@@ -39,3 +39,14 @@ weapons = [
     "combat_arms:infecteds_stundown",
     "combat_arms:infecteds_stundownplus",
 ]
+
+# The user's decision, 2026-11-14 (playtest 7): the infected ship turrets
+# kill nobody in a drawn ladder (their top gun's rays do nothing here), so a
+# rung on one is a dead rung.
+[[exclude]]
+reason = "kills nobody (the infected ship turrets' guns do no damage here)"
+weapons = [
+    "combat_arms:auto-turret_infecteds_01",
+    "combat_arms:auto-turret_infecteds_02",
+    "combat_arms:auto-turret_infecteds_03",
+]

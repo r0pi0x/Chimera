@@ -305,9 +305,11 @@ the A/B screenshots miss it.
 ### 2.6 Sizes
 
 The prototype measures in `cq` (1 % of a 16:9 frame's width). The
-overlay is sized by height, so 1 cq = 12.8 px at 720 lines times
-`overlay::scale`: identical at 16:9, wider margins at 21:9, the same
-layout at 4:3 (left/right anchors). Smallest text: tags .42-.5 cq (5.4-
+UI is sized by the largest 16:9 frame that fits the window
+(`units::layout_height`: the height, or width x 9/16 when narrower), so
+1 cq = 12.8 px at 720 lines times `overlay_scale` of that: identical at
+16:9, wider margins at 21:9; at 4:3 or in a tall window the frame fits
+the width (hotfix 7.1: the menu's frame was cropped at the sides). Smallest text: tags .42-.5 cq (5.4-
 6.4 px at 720 lines, 8-10 px at 1080) gets a floor in physical pixels
 from the theme (`min_text_px = 9`, as the prototype's `max(9px, ...)`)
 (risk 1).

@@ -8,9 +8,9 @@
 
 use bevy::prelude::*;
 use chimera_client::client::{
-    console::HeldActions,
+    console::{HeldActions, poll_showscores},
     minigame_scoreboard::{GunNames, MinigameScoreboardPlugin, ScoreboardRoot},
-    race_chip::{BoardContent, BoardRow, ChipContent, LeaderChip, PingMeter, RaceChipRoot, RacePlate, ping_level},
+    race_chip::{BoardContent, BoardRow, ChipContent, ChipLine, LeaderChip, PingMeter, RaceChipRoot, RacePlate, ping_level},
     signal::icons::SignalIcon,
     weapon_icons::{WeaponIcon, WeaponIcons},
 };
@@ -30,7 +30,12 @@ use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
 const SIGNAL: &str = "name = \"test\"\n[flags.hud]\nsignal = true\n[icons]\nprefer_game = true\n";
 
 fn sim(signal: bool) -> Sim {
+    sim_with(signal, |_| {})
+}
+
+fn sim_with(signal: bool, extra: impl FnOnce(&mut App) + Send + Sync + 'static) -> Sim {
     let mut sim = Sim::with(SimBasePlugins, |app| {
+        extra(app);
         app.add_plugins((GreyboxMapPlugin, MinigameScoreboardPlugin));
         app.add_weapon_data(&[
             ("p.toml", "id = \"kit:weapon_pistol\"\nslot = 1\ndraw = 0.5\nclass = \"pistol\"\n"),
@@ -463,5 +468,109 @@ fn a_listen_hosts_own_row_says_local() {
         assert!(hosts.contains(&(true, local_ping)) && hosts.contains(&(false, false)), "{role:?}: {hosts:?}");
         let texts = texts_under::<BoardContent>(&mut sim);
         assert_eq!(texts.iter().any(|t| t == "LOCAL"), local_ping, "{role:?}: {texts:?}");
+    }
+}
+
+/// The chip's plate fits its line at every window size and UI scale (a
+/// long leader's name, the text floor in a small window): laid out by
+/// Bevy's own UI, the plate is never narrower than the line it holds, so
+/// nothing is cropped (playtest7: "…ALPHA_9 05 | YOU 0…" cut both sides).
+#[test]
+fn the_chip_plate_fits_its_line_at_every_size() {
+    use bevy::camera::{ComputedCameraValues, RenderTargetInfo, Viewport};
+    // (physical width, height, scale factor)
+    let sizes = [
+        (1280, 720, 1.0),
+        (1920, 1080, 1.0),
+        (2560, 1440, 1.0),
+        (1624, 1558, 1.0),
+        (3440, 1440, 1.0),
+        (1920, 1080, 1.25),
+        (1920, 1080, 1.5),
+        (1024, 600, 1.0),
+    ];
+    for (pw, ph, sf) in sizes {
+        for leading in [false, true] {
+            let mut sim = sim_with(true, |app| {
+                app.init_resource::<Assets<Image>>()
+                    .init_resource::<Assets<bevy::image::TextureAtlasLayout>>()
+                    .init_resource::<ButtonInput<MouseButton>>()
+                    .init_resource::<Touches>()
+                    .init_resource::<bevy::picking::hover::HoverMap>()
+                    .init_resource::<bevy::picking::pointer::PointerMap>()
+                    .init_resource::<bevy::picking::events::PointerState>()
+                    .add_message::<bevy::picking::pointer::PointerInput>()
+                    .add_message::<bevy::picking::backend::PointerHits>()
+                    .init_asset::<Font>();
+                app.add_plugins((bevy::text::TextPlugin, bevy::ui::UiPlugin));
+            });
+            sim.app.world_mut().spawn((
+                Camera2d,
+                Camera {
+                    computed: ComputedCameraValues {
+                        target_info: Some(RenderTargetInfo { physical_size: UVec2::new(pw, ph), scale_factor: sf }),
+                        ..default()
+                    },
+                    viewport: Some(Viewport { physical_size: UVec2::new(pw, ph), ..default() }),
+                    ..default()
+                },
+            ));
+            sim.app.insert_resource(UiUnits { height: ph as f32 / sf, scale_factor: sf, ..default() });
+            // A long leader's name: wider than the look book's 21 cq.
+            let (me, them) = if leading { (3, 1) } else { (1, 3) };
+            player(&mut sim, "You", me, 4, true, false);
+            player(&mut sim, "ALPHA_9_THE_VERY_LONG_NAMED", them, 9, false, true);
+            for _ in 0..12 {
+                frame(&mut sim, 0.05);
+            }
+            let w = sim.app.world_mut();
+            let line = w.query_filtered::<&ComputedNode, With<ChipLine>>().single(w).expect("the chip's line").size.x;
+            let plate = w.query_filtered::<&ComputedNode, With<RacePlate>>().single(w).unwrap().size.x;
+            assert!(line > 0.0, "laid out");
+            assert!(plate >= line + 1.0, "{pw}x{ph} @{sf} leading {leading}: the plate ({plate}) fits its line ({line})");
+        }
+    }
+}
+
+/// Holding Tab (the key bound to `+showscores`, a polled bind that never
+/// runs through the console) opens the board, whatever rung (and so
+/// whichever game's gun and HUD) the local player is on, and letting go
+/// folds it; not while the chat line takes the keys (playtest7: the board
+/// read only the console's `+showscores`, so Tab never opened it).
+#[test]
+fn holding_tab_opens_the_board_on_every_rung() {
+    for rung in 0..4 {
+        let mut sim = sim(true);
+        sim.app.init_resource::<ButtonInput<KeyCode>>().init_resource::<ButtonInput<MouseButton>>();
+        sim.app.add_systems(PreUpdate, poll_showscores);
+        sim.app
+            .world_mut()
+            .resource_mut::<chimera_core::console::Console>()
+            .binds
+            .insert("tab".into(), "+showscores".into());
+        player(&mut sim, "Alpha", rung, 4, true, false);
+        player(&mut sim, "Botty", 2, 1, false, true);
+        for _ in 0..3 {
+            frame(&mut sim, 1.0 / 60.0);
+        }
+        assert!(visible::<ChipContent>(&mut sim) && !visible::<BoardContent>(&mut sim), "rung {rung}: the chip");
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::Tab);
+        for _ in 0..4 {
+            frame(&mut sim, 0.05);
+        }
+        assert!(visible::<BoardContent>(&mut sim), "rung {rung}: Tab held opens the board");
+        assert!(!sim.app.world().resource::<HeldActions>().showscores, "not through the console");
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(KeyCode::Tab);
+        for _ in 0..4 {
+            frame(&mut sim, 0.05);
+        }
+        assert!(visible::<ChipContent>(&mut sim) && !visible::<BoardContent>(&mut sim), "rung {rung}: let go, it folds");
+        // Typing chat: Tab is the line's, not the board's.
+        sim.app.insert_resource(chimera_client::client::chat::ChatInput { open: Some(false), ..default() });
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::Tab);
+        for _ in 0..4 {
+            frame(&mut sim, 0.05);
+        }
+        assert!(!visible::<BoardContent>(&mut sim), "rung {rung}: not while typing");
     }
 }

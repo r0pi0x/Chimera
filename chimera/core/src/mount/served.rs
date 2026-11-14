@@ -23,7 +23,9 @@
 //! set. With an asset service set (`[assets] url` and `token`), a
 //! manifest the store lacks is fetched from it when the store serves a
 //! game alone (`AssetSettings::build`), and every `CachedFiles` fetches
-//! the records the store lacks on demand (`AssetSettings::fetcher`).
+//! the records the store lacks on demand (`AssetSettings::fetcher`; with
+//! no service set, from the one a join binds later in the process:
+//! `chimera_assets::access::late_fetcher`).
 
 use std::{io, path::Path};
 
@@ -116,7 +118,8 @@ pub fn open_with(
             return Ok(None);
         }
         CachedFiles::open(store, game, build)
-            .map(|c| Some(c.with_fetcher(assets.fetcher())))
+            // No service yet: the one a join binds later (`late_fetcher`).
+            .map(|c| Some(c.with_fetcher(assets.fetcher().or_else(|| Some(chimera_assets::access::late_fetcher())))))
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     };
     if alone_with(assets, game, install) {

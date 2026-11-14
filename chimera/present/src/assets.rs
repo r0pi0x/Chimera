@@ -20,6 +20,12 @@
 //! texels (X9's `render::bc_wanted`, which needs the device: a loader is
 //! made in its plugin's `finish`, as Bevy's own image loader).
 //!
+//! A read that fails (no mount yet, or a file the mount couldn't give) is
+//! remembered (at most `UNMOUNTED_MAX` paths); `reload_unmounted` loads
+//! those paths again once their files may be there (a join bound the
+//! asset service and fetched the game's files: `net::assets::AssetsArrived`),
+//! for the handles still held.
+//!
 //! Known shortcuts: a directory listing reads the whole mount's entries
 //! for archives that don't override `FileSource::files_in`; there is no
 //! watcher (the installs don't change while playing); a mount once opened
@@ -82,6 +88,7 @@ impl Plugin for InstallSourcesPlugin {
     fn build(&self, app: &mut App) {
         for source in &self.0 {
             let reader = MountReader {
+                id: source.id,
                 open: source.open.clone(),
                 mount: Arc::new(RwLock::new(None)),
             };
@@ -101,6 +108,7 @@ pub fn install_path(game: &str, path: &str) -> String {
 /// Reads an install's files through its mount, opened on first use.
 #[derive(Clone)]
 struct MountReader {
+    id: &'static str,
     open: OpenMount,
     mount: Arc<RwLock<Option<Arc<Mount>>>>,
 }
@@ -118,11 +126,19 @@ impl MountReader {
 
     fn read_file(&self, path: &Path) -> Result<Vec<u8>, AssetReaderError> {
         let not_found = || AssetReaderError::NotFound(path.to_path_buf());
-        let mount = self.mount().ok_or_else(not_found)?;
-        mount.read(&path.to_string_lossy()).map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => not_found(),
-            _ => AssetReaderError::Io(Arc::new(e)),
-        })
+        let read = self.mount().ok_or_else(not_found).and_then(|mount| {
+            mount.read(&path.to_string_lossy()).map_err(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => not_found(),
+                _ => AssetReaderError::Io(Arc::new(e)),
+            })
+        });
+        if read.is_err() {
+            let mut failed = UNMOUNTED.lock().unwrap_or_else(|e| e.into_inner());
+            if failed.len() < UNMOUNTED_MAX {
+                failed.insert(install_path(self.id, &path.to_string_lossy()));
+            }
+        }
+        read
     }
 }
 
@@ -150,6 +166,27 @@ impl AssetReader for MountReader {
     async fn is_directory<'a>(&'a self, path: &'a Path) -> Result<bool, AssetReaderError> {
         let Some(mount) = self.mount() else { return Ok(false) };
         Ok(!mount.files_in(&chimera_core::mount::normalize(&path.to_string_lossy())).is_empty())
+    }
+}
+
+/// The most failed reads remembered for `reload_unmounted`.
+pub const UNMOUNTED_MAX: usize = 4096;
+
+/// Asset paths (`<game>://<path>`) whose read failed, to load again
+/// (`reload_unmounted`).
+static UNMOUNTED: std::sync::Mutex<std::collections::BTreeSet<String>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+/// Load again every install file whose read failed (module doc), for the
+/// handles still held; the list starts again. Run once a game's files
+/// arrived (a join bound the asset service: `net::assets::AssetsArrived`).
+pub fn reload_unmounted(server: &AssetServer) {
+    let failed = std::mem::take(&mut *UNMOUNTED.lock().unwrap_or_else(|e| e.into_inner()));
+    for path in &failed {
+        server.reload(path.clone());
+    }
+    if !failed.is_empty() {
+        info!("loading again {} game files that weren't there before", failed.len());
     }
 }
 

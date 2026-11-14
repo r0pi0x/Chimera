@@ -19,8 +19,9 @@
 //! - `step_timelines` writes each timeline's values (`Timeline::value`)
 //!   only when they change; `apply_timelines` writes translate, scale
 //!   (`UiTransform`) and width/height (`Node`, cq through `UiUnits`) on
-//!   change. Opacity, clips, letter spacing and material parameters are
-//!   read by the screen that owns the node (`Timeline::value`).
+//!   change, and all of them again when `UiUnits` change (a resize).
+//!   Opacity, clips, letter spacing and material parameters are read by
+//!   the screen that owns the node (`Timeline::value`).
 
 use bevy::prelude::*;
 
@@ -435,9 +436,18 @@ pub fn step_timelines(clock: Res<UiClock>, mut timelines: Query<&mut Timeline>) 
 /// Translate, scale and size from changed timelines (module doc).
 pub fn apply_timelines(
     units: Res<UiUnits>,
-    mut nodes: Query<(&Timeline, Option<&mut UiTransform>, Option<&mut Node>), Changed<Timeline>>,
+    mut nodes: Query<(Ref<Timeline>, Option<&mut UiTransform>, Option<&mut Node>)>,
 ) {
+    // A settled timeline is applied again when the units change (a window
+    // resized, moved to another monitor's scale, or its first real size
+    // after the default 720 lines): its cq values are px at the old size
+    // otherwise (playtest7: the race chip's plate stayed 21 cq at 720 lines
+    // in a 1080-line window, cropping its content on both sides).
+    let all = units.is_changed();
     for (tl, transform, node) in &mut nodes {
+        if !all && !tl.is_changed() {
+            continue;
+        }
         if let Some(mut tf) = transform {
             let mut next = *tf;
             if let Some(x) = tl.value(Prop::X) {

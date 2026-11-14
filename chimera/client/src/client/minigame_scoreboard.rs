@@ -294,7 +294,7 @@ fn draw(
     mut commands: Commands,
 ) {
     // Under the Signal look a ladder's board is the race chip's.
-    let show = held.showscores && hud.is_some_and(|h| h.playing()) && !race.active;
+    let show = held.scores() && hud.is_some_and(|h| h.playing()) && !race.active;
     root.1.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
     for e in &old {
         commands.entity(e).despawn();

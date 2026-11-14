@@ -67,6 +67,7 @@ impl Plugin for ConsoleUiPlugin {
             .init_resource::<HeldActions>()
             .init_resource::<SoundMarks>()
             .add_systems(Startup, (spawn_ui, load_history, autoexec).chain())
+            .add_systems(PreUpdate, poll_showscores.after(bevy::input::InputSystems))
             .add_systems(Startup, read_map_lists_ahead)
             .add_systems(Update, take_map_lists_ahead)
             .add_systems(
@@ -1813,13 +1814,51 @@ pub struct HeldActions {
     pub reload: bool,
     /// The use key (`+use`): doors, buttons.
     pub use_key: bool,
-    /// The scoreboard (`+showscores`, Tab in CS:S).
+    /// The scoreboard (`+showscores`, Tab in CS:S) held from the console.
     pub showscores: bool,
+    /// A key bound to `+showscores` is held (`poll_showscores`: the bind
+    /// is polled, so its key never runs `+showscores` through the console).
+    pub showscores_key: bool,
     /// Free look (`+freelook`, Left Alt): the mouse turns the camera only.
     pub freelook: bool,
     /// The game's named actions held from the console (`+firemode`,
     /// `BindsAppExt::bound_action`).
     pub named: std::collections::BTreeSet<String>,
+}
+
+impl HeldActions {
+    /// The scoreboard is asked for: its key held or `+showscores` run.
+    pub fn scores(&self) -> bool {
+        self.showscores || self.showscores_key
+    }
+}
+
+/// Keeps `HeldActions::showscores_key` from the keys bound to
+/// `+showscores` (a polled bind: `binds::POLLED`), for the shell's boards
+/// (the race chip's Tab board, the minigame scoreboard), which read
+/// `HeldActions::scores`. Not while the console, a menu or the chat line
+/// takes the keys, nor for a key a menu has captured. (Playtest7: the
+/// boards read only the console's `+showscores`, so Tab never opened
+/// them.)
+#[allow(clippy::too_many_arguments)]
+pub fn poll_showscores(
+    console: Option<Res<Console>>,
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    captured: Option<Res<super::binds::CapturedKeys>>,
+    ui: Option<Res<ConsoleUi>>,
+    menu: Option<Res<super::front_end::MenuStatus>>,
+    chat: Option<Res<super::chat::ChatInput>>,
+    mut held: ResMut<HeldActions>,
+) {
+    let busy = ui.is_some_and(|u| u.open) || menu.is_some_and(|m| m.open) || chat.is_some_and(|c| c.open.is_some());
+    let down = match (console, keys, mouse) {
+        (Some(c), Some(k), Some(m)) if !busy => super::binds::pressed_free(&c.binds, &k, &m, captured.as_deref(), "+showscores"),
+        _ => false,
+    };
+    if held.showscores_key != down {
+        held.showscores_key = down;
+    }
 }
 
 const ACTIONS: &[&str] = &[
