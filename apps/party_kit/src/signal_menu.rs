@@ -25,12 +25,16 @@
 //! - **Keys** along the foot, the backdrop's caption and its tabs (A, B,
 //!   C with a dwell bar) bottom right, `+` marks in the corners, the rule
 //!   of the game up the right edge.
+//! - **Backdrops** (`menu_backdrops`): the next when the shown one's
+//!   dwell is up (`rotate`), a tab click shows one from its start.
 //!
 //! Entrances run on the kit's `Timeline`s from when the page shows; a
 //! window resize rebuilds the page where its entrance is. Reduced motion
 //! (`ui_reduce_motion 1`): no entrance, no auto-swap, still backdrops.
 //! `ui_scene menu [ladder|assembly|ident] [t]` (console) stages it for
-//! screenshots: the page at rest, that backdrop frozen `t` s in;
+//! screenshots: the page at rest, that backdrop frozen `t` s in (`ui_scene
+//! menu assembly 2 0.4`: 40 % through the swap into it from the one
+//! before, the UI clock stopped);
 //! `ui_scene menu enter <t>` the page's entrance `t` s in, the UI clock
 //! stopped there (`ui_scene off` runs it again).
 //!
@@ -74,8 +78,9 @@ pub struct SignalMenu {
     pub sel: usize,
     /// The backdrop shown (index into `BACKDROPS`).
     pub backdrop: usize,
-    /// The one it swaps from, while the swap runs.
+    /// The one it swaps from, while the swap runs, and when that one began.
     pub previous: Option<usize>,
+    pub previous_since: f64,
     /// When the swap began (`UiClock`).
     pub swap_at: f64,
     /// When the current backdrop began (its own clock's zero).
@@ -99,6 +104,7 @@ impl Default for SignalMenu {
             sel: 0,
             backdrop: 0,
             previous: None,
+            previous_since: 0.0,
             swap_at: -10.0,
             since: 0.0,
             auto: true,
@@ -127,6 +133,7 @@ impl SignalMenu {
             return;
         }
         self.previous = Some(self.backdrop);
+        self.previous_since = self.since;
         self.backdrop = i;
         self.swap_at = now;
         self.since = now;
@@ -1143,6 +1150,9 @@ pub fn stage(world: &mut World, args: &[String]) -> Result<(), String> {
         },
     };
     let t = args.get(1).and_then(|s| s.parse::<f32>().ok());
+    // A third number: the swap into it this far through (0-1), from the
+    // backdrop before it, the UI clock stopped there.
+    let wipe = args.get(2).and_then(|s| s.parse::<f64>().ok());
     show_menu(world);
     let now = world.resource::<UiClock>().now;
     let mut s = world.resource_mut::<SignalMenu>();
@@ -1154,6 +1164,14 @@ pub fn stage(world: &mut World, args: &[String]) -> Result<(), String> {
     // At rest: the entrance long over.
     s.entered = Some(now - 60.0);
     s.staged += 1;
+    if let Some(w) = wipe {
+        let swap = world.get_resource::<Theme>().and_then(|t| t.dur_opt(L, "backdrop_swap")).unwrap_or(0.52) as f64;
+        let mut s = world.resource_mut::<SignalMenu>();
+        s.previous = Some((which + BACKDROPS.len() - 1) % BACKDROPS.len());
+        s.swap_at = now - w.clamp(0.0, 1.0) * swap;
+        s.clock_stopped = true;
+        world.resource_mut::<UiClock>().manual = true;
+    }
     Ok(())
 }
 

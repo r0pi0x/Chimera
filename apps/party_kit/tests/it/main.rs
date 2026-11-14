@@ -36,6 +36,7 @@ mod main_menu;
 mod map_files;
 mod map_pool_by_count;
 mod map_vote;
+mod menu_backdrops;
 mod net_gun_game;
 mod party_music;
 mod persist;

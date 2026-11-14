@@ -594,6 +594,17 @@ with the dwell bar and caption; the ambient under everything; no live
 map and no `MenuBackdrop` under it; `ui_scene menu [backdrop] [t]` and
 `ui_scene menu enter <t>`; tests `apps/party_kit/tests/it/signal_menu.rs`).
 The pages (Play, Join, Options) stay VGUI frames over it for now.
+The backdrops are in (`party_kit::menu_backdrops`): Ladder, Assembly and
+the Ident (slot C until M5b's Showcase) painted on the CPU into a
+vertex-coloured `Mesh2d` with `Text2d` labels per backdrop, drawn by a 2D
+camera into an image the size of the backdrops' area (the right 64 %),
+shown through `BackdropsMaterial`, which fades them toward the menu column,
+runs the 12° swap with its accent edge and lays the Ident's sheen; the
+Ladder uses the games' own kill icons when at hand. Cost (seeded,
+headless, instructions a frame, the menu's systems): Ladder 0.3 M,
+Assembly 1.2 M, Ident 2.5 M at its lock and 1.6 M under its sheen
+(`menu_backdrops::the_menus_frame_stays_in_budget`, limit 3 M); a frozen
+backdrop is painted once. Tests `apps/party_kit/tests/it/menu_backdrops.rs`.
 
 - `party_kit::main_menu` drawn with the kit (four items from
   main_menu.toml; Play, Join, Options, Quit), the lockup, the keys line,

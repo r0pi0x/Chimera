@@ -21,7 +21,7 @@ use super::main_menu::menu_bits;
 
 /// A theme that lays the menu out (the numbers default to the look
 /// book's).
-const MENU_THEME: &str = r#"
+pub(crate) const MENU_THEME: &str = r#"
 name = "test"
 [shape]
 slant_deg = 12.0
@@ -32,7 +32,7 @@ backdrop_dwell = 16.0
 backdrop_swap = 0.52
 "#;
 
-fn sim_with(theme: &str) -> Sim {
+pub(crate) fn sim_with(theme: &str) -> Sim {
     let theme = Theme::from_toml(theme).unwrap();
     let mut sim = Sim::with(CaSim, |app| {
         app.add_plugins((GreyboxMapPlugin, PartyPartsPlugin, chimera_net::net::NetPlugin));
@@ -48,7 +48,7 @@ fn sim_with(theme: &str) -> Sim {
     sim
 }
 
-fn step(sim: &mut Sim, secs: f32) {
+pub(crate) fn step(sim: &mut Sim, secs: f32) {
     sim.app.world_mut().resource_mut::<UiClock>().step(secs);
     sim.ticks(1);
 }
