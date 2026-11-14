@@ -522,7 +522,7 @@ fn draw(
 /// art is what is centred; a glyph's font is cut down when it would be taller
 /// than that. The row's height is fixed, so a line is as tall with an icon,
 /// without one or with a tall one (widths vary).
-fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: f32, fill: f32, images: Option<&Assets<Image>>) {
+pub fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: f32, fill: f32, images: Option<&Assets<Image>>) {
     let scale = fitted_scale(icon, scale, line * fill);
     // An icon font's ink sits a little above its line's middle: nudged down.
     let nudge = match icon {

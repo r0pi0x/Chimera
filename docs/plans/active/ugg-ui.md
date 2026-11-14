@@ -409,6 +409,23 @@ Next: `LinesMaterial`, `AmbientMaterial` (stub), icons, widgets,
 
 ### M2: race chip, Tab board, kill feed, fallback HUD
 
+Status (2026-11-14): in, behind the theme's `flags.hud.signal` (only
+Signal sets it; Lucker Party and the plain apps keep today's screens):
+`client::race_chip` (the chip, its leader variant, Tab opening it into
+the one board in 0.12 s and folding in 0.09 s from wherever it is),
+`kill_feed::signal_feed`, `hud_minimal::signal_hud`, their pieces in
+`client::signal` (tags, the fused YOU+HOST chip, the bot slot, the YOU
+row, fades, gun icons: each game's own where `WeaponIcons` has one while
+`flags.icons.prefer_game`, else the look book's set by `GunClass`; the
+set is rasterized in `signal::icons` until the kit's `icons` lands).
+Tests: `race_chip_opens_and_folds_on_showscores`,
+`race_chip_needs_the_signal_theme`, `leader_chip_shows_the_gap`,
+`board_rows_best_first_with_icons`, `kill_feed_marks_local_kills_and_deaths`,
+`the_plain_feed_without_the_signal_theme` (chimera_client),
+`fallback_hud_only_without_a_game_hud` (ultimate_gun_game). Left:
+`overlay_keeps_clear_of_game_huds`, rolling numbers and the tick pop
+(with M3's toast), the match clock on the board's head.
+
 - `client::race_chip` replaces `minigame_panel` for a ladder (other
   minigames keep the panel); `minigame_scoreboard` becomes the chip's
   board; `kill_feed` restyled with fallback icons; `hud_minimal`
@@ -610,8 +627,9 @@ must be one build.
 
 ## 6. Decisions (user, 2026-11-14)
 
-1. Icons: each game's own kill icons in the kill feed only; our fallback
-   set everywhere else (one style at small sizes).
+1. Icons: each game's own kill icon wherever it has one (board, feed,
+   toast); our fallback set only where none (confirmed 2026-11-14), behind
+   one theme switch, `flags.icons.prefer_game` (default true).
 2. Tab: one board, the chip opening into it. The board is big enough to
    carry everything the full scoreboard had (rung, gun icon and name,
    K/D, ladder strip, tags, session wins). Its open and close are fast

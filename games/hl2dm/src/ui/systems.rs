@@ -450,7 +450,7 @@ pub fn collect_board(
         Res<ButtonInput<KeyCode>>,
         Option<Res<ButtonInput<MouseButton>>>,
     ),
-    motd: Option<Res<chimera_net::net::ServerMotd>>,
+    (motd, minigame): (Option<Res<chimera_net::net::ServerMotd>>, Option<Res<chimera_sim::minigame::hud::MinigameHud>>),
 ) {
     if state.hud.is_none() {
         return;
@@ -488,7 +488,10 @@ pub fn collect_board(
         (Some(c), Some(m)) => binds::pressed(&c.binds, &keys, m, "+showscores"),
         _ => false,
     };
-    let show = (tab && !typing) || held.showscores || view.is_some_and(|v| v.over);
+    // A minigame has its own scoreboard (the shell's, whatever game's HUD),
+    // as CS:S's and Combat Arms' stay down for it.
+    let minigame = minigame.is_some_and(|h| h.playing());
+    let show = ((tab && !typing) || held.showscores || view.is_some_and(|v| v.over)) && !minigame;
     if show && let Some(look) = state.look.clone() {
         state.frame.0.extend(super::scoreboard::frame(&look, &board).0);
     }

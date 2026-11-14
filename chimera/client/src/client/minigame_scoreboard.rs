@@ -24,6 +24,10 @@
 //! at a word with `…`). The board is drawn above the minigame panel with an
 //! opaque background.
 //!
+//! Under the Signal look (`signal::signal_on`) a ladder's Tab board is the
+//! race chip's (`race_chip`); this one stays for other minigames and apps.
+//! `MinigameScoreboardPlugin` adds `RaceChipPlugin`.
+//!
 //! Known shortcuts: plain text, no team colours.
 
 use std::collections::HashMap;
@@ -54,6 +58,9 @@ impl Plugin for MinigameScoreboardPlugin {
             .add_systems(Startup, spawn)
             .add_systems(PreUpdate, fill_short_names)
             .add_systems(Update, draw);
+        if !app.is_plugin_added::<super::race_chip::RaceChipPlugin>() {
+            app.add_plugins(super::race_chip::RaceChipPlugin);
+        }
         super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
         chimera_core::console::ConsoleAppExt::console_command(
             app,
@@ -268,7 +275,7 @@ fn draw(
     settings: Option<Res<NetSettings>>,
     gun_names: Res<GunNames>,
     catalog: Option<Res<WeaponCatalog>>,
-    (fonts, rules): (Option<Res<super::fonts::UiFonts>>, Option<Res<GunNameRules>>),
+    (fonts, rules, race): (Option<Res<super::fonts::UiFonts>>, Option<Res<GunNameRules>>, Res<super::race_chip::RaceView>),
     players: Query<
         (
             Entity,
@@ -286,7 +293,8 @@ fn draw(
     old: Query<Entity, Or<(With<ScoreboardRow>, With<ScoreboardHeader>)>>,
     mut commands: Commands,
 ) {
-    let show = held.showscores && hud.is_some_and(|h| h.playing());
+    // Under the Signal look a ladder's board is the race chip's.
+    let show = held.showscores && hud.is_some_and(|h| h.playing()) && !race.active;
     root.1.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
     for e in &old {
         commands.entity(e).despawn();

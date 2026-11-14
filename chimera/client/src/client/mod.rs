@@ -39,6 +39,8 @@ pub mod hud_minimal;
 pub mod minigame_panel;
 pub mod overlay;
 pub mod minigame_scoreboard;
+pub mod race_chip;
+pub mod signal;
 pub mod hud_text;
 pub mod input;
 pub mod kill_feed;

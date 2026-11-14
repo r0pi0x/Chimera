@@ -70,7 +70,9 @@ fails when this file is stale; never edit the generated lines).
 - `chimera/client/src/client/night_vision.rs`: Night vision: the overlay's colour (the frame plus the frame times pure green, `NIGHT_VISION_TINT`) is ours (the material says additive frame...
 - `chimera/client/src/client/offscreen.rs`: - The image is `Rgba8UnormSrgb`; a window's surface is usually `Bgra8UnormSrgb`
 - `chimera/client/src/client/prematch_lobby.rs`: no sound for the countdown
+- `chimera/client/src/client/race_chip.rs`: no rolling numbers or tick pop (M3); the board lists at most `MAX_ROWS` players; no match clock on the head
 - `chimera/client/src/client/respawn_countdown.rs`: plain text on a dark band, no gauge
+- `chimera/client/src/client/signal.rs`: no rolling numbers yet (M3's toast brings them); the look book's icons are rasterized here (`icons`) until the kit's `chimera_ui::icons` lands
 - `chimera/client/src/client/spectate.rs`: Spectating (`client::spectate`) is measured only in part (specs/cs_source/spectating.md, from bots in a SourceTV demo: the 6.5 s without a freeze...
 - `chimera/client/src/client/startup.rs`: the window closes before the game's opens (a few seconds without one while the game loads, now from the disk); the window's text is English only
 - `chimera/client/src/client/swap_effect.rs`: the puff is one sphere, not particles

@@ -32,6 +32,14 @@ glow = 0.20
 slant_deg = 12.0
 min_text_px = 9.0
 
+# Switches: the shell's Signal HUD (race chip and board, kill feed,
+# fallback HUD) and each game's own gun icons over the kit's set.
+[flags.hud]
+signal = true
+
+[flags.icons]
+prefer_game = true
+
 # Text roles: the wordmark is Black with ss02 (whose A is the plain A).
 [type.wordmark]
 face = "display"
