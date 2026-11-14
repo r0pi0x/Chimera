@@ -21,6 +21,27 @@ pub struct SoundClip {
     pub loop_start: Option<usize>,
 }
 
+impl SoundClip {
+    /// The clip with its channels averaged into one (a clip already mono
+    /// is returned as is).
+    pub fn downmixed(self) -> SoundClip {
+        let n = self.channels as usize;
+        if n <= 1 {
+            return self;
+        }
+        let samples: Vec<i16> = self
+            .samples
+            .chunks_exact(n)
+            .map(|f| (f.iter().map(|&s| i32::from(s)).sum::<i32>() / n as i32) as i16)
+            .collect();
+        SoundClip {
+            channels: 1,
+            samples: samples.into(),
+            ..self
+        }
+    }
+}
+
 /// `SoundClip::samples` as little-endian bytes.
 mod samples_bytes {
     use std::sync::Arc;
