@@ -41,6 +41,11 @@ the user's go-ahead: no Actions runs unless asked.
   account that replaces asset tokens; later stats and meta progression):
   [plans/active/hub.md](plans/active/hub.md) section 10.
 
+- **Player requests (playtest 7, 2026-11-14):** games and guns wanted by
+  players: Halo guns (Halo CE is already on this roadmap), Fortnite guns,
+  Natural Selection 2 (one tester said no), Left 4 Dead infected, and
+  Left 4 Dead 2 guns and infected.
+
 - **Parity gaps, ranked (audit 2026-11-12):** the top gaps vs CS:S,
   Combat Arms and HL2:DM for a gun-game player, in
   [plans/active/parity-gaps-ranked.md](plans/active/parity-gaps-ranked.md).
@@ -160,6 +165,82 @@ the user's go-ahead: no Actions runs unless asked.
     game server, then a host's download server).
 
 ## 0. Playtest feedback (2026-10-07), top priority
+
+### UGG playtest 7, 2026-11-14 (user and testers, Windows, live)
+
+Fixed ones are on branch `release-7.1` (tag v0.1.0-playtest7.1, not yet
+published): confirm each in a playtest, then delete it. The rest is not
+started; the user asked to avoid server lag while testers play.
+
+- **Joining opened extra windows** (fixed in 7.1, confirm in a playtest).
+  P0. A token-bind relaunch, a separate startup download window and a
+  third, auto-joining instance. Fix: bind and download in-process. Look
+  at: the launcher's relaunch and token paths, the startup download.
+- **Mid-match join on a community map** (gg_mario_vs_wario; fixed in
+  7.1, confirm in a playtest): "server has no file to send". The map
+  verify asked the game server for the file instead of the asset
+  service.
+- **Tab board never opened** (fixed in 7.1, confirm in a playtest): the
+  poll of `+showscores` did not feed our boards (9eb00deb).
+- **Race chip cropped** (fixed in 7.1, confirm in a playtest): a stale
+  timeline width after a resize or DPI change, and a fixed-width plate
+  (67998ec5).
+- **Main menu hover and focus** (fixed in 7.1, confirm in a playtest):
+  the inverted label had alpha 0; keyboard and pointer focus disagreed
+  (d988dd12).
+- **Main menu frame cropped in tall or narrow windows** (fixed in 7.1,
+  confirm in a playtest): fit the frame to the width.
+- **Join page Recent** (fixed in 7.1, confirm in a playtest): it must
+  record, show and rejoin.
+- **Infected ship turrets** (combat_arms:auto-turret_infecteds_01/02/03;
+  fixed in 7.1, confirm in a playtest): they kill nobody; now a
+  `ladder_exclusions` entry, so drawn ladders skip them.
+- **The first rung's gun is invisible for the user.** The first gun of
+  each ladder start doesn't show. Look at: the view model's first
+  equip at a ladder start.
+- **Deaths on CS:S and Combat Arms rungs show no ragdoll or death
+  animation**; the body just disappears (seen by other players). Check
+  the perf-spikes change that warms ragdoll shapes inside
+  `spawn_ragdolls` (d149c231-era main against the playtest7 tag) and the
+  net path for ragdolls.
+- **Snow Valley (Combat Arms):** lighting looks wrong (details and a
+  screenshot pending); tree leaves are solid and block bullets, they
+  should be shoot-through.
+- **combat_arms:battleship is very laggy in play.** Profile client
+  frames and server ticks (tick_stats, seeded headless counts,
+  render-thread cost): draw calls, props, water, lights, physics props,
+  nav, bots. Compare with warehouse.
+- **Combat Arms crossbow:** the bolt appears as a whole crossbow model
+  flying at people (wrong projectile model), and a bolt stuck in a
+  player drags behind the body instead of staying at the hit point (the
+  attachment follows the wrong bone or offset, or hangs off the root and
+  lags). Look at: the crossbow's projectile model record and the
+  stick-to-body attachment.
+- **Text fields don't accept paste** (Ctrl+V, Shift+Insert, right-click)
+  anywhere: Join address and password, Play server name, Settings value
+  boxes, the console (check), the token entry later. Add clipboard paste
+  (and copy, cut, select-all) to the kit's `text_field` via arboard or
+  Bevy's clipboard support, on Windows and Linux.
+- **Kill feed gun icons are too small next to the names.** Make them
+  take more of the row (taller, fit by ink via `chimera_ui::icon_ink`);
+  same for the top HUD (the race chip's gun icon) and the headshot and
+  other kill-modifier icons. Re-check against the look book's
+  proportions and update the parity references if we deviate.
+- **Settings audit fixes:** fps_max and party_music are not archived;
+  the music volume is not applied to Combat Arms' party music; Combat
+  Arms' options apply may reset volume and gamma at start; no HL2:DM
+  Controls tab; game-specific rows are unlabelled; Host settings are
+  lost on restart; Brightness direction; Combat Arms view-model FOV
+  steps; the "The game's loop" label.
+- **Crash reporting, automated.** On a panic or native crash, write a
+  crash bundle (backtrace, log tail, build and net version, GPU and OS,
+  map and rung, Windows minidumps included) and send it to the
+  `/feedback` receiver, or queue it, on the next start. Ties into
+  [plans/active/feedback-reports.md](plans/active/feedback-reports.md)
+  P3 "crash bundles".
+- On main already, for the next build: the scroll container and slider
+  drag and typed values (ui-scroll, merging); the screenshot-tour UI
+  fixes (cb133450).
 
 ### Spectators (user, 2026-11-14)
 
