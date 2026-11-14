@@ -35,7 +35,10 @@
 //! or `chip.leading.*`, `board.head.*`, `board.th.*`, `board.row.<n>.*`
 //! from 1) for the UI parity check (`ui_parity`).
 //!
-//! Known shortcuts: no rolling numbers or tick pop (M3); the board lists
+//! Your rung on the chip rolls and your meter tick pops with the rank-up
+//! toast's roll (`rank_toast`).
+//!
+//! Known shortcuts: the board lists
 //! at most `MAX_ROWS` players; no match clock on the head; no packet loss on the board (not measured).
 
 use bevy::prelude::*;
@@ -71,9 +74,34 @@ impl Plugin for RaceChipPlugin {
             .init_resource::<GunNames>()
             .init_resource::<RaceView>()
             .add_systems(Startup, spawn)
-            .add_systems(Update, (gather, (build_chip, build_board), open_close).chain());
+            .add_systems(Update, (gather, (build_chip, build_board), open_close).chain().in_set(RaceChipSystems));
+        if !app.is_plugin_added::<super::rank_toast::RankToastPlugin>() {
+            app.add_plugins(super::rank_toast::RankToastPlugin);
+        }
     }
 }
+
+/// The chip's and board's systems (the rank-up toast runs after them).
+#[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RaceChipSystems;
+
+/// The staged race's ladder: (gun, short name, game, the kit's icon).
+pub const STAGED_GUNS: [(&str, &str, &str, &str); 14] = [
+    ("cs_source:weapon_glock", "GLOCK-18", "CS:S", "pistol"),
+    ("combat_arms:m92fs", "M92FS", "CA", "pistol"),
+    ("hl2dm:weapon_357", ".357 MAGNUM", "HL2:DM", "revolver"),
+    ("cs_source:weapon_mp5navy", "MP5", "CS:S", "smg"),
+    ("combat_arms:mp7", "MP7", "CA", "smg"),
+    ("hl2dm:weapon_shotgun", "SHOTGUN", "HL2:DM", "shotgun"),
+    ("cs_source:weapon_m4a1", "M4A1", "CS:S", "rifle"),
+    ("combat_arms:ak_47", "AK-47", "CA", "rifle"),
+    ("hl2dm:weapon_ar2", "PULSE RIFLE", "HL2:DM", "energy"),
+    ("cs_source:weapon_m249", "M249", "CS:S", "lmg"),
+    ("cs_source:weapon_awp", "AWP", "CS:S", "sniper"),
+    ("hl2dm:weapon_crossbow", "CROSSBOW", "HL2:DM", "crossbow"),
+    ("hl2dm:weapon_rpg", "RPG", "HL2:DM", "launcher"),
+    ("cs_source:weapon_knife", "KNIFE", "CS:S", "knife"),
+];
 
 /// The most rows the board lists.
 pub const MAX_ROWS: usize = 16;
@@ -162,23 +190,7 @@ pub struct RaceStaged {
 /// seventh-rung in fourth, or leading (`lead`).
 pub fn staged_race(lead: bool) -> RaceView {
     let gun = |rung: usize| -> (Option<&'static str>, &'static str, &'static str, Option<&'static str>) {
-        const L: [(&str, &str, &str, &str); 14] = [
-            ("cs_source:weapon_glock", "GLOCK-18", "CS:S", "pistol"),
-            ("combat_arms:m92fs", "M92FS", "CA", "pistol"),
-            ("hl2dm:weapon_357", ".357 MAGNUM", "HL2:DM", "revolver"),
-            ("cs_source:weapon_mp5navy", "MP5", "CS:S", "smg"),
-            ("combat_arms:mp7", "MP7", "CA", "smg"),
-            ("hl2dm:weapon_shotgun", "SHOTGUN", "HL2:DM", "shotgun"),
-            ("cs_source:weapon_m4a1", "M4A1", "CS:S", "rifle"),
-            ("combat_arms:ak_47", "AK-47", "CA", "rifle"),
-            ("hl2dm:weapon_ar2", "PULSE RIFLE", "HL2:DM", "energy"),
-            ("cs_source:weapon_m249", "M249", "CS:S", "lmg"),
-            ("cs_source:weapon_awp", "AWP", "CS:S", "sniper"),
-            ("hl2dm:weapon_crossbow", "CROSSBOW", "HL2:DM", "crossbow"),
-            ("hl2dm:weapon_rpg", "RPG", "HL2:DM", "launcher"),
-            ("cs_source:weapon_knife", "KNIFE", "CS:S", "knife"),
-        ];
-        let (id, name, game, class) = L[rung.min(13)];
+        let (id, name, game, class) = STAGED_GUNS[rung.min(13)];
         (Some(id), name, game, Some(class))
     };
     let row = |name: &str, rung: usize, kills: i32, deaths: u32, bot: bool, local: bool, host: bool, wins: u32, ping: u16| {
@@ -431,6 +443,7 @@ fn build_chip(
     look: Look,
     view: Res<RaceView>,
     mut ticks: Option<ResMut<Assets<TickBarMaterial>>>,
+    mut slants: Option<ResMut<Assets<SlantMaterial>>>,
     plate: Single<Entity, With<RacePlate>>,
     old: Query<Entity, With<ChipContent>>,
     mut commands: Commands,
@@ -479,8 +492,14 @@ fn build_chip(
             .with_children(|r1| {
                 // A rung: at least 1.5 cq wide (the look book's `.v`), so
                 // the line keeps its width as the digits change.
+                // Your rung rolls with the rank-up toast (`rank_toast`).
                 let num = |r1: &mut ChildSpawnerCommands, n: usize, size: f32, tone: Tone, id: &str| {
                     r1.spawn((Node { min_width: look.val(1.5), flex_shrink: 0.0, ..default() }, Pickable::IGNORE)).with_children(|v| {
+                        if id == "you.rung" {
+                            let e = super::rank_toast::roll(v, &look, n, size, tone, true);
+                            v.commands().entity(e).insert(UiParityId(format!("{cid}.{id}")));
+                            return;
+                        }
                         v.spawn((
                             look.tracked(Role::DisplayBold, size, size * 0.02, look.tone(tone), &format!("{:02}", n + 1)),
                             UiParityId(format!("{cid}.{id}")),
@@ -583,6 +602,11 @@ fn build_chip(
                     MaterialNode(ticks.add(mat)),
                     Pickable::IGNORE,
                 ));
+            }
+            // Your tick, popping as your rung rolls (`rank_toast`).
+            if me > 0 {
+                let x = ((me - 1) * pitch) as f32 / sf;
+                super::rank_toast::tick_pop(m, &look, slants.as_deref_mut(), x, (tick + skew_extra) as f32 / sf, h as f32 / sf);
             }
             // The leader's tick (chasing: a dot) or second place's
             // (leading: hollow).

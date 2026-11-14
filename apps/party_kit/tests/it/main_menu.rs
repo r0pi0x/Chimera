@@ -9,7 +9,8 @@
 //! first); Combat Arms' loading screen kept to its own maps; the data; the
 //! background (the menu's own backdrop with nothing at hand and no map
 //! load; a map at hand loaded behind it with downloads held, then the
-//! crossfade; the rotation between starts; the backdrop's cost a frame).
+//! crossfade; the rotation between starts; the backdrop's cost a frame);
+//! the logo pass on whichever UI camera draws.
 
 use bevy::prelude::*;
 use chimera_client::client::{AppHooks, front_end};
@@ -160,6 +161,26 @@ fn startup_without_a_map_opens_the_menu_and_with_one_does_not() {
             .resource::<chimera_client::client::front_end::AppMenu>()
             .open
     );
+}
+
+/// The logo pass between screens (`client::logo_pass`) draws on
+/// whichever UI camera draws: the menu's while the menu shows, the
+/// shell's (the default) in the game, as the lobby does.
+#[test]
+fn logo_pass_covers_both_ui_cameras() {
+    use chimera_client::client::logo_pass::LogoPassRoot;
+    let mut sim = local(true);
+    sim.app.world_mut().spawn((Camera::default(), IsDefaultUiCamera));
+    let pass = sim.app.world_mut().spawn((LogoPassRoot, Node::default())).id();
+    sim.ticks(2);
+    let menu_cam = {
+        let w = sim.app.world_mut();
+        w.query_filtered::<Entity, With<main_menu::MenuUiCamera>>().single(w).expect("the menu's camera")
+    };
+    assert_eq!(sim.app.world().get::<UiTargetCamera>(pass).map(|t| t.entity()), Some(menu_cam), "over the menu");
+    sim.app.world_mut().resource_mut::<PartyMenu>().screen = Screen::InGame;
+    sim.ticks(2);
+    assert!(sim.app.world().get::<UiTargetCamera>(pass).is_none(), "the shell's camera in the game");
 }
 
 #[test]
@@ -883,4 +904,69 @@ fn the_menus_sound_only_with_ui_sound() {
             assert!(v.music.is_none() && music, "Combat Arms' playlist as before");
         }
     }
+}
+
+/// The logo pass's numbers (the Ultimate Gun Game's), for a theme with one.
+const PASS_THEME: &str = r#"
+name = "test"
+[shape]
+slant_deg = 12.0
+[motion.dur.pass]
+total = 1.2
+swap = 0.6
+[layout.pass]
+band_ink_w = 140.0
+from = -175.0
+travel = 287.0
+"#;
+
+/// Under a theme with a logo pass, the menu's screens change at its
+/// swap: the menu (and its camera) stays up while the slab comes, the
+/// game shows from the swap, and leaving it goes back the same way.
+#[test]
+fn the_menu_changes_screens_at_the_pass_s_swap() {
+    use chimera_client::client::logo_pass::{LogoPass, LogoPassPlugin};
+    use chimera_ui::{ChimeraUiPlugin, Theme, UiClock};
+    use main_menu::ShownScreen;
+    let mut sim = Sim::with(CaSim, |app| {
+        app.add_plugins((GreyboxMapPlugin, PartyPartsPlugin, net::NetPlugin));
+        menu_bits(app, true);
+        app.insert_resource(Theme::from_toml(PASS_THEME).unwrap())
+            .add_plugins((ChimeraUiPlugin, LogoPassPlugin))
+            .insert_resource(UiClock::manual());
+        if !app.world().contains_resource::<Assets<Image>>() {
+            app.init_asset::<Image>();
+        }
+    });
+    sim.ticks(2);
+    let step = |sim: &mut Sim, secs: f32| {
+        sim.app.world_mut().resource_mut::<UiClock>().step(secs);
+        sim.ticks(1);
+    };
+    let shown = |sim: &Sim| sim.app.world().resource::<ShownScreen>().screen;
+    assert_eq!(shown(&sim), Screen::MainMenu);
+    sim.app.world_mut().resource_mut::<PartyMenu>().screen = Screen::InGame;
+    step(&mut sim, 0.0);
+    assert_eq!(shown(&sim), Screen::MainMenu, "the menu stays as the slab comes");
+    assert!(sim.app.world().resource::<LogoPass>().pending("menu_screen"));
+    step(&mut sim, 0.61);
+    assert_eq!(shown(&sim), Screen::InGame, "the game from the swap");
+    step(&mut sim, 0.7);
+    assert!(!sim.app.world().resource::<LogoPass>().active());
+    // Leaving: the same way back.
+    sim.app.world_mut().resource_mut::<PartyMenu>().screen = Screen::MainMenu;
+    step(&mut sim, 0.0);
+    assert_eq!(shown(&sim), Screen::InGame);
+    step(&mut sim, 0.61);
+    assert_eq!(shown(&sim), Screen::MainMenu);
+    // Joining and loading look alike: no pass between them.
+    sim.app.world_mut().resource_mut::<PartyMenu>().screen = Screen::Joining;
+    step(&mut sim, 1.2);
+    step(&mut sim, 0.61);
+    assert_eq!(shown(&sim), Screen::Joining);
+    let runs = sim.app.world().resource::<LogoPass>().runs;
+    sim.app.world_mut().resource_mut::<PartyMenu>().screen = Screen::Loading;
+    step(&mut sim, 0.0);
+    assert_eq!(shown(&sim), Screen::Loading);
+    assert_eq!(sim.app.world().resource::<LogoPass>().runs, runs);
 }

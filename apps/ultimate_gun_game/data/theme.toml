@@ -163,19 +163,39 @@ from = -175.0
 travel = 287.0
 mark_w = 13.0
 mark_h = 9.33
-mark_x = 81.5
+mark_x = 81.5          # its centre in the ink band, at mid-height: the frame's centre at the swap
 
-[layout.lobby]
+[layout.lobby]       # the pre-match lobby (chimera_client prematch_lobby): a 100 x 56.25 frame
+margin = 4.6         # left and right
+header_y = 3.8
 lockup = 1.05
 title = 1.2
 rule_y = 7.6
+col_y = 10.6
 left_w = 50.0
+right_x = 60.4
 big = 3.0
+map_big = 2.4
 row_h = 3.2
+open_h = 2.9
 col_pos = 2.6
-col_ready = 9.0
-col_ping = 9.4
+col_tag = 7.4
+col_status = 12.6
+name = 0.92
+label = 0.66
+head = 0.56
+tag = 0.62
+kv = 0.64
+key = 0.62
+bot = 0.94
+block_w = 1.25
+block_h = 0.85
+map_h = 11.4
+ticks_h = 1.4
 countdown_ticks = 48.0
+countdown_hot = 3.0  # the last seconds lit in the accent
+foot_y = 3.4         # from the bottom
+corner = 2.4         # the + marks, in from each corner
 
 [layout.chip]
 top = 2.2

@@ -30,6 +30,10 @@
 //!   puts on its copy on its own clock (`apply_protection`), so its
 //!   shots and others' traced again show no hit on that player for the
 //!   same windows the server blocks (no blood without damage).
+//! - **The match's effects** (`NetMinigame::effects`): the authority's
+//!   `minigame::effects::MatchEffects` (a host's surprises), their times
+//!   as server ticks, into the client's own (its clock), which the
+//!   shell's effects screen draws (`chimera_client::client::match_effects`).
 //! - **Events** (`MinigameNews`): rung ups and downs, the last rung, the
 //!   lead, a match won, for the HUD's notices and callouts, as the index
 //!   in `minigame::EVENT_NAMES`.
@@ -157,6 +161,9 @@ pub struct NetMinigame {
     /// The map vote on the match-end screen (`minigame::vote::MapVote`),
     /// while there is one.
     pub vote: Option<NetMapVote>,
+    /// The match's effects on now (`minigame::effects::MatchEffects`:
+    /// an air strike, moon gravity), their times as server ticks.
+    pub effects: Vec<minigame::effects::Effect>,
 }
 
 /// `minigame::vote::MapVote` on the network: the ballot, the counts, when
@@ -363,6 +370,20 @@ fn write_minigame(world: &mut World) {
             closes: tick_of(&clock, v.closes),
             winner: v.winner,
         }),
+        effects: world
+            .get_resource::<minigame::effects::MatchEffects>()
+            .map(|m| {
+                m.effects
+                    .iter()
+                    .map(|e| minigame::effects::Effect {
+                        starts: tick_of(&clock, e.starts),
+                        impact_at: e.impact_at.map(|t| tick_of(&clock, t)),
+                        ends: tick_of(&clock, e.ends),
+                        ..e.clone()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     };
     // Another minigame, or its definition made again (same id, new text).
     let announced = world.get_resource::<Announced>().map(|a| a.0);
@@ -969,6 +990,33 @@ fn apply_minigame(world: &mut World, mut refused: Local<Option<String>>) {
             None => {
                 world.remove_resource::<MapVote>();
             }
+        }
+    }
+    // The match's effects, their times on this clock (rewritten only when
+    // one comes, goes or moves by more than the clocks' jitter).
+    if let Some(f) = local.as_ref() {
+        let effects: Vec<minigame::effects::Effect> = n
+            .effects
+            .iter()
+            .map(|e| minigame::effects::Effect { starts: f(e.starts), impact_at: e.impact_at.map(f), ends: f(e.ends), ..e.clone() })
+            .collect();
+        let near = |a: f64, b: f64| (a - b).abs() < 0.1;
+        let same = world.get_resource::<minigame::effects::MatchEffects>().is_some_and(|have| {
+            have.effects.len() == effects.len()
+                && have.effects.iter().zip(&effects).all(|(h, e)| {
+                    h.id == e.id
+                        && h.stopped == e.stopped
+                        && near(h.starts, e.starts)
+                        && near(h.ends, e.ends)
+                        && match (h.impact_at, e.impact_at) {
+                            (Some(a), Some(b)) => near(a, b),
+                            (a, b) => a.is_none() && b.is_none(),
+                        }
+                })
+        }) || (effects.is_empty() && world.get_resource::<minigame::effects::MatchEffects>().is_none());
+        if !same {
+            let last_id = effects.iter().map(|e| e.id).max().unwrap_or(0);
+            world.insert_resource(minigame::effects::MatchEffects { effects, last_id });
         }
     }
     // The match-end hold, its time on this clock (rewritten only when it

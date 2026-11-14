@@ -7,7 +7,8 @@
 //!   accent bar at the left, a wipe clipping from the left and the right
 //!   along the slant, an alpha ramp. The menu's highlight bar, the
 //!   toast's wipe, the chip's meter ticks, health segments, vote pips,
-//!   the winner slab, the backdrop swap's edge. The node's box holds the
+//!   the winner slab, the backdrop swap's edge; or only its outline
+//!   (`outline`: the lobby's unready block). The node's box holds the
 //!   whole parallelogram (unlike CSS's skew, which leans out of its box):
 //!   make it the fill's width plus its height times the slant's tan.
 //! - `TickBarMaterial` (`tick_bar.wesl`): `n` ticks, `lit`, `hot`, by
@@ -19,8 +20,18 @@
 //!   hairlines and slabs on a 24-column grid moving on the renderer's
 //!   clock (`globals.time`: no CPU work a frame), or frozen at a time
 //!   (`freeze`, screenshots).
-//! - `AmbientMaterial` (`ambient.wesl`): the main menu's ambient
-//!   background, a stub (a slow accent glow on ink) until Look Book V.
+//! - `AmbientMaterial` (`ambient.wesl`): the ambient background every
+//!   between-match screen shares (look book V: slanted light bands, a
+//!   faceted field re-levelling every 24 s, one soft cobalt bloom, a cool
+//!   lift at the bottom, a vignette, a dither), our port of the look
+//!   book's fragment shader; per screen a calm column (the menu's) and
+//!   the bloom's place (`AmbientMaterial::MENU`, `MATCH_END`). Composed in
+//!   display space as the look book's, written as linear light; opaque.
+//! - `EdgeMaterial` (`edge.wesl`): a glow along the screen's edges (an
+//!   inset shadow and a hairline border), its opacity a parameter: the air
+//!   strike's pulse. Its middle is discarded: never a full-screen fill.
+//! - `RingMaterial` (`ring.wesl`): a countdown ring, the arc from the top
+//!   clockwise over a track (the effects chips').
 //!
 //! Colours go in as linear RGBA (`LinearRgba::from(color)`); builders
 //! take Bevy `Color`s. `KitMaterialsPlugin` registers them (a
@@ -45,19 +56,25 @@ impl Plugin for KitMaterialsPlugin {
             embedded_asset!(app, "pass.wesl");
             embedded_asset!(app, "lines.wesl");
             embedded_asset!(app, "ambient.wesl");
+            embedded_asset!(app, "edge.wesl");
+            embedded_asset!(app, "ring.wesl");
             app.add_plugins((
                 UiMaterialPlugin::<SlantMaterial>::default(),
                 UiMaterialPlugin::<TickBarMaterial>::default(),
                 UiMaterialPlugin::<PassMaterial>::default(),
                 UiMaterialPlugin::<LinesMaterial>::default(),
                 UiMaterialPlugin::<AmbientMaterial>::default(),
+                UiMaterialPlugin::<EdgeMaterial>::default(),
+                UiMaterialPlugin::<RingMaterial>::default(),
             ));
         } else if app.is_plugin_added::<AssetPlugin>() {
             app.init_asset::<SlantMaterial>()
                 .init_asset::<TickBarMaterial>()
                 .init_asset::<PassMaterial>()
                 .init_asset::<LinesMaterial>()
-                .init_asset::<AmbientMaterial>();
+                .init_asset::<AmbientMaterial>()
+                .init_asset::<EdgeMaterial>()
+                .init_asset::<RingMaterial>();
         }
     }
 }
@@ -77,6 +94,11 @@ pub struct SlantMaterial {
     /// at the left and the right.
     #[uniform(3)]
     pub wipe: Vec4,
+    /// x: drawn as an outline this many physical px wide (0: filled);
+    /// y: the wipe's cuts lean with the slant (0/1) even where the fill's
+    /// own edges are upright (the toast's wipe).
+    #[uniform(4)]
+    pub line: Vec4,
 }
 
 impl SlantMaterial {
@@ -88,7 +110,21 @@ impl SlantMaterial {
             accent: LinearRgba::NONE,
             shape: Vec4::new(theme.tan(), 1.0, 1.0, 0.0),
             wipe: Vec4::new(0.0, 0.0, 1.0, 1.0),
+            line: Vec4::ZERO,
         }
+    }
+
+    /// Only its outline, `px` physical pixels wide (an unlit block).
+    pub fn outline(mut self, px: f32) -> Self {
+        self.line.x = px;
+        self
+    }
+
+    /// The wipe's cuts lean with the slant (an upright box wiped in
+    /// along the slant, as the toast is).
+    pub fn slanted_cut(mut self) -> Self {
+        self.line.y = 1.0;
+        self
     }
 
     /// Which edges slant (a bar flush at the left: `edges(false, true)`).
@@ -209,7 +245,8 @@ pub struct PassMaterial {
     /// x: progress 0-1, y: tan, z: has a mark.
     #[uniform(3)]
     pub state: Vec4,
-    /// x: from, y: travel, z: mark x in the ink band, w: ink band width.
+    /// x: from, y: travel, z: the mark's centre in the ink band (at the
+    /// frame's mid-height, as every offset), w: ink band width.
     #[uniform(4)]
     pub sweep: Vec4,
     /// x, y: the accent hairline's offset and width; z, w: the accent band's.
@@ -307,30 +344,145 @@ impl UiMaterial for LinesMaterial {
     }
 }
 
-/// The main menu's ambient background (module doc; a stub).
+/// The shared ambient background (module doc): the look book's ambient
+/// shader, ported. Colours go in display space (sRGB, as the look book's
+/// shader takes them); the shader composes there and writes linear light.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone, PartialEq)]
 pub struct AmbientMaterial {
+    /// The ground, the type colour and the accent, display space (0-1).
     #[uniform(0)]
-    pub ink: LinearRgba,
+    pub ink: Vec4,
     #[uniform(1)]
-    pub acc: LinearRgba,
-    /// x: glow strength, y: loop in seconds, z: tan, w: opacity.
+    pub fg: Vec4,
     #[uniform(2)]
-    pub params: Vec4,
+    pub acc: Vec4,
+    /// x: the calm column's right edge (0-1 of the width; < 0: none, the
+    /// whole screen live), y, z: the bloom's centre (x, and y up; 0-1),
+    /// w: tan of the slant.
+    #[uniform(3)]
+    pub place: Vec4,
+    /// x: time offset (s), y: frozen time (< 0: live), z: opacity.
+    #[uniform(4)]
+    pub clock: Vec4,
+}
+
+/// A colour as the shader's display-space vector.
+fn display(c: Color) -> Vec4 {
+    let s = c.to_srgba();
+    Vec4::new(s.red, s.green, s.blue, s.alpha)
 }
 
 impl AmbientMaterial {
+    /// The look book's main menu: a calm column to 30 % of the width, the
+    /// bloom at (.68, .56).
+    pub const MENU: (f32, Vec2) = (0.30, Vec2::new(0.68, 0.56));
+    /// The match end: no column, the bloom at (.64, .68).
+    pub const MATCH_END: (f32, Vec2) = (-1.0, Vec2::new(0.64, 0.68));
+
+    /// The theme's ink, fg and accent, live, laid out as the match end
+    /// (`MATCH_END`; `column` and `bloom` change it). Its clock starts 40 s
+    /// in, as the look book's.
     pub fn new(theme: &Theme) -> AmbientMaterial {
         AmbientMaterial {
-            ink: theme.tone(Tone::Ink).into(),
-            acc: theme.tone(Tone::Acc).into(),
-            params: Vec4::new(0.10, 40.0, theme.tan(), 1.0),
+            ink: display(theme.tone(Tone::Ink)),
+            fg: display(theme.tone(Tone::Fg)),
+            acc: display(theme.tone(Tone::Acc)),
+            place: Vec4::new(Self::MATCH_END.0, Self::MATCH_END.1.x, Self::MATCH_END.1.y, theme.tan()),
+            clock: Vec4::new(40.0, -1.0, 1.0, 0.0),
         }
+    }
+
+    /// The calm column's right edge (0-1 of the width), or `None`.
+    pub fn column(mut self, edge: Option<f32>) -> Self {
+        self.place.x = edge.unwrap_or(-1.0);
+        self
+    }
+
+    /// The bloom's centre: x, and y up, 0-1 of the screen.
+    pub fn bloom(mut self, at: Vec2) -> Self {
+        self.place.y = at.x;
+        self.place.z = at.y;
+        self
+    }
+
+    /// Stopped at `t` s (screenshots, tests); `None` to move again.
+    pub fn freeze(mut self, t: Option<f32>) -> Self {
+        self.clock.y = t.unwrap_or(-1.0);
+        self
+    }
+
+    pub fn set_opacity(&mut self, a: f32) {
+        self.clock.z = a;
     }
 }
 
 impl UiMaterial for AmbientMaterial {
     fn fragment_shader() -> ShaderRef {
         "embedded://chimera_ui/materials/ambient.wesl".into()
+    }
+}
+
+/// The screen's edge glowing (module doc).
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone, PartialEq)]
+pub struct EdgeMaterial {
+    #[uniform(0)]
+    pub color: LinearRgba,
+    /// x: opacity (0-1), y: the glow's blur, z: its spread, w: the
+    /// border's width, in physical px.
+    #[uniform(1)]
+    pub params: Vec4,
+    /// x: the glow's alpha, y: the border's (before the opacity).
+    #[uniform(2)]
+    pub alphas: Vec4,
+}
+
+impl EdgeMaterial {
+    /// `color` glowing `blur` px wide from `spread` px in, a `border` px
+    /// line at the edge (physical px); off until `set_opacity`.
+    pub fn new(color: Color, blur: f32, spread: f32, border: f32) -> EdgeMaterial {
+        EdgeMaterial {
+            color: color.with_alpha(1.0).into(),
+            params: Vec4::new(0.0, blur, spread, border),
+            alphas: Vec4::new(0.55, 0.85, 0.0, 0.0),
+        }
+    }
+
+    pub fn set_opacity(&mut self, a: f32) {
+        self.params.x = a;
+    }
+}
+
+impl UiMaterial for EdgeMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://chimera_ui/materials/edge.wesl".into()
+    }
+}
+
+/// A countdown ring (module doc).
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone, PartialEq)]
+pub struct RingMaterial {
+    #[uniform(0)]
+    pub track: LinearRgba,
+    #[uniform(1)]
+    pub arc: LinearRgba,
+    /// x: the arc's share of the ring (0-1, from the top clockwise), y:
+    /// the line's width in physical px.
+    #[uniform(2)]
+    pub params: Vec4,
+}
+
+impl RingMaterial {
+    pub fn new(track: Color, arc: Color, width: f32) -> RingMaterial {
+        RingMaterial { track: track.into(), arc: arc.into(), params: Vec4::new(1.0, width, 0.0, 0.0) }
+    }
+
+    pub fn set_share(&mut self, share: f32) {
+        self.params.x = share.clamp(0.0, 1.0);
+    }
+}
+
+impl UiMaterial for RingMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://chimera_ui/materials/ring.wesl".into()
     }
 }
