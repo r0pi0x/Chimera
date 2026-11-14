@@ -1,10 +1,12 @@
 //! Sizes (docs/plans/active/ugg-ui.md, 2.6 and 2.5 "Pixel snapping").
 //!
 //! The prototype measures in **cq**: 1 % of a 16:9 frame's width, 12.8 px
-//! at 720 lines. The overlay is sized by the window's height (the shell's
-//! `overlay::scale`, the same rule as `overlay_scale` here), so 1 cq =
-//! 12.8 logical px times that scale: identical at 16:9, wider margins at
-//! 21:9, the same layout at 4:3.
+//! at 720 lines. The UI is sized by the largest 16:9 frame that fits the
+//! window (`layout_height`: the window's height, or its width x 9/16 when
+//! it is narrower than 16:9), so 1 cq = 12.8 logical px times
+//! `overlay_scale` of that: identical at 16:9, wider margins at 21:9, and
+//! in a 4:3 or tall window the frame fits the width (empty space above
+//! and below, never cropped at the sides).
 //!
 //! `UiUnits` (a resource kept from the primary window each frame, or set
 //! by hand in tests) converts: `cq` to logical px, `text_px` with the
@@ -24,6 +26,14 @@ pub fn overlay_scale(height: f32) -> f32 {
     height.max(240.0) / 720.0
 }
 
+/// The height the UI is laid out for in a window `width` x `height`
+/// logical px: the largest 16:9 frame that fits it (`min(height, width x
+/// 9/16)`), so a 16:9 frame (100 cq wide) never runs past a narrow or
+/// tall window's sides. A window with no width yet keeps its height.
+pub fn layout_height(width: f32, height: f32) -> f32 {
+    if width > 0.0 { height.min(width * 9.0 / 16.0) } else { height }
+}
+
 /// `v` cq in logical px in a window `height` logical px tall.
 pub fn cq(v: f32, height: f32) -> f32 {
     v * CQ_AT_720 * overlay_scale(height)
@@ -38,7 +48,8 @@ pub fn snap_px(logical: f32, scale_factor: f32) -> f32 {
 /// The window the UI is laid out in: its logical height and scale factor.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct UiUnits {
-    /// Logical height.
+    /// The logical height the UI is laid out for (`layout_height`: the
+    /// window's, or its width x 9/16 in a window narrower than 16:9).
     pub height: f32,
     /// Physical px per logical px.
     pub scale_factor: f32,
@@ -125,8 +136,8 @@ impl TickLayout {
     }
 }
 
-/// Keeps `UiUnits` from the primary window (its logical height and scale
-/// factor) and the theme's text floor.
+/// Keeps `UiUnits` from the primary window (the height its 16:9 frame
+/// fits, `layout_height`, and its scale factor) and the theme's text floor.
 pub fn track_window(
     windows: Query<&Window, With<PrimaryWindow>>,
     theme: Option<Res<crate::theme::Theme>>,
@@ -134,7 +145,7 @@ pub fn track_window(
 ) {
     let mut next = *units;
     if let Ok(w) = windows.single() {
-        next.height = w.height();
+        next.height = layout_height(w.width(), w.height());
         next.scale_factor = w.scale_factor();
     }
     if let Some(t) = theme {
