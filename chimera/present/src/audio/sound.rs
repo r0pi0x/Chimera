@@ -180,6 +180,7 @@ fn play_sounds(
     hearing: Res<Hearing>,
     room: Res<RoomDsp>,
     mix: Option<Res<super::live_sound::SoundMix>>,
+    muted: Option<Res<super::live_sound::MutedSounds>>,
     time: Res<Time>,
     mut seed: Local<u64>,
 ) {
@@ -204,6 +205,9 @@ fn play_sounds(
     // Every sound started this run (source, entry), for the voice limits.
     let mut fresh: Vec<(Entity, Option<Entity>, String)> = Vec::new();
     for m in messages.read() {
+        if muted.as_ref().is_some_and(|x| x.0.iter().any(|e| *e == m.entry)) {
+            continue;
+        }
         let Some(entry) = bank.0.entry(&m.entry) else {
             continue;
         };

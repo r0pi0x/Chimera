@@ -1348,7 +1348,7 @@ fn act_one(world: &mut World, action: MainMenuAction) {
             world.resource_mut::<PartyMenu>().options_tab = t;
         }
         A::OptionStep { index, dir } => {
-            let tabs = crate::esc_menu::option_tabs();
+            let tabs = crate::esc_menu::shown_tabs(world);
             let Some(s) = tabs.get(menu.options_tab).and_then(|(_, s)| s.get(index)).cloned() else {
                 return;
             };
@@ -1610,7 +1610,7 @@ fn refresh_values(world: &mut World) {
         return;
     }
     let settings: Vec<Setting> = match menu.page {
-        MenuPage::Options => crate::esc_menu::option_tabs()
+        MenuPage::Options => crate::esc_menu::shown_tabs(world)
             .into_iter()
             .nth(menu.options_tab)
             .map(|(_, s)| s)
@@ -1911,7 +1911,7 @@ fn show(
     data: Res<MenuData>,
     look_res: Res<MenuLook>,
     fonts: Option<Res<UiFonts>>,
-    title: Option<Res<crate::esc_menu::EscMenuTitle>>,
+    (title, opt_tabs): (Option<Res<crate::esc_menu::EscMenuTitle>>, Option<Res<crate::esc_menu::OptionTabs>>),
     version: Option<Res<chimera_core::core::BuildVersion>>,
     ca: Option<Res<combat_arms::ui::loading::CaLoading>>,
     minigames: Option<Res<chimera_sim::minigame::Minigames>>,
@@ -2016,7 +2016,10 @@ fn show(
         MenuPage::Main => {}
         MenuPage::Play => play_frame(&mut commands, root, &menu, &data, &look, &pool),
         MenuPage::Join => join_frame(&mut commands, root, &menu, &look),
-        MenuPage::Options => options_frame(&mut commands, root, &menu, &look),
+        MenuPage::Options => {
+            let tabs = opt_tabs.as_deref().map_or_else(|| crate::esc_menu::option_tabs_for(false), |t| t.tabs.clone());
+            options_frame(&mut commands, root, &menu, &look, &tabs)
+        }
     }
 }
 
@@ -2484,8 +2487,7 @@ fn join_frame(commands: &mut Commands, root: Entity, menu: &PartyMenu, look: &Lo
 }
 
 /// Options: the Escape menu's tabs (data/options.toml), Binds, Close.
-fn options_frame(commands: &mut Commands, root: Entity, menu: &PartyMenu, look: &Look) {
-    let tabs = crate::esc_menu::option_tabs();
+fn options_frame(commands: &mut Commands, root: Entity, menu: &PartyMenu, look: &Look, tabs: &[(String, Vec<Setting>)]) {
     let rows = tabs.iter().map(|(_, s)| s.len()).max().unwrap_or(0);
     let (w, h) = (560.0, 134.0 + rows as f32 * 30.0);
     let parts = widgets::frame(

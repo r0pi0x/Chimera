@@ -1,6 +1,6 @@
-//! The party menus' and surprises' UI cues (feature `present`;
-//! docs/plans/active/ugg-ui.md, "UI sound"): what the main menu, the
-//! Escape menu and the host's surprises send to the shell's `ui` bus
+//! The party menus' UI cues (feature `present`;
+//! docs/plans/active/ugg-ui.md, "UI sound"): what the main menu and the
+//! Escape menu send to the shell's `ui` bus
 //! (`chimera_client::client::ui_sound`), which plays them only in an app
 //! whose theme turns UI sound on (Ultimate Gun Game's Signal); Lucker
 //! Party hears nothing.
@@ -11,15 +11,10 @@
 //!   (`ui_denied`: while loading, a failure box or a reconnect shows), a
 //!   range setting's step (`ui_slider` at the value's place in its range,
 //!   `slider_value`). The backdrop swap's sound stays off.
-//! - **The surprises** (`surprises`): the air strike's warning (its HUD
-//!   banner, `surprise::warn_air_strike`'s text) plays `air_alert`, a
-//!   pulse each second of the warning (`air_pulse`), the banner folding
-//!   into its chip at 2 s (`hud_chip`) and `air_impact` when the first
-//!   shells land (`surprise::WARNING`); moon gravity's banner `hud_chip`.
-//!
-//! Known shortcuts: the surprises are read from their HUD text until M3
-//! makes them structured (`MatchEffects`), which should send these cues
-//! from its effects instead.
+//! - **The surprises**: their cues come from the match's effects
+//!   (`chimera_client::client::ui_cues`); under UI sound Combat Arms' air
+//!   strike siren stays silent on this client (`mute_siren`), our
+//!   `air_alert` standing in for it.
 
 use bevy::prelude::*;
 use chimera_client::client::{ui_sound::UiCue, widgets};
@@ -83,60 +78,26 @@ pub fn ensure_message(app: &mut App) {
     }
 }
 
-/// The surprises' cues (module doc): seconds after the warning showed.
-#[derive(Default)]
-pub struct StrikeSeen {
-    /// When the strike's banner and the moon's showed (`HudMessages`' times).
-    strike: Option<f64>,
-    moon: Option<f64>,
-    /// The strike's cues still to send: (seconds after the banner, event).
-    due: Vec<(f64, &'static str)>,
-}
-
-/// The air strike's cues after its banner: seconds in, event.
-pub fn strike_schedule() -> Vec<(f64, &'static str)> {
-    let w = crate::surprise::WARNING;
-    let mut out = vec![(0.0, "air_alert")];
-    let mut t = 1.0;
-    while t < w - 0.05 {
-        out.push((t, "air_pulse"));
-        t += 1.0;
-    }
-    out.push((2.0_f64.min(w), "hud_chip"));
-    out.push((w, "air_impact"));
-    out.sort_by(|a, b| a.0.total_cmp(&b.0));
-    out
-}
-
-/// The surprises' banners as they show on this client (module doc).
-pub fn surprises(
-    hud: Option<Res<chimera_world::map::logic_view::HudMessages>>,
-    time: Res<Time>,
-    mut seen: Local<StrikeSeen>,
-    mut out: MessageWriter<UiCue>,
+/// Under UI sound the air strike's own alert (`air_alert`, from the
+/// match's effects: `chimera_client::client::ui_cues`) stands in for
+/// Combat Arms' siren (`surprise::ALARM`), which this client then doesn't
+/// play (`MutedSounds`); without UI sound the siren plays as before.
+pub fn mute_siren(
+    theme: Option<Res<chimera_client::client::ui_sound::Theme>>,
+    sounds: Option<Res<chimera_client::client::ui_sound::UiSounds>>,
+    muted: Option<Res<chimera_present::audio::live_sound::MutedSounds>>,
+    mut commands: Commands,
 ) {
-    let now = time.elapsed_secs_f64();
-    if let Some(hud) = hud.as_deref() {
-        let shown = |pred: &dyn Fn(&str) -> bool| {
-            hud.channels.iter().flatten().filter(|(m, _)| pred(&m.text)).map(|(_, at)| *at).fold(None, |a: Option<f64>, t| {
-                Some(a.map_or(t, |a| a.max(t)))
-            })
-        };
-        let strike = shown(&|t| t.starts_with("AIR STRIKE"));
-        if strike.is_some() && strike != seen.strike {
-            let at = strike.unwrap_or(now);
-            seen.due = strike_schedule().into_iter().map(|(dt, e)| (at + dt, e)).collect();
+    let on = chimera_client::client::ui_sound::active(theme.as_deref(), sounds.as_deref());
+    let siren = crate::surprise::alarm_entry();
+    let has = muted.as_ref().is_some_and(|m| m.0.contains(&siren));
+    if on != has {
+        let mut list = muted.map(|m| m.0.clone()).unwrap_or_default();
+        list.retain(|e| *e != siren);
+        if on {
+            list.push(siren);
         }
-        seen.strike = strike.or(seen.strike);
-        let moon = shown(&|t| t.starts_with("Moon gravity"));
-        if moon.is_some() && moon != seen.moon {
-            out.write(UiCue::new("hud_chip"));
-        }
-        seen.moon = moon.or(seen.moon);
-    }
-    while seen.due.first().is_some_and(|(t, _)| *t <= now) {
-        let (_, e) = seen.due.remove(0);
-        out.write(UiCue::new(e));
+        commands.insert_resource(chimera_present::audio::live_sound::MutedSounds(list));
     }
 }
 
@@ -151,13 +112,5 @@ mod tests {
         assert_eq!(step_cue(&r, "1").value, Some(1.0));
         let c = Pick::Choices(vec![("0".into(), "Off".into())]);
         assert_eq!(step_cue(&c, "0").event, "ui_select");
-    }
-
-    #[test]
-    fn the_strike_alerts_pulses_folds_and_lands() {
-        let s = strike_schedule();
-        assert_eq!(s.first(), Some(&(0.0, "air_alert")));
-        assert_eq!(s.last().map(|e| e.1), Some("air_impact"));
-        assert!(s.iter().any(|e| e.1 == "air_pulse") && s.iter().any(|e| e.1 == "hud_chip"));
     }
 }

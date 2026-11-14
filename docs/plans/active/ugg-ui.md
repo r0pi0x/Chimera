@@ -761,34 +761,39 @@ licence, 5 MB a file, 20 MB in all.
   `flags.sound.ui` (Signal) plays anything.
 - **Data**: `apps/ultimate_gun_game/data/ui_sounds.toml` (the event
   table); the Audio tab's "UI volume" row (`apps/party_kit/data/
-  options.toml`: shown in Lucker Party too, where it does nothing).
+  options.toml`, `when = "ui_sound"`: only in an app with UI sound,
+  `esc_menu::OptionTabs`).
 - **Hooked**: menu hover, select, back, denied (a press refused while
   loading, a failure box or a reconnect; a non-host's Host), slider (a
   range row's step) in the party's main and Escape menus
-  (`party_kit::ui_cues`); the lobby's ready and unready, another player
-  readying, the countdown (10 to 4, 3, 2, 1, go); the rank-up (the
-  nearest of the 17 renders, p = rung / (rungs - 1)), the knife on the
-  last rung, the chain within 1.15 s; Tab and your kill-feed line (off
-  in the table); the match end's reveal; the map vote's cast, others',
-  last 10 s and lock; the air strike (alert, pulses, the chip at 2 s,
-  impact at the warning's end) and moon gravity's chip, read from their
-  HUD banners; the sci-fi loop on the main menu in place of Combat Arms'
-  playlist (Combat Arms' music silent meanwhile: `combat_arms::game::
-  music::AppMusicPlays`). The backdrop swap stays off.
-- **Left**: `pass_sweep` waits for M1's `logo_pass` (on its branch, not
-  main): where a pass begins (`LogoPass::runs += 1`), write
-  `UiCue::new("pass_sweep")`. M3's effects (`MatchEffects`) should send
-  `air_alert`, `air_pulse`, `air_impact` and `hud_chip` from the effect's
-  times and drop the HUD-text reading in `party_kit::ui_cues::surprises`.
-  M4's vote cards keep the cues (`ui_cues::match_end_cues` reads
-  `MatchEndView`). Combat Arms' strike siren (`surprise::ALARM`) still
-  plays over `air_alert`'s; the game's winner sound plays with
+  (`party_kit::ui_cues`); the logo pass (`pass_sweep` once per pass
+  begun, `LogoPass::runs`; not for the reduced-motion fade); the lobby's
+  ready and unready, another player readying, the countdown (10 to 4, 3,
+  2, 1, go); the rank-up (the nearest of the 17 renders, p = rung /
+  (rungs - 1), once per rung up), the knife on the last rung, the chain
+  within the toast's window (`motion.dur.toast` hold_to + leave, 1.16 s,
+  on the UI clock); Tab and your kill-feed line (off in the table); the
+  match end's reveal; the map vote's cast, others', last 10 s and lock;
+  the match effects (M3's `MatchEffects` through `match_effects::
+  EffectsView`): a threat's `air_alert` at its start, `air_pulse` on the
+  edge's pulses, `hud_chip` as its banner folds, `air_impact` at its
+  impact, another effect's `hud_chip` (`ui_cues::effect_cues`); under UI
+  sound Combat Arms' strike siren is muted on the client
+  (`chimera_present::audio::live_sound::MutedSounds`,
+  `party_kit::ui_cues::mute_siren`); the sci-fi loop on the main menu in
+  place of Combat Arms' playlist (Combat Arms' music silent meanwhile:
+  `combat_arms::game::music::AppMusicPlays`). The backdrop swap stays
+  off.
+- **The loop's level**: the music bus, `snd_musicvolume`, which the party
+  apps take from Combat Arms' music option; a first play's profile (the
+  template) has music 50 and effects 70, so a fresh player hears it
+  (`t21_music`). Tool runs load no profile: master and music are 0 there
+  (set them over the console).
+- **Left**: M4's vote cards keep the cues (`ui_cues::match_end_cues`
+  reads `MatchEndView`). The game's winner sound plays with
   `end_reveal` (the sound page's note: delay the game's 0.25 s or drop
   ours if they clash). Follow-up: a Rust port of `rank_up(p, seed)`
   rendering each match's ladder on a task at its start (no rank files),
-  the menu loop's level: in the party apps `snd_musicvolume` follows
-  Combat Arms' music option (`ca::ui::options_apply`), 0 on a fresh
-  profile in tool runs,
   and a compressed format with gapless loops (Vorbis) for the loop.
 
 ## 6. Decisions (user, 2026-11-14)

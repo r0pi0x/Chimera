@@ -10,10 +10,20 @@
 //!   (`lobby_peer`, once a frame), the countdown's seconds (`count_tick`
 //!   from 10 to 4, `count_tick_3`, `_2`, `_1`), and its end (`count_go`:
 //!   0 shown, or the lobby closing from 1).
-//! - **Rank-up** (the local player's `Rung` on the `Ladder`): a rung up
-//!   plays `rank_up` at p = rung / (rungs - 1) (`rank_progress`), the
-//!   last rung `rank_knife`; a rung up within `CHAIN_SECS` of the last
-//!   layers `rank_chain` over it.
+//! - **Rank-up** (the local player's `Rung` on the `Ladder`, as the rank
+//!   toast reads it): a rung up plays `rank_up` at p = rung / (rungs - 1)
+//!   (`rank_progress`), the last rung `rank_knife`, once per rung up; one
+//!   within the toast's chain window (`rank_toast::ToastTimes::total`,
+//!   from `motion.dur.toast`: 1.16 s) of the last layers `rank_chain`
+//!   over it, on the UI clock as the toast.
+//! - **Logo pass** (`logo_pass::LogoPass`): `pass_sweep` once per pass
+//!   begun (not for the reduced-motion fade).
+//! - **Match effects** (`match_effects::EffectsView`, M3's
+//!   `MatchEffects` on the UI clock): a threat (the air strike) plays
+//!   `air_alert` as it starts, `air_pulse` on each second of its
+//!   countdown (the edge's pulses), `hud_chip` as its banner folds into
+//!   its chip and `air_impact` at its impact; any other effect (moon
+//!   gravity) `hud_chip` as its chip comes in (`effect_cues`).
 //! - **Tab** (`race_chip::BoardOpen`): `tab_open`, `tab_close`.
 //! - **Kill feed**: your own kill entering it (`feed_self`).
 //! - **Match end** (`match_end::MatchEndView`): the screen coming up with
@@ -21,9 +31,9 @@
 //!   `_4` by card), someone else's (`vote_other`), its last 10 seconds
 //!   (`count_tick`) and its close (`vote_lock`).
 //!
-//! The logo pass's `pass_sweep` is sent by the pass itself (M1's
-//! `logo_pass`, where a pass begins); the menus' cues by the app's menus
-//! (`party_kit`), the air strike's by the app.
+//! The menus' cues come from the app's menus (`party_kit::ui_cues`).
+
+use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use chimera_net::prematch::status;
@@ -31,9 +41,13 @@ use chimera_sim::minigame::{
     ladder::{Ladder, Rung},
     vote::MapVote,
 };
-use chimera_ui::UiCue;
+use chimera_sim::minigame::effects::Effect;
+use chimera_ui::{Theme, UiClock, UiCue};
 
 use super::{
+    logo_pass::LogoPass,
+    match_effects::EffectsView,
+    rank_toast::ToastTimes,
     kill_feed::KillFeed,
     match_end::MatchEndView,
     prematch_lobby::LobbyView,
@@ -42,8 +56,41 @@ use super::{
 };
 use crate::core::{LocalPlayer, SimClock};
 
-/// A rung up this soon after the last one chains (the toast's 1.15 s).
-pub const CHAIN_SECS: f64 = 1.15;
+/// The rank toast's chain window (s): a rung up this soon after the last
+/// chains (`ToastTimes::total` from the theme's `motion.dur.toast`).
+pub fn chain_secs(theme: Option<&Theme>) -> f64 {
+    let d = ToastTimes::default();
+    let t = |k: &str, or: f32| theme.and_then(|t| t.dur_opt("toast", k)).unwrap_or(or);
+    (t("hold_to", d.hold_to) + t("leave", d.leave)) as f64
+}
+
+/// When an effect's banner folds into its chip, seconds in (the theme's
+/// `motion.dur.airstrike.fold_at`, as `match_effects::StrikeTimes`).
+pub fn chip_at(theme: Option<&Theme>) -> f32 {
+    theme.and_then(|t| t.dur_opt("airstrike", "fold_at")).unwrap_or(2.0) + 0.12
+}
+
+/// An effect's cues, seconds after its start (module doc).
+pub fn effect_cues(e: &Effect, chip: f32) -> Vec<(f32, &'static str)> {
+    let mut out = Vec::new();
+    let end = (e.ends - e.starts) as f32;
+    if e.threat {
+        out.push((0.0, "air_alert"));
+        if let Some(impact) = e.impact_at.map(|i| (i - e.starts) as f32) {
+            let mut k = 1.0;
+            while impact - k > 0.05 {
+                out.push((impact - k, "air_pulse"));
+                k += 1.0;
+            }
+            out.push((impact, "air_impact"));
+        }
+    }
+    if chip < end {
+        out.push((chip, "hud_chip"));
+    }
+    out.sort_by(|a, b| a.0.total_cmp(&b.0));
+    out
+}
 
 /// Sends the screens' cues (module doc).
 pub struct UiCuesPlugin;
@@ -55,7 +102,7 @@ impl Plugin for UiCuesPlugin {
         }
         app.add_systems(
             Update,
-            (lobby, rank, tab, feed, match_end).run_if(resource_exists::<UiSounds>),
+            (lobby, rank, tab, feed, match_end, pass, effects).run_if(resource_exists::<UiSounds>),
         );
     }
 }
@@ -142,7 +189,7 @@ struct RankSeen {
 fn rank(
     ladder: Option<Res<Ladder>>,
     me: Query<&Rung, With<LocalPlayer>>,
-    time: Res<Time<Real>>,
+    (clock, real, theme): (Option<Res<UiClock>>, Res<Time<Real>>, Option<Res<Theme>>),
     mut seen: Local<RankSeen>,
     mut out: MessageWriter<UiCue>,
 ) {
@@ -156,8 +203,8 @@ fn rank(
     if let (Some(was), Some(now)) = (seen.rung, rung)
         && now > was
     {
-        let t = time.elapsed_secs_f64();
-        let chained = seen.last_up.is_some_and(|l| t - l < CHAIN_SECS);
+        let t = clock.map_or_else(|| real.elapsed_secs_f64(), |c| c.now);
+        let chained = seen.last_up.is_some_and(|l| t - l < chain_secs(theme.as_deref()));
         out.write_batch(rank_cues(now, rungs, chained));
         seen.last_up = Some(t);
     }
@@ -192,6 +239,43 @@ fn feed(feed: Option<Res<KillFeed>>, mut last: Local<Option<u64>>, mut out: Mess
 struct EndSeen {
     view: MatchEndView,
     vote_left: Option<i64>,
+}
+
+fn pass(lp: Option<Res<LogoPass>>, mut seen: Local<u32>, mut out: MessageWriter<UiCue>) {
+    let Some(lp) = lp else { return };
+    if lp.runs != *seen {
+        if lp.runs > *seen && !lp.fading() {
+            out.write(UiCue::new("pass_sweep"));
+        }
+        *seen = lp.runs;
+    }
+}
+
+/// Each effect's cues as the UI clock passes them (by effect id: the
+/// seconds already heard). An effect first seen well after its start (a
+/// late join) sounds only what is still to come.
+fn effects(
+    view: Option<Res<EffectsView>>,
+    clock: Option<Res<UiClock>>,
+    theme: Option<Res<Theme>>,
+    mut heard: Local<BTreeMap<u32, f32>>,
+    mut out: MessageWriter<UiCue>,
+) {
+    let (Some(view), Some(clock)) = (view, clock) else { return };
+    let chip = chip_at(theme.as_deref());
+    let now = clock.now;
+    let mut next = BTreeMap::new();
+    for s in &view.shown {
+        let t = s.t(now);
+        let from = heard.get(&s.e.id).copied().unwrap_or(if t < 0.3 { -1.0 } else { t });
+        for (at, cue) in effect_cues(&s.e, chip) {
+            if at > from && at <= t {
+                out.write(UiCue::new(cue));
+            }
+        }
+        next.insert(s.e.id, t.max(from));
+    }
+    *heard = next;
 }
 
 /// The cues between two states of the match-end screen.
@@ -285,5 +369,15 @@ mod tests {
         assert_eq!(file(28, 30), "rank_p15"); // 15.45
         assert_eq!(file(29, 30), "rank_14_knife");
         assert_eq!(rank_cues(3, 8, true).len(), 2, "a chain layers rank_chain");
+    }
+
+    #[test]
+    fn an_air_strike_alerts_pulses_folds_and_lands() {
+        let e = Effect { threat: true, starts: 10.0, impact_at: Some(14.2), ends: 16.0, ..default() };
+        let c: Vec<&str> = effect_cues(&e, 2.12).into_iter().map(|c| c.1).collect();
+        assert_eq!(c, ["air_alert", "air_pulse", "air_pulse", "hud_chip", "air_pulse", "air_pulse", "air_impact"]);
+        let moon = Effect { starts: 0.0, ends: 30.0, ..default() };
+        assert_eq!(effect_cues(&moon, 2.12), [(2.12, "hud_chip")]);
+        assert!((chain_secs(None) - 1.16).abs() < 1e-6);
     }
 }

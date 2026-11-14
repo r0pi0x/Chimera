@@ -61,6 +61,11 @@ on = false
 [event.vote_cast_4]
 [event.vote_other]
 [event.vote_lock]
+[event.pass_sweep]
+[event.air_alert]
+[event.air_pulse]
+[event.air_impact]
+[event.hud_chip]
 [event.menu_loop]
 file = "loop"
 loop = true
@@ -287,4 +292,74 @@ fn the_menu_loop_plays_on_the_music_bus() {
     sim.app.world_mut().insert_resource(UiMusic(None));
     sim.app.update();
     assert!(sim.app.world().resource::<UiVoices>().music.is_none(), "stopped");
+}
+
+#[test]
+fn a_logo_pass_sweeps_once_per_pass() {
+    use chimera_client::client::logo_pass::LogoPass;
+    for signal in [true, false] {
+        let mut sim = sim(signal);
+        sim.app.world_mut().insert_resource(LogoPass::default());
+        sim.app.update();
+        sim.app.world_mut().resource_mut::<LogoPass>().runs = 1;
+        sim.app.update();
+        sim.app.update();
+        sim.app.world_mut().resource_mut::<LogoPass>().runs = 2;
+        sim.app.update();
+        let want: &[&str] = if signal { &["pass_sweep", "pass_sweep"] } else { &[] };
+        assert_eq!(events(&sim), want, "signal {signal}");
+    }
+}
+
+#[test]
+fn the_air_strike_and_its_chip_sound_from_the_match_effects() {
+    use chimera_client::client::match_effects::{EffectsView, ShownEffect};
+    use chimera_sim::minigame::effects::Effect;
+    use chimera_ui::UiClock;
+    for signal in [true, false] {
+        let mut sim = sim(signal);
+        sim.app.insert_resource(UiClock::manual());
+        let strike = Effect {
+            id: 7,
+            kind: "air_strike".into(),
+            threat: true,
+            starts: 0.0,
+            impact_at: Some(4.2),
+            ends: 6.0,
+            ..Default::default()
+        };
+        let moon = Effect { id: 8, kind: "moon_gravity".into(), starts: 0.0, ends: 30.0, ..Default::default() };
+        sim.app.insert_resource(EffectsView {
+            shown: vec![ShownEffect { e: strike, t0: 0.0 }, ShownEffect { e: moon, t0: 100.0 }],
+        });
+        // 7 s in 0.1 s steps: the strike's whole schedule, the moon not yet.
+        for _ in 0..70 {
+            sim.app.world_mut().resource_mut::<UiClock>().step(0.1);
+            sim.app.update();
+        }
+        let want: &[&str] = if signal {
+            &["air_alert", "air_pulse", "air_pulse", "hud_chip", "air_pulse", "air_pulse", "air_impact"]
+        } else {
+            &[]
+        };
+        assert_eq!(events(&sim), want, "signal {signal}");
+    }
+}
+
+#[test]
+fn the_rank_chain_follows_the_toasts_window() {
+    use chimera_ui::UiClock;
+    let mut sim = sim(true);
+    sim.app.insert_resource(UiClock::manual());
+    sim.app.world_mut().insert_resource(Ladder { rungs: vec!["a:g"; 14], ..default() });
+    let me = sim.app.world_mut().spawn((LocalPlayer, Rung(0))).id();
+    sim.app.update();
+    // 1.0 s apart: inside the toast's 1.16 s; then 1.3 s apart: outside.
+    for (dt, r) in [(0.0, 1), (1.0, 2), (1.3, 3)] {
+        sim.app.world_mut().resource_mut::<UiClock>().step(dt);
+        sim.app.world_mut().get_mut::<Rung>(me).unwrap().0 = r;
+        sim.app.update();
+        sim.app.update();
+    }
+    assert_eq!(events(&sim), ["rank_up", "rank_up", "rank_chain", "rank_up"], "once per rung up");
 }

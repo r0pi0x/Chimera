@@ -892,6 +892,10 @@ fn the_menus_sound_only_with_ui_sound() {
         act(&mut sim, A::Back);
         act(&mut sim, A::OptionsTab(1));
         act(&mut sim, A::OptionStep { index: 0, dir: -1 });
+        let ui_row = esc_menu::shown_tabs(sim.app.world())
+            .iter()
+            .any(|(_, rows)| rows.iter().any(|r| r.cvar == "snd_uivolume"));
+        assert_eq!(ui_row, on, "the UI volume row only with UI sound");
         let v = sim.app.world().resource::<UiVoices>();
         let music = sim.app.world().get_resource::<combat_arms::game::music::AppMenuShown>().is_some();
         if on {

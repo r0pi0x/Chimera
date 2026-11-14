@@ -67,6 +67,12 @@ pub struct SoundMix {
     pub ui: f32,
 }
 
+/// Sound entries this client doesn't play (an app's own sound stands in:
+/// Ultimate Gun Game's air-strike alert for Combat Arms' siren under its
+/// Signal look). Matched by the whole entry.
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct MutedSounds(pub Vec<String>);
+
 /// `snd_uivolume`'s default.
 pub const DEFAULT_UI_VOLUME: f32 = 0.8;
 

@@ -322,6 +322,12 @@ fn t21_music() {
     assert_eq!(s.app.world().resource::<CaSoundLevels>().music, 0.0);
     load(&mut s, Some(profile("[Sound]\nmusicenable = TRUE\n")));
     assert_eq!(s.app.world().resource::<CaSoundLevels>().music, 0.0, "a profile without musicvolume");
+    // A first play (no profile: the template's): music 50, effects 70, so
+    // a fresh player hears music (the party apps' snd_musicvolume follows
+    // it: Ultimate Gun Game's menu loop).
+    load(&mut s, None);
+    close(s.app.world().resource::<CaSoundLevels>().music as f64, 0.5, 1e-6);
+    close(s.app.world().resource::<CaSoundLevels>().master as f64, 0.7, 1e-6);
     // Over 100: passed on as is, stored as 100.
     close(sound::music_level(true, 150) as f64, 1.5, 1e-6);
     assert_eq!(sound::music_stored(150), 100);
