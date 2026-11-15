@@ -122,12 +122,13 @@ fn a_dead_spartan_leaves_a_body_that_lies_where_it_fell() {
     sim.seconds(3.0);
     let (_, _, later) = corpses(&mut sim)[0].clone();
     assert!(later.distance(at) < 1e-3, "lying still: {later}");
-    // Idle (from its last frame, 1.5 s after the death) for more than 900
-    // ticks: gone 31.5 s after the death.
-    sim.seconds(28.0);
-    assert!(sim.app.world().get_entity(e).is_ok(), "still there 31 s after the death");
-    sim.seconds(1.0);
-    assert!(sim.app.world().get_entity(e).is_err(), "gone after 900 idle ticks");
+    // At rest from the death (health_shields.md "How long a body lasts":
+    // the count runs while it is at rest, its animation playing or not)
+    // for more than 900 ticks: gone on the 901st, 30.03 s after the death.
+    sim.seconds(26.7);
+    assert!(sim.app.world().get_entity(e).is_ok(), "still there 29.8 s after the death");
+    sim.seconds(0.5);
+    assert!(sim.app.world().get_entity(e).is_err(), "gone after 900 ticks at rest");
 }
 
 #[test]

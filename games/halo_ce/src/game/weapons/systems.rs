@@ -279,6 +279,9 @@ pub struct HaloTrace<'w, 's> {
         With<Intent>,
     >,
     teams: Query<'w, 's, &'static Team>,
+    /// Halo's bodies (`body::death`): their hit volumes about their feet,
+    /// unturned (health_shields.md: shots hit a dead body).
+    corpses: Query<'w, 's, (Entity, &'static super::super::body::death::CorpseState, &'static crate::core::Hitboxes)>,
 }
 
 /// What a trace met (metres): the distance along it, the point, the
@@ -313,6 +316,11 @@ impl HaloTrace<'_, '_> {
             {
                 let p = from + *dir * enter;
                 best = Some((enter, p, -*dir, Some((e, Some(BodyRegion::from_hitgroup(hitgroup_at(b, p))))), None));
+            }
+        }
+        for (e, t, boxes) in self.corpses.iter().filter(|c| !skip.contains(&c.0)) {
+            if let Some((i, enter, _)) = boxes.nearest(from - t.at, *dir, limit(&best)) {
+                best = Some((enter, from + *dir * enter, -*dir, Some((e, Some(boxes.0[i].region))), None));
             }
         }
         for r in rewound.iter().filter(|r| !skip.contains(&r.entity)) {
@@ -387,9 +395,9 @@ impl HaloTrace<'_, '_> {
         self.characters.get(e).ok().filter(|c| c.5.current > 0.0).map(|c| c.1.translation)
     }
 
-    /// A character's centre, alive or dead.
+    /// A character's centre, alive or dead (a body's: its feet).
     pub fn any_centre(&self, e: Entity) -> Option<Vec3> {
-        self.characters.get(e).ok().map(|c| c.1.translation)
+        self.characters.get(e).ok().map(|c| c.1.translation).or_else(|| self.corpses.get(e).ok().map(|c| c.1.at))
     }
 
     /// The living characters: entity, centre (metres), camouflage.

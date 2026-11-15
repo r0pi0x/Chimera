@@ -197,25 +197,89 @@ fn an_airborne_body_falls_to_the_ground_and_lies_there() {
     let want = (2.0 * 5.0 / g).sqrt();
     assert!((ticks as f32 - want).abs() <= 2.0, "{ticks} ticks, {want}");
     let x = s.at.x;
+    // The touchdown tick still shows the airborne death; the landing death
+    // starts on the next tick, from its frame 0.
+    assert_eq!(s.sequence, Some(set.names["stand airborne-dead"]));
     s.fall(g, ground);
     assert_eq!(s.at.x, x, "lying still");
-    // Landed: the landing death plays from its frame 0.
+    s.tick(&set);
     assert_eq!(s.sequence, Some(set.names["stand landing-dead"]));
     assert_eq!(s.frame, 0);
 }
 
 #[test]
-fn a_body_lying_idle_more_than_900_ticks_goes() {
+fn the_airborne_death_repeats_while_the_body_falls() {
+    let set = set();
+    let mut s = CorpseState::new(&set, &corpse("stand airborne-dead", Vec3::ZERO), false, None);
+    let frames: Vec<usize> = (0..12).map(|_| { s.tick(&set); s.frame }).collect();
+    assert_eq!(frames, [0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1], "loop frame 0");
+}
+
+#[test]
+fn a_body_at_rest_more_than_900_ticks_goes() {
     let set = set();
     let mut s = CorpseState::new(&set, &corpse("damage s-kill front gut", Vec3::ZERO), true, None);
-    // 5 frames: idle from the tick its last frame shows.
-    for _ in 0..4 {
-        s.tick(&set);
-    }
+    // At rest from its first tick, its animation running or not.
     let mut n = 0;
     while !s.expired() {
         s.tick(&set);
         n += 1;
     }
-    assert_eq!(n, CORPSE_LIFE + 1, "deleted when idle for more than CORPSE_LIFE");
+    assert_eq!(n, CORPSE_LIFE + 1, "deleted on the 901st tick at rest");
+    // A falling body does not count.
+    let mut f = CorpseState::new(&set, &corpse("stand airborne-dead", Vec3::ZERO), false, None);
+    for _ in 0..1000 {
+        f.tick(&set);
+    }
+    assert_eq!(f.idle, 0);
+}
+
+#[test]
+fn the_held_weapon_drops_at_once_for_a_push_or_in_the_air() {
+    use chimera_core::core::DamageKind;
+    use halo_ce::game::body::death::{DeathPush, drops_at_once, violent_death};
+    let ground = corpse("damage s-kill front gut", Vec3::ZERO);
+    assert!(!drops_at_once(&ground, None), "a bullet: after the drawn delay");
+    assert!(!drops_at_once(&ground, Some(&DeathPush(0.0))));
+    assert!(drops_at_once(&ground, Some(&DeathPush(2.0))), "the needler's supercombine, 2");
+    assert!(drops_at_once(&ground, Some(&DeathPush(4.0))), "a grenade, 4");
+    assert!(drops_at_once(&corpse("stand airborne-dead", Vec3::ZERO), None), "in the air");
+    assert!(drops_at_once(&corpse("", Vec3::ZERO), None), "no death animation");
+    // The death line: violent for falls, flame and pushes of 2 or more.
+    assert!(!violent_death(DamageKind::Bullet, 0.0));
+    assert!(!violent_death(DamageKind::Melee, 0.0));
+    assert!(violent_death(DamageKind::Fall, 0.0));
+    assert!(violent_death(DamageKind::Burn, 0.0));
+    assert!(violent_death(DamageKind::Bullet, 2.0));
+    assert!(violent_death(DamageKind::Blast, 6.0));
+}
+
+#[test]
+fn a_body_has_hit_volumes_on_its_pose() {
+    use chimera_world::map::{BoneBox, MapBone, MapCharacterModel};
+    use halo_ce::game::body::death::corpse_hitboxes;
+    let m = MapCharacterModel {
+        game: Some(halo_ce::game::GAME),
+        team: None,
+        name: None,
+        class: None,
+        model: Default::default(),
+        hitboxes: vec![chimera_core::core::Hitbox::cuboid(Vec3::ZERO, Vec3::splat(0.1), Quat::IDENTITY, chimera_core::core::BodyRegion::Chest)],
+        bones: vec![MapBone { name: "root".into(), parent: None, position: Vec3::ZERO, rotation: Quat::IDENTITY }],
+        root: bevy::prelude::Transform::IDENTITY,
+        animations: None,
+        boxes: vec![BoneBox { bone: 0, center: Vec3::new(0.0, 1.0, 0.0), half: Vec3::splat(0.1), group: Hitgroup::Chest }],
+        ragdoll: None,
+    };
+    // The bone turned a quarter about Z: the box above it lies to its side.
+    let pose = vec![(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2), Vec3::ZERO)];
+    let h = corpse_hitboxes(&m, &pose, 0.0);
+    assert_eq!(h.0.len(), 1);
+    assert!((h.0[0].center - Vec3::new(-1.0, 0.0, 0.0)).length() < 1e-4, "{}", h.0[0].center);
+    assert_eq!(h.0[0].region, chimera_core::core::BodyRegion::Chest);
+    // Turned by the body's yaw about its feet.
+    let h = corpse_hitboxes(&m, &[(Quat::IDENTITY, Vec3::ZERO)], std::f32::consts::FRAC_PI_2);
+    assert!((h.0[0].center - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-4);
+    let ray = h.0[0].center + Vec3::Z * 5.0;
+    assert!(h.nearest(ray, Vec3::NEG_Z, 10.0).is_some(), "a shot meets it");
 }
