@@ -1,0 +1,102 @@
+# The plasma rifle (specs/halo_ce/weapons.md "Multiplayer weapon numbers",
+# 8 and 9; projectiles.md "Flight numbers", "Material responses";
+# animations.md "First-person graphs"): no rounds but heat (0.08 a shot,
+# overheated at 1, firing again below 0.25, 0.3 lost a second) and a
+# battery (0.005 a shot: 200 shots) that slows the rate of fire and the
+# cooling by 0.2 x age and misfires above 0.9; 7 rising to 10 rounds a
+# second as held (5, 5, then 4 ticks: Quirk 1), error 0.5 to 5 degrees
+# over 75 held ticks, two firing effect entries (the barrels), the bolt
+# at 1.67 WU a tick slowing at once to 0.83 and gone at about 30.8 WU.
+id = "halo_ce:plasma_rifle"
+base = "halo_ce:gun"
+slot = 0
+class = "smg"
+
+[hud]
+name = "Plasma Rifle"
+
+[hooks."halo_ce:weapon"]
+tag = 'weapons\plasma rifle\plasma rifle'
+# Bit 11: cannot fire at maximum age.
+flags = 0x800
+# The plasma rifle type.
+weapon_type = 4
+zoom_levels = 0
+camo = [0.3, 0.05]
+melee_damage = "plasma_rifle_melee"
+
+[hooks."halo_ce:weapon".heat]
+recovery_threshold = 0.25
+overheated_threshold = 1.0
+detonation_threshold = 1.0
+detonation_fraction = 0.0
+loss_per_second = 0.3
+illumination = 1.0
+
+[hooks."halo_ce:weapon".age]
+heat_recovery_penalty = 0.2
+rate_of_fire_penalty = 0.2
+misfire_start = 0.9
+misfire_chance = 0.5
+
+[hooks."halo_ce:weapon".aim_assist]
+autoaim_angle = 0.08726646
+autoaim_range = 25.0
+magnetism_angle = 0.20943952
+magnetism_range = 25.0
+deviation_angle = 0.0
+
+# A magazine of all zeros (0 >= 0: it always fires).
+[hooks."halo_ce:weapon".magazine]
+flags = 0
+rounds_recharged = 0
+rounds_total_initial = 0
+rounds_total_maximum = 0
+rounds_loaded_maximum = 0
+rounds_reloaded = 0
+chamber_time = 0.0
+
+[hooks."halo_ce:weapon".trigger]
+flags = 0
+rounds_per_second = [7.0, 10.0]
+rate_of_fire_acceleration = 0.018518519
+rate_of_fire_deceleration = 0.13333334
+error_acceleration = 0.013333334
+error_deceleration = 1.0
+magazine = 0
+rounds_per_shot = 0
+minimum_rounds_loaded = 0
+rounds_between_tracers = 3
+minimum_error = 0.0
+# 0.5 and 5 degrees.
+error_angle = [0.008726646, 0.08726646]
+projectiles_per_shot = 1
+distribution = 0
+first_person_offset = [0.0, 0.0, 0.0]
+heat_per_round = 0.08
+age_per_round = 0.005
+firing_effects = 2
+projectile = 'weapons\plasma rifle\bolt'
+
+# First-person frames (no reload).
+[hooks."halo_ce:weapon".animations]
+ready = 29
+melee = 36
+melee_key = 6
+
+[hooks."halo_ce:weapon".projectile]
+tag = 'weapons\plasma rifle\bolt'
+initial_velocity = 1.6666666
+final_velocity = 0.8333333
+air_damage_range = [20.0, 50.0]
+water_damage_range = [20.0, 50.0]
+maximum_range = 0.0
+air_gravity_scale = 0.0
+water_gravity_scale = 0.0
+collision_radius = 0.0
+minimum_velocity = 0.0
+timer = [0.0, 0.0]
+impact_damage = "plasma_rifle_bolt"
+on_body = { response = "disappear" }
+on_shield = { response = "disappear" }
+on_level = { response = "disappear" }

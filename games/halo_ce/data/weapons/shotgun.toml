@@ -1,0 +1,103 @@
+# The shotgun (specs/halo_ce/weapons.md "Multiplayer weapon numbers" and
+# 11; projectiles.md "Flight numbers", "Material responses"; animations.md
+# "First-person graphs"): 12 + 12 shells (60 most in reserve), one a
+# second (30 ticks), 15 pellets 10 degrees off, every shell chambered (its
+# own 22-frame chamber animation), loaded one at a time (the first by the
+# 15-frame `enter`, each further one by the 12-frame `reload-empty`), the
+# pellet at 4.67 WU a tick slowing to 3.33 on its fourth update, to 40 WU.
+id = "halo_ce:shotgun"
+base = "halo_ce:gun"
+slot = 0
+class = "shotgun"
+
+[hud]
+name = "Shotgun"
+
+[hooks."halo_ce:weapon"]
+tag = 'weapons\shotgun\shotgun'
+flags = 0
+# The shotgun type: its shell-by-shell reload.
+weapon_type = 1
+zoom_levels = 0
+camo = [1.0, 0.036]
+melee_damage = "shotgun_melee"
+
+[hooks."halo_ce:weapon".heat]
+recovery_threshold = 0.0
+overheated_threshold = 0.0
+detonation_threshold = 0.0
+detonation_fraction = 0.0
+loss_per_second = 0.0
+illumination = 0.0
+
+[hooks."halo_ce:weapon".age]
+heat_recovery_penalty = 0.0
+rate_of_fire_penalty = 0.0
+misfire_start = 0.0
+misfire_chance = 0.0
+
+[hooks."halo_ce:weapon".aim_assist]
+autoaim_angle = 0.10471976
+autoaim_range = 15.0
+magnetism_angle = 0.20943952
+magnetism_range = 15.0
+deviation_angle = 0.0
+
+# Flags 2: every round must be chambered.
+[hooks."halo_ce:weapon".magazine]
+flags = 2
+rounds_recharged = 0
+rounds_total_initial = 24
+rounds_total_maximum = 60
+rounds_loaded_maximum = 12
+rounds_reloaded = 1
+chamber_time = 0.0
+
+[hooks."halo_ce:weapon".trigger]
+flags = 0
+rounds_per_second = [1.0, 1.0]
+rate_of_fire_acceleration = 1.0
+rate_of_fire_deceleration = 1.0
+error_acceleration = 1.0
+error_deceleration = 1.0
+magazine = 0
+rounds_per_shot = 1
+minimum_rounds_loaded = 0
+rounds_between_tracers = 0
+minimum_error = 0.0
+# 10 degrees, every pellet.
+error_angle = [0.17453292, 0.17453292]
+projectiles_per_shot = 15
+distribution = 0
+first_person_offset = [0.0, 0.0, 0.0]
+heat_per_round = 0.0
+age_per_round = 0.0
+firing_effects = 1
+projectile = 'weapons\shotgun\pellet'
+
+# First-person frames (`enter`: the first shell), and the weapon's own
+# `chamber-1` (22 frames).
+[hooks."halo_ce:weapon".animations]
+ready = 23
+reload_empty = 12
+enter = 15
+melee = 36
+melee_key = 4
+world_chamber = 22
+
+[hooks."halo_ce:weapon".projectile]
+tag = 'weapons\shotgun\pellet'
+initial_velocity = 4.6666665
+final_velocity = 3.3333333
+air_damage_range = [1.5, 3.0]
+water_damage_range = [0.0, 1.0]
+maximum_range = 40.0
+air_gravity_scale = 1.0
+water_gravity_scale = 0.4
+collision_radius = 0.0
+minimum_velocity = 0.0
+timer = [0.0, 0.0]
+impact_damage = "shotgun_pellet"
+on_body = { response = "disappear" }
+on_shield = { response = "disappear" }
+on_level = { response = "disappear" }

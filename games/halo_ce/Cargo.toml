@@ -38,6 +38,8 @@ bevy_replicon.workspace = true
 # map cache files' tags (`game::maps`).
 blam_formats.workspace = true
 bevy.workspace = true
+# The weapons' traces of the level (`game::weapons`).
+avian3d.workspace = true
 # The map file's hash (`MapData::file_hash`) and the data tables
 # (data/*.toml).
 sha2.workspace = true

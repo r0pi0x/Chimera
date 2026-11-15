@@ -10,7 +10,7 @@
 //! `APP`: the game binary's app on Chimera's client app (`chimera_client::
 //! client::app`; main.rs is `run(&APP)`): `SimPlugin`, the client shell
 //! with Halo's HUD (`halo_ce::ui::with_hud`, none of its own yet) and Halo's
-//! front end (`front_end`, none yet).
+//! front end (`front_end`: its weapons' melee and zoom buttons).
 //!
 //! `VERSION` and `BUILD`: this build's version and commit, stamped by
 //! build.rs (the script every app shares, chimera/core/build_stamp.rs).
@@ -100,7 +100,10 @@ impl Plugin for SimPlugin {
 
 /// The client after the shell (`APP`'s front end): nothing of Halo's own
 /// yet (its field of view, menus and HUD come with their specs).
-pub fn front_end(_app: &mut App, _: &Args) {}
+pub fn front_end(app: &mut App, _: &Args) {
+    // The weapons' melee and zoom buttons.
+    halo_ce::ui::binds(app);
+}
 
 #[cfg(test)]
 mod tests {
