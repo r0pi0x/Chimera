@@ -42,6 +42,8 @@ usage: dump <game> [options]
                        name or a property value contains <text>
   --script <name>      tf2: a script (`tf_weapon_scattergun`, `playerclasses/scout`) as text on
                        stdout only (decrypted with the local key when encrypted; the source on stderr)
+  --gun-numbers        tf2: each gun's numbers' source (its script, or the spec fallback) and what the
+                       script set (specs/tf2/weapon_scripts.md), through the game's mount (store/install)
   --ice-probe          tf2: which ICE level (thin, ice) decrypts scripts/tf_weapon_rocketlauncher.ctx
                        with the local key (CHIMERA_TF2_CTX_KEY or [games.tf2.keys.ctx]), and how many
                        of the install's .ctx scripts decrypt at the configured level
@@ -61,6 +63,7 @@ struct Args {
     objects: Option<String>,
     script: Option<String>,
     ice_probe: bool,
+    gun_numbers: bool,
     out: Option<PathBuf>,
     install: Option<PathBuf>,
 }
@@ -82,6 +85,7 @@ fn parse() -> Result<Args, String> {
         objects: None,
         script: None,
         ice_probe: false,
+        gun_numbers: false,
         out: None,
         install: None,
     };
@@ -97,6 +101,7 @@ fn parse() -> Result<Args, String> {
             "--objects" => a.objects = Some(value()?.to_lowercase()),
             "--script" => a.script = Some(value()?.to_lowercase().replace('\\', "/")),
             "--ice-probe" => a.ice_probe = true,
+            "--gun-numbers" => a.gun_numbers = true,
             "--out" => a.out = Some(value()?.into()),
             "--install" => a.install = Some(value()?.into()),
             _ => return Err(format!("unknown option {flag}")),
@@ -191,6 +196,18 @@ fn dump_tf2(args: &Args, install: &Path) -> Result<(), String> {
     }
     if args.ice_probe {
         return tf2_ice_probe(install);
+    }
+    if args.gun_numbers {
+        let mount = tf2::mount::open(install).map_err(|e| e.to_string())?;
+        let key = tf2::scripts::key()?;
+        let numbers = tf2::weapons::script_numbers::GunNumbers::from_mount(Some(&mount), key.as_ref());
+        for s in &numbers.sources {
+            println!("{}: {}", s.gun, s.source);
+        }
+        numbers.parse().map_err(|e| format!("the mapped documents don't load: {e}"))?;
+        println!("the mapped documents load as weapon data");
+        println!("differing from the committed data: {:?}", numbers.differences()?);
+        return Ok(());
     }
     if let Ok(path) = tf2::mount::search_path(install) {
         println!("gameinfo.txt search path (first wins):");

@@ -250,8 +250,8 @@ looked into; it collides the same).
   `tf2:tf_weapon_minigun` with specs/tf2/weapons.md's numbers, classes
   shotgun, launcher, shotgun, heavy. `weapons::script_numbers` asks
   `scripts::read` for each gun's script at every load of the guns and
-  logs (a warning) where the numbers came from: "spec fallback" until
-  `numbers_from_script` maps the scripts' fields (no spec names them yet).
+  logs where the numbers came from. Since 2026-11-15 the scripts' numbers
+  are applied (specs/tf2/weapon_scripts.md, see "Real stats" below).
 - **The rules as hooks** (scenario tests on `Tf2Sim`,
   `tests/it/weapons.rs`): `tf2:gun`, the distance modifier (smoothstep,
   the 921.6 clamp, the near half x1.5 / x0.5 / x1) on each target's summed
@@ -294,15 +294,35 @@ looked into; it collides the same).
   model's same-named 1-frame stub (install.md 4.3). Network version
   `net57`.
 
-Left (M2b): the scripts' field mapping (needs a spec written with the key,
-then the ICE probe and the publish above; the sets are now named
-`weapon/tf_weapon_*`); the knockback per point is ours (open question 9,
+Left (M2b): the knockback per point is ours (open question 9,
 probe P3), bullets push nobody; the Minigun's first-person idle sat low
 and angled up (the Heavy arms' `m_idle` as decoded holds the gun upright
 below the eye; since tf2-guns2 the first person shows the spun pose
 raised by a `view_offset`: `game::view`); no explosion look (particles, scorch), no muzzle
 flash seen in first person; the rocket's crouched offset and the
 per-class shotgun starts wait for classes (M3); a TF2 rung has no knife.
+
+#### Real stats from the scripts (2026-11-15)
+
+- specs/tf2/weapon_scripts.md (a spec session with the key): the
+  scripts' fields, their meaning and units, and the mapping onto the
+  TOML: `Damage` (per pellet, blast, needle, or per second for the
+  flame; not the Sniper Rifle's), `BulletsPerShot`, `Spread`,
+  `TimeFireDelay`, `clip_size`, `TimeReload` (shell guns), `DamageRadius`
+  (Demoman launchers); `ProjectileType` and `WeaponType` checked.
+- `script_numbers::GunNumbers`: the documents TF2's guns register from,
+  the scripts' (through `INFO.mount()`: the store, or the install with
+  the key; an encrypted install copy without a key falls through to the
+  store's plain one) over the data, each gun's source logged at start;
+  registered as the server documents `tf2:weapons`, so a client without
+  scripts plays with the server's numbers. The harness keeps the
+  committed numbers (`GunNumbers::builtin`). `dump tf2 --gun-numbers`
+  shows each gun's source and what differs from the data (names only).
+- With the user's key all twelve guns read their script; the mapped
+  numbers equal the data's except the SMG's, Minigun's and Syringe Gun's
+  interval (nominal, not tick-rounded: weapon_scripts.md open question
+  3) and the Rocket Launcher's per-rocket reload (open question 6), as
+  the spec predicted.
 
 ### M3: the classes as bodies, TF2's movement
 
@@ -378,3 +398,6 @@ server probe for parity checks, TF2's own app.
   arms' stubs), sounds, TF2 in the party's `GUESTS` and
   `originals:gun_game_2fort`; the scripts' numbers a logged seam.
   Screenshots in UGG on ctf_2fort and de_dust2.
+- 2026-11-15: the weapon scripts' numbers: specs/tf2/weapon_scripts.md,
+  `script_numbers` applies them at run time (store or install plus key),
+  served to clients as server documents.

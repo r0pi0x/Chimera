@@ -220,11 +220,28 @@ pub fn from_bytes(name: &str, bytes: &[u8], key: Option<&CtxKey>, cipher: CtxCip
 
 /// The script `name` (`tf_weapon_scattergun`, `playerclasses/scout`)
 /// through `mount`, with `key` and the configured cipher; logged with its
-/// source.
+/// source. When the first copy doesn't serve (the install's, encrypted,
+/// and no key), a later layer's that does (the asset store's plain
+/// record, under the install).
 pub fn read(mount: &Mount, name: &str, key: Option<&CtxKey>) -> Script {
     let path = path_of(name);
     let script = match mount.read(&path) {
-        Ok(bytes) => from_bytes(name, &bytes, key, CtxCipher::configured()),
+        Ok(bytes) => {
+            let first = from_bytes(name, &bytes, key, CtxCipher::configured());
+            // The install's encrypted file with no key: a later layer's
+            // copy (the asset store's, decrypted) serves instead.
+            if first.source == ScriptSource::Missing {
+                mount
+                    .read_every(&path)
+                    .iter()
+                    .skip(1)
+                    .map(|b| from_bytes(name, b, key, CtxCipher::configured()))
+                    .find(|s| s.source != ScriptSource::Missing)
+                    .unwrap_or(first)
+            } else {
+                first
+            }
+        }
         Err(e) => Script {
             name: name.to_string(),
             source: ScriptSource::Missing,

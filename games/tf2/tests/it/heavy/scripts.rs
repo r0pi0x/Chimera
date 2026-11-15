@@ -71,3 +71,27 @@ fn the_probe_names_the_cipher_of_the_rocket_launchers_script() {
         ice::LEVEL_ENV
     );
 }
+
+/// Every gun's numbers come from its script (specs/tf2/weapon_scripts.md),
+/// the documents they make load as weapon data, and the mapped numbers
+/// agree with the committed data's (the specs' public numbers) except
+/// where the spec names a difference: the SMG's, Minigun's and Syringe
+/// Gun's interval (not tick-rounded), the Rocket Launcher's insert, the
+/// flame's damage (open questions 3, 4, 6). No number is printed.
+#[test]
+fn every_guns_numbers_come_from_its_script_and_agree_with_the_data() {
+    use tf2::game::weapons::{self as w, script_numbers::GunNumbers};
+    let Some((key, mount)) = key_and_mount() else { return };
+    let numbers = GunNumbers::from_mount(Some(&mount), Some(&key));
+    let not: Vec<&str> = numbers.sources.iter().filter(|s| !s.from_script).map(|s| s.gun.as_str()).collect();
+    assert!(not.is_empty(), "spec fallback for {not:?}");
+    let differ = numbers.differences().unwrap_or_else(|e| panic!("the mapped documents: {e}"));
+    let known = [
+        format!("{} cycle", w::SMG),
+        format!("{} cycle", w::MINIGUN),
+        format!("{} cycle", w::SYRINGE_GUN),
+        format!("{} clip/insert", w::ROCKET_LAUNCHER),
+    ];
+    let new: Vec<&String> = differ.iter().filter(|d| !known.contains(d)).collect();
+    assert!(new.is_empty(), "the scripts differ from the data beyond the spec's known cases: {new:?} (all: {differ:?})");
+}
