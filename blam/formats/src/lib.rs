@@ -10,6 +10,9 @@
 //! - `cache`: the map cache file (`.map`): the decompressed image, the tag
 //!   index, address spaces and bounds-checked views of tag data, the
 //!   foundation every tag-class reader is written on.
+//! - `bitmap`: the bitmap tag reader and pixel decoder (every format on the
+//!   disc to RGBA8; block compressed levels also as stored, for a GPU).
 
+pub mod bitmap;
 pub mod cache;
 pub mod disc;
