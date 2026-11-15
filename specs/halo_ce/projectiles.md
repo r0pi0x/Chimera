@@ -1159,6 +1159,19 @@ time s).
 | `globals\flaming_death` | burning | flame | none | 0 | 5000 | 5000 - 5000 | 0 | 0 | 0 | 0 | 0 | 1, 1 |
 | `globals\vehicle_hit_environment`, `globals\vehicle_killed_unit` | vehicles | none | none | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1, 1 |
 
+**Vehicle passthrough.** The damage effect's vehicle passthrough
+penalty (0x1DC) was read from every `jpt!` tag on Blood Gulch, Hang 'Em
+High and Damnation (all of the effects above and the firing, melee
+response and misfire ones): it is 0 on all of them except
+`weapons\sniper rifle\sniper bullet`, 0.5. A direct hit on a vehicle
+(no area flag) is repeated on each seated player and on the driver
+with the multiplier (1 − penalty) × the vehicle's rider damage
+fraction (0.18 on the disc's vehicles, `objects.md`): 0.18 for every
+effect in the table above, 0.09 for the sniper bullet; the effect's
+other values (amount, modifiers, stun) apply unchanged to the rider.
+`health_shields.md` owns what the rider's own shield and body do with
+it.
+
 Firing ("trigger") damage effects, applied to the shooter for its
 screen kick (weapons.md), do no damage (all modifiers 0); their only
 gameplay field is active camouflage damage: assault rifle 0.01, plasma
@@ -1358,7 +1371,7 @@ Values to 1e-4 unless noted.
 |---|---|---|---|---|---|
 | pistol bullet | (10.0, 0, 0.61822), 10.000001 | (20.0, 0, 0.61287) | gone | gone | update 4: cut at x = 40.0 (z 0.59148), range detonation (no effect) |
 | assault rifle bullet | (10.8, 0, 0.61822) | (21.6, 0, 0.61287) | gone | gone | update 4 at x = 40.0 (z 0.59518) |
-| plasma rifle bolt | (1.64931, 0, 0.62), 1.631944 | (3.26389, 0, 0.62), 1.597222 | (7.89931, 0, 0.62), 1.493056 | (14.93056, 0, 0.62), 1.319444 | reaches the final speed at x = 30.0 after update 24; at most one more move (to 30.825 at 0.825) and deleted on the next update (disappear; exact update depends on rounding at the final-speed boundary: accept 25 or 26) |
+| plasma rifle bolt | (1.64931, 0, 0.62), 1.631944 | (3.26389, 0, 0.62), 1.597222 | (7.89931, 0, 0.62), 1.493056 | (14.93056, 0, 0.62), 1.319444 | update 24 ends at x = 30.0 with speed 0.8333336 (single precision: 3e-7 above the final speed 0.8333333, so it is still slowing); update 25 is the last that moves it (the slow-down clamps the speed to 0.99 x final = 0.825, to x = 30.825); update 26 makes it disappear and **does not move it** (the speed 0.825 is below the final speed; the disappear request comes before the move and an object that has requested disappearing is not moved); it is removed at the end of update 26 |
 | needle | (0.13333, 0, 0.62) | (0.26667, 0, 0.62) | (0.66667, 0, 0.62) | (1.33333, 0, 0.62) | update 150: x = 20.0, range detonation (needle detonate effect, no damage) |
 | rocket | (0.39988, 0, 0.62), 0.399756 | (0.79951, 0, 0.62), 0.399511 | (1.99694, 0, 0.62), 0.398778 | (3.98778, 0, 0.62), 0.397556 | final speed after update 273 (x 100.089, speed 0.33); update 358: x = 128.0, explodes |
 | plasma pistol bolt | (0.82963, 0, 0.61982), 0.825926 | (1.65185, 0, 0.61929) | (4.07407, 0, 0.61559) | (7.96296, 0, 0.60264), 0.759267 | hits the floor on update 65 at (39.7756, 0, 0): disappear |
@@ -1538,9 +1551,13 @@ overshoots and swings back around the line of sight.) Charged bolt, same target,
    grenades only through the game type or starting equipment. Common
    memory of the game is "two frags". multiplayer_rules.md should
    settle it; measure by spawning in a 2-player game.
-4. **The 32-bit boundary at the final speed** (plasma rifle bolt ends on
-   update 25 or 26) depends on x87 precision in the real engine. A test
-   should accept either.
+4. **The 32-bit boundary at the final speed.** In single precision the
+   plasma rifle bolt ends on update 26 (the last move is update 25, to
+   x = 30.825). If the real engine's wider intermediate precision puts
+   the speed after update 24 at or below the final speed, the bolt
+   would instead disappear on update 25 without that last move (x
+   stays 30.0). A test of the exact update should accept 26, and may
+   accept 25; the damage and the position within 0.83 WU are the same.
 5. **Frags rolling.** On flat stone a frag stops in two or three
    bounces; players remember grenades rolling down Blood Gulch's
    slopes. Slopes keep giving them gravity along the surface; check on

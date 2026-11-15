@@ -127,14 +127,14 @@ grenade release of `projectiles.md`. Disc values are identical on all
 | 0x68 | 12 | 3 x f32 | grenade origin | WU | (0, 0.05, 0) | where a released grenade starts relative to the camera, in the aim's frame: the three offsets along the aim, to its left and above it; so 0.05 WU to the left (`projectiles.md`) |
 | 0x74 | 12 | | unused | | zero | 3 words |
 | 0x80 | 4 | f32 | stun movement penalty | factor | 0.8 | `movement.md`, `health_shields.md` |
-| 0x84 | 4 | f32 | stun turning penalty | factor | 0.8 | the turn rate (and the jump, see `movement.md`) |
+| 0x84 | 4 | f32 | stun turning penalty | factor | 0.8 | scales the player's jump (`movement.md`, "Damage stun"); it does not scale the turn rate, despite its name |
 | 0x88 | 4 | f32 | stun jumping penalty | factor | 1.0 | not read (`movement.md`) |
 | 0x8C | 4 | f32 | minimum stun time | s | 0 | the body stun's floor, times 30 and truncated to ticks (0) |
 | 0x90 | 4 | f32 | maximum stun time | s | 1.25 | its ceiling: 37 ticks (1.25 x 30 = 37.5 truncated) |
 | 0x94 | 8 | | unused | | zero | 2 words |
 | 0x9C | 4 | f32 | first person idle time lower bound | s | 10 | `animations.md`: the wait before the first-person weapon may pose, drawn uniformly between the two bounds, times 30 |
-| 0xA0 | 4 | f32 | first person idle time upper bound | s | 15 | |
-| 0xA4 | 4 | f32 | first person idle skip fraction | fraction | 0.25 | the chance a draw ends the wait without posing |
+| 0xA0 | 4 | f32 | first person idle time upper bound | s | 15 | (the disc's values are 10 s, 15 s and 0.25 on all 24 maps; 240 and 360 ticks) |
+| 0xA4 | 4 | f32 | first person idle skip fraction | fraction (0 to 1) | 0.25 | the chance a draw ends the wait without posing |
 | 0xA8 | 16 | | unused | | zero | 4 words |
 | 0xB8 | 16 | tag ref `effe` | coop respawn effect | | `effects\coop teleport` | played at a player who respawns near a partner in co-op; no multiplayer use |
 | 0xC8 | 44 | | unused | | zero | 11 words; the element ends at 0xF4 |
@@ -486,7 +486,10 @@ The look function is the piecewise-linear curve from stick deflection
 
 A 0xF4-byte element, every byte zero except the words below (all values
 are exact binary fractions, chosen so each field has a distinct value and
-a reader that is off by one word fails):
+a reader that is off by one word fails). **These are made-up test values,
+not the disc's** (the idle bounds here are 8 s, 12 s and 0.5; the disc's
+10 s, 15 s and 0.25 are in the field table above and in "Disc-backed"
+below); a test that reads a map must expect the disc's numbers:
 
 | Offset | Word | Value | Field |
 |---|---|---|---|

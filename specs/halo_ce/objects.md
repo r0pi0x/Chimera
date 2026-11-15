@@ -548,7 +548,7 @@ where useful). Shared by bipeds and vehicles.
 | 0x19A | 2 | enum16 | input B | | |
 | 0x19C | 2 | enum16 | input C | | |
 | 0x19E | 2 | enum16 | input D | | |
-| 0x1A0 | 4 | angle | camera field of view | rad | 1.2217305 (70 degrees) on the disc |
+| 0x1A0 | 4 | angle | camera field of view | rad | 1.2217305 (70 degrees) on the disc: a nominal angle across a 4:3 picture; the renderer's vertical field of view is 48.11 degrees (`weapons.md` section 12) |
 | 0x1A4 | 4 | f32 | camera stiffness | | stiffness of the camera's response to impulses |
 | 0x1A8 | 32 | tag string | camera marker name | | the camera's marker; empty on bipeds (the biped's camera height fields are used) |
 | 0x1C8 | 32 | tag string | camera submerged marker name | | |
