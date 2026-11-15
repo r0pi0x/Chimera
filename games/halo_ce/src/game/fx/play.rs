@@ -547,8 +547,8 @@ fn or_one(m: f32) -> f32 {
 /// multiplier, both blended `w x current + (1 - w) x next` through a
 /// transition (`hold`, `change`: seconds of the type's first state and of
 /// its change to the next). Each state's sprite is one engine particle on
-/// the same path: cross-faded through a transition (weight w, the next's 1
-/// - w) only when the two states differ in texture, blend or sequence,
+/// the same path: cross-faded through a transition (weight w, the next's
+/// 1 - w) only when the two states differ in texture, blend or sequence,
 /// else the current one alone carries the blended look. Physics: the state
 /// the particle is in, blended in reverse through a transition
 /// (`blended_physics`), at its radius (`physics_radius`), as the

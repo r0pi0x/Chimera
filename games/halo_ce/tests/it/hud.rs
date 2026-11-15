@@ -292,6 +292,12 @@ fn s10_blips_their_fades_and_the_sweep() {
     assert!(near(at(0.0, 10.0, std::f32::consts::FRAC_PI_2), [0.0, -25.7]), "facing it: up");
     assert!(near(at(19.9, 0.0, 0.0), [0.0, -41.8]));
     assert!(near(at(0.1, 0.0, 0.0), [0.0, 0.0]), "the centre");
+    // hud.md 10/S10 (fourth errata): the zero quantised vector draws exactly
+    // at the centre, whichever way the viewer faces (the distance's floor
+    // moves nothing).
+    for yaw in [0.0, 1.0, std::f32::consts::PI] {
+        assert_eq!(rules::blip_offset(0, 0, yaw, 20.0, 32.0, 42.0), Some([0.0, 0.0]), "yaw {yaw}");
+    }
     // hud.md 11: byte 127 decodes to exactly 20, and the drawing is strict: scanned, not drawn.
     assert!(at(20.0, 0.0, 0.0).is_none(), "at the range: not drawn");
     assert!(near(at(19.95, 0.0, 0.0), [0.0, -41.8]), "just inside: byte 126");

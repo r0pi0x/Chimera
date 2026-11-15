@@ -197,9 +197,10 @@ pub fn collect(
         depleted: vitality.is_some_and(|v| v.depleted),
         weapon,
         // The selected type's count (`grenades::Throw::selected`).
-        grenades: hands.get(me_e).map_or(0, |h| i32::from(h.throw.counts[h.throw.selected()])),
+        grenades: hands.get(me_e).map_or(0, |h| h.throw.selected().map_or(0, |k| i32::from(h.throw.counts[k]))),
         throwing: hands.get(me_e).is_ok_and(|h| h.grenade_held),
-        grenade_kind: hands.get(me_e).map_or(0, |h| h.throw.selected()),
+        grenade_kind: hands.get(me_e).map_or(0, |h| h.throw.selected().unwrap_or(0)),
+        no_grenade_type: hands.get(me_e).is_ok_and(|h| h.throw.selected().is_none()),
     };
     let eye = camera.iter().next().unwrap_or(at);
     let f = eye.forward();

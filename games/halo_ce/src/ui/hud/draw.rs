@@ -83,6 +83,9 @@ pub struct Unit {
     pub throwing: bool,
     /// The current grenade type (0 frag, 1 plasma: the grenade HUD drawn).
     pub grenade_kind: usize,
+    /// The unit has no current grenade type (a new life before its first
+    /// update, or no grenades at all): no grenade HUD.
+    pub no_grenade_type: bool,
 }
 
 /// A unit the tracker may show: an id, its kind, its horizontal
@@ -369,7 +372,7 @@ pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now:
         }
     }
     // 4. The grenade HUD of the current type.
-    if let Some(g) = data.grenades.get(unit.grenade_kind).or(data.grenades.first()).filter(|_| unit.alive) {
+    if let Some(g) = data.grenades.get(unit.grenade_kind).or(data.grenades.first()).filter(|_| unit.alive && !unit.no_grenade_type) {
         let anchor = Anchor::of(g.anchor);
         let count = unit.grenades;
         let flashing = count <= i32::from(g.flash_cutoff);

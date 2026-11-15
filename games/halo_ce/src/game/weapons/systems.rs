@@ -836,8 +836,11 @@ pub fn run(
             // The grenade throw's state.
             let busy = hands.melee > 0 || hands.throw.busy();
             let press = hands.grenade_button && !hands.grenade_held;
-            if hands.switch_button && !hands.switch_held && alive && !hands.throw.busy() {
-                hands.throw.switch();
+            // The grenade types (weapons.md 14): the input layer, a press
+            // one step.
+            if alive {
+                let press = hands.switch_button && !hands.switch_held;
+                hands.throw.input(press);
             }
             hands.switch_held = hands.switch_button;
             hands.grenade_held = hands.grenade_button;
@@ -909,6 +912,11 @@ pub fn run(
                 }
             }
             hands.throw = throw;
+            // The unit's grenade type follows the desired one when not busy.
+            if alive {
+                let occupied = hands.melee > 0 || hands.throw.busy();
+                hands.throw.update(occupied);
+            }
             // 3. The player melee.
             if state.on_ground {
                 hands.airborne = 0;
