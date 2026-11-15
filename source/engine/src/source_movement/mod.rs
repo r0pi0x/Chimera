@@ -1011,6 +1011,18 @@ impl SourceMovementAppExt for App {
                 },
             );
         }
+        // The game's character's body, the envelope its maps carry
+        // (`chimera_core::envelope`): the box's half width, heights, step.
+        if let Some(game) = chimera_core::core::movement_game(id) {
+            use chimera_core::envelope::{MovementEnvelope, MovementEnvelopeAppExt};
+            let u = METERS_PER_UNIT;
+            self.add_movement_envelope(game, MovementEnvelope {
+                radius: defaults.half_width * u,
+                height: defaults.stand_height * u,
+                crouch_height: defaults.duck_height * u,
+                step: defaults.stepsize * u,
+            });
+        }
         self.register_movement::<SourceMovement>(id).seat_movement(id, footing, seat)
     }
 }

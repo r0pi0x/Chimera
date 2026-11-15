@@ -313,6 +313,61 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
     Moved { p, contacts, climbable, clip }
 }
 
+/// The step-up (ours, not the spec's: its mover has none; on a map whose
+/// envelope steps higher than Halo's own, `MovementData::step_up`): when a
+/// grounded pill's move from `p` by `motion` (`plain`, already swept) met
+/// something steep, the same move's level part tried raised by up to the
+/// step (a ceiling lowers it), then dropped back by the rise and the
+/// motion's own fall until the first thing it meets (no slide). Taken when
+/// that is under it (a floor, or a step's edge the pill then rides up as
+/// it rides lower ones), above where it started, and the pill got further
+/// along the motion than `plain`: the contacts are the raised move's and
+/// the landing's, the clip set the landing's plane.
+pub fn step_up(space: &dyn Space, d: &MovementData, p: Vec3, h: f32, motion: Vec3, plain: &Moved) -> Option<Moved> {
+    let eps = d.epsilon;
+    let flat = Vec3::new(motion.x, 0.0, motion.z);
+    let dir = flat.try_normalize()?;
+    if d.step_up <= 0.0 || !plain.contacts.iter().any(|n| n.y < d.max_slope_cos && n.y > -0.1) {
+        return None;
+    }
+    let up = sweep(space, d, p, h, Vec3::Y * d.step_up);
+    let rise = up.p.y - p.y;
+    if rise <= eps {
+        return None;
+    }
+    let across = sweep(space, d, up.p, h, flat);
+    let drop = rise + (-motion.y).max(0.0) + 2.0 * d.ground_push;
+    // The drop stops at what it meets first (no slide: a step's edge it
+    // lands on holds it, as an edge the pill rides up).
+    let fall = Vec3::NEG_Y * drop;
+    let hit = space.cast(across.p, h, fall)?;
+    let n = hit.normal;
+    let plane = Plane {
+        normal: n,
+        offset: offset(hit.point, n, d.radius, h),
+    };
+    let into = -fall.dot(n);
+    if hit.t > 1.0 || n.y <= eps || into <= 0.0 {
+        return None;
+    }
+    let t = ((across.p.dot(n) - plane.offset) / into).clamp(0.0, hit.t);
+    let at = across.p + fall * t;
+    let further = (at - p).dot(dir) > (plain.p - p).dot(dir) + 10.0 * eps;
+    if !further || at.y <= p.y + eps {
+        return None;
+    }
+    let mut contacts = across.contacts;
+    let mut climbable = across.climbable;
+    contacts.push(n);
+    climbable.push(hit.climbable);
+    Some(Moved {
+        p: at,
+        contacts,
+        climbable,
+        clip: vec![plane],
+    })
+}
+
 /// The extra contact of a two- or three-plane clip set (spec section 5),
 /// if it normalises.
 pub fn virtual_contact(clip: &[Plane]) -> Option<Vec3> {
