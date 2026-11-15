@@ -313,12 +313,12 @@ minigame on the server, from `NetMinigame::arena` on a client).
   does. Each game's movement must be checked against it (Source's
   movement sweeps the map's brushes itself; Halo's movement has its own
   collision): A1 tests all five.
-- **Shots and projectiles** pass through. What you see through you can
-  shoot through; a wall that stopped bullets would make a concave slice
-  a place to hide behind nothing. Shots fly off into the map beyond.
-- **Grenades** pass too, and explode where they land; their blast
-  reaches back inside. Making each game's grenade bounce would need each
-  game's projectile code to know the wall, for little.
+- **Shots, projectiles and grenades** stop at the wall (the owner's
+  decision 5): the wall is ordinary solid static collision, so every
+  game's traces and projectiles meet it as they meet a level's wall (a
+  grenade bounces or bursts on it by its own game's rule), with no
+  per-game code. The players-only layer above is therefore not used:
+  one solid wall serves movement and shots alike.
 - **Vehicles**: none (off in the party apps). If a host turns them on, a
   slice places none; a later milestone gives the wall to vehicles.
 - **A character outside** (by its feet, more than 0.5 m past an edge: a
@@ -415,25 +415,33 @@ Risks:
 - The map beyond is still drawn whole: a slice costs as much to draw as
   the whole map, which the playtest machines already carry.
 
-Questions for the owner:
+Decisions (the owner, 2026-11-15; they answer this plan's twelve
+questions and override the sections above where they differ):
 
-1. Curated by hand first (A1-A2, slices drawn on the top-down picture,
-   no generator), the generator (A5) only once those play well?
-2. One fixed slice per match, or later a slice that shrinks or moves as
-   a match goes on?
-3. Slices for maps the pool already plays but leaves out at 2-4 players
-   (de_nuke, de_port, grayhammer and about 25 more), or only the big maps?
-4. A solid wall, rather than a soft one that hurts you outside?
-5. Bullets and grenades through the wall, as proposed?
-6. The slice's name shown to players as "Blood Gulch: Red Hill"?
-7. May the map vote offer two slices of the same map?
-8. Vehicles: none on slices even when a host turns them on?
-9. The look: this work ships the placeholder above, the party UI owner
-   draws the final one; is that the split you want?
-10. Halo's own app and server: slices never, or as an option later?
-11. The world beyond dimmed: wanted, or left as it is?
-12. Whole Blood Gulch at 16 players is 10.5 s against the 10 s rule:
-    let it in whole at 16, or always a slice?
+1. Curated by hand first; the generator (A5) once those play well.
+2. One fixed slice per match.
+3. Only the big maps: no slices for maps the pool already plays.
+4. A solid wall, nothing that hurts outside it.
+5. Bullets and grenades do NOT pass the wall (section 7 proposed that
+   they pass): the wall is solid to everything, as a level's own wall
+   is. So it is ordinary static collision every game's traces,
+   projectiles and movement already meet, not a players-only layer;
+   a curated slice should not be so concave that its wall hides one
+   part from another (a scoring point for A3 and A5).
+6. A display name per slice, generated ("Blood Gulch: Red Hill").
+7. No two slices of one map in the same vote, for now. A slice is a
+   sub-map: the map is the parent and its slices hang under it (the
+   pool entry, the vote, the name and the data follow that hierarchy).
+8. No vehicles on slices for now (later perhaps, once vehicles work
+   with every character type).
+9. The placeholder look ships with this work; design comes after.
+10. Never in Halo's own app: that stays faithful.
+11. The world beyond dimmed: yes, but show the owner what it looks
+    like before it is kept.
+12. No hand exception for a whole big map at a player count: which
+    entry is drawn (the whole map or one of its slices) is decided by
+    a heuristic (the pool's measures today), tuned from playtests to
+    what is fun.
 
 ## 10. Milestones
 
