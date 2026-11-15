@@ -47,7 +47,7 @@ port adds the ones below.
 | [scenario.md](scenario.md) | 1 | draft | spawns, netgame equipment, object placements, the sky |
 | sounds.md | 1 | planned | sound tags and the Xbox's compressed format |
 | animations.md | 1 | planned | animation graphs and compressed node animations |
-| objects.md | 2 | planned | object, unit, biped, item and scenery tags as data |
+| [objects.md](objects.md) | 2 | draft | object, unit, biped, item and scenery tags as data |
 | [movement.md](movement.md) | 2 | draft | the player's movement |
 | health_shields.md | 2 | planned | vitality, shields, damage by material and region |
 | weapons.md | 2 | planned | weapons, with every multiplayer weapon's numbers |
