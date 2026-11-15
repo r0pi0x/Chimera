@@ -280,6 +280,24 @@ smoke spins by A; impact sparks' speed scales with A).
 | a particle's collision or death effect | the particle's position, markers "velocity" (its direction) and "gravity" (down); inherits the particle's velocity / 30 per tick | collision: speed scale; death: 0 | 0 | none |
 | equipment (grenade) detonation | `projectiles.md` | | | |
 
+**A weapon's effect slot may name a sound instead of an effect.** Every
+effect reference a weapon or trigger carries (firing, misfire, empty,
+ready, reload, chamber, overheated, light toggle, charging) may be an
+`effe` tag or a `snd!` tag. For a sound the effect machinery is not
+used: the sound plays once as a one-shot sound on the holder (the
+weapon's parent unit; a weapon lying on the ground has no holder and
+plays nothing), at that object's origin facing its forward direction
+(no marker, no particles), with the scale the caller would have given
+the effect as the sound's scale (1 for an empty click, the trigger's
+rate of fire for a firing or misfire reference). On the disc the five
+empty references of the shotgun, plasma rifle, sniper rifle, plasma
+pistol and rocket launcher are sounds (`sound\sfx\weapons\assault rifle\dryfire` for
+the shotgun, sniper rifle and rocket launcher, `sound\sfx\weapons\plasma
+rifle\overheat` for the two plasma weapons); no misfire reference is a
+sound on the disc, but the format allows it and an implementation
+should take the same path. `weapons.md` lists which slot of which gun
+names what.
+
 Scales outside [0, 1] are a caller error. The effect also carries a
 colour (white unless the caller tints it; attached looping effects
 read an object change colour each update) and, for unattached
@@ -539,7 +557,7 @@ Class `part`, struct 0x164 bytes.
 | 0x09C | 2 | i16 | looping sequence count | | |
 | 0x09E | 2 | i16 | final sequence count | | |
 | 0x0A0 | 8 | pad | | | |
-| 0x0A8 | 4 | f32 | runtime: 1 / sprite size | 1/pixels | build-time; matches 1 / the largest sprite dimension in the bitmap within a pixel on the disc (0.0074 = 1/135 for the AR flash) |
+| 0x0A8 | 4 | f32 | runtime: 1 / sprite size | 1/pixels | build-time; matches 1 / the largest sprite dimension in the bitmap within a pixel on the disc (the AR flash's is exactly 1/135 = 0.007407407, f32 0x3BF2B9D6, not a rounded 0.0074) |
 | 0x0AC | 2 | enum16 | orientation | | 0 screen facing, 1 parallel to direction, 2 perpendicular to direction |
 | 0x0AE | 2 | pad | | | |
 | 0x0B0 | 0xB4 | struct | shader | | the effect shader part, below |
@@ -1455,7 +1473,7 @@ Decals used:
 | `vehicles\scorpion\secondary fire bullet` | identical to the assault rifle's fire bullet at "secondary trigger" |
 | `vehicles\scorpion\shell explosion` | damage shell explosion and frag shock wave; sound; particle system `vehicles\scorpion\shell explosion`; decal grenade char down 1 WU; light `vehicles\scorpion\shell explosion` (r 15, 30 ticks, early fall-off, lens flare); flare; `drifting smoke` x 40 - 60 |
 | `vehicles\ghost\ghost gun fire beam` | sound fire; flashes and smoke (independent camera); e1: tracer |
-| empty effects (AR, pistol, shotgun, needler) | the dry-fire sound at the object's origin ("" location) |
+| empty effects (AR, pistol, needler: `effe` tags `weapons\<name>\effects\empty`; shotgun, plasma rifle, sniper rifle, plasma pistol, rocket launcher: a `snd!` tag named directly, see Who creates effects) | the dry-fire sound at the object's origin ("" location) |
 | `weapons\plasma rifle\effects\overheated`, `...\plasma pistol\effects\overheated` | looping (loop 0-0) at "vent" / "vent_rear", "vent_mid", "vent_front": (null sound), `plasma overheat` x 2 - 4 per vent cam 1 and cam 2, smoke |
 
 ### Grenades
@@ -1714,7 +1732,7 @@ colour 0.961, 0.910, 0.686 times the intensity.
 | `weapons\assault rifle\effects\fire bullet` | flags 0, loop -1/-1, 3 locations "primary trigger", "primary ejection", "secondary ejection"; 4 events, all delay 0 duration 0, skip 0; event 0: 0 parts, 6 particles (all `effects\particles\flash\flash h ar`, camera 2); event 1: 2 parts (`snd!` `sound\sfx\weapons\assault rifle\fire` at location 0, `snd!` `sound\sfx\weapons\pistol\eject` at location 2) and 8 particles (`flash h ar center`, `smoke rifle water`, `bubbles`, `casing h ar bullet` at location 1 camera 3 velocity 2.0-2.5 cone 0.2618 radius 0.015, `bubbles`, 2 x `flash h ar`, `smoke h fp`); event 2: 6 x `flash h ar` camera 1; event 3: 4 particles |
 | the AR weapon's attachments | light `weapons\assault rifle\muzzle flash` at "primary trigger", primary scale 2 (function B); light `characters\marine_armored\flashlight_marine` at "flashlight" |
 | `weapons\assault rifle\muzzle flash` | flags 0x21, radius 2.0, modifiers 1/1, upper colour (0.961, 0.910, 0.686), duration 0 |
-| `effects\particles\flash\flash h ar` | flags 0x288, bitmap `effects\particles\flash\bitmaps\flash h ar fp`, physics `effects\point physics\cold smoke cloud`, lifespan 0.075/0.075, sequences first 0 initial 6, orientation 1, blend 3, 1/sprite size 0.0074 |
+| `effects\particles\flash\flash h ar` | flags 0x288, bitmap `effects\particles\flash\bitmaps\flash h ar fp`, physics `effects\point physics\cold smoke cloud`, lifespan 0.075/0.075, sequences first 0 initial 6, orientation 1, blend 3, 1/sprite size 1/135 (0.007407407) |
 | `effects\particles\solid\casing h ar bullet` | flags 7, lifespan 30, fade out 1.0, physics `effects\point physics\stones`, material effects `sound\sfx\impulse\shellcasings\ar_casings`, looping sequences 3, animation 6-30, contact deterioration 5 |
 | `effects\point physics\stones` | flags 3, density 2.4, air friction 900, water friction 14000, surface friction 0.1, elasticity 0.35, runtime 284672.03 / -0.4118 / -0.9991 |
 | pistol bullet's material response 2 (stone) default effect | `weapons\pistol\effects\impact stone`: locations "reflection", "negative incident", "normal"; 2 events; event 0 duration 0.25: parts decal `effects\decals\bullet holes\stone` (location 1, velocity 0.1) and sound `sound\sfx\impulse\impacts\granhit` (location 0); particles `sparks trail` 3-4, `gravel small` 1, `flash h ar` 2-3 at location 2; event 1: decal `stone med` (location 1, 0.1), particles `smoke impact` 2, `flash h pistol detonate` 1, `gravel small` 8-10, `flare h stealth cannon` 1 |

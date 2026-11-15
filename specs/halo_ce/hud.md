@@ -96,11 +96,19 @@ unit; this spec adds only what the HUD needs.
   page given as fractions) and the rest are ordinary 2D bitmaps with one
   bitmap per sequence (the plates, outlines, ammunition icons, scope
   masks, sensor pictures). A sprite's pixel size is its rectangle fraction
-  times the page's pixel size; a whole bitmap is drawn at its own pixel
-  size. The registration points stored in the bitmaps are not used by
+  times the page's pixel size, computed in single precision and
+  **truncated toward zero to whole pixels, never rounded**; a whole
+  bitmap is drawn at its own pixel size. Two disc sprites show it: the
+  plasma heat bar's is 104.99994 pixels wide, so 104 (its rectangle
+  runs from x = 52 to 156, not 157), and the "Low Battery" word's is
+  49.00006 by 26.99994, so 49 by 26. (The sizes listed in the tables
+  below are the authored ones; use these where they differ.) The registration points stored in the bitmaps are not used by
   the HUD (checked in the reference: every HUD placement ignores them).
 - **Colours.** Colour fields are `argb_color` (bytes B, G, R, A in the
-  file, the value written 0xAARRGGBB below). Alpha is not opacity: see
+  file, the value written 0xAARRGGBB below: every hexadecimal colour in
+  this spec, flash colours included, is alpha, red, green, blue from the
+  most significant byte; 0xFFFF552B is alpha 255, red 255, green 85,
+  blue 43, an orange red; a six-digit value is red, green, blue). Alpha is not opacity: see
   Colours, flashing and blending. `real_argb_color` fields (message
   colours) are f32 alpha, red, green, blue.
 - **Time.** Tag times are seconds (flash periods, message up and fade
@@ -129,7 +137,7 @@ unit; this spec adds only what the HUD needs.
 | SHIELD_HIT_HOLD | 15 | ticks | how long the lost part of a hit shield stays marked |
 | SHIELD_LOW / HEALTH_LOW | 0.25 | fraction | warning sound thresholds |
 | HEALTH_MINOR_MAJOR | 0.1875 | fraction | a body loss at or above this in one tick is "major damage" |
-| OVERSHIELD_STAGES | 5 meters, colours green, yellow used | | see Shield |
+| OVERSHIELD_STAGES | 5 meters (stage 0 the tag's, stages 1 to 4 red, green, yellow, violet), 3 reachable | | see Shield |
 | DEFAULT_SHIELD_SCALE | 255 | | meter value scale when the tag has 0 |
 | DEFAULT_HEALTH_SCALE | 8 | segments | meter value scale when the tag has 0 |
 | RADAR_RANGE | 20 | WU | motion sensor range (`hudg`, disc) |
@@ -732,7 +740,28 @@ its two colours:
   meters, the flashlight): gradient minimum = (min color RGB, minimum
   alpha), gradient maximum = max color RGB, flash colour = (flash color
   RGB x phi, maximum alpha) with phi = 0 when the caller's reference time
-  is negative, else clamp(1 - reference time, 0, 1). **Bit 0 set**
+  is negative, else clamp(1 - reference time, 0, 1). In words: the
+  flash colour's red, green and blue (as 0xAARRGGBB: the low three
+  bytes of the tag's flash color) are each multiplied by phi and the
+  result gets the maximum alpha byte as its alpha; the reference time
+  is a number of **seconds** (the shield's fade time f, which stays 0
+  for the whole 15-tick hold of section 5), or -1 when the caller has no
+  fade running, or, for the weapon meters, the flash start tick taken as
+  a number. Only these three cases occur, so phi is 1 for a hit shield
+  (the fade time is 0 while the lost part shows), 0 for every meter
+  with no fade (-1), and 0 for the weapon meters (a tick of 1 or more
+  gives clamp(1 - tick) = 0, the quirk below; only tick 0 would give 1).
+  Not the other readings: phi is not a pulse over time and does not
+  fade across the hold. Worked example, the shield (value scale 198,
+  alpha multiplier 1, bias 55, flash color 0x00FFFFFF) hit from 1.0 to
+  0.6 on tick T: on ticks T to T + 14 stage 0 has v = 0.6, w = 1.0,
+  fading; min value trunc(198 x 0.6) = 118, max value 198; minimum alpha
+  118 + 55 = 173, maximum alpha 198 + 55 = 253; reference time 0, so phi
+  = 1 and the flash colour is 0xFDFFFFFF (alpha 253, white); the shader
+  paints the texels whose blue byte lies from 173 up to 253 (the lost
+  part) in that colour and the texels below 173 in the bar's colours.
+  From tick T + 15 the stage is no longer fading (the reference time
+  is -1, phi 0, the marker gone). **Bit 0 set**
   (health): not flashing: both gradient ends = min color RGB (minimum
   alpha on the minimum), flash alpha = minimum alpha, no flash colour;
   flashing: both ends = max color RGB. (Bits 1 to 4, interpolation by
@@ -796,14 +825,17 @@ disabled when the unit is dead, several-players per section 15. **(ref)**
   the stage is "fading" when w_i > v_i, and its top = w_i if fading else
   v_i. Stop at the first stage whose v_i and top are both 0. Stage 0 uses
   the tag's meter element as it is; stages 1 and up use a copy whose min
-  and max colours are fixed: stage 1 green (0x00FF00), stage 2 yellow
-  (0xFFFF00), stage 3 purple (0x7F00FF), stage 4 black. The tag's own
+  and max colours are fixed (the engine's list of five colours has an
+  unused first entry 0, so stage i takes entry i): stage 1 red
+  (0x00FF0000), stage 2 green (0x0000FF00), stage 3 yellow (0x00FFFF00),
+  stage 4 violet (0x007F00FF), all as 0xAARRGGBB (checked in the disc's
+  executable as well as in the reference). The tag's own
   overcharge colour fields are zero on the disc and unread. Each stage
   draws with value scale S (the tag's, or 255 when 0): min value =
   min(trunc(S x v_i), 255), max value = min(trunc(S x top), 255), the
   draw flags above, reference time f if fading else -1, reference value
   v_i. For a Spartan, s reaches 3.0 at most, so three stages exist: the
-  normal blue bar, a green bar over it from 1.0 to 2.0, a yellow bar from
+  normal blue bar, a red bar over it from 1.0 to 2.0, a green bar from
   2.0 to 3.0.
 - The shield background plate is drawn **after** the meter (over it).
 
@@ -1079,10 +1111,29 @@ same selection as section 7, with the HUD shown): **(ref)**
 - *zoomed* = the player's zoom level is not NONE.
 - The mask bitmap (full screen with one window, split screen otherwise)
   is passed to the screen effect pass as its convolution mask, when
-  zoomed or the mask's "only when zoomed" bit is clear. The disc's masks
-  are an opaque border with a soft transparent window in the middle (the
-  sniper's 512 by 256 with a rounded frame outline, the pistol's and
-  rocket launcher's 256 by 256).
+  zoomed or the mask's "only when zoomed" bit is clear. **It is not a
+  HUD picture** (no placement, no tint, no blend of section 3 and no
+  position from a HUD element): it is a texture of the full-viewport
+  post-processing pass that runs after the scene is drawn, sampled one
+  texel per viewport pixel and centred on the viewport (the texture
+  coordinate offset is (mask size + 1 - viewport size) / 2 texels on
+  each axis, shifted by the difference between the window's and the
+  viewport's centres in split screen), and the pass is where the warp
+  below is applied to the scene. With no convolution (radius 0, a
+  single pass) the mask is the pass's only texture. The disc's masks
+  are black in colour with an alpha that is 255 at the border and
+  falls smoothly to 0 in a soft rounded window in the middle (decoded
+  sniper mask, 512 by 256: alpha 0 over a central window and 255 at
+  the rim; along the middle row, 16 samples 32 pixels apart:
+  255, 255, 255, 250, 187, 19, 0, 0, 0, 0, 0, 23, 190, 251, 255, 255;
+  the pistol's and rocket launcher's are 256 by 256 with the same
+  shape), so the border darkens the scene and the window leaves it
+  clear (the reference shows the plumbing, not the pixel shader: the
+  darkening is inferred from the data, open question 15). The warp
+  radius r of the next item is applied to the scene's texture
+  coordinates in that pass: scaled by 1 + r / viewport size about the
+  centre, so the scene is sampled r pixels wider than the viewport
+  while the mask's own coordinates stay one texel per pixel.
 - *Convolution* (single window only; zoomed or bit clear): the radius =
   the out upper bound when the in bounds are equal, else the out bounds
   interpolated by clamp((vertical field of view - in lower) / (in upper -
@@ -1090,7 +1141,13 @@ same selection as section 7, with the HUD shown): **(ref)**
   that radius. Disc: in bounds (1.1234, 0.1146) rad (64.4 to 6.6
   degrees), out bounds (0, 15) for the pistol and (0, 11) for the rocket
   launcher and sniper rifle: the picture warps more toward the edge the
-  deeper the zoom.
+  deeper the zoom. The "vertical field of view" is the render camera's,
+  i.e. the unit's nominal angle after the conversion of `weapons.md`
+  section 12 (70 degrees unzoomed is 0.83968 rad, not 1.2217), divided
+  by the zoom first: with t = clamp((v - 1.1234) / (0.1146 - 1.1234), 0,
+  1), the pistol zoomed 2x has v = 0.39672 and t = 0.7203, radius
+  10.81; the sniper rifle at 2x radius 7.92 (11 t) and at 8x (v =
+  0.09747, t clamps to 1) radius 11.
 - *Light enhancement* (zoomed or bit 0 clear): intensity = the tag's x
   (the flashlight power, 0..1, when bit 1 is set) x clamp(the scripted
   value of the script source, 0, 1); applied when above 0. *Desaturation*
@@ -1187,7 +1244,15 @@ in it):
    viewer's left lands to the **left**, behind lands **down**.
 3. d = the length of the rotated vector (at least 0.015625). If d >= 20
    the blip is not drawn (it can leave the disc between the scan and the
-   draw as the viewer moves).
+   draw as the viewer moves). The comparison is strict in the drawing
+   (d squared below 400 draws) and not strict in the scan (a unit whose
+   squared horizontal distance is at most 400 is taken). The decode
+   multiplies the byte by 20 and by the single-precision 1/127
+   (0.0078740157), which makes byte 127 exactly 20.0 (not 19.99999), so
+   **a unit at exactly 20 WU along an axis is scanned (byte 127) but its
+   blip is not drawn: it does not show.** A unit just inside the range
+   decodes shorter (the quantisation truncates toward zero: 19.9 WU is
+   byte 126, 19.84 WU), so it does show.
 4. Distance curve: the drawn radius is r = 42 x (d / 20)^0.7 pixels from
    the disc's centre for the layout scale 32 (general form: the blip's
    clip position is (scale / 32) x (d / 20)^0.7 of the half field, and the
@@ -1523,8 +1588,9 @@ unless said:
 
 1. **The unit HUD pair is chosen by local player count**, not by game
    type (section 2).
-2. **The overshield's colours are in the engine** (green, yellow, purple,
-   black), the tag's overcharge fields are zero and ignored.
+2. **The overshield's colours are in the engine** (stage 1 red, 2 green,
+   3 yellow, 4 violet), the tag's overcharge fields are zero and
+   ignored.
 3. **A hit marks the lost shield for 15 ticks and then snaps.** The fade
    variable the update maintains never shows (section 5).
 4. **Weapon meters never show their flash colour** (the reference time is
@@ -1731,7 +1797,7 @@ heat 75, age 10; valid types 18):
 | static 2 | state 2 (heat), one window, AO seq 0 (128 x 32), (4, 21), colour 0xFFAAD5FF, no flash (period 0) | (52, 57, 180, 89) |
 | static 3 | state 2, one window, BG seq 2 (128 x 32), (4, 21), colour 0xDC2896FF, flash as the plates | (52, 57, 180, 89) |
 | static 4 | state 2, split screen, AO seq 1 (128 x 8), (9, 21), scaling flags 3 | n/a |
-| meter 0 | state 2, one window, AM seq 0 (105 x 16), (4, 21), min 0x002896FF, max 0x00FF0000, flash 0x00FF552B, empty 0, alpha 1 x v, fade 0.35 | (52, 57, 156, 73) |
+| meter 0 | state 2, one window, AM seq 0 (104.99994 x 16: 104 x 16 pixels), (4, 21), min 0x002896FF, max 0x00FF0000, flash 0x00FF552B, empty 0, alpha 1 x v, fade 0.35 | (52, 57, 156, 73) |
 | meter 1 | state 2, split screen, AM seq 8 (130 x 10), (8, 20), value scale 255, fade 0.75 | n/a |
 | number 0 | state 3 (battery percent), any map, (26, 3), 3 digits, leading zeros, colour 0xFFE6F0FF | digits at x 65, 74, 83, y 39 |
 | overlay 0 | state 3, any map, AT seq 4 (32 x 16), (51, 2), type 16, "flashes", 0xFFE6F0FF | (99, 38, 131, 54) |
@@ -1797,7 +1863,7 @@ none).
 | `combined\hud_ammo_outlines` | 0 128 x 32, 1 128 x 8, 2 128 x 32, 3 128 x 32 |
 | `combined\hud_ammo_alphas` | 0 128 x 16, 1 128 x 32, 2 128 x 16, 3 128 x 16, 4 128 x 16, 5 128 x 16, 6 128 x 32, 7 128 x 16 |
 | `combined\hud_ammo_type_icons` | 0 32 x 16 ("x" and a bullet), 1 64 x 16 (a wide capsule; no nine-weapon HUD uses it), 2 32 x 16 (frag grenade), 3 32 x 16 (plasma grenade, a dot), 4 32 x 16 (battery) |
-| `combined\hud_ammo_meters` | 0 105 x 16, 1 114 x 27, 2 109 x 18, 3 105 x 13, 4 111 x 17, 5 108 x 17, 6 107 x 22, 7 130 x 18, 8 130 x 10 |
+| `combined\hud_ammo_meters` | 0 105 x 16 (104.99994: 104 pixels wide in the game), 1 114 x 27, 2 109 x 18, 3 105 x 13, 4 111 x 17, 5 108 x 17, 6 107 x 22, 7 130 x 18, 8 130 x 10 |
 | `combined\hud_reticles` | 0 66 x 66 (assault rifle), 2 (warthog gun), 3 (plasma pistol), 4 (plasma rifle), 6 (needler), 9 (rocket launcher), 10 (shotgun) all 64 x 64, 7 and 8 28 x 28 (empty, pistol), 11 (scorpion), 13 (ghost), 14 18 x 10 |
 | `combined\hud_reticle_warnings` | 0 "Low Battery", 1 "Reload", 2 "No Ammo", 3 "Low Fuel", 4 "No Fuel", 5 "No Grenades", 6 "No Weapon", 7 "Low Ammo", 8 a small triangle, 9 five progress frames (30 x 6), 10 "Battery Depleted" |
 | `combined\hud_counter_numbers` | 15 glyph sprites 18 x 12 (the "Km" one 19 x ...): 0 to 9, ".", ":", "-", "m", "Km" |
@@ -1916,7 +1982,7 @@ the rectangle is (463, 36, 585, 67).
 | 0.1 | 19 | 74 |
 | 0.5 | 99 | 154 |
 | 1.0 | 198 | 253 |
-| 2.5 (overshield) | stage 0: 198; stage 1 (green): 198; stage 2 (yellow): v = 0.5, 99 | 253, 253, 154 |
+| 2.5 (overshield) | stage 0: 198; stage 1 (red): 198; stage 2 (green): v = 0.5, 99 | 253, 253, 154 |
 
 | Body b | Segments trunc(8 b) | Fill alpha max(31, 30 v + 15) | Colour |
 |---|---|---|---|
@@ -2103,13 +2169,13 @@ refreshes it. A message created at tick 0 is at full alpha through tick
 | 1 Canvas and placement | reference only for the formula and safe frame; consistent with the disc (the symmetry check) |
 | 2 Which HUD, the order | reference only (the unit HUD pair choice is surprising: open question 2) |
 | 3 Colours, flashing, blending | reference only (the blend class from `shaders.md`); the flash formula is exact as read |
-| 4 Meters | the inputs checked against the disc's numbers; the shader mapping reference only; the tint and frame retention inferred |
-| 5, 6 Shield, health, sounds | reference only; thresholds and counts consistent with the disc's tags |
+| 4 Meters | the inputs checked against the disc's numbers (the flash expression read from the reference and the sprite truncation from the disc's sprite fractions in single precision); the shader mapping reference only; the tint and frame retention inferred |
+| 5, 6 Shield, health, sounds | reference only; thresholds and counts consistent with the disc's tags; the overshield colour list also checked in the disc's executable |
 | 7 Weapon HUD | reference only; every disc element's consistency checked (states and maps used as the rules say) |
 | 8 Crosshairs | reference only; the disc elements checked for consistency |
-| 9 Scopes, screen effects | layout checked against the disc; the effect application reference only; the look inferred |
+| 9 Scopes, screen effects | layout checked against the disc; the mask bitmaps decoded; the effect application and the mask's plumbing reference only; the look (the mask as a darkening border) inferred; the vertical field of view from the reference and the disc's executable |
 | 10 Grenades | reference only; values disc |
-| 11 Motion tracker | numbers checked against the disc; the blip rule reference only; the sweep compositing inferred |
+| 11 Motion tracker | numbers checked against the disc; the blip rule and the equality behaviour at the range (scan not strict, draw strict, decode exactly 20 at byte 127, checked in single precision) reference only; the sweep compositing inferred |
 | 12 Damage indicators | values disc; the direction rule reference only (suspect) |
 | 13 Messages | texts disc; layout rules reference only |
 | 14 Waypoints, friend markers | arrows disc; rules reference only |
@@ -2160,3 +2226,13 @@ refreshes it. A message created at tick 0 is at full alpha through tick
     expected in one window).
 14. **Whether the objective, timer and help text apply in multiplayer**
     (scripted only here); none of this spec's tests need them.
+15. **What the scope masks do in the pixel shader.** The reference shows
+    the mask bound as a texture of the screen-effect pass but not the
+    shader; the black border over the warped scene is inferred from the
+    mask's data. Check: a zoomed screenshot, whether the corners are
+    black, how soft the window's edge is, and whether the warp reaches
+    into the border.
+16. **Overshield colours.** Stage 1 red and stage 2 green follow the disc
+    executable's colour list (an earlier draft had them shifted by one,
+    green and yellow); check on a real game that the shield bar shows a
+    red layer from 1.0 to 2.0 and a green one above 2.0.

@@ -720,6 +720,52 @@ list checksum; permutation `plasma rifle fp`; 5 parts (618, 18, 1208,
 94, 19 vertices), 1957 vertices, 2259 triangles. Bounding box x
 -0.1199..0.0969, y -0.0297..0.0297, z -0.069..0.0559.
 
+### Shotgun, first person
+
+`weapons\shotgun\fp\fp`: 4 nodes (`frame gun`, `frame bullet`, `frame
+magazine`, `frame pump`; node list checksum 0x4011D166); cutoffs all
+0; one region (unnamed), permutation `shotgun fp`; one geometry of 3
+parts (1276, 4, 112 vertices); **1392 vertices, 1516 triangles**;
+shaders `weapons\shotgun\shaders\shotgun gun` (`soso`), `shotgun
+primary` (`sotr`), `shotgun shell` (`soso`). Bounding box x
+-0.2374..0.2008, y -0.0167..0.0167, z -0.0641..0.0284. Markers (one
+instance each): `flashlight`, `left hand cyborg`, `left hand marine`,
+`primary ejection`, `primary trigger`. Identical on all 13 multiplayer
+maps.
+
+### The other first-person weapon models
+
+Every held weapon of the multiplayer maps (the eleven: assault rifle,
+pistol, shotgun, plasma rifle, sniper rifle, plasma pistol, needler,
+rocket launcher, flamethrower, ball, flag) has a `weapons\<name>\fp\fp`
+model, each identical on all 13 multiplayer maps, each with all cutoffs
+0, one region and one permutation, one geometry. The assault rifle,
+pistol, shotgun and plasma rifle are above; the others:
+
+| Model | Nodes | Parts (vertices) | Vertices | Triangles | Shaders (class) | Bounding box x, y, z | Markers |
+|---|---|---|---|---|---|---|---|
+| sniper rifle | 4: `frame gun`, `frame magazine`, `frame ophandle`, `frame bullet` | 6 (1952, 6, 292, 14, 4, 6) | 2274 | 2236 | metal `soso`, primary `sotr`, grip `soso`, decal `soso`, subscreen `schi`, screen `schi` | -0.1736..0.4455, -0.0389..0.0389, -0.026..0.0812 | `flashlight`, `left hand cyborg`, `left hand marine`, `primary ejection`, `primary trigger` |
+| plasma pistol | 4: `frame gun`, `frame cover`, `frame dial`, `frame face` | 4 (485, 389, 104, 4) | 982 | 1030 | shiney, dull, luminous `soso`; gauge `smet` | -0.0215..0.0907, -0.0105..0.0105, -0.0429..0.0477 | `flashlight`, `left hand cyborg`, `primary trigger`, `primary trigger01`, `secondary trigger`, `secondary trigger flare1`, `secondary trigger flare2`, `vent_front`, `vent_mid`, `vent_rear` |
+| needler | 17: `frame body`, `frame eneedle13`, `frame needle01` to `needle12`, `needle14` to `needle16` | 4 (1273, 357, 672, 64) | 2366 | 1774 | gun, dull `soso`; luminous `sgla`; core `sotr` | -0.1227..0.0978, -0.0351..0.0368, -0.0954..0.1044 | `flashlight`, `primary trigger`, `smoke` |
+| rocket launcher | 5: `frame gun`, `frame body`, `frame foregrip`, `frame tubes`, `frame push_bar` | 4 (372, 1192, 1482, 34) | 3080 | 2176 | grip, body, tubes, decal (all `soso`) | -0.2821..0.164, -0.0408..0.0295, -0.033..0.1028 | `flashlight`, `left hand cyborg`, `left hand marine`, `primary ejection`, `primary trigger` |
+| flamethrower | 3: `frame gun`, `frame ammo`, `frame cover` | 6 (2070, 98, 4, 4, 4, 4) | 2184 | 2174 | `ft gun`, `ft ammo`, `ft decals` `soso`; `ft hundreds`, `ft ones`, `ft tens` `smet` | -0.0283..0.449, -0.0782..0.0538, -0.1131..0.0765 | `cyborg left hand`, `flashlight`, `marine left hand`, `pilot`, `primary trigger` |
+| ball | 1: `frame skull` | 1 (1239) | 1239 | 1792 | `weapons\ball\shaders\bone` `soso` | -0.0428..0.0391, -0.03..0.0292, -0.0079..0.0568 | none |
+| flag | 1: `frame pole` | 1 (143) | 143 | 240 | `weapons\flag\fp\shaders\flag fp` `soso` | -0.0075..0.0075, -0.0075..0.0075, 0..0.5 | `flag bottom`, `flag top`, `left hand` |
+
+The plasma rifle's marker list: `flashlight`, `ground point`, `heat
+flare`, `heat flare1`, `left hand`, `primary trigger`, `primary
+trigger1`, `secondary trigger`, `vent` (8 instances); the assault
+rifle's: `flashlight`, `left hand cyborg`, `left hand marine`, `primary
+ejection`, `primary trigger`, `smoke`; the pistol's: `flashlight`,
+`laser`, `left hand cyborg`, `left hand marine`, `primary ejection`,
+`primary trigger`. The permutation names are `<weapon> fp` for the
+assault rifle, pistol, shotgun, plasma rifle, plasma pistol and needler,
+`rocketlauncher` for the rocket launcher, `gameball` for the ball,
+`__base` for the sniper rifle, flamethrower and flag. The node list
+checksums (first-person model): needler 0xDD4D9E68, plasma pistol
+0x000AED50, rocket launcher 0xC0467E26, sniper rifle 0x602DB6D5,
+flamethrower 0x400542E7, ball 0x00033E60, flag 0x00019ED9.
+
 ### First-person arms: `characters\cyborg\fp\fp`
 
 37 nodes; one region `cyborg`, permutation `__base`; one geometry of 2
