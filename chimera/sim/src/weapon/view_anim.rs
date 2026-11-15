@@ -4,7 +4,8 @@
 //! animation's events ask for (`map::ViewModelEvent`). Per character and
 //! frame (`drive`, in `map::DriveAnimation`, simulation side so it runs
 //! headless): show the active weapon's view model (drawing it when it
-//! changes; nothing when dead), react to the weapon's `WeaponEvent`s,
+//! changes, or when its model comes in after the weapon did; nothing when
+//! dead), react to the weapon's `WeaponEvent`s,
 //! advance the animation and send the effects of the events its cycle
 //! passed, and idle once the sequence has played out, no grenade is held
 //! primed, no reload runs and the weapon's idle delay has passed (its

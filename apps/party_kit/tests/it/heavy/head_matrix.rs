@@ -44,7 +44,7 @@ use party_kit::PartyPartsPlugin;
 use crate::gun_game::{held, no_finale, place, plain_rungs, soldier};
 
 /// One gun of each game: (the game, its gun).
-const GUNS: [(&str, &str); 3] = [
+pub(crate) const GUNS: [(&str, &str); 3] = [
     ("cs_source", "cs_source:weapon_usp"),
     ("combat_arms", "combat_arms:m4a1"),
     ("hl2dm", "hl2dm:weapon_357"),
@@ -58,7 +58,7 @@ const BESIDE: f32 = 0.06;
 /// leaves move it by less.
 const MARGIN: f32 = 0.04;
 
-fn installed() -> bool {
+pub(crate) fn installed() -> bool {
     let Ok(config) = LocalConfig::load() else { return false };
     let css = config
         .game_path_in(cs_source::game::GAME, cs_source::game::INFO.steam.as_ref())
@@ -442,7 +442,7 @@ fn every_games_gun_hits_each_hl2dm_models_head_in_each_hold() {
 // player, posed from the drawn animation), the server's lag compensation
 // and its own posing deciding.
 
-fn net_dust2() -> Option<(chimera_net::harness::NetSim, Vec3, Vec3)> {
+pub(crate) fn net_dust2() -> Option<(chimera_net::harness::NetSim, Vec3, Vec3)> {
     use chimera_net::{harness::NetSim, net::memory::LinkConditions};
     if !installed() {
         return None;

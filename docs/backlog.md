@@ -195,14 +195,34 @@ started; the user asked to avoid server lag while testers play.
 - **Infected ship turrets** (combat_arms:auto-turret_infecteds_01/02/03;
   fixed in 7.1, confirm in a playtest): they kill nobody; now a
   `ladder_exclusions` entry, so drawn ladders skip them.
-- **The first rung's gun is invisible for the user.** The first gun of
-  each ladder start doesn't show. Look at: the view model's first
-  equip at a ladder start.
+- **The first rung's gun is invisible for the user** (fixed on branch
+  `pt7-gameplay`, confirm in a playtest). A weapon shown before its view
+  model was there (the new map's view models in after the first rung's
+  gun was given) kept no animation, which the drawing hides, until the
+  next switch; `map::ViewAnimator::show` now starts it when the model
+  comes in (cs_source `view_models::a_view_model_that_comes_in_after_the_weapon_is_drawn_then`).
 - **Deaths on CS:S and Combat Arms rungs show no ragdoll or death
-  animation**; the body just disappears (seen by other players). Check
-  the perf-spikes change that warms ragdoll shapes inside
-  `spawn_ragdolls` (d149c231-era main against the playtest7 tag) and the
-  net path for ragdolls.
+  animation** (CS:S and HL2:DM rungs fixed on branch `pt7-gameplay`,
+  confirm in a playtest). Not the perf-spikes warm-up: a client hears of
+  a death (`Killed`) ticks before the dead player's health comes
+  (replicated changes are paced), so the ragdoll it made saw its owner
+  still alive and went the next tick (HL2:DM's: kept as outliving a
+  respawn, then removed as its owner "died again"). A ragdoll now waits
+  for its owner to be seen dead (`ragdoll::DEATH_NEWS_WAIT`, 1 s at most)
+  before an owner alive counts as living again (party_kit
+  `heavy::death_bodies`). Combat Arms' corpse (`CaBody`, `map::Corpse`)
+  comes on both clients in that test (the simulation's side); its
+  drawing on a CA rung is still to confirm in a playtest.
+- **CS:S movement felt floaty, "on ice", over the session** (not
+  reproduced; looked at on branch `pt7-gameplay`). A loaded dedicated
+  server's caught-up hitches run each command as its own with no
+  misprediction (chimera_net `clock_hitches::a_loaded_servers_catch_up_ticks_run_the_players_own_commands`);
+  movement's friction and acceleration are per tick (`SimClock::dt`), the
+  same in prediction's replays. The session's server log has no tick
+  times; it shows the world's change tick at Bevy's limit after 55 min
+  (about 1M system runs a second, some 15,000 a tick: worth a profile of
+  a full server). Next time: a tester's `net_graph` (misses, late,
+  errors, resyncs) when it feels wrong, and the server's `tick_stats`.
 - **Snow Valley (Combat Arms):** lighting looks wrong (details and a
   screenshot pending); tree leaves are solid and block bullets, they
   should be shoot-through.

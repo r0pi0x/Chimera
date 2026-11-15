@@ -229,9 +229,20 @@ pub struct ViewAnimator {
 
 impl ViewAnimator {
     /// Show `key`'s view model (a fresh animator on its sequences, every
-    /// mesh drawn); no change if it is already shown.
+    /// mesh drawn); no change if it is already shown, unless it was shown
+    /// before its model came in (true then: the animator starts now).
     pub fn show(&mut self, key: Option<&str>, models: Option<&ViewModels>) -> bool {
         if self.key.as_deref() == key {
+            // Shown before its model was there (a map's view models in
+            // after the weapon was given: a ladder's first rung at a
+            // match's start): started now, or the drawing keeps hiding a
+            // model with animations and none playing.
+            if self.animator.is_none()
+                && let Some(set) = key.and_then(|k| models?.get(k)?.animations.clone())
+            {
+                self.animator = Some(anim::Animator::new(set));
+                return true;
+            }
             return false;
         }
         self.key = key.map(str::to_string);

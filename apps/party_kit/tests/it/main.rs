@@ -63,6 +63,7 @@ mod heavy {
     mod ca_mode_objects;
     mod clips_on_maps;
     mod cs_decals;
+    mod death_bodies;
     mod guest_effects;
     mod guest_shells;
     mod cross_hits;
