@@ -212,6 +212,26 @@ The four outputs (scalars in 0..1, and colours for colour sources) are
 the owning object's exported functions (`objects.md`). Level geometry
 has no object; every source then reads as none.
 
+Which object owns a drawn model, and when its values are taken:
+
+- An object's own model: that object's outgoing functions A to D and
+  its change colours A to D.
+- The first-person weapon model: the **held weapon object's** values
+  (not the player's unit's); the first-person arms model: the holder
+  unit's. A weapon's world model, in a hand or on the ground, uses the
+  weapon object's.
+- The values are the ones stored by the object's last tick (`objects.md`,
+  Per-tick order): nothing is recomputed per frame, so a value-driven
+  picture changes at most once per tick. The functions' active flags
+  are not passed: every consumer in this spec reads the stored value
+  as is (an inactive function's stored value is what its bounds left,
+  usually the lower bound).
+- The same four values feed every use: numeric shaders, meter
+  sources, texture animation sources (model, chicago and generic
+  maps), the model shader's self-illumination and change-colour
+  sources, fade sources, and the plasma shader's sources. `weapons.md`
+  section 18 lists every weapon display built on them.
+
 ### Detail functions
 
 | Code | Name | Result for value a and detail d |
@@ -808,19 +828,46 @@ block after the header:
 
 ### Numeric shaders
 
-The digit shown by a numeric shader drawn with shader permutation
-index k (the digit position, from the geometry):
+**Which image a transparent map shows.** A chicago or generic shader
+samples one *image* (one element of the bitmap tag's images block, not a
+sequence) of each map's bitmap. Its index i is chosen once per draw of a
+part and used for all of the shader's maps, each taking i modulo its
+own bitmap's image count:
+
+- By default i = the part's **shader permutation** (the permutation of
+  the model's shader reference, `models.md` Shaders; the level's own
+  index for level geometry). So a non-numeric shader drawn with
+  permutation 2 shows image 2 of a multi-image bitmap.
+- A shader with the numeric flag, at least one map, and an owning
+  object (level geometry has none: it keeps the default) instead
+  computes i as below, with k = the part's shader permutation read as
+  the **digit position** (0 units, 1 tens, ...). The same shader is
+  referenced once per digit position by the model, each part drawing
+  one digit.
+
+The digit:
 
 - frame count n = number of images in map 0's bitmap.
 - With the extra flag "numeric countdown timer" (chicago extra flags
   bit 1) the digit comes from the global countdown timer: position 0
   units of milliseconds, 1 hundredths, 2 tenths, 3 seconds, 4 tens of
   seconds (mod 6), 5 minutes, 6 tens of minutes (mod 6), 7 hours, 8
-  tens of hours.
-- Otherwise value = clamp(floor(limit × source + 0.5), 0, limit) with
-  source = object function D when n = 8, else function A; divide value
-  by n, k times (integer); the image shown is value mod n.
-- 13 disc tags per map use it (limits 60 and 8).
+  tens of hours. (Chicago only; generic shaders have no extra flags.)
+- Otherwise value = clamp(floor(limit × source + 0.5), 0, limit),
+  single precision, with source = the owning object's outgoing
+  function **D when n is exactly 8**, else **function A** (the image
+  count picks the function: an 8-image bitmap is a compass dial, any
+  other a digit strip); divide value by n, k times (integer division);
+  i = value mod n.
+- So every digit position always draws (leading zeros show), a value is
+  capped at the limit, and positions beyond the model's parts are simply
+  not drawn.
+- The picture changes by switching images only: no texture offset is
+  involved, and the maps' own texture transforms apply unchanged.
+- 13 disc tags per map use it (limits 60 and 8). The assault rifle's
+  counter (limit 60, 10 images, function A = rounds loaded / 60) and
+  compass (limit 8, 8 images, function D = the compass input) are worked
+  through in `weapons.md` section 18.
 
 ### Fade and fog stage
 
@@ -1127,8 +1174,10 @@ converter allows a second pass.
 | 0xE4 | 32 | | Unused |
 
 Meters draw bars on weapon and vehicle models (ammunition, heat).
-Inputs from the sources (1 when none): brightness β, flash brightness
-φ, value x, gradient g, flash extension e. With the meter map texel
+Inputs from the sources (animation sources: 1 to 4 read the owning
+object's stored outgoing function A to D as is; 0 or no object gives 1):
+brightness β, flash brightness φ, value x, gradient g, flash extension
+e. The disc's weapon meters are in `weapons.md` section 18. With the meter map texel
 Mt, its blue channel is the position along the bar:
 
 - gradient colour G = lerp(minimum, maximum, clamp(Mt.b /
@@ -1643,6 +1692,20 @@ error): (u, v) = (0.25, 0.5) maps to (−0.5, 0.5).
   cosine-variable at s = 0.25 is 0.2651, slide-variable at s = 0.5 is
   0.5914.
 
+### Numeric shaders and image choice
+
+| Setup | Input | Expected image index |
+|---|---|---|
+| numeric chicago, limit 60, map 0 with 10 images, object functions A = 32/60 = 0.53333336, D = 0.9 | part permutation 0 / 1 / 2 | 2 / 3 / 0 (function A; 60 x A + 0.5 = 32.5) |
+| same shader, map 0 with 8 images | permutation 0 | function D: floor(60 x 0.9 + 0.5) = 54, 54 mod 8 = 6 |
+| limit 8, 8 images, D = 0.75 / 1.0 / 0.0 / 0.0624 / 0.0625 | permutation 0 | 6 / 0 / 0 / 0 / 1 |
+| numeric flag set, drawn as level geometry (no object) | part permutation 3, 10 images | 3 (the default) |
+| not numeric, 4-image bitmap | part permutation 6 | 2 (6 mod 4) |
+| numeric chicago with the countdown timer flag, timer 83 456 ms | positions 0 to 5 | 6, 5, 4, 3, 2, 1 (ms units, hundredths, tenths, seconds, tens of seconds mod 6, minutes) |
+
+More cases, on the disc's assault rifle, are in `weapons.md` (Test
+cases, On-model displays).
+
 ### (b) Disc-backed (slow tests, `bloodgulch`)
 
 | Tag | Expected |
@@ -1670,6 +1733,7 @@ error): (u, v) = (0.25, 0.5) maps to (−0.5, 0.5).
 | Chicago and generic combine tables | reference only |
 | Fade factors per mode | inferred (the reference shows which vertex value, not its formula) |
 | Glass, meter, plasma, water math | reference only; per-vertex parts inferred |
+| Numeric shaders, image choice, whose function values a drawn model gets | reference; the disc's numeric and meter tags, their bitmaps and the models' permutations checked on bloodgulch (`weapons.md` section 18) |
 | Default textures, fog density ramps | checked on the disc (`rasterizer\...` bitmaps in bloodgulch) |
 | Fog formulas | reference only |
 | Draw order and sorting | reference only |

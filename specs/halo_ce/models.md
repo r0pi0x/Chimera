@@ -533,7 +533,7 @@ Shader reference, 0x20 bytes:
 | Offset | Size | Type | Field | Meaning |
 |---|---|---|---|---|
 | 0x00 | 16 | tag reference | shader | any shader class (`soso`, `schi`, `sotr`, `sgla`, `smet`, `spla`, `swat`, `senv`); the stored class is the target's own |
-| 0x10 | 2 | i16 | permutation | the shader permutation (which bitmap of a sequence, for example) the part is drawn with; 0 on most, 1 on the assault rifle's second `numbers` reference, 2 on a door blinker |
+| 0x10 | 2 | i16 | permutation | the shader permutation the part is drawn with: for a transparent shader, which image of its bitmaps it shows, or, for a numeric shader, which digit position (`shaders.md`, Numeric shaders); 0 on most, 1 on the assault rifle's second `numbers` reference (the tens digit), 2 on a door blinker |
 | 0x12 | 14 | | padding / unused | zero |
 
 A part's shader index selects one of these. The same shader can appear

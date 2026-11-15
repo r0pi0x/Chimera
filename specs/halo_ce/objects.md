@@ -223,12 +223,19 @@ Values 6 to 9 are as the reference names them; their exact semantics
 belong to health_shields.md (none is used by a disc object). On the disc
 objects use 0, 2, 4, 19 (and the unit and item layers below).
 
-**Compass**: with the object's forward vector f in the world, if
-|f.z| < 0.995 the value is clamp(0.5 + a / (2 pi), 0, 1) where a is the
-signed angle from the scenario's local north to the heading
-atan2(f.y, f.x), wrapped into (-pi, pi]; otherwise the input keeps its
-previous value. (One scenery object on a campaign map uses it; the
-scenario spec owns "local north".)
+**Compass**: with f the forward axis of the object's node 0 in the
+world (the node matrices as last computed: this export runs before the
+tick's node matrices, Per-tick order), if |f.z| < 0.995 the value is
+clamp(0.5 + a / (2 pi), 0, 1), computed in single precision with
+1 / (2 pi) = 0.15915494, where a = b - N, N the scenario's local north
+(`scenario.md`) and b = **atan2(f.x, f.y)**, a bearing measured from +Y
+toward +X (the reference passes x first; this is not the yaw
+atan2(f.y, f.x)); a is wrapped once: a value at or above pi has 2 pi
+subtracted, then a value at or below -pi has 2 pi added. Otherwise the
+input keeps its previous value. In yaw terms (yaw psi counter-clockwise
+from +X): a = pi/2 - psi - N, wrapped. Used by the assault rifle (object
+layer input D; its first-person and world models' compass dial,
+`weapons.md` section 18) and one scenery object on a campaign map.
 
 The value of input i is written each tick before the functions are
 computed. A class layer's own input list is applied after the object
