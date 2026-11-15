@@ -13,8 +13,8 @@
 //!   "split screen only" elements and the 0.5 crosshair scale are never
 //!   used).
 //! - Multitexture overlays (the sniper rifle's angle ticks) and the
-//!   screen effects (the scopes' convolution warp, night vision) are not
-//!   drawn; the scope masks are the warp's masks, so no zoom draws one.
+//!   screen effects' warp and night vision are not drawn; the zoom's mask
+//!   (`scope_mask`) is, at one texel per canvas unit.
 //! - The sweep's compositing is ours (section 11 is inferred): the sweep
 //!   picture is added in its light blue through the disc's mask, and each
 //!   blip's brightness is scaled by the sweep's alpha where it lies.
@@ -257,11 +257,42 @@ fn one_window(map_type: i16) -> bool {
 }
 
 /// This frame's quads.
+/// The zoom's mask (section 9): the first screen effect of the weapon's HUD
+/// chain, its full-screen mask (black, alpha 255 at the rim falling to 0 in
+/// a window) one texel per pixel (a canvas unit each, scaled with the HUD)
+/// centred on the view (black whatever the texels' colour: the disc's masks
+/// are black), and the rim's colour beyond it, when zoomed or the
+/// effect's "only when zoomed" bit is clear. The warp and night vision are
+/// not drawn.
+fn scope_mask(p: &mut Painter, chain: &[WeaponHud], zoomed: bool, canvas: &Canvas) {
+    let Some(effect) = chain.iter().flat_map(|h| &h.screen_effects).next() else { return };
+    if !zoomed && effect.mask_flags & 1 != 0 {
+        return;
+    }
+    let Some(mask) = p.data.whole_image(&effect.mask_full, 0) else { return };
+    let (w, h) = (mask.size[0] as i32, mask.size[1] as i32);
+    let (cx, cy) = (canvas.width / 2, layout::CANVAS_HEIGHT / 2);
+    let r = [cx - w / 2, cy - h / 2, cx - w / 2 + w, cy - h / 2 + h];
+    p.push(mask, r, Fill::Sprite([0.0, 0.0, 0.0, 1.0]));
+    // Beyond the mask: its corner texel (the rim: black, opaque).
+    let rim = Picture { uv: [0.0, 0.0, 1.0 / mask.size[0], 1.0 / mask.size[1]], size: [1.0, 1.0], ..mask };
+    let (cw, ch) = (canvas.width, layout::CANVAS_HEIGHT);
+    for b in [[0, 0, cw, r[1]], [0, r[3], cw, ch], [0, r[1], r[0], r[3]], [r[2], r[1], cw, r[3]]] {
+        if b[2] > b[0] && b[3] > b[1] {
+            p.push(rim, b, Fill::Sprite([0.0, 0.0, 0.0, 1.0]));
+        }
+    }
+}
+
 pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now: i64) -> Vec<Quad> {
     let mut p = Painter { data, frame: canvas.frame(), now, out: Vec::new() };
     let chain = chain_of(data, unit);
     let w = unit.weapon.as_ref().map(|h| h.now).unwrap_or_default();
     let disabled_all = !unit.alive;
+    // 1. The scope's mask (section 9), under the HUD.
+    if unit.alive && unit.weapon.is_some() {
+        scope_mask(&mut p, chain, w.zoom >= 0, canvas);
+    }
     // 2. Crosshairs: the weapon's own HUD first, then each parent.
     if unit.alive {
         let xs = &state.crosshairs;

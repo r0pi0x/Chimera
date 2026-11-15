@@ -117,6 +117,7 @@ impl HudData {
             hud.meters.iter().for_each(|m| want(&m.element.bitmap, true));
             hud.crosshairs.iter().for_each(|c| want(&c.bitmap, false));
             hud.overlays.iter().for_each(|o| want(&o.bitmap, false));
+            hud.screen_effects.iter().for_each(|s| want(&s.mask_full, false));
         }
         for g in &grenades {
             want(&g.background.bitmap, false);
