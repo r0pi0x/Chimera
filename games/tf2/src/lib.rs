@@ -5,10 +5,11 @@
 //! (`game::mount`, from its `tf/gameinfo.txt`; the dedicated server's
 //! layout, whose texture and sound archives are missing, mounts too), its
 //! maps (`game::maps`, `game::MAP_LOADER`: Source's conversion with TF2's
-//! data, spawns from `info_player_teamspawn`) and a stand-in movement
-//! (`game::movement`); and (M2a) its encrypted scripts (`game::ice`,
-//! `game::scripts`) and asset sets (`game::sets`). Its guns, classes and TF2's own movement come with
-//! the plan's later milestones. Source behaviour it shares with the other
+//! data, spawns from `info_player_teamspawn`); (M2a) its encrypted
+//! scripts (`game::ice`, `game::scripts`) and asset sets (`game::sets`);
+//! (M2b) its guns (`game::weapons`, `game::view`); and (M3) its classes
+//! (`game::classes`) and movement (`game::movement`: Source's with TF2's
+//! config, the class of the gun in hand). Source behaviour it shares with the other
 //! Source games comes from `source_engine`, never from another game.
 //!
 //! `SimPlugins`: everything TF2's simulation needs but its parts (the
@@ -27,7 +28,8 @@ pub mod ui;
 // `crate::game_registry`, `crate::map` and the rest inside, as in the other
 // game crates (the architecture check reads `crate::<module>` against its
 // layering table).
-use chimera_core::{core, game_registry, gameplay, mount};
+use chimera_core::{console, core, game_registry, gameplay, mount, slots};
+use chimera_sim::weapon;
 use chimera_world::map;
 
 use bevy::prelude::*;

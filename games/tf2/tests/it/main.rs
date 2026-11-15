@@ -1,7 +1,8 @@
 //! `tf2`'s integration tests, as one test binary (each file a module):
 //! what the game tells the shell (`info`), the skeleton on the headless
 //! harness (`skeleton`: `harness::Tf2Sim` and the greybox), the spawn
-//! rule on made-up entities (`spawns`), ICE against its spec (`ice`),
+//! rule on made-up entities (`spawns`), TF2's movement and classes
+//! (`movement`: movement.md's test cases), ICE against its spec (`ice`),
 //! the script reader on fixtures encrypted with throwaway keys
 //! (`scripts`), and, in `heavy`, the user's install (its mount, ctf_2fort
 //! and cp_badlands converted with their spawns, the converted-map cache's
@@ -15,6 +16,7 @@
 
 mod ice;
 mod info;
+mod movement;
 mod scripts;
 mod skeleton;
 mod spawns;

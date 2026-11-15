@@ -7961,6 +7961,7 @@ dependencies = [
  "source_formats",
  "source_logic",
  "tf2",
+ "toml",
  "vbsp",
  "workspace-hack",
 ]
