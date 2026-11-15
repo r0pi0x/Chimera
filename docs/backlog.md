@@ -226,8 +226,15 @@ the user's go-ahead: no Actions runs unless asked.
   - *Map viewer:* load a map and orbit or fly around it; "drop in" as a
     character on a local listen server (the same server the menu already
     starts).
-  - *Sandbox mode:* a gun picker across every game's guns, plus options:
-    infinite ammo, bots, time scale, noclip.
+  - *Sandbox mode:* the command-only sandbox exists (2026-11-15):
+    `ultimate_gun_game +sandbox [map]` / `sandbox [map]` plays alone on
+    every game's guns with nothing advancing or ending, `rung <n | gun id |
+    part | next | prev | list>` picks the gun, `ca_bot_*`, `god` and `noclip`
+    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Next: a gun and
+    rung picker menu; a time scale; target dummies that report damage and
+    time to kill at set distances (a gun's real strength measured, not
+    modelled); a firing range layout; saving a loadout of guns to cycle;
+    picking a rung character (Combat Arms' turret) instead of the draw's.
   - *Ties:* M5b's 3D Showcase backdrop
     ([plans/active/ugg-ui.md](plans/active/ugg-ui.md)) is the first
     viewer (gun under an inspect camera, character in idle) and should
@@ -238,7 +245,7 @@ the user's go-ahead: no Actions runs unless asked.
     assets by type, with the gun and character viewers on the Showcase
     scene; (2) map viewer with orbit and free-fly cameras, then drop-in
     on a local listen server; (3) sounds and textures viewers; (4)
-    sandbox mode with the gun picker and its options. About one to two
+    the sandbox's menu and options. About one to two
     weeks of agent work per phase; phase 1 gates the rest.
 - **Smaller installs: a hybrid (user decision, 2026-10-29).**
   - *Default:* every player has the games installed on disk and loads
