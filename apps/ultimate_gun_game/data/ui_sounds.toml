@@ -20,6 +20,9 @@ duck_db = 4
 
 # ---- menu
 [event.ui_hover]
+# Baked at whisper (-42), 10 dB under select (tap, -32): raised to about
+# 4 dB under it (the kit's sound rule; party_kit::ui_cues spaces it).
+gain = 6
 cents = 40
 db = 1.2
 voices = 1

@@ -598,8 +598,8 @@ screen): the header lockup with MATCH OVER and map, game, minigame,
 players; the winner with the accent slab sweeping across it and the
 line (all the rungs in the time, the final kill: the winner's gun and
 its last victim); the standings (HOST, fused YOU+HOST, the bot slot,
-your row tinted and outlined, hover a tick at the right edge and a faint
-fill, the selected row a stronger fill and a pointer outside the row, K/D
+your row tinted and outlined, hover a faint fill (no tick since
+2026-11-14), the selected row a stronger fill and a pointer outside the row, K/D
 under their marks right-aligned, ping with the loss mark, session wins
 with +1 on the winner's: the hook for M6); the climb chart (rung steps
 against match time for the hovered row, else the selected one, the
@@ -984,8 +984,8 @@ component table; only settings that exist). Step 1 in:
 `chimera_ui::controls` (buttons primary/secondary/ghost/danger with key
 caps, sub-tabs, rows and section headers, toggle, segmented, slider,
 stepper, dropdown, key-bind field, key/value lines, modal plates; one
-state vocabulary: hover the right-edge 12° tick plus a faint tint, focus
-the same tick in accent and the accent bar, selected a white fill, a
+state vocabulary: hover a faint tint (the right-edge tick dropped
+2026-11-14), focus the accent bar, selected a white fill, a
 toggle on white, threat as a mark only; `Wipe`/`wipe_cover` for moves
 inside a screen), `UiSlant::outline`; `ui_scene controls`; tests
 `chimera/ui/tests/it/controls.rs`. Step 2 in: the Esc menu
@@ -1031,7 +1031,21 @@ hidden under the Signal Esc menu and Settings over the match
 (`client::hud::HudCover`, M4's match end uses it too; test
 `esc_menu::signal_menu_covers_the_games_huds`); the Esc menu's shade is
 `chimera_ui::ShadeMaterial` (eased, per pixel in float, dithered: the
-gradient node's 8-bit stops banded it in wide stripes). Left: the Crosshair and Multiplayer
+gradient node's 8-bit stops banded it in wide stripes). Settings fixes
+(2026-11-14, the user's feedback): a value box typed into keeps its box,
+face and size, its text one node a character at rest and typing alike,
+the caret an overlay that takes no room, a click placing it between
+characters (`controls::TextHits`), a drag selecting, a double click
+selecting all (`TextPress`), the same in the kit's `text_field` (Play,
+Join, the password); no hover tick anywhere (rows, list lines,
+buttons, fields: an element's own fill lifts; `widgets::hover_tick`
+gone); the toggle's labels centred on their slabs, its slab sliding
+over (140 ms, none under reduced motion), its focus a strip on the
+track's bottom edge; the dropdown's mark the `chevron` icon, flipped up
+open; the Party page without the hit marker, others' voice lines and
+the radar (party defaults on, on, off); the hover cue once per row
+(`ui_cues::CueItem`), 90 ms apart, none while a button is held, 4 dB
+under select. Left: the Crosshair and Multiplayer
 pages (no rows exist yet), help previews (FOV fan, crosshair), a key
 bound twice flagged, the UI parity check for both screens (no look-book
 reference frames in `tools/ui-parity/reference/` yet), 720p/1440p/4K

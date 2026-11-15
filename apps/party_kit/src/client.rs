@@ -164,7 +164,8 @@ fn hl2_fast_switch(
 /// stay empty), drawn in one place whichever game's HUD is up, so a kill
 /// just before a rung swap is still in it after; and the games' radars
 /// hidden (`hud_radar` starts at 0; `hud_radar 1` brings CS:S's radar and
-/// Combat Arms' corner map back).
+/// Combat Arms' corner map back); the hit marker on (`cl_hitmarker` starts
+/// at 1). Neither has an Options row.
 pub struct PartyHudPlugin;
 
 impl Plugin for PartyHudPlugin {
@@ -175,6 +176,12 @@ impl Plugin for PartyHudPlugin {
             app.add_plugins(kill_feed::KillFeedStatePlugin);
         }
         hud::default_radars(app, false);
+        // The hit marker on in the party (Chimera's default is off, CS:S's
+        // parity); it has no Options row.
+        app.insert_resource(chimera_client::client::hit_marker::HitMarkerSetting { on: 1 });
+        if let Some(mut console) = app.world_mut().get_resource_mut::<chimera_core::console::Console>() {
+            console.set_default("cl_hitmarker", "1");
+        }
     }
 }
 

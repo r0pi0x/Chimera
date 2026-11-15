@@ -13,8 +13,8 @@
 //!   dead until let go. Closing takes the mouse back.
 //! - **Resume.**
 //! - **Options**: a tab per page of data/options.toml (video, audio,
-//!   mouse and the party's own: `cl_hitmarker`, `party_swap_effect`,
-//!   `party_music`, `hud_radar`), each an existing cvar of the player's
+//!   mouse and the party's own: `party_swap_effect`, `party_music`),
+//!   each an existing cvar of the player's
 //!   (archived; leaving the page writes the config), and "Binds", which
 //!   opens the Controls page (`controls`, F6).
 //! - **Host settings** (`host::SETTINGS`, data/host_settings.toml): only

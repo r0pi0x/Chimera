@@ -227,6 +227,16 @@ shapes = [
 [[[12, 16], [15, 16], [18.402, 0], [15.402, 0]]]
 ]
 
+# The dropdown's chevron (controls::Ui::chevron): an upright down V, 45°
+# arms 3.4 units across (the dropdown is a straight box).
+[chevron]
+name = "Chevron"
+w = 18
+h = 12
+shapes = [[
+  [[1, 2], [4.4, 2], [9, 6.6], [13.6, 2], [17, 2], [9, 10]]
+]]
+
 # The UGG mark (the logo pass, the lockup): three ascending player profiles.
 [mark]
 name = "UGG"
