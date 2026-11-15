@@ -18,7 +18,18 @@
 //! shared kill feed sits at the top right, where the shield and health
 //! block is): there the block moves to the bottom left, its bottom-left
 //! corner where the motion tracker's is, kept inside the safe frame
-//! (`party_offset`), and the tracker is not drawn.
+//! (`party_offset`), and the tracker is not drawn. The party's own HUD
+//! (Ultimate Gun Game's Signal look, sized in cq: 1 % of the largest 16:9
+//! frame that fits the window, `cq`) keeps two places the block and the
+//! weapon's must leave free: the chat's lines end `PARTY_STATUS_BAND` cq
+//! above the bottom (the band under them is the health's), so the block
+//! sits no higher than that band's top (`Canvas::party_floor`, below the
+//! safe frame's bottom edge in a 4:3 window); and the race chip and the
+//! rank-up toast are centred at the top, `PARTY_TOP_COLUMN` cq either
+//! side of the middle (`Canvas::party_column`), so a grenade plate that
+//! would reach into that column drops under the weapon's block
+//! (`draw::draw`). Checked against the party's laid-out nodes and its
+//! theme by party_kit's `halo_party_hud` test.
 
 use blam_formats::hud::Anchor;
 
@@ -28,6 +39,13 @@ pub const CANVAS_WIDTH: i32 = 640;
 /// The safe frame's insets (section 1).
 pub const SAFE_X: i32 = 48;
 pub const SAFE_Y: i32 = 36;
+
+/// The party HUD's band at the bottom left under its chat's lines, cq
+/// (the Signal theme's `layout.chat.bottom`).
+pub const PARTY_STATUS_BAND: f32 = 8.4;
+/// Half the party HUD's top-centre column (the rank-up toast's half
+/// width, 18.2 cq, the widest thing there, and a cq of room), cq.
+pub const PARTY_TOP_COLUMN: f32 = 19.2;
 
 /// Which layout the HUD draws in.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -75,6 +93,26 @@ impl Canvas {
     /// on the whole 4:3 picture is shifted by to stay centred).
     pub fn extra_half(&self) -> i32 {
         (self.width - CANVAS_WIDTH) / 2
+    }
+
+    /// One cq of the party's HUD in canvas units: 1 % of the largest 16:9
+    /// frame's width that fits the window (8.53 units in a 16:9 or wider
+    /// window, 6.4 at 4:3).
+    pub fn cq(&self) -> f32 {
+        let frame_height = (self.width as f32 * 9.0 / 16.0).min(CANVAS_HEIGHT as f32);
+        frame_height * 16.0 / 9.0 / 100.0
+    }
+
+    /// The highest the party layout's shield and health block may reach:
+    /// the top of the party's status band (`PARTY_STATUS_BAND`).
+    pub fn party_floor(&self) -> f32 {
+        CANVAS_HEIGHT as f32 - PARTY_STATUS_BAND * self.cq()
+    }
+
+    /// The party's top-centre column (left, right), canvas units.
+    pub fn party_column(&self) -> [f32; 2] {
+        let mid = self.width as f32 / 2.0;
+        [mid - PARTY_TOP_COLUMN * self.cq(), mid + PARTY_TOP_COLUMN * self.cq()]
     }
 
     /// A canvas rectangle in screen pixels (left, top, width, height).
@@ -211,12 +249,17 @@ pub fn rect_bounds(rects: impl IntoIterator<Item = [f32; 4]>) -> Option<[f32; 4]
 
 /// The party layout's move of the shield and health `block` (its bounding
 /// box): its bottom-left corner onto the `tracker`'s, then back inside the
-/// safe `frame` if it pokes out (canvas units, x and y).
-pub fn party_offset(block: [f32; 4], tracker: [f32; 4], frame: [i32; 4]) -> [f32; 2] {
+/// safe `frame` if it pokes out, then down to `floor` if its top is above
+/// it (the party's status band: `Canvas::party_floor`), never past the
+/// canvas's bottom (canvas units, x and y).
+pub fn party_offset(block: [f32; 4], tracker: [f32; 4], frame: [i32; 4], floor: f32) -> [f32; 2] {
     let mut d = [tracker[0] - block[0], tracker[3] - block[3]];
     let f = frame.map(|v| v as f32);
     d[0] += (f[0] - (block[0] + d[0])).max(0.0) - ((block[2] + d[0]) - f[2]).max(0.0);
     d[1] += (f[1] - (block[1] + d[1])).max(0.0) - ((block[3] + d[1]) - f[3]).max(0.0);
+    if block[1] + d[1] < floor {
+        d[1] = (floor - block[1]).min(CANVAS_HEIGHT as f32 - block[3]).max(d[1]);
+    }
     d
 }
 
@@ -231,5 +274,25 @@ mod tests {
         assert!((c.scale - 2.25).abs() < 1e-6);
         assert_eq!(c.frame(), [48, 36, 805, 444]);
         assert_eq!(Canvas::of(1280.0, 960.0).frame(), [48, 36, 592, 444]);
+    }
+
+    #[test]
+    fn the_party_band_follows_the_largest_sixteen_by_nine_frame() {
+        let wide = Canvas::of(1280.0, 720.0);
+        assert!((wide.cq() - 480.0 / 56.25).abs() < 0.01, "{}", wide.cq());
+        assert!((Canvas::of(2560.0, 1080.0).cq() - wide.cq()).abs() < 0.01);
+        let square = Canvas::of(1280.0, 960.0);
+        assert!((square.cq() - 6.4).abs() < 1e-4);
+        assert!((wide.party_floor() - (480.0 - 8.4 * wide.cq())).abs() < 1e-4);
+        // The disc's block (34 units tall) under the tracker's corner fits
+        // under a 16:9 window's band; a 4:3 one's is lower: moved down.
+        let block = [463.0, 36.0, 597.0, 70.0];
+        let tracker = [48.0, 316.0, 176.0, 444.0];
+        let d = party_offset(block, tracker, wide.frame(), wide.party_floor());
+        assert_eq!(d, [48.0 - 463.0, 444.0 - 70.0]);
+        let d = party_offset(block, tracker, square.frame(), square.party_floor());
+        assert!((block[1] + d[1] - square.party_floor()).abs() < 1e-4 && block[3] + d[1] <= 480.0, "{d:?}");
+        let [l, r] = square.party_column();
+        assert!((l - (320.0 - 19.2 * 6.4)).abs() < 1e-3 && (r - (320.0 + 19.2 * 6.4)).abs() < 1e-3);
     }
 }
