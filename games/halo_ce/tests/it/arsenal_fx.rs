@@ -415,3 +415,35 @@ fn a_particle_systems_explosion() {
         assert!(s.current_alpha() > 0.0);
     }
 }
+
+/// multiplayer_rules.md 5.4: a dead player's weapon lies where it died, as
+/// an item (on a map whose pickups play).
+#[test]
+fn a_dead_players_weapon_is_dropped() {
+    use halo_ce::game::weapons::{PISTOL, ROCKET_LAUNCHER, pickups::{NetgameEntry, spawn_entry}};
+    let (mut sim, p, _) = super::weapons::armed(ROCKET_LAUNCHER);
+    spawn_entry(sim.app.world_mut(), NetgameEntry { index: 0, at: Vec3::new(500.0, 0.0, 500.0), period: 900, items: Vec::new(), levitate: false });
+    let at = sim.position(p) - Vec3::Z * 4.0;
+    let t = sim.spawn_character(at, movement::ID);
+    sim.ticks(2);
+    give(sim.app.world_mut(), t, PISTOL).unwrap();
+    sim.seconds(2.0);
+    let mut died = sim.app.world().resource::<Messages<chimera_core::core::Died>>().get_cursor_current();
+    let mut dead = false;
+    for k in 0..60 {
+        sim.intent(p).fire = k == 0;
+        sim.ticks(1);
+        dead |= died.read(sim.app.world().resource::<Messages<chimera_core::core::Died>>()).any(|d| d.entity == t);
+        if dead {
+            sim.ticks(3);
+            break;
+        }
+    }
+    assert!(dead, "the rocket killed");
+    let w = sim.app.world_mut();
+    let items: Vec<(Item, Vec3)> = w.query::<(&HaloItem, &Transform)>().iter(w).map(|(i, t)| (i.item.clone(), t.translation)).collect();
+    assert!(
+        items.iter().any(|(i, x)| matches!(i, Item::Weapon { id, .. } if *id == PISTOL) && x.distance(at) < 2.0),
+        "the pistol lies where it died: {items:?}"
+    );
+}
