@@ -26,6 +26,9 @@
 //!   arms, played from the weapons' events one frame a tick, hidden while
 //!   zoomed, and its held model and stance; on Halo's maps and, from the
 //!   donor map, on any other;
+//! - `fx`: the guns' sounds and effects (effects.md, sounds.md): the library
+//!   from the donor map, effects played as the engine's sounds, particles,
+//!   decals and lights, shots shown on every machine;
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
 //!   the donor map, `map/<name>` per multiplayer map); `mount::build` reads
 //!   the install's build from a map header;
@@ -37,6 +40,7 @@
 
 pub mod body;
 pub mod damage;
+pub mod fx;
 pub mod maps;
 pub mod mount;
 pub mod movement;
@@ -146,6 +150,7 @@ impl PluginGroup for HaloPlugins {
             .add(vitality::VitalityPlugin)
             .add(damage::DamagePlugin)
             .add(weapons::HaloWeaponsPlugin)
+            .add(fx::HaloFxPlugin)
             .add(body::HaloBodyPlugin)
             .add(view::HaloViewPlugin)
     }
@@ -163,7 +168,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     info: &INFO,
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
-    guest: Some(&view::load::GUEST),
+    guest: Some(&fx::load::GUEST),
     kept: &[],
     binds: &[],
     view_model_fov: Some(view::fov),

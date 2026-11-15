@@ -23,8 +23,11 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net55` since the lobby's rows carry each
-   player's avatar (its `cl_avatar` userinfo); `net54` (Combat Arms'
+   The network version is `net56` since Halo's players travel (its
+   movement's and weapons' predicted state, its vitality, its shots
+   shown on every machine: the party apps add them for Halo's guns);
+   `net55` (the lobby's rows carry each player's avatar, its
+   `cl_avatar` userinfo), `net54` (Combat Arms'
    damage screen effects travel, each character's lasting-damage types, a
    jump's escape from poison, and its kill call-outs reach the killer's
    and the victim's teams), `net53` (kills carry their domination flags and each player's

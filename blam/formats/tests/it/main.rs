@@ -10,6 +10,7 @@ mod bsp_fixture;
 mod cache;
 mod collision;
 mod disc;
+mod effect;
 mod fixture;
 mod map_fixture;
 mod model;
@@ -31,6 +32,7 @@ mod heavy {
     mod bsp_install;
     mod cache_install;
     mod disc_install;
+    mod effect_install;
     mod maps;
     mod model_install;
     mod scenario_install;

@@ -17,9 +17,10 @@
 //!
 //! Known shortcuts: a shot starts at the eye (the weapon's trigger marker,
 //! moved onto the camera ray, has no model yet to come from; the four have
-//! no first-person offset); a fired projectile is the server's only (no
-//! replicated entity yet: the shooter's client predicts the weapon, ammo,
-//! heat and the shot's `HaloFired`, not the projectile); later updates of
+//! no first-person offset); a fired projectile's flight is the server's
+//! (the shooter's client predicts the weapon, ammo, heat and the shot's
+//! `HaloFired`; every machine shows the projectile by flying it again from
+//! the shot, `fx::shots`, the server sending others' shots); later updates of
 //! a projectile meet characters where they are now (lag compensation
 //! rewinds the firing tick's update only); the hit's "shield or body"
 //! material is the target's shield above 0 before the hit (the seam knows

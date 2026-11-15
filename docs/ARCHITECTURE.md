@@ -314,7 +314,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   played per 30 Hz tick by Halo's own view machine through
   `Animator::fixed`, beside the engine's `ViewAnimator`; its held model
   on the Spartan's hand marker; from the donor map on other games' maps
-  (`view::load::GUEST`). Halo's files reach
+  (`view::load::GUEST`). `game::fx` gives Halo's guns their sounds and
+  effects from the donor map's effect tags: firing effects, muzzle
+  lights and kicks, visible projectiles flown again on every machine
+  from the shots the server sends (net part `halo_ce_shots`), and
+  impacts by surface material through the engine's impact route. Halo's
+  files reach
   players without the disc through the asset store: `chimera_pack
   pack|sets halo_ce` packs the disc's own files under the build its
   maps' headers name (`game::mount::build`), `base` the donor map and

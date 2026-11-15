@@ -69,6 +69,6 @@ pub fn add_map_pool(app: &mut bevy::app::App) {
 pub fn add_guns(app: &mut bevy::app::App) {
     if !app.is_plugin_added::<super::weapons::HaloWeaponsPlugin>() {
         super::movement::register(app);
-        app.add_plugins((super::vitality::VitalityPlugin, super::damage::DamagePlugin, super::weapons::HaloWeaponsPlugin));
+        app.add_plugins((super::vitality::VitalityPlugin, super::damage::DamagePlugin, super::weapons::HaloWeaponsPlugin, super::fx::HaloFxPlugin));
     }
 }
