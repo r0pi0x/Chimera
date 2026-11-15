@@ -231,6 +231,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         // Its guns as rungs: its movement (not the match's), its vitality
         // and damage seam, its weapons (`parts::add_guns`).
         parts::add_guns(app);
+        weapons::grenades::party(app);
         // Its players' body, worn by its guns' holders (`body`).
         app.add_plugins(body::HaloBodyPlugin);
         app.add_plugins(view::HaloViewPlugin);

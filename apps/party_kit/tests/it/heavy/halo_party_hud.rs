@@ -9,7 +9,9 @@
 //! `overlay_guard`'s every-HUD setup), nor the Signal look's places from
 //! Ultimate Gun Game's theme (its kill feed top right, the race chip and
 //! the rank-up toast top centre, the chat's lines above the bottom-left
-//! status band). Passes with a note without the disc image.
+//! status band), with the party's grenade switch off (no grenade plate
+//! drawn) and on. And a Halo map in the party has no Halo equipment (no
+//! grenade to pick up). Passes with a note without the disc image.
 
 use std::sync::Arc;
 
@@ -17,6 +19,7 @@ use bevy::{prelude::*, window::PrimaryWindow};
 use chimera_client::client::kill_feed::{FeedName, KillEntry, KillFeed};
 use chimera_core::{core::DamageKind, gameplay::Gameplay};
 use chimera_world::harness::Sim;
+use halo_ce::game::weapons::{HaloHands, grenades::PartyGrenades};
 use halo_ce::ui::hud::{
     HaloHudLayout,
     data::HudData,
@@ -103,7 +106,13 @@ fn a_halo_rung_holders_hud_leaves_the_partys_overlay_free() {
             at,
         });
     }
-    for (w, h) in SIZES {
+    // The party's grenade switch off (its default) and on: no grenade
+    // plate, then the plate (a new life's frags).
+    for (grenades, (w, h)) in [false, true].into_iter().flat_map(|g| SIZES.map(|s| (g, s))) {
+        sim.app.insert_resource(PartyGrenades(grenades));
+        if let Some(mut hands) = sim.app.world_mut().get_mut::<HaloHands>(me) {
+            hands.armed = false;
+        }
         let laid = crate::overlay_guard::layout(&mut sim, me, halo_ce::game::GAME, (w, h));
         assert_eq!(sim.app.world().resource::<Gameplay>().hud, halo_ce::game::GAME);
         let win = {
@@ -114,6 +123,7 @@ fn a_halo_rung_holders_hud_leaves_the_partys_overlay_free() {
         let ours = blocks(&sim);
         let names: Vec<&str> = ours.iter().map(|(n, _)| *n).collect();
         assert!(names.contains(&"ammunition") && names.contains(&"shield and health"), "{names:?} at {w}x{h}");
+        assert_eq!(names.contains(&"grenades"), grenades, "the grenade plate with the switch {grenades}: {names:?} at {w}x{h}");
         // The shell's overlay as laid out: every node with words in it
         // (the feed's rows and their names, the panel's lines, the callout).
         let rows: Vec<&crate::overlay_guard::Laid> =
@@ -135,3 +145,25 @@ fn a_halo_rung_holders_hud_leaves_the_partys_overlay_free() {
     }
 }
 
+/// No Halo equipment on a Halo map in the party: its netgame equipment
+/// (the grenades among it) is the kit of a map played by Halo's own rules
+/// (`halo_ce::game::weapons::pickups::ENTRY_CLASS` entities, read only
+/// when the map's game is the gameplay's, `map::KitLoad::pickups`), so the
+/// party's load of Hang 'Em High and Blood Gulch has none, while Halo's
+/// own load of the same map has its grenades.
+#[test]
+fn no_halo_grenade_pickups_on_a_party_halo_map() {
+    use chimera_world::map::MapLoadOptions;
+    use halo_ce::game::weapons::pickups::ENTRY_CLASS;
+    if halo_ce::game::INFO.mount().is_none() {
+        eprintln!("skipping: no Halo CE disc image");
+        return;
+    }
+    let entries = |m: &chimera_world::map::MapData| m.entities.iter().filter(|e| e.classname() == ENTRY_CLASS).count();
+    for id in ["halo_ce:hangemhigh", "halo_ce:bloodgulch"] {
+        let party = party_kit::load_map_with(id, &MapLoadOptions::lean()).unwrap();
+        assert_eq!(entries(&party), 0, "{id}: no equipment in the party");
+        let own = (halo_ce::game::MAP_LOADER.load)(id.split_once(':').unwrap().1, &MapLoadOptions::lean()).unwrap();
+        assert!(entries(&own) > 0, "{id}: Halo's own load has its equipment");
+    }
+}

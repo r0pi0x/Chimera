@@ -804,7 +804,7 @@ pub fn run(
     role: Option<Res<NetRole>>,
     actions: Option<Res<ActionRegistry>>,
     spartan: Option<Res<Spartan>>,
-    (grenades, bend): (Res<GrenadeData>, Option<Res<aim::Bend>>),
+    (grenades, bend, party): (Res<GrenadeData>, Option<Res<aim::Bend>>, Option<Res<grenades::PartyGrenades>>),
     mut most: Local<u32>,
     mut commands: Commands,
 ) {
@@ -813,6 +813,8 @@ pub fn run(
     let bit = |name: &str| actions.as_deref().map_or(0, |a| a.bit(name));
     let (melee_bit, zoom_bit, grenade_bit) = (bit(MELEE_ACTION), bit(ZOOM_ACTION), bit(grenades::GRENADE_ACTION));
     let switch_bit = bit(grenades::SWITCH_ACTION);
+    // A party app's switch off: no grenades, the buttons dead.
+    let no_grenades = grenades::PartyGrenades::none(party.as_deref());
     *most = (*most).max(holders.iter().count() as u32);
     let players = *most;
     for (owner, intent, inv, at, state, vel, health, mut hands) in &mut holders {
@@ -825,15 +827,18 @@ pub fn run(
             hands.armed = false;
         } else if !hands.armed {
             hands.armed = true;
-            hands.throw = Throw::new(grenades.start(grenades.cap(players)));
+            hands.throw = Throw::new(if no_grenades { [0, 0] } else { grenades.start(grenades.cap(players)) });
+        }
+        if no_grenades && hands.throw != Throw::new([0, 0]) && !hands.throw.busy() {
+            hands.throw = Throw::new([0, 0]);
         }
         // The inputs seen since the last Halo tick.
         hands.fire |= intent.fire;
         hands.zoom |= intent.secondary || intent.actions & zoom_bit != 0;
         hands.melee_button |= intent.actions & melee_bit != 0;
         hands.reload |= intent.reload;
-        hands.grenade_button |= grenade_bit != 0 && intent.actions & grenade_bit != 0;
-        hands.switch_button |= switch_bit != 0 && intent.actions & switch_bit != 0;
+        hands.grenade_button |= !no_grenades && grenade_bit != 0 && intent.actions & grenade_bit != 0;
+        hands.switch_button |= !no_grenades && switch_bit != 0 && intent.actions & switch_bit != 0;
         if n == 0 {
             continue;
         }

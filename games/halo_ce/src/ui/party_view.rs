@@ -34,6 +34,7 @@ pub fn camera_fov(player: f32, zoomed: f32, extra: f32) -> f32 {
 }
 
 /// The local player's Halo zoom on the first-person camera (module doc).
+#[allow(clippy::type_complexity)]
 pub fn zoom(
     player: Option<Single<(&Inventory, Option<&Zoomed>), With<LocalPlayer>>>,
     guns: Query<(), With<HaloGun>>,

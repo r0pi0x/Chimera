@@ -64,7 +64,7 @@ fn game_of(id: &str) -> &str {
 }
 
 /// The party playing `LADDER` with a body of each game.
-fn party() -> Sim {
+pub(crate) fn party() -> Sim {
     let mut sim = Sim::with(CaSim, |app| {
         app.add_plugins((GreyboxMapPlugin, MapSimPlugin::empty(), PartyPartsPlugin, KillFeedStatePlugin));
     });
@@ -93,7 +93,7 @@ fn party() -> Sim {
     sim
 }
 
-fn set_rung(sim: &mut Sim, e: Entity, r: usize) {
+pub(crate) fn set_rung(sim: &mut Sim, e: Entity, r: usize) {
     let w = sim.app.world_mut();
     let l = w.resource::<Ladder>().clone();
     minigame::ladder::set_rung(w, e, r, &l);
