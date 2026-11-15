@@ -1133,17 +1133,36 @@ are first person throughout.
    0.6 (every point of the disc's tracks: |o| >= 1.02) the D terms
    cancel: **the camera sits at C = F + o_x H + o_y Hleft + o_z z**,
    the track point itself, looking along L.
-5. **Pull-in.** From Q a ray goes back along −L for D + 0.02 WU against
-   front-facing faces of the structure BSP, water surfaces (unless Q is
-   under water) and scenery (not vehicles, bipeds or machines). Hit at
-   fraction t1: four more rays to the same end point displaced by
-   ±0.174 D along the camera's up and along its left; if one of them
-   hits nearer (fraction t2) a 10-step bisection on the displacement
-   finds the edge, and the distance becomes D × ((1 − s) t2 + s t1)
-   with s the edge's displacement fraction; otherwise D × t1. The
-   camera is at Q − L × that distance. No hit: C as above. Finally a
-   camera within 0.05 WU of a water surface is moved to 0.05 WU from it
-   on its own side.
+5. **Pull-in.** All rays below start at Q, test front-facing faces of
+   the structure BSP, water surfaces (unless Q is under water) and
+   scenery (not vehicles, bipeds or machines), and report the fraction
+   of their own length at the first hit. E = Q − (D + 0.02) L is the
+   desired end; step = 0.174 D; U is the camera's up and W = U × L its
+   left.
+   1. **Centre ray** Q to E: fraction t1 (t1 = 1 when it misses).
+   2. **Four probes**, in this order, to E − step U, E − step W,
+      E + step U, E + step W. The probe kept is the one with the
+      smallest fraction that is strictly below the best so far (the
+      best starts at t1, so a probe must hit nearer than the centre; on
+      a tie the earlier probe stays). Its fraction is t2, its direction
+      P (one of ±U, ±W, sign included). **A probe can be kept when the
+      centre ray missed** (t1 = 1): a wall just beside the line still
+      pulls the camera in.
+   3. No probe kept: the distance becomes D × t1 (D unchanged when the
+      centre ray missed too).
+   4. A probe kept: bisect the displacement m (the ray to E + m step P)
+      between lo = 0 and hi = 1 for exactly 10 steps, starting with
+      last-hit = t2 and last-miss = t1. Each step tests m = (lo + hi)/2:
+      if that ray hits **and** its fraction is within 0.1 of last-hit
+      (the same near surface), hi = m and last-hit = that fraction;
+      otherwise lo = m and last-miss = its fraction if it hit, 1 if it
+      missed. After the 10 steps the edge s is **lo when last-miss <
+      last-hit, else hi** (not the midpoint), and the distance becomes
+      D × ((1 − s) t2 + s t1). (t2 here is the kept probe's fraction,
+      not the last bisection hit.)
+   The camera is at Q − L × that distance; with no pull-in this is C
+   above. Finally a camera within 0.05 WU of a water surface is moved
+   to 0.05 WU from it on its own side.
 6. **Field of view** 70 degrees, whatever the zoom. **Smoothing:** none
    in steady play. The camera is placed exactly where steps 1 to 5 put
    it, every frame, with no lag, spring or low-pass filter, whether the
@@ -1186,11 +1205,23 @@ timer, and the observer:
    against that frame's target, so a moving target is followed smoothly
    and reached exactly when the timer ends. For the focus position the
    curve also carries an end-velocity term built from the command's
-   focus velocity u (per tick, x 30 for per second): A -= 3 u / T^4,
-   B += 8 u / T^3, C -= 6 u / T^2 and u r is added to y. (Its sign
-   convention was not traced through; a port that ends the focus at
-   the vehicle's own velocity, or at rest, differs only during the
-   1 s transitions.)
+   focus velocity: u is the followed unit's velocity (the player's own
+   unit, the rider while seated) in WU per tick and U = 30 u per
+   second: A -= 3 U / T^4, B += 8 U / T^3, C -= 6 U / T^2 and U r is
+   added to y. These terms leave y(T), the start velocity and the start
+   acceleration unchanged and make dy/dr = U at r = 0. Since r runs
+   backwards in time, the focus's velocity in time at the end of the
+   transition is **−U**: the curve is fitted to arrive moving against
+   the unit's motion (a quirk of the sign: the term is positive where
+   a "match the target's motion" end condition would need it negative).
+   The parameter's stored velocity is likewise dy/dr, the negative of
+   its velocity in time; when a parameter snaps its stored velocity is
+   −(target − old)/dt (0 for a forced timer). Because the fit is redone
+   every frame and the parameter snaps to the target when the timer
+   runs out, the effect is confined to the 1 s transitions; a port
+   that ends the focus at rest differs only during them, and only
+   while the unit moves. (Whether a seated rider's own velocity is the
+   vehicle's is not traced: Open questions.)
 3. **Acceleration cap.** If any value's acceleration at r = T - dt
    exceeds 1500 WU/s^2 (focus position, focus offset) or 100 000 (the
    distance, field of view and orientation), that parameter's timer
@@ -1271,7 +1302,20 @@ Full lists: Warthog loose x, z per point (pitch −90, −67.5, ..., +90):
 (−1.8471, −0.1524). Banshee: (1.6825, 4.2036), (−0.3336, 4.0599),
 (−1.9989, 3.2481), (−2.6678, 2.3735), (−2.9329, 1.1784), (−2.7761,
 0.0856), (−2.3899, −0.8667), (−1.7120, −1.7484), (−0.7176, −2.4833).
-y is 0 on all three.
+y is 0 on all three. The globals' default unit camera track (x, y, z,
+the same nine pitches): (0.2387, −0.0058, 3.8862), (−1.4858, −0.0019,
+3.6764), (−2.8604, 0.0004, 2.9561), (−3.5224, 0.0009, 1.8384),
+(−3.6826, −0.0001, 0.5752), (−3.1813, −0.0038, −0.7709), (−2.0725,
+−0.0070, −1.5752), (−0.9813, −0.0070, −1.8648), (−0.0381, −0.0038,
+−1.9795). Every track on the disc has 9 points (also the unused
+`camera\warthog_driver_tight`, x, z: (−0.1282, 1.0641), (−0.2322,
+1.0129), (−0.3042, 0.9482), (−0.3831, 0.8272), (−0.3947, 0.7195),
+(−0.3698, 0.6719), (−0.3550, 0.6537), (−0.3322, 0.6454), (−0.2999,
+0.6385)); each point also stores an orientation (a pitch quaternion
+matching its angle), which the seat camera does not read. The camera's
+distance is also multiplied by a per-camera distance scale, 1 in play:
+offset (D cos θ + o_x, −o_y, D sin θ + o_z) × scale and D' = max((D −
+0.6) × scale + 0.6, 0.6).
 
 **Look limits and rates per seat** (the rules above; angles in
 degrees; "player" = the player's own look rate; yaw arcs relative to
@@ -1351,15 +1395,102 @@ animation set holds a weapon (Weapons on entering and leaving):
 - **Warthog passenger: holds and fires its own weapon** with every
   multiplayer weapon (rifle, pistol, missile and support classes), in
   first person, aiming with its own look limited to the seat's ±90
-  degree arc; reloading and grenades work as on foot.
+  degree arc; reloading works as on foot (the reload's length comes
+  from the weapon's first-person animation, not the rider's), but
+  **no seated unit can throw a grenade or melee** (below).
 - Scorpion riders: hold and fire their own weapon, except the
   flamethrower (no `ft` type in their sets: it is stowed).
-- A rider's shots, damage and melee are its own (`weapons.md`); it is
-  not the vehicle's.
+- A rider's shots and damage are its own (`weapons.md`); it is not
+  the vehicle's.
+
+**The seat animation sets on the disc are complete as listed here**
+(the Spartan's graph, every animation whose name starts with a seat
+label): for each of W-driver, W-gunner, W-passenger, G-driver and
+scorpionLF only `enter`, `exit`, the three acceleration overlays
+(`acc-front-back`, `acc-left-right`, `acc-up-down`, 3 frames each;
+none for scorpion-driver), and per class `idle` and `aim-still`
+(W-driver unarmed aim-still 9 frames, W-gunner fixed aim-still 16,
+W-passenger rifle, pistol and missile aim-still 9 each, scorpionLF
+rifle aim-still 9; G-driver and scorpion-driver have none). The
+scorpion-driver set has only enter (65), exit (55) and its 5-frame
+bind-pose idle. Consequences, by the general rules
+(`animations.md`):
+
+1. **No turning, firing, reload, melee or throw animations in any
+   seat.** A seated rider's body never plays a recoil or reload: an
+   overlay or action whose animation is missing is simply not started
+   (the shot, the reload and its timing still happen, from the weapon).
+2. **No grenades and no melee from any seat.** The throw and the three
+   melee states cannot be entered without an animation (the only
+   states with that rule, with the two leap states), so pressing the
+   grenade button or melee in a seat does nothing for a rider; for a
+   driver-gunner the grenade button is the vehicle's trigger 1
+   instead. The grenade count is kept.
+3. **Turning** shows only through the yaw of the rider's aim-still
+   screen (its aiming vector relative to the seat marker) and, for the
+   Warthog driver, the hands following the steering wheel by IK. The
+   rider's body otherwise stays in the idle pose of its seat, which is
+   attached to the seat marker and so follows the vehicle (and the
+   turret, for the gunner).
+4. **Acceleration** is the acceleration lean above; **entering and
+   exiting** are the enter and exit base animations (Entering, exiting
+   and flipping), each started with a 6-tick blend.
+5. **Aim** is the class's aim-still overlay played as an aiming screen
+   on the rider's aiming vector (relative to the seat marker's frame),
+   clipped to the class's bounds (table above). A W-gunner's aim-still
+   turns the upper body with the turret's yaw through ±180 degrees in
+   90-degree columns; a passenger's turns ±90 degrees.
+6. A first-person rider (Warthog passenger, Scorpion riders) holding a
+   weapon sees that weapon's first-person model and animations exactly
+   as on foot (fire, reload, idle), placed at the seat's eye; seats
+   whose rider is unarmed draw no first-person weapon.
 
 **Visibility.** Riders are visible in all seats of the three
 multiplayer vehicles (no seat has the invisible flag); a seated unit's
 flashlight is switched off and cannot be switched on.
+
+**The rider's HUD** (`hud.md` sections 2 and 7 for the pieces). Each
+unit HUD in the list below is chosen as element 0 of its block, or
+element 1 when more than one local player shares the screen (clamped
+to the block's last element):
+
+1. **Unit HUDs.** Always the rider's own (the Spartan's: shield,
+   health, motion tracker, as on foot). A rider in a seat with the
+   **driver** flag also gets the vehicle's own unit HUD (none on the
+   three multiplayer vehicles) and then, for **every seated unit** of
+   the vehicle in its child order (the driver itself included), that
+   unit's seat HUD, drawn with that unit's state; a rider in any other
+   seat gets no seat HUD at all. They are drawn last in the list first,
+   so the rider's own HUD is on top. On the disc: the Warthog driver
+   sees `ui\hud\warthog driver` (a reticle picture, `hud_reticles`
+   sequence 14, at (0, −40) from the bottom centre, anchor 4, colour
+   (40, 150, 255) opaque) plus, when the seats are taken,
+   `ui\hud\passenger_2` (the passenger's health: background sequence 10
+   of the unit-meter page at (12, 31), meter sequence 7 at (12, 41),
+   top-left anchor) and `ui\hud\gunner` (the gunner's health:
+   background sequence 9 at (24, 2), meter at (24, 12)); both meters
+   run from (255, 0, 0) empty to (40, 150, 255) full with the medium
+   colour (255, 223, 0) at cutoffs 0.33 and 0.67, flash (255, 85, 43);
+   these show the riders' health to the driver only. The Ghost and Scorpion seats have
+   no seat HUD, so their riders see only their own.
+2. **Weapon HUD.** The rider's own current weapon's HUD when it holds
+   one (Warthog passenger, Scorpion riders: the weapon's full HUD,
+   ammunition and crosshair, as on foot). A rider holding none in a
+   **gunner** seat gets the vehicle's current weapon's HUD, with the
+   vehicle weapon's state: Warthog gunner `vehicles\warthog\warthog
+   gun` (one crosshair, `hud_reticles` sequence 2, flashing, colour
+   (40, 150, 255), no ammunition counter), Ghost driver
+   `vehicles\ghost\ghost gun` (sequence 13, the same), Scorpion driver
+   `vehicles\scorpion\scorpion cannon` (sequence 11 as the aim
+   crosshair, plus crosshair type 7, "reload / overheat", drawn while
+   magazine 0 reloads or chambers: `hud_reticle_warnings` sequence 9,
+   the five progress frames, at (0, 30) from the centre, so a progress
+   bar shows under the reticle for the cannon's 4 s chamber). None of
+   the three has meters, numbers, overlays, sounds or a screen effect.
+   A rider holding none in a seat without the gunner flag (the Warthog
+   driver) gets **no** weapon HUD, not the empty default.
+3. The weapon-swap prompt (a depleted weapon) is not shown in a driver
+   or gunner seat.
 
 ### Turrets and guns
 
@@ -1424,7 +1555,21 @@ flashlight is switched off and cannot be switched on.
   let the riders use their own (Seated riders).
 - Ghost: driver-gunner, `vehicles\ghost\ghost gun` (5 to 6 shots per
   second, two bolts per shot, error 0.5 to 3 degrees, no heat: heat
-  per round 0; magazine as `weapons.md`). Its **strafing** is the
+  per round 0). **Its ammunition never runs out but it pauses:** the
+  magazine holds 50 loaded rounds of a 300-round reserve and each shot
+  (both bolts) costs 1 round; the reserve is only drawn down for a
+  weapon that belongs to a player (a weapon picked up), which a
+  vehicle's gun never is, so it stays at 300. When the loaded count
+  reaches 0 the gun reloads: the reload's length is the weapon's
+  first-person reload animation, which a vehicle gun lacks, so it ends
+  on the next tick; the magazine is then chambered for its chamber
+  time, 0.3 s (9 ticks). So after every 50 shots (about 9 s of held
+  fire at 5.5 per second) the Ghost stops for about 10 ticks. The
+  gunner's reload button starts the same reload early (when fewer than
+  50 are loaded). The Scorpion's cannon follows the same path every
+  shot (1 loaded round, 9999 reserve never drawn down): fire, reload
+  on the next tick, chamber 4 s; its machine gun and the Warthog's gun
+  use no rounds at all. Its **strafing** is the
   driver's left stick sideways (t_j): the drive targets (V t_i, V t_j)
   in the hull frame, with V the maximum forward speed in every
   direction (The scout).
@@ -1549,6 +1694,16 @@ aiming screen (Turrets and guns) and the object overlays:
   the overlay plays at frame 4 × output, so the barrels spin while the
   gun spins up, fires and spins down, and stop at rate 0. The
   Scorpion's single object overlay names no animation.
+- **Recoil overlays.** The vehicle is the unit holding its gun, so a
+  shot starts the vehicle's own weapon-type recoil overlay
+  (`animations.md`: primary shot fire-1, secondary shot fire-2, in the
+  vehicle graph's `stand` seat, `fixed` class), as for a biped: the
+  Scorpion's `stand fixed cannon fire-1` (22 frames: the cannon's
+  recoil) on each shell and `stand fixed cg fire-2` (5 frames) on each
+  machine-gun round; the Ghost's `stand fixed c ghost gun fire-1` (10
+  frames) on each shot. The Warthog has no recoil overlay (its barrels
+  spin by the `firing` object overlay above). The Scorpion's base is
+  `stand fixed idle` (5 frames, no movement).
 - **Functions for shaders and effects** (Vehicle function sources):
   Warthog B jump/brake, C engine hack; Ghost B engine hack; Scorpion A
   and B the tread positions (scrolling tread textures), D engine hack.
@@ -2052,7 +2207,7 @@ the vehicle.)
 | Ghost at top speed | release | | below 0.001 WU/t after 43 ticks, 4.57 WU on |
 | Ghost hovering | t_i = 1 | 1 s, 2 s, 5 s, 10 s | distance 2.27, 8.35, 28.55, 62.21 WU |
 | Ghost empty, at rest on its spheres | driver enters (power rises 1/60 per tick) | ticks 30, 60, 90 | centre of mass z 0.449, 0.662, 0.668 (hover 0.665) |
-| Ghost hovering still | camera 90 degrees left | ticks 5, 10, 20, 30, 40 | yaw 3.0, 10.9, 41.4, 76.0, 90.5 degrees; peak rate 3.9 degrees per tick; settled at 90 by tick 60 |
+| Ghost hovering still | camera 90 degrees left | ticks 5, 10, 20, 30, 40 | yaw 3.0, 10.9, 41.4, 76.0, 90.5 degrees; peak rate 4.2 degrees per tick (the ideal bang-bang with the 0.2 degree per tick squared cap peaks at exactly 4.2 at tick 21 and gives 3.0, 11.0, 42.0, 76.7, 91.5; the simulation's small losses give the angles stated; the earlier "3.9" was wrong); settled at 90 by tick 60 |
 | Scorpion | none | settled | centre of mass z = 0.49530 (origin 0.07175 above ground) |
 | Scorpion | t_i = 1 | ticks 30, 60, 120, 300 | v = 0.04048, 0.09871, 0.13827, 0.13844 (top: 12.66 m/s) |
 | Scorpion | t_i = 1 | 1 s, 2 s, 4 s, 5 s, 10 s | distance 0.509, 2.619, 10.44, 14.59, 35.36 WU |
@@ -2083,7 +2238,11 @@ the vehicle.)
 | camera track evaluation, θ = −90 degrees, θ = +90 degrees | | | points 0..3 at s = 0 (point 0), points 5..8 at s = 3 (point 8) |
 | third-person command, o = (−2, 0, 1), θ = 0, F = (0, 0, 0), heading +x, no obstruction | | | D = 2.2361; offset (0.2361, 0, 1); Q = (0.2361, 0, 1); camera (−2, 0, 1), looking +x |
 | the same, heading +y (ψ = 90 degrees) | | | camera (0, −2, 1), looking +y |
-| the same, a wall plane facing the camera at x = −1 | | | ray from Q back 2.2561 WU hits at fraction (1.2361/2.2561) = 0.5479: camera at x = 0.2361 − 2.2361 × 0.5479 = −0.9891 (no perturbed ray hits nearer) |
+| the same, a wall plane facing the camera at x = −1 | | | ray from Q back 2.2561 WU hits at fraction (1.2361/2.2561) = 0.5479: camera at x = 0.2361 − 2.2361 × 0.5479 = −0.9891 (the four probes hit the same plane at fractions ≥ 0.5479, none strictly nearer, so no bisection) |
+| pull-in probes, D = 2.2361 | | | step = 0.174 × 2.2361 = 0.3891 WU; probes in the order end − step up, end − step left, end + step up, end + step left |
+| pull-in, D = 2.2361, centre ray misses (t1 = 1), only the "+ step left" probe hits (t2 = 0.4); synthetic edge: rays with m >= 0.3 hit at 0.4, rays with m < 0.3 miss | 10 bisection steps: m = 0.5 hit, 0.25 miss, 0.375 hit, 0.3125 hit, 0.28125 miss, 0.296875 miss, 0.3046875 hit, 0.30078125 hit, 0.298828125 miss, 0.2998046875 miss | | last-miss 1 is not below last-hit 0.4, so s = hi = 0.30078125; distance = D × (0.69921875 × 0.4 + 0.30078125) = D × 0.58046875 = 1.2980 WU (the camera is pulled in although the centre line is clear) |
+| pull-in, bisection where the last non-matching ray hit something nearer (last-miss 0.2 < last-hit 0.4) | | | s = lo (the side toward the centre) |
+| default unit camera track, θ = 0 | | | o = (−3.6826, −0.0001, 0.5752) (point 4) |
 | suspension, Warthog tyre centre 0.2227 WU above flat ground, previous value 0.51 | | | k = (−0.2227 + 0.31445)/0.17993 = 0.510; stored value unchanged |
 | suspension, ground 0.40 below the tyre centre (wheel hanging) | | | k = 0 |
 | suspension, ground 0.10 below the tyre centre | | | k = 1 |
@@ -2114,6 +2273,15 @@ the vehicle.)
 | a player with an assault rifle enters W-passenger | keeps the rifle, animation set W-passenger rifle (idle 40 frames), can fire |
 | a player with an assault rifle enters W-driver or W-gunner | rifle stowed, unarmed; on exit the rifle is readied again |
 | a player with a flamethrower enters a Scorpion rider seat | flamethrower stowed (no `ft` type) |
+| Warthog passenger with an assault rifle and 2 frag grenades presses the grenade button, then melee | nothing happens (no throw or melee animation in the seat); still 2 grenades |
+| Warthog passenger reloads the assault rifle | the magazine refills after the weapon's own reload time; the rider's third-person body plays no reload |
+| Ghost driver holds fire from a full gun | 50 shots (100 bolts), then about 10 ticks without a shot (a 1-tick reload and the 9-tick chamber), then fire resumes; the reserve stays 300 |
+| Scorpion driver fires the cannon | the cannon fires, the vehicle plays `stand fixed cannon fire-1` (22 frames), the "reload / overheat" crosshair shows the progress frames for the 4 s chamber, the next shell 4 s later |
+| HUD, Warthog driver alone | own Spartan HUD, the `warthog driver` reticle picture at (0, −40) from the bottom centre; no weapon HUD |
+| HUD, Warthog driver with a passenger and a gunner | adds the passenger's and the gunner's health meters (top left, (12, 41) and (24, 12)) |
+| HUD, Warthog gunner | own Spartan HUD and the warthog gun's crosshair (sequence 2); no seat HUDs |
+| HUD, Warthog passenger with a pistol | own Spartan HUD and the pistol's HUD, as on foot |
+| HUD, Ghost driver | own Spartan HUD and the ghost gun crosshair (sequence 13) |
 | Warthog ground-speed overlay, s = 0.255 for 1 tick from W = 0.9 | W = 0.155 (mod 1), frame 0.62 of 4 |
 | Warthog steering overlay, τ = 0.5236 (30 degrees) | 6/7 of the way from the centre frame to the full-left frame |
 | Ghost with camera 90 degrees left | its steering overlay stays at the centre frame (τ = 0) |
@@ -2133,7 +2301,7 @@ the vehicle.)
 | Mass-point step | reference only; the sphere query's depth is the reading of the collision features (collision.md) |
 | Jeep, tank, scout, fighter models | reference only; the jeep's wheel yaw sign traced through the engine's quaternion and matrix conventions |
 | Placement | reference (creation path and game-type substitution) and the disc (flags) |
-| Camera | reference (track evaluation, command, observer placement and pull-in, the observer's transitions and timers); tracks and markers from the disc; worked examples computed from them; the focus end-velocity term's sign not traced |
+| Camera | reference (track evaluation, command, observer placement and pull-in, the observer's transitions and timers); tracks and markers from the disc; worked examples computed from them; the pull-in's probe order, tie rule and bisection end traced; the focus end-velocity sign traced (the end velocity in time is minus the unit's); all tracks re-read from the disc (9 points each) |
 | Rider IK with missing markers | reference (the point is skipped when either marker is missing) |
 | Entering, exiting, seated riders | reference for the rules; marker positions, animation lengths, root tracks, classes and bounds read from the disc (the Spartan's graph and the three models, bind pose) |
 | Turrets, vehicle animation | reference for the rules; screens, nodes, overlays and suspension elements from the disc |
@@ -2141,7 +2309,9 @@ the vehicle.)
 | Collisions, pushes | reference only; damage effect values from `projectiles.md` (disc) |
 | Entering, exiting, flipping, ejection | reference only; the ejection threshold (0.2) is what the reference states the retail game does; its own older build used 0 |
 | Input | reference only |
-| Guns | weapons checked against the disc (triggers, projectiles); routing and shot origin reference only; markers from the disc |
+| Guns | weapons checked against the disc (triggers, projectiles); routing and shot origin reference only; markers from the disc; the Ghost's reload and chamber pause from the reference's magazine rules (the trigger for the automatic reload at 0 loaded not traced line by line; "about 10 ticks" may be 9 to 11) |
+| Seat animation sets, grenades and melee in seats | animation lists read from the disc (every seat animation of the Spartan's graph and the vehicles' graphs); the no-animation rules from the reference |
+| The rider's HUD per seat | selection rules from the reference; HUD tags read from the disc |
 | Damage | vitality from `health_shields.md` (disc); rider fractions checked on the disc; the passthrough rule (non-area only, every seat) reference |
 | Multiplayer placements | checked against the disc (all 13 maps) |
 | Test cases | formula cases computed from the rules; simulation cases from a scratch simulation of the model as written here, on flat ground only; the drop and spawn cases re-run in a second, independent simulation written from this spec, which reproduces every other Warthog, Ghost and Scorpion number of the tables to the digits given |
@@ -2182,8 +2352,10 @@ the vehicle.)
     35, 36 are on the disc, so only those matter.
 11. **The observer's smoothing.** Settled from the reference (Third-
     person camera, The observer's transitions): no lag in steady play;
-    quintic eases only over the 1 s and 0.5 s transitions. Open: the
-    sign of the focus end-velocity term, and the exact frame on which a
+    quintic eases only over the 1 s and 0.5 s transitions. The focus
+    end-velocity sign is now traced (Third-person camera, step 2 of the
+    transitions). Open: whether a seated rider's own object velocity
+    (which the term reads) is the vehicle's or 0, and the exact frame on which a
     seat change is seen (it compares the followed unit and seat with
     the previous frame's). Check on video that entering a Warthog eases
     the camera out over 1 s and that driving shows no trailing.

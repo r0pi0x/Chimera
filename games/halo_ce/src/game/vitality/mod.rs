@@ -449,7 +449,7 @@ pub fn mirror(v: &Vitality, health: &mut Health, armor: Option<&mut Armor>, mirr
 /// spec's tick (`Vitality::tick`), the values written back, then the
 /// tick's pickups.
 #[allow(clippy::type_complexity)]
-fn update(
+pub fn update(
     mut q: Query<(Entity, &mut Vitality, &mut Health, Option<&mut Armor>, Option<&mut Stun>, Option<&mut Mirrored>)>,
     spartan: Res<Spartan>,
     clock: Res<crate::core::SimClock>,

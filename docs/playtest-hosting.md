@@ -25,8 +25,12 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    Run the server from the same release's zip, or from the same commit.
    The network version is `net62` since who sits in which seat of Halo's
    vehicles goes to every client (net part `halo_ce_vehicles`: a rider's
-   seat by the vehicle's map prop) and the party apps add Halo's vehicles
-   on its maps; `net59` (Halo's players carry the grenade
+   seat by the vehicle's map prop; the party apps place Halo's vehicles
+   only with `halo_ce:party_vehicles 1`); `net61` (a dead Halo player's
+   body is an object of its own sent to every client: its death animation,
+   colour and fall, net part `halo_ce_corpses`), `net60` (Halo's match: its
+   game type, team scores, clock and game over, sent to every client as
+   net part `halo_ce_match`), `net59` (Halo's players carry the grenade
    kind they have selected: the rotate-grenades button, `+grenade_switch`,
    rides the command's action bits; the kind is in the predicted state),
    `net58` (Halo's shots carry their trigger

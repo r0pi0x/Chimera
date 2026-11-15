@@ -10,8 +10,10 @@ used for behaviour. The disc's numbers win wherever both speak.
 Status: draft
 
 Sections: Summary; Units and conventions; Constants; 1 The game type
-definition; 2 The stock game types; 3 Teams; 4 Spawning; 5 Pickups; 6
-Scoring and the end of a game; 7 The radar; 8 Vehicles; 9 The
+definition; 2 The stock game types; 3 Teams (3.1 friendly fire and
+balance); 4 Spawning; 5 Pickups; 6 Scoring and the end of a game (6.4.1
+the flag object and its cloth); 7 The radar (7.1 objective markers); 8
+Vehicles; 9 The
 announcer; 10 Per-tick order; 11 Measured facts; 12 Checks run; Edge
 cases; Quirks; Test cases; Confidence per section; Open questions.
 
@@ -92,7 +94,7 @@ spec:
 | FRIEND_BONUS_CAP | 3.0 | | cap on the sum before scaling: bonus = 3 x sum + 1, 1 to 10 |
 | ITEM_DEFAULT_PERIOD | 30 | s | item period when neither entry nor collection names one (reference; `scenario.md`) |
 | ITEM_UNOWNED_LIFE | 900 | ticks | an unheld item older than this is deleted (reference) |
-| CORPSE_LIFE | 900 | ticks | a dead biped lying idle this long is deleted (reference) |
+| CORPSE_LIFE | 900 | ticks | a dead biped lying idle this long is deleted (reference); "idle" means at rest, not moving: `health_shields.md`, The body |
 | GRENADE_MAX | 4 frag, 4 plasma | count | globals, `maximum count` (disc) |
 | GRENADE_MP_DEFAULT | 0, 0 | count | globals, `mp spawn default` of each (disc); not read by the reference |
 | STARTING_GRENADES_5PLUS | 2 | count | cap on starting grenades of each kind once the game began with 5 or more players (reference) |
@@ -112,13 +114,18 @@ spec:
 | ANNOUNCER_GAP | 5 | ticks | added to a line's length when it is queued (reference) |
 | CTF_FLAG_RETURN | 17 | s | an unheld flag away from home returns after more than this (reference) |
 | CTF_CAPTURE_RADIUS | 1.0 | WU | carrier within this (3D, strict) of its own flag spot scores (reference) |
-| CTF_WARNING_PERIOD | 20 | s | announcer repeats "has the flag" while a flag is taken (reference) |
+| CTF_WARNING_PERIOD | 600 | ticks | announcer repeats "has the flag" while a flag is taken, when a counter exceeds this: every 601 ticks (reference) |
+| GOAL_RISE | 0.63 | WU | an objective marker's point is raised by this (reference; 7.1) |
+| HILL_LONE_FLAG_HALF | 1.0 | WU | a lone hill flag's square: x and y plus or minus this, world axes (reference) |
+| HILL_WALL_HEIGHT | 0.8 | WU | the hill's drawn walls (reference) |
+| FLAG_CLOTH | 16 x 13, 0.025 | vertices, WU | the flag's cloth grid and spacing (disc; 6.4.1) |
+| FLAG_CLOTH_POINT_RADIUS | 0.02 | WU | radius used for the cloth's point physics (reference) |
 | CTF_FAILURE_PERIOD | 4 | s | at most one "flag failure" sound per this (reference) |
 | ODDBALL_START_BALL | 15 | s | ball n appears 15 s x (n + 1) after the start (reference) |
 | ODDBALL_RESET | 40 | s | an unheld ball away from its spot resets after more than this (reference) |
 | ODDBALL_MAX_BALLS | 16 | count | (reference; `scenario.md`) |
 | KING_MOVE_PERIOD | 60 | s | a moving hill moves this often (reference) |
-| KING_CONTROL_TIME | 10 | s | a hill held this long uncontested makes "contested" audible (reference) |
+| KING_CONTROL_TIME | 300 | ticks | a hill held this long by one side plays "hill controlled" (at exactly 300) and makes a later "hill contested" audible (above 300) (reference) |
 | HILL_BOTTOM, HILL_TOP | -0.1, +0.8 | WU | hill volume against the lowest and highest flag (reference; `scenario.md`) |
 | RACE_MAX_FLAGS | 32 | count | checkpoints (reference) |
 | RACE_MAX_VEHICLES | 8 | count | vehicles a race creates (reference) |
@@ -250,10 +257,10 @@ leaving. Defaults are what a variant without them gets.
 | Option | Values | Default | Effect |
 |---|---|---|---|
 | time limit | minutes, 0 none | none | the game ends when the game clock reaches it |
-| friendly fire | on, off, shields only, explosives only | on | applies in team games only, to a teammate's hit (never to oneself): off removes the damage, shields only lets it hit shields, explosives only lets explosions through |
+| friendly fire | on, off, shields only, explosives only | on | applies in team games only, to a hit by another player on a teammate's object (never to oneself, never to a hit with no player behind it); rules in 3.1 |
 | friendly fire penalty | seconds | 0 | added to a team killer's next respawn |
 | vehicle respawn time | seconds, 0 never | never | an empty vehicle more than 2 WU from its home, or a wreck, is replaced after this |
-| auto team balance | on / off | off | at a death, a player on a team 2 or more larger moves to the other team |
+| auto team balance | on / off | off | before the game starts only: the lobby's teams are kept within one player of each other (3.1); nobody is moved during play |
 | radar players | all, friends, none | all (none if flag bit 0 clear) | which units show on the motion tracker |
 | vehicle set and counts per team | | the variant's | which vehicles each team's nearer placements keep |
 | loadout | category (weapon set), custom primary/secondary | category | custom replaces every weapon by the two chosen |
@@ -362,7 +369,7 @@ Notes:
   killer scores -1 in slayer; the victim's respawn gets the suicide
   penalty added (it is not "a kill by an enemy"). Nothing else is
   charged. The PC options of section 1.6 add a friendly fire mode, a
-  respawn penalty for the team killer and auto balance.
+  respawn penalty for the team killer and auto balance (section 3.1).
 - **Balance.** The Xbox game has none after the game starts except the
   lobby's rule above. The game ends at once if every player who is
   still alive or has lives left is on one team (and there was more than
@@ -370,6 +377,51 @@ Notes:
 - Capture the flag, oddball with teams, king of the hill with teams
   and race with teams score per team; slayer with teams scores per
   team and per player (section 6.2).
+
+### 3.1 Friendly fire and team balance
+
+**The Xbox game (disc and reference agree): there is no friendly fire
+option and no balancing.** The 0x68-byte variant (1.1) has no field for
+either and the setup menus offer neither (1.5). A teammate's hit always
+does damage; what makes it different is only the collision model's
+friendly rules (`health_shields.md`, "Friendly": the hit is marked
+friendly when the instigator's team is not an enemy of the victim's
+object's owner team; for the Spartan the friendly damage resistance is
+0 and the "always shields friendly damage" flag lets the shield take the
+whole hit), so friendly and enemy hits on a Spartan do the same damage.
+
+**The PC options of 1.6, for a port that offers them** (from the
+reference's own additions; they are not Xbox behaviour and should be off
+or "on" by default):
+
+1. Friendly fire mode, consulted for each object a hit reaches when the
+   hit is friendly (as above), the game has teams, the hit has a player
+   instigator and that player's own unit is not the object hit:
+   - **on**: the hit is dealt in full (the Xbox rule);
+   - **off**: nothing: no shield damage, no body damage, and an
+     instant-kill hit (a melee from behind, a kill-instantly effect) does
+     not kill;
+   - **shields only**: the shield step runs as usual (a shield can be
+     emptied); the body step is skipped and an instant kill does not
+     kill, so a teammate can strip shields but never wound or kill;
+   - **explosives only**: as "on" for an explosive hit, as "off" for any
+     other; explosive means the hit is area damage (any explosion's
+     area, `projectiles.md`) or its damage effect's category is grenade
+     or high explosive (so a rocket's or grenade's direct impact counts
+     too).
+   Hits with no player instigator (falling, a vehicle with no driver, the
+   level) and damage to oneself are always full. Vehicles and other
+   objects owned by a team are covered by the same rule (a teammate's
+   occupied vehicle takes no damage with "off").
+2. Friendly fire penalty: seconds added to the team killer's next
+   respawn time (4.2), on a betrayal.
+3. Auto team balance, in the lobby before the game starts: while the
+   two teams' player counts differ by 2 or more, the player of the
+   larger team in the highest slot is moved to the other team (repeat
+   until they differ by at most 1). During the game the setting only
+   refuses a player's own request to change teams when the change would
+   leave the teams 2 or more apart; nobody is moved at a death or
+   respawn.
 - The radar and friend indicators are section 7.
 
 ## 4. Spawning
@@ -898,9 +950,17 @@ created. Flag weapons are objective weapons: never purged, "must be
 readied" and not counted toward the two-weapon limit (`weapons.md`),
 and a carrier loses active camouflage every tick.
 
-- **Grab.** An enemy touching a flag (walking over it) picks it up
-  (flag taken: announcer "red/blue team has the flag" for the
-  **carrier's** team; the same line repeats every 20 s while taken).
+- **Grab.** An enemy touching a flag (walking over it) picks it up.
+  The first pick-up after the flag was last at home (its "handled" bit
+  clear) is a grab: announcer "red/blue team has the flag" for the
+  **carrier's** team, and the owner team's warning starts; a re-pick of
+  a dropped flag is not announced. While the warning is on, the same
+  line repeats: a counter set to 0 at the grab rises by 1 each tick
+  after the check, and when it exceeds 600 the line plays and the
+  counter restarts, so the repeats come every 601 ticks (20.03 s),
+  whether the flag is carried or lying dropped. The warning ends when
+  the flag is returned (touch or timeout), captured, or (single flag)
+  swapped.
 - **Return by touch.** A player of the **owning** team touching their
   own flag when it is away from home (the "handled" bit set: it was
   picked up or dropped) returns it to its spot instantly (a return is
@@ -925,10 +985,23 @@ and a carrier loses active camouflage every tick.
   planting it at the enemy base (the spot where the carrier's team's
   own object sat). The announcer for grabs is not played. (A start
   nearer its own flag is dropped in section 4.3.)
-- **Single flag.** With a nonzero time, one flag is made for a random
-  team at the start; every time the time elapses with the flag not
-  carried, the flag's owner team swaps (the other team now defends)
-  and the flag returns to the new owner's spot.
+- **Single flag.** With a nonzero time T (ticks), one flag is made for
+  a random team at the start (messages "you are on defense" to its
+  team, "you are on attack" to the other; no announcer line at the
+  start beyond "capture the flag"), and a swap timer is set to T. The
+  timer falls by 1 every tick from the start, **carried or not**, and
+  stops at 0. On the first tick on which the timer is 0 and the flag is
+  not held by a unit, the swap happens: the "time expired" message, both
+  warnings off, every flag marker cleared, the flag's owner team
+  changes to the other team, the announcer names the new **attacking**
+  team ("blue team ctf" when red now defends, "red team ctf" when blue
+  does), the flag returns to the new owner's spot (not handled), the
+  timer is set to T again and the defense and attack messages repeat.
+  So a flag carried when the time runs out swaps the moment it is
+  dropped or its carrier dies (it does not wait another T), and while
+  it is carried past T the attackers can still capture it. A capture
+  does not touch the timer. "Flag at home to score" is ignored with a
+  single flag. The 17 s untouched return applies as usual.
 - **Win.** The first team whose score reaches the score to win (in
   captures) wins; a tie score at the limit cannot occur.
 - **Scoring is per team**; a player's own score is their number of
@@ -936,6 +1009,112 @@ and a carrier loses active camouflage every tick.
 
 Kill handling is not part of capture the flag on the disc (kills do not
 score).
+
+#### 6.4.1 The flag object and its cloth
+
+The flag is an ordinary weapon object (`weapons\flag\flag`, class
+`weap`; its weapon rules are `weapons.md`'s and its resting and falling
+are `objects.md`'s) whose model `weapons\flag\flag` (class `mode`) is
+only the pole: one node, `frame pole`, and the markers `flag top` (0, 0,
+0.7436), `flag bottom` (0, 0, 0.3936) and `left hand cyborg` (the
+carrier's grip), positions in the model frame in WU, bind pose. Bounding
+radius 0.45. The cloth is not in the model: it is the object's one
+**widget**, a tag of class `flag` (`weapons\flag\flag`), simulated and
+drawn by the engine. Disc values, identical on every map checked (Blood
+Gulch, Hang 'Em High, Sidewinder, Boarding Action):
+
+| Field | Value | Meaning |
+|---|---|---|
+| width, height | 16, 13 | vertices along the cloth (columns, x = 0 at the pole) and down it (rows, y = 0 at the top): 208 vertices, 15 x 12 cells |
+| cell width, cell height | 0.025, 0.025 WU | rest distances between neighbours: the cloth is 0.375 WU long and 0.3 WU tall at rest |
+| trailing edge shape, offset; attached edge shape | flat, 0; flat | every cell drawn as two triangles (no notch or swallowtail) |
+| attachment points | `flag top` with span 12, then `flag bottom` with span 0 | rows 0 to 12 of column 0 are tied to the pole between the two markers |
+| point physics | `weapons\flag\flag cloth` (`pphy`): flags 0 (no collisions, no wind flags), density 1.0, air friction 18000, water friction 50000, surface friction 0.6, elasticity 2 | (`effects.md`, Point physics) |
+| wind noise | 0 | the random push per vertex is zero |
+| shaders | red `weapons\flag\shaders\flag_red`, blue `weapons\flag\shaders\flag_blue` (both class `sotr`, two-sided) | the red one when the object's owner team is 0, the blue one otherwise (team 1, or no team) |
+
+**Pinning (each step).** Read the two markers' world positions A (top)
+and B (bottom) from the posed object. Row 0 of column 0 is placed
+exactly at A and row 12 of column 0 exactly at B; for rows 1 to 11 of
+column 0 a "force point" F(y) = A + (B - A) y / 12 is used (below). The
+markers are 0.35 WU apart, so the tied edge is stretched to 0.0292 WU
+per row against the rest 0.025. If A moved more than 1 WU along any
+world axis since the last step, every vertex is first moved by that
+whole displacement (a flag returned to its spot, or teleported, keeps
+its shape instead of streaking).
+
+**One step** of length dt seconds (1/30 on the Xbox, once per tick;
+see Timing), for every column x from 0 to 15 and, within it, every row
+y from 0 to 12 in that order (the update is in place, so a vertex sees
+the new positions of the vertices before it):
+
+1. The vertex's velocity v (WU/s) gets the point physics of the cloth
+   tag for a point of radius 0.02 WU (`effects.md`, One physics step,
+   steps 1 to 4): the medium is water if the bottom marker B is under
+   water, else air (one test for the whole cloth); the wind is the
+   current of the weather palette of the cluster holding A, taken at
+   the vertex (the cloth asks for it whatever the tag's wind flags:
+   zero where the cluster has no weather; the wind model itself is
+   `effects.md`'s open question 4). In air: mass M = (118613.34 +
+   130.47474) x 0.02^3 = 0.94995, gravity v_z += 3.2086613 x (-0.99780)
+   x dt = -0.10672 WU/s per tick, drag k = dt x 18000 x 0.02^2 / M =
+   0.25264 per tick (v += (w - v) k). In water: M = (118613.34 +
+   118613.34) x 0.02^3 = 1.89781, no gravity (buoyancy 0), k = 0.35128
+   per tick. No push (wind noise 0). The
+   predicted position is P = p + v dt; nothing collides (the level and
+   objects are ignored).
+2. If the vertex is in column 0 on row 0 or 12, its new position is A
+   or B. Otherwise, for each of its neighbours that exists among the
+   one toward the pole (x - 1, y), the one below (x, y + 1) and the one
+   above (x, y - 1), an estimate E = N + (rest distance) x unit(P - N)
+   with N that neighbour's current position (unit of a zero vector is
+   zero, so E = N then); rest distance 0.025 for all three. The new
+   position is the weighted mean of the estimates, the pole-side
+   estimate weighing 4 and the others 1; for column 0 (rows 1 to 11),
+   which has no pole-side neighbour, the force point F(y) is added with
+   weight 4. The vertex's own predicted position P only gives the
+   directions. The neighbour on the far side (x + 1) is never used.
+3. v = (new position - old position) / dt; the position becomes the
+   new one.
+
+So the cloth is a chain of position constraints hung from the pole,
+with gravity and air drag; it droops and swings when the carrier moves
+and settles hanging down beside the pole when still. Only the map's
+wind (where its weather palette has one) moves a still flag; the tag
+adds no flutter of its own.
+
+**Timing.** The cloth steps only while its object is being drawn: a
+counter of steps since the last draw rises each step, and a step happens
+only when that counter is below 5. When the object is drawn after more
+than 5 steps without a draw, or for the first time, one settling step
+with dt = 5 s runs first (the drag factor clamps to 1, so velocities
+become the wind and the cloth falls into its constraints at once). On
+creation every vertex is at the world origin and so is the remembered
+A; the first step's "moved more than 1 WU" rule moves them all to A
+(a flag created at the origin itself would not move: a quirk with no
+effect on the disc's maps).
+
+**Drawing.** One mesh per frame: the 208 vertices at their positions,
+texture coordinates (x / 15, y / 12), each vertex's normal the
+normalised cross product of (across - origin) and (down - origin) of
+the cell at (min(x, 14), min(y, 11)) (so the last row and column use the
+cell before); every cell two triangles ((x, y), (x + 1, y), (x, y + 1))
+and ((x, y + 1), (x + 1, y), (x + 1, y + 1)); one node (identity), the
+object's own lighting, the shader by the owner team as above (a
+transparent shader goes to the transparent pass sorted by the centroid
+of the four corner vertices). A port that interpolates objects between
+ticks should draw the cloth shifted by the difference between the
+interpolated and the stepped position of A, so it stays on a moving
+pole.
+
+**Approximation.** The exact cloth costs 208 vertex updates a tick and
+is the recommended implementation. A cheaper stand-in (a rigid sheet of
+the same size hinged on the pole, hanging straight down when still) is
+right at rest and wrong only while the flag moves or in wind: the real
+cloth trails behind a running carrier by up to its length, 0.375 WU, at
+its free corner, and swings back as the drag removes about a quarter of
+each vertex's velocity per tick. The error of the stand-in is bounded by
+that length.
 
 ### 6.5 Oddball (brief, complete)
 
@@ -975,19 +1154,62 @@ chime every 5 s of holding.
 
 A hill is the set of type 8 netgame flags sharing a team index (hill
 number); the first 12 flags in block order are used; their convex hull in
-the XY plane is the hill; one flag alone is a 2 WU square; vertical
-extent from the lowest flag - 0.1 WU to the highest flag + 0.8 WU
-(`scenario.md`). A player is **on the hill** when the unit's bounding
-sphere centre is inside that volume. Each tick, for each player on the
+the XY plane is the hill; vertical extent from the lowest flag - 0.1 WU
+to the highest flag + 0.8 WU (`scenario.md`). A player is **on the
+hill** when the unit's bounding sphere centre is inside that volume
+(the hull test includes its edges).
+
+- **One flag alone** becomes four corners (x - 1, y - 1), (x + 1, y -
+  1), (x - 1, y + 1), (x + 1, y + 1) at the flag's height: a 2 by 2 WU
+  square **aligned with the world X and Y axes** (the flag's facing is
+  not used), centred on the flag.
+- **Two flags** (or any number of flags that all lie on one line in XY,
+  or all at one XY point) have no area: the hull has no corners, so that
+  hill **does not exist**: nobody can be on it, it scores nothing, it
+  is not drawn and has no marker. If it is the starting hill (number
+  0), the game runs with no hill until a move (moving hill only); when a
+  move picks such a hill the game picks again at once (another "hill
+  move" sound each time) until it finds one with an area. On the Xbox a
+  map whose every hill is degenerate makes that search endless (a
+  hang); a port must bound it. (Whether any disc hill is degenerate was
+  not checked: Open questions.)
+- Hull corners are kept in the order the hull is walked: starting at the
+  corner with the lowest y (lowest x among equals), counter-clockwise.
+- The hill's **centre** (its marker, 7.1) is the middle of the
+  corners' bounding box in x, y and z (z: halfway between the lowest and
+  highest flag, not the volume's middle).
+
+**Drawing the hill.** Every frame, a wall along each hull edge: a quad
+from corner i to corner i + 1 (the last to the first), from each
+corner's own height up 0.8 WU, drawn with the globals' hill shader
+(`scenery\hilltop\shaders\hilltop`, `sotr`, two-sided, additive), with
+plain white ambient light and no other lights. Texture: with P the
+perimeter (3D edge lengths summed) and N = round(P) (at least 1), u runs
+from 0 to N along the perimeter in proportion to distance (the shader's
+map repeats N times around the hill), v is 1 at the bottom edge and 0.2
+at the top. The hill's state (uncontrolled, controlled, contested) does
+**not** change the drawing in this build. Each tick, for each player on the
 hill, the player's time on hill +1 and their team's score +1, but a team
 gets at most one point per tick however many of its players are on
 the hill (free for all: the player's own). The game ends when a team's
 score reaches score to win x 1800 (minutes). The winner is the higher
-score. Announcer: "60 s" and "30 s" warnings at exactly that distance
-from the limit, a chime every 150 ticks, "hill contested" when a hill
-that had been held more than 10 s by one side gets players of both
-sides. **Contested hills still score for every team on them** (the
-state only drives the sound and the hill's drawing; reference).
+score. Announcer (section 9 says who hears): when a point is added and
+the score is then exactly 1800 ticks short of the limit, "one minute to
+win" (team games: "red/blue team, one minute to win" for the scoring
+team); exactly 900 short, "30 seconds to win" likewise; when the
+score is a positive multiple of 150 and below the limit, the chime
+(`countdown_timer_end`). **Control** (computed each tick after the
+players): team games: blue players on the hill and red ones too is
+contested; only one team's players is "controlled by" that team (its
+count of consecutive controlled ticks rises by 1 per tick while the same
+team keeps it, and restarts at 0 when control changes); nobody is
+uncontrolled (count 0). Free for all: two or more players is
+contested; exactly one is controlled, the count rising only while it is
+the same player. When the count reaches exactly 300 (10 s), "hill
+controlled" plays once; when the hill becomes contested after a count
+above 300, "hill contested" plays; contested resets the count to 0.
+**Contested hills still score for every team on them** (the state only
+drives these two sounds; reference).
 **Moving hill:** a timer of 1800 ticks (60 s) runs while the game can
 score; at zero the hill becomes a randomly chosen other hill number
 (not the current one) and the "hill move" sound plays; the timer
@@ -1077,7 +1299,41 @@ and not at all for "none". Who sees a goal: a flag's marker is shown to
 the team that does not own the flag, except its carrier, and the
 carrier alone sees the destination marker; kill in order shows the
 target only to its hunter; the hill is hidden from players standing
-on it.
+on it. Section 7.1 has the whole rule.
+
+### 7.1 Objective markers (goals)
+
+The game type keeps a table of **goals**, each with a world point, an
+arrow name from the HUD globals' waypoint list (`hud.md` section 14),
+and who may see it: a single player (or everyone), a team (or every
+team) and one player excluded (or none). The stored point is the
+given point raised by 0.63 WU. Every goal a player may see is shown to
+that player as a radar blip (objective indicator "motion tracker":
+`hud.md` section 11, goal blips) or as an on-screen arrow (indicator "nav
+points": `hud.md` section 14), or not at all (indicator "none"). The
+goals are refreshed by the game type every tick:
+
+| Game type | Goal | Point (before the 0.63 rise) | Arrow | Seen by |
+|---|---|---|---|---|
+| capture the flag | one per flag (goal = the owner team's number) | the flag object's position, also while carried (its carrier's held position) | `flag_blue` | the team that does not own the flag, except its carrier |
+| capture the flag | one per carried flag (goal = owner team + 2) | the carrier's own team's flag spot, **plus 0.5 WU in y** (a quirk: in y, not z) | `default` | the carrier only; cleared when nobody carries it |
+| oddball, ball type 0 | one per ball (goal = ball number) | the ball's position, also while carried | `ball_blue` | everyone except the ball's current holder |
+| oddball, types 1 and 2 | one per held ball | the holder's bounding sphere centre | `target_blue` | everyone except the holder; none while the ball is free |
+| king of the hill | one (goal 0) | the hill's centre (6.6) | `crown_blue` | everyone not standing on the hill (on the hill counts only while the game can score); none while there is no hill |
+| race | one per checkpoint (goal = its sequence number), set once at the start | the checkpoint flag's position | `flag_blue` | a player who may touch that checkpoint next: normal race the next in order (after a full lap the first), any order every untouched one, rally the lit one; none once the player has finished |
+| slayer, kill in order | one per hunter (goal = the hunter's slot) | the target's bounding sphere centre | `target_blue` | the hunter only |
+
+Notes:
+
+- **Every marker uses `default` or a `_blue` arrow, for both teams.**
+  The `_red` arrows exist on the disc but no game type names them, so
+  every
+  objective marker has the blue arrow's colour (0x2896FF); the flag's own
+  team is shown by the cloth's colour, not by the marker.
+- A single-flag swap clears all four capture-the-flag goals; they are
+  set again on the next tick.
+- Nothing else is a goal: vehicles, weapons, powerups and teammates are
+  not (teammates have their own triangles, `hud.md` section 14).
 
 ## 8. Vehicles in multiplayer
 
@@ -1108,8 +1364,22 @@ ones play at once (index 26 to 31 and 42: countdown timer, teleporter
 activate, flag failure, countdown for respawn, hill move, player
 respawn, countdown timer end).
 
+**Who hears a line.** Every line is an unspatialized sound at scale
+1.0 (`sounds.md`: no position, no attenuation), heard by everyone at the
+machine that plays it. The rules' events (game start, flag, ball, hill,
+race, game over) are played for everyone: every player hears "red team
+has the flag", whichever team they are on (the lines name a team; they
+are not "your team"/"the enemy"). These are played only for a local
+player whose own event it is, and so are heard only at that player's
+machine: the multi-kill and spree lines (the killer's; a kill of a
+teammate or a plain kill plays nothing), the respawn countdown and
+"player respawn" (the waiting player's), "teleporter activate" (the
+player who teleported), "flag failure" (the player refused). Split
+screen: one machine, so its local players hear each other's.
+
 Queue rules (reference): at the start of a game the queue holds one
-silent entry that lasts 60 ticks. A queueable line is appended with a
+silent entry that lasts 60 ticks (so the game-start line, queued at
+once, plays 2 s in). A queueable line is appended with a
 delay of `length x 30 / 1000 + 5` ticks (integer division, the sound
 tag's stored longest permutation length in ms; it is 1.125 x the real
 length, `sounds.md`), if fewer than 5 are queued, else dropped. When
@@ -1119,49 +1389,61 @@ removed and the next plays.
 
 | # | Event (tag `sound\...`) | Trigger | Stored ms | Queue ticks |
 |---|---|---|---|---|
-| 0 | `dialog\multiplayer1\play_ball` | oddball: a ball spawns | 1260 | 42 |
-| 1 | `dialog\multiplayer1\game_over` | a game ends | 1802 | 59 |
-| 2 | `dialog\multiplayer1\one_minute_to_win` | score is 60 s from the limit (no teams; oddball, king) | 1338 | 45 |
-| 3 | `dialog\multiplayer1\30_seconds_to_win` | 30 s from the limit | 1557 | 51 |
-| 4 | `dialog\multiplayer1\red_team_minute_to_win` | as 2, a red team | 2448 | 78 |
+| 0 | `dialog\multiplayer1\play_ball` | oddball type 0: a ball appears (its spawn timer runs out) | 1260 | 42 |
+| 1 | `dialog\multiplayer1\game_over` | a game ends (the postgame delay starts) | 1802 | 59 |
+| 2 | `dialog\multiplayer1\one_minute_to_win` | free for all oddball or king: a point leaves the scorer exactly 1800 ticks short of the limit | 1338 | 45 |
+| 3 | `dialog\multiplayer1\30_seconds_to_win` | as 2, exactly 900 short | 1557 | 51 |
+| 4 | `dialog\multiplayer1\red_team_minute_to_win` | as 2, a red team in a team game | 2448 | 78 |
 | 5 | `dialog\multiplayer1\red_team_30_to_win` | | 2657 | 84 |
 | 6 | `dialog\multiplayer1\blue_team_minute_to_win` | | 2413 | 77 |
 | 7 | `dialog\multiplayer1\blue_team_30_to_win` | | 2605 | 83 |
-| 8 | `dialog\multiplayer1\blue_team_has_the_flag` | a blue player takes the enemy flag; repeats every 20 s | 2553 | 81 |
-| 9 | `dialog\multiplayer1\blue_team_flag_returned` | the blue flag is returned (by touch or timeout) | 2546 | 81 |
-| 10 | `dialog\multiplayer1\blue_team_score` | blue captures | 2115 | 68 |
+| 8 | `dialog\multiplayer1\blue_team_has_the_flag` | a blue player grabs the red flag from home (not in assault); repeats every 601 ticks until the red flag is back (6.4) | 2553 | 81 |
+| 9 | `dialog\multiplayer1\blue_team_flag_returned` | the blue flag is returned by a blue player's touch or by the 17 s timeout (only if it was handled; not after a capture, not at a single-flag swap) | 2546 | 81 |
+| 10 | `dialog\multiplayer1\blue_team_score` | a blue player captures | 2115 | 68 |
 | 11 | `dialog\multiplayer1\red_team_has_the_flag` | a red player takes the enemy flag | 2099 | 67 |
 | 12 | `dialog\multiplayer1\red_team_flag_returned` | | 2240 | 72 |
 | 13 | `dialog\multiplayer1\red_team_score` | red captures | 2217 | 71 |
-| 14 | `dialog\multiplayer1\double_kill` | multi-kill count 2 | 1498 | 49 |
-| 15 | `dialog\multiplayer1\triple_kill` | multi-kill count 3 | 1374 | 46 |
-| 16 | `dialog\multiplayer1\killtacular` | multi-kill count 4 or more | 1433 | 47 |
-| 17 | `dialog\multiplayer1\running_riot` | 10, 15, 20... kills in a row | 1472 | 49 |
-| 18 | `dialog\multiplayer1\killing_spree` | 5 kills in a row | 1312 | 44 |
-| 19 | `dialog\multiplayer1\oddball` | oddball (no teams) starts, game time 60 | 1008 | 35 |
-| 20 | `dialog\multiplayer1\race` | race starts | 813 | 29 |
-| 21 | `dialog\multiplayer1\slayer` | slayer (no teams) starts | 1120 | 38 |
-| 22 | `dialog\multiplayer1\capture_the_flag` | CTF starts | 1733 | 56 |
-| 23 | `dialog\multiplayer1\warthog` | race vehicle announcements | 1061 | 36 |
-| 24 | `dialog\multiplayer1\ghost` | | 1048 | 36 |
-| 25 | `dialog\multiplayer1\scorpion` | | 1087 | 37 |
-| 26 | `sfx\ui\countdown_timer` | race flag touched (immediate) | 702 | 26 |
+| 14 | `dialog\multiplayer1\double_kill` | multi-kill count 2 (killer only) | 1498 | 49 |
+| 15 | `dialog\multiplayer1\triple_kill` | multi-kill count 3 (killer only) | 1374 | 46 |
+| 16 | `dialog\multiplayer1\killtacular` | multi-kill count 4 or more (killer only) | 1433 | 47 |
+| 17 | `dialog\multiplayer1\running_riot` | 10, 15, 20... kills in a row (killer only) | 1472 | 49 |
+| 18 | `dialog\multiplayer1\killing_spree` | 5 kills in a row (killer only) | 1312 | 44 |
+| 19 | `dialog\multiplayer1\oddball` | free for all oddball: at game time 60 | 1008 | 35 |
+| 20 | `dialog\multiplayer1\race` | free for all race: at game time 2 | 813 | 29 |
+| 21 | `dialog\multiplayer1\slayer` | free for all slayer: the game starts | 1120 | 38 |
+| 22 | `dialog\multiplayer1\capture_the_flag` | capture the flag (every variant, single flag and assault too): the game starts | 1733 | 56 |
+| 23 | `dialog\multiplayer1\warthog` | race, right after the race line, if race vehicles were created: vehicle set default plays warthog, ghost, scorpion in that order; set warthog, ghost or scorpion plays its one line; none plays nothing | 1061 | 36 |
+| 24 | `dialog\multiplayer1\ghost` | as 23 | 1048 | 36 |
+| 25 | `dialog\multiplayer1\scorpion` | as 23 | 1087 | 37 |
+| 26 | `sfx\ui\countdown_timer` | any player touches a race checkpoint that counts (immediate; everyone hears it) | 702 | 26 |
 | 27 | `sfx\ui\teleporter_activate` | a local player teleports (immediate) | 1537 | 51 |
-| 28 | `sfx\ui\flag_failure` | CTF scoring refused (immediate) | 561 | 21 |
-| 29 | `sfx\ui\countdown_for_respawn` | respawn timer 90, 60, 30 (immediate) | 97 | 7 |
-| 30 | `sfx\ui\hill_move` | the hill moves; ball reset (immediate) | 3379 | 106 |
-| 31 | `sfx\ui\player_respawn` | respawn timer 1 (immediate) | 261 | 12 |
-| 32 | `dialog\multiplayer1\team_king_of_the_hill` | team king starts | 1648 | 54 |
-| 33 | `dialog\multiplayer1\team_oddball` | team oddball starts | 1593 | 52 |
-| 34 | `dialog\multiplayer1\team_race` | team race starts | 1531 | 50 |
-| 35 | `dialog\multiplayer1\team_slayer` | team slayer starts | 1440 | 48 |
-| 36 | `dialog\multiplayer1\king_of_the_hill` | king starts | 1492 | 49 |
-| 37 | `dialog\multiplayer1\blue_team_ctf` | single flag: blue defends/attacks | 2491 | 79 |
-| 38 | `dialog\multiplayer1\red_team_ctf` | | 2586 | 82 |
-| 39 | `dialog\multiplayer1\hill_contested` | hill contested | 1325 | 44 |
-| 40 | `dialog\multiplayer1\hill_controlled` | hill controlled | 1609 | 53 |
-| 41 | `dialog\multiplayer1\hill_occupied` | (no trigger found) | 1691 | 55 |
-| 42 | `sfx\ui\countdown_timer_end` | race lap, a score chime every 5 s (immediate) | 143 | 9 |
+| 28 | `sfx\ui\flag_failure` | a local player's capture is refused ("flag at home to score") or their touch of their own handled flag does nothing ("flag must reset"); at most once per 4 s (immediate) | 561 | 21 |
+| 29 | `sfx\ui\countdown_for_respawn` | the local waiting player's respawn timer at 90, 60, 30 (immediate) | 97 | 7 |
+| 30 | `sfx\ui\hill_move` | the hill moves (once per pick, 6.6); an oddball ball resets by timeout in a game of 1 or 2 balls (immediate) | 3379 | 106 |
+| 31 | `sfx\ui\player_respawn` | the local waiting player's respawn timer at 1 (immediate) | 261 | 12 |
+| 32 | `dialog\multiplayer1\team_king_of_the_hill` | team king: the game starts | 1648 | 54 |
+| 33 | `dialog\multiplayer1\team_oddball` | team oddball: at game time 60 | 1593 | 52 |
+| 34 | `dialog\multiplayer1\team_race` | team race: at game time 2 | 1531 | 50 |
+| 35 | `dialog\multiplayer1\team_slayer` | team slayer: the game starts | 1440 | 48 |
+| 36 | `dialog\multiplayer1\king_of_the_hill` | free for all king: the game starts | 1492 | 49 |
+| 37 | `dialog\multiplayer1\blue_team_ctf` | single flag swap leaving blue to attack (red now defends) | 2491 | 79 |
+| 38 | `dialog\multiplayer1\red_team_ctf` | single flag swap leaving red to attack | 2586 | 82 |
+| 39 | `dialog\multiplayer1\hill_contested` | the hill becomes contested after one side held it more than 300 ticks (6.6) | 1325 | 44 |
+| 40 | `dialog\multiplayer1\hill_controlled` | one side has held the hill alone for exactly 300 ticks (6.6) | 1609 | 53 |
+| 41 | `dialog\multiplayer1\hill_occupied` | never played (no rule names it) | 1691 | 55 |
+| 42 | `sfx\ui\countdown_timer_end` | race: a lap completed (rally: a flag point); king: a team's (free for all: a player's) score reaches a positive multiple of 150 below the limit; oddball: a holder's own score does (immediate) | 143 | 9 |
+
+**Per game type, in order of a game** (everyone hears these unless the
+table says "killer only" or "local"):
+
+| Game type | Lines |
+|---|---|
+| slayer | start ("slayer" or "team slayer"), then only the killer-only multi-kill and spree lines, and "game over" |
+| capture the flag | start; grabs, 20 s repeats, returns, captures (6.4); single flag swaps; flag failure (local); "game over" |
+| oddball | at game time 60 the type's line; type 0: "play ball" as each ball appears; the one minute and 30 second warnings; the 5 s chime for a holder; ball reset by timeout (hill move sound) with 1 or 2 balls; "game over" |
+| king of the hill | start; minute and 30 s warnings; the chime every 150 ticks of team score; hill controlled, hill contested; hill move; "game over" |
+| race | at game time 2 the race line and the vehicle lines; a checkpoint tick for every counted touch; a lap chime; "game over" |
+| every type | killer-only multi-kill and spree lines (any game type with kills), respawn countdown (local), teleporter (local) |
 
 Multi-kill and spree rules are in 6.1. Per-killer counters: kills in a
 row (zeroed by the player's own death), multi-kill count, last kill
@@ -1535,6 +1817,44 @@ spare rounds go to 0 (the weapon is deleted).
 | a dropped blue flag at tick L (last held tick) | returns at the first update with now - L > 510 (tick L + 511) |
 | flag must reset on, red touches its dropped flag | nothing happens; failure sound; returns at L + 511 |
 | capture with score to win 3 | the third capture ends the game |
+| a blue player grabs the red flag from its spot at tick G | "blue team has the flag" at once (queued); repeats at G + 601, G + 1202, ... while the red flag is away, carried or dropped |
+| the blue carrier dies and a teammate picks the dropped red flag up | no new announcement (the flag is still handled); the repeats keep their rhythm |
+| single flag, time 1800 (1 min), red flag created at tick 0, never touched | swap at tick 1800: the flag becomes blue's, at the blue spot; "red team ctf" (red now attacks); timer 1800 again |
+| the same, a blue attacker grabs it at tick 1000 and still carries it at 1800 | no swap at 1800 (timer holds at 0); the carrier dies at tick 2100: swap on that tick's flag update; next swap due 1800 ticks later |
+| the same, the carrier captures at tick 1500 | blue +1, flag back at the red spot, timer not reset: swap at tick 1800 |
+
+### King of the hill and markers
+
+| Case | Expected |
+|---|---|
+| a hill made of one flag at (10.0, 20.0, 1.0) | corners (9, 19, 1), (11, 19, 1), (11, 21, 1), (9, 21, 1) in that order; volume z 0.9 to 1.8; centre (10, 20, 1); marker point (10, 20, 1.63) |
+| a unit's bounding sphere centre at (10.9, 20.9, 1.5) on that hill | on the hill |
+| the same at (11.2, 20.0, 1.5) | not on the hill (square, not a circle; world axes) |
+| a hill made of two flags (0, 0, 0) and (4, 0, 0) | no hill: no score, no walls, no marker |
+| hill perimeter 8.0 WU (one-flag square) | N = 8 texture repeats; each wall's u spans 2 (from 0 to 8 around) |
+| team king, red alone on the hill from tick 100 | "hill controlled" at the tick red's count reaches 300 (tick 400); a blue player stepping on at tick 450: "hill contested" (count 350 > 300); a second blue step-on after the count restarted: no "contested" until red again holds 301 ticks |
+| team king, score to win 2 min (3600), red at 1799 gains a point | 1800 short: "red team minute to win"; at 2700: "red team 30 to win"; chimes at 150, 300, ... 3450 |
+| CTF on Blood Gulch, red flag at home | a marker at (95.69, -159.45, 0.53) with the `flag_blue` arrow, seen by blue players only |
+| a blue player carries the red flag | the red flag's marker follows the carrier, hidden from that carrier; the carrier alone sees a `default` arrow at the blue spot with y + 0.5 and z + 0.63 |
+
+### Flag cloth (one step in air, no wind, dt = 1/30 s)
+
+| Case | Expected |
+|---|---|
+| a free vertex at rest (v = 0) | before the constraints: v_z = -0.10672 then x (1 - 0.25264) = -0.07976 WU/s; predicted drop 0.002659 WU |
+| a vertex moving at (3, 0, 0) WU/s with its carrier | after drag (2.24208, 0, -0.07976) WU/s before the constraints |
+| column 0, row 6, markers A = (0, 0, 0.7436), B = (0, 0, 0.3936) on a flag at the origin | force point F(6) = (0, 0, 0.5686) with weight 4 |
+| the flag object moves 1.5 WU in x within one step (a return) | every vertex is shifted by 1.5 WU first, then stepped |
+| the flag owned by team 0 / team 1 | drawn with `flag_red` / `flag_blue` |
+
+### Friendly fire (PC options only, 3.1)
+
+| Mode | Teammate's assault rifle bullet | Teammate's frag grenade (area) | Teammate's melee from behind |
+|---|---|---|---|
+| on (and the Xbox) | full | full | kills |
+| off | nothing | nothing | nothing |
+| shields only | shield only, body untouched | shield only | no kill; shield damage only |
+| explosives only | nothing | full | nothing |
 
 ### Radar
 
@@ -1568,10 +1888,15 @@ spare rounds go to 0 (the weapon is deleted).
 | 5.4, 5.5 pickups | reference only; ammunition maxima checked against the disc (`weapons.md`) |
 | 6.1 to 6.3 slayer and kill bookkeeping | reference only |
 | 6.4 to 6.7 other game types | reference only; counts and flags checked against the disc |
+| 6.4 single flag timer, warnings, grabs | reference only |
+| 6.4.1 flag object and cloth | tag values and markers checked against the disc (four maps); simulation and drawing from the reference; wind not determined |
+| 6.6 lone and degenerate hills, drawing, control sounds | reference only; hill shader checked against the disc |
+| 3.1 friendly fire and balance | Xbox: absence checked against the disc (layout, menus); PC options from the reference's additions only |
+| 7.1 objective markers | reference only; arrow names checked against the disc (`hud.md`) |
 | 6.8 teleporters | reference only (the flags and pairs checked against the disc, `scenario.md`); the exit volume's numbers follow from the biped's pill (`movement.md`) |
 | 7 radar | the three numbers checked against the disc; rule from the reference |
 | 8 vehicles | placements checked against the disc; no respawn from the reference |
-| 9 announcer | list and lengths checked against the disc; queue from the reference |
+| 9 announcer | list and lengths checked against the disc; queue, triggers and who hears from the reference |
 | 11, 12 | checked against the disc |
 
 ## Open questions
@@ -1613,8 +1938,30 @@ spare rounds go to 0 (the weapon is deleted).
 12. **Walk-over pickup of a second weapon** (reference port adds it;
     the Xbox rule is the action hold): spawn with one weapon, walk over
     another.
-13. **Friendly fire on the Xbox disc** has no option; confirm there is
-    no damage reduction between teammates in team slayer.
+13. **Friendly fire on the Xbox disc** has no option (variant layout and
+    menus, disc; the friendly path in the damage code only applies the
+    collision model's friendly rules, which are neutral for the
+    Spartan: `health_shields.md`); confirm there is no damage reduction
+    between teammates in team slayer.
+15. **Degenerate hills on the disc.** Whether any disc hill has all its
+    flags on one line or only two flags (6.6: such a hill does not
+    exist, and an all-degenerate map hangs the Xbox on a move). Check
+    each map's type 8 flags with a script.
+16. **The flag cloth on the Xbox.** The step length is the frame time
+    (the Xbox draws at 30 frames a second, so 1/30; a slow frame steps
+    longer). The wind at the cloth needs the wind model (`effects.md`
+    open question 4); which multiplayer clusters carry a wind is
+    unchecked. Check on a capture: a carried flag's trail behind a
+    sprinting carrier (expected: the free corner lags toward the
+    carrier's back and settles within a fraction of a second).
+17. **Remote players and the announcer.** The rule (section 9) is
+    stated for the machine running the game; whether a client of an
+    Xbox system-link game hears the event lines exactly when the host
+    does (or when its copy of the state changes) belongs to the
+    netcode. Check: two consoles, one grab; compare the lines' start.
+18. **First-person flag.** Whether the carrier's own first-person view
+    shows the cloth (the cloth is the object's widget; the first-person
+    weapon model is separate, `weapons.md`).
 14. **Teleporter exit volume.** The exit test puts the arriving pill's
     bottom-sphere centre on the flag itself, 0.2 WU lower than the
     feet will be. Check: stand a second player 0.3 WU and then 0.5 WU

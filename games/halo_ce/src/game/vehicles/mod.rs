@@ -43,9 +43,10 @@
 //! - `tidy` (every tick, every role): no stale seat: a rider that is gone
 //!   (a disconnect, a death that took the character away) or sits
 //!   elsewhere leaves its seat empty; a rider of a vehicle that is gone (a
-//!   map change) stands. `round_restart` (the engine's `RoundRestart`):
-//!   every rider stands and every placed vehicle is back at its placement,
-//!   at rest. Dying in a seat (marked dead, or no health left) puts the
+//!   map change) stands. `reset_vehicles`, at the engine's `RoundRestart`
+//!   (a party's round) and at a Halo game's start (`rules::HaloGameType`
+//!   set again): every rider stands and every placed vehicle is back at
+//!   its placement, at rest. Dying in a seat (marked dead, or no health left) puts the
 //!   rider out beside it (`seat_input`); a driver gone leaves the vehicle
 //!   coasting.
 //! - `look` (every machine): the wheels' spin, the steering and the
@@ -255,6 +256,13 @@ impl Plugin for HaloVehiclesPlugin {
                 app.replicate::<NetSeat>();
             })
             .add_observer(round_restart)
+            .add_systems(
+                FixedUpdate,
+                reset_vehicles
+                    .run_if(resource_exists_and_changed::<crate::game::rules::HaloGameType>)
+                    .after(SimSet::Movement)
+                    .before(attach),
+            )
             .add_systems(
                 FixedUpdate,
                 (
@@ -896,11 +904,16 @@ fn ride_drawn(
     }
 }
 
-/// A round restart (`core::RoundRestart`) on the authority: every rider
+/// A round restart (`core::RoundRestart`): `reset_vehicles`.
+fn round_restart(_restart: On<crate::core::RoundRestart>, mut commands: Commands) {
+    commands.run_system_cached(reset_vehicles);
+}
+
+/// On the authority, at a round restart (`round_restart`) or a Halo game's
+/// start (its game type set again: `rules::HaloGameType`): every rider
 /// stands and every map vehicle is back at its placement, at rest.
 #[allow(clippy::type_complexity)]
-fn round_restart(
-    _restart: On<crate::core::RoundRestart>,
+pub fn reset_vehicles(
     mut vehicles: Query<(&mut HaloVehicle, &PropIndex, &mut Transform)>,
     seated: Query<Entity, With<Seated>>,
     entities: Option<Res<MapEntities>>,

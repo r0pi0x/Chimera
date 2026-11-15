@@ -11,6 +11,8 @@
 //!   and each tick's state, frame and pose (`HaloAnim`).
 //! - `hits`: the collision model's nodes as boxes on the bones, the head
 //!   material's node the head.
+//! - `death`: a dead player's body (`HaloCorpse`): the death chosen, played
+//!   and removed.
 //! - `load`: the body from a map file (`spartan`; textures through the map
 //!   loader's model-shader looks, the armour tinted per colour as skins),
 //!   added to a Halo map's kit and, from the donor map (`DONOR_MAP`,
@@ -35,17 +37,21 @@
 //! info is read) and turn with the look. `wear_colours` shows each player's
 //! armour colour (`BodySkin`: the skin of its colour, `COLOURS`).
 //!
-//! Death: the body has no ragdoll; the engine hides a dead body
-//! (`MapCharacterModel::ragdoll` None).
+//! Death (`death`): the body has no ragdoll; a dead player is hidden (the
+//! engine's `Dead`) and the server leaves a body of its own in its place
+//! (`death::HaloCorpse`, replicated: net part `halo_ce_corpses`), which
+//! every machine plays (the death the killing hit picked from the unit
+//! damage table or the airborne death, its sound, its fall) and draws as
+//! the engine's `map::Corpse`.
 //!
 //! Known shortcuts:
 //! - The drawn body takes the tick's pose (no easing between ticks; Halo
 //!   draws at its tick rate, the engine's frames may be faster).
-//! - Death and ping animations (the unit damage table) and the left
-//!   hand's IK onto the held weapon are later steps (the weapon in the hand
-//!   is `view`'s held model).
+//! - Ping (flinch) animations and the left hand's IK onto the held weapon
+//!   are later steps (the weapon in the hand is `view`'s held model).
 
 pub mod anims;
+pub mod death;
 pub mod hits;
 pub mod load;
 pub mod skeleton;
@@ -261,7 +267,21 @@ pub struct HaloBodyPlugin;
 
 impl Plugin for HaloBodyPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_net::net::parts::NetAppExt;
         app.add_systems(FixedLast, animate.before(SimPose))
-            .add_systems(Update, wear_colours);
+            .add_systems(Update, wear_colours)
+            // Deaths (`death`): the server leaves the bodies, every machine
+            // plays them.
+            .add_systems(
+                FixedUpdate,
+                death::leave_corpses.after(crate::core::apply_damage).run_if(crate::core::authoritative),
+            )
+            .add_systems(
+                FixedLast,
+                (death::play_corpses, death::remove_corpses.run_if(crate::core::authoritative)).chain().before(SimPose),
+            )
+            .net_part("halo_ce_corpses", death::register);
+        #[cfg(feature = "dev")]
+        death::dev_commands(app);
     }
 }

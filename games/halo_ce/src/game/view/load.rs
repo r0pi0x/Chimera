@@ -511,6 +511,8 @@ pub fn object_tags(file: &MapFile) -> Vec<(String, String)> {
         .iter()
         .map(|g| g.to_ascii_lowercase())
         .chain(file.of_class(class::EQUIPMENT).map(|t| t.path.to_ascii_lowercase()))
+        // The game types' objects lying on the map (rules::ctf).
+        .chain([r"weapons\flag\flag".to_string(), r"weapons\ball\ball".to_string()])
         .map(|t| (item_key(&t), t));
     let mut all: Vec<(String, String)> = flying.chain(lying).collect();
     all.sort();
