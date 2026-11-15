@@ -1,0 +1,98 @@
+# Halo's player movement numbers (specs/halo_ce/movement.md, "Constants"),
+# in the game's own units as that table states them: world units (WU,
+# 3.048 m), the 30 Hz tick (t), seconds (s). Each line names the spec's
+# constant. Angles are stored as the engine stores them, precomputed (the
+# cosine or sine the spec gives). `games/halo_ce/src/game/movement/data.rs`
+# reads it (`MovementData`).
+
+# GRAVITY: WU/t^2 (engine constant; 9.780 m/s^2).
+gravity = 0.0035651792
+
+# RUN_FORWARD, RUN_BACKWARD, RUN_SIDEWAYS: WU/s (divided by 30 per tick).
+run_forward = 2.25
+run_backward = 2.0
+run_sideways = 2.0
+# RUN_ACCEL: WU/s per tick (0.0106667 WU/t^2).
+run_accel = 0.32
+# SNEAK_FORWARD, SNEAK_BACKWARD, SNEAK_SIDEWAYS: WU/s (crouched).
+sneak_forward = 0.9
+sneak_backward = 0.65
+sneak_sideways = 0.6
+# SNEAK_ACCEL: WU/s per tick.
+sneak_accel = 0.16
+# AIR_ACCEL: WU/s per tick (0.00116667 WU/t^2).
+air_accel = 0.035
+
+# STUN_MOVE: the wanted speed's stun penalty factor.
+stun_move = 0.8
+# STUN_TURN: the jump's stun penalty factor (the turning penalty: Quirks).
+stun_turn = 0.8
+# HARD_LAND_DECEL: WU/t^2, the ground step while hard-landing.
+hard_land_decel = 0.0053333333
+# GROUND_PUSH: WU/t, along -ground normal every grounded tick (1/128).
+ground_push = 0.0078125
+# THROTTLE_DEAD: throttle magnitude below this is zero.
+throttle_dead = 0.1
+# CROUCH_STICK: controller crouch ignored on the ground at or above this.
+crouch_stick = 0.98
+
+# JUMP_VELOCITY: WU/t.
+jump_velocity = 0.07
+# JUMP_RECOVERY: the jump fires when the timer is above this (6 grounded
+# ticks: "timer > 5").
+jump_timer_above = 5.0
+# The jump timer's saturation and start value (ticks).
+jump_timer_max = 127.0
+
+# HEIGHT_STAND, HEIGHT_CROUCH, RADIUS: WU (the pill).
+height_stand = 0.7
+height_crouch = 0.5
+radius = 0.2
+# CAMERA_STAND, CAMERA_CROUCH: WU above the origin.
+camera_stand = 0.62
+camera_crouch = 0.35
+# CROUCH_TIME 0.2 s as the per-tick rate stored precomputed (1/6).
+crouch_rate = 0.16666667
+# The crouch fraction change above which the air crouch lift applies.
+crouch_lift_min = 0.01
+
+# MAX_SLOPE 45 degrees: its precomputed cosine (ground test).
+max_slope_cos = 0.70710677
+# UPHILL_FALLOFF 20 and UPHILL_CUTOFF 45 degrees: precomputed sines.
+uphill_falloff_sin = 0.34202012
+uphill_cutoff_sin = 0.70710677
+# UPHILL_SCALE.
+uphill_scale = 0.65
+# DOWNHILL_FALLOFF 20 and DOWNHILL_CUTOFF 45 degrees: precomputed (negative)
+# sines.
+downhill_falloff_sin = -0.34202012
+downhill_cutoff_sin = -0.70710677
+# DOWNHILL_SCALE.
+downhill_scale = 1.25
+
+# SOFT_LAND_MIN, HARD_LAND_MIN, HARD_LAND_MAX: WU/s.
+soft_land_min = 1.5
+hard_land_min = 5.0
+hard_land_max = 8.0
+# SOFT_LAND_TIME, HARD_LAND_TIME: s.
+soft_land_time = 0.6
+hard_land_time = 1.0
+
+# FALL_V_MIN, FALL_V_MAX, FALL_V_KILL: WU/t, stored precomputed.
+fall_v_min = 0.14625688
+fall_v_max = 0.20683846
+fall_v_kill = 0.34300280
+# FALL_DAMAGE (`globals\falling`): damage minimum and upper bound, points.
+fall_damage_min = 10.0
+fall_damage_max = 155.0
+# FALL_KILL_DAMAGE (`globals\distance`): points.
+fall_kill_damage = 105.0
+# Points per 1.0 of the engine's normalised `Damage` (health_shields.md
+# SPARTAN_BODY: 75 body points). Shields do not exist yet: falling damage
+# goes to health (the movement's Known shortcuts).
+body_vitality = 75.0
+
+# The engine's "nearly zero" (epsilon), WU.
+epsilon = 0.0001
+# MAX_CONTACTS: most contacts one mover call records.
+max_contacts = 16

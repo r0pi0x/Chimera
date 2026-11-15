@@ -1,14 +1,14 @@
 //! Hosting from the party apps' main menu goes through the pre-match lobby
-//! (`chimera_net::prematch`): Play's Start (its Server tab's lobby rows:
-//! `mp_lobby 1`, `mp_lobby_min_players 2`, `mp_lobby_ready_up 1`) on a
-//! listen host with its own player and bots holds the gun game's first
-//! match in the lobby; the host sees the panel (its row tagged, the bots
-//! ready, its key starting the match); alone it doesn't count down; a
-//! joiner from the menu joins during the lobby and sees it (not ready
-//! until it says so, `lobby_ready` from its key, and back); the host's key
-//! starts the countdown and the countdown the match, with everyone in it.
-//! A dedicated server's lobby keeps players ready once they have the map
-//! (`mp_lobby_ready_up` 0 by default). Ticks only.
+//! (`chimera_net::prematch`): Host's Start (its Server tab's lobby rows:
+//! `mp_lobby 1`, `mp_lobby_min_players 2`, `mp_lobby_host_start 1`; no
+//! ready-up) on a listen host with its own player and bots holds the gun
+//! game's first match in the lobby; the host sees the panel (its row
+//! tagged, the bots ready, its key starting the match); nothing starts it
+//! by itself, not the longest wait nor everyone having loaded; a joiner
+//! from the menu joins during the lobby and is ready once it has the map;
+//! the host's start begins the countdown and the countdown the match, with
+//! everyone in it. A dedicated server's lobby keeps players ready once
+//! they have the map and waits for no host. Ticks only.
 
 use std::time::Duration;
 
@@ -126,12 +126,15 @@ fn in_lobby(sim: &NetSim) -> bool {
 #[test]
 fn hosting_from_the_menu_holds_the_match_in_the_lobby_until_the_host_starts_it() {
     let mut sim = host_at_menu();
-    // Play, then Start with the Server tab's rows as shipped.
+    // Host, then Start with the Server tab's rows as shipped: the lobby
+    // on, waiting for 2, nobody readies up (loaded is ready), the first
+    // match starting when the host presses Start.
     let data = MenuData::shipped();
-    for (cvar, want) in [("mp_lobby", "1"), ("mp_lobby_min_players", "2"), ("mp_lobby_ready_up", "1")] {
+    for (cvar, want) in [("mp_lobby", "1"), ("mp_lobby_min_players", "2"), ("mp_lobby_host_start", "1")] {
         let row = data.play.iter().find(|r| r.cvar == cvar).unwrap_or_else(|| panic!("a {cvar} row"));
         assert_eq!(row.default.as_deref(), Some(want), "{cvar}'s default");
     }
+    assert!(data.play.iter().all(|r| r.cvar != "mp_lobby_ready_up"), "no ready-up row");
     server_act(&mut sim, A::Entry(0));
     server_act(&mut sim, A::Start);
     assert!(
@@ -143,59 +146,40 @@ fn hosting_from_the_menu_holds_the_match_in_the_lobby_until_the_host_starts_it()
     let w = sim.server.app.world();
     assert_eq!(w.resource::<ActiveMinigame>().def.id, DEFAULT_MINIGAME);
     let s = *w.resource::<LobbySettings>();
-    assert_eq!((s.enabled, s.min_players, s.ready_up), (1, 2, 1), "Start set the lobby's rows");
+    assert_eq!((s.enabled, s.min_players, s.ready_up, s.host_start), (1, 2, 0, 1), "Start set the lobby's rows");
 
     // The lobby: the host sees the panel, its own row tagged and its key
-    // starting the match; bots are ready.
+    // (and Start) starting the match; bots are ready.
     assert!(sim.until(2 * HZ, |s| host_view(s).shown), "the host sees the lobby");
     assert!(in_lobby(&sim), "the match is held");
     let v = host_view(&sim);
-    assert!(v.hosting);
+    assert!(v.hosting && v.host_start, "{v:?}");
     let me = v.rows.iter().find(|r| r.local).expect("the host's own row");
     assert!(me.host && !me.bot, "{me:?}");
     assert_eq!(me.status, status::READY);
     assert!(v.rows.iter().filter(|r| r.bot).all(|r| r.status == status::READY && r.ping == "BOT"), "{v:?}");
     assert_eq!(v.key_line(), Some("lobby_start"));
-    assert_eq!(v.hint, "Press F3 to start the match now");
-    // Alone (waiting for a second player): no countdown yet.
+    // Nothing starts it by itself, not even the longest wait.
     sim.ticks(3 * HZ);
     assert!(in_lobby(&sim) && host_view(&sim).countdown.is_none(), "{:?}", host_view(&sim));
-    assert!(host_view(&sim).line.starts_with("Waiting for 1 player"), "{}", host_view(&sim).line);
+    assert_eq!(host_view(&sim).line, "Waiting for the host to start");
 
-    // A joiner from the menu, during the lobby: it sees it, not ready
-    // until it says so.
+    // A joiner from the menu, during the lobby: ready once it has the map
+    // (it never readies up), and still nothing counts down.
     let c = add_menu_client(&mut sim);
     client_act(&mut sim, c, A::Entry(1));
     sim.clients[c].app.world_mut().resource_mut::<Console>().submit("mainmenu_type address 127.0.0.1");
     client_act(&mut sim, c, A::Connect);
-    let not_ready = |s: &mut NetSim| client_view(s, c).rows.iter().any(|r| r.local && r.status == status::NOT_READY);
-    assert!(sim.until(30 * HZ, not_ready), "the joiner sees itself not ready: {:?}", client_view(&sim, c));
+    let loaded = |s: &mut NetSim| client_view(s, c).rows.iter().any(|r| r.local && r.status == status::READY);
+    assert!(sim.until(30 * HZ, loaded), "the joiner is ready once loaded: {:?}", client_view(&sim, c));
     let v = client_view(&sim, c);
-    assert!(v.shown && !v.hosting && v.countdown.is_none());
+    assert!(v.shown && !v.hosting && v.countdown.is_none() && v.host_start);
     assert!(v.rows.iter().any(|r| r.host && !r.local), "the joiner sees the host tagged: {v:?}");
-    assert_eq!(v.hint, "Press F3 when you are ready");
-    assert!(in_lobby(&sim));
-    // Ready, then not: the host hears both.
-    let id = JOINER;
-    let server_status = |s: &mut NetSim| {
-        let mut q = s.server.app.world_mut().query::<&NetLobby>();
-        q.iter(s.server.app.world()).next().and_then(|l| l.rows.iter().find(|r| r.id == Some(id)).map(|r| r.status))
-    };
-    // (The host waits for a third friend: everyone ready doesn't count
-    // down yet.)
-    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_min_players 3");
-    press_lobby_key(&mut sim.clients[c].app);
-    assert!(sim.until(HZ, |s| server_status(s) == Some(status::READY)), "ready on the server");
-    assert!(
-        sim.until(HZ, |s| client_view(s, c).rows.iter().any(|r| r.local && r.status == status::READY)),
-        "the joiner sees itself ready"
-    );
-    assert!(host_view(&sim).countdown.is_none(), "waiting for the third");
-    press_lobby_key(&mut sim.clients[c].app);
-    assert!(sim.until(HZ, |s| server_status(s) == Some(status::NOT_READY)), "not ready again");
+    assert_eq!(v.key_line(), Some("lobby_ready"), "F3 is harmless: nobody needs it");
+    sim.ticks(2 * HZ);
+    assert!(in_lobby(&sim) && host_view(&sim).countdown.is_none(), "everyone loaded: still the host's to start");
 
-    // The host starts it early: the countdown, then the match with
-    // everyone.
+    // The host starts it: the countdown, then the match with everyone.
     press_lobby_key(&mut sim.server.app);
     assert!(
         sim.until(HZ, |s| host_view(s).countdown.is_some() && client_view(s, c).countdown.is_some()),
@@ -212,6 +196,7 @@ fn hosting_from_the_menu_holds_the_match_in_the_lobby_until_the_host_starts_it()
 
 #[test]
 fn a_dedicated_servers_lobby_keeps_players_ready_once_they_have_the_map() {
-    assert_eq!(LobbySettings::default().ready_up, 0, "ready-up is the menu host's, not a server's default");
+    assert_eq!(LobbySettings::default().ready_up, 0, "no ready-up by default");
+    assert_eq!(LobbySettings::default().host_start, 0, "a dedicated server has no host to wait for");
     assert_eq!(LobbySettings::default().min_players, 1);
 }

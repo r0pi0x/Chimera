@@ -30,7 +30,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    halo_ce_server (apps/halo_ce_server/)   Halo's dedicated server: no presentation
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
-  |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, stand-in movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
+  |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -280,9 +280,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   shaders, bitmaps, lightmap pages packed into one atlas, collision BSP,
   player starts and sky fog as `MapData` in metres, through the
   converted-map cache), `SimPlugins`, `game::HaloPlugins` (the
-  registration, the stand-in movement `halo_ce:movement`, Chimera's
-  placeholder with its own numbers, its players' vitality and its damage
-  seam) and `harness::HaloSim`. A character on Halo's movement wears
+  registration, Halo's movement `halo_ce:movement`,
+  specs/halo_ce/movement.md: `game::movement`, a pill moved once a tick
+  in world units on the engine's shape casts, its numbers in
+  data/movement.toml, its state `HaloMovement` predicted; exact at its
+  30 Hz tick, scaled by the tick's length under another),
+  its players' vitality and its damage seam) and `harness::HaloSim`. A character on Halo's movement wears
   `game::vitality` (health_shields.md: `Vitality`, the spec's body and
   shield fractions of the Spartan's 75 points, the 6 s delay and 4 s
   recharge, overshield, camouflage, `Stun` for movement; numbers in
@@ -450,8 +453,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `-p` for release.
 - `halo_ce_app` (apps/halo_ce/) is the Halo app (binary `halo_ce`): Chimera
   and `halo_ce` composed (`APP`, a `GameApp`), maps `halo_ce:<name>` from
-  the disc once its loader is written, the greybox otherwise, with the
-  game's stand-in movement; `halo_ce_server` (apps/halo_ce_server/) its
+  the disc, the greybox otherwise, with the game's movement;
+  `halo_ce_server` (apps/halo_ce_server/) its
   dedicated server on `chimera_net::dedicated` (its `SERVER`), no
   presentation, client shell or app (`server_builds_without_presentation`);
   built alone with `-p` for release.

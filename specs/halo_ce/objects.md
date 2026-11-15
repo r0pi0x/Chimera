@@ -886,11 +886,13 @@ Attachment 0: type `ligh` `characters\cyborg\flashlight_cyborg`, marker
 `flashlight`, primary scale 1 (outgoing A), secondary 0, change colour 0.
 
 Functions: both have flags 0, period 1.0, function type 0 (one), step
-count 0, sawtooth 0, map to linear, bounds mode 0, bounds 0 to 1, turn
-off with -1, scale by 0. Function A: scale function by 3 (input C),
-usage `integrated light power`. Function B: scale function by 1 (input
-A), usage `shield glow source`. So function A is the flashlight's
-power, function B the recent shield damage.
+count 0, sawtooth 0, bounds mode 0, bounds 0 to 1, turn off with -1,
+scale by 0. Function A: scale function by 3 (input C), map to linear
+(0), usage `integrated light power`. Function B: scale function by 1
+(input A), map to **very early** (2: the glow rises quickly and flattens
+as the input nears 1), usage `shield glow source`. So function A is the
+flashlight's power, function B the recent shield damage. (Checked by
+script on bloodgulch, hangemhigh and damnation: identical.)
 
 Change colours: slot A: darken by 6 (outgoing B), scale by 2 (input B,
 shield vitality), flags 1 (HSV), lower (0.74, 0.98, 1.0), upper (0.33,
@@ -979,7 +981,9 @@ Gulch) has the same biped and unit layers except:
 bounding radius 0.45 and bounding offset (-0.02, 0, 0), render
 bounding radius 0.45, three change colours (slot C has one permutation
 of weight 1.0 with colour (0.341, 0.404, 0.145) at both bounds), unit
-flags 0x447008, integrated light toggle `effe`
+flags 0x448008 (the multiplayer Spartan's 0x8008 plus bits 18, runs
+around flaming, and 22, shields fry infection forms), its
+function A with flags 0x4 (always active), integrated light toggle `effe`
 `weapons\assault rifle\effects\flashlight`, melee damage null,
 stationary turning threshold 1.3962634 rad (80 degrees; cosine
 0.17364822), hard ping threshold 0.
@@ -1026,9 +1030,10 @@ the overshield tag uses the camouflage's (`powerups\active
 camoflage\active camoflage`, spelt so on the disc): the two pickups'
 models are swapped on the disc. The double speed and full-spectrum
 vision pickups use the model `item collections\powerups\powerups`
-with no collision model. Other equipment: model and collision model of
-the same path as the tag (`powerups\<name>\<name>`), none for the grenades'
-collision model.
+with no collision model. The health pack's model and collision model are
+`powerups\healthpack\healthpack` (not its own path). Other equipment:
+model and collision model of the same path as the tag
+(`powerups\<name>\<name>`), none for the grenades' collision model.
 
 ### Weapons and vehicles: object base essentials
 

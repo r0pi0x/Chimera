@@ -281,10 +281,10 @@ column except the one noted below.
 | 5 | Rockets | slayer | no | 34 | 0 | 0 | 10 | - | 100% | 25 | N | 6 | 2 | no | bonus on, penalty on |
 | 6 | Snipers | slayer | no | 34 | 0 | 5 | 10 | - | 100% | 15 | N | 4 | 2 | no | bonus on, penalty on |
 | 7 | Oddball | oddball | no | 3 | 5 | 0 | 5 | - | 100% | 2 | N | 0 | 1 | no | type 0, 1 ball, speed slow, traits none, random start off |
-| 8 | Reverse Tag | oddball | no | 2 | 5 | 0 | 5 | - | 100% | 2 | N | 0 | 1 | no | type 1, 1 ball, speed slow |
-| 9 | Accumulate | oddball | no | 2 | 5 | 0 | 5 | - | 100% | 5 | - | 0 | 1 | no | type 1, 16 balls, speed slow |
-| 10 | Juggernaut | oddball | no | 3 | 5 | 0 | 5 | - | 100% | 10 | N | 0 | 2 | no | type 2, 1 ball, trait with ball extra damage |
-| 11 | Stalker | oddball | no | 2 | 5 | 0 | 5 | - | 100% | 10 | M | 0 | 2 | no | type 2, 1 ball, speed fast, with ball invisible, without ball damage resistant |
+| 8 | Reverse Tag | oddball | no | 2 | 5 | 0 | 5 | - | 100% | 2 | N | 0 | 1 | no | type 1, 1 ball, speed slow, traits none, random start off |
+| 9 | Accumulate | oddball | no | 2 | 5 | 0 | 5 | - | 100% | 5 | - | 0 | 1 | no | type 1, 16 balls, speed slow, traits none, random start off |
+| 10 | Juggernaut | oddball | no | 3 | 5 | 0 | 5 | - | 100% | 10 | N | 0 | 2 | no | type 2, 1 ball, trait with ball extra damage, trait without none, speed slow (stored 0: the builder sets no speed), random start off |
+| 11 | Stalker | oddball | no | 2 | 5 | 0 | 5 | - | 100% | 10 | M | 0 | 2 | no | type 2, 1 ball, speed fast, with ball invisible, without ball damage resistant, random start off |
 | 12 | King | king | no | 3 | 5 | 0 | 5 | - | 100% | 2 | N | 0 | 2 | no | moving hill off |
 | 13 | King Pro | king | no | 35 | 10 | 0 | 15 | - | 100% | 2 | N | 0 | 2 | no | moving hill off |
 | 14 | Crazy King | king | no | 3 | 0 | 0 | 5 | - | 100% | 2 | N | 0 | 2 | no | moving hill on |
@@ -296,12 +296,17 @@ column except the one noted below.
 | 20 | CTF Pro | ctf | yes | 35 | 10 | 0 | 15 | - | 100% | 3 | N | 0 | 2 | no | flag at home to score on |
 | 21 | Team Race | race | yes | 3 | 0 | 0 | 10 | - | 100% | 3 | N | 0 | 2 | no | type normal, minimum |
 | 22 | Team Rally | race | yes | 3 | 0 | 0 | 10 | - | 100% | 5 | N | 0 | 2 | no | type rally, minimum |
-| 23 | Team Ball | oddball | yes | 35 | 10 | 0 | 5 | - | 100% | 2 | N | 0 | 1 | no | type 0, 1 ball |
+| 23 | Team Ball | oddball | yes | 35 (inferred, see notes) | 10 | 0 | 5 | - | 100% | 2 | N | 0 | 1 | no | type 0, 1 ball, speed slow (stored 0), traits none, random start off |
 | 24 | Team King | king | yes | 3 | 10 | 0 | 5 | - | 100% | 2 | N | 0 | 2 | no | moving hill on |
 | 25 | Team Slayer | slayer | yes | 3 | 10 | 0 | 10 | - | 100% | 50 | M | 0 | 2 | no | bonus on, penalty on |
 
 Notes:
 
+- An oddball option a row does not name is stored as 0 by that builder:
+  speed with ball 0 is **slow** (not normal), traits 0 are none, random
+  start 0 is off, ball type 0 is normal. The "ball spawn delay" byte
+  (never read) is 1 on Oddball and Reverse Tag and 0 elsewhere. Checked
+  on the executable's builders (all 6 oddball builders).
 - "Score to win" is kills for slayer, captures for CTF, laps for race
   (flag points for rally), and **minutes** for oddball types 0 and 1
   and for king of the hill; for oddball type 2 (juggernaut, stalker)
@@ -1167,8 +1172,8 @@ One game tick (reference):
 
 ### 11.1 The globals' multiplayer information (disc, all 13 maps identical)
 
-Tag `globals\globals` (`matg`), the block at 0x164, one element of 0xA0
-bytes:
+Tag `globals\globals` (`matg`; `globals.md` owns the layout of the whole
+tag), the block at 0x164, one element of 0xA0 bytes:
 
 | Offset | Size | Field | Value |
 |---|---|---|---|

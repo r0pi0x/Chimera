@@ -31,13 +31,16 @@ feature-paths = { ui = ["src/ui/"] }
 chimera_core.workspace = true
 chimera_world.workspace = true
 chimera_sim.workspace = true
-# Replication of its players' vitality (`game::vitality`).
+# The network: replication of its players' vitality (`game::vitality`) and
+# the prediction harness for the movement's test (`harness::NetSim`).
 chimera_net.workspace = true
 bevy_replicon.workspace = true
 # Halo's disc image and install folder as a mount (`game::mount`), its
 # map cache files' tags (`game::maps`).
 blam_formats.workspace = true
 bevy.workspace = true
+# The movement's collision queries (shape casts on the engine's colliders).
+avian3d.workspace = true
 # The map file's hash (`MapData::file_hash`) and the data tables
 # (data/*.toml).
 sha2.workspace = true
