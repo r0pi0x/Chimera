@@ -85,20 +85,34 @@ fn descendants_with<C: Component + Clone>(app: &mut App, e: Entity) -> Vec<C> {
     out
 }
 
-/// A primary button: the white slab on the slant, ink text, its key cap;
-/// no tick, focused or hovered (the kit's design rules: a button's hover
-/// is its own lift, its focus the accent bar).
+/// A primary button is the hero: the cobalt (`hero`) slab on the slant,
+/// white text, its key cap; no tick, focused or hovered (the kit's design
+/// rules: a button's hover is its own lift, its focus a bar); hover lifts
+/// the slab to `acc`.
 #[test]
 fn buttons_carry_their_kind_and_focus() {
     let mut app = app();
     let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Apply", Some("Ctrl S"), 2.0, State::focused(true)));
     assert_eq!(texts_under(&mut app, b), ["APPLY", "CTRL S"]);
     let slants = descendants_with::<UiSlant>(&mut app, b);
-    assert!(slants.iter().any(|s| s.fill == Tone::Fg && s.edges == (false, true)), "the white slab leans at the right");
+    assert!(slants.iter().any(|s| s.fill == Tone::Hero && s.edges == (false, true)), "the hero's slab leans at the right");
     let ticks = descendants_with::<Tick>(&mut app, b);
     assert!(ticks.is_empty(), "no tick on a button");
     let texts = descendants_with::<UiText>(&mut app, b);
-    assert_eq!(texts[0].tone, Tone::Ink);
+    assert!(texts.iter().all(|t| t.tone == Tone::OnHero), "white on the hero");
+    assert!(texts.iter().any(|t| t.role == Role::DisplayRegular), "button labels are words: Display");
+    assert!(texts.iter().any(|t| t.role == Role::Mono), "key caps stay Mono");
+    assert_eq!(app.world().resource::<Theme>().tone(Tone::Hero).to_srgba().to_hex(), "#2D6BEB");
+    *app.world_mut().get_mut::<Interaction>(b).unwrap() = Interaction::Hovered;
+    app.update();
+    assert!(descendants_with::<UiSlant>(&mut app, b).iter().any(|s| s.fill == Tone::Acc), "hover lifts the slab");
+    // The big hero (Start, Connect, a dialog's) is bold and bigger.
+    let big = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", Some("Enter"), controls::HERO_H, State::NONE));
+    let t = descendants_with::<UiText>(&mut app, big);
+    assert!(t.iter().any(|t| t.role == Role::DisplayBold && t.size > 0.85), "{t:?}");
+    // A disabled hero stays a slab.
+    let off = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Apply", None, 2.0, State { disabled: true, ..State::NONE }));
+    assert!(descendants_with::<UiSlant>(&mut app, off).iter().any(|s| s.fill == Tone::Fg && s.alpha < 0.1));
     // Danger: the threat mark, never a threat fill.
     let d = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Danger, "End the game", None, 2.4, State::NONE));
     let slants = descendants_with::<UiSlant>(&mut app, d);
@@ -162,7 +176,7 @@ fn rows_toggles_and_segments_show_their_state() {
 
 /// Text on white is ink at full strength and one pixel heavier (the
 /// `InkWeight` shadow of its own colour): the selected segment, a toggle's
-/// ON, the primary button's label and its key cap. Light text gets none,
+/// ON (the hero's label is white on cobalt). Light text gets none,
 /// and loses it when its tone turns light.
 #[test]
 fn text_on_white_is_full_strength_ink() {
@@ -170,7 +184,6 @@ fn text_on_white_is_full_strength_ink() {
     let mut app = app();
     let theme = app.world().resource::<Theme>().clone();
     let ink = theme.tone(Tone::Ink);
-    let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", Some("Enter"), 2.0, State::NONE));
     let seg = build(&mut app, |ui, c, root| ui.segmented(c, root, &["Windowed", "Full screen"], Some(0), State::NONE));
     let tog = build(&mut app, |ui, c, root| ui.toggle(c, root, true, State::NONE));
     let colours = |app: &mut App, e: Entity| -> Vec<(String, Color, Option<TextShadow>)> {
@@ -187,21 +200,21 @@ fn text_on_white_is_full_strength_ink() {
         }
         out
     };
-    let mut on_white = colours(&mut app, b);
-    on_white.extend(colours(&mut app, seg[0]));
+    let mut on_white = colours(&mut app, seg[0]);
     on_white.extend(colours(&mut app, tog).into_iter().filter(|(t, ..)| t == "ON"));
     let mut names: Vec<&str> = on_white.iter().map(|(t, ..)| t.as_str()).collect();
     names.sort();
-    assert_eq!(names, ["ENTER", "ON", "START", "WINDOWED"]);
+    assert_eq!(names, ["ON", "WINDOWED"]);
     for (t, c, shadow) in &on_white {
         assert_eq!(*c, ink, "{t}: ink at full strength");
         let s = shadow.unwrap_or_else(|| panic!("{t}: the ink weight"));
         assert_eq!(s.color, ink);
         assert!(s.offset.x > 0.0 && s.offset.y == 0.0, "{t}: one pixel to the right");
     }
-    // The cap's outline is full strength too.
-    let cap_outline = descendants_with::<chimera_ui::UiStyle>(&mut app, b).into_iter().find_map(|s| s.outline);
-    assert_eq!(cap_outline, Some((Tone::Ink, 1.0)));
+    // A key cap is full strength (the lockup: no .75 alpha).
+    let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Secondary, "Revert", Some("Ctrl Z"), 2.0, State::NONE));
+    let cap_outline = descendants_with::<chimera_ui::UiStyle>(&mut app, b).into_iter().filter_map(|s| s.outline).last();
+    assert!(cap_outline.is_some_and(|(_, a)| a == 1.0), "{cap_outline:?}");
     // Light text: no weight; a tone turning light drops it.
     for (t, _, shadow) in colours(&mut app, seg[1]) {
         assert!(shadow.is_none(), "{t}: light text keeps its own weight");
@@ -710,3 +723,42 @@ fn the_dropdown_shows_a_chevron_that_flips_open() {
 }
 
 
+
+/// The progress component (design rules 11.6, variant B): its fill is the
+/// share done (0, 42 and 100 %), its words and percentage inside, ready a
+/// solid slab without a percentage, connecting striped.
+#[test]
+fn progress_fills_by_its_share() {
+    use chimera_ui::controls::{Progress, ProgressBar, ProgressFill};
+    let mut app = app();
+    for (f, pct) in [(0.0, "0%"), (0.42, "42%"), (1.0, "100%")] {
+        let b = build(&mut app, |ui, c, root| ui.progress(c, root, Progress::Running(f), "Loading", 10.5, 1.15, 0.56, true));
+        assert_eq!(app.world().get::<ProgressBar>(b), Some(&ProgressBar(Progress::Running(f))));
+        let fill = descendants_with_entity::<ProgressFill>(&mut app, b);
+        assert_eq!(fill.len(), 1);
+        assert_eq!(app.world().get::<Node>(fill[0]).unwrap().width, Val::Percent(f * 100.0));
+        let t = texts_under(&mut app, b);
+        assert!(t.iter().all(|t| t == &format!("LOADING {pct}")), "{t:?}");
+    }
+    let r = build(&mut app, |ui, c, root| ui.progress(c, root, Progress::Ready, "Loaded", 10.5, 1.15, 0.56, true));
+    assert!(descendants_with_entity::<ProgressFill>(&mut app, r).is_empty());
+    assert!(descendants_with::<UiSlant>(&mut app, r).iter().any(|s| s.fill == Tone::Fg && s.outline == 0.0), "ready: filled");
+    assert_eq!(texts_under(&mut app, r), ["LOADED"]);
+    let w = build(&mut app, |ui, c, root| ui.progress(c, root, Progress::Connecting, "Connecting", 10.5, 1.15, 0.56, true));
+    assert!(descendants_with::<UiSlant>(&mut app, w).len() > 5, "stripes");
+}
+
+/// Tabs carry their Q and E caps at the strip's ends; the active one's
+/// strip is cobalt.
+#[test]
+fn tabs_have_their_keys_at_the_ends() {
+    let mut app = app();
+    let parent = build(&mut app, |ui, c, root| {
+        ui.tabs_ex(c, root, &["Server", "Game"], 0, false, Some(("Q", "E")));
+        root
+    });
+    let all = texts_under(&mut app, parent);
+    assert_eq!(all, ["Q", "SERVER", "GAME", "E"]);
+    assert_eq!(descendants_with_entity::<controls::TabKey>(&mut app, parent).len(), 2);
+    assert!(descendants_with::<UiSlant>(&mut app, parent).iter().any(|s| s.fill == Tone::Acc), "the cobalt strip");
+}

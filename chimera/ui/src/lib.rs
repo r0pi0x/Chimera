@@ -58,6 +58,7 @@
 //! Without a `Theme` resource it inserts `Theme::shell_default`; it
 //! installs our faces (`KitFonts::install`).
 
+pub mod avatar;
 pub mod chat;
 pub mod clipboard;
 pub mod controls;
@@ -68,6 +69,7 @@ pub mod materials;
 pub mod motion;
 pub mod parity;
 pub mod scroll;
+pub mod shell;
 pub mod pointer_lead;
 pub mod sound;
 pub mod theme;
@@ -115,7 +117,7 @@ impl Plugin for ChimeraUiPlugin {
             .init_resource::<UiMusic>()
             .add_message::<UiCue>()
             .init_resource::<UiClock>()
-            .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, scroll::ScrollPlugin))
+            .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, scroll::ScrollPlugin, shell::ShellPlugin))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare));
         pointer_lead::add(app);
         app

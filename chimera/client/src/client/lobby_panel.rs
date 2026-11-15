@@ -2,69 +2,64 @@
 //! whose theme lays the lobby out (`[layout.lobby]`: the Ultimate Gun
 //! Game's Signal, docs/plans/active/ugg-ui.md 3 and M1); without one the
 //! shell's own panel (`prematch_lobby`) draws as before. Same state
-//! (`prematch_lobby::LobbyView`), same root (`LobbyRoot`), same key (F3):
-//! presentation only. Built from the kit's style layer (`style!`,
+//! (`prematch_lobby::LobbyView`), same root (`LobbyRoot`), same key (F3,
+//! and Enter for the host): presentation only. Built from the kit's style layer (`style!`,
 //! `UiText`, `UiSlant`) and its Look Book V marks (`widgets`).
 //!
 //! On a full-screen ink plate over the frozen map, a 16:9 frame (100 x
-//! 56.25 cq, centred; wider windows get wider margins) with the theme's
-//! numbers:
+//! 56.25 cq, centred) on the shell (`chimera_ui::shell`; docs/plans/
+//! active/ugg-ui.md "Signal revision 8"):
 //!
-//! - **Header**: the lockup (the kit's `mark` icon, ULTIMATE spread over
-//!   the wordmark's width, the wordmark with `ss02`), "Lobby", and the
-//!   header's buttons: Invite and Match settings (shown, not clickable),
-//!   Settings (`prematch_lobby::LobbyAction::Settings`: the party apps'
-//!   Settings over the lobby), Report a bug (`LobbyAction::Report`) and
-//!   Leave (`LobbyAction::Leave`, the app's way out, which the party apps
-//!   confirm first); a rule under it; `+` marks in the corners. There is
-//!   no Escape menu: Esc only closes what an app opened over the lobby.
-//!   Hidden under an app's overlay (`prematch_lobby::LobbyOverlay`),
-//!   which has its own header, so it doesn't ghost through the shade.
-//! - **Left**: the Ready tag and count ("5 / 7", "players • 8 slots"
-//!   when the slot count is known), the player table (`#`, player, tag,
-//!   status): the slot number, the bot slot left of every name (the robot
-//!   for a bot, `LobbyMark::Bot`), the name (as its player typed it, in
-//!   the sentence face `Role::Text`); HOST as a solid tag
-//!   (`LobbyMark::Host`), YOU and HOST as the fused chip
-//!   (`LobbyMark::YouHost`); the session wins after the name (trophy
-//!   and count, only with any, the leader's in the accent: `LobbyWins`,
-//!   from `LobbyRow::wins`); the status: the ping meter and the number
-//!   (by the theme's `[network]` thresholds, "LAG" when bad, a dash for a
-//!   bot), a slanted block (`ReadyBlock`: filled when ready, an outline
-//!   otherwise; it pops, scale y 1.9 to 1 over
-//!   `motion.dur.lobby.ready_pop`, when it turns ready) and its words;
-//!   your row tinted and outlined (`widgets::row_you`,
-//!   `LobbyPlayerRow::you`); free slots reading "Open" (`OpenSlot`).
-//! - **Right**: the map's name big and its game, a map preview (a
-//!   gradient tinted by the map's name stands in: no thumbnails yet),
-//!   Mode and Guns from (the ladder's games), and "Starts in" with the
-//!   countdown big and the waiting line beside it (a sentence:
-//!   `Role::Text`), over a tick bar
-//!   (`CountdownBar`: pixel-snapped ticks lit as the countdown runs,
-//!   stepped every frame from `UiClock`, the last
-//!   `layout.lobby.countdown_hot` seconds in the accent).
-//! - **Footer**: the keys: F3 and what it does now (`LobbyView::key_line`;
-//!   a player still downloading or loading readies up for when it has
-//!   the map), a button too (`LobbyAction::Ready`), and Tab Players;
-//!   hidden while an app's overlay is up (`prematch_lobby::LobbyOverlay`),
-//!   so the overlay's keys are the only ones on screen. The lobby owns
-//!   the screen and the mouse (`prematch_lobby::lobby_shown`), so its
-//!   buttons take clicks through a download and a load.
+//! - **The bar**: the breadcrumb ("‹ Host" for a listen host, "‹ Join"
+//!   for a joiner) over "Lobby"; Back (a click on it, Esc or a right
+//!   click) is Leave, which the party apps confirm first. At the right the
+//!   party and the tiles: Settings (`LobbyAction::Settings`: the party
+//!   apps' Settings over the lobby), Report a bug. Hidden under an app's
+//!   overlay (`prematch_lobby::LobbyOverlay`), which draws its own.
+//! - **Mode**, pinned at the left (`layout.lobby.mode_w`): the minigame,
+//!   Free for all, the games the guns come from, one per line in full.
+//! - **The list** (Call of Duty's, free for all): everyone in one list,
+//!   you first (your party, once parties exist), then the server's order;
+//!   "Loaded n / m" and the slots above. A row (`LobbyPlayerRow`): the
+//!   slot number, the avatar (`chimera_ui::avatar`, from `LobbyRow::
+//!   avatar`; YOU its white frame; a bot the robot, `LobbyMark::Bot`), the
+//!   name in Display, HOST as an outlined tag (`LobbyMark::Host`), the
+//!   session wins (trophy and count, the leader's in the accent:
+//!   `LobbyWins`), the status as the progress component (variant B:
+//!   loaded is ready, filled; downloading a hollow bar filling with its
+//!   share; loading and connecting striped) and the ping (the bars and
+//!   ms; the loss mark on a bad line; a bot a dim meter and a dash). Free
+//!   slots read "Open" (`OpenSlot`).
+//! - **Up next**, at the right: the map's big card (a gradient tinted by
+//!   the map's name stands in, "Preview coming") with its name and game;
+//!   once the countdown runs, STANDBY and its seconds over the tick bar
+//!   (`CountdownBar`: pixel-snapped ticks lit as it runs, stepped every
+//!   frame from `UiClock`, the last `layout.lobby.countdown_hot` seconds
+//!   in the accent).
+//! - **The action bar**: the status sentence (how many have loaded; what
+//!   starts the match: "Waiting for the host to start" while the first
+//!   lobby waits for the host, `NetLobby::host_start`) and, for the
+//!   host, **Start** [Enter], the big hero (`LobbyAction::Ready`: the
+//!   host's `lobby_start`). Nobody readies up: loaded is ready.
+//! - **Keys** at the foot (Enter Start for the host, Tab Players), hidden
+//!   under an app's overlay. The lobby owns the screen and the mouse
+//!   (`prematch_lobby::lobby_shown`), so its buttons take clicks through a
+//!   download and a load.
 //!
-//! Rebuilt when the view, the window's units or the theme change; the
-//! bar and the pops animate without a rebuild.
+//! Rebuilt when the view, the party, the window's units or the theme
+//! change; the tick bar animates without a rebuild.
 //!
-//! Known shortcuts: the map preview is a gradient; Invite and Match
-//! settings are drawn but not clickable; a downloader's bytes show as a percentage only;
-//! no packet-loss mark (the lobby has no loss figure).
+//! Known shortcuts: the map preview is a gradient; no parties yet, so no
+//! party edges (a party's coloured left edge) and nobody but you is
+//! grouped; Match settings and Invite aren't drawn; a loader's share isn't
+//! known (striped); the loss mark stands for a bad ping (the lobby has no
+//! loss figure).
 
-use std::collections::HashMap;
-
-use bevy::prelude::*;
+use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_net::prematch::status;
 use chimera_ui::{
     IconImages, KitFonts,
-    icons::{self, Icon}, Prop, Role, SlantMaterial, Theme, TickBarMaterial, TickLayout, Timeline, Tone, Track, UiClock,
+    Role, SlantMaterial, Theme, TickBarMaterial, TickLayout, Tone, UiClock,
     UiStyle, UiText, UiUnits, style,
     widgets::{self, PingLevel, TagKind},
 };
@@ -106,12 +101,6 @@ pub struct LobbyWins {
     pub leader: bool,
 }
 
-/// A row's status block: filled when ready.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ReadyBlock {
-    pub ready: bool,
-}
-
 /// A free slot's row.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct OpenSlot;
@@ -147,7 +136,7 @@ impl CountdownBar {
 /// The lobby panel's systems (added by `PreMatchLobbyPlugin`).
 pub fn add(app: &mut App) {
     app.add_systems(Update, (draw, step_bar).chain().after(super::prematch_lobby::LobbyFollow).run_if(themed))
-        .add_systems(Update, press.before(super::prematch_lobby::LobbyFollow));
+        .add_systems(Update, (press, enter_starts).before(super::prematch_lobby::LobbyFollow));
 }
 
 /// A click on one of the lobby's buttons (`LobbyAction`).
@@ -159,22 +148,28 @@ fn press(pressed: Query<(&Interaction, &LobbyAction), Changed<Interaction>>, mut
     }
 }
 
+/// Enter is the host's Start (the hero's key) while the lobby shows with
+/// nothing over it.
+fn enter_starts(
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    view: Res<LobbyView>,
+    overlay: Option<Res<LobbyOverlay>>,
+    theme: Option<Res<Theme>>,
+    mut out: MessageWriter<LobbyAction>,
+) {
+    let pressed = keys.is_some_and(|k| k.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter]));
+    if pressed && themed(theme) && view.shown && view.hosting && view.countdown.is_none() && !overlay.is_some_and(|o| o.0) {
+        out.write(LobbyAction::Ready);
+    }
+}
+
 #[derive(Default)]
 struct Drawn {
     key: Option<(LobbyView, u32, u32, String)>,
-    /// When each player's block turned ready (by name), for its pop.
-    popped: HashMap<String, f64>,
     /// The countdown's length: the most seconds seen since it began.
     total: u32,
     left: Option<u32>,
     since: f64,
-    /// The tabs' triangle by height in physical px.
-    tri: HashMap<u32, Handle<Image>>,
-}
-
-/// The tabs' small right-pointing triangle.
-fn triangle() -> Icon {
-    Icon { name: "Triangle".into(), w: 46.0, h: 56.0, shapes: vec![vec![vec![[0.0, 0.0], [46.0, 28.0], [0.0, 56.0]]]] }
 }
 
 /// `map` to a pair of colours, for the map preview's stand-in.
@@ -230,20 +225,6 @@ impl Panel<'_> {
         self.tag(c, wrap, TagKind::Accent, text);
     }
 
-    /// A value big with its unit beside it: a small label, or (`sentence`)
-    /// a line in the sentence face.
-    #[allow(clippy::too_many_arguments)]
-    fn big(&self, c: &mut Commands, parent: Entity, value: &str, size: f32, unit: &str, top: f32, sentence: bool) {
-        let row = self.boxed(c, parent, style!(row, gap: 1.0, margin: [top, 0.0, 0.0, 0.0]).align(AlignItems::Baseline));
-        self.text(c, row, Role::DisplayBold, size, Tone::Fg, value);
-        let u = if sentence {
-            self.cased(c, row, Role::Text, chimera_ui::controls::NOTE, Tone::Fg2, unit)
-        } else {
-            self.text(c, row, Role::Mono, self.lay("label"), Tone::Fg3, unit)
-        };
-        c.entity(u).insert(TextLayout::new(Justify::Left, LineBreak::WordBoundary));
-    }
-
     /// The kit's icon `key`, `h` cq tall, in `tone`.
     fn icon(&self, c: &mut Commands, parent: Entity, icons: &mut IconImages, images: &mut Assets<Image>, key: &str, h: f32, tone: Tone) {
         let u = self.units;
@@ -265,7 +246,7 @@ impl Panel<'_> {
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn draw(
-    (view, asked, overlay): (Res<LobbyView>, Res<LobbyAsked>, Option<Res<LobbyOverlay>>),
+    (view, asked, overlay, party): (Res<LobbyView>, Res<LobbyAsked>, Option<Res<LobbyOverlay>>, Res<chimera_ui::shell::Party>),
     theme: Res<Theme>,
     units: Res<UiUnits>,
     clock: Res<UiClock>,
@@ -301,19 +282,10 @@ fn draw(
         view.clone(),
         (units.height * 8.0) as u32,
         (units.scale_factor * 1000.0) as u32,
-        format!("{}{}{}{}", theme.name, kit.is_some(), asked.0, overlay.as_ref().is_some_and(|o| o.0)),
+        format!("{}{}{}{}{:?}", theme.name, kit.is_some(), asked.0, overlay.as_ref().is_some_and(|o| o.0), *party),
     );
     if drawn.key.as_ref() == Some(&key) && !theme.is_changed() && !kit.as_ref().is_some_and(|k| k.is_changed()) {
         return;
-    }
-    // The pops: rows that turned ready since the last drawing.
-    if let Some((old, ..)) = &drawn.key {
-        for r in &view.rows {
-            let was = old.rows.iter().find(|o| o.name == r.name).map(|o| o.status);
-            if r.status == status::READY && was.is_some_and(|s| s != status::READY) {
-                drawn.popped.insert(r.name.clone(), clock.now);
-            }
-        }
     }
     drawn.key = Some(key);
     visibility.set_if_neq(if view.shown { Visibility::Inherited } else { Visibility::Hidden });
@@ -321,7 +293,6 @@ fn draw(
         commands.entity(e).despawn();
     }
     if !view.shown {
-        drawn.popped.clear();
         return;
     }
     if root_node.padding != UiRect::ZERO {
@@ -332,11 +303,8 @@ fn draw(
     else {
         return;
     };
-    let pop = theme.dur(L, "ready_pop");
-    drawn.popped.retain(|_, at| clock.now - *at < pop as f64);
     let p = Panel { theme: &theme, kit: kit.as_deref(), units: *units };
     let c = &mut commands;
-    let tan = theme.tan();
     let hair = units.hairline();
 
     let content = c
@@ -350,155 +318,149 @@ fn draw(
         ))
         .id();
     let frame = p.boxed(c, content, style!(row, w: 100.0, h: 56.25).shrink(0.0));
-    let m = p.lay("margin");
 
-    // Corners.
-    let k = p.lay("corner");
-    for (x, y) in [(k, k), (100.0 - k, k), (k, 56.25 - k), (100.0 - k, 56.25 - k)] {
-        let s = 1.1;
-        let plus = p.boxed(c, frame, style!(row, w: s, h: s).abs([Some(x - s / 2.0), Some(y - s / 2.0), None, None]));
-        let line = theme.tone(Tone::Fg3);
-        c.spawn((
-            Node { position_type: PositionType::Absolute, left: percent(50.0), width: px(hair), height: percent(100.0), ..default() },
-            BackgroundColor(line),
-            ChildOf(plus),
-        ));
-        c.spawn((
-            Node { position_type: PositionType::Absolute, top: percent(50.0), height: px(hair), width: percent(100.0), ..default() },
-            BackgroundColor(line),
-            ChildOf(plus),
-        ));
+    // The shell's bar: the breadcrumb (Back is Leave, which the app
+    // confirms) over the title, the party, the system tiles.
+    let ui = chimera_ui::controls::Ui::new(&theme, kit.as_deref(), *units);
+    let parent = if view.hosting { "Host" } else { "Join" };
+    let bar = chimera_ui::shell::Bar {
+        left: chimera_ui::shell::Left::Crumb { parent, title: "Lobby" },
+        party: &party.members,
+        party_max: party.max,
+        open: None,
+    };
+    let parts = chimera_ui::shell::bar(&ui, c, frame, images, icons, &bar);
+    if let Some(e) = parts.tile(chimera_ui::shell::ShellTile::Settings) {
+        c.entity(e).insert(LobbyAction::Settings);
     }
-
-    // Header: the lockup, the title, the tabs.
-    let header = p.boxed(c, frame, style!(row, gap: 3.0).abs([Some(m), Some(p.lay("header_y")), Some(m), None]));
-    let lk = p.lay("lockup");
-    let lockup = p.boxed(c, header, style!(row, gap: 0.55 * lk));
-    p.icon(c, lockup, icons, images, "mark", 2.05 * lk, Tone::Fg);
-    let words = p.boxed(c, lockup, style!(column, gap: 0.3 * lk));
-    let ult = p.boxed(c, words, style!(row).justify(JustifyContent::SpaceBetween));
-    for ch in "ULTIMATE".chars() {
-        p.text(c, ult, Role::DisplayRegular, 0.62 * lk, Tone::Fg2, &ch.to_string());
-    }
-    p.text(c, words, Role::Wordmark, lk, Tone::Fg, "GUN GAME");
-    p.text(c, header, Role::DisplayBold, p.lay("title"), Tone::Fg, "Lobby");
-    p.boxed(c, header, style!(row).grow(1.0));
-    let tabs = p.boxed(c, header, style!(row, gap: 0.45));
-    // Invite and Match settings are drawn only (not clickable yet).
-    let buttons = [
-        ("Invite", false, None),
-        ("Match settings", false, None),
-        ("Settings", false, Some(LobbyAction::Settings)),
-        ("Report a bug", false, Some(LobbyAction::Report)),
-        ("Leave", true, Some(LobbyAction::Leave)),
-    ];
-    for (label, outline, action) in buttons {
-        let (bg, fg) = if outline { (Tone::Ink, Tone::Fg) } else { (Tone::Fg, Tone::Ink) };
-        let mut s = style!(row, gap: 1.6, pad: [0.5, 0.6, 0.45, 0.7], min_w: 7.4).justify(JustifyContent::SpaceBetween).bg(bg);
-        if outline {
-            s = s.outline(Tone::Fg3, 1.0);
-        }
-        let tab = p.boxed(c, tabs, s);
-        if let Some(a) = action {
-            c.entity(tab).insert((a, chimera_ui::controls::clickable()));
-        }
-        p.text(c, tab, Role::Mono, p.lay("kv"), fg, label);
-        let px = units.phys(units.cq(0.45)).round().max(1.0) as u32;
-        let tri = drawn.tri.entry(px).or_insert_with(|| images.add(icons::image(&triangle(), px))).clone();
-        c.spawn((
-            ImageNode { image: tri, color: theme.tone(fg), ..default() },
-            Node { width: Val::Px((px as f32 * 46.0 / 56.0).ceil() / units.scale_factor), height: Val::Px(px as f32 / units.scale_factor), ..default() },
-            ChildOf(tab),
-        ));
-    }
-    let rule = c
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: units.val(m),
-                right: units.val(m),
-                top: units.val(p.lay("rule_y")),
-                height: px(hair),
-                ..default()
-            },
-            BackgroundColor(theme.tone(Tone::Fg4)),
-            ChildOf(frame),
-        ))
-        .id();
+    c.entity(root).insert(chimera_ui::shell::ShellScreen);
+    let header = parts.bar.unwrap_or(frame);
+    let rule = parts.bar.unwrap_or(frame);
     // Under an app's overlay (which has its own header) the header
     // doesn't ghost through its shade.
     let overlaid = overlay.as_ref().is_some_and(|o| o.0);
     if overlaid {
         c.entity(header).insert(Visibility::Hidden);
-        c.entity(rule).insert(Visibility::Hidden);
+        let _ = rule;
     }
 
-    // Left: the ready count and the players.
-    let ready = view.rows.iter().filter(|r| r.status == status::READY).count();
-    let left = p.boxed(c, frame, style!(column, w: p.lay("left_w")).abs([Some(m), Some(p.lay("col_y")), None, None]));
-    p.label(c, left, "Ready");
+    // The window: the mode at the left, the list in the middle, the map
+    // at the right, the action bar along its foot.
+    let sh = chimera_ui::shell::ShellLayout::of(&theme);
+    let win = chimera_ui::shell::window(&ui, c, frame);
+    if overlaid {
+        c.entity(win).insert(Visibility::Hidden);
+    }
+    let body_bottom = sh.act_h + 1.4;
+    let mode_w = p.lay("mode_w");
+    let map_w = p.lay("map_w");
+
+    // The mode, pinned at the left.
+    let mode = p.boxed(
+        c,
+        win,
+        style!(column, gap: 0.6, w: mode_w).abs([Some(sh.rows_in), Some(1.6), None, Some(body_bottom)]),
+    );
+    c.spawn((
+        Node { position_type: PositionType::Absolute, right: units.val(-1.4), top: Val::ZERO, bottom: Val::ZERO, width: px(hair), ..default() },
+        BackgroundColor(theme.tone(Tone::Fg5)),
+        ChildOf(mode),
+    ));
+    p.label(c, mode, "Mode");
+    p.text(c, mode, Role::DisplayBold, 1.25, Tone::Fg, &view.mode);
+    let kv = |c: &mut Commands, k: &str, v: &str| {
+        let r = c
+            .spawn((
+                style!(row, gap: 1.0, pad: [0.6, 0.0]),
+                Node { border: UiRect::bottom(px(hair)), ..default() },
+                BorderColor::all(theme.tone(Tone::Fg5)),
+                ChildOf(mode),
+            ))
+            .id();
+        let dt = p.boxed(c, r, style!(row, w: 6.0).shrink(0.0));
+        p.text(c, dt, Role::Mono, 0.56, Tone::Fg3, k);
+        p.text(c, r, Role::Mono, 0.6, Tone::Fg, v);
+    };
+    kv(c, "Mode", "Free for all");
+    if !view.guns_from.is_empty() {
+        let g = p.boxed(c, mode, style!(column, gap: 0.35, margin: [0.6, 0.0, 0.0, 0.0]));
+        p.text(c, g, Role::Mono, 0.56, Tone::Fg3, "Guns from");
+        for game in &view.guns_from {
+            p.text(c, g, Role::DisplayRegular, 0.78, Tone::Fg, &full_game_name(game));
+        }
+    }
+
+    // The list: everyone, your party first; status a progress bar, ping
+    // the bars and ms.
+    let list = p.boxed(
+        c,
+        win,
+        style!(column).abs([Some(sh.rows_in + mode_w + 2.8), Some(1.6), Some(sh.rows_in + map_w + 1.8), Some(body_bottom)]),
+    );
+    let loaded = view.rows.iter().filter(|r| r.status == status::READY).count();
+    let head = p.boxed(c, list, style!(row, gap: 1.2, margin: [0.0, 0.0, 0.6, 0.0]).align(AlignItems::Center));
+    let lt = p.boxed(c, head, style!(column).align(AlignItems::FlexStart));
+    p.label(c, lt, "Loaded");
+    p.text(c, head, Role::DisplayBlack, p.lay("big"), Tone::Fg, &format!("{loaded} / {}", view.rows.len()));
     let unit = match view.slots {
         Some(s) => format!("players \u{2022} {s} slots"),
         None => "players".into(),
     };
-    p.big(c, left, &format!("{ready} / {}", view.rows.len()), p.lay("big"), &unit, 0.7, false);
-    let table = p.boxed(c, left, style!(column, margin: [2.3, 0.0, 0.0, 0.0]));
-    // The four columns: #, player, tag, status.
-    let widths = [Some(p.lay("col_pos")), None, Some(p.lay("col_tag")), Some(p.lay("col_status"))];
-    let cell = |c: &mut Commands, row: Entity, i: usize| -> Entity {
-        let mut s = style!(row, gap: if i == 3 { 0.7 } else { 0.5 }).shrink(0.0);
-        match widths[i] {
-            Some(w) => s = s.w(w),
-            None => s = s.grow(1.0).shrink(1.0),
+    p.text(c, head, Role::Mono, 0.6, Tone::Fg3, &unit);
+    // The columns: #, avatar, player, status, ping.
+    let (cw_ix, cw_av, cw_st, cw_ping) = (1.6, p.lay("avatar"), p.lay("status_w"), p.lay("ping_w"));
+    let cols = p.boxed(c, list, style!(row, gap: 0.8, pad: [0.0, 0.9, 0.45, 0.3]));
+    for (w, h) in [(Some(cw_ix), "#"), (Some(cw_av), ""), (None, "Player"), (Some(cw_st), "Status"), (Some(cw_ping), "Ping")] {
+        let mut st = style!(row).shrink(0.0);
+        st = match w {
+            Some(w) => st.w(w),
+            None => st.grow(1.0),
+        };
+        if h == "Status" {
+            st = st.justify(JustifyContent::Center);
         }
-        if i == 3 {
-            s = s.justify(JustifyContent::FlexEnd);
-        }
-        let e = c.spawn((s, Node::default(), ChildOf(row))).id();
-        if i == 1 {
-            c.entity(e).insert(UiStyle { min_w: Some(0.0), ..style!(row, gap: 0.5).grow(1.0).shrink(1.0) });
-        }
-        e
-    };
-    let head = c
-        .spawn((
-            style!(row, gap: 1.0, pad: [0.0, 1.0, 0.7, 1.0]),
-            Node { border: UiRect::bottom(px(hair)), ..default() },
-            BorderColor::all(theme.tone(Tone::Fg4)),
-            ChildOf(table),
-        ))
-        .id();
-    for (i, h) in ["#", "Player", "Tag", "Status"].into_iter().enumerate() {
-        let e = cell(c, head, i);
-        p.text(c, e, Role::Mono, p.lay("head"), Tone::Fg3, h);
+        let e = p.boxed(c, cols, st);
+        p.text(c, e, Role::Mono, 0.5, Tone::Fg3, h);
     }
+    // You first (your party, until parties exist), then as the server
+    // lists them (humans by join, then bots).
+    let mut order: Vec<usize> = (0..view.rows.len()).collect();
+    order.sort_by_key(|i| !view.rows[*i].local);
     let top_wins = view.rows.iter().map(|r| r.wins).max().unwrap_or(0);
-    for (i, row) in view.rows.iter().enumerate() {
+    let row_h = p.lay("row_h");
+    for (n, &i) in order.iter().enumerate() {
+        let row = &view.rows[i];
         let you = row.local;
         let r = c
             .spawn((
                 LobbyPlayerRow { index: i, you },
-                style!(row, gap: 1.0, pad: [0.0, 1.0], h: p.lay("row_h")),
-                Node { border: UiRect::bottom(px(hair)), ..default() },
-                BorderColor::all(theme.tone(Tone::Fg5)),
-                ChildOf(table),
+                style!(row, gap: 0.8, pad: [0.0, 0.9, 0.0, 0.3], h: row_h, margin: [if n == 0 { 0.0 } else { 0.45 }, 0.0, 0.0, 0.0])
+                    .bg_a(Tone::Fg, if you { 0.06 } else { 0.025 })
+                    .outline(Tone::Fg5, 1.0),
+                Node::default(),
+                ChildOf(list),
             ))
             .id();
-        if you {
-            c.entity(r).insert(widgets::row_you(&theme, &units));
-        }
-        let n = cell(c, r, 0);
-        p.text(c, n, Role::Mono, p.lay("label"), Tone::Fg3, &format!("{:02}", i + 1));
-        let who = cell(c, r, 1);
-        let slot = c.spawn((widgets::bot_slot(images, icons, &theme, &units, row.bot, p.lay("bot"), Tone::Fg2), ChildOf(who))).id();
+        let ix = p.boxed(c, r, style!(row, w: cw_ix).shrink(0.0).justify(JustifyContent::FlexEnd));
+        p.text(c, ix, Role::Mono, 0.56, Tone::Fg3, &format!("{:02}", n + 1));
+        let face = match chimera_ui::avatar::AvatarLook::from_byte(row.avatar) {
+            _ if row.bot => chimera_ui::avatar::Face::Bot,
+            Some(l) => chimera_ui::avatar::Face::Look(l),
+            None => chimera_ui::avatar::Face::Look(chimera_ui::avatar::AvatarLook::for_name(&row.name)),
+        };
+        let av = chimera_ui::avatar::spawn(&ui, c, r, images, icons, face, chimera_ui::avatar::AvatarMarks { you, ..default() }, cw_av);
         if row.bot {
-            c.entity(slot).insert(LobbyMark::Bot);
+            c.entity(av).insert(LobbyMark::Bot);
         }
-        // The name as its player typed it, in the sentence face.
-        let name = p.cased(c, who, Role::Text, p.lay("name"), Tone::Fg, &row.name);
+        let who = p.boxed(c, r, UiStyle { min_w: Some(0.0), ..style!(row, gap: 0.6).grow(1.0).shrink(1.0) });
+        let name = p.cased(c, who, Role::DisplayBold, p.lay("name"), Tone::Fg, &row.name);
         c.entity(name).insert(chimera_ui::Ellipsize::in_parent(row.name.clone()));
+        if row.host {
+            let t = p.boxed(c, who, style!(row, pad: [0.2, 0.32, 0.16, 0.32]).outline(Tone::Fg3, 1.0).shrink(0.0));
+            c.entity(t).insert(LobbyMark::Host);
+            p.text(c, t, Role::Mono, 0.46, Tone::Fg2, "Host");
+        }
         if row.wins > 0 {
-            // The session wins: the leader's in the accent.
             let leader = row.wins == top_wins;
             let tone = if leader { Tone::AccText } else { Tone::Fg2 };
             let w = p.boxed(c, who, style!(row, gap: 0.18).shrink(0.0));
@@ -506,188 +468,170 @@ fn draw(
             p.icon(c, w, icons, images, "trophy", p.lay("tag"), tone);
             p.text(c, w, Role::Mono, p.lay("tag"), tone, &row.wins.to_string());
         }
-        let tag = cell(c, r, 2);
-        match (row.host, you) {
-            (true, true) => {
-                let chip = widgets::spawn_you_host(c, slants, &theme, kit.as_deref(), &units, p.lay("tag"));
-                c.entity(chip).insert((LobbyMark::YouHost, ChildOf(tag)));
-            }
-            (true, false) => {
-                let t = p.tag(c, tag, TagKind::Host, "Host");
-                c.entity(t).insert(LobbyMark::Host);
-            }
-            _ => {}
-        }
-        // Status: the ping, the block, the words.
-        let st = cell(c, r, 3);
-        let ping = p.boxed(c, st, style!(row, gap: 0.3, margin: [0.0, 0.9, 0.0, 0.0]));
-        let size = p.lay("tag");
+        // Status: the progress component (variant B).
+        let stc = p.boxed(c, r, style!(row, w: cw_st).shrink(0.0).justify(JustifyContent::Center));
+        let (prog, words) = row_progress(row);
+        ui.progress(c, stc, prog, &words, cw_st - 0.7, 1.15, 0.56, true);
+        // Ping: the bars and ms; a bot a dim meter and a dash; the loss
+        // mark on a bad line.
+        let pc = p.boxed(c, r, style!(row, w: cw_ping, gap: 0.45).shrink(0.0));
         match row.ping_ms {
             Some(ms) if !row.bot => {
                 let level = PingLevel::from_ms(&theme, ms as u32);
-                let meter = widgets::spawn_ping_meter(c, slants, &theme, &units, size * 0.92, level);
-                c.entity(meter).insert(ChildOf(ping));
-                let number = if level.tone == Tone::Good { Tone::Fg3 } else { level.tone };
-                p.text(c, ping, Role::Mono, size, number, &ms.to_string());
+                let meter = widgets::spawn_ping_meter(c, slants, &theme, &units, 0.97, level);
+                c.entity(meter).insert(ChildOf(pc));
+                p.text(c, pc, Role::Mono, 0.58, Tone::Fg2, &format!("{ms} ms"));
                 if level.tone == Tone::Threat {
-                    let lag = p.boxed(c, ping, style!(row, pad: [0.1, 0.18, 0.07, 0.18]).outline(Tone::Threat, 1.0));
-                    p.text(c, lag, Role::Mono, size * 0.7, Tone::Threat, "Lag");
+                    p.icon(c, pc, icons, images, "loss", 0.8, Tone::Threat);
                 }
             }
-            _ if row.bot => {
-                p.text(c, ping, Role::Mono, size, Tone::Fg4, "-");
+            _ => {
+                let meter = widgets::spawn_ping_meter(c, slants, &theme, &units, 0.97, PingLevel { lit: 0, tone: Tone::Fg4, alpha: 1.0 });
+                c.entity(meter).insert(ChildOf(pc));
+                p.text(c, pc, Role::Mono, 0.58, Tone::Fg4, "-");
             }
-            _ => {}
         }
-        let ready = row.status == status::READY;
-        let (bw, bh) = (p.lay("block_w"), p.lay("block_h"));
-        // A slanted node's box holds the lean: width + height x tan.
-        let block = SlantMaterial::new(&theme, theme.tone(if ready { Tone::Fg } else { Tone::Fg3 }));
-        let block = if ready { block } else { block.outline(1.0) };
-        let mut b = c.spawn((
-            ReadyBlock { ready },
-            MaterialNode(slants.add(block)),
-            Node { width: units.val(bw + bh * tan), height: units.val(bh), flex_shrink: 0.0, ..default() },
-            UiTransform::IDENTITY,
-            ChildOf(st),
-        ));
-        if let Some(at) = drawn.popped.get(&row.name) {
-            let mut tl = Timeline::new([Track::new(Prop::ScaleY, 1.9, 1.0).dur(pop).ease(theme.ease("out"))]);
-            tl.start = Some(*at);
-            tl.step(clock.now);
-            let s = tl.value_or(Prop::ScaleY, 1.0);
-            b.insert((tl, UiTransform { scale: Vec2::new(1.0, s), ..UiTransform::IDENTITY }));
-        }
-        p.text(c, st, Role::Mono, p.lay("label"), if ready { Tone::Fg } else { Tone::Fg3 }, &row.state);
     }
-    // Free slots.
+    // Free slots, up to the server's.
     let open = view.slots.map_or(0, |s| (s as usize).saturating_sub(view.rows.len()));
-    let shown = if view.rows.len() + open <= 10 { open } else { open.min(1) };
+    let shown = open.min(8usize.saturating_sub(view.rows.len()).max(1));
     for k in 0..shown {
         let r = c
             .spawn((
                 OpenSlot,
-                style!(row, gap: 1.0, pad: [0.0, 1.0], h: p.lay("open_h"), margin: [if k == 0 { 0.4 } else { 0.2 }, 0.0, 0.0, 0.0])
-                    .outline(Tone::Fg4, 1.0),
+                style!(row, gap: 0.8, pad: [0.0, 0.9, 0.0, 0.3], h: row_h, margin: [0.45, 0.0, 0.0, 0.0]).outline(Tone::Fg5, 1.0),
                 Node::default(),
-                ChildOf(table),
+                ChildOf(list),
             ))
             .id();
-        let n = cell(c, r, 0);
-        p.text(c, n, Role::Mono, p.lay("label"), Tone::Fg3, &format!("{:02}", view.rows.len() + k + 1));
-        let who = cell(c, r, 1);
-        let label = if shown < open { format!("Open \u{2022} {open} slots") } else { "Open".into() };
-        p.text(c, who, Role::Mono, p.lay("label"), Tone::Fg3, &label);
+        let ix = p.boxed(c, r, style!(row, w: cw_ix).shrink(0.0).justify(JustifyContent::FlexEnd));
+        p.text(c, ix, Role::Mono, 0.56, Tone::Fg4, &format!("{:02}", view.rows.len() + k + 1));
+        p.boxed(c, r, style!(row, w: cw_av, h: cw_av).shrink(0.0).outline(Tone::Fg5, 1.0));
+        let label = if shown < open && k + 1 == shown { format!("Open \u{2022} {open} slots") } else { "Open".into() };
+        p.text(c, r, Role::DisplayBold, p.lay("name"), Tone::Fg4, &label);
     }
 
-    // Right: the map, the mode, the countdown.
-    let right_w = 100.0 - p.lay("right_x") - m;
-    let right = p.boxed(c, frame, style!(column).abs([Some(p.lay("right_x")), Some(p.lay("col_y")), Some(m), None]));
-    p.label(c, right, "Map");
-    let name = p.boxed(c, right, style!(row, margin: [0.7, 0.0, 0.0, 0.0]));
-    p.text(c, name, Role::DisplayBold, p.lay("map_big"), Tone::Fg, &view.map);
-    if !view.game.is_empty() {
-        let g = p.boxed(c, right, style!(row, margin: [0.7, 0.0, 0.0, 0.0]));
-        p.text(c, g, Role::Mono, p.lay("kv"), Tone::Fg2, &view.game);
-    }
-    // The preview's stand-in.
+    // The map, up next: a big card (a gradient stands in for previews).
+    let right = p.boxed(c, win, style!(column, w: map_w).abs([None, Some(1.6), Some(sh.rows_in), Some(body_bottom)]));
+    p.label(c, right, "Up next");
     let (a, b) = map_tint(&view.map);
     let tile = c
         .spawn((
-            style!(column, h: p.lay("map_h"), margin: [1.4, 0.0, 0.0, 0.0]).outline(Tone::Fg4, 1.0),
+            style!(column, h: p.lay("card_h"), margin: [0.7, 0.0, 0.0, 0.0]),
             Node { overflow: Overflow::clip(), ..default() },
-            BackgroundGradient::from(LinearGradient::degrees(110.0, vec![ColorStop::percent(a, 0.0), ColorStop::percent(b, 100.0)])),
+            BackgroundGradient::from(LinearGradient::degrees(160.0, vec![ColorStop::percent(a, 0.0), ColorStop::percent(b, 100.0)])),
             ChildOf(right),
         ))
         .id();
     c.spawn((
         Node { position_type: PositionType::Absolute, width: percent(100.0), height: percent(100.0), ..default() },
         BackgroundGradient::from(LinearGradient::to_bottom(vec![
-            ColorStop::percent(Color::NONE, 50.0),
-            ColorStop::percent(theme.tone_a(Tone::Ink, 0.65), 100.0),
+            ColorStop::percent(Color::NONE, 55.0),
+            ColorStop::percent(theme.tone_a(Tone::Ink, 0.75), 100.0),
         ])),
         ChildOf(tile),
     ));
-    let cap = p.boxed(c, tile, style!(row).abs([Some(1.0), None, None, Some(0.9)]));
-    p.text(c, cap, Role::Mono, 0.58, Tone::Fg, "Map preview");
-    // Mode and guns.
-    let kv = p.boxed(c, right, style!(column, margin: [1.2, 0.0, 0.0, 0.0]));
-    let guns = view.guns_from.join(" \u{2022} ");
-    for (key, value) in [("Mode", view.mode.as_str()), ("Guns from", guns.as_str())] {
-        if value.is_empty() {
-            continue;
-        }
-        let r = c
-            .spawn((
-                style!(row, gap: 1.0, pad: [0.6, 0.0]),
-                Node { border: UiRect::bottom(px(hair)), ..default() },
-                BorderColor::all(theme.tone(Tone::Fg5)),
-                ChildOf(kv),
-            ))
-            .id();
-        let dt = p.boxed(c, r, style!(row, w: 7.6).shrink(0.0));
-        p.text(c, dt, Role::Mono, p.lay("kv"), Tone::Fg3, key);
-        p.text(c, r, Role::Mono, p.lay("kv"), Tone::Fg, value);
+    let pc = p.boxed(c, tile, style!(row).abs([Some(1.0), Some(1.0), None, None]));
+    p.text(c, pc, Role::Mono, 0.5, Tone::Fg3, "Preview coming");
+    let cap = p.boxed(c, tile, style!(row, gap: 0.8).abs([Some(1.0), None, None, Some(1.0)]).align(AlignItems::Baseline));
+    p.text(c, cap, Role::DisplayBlack, p.lay("map_big"), Tone::Fg, &view.map);
+    if !view.game.is_empty() {
+        p.text(c, cap, Role::Mono, 0.6, Tone::Fg2, &view.game);
     }
-    // The countdown.
-    let cd = p.boxed(c, right, style!(column, margin: [1.4, 0.0, 0.0, 0.0]));
-    p.label(c, cd, "Starts in");
-    let big = match view.countdown {
-        Some(s) => format!("{:02}:{:02}", s / 60, s % 60),
-        None => "--:--".into(),
-    };
-    p.big(c, cd, &big, p.lay("big"), &view.line, 0.6, true);
-    let n = p.lay("countdown_ticks").max(1.0) as u32;
-    let box_w = units.phys(units.cq(right_w)).floor() as u32;
-    let box_h = units.phys(units.cq(p.lay("ticks_h"))).floor() as u32;
-    let layout = TickLayout::new(box_w, box_h, n);
-    let mut mat = TickBarMaterial::new(&theme, n, layout);
-    let bar = CountdownBar {
-        material: Handle::default(),
-        ticks: n,
-        total: drawn.total,
-        left: view.countdown,
-        since: drawn.since,
-        hot: p.lay("countdown_hot"),
-    };
-    let (lit, hot) = bar.lit(clock.now);
-    mat.set(lit, hot);
-    let handle = ticks.add(mat);
-    let sf = units.scale_factor.max(1e-3);
-    let well = p.boxed(c, cd, style!(row, h: p.lay("ticks_h"), margin: [1.0, 0.0, 0.0, 0.0]));
-    c.spawn((
-        CountdownBar { material: handle.clone(), ..bar },
-        MaterialNode(handle),
-        Node { width: px(layout.w as f32 / sf), height: px(layout.h as f32 / sf), ..default() },
-        ChildOf(well),
-    ));
+    // Standby: the countdown and its ticks, once it runs.
+    if let Some(left) = view.countdown {
+        let cd = p.boxed(c, right, style!(column, margin: [1.2, 0.0, 0.0, 0.0]));
+        let line = p.boxed(c, cd, style!(row, gap: 1.0).align(AlignItems::Baseline));
+        p.text(c, line, Role::Mono, 0.6, Tone::Fg2, "Standby");
+        p.text(c, line, Role::Mono, p.lay("big") * 0.8, Tone::Fg, &format!("{}:{:02}", left / 60, left % 60));
+        let n = p.lay("countdown_ticks").max(1.0) as u32;
+        let box_w = units.phys(units.cq(map_w)).floor() as u32;
+        let box_h = units.phys(units.cq(p.lay("ticks_h"))).floor() as u32;
+        let layout = TickLayout::new(box_w, box_h, n);
+        let mut mat = TickBarMaterial::new(&theme, n, layout);
+        let bar = CountdownBar {
+            material: Handle::default(),
+            ticks: n,
+            total: drawn.total,
+            left: view.countdown,
+            since: drawn.since,
+            hot: p.lay("countdown_hot"),
+        };
+        let (lit, hot) = bar.lit(clock.now);
+        mat.set(lit, hot);
+        let handle = ticks.add(mat);
+        let sf = units.scale_factor.max(1e-3);
+        let well = p.boxed(c, cd, style!(row, h: p.lay("ticks_h"), margin: [0.7, 0.0, 0.0, 0.0]));
+        c.spawn((
+            CountdownBar { material: handle.clone(), ..bar },
+            MaterialNode(handle),
+            Node { width: px(layout.w as f32 / sf), height: px(layout.h as f32 / sf), ..default() },
+            ChildOf(well),
+        ));
+    }
+
+    // The action bar: the status sentence; Start, the host's hero. Nobody
+    // readies up: loaded is ready.
+    let bar = chimera_ui::shell::action_bar(&ui, c, win);
+    let line = action_line(&view, loaded);
+    let st = p.boxed(c, bar, style!(row).grow(1.0));
+    ui.sentence(c, st, chimera_ui::controls::SENTENCE, Tone::Fg2, &line);
+    if view.hosting && view.countdown.is_none() {
+        let go = ui.button(c, bar, chimera_ui::controls::Kind::Primary, "Start", Some("Enter"), chimera_ui::controls::HERO_H, chimera_ui::controls::State::NONE);
+        c.entity(go).insert(LobbyAction::Ready);
+    }
 
     // Footer: the keys (not under an app's overlay, which has its own).
     if overlaid {
         return;
     }
-    let key_words = match view.key_line() {
-        Some("lobby_start") => Some("Start now"),
-        Some(_) if view.rows.iter().any(|r| r.local && r.status == status::NOT_READY) => Some("Ready up"),
-        Some(_) => Some("Not ready"),
-        // Still downloading or loading: ready up for when the map is in.
-        None if !view.hosting && view.rows.iter().any(|r| r.local) => Some(if asked.0 { "Not ready" } else { "Ready up" }),
-        None => None,
-    };
-    let foot = p.boxed(c, frame, style!(row, gap: 2.2).abs([Some(m), None, None, Some(p.lay("foot_y"))]));
-    let keys = [
-        (super::prematch_lobby::LOBBY_KEY.to_uppercase(), key_words, Some(LobbyAction::Ready)),
-        ("Tab".into(), Some("Players"), None),
-    ];
-    for (k, words, action) in keys {
-        let Some(words) = words else { continue };
-        let item = p.boxed(c, foot, style!(row, gap: 0.55));
-        if let Some(a) = action {
-            c.entity(item).insert((a, chimera_ui::controls::clickable()));
-        }
-        let cap = widgets::spawn_pair(c, widgets::kbd(&theme, kit.as_deref(), &units, &k, p.lay("key")));
-        c.entity(cap).insert(ChildOf(item));
-        p.text(c, item, Role::Mono, p.lay("key"), Tone::Fg2, words);
+    let mut keys: Vec<(&str, &str)> = Vec::new();
+    if view.hosting && view.countdown.is_none() {
+        keys.push(("Enter", "Start"));
+    }
+    keys.push(("Tab", "Players"));
+    chimera_ui::shell::keys(&ui, c, frame, &keys);
+}
+
+/// A row's progress and its words (variant B: the word and the share
+/// inside the bar).
+fn row_progress(r: &super::prematch_lobby::LobbyViewRow) -> (chimera_ui::controls::Progress, String) {
+    use chimera_ui::controls::Progress;
+    match r.status {
+        _ if r.bot => (Progress::Ready, "Loaded".into()),
+        status::READY | status::NOT_READY => (Progress::Ready, "Loaded".into()),
+        status::DOWNLOADING => match r.fraction {
+            Some(f) if f > 0.0 => (Progress::Running(f), "Downloading".into()),
+            _ => (Progress::Connecting, "Downloading".into()),
+        },
+        status::LOADING => (Progress::Connecting, "Loading".into()),
+        _ => (Progress::Connecting, "Connecting".into()),
+    }
+}
+
+/// The action bar's sentence: how many have loaded and what starts the
+/// match.
+pub fn action_line(v: &LobbyView, loaded: usize) -> String {
+    let n = v.rows.len();
+    if let Some(left) = v.countdown {
+        return format!("{loaded} of {n} loaded. The match starts in {left} s.");
+    }
+    if v.hosting {
+        format!("{loaded} of {n} loaded. The match starts when you press Start.")
+    } else if v.host_start {
+        format!("{loaded} of {n} loaded. Waiting for the host to start.")
+    } else {
+        format!("{loaded} of {n} loaded. {}", v.line)
+    }
+}
+
+/// A game's full name from its short one (the ladder's "Guns from").
+fn full_game_name(short: &str) -> String {
+    match short {
+        "CS:S" => "Counter-Strike: Source".into(),
+        "CA" => "Combat Arms".into(),
+        "HL2:DM" => "Half-Life 2: Deathmatch".into(),
+        other => other.into(),
     }
 }
 

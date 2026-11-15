@@ -55,6 +55,7 @@ pub mod match_effects;
 pub mod match_end;
 pub mod match_end_signal;
 pub mod prematch_lobby;
+pub mod profile;
 pub mod lobby_panel;
 pub mod logo_pass;
 pub mod net;
@@ -585,6 +586,7 @@ impl PluginGroup for ClientPlugins {
             .add(hud::HudPlugin)
             .add(overlay::OverlayPlugin)
             .add(chimera_ui::ChimeraUiPlugin)
+            .add(profile::ProfilePlugin)
             .add(logo_pass::LogoPassPlugin)
             .add(ui_scene::UiScenePlugin)
             .add(minigame_panel::MinigamePanelPlugin)
