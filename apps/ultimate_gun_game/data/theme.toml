@@ -209,6 +209,14 @@ ticks_h = 1.4
 countdown_ticks = 48.0
 countdown_hot = 3.0  # the last seconds lit in the accent
 
+# The chat docked in the lobby (chimera_client signal_chat): in the mode
+# column, above the action bar (the shell's window, revision 8).
+[layout.chat]
+dock_left = 4.4
+dock_bottom = 10.4
+dock_w = 18.0
+dock_h = 11.0
+
 [layout.menu]        # the party menu's first page (party_kit signal_menu): a 100 x 56.25 frame
 lockup_x = 2.6
 lockup_y = 2.4

@@ -1,7 +1,7 @@
 //! The kit's scroll container (docs/plans/active/ugg-ui.md, M7): a list
 //! taller than its box scrolls, with a Signal scroll bar, eased wheel
-//! steps, a right-button pan with a fling, and a way to keep an entity
-//! in view.
+//! steps and a way to keep an entity in view (the right-button pan is
+//! gone: the right button is Back, `shell`).
 //!
 //! - **Build**: `Ui::scroll(c, parent, key, frame, content)` gives a frame
 //!   (a row: the view and the bar), the view (`ScrollView`, clipping,
@@ -19,15 +19,10 @@
 //! - **Wheel**: each notch moves the target `wheel_step` cq (a pixel
 //!   wheel by its pixels); the offset follows it eased (exponential, time
 //!   constant `ease` s), notches adding up.
-//! - **Right button** (held over the view): the content follows the
-//!   pointer 1:1, past an edge on an elastic band (at most `overscroll`
-//!   cq); on release it flings at the speed of the last `window` s
-//!   (capped at `max_velocity` cq/s), slowing by `friction` (per second,
-//!   exponential), stopped at an edge by a spring (`spring`, per second)
-//!   and pulled back inside. The next press (any button) or a wheel
-//!   notch over the view stops a fling. The press and the release are
-//!   taken from `ButtonInput<MouseButton>` (`clear_just_pressed`), so
-//!   what reads the right button after `ScrollInput` doesn't see them.
+//! - **No right-button pan** (design rules 11.1: the right button is
+//!   Back, `shell::back_keys`): `ScrollState` keeps its pan and fling
+//!   (`pan_start`, `pan_end`, the elastic band) for a later drag, but no
+//!   input starts one.
 //! - **In view**: `ScrollIntoView` on an entity under a view's content
 //!   (`scroll_into_view(c, e)`) scrolls it in, eased, with
 //!   `reveal_margin` cq around it, once laid out; the marker then goes.
@@ -600,7 +595,7 @@ pub fn scroll_input(
     let tune = ScrollTuning::from_theme(&theme);
     let reduced = reduced.is_some_and(|r| r.0);
     let now = clock.now;
-    let (mut right_down, mut right_up) = (false, false);
+    let (right_down, mut right_up) = (false, false);
     for (v, pos, node, locked) in &view_q {
         let s = views.state(&v.key);
         if locked {
@@ -610,12 +605,9 @@ pub fn scroll_input(
         }
         let y = pointer_y(&units, node, pos);
         if let Some(m) = mouse.as_deref() {
-            if m.just_pressed(MouseButton::Right) && pos.cursor_over && s.overflows() {
-                if let Some(y) = y {
-                    s.pan_start(y, now);
-                    right_down = true;
-                }
-            } else if m.just_pressed(MouseButton::Left) && pos.cursor_over {
+            // The right button is Back on every screen (`shell::back_keys`,
+            // the design rules' 11.1): no pan starts from it any more.
+            if m.just_pressed(MouseButton::Left) && pos.cursor_over {
                 s.stop();
             }
             if s.pan.is_some() {

@@ -201,6 +201,8 @@ fn session_wins_survive_a_map_change_and_a_rejoin() {
         setup,
     );
     sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_max_wait 90");
+    // The first match starts by itself here (the host's start is `prematch_lobby`'s).
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_host_start 0");
     sim.server.app.add_systems(Update, server_loads);
     sim.server.app.console_command("changelevel", "changelevel <map>: a test's.", |w, a| {
         let map = a.first().cloned().unwrap_or_default();

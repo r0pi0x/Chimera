@@ -2,8 +2,8 @@
 //! whose theme lays the lobby out (`[layout.lobby]`: the Ultimate Gun
 //! Game's Signal, docs/plans/active/ugg-ui.md 3 and M1); without one the
 //! shell's own panel (`prematch_lobby`) draws as before. Same state
-//! (`prematch_lobby::LobbyView`), same root (`LobbyRoot`), same key (F3,
-//! and Enter for the host): presentation only. Built from the kit's style layer (`style!`,
+//! (`prematch_lobby::LobbyView`), same root (`LobbyRoot`), same key (F3):
+//! presentation only. Built from the kit's style layer (`style!`,
 //! `UiText`, `UiSlant`) and its Look Book V marks (`widgets`).
 //!
 //! On a full-screen ink plate over the frozen map, a 16:9 frame (100 x
@@ -39,9 +39,10 @@
 //! - **The action bar**: the status sentence (how many have loaded; what
 //!   starts the match: "Waiting for the host to start" while the first
 //!   lobby waits for the host, `NetLobby::host_start`) and, for the
-//!   host, **Start** [Enter], the big hero (`LobbyAction::Ready`: the
-//!   host's `lobby_start`). Nobody readies up: loaded is ready.
-//! - **Keys** at the foot (Enter Start for the host, Tab Players), hidden
+//!   host, **Start** [F3], the big hero (`LobbyAction::Ready`: the host's
+//!   `lobby_start`; F3, not the mock's Enter, which opens the docked
+//!   chat). Nobody readies up: loaded is ready.
+//! - **Keys** at the foot (F3 Start for the host, Tab Players), hidden
 //!   under an app's overlay. The lobby owns the screen and the mouse
 //!   (`prematch_lobby::lobby_shown`), so its buttons take clicks through a
 //!   download and a load.
@@ -136,7 +137,7 @@ impl CountdownBar {
 /// The lobby panel's systems (added by `PreMatchLobbyPlugin`).
 pub fn add(app: &mut App) {
     app.add_systems(Update, (draw, step_bar).chain().after(super::prematch_lobby::LobbyFollow).run_if(themed))
-        .add_systems(Update, (press, enter_starts).before(super::prematch_lobby::LobbyFollow));
+        .add_systems(Update, press.before(super::prematch_lobby::LobbyFollow));
 }
 
 /// A click on one of the lobby's buttons (`LobbyAction`).
@@ -145,21 +146,6 @@ fn press(pressed: Query<(&Interaction, &LobbyAction), Changed<Interaction>>, mut
         if *i == Interaction::Pressed {
             out.write(*a);
         }
-    }
-}
-
-/// Enter is the host's Start (the hero's key) while the lobby shows with
-/// nothing over it.
-fn enter_starts(
-    keys: Option<Res<ButtonInput<KeyCode>>>,
-    view: Res<LobbyView>,
-    overlay: Option<Res<LobbyOverlay>>,
-    theme: Option<Res<Theme>>,
-    mut out: MessageWriter<LobbyAction>,
-) {
-    let pressed = keys.is_some_and(|k| k.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter]));
-    if pressed && themed(theme) && view.shown && view.hosting && view.countdown.is_none() && !overlay.is_some_and(|o| o.0) {
-        out.write(LobbyAction::Ready);
     }
 }
 
@@ -422,25 +408,42 @@ fn draw(
         let e = p.boxed(c, cols, st);
         p.text(c, e, Role::Mono, 0.5, Tone::Fg3, h);
     }
-    // You first (your party, until parties exist), then as the server
-    // lists them (humans by join, then bots).
-    let mut order: Vec<usize> = (0..view.rows.len()).collect();
-    order.sort_by_key(|i| !view.rows[*i].local);
+    // Your party first (you, then your friends), then the other parties,
+    // each together, then everyone alone, as the server lists them
+    // (humans by join, then bots).
+    let order = list_order(&view.rows);
+    let mine = view.rows.iter().find(|r| r.local).map(|r| r.party).filter(|p| *p != 0);
     let top_wins = view.rows.iter().map(|r| r.wins).max().unwrap_or(0);
     let row_h = p.lay("row_h");
+    let mut last_party: Option<u8> = None;
     for (n, &i) in order.iter().enumerate() {
         let row = &view.rows[i];
         let you = row.local;
+        // A party's rows join (no gap between them); groups stand apart.
+        let party = (row.party != 0).then_some(row.party);
+        let joined = n > 0 && party.is_some() && party == last_party;
+        last_party = party;
         let r = c
             .spawn((
                 LobbyPlayerRow { index: i, you },
-                style!(row, gap: 0.8, pad: [0.0, 0.9, 0.0, 0.3], h: row_h, margin: [if n == 0 { 0.0 } else { 0.45 }, 0.0, 0.0, 0.0])
+                style!(row, gap: 0.8, pad: [0.0, 0.9, 0.0, 0.3], h: row_h, margin: [if n == 0 || joined { 0.0 } else { 0.45 }, 0.0, 0.0, 0.0])
                     .bg_a(Tone::Fg, if you { 0.06 } else { 0.025 })
                     .outline(Tone::Fg5, 1.0),
                 Node::default(),
                 ChildOf(list),
             ))
             .id();
+        if let Some(pid) = party {
+            // The party's edge: a thin solid colour down the rows' left
+            // (yours cobalt, another party one of the avatar palette's).
+            let colour = if Some(pid) == mine { theme.tone(Tone::Acc) } else { party_colour(pid) };
+            c.spawn((
+                PartyEdge(pid),
+                Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, width: units.val(0.26), ..default() },
+                BackgroundColor(colour),
+                ChildOf(r),
+            ));
+        }
         let ix = p.boxed(c, r, style!(row, w: cw_ix).shrink(0.0).justify(JustifyContent::FlexEnd));
         p.text(c, ix, Role::Mono, 0.56, Tone::Fg3, &format!("{:02}", n + 1));
         let face = match chimera_ui::avatar::AvatarLook::from_byte(row.avatar) {
@@ -577,7 +580,9 @@ fn draw(
     let st = p.boxed(c, bar, style!(row).grow(1.0));
     ui.sentence(c, st, chimera_ui::controls::SENTENCE, Tone::Fg2, &line);
     if view.hosting && view.countdown.is_none() {
-        let go = ui.button(c, bar, chimera_ui::controls::Kind::Primary, "Start", Some("Enter"), chimera_ui::controls::HERO_H, chimera_ui::controls::State::NONE);
+        // F3 (the lobby's key; Enter is the docked chat's).
+        let key = super::prematch_lobby::LOBBY_KEY.to_uppercase();
+        let go = ui.button(c, bar, chimera_ui::controls::Kind::Primary, "Start", Some(&key), chimera_ui::controls::HERO_H, chimera_ui::controls::State::NONE);
         c.entity(go).insert(LobbyAction::Ready);
     }
 
@@ -585,13 +590,43 @@ fn draw(
     if overlaid {
         return;
     }
+    let key = super::prematch_lobby::LOBBY_KEY.to_uppercase();
     let mut keys: Vec<(&str, &str)> = Vec::new();
     if view.hosting && view.countdown.is_none() {
-        keys.push(("Enter", "Start"));
+        keys.push((&key, "Start"));
     }
     keys.push(("Tab", "Players"));
     chimera_ui::shell::keys(&ui, c, frame, &keys);
 }
+
+/// The list's order (module doc): your party, other parties together
+/// (by their first member's place), then the rest, each in the server's
+/// order.
+pub fn list_order(rows: &[super::prematch_lobby::LobbyViewRow]) -> Vec<usize> {
+    let mine = rows.iter().find(|r| r.local).map(|r| r.party);
+    let first_of = |p: u8| rows.iter().position(|r| r.party == p).unwrap_or(0);
+    let mut order: Vec<usize> = (0..rows.len()).collect();
+    order.sort_by_key(|&i| {
+        let r = &rows[i];
+        let group = match (r.local, r.party) {
+            (true, _) => (0, 0),
+            (_, 0) => (2, i),
+            (_, p) if Some(p) == mine => (0, 0),
+            (_, p) => (1, first_of(p)),
+        };
+        (group, !r.local, i)
+    });
+    order
+}
+
+/// Another party's edge colour: one of the avatar palette's tints.
+fn party_colour(party: u8) -> Color {
+    chimera_ui::avatar::AvatarLook::new(0, party.wrapping_add(3) % 8).tint()
+}
+
+/// A party's coloured edge on one of its rows (its party id).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PartyEdge(pub u8);
 
 /// A row's progress and its words (variant B: the word and the share
 /// inside the bar).

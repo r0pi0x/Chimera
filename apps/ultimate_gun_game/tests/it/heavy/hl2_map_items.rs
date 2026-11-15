@@ -34,6 +34,11 @@ fn is_item(class: &str) -> bool {
 
 #[test]
 fn an_hl2_maps_pickups_are_not_placed_its_crates_are_and_its_props_follow_hl2s_rules() {
+    let info = &hl2dm::game::INFO;
+    if !info.install().is_some_and(|p| chimera_core::mount::served::usable(info.id, &p, "hl2mp")) {
+        eprintln!("skipping: needs the HL2:DM install");
+        return;
+    }
     let Ok(data) = party_kit::load_map_with(MAP, &MapLoadOptions::lean()) else {
         eprintln!("skipping: needs the HL2:DM install");
         return;

@@ -64,8 +64,14 @@ fn de_dust2_loads_from_the_store_alone() {
     let install_took = started.elapsed();
     let from_install = summary(&map);
     drop(map);
-    let paths: Vec<String> = recorder.lines().into_iter().map(|l| l.path).collect();
     let read: u64 = recorder.lines().iter().map(|l| l.size).sum();
+    // The files read and those only checked for (`contains`; the recorder
+    // never reads them): the published store's manifest answers a check, so
+    // this one must list them too, or the load takes another way.
+    let mut paths: Vec<String> = recorder.lines().into_iter().map(|l| l.path).collect();
+    paths.extend(recorder.checks().into_iter().map(|(_, p)| p));
+    paths.sort();
+    paths.dedup();
 
     let dir = std::env::temp_dir().join(format!("chimera_served_dust2_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

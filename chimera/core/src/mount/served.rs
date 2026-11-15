@@ -15,7 +15,8 @@
 //! manifest lists: every file the game mounts when it was published whole
 //! (`complete`), else only the sets packed so far (`partial`). `usable`
 //! is what a test or tool asks before reading a game's files: an install
-//! with the game's folder, or the store standing in for it; `sets_held`
+//! with the game's folder, or the store standing in for it (a whole
+//! publish only with a service to fetch from); `sets_held`
 //! and `map_held` whether the store holds whole sets (a map's) with no
 //! network (what a load may read without downloading). `CHIMERA_VFS_LOG=<file>` wraps every layer
 //! in a `Recording`: each file read is logged with its game, size and
@@ -68,10 +69,22 @@ pub fn partial(game: &str, install: &Path) -> bool {
 /// install; one that reads the install's own files outside the mount (an
 /// archive by its file name) asks for the marker alone. An empty `marker`
 /// means the install path itself: a game whose install is one file (a disc
-/// image) or whose folder has no marker.
+/// image) or whose folder has no marker. The store stands in only where
+/// it can give what it lists (`readable_alone`): a whole publish with no
+/// service to fetch from (no install found, no `[assets] url`, no bound
+/// access) holds little more than its manifest, so a test or tool skips
+/// rather than failing on every file.
 pub fn usable(game: &str, install: impl AsRef<Path>, marker: &str) -> bool {
     let install = install.as_ref();
-    holds(install, marker) || alone(game, install)
+    holds(install, marker) || settings().is_ok_and(|a| alone_with(&a, game, install) && readable_alone(&a, game))
+}
+
+/// Whether the store alone can give `game`'s files: a service is set
+/// (files it lacks are fetched on demand), or the build is only some sets
+/// (`partial`: the ones packed here, which a check of the whole install
+/// skips by `partial` anyway).
+fn readable_alone(assets: &AssetSettings, game: &str) -> bool {
+    assets.fetcher().is_some() || !complete(assets, game)
 }
 
 /// Whether `install` holds `marker` (an empty one: `install` itself exists).

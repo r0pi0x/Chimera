@@ -480,7 +480,7 @@ Maps and matches:
   | `mp_lobby_max_wait` | 90 | the longest wait, s, from the lobby's start or the first player's arrival (whichever is later), before the countdown starts anyway; the stragglers join late |
   | `mp_lobby_min_players` | 1 | players (not bots) connected before being ready counts; set it to the testers you expect for the first match, so it doesn't start for the first one in (the max wait still applies) |
   | `mp_lobby_ready_up` | 0 | 1: a player on the map is "Not ready" until it presses F3 (`lobby_ready`; again takes it back); 0: having the map is ready |
-  | `mp_lobby_host_start` | 0 | 1: the server run's first lobby waits for the host's start (`lobby_start`, the lobby's Start); nothing counts it down by itself (the app's Host page sets it) |
+  | `mp_lobby_host_start` | 1 (0 on the party apps' dedicated servers) | 1: the server run's first lobby waits for the host's start (a listen host's Start, `lobby_start` on the console); nothing counts it down by itself. 0: it counts down once everyone is ready or after the longest wait |
 
   `lobby` on the console lists the players and what it waits for;
   `lobby_start` starts the countdown now (`lobby_start 0`: the match at

@@ -82,7 +82,24 @@ label = "Quit"
 action = "quit"
 
 [[play]]
-label = "Map"
+label = "Server name"
+cvar = "hostname"
+text = 64
+default = "{title}'s game"
+
+[[play]]
+label = "Password"
+cvar = "sv_password"
+text = 32
+masked = true
+
+[[play]]
+label = "Port"
+cvar = "hostport"
+text = 5
+
+[[play]]
+label = "Maps"
 map = true
 
 [[play]]
@@ -119,23 +136,6 @@ label = "Start when"
 cvar = "mp_lobby_host_start"
 choices = [["1", "Host presses Start"]]
 default = "1"
-
-[[play]]
-label = "Server name"
-cvar = "hostname"
-text = 64
-default = "{title}'s game"
-
-[[play]]
-label = "Password"
-cvar = "sv_password"
-text = 32
-masked = true
-
-[[play]]
-label = "Port"
-cvar = "hostport"
-text = 5
 
 [[play]]
 label = "Open the router's port (UPnP)"
