@@ -1835,12 +1835,12 @@ pub fn log_layer(_: &mut App) -> Option<BoxedLayer> {
         }
     }
     let queue = LOG.get_or_init(Default::default).clone();
+    // The session's log too (`diagnostics`: INFO and above, every target).
+    let layer = ToConsole(queue).and_then(chimera_core::diagnostics::SessionLayer);
     // A profile build also times every span for the hitch log
     // (`frame_metrics::span_times`).
     #[cfg(feature = "profile")]
-    let layer = ToConsole(queue).and_then(super::frame_metrics::span_times::SpanTimes);
-    #[cfg(not(feature = "profile"))]
-    let layer = ToConsole(queue);
+    let layer = layer.and_then(super::frame_metrics::span_times::SpanTimes);
     // A `trace` build records short windows of spans (`trace_capture`).
     #[cfg(feature = "trace")]
     let layer = layer.and_then(super::trace_capture::CaptureLayer);

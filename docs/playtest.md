@@ -222,12 +222,23 @@ console lines) into a new folder under
 name. Zip that folder and send it. You can add a note: `bugreport the gun
 floated` in the console.
 
-For crashes and freezes: the game has no crash reporter. `Play-UGG.bat`
-saves everything the console window shows into `ugg-last.log` in the game's
-folder (overwritten on each start, so copy it before you start again). If you
-started the game another way, copy the console window's text, or take a photo
-of it before closing it. Send `ugg-last.log` plus what you were doing. If
-the game closes by itself, send the log first, then the details.
+For crashes and freezes, in a build that has it: the game keeps a log of
+its last sessions (`%LOCALAPPDATA%\chimera\logs\session-<time>.log`, the
+last five, with a line of memory and frame times every 10 seconds). If it
+crashes, freezes and is killed, or the PC goes down, the next start says
+**"The last session ended unexpectedly. Send a report?"** on the main menu:
+**Send** sends that session's log tail (and, after a crash, what crashed)
+to the host as a report; **Always send** does that from now on without
+asking; **Not now** keeps nothing. No passwords, tokens or addresses are in
+the log. The console's `cl_crash_reports ask|always|never` is the same
+choice.
+
+In an older build: `Play-UGG.bat` saves everything the console window
+shows into `ugg-last.log` in the game's folder (overwritten on each start,
+so copy it before you start again). If you started the game another way,
+copy the console window's text, or take a photo of it before closing it.
+Send `ugg-last.log` plus what you were doing. If the game closes by
+itself, send the log first, then the details.
 
 ## Known issues
 

@@ -7,7 +7,10 @@
 //!
 //! The game (`chimera_client::client::feedback`) fills the `ReportState`:
 //! the text sections (`game`, `system`, `perf`, `net`) as it formats them,
-//! cvars and binds as lists, console and log lines as they were.
+//! cvars and binds as lists, console and log lines as they were. A crash
+//! report (`Kind::Crash`, made by `session`) adds `backtrace.txt`,
+//! `health.txt` and, from a native crash on Windows, `minidump.dmp` (its
+//! home folders scrubbed; a binary the filter can't read otherwise).
 
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +22,10 @@ pub const SCHEMA: u32 = 1;
 pub const CONSOLE_LINES: usize = 300;
 /// Log lines kept (the last ones).
 pub const LOG_LINES: usize = 500;
+/// Log lines a crash report keeps (the session's tail).
+pub const CRASH_LOG_LINES: usize = 3000;
+/// A minidump's first bytes.
+pub const MINIDUMP_MAGIC: &[u8] = b"MDMP";
 
 /// Every entry a bundle may hold, with its cap in bytes.
 pub const ENTRIES: &[(&str, usize)] = &[
@@ -32,6 +39,10 @@ pub const ENTRIES: &[(&str, usize)] = &[
     ("cvars.txt", 256 * 1024),
     ("console.txt", 512 * 1024),
     ("log.txt", 1024 * 1024),
+    // Crash reports (`Kind::Crash`, `session`).
+    ("backtrace.txt", 256 * 1024),
+    ("health.txt", 256 * 1024),
+    ("minidump.dmp", 6 * 1024 * 1024),
 ];
 
 /// An entry's cap (None: not allowed).
@@ -46,6 +57,9 @@ pub enum Kind {
     #[default]
     Bug,
     Feedback,
+    /// Made by the game itself: a panic, a native crash, a render device
+    /// lost, or a session that ended without a clean exit (`session`).
+    Crash,
 }
 
 impl Kind {
@@ -53,6 +67,7 @@ impl Kind {
         match self {
             Kind::Bug => "bug",
             Kind::Feedback => "feedback",
+            Kind::Crash => "crash",
         }
     }
 }
@@ -138,6 +153,13 @@ pub struct ReportState {
     pub console: Vec<String>,
     /// The `tracing` log's last lines (the last `LOG_LINES` are kept).
     pub log: Vec<String>,
+    /// `backtrace.txt` (a crash): the panic's message, place and stack.
+    pub backtrace: String,
+    /// `health.txt` (a crash): the session's last health lines.
+    pub health: Vec<String>,
+    /// `minidump.dmp` (a native crash on Windows), home folders scrubbed
+    /// (`session::scrub_dump`).
+    pub minidump: Option<Vec<u8>>,
 }
 
 /// `report.json`.
@@ -161,6 +183,9 @@ pub struct ReportInfo {
     /// Why there is no screenshot though one was taken ("too large").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screenshot_dropped: Option<String>,
+    /// Why there is no minidump though the crash left one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minidump_dropped: Option<String>,
 }
 
 /// A built bundle.
@@ -229,6 +254,7 @@ pub fn build(state: &ReportState) -> Result<Bundle, String> {
         app: redact::line(&cut_chars(&state.app, 100)),
         install_id: cut_chars(&state.install_id, 64).chars().filter(char::is_ascii_alphanumeric).collect(),
         screenshot_dropped: None,
+        minidump_dropped: None,
     };
     let mut cvars = String::new();
     for c in state.cvars.iter().filter(|c| !c.server_private && !redact::secret_name(&c.name)) {
@@ -242,16 +268,25 @@ pub fn build(state: &ReportState) -> Result<Bundle, String> {
             cvars.push('\n');
         }
     }
-    let texts: [(&str, String, bool); 7] = [
+    let texts: [(&str, String, bool); 9] = [
         ("game.txt", redact::text(&state.game), false),
         ("system.txt", redact::text(&state.system), false),
         ("perf.txt", redact::text(&state.perf), false),
         ("net.txt", redact::text(&state.net), true),
         ("cvars.txt", cvars, false),
         ("console.txt", lines(&state.console, CONSOLE_LINES), true),
-        ("log.txt", lines(&state.log, LOG_LINES), true),
+        ("log.txt", lines(&state.log, if state.kind == Kind::Crash { CRASH_LOG_LINES } else { LOG_LINES }), true),
+        ("backtrace.txt", redact::text(&state.backtrace), false),
+        ("health.txt", lines(&state.health, LOG_LINES), true),
     ];
     let screenshot = state.screenshot.as_ref().filter(|s| s.valid());
+    let minidump = state
+        .minidump
+        .as_ref()
+        .filter(|d| d.starts_with(MINIDUMP_MAGIC) && d.len() <= cap("minidump.dmp").expect("listed"));
+    if state.minidump.is_some() && minidump.is_none() {
+        info.minidump_dropped = Some("too large or not a minidump".into());
+    }
     let assemble = |info: &ReportInfo, screenshot: Option<&Screenshot>| {
         let mut w = zip::ZipWriter::new(time);
         let json = serde_json::to_vec_pretty(info).expect("plain data");
@@ -264,6 +299,9 @@ pub fn build(state: &ReportState) -> Result<Bundle, String> {
                 let body = fit(body.clone(), cap(name).expect("listed"), *keep_end);
                 w.add(name, body.as_bytes(), false);
             }
+        }
+        if let Some(d) = minidump {
+            w.add("minidump.dmp", d, true);
         }
         w.finish()
     };
@@ -308,6 +346,12 @@ pub fn open(bytes: &[u8]) -> Result<Opened, String> {
     }
     for e in &entries {
         let format = match e.name.as_str() {
+            "minidump.dmp" => {
+                if !e.data.starts_with(MINIDUMP_MAGIC) {
+                    return Err("minidump.dmp: not a minidump".into());
+                }
+                continue;
+            }
             "screenshot.jpg" => ImageFormat::Jpeg,
             "screenshot.png" => ImageFormat::Png,
             _ => {

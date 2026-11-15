@@ -90,6 +90,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("announcer", &[]),
     // Minigame cue packs: sounds by cue key (plain data).
     ("cues", &[]),
+    // A session's diagnostics: the rolling log, health lines, crash
+    // capture (over chimera_assets' `feedback::session`); the console's
+    // lines, the memory readers and the tick metrics.
+    ("diagnostics", &["console", "metrics", "env"]),
     ("slots", &["core"]),
     ("character", &["core", "slots"]),
     ("movement", &["core", "slots", "character"]),

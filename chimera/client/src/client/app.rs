@@ -51,6 +51,11 @@
 //! The build's version stamp, the other piece every app shares, is a
 //! build script's: chimera/core/build_stamp.rs, which each app's build.rs
 //! includes.
+//!
+//! `run` starts the process's session first (`start_session`: the
+//! rolling log in the data folder's `logs/`, the unclean-exit marker, the
+//! panic hook and Windows' minidump filter; `chimera_core::diagnostics`),
+//! and hands the sessions that died to `crash::CrashReports`.
 
 use bevy::{app::PluginGroupBuilder, ecs::schedule::SingleThreadedExecutor, prelude::*};
 use chimera_present::assets::{InstallSource, InstallSourcesPlugin};
@@ -294,6 +299,7 @@ impl GameApp {
 pub fn run(game: &'static GameApp) -> AppExit {
     let args = game.args(Args::parse_for(&game.usage()));
     super::offscreen::silence_audio_device(&args);
+    let session = start_session(game, &args);
     // The files the games read at startup, when they come from the asset
     // service and aren't here yet: fetched in the background, in batches.
     let startup = start_startup_fetch(game);
@@ -316,7 +322,34 @@ pub fn run(game: &'static GameApp) -> AppExit {
     if let Some(fetch) = startup {
         app.insert_resource(crate::net::assets::StartupFiles(fetch));
     }
+    if let Some((session, previous)) = session {
+        app.insert_resource(chimera_core::diagnostics::SessionLog(session));
+        super::crash::found(&mut app, previous);
+    }
     run_app(app)
+}
+
+/// The process's session (`diagnostics::start`: the log in the data
+/// folder's `logs/`, the marker, the crash hooks) and the dead sessions to
+/// offer. An `--offscreen` run (a tool's, an agent's) logs as
+/// `offscreen-*` and offers nothing (its dead runs are settled quietly)
+/// unless `CHIMERA_CRASH_NOTICE=1`, so a killed capture never shows a
+/// player the notice.
+pub fn start_session(game: &'static GameApp, args: &Args) -> Option<(std::sync::Arc<chimera_core::diagnostics::Session>, Vec<chimera_core::diagnostics::Previous>)> {
+    let offscreen = args.offscreen.is_some();
+    let (session, mut previous) = chimera_core::diagnostics::start(chimera_core::diagnostics::SessionOptions {
+        root: chimera_core::diagnostics::data_root()?,
+        prefix: if offscreen { "offscreen" } else { "session" }.into(),
+        app: game.bin.into(),
+        build: game.version.into(),
+        net_version: crate::net::NET_VERSION.into(),
+    })?;
+    if offscreen && chimera_core::env::var("CHIMERA_CRASH_NOTICE").as_deref() != Ok("1") {
+        for p in previous.drain(..) {
+            p.settle();
+        }
+    }
+    Some((session, previous))
 }
 
 /// The startup fetch (`net::asset_startup`) of the files `game`'s games

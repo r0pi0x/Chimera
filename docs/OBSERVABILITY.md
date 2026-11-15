@@ -1792,6 +1792,22 @@ then 6.3 s per change.
 `RUST_LOG=mashup=debug cargo run --features dev`. Log state changes that matter
 (movement swaps, mounts, match events) at `info`; per-tick detail at `trace`.
 
+Every run of a game or a dedicated server also keeps a **session log**
+(`chimera_core::diagnostics`; docs/plans/active/feedback-reports.md
+section 13): `<data_local>/chimera/logs/<prefix>-<utc time>.log` (`session`
+for a game, `server`, `offscreen` for an `--offscreen` run; the last five
+of each; `CHIMERA_DATA_DIR` names another data folder), every `tracing`
+line at INFO and above and every console line, secrets filtered, synced
+to disk every 2 s, and a `health ...` line every `chimera:health_interval`
+seconds (10 in a game, 20 on a server: `up rss peak avail commit tick
+tick_instr frame frame_max gpu ping loss resyncs errors jumps map rung
+entities players ...`; `chimera:health` prints one now). A server prints
+its health and `tick_stats` lines on its console too. A
+`<prefix>-<time>.running` marker beside the log is held while the process
+runs and removed at a clean exit; a game's next start offers the report
+of a session that died (`client::crash`; `crash_report`, `crash_test
+<panic|native|render>` to try it; `ui_scene crash` stages the notice).
+
 The server log (CS:S's, `game_log`): `log on` writes the half-life
 standard's lines (`"Name<userid><uniqueid><TEAM>" triggered
 "Planted_The_Bomb"`, `World triggered "Round_End"`) to the console

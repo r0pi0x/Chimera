@@ -268,3 +268,42 @@ fn the_binarys_app_adds_the_launch_hook() {
     let app = dedicated::app(&PLAIN_SERVER, StartMap::Greybox, &options);
     assert!(!app.world().contains_resource::<Launched>());
 }
+
+/// Every `HEALTH_SECS` the server prints a health line (memory, ticks,
+/// map) and its `tick_stats` on one line, and keeps both in its session's
+/// log.
+#[test]
+fn a_server_writes_health_lines_and_tick_stats_to_its_log() {
+    use chimera_core::diagnostics::{HealthLine, HealthSettings, Session, SessionLog, SessionOptions};
+    let mut sim = server(&PLAIN_SERVER, &[]);
+    assert_eq!(sim.app.world().resource::<HealthSettings>(), &HealthSettings { interval: dedicated::HEALTH_SECS, print: true });
+    let root = std::env::temp_dir().join(format!("chimera_net_health_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let (session, _) = Session::start(SessionOptions {
+        root: root.clone(),
+        prefix: "server".into(),
+        app: "stand_in_server".into(),
+        build: "test".into(),
+        net_version: "net".into(),
+    })
+    .unwrap();
+    sim.app.insert_resource(SessionLog(session.clone()));
+    sim.app.world_mut().resource_mut::<Console>().submit("chimera:health_interval 0.1");
+    for _ in 0..30 {
+        sim.app.update();
+    }
+    let console: Vec<String> = sim.app.world().resource::<Console>().output.iter().map(|l| l.text.clone()).collect();
+    let health: Vec<&String> = console.iter().filter(|l| l.starts_with("health ")).collect();
+    assert!(health.len() >= 2, "a line every 0.1 s: {console:#?}");
+    let h = HealthLine::parse(health[0]).unwrap();
+    for key in ["up", "rss", "peak", "avail", "commit", "map", "entities"] {
+        assert!(h.get(key).is_some(), "{key} in {}", health[0]);
+    }
+    assert_eq!(h.get("map"), Some("greybox"));
+    assert!(console.iter().any(|l| l.starts_with("tick_stats ticks")), "{console:#?}");
+    let log = std::fs::read_to_string(session.log_path()).unwrap();
+    assert!(log.contains(" health up=") && log.contains(" tick_stats "), "{log}");
+    assert!(!log.contains("console health "), "printed once, not again as a console line");
+    assert!(session.health_lines().len() >= 2);
+    session.end();
+}

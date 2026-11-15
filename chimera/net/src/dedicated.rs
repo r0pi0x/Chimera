@@ -43,6 +43,11 @@
 //!   Ctrl+C as `quit`. `tick_stats` prints the last ticks' wall and CPU
 //!   ms and instructions (`metrics::TickMetrics`, when the game's sim adds
 //!   it) and the process's resident memory, for watching a live server.
+//!   Every `HEALTH_SECS` (20) a `health ...` line (memory, the ticks'
+//!   cost, players, the map) and a `tick_stats ...` line are printed and
+//!   kept in the session's log (`ServerHealthPlugin`; `run` starts the
+//!   session: `<data_local>/chimera/logs/server-<time>.log`, its panic
+//!   hook, a dead last session's log named on stderr).
 //!   20 s after each map change the allocator's free pages go back to the
 //!   system (`metrics::memory::release_after_change`; glibc kept 1.3-1.8 GB
 //!   of them on Ultimate Gun Game's server, more each map).
@@ -491,6 +496,7 @@ impl Plugin for ServerPlugin {
             maxplayers: hooks.maxplayers,
             ..default()
         })
+        .add_plugins(ServerHealthPlugin)
         .add_systems(Update, finish_level_change)
         // glibc's free pages back a while after each map change.
         .add_systems(Update, chimera_core::metrics::memory::release_after_change::<map::MapFile>)
@@ -549,6 +555,51 @@ fn follow_map_cycle(name: Option<Res<LoadedMapName>>, serving: Res<Serving>, mut
         let info = serving.0.info;
         cycle.maps = info.mount().map(|m| (info.map_cycle)(&m)).unwrap_or_default();
     }
+}
+
+/// Seconds between a dedicated server's health lines.
+pub const HEALTH_SECS: f32 = 20.0;
+
+/// The server's health lines (`chimera_core::diagnostics`): every
+/// `HEALTH_SECS` a `health ...` line (memory, the ticks' wall time and
+/// instructions, players, worst ping and loss, the map) and a
+/// `tick_stats ...` line (`tick_stats` on one line), printed on the
+/// console (stdout: the server's log) and into the session's log.
+pub struct ServerHealthPlugin;
+
+impl Plugin for ServerHealthPlugin {
+    fn build(&self, app: &mut App) {
+        if !app.is_plugin_added::<chimera_core::diagnostics::DiagnosticsPlugin>() {
+            app.add_plugins(chimera_core::diagnostics::DiagnosticsPlugin {
+                health: chimera_core::diagnostics::HealthSettings { interval: HEALTH_SECS, print: true },
+            });
+        }
+        chimera_core::diagnostics::add_health_part(app, server_health);
+        chimera_core::diagnostics::add_health_extra(app, |w| Some(format!("tick_stats {}", tick_stats(w).replace('\n', " | "))));
+        chimera_core::diagnostics::add_context_part(app, |w| {
+            let map = w.get_resource::<LoadedMapName>().map_or("greybox".to_string(), |m| m.0.clone());
+            let minigame = w
+                .get_resource::<chimera_sim::minigame::ActiveMinigame>()
+                .map_or(String::new(), |m| format!("minigame: {}\n", m.def.id));
+            format!("map: {map}\n{minigame}")
+        });
+    }
+}
+
+fn server_health(world: &mut World, h: &mut chimera_core::diagnostics::HealthLine) {
+    if world.get_resource::<chimera_core::core::NetRole>().is_some_and(|r| *r == chimera_core::core::NetRole::Server) {
+        let players = net::server::players(world);
+        h.push("players", players.len());
+        if let Some(ping) = players.iter().filter_map(|p| p.ping_ms).reduce(f64::max) {
+            h.push("ping_max", format!("{ping:.0}ms"));
+        }
+        if let Some(loss) = players.iter().map(|p| p.loss).reduce(f64::max) {
+            h.push("loss_max", format!("{:.1}%", loss * 100.0));
+        }
+    }
+    let map = world.get_resource::<LoadedMapName>().map_or("greybox".to_string(), |m| m.0.clone());
+    h.push("map", map);
+    h.push("entities", world.entities().count_spawned());
 }
 
 /// `tick_stats`: each simulation tick's cost over the last ticks
@@ -878,10 +929,42 @@ pub fn run(server: &'static GameServer) {
     if let Some(minigame) = &options.minigame {
         eprintln!("minigame {minigame}");
     }
+    // The session's log (`<data_local>/chimera/logs/server-<time>.log`),
+    // the crash hooks; a server that died last time is told.
+    let session = chimera_core::diagnostics::data_root().and_then(|root| {
+        chimera_core::diagnostics::start(chimera_core::diagnostics::SessionOptions {
+            root,
+            prefix: "server".into(),
+            app: std::env::current_exe()
+                .ok()
+                .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| format!("{}_server", server.info.id)),
+            build: server.version.into(),
+            net_version: net::NET_VERSION.into(),
+        })
+    });
     let mut app = self::app(server, start, &options);
+    if let Some((session, previous)) = session {
+        eprintln!("session log: {}", session.log_path().display());
+        for p in previous {
+            eprintln!(
+                "the last server session ({} {}) ended without a clean exit: its log is {}{}",
+                p.info.app,
+                p.info.build,
+                p.log_path().map_or("gone".into(), |l| l.display().to_string()),
+                p.held().map_or(String::new(), |h| format!(", its crash report {}", h.display()))
+            );
+            // Kept for the host to read; the marker goes.
+            let _ = std::fs::remove_file(&p.marker);
+        }
+        app.insert_resource(chimera_core::diagnostics::SessionLog(session));
+    }
     // Ctrl+C exits as `quit` does (AppExit: `net::udp` hangs up on every
     // client).
-    app.add_plugins((bevy::log::LogPlugin::default(), bevy::app::TerminalCtrlCHandlerPlugin))
+    app.add_plugins((
+        bevy::log::LogPlugin { custom_layer: chimera_core::diagnostics::log_layer, ..Default::default() },
+        bevy::app::TerminalCtrlCHandlerPlugin,
+    ))
         .add_systems(Update, (read_stdin, start_serving, print_console).chain());
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {

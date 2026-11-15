@@ -61,6 +61,7 @@ fails when this file is stale; never edit the generated lines).
 - `chimera/assets/src/feedback/inbox.rs`: the limit windows are in memory (a restart forgets them); `list` reads every report's `meta.toml` each time; no retention
 - `chimera/assets/src/feedback/outbox.rs`: the backoff state (attempts, next try) is in memory only: a restart tries everything at once; a destination change doesn't retry a `failed` report...
 - `chimera/assets/src/feedback/redact.rs`: it errs on the side of hiding: a log line saying "token refused" loses what follows, a version `1.2.3.4` reads as an address, a long hash as a token
+- `chimera/assets/src/feedback/session.rs`: a minidump's stacks may hold a secret that was on them (a token being sent); its module paths are scrubbed of home folders, nothing else
 - `chimera/assets/src/lib.rs`: `verify` and `gc` read the whole store single-threaded; no cap on the store; `chimera_pack`'s `put` doesn't check free space (an explicit fill...
 - `chimera/assets/src/map_cache.rs`: files a converter reads without the mount are the loader's to put in its key
 - `chimera/assets/src/server.rs`: a revoke stops a token's next request, not a batch already being sent; a batch answer is sent with chunked encoding, so a client learns its length...
@@ -68,7 +69,7 @@ fails when this file is stale; never edit the generated lines).
 - `chimera/client/src/client/binds.rs`: a named action has no wheel notch
 - `chimera/client/src/client/callouts.rs`: plain text on a dark band, no animation; the files load on first use (the first cue of each kind may come up to a load late, given up after 3 s)
 - `chimera/client/src/client/exit_drain.rs`: - The wait is capped at `MAX_WAIT`; a driver compiling longer than that still races the exit, with a warning
-- `chimera/client/src/client/feedback.rs`: the text has one caret, at its end (no arrows, no selection, no paste: the kit's `text_field` gets paste); no `log.txt` yet (no ring buffer of...
+- `chimera/client/src/client/feedback.rs`: the text has one caret, at its end (no arrows, no selection, no paste: the kit's `text_field` gets paste)
 - `chimera/client/src/client/hit_marker.rs`: no sound (the cvar is a switch only); a plain text glyph, no animation
 - `chimera/client/src/client/hud_minimal.rs`: the weapon is called by its id (no display-name registry in the shell); no kill feed or scoreboard (the opt-in `cl_hitmarker` works over it)
 - `chimera/client/src/client/ink_icon.rs`: the node is empty (0 wide) until its art has loaded: a row built before then gains its icon a frame later

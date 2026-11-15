@@ -31,7 +31,7 @@ use chimera_assets::{
 use super::scratch;
 
 /// Strings that must never reach a bundle.
-const PLANTED: &[&str] = &[
+pub(crate) const PLANTED: &[&str] = &[
     "PlantedRcon77",
     "PlantedSvPw",
     "chimera1_5e3c0ffee5e3c0ffee5e3c0ffee5e3c0ffee",
@@ -471,4 +471,56 @@ fn on_report_runs_the_hosts_command_with_a_cleaned_summary() {
     }
     std::thread::sleep(Duration::from_millis(50));
     assert_eq!(fs::read_to_string(&out).unwrap(), format!("{id}|internal:tester|everyone rm -rf bbroken/b"));
+}
+
+#[test]
+fn the_route_takes_crash_reports_and_groups_them_by_signature() {
+    let r = Receiver::new("feedback_crash", FeedbackLimits::default());
+    let remote = r.remote(&r.user("tester"));
+    let crash = |frame: &str| {
+        let b = bundle::build(&ReportState {
+            kind: Kind::Crash,
+            text: "panic in thread 'main': boom at chimera/x.rs:3".into(),
+            backtrace: format!(
+                "panic in thread 'main': boom at chimera/x.rs:3\n\n   0: std::panicking::begin_panic\n   1: {frame}::h0123456789abcdef\n   2: chimera_client::client::app::run\n"
+            ),
+            health: vec!["12:00:00.000 health rss=812M".into()],
+            minidump: Some(b"MDMP fake dump".to_vec()),
+            log: vec!["INFO map: de_dust2 loaded".into()],
+            ..ReportState::default()
+        })
+        .unwrap();
+        (b.id, b.bytes)
+    };
+    let (a, a_bytes) = crash("chimera_client::client::hud::draw");
+    let (b, b_bytes) = crash("chimera_client::client::hud::draw");
+    let (c, c_bytes) = crash("chimera_world::map::spawn");
+    for (id, bytes) in [(&a, &a_bytes), (&b, &b_bytes), (&c, &c_bytes)] {
+        assert_eq!(post(&remote, id, bytes).0, 201);
+    }
+    let inbox = r.inbox();
+    let meta = inbox.meta(&a).unwrap();
+    assert_eq!(meta.kind, "crash");
+    assert!(meta.signature.starts_with("panic chimera_client::client::hud::draw"), "{}", meta.signature);
+    let dir = inbox.find(&a).unwrap();
+    for entry in ["backtrace.txt", "health.txt", "minidump.dmp", "log.txt"] {
+        assert!(dir.join(entry).is_file(), "{entry}");
+    }
+    let groups = inbox.crash_groups();
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].2.len(), 2);
+    assert_eq!(groups[0].0, meta.signature_key);
+    // The page: the groups, the minidump as bytes.
+    let page = chimera_assets::feedback::page::handle(&inbox, false, &["crashes"], b"", false);
+    let v: serde_json::Value = serde_json::from_slice(&page.body).unwrap();
+    assert_eq!(v[0]["count"], 2);
+    let dump = chimera_assets::feedback::page::handle(&inbox, false, &[&a, "minidump.dmp"], b"", false);
+    assert_eq!((dump.status, dump.content_type), (200, "application/octet-stream"));
+    // Not a minidump: refused.
+    let mut w = zip::ZipWriter::new(0);
+    let id = new_report_id();
+    w.add("report.json", format!(r#"{{"schema":1,"id":"{id}","kind":"crash","text":"x","time":0}}"#).as_bytes(), false);
+    w.add("minidump.dmp", b"not one", false);
+    assert_eq!(post(&remote, &id, &w.finish()).0, 400);
+    let _ = c;
 }

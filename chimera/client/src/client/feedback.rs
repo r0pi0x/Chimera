@@ -49,9 +49,12 @@
 //! go, what waits and why), `feedback_press
 //! <send|cancel|bug|feedback|shot|details>` (tests, screenshots).
 //!
+//! `log.txt` is the session's log tail (`diagnostics`: every `tracing`
+//! line at INFO and above and every console line, filtered), when a
+//! session runs.
+//!
 //! Known shortcuts: the text has one caret, at its end (no arrows, no
-//! selection, no paste: the kit's `text_field` gets paste); no `log.txt`
-//! yet (no ring buffer of `tracing` lines).
+//! selection, no paste: the kit's `text_field` gets paste).
 
 use std::{
     path::PathBuf,
@@ -290,6 +293,9 @@ pub trait Outbox: Send + Sync + 'static {
     }
     /// The app started (reports from an earlier run may wait).
     fn startup(&self) {}
+    /// Reports were put in the outbox from outside (a crash's,
+    /// `crash`): send what waits now.
+    fn wake(&self) {}
 }
 
 /// A report service named by hand: `chimera:feedback_url`,
@@ -325,9 +331,10 @@ impl Default for FeedbackOutbox {
     }
 }
 
-/// The data folder's `feedback/` (`<data_local>/chimera/feedback`).
+/// The data folder's `feedback/` (`<data_local>/chimera/feedback`;
+/// `CHIMERA_DATA_DIR` names another data folder: `diagnostics::data_root`).
 pub fn feedback_folder() -> Option<PathBuf> {
-    Some(chimera_core::env::user_folder(&dirs::data_local_dir()?).join("feedback"))
+    Some(chimera_core::diagnostics::data_root()?.join("feedback"))
 }
 
 /// Reports through `chimera_assets::feedback`'s outbox: the zip built
@@ -490,6 +497,13 @@ impl Outbox for AssetsOutbox {
         self.start_if_waiting();
     }
 
+    fn wake(&self) {
+        match self.started.get() {
+            Some(Ok(o)) => o.retry_now(),
+            _ => self.start_if_waiting(),
+        }
+    }
+
     fn named(&self, target: Option<Target>) {
         if let Ok(mut t) = self.targets.lock() {
             t.cvar = target.clone();
@@ -626,7 +640,10 @@ pub fn collect_state(w: &mut World, snapshot: &str) -> ReportState {
     let defaults: std::collections::BTreeMap<String, String> =
         w.get_resource::<super::binds::BindDefaults>().map(|d| d.default_binds().into_iter().collect()).unwrap_or_default();
     let binds = binds.into_iter().filter(|(k, v)| defaults.get(k) != Some(v)).collect();
+    let log = w.get_resource::<chimera_core::diagnostics::SessionLog>().map(|s| s.0.tail()).unwrap_or_default();
     ReportState {
+        log,
+        health: w.get_resource::<chimera_core::diagnostics::SessionLog>().map(|s| s.0.health_lines()).unwrap_or_default(),
         build,
         net_version: crate::net::NET_VERSION.to_string(),
         app,

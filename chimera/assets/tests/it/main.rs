@@ -2,6 +2,7 @@
 //! own fixture bytes (no game's files).
 
 mod feedback;
+mod session;
 mod service;
 
 use std::{fs, path::PathBuf, sync::Arc};

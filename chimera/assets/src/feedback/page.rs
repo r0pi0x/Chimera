@@ -12,6 +12,10 @@
 //!   Accept, Reject (reason), Needs info, Duplicate (group), Fixed
 //!   (commit), Triaged.
 //! - `GET /feedback/admin/list`: every report's `meta.toml` as JSON.
+//! - `GET /feedback/admin/crashes`: crash reports grouped by signature
+//!   (`Inbox::crash_groups`), the biggest group first. The page filters
+//!   by kind (bug, feedback, crash) and by a crash's signature, opens a
+//!   crash's `backtrace.txt` and offers its `minidump.dmp` as a download.
 //! - `GET /feedback/admin/<id>`: one report (meta, text, entries, history).
 //! - `GET /feedback/admin/<id>/<entry>`: an entry (allow-listed names,
 //!   `meta.toml`, `history.log`), as text or the image it is.
@@ -58,6 +62,21 @@ pub fn handle(inbox: &Inbox, post: bool, parts: &[&str], body: &[u8], admin_head
     match (post, parts) {
         (false, [] | [""]) => reply(200, "text/html; charset=utf-8", PAGE),
         (false, ["list"]) => json(&serde_json::to_value(inbox.list()).unwrap_or_default()),
+        (false, ["crashes"]) => json(&serde_json::Value::Array(
+            inbox
+                .crash_groups()
+                .into_iter()
+                .map(|(key, signature, reports)| {
+                    serde_json::json!({
+                        "key": key,
+                        "signature": signature,
+                        "count": reports.len(),
+                        "latest": reports[0].received_utc,
+                        "ids": reports.iter().map(|m| m.id.clone()).collect::<Vec<_>>(),
+                    })
+                })
+                .collect(),
+        )),
         (false, [id]) => {
             let (Some(dir), Some(meta)) = (inbox.find(id), inbox.meta(id)) else {
                 return reply(404, "text/plain; charset=utf-8", "no such report\n");
@@ -86,6 +105,7 @@ pub fn handle(inbox: &Inbox, post: bool, parts: &[&str], body: &[u8], admin_head
                 "screenshot.jpg" => "image/jpeg",
                 "screenshot.png" => "image/png",
                 "report.json" => "application/json",
+                "minidump.dmp" => "application/octet-stream",
                 _ => "text/plain; charset=utf-8",
             };
             match std::fs::read(dir.join(entry)) {
@@ -139,7 +159,8 @@ details{margin:6px 0}summary{cursor:pointer;color:var(--mut)}
 </style></head><body>
 <header><h1>Feedback reports</h1>
 <label>Status <select id="fs"><option value="">all</option></select></label>
-<label>Kind <select id="fk"><option value="">all</option><option>bug</option><option>feedback</option></select></label>
+<label>Kind <select id="fk"><option value="">all</option><option>bug</option><option>feedback</option><option>crash</option></select></label>
+<label>Crash <select id="fg"><option value="">any signature</option></select></label>
 <button id="reload">Reload</button><span id="count" class="kv"></span></header>
 <main><div id="list"></div><div id="detail"><p class="kv">Pick a report.</p></div></main>
 <script>
@@ -148,12 +169,14 @@ const $=s=>document.querySelector(s);
 function el(tag,text,cls){const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e}
 for(const s of STATUSES){$("#fs").append(el("option",s))}
 let all=[],current=null;
-async function load(){const r=await fetch("list");all=await r.json();render()}
-function render(){const s=$("#fs").value,k=$("#fk").value;const list=$("#list");list.replaceChildren();
- const shown=all.filter(m=>(!s||m.status===s)&&(!k||m.kind===k));$("#count").textContent=shown.length+" of "+all.length;
+async function load(){const r=await fetch("list");all=await r.json();groups();render()}
+function groups(){const g=$("#fg"),keep=g.value,n={};for(const m of all){if(m.signature_key){n[m.signature_key]=n[m.signature_key]||{c:0,s:m.signature};n[m.signature_key].c++}}
+ g.replaceChildren(el("option","any signature"));g.firstChild.value="";for(const [k,v] of Object.entries(n).sort((a,b)=>b[1].c-a[1].c)){const o=el("option",v.c+"x "+v.s.slice(0,90));o.value=k;g.append(o)}g.value=keep}
+function render(){const s=$("#fs").value,k=$("#fk").value,g=$("#fg").value;const list=$("#list");list.replaceChildren();
+ const shown=all.filter(m=>(!s||m.status===s)&&(!k||m.kind===k)&&(!g||m.signature_key===g));$("#count").textContent=shown.length+" of "+all.length;
  for(const m of shown){const row=el("div",null,"row"+(m.id===current?" sel":""));const top=el("div",null,"top");
   top.append(el("span",m.received_utc),el("span",m.account.split("#")[0]),el("span",m.kind),el("span",m.map),el("span",m.status,"tag"+(m.status==="new"?" new":"")));
-  if(m.group)top.append(el("span","group "+m.group,"tag"));
+  if(m.group)top.append(el("span","group "+m.group,"tag"));if(m.signature_key)top.append(el("span","sig "+m.signature_key,"tag"));
   row.append(top,el("div",m.summary||"(no text)","sum"));row.onclick=()=>show(m.id);list.append(row)}}
 async function show(id){current=id;history.replaceState(null,"","#"+id);render();const r=await fetch(encodeURIComponent(id));if(!r.ok)return;const d=await r.json();const m=d.meta;
  const box=$("#detail");box.replaceChildren();
@@ -166,11 +189,13 @@ async function show(id){current=id;history.replaceState(null,"","#"+id);render()
   if(!r.ok){alert(await r.text());return}await load();show(id)};acts.append(b)};
  act("Triaged","triaged");act("Accept","accepted");act("Reject","rejected","Reason (troll, not a bug, ...)");act("Needs info","needs-info");
  act("Duplicate","duplicate","Group id (e.g. another report's id)");act("Fixed","fixed","Commit it was fixed in");
+ if(m.signature)box.append(el("div","crash signature "+m.signature_key+": "+m.signature,"kv"));
  box.append(acts,el("pre",d.text||"(no text)"));
  for(const e of d.entries){if(e.startsWith("screenshot")){const img=el("img");img.src=encodeURIComponent(id)+"/"+e;img.alt="screenshot";box.append(img)}}
- for(const e of d.entries){if(e.startsWith("screenshot"))continue;const det=el("details");det.append(el("summary",e));const pre=el("pre","...");det.append(pre);
-  det.ontoggle=async()=>{if(det.open&&pre.textContent==="..."){pre.textContent=await (await fetch(encodeURIComponent(id)+"/"+e)).text()}};box.append(det)}
+ for(const e of d.entries){if(e.endsWith(".dmp")){const a=el("a","Download "+e);a.href=encodeURIComponent(id)+"/"+e;a.download=id+"-"+e;box.append(el("div",null,"kv"),a)}}
+ for(const e of d.entries){if(e.startsWith("screenshot")||e.endsWith(".dmp"))continue;const det=el("details");det.append(el("summary",e));const pre=el("pre","...");det.append(pre);
+  det.ontoggle=async()=>{if(det.open&&pre.textContent==="..."){pre.textContent=await (await fetch(encodeURIComponent(id)+"/"+e)).text()}};box.append(det);if(e==="backtrace.txt")det.open=true}
  const h=el("details");h.append(el("summary","history"),el("pre",d.history));box.append(h)}
-$("#fs").onchange=render;$("#fk").onchange=render;$("#reload").onclick=load;load().then(()=>{const h=location.hash.slice(1);if(h)show(h)});
+$("#fs").onchange=render;$("#fk").onchange=render;$("#fg").onchange=render;$("#reload").onclick=load;load().then(()=>{const h=location.hash.slice(1);if(h)show(h)});
 </script></body></html>
 "##;
