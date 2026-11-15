@@ -1,474 +1,809 @@
-# Plan: the hub (one address for every service)
+# Plan: the hub and its services (accounts, server list, assets, feedback)
 
-Status: planned (2026-11-14), nothing built. The user's idea: a master
-server that lists servers, hosted on the dev box, reached through **one
-address a player sets once** at first run; from it the game learns every
-other service (the server list, the asset service, feedback, news), so
-nobody types a server's IP again. This plan is main-menu.md's M3 (the
-master server, the Internet tab) widened to a discovery document, and it
-folds the asset token's entry into the same first-run step.
+Status: planned (2026-11-14; revised the same day), nothing of it built.
+The user's direction: a master server players connect to up front, which
+serves the game files by default, lists every lobby (hosting one lists it
+for everyone on the same master) and holds everyone's **accounts**, which
+the owner alone admits; their stats are kept in a **persistent database**
+beside the assets; the parts are **separate services** that restart
+without breaking each other. The player's whole setup: **the hub link and
+an invite code**, nothing else. Anyone with an account uses the asset
+service with no further step.
+
+This plan is main-menu.md's M3 (the master server, the Internet tab)
+widened to a discovery document, plus the accounts that the first version
+of this plan kept as a North Star; both are now one design.
+
+**A Chimera platform, not one game's** (user, 2026-11-14): the account
+is the hub's identity (invite, username, devices, recovery, asset
+access), owned by Chimera crates. Under it each account has a **profile
+per game** (`ultimate_gun_game`, later `lucker_party`), made the first
+time it plays that game, holding that game's stats, progression and
+settings in a schema **the game declares as data** and registers, as
+minigames and hooks are. Game servers report results per game. By
+default an account plays every game on the hub; access per game is an
+option.
+
+Words: a **game** here is a title played on the hub (an app's id:
+`ultimate_gun_game`); the asset service's games (`cs_source`, `hl2dm`,
+`combat_arms`: whose files may be fetched) are called **content**.
 
 Placeholders only: `<hub host>`, `<hub port>`, `<fingerprint>`,
-`<token>` and `<public address>` are never written into the repository;
-the host hands them out privately, as playtest-hosting.md says.
+`<server store>`, `<code>` and `<public address>` are never written into
+the repository; the host hands the link and codes out privately, as
+playtest-hosting.md says.
 
-Section 9 lists the decisions the user still has to make; section 10 is
-the North Star for accounts (later).
+Section 11 lists the decisions the user still has to make.
 
 ## 1. What exists (build on it)
 
 | Need | Have | Where |
 |---|---|---|
 | Asking a server for its info and ping | the A2S_INFO-shaped query on the game port (challenge, name, map, folder `chimera`, players, max, bots, password, `NET_VERSION`, instance id, keywords with `minigame=<id>`); `Responder` rate limits | `chimera_net::net::query` |
-| A client's queries | `ServerQueries`: one socket, `query(addr)` unicast, `scan_lan`, retries, ping by round trip, one entry per instance (a server reached at two addresses is listed once) | same |
-| The browser's model and page | `party_kit::server_list` (`BrowserTab` LAN, Favourites, History; `listed()` rows from addresses, `Status` up/asking/down, sort by ping, scrolling) and `signal_pages` (Join's right column) | `apps/party_kit/src/` |
-| An HTTPS service testers already reach | the asset service: tiny_http behind its own TLS front (`tls::Front`, self-signed Ed25519 certificate, clients pin its SHA-256 fingerprint), the client's IP behind the front (`tls::Peers`), access log | `chimera/assets/src/server.rs`, `tls.rs` |
-| Accounts and tokens | `accounts.toml` (hashes only), `chimera_pack user add/revoke/list`, `Authenticator` per account kind, per-account `Limits` (rate, burst, bytes a day), bad-token bans, `FrontLimits` (connections per address) | `chimera/assets/src/accounts.rs`, `server.rs`, `tls.rs` |
-| A signing key | the server's Ed25519 key that signs manifests (`sign::sign`, `verify`, `GET /key`) | `chimera/assets/src/sign.rs` |
-| A player's token, bound to one service | `asset-access.toml` (token, URL, fingerprint; the first offered service binds it; another certificate is refused) | `chimera/assets/src/access.rs` |
+| A client's queries | `ServerQueries`: one socket, `query(addr)` unicast, `scan_lan`, retries, ping by round trip, one entry per instance | same |
+| The browser's model and page | `party_kit::server_list` (`BrowserTab` LAN, Favourites, History; `listed()` rows, `Status`, sort by ping) and `signal_pages` (Join's right column) | `apps/party_kit/src/` |
+| An HTTPS service testers already reach | the asset service: tiny_http on 127.0.0.1 behind its own TLS front (`tls::Front`, self-signed Ed25519 certificate, clients pin its SHA-256 fingerprint), the client's address behind the front (`tls::Peers`), access log | `chimera/assets/src/server.rs`, `tls.rs` |
+| Accounts today | `accounts.toml` (token hashes only, `chimera1_` tokens), `chimera_pack user add/revoke/list`, the `Authenticator` trait (one per account kind, `Verdict`, `Principal` with its games), per-account `Limits` (rate, burst, bytes a day), bad-token bans, `FrontLimits` | `chimera/assets/src/accounts.rs`, `server.rs`, `tls.rs` |
+| A signing key | the server's Ed25519 key that signs manifests (`sign`, `GET /key`) | `chimera/assets/src/sign.rs` |
+| A player's token, bound to one service | `asset-access.toml` (token, URL, fingerprint; the first offered service binds it) | `chimera/assets/src/access.rs` |
 | A game server naming its asset service | `chimera:asset_url`, `chimera:asset_fingerprint`; the match manifest's `AssetOffer` | `chimera_net::net::assets` |
-| Token entry today | `+chimera:asset_token <token>` on the command line (kept before the app starts), then a join binds it and fetches the files in the same game (`net::assets::bind_here`) | `chimera_client::client` (`take_asset_token`), `chimera_net::net::assets` |
-| The startup download | `asset_startup` (the `base` sets behind a progress window, from a bound access) | `chimera_net::net::asset_startup` |
-| Router port | `net_upnp`; NAT options ranked | `chimera_net::net::upnp`; [nat-traversal.md](nat-traversal.md) |
-| A feedback endpoint | planned: `POST /feedback` on the asset service | [feedback-reports.md](feedback-reports.md) |
+| Token entry today | `+chimera:asset_token <token>` on the command line, bound at the next join | `chimera_client::client`, `chimera_net::net::assets` |
+| Feedback reports | built (P1): `POST /feedback` on the asset service with the tester's token, `feedback::inbox` (files under `<server store>/server/feedback/`), the triage page on the plain listener only, the client's outbox with retries | `chimera/assets/src/feedback/`, [feedback-reports.md](feedback-reports.md) |
+| A match's results | `minigame::MatchResults` (name, kills, deaths, rung, wins per player; the winner first), recorded on the authoritative side at `MatchEnd`, replicated by `NetMinigame` | `chimera/sim/src/minigame/results.rs`, `chimera/net/src/minigame_net.rs` |
 
-Missing: no master list, no way to learn a service except from a game
-server at join or from `chimera.local.toml`, no first-run screen in the
-party apps, no account right that separates "may download" from "may
-list a server".
+Missing: no master list; no way to learn a service except from a game
+server at join or the local config; no first-run screen; no account that
+outlives a token; no database; one process does every server-side job.
 
-## 2. The discovery document
+## 2. Architecture: separate services
 
-### 2.1 What the hub returns
+### 2.1 The services
 
-`GET /hub` answers a JSON document (serde_json is in the workspace),
-built from the host's `<server store>/server/hub.toml` (host-written, never
-in the repo) and from the process itself (its certificate, its key):
+Each is its own process, started and restarted on its own:
+
+| Service | Job | Its state |
+|---|---|---|
+| **front** | The one public TLS port: the TLS handshake with the certificate players pin, then each connection relayed to the service its path names (2.3); per-address connection limits (`FrontLimits`) | none (the certificate's folder, read at start) |
+| **accounts** | The platform account: invites the owner mints, sign-up with a username, device keys, device link codes, recovery, tickets (2.4), revocation, bans, rights; per-game profiles, match results and stats (section 9); the admin API and page (localhost) | `accounts.db` (section 3): the one database that must never be lost |
+| **hub** | The discovery document (`GET /hub`), the server registry and its heartbeats, the reachability probe, the list | `hub.db`: listings only (ephemeral, kept so a restart doesn't empty the list) |
+| **assets** | Today's asset service, unchanged in its routes; accepts account tickets beside the legacy tokens | the store (records, manifests), access log |
+| **feedback** | Today's `/feedback` route and triage page, moved to their own process in S5 (until then they stay in assets) | report folders on disk, as built |
+
+What depends on what: nothing calls another service to answer a
+player's request, except a player asking accounts for a ticket.
+Assets, hub and feedback check tickets locally with the accounts
+service's public key; they ask accounts (on loopback) only for the
+revocation list, every 30 s, and keep the last one when it doesn't
+answer.
+
+### 2.2 One binary, roles (recommended)
+
+`chimera_services <role> [options]`, one host binary whose roles are
+`front`, `accounts`, `hub`, `assets`, `feedback`, plus `all` (every role
+in one process: development, tests, a quick host on Windows) and
+`admin ...` (the owner's command line, 7.1). Each role runs as its own
+process under its own unit (2.6).
+
+| Option | For | Against |
+|---|---|---|
+| **One binary, a role per process** (recommended) | One build and one file to install and update; the shared parts (config, TLS, limits, logging, ticket checks, the DB helpers) linked once; `all` makes a whole hub in one process for tests and Windows; separate processes still give separate restarts and crashes | A changed role ships a new binary for all (each unit restarts only when asked, so a running service keeps its old copy until then) |
+| One binary per service | Each restarts on its own binary's update | Five builds, five release entries, five sets of flags; the shared code is linked five times |
+| One process, many routes (the first version of this plan) | Simplest | A crash or restart takes everything down; the user asked for the opposite |
+
+`chimera_asset_server` stays as today (a thin alias of `chimera_services
+assets` with today's flags) so developers' steps and
+assets-for-developers.md keep working.
+
+### 2.3 Ports and the TLS front
+
+One public TCP port, `<hub port>`: **today's asset `--tls` port and its
+certificate** (`<server store>/server/tls/`), so every tester's existing
+binding (`asset-access.toml` pins that fingerprint) keeps working and the
+hub link names the same fingerprint. One router forward, one firewall
+rule.
+
+Internal listeners, plain HTTP on 127.0.0.1 only (`services.toml` in
+`<server store>/server/`, host-written; these defaults):
+
+| Service | Loopback port | Public path prefixes (through the front) |
+|---|---|---|
+| assets | 8731 (today's) | everything not below: `/key`, `/whoami`, `/games`, `/m/`, `/r/`, `/batch` (old clients use root paths) |
+| accounts | 8732 | `/accounts/` |
+| hub | 8733 | `/hub` and `/hub/` |
+| feedback | 8734 (S5; before it, assets) | `/feedback` |
+| front | none (its public port only) | |
+
+**Routing**: the front reads the first request's line on a connection,
+picks the service by its path's prefix and relays that connection to it
+for its whole life. Each request head on the connection gets
+`X-Chimera-Peer: <client ip:port>` added (an incoming one is stripped),
+which replaces the in-process `tls::Peers` for the access logs and
+per-address limits; to add it the front parses request heads and
+`Content-Length` bodies (our clients never send chunked request bodies;
+the front answers 411 to one). Our clients keep one connection pool per
+service (one ureq `Agent` each), and a service answers **421** to a path
+that isn't its own, so a stray request is loud, not misrouted.
+
+The front never relays `/admin`, `/internal` or `/feedback/admin`
+(404): those exist on the loopback listeners only, for this machine.
+Services trust `X-Chimera-Peer` only from a loopback connection.
+
+Alternative (decision 2): no front; each service runs its own in-process
+TLS listener on its own public port with the same certificate, and the
+discovery document names each port. No single point of failure, but a
+router forward per service and old clients keep needing the asset port.
+The front is small, holds no state and changes rarely, so restarts of the
+others (the frequent case) never touch it.
+
+### 2.4 How services trust a player: tickets
+
+- **Device key.** Redeeming a code (5.1) makes an Ed25519 key pair **on
+  the player's machine**; the accounts service stores only the public
+  key. No secret of a player's ever sits on the server: a copied
+  `accounts.db` grants nothing.
+- **Ticket.** The client asks `POST /accounts/ticket` with a request
+  signed by its device key (device id, time, a random nonce; refused
+  outside +-5 minutes or with a nonce seen in that window) and receives a
+  **ticket**: `chimera2t.<payload>.<signature>` (base64url), the payload
+  (postcard) carrying the version, the key id, the account id, the device
+  id, the username, role, rights (`content`: what the asset service may
+  serve it; `games`: `*` or the games it may play; `list` slots,
+  `report`, `muted`), the
+  audience, issued and expiry times. Signed with the accounts service's
+  ticket key (`<server store>/server/accounts/ticket.key`, mode 0600, not
+  the manifest key).
+- **Checked locally.** Every other service (and a game server, S4)
+  checks a ticket with the ticket public key alone: signature, expiry
+  (60 s of skew), audience, the revocation list. The public key is a file
+  beside the private one for services on this box and is in the
+  discovery document (`accounts.ticket_keys`) for game servers and
+  clients. Tickets carry a key id, so a new key can be added and the old
+  one retired once its tickets expire.
+- **Lifetime: 6 hours**, refreshed by the client at half-life and kept on
+  disk, so a game started while accounts restarts still has a valid one
+  (decision 4). **Revocation** is quick anyway: accounts serves
+  `GET /internal/revoked?since=<n>` (account and device ids, loopback,
+  with the services' shared secret) and assets, hub and feedback poll it
+  every 30 s; a revoked device stops within 30 s while accounts is up and
+  at its ticket's expiry at the latest while it is down.
+- **Audiences**: `services` (assets, hub list and heartbeats, feedback)
+  and `join:<instance id>` (S4: a short ticket, 5 minutes, that a player
+  shows one game server; that server can't reuse it elsewhere).
+- **Services among themselves** talk only on loopback, with a shared
+  secret (`<server store>/server/services/secret`, 0600, made at first
+  start) in `X-Chimera-Service`. Game servers are players of the hub:
+  they hold an account (role `host`) and tickets like anyone.
+- **Legacy tokens** (`chimera1_...`) keep working as bearer tokens
+  (section 6).
+
+The asset service gains a `TicketAuth` (an `Authenticator` of kind
+`account`, recognising the `chimera2t.` prefix) before `Internal`; its
+`Principal` name is the account id and its `Games` are the ticket's
+`content`.
+Today's per-account limits, bans and access log stay as they are.
+
+### 2.5 What keeps working when one is down
+
+| Down | Still works | Stops |
+|---|---|---|
+| front | Joined matches; LAN, Favourites, History, Direct joins; installs; everything on this box over loopback | Every public route; clients use the cached document and list and say "hub offline"; listings expire after 90 s without heartbeats and come back with the next ones |
+| accounts | Downloads, the list, heartbeats and reports for anyone with a valid ticket (up to 6 h); the revocation list as last fetched | Redeeming, new tickets, the admin page; stats at match end wait in the game server's outbox and are sent when it is back |
+| hub | Downloads, accounts, joins by address; game servers retry heartbeats quietly | The Internet tab's fresh list (the cached one shows, marked old) |
+| assets | Players with installs; accounts, the list, joins | Downloads (clients retry as today) |
+| feedback | Everything else | Uploads wait in the client's outbox (as built) |
+| `accounts.db` corrupt | The others, as "accounts down" | accounts refuses to start and logs why; restore the last backup (3.3) |
+
+### 2.6 Supervision on this box
+
+- **systemd user units**, one per role: `chimera-front.service`,
+  `chimera-accounts.service`, `chimera-hub.service`,
+  `chimera-assets.service`, `chimera-feedback.service`, all
+  `PartOf=chimera-services.target`; `loginctl enable-linger` once so they
+  run without a login session. Templates in `tools/services/systemd/`
+  using `%h` and `<server store>` placeholders; `chimera_services admin
+  install-units --store <dir>` writes them to `~/.config/systemd/user/`.
+- **Restart policy**: `Restart=on-failure`, `RestartSec=2`,
+  `StartLimitIntervalSec=120`, `StartLimitBurst=5` (a crash loop stops
+  and shows in `systemctl --user status`). Hardening that costs nothing:
+  `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=strict`,
+  `ReadWritePaths=<server store>`.
+- **The binary** is installed to `~/.local/lib/chimera/chimera_services`
+  by `admin install-units` (a copy of a release build), so a `cargo
+  build` never swaps it under a running service; an update is a copy and
+  `systemctl --user restart chimera-<role>` for the roles that changed.
+- **Logs**: stderr to journald (`journalctl --user -u chimera-accounts
+  -f`); the access logs stay files under `<server store>/server/`.
+  `chimera_services admin status` asks each loopback `GET /health`
+  (version, uptime, DB state, revocation list age) and prints one line
+  each.
+- **Graceful stop**: SIGTERM stops accepting, finishes requests in flight
+  (at most 10 s), checkpoints the WAL (accounts, hub) and exits 0.
+- **Windows** (a host without systemd): `chimera_services all` in a
+  console, as `chimera_asset_server` runs today.
+
+### 2.7 Code layout (layering)
+
+Each crate's folder is its layer (checks/tests/it/architecture.rs):
+
+- **`chimera_assets`** (engine, plain data, no Bevy) gains what clients,
+  game servers and services all need, small and SQLite-free:
+  `ticket` (the format, signing, checking, the revocation set),
+  `account` (the client side: device key, `account.toml`, redeem and
+  ticket requests over `tls::PinnedTls`, the ticket cache; replaces
+  `access`'s token for a hub-bound player), `hub_doc` (the discovery
+  document and the link format, client and server side) and `TicketAuth`
+  in `accounts`.
+- **`chimera_services`** (new, `chimera/services/`, engine layer, no Bevy;
+  a `workspace_crates` row: `default-members`, an empty `dev` feature
+  turning on its dependencies' `dev`, listed in `NO_HACK` like
+  `chimera/assets`; `cargo hakari generate`): the roles (`front`,
+  `accounts`, `hub`, `feedback` wrapping `chimera_assets::feedback`,
+  `assets` wrapping `chimera_assets::server`), `db` (rusqlite, the
+  migrations, backup), the admin API, page and CLI, the binary. Builds on
+  `chimera_assets` and `chimera_formats` (the A2S codec for the probe).
+  **rusqlite lives only here**, so no game or client build compiles
+  SQLite. A host tool: not in player releases.
+- **`chimera_assets::profile`** (plain data): the profile schema format
+  (9.1): parsing, validation, applying a match's results to a profile,
+  deriving stats. Shared by the accounts service (which stores and
+  checks) and game servers (which declare and report), so both read one
+  definition.
+- **The game's schema** stays in its own crate as data: e.g.
+  `apps/ultimate_gun_game/data/profile.toml`, registered by the app with
+  `app.register_profile_schema(...)` (`chimera_net::net::hub`'s
+  `ProfileSchemas` resource, beside minigame registration). Chimera never
+  names a game; a game crate never touches the database.
+- **`chimera_formats::a2s`**: the A2S packets' codec lifted from
+  `chimera_net::net::query` (which re-exports it), so the hub can probe
+  without the network crate.
+- **`chimera_net::net::hub`** (engine): the game server's heartbeat
+  thread, its match-results outbox (S4), the join-ticket check (S4); the
+  client's `Hub` resource (cached document, refresh, the list).
+- **`chimera_client::client`**: `+chimera:hub <link>` kept before the
+  app starts; the redeem at first run.
+- **`party_kit`** (app): `BrowserTab::Internet`, the first-run page,
+  Settings > Network and Account (devices, link a device, recovery key),
+  the account chip, the board's column; each party app passes its game
+  id and schema.
+
+## 3. The persistent database
+
+### 3.1 SQLite (recommended) or Postgres
+
+| | SQLite (rusqlite, `bundled`) | Postgres |
+|---|---|---|
+| Running it | A file; nothing to install, start or patch | A daemon to install, run, secure and upgrade |
+| Builds | rusqlite's `bundled` compiles SQLite itself on Linux and Windows (MSVC) | sqlx or tokio-postgres pull an async runtime into a blocking codebase |
+| Backup | One online backup call to a file | `pg_dump` and its own schedule |
+| Scale | Tens of thousands of accounts and a write a second are nothing; one writer at a time (WAL lets readers run beside it) | Many writers on many machines |
+| Moving later | Plain SQL, no SQLite-only tricks, so the schema ports | |
+
+**SQLite now**, with rusqlite (blocking, like the rest of the server
+code; sqlx's async and compile-time checks buy nothing here). Postgres
+only if services ever run on several machines writing the same data.
+
+### 3.2 Setup
+
+- Files: `<server store>/server/accounts/accounts.db` (owned by the
+  accounts process alone; the CLI goes through its admin API, 7.1) and
+  `<server store>/server/hub/hub.db`. One database per service, never
+  shared between processes.
+- Pragmas at open: `journal_mode=WAL`, `synchronous=NORMAL`,
+  `foreign_keys=ON`, `busy_timeout=5000`.
+- **Migrations**: numbered SQL files compiled in
+  (`chimera/services/migrations/0001_init.sql`, ...), applied at start in
+  one transaction each, `PRAGMA user_version` as the counter (a few lines
+  of our own; no migration crate needed). A database newer than the binary
+  is refused with a message, never touched. A copy is taken (3.3) before
+  any migration runs.
+
+### 3.3 Backups
+
+- **Nightly** (`chimera-accounts-backup.timer`, 04:00 local, `Persistent=
+  true`): `chimera_services admin backup` asks the running service to
+  write an online backup (SQLite's backup API) to
+  `<server store>/server/backups/accounts-<YYYYMMDD>.db`, then runs
+  `PRAGMA integrity_check` on the copy and logs the result.
+- **Retention**: 14 daily copies, then one a week for 8 weeks; older ones
+  deleted by the same command. Also one before every migration.
+- **Off this box** (decision 7): the backups folder copied elsewhere
+  (another machine on the tailnet, an encrypted cloud folder). A disk
+  failure otherwise loses every account.
+- **Restore**: stop accounts, copy a backup over `accounts.db`, start;
+  a test does exactly this.
+- hub.db has no backup: its listings come back with the next heartbeats.
+
+### 3.4 Schema (S1, plus S4's tables)
+
+```
+-- The platform account (Chimera's)
+accounts   id BLOB(16) PK (random), username TEXT UNIQUE (case-folded; permanent),
+           display_name, created, role ('tester'|'host'|'owner'), note (owner's),
+           content ('*' or a list: asset service games), games ('*' or a list: hub games),
+           list_slots INT, report INT (may send match results),
+           muted INT (feedback), limits (JSON: rate, burst, daily bytes; null = role's),
+           recovery_hash TEXT NULL (the recovery key's hash, 5.3),
+           password_hash TEXT NULL (later, optional; argon2),
+           state ('active'|'revoked'), revoked_at, last_seen
+devices    id BLOB(16) PK, account_id FK, kind ('key'|'legacy'),
+           public_key BLOB(32) UNIQUE NULL, token_hash TEXT UNIQUE NULL (legacy),
+           label, created, last_seen, last_address (owner's eyes, trimmed after 30 days),
+           revoked_at
+invites    code_hash TEXT PK (SHA-256), name (the owner's label and the suggested
+           username), role, content, games, list_slots,
+           for_account FK NULL (a re-invite into that account), created, expires,
+           redeemed_at, redeemed_device FK NULL, revoked_at
+link_codes code_hash TEXT PK, account_id FK, made_by_device FK, created,
+           expires (10 minutes), used_at, used_device FK NULL
+bans       id PK, account_id FK NULL, address TEXT NULL, reason, created, until NULL
+revocations seq INTEGER PK, kind ('account'|'device'), target BLOB(16), at
+           (the feed services poll)
+audit      seq PK, at, actor ('cli'|'page'|'system'|'<device>'), action, target, detail
+
+-- Games on the platform (each game's data shaped by its own schema)
+game_schemas game TEXT, version INT, schema TEXT (the game's profile.toml),
+           hash, registered_by FK, at; PK (game, version)
+game_profiles account_id FK, game TEXT, schema_version INT,
+           data TEXT (JSON: progression and settings the schema declares),
+           created (first play), updated; PK (account_id, game)
+matches    id BLOB(16) PK (the server's), game, server_account FK, server_device FK,
+           instance, minigame, map, started, ended, length_ms, received, ranked INT
+match_players  match_id FK, slot, account_id FK NULL (a guest), name,
+           fields TEXT (JSON: the schema's per-player result fields:
+           kills, deaths, rung, place, won, ...)
+stats      account_id FK, game, scope ('*' or '<minigame>'), key, value INT,
+           match_id FK NULL (the match that last changed it), updated;
+           PK (account_id, game, scope, key)
+
+-- hub.db
+servers    instance PK, account_id, address, port, lan (JSON), name, game,
+           minigame, map, players, max, bots, password, net, reachable,
+           first_seen, last_heartbeat
+```
+
+`stats` and each profile's derived parts are computed from
+`match_players` by the game's schema in the same transaction that stores
+a match, so they can always be rebuilt (`admin stats rebuild [--game]`).
+The platform tables never name a game's fields; a new game adds rows,
+not columns.
+
+## 4. The discovery document and the server list
+
+### 4.1 What the hub returns
+
+`GET /hub` (a `services` ticket or a legacy token; decision 6) answers
+JSON, built from the host's `<server store>/server/hub/hub.toml` and the
+process itself:
 
 ```
 {
   "schema": 1,
-  "name": "<hub name>",                  // shown on the first-run page
-  "issued": 1763150000, "expires": 1763754800,   // unix seconds; 7 days
-  "servers":  { "url": "/hub/servers" }, // relative: the hub's own origin
+  "name": "<hub name>",
+  "issued": 1763150000, "expires": 1763754800,
+  "accounts": { "url": "/accounts", "ticket_keys": { "<key id>": "<public key hex>" } },
+  "servers":  { "url": "/hub/servers" },
   "register": { "url": "/hub/heartbeat" },
-  "assets":   { "url": "https://<hub host>:<hub port>",
-                "fingerprint": "<fingerprint>", "key": "<manifest key hex>" },
-  "feedback": { "url": "/feedback" },    // absent until feedback-reports P1a
-  "news": [ { "id": "2026-11-14a", "date": "2026-11-14",
-              "title": "...", "text": "..." } ],
+  "assets":   { "url": "/", "key": "<manifest key hex>" },
+  "feedback": { "url": "/feedback" },
+  "news": [ { "id": "2026-11-14a", "date": "2026-11-14", "title": "...", "text": "..." } ],
   "motd": "Playtest Saturday 13:00 UTC",
-  "client": { "min_net": 52, "recommended_build": "0.1.0",
-              "download": "<release page>" },
-  "next_fingerprint": null               // certificate rotation (2.2)
+  "client": { "min_net": 53, "recommended_build": "0.1.0", "download": "<release page>" },
+  "next_fingerprint": null
 }
 ```
 
-- **Endpoints** are relative to the hub when they live in the same
-  process (the default) and absolute with their own fingerprint when they
-  don't (an asset service on a VPS later), so moving one service is an
-  edit to hub.toml, not a client update.
-- **`client.min_net`** is the number in `NET_VERSION` (`.../net52`): a
-  client below it shows a banner "A newer build is needed for this hub's
-  servers" with the `download` link; it still runs (LAN, own install).
-  `recommended_build` only gives a softer "an update is out".
-- **News and MOTD** are plain text (no HTML, no links followed by the
-  game); the main menu shows the MOTD as one line and the newest news item
-  until it is dismissed (its id remembered).
+- **Endpoints** are relative to the hub's origin (the front) by default
+  and absolute with their own fingerprint when a service moves elsewhere
+  (a VPS for the assets later): an edit to hub.toml, not a client update.
+- **`client.min_net`**: below it the menu shows "A newer build is needed
+  for this hub's servers" with the link; LAN and installs still work.
+- **News and MOTD**: plain text; the menu shows the MOTD as one line and
+  the newest item until dismissed.
+- **Trust**: pinned TLS (the link carries the fingerprint) and the
+  document signed with the manifest key (`X-Chimera-Signature`), pinned on
+  the first fetch, so a cached copy is trusted offline and a game server
+  may relay it later. **Rotation**: `next_fingerprint` signed by the
+  current key; a hub that lost both key and certificate is a new hub.
+- **Client cache**: `<data_local>/chimera/hub.toml` (URL, fingerprint,
+  pinned key, skip mark, dismissed news; 0600 on Unix; `CHIMERA_HUB`
+  names another file) and `hub-discovery.json` with its `.sig`. Used at
+  once at start, fetched again on a thread (at most `REFRESH_WAIT`) and
+  when Join opens if older than 5 minutes.
 
-### 2.2 Trust: pinned, then signed
+### 4.2 Heartbeats
 
-- **Pinned TLS**: the address a player sets carries the certificate's
-  fingerprint (the hub link, 4.2), so the first contact already trusts
-  exactly that certificate (`tls::PinnedTls`), as an asset offer does. No
-  CA, no names, no trust on first use.
-- **Signed**: the document's bytes are signed with the server's manifest
-  key (`X-Chimera-Signature`, as `GET /m/...`), and the key comes in the
-  document (`assets.key`). The client pins the key on the first fetch
-  (over the pinned connection) and refuses a later document signed by
-  another. The signature lets the cached copy be trusted offline and
-  lets a game server relay the document later (phase H6) without the
-  client trusting that server.
-- **Rotation**: a hub that must change its certificate (a lost `tls`
-  folder is the only case today) publishes `next_fingerprint` signed by
-  the current key for a while; clients that saw it accept the new
-  certificate. A hub that lost both key and certificate is a new hub:
-  players paste its link again (the asset token's rule today).
-
-### 2.3 How the client caches it
-
-- `<data_local>/chimera/hub.toml` (beside `asset-access.toml`; mode 0600
-  on Unix; `CHIMERA_HUB` names another file): the hub's URL, its
-  fingerprint, its pinned key, the skip mark (5.3) and the dismissed news
-  id. `hub-discovery.json` with `.sig` beside it: the last document as
-  received.
-- At start the cached document is used at once (the menu has endpoints
-  before any network answer); a thread fetches it again (at most
-  `REFRESH_WAIT`, as `asset_startup::refresh`) and when Join opens if it
-  is older than 5 minutes. A failure keeps the cache and says "hub
-  offline" on the Internet tab; past `expires` the endpoints are still
-  used and the page says the list may be old.
-- A release ships no hub.toml; tests and tool runs use none (as
-  `BrowserFiles`).
-
-## 3. Server registration
-
-### 3.1 The heartbeat
-
-A game server that is listed sends `POST /hub/heartbeat` over the pinned
-HTTPS every 30 s, and at once when its info changes (map, players, a
-password set), from a thread (never the main thread), with its host
-token (`Authorization: Bearer`). The body is what its A2S reply says
-plus what the hub can't learn by querying:
+A listed game server sends `POST /hub/heartbeat` every 30 s, and at once
+when its info changes, from a thread, with its `services` ticket:
 
 ```
 { "instance": "<instance id hex>", "port": 27015, "lan": ["192.168.x.y:27015"],
-  "name": "...", "app": "ultimate_gun_game", "minigame": "gun_game",
+  "name": "...", "game": "ultimate_gun_game", "minigame": "gun_game",
   "map": "de_dust2", "players": 5, "max": 12, "bots": 3,
-  "password": false, "dedicated": true, "net": "0.1.0/net52" }
+  "password": false, "dedicated": true, "net": "0.1.0/net53" }
 ```
 
-- **The address is the one the hub sees** (`tls::Peers`: the client
-  address behind the front) with the body's `port`; a body never names
-  another machine's address, so nobody can list a stranger. Exception:
-  a heartbeat from the hub's own machine (loopback or its LAN address)
-  is listed at the hub's `public_address` from hub.toml, so a dedicated
-  server on this box is listed at the address outsiders reach.
-- `lan` (the server's own interface addresses, private ranges only) is
-  given to clients beside the public address: a player behind the same
-  router as the server (no hairpin NAT) still reaches it, and
-  `ServerQueries`' instance id merges the two into one row.
-- **Expiry**: a listing missing 3 heartbeats (90 s) is dropped;
-  `POST /hub/leave` (on `quit`, a map-less shutdown, `sv_hub 0`) drops it
-  at once. One listing per (account, instance); a restarted server is a
-  new instance and the old one expires.
-- Text is cleaned: names to 64 characters, control characters out,
-  map and minigame ids to `[a-z0-9_:-]`; anything else is 400.
-- The hub never trusts the heartbeat's numbers for the list's order:
-  clients query each server themselves (3.4).
+- **Who may list**: a ticket whose `list` right is above 0 (how many
+  servers at once; role `host` gets 4, testers 1 or 0: decision 5). Past
+  it, or past one heartbeat per 10 s per listing: 429 with the reason.
+- **The address is the one the hub sees** (`X-Chimera-Peer`) with the
+  body's port; a body never names another machine, so nobody can list a
+  stranger. A heartbeat from this box itself is listed at hub.toml's
+  `public_address`. `lan` (private ranges only) is given beside it, for
+  players behind the same router; `ServerQueries`' instance id merges the
+  two into one row.
+- **Expiry**: 3 missed heartbeats (90 s) drops a listing; `POST
+  /hub/leave` (quit, `sv_hub 0`) at once. One listing per (account,
+  instance). A revoked account's listings go with the revocation feed.
+- Text cleaned: names to 64 characters, no control characters, ids to
+  `[a-z0-9_:-]`; anything else 400.
+- **The probe**: after the first heartbeat and every 5 minutes, one
+  A2S_INFO from the hub's UDP socket to the seen address and port;
+  `reachable: true | false | unknown` in the answer, printed once by the
+  server ("hub: listed, but the hub can't reach UDP <port>: forward it or
+  try net_upnp 1") and in `status`. Only ever to the heartbeat's own
+  address, at most once a minute per listing. Unreachable listings are
+  hidden from others and shown to their own account with the reason.
+- NAT as in [nat-traversal.md](nat-traversal.md): a forwarded port or
+  `net_upnp`; no relay here. IPv4 first.
 
-### 3.2 Auth: who may list
+### 4.3 The list and the Internet tab
 
-- Listing needs a token whose account has the **`list`** right, a new
-  field in accounts.toml (`list = 4`: how many servers at once; 0 or
-  absent: none). `chimera_pack user add <name> --list <n>` sets it; a
-  host token is an account with `list` and no games (`--games none`).
-- Testers' tokens get `list = 1` or none (decision 3): with it a tester's
-  listen server (Play) can be listed; without it only the host's servers
-  are.
-- Past `list`, or past a rate of one heartbeat per 10 s per listing:
-  429 with the reason. Unknown tokens count toward the bad-token ban as
-  on the asset routes. `chimera_assets hub delist <instance>` and
-  `user revoke` drop a listing at once; a revoked account's listings go
-  at its next heartbeat.
-
-### 3.3 Reachability and NAT
-
-- **The probe**: after a listing's first heartbeat (and every 5 minutes)
-  the hub sends one A2S_INFO request from its own UDP socket to the seen
-  address and port. It answers the heartbeat with `reachable: true |
-  false | unknown`; the server prints it once ("hub: listed, reachable
-  from the internet" or "hub: listed, but the hub can't reach UDP
-  <port>: forward it or try net_upnp 1") and `status` shows it.
-- The probe goes only to the address the heartbeat came from, at most
-  once a minute per listing, so the hub can't be aimed at anyone else.
-- **Unreachable listings** are hidden from the list by default and
-  shown to their own account (the host sees "not reachable" on its own
-  Internet tab); decision 4.
-- NAT as today ([nat-traversal.md](nat-traversal.md)): a forwarded port
-  or `net_upnp` works; carrier-grade NAT can't be listed reachably (the
-  probe says so); a relay or hole punching is out of scope here and is
-  that plan's (c)/(d). A tailnet hub sees tailnet addresses and lists
-  them: one population per hub (6.3).
-- IPv4 only at first (`ServerQueries` binds IPv4); an IPv6 heartbeat is
-  listed when a later `ServerQueries` asks over IPv6.
-
-### 3.4 The list and the Internet tab
-
-- `GET /hub/servers` (token required, decision 5): the live listings,
-  each `{ addr, lan[], name, app, minigame, map, players, max, bots,
-  password, net, reachable, since }`, at most 500, as JSON. Cheap: from
-  memory.
+- `GET /hub/servers` (a ticket): the live listings as JSON (`addr`,
+  `lan[]`, name, game, minigame, map, players, max, bots, password, net,
+  reachable, since), at most 500, from memory.
 - **Internet** becomes the browser's first tab (`BrowserTab::Internet`,
-  before LAN): its rows are `server_list::listed()` over the list's
-  addresses, as Favourites are, so each server is **queried directly**
-  for its info and ping with the existing unicast `ServerQueries::query`
-  (the hub's numbers fill a row until the server answers). Sorted by
-  ping, then asking, then silent (the Favourites order).
-- Up to 64 queries at once (the rest queued), so a long list doesn't
-  flood the player's link or trip `Responder`'s limits.
-- A server of another `NET_VERSION` stays listed, greyed: "needs build
-  <its version>"; another app's servers (the `app` field) are left out
-  unless the page's filter asks for them.
-- F5 refreshes (the list again, then the queries); the page opens with
-  the cached list and asks for a new one.
+  before LAN): rows are `server_list::listed()` over the list's
+  addresses, each **queried directly** with `ServerQueries::query` (the
+  hub's numbers fill a row until the server answers), at most 64 queries
+  at once, sorted by ping, then asking, then silent. Another
+  `NET_VERSION` is greyed ("needs build ..."); another game's servers are
+  left out unless the filter asks, and a game the account may not play
+  is greyed (5.5). F5 refreshes. **Join** as from any
+  other tab.
 
-## 4. First-run setup
+## 5. Accounts
 
-### 4.1 The screen
+### 5.1 Invite and sign-up
 
-A Signal page (`party_kit::signal_pages`, the look of Join and Settings)
-shown before the main page on the first start, when there is no
-hub.toml, no bound asset access and no skip mark, and the command line
-doesn't play (`starts_at_menu`):
+- **The owner** runs `chimera_services admin invite <name>` (or mints on
+  the admin page), which prints one line to send privately:
+  `chimera-hub://<hub host>:<hub port>/<fingerprint>?code=XXX-XXX-XXX`.
+  The code is 9 characters of Crockford base32 (45 bits; no 0/O or 1/I
+  confusion, case and dashes ignored), **single use**, valid 14 days
+  (`--expires`); only its SHA-256 is stored and it is printed once.
+  Redeeming is rate limited (10 tries an hour per address; wrong codes
+  count toward the bad-token ban), which makes 45 bits plenty. `<name>`
+  is the owner's label and the suggested username. The link without
+  `?code=` is the plain hub link. The same text works as `+chimera:hub
+  <link>` on the command line.
+- **The player** pastes the link in the first-run page (8), picks a
+  **username** (3-20 characters, `[a-z0-9_]` after case folding, unique
+  on the hub, a short list of reserved words refused; the name from the
+  invite filled in) and presses Connect. The client makes an Ed25519 key
+  pair; `POST /accounts/redeem {code, username, device_public_key,
+  device_label}` over the pinned link creates the account and answers
+  `{account, device, ticket, recovery_key}` (5.3). A taken username is
+  answered without using up the code.
+- **After that, silent login**: the client asks for tickets with its
+  device key; no password, nothing to type.
+- **Username and display name**: the username is the permanent handle
+  (the owner's lists, the board's tooltip, `admin` commands, re-invites);
+  the **display name** shown in games starts equal to it and changes
+  freely in Settings. A username changes only by the owner (`admin
+  account set <id> --username`).
+- **Passwords**: none for now; an optional password (argon2, a column
+  already reserved) may come later as one more way to add a device.
+- **The client's file**: `<data_local>/chimera/account.toml` (hub URL
+  and fingerprint, account and device ids, username, the device's private
+  key, the last ticket), mode 0600 on Unix; on Windows the user's
+  `%LOCALAPPDATA%` as `asset-access.toml` is today (DPAPI is a known
+  shortcut to take later).
 
-- **Hub link** (text field, paste): the link or code from the host.
-- **Token** (text field, hidden as a password): empty when the link
-  carried one (an invite, 4.2).
-- **Connect** (primary): fetch the document over the pinned link, show
-  the hub's name, MOTD and what it serves ("servers, game files,
-  reports"), keep hub.toml, bind the token to the document's asset
-  service (`access::Access::bind`, the same rule as an offer: the token
-  only ever goes to that certificate). Errors in words: wrong link, hub
-  unreachable, refused token, another certificate.
-- **Skip: play from my installs / LAN** (secondary): writes the skip
-  mark. Everything works as today: installs, LAN, Favourites, History,
-  Direct; the Internet tab says "no hub: Settings > Network".
-- Settings > Network: the hub (name, status), **Change hub**, **Forget
-  hub** (removes hub.toml; the asset binding stays unless asked).
+### 5.2 Devices
 
-### 4.2 The link
+- **Link a device**: Settings > Account > **Link a device** asks
+  `POST /accounts/link` (with a ticket) and shows a short code
+  (`XXX-XXX`, 10 minutes, single use, hashed). On the new PC the player
+  enters the hub link and that code on the first-run page (the code field
+  takes either kind); `POST /accounts/redeem` with a link code adds a key
+  device to the same account. The first device's page shows "linked:
+  <device label>" when it is used.
+- **Listed and revocable**: Settings > Account lists the devices (label,
+  last seen, "this device") with **Revoke** on the others; revoking goes
+  into the revocation feed (2.4). **Sign out of this device** revokes
+  its own and deletes `account.toml`. The owner sees and revokes the same
+  on the admin page.
 
-`chimera-hub://<hub host>:<hub port>/<fingerprint>` (the fingerprint as
-the 64 hex digits, or base32 to shorten it), with an optional
-`?token=<token>` making it an **invite**. The hub prints its link at
-start; `chimera_pack user add <name> [--list n]` prints that account's
-invite, the one line to send privately. The same text works as
-`+chimera:hub <link>` on the command line (kept before the app starts,
-as `+chimera:asset_token` is), so `Play-UGG.bat +chimera:hub <invite>`
-replaces today's token line. Registering `chimera-hub://` as an OS link
-handler (a click in a chat opens the game) is decision 6.
+### 5.3 Recovery
 
-### 4.3 Folding the asset token in
+- **Recovery key**, shown once at sign-up: 16 Crockford base32
+  characters in four groups (80 bits), with **Copy** and **Save to a
+  file** buttons and a check box "I saved it" before continuing (it can
+  be shown again from Settings while signed in only by making a new one,
+  which replaces the old). The hub stores its hash only. On a new PC
+  without another device, the first-run page's "Recover with a key"
+  takes the hub link, the username and the key; it adds a device and
+  revokes the others (the old PC is presumed lost).
+- **Or the owner re-invites into the same account**: `admin invite
+  <name> --for <username>` (a button on the admin page) prints an invite
+  that, redeemed, adds a device to that account (keeping the username,
+  profiles and stats) and revokes its other devices unless `--keep`.
+- A recovery key is a bearer secret: rate limited per username and per
+  address as codes are, and a successful recovery is an `audit` row the
+  owner sees.
 
-- With a hub, the token is entered once, at first run (or in the
-  invite), and bound to the hub's asset service at once, so the startup
-  download (`asset_startup`) can run before the first join and no join
-  restarts the game for a token.
-- The mounts are opened at startup, so a first run that binds a token
-  for a game that isn't installed restarts once (the existing
-  `AssetRelaunch` path, then the startup download's window). A later
-  step can ask the hub link in the startup window instead and save that
-  restart.
-- `+chimera:asset_token` and a game server's `AssetOffer` keep working
-  unchanged (no hub, a server with its own service); a server that
-  offers another certificate than the hub-bound one is refused as now.
-- Players with the games installed may skip, or connect for the list
-  alone (an account with no games; their reports then upload too).
+### 5.4 Rights and roles
 
-## 5. Hosting on this box
+`tester` (the default: the content the owner chose, every game, `list`
+1 or 0, may send feedback), `host` (`list` 4, `report` 1: its match
+results count; no content unless given) and `owner` (everything, and the
+admin API from another machine later). Rights are on the account and
+travel in its tickets; a change takes effect at the next ticket (within
+3 h) or at once with `admin account refresh <id>` (its devices' current
+tickets go into the revocation feed, so the clients ask again).
 
-### 5.1 One process: routes on the asset service (recommended)
+### 5.5 Per-game access (optional)
 
-| Option | For | Against |
-|---|---|---|
-| **A. `/hub/*` routes on the asset service** (recommended) | One port, one certificate, one link for everything (the user's "one route"); the TLS front, accounts, limits, bans and access log already exist; feedback-reports.md puts `/feedback` there too; nothing new to open on the router | The asset crate grows a third job (split later, 5.4); a hub restart restarts downloads |
-| B. Its own binary and port | Separate restarts, could run on another machine | A second port, certificate and token story; the link would still have to point at a document that names the asset service: back to A's shape |
-| C. A Valve-style UDP master protocol | Familiar to Source tools | A second protocol and port, no TLS, no tokens; our clients query servers by A2S already and need only the list |
+By default `games = '*'`: an account plays every game on the hub, and a
+game server admits any account. The owner may narrow it (`admin account
+set <id> --games ultimate_gun_game`, or per invite); a game server then
+refuses a join ticket for a game the account lacks ("this account isn't
+invited to <game>"), and the Internet tab greys those servers. Accounts
+mints a join ticket only for a game the account may play.
 
-A, with the code in its own module so it can move: `chimera_asset_server
---hub` turns the routes on (off by default; the asset service alone
-stays as it is).
+### 5.6 Privacy
 
-### 5.2 Ports, TLS, limits
+No email, real name or phone number. Stored: the random ids, username,
+display name, role, rights, device public keys and labels, last-seen
+times, the recovery key's hash, the per-game profiles and stats, and for
+30 days the last address a device used (abuse checks; the owner's eyes
+only). A player can ask the owner to delete the account: `admin account
+delete <id>` removes it, its devices, profiles and stats (match rows
+keep the name as played, without the id) and frees the username after
+30 days.
 
-- **TCP `<hub port>`**: the asset service's `--tls` port, unchanged; the
-  hub link points at it. Its plain listener stays on 127.0.0.1:8731 for
-  this machine's tools and for a dedicated server on this box (plain
-  HTTP to localhost is already allowed by the client).
-- **UDP**: none inbound for the hub; the probe goes out from an
-  ephemeral port. Game servers keep their own UDP ports (27015...).
-- **TLS**: the service's own certificate, pinned by the link; no domain,
-  no CA. Behind a Cloudflare Tunnel or `tailscale serve` later the
-  front's certificate changes, so the link changes too (6.3).
-- **Limits** (new `Limits` fields, CLI flags): `/hub` and
-  `/hub/servers` 2 a second per account (bursts of 20); heartbeats as
-  3.2; at most 4 listings per address whatever the accounts; 500
-  listings in all; the existing 48 connections per address and the
-  bad-token ban. Past a limit: 429 and an access-log line.
+## 6. Migration from today's tokens
 
-### 5.3 Tailnet or public
+- **Import once**: `chimera_services admin import-legacy
+  <server store>/server/accounts.toml` makes one account per internal
+  account (role `tester`, its games as `content`, every game to play,
+  limits and note; its old name, case-folded, as the username) and one
+  `legacy` device per token hash. Nothing changes for testers.
+- **Legacy tokens keep working everywhere**: the asset service keeps
+  `Internal` (reading accounts.toml) until S3 has shipped one playtest
+  build; accounts also accepts `Authorization: Bearer chimera1_...` at
+  `POST /accounts/ticket` (answering a ticket for that legacy device), so
+  a new client with only a token still gets tickets.
+- **Automatic upgrade** (recommended, decision 8): a hub-aware client
+  with a legacy token makes a device key and calls `POST
+  /accounts/upgrade` with the token; the legacy device is replaced by a
+  key device of the same account and the token stops working. The token
+  line in `Play-UGG.bat` can then go.
+- **Retiring accounts.toml**: after a playtest with S3, `Internal` is
+  switched off (`--legacy-tokens off`); `chimera_pack user add` becomes a
+  shortcut for `admin invite <name>` and prints the invite link instead
+  of a token.
+- `+chimera:asset_token` and a game server's own `AssetOffer` keep
+  working for a server with its own asset service and no hub.
 
-- Today the asset service's TLS port faces the internet during
-  playtests (playtest-hosting.md), with internal accounts, and the asset
-  plan's decision says Steam sign-in must be on before it is opened up
-  for good. The hub follows the same line: **token-only** (the document,
-  the list and heartbeats all want a token), public only while a
-  playtest runs, otherwise reached over the tailnet (decision 7).
-- A hub over the tailnet lists tailnet addresses (players must be on
-  it); a public hub lists public addresses. Mixing needs two links.
-- The VPS later (the asset plan's hosting decision): the same binary
-  there; hub.toml's `assets.url` may point back at this box with its
-  own fingerprint until the store moves.
+## 7. Owner-only account creation
 
-### 5.4 Code layout (layering)
+### 7.1 The command line
 
-Each crate's folder is its layer (checks/tests/it/architecture.rs):
+Talks to the accounts service's admin API on loopback (with the services
+secret), so the database has one writer:
 
-- **`chimera_formats::a2s`** (pure data): the A2S packets' codec
-  (`ServerInfo`, `encode`, `parse_reply`, `info_request`, challenges)
-  lifted from `chimera_net::net::query`, which re-exports it; the
-  Bevy-side `Responder`, `ServerQueries` and cvars stay in
-  `chimera_net`. Needed so the hub (pure data) can probe without
-  depending on the network crate. `chimera_assets` may use
-  `chimera_formats` (the neutral layer).
-- **`chimera_assets::hub`** (pure data, no Bevy): `discovery` (the
-  document, hub.toml's host side, signing and checking, the link and
-  invite format), `registry` (listings, heartbeat validation, expiry,
-  per-account and per-address caps, the probe's schedule), `client`
-  (blocking fetches of the document and list and the heartbeat over
-  `remote`/`tls`), the client cache (`HubAccess`, like `access`); the
-  routes in `server.rs`; accounts' `list` right; `chimera_assets hub
-  link | servers | delist` and `chimera_pack user add --list`. If it
-  outgrows the crate it moves, with feedback, to an engine crate
-  `chimera_services` (a `workspace_crates` row, `cargo hakari
-  generate`); not before.
-- **`chimera_net::net::hub`** (engine): the server's heartbeat thread
-  from `LocalServerInfo` (cvars `sv_hub` 0/1, `chimera:hub`,
-  `chimera:hub_token`; `[hub]` in the dedicated server's local config),
-  the reachability line in `status`; the client's `Hub` resource (the
-  cached document, refresh thread, the list fetch) feeding
-  `ServerQueries`.
-- **`chimera_client::client`**: `+chimera:hub` kept before the app
-  starts; a first-run bind goes on in the same game (`net::assets`).
-- **`party_kit`** (app): `server_list::BrowserTab::Internet`, the
-  first-run page and Settings > Network in `signal_pages`/`settings`,
-  the MOTD and news line on the main page, the Play row "List on the
-  hub" (a `[[play]]` row in data/main_menu.toml on `sv_hub`).
+```
+chimera_services admin invite <name> [--role tester|host] [--content a,b|*] [--games a,b|*]
+                                     [--list <n>] [--expires <days>]
+                                     [--for <username> [--keep]]   # prints the invite link
+chimera_services admin invites [--state unused|redeemed|expired|revoked]
+chimera_services admin invite revoke <code or name>
+chimera_services admin account list [--json]
+chimera_services admin account show <username>    # devices, rights, last seen, profiles, stats
+chimera_services admin account set <username> [--username ..] [--role ..] [--content ..]
+                                   [--games ..] [--list n] [--note ..] [--mute|--unmute]
+chimera_services admin account revoke <username> | device revoke <device>
+chimera_services admin account delete <username>
+chimera_services admin ban <username|address> [--for <days>] --reason <text>
+chimera_services admin import-legacy <accounts.toml>
+chimera_services admin stats rebuild [--game <game>]
+chimera_services admin backup | status | install-units --store <dir>
+```
 
-No change to the game protocol: the heartbeat is HTTPS, the A2S reply
-is unchanged, so no `NET_VERSION` bump.
+Every change is an `audit` row.
 
-## 6. Phases
+### 7.2 The admin page
+
+`http://127.0.0.1:8732/admin/` (loopback only, never through the front;
+the same rule as the feedback triage page; from another machine over an
+SSH tunnel): **Invites** (invite with a name, role, content, games and
+expiry, the link shown once with a copy button; the list with state;
+revoke), **Accounts** (username, display name, role, devices, last seen,
+each game's profile summary; set rights, revoke a device or the account,
+ban, **Re-invite** into the account), **Servers** (the hub's listings,
+delist), **Matches** (the latest results per game) and **Games** (the
+registered schemas and their versions). Plain HTML and a little
+JavaScript served by the service, as the triage page is.
+
+## 8. Client UX
+
+- **First run** (a Signal page before the main page, when there is no
+  hub.toml, no account, no bound asset token and no skip mark, and the
+  command line doesn't play): **Hub link** (paste; an invite link fills
+  the code too), **Code** (an invite code or a device link code),
+  **Connect**; then, for an invite, **Pick a username** and the
+  **recovery key** screen (5.3); a link code needs neither. Secondary:
+  **Recover with a key** and **Skip: play from my installs / LAN**.
+  Connect fetches the document, shows the hub's name and MOTD, redeems,
+  keeps hub.toml and account.toml, and starts the startup download for
+  the content the account may fetch. Errors in words: wrong link, hub
+  unreachable, code unknown, used or expired, username taken, another
+  certificate. A first run that adds content not installed restarts once
+  (the existing `AssetRelaunch` path).
+- **Main menu**: an **account chip** (display name, and this game's
+  matches and wins or level once S4 is in; "Guest" without an account; a
+  click opens Settings > Account), the MOTD line, the newest news.
+- **Join**: Internet first (4.3), then LAN, Favourites, History; Join.
+- **Settings > Network**: the hub (name, status), Change hub, Forget hub.
+  **Settings > Account**: username, display name (editable), Link a
+  device, the device list with Revoke, New recovery key, Sign out of this
+  device.
+- Players with every game installed still connect (for the list, reports
+  and stats); Skip keeps everything working as today.
+
+## 9. Per-game profiles and stats (S4)
+
+### 9.1 A game declares its profile
+
+Each game ships a schema as data in its own crate
+(`apps/ultimate_gun_game/data/profile.toml`; later Lucker Party's) and
+registers it (`register_profile_schema`, 2.7); Chimera's code never
+names a game's fields. A sketch:
+
+```
+game = "ultimate_gun_game"
+version = 1
+
+[result]              # one row per player per match, from MatchResults
+kills = "int"
+deaths = "int"
+rung = "int?"
+place = "int"
+won = "bool"
+
+[stats]               # how results add up (scope "*" unless said)
+matches = { count = true }
+wins = { sum = "won" }
+kills = { sum = "kills" }
+deaths = { sum = "deaths" }
+best_place = { min = "place" }
+best_rung = { max = "rung", scope = "minigame" }
+
+[progression]         # derived on the server, never sent by a client
+xp = { per_match = 50, per_win = 100, per_kill = 2 }
+level = { from = "xp", steps = [0, 500, 1200, 2100] }
+
+[settings]            # the player's own, synced across devices
+crosshair = { type = "string", max = 64 }
+```
+
+- **Result fields** come from `minigame::MatchResults`' rows by name
+  (kills, deaths, rung, place, won); a game whose results carry more
+  registers a hook that adds fields, as rules hooks are registered.
+- **Stats and progression** are computed by `chimera_assets::profile`
+  from stored results only: written by servers, never by clients.
+- **Settings** are the only part a client writes (`PUT
+  /accounts/profiles/<game>/settings` with a ticket), validated against
+  the schema, at most 8 KB.
+- **Versions**: a schema may add fields in a higher version; renaming or
+  removing one needs a `[migrate]` entry (later); `admin stats rebuild`
+  recomputes stats and progression from `match_players` after a change.
+- **Registration with the hub**: a game server's report names its
+  schema's game, version and hash; accounts answers 409 for one it
+  doesn't know, and the server (a `host` account) uploads it to `POST
+  /accounts/schemas`. A different schema under a known (game, version) is
+  refused.
+
+### 9.2 The profile
+
+The first ticket for a game (a join ticket, or `GET
+/accounts/profiles/<game>` from that game's menu) makes the account's
+profile for it (`game_profiles`: empty settings, zero stats). An account
+has as many profiles as games it has played; the platform account stays
+the same across them.
+
+### 9.3 Results at match end
+
+- **Who is who**: at connect the client asks accounts for a `join`
+  ticket for the server's game and instance id (from its A2S reply) and
+  sends it in the connect message; the game server checks it locally
+  with the document's ticket keys (and refuses a game the account may not
+  play, 5.5). No ticket (no hub, accounts down, LAN): the player is a
+  guest and nothing of theirs is recorded. This changes the connect
+  message: a `NET_VERSION` bump in S4.
+- **Report**: at `MatchEnd` the server takes `MatchResults`, maps them to
+  the schema's result fields and posts `POST /accounts/matches` with its
+  own `services` ticket and the body signed by its device key (match id,
+  game and schema version, instance, minigame, map, times, one row per
+  player: account id or none, name, the fields). It goes through an
+  outbox on disk (`<data_local>/chimera/match-outbox/`) with retries, so
+  an accounts restart loses nothing; the match id makes a resend
+  harmless.
+- **What counts**: results from an account with `report` (hosts) are
+  ranked and update stats and progression; others are stored unranked
+  or refused (decision 9). A row's account must have been issued a join
+  ticket for that instance in the last hour, so a host can't credit
+  absent players.
+- **Shown**: the account chip shows this game's numbers (the schema
+  names which: `[display] chip = ["level", "wins"]`); the board (Tab)
+  gets each account's chosen stat beside the name (`[display] board =
+  "wins"`): the server fetches `GET /accounts/public/<id>/<game>` for each
+  joined account once and replicates it; guests show none. `GET
+  /accounts/me/<game>` gives the client its own profile.
+
+## 10. Phases
+
+Each phase leaves everything working; the layering rules hold at each
+step (2.7).
 
 | Phase | What | Size | Tests |
 |---|---|---|---|
-| **H0** (now, no code) | The host sends address and token privately; Direct, Favourites, History | none | none |
-| **H1** the hub's server side | `chimera_assets::hub` discovery (hub.toml, signing, the link), registry with expiry, `/hub`, `/hub/servers`, `/hub/heartbeat`, `/hub/leave`, the `list` right, limits, `--hub`, the CLI | 3-4 h | `chimera_assets` it tests on port 0 over the TLS front: the document's signature checks with `GET /key`'s key; a pinned client refuses another certificate; heartbeat without a token 401, without `list` 403, past `list` 429; the address listed is the peer's, never the body's; loopback heartbeats listed at `public_address`; expiry after 3 missed beats (a test clock), leave drops at once; delist and revoke; bad names 400 |
-| **H2** servers heartbeat | `chimera_net::net::hub` server side; dedicated servers from `[hub]` or `+chimera:hub`/`+chimera:hub_token`; listen servers by the Play row | 2-3 h | a dedicated server (headless `dedicated`) against a hub on port 0: listed with the right fields, updated when a bot joins and a password is set, left on quit, expired when killed; nothing sent with `sv_hub 0` or no token |
-| **H3** the probe | `chimera_formats::a2s` lifted (`chimera_net` re-exports; its query tests kept); the hub's probe; `reachable` in the answer and `status`; hidden-unless-own rule | 2 h | the probe against a real `Responder` on loopback (reachable) and a closed port (not); the probe never goes to an address other than the heartbeat's; the codec's round-trip tests moved |
-| **H4** client and Internet tab | `Hub` resource, cache and refresh; `BrowserTab::Internet` first; direct queries, 64 at a time, ping sort, version greying, app filter; MOTD/news line; the min-client banner | 3-4 h | `party_kit` `signal_pages.rs`: rows from a hub list on a NetSim pair, sorted by ping, a silent one last, another `NET_VERSION` greyed, another app left out; offline uses the cache with its note; a document signed by another key refused; `ui_scene join internet` screenshots |
-| **H5** first-run setup | The first-run page, invite and `+chimera:hub`, binding the token, the one restart, Skip, Settings > Network | 3 h | `main_menu.rs`: first start shows the page, a second start doesn't; Connect with an invite binds the token to the document's service and keeps hub.toml; Skip leaves installs, LAN and Direct as today; a wrong link, an unreachable hub and a refused token each say so; with an install nothing is fetched; screenshots |
-| **H6** folding the rest | A server without `chimera:asset_url` offers the hub's asset service; feedback-reports.md's endpoint order gains "the hub's `feedback`" first; a joined server relays the hub's document (signed) to clients without one; docs | 2 h + docs | offers from the hub's document; a relayed document with a bad signature ignored |
-| Release | A playtest build with H1-H5 (all players and the server update; `NET_VERSION` unchanged by this plan) | user's go | `tools/post-push-tests.sh`; a fresh Windows PC: paste an invite, see the list, join |
+| **S0** (now, no code) | Tokens and the asset `--tls` port as today; the host sends address and token privately | none | none |
+| **S1a** accounts and the database | `chimera/services` crate (workspace row, `dev`, `NO_HACK`, hakari); `db` (rusqlite bundled, WAL, migrations, backup); the `accounts` role: invites (`admin invite <name>`), sign-up with a username, device keys, device link codes, the recovery key and owner re-invites, tickets, revocation feed, legacy import and legacy tickets, rights and per-game access; the admin API, CLI and page; `chimera_assets::ticket` and `TicketAuth` in the asset service | 7-9 h | `chimera_services` it tests on port 0: an invite redeems once with a username (a second redeem 4xx, an expired one 4xx, a revoked one 4xx; a taken or malformed username refused without using up the code); a link code adds a device to the same account once and expires after 10 minutes; a recovery key adds a device and revokes the others, a wrong one counts toward the ban; a re-invite `--for` keeps the username; a ticket checks with the public key alone, a changed byte fails, an expired one fails, a wrong audience fails; a ticket request with an old time or a seen nonce is refused; revoke a device: its tickets fail at the asset service within one revocation poll (a test clock); import-legacy: an old token still downloads, and gets a ticket; the asset service serves a ticket's content only; migrations from 0 on an empty DB and from a fixture DB of the previous version; backup then restore gives the same rows; a DB newer than the binary refused. `chimera_assets` tests for the ticket format |
+| **S1b** front, units, the client's credential | The `front` role (connection routing, `X-Chimera-Peer`, 421, admin paths refused) on today's certificate; `all`; systemd templates and `install-units`; `admin status`; the client's `account` (redeem by `+chimera:hub <invite>` with no UI yet, the ticket cache and refresh, the asset service used with tickets); docs | 5-6 h | through the front: an old client's root paths reach assets with a legacy token and the same fingerprint; `/accounts/` reaches accounts; `/admin` 404 from outside; a forged `X-Chimera-Peer` stripped; per-address limits see the real peer; accounts stopped mid-test: downloads with a ticket go on, a new redeem fails cleanly; assets restarted: accounts unaffected. Client: `+chimera:hub <invite>` redeems once and downloads; a second start reuses the ticket with accounts down |
+| **S2** the hub and the Internet tab | `chimera_formats::a2s` lifted; the `hub` role (document, signing, registry, heartbeats, expiry, the probe, `/hub/servers`, delist); `chimera_net::net::hub` heartbeats from dedicated and listen servers (`sv_hub`, `[hub]`); the client's `Hub` resource and `BrowserTab::Internet`; MOTD and news line; the min-client banner | 10-12 h (three agents' worth: server, game server, client) | the document's signature checks with `GET /key`; heartbeat without a ticket 401, without `list` 403, past it 429; the listed address is the peer's; this box's heartbeats listed at `public_address`; expiry after 3 missed beats, leave at once; revoke drops listings; the probe reaches a real `Responder` and not a closed port, and never another address; a hub restart keeps the list (hub.db); a headless dedicated server listed, updated when a bot joins, gone on quit; `party_kit` rows from a hub list on a NetSim pair sorted by ping, another `NET_VERSION` greyed, another app left out, offline shows the cache; `ui_scene join internet` screenshots |
+| **S3** first-run setup | The first-run page (link and code, username, recovery key, Recover, Skip), Settings > Network and Account (display name, Link a device, devices and Revoke, new recovery key, sign out), the account chip (name only), legacy auto-upgrade, `chimera_pack user add` printing invites; docs (playtest.md: paste the invite) | 4-5 h | `main_menu.rs`: a first start shows the page, a second doesn't; Connect with an invite asks a username, shows the recovery key, keeps both files and starts the download; a link code from a second NetSim client's Settings signs a fresh client into the same account; revoking it from the first stops it; Skip leaves installs, LAN and Direct as today; a wrong link, an unreachable hub and a used code each say so; a legacy-token client upgrades once and the token stops working; screenshots at 720p and 1440p |
+| **S4** per-game profiles and stats | `chimera_assets::profile` (schema format, results to stats and progression); `register_profile_schema` and UGG's `data/profile.toml`; schema upload; profiles made on first play; settings sync; join tickets in the connect message (`NET_VERSION` bump); the server's results outbox; `/accounts/matches`, `/accounts/me/<game>`, `/accounts/public/<id>/<game>`; `admin stats rebuild`; the chip's numbers; the board's column | 8-10 h | `chimera_assets`: a schema parses, a bad one is refused with the field named; results fold into stats and progression as declared; a rebuild equals the incremental sums. NetSim: a client with a join ticket is that account on the server, one without is a guest, a ticket for another instance or a game the account lacks refused; the first match makes the profile; an unknown schema is uploaded once (409 then 201), a changed one under the same version refused; settings over 8 KB or off-schema refused; two games' profiles on one account stay apart; a match end posts one report, resent after accounts comes back, stored once; ranked only from a `report` account; an absent account's row refused; the chip and board show the schema's numbers (screenshots) |
+| **S5** feedback under accounts | The `feedback` role (its own process and port, routed at `/feedback`); reports carry the account id from the ticket; mute on the account (`muted`); the triage page on its loopback port; the `/feedback` route leaves assets | 2-3 h | feedback's existing it tests run against the role; a ticket's account named in `meta.toml`; a muted account gets 202 and nothing stored; assets restarted while a report uploads: the report lands |
+| Release | A playtest build with S1-S3 (all players update) and the host's units installed; S4 in the next (its protocol bump) | user's go | `tools/post-push-tests.sh`; a fresh Windows PC: paste an invite, see the list, join; an old build's token still downloads |
 
-Docs to change with the phases: docs/playtest-hosting.md (starting the
-hub, its link and invites, hub.toml, ports, delisting), docs/playtest.md
-(first run: paste the invite), assets-for-developers.md (the hub link as
-an alternative to `[assets]`), main-menu.md (M3 as built), DESIGN "The
-party apps' main menu", each new file's `//!` doc (`docs_index`).
+Docs to change with the phases: playtest-hosting.md (the services, units,
+invites, backups, ports), playtest.md (first run), assets-for-developers.md
+(the hub link and invites beside `[assets]`), ARCHITECTURE.md (the new
+crate), DESIGN.md "The party apps' main menu" and the asset service's
+account kinds, main-menu.md (M3 as built), each new file's `//!` doc
+(`docs_index`).
 
-## 7. Risks
+## 11. Decisions for the user
 
-- **One process, three jobs**: a hub bug can take the downloads down
-  mid-playtest. The routes are behind `--hub`, and H1's tests run the
-  asset routes beside them.
-- **Junk listings**: tokens, the `list` right, per-address caps, cleaned
-  text, delist and revoke; the probe hides what nobody can reach.
-- **The hub's address changes** (a home connection): the link names the
-  certificate, not only the address, and the asset binding already
-  survives an address change; the link with the new address is sent
-  again, the token stays.
-- **A lost `tls` folder or key**: every player pastes a new link (as
-  tokens today); keep `<server store>/server/` backed up.
-- **Exposure**: a public hub with internal accounts is the same risk the
-  asset service already takes during playtests; Steam sign-in before
-  it stays open (the asset plan's rule).
+Taken (user, 2026-11-14): a Chimera platform account with per-game
+profiles declared by each game as data; every game open to every
+account by default; the account UX of section 5 (`invite <name>`,
+username, device key, link codes, recovery key or re-invite, no
+password for now, legacy tokens kept during migration).
 
-## 8. Alternatives considered (short)
+Still open:
 
-Valve's master server protocol (UDP, no auth, a second port); a static
-JSON list on a web host (no heartbeats, edited by hand); Steam's server
-browser (needs an app id: nat-traversal.md section 1); listing through
-each game server (no first contact without an address); a list without
-a discovery document (the user wants one address for every service).
-
-## 9. Decisions for the user
-
-1. **Where the hub runs:** routes on the asset service process on this
-   box, behind `--hub` (recommended), or a separate binary.
-2. **The link:** a link with the fingerprint, and invites that carry the
-   token too (one paste; recommended), or the link and the token as two
-   things to enter.
-3. **Who may list a server:** host tokens only, or every tester's token
-   with one listing (`list = 1`) so their Play games show up
-   (recommended: testers get 1).
-4. **Unreachable servers:** hidden from others, shown to their own host
-   with the reason (recommended), or listed greyed for everyone.
-5. **Who may read the list and the document:** token holders only
-   (recommended while accounts are internal), or public.
-6. **`chimera-hub://` as an OS link handler** (a click in a chat opens
-   the game with the link) in a later phase, or paste only.
-7. **Reach:** public only during playtests, the tailnet otherwise
-   (recommended, as the asset service now), or always public.
-8. **First run:** the hub page on every fresh start until connected or
-   skipped (recommended), or only from Join's Internet tab.
-9. **News and MOTD:** in the hub's hub.toml edited by hand (recommended),
-   or a `chimera_assets hub news add` command; and whether Discord update
-   posts should also land there.
-10. **Min client:** a banner only (recommended), or refuse to list
-    servers to an old client.
-
-## 10. North Star: accounts by redeem code
-
-Not for now (user, 2026-11-14): none of H1-H6 depends on it, and the
-tokens work until it is built. The idea: a login that admits only the
-people allowed to test, as simple as possible for the host and for the
-player, with nothing to type but the hub link and a code. A usernameless
-account (display names change at will) is also the base for a longer-term
-identity and, later, meta progression.
-
-**Host side.** One command on the hub box mints codes, for example
-`chimera_pack code mint <n> [--label <text>] [--role tester|host]
-[--expires <days>] [--games a,b]`; each code is single-use and printed
-once (only its hash is stored, like tokens today). `code list` shows
-label, role, state (unused, redeemed by which account, expired) and
-`code revoke <code or label>` kills an unused code. The accounts file
-grows from "name and token hashes" to account id, role, rights (`list`,
-games), limits, a note, and the device credentials' hashes.
-
-**Player side.** First-run setup (4.1) asks for the hub link and the
-code, nothing else; an invite link can carry the code, so one paste does
-both. Redeeming (`POST /hub/redeem`, over the pinned link, rate limited
-per address) creates an **account**: an opaque random id plus a **device
-credential** the client keeps in its local access file. That one
-credential replaces the per-tester asset token: asset access, feedback
-uploads (feedback-reports.md) and server listing (3.2) all derive from
-the account's rights, so there is one thing to store, bind and revoke.
-Display names stay free to change in Settings and are never an account
-key; the hub may record the last name seen, for the host's eyes only.
-
-**Recovery.** Losing a device or reinstalling is the host's job to fix
-in the simplest case: re-issue a code **bound to the same account**
-(`code mint --for <account>`), which redeems into a fresh device
-credential and revokes the old one. Optionally Settings shows a backup
-**account key** (a long phrase of words) that the player can store and
-paste at first run to recover alone; whether to offer it is a decision
-when this is built, since it makes the key a bearer secret.
-
-**Fit with the hub's phases.** Section 4.2's invite already carries a
-token; the redeem code is that token's replacement: the same invite
-shape (`?token=` becomes `?code=`), the same first-run field, the same
-`+chimera:hub` line. Migration: the hub keeps accepting today's tokens
-as legacy device credentials of an account made for them, so existing
-testers change nothing; `chimera_pack user add` turns into a shortcut
-for mint-and-redeem for the host's own devices; a legacy token can be
-swapped for a code-made credential whenever the host re-invites. Build
-it after H5, as a new phase, once the token flow in H1-H6 has shown
-what testers trip over.
-
-**Later uses.** Session stats and meta progression stored on the hub by
-account id (levels, unlocks, match history; the hub then also needs
-backups and a say in what clients may claim, so servers report results
-to it, never the client); report attribution (a report carries the
-account id, so repeated reporters and repeat crashes are visible);
-bans by account (revoke the credential and the account's id stays
-barred, so a new code can't be minted for it by mistake).
-
-**Privacy.** No email, password, real name or phone number: a code is
-the only thing handed out, the id is random, and the hub stores the id,
-role, rights, credential hashes, last-seen time and (for the host) the
-last display name. A player can ask the host to delete the account;
-that removes the id and its stats. Nothing here is written into the
-repository (placeholders only, as above).
-
+1. **One binary with roles** (`chimera_services <role>`, recommended) or
+   one binary per service.
+2. **One public port behind a front** with path routing (recommended:
+   one router forward, old clients unchanged) or a public port per
+   service (no single front, more forwards).
+3. **SQLite** (recommended) now, Postgres only if services spread over
+   machines.
+4. **Ticket lifetime**: 6 hours refreshed at half-life, with a 30 s
+   revocation feed (recommended), or shorter (1 h: accounts' downtime
+   matters sooner).
+5. **Who may list a server**: hosts only, or testers with one listing
+   so their Play games show (recommended: testers get 1).
+6. **Who may read the document and the list**: account holders only
+   (recommended while accounts are invite-only), or public.
+7. **Backups off this box**: where to (another tailnet machine,
+   recommended; or an encrypted cloud folder).
+8. **Legacy tokens**: upgraded automatically by a hub-aware client
+   (recommended), or kept until the owner re-invites.
+9. **Testers' own servers' results**: stored unranked (recommended) or
+   not stored.
+10. **Reach**: the front public only during playtests, the tailnet
+    otherwise (recommended, as the asset service now), or always public.
+    Invite-only accounts stand in for "internal" accounts; opening the
+    asset service beyond people the owner invites still waits for the
+    asset plan's ownership check.
+11. **Usernames**: 3-20 of `[a-z0-9_]`, case-insensitive (recommended),
+    or any letters; and whether a deleted account's username is ever
+    reused (recommended: after 30 days).
+12. **The recovery key**: required to be saved at sign-up (recommended:
+    a check box) or optional.
+13. **`chimera-hub://` as an OS link handler** (a click opens the game)
+    later, or paste only.
