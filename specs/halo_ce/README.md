@@ -44,7 +44,7 @@ port adds the ones below.
 | [collision.md](collision.md) | 1 | draft | collision BSPs and how a trace walks them |
 | [models.md](models.md) | 1 | draft | render models |
 | shaders.md | 1 | planned | the shader classes and what each draws |
-| scenario.md | 1 | planned | spawns, netgame equipment, object placements, the sky |
+| [scenario.md](scenario.md) | 1 | draft | spawns, netgame equipment, object placements, the sky |
 | sounds.md | 1 | planned | sound tags and the Xbox's compressed format |
 | animations.md | 1 | planned | animation graphs and compressed node animations |
 | objects.md | 2 | planned | object, unit, biped, item and scenery tags as data |
