@@ -39,7 +39,7 @@ port adds the ones below.
 |---|---|---|---|
 | [disc_image.md](disc_image.md) | 0 | draft | the Xbox disc image's file system |
 | [cache_file.md](cache_file.md) | 0 | draft | the map cache file, the tag index, tag data conventions, tag classes, units and tick |
-| bitmaps.md | 1 | planned | bitmap tags and pixel formats |
+| [bitmaps.md](bitmaps.md) | 1 | draft | bitmap tags and pixel formats |
 | [structure_bsp.md](structure_bsp.md) | 1 | draft | the level's render geometry, lightmaps, clusters and visibility |
 | [collision.md](collision.md) | 1 | draft | collision BSPs and how a trace walks them |
 | [models.md](models.md) | 1 | draft | render models |
