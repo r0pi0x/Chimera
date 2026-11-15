@@ -49,11 +49,20 @@ pub struct LooseAsset {
 }
 
 /// Each held model's loose form, sized by the first character's scale
-/// (none without characters).
+/// (none without characters), or by the first of its own game's where
+/// its key names one (`<game>:...`: a guest game's models on another
+/// game's map keep their own units).
 pub fn assets(data: &super::MapData) -> Option<LooseAssets> {
-    let root = data.kit.characters.first()?.root;
+    let first = data.kit.characters.first()?.root;
+    let root_of = |key: &str| {
+        data.kit
+            .characters
+            .iter()
+            .find(|c| c.game.is_some_and(|g| key.strip_prefix(g).is_some_and(|r| r.starts_with(':'))))
+            .map_or(first, |c| c.root)
+    };
     Some(LooseAssets(
-        data.kit.held.iter().map(|h| (h.key.clone(), asset(h, root))).collect(),
+        data.kit.held.iter().map(|h| (h.key.clone(), asset(h, root_of(&h.key)))).collect(),
     ))
 }
 
@@ -180,5 +189,36 @@ mod tests {
         // The model's far corner lands at +half.
         let corner = a.frame.transform_point(Vec3::new(40.0, 4.0, 2.0));
         assert!((corner - a.half).length() < 1e-5);
+    }
+
+    /// A held model keyed by a game's id (`halo_ce:...`) takes the scale of
+    /// that game's character, not the map's first one; any other the first.
+    #[test]
+    fn a_games_own_items_keep_its_scale() {
+        let body = |game: &'static str, scale: f32| crate::map::MapCharacterModel {
+            game: Some(game),
+            team: None,
+            name: None,
+            class: None,
+            model: default(),
+            hitboxes: Vec::new(),
+            bones: Vec::new(),
+            root: Transform::from_scale(Vec3::splat(scale)),
+            animations: None,
+            boxes: Vec::new(),
+            ragdoll: None,
+        };
+        let held = |key: &str| {
+            let mut model = MapModel::default();
+            model.meshes.push(MapMesh { positions: vec![[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]], ..default() });
+            MapHeldModel { merged: Vec::new(), own: None, key: key.into(), model, bone: String::new(), muzzle: None, attachments: Vec::new() }
+        };
+        let mut data = crate::map::MapData::default();
+        data.kit.characters = vec![body("cs_source", 0.0254), body("halo_ce", 3.0)];
+        data.kit.held = vec![held("weapon_ak47"), held("halo_ce:obj:frag"), held("halo_cex:other")];
+        let a = assets(&data).unwrap();
+        assert!((a.0["weapon_ak47"].half.x - 0.0254).abs() < 1e-5);
+        assert!((a.0["halo_ce:obj:frag"].half.x - 3.0).abs() < 1e-5);
+        assert!((a.0["halo_cex:other"].half.x - 0.0254).abs() < 1e-5, "a prefix of another name is not its game");
     }
 }

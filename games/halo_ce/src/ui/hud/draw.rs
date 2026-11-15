@@ -79,6 +79,8 @@ pub struct Unit {
     pub weapon: Option<Held>,
     pub grenades: i32,
     pub throwing: bool,
+    /// The current grenade type (0 frag, 1 plasma: the grenade HUD drawn).
+    pub grenade_kind: usize,
 }
 
 /// A unit the tracker may show: an id, its kind, its horizontal
@@ -168,7 +170,7 @@ impl HudState {
         for (slot, s) in self.weapon_flash.iter_mut().zip(states) {
             latch(slot, s.flashing && unit.weapon.is_some(), now);
         }
-        let cutoff = data.grenades.first().map_or(1, |g| i32::from(g.flash_cutoff));
+        let cutoff = data.grenades.get(unit.grenade_kind).or(data.grenades.first()).map_or(1, |g| i32::from(g.flash_cutoff));
         latch(&mut self.grenade_flash, unit.grenades <= cutoff, now);
         let range = data.globals.defaults.sensor_range.max(1.0);
         let sensitivity = data.globals.defaults.sensor_velocity_sensitivity;
@@ -325,8 +327,8 @@ pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now:
             }
         }
     }
-    // 4. The grenade HUD (frag; zero until grenades exist).
-    if let Some(g) = data.grenades.first().filter(|_| unit.alive) {
+    // 4. The grenade HUD of the current type.
+    if let Some(g) = data.grenades.get(unit.grenade_kind).or(data.grenades.first()).filter(|_| unit.alive) {
         let anchor = Anchor::of(g.anchor);
         let count = unit.grenades;
         let flashing = count <= i32::from(g.flash_cutoff);

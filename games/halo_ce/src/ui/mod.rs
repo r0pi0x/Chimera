@@ -1,5 +1,5 @@
 //! Halo's front end on the client shell (the `ui` feature): its weapons'
-//! own buttons (`binds`: `+melee`, `+zoom`) and its HUD (`hud`:
+//! own buttons (`binds`: `+melee`, `+zoom`, `+grenade`) and its HUD (`hud`:
 //! specs/halo_ce/hud.md, drawn from the disc's HUD tags in place of the
 //! shell's fallback crosshair and status).
 
@@ -19,11 +19,15 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 }
 
 /// The weapons' buttons beside fire, attack2 (also the zoom) and reload:
-/// the melee and the zoom as named actions (`game::weapons::systems`).
+/// the melee, the zoom and the grenade throw as named actions
+/// (`game::weapons::systems`, `game::weapons::grenades`).
 pub fn binds(app: &mut bevy::app::App) {
     use chimera_client::client::binds::BindsAppExt;
-    use crate::game::weapons::systems::{MELEE_ACTION, ZOOM_ACTION};
-    app.bound_action(MELEE_ACTION).bound_action(ZOOM_ACTION);
+    use crate::game::weapons::{
+        grenades::GRENADE_ACTION,
+        systems::{MELEE_ACTION, ZOOM_ACTION},
+    };
+    app.bound_action(MELEE_ACTION).bound_action(ZOOM_ACTION).bound_action(GRENADE_ACTION);
     fx_lights::plugin(app);
 }
 

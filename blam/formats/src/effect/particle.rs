@@ -30,7 +30,7 @@ impl EffectShader {
 }
 
 /// Read an effect shader part at `offset` of `v`.
-fn shader_at(v: &View<'_>, offset: usize) -> io::Result<EffectShader> {
+pub(crate) fn shader_at(v: &View<'_>, offset: usize) -> io::Result<EffectShader> {
     Ok(EffectShader {
         flags: v.u16(offset + 0x28)?,
         blend: v.i16(offset + 0x2A)?,

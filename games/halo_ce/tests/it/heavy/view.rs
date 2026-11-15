@@ -3,12 +3,12 @@
 //! its models"; weapons.md 16): the first-person models and the arms with
 //! the spec's node, vertex and marker counts; each first-person graph's
 //! node count and every filled slot's frame, key and loop numbers; every
-//! node of the arms and of each gun in its graph by name; the four view
+//! node of the arms and of each gun in its graph by name; the nine view
 //! models and held models built from bloodgulch, each gun's draw, reload,
 //! shell and melee animations as long as its document's timers; and the
 //! assault rifle's idle placing `frame gun` where the spec's sanity check
 //! puts it in front of the camera; another game's map dressed with the
-//! Spartan and the four guns. Passes with a note without an install.
+//! Spartan and the nine guns. Passes with a note without an install.
 
 use blam_formats::{
     animation::{AnimationGraph, FirstPersonSlot as S},
@@ -24,7 +24,10 @@ use halo_ce::game::{
         load::{self, EJECTION, MUZZLE},
         machine::{numbers, sequence},
     },
-    weapons::{ASSAULT_RIFLE, PISTOL, PLASMA_RIFLE, SHOTGUN, gun},
+    weapons::{
+        ASSAULT_RIFLE, FLAMETHROWER, NEEDLER, PISTOL, PLASMA_PISTOL, PLASMA_RIFLE, ROCKET_LAUNCHER, SHOTGUN, SNIPER_RIFLE,
+        gun,
+    },
 };
 
 use super::maps::mount;
@@ -107,6 +110,66 @@ fn first_person_models_and_graphs_match_the_spec() {
         ),
         // The spec gives no shotgun first-person model numbers.
         (SHOTGUN, 4, None, vec![], 41),
+        // models.md "The other first-person weapon models"; animations.md
+        // "Inventory" for the graphs' node counts.
+        (
+            SNIPER_RIFLE,
+            4,
+            Some(2274),
+            vec![
+                ("flashlight", 1),
+                ("left hand cyborg", 1),
+                ("left hand marine", 1),
+                ("primary ejection", 1),
+                ("primary trigger", 1),
+            ],
+            41,
+        ),
+        (
+            PLASMA_PISTOL,
+            4,
+            Some(982),
+            vec![
+                ("flashlight", 1),
+                ("left hand cyborg", 1),
+                ("primary trigger", 1),
+                ("primary trigger01", 1),
+                ("secondary trigger", 1),
+                ("secondary trigger flare1", 1),
+                ("secondary trigger flare2", 1),
+                ("vent_front", 1),
+                ("vent_mid", 1),
+                ("vent_rear", 1),
+            ],
+            41,
+        ),
+        (NEEDLER, 17, Some(2366), vec![("flashlight", 1), ("primary trigger", 1), ("smoke", 1)], 54),
+        (
+            ROCKET_LAUNCHER,
+            5,
+            Some(3080),
+            vec![
+                ("flashlight", 1),
+                ("left hand cyborg", 1),
+                ("left hand marine", 1),
+                ("primary ejection", 1),
+                ("primary trigger", 1),
+            ],
+            42,
+        ),
+        (
+            FLAMETHROWER,
+            3,
+            Some(2184),
+            vec![
+                ("cyborg left hand", 1),
+                ("flashlight", 1),
+                ("marine left hand", 1),
+                ("pilot", 1),
+                ("primary trigger", 1),
+            ],
+            40,
+        ),
     ] {
         let (model, graph) = fp(&file, &gun(id).tag);
         if verts.is_some() {
@@ -141,7 +204,7 @@ type Slot = (S, i16, i16, i16);
 fn first_person_slots_have_the_specs_frames() {
     let Some(file) = bloodgulch() else { return };
     // animations.md "First-person graphs": (slot, frames, key, loop).
-    let table: [(&str, Vec<Slot>); 4] = [
+    let table: [(&str, Vec<Slot>); 9] = [
         (
             ASSAULT_RIFLE,
             vec![
@@ -207,6 +270,79 @@ fn first_person_slots_have_the_specs_frames() {
                 (S::Posing, 66, 0, 0),
             ],
         ),
+        (
+            SNIPER_RIFLE,
+            vec![
+                (S::Ready, 29, 0, 0),
+                (S::Fire1, 19, 0, 0),
+                (S::ReloadEmpty, 94, 0, 0),
+                (S::ReloadFull, 83, 0, 0),
+                (S::Melee, 36, 6, 0),
+                (S::ThrowGrenade, 37, 0, 0),
+                (S::Idle, 80, 0, 0),
+                (S::Posing, 166, 0, 0),
+            ],
+        ),
+        (
+            ROCKET_LAUNCHER,
+            vec![
+                (S::Ready, 22, 0, 0),
+                (S::Fire1, 28, 0, 0),
+                (S::ReloadEmpty, 125, 0, 0),
+                (S::ReloadFull, 111, 0, 0),
+                (S::Melee, 52, 4, 0),
+                (S::ThrowGrenade, 43, 0, 0),
+                (S::Idle, 60, 0, 0),
+                (S::Posing, 118, 0, 0),
+            ],
+        ),
+        (
+            NEEDLER,
+            vec![
+                (S::Ready, 23, 0, 0),
+                (S::Fire1, 8, 0, 0),
+                (S::ReloadEmpty, 70, 0, 0),
+                (S::ReloadFull, 70, 0, 0),
+                (S::Melee, 48, 6, 0),
+                (S::ThrowGrenade, 37, 0, 0),
+                (S::Ammunition, 21, 0, 0),
+                (S::Idle, 60, 0, 0),
+                (S::Posing, 88, 0, 0),
+            ],
+        ),
+        (
+            PLASMA_PISTOL,
+            vec![
+                (S::Ready, 14, 0, 0),
+                (S::Fire1, 13, 0, 0),
+                (S::ReloadEmpty, 9, 0, 34),
+                (S::ReloadFull, 9, 0, 34),
+                (S::Melee, 33, 4, 0),
+                (S::ThrowGrenade, 37, 0, 0),
+                (S::Fire2, 24, 0, 0),
+                (S::Overcharged, 20, 0, 20),
+                (S::OverchargedJitter, 16, 0, 0),
+                (S::Overheated, 9, 0, 34),
+                (S::Overheating, 34, 0, 0),
+                (S::OverheatingAgain, 25, 0, 0),
+                (S::Misfire1, 19, 0, 0),
+                (S::ThrowOverheated, 33, 0, 0),
+                (S::OverheatedExit, 24, 0, 0),
+                (S::OverheatedSuperchargeEnter, 24, 0, 0),
+            ],
+        ),
+        (
+            FLAMETHROWER,
+            vec![
+                (S::Ready, 30, 0, 0),
+                (S::ReloadEmpty, 104, 0, 0),
+                (S::ReloadFull, 104, 0, 0),
+                (S::Melee, 51, 8, 0),
+                (S::ThrowGrenade, 39, 0, 0),
+                (S::Idle, 60, 0, 0),
+                (S::Posing, 113, 0, 0),
+            ],
+        ),
     ];
     for (id, slots) in table {
         let (_, graph) = fp(&file, &gun(id).tag);
@@ -247,8 +383,11 @@ fn the_guns_in_hand_load_from_bloodgulch() {
         start.elapsed().as_secs_f32(),
         looks.warnings
     );
-    assert_eq!(looks.view_models.len(), 4, "{:?}", looks.warnings);
-    assert_eq!(looks.held.len(), 4, "{:?}", looks.warnings);
+    assert_eq!(looks.view_models.len(), 9, "{:?}", looks.warnings);
+    // The guns' held models (and beside them the objects drawn as shown
+    // items: `heavy::fx`).
+    let guns: Vec<_> = looks.held.iter().filter(|h| !h.key.starts_with(load::OBJECT_PREFIX) && !h.key.starts_with(load::ITEM_PREFIX)).collect();
+    assert_eq!(guns.len(), 9, "{:?}", looks.warnings);
     for v in &looks.view_models {
         let id = v.key.as_str();
         let set = v.animations.as_ref().unwrap();
@@ -290,7 +429,7 @@ fn the_guns_in_hand_load_from_bloodgulch() {
             "{id}: the first shell"
         );
     }
-    for h in &looks.held {
+    for h in guns {
         assert_eq!(h.bone, "bip01 r hand", "{}: held in the right hand", h.key);
         assert!(h.muzzle.is_some() && !h.model.meshes.is_empty(), "{}", h.key);
     }
@@ -321,18 +460,17 @@ fn another_games_map_is_dressed_with_the_guns() {
         return;
     }
     // The bundle's guest dressing (an app of several games, another game's
-    // map): the Spartan and the four guns' view and held models.
+    // map): the Spartan and the nine guns' view and held models.
     let mut map = chimera_world::map::MapData::default();
     let dress = halo_ce::game::BUNDLE.guest.unwrap().dress;
     dress(&mut map, &chimera_world::map::MapLoadOptions::lean()).unwrap();
-    // The guns whose documents name their models (the arsenal's five newer
-    // guns have none yet).
+    // The guns whose documents name their models: all nine.
     let mut guns: Vec<String> = halo_ce::game::view::load::gun_models().iter().map(|g| g.id.to_string()).collect();
-    assert_eq!(guns.len(), 4);
+    assert_eq!(guns.len(), 9);
     guns.sort();
     let mut shown: Vec<String> = map.kit.view_models.iter().map(|v| v.key.clone()).collect();
     shown.sort();
-    let mut held: Vec<String> = map.kit.held.iter().map(|h| h.key.clone()).collect();
+    let mut held: Vec<String> = map.kit.held.iter().map(|h| h.key.clone()).filter(|k| !k.starts_with(load::OBJECT_PREFIX) && !k.starts_with(load::ITEM_PREFIX)).collect();
     held.sort();
     assert_eq!(shown, guns);
     assert_eq!(held, guns);

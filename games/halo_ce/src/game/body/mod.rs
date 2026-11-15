@@ -127,6 +127,7 @@ pub fn inputs(intent: &Intent, velocity: Vec3, state: &MovementState) -> Inputs 
         throttle: Vec2::new(velocity.dot(forward), velocity.dot(left)) / run.max(1e-6),
         vertical: velocity.y / METERS_PER_UNIT,
         pitch: intent.pitch,
+        throw: None,
     }
 }
 
@@ -159,11 +160,12 @@ pub fn animate(
         Option<&mut HaloBody>,
         Option<&mut Animator>,
         Option<&mut SimAnimator>,
+        Option<&super::weapons::HaloHands>,
     )>,
     mut commands: Commands,
 ) {
     let Some(models) = models else { return };
-    for (e, body, intent, velocity, state, health, label, inventory, halo, animator, sim) in &mut bodies {
+    for (e, body, intent, velocity, state, health, label, inventory, halo, animator, sim, hands) in &mut bodies {
         let Some(m) = models.0.get(body.0).filter(|m| m.game == Some(GAME)) else {
             if halo.is_some() {
                 commands.entity(e).remove::<(HaloBody, SimAnimator)>();
@@ -191,7 +193,8 @@ pub fn animate(
         }
         let armed = inventory.is_some_and(|i| i.active.is_some());
         let label = label_of(&set, label, armed);
-        let i = inputs(intent, velocity.0, state);
+        let mut i = inputs(intent, velocity.0, state);
+        i.throw = hands.and_then(|h| h.throw.frame).map(|f| f.max(0) as usize);
         let land = landing();
         let mut pose = Vec::new();
         for _ in 0..ticks {

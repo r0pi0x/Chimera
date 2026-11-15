@@ -14,16 +14,25 @@
 //! the light attachment (the muzzle light); the trigger's firing damage
 //! effect's shake (the kick); the projectile's material responses'
 //! default effects, its contrail (the tracer) and light attachments.
-//! Through the effects: every sound, decal (and its chain), light and
-//! particle (with its bitmap's sprite sequences and its point physics).
+//! Per projectile (`FxProjectile`: every gun's triggers', the plasma
+//! pistol's charged bolt among them, and the two grenades'): its default
+//! and potential impact effects by material, its detonation, supercombine
+//! and detonation-started effects, its contrail, light and effect
+//! attachments (the rocket's exhaust, the grenades' trails) and whether it
+//! has a model. Per item (the guns' weapon tags and every equipment tag):
+//! its pickup sound. Through the effects: every sound, decal (and its
+//! chain), light and particle (with its bitmap's sprite sequences and its
+//! point physics).
 //!
 //! Known shortcuts: a particle's sprites come from its bitmap's first
 //! page only (all the weapons' particle bitmaps on the disc are one page);
 //! a decal's size is its radius bounds' mean (one variant per sprite
 //! sequence) and additive decals (the plasma burn's glows) are left out:
-//! the engine's decals multiply or blend; particle systems, object parts,
-//! damage parts, collision and death effects and material effects (the
-//! casings' clicks) are not compiled; a sound plays its permutations at
+//! the engine's decals multiply or blend; object parts, damage parts,
+//! collision and death effects and material effects (the casings' clicks)
+//! are not compiled; a particle system keeps each type's birth state (its
+//! length and creation rate) and its particle states (`FxSystem`; the type
+//! states after the birth are not kept); a sound plays its permutations at
 //! random (no deck without repeats) at their mean gain.
 
 use std::{
@@ -37,7 +46,7 @@ use blam_formats::{
     bitmap::Bitmap,
     cache::{MapFile, TagRef, class},
     damage_effect::DamageEffect,
-    effect::{Contrail, Decal, Effect, Light, Particle, PointPhysics},
+    effect::{Contrail, Decal, Effect, Light, Particle, ParticleSystem, PointPhysics},
     model::Model,
     projectile::Projectile,
     sound::Sound,
@@ -69,8 +78,48 @@ pub enum FxPartKind {
     /// A decal group's name (`MapDecals::groups`).
     Decal(String),
     Light(FxLight),
-    /// Not compiled (damage, particle systems, objects).
+    /// A particle system (`HaloFx::systems`).
+    System(usize),
+    /// Not compiled (damage, objects).
     Other,
+}
+
+/// A particle system's particle state as drawn (`play::system`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct FxSysState {
+    /// Seconds.
+    pub duration: (f32, f32),
+    /// Index into the map's particle materials.
+    pub material: Option<usize>,
+    pub sequence: i16,
+    /// The sprite's radius bounds (WU): the scale (WU per pixel) times half
+    /// the sprite's larger side in pixels.
+    pub radius: (f32, f32),
+    pub color_lower: [f32; 4],
+    pub color_upper: [f32; 4],
+    pub additive: bool,
+    pub animation_rate: (f32, f32),
+}
+
+/// A particle system's type: its creation (initial count, the physics and
+/// its constants), its birth state's length and creation rate, its
+/// particle states.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FxSysType {
+    pub flags: u32,
+    pub initial: i16,
+    pub creation: i16,
+    pub constants: Vec<f32>,
+    pub birth: (f32, f32),
+    pub rate: f32,
+    pub states: Vec<FxSysState>,
+}
+
+/// A particle system (`pctl`) as drawn.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FxSystem {
+    pub path: String,
+    pub types: Vec<FxSysType>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -185,14 +234,42 @@ pub struct FxGun {
     pub bolt_light: Option<FxLight>,
 }
 
+/// One projectile's presentation (by its tag's path): what the guns'
+/// second triggers and the grenades fire too (the charged bolt, the frag).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FxProjectile {
+    /// Impact effects by material type code (the default responses), and
+    /// the potential responses' (the charged bolt's "charged bolt impact").
+    pub impacts: Vec<Option<usize>>,
+    pub potential: Vec<Option<usize>>,
+    /// The detonation effect, the supercombine's, the countdown's (a plasma
+    /// grenade stuck or landed: "detonation started").
+    pub detonation: Option<usize>,
+    pub super_detonation: Option<usize>,
+    pub detonation_started: Option<usize>,
+    pub tracer: Option<FxTracer>,
+    /// Its light attachment (the bolt's glow, the grenade's light).
+    pub light: Option<FxLight>,
+    /// Its effect attachments by marker (the rocket's exhaust, the frag's
+    /// smoke trail, the plasma grenade's glow), made again each Halo tick.
+    pub attached: Vec<(usize, String)>,
+    /// Its object model has meshes: drawn as `object_key(tag)`.
+    pub model: bool,
+}
+
 /// The compiled library.
 #[derive(Clone, Debug, Default)]
 pub struct HaloFx {
     pub effects: Vec<FxEffect>,
     pub by_path: ByPath,
     pub particles: Vec<FxParticle>,
+    pub systems: Vec<FxSystem>,
     /// By weapon tag path.
     pub guns: BTreeMap<String, FxGun>,
+    /// By projectile tag path: every gun's triggers' and the grenades'.
+    pub projectiles: BTreeMap<String, FxProjectile>,
+    /// Equipment and weapon items' pickup sounds by tag path.
+    pub pickups: BTreeMap<String, String>,
 }
 
 impl HaloFx {
@@ -202,6 +279,10 @@ impl HaloFx {
 
     pub fn gun(&self, tag: &str) -> Option<&FxGun> {
         self.guns.get(&tag.to_ascii_lowercase())
+    }
+
+    pub fn projectile(&self, tag: &str) -> Option<&FxProjectile> {
+        self.projectiles.get(&tag.to_ascii_lowercase())
     }
 }
 
@@ -225,6 +306,7 @@ struct Compiler<'a> {
     /// Bitmap tag id to texture index.
     bitmaps: BTreeMap<u32, Option<usize>>,
     particles: BTreeMap<u32, usize>,
+    systems: BTreeMap<u32, usize>,
     sounds: BTreeSet<u32>,
     decals: BTreeSet<u32>,
 }
@@ -396,6 +478,69 @@ impl Compiler<'_> {
         Some(i)
     }
 
+    /// A particle system's types and states (module doc), each state's
+    /// bitmap a particle material.
+    fn system(&mut self, r: &TagRef) -> Option<usize> {
+        if let Some(i) = self.systems.get(&r.id.0) {
+            return Some(*i);
+        }
+        let tag = self.file.tag(r.id)?;
+        let sys = ParticleSystem::read(self.file, tag).map_err(|e| self.warn(format!("{}: {e}", tag.path))).ok()?;
+        let mut types = Vec::new();
+        for t in &sys.types {
+            if t.flags & blam_formats::effect::system::ParticleType::DISABLED != 0 {
+                continue;
+            }
+            let mut states = Vec::new();
+            for st in &t.particle_states {
+                let additive = st.shader.blend != blam_formats::effect::EffectShader::ALPHA_BLEND;
+                let (mut pixels, mut material) = (1.0, None);
+                if let Some((texture, sequences)) = self.bitmap(&st.bitmap) {
+                    let (w, h) = self.set.textures.get(texture).map_or((1.0, 1.0), |t| (t.width as f32, t.height as f32));
+                    if let Some(r) = sequences.get(st.sequence.max(0) as usize).and_then(|s| s.first()) {
+                        pixels = ((r[2] - r[0]) * w).max((r[3] - r[1]) * h).abs();
+                    }
+                    self.set.materials.push(ParticleMaterial {
+                        name: format!("{}#{}", name_of(&tag.path), self.set.materials.len()),
+                        texture: Some(texture),
+                        blend: if additive { ParticleBlend::Additive } else { ParticleBlend::Alpha },
+                        vertex_color: true,
+                        vertex_alpha: true,
+                        sequences,
+                        ..Default::default()
+                    });
+                    material = Some(self.set.materials.len() - 1);
+                }
+                let argb = |c: &blam_formats::cache::RealArgb| [c.a, c.r, c.g, c.b];
+                states.push(FxSysState {
+                    duration: (st.duration.lower, st.duration.upper),
+                    material,
+                    sequence: st.sequence,
+                    radius: (st.scale.lower * pixels / 2.0, st.scale.upper * pixels / 2.0),
+                    color_lower: argb(&st.color_lower),
+                    color_upper: argb(&st.color_upper),
+                    additive,
+                    animation_rate: (st.animation_rate.lower, st.animation_rate.upper),
+                });
+            }
+            let birth = t.type_states.first();
+            types.push(FxSysType {
+                flags: t.flags,
+                initial: t.initial_count,
+                creation: t.creation_physics,
+                constants: t.constants.clone(),
+                birth: birth.map_or((0.0, 0.0), |b| (b.duration.lower, b.duration.upper)),
+                rate: birth.map_or(0.0, |b| b.creation_rate),
+                states,
+            });
+        }
+        let lib = &mut self.set.library;
+        lib.systems.push(FxSystem { path: tag.path.to_ascii_lowercase(), types });
+        let i = lib.systems.len() - 1;
+        self.systems.insert(r.id.0, i);
+        Some(i)
+    }
+
     fn effect(&mut self, r: &TagRef) -> Option<usize> {
         let tag = self.file.tag(r.id)?;
         let key = tag.path.to_ascii_lowercase();
@@ -429,6 +574,7 @@ impl Compiler<'_> {
                         first.map(FxPartKind::Decal)
                     }
                     c if c == class::LIGHT => self.light(&p.kind).map(FxPartKind::Light),
+                    c if c == class::PARTICLE_SYSTEM => self.system(&p.kind).map(FxPartKind::System),
                     _ => Some(FxPartKind::Other),
                 };
                 let Some(kind) = kind else { continue };
@@ -529,6 +675,45 @@ impl Compiler<'_> {
         Ok(g)
     }
 
+    fn projectile(&mut self, path: &str) -> Result<FxProjectile, String> {
+        let file = self.file;
+        let tag = file.find(class::PROJECTILE, path).ok_or_else(|| format!("no projectile `{path}`"))?;
+        let p = Projectile::read(file, tag).map_err(|e| format!("{path}: {e}"))?;
+        let mut out = FxProjectile {
+            impacts: p.own.material_responses.iter().map(|r| self.effect(&r.default_effect)).collect(),
+            potential: p.own.material_responses.iter().map(|r| self.effect(&r.potential_effect)).collect(),
+            detonation: self.effect(&p.own.effect),
+            super_detonation: self.effect(&p.own.super_detonation),
+            detonation_started: self.effect(&p.own.detonation_started),
+            model: file.tag(p.object.model.id).is_some(),
+            ..Default::default()
+        };
+        for a in &p.object.attachments {
+            if a.attached.class == class::CONTRAIL && out.tracer.is_none() {
+                out.tracer = self.contrail(&a.attached);
+            } else if a.attached.class == class::LIGHT && out.light.is_none() {
+                out.light = self.light(&a.attached);
+            } else if a.attached.class == class::EFFECT
+                && let Some(e) = self.effect(&a.attached)
+            {
+                out.attached.push((e, a.marker_name.to_ascii_lowercase()));
+            }
+        }
+        Ok(out)
+    }
+
+    /// An item tag's pickup sound (equipment's, a weapon's).
+    fn pickup(&mut self, path: &str) -> Option<String> {
+        let file = self.file;
+        if let Some(t) = file.find(class::EQUIPMENT, path) {
+            let e = blam_formats::object::Equipment::read(file, t).ok()?;
+            return self.sound(&e.own.pickup_sound);
+        }
+        let t = file.find(class::WEAPON, path)?;
+        let w = Weapon::read(file, t).ok()?;
+        self.sound(&w.own.pickup_sound)
+    }
+
     fn contrail(&mut self, r: &TagRef) -> Option<FxTracer> {
         let c = Contrail::read(self.file, self.file.tag(r.id)?).ok()?;
         let s = c.point_states.first()?;
@@ -572,7 +757,7 @@ fn markers(file: &MapFile, r: &TagRef) -> BTreeMap<String, [f32; 3]> {
 
 /// The library of `file`'s tags for the guns of weapon tag paths `guns`.
 pub fn compile(file: &MapFile, guns: &[&str], decode: bool) -> FxSet {
-    let mut c = Compiler { file, decode, set: FxSet::default(), bitmaps: BTreeMap::new(), particles: BTreeMap::new(), sounds: BTreeSet::new(), decals: BTreeSet::new() };
+    let mut c = Compiler { file, decode, set: FxSet::default(), bitmaps: BTreeMap::new(), particles: BTreeMap::new(), systems: BTreeMap::new(), sounds: BTreeSet::new(), decals: BTreeSet::new() };
     for g in guns {
         match c.gun(g) {
             Ok(gun) => {
@@ -581,10 +766,39 @@ pub fn compile(file: &MapFile, guns: &[&str], decode: bool) -> FxSet {
             Err(e) => c.warn(e),
         }
     }
+    for p in projectile_tags(file, guns) {
+        match c.projectile(&p) {
+            Ok(look) => {
+                c.set.library.projectiles.insert(p, look);
+            }
+            Err(e) => c.warn(e),
+        }
+    }
+    let items: Vec<String> = guns
+        .iter()
+        .map(|g| g.to_ascii_lowercase())
+        .chain(file.of_class(class::EQUIPMENT).map(|t| t.path.to_ascii_lowercase()))
+        .collect();
+    for i in items {
+        if let Some(sound) = c.pickup(&i) {
+            c.set.library.pickups.insert(i, sound);
+        }
+    }
     c.set
 }
 
-/// The four guns' weapon tags.
+/// The projectiles' tags (lower case): each gun's triggers' (`guns`: their
+/// weapon tags) and the two grenades'.
+pub fn projectile_tags(file: &MapFile, guns: &[&str]) -> BTreeSet<String> {
+    let grenades = super::super::weapons::grenades::GrenadeData::load();
+    guns.iter()
+        .filter_map(|g| file.find(class::WEAPON, g).and_then(|t| Weapon::read(file, t).ok()))
+        .flat_map(|w| w.own.triggers.into_iter().filter_map(|t| path(file, &t.projectile)))
+        .chain([grenades.frag.tag.to_ascii_lowercase(), grenades.plasma.tag.to_ascii_lowercase()])
+        .collect()
+}
+
+/// The nine guns' weapon tags.
 pub fn gun_tags() -> Vec<String> {
     super::super::weapons::guns().into_iter().map(|(_, g)| g.tag).collect()
 }
@@ -619,8 +833,16 @@ pub fn add(map: &mut MapData, set: &FxSet) {
     for p in &mut library.particles {
         p.material = p.material.map(|m| m + mat);
     }
+    for s in library.systems.iter_mut().flat_map(|s| s.types.iter_mut()).flat_map(|t| t.states.iter_mut()) {
+        s.material = s.material.map(|m| m + mat);
+    }
     for g in library.guns.values_mut() {
         if let Some(t) = &mut g.tracer {
+            t.material = t.material.map(|m| m + mat);
+        }
+    }
+    for p in library.projectiles.values_mut() {
+        if let Some(t) = &mut p.tracer {
             t.material = t.material.map(|m| m + mat);
         }
     }

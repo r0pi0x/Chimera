@@ -159,6 +159,9 @@ pub struct HaloFired {
     /// The weapon's heat and battery after the shot.
     pub heat: f32,
     pub age: f32,
+    /// A guided projectile's target (section 15's, where the gun's data
+    /// gives it one: the needles, the charged bolt).
+    pub target: Option<Entity>,
 }
 
 /// A projectile's segment of one update (server): from, to (metres), what
@@ -186,6 +189,9 @@ pub struct HaloDetonation {
     pub at: Vec3,
     pub supercombine: bool,
     pub effects: Vec<EffectId>,
+    /// Its flight's direction then (unit, engine axes; down for one at
+    /// rest): the detonation effect's forward.
+    pub forward: Vec3,
 }
 
 /// A projectile stuck (server, for presentation: the needles in a body,
@@ -743,7 +749,8 @@ fn detonate(e: Entity, projectiles: &mut Query<(Entity, &mut HaloProjectile)>, t
         }
     }
     debug!("{} detonated at {em}{}", p.id, if supercombine { " (supercombine)" } else { "" });
-    blasts.detonations.write(HaloDetonation { owner: p.owner, tag: p.proj.tag.clone(), at: em, supercombine, effects: ids });
+    let forward = if supercombine { Vec3::NEG_Y } else { p.flight.velocity.normalize_or(Vec3::NEG_Y) };
+    blasts.detonations.write(HaloDetonation { owner: p.owner, tag: p.proj.tag.clone(), at: em, supercombine, effects: ids, forward });
 }
 
 /// The tick's pushes on characters (server): Halo's movement through its
@@ -939,6 +946,13 @@ pub fn run(
                                 debug!("{} fired trigger {trigger} on tick {}: {} loaded, {} reserve, heat {}", weapon.id, clock.tick, gun.loaded, gun.reserve, gun.heat);
                             }
                             event(&mut events, &first, owner, w, WeaponEventKind::Action(if trigger == 1 { "fire_charged" } else { kind }));
+                            // A guided projectile's target, the same on
+                            // both sides of the prediction.
+                            let guided = match (&hw.0.secondary, trigger) {
+                                (Some(s), 1) => s.projectile.guided_angular_velocity,
+                                _ => hw.0.projectile.guided_angular_velocity,
+                            } > 0.0;
+                            let target = (first.0 && guided && hw.0.guidance_targets).then(|| trace.target(owner, eye, aim, &hw.0)).flatten();
                             if first.0 {
                                 fired.write(HaloFired {
                                     owner,
@@ -952,6 +966,7 @@ pub fn run(
                                     projectiles: projectiles.clone(),
                                     heat: gun.heat,
                                     age: gun.age,
+                                    target,
                                 });
                             }
                             if server && first.0 && !projectiles.is_empty() {
@@ -965,9 +980,6 @@ pub fn run(
                                 };
                                 let rewound = lag.rewind(owner, true, None);
                                 let inherited = vel.map_or(0.0, |v| v.0.dot(aim)) / METERS_PER_WU / 30.0;
-                                let target = (proj.guided_angular_velocity > 0.0 && g.guidance_targets)
-                                    .then(|| trace.target(owner, eye, aim, g))
-                                    .flatten();
                                 // The first-person offset (forward, left,
                                 // up), unless the vector cannot be adjusted.
                                 let mut origin = eye / METERS_PER_WU;

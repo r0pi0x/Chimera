@@ -139,9 +139,17 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
     ("mouse2", "+attack2"),
     ("r", "+reload"),
     ("f", "+melee"),
+    ("g", "+grenade"),
     ("e", "+use"),
     ("tab", "+showscores"),
 ];
+
+/// Halo's own keys over an app's shared binds, for a player whose identity
+/// is Halo's (a Halo rung's in a party app): its melee and grenade buttons
+/// (`weapons::systems::MELEE_ACTION`, `weapons::grenades::GRENADE_ACTION`),
+/// as in `DEFAULT_BINDS`. No party game has a throw button of its own (the
+/// other games' grenades are weapons in a slot), so Halo's is its own.
+pub const BUNDLE_BINDS: &[(&str, &str)] = &[("f", "+melee"), ("g", "+grenade")];
 
 /// Halo's parts, after `crate::SimPlugins`: the game registered (`INFO`),
 /// its movement (`movement`), its players' vitality (`vitality`), its
@@ -178,7 +186,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     // Its guns' view and held models stay on its maps in an app whose
     // gameplay is another game's (a party's Halo rungs on Hang 'Em High).
     kept: &["halo_ce:"],
-    binds: &[],
+    binds: BUNDLE_BINDS,
     view_model_fov: Some(view::fov),
     sim: |app| {
         use crate::game_registry::GameAppExt;

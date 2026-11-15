@@ -223,6 +223,32 @@ pub struct HaloItem {
     pub entry: Option<usize>,
 }
 
+/// An item taken (for presentation: its pickup sound for the taker): by
+/// whom, the item's tag, where it lay (metres).
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct HaloTaken {
+    pub unit: Entity,
+    pub tag: String,
+    pub at: Vec3,
+}
+
+/// An item's object tag (what it is drawn as and its pickup sound): a
+/// weapon's tag, a grenade's, a powerup's equipment.
+pub fn item_tag(item: &Item, grenades: &GrenadeData, spartan: &super::super::vitality::Spartan) -> String {
+    match item {
+        Item::Weapon { id, .. } => guns().into_iter().find(|(i, _)| i == id).map(|(_, g)| g.tag).unwrap_or_default(),
+        Item::Grenade(k) => if *k == FRAG { grenades.frag.tag.clone() } else { grenades.plasma.tag.clone() },
+        Item::Powerup(p) => {
+            let p2 = &spartan.powerups;
+            match p {
+                Powerup::Overshield => p2.overshield.tag.clone(),
+                Powerup::Camouflage => p2.active_camouflage.tag.clone(),
+                Powerup::Health => p2.health_pack.tag.clone(),
+            }
+        }
+    }
+}
+
 /// The item clock: game time in Halo ticks since the entries were made,
 /// and the generator its draws come from.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
@@ -419,6 +445,8 @@ pub fn take(world: &mut World) {
                 debug!("halo_ce: {unit:?} took {:?}", item.item);
                 gone.push(*ie);
                 world.despawn(*ie);
+                let tag = item_tag(&item.item, &grenades, &spartan);
+                world.write_message(HaloTaken { unit, tag, at: *at });
             }
         }
     }

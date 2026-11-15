@@ -59,7 +59,7 @@ fn particle() -> FxParticle {
     }
 }
 
-fn entry(location: i16, count: i16, distribution: i16) -> FxEntry {
+pub(crate) fn entry(location: i16, count: i16, distribution: i16) -> FxEntry {
     FxEntry {
         location,
         environment: 0,
@@ -131,6 +131,7 @@ pub(crate) fn library() -> HaloFx {
             ("weapons\\assault rifle\\assault rifle".into(), gun),
             ("weapons\\plasma rifle\\plasma rifle".into(), plasma),
         ]),
+        ..Default::default()
     }
 }
 

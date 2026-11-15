@@ -37,6 +37,13 @@
 //! trigger`, and its `attachments` all its markers by name, in the hand
 //! bone's frame.
 //!
+//! **Objects** (`object_model`, keyed `object_key(tag)`): the projectiles
+//! every gun fires and the two grenades, the guns as items and every
+//! equipment tag, each its object's model in its own frame (Halo's axes,
+//! world units, as the Spartan's skeleton space is) with its markers, as
+//! held models the engine draws as shown items (`map::loose::ShownItem`:
+//! a rocket or needle in flight, a grenade, an item on the ground).
+//!
 //! **The held model**: the weapon's third-person model, rigid (its bind
 //! pose), on the Spartan's bone that carries the hand marker the
 //! Spartan's graph names for the gun's label (the `stand` seat's weapon
@@ -429,6 +436,87 @@ fn held_model(
     ))
 }
 
+/// The key a projectile's model is drawn by in flight
+/// (`map::loose::ShownItem`), by its tag's path.
+pub fn object_key(tag: &str) -> String {
+    format!("{OBJECT_PREFIX}{}", tag.to_ascii_lowercase())
+}
+
+/// The key an item's model is drawn by lying on the map, by its tag's path
+/// (a frag grenade is both a projectile and an item: two keys, one model).
+pub fn item_key(tag: &str) -> String {
+    format!("{ITEM_PREFIX}{}", tag.to_ascii_lowercase())
+}
+
+pub const OBJECT_PREFIX: &str = "halo_ce:obj:";
+pub const ITEM_PREFIX: &str = "halo_ce:item:";
+
+/// The model of the object tag at `path` (a projectile, equipment or a
+/// weapon lying in the world), in its own frame (Halo's axes, world
+/// units: the Spartan's skeleton space, which a shown item's root takes to
+/// metres), with its markers.
+fn object_model(file: &MapFile, key: String, path: &str) -> Option<(MapHeldModel, Vec<(MapMesh, TagRef)>)> {
+    let tag = [class::PROJECTILE, class::EQUIPMENT, class::WEAPON].into_iter().find_map(|c| file.find(c, path))?;
+    let object = blam_formats::object::ObjectBase::read(file, tag).ok()?;
+    let model = read_model(file, object.model, path).ok()?;
+    let from_game = Quat::from_mat3(&bevy::math::Mat3::from_cols(
+        space::direction([1.0, 0.0, 0.0]),
+        space::direction([0.0, 1.0, 0.0]),
+        space::direction([0.0, 0.0, 1.0]),
+    ))
+    .inverse();
+    let mut meshes = objects::model_meshes(file, &model, &|p| Vec3::from(p));
+    if meshes.is_empty() {
+        return None;
+    }
+    for (m, _) in &mut meshes {
+        for n in &mut m.normals {
+            *n = (from_game * Vec3::from(*n)).to_array();
+        }
+    }
+    let posed = model_globals(&model);
+    let attachments = model
+        .markers
+        .iter()
+        .filter_map(|m| {
+            let i = m.instances.first()?;
+            let (q, p) = posed.get(i.node).copied()?;
+            let local = Mat4::from_rotation_translation(q, p) * Mat4::from_rotation_translation(usual(i.rotation), Vec3::from(i.translation));
+            Some((m.name.clone(), Transform::from_matrix(local)))
+        })
+        .collect();
+    Some((
+        MapHeldModel {
+            key,
+            model: MapModel::default(),
+            bone: String::new(),
+            muzzle: None,
+            attachments,
+            merged: Vec::new(),
+            own: None,
+        },
+        meshes,
+    ))
+}
+
+/// The objects drawn as shown items, by key and tag: the projectiles
+/// every gun fires and the grenades (in flight, `object_key`), the guns and
+/// every equipment tag (lying on the map, `item_key`).
+pub fn object_tags(file: &MapFile) -> Vec<(String, String)> {
+    let guns: Vec<String> = gun_models().into_iter().map(|g| g.tag).collect();
+    let refs: Vec<&str> = guns.iter().map(String::as_str).collect();
+    let flying = super::super::fx::load::projectile_tags(file, &refs).into_iter().map(|t| (object_key(&t), t));
+    let lying = guns
+        .iter()
+        .map(|g| g.to_ascii_lowercase())
+        .chain(file.of_class(class::EQUIPMENT).map(|t| t.path.to_ascii_lowercase()))
+        .map(|t| (item_key(&t), t));
+    let mut all: Vec<(String, String)> = flying.chain(lying).collect();
+    all.sort();
+    all.dedup();
+    all
+}
+
 fn bounds(meshes: &[MapMesh]) -> (Vec3, Vec3) {
     let (lo, hi) = meshes
         .iter()
@@ -491,6 +579,19 @@ pub fn looks(file: &MapFile, decode: bool) -> Looks {
                 }
                 Err(e) => out.warnings.push(e),
             }
+        }
+    }
+    // The objects drawn as shown items (projectiles, items).
+    for (key, tag) in object_tags(file) {
+        if let Some((h, meshes)) = object_model(file, key, &tag) {
+            out.held.push(h);
+            let i = 1000 + out.held.len() - 1;
+            pending.extend(meshes.into_iter().map(|(mesh, shader)| Pending {
+                mesh,
+                shader,
+                lit: true,
+                dest: Dest::Model(i),
+            }));
         }
     }
     for (mesh, dest) in maps::apply_looks(file, pending, &mut out.textures, &mut out.warnings, decode) {
