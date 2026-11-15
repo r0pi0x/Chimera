@@ -106,6 +106,8 @@ pub(crate) struct Tally {
     pub dry: u32,
     /// The plasma pistol's charged bolts.
     pub charged: u32,
+    /// Halo's grenade rung's throws (its shot facts).
+    pub throws: u32,
     /// Per bot: the last round's time (s).
     last: HashMap<Entity, f64>,
     /// Per bot: since when it has been engaged without a round (s).
@@ -133,6 +135,9 @@ fn count(mut events: MessageReader<WeaponEvent>, mut damage: MessageReader<Damag
             WeaponEventKind::Action("overheated") => t.overheats += 1,
             WeaponEventKind::DryFire => t.dry += 1,
             _ => {}
+        }
+        if matches!(e.kind, WeaponEventKind::ShotMade { id: weapons::rung::FRAG_RUNG, .. }) {
+            t.throws += 1;
         }
         if matches!(e.kind, WeaponEventKind::Action("fire_charged")) {
             t.charged += 1;
@@ -273,4 +278,16 @@ fn a_bot_hears_a_halo_shot_behind_it() {
 fn bots_fire_and_kill_with_each_of_halos_guns_on_the_greybox() {
     let rows = table("greybox", || None);
     check(&rows);
+}
+
+/// Halo's grenade rung (`weapons::rung`): four bots on it on the greybox
+/// for a minute press its grenade action (`weapon::AttackAction`), throw
+/// and kill, and fewer of their deaths are their own than their kills.
+#[test]
+fn bots_clear_halos_grenade_rung_on_the_greybox() {
+    let t = measure(None, weapons::rung::FRAG_RUNG, 4, MINUTES);
+    println!("frag rung, greybox, 4 bots, {MINUTES} min: {} throws, {} kills, {} self-kills, {} dry pulls", t.throws, t.kills, t.suicides, t.dry);
+    assert!(t.throws > 0, "the bots threw: {t:?}");
+    assert!(t.kills >= 1, "a kill: {t:?}");
+    assert!(t.suicides < t.kills, "fewer self-kills than kills: {t:?}");
 }

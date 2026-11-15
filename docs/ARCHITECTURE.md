@@ -52,7 +52,7 @@ chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs 
 chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, harness::Sim
   |                \
 chimera_core          source_formats (source/formats/)   formats as plain data: no Bevy
- (chimera/core/)       core, console, console_names, console_scope, slots, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
+ (chimera/core/)       core, console, console_names, console_scope, slots, envelope, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
                       chimera_vfs (chimera/vfs/)   the neutral VFS (`FileSource`, `Mount`) under both format crates and `mount`
                       chimera_assets (chimera/assets/)   the asset store over the VFS: records, manifests and sets, `CachedFiles`, the vfs log, the asset service (server, HTTPS client), account tickets and the player's account file; `mount::served` layers it
                       chimera_services (chimera/services/)   the hub's services, a binary each (`chimera_accounts`, `chimera_front`): accounts on SQLite, the front; on chimera_assets, host tools only
@@ -404,6 +404,14 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   engine frame's hitscan command), and the plasma pistol's trigger as
   one that fires when released (`weapon::FiresOnRelease`), so the
   party's bots fire, pace, hear and tap every Halo rung gun.
+  Halo lends a grenade rung (`weapons::rung`): an empty pistol in hand
+  and frags on the grenade button by the grenade band's rule, shown as
+  the frag grenade; bots attack through `weapon::AttackAction`, and its
+  opt-in rung hint is the party overlay's (`client::rung_hint`).
+  Halo's movement takes the loaded map's movement envelope
+  (`chimera_core::envelope`): on another game's map its pill is no
+  wider or taller than that game's character and steps as high
+  (`movement::body`, `mover::step_up`); its own maps are unchanged.
   Halo's lasting sounds (`game::audio`) play on the engine's
   `SoundControl`/`PlaySound` seams: the level's background sound by the
   listener's cluster, its sound scenery, the shown projectiles' flight
@@ -688,6 +696,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
 
 Exact edges: console_scope uses core, console, game_registry and slots
 (the console's scope from the game played, the games' namespaces);
+envelope uses core (the map's movement envelope by the map's game:
+what a map's own character's body is, read by a movement that fits its
+body to the map);
 game_log uses core, console and gameplay (the gameplay's
 game names players in the log); net uses the engine's
 simulation (core, console, game_log, slots, character, movement, map,

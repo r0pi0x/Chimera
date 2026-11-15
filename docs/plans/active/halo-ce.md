@@ -436,6 +436,20 @@ backlog.
   wanted in the gun game for now; a switch in Halo's party bundle,
   default off, places no vehicle on a Halo map there. Halo's own app
   and server have them.
+- **Grenades over time on the grenade rung** (the user, 2026-11-15;
+  high): a thrown grenade comes back at once under the ladder's
+  `refill_ammo` (Halo's rung keeps 4), so it can be spammed. Wanted: one
+  grenade every N seconds up to the maximum (N a data value), as a rule
+  of the grenade band so every game's grenade rung paces the same.
+- **The envelope for the other games' characters**: only Halo's
+  movement takes the map's movement envelope; a CS:S character on
+  Combat Arms' warehouse reaches 92% of what the soldier does. Source's
+  box sizes are one configuration per movement, not per character:
+  mover work.
+- **Special rungs**: Combat Arms' turret, Halo's grenade rung, a TF2
+  engineer's sentry later; the grenade rung is weapon data
+  (`weapons/rung.rs`, an opt-in `rung_hint`), not a rung extra. When
+  the third arrives, see what the ladder's rung extras lack.
 - **The user's decisions for the party apps** (2026-11-15):
   - Order of work: first what Halo needs to play well in Ultimate Gun
     Game (the HUD layout, scopes, audio, kill feed icons, the balance
@@ -453,13 +467,13 @@ backlog.
   - A grenade rung later: the pistol with an empty magazine and no
     reserve, grenades and melee only, left click throws, shown and named
     as the frag grenade; after the health rule below is decided.
-  - Gravity: the user asked for the map to own gravity with no change to
-    any character's jump. NOT built: the numbers given then were wrong
-    (Source units are inches here). By the code: gravity 9.78 m/s2
-    (Halo), 20.3 (CS:S, TF2), 19.8 (Combat Arms), 15.2 (HL2:DM); standing
-    jumps 1.99 m, 1.45, 1.33, 0.89 and 0.54 m. Under Halo's gravity a
-    CS:S character would jump 3.0 m and TF2's 2.75 m, over the Spartan's
-    1.99 m; put back to the user.
+  - Gravity: left alone (the user, after the corrected numbers): every
+    character keeps its own gravity and jump on every map. Gravity
+    9.78 m/s2 (Halo), 20.3 (CS:S, TF2), 19.8 (Combat Arms), 15.2
+    (HL2:DM); standing jumps 1.99 m, 1.45, 1.33, 0.89 and 0.54 m. A
+    map-owned gravity would have a CS:S character jump 3.0 m on a Halo
+    map; to revisit only if play shows people reaching where they
+    should not.
   - Kill feed icons: Halo registers none (the feed shows the gun's
     name); to add from the disc's pictures.
 - **Balance in the party apps** (measured from code and data,
@@ -680,3 +694,19 @@ backlog.
   map's own characters (hit boxes and model unchanged). Next after it:
   the grenade rung (the pistol with an empty magazine), then the
   milestone's full validation.
+- 2026-11-15: the last two party essentials. The grenade rung
+  (`halo_ce:frag_grenade`: the pistol with an empty magazine, left
+  click a dry fire, the grenade button throws, shown as the frag
+  grenade; bots press the grenade action through `weapon::AttackAction`:
+  13 throws, 5 kills, no self-kill in a minute; an opt-in rung hint,
+  the kit's key cap and a verb at the bottom centre, on arrival and on
+  a dry fire). The map's movement envelope (`chimera_core::envelope`):
+  a Spartan-sized walker's reach under the rule 91% of de_dust2 (64%
+  before), 90% of cs_office (56%), and with jump-ups 100% of Combat
+  Arms' warehouse (7%); in simulation the old body also completed the
+  24 sampled paths, so the gain is shown by the flood and by synthetic
+  corridors, steps and ceilings. The displays on the guns (the assault
+  rifle's counter and compass, the plasma gauges, the needler's
+  needles) are specified (weapons.md 18) and being built. With these
+  Halo is in Ultimate Gun Game: the milestone's full validation runs
+  next.

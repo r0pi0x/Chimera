@@ -48,6 +48,10 @@ jump_timer_max = 127.0
 height_stand = 0.7
 height_crouch = 0.5
 radius = 0.2
+# The highest edge the pill rides up at a full run (section 5, "Steps": no
+# step-up code; 0.1231 WU, 0.375 m, from the spec's simulation): Halo's own
+# step in its movement envelope (`movement::envelope`, ours).
+ride_step = 0.1231
 # CAMERA_STAND, CAMERA_CROUCH: WU above the origin.
 camera_stand = 0.62
 camera_crouch = 0.35

@@ -51,6 +51,8 @@ class = "rifle"                 # an automatic gun game's class (GunClass:
 #   kills): its game lends it to a ladder (minigame::auto), its band on the
 #   power curve (chimera/sim/data/power_curve.toml); none: not in one;
 #   not inherited from `base`
+rung_hint = { action = "grenade", verb = "throw" }   # opt-in: a ladder on its
+#   rung shows "Press <the action's key> to <verb>" (minigame::hud::RungHint)
 
 [buy]                           # economy::Prices
 price = 2500

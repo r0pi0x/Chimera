@@ -121,6 +121,11 @@ pub struct WeaponData {
     /// lends it to a ladder); None: not in one.
     #[serde(default)]
     pub class: Option<chimera_core::game_parts::GunClass>,
+    /// A hint a ladder shows the player on this weapon's rung (opt-in;
+    /// none by default): the named action whose bound key it names and
+    /// what that does ("Press G to throw": `minigame::hud::RungHint`).
+    #[serde(default)]
+    pub rung_hint: Option<RungHintData>,
     #[serde(default)]
     pub undroppable: bool,
     /// The drop key leaves it in hand; it still drops at death
@@ -169,6 +174,14 @@ pub struct WeaponData {
     /// The magazine's ammo type, resolved at load.
     #[serde(skip)]
     pub ammo: Option<AmmoData>,
+}
+
+/// `rung_hint`: the action (`core::ActionRegistry` name) and the verb.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RungHintData {
+    pub action: String,
+    pub verb: String,
 }
 
 /// Buying it (`economy::Prices`).

@@ -22,7 +22,8 @@
 //! for the next shot, letting go of the trigger; the grenade count by the
 //! engine frame's `Fired` rounds), and
 //! damage (a bot that hurt a player resets its grenade count; a bot hit
-//! moves and may dodge). `camping` keeps each human's camping time (5.5).
+//! moves and may dodge). A weapon whose attack is a named action
+//! (`weapon::AttackAction`) gets that action pressed instead of fire. `camping` keeps each human's camping time (5.5).
 //!
 //! Units: positions in metres; the spec's distances in world units
 //! (`inventory::UNIT` metres each) where the code names them so.
@@ -53,7 +54,7 @@ use super::super::{
 use crate::{
     core::{Damage, Dead, FreezeTime, Health, Intent, MovementState, SimClock, Spectating, Team},
     map::{SeeThrough, nav::NavMesh, nav_gen, vis::ActiveVisibility},
-    weapon::{FiresOnRelease, Inventory, Magazine, Melee, Weapon, WeaponEvent, WeaponEventKind, grenade::Throwable},
+    weapon::{AttackAction, FiresOnRelease, Inventory, Magazine, Melee, Weapon, WeaponEvent, WeaponEventKind, grenade::Throwable},
 };
 
 /// Sight range (u), `SeeEnemyDistance`.
@@ -881,11 +882,21 @@ pub fn think(world: &mut World, mut queries: Local<Option<SnapQueries>>, mut spa
     // Apply.
     for (e, bot, out) in outs {
         if let Some(i) = out.intent {
+            // A weapon attacked with a named action (`weapon::AttackAction`:
+            // Halo's grenade rung): that action pressed where fire would be.
+            let attack = world
+                .get::<Inventory>(e)
+                .and_then(|inv| inv.active)
+                .and_then(|w| world.get::<AttackAction>(w))
+                .map_or(0, |a| world.get_resource::<crate::core::ActionRegistry>().map_or(0, |r| r.bit(&a.action)));
             let mut intent = world.get_mut::<Intent>(e).unwrap();
             intent.yaw = i.yaw;
             intent.pitch = i.pitch.clamp(-1.55, 1.55);
             intent.move_axis = i.axis;
-            intent.fire = i.fire;
+            intent.fire = i.fire && attack == 0;
+            if attack != 0 {
+                intent.actions = if i.fire { intent.actions | attack } else { intent.actions & !attack };
+            }
             intent.reload = i.reload;
             intent.crouch = i.crouch;
             intent.jump = i.jump;

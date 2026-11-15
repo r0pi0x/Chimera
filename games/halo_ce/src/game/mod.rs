@@ -66,6 +66,8 @@
 //! - the front end's `ui::party_view` (the party zoom on the player's
 //!   field of view) and `ui::kill_icons` (the kill-feed icons from the
 //!   disc);
+//! - `weapons::rung`: the party ladder's grenade rung; `movement` also
+//!   fits the pill to the map's envelope (`body`, `envelope`);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `audio`: looping sounds, the level's background sound, environment
