@@ -975,3 +975,66 @@ fn the_menu_changes_screens_at_the_pass_s_swap() {
     assert_eq!(shown(&sim), Screen::Loading);
     assert_eq!(sim.app.world().resource::<LogoPass>().runs, runs);
 }
+
+/// One key press for the menu's fields, `held` down around it.
+fn key(sim: &mut Sim, held: &[KeyCode], code: KeyCode, logical: bevy::input::keyboard::Key) {
+    use bevy::input::{ButtonState, keyboard::KeyboardInput};
+    let window = Entity::PLACEHOLDER;
+    for h in held {
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(*h);
+    }
+    sim.app.world_mut().write_message(KeyboardInput {
+        key_code: code,
+        logical_key: logical,
+        state: ButtonState::Pressed,
+        text: None,
+        repeat: false,
+        window,
+    });
+    sim.ticks(1);
+    for h in held {
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(*h);
+    }
+    sim.ticks(1);
+}
+
+/// Playtest 7: no text field took a paste. Join's address takes Ctrl+V
+/// and Shift+Insert (one line: a copied address's newline dropped);
+/// Ctrl+A, Ctrl+C and Ctrl+X select, copy and cut; the password pastes
+/// but never copies.
+#[test]
+fn text_fields_paste_copy_and_cut() {
+    use bevy::input::keyboard::Key;
+    use chimera_ui::clipboard::Clipboard;
+    let mut sim = local_plus(true, None, false, |app| {
+        app.insert_resource(Clipboard::memory(Some("10.0.0.7:27016\n")));
+    });
+    let ctrl = [KeyCode::ControlLeft];
+    let shift = [KeyCode::ShiftLeft];
+    act(&mut sim, A::Entry(1));
+    assert_eq!(menu(&sim).page, MenuPage::Join);
+    act(&mut sim, A::Focus(Field::Address));
+    key(&mut sim, &ctrl, KeyCode::KeyV, Key::Character("v".into()));
+    assert_eq!(menu(&sim).address, "10.0.0.7:27016", "Ctrl+V pastes one line");
+    key(&mut sim, &ctrl, KeyCode::KeyA, Key::Character("a".into()));
+    key(&mut sim, &ctrl, KeyCode::KeyX, Key::Character("x".into()));
+    assert_eq!(menu(&sim).address, "", "Ctrl+X cuts the selection");
+    key(&mut sim, &shift, KeyCode::Insert, Key::Insert);
+    key(&mut sim, &shift, KeyCode::Insert, Key::Insert);
+    assert_eq!(menu(&sim).address, "10.0.0.7:2701610.0.0.7:27016", "Shift+Insert pastes what was cut");
+    key(&mut sim, &shift, KeyCode::Home, Key::Home);
+    assert_eq!(menu(&sim).caret.range(), 0..28, "Shift+Home selects to the start");
+    key(&mut sim, &[], KeyCode::ArrowLeft, Key::ArrowLeft);
+    key(&mut sim, &ctrl, KeyCode::KeyC, Key::Character("c".into()));
+    assert_eq!(sim.app.world_mut().resource_mut::<Clipboard>().get().as_deref(), Some("10.0.0.7:27016"), "nothing selected: nothing copied");
+
+    act(&mut sim, A::Focus(Field::Password));
+    key(&mut sim, &ctrl, KeyCode::KeyV, Key::Character("v".into()));
+    assert_eq!(menu(&sim).password, "10.0.0.7:27016", "a password pastes");
+    sim.app.world_mut().insert_resource(Clipboard::memory(Some("kept")));
+    key(&mut sim, &ctrl, KeyCode::KeyA, Key::Character("a".into()));
+    key(&mut sim, &ctrl, KeyCode::KeyC, Key::Character("c".into()));
+    key(&mut sim, &ctrl, KeyCode::KeyX, Key::Character("x".into()));
+    assert_eq!(sim.app.world_mut().resource_mut::<Clipboard>().get().as_deref(), Some("kept"), "a password never copies");
+    assert_eq!(menu(&sim).password, "10.0.0.7:27016", "nor cuts");
+}

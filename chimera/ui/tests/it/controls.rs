@@ -245,11 +245,49 @@ fn text_field_shows_text_caret_and_placeholder() {
     assert_eq!(texts_under(&mut app, f), ["HOST OR HOST:PORT"]);
     assert_eq!(caret_count(&mut app, f), 0);
     // What is typed keeps its case (the placeholder is a label).
-    let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "Lan:27016", "", Some(3), false, 15.0, State::focused(true)));
+    let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "Lan:27016", "", Some(3.into()), false, 15.0, State::focused(true)));
     assert_eq!(texts_under(&mut app, f), ["Lan", ":27016"]);
     assert_eq!(caret_count(&mut app, f), 1);
     let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "pässwd", "", None, true, 15.0, State::NONE));
     assert_eq!(texts_under(&mut app, f), ["******"]);
+}
+
+/// The `TextSelection` nodes under `e`.
+fn selections(app: &mut App, e: Entity) -> Vec<Entity> {
+    let w = app.world_mut();
+    let mut out = Vec::new();
+    let mut stack = vec![e];
+    while let Some(n) = stack.pop() {
+        if w.get::<controls::TextSelection>(n).is_some() {
+            out.push(n);
+        }
+        if let Some(ch) = w.get::<Children>(n) {
+            stack.extend(ch.iter());
+        }
+    }
+    out
+}
+
+/// A selection shows: its text on an accent tint (`TextSelection`), the
+/// caret at its end; a masked field's selection covers its stars.
+#[test]
+fn text_field_shows_its_selection() {
+    let mut app = app();
+    let f = build(&mut app, |ui, c, root| {
+        ui.text_field(c, root, "Lan:27016", "", Some(controls::TextCursor { at: 3, anchor: 0 }), false, 15.0, State::focused(true))
+    });
+    assert_eq!(texts_under(&mut app, f), ["Lan", ":27016"]);
+    let sel = selections(&mut app, f);
+    assert_eq!(sel.len(), 1);
+    assert_eq!(texts_under(&mut app, sel[0]), ["Lan"], "the selected text is on the tint");
+    assert_eq!(descendants_with::<controls::TextCaret>(&mut app, f).len(), 1);
+    // "ä" is two bytes: the selection's ends are byte offsets.
+    let f = build(&mut app, |ui, c, root| {
+        ui.text_field(c, root, "pässwd", "", Some(controls::TextCursor { at: 1, anchor: 4 }), true, 15.0, State::focused(true))
+    });
+    let sel = selections(&mut app, f);
+    assert_eq!(texts_under(&mut app, sel[0]), ["**"], "two chars selected, as stars");
+    assert_eq!(texts_under(&mut app, f), ["*", "**", "***"]);
 }
 
 /// A wipe cover clips away along the slant over its time and is gone at
@@ -293,7 +331,7 @@ fn a_sliders_value_box_types() {
     let p = build(&mut app, |ui, c, root| ui.slider_ex(c, root, 0.5, None, "0.5", 15.0, State::NONE, None));
     assert!(app.world().get::<Interaction>(p.value).is_some(), "clickable");
     assert_eq!(texts_under(&mut app, p.value), ["0.5"]);
-    let typing = controls::Typing { text: "1.6", caret: 3, error: true };
+    let typing = controls::Typing { text: "1.6", caret: 3, anchor: 3, error: true };
     let p = build(&mut app, |ui, c, root| ui.slider_ex(c, root, 1.0, None, "1.6", 15.0, State::NONE, Some(typing)));
     assert_eq!(texts_under(&mut app, p.value), ["1.6"], "as typed");
     assert_eq!(descendants_with::<controls::TextCaret>(&mut app, p.value).len(), 1, "the caret");

@@ -34,6 +34,8 @@
 //!   and a Signal scroll bar), eased wheel steps, the right-button pan
 //!   with a fling, `ScrollIntoView`; state by key in `ScrollViews`,
 //!   tuned by `[layout.scroll]`, cut down by `ReducedMotion`.
+//! - `clipboard`: `Clipboard` (the system's through arboard, or one of
+//!   its own for tests) that text fields copy to and paste from.
 //! - `parity`: `UiParityId`, a node's name in the look book, and its
 //!   measured box for the UI parity check (`tools/ui-parity/`).
 //! - `pointer_lead`: `PointerLead`, whether the keys or the pointer drive
@@ -45,6 +47,7 @@
 //! layout) and registers the materials. Add it after Bevy's plugins.
 //! Without a `Theme` resource it inserts `Theme::shell_default`.
 
+pub mod clipboard;
 pub mod controls;
 pub mod fonts;
 pub mod icon_ink;

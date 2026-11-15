@@ -608,7 +608,7 @@ fn a_click_cues_once_and_keys_cue_each_step() {
 }
 
 /// Clicking the value box types a number (a volume in percent, 160 for
-/// 1.6); a negative volume or one
+/// 1.6, the box opened with it all selected); a negative volume or one
 /// past 200 % refused with why, Esc puts the value back.
 #[test]
 fn a_typed_value_is_kept_past_the_range_and_checked() {
@@ -616,6 +616,7 @@ fn a_typed_value_is_kept_past_the_range_and_checked() {
     let app = &mut sim.app;
     send(app, SettingsAction::EditValue(row));
     assert_eq!(set(app).edit.as_ref().map(|e| e.text.as_str()), Some("100"), "the value to edit, in percent");
+    assert_eq!(set(app).edit.as_ref().map(|e| (e.anchor, e.caret)), Some((0, 3)), "all of it selected");
     app.world_mut().resource_mut::<Console>().submit("settings_type 160");
     app.update();
     tap(app, KeyCode::Enter);

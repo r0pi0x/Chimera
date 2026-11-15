@@ -14,7 +14,7 @@
 //! help line for the command typed (its usage from the help text with the
 //! argument being typed marked, a cvar's value, default, range and values),
 //! history (Up/Down with an empty line, persisted, Ctrl+R), editing keys
-//! (Ctrl+Backspace/W/Delete words, Ctrl+U/K, Ctrl+V paste, Ctrl+L clear,
+//! (Ctrl+Backspace/W/Delete words, Ctrl+U/K, Ctrl+V or Shift+Insert paste, Ctrl+L clear,
 //! Ctrl+Home/End), output lines that fit the window's height,
 //! scrollback/filter/timestamps, drag-selecting text in the output (Ctrl+C copies it; clicks never
 //! grab the mouse while open), binds with `+`/`-` actions (F1 and F2
@@ -54,6 +54,7 @@ use bevy::{
     window::CursorOptions,
 };
 
+use chimera_ui::clipboard::Clipboard;
 use super::{FirstPersonCamera, fonts::UiFonts, widgets::Interaction};
 use crate::{
     console::{Console, ConsoleAppExt, Level, cfg_dir, parse, resource_cvar},
@@ -803,6 +804,11 @@ fn edit_key(world: &mut World, e: &KeyboardInput, ctrl: bool, shift: bool) {
             _ => {}
         }
     }
+    // Paste (Ctrl+V, Shift+Insert): the clipboard's text, read before
+    // the console's state is borrowed (`chimera_ui::clipboard`).
+    let paste = (ctrl && e.key_code == KeyCode::KeyV) || (shift && e.key_code == KeyCode::Insert);
+    let pasted = paste.then(|| world.get_resource_or_init::<Clipboard>().get().unwrap_or_default());
+    let mut copied = None;
     let mut ui = world.resource_mut::<ConsoleUi>();
     let before = ui.input.clone();
     let chars: Vec<char> = ui.input.chars().collect();
@@ -852,9 +858,9 @@ fn edit_key(world: &mut World, e: &KeyboardInput, ctrl: bool, shift: bool) {
         (_, KeyCode::Delete) if ctrl => {
             ui.input = chars[..cur].iter().chain(&chars[word_end..]).collect();
         }
-        (_, KeyCode::KeyV) if ctrl => {
+        _ if paste => {
             // Paste (one line: newlines become command separators).
-            let text = arboard::Clipboard::new().and_then(|mut c| c.get_text()).unwrap_or_default();
+            let text = pasted.unwrap_or_default();
             let text = text.trim_end().replace("\r\n", "; ").replace('\n', "; ");
             let ins: Vec<char> = text.chars().collect();
             let mut c = chars.clone();
@@ -862,8 +868,8 @@ fn edit_key(world: &mut World, e: &KeyboardInput, ctrl: bool, shift: bool) {
             ui.input = c.into_iter().collect();
             ui.cursor = cur + ins.len();
         }
-        (_, KeyCode::KeyC) if ctrl => {
-            copy_selection(&ui);
+        (_, KeyCode::KeyC) | (_, KeyCode::Insert) if ctrl => {
+            copied = selection_text(&ui);
         }
         (_, KeyCode::KeyA) if ctrl => ui.cursor = 0,
         (_, KeyCode::KeyE) if ctrl => ui.cursor = chars.len(),
@@ -955,6 +961,9 @@ fn edit_key(world: &mut World, e: &KeyboardInput, ctrl: bool, shift: bool) {
             ui.cursor = cur + 1;
         }
         _ => return,
+    }
+    if let Some(text) = copied {
+        world.get_resource_or_init::<Clipboard>().set(&text);
     }
     let mut ui = world.resource_mut::<ConsoleUi>();
     if reset_cycle {
@@ -1249,7 +1258,7 @@ fn selected_text(rows: &[String], sel: (TextPos, TextPos)) -> String {
 
 /// Select text in the output with the mouse: press and drag from one
 /// character to another (rows between are covered whole), the selected
-/// span drawn highlighted; Ctrl+C copies it (`copy_selection`), as CS:S's
+/// span drawn highlighted; Ctrl+C copies it (`selection_text`), as CS:S's
 /// console does.
 fn select_text(
     mut ui: ResMut<ConsoleUi>,
@@ -1358,15 +1367,11 @@ fn select_text(
     }
 }
 
-/// Ctrl+C with text selected in the output puts it on the clipboard;
-/// whether there was a selection to copy.
-fn copy_selection(ui: &ConsoleUi) -> bool {
-    let Some(sel) = ui.selection.filter(|(a, b)| a != b) else { return false };
-    let text = selected_text(&ui.shown, sel);
-    if let Err(e) = arboard::Clipboard::new().and_then(|mut c| c.set_text(text)) {
-        warn!("clipboard: {e}");
-    }
-    true
+/// The text selected in the output, for Ctrl+C (Ctrl+Insert) to put on
+/// the clipboard; none without a selection.
+fn selection_text(ui: &ConsoleUi) -> Option<String> {
+    let sel = ui.selection.filter(|(a, b)| a != b)?;
+    Some(selected_text(&ui.shown, sel))
 }
 
 /// The suggestion box under the console as you type: the help line for
@@ -2907,9 +2912,7 @@ pub fn client_commands(app: &mut App) {
             };
             let text: Vec<String> = output.iter().skip(output.len().saturating_sub(n)).map(|l| l.text.clone()).collect();
             let count = text.len();
-            arboard::Clipboard::new()
-                .and_then(|mut c| c.set_text(text.join("\n")))
-                .map_err(|e| format!("clipboard: {e}"))?;
+            w.get_resource_or_init::<Clipboard>().set(&text.join("\n"));
             Ok(Some(format!("copied {count} lines")))
         },
     );

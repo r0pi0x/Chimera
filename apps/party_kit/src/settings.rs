@@ -75,7 +75,7 @@ use std::collections::BTreeMap;
 use bevy::{
     input::{
         ButtonInput, ButtonState,
-        keyboard::{Key, KeyboardInput},
+        keyboard::KeyboardInput,
         mouse::AccumulatedMouseScroll,
     },
     prelude::*,
@@ -188,6 +188,8 @@ pub struct ValueEdit {
     pub row: usize,
     pub text: String,
     pub caret: usize,
+    /// The selection's other end (a char index; the caret's: none).
+    pub anchor: usize,
     pub error: Option<String>,
 }
 
@@ -281,9 +283,9 @@ pub fn rows(ctx: Context, tabs: &[(String, Vec<Setting>)], tab: usize, bind_game
                     live: true,
                     when: None,
                     widget: None,
-                    percent: false,
                     hard_min: None,
                     hard_max: None,
+                    percent: false,
                 };
                 out.push(Row::Setting { s, note: None });
             }
@@ -413,16 +415,20 @@ impl Plugin for SettingsPlugin {
             w.write_message(action);
             Ok(None)
         });
-        app.console_command("chimera:settings_type", "settings_type <text>: type into the value box (the focused row's, opened if none is) (tests, screenshots).", |w, a| {
+        app.console_command("chimera:settings_type", "settings_type [text]: type into the value box (the focused row's, opened if none is; no text: just open it, its value selected) (tests, screenshots).", |w, a| {
             let text = a.join(" ");
             if w.resource::<Settings>().edit.is_none() {
                 // The focused row's box opens first.
                 let focus = w.resource::<Settings>().focus;
                 act_one(w, SettingsAction::EditValue(focus));
             }
+            if a.is_empty() {
+                return Ok(None);
+            }
             let mut s = w.resource_mut::<Settings>();
             let e = s.edit.as_mut().ok_or("the focused row takes no typed number")?;
             e.caret = text.chars().count();
+            e.anchor = e.caret;
             e.text = text;
             e.error = None;
             Ok(None)
@@ -790,33 +796,38 @@ fn clicks(
 }
 
 /// Keys typed into a value box (`Settings::edit`; Enter and Esc are
-/// `keys`').
-fn edit_typing(mut events: MessageReader<KeyboardInput>, mut s: ResMut<Settings>) {
-    use chimera_client::client::widgets::{Caret, Edit};
+/// `keys`'): typing, the selection, copy, cut and paste
+/// (`widgets::text_key`, the app's `Clipboard` else this system's).
+fn edit_typing(
+    mut events: MessageReader<KeyboardInput>,
+    mut s: ResMut<Settings>,
+    held: Option<Res<ButtonInput<KeyCode>>>,
+    mut own: Local<chimera_ui::clipboard::Clipboard>,
+    shared: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
+) {
+    use chimera_client::client::widgets::{Caret, text_key};
     if s.edit.is_none() {
         events.clear();
         return;
     }
+    let clipboard = match shared {
+        Some(c) => c.into_inner(),
+        None => &mut *own,
+    };
+    let held = |k: [KeyCode; 2]| held.as_ref().is_some_and(|h| h.any_pressed(k));
+    let (ctrl, shift) = (held([KeyCode::ControlLeft, KeyCode::ControlRight]), held([KeyCode::ShiftLeft, KeyCode::ShiftRight]));
     for ev in events.read() {
         if ev.state != ButtonState::Pressed {
             continue;
         }
-        let edit = match &ev.logical_key {
-            Key::Backspace => Edit::Backspace,
-            Key::Delete => Edit::Delete,
-            Key::ArrowLeft => Edit::Left(false),
-            Key::ArrowRight => Edit::Right(false),
-            Key::Home => Edit::Home(false),
-            Key::End => Edit::End(false),
-            Key::Character(t) => Edit::Insert(t.to_string()),
-            _ => continue,
-        };
+        let Some(key) = text_key(&ev.logical_key, ev.key_code, ctrl, shift) else { continue };
         let Some(e) = s.edit.as_mut() else { return };
-        let mut caret = Caret { at: e.caret, anchor: e.caret };
-        if caret.edit(&mut e.text, edit, 24) {
+        let mut caret = Caret { at: e.caret, anchor: e.anchor };
+        if caret.key(&mut e.text, key, clipboard, 24, false) {
             e.error = None;
         }
         e.caret = caret.at;
+        e.anchor = caret.anchor;
     }
 }
 
@@ -1115,7 +1126,9 @@ fn act_one(world: &mut World, a: SettingsAction) {
                 let mut st = world.resource_mut::<Settings>();
                 st.focus = row;
                 st.open_list = None;
-                st.edit = Some(ValueEdit { row, caret: text.chars().count(), text, error: None });
+                let n = text.chars().count();
+                // All of it selected: what is typed replaces it.
+                st.edit = Some(ValueEdit { row, caret: n, anchor: 0, text, error: None });
                 cue(world, UiCue::new("ui_select"));
             }
         }
@@ -1688,6 +1701,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                     let typing = edit.map(|e| controls::Typing {
                         text: &e.text,
                         caret: e.text.char_indices().nth(e.caret).map_or(e.text.len(), |(b, _)| b),
+                        anchor: e.text.char_indices().nth(e.anchor).map_or(e.text.len(), |(b, _)| b),
                         error: e.error.is_some(),
                     });
                     let p = ui.slider_ex(c, vl, f, None, &set.shown(&v), 15.0, vst, typing);

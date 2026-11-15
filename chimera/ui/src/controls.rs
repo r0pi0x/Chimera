@@ -15,7 +15,9 @@
 //!   number inside the setting's hard limits); `dropdown` (a
 //!   field and, open, its list); `key_field` (key caps, "press a key"
 //!   while listening); `text_field` (typed text or stars, a placeholder,
-//!   the caret in accent while it has the keys); `kv` (key/value lines); `modal` (a plate with a
+//!   the caret in accent while it has the keys, the selection on an
+//!   accent tint; its keys, copy, cut and paste are the screen's:
+//!   `chimera_client::client::widgets::text_key`, `clipboard`); `kv` (key/value lines); `modal` (a plate with a
 //!   top bar, white or threat).
 //! - **States** (`State`), one vocabulary everywhere: hover is the
 //!   right-edge 12° tick plus a faint tint (`Hover`, shown live by
@@ -677,7 +679,7 @@ impl<'a> Ui<'a> {
     #[allow(clippy::too_many_arguments)]
     fn value_box(&self, c: &mut Commands, parent: Entity, value: &str, w: f32, st: State, typing: Option<Typing>, look: ValueLook) -> Entity {
         if let Some(t) = typing {
-            return self.text_field(c, parent, t.text, "", Some(t.caret), false, w, State { focus: true, error: t.error, ..State::NONE });
+            return self.text_field(c, parent, t.text, "", Some(TextCursor { at: t.caret, anchor: t.anchor }), false, w, State { focus: true, error: t.error, ..State::NONE });
         }
         let over = self.color(Tone::Fg, 0.06);
         let nv = c
@@ -885,10 +887,12 @@ impl<'a> Ui<'a> {
 
     /// A text field (min `w` cq, 1.9 cq tall, the dropdown's field): the
     /// value in Mono as typed (its case kept; stars when `masked`),
-    /// `placeholder` in `fg_3` when empty; `caret` (a byte offset into `value`; Some only while it has
-    /// the keys) an accent bar at that place, the field tinted and
-    /// underlined in accent. Error: the threat underline. Returns the
-    /// field (give it its focusing action).
+    /// `placeholder` in `fg_3` when empty; `caret` (Some only while it has
+    /// the keys; byte offsets into `value`) an accent bar at its place and
+    /// the selection between it and its anchor on an accent tint
+    /// (`TextSelection`), the field tinted and underlined in accent.
+    /// Error: the threat underline. Returns the field (give it its
+    /// focusing action).
     #[allow(clippy::too_many_arguments)]
     pub fn text_field(
         &self,
@@ -896,7 +900,7 @@ impl<'a> Ui<'a> {
         parent: Entity,
         value: &str,
         placeholder: &str,
-        caret: Option<usize>,
+        caret: Option<TextCursor>,
         masked: bool,
         w: f32,
         st: State,
@@ -921,20 +925,16 @@ impl<'a> Ui<'a> {
         if value.is_empty() && !typing {
             self.text(c, f, Role::Mono, 0.62, Tone::Fg3, placeholder);
         } else {
-            // The caret's place in the shown text (stars: one per char).
-            let at = caret.map(|b| {
+            // A byte offset of `value` as one of the shown text (stars:
+            // one per char).
+            let place = |b: usize| {
                 let b = (0..=b.min(value.len())).rev().find(|i| value.is_char_boundary(*i)).unwrap_or(0);
                 let chars = value[..b].chars().count();
                 shown.char_indices().nth(chars).map_or(shown.len(), |(i, _)| i)
-            });
-            let (before, after) = match at {
-                Some(i) => shown.split_at(i),
-                None => (shown.as_str(), ""),
             };
-            if !before.is_empty() {
-                self.text_plain(c, f, Role::Mono, 0.66, Tone::Fg, before);
-            }
-            if typing {
+            let (at, anchor) = caret.map_or((shown.len(), shown.len()), |k| (place(k.at), place(k.anchor)));
+            let (a, b) = (at.min(anchor), at.max(anchor));
+            let bar = |c: &mut Commands| {
                 c.spawn((
                     Node { width: Val::Px(self.units.hairline() * 2.0), height: self.units.val(1.0), flex_shrink: 0.0, ..default() },
                     BackgroundColor(self.color(Tone::Acc, 1.0)),
@@ -942,9 +942,30 @@ impl<'a> Ui<'a> {
                     Pickable::IGNORE,
                     ChildOf(f),
                 ));
+            };
+            if a > 0 {
+                self.text_plain(c, f, Role::Mono, 0.66, Tone::Fg, &shown[..a]);
             }
-            if !after.is_empty() {
-                self.text_plain(c, f, Role::Mono, 0.66, Tone::Fg, after);
+            if typing && at == a {
+                bar(c);
+            }
+            if b > a {
+                let sel = c
+                    .spawn((
+                        Node { align_items: AlignItems::Center, flex_shrink: 0.0, ..default() },
+                        BackgroundColor(self.color(Tone::Acc, 0.45)),
+                        TextSelection,
+                        Pickable::IGNORE,
+                        ChildOf(f),
+                    ))
+                    .id();
+                self.text_plain(c, sel, Role::Mono, 0.66, Tone::Fg, &shown[a..b]);
+            }
+            if typing && at == b && b > a {
+                bar(c);
+            }
+            if b < shown.len() {
+                self.text_plain(c, f, Role::Mono, 0.66, Tone::Fg, &shown[b..]);
             }
         }
         if st.error {
@@ -999,11 +1020,13 @@ fn style_abs(ltrb: [Option<f32>; 4], w: f32, h: f32) -> UiStyle {
 }
 
 /// A value box being typed into (`Ui::slider_ex`, `Ui::stepper_ex`):
-/// the text, the caret (a byte index), the text refused.
+/// the text, the caret and its selection's other end (byte indices),
+/// the text refused.
 #[derive(Clone, Copy, Debug)]
 pub struct Typing<'a> {
     pub text: &'a str,
     pub caret: usize,
+    pub anchor: usize,
     pub error: bool,
 }
 
@@ -1061,6 +1084,25 @@ pub fn typed_number(text: &str, hard: (Option<f32>, Option<f32>)) -> Result<f32,
 /// A text field's caret (`Ui::text_field`).
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TextCaret;
+
+/// A text field's selected text, on its accent tint (`Ui::text_field`).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextSelection;
+
+/// Where a text field's caret is and the other end of its selection
+/// (byte offsets into the value; equal: nothing selected).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TextCursor {
+    pub at: usize,
+    pub anchor: usize,
+}
+
+impl From<usize> for TextCursor {
+    /// A caret with nothing selected.
+    fn from(at: usize) -> Self {
+        Self { at, anchor: at }
+    }
+}
 
 /// A node's least height in cq (rows): `resolve_min_heights` writes it
 /// after the style.

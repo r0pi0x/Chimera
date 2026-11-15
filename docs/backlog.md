@@ -216,11 +216,13 @@ started; the user asked to avoid server lag while testers play.
   attachment follows the wrong bone or offset, or hangs off the root and
   lags). Look at: the crossbow's projectile model record and the
   stick-to-body attachment.
-- **Text fields don't accept paste** (Ctrl+V, Shift+Insert, right-click)
-  anywhere: Join address and password, Play server name, Settings value
-  boxes, the console (check), the token entry later. Add clipboard paste
-  (and copy, cut, select-all) to the kit's `text_field` via arboard or
-  Bevy's clipboard support, on Windows and Linux.
+- **Text fields don't accept paste** (done after 7.1, confirm in a
+  playtest): the Signal fields (Join address and password, the Play
+  page's text rows, Settings' value boxes) and the console take Ctrl+V
+  and Shift+Insert (one line), Ctrl+C/Ctrl+Insert, Ctrl+X/Shift+Delete
+  and Ctrl+A, with the selection drawn (`chimera_ui::clipboard`,
+  `widgets::text_key`; a password pastes but never copies). Still open:
+  right-click paste (no context menu), the token entry when it comes.
 - **Kill feed gun icons are too small next to the names.** Make them
   take more of the row (taller, fit by ink via `chimera_ui::icon_ink`);
   same for the top HUD (the race chip's gun icon) and the headshot and
