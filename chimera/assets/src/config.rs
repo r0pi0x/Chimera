@@ -4,7 +4,8 @@
 //! environment over it (`CHIMERA_ASSET_STORE`, `CHIMERA_ASSET_USE_INSTALL`
 //! = 0/1, `CHIMERA_ASSET_URL`, `CHIMERA_ASSET_TOKEN`, `CHIMERA_ASSET_KEY`)
 //! and the repository's `assets.lock` (`lock`). With no service named
-//! there, a player's bound access (`access`: a token and the service a game
+//! there, a player's platform account (`account`: its hub's asset service
+//! with its current ticket), else a player's bound access (`access`: a token and the service a game
 //! server named, pinned by its certificate) is the service. The default store is per
 //! user and shared by every checkout and slot: `~/.cache/chimera/assets`
 //! (Linux), `%LOCALAPPDATA%\chimera\assets` (Windows).
@@ -93,9 +94,12 @@ impl AssetsConfig {
         let url = env(remote::URL_ENV).or_else(|| self.url.clone());
         let token = env(remote::TOKEN_ENV).or_else(|| self.token.clone());
         let key = env(remote::KEY_ENV).or_else(|| self.key.clone());
-        // Else the service a game server bound this user's token to
+        // Else this user's platform account's asset service (`account`),
+        // else the service a game server bound this user's token to
         // (`access`: a player's, not a developer's).
-        s.remote = remote_config(url, token, key).or_else(|| crate::access::Access::load().remote());
+        s.remote = remote_config(url, token, key)
+            .or_else(crate::account::user_remote)
+            .or_else(|| crate::access::Access::load().remote());
         s.lock = AssetsLock::current();
         s
     }

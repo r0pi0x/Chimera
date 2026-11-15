@@ -1472,6 +1472,7 @@ fn workspace_crates() {
         "chimera/vfs",
         "chimera/formats",
         "chimera/assets",
+        "chimera/services",
         "source/formats",
         "lithtech/formats",
         "source/tools",
@@ -1582,6 +1583,9 @@ fn workspace_crates() {
     const TOOLS: &str = "is a layer's tools (docs/ARCHITECTURE.md, \"Crates\"): a tool lives at the lowest \
         layer whose knowledge it needs, and uses nothing above it. Move the tool (or the part of it that \
         needs the layer above) into that layer's tools: chimera/tools, source/tools, games/<game>/tools.";
+    const SERVICES: &str = "is the hub's services (docs/ARCHITECTURE.md, \"Crates\"; docs/plans/active/hub.md, \
+        2.7): host tools on `chimera_assets` and plain data, never Bevy, the simulation, the network or a game. \
+        What a client or game server needs too (tickets, the account file) lives in `chimera_assets`.";
     const CHECKS: &str = "is the repository's checks (docs/ARCHITECTURE.md, \"Crates\"): plain crates only, so \
         the architecture tests and the hooks' test selection build in seconds in a fresh clone and never \
         depend on the code they check. Read what is needed from files or `cargo metadata` instead.";
@@ -1657,6 +1661,36 @@ fn workspace_crates() {
                 "workspace-hack",
             ],
             PURE_DATA,
+        ),
+        // The hub's services (docs/plans/active/hub.md, 2.7): host tools on
+        // the asset store's crate and plain data, no Bevy, no game; SQLite
+        // lives only here.
+        (
+            "chimera/services",
+            &[
+                "bevy",
+                "avian",
+                "mashup",
+                "source_",
+                "lithtech_",
+                "chimera_core",
+                "chimera_world",
+                "chimera_present",
+                "chimera_sim",
+                "chimera_net",
+                "chimera_client",
+                "chimera_tools",
+                "chimera_ui",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "games",
+                "originals",
+                "lucker_party",
+                "party_kit",
+                "workspace-hack",
+            ],
+            SERVICES,
         ),
         // Source's formats may use the VFS (`chimera_vfs`) and no other
         // Chimera crate.

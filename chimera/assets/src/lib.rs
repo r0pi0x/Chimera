@@ -29,6 +29,13 @@
 //! exactly the certificate whose fingerprint it was given; `access` keeps a
 //! player's token and the service a game server bound it to.
 //!
+//! Platform accounts (docs/plans/active/hub.md): `ticket` is the accounts
+//! service's signed tickets and its revocation feed, checked by any
+//! service with the public key alone; `account` is a player's side (the
+//! hub link, the device key, `account.toml`, tickets refreshed at
+//! half-life), and `accounts::TicketAuth` lets the asset service take
+//! tickets beside legacy tokens.
+//!
 //! `progress` reports fetches in words people read: a live line for
 //! `chimera_assets fetch`, periodic lines while a load fetches on demand.
 //! `sets` fetches whole sets as the game does (a join's, the startup's,
@@ -57,6 +64,7 @@
 //! explicit fill fails loudly instead).
 
 pub mod access;
+pub mod account;
 pub mod accounts;
 pub mod cached;
 pub mod config;
@@ -76,6 +84,7 @@ pub mod sets;
 pub mod shared;
 pub mod sign;
 pub mod store;
+pub mod ticket;
 pub mod tls;
 
 pub use cached::CachedFiles;

@@ -36,10 +36,12 @@ use chimera_assets::{
 const USAGE: &str = "usage: chimera_asset_server [--store <dir>] [--listen <ip:port>] [--tls <ip:port>] [--threads <n>]
        [--latency-ms <n>] [--rate <requests/s>] [--burst <n>] [--daily-gb <n>] [--bad-tokens <n per minute>]
        [--connections <n per address>] [--on-report <command>] [--reports-per-hour <n>]
-       [--reports-per-day <n>] [--reports-per-address <n per hour>]
+       [--reports-per-day <n>] [--reports-per-address <n per hour>] [--accounts <url> | --no-tickets]
   --listen     plain HTTP, default 127.0.0.1:8731 (keep it on this machine)
   --tls        HTTPS with the server's own certificate (its fingerprint is printed), e.g. 0.0.0.0:27031
-  --on-report  a command run for each new feedback report (default: [feedback] on_report in the local config)";
+  --on-report  a command run for each new feedback report (default: [feedback] on_report in the local config)
+  --accounts   the accounts service on this machine, for the revocation feed (default http://127.0.0.1:8741)
+  --no-tickets legacy tokens only (no account tickets)";
 
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -50,6 +52,7 @@ fn run() -> Result<(), String> {
     let mut front_limits = chimera_assets::tls::FrontLimits::default();
     let mut feedback_limits = chimera_assets::feedback::inbox::FeedbackLimits::default();
     let mut on_report = None;
+    let mut accounts = Some("http://127.0.0.1:8741".to_string());
     let number = |v: String, what: &str| v.parse::<f64>().map_err(|_| format!("{what}: a number"));
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -66,6 +69,8 @@ fn run() -> Result<(), String> {
             "--bad-tokens" => limits.bad_tokens = number(value()?, arg)? as u32,
             "--connections" => front_limits.per_address = number(value()?, arg)?.max(1.0) as usize,
             "--on-report" => on_report = Some(value()?),
+            "--accounts" => accounts = Some(value()?),
+            "--no-tickets" => accounts = None,
             "--reports-per-hour" => feedback_limits.per_account_hour = number(value()?, arg)? as usize,
             "--reports-per-day" => feedback_limits.per_account_day = number(value()?, arg)? as usize,
             "--reports-per-address" => feedback_limits.per_address_hour = number(value()?, arg)? as usize,
@@ -78,7 +83,11 @@ fn run() -> Result<(), String> {
         None => chimera_assets::feedback::LocalFeedback::load()?.on_report,
     };
     let peers = chimera_assets::tls::Peers::default();
-    let service = Service::new(store.clone())
+    let service = match &accounts {
+        Some(url) => Service::with_tickets(store.clone(), url, chimera_assets::accounts::FEED_EVERY),
+        None => Service::new(store.clone()),
+    };
+    let service = service
         .map_err(|e| format!("{}: {e}", store.root.display()))?
         .with_latency(std::time::Duration::from_millis(latency))
         .with_limits(limits)
@@ -88,6 +97,10 @@ fn run() -> Result<(), String> {
     let running = serve(service, &listen, threads).map_err(|e| e.to_string())?;
     println!("serving {} at {}", store.root.display(), running.url());
     println!("public key: {key}");
+    match &accounts {
+        Some(url) => println!("account tickets: checked with {}, revocations from {url}", chimera_assets::accounts::ticket_keys_path(&store.root).display()),
+        None => println!("account tickets: off (legacy tokens only)"),
+    }
     let _front = match tls {
         Some(at) => {
             let dir = chimera_assets::server::tls_dir(&store);

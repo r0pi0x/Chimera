@@ -22,6 +22,7 @@ members = [
     "chimera/vfs",
     "chimera/formats",
     "chimera/assets",
+    "chimera/services",
     "source/formats",
     "source/logic",
     "source/engine",
@@ -62,6 +63,7 @@ default-members = [
     "chimera/vfs",
     "chimera/formats",
     "chimera/assets",
+    "chimera/services",
     "source/formats",
     "source/logic",
     "source/engine",
@@ -115,6 +117,9 @@ chimera_formats = { path = "chimera/formats" }
 # Game files as content-addressed records: the store, manifests, the
 # `CachedFiles` mount layer, the vfs access log (docs/plans/active/asset-service.md).
 chimera_assets = { path = "chimera/assets" }
+# The hub's services (accounts; later front, hub, feedback): a library
+# with a binary per service (docs/plans/active/hub.md, 2.2).
+chimera_services = { path = "chimera/services" }
 source_formats = { path = "source/formats" }
 source_logic = { path = "source/logic" }
 # Source engine behaviour every Source game shares, on Chimera (the

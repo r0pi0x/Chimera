@@ -117,6 +117,9 @@ pub const PREFETCH_RATE_CVAR: &str = "chimera:asset_prefetch_rate";
 pub const PREFETCH_RATE_DEFAULT: u32 = 2000;
 /// Enter this player's asset token (command).
 pub const TOKEN_COMMAND: &str = "chimera:asset_token";
+/// Sign this PC into a hub with an invite link (command line only, before
+/// the app starts: `+chimera:hub <link> [username]`; docs/plans/active/hub.md).
+pub const HUB_COMMAND: &str = "chimera:hub";
 /// The userinfo key of a client that can fetch from an offered service.
 pub const ASSETS_KEY: &str = "_assets";
 /// What the loading screen calls the download.
@@ -536,6 +539,14 @@ pub fn save_token(path: &std::path::Path, token: &str) -> Result<(), String> {
     let mut access = Access::load_from(path);
     access.set_token(token)?;
     access.save_to(path)
+}
+
+/// `+chimera:hub <link> [username]`: redeem the invite in `link` and keep
+/// this user's account file (`chimera_assets::account`); what to tell
+/// the player.
+pub fn join_hub(link: &str, username: Option<&str>) -> Result<String, String> {
+    let path = chimera_assets::account::AccountFile::path().ok_or("no per-user data folder")?;
+    chimera_assets::account::join_hub(link, username, &path)
 }
 
 // --- The server.

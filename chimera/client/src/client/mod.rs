@@ -317,12 +317,35 @@ impl Args {
         });
     }
 
+    /// `+chimera:hub <link> [username]` redeems the link's invite at once,
+    /// before the app starts (so its mounts use the account's asset
+    /// service), and is taken off the console's lines so the code isn't
+    /// echoed (`net::assets::join_hub`; no UI yet: hub.md S3).
+    fn take_hub_link(&mut self) {
+        let command = chimera_net::net::assets::HUB_COMMAND;
+        self.console.retain(|line| {
+            let words = crate::console::parse(line).into_iter().next().unwrap_or_default();
+            if !words.first().is_some_and(|w| w.eq_ignore_ascii_case(command)) {
+                return true;
+            }
+            match words.get(1) {
+                Some(link) => match chimera_net::net::assets::join_hub(link, words.get(2).map(String::as_str)) {
+                    Ok(said) => println!("{said}"),
+                    Err(e) => eprintln!("{command}: {e}"),
+                },
+                None => eprintln!("usage: +{command} <hub link with ?code=> [username]"),
+            }
+            false
+        });
+    }
+
     /// The process's command line: `--help` prints `usage` and ends the
     /// process (0), a bad option says so with `usage` (2).
     pub fn parse_for(usage: &str) -> Self {
         match Self::parse_from(std::env::args().skip(1)) {
             Ok(mut args) => {
                 args.take_asset_token();
+                args.take_hub_link();
                 args
             }
             Err(e) if e == HELP => {

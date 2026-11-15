@@ -6,7 +6,8 @@
 //!   `secret`, `rcon`, `auth`, `fingerprint` or `asset_url`
 //!   (`secret_name`).
 //! - In a line, a word naming such a thing (`rcon_password`,
-//!   `+chimera:asset_token`, `"sv_password"`, a bare `password`) keeps the
+//!   `+chimera:asset_token`, `+chimera:hub` and a hub link (its invite
+//!   code), a recovery key, `"sv_password"`, a bare `password`) keeps the
 //!   word and hides everything after it (`(hidden)`, rcon's rule).
 //!   Here a word's parts (split at `_ : . -`) are matched, so `keyboard`
 //!   is no secret but `key`, `api_key` and `KEYS` are.
@@ -33,7 +34,14 @@ pub fn secret_name(name: &str) -> bool {
 /// Whether a word in a line names a secret (by its parts).
 fn secret_word(word: &str) -> bool {
     let w = word.to_ascii_lowercase();
-    if w.contains("asset_url") || w.contains("password") || w.contains("secret") || w.contains("passwd") {
+    if w.contains("asset_url")
+        || w.contains("password")
+        || w.contains("secret")
+        || w.contains("passwd")
+        || w.contains("chimera:hub")
+        || w.contains("chimera-hub:")
+        || w.contains("recovery")
+    {
         return true;
     }
     w.split(['_', ':', '.', '-']).any(|part| {
@@ -260,6 +268,9 @@ mod tests {
         assert!(!secret_name("fps_max") && !secret_name("sensitivity"));
         assert_eq!(line("] rcon_password hunter2"), "] rcon_password (hidden)");
         assert_eq!(line("+chimera:asset_token abc"), "+chimera:asset_token (hidden)");
+        assert_eq!(line("+chimera:hub chimera-hub://h:1/ab?code=ABC-DEF-GHJ bob"), "+chimera:hub (hidden)");
+        assert_eq!(line("your recovery key ABCD-EFGH-JKMN-PQRS"), "your recovery (hidden)");
+        assert!(!line(&format!("ticket chimera2t.{}.{}", "Ab1".repeat(30), "Xy9".repeat(28))).contains("Ab1Ab1"));
         assert_eq!(line("\"sv_password\" = \"x\" ( def. \"\" )"), "\"sv_password\" (hidden)");
         assert_eq!(line("password"), "password");
         assert_eq!(line("keyboard layout us"), "keyboard layout us");

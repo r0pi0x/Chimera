@@ -19,6 +19,9 @@
 //! `pace::Pace`'s rate on one connection (the game's background
 //! prefetch), unclaimed.
 //!
+//! A token is a legacy `chimera1_` token or a platform account's ticket
+//! (`account`: the session refreshes it at half-life, `fresh_ticket`).
+//!
 //! Tokens and files go over HTTPS only: a URL must be `https://`, except
 //! on this machine (`localhost`, `127.0.0.1`, `[::1]`: tests, a server on
 //! the same box). The token goes only to the configured server (never
@@ -114,7 +117,7 @@ impl RemoteConfig {
     /// The URL without a trailing slash, if tokens may go there.
     pub fn base(&self) -> Result<String, String> {
         let url = self.url.trim().trim_end_matches('/');
-        if url.starts_with("https://") || (url.starts_with("http://") && is_local(url)) {
+        if secure_url(url) {
             Ok(url.to_string())
         } else {
             Err(format!(
@@ -122,6 +125,37 @@ impl RemoteConfig {
             ))
         }
     }
+}
+
+/// An HTTPS agent for our services: no redirects, statuses as answers,
+/// and with `fingerprint` exactly that certificate trusted
+/// (`tls::PinnedTls`); without, the usual authorities.
+pub fn agent(fingerprint: Option<&str>) -> Result<Agent, String> {
+    let settings = Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_connect(Some(Duration::from_secs(10)))
+        .timeout_recv_response(Some(Duration::from_secs(60)))
+        .timeout_per_read(Some(Duration::from_secs(60)))
+        .max_redirects(0)
+        .user_agent(concat!("chimera_assets/", env!("CARGO_PKG_VERSION")))
+        .build();
+    Ok(match fingerprint.filter(|f| !f.trim().is_empty()) {
+        Some(fingerprint) => {
+            use ureq::unversioned::{
+                resolver::DefaultResolver,
+                transport::{Connector, TcpConnector},
+            };
+            let tls = crate::tls::PinnedTls::new(fingerprint)?;
+            Agent::with_parts(settings, ().chain(TcpConnector::default()).chain(tls), DefaultResolver::default())
+        }
+        None => settings.new_agent(),
+    })
+}
+
+/// Whether secrets may go to `url`: `https://`, or plain `http://` on this
+/// machine only.
+pub fn secure_url(url: &str) -> bool {
+    url.starts_with("https://") || (url.starts_with("http://") && is_local(url))
 }
 
 /// One server.
@@ -152,29 +186,7 @@ fn status_error(status: u16, what: &str, body: &str) -> io::Error {
 impl Remote {
     pub fn new(config: RemoteConfig) -> Result<Self, String> {
         let base = config.base()?;
-        let settings = Agent::config_builder()
-            .http_status_as_error(false)
-            .timeout_connect(Some(Duration::from_secs(10)))
-            .timeout_recv_response(Some(Duration::from_secs(60)))
-            .timeout_per_read(Some(Duration::from_secs(60)))
-            .max_redirects(0)
-            .user_agent(concat!("chimera_assets/", env!("CARGO_PKG_VERSION")))
-            .build();
-        let agent = match config.fingerprint.as_deref().filter(|f| !f.trim().is_empty()) {
-            Some(fingerprint) => {
-                use ureq::unversioned::{
-                    resolver::DefaultResolver,
-                    transport::{Connector, TcpConnector},
-                };
-                let tls = crate::tls::PinnedTls::new(fingerprint)?;
-                Agent::with_parts(
-                    settings,
-                    ().chain(TcpConnector::default()).chain(tls),
-                    DefaultResolver::default(),
-                )
-            }
-            None => settings.new_agent(),
-        };
+        let agent = agent(config.fingerprint.as_deref())?;
         Ok(Self {
             config,
             base,
@@ -199,10 +211,18 @@ impl Remote {
         &self.base
     }
 
+    /// The `Authorization` value: the token, or for an account ticket the
+    /// signed-in session's current one (`account::fresh_ticket`: refreshed
+    /// at half-life).
+    fn bearer(&self) -> String {
+        let token = crate::account::fresh_ticket(&self.config.token).unwrap_or_else(|| self.config.token.clone());
+        format!("Bearer {token}")
+    }
+
     /// GET (or POST `body`) `path`: status, headers wanted, body.
     fn call(&self, path: &str, body: Option<&[u8]>, want: &[&str]) -> io::Result<(u16, Vec<Option<String>>, Vec<u8>)> {
         let url = format!("{}{path}", self.base);
-        let auth = format!("Bearer {}", self.config.token);
+        let auth = self.bearer();
         let result = match body {
             None => self.agent.get(&url).header("Authorization", &auth).call(),
             Some(b) => {
@@ -222,7 +242,7 @@ impl Remote {
     /// else the error the status means.
     fn post_stream(&self, path: &str, body: &[u8]) -> io::Result<ureq::BodyReader<'static>> {
         let url = format!("{}{path}", self.base);
-        let auth = format!("Bearer {}", self.config.token);
+        let auth = self.bearer();
         let response = self
             .agent
             .post(&url)
@@ -251,7 +271,7 @@ impl Remote {
         body: &[u8],
     ) -> io::Result<(u16, Option<String>, String)> {
         let url = format!("{}{path}", self.base);
-        let auth = format!("Bearer {}", self.config.token);
+        let auth = self.bearer();
         let mut request = self.agent.post(&url).header("Authorization", &auth).header("Content-Type", content_type);
         for (name, value) in headers {
             request = request.header(*name, *value);

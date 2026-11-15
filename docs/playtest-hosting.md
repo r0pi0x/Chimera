@@ -546,6 +546,29 @@ address the server names. To change the certificate (a lost `tls` folder),
 every tester enters their token again (`+chimera:asset_token <token>`),
 which clears the binding.
 
+### Platform accounts (being built: docs/plans/active/hub.md, S1a)
+
+The accounts service (`chimera_accounts`) runs beside the asset service
+over the same server store and replaces tokens with invites once the
+front and the first-run page are in (S1b, S3). Until then tokens above
+stay the way testers get in; the asset service takes both. On loopback
+only:
+
+```
+cargo build --release -p chimera_services --bin chimera_accounts
+target/release/chimera_accounts serve        # 127.0.0.1:8741, <server store>/server/accounts/
+target/release/chimera_accounts import-legacy   # an account per accounts.toml account; tokens keep working
+target/release/chimera_accounts invite <name>   # prints the code once (test invites for now)
+target/release/chimera_accounts account list | invites | backup | status
+```
+
+It backs `accounts.db` up nightly into `<server store>/server/backups/`
+(local only for now). Invites are for trying it out until the front
+(S1b) puts accounts and assets behind the one public port: a hub link
+names one origin for both. `chimera_asset_server` checks tickets with
+`<server store>/server/accounts/ticket.pub` and polls revocations from
+127.0.0.1:8741 every 30 s (`--no-tickets`: tokens only).
+
 ## Pre-flight smoke test (the evening before, and an hour before)
 
 1. Server up, log shows the banner, the build version, a printed seed and a
