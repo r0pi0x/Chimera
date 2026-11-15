@@ -352,11 +352,14 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   Halo's own app runs the spec's respawn and starting loadout
   (`game::respawn`, `HaloRules`, not in the party apps); the grenade
   kind is switched (`+grenade_switch`, `net59`).
-  `game::vehicles` runs Halo's vehicles (the Warthog as data in
-  `data/vehicles/`) by the spec's own mass-point step at 30 Hz on avian's
-  spatial queries, writing a kinematic body that replicates as a moving
-  map prop (`NetProp`); seats suspend the rider's movement, and the
-  driver's camera is the seat's track through `MapView`.
+  `game::vehicles` runs Halo's vehicles (the Warthog, the Ghost and the
+  Scorpion as data in `data/vehicles/`) by the spec's own mass-point
+  step at 30 Hz on avian's spatial queries, writing a kinematic body
+  that replicates as a moving map prop (`NetProp`); seats suspend the
+  rider's movement; the seat camera (`vehicles::camera`) is the seat's
+  track in the heading frame with its pull-in, through `MapView`; the
+  wheels, steering and suspension are posed on the rigged prop
+  (`vehicles::look`), on a client from the replicated motion.
   Halo's
   files reach
   players without the disc through the asset store: `chimera_pack

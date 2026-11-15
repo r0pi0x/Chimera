@@ -1,6 +1,5 @@
 //! Halo's vehicles as data (`VehicleDef`): one document per vehicle in
-//! data/vehicles/ (the Warthog's; the Ghost and Scorpion come with their
-//! driving rules), compiled in and parsed once, in the tag's own units
+//! data/vehicles/ (the Warthog's, the Ghost's, the Scorpion's), compiled in and parsed once, in the tag's own units
 //! (specs/halo_ce/vehicles.md: world units, WU per tick, the turn limits,
 //! turn rate and seat rates in degrees). `VehicleDef::physics_def` derives
 //! what the mass-point step reads (`physics::PhysicsDef`: the inverse
@@ -15,6 +14,10 @@ use super::physics::{ChannelDef, Friction, PhysicsDef, PointDef};
 
 /// data/vehicles/warthog.toml, built in.
 pub const WARTHOG: &str = include_str!("../../../data/vehicles/warthog.toml");
+/// data/vehicles/ghost.toml, built in.
+pub const GHOST: &str = include_str!("../../../data/vehicles/ghost.toml");
+/// data/vehicles/scorpion.toml, built in.
+pub const SCORPION: &str = include_str!("../../../data/vehicles/scorpion.toml");
 
 /// The driving model a vehicle's type picks (vehicles.md "The vehicle
 /// tag", type).
@@ -209,9 +212,19 @@ impl VehicleDef {
         toml::from_str(WARTHOG).expect("data/vehicles/warthog.toml parses")
     }
 
+    /// The built-in Ghost.
+    pub fn ghost() -> Self {
+        toml::from_str(GHOST).expect("data/vehicles/ghost.toml parses")
+    }
+
+    /// The built-in Scorpion.
+    pub fn scorpion() -> Self {
+        toml::from_str(SCORPION).expect("data/vehicles/scorpion.toml parses")
+    }
+
     /// Every built-in vehicle, by name.
     pub fn builtin() -> Vec<VehicleDef> {
-        vec![Self::warthog()]
+        vec![Self::warthog(), Self::ghost(), Self::scorpion()]
     }
 
     /// The seat with the driver flag, if any.
@@ -235,6 +248,8 @@ impl VehicleDef {
             ground_k1: p.ground_normal_k1,
             ground_k0: p.ground_normal_k0,
             air_friction: p.air_friction,
+            xx_moment: xx,
+            yy_moment: yy,
             zz_moment: zz,
             inverse_inertia: tensor.inverse(),
             channels: p

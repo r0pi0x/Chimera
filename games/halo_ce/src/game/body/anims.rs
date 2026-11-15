@@ -259,7 +259,7 @@ fn keep<T>(bit: bool, base: bool, mut v: Vec<T>) -> Option<Vec<T>> {
 }
 
 /// The bounds as the two axes' keys (module doc).
-fn screen_axes(b: &ScreenBounds) -> [Axis; 2] {
+pub fn screen_axes(b: &ScreenBounds) -> [Axis; 2] {
     [
         Axis {
             param: None,

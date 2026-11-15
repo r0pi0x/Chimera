@@ -37,9 +37,10 @@
 //!   decals and lights, shots shown on every machine; `fx::objects`: thrown
 //!   grenades, explosions, plasma countdowns, items on the ground and their
 //!   pickup sounds, on every machine;
-//! - `vehicles`: the scenario's vehicles (the Warthog; vehicles.md):
-//!   placement as moving props, the mass-point physics on the engine's
-//!   collision, driving, seats and the seat camera, splatter and riders'
+//! - `vehicles`: the scenario's vehicles (the Warthog, the Ghost and the
+//!   Scorpion; vehicles.md): placement as moving props, the mass-point
+//!   physics on the engine's collision, driving, seats, the seat camera
+//!   (`camera`) and the model's overlays (`look`), splatter and riders'
 //!   damage;
 //! - `respawn`: Halo's players' loadout and respawn by
 //!   multiplayer_rules.md 4 (`HaloRules`, Halo's own app only);
