@@ -79,4 +79,6 @@ mod heavy {
     mod walk;
     mod vehicle_data;
     mod vehicles;
+    mod vehicles_net;
+    mod vehicle_deaths;
 }

@@ -1225,7 +1225,7 @@ fn step(
         Has<Zoomed>,
         Has<Dead>,
         Has<MovementLocked>,
-    )>,
+    ), Without<crate::core::Carried>>,
     characters: Query<(), With<Intent>>,
     bodies: Query<&RigidBody>,
     fixed: Query<(), With<super::objects::CaFixedNode>>,

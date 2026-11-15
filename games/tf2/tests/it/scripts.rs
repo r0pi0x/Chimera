@@ -4,14 +4,14 @@
 //! makes, then read back: as plain bytes (the asset store's record),
 //! decrypted with the key, missing without one; through a mount and
 //! through the packer's decrypting layer (`scripts::decrypting`); and the
-//! probe (`ice::probe_ctx`) finding the cipher a file was written with.
+//! probe (`ice::probe_ctx`) finding the level a file was written at.
 //! No real key or game file is used.
 
 use std::io;
 
 use chimera_core::mount::{Entry, FileSource, Mount};
 use tf2::game::{
-    ice::{self, CtxCipher, Fill, Reading},
+    ice::{self, CtxCipher},
     scripts::{self, CtxKey, ScriptSource},
 };
 
@@ -137,12 +137,8 @@ fn the_reader_and_the_packers_layer_read_through_a_mount() {
 fn the_probe_finds_the_cipher_a_file_was_written_with() {
     let plain = fixture();
     let key = throwaway_key();
-    let cipher = CtxCipher {
-        level: 1,
-        reading: Reading { fill: Fill::Blocked, registers: [3, 2, 1, 0], roles: [1, 2, 0], ..Reading::SPEC },
-    };
+    let cipher = CtxCipher { level: 1 };
     let enc = ice::encrypt_ctx(&cipher.ice(&key.0), &plain);
     let found = ice::probe_ctx(&key.0, &enc);
-    assert!(found.contains(&cipher), "{:?}", found.iter().map(CtxCipher::name).collect::<Vec<_>>());
-    assert!(found.len() <= 4, "the probe is that specific: {}", found.len());
+    assert_eq!(found, [cipher], "{:?}", found.iter().map(CtxCipher::name).collect::<Vec<_>>());
 }

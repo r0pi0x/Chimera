@@ -26,7 +26,7 @@ maps the code; [docs/DESIGN.md](docs/DESIGN.md) gives the reasons.
    `no_keys_tracked`; `.gitignore`.)
 2. **Specs, or listed sources only.** Code may be copied or adapted only
    from an approved permissive source in [THIRD_PARTY.md](THIRD_PARTY.md)
-   (now hl2-rs), and the file then starts with a header such as
+   (now hl2-rs and ICE), and the file then starts with a header such as
    `// Adapted from hl2-rs (MIT, see THIRD_PARTY.md): <original path>`;
    adding a source needs the user's OK (`third_party_headers_name_listed_sources`).
    All other third-party code (Source SDK 2013, leaked or decompiled code,

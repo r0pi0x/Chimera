@@ -6,12 +6,17 @@ algorithm, its variants and its certification triplets, and the slides of
 the paper's presentation; for the game's use of it, public community
 documentation of the engine's encrypted script files. No implementation
 of the cipher and no game or engine code was read.
-Status: draft. **No reading of this description reproduces the paper's
-certification triplets** (Open question 1): an implementation of it
-(`games/tf2`, M2a) matches this spec's own derived values (cases 6, 7,
-11–14), and none of 55,296 combinations of the listed alternatives
-reproduces any of the three triplets. Which combination the game's files
-use is to be settled with a real file and the user's key (case 18).
+Status: superseded for implementation. Since 2026-11-15 `games/tf2`'s
+ICE is a port of the designer's own reference implementation, which he
+placed in the public domain (user-approved source, THIRD_PARTY.md, "ICE"),
+not code written from this description. The port reproduces the three
+certification triplets (cases 1–4) and decrypts every one of the
+install's `.ctx` scripts at level 0 (case 18; open question 3 settled:
+Thin-ICE). This description does not: among its differences from the
+reference, the S-box offset table's S4 row 1 should read `cb`, not `cd`,
+and the key registers are filled from the key's last 16-bit word first.
+Cases 11–13 hold this description's own derived values, not the
+reference's; the other cases stay as checks.
 
 ## Summary
 
