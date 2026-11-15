@@ -45,7 +45,7 @@ port adds the ones below.
 | [models.md](models.md) | 1 | draft | render models |
 | [shaders.md](shaders.md) | 1 | draft | the shader classes and what each draws |
 | [scenario.md](scenario.md) | 1 | draft | spawns, netgame equipment, object placements, the sky |
-| sounds.md | 1 | planned | sound tags and the Xbox's compressed format |
+| [sounds.md](sounds.md) | 1 | draft | sound tags and the Xbox's compressed format |
 | animations.md | 1 | planned | animation graphs and compressed node animations |
 | [objects.md](objects.md) | 2 | draft | object, unit, biped, item and scenery tags as data |
 | [movement.md](movement.md) | 2 | draft | the player's movement |
