@@ -221,3 +221,15 @@ fn a_ladder_mixing_halos_rungs_with_the_other_games_runs_to_its_end() {
     assert_eq!(phase(&sim), Phase::MatchOver, "the match ends at the last rung");
     assert_eq!(sim.app.world().resource::<Match>().result, Some(Some(team_a)));
 }
+
+/// Halo's guns keep their view and held models on Halo's own maps in the
+/// party (its bundle's `kept`, in the party's `MAP_SOURCES`): without it a
+/// Halo rung on Hang 'Em High showed no gun in hand (found in a tool run).
+#[test]
+fn halos_guns_stay_in_hand_on_its_own_maps() {
+    let kit = chimera_world::map::KitLoad::Players(party_kit::MAP_SOURCES.kept);
+    for gun in weapons::GUNS {
+        assert!(kit.wants(gun), "{gun}");
+    }
+    assert!(kit.any_models());
+}

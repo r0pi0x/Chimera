@@ -208,8 +208,8 @@ pub const SURFACES: &[SurfaceTable] = &[
 ];
 
 /// What of the guests' parts stays on their own maps: their guns' held
-/// and view models (Halo lends none).
-pub static KEPT: [&str; 2] = [GUESTS[0].kept[0], GUESTS[1].kept[0]];
+/// and view models (Halo's too: its guns in hand on its maps).
+pub static KEPT: [&str; 3] = [GUESTS[0].kept[0], GUESTS[1].kept[0], GUESTS[2].kept[0]];
 
 /// The guests' players, guns and HUD looks on the maps of other games
 /// (Halo's: its Spartan body).

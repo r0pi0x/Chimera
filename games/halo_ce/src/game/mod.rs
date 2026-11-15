@@ -170,7 +170,9 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
     guest: Some(&fx::load::GUEST),
-    kept: &[],
+    // Its guns' view and held models stay on its maps in an app whose
+    // gameplay is another game's (a party's Halo rungs on Hang 'Em High).
+    kept: &["halo_ce:"],
     binds: &[],
     view_model_fov: Some(view::fov),
     sim: |app| {
