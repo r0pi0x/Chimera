@@ -53,6 +53,9 @@ struct Expected {
     vertices: usize,
     collision_triangles: usize,
     bounds: [[f32; 2]; 3],
+    /// Spawns without a team (slayer's), red's and blue's (capture the
+    /// flag's after the flag check): multiplayer_rules.md 11.2.
+    spawns: [usize; 3],
 }
 
 const HANG_EM_HIGH: Expected = Expected {
@@ -61,6 +64,7 @@ const HANG_EM_HIGH: Expected = Expected {
     vertices: 5381,
     collision_triangles: 2874,
     bounds: [[5.900, 35.878], [-22.823, 15.823], [-9.253, 8.183]],
+    spawns: [28, 19, 20],
 };
 
 const BLOOD_GULCH: Expected = Expected {
@@ -69,6 +73,7 @@ const BLOOD_GULCH: Expected = Expected {
     vertices: 5790,
     collision_triangles: 5468,
     bounds: [[5.907, 131.902], [-190.219, -45.057], [-0.349, 26.233]],
+    spawns: [16, 17, 21],
 };
 
 fn bounds_of(map: &MapData) -> (Vec3, Vec3) {
@@ -166,8 +171,11 @@ fn check(mount: &Mount, e: &Expected) -> MapData {
     // the lowest point), and ground under each within a body height.
     assert!(!map.spawns.is_empty());
     assert_eq!(map.spawns.len(), map.spawn_yaws.len());
-    for (p, team) in &map.spawns {
-        assert_eq!(*team, None, "free-for-all slayer has no teams");
+    // Slayer's starts without a team, capture the flag's red and blue as
+    // Team 1 and 2 (`maps::spawns`).
+    let of = |t: Option<u8>| map.spawns.iter().filter(|(_, team)| team.map(|t| t.0) == t).count();
+    assert_eq!([of(None), of(Some(1)), of(Some(2))], e.spawns, "slayer, red and blue spawns");
+    for (p, _) in &map.spawns {
         let slack = Vec3::splat(0.05);
         assert!(p.cmpge(want_lo - slack).all() && p.cmple(want_hi + slack).all(), "{p} outside the world");
         let up = 0.3;
