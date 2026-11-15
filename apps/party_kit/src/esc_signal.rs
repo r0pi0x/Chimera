@@ -22,6 +22,11 @@
 //! the game for N players?"), Stay first. The keys at the foot and "Match
 //! live" with the threat mark after them. Options and Host settings are
 //! the Settings screen's (`settings`).
+//!
+//! Over the themed pre-match lobby (`Drawn::lobby`) there is no panel:
+//! only Leave's confirm ("Leave the lobby?", Stay first) on a flat shade
+//! as deep as Settings' (`settings::LOBBY_SHADE`), so the lobby reads dimmed under
+//! it and its header doesn't ghost through; Settings brings its own.
 
 use bevy::prelude::*;
 use chimera_ui::{
@@ -50,7 +55,7 @@ pub struct VoteShown {
 
 /// What to draw.
 pub struct Drawn<'a> {
-    /// The pre-match lobby's menu: its lines (the match hasn't started).
+    /// Over the themed pre-match lobby: its overlays only (no panel).
     pub lobby: bool,
     pub page: Page,
     pub focus: usize,
@@ -86,6 +91,14 @@ pub fn spawn(
     // ink curve, eased (no corners where it would read as a wall) and
     // dithered per pixel: a gradient node's stops are 8-bit, and the
     // near-opaque ink banded in wide stripes.
+    if d.lobby {
+        // Over the lobby: Settings draws its own page and shade; Leave's
+        // confirm brings a flat one.
+        if d.page == Page::ConfirmLeave {
+            confirm(c, ui, root, crate::settings::LOBBY_SHADE, "Leave the lobby?", "You go back to the main menu; the match starts without you.", "Leave", d.focus);
+        }
+        return root;
+    }
     match shades {
         Some(shades) => {
             c.entity(root).insert(MaterialNode(shades.add(ShadeMaterial::new(t, Tone::Ink, 0.92, 0.12, 0.68))));
@@ -113,8 +126,7 @@ pub fn spawn(
     ui.lockup(c, panel, images, icons, lay("lockup"));
     let ps = ui.boxed(c, panel, UiStyle { gap: Some(0.7), margin: Some([2.4, 0.0, 1.4, 0.0].into()), ..UiStyle::row() });
     ui.mark(c, ps, Tone::Acc, 0.5, 0.5);
-    let paused = if d.lobby { "The match hasn't started: the lobby waits" } else { "Paused for you only: the match goes on" };
-    ui.text(c, ps, Role::Mono, 0.58, Tone::Fg2, paused);
+    ui.text(c, ps, Role::Mono, 0.58, Tone::Fg2, "Paused for you only: the match goes on");
     let list = ui.boxed(c, panel, UiStyle::column());
     for (i, e) in d.entries.iter().enumerate() {
         entry(c, ui, list, i, e, d);
@@ -129,29 +141,18 @@ pub fn spawn(
     }
     // The keys and the live line at the foot.
     let foot = ui.boxed(c, root, UiStyle { gap: Some(1.6), ..UiStyle::row() }.abs([Some(lay("panel_x")), None, None, Some(lay("foot_y"))]));
-    for (k, what) in [("↑↓", "Select"), ("Enter", "Confirm"), ("Esc", if d.lobby { "Lobby" } else { "Resume" })] {
+    for (k, what) in [("↑↓", "Select"), ("Enter", "Confirm"), ("Esc", "Resume")] {
         let g = ui.boxed(c, foot, UiStyle { gap: Some(0.45), ..UiStyle::row() });
         ui.kbd(c, g, k, 0.56, Tone::Fg);
         ui.text(c, g, Role::Mono, 0.56, Tone::Fg2, what);
     }
     // In the keys' line.
     let live = ui.boxed(c, foot, UiStyle { gap: Some(0.6), margin: Some([0.0, 0.0, 0.0, 1.4].into()), ..UiStyle::row() });
-    if d.lobby {
-        ui.mark(c, live, Tone::Acc, 0.6, 0.6);
-        ui.text(c, live, Role::Mono, 0.52, Tone::Fg2, "Lobby • the match starts when everyone is ready");
-    } else {
-        ui.mark(c, live, Tone::Threat, 0.6, 0.6);
-        ui.text(c, live, Role::Mono, 0.52, Tone::Fg2, "Match live • you can still be hit");
-    }
-    match d.page {
-        Page::ConfirmDisconnect(n) => {
-            let who = if n == 1 { "1 player".to_string() } else { format!("{n} players") };
-            confirm(c, ui, root, &format!("End the game for {who}?"), "You are the host: leaving closes the server.", "End the game", d.focus);
-        }
-        Page::ConfirmLeave => {
-            confirm(c, ui, root, "Leave the lobby?", "You go back to the main menu; the match starts without you.", "Leave", d.focus);
-        }
-        _ => {}
+    ui.mark(c, live, Tone::Threat, 0.6, 0.6);
+    ui.text(c, live, Role::Mono, 0.52, Tone::Fg2, "Match live • you can still be hit");
+    if let Page::ConfirmDisconnect(n) = d.page {
+        let who = if n == 1 { "1 player".to_string() } else { format!("{n} players") };
+        confirm(c, ui, root, 0.72, &format!("End the game for {who}?"), "You are the host: leaving closes the server.", "End the game", d.focus);
     }
     root
 }
@@ -263,9 +264,10 @@ fn vote_box(c: &mut Commands, ui: &Ui, panel: Entity, v: &VoteShown) {
     }
 }
 
-/// The host's leave: a modal with the threat bar, Stay first.
+/// A leave (the host's, the lobby's): a modal with the threat bar over a
+/// flat shade (ink at `shade`), Stay first.
 #[allow(clippy::too_many_arguments)]
-fn confirm(c: &mut Commands, ui: &Ui, root: Entity, title: &str, line: &str, go: &str, focus: usize) {
+fn confirm(c: &mut Commands, ui: &Ui, root: Entity, shade: f32, title: &str, line: &str, go: &str, focus: usize) {
     let shade = c
         .spawn((
             Node {
@@ -276,7 +278,7 @@ fn confirm(c: &mut Commands, ui: &Ui, root: Entity, title: &str, line: &str, go:
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(ui.color(Tone::Ink, 0.72)),
+            BackgroundColor(ui.color(Tone::Ink, shade)),
             bevy::ui::FocusPolicy::Block,
             ChildOf(root),
         ))

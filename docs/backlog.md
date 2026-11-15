@@ -208,9 +208,11 @@ started; the user asked to avoid server lag while testers play.
   over the lobby, nothing could be clicked while the map loaded, Esc gave
   the match's menu, and players were spawned with a gun as soon as the
   map was in. Now the lobby owns the screen and the input (no HUD, no
-  world drawn, Ready and Leave buttons, Esc its own menu), nobody is in
-  play until the countdown's end, and the map left is unloaded first.
-  Left: M9's "Left".
+  world drawn, Ready and Leave buttons), nobody is in play until the
+  countdown's end, and the map left is unloaded first. Since
+  `lobby-menus` (user's call): no Escape menu in the lobby; its header
+  has Settings (an overlay, the lobby live under it), Report a bug and
+  Leave (confirmed); Esc only closes those. Left: M9's "Left".
 - **Infected ship turrets** (combat_arms:auto-turret_infecteds_01/02/03;
   fixed in 7.1, confirm in a playtest): they kill nobody; now a
   `ladder_exclusions` entry, so drawn ladders skip them.

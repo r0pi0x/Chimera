@@ -12,10 +12,14 @@
 //! The staging: during the lobby nobody is in play (every character
 //! staged: no weapon, dead, out of the game) and each client shows the
 //! lobby in place of the match (no HUD, no world drawn, the input the
-//! lobby's) while the map loads; Esc opens the lobby's menu; Ready and
-//! Leave work while a client still loads; everyone spawns on the first
-//! rung at the countdown's end; the map a match left is unloaded before
-//! the next lobby shows. Ticks only.
+//! lobby's) while the map loads; the themed lobby (the Ultimate Gun
+//! Game's theme on the clients: `staged_signal_party`) has no Escape
+//! menu, Esc only closing Settings and Leave's confirm over it, Settings
+//! keeping the lobby live under it and staying open across the match's
+//! start; the plain lobby (Lucker Party's) keeps the match's Escape
+//! menu; the header's buttons and Ready work while a client still
+//! loads; everyone spawns on the first rung at the countdown's end; the
+//! map a match left is unloaded before the next lobby shows. Ticks only.
 
 use std::time::Duration;
 
@@ -24,7 +28,7 @@ use chimera_client::client::{
     AppHooks,
     front_end::AppMenu,
     hud::HudCover,
-    prematch_lobby::{LobbyGate, LobbyView, PreMatchLobbyPlugin},
+    prematch_lobby::{LobbyGate, LobbyOverlay, LobbyView, PreMatchLobbyPlugin},
 };
 use chimera_core::{
     console::{Console, ConsoleAppExt},
@@ -117,9 +121,32 @@ fn file_of_loaded_map(world: &mut World) {
     }
 }
 
+/// `setup` with Settings and the report dialog (the Ultimate Gun Game's
+/// front end).
+fn setup_signal(app: &mut App) {
+    setup(app);
+    app.add_plugins((party_kit::settings::SettingsPlugin, party_kit::feedback_signal::FeedbackSignalPlugin));
+}
+
+/// `staged_party` whose clients draw in the Ultimate Gun Game's theme
+/// (the themed lobby, the Signal Escape menu and Settings).
+fn staged_signal_party() -> NetSim {
+    let mut sim = staged_party_with(setup_signal);
+    for c in &mut sim.clients {
+        c.app
+            .insert_resource(chimera_ui::Theme::from_toml(include_str!("../../../ultimate_gun_game/data/theme.toml")).unwrap())
+            .insert_resource(chimera_ui::UiUnits::new(1080.0, 1.0));
+    }
+    sim
+}
+
 /// A party server with the lobby on and two clients, the server's
 /// `changelevel` a test map coming in `SERVER_LOAD` frames later.
 pub(crate) fn staged_party() -> NetSim {
+    staged_party_with(setup)
+}
+
+fn staged_party_with(setup: fn(&mut App)) -> NetSim {
     let mut sim = NetSim::new(
         CaSim,
         LinkConditions {
@@ -419,36 +446,169 @@ fn nobody_plays_in_the_lobby_and_everyone_spawns_at_its_end() {
     }
 }
 
-#[test]
-fn escape_in_the_lobby_opens_the_lobby_menu() {
-    let mut sim = staged_party();
-    assert!(sim.until(900, |s| s.clients[0].app.world().contains_resource::<Joined>() && lobby_view(s, 0)));
-    // Long enough to look at: no countdown.
+/// Client `i`'s Escape menu.
+fn esc(sim: &NetSim, i: usize) -> &EscMenu {
+    sim.clients[i].app.world().resource::<EscMenu>()
+}
+
+/// Where client `i`'s Settings shows (None: shut).
+fn settings_ctx(sim: &NetSim, i: usize) -> Option<party_kit::settings::Context> {
+    sim.clients[i].app.world().resource::<party_kit::settings::Settings>().ctx
+}
+
+fn overlay(sim: &NetSim, i: usize) -> bool {
+    sim.clients[i].app.world().resource::<LobbyOverlay>().0
+}
+
+/// Client 0 joined and in the lobby, no countdown for a minute.
+fn in_lobby(sim: &mut NetSim) {
     sim.server.app.world_mut().resource_mut::<LobbySettings>().countdown = 60.0;
-    tap(&mut sim, 0, KeyCode::Escape);
-    {
-        let m = sim.clients[0].app.world().resource::<EscMenu>();
-        assert!(m.open && m.lobby && m.page == Page::Main, "{m:?}");
-    }
-    let labels: Vec<String> = esc_menu::lobby_entries(true).into_iter().map(|e| e.label).collect();
-    assert_eq!(labels, ["Back to the lobby", "Settings", "Report a bug", "Leave the lobby"]);
-    assert!(!esc_menu::shown_entries(true, true, false).iter().any(|e| e.action == Some(Action::Leave)), "the match's menu has no Leave");
-    // Leave asks first; Stay goes back; Esc closes it.
-    sim.clients[0].app.world_mut().write_message(Action::Leave);
-    sim.ticks(2);
-    assert_eq!(sim.clients[0].app.world().resource::<EscMenu>().page, Page::ConfirmLeave);
-    sim.clients[0].app.world_mut().write_message(Action::Back);
-    sim.ticks(2);
-    assert_eq!(sim.clients[0].app.world().resource::<EscMenu>().page, Page::Main);
-    tap(&mut sim, 0, KeyCode::Escape);
-    assert!(!sim.clients[0].app.world().resource::<EscMenu>().open);
-    lobby_owns(&mut sim, 0).unwrap();
-    assert!(sim.clients[0].app.world().resource::<JoinProgress>().failure.is_none(), "still connected");
+    assert!(sim.until(900, |s| s.clients[0].app.world().contains_resource::<Joined>() && lobby_view(s, 0)));
 }
 
 #[test]
-fn ready_and_leave_work_while_a_client_still_loads() {
+fn escape_in_the_themed_lobby_only_closes_what_is_open() {
+    let mut sim = staged_signal_party();
+    in_lobby(&mut sim);
+    // Nothing open: Esc does nothing (no menu, no leave).
+    for _ in 0..2 {
+        tap(&mut sim, 0, KeyCode::Escape);
+        assert!(!esc(&sim, 0).open, "{:?}", esc(&sim, 0));
+        assert!(!overlay(&sim, 0));
+        lobby_owns(&mut sim, 0).unwrap();
+    }
+    // Settings over the lobby; Esc closes it.
+    sim.clients[0].app.world_mut().write_message(LobbyAction::Settings);
+    sim.ticks(2);
+    {
+        let m = esc(&sim, 0);
+        assert!(m.open && m.lobby && m.page == Page::Options(0), "{m:?}");
+    }
+    assert_eq!(settings_ctx(&sim, 0), Some(party_kit::settings::Context::Game));
+    assert!(overlay(&sim, 0), "the lobby's key hints hide under it");
+    tap(&mut sim, 0, KeyCode::Escape);
+    assert!(!esc(&sim, 0).open && settings_ctx(&sim, 0).is_none() && !overlay(&sim, 0), "Esc closed Settings: {:?}", esc(&sim, 0));
+    // Leave asks first, Stay first; Esc closes it.
+    sim.clients[0].app.world_mut().write_message(LobbyAction::Leave);
+    sim.ticks(2);
+    {
+        let m = esc(&sim, 0);
+        assert!(m.open && m.lobby && m.page == Page::ConfirmLeave && m.focus == 0, "{m:?}");
+    }
+    tap(&mut sim, 0, KeyCode::Escape);
+    assert!(!esc(&sim, 0).open, "Esc closed the confirm");
+    // Settings' Back closes it too (no first page behind it).
+    sim.clients[0].app.world_mut().write_message(LobbyAction::Settings);
+    sim.ticks(2);
+    sim.clients[0].app.world_mut().write_message(Action::Back);
+    sim.ticks(2);
+    assert!(!esc(&sim, 0).open);
+    tap(&mut sim, 0, KeyCode::Escape);
+    assert!(!esc(&sim, 0).open);
+    lobby_owns(&mut sim, 0).unwrap();
+    assert!(sim.clients[0].app.world().resource::<JoinProgress>().failure.is_none(), "still connected");
+    // No lobby entries in the menu's data.
+    assert!(!esc_menu::shown_entries(true, true, false).iter().any(|e| e.action == Some(Action::Leave)), "the match's menu has no Leave");
+}
+
+#[test]
+fn escape_in_the_plain_lobby_opens_the_match_menu() {
+    // Lucker Party's: no themed lobby, no header buttons; Esc is the
+    // match's Escape menu as before.
     let mut sim = staged_party();
+    in_lobby(&mut sim);
+    tap(&mut sim, 0, KeyCode::Escape);
+    {
+        let m = esc(&sim, 0);
+        assert!(m.open && !m.lobby && m.page == Page::Main, "{m:?}");
+    }
+    tap(&mut sim, 0, KeyCode::Escape);
+    assert!(!esc(&sim, 0).open);
+    lobby_owns(&mut sim, 0).unwrap();
+}
+
+/// The server's players ready (`LobbyReady`).
+fn ready_on_server(sim: &mut NetSim) -> usize {
+    let w = sim.server.app.world_mut();
+    w.query_filtered::<(), With<LobbyReady>>().iter(w).count()
+}
+
+/// Client `i`'s own row in its lobby reads ready.
+fn ready_here(sim: &NetSim, i: usize) -> bool {
+    lobby_view(sim, i)
+        && sim.clients[i].app.world().resource::<LobbyView>().rows.iter().any(|r| r.local && r.status == chimera_net::prematch::status::READY)
+}
+
+#[test]
+fn settings_over_the_lobby_keeps_it_live_and_ready_kept() {
+    let mut sim = staged_signal_party();
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_ready_up 1");
+    assert!(sim.until(900, |s| (0..2).all(|i| s.clients[i].app.world().contains_resource::<Joined>() && lobby_view(s, i))));
+    sim.server.app.world_mut().resource_mut::<LobbySettings>().countdown = 60.0;
+    // Client 0 readies up, then opens Settings over the lobby.
+    sim.clients[0].app.world_mut().write_message(LobbyAction::Ready);
+    assert!(sim.until(120, |s| ready_here(s, 0)), "client 0 ready");
+    sim.clients[0].app.world_mut().write_message(LobbyAction::Settings);
+    sim.ticks(2);
+    assert_eq!(settings_ctx(&sim, 0), Some(party_kit::settings::Context::Game));
+    // Under it the lobby goes on: client 1 readies and the countdown
+    // starts, both seen on client 0; its own Ready holds.
+    let others_ready = |s: &NetSim| {
+        s.clients[0].app.world().resource::<LobbyView>().rows.iter().any(|r| !r.local && r.status == chimera_net::prematch::status::READY)
+    };
+    assert!(!others_ready(&sim));
+    sim.clients[1].app.world_mut().write_message(LobbyAction::Ready);
+    assert!(sim.until(120, |s| others_ready(s)), "client 1's Ready seen under Settings");
+    assert!(sim.until(120, |s| s.clients[0].app.world().resource::<LobbyView>().countdown.is_some()), "the countdown seen under Settings");
+    let before = sim.clients[0].app.world().resource::<LobbyView>().countdown;
+    assert!(
+        sim.until(200, |s| s.clients[0].app.world().resource::<LobbyView>().countdown != before),
+        "the countdown runs under Settings"
+    );
+    assert!(ready_here(&sim, 0) && ready_on_server(&mut sim) == 2, "client 0's Ready kept");
+    assert!(esc(&sim, 0).open && settings_ctx(&sim, 0).is_some() && overlay(&sim, 0), "Settings still open");
+    // Closed: the lobby as it was, still ready.
+    tap(&mut sim, 0, KeyCode::Escape);
+    assert!(settings_ctx(&sim, 0).is_none() && !overlay(&sim, 0));
+    assert!(ready_here(&sim, 0));
+    lobby_owns(&mut sim, 0).unwrap();
+}
+
+#[test]
+fn settings_stay_open_across_the_match_start() {
+    let mut sim = staged_signal_party();
+    in_lobby(&mut sim);
+    sim.clients[0].app.world_mut().write_message(LobbyAction::Settings);
+    sim.ticks(2);
+    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("settings_set cl_hitmarker 0");
+    sim.ticks(2);
+    let pending = |s: &NetSim| s.clients[0].app.world().resource::<party_kit::settings::Settings>().pending.clone();
+    assert_eq!(pending(&sim).get("cl_hitmarker").map(String::as_str), Some("0"), "a change pending");
+    // The match starts under it (the host's start: a short countdown).
+    sim.server.app.world_mut().resource_mut::<LobbySettings>().countdown = 1.0;
+    sim.server.app.world_mut().resource_mut::<Console>().submit("lobby_start 1");
+    assert!(sim.until(900, |s| !s.server.app.world().contains_resource::<PreMatch>()), "the lobby ends");
+    assert!(sim.until(120, |s| !lobby_view(s, 0)), "the lobby gone on client 0");
+    sim.ticks(10);
+    {
+        let m = esc(&sim, 0);
+        assert!(m.open && !m.lobby && m.page == Page::Options(0), "Settings stays, now the match's: {m:?}");
+    }
+    assert_eq!(settings_ctx(&sim, 0), Some(party_kit::settings::Context::Game));
+    assert_eq!(pending(&sim).get("cl_hitmarker").map(String::as_str), Some("0"), "nothing lost");
+    assert!(sim.clients[0].app.world().resource::<AppMenu>().open, "the input still Settings'");
+    // Back goes to the match's menu, as for Settings opened in play.
+    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("settings_press leave_discard");
+    sim.ticks(2);
+    sim.clients[0].app.world_mut().write_message(Action::Back);
+    sim.ticks(2);
+    let m = esc(&sim, 0);
+    assert!(m.open && m.page == Page::Main, "{m:?}");
+}
+
+#[test]
+fn the_lobby_buttons_work_while_a_client_still_loads() {
+    let mut sim = staged_signal_party();
     sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_ready_up 1");
     hold_join(&mut sim, 1);
     assert!(sim.until(900, |s| lobby_view(s, 1) && s.character_of(1).is_some()));
@@ -456,18 +616,46 @@ fn ready_and_leave_work_while_a_client_still_loads() {
     lobby_owns(&mut sim, 1).unwrap();
     // Ready while loading: kept on the server for when it has the map.
     sim.clients[1].app.world_mut().write_message(LobbyAction::Ready);
-    let ready = |s: &mut NetSim| {
-        let w = s.server.app.world_mut();
-        w.query_filtered::<(), With<LobbyReady>>().iter(w).count()
-    };
-    assert!(sim.until(120, |s| ready(s) == 1), "client 1 readied up while loading");
-    // Leave: asked first, then gone.
+    assert!(sim.until(120, |s| ready_on_server(s) == 1), "client 1 readied up while loading");
+    // Settings over the lobby and the loading panel; Esc closes it.
+    sim.clients[1].app.world_mut().write_message(LobbyAction::Settings);
+    sim.ticks(2);
+    {
+        let m = esc(&sim, 1);
+        assert!(m.open && m.lobby && m.page == Page::Options(0), "{m:?}");
+    }
+    assert!(settings_ctx(&sim, 1).is_some() && overlay(&sim, 1));
+    tap(&mut sim, 1, KeyCode::Escape);
+    assert!(!esc(&sim, 1).open && settings_ctx(&sim, 1).is_none());
+    // Report a bug: the report's capture (a made-up frame), then its
+    // dialog; Esc closes it and nothing else.
+    use chimera_client::client::feedback::{Feedback, FeedbackCapture};
+    sim.clients[1].app.insert_resource(FeedbackCapture::fake());
+    sim.clients[1].app.world_mut().write_message(LobbyAction::Report);
+    sim.ticks(2);
+    assert!(sim.clients[1].app.world().resource::<Feedback>().active(), "the report asked for");
+    assert!(overlay(&sim, 1), "the key hints hide under the report");
+    assert!(sim.until(60, |s| s.clients[1].app.world().resource::<Feedback>().shown()), "the report's dialog");
+    // The dialog reads typed keys (`KeyboardInput`), the menus held ones.
+    sim.clients[1].app.world_mut().write_message(bevy::input::keyboard::KeyboardInput {
+        key_code: KeyCode::Escape,
+        logical_key: bevy::input::keyboard::Key::Escape,
+        state: bevy::input::ButtonState::Pressed,
+        text: None,
+        repeat: false,
+        window: Entity::PLACEHOLDER,
+    });
+    tap(&mut sim, 1, KeyCode::Escape);
+    assert!(!sim.clients[1].app.world().resource::<Feedback>().active(), "Esc closed the report");
+    assert!(!esc(&sim, 1).open && !overlay(&sim, 1), "and opened nothing");
+    // Leave: asked first (Stay first), then gone.
     sim.clients[1].app.world_mut().write_message(LobbyAction::Leave);
     sim.ticks(2);
     {
-        let m = sim.clients[1].app.world().resource::<EscMenu>();
-        assert!(m.open && m.lobby && m.page == Page::ConfirmLeave, "{m:?}");
+        let m = esc(&sim, 1);
+        assert!(m.open && m.lobby && m.page == Page::ConfirmLeave && m.focus == 0, "{m:?}");
     }
+    assert!(!sim.clients[1].app.world().contains_resource::<Joined>(), "client 1 still loads");
     sim.clients[1].app.world_mut().write_message(Action::DisconnectYes);
     let players = |s: &mut NetSim| {
         let w = s.server.app.world_mut();

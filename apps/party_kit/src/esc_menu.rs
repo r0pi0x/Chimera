@@ -38,16 +38,24 @@
 //! main menu shows (out of a game) Esc is the main menu's and this menu
 //! stays shut; `AppMenu::open` then counts the main menu too.
 //!
-//! **The lobby's menu**: while the server's pre-match lobby owns the
-//! screen (`main_menu::owned_by_lobby`, over the loading panel too) the
-//! mouse is free and the game gets no input (`AppMenu::open`), and Esc
-//! opens this menu with the lobby's entries (`[[escape]]` with `lobby =
-//! true`, `lobby_entries`: Back to the lobby, Settings, Report a bug,
-//! Leave the lobby) instead of the match's (`EscMenu::lobby`, following
-//! the lobby: `follow_lobby`). Leave asks first (`Page::ConfirmLeave`,
-//! Stay first), as does the lobby's own Leave button
-//! (`prematch_lobby::LobbyLeaveAsked`, `ask_to_leave`); its Yes is
-//! `disconnect`.
+//! **The pre-match lobby**: while the server's lobby owns the screen
+//! (`main_menu::owned_by_lobby`, over the loading panel too) the mouse
+//! is free and the game gets no input (`AppMenu::open`). A themed lobby
+//! (`lobby_screen`: the Ultimate Gun Game's, `client::lobby_panel`) has
+//! no Escape menu: its header's buttons open what this menu holds, as
+//! overlays over the lobby (`EscMenu::lobby`: no first page, going back
+//! closes; `lobby_asked`): Settings (`Page::Options`, the lobby live
+//! under it, Ready kept) and Leave's confirm (`Page::ConfirmLeave`, Stay
+//! first; its Yes is `disconnect`); Report a bug is the report dialog.
+//! Esc there only closes what is open (Settings, the confirm; the dialog
+//! closes itself); with nothing open it does nothing. An overlay up
+//! (this menu, the dialog, the Controls page) tells the lobby to hide
+//! its key hints (`prematch_lobby::LobbyOverlay`). The lobby's end (the
+//! match starting under it) leaves Settings open, now the match's (Back
+//! goes to this menu's first page, as for Settings opened in play), and
+//! closes the confirm; a lobby coming up over this menu keeps Settings
+//! (now over the lobby) and closes the rest (`follow_lobby`). Lucker
+//! Party's plain lobby keeps the match's Escape menu.
 //!
 //! The vote panel (`VotePanel`): while a vote runs, everyone sees a
 //! small panel ("Ann wants to skip the map", F1 yes / F2 no, the counts,
@@ -197,15 +205,19 @@ pub struct EscMenu {
     pub focus: usize,
     /// When `focus` last moved (`chimera_ui::UiClock`: its wipe).
     pub focus_since: f64,
-    /// The pre-match lobby's menu (opened while the lobby owns the
-    /// screen, `main_menu::owned_by_lobby`): its entries (`lobby_entries`)
-    /// in place of the match's.
+    /// Open over the themed pre-match lobby (`lobby_screen`): only its
+    /// overlays (Settings, the Leave confirm), no first page; going back
+    /// closes.
     pub lobby: bool,
 }
 
 impl EscMenu {
+    /// Open or close at the first page (closing leaves the lobby's too).
     pub fn set_open(&mut self, open: bool) {
         self.open = open;
+        if !open {
+            self.lobby = false;
+        }
         self.page = Page::Main;
         self.notice = None;
         self.focus = 0;
@@ -225,23 +237,10 @@ pub struct ShownEntry {
 /// The first page's entries (data/main_menu.toml `[[escape]]`) for a host
 /// or not, in an app with the main menu or not, a vote running or not.
 pub fn shown_entries(host: bool, main_menu: bool, voting: bool) -> Vec<ShownEntry> {
-    entries_for(false, host, main_menu, voting)
-}
-
-/// The pre-match lobby's menu's entries (data/main_menu.toml `[[escape]]`
-/// with `lobby = true`): back to the lobby, Settings, Report a bug,
-/// Leave the lobby (which asks first).
-pub fn lobby_entries(main_menu: bool) -> Vec<ShownEntry> {
-    entries_for(true, false, main_menu, false)
-}
-
-/// The entries of the lobby's menu or the match's.
-pub fn entries_for(lobby: bool, host: bool, main_menu: bool, voting: bool) -> Vec<ShownEntry> {
     use crate::main_menu::{EscDoes, When};
     crate::main_menu::MenuData::shipped()
         .escape
         .into_iter()
-        .filter(|e| e.lobby == lobby)
         .filter(|e| match e.when {
             When::Always => true,
             When::Host => host,
@@ -255,7 +254,6 @@ pub fn entries_for(lobby: bool, host: bool, main_menu: bool, voting: bool) -> Ve
                 EscDoes::Disconnect => Some(Action::Disconnect),
                 EscDoes::Quit => Some(Action::Quit),
                 EscDoes::Feedback => Some(Action::Feedback),
-                EscDoes::Leave => Some(Action::Leave),
                 EscDoes::Vote => (!voting).then_some(Action::SkipMap),
             };
             ShownEntry {
@@ -266,6 +264,13 @@ pub fn entries_for(lobby: bool, host: bool, main_menu: bool, voting: bool) -> Ve
             }
         })
         .collect()
+}
+
+/// The themed pre-match lobby owns the screen (`main_menu::owned_by_lobby`
+/// under a theme that lays the lobby out, `[layout.lobby]`): its own
+/// buttons, no Escape menu (module doc).
+pub fn lobby_screen(lobby: Option<&chimera_client::client::prematch_lobby::LobbyView>, theme: Option<&chimera_ui::Theme>) -> bool {
+    crate::main_menu::owned_by_lobby(lobby) && theme.is_some_and(|t| t.has_layout("lobby"))
 }
 
 /// The Signal look draws the menu (a theme with `[layout.esc]`: the
@@ -301,7 +306,7 @@ fn navigate(
         Page::Main => {
             let host = host::may_change(role.0.as_deref(), role.1.as_deref());
             let voting = vote.as_ref().is_some_and(|v| v.active.is_some());
-            let entries = entries_for(menu.lobby, host, main_menu.is_some(), voting);
+            let entries = shown_entries(host, main_menu.is_some(), voting);
             let live: Vec<usize> = (0..entries.len()).filter(|i| entries[*i].action.is_some()).collect();
             if live.is_empty() {
                 return;
@@ -378,7 +383,7 @@ pub enum Action {
     /// The confirm's Yes.
     DisconnectYes,
     /// Leave the pre-match lobby (asks first: `Page::ConfirmLeave`, whose
-    /// Yes is `DisconnectYes`).
+    /// Yes is `DisconnectYes`; the lobby's Leave button, `lobby_asked`).
     Leave,
     /// Report a bug: the menu closes, then the screenshot, then the
     /// report dialog (`client::feedback`, `feedback menu`).
@@ -416,8 +421,8 @@ impl Plugin for EscMenuPlugin {
         chimera_ui::pointer_lead::add(app);
         chimera_client::client::hud::hud_cover(app);
         chimera_client::client::ui_scene::UiSceneHooks::add(app.world_mut(), "esc", scene_esc);
-        app.insert_resource(chimera_client::client::prematch_lobby::LeaveAnswered)
-            .add_observer(ask_to_leave)
+        app.insert_resource(chimera_client::client::prematch_lobby::LobbyAnswered)
+            .add_observer(lobby_asked)
             .init_resource::<EscMenu>()
             .init_resource::<OptionTabs>()
             .init_resource::<EscMenuTitle>()
@@ -425,6 +430,7 @@ impl Plugin for EscMenuPlugin {
             .init_resource::<CapturedKeys>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<VotePanel>()
+            .init_resource::<chimera_client::client::prematch_lobby::LobbyOverlay>()
             .add_message::<Action>()
             .add_systems(Update, crate::ui_cues::hover::<Action>.in_set(EscMenuSystems))
             .console_command("chimera:escmenu", "escmenu [options|host]: open or close the Escape menu (at that page).", |w, a| {
@@ -462,7 +468,7 @@ impl Plugin for EscMenuPlugin {
             )
             .add_systems(
                 Update,
-                (sync_tabs, follow_lobby, toggle, navigate, clicks, act, refresh_values, sync, show, show_vote, cover_huds)
+                (sync_tabs, follow_lobby, toggle, navigate, clicks, act, refresh_values, sync, show, show_vote, cover_huds, lobby_overlay)
                     .chain()
                     .in_set(EscMenuSystems)
                     .before(crate::controls::ControlsSystems),
@@ -470,25 +476,59 @@ impl Plugin for EscMenuPlugin {
     }
 }
 
-/// The lobby's Leave (`prematch_lobby::LobbyLeaveAsked`): the lobby's
-/// menu open at its confirm (Stay first).
-fn ask_to_leave(_: On<chimera_client::client::prematch_lobby::LobbyLeaveAsked>, mut m: ResMut<EscMenu>) {
+/// The lobby's Settings and Leave (`prematch_lobby::LobbyAppAsked`):
+/// this menu open over the lobby at Settings, or at Leave's confirm
+/// (Stay first).
+fn lobby_asked(asked: On<chimera_client::client::prematch_lobby::LobbyAppAsked>, mut m: ResMut<EscMenu>) {
+    use chimera_client::client::prematch_lobby::LobbyAction;
+    let page = match asked.0 {
+        LobbyAction::Settings => Page::Options(0),
+        LobbyAction::Leave => Page::ConfirmLeave,
+        _ => return,
+    };
     m.set_open(true);
     m.lobby = true;
-    m.page = Page::ConfirmLeave;
+    m.page = page;
     m.focus = 0;
 }
 
-/// The open menu follows the lobby: the lobby's menu while it owns the
-/// screen, the match's once it is gone (the match started under it).
-fn follow_lobby(lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyView>>, mut menu: ResMut<EscMenu>) {
-    let up = crate::main_menu::owned_by_lobby(lobby.as_deref());
-    if menu.open && menu.lobby != up {
+/// The open menu follows the themed lobby (`lobby_screen`): its end (the
+/// match started under it) leaves Settings open as the match's and
+/// closes Leave's confirm; a lobby coming up over the open menu keeps
+/// Settings, over the lobby now, and closes the rest.
+fn follow_lobby(
+    lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
+    theme: Option<Res<chimera_ui::Theme>>,
+    mut menu: ResMut<EscMenu>,
+    mut console: Option<ResMut<Console>>,
+) {
+    if !menu.open {
+        return;
+    }
+    let up = lobby_screen(lobby.as_deref(), theme.as_deref());
+    if menu.lobby == up {
+        return;
+    }
+    let settings = matches!(menu.page, Page::Options(_) | Page::Host);
+    if settings {
         menu.lobby = up;
-        if !up && menu.page == Page::ConfirmLeave {
-            menu.page = Page::Main;
-            menu.focus = 0;
-        }
+    } else {
+        leave_page(&mut menu, console.as_deref_mut());
+        menu.set_open(false);
+    }
+}
+
+/// The lobby hides its key hints while something is open over it: this
+/// menu (Settings, Leave's confirm), the report dialog, the Controls page.
+fn lobby_overlay(
+    menu: Res<EscMenu>,
+    report: Option<Res<chimera_client::client::feedback::Feedback>>,
+    controls: Option<Res<crate::controls::ControlsPage>>,
+    mut overlay: ResMut<chimera_client::client::prematch_lobby::LobbyOverlay>,
+) {
+    let on = menu.open || report.is_some_and(|r| r.active()) || controls.is_some_and(|c| c.open);
+    if overlay.0 != on {
+        overlay.0 = on;
     }
 }
 
@@ -520,7 +560,8 @@ fn scene_esc(w: &mut World, args: &[String]) -> Result<(), String> {
 }
 
 /// Esc: open, back to the first page, or close (unless the console, chat
-/// or the Controls page has it).
+/// or the Controls page has it). Over the themed lobby it only closes
+/// what is open (module doc).
 fn toggle(
     keys: Res<ButtonInput<KeyCode>>,
     console: Option<Res<chimera_client::client::console::ConsoleUi>>,
@@ -531,7 +572,7 @@ fn toggle(
     mut console_cmds: Option<ResMut<Console>>,
     mut cues: MessageWriter<chimera_client::client::ui_sound::UiCue>,
     settings: Option<Res<crate::settings::Settings>>,
-    lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
+    (lobby, theme): (Option<Res<chimera_client::client::prematch_lobby::LobbyView>>, Option<Res<chimera_ui::Theme>>),
 ) {
     use chimera_client::client::ui_sound::UiCue;
     if !keys.just_pressed(KeyCode::Escape) {
@@ -541,11 +582,10 @@ fn toggle(
     if settings.is_some_and(|s| s.esc_taken) {
         return;
     }
-    // The pre-match lobby owns the screen: Esc is its menu's, over the
+    // The pre-match lobby owns the screen: Esc is the lobby's, over the
     // loading panel too.
-    let lobby = crate::main_menu::owned_by_lobby(lobby.as_deref());
     // Out of a game the main menu has Esc.
-    if !lobby && main_menu.is_some_and(|m| m.shown()) {
+    if !crate::main_menu::owned_by_lobby(lobby.as_deref()) && main_menu.is_some_and(|m| m.shown()) {
         if menu.open {
             menu.set_open(false);
         }
@@ -554,14 +594,20 @@ fn toggle(
     if console.is_some_and(|c| c.open) || chat.is_some_and(|c| c.open.is_some()) || controls.is_some_and(|c| c.open) {
         return;
     }
+    // The themed lobby has no Escape menu: Esc closes what is open over
+    // it, else nothing.
+    let lobby_screen = lobby_screen(lobby.as_deref(), theme.as_deref());
     if !menu.open {
+        if lobby_screen {
+            return;
+        }
         menu.set_open(true);
-        menu.lobby = lobby;
+        menu.lobby = false;
         cues.write(UiCue::new("ui_select"));
         return;
     }
     cues.write(UiCue::new("ui_back"));
-    if menu.page != Page::Main {
+    if menu.page != Page::Main && !menu.lobby {
         leave_page(&mut menu, console_cmds.as_deref_mut());
         if menu.page.confirm() {
             menu.focus = 0;
@@ -645,6 +691,11 @@ fn act_one(world: &mut World, action: Action) {
         Action::Back => {
             leave(world);
             let mut m = world.resource_mut::<EscMenu>();
+            if m.lobby {
+                // Over the lobby: no first page to go back to.
+                m.set_open(false);
+                return;
+            }
             if m.page.confirm() {
                 m.focus = 0;
             }
@@ -811,7 +862,7 @@ struct Shown {
     main_menu: bool,
     /// The Signal look (`esc_signal`): its selection, the window's units.
     signal: Option<(usize, u64, u32, u32)>,
-    /// The pre-match lobby's menu (`EscMenu::lobby`).
+    /// Over the themed lobby (`EscMenu::lobby`).
     lobby: bool,
 }
 
@@ -884,7 +935,7 @@ fn show(
                 mine: v.mine,
                 may_vote: v.may_vote,
             });
-            let entries = entries_for(now.lobby, now.host, now.main_menu, active.is_some());
+            let entries = shown_entries(now.host, now.main_menu, active.is_some());
             let at = crate::esc_signal::Drawn {
                 lobby: now.lobby,
                 page: menu.page,
@@ -990,13 +1041,10 @@ fn spawn_menu(
 }
 
 fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chimera_net::net::vote::VoteState>) {
-    let line = if shown.lobby { "The match hasn't started: the lobby waits" } else { "Paused for you only: the match goes on" };
+    let line = "Paused for you only: the match goes on";
     panel.spawn((Node { margin: UiRect::bottom(px(8.0)), ..default() }, children![text(line, 13.0, DIM)]));
     const WIDE: f32 = 320.0;
     for e in crate::main_menu::MenuData::shipped().escape {
-        if e.lobby != shown.lobby {
-            continue;
-        }
         let visible = match e.when {
             crate::main_menu::When::Always => true,
             crate::main_menu::When::Host => shown.host,
@@ -1013,7 +1061,6 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             EscDoes::Disconnect => Action::Disconnect,
             EscDoes::Quit => Action::Quit,
             EscDoes::Feedback => Action::Feedback,
-            EscDoes::Leave => Action::Leave,
             EscDoes::Vote => {
                 vote_rows(panel, vote, &e.label, WIDE);
                 continue;
