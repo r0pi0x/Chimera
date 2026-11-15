@@ -32,7 +32,9 @@
 //!   donor map, on any other;
 //! - `fx`: the guns' sounds and effects (effects.md, sounds.md): the library
 //!   from the donor map, effects played as the engine's sounds, particles,
-//!   decals and lights, shots shown on every machine;
+//!   decals and lights, shots shown on every machine; `fx::objects`: thrown
+//!   grenades, explosions, plasma countdowns, items on the ground and their
+//!   pickup sounds, on every machine;
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`

@@ -334,7 +334,14 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   climb on them; Halo's movement climbs by movement.md's aim rule.
   Halo's camera uses the renderer's real angles (nominal 70 → 48.11
   degrees vertical, `view::camera_fov`), its mover clips by movement.md's
-  detailed rule, and its spread uses the spec's direction table. Halo's
+  detailed rule, and its spread uses the spec's direction table. Every
+  gun is in hand with its states, each projectile has its own look
+  (guided shots steered to the server's target), and the server's
+  detonations, plasma countdowns and pickups are sent to every client
+  (`fx::objects`, net part `halo_ce_objects`); thrown grenades and items
+  are the server's entities, drawn as shown items through the engine's
+  `NetItem`; particle systems come from `blam_formats::effect::system`.
+  Halo's
   files reach
   players without the disc through the asset store: `chimera_pack
   pack|sets halo_ce` packs the disc's own files under the build its
