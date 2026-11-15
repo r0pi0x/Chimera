@@ -1,5 +1,5 @@
 //! Halo's vehicles as data (`VehicleDef`): one document per vehicle in
-//! data/vehicles/ (the Warthog's, the Ghost's), compiled in and parsed once, in the tag's own units
+//! data/vehicles/ (the Warthog's, the Ghost's, the Scorpion's), compiled in and parsed once, in the tag's own units
 //! (specs/halo_ce/vehicles.md: world units, WU per tick, the turn limits,
 //! turn rate and seat rates in degrees). `VehicleDef::physics_def` derives
 //! what the mass-point step reads (`physics::PhysicsDef`: the inverse
@@ -16,6 +16,8 @@ use super::physics::{ChannelDef, Friction, PhysicsDef, PointDef};
 pub const WARTHOG: &str = include_str!("../../../data/vehicles/warthog.toml");
 /// data/vehicles/ghost.toml, built in.
 pub const GHOST: &str = include_str!("../../../data/vehicles/ghost.toml");
+/// data/vehicles/scorpion.toml, built in.
+pub const SCORPION: &str = include_str!("../../../data/vehicles/scorpion.toml");
 
 /// The driving model a vehicle's type picks (vehicles.md "The vehicle
 /// tag", type).
@@ -215,9 +217,14 @@ impl VehicleDef {
         toml::from_str(GHOST).expect("data/vehicles/ghost.toml parses")
     }
 
+    /// The built-in Scorpion.
+    pub fn scorpion() -> Self {
+        toml::from_str(SCORPION).expect("data/vehicles/scorpion.toml parses")
+    }
+
     /// Every built-in vehicle, by name.
     pub fn builtin() -> Vec<VehicleDef> {
-        vec![Self::warthog(), Self::ghost()]
+        vec![Self::warthog(), Self::ghost(), Self::scorpion()]
     }
 
     /// The seat with the driver flag, if any.

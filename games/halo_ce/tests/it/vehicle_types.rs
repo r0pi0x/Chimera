@@ -213,3 +213,159 @@ fn the_ghost_formula_cases() {
     close(scout_yaw_rate(1.0), 0.08356, 1e-5, "desired rate");
     close(scout_yaw_rate(0.01), 0.005, 1e-7, "desired rate, small sigma");
 }
+
+fn scorpion() -> (VehicleDef, PhysicsDef) {
+    let d = VehicleDef::scorpion();
+    let p = d.physics_def();
+    (d, p)
+}
+
+/// A Scorpion settled on its springs, sleep off.
+fn settled_tank() -> (VehicleDef, PhysicsDef, Drive) {
+    let (d, p) = scorpion();
+    let mut v = Drive::new(Body::at(Vec3::new(0.0, 0.0, 0.5), 0.0));
+    v.sleep_enabled = false;
+    for _ in 0..900 {
+        v.tick(&d, &p, &Controls::default(), &FLOOR, &[]);
+    }
+    v.power = 1.0;
+    (d, p, v)
+}
+
+#[test]
+fn the_tank_formula_cases() {
+    let (d, _) = scorpion();
+    // s = 0.05, camera 90 degrees left: tau 0.004 after a tick, 0.14 after
+    // 35; the treads at s -/+ tau.
+    let mut v = Drive::new(Body::at(Vec3::ZERO, 0.0));
+    let c = Controls {
+        driver: true,
+        throttle: [0.05, 0.0],
+        facing: Vec3::Y,
+        ..Default::default()
+    };
+    v.speed = 0.05;
+    v.update_variables(&d, &c);
+    close(v.turn, 0.004, 1e-6, "tau after a tick");
+    for _ in 0..34 {
+        v.update_variables(&d, &c);
+    }
+    close(v.turn, 0.14, 1e-5, "tau after 35 ticks");
+    let ch = v.prepare(&d);
+    close(ch[0].ground_speed, v.speed - v.turn, 1e-7, "left tread");
+    close(ch[1].ground_speed, v.speed + v.turn, 1e-7, "right tread");
+    // s = 0: no turn whatever the camera.
+    let mut v = Drive::new(Body::at(Vec3::ZERO, 0.0));
+    for _ in 0..10 {
+        v.update_variables(
+            &d,
+            &Controls {
+                throttle: [0.0, 0.0],
+                ..c
+            },
+        );
+    }
+    assert_eq!(v.turn, 0.0);
+}
+
+#[test]
+fn the_scorpion_rests_and_drives() {
+    let (d, p, mut v) = settled_tank();
+    eprintln!("scorpion: com z {}", v.body.position.z);
+    close(v.body.position.z, 0.49530, 1e-3, "centre of mass");
+    close(v.body.origin(p.center_of_mass).z, 0.07175, 1e-3, "model origin");
+    let top0 = v.clone();
+    let start = v.body.position;
+    let mut speeds = Vec::new();
+    let mut dist = Vec::new();
+    for _ in 0..300 {
+        let c = drive(&v, 1.0, 0.0);
+        v.tick(&d, &p, &c, &FLOOR, &[]);
+        speeds.push(v.body.velocity.dot(v.body.forward));
+        dist.push((v.body.position - start).dot(Vec3::X));
+    }
+    eprintln!(
+        "scorpion v at 30, 60, 120, 300: {:?}; distance at 1, 2, 4, 5, 10 s: {:?}",
+        [30, 60, 120, 300].map(|t| speeds[t - 1]),
+        [30, 60, 120, 150, 300].map(|t| dist[t - 1])
+    );
+    for (t, s, tol) in [(30, 0.04048, 1e-3), (60, 0.09871, 1e-3), (120, 0.13827, 1e-3), (300, 0.13844, 5e-4)] {
+        close(speeds[t - 1], s, tol, &format!("speed on tick {t}"));
+    }
+    for (t, x, tol) in [(30, 0.509, 0.03), (60, 2.619, 0.06), (120, 10.44, 0.15), (150, 14.59, 0.2), (300, 35.36, 0.4)] {
+        close(dist[t - 1], x, tol, &format!("distance on tick {t}"));
+    }
+    // Release: s = 0 after 24 ticks; below 0.001 after 66, 2.94 WU on.
+    let start = v.body.position;
+    let mut zero = None;
+    let mut below = None;
+    for t in 1..=200i32 {
+        let c = drive(&v, 0.0, 0.0);
+        v.tick(&d, &p, &c, &FLOOR, &[]);
+        if v.speed == 0.0 && zero.is_none() {
+            zero = Some(t);
+        }
+        if v.body.velocity.dot(v.body.forward) < 0.001 && below.is_none() {
+            below = Some((t, (v.body.position - start).dot(Vec3::X)));
+        }
+    }
+    eprintln!("scorpion release: s 0 at {zero:?}, below 0.001 at {below:?}");
+    assert_eq!(zero, Some(24));
+    let (t, x) = below.unwrap();
+    assert!((t - 66).abs() <= 3, "stopped on tick {t}");
+    close(x, 2.94, 0.1, "stopping distance");
+    // Reverse held: -0.11866.
+    let mut v = top0.clone();
+    for _ in 0..600 {
+        let c = drive(&v, -1.0, 0.0);
+        v.tick(&d, &p, &c, &FLOOR, &[]);
+    }
+    let r = v.body.velocity.dot(v.body.forward);
+    eprintln!("scorpion reverse {r}");
+    close(r, -0.11866, 1e-3, "reverse speed");
+    // At rest with the camera 90 degrees left and no throttle: no turn.
+    let mut v = top0;
+    for _ in 0..60 {
+        let c = Controls {
+            facing: v.body.left(),
+            ..drive(&v, 0.0, 0.0)
+        };
+        v.tick(&d, &p, &c, &FLOOR, &[]);
+    }
+    assert!(v.body.angular_velocity.z.abs() < 1e-5, "yaw rate {}", v.body.angular_velocity.z);
+}
+
+#[test]
+fn the_scorpion_turns_by_its_treads() {
+    let (d, p, mut v) = settled_tank();
+    for _ in 0..300 {
+        let c = drive(&v, 1.0, 0.0);
+        v.tick(&d, &p, &c, &FLOOR, &[]);
+    }
+    let mut taus = Vec::new();
+    let mut rates = Vec::new();
+    for _ in 0..300 {
+        let c = Controls {
+            facing: v.body.left(),
+            ..drive(&v, 1.0, 0.0)
+        };
+        v.tick(&d, &p, &c, &FLOOR, &[]);
+        taus.push(v.turn);
+        rates.push(v.body.angular_velocity.z);
+    }
+    let speed = v.body.velocity.truncate().length();
+    eprintln!(
+        "scorpion turn: tau at 10, 30, 60 {:?}, yaw rate at 10, 30, 60, 300 {:?}, speed {speed}, radius {}",
+        [10, 30, 60].map(|t| taus[t - 1]),
+        [10, 30, 60, 300].map(|t| rates[t - 1]),
+        speed / rates[299]
+    );
+    for (t, tau) in [(10, 0.04), (30, 0.12), (60, 0.14)] {
+        close(taus[t - 1], tau, 1e-4, &format!("tau on tick {t}"));
+    }
+    for (t, w, tol) in [(10, 0.0105, 1e-3), (30, 0.0506, 2e-3), (60, 0.0767, 2e-3), (300, 0.0774, 1e-3)] {
+        close(rates[t - 1], w, tol, &format!("yaw rate on tick {t}"));
+    }
+    close(speed, 0.107, 3e-3, "speed in the turn");
+    close(speed / rates[299], 1.39, 0.05, "path radius");
+}

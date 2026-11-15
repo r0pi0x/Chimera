@@ -70,4 +70,21 @@ fn the_worked_examples() {
         let cmd = command(c, track_point(&p, t), 0.0, t);
         near(cmd.camera, cam, 2e-4, &format!("Warthog camera at {deg} degrees"));
     }
+    // Scorpion driver.
+    let d = VehicleDef::scorpion();
+    let c = Vec3::from(d.physics.center_of_mass);
+    let p = track(&d, "scorpion_driver_loose");
+    near(track_point(&p, 0.0), Vec3::new(-4.6130, 0.0, 2.1571), 1e-4, "Scorpion o level");
+    near(
+        command(c, track_point(&p, 0.0), 0.0, 0.0).camera,
+        Vec3::new(-4.6468, 0.0, 2.5807),
+        2e-4,
+        "Scorpion camera level",
+    );
+    near(
+        track_point(&p, (-30f32).to_radians()),
+        Vec3::new(-4.0234, 0.0, 3.5954),
+        2e-4,
+        "Scorpion o 30 degrees down",
+    );
 }

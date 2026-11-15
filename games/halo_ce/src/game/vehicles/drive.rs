@@ -9,8 +9,11 @@
 //! The jeep's driving model (the Warthog: `prepare`'s channels) and the
 //! scout's (the Ghost: every channel's antigravity at the driver's power,
 //! `scout`'s drive, yaw, levelling and jump force and torque, the hover
-//! fraction after the step); the tank and fighter are each a `prepare` arm
-//! away.
+//! fraction after the step) and the tank's (the Scorpion: its turn
+//! variable from the speed variable, its treads at s ∓ τ); the fighter is
+//! a `prepare` arm away. The vehicles' guns (the Ghost's and Scorpion's
+//! drivers are their gunners: seat flag 3 in the data) come with the
+//! turret work.
 //!
 //! Known shortcuts:
 //! - The scout's water cut-off (drive, yaw and levelling stop in 0.5 WU of
@@ -234,7 +237,15 @@ impl Drive {
         self.sigma = sigma;
         match def.kind {
             Kind::Tank => {
-                // The tank's turn (vehicles.md step 3) comes with its rule.
+                // Step 3: no turn without speed; else toward the steering
+                // angle's share of the forward maximum, at twice the speed
+                // record's steps and limits.
+                self.turn = if self.speed == 0.0 {
+                    seek(self.turn, 0.0, p, 1.0)
+                } else {
+                    let target = (sigma * 2.0 / std::f32::consts::PI).clamp(-1.0, 1.0) * def.max_forward_speed;
+                    seek(self.turn, target, p, 2.0)
+                };
             }
             _ => {
                 let left = def.max_left_turn.to_radians();
@@ -275,6 +286,25 @@ impl Drive {
                         ground_speed: self.speed,
                         yaw: -self.turn,
                         antigrav: 0.0,
+                    },
+                ]
+            }
+            Kind::Tank => {
+                // The treads at s ∓ τ, each position advancing by its speed.
+                let (left, right) = (self.speed - self.turn, self.speed + self.turn);
+                let circ = def.wheel_circumference;
+                if circ > 0.0 {
+                    self.treads[0] = (self.treads[0] + left).rem_euclid(circ);
+                    self.treads[1] = (self.treads[1] + right).rem_euclid(circ);
+                }
+                vec![
+                    ChannelState {
+                        ground_speed: left,
+                        ..Default::default()
+                    },
+                    ChannelState {
+                        ground_speed: right,
+                        ..Default::default()
                     },
                 ]
             }

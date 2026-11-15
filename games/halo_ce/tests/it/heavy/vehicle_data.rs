@@ -37,6 +37,12 @@ fn the_ghosts_numbers_are_the_disc_s() {
     check(&map, &VehicleDef::ghost(), Kind::Scout, 4);
 }
 
+#[test]
+fn the_scorpions_numbers_are_the_disc_s() {
+    let Some(map) = bloodgulch() else { return };
+    check(&map, &VehicleDef::scorpion(), Kind::Tank, 0);
+}
+
 /// Every number of `d` against the disc's tag, of type `code`.
 fn check(map: &MapFile, d: &VehicleDef, kind: Kind, code: i16) {
     let tag = map.find(class::VEHICLE, &d.tag).expect("the vehicle");
