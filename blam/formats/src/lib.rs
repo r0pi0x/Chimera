@@ -42,12 +42,15 @@
 //! - `game_type`: the saved game variant record and the 26 stock game types.
 //! - `weapon`: the weapon tag (the item and object layers, magazines,
 //!   triggers) and the pure formulas on its fields.
+//! - `effect`: the effect family (effect, particle, point physics, light,
+//!   decal, material effects, contrail) as the four weapons' effects use it.
 
 pub mod animation;
 pub mod bitmap;
 pub mod cache;
 pub mod collision;
 pub mod disc;
+pub mod effect;
 pub mod model;
 pub mod scenario;
 pub mod shader;
