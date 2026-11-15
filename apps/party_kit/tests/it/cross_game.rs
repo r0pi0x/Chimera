@@ -214,11 +214,41 @@ pub(crate) fn shape_at(sim: &Sim, b: Entity, region: chimera_core::core::BodyReg
     feet + w.get::<chimera_core::core::Intent>(b).unwrap().yaw_rotation() * shape.center
 }
 
-/// One round from `a` at `point`; the hitgroups `b` was hit in.
+/// The command number nearest the middle of CS:S's pattern: its shot
+/// seed's inaccuracy and spread draws (specs/cs_source/weapons.md 4.2.2,
+/// `r = U(0, 1)` times each) are both the smallest of the 256 patterns'.
+/// A round of it goes where it is aimed to within a few percent of the
+/// weapon's cone, whatever the gun; any other command's is a fair random
+/// shot that a one-round test at a small hitbox can miss.
+fn centred_command() -> u32 {
+    use chimera_sim::weapon::random::shot_seed;
+    let draws = |c: u32| {
+        let r1 = chimera_sim::weapon::cs_offsets(shot_seed(c), 1.0, 0.0, 1)[0].length();
+        let r2 = chimera_sim::weapon::cs_offsets(shot_seed(c), 0.0, 1.0, 1)[0].length();
+        r1.max(r2)
+    };
+    (0..4096).min_by(|x, y| draws(*x).total_cmp(&draws(*y))).unwrap()
+}
+
+/// `a`'s next tick runs on `centred_command`: its `Seed` set so that
+/// tick's command number is that one.
+pub(crate) fn centre_next_shot(sim: &mut Sim, a: Entity) {
+    let next = sim.app.world().resource::<chimera_core::core::SimTick>().0 + 1;
+    sim.app
+        .world_mut()
+        .entity_mut(a)
+        .insert(chimera_core::core::Seed(centred_command().wrapping_sub(next as u32) as u64));
+}
+
+/// One round from `a` at `point`; the hitgroups `b` was hit in. The round
+/// is fired on `centred_command` (the shooter's `Seed` set for that tick,
+/// as a Source client numbers its own commands), so it lands where it was
+/// aimed and the check is of the hitboxes, not of a random draw.
 pub(crate) fn shot_at(sim: &mut Sim, a: Entity, b: Entity, point: Vec3) -> Vec<chimera_core::core::Hitgroup> {
     sim.app.world_mut().resource_mut::<Hits>().0.clear();
     testkit::aim_at(sim, a, point);
     sim.ticks(1);
+    centre_next_shot(sim, a);
     sim.intent(a).fire = true;
     sim.ticks(1);
     sim.intent(a).fire = false;
@@ -273,6 +303,7 @@ fn a_cs_source_round_poses_only_the_combat_arms_bodies_it_passes() {
     let (near, far) = (cells(&sim, b), cells(&sim, c));
     assert!(!near.0.0.is_made() && !far.0.0.is_made() && !far.1.is_posed_any(), "nothing asked yet");
     sim.app.world_mut().resource_mut::<Hits>().0.clear();
+    centre_next_shot(&mut sim, a);
     sim.intent(a).fire = true;
     sim.ticks(1);
     sim.intent(a).fire = false;
