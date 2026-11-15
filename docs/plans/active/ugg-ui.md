@@ -956,6 +956,24 @@ licence, 5 MB a file, 20 MB in all.
   rendering each match's ladder on a task at its start (no rank files),
   and a compressed format with gapless loops (Vorbis) for the loop.
 
+### Names (2026-11-14)
+
+A player's name is at most 20 characters (the user's decision): the
+server cuts it at a join, a rename and in the userinfo, takes control
+characters out, trims it, and numbers a name another player has ("Ann
+2", within the 20; `chimera_net::net::server::NAME_MAX`, `clean_name`,
+`unique_name`). Every Signal widget that shows a name fits it to its
+place with `…` (`...` in the UGG faces v0.4, which have no `…` glyph;
+`chimera_ui::text_fit`: `Ellipsize`, measured in the kit's faces by
+`KitFonts::width` and corrected from Bevy's layout where kerning widens
+it): the kill feed (8 cq a name), the race
+chip (the leader's 7 cq, the one you lead 6 cq), the Tab board's name
+cell, the lobby's rows, the match end's winner (44 cq), standings, the
+climb's head (12 cq) and the vote cards' maps, the rank-up toast's gun.
+The feedback dialog shows no name. `ui_scene_name <name>` calls every
+staged player `name` (screenshots); ultimate_gun_game `names_fit` lays
+twenty W's out in each at 1280x720 and 1920x1080.
+
 ### M7: Settings and Esc menu (first drafts)
 
 Status (2026-11-14): in progress, first drafts for the playtest (the

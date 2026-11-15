@@ -70,18 +70,28 @@ pub struct KitFonts {
     pub display_bold: Option<Handle<Font>>,
     pub display_regular: Option<Handle<Font>>,
     pub mono: Option<Handle<Font>>,
+    /// Each face's bytes by its handle, to measure text
+    /// (`text_fit`: `KitFonts::width`).
+    pub bytes: Vec<(AssetId<Font>, std::sync::Arc<[u8]>)>,
 }
 
 impl KitFonts {
     /// The four faces made into `Font` assets.
     pub fn load(fonts: &mut Assets<Font>, files: FontFiles) -> KitFonts {
-        let mut add = |b: &[u8]| Some(fonts.add(Font::from_bytes(b.to_vec())));
-        KitFonts {
-            display_black: add(files.display_black),
-            display_bold: add(files.display_bold),
-            display_regular: add(files.display_regular),
-            mono: add(files.mono),
-        }
+        let mut bytes = Vec::new();
+        let mut add = |b: &[u8]| {
+            let h = fonts.add(Font::from_bytes(b.to_vec()));
+            bytes.push((h.id(), std::sync::Arc::<[u8]>::from(b)));
+            Some(h)
+        };
+        let (display_black, display_bold, display_regular, mono) =
+            (add(files.display_black), add(files.display_bold), add(files.display_regular), add(files.mono));
+        KitFonts { display_black, display_bold, display_regular, mono, bytes }
+    }
+
+    /// The bytes of the face `id` (one of the kit's).
+    pub fn bytes_of(&self, id: AssetId<Font>) -> Option<&[u8]> {
+        self.bytes.iter().find(|(i, _)| *i == id).map(|(_, b)| &b[..])
     }
 
     /// The face for a `face` name and weight: `display` by weight (the

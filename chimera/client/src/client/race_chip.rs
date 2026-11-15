@@ -60,7 +60,7 @@ use chimera_sim::{
     },
     weapon::data::WeaponCatalog,
 };
-use chimera_ui::{Prop, Role, SlantMaterial, TickBarMaterial, TickLayout, Timeline, Tone, Track, UiClock, UiParityId, parity};
+use chimera_ui::{Ellipsize, Prop, Role, SlantMaterial, TickBarMaterial, TickLayout, Timeline, Tone, Track, UiClock, UiParityId, parity};
 
 use super::{
     console::HeldActions,
@@ -355,6 +355,10 @@ fn closed_w(view: &RaceView, fit: ChipFit) -> f32 {
     chip_w(view).max(fit.0).min(BOARD_W - 1.0)
 }
 const CHIP_H: f32 = 3.05;
+/// The chip's names at most this wide, cq (`chimera_ui::Ellipsize`): the
+/// leader's, and the one you lead.
+const CHIP_NAME_LEAD: f32 = 7.0;
+const CHIP_NAME_GAP: f32 = 6.0;
 const BOARD_W: f32 = 64.0;
 const ROW_H: f32 = 2.55;
 /// The board's height besides its rows: padding, head, column titles.
@@ -619,6 +623,7 @@ fn build_chip(
                                 g.spawn((look.tracked(Role::Mono, 0.5, 0.56 * 0.1, look.tone(Tone::Fg3), "OVER"), UiParityId(format!("{cid}.gap.over")), Pickable::IGNORE));
                                 g.spawn((
                                     look.tracked(Role::DisplayBold, 0.62, 0.62 * 0.03, look.tone(Tone::Fg2), &s.name.to_uppercase()),
+                                    Ellipsize::max(s.name.to_uppercase(), CHIP_NAME_GAP),
                                     UiParityId(format!("{cid}.gap.name")),
                                     Pickable::IGNORE,
                                 ));
@@ -632,6 +637,7 @@ fn build_chip(
                             parity::name(g, e, format!("{cid}.lead.tag"));
                             g.spawn((
                                 look.tracked(Role::DisplayBold, 0.72, 0.72 * 0.03, look.tone(Tone::Fg), &l.name.to_uppercase()),
+                                Ellipsize::max(l.name.to_uppercase(), CHIP_NAME_LEAD),
                                 UiParityId(format!("{cid}.lead.name")),
                                 Pickable::IGNORE,
                             ));
@@ -885,6 +891,7 @@ fn build_board(
                     c.spawn((
                         Node { flex_shrink: 1.0, min_width: px(0.0), overflow: Overflow::clip(), ..default() },
                         look.tracked(Role::DisplayBold, 0.66, 0.66 * 0.03, look.tone(Tone::Fg), &row.name.to_uppercase()),
+                        Ellipsize::in_parent(row.name.to_uppercase()),
                         UiParityId(format!("{p}.name")),
                         Pickable::IGNORE,
                     ));

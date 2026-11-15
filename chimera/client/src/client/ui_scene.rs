@@ -28,6 +28,9 @@
 //! staged, again whenever that changes (`chimera_ui::UiUnits`), from the app's `Theme` and faces
 //! (`KitFonts`; the shell's default theme without them).
 //!
+//! `ui_scene_name <name>` calls every made-up player of the HUD scenes
+//! `name` (`StagedName`: a 20-character name's fit, screenshots).
+//!
 //! `+ui_scene proof` on the command line stages it at start, e.g.
 //! `ultimate_gun_game --offscreen 1920x1080 --frames 30 --screenshot
 //! <out>.png +ui_scene proof`.
@@ -93,6 +96,41 @@ pub struct UiSceneRoot;
 /// when every scene is cleared).
 pub type SceneHook = fn(&mut World, &[String]) -> Result<(), String>;
 
+/// `ui_scene_name <name>`: every made-up player of the staged HUD scenes
+/// (`chip`, `lead`, `board`, `board_lead`, `feed`, `matchend`) is called
+/// `name` (a long name's fit: `chimera_ui::Ellipsize`); `ui_scene_name`
+/// alone gives them their own again. Applies at the next `ui_scene`.
+#[derive(Resource, Default, Clone, Debug, PartialEq)]
+pub struct StagedName(pub Option<String>);
+
+/// The staged scenes' players renamed (`StagedName`).
+pub fn rename_staged(w: &mut World) {
+    let Some(name) = w.get_resource::<StagedName>().and_then(|n| n.0.clone()) else { return };
+    if let Some(mut r) = w.get_resource_mut::<super::race_chip::RaceStaged>() {
+        for row in &mut r.view.rows {
+            row.name = name.clone();
+        }
+    }
+    if w.contains_resource::<super::kill_feed::signal_feed::FeedStaged>()
+        && let Some(mut f) = w.get_resource_mut::<super::kill_feed::KillFeed>()
+    {
+        for e in &mut f.entries {
+            e.victim.name = name.clone();
+            if let Some(k) = e.killer.as_mut() {
+                k.name = name.clone();
+            }
+        }
+    }
+    if let Some(mut m) = w.get_resource_mut::<super::match_end::MatchEndStaged>() {
+        for row in &mut m.view.rows {
+            row.name = name.clone();
+        }
+        if m.view.winner.is_some() {
+            m.view.winner = Some(name.clone());
+        }
+    }
+}
+
 /// Scenes of screens an app draws itself (the party menu's `menu`), by
 /// name: `ui_scene <name> ...` calls the hook.
 #[derive(Resource, Default, Clone)]
@@ -112,6 +150,17 @@ pub struct UiScenePlugin;
 impl Plugin for UiScenePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<UiScene>()
+            .init_resource::<StagedName>()
+            .console_command(
+                "ui_scene_name",
+                "ui_scene_name [name]: the staged HUD scenes' made-up players all called `name` (a long name's fit), from the \
+                 next ui_scene; alone: their own names.",
+                |w, a| {
+                    let name = a.join(" ");
+                    w.resource_mut::<StagedName>().0 = (!name.is_empty()).then_some(name);
+                    Ok(None)
+                },
+            )
             .console_command(
                 "ui_scene",
                 "ui_scene <proof|controls|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|off> [fixture.json | t]: stage a screen of the UI \
@@ -166,16 +215,20 @@ impl Plugin for UiScenePlugin {
                         }
                         "chip" | "lead" | "board" | "board_lead" => {
                             super::race_chip::stage(w, Some(name));
+                            rename_staged(w);
                             if let Some(path) = a.get(1) {
                                 super::ui_parity::apply_fixture(w, name, path)?;
                             }
                             return Ok(None);
                         }
                         "matchend" => {
-                            return super::match_end_signal::stage(w, a.get(1).map(String::as_str)).map(|_| None);
+                            super::match_end_signal::stage(w, a.get(1).map(String::as_str))?;
+                            rename_staged(w);
+                            return Ok(None);
                         }
                         "feed" => {
                             super::kill_feed::signal_feed::stage(w);
+                            rename_staged(w);
                             if let Some(path) = a.get(1) {
                                 super::ui_parity::apply_fixture(w, name, path)?;
                             }

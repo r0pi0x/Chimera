@@ -16,7 +16,8 @@
 //!   calls) in a burst, then one a second (`Flood`; a call every 1.5 s);
 //!   more are dropped, with a word to the sender. Bots aren't limited.
 //! - **Names**: the `name` cvar changed while connected goes to the server
-//!   (`NameRequest`, Source's setinfo); the server takes it (made safe),
+//!   (`NameRequest`, Source's setinfo); the server takes it (made safe
+//!   and kept apart: `server::clean_name`, `unique_name`, 20 characters),
 //!   renames the character everyone sees and tells everyone
 //!   (`NameChanged`: "* X changed name to Y"). The host's own change too.
 //!
@@ -410,6 +411,7 @@ fn receive_names(mut requests: MessageReader<FromClient<NameRequest>>, mut comma
                 .get::<bevy_replicon::shared::backend::connected_client::NetworkId>(c)
                 .map_or(0, |n| n.get());
             let name = super::server::clean_name(&name, id);
+            let name = super::server::unique_name(w, &name, &[character]);
             if rename(w, character, &name) {
                 w.get_mut::<Player>(c).expect("checked").name = name;
             }
@@ -460,6 +462,7 @@ fn rename_host(world: &mut World, mut last: Local<Option<String>>) {
         .next();
     if let Some(host) = host {
         let name = super::server::clean_name(&name, super::HOST_ID);
+        let name = super::server::unique_name(world, &name, &[host]);
         rename(world, host, &name);
     }
 }

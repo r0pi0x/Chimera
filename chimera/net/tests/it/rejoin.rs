@@ -66,14 +66,15 @@ fn a_player_who_rejoins_from_the_same_address_shows_once() {
 
 #[test]
 fn another_address_or_a_live_connection_is_not_a_twin() {
-    // The same name from another address stays (two players, one name).
+    // The same name from another address stays: two players, the second
+    // numbered (`server::unique_name`).
     let mut sim = joined("Ann", "Bob");
     peer(&mut sim, 1, "10.0.0.5", 5);
     let other = sim.add_client(named("Ann"));
     peer(&mut sim, 3, "10.0.0.9", 0);
     sim.until(600, |s| s.clients[other].app.world().contains_resource::<chimera_net::net::client::Joined>());
     sim.ticks(10);
-    assert_eq!(names(&mut sim), ["Ann", "Ann", "Bob"]);
+    assert_eq!(names(&mut sim), ["Ann", "Ann 2", "Bob"]);
 
     // The same name and address while the first is alive stays too (two
     // clients on one machine).
@@ -83,5 +84,5 @@ fn another_address_or_a_live_connection_is_not_a_twin() {
     peer(&mut sim, 3, "10.0.0.5", 0);
     sim.until(600, |s| s.clients[again].app.world().contains_resource::<chimera_net::net::client::Joined>());
     sim.ticks(10);
-    assert_eq!(names(&mut sim), ["Ann", "Ann", "Bob"]);
+    assert_eq!(names(&mut sim), ["Ann", "Ann 2", "Bob"]);
 }

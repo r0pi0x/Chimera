@@ -39,6 +39,9 @@
 //! - `pointer_lead`: `PointerLead`, whether the keys or the pointer drive
 //!   a list's selection (a navigation key takes it, a real pointer move
 //!   gives it back): one rule for every list hover and keys both select in.
+//! - `text_fit`: `ellipsize` and `Ellipsize` (a text cut to a width with
+//!   `…`, measured in the kit's faces: `KitFonts::width`), for the names
+//!   in the Signal screens.
 //!
 //! `ChimeraUiPlugin` keeps `UiUnits` from the window, steps the clock and
 //! every `Timeline` (`UiKitSystems`, in `PostUpdate` before Bevy's UI
@@ -57,6 +60,7 @@ pub mod pointer_lead;
 pub mod sound;
 pub mod theme;
 pub mod style;
+pub mod text_fit;
 pub mod units;
 pub mod widgets;
 
@@ -76,6 +80,7 @@ pub use scroll::{ReducedMotion, ScrollIntoView, ScrollParts, ScrollViews, scroll
 pub use sound::{SoundTable, UiCue, UiMusic};
 pub use theme::{Theme, Tone};
 pub use style::{PlainText, UiSlant, UiStyle, UiText};
+pub use text_fit::{Ellipsize, ellipsize, ellipsize_with};
 pub use units::{TickLayout, UiUnits};
 
 /// The kit's per-frame work: units from the window, the clock, the
@@ -107,6 +112,8 @@ impl Plugin for ChimeraUiPlugin {
                     units::track_window,
                     // Before the timelines, which write over its sizes.
                     style::resolve_styles,
+                    // On the styles' fonts and the last layout's widths.
+                    text_fit::fit_texts,
                     motion::advance_clock,
                     motion::step_timelines,
                     motion::apply_timelines,

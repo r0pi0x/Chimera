@@ -29,6 +29,7 @@ mod no_damage;
 mod no_stand_ins;
 mod offered_weapons;
 mod net;
+mod names_fit;
 mod net_ui_sounds;
 mod parts;
 mod pickups;
