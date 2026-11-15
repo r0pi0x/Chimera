@@ -48,9 +48,18 @@
 //! `Zoomed` and a Halo gun); the camera's zoom is the weapons'.
 //!
 //! **Placement**: no offset (the models are authored relative to the
-//! camera, node 0 at its frame) and the camera's field of view, 70
-//! degrees (objects.md, the unit's camera field of view; taken as
-//! horizontal at 4:3, as the weapons' zoom takes it): `settings`, `fov`.
+//! camera, node 0 at its frame) and the camera's field of view (`settings`,
+//! `fov`). **Field of view** (weapons.md 12, objects.md 0x1A0): the unit's
+//! 70 degrees is a nominal angle a; the camera's vertical field of view v
+//! has tan(v / 2) = 0.75 x 0.85 x tan(a / 2) (48.11 degrees), kept on
+//! every window shape (the horizontal is v widened by the aspect: 61.52
+//! degrees at 4:3, 76.87 at 16:9). In the engine's terms (degrees
+//! horizontal at 4:3, `map::view_model::vertical_fov`) that is
+//! 2 atan(0.85 tan(a / 2)): `camera_fov` of a nominal angle, `FOV` of the
+//! unit's; the weapons' zoom (`Zoomed`) takes `camera_fov` of the nominal
+//! angle divided by the magnification, so the world camera, the view
+//! model's camera and the effects' re-projection between them
+//! (`fx::place`, which reads both cameras) all use the real angles.
 //!
 //! **Third person** (`stance`): a holder of a Halo gun takes its label
 //! (`body::WeaponLabel` from the document's `label`, the weapon tag's) and
@@ -78,9 +87,24 @@ use crate::{
     map::{GameFov, Held, ViewAnimator, ViewModelSettings, ViewModels},
 };
 
-/// The camera's field of view (objects.md: the unit's, 70 degrees),
-/// horizontal at 4:3: the view model's.
-pub const FOV: f32 = 70.0;
+/// The unit's nominal camera field of view, degrees (objects.md 0x1A0: 70).
+pub const NOMINAL_FOV: f32 = 70.0;
+
+/// The renderer's fixed narrowing of the nominal angle's half tangent
+/// (weapons.md 12).
+pub const NARROWING: f32 = 0.85;
+
+/// The camera's field of view for a nominal angle (degrees), in the
+/// engine's terms: degrees horizontal at 4:3, 2 atan(0.85 tan(a / 2))
+/// (module doc; its vertical is `map::view_model::vertical_fov` of it).
+pub fn camera_fov(nominal: f32) -> f32 {
+    2.0 * (NARROWING * (nominal.to_radians() / 2.0).tan()).atan().to_degrees()
+}
+
+/// The camera's field of view (module doc): `camera_fov(NOMINAL_FOV)`,
+/// 61.52 degrees horizontal at 4:3 (48.11 vertical): the world camera's
+/// in Halo's app and the view model's.
+pub const FOV: f32 = 61.520_22;
 
 /// The view-model settings Halo's own app starts with: the models at the
 /// camera's field of view, whatever the player's (`SettingsFollowPlayerFov`).

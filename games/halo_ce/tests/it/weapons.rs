@@ -225,8 +225,10 @@ fn the_pistols_zoom_halves_the_field_of_view() {
     sim.ticks(1);
     sim.intent(p).secondary = false;
     sim.ticks(1);
+    // The nominal 35 degrees as the camera's: vertical 22.73 degrees, 0.39672 rad (weapons.md 12).
     let z = *sim.app.world().get::<Zoomed>(p).expect("zoomed");
-    assert!((z.fov - 35.0).abs() < 1e-3, "{}", z.fov);
+    let v = chimera_world::map::view_model::vertical_fov(z.fov);
+    assert!((v.to_radians() - 0.39672).abs() < 1e-5, "{} -> {v}", z.fov);
     assert_eq!(sim.app.world().get::<HaloGun>(g).unwrap().zoom, 0);
     sim.intent(p).secondary = true;
     sim.ticks(1);

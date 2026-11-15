@@ -7,7 +7,8 @@
 //! from, the push back on a shot, hiding while zoomed; and on `HaloSim`
 //! with a stand-in view model: giving the assault rifle readies it, a shot
 //! pushes the gun back without a fire state, and a reload plays the reload
-//! for its full length, in step with the weapon's own timer.
+//! for its full length, in step with the weapon's own timer; the camera's
+//! field of view from the nominal angle (weapons.md 12's worked values).
 
 use std::sync::Arc;
 
@@ -453,4 +454,24 @@ fn the_zoomed_pistol_hides_its_view() {
     sim.intent(p).secondary = false;
     sim.ticks(1);
     assert!(sim.app.world().get::<ViewModelHidden>(p).is_none(), "shown again");
+}
+
+/// The unit's nominal 70 degrees (and the zooms' 35 and 8.75) as the
+/// camera's angles: weapons.md 12's worked values, vertical on every
+/// window and widened by its aspect.
+#[test]
+fn the_field_of_view_is_the_nominal_angle_narrowed() {
+    use chimera_world::map::view_model::{aspect_fov, vertical_fov};
+    use halo_ce::game::view::{FOV, NOMINAL_FOV, camera_fov};
+    assert!((camera_fov(NOMINAL_FOV) - FOV).abs() < 1e-4, "{}", camera_fov(NOMINAL_FOV));
+    let v = vertical_fov(FOV);
+    assert!((v - 48.11).abs() < 0.005 && (v.to_radians() - 0.83968).abs() < 1e-5, "{v}");
+    assert!((aspect_fov(FOV, 4.0 / 3.0) - 61.52).abs() < 0.005);
+    assert!((aspect_fov(FOV, 16.0 / 9.0) - 76.87).abs() < 0.005);
+    for (nominal, rad) in [(35.0, 0.39672), (8.75, 0.09747)] {
+        let v = vertical_fov(camera_fov(nominal)).to_radians();
+        assert!((v - rad).abs() < 1e-5, "{nominal}: {v}");
+    }
+    let s = halo_ce::game::view::settings();
+    assert_eq!((s.fov, s.default_fov), (FOV, FOV));
 }
