@@ -309,7 +309,7 @@ fn play_music(
             let key = SoundKey(MUSIC_KEYS | pb.next_key);
             control.write(SoundControl::Start(StartSound {
                 key,
-                entry: format!("ca:bgm:{file}|stream"),
+                entry: format!("ca:bgm:{file}{}", chimera_present::audio::live_sound::MUSIC_TAG),
                 at: None,
                 follow: None,
                 volume: Some(s.gain),

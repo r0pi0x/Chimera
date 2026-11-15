@@ -130,7 +130,7 @@ use std::collections::BTreeMap;
 use bevy::{
     input::{
         ButtonState,
-        keyboard::{Key, KeyboardInput},
+        keyboard::KeyboardInput,
     },
     prelude::*,
 };
@@ -139,7 +139,7 @@ use chimera_client::client::{
     console::ConsoleRoot,
     fonts::UiFonts,
     front_end as fe,
-    widgets::{self, ButtonState as Btn, Caret, Edit, FrameSpec, Look, label, place},
+    widgets::{self, ButtonState as Btn, Caret, FrameSpec, Look, label, place},
 };
 use chimera_core::{
     console::{Console, ConsoleAppExt},
@@ -1168,7 +1168,15 @@ fn typing(
     mut out: MessageWriter<MainMenuAction>,
     settings: Option<Res<crate::settings::Settings>>,
     theme: Option<Res<chimera_ui::Theme>>,
+    mut clipboard: Local<chimera_ui::clipboard::Clipboard>,
+    shared_clipboard: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
+    // The app's clipboard (a test's), else this system's own handle on
+    // the system's.
+    let clipboard = match shared_clipboard {
+        Some(c) => c.into_inner(),
+        None => &mut *clipboard,
+    };
     // The Signal pages (`signal_pages`) take Enter and Tab on Play and Join.
     let signal_page = crate::signal_pages::themed(theme.as_deref()) && matches!(menu.page, MenuPage::Play | MenuPage::Join);
     let live = menu.shown() && !console.is_some_and(|c| c.open) && !controls.is_some_and(|c| c.open);
@@ -1222,29 +1230,21 @@ fn typing(
             }
             continue;
         }
-        let edit = match (&e.logical_key, e.key_code) {
-            (_, KeyCode::KeyA) if ctrl => Edit::SelectAll,
-            (_, KeyCode::ArrowLeft) => Edit::Left(shift),
-            (_, KeyCode::ArrowRight) => Edit::Right(shift),
-            (_, KeyCode::Home) => Edit::Home(shift),
-            (_, KeyCode::End) => Edit::End(shift),
-            (_, KeyCode::Delete) => Edit::Delete,
-            (Key::Backspace, _) => Edit::Backspace,
-            (Key::Space, _) => Edit::Insert(" ".into()),
-            (Key::Character(s), _) if !ctrl => Edit::Insert(s.to_string()),
-            _ => continue,
-        };
-        let max = match field {
+        // Typing, the selection, and copy, cut and paste
+        // (`widgets::text_key`: Ctrl+V and Shift+Insert paste one line; a
+        // password pastes but never copies).
+        let Some(key) = widgets::text_key(&e.logical_key, e.key_code, ctrl, shift) else { continue };
+        let (max, masked) = match field {
             Field::Play(i) => match data.play.get(i).map(|r| &r.kind) {
-                Some(PlayKind::Text { max, .. }) => *max,
-                _ => 64,
+                Some(PlayKind::Text { max, masked }) => (*max, *masked),
+                _ => (64, false),
             },
-            Field::Address => 128,
-            Field::Password => 64,
+            Field::Address => (128, false),
+            Field::Password => (64, true),
         };
         let mut caret = menu.caret;
         if let Some(text) = menu.text_mut(field) {
-            caret.edit(text, edit, max);
+            caret.key(text, key, clipboard, max, masked);
         }
         menu.caret = caret;
     }
@@ -2473,7 +2473,7 @@ fn play_frame(commands: &mut Commands, root: Entity, menu: &PartyMenu, data: &Me
                 y,
                 w,
                 &s.label,
-                &s.pick.shown(&v),
+                &s.shown(&v),
                 MainMenuAction::GameStep { index: i, dir: -1 },
                 MainMenuAction::GameStep { index: i, dir: 1 },
             );
@@ -2676,7 +2676,7 @@ fn options_frame(commands: &mut Commands, root: Entity, menu: &PartyMenu, look: 
                 y,
                 w,
                 &s.label,
-                &s.pick.shown(&v),
+                &s.shown(&v),
                 MainMenuAction::OptionStep { index: i, dir: -1 },
                 MainMenuAction::OptionStep { index: i, dir: 1 },
             );

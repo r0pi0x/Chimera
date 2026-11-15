@@ -1027,6 +1027,21 @@ screenshots.
 6. The menu's Showcase may show any installed or cached body and gun
    (the menu is outside any lobby); the coming ladder isn't a constraint.
 
+7. Bigger game icons (user, playtest 7, 2026-11-14): the kill feed's
+   gun icons were too small beside the names. A game's own icon is now
+   fitted by its visible ink (`chimera_client::client::ink_icon` on
+   `chimera_ui::icon_ink`: an image's lit ink rectangle, a glyph's
+   outline rasterized at the node's pixel height, centred in its box)
+   instead of by its whole art, everywhere the Signal HUD draws one: the
+   feed's gun 1.25 cq tall in its 1.85 cq row (the look book's .78), its
+   headshot mark 1 cq; the race chip's gun 1.3 cq in a 1.3 x 4 cq box
+   (.9 x 2.8); the board's and the toast's at their old heights, by
+   ink. A deliberate deviation from the look book: the parity
+   references (`tools/ui-parity/reference/style.css`, `.kf .e .gi`,
+   `.c0 .gi`, `.c0 .gw`) carry the new sizes. The feed has no other
+   kill-modifier marks yet (no penetration flag: `kill_feed`'s
+   shortcuts); a new one goes through the same ink fit.
+
 Look Book V decisions (user, 2026-11-14): menu slot C is the Ident
 (the mark signs on facet by facet on one 12° scan, holds with a sheen,
 signs off); an ambient full-menu fragment shader (slanted bands, a

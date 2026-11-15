@@ -1109,7 +1109,7 @@ fn password_modal(c: &mut Commands, ui: &Ui, root: Entity, menu: &PartyMenu, p: 
     let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 1.0, 0.0].into()), ..UiStyle::column() });
     ui.paragraph(c, tx, Role::Mono, 0.62, Tone::Fg2, &format!("{} is locked. Type its password to join.", ask.name));
     let st = State { focus: true, error: p.notice.is_some(), ..State::NONE };
-    let f = ui.text_field(c, m, &menu.password, "Password", Some(menu.caret.at), true, 26.0, st);
+    let f = ui.text_field(c, m, &menu.password, "Password", Some(menu.caret.cursor(&menu.password)), true, 26.0, st);
     c.entity(f).insert(MainMenuAction::Focus(Field::Password));
     if let Some(n) = &p.notice {
         let row = ui.boxed(c, m, UiStyle { gap: Some(0.6), margin: Some([0.7, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
@@ -1172,7 +1172,7 @@ fn play_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
                     PickAct::Option(option) => MainMenuAction::PlayPick { row: r, option },
                 }),
                 PlayKind::Text { masked, .. } => {
-                    let caret = (menu.focus == Some(Field::Play(r))).then_some(menu.caret.at);
+                    let caret = (menu.focus == Some(Field::Play(r))).then(|| menu.caret.cursor(&v));
                     let placeholder = if row.cvar == "hostport" { "27015" } else { "None" };
                     let f = ui.text_field(c, vl, &v, placeholder, caret, *masked, 13.0, vst);
                     c.entity(f).insert(MainMenuAction::Focus(Field::Play(r)));
@@ -1270,7 +1270,7 @@ fn join_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
             };
             let (e, vl) = ui.row(c, list, label, None, row_h, st);
             c.entity(e).insert(PageLine(i));
-            let caret = (menu.focus == Some(field) && p.ask.is_none()).then_some(menu.caret.at);
+            let caret = (menu.focus == Some(field) && p.ask.is_none()).then(|| menu.caret.cursor(value));
             let f = ui.text_field(c, vl, value, ph, caret, masked, 15.0, st);
             c.entity(f).insert(MainMenuAction::Focus(field));
         }

@@ -2,7 +2,8 @@
 //! `party_kit::feedback_signal` under Signal's theme): the report key
 //! takes the screenshot first and opens the dialog after it; typing goes
 //! into the report (the game's keys reset), Tab switches the category,
-//! Ctrl+Enter sends through the outbox, Esc cancels; the Escape menu's
+//! Ctrl+Enter sends through the outbox, Esc cancels; the clipboard's
+//! keys (paste, copy, cut, select all) work in the text; the Escape menu's
 //! "Report a bug" closes the menu before the capture; the key is a row of
 //! Settings > Controls (Shared) that rebinds.
 
@@ -186,6 +187,57 @@ fn esc_cancels_and_an_empty_report_is_refused() {
     assert_eq!(fb(&sim.app).phase, Phase::Closed, "Esc cancels");
     assert!(!sim.app.world().resource::<EscMenu>().open, "the Esc was the dialog's");
     assert!(got.0.lock().unwrap().is_empty(), "nothing sent");
+}
+
+/// A key with Ctrl (or Shift) held, as the window sends it.
+fn with_mod(app: &mut App, (m, ml): (KeyCode, Key), key_code: KeyCode, logical: Key) {
+    event(app, m, ml.clone(), ButtonState::Pressed);
+    app.update();
+    key(app, key_code, logical);
+    event(app, m, ml, ButtonState::Released);
+    app.update();
+}
+
+#[test]
+fn the_report_text_takes_paste_copy_cut_and_select_all() {
+    use chimera_ui::clipboard::Clipboard;
+    let ctrl = (KeyCode::ControlLeft, Key::Control);
+    let shift = (KeyCode::ShiftLeft, Key::Shift);
+    let (mut sim, _) = party();
+    sim.app.insert_resource(Clipboard::memory(Some("fell\r\nthrough")));
+    open_with_f10(&mut sim.app);
+    type_text(&mut sim.app, "I ");
+    with_mod(&mut sim.app, ctrl.clone(), KeyCode::KeyV, Key::Character("v".into()));
+    assert_eq!(fb(&sim.app).text, "I fell\nthrough", "Ctrl+V pastes, its line breaks kept");
+    with_mod(&mut sim.app, shift.clone(), KeyCode::Insert, Key::Insert);
+    assert_eq!(fb(&sim.app).text, "I fell\nthroughfell\nthrough", "Shift+Insert pastes");
+    // Nothing selected: copy leaves the clipboard.
+    sim.app.world_mut().insert_resource(Clipboard::memory(Some("kept")));
+    with_mod(&mut sim.app, ctrl.clone(), KeyCode::KeyC, Key::Character("c".into()));
+    assert_eq!(sim.app.world_mut().resource_mut::<Clipboard>().get().as_deref(), Some("kept"));
+    // Ctrl+A selects the whole text, drawn as a selection; Ctrl+C copies it.
+    with_mod(&mut sim.app, ctrl.clone(), KeyCode::KeyA, Key::Character("a".into()));
+    assert!(fb(&sim.app).selected);
+    sim.app.update();
+    let drawn = sim.app.world_mut().query_filtered::<(), With<chimera_ui::controls::TextSelection>>().iter(sim.app.world()).count();
+    assert!(drawn > 0, "the selection is drawn");
+    with_mod(&mut sim.app, ctrl.clone(), KeyCode::KeyC, Key::Character("c".into()));
+    assert_eq!(sim.app.world_mut().resource_mut::<Clipboard>().get().as_deref(), Some("I fell\nthroughfell\nthrough"));
+    assert_eq!(fb(&sim.app).text, "I fell\nthroughfell\nthrough", "copy keeps the text");
+    // Typing replaces the selection.
+    type_text(&mut sim.app, "x");
+    assert_eq!(fb(&sim.app).text, "x");
+    assert!(!fb(&sim.app).selected);
+    // Ctrl+X cuts it; Shift+Delete too.
+    with_mod(&mut sim.app, ctrl.clone(), KeyCode::KeyA, Key::Character("a".into()));
+    with_mod(&mut sim.app, ctrl.clone(), KeyCode::KeyX, Key::Character("x".into()));
+    assert_eq!(fb(&sim.app).text, "");
+    assert_eq!(sim.app.world_mut().resource_mut::<Clipboard>().get().as_deref(), Some("x"));
+    type_text(&mut sim.app, "yz");
+    with_mod(&mut sim.app, ctrl, KeyCode::KeyA, Key::Character("a".into()));
+    with_mod(&mut sim.app, shift, KeyCode::Delete, Key::Delete);
+    assert_eq!(fb(&sim.app).text, "");
+    assert_eq!(sim.app.world_mut().resource_mut::<Clipboard>().get().as_deref(), Some("yz"));
 }
 
 #[test]

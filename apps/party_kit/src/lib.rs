@@ -233,12 +233,14 @@ pub const DEFAULT_BOTS: u32 = 3;
 
 /// Each game's guns at the game's own view-model field of view, for a
 /// player of that game (each bundle's `view_model_fov`: `viewmodel_fov` is
-/// CS:S's, `ca_viewmodel_fov` Combat Arms', both saved in the config;
-/// HL2:DM's 54 at its 75). After Combat Arms' view model settings are in.
+/// CS:S's, `ca_viewmodel_fov` Combat Arms', `hl2dm_viewmodel_fov`
+/// HL2:DM's (54 at its 75), all saved in the config). After Combat Arms'
+/// view model settings are in.
 pub fn add_view_model_fovs(app: &mut App) {
     let fovs = [BASE].iter().chain(GUESTS.iter()).filter_map(|b| b.view_model_fov.map(|f| f())).collect();
     app.insert_resource(chimera_world::map::GameViewModelFovs(fovs));
     cs_source::game::view_anim::viewmodel_fov_cvar(app);
+    hl2dm::game::view::viewmodel_fov_cvar(app);
 }
 
 /// What the party adds to Combat Arms' simulation (the headless tests run

@@ -7,7 +7,8 @@
 # (chimera_sim::minigame::overrides: that TOML key set when a match
 # starts; "" is the minigame's own value), so it applies from the next
 # match; without `key` the cvar is an existing one that applies at once
-# (`live = true`).
+# (`live = true`). They last for the session: the host's next start
+# begins from the minigames' own values (the page says "this session").
 
 [[setting]]
 label = "Bots"
@@ -28,10 +29,10 @@ live = true
 choices = [["1", "Allowed"], ["0", "Off"]]
 
 [[setting]]
-label = "Rung extras: attachments"
+label = "Rung extras: attachments (Combat Arms)"
 cvar = "mp_rung_extras_attachments"
 key = "rules.rung_extras.attachments"
-help = "A gun game's rungs draw fitted parts for their guns (true or false)."
+help = "A gun game's Combat Arms rungs draw fitted parts for their guns (true or false); the other games' guns take no parts."
 choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
 
 [[setting]]
@@ -49,7 +50,7 @@ help = "A gun game's rungs draw a melee weapon of their own (true or false)."
 choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
 
 [[setting]]
-label = "Rung extras: infected odds"
+label = "Rung extras: infected odds (Combat Arms)"
 cvar = "mp_rung_extras_infected_odds"
 key = "rules.rung_extras.infected.odds"
 help = "How often a melee rung (the knife finale's; at most one a ladder) makes its players the infected, with their hands alone (0 to 1; Combat Arms' data: 0.25)."

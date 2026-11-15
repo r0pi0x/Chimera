@@ -168,3 +168,26 @@ fn the_party_music_cvar_defaults_to_the_playlist_and_sets_the_director() {
     assert_eq!(sim.app.world().resource::<CaMusic>().party_music, 2);
     assert!((cvar.set)(sim.app.world_mut(), "3").is_err());
 }
+
+/// Music set to None stops the track at once, the original's loop too
+/// (playtest 7: it played on until the next match).
+#[test]
+fn music_none_stops_at_once() {
+    let mut sim = party();
+    let a = soldier(&mut sim);
+    sim.app.world_mut().entity_mut(a).insert(LocalPlayer);
+    let _b = soldier(&mut sim);
+    let console = sim.app.world().resource::<chimera_core::console::Console>();
+    let cvar = console.cvar("party_music").expect("party_music").clone();
+    (cvar.set)(sim.app.world_mut(), "2").unwrap();
+    sim.seconds(1.0);
+    let music = sim.app.world().resource::<CaMusic>();
+    assert!(!music.current.is_empty(), "the original's loop asked for");
+    // (Headless there are no files: what plays is what was asked for.)
+    (cvar.set)(sim.app.world_mut(), "0").unwrap();
+    let music = sim.app.world().resource::<CaMusic>();
+    assert!(music.current.is_empty() && !music.player.playing(), "stopped at once");
+    sim.seconds(1.0);
+    let music = sim.app.world().resource::<CaMusic>();
+    assert!(music.current.is_empty() && !music.player.playing(), "and stays stopped");
+}

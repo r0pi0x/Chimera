@@ -252,7 +252,7 @@ fn play_cues(
             voices.voices[i].ends = now;
         }
         voices.voices.retain(|v| v.ends > now);
-        let level = gain * mix.ui.clamp(0.0, 1.0) * voices.duck;
+        let level = gain * mix.ui_gain() * voices.duck;
         let gains = Arc::new(Gains::new(level, level));
         let ends = now + clip_secs(&clip) / speed.max(0.01) as f64;
         let entity = spawn_voice(&mut commands, &mut clips, clip, &gains, speed);
@@ -304,7 +304,7 @@ fn play_music(
         clip.loop_start = Some(0);
     }
     let gain = 10f32.powf(entry.gain / 20.0);
-    let level = gain * mix.music.clamp(0.0, 1.0);
+    let level = gain * mix.music_gain();
     let gains = Arc::new(Gains::new(level, level));
     let now = time.elapsed_secs_f64();
     let entity = spawn_voice(&mut commands, &mut clips, clip, &gains, 1.0);
@@ -333,7 +333,7 @@ fn mix(
     let now = time.elapsed_secs_f64();
     let duck = if announcer.is_empty() { 1.0 } else { 10f32.powf(-sounds.table.duck_db / 20.0) };
     voices.duck = duck;
-    let ui = mix.ui.clamp(0.0, 1.0);
+    let ui = mix.ui_gain();
     voices.voices.retain(|v| v.ends > now);
     for v in &voices.voices {
         let level = v.gain * ui * duck;
@@ -342,7 +342,7 @@ fn mix(
         }
     }
     if let Some(m) = &voices.music {
-        let level = m.gain * mix.music.clamp(0.0, 1.0);
+        let level = m.gain * mix.music_gain();
         if (m.gains.get().0 - level).abs() > 1e-6 {
             m.gains.set(level, level);
         }

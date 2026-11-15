@@ -169,7 +169,7 @@ pub const CVAR_RANGES: &[(&str, f32, f32)] = &[
     ("m_yaw", -0.1, 0.1),
     ("m_pitch", -0.1, 0.1),
     ("zoom_sensitivity_ratio", 0.0, 4.0),
-    ("volume", 0.0, 1.0),
+    ("volume", 0.0, 2.0),
     ("dsp_volume", 0.0, 2.0),
     ("viewmodel_fov", 30.0, 120.0),
     ("cam_idealdist", 0.0, 400.0),

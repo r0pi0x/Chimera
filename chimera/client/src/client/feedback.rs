@@ -20,7 +20,11 @@
 //!   press.
 //! - **While open** the dialog has the keys (as chat): typed text goes
 //!   into the report (2000 characters; Enter a new line), Tab switches
-//!   Bug / Feedback, **Ctrl+Enter** sends, **Esc** cancels; every key is
+//!   Bug / Feedback, the clipboard's keys work as in the kit's text
+//!   fields (`widgets::text_key`: Ctrl+V and Shift+Insert paste, line
+//!   breaks kept; Ctrl+A selects the whole text, `Feedback::selected`,
+//!   which Ctrl+C or Ctrl+Insert copies, Ctrl+X or Shift+Delete cuts and
+//!   typing replaces), **Ctrl+Enter** sends, **Esc** cancels; every key is
 //!   reset after, so no bind runs and the game sees nothing
 //!   (`console::run_binds` waits too). Clicks arrive as `FeedbackAction`s.
 //!   The UI cues sound (`ui_select` on opening and sending, `ui_hover` on
@@ -58,7 +62,7 @@ use bevy::{
     asset::RenderAssetUsages,
     input::{
         ButtonState, InputSystems,
-        keyboard::{Key, KeyboardInput},
+        keyboard::KeyboardInput,
     },
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured},
@@ -68,6 +72,7 @@ use chimera_core::mount::assets::feedback::{
     CvarValue, Feedback as OutboxThread, ImageFormat, Kind, OutboxConfig, ReportState, Screenshot as ShotBytes, Target, Targets,
 };
 
+use super::widgets::{Edit, TextKey};
 use crate::console::{Console, ConsoleAppExt, Level};
 
 /// Most characters a report's text takes.
@@ -163,6 +168,9 @@ pub struct Feedback {
     pub notice: Option<Notice>,
     /// An empty Send was refused (the field shows it until typed in).
     pub refused: bool,
+    /// The whole text is selected (Ctrl+A): copy and cut take it, typing
+    /// replaces it.
+    pub selected: bool,
     /// The app draws the dialog (else the console's `feedback_send`).
     pub dialog: bool,
     /// The app holds the key off (a bind listening for one).
@@ -187,6 +195,7 @@ impl Feedback {
         self.text.clear();
         self.details_open = false;
         self.refused = false;
+        self.selected = false;
         self.shot = None;
         self.thumb = None;
         self.snapshot.clear();
@@ -862,25 +871,42 @@ fn advance(world: &mut World) {
     }
 }
 
-/// The dialog's keys while it shows: typing, Tab, Ctrl+Enter, Esc; then
-/// every key reset (no bind, no game key, no other menu sees them).
+/// The dialog's keys while it shows: typing, Tab, Ctrl+Enter, Esc, the
+/// clipboard's; then every key reset (no bind, no game key, no other menu
+/// sees them).
+#[allow(clippy::too_many_arguments)]
 fn typing(
     mut feedback: ResMut<Feedback>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut events: MessageReader<KeyboardInput>,
     mut out: MessageWriter<FeedbackAction>,
-    mut ctrl: Local<bool>,
+    mut mods: Local<(bool, bool)>,
+    mut own: Local<chimera_ui::clipboard::Clipboard>,
+    shared: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
     if !feedback.shown() {
         events.clear();
-        *ctrl = false;
+        *mods = (false, false);
         return;
     }
+    let clipboard = match shared {
+        Some(c) => c.into_inner(),
+        None => &mut *own,
+    };
+    let (ctrl, shift) = &mut *mods;
     *ctrl |= keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    *shift |= keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
     for e in events.read() {
-        if matches!(e.key_code, KeyCode::ControlLeft | KeyCode::ControlRight) {
-            *ctrl = e.state == ButtonState::Pressed;
-            continue;
+        match e.key_code {
+            KeyCode::ControlLeft | KeyCode::ControlRight => {
+                *ctrl = e.state == ButtonState::Pressed;
+                continue;
+            }
+            KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+                *shift = e.state == ButtonState::Pressed;
+                continue;
+            }
+            _ => {}
         }
         if e.state != ButtonState::Pressed {
             continue;
@@ -896,20 +922,44 @@ fn typing(
                 out.write(FeedbackAction::ToggleCategory);
             }
             (_, KeyCode::Enter | KeyCode::NumpadEnter) => type_text(&mut feedback, "\n"),
-            (Key::Backspace, _) => {
-                feedback.text.pop();
-            }
-            (Key::Space, _) => type_text(&mut feedback, " "),
-            (Key::Character(s), _) if !*ctrl => type_text(&mut feedback, s),
-            _ => {}
+            (logical, code) => match super::widgets::text_key(logical, code, *ctrl, *shift) {
+                Some(TextKey::Paste) => {
+                    if let Some(t) = clipboard.get() {
+                        type_text(&mut feedback, &t.replace("\r\n", "\n").replace('\r', "\n"));
+                    }
+                }
+                Some(TextKey::Copy) if feedback.selected => clipboard.set(&feedback.text),
+                Some(TextKey::Cut) if feedback.selected => {
+                    clipboard.set(&feedback.text);
+                    feedback.text.clear();
+                    feedback.selected = false;
+                }
+                Some(TextKey::Edit(Edit::SelectAll)) => feedback.selected = !feedback.text.is_empty(),
+                Some(TextKey::Edit(Edit::Backspace | Edit::Delete)) if feedback.selected => {
+                    feedback.text.clear();
+                    feedback.selected = false;
+                }
+                Some(TextKey::Edit(Edit::Backspace)) => {
+                    feedback.text.pop();
+                }
+                Some(TextKey::Edit(Edit::Insert(s))) => type_text(&mut feedback, &s),
+                // The arrows, Home and End: the selection goes (the text
+                // has no caret but its end).
+                Some(TextKey::Edit(_)) => feedback.selected = false,
+                _ => {}
+            },
         }
     }
     keys.reset_all();
 }
 
 /// Add typed text, without control characters but new lines, up to
-/// `MAX_TEXT` characters.
+/// `MAX_TEXT` characters (over the selection, which it replaces).
 fn type_text(f: &mut Feedback, s: &str) {
+    if f.selected {
+        f.selected = false;
+        f.text.clear();
+    }
     let mut n = f.text.chars().count();
     for c in s.chars().filter(|c| *c == '\n' || !c.is_control()) {
         if n >= MAX_TEXT {

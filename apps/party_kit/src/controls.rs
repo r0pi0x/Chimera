@@ -23,7 +23,7 @@
 //!
 //! Each tab also has its numbers (`Setting`, a `-` and a `+` over a saved
 //! cvar): the shared tab the mouse sensitivity, each game's tab its gun
-//! view FOV (`viewmodel_fov`, `ca_viewmodel_fov`).
+//! view FOV (`viewmodel_fov`, `ca_viewmodel_fov`, `hl2dm_viewmodel_fov`).
 //!
 //! Known shortcuts: the rows are the movement and combat basics (each
 //! game's full lists are in its own options); the other settings aren't
@@ -108,6 +108,12 @@ pub const GAMES: &[GameRows] = &[
         rows: &[row("Walk", "+speed"), row("Duck", "+duck")],
         settings: &[Setting { label: "Gun view FOV", cvar: "viewmodel_fov", min: 54.0, max: 110.0, step: 1.0 }],
     },
+    GameRows {
+        game: hl2dm::game::GAME,
+        label: "Half-Life 2: Deathmatch",
+        rows: &[row("Sprint", "+speed"), row("Walk", "+walk"), row("Duck", "+duck"), row("Zoom", "+zoom")],
+        settings: &[Setting { label: "Gun view FOV", cvar: "hl2dm_viewmodel_fov", min: 54.0, max: 110.0, step: 1.0 }],
+    },
 ];
 
 /// Tab 0 is "Shared", tab `n` is `GAMES[n - 1]`.
@@ -141,9 +147,9 @@ pub fn tab_settings(tab: usize) -> &'static [Setting] {
 }
 
 /// `value` moved one step of `setting` (dir -1 or 1), within its range.
+/// On the step's grid (`host::step_from`): Combat Arms' 63.74 goes to 64.
 pub fn nudged(setting: &Setting, value: f32, dir: i8) -> f32 {
-    let next = (value + setting.step * dir as f32).clamp(setting.min, setting.max);
-    (next * 100.0).round() / 100.0
+    crate::host::step_from(value, setting.step, dir, setting.min, setting.max)
 }
 
 /// The keys `command` has on a tab: the shared binds', or the game's own.

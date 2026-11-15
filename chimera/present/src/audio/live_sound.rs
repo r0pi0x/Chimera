@@ -60,7 +60,7 @@ pub struct LiveSound {
 /// Volume by kind of sound: music (`snd_musicvolume`, set by the
 /// client's options) and an app's interface sounds (`snd_uivolume`, the
 /// `ui` bus: `chimera_client::client::ui_sound`), times the master
-/// volume.
+/// volume. Each is 0 to `MAX_GAIN` (above 1 amplifies).
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct SoundMix {
     pub music: f32,
@@ -82,17 +82,38 @@ impl Default for SoundMix {
     }
 }
 
+/// The most a volume (`volume`, `snd_musicvolume`, `snd_uivolume`)
+/// reaches: 2 is twice the recorded level (200 % in a menu).
+pub const MAX_GAIN: f32 = 2.0;
+
+/// The tag a game's own music entry ends with (Combat Arms' streamed
+/// tracks): `is_music` then counts it as music.
+pub const MUSIC_TAG: &str = "|music";
+
 impl SoundMix {
     /// The gain for a sound entry (a sound script's name or a wave path).
     pub fn gain(&self, entry: &str) -> f32 {
-        if is_music(entry) { self.music.clamp(0.0, 1.0) } else { 1.0 }
+        if is_music(entry) { self.music_gain() } else { 1.0 }
+    }
+
+    /// The music bus's gain, 0 to `MAX_GAIN`.
+    pub fn music_gain(&self) -> f32 {
+        self.music.clamp(0.0, MAX_GAIN)
+    }
+
+    /// The interface bus's gain, 0 to `MAX_GAIN`.
+    pub fn ui_gain(&self) -> f32 {
+        self.ui.clamp(0.0, MAX_GAIN)
     }
 }
 
 /// Whether a sound is music: a wave under `music/` (after Source's sound
-/// characters) or an MP3 (CS:S ships none; community maps play their
-/// music as MP3s).
+/// characters), an MP3 (CS:S ships none; community maps play their
+/// music as MP3s) or an entry tagged `MUSIC_TAG` (a game's own music).
 pub fn is_music(entry: &str) -> bool {
+    if entry.ends_with(MUSIC_TAG) {
+        return true;
+    }
     let e = entry
         .trim()
         .trim_start_matches(|c: char| "*#@<>^)}$!?&".contains(c))
@@ -556,6 +577,19 @@ fn drive_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A game's tagged music is music; the buses go past 1 (louder than
+    /// recorded) up to `MAX_GAIN` and no further.
+    #[test]
+    fn tagged_music_and_gains_above_one() {
+        assert!(is_music(&format!("ca:bgm:game/bgm/x.wav{MUSIC_TAG}")));
+        assert!(!is_music("ca:bgm:game/bgm/x.wav|stream"));
+        let mix = SoundMix { music: 1.6, ui: 3.0 };
+        assert_eq!(mix.gain("music/a.wav"), 1.6);
+        assert_eq!(mix.gain("weapons/a.wav"), 1.0);
+        assert_eq!(mix.ui_gain(), MAX_GAIN);
+        assert_eq!(SoundMix { music: -1.0, ui: 0.0 }.music_gain(), 0.0);
+    }
 
     fn clip(frames: usize, loop_start: Option<usize>) -> MapSoundClip {
         MapSoundClip {

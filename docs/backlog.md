@@ -246,22 +246,30 @@ started; the user asked to avoid server lag while testers play.
   `BoltParams::shown_model`), and a stuck bolt dragged behind the body
   (it followed the body's box centre on the 20 Hz frames, drawn a frame
   behind; now the struck sphere's node every tick, `bolts::follow_stuck`).
-- **Text fields don't accept paste** (Ctrl+V, Shift+Insert, right-click)
-  anywhere: Join address and password, Play server name, Settings value
-  boxes, the console (check), the token entry later. Add clipboard paste
-  (and copy, cut, select-all) to the kit's `text_field` via arboard or
-  Bevy's clipboard support, on Windows and Linux.
-- **Kill feed gun icons are too small next to the names.** Make them
-  take more of the row (taller, fit by ink via `chimera_ui::icon_ink`);
-  same for the top HUD (the race chip's gun icon) and the headshot and
-  other kill-modifier icons. Re-check against the look book's
-  proportions and update the parity references if we deviate.
-- **Settings audit fixes:** fps_max and party_music are not archived;
-  the music volume is not applied to Combat Arms' party music; Combat
-  Arms' options apply may reset volume and gamma at start; no HL2:DM
-  Controls tab; game-specific rows are unlabelled; Host settings are
-  lost on restart; Brightness direction; Combat Arms view-model FOV
-  steps; the "The game's loop" label.
+- **Text fields don't accept paste** (done after 7.1, confirm in a
+  playtest): the Signal fields (Join address and password, the Play
+  page's text rows, Settings' value boxes) and the console take Ctrl+V
+  and Shift+Insert (one line), Ctrl+C/Ctrl+Insert, Ctrl+X/Shift+Delete
+  and Ctrl+A, with the selection drawn (`chimera_ui::clipboard`,
+  `widgets::text_key`; a password pastes but never copies); the report
+  dialog's text takes them too (a paste keeps its line breaks, Ctrl+A
+  selects the whole text). Still open:
+  right-click paste (no context menu), the token entry when it comes.
+- **Kill feed gun icons too small** (done after 7.1, confirm in a
+  playtest): game icons fitted by their ink (`client::ink_icon`): the
+  feed's 1.25 cq in its row, the headshot mark 1 cq, the race chip's
+  1.3 cq; parity references updated (ugg-ui.md, decision 7).
+- **Settings audit fixes** (done after 7.1, confirm in a playtest):
+  `fps_max` and `party_music` archived (a test checks every Options
+  cvar is); Combat Arms' options apply no longer sets the volume (it
+  started at 0, and config.cfg saved it), the music volume or the gamma
+  in the party (`ShellOptions`); a config saved with that bug is
+  repaired once at start (`chimera_repair_options`); volumes 0 to 200 % (`volume` default 50 %), the
+  music volume applies to Combat Arms' party music; an HL2:DM Controls
+  tab with its own gun view FOV (`hl2dm_viewmodel_fov`); game-specific
+  rows labelled; Brightness is "Gamma" (lower is brighter); the CA gun
+  view FOV steps on whole degrees; "Combat Arms' loop"; Music None stops
+  at once; Host settings say they last this session (still not saved).
 - **Crash reporting, automated.** On a panic or native crash, write a
   crash bundle (backtrace, log tail, build and net version, GPU and OS,
   map and rung, Windows minidumps included) and send it to the

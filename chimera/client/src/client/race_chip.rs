@@ -9,7 +9,8 @@
 //! - **The chip** (21 x 3.05 cq, 2.2 cq from the top; wider when its line
 //!   needs it, a long name or the text floor in a small window: the plate
 //!   is measured to fit, `ChipFit`, never cropping): the leader (LEAD,
-//!   name, rung), then YOU, your rung and your gun's icon, and the ladder's
+//!   name, rung), then YOU, your rung and your gun's icon (1.3 cq, by its
+//!   ink: `ink_icon`), and the ladder's
 //!   meter (one skewed tick a rung: yours lit, your current one in the
 //!   accent, the leader's tick marked with a dot). **Leading**, it changes
 //!   shape: a crown, YOU and your rung in the accent, the whole meter in
@@ -71,6 +72,10 @@ use crate::{
     core::{LocalPlayer, Score},
     net::{HOST_ID, NetCharacter, NetScore, NetSettings, score_flags},
 };
+
+/// The chip's gun icon's height in cq (in a 4 cq wide box), fitted by its
+/// ink (`ink_icon`).
+pub const CHIP_ICON_H: f32 = 1.3;
 
 /// The chip and its board (module doc).
 pub struct RaceChipPlugin;
@@ -589,9 +594,11 @@ fn build_chip(
                 };
                 let gun = |r1: &mut ChildSpawnerCommands, row: &RaceRow| {
                     if let Some(id) = row.gun {
-                        r1.spawn((Node { height: look.val(0.9), width: look.val(2.8), align_items: AlignItems::Center, ..default() }, Pickable::IGNORE))
+                        // 1.3 x 4 cq, the icon fitted by its ink (playtest 7:
+                        // the look book's .9 x 2.8 read too small).
+                        r1.spawn((Node { height: look.val(CHIP_ICON_H), width: look.val(4.0), align_items: AlignItems::Center, ..default() }, Pickable::IGNORE))
                             .with_children(|g| {
-                                let e = signal::gun_icon(g, &look, id, row.class, look.px(0.9), look.tone(Tone::Fg));
+                                let e = signal::gun_icon(g, &look, id, row.class, look.px(CHIP_ICON_H), look.tone(Tone::Fg));
                                 parity::name(g, e, format!("{cid}.you.icon"));
                             });
                     }

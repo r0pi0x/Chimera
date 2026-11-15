@@ -982,7 +982,7 @@ fn setting_row(panel: &mut ChildSpawnerCommands, s: &Setting, index: usize, on_h
             line.spawn(button("<", Action::Step { host: on_host, index, dir: -1 }, BUTTON, 36.0));
             line.spawn((
                 Node { width: px(170.0), justify_content: JustifyContent::Center, ..default() },
-                children![text(s.pick.shown(value), 16.0, ACCENT)],
+                children![text(s.shown(value), 16.0, ACCENT)],
             ));
             line.spawn(button(">", Action::Step { host: on_host, index, dir: 1 }, BUTTON, 36.0));
             if on_host {
@@ -1013,7 +1013,7 @@ fn options_page(panel: &mut ChildSpawnerCommands, menu: &EscMenu, tab: usize, ta
 fn host_page(panel: &mut ChildSpawnerCommands, menu: &EscMenu) {
     panel.spawn((
         Node { margin: UiRect::vertical(px(6.0)), ..default() },
-        children![text("Host settings: your server's. \"next match\": from the next match on.", 13.0, DIM)],
+        children![text("Host settings: your server's, for this session (not saved). \"next match\": from the next match on.", 13.0, DIM)],
     ));
     for (i, s) in host::settings().iter().enumerate() {
         let v = menu.values.get(&s.cvar).cloned().unwrap_or_default();

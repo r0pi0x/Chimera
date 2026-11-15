@@ -5,7 +5,8 @@
 //!
 //! A modal plate with the white top bar: "Report" and a segmented **Bug |
 //! Feedback** (Tab or click); the text area ("What happened? What did you
-//! expect?", the characters left, Enter a new line); the screenshot's
+//! expect?", the characters left, Enter a new line; Ctrl+A's selection
+//! drawn on the accent tint); the screenshot's
 //! thumbnail with the **Include screenshot** toggle; a folded **What's
 //! sent** (`kv` lines: build, map, position, weapon, screenshot, the
 //! rest) and the one-line privacy notice; where the report goes (the
@@ -105,6 +106,7 @@ struct Shown {
     include: bool,
     details: bool,
     refused: bool,
+    selected: bool,
     units: (u32, u32),
 }
 
@@ -133,6 +135,7 @@ fn show(
         include: feedback.include_screenshot,
         details: feedback.details_open,
         refused: feedback.refused,
+        selected: feedback.selected,
         units: ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32),
     };
     if shown.as_ref() == Some(&now) {
@@ -204,7 +207,11 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
                     ChildOf(line),
                 ))
                 .id();
-            let _ = t;
+            if f.selected {
+                // Ctrl+A: the whole text on the accent tint, as the kit's
+                // fields draw a selection.
+                c.entity(t).insert((BackgroundColor(ui.color(Tone::Acc, 0.45)), chimera_ui::controls::TextSelection));
+            }
             if i + 1 == lines.len() {
                 caret(c, ui, line);
             }

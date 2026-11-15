@@ -14,7 +14,7 @@
 //! help line for the command typed (its usage from the help text with the
 //! argument being typed marked, a cvar's value, default, range and values),
 //! history (Up/Down with an empty line, persisted, Ctrl+R), editing keys
-//! (Ctrl+Backspace/W/Delete words, Ctrl+U/K, Ctrl+V paste, Ctrl+L clear,
+//! (Ctrl+Backspace/W/Delete words, Ctrl+U/K, Ctrl+V or Shift+Insert paste, Ctrl+L clear,
 //! Ctrl+Home/End), output lines that fit the window's height,
 //! scrollback/filter/timestamps, drag-selecting text in the output (Ctrl+C copies it; clicks never
 //! grab the mouse while open), binds with `+`/`-` actions (F1 and F2
@@ -31,6 +31,11 @@
 //! greybox back, `load_greybox`), disconnect (the greybox, then the main menu),
 //! toggleconsole, quit), `developer 1` notify lines, the `chimera/console`
 //! remote method.
+//!
+//! At start: config.cfg, then autoexec.cfg, then the command line; a
+//! config written before the party apps' options fix (no `OPTIONS_MARK`)
+//! gets `chimera_repair_options` once, which puts back the volumes and
+//! brightness that bug saved (`repair_options`).
 
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -49,6 +54,7 @@ use bevy::{
     window::CursorOptions,
 };
 
+use chimera_ui::clipboard::Clipboard;
 use super::{FirstPersonCamera, fonts::UiFonts, widgets::Interaction};
 use crate::{
     console::{Console, ConsoleAppExt, Level, cfg_dir, parse, resource_cvar},
@@ -803,6 +809,11 @@ fn edit_key(world: &mut World, e: &KeyboardInput, ctrl: bool, shift: bool) {
             _ => {}
         }
     }
+    // Paste (Ctrl+V, Shift+Insert): the clipboard's text, read before
+    // the console's state is borrowed (`chimera_ui::clipboard`).
+    let paste = (ctrl && e.key_code == KeyCode::KeyV) || (shift && e.key_code == KeyCode::Insert);
+    let pasted = paste.then(|| world.get_resource_or_init::<Clipboard>().get().unwrap_or_default());
+    let mut copied = None;
     let mut ui = world.resource_mut::<ConsoleUi>();
     let before = ui.input.clone();
     let chars: Vec<char> = ui.input.chars().collect();
@@ -852,9 +863,9 @@ fn edit_key(world: &mut World, e: &KeyboardInput, ctrl: bool, shift: bool) {
         (_, KeyCode::Delete) if ctrl => {
             ui.input = chars[..cur].iter().chain(&chars[word_end..]).collect();
         }
-        (_, KeyCode::KeyV) if ctrl => {
+        _ if paste => {
             // Paste (one line: newlines become command separators).
-            let text = arboard::Clipboard::new().and_then(|mut c| c.get_text()).unwrap_or_default();
+            let text = pasted.unwrap_or_default();
             let text = text.trim_end().replace("\r\n", "; ").replace('\n', "; ");
             let ins: Vec<char> = text.chars().collect();
             let mut c = chars.clone();
@@ -862,8 +873,8 @@ fn edit_key(world: &mut World, e: &KeyboardInput, ctrl: bool, shift: bool) {
             ui.input = c.into_iter().collect();
             ui.cursor = cur + ins.len();
         }
-        (_, KeyCode::KeyC) if ctrl => {
-            copy_selection(&ui);
+        (_, KeyCode::KeyC) | (_, KeyCode::Insert) if ctrl => {
+            copied = selection_text(&ui);
         }
         (_, KeyCode::KeyA) if ctrl => ui.cursor = 0,
         (_, KeyCode::KeyE) if ctrl => ui.cursor = chars.len(),
@@ -955,6 +966,9 @@ fn edit_key(world: &mut World, e: &KeyboardInput, ctrl: bool, shift: bool) {
             ui.cursor = cur + 1;
         }
         _ => return,
+    }
+    if let Some(text) = copied {
+        world.get_resource_or_init::<Clipboard>().set(&text);
     }
     let mut ui = world.resource_mut::<ConsoleUi>();
     if reset_cycle {
@@ -1060,6 +1074,10 @@ fn autoexec(
         // written again with the mark.
         console.submit("binddefaults new");
     }
+    if !config.as_ref().is_none_or(|t| t.contains(OPTIONS_MARK)) {
+        // Written before the party's options fix: undo what it saved.
+        console.submit("chimera_repair_options");
+    }
     // The app's own defaults (`binds::AppBind`: Ultimate Gun Game's F10)
     // on a saved config, once: where the key is free or still holds the
     // default they replace.
@@ -1090,6 +1108,35 @@ fn autoexec(
             *v = Visibility::Visible;
         }
     }
+}
+
+/// A config.cfg written since the party apps keep their own sound and
+/// brightness says so (`console::config_text`'s fourth line). One without
+/// it may carry what Combat Arms' options, its profile not loaded, set at
+/// each start of the party apps until the fix of 2026-11-14 (`combat_arms::ui::
+/// options_apply::ShellOptions`) and the config then saved: `volume 0`
+/// with `snd_musicvolume 0`, and `mat_monitorgamma` at Combat Arms' default
+/// gamma's (2.2 / 1.22): `chimera_repair_options` puts those back to the
+/// defaults, once (the config is written again with the mark).
+pub const OPTIONS_MARK: &str = "// shell options: 1";
+
+/// The brightness Combat Arms' default gamma (1.22) set in the party apps
+/// (`options_apply::monitor_gamma`), the saved bug's signature.
+pub const CA_GAMMA_SAVED: f32 = 2.2 / 1.22;
+
+/// `chimera_repair_options` (`OPTIONS_MARK`): the lines that put back the
+/// options the party's bug saved, from the values the config gave
+/// (`volume`, `snd_musicvolume`, `mat_monitorgamma`; None: unset).
+pub fn repair_options(volume: Option<f32>, music: Option<f32>, gamma: Option<f32>) -> Vec<String> {
+    let mut out = Vec::new();
+    if volume == Some(0.0) && music == Some(0.0) {
+        out.push(format!("volume {}", super::audio::DEFAULT_VOLUME));
+        out.push("snd_musicvolume 1".to_string());
+    }
+    if gamma.is_some_and(|g| (g - CA_GAMMA_SAVED).abs() < 1e-3) {
+        out.push(format!("mat_monitorgamma {}", super::gamma::DEFAULT_GAMMA));
+    }
+    out
 }
 
 /// Save binds and changed cvars when the game closes.
@@ -1230,7 +1277,7 @@ fn selected_text(rows: &[String], sel: (TextPos, TextPos)) -> String {
 
 /// Select text in the output with the mouse: press and drag from one
 /// character to another (rows between are covered whole), the selected
-/// span drawn highlighted; Ctrl+C copies it (`copy_selection`), as CS:S's
+/// span drawn highlighted; Ctrl+C copies it (`selection_text`), as CS:S's
 /// console does.
 fn select_text(
     mut ui: ResMut<ConsoleUi>,
@@ -1339,15 +1386,11 @@ fn select_text(
     }
 }
 
-/// Ctrl+C with text selected in the output puts it on the clipboard;
-/// whether there was a selection to copy.
-fn copy_selection(ui: &ConsoleUi) -> bool {
-    let Some(sel) = ui.selection.filter(|(a, b)| a != b) else { return false };
-    let text = selected_text(&ui.shown, sel);
-    if let Err(e) = arboard::Clipboard::new().and_then(|mut c| c.set_text(text)) {
-        warn!("clipboard: {e}");
-    }
-    true
+/// The text selected in the output, for Ctrl+C (Ctrl+Insert) to put on
+/// the clipboard; none without a selection.
+fn selection_text(ui: &ConsoleUi) -> Option<String> {
+    let sel = ui.selection.filter(|(a, b)| a != b)?;
+    Some(selected_text(&ui.shown, sel))
 }
 
 /// The suggestion box under the console as you type: the help line for
@@ -2895,6 +2938,27 @@ pub fn client_commands(app: &mut App) {
         },
     )
     .console_command(
+        "chimera:repair_options",
+        "repair_options: put back a volume, music volume and brightness the party apps' options bug saved (run once \
+         at start for a config written before the fix).",
+        |w, _| {
+            let mut value = |name: &str| {
+                let c = w.resource::<Console>().cvar(name).cloned()?;
+                (c.get)(w).and_then(|v| v.trim().parse::<f32>().ok())
+            };
+            let (v, m, g) = (value("volume"), value("snd_musicvolume"), value("mat_monitorgamma"));
+            let lines = repair_options(v, m, g);
+            if lines.is_empty() {
+                return Ok(None);
+            }
+            let mut console = w.resource_mut::<Console>();
+            for l in &lines {
+                console.submit(l.clone());
+            }
+            Ok(Some(format!("options repaired: {}", lines.join("; "))))
+        },
+    )
+    .console_command(
         "chimera:con_copy",
         "con_copy [lines]: copy the console output (or its last lines) to the clipboard.",
         |w, a| {
@@ -2905,9 +2969,7 @@ pub fn client_commands(app: &mut App) {
             };
             let text: Vec<String> = output.iter().skip(output.len().saturating_sub(n)).map(|l| l.text.clone()).collect();
             let count = text.len();
-            arboard::Clipboard::new()
-                .and_then(|mut c| c.set_text(text.join("\n")))
-                .map_err(|e| format!("clipboard: {e}"))?;
+            w.get_resource_or_init::<Clipboard>().set(&text.join("\n"));
             Ok(Some(format!("copied {count} lines")))
         },
     );
@@ -2951,6 +3013,19 @@ pub fn remote_exec(
 
 #[cfg(test)]
 mod tests {
+    /// The party's saved bug is put back (both volumes 0 together, the
+    /// brightness at Combat Arms' default gamma's); a player's own 0
+    /// volume with music on, or their own brightness, stays.
+    #[test]
+    fn repair_options_undoes_the_party_bug_only() {
+        use super::{CA_GAMMA_SAVED, repair_options};
+        assert_eq!(repair_options(Some(0.0), Some(0.0), Some(1.8032787)), ["volume 0.5", "snd_musicvolume 1", "mat_monitorgamma 2.2"]);
+        assert!((CA_GAMMA_SAVED - 1.8032787).abs() < 1e-5);
+        assert!(repair_options(Some(0.0), Some(0.6), Some(1.8)).is_empty());
+        assert!(repair_options(Some(0.7), Some(0.0), None).is_empty());
+        assert!(repair_options(None, None, None).is_empty());
+    }
+
 
     #[test]
     fn closing_with_the_console_key_captures_the_mouse() {

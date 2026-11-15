@@ -4,10 +4,18 @@
 //! each game, and the binds (shared and each game's own). The config is
 //! written as `host_writeconfig` writes it (`config_text`) and read as the
 //! shell reads it at start (its lines run from the console's queue after
-//! the startup systems), headless.
+//! the startup systems), headless. The volumes and the brightness too:
+//! Combat Arms' options apply, with its profile unloaded (`soundvolume`
+//! 0), set the master volume to 0 at each start.
 
 use bevy::prelude::*;
-use chimera_client::client::input::{MouseSettings, mouse_cvars};
+use bevy::audio::GlobalVolume;
+use chimera_client::client::{
+    audio::SoundOptionsPlugin,
+    gamma::GammaPlugin,
+    input::{MouseSettings, mouse_cvars},
+};
+use chimera_present::audio::live_sound::SoundMix;
 use chimera_core::console::{Console, ConsolePlugin, config_text};
 use chimera_world::map::{GameViewModelFovs, ViewModelSettings};
 use combat_arms::{game::options::CaOptionsPlugin, ui::options_apply::CaOptionsApplyPlugin};
@@ -23,6 +31,7 @@ fn app(config: Option<&str>) -> App {
         .init_resource::<MouseSettings>()
         .insert_resource(combat_arms::game::view_model::settings());
     mouse_cvars(&mut app);
+    app.add_plugins((SoundOptionsPlugin, GammaPlugin));
     app.add_plugins((CaOptionsPlugin, CaOptionsApplyPlugin, PartyMousePlugin));
     combat_arms::game::view_model::register_fov_cvar(&mut app);
     party_kit::add_view_model_fovs(&mut app);
@@ -101,4 +110,89 @@ fn the_fov_stays_in_its_range() {
     assert_eq!(value(&mut app, "viewmodel_fov"), "110");
     run(&mut app, "ca_viewmodel_fov 10");
     assert_eq!(value(&mut app, "ca_viewmodel_fov"), "63.74");
+}
+
+/// A fresh profile hears the game at half volume, whatever Combat Arms'
+/// unloaded profile says (its `soundvolume` 0 had muted the party); a
+/// volume above 1 (up to 200 %) is saved, read back, left alone by
+/// Combat Arms' options changing, and reaches the mixer above 1. The
+/// brightness and the music volume likewise.
+#[test]
+fn volumes_and_brightness_are_the_shells() {
+    let mut first = app(None);
+    assert_eq!(value(&mut first, "volume"), "0.5", "a fresh profile starts at half volume");
+    assert!((first.world().resource::<GlobalVolume>().volume.to_linear() - 0.5).abs() < 1e-6);
+    for line in ["volume 1.6", "snd_musicvolume 1.4", "mat_monitorgamma 1.8"] {
+        run(&mut first, line);
+    }
+    // Combat Arms' options changing must not take them from the shell.
+    {
+        let mut levels = first.world_mut().resource_mut::<combat_arms::game::options::CaSoundLevels>();
+        levels.master = 0.0;
+        levels.music = 0.0;
+    }
+    first.world_mut().resource_mut::<combat_arms::game::options::CaGamma>().0 = 1.0;
+    first.update();
+    assert_eq!(value(&mut first, "volume"), "1.6", "Combat Arms' options leave the shell's volume alone");
+    assert_eq!(value(&mut first, "mat_monitorgamma"), "1.8");
+    let config = config_text(first.world_mut());
+    assert!(config.contains("volume \"1.6\"") || config.contains("volume 1.6"), "{config}");
+
+    let mut second = app(Some(&config));
+    assert_eq!(value(&mut second, "volume"), "1.6");
+    assert_eq!(value(&mut second, "snd_musicvolume"), "1.4");
+    assert_eq!(value(&mut second, "mat_monitorgamma"), "1.8");
+    let gain = second.world().resource::<GlobalVolume>().volume.to_linear();
+    assert!((gain - 1.6).abs() < 1e-6, "the mixer's master is above 1: {gain}");
+    let music = second.world().resource::<SoundMix>().gain(&format!("ca:bgm:a.wav{}", chimera_present::audio::live_sound::MUSIC_TAG));
+    assert!((music - 1.4).abs() < 1e-6, "Combat Arms' party music follows snd_musicvolume: {music}");
+}
+
+/// Every cvar the party's Options page sets is saved in config.cfg (an
+/// option that isn't comes back at its default after a restart, as
+/// `fps_max` and `party_music` did): each row's owner registered as the
+/// client registers it, on the party's simulation.
+#[test]
+fn every_option_is_archived() {
+    use chimera_client::client::{hit_marker::HitMarkerPlugin, hud, perf, swap_effect::SwapEffectPlugin, video::VideoPlugin};
+    use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
+    use combat_arms::harness::CaSim;
+    let sim = Sim::with(CaSim, |app| {
+        app.add_plugins((GreyboxMapPlugin, party_kit::PartyPartsPlugin))
+            .add_plugins((VideoPlugin, SoundOptionsPlugin, GammaPlugin, HitMarkerPlugin, SwapEffectPlugin))
+            .init_resource::<MouseSettings>();
+        mouse_cvars(app);
+        perf::frame_limit_cvar(app);
+        hud::default_radars(app, false);
+    });
+    let console = sim.app.world().resource::<Console>();
+    let tabs = party_kit::esc_menu::option_tabs_for(true);
+    assert!(!tabs.is_empty());
+    for (tab, settings) in tabs {
+        for s in settings {
+            let cvar = console.cvar(&s.cvar).unwrap_or_else(|| panic!("{tab}: {} has no cvar here", s.cvar));
+            assert!(cvar.archive, "{tab}: {} ({}) isn't saved in config.cfg", s.label, s.cvar);
+        }
+    }
+}
+
+/// The Options' volumes go to 200 % and show as percentages; the
+/// settings audit's labels: game-specific rows name their games,
+/// brightness is "Gamma" (lower is brighter), Combat Arms' loop is named.
+#[test]
+fn options_rows_read_right() {
+    let tabs = party_kit::esc_menu::option_tabs_for(true);
+    let row = |cvar: &str| tabs.iter().flat_map(|(_, s)| s.iter()).find(|s| s.cvar == cvar).unwrap_or_else(|| panic!("{cvar}")).clone();
+    for cvar in ["volume", "snd_musicvolume", "snd_uivolume"] {
+        let s = row(cvar);
+        assert!(matches!(s.pick, party_kit::host::Pick::Range { min: 0.0, max: 2.0, .. }), "{cvar}: 0 to 200 %");
+        assert_eq!(s.shown("1.6"), "160%");
+        assert_eq!(s.shown("0.5"), "50%");
+    }
+    assert_eq!(row("mat_monitorgamma").label, "Gamma");
+    assert!(row("cl_hitmarker").label.contains("CS:S"));
+    assert!(row("hud_radar").label.contains("Combat Arms"));
+    let music = row("party_music");
+    assert_eq!(music.shown("2"), "Combat Arms' loop");
+    assert_eq!(row("fov_desired").shown("90"), "90", "a plain range stays a number");
 }

@@ -18,7 +18,8 @@
 //! (`ScrollDrag`), the view free of the list's selection; a `Slider` follows the
 //! mouse while held, with tick marks under it; a `TextEntry` has a caret,
 //! a selection (Shift with the arrows, a drag, Ctrl+A), copy, cut and
-//! paste; a `Frame` moves by its title bar (kept on screen), comes to the
+//! paste (one-line fields: `text_key` maps the keys, `Caret::key` applies
+//! them with `chimera_ui::clipboard::Clipboard`); a `Frame` moves by its title bar (kept on screen), comes to the
 //! front when clicked, closes from its X, and the sizeable ones (the
 //! server browser) resize from their edges and corner down to their
 //! minimum size. Nothing is remembered across runs: a frame is centred
@@ -1154,6 +1155,11 @@ impl Caret {
         self.at.min(self.anchor)..self.at.max(self.anchor)
     }
 
+    /// As the kit's text field takes it (byte offsets into `text`).
+    pub fn cursor(&self, text: &str) -> chimera_ui::controls::TextCursor {
+        chimera_ui::controls::TextCursor { at: byte(text, self.at), anchor: byte(text, self.anchor) }
+    }
+
     pub fn selected<'a>(&self, text: &'a str) -> &'a str {
         let r = self.range();
         &text[byte(text, r.start)..byte(text, r.end)]
@@ -1228,6 +1234,68 @@ impl Caret {
             Edit::To(i, extend) => moved(self, i.min(n), extend),
         }
         false
+    }
+}
+
+/// A key in a one-line text field (`text_key`): an edit, or the
+/// clipboard's copy, cut or paste.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TextKey {
+    Edit(Edit),
+    Copy,
+    Cut,
+    Paste,
+}
+
+/// What a key does in a one-line text field (the party's Signal fields,
+/// the kit's `text_field`): Ctrl+V and Shift+Insert paste, Ctrl+C and
+/// Ctrl+Insert copy, Ctrl+X and Shift+Delete cut, Ctrl+A selects all;
+/// the arrows, Home and End move (Shift extends the selection); typed
+/// characters insert. None: not the field's (Enter, Tab, Esc).
+pub fn text_key(logical: &bevy::input::keyboard::Key, code: KeyCode, ctrl: bool, shift: bool) -> Option<TextKey> {
+    use bevy::input::keyboard::Key;
+    Some(match (logical, code) {
+        (_, KeyCode::KeyV) if ctrl => TextKey::Paste,
+        (_, KeyCode::Insert) if shift => TextKey::Paste,
+        (_, KeyCode::KeyC) if ctrl => TextKey::Copy,
+        (_, KeyCode::Insert) if ctrl => TextKey::Copy,
+        (_, KeyCode::KeyX) if ctrl => TextKey::Cut,
+        (_, KeyCode::Delete) if shift => TextKey::Cut,
+        (_, KeyCode::KeyA) if ctrl => TextKey::Edit(Edit::SelectAll),
+        (_, KeyCode::ArrowLeft) => TextKey::Edit(Edit::Left(shift)),
+        (_, KeyCode::ArrowRight) => TextKey::Edit(Edit::Right(shift)),
+        (_, KeyCode::Home) => TextKey::Edit(Edit::Home(shift)),
+        (_, KeyCode::End) => TextKey::Edit(Edit::End(shift)),
+        (_, KeyCode::Delete) => TextKey::Edit(Edit::Delete),
+        (Key::Backspace, _) => TextKey::Edit(Edit::Backspace),
+        (Key::Space, _) => TextKey::Edit(Edit::Insert(" ".into())),
+        (Key::Character(s), _) if !ctrl => TextKey::Edit(Edit::Insert(s.to_string())),
+        _ => return None,
+    })
+}
+
+impl Caret {
+    /// Applies `key` to `text` (at most `max` bytes) with `clipboard`: a
+    /// paste is one line (`chimera_ui::clipboard::single_line`); a
+    /// `masked` field (a password) takes a paste but never gives its text
+    /// (copy and cut do nothing). Whether the text changed.
+    pub fn key(&mut self, text: &mut String, key: TextKey, clipboard: &mut chimera_ui::clipboard::Clipboard, max: usize, masked: bool) -> bool {
+        match key {
+            TextKey::Edit(e) => self.edit(text, e, max),
+            TextKey::Paste => match clipboard.get() {
+                Some(t) => self.edit(text, Edit::Insert(chimera_ui::clipboard::single_line(&t)), max),
+                None => false,
+            },
+            TextKey::Copy | TextKey::Cut if masked || self.range().is_empty() => false,
+            TextKey::Copy => {
+                clipboard.set(self.selected(text));
+                false
+            }
+            TextKey::Cut => {
+                clipboard.set(self.selected(text));
+                self.edit(text, Edit::Delete, max)
+            }
+        }
     }
 }
 

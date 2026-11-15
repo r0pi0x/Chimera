@@ -27,6 +27,8 @@ serde.workspace = true
 # features Bevy's text stack already builds (through parley).
 skrifa = { version = "0.44", default-features = false, features = ["std", "autohint_shaping"] }
 toml.workspace = true
+# The system clipboard for text fields (`clipboard`): Windows, X11, Wayland.
+arboard.workspace = true
 workspace-hack.workspace = true
 
 # avian3d with the clients' features, for this crate's own tests only (one
