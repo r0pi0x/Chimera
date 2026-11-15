@@ -107,6 +107,9 @@ pub struct PhysicsDef {
     pub ground_k1: f32,
     pub ground_k0: f32,
     pub air_friction: f32,
+    /// The stored tensor's diagonal (the scout's torque scales).
+    pub xx_moment: f32,
+    pub yy_moment: f32,
     pub zz_moment: f32,
     /// Model frame.
     pub inverse_inertia: Mat3,

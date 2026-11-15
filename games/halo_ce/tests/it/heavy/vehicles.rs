@@ -25,7 +25,7 @@ const PLACEMENTS: [[f32; 3]; 2] = [[29.14, -90.83, 0.29], [102.31, -144.63, 0.58
 fn vehicles(sim: &mut Sim) -> Vec<(Entity, HaloVehicle)> {
     let w = sim.app.world_mut();
     let mut q = w.query::<(Entity, &HaloVehicle)>();
-    let mut out: Vec<(Entity, HaloVehicle)> = q.iter(w).map(|(e, v)| (e, v.clone())).collect();
+    let mut out: Vec<(Entity, HaloVehicle)> = q.iter(w).filter(|(_, v)| v.def == 0).map(|(e, v)| (e, v.clone())).collect();
     out.sort_by(|a, b| a.1.drive.body.position.x.total_cmp(&b.1.drive.body.position.x));
     out
 }
@@ -161,6 +161,13 @@ fn the_seat_cameras_on_the_disc() {
     near(command(gunner, o, 0.0, 0.0).camera, Vec3::new(-2.9759, 0.0, 1.4958), "gunner camera");
     // The passenger's eye.
     near(Vec3::from(m["camera rider"]), Vec3::new(0.0715, -0.1586, 0.8056), "camera rider");
+    // The Ghost driver's `driver camera` is missing: the root node.
+    use halo_ce::game::vehicles::camera::ROOT_NODE;
+    let g = markers_of(&map, "ghost").expect("a placed Ghost");
+    assert!(!g.contains_key("driver camera"));
+    let hull = Vec3::from(g[ROOT_NODE]);
+    near(hull, Vec3::new(0.3928, 0.0, 0.1711), "the Ghost's hull node");
+    near(command(hull, o, 0.0, 0.0).camera, Vec3::new(-2.3596, 0.0, 0.8538), "Ghost camera");
 }
 
 #[test]

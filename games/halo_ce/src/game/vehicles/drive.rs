@@ -6,9 +6,16 @@
 //! and the flip) and `Drive::tick` runs one Halo tick of a vehicle: the
 //! variables from the driver's controls, the type's channels, the step.
 //!
-//! Only the jeep's driving model is here (the Warthog); the scout, tank and
-//! fighter are each a `prepare` arm away (their channels and magic force
-//! and torque are in the spec).
+//! The jeep's driving model (the Warthog: `prepare`'s channels) and the
+//! scout's (the Ghost: every channel's antigravity at the driver's power,
+//! `scout`'s drive, yaw, levelling and jump force and torque, the hover
+//! fraction after the step); the tank and fighter are each a `prepare` arm
+//! away.
+//!
+//! Known shortcuts:
+//! - The scout's water cut-off (drive, yaw and levelling stop in 0.5 WU of
+//!   water) is not applied: the multiplayer maps' water is shallow and the
+//!   engine has no water volumes for it.
 
 use bevy::math::Vec3;
 
@@ -28,6 +35,31 @@ pub const FLIP_RATE: f32 = 0.3;
 pub const FLIP_UP_LIMIT: f32 = 0.7071;
 /// Riders are thrown out of a grounded vehicle whose up.z is below this.
 pub const EJECT_UP: f32 = 0.2;
+/// The scout (vehicles.md "The scout", Constants): its yaw rate's change
+/// limit, the steering beyond which grounded drive is cut, the hover
+/// fraction's rate, the desired yaw rate's gain, the up.z at or below which
+/// it neither drives nor steers, the stick and levelling torque scales, and
+/// the jump's pitch torque and lift.
+pub const SCOUT_YAW_ACCEL: f32 = 0.003_490_658_7;
+pub const SCOUT_STEER_SHARP: f32 = 0.785_398_2;
+pub const HOVER_RATE: f32 = 0.1;
+pub const SCOUT_YAW_GAIN: f32 = 0.006_981_317_4;
+pub const SCOUT_UPSIDE_DOWN: f32 = -0.2;
+pub const SCOUT_STICK_TORQUE: f32 = 0.001_551_403_8;
+pub const SCOUT_LEVEL_TORQUE: f32 = 0.003_878_509_4;
+pub const SCOUT_JUMP_PITCH: f32 = -0.005_817_764;
+pub const SCOUT_JUMP_LIFT: f32 = 0.004;
+
+/// The scout's desired yaw rate for steering angle `sigma`: sign(σ)
+/// √(0.0069813174 |σ|), or σ/2 when σ is under twice that (|σ| < 0.0279
+/// rad).
+pub fn scout_yaw_rate(sigma: f32) -> f32 {
+    if sigma == 0.0 {
+        return 0.0;
+    }
+    let wd = sigma.signum() * (SCOUT_YAW_GAIN * sigma.abs()).sqrt();
+    if wd.abs() > 1e-6 && sigma / wd < 2.0 { sigma / 2.0 } else { wd }
+}
 
 /// A speed record: positive limit, negative limit, acceleration,
 /// deceleration.
@@ -120,6 +152,10 @@ pub struct Drive {
     pub treads: [f32; 2],
     /// The driver's seat power P0.
     pub power: f32,
+    /// The scout's hover fraction h_v.
+    pub hover: f32,
+    /// The steering angle σ of the last controls.
+    pub sigma: f32,
     pub brake: bool,
     pub asleep: bool,
     /// Whether sleeping is allowed (the spec's driving cases turn it off).
@@ -150,6 +186,8 @@ impl Drive {
             wheel: 0.0,
             treads: [0.0; 2],
             power: 0.0,
+            hover: 0.0,
+            sigma: 0.0,
             brake: false,
             asleep: false,
             sleep_enabled: true,
@@ -193,6 +231,7 @@ impl Drive {
         } else {
             0.0
         };
+        self.sigma = sigma;
         match def.kind {
             Kind::Tank => {
                 // The tank's turn (vehicles.md step 3) comes with its rule.
@@ -249,6 +288,73 @@ impl Drive {
         }
     }
 
+    /// The scout's preparation (vehicles.md "The scout", step 2): its drive
+    /// toward the stick's velocity, the capped yaw torque toward the
+    /// camera, the levelling and stick torques while partly grounded, the
+    /// jump's lift; all times the driver's power. Returns the magic force
+    /// and torque.
+    fn scout(&self, def: &VehicleDef, phys: &PhysicsDef, c: &Controls, sigma: f32) -> (Vec3, Vec3) {
+        let b = &self.body;
+        let (f, l, u) = (b.forward, b.left(), b.up);
+        let (mut fm, mut tm) = (Vec3::ZERO, Vec3::ZERO);
+        // No water reaches 0.5 WU on the multiplayer maps (not modelled).
+        if u.z <= SCOUT_UPSIDE_DOWN {
+            return (fm, tm);
+        }
+        let m = phys.mass;
+        let hv = self.hover;
+        let v = b.velocity;
+        let w = b.angular_velocity;
+        let top = def.max_forward_speed;
+        if hv > 0.0 {
+            let vmax = top * if self.brake { 0.8 } else { 1.0 };
+            let mut a = Vec3::new(vmax * c.throttle[0] - v.dot(f), vmax * c.throttle[1] - v.dot(l), 0.0);
+            let mut amax = def.speed_acceleration;
+            if self.ground_ticks > 0 && sigma.abs() > SCOUT_STEER_SHARP {
+                amax *= 1.0 - (0.05 * self.ground_ticks as f32).min(0.98);
+            }
+            if a.length() > amax {
+                a = a.normalize() * amax;
+            }
+            fm += b.frame() * a * (m * hv);
+            let wu = u.dot(w);
+            let wd = scout_yaw_rate(sigma);
+            let e = (wd - wu).clamp(-SCOUT_YAW_ACCEL, SCOUT_YAW_ACCEL);
+            tm += u * (e * phys.zz_moment * hv);
+        }
+        if hv < 1.0 {
+            let f2 = Vec3::new(f.x, f.y, 0.0).normalize_or_zero();
+            let l2 = Vec3::new(l.x, l.y, 0.0).normalize_or_zero();
+            let t = [c.throttle[0], c.throttle[1]];
+            let comp = if u.z > 0.0 {
+                let align = [u.dot(f2), u.dot(l2)];
+                let rate = [w.dot(l2), -w.dot(f2)];
+                let lev = [-align[0] - 15.0 * rate[0], -align[1] - 15.0 * rate[1]];
+                [0, 1].map(|k| {
+                    let s = if t[k] * lev[k] < 0.0 { -1.0 } else { 1.0 };
+                    t[k] * (s * lev[k].abs() + 1.0).clamp(0.3, 2.5) * SCOUT_STICK_TORQUE
+                        + (1.0 - u.z) * SCOUT_LEVEL_TORQUE * lev[k]
+                })
+            } else {
+                [t[0] * SCOUT_STICK_TORQUE, t[1] * SCOUT_STICK_TORQUE]
+            };
+            tm += (l * (comp[0] * phys.yy_moment) - f * (comp[1] * phys.xx_moment)) * (1.0 - hv);
+        }
+        if self.brake {
+            let k = (f.dot(v) / top).clamp(0.0, 1.0);
+            if k > 0.0 {
+                tm += l * (phys.yy_moment * k * hv * SCOUT_JUMP_PITCH);
+                fm += Vec3::Z * (m * k * hv * SCOUT_JUMP_LIFT);
+            }
+            if self.airborne_ticks > 0 {
+                let rho = (1.0 - self.airborne_ticks as f32 / 30.0).clamp(0.0, 1.0);
+                let ahead = l.cross(Vec3::Z).normalize_or_zero();
+                fm += (ahead * 0.002 + Vec3::Z * 0.001) * ((1.0 - hv) * m * rho);
+            }
+        }
+        (fm * self.power, tm * self.power)
+    }
+
     /// Whether the vehicle wakes this tick (flags 0 to 2).
     fn wakes(&self, def: &VehicleDef) -> bool {
         (def.flags & vehicle_flags::SPEED_WAKES_PHYSICS != 0 && self.speed != 0.0)
@@ -287,10 +393,23 @@ impl Drive {
         // 9. The physics, or the slow stop while asleep.
         if !self.asleep {
             let channels = self.prepare(def);
-            let (f, t) = (self.collision_force, self.collision_torque);
+            let (mut f, mut t) = (self.collision_force, self.collision_torque);
+            if def.kind == Kind::Scout {
+                let (fm, tm) = self.scout(def, phys, c, self.sigma);
+                f += fm;
+                t += tm;
+            }
             self.collision_force = Vec3::ZERO;
             self.collision_torque = Vec3::ZERO;
             self.last = physics::step(phys, &mut self.body, &channels, level, scales, f, t);
+            if def.kind == Kind::Scout {
+                // The hover fraction toward (antigraving channel points /
+                // channel points) · max(up.z, 0.4).
+                let points = phys.points.iter().filter(|p| p.channel.is_some()).count().max(1);
+                let target =
+                    (self.last.antigraving as f32 / points as f32 * self.body.up.z.max(0.4)).clamp(0.0, 1.0);
+                self.hover += (target - self.hover).clamp(-HOVER_RATE, HOVER_RATE);
+            }
             self.on_ground = self.last.touching > 0;
             self.ground_ticks = if self.on_ground { (self.ground_ticks + 1).min(255) } else { 0 };
             self.airborne_ticks = if self.on_ground || self.last.antigraving > 0 {

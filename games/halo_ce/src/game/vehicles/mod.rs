@@ -171,13 +171,13 @@ impl Plugin for HaloVehiclesPlugin {
         use chimera_core::console::ConsoleAppExt;
         app.console_command(
             "halo_vehicle_enter",
-            "Seat the local player in the nearest vehicle's empty driver seat (screenshots)",
-            |w, _| match enter_nearest(w) {
+            "Seat the local player in the nearest vehicle's empty driver seat; <name>: of that vehicle (screenshots)",
+            |w, args| match enter_nearest(w, args.first().map(String::as_str)) {
                 Ok(m) => Ok(Some(m)),
                 // Not yet (a launch's `+halo_vehicle_enter` runs before
                 // the map loads): retried each tick until it works.
                 Err(_) => {
-                    w.insert_resource(EnterWhenReady);
+                    w.insert_resource(EnterWhenReady(args.first().cloned()));
                     Ok(Some("will seat the local player once a vehicle is near".into()))
                 }
             },
@@ -220,19 +220,22 @@ impl Plugin for HaloVehiclesPlugin {
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct HeldThrottle(pub f32);
 
-/// `halo_vehicle_enter` waiting for a local player and a vehicle.
-#[derive(Resource, Clone, Copy, Debug)]
-pub struct EnterWhenReady;
+/// `halo_vehicle_enter` waiting for a local player and a vehicle (of
+/// that name).
+#[derive(Resource, Clone, Debug)]
+pub struct EnterWhenReady(pub Option<String>);
 
 fn enter_when_ready(
     players: Query<(Entity, &Transform), (With<crate::core::LocalPlayer>, Without<Seated>)>,
     mut vehicles: Query<(Entity, &mut HaloVehicle)>,
     defs: Res<VehicleDefs>,
+    wanted: Res<EnterWhenReady>,
     mut commands: Commands,
 ) {
     let Some((p, at)) = players.iter().next() else { return };
     let best = vehicles
         .iter()
+        .filter(|(_, v)| wanted.0.as_ref().is_none_or(|n| *n == defs.0[v.def].0.name))
         .filter_map(|(e, v)| {
             let seat = defs.0[v.def].0.driver_seat().filter(|&s| v.riders[s].is_none())?;
             Some(((to_engine(v.drive.body.position) - at.translation).length(), e, seat))
@@ -247,7 +250,7 @@ fn enter_when_ready(
 }
 
 /// The local player into the nearest vehicle's empty driver seat.
-fn enter_nearest(w: &mut World) -> Result<String, String> {
+fn enter_nearest(w: &mut World, name: Option<&str>) -> Result<String, String> {
     let mut players = w.query_filtered::<(Entity, &Transform), (With<crate::core::LocalPlayer>, Without<Seated>)>();
     let (p, at) = players
         .iter(w)
@@ -258,6 +261,7 @@ fn enter_nearest(w: &mut World) -> Result<String, String> {
     let mut vehicles = w.query::<(Entity, &HaloVehicle)>();
     let (ve, seat) = vehicles
         .iter(w)
+        .filter(|(_, v)| name.is_none_or(|n| n == defs.0[v.def].0.name))
         .filter_map(|(e, v)| {
             let d = &defs.0[v.def].0;
             let seat = d.driver_seat().filter(|&s| v.riders[s].is_none())?;

@@ -1,0 +1,120 @@
+# The Ghost (`vehicles\ghost\ghost_mp`), from specs/halo_ce/vehicles.md
+# ("Vehicle fields of the four", "Seats", "Physics: the four", "Ghost mass
+# points"). Units as the tag's: world units (WU), WU per tick, degrees
+# where the tag stores degrees (seat yaw and pitch rates), radians
+# elsewhere. Its physics tag is the campaign Ghost's (`vehicles\ghost\ghost`).
+# Checked against the disc by the heavy test `vehicle_data`.
+
+name = "ghost"
+tag = "vehicles\\ghost\\ghost_mp"
+kind = "scout"
+flags = 0x29C5
+max_forward_speed = 0.225
+max_reverse_speed = 0.0
+speed_acceleration = 0.005
+speed_deceleration = 0.0
+max_left_turn = 0.0
+max_right_turn = 0.0
+wheel_circumference = 0.0
+turn_rate = 0.0
+blur_speed = 0.0
+flipping_angular_velocity = [0.2, 0.75]
+bounding_radius = 0.8
+acceleration_scale = 0.3
+rider_damage_fraction = 0.18
+power_up_time = 2.0
+power_down_time = 1.0
+
+[physics]
+mass = 2000.0
+center_of_mass = [0.362, 0.0, 0.108]
+density = 3.0
+gravity_scale = 1.0
+ground_friction = 0.2
+ground_depth = 0.15
+ground_damp_fraction = 0.05
+ground_normal_k1 = 0.707107
+ground_normal_k0 = 0.5
+water_friction = 0.05
+water_depth = 0.25
+water_density = 1.0
+air_friction = 0.0025
+moments = [189.408, 301.6, 423.648]
+product_xz = 5.712
+
+[[physics.channels]]
+name = "front antigrav"
+flags = 0x40
+antigrav_strength = 1.5
+antigrav_height = 0.75
+antigrav_damp_fraction = 0.02
+antigrav_normal_k1 = 0.5
+antigrav_normal_k0 = 0.258819
+
+[[physics.channels]]
+name = "back antigrav"
+flags = 0x40
+antigrav_strength = 1.5
+antigrav_height = 0.75
+antigrav_damp_fraction = 0.02
+antigrav_normal_k1 = 0.5
+antigrav_normal_k0 = 0.258819
+
+[[physics.points]]
+name = "hull back seat"
+channel = 1
+node = 4
+position = [-0.25, 0.0, 0.08]
+mass = 400.0
+radius = 0.22
+metallic = true
+
+[[physics.points]]
+name = "hull mid"
+position = [0.2, 0.0, 0.2]
+mass = 400.0
+radius = 0.3
+metallic = true
+
+[[physics.points]]
+name = "wing right"
+channel = 0
+position = [0.62, -0.4, 0.06]
+mass = 400.0
+radius = 0.23
+metallic = true
+
+[[physics.points]]
+name = "hull front"
+position = [0.62, 0.0, 0.14]
+mass = 400.0
+radius = 0.32
+metallic = true
+
+[[physics.points]]
+name = "wing left"
+channel = 0
+position = [0.62, 0.4, 0.06]
+mass = 400.0
+radius = 0.23
+metallic = true
+
+[[seats]]
+label = "G-driver"
+marker = "driver"
+flags = 0x1C
+yaw_rate = 80.0
+pitch_rate = 0.0
+camera_marker = "driver camera"
+pitch_auto_level = -0.08726646
+pitch_range = [-0.5235988, 0.5235988]
+yaw_range = [0.0, 0.0]
+track = "warthog_driver_loose"
+hud_text = 13
+
+[tracks.warthog_driver_loose]
+points = [
+    [0.5974, 3.5431], [-0.8369, 3.2299], [-1.9179, 2.4325], [-2.5767, 1.6104],
+    [-2.7524, 0.6827], [-2.4676, 0.1141], [-1.8786, -0.1244], [-1.3638, -0.1717],
+    [-1.0209, -0.1809],
+]

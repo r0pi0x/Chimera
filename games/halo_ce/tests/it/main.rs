@@ -42,6 +42,7 @@ mod weapons_rules;
 mod vehicle_camera;
 mod vehicle_look;
 mod vehicle_physics;
+mod vehicle_types;
 mod vehicles;
 
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
