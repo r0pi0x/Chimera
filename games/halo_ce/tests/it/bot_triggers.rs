@@ -12,6 +12,9 @@
 //!   `Magazine` whose rounds are the battery's (`systems::battery_rounds`):
 //!   rounds while they may fire, none while overheated, where they had no
 //!   `Magazine` and the bots took them for empty and never fired.
+//! - only the plasma pistol's trigger states that it fires when released
+//!   (`weapon::FiresOnRelease`, `systems::fires_on_release`, from the
+//!   data: it charges while held and its press fires nothing).
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{Magazine, WeaponEvent, WeaponEventKind, give};
@@ -101,5 +104,16 @@ fn the_battery_weapons_rounds_are_their_batterys() {
         assert!(overheated, "{id} never overheated");
         let after = sim.app.world().get::<Magazine>(g).unwrap().clip;
         assert!(after < m.size, "{id}: the battery used: {after} of {}", m.size);
+    }
+}
+
+#[test]
+fn only_the_plasma_pistols_trigger_fires_when_released() {
+    for (id, gun) in halo_ce::game::weapons::guns() {
+        let (mut sim, _, g) = armed_at_64(&id);
+        sim.ticks(2);
+        let stated = sim.app.world().get::<chimera_sim::weapon::FiresOnRelease>(g).is_some();
+        assert_eq!(stated, id == PLASMA_PISTOL, "{id}");
+        assert_eq!(halo_ce::game::weapons::systems::fires_on_release(&gun), stated, "{id}");
     }
 }

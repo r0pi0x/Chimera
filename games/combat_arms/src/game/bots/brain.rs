@@ -53,7 +53,7 @@ use super::super::{
 use crate::{
     core::{Damage, Dead, FreezeTime, Health, Intent, MovementState, SimClock, Spectating, Team},
     map::{SeeThrough, nav::NavMesh, nav_gen, vis::ActiveVisibility},
-    weapon::{Inventory, Magazine, Melee, Weapon, WeaponEvent, WeaponEventKind, grenade::Throwable},
+    weapon::{FiresOnRelease, Inventory, Magazine, Melee, Weapon, WeaponEvent, WeaponEventKind, grenade::Throwable},
 };
 
 /// Sight range (u), `SeeEnemyDistance`.
@@ -726,6 +726,9 @@ struct Gun {
     throw_time: f32,
     /// An auto turret to place (special_weapons.md 6.7).
     turret: bool,
+    /// Its trigger fires when released (`weapon::FiresOnRelease`): tapped,
+    /// never held to charge.
+    on_release: bool,
 }
 
 impl Gun {
@@ -1150,6 +1153,7 @@ fn guns_of(world: &World, e: Entity) -> Vec<Gun> {
                 turret: world
                     .get::<super::super::special::CaDeviceData>(w)
                     .is_some_and(|d| d.params.kind == super::super::special::DeviceKind::Turret),
+                on_release: world.get::<FiresOnRelease>(w).is_some(),
             })
         })
         .collect()
@@ -2258,6 +2262,11 @@ fn aim_and_fire(ctx: &Ctx, bot: &mut CaBot, me: &Char, target: &Char, guns: &[Gu
         && (knife || bot.burst_left > 0)
         && now >= bot.pause_until;
     io.fire = fire && !std::mem::take(&mut bot.release);
+    // A trigger that fires when released: tapped, the press let go on the
+    // next tick (the shot is the release's; never held to charge).
+    if io.fire && held.on_release {
+        bot.release = true;
+    }
 }
 
 /// The target is nearer than this (u): the close throw animation (8.5).

@@ -2414,6 +2414,9 @@ a first bot are in.
   scoring, third-person fire animation, the games' HUD and effects, the
   bots' grenade count) from `Fired` to the shot fact (`ShotMade`,
   DESIGN.md "A shot and the command to trace it").
+- Bots: a charged-shot tactic for a trigger that fires when released
+  (`weapon::FiresOnRelease`: today they only tap it; Halo's plasma
+  pistol's charged bolt strips a shield).
 - Ragdolls, remaining (`map/ragdoll.rs` has the spec's bodies, joints,
   self-collision pairs, death poses, impulse, bone velocities, bullet and
   blast pushes, separation repair, settling and removal): check the

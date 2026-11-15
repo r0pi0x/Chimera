@@ -28,11 +28,12 @@
 //! stood 29 s engaged without a round) and no bot heard a Halo shot. Since
 //! they read the shot fact (`WeaponEventKind::ShotMade`, which Halo's
 //! frame sends too): 59 rounds, 15 kills, its magazines and reloads
-//! (asserted), and a Halo shot behind a bot is heard (asserted). Open:
-//! the plasma pistol's press only begins a charge (no shot to let go on),
-//! so its bots still hold each charge to the charged bolt and overheat
-//! (53 bolts, 35 overheats, no kill a minute); a fact for "the trigger
-//! waits for a release" is the interface's next step (not asserted).
+//! (asserted), and a Halo shot behind a bot is heard (asserted). The
+//! plasma pistol's press only begins a charge (no shot to let go on), so
+//! its bots held each charge to the charged bolt and overheated (53 bolts,
+//! 35 overheats, no kill a minute); since its trigger states that it fires
+//! when released (`weapon::FiresOnRelease`) the bots tap it (asserted: no
+//! charged bolt, at most 3 overheats, kills).
 
 use std::collections::HashMap;
 
@@ -218,6 +219,12 @@ fn check(rows: &[(&str, Tally)]) {
     let row = |id| &rows.iter().find(|(g, _)| *g == id).unwrap().1;
     let sniper = row(weapons::SNIPER_RIFLE);
     assert!(sniper.reloads > 0 && sniper.rounds >= 4 * sniper.reloads, "the sniper rifle's magazines: {sniper:?}");
+    // The plasma pistol fires when its trigger is released
+    // (`weapon::FiresOnRelease`): tapped, never held to the charged bolt.
+    let pistol = row(weapons::PLASMA_PISTOL);
+    assert_eq!(pistol.charged, 0, "the plasma pistol tapped, never charged: {pistol:?}");
+    assert!(pistol.overheats <= 3, "the plasma pistol tapped, not overheated: {pistol:?}");
+    assert!(pistol.kills > 0, "the plasma pistol kills: {pistol:?}");
 }
 
 /// A Halo player's shots behind a bot are gunfire it hears (as another

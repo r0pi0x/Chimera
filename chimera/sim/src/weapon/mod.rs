@@ -863,6 +863,14 @@ pub struct Weapon {
     pub max_speed: Option<f32>,
 }
 
+/// A fact about a weapon's primary trigger: it fires when RELEASED (a
+/// press only starts a charge; held, it charges). What pulls a trigger
+/// only to fire (a bot) taps it: a press, then a release. Absent: the
+/// trigger fires on the press (every engine-frame gun). Set by the game
+/// from its data (Halo's plasma pistol).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FiresOnRelease;
+
 /// A weapon's auto-switch priority (Source weapon scripts' `weight`): a
 /// player with `cl_autowepswitch` on draws a weapon it walks over when it
 /// weighs more than the one in hand (`drop::auto_switch`). None counts

@@ -858,13 +858,33 @@ pub fn give_battery_magazines(guns: Query<(Entity, &HaloWeapon, &HaloGun), Witho
     }
 }
 
-/// `give_battery_magazines` before the holders' tick (beside
-/// `weapons::HaloWeaponsPlugin`).
+/// Whether `gun`'s primary trigger fires when released: it charges while
+/// held and its press fires nothing (a second trigger takes the charge,
+/// or it has no rate of its own: weapons.md 4; the plasma pistol).
+pub fn fires_on_release(gun: &Gun) -> bool {
+    let t = &gun.trigger;
+    t.charging_ticks() > 0 && (gun.secondary.is_some() || t.rounds_per_second == [0.0, 0.0])
+}
+
+/// Each weapon whose trigger fires when released stated so to the
+/// engine (`weapon::FiresOnRelease`, `fires_on_release`).
+pub fn state_release_triggers(guns: Query<(Entity, &HaloWeapon), Without<chimera_sim::weapon::FiresOnRelease>>, mut commands: Commands) {
+    for (e, hw) in &guns {
+        if fires_on_release(&hw.0) {
+            commands.entity(e).insert(chimera_sim::weapon::FiresOnRelease);
+        }
+    }
+}
+
+/// What Halo's weapons state to the engine beyond their own frame, before
+/// the holders' tick (beside `weapons::HaloWeaponsPlugin`): the battery
+/// weapons' rounds (`give_battery_magazines`) and the triggers that fire
+/// when released (`state_release_triggers`).
 pub struct BatteryRoundsPlugin;
 
 impl Plugin for BatteryRoundsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(crate::core::Predict::Weapons, give_battery_magazines.before(run));
+        app.add_systems(crate::core::Predict::Weapons, (give_battery_magazines, state_release_triggers).before(run));
     }
 }
 
