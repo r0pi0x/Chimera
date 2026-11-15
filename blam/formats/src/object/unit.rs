@@ -62,14 +62,19 @@ bit_flags! {
 }
 
 bit_flags! {
-    /// A seat's flags (the bits the spec names; others exist).
+    /// A seat's flags (vehicles.md, "Seat flags").
     pub struct SeatFlags(u32) {
         INVISIBLE = 0,
+        LOCKED = 1,
         DRIVER = 2,
         GUNNER = 3,
         THIRD_PERSON_CAMERA = 4,
+        ALLOWS_WEAPONS = 5,
         THIRD_PERSON_ON_ENTER = 6,
+        /// First-person camera slaved to the vehicle's gun.
         FIRST_PERSON_CAMERA = 7,
+        ALLOW_VEHICLE_COMMUNICATION_ANIMATIONS = 8,
+        NOT_VALID_WITHOUT_DRIVER = 9,
         ALLOWS_NONCOMBATANTS = 10,
     }
 }
@@ -184,18 +189,31 @@ crate::tag_struct! {
 }
 
 crate::tag_struct! {
-    /// A seat (element 0x11C), the fields the objects spec's summary gives;
-    /// vehicles.md owns the rest (camera, HUD).
+    /// A seat (element 0x11C, vehicles.md "Seat element").
     pub struct Seat: 0x11C {
         0x00 flags: SeatFlags,
+        /// The seat's animation label (`W-driver`).
         0x04 label: String,
         0x24 marker_name: String,
         0x64 acceleration_scale: [f32; 3],
-        /// The reference's unit is unclear (60, 30, 80, 50 on the disc:
-        /// looks like degrees per second).
+        /// Degrees per second; replaces the look yaw rate when > 0.
         0x7C yaw_rate: f32,
+        /// Degrees per second.
         0x80 pitch_rate: f32,
+        /// The third-person camera's focus marker (empty: the rider's).
+        0x84 camera_marker_name: String,
+        0xA4 camera_submerged_marker_name: String,
         /// Radians.
+        0xC4 pitch_auto_level: f32,
+        /// Radians; both 0: no seat limit.
+        0xC8 pitch_range_minimum: f32,
+        0xCC pitch_range_maximum: f32,
+        /// Only the first is used.
+        0xD0 camera_tracks: Vec<CameraTrack>,
+        0xDC hud_interfaces: Vec<UnitHudInterface>,
+        /// The seat's name in the entry prompt.
+        0xEC hud_text_message_index: i16,
+        /// Radians, relative to the seat marker's yaw; both 0: no limit.
         0xF0 yaw_minimum: f32,
         0xF4 yaw_maximum: f32,
         /// Class `actv`.
