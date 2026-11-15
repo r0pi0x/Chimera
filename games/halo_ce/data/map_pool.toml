@@ -1,0 +1,40 @@
+# Halo maps an automatic gun game's pool leaves out (the Ultimate Gun
+# Game: chimera_sim::minigame::map_fit; docs/plans/active/
+# map-pool-fitness.md). Every other multiplayer map of the disc image
+# joins the pool, drawn by the players present (data/map_fitness.toml).
+# Each entry: map names (`*` matches any run of letters) and why;
+# `[[allow]]` entries win over `[[deny]]` and over the measurements'
+# flags.
+#
+# M1 (docs/plans/active/halo-ce.md): the maps are played with other
+# games' movement, and Halo's teleporters, vehicles and lifts are not
+# implemented yet. The `map_fitness` sweep (2026-11-15) found every spawn
+# point of all 13 maps on one region the bots' walk (0.8 m jump-ups)
+# reaches, so no map is cut in parts without its teleporters; those kept
+# out below have three or more teleporter pairs (scenario.md, "Measured
+# facts"), which carry much of their play. The teleporter-free maps
+# (hangemhigh, longest, prisoner) and those with two pairs, shortcuts on
+# a map walked end to end (beavercreek, bloodgulch, damnation), are in.
+# Blood Gulch and Sidewinder are vehicle maps measured over the pool's
+# size limit: Blood Gulch is allowed (the milestone's map), its count rule
+# still keeps it out of a draw by players present (its wander time).
+
+[[deny]]
+reason = "its rooms are joined by 30 teleporter pairs (not implemented yet)"
+maps = ["putput"]
+
+[[deny]]
+reason = "8 teleporter pairs carry its play between the ships (not implemented yet)"
+maps = ["boardingaction"]
+
+[[deny]]
+reason = "3 or 4 teleporter pairs carry its play (not implemented yet)"
+maps = ["carousel", "chillout", "ratrace", "wizard"]
+
+[[deny]]
+reason = "a vehicle map with 4 teleporter pairs (neither implemented yet)"
+maps = ["sidewinder"]
+
+[[allow]]
+reason = "M1's map: its measured area is the flood's cap, not a judgement"
+maps = ["bloodgulch"]

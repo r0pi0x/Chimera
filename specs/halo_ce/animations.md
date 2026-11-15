@@ -1272,9 +1272,11 @@ Done on the disc with throwaway scripts:
   at x -0.007: the cycle is in place; travel is in the frame info
   (0.0763 WU per tick at frame 0, 1.50 WU over the 20 frames).
 - Aim grid orientation and overlay order: applying each frame of
-  `stand rifle aim-still` to idle frame 0, frame 4 leaves the pose
-  unchanged, frames 3 and 5 swing both hands about 90 degrees right and
-  left, frames 1 and 7 lower and raise them.
+  `stand rifle aim-still` to idle frame 0, frame 4 leaves the pelvis,
+  spine, clavicles, head, arms and hands unchanged (but not the legs:
+  the left thigh and foot turn 2.9 degrees and the right ones 4.1),
+  frames 3 and 5 swing both hands about 90 degrees right and left,
+  frames 1 and 7 lower and raise them.
 - First person: in every multiplayer weapon's graph all 37 arm nodes
   and every weapon model node are present by name; in idle and ready,
   `frame gun` keeps a constant distance from `frame r wriste` (it is
@@ -1389,8 +1391,10 @@ frame 1, result looped.
 Overlay of frame 1 (type 1) onto a base with node 1 at (0, 0, 0, 1),
 (1, 2, 3): node 1 becomes (0, 0, 0.707114, 0.707114), (1.2, 2, 3); node
 0 unchanged. Overlay onto a base rotation q_b = (0, 0, 0.707107,
-0.707107) gives q_o * q_b = (0, 0, 1.0, 0) within 1e-5 (two quarter
-turns).
+0.707107) gives q_o * q_b = (0, 0, 1.0000103, 0) (two quarter turns: the
+stored 23170 / 32767 = 0.7071139 is 7e-6 above the exact value, so the
+product is 1.03e-5 above 1; within 2e-5 of (0, 0, 1, 0), exact once
+normalised).
 
 Transition: from pose A (node 1 rotation identity, translation (0, 0,
 0)) to pose B (rotation (0, 0, 0.707107, 0.707107), translation (0.3,
@@ -1501,5 +1505,5 @@ an empty label is selected by `unarmed`.
 - Graph flags 1 and 3 on some campaign graphs are assumed to be
   build-time compression options with no run-time effect.
 - The first-person idle time bounds and skip fraction live in the
-  globals tag (`player information`); their offsets and values belong to
-  the globals spec, which does not exist yet.
+  globals tag (`player information`, offsets 0x9C, 0xA0 and 0xA4: 10 s,
+  15 s and 0.25 on the disc); `globals.md` owns the layout.

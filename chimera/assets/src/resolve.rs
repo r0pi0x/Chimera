@@ -37,6 +37,10 @@ use crate::Manifest;
 
 /// The set a client fetches at startup (`sets::STARTUP_SETS`).
 pub const BASE: &str = "base";
+/// The files a game declares it plays (voice lines, call-outs, radio,
+/// the announcer: `chimera_pack`'s per-game declared files), whatever a
+/// recorded run read: `lean` keeps them in `common` (or `base`).
+pub const DECLARED: &str = "declared";
 /// What a match of a game may play beyond `base` (event sounds, images).
 pub const COMMON: &str = "common";
 /// The sets the offer names per game in play, each match.
@@ -135,6 +139,16 @@ pub fn lean(manifest: &Manifest, runs: &[Run]) -> Lean {
             out.common.insert(p.clone());
         }
     }
+    // What the game declares it plays stays, read by a run or not.
+    if let Some(declared) = manifest.sets.get(DECLARED) {
+        for p in declared.iter().filter(|p| manifest.files.contains_key(*p)) {
+            if !out.base.contains(p) && !music.contains(p) {
+                out.ladder.remove(p);
+                out.checked.remove(p);
+                out.common.insert(p.clone());
+            }
+        }
+    }
     for p in music.iter().filter(|p| manifest.files.contains_key(*p)) {
         out.tracks.entry(track_set(p)).or_default().insert(p.clone());
     }
@@ -155,6 +169,28 @@ impl Lean {
             manifest.sets.insert(name.clone(), paths.clone());
         }
     }
+}
+
+/// A game's declared files (`DECLARED`) entered into `manifest`: those it
+/// lists (normalized: `/`, lower case), replacing the set; each goes to
+/// `common` unless `base` holds it already (`common` made when there is
+/// none). Returns the files named and listed in the manifest, and how many
+/// were new to `base` and `common`.
+pub fn declare(manifest: &mut Manifest, files: impl IntoIterator<Item = String>) -> (usize, usize) {
+    let kept: BTreeSet<String> = files
+        .into_iter()
+        .map(|f| f.replace('\\', "/").to_ascii_lowercase())
+        .filter(|f| manifest.files.contains_key(f))
+        .collect();
+    let base = manifest.sets.get(BASE).cloned().unwrap_or_default();
+    let common = manifest.sets.entry(COMMON.into()).or_default();
+    let mut added = 0;
+    for f in kept.iter().filter(|f| !base.contains(*f)) {
+        added += usize::from(common.insert(f.clone()));
+    }
+    let n = kept.len();
+    manifest.sets.insert(DECLARED.into(), kept);
+    (n, added)
 }
 
 /// The distinct records `sets` of `manifest` come to, with their plain and
@@ -209,6 +245,31 @@ mod tests {
             reads: reads.iter().map(|s| s.to_string()).collect(),
             checks: checks.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    /// Declared files outside every set end up in `common`, and a later
+    /// `lean` (which rebuilds `common`) keeps them, though no run read them.
+    #[test]
+    fn declared_files_land_in_common_and_survive_lean() {
+        let mut m = manifest(&[
+            ("ui/font.ttf", &["base"]),
+            ("snd/callout.wav", &[]),
+            ("snd/radio.wav", &["base"]),
+            ("snd/other.wav", &[]),
+        ]);
+        let (named, added) = declare(
+            &mut m,
+            ["SND\\Callout.wav".to_string(), "snd/radio.wav".into(), "snd/absent.wav".into()],
+        );
+        assert_eq!((named, added), (2, 1), "the absent one isn't counted; base's isn't new");
+        assert!(m.sets[COMMON].contains("snd/callout.wav") && !m.sets[COMMON].contains("snd/other.wav"));
+        // A lean from runs that read neither.
+        let l = lean(&m, &[run(&["ui/font.ttf", "snd/radio.wav"], &[])]);
+        assert!(l.common.contains("snd/callout.wav"), "{:?}", l.common);
+        assert!(l.base.contains("snd/radio.wav") && !l.common.contains("snd/radio.wav"));
+        l.apply(&mut m);
+        assert!(m.sets[COMMON].contains("snd/callout.wav"));
+        assert!(!m.sets[COMMON].contains("snd/other.wav"));
     }
 
     /// A gun's set pulls its sounds: a ladder with the gun fetches its

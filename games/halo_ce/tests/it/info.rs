@@ -63,3 +63,22 @@ fn the_map_loader_names_a_missing_maps_file() {
     let err = halo_ce::game::maps::load_in(&Mount::default(), "nowhere", &Default::default(), None).unwrap_err();
     assert!(err.contains("maps/nowhere.map"), "{err}");
 }
+
+/// Halo's pool data (data/map_pool.toml, data/map_fitness.toml): every
+/// multiplayer map measured, and the maps its rules let in are those M1
+/// plays without teleporters and vehicles (Hang 'Em High and Blood Gulch
+/// among them; the reasons are in the file).
+#[test]
+fn its_pool_lets_in_the_maps_played_without_teleporters() {
+    use chimera_sim::minigame::map_fit::{MapPool, PoolRules, parse_fitness};
+    use halo_ce::game::parts::{MAP_FITNESS, POOL_RULES};
+    let measured = parse_fitness(MAP_FITNESS).unwrap();
+    let mut names: Vec<&str> = measured.keys().map(String::as_str).collect();
+    names.sort();
+    assert_eq!(names, MULTIPLAYER_MAPS);
+    let mut pool = MapPool::default();
+    pool.add_rules(GAME, PoolRules::parse(POOL_RULES).unwrap());
+    let listed: Vec<&str> = MULTIPLAYER_MAPS.iter().copied().filter(|m| pool.listed(GAME, m).is_ok()).collect();
+    assert_eq!(listed, ["beavercreek", "bloodgulch", "damnation", "hangemhigh", "longest", "prisoner"]);
+    assert!(pool.listed(GAME, "putput").unwrap_err().contains("teleporter"));
+}

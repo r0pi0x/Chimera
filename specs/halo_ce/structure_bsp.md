@@ -438,8 +438,9 @@ On Blood Gulch every portal vertex lies on its plane (error below
   first) is set when cluster j may be visible from cluster i. Size = 4 ×
   N × W bytes (Blood Gulch: N = 30, 120 bytes).
 - On the disc every cluster sees itself and the relation is symmetric.
-  Density varies (Blood Gulch 80%, Sidewinder 40%, Boarding Action
-  100%).
+  Density (set bits over N x N) varies: Blood Gulch 716 of 900 =
+  79.56%, Sidewinder 495 of 1225 = 40.40%, Boarding Action 100%, Damnation
+  95.83%, Chill Out 98.0%, Hang 'Em High 1 of 1.
 
 ### How the game culls (reference only)
 

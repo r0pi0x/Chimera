@@ -908,7 +908,7 @@ Expected:
 | vertex 3 texcoord after base scale | (2.0, 1.0) |
 | vertex 0 skin | rigid, node 0, w0 = 1 |
 | vertex 2 skin | rigid, node 1, w0 = 1 |
-| vertex 3 skin | nodes 0 and 1, w0 = 24575/32767 = 0.7499771, w1 = 0.2500229 |
+| vertex 3 skin | nodes 0 and 1, w0 = 24575/32767 = 0.7499924 (0.74999237), w1 = 1 - w0 = 0.2500076 |
 | strip | 4 indices (count 2 + 2); triangles in strip order (0, 1, 2), (1, 3, 2), both clockwise seen from +Z (the normals' side) |
 | triangle list, counter-clockwise front | (0, 2, 1), (1, 2, 3) |
 | node 0 rotation matrix (forward, left, up columns) | forward (0, -1, 0), left (1, 0, 0), up (0, 0, 1) |
@@ -916,7 +916,7 @@ Expected:
 | node 1 world | same rotation, position (0, -2, 1); distance to node 0 = 2.0 |
 | inverse matrices | equal to the stored ones (within 1e-6) |
 | bind-pose skin matrices | identity for both nodes; skinned positions equal stored positions |
-| pose: node 1 translation (3, 0, 0), node 0 unchanged | node 1 world position (0, -3, 1); skin(1) = translation by (0, -1, 0); skinned v2 = (1, -1, 1); v3 = (1, 0.7499771, 1); v0, v1 unchanged |
+| pose: node 1 translation (3, 0, 0), node 0 unchanged | node 1 world position (0, -3, 1); skin(1) = translation by (0, -1, 0); skinned v2 = (1, -1, 1); v3 = (1, 0.7499924, 1); v0, v1 unchanged |
 | marker `primary trigger` | one instance; world position (0, -2.5, 1); forward (-1, 0, 0), left (0, -1, 0), up (0, 0, 1) |
 | marker lookup `PRIMARY TRIGGER` | found (case-insensitive) |
 | LOD at d = 1000 | level 4 |

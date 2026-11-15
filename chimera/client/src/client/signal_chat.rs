@@ -713,6 +713,7 @@ fn stage_lobby_scene(w: &mut World, args: &[String]) -> Result<(), String> {
         total: 0,
         ping_ms: ping,
         wins: 0,
+        avatar: if id.is_some() { (name.len() as u8 * 5) % 32 } else { chimera_net::prematch::NO_AVATAR },
     };
     w.spawn((
         StagedLobby,
@@ -728,6 +729,7 @@ fn stage_lobby_scene(w: &mut World, args: &[String]) -> Result<(), String> {
             waiting: 1,
             wait_left: Some(24),
             countdown: None,
+            host_start: false,
         },
     ));
     Ok(())

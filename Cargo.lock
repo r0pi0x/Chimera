@@ -6524,6 +6524,7 @@ dependencies = [
  "chimera_world",
  "combat_arms",
  "cs_source",
+ "halo_ce",
  "hl2dm",
  "originals",
  "source_engine",

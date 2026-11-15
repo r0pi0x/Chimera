@@ -22,6 +22,7 @@ mod footstep_levels;
 mod game_hooks;
 mod grenade_looks;
 mod gun_game;
+mod halo_maps;
 mod host_lobby;
 mod hl2dm_parts;
 mod hud;
@@ -69,6 +70,7 @@ mod heavy {
     mod death_bodies;
     mod guest_effects;
     mod guest_shells;
+    mod halo_maps;
     mod cross_hits;
     mod head_matrix;
     mod css_map_moves;

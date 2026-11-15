@@ -1,8 +1,12 @@
 //! Settings in the Signal look (feature `present`; a theme with
 //! `[layout.settings]`, the Ultimate Gun Game's; docs/plans/active/
-//! ugg-ui.md M7, the components page's frame 02): one page for the main
-//! menu's Options, the Escape menu's Options and the Controls page (F6),
-//! and the Escape menu's Host settings in the same window.
+//! ugg-ui.md M7 and "Signal revision 8", the components page's frame
+//! 02): one page for the main menu's Settings, the Escape menu's and the
+//! Controls page (F6), and the Escape menu's Host settings in the same
+//! window, on the shell (`chimera_ui::shell`: the bar with the breadcrumb
+//! back to where it opened from, its Settings tile white; Back is the
+//! breadcrumb, Esc or a right click, never while a bind listens: the
+//! shell's `BackGuard`).
 //!
 //! - **When**: the main menu's Options page (`PartyMenu::page`) over the
 //!   menu's ambient (`AmbientMaterial::MENU`), or the Escape menu's
@@ -406,7 +410,8 @@ impl Plugin for SettingsPlugin {
                 Update,
                 (follow, capture, edit_typing, keys, clicks, edit_pointer, hover_focus, act, refresh_values, draw).chain().in_set(SettingsSystems),
             )
-            .add_systems(Update, crate::ui_cues::hover::<SettingsAction>.in_set(SettingsSystems));
+            .add_systems(Update, crate::ui_cues::hover::<SettingsAction>.in_set(SettingsSystems))
+            .add_systems(Update, hold_back);
         use chimera_client::client::ui_scene::UiSceneHooks;
         UiSceneHooks::add(app.world_mut(), "settings", scene_settings);
         app.console_command("chimera:settings_press", "settings_press <apply|revert|back|keep|revert_keep|leave_apply|leave_discard|stay|commit>: press that button of Settings (tests, screenshots).", |w, a| {
@@ -1406,6 +1411,7 @@ struct DrawKey {
     camera: Option<Entity>,
     /// Over the themed pre-match lobby (`EscMenu::lobby`).
     lobby: bool,
+    party: chimera_ui::shell::Party,
 }
 
 fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
@@ -1442,6 +1448,7 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         theme: theme.name.clone(),
         camera,
         lobby,
+        party: world.get_resource::<chimera_ui::shell::Party>().cloned().unwrap_or_default(),
     };
     if drawn.as_ref() == Some(&key) {
         return;
@@ -1480,7 +1487,8 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         let mut c = Commands::new(&mut queue, world);
         let ui = Ui::new(&theme, kit.as_ref(), units);
         let reduced = world.get_resource::<chimera_ui::ReducedMotion>().is_some_and(|r| r.0);
-        let d = Draw { ctx, lobby, s: &s, tabs: &tabs, help: &help, keys: &keys_of, bind_changed: &bind_changed, changes, now: t, reduced };
+        let party = drawn.as_ref().map(|k| k.party.clone()).unwrap_or_default();
+        let d = Draw { ctx, lobby, s: &s, tabs: &tabs, help: &help, keys: &keys_of, bind_changed: &bind_changed, changes, now: t, reduced, party: &party };
         let root = spawn(&mut c, &ui, &d, images.as_mut(), icons.as_mut(), ambients.as_mut());
         if let Some(cam) = camera {
             c.entity(root).insert(UiTargetCamera(cam));
@@ -1573,6 +1581,7 @@ struct Draw<'a> {
     now: f64,
     /// Reduced motion: no toggle slide.
     reduced: bool,
+    party: &'a chimera_ui::shell::Party,
 }
 
 fn spawn(
@@ -1589,6 +1598,7 @@ fn spawn(
     let root = c
         .spawn((
             SettingsRoot,
+            chimera_ui::shell::ShellScreen,
             Name::new("settings"),
             GlobalZIndex(SETTINGS_Z),
             Node {
@@ -1619,43 +1629,34 @@ fn spawn(
         ));
     }
     let frame = ui.boxed(c, root, UiStyle { w: Some(100.0), h: Some(56.25), shrink: Some(0.0), ..UiStyle::row() });
-    let m = lay("margin");
-    // Header: the lockup, the title, where it is.
-    let head = ui.boxed(c, frame, UiStyle { gap: Some(2.4), ..UiStyle::row() }.abs([Some(m), Some(2.8), Some(m), None]));
-    if let (Some(images), Some(icons)) = (images, icons) {
-        ui.lockup(c, head, images, icons, 1.05);
-    }
-    let (title, crumb) = match d.ctx {
-        Context::Menu => ("Settings", "Main menu ▸ Settings"),
-        Context::Game if d.lobby => ("Settings", "Lobby ▸ Settings • the lobby goes on"),
-        Context::Game => ("Settings", "Esc menu ▸ Settings • the match goes on"),
-        Context::Host => ("Host settings", "Esc menu ▸ Host settings • your server's"),
+    let sh = chimera_ui::shell::ShellLayout::of(t);
+    // The shell's bar: the breadcrumb back to where it was opened from
+    // over the title, the party, the system tiles with Settings open.
+    let (parent, title) = match d.ctx {
+        Context::Menu => ("Main menu", "Settings"),
+        Context::Game if d.lobby => ("Lobby", "Settings"),
+        Context::Game => ("Match", "Settings"),
+        Context::Host => ("Match", "Host settings"),
     };
-    ui.text(c, head, Role::DisplayBold, 1.2, Tone::Fg, title);
-    ui.text(c, head, Role::Mono, 0.5, Tone::Fg3, crumb);
-    let rule = ui.boxed(c, frame, UiStyle { h: None, ..UiStyle::row() }.abs([Some(m), Some(7.4), Some(m), None]));
-    c.spawn((Node { width: percent(100.0), height: Val::Px(ui.units.hairline()), ..default() }, BackgroundColor(ui.color(Tone::Fg4, 1.0)), ChildOf(rule)));
+    if let (Some(images), Some(icons)) = (images, icons) {
+        let bar = chimera_ui::shell::Bar {
+            left: chimera_ui::shell::Left::Crumb { parent, title },
+            party: &d.party.members,
+            party_max: d.party.max,
+            open: (d.ctx != Context::Host).then_some(chimera_ui::shell::ShellTile::Settings),
+        };
+        chimera_ui::shell::bar(ui, c, frame, images, icons, &bar);
+    }
 
     // The window.
-    let win = c
-        .spawn((
-            UiStyle::column().abs([Some(m), Some(lay("win_top")), Some(m), Some(lay("win_bottom"))]).bg_a(Tone::Ink, 0.78).outline(Tone::Fg5, 1.0),
-            Node::default(),
-            ChildOf(frame),
-        ))
-        .id();
-    c.spawn((
-        Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, top: Val::ZERO, height: Val::Px(ui.units.hairline()), ..default() },
-        BackgroundColor(ui.color(Tone::Fg4, 1.0)),
-        ChildOf(win),
-    ));
+    let win = chimera_ui::shell::window(ui, c, frame);
     let names = pages(d.ctx, d.tabs);
-    let tabbar = ui.boxed(c, win, UiStyle::column().abs([Some(2.0), Some(1.6), Some(2.0), None]));
+    let tabbar = ui.boxed(c, win, UiStyle::column().abs([Some(sh.rows_in), Some(1.6), Some(sh.side_w + 2.0 * sh.rows_in), None]));
     let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    for (i, e) in ui.tabs(c, tabbar, &name_refs, s.tab, false).into_iter().enumerate() {
+    for (i, e) in ui.tabs_ex(c, tabbar, &name_refs, s.tab, false, (name_refs.len() > 1).then_some(("Q", "E"))).into_iter().enumerate() {
         c.entity(e).insert(SettingsAction::Tab(i));
     }
-    let cols = ui.boxed(c, win, UiStyle { gap: Some(2.4), align: Some(AlignItems::Stretch), ..UiStyle::row() }.abs([Some(2.0), Some(4.6), Some(2.0), Some(4.4)]));
+    let cols = ui.boxed(c, win, UiStyle { gap: Some(2.0 * sh.rows_in), align: Some(AlignItems::Stretch), ..UiStyle::row() }.abs([Some(sh.rows_in), Some(4.6), Some(sh.rows_in), Some(sh.act_h + 1.4)]));
     // The rows scroll in the kit's container (its bar, the wheel, a
     // right-button pan); the keys keep the focused row in view.
     let sc = ui.scroll(c, cols, SCROLL_KEY, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() }, UiStyle::column());
@@ -1676,7 +1677,7 @@ fn spawn(
     ui.wipe_cover(c, sc.frame, Tone::Ink, s.page_since, d.now, lay("wipe"));
 
     // The help pane.
-    let help = ui.boxed(c, cols, UiStyle { w: Some(lay("help_w")), gap: Some(1.0), shrink: Some(0.0), ..UiStyle::column() });
+    let help = ui.boxed(c, cols, UiStyle { w: Some(sh.side_w), gap: Some(1.0), shrink: Some(0.0), ..UiStyle::column() });
     if !d.help.title.is_empty() {
         let tagrow = ui.boxed(c, help, UiStyle::row());
         let (node, label) = chimera_ui::widgets::tag(t, ui.kit, &ui.units, chimera_ui::widgets::TagKind::Accent, "Selected", 0.5);
@@ -1691,21 +1692,8 @@ fn spawn(
         ui.kv(c, help, &kv, 6.0);
     }
 
-    // The bar.
-    let bar = c
-        .spawn((
-            UiStyle { h: Some(lay("bar_h")), gap: Some(1.2), pad: Some([0.0, 1.2, 0.0, 2.0].into()), ..UiStyle::row() }
-                .abs([Some(0.0), None, Some(0.0), Some(0.0)])
-                .bg_a(Tone::Ink, 0.6),
-            Node::default(),
-            ChildOf(win),
-        ))
-        .id();
-    c.spawn((
-        Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, top: Val::ZERO, height: Val::Px(ui.units.hairline()), ..default() },
-        BackgroundColor(ui.color(Tone::Fg4, 1.0)),
-        ChildOf(bar),
-    ));
+    // The action bar.
+    let bar = chimera_ui::shell::action_bar(ui, c, win);
     let st = ui.boxed(c, bar, UiStyle { gap: Some(0.6), grow: Some(1.0), ..UiStyle::row() });
     let changed = d.changes;
     if d.ctx == Context::Host {
@@ -1725,8 +1713,6 @@ fn spawn(
         let b = ui.button(c, bar, Kind::Ghost, "Default keys", None, 2.0, State::NONE);
         c.entity(b).insert(SettingsAction::Defaults);
     }
-    let back = ui.button(c, bar, Kind::Ghost, "Back", Some("Esc"), 2.0, State::NONE);
-    c.entity(back).insert(SettingsAction::Back);
     if d.ctx != Context::Host {
         let off = State { disabled: changed == 0, ..State::NONE };
         let rv = ui.button(c, bar, Kind::Secondary, "Revert", Some("Ctrl Z"), 2.0, off);
@@ -1735,18 +1721,9 @@ fn spawn(
         c.entity(ap).insert(SettingsAction::Apply);
     }
 
-    // The keys at the foot.
-    let foot = ui.boxed(c, frame, UiStyle { gap: Some(2.0), ..UiStyle::row() }.abs([Some(m), None, None, Some(3.0)]));
-    let mut keys = vec![("↑↓", "Row"), ("←→", "Change"), ("Enter", "Pick")];
-    if names.len() > 1 {
-        keys.push(("Q E", "Page"));
-    }
-    keys.push(("Esc", "Back"));
-    for (k, what) in keys {
-        let g = ui.boxed(c, foot, UiStyle { gap: Some(0.5), ..UiStyle::row() });
-        ui.kbd(c, g, k, 0.6, Tone::Fg);
-        ui.text(c, g, Role::Mono, 0.6, Tone::Fg2, what);
-    }
+    // The keys at the foot (Back is the breadcrumb; Q and E sit at the
+    // tab strip's ends).
+    chimera_ui::shell::keys(ui, c, frame, &[("↑↓", "Row"), ("←→", "Change"), ("Enter", "Pick")]);
     if let Some(k) = &s.keep {
         keep_modal(c, ui, root, (k.until - d.now).max(0.0).ceil() as u64);
     } else if let Some(at) = s.leave {
@@ -1912,5 +1889,15 @@ fn leave_modal(c: &mut Commands, ui: &Ui, root: Entity, at: usize, changes: usiz
         let key = if k == at { Some("Enter") } else if action == SettingsAction::LeaveStay { Some("Esc") } else { None };
         let b = ui.button(c, acts, kind, label, key, 2.4, State::focused(k == at));
         c.entity(b).insert(action);
+    }
+}
+
+/// A bind listening takes the mouse's buttons as binds: right-click isn't
+/// Back then (`chimera_ui::shell::BackGuard`).
+fn hold_back(s: Res<Settings>, guard: Option<ResMut<chimera_ui::shell::BackGuard>>) {
+    if s.capture.is_some()
+        && let Some(mut g) = guard
+    {
+        g.hold();
     }
 }

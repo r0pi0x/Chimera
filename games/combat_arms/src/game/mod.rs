@@ -81,6 +81,7 @@ pub mod chat;
 pub mod damage_fx;
 pub mod data;
 pub mod death_cam;
+pub mod declared;
 pub mod effects;
 pub mod gear;
 pub mod grenades;

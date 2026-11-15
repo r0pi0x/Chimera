@@ -1,6 +1,6 @@
 //! Development tool: how fit each installed map is for a gun game's pool
 //! (docs/plans/active/map-pool-fitness.md). Loads every map of the party's
-//! games (CS:S, Combat Arms, HL2:DM: each install's `GameInfo::map_names`)
+//! games (CS:S, Combat Arms, HL2:DM, Halo: each install's `GameInfo::map_names`)
 //! headless, one at a time, as the dedicated server does (no textures, no
 //! kit), on Combat Arms' simulation (`CaSim`) with the party's parts
 //! (`PartyPartsPlugin`: the map logic's brush entities) and the gun game
@@ -105,7 +105,7 @@ use combat_arms::harness::CaSim;
 
 const USAGE: &str = "\
 usage: map_fitness [options]
-  --game <ids>       comma-separated: cs_source, combat_arms, hl2dm (default: all three)
+  --game <ids>       comma-separated: cs_source, combat_arms, hl2dm, halo_ce (default: all four)
   --filter <text>    only maps whose name contains <text> (several: comma-separated)
   --list             only list each game's installed maps
   --out <dir>        report folder (default: target/map_fitness)
@@ -167,7 +167,7 @@ struct Opts {
 
 fn parse() -> Result<Opts, String> {
     let mut o = Opts {
-        games: vec!["cs_source".into(), "combat_arms".into(), "hl2dm".into()],
+        games: vec!["cs_source".into(), "combat_arms".into(), "hl2dm".into(), "halo_ce".into()],
         filter: Vec::new(),
         list: false,
         out: PathBuf::from("target/map_fitness"),
@@ -221,6 +221,7 @@ fn info(game: &str) -> Option<&'static GameInfo> {
         "cs_source" => Some(&cs_source::game::INFO),
         "combat_arms" => Some(&combat_arms::game::INFO),
         "hl2dm" => Some(&hl2dm::game::INFO),
+        "halo_ce" => Some(&halo_ce::game::INFO),
         _ => None,
     }
 }
