@@ -1526,19 +1526,29 @@ growing with distance: the sprite's v range starts at (1 - fade) / 2 of
 the way down with fade = clamp(1 - (depth - near) x 100 / (far - near),
 0.075, 1) (so far markers are shorter), drawn at scale 1.
 
-**Waypoints (ref; disc arrows).** The game engine activates up to four
-waypoints per player (a flag, a hill, a ball, a crown, a target), each
-by arrow name; the disc's ten arrows (`default`, `flag`, `target`,
+**Waypoints (ref; disc arrows).** In multiplayer the waypoints are the
+game type's goals (`multiplayer_rules.md` section 7.1: which objects,
+where, who sees each), drawn when the variant's objective indicator is
+"nav points" and the viewer has a living unit, every goal the viewer may
+see, each by its arrow name; the game types name only `default`,
+`flag_blue`, `ball_blue`, `crown_blue` and `target_blue`, so **every
+objective marker is blue (0x2896FF) for both teams**. The disc's ten
+arrows (`default`, `flag`, `target`,
 `ball`, `crown`, each `_blue` or `_red`): colour 0x2896FF (blue team) or
 0xFF552B (red team), opacity 0.5, fade 0, sequences on screen / off
 screen / occluded: default (1, 0, 6), flag (2, 0, 6), target (3, 0, 6),
 ball (4, 0, 6), crown (5, 0, 6) in `hud_waypoints` (0 a downward
 triangle, 1 a double chevron, 2 a flag, 3 a target ring, 4 a skull, 5 a
-crown, 6 a diamond; each 34 by 34). Per frame: its world point is
-projected; the waypoint is "occluded" when a line from the player's head
-hits something other than the object; "off screen" when it projects
-outside the screen or the ellipse below. Scale = 0.5 beyond 15 WU, else
-(1 - d / 15)^0.7 + 0.5. The ellipse has semi-axes a = (window width -
+crown, 6 a diamond; each 34 by 34). Per frame: its world point (for a
+goal, the point the game type set, already raised 0.63 WU) is
+projected; the waypoint is "occluded" when a line-of-sight ray from the
+player's head to the point (ignoring the player's own unit) hits
+anything (for a goal there is no reference object, so the carried flag's
+carrier or the ball's holder occludes it too: the arrow is drawn with its
+occluded sequence, the diamond), and "on screen" otherwise; "off
+screen" when it projects outside the screen or the ellipse below. Scale = 0.5 beyond 15 WU, else
+(1 - d / 15)^0.7 + 0.5, d the distance from the player's camera
+position to the point (the drawn metres use the same d x 3.048). The ellipse has semi-axes a = (window width -
 (left + right offset)) / 2 = (544 - 40) / 2 = 252 and b = (408 - 40) / 2 =
 184, centred at the window centre; a waypoint outside it (or off screen)
 is moved onto it along the ray from the centre (factor sqrt(a^2 b^2 /
