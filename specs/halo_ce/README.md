@@ -56,6 +56,6 @@ port adds the ones below.
 | [globals.md](globals.md) | 2 | draft | the globals tag: player information, falling damage, grenades, multiplayer information, materials and the rest |
 | [effects.md](effects.md) | 3 | draft | effects, particles, lights, decals |
 | [hud.md](hud.md) | 3 | draft | the HUD's pieces |
-| vehicles.md | 3 | planned | vehicles |
+| [vehicles.md](vehicles.md) | 3 | draft | vehicles |
 
 A file's link is added here when it lands.

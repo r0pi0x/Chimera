@@ -96,8 +96,10 @@
 //!   neighbour's hold (a sweep meeting nothing while on a ladder snapping
 //!   onto a climbable neighbour) is not modelled.
 //! - Not modelled: body facing and the animation states (cosmetic: no
-//!   bodies yet), impulses and slipping (no damage effects yet), elevators
-//!   (no multiplayer map has one), volatile contacts and the 16-contact splatter flag, the pitch clamp
+//!   bodies yet), slipping (an impulse, `push`, is added to the velocity
+//!   and makes the player airborne, but does not slip), elevators (no
+//!   multiplayer map has one),
+//!   volatile contacts and the 16-contact splatter flag, the pitch clamp
 //!   (the input layer's), the airborne tick counter (animation only).
 //! - The virtual contact's normal for two planes, one facing down, is of
 //!   e x N_s and N_s x e the one pointing out of the crease (the spec's
@@ -163,6 +165,17 @@ pub fn register(app: &mut App) {
         .seat_movement(ID, footing, seat)
         .add_systems(Predict::Movement, (step.after(UnitStep), sync_collider).chain())
         .predicted_net::<HaloMovement>();
+}
+
+/// An impulse on a living player (movement.md 8, projectiles.md 11: the
+/// explosions' push, already halved for a living biped): `dv` (metres per
+/// second) added to its velocity, and airborne. The one seam the
+/// movement offers its pushers.
+pub fn push(me: Option<&mut HaloMovement>, velocity: &mut Velocity, dv: Vec3) {
+    velocity.0 += dv;
+    if let Some(m) = me {
+        m.airborne = true;
+    }
 }
 
 /// The engine tick's length in Halo ticks: exactly 1 at Halo's own tick.

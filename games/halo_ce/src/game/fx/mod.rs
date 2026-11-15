@@ -20,13 +20,8 @@
 //!   tracer, pellets) re-simulated from the shot on every machine (the
 //!   server sends others' shots, `HaloShotNet`), its impacts by the
 //!   surface's material; the authority's decals from the real impacts.
-//! - `place`: where the effects go: the first person's muzzle
-//!   (`first_person_frame`) and the third person's (`third_person_frame`).
-//!
-//! **For the view model** (the view-model agent's attachments): first-
-//! person effects sit at `place::first_person_frame`, today the camera
-//! with the first-person model's bind-pose marker; repointing it to the
-//! view model's named attachment is the one line marked there.
+//! - `place`: where the effects go: the view model's animated markers for
+//!   the shooter, the held model's for everyone else (`Placer`).
 //!
 //! Known shortcuts: see `play`, `shots`, `sound` and `load`; the full-body
 //! shield shader (the shield's glow over the body) is later work, only the
@@ -53,8 +48,10 @@ pub struct HaloLight {
     pub color: Vec3,
     pub radius: f32,
     pub seconds: f32,
-    /// The shooter, for a muzzle light (it follows nothing yet).
+    /// Whose effect made it (the shooter, an impact's shooter).
     pub owner: Option<Entity>,
+    /// It goes with its owner (the muzzle light: a child of the shooter).
+    pub follow: bool,
 }
 
 /// The library while a map plays (from its memos, or set by a test).

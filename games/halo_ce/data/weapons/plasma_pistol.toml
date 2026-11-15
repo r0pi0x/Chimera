@@ -1,0 +1,155 @@
+# The plasma pistol (specs/halo_ce/weapons.md "Multiplayer weapon
+# numbers", 8 to 10, "Test cases"; projectiles.md "Flight numbers", 14;
+# animations.md "First-person graphs"): two triggers. Trigger 0 (the fire
+# button) charges on the press (18 ticks) and fires a bolt on the release
+# (no rate limit: a tap every other tick fires every 2), 0.16 heat and
+# 0.002 battery a bolt; held through the charge it stays charged (45 s, the
+# overcharged action none: held for ever) and its release fires trigger 1,
+# the charged bolt (heat 1, battery 0.11), which tracks its target and
+# strips a shield (70 points, emp). Overheated at 1, firing again below
+# 0.25, 0.65 heat lost a second (35 ticks from full).
+id = "halo_ce:plasma_pistol"
+base = "halo_ce:gun"
+slot = 1
+class = "pistol"
+
+[hud]
+name = "Plasma Pistol"
+
+[hooks."halo_ce:weapon"]
+tag = 'weapons\plasma pistol\plasma pistol'
+# Bit 11: cannot fire at maximum age.
+flags = 0x800
+# The plasma pistol type.
+weapon_type = 3
+zoom_levels = 0
+camo = [1.0, 0.04]
+melee_damage = "plasma_pistol_melee"
+# The port gives its charged bolt section 15's target with aim assist off.
+guidance_targets = true
+
+[hooks."halo_ce:weapon".heat]
+recovery_threshold = 0.25
+overheated_threshold = 1.0
+detonation_threshold = 1.0
+detonation_fraction = 0.0
+loss_per_second = 0.65
+illumination = 1.0
+
+[hooks."halo_ce:weapon".age]
+heat_recovery_penalty = 0.0
+rate_of_fire_penalty = 0.0
+misfire_start = 0.9
+misfire_chance = 0.5
+
+[hooks."halo_ce:weapon".aim_assist]
+autoaim_angle = 0.0872665
+autoaim_range = 20.0
+magnetism_angle = 0.20944
+magnetism_range = 20.0
+deviation_angle = 0.0
+
+[hooks."halo_ce:weapon".magazine]
+flags = 0
+rounds_recharged = 0
+rounds_total_initial = 0
+rounds_total_maximum = 0
+rounds_loaded_maximum = 0
+rounds_reloaded = 0
+chamber_time = 0.0
+
+[hooks."halo_ce:weapon".trigger]
+flags = 0
+rounds_per_second = [0.0, 0.0]
+rate_of_fire_acceleration = 1.0
+rate_of_fire_deceleration = 1.0
+error_acceleration = 1.0
+error_deceleration = 1.0
+magazine = 0
+rounds_per_shot = 0
+minimum_rounds_loaded = 0
+rounds_between_tracers = 0
+minimum_error = 0.0
+error_angle = [0.0, 0.0]
+projectiles_per_shot = 1
+distribution = 0
+first_person_offset = [0.0, 0.0, 0.0]
+heat_per_round = 0.16
+age_per_round = 0.002
+firing_effects = 1
+projectile = 'weapons\plasma pistol\bolt'
+charging_time = 0.6
+charged_time = 45.0
+overcharged_action = 0
+
+[hooks."halo_ce:weapon".animations]
+ready = 14
+reload_empty = 9
+melee = 33
+melee_key = 4
+
+[hooks."halo_ce:weapon".projectile]
+tag = 'weapons\plasma pistol\bolt'
+initial_velocity = 0.8333334
+final_velocity = 0.5
+air_damage_range = [20.0, 50.0]
+water_damage_range = [0.0, 0.0]
+maximum_range = 50.0
+air_gravity_scale = 0.1
+water_gravity_scale = 0.0
+collision_radius = 0.0
+minimum_velocity = 0.0
+timer = [0.0, 0.0]
+impact_damage = "plasma_pistol_bolt"
+
+[hooks."halo_ce:weapon".projectile.responses]
+count = 33
+elements = [
+    { types = [32], default = "reflect" },
+    { types = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], default = "disappear" },
+]
+
+[hooks."halo_ce:weapon".secondary.trigger]
+flags = 0x4
+rounds_per_second = [0.0, 0.0]
+rate_of_fire_acceleration = 1.0
+rate_of_fire_deceleration = 1.0
+error_acceleration = 1.0
+error_deceleration = 1.0
+magazine = 0
+rounds_per_shot = 0
+minimum_rounds_loaded = 0
+rounds_between_tracers = 0
+minimum_error = 0.0
+error_angle = [0.0, 0.0]
+projectiles_per_shot = 1
+distribution = 0
+first_person_offset = [0.0, 0.0, 0.0]
+heat_per_round = 1.0
+age_per_round = 0.11
+firing_effects = 1
+projectile = 'weapons\plasma rifle\charged bolt'
+overcharged_action = 1
+
+[hooks."halo_ce:weapon".secondary.projectile]
+tag = 'weapons\plasma rifle\charged bolt'
+flags = 1
+initial_velocity = 0.5
+final_velocity = 0.3
+air_damage_range = [5.0, 20.0]
+water_damage_range = [0.0, 0.0]
+maximum_range = 40.0
+air_gravity_scale = 0.0
+water_gravity_scale = 0.0
+collision_radius = 0.1
+minimum_velocity = 0.0
+timer = [0.0, 0.0]
+guided_angular_velocity = 0.5061455
+impact_damage = "charged_bolt"
+
+[hooks."halo_ce:weapon".secondary.projectile.responses]
+count = 33
+elements = [
+    { types = [29], default = "disappear", potential = "overpenetrate", skip = 0.0 },
+    { types = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31, 32], default = "disappear", potential = "detonate", skip = 0.0 },
+]

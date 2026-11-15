@@ -16,7 +16,7 @@ use halo_ce::game::{
         ASSAULT_RIFLE, PISTOL, PLASMA_RIFLE, SHOTGUN,
         flight::{End, Flight, Hit},
         gun,
-        params::{Gun, Response, effect_id, take_ammunition},
+        params::{Gun, effect_id, take_ammunition},
         random::{self, HaloRng},
         tick::{GunEvent, HaloGun, Inputs, MagazineMode},
     },
@@ -253,7 +253,7 @@ fn world(floor: bool, wall: Option<f32>) -> impl FnMut(Vec3, Vec3, Option<u8>) -
         let mut best: Option<Hit<u8>> = None;
         if floor && b.y < 0.0 && a.y >= 0.0 {
             let t = a.y / (a.y - b.y);
-            best = Some(Hit { t, point: a + (b - a) * t, normal: Vec3::Y, object: None });
+            best = Some(Hit::level(t, a + (b - a) * t, Vec3::Y, Some(2)));
         }
         // A trace ending exactly on the wall does not hit it; one starting
         // on it hits at t = 0 (projectiles.md, Edge cases).
@@ -263,7 +263,7 @@ fn world(floor: bool, wall: Option<f32>) -> impl FnMut(Vec3, Vec3, Option<u8>) -
         {
             let t = (x - a.x) / (b.x - a.x);
             if best.is_none_or(|h| t < h.t) {
-                best = Some(Hit { t, point: a + (b - a) * t, normal: Vec3::NEG_X, object: Some(1) });
+                best = Some(Hit { t, point: a + (b - a) * t, normal: Vec3::NEG_X, object: Some(1), material: Some(21), unit: true });
             }
         }
         best
@@ -285,9 +285,10 @@ fn shoot(id: &str, floor: bool, wall: Option<f32>, max: u32) -> (Vec<(Vec3, f32)
         let mut ignored = None;
         let mut struck = |h: &Hit<u8>, v: Vec3, s: f32| {
             hits.push((k, h.t, v.length(), s));
-            Response::Disappear
+            // The shield took it (22: every one of these disappears).
+            Some(22)
         };
-        let m = f.update(p, &mut ignored, &mut trace, &mut struck);
+        let m = f.update(p, &mut ignored, &mut HaloRng(0), None, &mut trace, &mut struck);
         out.push((f.position, f.speed()));
         if let Some(e) = m.end {
             return (out, Some((k, e)), hits);

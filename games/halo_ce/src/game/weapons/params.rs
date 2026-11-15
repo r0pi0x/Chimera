@@ -52,20 +52,42 @@ pub struct Gun {
     pub trigger: Trigger,
     pub animations: Animations,
     pub projectile: Projectile,
+    /// Trigger 1 and its projectile (the plasma pistol's charged bolt;
+    /// weapons.md 10): fired by trigger 0's release of a charge, never by
+    /// a button of its own.
+    #[serde(default)]
+    pub secondary: Option<Secondary>,
+    /// The port's switch: a guided projectile (the needle, the charged
+    /// bolt) gets the target section 15's rule picks (weapons.md 6 step 7:
+    /// "its target is the aim assist target") although aim assist itself
+    /// (the bending, magnetism) is off. Off: no target, no guidance.
+    #[serde(default)]
+    pub guidance_targets: bool,
+}
+
+/// Trigger 1 with the projectile it fires.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Secondary {
+    pub trigger: Trigger,
+    pub projectile: Projectile,
 }
 
 /// Weapon flag bits (weapons.md "Weapon flags").
 pub mod weapon_flags {
     pub const AIM_ASSISTS_ONLY_WHEN_ZOOMED: u32 = 1 << 5;
+    pub const PREVENTS_GRENADES: u32 = 1 << 6;
     pub const PREVENTS_MELEE: u32 = 1 << 9;
     pub const CANNOT_FIRE_AT_MAXIMUM_AGE: u32 = 1 << 11;
 }
 
 /// Trigger flag bits (weapons.md "Trigger flags").
 pub mod trigger_flags {
+    pub const TRACKS_FIRED_PROJECTILE: u32 = 1;
     pub const CAN_FIRE_WITH_PARTIAL_AMMO: u32 = 1 << 2;
     pub const DOES_NOT_REPEAT_AUTOMATICALLY: u32 = 1 << 3;
     pub const USE_ERROR_WHEN_UNZOOMED: u32 = 1 << 10;
+    pub const PROJECTILE_VECTOR_CANNOT_BE_ADJUSTED: u32 = 1 << 11;
     pub const PROJECTILES_HAVE_IDENTICAL_ERROR: u32 = 1 << 12;
 }
 
@@ -193,6 +215,19 @@ pub struct Trigger {
     pub firing_effects: u8,
     /// The projectile tag's path.
     pub projectile: String,
+    /// Charging and charged time, seconds (x 30, truncated; weapons.md 10).
+    #[serde(default)]
+    pub charging_time: f32,
+    #[serde(default)]
+    pub charged_time: f32,
+    /// After the charged time: 0 none, 1 explodes, 2 discharges.
+    #[serde(default)]
+    pub overcharged_action: u16,
+    /// Spew and overload time, seconds (no multiplayer weapon has them).
+    #[serde(default)]
+    pub spew_time: f32,
+    #[serde(default)]
+    pub overload_time: f32,
 }
 
 impl Trigger {
@@ -219,6 +254,16 @@ impl Trigger {
     /// The error angle limit at error `e`.
     pub fn theta_max(&self, e: f32) -> f32 {
         (1.0 - e) * self.error_angle[0] + e * self.error_angle[1]
+    }
+
+    /// Ticks to a full charge (0: the trigger does not charge).
+    pub fn charging_ticks(&self) -> i32 {
+        seconds_to_ticks(self.charging_time)
+    }
+
+    /// Ticks a full charge holds before the overcharged action.
+    pub fn charged_ticks(&self) -> i32 {
+        seconds_to_ticks(self.charged_time)
     }
 }
 
@@ -256,6 +301,13 @@ pub struct Animations {
 #[serde(deny_unknown_fields)]
 pub struct Projectile {
     pub tag: String,
+    /// Projectile flags (0x17C, `projectile_flags`).
+    #[serde(default)]
+    pub flags: u32,
+    /// When the detonation timer starts: 0 at once, 1 after the first
+    /// bounce, 2 when at rest (1 and 2 act the same: behaviour 2).
+    #[serde(default)]
+    pub timer_starts: u16,
     pub initial_velocity: f32,
     pub final_velocity: f32,
     pub air_damage_range: [f32; 2],
@@ -268,23 +320,146 @@ pub struct Projectile {
     pub minimum_velocity: f32,
     /// Seconds (both 0: no timer).
     pub timer: [f32; 2],
-    /// The impact damage effect by our id.
+    /// Seconds (0: no arming).
+    #[serde(default)]
+    pub arming_time: f32,
+    /// Radians per second.
+    #[serde(default)]
+    pub guided_angular_velocity: f32,
+    /// The impact damage effect by our id ("" for none).
     pub impact_damage: String,
-    /// What it does on a character's cyborg body (material type 21) and
-    /// shield (22), and on the level (projectiles.md "Material
-    /// responses"): `disappear` or `overpenetrate`.
-    pub on_body: Response,
-    pub on_shield: Response,
-    pub on_level: Response,
+    /// The damage effects of the detonation effect's damage parts (area
+    /// damage, behaviour 10), by our ids; empty: the detonation hurts
+    /// nothing.
+    #[serde(default)]
+    pub detonation: Vec<String>,
+    /// The supercombine's (the needle's super detonation).
+    #[serde(default)]
+    pub super_detonation: Vec<String>,
+    /// The damage dealt to the object it is stuck in when it detonates.
+    #[serde(default)]
+    pub attached_damage: Option<String>,
+    /// The material responses (projectiles.md "Material responses").
+    pub responses: Responses,
 }
 
-/// A material response the four projectiles' rows use.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields, rename_all = "snake_case", tag = "response")]
-pub enum Response {
+/// Projectile flag bits (0x17C).
+pub mod projectile_flags {
+    pub const ORIENTED_ALONG_VELOCITY: u32 = 1;
+    pub const DETONATION_MAX_TIME_IF_ATTACHED: u32 = 1 << 2;
+    pub const HAS_SUPER_COMBINING_EXPLOSION: u32 = 1 << 3;
+}
+
+/// A response kind (the tag's enumeration, default and potential).
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    #[default]
     Disappear,
-    /// Pass through, keeping (1 - initial friction) of the speed.
-    Overpenetrate { initial_friction: f32 },
+    Detonate,
+    Reflect,
+    Overpenetrate,
+    Attach,
+}
+
+impl Kind {
+    /// The tag's code.
+    pub fn code(self) -> u16 {
+        self as u16
+    }
+}
+
+/// A projectile's material response block: the elements the spec gives,
+/// each for the material types it lists.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Responses {
+    /// The block's element count (33; 31 for the flame): a type at or past
+    /// it uses the built-in response (disappear, nothing else).
+    pub count: u8,
+    /// The type whose element a type the spec does not state uses (the
+    /// data's notes say why).
+    #[serde(default)]
+    pub unstated: Option<u8>,
+    pub elements: Vec<Response>,
+}
+
+/// One material response element (0xA0); a field the spec does not state
+/// is None (read as 0).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Response {
+    /// The material types it is the element of.
+    pub types: Vec<u8>,
+    pub default: Kind,
+    /// Disappear: none.
+    #[serde(default)]
+    pub potential: Kind,
+    #[serde(default)]
+    pub only_against_units: bool,
+    #[serde(default)]
+    pub skip: Option<f32>,
+    /// Impact angle window, radians (upper 0: no condition).
+    #[serde(default)]
+    pub angle: Option<[f32; 2]>,
+    /// Impact speed window, WU per tick (upper 0: no condition).
+    #[serde(default)]
+    pub velocity: Option<[f32; 2]>,
+    #[serde(default)]
+    pub angular_noise: Option<f32>,
+    #[serde(default)]
+    pub velocity_noise: Option<f32>,
+    #[serde(default)]
+    pub initial_friction: Option<f32>,
+    /// Lost of the component along the normal, and along the surface.
+    #[serde(default)]
+    pub parallel_friction: Option<f32>,
+    #[serde(default)]
+    pub perpendicular_friction: Option<f32>,
+}
+
+/// The built-in response: default disappear, all zeros.
+pub static BUILT_IN: Response = Response {
+    types: Vec::new(),
+    default: Kind::Disappear,
+    potential: Kind::Disappear,
+    only_against_units: false,
+    skip: None,
+    angle: None,
+    velocity: None,
+    angular_noise: None,
+    velocity_noise: None,
+    initial_friction: None,
+    parallel_friction: None,
+    perpendicular_friction: None,
+};
+
+impl Response {
+    /// The potential response's conditions (behaviour 6 step 4, but the
+    /// skip draw, the caller's).
+    pub fn potential_applies(&self, alpha: f32, u: f32, unit: bool) -> bool {
+        let [a0, a1] = self.angle.unwrap_or([0.0, 0.0]);
+        let [v0, v1] = self.velocity.unwrap_or([0.0, 0.0]);
+        self.potential != Kind::Disappear
+            && (a1 == 0.0 || (a0 <= alpha && alpha <= a1))
+            && (v1 == 0.0 || (v0 <= u && u <= v1))
+            && (!self.only_against_units || unit)
+    }
+}
+
+impl Responses {
+    /// The element for material type `t` (None: material-less, the
+    /// built-in one).
+    pub fn get(&self, t: Option<u8>) -> &Response {
+        let Some(t) = t.filter(|t| *t < self.count) else { return &BUILT_IN };
+        let find = |t: u8| self.elements.iter().find(|e| e.types.contains(&t));
+        find(t).or_else(|| self.unstated.and_then(find)).unwrap_or(&BUILT_IN)
+    }
+
+    /// The element the spec states for type `t`, if it does.
+    pub fn stated(&self, t: u8) -> Option<&Response> {
+        self.elements.iter().find(|e| e.types.contains(&t))
+    }
 }
 
 /// The engine's gravity, WU per tick squared (projectiles.md, constants).
@@ -316,6 +491,22 @@ impl Projectile {
 
     pub fn has_timer(&self) -> bool {
         self.timer[1] != 0.0
+    }
+
+    pub fn has(&self, flag: u32) -> bool {
+        self.flags & flag != 0
+    }
+
+    /// The step of a 0-to-1 accumulator for `seconds`: 1 / (30 s) when
+    /// 30 s >= 1, else 0 (none; behaviour 1, in single precision).
+    pub fn step(seconds: f32) -> f32 {
+        let t = seconds * 30.0;
+        if t >= 1.0 { 1.0 / t } else { 0.0 }
+    }
+
+    /// The impact damage effect's id (none for "").
+    pub fn impact_effect(&self) -> Option<EffectId> {
+        effect_id(&self.impact_damage)
     }
 }
 

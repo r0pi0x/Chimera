@@ -1,0 +1,113 @@
+# The needler (specs/halo_ce/weapons.md "Multiplayer weapon numbers";
+# projectiles.md "Flight numbers", 12, 13; animations.md "First-person
+# graphs"): 20 + 60 needles (80 most in reserve), 3 rising to 10 a second as
+# held (10 ticks to 3), error 2 to 4 degrees; the needle at 0.133 WU a tick
+# to 20 WU, turning 1.57 rad a second toward its target (half against a
+# player), sticking into what it hits (stone and metal glance off at a
+# shallow angle) and detonating 0.75 s after the last one stuck: 10 points
+# each, and more than six in one biped a supercombine (60 points, emp).
+id = "halo_ce:needler"
+base = "halo_ce:gun"
+slot = 0
+class = "smg"
+
+[hud]
+name = "Needler"
+
+[hooks."halo_ce:weapon"]
+tag = 'weapons\needler\needler'
+flags = 0
+# The needler type.
+weapon_type = 2
+zoom_levels = 0
+camo = [0.16, 0.015]
+melee_damage = "needler_melee"
+# The port gives its needles section 15's target with aim assist off.
+guidance_targets = true
+
+[hooks."halo_ce:weapon".heat]
+recovery_threshold = 0.0
+overheated_threshold = 0.0
+detonation_threshold = 0.0
+detonation_fraction = 0.0
+loss_per_second = 0.0
+illumination = 0.0
+
+[hooks."halo_ce:weapon".age]
+heat_recovery_penalty = 0.0
+rate_of_fire_penalty = 0.0
+misfire_start = 0.0
+misfire_chance = 0.0
+
+[hooks."halo_ce:weapon".aim_assist]
+autoaim_angle = 0.10472
+autoaim_range = 25.0
+magnetism_angle = 0.20944
+magnetism_range = 25.0
+deviation_angle = 0.0
+
+[hooks."halo_ce:weapon".magazine]
+flags = 0
+rounds_recharged = 0
+rounds_total_initial = 80
+rounds_total_maximum = 80
+rounds_loaded_maximum = 20
+rounds_reloaded = 20
+chamber_time = 0.0
+
+[hooks."halo_ce:weapon".trigger]
+flags = 0
+rounds_per_second = [3.0, 10.0]
+rate_of_fire_acceleration = 0.0666667
+rate_of_fire_deceleration = 0.222222
+error_acceleration = 0.0666667
+error_deceleration = 1.0
+magazine = 0
+rounds_per_shot = 1
+minimum_rounds_loaded = 0
+rounds_between_tracers = 0
+minimum_error = 0.0349066
+error_angle = [0.0698132, 0.0698132]
+projectiles_per_shot = 1
+distribution = 0
+first_person_offset = [0.0, 0.0, 0.0]
+heat_per_round = 0.0
+age_per_round = 0.0
+firing_effects = 1
+projectile = 'weapons\needler\needle'
+
+[hooks."halo_ce:weapon".animations]
+ready = 23
+reload_empty = 70
+melee = 48
+melee_key = 6
+
+[hooks."halo_ce:weapon".projectile]
+tag = 'weapons\needler\needle'
+flags = 11
+timer_starts = 2
+initial_velocity = 0.13333334
+final_velocity = 0.13333334
+air_damage_range = [0.0, 100.0]
+water_damage_range = [0.0, 10.0]
+maximum_range = 20.0
+air_gravity_scale = 0.0
+water_gravity_scale = 0.0
+collision_radius = 0.0
+minimum_velocity = 0.06666667
+timer = [0.75, 0.75]
+guided_angular_velocity = 1.5707964
+impact_damage = "needle_impact"
+super_detonation = ["needler_shock_wave", "needler_explosion"]
+attached_damage = "needle_detonation"
+
+[hooks."halo_ce:weapon".projectile.responses]
+count = 33
+elements = [
+    { types = [0, 21, 22], default = "attach" },
+    { types = [2], default = "attach", potential = "reflect", angle = [0.0, 0.4363], angular_noise = 0.2618, parallel_friction = 0.3, perpendicular_friction = 0.3 },
+    { types = [5, 6, 7], default = "attach", potential = "reflect", angle = [0.0, 0.6109], angular_noise = 0.0873, parallel_friction = 0.3, perpendicular_friction = 0.3 },
+    { types = [9], default = "attach", potential = "reflect", angle = [0.0, 0.2618] },
+    { types = [10, 16, 18, 32], default = "reflect" },
+    { types = [28, 29], default = "overpenetrate" },
+]

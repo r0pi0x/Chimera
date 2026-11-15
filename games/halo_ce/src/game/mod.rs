@@ -9,16 +9,20 @@
 //! - `maps`: the install's map cache files as Chimera's `MapData`
 //!   (`MAP_LOADER`; cache_file.md, structure_bsp.md, collision.md,
 //!   shaders.md, scenario.md);
+//! - `maps::teleporters`: the scenario's teleporter pairs as the engine's
+//!   teleporters; `maps::collision` also publishes climbable sheets as
+//!   ladders;
 //! - `movement`: `halo_ce:movement`, Halo's player movement
 //!   (specs/halo_ce/movement.md; its numbers in data/movement.toml);
 //! - `vitality`: a Halo player's body and shield, recharge, overshield,
 //!   camouflage and stun (health_shields.md; its numbers in
 //!   data/vitality.toml and data/damage.toml), and `damage`: the seam every
 //!   Halo damage source delivers through (`damage::HaloHit`);
-//! - `weapons`: the assault rifle, pistol, plasma rifle and shotgun
-//!   (weapons.md, projectiles.md): data/weapons/*.toml, the per-tick weapon
-//!   rules, projectiles and melee, hits through `damage::HaloHit`, lent as
-//!   rungs in `parts`;
+//! - `weapons`: the nine held weapons and the two grenades (weapons.md,
+//!   projectiles.md, multiplayer_rules.md 5): data/weapons/*.toml and
+//!   data/grenades.toml, per-tick weapon rules with charging, projectiles
+//!   with material responses, explosions and pickups, hits through
+//!   `damage::HaloHit`, lent as rungs in `parts`;
 //! - `body`: the players' Spartan body (model, animations from the graph's
 //!   unit tables, hit boxes from the collision model, armour colours), on
 //!   Halo's maps and, from the donor map, on any other;
@@ -29,6 +33,8 @@
 //! - `fx`: the guns' sounds and effects (effects.md, sounds.md): the library
 //!   from the donor map, effects played as the engine's sounds, particles,
 //!   decals and lights, shots shown on every machine;
+//! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
+//!   at any tick rate (`halo_ticks`);
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
 //!   the donor map, `map/<name>` per multiplayer map); `mount::build` reads
 //!   the install's build from a map header;
@@ -48,6 +54,7 @@ pub mod mount;
 pub mod movement;
 pub mod parts;
 pub mod sets;
+pub mod ticks;
 pub mod view;
 pub mod vitality;
 pub mod weapons;
@@ -171,7 +178,9 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
     guest: Some(&fx::load::GUEST),
-    kept: &[],
+    // Its guns' view and held models stay on its maps in an app whose
+    // gameplay is another game's (a party's Halo rungs on Hang 'Em High).
+    kept: &["halo_ce:"],
     binds: &[],
     view_model_fov: Some(view::fov),
     sim: |app| {

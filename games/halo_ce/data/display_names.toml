@@ -20,3 +20,23 @@ full = "Plasma Rifle"
 [[name]]
 weapons = ["halo_ce:shotgun"]
 full = "Shotgun"
+
+[[name]]
+weapons = ["halo_ce:sniper_rifle"]
+full = "Sniper Rifle"
+
+[[name]]
+weapons = ["halo_ce:rocket_launcher"]
+full = "Rocket Launcher"
+
+[[name]]
+weapons = ["halo_ce:needler"]
+full = "Needler"
+
+[[name]]
+weapons = ["halo_ce:plasma_pistol"]
+full = "Plasma Pistol"
+
+[[name]]
+weapons = ["halo_ce:flamethrower"]
+full = "Flamethrower"

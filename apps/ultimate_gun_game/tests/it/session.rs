@@ -138,11 +138,12 @@ fn a_session_of_matches_stops_making_tables() {
     // sixth; with a game switch's parts kept or moved together, about 960,
     // 351 of them characters', and 40 more after the fourth match; Halo's
     // four guns as rungs, its stand-in movement and shield parts on and
-    // off with them, about 1,220, a few new after the sixth).
+    // off with them, about 1,220, a few new after the sixth; its eight,
+    // more Halo rungs to arrive on, about 1,300).
     let made = chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20);
     eprintln!("{made}");
     assert!(
-        last.0 < 1300 && last.0 - rows[3].0 < 100,
+        last.0 < 1400 && last.0 - rows[3].0 < 100,
         "{} archetypes after four matches, {} after eight: a part that comes and goes on characters, one at a time, makes \
          one for every combination of the others. Keep it on them from the spawn \
          (`chimera_core::character::CharacterPartsExt::on_every_character`) or put a game's parts on and off in one move \

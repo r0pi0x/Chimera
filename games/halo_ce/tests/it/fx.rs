@@ -95,7 +95,7 @@ const STONE: &str = "halo_ce:stone";
 /// The library: the assault rifle's (and the plasma rifle's) firing effect
 /// (its sound and one flash), the stone impact (sound at "reflection", a
 /// decal along "negative incident", three particles at "normal").
-fn library() -> HaloFx {
+pub(crate) fn library() -> HaloFx {
     let fire = FxEffect {
         path: "fire".into(),
         locations: vec!["primary trigger".into()],

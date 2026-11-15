@@ -79,7 +79,7 @@ tags' own.
 | DOUBLE_SPEED | 1.25 | factor | `double speed multiplier`; a debug option only |
 | MP_SPEED_MULT | 0.0 | factor | `multiplayer only speed multiplier`; unused by the engine |
 | STUN_MOVE | 0.8 | factor | `stun movement penalty` |
-| STUN_TURN | 0.8 | factor | `stun turning penalty` (also used for jumps, see Quirks) |
+| STUN_TURN | 0.8 | factor | `stun turning penalty`: scales the jump only (see Damage stun) |
 | STUN_JUMP | 1.0 | factor | `stun jumping penalty` (unused, see Quirks) |
 | HARD_LAND_DECEL | 0.0053333333 | WU/t² | engine default step used while hard-landing |
 | GROUND_PUSH | 1/128 = 0.0078125 | WU/t | push along −ground normal added every grounded tick |
@@ -393,7 +393,19 @@ section leaves out:
   motion still goes into it (V'·N_old < −ε) the motion is restricted
   to the two planes' intersection line (position projected onto the
   line); with a third, the point stops at the three planes' common
-  point. The clip set keeps the newest plane plus those used.
+  point. The clip set keeps the newest plane plus those used. In
+  detail, per contact: the remaining motion V' (the tick's velocity
+  scaled by the product of the (1 − t) so far, never the already
+  clipped one) is clipped to the new plane to give the candidate
+  motion. Then, if the clip set is not empty: if the candidate goes
+  into the first stored plane (candidate·N_first < −ε), the pair
+  (new, first) gives the line, and V' (not the candidate) is projected
+  onto it, the position too; and if a second stored plane exists and
+  that line motion goes into it, the point is the common point of the
+  three planes and the motion zero. Otherwise, if a second stored
+  plane exists and the candidate goes into it, the pair (new, second)
+  gives the line the same way. Otherwise the clip set is just the new
+  plane. The line's direction is e = N_new × N_other.
 - The loop ends when every component of the remaining motion is below
   ε, when the sweep hits nothing (the point moves the rest of the
   way), or after 16 contacts (the rest of the motion is dropped).
@@ -402,14 +414,30 @@ section leaves out:
   (one plane), V projected on the line (two), or zero (three). There is
   no restitution: nothing bounces.
 - Extra virtual contact for two or three clip planes (only when fewer
-  than 16 contacts were recorded): its normal is, for two planes with
-  line direction e, either e × N_s (or N_s × e, keeping the steepest
-  plane's orientation) when one of the planes faces down (the steepest
-  is the one with the lowest negative n_z), else +Z made perpendicular
-  to e (+Z − e·e_z/|e|²), normalised; for three planes, +Z made
-  perpendicular to the most downward-facing plane, or +Z itself if
-  none faces down. If the normalisation fails the virtual contact is
-  dropped. This contact takes part in the ground test below.
+  than 16 contacts were recorded). Let the steepest plane be the one
+  of the clip set with the lowest negative n_z (none if no plane
+  faces down).
+  - Two planes (N_new the newest plane's normal, N_old the other,
+    c = N_new·N_old): if the steepest is the newest plane, the
+    virtual normal is N_old − c·N_new (the other plane's normal made
+    perpendicular to the steepest one's), normalised; if the steepest
+    is the older plane, it is N_new − c·N_old, normalised. (This is
+    e × N_new, respectively N_old × e, with e = N_new × N_old, so the
+    vector lies in the steepest plane and is perpendicular to the
+    crease: "keeping the steepest plane's orientation" means exactly
+    these two signs, not either sign.) Worked example: N_new =
+    (−0.8, 0, 0.6) (a slope facing up), N_old = (0.6, 0, −0.8) (an
+    overhang, the steepest, n_z = −0.8): c = −0.96, N_new − c·N_old =
+    (−0.224, 0, −0.168), normalised (−0.8, 0, −0.6): the virtual
+    contact faces down and sideways. If no plane faces down, the
+    virtual normal is +Z made perpendicular to e (+Z − e·e_z/|e|²),
+    normalised: for two planes whose crease is horizontal, +Z.
+  - Three planes: +Z made perpendicular to the steepest plane
+    (+Z − n_z·N_steepest), normalised, or +Z itself if none faces
+    down.
+  If the normalisation fails the virtual contact is dropped. Its
+  point is the last clip plane's contact point. This contact takes
+  part in the ground test below.
 
 **The ground test** (every tick, ground and air alike). Among the
 tick's contacts (real and virtual), pick the one with the largest
@@ -565,11 +593,23 @@ being clamped (the velocity is more than one step from the wanted
 one); the first tick that is within one step clears it. Slipping never
 starts any other way.
 
-**Damage stun.** The body stun s_b (set and decayed by
+**Damage stun.** The body stun s_b (0 to 1; set and decayed by
 `health_shields.md`: the globals' stun times, the damage effect's stun
-values) scales the wanted speed by (1 − 0.8·s_b) and the jump by
-(1 − 0.8·s_b); above 0.2 the stunned moving animations play. The unit
-tag's `stunned movement threshold` is 0 on the Spartan (off).
+values) has exactly these effects, and this paragraph is the one place
+that states them (other specs refer here):
+
+- the wanted ground speed is multiplied by (1 − STUN_MOVE·s_b), the
+  `stun movement penalty` (0.8): the factor k_s of section 2, and
+  nothing else of the movement (acceleration limit, air control, turn
+  rate) changes;
+- the jump velocity of a player-controlled biped is multiplied by
+  (1 − STUN_TURN·s_b), the `stun turning penalty` (0.8; the name is
+  the tag's, the jump is all it scales: it does not affect the turn
+  rate). A biped without a player is not scaled. The tag's `stun
+  jumping penalty` (1.0) is never read. Both penalties happen to be
+  0.8 on the disc, so on the disc a stun of 1 leaves 0.2 of both;
+- above s_b = 0.2 the stunned moving animations play. The unit tag's
+  `stunned movement threshold` is 0 on the Spartan (off).
 
 **Game-type speed.** The player speed multiplier m_p is set by the game
 type (Oddball ball carrier 1.25 or 0.75, Race catch-up 1.1 or 1.2,
@@ -708,10 +748,11 @@ Keep all of these; they are part of how the game plays.
   measures the velocity from its lower bound, the hard branch does not
   (λ/(v_m − v_h) with λ ≥ v_h is always above 1), so q is clamped
   to 1.
-- **Jump stun uses the turning penalty.** The jump is scaled by
-  STUN_TURN (0.8), not by the tag's `stun jumping penalty` (1.0, which
-  would make a fully stunned player unable to jump). Keep 0.8: a fully
-  stunned player still jumps at 0.2 × 0.07 = 0.014 WU/t.
+- **Jump stun uses the turning penalty.** The jump is scaled by the
+  `stun turning penalty` STUN_TURN (0.8), not by the tag's `stun
+  jumping penalty` (1.0, which would make a fully stunned player unable
+  to jump). Keep 0.8: a fully stunned player still jumps at 0.2 × 0.07
+  = 0.014 WU/t.
 - **Letting go in the air brakes.** Air control steers toward the
   stick's wish, which is zero without input.
 - **Hops over edges.** Small edges and crests launch the player a
@@ -825,13 +866,31 @@ at rest and hold (1, 0).
 | s = 0.10 | (1, 0) | ticks 17 to 19 | airborne, top z 0.1058883 on tick 18 |
 | s = 0.10 | (1, 0) | tick 20 | grounded on the top: x = 0.7338624, z = 0.1, speed 0.0452953; 0.075 again on tick 23 |
 | s = 0.12 | (1, 0) | tick 40 | on the top, z = 0.12, grounded, speed 0.075 |
-| s = 0.13 | (1, 0) | tick 40 | blocked: origin x = 0.6 − √(0.2² − 0.07²) = 0.4126501, z = 0, speed 0, grounded |
-| s = 0.15 | (1, 0) | tick 40 | blocked at x = 0.4063508 |
+| s = 0.13 | (1, 0) | tick 9 | first touch: x = 0.415832, z = 0.0085163, v = (0.0066261, 0, 0.0177342), grounded (floor and the edge's rounded contact, normal (−0.937, 0, 0.35)) |
+| s = 0.13 | (1, 0) | ticks 10 to 21 | airborne on the edge contact alone: apex z = 0.0455154 and x = 0.4367284 on tick 15, back at x = 0.4161609, z = 0.0096103 on tick 21 (the hop is the clip's upward slide, then gravity brings it back) |
+| s = 0.13 | (1, 0) | tick 22 | the floor is hit again: x = 0.4108436, z = 0, v = (−0.0047308, 0, 0), grounded |
+| s = 0.13 | (1, 0) | ticks 23 to 40 (and on) | blocked: origin x = 0.6 − √(0.2² − 0.07²) = 0.4126501, z = 0, v = 0 exactly, grounded; each tick's contacts are the floor, the edge and the virtual +Z contact |
+| s = 0.15 | (1, 0) | tick 9 | first touch: x = 0.4079286, z = 0.0061106 |
+| s = 0.15 | (1, 0) | ticks 10 to 14 | airborne (apex z = 0.0129625 on tick 11) |
+| s = 0.15 | (1, 0) | ticks 15, 16 on | tick 15: x = 0.405607, z = 0, v = (−0.0008787, 0, 0), grounded; from tick 16 blocked at x = 0.4063508 (= 0.6 − √(0.2² − 0.05²)), v = 0 |
 | s = 0.03 | (1, 0) | ticks 10, 11 | grounded on the edge contact; v = (0.0506893, 0, 0.0314144), then (0.0540089, 0, 0.0227750) |
 | s = 0.03 | (1, 0) | ticks 12 to 23 | airborne hop, apex z = 0.0987121 on tick 17 |
 | s = 0.03 | (1, 0) | tick 24 | grounded on the top: x = 1.5113295, z = 0.03, speed 0.075 |
 | ledge: floor z = 0 for x < 1.0, ground z = −5 beyond | (1, 0) | tick 18 | airborne; z = −0.0078125, v_z = −0.0078125 |
 | two faces at 60° forming a V along y (crease at z = 0) | released from z = 1 | 80 ticks | grounded (virtual contact, normal +Z), origin z = 0.2 |
+
+Why the blocked rows end at speed exactly 0: once the sphere is down
+on the floor again and pressed into the edge's rounded contact (a
+cylinder around the edge), both planes are in the clip set; the stored
+velocity is the tick's velocity projected on their common line, which
+runs along y, so its x and z are 0, and the position is projected onto
+the same line, which holds it at the stated x. The ground push
+(1/128 along the ground normal) is what keeps the floor plane in the
+set each tick; the edge's slide upward (the hop of ticks 10 to 21) only
+happens while the floor plane is not in the set, as on the first touch.
+The rows were produced by a simulation of the clip rules above
+(its last digits may differ in single precision); the same simulation climbs 0.12 and blocks 0.125
+and every higher step (full-run limit 0.1231).
 
 The step rows depend on the full mover; an implementation using a
 physics engine's capsule cast instead (`collision.md` allows it for a
