@@ -103,6 +103,10 @@ impl Plugin for SimPlugin {
 pub fn front_end(app: &mut App, _: &Args) {
     // The weapons' melee and zoom buttons.
     halo_ce::ui::binds(app);
+    // The camera's field of view, the view models' too (`game::view`).
+    app.insert_resource(chimera_client::client::video::PlayerFov(game::view::FOV))
+        .insert_resource(game::view::settings())
+        .insert_resource(chimera_world::map::SettingsFollowPlayerFov);
 }
 
 #[cfg(test)]

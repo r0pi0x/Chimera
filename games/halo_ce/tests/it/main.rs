@@ -19,6 +19,7 @@
 mod assets;
 mod body;
 mod cross_game;
+mod fx;
 mod hud;
 mod info;
 mod maps;
@@ -27,6 +28,7 @@ mod movement_net;
 mod movement_vitality;
 mod net_vitality;
 mod skeleton;
+mod view;
 mod vitality;
 mod vitality_data;
 mod weapons;
@@ -35,10 +37,12 @@ mod weapons_rules;
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
 mod heavy {
     mod body;
+    mod fx;
     mod hud;
     mod maps;
     mod mount;
     mod served;
+    mod view;
     mod vitality_data;
     mod weapon_data;
     mod walk;

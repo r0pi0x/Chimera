@@ -5,6 +5,8 @@
 
 pub mod hud;
 
+pub mod fx_lights;
+
 use bevy::app::PluginGroupBuilder;
 use chimera_world::game_bundle::GameClient;
 
@@ -22,6 +24,7 @@ pub fn binds(app: &mut bevy::app::App) {
     use chimera_client::client::binds::BindsAppExt;
     use crate::game::weapons::systems::{MELEE_ACTION, ZOOM_ACTION};
     app.bound_action(MELEE_ACTION).bound_action(ZOOM_ACTION);
+    fx_lights::plugin(app);
 }
 
 /// Halo's front end in an app made of several games (beside its
