@@ -664,9 +664,10 @@ fn prop_output(lit: vec3<f32>, alpha: f32, p: vec3<f32>) -> vec4<f32> {
     // surface takes the water's fog.
     let fog = source_fog(params.fog_color, params.fog_range, params.water_fog_color, params.water_fog_range, p);
     let rgb = mix(lit, fog.rgb, fog.a);
-    // Additive (translucent 2): alpha 0 under premultiplied blending adds.
+    // Additive (translucent 2): alpha 0 under premultiplied blending adds,
+    // fogged toward black (`fog::fog_surface`).
     if params.translucent > 1.5 {
-        return vec4<f32>(rgb, 0.0);
+        return vec4<f32>(lit * (1.0 - fog.a), 0.0);
     }
     return vec4<f32>(rgb, select(1.0, alpha, params.translucent > 0.5));
 }

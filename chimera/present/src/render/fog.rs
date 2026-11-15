@@ -78,6 +78,20 @@ pub fn fog_at(f: &FogUniform, eye: Vec3, point: Vec3, depth: f32) -> (Vec3, f32)
     (f.color.truncate(), range_amount(f.range))
 }
 
+/// A surface's colour after fog `(colour, amount)` (`fog_at`), as the
+/// world and prop shaders apply it: toward the fog colour, but an additive
+/// surface toward black, as particles are (it adds nothing where fogged
+/// out; toward the fog colour it would add that colour over its whole
+/// shape: the 2026-11-14 playtest's pale light cones in Combat Arms'
+/// fogged maps).
+pub fn fog_surface(color: Vec3, fog: (Vec3, f32), additive: bool) -> Vec3 {
+    if additive {
+        color * (1.0 - fog.1)
+    } else {
+        color.lerp(fog.0, fog.1)
+    }
+}
+
 #[derive(Resource)]
 struct FogShaderLoaded;
 
@@ -241,6 +255,27 @@ mod tests {
             water_color: Vec4::new(0.0, 0.1, 0.2, mode),
             water_range: Vec4::new(0.0, 1.0, 1.0, 0.0),
         }
+    }
+
+    #[test]
+    fn additive_surfaces_fog_toward_black() {
+        let fog = world_fog(Some(&crate::map::MapFog {
+            color: [0.6, 0.6, 0.65],
+            start: 0.0,
+            end: 100.0,
+            max_density: 1.0,
+            linear: true,
+        }));
+        let cone = Vec3::new(0.0, 0.0, 0.0);
+        let (c, a) = fog_at(&fog, Vec3::ZERO, Vec3::new(0.0, 0.0, -80.0), 80.0);
+        assert!(a > 0.7, "far in the fog: {a}");
+        // A black texel of a light cone adds nothing, near or far.
+        assert_eq!(fog_surface(cone, (c, a), true), Vec3::ZERO);
+        // A bright one fades out with the fog.
+        let bright = fog_surface(Vec3::ONE, (c, a), true);
+        assert!(bright.max_element() <= 1.0 - a + 1e-6, "{bright}");
+        // An opaque surface goes toward the fog colour.
+        assert!(fog_surface(cone, (c, a), false).distance(c * a) < 1e-5);
     }
 
     #[test]

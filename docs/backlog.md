@@ -203,9 +203,13 @@ started; the user asked to avoid server lag while testers play.
   the perf-spikes change that warms ragdoll shapes inside
   `spawn_ragdolls` (d149c231-era main against the playtest7 tag) and the
   net path for ragdolls.
-- **Snow Valley (Combat Arms):** lighting looks wrong (details and a
-  screenshot pending); tree leaves are solid and block bullets, they
-  should be shoot-through.
+- **Snow Valley (Combat Arms)** (fixed on branch `pt7-ca`, confirm in a
+  playtest): the light cones (additive world models) were fogged toward
+  the fog colour, which they then added over their whole shape (pale
+  slabs in every fogged map); additive world and prop surfaces now fog
+  toward black (`fog::fog_surface`). Tree leaves (non-solid faces with a
+  cut-out texture) stopped rounds; now nothing meets them
+  (`world::FOLIAGE`, every Combat Arms map).
 - **combat_arms:battleship is very laggy in play.** Profile client
   frames and server ticks (tick_stats, seeded headless counts,
   render-thread cost): draw calls, props, water, lights, physics props,

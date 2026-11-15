@@ -185,7 +185,8 @@ fn warehouse_spawns() {
 }
 
 /// world_dat.md cases 9, 10, 13, 14 and 20 on WAREHOUSE: its non-solid
-/// physics polygons stop traces only and its 50 collision-blocker
+/// physics polygons stop traces only (but cut-out ones, which nothing
+/// meets) and its 50 collision-blocker
 /// polygons players only; the sky camera follows the player through the
 /// sky object's inner box; the fog is the world properties' (linear,
 /// (23, 23, 19), 0 to 10000 u); no file hash.
@@ -200,7 +201,10 @@ fn warehouse_collision_sky_and_fog() {
             .map(|c| c.indices.len())
             .sum()
     };
-    assert!(tris(false, true) >= 4_960, "non-solid polygons: {}", tris(false, true));
+    // Non-solid faces with a cut-out texture (wire, leaves) meet nothing
+    // (`world::FOLIAGE`, ours); the rest stop traces.
+    let foliage = map.collision_sets.iter().find(|c| c.name == world::FOLIAGE).map_or(0, |c| c.indices.len());
+    assert!(tris(false, true) + foliage >= 4_960, "non-solid polygons: {} + {foliage}", tris(false, true));
     assert!(tris(true, false) >= 50, "blocker polygons: {}", tris(true, false));
     // Sky: SkyPointerBox00 at (6623, 7009, -1471) u, SkyDims 256,
     // InnerPercent 0.001; extents +-(9952, 10080, 10112).
@@ -516,4 +520,30 @@ fn glass_sets_and_glass_world_models_name_their_surface() {
     assert_eq!((nodes("40"), nodes("41")), (16, 8), "crystaltower's glass world models");
     let freezer = world::load_world(&mount, "freezer").unwrap();
     assert!(tris(&freezer, "glass (Bullet-Proof Glass)") > 1000 && tris(&freezer, "glass (Glass)") == 0, "freezer");
+}
+
+/// Snow Valley (the 2026-11-14 playtest): its pine needles (non-solid
+/// physics polygons, surface Snow, a cut-out texture: `alpharef 128`) are
+/// walked and shot through (`world::FOLIAGE`, no collider), its trunks
+/// stay solid; its light cones (`WorldModel`s with `BlendMode Additive`,
+/// `256cx_lightcone01`) are drawn additive (blended, no depth written;
+/// fogged toward black: `chimera_present::render::fog::fog_surface`).
+#[test]
+fn snow_valley_foliage_and_light_cones() {
+    use chimera_world::map::MapAlpha;
+    let Some(mount) = mount() else { return };
+    let map = world::load_world(&mount, "snowvalley").unwrap();
+    let set = |name: &str| map.collision_sets.iter().find(|s| s.name == name).unwrap_or_else(|| panic!("no set {name}"));
+    let foliage = set(world::FOLIAGE);
+    assert!(!foliage.characters && !foliage.traces, "nothing meets the leaves");
+    // 8,448 needle polygons (and a few dozen more cut-out faces): at
+    // least one triangle each.
+    assert!(foliage.indices.len() >= 8448, "{} foliage triangles", foliage.indices.len());
+    let detail = set("non-solid detail");
+    assert!(detail.indices.len() < foliage.indices.len(), "the leaves left the traces' set: {}", detail.indices.len());
+    let cones: Vec<_> = map.meshes.iter().filter(|m| m.material.to_ascii_lowercase().contains("lightcone")).collect();
+    assert!(!cones.is_empty(), "light cones drawn");
+    assert!(cones.iter().all(|m| m.alpha == MapAlpha::Add), "{:?}", cones.iter().map(|m| m.alpha).collect::<Vec<_>>());
+    let needles: Vec<_> = map.meshes.iter().filter(|m| m.material.to_ascii_lowercase().contains("snowedpine01")).collect();
+    assert!(!needles.is_empty() && needles.iter().all(|m| matches!(m.alpha, MapAlpha::Mask(_))), "needles cut out");
 }
