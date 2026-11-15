@@ -22,8 +22,8 @@
 //! `Transform` (the pill's centre, metres) and `Velocity` (m/s), runs the
 //! tick in world units and writes them back with `MovementState` (eye
 //! height 0.62 WU standing, 0.35 crouched, linear in the crouch fraction);
-//! the falling damage as the engine's `Damage` (kind `Fall`, a fraction of
-//! the body's 75 points); the entity's collider following the pill; the
+//! the falling damage as a `damage::HaloHit` (`fall` at the landing's scale,
+//! `lethal_fall` in the air: shields, then body, by the vitality's rule); the entity's collider following the pill; the
 //! footing and seating that let a party app switch a player to this
 //! movement and back (`slots::set_movement`). A spawn starts airborne with
 //! the jump timer full and the pill pushed out of anything it overlaps;
@@ -33,9 +33,19 @@
 //! as the spec maps keys, full per axis, normalised on diagonals; crouch is
 //! a level and always counts (the spec's keyboard choice). A
 //! `ControllerStick` on the player applies the controller's crouch rule
-//! instead. `BodyStun` (s_b) and `SpeedMultiplier` (the game type's m_p)
-//! are read when present; nothing sets them yet (health_shields.md and
-//! multiplayer_rules.md will).
+//! instead. The vitality's `Stun` (s_b: the damage event sets it) and
+//! `SpeedMultiplier` (the game type's m_p; nothing sets it yet,
+//! multiplayer_rules.md will) are read when present.
+//!
+//! The tick's order (health_shields.md "Per-tick order", movement.md): the
+//! stun's counter step (`vitality::UnitStep`, the unit update) comes first,
+//! `step` runs `.after(UnitStep)` and reads the stepped stun for the wanted
+//! speed, scaled by (1 - 0.8 s_b), and for the jump, scaled by the turning
+//! penalty (1 - 0.8 s_b) as the spec's quirk keeps (the tag's jumping
+//! penalty of 1.0 is unused); the fall's hit is written in the movement set
+//! and applied by the seam after `SimSet::Weapons` and before the engine's
+//! damage, so the same tick's damage update (shield delay and recharge) sees
+//! it, and a stun a hit sets in tick n first slows tick n + 1's movement.
 //!
 //! The tick rate: the spec's numbers are per 30 Hz tick and the movement
 //! is exact when the simulation ticks at 30 Hz (Halo's own apps, its
@@ -71,9 +81,10 @@
 //!   triangle meshes) are met exactly. Against an edge too high to climb
 //!   the player rocks by a few thousandths of a WU instead of resting
 //!   (the spec's blocked rows have speed 0).
-//! - Falling damage goes to health: shields do not exist yet (the amount is
-//!   the spec's points over the body's 75). The in-air kill damage is
-//!   dealt once per engine tick (per Halo tick at 30 Hz).
+//! - The in-air kill damage is dealt once per engine tick (per Halo tick at
+//!   30 Hz); a fall's hit is written only on a first-time prediction.
+//! - Stun is read as its value s_b alone: the stunned moving animations
+//!   (above 0.2) have no body to play on yet.
 //! - Not modelled: body facing and the animation states (cosmetic: no
 //!   bodies yet), climbable surfaces (ladders: Boarding Action only),
 //!   impulses and slipping (no damage effects yet), elevators, teleporters,
@@ -96,21 +107,18 @@ use chimera_core::{
 };
 
 pub use data::MovementData;
-pub use tick::{Controls, HaloMovement, Landing};
+pub use tick::{Controls, Fall, HaloMovement, Landing};
 
+use super::{
+    damage::HaloHit,
+    vitality::{DamageEffects, Stun, UnitStep},
+};
 use crate::core::{
-    CHARACTER_FILTER, Damage, DamageKind, Dead, FirstTimePredicted, Hitgroup, Intent, MovementState, Predict,
-    PredictedAppExt, SimClock, Velocity,
+    CHARACTER_FILTER, Dead, FirstTimePredicted, Intent, MovementState, Predict, PredictedAppExt, SimClock, Velocity,
 };
 
 /// The movement's id.
 pub const ID: &str = "halo_ce:movement";
-
-/// Body stun s_b (0 to 1; health_shields.md sets it): scales the wanted
-/// speed and the jump.
-#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
-#[component(storage = "SparseSet")]
-pub struct BodyStun(pub f32);
 
 /// The player's speed multiplier m_p (the game type's,
 /// multiplayer_rules.md): scales the wanted speed only.
@@ -133,7 +141,7 @@ impl Plugin for HaloMovementPlugin {
             .insert_resource(Loadout { movement: ID })
             .register_movement::<HaloMovement>(ID)
             .seat_movement(ID, footing, seat)
-            .add_systems(Predict::Movement, (step, sync_collider).chain())
+            .add_systems(Predict::Movement, (step.after(UnitStep), sync_collider).chain())
             .predicted_net::<HaloMovement>();
     }
 }
@@ -188,13 +196,14 @@ fn step(
         &mut Transform,
         &mut Velocity,
         &mut MovementState,
-        (Option<&BodyStun>, Option<&SpeedMultiplier>, Has<ControllerStick>, Has<Dead>),
+        (Option<&Stun>, Option<&SpeedMultiplier>, Has<ControllerStick>, Has<Dead>),
     )>,
     move_and_slide: MoveAndSlide,
     data: Res<MovementData>,
     clock: Res<SimClock>,
     first: Option<Res<FirstTimePredicted>>,
-    mut damage: MessageWriter<Damage>,
+    effects: Res<DamageEffects>,
+    mut hits: MessageWriter<HaloHit>,
 ) {
     let d = &*data;
     let s = crate::game::METERS_PER_UNIT;
@@ -237,23 +246,16 @@ fn step(
             jump: intent.jump,
             crouch: intent.crouch,
             controller,
-            stun: stun.map_or(0.0, |b| b.0),
+            stun: stun.map_or(0.0, |s| s.value),
             speed_multiplier: mult.map_or(1.0, |m| m.0),
         };
         let out = tick::tick(d, &mut me, origin, velocity, controls, k, &space);
         transform.translation = (out.origin + Vec3::Y * d.centre_above_origin(me.crouch)) * s;
         vel.0 = out.velocity * per_tick;
-        if first && let Some(points) = out.damage {
-            damage.write(Damage {
-                target: e,
-                attacker: None,
-                amount: points / d.body_vitality,
-                point: transform.translation,
-                dir: Vec3::NEG_Y,
-                hitgroup: Hitgroup::Generic,
-                kind: DamageKind::Fall,
-                weapon: None,
-                force: Vec3::ZERO,
+        if first && let Some(fall) = out.damage {
+            hits.write(match fall {
+                Fall::Landing(q_f) => HaloHit::fall(&effects, e, q_f),
+                Fall::Lethal => HaloHit::lethal_fall(&effects, e),
             });
         }
         *state = MovementState {

@@ -60,10 +60,6 @@ pub struct MovementData {
     pub fall_v_min: f32,
     pub fall_v_max: f32,
     pub fall_v_kill: f32,
-    pub fall_damage_min: f32,
-    pub fall_damage_max: f32,
-    pub fall_kill_damage: f32,
-    pub body_vitality: f32,
     pub epsilon: f32,
     pub max_contacts: u32,
 }
@@ -129,12 +125,10 @@ impl MovementData {
         }
     }
 
-    /// The falling damage (points) of a landing at `lambda` (WU/t), if any
-    /// (spec section 6, step 1): `globals\falling` at its scale.
-    pub fn fall_damage(&self, lambda: f32) -> Option<f32> {
-        (lambda > self.fall_v_min).then(|| {
-            let q = ((lambda - self.fall_v_min) / (self.fall_v_max - self.fall_v_min)).clamp(0.0, 1.0);
-            (1.0 - q) * self.fall_damage_min + q * self.fall_damage_max
-        })
+    /// The falling damage's scale q_f of a landing at `lambda` (WU/t), if
+    /// it hurts (spec section 6, step 1): the damage effect `globals\falling`
+    /// is then dealt at that scale.
+    pub fn fall_scale(&self, lambda: f32) -> Option<f32> {
+        (lambda > self.fall_v_min).then(|| ((lambda - self.fall_v_min) / (self.fall_v_max - self.fall_v_min)).clamp(0.0, 1.0))
     }
 }
