@@ -59,6 +59,25 @@ the user's go-ahead: no Actions runs unless asked.
   - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
   - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
 
+- **Parties and friends: the social layer (user, 2026-11-15; needs a design first):** today only the front end exists. The lobby can group a party's rows with a coloured edge, but the server always sends party 0 (`chimera/net/src/prematch.rs`), so nobody is grouped. The "+" invite and Friends tiles in the shell's rack are disabled ("Coming soon"), and your party is you alone (`chimera_ui::shell`, `client::profile`, `client::lobby_panel`).
+  - **Friends** (needs accounts, hub.md S3/S4):
+    - add by username or invite link, accept or decline, remove, block;
+    - online and in-game presence ("in a match on de_dust2", away and idle from the avatar states);
+    - join a friend's server from the list;
+    - a Friends panel from the rack's tile.
+  - **Parties:**
+    - invite from Friends, the "+" tile, or an invite code for players without accounts;
+    - a leader, who can kick, promote and leave;
+    - the party follows its leader into a server, and stays together across map changes and matches;
+    - the server keeps a party on one team where the mode has teams and sends real party ids, so the lobby's edges and grouping show;
+    - party chat, and the party's avatars in the rack.
+  - **Design questions:**
+    - Session-only parties first, which work now with codes and no accounts, or account-backed only?
+    - Where presence and party state live: a hub service, or the game server only.
+    - Privacy: who can see you're online, and invite permissions.
+    - Moderation: blocking hides chat, voice and invites.
+  - Builds on hub phases S2–S4 and the Signal r8 shell's tiles. Related: sprays, profiles and stats, ranks per game.
+
 - **Sprays (user, 2026-11-15; needs a design first):** players put a picture on a wall with a key, as in TF2, CS:S, HL2:DM and the other Source games: one spray per life or on a cooldown, decaling the surface looked at, visible to everyone and fading out when replaced.
   - **Design first:**
     - **Upload:** how a player chooses and uploads their spray: a file picker in Settings, size and format limits, conversion to one texture format, and possibly the games' own .vtf sprays.
