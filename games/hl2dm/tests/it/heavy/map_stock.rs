@@ -18,7 +18,11 @@ pub(crate) fn install_mount() -> Option<Mount> {
         return None;
     };
     if !served::usable(GAME, &path, "hl2mp") {
-        eprintln!("skipping: no HL2:DM install at {}", path.display());
+        eprintln!(
+            "skipping: no HL2:DM install at {} (Steam, [games.hl2dm] path, or $CHIMERA_HL2DM_ROOT), \
+             and the asset store can't stand in for it without an asset service",
+            path.display()
+        );
         return None;
     }
     Some(mount::open(&path).expect("the install mounts"))
