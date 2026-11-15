@@ -210,10 +210,13 @@ started; the user asked to avoid server lag while testers play.
   toward black (`fog::fog_surface`). Tree leaves (non-solid faces with a
   cut-out texture) stopped rounds; now nothing meets them
   (`world::FOLIAGE`, every Combat Arms map).
-- **combat_arms:battleship is very laggy in play.** Profile client
-  frames and server ticks (tick_stats, seeded headless counts,
-  render-thread cost): draw calls, props, water, lights, physics props,
-  nav, bots. Compare with warehouse.
+- **combat_arms:battleship is very laggy in play.** Measured on branch
+  `pt7-ca` (docs/performance.md, "Battleship"): its server ticks, client
+  frames and render world cost what warehouse's do in seeded runs; a
+  guard holds its ticks. Not found: what made it lag. Next: on the
+  testers' machines, `chimera_perf_log 1` and the net graph on
+  battleship with eight players (its 9 spawn points), and the server's
+  tick times then.
 - **Combat Arms crossbow** (fixed on branch `pt7-ca`, confirm in a
   playtest): the bolt flew as the crossbow's own model (bolts were drawn
   by their weapon's key; now the `CrossBow` record's arrow,
