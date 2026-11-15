@@ -57,7 +57,11 @@ impl Plugin for NoclipPlugin {
     }
 }
 
-fn step(mut q: Query<(&Intent, &mut Transform, &mut Velocity, &mut MovementState), With<Noclip>>, clock: Res<SimClock>) {
+#[allow(clippy::type_complexity)]
+fn step(
+    mut q: Query<(&Intent, &mut Transform, &mut Velocity, &mut MovementState), (With<Noclip>, Without<crate::core::Carried>)>,
+    clock: Res<SimClock>,
+) {
     for (intent, mut transform, mut vel, mut state) in &mut q {
         let up = intent.jump as i8 as f32 - intent.crouch as i8 as f32;
         let local = Vec3::new(intent.move_axis.x, 0.0, -intent.move_axis.y).clamp_length_max(1.0);

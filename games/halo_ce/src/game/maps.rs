@@ -134,6 +134,7 @@ pub fn load_in(
     let key = crate::map::cache::key(GAME, CONVERTER)
         .part("map", name)
         .options(options)
+        .part("vehicles", [super::vehicles::place::placed_with(options) as u8])
         .part("file", file_hash);
     let (mut map, outcome) = crate::map::cache::cached(cache, mount, key, || {
         convert(&bytes, name, file_hash, options).map_err(|e| format!("{path}: {e}"))
@@ -201,7 +202,9 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
     pending.extend(sky::sky_model(&file, level_sky.as_ref(), &mut map));
     let light = sky::prop_light(level_sky.as_ref());
     pending.extend(objects::scenery(&file, &scenario, &light, &mut map));
-    pending.extend(super::vehicles::place::vehicles(&file, &scenario, &light, &mut map));
+    if super::vehicles::place::placed_with(options) {
+        pending.extend(super::vehicles::place::vehicles(&file, &scenario, &light, &mut map));
+    }
 
     report(0.55, "Textures");
     let cubes = Some(&mut map.cubemaps);

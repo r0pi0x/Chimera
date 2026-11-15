@@ -53,6 +53,10 @@
 //!   multiplayer_rules.md 4 (`HaloRules`, Halo's own app only);
 //! - `weapons::aim`'s `Bend` is off by default (`halo_autoaim`); `fx`
 //!   has the dev command `halo_ce_blast` (a detonation at a point);
+//! - `vehicles` also seats any game's character (the engine's
+//!   `Carried`) and replicates who sits where (`NetSeat`, net part
+//!   `halo_ce_vehicles`); in the party apps vehicles are placed only with
+//!   `halo_ce:party_vehicles` on (off by default);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `audio`: looping sounds, the level's background sound, environment
@@ -236,6 +240,8 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         // Its players' body, worn by its guns' holders (`body`).
         app.add_plugins(body::HaloBodyPlugin);
         app.add_plugins(view::HaloViewPlugin);
+        app.add_plugins(vehicles::HaloVehiclesPlugin);
+        vehicles::place::party_vehicles(app);
         if !app.is_plugin_added::<audio::HaloAudioPlugin>() {
             app.add_plugins(audio::HaloAudioPlugin);
         }
