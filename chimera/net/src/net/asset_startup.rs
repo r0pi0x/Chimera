@@ -39,7 +39,7 @@ use std::{
 pub use chimera_assets::{AssetSettings, RemoteConfig, Store, sets::Wanted};
 use chimera_assets::{
     progress::{Transfer, clock},
-    sets::{self, STARTUP_SETS},
+    sets,
 };
 use chimera_core::{
     game_registry::GameInfo,
@@ -68,7 +68,8 @@ pub fn plan(settings: &AssetSettings, games: &[AppGame]) -> Option<Vec<Wanted>> 
     let wanted: Vec<Wanted> = games
         .iter()
         .filter(|g| !(g.installed && settings.use_install))
-        .map(|g| Wanted { game: g.game.clone(), sets: STARTUP_SETS.iter().map(|s| s.to_string()).collect() })
+        .map(|g| Wanted { game: g.game.clone(), sets: sets::startup_sets(&g.game).iter().map(|s| s.to_string()).collect() })
+        .filter(|w| !w.sets.is_empty())
         .collect();
     (!wanted.is_empty() && sets::missing(settings, &wanted)).then_some(wanted)
 }

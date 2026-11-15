@@ -4,6 +4,7 @@
 mod feedback;
 mod session;
 mod service;
+mod sign;
 
 use std::{fs, path::PathBuf, sync::Arc};
 

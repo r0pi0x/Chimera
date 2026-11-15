@@ -24,6 +24,18 @@ use crate::{AssetSettings, Manifest, Remote, pace::Pace, progress::Transfer, sha
 /// game's window when the store lacks them.
 pub const STARTUP_SETS: &[&str] = &["base"];
 
+/// Games whose `base` is not fetched at startup but with a match that uses
+/// the game (its offer names `base` beside the sets in play): Halo's is
+/// its donor map (22 MB), needed only when one of its maps, guns or bodies
+/// is in a match.
+pub const MATCH_BASE_GAMES: &[&str] = &["halo_ce"];
+
+/// The sets `game`'s client fetches at startup: `STARTUP_SETS`, none for a
+/// game of `MATCH_BASE_GAMES`.
+pub fn startup_sets(game: &str) -> &'static [&'static str] {
+    if MATCH_BASE_GAMES.contains(&game) { &[] } else { STARTUP_SETS }
+}
+
 /// Waits before each new try at the records a fetch didn't get (a
 /// connection closed or refused, a 429): the service restarted or busy
 /// for a few seconds shouldn't leave a player without files.
@@ -299,6 +311,17 @@ pub fn explain(url: &str, e: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// Every game reads `base` at startup but those that say theirs comes
+    /// with a match (Halo's donor map): none for them.
+    #[test]
+    fn a_games_base_is_a_startup_set_unless_it_comes_with_a_match() {
+        for g in ["cs_source", "hl2dm", "combat_arms", "tf2", "unknown"] {
+            assert_eq!(super::startup_sets(g), super::STARTUP_SETS, "{g}");
+        }
+        assert!(super::startup_sets("halo_ce").is_empty());
+        assert!(super::MATCH_BASE_GAMES.iter().all(|g| super::startup_sets(g).is_empty()));
+    }
+
     #[test]
     fn errors_read_as_what_to_do() {
         let e = super::explain("https://h:1", "/whoami: HTTP 401: the token was refused");

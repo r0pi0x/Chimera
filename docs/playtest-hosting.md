@@ -86,12 +86,25 @@ map (its one file). Then copy to the server's store the records the
 server lacks (`records/<ab>/<id>.zst`: copying the staging store's whole
 `records/` folder over it is safe, a record's name is its content's hash)
 and the one manifest, `manifests/halo_ce/<build>.txt`; no other file. On
-the server, sign that manifest with the server's key (no install needed;
-no other game's manifest is touched):
+the server, sign that manifest with the server's key (it needs the key the
+server made at its first start, creates none, touches no other game's
+manifest, needs no install and no game code). The light binary builds in
+about a minute without Bevy:
 
 ```
-cargo run --release --features tools --bin chimera_pack -- sign halo_ce --store <server store>
+cargo build --release -p chimera_assets --bin chimera_assets     # target/release/chimera_assets
+target/release/chimera_assets --store <server store> sign halo_ce [--build <build>]
 ```
+
+It prints the game, build, the manifest's id (its SHA-256) and the key.
+`chimera_pack sign halo_ce --store <server store>` (the root package's
+`--features tools` build, every game and Bevy) does the same where that
+build exists.
+
+Halo's `base` (the donor map, 22.5 MB) is not a start-up download: a
+client fetches it with the first match that plays a Halo map, gun or
+body (`chimera_assets::sets::startup_sets`), so players who never play
+Halo never download it.
 
 Sizes: [assets-for-developers.md](assets-for-developers.md), "Halo".
 

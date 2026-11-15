@@ -75,7 +75,15 @@ bipeds, so Halo's guns and the Spartan will be read from it on any map),
 `players` the same record, and `map/<name>` each map's one file;
 `weapon/<id>` sets would all be the donor map and aren't recorded while
 Halo has no guns. A client with the store and no disc plays Halo's maps
-from it (`CHIMERA_ASSET_USE_INSTALL=0`, or no disc configured).
+from it (`CHIMERA_ASSET_USE_INSTALL=0`, or no disc configured). Halo's
+`base` is fetched with a match that uses Halo (its offer names it with the
+map, gun or body), not at a client's start-up like the other games'
+(`sets::startup_sets`). A manifest packed elsewhere is published by
+copying it and its records into the server's store and running
+`chimera_assets --store <server store> sign halo_ce` there (the light
+binary, no Bevy: `cargo build --release -p chimera_assets --bin
+chimera_assets`); `chimera_pack sign halo_ce --store <server store>` is the
+alternative.
 
 Players rather than developers (a playtest over the internet, no
 checkout): the game server names the service at join and the client

@@ -14,6 +14,9 @@
 //! progress (`progress::Transfer`: a live line on a terminal, a line every
 //! 5 s otherwise, then a summary); `lock [<game>...]` pins the service's
 //! newest builds in `assets.lock` (the one in effect, else `./assets.lock`).
+//! `sign <game> [--build <id>]` signs one manifest of a server's store with
+//! the store's key (a manifest packed elsewhere and copied in with its
+//! records; the light twin of `chimera_pack sign`, no game code or Bevy).
 //! `feedback list|show|set|mute|unmute` reads and triages the feedback
 //! reports a server store received (`feedback::inbox`; `--store` is then
 //! the server's store, default `<data_local>/chimera/asset-server`).
@@ -33,6 +36,9 @@ usage: chimera_assets [--store <dir>] <command>
   login [<url> <token>]     check a token with the asset service; print the [assets] lines
   fetch <game> [<set>...]   fetch a build's manifest and its sets' records (every file without a set)
   lock [<game>...]          pin the service's newest builds in assets.lock
+  sign <game> [--build <id>] sign a game's newest (or the named) manifest in a server's store
+                            (--store: the server's store, default <data_local>/chimera/asset-server;
+                            needs the key the server made; makes none)
   feedback list [--status <s>] [--kind bug|feedback|crash] [--json]
                             the feedback reports this machine's asset service received
   feedback crashes [--json] crash reports grouped by signature (a panic's top frames,
@@ -351,6 +357,33 @@ fn feedback(store: &Store, mut args: Vec<String>) -> Result<(), String> {
     }
 }
 
+/// `sign <game> [--build <id>]`: sign one manifest of the server's `store`
+/// with its existing key (`sign::sign_stored_with_existing_key`) and print
+/// what was signed: the game, build and the manifest's id (SHA-256 of its
+/// file, which the signature covers).
+fn sign(store: &Store, args: Vec<String>) -> Result<(), String> {
+    let usage = "usage: chimera_assets --store <server store> sign <game> [--build <id>]";
+    let mut it = args.into_iter();
+    let game = it.next().filter(|g| !g.starts_with("--")).ok_or(usage)?;
+    let mut build = None;
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--build" => build = Some(it.next().ok_or("--build needs a build id")?),
+            _ => return Err(format!("unknown option {arg}
+{usage}")),
+        }
+    }
+    let (build, public) =
+        chimera_assets::sign::sign_stored_with_existing_key(store, &game, build.as_deref()).map_err(|e| e.to_string())?;
+    let path = store.manifest_path(&game, &build);
+    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    println!("signed {game} build {build}");
+    println!("manifest id: {}", chimera_assets::store::sha256_hex(&bytes));
+    println!("manifest: {}", path.display());
+    println!("key: {public}");
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut store = None;
@@ -368,6 +401,19 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         };
         return match feedback(&store, args.split_off(1)) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if args.first().map(String::as_str) == Some("sign") {
+        let Some(store) = store.or_else(chimera_assets::server::default_store) else {
+            eprintln!("no server store: pass --store <dir>");
+            return ExitCode::from(2);
+        };
+        return match sign(&store, args.split_off(1)) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("{e}");

@@ -1106,6 +1106,22 @@ fn run_startup(settings: AssetSettings, wanted: Vec<chimera_assets::sets::Wanted
     panic!("the startup fetch didn't end: {seen:?}");
 }
 
+/// A game whose `base` comes with a match (`sets::startup_sets`: Halo's)
+/// is not in the startup plan, whether or not the store has it; the
+/// other games' plan is what it was.
+#[test]
+fn a_game_whose_base_comes_with_a_match_is_not_a_startup_download() {
+    let svc = Fixture::new("startup_halo", 300, Duration::from_millis(100));
+    let token = svc.user("tester");
+    let settings = startup_settings(&svc, "client", &token, svc.front.url(), &svc.fingerprint);
+    let halo = AppGame { game: "halo_ce".into(), installed: false };
+    assert!(asset_startup::plan(&settings, &[halo.clone()]).is_none(), "nothing to fetch for Halo alone");
+    let ours = AppGame { game: GAME.into(), installed: false };
+    let wanted = asset_startup::plan(&settings, &[halo, ours]).expect("the other game is planned");
+    assert_eq!(wanted.len(), 1, "{wanted:?}");
+    assert_eq!((wanted[0].game.as_str(), wanted[0].sets.as_slice()), (GAME, ["base".to_string()].as_slice()));
+}
+
 /// The startup fetch: planned only for a game that
 /// isn't installed and whose startup sets the store lacks; it fetches
 /// them (and nothing else) with its progress, then plans nothing; a game
