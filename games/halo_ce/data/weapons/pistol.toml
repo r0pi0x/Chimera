@@ -1,0 +1,100 @@
+# The pistol (specs/halo_ce/weapons.md "Multiplayer weapon numbers";
+# projectiles.md "Flight numbers", "Material responses"; animations.md
+# "First-person graphs"): 12 + 48 rounds (120 most in reserve), 3.5 a
+# second (9 ticks), automatic when held, error 0.2 to 2 degrees over 15
+# held ticks, one 2x zoom that leaves the accuracy alone, a 5-frame recoil
+# animation of its own that holds a reload back, the bullet at 10 WU a
+# tick to 40 WU.
+id = "halo_ce:pistol"
+base = "halo_ce:gun"
+slot = 1
+class = "heavy_pistol"
+
+[hud]
+name = "Pistol"
+
+[hooks."halo_ce:weapon"]
+tag = 'weapons\pistol\pistol'
+flags = 0
+weapon_type = 0
+zoom_levels = 1
+magnification = [2.0, 2.0]
+camo = [0.65, 0.01]
+melee_damage = "pistol_melee"
+
+[hooks."halo_ce:weapon".heat]
+recovery_threshold = 0.0
+overheated_threshold = 0.0
+detonation_threshold = 0.0
+detonation_fraction = 0.0
+loss_per_second = 0.0
+illumination = 0.0
+
+[hooks."halo_ce:weapon".age]
+heat_recovery_penalty = 0.0
+rate_of_fire_penalty = 0.0
+misfire_start = 0.0
+misfire_chance = 0.0
+
+[hooks."halo_ce:weapon".aim_assist]
+autoaim_angle = 0.05235988
+autoaim_range = 30.0
+magnetism_angle = 0.10471976
+magnetism_range = 30.0
+deviation_angle = 0.0
+
+[hooks."halo_ce:weapon".magazine]
+flags = 0
+rounds_recharged = 0
+rounds_total_initial = 60
+rounds_total_maximum = 120
+rounds_loaded_maximum = 12
+rounds_reloaded = 12
+chamber_time = 0.0
+
+[hooks."halo_ce:weapon".trigger]
+flags = 0
+rounds_per_second = [3.5, 3.5]
+rate_of_fire_acceleration = 1.0
+rate_of_fire_deceleration = 1.0
+error_acceleration = 0.06666667
+error_deceleration = 0.16666667
+magazine = 0
+rounds_per_shot = 1
+minimum_rounds_loaded = 0
+rounds_between_tracers = 0
+minimum_error = 0.0
+# 0.2 and 2 degrees.
+error_angle = [0.0034906585, 0.034906585]
+projectiles_per_shot = 1
+distribution = 0
+first_person_offset = [0.0, 0.0, 0.0]
+heat_per_round = 0.0
+age_per_round = 0.0
+firing_effects = 1
+projectile = 'weapons\pistol\bullet'
+
+# First-person frames, and the weapon's own `fire-1` (5 frames).
+[hooks."halo_ce:weapon".animations]
+ready = 35
+reload_empty = 67
+melee = 45
+melee_key = 4
+world_recoil = 5
+
+[hooks."halo_ce:weapon".projectile]
+tag = 'weapons\pistol\bullet'
+initial_velocity = 10.0
+final_velocity = 10.0
+air_damage_range = [0.0, 100.0]
+water_damage_range = [0.0, 10.0]
+maximum_range = 40.0
+air_gravity_scale = 1.0
+water_gravity_scale = 0.4
+collision_radius = 0.0
+minimum_velocity = 0.0
+timer = [0.0, 0.0]
+impact_damage = "pistol_bullet"
+on_body = { response = "disappear" }
+on_shield = { response = "disappear" }
+on_level = { response = "disappear" }

@@ -51,11 +51,12 @@ fn each_game_reports_what_it_lends() {
     let mut report = auto::report(sim.app.world());
     let games: Vec<&str> = report.iter().map(|c| c.game).collect();
     assert_eq!(games, ["cs_source", "hl2dm", "halo_ce", "combat_arms"]);
-    // Halo lends its maps only (from its disc image: none claimed), no
-    // guns or movement: not in a ladder (tests/it/halo_maps.rs in
-    // party_kit). The others as before.
+    // Halo lends its four guns with its movement, and claims no map (they
+    // come from its disc image: tests/it/halo_maps.rs in party_kit). The
+    // others as before.
     let halo = report.remove(2);
-    assert!(!halo.playable() && halo.maps.is_empty(), "{}", halo.line());
+    assert!(halo.playable() && halo.missing.is_empty() && halo.maps.is_empty(), "{}", halo.line());
+    assert_eq!(halo.guns.len(), 4, "{}", halo.line());
     let parts: Vec<_> = party_kit::GAME_PARTS.iter().filter(|p| p.game != "halo_ce").collect();
     let claimed_guns = |i: usize| parts[i].guns.iter().filter(|g| g.class != GunClass::Grenade).count();
     for c in &report {
@@ -143,6 +144,7 @@ fn a_player_climbs_as_each_guns_game() {
         let want = match game {
             "cs_source" => "cs_source:movement",
             "hl2dm" => hl2dm::game::movement::ID,
+            "halo_ce" => "halo_ce:movement",
             _ => movement::ID,
         };
         assert_eq!(w.get::<MovementSlot>(a).map(|m| m.0), Some(want), "rung {i}: {id}");

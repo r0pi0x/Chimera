@@ -137,13 +137,23 @@ pub struct HaloMovementPlugin;
 
 impl Plugin for HaloMovementPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(MovementData::builtin())
-            .insert_resource(Loadout { movement: ID })
-            .register_movement::<HaloMovement>(ID)
-            .seat_movement(ID, footing, seat)
-            .add_systems(Predict::Movement, (step.after(UnitStep), sync_collider).chain())
-            .predicted_net::<HaloMovement>();
+        register(app);
+        app.insert_resource(Loadout { movement: ID });
     }
+}
+
+/// Halo's movement registered under its id without making it the match's:
+/// what an app of several games adds for Halo's guns, whose holders move
+/// as Halo's players (`parts::add_guns`). Once per app.
+pub fn register(app: &mut App) {
+    if app.world().contains_resource::<MovementData>() {
+        return;
+    }
+    app.insert_resource(MovementData::builtin())
+        .register_movement::<HaloMovement>(ID)
+        .seat_movement(ID, footing, seat)
+        .add_systems(Predict::Movement, (step.after(UnitStep), sync_collider).chain())
+        .predicted_net::<HaloMovement>();
 }
 
 /// The engine tick's length in Halo ticks: exactly 1 at Halo's own tick.

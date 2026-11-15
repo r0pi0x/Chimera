@@ -1,0 +1,22 @@
+# What every Halo weapon shares (the format: docs/weapon-data.md): the
+# game's world unit (10 feet: specs/halo_ce/cache_file.md "The world").
+# Each weapon's numbers are its `[hooks."halo_ce:weapon"]` table, in the
+# game's own units (world units, radians, 30 Hz ticks and per-tick rates)
+# as specs/halo_ce/weapons.md "Multiplayer weapon numbers", projectiles.md
+# "Flight numbers" and animations.md "First-person graphs" give them;
+# tests/it/heavy/weapon_data.rs checks every one against bloodgulch.map.
+# No stock trigger, magazine or hitscan part: Halo's weapons run their own
+# per-tick rules (game::weapons), the engine's frame leaves them alone.
+id = "halo_ce:gun"
+abstract = true
+units = { length = 3.048 }
+# The stock frame's draw is not used: the draw is the first-person ready
+# animation's frame count (`animations.ready`).
+draw = 0.0
+slot = 0
+
+# The holder's camera field of view, radians (the multiplayer Spartan's
+# unit: specs/halo_ce/objects.md, 70 degrees); a zoom of m divides it
+# (weapons.md 12).
+[hooks."halo_ce:weapon"]
+camera_field_of_view = 1.2217305

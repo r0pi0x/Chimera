@@ -300,7 +300,11 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   before `core::apply_damage` and turns into the engine's `Damage`, so
   deaths, credit and a gun game's ladder are the engine's; on another
   game's character it is an unshielded Spartan's body hit through that
-  character's own armour. Its spawns
+  character's own armour. Halo's first four guns (`game::weapons`) are
+  data (data/weapons/*.toml) run by Halo's own 30 Hz per-tick rules
+  beside the engine's frame (`weapon::OwnFrame`), firing per-tick
+  projectiles whose hits go through `damage::HaloHit`; its `PARTS`
+  lends them as gun-game rungs with its movement. Its spawns
   are the slayer starts (no team) and capture the flag's red and blue
   bases (`Team(1)`, `Team(2)`, after the game's flag check;
   `game::maps::spawns`). In the party apps (`game::BUNDLE`, one of
