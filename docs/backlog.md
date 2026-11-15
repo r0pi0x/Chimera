@@ -59,6 +59,21 @@ the user's go-ahead: no Actions runs unless asked.
   - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
   - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
 
+- **Our own default assets: player models from the logo's three characters (user, 2026-11-15):** create a small set of original, committed assets, made by us (e.g. in Blender), for games or tests that have no player model yet. Today they fall back to the shell's capsule (`map::CharacterModels::for_identity`).
+  - **First goal:** turn the three characters in the logo (the Operator, Trooper and Vanguard avatar glyphs, `shots/avatar-glyphs/*.svg` in the Signal design work, now `chimera_ui::avatar`) into rigged, animated player models in the Signal look.
+  - **Rigging:** one shared humanoid skeleton, so animations retarget across all three.
+  - **Animations:** a base set of idle, run, crouch, jump, death, and holding a pistol, rifle and melee weapon, with weapon attachment bones.
+  - **First-person arms:** for weapons that have no view-model arms.
+  - **Pipeline:**
+    - Source `.blend` files, exported to glTF, which Bevy loads natively. Decide whether to commit the `.blend` sources or only the exports.
+    - A short docs page on how to edit and re-export.
+    - Placement under an assets folder of our own, since these are original assets and the asset rule allows them.
+  - **Uses:**
+    - the fallback body for any game without characters;
+    - the greybox and tests;
+    - later, an original "Lucker Party" look for the party apps' own characters.
+  - **Design first:** the style, polygon budget and colours (the avatar palette), with mockups or a turnaround sheet for the user to approve before modelling.
+
 - **Ladder draw: games dealt equally, soft gun recency (user, 2026-11-15):** today `chimera_sim::minigame::auto::ladder` weights a game's guns by 1/√count, so a game's share grows as √(its gun count), and every game gets at least one rung. With today's weapon files that's roughly Combat Arms 32 %, CS:S 23 %, HL2:DM and TF2 16 % each, Halo 13 %.
   - **Which game:** shuffle the games and deal one per rung until each has had a turn, then reshuffle. Every game gets an equal share however many guns it has. No guaranteed rung per game, since that can't hold once there are more games than rungs; then each match gets a different random subset. No hard rule against runs.
   - **Which gun within the game:** random, with a soft, server-session recency weight. A gun drawn recently is less likely and recovers over the next matches, but is never excluded. It applies within a game only, never to the game choice, so games with few guns (Halo) keep their full share and only cycle their guns sooner. The memory resets when the server restarts.
