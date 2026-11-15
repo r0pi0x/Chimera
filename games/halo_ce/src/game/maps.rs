@@ -249,10 +249,11 @@ pub fn apply_looks_in(
 ) -> Vec<(crate::map::MapMesh, Dest)> {
     let mut out = Vec::with_capacity(pending.len());
     let mut looks: BTreeMap<u32, materials::Look> = BTreeMap::new();
+    let tables = blam_formats::shader::PeriodicTables::new();
     for m in &pending {
         looks
             .entry(m.shader.id.0)
-            .or_insert_with(|| materials::look(file, &m.shader));
+            .or_insert_with(|| materials::look(file, &m.shader, &tables));
     }
     if cubemaps.is_none() {
         for look in looks.values_mut() {

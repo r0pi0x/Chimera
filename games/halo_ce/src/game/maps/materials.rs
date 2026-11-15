@@ -76,9 +76,11 @@
 //!   layer's alpha instead of added (one pass). Water (`swat`, two tags,
 //!   both on sky geometry): its base map blended, unlit, double-sided
 //!   (the spec's minimum); its ripples and reflection are not drawn.
-//!   Meter (`smet`, 7 tags: weapon and vehicle bars) by the spec's
-//!   minimum: the meter map added, unlit, tinted by the gradient minimum
-//!   colour (the value cut and flash are not drawn). Plasma (`spla`, the
+//!   Meter (`smet`, 7 tags: weapon and vehicle bars): the meter map
+//!   blended by its alpha, unlit (the spec's minimum, added and tinted by
+//!   the gradient minimum colour, lit up the whole quad of the plasma
+//!   pistol's dial: the bar's shape is in Mt.a; the gradient, value cut
+//!   and flash are not drawn). Plasma (`spla`, the
 //!   one shield-hit tag) by its minimum: the primary noise map's first
 //!   slice added, tinted by the perpendicular colour x brightness, unlit,
 //!   double-sided; drawing it over the Spartan as the shield flash is the
@@ -392,7 +394,7 @@ fn transparent_alpha(common: &TransparentCommon) -> (MapAlpha, Option<String>) {
 
 /// The look of shader `shader` (a level material's), reading the bitmaps'
 /// headers it needs (sizes for the detail scale).
-pub fn look(map: &MapFile, shader: &TagRef) -> Look {
+pub fn look(map: &MapFile, shader: &TagRef, tables: &PeriodicTables) -> Look {
     let shader_id = shader.id.0;
     let Some(tag) = map.tag(shader.id) else {
         return Look {
@@ -409,10 +411,9 @@ pub fn look(map: &MapFile, shader: &TagRef) -> Look {
             };
         }
     };
-    let tables = PeriodicTables::new();
     let colour = |r: Option<u32>| r.map(TextureRequest::colour);
     match &shader {
-        Shader::Environment(s) => environment(map, s),
+        Shader::Environment(s) => environment(map, s, tables),
         Shader::TransparentGeneric(s) => {
             let (alpha, problem) = transparent_alpha(&s.common);
             let map0 = s.maps.first();
@@ -438,7 +439,7 @@ pub fn look(map: &MapFile, shader: &TagRef) -> Look {
                 unlit: true,
                 tint,
                 transform: map0.map_or(MapUvTransform::IDENTITY, |m| {
-                    animated_transform(m.texture_transform(&tables, 0.0, &no_object), &m.animation)
+                    animated_transform(m.texture_transform(tables, 0.0, &no_object), &m.animation)
                 }),
                 surface: surface(&s.header),
                 transparent: true,
@@ -465,7 +466,7 @@ pub fn look(map: &MapFile, shader: &TagRef) -> Look {
                     MapUvTransform::IDENTITY
                 } else {
                     map0.map_or(MapUvTransform::IDENTITY, |m| {
-                        animated_transform(m.texture_transform(&tables, 0.0, &no_object), &m.animation)
+                        animated_transform(m.texture_transform(tables, 0.0, &no_object), &m.animation)
                     })
                 },
                 surface: surface(&s.header),
@@ -474,7 +475,7 @@ pub fn look(map: &MapFile, shader: &TagRef) -> Look {
                 ..Look::default()
             }
         }
-        Shader::Model(s) => model_shader(s),
+        Shader::Model(s) => model_shader(s, tables),
         Shader::Glass(s) => {
             let base = colour(tag_id(&s.diffuse_map));
             let detail = tag_id(&s.diffuse_detail_map).map(|d| DetailRequest {
@@ -507,23 +508,20 @@ pub fn look(map: &MapFile, shader: &TagRef) -> Look {
             transparent: true,
             ..Look::default()
         },
-        // The spec's minimums: the meter map added, unlit, coloured by the
-        // gradient's minimum colour; the plasma's primary noise map (its
-        // first slice) added, tinted by the perpendicular colour x
-        // brightness, unlit, double-sided.
-        Shader::Meter(s) => {
-            let c = s.gradient_min_color;
-            Look {
-                base: colour(tag_id(&s.meter_map)),
-                alpha: MapAlpha::Add,
-                double_sided: s.flags & blam_formats::shader::MeterShader::TWO_SIDED != 0,
-                unlit: true,
-                tint: Some([linear(c.r), linear(c.g), linear(c.b)]),
-                surface: surface(&s.header),
-                transparent: true,
-                ..Look::default()
-            }
-        }
+        // The meter map blended by its alpha, unlit (the spec's minimum
+        // adds it coloured by the gradient's minimum colour, but its own
+        // alpha decides where the bar is: added, the whole quad lit up);
+        // the plasma's primary noise map (its first slice) added, tinted
+        // by the perpendicular colour x brightness, unlit, double-sided.
+        Shader::Meter(s) => Look {
+            base: colour(tag_id(&s.meter_map)),
+            alpha: MapAlpha::Blend,
+            double_sided: s.flags & blam_formats::shader::MeterShader::TWO_SIDED != 0,
+            unlit: true,
+            surface: surface(&s.header),
+            transparent: true,
+            ..Look::default()
+        },
         Shader::Plasma(s) => {
             let (c, b) = (s.perpendicular_tint_color, s.perpendicular_brightness);
             Look {
@@ -547,7 +545,7 @@ pub fn look(map: &MapFile, shader: &TagRef) -> Look {
 /// base alpha unless "not alpha-tested", blended for an alpha-blended
 /// decal, two-sided where flagged. Lit by the placement's light, not
 /// unlit; change colour, self-illumination and reflection are not drawn.
-fn model_shader(s: &ModelShader) -> Look {
+fn model_shader(s: &ModelShader, tables: &PeriodicTables) -> Look {
     let alpha = if s.flags & ModelShader::ALPHA_BLENDED_DECAL != 0 {
         MapAlpha::Blend
     } else if s.flags & ModelShader::NOT_ALPHA_TESTED != 0 {
@@ -573,7 +571,7 @@ fn model_shader(s: &ModelShader) -> Look {
         base: tag_id(&s.base_map).map(TextureRequest::colour),
         detail,
         reflection: model_reflection(s, multipurpose),
-        self_illumination: model_self_illumination(s, multipurpose),
+        self_illumination: model_self_illumination(s, multipurpose, tables),
         // The change colour by the multipurpose map's alpha (tint = white
         // (1 - Mp.a) + change colour Mp.a); the colour itself is the
         // owner's (the body's skins).
@@ -653,9 +651,13 @@ pub fn model_reflection(s: &ModelShader, multipurpose: Option<u32>) -> Option<Re
 /// the animation function at its mean (each object has its own random
 /// phase), the source colour white; masked by the multipurpose map's
 /// green. None when C_si is black or there is no multipurpose map.
-pub fn model_self_illumination(s: &ModelShader, multipurpose: Option<u32>) -> Option<SelfIllumRequest> {
+pub fn model_self_illumination(
+    s: &ModelShader,
+    multipurpose: Option<u32>,
+    tables: &PeriodicTables,
+) -> Option<SelfIllumRequest> {
     let mask = multipurpose?;
-    let f = periodic_mean(&PeriodicTables::new(), s.self_illumination_function);
+    let f = periodic_mean(tables, s.self_illumination_function);
     let (lo, hi) = (s.self_illumination_color_lower, s.self_illumination_color_upper);
     let c = [
         lo.r + (hi.r - lo.r) * f,
@@ -676,7 +678,7 @@ fn nonzero(s: f32) -> f32 {
 }
 
 /// The environment shader's look (module doc).
-fn environment(map: &MapFile, s: &EnvironmentShader) -> Look {
+fn environment(map: &MapFile, s: &EnvironmentShader, tables: &PeriodicTables) -> Look {
     let base_id = tag_id(&s.base_map);
     let base_size = base_id
         .and_then(|b| first_image(map, b))
@@ -750,8 +752,7 @@ fn environment(map: &MapFile, s: &EnvironmentShader) -> Look {
     let mut derive = Derive::None;
     let mut self_illumination = None;
     if let (Some(map), Some(_)) = (tag_id(&s.self_illumination_map), base_id) {
-        let tables = PeriodicTables::new();
-        let (tint, weights) = self_illumination_colour(&tables, s);
+        let (tint, weights) = self_illumination_colour(tables, s);
         if cutout.is_some() {
             problem = Some("self-illumination on an alpha-tested surface: not drawn".into());
         } else if weights != [0.0; 3] {
