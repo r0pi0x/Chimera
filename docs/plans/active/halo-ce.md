@@ -24,8 +24,8 @@ plays as the real game, from specs and the disc's own data.
 | M3 the full multiplayer arsenal | done (2026-11-15) | the sniper rifle, rocket launcher, needler, plasma pistol and flamethrower beside M2's four, frag and plasma grenades, explosions, the level's materials at each hit, pickups on the item clock; eight rungs (every held gun but the flamethrower); each gun in hand with its states, sounds and effects, each projectile with its own look, grenades and items seen on every machine; Halo's HUD from the disc's tags; summary below |
 | M4 every multiplayer map | done (2026-11-15) | teleporters for every game's characters (`chimera_world::map::teleport`, from the scenario's pairs), climbable surfaces as ladders (Halo's movement climbs them by movement.md, the others by their own rules), no machine play depends on (Wizard's 4 alert lights), twelve of thirteen maps in the pool (Sidewinder waits for vehicles), the pool measured with teleporters as links; the bots' generated mesh held to the drawn level (`nav_gen::NavWithin`, the structure BSP's world bounds) and grown to it (Blood Gulch's 78,000 m2 whole), teleporters as navigation links the bots plan through and walk onto (`Via::Teleport`); ladders for bots open (backlog) |
 | M5 feel and parity pass | not started | |
-| M6 vehicles | in progress (2026-11-15) | stage 1: the Warthog on Blood Gulch in Halo's app, driven by vehicles.md's mass-point step (its simulation table matched but one number), seats, the driver's camera, splatter and riders' damage; next: the gunner's turret, seated poses, the Ghost and the Scorpion, vehicles in the party apps |
-| M7 and on (effects, ragdolls, the classic look, the backlog) | not started | |
+| M6 vehicles | in progress (2026-11-15) | the Warthog, the Ghost and the Scorpion on the disc's maps in Halo's app, driven by vehicles.md's mass-point step (its simulation tables matched), seats, the seat camera, the wheels and suspension shown, splatter and riders' damage; being done: seats on every machine and vehicles in the party apps; next: the guns and turret, the riders' seated poses |
+| M7 and on (effects, ragdolls, the classic look, the backlog) | in progress (2026-11-15) | Halo's own game types in its app and server (Slayer, Capture the Flag, King of the Hill, Oddball; Race waits for its vehicles); being done: the Spartan's death, the explosions' particle states and the scopes by the corrected specs |
 
 ## 1. The two rules
 
@@ -343,10 +343,22 @@ Warthog's splatter through `HaloHit`, 18% of hull hits to riders. On
 this disc the Banshee is campaign only: multiplayer's vehicles are the
 Warthog, the Ghost and the Scorpion.
 
-Stage 2: the gunner's turret, the riders' seated poses and the entering
-and leaving animations, the wheels and suspension shown, the Ghost and
-the Scorpion, the seated state replicated, vehicles in the party apps
-(Sidewinder into the pool).
+Stage 2 (2026-11-15): the Warthog by the corrected spec (the tick's
+order, the freeze, placement at the centre of mass by the vehicle set,
+the drop case's corrected numbers), the seat camera from the seat's
+track with its pull-in (`vehicles::camera`), the wheels, steering and
+suspension posed on the rigged prop (`vehicles::look`; a client
+estimates them from the replicated motion), the Ghost (hover) and the
+Scorpion (treads) as data, their simulation tables matched (the Ghost's
+peak yaw rate is 4.21 degrees a tick against the spec's 3.9, which its
+own angles contradict: asked of the spec). Heavy tests: placements by
+kind on all 13 maps; each kind resting and driven on Blood Gulch,
+Sidewinder and Hang 'Em High.
+
+Still to do: the seated state on every machine and vehicles in the
+party apps (being done), the guns and the gunner's turret, the riders'
+seated poses and the entering and leaving animations, Sidewinder into
+the pool, Race.
 
 ### M7 and on
 
@@ -511,3 +523,15 @@ backlog.
   stated, 55.5 from its own positions), the tracker's (0.1, 0) blip.
   The vehicles spec was corrected from the Warthog (the drop case's
   number was the spec's mistake).
+- 2026-11-15: the specs corrected a fourth time (the scopes' masks dim
+  and blur, nothing is blacked out; particle systems' states; grenade
+  selection; the autoaim's aim point). Landed: the grenade kind's
+  switch (`net59`) and Halo's app's respawn; vehicles stage 2 (the
+  Ghost, the Scorpion, the seat camera, the model's overlays); Halo's
+  game types (`game::rules`, `net60`): Slayer, Capture the Flag, King
+  of the Hill and Oddball on the engine's mode runtime, from the disc's
+  game type records, a match played to its end by real fire on Hang
+  'Em High; the party apps keep their own rules. Held back and being
+  redone by the corrected specs: the scope's mask (drawn as first
+  inferred it blacked out the zoomed view) and the particle systems'
+  states (the frag's smoke drew as one grey sheet).

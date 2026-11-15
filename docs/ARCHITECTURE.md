@@ -351,7 +351,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   target; its teleporter exits use the engine's `teleport::Exit::Pill`.
   Halo's own app runs the spec's respawn and starting loadout
   (`game::respawn`, `HaloRules`, not in the party apps); the grenade
-  kind is switched (`+grenade_switch`, `net59`).
+  kind is switched (`+grenade_switch`, `net59`). `game::rules` plays
+  Halo's game types (Slayer, Capture the Flag, King of the Hill,
+  Oddball) as variants of the disc's game type records on the mode
+  runtime, chosen by `halo_ce:gametype`, in Halo's own app and server
+  only; the match's state replicates as the net part `halo_ce_match`
+  (`net60`), flags and balls through `NetItem`.
   `game::vehicles` runs Halo's vehicles (the Warthog, the Ghost and the
   Scorpion as data in `data/vehicles/`) by the spec's own mass-point
   step at 30 Hz on avian's spatial queries, writing a kinematic body

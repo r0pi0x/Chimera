@@ -42,6 +42,9 @@
 //!   physics on the engine's collision, driving, seats, the seat camera
 //!   (`camera`) and the model's overlays (`look`), splatter and riders'
 //!   damage;
+//! - `rules`: Halo's game types (multiplayer_rules.md): the variant
+//!   chosen by `halo_ce:gametype`, slayer, capture the flag, king of the
+//!   hill, oddball, spawns, equipment and scoring, the match's view;
 //! - `respawn`: Halo's players' loadout and respawn by
 //!   multiplayer_rules.md 4 (`HaloRules`, Halo's own app only);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
@@ -65,6 +68,7 @@ pub mod mount;
 pub mod movement;
 pub mod parts;
 pub mod respawn;
+pub mod rules;
 pub mod sets;
 pub mod ticks;
 pub mod vehicles;
@@ -186,6 +190,7 @@ impl PluginGroup for HaloPlugins {
             .add(view::HaloViewPlugin)
             .add(respawn::HaloRespawnPlugin)
             .add(vehicles::HaloVehiclesPlugin)
+            .add(rules::HaloRulesPlugin)
     }
 }
 
