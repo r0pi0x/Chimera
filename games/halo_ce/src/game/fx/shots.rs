@@ -109,7 +109,7 @@ use crate::{
         PlaceDecal, PlaySound,
         loose::ShownItem,
         impact::{ActiveImpacts, SurfaceClass, SurfaceClasses},
-        particles::{Fade, Particle, ParticleGroup, Particles, Ramp, Shape},
+        particles::{Fade, Particle, ParticleCurves, ParticleGroup, Particles, Ramp, Shape},
         sound::SurfaceGrid,
     },
 };
@@ -394,6 +394,7 @@ fn on_fired(
                 color: Vec3::from(light.color),
                 radius: light.radius * METERS_PER_UNIT,
                 seconds: muzzle_light_ticks(gun) / 30.0,
+                falloff: 0,
                 owner: Some(f.owner),
                 follow: true,
             });
@@ -635,9 +636,30 @@ pub fn draw_segment(particles: &mut Particles, tracer: Option<&FxTracer>, light:
     g.kill_after = Some(life + 0.004);
     // Its first state's width (the states' widening is not drawn).
     let wide = width;
+    // A long-lived trail's points live through the contrail's states: their
+    // colour and alpha, and the ribbon's width, follow them over the life.
+    let curves = (long && t.states.len() > 1).then(|| {
+        let (mut at, mut color_keys, mut size_keys) = (0.0f32, Vec::new(), Vec::new());
+        let total: f32 = t.states[..t.states.len() - 1].iter().map(|s| s.duration + s.transition).sum::<f32>().max(1e-3);
+        for (k, s) in t.states.iter().enumerate() {
+            for end in [at, at + s.duration] {
+                let f = end / total;
+                color_keys.push((f, [s.color[1], s.color[2], s.color[3], s.color[0]]));
+                size_keys.push((f, s.width * METERS_PER_UNIT));
+            }
+            at += s.duration + if k + 1 < t.states.len() { s.transition } else { 0.0 };
+        }
+        std::sync::Arc::new(ParticleCurves { color: color_keys, size: size_keys, frames: Vec::new(), frame_time: 0.0 })
+    });
+    let life = if curves.is_some() { t.states[..t.states.len() - 1].iter().map(|s| s.duration + s.transition).sum::<f32>().max(1.0 / 30.0) } else { life };
+    g.kill_after = Some(life + 0.004);
+    let has_curves = curves.is_some();
     let mut streak = Particle {
         color,
-        alpha: if long { t.color[3].clamp(0.0, 1.0) * 0.5 } else { t.color[3].max(0.5) },
+        curves,
+        alpha: if has_curves {
+            1.0
+        } else if long { t.color[3].clamp(0.0, 1.0) * 0.5 } else { t.color[3].max(0.5) },
         fade: if long { Fade::Ramp(Ramp::linear(1.0, 0.0)) } else { Fade::Ramp(Ramp::constant(1.0)) },
         shape: Shape::Ribbon { to: b, width: if long { [wide, width] } else { [width * 0.25, width] }, u: (0.0, 1.0), end_color: None, prev: None, next: None },
         ..Particle::new(a, life, material, width)

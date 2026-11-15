@@ -421,7 +421,8 @@ pub fn draw_particles(
                     let here = side_of(p.position, to);
                     let start_side = prev.map_or(here, |q| (side_of(q, p.position) + here).normalize_or(here));
                     let end_side = next.map_or(here, |q| (here + side_of(to, q)).normalize_or(here));
-                    let (w0, w1) = (start_side * width[0] / 2.0, end_side * width[1] / 2.0);
+                    let grow = p.size_scale();
+                    let (w0, w1) = (start_side * width[0] * grow / 2.0, end_side * width[1] * grow / 2.0);
                     // U along the strip, V across.
                     let r = [rect[0] + (rect[2] - rect[0]) * u.0, rect[1], rect[0] + (rect[2] - rect[0]) * u.1, rect[3]];
                     let end_rgba = end_color.map_or(rgba, |c| {

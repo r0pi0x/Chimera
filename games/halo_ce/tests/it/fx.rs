@@ -115,14 +115,14 @@ pub(crate) fn library() -> HaloFx {
     impacts[2] = Some(1);
     let gun = FxGun {
         firing: vec![Some(0), Some(0)],
-        light: Some((FxLight { color: [0.961, 0.910, 0.686], radius: 2.0, ticks: 0.0 }, "primary trigger".into())),
+        light: Some((FxLight { color: [0.961, 0.910, 0.686], radius: 2.0, ticks: 0.0, falloff: 0 }, "primary trigger".into())),
         impacts,
         tracer: Some(FxTracer { width: 0.05, color: [1.0, 0.89, 0.28, 1.0], material: Some(0), additive: true, ..Default::default() }),
         fp_markers: BTreeMap::from([("primary trigger".to_string(), [0.2, 0.0, 0.05])]),
         ..Default::default()
     };
     let mut plasma = gun.clone();
-    plasma.bolt_light = Some(FxLight { color: [0.5, 1.0, 1.0], radius: 1.0, ticks: 0.0 });
+    plasma.bolt_light = Some(FxLight { color: [0.5, 1.0, 1.0], radius: 1.0, ticks: 0.0, falloff: 0 });
     HaloFx {
         effects: vec![fire, stone],
         by_path: BTreeMap::from([("fire".into(), 0), ("impact stone".into(), 1)]),

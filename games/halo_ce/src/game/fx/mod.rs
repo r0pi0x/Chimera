@@ -54,6 +54,9 @@ pub struct HaloLight {
     pub color: Vec3,
     pub radius: f32,
     pub seconds: f32,
+    /// Its fall-off's transition function (`load::FxLight::falloff`): the
+    /// intensity is 1 minus the function of the elapsed fraction.
+    pub falloff: i16,
     /// Whose effect made it (the shooter, an impact's shooter).
     pub owner: Option<Entity>,
     /// It goes with its owner (the muzzle light: a child of the shooter).
