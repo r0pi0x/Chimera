@@ -45,6 +45,10 @@
 //! go, what waits and why), `feedback_press
 //! <send|cancel|bug|feedback|shot|details>` (tests, screenshots).
 //!
+//! Quitting waits (at most `FLUSH_LIMIT`) for reports still being
+//! written (`Outbox::flush`, a `chimera_core::shutdown` step); a report
+//! not sent yet stays in the outbox for the next start.
+//!
 //! Known shortcuts: the text has one caret, at its end (no arrows, no
 //! selection, no paste: the kit's `text_field` gets paste); no `log.txt`
 //! yet (no ring buffer of `tracing` lines).
@@ -69,6 +73,9 @@ use chimera_core::mount::assets::feedback::{
 };
 
 use crate::console::{Console, ConsoleAppExt, Level};
+
+/// How long a quit waits for reports still being written.
+pub const FLUSH_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Most characters a report's text takes.
 pub const MAX_TEXT: usize = 2000;
@@ -281,6 +288,10 @@ pub trait Outbox: Send + Sync + 'static {
     }
     /// The app started (reports from an earlier run may wait).
     fn startup(&self) {}
+    /// The game quits: the reports still being written are, within
+    /// `limit` (`chimera_core::shutdown`'s `Persist` step). What waits to be
+    /// sent stays in the outbox for the next start.
+    fn flush(&self, _limit: std::time::Duration) {}
 }
 
 /// A report service named by hand: `chimera:feedback_url`,
@@ -338,6 +349,8 @@ pub struct AssetsOutbox {
     started: OnceLock<Result<Arc<OutboxThread>, String>>,
     /// Failures of the encoding thread (the outbox's own come from it).
     failed: Arc<Mutex<Vec<Delivery>>>,
+    /// The bundles' threads (the JPEG and the zip), for `flush`.
+    writing: Mutex<Vec<std::thread::JoinHandle<()>>>,
 }
 
 impl AssetsOutbox {
@@ -350,6 +363,7 @@ impl AssetsOutbox {
             user_targets: true,
             started: OnceLock::new(),
             failed: Arc::default(),
+            writing: Mutex::default(),
         }
     }
 
@@ -361,6 +375,7 @@ impl AssetsOutbox {
             user_targets: false,
             started: OnceLock::new(),
             failed: Arc::default(),
+            writing: Mutex::default(),
         }
     }
 
@@ -447,7 +462,7 @@ impl Outbox for AssetsOutbox {
         let (shot, failed, thread_id) = (report.screenshot, self.failed.clone(), id.clone());
         // The JPEG and the zip off the main thread; the outbox's thread
         // sends it.
-        std::thread::Builder::new()
+        let handle = std::thread::Builder::new()
             .name("feedback-bundle".into())
             .spawn(move || {
                 if let Some(img) = shot {
@@ -463,6 +478,10 @@ impl Outbox for AssetsOutbox {
                 }
             })
             .map_err(|e| e.to_string())?;
+        if let Ok(mut w) = self.writing.lock() {
+            w.retain(|h| !h.is_finished());
+            w.push(handle);
+        }
         Ok(match destination {
             Some(d) => Submitted::Sending { id, to: destination_text(Some(&d)) },
             None => Submitted::Queued { id, waiting, folder: folder.join("outbox") },
@@ -479,6 +498,21 @@ impl Outbox for AssetsOutbox {
 
     fn startup(&self) {
         self.start_if_waiting();
+    }
+
+    fn flush(&self, limit: std::time::Duration) {
+        let writing = self.writing.lock().map(|mut w| std::mem::take(&mut *w)).unwrap_or_default();
+        let until = std::time::Instant::now() + limit;
+        for h in writing {
+            while !h.is_finished() && std::time::Instant::now() < until {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            if h.is_finished() {
+                let _ = h.join();
+            } else {
+                warn!("feedback: a report still being written after {} s", limit.as_secs());
+            }
+        }
     }
 
     fn named(&self, target: Option<Target>) {
@@ -714,6 +748,12 @@ pub struct FeedbackPlugin;
 
 impl Plugin for FeedbackPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::shutdown::{ShutdownAppExt, Stage};
+        app.shutdown_flush(Stage::Persist, "feedback outbox", |w| {
+            if let Some(o) = w.get_resource::<FeedbackOutbox>() {
+                o.0.flush(FLUSH_LIMIT);
+            }
+        });
         app.init_resource::<Feedback>()
             .init_resource::<FeedbackOutbox>()
             .init_resource::<FeedbackCapture>()

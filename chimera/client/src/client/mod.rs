@@ -148,6 +148,10 @@ pub struct Args {
     /// `--frame-log <file.csv>`: every frame's main and render world times
     /// (`frame_metrics`, as `CHIMERA_FRAME_LOG`).
     pub frame_log: Option<PathBuf>,
+    /// `--clean-exit`: quitting drops the whole app before the process
+    /// ends (leak checks), instead of ending it once what must persist is
+    /// saved (`chimera_core::shutdown`).
+    pub clean_exit: bool,
 }
 
 /// The shell's options for `--help` (`usage`), written for game `info`'s
@@ -210,6 +214,8 @@ usage: {bin} [options]
   --dump-every <n>          frames between --dump frames
   --frame-log <file.csv>    one line per frame of each world: wall start, ms, CPU ms
                             (as CHIMERA_FRAME_LOG; docs/OBSERVABILITY.md)
+  --clean-exit              quitting drops the whole app before the process ends (slow; leak
+                            checks); by default what must be saved is, then the process ends
   --playdemo <file.dem>     watch a demo (the game's playdemo command: its map loads, then it plays)
   -port <n>                 UDP port to host on (hostport; default 27015; tool runs: --screenshot,
                             --views, --frames, --bench host on 127.0.0.1 on a port the system picks)
@@ -377,6 +383,10 @@ impl Args {
             }
             if flag == "--lightmap-only" {
                 out.lightmap_only = true;
+                continue;
+            }
+            if flag == "--clean-exit" {
+                out.clean_exit = true;
                 continue;
             }
             let value = it.next().ok_or_else(|| format!("{flag}: missing value"))?;
@@ -603,6 +613,11 @@ impl Plugin for ShellSetupPlugin {
             .init_resource::<crate::map::loading::LoadReporter>()
             .init_resource::<crate::map::nav_gen::SliceFloods>()
             .insert_resource(self.args.join_choice());
+        // Quitting drops the app only when asked (`--clean-exit`,
+        // `CHIMERA_CLEAN_EXIT=1`) or in a tool run, whose dumps and frame
+        // times are written as it drops (`chimera_core::shutdown`).
+        let clean = self.args.clean_exit || self.args.tool_run() || chimera_core::shutdown::ExitMode::default().is_clean();
+        app.insert_resource(chimera_core::shutdown::ExitMode { clean: u8::from(clean) });
     }
 }
 

@@ -64,6 +64,10 @@
 //! and a join that fetches waits for it first, its bytes on the loading
 //! screen.
 //!
+//! Quitting stops the prefetch (`stop_downloads`, a `chimera_core::shutdown`
+//! step); every record is written whole or not at all, so the process may
+//! end in the middle of any fetch.
+//!
 //! Known shortcuts: a bind's `remount` reads again only what its hooks
 //! name (data leaked as `&'static`, a game's weapon set, keeps what it was
 //! built from); sets the service doesn't have are skipped (their files come on
@@ -465,6 +469,8 @@ pub fn prefetch_state(world: &World) -> Option<PrefetchState> {
 }
 
 pub(super) fn plugin(app: &mut App) {
+    use chimera_core::shutdown::{ShutdownAppExt, Stage};
+    app.shutdown_flush(Stage::Persist, "downloads", stop_downloads);
     app.init_resource::<AssetHost>()
         .init_resource::<AssetHooks>()
         .init_resource::<PrefetchRate>();
@@ -1100,6 +1106,16 @@ fn pace_prefetch(
     let busy = fetch.is_some() || joined.is_none() || progress.is_some_and(|p| !matches!(p.stage, JoinStage::Idle | JoinStage::Joined));
     if pace.paused() != busy {
         pace.pause(busy);
+    }
+}
+
+/// The game quits: the prefetch stops at its next chunk. Nothing is cut
+/// mid-file: the store writes each record whole beside its place and
+/// renames it in (`store::write_atomic`), so a fetch ended anywhere leaves
+/// whole records, and the next fetch asks for the rest.
+fn stop_downloads(world: &mut World) {
+    if let Some((_, pace)) = world.get_resource::<Prefetch>().and_then(|p| p.running.as_ref()) {
+        pace.stop();
     }
 }
 

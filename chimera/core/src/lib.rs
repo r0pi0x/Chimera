@@ -11,7 +11,8 @@
 //! packs and kill facts (`announcer`), minigame cue packs (`cues`), queries
 //! kept between calls of exclusive code (`query_cache`), values worked out
 //! once and kept by their owner (`memo`), values made on first use
-//! (`later`). Code
+//! (`later`), quitting quickly (`shutdown`: what must persist, then the
+//! process ends without dropping the app). Code
 //! everything else uses and that changes rarely, in its own crate so an
 //! edit higher up doesn't recompile it.
 //!
@@ -36,5 +37,6 @@ pub mod metrics;
 pub mod mount;
 pub mod profile;
 pub mod query_cache;
+pub mod shutdown;
 pub mod slots;
 pub mod tasks;

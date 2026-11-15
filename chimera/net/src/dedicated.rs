@@ -40,9 +40,11 @@
 //! - `run`: at most 300 frames a second (`FPS_MAX`), schedules on one
 //!   thread each (`single_threaded_schedules`; `CHIMERA_EXECUTOR=multi`
 //!   keeps Bevy's), the console on stdin and its output on stdout,
-//!   Ctrl+C as `quit`. `tick_stats` prints the last ticks' wall and CPU
-//!   ms and instructions (`metrics::TickMetrics`, when the game's sim adds
-//!   it) and the process's resident memory, for watching a live server.
+//!   Ctrl+C as `quit`; either ends the process at once after what must be
+//!   done (clients told, the UPnP mapping removed: `chimera_core::shutdown`).
+//!   `tick_stats` prints the last ticks' wall and CPU ms and instructions
+//!   (`metrics::TickMetrics`, when the game's sim adds it) and the
+//!   process's resident memory, for watching a live server.
 //!   20 s after each map change the allocator's free pages go back to the
 //!   system (`metrics::memory::release_after_change`; glibc kept 1.3-1.8 GB
 //!   of them on Ultimate Gun Game's server, more each map).
@@ -881,7 +883,13 @@ pub fn run(server: &'static GameServer) {
     let mut app = self::app(server, start, &options);
     // Ctrl+C exits as `quit` does (AppExit: `net::udp` hangs up on every
     // client).
-    app.add_plugins((bevy::log::LogPlugin::default(), bevy::app::TerminalCtrlCHandlerPlugin))
+    // `quit` and Ctrl+C end the process once the steps that persist have
+    // run (`chimera_core::shutdown`; `+chimera:clean_exit 1` drops the app).
+    app.add_plugins((
+        bevy::log::LogPlugin::default(),
+        bevy::app::TerminalCtrlCHandlerPlugin,
+        chimera_core::shutdown::ShutdownPlugin,
+    ))
         .add_systems(Update, (read_stdin, start_serving, print_console).chain());
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
