@@ -1182,6 +1182,10 @@ fn lit_world_material(
                 0.0
             },
             flat_envmap_scale: m.flat_envmap.map_or(1.0, |e| e.scale),
+            envmap_light: m
+                .envmap
+                .and_then(|e| e.light_mask)
+                .map_or(Vec4::ZERO, |l| Vec3::from_array(l.weights).extend(1.0 - l.floor)),
             ..WorldParams::identity_uv()
         },
         base: m.texture.map(|i| textures[i].clone()),

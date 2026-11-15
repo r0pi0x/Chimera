@@ -342,7 +342,10 @@ fn run() -> Result<(), String> {
             };
             let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             let done: Imported = args.admin()?.post("/admin/import-legacy", &serde_json::json!({ "toml": text }))?;
-            println!("imported {} accounts ({} legacy devices); {} skipped (imported before)", done.accounts, done.devices, done.skipped);
+            println!(
+                "imported {} accounts ({} legacy devices); {} skipped (imported before); {} devices and {} accounts revoked from the file",
+                done.accounts, done.devices, done.skipped, done.revoked, done.revoked_accounts
+            );
             Ok(())
         }
         ["backup"] => {

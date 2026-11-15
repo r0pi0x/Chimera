@@ -660,6 +660,14 @@ chimera_pack user revoke <tester>               # all of a tester's tokens
 chimera_pack user revoke <tester> --token <n>   # one
 ```
 
+With the accounts service running and the file imported, run
+`chimera_accounts import-legacy` again after a `user revoke`: the
+accounts service gives tickets to imported tokens from its own database,
+and a re-import carries the file's revocations over (it only ever
+revokes). The other way round is automatic: `chimera_accounts account
+revoke | delete` and `device revoke` mark the account's tokens revoked in
+`accounts.toml` too.
+
 Testers who play from their own install get a token too: the game sends
 their F10 reports with it to the service the server offers (until it is
 bound to one, the first server that offers its files; see below).
@@ -697,7 +705,7 @@ forward and one firewall rule (TCP `<hub port>`).
 
 ```
 cargo build --release -p chimera_services -p chimera_assets --bin chimera_front --bin chimera_accounts --bin chimera_asset_server
-target/release/chimera_accounts import-legacy   # once: an account per accounts.toml account; tokens keep working
+target/release/chimera_accounts import-legacy   # an account per accounts.toml account; tokens keep working; again after a `user revoke` (carries revocations over)
 target/release/chimera_accounts invite <name> --hub <public address>:<hub port>   # the link, printed once
 target/release/chimera_accounts invites | account list | account show <username>
 target/release/chimera_accounts account set <username> --content cs_source,combat_arms --role host ...

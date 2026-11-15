@@ -291,6 +291,11 @@ pub struct MapMesh {
     pub entity: Option<usize>,
     /// Colour multiplier (linear) on the texture (Source `$color`/`$color2`).
     pub tint: Option<[f32; 3]>,
+    /// Where `tint` applies on a model (the prop shader): a mask texture's
+    /// red (index into `MapData::textures`, linear), the colour times
+    /// mix(1, tint, mask) (Halo's change colour by its multipurpose map,
+    /// specs/halo_ce/shaders.md "What it draws"); None: everywhere.
+    pub tint_mask: Option<usize>,
     /// A water surface: index into `MapData::water_materials` (drawn by
     /// `render::water::WaterMaterial` instead).
     pub water: Option<usize>,
@@ -516,6 +521,20 @@ pub struct MapEnvmap {
     /// cubemap in the view direction, unlit and unfogged, instead of
     /// reflecting it.
     pub imposter: bool,
+    /// Scales a world surface's reflection by its baked light
+    /// (`EnvmapLightMask`); None for every Source surface.
+    pub light_mask: Option<EnvmapLightMask>,
+}
+
+/// A world surface's reflection scaled by its lightmap (Halo's reflection
+/// lightmap mask, specs/halo_ce/shaders.md "Reflection mask value M"):
+/// M = (1 - λ) `floor` + λ, with λ = clamp(`weights` · the lightmap texel
+/// in gamma space), so reflections in the dark fall to `floor`
+/// (`material_fx::envmap_light_mask`).
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EnvmapLightMask {
+    pub weights: [f32; 3],
+    pub floor: f32,
 }
 
 /// Source `$detail`: a texture tiled `scale` times per base texture repeat

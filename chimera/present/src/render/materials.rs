@@ -80,6 +80,13 @@ pub fn lit_prop_material(
     let [r, g, b] = m.color;
     let lighting_only = matches!(view, MapDebugView::Lighting { .. });
     let tint = m.tint.map_or(Vec4::ONE, |[r, g, b]| Vec4::new(r, g, b, 1.0));
+    // A masked tint (`MapMesh::tint_mask`) is the shader's, not the base
+    // colour's.
+    let tint_mask = m
+        .tint_mask
+        .filter(|_| m.tint.is_some() && !lighting_only)
+        .and_then(|i| textures.get(i).cloned());
+    let (tint, mask_tint) = if tint_mask.is_some() { (Vec4::ONE, tint) } else { (tint, Vec4::ONE) };
     let mut material = PropMaterial {
         params: PropParams {
             base_color: if m.texture.is_some() || lighting_only {
@@ -111,6 +118,8 @@ pub fn lit_prop_material(
                 None => 0.0,
             },
             selfillum_tint: m.selfillum.map_or(Vec4::ONE, |s| Vec3::from_array(s.tint).extend(1.0)),
+            tint_masked: if tint_mask.is_some() { 1.0 } else { 0.0 },
+            mask_tint,
             ..default()
         },
         base: m.texture.filter(|_| !lighting_only).map(|i| textures[i].clone()),
@@ -134,6 +143,7 @@ pub fn lit_prop_material(
         lightwarp: None,
         phong_warp: None,
         probes: default(),
+        tint_mask,
     };
     if let Some(phong) = m.phong.as_deref().filter(|_| !lighting_only && !m.unlit && phong_enabled()) {
         set_prop_phong(&mut material, phong, m.normal_map, textures);
@@ -439,5 +449,40 @@ mod tests {
             assert!(wesl.contains("i = ranges.first_spot_light_index_offset; i < ranges.first_rect_light_index_offset"));
             assert!(wesl.contains("spot_cone("));
         }
+    }
+}
+
+#[cfg(test)]
+mod tint_mask_tests {
+    use super::*;
+
+    /// A masked tint (`MapMesh::tint_mask`) moves the tint from the base
+    /// colour to the shader's masked tint; without a mask nothing changes.
+    #[test]
+    fn a_masked_tint_is_the_shaders() {
+        let textures = vec![Handle::<Image>::default(), Handle::<Image>::default()];
+        let data = MapData::default();
+        let mesh = MapMesh {
+            texture: Some(0),
+            tint: Some([0.5, 0.25, 1.0]),
+            ..default()
+        };
+        let plain = lit_prop_material(&mesh, &textures, &data, MapDebugView::Normal, false);
+        assert_eq!(plain.params.base_color, Vec4::new(0.5, 0.25, 1.0, 1.0));
+        assert_eq!(plain.params.tint_masked, 0.0);
+        assert!(plain.tint_mask.is_none());
+        let masked = MapMesh {
+            tint_mask: Some(1),
+            ..mesh.clone()
+        };
+        let m = lit_prop_material(&masked, &textures, &data, MapDebugView::Normal, false);
+        assert_eq!(m.params.base_color, Vec4::ONE);
+        assert_eq!(m.params.tint_masked, 1.0);
+        assert_eq!(m.params.mask_tint, Vec4::new(0.5, 0.25, 1.0, 1.0));
+        assert!(m.tint_mask.is_some());
+        // A mask without a tint does nothing.
+        let untinted = MapMesh { tint: None, ..masked };
+        let m = lit_prop_material(&untinted, &textures, &data, MapDebugView::Normal, false);
+        assert_eq!(m.params.tint_masked, 0.0);
     }
 }
