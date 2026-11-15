@@ -84,8 +84,8 @@
 //! sounds) comes from `CHIMERA_VFS_LOG` logs (`--from`).
 //!
 //! `chimera_pack sets` also enters a game's declared files (`declared_files`:
-//! Combat Arms' call-out, radio and announcer voices, read by its own loaders
-//! from the install) as the `declared` set and into `common`, whether or not
+//! Combat Arms' call-out, radio and announcer voices, CS:S's HUD pictures
+//! with the domination icons, read by its own loaders from the install) as the `declared` set and into `common`, whether or not
 //! a run read them; `lean` keeps them there.
 //!
 //! `chimera_pack lean <game> --store <dir> --from <log>...` makes the
@@ -963,19 +963,21 @@ fn record_maps(
     }
 }
 
-/// Whether `sets` merges set `name` into what the manifest has (`base`
-/// and the maps' sets, also recorded from `CHIMERA_VFS_LOG` logs) rather
-/// than replacing it.
-/// The voice and call-out files `game` declares it plays (its own loaders
-/// read them from the install): `sets` puts them into `common`
-/// (`resolve::declare`). CS:S and HL2:DM declare none yet.
+/// The files `game` declares it plays or draws (its own loaders read them
+/// from the install): `sets` puts them into `common` (`resolve::declare`).
+/// Combat Arms' voices and call-outs, CS:S's HUD pictures (the domination
+/// icons, shown only after a domination); HL2:DM declares none yet.
 fn declared_files(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<String> {
     match game {
         "combat_arms" => combat_arms::game::declared::voice_files(&|p| mount.read(p).ok()),
+        "cs_source" => cs_source::game::hud::declared_files(&|p| mount.read(p).ok()),
         _ => Vec::new(),
     }
 }
 
+/// Whether `sets` merges set `name` into what the manifest has (`base`
+/// and the maps' sets, also recorded from `CHIMERA_VFS_LOG` logs) rather
+/// than replacing it.
 fn merged_set(name: &str) -> bool {
     name == "base" || name == chimera_assets::resolve::COMMON || name.starts_with("map/")
 }
