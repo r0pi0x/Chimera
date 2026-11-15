@@ -64,7 +64,7 @@ use chimera_client::client::ui_sound::UiCue;
 use chimera_net::net::query::{LanSettings, QueryResult, QueryState, ServerInfo, ServerQueries};
 use chimera_ui::{
     AmbientMaterial, IconImages, KitFonts, Role, Theme, Tone, UiClock, UiStyle, UiUnits,
-    controls::{Kind, SENTENCE, State, Ui},
+    controls::{Kind, NOTE, SENTENCE, State, Ui},
 };
 
 use crate::{
@@ -1056,7 +1056,7 @@ fn spawn(
         (None, _) => (Tone::Fg4, "Enter joins the focused line • the port is 27015 unless given".to_string()),
     };
     ui.mark(c, st, mark, 0.42, 0.42);
-    ui.text(c, st, Role::Mono, 0.6, if p.notice.is_some() { Tone::Fg } else { Tone::Fg3 }, &line);
+    ui.sentence(c, st, NOTE, if p.notice.is_some() { Tone::Fg } else { Tone::Fg3 }, &line);
     let back = ui.button(c, bar, Kind::Ghost, "Back", Some("Esc"), 2.0, State::NONE);
     c.entity(back).insert(MainMenuAction::Back);
     let (label, action) = match (page, ls.get(p.focus)) {
@@ -1114,7 +1114,7 @@ fn password_modal(c: &mut Commands, ui: &Ui, root: Entity, menu: &PartyMenu, p: 
     if let Some(n) = &p.notice {
         let row = ui.boxed(c, m, UiStyle { gap: Some(0.6), margin: Some([0.7, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
         ui.mark(c, row, Tone::Threat, 0.42, 0.42);
-        ui.text(c, row, Role::Mono, 0.58, Tone::Fg, n);
+        ui.sentence(c, row, NOTE, Tone::Fg, n);
     }
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
     let join = ui.button(c, acts, Kind::Primary, "Join", Some("Enter"), 2.4, State::NONE);
@@ -1355,7 +1355,7 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
             BrowserTab::Favourites => "No favourites yet: focus a server and press F",
             BrowserTab::History => "No server joined yet",
         };
-        ui.text(c, e, Role::Mono, 0.56, Tone::Fg3, none);
+        ui.sentence(c, e, NOTE, Tone::Fg3, none);
         return;
     }
     let list = ui.boxed(c, right, UiStyle::column());

@@ -2391,8 +2391,9 @@ what follows it a few px along; a width that differs only by that ratio
 tolerance) is expected: marked `~`, counted apart and not past tolerance;
 the rest are listed with their font sizes (`font 11.5/12`). Only the screen's ids count (`screens.json`'s
 `include`), so a game playing behind the staged screen adds nothing.
-`lobby` has no `ui_scene lobby` yet (M1): its report lists the mockup's
-ids only.
+`ui_scene lobby` stages the lobby with made-up players (for
+screenshots; no parity ids or fixture yet), so `lobby`'s report lists
+the mockup's ids only.
 
 Ids are the look book's (`board.row.3.name`, rows from 1): the
 generator writes `data-ui` attributes, the game puts `UiParityId` on the
