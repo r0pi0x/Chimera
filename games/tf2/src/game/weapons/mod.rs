@@ -5,9 +5,12 @@
 //! docs/plans/active/tf2.md), and the Scout's Pistol, the SMG, the Sniper
 //! Rifle, the Revolver, the Grenade and Stickybomb Launchers, the Flame
 //! Thrower and the Syringe Gun (specs/tf2/weapons_more.md, the plan's
-//! "More guns"). The game's own weapon scripts override them once their
-//! fields are specced (`script_numbers`: the seam, logging which source
-//! served).
+//! "More guns"). The game's own weapon scripts override them
+//! where a script is served (`script_numbers`, from
+//! specs/tf2/weapon_scripts.md: the store's decrypted script or the
+//! install's with the key), each gun's source logged; the documents
+//! registered are the set's server documents (`SERVER_DOCS`), so a client
+//! plays with the server's numbers.
 //!
 //! The shared frame (`chimera_sim::weapon`) runs them: pellets in a fixed
 //! cone (`SpreadShape::Template`: each axis the sum of two halves, open
@@ -263,22 +266,57 @@ fn power_minigun(p: &HookParams, _: &ReadAt, s: &mut GunStats) {
     s.latency += num(p, "wind_up").unwrap_or(0.0);
 }
 
+/// The server documents' name of TF2's weapon set (`server_docs`).
+pub const SERVER_DOCS: &str = "tf2:weapons";
+
+/// The projectile rules read from `set` (the hooks' parameters).
+fn insert_rules(world: &mut World, set: &WeaponSet) {
+    world.insert_resource(rocket::RocketRules::from_set(set));
+    world.insert_resource(grenade::GrenadeRules(rocket::RocketRules::of_hook(set, GRENADE_HOOK)));
+    world.insert_resource(sticky::StickyRules::from_set(set));
+    world.insert_resource(needle::NeedleRules::from_set(set));
+}
+
+/// The rules read again when TF2's set changed (a server's documents put
+/// in, or this machine's back).
+fn refresh_rules(catalog: Res<chimera_sim::weapon::data::WeaponCatalog>, mut commands: Commands) {
+    let Some(set) = catalog.sets.iter().rev().find(|s| s.get(SCATTERGUN).is_some()).copied() else {
+        return;
+    };
+    commands.insert_resource(rocket::RocketRules::from_set(set));
+    commands.insert_resource(grenade::GrenadeRules(rocket::RocketRules::of_hook(set, GRENADE_HOOK)));
+    commands.insert_resource(sticky::StickyRules::from_set(set));
+    commands.insert_resource(needle::NeedleRules::from_set(set));
+}
+
 /// TF2's guns: their data, hooks and systems.
 pub struct Tf2GunsPlugin;
 
 impl Plugin for Tf2GunsPlugin {
     fn build(&self, app: &mut App) {
         use chimera_sim::weapon::{CarriedAppExt, SelectWeapons, projectile::FlyerSet};
+        use chimera_sim::server_docs::DocsAppExt;
         register_hooks(app);
-        if let Err(e) = app.add_weapon_data(DATA) {
-            panic!("TF2 weapon data: {e}");
-        }
-        let set = tf2_weapons();
-        app.insert_resource(rocket::RocketRules::from_set(&set))
-            .insert_resource(grenade::GrenadeRules(rocket::RocketRules::of_hook(&set, GRENADE_HOOK)))
-            .insert_resource(sticky::StickyRules::from_set(&set))
-            .insert_resource(needle::NeedleRules::from_set(&set))
-            .add_message::<crate::map::GameSound>()
+        // The numbers: the harness's built-in ones, else the scripts'
+        // over the data (`script_numbers`), each gun's source logged.
+        let numbers = app
+            .world()
+            .get_resource::<script_numbers::GunNumbers>()
+            .cloned()
+            .unwrap_or_else(script_numbers::GunNumbers::from_scripts);
+        numbers.log();
+        let docs: Vec<(&str, &str)> = numbers.docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
+        let set = app.add_weapon_data(&docs).unwrap_or_else(|e| panic!("TF2 weapon data: {e}"));
+        // A client whose own differ (no scripts, the fallback) plays with
+        // the server's.
+        app.server_weapon_docs(SERVER_DOCS, set, numbers.docs.clone());
+        app.insert_resource(numbers);
+        insert_rules(app.world_mut(), set);
+        app.add_systems(
+            PreUpdate,
+            refresh_rules.run_if(resource_changed::<chimera_sim::weapon::data::WeaponCatalog>),
+        )
+        .add_message::<crate::map::GameSound>()
             .add_message::<crate::map::PredictedSound>()
             .add_message::<blast::Tf2Explosion>()
             .add_systems(

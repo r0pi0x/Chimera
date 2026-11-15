@@ -35,6 +35,7 @@ impl HudParams {
         let uv = Vec4::from_array(uv);
         match fill {
             Fill::Sprite(c) => HudParams { mode: Vec4::ZERO, color: Vec4::from_array(*c), uv, ..default() },
+            Fill::Reticle(c) => HudParams { mode: Vec4::new(0.0, 1.0, 0.0, 0.0), color: Vec4::from_array(*c), uv, ..default() },
             Fill::Meter(m) => HudParams {
                 mode: Vec4::new(1.0, m.value, m.extension, m.tint),
                 color: Vec4::ONE,

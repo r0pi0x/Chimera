@@ -25,6 +25,7 @@
 //! - `explode`: a detonation's area damage (falloff, sight by the core
 //!   probes) and push;
 //! - `grenades`: the counts carried and the throw on the grenade button;
+//! - `rung`: the party ladder's grenade rung (the empty pistol, frags);
 //! - `pickups`: the netgame equipment on the item clock, powerups,
 //!   grenades, ammunition from duplicates and the weapon swap;
 //! - `systems`: the engine side: the holders' ticks (switches, the throw,
@@ -123,6 +124,7 @@ pub mod materials;
 pub mod params;
 pub mod pickups;
 pub mod random;
+pub mod rung;
 pub mod systems;
 pub mod tick;
 
@@ -177,6 +179,7 @@ pub const DATA: &[(&str, &str)] = &[
     doc!("needler.toml"),
     doc!("plasma_pistol.toml"),
     doc!("flamethrower.toml"),
+    doc!("frag_grenade.toml"),
 ];
 
 /// Its guns' names (data/display_names.toml).
@@ -234,18 +237,30 @@ fn build(e: &mut EntityWorldMut, gun: &params::Gun) {
 /// (`chimera_sim::minigame::power`): a projectile's damage on an
 /// unshielded body (the effect's mean at the scale its speed left at the
 /// distance, its cyborg modifier, a Halo point 1/75 of the baseline's
-/// health, as the damage seam counts it), the pellets, the ticks between
-/// shots held at full rate (a battery just touched), the cone at error 0
-/// and as held, the magazine and its reload; nothing beyond the
-/// projectile's reach.
+/// health, as the damage seam counts it; the party's per-game table then
+/// scales it, `power::stats`), the pellets, the ticks between shots held
+/// at full rate (a battery just touched), the cone at error 0 and as held,
+/// the magazine and its reload; nothing beyond the projectile's reach.
+/// With the party balance on (`cross_game::CrossGame`, its `[power]`
+/// hand), what a hand does with it: a trigger with no rate limit fires at
+/// the hand's taps a second; heat that overheats the gun counts as a
+/// magazine of the shots before it and a reload of the pause (cooling to
+/// the recovery threshold); an automatic gun whose error grows as it is
+/// held is fired in bursts (the cone the burst's mean, the pause until the
+/// error is back counted in the interval); the projectile's flight to the
+/// distance, and a stuck projectile's fuse, come before the hit (latency);
+/// a guided one's turn (half against a player) takes off as much of the
+/// cone as it can bend back over the flight.
 fn power(p: &chimera_sim::minigame::power::HookParams, at: &chimera_sim::minigame::power::ReadAt, s: &mut chimera_sim::minigame::power::GunStats) {
     let Ok(g) = p.clone().try_into::<params::Gun>() else { return };
     let t = &g.trigger;
     let pr = &g.projectile;
     let effects = super::vitality::DamageEffects::load();
+    let hand = super::cross_game::CrossGame::load();
     // The hit's damage: the impact's, else what a stuck projectile deals
     // (a needle), else its detonation's at the centre (a rocket, a flame).
     let named = |n: &str| params::effect_id(n).and_then(|e| effects.get(e).cloned()).filter(|f| f.lower + f.upper[1] > 0.0);
+    let attached = named(&pr.impact_damage).is_none() && pr.attached_damage.as_deref().and_then(named).is_some();
     let Some(fx) = named(&pr.impact_damage)
         .or_else(|| pr.attached_damage.as_deref().and_then(named))
         .or_else(|| pr.detonation.iter().find_map(|n| named(n)))
@@ -273,6 +288,80 @@ fn power(p: &chimera_sim::minigame::power::HookParams, at: &chimera_sim::minigam
     let m = g.magazine.filter(|m| m.rounds_loaded_maximum > 0);
     s.clip = m.map_or(0, |m| m.rounds_loaded_maximum as u32);
     s.reload = g.animations.reload_empty.unwrap_or(0) as f32 / 30.0;
+    if !hand.enabled {
+        return;
+    }
+    let h = hand.power;
+    // No rate limit: as fast as a hand taps.
+    if required <= 0.0 && h.hand_taps_per_second > 0.0 {
+        s.interval = 1.0 / h.hand_taps_per_second;
+    }
+    // Bursts: an automatic trigger whose error grows as it is held.
+    let automatic = !t.has(params::trigger_flags::DOES_NOT_REPEAT_AUTOMATICALLY);
+    if automatic && t.error_acceleration > 0.0 && t.error_angle[1] > t.error_angle[0] && h.burst_seconds > 0.0 {
+        let per = required.ceil().max(1.0);
+        let rounds = ((h.burst_seconds * 30.0) / per).floor().max(1.0);
+        // The error as each round leaves (0 for the first), and at the end.
+        let mean = ((rounds - 1.0) / 2.0 * per * t.error_acceleration).min(1.0);
+        let end = (rounds * per * t.error_acceleration).min(1.0);
+        let pause = if t.error_deceleration > 0.0 { (end / t.error_deceleration).ceil() } else { 0.0 };
+        s.follow = Some(t.theta_max(mean).tan());
+        s.interval = (rounds * per + pause) / rounds / 30.0;
+    }
+    // Heat: the shots before an overheat, then the pause to recover.
+    let heat = &g.heat;
+    if s.clip == 0 && t.heat_per_round > 0.0 && heat.overheated_threshold > 0.0 && heat.loss_per_second > 0.0 {
+        let cool = heat.loss_per_second * s.interval;
+        let (mut level, mut shots) = (0.0f32, 0u32);
+        while shots < 1000 {
+            level += t.heat_per_round;
+            shots += 1;
+            if level >= heat.overheated_threshold {
+                break;
+            }
+            level = (level - cool).max(0.0);
+        }
+        if shots < 1000 {
+            s.clip = shots;
+            s.reload = (heat.overheated_threshold - heat.recovery_threshold).max(0.0) / heat.loss_per_second;
+        }
+    }
+    // The flight (ticks, then seconds) and a stuck projectile's fuse.
+    let flight = flight_ticks(v0, vf, a, start, d) / 30.0;
+    s.latency += flight + if attached { pr.timer[1].max(0.0) } else { 0.0 };
+    // Guidance: the lateral distance its turn bends back over the flight.
+    if pr.guided_angular_velocity > 0.0 && d > 0.0 {
+        let omega = pr.guided_angular_velocity * systems::GUIDANCE_VS_PLAYER;
+        let speed = v0 * 30.0;
+        let bend = speed * omega * flight * flight / 2.0;
+        s.spread = (s.spread * d - bend).max(0.0) / d;
+        s.follow = s.follow.map(|f| (f * d - bend).max(0.0) / d);
+    }
+}
+
+/// Ticks a projectile takes to `d` WU: at `v0` until `start`, then slowing
+/// at `a` to `vf` (WU a tick, a tick squared), then at `vf`.
+fn flight_ticks(v0: f32, vf: f32, a: f32, start: f32, d: f32) -> f32 {
+    if v0 <= 0.0 {
+        return 0.0;
+    }
+    let first = d.min(start);
+    let mut t = first / v0;
+    let rest = d - first;
+    if rest <= 0.0 {
+        return t;
+    }
+    if a <= 0.0 {
+        return t + rest / v0;
+    }
+    let slowing = (v0 * v0 - vf * vf) / (2.0 * a);
+    if rest <= slowing {
+        let v = (v0 * v0 - 2.0 * a * rest).max(0.0).sqrt();
+        t += (v0 - v) / a;
+    } else {
+        t += (v0 - vf) / a + if vf > 0.0 { (rest - slowing) / vf } else { 0.0 };
+    }
+    t
 }
 
 /// The cyborg body's material type (the Spartan's body; projectiles.md).
@@ -286,6 +375,7 @@ impl Plugin for HaloWeaponsPlugin {
         use chimera_core::character::CharacterPartsExt;
         chimera_sim::minigame::power::PowerAppExt::add_power_reader(app, WEAPON_HOOK, power);
         app.register_weapon_hook::<params::Gun>(WEAPON_HOOK, |e, _, p| build(e, p));
+        rung::register(app);
         if let Err(e) = app.add_weapon_data(DATA) {
             panic!("Halo weapon data: {e}");
         }

@@ -16,11 +16,14 @@
 //! mercenaries' aim).
 //!
 //! `post_stimuli` (after the weapons and damage): gunfire from every
-//! `Fired` round of a gun (radius: the fitted weapon's fire sound,
+//! shot of a gun (`WeaponEventKind::ShotMade`, every weapon frame's, Halo's
+//! own too; radius: the fitted weapon's fire sound,
 //! `attachments::CaMods`), footsteps, the shot's bookkeeping (a new aim
-//! for the next shot, the grenade count, letting go of the trigger), and
+//! for the next shot, letting go of the trigger; the grenade count by the
+//! engine frame's `Fired` rounds), and
 //! damage (a bot that hurt a player resets its grenade count; a bot hit
-//! moves and may dodge). `camping` keeps each human's camping time (5.5).
+//! moves and may dodge). A weapon whose attack is a named action
+//! (`weapon::AttackAction`) gets that action pressed instead of fire. `camping` keeps each human's camping time (5.5).
 //!
 //! Units: positions in metres; the spec's distances in world units
 //! (`inventory::UNIT` metres each) where the code names them so.
@@ -51,7 +54,7 @@ use super::super::{
 use crate::{
     core::{Damage, Dead, FreezeTime, Health, Intent, MovementState, SimClock, Spectating, Team},
     map::{SeeThrough, nav::NavMesh, nav_gen, vis::ActiveVisibility},
-    weapon::{Inventory, Magazine, Melee, Weapon, WeaponEvent, WeaponEventKind, grenade::Throwable},
+    weapon::{AttackAction, FiresOnRelease, Inventory, Magazine, Melee, Weapon, WeaponEvent, WeaponEventKind, grenade::Throwable},
 };
 
 /// Sight range (u), `SeeEnemyDistance`.
@@ -289,8 +292,25 @@ pub fn post_stimuli(
         if e.replay {
             continue;
         }
-        let WeaponEventKind::Fired { origin, .. } = e.kind else { continue };
+        // The grenade count goes by the engine frame's rounds (`Fired`);
+        // the rest by the shot fact every weapon frame sends (`ShotMade`:
+        // one with each `Fired`, and an own-frame weapon's shots).
+        let fired = matches!(e.kind, WeaponEventKind::Fired { .. });
+        let origin = match e.kind {
+            WeaponEventKind::ShotMade { origin, .. } => origin,
+            WeaponEventKind::Fired { .. } => Vec3::ZERO,
+            _ => continue,
+        };
         let Ok((w, fitted, gun, trigger)) = weapons.get(e.weapon) else { continue };
+        if fired {
+            if gun
+                && data.gun_type(w.id) != Some("Knife")
+                && let Ok(mut b) = bots.get_mut(e.owner)
+            {
+                b.grenades = b.grenades.saturating_sub(1);
+            }
+            continue;
+        }
         if gun {
             let radius = fitted.map_or(2000, |f| f.fire_sound().radius) as f32;
             let team = teams.get(e.owner).map_or(0, |t| t.0);
@@ -308,9 +328,6 @@ pub fn post_stimuli(
                 };
             b.aim_offset = None;
             b.release = true;
-            if gun && data.gun_type(w.id) != Some("Knife") {
-                b.grenades = b.grenades.saturating_sub(1);
-            }
         }
     }
     for d in damage.read() {
@@ -710,6 +727,9 @@ struct Gun {
     throw_time: f32,
     /// An auto turret to place (special_weapons.md 6.7).
     turret: bool,
+    /// Its trigger fires when released (`weapon::FiresOnRelease`): tapped,
+    /// never held to charge.
+    on_release: bool,
 }
 
 impl Gun {
@@ -862,11 +882,21 @@ pub fn think(world: &mut World, mut queries: Local<Option<SnapQueries>>, mut spa
     // Apply.
     for (e, bot, out) in outs {
         if let Some(i) = out.intent {
+            // A weapon attacked with a named action (`weapon::AttackAction`:
+            // Halo's grenade rung): that action pressed where fire would be.
+            let attack = world
+                .get::<Inventory>(e)
+                .and_then(|inv| inv.active)
+                .and_then(|w| world.get::<AttackAction>(w))
+                .map_or(0, |a| world.get_resource::<crate::core::ActionRegistry>().map_or(0, |r| r.bit(&a.action)));
             let mut intent = world.get_mut::<Intent>(e).unwrap();
             intent.yaw = i.yaw;
             intent.pitch = i.pitch.clamp(-1.55, 1.55);
             intent.move_axis = i.axis;
-            intent.fire = i.fire;
+            intent.fire = i.fire && attack == 0;
+            if attack != 0 {
+                intent.actions = if i.fire { intent.actions | attack } else { intent.actions & !attack };
+            }
             intent.reload = i.reload;
             intent.crouch = i.crouch;
             intent.jump = i.jump;
@@ -1134,6 +1164,7 @@ fn guns_of(world: &World, e: Entity) -> Vec<Gun> {
                 turret: world
                     .get::<super::super::special::CaDeviceData>(w)
                     .is_some_and(|d| d.params.kind == super::super::special::DeviceKind::Turret),
+                on_release: world.get::<FiresOnRelease>(w).is_some(),
             })
         })
         .collect()
@@ -2242,6 +2273,11 @@ fn aim_and_fire(ctx: &Ctx, bot: &mut CaBot, me: &Char, target: &Char, guns: &[Gu
         && (knife || bot.burst_left > 0)
         && now >= bot.pause_until;
     io.fire = fire && !std::mem::take(&mut bot.release);
+    // A trigger that fires when released: tapped, the press let go on the
+    // next tick (the shot is the release's; never held to charge).
+    if io.fire && held.on_release {
+        bot.release = true;
+    }
 }
 
 /// The target is nearer than this (u): the close throw animation (8.5).

@@ -8,13 +8,19 @@ use bevy::prelude::*;
 /// TF2's simulation (`crate::SimPlugins` with `game::Tf2Plugins`) as the
 /// harness runs it, headless, TF2 the gameplay (its tick,
 /// `game::TICK_INTERVAL`), map logic's random picks seeded so they repeat
-/// run to run.
+/// run to run, the guns' numbers the committed data's (`GunNumbers::builtin`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Tf2Sim;
 
 impl Plugin for Tf2Sim {
     fn build(&self, app: &mut App) {
         use crate::gameplay::{Gameplay, GameplayAppExt};
+        // The guns' committed numbers, never the scripts' (repeatable
+        // tests with or without an install and key).
+        // A test's own (`GunNumbers::with_scripts`) stays.
+        if !app.world().contains_resource::<crate::game::weapons::script_numbers::GunNumbers>() {
+            app.insert_resource(crate::game::weapons::script_numbers::GunNumbers::builtin());
+        }
         app.add_plugins((crate::SimPlugins, crate::game::Tf2Plugins))
             .set_gameplay(Gameplay::of(&crate::game::INFO))
             .insert_resource(source_logic::logic::LogicSeed(Some(0x9e37_79b9_7f4a_7c15)));

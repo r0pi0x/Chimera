@@ -27,3 +27,7 @@
 "cs_source:weapon_sg550" = "SR"
 "cs_source:weapon_m249" = "MG"
 "cs_source:weapon_knife" = "Knife"
+# Halo's grenade rung (its frags thrown on the grenade action, the bots
+# pressing it: `weapon::AttackAction`): Combat Arms' throw row, its range
+# 300 to 1200 u (about 5.7 to 23 m): a frag's blast reaches 7.6 m.
+"halo_ce:frag_grenade" = "ThrowWeapon"

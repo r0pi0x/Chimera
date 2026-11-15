@@ -21,6 +21,7 @@ mod movement;
 mod scripts;
 mod skeleton;
 mod spawns;
+mod weapon_scripts;
 mod weapons;
 mod weapons_more;
 

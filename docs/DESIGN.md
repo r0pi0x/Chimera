@@ -217,6 +217,17 @@ per-game components that travel with the weapon.
 
 Prior art: Minecraft's item data components; Unreal's Gameplay Ability System.
 
+**A shot and the command to trace it** are separate weapon events
+(`chimera_sim::weapon::WeaponEventKind`). `ShotMade` is the fact that a
+weapon discharged one shot (the weapon, the eye, the direction): every
+weapon frame sends it, the engine's once per `Fired`, a game that runs its
+own frame (`OwnFrame`: Halo) once per shot it fires; it is never traced
+and never replicated. `Fired` is the engine frame's command: a hitscan
+round to trace and to send other clients as `FireBullets`. What only needs
+to know that a shot happened (the bots' trigger, pacing, aim and hearing)
+reads `ShotMade`, so an own-frame weapon can say it fired without its
+shots being traced or replicated twice.
+
 ### Components and categorization
 
 - Core vocabulary: Transform, Velocity, Health, Team, Hitbox, Inventory,
@@ -602,7 +613,12 @@ numbers (pinned by `parity_pin_*` tests in each game).
   armour is kevlar by CS:S's rules and shows on CS:S's HUD, a Combat
   Arms-gun player's the same points as Combat Arms' gear on its HUD,
   and nobody carries armour their HUD doesn't show. (Combat Arms puts on
-  its default gear at a switch, not a loadout's.)
+  its default gear at a switch, not a loadout's.) Halo's shield is the
+  exception on the way out: a character becoming Halo's brings its armour
+  in as the shield's start, but one that stops being Halo's gets back the
+  armour it brought (its value and kind, or none), never the shield's
+  value (`halo_ce::game::cross_game::Brought`, the party balance's
+  switch on; user, 2026-11-15).
 
 - **Spawn protection: see-through, shot through** (`core::SpawnProtected`,
   a minigame's: `protection = { damage, bullets, fire_ends }`, in shape
@@ -792,6 +808,21 @@ that):
   `Turret-TopGun`, the infected ship turrets' grenade guns) names no
   class, so no draw deals it as a hand-held gun (the "Infected '02 Top
   Gun" that fired grenades on a rung, 2026-11-13).
+- **A grenade rung: Halo's frags with an empty pistol** (user,
+  2026-11-15): Halo's grenades are a count thrown beside the gun in
+  hand, not a weapon, so Halo lends a part of class `grenade` of its own
+  (`halo_ce:frag_grenade`, `weapons::rung`) that the ladder's grenade
+  band deals as it deals the others' grenades. Its holder has the pistol
+  with no round loaded and none to be had (left click is an empty
+  pistol's click), throws frags with the grenade button by the band's
+  supply rule (with `refill_ammo`: kept full, whatever
+  `halo_party_grenades` says for the other Halo rungs), and melees as on
+  any Halo rung; its kills (the frag's, a melee's) climb as any kill.
+  Bots press its attack action (`weapon::AttackAction`). The rung
+  declares a hint (opt-in in its weapon data, `rung_hint`: the action and
+  "throw"), which the party shows at the bottom centre while it is new
+  and after a dry fire: the key bound now to the grenade action and the
+  verb (`chimera_client::client::rung_hint`).
 - **No HL2:DM pickups or chargers** (user, 2026-11-12): a party's
   HL2:DM map has none of its walk-over items (kits, vials, batteries,
   ammo boxes) and wall chargers, not even drawn: only the HL2:DM app,
