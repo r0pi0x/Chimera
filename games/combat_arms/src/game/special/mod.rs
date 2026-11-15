@@ -100,9 +100,11 @@
 //!   effect itself is another spec's, Open question 8).
 //! - The explosive bolt's `Range` is measured in a straight line from the
 //!   fire position.
-//! - Placeholder looks: devices (but a turret with its record's model) and
-//!   bolts are shown by their weapon's `ShownItem` key (no models or
-//!   effects for the devices yet; their sounds in flight, `CaFlightLook`);
+//! - Placeholder looks: devices (but a turret with its record's model) are
+//!   shown by their weapon's `ShownItem` key (no models or effects for the
+//!   devices yet; their sounds in flight, `CaFlightLook`); a bolt by its
+//!   projectile record's model (`BoltParams::shown_model`, the `CrossBow`
+//!   record's; the placeholder without an install), never the crossbow's;
 //!   the turret's `Lower_set` and its gun's own turn aren't played (the
 //!   whole model turns), its setup sound isn't either; a broken turret
 //!   shows its ammo's impact effect, if any (the spec names no break or
@@ -226,6 +228,7 @@ pub struct State {
     /// A bolt: stuck in something (the entity, its offset), since when,
     /// the alternate fire's flag, and the explosive bolt's blast time.
     pub stuck: Option<(Entity, Vec3)>,
+    pub stuck_on: Option<StuckOn>,
     pub stuck_at: f64,
     pub boom_at: Option<f64>,
     /// Who brought it to its last hit points, and with what (the kill
@@ -239,6 +242,16 @@ pub struct State {
     pub shot_to: Vec3,
     /// A landed turret's collider is on (`turret_body`).
     pub body: bool,
+}
+
+/// Where a bolt stuck in a character sits (`bolts::follow_stuck`): the
+/// index of the sphere it struck (the body's hit table, or another game's
+/// hitbox) and the direction it went in, in the body's turn; its offset
+/// from that sphere's centre (m, the body's turn) is `State::stuck`'s.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StuckOn {
+    pub sphere: usize,
+    pub dir: Vec3,
 }
 
 /// A special weapon's object in the world (the server's).
@@ -535,6 +548,19 @@ impl Plugin for CaSpecialPlugin {
         // On a network server the clients draw the objects from `NetItem`s;
         // a client draws its own projectiles from the shot (`predict_shots`).
         .add_systems(FixedLast, net_items.run_if(resource_equals(NetRole::Server)))
+        // Stuck bolts sit on the body as it is at the end of the tick,
+        // before the network and the tick blend sample them. It writes only
+        // the objects' transforms (what else in `FixedLast` reads
+        // transforms reads the characters'), so it is ordered against
+        // those two alone.
+        .add_systems(
+            FixedLast,
+            bolts::follow_stuck
+                .before(net_items)
+                .before(crate::map::interp::InterpSystems::Sample)
+                .ambiguous_with_all()
+                .run_if(crate::core::authoritative),
+        )
         .add_systems(
             FixedUpdate,
             predict_shots
@@ -587,14 +613,14 @@ fn predict_shots(
             let gravity = if p.gravity { -super::grenades::OBJECT_GRAVITY * d.unit } else { 0.0 };
             PredictedItem::new(p.shown_key(), origin, dir * p.speed * d.unit, step)
                 .with_gravity(gravity, super::grenades::GRAVITY_INTEGRATION_FACTOR)
-        } else if let Ok((d, w, volley)) = bolts.get(e.weapon) {
+        } else if let Ok((d, _, volley)) = bolts.get(e.weapon) {
             let p = &d.params;
             let dir = cone_dir(p.perturb, p.dynamic_perturb, yaw, pitch, seed, BOLT);
             let speed = match p.alt {
                 Some(a) if alt_round(volley, clock.now) => a.speed,
                 _ => p.speed,
             };
-            PredictedItem::new(w.id, origin, dir * speed * d.unit, step)
+            PredictedItem::new(p.shown_model().shown_key(), origin, dir * speed * d.unit, step)
         } else {
             continue;
         };
@@ -932,12 +958,12 @@ pub fn spawn_object(world: &mut World, mut o: CaObject) -> Entity {
         centre: at,
         half: o.half * o.unit,
     };
-    // Drawn as its projectile record's model (impact projectiles), else
-    // by its weapon's key.
+    // Drawn as its projectile record's model (impact projectiles, bolts),
+    // else by its weapon's key (devices without one).
     let id = match &o.kind {
         Kind::Impact(p) => p.shown_key(),
         Kind::Device(d) => d.shown_model().map_or_else(|| o.weapon.to_string(), |m| m.shown_key()),
-        _ => o.weapon.to_string(),
+        Kind::Bolt(b) => b.shown_model().shown_key(),
     };
     // A device's sounds in flight and at rest (Corrections (2026-10-31) 3).
     let look = match &o.kind {

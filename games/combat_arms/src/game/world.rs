@@ -86,7 +86,10 @@
 //!   where they stand at load. Collision sets (`MapCollisionSet`): the
 //!   collision blockers, players only; the polygons without the solid bit
 //!   (non-solid detail) and the world models that are ray-hit but not
-//!   solid, traces only (shots, sight, cover, grenades). Polygons of the
+//!   solid, traces only (shots, sight, cover, grenades), but for those
+//!   with a cut-out texture (`alpharef`: tree leaves), which nothing
+//!   meets (`FOLIAGE`; ours: the spec's rays meet every polygon, and the
+//!   2026-11-14 playtest wanted leaves shot through). Polygons of the
 //!   glass surface types (`GLASS_SURFACE_TYPES`) go to sets of their own,
 //!   one per type, Chimera's `SeeThrough` (bots see through them, bots.md
 //!   5.2), each named with its surface (`MapCollisionSet::surface`: Glass,
@@ -1843,7 +1846,16 @@ fn collision(
         }
         positions.extend(corners.iter().map(|p| p.to_array()));
     };
+    // Cut-out textures (`alpharef`: tree leaves, fences' wire): their
+    // non-solid faces are foliage that neither players nor rounds meet.
+    let cutout: std::collections::BTreeSet<String> = map
+        .meshes
+        .iter()
+        .filter(|m| matches!(m.alpha, MapAlpha::Mask(_)))
+        .map(|m| m.material.replace('\\', "/").to_ascii_lowercase())
+        .collect();
     let (mut solid, mut traces, mut blockers) = (Vec::new(), Vec::new(), Vec::new());
+    let mut foliage = Vec::new();
     // Per glass type: (solid, ray-hit only).
     let mut glass: Vec<(Vec<[u32; 3]>, Vec<[u32; 3]>)> = GLASS_SURFACE_TYPES.iter().map(|_| Default::default()).collect();
     let mut sky = Vec::new();
@@ -1860,9 +1872,14 @@ fn collision(
             let surface = m.polygon_surface(i);
             let glass_type = GLASS_SURFACE_TYPES.iter().position(|t| *t == surface.surface_type);
             let solid_face = is_solid && surface.flags & surface_flags::SOLID != 0;
+            let cut = !solid_face
+                && m.textures
+                    .get(surface.texture as usize)
+                    .is_some_and(|t| cutout.contains(&t.replace('\\', "/").to_ascii_lowercase()));
             let out = match (solid_face, glass_type) {
                 _ if node && solid_face => &mut node_floors,
                 _ if node => &mut node_surfaces,
+                (false, None) if cut => &mut foliage,
                 (true, None) => &mut solid,
                 (true, Some(g)) => &mut glass[g].0,
                 (false, None) => &mut traces,
@@ -1892,6 +1909,12 @@ fn collision(
             indices: traces,
             characters: false,
             traces: true,
+            ..default()
+        },
+        // Neither: leaves and the like are shot and walked through.
+        MapCollisionSet {
+            name: FOLIAGE.into(),
+            indices: foliage,
             ..default()
         },
         // Neither: no collider (the nodes have theirs), floors for spawns.
@@ -1933,6 +1956,11 @@ fn collision(
     }
     sky
 }
+
+/// The collision set of non-solid faces with a cut-out texture (tree
+/// leaves): no collider, neither players nor rounds meet them (the
+/// 2026-11-14 playtest: Snow Valley's pine needles stopped bullets).
+pub const FOLIAGE: &str = "non-solid cut-out detail (foliage)";
 
 /// The collision sets of the nodes' world models where they stand at load
 /// (solid faces, other faces): no collider, only floors for dropping

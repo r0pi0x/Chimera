@@ -223,19 +223,26 @@ started; the user asked to avoid server lag while testers play.
   (about 1M system runs a second, some 15,000 a tick: worth a profile of
   a full server). Next time: a tester's `net_graph` (misses, late,
   errors, resyncs) when it feels wrong, and the server's `tick_stats`.
-- **Snow Valley (Combat Arms):** lighting looks wrong (details and a
-  screenshot pending); tree leaves are solid and block bullets, they
-  should be shoot-through.
-- **combat_arms:battleship is very laggy in play.** Profile client
-  frames and server ticks (tick_stats, seeded headless counts,
-  render-thread cost): draw calls, props, water, lights, physics props,
-  nav, bots. Compare with warehouse.
-- **Combat Arms crossbow:** the bolt appears as a whole crossbow model
-  flying at people (wrong projectile model), and a bolt stuck in a
-  player drags behind the body instead of staying at the hit point (the
-  attachment follows the wrong bone or offset, or hangs off the root and
-  lags). Look at: the crossbow's projectile model record and the
-  stick-to-body attachment.
+- **Snow Valley (Combat Arms)** (fixed on branch `pt7-ca`, confirm in a
+  playtest): the light cones (additive world models) were fogged toward
+  the fog colour, which they then added over their whole shape (pale
+  slabs in every fogged map); additive world and prop surfaces now fog
+  toward black (`fog::fog_surface`). Tree leaves (non-solid faces with a
+  cut-out texture) stopped rounds; now nothing meets them
+  (`world::FOLIAGE`, every Combat Arms map).
+- **combat_arms:battleship is very laggy in play.** Measured on branch
+  `pt7-ca` (docs/performance.md, "Battleship"): its server ticks, client
+  frames and render world cost what warehouse's do in seeded runs; a
+  guard holds its ticks. Not found: what made it lag. Next: on the
+  testers' machines, `chimera_perf_log 1` and the net graph on
+  battleship with eight players (its 9 spawn points), and the server's
+  tick times then.
+- **Combat Arms crossbow** (fixed on branch `pt7-ca`, confirm in a
+  playtest): the bolt flew as the crossbow's own model (bolts were drawn
+  by their weapon's key; now the `CrossBow` record's arrow,
+  `BoltParams::shown_model`), and a stuck bolt dragged behind the body
+  (it followed the body's box centre on the 20 Hz frames, drawn a frame
+  behind; now the struck sphere's node every tick, `bolts::follow_stuck`).
 - **Text fields don't accept paste** (Ctrl+V, Shift+Insert, right-click)
   anywhere: Join address and password, Play server name, Settings value
   boxes, the console (check), the token entry later. Add clipboard paste

@@ -182,6 +182,12 @@ fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     // Under (or, at the surface, just below) water, what is below the
     // surface takes the water's fog.
     let f = source_fog(params.fog_color, params.fog_range, params.water_fog_color, params.water_fog_range, world);
+    // An additive surface fogs toward black (it then adds nothing), not
+    // toward the fog colour, which it would add over its whole shape: a
+    // distant light cone drawn as a pale slab (`fog::fog_surface`).
+    if params.translucent > 1.5 && params.translucent < 2.5 {
+        return color * (1.0 - f.a);
+    }
     return mix(color, f.rgb, f.a);
 }
 

@@ -705,6 +705,56 @@ fn t33_crossbow_bolt() {
     }
 }
 
+/// A bolt stuck in a running player stays where it went in (the
+/// 2026-11-14 playtest: it dragged behind the body): drawn on the struck
+/// sphere every tick, not moved on the 20 Hz frames and drawn a frame
+/// behind as flying objects are. Its place from the player's origin, in
+/// his turn, holds within a few centimetres while he strafes and while he
+/// turns; its blast point (`CaObject::at`) is where it is drawn.
+#[test]
+fn stuck_bolt_stays_at_the_hit_point() {
+    let mut sim = sim();
+    let owner = far_player(&mut sim, 1);
+    let victim = player(&mut sim, 0.0, 1000.0, 0.0, 2);
+    set_health(&mut sim, victim, 100000.0);
+    let torso = spheres(&mut sim, victim)
+        .into_iter()
+        .filter(|s| s.2 == Location::Torso)
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .unwrap();
+    let b = bolt(&mut sim, BOW, Some(owner), Vec3::new(0.0, 60.0, 0.0), torso.0);
+    to_step(&mut sim, b, 4);
+    assert!(obj(&sim, b).s.stuck.is_some(), "stuck in him");
+    sim.ticks(1);
+    // Its place from his origin, in his turn.
+    let rel = |sim: &mut Sim| -> Vec3 {
+        let at = sim.app.world().get::<Transform>(b).unwrap().translation;
+        let turn = Quat::from_rotation_y(sim.intent(victim).yaw);
+        turn.inverse() * (at - sim.position(victim))
+    };
+    let r0 = rel(&mut sim);
+    assert!(r0.length() < 1.0, "on him: {r0}");
+    let mut worst: f32 = 0.0;
+    // Strafing at full speed, then turning while he runs.
+    sim.intent(victim).move_axis = Vec2::X;
+    for tick in 0..90 {
+        if tick >= 45 {
+            sim.intent(victim).yaw += 0.03;
+        }
+        sim.ticks(1);
+        let r = rel(&mut sim);
+        worst = worst.max(r.distance(r0));
+        let o = obj(&sim, b);
+        let drawn = sim.app.world().get::<Transform>(b).unwrap().translation;
+        assert!(o.at().distance(drawn) < 1e-3, "tick {tick}: blast point {} vs drawn {drawn}", o.at());
+    }
+    sim.intent(victim).move_axis = Vec2::ZERO;
+    let moved = sim.position(victim).x;
+    assert!(moved.abs() > 2.0, "he ran: {moved} m");
+    assert!(worst < 0.08, "the bolt stays on him: {worst} m off its place");
+    assert!(alive(&sim, b), "still stuck (5 s)");
+}
+
 /// The bolts of `w` in the world (newest last).
 fn bolts_of(sim: &mut Sim, owner: Entity) -> Vec<CaObject> {
     let world = sim.app.world_mut();
@@ -1050,6 +1100,91 @@ fn t39_round_end() {
 }
 
 const M32_INCENDIARY: &str = "combat_arms:m32_incendiarybomb";
+
+/// Over the network: a bolt stuck in a running player is drawn on him by
+/// another client, where it went in (the 2026-11-14 playtest saw it drag
+/// behind the body): the client draws both from the server's snapshots at
+/// one render time, and the server keeps the bolt on the body every tick.
+/// Its place from the drawn body holds within a few centimetres frame to
+/// frame while he strafes.
+#[test]
+fn net_stuck_bolt_is_drawn_on_the_body() {
+    let link = LinkConditions {
+        latency: Duration::from_millis(30),
+        jitter: Duration::ZERO,
+        loss: 0.0,
+    };
+    let mut sim = NetSim::new(CaSim, link, 7, 2, |app| {
+        app.add_plugins(GreyboxMapPlugin);
+    });
+    sim.set_frame(TICK_INTERVAL);
+    sim.until_joined(600);
+    sim.ticks(240);
+    let victim = sim.character_of(1).unwrap();
+    {
+        let mut h = sim.server.app.world_mut().get_mut::<Health>(victim).unwrap();
+        h.current = 1000.0;
+        h.max = 1000.0;
+    }
+    // A bolt from 3 m in front of him at his chest, on the server.
+    let (torso, start) = {
+        let w = sim.server.app.world_mut();
+        let mut q = w.query::<(&Transform, &Intent, &chimera_core::core::MovementState, Option<&ColliderAabb>)>();
+        let (t, i, s, a) = q.get(w, victim).unwrap();
+        let (_, _, spheres) = combat_arms::game::weapons::body_geometry(t, i, s, a, *combat_arms::game::weapons::MALE).unwrap();
+        let torso = combat_arms::game::weapons::MALE
+            .iter()
+            .zip(&spheres)
+            .filter(|(d, _)| d.location == Location::Torso)
+            .max_by(|a, b| a.1.1.total_cmp(&b.1.1))
+            .map(|(_, s)| s.0)
+            .unwrap();
+        (torso, torso + i.yaw_rotation() * Vec3::NEG_Z * 3.0)
+    };
+    let b = {
+        let w = sim.server.app.world_mut();
+        let weapon = chimera_sim::weapon::spawn_weapon(w, BOW, Entity::PLACEHOLDER).unwrap();
+        let d = w.get::<CaBoltData>(weapon).unwrap().clone();
+        let name = w.get::<Weapon>(weapon).unwrap().id;
+        let v = (torso - start).normalize() * d.params.speed;
+        let mut o = CaObject::new(name, None, d.unit, d.hp, start / U, v, Kind::Bolt(d.params));
+        o.s.origin = start / U;
+        special::spawn_object(w, o)
+    };
+    sim.ticks(20);
+    let o = sim.server.app.world().get::<CaObject>(b).cloned();
+    let at = sim.server.app.world().get::<Transform>(victim).unwrap().translation;
+    let prot = sim.server.app.world().get::<chimera_core::core::SpawnProtected>(victim).is_some();
+    assert!(
+        o.as_ref().is_some_and(|o| o.s.stuck.is_some()),
+        "stuck in him: {:?} at {:?}, him at {at}, torso {torso}, start {start}, protected {prot}",
+        o.as_ref().map(|o| (o.s.landed, o.steps)),
+        o.as_ref().map(|o| o.at())
+    );
+    // He strafes; client 0 draws him and the bolt a frame at a time.
+    let theirs = sim.local_player(1).unwrap();
+    sim.clients[1].app.world_mut().get_mut::<Intent>(theirs).unwrap().move_axis = Vec2::X;
+    sim.set_frame(1.0 / 144.0);
+    let owner = Some(sim.client_id(1));
+    let mut rels = Vec::new();
+    let from = sim.server.app.world().get::<Transform>(victim).unwrap().translation;
+    for _ in 0..200 {
+        sim.step();
+        let Some(him) = NetSim::owned_by(&mut sim.clients[0], owner) else { continue };
+        let w = sim.clients[0].app.world_mut();
+        let Some(item) = w.query_filtered::<&Transform, With<chimera_net::net::NetItem>>().iter(w).next().map(|t| t.translation) else {
+            continue;
+        };
+        let body = w.get::<Transform>(him).unwrap().translation;
+        rels.push(item - body);
+    }
+    let ran = sim.server.app.world().get::<Transform>(victim).unwrap().translation.distance(from);
+    assert!(ran > 2.0, "he ran: {ran} m");
+    assert!(rels.len() > 150, "drawn: {}", rels.len());
+    let r0 = rels[0];
+    let worst = rels.iter().map(|r| r.distance(r0)).fold(0.0f32, f32::max);
+    assert!(worst < 0.1, "drawn on him on client 0: {worst} m off its place");
+}
 
 /// Over the network: a client fires its LAW; both clients draw the rocket
 /// in flight, the shot is predicted without error, and its blast's damage

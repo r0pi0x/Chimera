@@ -4060,6 +4060,32 @@ frame and its colliders after, a new game only once it is all in, the client tol
 let in again and its command clock without a jump; the greybox calls a spawn under way
 off).
 
+## Battleship (2026-11-14)
+
+The UGG playtest of 2026-11-14 found `combat_arms:battleship` "very
+laggy" (no detail; the dedicated server's log has no tick costs for it).
+Its costs against warehouse's, the same build, work counts:
+
+| | battleship | warehouse |
+|---|---|---|
+| server tick, 6 bots, 3000 ticks (`heavy::map_ticks`, `CHIMERA_MAP_TICKS`): median / p99 / steady p99.9 | 7.66 / 14.16 / 16.19 M | 7.36 / 12.96 / 14.80 M |
+| the bots' thinking a tick | 0.33 M | 0.38 M |
+| client frame (`frame_bench`, 6 bots, 600 frames, 1280x720): main schedule p50 / p99 | 11.25 / 20.73 M | 11.83 / 22.57 M |
+| render world p50 / p99 | 10.93 / 13.91 M | 11.99 / 15.68 M |
+| meshes drawn a frame | 122 | 155 |
+| an offscreen client (listen host, 1500 frames, `--frame-log`): frame / main / render ms p50 | 7.0 / 6.3 / 3.4 | 6.7 / 5.9 / 3.8 |
+
+Nothing of its own: the costliest systems are both maps' (Bevy's command
+submission, movement, posing). Its world: 104 world models, 47k physics
+polygons, 59.6k drawn triangles in 124 meshes, 11 rotating doors, two sky
+objects, one water volume, 144 light objects (warehouse: 110, 38k, 50k
+in 281, none, one, none, 108). What the seeded runs leave out: eight
+players at once on its 9 spawn points, and the network (a client's link
+and the server's snapshots). Guard: `heavy::map_ticks::
+a_tick_on_battleship_stays_in_its_budget` (warehouse's budget). Next:
+a capture from the playtest's machines (`chimera_perf_log 1`, `net_graph`)
+on battleship.
+
 ## A death's frame, a new ladder's frame (2026-11-14)
 
 Three of the leftovers of "Nothing blocks the main thread", each measured in a seeded

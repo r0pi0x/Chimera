@@ -8,8 +8,9 @@
 //! Combat Arms' deserthole (7,850 areas, no clips; with `area_at`
 //! searching every area its bots' thinking is 10.6 M a tick and its
 //! costliest steady ticks 109 M, both over the limits); cs_militia keeps
-//! the same budget. Headless, the automatic gun game with six bots, the
-//! floods at once (no `SliceFloods`), repeatable (`Sim::repeatable`), work
+//! the same budget, as does combat_arms:battleship (the 2026-11-14
+//! playtest's "very laggy" map: its ticks are warehouse's). Headless,
+//! the automatic gun game with six bots, the floods at once (no `SliceFloods`), repeatable (`Sim::repeatable`), work
 //! counts (`Sim::work`): the same on every run of the same build, whatever
 //! the machine's load.
 //!
@@ -79,6 +80,21 @@ fn a_tick_on_a_large_mesh_stays_in_its_budget() {
             "{name}'s generated mesh has {areas} areas: no longer the large mesh this guards"
         );
     }
+}
+
+/// The 2026-11-14 playtest found battleship "very laggy". Its ticks, as
+/// counted here, are warehouse's (2026-11-14: median 7.66 M against
+/// 7.36 M, p99.9 of the steady ticks 16.2 M against 14.8 M, the bots'
+/// thinking 0.33 M against 0.38 M; docs/performance.md, "Battleship"):
+/// held to the same budget, so a cost of its own shows here first.
+const BATTLESHIP: &str = "combat_arms:battleship";
+
+#[test]
+fn a_tick_on_battleship_stays_in_its_budget() {
+    if std::env::var("CHIMERA_MAP_TICKS").is_ok() {
+        return;
+    }
+    within_budget(BATTLESHIP, true);
 }
 
 #[test]

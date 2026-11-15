@@ -117,8 +117,9 @@ impl ProjectileLook {
 }
 
 /// The impact projectiles weapon `w` makes: its own
-/// (`combat_arms:projectile`) and an air strike designator's shells
-/// (`combat_arms:device`'s `strike.shell`, special_weapons.md 6.10). The
+/// (`combat_arms:projectile`), an air strike designator's shells
+/// (`combat_arms:device`'s `strike.shell`, special_weapons.md 6.10) and
+/// a crossbow's bolt as drawn (`BoltParams::shown_model`). The
 /// map's load draws their models and looks in flight (`characters::
 /// models`, `effects::library`).
 pub fn projectiles_of(w: &chimera_sim::weapon::data::WeaponData) -> Vec<ProjectileParams> {
@@ -126,6 +127,7 @@ pub fn projectiles_of(w: &chimera_sim::weapon::data::WeaponData) -> Vec<Projecti
     let device = w.hook::<DeviceParams>(DEVICE);
     out.extend(device.as_ref().and_then(|d| d.shown_model()));
     out.extend(device.and_then(|d| d.strike).map(|s| s.shell));
+    out.extend(w.hook::<BoltParams>(BOLT).map(|b| b.shown_model()));
     out
 }
 
@@ -601,6 +603,17 @@ pub struct BoltParams {
     /// hook's volley): its speed and direct damage, the rest the same.
     #[serde(default)]
     pub alt: Option<AltBolt>,
+    /// Its projectile record's world model (`CrossBow`, `CrossBowFunc`:
+    /// `Model`, `ModelScale`, `Skin#`, from the install; special_weapons.md
+    /// Follow-up 5), drawn in flight and where it sticks (`shown_model`);
+    /// None: the engine's placeholder projectile (never the crossbow's own
+    /// hand-held model: the 2026-11-14 playtest saw whole crossbows fly).
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default = "unit_scale")]
+    pub model_scale: [f32; 3],
+    #[serde(default)]
+    pub skins: Vec<String>,
 }
 
 /// A crossbow's alternate bolt (7): `Velocity` and `InstDamage` of the
@@ -613,6 +626,34 @@ pub struct AltBolt {
 }
 
 impl BoltParams {
+    /// Its bolt as an impact projectile's draw key would carry it (the
+    /// same loader, `characters::models`, and looks in flight,
+    /// `effects::attached::on_shown`): the record's model, else the
+    /// engine's placeholder (`ProjectileParams::drawn_model`).
+    pub fn shown_model(&self) -> ProjectileParams {
+        ProjectileParams {
+            speed: self.speed,
+            gravity: false,
+            lifetime: self.lifetime,
+            health: self.health,
+            box_half: [0.0; 3],
+            hits_same_kind: false,
+            perturb: self.perturb,
+            dynamic_perturb: self.dynamic_perturb,
+            area_damage: 0.0,
+            area_radius: 0.0,
+            area_type: explode(),
+            over_time: None,
+            shooter_exempt: false,
+            model: self.model.clone(),
+            model_scale: self.model_scale,
+            skins: self.skins.clone(),
+            look: self.look.clone(),
+            create_sound: String::new(),
+            create_radius: 0.0,
+        }
+    }
+
     /// The bolt the alternate fire shoots (itself when it has none).
     pub fn alternate(&self) -> Self {
         let mut p = self.clone();
