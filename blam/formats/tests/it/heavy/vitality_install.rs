@@ -281,6 +281,11 @@ fn the_globals_values_of_movement_and_health() {
     assert_eq!(pl.minimum_stun_time, 0.0);
     near(pl.maximum_stun_time, 1.25, "maximum stun time");
     assert_eq!(pl.maximum_stun_ticks(), 37);
+    // globals.md: the first-person idle numbers on the disc (not the synthetic 8, 12, 0.5).
+    near(pl.first_person_idle_time.lower, 10.0, "idle lower");
+    near(pl.first_person_idle_time.upper, 15.0, "idle upper");
+    near(pl.first_person_idle_skip, 0.25, "idle skip");
+    assert_eq!(pl.first_person_idle_ticks(), (300, 450));
     // The grenade origin (0, 0.05, 0): 0.05 to the left of the camera.
     near(pl.grenade_origin[0], 0.0, "grenade origin x");
     near(pl.grenade_origin[1], 0.05, "grenade origin y");

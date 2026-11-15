@@ -92,6 +92,7 @@ pub mod rope_sway;
 pub mod solver_bodies;
 pub mod sound;
 pub mod steam;
+pub mod teleport;
 pub use sound::{
     GameSound, MapSoundClip, MapSoundEntry, MapSounds, MapSurface, PlaySound, PredictedSound, SoundControl, SoundKey,
     SoundLevel, StartSound, StepRemap,
@@ -160,10 +161,18 @@ pub struct KillHeight(pub f32);
 
 /// Falling out of the map kills; characters that can't die (god mode, no
 /// health) go back to a spawn point instead. A noclipping character
-/// (`core::Noclip`) flies where it likes: below the map too.
+/// (`core::Noclip`) flies where it likes: below the map too. Then, the
+/// server's, the map's teleporters (`teleport::busy`, `teleport::apply`):
+/// one system after the tick's movement for both.
 #[allow(clippy::type_complexity)]
 pub fn fall_out_of_map(
     kill: Option<Res<KillHeight>>,
+    (teleporters, role, playback, mut commands): (
+        Option<Res<teleport::MapTeleporters>>,
+        Option<Res<crate::core::NetRole>>,
+        Option<Res<crate::core::Playback>>,
+        Commands,
+    ),
     mut characters: Query<
         (
             Entity,
@@ -172,14 +181,21 @@ pub fn fall_out_of_map(
             Option<&crate::core::Health>,
             Has<crate::core::God>,
             Option<&Team>,
+            (Option<&teleport::TeleportArrival>, Option<&teleport::TeleportBlocked>),
         ),
         (With<crate::core::Intent>, Without<crate::core::Noclip>),
     >,
     spawns: Query<(&Transform, &crate::core::SpawnPoint), Without<crate::core::Intent>>,
     mut damage: MessageWriter<crate::core::Damage>,
 ) {
+    if let Some(t) = teleporters
+        && crate::core::authoritative(role, playback)
+        && teleport::busy(&t, characters.iter().map(|(_, at, .., (a, b))| (at.translation, a, b)))
+    {
+        commands.queue(teleport::apply);
+    }
     let Some(kill) = kill else { return };
-    for (e, mut at, velocity, health, god, team) in &mut characters {
+    for (e, mut at, velocity, health, god, team, _) in &mut characters {
         if at.translation.y >= kill.0 {
             continue;
         }

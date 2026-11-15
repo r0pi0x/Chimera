@@ -198,6 +198,12 @@ crate::tag_struct! {
         0x8C minimum_stun_time: f32,
         /// Seconds (0x90).
         0x90 maximum_stun_time: f32,
+        /// Seconds: the wait before the first-person weapon may pose,
+        /// drawn between the bounds (globals.md: 10 and 15 on the disc).
+        0x9C first_person_idle_time: Bounds<f32>,
+        /// Fraction: the chance a draw ends the wait without posing (0.25
+        /// on the disc).
+        0xA4 first_person_idle_skip: f32,
     }
 }
 
@@ -205,6 +211,13 @@ impl PlayerInformation {
     /// The maximum stun time in ticks, truncated (1.25 s is 37).
     pub fn maximum_stun_ticks(&self) -> i32 {
         (self.maximum_stun_time * TICKS as f32) as i32
+    }
+
+    /// The first-person idle wait's bounds in ticks (seconds x 30,
+    /// truncated: 300 and 450 on the disc).
+    pub fn first_person_idle_ticks(&self) -> (i32, i32) {
+        let t = |s: f32| (s * TICKS as f32) as i32;
+        (t(self.first_person_idle_time.lower), t(self.first_person_idle_time.upper))
     }
 }
 

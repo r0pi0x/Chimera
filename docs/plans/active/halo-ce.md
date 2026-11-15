@@ -20,9 +20,9 @@ plays as the real game, from specs and the disc's own data.
 |---|---|---|
 | M0 specs (formats and core rules) | done (2026-11-15) | eighteen specs in `specs/halo_ce/` (its README is the index): the disc image, the cache file and tag conventions, bitmaps, structure BSP, collision, models, shaders, scenario, sounds, animations, objects, globals, movement, health and shields, weapons, projectiles, multiplayer rules, effects; each checked against the disc by its writer, corrected once from the readers' tests; still to write, as their milestones near: the HUD and vehicles |
 | M1 a map you can walk on | done (2026-11-15) | every multiplayer map loads from the disc image with textures, one lightmap atlas, the sky model, scenery and collision; Halo's own app and server (`halo_ce`, `halo_ce_server`); six maps in the party apps' pool, played by the other games' characters; summary below |
-| M2 Halo guns as UGG rungs | in progress (2026-11-15) | Halo's movement (`halo_ce:movement`, movement.md) landed: every spec test case a scenario test; the steps' hops by the engine's capsule cast (its Known shortcuts); a Halo player's vitality (shields over health, health_shields.md: `game::vitality`) and the damage seam every Halo weapon delivers through (`game::damage::HaloHit`) landed; Halo's movement and the guns are next |
-| M3 the full multiplayer arsenal | not started | |
-| M4 every multiplayer map | not started | |
+| M2 Halo guns as UGG rungs | done (2026-11-15) | the assault rifle, pistol, plasma rifle and shotgun as data-driven rungs with their view models, animations, sounds and effects; a Halo rung's holder is a Halo player (movement, shields over health, the Spartan, Halo's HUD); a mixed ladder climbed by real fire as a party test; Halo's sets published to the asset service; summary below |
+| M3 the full multiplayer arsenal | in progress (2026-11-15) | simulated: the sniper rifle, rocket launcher, needler, plasma pistol and flamethrower, frag and plasma grenades, explosions, the level's materials at each hit, pickups on the item clock; four more rungs (eight in all); Halo's HUD from the disc's tags (shield, health, ammunition, heat, crosshairs, motion tracker). Being built: the five guns in hand with their sounds and effects, grenades thrown and seen, pickups seen |
+| M4 every multiplayer map | done but bots' bound (2026-11-15) | teleporters for every game's characters (`chimera_world::map::teleport`, from the scenario's pairs), climbable surfaces as ladders (Halo's movement climbs them by movement.md, the others by their own rules), no machine play depends on (Wizard's 4 alert lights), twelve of thirteen maps in the pool (Sidewinder waits for vehicles), the pool measured with teleporters as links; open: the bots' mesh bounded to the played space and teleporter and ladder links for bots (backlog) |
 | M5 feel and parity pass | not started | |
 | M6 vehicles | not started | |
 | M7 and on (effects, ragdolls, the classic look, the backlog) | not started | |
@@ -210,6 +210,55 @@ comes as its milestone nears.
 - UGG runs a match whose ladder mixes Halo rungs with the other games'.
 - The game in `chimera_pack`; Halo's asset sets published (section 2).
 
+### M2's summary (2026-11-15)
+
+- **What landed** (all in `games/halo_ce` unless said):
+  - `game::movement`: Halo's movement from movement.md, its numbers in
+    data/movement.toml; exact at 30 Hz, scaled under another tick.
+  - `game::vitality` and `game::damage`: body and shield, recharge,
+    overshield, camouflage, stun; the seam `HaloHit` every Halo damage
+    source delivers through. The shield is the engine's `Armor` with its
+    own ratio (`weapon::ArmorRatio`, new in `chimera_sim`), so another
+    game's bullet takes the shield first.
+  - `game::weapons`: the four guns as data (data/weapons/*.toml, checked
+    against the disc by a heavy test) run by Halo's own per-tick rules
+    beside the engine's frame (`weapon::OwnFrame`, new in `chimera_sim`);
+    per-tick projectiles; melee; lent as rungs.
+  - `game::body`: the Spartan with third-person animation from the
+    graph's unit tables, hit boxes with the head tagged, armour colours.
+  - `game::view`: the guns in hand with the arms, played one frame a
+    tick; the held model on the Spartan's hand.
+  - `game::fx`: sounds and effects from the donor map's effect tags;
+    every shot shown on every machine (net part `halo_ce_shots`).
+  - `game::ticks`: Halo's 30 Hz ticks counted exactly from the engine's
+    tick index at any tick rate.
+  - `blam_formats`: readers for effects, particles, lights, decals and
+    material effects, and for the HUD tags.
+  - The asset store: `chimera_pack pack|sets halo_ce`, `chimera_assets
+    sign`; Halo's `base` (the donor map) fetched with a match that uses
+    Halo, not at start-up. Published 2026-11-15: 30 records, 2.4 GB,
+    the manifest signed on the server; verified by fetching `base` and a
+    map set through the service.
+  - The network version is `net56` (Halo's replicated state and shots).
+- **What the integration pass found** (each fixed, each with a test):
+  vitality and stun stepped once per engine tick instead of once per
+  Halo tick, so the shield delay ran 2.2 times fast in the party apps;
+  Combat Arms' armour step removed Halo's shield pieces, so other
+  games' rounds passed the shield (`weapon::PiecesOf`, and one condition
+  in Combat Arms' `armour_follows_identity`); no Halo gun in hand on
+  Halo's own maps in the party (`BUNDLE.kept`).
+- **Tests.** `halo_ce`: 217 with the disc. `blam_formats`: 353. The
+  whole workspace's fast tier on Windows: 6,041 passed (2026-11-15).
+- **Screenshots** (outside the repository; posted to the playtest
+  channel): the assault rifle in hand with Halo's HUD on Hang 'Em High;
+  a Halo rung firing in an Ultimate Gun Game match; the Spartan.
+- **Open after M2**: the parity list from the specs' second correction
+  (the field of view's real angles, the blocked steps, the shot
+  direction table: being done); no supported way to start a match on a
+  chosen rung (a dev command would help screenshots and tests); the
+  Spartan's left-hand IK; the rifle's ammunition counter on the gun is a
+  static texture; death animations; the full-body shield shader.
+
 ### M3: the full multiplayer arsenal
 
 Sniper rifle, rocket launcher, needler, plasma pistol, fuel rod gun,
@@ -277,15 +326,26 @@ backlog.
   (`nav_gen`, seeded at the spawn points), so they walk Halo's maps
   today, but unbounded: Halo's visibility (clusters, portals, the PVS)
   is not handed to the engine, so the flood is not held to the played
-  space (Blood Gulch's reaches the flood's cell limit, with 967 of its
-  spawn spots off the main region). Missing: the
-  level's clusters as `map::vis` data (or a nav mesh of Halo's own),
-  jump links for its lifts, and teleporters as nav links.
-- **The maps kept out of the pool** (games/halo_ce/data/map_pool.toml):
-  putput (30 teleporter pairs), boardingaction (8), carousel, ratrace,
-  wizard (4 each), chillout (3), sidewinder (vehicles, 4 pairs): in with
-  teleporters (M4) and, for Sidewinder, vehicles (M6). Ratrace has no
-  capture the flag starts: its team spawns would be none.
+  space (Blood Gulch's reaches the flood's cell limit, with 972 of its
+  spawn spots off the main region; Sidewinder's 69000 m2 too; every
+  other map's measures as its rooms, no spot off). The engine's
+  generator takes one bound, `map::vis` clusters (`nav_gen::Bounds`):
+  Halo's would be the collision BSP's leaves with the structure's leaf
+  clusters, but handing `MapData::visibility` over also turns on the
+  renderer's culling, a change of its own. Missing: that bound (or a
+  nav mesh of Halo's own), and links for bots through teleporters and
+  up ladders (`nav::Via` has walks and the `.nav` file's ladders only;
+  the generator makes neither). No multiplayer map has a lift.
+- **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
+  a vehicle map too large on foot; in with vehicles (M6).
+- **Teleporters' extras**: the blocked message, the "teleporter activate"
+  sound for the teleported player, the pads' shimmer (Blood Gulch's
+  `teleporter_loop` sound scenery plays as any sound scenery would, when
+  sound scenery is placed); the edge neighbour's hold on a ladder
+  (movement.md). Spec questions: whether a player can mount a ladder
+  from the floor (the ground test keeps the floor, the higher normal);
+  movement.md says only Boarding Action has climbable surfaces, the disc
+  has them on nine maps (collision.md's 120 surfaces).
 - **Blood Gulch in a draw**: it is in the pool (allowed), but the pool's
   count rule keeps it out of every draw by players present (its wander
   time, 21 s at 8 players, over the 10 s target: a vehicle map walked).
@@ -334,3 +394,20 @@ backlog.
   log's tests on `main` (an append-only handle cannot be truncated; a
   locked marker read through a second handle) was fixed in passing, as
   it blocked the commit hook.
+- 2026-11-15: M2 done (its summary above); Halo's sets published to
+  the asset service. M3's simulation and Halo's HUD landed; the
+  vehicles spec (M6) is being written. The specs were corrected a
+  second time from the implementations' findings.
+- 2026-11-15: M4 (but the bots' bound): `chimera_world::map::teleport`
+  (pads in a map's typed extras, acted on by one system for every
+  character with its movement's footing: radius, re-arm, velocity kept
+  or zeroed, the look turned, blocking and telefrags), Halo's teleporter
+  pairs as its pads (`game::maps::teleporters`), climbable sheets as
+  ladder brushes every movement climbs (`game::maps::collision`), Halo's
+  movement climbing by the aim (movement.md); `map_fitness` counts
+  teleporters as links; putput, boardingaction, carousel, chillout,
+  ratrace and wizard joined the pool. Heavy tests: each map's teleporter
+  count, a Halo player on each of the 61 pads arriving on the ground at
+  its target, CS:S and Combat Arms characters through Chill Out's and
+  Wizard's, boardingaction's 40 ladder sheets, spawns for both teams on
+  all 13 maps, every pool map's spawns reachable with teleporter links.

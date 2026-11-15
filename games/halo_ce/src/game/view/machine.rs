@@ -42,6 +42,12 @@
 //!   permutation per slot (the slot's first).
 //! - The posing timer's draws use a per-holder generator of our own, not
 //!   the game's (posing is display only).
+//!
+//! The posing timer's numbers are the map's globals' first-person idle
+//! time and skip fraction (globals.md: 10 s, 15 s and 0.25 on the disc),
+//! which the load puts on the set (`set_idle`: an event on the idle
+//! sequence) and the timer reads from it (`idle_timing`); a set built
+//! without a map (the tests') takes `IdleTiming::FALLBACK`.
 
 use bevy::math::{Quat, Vec2};
 use blam_formats::animation::{FirstPersonSlot, smooth_step};
@@ -58,10 +64,50 @@ pub const BASE: &str = "base";
 pub const OVERLAY: &str = "overlay";
 pub const REPLACEMENT: &str = "replacement";
 
-/// The globals' first-person idle numbers (globals.md, the disc's
-/// values): the wait before posing, seconds, and the skip fraction.
-pub const IDLE_TIME: (f32, f32) = (8.0, 12.0);
-pub const IDLE_SKIP: f32 = 0.5;
+/// The event on the idle sequence carrying the globals' first-person
+/// idle numbers (`set_idle`).
+pub const IDLE_EVENT: &str = "halo:idle";
+
+/// The globals' first-person idle numbers: the wait before posing between
+/// two bounds (seconds) and the chance a draw ends it without posing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct IdleTiming {
+    pub time: (f32, f32),
+    pub skip: f32,
+}
+
+impl IdleTiming {
+    /// For a set built without a map's globals (tests): what every disc
+    /// map's globals hold (globals.md).
+    pub const FALLBACK: IdleTiming = IdleTiming { time: (10.0, 15.0), skip: 0.25 };
+}
+
+/// Put the map's idle numbers on a view model's set (module doc).
+pub fn set_idle(set: &mut AnimSet, idle: IdleTiming) {
+    let Some(s) = sequence(set, FirstPersonSlot::Idle) else {
+        return;
+    };
+    let q = &mut set.sequences[s];
+    q.events.retain(|e| e.name != IDLE_EVENT);
+    q.events.push(crate::map::anim::AnimEvent {
+        cycle: 0.0,
+        event: 0,
+        name: IDLE_EVENT.into(),
+        options: format!("{} {} {}", idle.time.0, idle.time.1, idle.skip),
+    });
+}
+
+/// The idle numbers a set carries (`set_idle`), else the fallback.
+pub fn idle_timing(set: &AnimSet) -> IdleTiming {
+    let read = || {
+        let q = &set.sequences[sequence(set, FirstPersonSlot::Idle)?];
+        let e = q.events.iter().find(|e| e.name == IDLE_EVENT)?;
+        let v: Vec<f32> = e.options.split_whitespace().filter_map(|w| w.parse().ok()).collect();
+        let [lower, upper, skip] = v[..] else { return None };
+        Some(IdleTiming { time: (lower, upper), skip })
+    };
+    read().unwrap_or(IdleTiming::FALLBACK)
+}
 
 /// A first-person slot's sequence name: its spec label (`fire-1`).
 pub fn sequence_name(slot: FirstPersonSlot) -> &'static str {
@@ -313,7 +359,8 @@ pub struct HaloView {
     after_exit_empty: bool,
     overcharge: f32,
     posing_counter: u32,
-    posing_wait: u32,
+    /// Drawn when the timer first needs it (the set carries its numbers).
+    posing_wait: Option<u32>,
     rng: u32,
     blend: Option<Blend>,
     last: Vec<BonePose>,
@@ -322,12 +369,10 @@ pub struct HaloView {
 impl HaloView {
     /// A view whose posing draws come from `seed`.
     pub fn new(seed: u32) -> Self {
-        let mut v = Self {
+        Self {
             rng: seed | 1,
             ..Default::default()
-        };
-        v.posing_wait = v.draw_wait();
-        v
+        }
     }
 
     fn roll(&mut self) -> f32 {
@@ -339,9 +384,9 @@ impl HaloView {
         (x >> 8) as f32 / (1u32 << 24) as f32
     }
 
-    fn draw_wait(&mut self) -> u32 {
+    fn draw_wait(&mut self, idle: IdleTiming) -> u32 {
         let r = self.roll();
-        ((IDLE_TIME.0 + (IDLE_TIME.1 - IDLE_TIME.0) * r) * 30.0) as u32
+        ((idle.time.0 + (idle.time.1 - idle.time.0) * r) * 30.0) as u32
     }
 
     fn start_blend(&mut self, n: u32) {
@@ -548,11 +593,20 @@ impl HaloView {
             && self.push == (0.0, 0.0);
         match self.state {
             ViewState::Idle if still => {
+                let idle = idle_timing(set);
+                let wait = match self.posing_wait {
+                    Some(w) => w,
+                    None => {
+                        let w = self.draw_wait(idle);
+                        self.posing_wait = Some(w);
+                        w
+                    }
+                };
                 self.posing_counter += 1;
-                if self.posing_counter > self.posing_wait {
+                if self.posing_counter > wait {
                     self.posing_counter = 0;
-                    self.posing_wait = self.draw_wait();
-                    if self.roll() >= IDLE_SKIP {
+                    self.posing_wait = Some(self.draw_wait(idle));
+                    if self.roll() >= idle.skip {
                         self.enter(set, ViewState::Posing);
                     }
                 }

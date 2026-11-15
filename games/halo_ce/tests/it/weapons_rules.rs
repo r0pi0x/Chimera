@@ -78,11 +78,43 @@ fn the_generator_draws_as_the_spec_states() {
     assert_eq!(r.0, 0x4750_2932);
 }
 
+/// weapons.md 7, "The direction table": the spec's construction and order,
+/// checked by its count, unit length, distinctness and checkpoint entries
+/// (Halo's frame); a draw's tilt goes toward the entry the seed picks (the
+/// table in the engine's axes), within the cone's bounds.
 #[test]
-fn there_are_1026_unit_directions_and_the_cone_keeps_its_bounds() {
-    let d = random::directions();
+fn the_direction_table_is_the_specs_and_the_cone_keeps_its_bounds() {
+    let d = &random::table();
     assert_eq!(d.len(), 1026);
-    assert!(d.iter().all(|v| (v.length() - 1.0).abs() < 1e-5));
+    assert!(d.iter().all(|v| (v.length() - 1.0).abs() < 1e-6));
+    for (i, a) in d.iter().enumerate() {
+        assert!(d[i + 1..].iter().all(|b| (*a - *b).length() > 1e-4), "entry {i} repeated");
+    }
+    let checks = [
+        (0, [0.0, 0.0, 1.0]),
+        (5, [0.0, 0.0, -1.0]),
+        (6, [0.0665190, 0.0, 0.9977852]),
+        (7, [0.1414214, 0.0, 0.9899495]),
+        (21, [0.0, 0.0665190, 0.9977852]),
+        (28, [0.0, 0.7071068, 0.7071068]),
+        (100, [0.1825742, 0.9128709, 0.3651484]),
+        (500, [-0.8741572, 0.3885143, 0.2913858]),
+        (1025, [0.9949367, 0.0710669, -0.0710669]),
+    ];
+    for (i, want) in checks {
+        assert!((d[i] - Vec3::from(want)).length() < 2e-7, "entry {i}: {}", d[i]);
+    }
+    // A seeded draw: the integer range draw picks floor(1026 r / 65536); the tilt is toward it.
+    for seed in [0u32, 7, 12345] {
+        let mut r = HaloRng(seed);
+        let i = HaloRng(seed).int_range(0, 1026) as usize;
+        let v = random::cone(&mut r, AIM, 0.01, 0.1);
+        let t = halo_ce::game::maps::space::direction(d[i].to_array());
+        assert!((random::direction(i) - t).length() < 1e-6);
+        assert!((random::direction(1025) - halo_ce::game::maps::space::direction(d[1025].to_array())).length() < 1e-6);
+        let axis = AIM.cross(t).normalize();
+        assert!(axis.dot(v).abs() < 1e-5 && (v - AIM).dot(t - AIM * AIM.dot(t)) > 0.0, "seed {seed}: toward entry {i}");
+    }
     let mut r = HaloRng(7);
     for _ in 0..2000 {
         let v = random::cone(&mut r, AIM, 0.01, 0.1);
@@ -325,9 +357,12 @@ fn level_shots_fly_as_the_table_gives() {
         assert!(near(pos[k - 1].0, at(x, 0.62), 1e-4) && (pos[k - 1].1 - s).abs() < 1e-4, "update {k}: {:?}", pos[k - 1]);
     }
     assert!((pos[23].0.x - 30.0).abs() < 1e-3, "at the final speed after update 24: {:?}", pos[23]);
+    // projectiles.md: update 25 is the last that moves it (to 30.825, the speed clamped to
+    // 0.825); update 26 makes it disappear without moving it (single precision).
     let (k, e) = end.unwrap();
-    assert!((25..=26).contains(&k) && e == End::Disappear, "ends on update {k}");
-    assert!(pos.last().unwrap().0.x <= 30.826, "{:?}", &pos[22..]);
+    assert!(k == 26 && e == End::Disappear, "ends on update {k}");
+    assert!((pos[24].0.x - 30.825).abs() < 1e-3 && (pos[24].1 - 0.825).abs() < 1e-4, "update 25: {:?}", pos[24]);
+    assert_eq!(pos[25].0, pos[24].0, "update 26 does not move it");
     // Shotgun pellet: full speed for three updates, then slowed.
     let (pos, end, _) = shoot(SHOTGUN, true, None, 20);
     assert!(near(pos[0].0, at(4.66667, 0.61822), 1e-4) && near(pos[1].0, at(9.33333, 0.61287), 1e-4));

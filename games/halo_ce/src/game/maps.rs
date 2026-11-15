@@ -21,6 +21,8 @@
 //! - `surfaces`: material types as the engine's surface names
 //!   (data/surfaces.toml);
 //! - `spawns`: the player starts as spawns and yaws;
+//! - `teleporters`: the teleporter pairs as the engine's teleporters
+//!   (`map::teleport`, every game's characters use them);
 //! - `objects`: render models as meshes, the scenery placements as props
 //!   with their collision;
 //! - `sky`: fog, a flat background, the sky model as a 3D skybox, and the
@@ -34,9 +36,14 @@
 //! guns' view and held models (`view::load::add_own`) and the
 //! body's meshes use too). Progress goes to the options' reporter.
 //!
+//! Machines: only Wizard places any (4 alert lights, scenario.md), and no
+//! multiplayer map has a lift or door play depends on; none is converted.
+//!
 //! Known shortcuts: only the first structure BSP is converted (every
 //! multiplayer map has one); the level's visibility (clusters, portals,
-//! the potentially visible set) is not handed over, everything is drawn.
+//! the potentially visible set) is not handed over, everything is drawn,
+//! and the bots' generated mesh is not bounded by it (docs/plans/active/
+//! halo-ce.md, backlog).
 
 pub mod collision;
 pub mod geometry;
@@ -47,6 +54,7 @@ pub mod sky;
 pub mod space;
 pub mod spawns;
 pub mod surfaces;
+pub mod teleporters;
 
 use std::{
     collections::BTreeMap,
@@ -203,6 +211,7 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
 
     report(0.9, "Spawns");
     spawns::add(&scenario, &mut map);
+    teleporters::add(&scenario, &mut map);
     sky::add(level_sky.as_ref(), &bsp, &mut map, decode);
     super::weapons::pickups::add_entities(&file, &scenario, &mut map, options.kit.pickups());
     Ok(map)

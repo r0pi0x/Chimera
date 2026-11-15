@@ -9,6 +9,9 @@
 //! - `maps`: the install's map cache files as Chimera's `MapData`
 //!   (`MAP_LOADER`; cache_file.md, structure_bsp.md, collision.md,
 //!   shaders.md, scenario.md);
+//! - `maps::teleporters`: the scenario's teleporter pairs as the engine's
+//!   teleporters; `maps::collision` also publishes climbable sheets as
+//!   ladders;
 //! - `movement`: `halo_ce:movement`, Halo's player movement
 //!   (specs/halo_ce/movement.md; its numbers in data/movement.toml);
 //! - `vitality`: a Halo player's body and shield, recharge, overshield,

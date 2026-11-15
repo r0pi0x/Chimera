@@ -95,8 +95,9 @@
 //! - `tick::HaloGun` on the weapon: `heat`, `age` (the battery is
 //!   `1 - age`), `overheated`, `overheat_exit`, `error`, `rate_of_fire`,
 //!   `zoom`, `overcharged`, `HaloGun::charge` (the charged fraction), the
-//!   magazine's state; `Zoomed` on the holder (the field of view, 70
-//!   degrees over the magnification); `systems::HaloHands::melee`,
+//!   magazine's state; `Zoomed` on the holder (the field of view: the nominal
+//!   70 degrees over the magnification, as the camera's angle,
+//!   `view::camera_fov`); `systems::HaloHands::melee`,
 //!   `HaloHands::throw` (the grenade counts, the throw's frame).
 //!
 //! Aim assist is a controller feature the port leaves off (weapons.md
