@@ -27,8 +27,11 @@
 //!   scenery's light.
 //!
 //! `MapLoadOptions::textures` off (the lean load) keeps every texture a
-//! placeholder of its size, everything else identical. Halo brings no kit
-//! yet (`MapData::kit` default). Progress goes to the options' reporter.
+//! placeholder of its size, everything else identical. Its kit is the
+//! players' body when the load wants bodies (`KitLoad::bodies`: the
+//! Spartan from the map's own file, `body::load::add_own`); the shaders'
+//! looks are resolved once for every pending mesh (`apply_looks`, which the
+//! body's meshes use too). Progress goes to the options' reporter.
 //!
 //! Known shortcuts: only the first structure BSP is converted (every
 //! multiplayer map has one); the level's visibility (clusters, portals,
@@ -180,11 +183,39 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
     pending.extend(objects::scenery(&file, &scenario, &light, &mut map));
 
     report(0.55, "Textures");
+    for (mesh, dest) in apply_looks(&file, pending, &mut map.textures, &mut map.warnings, decode) {
+        match dest {
+            Dest::Level | Dest::Sky => map.meshes.push(mesh),
+            Dest::Model(i) => map.models[i].meshes.push(mesh),
+        }
+    }
+    if options.kit.bodies() {
+        report(0.85, "Bodies");
+        super::body::load::add_own(&file, &mut map, decode);
+    }
+
+    report(0.9, "Spawns");
+    spawns::add(&scenario, &mut map);
+    sky::add(level_sky.as_ref(), &bsp, &mut map, decode);
+    Ok(map)
+}
+
+/// Pending meshes with their shaders' looks (`materials::look`): their
+/// textures decoded once each into `textures` (indices into it), a
+/// shader's problems told once in `warnings`; each mesh with where it goes.
+pub fn apply_looks(
+    file: &MapFile,
+    pending: Vec<Pending>,
+    textures: &mut Vec<crate::map::MapTexture>,
+    warnings: &mut Vec<String>,
+    decode: bool,
+) -> Vec<(crate::map::MapMesh, Dest)> {
+    let mut out = Vec::with_capacity(pending.len());
     let mut looks: BTreeMap<u32, materials::Look> = BTreeMap::new();
     for m in &pending {
         looks
             .entry(m.shader.id.0)
-            .or_insert_with(|| materials::look(&file, &m.shader));
+            .or_insert_with(|| materials::look(file, &m.shader));
     }
     let mut requests = materials::Requests::default();
     let mut wanted: Vec<(Option<usize>, Option<usize>)> = Vec::with_capacity(pending.len());
@@ -194,17 +225,16 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
         let detail = look.detail.map(|d| requests.want(d.texture));
         wanted.push((base, detail));
     }
-    let decoded = materials::decode_all(&file, &requests.list, decode);
+    let decoded = materials::decode_all(file, &requests.list, decode);
     let mut slots: Vec<Option<usize>> = Vec::with_capacity(decoded.len());
     for d in decoded {
         match d {
             Ok(t) => {
-                map.textures.push(t);
-                slots.push(Some(map.textures.len() - 1));
+                textures.push(t);
+                slots.push(Some(textures.len() - 1));
             }
             Err(e) => {
-                map.warnings
-                    .push(format!("texture unreadable, flat colour instead: {e}"));
+                warnings.push(format!("texture unreadable, flat colour instead: {e}"));
                 slots.push(None);
             }
         }
@@ -216,7 +246,7 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
         if let Some(problem) = &look.problem
             && reported.insert(m.shader.id.0)
         {
-            map.warnings.push(format!("shader `{}`: {problem}", mesh.material));
+            warnings.push(format!("shader `{}`: {problem}", mesh.material));
         }
         mesh.texture = base.and_then(|i| slots[i]);
         mesh.color = if mesh.texture.is_some() || (look.base.is_none() && look.problem.is_none()) {
@@ -225,11 +255,10 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
             materials::FLAT
         };
         if look.base.is_none() && look.problem.is_none() && reported.insert(m.shader.id.0) {
-            map.warnings
-                .push(format!("shader `{}`: no base map, drawn white", mesh.material));
+            warnings.push(format!("shader `{}`: no base map, drawn white", mesh.material));
         }
         if look.base.is_some() && mesh.texture.is_none() && reported.insert(m.shader.id.0) {
-            map.warnings.push(format!(
+            warnings.push(format!(
                 "shader `{}`: its base map did not read, flat colour",
                 mesh.material
             ));
@@ -247,16 +276,9 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
         mesh.tint = look.tint;
         mesh.base_transform = look.transform;
         mesh.surface = look.surface.clone();
-        match m.dest {
-            Dest::Level | Dest::Sky => map.meshes.push(mesh),
-            Dest::Model(i) => map.models[i].meshes.push(mesh),
-        }
+        out.push((mesh, m.dest));
     }
-
-    report(0.9, "Spawns");
-    spawns::add(&scenario, &mut map);
-    sky::add(level_sky.as_ref(), &bsp, &mut map, decode);
-    Ok(map)
+    out
 }
 
 /// The BSP's lightmap pages packed into one atlas, and each group's page

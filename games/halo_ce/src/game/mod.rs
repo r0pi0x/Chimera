@@ -21,6 +21,7 @@
 //!
 //! `HaloPlugins` adds the game's parts after `crate::SimPlugins`.
 
+pub mod body;
 pub mod damage;
 pub mod maps;
 pub mod mount;
@@ -115,8 +116,8 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
 ];
 
 /// Halo's parts, after `crate::SimPlugins`: the game registered (`INFO`),
-/// its movement (`movement`), its players' vitality (`vitality`) and its
-/// damage seam (`damage`).
+/// its movement (`movement`), its players' vitality (`vitality`), its
+/// damage seam (`damage`) and its players' bodies (`body`).
 pub struct HaloPlugins;
 
 impl PluginGroup for HaloPlugins {
@@ -126,13 +127,15 @@ impl PluginGroup for HaloPlugins {
             .add(movement::HaloMovementPlugin)
             .add(vitality::VitalityPlugin)
             .add(damage::DamagePlugin)
+            .add(body::HaloBodyPlugin)
     }
 }
 
 /// Halo as one bundle for an app made of several games
-/// (`chimera_world::game_bundle`): its info, parts and maps; it brings no
-/// players or guns to other games' maps yet (`guest: None`) and adds
-/// its registration, its surface names' classes (`maps::surfaces::
+/// (`chimera_world::game_bundle`): its info, parts and maps; it brings its
+/// players' body to other games' maps (`guest`: the Spartan, from the
+/// donor map, `body::load::GUEST`) and adds its registration, its bodies'
+/// animation and colours (`body::HaloBodyPlugin`), its surface names' classes (`maps::surfaces::
 /// SURFACES`) and its map pool's rules and measurements
 /// (`parts::add_map_pool`) to a composed simulation: its maps are played
 /// there with the other games' movement and guns.
@@ -140,7 +143,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     info: &INFO,
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
-    guest: None,
+    guest: Some(&body::load::GUEST),
     kept: &[],
     binds: &[],
     view_model_fov: None,
@@ -151,6 +154,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         // played on them.
         crate::map::impact::SurfaceClassesAppExt::register_surface_classes(app, maps::surfaces::SURFACES);
         parts::add_map_pool(app);
+        app.add_plugins(body::HaloBodyPlugin);
     },
     display_names: None,
 };

@@ -20,7 +20,7 @@ pub static PARTS: GameParts = GameParts {
     guns: &[],
     knife: None,
     movement: None,
-    characters: None,
+    characters: Some("halo_ce:spartan"),
     hud: None,
     maps: &[],
     announcer: None,

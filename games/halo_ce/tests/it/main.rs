@@ -12,6 +12,7 @@
 //! `cargo test -p halo_ce --features dev --test it`; where tests go:
 //! docs/OBSERVABILITY.md, section 1.
 
+mod body;
 mod cross_game;
 mod info;
 mod maps;
@@ -25,6 +26,7 @@ mod vitality_data;
 
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
 mod heavy {
+    mod body;
     mod maps;
     mod mount;
     mod vitality_data;

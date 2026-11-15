@@ -190,8 +190,8 @@ pub const SURFACES: &[SurfaceTable] = &[
 pub static KEPT: [&str; 2] = [GUESTS[0].kept[0], GUESTS[1].kept[0]];
 
 /// The guests' players, guns and HUD looks on the maps of other games
-/// (Halo has none to bring yet).
-pub static GUEST_DRESSING: [&MapDressing; 2] = [GUESTS[0].guest.unwrap(), GUESTS[1].guest.unwrap()];
+/// (Halo's: its Spartan body).
+pub static GUEST_DRESSING: [&MapDressing; 3] = [GUESTS[0].guest.unwrap(), GUESTS[1].guest.unwrap(), GUESTS[2].guest.unwrap()];
 
 /// Where this app's maps come from (a bare map name is the first guest's,
 /// CS:S's) and whose gameplay dresses them.
