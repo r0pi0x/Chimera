@@ -35,6 +35,10 @@
 //!   decals and lights, shots shown on every machine; `fx::objects`: thrown
 //!   grenades, explosions, plasma countdowns, items on the ground and their
 //!   pickup sounds, on every machine;
+//! - `vehicles`: the scenario's vehicles (the Warthog; vehicles.md):
+//!   placement as moving props, the mass-point physics on the engine's
+//!   collision, driving, seats and the seat camera, splatter and riders'
+//!   damage;
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
@@ -57,6 +61,7 @@ pub mod movement;
 pub mod parts;
 pub mod sets;
 pub mod ticks;
+pub mod vehicles;
 pub mod view;
 pub mod vitality;
 pub mod weapons;
@@ -172,6 +177,7 @@ impl PluginGroup for HaloPlugins {
             .add(fx::HaloFxPlugin)
             .add(body::HaloBodyPlugin)
             .add(view::HaloViewPlugin)
+            .add(vehicles::HaloVehiclesPlugin)
     }
 }
 

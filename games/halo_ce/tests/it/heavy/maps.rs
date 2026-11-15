@@ -409,7 +409,13 @@ fn every_created_scenery_placement_is_a_prop_inside_the_level() {
             .filter(|p| p.header.is_created(scenario.scenery_palette.len(), Some(0)))
             .count();
         assert_eq!(scenario.scenery.len(), placements, "{name}: placements");
-        assert_eq!(map.props.len(), created, "{name}: props");
+        // The scenario's vehicles are props too (`vehicles::place`).
+        let vehicles = map
+            .entities
+            .iter()
+            .filter_map(halo_ce::game::vehicles::place::Placed::from_entity)
+            .count();
+        assert_eq!(map.props.len(), created + vehicles, "{name}: props");
         eprintln!("{name}: {created} of {placements} scenery placements created");
         assert!(created <= placements);
         // Blood Gulch's table says 50 placements; four of them (palette 11

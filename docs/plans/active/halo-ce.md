@@ -21,10 +21,10 @@ plays as the real game, from specs and the disc's own data.
 | M0 specs (formats and core rules) | done (2026-11-15) | eighteen specs in `specs/halo_ce/` (its README is the index): the disc image, the cache file and tag conventions, bitmaps, structure BSP, collision, models, shaders, scenario, sounds, animations, objects, globals, movement, health and shields, weapons, projectiles, multiplayer rules, effects; each checked against the disc by its writer, corrected once from the readers' tests; still to write, as their milestones near: the HUD and vehicles |
 | M1 a map you can walk on | done (2026-11-15) | every multiplayer map loads from the disc image with textures, one lightmap atlas, the sky model, scenery and collision; Halo's own app and server (`halo_ce`, `halo_ce_server`); six maps in the party apps' pool, played by the other games' characters; summary below |
 | M2 Halo guns as UGG rungs | done (2026-11-15) | the assault rifle, pistol, plasma rifle and shotgun as data-driven rungs with their view models, animations, sounds and effects; a Halo rung's holder is a Halo player (movement, shields over health, the Spartan, Halo's HUD); a mixed ladder climbed by real fire as a party test; Halo's sets published to the asset service; summary below |
-| M3 the full multiplayer arsenal | in progress (2026-11-15) | simulated: the sniper rifle, rocket launcher, needler, plasma pistol and flamethrower, frag and plasma grenades, explosions, the level's materials at each hit, pickups on the item clock; four more rungs (eight in all); Halo's HUD from the disc's tags (shield, health, ammunition, heat, crosshairs, motion tracker). Being built: the five guns in hand with their sounds and effects, grenades thrown and seen, pickups seen |
+| M3 the full multiplayer arsenal | done (2026-11-15) | the sniper rifle, rocket launcher, needler, plasma pistol and flamethrower beside M2's four, frag and plasma grenades, explosions, the level's materials at each hit, pickups on the item clock; eight rungs (every held gun but the flamethrower); each gun in hand with its states, sounds and effects, each projectile with its own look, grenades and items seen on every machine; Halo's HUD from the disc's tags; summary below |
 | M4 every multiplayer map | done (2026-11-15) | teleporters for every game's characters (`chimera_world::map::teleport`, from the scenario's pairs), climbable surfaces as ladders (Halo's movement climbs them by movement.md, the others by their own rules), no machine play depends on (Wizard's 4 alert lights), twelve of thirteen maps in the pool (Sidewinder waits for vehicles), the pool measured with teleporters as links; the bots' generated mesh held to the drawn level (`nav_gen::NavWithin`, the structure BSP's world bounds) and grown to it (Blood Gulch's 78,000 m2 whole), teleporters as navigation links the bots plan through and walk onto (`Via::Teleport`); ladders for bots open (backlog) |
 | M5 feel and parity pass | not started | |
-| M6 vehicles | not started | |
+| M6 vehicles | in progress (2026-11-15) | stage 1: the Warthog on Blood Gulch in Halo's app, driven by vehicles.md's mass-point step (its simulation table matched but one number), seats, the driver's camera, splatter and riders' damage; next: the gunner's turret, seated poses, the Ghost and the Scorpion, vehicles in the party apps |
 | M7 and on (effects, ragdolls, the classic look, the backlog) | not started | |
 
 ## 1. The two rules
@@ -265,6 +265,54 @@ Sniper rifle, rocket launcher, needler, plasma pistol, fuel rod gun,
 flamethrower if the disc has it; frag and plasma grenades; melee;
 pickups; the HUD pieces a Halo rung shows, on UGG's HUD hooks.
 
+### M3's summary (2026-11-15)
+
+- **What landed** (all in `games/halo_ce` unless said):
+  - `game::weapons`: the nine held guns and the two grenades as data
+    (data/weapons/*.toml, data/grenades.toml, checked against the disc),
+    with charging (the plasma pistol's overcharge), heat, zoom levels,
+    guided needles, rockets, the flame; per-tick projectiles with the
+    level's material at each hit (bounce, stick, detonate), explosions
+    as area damage through `damage::HaloHit`, grenades as a count thrown
+    beside the gun in hand, pickups on the item clock.
+  - Eight rungs lent to the party apps (`game::parts`): every held gun
+    but the flamethrower (its flame ends 2.5 WU out, and no stock map
+    places it).
+  - `ui::hud`: Halo's HUD from the disc's interface tags: shield and
+    health meters, ammunition and heat, each gun's crosshair, grenade
+    counts, the motion tracker.
+  - `game::view` and `game::fx`: each gun in hand with its states (the
+    sniper's zoom, the launcher's reload, the overcharge), each
+    projectile's own look (guided shots steered to the server's target),
+    particle systems (`blam_formats::effect::system`), detonations,
+    plasma countdowns and pickups sent to every client (net part
+    `halo_ce_objects`); thrown grenades and items are the server's
+    entities, drawn through the engine's `NetItem`.
+  - The specs' second and third corrections applied: the field of view's
+    real angles (70 nominal is 48.11 degrees vertical), the mover's
+    blocked steps, the spread's direction table.
+  - The network version is `net58` (Halo's shots carry their trigger and
+    target; its objects are sent to every client).
+  - Shared code: the held model's scale by game
+    (`chimera/world/src/map/loose.rs`), a Halo tab on the party's
+    Controls page and a grenade bind.
+- **What the merge found**: with nine Halo guns and TF2's in one ladder,
+  Ultimate Gun Game's bound on tables made over a session of matches
+  failed (104 new archetypes between the fourth and eighth match, the
+  bound 100). Halo's parts now go on and off a character in one move
+  (movement, shield and vitality together; the kick kept from spawn with
+  a flag): 70. The bound was not raised. Most of the rest is other
+  games' parts and the physics engine's.
+- **Tests.** `halo_ce`: 246 with the disc. `blam_formats`: 363.
+- **Screenshots** (outside the repository; posted to the playtest
+  channel): the rocket launcher in hand with Halo's HUD, a frag
+  grenade's burst, needles in flight, the sniper's zoom levels.
+- **Open after M3**: switching the grenade type, the scopes' masks, some
+  sprites drawn soft-edged, the rocket's trail, respawning in the
+  offline app; the corrected specs' second list (ladders mounted from
+  the floor, the grenades' real material tables, guidance, autoaim on by
+  default, teleporter exits: being done).
+
 ### M4: maps
 
 Every multiplayer map in the UGG pool with spawns and bot navigation,
@@ -280,6 +328,25 @@ or capture tool if one is needed.
 ### M6: vehicles (only if the earlier milestones are solid)
 
 Warthog, Ghost, Banshee and Scorpion as a UGG mode or rung variant.
+
+Stage 1 (2026-11-15), `game::vehicles`: the scenario's Warthogs on Blood
+Gulch in Halo's app. The physics is vehicles.md's own mass-point step at
+30 Hz (springs and friction per tick, not the physics engine's solver)
+on the engine's spatial queries, writing a kinematic body that
+replicates as a moving map prop, so no network message changed. Against
+the spec's simulation table: speeds, distances, stopping, steering, ride
+height, tyre depths and settling match to the stated digits; the 1 WU
+drop's lowest point is -0.1215 against the spec's -0.131 (asked of the
+spec). Seats by the spec's search (driver and passenger; the rider's
+movement suspended), the driver's camera from the seat's track, a moving
+Warthog's splatter through `HaloHit`, 18% of hull hits to riders. On
+this disc the Banshee is campaign only: multiplayer's vehicles are the
+Warthog, the Ghost and the Scorpion.
+
+Stage 2: the gunner's turret, the riders' seated poses and the entering
+and leaving animations, the wheels and suspension shown, the Ghost and
+the Scorpion, the seated state replicated, vehicles in the party apps
+(Sidewinder into the pool).
 
 ### M7 and on
 
@@ -423,3 +490,9 @@ backlog.
   the flood is seeded at their exits too. `map_fitness`: Blood Gulch
   77,996 m2, no spot off, wander 52.7/22.6/14.4 s; the other maps
   unchanged. Ladders for bots stay open (backlog).
+- 2026-11-15: M3 done (its summary above): the five guns in hand, the
+  projectiles' looks, grenades and items on every machine (`net58`),
+  after Halo's parts were made to go on and off a character in one move
+  (Ultimate Gun Game's bound on tables over a session). M6 stage 1: the
+  Warthog (its section above). Being done: the corrected specs' second
+  list, and the vehicles spec's gaps for stage 2.

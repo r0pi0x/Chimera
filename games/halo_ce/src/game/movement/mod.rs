@@ -228,7 +228,7 @@ fn step(
         &mut Velocity,
         &mut MovementState,
         (Option<&Stun>, Option<&SpeedMultiplier>, Has<ControllerStick>, Has<Dead>),
-    )>,
+    ), Without<crate::game::vehicles::Seated>>,
     move_and_slide: MoveAndSlide,
     data: Res<MovementData>,
     clock: Res<SimClock>,
