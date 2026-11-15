@@ -1,7 +1,17 @@
 # Plan: the hub and its services (accounts, server list, assets, feedback)
 
-Status: S1a in progress (2026-11-14): the user's decisions are in
-section 11; the plan below follows them.
+Status: S1a built (2026-11-14), not deployed; S1b next. The user's
+decisions are in section 11; the plan below follows them. Built in S1a:
+`chimera_services` with `chimera_accounts` (SQLite, migrations, WAL,
+nightly local backups and restore; invites, sign-up, link codes, recovery,
+re-invites, tickets, the revocation feed, bans, legacy import and legacy
+tickets; the admin API and command line), `chimera_assets::ticket` and
+`account` (the client's file, redeem, ticket refresh at half-life,
+`+chimera:hub <link> [username]` on the command line) and `TicketAuth` in
+`chimera_asset_server`. Moved to S1b: the admin page (7.2), `account
+set`, `show`, `delete` and `refresh`, `X-Chimera-Peer` (the front's), the
+join flow's use of an account's tickets for a game server's offered
+asset service (today a join binds a legacy token, `net::assets`).
 The user's direction: a master server players connect to up front, which
 serves the game files by default, lists every lobby (hosting one lists it
 for everyone on the same master) and holds everyone's **accounts**, which

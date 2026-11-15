@@ -7,7 +7,10 @@
 //! - `GET /key`: the server's public key (hex), unauthenticated: what
 //!   manifests are signed with.
 //! - Everything else wants `Authorization: Bearer <token>`: none, an
-//!   unknown or a revoked token is 401 (`accounts`).
+//!   unknown or a revoked token is 401 (`accounts`). A token is a legacy
+//!   `chimera1_` token or, with `Service::with_tickets`, an account ticket
+//!   (`ticket`, docs/plans/active/hub.md 2.4), refused within one
+//!   revocation poll of its device's or account's revocation.
 //! - `GET /whoami`: `<kind> <name> <token>` and the games it may fetch.
 //! - `GET /games`: `<game> <build> <manifest id>` per line, oldest build
 //!   first, for the games the account may fetch.
@@ -235,6 +238,20 @@ impl Service {
     pub fn new(store: Store) -> io::Result<Self> {
         let accounts = Accounts::path(&store.root);
         Self::with_authenticators(store, vec![Box::new(Internal::new(accounts))])
+    }
+
+    /// The service of `store` taking the accounts service's tickets
+    /// (`TicketAuth`, keys from `<store>/server/accounts/ticket.pub`, the
+    /// revocation feed from `accounts_url` every `every`) before the
+    /// internal accounts' tokens.
+    pub fn with_tickets(store: Store, accounts_url: &str, every: Duration) -> io::Result<Self> {
+        let tickets = crate::accounts::TicketAuth::new(crate::accounts::ticket_keys_path(&store.root)).with_feed(
+            accounts_url.to_string(),
+            crate::accounts::service_secret_path(&store.root),
+            every,
+        );
+        let accounts = Accounts::path(&store.root);
+        Self::with_authenticators(store, vec![Box::new(tickets), Box::new(Internal::new(accounts))])
     }
 
     /// With these account kinds, asked in order (Steam's goes here later).
@@ -517,6 +534,7 @@ impl Service {
             match auth.authenticate(token) {
                 Some(Verdict::Granted(p)) => return Ok(p),
                 Some(Verdict::Revoked) => return Err(Outcome::text(401, "this token was revoked\n")),
+                Some(Verdict::Refused(why)) => return Err(Outcome::text(401, format!("{why}\n"))),
                 None => {}
             }
         }

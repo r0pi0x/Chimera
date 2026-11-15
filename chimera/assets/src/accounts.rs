@@ -15,6 +15,15 @@
 //! The accounts file (`<store>/server/accounts.toml`) keeps only each
 //! token's SHA-256, never the token; it is read again when it changes, so
 //! a revoke takes effect at the next request without a restart.
+//!
+//! Platform accounts (docs/plans/active/hub.md, 2.4): `TicketAuth` (kind
+//! `account`) takes the accounts service's tickets (`ticket`, the
+//! `chimera2t.` prefix), checked with the ticket public keys alone
+//! (`<store>/server/accounts/ticket.pub`, read again when it changes) and
+//! the revocation feed, which a thread polls from the accounts service on
+//! loopback (`with_feed`: every 30 s, with the services' shared secret;
+//! the last list is kept while accounts doesn't answer). Its principal is
+//! the account's username; its games are the ticket's `content`.
 
 use std::{
     collections::BTreeSet,
@@ -43,6 +52,15 @@ impl Games {
         match self {
             Games::All => true,
             Games::Only(games) => games.contains(game),
+        }
+    }
+
+    /// A ticket's `content`: `*` all, else exactly these (none: nothing).
+    pub fn from_content(list: &[String]) -> Self {
+        if list.iter().any(|g| g == "*") {
+            Games::All
+        } else {
+            Games::Only(list.iter().cloned().collect())
         }
     }
 
@@ -80,6 +98,8 @@ pub enum Verdict {
     Granted(Principal),
     /// Known, but taken back.
     Revoked,
+    /// Refused for this reason (an expired or forged ticket).
+    Refused(String),
 }
 
 /// One kind of account: checks the tokens it issued.
@@ -272,5 +292,159 @@ impl Authenticator for Internal {
             }
         }
         cache.1.verdict(token)
+    }
+}
+
+/// The services' shared secret's header (loopback calls between services).
+pub const SERVICE_HEADER: &str = "X-Chimera-Service";
+/// How often `TicketAuth` asks the accounts service for revocations.
+pub const FEED_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The ticket public keys of a services box (`ticket.pub`).
+pub fn ticket_keys_path(store_root: &Path) -> PathBuf {
+    store_root.join("server").join("accounts").join("ticket.pub")
+}
+
+/// The services' shared secret (`<store>/server/services/secret`).
+pub fn service_secret_path(store_root: &Path) -> PathBuf {
+    store_root.join("server").join("services").join("secret")
+}
+
+/// Account tickets (`ticket`), checked locally.
+pub struct TicketAuth {
+    keys_path: PathBuf,
+    keys: Mutex<(Option<(SystemTime, u64)>, crate::ticket::TicketKeys)>,
+    revoked: std::sync::Arc<std::sync::RwLock<crate::ticket::Revocations>>,
+    feed: Option<Feed>,
+}
+
+/// The revocation poller; stopped when dropped.
+struct Feed {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Drop for Feed {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(t) = self.thread.take() {
+            t.thread().unpark();
+            let _ = t.join();
+        }
+    }
+}
+
+/// One ask of the feed: the entries after `since`.
+pub fn read_feed(accounts_url: &str, secret: &str, since: u64) -> Result<String, String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_global(Some(std::time::Duration::from_secs(5)))
+        .max_redirects(0)
+        .build()
+        .new_agent();
+    let url = format!("{}/internal/revoked?since={since}", accounts_url.trim_end_matches('/'));
+    let mut response = agent.get(&url).header(SERVICE_HEADER, secret).call().map_err(|e| format!("{url}: {e}"))?;
+    let status = response.status().as_u16();
+    let body = response.body_mut().read_to_string().map_err(|e| format!("{url}: {e}"))?;
+    if status != 200 {
+        return Err(format!("{url}: {status} {}", body.trim()));
+    }
+    Ok(body)
+}
+
+impl TicketAuth {
+    /// Tickets checked with the keys in `keys_path` (none there: every
+    /// ticket refused), with no revocation feed yet.
+    pub fn new(keys_path: PathBuf) -> Self {
+        Self {
+            keys_path,
+            keys: Mutex::new((None, Default::default())),
+            revoked: Default::default(),
+            feed: None,
+        }
+    }
+
+    /// Poll the accounts service at `accounts_url` (plain HTTP on loopback)
+    /// for revocations every `every`, with the secret in `secret_path`
+    /// (read again each time: accounts makes it at its first start).
+    pub fn with_feed(mut self, accounts_url: String, secret_path: PathBuf, every: std::time::Duration) -> Self {
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (revoked, stop2) = (self.revoked.clone(), stop.clone());
+        let thread = std::thread::Builder::new()
+            .name("revocation-feed".into())
+            .spawn(move || {
+                let mut said = false;
+                while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
+                    let secret = fs::read_to_string(&secret_path).map(|s| s.trim().to_string());
+                    let since = revoked.read().unwrap_or_else(|e| e.into_inner()).seq;
+                    let got = secret
+                        .map_err(|e| format!("{}: {e}", secret_path.display()))
+                        .and_then(|secret| read_feed(&accounts_url, &secret, since));
+                    match got {
+                        Ok(text) => {
+                            let mut r = revoked.write().unwrap_or_else(|e| e.into_inner());
+                            if let Err(e) = r.apply(&text) {
+                                eprintln!("tickets: {e}");
+                            }
+                            said = false;
+                        }
+                        // Keep the last list; say so once until it answers again.
+                        Err(e) if !said => {
+                            eprintln!("tickets: no revocation feed ({e}); keeping the last list");
+                            said = true;
+                        }
+                        Err(_) => {}
+                    }
+                    std::thread::park_timeout(every);
+                }
+            })
+            .expect("a thread");
+        self.feed = Some(Feed { stop, thread: Some(thread) });
+        self
+    }
+
+    /// The revocations as last read (tests, `status`).
+    pub fn revocations(&self) -> std::sync::Arc<std::sync::RwLock<crate::ticket::Revocations>> {
+        self.revoked.clone()
+    }
+
+    fn keys(&self) -> crate::ticket::TicketKeys {
+        let stamp = fs::metadata(&self.keys_path).ok().and_then(|m| Some((m.modified().ok()?, m.len())));
+        let mut cache = self.keys.lock().unwrap_or_else(|e| e.into_inner());
+        if cache.0 != stamp || stamp.is_none() {
+            let keys = fs::read_to_string(&self.keys_path)
+                .map_err(|e| e.to_string())
+                .and_then(|t| crate::ticket::TicketKeys::parse(&t));
+            *cache = match keys {
+                Ok(k) => (stamp, k),
+                Err(_) => (None, Default::default()),
+            };
+        }
+        cache.1.clone()
+    }
+}
+
+impl Authenticator for TicketAuth {
+    fn kind(&self) -> &str {
+        "account"
+    }
+
+    fn authenticate(&self, token: &str) -> Option<Verdict> {
+        if !token.starts_with(crate::ticket::PREFIX) {
+            return None;
+        }
+        let claims = match self.keys().check(token, crate::ticket::SERVICES, now()) {
+            Ok(c) => c,
+            Err(e) => return Some(Verdict::Refused(e.to_string())),
+        };
+        if self.revoked.read().unwrap_or_else(|e| e.into_inner()).refuses(&claims) {
+            return Some(Verdict::Revoked);
+        }
+        Some(Verdict::Granted(Principal {
+            kind: "account".into(),
+            name: claims.username.clone(),
+            token: 0,
+            games: Games::from_content(&claims.content),
+        }))
     }
 }
