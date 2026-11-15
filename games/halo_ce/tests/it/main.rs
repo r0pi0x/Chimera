@@ -32,6 +32,7 @@ mod movement;
 mod movement_net;
 mod movement_vitality;
 mod net_vitality;
+mod respawn;
 mod skeleton;
 mod ticks;
 mod view;

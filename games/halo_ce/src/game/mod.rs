@@ -55,6 +55,7 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod respawn;
 pub mod sets;
 pub mod ticks;
 pub mod view;
@@ -173,6 +174,7 @@ impl PluginGroup for HaloPlugins {
             .add(fx::HaloFxPlugin)
             .add(body::HaloBodyPlugin)
             .add(view::HaloViewPlugin)
+            .add(respawn::HaloRespawnPlugin)
     }
 }
 
