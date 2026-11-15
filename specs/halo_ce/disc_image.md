@@ -55,7 +55,7 @@ At partition base + 32 * 2048, one sector of 2048 bytes.
 | 0x024 | 1992 | bytes | all zero |
 | 0x7EC | 20 | text | the magic text again |
 
-This disc: root sector 264, root size 88 bytes, time bytes e0 87 77 05
+This disc: root sector 264, root size 88 bytes, time bytes 00 e0 87 77 05
 52 c1 01 (read as a number: 2001-10-15 08:21:50 UTC), the 1992 bytes all
 zero. A reader must require both magics. The time is informational; a
 reader may expose it or ignore it. Nothing else in the sector is used.
@@ -252,7 +252,7 @@ order).
 | Directories (not counting the root) | 57 |
 | Total file bytes | 3,726,832,117 (3,554.2 MiB as the user's folder shows) |
 | Top-level entries | default.xbe (file), bink (directory), maps (directory), XDemos (directory) |
-| Files at top level | 1 (default.xbe); bink has 5, maps has 24, XDemos has 1,136 |
+| Files at top level | 1 (default.xbe); bink has 5, maps has 24, XDemos has 6 entries (1,136 files below it) |
 | default.xbe | 2,535,424 bytes, start sector 265 |
 | maps/bloodgulch.map | 22,571,008 bytes, start sector 835,909 |
 | Largest file | bink/credits.bik, 200,614,260 bytes |
