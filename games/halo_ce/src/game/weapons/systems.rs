@@ -785,6 +785,73 @@ pub fn apply_pushes(
     }
 }
 
+/// The fire button up on an engine tick (between two Halo ticks under
+/// another game's tick, or on one at Halo's own): the weapon in hand saw
+/// its trigger released (a semi-automatic's next pull fires though the
+/// press latched since is still down at the next Halo tick), and a trigger
+/// waiting for a release (locked, charging, charged) gets it: the latched
+/// press is dropped, so a charge is let go. At Halo's own tick this is
+/// what the Halo tick itself does with the button up. Without it a press
+/// every other engine tick (Combat Arms' bots' trigger) reached every
+/// Halo tick as held: the sniper rifle never fired again after its first
+/// round and the plasma pistol charged and held its bolt.
+fn release_between_ticks(inv: &Inventory, guns: &mut Query<(&Weapon, &HaloWeapon, &mut HaloGun, Option<&mut Magazine>)>, hands: &mut HaloHands) {
+    let Some(Ok((_, _, mut gun, _))) = inv.active.map(|w| guns.get_mut(w)) else { return };
+    if !gun.released_since_shot {
+        gun.released_since_shot = true;
+    }
+    if gun.trigger != TriggerMode::Idle {
+        hands.fire = false;
+    }
+}
+
+/// A battery weapon's battery used per round of its first trigger (the
+/// plasma rifle's and pistol's; at least a tiny amount), None for a
+/// weapon with a magazine of rounds.
+pub fn battery(gun: &Gun) -> Option<f32> {
+    gun.magazine.is_none_or(|m| m.rounds_loaded_maximum <= 0).then_some(gun.trigger.age_per_round.max(1e-3))
+}
+
+/// A battery weapon's rounds as the engine's `Magazine` counts them (what
+/// a gun's rounds are to what reads them there: Combat Arms' bots, which
+/// fire a gun with rounds loaded and take one without for empty): the
+/// first trigger's rounds the battery has left, none while overheated or
+/// dead at its maximum age; at least one while it may fire.
+pub fn battery_rounds(gun: &Gun, state: &HaloGun, per_round: f32) -> u32 {
+    if state.overheated || (gun.has(weapon_flags::CANNOT_FIRE_AT_MAXIMUM_AGE) && state.age >= 1.0) {
+        return 0;
+    }
+    (((1.0 - state.age) / per_round).ceil().max(1.0)) as u32
+}
+
+/// Each battery weapon its `Magazine` (`battery_rounds`; no reserve, a
+/// magazine as large as a full battery's rounds), kept by `run`; the
+/// magazine weapons have theirs from their data (`weapons::build`).
+pub fn give_battery_magazines(guns: Query<(Entity, &HaloWeapon, &HaloGun), Without<Magazine>>, mut commands: Commands) {
+    for (e, hw, gun) in &guns {
+        let Some(per_round) = battery(&hw.0) else { continue };
+        commands.entity(e).insert(Magazine {
+            clip: battery_rounds(&hw.0, gun, per_round),
+            size: (1.0 / per_round).ceil() as u32,
+            reserve: 0,
+            reserve_max: 0,
+            reload_time: 0.0,
+            reload_while_held: false,
+            auto_reload: false,
+        });
+    }
+}
+
+/// `give_battery_magazines` before the holders' tick (beside
+/// `weapons::HaloWeaponsPlugin`).
+pub struct BatteryRoundsPlugin;
+
+impl Plugin for BatteryRoundsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(crate::core::Predict::Weapons, give_battery_magazines.before(run));
+    }
+}
+
 /// Every Halo holder's tick (module doc): in the predicted weapons stage.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn run(
@@ -829,7 +896,10 @@ pub fn run(
         }
         // The inputs seen since the last Halo tick.
         hands.fire |= intent.fire;
-        hands.zoom |= intent.secondary || intent.actions & zoom_bit != 0;
+        if !intent.fire {
+            release_between_ticks(inv, &mut guns, &mut hands);
+        }
+        hands.zoom |=intent.secondary || intent.actions & zoom_bit != 0;
         hands.melee_button |= intent.actions & melee_bit != 0;
         hands.reload |= intent.reload;
         hands.grenade_button |= grenade_bit != 0 && intent.actions & grenade_bit != 0;
@@ -953,7 +1023,9 @@ pub fn run(
             for &w in &inv.weapons {
                 let Ok((weapon, hw, mut gun, mag)) = guns.get_mut(w) else { continue };
                 let held = inv.active == Some(w) && alive;
-                if let Some(m) = mag.as_deref() {
+                if let Some(m) = mag.as_deref()
+                    && battery(&hw.0).is_none()
+                {
                     gun.loaded = m.clip as i16;
                     gun.reserve = m.reserve as i16;
                 }
@@ -992,8 +1064,18 @@ pub fn run(
                 };
                 let evs = gun.tick(&hw.0, &inputs);
                 if let Some(mut m) = mag {
-                    m.clip = gun.loaded.max(0) as u32;
-                    m.reserve = gun.reserve.max(0) as u32;
+                    match battery(&hw.0) {
+                        Some(per_round) => {
+                            let rounds = battery_rounds(&hw.0, &gun, per_round);
+                            if m.clip != rounds {
+                                m.clip = rounds;
+                            }
+                        }
+                        None => {
+                            m.clip = gun.loaded.max(0) as u32;
+                            m.reserve = gun.reserve.max(0) as u32;
+                        }
+                    }
                 }
                 for ev in evs {
                     match ev {

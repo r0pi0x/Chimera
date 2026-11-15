@@ -195,6 +195,7 @@ impl PluginGroup for HaloPlugins {
             .add(vitality::VitalityPlugin)
             .add(damage::DamagePlugin)
             .add(weapons::HaloWeaponsPlugin)
+            .add(weapons::systems::BatteryRoundsPlugin)
             .add(fx::HaloFxPlugin)
             .add(audio::HaloAudioPlugin)
             .add(body::HaloBodyPlugin)

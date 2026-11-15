@@ -23,6 +23,7 @@ mod assets;
 mod audio;
 mod autoaim;
 mod body;
+mod bot_triggers;
 mod cross_game;
 mod death;
 mod fx;
