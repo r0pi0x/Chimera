@@ -455,8 +455,10 @@ pub fn resolve_with(
     let with_build =
         |path: PathBuf, found: Found| Install { build_id: sg.and_then(|g| build_id_near(&path, g)), path, found };
     let mut notes = Vec::new();
-    if let Some(g) = config.games.get(game) {
-        let path = expand_home(&g.path);
+    if let Some(g) = config.games.get(game)
+        && let Some(path) = &g.path
+    {
+        let path = expand_home(path);
         if let Some(sg) = sg
             && let Err(e) = check(&path, sg)
         {

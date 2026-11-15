@@ -23,5 +23,5 @@ pub mod install;
 pub mod served;
 
 pub use chimera_assets as assets;
-pub use chimera_vfs::{Entry, FileSource, LooseDir, Mount, normalize};
+pub use chimera_vfs::{Access, Entry, FileSource, LooseDir, Mount, normalize};
 pub use chimera_formats::keyvalues;

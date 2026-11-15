@@ -75,7 +75,15 @@ bipeds, so Halo's guns and the Spartan will be read from it on any map),
 `players` the same record, and `map/<name>` each map's one file;
 `weapon/<id>` sets would all be the donor map and aren't recorded while
 Halo has no guns. A client with the store and no disc plays Halo's maps
-from it (`CHIMERA_ASSET_USE_INSTALL=0`, or no disc configured).
+from it (`CHIMERA_ASSET_USE_INSTALL=0`, or no disc configured). Halo's
+`base` is fetched with a match that uses Halo (its offer names it with the
+map, gun or body), not at a client's start-up like the other games'
+(`sets::startup_sets`). A manifest packed elsewhere is published by
+copying it and its records into the server's store and running
+`chimera_assets --store <server store> sign halo_ce` there (the light
+binary, no Bevy: `cargo build --release -p chimera_assets --bin
+chimera_assets`); `chimera_pack sign halo_ce --store <server store>` is the
+alternative.
 
 Players rather than developers (a playtest over the internet, no
 checkout): the game server names the service at join and the client
@@ -196,6 +204,20 @@ found as the other games' are: `$CHIMERA_TF2_ROOT` for one run, else
 
 Both are folders holding `tf/`, `hl2/` and `platform/`; a SteamCMD
 install outside Steam's libraries needs the config line or the variable.
+
+**The weapon scripts' key.** TF2's weapon and class scripts
+(`scripts/*.ctx`) are encrypted (specs/tf2/ice.md). Reading them from an
+install needs an 8-character key that **you supply locally**: it is not
+in the repository, the specs, the docs or any log, and never should be.
+Put it in `CHIMERA_TF2_CTX_KEY` for one run, or in `chimera.local.toml`
+(the commented `[games.tf2.keys.ctx]` section of
+`chimera.local.example.toml`). Without it, a test that needs the scripts
+passes with a note. Once TF2's sets are on the asset service, their
+records hold the scripts already decrypted (the host packs them with its
+key), so a developer or player served from it needs no key. `dump tf2
+--script <name>` prints one script to stdout; `dump tf2 --ice-probe` says
+which reading of the cipher decrypts the files (specs/tf2/ice.md, open
+question 1).
 
 ## When something goes wrong
 

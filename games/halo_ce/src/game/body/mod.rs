@@ -60,8 +60,8 @@ use crate::{
 };
 
 /// The weapon label a holder's body plays (animations.md: the weapon tag's
-/// label, `ar`, `hp`, ...): set by a weapon's step; without it, `unarmed`
-/// with nothing held and `ARMED_DEFAULT` with anything.
+/// label, `ar`, `hp`, ...): set by a weapon's step; without it (or empty),
+/// `unarmed` with nothing held and `ARMED_DEFAULT` with anything.
 #[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
 pub struct WeaponLabel(pub String);
 
@@ -134,7 +134,7 @@ pub fn inputs(intent: &Intent, velocity: Vec3, state: &MovementState) -> Inputs 
 /// The label to play: the holder's, else by what it holds; one the set
 /// has no table for plays `unarmed`.
 fn label_of(set: &crate::map::anim::AnimSet, own: Option<&WeaponLabel>, armed: bool) -> String {
-    let want = own.map_or(if armed { ARMED_DEFAULT } else { "unarmed" }, |l| l.0.as_str());
+    let want = own.filter(|l| !l.0.is_empty()).map_or(if armed { ARMED_DEFAULT } else { "unarmed" }, |l| l.0.as_str());
     let known = set.names.contains_key(&key(SEATS[0], want, State::Idle.name()));
     if known {
         want.to_ascii_lowercase()

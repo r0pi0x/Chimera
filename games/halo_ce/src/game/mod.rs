@@ -22,6 +22,13 @@
 //! - `body`: the players' Spartan body (model, animations from the graph's
 //!   unit tables, hit boxes from the collision model, armour colours), on
 //!   Halo's maps and, from the donor map, on any other;
+//! - `view`: the guns in hand: each gun's first-person view model with the
+//!   arms, played from the weapons' events one frame a tick, hidden while
+//!   zoomed, and its held model and stance; on Halo's maps and, from the
+//!   donor map, on any other;
+//! - `fx`: the guns' sounds and effects (effects.md, sounds.md): the library
+//!   from the donor map, effects played as the engine's sounds, particles,
+//!   decals and lights, shots shown on every machine;
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
 //!   the donor map, `map/<name>` per multiplayer map); `mount::build` reads
 //!   the install's build from a map header;
@@ -39,6 +46,7 @@ pub mod mount;
 pub mod movement;
 pub mod parts;
 pub mod sets;
+pub mod view;
 pub mod vitality;
 pub mod weapons;
 
@@ -144,6 +152,7 @@ impl PluginGroup for HaloPlugins {
             .add(weapons::HaloWeaponsPlugin)
             .add(fx::HaloFxPlugin)
             .add(body::HaloBodyPlugin)
+            .add(view::HaloViewPlugin)
     }
 }
 
@@ -162,7 +171,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     guest: Some(&fx::load::GUEST),
     kept: &[],
     binds: &[],
-    view_model_fov: None,
+    view_model_fov: Some(view::fov),
     sim: |app| {
         use crate::game_registry::GameAppExt;
         app.register_game(&INFO);
@@ -175,6 +184,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         parts::add_guns(app);
         // Its players' body, worn by its guns' holders (`body`).
         app.add_plugins(body::HaloBodyPlugin);
+        app.add_plugins(view::HaloViewPlugin);
     },
     display_names: None,
 };

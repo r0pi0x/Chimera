@@ -27,6 +27,7 @@ mod movement_net;
 mod movement_vitality;
 mod net_vitality;
 mod skeleton;
+mod view;
 mod vitality;
 mod vitality_data;
 mod weapons;
@@ -39,6 +40,7 @@ mod heavy {
     mod maps;
     mod mount;
     mod served;
+    mod view;
     mod vitality_data;
     mod weapon_data;
     mod walk;

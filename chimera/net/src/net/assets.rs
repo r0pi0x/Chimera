@@ -711,6 +711,9 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
     };
     let mut in_play: Vec<String> = m.games.iter().map(|g| g.game.clone()).collect();
     in_play.extend(m.weapons.iter().cloned());
+    // The map's game too: a game whose `base` isn't a startup set
+    // (`sets::startup_sets`: Halo's) gets it with the match that plays its map.
+    in_play.extend(m.map.split_once(':').map(|(g, _)| g.to_string()));
     let (mut weapons, mut named) = (Vec::new(), Vec::new());
     for hook in world.get_resource::<AssetHooks>().cloned().unwrap_or_default().0 {
         let n = hook(world);
@@ -1066,7 +1069,7 @@ fn bind_here(world: &mut World, offer: &AssetOffer, session: &AssetSession, game
     let fetched = |g: &str| bound.contains(g) || session.served.contains(g);
     let mut wants: Vec<Wanted> = games
         .iter()
-        .map(|g| Wanted { game: g.clone(), sets: sets::STARTUP_SETS.iter().map(|s| s.to_string()).collect() })
+        .map(|g| Wanted { game: g.clone(), sets: sets::startup_sets(g).iter().map(|s| s.to_string()).collect() })
         .collect();
     let now = with_client_sets(world, offer.now.iter().filter(|g| fetched(&g.game)).cloned().collect());
     for g in &now {

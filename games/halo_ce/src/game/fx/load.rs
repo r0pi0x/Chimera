@@ -667,7 +667,9 @@ pub fn of(memos: &MapMemos) -> Option<Arc<HaloFx>> {
 pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
     game: super::super::GAME,
     dress: |map, options| {
-        (super::super::body::load::GUEST.dress)(map, options)?;
+        // The Spartan and the guns in hand first (`view::load::GUEST`
+        // dresses the body too), then the guns' sounds and effects.
+        (super::super::view::load::GUEST.dress)(map, options)?;
         dress(map, options)
     },
 };
