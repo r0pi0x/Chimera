@@ -21,6 +21,8 @@
 //! - `surfaces`: material types as the engine's surface names
 //!   (data/surfaces.toml);
 //! - `spawns`: the player starts as spawns and yaws;
+//! - `teleporters`: the teleporter pairs as the engine's teleporters
+//!   (`map::teleport`, every game's characters use them);
 //! - `objects`: render models as meshes, the scenery placements as props
 //!   with their collision;
 //! - `sky`: fog, a flat background, the sky model as a 3D skybox, and the
@@ -47,6 +49,7 @@ pub mod sky;
 pub mod space;
 pub mod spawns;
 pub mod surfaces;
+pub mod teleporters;
 
 use std::{
     collections::BTreeMap,
@@ -203,6 +206,7 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
 
     report(0.9, "Spawns");
     spawns::add(&scenario, &mut map);
+    teleporters::add(&scenario, &mut map);
     sky::add(level_sky.as_ref(), &bsp, &mut map, decode);
     Ok(map)
 }

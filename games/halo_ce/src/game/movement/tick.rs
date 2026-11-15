@@ -92,6 +92,8 @@ pub struct Controls {
     /// The movement facing's horizontal forward and left (unit).
     pub forward: Vec3,
     pub left: Vec3,
+    /// The aim (unit, pitch included): the wish on a near-vertical ladder.
+    pub aim: Vec3,
     pub jump: bool,
     pub crouch: bool,
     /// The controller's crouch rule applies (a stick; keyboards: no).
@@ -205,7 +207,14 @@ pub fn tick(
         let dir = if n.y > eps {
             Vec3::new(wish_h.x, -(wish_h.x * n.x + wish_h.z * n.z) / n.y, wish_h.z).normalize_or_zero()
         } else {
-            Vec3::ZERO
+            // A near-vertical ladder: the wish from the aim (movement.md,
+            // "Climbable surfaces"), its vertical part five times over.
+            let forward = c.aim - n * c.aim.dot(n);
+            let left = Vec3::Y.cross(c.aim).normalize_or_zero();
+            let left = left - n * left.dot(n);
+            let mut dir = forward * a + left * b;
+            dir.y *= 5.0;
+            dir.normalize_or_zero()
         };
         let sigma = (a * a + b * b).sqrt() * d.slope_scale(dir.y);
         let w = dir * sigma;
@@ -225,15 +234,21 @@ pub fn tick(
     let p = origin + Vec3::Y * r;
     let moved = mover::sweep(space, d, p, h, swept * k + Vec3::Y * gravity_fix);
     // 10. The ground test.
-    let best = moved
+    // A climbable surface counts at any steepness unless it is behind the
+    // player (its level normal along the facing by more than 0.5).
+    let counts = |n: &Vec3| {
+        n.y >= d.max_slope_cos
+            || (moved.climbable.contains(n) && Vec3::new(n.x, 0.0, n.z).normalize_or_zero().dot(c.forward) <= 0.5)
+    };
+    let ground = moved
         .contacts
         .iter()
         .copied()
+        .filter(counts)
         .fold(None, |best: Option<Vec3>, n| match best {
             Some(b) if b.y >= n.y => Some(b),
             _ => Some(n),
         });
-    let ground = best.filter(|n| n.y >= d.max_slope_cos);
     let grounded = ground.is_some();
     let lambda = ground.map_or(0.0, |n| -n.dot(swept));
     // 11. Standing room.

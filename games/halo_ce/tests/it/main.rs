@@ -22,6 +22,7 @@ mod cross_game;
 mod fx;
 mod hud;
 mod info;
+mod map_objects;
 mod maps;
 mod movement;
 mod movement_net;
@@ -39,6 +40,7 @@ mod heavy {
     mod body;
     mod fx;
     mod hud;
+    mod map_objects;
     mod maps;
     mod mount;
     mod served;

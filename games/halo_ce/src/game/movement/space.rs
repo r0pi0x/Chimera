@@ -21,6 +21,7 @@
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use chimera_core::core::MapBrush;
 
 use super::{
     data::MovementData,
@@ -38,6 +39,9 @@ const SAME_FACE: f32 = 0.999;
 /// shallower than this are missed.
 pub const SKIN: f32 = 1e-3;
 
+/// How far (m) from a ladder volume a contact still counts as on it.
+const LADDER_REACH: f32 = 0.03;
+
 /// How much further (WU) than asked a cast sweeps (`SKIN` over the
 /// shallowest approach it covers: a tenth of the motion into the surface).
 const REACH: f32 = 10.0 * SKIN;
@@ -49,6 +53,10 @@ pub struct EngineSpace<'a, 'w, 's> {
     /// Metres per world unit.
     pub scale: f32,
     pub radius: f32,
+    /// Climbable volumes (engine space): a contact inside one is on a
+    /// ladder (`Hit::climbable`): the map's ladders (`core::MapLadders`,
+    /// Halo's climbable sheets among them) and games' `LadderZone`s.
+    pub ladders: &'a [MapBrush],
 }
 
 impl<'a, 'w, 's> EngineSpace<'a, 'w, 's> {
@@ -58,7 +66,19 @@ impl<'a, 'w, 's> EngineSpace<'a, 'w, 's> {
             filter,
             scale: crate::game::METERS_PER_UNIT,
             radius: d.radius,
+            ladders: &[],
         }
+    }
+
+    /// The space with the climbable volumes `ladders`.
+    pub fn with_ladders(self, ladders: &'a [MapBrush]) -> Self {
+        Self { ladders, ..self }
+    }
+
+    /// Whether a contact at `point` (WU) is on a ladder.
+    fn on_ladder(&self, point: Vec3) -> bool {
+        let at = point * self.scale;
+        self.ladders.iter().any(|b| b.overlaps_box(at, Vec3::splat(LADDER_REACH), 0.0))
     }
 
     /// The pill's cast shape (metres): a capsule of segment `h` (WU),
@@ -86,7 +106,12 @@ impl<'a, 'w, 's> EngineSpace<'a, 'w, 's> {
         let at = p + motion * t;
         let q = at + Vec3::Y * (point.y - at.y).clamp(0.0, h);
         let normal = self.contact_normal(q, point, hit.normal1.normalize_or_zero());
-        Some(Hit { t, point, normal })
+        Some(Hit {
+            t,
+            point,
+            normal,
+            climbable: self.on_ladder(point),
+        })
     }
 
     /// The first face a ray from `from` (WU) along `dir` meets within

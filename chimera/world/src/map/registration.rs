@@ -219,6 +219,16 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
             .before(crate::core::SimSet::Movement),
     )
     .add_systems(FixedUpdate, fall_out_of_map.after(crate::core::SimSet::Movement))
+    // The map's teleporters (`teleport`): the server's, alone, between the
+    // tick's movement and its weapons.
+    .add_systems(
+        FixedUpdate,
+        super::teleport::teleport
+            .after(crate::core::SimSet::Movement)
+            .before(crate::core::SimSet::Weapons)
+            .ambiguous_with_all()
+            .run_if(crate::core::authoritative),
+    )
     // Character models a game added late, into the map's (out of the
     // fixed tick: its order is the ratchet's, cs_source schedules.rs).
     .add_systems(PreUpdate, append_late_characters)
@@ -363,6 +373,7 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<crate::core::MapGame>()
         .map_scoped::<MapBrushTree>()
         .map_scoped::<KillHeight>()
+        .map_scoped::<super::teleport::MapTeleporters>()
         .map_scoped::<MapWater>()
         .map_scoped::<water::WaterMovers>()
         .map_scoped::<RoundSounds>()

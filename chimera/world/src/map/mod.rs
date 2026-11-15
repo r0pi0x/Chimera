@@ -92,6 +92,7 @@ pub mod rope_sway;
 pub mod solver_bodies;
 pub mod sound;
 pub mod steam;
+pub mod teleport;
 pub use sound::{
     GameSound, MapSoundClip, MapSoundEntry, MapSounds, MapSurface, PlaySound, PredictedSound, SoundControl, SoundKey,
     SoundLevel, StartSound, StepRemap,
