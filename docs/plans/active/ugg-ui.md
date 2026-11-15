@@ -218,7 +218,10 @@ Our own fonts (OFL-1.1, authored for this project) may be committed:
   `ugg-display-bold.ttf`, `ugg-display-regular.ttf`,
   `ugg-mono-regular.ttf` (TTF, 8-20 KB each; no WOFF2 needed),
   `OFL.txt` (the licence with our copyright line and the Reserved Font
-  Name, if any) and `FONTLOG.txt` (version v0.4, what changed).
+  Name, if any) and `FONTLOG.txt` (version v0.5, what changed). v0.5
+  adds the missing ASCII, the accented capitals and a lower-case draft
+  (`tools/fonts/lower.py`), built only with `UGG_FONTS_LOWER=1` until the
+  kit's roles upper-case their own text.
 - Loaded by the app at start (`include_bytes!` in the app crate, then
   `Font::from_bytes` into `Assets<Font>`: no file I/O, the same on Linux
   and Windows, works offscreen and headless), handed to `chimera_ui::
