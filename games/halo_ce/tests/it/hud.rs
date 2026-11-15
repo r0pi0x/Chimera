@@ -350,3 +350,16 @@ fn s11_who_shows_on_the_tracker() {
     t.frame(40, &[unit(true)], 0.0, 20.0);
     assert_eq!(t.entries.len(), rules::RADAR_HISTORY);
 }
+
+/// The party layout's move (`layout::party_offset`): the block's
+/// bottom-left corner onto the tracker's, pulled back inside the safe
+/// frame when it would poke out.
+#[test]
+fn the_party_layouts_offset() {
+    use halo_ce::ui::hud::layout::party_offset;
+    let frame = [48, 36, 592, 444];
+    // A top-right block onto a bottom-left tracker.
+    assert_eq!(party_offset([440.0, 40.0, 590.0, 80.0], [50.0, 330.0, 140.0, 440.0], frame), [-390.0, 360.0]);
+    // A block reaching above the frame once moved is pulled back down.
+    assert_eq!(party_offset([440.0, 40.0, 590.0, 500.0], [50.0, 330.0, 140.0, 440.0], frame), [-390.0, -4.0]);
+}
