@@ -31,6 +31,7 @@
 //! players' body when the load wants bodies (`KitLoad::bodies`: the
 //! Spartan from the map's own file, `body::load::add_own`); the shaders'
 //! looks are resolved once for every pending mesh (`apply_looks`, which the
+//! guns' view and held models (`view::load::add_own`) and the
 //! body's meshes use too). Progress goes to the options' reporter.
 //!
 //! Known shortcuts: only the first structure BSP is converted (every
@@ -193,6 +194,7 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
         report(0.85, "Bodies");
         super::body::load::add_own(&file, &mut map, decode);
     }
+    super::view::load::add_own(&file, &mut map, options);
 
     report(0.9, "Spawns");
     spawns::add(&scenario, &mut map);

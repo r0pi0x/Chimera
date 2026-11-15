@@ -38,6 +38,7 @@ pub mod mount;
 pub mod movement;
 pub mod parts;
 pub mod sets;
+pub mod view;
 pub mod vitality;
 pub mod weapons;
 
@@ -142,6 +143,7 @@ impl PluginGroup for HaloPlugins {
             .add(damage::DamagePlugin)
             .add(weapons::HaloWeaponsPlugin)
             .add(body::HaloBodyPlugin)
+            .add(view::HaloViewPlugin)
     }
 }
 
@@ -157,10 +159,10 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     info: &INFO,
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
-    guest: Some(&body::load::GUEST),
+    guest: Some(&view::load::GUEST),
     kept: &[],
     binds: &[],
-    view_model_fov: None,
+    view_model_fov: Some(view::fov),
     sim: |app| {
         use crate::game_registry::GameAppExt;
         app.register_game(&INFO);
@@ -173,6 +175,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         parts::add_guns(app);
         // Its players' body, worn by its guns' holders (`body`).
         app.add_plugins(body::HaloBodyPlugin);
+        app.add_plugins(view::HaloViewPlugin);
     },
     display_names: None,
 };
