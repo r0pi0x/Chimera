@@ -25,7 +25,7 @@ use chimera_core::core::MapBrush;
 
 use super::{
     data::MovementData,
-    mover::{Hit, Space},
+    mover::{Hit, Neighbour, Space, Support},
 };
 
 /// How close (cosine) a face's normal must be to the cast's to replace it.
@@ -155,4 +155,100 @@ impl Space for EngineSpace<'_, '_, '_> {
         self.cast_shape(&Collider::sphere((self.radius - SKIN) * self.scale), p, 0.0, motion)
             .is_some_and(|hit| hit.t <= 1.0)
     }
+
+    fn support(&self, p: Vec3, n: Vec3) -> Option<Support> {
+        ladder_support(self.ladders, self.scale, self.radius, p, n)
+    }
+}
+
+/// A ladder brush's sheet (`maps::collision::ladder_brush`'s shape: the
+/// slab's two planes, then one plane per edge in the polygon's order):
+/// its plane (normal, offset; metres) and its corners in order. None for
+/// a brush of another shape (a box: no two edge planes in a row meet).
+fn sheet(b: &MapBrush) -> Option<(Vec3, f32, Vec<Vec3>)> {
+    let skin = crate::game::maps::collision::LADDER_SKIN;
+    let [(n, front), (back_n, back), edges @ ..] = b.planes.as_slice() else { return None };
+    if edges.len() < 3 || n.dot(*back_n) > -0.9999 || (front + back - 2.0 * skin).abs() > 1e-4 {
+        return None;
+    }
+    let d = front - skin;
+    let corners = (0..edges.len())
+        .map(|i| {
+            let (a, da) = edges[(i + edges.len() - 1) % edges.len()];
+            let (c, dc) = edges[i];
+            let m = Mat3::from_cols(*n, a, c).transpose();
+            (m.determinant().abs() > 1e-6).then(|| m.inverse() * Vec3::new(d, da, dc))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some((*n, d, corners))
+}
+
+/// The ladder sheet a pill of radius `r` (WU) whose point is `p` (WU)
+/// rested on with contact normal `n` (`Space::support`), among the
+/// climbable brushes `ladders` (engine space, `scale` metres per WU), with
+/// the sheets that share an edge with it (the edge neighbour's hold), in
+/// world units. Each neighbour's face is the one on the support's side
+/// of the fold (the faces of a folded sheet join consistently).
+pub fn ladder_support(ladders: &[MapBrush], scale: f32, r: f32, p: Vec3, n: Vec3) -> Option<Support> {
+    let at = p * scale;
+    let sheets: Vec<(Vec3, f32, Vec<Vec3>)> = ladders.iter().filter_map(sheet).collect();
+    let (i, sense) = sheets
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (sn, d, corners))| {
+            let sense = sn.dot(n).signum();
+            let off = sense * (sn.dot(at) - d) - r * scale;
+            let inside = corners.iter().enumerate().all(|(j, a)| {
+                let b = corners[(j + 1) % corners.len()];
+                let centre = corners.iter().copied().sum::<Vec3>() / corners.len() as f32;
+                let mut out = (b - *a).cross(*sn).normalize_or_zero();
+                if out.dot(centre - *a) > 0.0 {
+                    out = -out;
+                }
+                out.dot(at - *a) <= r * scale
+            });
+            (sn.dot(n).abs() > 0.999 && off.abs() < 0.05 * scale && inside).then_some((i, sense, off.abs()))
+        })
+        .min_by(|a, b| a.2.total_cmp(&b.2))
+        .map(|(i, sense, _)| (i, sense))?;
+    let (sn, d, corners) = &sheets[i];
+    let normal = *sn * sense;
+    let centre_of = |c: &[Vec3]| c.iter().copied().sum::<Vec3>() / c.len() as f32;
+    let tol = 1e-3;
+    let mut neighbours = Vec::new();
+    for (j, (on, od, oc)) in sheets.iter().enumerate() {
+        if j == i {
+            continue;
+        }
+        for (k, a) in corners.iter().enumerate() {
+            let b = corners[(k + 1) % corners.len()];
+            let shared = oc.iter().any(|x| x.distance(*a) < tol) && oc.iter().any(|x| x.distance(b) < tol);
+            if !shared {
+                continue;
+            }
+            // Into each sheet from the edge, in its plane.
+            let mid = (*a + b) / 2.0;
+            let into = |c: &[Vec3], sn: Vec3| {
+                let u = (b - *a).cross(sn).normalize_or_zero();
+                if u.dot(centre_of(c) - mid) < 0.0 { -u } else { u }
+            };
+            let (u_a, u_b) = (into(corners, *sn), into(oc, *on));
+            let fold = normal.dot(u_b);
+            let s = if fold.abs() < 1e-4 {
+                on.dot(normal).signum()
+            } else {
+                (on.dot(u_a) * fold).signum()
+            };
+            neighbours.push(Neighbour {
+                normal: *on * s,
+                offset: s * od / scale,
+                edge: [*a / scale, b / scale],
+            });
+        }
+    }
+    Some(Support {
+        normal,
+        offset: sense * d / scale,
+        neighbours,
+    })
 }

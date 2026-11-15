@@ -26,6 +26,7 @@ mod fx;
 mod fx_place;
 mod hud;
 mod info;
+mod ladders;
 mod map_objects;
 mod maps;
 mod movement;
@@ -45,6 +46,7 @@ mod heavy {
     mod body;
     mod fx;
     mod hud;
+    mod ladder;
     mod map_objects;
     mod nav_within;
     mod maps;
