@@ -727,7 +727,19 @@ angular velocity, rotation, tint, owner, view flags):
   2 R x (1/sprite size field) x the sprite's pixel size, so the
   bitmap's largest sprite spans 2R. If its projected diameter is below
   the minimum size it is scaled up to it; if not above the fade end
-  size it is not drawn.
+  size it is not drawn. **Units:** r (the entry's radius draw) and R
+  are in WU and are a radius: the sprite is about 2R across, not R and
+  not R in some other unit; the radius animation bounds multiply r
+  (they are factors, not sizes); the sprite size field is 1 / pixels.
+  (A particle system's size has a different rule: its scale is WU per
+  sprite pixel, Particle systems, Drawing size.)
+- **View-filling sprites are capped.** For every sprite built (plain
+  particles, particle systems, weather, glows), the fraction of the view
+  its world-space bounding box covers is estimated (1 when the box
+  reaches the camera plane); counting from the start of each view's
+  frame, once more than 11 sprites with a fraction above 0.5 have been
+  built (the 12th onward), each further such sprite is dropped. Smaller
+  sprites are never dropped by this rule.
 - Orientation: screen facing (0); parallel to direction (1: the
   sprite's long axis along the particle's direction, turned to face the
   viewer as far as it can); perpendicular to direction (2: the sprite
@@ -836,23 +848,117 @@ effect shader part (0xB4); 0x16C 12 pad.
   2/3, else the particle dies at the end); during a transition the
   next state's random variables are drawn at its start. Rotation and
   sprite position advance by the (interpolated) rates x the type
-  multipliers x dt. Physics: the state's point physics (interpolated
-  between the two states' fields during a transition) with radius =
-  type radius x type radius multiplier x state radius multiplier; it
-  dies on the flags 4 to 6 conditions.
-- Drawing: scale = random scale x type multiplier (interpolated in
-  transitions) in WU per bitmap pixel; colour likewise; alpha-blended
-  states are lit by the system's lighting; the current state's sprite
-  drawn with weight w and the next state's with 1 - w (when they differ
-  in blend, map flags or sequence).
+  multipliers x dt.
+- **Physics, per particle, per update: the point physics of the
+  particle state that particle is in now**, not the first state's: each
+  particle state names its own `pphy` (the frag explosion's "fire" and
+  "smoke plume" states use `fire explosion`, its last state `smoke
+  explosion`), and a particle switches the moment it enters the next
+  state. Outside a transition: that state's tag as stored. During a
+  transition from state s to state n, with w = time left / transition
+  length (1 at the start of the transition, 0 at its end), every
+  numeric field (density, the three runtime values, air and water
+  friction, surface friction, elasticity) is blended as (1 - w) x s's +
+  w x n's, and the flags are s's. **Quirk, keep it:** these weights
+  are the reverse of every other blended variable (scale, colour,
+  radius use w x s's + (1 - w) x n's): at the start of a transition the
+  particle already moves with the next state's physics, drifts back to
+  the current state's by the end, then jumps to the next state's when
+  it enters it. Radius for the physics = type radius x the type's live
+  radius multiplier x the particle state's radius multiplier (blended w
+  x s's + (1 - w) x n's in a transition). It dies on the flags 4 to 6
+  conditions.
+- **Drawing size.** scale k = the particle's random scale (U(the
+  state's scale bounds), drawn when it enters the state; in a
+  transition w x the current state's draw + (1 - w) x the next state's)
+  x the type's live scale multiplier (the type state's, blended between
+  type states, x the system's scale only with type flag 13). k is in
+  **WU per pixel of the sprite**: the quad spans (sprite width in
+  pixels) x k by (sprite height in pixels) x k WU (the engine multiplies
+  both the horizontal and the vertical texture-fraction extents by the
+  page's **width** in pixels; the disc's pages are square, so this
+  matters only for odd pages). Nothing else multiplies it: not the type
+  radius, not the radius multipliers (those are physics only), not the
+  effect part's scale (unless flag 13), not a 2. Example: a 36 by 36
+  pixel `fire cloud` sprite at k = 0.02 is 0.72 by 0.72 WU.
+- Colour: the particle's random colour (drawn on entering the state) x the type's
+  live colour multiplier, blended likewise; alpha-blended states (blend
+  0) are multiplied by the system's lighting; additive ones are not.
+  The current state's sprite is drawn with weight w and the next
+  state's with 1 - w (each only above 0.01) when they differ in blend
+  function, map flags or sequence, else only the current one at weight
+  1; the weight multiplies the vertex alpha (or is the vertex alpha for
+  a non-alpha-blend shader without the nonlinear-tint flag).
+- **Rotational render mode** (complex sprite render mode 1, every
+  type on the disc): with theta the angle between the view direction to
+  the particle and the particle's spin axis (in view space) minus 90
+  degrees, f = clamp(theta^2 / (90 degrees)^2, 0, 1). If f > 0.05 an
+  "edge-on" sprite from the next sequence (state's sequence + 1) is
+  drawn at weight f (mirrored when theta < 0); if 1 - f > 0.05 a
+  "face-on" sprite from the state's sequence is drawn at weight 1 - f,
+  its sprite index = (count x rotation / (2 pi) + 0.5) mod count and
+  its in-plane rotation the angle of the spin axis in the view plane.
+  Both at the same scale k. A bitmap with no next sequence draws only
+  the face-on sprite. (The frag explosion's `fire cloud` and `smoke
+  cloud` have 60 face-on and 4 edge-on sprites, all about 36 by 36
+  pixels.)
 - A free system with no live types is deleted.
 
 Disc values (explosions): the frag "explosion med" has one type "fire
-to smoke": 35 initial particles, explosion creation with spread 0.012
+to smoke" (flags 0x10: dies in water; rotational render mode; radius
+1.5 WU): 35 initial particles, explosion creation with spread 0.012
 (xy), 0.08 (z), intensity 200; type state "birth" 1 - 1.5 s then a 4 -
-5 s transition to "death"; particle states fire (0.1 - 0.2 s, add,
-`effects\particles\flash\bitmaps\fire cloud`, scale 0.01 - 0.03) ->
-smoke plume (0.3 - 0.6 s, alpha blend, smoke cloud) -> death. The
+5 s transition to "death" (colour multiplier 0: whatever is left fades
+out over those seconds); its particle states:
+
+| State | Duration; transition (s) | Bitmap (sprite size) | Scale k (WU per pixel) | Drawn size (WU) | Colour lower .. upper; alpha | Blend | Physics |
+|---|---|---|---|---|---|---|---|
+| fire | 0.1 - 0.2; 0.1 - 0.8 | `effects\particles\flash\bitmaps\fire cloud` (36 x 36) | 0.01 - 0.03 | 0.36 - 1.08 | (1, 0.92, 0.64) .. (1, 0.50, 0.28); 1 | add | `fire explosion` |
+| smoke plume | 0.3 - 0.6; 0.3 - 0.8 | `effects\particles\air\bitmaps\smoke cloud` (36 x 36) | 0.01 - 0.04 | 0.36 - 1.44 | (0.64, 0.61, 0.57) .. (0.49, 0.46, 0.42); 0.2 - 0.4 | alpha | `fire explosion` |
+| death | 0; 0 | smoke cloud | 0.01 - 0.04 | ends at once | grey; 0 | alpha | `smoke explosion` |
+
+A particle lives at most 0.2 + 0.8 + 0.6 + 0.8 = 2.4 s. `fire
+explosion`: density 0.0005, air friction 2000, flags 0 (no collisions:
+the particles pass through floors), air buoyancy +0.375; at radius 1.5
+WU: M = 640.5, drag 0.2342 of the velocity per tick, rise acceleration
+1.20 WU/s^2, terminal rise speed 0.17 WU/s. A particle starts at the
+explosion point + (0.012, 0.012, 0.08) x d (d a unit direction draw)
+with velocity 200 x that offset (up to 2.4 WU/s sideways and 16 WU/s up
+or down) and, the drag acting before each move, coasts v0 x (1 - 0.2342)
+/ (0.2342 x 30) = v0 x 0.109 s before drag stops it: at most 0.26 WU
+sideways and 1.74 WU up or down. So the 35 fire sprites, each 0.36 -
+1.08 WU across, form a column about 0.5 WU wide reaching up to 1.8 WU
+above (and below) the explosion point: **the fireball is a bright
+additive cluster about 1.5 WU (4.5 m) wide and up to about 2.3 WU (7 m)
+tall above the ground at its largest (sprite size included), turning to
+grey smoke puffs of up to 1.44 WU within a second and gone within about
+2.4 s.**
+
+**Drifting smoke** (the explosion effect's only particle entry,
+`weapons\frag grenade\effects\drifting smoke`, a plain particle, not a
+system): count 10 - 15, radius R = U(1.2, 2.0) WU (radius animation 1
+to 1: constant), velocity 1 - 2 WU/s, tint grey (0.39 .. 0.31) with
+alpha 0.4 .. 0.6, lit by the level (not self-illuminated), alpha blend;
+lifespan 2 - 4 s, fade in 0.3 s, fade out 3.0 s; bitmap
+`effects\particles\air\bitmaps\smoke tank cannon` (18 soft puff sprites
+on two pages, about 23 to 33 pixels, sprite size field 1/33); physics `smoke explosion`
+(density 0.0008, air friction 200, simple and damped wind, buoyancy
++0.158: at R = 1.6 a drag of 0.0185 per tick and a terminal rise of
+0.91 WU/s). Drawn size = 2 R x (sprite pixels / 33): **1.7 to 3.4 WU
+(5 to 10 m) across each**, the largest sprite exactly 2R. Opacity at
+its peak (age 0.3 s): tint alpha x min(1, (L - 0.3) / 3) x the sprite's
+own alpha (soft, at most about 0.85 in a puff's middle and 0 at its
+edge): 0.23 to 0.6 times the texture's. On screen: from 10 m (3.3 WU)
+the 70 degree view is 4.6 WU wide, so each puff spans 37 to 74 percent
+of it; from 2 m (0.66 WU) the view is 0.92 WU wide and every puff covers
+all of it, so a close explosion **does** fill the view with layered
+translucent grey (no puff is opaque and each has soft edges and a
+random sprite; a flat, edge-to-edge uniform sheet means the sprite's
+alpha or its sub-rectangle was not used), and at most 11 such
+view-filling sprites are drawn per frame (How a particle lives, Size,
+alpha and drawing).
+
+The
 plasma grenade's has 10 initial, 15 per second while in "birth" (0.25
 s), cyan colours, all additive. The tank shell's: 30 initial, spread
 0.03 / 0.08 / 380. Full values come from the tags.
@@ -912,10 +1018,25 @@ bit 5 colour (multiplied by the point's density).
   fraction x object velocity + a random direction in the cone x
   U(velocity bounds). A projectile that hits something emits its last
   points to the hit point first.
-- Point life: a new point enters state 0. A point is in a state for
-  U(duration) (x density per flags) then transitions to the next state
-  for U(transition duration); a state with 0 duration passes at once;
-  after the transition into the last state it **expires**. Each tick
+- Point life: a new point enters state 0 on its first update. **Each
+  point draws its own lengths, one draw per state and per transition,
+  at the moment it enters that state or transition** (not the mean of
+  the bounds, not one draw per contrail): length = lower x f0 + U(0,
+  (upper - lower) x f1) seconds from the local (presentation) random
+  generator, f0 = the point's density if the state's scale-flag bit for
+  that bound is set (bit 0 duration, bit 2 transition duration), else
+  1, and f1 likewise with bit 1 (duration delta) or bit 3 (transition
+  delta); the draw is made even when lower = upper. Each update the
+  point's progress grows by dt / length; when it passes 1 (strictly),
+  or at once when the length is 0, the point moves on and its progress
+  restarts at 0 (the overshoot is dropped, not carried): from a state
+  to the transition toward the next state, from a transition into that
+  next state; several zero lengths are passed in the same update. When
+  the point's **last** state ends (its own duration, after the
+  transition into it) it **expires**; a last state of duration 0
+  therefore expires the update the transition into it ends. During a
+  transition, the progress is the interpolation fraction for width and
+  colour. Each tick
   every live point except those just made runs its state's point
   physics (radius = width / 2). Expired points at the tail are freed
   while the point before them is expired too (one expired point stays
@@ -1725,10 +1846,30 @@ transition(late, 0.5 x 12/12); after 6 ticks transition(late, 0.25).
 2/3, 1/3, 0 on ticks N, N+1, N+2, N+3; radius 2.0 WU throughout;
 colour 0.961, 0.910, 0.686 times the intensity.
 
+**Particle systems and contrails (fourth errata batch).**
+
+| Setup | Input | Expected |
+|---|---|---|
+| particle system type, state 0 physics P0 (air friction 2000), state 1 physics P1 (air friction 200), particle in state 0 | one update | P0 used as stored |
+| same, particle transitioning 0 to 1, time left / length w = 0.75 | one update | air friction = 0.25 x 2000 + 0.75 x 200 = 650 (the next state's weight is w: the reversed blend); flags P0's |
+| same, w = 0.75, state radius multipliers 1 and 2, type radius 1.5, type multiplier 1 | radius for the physics | 1.5 x (0.75 x 1 + 0.25 x 2) = 1.875 |
+| same, particle in state 1 (transition over) | one update | P1 as stored |
+| particle system particle, random scale 0.02, type scale multiplier 1, sprite 36 by 36 pixels on a 256 page | drawn quad | 0.72 by 0.72 WU |
+| same, type state scale multiplier blended 0.5, system scale 3 without type flag 13 | drawn quad | 0.36 by 0.36 WU (the system scale is not applied) |
+| plain particle, radius draw 1.5, radius animation (1, 1), sprite size field 1/33, sprite 33 pixels wide | drawn width | 3.0 WU (2R) |
+| 12 sprites each covering the whole view, built in one view's frame | draw | the first 11 drawn, the 12th dropped |
+| contrail point state 0 duration bounds 0.1 - 0.25, no scale flags, local draw stubbed to 0.5 | point enters state 0 | its length 0.175 s; at 30 updates/s its progress is 0.952 after 5 updates and 1.143 after 6: it leaves state 0 on the 6th, its transition progress starting at 0 (the 0.143 is dropped) |
+| two points of the same contrail entering state 0 with draws 0 and 1 | lengths | 0.1 s and 0.3 s (each point its own draw; never the mean 0.2 for both) |
+| last state with duration 0 | transition into it ends | the point expires in that same update |
+| last state with duration 0.5 | transition into it ends | the point lives 0.5 s more in it, then expires |
+
 ### (b) Disc-backed (slow tests, the user's own disc files)
 
 | Check | Expected |
 |---|---|
+| `weapons\frag grenade\effects\explosion med` (`pctl`) | one type: flags 0x10, initial 35, render mode 1, radius 1.5, explosion creation (0.012, 0.08, 200); type states (1 - 1.5 s, transition 4 - 5 s, multipliers 1) and (colour multiplier 0); particle states fire (0.1 - 0.2 / 0.1 - 0.8, `fire cloud` seq 0, scale 0.01 - 0.03, rotation 3.49 - 6.98 rad/s, blend 3, `fire explosion`), smoke plume (0.3 - 0.6 / 0.3 - 0.8, `smoke cloud`, 0.01 - 0.04, alpha 0.2 - 0.4, blend 0, `fire explosion`), death (0 / 0, alpha 0, `smoke explosion`) |
+| `weapons\frag grenade\effects\drifting smoke` | flags 4, lifespan 2 - 4, fade in 0.3, fade out 3.0, radius animation 1 - 1, fade end size 4, sprite size field 0.030303031, bitmap `smoke tank cannon`, physics `smoke explosion`; the effect entry: count 10 - 15, radius 1.2 - 2.0, velocity 1 - 2, tint alpha 0.4 - 0.6 |
+| `fire explosion` / `smoke explosion` (`pphy`) | density 0.0005 / 0.0008, air friction 2000 / 200, flags 0 / 0x18 |
 | `weapons\assault rifle\effects\fire bullet` | flags 0, loop -1/-1, 3 locations "primary trigger", "primary ejection", "secondary ejection"; 4 events, all delay 0 duration 0, skip 0; event 0: 0 parts, 6 particles (all `effects\particles\flash\flash h ar`, camera 2); event 1: 2 parts (`snd!` `sound\sfx\weapons\assault rifle\fire` at location 0, `snd!` `sound\sfx\weapons\pistol\eject` at location 2) and 8 particles (`flash h ar center`, `smoke rifle water`, `bubbles`, `casing h ar bullet` at location 1 camera 3 velocity 2.0-2.5 cone 0.2618 radius 0.015, `bubbles`, 2 x `flash h ar`, `smoke h fp`); event 2: 6 x `flash h ar` camera 1; event 3: 4 particles |
 | the AR weapon's attachments | light `weapons\assault rifle\muzzle flash` at "primary trigger", primary scale 2 (function B); light `characters\marine_armored\flashlight_marine` at "flashlight" |
 | `weapons\assault rifle\muzzle flash` | flags 0x21, radius 2.0, modifiers 1/1, upper colour (0.961, 0.910, 0.686), duration 0 |
@@ -1787,8 +1928,9 @@ colour 0.961, 0.910, 0.686 times the intensity.
 | Particle tag layout | checked against the disc (0x6C..0x73 unused per the reference; leftovers on the disc) |
 | Particle behaviour, size, fade, drawing | reference only; "1 / sprite size" relation inferred and checked on the disc |
 | Point physics layout and runtime formulas | checked against the disc; integration from the reference |
-| Particle systems layout | checked against the disc; behaviour reference only |
-| Contrails layout | checked against the disc; behaviour reference only; flag names bits 2 to 5 inferred |
+| Particle systems layout | checked against the disc; behaviour reference only (per-state physics and its reversed blend, the drawing scale in WU per sprite pixel and the rotational sprites read from the reference's update and draw code); the frag explosion's values and sizes from the disc |
+| View-filling sprite cap (11 per view frame) | reference only |
+| Contrails layout | checked against the disc; behaviour reference only (per-point duration draws, the dropped overshoot and the expiry after the last state's own duration read from the reference); flag names bits 2 to 5 inferred |
 | Lights layout | checked against the disc (0xD4..0xE3 values present but not read per the reference); behaviour reference only; duration in ticks inferred from the reference's use and the disc's values |
 | Lens flares | layout checked against the disc; behaviour not specified |
 | Glows | layout from the reference only (no tag on the disc's multiplayer maps) |
