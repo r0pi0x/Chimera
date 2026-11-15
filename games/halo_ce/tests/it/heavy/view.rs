@@ -496,7 +496,8 @@ fn the_posing_timer_takes_the_maps_idle_numbers() {
     let disc = IdleTiming { time: (10.0, 15.0), skip: 0.25 };
     assert_eq!(halo_ce::game::view::idle_of(&file), disc);
     let looks = load::looks(&file, false);
-    assert_eq!(looks.view_models.len(), 4);
+    // Every held gun with a view model (nine since the whole arsenal).
+    assert_eq!(looks.view_models.len(), 9);
     for v in &looks.view_models {
         assert_eq!(idle_timing(v.animations.as_ref().unwrap()), disc, "{}", v.key);
     }
