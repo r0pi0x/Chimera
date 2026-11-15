@@ -60,13 +60,40 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
 ## Halo's maps (optional)
 
 Halo: Combat Evolved's multiplayer maps join the Ultimate Gun Game's pool
-only where the Xbox disc image is: set `CHIMERA_HALO_CE_ROOT` to the image
-(or `[games.halo_ce] path` in chimera.local.toml) on the server, and every
-player who should get them needs it too. Its files are not published to
-the asset store, so each match's pool (made for the players then
-connected) leaves Halo's maps out when one of them lacks the image (their
-mount report says so); without the image nothing changes. Halo lends only maps for now (no guns, bodies or movement), and
-its pool is `games/halo_ce/data/map_pool.toml`'s.
+where the Xbox disc image is (`CHIMERA_HALO_CE_ROOT`, or `[games.halo_ce]
+path` in chimera.local.toml) or where the asset service serves Halo. A
+player without the image gets Halo's files from the service at the join,
+as the other games' (a map's offer names `halo_ce`'s `map/<name>` and
+`base`); without the image and without Halo on the service, each match's
+pool (made for the players then connected) leaves Halo's maps out. Halo
+lends only maps for now (no guns, bodies or movement), and its pool is
+`games/halo_ce/data/map_pool.toml`'s.
+
+Publishing Halo needs no disc on the server's machine. On the machine
+with the image, pack it into a local staging store and record its sets:
+
+```
+cargo run --release --features tools --bin chimera_pack -- pack halo_ce --store <staging store>
+cargo run --release --features tools --bin chimera_pack -- sets halo_ce --store <staging store>
+```
+
+That packs the disc's own files (`maps/`, `default.xbe`, the `bink/`
+videos; not `xdemos/`, the other games' demos on the disc:
+`--all-files` packs them too) under the build its maps name
+(`01.10.12.2276` for the NTSC disc), and records `base` and `players`
+(the donor map, `maps/bloodgulch.map`) and `map/<name>` per multiplayer
+map (its one file). Then copy to the server's store the records the
+server lacks (`records/<ab>/<id>.zst`: copying the staging store's whole
+`records/` folder over it is safe, a record's name is its content's hash)
+and the one manifest, `manifests/halo_ce/<build>.txt`; no other file. On
+the server, sign that manifest with the server's key (no install needed;
+no other game's manifest is touched):
+
+```
+cargo run --release --features tools --bin chimera_pack -- sign halo_ce --store <server store>
+```
+
+Sizes: [assets-for-developers.md](assets-for-developers.md), "Halo".
 
 ## Publishing the game files (once, and after a game update)
 
