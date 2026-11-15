@@ -128,7 +128,9 @@ r / 65535 (0 to 1 inclusive); a real range draw returns
 lo + (hi - lo) * real draw. The direction table is the vertex set of an
 octahedron (the six axis directions) whose faces are subdivided 16
 times along each edge and pushed out to the unit sphere: 8 x 14 x 15 /
-2 + 12 x 15 + 6 = 1026 vertices (open question 2 on their order).
+2 + 12 x 15 + 6 = 1026 vertices. Its order and positions are fixed and
+given in "The direction table" below, so a seeded implementation can
+reproduce the original's shot pattern.
 
 ## The weapon tag
 
@@ -699,6 +701,47 @@ even count -0.5, 0.5, 0.5, -0.5, 1.5, -1.5... (this is what the
 reference computes, duplicates included; no multiplayer weapon uses a
 fan).
 
+**The direction table** (built once at start; the order and the
+positions below reproduce the original's table, so the same seed gives
+the same tilt direction). A draw takes entry floor(1026 x r / 65536),
+r the 16-bit value of the draw. Construction, with 16 segments:
+
+1. Entries 0 to 5 are the corners: +Z, +Y, +X, -Y, -X, -Z.
+2. The eight faces are taken in this order, each as three corners
+   (a, b, c): (0, 1, 2), (0, 2, 3), (0, 3, 4), (0, 4, 1), (5, 1, 4),
+   (5, 4, 3), (5, 3, 2), (5, 2, 1) (corner numbers as in step 1).
+3. Within a face, the grid points are (row, col) with 0 <= col <= row
+   <= 16: col = 0 is on the edge a to c (point number row counted from
+   a), col = row on the edge a to b (point number row from a), row = 16
+   on the edge c to b (point number col from c); the others are
+   interior. The face is walked for row = 1 to 16 and col = 1 to row,
+   and each step visits the points (row - 1, col - 1), (row, col - 1),
+   (row, col) and, if col < row, (row - 1, col), in that order. A grid
+   point gets its entries the first time it is visited.
+4. An edge point makes the **whole edge** at once, unless an earlier
+   face has made it (edges are shared by two faces; the corners
+   already exist): the 15 inner points of the edge, in order from the
+   edge's lower-numbered corner to its higher-numbered one, each the
+   normalised blend (1 - k/16) x lower + (k/16) x higher for k = 1 to 15.
+   An edge point's entry is then the one for its number counted from a
+   or c (so on an edge whose a-side corner has the higher number the
+   count runs backward through the stored 15).
+5. An interior point (row, col) takes the next free entry, the blend of
+   the face's points (row) on the edge a to c and (row) on the edge a to
+   b with weight col / row on the second: normalised ((1 - col/row) x
+   P_ac + (col/row) x P_ab). (The edge points it needs already exist
+   by then: row 1 makes both edges.)
+
+Arithmetic is in single precision; a table that differs in the last
+bit is as good. Checks: 1026 entries, all of unit length and distinct;
+entry 6 = (0.0665190, 0, 0.9977852), entry 7 = (0.1414214, 0, 0.9899495),
+entry 21 = (0, 0.0665190, 0.9977852), entry 28 = (0, 0.7071068,
+0.7071068), entry 100 = (0.1825742, 0.9128709, 0.3651484), entry 500 =
+(-0.8741572, 0.3885143, 0.2913858), entry 1025 = (0.9949367, 0.0710669,
+-0.0710669). Edge points are blends of the corners, not equal angles
+apart, and interior points blend edge points, so the table is not a
+face subdivided flat and pushed out.
+
 **Random draws per shot, in order** (game-state generator):
 (1) firing-effect choice, when an entry runs out: one integer draw if
 "random firing effects", then one integer range draw per entry visited
@@ -720,7 +763,9 @@ at once if 0). Examples (test cases have more):
 - pistol: +1/15 held, -1/6 released: shot 1 0.2 deg, shot 2 (tick 9)
   1.28 deg, shot 3 on 2 deg; a pause of 6 ticks restores 0.2 deg.
 - plasma rifle: +1/75 held, back to 0 the first tick released: 0.5 deg
-  rising to 5 deg after 75 ticks.
+  rising to 5 deg after 76 updates (the 75th leaves 0.99999934 in
+  single precision, the 76th clamps to 1.0; the angle limit differs
+  from 5 deg by 3e-6 deg until then).
 - shotgun and sniper rifle: lower = upper, so fixed (10 deg per pellet,
   0.5 deg unzoomed and 0 zoomed respectively).
 
@@ -894,6 +939,21 @@ Then all magazines go idle and the triggers uninitialised.
 - Field of view while zoomed = base field of view / m (the angle
   itself, not its tangent), used only if the result lies between pi/100
   and 99 pi/100. Look input is divided by m while zoomed.
+- **What that angle is.** The unit tag's 70 degrees (and the zoomed
+  angle derived from it) is a nominal angle *measured across a 4:3
+  picture and then shrunk*: the renderer turns it into the camera's
+  **vertical** field of view by tan(v / 2) = 0.75 x 0.85 x tan(a / 2),
+  with a the nominal angle (0.75 is the 3:4 height to width ratio, 0.85
+  a fixed narrowing of the tangent; both checked as constants in the
+  disc's executable, the 0.85 in a small routine that multiplies a
+  half-angle tangent by it). The horizontal extent is the vertical one
+  times the viewport's width over height, whatever the viewport. So
+  with a = 70 degrees: vertical 48.11 degrees (0.83968 rad); at 4:3
+  horizontal 2 atan(0.85 tan 35 degrees) = 61.52 degrees (not 70); at
+  16:9 horizontal 76.87 degrees. Zoomed pistol or rocket launcher (a =
+  35 degrees): vertical 22.73 degrees (0.39672 rad); sniper 8x (a =
+  8.75 degrees): vertical 5.58 degrees (0.09747 rad). The HUD's screen
+  effect compares this vertical angle (`hud.md`).
 - The zoom-in sound plays with scale i / (n - 1) (1 for one level), the
   zoom-out sound when leaving zoom.
 - Zoom is cancelled by: starting a reload, switching weapons, picking
@@ -939,8 +999,10 @@ A player's melee (a biped with a player; the melee button):
   acceleration scale x 0.035. A breakable surface takes it when no
   object was hit. Damage scale = clamp((velocity . forward) x 30 / run
   forward speed, 0, 1) with run forward speed 2.25 WU/s from the
-  globals (open question 5 on what this scale does to melee damage),
-  and 1.5 when the attacker has been airborne more than 15 ticks.
+  globals, and 1.5 when the attacker has been airborne more than 15
+  ticks. The scale is the damage event's scale: amount = (1 - s) x
+  minimum + U x s (`health_shields.md`), so a standing melee deals the
+  effect's minimum (open question 5).
   Damage effects: health_shields.md and projectiles.md.
 - If anything with a material was hit, the melee sound plays and the
   weapon's melee response damage is applied to the attacker.
@@ -1438,6 +1500,10 @@ trigger is down; the weapon has been in hand for a long time
 (idle counter 127, rate of fire and error 0, heat 0, age 0) and holds
 its new-weapon ammunition unless stated.
 
+Values are printed to four digits unless more are needed; compare
+fractions (error, heat, rate of fire) with a tolerance of 1e-5 except
+where a row prints the single-precision value on purpose.
+
 | Setup | Input | After | Expected |
 |---|---|---|---|
 | assault rifle | hold | 1 s / 2 s / 5 s (ticks 0-29 / 0-59 / 0-149) | 15 / 30 / 60 shots (the magazine; the reload starts tick 119) |
@@ -1454,7 +1520,7 @@ its new-weapon ammunition unless stated.
 | plasma rifle | hold | heat after shots 1, 2, 5, 10, 20, 24, 25 | 0.08, 0.1101, 0.2204, 0.4218, 0.8276, 0.9911, 1.0 |
 | plasma rifle | hold | overheat | 25th shot on tick 98, overheated on tick 99, clears on tick 175 (heat 0.2492), next shot tick 175 if held |
 | plasma rifle | hold | error limit of shots 1-6 | 0.5, 0.8, 1.1, 1.34, 1.58, 1.82 deg |
-| plasma rifle | hold 90 ticks, release | error at end of tick 74, 89, 90 | 1, 1, 0 |
+| plasma rifle | hold 90 ticks, release | error at end of tick 73, 74, 75, 89, 90 | 0.9866660, 0.99999934 (0x3F7FFFF5: 75 steps of the f32 1/75, one short of 1 in single precision), 1.0 (the 76th step clamps), 1.0, 0 |
 | plasma rifle | age 0.005, rate of fire 1 | required ticks | 3.003 (interval 4); age 0: 3.0 (interval 3); age 0.995, rate of fire 0: 5.1386 (interval 6) |
 | shotgun | hold | 1 s / 2 s / 5 s | 1 / 2 / 5 shots |
 | shotgun | hold | first shots | ticks 0, 30, 60, 90, 120, 150 |
@@ -1481,7 +1547,7 @@ its new-weapon ammunition unless stated.
 | assault rifle, reloading (87 frames) | grenade thrown with timer 43 left | | 2 x 43 = 86 < 87: rounds added at once |
 | assault rifle, reloading | grenade thrown with timer 44 left | | 88 >= 87: reload lost, magazine stays empty |
 | sniper rifle | zoom presses 1, 2, 3 | magnification | 2x, 8x, unzoomed |
-| pistol | zoomed | field of view 70 deg base | 35 deg; autoaim angle 1.5 deg, range 60 WU, deviation 1.5 deg |
+| pistol | zoomed | field of view 70 deg base (nominal) | 35 deg nominal (vertical 22.73 deg, 0.39672 rad; unzoomed vertical 48.11 deg); autoaim angle 1.5 deg, range 60 WU, deviation 1.5 deg |
 | random generator | seed 0 | first draw | seed 1013904223 (0x3C6EF35F); integer draw 0x3C6E = 15470; real 0.236057 |
 | random generator | seed 0x3C6EF35F | integer range draw (0, 1026) | seed 0x47502932 (1196435762); r = 0x4750 = 18256; 1026 x 18256 >> 16 = 285 |
 | plasma rifle | hold | rate of fire after 54 / 55 held ticks | 0.9999996 / 1.0 |
@@ -1497,7 +1563,7 @@ its new-weapon ammunition unless stated.
 | Runtime state, trigger state machine, firing, magazines, heat, battery, charging | reference only (the disc confirms only that the numbers it feeds make sense: 15/s, 12 rounds, 2x scope, 4 rounds and two zoom levels for the sniper, battery of 1) |
 | Ticks between shots, reload and draw timelines, melee timing, heat timelines | worked out from the reference's rules with the disc's numbers (scratch simulation) |
 | Shot origin, aim correction, aim assist, magnetism | reference only |
-| Random generator and direction table size | reference only |
+| Random generator, direction table size and order | reference only (the table's construction was rebuilt and checked for count and unit length; not compared with a recording) |
 | Pickup and swap | reference only; the swap's 7 frames is from the disc's globals |
 | Unused fields (ready time, reload time, error bounds, movement penalties, light times) | reference only: no code reads them |
 
@@ -1507,11 +1573,10 @@ its new-weapon ammunition unless stated.
    rifle every 4 ticks once its battery is touched (7.5/s), or every 3
    (10/s)? Measure: record a full-auto burst at 60 fps from a fresh
    plasma rifle and count bolts per second after 2 s of holding.
-2. **Direction table order.** The reference builds 1026 directions from
-   a subdivided octahedron in a fixed order; this spec does not give
-   the order, so an implementation cannot replay the original's spread
-   pattern bit for bit (only its distribution). Needed only for
-   cross-checking against recordings.
+2. **Direction table order.** Settled (section 7, "The direction
+   table"): the order is fully determined by the construction. What is
+   still unmeasured is that the Xbox build uses the same table as the
+   reference's; a recording of a seeded shot pattern would confirm it.
 3. **Convergence trace that hits nothing** within 128 WU: the point used
    is assumed to be the trace's end point. Check by shooting at the sky
    from a high place and comparing where bullets land against the
@@ -1520,12 +1585,18 @@ its new-weapon ammunition unless stated.
    action none, so the gun should simply stay charged. Confirm in the
    game by holding the charge for a minute and then releasing it (a
    charged bolt, no vanishing gun, no early release).
-5. **Melee damage scale.** The melee sets a damage scale from forward
-   speed (0 standing still, 1 at run speed, 1.5 airborne); whether that
-   scale interpolates the damage effect's minimum and its random
-   damage (health_shields.md) as the reference suggests, which would
-   make a standing melee deal the minimum, should be measured: melee a
-   shielded target standing still and running and compare shield loss.
+5. **Melee damage scale.** Settled from the reference, not measured on
+   hardware: the scale s (0 standing still, 1 at run speed, 1.5
+   airborne, section 13) is the damage event's scale, and the amount is
+   (1 - s) x minimum + U x s with U drawn between the damage effect's
+   bounds (one draw per event, taken even when s = 0). A standing or
+   backing-up melee therefore deals exactly the effect's minimum (40
+   for every gun, 56 shield points after the 1.4 modifier), a run-speed
+   melee deals U (50 to 60) and a lunge 1.5 U - 0.5 x minimum (55 to
+   70); the "no distance scaling" flag of the melee effects does not
+   matter because it only gates the area-damage distance scale. To
+   measure: melee a shielded target standing still and running and
+   compare shield loss.
 6. **Ready and reload lengths.** The tags carry ready and reload times
    (assault rifle 1.3 s and 3.4 s) that the reference ignores in favour
    of animation frame counts (0.97 s and 2.9 s). Time a draw and a

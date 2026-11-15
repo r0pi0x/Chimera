@@ -1,35 +1,52 @@
-//! Halo's weapons (specs/halo_ce/weapons.md, projectiles.md; M2 of
-//! docs/plans/active/halo-ce.md): the assault rifle, the pistol, the
-//! plasma rifle and the shotgun as data (data/weapons/*.toml: every
-//! number in the `halo_ce:weapon` hook's table, `params`), run by Halo's
-//! own per-tick rules, not the engine's stock frame (`weapon::OwnFrame`):
+//! Halo's weapons (specs/halo_ce/weapons.md, projectiles.md; M2 and M3 of
+//! docs/plans/active/halo-ce.md): the nine held multiplayer weapons (the
+//! assault rifle, pistol, plasma rifle, shotgun, sniper rifle, rocket
+//! launcher, needler, plasma pistol and flamethrower) and the frag and
+//! plasma grenades as data (data/weapons/*.toml: every number in the
+//! `halo_ce:weapon` hook's table, `params`; data/grenades.toml), run by
+//! Halo's own per-tick rules, not the engine's stock frame
+//! (`weapon::OwnFrame`):
 //!
 //! - `tick`: one weapon's 30 Hz update in the spec's order (the draw by
 //!   the ready animation's frames, the trigger's idle counter and the
 //!   rate-of-fire ramp, the error growing and decaying, the cone's draws
 //!   in order, the shotgun's 15 pellets, magazines, reloads and their
-//!   interruption, the shotgun's shell loop and chambering, the plasma
-//!   rifle's heat and battery, the pistol's zoom);
+//!   interruption, the shotgun's shell loop and chambering, heat and
+//!   battery, the zoom levels, charging and the second trigger: the
+//!   plasma pistol);
 //! - `random`: the game-state generator and the 1026 directions;
-//! - `flight`: a projectile's flight (deceleration, the slowed bolt's end,
-//!   gravity, range, hits) one update per tick: no hitscan, a bullet's
-//!   first update traces its whole tick's travel on the firing tick;
-//! - `systems`: the engine side: the holders' ticks (switches, the player
-//!   melee by its key frame through the seam's `HaloHit::melee`), the
-//!   projectiles (server) and their direct hits through
-//!   `damage::HaloHit::direct` (the amount between the effect's bounds by
-//!   the speed left and a draw), lag compensation of the firing tick,
-//!   prediction (`HaloGun` and `Magazine` with the inventory, `HaloHands`
-//!   with the player).
+//! - `flight`: a projectile's flight one update per tick (timers and
+//!   arming, guidance and its wander, deceleration, gravity, range, hits
+//!   and the material responses by the level's or the body's material
+//!   type: disappear, detonate, reflect, overpenetrate, attach): no
+//!   hitscan, a bullet's first update traces its whole tick's travel on
+//!   the firing tick;
+//! - `materials`: the level's material types from the map to the traces;
+//! - `explode`: a detonation's area damage (falloff, sight by the core
+//!   probes) and push;
+//! - `grenades`: the counts carried and the throw on the grenade button;
+//! - `pickups`: the netgame equipment on the item clock, powerups,
+//!   grenades, ammunition from duplicates and the weapon swap;
+//! - `systems`: the engine side: the holders' ticks (switches, the throw,
+//!   the player melee by its key frame through the seam's
+//!   `HaloHit::melee`), the projectiles (server: free, stuck in a body,
+//!   or in a thrower's hand), their direct hits through
+//!   `damage::HaloHit::direct`, detonations through `HaloHit::area` and
+//!   the push through `movement::push`, the needles' supercombine, lag
+//!   compensation of the firing tick, prediction (`HaloGun` and `Magazine`
+//!   with the inventory, `HaloHands` with the player).
 //!
 //! **How each special rule is expressed.** Data: every number (rates,
-//! errors, magazines, heat, battery, zoom, animation frames, projectiles,
-//! responses). Stock parts: `Weapon` and `WeaponState` (selection and the
-//! deploy event), `Magazine` (the rounds, which HUDs, `impulse 101` and
-//! the network already know: the weapon keeps it equal to its own),
-//! `Zoomed` for the camera, `WeaponEvent`. Halo's own parts: `HaloGun`
-//! (the state), `HaloWeapon` (the numbers), `HaloHands` (the melee),
-//! `HaloProjectile`. One engine extension point: `weapon::OwnFrame`.
+//! errors, magazines, heat, battery, zoom, charging, animation frames,
+//! projectiles, material responses, the detonation effects' damage
+//! effects, the throw, the explosions' constants). Stock parts: `Weapon`
+//! and `WeaponState` (selection and the deploy event), `Magazine` (the
+//! rounds, which HUDs, `impulse 101` and the network already know: the
+//! weapon keeps it equal to its own), `Zoomed` for the camera,
+//! `WeaponEvent`. Halo's own parts: `HaloGun` (the state), `HaloWeapon`
+//! (the numbers), `HaloHands` (the melee, the grenades, the throw),
+//! `HaloProjectile`, `pickups::HaloItem`. One engine extension point:
+//! `weapon::OwnFrame`.
 //!
 //! **The tick rate.** The spec's numbers are 30 Hz ticks and counted as
 //! such (`systems::halo_ticks`): exact at Halo's own tick, where one Halo
@@ -45,40 +62,61 @@
 //! - `WeaponEvent`s on the weapon: `Deployed` (the engine's, on a switch;
 //!   the draw lasts `params::Animations::ready` ticks), `Action("fire")`,
 //!   `Action("fire_last")` (the magazine's last round), `Action("misfire")`,
-//!   `DryFire` (the empty click, once a pull), `ReloadStarted` (a magazine,
-//!   or the shotgun's first shell: its `enter`), `ShellInserting` (each
-//!   further shell), `Action("shell_in")` (a shell went in), `Reloaded`
-//!   (a magazine's rounds went in), `Action("chamber")` (the shotgun's
-//!   pump), `Action("overheated")`, `Action("overheat_cleared")`,
+//!   `Action("fire_charged")` (the plasma pistol's charged bolt),
+//!   `Action("charging")`, `Action("charged")` (the first-person charged
+//!   state), `DryFire` (the empty click, once a pull), `ReloadStarted` (a
+//!   magazine, or the shotgun's first shell: its `enter`), `ShellInserting`
+//!   (each further shell), `Action("shell_in")` (a shell went in),
+//!   `Reloaded` (a magazine's rounds went in), `Action("chamber")` (the
+//!   shotgun's pump), `Action("overheated")`, `Action("overheat_cleared")`,
 //!   `Action("zoom_in")`, `Action("zoom_out")`, `Action("melee")` (a melee
-//!   began) and `Swing` (its hit tick: what it struck);
-//! - `systems::HaloFired`: each round with its trigger, the firing effect
-//!   entry (the plasma rifle's barrel), last round, misfire, origin, every
-//!   projectile's direction and tracer flag, heat and battery after it;
+//!   began), `Swing` (its hit tick: what it struck), `Action("throw_grenade")`
+//!   (a throw began: the first-person and holder's throw animations);
+//! - `systems::HaloFired`: each round with its trigger (1: the charged
+//!   bolt), the firing effect entry (the plasma rifle's barrel), last round,
+//!   misfire, origin, every projectile's direction and tracer flag, heat and
+//!   battery after it;
 //! - `systems::HaloImpact` (server): each projectile segment, what it met
-//!   (a character, the level), the normal, its tracer;
+//!   (a character, the level), the normal, the material type, its tracer;
+//! - `systems::HaloStuck` (server): a needle or plasma grenade stuck in a
+//!   body or the level (the needles a body carries, the plasma grenade's
+//!   detonation-started effect);
+//! - `systems::HaloDetonation` (server): a rocket's, grenade's, flame's or
+//!   needle's detonation, where, the supercombine, its damage effects (the
+//!   explosions' effects and shock waves);
+//! - `systems::HaloPush` (server): a push on a character;
+//! - `HaloProjectile` entities (server; not replicated yet): rockets,
+//!   needles, flames, bolts and grenades in flight, held or stuck;
+//! - `pickups::HaloItem` entities (server; not replicated yet): items
+//!   lying on the map, with what they are (weapon, grenade, powerup);
 //! - `tick::HaloGun` on the weapon: `heat`, `age` (the battery is
 //!   `1 - age`), `overheated`, `overheat_exit`, `error`, `rate_of_fire`,
-//!   `zoom`, the magazine's state; `Zoomed` on the holder (the field of
-//!   view, 70 degrees over the magnification); `systems::HaloHands::melee`.
+//!   `zoom`, `overcharged`, `HaloGun::charge` (the charged fraction), the
+//!   magazine's state; `Zoomed` on the holder (the field of view, 70
+//!   degrees over the magnification); `systems::HaloHands::melee`,
+//!   `HaloHands::throw` (the grenade counts, the throw's frame).
 //!
 //! Aim assist is a controller feature the port leaves off (weapons.md
 //! 15): its numbers are data and `params::AimAssist::enabled` is the
-//! switch, false for the four; with it off, only the convergence
+//! switch, false for all nine; with it off, only the convergence
 //! correction would remain, which is the identity while shots start on
-//! the camera ray (as here).
+//! the camera ray (as here). A guided projectile still gets section 15's
+//! target where its data says so (`params::Gun::guidance_targets`: the
+//! needler and the plasma pistol).
 //!
-//! Ammunition at spawn and from a duplicate weapon on the ground
-//! (multiplayer_rules.md 4.6, 5.5): `params::Magazine::new_rounds`,
-//! `params::take_ammunition`; the pickups themselves are M3's.
-//!
-//! Known shortcuts: see `tick`, `flight`, `systems` and `random`; aim
-//! assist and magnetism are not implemented beyond the switch; inventory
-//! weapons only tick while carried by a holder (a dropped plasma rifle
-//! does not cool on the ground).
+//! Known shortcuts: see `tick`, `flight`, `systems`, `grenades`,
+//! `pickups`, `explode` and `random`; aim assist and magnetism are not
+//! implemented beyond the switch; inventory weapons only tick while
+//! carried by a holder (a dropped plasma rifle does not cool on the
+//! ground); the grenade button is the named action `grenade`, which the
+//! front end binds (not bound here).
 
+pub mod explode;
 pub mod flight;
+pub mod grenades;
+pub mod materials;
 pub mod params;
+pub mod pickups;
 pub mod random;
 pub mod systems;
 pub mod tick;
@@ -107,9 +145,14 @@ pub const ASSAULT_RIFLE: &str = "halo_ce:assault_rifle";
 pub const PISTOL: &str = "halo_ce:pistol";
 pub const PLASMA_RIFLE: &str = "halo_ce:plasma_rifle";
 pub const SHOTGUN: &str = "halo_ce:shotgun";
+pub const SNIPER_RIFLE: &str = "halo_ce:sniper_rifle";
+pub const ROCKET_LAUNCHER: &str = "halo_ce:rocket_launcher";
+pub const NEEDLER: &str = "halo_ce:needler";
+pub const PLASMA_PISTOL: &str = "halo_ce:plasma_pistol";
+pub const FLAMETHROWER: &str = "halo_ce:flamethrower";
 
-/// The four, in the order they register.
-pub const GUNS: [&str; 4] = [ASSAULT_RIFLE, PISTOL, PLASMA_RIFLE, SHOTGUN];
+/// The nine held multiplayer weapons, in the order they register.
+pub const GUNS: [&str; 9] = [ASSAULT_RIFLE, PISTOL, PLASMA_RIFLE, SHOTGUN, SNIPER_RIFLE, ROCKET_LAUNCHER, NEEDLER, PLASMA_PISTOL, FLAMETHROWER];
 
 macro_rules! doc {
     ($name:literal) => {
@@ -124,6 +167,11 @@ pub const DATA: &[(&str, &str)] = &[
     doc!("pistol.toml"),
     doc!("plasma_rifle.toml"),
     doc!("shotgun.toml"),
+    doc!("sniper_rifle.toml"),
+    doc!("rocket_launcher.toml"),
+    doc!("needler.toml"),
+    doc!("plasma_pistol.toml"),
+    doc!("flamethrower.toml"),
 ];
 
 /// Its guns' names (data/display_names.toml).
@@ -190,7 +238,15 @@ fn power(p: &chimera_sim::minigame::power::HookParams, at: &chimera_sim::minigam
     let t = &g.trigger;
     let pr = &g.projectile;
     let effects = super::vitality::DamageEffects::load();
-    let Some(fx) = params::effect_id(&pr.impact_damage).and_then(|e| effects.get(e).cloned()) else { return };
+    // The hit's damage: the impact's, else what a stuck projectile deals
+    // (a needle), else its detonation's at the centre (a rocket, a flame).
+    let named = |n: &str| params::effect_id(n).and_then(|e| effects.get(e).cloned()).filter(|f| f.lower + f.upper[1] > 0.0);
+    let Some(fx) = named(&pr.impact_damage)
+        .or_else(|| pr.attached_damage.as_deref().and_then(named))
+        .or_else(|| pr.detonation.iter().find_map(|n| named(n)))
+    else {
+        return;
+    };
     // The speed left at the distance (WU): full before the deceleration
     // starts, then at a constant rate down to the final speed.
     let d = at.distance;
@@ -229,18 +285,26 @@ impl Plugin for HaloWeaponsPlugin {
             panic!("Halo weapon data: {e}");
         }
         chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(app, "halo_ce data/display_names.toml", DISPLAY_NAMES);
-        app.intent_action(systems::MELEE_ACTION).intent_action(systems::ZOOM_ACTION);
+        app.intent_action(systems::MELEE_ACTION)
+            .intent_action(systems::ZOOM_ACTION)
+            .intent_action(grenades::GRENADE_ACTION);
+        app.insert_resource(grenades::GrenadeData::load()).init_resource::<pickups::ItemClock>();
         app.on_every_character::<HaloHands>();
         app.add_message::<HaloFired>()
             .add_message::<HaloImpact>()
             .add_message::<super::damage::HaloHit>()
             .add_message::<super::damage::HaloHurt>()
+            .add_message::<systems::HaloDetonation>()
+            .add_message::<systems::HaloStuck>()
+            .add_message::<systems::HaloPush>()
             .add_systems(Predict::Weapons, systems::run.before(WeaponFrame))
             .add_systems(
                 FixedUpdate,
                 (
-                    systems::fly.in_set(SimSet::Weapons).before(WeaponFrame),
+                    (materials::follow, systems::cut_throws, systems::fly).chain().in_set(SimSet::Weapons).before(WeaponFrame),
+                    (systems::settle_new, systems::apply_pushes).chain().after(SimSet::Weapons).before(super::damage::deliver_hits),
                     (systems::camo_on_fire, systems::unzoom_when_hurt).after(SimSet::Weapons),
+                    pickups::systems().in_set(SimSet::Weapons).after(WeaponFrame),
                 )
                     .run_if(crate::core::authoritative),
             )

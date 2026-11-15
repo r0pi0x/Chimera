@@ -16,11 +16,14 @@
 //! `cargo test -p halo_ce --features dev --test it`; where tests go:
 //! docs/OBSERVABILITY.md, section 1.
 
+mod arsenal;
+mod arsenal_rules;
 mod assets;
 mod body;
 mod cross_game;
 mod fx;
 mod fx_place;
+mod hud;
 mod info;
 mod maps;
 mod movement;
@@ -39,6 +42,7 @@ mod weapons_rules;
 mod heavy {
     mod body;
     mod fx;
+    mod hud;
     mod maps;
     mod mount;
     mod served;

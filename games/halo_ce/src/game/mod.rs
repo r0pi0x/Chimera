@@ -15,10 +15,11 @@
 //!   camouflage and stun (health_shields.md; its numbers in
 //!   data/vitality.toml and data/damage.toml), and `damage`: the seam every
 //!   Halo damage source delivers through (`damage::HaloHit`);
-//! - `weapons`: the assault rifle, pistol, plasma rifle and shotgun
-//!   (weapons.md, projectiles.md): data/weapons/*.toml, the per-tick weapon
-//!   rules, projectiles and melee, hits through `damage::HaloHit`, lent as
-//!   rungs in `parts`;
+//! - `weapons`: the nine held weapons and the two grenades (weapons.md,
+//!   projectiles.md, multiplayer_rules.md 5): data/weapons/*.toml and
+//!   data/grenades.toml, per-tick weapon rules with charging, projectiles
+//!   with material responses, explosions and pickups, hits through
+//!   `damage::HaloHit`, lent as rungs in `parts`;
 //! - `body`: the players' Spartan body (model, animations from the graph's
 //!   unit tables, hit boxes from the collision model, armour colours), on
 //!   Halo's maps and, from the donor map, on any other;
@@ -29,9 +30,13 @@
 //! - `fx`: the guns' sounds and effects (effects.md, sounds.md): the library
 //!   from the donor map, effects played as the engine's sounds, particles,
 //!   decals and lights, shots shown on every machine;
+//! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
+//!   at any tick rate (`halo_ticks`);
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
 //!   the donor map, `map/<name>` per multiplayer map); `mount::build` reads
 //!   the install's build from a map header;
+//! - the HUD is the front end's (`ui::hud`): `parts` names it (`hud:
+//!   Some(GAME)`), so a Halo gun in a party app shows it;
 //! - `parts`: what the game lends other games' apps (`PARTS`): its maps,
 //!   by its pool rules and measurements (data/map_pool.toml,
 //!   data/map_fitness.toml), played with other games' players and guns.

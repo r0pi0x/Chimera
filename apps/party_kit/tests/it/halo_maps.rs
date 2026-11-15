@@ -6,7 +6,9 @@
 //! surface names are Combat Arms' through the composed table. A Halo gun
 //! as a rung makes its holder Halo's (its movement and shield) and fires
 //! by Halo's rules on the party's tick, with no view model. With the
-//! disc: `heavy::halo_maps`.
+//! disc: `heavy::halo_maps`. Halo's HUD comes and goes with its gun:
+//! `halos_hud_follows_its_gun` (and `mixed_with_halo`, the every-HUD
+//! ladder of `kill_feed` and the overlay guard).
 
 use chimera_sim::minigame::auto::{self, InstalledMaps};
 use chimera_world::{harness::Sim, map::impact::SurfaceClasses};
@@ -21,7 +23,7 @@ fn halo_lends_its_guns_and_no_map_without_the_disc() {
     assert!(w.resource::<SurfaceClasses>().of(halo_ce::game::GAME).is_some(), "its surfaces' classes");
     let report = auto::report(w);
     let halo = report.iter().find(|c| c.game == halo_ce::game::GAME).expect("Halo reports its parts");
-    assert_eq!(halo.guns.len(), 4, "{}", halo.line());
+    assert_eq!(halo.guns.len(), halo_ce::game::parts::PARTS.guns.len(), "{}", halo.line());
     assert!(halo.missing.is_empty() && halo.movement.is_some() && halo.playable(), "{}", halo.line());
     assert!(halo.maps.is_empty(), "no map claimed without the disc: {}", halo.line());
     // The other games still lend what they did.
@@ -118,4 +120,40 @@ fn a_halo_rung_makes_its_holder_halos() {
     sim.seconds(1.2);
     assert_eq!(held(&sim, a), Some(weapons::PISTOL));
     assert_eq!(identity(&sim).as_deref(), Some("halo_ce"));
+}
+
+/// The mixed ladder (`hl2dm_parts::LADDER`) with Halo's assault rifle as a
+/// last rung (5), Halo's guns allowed: the every-HUD party's
+/// (`kill_feed::every_hud_sim`), so each game with a HUD has a rung.
+pub(crate) fn mixed_with_halo() -> String {
+    let mut ladder = crate::hl2dm_parts::LADDER.to_vec();
+    ladder.push(halo_ce::game::weapons::ASSAULT_RIFLE);
+    crate::hl2dm_parts::ladder_text(&ladder, false).replace(
+        "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
+        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"combat_arms\"]",
+    )
+}
+
+/// Halo's HUD in the party (`halo_ce::ui::party::CLIENT`): up while the
+/// local player holds a Halo gun, its root hidden and the other game's HUD
+/// up again on another game's rung; while it is up the shell's fallback
+/// crosshair and status are off (`GameDraws`), and its declared kill feed
+/// stays empty.
+#[test]
+fn halos_hud_follows_its_gun() {
+    use chimera_client::client::hud::GameDraws;
+    let (mut sim, me, _) = crate::kill_feed::every_hud_sim_and(true, |_| {});
+    crate::hud::swap_to(&mut sim, me, 5);
+    assert_eq!(crate::hud::hud(&sim), halo_ce::game::GAME, "Halo's gun, Halo's HUD");
+    assert!(crate::hud::shown(&mut sim, halo_ce::game::GAME));
+    let draws = *sim.app.world().resource::<GameDraws>();
+    assert!(draws.crosshair && draws.status && !draws.killfeed, "{draws:?}");
+    let feeds = chimera_client::client::kill_feed::GameKillFeeds::lines(sim.app.world());
+    assert!(feeds.contains(&(halo_ce::game::GAME, 0)), "{feeds:?}");
+    crate::hud::swap_to(&mut sim, me, 0);
+    assert_eq!(crate::hud::hud(&sim), hl2dm::game::GAME);
+    assert!(!crate::hud::shown(&mut sim, halo_ce::game::GAME), "Halo's root hidden on HL2:DM's rung");
+    assert!(crate::hud::shown(&mut sim, hl2dm::game::GAME), "HL2:DM's up");
+    crate::hud::swap_to(&mut sim, me, 5);
+    assert!(crate::hud::shown(&mut sim, halo_ce::game::GAME), "back with the gun");
 }
