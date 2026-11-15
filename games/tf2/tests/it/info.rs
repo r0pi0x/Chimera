@@ -21,7 +21,7 @@ fn names_its_game_folder_app_and_namespaces() {
     assert!(!INFO.movement_cvars.is_empty(), "Source's movement cvars");
 }
 
-/// M2b: the bundle lends the four guns (playable: with its stand-in
+/// M2b: the bundle lends its guns (twelve since tf2-guns2) (playable: with its stand-in
 /// movement), dresses other games' maps with them, keeps them on its own,
 /// names them; its maps aren't in an automatic pool yet.
 #[test]

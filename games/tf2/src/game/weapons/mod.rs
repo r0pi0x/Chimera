@@ -59,6 +59,7 @@ pub mod blast;
 pub mod damage;
 pub mod flame;
 pub mod grenade;
+pub mod looks;
 pub mod minigun;
 pub mod needle;
 pub mod rocket;
@@ -251,10 +252,11 @@ fn power_sniper(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
     s.damage = num(p, "base").unwrap_or(0.0) * at.data.units.damage;
 }
 
-/// A flame tick at half its burn ramp, every tick, within its range.
+/// A flame tick at three quarters of its burn ramp, every tick (the
+/// curve's distances are beyond its reach: it scores as if within it, as
+/// the other games' flamethrowers do).
 fn power_flame(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
-    let range = num(p, "range").unwrap_or(0.0);
-    s.damage = if at.distance <= range { num(p, "damage").unwrap_or(0.0) * 0.75 * at.data.units.damage } else { 0.0 };
+    s.damage = num(p, "damage").unwrap_or(0.0) * 0.75 * at.data.units.damage;
     s.pellets = 1;
     s.interval = num(p, "tick").unwrap_or(s.interval);
 }
@@ -340,6 +342,7 @@ impl Plugin for Tf2GunsPlugin {
             .predicted_part::<sniper::Tf2Sniper>()
             .predicted_part::<sticky::Tf2Sticky>()
             .predicted_part::<flame::Tf2Flame>();
+        looks::add(app);
     }
 }
 
