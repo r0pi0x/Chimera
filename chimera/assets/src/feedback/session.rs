@@ -52,7 +52,7 @@
 use std::{
     collections::VecDeque,
     fs::{self, File, OpenOptions},
-    io::{Seek, SeekFrom, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, OnceLock,
@@ -357,12 +357,15 @@ fn dead_sessions(logs: &Path, feedback: &Path, prefix: &str) -> Vec<Previous> {
             continue;
         }
         let path = e.path();
-        let Ok(file) = OpenOptions::new().read(true).write(true).open(&path) else { continue };
+        let Ok(mut file) = OpenOptions::new().read(true).write(true).open(&path) else { continue };
         if file.try_lock().is_err() {
             // A live process holds it (another instance).
             continue;
         }
-        let text = fs::read_to_string(&path).unwrap_or_default();
+        // Through the handle that holds the lock: on Windows the lock is
+        // mandatory, so another handle's read of the file is refused.
+        let mut text = String::new();
+        let _ = file.read_to_string(&mut text);
         let _ = file.unlock();
         drop(file);
         out.push(Previous { marker: path, info: MarkerInfo::parse(&text), logs: logs.to_path_buf(), feedback: feedback.to_path_buf() });
@@ -414,7 +417,10 @@ impl Session {
         let log_path = logs.join(format!("{stem}.log"));
         let marker_path = logs.join(format!("{stem}.running"));
         let dump_path = logs.join(format!("{stem}.dmp"));
-        let file = OpenOptions::new().create(true).append(true).open(&log_path)?;
+        // Not `append`: on Windows an append-only handle can't be truncated
+        // (`set_len`) when the file starts over. The file is new, so the
+        // position is its end; the cap's start-over seeks back itself.
+        let file = OpenOptions::new().create(true).truncate(false).write(true).open(&log_path)?;
         let info = MarkerInfo {
             app: options.app.clone(),
             build: options.build.clone(),
