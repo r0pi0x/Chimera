@@ -155,6 +155,14 @@ pub enum StatusLight {
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StatusBlock(pub StatusLight);
 
+/// A segmented group's slanted track (`Ui::segmented`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct SegmentedTrack;
+
+/// A segmented group's pick: the white slanted slab.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct SegmentedPick;
+
 /// A tab strip's Q or E cap (`Ui::tabs_ex`).
 #[derive(Component, Clone, Copy, Debug)]
 pub struct TabKey;
@@ -701,30 +709,58 @@ impl<'a> Ui<'a> {
     /// one white (ink text); focus underlines it in accent. Returns the
     /// options.
     pub fn segmented(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, st: State) -> Vec<Entity> {
+        // One slanted track (fill .05, a `fg_4` outline), slanted `fg_5`
+        // dividers, the pick a white slanted slab; the words stay upright
+        // (Display for words, Mono for numbers).
+        let h = 1.7;
+        let lean = h * self.theme.tan();
+        let u = self.units;
         let g = c
-            .spawn((UiStyle { shrink: Some(0.0), ..UiStyle::row() }.bg_a(Tone::Ink, 0.5).outline(Tone::Fg4, 1.0), Node::default(), ChildOf(parent)))
+            .spawn((UiStyle { shrink: Some(0.0), pad: Some([0.0, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }, Node::default(), SegmentedTrack, ChildOf(parent)))
             .id();
+        let full = || Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, right: Val::ZERO, ..default() };
+        c.spawn((full(), UiSlant::new(Tone::Fg, 0.05), Pickable::IGNORE, ChildOf(g)));
+        c.spawn((full(), UiSlant::new(Tone::Fg4, 1.0).outline(u.phys(u.hairline())), Pickable::IGNORE, ChildOf(g)));
         options
             .iter()
             .enumerate()
             .map(|(i, o)| {
                 let sel = selected == Some(i);
-                let base = if sel { self.color(Tone::Fg, 1.0) } else { Color::NONE };
-                let over = if sel { base } else { self.color(Tone::Fg, 0.06) };
+                let over = if sel { Color::NONE } else { self.color(Tone::Fg, 0.06) };
+                let (lp, rp) = (0.75 + if i == 0 { lean * 0.6 } else { lean * 0.5 }, 0.75 + if i + 1 == options.len() { lean * 0.6 } else { lean * 0.5 });
                 let b = c
                     .spawn((
-                        UiStyle { h: Some(1.7), pad: Some([0.0, 0.75].into()), ..UiStyle::row() },
+                        UiStyle { h: Some(h), pad: Some([0.0, rp, 0.0, lp].into()), justify: Some(JustifyContent::Center), ..UiStyle::row() },
                         Node::default(),
-                        BackgroundColor(base),
-                        Hover { base, over },
+                        BackgroundColor(Color::NONE),
+                        Hover { base: Color::NONE, over },
                         clickable(),
                         ChildOf(g),
                     ))
                     .id();
-                self.text(c, b, Role::Mono, 0.58, if sel { Tone::Ink } else { Tone::Fg2 }, o);
-                if sel && st.focus {
-                    self.underline(c, b, Tone::Acc, 0.2);
+                if sel {
+                    c.spawn((full(), UiSlant::new(Tone::Fg, 1.0), SegmentedPick, Pickable::IGNORE, ChildOf(b)));
+                    if st.focus {
+                        // The focus strip on the pick's foot, clipped to its slant.
+                        c.spawn((
+                            Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, height: u.val(0.2), ..default() },
+                            UiSlant::new(Tone::Acc, 1.0),
+                            Pickable::IGNORE,
+                            ChildOf(b),
+                        ));
+                    }
+                } else if i > 0 && selected != Some(i - 1) {
+                    // A slanted divider at its left edge.
+                    c.spawn((
+                        Node { position_type: PositionType::Absolute, left: u.val(-lean / 2.0), top: Val::ZERO, bottom: Val::ZERO, width: Val::Px(u.cq(lean) + u.hairline()), ..default() },
+                        UiSlant::new(Tone::Fg4, 1.0),
+                        Pickable::IGNORE,
+                        ChildOf(b),
+                    ));
                 }
+                let number = o.chars().all(|ch| ch.is_ascii_digit() || ch == '.' || ch == ' ');
+                let role = if number { Role::Mono } else { Role::DisplayRegular };
+                self.text(c, b, role, if number { 0.58 } else { 0.62 }, if sel { Tone::Ink } else { Tone::Fg2 }, o);
                 b
             })
             .collect()

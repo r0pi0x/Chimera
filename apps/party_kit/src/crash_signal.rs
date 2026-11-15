@@ -140,7 +140,7 @@ fn spawn(c: &mut Commands, ui: &Ui, what: &Shown, reports: &CrashReports) -> Ent
             c.entity(not_now).insert(CrashAction::Dismiss);
             let always = ui.button(c, foot, Kind::Secondary, "Always send", None, 2.2, State::NONE);
             c.entity(always).insert(CrashAction::Always);
-            let send = ui.button(c, foot, Kind::Primary, "Send", None, 2.2, State::focused(true));
+            let send = ui.button(c, foot, Kind::Primary, "Send", None, chimera_ui::controls::HERO_H, State::focused(true));
             c.entity(send).insert(CrashAction::Send);
         }
         Shown::Said(text) => {

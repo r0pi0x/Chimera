@@ -276,7 +276,7 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
     ui.boxed(c, foot, UiStyle::row().grow(1.0));
     let cancel = ui.button(c, foot, Kind::Secondary, "Cancel", Some("Esc"), 2.4, State::NONE);
     c.entity(cancel).insert(FeedbackAction::Cancel);
-    let send = ui.button(c, foot, Kind::Primary, "Send", Some("Ctrl+Enter"), 2.4, State::focused(true));
+    let send = ui.button(c, foot, Kind::Primary, "Send", Some("Ctrl+Enter"), chimera_ui::controls::HERO_H, State::focused(true));
     c.entity(send).insert(FeedbackAction::Send);
     root
 }

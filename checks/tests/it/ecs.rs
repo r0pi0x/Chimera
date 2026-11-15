@@ -306,6 +306,7 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("chimera/client/src/client/feedback.rs", "a menu (the report dialog): it takes the screenshot, cues sounds and hands the report to the outbox, gated on its phase"),
     ("apps/party_kit/src/esc_menu.rs", "a menu"),
     ("apps/party_kit/src/settings.rs", "a menu: its clicks as console lines and cvars, its drawing from the console's binds"),
+    ("apps/party_kit/src/loading_signal.rs", "a menu (the loading screen and its Leave?): drawn from the join's progress, the menu's and the shell's state; its keys cue sounds and hand Leave to the menu's Cancel"),
     ("apps/party_kit/src/main_menu.rs", "a menu: its clicks as console lines and cvars, the map loads it follows"),
     ("chimera/client/src/client/console.rs", "the console and map loading"),
     ("chimera/core/src/diagnostics.rs", "a tool: the health line and the context read the whole world (as the console's commands do), at most every second, into the session's log"),

@@ -972,6 +972,8 @@ fn start_fetch(
         from: "asset service".into(),
         done: 0,
         total: 0,
+        files_done: 0,
+        files_total: 0,
     });
     world.insert_resource(AssetFetch {
         then,
@@ -1176,7 +1178,7 @@ fn poll_fetch(world: &mut World) {
     let transfer = f.transfer.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let finished = f.job.as_ref().is_none_or(|j| j.is_finished());
     if let Some(t) = transfer {
-        let (_, bytes, total) = t.done();
+        let (files, bytes, total) = t.done();
         if let Some(d) = world
             .resource_mut::<JoinProgress>()
             .download
@@ -1185,6 +1187,8 @@ fn poll_fetch(world: &mut World) {
         {
             d.done = bytes;
             d.total = total;
+            d.files_done = files;
+            d.files_total = t.files();
         }
     }
     if !finished {
