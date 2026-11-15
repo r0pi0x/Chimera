@@ -587,9 +587,8 @@ fn camouflage() {
     grant(&mut sim, e, Powerup::ActiveCamouflage);
     let v = vit(&sim, e);
     assert_eq!((v.camouflaged, v.camo_ticks, v.camo), (true, 1350, 0.0));
-    // 120 steps of 1/120 in f32 leave 0.9999994 (as the shield's
-    // recharge does); the 121st clamps to 1 (the spec's "120 ticks: 1.0"
-    // is the exact sum).
+    // health_shields.md "Active camouflage": the fade in takes 121 updates
+    // (CAMO_STEP, f32 of 1/120): 120 leave 0.9999994, the 121st clamps to 1.
     sim.ticks(120);
     assert!(close(vit(&sim, e).camo, 0.9999994, 1e-7), "{}", vit(&sim, e).camo);
     sim.ticks(1);
@@ -607,6 +606,43 @@ fn camouflage() {
     assert_eq!(vit(&sim, e).camo, 1.0);
     shoot(&mut sim, e, ids::ASSAULT_RIFLE_BULLET, 10.0, On::Body);
     assert!(close(vit(&sim, e).camo, 0.75 + 1.0 / 120.0, 1e-6), "0.75 after the hit, then a tick's regrowth");
+}
+
+/// health_shields.md 7: a hit that skips shields (here an event that
+/// bypasses them) never resets the shield delay, shield up or empty; a hit
+/// through the shield step resets it, even on an empty shield.
+#[test]
+fn a_hit_that_skips_shields_leaves_the_delay() {
+    use halo_ce::game::damage::hit_flags;
+    let mut sim = sim();
+    let e = spartan(&mut sim);
+    let bypass = |sim: &Sim| {
+        let amount = effects(sim).get(ids::ASSAULT_RIFLE_BULLET).unwrap().amount_with(1.0, 10.0);
+        HaloHit::direct(e, ids::ASSAULT_RIFLE_BULLET, amount, 1.0, On::Body.region(), Vec3::ZERO, Vec3::NEG_Z, None)
+            .with(hit_flags::BYPASS_SHIELDS)
+    };
+    // Shield up: the body takes it, the delay stays 0.
+    let h = bypass(&sim);
+    hit(&mut sim, h);
+    let v = vit(&sim, e);
+    assert!(v.shield == 1.0 && v.body < 1.0, "{} {}", v.shield, v.body);
+    assert_eq!(v.delay, 0, "shield up");
+    // Shield empty, the delay run down: a bypassing hit leaves it at 0.
+    // (Set by hand in the engine's values and their mirror too, so it is not read as another
+    // game's hit.)
+    {
+        let w = sim.app.world_mut();
+        w.get_mut::<Vitality>(e).unwrap().shield = 0.0;
+        w.get_mut::<Vitality>(e).unwrap().delay = 0;
+        w.get_mut::<Armor>(e).unwrap().amount = 0.0;
+        w.get_mut::<halo_ce::game::vitality::Mirrored>(e).unwrap().shield = 0.0;
+    }
+    let h = bypass(&sim);
+    hit(&mut sim, h);
+    assert_eq!(vit(&sim, e).delay, 0, "shield empty");
+    // The same hit through the shield step on the empty shield restarts it.
+    shoot(&mut sim, e, ids::ASSAULT_RIFLE_BULLET, 10.0, On::Body);
+    assert_eq!(vit(&sim, e).delay, 179, "through the shield step: 180, counted once by its tick");
 }
 
 #[test]

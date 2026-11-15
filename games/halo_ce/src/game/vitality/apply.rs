@@ -156,8 +156,9 @@ impl Vitality {
             }
             out.shield_taken = d_s;
         }
-        // 7. Shield delay.
-        if (shield_ran && out.shield_taken >= model.minimum_stun_damage) || self.shield == 0.0 {
+        // 7. Shield delay: only when step 6 ran (not skipped or bypassed), shield up or empty;
+        // a hit that skips shields never resets it (health_shields.md 7).
+        if !skips && (out.shield_taken >= model.minimum_stun_damage || self.shield == 0.0) {
             self.delay = spartan.shield_delay();
         }
         // 8. Body.

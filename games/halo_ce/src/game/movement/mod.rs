@@ -82,8 +82,10 @@
 //!   can miss a shallow touch outright, so a player there may drop 1/128
 //!   WU for a tick; a map's triangle mesh (and the tests' levels, built as
 //!   triangle meshes) are met exactly. Against an edge too high to climb
-//!   the player rocks by a few thousandths of a WU instead of resting
-//!   (the spec's blocked rows have speed 0).
+//!   the player rests as the spec's blocked rows (from their tick, speed
+//!   0 forward and up), but the cast's edge normal is not exactly level:
+//!   it drifts along the edge by up to 2.4e-4 WU per tick, and once in a
+//!   while the cast loses the floor under it for a tick.
 //! - The in-air kill damage is dealt once per engine tick (per Halo tick at
 //!   30 Hz); a fall's hit is written only on a first-time prediction.
 //! - Stun is read as its value s_b alone: the stunned moving animations
@@ -101,9 +103,6 @@
 //!   multiplayer map has one),
 //!   volatile contacts and the 16-contact splatter flag, the pitch clamp
 //!   (the input layer's), the airborne tick counter (animation only).
-//! - The virtual contact's normal for two planes, one facing down, is of
-//!   e x N_s and N_s x e the one pointing out of the crease (the spec's
-//!   "keeping the steepest plane's orientation" does not say).
 
 pub mod data;
 pub mod mover;

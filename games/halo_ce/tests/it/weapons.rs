@@ -218,6 +218,29 @@ fn a_melee_hits_on_its_key_frame_and_frees_the_trigger_after() {
     }
 }
 
+/// weapons.md 13: the melee's amount is (1 - s) minimum + U s with the
+/// damage scale s from the attacker's forward speed, so a standing melee
+/// (s = 0) deals the effect's minimum.
+#[test]
+fn a_standing_melee_deals_the_minimum() {
+    use halo_ce::game::{damage::HaloHit, vitality::DamageEffects};
+    for id in [ASSAULT_RIFLE, PISTOL] {
+        let (mut sim, p, _) = armed(id);
+        let t = target(&mut sim, p, 1.5);
+        let bit = melee_bit(&sim);
+        let mut cursor = sim.app.world().resource::<Messages<HaloHit>>().get_cursor_current();
+        let mut hits = Vec::new();
+        for k in 0..10 {
+            sim.intent(p).actions = if k == 0 { bit } else { 0 };
+            sim.ticks(1);
+            hits.extend(cursor.read(sim.app.world().resource::<Messages<HaloHit>>()).filter(|h| h.target == t).cloned());
+        }
+        assert_eq!(hits.len(), 1, "{id}: one melee hit");
+        let fx = sim.app.world().resource::<DamageEffects>().get(hits[0].effect).unwrap().clone();
+        assert_eq!((hits[0].scale, hits[0].amount), (0.0, fx.lower), "{id}: the minimum");
+    }
+}
+
 #[test]
 fn the_pistols_zoom_halves_the_field_of_view() {
     let (mut sim, p, g) = armed(PISTOL);
@@ -225,8 +248,10 @@ fn the_pistols_zoom_halves_the_field_of_view() {
     sim.ticks(1);
     sim.intent(p).secondary = false;
     sim.ticks(1);
+    // The nominal 35 degrees as the camera's: vertical 22.73 degrees, 0.39672 rad (weapons.md 12).
     let z = *sim.app.world().get::<Zoomed>(p).expect("zoomed");
-    assert!((z.fov - 35.0).abs() < 1e-3, "{}", z.fov);
+    let v = chimera_world::map::view_model::vertical_fov(z.fov);
+    assert!((v.to_radians() - 0.39672).abs() < 1e-5, "{} -> {v}", z.fov);
     assert_eq!(sim.app.world().get::<HaloGun>(g).unwrap().zoom, 0);
     sim.intent(p).secondary = true;
     sim.ticks(1);

@@ -9,9 +9,9 @@
 //! asks 1e-6 WU; positions pass through the engine's metres in f32, so
 //! 2e-6), `SUM` for sums over many ticks; the steps' rows depend on the
 //! collision mover, which is the engine's capsule cast here (the module's
-//! Known shortcuts): those not met exactly are checked by what they show
-//! (climbs or is blocked, the top's height), each with its measured
-//! tolerance in its doc.
+//! Known shortcuts): they follow the spec's tick traces (the blocked rows'
+//! place and speed 0 from the spec's tick, the hops' ticks), each with its
+//! measured tolerance in its doc.
 
 use avian3d::prelude::{Collider, RigidBody};
 use bevy::prelude::*;
@@ -32,12 +32,16 @@ use halo_ce::{
 
 const EXACT: f32 = 2e-6;
 const SUM: f32 = 2e-5;
-/// The steps' first touch (measured: within 2e-3 of the spec's mover).
-const STEP: f32 = 2e-3;
-/// Blocked by an edge: rocking against it (measured: the place within
-/// 2e-3, the speed below 0.012 WU/t).
-const BLOCKED: f32 = 1e-2;
-const ROCK: f32 = 0.02;
+/// The 0.10 step's first touch (measured: within 6e-6 of the spec's trace).
+const STEP: f32 = 2e-5;
+/// Blocked by an edge: where (measured: within 2.6e-5 of the spec's x).
+const BLOCKED: f32 = 4e-5;
+/// Blocked by an edge: the speed (the spec's exact 0; measured below 4e-6).
+const STILL: f32 = 1e-5;
+/// Blocked by an edge: sideways, along the edge (measured below 2.4e-4:
+/// the engine's edge normal is not exactly level, so the line the two
+/// planes make leans a hair off the edge).
+const SIDEWAYS: f32 = 3e-4;
 
 fn close(got: f32, want: f32, tol: f32, what: &str) {
     assert!((got - want).abs() <= tol, "{what}: got {got}, want {want} (tolerance {tol})");
@@ -728,13 +732,13 @@ fn step_level(s: f32) -> Vec<Block> {
     vec![floor(), aabb(Vec3::new(0.6, -60.0, -1.0), Vec3::new(60.0, 60.0, s))]
 }
 
-/// "Steps and edges", s = 0.10: not touching on tick 8 (exact); the first
-/// touch on tick 9 (the spec's x, z and velocity within `STEP`); climbs
-/// onto the top (z = 0.1) and runs at full speed again. Measured: our
-/// capsule cast leaves the floor and meets the edge's rounded contact as
-/// the spec's mover does, but hops higher over it (apex 0.126 against
-/// 0.106): it lands on the top on tick 23 (the spec's 20) and is at full
-/// speed on tick 26 (23).
+/// "Steps and edges", s = 0.10, against the spec's trace: not touching on
+/// tick 8 (exact); the first touch on tick 9 (x and z within `STEP`:
+/// measured 6e-6; the velocity 2.4e-5), airborne on tick 10. Remaining (our
+/// capsule cast for the spec's mover, measured): the edge contact grounds
+/// it on ticks 14 and 15 (the spec's 15 and 16), the hop over the edge
+/// rises to 0.113 (0.106) and it lands on the top on tick 22 (20), at full
+/// speed three ticks later as the spec's (25 against 23).
 #[test]
 fn a_step_of_0_10_is_climbed() {
     let mut t = T::standing_on(step_level(0.10));
@@ -747,29 +751,42 @@ fn a_step_of_0_10_is_climbed() {
     assert!(!t.mv().airborne, "tick 9: grounded through the floor contact");
     close(o.x, 0.4312763, STEP, "tick 9: x");
     close(o.z, 0.0077620, STEP, "tick 9: z");
-    close(v.x, 0.0153671, STEP, "tick 9: v_x");
-    close(v.z, 0.0266166, STEP, "tick 9: v_z");
+    close(v.x, 0.0153671, 3e-5, "tick 9: v_x");
+    close(v.z, 0.0266166, 3e-5, "tick 9: v_z");
     t.tick();
     assert!(t.mv().airborne, "tick 10: airborne (the edge contact alone is too steep)");
     let mut landed = None;
+    let mut full = None;
     for n in 11..=30 {
         t.tick();
         if landed.is_none() && !t.mv().airborne && (t.origin().z - 0.1).abs() < EXACT {
             landed = Some(n);
         }
+        if full.is_none() && (t.speed() - 0.075).abs() < EXACT {
+            full = Some(n);
+        }
     }
     let landed = landed.expect("lands on the top");
-    assert!((20..=23).contains(&landed), "lands on the top on tick {landed} (the spec's 20)");
+    assert!((20..=22).contains(&landed), "lands on the top on tick {landed} (the spec's 20)");
+    assert_eq!(full, Some(landed + 3), "full speed again three ticks after landing (the spec's 23)");
     close(t.origin().z, 0.1, EXACT, "on the top");
-    close(t.speed(), 0.075, EXACT, "full speed again");
 }
 
-/// "Steps and edges": 0.12 is climbed; 0.13 and 0.15 block where the
-/// bottom sphere meets the edge. Measured: against the edge ours does not
-/// come to rest as the spec's (speed 0 exactly) but rocks on it by a few
-/// thousandths (the clip of the floor and the edge alternate), so the
-/// blocked rows are checked within `BLOCKED` and `ROCK`, and that it never
-/// climbs.
+/// "Steps and edges": 0.12 is climbed; 0.13 and 0.15 against the spec's
+/// traces. The blocked rows hold as the spec's: from tick 23 (0.13) and
+/// tick 16 (0.15) the floor, the edge and the virtual +Z contact hold the
+/// point on the two planes' line, speed 0 (within `STILL`: single
+/// precision through the engine's metres; sideways within `SIDEWAYS`), x
+/// within `BLOCKED` of
+/// 0.6 - sqrt(0.2^2 - (0.2 - s)^2). The hop before it (the clip's upward
+/// slide off the edge; our capsule cast for the spec's mover) is within
+/// the measured tolerances below: 0.13's first touch 3e-5, apex 1e-3 on
+/// the spec's tick 15, the floor met again on the spec's tick 22 with x
+/// 1.1e-3 off; 0.15's first touch 5e-5, apex 3.3e-4 on the spec's tick
+/// 11, the floor on the spec's tick 15 with x 5.5e-4 and v_x 1.2e-4 off.
+/// Checked to tick 40 (the spec's row): on tick 41 the engine's cast
+/// misses the floor under 0.13's blocked pill once (a tick airborne,
+/// 3.4e-3 down), then it is blocked again.
 #[test]
 fn step_heights_climbed_and_blocked() {
     let mut t = T::standing_on(step_level(0.12));
@@ -778,40 +795,81 @@ fn step_heights_climbed_and_blocked() {
     assert!(!t.mv().airborne, "0.12: grounded");
     close(t.origin().z, 0.12, EXACT, "0.12: on the top");
     close(t.speed(), 0.075, EXACT, "0.12: full speed");
-    for (s, x) in [(0.13, 0.4126501), (0.15, 0.4063508)] {
+    // (s, the first touch (x, z, v_x, v_z), the apex (tick, z), the floor met again (tick, x,
+    // v_x), the blocked x from the next tick on.)
+    let rows = [
+        (0.13, [0.415832, 0.0085163, 0.0066261, 0.0177342], (15, 0.0455154), (22, 0.4108436, -0.0047308), 0.4126501),
+        (0.15, [0.4079286, 0.0061106, 0.0, 0.0], (11, 0.0129625), (15, 0.405607, -0.0008787), 0.4063508),
+    ];
+    for (s, touch, (apex_tick, apex), (floor_tick, floor_x, floor_v), x) in rows {
         let mut t = T::standing_on(step_level(s));
         t.throttle(1.0, 0.0);
-        let mut top: f32 = 0.0;
-        for _ in 1..=40 {
-            t.tick();
-            top = top.max(t.origin().z);
-            assert!(t.origin().x < 0.6 - 0.1, "{s}: never climbs: {}", t.origin());
+        t.ticks(9);
+        let (o, v) = (t.origin(), t.vel());
+        assert!(!t.mv().airborne, "{s}: grounded on the first touch");
+        close(o.x, touch[0], 3e-5, &format!("{s}: first touch x"));
+        close(o.z, touch[1], 6e-5, &format!("{s}: first touch z"));
+        if touch[2] != 0.0 {
+            // The 0.15 row gives no velocity.
+            close(v.x, touch[2], 3e-5, &format!("{s}: first touch v_x"));
+            close(v.z, touch[3], 3e-5, &format!("{s}: first touch v_z"));
         }
-        eprintln!("step {s}: x {} z {} top {top} speed {}", t.origin().x, t.origin().z, t.speed());
-        close(t.origin().x, x, BLOCKED, &format!("{s}: blocked at"));
-        close(t.origin().z, 0.0, BLOCKED, &format!("{s}: on the floor"));
-        close(t.speed(), 0.0, ROCK, &format!("{s}: (nearly) stopped"));
+        let mut top = (0, 0.0f32);
+        for n in 10..floor_tick {
+            t.tick();
+            assert!(t.mv().airborne, "{s}: airborne on tick {n}");
+            if t.origin().z > top.1 {
+                top = (n, t.origin().z);
+            }
+        }
+        assert_eq!(top.0, apex_tick, "{s}: the apex's tick");
+        close(top.1, apex, 1.1e-3, &format!("{s}: the apex"));
+        t.tick();
+        assert!(!t.mv().airborne, "{s}: the floor met again on tick {floor_tick}");
+        close(t.origin().x, floor_x, 1.1e-3, &format!("{s}: x on tick {floor_tick}"));
+        close(t.vel().x, floor_v, 2.5e-4, &format!("{s}: v_x on tick {floor_tick}"));
+        for n in floor_tick + 1..=40 {
+            t.tick();
+            assert!(!t.mv().airborne, "{s}: grounded on tick {n}");
+            close(t.origin().x, x, BLOCKED, &format!("{s}: blocked at, tick {n}"));
+            close(t.origin().z, 0.0, EXACT, &format!("{s}: on the floor, tick {n}"));
+            close(t.vel().x, 0.0, STILL, &format!("{s}: v_x, tick {n}"));
+            close(t.vel().z, 0.0, STILL, &format!("{s}: v_z, tick {n}"));
+            close(t.speed(), 0.0, SIDEWAYS, &format!("{s}: stopped, tick {n}"));
+        }
     }
 }
 
 /// "Steps and edges", s = 0.03: a small lip launches a hop and the player
-/// lands on the top at full speed. The spec's apex (0.0987121 on tick 17)
-/// and its landing tick (24) come from its own mover; ours is checked
-/// within the measured tolerance below.
+/// lands on the top at full speed. Against the spec's trace (our capsule
+/// cast for its mover, measured): grounded on the edge contact on ticks 10
+/// and 11 (as the spec), the velocities within 1.6e-3; airborne from tick
+/// 12 as the spec, but its apex 0.0857 on tick 16 (the spec's 0.0987 on
+/// 17) and it lands a tick earlier (23 against 24).
 #[test]
 fn a_small_lip_hops() {
     let mut t = T::standing_on(step_level(0.03));
     t.throttle(1.0, 0.0);
-    let mut apex: f32 = 0.0;
-    let mut airborne = 0;
-    for _ in 1..=40 {
+    t.ticks(9);
+    for (n, want) in [(10, [0.0506893, 0.0314144]), (11, [0.0540089, 0.0227750])] {
         t.tick();
-        apex = apex.max(t.origin().z);
-        airborne += t.mv().airborne as u32;
+        assert!(!t.mv().airborne, "tick {n}: grounded on the edge contact");
+        close(t.vel().x, want[0], 1.6e-3, &format!("tick {n}: v_x"));
+        close(t.vel().z, want[1], 1.6e-3, &format!("tick {n}: v_z"));
     }
-    eprintln!("lip 0.03: apex {apex}, airborne ticks {airborne}");
-    assert!(airborne > 0, "a hop");
-    close(apex, 0.0987121, 0.03, "the hop's apex");
+    let mut apex: f32 = 0.0;
+    let mut landed = None;
+    for n in 12..=40 {
+        t.tick();
+        assert!(n > 12 || t.mv().airborne, "airborne on tick 12");
+        apex = apex.max(t.origin().z);
+        if landed.is_none() && !t.mv().airborne {
+            landed = Some(n);
+        }
+    }
+    close(apex, 0.0987121, 0.015, "the hop's apex");
+    let landed = landed.expect("lands");
+    assert!((23..=24).contains(&landed), "lands on tick {landed} (the spec's 24)");
     assert!(!t.mv().airborne, "on the top");
     close(t.origin().z, 0.03, EXACT, "on the top");
     close(t.speed(), 0.075, EXACT, "full speed");
@@ -1017,3 +1075,27 @@ fn the_movement_registers_and_its_data_parses() {
         "the eye stands 0.62 WU above the floor",
     );
 }
+
+
+/// Section 5, the virtual contact's worked example: a slope facing up
+/// (newest) and an overhang (the steepest) give a contact in the overhang,
+/// facing down and sideways; and the other order of the same planes gives
+/// the other's sign. Two planes facing up meeting in a horizontal crease
+/// give +Z.
+#[test]
+fn the_virtual_contact_keeps_the_steepest_planes_orientation() {
+    use halo_ce::game::movement::mover::{Plane, virtual_contact};
+    let d = |v: [f32; 3]| space::direction(v);
+    let plane = |v| Plane { normal: d(v), offset: 0.0 };
+    let (slope, overhang) = (plane([-0.8, 0.0, 0.6]), plane([0.6, 0.0, -0.8]));
+    let got = virtual_contact(&[slope, overhang]).expect("normalises");
+    assert!((got - d([-0.8, 0.0, -0.6])).length() < 1e-6, "{got}");
+    // The overhang newest: N_old - c N_new = (-0.8, 0, 0.6) - (-0.96)(0.6, 0, -0.8).
+    let got = virtual_contact(&[overhang, slope]).expect("normalises");
+    let want = (Vec3::new(-0.8, 0.0, 0.6) + Vec3::new(0.6, 0.0, -0.8) * 0.96).normalize();
+    assert!((got - d(want.to_array())).length() < 1e-6, "{got}");
+    let a = 60f32.to_radians();
+    let v = [plane([-a.sin(), 0.0, a.cos()]), plane([a.sin(), 0.0, a.cos()])];
+    assert!((virtual_contact(&v).unwrap() - Vec3::Y).length() < 1e-6);
+}
+

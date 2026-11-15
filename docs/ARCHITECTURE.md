@@ -332,7 +332,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   tick system after movement) and their climbable sheets as ladder
   brushes (`core::MapLadders`), so every game's characters teleport and
   climb on them; Halo's movement climbs by movement.md's aim rule.
-  Halo's
+  Halo's camera uses the renderer's real angles (nominal 70 → 48.11
+  degrees vertical, `view::camera_fov`), its mover clips by movement.md's
+  detailed rule, and its spread uses the spec's direction table. Halo's
   files reach
   players without the disc through the asset store: `chimera_pack
   pack|sets halo_ce` packs the disc's own files under the build its
