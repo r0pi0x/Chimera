@@ -1,12 +1,20 @@
 """Build UGG Display (Black, Bold, Regular) and UGG Mono (Regular).
 
-    python build.py                    # all four into apps/ultimate_gun_game/fonts/
+    python build.py                    # all four into chimera/ui/fonts/
     python build.py black mono         # some of them
     UGG_FONTS_OUT=<dir> python build.py   # elsewhere
     UGG_FONTS_WOFF2=1 python build.py     # also WOFF2 (needs brotli)
+    UGG_FONTS_LOWER=0 python build.py     # the old caps-only build (v0.4's mapping)
+
+Two builds come from one source. The default is what the game ships
+(v0.5): the capitals, the lower case (lower.py), the symbols and the
+accented letters, a-z mapped to the drawn lower case; the kit's roles that
+must stay in capitals upper-case their own text (`TypeSpec::upper`).
+`UGG_FONTS_LOWER=0` builds the old caps-only mapping (every lower-case code
+point mapped to its capital), for comparison.
 
 Requirements and licence: README.md beside this file (OFL-1.1; the fonts'
-FONTLOG.txt in apps/ultimate_gun_game/fonts/).
+FONTLOG.txt in chimera/ui/fonts/).
 
 Glyph drawings: glyphs2.py; curve geometry: geom2.py. Outlines are built
 with cubic squircle corners, overlaps removed with skia-pathops, then
@@ -26,14 +34,17 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.pens.recordingPen import RecordingPen
 from fontTools.ttLib import TTFont
 
-import geom2 as gm
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # works under `python -I` too
+import geom2 as gm  # noqa: E402
 from glyphs2 import GLYPHS, G
+import lower as lw  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.environ.get("UGG_FONTS_OUT") or os.path.join(HERE, "..", "..", "apps", "ultimate_gun_game", "fonts")
+OUT = os.environ.get("UGG_FONTS_OUT") or os.path.join(HERE, "..", "..", "chimera", "ui", "fonts")
 WOFF2 = os.environ.get("UGG_FONTS_WOFF2") == "1"
+LOWER = os.environ.get("UGG_FONTS_LOWER", "1") != "0"
 UPM = 1000
-VERSION = 0.4
+VERSION = 0.5
 
 BASE = dict(
     H=700, ov=8, R=272, rfrac=0.45, cf=0.95, round_gain=1.03, mid_gain=0.93,
@@ -46,6 +57,10 @@ BASE = dict(
     mono=False, kern_factor=0.5,
     six_k=1.0, amp_k=0.94, amp_yu=0.52, amp_xu1=0.60,
     a_slit=0.17, a_taper=0.20, a_round=0.80, a_sq_bar=0.33,
+    # lower case (lower.py): x-height, ascender and descender in cap
+    # heights; stems and horizontals as fractions of the capitals'
+    xr=0.74, asc_r=1.06, desc_r=-0.286, sl_k=0.94, tl_k=0.86, a_bowl=0.58, e_bar=0.52,
+    lc_sb=1.10,  # lower-case sidebearings: a little looser than the capitals' for text sizes
 )
 
 # body widths in cap heights (Bold); Regular scales by `wscale`
@@ -56,13 +71,14 @@ WIDTHS = dict(
     question=0.80, hyphen=0.44, endash=0.72, emdash=1.36, paren=0.30,
     bracket=0.28, plus=0.60, mult=0.48, aster=0.44, percent=1.12, hash=0.96,
     amp=1.08, at=1.22, arrow=0.96, arrowv=0.58, tri=0.40, bullet=0.30,
-    degree=0.34, underscore=0.80, notdef=0.62,
+    degree=0.34, underscore=0.80, notdef=0.62, brace=0.30, angle=0.0,
 )
 
 ROUND_L = set("CGOQS") | {"zero.pnum", "six.pnum", "eight.pnum", "nine.pnum"}
 ROUND_R = set("BDOQS") | {"zero.pnum", "eight.pnum", "nine.pnum", "six.pnum"}
 
-SIDES = dict(c=-0.30, s=1.0, r=0.84, o=0.50, t=0.26, d=0.14, p=0.80, n=0.86, z=0.0)
+SIDES = dict(c=-0.30, s=1.0, r=0.84, o=0.50, t=0.26, d=0.14, p=0.80, n=0.86, z=0.0,
+             h=-0.60)  # h: a descender hook that tucks under its neighbour (j)
 
 FONTS = {
     "bold": dict(
@@ -73,15 +89,18 @@ FONTS = {
         family="UGG Display", style="Black", ps="UGGDisplay-Black", file="ugg-display-black",
         weight=900, S=200, T=166, sb=54, space=230, wscale=1.0, mid_gain=0.88, b8=0.90,
         b8m=0.80, cf=0.93, six_bowl=0.64, six_k=0.90, amp_k=0.80, amp_yu=0.49, amp_xu1=0.66,
+        sl_k=0.92, tl_k=0.76, e_bar=0.50, lc_sb=1.04,
     ),
     "regular": dict(
         family="UGG Display", style="Regular", ps="UGGDisplay-Regular", file="ugg-display-regular",
         weight=400, S=88, T=80, sb=70, space=230, wscale=0.97, ov=7, cf=0.96,
+        sl_k=0.95, tl_k=0.92, lc_sb=1.12,
     ),
     "mono": dict(
         family="UGG Mono", style="Regular", ps="UGGMono-Regular", file="ugg-mono-regular",
         weight=400, S=86, T=78, sb=60, space=0, H=660, R=236, ov=7, mono=True,
         advance=620, body=496, zero_w=0.80, tend=0.05, cf=0.96, mdiag=0.70, diag=0.92, zslash=0.66,
+        xr=0.76, desc_r=-0.288, sl_k=0.95, tl_k=0.92,
     ),
 }
 
@@ -89,7 +108,7 @@ MONO_W = dict(  # fractions of the mono body width
     question=0.84, hyphen=0.62, endash=1.0, emdash=1.25, paren=0.40, bracket=0.36,
     plus=0.80, mult=0.66, aster=0.66, percent=1.0, hash=1.0, amp=1.0, at=1.04,
     arrow=1.0, arrowv=0.80, tri=0.56, bullet=0.38, degree=0.46, underscore=1.25,
-    notdef=0.8,
+    notdef=0.8, brace=0.40, angle=1.0,
 )
 
 
@@ -98,11 +117,18 @@ def make_params(key):
     d.update(FONTS[key])
     P = NS(**d)
     P.key = key
+    P.xh = round(P.xr * P.H)
+    P.asc = round(P.asc_r * P.H)
+    P.desc = round(P.desc_r * P.H)
+    P.Sl, P.Tl = P.S * P.sl_k, P.T * P.tl_k
+    P.Sl_ref = 148 * 0.94          # Bold's lower-case stem: heavier faces widen from it
     return P
 
 
 def width_for(P, wkey):
     H, S = P.H, P.S
+    if wkey.startswith("lc_"):
+        return lw.lc_width(P, wkey)
     if P.mono:
         if wkey in MONO_W:
             return P.body * MONO_W[wkey]
@@ -172,7 +198,7 @@ def place(P, name, path, wkey, sides, w):
             cx = (b[0] + b[2]) / 2
             return gm.translate(path, A / 2 - cx), A
         return gm.translate(path, (A - w) / 2), A
-    sb = P.sb
+    sb = P.sb * (P.lc_sb if wkey.startswith("lc_") else 1.0)
     lf, rf = SIDES[sides[0]], SIDES[sides[1]]
     if b is None:
         return path, round(w)
@@ -193,6 +219,18 @@ PUNCT = ["period", "comma", "colon", "semicolon", "exclam", "question", "quotesi
          "numbersign", "ampersand", "at", "asterisk", "multiply", "arrowright", "arrowleft",
          "arrowup", "arrowdown", "triangleright", "bullet", "underscore", "bar", "degree"]
 ORDER = [".notdef", "space"] + ORDER_LETTERS + DIGITS + PUNCT
+# v0.5: the missing ASCII, some Latin-1 symbols, the accented capitals
+ORDER_SHIP = ORDER + lw.SYMBOLS + lw.UPPER_LATIN + ["germandbls"]
+ORDER_LOWER = lw.LOWER + lw.LOWER_LATIN
+CAP_COMPOSITES = [n for n, (cp, b, m) in lw.COMPOSITES.items() if b[0].isupper()]
+LOW_COMPOSITES = [n for n, (cp, b, m) in lw.COMPOSITES.items() if not b[0].isupper()]
+
+
+def glyph_order(lower):
+    o = ORDER_SHIP + CAP_COMPOSITES
+    if lower:
+        o = o + ORDER_LOWER + LOW_COMPOSITES
+    return o
 
 # logo-set A styles: (feature, style); ss02's own A is A_DEFAULT
 A_STYLES = [("ss03", "plain"), ("ss04", "slit"), ("ss05", "squircle"), ("ss06", "split")]
@@ -203,9 +241,29 @@ A_DEFAULT = "plain"
 OPTICAL_SHIFT = {"three": -0.035, "seven": -0.03}
 
 
-def build_glyphs(P):
+def compose(P, gl, name):
+    cp, base, mark = lw.COMPOSITES[name]
+    b = gl[base]
+    bb = b.path.bounds
+    g = G(P, 0)
+    mp = lw.MARKS[mark](g, base[0].isupper())
+    mb = mp.bounds
+    xc = (bb[0] + bb[2]) / 2
+    if base in ("a",) and not P.mono:
+        xc = (bb[0] + bb[2]) / 2 + 0.03 * (bb[2] - bb[0])
+    if mark == "cedilla":
+        # the cedilla's stub (at its x = 0) hangs from the bowl's foot
+        mp = gm.translate(mp, (bb[0] + bb[2]) / 2 + 0.02 * (bb[2] - bb[0]), 0)
+    else:
+        mp = gm.translate(mp, xc - (mb[0] + mb[2]) / 2, 0)
+    return NS(name=name, cps=[cp], path=gm.simplify(gm.union(b.path, mp)), adv=b.adv)
+
+
+def build_glyphs(P, lower=False):
     gl = {}
-    for n in ORDER:
+    for n in glyph_order(lower):
+        if n in lw.COMPOSITES:
+            continue
         cps, wkey, sides, f = GLYPHS[n]
         w = width_for(P, wkey)
         path = draw(P, n, w)
@@ -213,6 +271,19 @@ def build_glyphs(P):
         if n in OPTICAL_SHIFT:
             pp = gm.translate(pp, OPTICAL_SHIFT[n] * w)
         gl[n] = NS(name=n, cps=cps, path=pp, adv=adv)
+    for n in glyph_order(lower):
+        if n in lw.COMPOSITES:
+            gl[n] = compose(P, gl, n)
+    if lower:
+        # cv01: single-storey a; cv02: an l without its tail
+        for n, base, extra in (("a.cv01", "a", dict(single=True)), ("l.cv02", "l", dict(plain=True))):
+            cps, wkey, sides, f = GLYPHS[base]
+            if base == "l" and not P.mono:
+                wkey = "lc_lplain"
+            w = width_for(P, wkey)
+            path = draw(P, base, w, **extra)
+            pp, adv = place(P, base, path, wkey, sides if not (P.mono and base == "l") else "pp", w)
+            gl[n] = NS(name=n, cps=[], path=pp, adv=adv)
     if not P.mono:
         # proportional figures: same drawings, sidebearings fitted to the ink
         for n in DIGITS:
@@ -281,9 +352,12 @@ def profiles(polys, ys):
     return L, R
 
 
-def auto_kern(P, gl, lefts, rights, ref_pair=("H", "H")):
-    H = P.H
-    ys = [y + 0.5 for y in range(-120, H + 120, 10)]
+def auto_kern(P, gl, lefts, rights, ref_pair=("H", "H"), top=None, ylo=-120, yhi=None):
+    """Kern by area between profiles in the band 0..top (the cap height;
+    the x-height for pairs with a lower-case letter, `ref_pair` n n)."""
+    H = P.H if top is None else top
+    yhi = P.H + 120 if yhi is None else yhi
+    ys = [y + 0.5 for y in range(ylo, yhi, 10)]
     names = set(lefts) | set(rights) | set(ref_pair)
     polys = {n: gm.flatten(gl[n].path, 8) for n in names}
     prof = {n: profiles(polys[n], ys) for n in names}
@@ -317,6 +391,60 @@ def auto_kern(P, gl, lefts, rights, ref_pair=("H", "H")):
             if abs(k) >= 10:
                 pairs[(a, b)] = k
     return pairs, ref
+
+
+LC_OPEN_R = set("cefkrtvwxyz") | {"ae"}
+LC_OPEN_L = set("jvwxyz")
+LC_ROUND_L = set("acdegoq") | {"oslash", "eth"}
+LC_ROUND_R = set("bcdeop") | {"oslash", "thorn"}
+
+
+def lower_kern(P, gl, pairs, punct_k, open_r, open_l):
+    """Pairs with a lower-case letter: measured in the x-height band against
+    n n, kerned only where a side is open, rounds gently."""
+    low = list(lw.LOWER)
+    lefts = low + ORDER_LETTERS + ["quotesingle", "quotedbl", "parenleft", "bracketleft",
+                                   "slash", "hyphen"]
+    rights = low + ORDER_LETTERS + ["period", "comma", "quotesingle", "quotedbl", "parenright",
+                                    "bracketright", "slash", "hyphen"]
+    raw, _ = auto_kern(P, gl, lefts, rights, ref_pair=("n", "n"), top=P.xh,
+                       ylo=P.desc - 20, yhi=P.asc + 60)
+    o_r = open_r | LC_OPEN_R
+    o_l = open_l | LC_OPEN_L
+    for (a, b), k in raw.items():
+        if a not in low and b not in low:
+            continue                  # caps-caps and caps-punctuation: the capitals' own pass
+        if a not in o_r and b not in o_l:
+            continue
+        if b in ROUND_L or a in ROUND_R or b in LC_ROUND_L or a in LC_ROUND_R:
+            k = max(k, -int(0.5 * P.sb) // 5 * 5)
+            if abs(k) < 10:
+                continue
+        if a in punct_k and b in punct_k:
+            continue
+        # f and r over punctuation and lower case: never closer than 40 % of nn
+        pairs[(a, b)] = k
+
+
+def expand_composites(pairs, lower):
+    """Accented letters kern as their base (a dotless-i base is left alone:
+    its marks would clash with T, V, W, Y)."""
+    var = {}
+    for n, (cp, b, m) in lw.COMPOSITES.items():
+        if b in ("I", "dotlessi"):
+            continue
+        if not lower and not b[0].isupper():
+            continue
+        var.setdefault(b, []).append(n)
+    var.setdefault("O", []).append("Oslash")
+    if lower:
+        var.setdefault("o", []).append("oslash")
+    out = dict(pairs)
+    for (a, b), k in pairs.items():
+        for a2 in [a] + var.get(a, []):
+            for b2 in [b] + var.get(b, []):
+                out.setdefault((a2, b2), k)
+    return out
 
 
 # ------------------------------------------------------------------ output
@@ -354,8 +482,8 @@ class RoundingPen:
 
 def build_font(key):
     P = make_params(key)
-    gl = build_glyphs(P)
-    order = list(ORDER)
+    gl = build_glyphs(P, LOWER)
+    order = list(glyph_order(LOWER))
     extra = [n for n in gl if n not in order]
     order += extra
 
@@ -409,14 +537,27 @@ def build_font(key):
                         continue
                 pairs[(a, b)] = k
 
+    if not P.mono and LOWER:
+        lower_kern(P, gl, pairs, punct_k, open_r, open_l)
+    if not P.mono:
+        pairs = expand_composites(pairs, LOWER)
+
     fb = FontBuilder(UPM, isTTF=True)
     fb.setupGlyphOrder(order)
     cmap = {}
-    for n in ORDER:
+    for n in glyph_order(LOWER):
         for cp in gl[n].cps:
             cmap[cp] = n
-    for c in ORDER_LETTERS:
-        cmap[ord(c.lower())] = c
+    if not LOWER:
+        # shipped build: lower case shows as capitals (a-z, the accented
+        # letters, dotless i; the y with dieresis as its capital)
+        byc = dict(cmap)
+        for c in [chr(c) for c in range(0x61, 0x7B)] + [chr(c) for c in range(0xE0, 0x100)] + ["\u0131"]:
+            u = c.upper()
+            if c == "\u00f7" or len(u) != 1 or ord(u) not in byc:
+                continue
+            cmap[ord(c)] = byc[ord(u)]
+        cmap[0x131] = "I"
     fb.setupCharacterMap(cmap)
 
     glyf, metrics = {}, {}
@@ -441,8 +582,10 @@ def build_font(key):
     vs = f"Version {VERSION:.3f}"
     desc_txt = ("Display face for Ultimate Gun Game: wide, square-shouldered capitals whose "
                 "bowls are squircles, open terminals cut 20 degrees off vertical and diagonals "
-                "at 70 degrees, both taken from the game's logo facets. Caps only: lowercase maps "
-                "to capitals. Tabular figures by default; pnum gives proportional figures, zero a "
+                "at 70 degrees, both taken from the game's logo facets. "
+                + ("Lower case drawn in the same construction (cv01 single-storey a, cv02 an l "
+                   "without its tail). " if LOWER else "Caps only: lowercase maps to capitals. ")
+                + "Tabular figures by default; pnum gives proportional figures, zero a "
                 "slashed zero.")
     if P.key == "black":
         desc_txt += (" ss02 is the wordmark set (tighter, arm ends cut at 70 degrees); "
@@ -450,7 +593,8 @@ def build_font(key):
     if P.mono:
         desc_txt = ("Data monospace for Ultimate Gun Game, companion to UGG Display: squircle bowls, "
                     "every glyph on one advance, slashed zero by default (ss01 gives a plain zero). "
-                    "Caps only: lowercase maps to capitals.")
+                    + ("Lower case drawn on the same advance (cv01 single-storey a, cv02 a plain l)."
+                       if LOWER else "Caps only: lowercase maps to capitals."))
     fb.setupNameTable({
         "copyright": "Copyright 2026 Lucker Party contributors",
         "familyName": P.family if P.style in ("Regular", "Bold") else f"{P.family} {P.style}",
@@ -471,7 +615,7 @@ def build_font(key):
     fb.setupOS2(
         sTypoAscender=asc, sTypoDescender=desc, sTypoLineGap=0,
         usWinAscent=max(asc, ymax_all + 10), usWinDescent=max(-desc, -ymin_all + 10),
-        sCapHeight=P.H, sxHeight=P.H, usWeightClass=P.weight, fsType=0,
+        sCapHeight=P.H, sxHeight=P.xh if LOWER else P.H, usWeightClass=P.weight, fsType=0,
         achVendID="NONE", fsSelection=(1 << 7) | ((1 << 5) if bold else (1 << 6)),
         ulCodePageRange1=1, version=4,
         xAvgCharWidth=P.advance if P.mono else 600,
@@ -506,6 +650,9 @@ def build_font(key):
     else:
         fea += ["feature ss01 { sub zero by zero.plain; } ss01;",
                 "feature ss03 { sub one by one.nobase; } ss03;"]
+    if LOWER:
+        fea += ["feature cv01 { sub a by a.cv01; } cv01;",
+                "feature cv02 { sub l by l.cv02; } cv02;"]
     addOpenTypeFeaturesFromString(fb.font, "\n".join(fea))
 
     out_ttf = os.path.join(OUT, P.file + ".ttf")

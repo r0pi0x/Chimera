@@ -322,6 +322,10 @@ impl Plugin for CaEffectsPlugin {
         // server's message to a team.
         let callouts = kill_callout::CaTeamCallouts::load(&crate::game::data::CaData::of(app));
         app.insert_resource(callouts)
+            // Read again from files a join fetched (`data::renew`).
+            .add_observer(|r: On<crate::game::data::CaDataRenewed>, mut commands: Commands| {
+                commands.insert_resource(kill_callout::CaTeamCallouts::load(&r.data));
+            })
             .add_message::<kill_callout::CaTeamCallout>()
             .add_systems(
                 FixedLast,

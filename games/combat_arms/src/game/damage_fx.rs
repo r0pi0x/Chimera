@@ -866,6 +866,10 @@ impl Plugin for CaDamageFxPlugin {
         // match would keep making them: ultimate_gun_game `session`).
         app.on_every_character::<CaProgress>();
         app.insert_resource(table)
+            // Read again from files a join fetched (`data::renew`).
+            .add_observer(|r: On<crate::game::data::CaDataRenewed>, mut commands: Commands| {
+                commands.insert_resource(CaDamageFxTable::load(&r.data));
+            })
             .init_resource::<ProgressPass>()
             .init_resource::<CaDamageFxView>()
             .init_resource::<CaScreenFx>()

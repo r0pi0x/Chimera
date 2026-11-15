@@ -6,10 +6,9 @@
 //!   12° slant (white YOU, then cobalt HOST).
 //! - `bot_slot`: the slot reserved left of every player's name, holding
 //!   the antenna robot icon for a bot (no BOT tag), empty otherwise.
-//! - `row_you`: your row (7 % light tint and a 1 px outline at 60 %);
-//!   `hover_tick` + `HoverTicks`: a hoverable row's hover is a slanted tick
-//!   at its right edge (shown while the row is `Hovered`), never an
-//!   outline, so it never reads as YOU.
+//! - `row_you`: your row (7 % light tint and a 1 px outline at 60 %); a
+//!   hoverable row's hover is its own fill lift (no tick: the user's
+//!   call, 2026-11-14), never an outline, so it never reads as YOU.
 //! - `kbd`: a key cap.
 //! - `spawn_ping_meter` / `PingLevel`: four slanted bars, lit by ping
 //!   (the theme's `[network]` thresholds: quiet in `Good`, fine, amber
@@ -18,7 +17,7 @@
 //! Builders return bundles the caller spawns (`spawn_pair` for a box and
 //! its text); those needing a material spawn themselves.
 
-use bevy::{picking::hover::Hovered, prelude::*};
+use bevy::prelude::*;
 
 use crate::{
     fonts::{self, KitFonts, Role},
@@ -136,52 +135,6 @@ pub fn row_you(theme: &Theme, units: &UiUnits) -> impl Bundle + use<> {
         BackgroundColor(theme.tone_a(Tone::Fg, 0.07)),
         Outline::new(Val::Px(units.hairline()), Val::Px(-units.hairline()), theme.tone_a(Tone::Fg, 0.6)),
     )
-}
-
-/// A hoverable row's hover mark, a child of the row (`row_h_cq` tall): a
-/// slanted tick .22 cq wide at .35 cq from the right edge, 22 % in from
-/// the top and the bottom, shown while the row is `Hovered` (`HoverTicks`). Give the
-/// row `Hovered::default()` and `position_type: Relative`.
-#[derive(Component)]
-pub struct HoverTick;
-
-pub fn hover_tick(slants: &mut Assets<SlantMaterial>, theme: &Theme, units: &UiUnits, row_h_cq: f32) -> impl Bundle + use<> {
-    // A slanted node is drawn inside its box, so the box is the tick's
-    // width plus its lean over its height.
-    let h = row_h_cq * 0.56;
-    (
-        HoverTick,
-        MaterialNode(slants.add(SlantMaterial::new(theme, theme.tone(Tone::Fg)))),
-        Node {
-            position_type: PositionType::Absolute,
-            right: units.val(0.35),
-            top: units.val(row_h_cq * 0.22),
-            width: units.val(0.22 + h * theme.tan()),
-            height: units.val(h),
-            ..default()
-        },
-        Visibility::Hidden,
-        Pickable::IGNORE,
-    )
-}
-
-/// Shows a row's `HoverTick` while the row is hovered.
-pub struct HoverTicks;
-
-impl Plugin for HoverTicks {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Update, show_hover_ticks);
-    }
-}
-
-fn show_hover_ticks(rows: Query<(&Hovered, &Children), Changed<Hovered>>, mut ticks: Query<&mut Visibility, With<HoverTick>>) {
-    for (hovered, children) in &rows {
-        for c in children.iter() {
-            if let Ok(mut v) = ticks.get_mut(c) {
-                v.set_if_neq(if hovered.get() { Visibility::Inherited } else { Visibility::Hidden });
-            }
-        }
-    }
 }
 
 /// A key cap: outlined, the key in Mono.

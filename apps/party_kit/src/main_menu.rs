@@ -2152,6 +2152,7 @@ fn show(
         s: (size.y / 720.0).clamp(0.6, 3.0),
         height: size.y,
         accent,
+        own_faces: true,
     };
     // The Signal menu (`signal_menu`) draws the first page under this
     // root: no shade over it, and the pointer passes to it.

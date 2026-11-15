@@ -283,6 +283,13 @@ fn effect_file(path: &str) -> bool {
     .any(|d| p.starts_with(d))
 }
 
+/// The server's last `n` console lines (a failure's report: what a
+/// command such as `ugg_new` answered).
+fn server_console(app: &App, n: usize) -> String {
+    let out = &app.world().resource::<Console>().output;
+    out[out.len().saturating_sub(n)..].iter().map(|l| format!("  {:.1} {}", l.time, l.text)).collect::<Vec<_>>().join("\n")
+}
+
 /// Every character with a rung on the server (bots and players).
 fn climbers(world: &mut World) -> Vec<Entity> {
     world.query_filtered::<Entity, With<Rung>>().iter(world).collect()
@@ -438,8 +445,9 @@ fn run(published: &Store, session: &[(u64, &'static str)]) {
         let before = lines.count(&pattern) + lines.count(&pattern_full);
         assert!(
             until(&mut app, &mut client, JOIN_LIMIT, |_| lines.count(&pattern) + lines.count(&pattern_full) > before),
-            "{map}: the client's match didn't start within {JOIN_LIMIT:?}; its last lines:\n{}",
-            lines.tail(40)
+            "{map}: the client's match didn't start within {JOIN_LIMIT:?}; its last lines:\n{}\nthe server's console:\n{}",
+            lines.tail(40),
+            server_console(&app, 30)
         );
         let joined = map_started.elapsed();
         // Everyone climbs the whole ladder.
@@ -478,7 +486,7 @@ fn run(published: &Store, session: &[(u64, &'static str)]) {
     assert_eq!(processes, 1, "the client stayed one process (no game started again)");
     if !bound {
         assert!(
-            all.iter().any(|l| l.contains("the asset token is bound to")),
+            all.iter().any(|l| l.contains(&format!("the asset service at {url} is used now"))),
             "the first join bound the token"
         );
     }

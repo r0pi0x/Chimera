@@ -562,7 +562,14 @@ fn typed_text_keeps_its_case_and_labels_stay_capitals() {
     submit(&mut sim, "mainmenu_type address Home.Example:27015");
     sim.ticks(3);
     let texts: Vec<String> = sim.app.world_mut().query::<&Text>().iter(sim.app.world()).map(|t| t.0.clone()).collect();
-    assert!(texts.iter().any(|t| t == "Home.Example:27015"), "the typed text as typed: {texts:?}");
+    // A field's text is one node a character (`controls::EditText`).
+    let w = sim.app.world_mut();
+    let fields: Vec<String> = w
+        .query::<&chimera_ui::controls::EditText>()
+        .iter(w)
+        .map(|f| f.chars.iter().map(|c| w.get::<Children>(*c).and_then(|ch| ch.iter().find_map(|t| w.get::<Text>(t))).map_or(String::new(), |t| t.0.clone())).collect())
+        .collect();
+    assert!(fields.iter().any(|t| t == "Home.Example:27015"), "the typed text as typed: {fields:?}");
     assert!(texts.iter().any(|t| t == "ADDRESS"), "a label in capitals");
     assert!(!texts.iter().any(|t| t == "HOME.EXAMPLE:27015"));
 }

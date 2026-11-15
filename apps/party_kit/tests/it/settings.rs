@@ -634,7 +634,7 @@ fn a_typed_value_is_kept_past_the_range_and_checked() {
     let e = set(app).edit.expect("still typing");
     assert_eq!(e.error.as_deref(), Some("At least 0"), "why, beside the box");
     let texts: Vec<String> = app.world_mut().query::<&Text>().iter(app.world()).map(|t| t.0.clone()).collect();
-    assert!(texts.iter().any(|t| t == "AT LEAST 0"), "shown: {texts:?}");
+    assert!(texts.iter().any(|t| t == "At least 0"), "why, in the sentence face; shown: {texts:?}");
     app.world_mut().resource_mut::<Console>().submit("settings_type abc");
     app.update();
     tap(app, KeyCode::Enter);
@@ -645,4 +645,126 @@ fn a_typed_value_is_kept_past_the_range_and_checked() {
     assert!(set(app).edit.is_none());
     assert_eq!(set(app).ctx, Some(Context::Game), "Esc only closed the box");
     assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.6"));
+}
+
+/// The volumes step in 5 %: ←→ moves one, a press on the track lands on
+/// the 5 % grid, the help pane says so in percent (never the raw 0.05).
+#[test]
+fn volumes_step_in_five_percent() {
+    let (mut sim, row) = audio_page();
+    let app = &mut sim.app;
+    send(app, SettingsAction::Row(row));
+    tap(app, KeyCode::ArrowRight);
+    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.05"), "→: 100 % to 105 %");
+    tap(app, KeyCode::ArrowLeft);
+    tap(app, KeyCode::ArrowLeft);
+    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("0.95"), "←←: 95 %");
+    // A press between the grid's marks lands on one (0 to 200 %).
+    send(app, SettingsAction::SlideStart { row, frac: 0.513 });
+    send(app, SettingsAction::SlideEnd(row));
+    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.05"), "51.3 % of the track: 102.6 % lands on 105 %");
+    let tabs = party_kit::esc_menu::shown_tabs(app.world());
+    for cvar in ["volume", "snd_musicvolume", "snd_uivolume"] {
+        let Some(s) = tabs.iter().flat_map(|(_, s)| s.iter()).find(|s| s.cvar == cvar) else { continue };
+        assert!(matches!(s.pick, party_kit::host::Pick::Range { step, .. } if (step - 0.05).abs() < 1e-6), "{cvar}: 5 % steps");
+        assert_eq!(settings::range_text(s), "0% – 200%, steps of 5%", "{cvar}");
+    }
+}
+
+/// Counts the hover cues.
+#[derive(Resource, Default)]
+struct HoverCues(usize);
+
+fn count_hover_cues(mut cues: MessageReader<chimera_ui::UiCue>, mut n: ResMut<HoverCues>) {
+    n.0 += cues.read().filter(|c| c.event == "ui_hover").count();
+}
+
+fn hover_cues(app: &App) -> usize {
+    app.world().resource::<HoverCues>().0
+}
+
+fn later(app: &mut App, secs: f32) {
+    app.world_mut().resource_mut::<UiClock>().step(secs);
+}
+
+/// The hover cue belongs to the row, not its parts: across the field of
+/// view row's label, slider, value box and background it plays once; a
+/// fast sweep over ten rows plays a few (90 ms apart at least); none
+/// while the button is held (a drag); ↑↓ cue each step.
+#[test]
+fn hover_cues_once_per_row_spaced_and_never_while_dragging() {
+    let mut sim = party(true);
+    sim.app.init_resource::<HoverCues>().add_systems(Update, count_hover_cues.after(settings::SettingsSystems));
+    let app = &mut sim.app;
+    open_settings(app);
+    let fov = row_of(app, "fov_desired");
+    later(app, 1.0);
+    app.update();
+    let n0 = hover_cues(app);
+    for a in [
+        SettingsAction::Row(fov),
+        SettingsAction::Slide(fov),
+        SettingsAction::Row(fov),
+        SettingsAction::EditValue(fov),
+        SettingsAction::Row(fov),
+        SettingsAction::Slide(fov),
+    ] {
+        hover_on(app, &a);
+        later(app, 0.2);
+    }
+    assert_eq!(hover_cues(app) - n0, 1, "one row: one cue");
+    // Another row, then back: each a new item.
+    let other = rows(app).iter().position(|r| matches!(r, Row::Setting { s, .. } if s.cvar != "fov_desired")).unwrap();
+    hover_on(app, &SettingsAction::Row(other));
+    later(app, 0.2);
+    hover_on(app, &SettingsAction::Slide(fov));
+    assert_eq!(hover_cues(app) - n0, 3, "a different row cues, and coming back does");
+
+    // A fast sweep down Controls' rows, 30 ms each.
+    send(app, SettingsAction::Tab(2));
+    later(app, 1.0);
+    let live: Vec<usize> = rows(app).iter().enumerate().filter(|(_, r)| r.focusable()).map(|(i, _)| i).take(10).collect();
+    assert_eq!(live.len(), 10);
+    let n1 = hover_cues(app);
+    for r in &live {
+        hover_on(app, &SettingsAction::Row(*r));
+        later(app, 0.03);
+    }
+    let swept = hover_cues(app) - n1;
+    assert!((1..=4).contains(&swept), "ten rows in 0.3 s: a few cues, not ten ({swept})");
+
+    // Held: none.
+    later(app, 1.0);
+    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Left);
+    let n2 = hover_cues(app);
+    for r in &live[..4] {
+        hover_on(app, &SettingsAction::Row(*r));
+        later(app, 0.2);
+    }
+    assert_eq!(hover_cues(app), n2, "no hover cue while the button is held");
+    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().release(MouseButton::Left);
+    app.update();
+
+    // The keys: each step, gap or not.
+    let n3 = hover_cues(app);
+    for _ in 0..3 {
+        tap(app, KeyCode::ArrowDown);
+    }
+    assert_eq!(hover_cues(app) - n3, 3, "↓ three times: three cues");
+}
+
+/// A toggle flipped slides its slab (the row and the time kept for the
+/// drawing).
+#[test]
+fn a_flipped_toggle_slides() {
+    let mut sim = party(true);
+    let app = &mut sim.app;
+    open_settings(app);
+    send(app, SettingsAction::Tab(3));
+    let row = row_of(app, "party_swap_effect");
+    send(app, SettingsAction::Step { row, dir: 1 });
+    assert_eq!(set(app).flip.map(|(r, _)| r), Some(row));
+    let w = app.world_mut();
+    let sliding = w.query_filtered::<(), (With<chimera_ui::controls::ToggleSlab>, With<chimera_ui::Timeline>)>().iter(w).count();
+    assert_eq!(sliding, 1, "its slab slides");
 }

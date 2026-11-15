@@ -88,7 +88,7 @@ use chimera_client::client::{binds, ui_sound::UiCue};
 use chimera_core::console::{Console, ConsoleAppExt};
 use chimera_ui::{
     IconImages, KitFonts, Role, ScrollViews, Theme, Tone, UiClock, UiStyle, UiUnits,
-    controls::{self, Kind, State, Ui},
+    controls::{self, Kind, NOTE, SENTENCE, State, Ui},
     scroll::ScrollLocked,
 };
 
@@ -171,6 +171,9 @@ pub struct Settings {
     pub slide: Option<Slide>,
     /// A value box typed into (module doc).
     pub edit: Option<ValueEdit>,
+    /// The toggle flipped last: its row and when (the UI clock), for its
+    /// slab's slide.
+    pub flip: Option<(usize, f64)>,
     /// A page asked for by name (`ui_scene settings <tab>`) at opening.
     pub want_tab: Option<String>,
     /// A staged scene's page, opened once the menus are up.
@@ -401,7 +404,7 @@ impl Plugin for SettingsPlugin {
             )
             .add_systems(
                 Update,
-                (follow, capture, edit_typing, keys, clicks, hover_focus, act, refresh_values, draw).chain().in_set(SettingsSystems),
+                (follow, capture, edit_typing, keys, clicks, edit_pointer, hover_focus, act, refresh_values, draw).chain().in_set(SettingsSystems),
             )
             .add_systems(Update, crate::ui_cues::hover::<SettingsAction>.in_set(SettingsSystems));
         use chimera_client::client::ui_scene::UiSceneHooks;
@@ -451,7 +454,18 @@ impl Plugin for SettingsPlugin {
                 .find(|s| &s.cvar == cvar)
                 .cloned()
                 .ok_or_else(|| format!("no setting `{cvar}`"))?;
+            let before = shown_value(w, ctx, &set.cvar);
             set_value(w, ctx, &set, value);
+            // A toggle's slab slides, as a click's does.
+            if widget(&set) == Widget::Toggle && !host::same_value(&before, value) {
+                let at = tabs_of(w);
+                let s = w.resource::<Settings>();
+                let row = rows(ctx, &at, s.tab, s.bind_game).iter().position(|r| matches!(r, Row::Setting { s, .. } if s.cvar == set.cvar));
+                if let Some(row) = row {
+                    let since = now(w);
+                    w.resource_mut::<Settings>().flip = Some((row, since));
+                }
+            }
             Ok(None)
         });
     }
@@ -838,6 +852,61 @@ fn edit_typing(
     }
 }
 
+/// The pointer in a value box typed into (`controls::TextPress`): a
+/// press places the caret between the characters it is nearest
+/// (`controls::TextHits`, from the layout), a drag from it selects, a
+/// double press selects all. The press that opens the box selects all
+/// of it (`EditValue`), a drag from it selects from where it was.
+fn edit_pointer(
+    mouse: Res<ButtonInput<MouseButton>>,
+    boxes: Query<(Entity, &Interaction, &SettingsAction), With<controls::EditText>>,
+    hits: controls::TextHits,
+    clock: Option<Res<UiClock>>,
+    mut press: Local<(controls::TextPress, bool)>,
+    mut s: ResMut<Settings>,
+) {
+    let now = clock.map_or(0.0, |c| c.now);
+    let (press, dragged) = &mut *press;
+    if mouse.just_pressed(MouseButton::Left) {
+        *dragged = false;
+        let hit = boxes.iter().find_map(|(e, i, a)| match a {
+            SettingsAction::EditValue(row) if *i == Interaction::Pressed => Some((e, *row)),
+            _ => None,
+        });
+        let Some((e, row)) = hit else {
+            press.release();
+            return;
+        };
+        let (Some(at), Some(len)) = (hits.char_at(e), hits.len(e)) else { return };
+        let (c, a) = press.press(now, at, len);
+        if let Some(ed) = s.edit.as_mut().filter(|ed| ed.row == row) {
+            let n = ed.text.chars().count();
+            ed.caret = c.min(n);
+            ed.anchor = a.min(n);
+        }
+        return;
+    }
+    if !mouse.pressed(MouseButton::Left) {
+        press.release();
+        return;
+    }
+    let Some(row) = s.edit.as_ref().map(|e| e.row) else { return };
+    let Some(e) = boxes.iter().find_map(|(e, _, a)| (*a == SettingsAction::EditValue(row)).then_some(e)) else { return };
+    let Some(at) = hits.char_at(e) else { return };
+    if let Some((c, a)) = press.drag(at)
+        && (c != a || *dragged)
+    {
+        *dragged = true;
+        let ed = s.edit.as_mut().expect("checked");
+        let n = ed.text.chars().count();
+        let (c, a) = (c.min(n), a.min(n));
+        if (ed.caret, ed.anchor) != (c, a) {
+            ed.caret = c;
+            ed.anchor = a;
+        }
+    }
+}
+
 /// The pointer on a row focuses it while the pointer leads
 /// (`chimera_ui::PointerLead`: ↑↓ take the lead, so a still pointer, or a
 /// row redrawn or scrolled under it, never pins the focus; a real move
@@ -1067,6 +1136,10 @@ fn act_one(world: &mut World, a: SettingsAction) {
                     let next = s.pick.next(&now, dir);
                     cue(world, crate::ui_cues::step_cue(&s.pick, &next));
                     set_value(world, ctx, s, &next);
+                    if widget(s) == Widget::Toggle && !host::same_value(&now, &next) {
+                        let since = self::now(world);
+                        world.resource_mut::<Settings>().flip = Some((row, since));
+                    }
                 }
                 _ => {}
             }
@@ -1406,7 +1479,8 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         let mut queue = bevy::ecs::world::CommandQueue::default();
         let mut c = Commands::new(&mut queue, world);
         let ui = Ui::new(&theme, kit.as_ref(), units);
-        let d = Draw { ctx, lobby, s: &s, tabs: &tabs, help: &help, keys: &keys_of, bind_changed: &bind_changed, changes, now: t };
+        let reduced = world.get_resource::<chimera_ui::ReducedMotion>().is_some_and(|r| r.0);
+        let d = Draw { ctx, lobby, s: &s, tabs: &tabs, help: &help, keys: &keys_of, bind_changed: &bind_changed, changes, now: t, reduced };
         let root = spawn(&mut c, &ui, &d, images.as_mut(), icons.as_mut(), ambients.as_mut());
         if let Some(cam) = camera {
             c.entity(root).insert(UiTargetCamera(cam));
@@ -1432,8 +1506,15 @@ struct Help {
     kv: Vec<(&'static str, String)>,
 }
 
-fn range_text(p: &Pick) -> String {
+/// A setting's range as the help pane says it: a percentage's in percent
+/// (a volume's "0 – 200%, steps of 5%", never its 0.05 step).
+pub fn range_text(set: &Setting) -> String {
+    let p = &set.pick;
     match p {
+        Pick::Range { min, max, step } if set.percent => {
+            let pc = |v: f32| (v * 100.0).round();
+            format!("{}% – {}%, steps of {}%", pc(*min), pc(*max), pc(*step))
+        }
         Pick::Range { min, max, step } => format!("{min} – {max}, steps of {step}"),
         Pick::Choices(c) => c.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>().join(" / "),
     }
@@ -1450,7 +1531,7 @@ fn help_of(world: &World, ctx: Context, tabs: &[(String, Vec<Setting>)], s: &Set
             if let Some(c) = cvar {
                 kv.push(("Default", set.shown(&c.default)));
             }
-            kv.push(("Range", range_text(&set.pick)));
+            kv.push(("Range", range_text(set)));
             if let Some(n) = note {
                 kv.push(("Applies", (*n).to_string()));
             }
@@ -1490,6 +1571,8 @@ struct Draw<'a> {
     /// Changes not applied (`Settings::changes`).
     changes: usize,
     now: f64,
+    /// Reduced motion: no toggle slide.
+    reduced: bool,
 }
 
 fn spawn(
@@ -1601,8 +1684,10 @@ fn spawn(
         c.spawn((label, ChildOf(tag)));
         ui.text(c, help, Role::DisplayBold, 1.3, Tone::Fg, &d.help.title);
         let tx = ui.boxed(c, help, UiStyle { w_pct: Some(100.0), ..UiStyle::column() });
-        ui.paragraph(c, tx, Role::Mono, 0.62, Tone::Fg2, &d.help.text);
-        let kv: Vec<(&str, String)> = d.help.kv.iter().map(|(k, v)| (*k, v.clone())).collect();
+        ui.paragraph(c, tx, Role::Text, SENTENCE, Tone::Fg2, &d.help.text);
+        // Console names in their own (lower) case, other values in capitals.
+        let kv: Vec<(&str, String)> =
+            d.help.kv.iter().map(|(k, v)| (*k, if *k == "Console" { v.clone() } else { v.to_uppercase() })).collect();
         ui.kv(c, help, &kv, 6.0);
     }
 
@@ -1625,7 +1710,7 @@ fn spawn(
     let changed = d.changes;
     if d.ctx == Context::Host {
         ui.mark(c, st, Tone::Fg4, 0.42, 0.42);
-        ui.text(c, st, Role::Mono, 0.6, Tone::Fg3, "Your server's settings: some now, some from the next match");
+        ui.sentence(c, st, NOTE, Tone::Fg3, "Your server's settings: some now, some from the next match");
     } else {
         ui.mark(c, st, if changed > 0 { Tone::Acc } else { Tone::Fg4 }, 0.42, 0.42);
         let line = match changed {
@@ -1633,7 +1718,7 @@ fn spawn(
             1 => "1 change not applied".to_string(),
             n => format!("{n} changes not applied"),
         };
-        ui.text(c, st, Role::Mono, 0.6, if changed > 0 { Tone::Fg } else { Tone::Fg3 }, &line);
+        ui.sentence(c, st, NOTE, if changed > 0 { Tone::Fg } else { Tone::Fg3 }, &line);
     }
     let on_binds = names.get(s.tab).is_some_and(|n| n == "Controls");
     if on_binds {
@@ -1682,7 +1767,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
         }
         Row::Games => {
             let (row, vl) = ui.row(c, list, "Binds for", None, t.layout(L, "row_h"), State::focused(focus));
-            c.entity(row).insert(SettingsAction::Row(i));
+            c.entity(row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
             let names: Vec<&str> = (0..crate::controls::tab_count()).map(crate::controls::tab_label).collect();
             for (k, e) in ui.segmented(c, vl, &names, Some(s.bind_game), State::focused(focus)).into_iter().enumerate() {
                 c.entity(e).insert(SettingsAction::Pick { row: i, option: k });
@@ -1693,7 +1778,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
             let listening = s.capture == Some(i);
             let changed = d.bind_changed.get(i).copied().unwrap_or(false);
             let (row, vl) = ui.row(c, list, label, None, t.layout(L, "bind_h"), State { focus, changed, ..State::NONE });
-            c.entity(row).insert(SettingsAction::Row(i));
+            c.entity(row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
             let keys = d.keys.get(i).cloned().unwrap_or_default();
             let f = ui.key_field(c, vl, &keys, listening, 8.5, State::focused(focus));
             c.entity(f).insert(SettingsAction::Bind(i));
@@ -1708,7 +1793,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
             let changed = s.pending.contains_key(&set.cvar);
             let st = State { focus, changed, ..State::NONE };
             let (row, vl) = ui.row(c, list, &set.label, *note, t.layout(L, "row_h"), st);
-            c.entity(row).insert(SettingsAction::Row(i));
+            c.entity(row).insert((SettingsAction::Row(i), crate::ui_cues::CueItem(format!("settings:{}:{i}", s.tab))));
             let vst = State::focused(focus);
             match (widget(set), &set.pick) {
                 (Widget::Slider { min, max, .. }, _) => {
@@ -1721,6 +1806,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                         caret: e.text.char_indices().nth(e.caret).map_or(e.text.len(), |(b, _)| b),
                         anchor: e.text.char_indices().nth(e.anchor).map_or(e.text.len(), |(b, _)| b),
                         error: e.error.is_some(),
+                        suffix: set.percent.then_some("%"),
                     });
                     let p = ui.slider_ex(c, vl, f, None, &set.shown(&v), 15.0, vst, typing);
                     c.entity(p.track).insert(SettingsAction::Slide(i));
@@ -1729,12 +1815,13 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                         // Refused: why, beside the box (threat as a mark).
                         let n = ui.boxed(c, vl, UiStyle { gap: Some(0.4), margin: Some([0.0, 0.0, 0.0, 0.6].into()), ..UiStyle::row() });
                         ui.mark(c, n, Tone::Threat, 0.36, 0.36);
-                        ui.text(c, n, Role::Mono, 0.5, Tone::Fg2, why);
+                        ui.sentence(c, n, NOTE, Tone::Fg2, why);
                     }
                 }
                 (Widget::Toggle, Pick::Choices(ch)) => {
                     let on = ch.get(1).is_some_and(|(cv, _)| host::same_value(cv, &v));
-                    let tg = ui.toggle(c, vl, on, vst);
+                    let slide = s.flip.filter(|(r, _)| *r == i).map(|(_, since)| controls::ToggleSlide { since, now: d.now, reduced: d.reduced });
+                    let tg = ui.toggle_ex(c, vl, on, vst, slide);
                     c.entity(tg).insert(SettingsAction::Step { row: i, dir: 1 });
                 }
                 (Widget::Segmented, Pick::Choices(ch)) => {
@@ -1751,7 +1838,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                     let (f, opts) = ui.dropdown(c, vl, &labels, sel, open, 12.0, vst);
                     c.entity(f).insert(SettingsAction::OpenList(i));
                     for (k, e) in opts.into_iter().enumerate() {
-                        c.entity(e).insert(SettingsAction::Pick { row: i, option: k });
+                        c.entity(e).insert((SettingsAction::Pick { row: i, option: k }, crate::ui_cues::CueItem(format!("settings:list:{i}:{k}"))));
                     }
                 }
                 _ => {
@@ -1787,7 +1874,7 @@ fn keep_modal(c: &mut Commands, ui: &Ui, root: Entity, left: u64) {
     ui.text(c, m, Role::DisplayBold, 1.35, Tone::Fg, "Keep this display mode?");
     let big = ui.boxed(c, m, UiStyle { gap: Some(0.8), margin: Some([1.0, 0.0, 0.3, 0.0].into()), ..UiStyle::row() }.align(AlignItems::Baseline));
     ui.text(c, big, Role::DisplayBold, 2.6, Tone::Fg, &format!("{left}"));
-    ui.text(c, big, Role::Mono, 0.62, Tone::Fg2, "s, then it goes back");
+    ui.sentence(c, big, SENTENCE, Tone::Fg2, "s, then it goes back");
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
     let k = ui.button(c, acts, Kind::Primary, "Keep", Some("Enter"), 2.4, State::focused(true));
     c.entity(k).insert(SettingsAction::Keep);
@@ -1817,7 +1904,7 @@ fn leave_modal(c: &mut Commands, ui: &Ui, root: Entity, at: usize, changes: usiz
     ui.text(c, m, Role::DisplayBold, 1.35, Tone::Fg, "Apply your changes?");
     let line = if changes == 1 { "1 change is not applied yet.".to_string() } else { format!("{changes} changes are not applied yet.") };
     let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
-    ui.paragraph(c, tx, Role::Mono, 0.62, Tone::Fg2, &format!("{line} Apply keeps them and saves; Discard puts them back."));
+    ui.paragraph(c, tx, Role::Text, SENTENCE, Tone::Fg2, &format!("{line} Apply keeps them and saves; Discard puts them back."));
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
     let buttons = [(Kind::Primary, "Apply"), (Kind::Secondary, "Discard"), (Kind::Ghost, "Stay")];
     for (k, ((kind, label), action)) in buttons.into_iter().zip(LEAVE_CHOICES).enumerate() {

@@ -7,25 +7,39 @@
 //!   `tabs` (the settings' sub-tabs: the selected one white with a
 //!   slanted underline); `row` (a label and a value, `min_h` 2.9 cq, a
 //!   hairline under it) and `section` (a small header with the accent
-//!   mark); `toggle` (a slab sliding on a slanted track, white when on);
+//!   mark); `toggle` (a slab on a slanted track, white when on, each
+//!   label centred on its slab's place; `toggle_ex` slides the slab over,
+//!   `ToggleSlide`, 140 ms eased, none under reduced motion; focus a
+//!   strip clipped to the track's bottom edge);
 //!   `segmented`; `slider` (track, fill, the default's mark, a slanted
 //!   thumb, the value); `stepper` (`-`, the value, `+`); their `_ex`
-//!   forms make the value box clickable and, while `Typing`, a text
-//!   field (a number typed in, checked by `typed_number`: any finite
-//!   number inside the setting's hard limits); `dropdown` (a
-//!   field and, open, its list); `key_field` (key caps, "press a key"
-//!   while listening); `text_field` (typed text or stars, a placeholder,
-//!   the caret in accent while it has the keys, the selection on an
-//!   accent tint; its keys, copy, cut and paste are the screen's:
-//!   `chimera_client::client::widgets::text_key`, `clipboard`); `kv` (key/value lines); `modal` (a plate with a
-//!   top bar, white or threat).
-//! - **States** (`State`), one vocabulary everywhere: hover is the
-//!   right-edge 12° tick plus a faint tint (`Hover`, shown live by
-//!   `show_hover` from the pointer, no rebuild); focus is the same tick in
-//!   accent and the accent bar at the left; selected is a white fill; a
-//!   toggle that is on is white (cobalt stays for focus and changed rows:
-//!   a changed row's accent square); threat red only as a mark (an error's
-//!   underline, the danger button's mark), never a fill.
+//!   forms make the value box clickable and, while `Typing`, typed into
+//!   in place (a number, checked by `typed_number`: any finite number
+//!   inside the setting's hard limits); `dropdown` (a field with the
+//!   upright `chevron` icon, flipped up while open, and, open, its list);
+//!   `key_field` (key caps, "press a key" while listening); `text_field`
+//!   (typed text or stars, a placeholder, the caret in accent while it
+//!   has the keys, the selection on an accent tint; its keys, copy, cut
+//!   and paste are the screen's: `chimera_client::client::widgets::
+//!   text_key`, `clipboard`); `kv` (key/value lines); `modal` (a plate
+//!   with a top bar, white or threat).
+//! - **Text** in a value box or a text field (`edit_chars`): one node a
+//!   character, at rest and typing alike, so opening one moves nothing
+//!   (the same box, face and size; typed text in `Role::Text` at
+//!   `TYPED`, stars and numbers in Mono); the caret a thin overlay (one
+//!   physical pixel, two over 1440 lines) just after the character
+//!   before it, taking no room; the selection a tint behind its
+//!   characters. `TextHits` finds the boundary under the pointer from the
+//!   layout; `TextPress` makes a press place the caret, a drag select and
+//!   a double press select all (the screens keep one).
+//! - **States** (`State`; the kit's design rules, 2026-11-14): hover is a
+//!   faint tint (`Hover`, shown live by `show_hover` from the pointer, no
+//!   rebuild), the element's own fill lifting: no tick anywhere (the
+//!   user's call; a sub-tab's short underline stays); focus is the accent bar at the left (a
+//!   control's own accent detail on its shape); selected is a white fill;
+//!   a toggle that is on is white (cobalt stays for focus and changed
+//!   rows: a changed row's accent square); threat red only as a mark (an
+//!   error's underline, the danger button's mark), never a fill.
 //! - **Wipes** (`Wipe`): a moving cover or bar on the 12° slant, clipped
 //!   along it by its `Timeline` (`Prop::ClipLeft`/`ClipRight`), the
 //!   menus' moves inside a screen (`wipe_cover`, `Wipe::bar`); the logo
@@ -34,14 +48,13 @@
 //! Builders spawn under a parent (`ChildOf`) and return the entity a
 //! screen gives its action (with `clickable`), sized from `UiUnits` at
 //! the time: screens rebuild when the units change, as the lobby does.
-//! Labels go upper case (the UGG faces draw capitals only); what a person
-//! types (`text_field`, `text_plain`) keeps its case, and is drawn in
-//! Bevy's default face, a system one in the client (`style::PlainText`;
-//! the kit's face is its fallback).
+//! Labels go upper case (`text`); sentences (`paragraph`) and what a
+//! person types or is called (`text_field`, `text_plain`) keep their case,
+//! in the sentence face (`Role::Text`), ours like every other text.
 
 use bevy::{
     prelude::*,
-    ui::{DeprecatedInteraction as Interaction, FocusPolicy, RelativeCursorPosition},
+    ui::{ComputedNode, DeprecatedInteraction as Interaction, FocusPolicy, RelativeCursorPosition, UiGlobalTransform, Val2},
 };
 
 use crate::{
@@ -103,8 +116,9 @@ pub struct Hover {
     pub over: Color,
 }
 
-/// The right-edge tick: shown while its parent is hovered, or always
-/// (`always`: the focus tick, in accent).
+/// A hover mark shown while its parent is hovered, or always (`always`):
+/// the sub-tabs' short underline (rows, lines, buttons and fields have no
+/// tick: their own fill lifts).
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
 pub struct Tick {
     pub always: bool,
@@ -119,6 +133,14 @@ pub fn clickable() -> (Interaction, FocusPolicy) {
 pub const BUTTON_H: f32 = 2.4;
 /// A row's least height, cq.
 pub const ROW_H: f32 = 2.9;
+/// Typed text's size in a field, cq (`Role::Text`).
+pub const TYPED: f32 = 0.74;
+/// A sentence's size, cq (`Role::Text`: descriptions, help, dialog
+/// bodies, notices).
+pub const SENTENCE: f32 = 0.86;
+/// A small sentence's size, cq (`Role::Text`: a dialog's footnote, a
+/// field's hint, a status line under a list).
+pub const NOTE: f32 = 0.72;
 
 impl<'a> Ui<'a> {
     pub fn new(theme: &'a Theme, kit: Option<&'a KitFonts>, units: UiUnits) -> Self {
@@ -145,16 +167,29 @@ impl<'a> Ui<'a> {
         self.text_with_case(c, parent, role, size, tone, alpha, &text.to_uppercase())
     }
 
-    /// `text` as it is (a person's own: what they type in a field), in a
-    /// role at `size` cq, on one line. Labels use `text` (capitals).
+    /// `text` as it is (a sentence, a name, what a person types in a
+    /// field, a cvar name in Mono), in a role at `size` cq, on one line.
+    /// Labels use `text` (capitals).
     pub fn text_plain(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, text: &str) -> Entity {
-        let e = self.text_with_case(c, parent, role, size, tone, 1.0, text);
-        c.entity(e).insert(style::PlainText);
+        self.text_plain_a(c, parent, role, size, tone, 1.0, text)
+    }
+
+    /// A sentence on one line in its own case (`Role::Text` at `size` cq:
+    /// `SENTENCE`, `NOTE`).
+    pub fn sentence(&self, c: &mut Commands, parent: Entity, size: f32, tone: Tone, text: &str) -> Entity {
+        self.text_with_case(c, parent, Role::Text, size, tone, 1.0, text)
+    }
+
+    /// `text_plain` with the tone at `alpha`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_plain_a(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, alpha: f32, text: &str) -> Entity {
+        let e = self.text_with_case(c, parent, role, size, tone, alpha, text);
+        c.entity(e).insert(style::KeepCase);
         e
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn text_with_case(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, alpha: f32, text: &str) -> Entity {
+    pub fn text_with_case(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, alpha: f32, text: &str) -> Entity {
         c.spawn((
             Text::new(text),
             UiText { role, size, tone, alpha },
@@ -164,14 +199,14 @@ impl<'a> Ui<'a> {
         .id()
     }
 
-    /// Text that wraps within its parent's width.
+    /// Text that wraps within its parent's width, in its own case: a
+    /// sentence (descriptions, help, dialog bodies) in `Role::Text`, whose
+    /// lines are 1.3 em (`TypeSpec::line`).
     pub fn paragraph(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, text: &str) -> Entity {
         c.spawn((
-            Text::new(text.to_uppercase()),
+            Text::new(text),
             UiText::new(role, size, tone),
-            // Wrapped lines need room: 1.5 lines.
             TextLayout::new(Justify::Left, LineBreak::WordBoundary),
-            bevy::text::LineHeight::RelativeToFont(1.55),
             ChildOf(parent),
         ))
         .id()
@@ -181,30 +216,6 @@ impl<'a> Ui<'a> {
     /// `top` in cq, `w` x `h` cq.
     pub fn slant_at(&self, c: &mut Commands, parent: Entity, slant: UiSlant, ltrb: [Option<f32>; 4], w: f32, h: f32) -> Entity {
         c.spawn((style_abs(ltrb, w, h), Node::default(), slant, Pickable::IGNORE, ChildOf(parent))).id()
-    }
-
-    /// The right-edge tick `right` cq in from the edge of a box `h` cq
-    /// tall: white while hovered, or (focus) always and in accent.
-    pub fn tick(&self, c: &mut Commands, parent: Entity, right: f32, focus: bool) -> Entity {
-        let u = &self.units;
-        let lean = 0.52 * u.cq(1.0) * self.theme.tan();
-        let tone = if focus { Tone::Acc } else { Tone::Fg };
-        c.spawn((
-            Tick { always: focus },
-            Node {
-                position_type: PositionType::Absolute,
-                right: u.val(right),
-                top: percent(24.0),
-                bottom: percent(24.0),
-                width: Val::Px(u.snap(u.cq(0.22) + lean)),
-                ..default()
-            },
-            UiSlant::new(tone, 1.0),
-            if focus { Visibility::Inherited } else { Visibility::Hidden },
-            Pickable::IGNORE,
-            ChildOf(parent),
-        ))
-        .id()
     }
 
     /// The focus bar: accent, `w` cq wide down the left edge.
@@ -377,9 +388,6 @@ impl<'a> Ui<'a> {
         if st.focus && !st.disabled {
             self.focus_bar(c, b, 0.24);
         }
-        if !st.disabled {
-            self.tick(c, b, if kind == Kind::Primary { 0.45 + lean } else { 0.45 }, st.focus);
-        }
         if st.error {
             self.underline(c, b, Tone::Threat, 0.18);
         }
@@ -452,8 +460,8 @@ impl<'a> Ui<'a> {
     // Rows.
 
     /// A settings row: the label (Display .8 cq) with an optional small
-    /// note, the value at the right. Focus: tint .06, the accent bar and
-    /// tick; changed: the accent square before the label; error: the
+    /// note, the value at the right. Hover: its fill lifts (no tick);
+    /// focus: tint .06 and the accent bar; changed: the accent square before the label; error: the
     /// threat bar at the left. Returns (row, value box).
     pub fn row(&self, c: &mut Commands, parent: Entity, label: &str, small: Option<&str>, min_h: f32, st: State) -> (Entity, Entity) {
         let base = if st.focus { self.color(Tone::Fg, 0.06) } else { Color::NONE };
@@ -488,7 +496,6 @@ impl<'a> Ui<'a> {
         } else if st.focus {
             self.focus_bar(c, row, 0.24);
         }
-        self.tick(c, row, 0.35, st.focus);
         (row, vl)
     }
 
@@ -511,11 +518,20 @@ impl<'a> Ui<'a> {
     // Values.
 
     /// A toggle: a slab sliding on a slanted track 4.4 x 1.5 cq, OFF/ON
-    /// under it; on, the slab is white at the right. Returns the toggle.
+    /// each centred on its half (the slab's place); on, the slab is white
+    /// at the right. Focus: the track's own slanted outline in accent (no
+    /// underline). Returns the toggle.
     pub fn toggle(&self, c: &mut Commands, parent: Entity, on: bool, st: State) -> Entity {
+        self.toggle_ex(c, parent, on, st, None)
+    }
+
+    /// `toggle` with the slab sliding over from the other side
+    /// (`ToggleSlide`: flipped at `since`, `TOGGLE_SLIDE_SECS`, eased out;
+    /// none under reduced motion).
+    pub fn toggle_ex(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>) -> Entity {
         let t = c
             .spawn((
-                UiStyle { w: Some(4.4), h: Some(1.5), shrink: Some(0.0), ..UiStyle::row() },
+                UiStyle { w: Some(TOGGLE_W), h: Some(TOGGLE_H), shrink: Some(0.0), ..UiStyle::row() },
                 Node::default(),
                 BackgroundColor(Color::NONE),
                 Hover { base: Color::NONE, over: Color::NONE },
@@ -532,21 +548,45 @@ impl<'a> Ui<'a> {
             ));
         };
         full(c, UiSlant::new(Tone::Fg, 0.05));
-        full(c, UiSlant::new(if st.focus { Tone::Fg2 } else { Tone::Fg4 }, 1.0).outline(self.units.phys(self.units.hairline())));
+        full(c, UiSlant::new(Tone::Fg4, 1.0).outline(self.units.phys(self.units.hairline())));
         // The slab: half the track less its insets.
-        let slab = UiSlant::new(if on { Tone::Fg } else { Tone::Fg3 }, 1.0);
-        let left = if on { 2.25 } else { 0.25 };
-        self.slant_at(c, t, slab, [Some(left), Some(0.2), None, None], 1.9, 1.1);
-        let labels = self.boxed(
-            c,
-            t,
-            UiStyle { abs: Some([Some(0.0), Some(0.0), Some(0.0), Some(0.0)]), justify: Some(JustifyContent::SpaceAround), ..UiStyle::row() },
-        );
-        c.entity(labels).insert(Pickable::IGNORE);
-        self.text(c, labels, Role::Mono, 0.5, if on { Tone::Fg3 } else { Tone::Ink }, "Off");
-        self.text(c, labels, Role::Mono, 0.5, if on { Tone::Ink } else { Tone::Fg3 }, "On");
-        if st.focus {
-            self.underline(c, t, Tone::Acc, 0.2);
+        let slab = UiSlant::new(if on { Tone::Fg } else { Tone::Fg4 }, 1.0);
+        let left = if on { TOGGLE_ON_LEFT } else { TOGGLE_OFF_LEFT };
+        let s = self.slant_at(c, t, slab, [Some(left), Some(0.2), None, None], TOGGLE_SLAB_W, 1.1);
+        c.entity(s).insert((ToggleSlab, UiTransform::default()));
+        if let Some(sl) = slide.filter(|sl| !sl.reduced) {
+            let from = if on { TOGGLE_OFF_LEFT - TOGGLE_ON_LEFT } else { TOGGLE_ON_LEFT - TOGGLE_OFF_LEFT };
+            let tl = Timeline::new([Track::new(Prop::X, from, 0.0).dur(TOGGLE_SLIDE_SECS).ease(crate::motion::Ease::OUT)]).started(sl.since);
+            if !tl.done(sl.now) {
+                let x = tl.sample(Prop::X, tl.local(sl.now)).unwrap_or(0.0);
+                c.entity(s).insert((tl, UiTransform { translation: Val2::px(self.units.cq(x), 0.0), ..default() }));
+            }
+        }
+        // Each label centred on its half, where the slab stands for it.
+        for (l, x, lit) in [("Off", TOGGLE_OFF_LEFT, !on), ("On", TOGGLE_ON_LEFT, on)] {
+            let half = self.boxed(
+                c,
+                t,
+                UiStyle { abs: Some([Some(x), Some(0.0), None, Some(0.0)]), w: Some(TOGGLE_SLAB_W), justify: Some(JustifyContent::Center), ..UiStyle::row() },
+            );
+            c.entity(half).insert((ToggleLabel, Pickable::IGNORE));
+            // On: ink on the white slab; off: white on the dim one; the
+            // side the slab isn't on, faint.
+            let tone = match (lit, on) {
+                (true, true) => Tone::Ink,
+                (true, false) => Tone::Fg,
+                _ => Tone::Fg3,
+            };
+            self.text(c, half, Role::Mono, 0.5, tone, l);
+        }
+        if (st.focus || st.error) && !st.disabled {
+            // Focus (error: threat) as a strip along the track's bottom
+            // edge, its ends on the track's slant (Rule 2).
+            let tone = if st.error { Tone::Threat } else { Tone::Acc };
+            let h = 0.2;
+            let tan = self.theme.tan();
+            let strip = self.slant_at(c, t, UiSlant::new(tone, 1.0), [Some(0.0), None, None, Some(0.0)], TOGGLE_W - TOGGLE_H * tan + h * tan, h);
+            c.entity(strip).insert(ToggleFocus);
         }
         t
     }
@@ -674,33 +714,121 @@ impl<'a> Ui<'a> {
     }
 
     /// A number's box (a slider's, a stepper's): clickable, a faint tint
-    /// on hover; typing, a text field with the caret (`Typing`), its
-    /// underline threat when the text was refused.
+    /// on hover. Typing (`Typing`) keeps its geometry and its face: the
+    /// same box, the typed text in the same role and size one character a
+    /// node (`edit_chars`, as at rest, so nothing moves when it opens),
+    /// the caret an overlay, the selection a tint behind its characters,
+    /// the underline accent (threat when the text was refused). A
+    /// `suffix` (a percentage's `%`) stays after the typed text.
     #[allow(clippy::too_many_arguments)]
     fn value_box(&self, c: &mut Commands, parent: Entity, value: &str, w: f32, st: State, typing: Option<Typing>, look: ValueLook) -> Entity {
-        if let Some(t) = typing {
-            return self.text_field(c, parent, t.text, "", Some(TextCursor { at: t.caret, anchor: t.anchor }), false, w, State { focus: true, error: t.error, ..State::NONE });
-        }
         let over = self.color(Tone::Fg, 0.06);
+        let base = if typing.is_some() { over } else { Color::NONE };
         let nv = c
             .spawn((
                 UiStyle { min_w: Some(w), h: Some(look.h), pad: Some([0.0, look.pad].into()), justify: Some(look.justify), ..UiStyle::row() },
                 Node::default(),
-                BackgroundColor(Color::NONE),
-                Hover { base: Color::NONE, over },
+                BackgroundColor(base),
+                Hover { base, over },
+                RelativeCursorPosition::default(),
                 clickable(),
                 ChildOf(parent),
             ))
             .id();
-        self.text(c, nv, Role::Mono, look.size, Tone::Fg, value);
-        if st.focus {
-            self.underline(c, nv, Tone::Acc, 0.18);
-        } else if st.error {
+        let face = Face { role: Role::Mono, size: look.size, tone: Tone::Fg, plain: false };
+        match typing {
+            Some(t) => {
+                let (at, anchor) = (char_of(t.text, t.caret), char_of(t.text, t.anchor));
+                let chars = self.edit_chars(c, nv, t.text, face, Some((at, anchor)));
+                if let Some(sfx) = t.suffix {
+                    self.text_with_case(c, nv, face.role, face.size, face.tone, 1.0, sfx);
+                }
+                c.entity(nv).insert(EditText { chars });
+            }
+            // At rest in capitals, as labels are (the UGG faces draw
+            // capitals only); a value with a space as one text (a lone
+            // space lays out as nothing), never typed into.
+            None if value.contains(' ') => {
+                self.text(c, nv, face.role, face.size, face.tone, value);
+            }
+            None => {
+                let chars = self.edit_chars(c, nv, &value.to_uppercase(), face, None);
+                c.entity(nv).insert(EditText { chars });
+            }
+        }
+        let error = st.error || typing.is_some_and(|t| t.error);
+        if error {
             self.underline(c, nv, Tone::Threat, 0.18);
+        } else if st.focus || typing.is_some() {
+            self.underline(c, nv, Tone::Acc, 0.18);
         } else if look.rest_line {
             self.hairline(c, nv, Tone::Fg4, 1.0);
         }
         nv
+    }
+
+    /// `text` under `parent` one character a node (each its own `Text` in
+    /// `face`, in a row that takes no more room than the text), so a caret
+    /// and a selection are placed by the layout itself: the caret
+    /// (`caret`: (at, anchor), char indices) an accent bar over the
+    /// boundary that takes no room (absolute, centred on it), the
+    /// selection an accent tint behind its characters. Returns the
+    /// characters' nodes (`EditText`, `TextHits` hit-test them).
+    fn edit_chars(&self, c: &mut Commands, parent: Entity, text: &str, face: Face, caret: Option<(usize, usize)>) -> Vec<Entity> {
+        let wrap = c
+            .spawn((Node { flex_shrink: 0.0, align_items: AlignItems::Center, ..default() }, Pickable::IGNORE, ChildOf(parent)))
+            .id();
+        let n = text.chars().count();
+        let (lo, hi) = caret.map_or((0, 0), |(a, b)| (a.min(b).min(n), a.max(b).min(n)));
+        let mut out = Vec::with_capacity(n);
+        for (i, ch) in text.chars().enumerate() {
+            let sel = i >= lo && i < hi;
+            let cell = c
+                .spawn((
+                    Node { flex_shrink: 0.0, align_items: AlignItems::Center, ..default() },
+                    BackgroundColor(if sel { self.color(Tone::Acc, 0.45) } else { Color::NONE }),
+                    Pickable::IGNORE,
+                    ChildOf(wrap),
+                ))
+                .id();
+            if sel {
+                c.entity(cell).insert(TextSelection);
+            }
+            // A space would be laid out as nothing on its own.
+            let shown = if ch == ' ' && face.plain { '\u{a0}'.to_string() } else { ch.to_string() };
+            let t = self.text_with_case(c, cell, face.role, face.size, face.tone, 1.0, &shown);
+            if face.plain {
+                c.entity(t).insert(style::KeepCase);
+            }
+            out.push(cell);
+        }
+        if let Some((at, _)) = caret {
+            let at = at.min(n);
+            let (holder, left) = match out.get(at) {
+                Some(cell) => (*cell, Val::ZERO),
+                None => (out.last().copied().unwrap_or(wrap), if n == 0 { Val::ZERO } else { percent(100.0) }),
+            };
+            // Thin: one physical pixel, two on a window over 1440 lines;
+            // just after the character before it (at the boundary's left).
+            let w = self.units.hairline() * if self.units.phys(self.units.height) > 1440.0 { 2.0 } else { 1.0 };
+            c.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left,
+                    top: percent(50.0),
+                    margin: UiRect { top: self.units.val(-0.5), ..default() },
+                    width: Val::Px(w),
+                    height: self.units.val(1.0),
+                    ..default()
+                },
+                BackgroundColor(self.color(Tone::Acc, 1.0)),
+                TextCaret,
+                ZIndex(1),
+                Pickable::IGNORE,
+                ChildOf(holder),
+            ));
+        }
+        out
     }
 
     /// A stepper: `-`, the value (`w` cq at least), `+`, on slanted
@@ -744,8 +872,8 @@ impl<'a> Ui<'a> {
 
     /// A dropdown `w` cq wide: the field (1.9 cq, a faint fill, a hairline
     /// under it, accent when focused; white when open) and, when `open`,
-    /// its list below (the chosen option's accent cut, the active one's
-    /// accent tick). Returns (field, options).
+    /// its list below (the chosen option's accent cut, the keys' line the
+    /// accent bar). Returns (field, options).
     #[allow(clippy::too_many_arguments)]
     pub fn dropdown(
         &self,
@@ -774,8 +902,7 @@ impl<'a> Ui<'a> {
             .id();
         let ink = open.is_some();
         self.text(c, f, Role::Mono, 0.66, if ink { Tone::Ink } else { Tone::Fg }, options.get(selected).copied().unwrap_or("-"));
-        // The arrow: a small slanted bar standing in for the triangle.
-        self.mark(c, f, if ink { Tone::Ink } else { Tone::Fg2 }, 0.5, 0.5);
+        self.chevron(c, f, if ink { Tone::Ink } else { Tone::Fg2 }, open.is_some());
         if open.is_none() {
             if st.focus {
                 self.underline(c, f, Tone::Acc, 0.2);
@@ -811,11 +938,37 @@ impl<'a> Ui<'a> {
                 let cut = if i == selected { Tone::Acc } else { Tone::Fg5 };
                 self.mark(c, e, cut, 0.36, 0.36);
                 self.text(c, e, Role::Mono, 0.62, if i == selected || act { Tone::Fg } else { Tone::Fg2 }, o);
-                self.tick(c, e, 0.45, act);
+                if act {
+                    // The keys' line: the accent bar (no tick).
+                    self.focus_bar(c, e, 0.2);
+                }
                 out.push(e);
             }
         }
         (f, out)
+    }
+
+    /// The dropdown's mark: the kit's `chevron` icon (an upright down V:
+    /// the dropdown is a straight box), `CHEVRON_H` cq tall in `tone`, flipped up while
+    /// `up` (the list open). Its image is drawn by `draw_kit_icons`.
+    /// Returns the node.
+    pub fn chevron(&self, c: &mut Commands, parent: Entity, tone: Tone, up: bool) -> Entity {
+        let u = self.units;
+        let px = u.phys(u.cq(CHEVRON_H)).round().max(1.0);
+        c.spawn((
+            ImageNode { color: self.theme.tone(tone), flip_y: up, ..default() },
+            Node {
+                width: Val::Px((CHEVRON_ASPECT * px).ceil() / u.scale_factor),
+                height: Val::Px(px / u.scale_factor),
+                flex_shrink: 0.0,
+                ..default()
+            },
+            KitIcon { key: "chevron", px: px as u32 },
+            Chevron { up },
+            Pickable::IGNORE,
+            ChildOf(parent),
+        ))
+        .id()
     }
 
     /// A key-binding field (min `w` cq, 1.8 cq tall): the keys as caps
@@ -879,20 +1032,19 @@ impl<'a> Ui<'a> {
         } else if st.focus && !listening {
             self.underline(c, f, Tone::Acc, 0.2);
         }
-        if !listening {
-            self.tick(c, f, 0.35, false);
-        }
         f
     }
 
     /// A text field (min `w` cq, 1.9 cq tall, the dropdown's field): the
-    /// value in Mono as typed (its case kept; stars when `masked`),
+    /// value in Mono as typed (its case kept; stars when `masked`) one
+    /// character a node (`edit_chars`: the same at rest and typing),
     /// `placeholder` in `fg_3` when empty; `caret` (Some only while it has
-    /// the keys; byte offsets into `value`) an accent bar at its place and
-    /// the selection between it and its anchor on an accent tint
-    /// (`TextSelection`), the field tinted and underlined in accent.
-    /// Error: the threat underline. Returns the field (give it its
-    /// focusing action).
+    /// the keys; byte offsets into `value`) an accent bar over its place
+    /// that takes no room, the selection between it and its anchor on an
+    /// accent tint (`TextSelection`), the field tinted and underlined in
+    /// accent. Error: the threat underline. Hover is its own tint (no
+    /// tick). Returns the field (give it its focusing action; `TextHits`
+    /// places a click).
     #[allow(clippy::too_many_arguments)]
     pub fn text_field(
         &self,
@@ -917,56 +1069,24 @@ impl<'a> Ui<'a> {
                 Node::default(),
                 BackgroundColor(base),
                 Hover { base, over },
+                RelativeCursorPosition::default(),
                 clickable(),
                 ChildOf(parent),
             ))
             .id();
         let shown: String = if masked { "*".repeat(value.chars().count()) } else { value.to_string() };
+        // Typed text in the sentence face, its own case; stars in Mono.
+        let (role, size) = if masked { (Role::Mono, 0.66) } else { (Role::Text, TYPED) };
         if value.is_empty() && !typing {
             self.text(c, f, Role::Mono, 0.62, Tone::Fg3, placeholder);
+            c.entity(f).insert(EditText { chars: Vec::new() });
         } else {
-            // A byte offset of `value` as one of the shown text (stars:
-            // one per char).
-            let place = |b: usize| {
-                let b = (0..=b.min(value.len())).rev().find(|i| value.is_char_boundary(*i)).unwrap_or(0);
-                let chars = value[..b].chars().count();
-                shown.char_indices().nth(chars).map_or(shown.len(), |(i, _)| i)
-            };
-            let (at, anchor) = caret.map_or((shown.len(), shown.len()), |k| (place(k.at), place(k.anchor)));
-            let (a, b) = (at.min(anchor), at.max(anchor));
-            let bar = |c: &mut Commands| {
-                c.spawn((
-                    Node { width: Val::Px(self.units.hairline() * 2.0), height: self.units.val(1.0), flex_shrink: 0.0, ..default() },
-                    BackgroundColor(self.color(Tone::Acc, 1.0)),
-                    TextCaret,
-                    Pickable::IGNORE,
-                    ChildOf(f),
-                ));
-            };
-            if a > 0 {
-                self.text_plain(c, f, Role::Mono, 0.66, Tone::Fg, &shown[..a]);
-            }
-            if typing && at == a {
-                bar(c);
-            }
-            if b > a {
-                let sel = c
-                    .spawn((
-                        Node { align_items: AlignItems::Center, flex_shrink: 0.0, ..default() },
-                        BackgroundColor(self.color(Tone::Acc, 0.45)),
-                        TextSelection,
-                        Pickable::IGNORE,
-                        ChildOf(f),
-                    ))
-                    .id();
-                self.text_plain(c, sel, Role::Mono, 0.66, Tone::Fg, &shown[a..b]);
-            }
-            if typing && at == b && b > a {
-                bar(c);
-            }
-            if b < shown.len() {
-                self.text_plain(c, f, Role::Mono, 0.66, Tone::Fg, &shown[b..]);
-            }
+            // Typed text in the sentence face (`TYPED`), its own case;
+            // stars in Mono.
+            let face = Face { role, size, tone: Tone::Fg, plain: !masked };
+            let k = caret.map(|k| (char_of(value, k.at), char_of(value, k.anchor)));
+            let chars = self.edit_chars(c, f, &shown, face, k);
+            c.entity(f).insert(EditText { chars });
         }
         if st.error {
             self.underline(c, f, Tone::Threat, 0.2);
@@ -975,13 +1095,13 @@ impl<'a> Ui<'a> {
         } else {
             self.hairline(c, f, Tone::Fg3, 1.0);
         }
-        self.tick(c, f, 0.35, false);
         f
     }
 
     /// Key/value lines (the help pane's console name, default, range):
-    /// keys Mono .6 `fg_3` in a `kw` cq column, values `fg`, a hairline
-    /// under each.
+    /// keys Mono .6 `fg_3` in a `kw` cq column (capitals), values `fg` in
+    /// Mono as given (a cvar name in its lower case; callers upper-case
+    /// word values), a hairline under each.
     pub fn kv(&self, c: &mut Commands, parent: Entity, pairs: &[(&str, String)], kw: f32) -> Entity {
         let list = self.boxed(c, parent, UiStyle::column());
         for (k, v) in pairs {
@@ -989,7 +1109,7 @@ impl<'a> Ui<'a> {
             self.hairline(c, line, Tone::Fg, 0.07);
             let kc = self.boxed(c, line, UiStyle { w: Some(kw), shrink: Some(0.0), ..UiStyle::row() });
             self.text(c, kc, Role::Mono, 0.6, Tone::Fg3, k);
-            self.text(c, line, Role::Mono, 0.6, Tone::Fg, v);
+            self.text_plain(c, line, Role::Mono, 0.6, Tone::Fg, v);
         }
         list
     }
@@ -1019,6 +1139,170 @@ fn style_abs(ltrb: [Option<f32>; 4], w: f32, h: f32) -> UiStyle {
     UiStyle { w: Some(w), h: Some(h), ..UiStyle::row() }.abs(ltrb)
 }
 
+/// The dropdown chevron's height, cq, and its icon's aspect (18 x 12
+/// units, data/icons.toml).
+pub const CHEVRON_H: f32 = 0.58;
+pub const CHEVRON_ASPECT: f32 = 1.5;
+
+/// The dropdown's chevron (`Ui::chevron`): pointing up (the list open).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Chevron {
+    pub up: bool,
+}
+
+/// An `ImageNode` that shows the kit's icon `key` at `px` physical px
+/// tall, its image filled in by `draw_kit_icons` (builders without the
+/// image assets: `Ui::chevron`).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KitIcon {
+    pub key: &'static str,
+    pub px: u32,
+}
+
+/// Fills in `KitIcon`s' images (module doc).
+pub fn draw_kit_icons(
+    mut nodes: Query<(&KitIcon, &mut ImageNode), Changed<KitIcon>>,
+    images: Option<ResMut<Assets<Image>>>,
+    icons: Option<ResMut<IconImages>>,
+) {
+    let (Some(mut images), Some(mut icons)) = (images, icons) else { return };
+    for (k, mut img) in &mut nodes {
+        if let Some(h) = icons.get(&mut images, k.key, k.px) {
+            img.image = h;
+        }
+    }
+}
+
+/// A toggle's size, cq.
+pub const TOGGLE_W: f32 = 4.4;
+pub const TOGGLE_H: f32 = 1.5;
+/// Its slab's width and its two places (left edge, cq).
+pub const TOGGLE_SLAB_W: f32 = 1.9;
+pub const TOGGLE_OFF_LEFT: f32 = 0.25;
+pub const TOGGLE_ON_LEFT: f32 = 2.25;
+/// The slab's slide from one side to the other, seconds.
+pub const TOGGLE_SLIDE_SECS: f32 = 0.14;
+
+/// A toggle flipped at `since` (UI clock), drawn at `now`: its slab
+/// slides over (`Ui::toggle_ex`); `reduced`: it jumps.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ToggleSlide {
+    pub since: f64,
+    pub now: f64,
+    pub reduced: bool,
+}
+
+/// A toggle's focus strip (`Ui::toggle`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ToggleFocus;
+
+/// A toggle's slab (the moving part).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ToggleSlab;
+
+/// A toggle's label box (OFF, then ON), each its half's width.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ToggleLabel;
+
+/// How `Ui::edit_chars` draws a text.
+#[derive(Clone, Copy, Debug)]
+struct Face {
+    role: Role,
+    size: f32,
+    tone: Tone,
+    /// A person's own text, in its own case (`style::KeepCase`).
+    plain: bool,
+}
+
+/// A text field's or a value box's characters, one node each, in order
+/// (`Ui::edit_chars`): on the field, for `TextHits`.
+#[derive(Component, Clone, Debug, Default, PartialEq)]
+pub struct EditText {
+    pub chars: Vec<Entity>,
+}
+
+/// The char index of byte offset `b` of `text` (rounded down to a char).
+pub fn char_of(text: &str, b: usize) -> usize {
+    let b = (0..=b.min(text.len())).rev().find(|i| text.is_char_boundary(*i)).unwrap_or(0);
+    text[..b].chars().count()
+}
+
+/// The boundary a pointer at physical x `px` is nearest, of characters
+/// whose centres are at `centres` (physical x, in order): how many of
+/// them lie left of it.
+pub fn boundary_at(px: f32, centres: &[f32]) -> usize {
+    centres.iter().filter(|c| **c < px).count()
+}
+
+/// Where the pointer is in a text field or value box (`EditText`): the
+/// char boundary it is nearest, from the layout (the field's
+/// `RelativeCursorPosition`, each character's place). None: no pointer,
+/// or not laid out.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct TextHits<'w, 's> {
+    fields: Query<'w, 's, (&'static EditText, &'static RelativeCursorPosition, &'static ComputedNode, &'static UiGlobalTransform)>,
+    nodes: Query<'w, 's, &'static UiGlobalTransform>,
+}
+
+impl TextHits<'_, '_> {
+    pub fn char_at(&self, field: Entity) -> Option<usize> {
+        let (text, rel, node, at) = self.fields.get(field).ok()?;
+        let n = rel.normalized?;
+        let px = at.affine().translation.x + n.x * node.size.x;
+        let centres: Vec<f32> = text.chars.iter().filter_map(|e| self.nodes.get(*e).ok()).map(|t| t.affine().translation.x).collect();
+        (centres.len() == text.chars.len()).then(|| boundary_at(px, &centres))
+    }
+
+    /// The field's length in characters.
+    pub fn len(&self, field: Entity) -> Option<usize> {
+        self.fields.get(field).ok().map(|f| f.0.chars.len())
+    }
+}
+
+/// Seconds within which a second press near the first selects all.
+pub const DOUBLE_CLICK_SECS: f64 = 0.4;
+
+/// The pointer in a text (char indices; a screen keeps one): a press
+/// places the caret, a drag from it selects, a double press selects all.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TextPress {
+    last: Option<(f64, usize)>,
+    held: Option<usize>,
+}
+
+impl TextPress {
+    /// A press at `at` of a text `len` chars long at `now`: (caret,
+    /// anchor), all of it on a double press.
+    pub fn press(&mut self, now: f64, at: usize, len: usize) -> (usize, usize) {
+        if let Some((t, a)) = self.last
+            && now - t <= DOUBLE_CLICK_SECS
+            && a.abs_diff(at) <= 1
+        {
+            self.last = None;
+            self.held = None;
+            return (len, 0);
+        }
+        self.last = Some((now, at));
+        self.held = Some(at);
+        (at, at)
+    }
+
+    /// The pointer held and at `at`: (caret, anchor) from the press.
+    pub fn drag(&self, at: usize) -> Option<(usize, usize)> {
+        self.held.map(|a| (at, a))
+    }
+
+    /// Held since a press.
+    pub fn held(&self) -> bool {
+        self.held.is_some()
+    }
+
+    /// The button let go.
+    pub fn release(&mut self) {
+        self.held = None;
+    }
+}
+
 /// A value box being typed into (`Ui::slider_ex`, `Ui::stepper_ex`):
 /// the text, the caret and its selection's other end (byte indices),
 /// the text refused.
@@ -1028,6 +1312,8 @@ pub struct Typing<'a> {
     pub caret: usize,
     pub anchor: usize,
     pub error: bool,
+    /// Shown after the typed text, not typed (a percentage's `%`).
+    pub suffix: Option<&'a str>,
 }
 
 /// A value box's look: a slider's (right-aligned, a hairline at rest)
@@ -1234,7 +1520,7 @@ pub struct ControlsPlugin;
 
 impl Plugin for ControlsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, show_hover).add_systems(
+        app.add_systems(Update, show_hover).add_systems(PostUpdate, draw_kit_icons.in_set(crate::UiKitSystems)).add_systems(
             PostUpdate,
             (resolve_min_heights.after(crate::style::resolve_styles), apply_wipes.after(crate::motion::step_timelines))
                 .in_set(crate::UiKitSystems),

@@ -2414,6 +2414,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "blam_formats"
+version = "0.1.0"
+dependencies = [
+ "chimera_vfs",
+ "flate2",
+ "toml",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4422,6 +4431,23 @@ dependencies = [
  "num-traits",
  "serde",
  "zerocopy",
+]
+
+[[package]]
+name = "halo_ce"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "blam_formats",
+ "chimera_client",
+ "chimera_core",
+ "chimera_present",
+ "chimera_sim",
+ "chimera_world",
+ "halo_ce",
+ "workspace-hack",
 ]
 
 [[package]]

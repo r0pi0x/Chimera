@@ -1,7 +1,8 @@
 # The shell's default theme (chimera_ui::theme::Theme::shell_default):
 # what screens use when the app inserts no theme, and the base every other
-# theme lays over (a theme names only what differs). Trebuchet MS and the
-# shell overlays' present colours. Colours are display-space sRGB.
+# theme lays over (a theme names only what differs). Our faces (UGG
+# Display and Mono, chimera/ui/fonts/) and the shell overlays' present
+# colours. Colours are display-space sRGB.
 
 name = "shell"
 
@@ -44,29 +45,49 @@ good_alpha = 0.7
 slant_deg = 0.0
 min_text_px = 9.0
 
-# Text roles (chimera_ui::fonts::Role): face `display`/`mono` are the
-# app's own faces (KitFonts) when loaded; any other face is a family name.
+# Text roles (chimera_ui::fonts::Role): face `display`/`mono` are our own
+# faces (KitFonts, loaded for every app); any other face is a family name.
+# `upper`: the role upper-cases its text (the faces have lower case);
+# `line`: line height in font sizes.
 [type.wordmark]
-face = "trebuchet ms"
-weight = 700
+face = "display"
+weight = 900
+tracking = 0.03
 upper = true
 
 [type.display_black]
-face = "trebuchet ms"
-weight = 700
+face = "display"
+weight = 900
+tracking = 0.02
 upper = true
 
 [type.display_bold]
-face = "trebuchet ms"
+face = "display"
 weight = 700
+tracking = 0.02
+upper = true
 
 [type.display_regular]
-face = "trebuchet ms"
+face = "display"
 weight = 400
+tracking = 0.02
+upper = true
 
 [type.mono]
-face = "trebuchet ms"
+face = "mono"
 weight = 400
+tracking = 0.06
+hinted = true
+upper = true
+
+# Sentences and typed text, in their own case: descriptions, help, dialog
+# bodies, notices, names. Lines 1.3 em: the lower case's descenders reach
+# 0.05 em below the faces' line box.
+[type.text]
+face = "display"
+weight = 400
+tracking = 0.01
+line = 1.3
 
 # Named easings (chimera_ui::motion::Ease::parse).
 [motion.ease]

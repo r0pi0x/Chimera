@@ -117,3 +117,61 @@ fn two_clients_play_the_servers_ladder_made_for_what_they_have() {
     assert!(of(&again, "cs_source") > 0, "{again:?}");
     assert_clients_play_the_servers(&sim, &[full]);
 }
+
+/// A server whose players share no game can't build a ladder: told once
+/// (not every frame once a match is over), and built when a client with
+/// the games arrives.
+#[test]
+fn a_ladder_no_game_can_make_is_told_once_then_built_when_a_capable_client_joins() {
+    use chimera_sim::minigame::NextMatch;
+    use chimera_sim::mode::{Match, Phase};
+    let mut sim = NetSim::new(
+        CaSim,
+        LinkConditions {
+            latency: Duration::from_millis(20),
+            jitter: Duration::ZERO,
+            loss: 0.0,
+        },
+        13,
+        0,
+        setup,
+    );
+    sim.set_frame(TICK_INTERVAL);
+    // One has CS:S only, the other Combat Arms only: no game in common.
+    sim.add_client(|w| w.insert_resource(mounts(&["cs_source"])));
+    sim.add_client(|w| w.insert_resource(mounts(&["combat_arms"])));
+    chimera_net::minigame_net::change_match(sim.server.app.world_mut(), MINIGAME, Some("greybox")).unwrap();
+    sim.until_joined(900);
+    sim.ticks(120);
+    let told = |sim: &NetSim| {
+        sim.server
+            .app
+            .world()
+            .resource::<Console>()
+            .output
+            .iter()
+            .filter(|l| l.text.contains("no game lends guns and movement that every player has"))
+            .count()
+    };
+    let before = told(&sim);
+    // The match is over and the hold has run out: the rotation moves on.
+    {
+        let w = sim.server.app.world_mut();
+        w.resource_mut::<Match>().phase = Phase::MatchOver;
+        w.insert_resource(NextMatch { map: None, at: 0.0 });
+    }
+    sim.ticks(240);
+    let after = told(&sim);
+    assert_eq!(after, before + 1, "told once, not every frame");
+    // A client with both games joins; the ladder can be made again.
+    sim.add_client(|w| w.insert_resource(mounts(&["cs_source", "combat_arms"])));
+    sim.remove_client(0);
+    sim.remove_client(0);
+    sim.ticks(240);
+    let w = sim.server.app.world();
+    assert_eq!(told(&sim), after, "no further line once a capable client is alone");
+    assert!(
+        w.resource::<Match>().phase != Phase::MatchOver,
+        "the rotation moved on with a ladder for the client's games"
+    );
+}

@@ -92,8 +92,8 @@ pub const CUE_GAP: f64 = 1.5;
 pub const LINES: usize = 6;
 /// Lines the open history shows at most.
 pub const HISTORY: usize = 12;
-/// Text size, cq.
-pub const SIZE: f32 = 0.74;
+/// Text size, cq (typed text's, `chimera_ui::controls::TYPED`).
+pub const SIZE: f32 = chimera_ui::controls::TYPED;
 
 /// A line of the feed.
 #[derive(Clone, Debug, PartialEq)]

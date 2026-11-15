@@ -1,6 +1,14 @@
-//! The one place UI text gets its font: a scheme font by name (the GameUI
-//! scheme's `Default`, `ConsoleText`, the client scheme's `ChatFont`,
-//! `HudHintText`) resolved to a face and a size, as CS:S draws it.
+//! The one place UI text gets its font. The shell's own text (the
+//! console, chat lines and hints, net_graph, the perf and debug
+//! overlays, the overlay layer: toasts, callouts, the match end, the
+//! lobby, the kill feed) is in our faces (`chimera_ui::fonts::OWN`, UGG
+//! Display and Mono: `text`, `mono`); they are also Bevy's default font
+//! (`chimera_ui::KitFonts::install`), so text that names no font is
+//! ours, never FiraMono or a system face. A game's own HUD code (CS:S's,
+//! HL2:DM's, Combat Arms', GameUI's menus, VGUI panels, `game_text`)
+//! asks for its scheme fonts by name (the GameUI scheme's `Default`,
+//! the client scheme's `HudNumbers`, `Trebuchet24`) resolved to a face
+//! and a size, as the game draws it.
 //!
 //! The schemes name Windows system faces (Tahoma, Verdana, Lucida Console,
 //! Courier New, Trebuchet MS, Arial), which the game doesn't ship:
@@ -20,10 +28,9 @@
 //! edged when the real face is present (fallback faces stay smoothed:
 //! they aren't hinted for it).
 //!
-//! The faces load as the app is built. The scheme's default text face
-//! (the GameUI `Default`: Tahoma) also replaces Bevy's default font, so text that names no font
-//! isn't drawn in Bevy's built-in face. Without a window (headless tests)
-//! nothing is loaded and lookups give default fonts.
+//! The faces load as the app is built. Without a window (headless tests)
+//! no system face is loaded and scheme lookups give the default font
+//! (ours, where the text plugin is).
 //!
 //! The one font service (`UiFonts`): a scheme font by name (`Scheme::Source`,
 //! GameUI's `SourceScheme.res` fonts from `map::hud::GameUi`: menus, console
@@ -39,10 +46,10 @@
 //! (`%WINDIR%\Fonts` and the per-user fonts folder: `tahoma.ttf`,
 //! `verdana.ttf`, `lucon.ttf`, `cour.ttf`, `trebuc.ttf`, ...; fontconfig's
 //! folders elsewhere), never bundled, else stand-ins (DejaVu, Liberation,
-//! Noto); the default face also replaces Bevy's default font; the game's own
-//! font files (`cs.ttf` HUD numbers and icon glyphs) by scheme name;
-//! `hud_font()`: a scheme font as `hud_text` draws it (file bytes, additive,
-//! cell height in pixels); `debug()`: a mono face for debug overlays. The
+//! Noto); the game's own font files (`cs.ttf` HUD numbers and icon
+//! glyphs) by scheme name; `hud_font()`: a scheme font as `hud_text`
+//! draws it (file bytes, additive, cell height in pixels); `text()`,
+//! `mono()`, `debug()`, `ours()`: our faces for the shell's own text. The
 //! `fonts:` log line says which file each family resolved to.
 
 use std::{
@@ -65,6 +72,9 @@ impl Plugin for FontsPlugin {
         if let Some(mut fonts) = app.world_mut().get_resource_mut::<Assets<Font>>() {
             load_system_faces(&mut fonts, &mut ui);
         }
+        // Ours, and Bevy's default font (after the system faces: nothing
+        // may put another face there).
+        ui.own = chimera_ui::KitFonts::install(app.world_mut());
         app.insert_resource(ui)
             .add_systems(PreUpdate, take_hud_fonts);
     }
@@ -216,8 +226,6 @@ const FAMILIES: [(Family, [&[&str]; 2]); 6] = [
 const DEFAULT_FAMILY: &str = "tahoma";
 /// The client scheme's usual face, for client fonts it lacks.
 const CLIENT_FAMILY: &str = "verdana";
-/// Debug overlays' face.
-const DEBUG_FAMILY: &str = "lucida console";
 
 /// A loaded face: its font, the family it really is, its line height in
 /// ems, and whether it is the family asked for (not a stand-in).
@@ -229,9 +237,12 @@ pub struct Face {
     pub exact: bool,
 }
 
-/// Scheme fonts, the faces they resolve to, and the game's font files.
+/// Scheme fonts, the faces they resolve to, the game's font files, and
+/// our faces.
 #[derive(Resource, Default)]
 pub struct UiFonts {
+    /// Our faces (`chimera_ui::KitFonts`), for the shell's own text.
+    own: Option<chimera_ui::KitFonts>,
     /// By lower-case family and boldness.
     faces: HashMap<(String, bool), Face>,
     /// Each kind's stand-in, regular and bold.
@@ -360,10 +371,42 @@ impl UiFonts {
         }
     }
 
-    /// Debug overlays: a readable mono face (Lucida Console where
-    /// installed) at `em_px`.
+    /// The shell's text in our text face (UGG Display Regular, Bold when
+    /// `bold`) at `em_px`; without our faces loaded, Bevy's default font
+    /// (ours too where the text plugin is: `KitFonts::install`).
+    pub fn text(&self, em_px: f32, bold: bool) -> TextFont {
+        let face = self.own.as_ref().and_then(|k| if bold { k.display_bold.clone() } else { k.display_regular.clone() });
+        TextFont {
+            font: face.unwrap_or_default().into(),
+            font_size: FontSize::Px(em_px),
+            ..default()
+        }
+    }
+
+    /// The shell's data text (the console, net_graph, debug readouts) in
+    /// our Mono at `em_px`.
+    pub fn mono(&self, em_px: f32) -> TextFont {
+        TextFont {
+            font: self.own.as_ref().and_then(|k| k.mono.clone()).unwrap_or_default().into(),
+            font_size: FontSize::Px(em_px),
+            ..default()
+        }
+    }
+
+    /// `font` (a scheme font, sized as the game sizes it) in our text face
+    /// at the same size: for the shell's text placed as a game places it
+    /// (chat lines, hints).
+    pub fn ours(&self, font: TextFont, bold: bool) -> TextFont {
+        let size = match font.font_size {
+            FontSize::Px(p) => p,
+            _ => 16.0,
+        };
+        TextFont { font_smoothing: FontSmoothing::AntiAliased, ..self.text(size, bold) }
+    }
+
+    /// Debug overlays (the perf HUD, debug readouts): our Mono at `em_px`.
     pub fn debug(&self, em_px: f32) -> TextFont {
-        self.em(DEBUG_FAMILY, false, em_px)
+        self.mono(em_px)
     }
 
     /// One of the game's font files by scheme name (`HudNumbers`,
@@ -636,13 +679,6 @@ fn load_system_faces(fonts: &mut Assets<Font>, ui: &mut UiFonts) {
         }
     }
     ui.face_bytes = face_bytes;
-    // Bevy's default font: the default text face, before any text is
-    // laid out (its font collection reads each asset once, on first use).
-    if let Some(face) = ui.face(DEFAULT_FAMILY, false)
-        && let Some(font) = fonts.get(&face.handle).cloned()
-    {
-        let _ = fonts.insert(AssetId::default(), font);
-    }
     info!("fonts: {}", ui.report());
 }
 

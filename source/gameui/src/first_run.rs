@@ -2,7 +2,7 @@
 //! install is used and how it was found (`mount::install`: the config,
 //! the user's saved choice, a Steam library) or that none was. With none,
 //! at the main menu, a dialog drawn as the game menu's GameUI dialogs
-//! says so: a box to paste the folder into, why a folder doesn't do,
+//! (in our faces: `widgets::Look::own_faces`) says so: a box to paste the folder into, why a folder doesn't do,
 //! Retry (that folder, or search Steam again when the box is empty) and
 //! Continue Without (built-in looks). A folder that checks out is saved
 //! in the user's settings file and the menu's look is read from it.
@@ -438,6 +438,8 @@ fn draw(
         s: (size.y / 720.0).clamp(0.6, 3.0),
         height: size.y,
         accent: Color::srgb_u8(255, 176, 0),
+        // Our dialog (the game may not be there to lend its scheme).
+        own_faces: true,
     };
     let root = commands
         .spawn((

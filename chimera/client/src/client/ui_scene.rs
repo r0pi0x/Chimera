@@ -11,7 +11,8 @@
 //! the HUD's own screens with made-up players (`race_chip::stage`,
 //! `kill_feed::signal_feed::stage`), and `matchend` (the match end with
 //! eight players, the climb and the vote: `match_end_signal::stage`),
-//! under the Signal theme; given a
+//! `lobby` (the pre-match lobby with made-up players, names as typed:
+//! a `NetLobby` of its own, `StagedLobby`), under the Signal theme; given a
 //! fixture (`ui_scene board <fixture.json>`), its data over a flat ground
 //! instead (the UI parity check, `ui_parity`). `proof` (the kit itself: the type ramp of every role, tick
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
@@ -49,7 +50,43 @@ use chimera_ui::{
 pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
-pub const SCENES: &[&str] = &["proof", "controls", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend"];
+pub const SCENES: &[&str] =
+    &["proof", "controls", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby"];
+
+/// `ui_scene lobby`'s made-up lobby (despawned at `off`).
+#[derive(Component)]
+pub struct StagedLobby;
+
+/// `ui_scene lobby`: a lobby waiting for players, its names as their
+/// players typed them.
+fn stage_lobby(w: &mut World) {
+    use chimera_net::prematch::{LobbyRow, NetLobby, status};
+    let row = |id: Option<u64>, name: &str, st: u8, ping: Option<u16>, wins: u32| LobbyRow {
+        id,
+        name: name.into(),
+        status: st,
+        done: 0,
+        total: 0,
+        ping_ms: ping,
+        wins,
+    };
+    w.spawn((
+        StagedLobby,
+        NetLobby {
+            map: "cs_source:de_dust2".into(),
+            mode: "Ultimate Gun Game".into(),
+            rows: vec![
+                row(Some(1), "Zoë the Kestrel", status::READY, Some(24), 2),
+                row(Some(2), "nadia.exe", status::NOT_READY, Some(61), 0),
+                row(Some(3), "Björn_Quigley", status::LOADING, Some(130), 1),
+                row(None, "Rook", status::READY, None, 0),
+            ],
+            waiting: 2,
+            wait_left: Some(72),
+            countdown: None,
+        },
+    ));
+}
 
 /// The scene asked for (`None`: none).
 #[derive(Resource, Default, Clone, Debug, PartialEq)]
@@ -79,6 +116,10 @@ fn scene_start(world: &mut World, t: Option<f64>) -> f64 {
 /// Every staged HUD scene cleared, the clock running again if a scene
 /// froze it.
 fn clear_staged(w: &mut World) {
+    let lobbies: Vec<Entity> = w.query_filtered::<Entity, With<StagedLobby>>().iter(w).collect();
+    for e in lobbies {
+        w.despawn(e);
+    }
     super::race_chip::stage(w, None);
     super::rank_toast::stage(w, None);
     super::match_effects::stage(w, None);
@@ -165,7 +206,7 @@ impl Plugin for UiScenePlugin {
             )
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|controls|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|off> [fixture.json | t]: stage a screen of the UI \
+                "ui_scene <proof|controls|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|lobby|off> [fixture.json | t]: stage a screen of the UI \
                  kit with made-up data (screenshots), or a fixture's (the UI parity check); an animated scene (rankup, airstrike) \
                  with `t` frozen `t` s into its loop.",
                 |w, a| {
@@ -226,6 +267,10 @@ impl Plugin for UiScenePlugin {
                         "matchend" => {
                             super::match_end_signal::stage(w, a.get(1).map(String::as_str))?;
                             rename_staged(w);
+                            return Ok(None);
+                        }
+                        "lobby" => {
+                            stage_lobby(w);
                             return Ok(None);
                         }
                         "feed" => {
@@ -527,12 +572,7 @@ fn proof(m: &mut Makers, passes: &mut Assets<PassMaterial>, lines: &mut Assets<L
         }
         let slot = commands.spawn(widgets::bot_slot(m.images, m.icon_images, t, &u, !you, 0.9, Tone::Fg3)).id();
         let n = commands.spawn(m.text(Role::DisplayBold, 0.78, name, Tone::Fg)).id();
-        // The second row as if hovered (its tick shown; no `Hovered` to hide it).
-        let tick = commands.spawn(widgets::hover_tick(m.slants, t, &u, 2.15)).id();
-        if !you {
-            commands.entity(tick).insert(Visibility::Inherited);
-        }
-        commands.entity(r).add_children(&[slot, n, tick]);
+        commands.entity(r).add_children(&[slot, n]);
         commands.entity(ramp).add_child(r);
     }
     commands.entity(body).add_child(ramp);

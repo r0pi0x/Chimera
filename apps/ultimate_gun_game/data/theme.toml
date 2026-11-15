@@ -51,32 +51,48 @@ ui = true
 
 
 # Text roles: the wordmark is Black with ss02 (whose A is the plain A).
+# Titles, labels and buttons upper-case their text (`upper`; the faces
+# have lower case since v0.5); `text` is the sentence face (descriptions,
+# help, dialog bodies, notices, typed text, names) in its own case.
 [type.wordmark]
 face = "display"
 weight = 900
 tracking = 0.03
 features = ["ss02"]
+upper = true
 
 [type.display_black]
 face = "display"
 weight = 900
 tracking = 0.02
+upper = true
 
 [type.display_bold]
 face = "display"
 weight = 700
 tracking = 0.02
+upper = true
 
 [type.display_regular]
 face = "display"
 weight = 400
 tracking = 0.02
+upper = true
 
+# Data and the small tracked labels; cvar names and console lines keep
+# their case (drawn without the role's case rule).
 [type.mono]
 face = "mono"
 weight = 400
 tracking = 0.06
 hinted = true
+upper = true
+
+[type.text]
+face = "display"
+weight = 400
+tracking = 0.01
+line = 1.3
 
 [motion.ease]
 out = "bezier(.16,1,.3,1)"

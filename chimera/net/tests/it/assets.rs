@@ -8,7 +8,8 @@
 //! then joins and spawns; one with the install fetches nothing; a revoked
 //! token fails the join with the reason; a client with no files of the game
 //! binds its token to the offered service and fetches them in the same game
-//! (no restart), or, with no token, is told how to enter one.
+//! (no restart), or, with no token, is told how to enter one; a game's
+//! weapons built from its files are built again before the match is checked.
 
 use std::{
     collections::BTreeSet,
@@ -492,6 +493,14 @@ fn reads_from(sim: &NetSim, i: usize, url: &str) -> bool {
         && world.resource::<LocalMounts>().0.has(GAME)
 }
 
+/// The server's view of its one player's mount report (its userinfo's).
+fn server_report(sim: &mut NetSim) -> Option<MountReport> {
+    let world = sim.server.app.world_mut();
+    let mut q = world.query::<(&chimera_net::net::NetCharacter, &chimera_core::core::UserInfo)>();
+    let info = q.iter(world).find(|(c, _)| c.owner.is_some())?.1.0.clone();
+    chimera_net::net::manifest::from_userinfo(info.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+}
+
 /// Counts the remounts (`AssetsArrived`).
 static REMOUNTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -527,6 +536,13 @@ fn a_first_join_binds_the_token_and_fetches_in_the_same_game() {
     assert!(svc.ids("extra").iter().all(|id| !store.has(id)), "only what the match offers");
     assert!(reads_from(&sim, 0, &svc.front.url()), "the game is read from the store with the service now");
     assert_eq!(REMOUNTS.load(std::sync::atomic::Ordering::SeqCst), 1, "read again once");
+    // The server hears that the client has the game now (its mount report
+    // sent again: the next match's checks and ladders count it).
+    assert!(
+        until(&mut sim, 10.0, |s| server_report(s).is_some_and(|r| r.has(GAME))),
+        "the server's view of the client: {:?}",
+        server_report(&mut sim)
+    );
     let p = progress(&sim, 0);
     assert!(p.failure.is_none(), "{:?}", p.failure);
     let stages: Vec<JoinStage> = p.log.iter().map(|l| l.0).collect();
@@ -545,6 +561,90 @@ fn a_first_join_binds_the_token_and_fetches_in_the_same_game() {
     assert_eq!(fs::read(&access).unwrap(), before, "the binding as it was");
     assert_eq!(REMOUNTS.load(std::sync::atomic::Ordering::SeqCst), 1, "nothing read again");
     assert!(reads_from(&sim, 0, &svc.front.url()));
+    assert!(progress(&sim, 0).failure.is_none());
+}
+
+/// The stand-in game's weapon documents: what a machine has without its
+/// files (`first`), and with them (`first` and `arrived`: a game whose
+/// weapon set is built from its install, Combat Arms').
+const WEAPONS_SET: &str = "fixture_game:weapons";
+
+fn weapon_docs(with_files: bool) -> Vec<(String, String)> {
+    let doc = |id: &str| (format!("{id}.toml"), format!("id = \"{GAME}:{id}\"\nslot = 1\ndraw = 1.0\n"));
+    let mut docs = vec![doc("first")];
+    if with_files {
+        docs.push(doc("arrived"));
+    }
+    docs
+}
+
+/// The stand-in game's weapon set made from `weapon_docs`, put in place
+/// of this world's (`server_docs::renew_own`): what a game's
+/// `AssetsArrived` observer does once its files are here.
+fn renew_weapons(world: &mut World, with_files: bool) {
+    use chimera_sim::{server_docs::{self, DocApply}, weapon::data::WeaponSet};
+    let docs = weapon_docs(with_files);
+    let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
+    let set: &'static WeaponSet = Box::leak(Box::new(WeaponSet::parse(&refs, &[]).unwrap()));
+    server_docs::renew_own(world, WEAPONS_SET, docs, DocApply::Weapons(set)).unwrap();
+}
+
+/// A client's manifest hook (as the minigame's, `minigame_net`): the
+/// weapon the match hands out must be in the catalogue.
+fn needs_arrived_weapon(world: &mut World, _: &MatchManifest) -> Result<(), String> {
+    let id = format!("{GAME}:arrived");
+    world
+        .get_resource::<chimera_sim::weapon::data::WeaponCatalog>()
+        .and_then(|c| c.get(&id))
+        .map(|_| ())
+        .ok_or_else(|| format!("weapon {id}: not in the weapon catalogue"))
+}
+
+/// A tester's first join with a game whose weapons are built from its
+/// files (Combat Arms' install weapons): the client starts with the
+/// built-in set only, the server has the full one. Once the files arrive,
+/// the game's `AssetsArrived` observer queues its set made again; that is
+/// in place before the join checks the match (its minigame's weapons in
+/// the catalogue), at the server's registry indices, and as this
+/// machine's own documents: none are taken from the server.
+#[test]
+fn a_first_join_rebuilds_a_games_weapons_before_the_match_is_checked() {
+    use chimera_sim::{server_docs::{DocApply, DocsAppExt, ServerDocs}, weapon::{WeaponRegistry, data::WeaponDataAppExt}};
+    let svc = Fixture::new("bind_weapons", 2, Duration::ZERO);
+    let token = svc.user("tester");
+    let (session, _) = fresh_client(&svc, "weapons", &token);
+    let base = setup(svc.host());
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, move |app: &mut App| {
+        base(app);
+        // Every app starts with the built-in set, and a weapon of another
+        // game registered after it (its index moves with the set's).
+        let docs = weapon_docs(false);
+        let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
+        let set = app.add_weapon_data(&refs).unwrap();
+        app.server_weapon_docs(WEAPONS_SET, set, docs.clone());
+        app.add_weapon_data(&[("later.toml", "id = \"other:later\"\nslot = 1\ndraw = 1.0\n")]).unwrap();
+    });
+    // The server reads the game's files.
+    renew_weapons(sim.server.app.world_mut(), true);
+    sim.add_client(move |w: &mut World| {
+        client_with(session, false)(w);
+        w.resource_mut::<NetHooks>().accept.push(needs_arrived_weapon);
+        w.add_observer(|a: On<AssetsArrived>, mut commands: Commands| {
+            if a.games.iter().any(|g| g == GAME) {
+                commands.queue(|w: &mut World| renew_weapons(w, true));
+            }
+        });
+    });
+    let ids = |w: &World| w.resource::<WeaponRegistry>().0.iter().map(|d| d.id).collect::<Vec<_>>();
+    assert_eq!(ids(sim.clients[0].app.world()), [format!("{GAME}:first").as_str(), "other:later"], "built in only");
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
+    let client = sim.clients[0].app.world();
+    assert_eq!(ids(client), ids(sim.server.app.world()), "the server's indices");
+    assert!(ids(client).contains(&format!("{GAME}:arrived").as_str()));
+    let own = client.resource::<ServerDocs>().get(WEAPONS_SET).unwrap();
+    assert!(!own.replaced(), "this machine's own documents, none taken from the server");
+    assert_eq!(*own.docs, weapon_docs(true));
+    assert!(matches!(own.apply, DocApply::Weapons(s) if s.weapons.len() == 2));
     assert!(progress(&sim, 0).failure.is_none());
 }
 

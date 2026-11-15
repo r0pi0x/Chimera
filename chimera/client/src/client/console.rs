@@ -206,16 +206,16 @@ struct ConsoleSuggest;
 #[derive(Component)]
 struct OverlayText;
 
-/// The console's text: GameUI's `ConsoleText` face (Lucida Console) at our
-/// sizes (the console is laid out by us, `ROW_HEIGHT`).
+/// The console's text: our Mono (`UiFonts::mono`), in its own case (cvar
+/// names in lower case), at our sizes (`ROW_HEIGHT`).
 fn console_font(fonts: &UiFonts, size: f32) -> TextFont {
-    fonts.source_face("ConsoleText", "Lucida Console", size)
+    fonts.mono(size)
 }
 
 /// The engine's overlay text (notify lines, `cl_showpos`, `snd_show`):
-/// GameUI's `DefaultFixedOutline` face.
+/// our Mono too.
 fn overlay_font(fonts: &UiFonts, size: f32) -> TextFont {
-    fonts.source_face("DefaultFixedOutline", "Lucida Console", size)
+    fonts.mono(size)
 }
 
 fn spawn_ui(mut commands: Commands, fonts: Res<UiFonts>) {

@@ -1,0 +1,40 @@
+[package]
+name = "blam_formats"
+version = "0.1.0"
+description = "Halo: Combat Evolved's file formats as plain data: no Bevy, no game code"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# Pure data, like `lithtech_formats`: what a format needs to be read and
+# nothing else. No Bevy, avian, Chimera's crates (but the VFS), a game or
+# `mashup` (checks/tests/it/architecture.rs checks it). `chimera_vfs` only
+# for the VFS (`FileSource`, `Mount`) and its byte reader, so the disc
+# image is a mount layer like a VPK or a `.rez`.
+[dependencies]
+chimera_vfs.workspace = true
+# The map cache file's body is one zlib stream (src/cache): flate2 on its
+# pure-Rust backend (miniz_oxide), so no C toolchain is needed. The version
+# already in Cargo.lock (chimera_assets uses it).
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+
+# The heavy tests find the install in chimera.local.toml themselves (no
+# Chimera crate here).
+[dev-dependencies]
+toml.workspace = true
+
+# Integration tests as one binary (tests/it/): spec fixtures built in
+# code, and `heavy::` against the user's Halo disc image.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[features]
+# Nothing: lets `--features dev` name this package alongside the others
+# (cargo test -p ... -p <crate> --features dev; .githooks/pre-commit).
+dev = ["chimera_vfs/dev"]

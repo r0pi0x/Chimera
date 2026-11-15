@@ -239,6 +239,10 @@
   --type-mono-weight:400;
   --type-mono-tracking:.06em;
   --type-mono-features:normal;
+  --type-text-family:"UGG Display";
+  --type-text-weight:400;
+  --type-text-tracking:.01em;
+  --type-text-features:normal;
   --type-wordmark-family:"UGG Display";
   --type-wordmark-weight:900;
   --type-wordmark-tracking:.03em;

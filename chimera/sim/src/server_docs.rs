@@ -29,6 +29,9 @@
 //!   and server compare at the join.
 //! - `restore_own` puts every replaced set back to this machine's own
 //!   (the client left the server).
+//! - `renew_own` puts in this machine's own documents made again (a join
+//!   bound the asset service and the game's files arrived: chimera_net's
+//!   `AssetsArrived`), a weapon set swapped into the old one's place.
 //!
 //! Known shortcuts: each weapon set put in is a new leaked `WeaponSet`
 //! (weapon ids are `&'static str`), once per join to a server whose data
@@ -162,6 +165,52 @@ pub fn apply(world: &mut World, name: &str, docs: Vec<(String, String)>) -> Resu
     }
     s.docs = Arc::new(docs);
     s.apply = apply;
+    Ok(())
+}
+
+/// This machine's own documents of set `name` made again (a join bound
+/// the asset service and the game's files arrived after the app read
+/// none: chimera_net's `AssetsArrived`): put in this world now (a weapon
+/// set, `DocApply::Weapons` with the new set already parsed: swapped into
+/// the old one's place, `swap_weapon_set`, so the registry's indices are
+/// what they'd have been had the files been there from the start; other
+/// sets: their apply function with `docs`) and kept as this machine's
+/// own. While the server's documents are in (`DocSet::replaced`), those
+/// stay and only the own ones change (`restore_own` puts them back).
+/// Err: no such set here, or they don't load (nothing changed).
+pub fn renew_own(world: &mut World, name: &str, docs: Vec<(String, String)>, apply: DocApply) -> Result<(), String> {
+    let set = world
+        .get_resource::<ServerDocs>()
+        .and_then(|s| s.get(name))
+        .cloned()
+        .ok_or_else(|| format!("this build has no {name} data"))?;
+    let apply = match (set.apply, apply) {
+        (DocApply::Weapons(_), DocApply::With(..)) | (DocApply::With(..), DocApply::Weapons(_)) => {
+            return Err(format!("{name}: another kind of data"));
+        }
+        // The server's are in: they stay.
+        (_, new) if set.replaced() => new,
+        (DocApply::Weapons(old), DocApply::Weapons(new)) => {
+            if !std::ptr::eq(old, new) {
+                swap_weapon_set(world, old, new)?;
+            }
+            DocApply::Weapons(new)
+        }
+        (_, DocApply::With(f, format)) => {
+            f(world, &docs)?;
+            DocApply::With(f, format)
+        }
+    };
+    let docs = Arc::new(docs);
+    let mut all = world.resource_mut::<ServerDocs>();
+    let s = all.0.iter_mut().find(|s| s.name == name).expect("found above");
+    match &mut s.own {
+        Some(own) => *own = (docs, apply),
+        None => {
+            s.docs = docs;
+            s.apply = apply;
+        }
+    }
     Ok(())
 }
 

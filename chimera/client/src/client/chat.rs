@@ -672,8 +672,8 @@ fn draw_input(
         "HudChat",
         (HudCoord::Start(10.0), HudCoord::Start(275.0), 320.0, 120.0),
     );
-    // The scheme's ChatFont (bold Verdana, drop shadow).
-    let font = fonts.client("ChatFont", h, 12.0);
+    // At the scheme's ChatFont size, in our face (bold, drop shadow).
+    let font = fonts.ours(fonts.client("ChatFont", h, 12.0), true);
     let root = commands
         .spawn((
             InputText,
@@ -875,7 +875,7 @@ fn draw_chat(
             GlobalZIndex(41),
         ))
         .id();
-    let font = fonts.client("ChatFont", h, 12.0);
+    let font = fonts.ours(fonts.client("ChatFont", h, 12.0), true);
     for (line, _) in &log.lines {
         let text = commands
             .spawn((
@@ -961,7 +961,7 @@ fn draw_hint(
         .id();
     commands.spawn((
         Text::new(text.clone()),
-        fonts.client("HudHintText", h, 12.0),
+        fonts.ours(fonts.client("HudHintText", h, 12.0), false),
         TextColor(fg),
         TextLayout::justify(Justify::Center),
         BackgroundColor(bg),
@@ -980,7 +980,10 @@ fn draw_hint(
 fn warm_fonts(window: super::text_warm::PrimaryWindows, fonts: Option<Res<UiFonts>>) -> Vec<super::text_warm::WarmText> {
     let Some(fonts) = fonts else { return Vec::new() };
     let h = super::text_warm::window_height(&window);
-    vec![fonts.client("ChatFont", h, 12.0).into(), fonts.client("HudHintText", h, 12.0).into()]
+    vec![
+        fonts.ours(fonts.client("ChatFont", h, 12.0), true).into(),
+        fonts.ours(fonts.client("HudHintText", h, 12.0), false).into(),
+    ]
 }
 #[cfg(test)]
 mod tests {

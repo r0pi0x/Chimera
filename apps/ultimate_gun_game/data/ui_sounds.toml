@@ -20,6 +20,11 @@ duck_db = 4
 
 # ---- menu
 [event.ui_hover]
+# Baked at whisper (-42), 10 dB under select (tap, -32), and kept there:
+# the user asked for hover to be less present, so the kit's sound rule
+# (one cue per item, at most one per 90 ms, none in a drag) thins it out
+# rather than raising it toward select.
+gain = 0
 cents = 40
 db = 1.2
 voices = 1

@@ -25,7 +25,7 @@ use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_client::client::feedback::{Category, Feedback, FeedbackAction, FeedbackOutbox, MAX_TEXT, Phase};
 use chimera_ui::{
     Role, Tone, UiStyle,
-    controls::{Kind, State, Ui},
+    controls::{Kind, NOTE, State, TYPED, Ui},
 };
 
 /// Over the Escape menu (90), under the console (100).
@@ -192,7 +192,7 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
     if f.text.is_empty() {
         let line = ui.boxed(c, area, UiStyle::row());
         caret(c, ui, line);
-        ui.text_plain(c, line, Role::Mono, 0.66, Tone::Fg3, " What happened? What did you expect?");
+        ui.sentence(c, line, TYPED, Tone::Fg3, " What happened? What did you expect?");
     } else {
         let lines: Vec<&str> = f.text.split('\n').collect();
         for (i, l) in lines.iter().enumerate() {
@@ -200,8 +200,7 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
             let t = c
                 .spawn((
                     Text::new(if l.is_empty() { " ".to_string() } else { l.to_string() }),
-                    chimera_ui::style::UiText::new(Role::Mono, 0.66, Tone::Fg),
-                    chimera_ui::style::PlainText,
+                    chimera_ui::style::UiText::new(Role::Text, TYPED, Tone::Fg),
                     TextLayout::new(Justify::Left, LineBreak::AnyCharacter),
                     Node { max_width: ui.units.val(WIDTH - 6.0), ..default() },
                     ChildOf(line),
@@ -224,7 +223,7 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
     }
     let under = ui.boxed(c, m, UiStyle { margin: Some([0.5, 0.0, 1.1, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::SpaceBetween));
     let hint = if f.refused { "Say what happened first" } else { "Enter: new line" };
-    ui.text(c, under, Role::Mono, 0.5, if f.refused { Tone::Threat } else { Tone::Fg3 }, hint);
+    ui.sentence(c, under, NOTE, if f.refused { Tone::Threat } else { Tone::Fg3 }, hint);
     ui.text(c, under, Role::Mono, 0.5, Tone::Fg3, &format!("{} / {MAX_TEXT}", f.text.chars().count()));
     // The screenshot and its toggle.
     let shot = ui.boxed(c, m, UiStyle { gap: Some(1.4), margin: Some([0.0, 0.0, 1.0, 0.0].into()), ..UiStyle::row() });
@@ -248,7 +247,7 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
     let tg = ui.toggle(c, trow, f.include_screenshot && f.thumb.is_some(), State { disabled: f.thumb.is_none(), ..State::NONE });
     c.entity(tg).insert(FeedbackAction::ToggleScreenshot);
     ui.text(c, trow, Role::DisplayRegular, 0.72, Tone::Fg, "Include screenshot");
-    ui.text(c, col, Role::Mono, 0.5, Tone::Fg3, "The frame when you pressed the key");
+    ui.sentence(c, col, NOTE, Tone::Fg3, "The frame when you pressed the key");
     // What's sent, folded.
     let head = c
         .spawn((
@@ -270,10 +269,10 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
     }
     let note = ui.boxed(c, m, UiStyle { gap: Some(0.6), margin: Some([0.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
     ui.mark(c, note, Tone::Acc, 0.42, 0.6);
-    ui.text_plain(c, note, Role::Mono, 0.54, Tone::Fg2, NOTICE);
+    ui.sentence(c, note, NOTE, Tone::Fg2, NOTICE);
     // Where it goes, and the buttons.
     let foot = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.5, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
-    ui.text_plain(c, foot, Role::Mono, 0.52, Tone::Fg3, destination);
+    ui.sentence(c, foot, NOTE, Tone::Fg3, destination);
     ui.boxed(c, foot, UiStyle::row().grow(1.0));
     let cancel = ui.button(c, foot, Kind::Secondary, "Cancel", Some("Esc"), 2.4, State::NONE);
     c.entity(cancel).insert(FeedbackAction::Cancel);

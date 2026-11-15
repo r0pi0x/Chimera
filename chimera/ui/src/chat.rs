@@ -24,9 +24,8 @@
 //!   channel's key cap (ALL or TEAM), in the sentence face with the case
 //!   kept; the count of characters left in Mono once under 20.
 //!
-//! Known shortcuts: `SENTENCE` is Display Regular until the text face
-//! (`Role::Text`, branch `fonts-wire`) is merged; Display Regular draws
-//! lower case as capitals (UGG faces v0.4).
+//! Everything a person wrote, names included, keeps its own case in the
+//! text face (`SENTENCE`, `Role::Text`); tags and stamps are Mono.
 
 use bevy::prelude::*;
 
@@ -37,9 +36,9 @@ use crate::{
     theme::Tone,
 };
 
-/// The face sentences are set in: the text face once it is in
-/// (`Role::Text`, `fonts-wire`); Display Regular until then.
-pub const SENTENCE: Role = Role::DisplayRegular;
+/// The face sentences and typed text are set in: the text face, with its
+/// lower case (`Role::Text`), at `controls::TYPED` in the feed.
+pub const SENTENCE: Role = Role::Text;
 
 /// Seconds a line stays fully shown, then fades over `FADE`.
 pub const HOLD: f32 = 8.0;
@@ -253,7 +252,7 @@ impl Ui<'_> {
                         ))
                         .id();
                     let color = if line.muted { line.name_color.with_alpha(0.4) } else { line.name_color };
-                    self.span(c, n, Role::DisplayBold, size, color, &format!("{name}:"));
+                    self.span(c, n, SENTENCE, size, color, &format!("{name}:"));
                     match line.tag {
                         Some(NameTag::Bot) => {
                             self.chat_tag(c, n, "BOT", None, Tone::Fg2);

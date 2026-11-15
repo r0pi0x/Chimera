@@ -5,7 +5,7 @@
 // Chrome's and Edge's usual install paths (Windows).
 //
 // Also a static file server rooted at the repo, so the reference pages'
-// fonts (apps/ultimate_gun_game/fonts) load over http (Chromium refuses
+// fonts (chimera/ui/fonts) load over http (Chromium refuses
 // fonts from file:// pages).
 
 import { spawn } from 'node:child_process';
