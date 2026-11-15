@@ -830,3 +830,66 @@ fn a_kill_pushes_with_its_guns_impulse() {
     let (glock, awp) = (speed(2000.0), speed(2800.0));
     assert!(glock > 0.1 && awp > glock * 1.2, "glock {glock}, awp {awp}");
 }
+
+/// Over the network (ragdolls.md 2.1: player ragdolls are the clients'):
+/// a player the server kills falls as a ragdoll on every client, the one
+/// who died and the one watching, and the body stays a ragdoll until the
+/// player lives again (playtest 7: bodies vanished on death for others).
+#[test]
+fn a_player_killed_on_the_server_falls_as_a_ragdoll_on_every_client() {
+    use crate::stack::{
+        harness::NetSim,
+        net::memory::LinkConditions,
+    };
+    let mut m = model();
+    m.game = Some("cs_source");
+    let map = floor_map(m);
+    let link = LinkConditions {
+        latency: std::time::Duration::from_millis(40),
+        jitter: std::time::Duration::from_millis(5),
+        loss: 0.0,
+    };
+    let mut sim = NetSim::new(CsSim, link, 11, 2, move |app| {
+        app.add_plugins(MapPlugin::new(map.clone()));
+    });
+    sim.server.app.world_mut().resource_mut::<Deathmatch>().respawn_delay = 1000.0;
+    sim.until_joined(600);
+    sim.ticks(64);
+    let victim = sim.character_of(1).expect("the victim on the server");
+    let owner = sim.client_id(1);
+    for i in 0..2 {
+        let seen = NetSim::owned_by(&mut sim.clients[i], Some(owner)).expect("seen");
+        let w = sim.clients[i].app.world();
+        assert!(w.get::<crate::stack::map::BodyModel>(seen).is_some(), "client {i}: the victim has no body");
+    }
+    let at = sim.server.app.world().get::<Transform>(victim).unwrap().translation;
+    sim.server.app.world_mut().write_message(Damage {
+        force: Vec3::ZERO,
+        target: victim,
+        attacker: None,
+        amount: 500.0,
+        point: at + Vec3::Y * 0.3,
+        dir: Vec3::NEG_Z,
+        hitgroup: Hitgroup::Chest,
+        kind: DamageKind::Bullet,
+        weapon: None,
+    });
+    // Each client sees the death a link's latency later, then keeps the
+    // ragdoll (the dead stay dead here).
+    for i in 0..2 {
+        let ok = sim.until(64, |s| {
+            let w = s.clients[i].app.world_mut();
+            w.query::<&Ragdoll>().iter(w).next().is_some()
+        });
+        assert!(ok, "client {i} never made a ragdoll for the dead player");
+    }
+    sim.ticks(128);
+    for i in 0..2 {
+        let seen = NetSim::owned_by(&mut sim.clients[i], Some(owner)).unwrap();
+        let w = sim.clients[i].app.world_mut();
+        let ragdolls: Vec<Ragdoll> = w.query::<&Ragdoll>().iter(w).cloned().collect();
+        assert_eq!(ragdolls.len(), 1, "client {i}: the ragdoll went while the player is dead");
+        assert_eq!(ragdolls[0].owner, seen, "client {i}");
+        assert!(w.get::<Ragdolled>(seen).is_some(), "client {i}: the body isn't handed to the ragdoll");
+    }
+}

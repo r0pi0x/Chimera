@@ -20,7 +20,10 @@
 //! late frame's states wait for their ticks (`predict`'s module doc).
 //! A server hitch that drops time costs each client one jump back (the
 //! server's clock lost that time; a client can only follow), one that
-//! doesn't (its ticks caught up) none.
+//! doesn't (its ticks caught up) none. A loaded dedicated server's
+//! caught-up hitches (playtest 7's "on ice" CS:S movement) run every
+//! command of a walking player as its own, with no misprediction, as a
+//! steady server does.
 
 use std::time::Duration;
 
@@ -392,4 +395,54 @@ fn a_server_hitch_costs_a_client_at_most_one_jump() {
     assert_eq!(stalls, 0, "the client's frames dropped nothing");
     assert!(jumps <= dropping && jumps + 1 >= dropping, "{jumps} jumps for {dropping} hitches");
     assert!(restarts <= jumps as u64, "{restarts} restarts for {jumps} jumps");
+}
+
+/// A dedicated server under load (playtest 7: CS:S movement "on ice"
+/// over the session): frames of 10-40 ms and a 120 ms hitch every few
+/// seconds, all caught up (none beyond `Time<Virtual>`'s 250 ms), while
+/// the player walks back and forth. Prints what the server ran on
+/// repeated commands (`CommandBuffer`: missed, late) and what the client
+/// mispredicted (`NetGraph`), and holds them to a steady server's.
+#[test]
+fn a_loaded_servers_catch_up_ticks_run_the_players_own_commands() {
+    fn loaded_server(k: u64) -> f64 {
+        if k % 200 == 199 {
+            return 0.12;
+        }
+        0.010 + 0.0013 * ((k * 11) % 24) as f64
+    }
+    let walk = |server: fn(u64) -> f64| {
+        let (mut sim, mut frames) = sim(server, |_| 1.0 / 144.0);
+        serve(&mut sim);
+        let mut count = Count::default();
+        assert!(frames.until(&mut sim, 20.0, &mut count, joined), "the client joined");
+        // Out of the lobby and into the match.
+        frames.until(&mut sim, 20.0, &mut count, |s| !in_lobby(s));
+        frames.run(&mut sim, 2.0, &mut count);
+        let base = sim.clients[0].app.world().resource::<NetGraph>().clone();
+        let me = sim.local_player(0).unwrap();
+        let character = sim.character_of(0).unwrap();
+        let before = sim.server.app.world().get::<chimera_net::net::server::CommandBuffer>(character).map(|b| (b.missed, b.late)).unwrap();
+        for i in 0..40 {
+            sim.clients[0].intent(me).move_axis = if i % 2 == 0 { Vec2::Y } else { Vec2::NEG_Y };
+            frames.run(&mut sim, 0.5, &mut count);
+        }
+        let g = sim.clients[0].app.world().resource::<NetGraph>().clone();
+        let after = sim.server.app.world().get::<chimera_net::net::server::CommandBuffer>(character).map(|b| (b.missed, b.late)).unwrap();
+        let (missed, late) = (after.0 - before.0, after.1 - before.1);
+        let errors = g.errors - base.errors;
+        println!(
+            "missed {missed}, late {late}, errors {errors} of {} checked, worst {:.3}, resyncs {}",
+            g.checked - base.checked,
+            g.worst_error,
+            g.resyncs - base.resyncs
+        );
+        (missed, late, errors)
+    };
+    let steady_run = walk(steady);
+    let loaded = walk(loaded_server);
+    assert!(
+        loaded.0 <= steady_run.0 + 2 && loaded.2 <= steady_run.2 + 2,
+        "a loaded server ran repeated commands or the client mispredicted: steady {steady_run:?}, loaded {loaded:?}"
+    );
 }
