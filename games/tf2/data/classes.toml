@@ -1,0 +1,98 @@
+# TF2's nine classes (specs/tf2/classes.md, "The class table";
+# specs/tf2/movement.md, "Class top speed", "The Scout's air jump"): what a
+# player holding one of the class's guns is (`game::classes`).
+#
+# health: max health (points); speed: top speed (units/s, `SourceSpeed`);
+# eye: standing eye height (units; ducked 45 for all); air_jumps: jumps in
+# the air (the Scout's one); model: the player model; arms: the first-
+# person arms' class (`c_<arms>_arms.mdl`).
+
+[classes.scout]
+index = 1
+health = 125
+speed = 400
+eye = 65
+air_jumps = 1
+model = "models/player/scout.mdl"
+arms = "scout"
+
+[classes.sniper]
+index = 2
+health = 125
+speed = 300
+eye = 75
+model = "models/player/sniper.mdl"
+arms = "sniper"
+
+[classes.soldier]
+index = 3
+health = 200
+speed = 240
+eye = 68
+model = "models/player/soldier.mdl"
+arms = "soldier"
+
+[classes.demoman]
+index = 4
+health = 175
+speed = 280
+eye = 68
+model = "models/player/demo.mdl"
+arms = "demo"
+
+[classes.medic]
+index = 5
+health = 150
+speed = 320
+eye = 75
+model = "models/player/medic.mdl"
+arms = "medic"
+
+[classes.heavy]
+index = 6
+health = 300
+speed = 230
+eye = 75
+model = "models/player/heavy.mdl"
+arms = "heavy"
+
+[classes.pyro]
+index = 7
+health = 175
+speed = 300
+eye = 68
+model = "models/player/pyro.mdl"
+arms = "pyro"
+
+[classes.spy]
+index = 8
+health = 125
+speed = 320
+eye = 75
+model = "models/player/spy.mdl"
+arms = "spy"
+
+[classes.engineer]
+index = 9
+health = 125
+speed = 300
+eye = 68
+model = "models/player/engineer.mdl"
+arms = "engineer"
+
+# The class a gun makes its holder (weapons.md 2; the plan's decision 6),
+# by the gun's id: a new gun joins with a line here. A gun not listed is
+# the class of its `tf2:gun` hook's `arms`.
+[guns]
+"tf2:tf_weapon_scattergun" = "scout"
+"tf2:tf_weapon_pistol" = "scout"
+"tf2:tf_weapon_rocketlauncher" = "soldier"
+"tf2:tf_weapon_minigun" = "heavy"
+"tf2:tf_weapon_shotgun_primary" = "engineer"
+"tf2:tf_weapon_smg" = "sniper"
+"tf2:tf_weapon_sniperrifle" = "sniper"
+"tf2:tf_weapon_revolver" = "spy"
+"tf2:tf_weapon_grenadelauncher" = "demoman"
+"tf2:tf_weapon_pipebomblauncher" = "demoman"
+"tf2:tf_weapon_flamethrower" = "pyro"
+"tf2:tf_weapon_syringegun_medic" = "medic"

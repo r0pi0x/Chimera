@@ -121,6 +121,9 @@ struct WorldParams {
     flat_envmap: f32,
     flat_envmap_alpha: f32,
     flat_envmap_scale: f32,
+    // The reflection's lightmap mask (map::EnvmapLightMask): lightmap rgb
+    // weights, 1 - floor; zero leaves reflections unscaled.
+    envmap_light: vec4<f32>,
 }
 
 // Gamma space for the fixed-function blends of LithTech's second layers
@@ -473,6 +476,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             + w.z * sample_lightmap(lightmap_b2, in.uv_b);
     }
     light = light * params.lightmap_scale;
+    // The reflection's lightmap mask (map::material_fx::envmap_light_mask):
+    // 1 - k (1 - clamp(w . the baked light in gamma space)).
+    let envmap_light = 1.0 - params.envmap_light.w * (1.0 - saturate(dot(params.envmap_light.xyz, to_gamma(light))));
     if two_texture {
         // The usual scale is 2^2.2 for Source's LDR lightmaps; this shader
         // uses 2.0.
@@ -498,7 +504,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     color = color * params.light_scale;
     if params.envmap > 0.5 {
-        color = color + envmap_term(in, n_ts, albedo.a, normal_texel.a);
+        color = color + envmap_term(in, n_ts, albedo.a, normal_texel.a) * envmap_light;
     }
     return vec4<f32>(apply_fog(color, in.world_position.xyz), out_alpha(albedo.a));
 }

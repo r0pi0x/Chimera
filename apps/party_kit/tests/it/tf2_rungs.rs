@@ -3,12 +3,16 @@
 //! that mixes TF2's four guns with CS:S's, HL2:DM's and Combat Arms' (no
 //! Halo), on the party's simulation headless on the greybox: a TF2 rung
 //! gives its TF2 gun and makes the player TF2's (its identity and
-//! stand-in movement), a kill with it climbs to the next rung, another
-//! game's gun, and the identity follows the gun; the Rocket Launcher's
-//! rung kills too, with a rocket.
+//! movement) and the gun's class (its max health and top speed), a kill
+//! with it climbs to the next rung, another game's gun, and the identity
+//! follows the gun (the max health back to the party's); the Rocket
+//! Launcher's rung kills too, with a rocket.
 
 use bevy::prelude::*;
-use chimera_core::slots::{GameIdentity, MovementSlot};
+use chimera_core::{
+    core::Health,
+    slots::{GameIdentity, MovementSlot},
+};
 use chimera_sim::minigame::{self, ladder::Ladder};
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
 use combat_arms::harness::CaSim;
@@ -56,6 +60,11 @@ fn a_tf2_rung_gives_its_gun_and_a_kill_climbs_to_the_next_games() {
     let w = sim.app.world();
     assert_eq!(identity(w, a).as_deref(), Some("tf2"));
     assert_eq!(movement(w, a), Some(tf2::game::movement::ID));
+    // The Scout's: 125 health, 400 units/s.
+    let h = *w.get::<Health>(a).unwrap();
+    assert!((h.max - 1.25).abs() < 1e-6 && (h.current - 1.25).abs() < 1e-6, "{h:?}");
+    let traits = w.get::<source_engine::source_movement::SourceTraits>(a).unwrap();
+    assert_eq!(traits.max_speed, Some(400.0));
     // A kill with it: the next rung, another game's gun, its identity.
     line_up(&mut sim, a, b, 3.0);
     assert!(shoot_until_dead(&mut sim, a, b, 10.0), "the Scattergun kills");
@@ -66,6 +75,8 @@ fn a_tf2_rung_gives_its_gun_and_a_kill_climbs_to_the_next_games() {
     assert_eq!(held(&sim, a), Some(next));
     let game = next.split_once(':').unwrap().0;
     assert_eq!(identity(sim.app.world(), a).as_deref(), Some(game), "the identity follows {next}");
+    let h = *sim.app.world().get::<Health>(a).unwrap();
+    assert!((h.max - 1.0).abs() < 1e-6, "the party's max health back: {h:?}");
     // Each TF2 rung's gun in hand, and TF2's identity with it.
     for r in tf2_rungs {
         set_rung(&mut sim, a, r);

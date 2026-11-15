@@ -262,6 +262,15 @@ pub fn flat_envmap_uv(r: Vec3, scale: f32) -> Vec2 {
     Vec2::new(r.x, r.y) * (-0.5 / scale) + Vec2::splat(0.5)
 }
 
+/// The reflection's lightmap mask (`MapEnvmap::light_mask`, Halo's
+/// shaders.md "Reflection mask value M"): 1 - k (1 - λ) with λ =
+/// clamp(`weights` · `light_gamma`) and k = 1 - floor (so no mask, k = 0,
+/// is 1). Mirrors world.wesl (`envmap_light`).
+pub fn envmap_light_mask(light_gamma: Vec3, weights: Vec3, floor: f32) -> f32 {
+    let lambda = weights.dot(light_gamma).clamp(0.0, 1.0);
+    1.0 - (1.0 - floor) * (1.0 - lambda)
+}
+
 /// Self-illumination (shaders.md 2 and 4): the lit colour toward
 /// `tint` × albedo by `mask`.
 pub fn self_illum(diffuse: Vec3, albedo: Vec3, tint: Vec3, mask: f32) -> Vec3 {
@@ -307,6 +316,21 @@ impl MapTextureAnim {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Halo's M = (1 - λ) s + λ: full where the light is white, the floor
+    /// in the dark, 1 without a mask.
+    #[test]
+    fn envmap_light_mask_falls_to_its_floor_in_the_dark() {
+        let w = Vec3::new(128.0, 176.0, 80.0) / 255.0;
+        assert!((envmap_light_mask(Vec3::ONE, w, 0.0) - 1.0).abs() < 1e-6);
+        assert!(envmap_light_mask(Vec3::ZERO, w, 0.0).abs() < 1e-6);
+        assert!((envmap_light_mask(Vec3::ZERO, w, 0.25) - 0.25).abs() < 1e-6);
+        let half = envmap_light_mask(Vec3::splat(0.5), w, 0.25);
+        let lambda = 0.5 * (128.0 + 176.0 + 80.0) / 255.0;
+        assert!((half - ((1.0 - lambda) * 0.25 + lambda)).abs() < 1e-5);
+        // No mask: weights 0 and floor 1.
+        assert_eq!(envmap_light_mask(Vec3::splat(0.3), Vec3::ZERO, 1.0), 1.0);
+    }
 
     /// floor(rate · t) mod count, a hard switch; no rate holds frame 0.
     #[test]

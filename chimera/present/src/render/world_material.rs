@@ -137,6 +137,10 @@ pub struct WorldParams {
     pub flat_envmap_alpha: f32,
     /// `EnvScale`.
     pub flat_envmap_scale: f32,
+    /// The reflection's lightmap mask (`MapEnvmap::light_mask`): the
+    /// weights of the lightmap's rgb in xyz, 1 - its floor in w; zero
+    /// (none) leaves reflections unscaled.
+    pub envmap_light: Vec4,
 }
 
 impl WorldParams {

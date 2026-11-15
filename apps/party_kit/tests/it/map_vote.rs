@@ -171,6 +171,9 @@ fn a_listen_server_host_votes_for_its_own_player() {
     let results = sim.server.app.world().resource::<MatchResults>().clone();
     assert!(results.rows[0].winner && results.rows[0].player == Some(host), "{results:?}");
     console(&mut sim, "vote_map 3");
+    // The client hears of the vote a few ticks after the server opens it.
+    let ok = sim.until(300, |s| s.clients[0].app.world().contains_resource::<MapVote>());
+    assert!(ok, "the client sees the vote");
     minigame_net::vote_map(sim.clients[0].app.world_mut(), 1).unwrap();
     let ok = sim.until(300, |s| s.server.app.world().resource::<MapVote>().counts == [0, 1, 1]);
     assert!(ok, "the host's vote and the client's: {:?}", server_vote(&sim).counts);

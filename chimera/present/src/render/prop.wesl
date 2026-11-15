@@ -67,6 +67,9 @@ struct PropParams {
     phong_warp: vec4<f32>,
     probe_slot: u32,
     face_slot: u32,
+    // The tint by a mask's red (map::MapMesh::tint_mask): 1 on; the tint.
+    tint_masked: f32,
+    mask_tint: vec4<f32>,
 }
 
 // A moving model's probe light (probe_lit::ProbeTable): what probe_cube,
@@ -90,6 +93,7 @@ struct Probe {
 @group(constants::MATERIAL_BIND_GROUP) @binding(10) var phong_exponent_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(11) var lightwarp_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(12) var phong_warp_texture: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(14) var tint_mask_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(13) var<storage, read> probes: array<Probe>;
 
 // The probe's ambient cube, lights' directions and colours: from the probe
@@ -531,6 +535,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     let base = color;
     color = color * params.base_color;
+    // A tint where a mask's red says (map::MapMesh::tint_mask).
+    if params.tint_masked > 0.5 {
+        let m = textureSample(tint_mask_texture, base_sampler, uv).r;
+        color = vec4<f32>(color.rgb * mix(vec3<f32>(1.0), params.mask_tint.rgb, m), color.a);
+    }
     // Self-illuminated: the base alpha is the mask, not opacity; so is it
     // under $basemapalphaphongmask.
     if params.selfillum > 0.5 || (params.phong > 0.5 && params.phong_flags.z > 0.5) {

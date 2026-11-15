@@ -622,3 +622,14 @@ backlog.
   left, no tracker: the party's kill feed is top right). The user's
   decisions for the party apps and the balance findings are in the
   backlog above.
+- 2026-11-15: Halo's lasting sounds (`game::audio`: the level's
+  background sound, sound scenery, projectile loops, footsteps by
+  material; reverb not applied, weapon loops not played) and the
+  shaders' looks (`maps::materials`: self-illumination on 16 level
+  shaders, cube reflections on 57, the model's multipurpose masks,
+  scrolling transparents; 334 shaders on the 13 maps). Left of the
+  look: bump shading (needs the lightmap's incident direction per
+  vertex), the indoor/outdoor fog switch, lens flares (a `lens` reader),
+  the transparents' later maps and periodic animations. Blood Gulch's
+  converted load went from 0.48 s to about 0.64 s (the cause not found;
+  from the cache 0.03 to 0.04 s); the frame time did not rise.

@@ -20,7 +20,7 @@ from specs, measurements and the game's own data.
 | M1 a map you can walk on | done (2026-11-15) | `games/tf2`; mount (missing archives skipped); ctf_2fort and cp_badlands converted with team spawns; `tf2:<map>` in the party apps; `$ssbump` drawn |
 | M2a the weapon scripts, `chimera_pack tf2` | done (2026-11-15) | our ICE (`game::ice`) with the spec's readings selectable; `game::scripts` (store/plain, install plus key, none); `dump tf2 --script`, `--ice-probe`; `chimera_pack tf2` (`weapon/<id>` for M2's guns with the decrypted script, `players`, `map/<name>`); not published. No reading reproduces the paper's triplets: the user's `--ice-probe` settles the reading |
 | M2b TF2 guns as UGG rungs | done (2026-11-15) | the four guns as data with the spec's numbers (the scripts' field mapping a seam), TF2's gun rules as hooks, `c_` weapons bone-merged on the class arms, sounds, TF2 in the party's `GUESTS`, `originals:gun_game_2fort` |
-| M3 classes as bodies, TF2's movement | not started | |
+| M3 classes as bodies, TF2's movement | in progress (2026-11-15) | the classes as data (`game::classes`, data/classes.toml); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health) |
 | M4 more maps and weapons | not started | |
 
 ## 1. Rules for this port
