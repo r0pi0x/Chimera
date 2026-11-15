@@ -52,7 +52,7 @@ chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs 
 chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, harness::Sim
   |                \
 chimera_core          source_formats (source/formats/)   formats as plain data: no Bevy
- (chimera/core/)       core, console, console_names, console_scope, slots, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
+ (chimera/core/)       core, console, console_names, console_scope, slots, envelope, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
                       chimera_vfs (chimera/vfs/)   the neutral VFS (`FileSource`, `Mount`) under both format crates and `mount`
                       chimera_assets (chimera/assets/)   the asset store over the VFS: records, manifests and sets, `CachedFiles`, the vfs log, the asset service (server, HTTPS client), account tickets and the player's account file; `mount::served` layers it
                       chimera_services (chimera/services/)   the hub's services, a binary each (`chimera_accounts`, `chimera_front`): accounts on SQLite, the front; on chimera_assets, host tools only
@@ -696,6 +696,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
 
 Exact edges: console_scope uses core, console, game_registry and slots
 (the console's scope from the game played, the games' namespaces);
+envelope uses core (the map's movement envelope by the map's game:
+what a map's own character's body is, read by a movement that fits its
+body to the map);
 game_log uses core, console and gameplay (the gameplay's
 game names players in the log); net uses the engine's
 simulation (core, console, game_log, slots, character, movement, map,
