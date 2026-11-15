@@ -325,7 +325,10 @@ fn another_games_map_is_dressed_with_the_guns() {
     let mut map = chimera_world::map::MapData::default();
     let dress = halo_ce::game::BUNDLE.guest.unwrap().dress;
     dress(&mut map, &chimera_world::map::MapLoadOptions::lean()).unwrap();
-    let mut guns: Vec<String> = halo_ce::game::weapons::GUNS.iter().map(|g| g.to_string()).collect();
+    // The guns whose documents name their models (the arsenal's five newer
+    // guns have none yet).
+    let mut guns: Vec<String> = halo_ce::game::view::load::gun_models().iter().map(|g| g.id.to_string()).collect();
+    assert_eq!(guns.len(), 4);
     guns.sort();
     let mut shown: Vec<String> = map.kit.view_models.iter().map(|v| v.key.clone()).collect();
     shown.sort();

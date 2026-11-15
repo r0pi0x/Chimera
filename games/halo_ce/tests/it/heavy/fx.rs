@@ -24,7 +24,7 @@ fn the_four_guns_effects_compile() {
     let set = compile(&map, &tags.iter().map(String::as_str).collect::<Vec<_>>(), false);
     assert!(set.warnings.is_empty(), "{:?}", set.warnings);
     let lib = &set.library;
-    assert_eq!(lib.guns.len(), 4);
+    assert_eq!(lib.guns.len(), halo_ce::game::weapons::GUNS.len(), "every gun of the arsenal has its effects");
     let ar = lib.gun("weapons\\assault rifle\\assault rifle").unwrap();
     for (name, p) in &ar.fp_markers {
         eprintln!("assault rifle first-person marker {name}: {p:?}");
