@@ -31,6 +31,9 @@ feature-paths = { ui = ["src/ui/"] }
 chimera_core.workspace = true
 chimera_world.workspace = true
 chimera_sim.workspace = true
+# Replication of its players' vitality (`game::vitality`).
+chimera_net.workspace = true
+bevy_replicon.workspace = true
 # Halo's disc image and install folder as a mount (`game::mount`), its
 # map cache files' tags (`game::maps`).
 blam_formats.workspace = true
@@ -76,4 +79,4 @@ path = "tests/it/main.rs"
 ui = ["dep:chimera_client", "dep:chimera_present"]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on):
 # `cargo test -p halo_ce --features dev` shares the apps' Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_client?/dev", "chimera_present?/dev", "blam_formats/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "chimera_client?/dev", "chimera_present?/dev", "blam_formats/dev"]

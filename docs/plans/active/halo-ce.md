@@ -20,7 +20,7 @@ plays as the real game, from specs and the disc's own data.
 |---|---|---|
 | M0 specs (formats and core rules) | in progress (2026-11-15) | waves 0 and 1 landed but sounds and animations (disc image, cache file, structure BSP, collision, models, bitmaps, scenario, shaders), and of wave 2 movement and objects; weapons, projectiles, health and shields, multiplayer rules, sounds and animations being written |
 | M1 a map you can walk on | in progress (2026-11-15) | `blam_formats` reads the disc image and the map cache file (tag index, address spaces, typed tag reads); `games/halo_ce` is a skeleton that mounts the disc; the class readers (bitmaps, structure BSP and collision, scenario and shaders) are being written; the map converter is next |
-| M2 Halo guns as UGG rungs | not started | |
+| M2 Halo guns as UGG rungs | in progress (2026-11-15) | a Halo player's vitality (shields over health, health_shields.md: `game::vitality`) and the damage seam every Halo weapon delivers through (`game::damage::HaloHit`) landed; Halo's movement and the guns are next |
 | M3 the full multiplayer arsenal | not started | |
 | M4 every multiplayer map | not started | |
 | M5 feel and parity pass | not started | |
