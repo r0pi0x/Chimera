@@ -114,7 +114,8 @@ the user's go-ahead: no Actions runs unless asked.
   Source games, so most loaders exist (VPK, BSP, MDL); the work is each
   game's movement, weapons and HUD as specs, then games-as-libraries
   crates. HL2:DM's plan (2026-11-01):
-  [plans/active/hl2dm.md](plans/active/hl2dm.md).
+  [plans/active/hl2dm.md](plans/active/hl2dm.md). TF2's (2026-11-15):
+  [plans/active/tf2.md](plans/active/tf2.md).
 - **Then more modern games:** Call of Duty: Modern Warfare 1 or the
   earlier Call of Duties (new engines and formats: plan first).
 - **Asset browser and sandbox (user idea, 2026-11-14).** For later, a
