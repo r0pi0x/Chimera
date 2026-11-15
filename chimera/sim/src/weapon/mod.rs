@@ -47,7 +47,8 @@
 //! where `core::authoritative`, armour only from hits that land (`HitArmor`,
 //! the one place bullets, knives and blasts take it, through the shared
 //! armour step `hits::absorb`: `Armor`'s coverage, `KEVLAR` and `HELMET`, or
-//! a game's own pieces worn with it, `ArmorPieces`: `coverage`),
+//! a game's own pieces worn with it, `ArmorPieces`: `coverage`; armour
+//! with its own ratio in place of the gun's, `ArmorRatio`: Halo's shield),
 //! with a `BulletHit` for each bullet hit on something with health (games'
 //! reactions: CS:S's slowdown and flinch); `ViewPunch` (pitch, yaw, roll) on
 //! the view and, scaled, on the shots; `ViewBackPush` (the camera pushed
@@ -1422,6 +1423,17 @@ pub struct ArmorPieces {
     pub armour_quantum: Option<f32>,
 }
 
+/// A game's armour that takes every hit by its own armour ratio, in place
+/// of the hitting gun's (`DamageEffect::armor_ratio`, `Swing::armor_ratio`;
+/// a gun with none included): Halo's shield (`ArmorPieces` covering every
+/// part and class, `Depletion::Blocked`, ratio 1), which takes the whole
+/// of any game's hit first and lets only the overflow through to health
+/// (docs/DESIGN.md "Hits across games"). Put on with the pieces and taken
+/// off with them when the character becomes another game's.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[component(storage = "SparseSet")]
+pub struct ArmorRatio(pub f32);
+
 /// What `armor` covers (a game's `pieces` when worn, else its default
 /// kit) and how it runs out.
 pub fn coverage<'a>(armor: &Armor, pieces: Option<&'a ArmorPieces>) -> (impl Iterator<Item = &'a hits::Coverage>, hits::Depletion) {
@@ -1453,7 +1465,7 @@ pub struct ArmorHit {
 /// "Refused hits").
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct HitArmor<'w, 's> {
-    armor: Query<'w, 's, (&'static mut Armor, Option<&'static ArmorPieces>)>,
+    armor: Query<'w, 's, (&'static mut Armor, Option<&'static ArmorPieces>, Option<&'static ArmorRatio>)>,
     rules: crate::core::DamageRules<'w, 's>,
     shares: Option<ResMut<'w, Messages<ArmourShare>>>,
 }
@@ -1486,9 +1498,11 @@ impl HitArmor<'_, '_> {
         quantum: f32,
     ) -> ArmorHit {
         let lands = self.rules.lands(damage);
-        let Ok((mut armor, pieces)) = self.armor.get_mut(damage.target) else {
+        let Ok((mut armor, pieces, own_ratio)) = self.armor.get_mut(damage.target) else {
             return ArmorHit::default();
         };
+        // The armour's own ratio, if it has one, whatever the gun's.
+        let ratio = own_ratio.map(|r| r.0).or(ratio);
         let armour_quantum = pieces.and_then(|p| p.armour_quantum);
         let (entries, depletion) = coverage(&armor, pieces);
         let mut hit = ArmorHit {

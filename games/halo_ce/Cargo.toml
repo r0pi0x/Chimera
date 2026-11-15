@@ -31,9 +31,10 @@ feature-paths = { ui = ["src/ui/"] }
 chimera_core.workspace = true
 chimera_world.workspace = true
 chimera_sim.workspace = true
-# The network's prediction harness for the movement's test (`harness::NetSim`),
-# as the other games have it.
+# The network: replication of its players' vitality (`game::vitality`) and
+# the prediction harness for the movement's test (`harness::NetSim`).
 chimera_net.workspace = true
+bevy_replicon.workspace = true
 # Halo's disc image and install folder as a mount (`game::mount`), its
 # map cache files' tags (`game::maps`).
 blam_formats.workspace = true

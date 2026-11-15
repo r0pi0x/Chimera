@@ -21,7 +21,7 @@ pub mod ui;
 // `crate::game_registry`, `crate::map` and the rest inside, as in the other
 // game crates (the architecture check reads `crate::<module>` against its
 // layering table).
-use chimera_core::{core, game_registry, gameplay, mount};
+use chimera_core::{core, game_registry, gameplay, mount, slots};
 use chimera_world::map;
 
 use bevy::prelude::*;

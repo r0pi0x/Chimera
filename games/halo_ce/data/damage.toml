@@ -1,0 +1,623 @@
+# Halo's damage effects (`jpt!` tags) by our id, in the game's own units
+# (points, WU, WU/s, seconds, fractions): specs/halo_ce/projectiles.md,
+# "What is on the disc", "Damage effects" (the table and the material
+# modifier lists). `games/halo_ce/src/game/vitality/data.rs` reads it at
+# startup; the heavy test `tests/it/heavy/vitality_data.rs` checks every
+# number against `bloodgulch.map`.
+#
+# Per effect: `tag`, the tag's path; `category` and `side_effect` by the
+# spec's names; `flags`, the damage flags (0x1C8); `no_distance_scaling`,
+# the tag's own flag bit 0 (0x00C); `lower` the damage lower bound
+# ("minimum", 0x1D0) and `upper` the upper bound pair (0x1D4), points;
+# `radius` (0x000), WU; `core`, the area of effect core radius (0x1CC);
+# `camo`, the active camouflage damage (0x1E0); `stun`: stun, maximum stun
+# and stun time in s (0x1E4 to 0x1EC); `accel`, the instantaneous
+# acceleration (0x1F4), WU/s; `passthrough`, the vehicle passthrough
+# penalty (0x1DC), where the spec gives one; `modifiers`, the material
+# modifiers (0x200) as the spec lists them, a value and its material types
+# (codes, ranges with "-"), every type not listed 0.
+
+[effect.assault_rifle_bullet]
+tag = 'weapons\assault rifle\bullet'
+category = "bullet"
+side_effect = "none"
+flags = 0
+lower = 10.0
+upper = [10.0, 10.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.25
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11, 14, 15, 21-25" },
+    { value = 0.25, types = "5-8" },
+    { value = 0.5, types = "12, 13" },
+    { value = 0.6, types = "17" },
+    { value = 0.65, types = "19, 20" },
+    { value = 0.7, types = "30" },
+]
+
+[effect.pistol_bullet]
+tag = 'weapons\pistol\bullet'
+category = "bullet"
+side_effect = "none"
+flags = 0x2
+lower = 25.0
+upper = [25.0, 25.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.45
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "11, 13, 14, 15, 22, 23, 24, 30" },
+    { value = 1.5, types = "19, 20, 21" },
+    { value = 4.0, types = "9" },
+    { value = 2.0, types = "17" },
+    { value = 0.25, types = "5-8" },
+    { value = 0.2, types = "12, 25" },
+]
+
+[effect.shotgun_pellet]
+tag = 'weapons\shotgun\pellet'
+category = "shotgun"
+side_effect = "none"
+flags = 0
+lower = 8.0
+upper = [18.0, 25.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.18
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11, 13, 14, 15, 17, 21, 23, 24, 30" },
+    { value = 0.5, types = "22, 25" },
+    { value = 0.2, types = "12" },
+    { value = 1.5, types = "19" },
+    { value = 1.75, types = "20" },
+    { value = 0.25, types = "5-8" },
+]
+
+[effect.sniper_bullet]
+tag = 'weapons\sniper rifle\sniper bullet'
+category = "sniper"
+side_effect = "none"
+flags = 0x2
+lower = 101.0
+upper = [101.0, 101.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 1.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+passthrough = 0.5
+modifiers = [
+    { value = 1.0, types = "9, 11, 14, 15, 21-24" },
+    { value = 2.0, types = "30" },
+    { value = 0.5, types = "12, 13" },
+    { value = 0.2, types = "17, 25" },
+    { value = 0.05, types = "19, 20" },
+]
+
+[effect.plasma_rifle_bolt]
+tag = 'weapons\plasma rifle\bolt'
+category = "plasma"
+side_effect = "none"
+flags = 0x804
+lower = 10.0
+upper = [12.0, 14.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.12
+stun = [1.0, 1.0, 0.15]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11, 14-17, 19, 20, 23, 24" },
+    { value = 2.0, types = "10, 22, 25, 30" },
+    { value = 0.5, types = "12, 13, 21" },
+    { value = 0.25, types = "5-8" },
+]
+
+[effect.plasma_pistol_bolt]
+tag = 'weapons\plasma pistol\bolt'
+category = "plasma"
+side_effect = "none"
+flags = 0x4
+lower = 10.0
+upper = [16.0, 20.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.12
+stun = [1.0, 1.0, 0.15]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11, 14-17, 19, 20, 23, 24" },
+    { value = 2.0, types = "10, 25, 30" },
+    { value = 0.6, types = "21, 22" },
+    { value = 0.5, types = "12, 13" },
+    { value = 0.25, types = "5-8" },
+]
+
+# The plasma pistol's charged bolt (the tag lives under the plasma rifle).
+[effect.charged_bolt]
+tag = 'weapons\plasma rifle\charged bolt'
+category = "plasma"
+side_effect = "emp"
+flags = 0x4
+lower = 70.0
+upper = [70.0, 70.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 1.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11, 14-17, 19, 20, 22" },
+    { value = 4.0, types = "10, 25" },
+    { value = 1.5, types = "30" },
+    { value = 0.6, types = "21" },
+    { value = 0.5, types = "12, 13" },
+    { value = 0.2, types = "23, 24" },
+    { value = 0.25, types = "5-8" },
+]
+
+[effect.needle_impact]
+tag = 'weapons\needler\impact damage'
+category = "bullet"
+side_effect = "none"
+flags = 0
+lower = 0.0
+upper = [0.0, 0.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.15
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = []
+
+[effect.needle_detonation]
+tag = 'weapons\needler\detonation damage'
+category = "bullet"
+side_effect = "none"
+flags = 0
+lower = 10.0
+upper = [10.0, 10.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.1
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11, 14, 15, 16, 21-24, 30" },
+    { value = 1.2, types = "19, 20" },
+    { value = 0.6, types = "17" },
+    { value = 0.5, types = "12, 13" },
+    { value = 0.25, types = "5-8" },
+]
+
+# The supercombine.
+[effect.needler_explosion]
+tag = 'weapons\needler\explosion'
+category = "grenade"
+side_effect = "emp"
+flags = 0x20
+lower = 40.0
+upper = [60.0, 60.0]
+radius = [0.5, 1.0]
+core = 0.0
+camo = 1.0
+stun = [0.0, 0.0, 0.0]
+accel = 2.0
+modifiers = [
+    { value = 1.0, types = "0-11, 14, 15, 17, 21-24, 27, 28, 29, 31" },
+    { value = 4.0, types = "20, 25, 30" },
+    { value = 2.0, types = "19" },
+    { value = 1.5, types = "16" },
+    { value = 0.5, types = "13" },
+    { value = 0.2, types = "12" },
+]
+
+[effect.needler_shock_wave]
+tag = 'weapons\needler\shock wave'
+category = "none"
+side_effect = "none"
+flags = 0
+lower = 0.0
+upper = [0.0, 0.0]
+radius = [2.0, 4.0]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = []
+
+[effect.frag_explosion]
+tag = 'weapons\frag grenade\explosion'
+category = "grenade"
+side_effect = "none"
+flags = 0x20
+lower = 80.0
+upper = [120.0, 120.0]
+radius = [1.5, 2.5]
+core = 0.4
+camo = 0.6
+stun = [0.0, 0.0, 0.0]
+accel = 4.0
+modifiers = [
+    { value = 1.0, types = "0-8, 11, 14-17, 21-24, 27-31" },
+    { value = 4.0, types = "9, 20" },
+    { value = 2.0, types = "19" },
+    { value = 0.5, types = "13" },
+    { value = 0.25, types = "12" },
+    { value = 0.4, types = "25" },
+    { value = 0.2, types = "10" },
+]
+
+[effect.frag_shock_wave]
+tag = 'weapons\frag grenade\shock wave'
+category = "none"
+side_effect = "none"
+flags = 0
+lower = 0.0
+upper = [0.0, 0.0]
+radius = [3.5, 8.0]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [{ value = 1.0, types = "9" }]
+
+[effect.plasma_grenade_explosion]
+tag = 'weapons\plasma grenade\explosion'
+category = "grenade"
+side_effect = "emp"
+flags = 0x20
+lower = 80.0
+upper = [120.0, 120.0]
+radius = [0.5, 2.0]
+core = 0.4
+camo = 1.0
+stun = [0.0, 0.0, 0.0]
+accel = 4.0
+modifiers = [
+    { value = 1.0, types = "0-11, 14, 15, 17, 21-24, 27, 28, 29, 31" },
+    { value = 4.0, types = "20, 25, 30" },
+    { value = 2.0, types = "19" },
+    { value = 1.5, types = "16" },
+    { value = 0.5, types = "13" },
+    { value = 0.25, types = "12" },
+]
+
+[effect.plasma_grenade_attached]
+tag = 'weapons\plasma grenade\attached'
+category = "grenade"
+side_effect = "emp"
+flags = 0
+lower = 80.0
+upper = [120.0, 120.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 4.0
+modifiers = [
+    { value = 1.0, types = "9, 10, 11, 13-17, 19-24" },
+    { value = 4.0, types = "25, 30" },
+    { value = 0.2, types = "12" },
+]
+
+[effect.plasma_grenade_shock_wave]
+tag = 'weapons\plasma grenade\shock wave'
+category = "none"
+side_effect = "none"
+flags = 0
+lower = 0.0
+upper = [0.0, 0.0]
+radius = [3.5, 8.0]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = []
+
+[effect.rocket_explosion]
+tag = 'weapons\rocket launcher\explosion'
+category = "high explosive"
+side_effect = "none"
+flags = 0x20
+lower = 80.0
+upper = [300.0, 330.0]
+radius = [0.5, 2.0]
+core = 0.6
+camo = 1.0
+stun = [0.0, 0.0, 0.0]
+accel = 6.0
+modifiers = [
+    { value = 1.0, types = "0-8, 11-17, 21-24, 27-31" },
+    { value = 4.0, types = "9, 20" },
+    { value = 2.0, types = "19" },
+    { value = 0.4, types = "25" },
+    { value = 0.2, types = "10" },
+]
+
+[effect.tank_shell_explosion]
+tag = 'vehicles\scorpion\shell explosion'
+category = "mounted weapon"
+side_effect = "none"
+flags = 0x20
+lower = 80.0
+upper = [351.0, 351.0]
+radius = [1.5, 3.25]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 6.0
+modifiers = [
+    { value = 1.0, types = "0-8, 11-17, 21-24, 27-31" },
+    { value = 4.0, types = "9, 20" },
+    { value = 2.0, types = "19" },
+    { value = 0.4, types = "25" },
+    { value = 0.2, types = "10" },
+]
+
+[effect.flame_explosion]
+tag = 'weapons\flamethrower\explosion'
+category = "flame"
+side_effect = "none"
+flags = 0x80
+lower = 10.0
+upper = [10.0, 10.0]
+radius = [0.4, 0.4]
+core = 0.0
+camo = 1.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "11, 13, 15, 16, 17, 21-24, 30" },
+    { value = 4.0, types = "9, 20" },
+    { value = 2.0, types = "19" },
+    { value = 0.4, types = "14, 25" },
+    { value = 0.2, types = "10, 12" },
+]
+
+[effect.warthog_bullet]
+tag = 'vehicles\warthog\bullet'
+category = "mounted weapon"
+side_effect = "none"
+flags = 0
+lower = 16.0
+upper = [16.0, 24.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.25
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11, 14, 15, 17, 19-25, 30" },
+    { value = 0.5, types = "12, 13" },
+    { value = 0.25, types = "5-8" },
+]
+
+[effect.scorpion_bullet]
+tag = 'vehicles\scorpion\bullet'
+category = "mounted weapon"
+side_effect = "none"
+flags = 0
+lower = 10.0
+upper = [10.0, 10.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 1.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11, 14, 15, 21-25" },
+    { value = 0.25, types = "5-8" },
+    { value = 0.5, types = "12, 13" },
+    { value = 0.6, types = "17" },
+    { value = 0.65, types = "19, 20" },
+    { value = 0.7, types = "16, 30" },
+]
+
+[effect.ghost_bolt]
+tag = 'vehicles\ghost\ghost bolt'
+category = "mounted weapon"
+side_effect = "none"
+flags = 0x4
+lower = 10.0
+upper = [10.0, 14.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.25
+stun = [1.0, 1.0, 0.15]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "11, 14, 15, 17, 19, 20, 23, 24" },
+    { value = 2.0, types = "10, 16, 22, 25, 30" },
+    { value = 0.5, types = "12, 13, 21" },
+    { value = 0.25, types = "5-8" },
+]
+
+# The eight guns' melee effects (`weapons\<weapon>\melee`), all identical.
+[effect.assault_rifle_melee]
+tag = 'weapons\assault rifle\melee'
+category = "melee"
+side_effect = "lethal to the unsuspecting"
+flags = 0x5
+no_distance_scaling = true
+lower = 40.0
+upper = [50.0, 60.0]
+radius = [0.5, 0.5]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11-18, 23, 24, 30" },
+    { value = 1.4, types = "21, 22" },
+    { value = 0.2, types = "19, 20, 25, 26" },
+]
+
+[effect.pistol_melee]
+tag = 'weapons\pistol\melee'
+like = "assault_rifle_melee"
+
+[effect.shotgun_melee]
+tag = 'weapons\shotgun\melee'
+like = "assault_rifle_melee"
+
+[effect.plasma_rifle_melee]
+tag = 'weapons\plasma rifle\melee'
+like = "assault_rifle_melee"
+
+[effect.sniper_rifle_melee]
+tag = 'weapons\sniper rifle\melee'
+like = "assault_rifle_melee"
+
+[effect.plasma_pistol_melee]
+tag = 'weapons\plasma pistol\melee'
+like = "assault_rifle_melee"
+
+[effect.needler_melee]
+tag = 'weapons\needler\melee'
+like = "assault_rifle_melee"
+
+[effect.rocket_launcher_melee]
+tag = 'weapons\rocket launcher\melee'
+like = "assault_rifle_melee"
+
+[effect.flamethrower_melee]
+tag = 'weapons\flamethrower\melee'
+category = "melee"
+side_effect = "lethal to the unsuspecting"
+flags = 0x5
+no_distance_scaling = true
+lower = 60.0
+upper = [70.0, 80.0]
+radius = [0.5, 0.5]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11-18, 21-24, 30" },
+    { value = 0.2, types = "19, 20, 25, 26" },
+]
+
+[effect.ball_melee]
+tag = 'weapons\ball\melee'
+category = "melee"
+side_effect = "lethal to the unsuspecting"
+flags = 0x5
+no_distance_scaling = true
+lower = 80.0
+upper = [80.0, 80.0]
+radius = [0.5, 0.5]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [
+    { value = 1.0, types = "9, 11-18, 21-24, 30" },
+    { value = 0.2, types = "19, 20, 25, 26" },
+]
+
+[effect.flag_melee]
+tag = 'weapons\flag\melee'
+like = "ball_melee"
+
+# The Spartan unit's own melee (no weapon; a player never uses it).
+[effect.cyborg_melee]
+tag = 'characters\cyborg\melee'
+category = "melee"
+side_effect = "none"
+flags = 0x1
+lower = 1000.0
+upper = [1000.0, 1000.0]
+radius = [0.2, 0.2]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 1.5
+modifiers = [
+    { value = 1.0, types = "11, 14-25, 30" },
+    { value = 0.2, types = "12, 13" },
+]
+
+# Falling (movement.md "Landing and falling"): at scale q_f, and the lethal
+# fall's every tick.
+[effect.falling]
+tag = 'globals\falling'
+category = "falling"
+side_effect = "none"
+flags = 0
+lower = 10.0
+upper = [155.0, 155.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [{ value = 1.0, types = "0-30" }]
+
+[effect.distance]
+tag = 'globals\distance'
+category = "falling"
+side_effect = "none"
+flags = 0
+lower = 105.0
+upper = [105.0, 105.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [{ value = 1.0, types = "0-30" }]
+
+[effect.vehicle_collision]
+tag = 'globals\vehicle_collision'
+category = "vehicle"
+side_effect = "none"
+flags = 0
+lower = 1000.0
+upper = [1000.0, 1000.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [{ value = 1.0, types = "0-30" }]
+
+[effect.flaming_death]
+tag = 'globals\flaming_death'
+category = "flame"
+side_effect = "none"
+flags = 0
+lower = 5000.0
+upper = [5000.0, 5000.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [{ value = 1.0, types = "0-31" }]
+
+[effect.vehicle_hit_environment]
+tag = 'globals\vehicle_hit_environment'
+category = "none"
+side_effect = "none"
+flags = 0
+lower = 0.0
+upper = [0.0, 0.0]
+radius = [0.0, 0.0]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 0.0
+modifiers = [{ value = 1.0, types = "0-30" }]
+
+[effect.vehicle_killed_unit]
+tag = 'globals\vehicle_killed_unit'
+like = "vehicle_hit_environment"
