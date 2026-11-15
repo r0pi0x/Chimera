@@ -6,25 +6,76 @@
 //! The target itself is picked by `systems::HaloTrace::target` (the
 //! characters' positions are the simulation's).
 //!
-//! The autoaim (the target, the bending, and the target guided
-//! projectiles follow: projectiles.md 12) runs for every player whatever
-//! the input device; `params::AimAssist::enabled` is the data's switch,
-//! on unless a weapon's data turns it off (off: no target, no guidance,
-//! the convergence correction alone). The magnetism (look stickiness) is
+//! The target (the one guided projectiles follow: projectiles.md 12, the
+//! needles and the charged bolt) is picked for every player;
+//! `params::AimAssist::enabled` is the data's switch for it, on unless a
+//! weapon's data turns it off. The bending of the shot toward it and the
+//! convergence correction (`bend`) are the original's behaviour for a
+//! controller and are off by default in every app (mouse and keyboard,
+//! the only input the engine has): `Bend`, set by the console's
+//! `halo_autoaim 1` (or a resource an app inserts). (Were the engine to
+//! report a player's input device, `Bend` would follow it there.) The magnetism (look stickiness) is
 //! left off: its levels only order the targets.
 //!
-//! Known shortcuts: the look point of step 1 is the level's (characters
-//! do not stop the convergence ray, which starts at the camera) or the
-//! ray's end 128 WU away (the spec leaves a miss open); a target's aim
-//! point is its centre (no autoaim pill); no unit is "inconsequential"
-//! or "ignored by autoaim" in a match.
+//! A target's aim point (`aim_point`) is on its autoaim pill, the segment
+//! from its pelvis to its head: the segment's point nearest the camera ray
+//! (clamped to the segment), moved toward the ray by up to the autoaim
+//! width. The convergence ray (step 1) starts the camera-to-holder distance
+//! ahead of the camera, runs 128 WU and stops on the level and on any
+//! character but the shooter (`systems::HaloTrace::look_at`); a miss is
+//! its end.
+//!
+//! Known shortcuts: the pill's ends are the Spartan's pelvis and head
+//! nodes in the identity pose above the character's feet, the feet
+//! `EYE_HEIGHT` below its eye (`PELVIS_HEIGHT`, `HEAD_HEIGHT`; the
+//! animated pose is not read); the
+//! convergence ray meets characters by their hitboxes and not dead ones,
+//! nor vehicles or other objects; no unit is "inconsequential" or
+//! "ignored by autoaim" in a match.
 
 use bevy::math::{Quat, Vec3};
 
 use super::params::{Gun, weapon_flags};
 
+/// Whether shots are bent toward the target and the look point (module
+/// doc): off by default; `halo_autoaim 1` turns it on.
+#[derive(bevy::prelude::Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Bend(pub bool);
+
 /// How far the convergence ray looks, WU (step 1).
 pub const LOOK_RANGE: f32 = 128.0;
+
+/// The Spartan's pelvis and head nodes above its feet in the identity
+/// pose, WU (weapons.md 15's test rows): the ends of its autoaim pill.
+pub const PELVIS_HEIGHT: f32 = 0.36;
+pub const HEAD_HEIGHT: f32 = 0.56;
+/// The standing Spartan's eye above its feet, WU (the same rows: the
+/// camera at 0.62 over feet at 0).
+pub const EYE_HEIGHT: f32 = 0.62;
+
+/// The cyborg's autoaim width, WU (objects.md).
+pub const AUTOAIM_WIDTH: f32 = 0.08;
+
+/// A target's aim point (weapons.md 15): the point of the segment `pelvis`
+/// to `head` nearest the line from `eye` along `dir` (the segment's
+/// parameter clamped to 0..1), then moved toward that line, square to it,
+/// by its distance or `width`, whichever is smaller. Any units, any axes.
+pub fn aim_point(pelvis: Vec3, head: Vec3, width: f32, eye: Vec3, dir: Vec3) -> Vec3 {
+    let d = dir.normalize_or_zero();
+    let u = head - pelvis;
+    let w0 = pelvis - eye;
+    let (a, b) = (u.dot(u), u.dot(d));
+    let denom = a - b * b;
+    let t = if denom > 1e-12 { ((b * d.dot(w0) - u.dot(w0)) / denom).clamp(0.0, 1.0) } else { 0.0 };
+    let p = pelvis + u * t;
+    let on_ray = eye + d * (p - eye).dot(d);
+    let off = on_ray - p;
+    let len = off.length();
+    if len <= 1e-9 {
+        return p;
+    }
+    p + off / len * len.min(width)
+}
 
 /// The aim assist parameters in force (radians and world units, scaled by
 /// the zoom's magnification).

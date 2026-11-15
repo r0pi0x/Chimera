@@ -2,7 +2,8 @@
 // drawn "alpha-multiply add" (specs/halo_ce/hud.md, section 3: the texel
 // times the colour, the frame kept by 1 - its alpha), the meter shader's
 // rule (section 4: the texel's blue channel is the place along the bar),
-// and the motion tracker's sweep. The pipeline blends premultiplied: the
+// the motion tracker's sweep, and the scope's darkening (section 9: the
+// frame times 1 - the mask's grey level). The pipeline blends premultiplied: the
 // output's rgb is added, the frame kept by 1 - its alpha. Texels and
 // colours are the game's (gamma) values; the result is made linear last.
 
@@ -38,6 +39,13 @@ fn linear(c: vec3<f32>) -> vec3<f32> {
 @fragment
 fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     let mode = params.mode.x;
+    if mode > 2.5 {
+        // The scope's darkening: the frame kept by 1 - the texel's grey
+        // level (its blue), nothing added.
+        let t = mix(params.uv.xy, params.uv.zw, in.uv);
+        let y = textureSample(image, image_sampler, t).b;
+        return vec4<f32>(0.0, 0.0, 0.0, clamp(y, 0.0, 1.0));
+    }
     if mode > 1.5 {
         // The sweep: the picture over a window of half size h about its
         // centre, in its colour, through the disc's mask.

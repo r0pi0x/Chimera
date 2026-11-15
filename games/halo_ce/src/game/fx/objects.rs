@@ -4,6 +4,10 @@
 //! projectiles' looks in flight, detonations, a plasma grenade's countdown,
 //! items lying on the map and their pickup sound.
 //!
+//! `halo_ce_blast <projectile> <x> <y> <z>` (console) shows a projectile's
+//! detonation at a point on this machine alone, without damage (pictures
+//! of the effects: docs/OBSERVABILITY.md's offscreen frame dumps).
+//!
 //! - **Grenades** (`show_grenades`, the authority): the server's own
 //!   grenade projectiles (`weapons::systems::HaloProjectile`, frag and
 //!   plasma) once out of the hand get a `Transform` from their flight each
@@ -61,7 +65,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     ActiveFx, HaloLight,
     place::Frame,
-    play::{Effects, Instance, start},
+    play::{Effects, Instance, Made, start},
     shots::{HaloShown, facing, instances_from},
 };
 use super::super::{
@@ -77,7 +81,7 @@ use super::super::{
 };
 use crate::{
     core::{Intent, LocalPlayer, NetRole, SOLID_LAYERS, SimClock, SimSet},
-    map::{PlaySound, loose::ShownItem},
+    map::{PlaySound, loose::ShownItem, particles::Particles},
 };
 
 /// A detonation as every machine shows it: the projectile's tag, where
@@ -174,6 +178,7 @@ pub fn trails(
     clock: Res<SimClock>,
     mut effects: ResMut<Effects>,
     mut lights: MessageWriter<HaloLight>,
+    mut particles: ResMut<Particles>,
 ) {
     let Some(lib) = fx.0.clone() else { return };
     if halo_ticks(&clock) == 0 {
@@ -184,12 +189,22 @@ pub fn trails(
         let Some(look) = lib.projectile(tag) else { continue };
         let forward = t.rotation * Vec3::NEG_Z;
         if let Some(l) = &look.light {
-            lights.write(HaloLight { at: t.translation, color: Vec3::from(l.color), radius: l.radius * METERS_PER_UNIT, seconds: 1.5 / 30.0, owner: None, follow: false });
+            lights.write(HaloLight { at: t.translation, color: Vec3::from(l.color), radius: l.radius * METERS_PER_UNIT, seconds: 1.5 / 30.0, falloff: 0, owner: None, follow: false });
         }
         for (effect, _marker) in &look.attached {
             let f = Frame::facing(t.translation, -forward);
             let inst = lib.effects[*effect].locations.iter().map(|_| vec![Instance::both(f)]).collect();
             start(&mut effects, &lib, *effect, inst, |_| {});
+        }
+        // Its attached particle systems: a Halo tick of their rate, at the
+        // projectile (the marker's offset is not kept).
+        for (system, _marker) in &look.attached_systems {
+            let Some(sys) = lib.systems.get(*system) else { continue };
+            let mut made = Made::default();
+            super::play::emit(sys, &Frame::facing(t.translation, -forward), 1.0 / 30.0, &mut effects.rng, &mut made);
+            for g in made.groups {
+                particles.add(g);
+            }
         }
     }
 }
@@ -410,4 +425,22 @@ pub(super) fn plugin(app: &mut App) {
                 .chain(),
         )
         .net_part("halo_ce_objects", register_net);
+    use chimera_core::console::ConsoleAppExt;
+    app.console_command(
+        "halo_ce_blast",
+        "halo_ce_blast <projectile> <x> <y> <z>: show the detonation of the first projectile whose tag path holds <projectile> (`_` for spaces, e.g. frag_grenade, rocket, needle) at that point (engine metres) on this machine (pictures of the effects)",
+        |w, args| {
+            let [name, x, y, z] = args else { return Err("expected <projectile> <x> <y> <z>".into()) };
+            let at: Vec<f32> = [x, y, z].iter().map(|a| a.parse::<f32>()).collect::<Result<_, _>>().map_err(|e| e.to_string())?;
+            let name = name.replace('_', " ").to_ascii_lowercase();
+            let tag = w
+                .resource::<super::ActiveFx>()
+                .0
+                .as_ref()
+                .and_then(|lib| lib.projectiles.keys().find(|k| k.contains(&name)).cloned())
+                .ok_or_else(|| format!("no projectile like {name}"))?;
+            w.write_message(HaloBlast { tag: tag.clone(), at: Vec3::new(at[0], at[1], at[2]), forward: Vec3::NEG_Y, supercombine: false });
+            Ok(Some(format!("{tag} detonates")))
+        },
+    );
 }
