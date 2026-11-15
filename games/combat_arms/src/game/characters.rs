@@ -2110,10 +2110,12 @@ fn dress(
         Option<&Animator>,
     )>,
     loaded: models::LoadedModels,
+    mut dressed: Local<bevy::platform::collections::HashSet<Entity>>,
     mut commands: Commands,
 ) {
     let Some(models) = models else { return };
     let loaded = loaded.get();
+    dressed.retain(|e| characters.contains(*e));
     dress_corpses(&data, loaded, &models, clock.now, &bodies, &mut commands);
     let quarantine = view.is_some_and(|v| v.mode == super::gear::QUARANTINE);
     let mine = local.iter().next().flatten().copied();
@@ -2127,11 +2129,14 @@ fn dress(
             if ours {
                 commands.entity(e).remove::<BodyName>();
             }
-            if number.is_some() || skin.is_some() {
+            // Only the skin and body number it set: another game sets its
+            // own (TF2's team skins, Halo's colours).
+            if dressed.remove(&e) && (number.is_some() || skin.is_some()) {
                 commands.entity(e).remove::<(BodyNumber, BodySkin)>();
             }
             continue;
         }
+        dressed.insert(e);
         // Not loaded yet (`bodies_on_demand`): it wears what it wore, but
         // holds what it holds.
         let worn = models::drawn(&data, loaded, look).filter(|(want, _)| models.0.iter().any(|m| m.name.as_deref() == Some(want.as_str())));

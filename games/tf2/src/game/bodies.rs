@@ -79,7 +79,9 @@ pub fn add_bodies(
     }
     let table = Classes::default();
     let default = table.get(DEFAULT).map(|c| c.model.clone()).unwrap_or_default();
-    for path in wanted_models(&table, &|g| kit.wants(g)) {
+    let paths = wanted_models(&table, &|g| kit.wants(g));
+    debug!("TF2 bodies: {} ({kit:?})", paths.join(", "));
+    for path in paths {
         match load(materials, surfaces, &path, &default) {
             Ok(m) => into.characters.push(m),
             Err(e) => warnings.push(e),

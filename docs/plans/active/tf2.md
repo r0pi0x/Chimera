@@ -20,7 +20,7 @@ from specs, measurements and the game's own data.
 | M1 a map you can walk on | done (2026-11-15) | `games/tf2`; mount (missing archives skipped); ctf_2fort and cp_badlands converted with team spawns; `tf2:<map>` in the party apps; `$ssbump` drawn |
 | M2a the weapon scripts, `chimera_pack tf2` | done (2026-11-15) | our ICE (`game::ice`) with the spec's readings selectable; `game::scripts` (store/plain, install plus key, none); `dump tf2 --script`, `--ice-probe`; `chimera_pack tf2` (`weapon/<id>` for M2's guns with the decrypted script, `players`, `map/<name>`); not published. No reading reproduces the paper's triplets: the user's `--ice-probe` settles the reading |
 | M2b TF2 guns as UGG rungs | done (2026-11-15) | the four guns as data with the spec's numbers (the scripts' field mapping a seam), TF2's gun rules as hooks, `c_` weapons bone-merged on the class arms, sounds, TF2 in the party's `GUESTS`, `originals:gun_game_2fort` |
-| M3 classes as bodies, TF2's movement | in progress (2026-11-15) | the classes as data (`game::classes`, data/classes.toml); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health) |
+| M3 classes as bodies, TF2's movement | done (2026-11-15) | the classes as data (`game::classes`); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health); the class bodies with team skins and animation; TF2's HUD (health, ammo, crosshair) and kill icons |
 | M4 more maps and weapons | not started | |
 
 ## 1. Rules for this port
@@ -313,6 +313,70 @@ parameters), health per class, TF2's movement numbers (movement.md:
 the jump, the air duck, the Scout's air jump, the bunny-hop cap, fall
 damage), the rocket jump tuned on the probe server.
 
+#### M3: what landed (2026-11-15)
+
+- **The classes as data** (data/classes.toml, `game::classes`): the
+  nine classes' index, max health, top speed, eye height, air jumps,
+  player model and arms (classes.md), and each gun's class (`[guns]`: a
+  new gun joins with a line; a gun not listed is its `tf2:gun` hook's
+  `arms`). Already listed for the other track's guns: the Pistol (Scout),
+  SMG and Sniper Rifle (Sniper), Revolver (Spy), Grenade and Stickybomb
+  Launchers (Demoman), Flame Thrower (Pyro), Syringe Gun (Medic).
+- **TF2's movement** (`game::movement`): Source's movement with TF2's
+  config (movement.md): gravity 800, accelerate 10 and 10, the 48 x 48 x
+  82 box (62 ducked, eyes 45), the jump 289, the 0.2 s duck counted from
+  the press's tick, the whole 20-unit lift in the air and two air ducks,
+  no ground jump fully ducked, backwards 0.9 and ducked a third of the
+  class speed, the bunny-hop cap 1.2 x the tick's top speed, the 520
+  ceiling, fall damage max health x speed / 6000 above 650 with its +-20 %
+  spread (`tf2:tf_fall_damage_disablespread`). The class of the gun in
+  hand (`select_class`, predicted) gives the speed (or the weapon's own
+  `max_speed`: the spun Minigun's 110), the eyes and the Scout's air jump
+  (vz 268.33, the horizontal velocity the keys' wish). The server gives
+  each TF2 player its class's max health, the share of health kept; a
+  player leaving TF2's movement gets back the max it had.
+- **Bodies** (`game::bodies`, `game::player_anim`): the classes' player
+  models for the guns a map's kit wants, worn by the gun's class by name
+  (the Soldier the unnamed default), the team's skin (0 RED, 1 BLU); the
+  head hitbox on `bip_head`; animation on Source's shared player
+  animation: `ACT_MP_<state>_<kind>`, the jump's start then float, the move
+  grid by `move_x`/`move_y`, `body_pitch`/`body_yaw` with the aim matrix
+  autolayers, fire, reload and landing gestures; the `c_` gun on
+  `weapon_bone`.
+- **HUD** (`ui`, `game::hud`): health (the cross filled by the share of
+  max, the number, the overheal and low-health pulses), ammo (clip and
+  reserve, or one number) in the team's colour, the crosshair (the
+  sheet's "( · )"), in the install's scheme fonts and colours from the
+  map's kit, under its own `HudRoot` by H/480. Its guns' kill icons cut
+  from `mod_textures.txt`'s cells of `hud/d_images` for every app's feed
+  (the feed's rows are the party's).
+- **Generic**: `SourceMovementConfig` fields (`half_width`, `duck_time`,
+  `duck_counts_first_tick`, `bunnyhop_cap_scale`, `back_speed`,
+  `air_jumps`/`air_jump_speed`, `no_ducked_jump`, `air_ducks_max`,
+  `fall_by_max_health`/`fall_spread`) and the per-character
+  `SourceTraits` (speed, eyes, air jumps); Source's model loader cuts each
+  `.vtx` model's meshes to its `.mdl` model's (an empty body-group choice
+  listing a mesh shifted every later one: the Heavy didn't load); the
+  HUD look reader takes `CustomFontFiles` blocks and `dfile`/`dnegfile`
+  sheets; Combat Arms takes off only the skins it set (it took TF2's team
+  skin off every frame). Network version `net62`.
+- **Tests**: movement.md's cases 1-3, 5-8, 9-16, 18-20, 22, 23 and
+  classes.md's 1 (`tests/it/movement.rs`); the HUD's 1-6, 8-11
+  (`ui::hud`); heavy: the bodies' sequences, poses, head and skins, a
+  running Scout's grid, the HUD look and the kill icons
+  (`heavy/bodies.rs`); party: a TF2 rung's class health and speed, back
+  on the next game's rung, TF2's HUD following its gun, the overlay
+  guard with TF2's HUD.
+
+Left (M3): the Heavy's spun ("deployed") sequences and spin gestures, the
+flinch, the air jump's own sequence, a weighted pick among sequences of
+one activity; body groups (the Soldier's rocket in hand); the
+max-health label, low-ammo pulse, damage numbers, health-gain number,
+class portrait and each gun's own crosshair (hud.md open questions); the
+kill feed's row look is the party's; overheal and the Medic's
+regeneration have no source yet (no Medi Gun); the rocket jump tuned on
+the probe server.
+
 ### M4 and on
 
 More maps in the pool (koth_, cp_, ctf_ with the map pool's fitness
@@ -377,3 +441,8 @@ server probe for parity checks, TF2's own app.
   arms' stubs), sounds, TF2 in the party's `GUESTS` and
   `originals:gun_game_2fort`; the scripts' numbers a logged seam.
   Screenshots in UGG on ctf_2fort and de_dust2.
+- 2026-11-15: M3 landed: the classes as data, TF2's movement on Source's
+  with the gun's class (speed, eyes, the Scout's air jump, max health),
+  the class bodies with team skins and animation, TF2's HUD and kill
+  icons. Screenshots in UGG on ctf_2fort and de_dust2 (each gun's HUD, a
+  third-person Heavy, a Scout mid air jump).

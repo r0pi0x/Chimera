@@ -174,18 +174,23 @@ pub fn sync(
                     if kind == KIND_BOX {
                         e.insert(BackgroundColor(Color::NONE));
                     }
-                    if kind == KIND_TEXT {
-                        e.insert(HudText {
-                            font: GlyphFont { data: Arc::new(Vec::new()), additive: false },
-                            tall: 1.0,
-                            text: String::new(),
-                            color: Color::NONE,
-                            at: Vec2::ZERO,
-                            align: super::hud::Align::Left,
-                        });
-                    }
                     let id = e.id();
                     pool[kind as usize].push(id);
+                    if kind == KIND_TEXT {
+                        // The text itself, a child of the screen-sized node.
+                        commands.spawn((
+                            Node { position_type: PositionType::Absolute, ..default() },
+                            HudText {
+                                font: GlyphFont { data: Arc::new(Vec::new()), additive: false },
+                                tall: 1.0,
+                                text: String::new(),
+                                color: Color::NONE,
+                                at: Vec2::ZERO,
+                                align: super::hud::Align::Left,
+                            },
+                            ChildOf(id),
+                        ));
+                    }
                     id
                 }
             };
@@ -212,7 +217,9 @@ pub fn sync(
                     let Some((glyph, _)) = look.font(font) else { continue };
                     let want = HudText { font: glyph, tall: *tall, text: text.clone(), color: rgba(*color), at: *at, align: *align };
                     commands.queue(move |w: &mut World| {
-                        if let Some(mut t) = w.get_mut::<HudText>(entity)
+                        let child = w.get::<Children>(entity).and_then(|c| c.first().copied());
+                        if let Some(child) = child
+                            && let Some(mut t) = w.get_mut::<HudText>(child)
                             && *t != want
                         {
                             *t = want;
