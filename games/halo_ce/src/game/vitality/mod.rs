@@ -15,7 +15,10 @@
 //! out by what it blocks) with its own ratio (`weapon::ArmorRatio(1)`), so
 //! any other game's hit (a CS:S bullet, a Combat Arms grenade) empties the
 //! shield first through the shared armour step and only the overflow
-//! reaches health. `core::Health` is the body fraction (1.0 the Spartan's
+//! reaches health. With the party balance's incoming scale k
+//! (`cross_game`: 1.5) the shield's `Armor` is the fraction / k and the
+//! character carries `core::DamageScale(k)`: another game's hit counts k
+//! times against both, the shield still first. `core::Health` is the body fraction (1.0 the Spartan's
 //! 75 points: a Halo point is 1/75 of a standard player's health), with
 //! one exception: a body of exactly 0 is alive in Halo (the spec's strict
 //! below-zero death) and shows as `ALIVE_AT_ZERO`. `Vitality` holds the
@@ -36,7 +39,10 @@
 //! put back by `keep_shield` if one took them off in the same tick) and
 //! ratio, and an `Armor` if it had none (a full shield; one it had stays:
 //! the armour value is the character's and recharges from there); one
-//! leaving takes them off, keeping `Armor`. Both in one move with the
+//! leaving takes them off and, the party balance on (`cross_game`), gets
+//! back the armour it brought (`cross_game::Brought`: its value and kind,
+//! or none), never the shield's value; off, it keeps `Armor`. Both in one
+//! move with the
 //! movement's marker (`slots::set_movement` calls Halo's `wear_halo` and
 //! `leave_halo`, `slots::MovementImpl::insert` and `remove`): each part
 //! on its own was an archetype for every combination of the character's
@@ -68,7 +74,8 @@
 //! - Other games' hits on a Halo character restart the shield delay but
 //!   neither stun nor ping it, nor count for its kill credit's attacker
 //!   list; their own game decides how much (`hits::absorb` through the
-//!   shield's coverage), with no Halo material multipliers.
+//!   shield's coverage), with no Halo material multipliers, counted the
+//!   party balance's incoming scale (`cross_game`).
 //! - The pickups themselves (touching equipment) are a later step:
 //!   `GrantPowerup` is how they will grant.
 //! - Assists are not counted (no engine score for them yet).
@@ -80,8 +87,9 @@ use bevy::prelude::*;
 use chimera_sim::weapon::{Armor, ArmorPieces, ArmorRatio, Coverage, Depletion, PiecesOf, hits::ArmorPiece};
 use serde::{Deserialize, Serialize};
 
+use super::cross_game::{Brought, CrossGame, shield_of, shield_unit};
 use crate::{
-    core::{Health, Predict, PredictedAppExt, SimSet},
+    core::{DamageScale, Health, Predict, PredictedAppExt, SimSet},
     slots::{MovementRegistry, MovementSlot},
 };
 
@@ -296,6 +304,7 @@ impl Plugin for VitalityPlugin {
         use chimera_net::net::parts::NetAppExt;
         app.insert_resource(Spartan::load())
             .insert_resource(DamageEffects::load())
+            .init_resource::<super::cross_game::CrossGame>()
             .add_message::<HaloPing>()
             .add_message::<GrantPowerup>()
             .add_message::<PowerupTaken>()
@@ -325,21 +334,40 @@ impl Plugin for VitalityPlugin {
 /// in one move: the shield's pieces (over any the last game left on) and
 /// ratio, and, where it wasn't Halo's, a fresh `Vitality`, `Stun`,
 /// `Attackers` and `Mirrored`, and a full shield's `Armor` if it had none
-/// (one it had stays). `extra` is the movement's marker and slot, or none.
+/// (one it had stays). With the party's balance on (`cross_game`), another
+/// game's damage on it counts its incoming scale (`DamageScale`, with the
+/// shield's `Armor` in that unit: `cross_game::shield_unit`). `extra` is
+/// the movement's marker and slot, or none.
 fn put_on(e: &mut EntityWorldMut, extra: impl Bundle) {
     let pieces = (shield_armour(), PiecesOf(super::GAME), ArmorRatio(1.0));
-    let fresh = || (Vitality::default(), Stun::default(), super::damage::Attackers::default(), Mirrored::default());
+    let brought = Brought(e.get::<Armor>().copied());
+    let fresh = || (Vitality::default(), Stun::default(), super::damage::Attackers::default(), Mirrored::default(), brought);
+    let scale = e.get_resource::<CrossGame>().copied().unwrap_or_default().incoming();
+    let scaled = (scale != 1.0).then_some(DamageScale(scale));
     if e.contains::<Vitality>() {
         e.insert((extra, pieces));
     } else if e.contains::<Armor>() {
         e.insert((extra, pieces, fresh()));
+        if let Some(s) = scaled {
+            e.insert(s);
+        }
     } else {
         e.insert((extra, pieces, fresh(), Armor { amount: 1.0, helmet: false }));
+        if let Some(s) = scaled {
+            e.insert(s);
+        }
     }
 }
 
-/// Halo's parts taken off a character, all in one move (`Armor` stays).
-type HaloParts = (Vitality, Stun, ArmorPieces, PiecesOf, ArmorRatio, Mirrored, super::damage::Attackers);
+/// Halo's parts taken off a character, all in one move (`Armor` is given
+/// back separately: `armour_back`).
+type HaloParts = (Vitality, Stun, ArmorPieces, PiecesOf, ArmorRatio, Mirrored, super::damage::Attackers, DamageScale, Brought);
+
+/// The incoming scale a Halo character's shield and health are in (1:
+/// none, `cross_game`).
+pub fn scale_of(scale: Option<&DamageScale>) -> f32 {
+    scale.map_or(1.0, |s| s.0)
+}
 
 /// `halo_ce:movement`'s insert (`slots::MovementImpl::insert`): the marker
 /// and slot with the vitality (`put_on`).
@@ -350,14 +378,45 @@ fn wear_halo(e: &mut EntityWorldMut, slot: MovementSlot) {
 /// `halo_ce:movement`'s remove: the marker with the vitality, if it wears it.
 fn leave_halo(e: &mut EntityWorldMut) {
     if e.contains::<Vitality>() {
+        let back = armour_back(e);
         e.remove::<(super::movement::HaloMovement, HaloParts)>();
+        give_back(e, back);
     } else {
         e.remove::<super::movement::HaloMovement>();
     }
 }
 
+/// What a character leaving Halo gets back as armour (`cross_game::
+/// Brought`), the party balance on: Some(what it brought, or none); None
+/// keeps the shield's value (the balance off).
+fn armour_back(e: &EntityWorldMut) -> Option<Option<Armor>> {
+    let on = e.get_resource::<CrossGame>().copied().unwrap_or_default().restores_armour();
+    e.get::<Brought>().filter(|_| on).map(|b| b.0)
+}
+
+/// Put back the armour `armour_back` gave.
+fn give_back(e: &mut EntityWorldMut, back: Option<Option<Armor>>) {
+    match back {
+        Some(Some(a)) => {
+            e.insert(a);
+        }
+        Some(None) => {
+            e.remove::<Armor>();
+        }
+        None => {}
+    }
+}
+
+/// Halo's parts taken off (the slot changed some other way), the armour
+/// it brought given back.
+fn take_off(mut e: EntityWorldMut) {
+    let back = armour_back(&e);
+    e.remove::<HaloParts>();
+    give_back(&mut e, back);
+}
+
 /// Characters on Halo's movement wear its vitality; leaving it takes it
-/// off (`Armor` stays). The movement's switch does both with the marker
+/// off (`Armor` stays, or what it brought comes back). The movement's switch does both with the marker
 /// (`wear_halo`, `leave_halo`); here the shield's pieces are put back over
 /// any the last game left, and a slot changed some other way is caught up.
 fn wear(mut commands: Commands, on: Query<(Entity, &MovementSlot, Has<Vitality>), Changed<MovementSlot>>) {
@@ -365,7 +424,7 @@ fn wear(mut commands: Commands, on: Query<(Entity, &MovementSlot, Has<Vitality>)
         if slot.0 == super::movement::ID {
             commands.entity(e).queue(|mut e: EntityWorldMut| put_on(&mut e, ()));
         } else if halo {
-            commands.entity(e).remove::<HaloParts>();
+            commands.entity(e).queue(take_off);
         }
     }
 }
@@ -401,8 +460,9 @@ pub const SAME_HEALTH: f32 = 1e-5;
 /// Take in what other games' hits did to `armor` and `health` since the
 /// server last wrote them (`mirrored`): a drop restarts the shield delay
 /// (any hit does) and a broken shield is marked; then the spec's values
-/// are theirs.
-pub fn take_foreign(spartan: &Spartan, v: &mut Vitality, health: &Health, armor: Option<&Armor>, mirrored: &Mirrored) {
+/// are theirs (the shield's in the incoming `scale`'s unit,
+/// `cross_game::shield_of`).
+pub fn take_foreign(spartan: &Spartan, v: &mut Vitality, health: &Health, armor: Option<&Armor>, mirrored: &Mirrored, scale: f32) {
     if let Some(armor) = armor
         && armor.amount.to_bits() != mirrored.shield.to_bits()
     {
@@ -413,7 +473,7 @@ pub fn take_foreign(spartan: &Spartan, v: &mut Vitality, health: &Health, armor:
                 v.current_shield_damage = 0.0;
             }
         }
-        v.shield = armor.amount.clamp(0.0, spartan.constants.overshield_max);
+        v.shield = shield_of(armor.amount, scale).clamp(0.0, spartan.constants.overshield_max);
     }
     if (health.current - mirrored.health).abs() > SAME_HEALTH && !v.dead {
         if health.current < mirrored.health {
@@ -426,9 +486,10 @@ pub fn take_foreign(spartan: &Spartan, v: &mut Vitality, health: &Health, armor:
     }
 }
 
-/// Write the spec's values to the engine's `Health` and `Armor` (only
-/// what differs, so change detection means a change).
-pub fn mirror(v: &Vitality, health: &mut Health, armor: Option<&mut Armor>, mirrored: &mut Mirrored) {
+/// Write the spec's values to the engine's `Health` and `Armor` (the
+/// shield in the incoming `scale`'s unit; only what differs, so change
+/// detection means a change).
+pub fn mirror(v: &Vitality, health: &mut Health, armor: Option<&mut Armor>, mirrored: &mut Mirrored, scale: f32) {
     if !v.dead {
         let h = health_of(v.body);
         if health.current.to_bits() != h.to_bits() {
@@ -437,8 +498,9 @@ pub fn mirror(v: &Vitality, health: &mut Health, armor: Option<&mut Armor>, mirr
     }
     mirrored.health = health.current;
     if let Some(armor) = armor {
-        if armor.amount.to_bits() != v.shield.to_bits() {
-            armor.amount = v.shield;
+        let amount = shield_unit(v.shield, scale);
+        if armor.amount.to_bits() != amount.to_bits() {
+            armor.amount = amount;
         }
         mirrored.shield = armor.amount;
     }
@@ -450,7 +512,15 @@ pub fn mirror(v: &Vitality, health: &mut Health, armor: Option<&mut Armor>, mirr
 /// tick's pickups.
 #[allow(clippy::type_complexity)]
 pub fn update(
-    mut q: Query<(Entity, &mut Vitality, &mut Health, Option<&mut Armor>, Option<&mut Stun>, Option<&mut Mirrored>)>,
+    mut q: Query<(
+        Entity,
+        &mut Vitality,
+        &mut Health,
+        Option<&mut Armor>,
+        Option<&mut Stun>,
+        Option<&mut Mirrored>,
+        Option<&DamageScale>,
+    )>,
     spartan: Res<Spartan>,
     clock: Res<crate::core::SimClock>,
     mut grants: MessageReader<GrantPowerup>,
@@ -458,10 +528,13 @@ pub fn update(
     mut commands: Commands,
 ) {
     let grants: Vec<GrantPowerup> = grants.read().copied().collect();
-    for (e, mut v, mut health, mut armor, stun, mirrored) in &mut q {
+    for (e, mut v, mut health, mut armor, stun, mirrored, scale) in &mut q {
+        let scale = scale_of(scale);
         let Some(mut mirrored) = mirrored.filter(|m| m.primed) else {
             // First tick: the engine's values are where Halo starts (an
-            // armour value from another game stays, and recharges).
+            // armour value from another game stays, and recharges; as it
+            // is, whatever the incoming scale: the shield's unit begins at
+            // the mirror).
             if let Some(a) = armor.as_deref() {
                 v.shield = a.amount.clamp(0.0, spartan.constants.overshield_max);
             }
@@ -469,7 +542,7 @@ pub fn update(
                 v.body = health.current;
             }
             let mut m = Mirrored { primed: true, ..default() };
-            mirror(&v, &mut health, armor.as_deref_mut(), &mut m);
+            mirror(&v, &mut health, armor.as_deref_mut(), &mut m, scale);
             // Over the unprimed one `put_on` gave it: no new archetype.
             commands.entity(e).insert(m);
             continue;
@@ -478,13 +551,13 @@ pub fn update(
             // Respawned: a new unit, shield and body full.
             *v = Vitality::default();
             if let Some(a) = armor.as_deref_mut() {
-                a.amount = 1.0;
+                a.amount = shield_unit(1.0, scale);
             }
             if let Some(mut s) = stun {
                 *s = Stun::default();
             }
         } else {
-            take_foreign(&spartan, &mut v, &health, armor.as_deref(), &mirrored);
+            take_foreign(&spartan, &mut v, &health, armor.as_deref(), &mirrored, scale);
             if v.dead {
                 v.die();
             }
@@ -505,6 +578,6 @@ pub fn update(
                 });
             }
         }
-        mirror(&v, &mut health, armor.as_deref_mut(), &mut mirrored);
+        mirror(&v, &mut health, armor.as_deref_mut(), &mut mirrored, scale);
     }
 }

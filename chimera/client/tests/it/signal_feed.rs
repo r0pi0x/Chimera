@@ -116,3 +116,20 @@ fn the_plain_feed_without_the_signal_theme() {
     let w = sim.app.world_mut();
     assert_eq!(w.query::<&KillFeedRow>().iter(w).count(), 1, "today's feed");
 }
+
+/// A staged feed's fixture row may name a game's weapon id (`ui_parity::
+/// FixtureKill::weapon`: `ui_scene feed <fixture>` shows that gun, e.g. to
+/// photograph a game's kill icons); without one it is the class's made-up
+/// gun, as before.
+#[test]
+fn a_feed_fixture_row_may_name_a_weapon() {
+    use chimera_client::client::ui_parity::Fixture;
+    let json = r#"{"feed": [
+        {"killer": "a", "victim": "b", "class": "rifle", "weapon": "halo_ce:needler"},
+        {"killer": "c", "victim": "d", "class": "rifle"}
+    ]}"#;
+    let fixture: Fixture = serde_json::from_str(json).expect("the fixture reads");
+    let kills = fixture.kills(10.0);
+    assert_eq!(kills[0].weapon, Some("halo_ce:needler"));
+    assert!(kills[1].weapon.is_some_and(|w| w != "halo_ce:needler"), "{:?}", kills[1].weapon);
+}

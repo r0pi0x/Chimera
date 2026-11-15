@@ -73,6 +73,17 @@
 //! model's camera and the effects' re-projection between them
 //! (`fx::place`, which reads both cameras) all use the real angles.
 //!
+//! **Zoom in the party apps** (`party_zoom_fov`, applied to the world
+//! camera by the front end's `ui::party_view`): the world camera's field
+//! of view is the player's own setting there, for every game's gun, and
+//! Halo changes it only while zoomed: the player's view narrowed by the
+//! magnification of Halo's zoomed over its unzoomed view in the tangent of
+//! the half angle (`magnification`), so the zoom looks as many times
+//! closer from any setting. Halo's own app keeps Halo's angles (its
+//! player's view is `FOV`, where the two agree). The gun in hand keeps
+//! `FOV` whatever the player's setting (`fov`: it follows the player's
+//! base, `GameFov::follows_player`), and it is hidden while zoomed.
+//!
 //! **Third person** (`stance`): a holder of a Halo gun takes its label
 //! (`body::WeaponLabel` from the document's `label`, the weapon tag's) and
 //! holds its held model (`map::Held`).
@@ -117,6 +128,24 @@ pub fn camera_fov(nominal: f32) -> f32 {
 /// 61.52 degrees horizontal at 4:3 (48.11 vertical): the world camera's
 /// in Halo's app and the view model's.
 pub const FOV: f32 = 61.520_22;
+
+/// The magnification a zoomed field of view `zoomed` (degrees horizontal
+/// at 4:3, `Zoomed::fov`) is of Halo's unzoomed view (`FOV`), taken in
+/// the tangent of the half angle: 2.22 at the 2x zooms (the nominal 70
+/// degrees halved, then narrowed), 9.15 at the sniper rifle's 8x.
+pub fn magnification(zoomed: f32) -> f32 {
+    (FOV.to_radians() / 2.0).tan() / (zoomed.to_radians() / 2.0).tan().max(1e-6)
+}
+
+/// The party apps' zoomed view (module doc, "Zoom in the party apps"):
+/// the player's own unzoomed field of view `player` (degrees horizontal
+/// at 4:3) narrowed by the magnification of Halo's zoomed `zoomed` over
+/// its unzoomed view (`magnification`), so a 2x zoom looks 2x from
+/// whatever the player chose; at Halo's own angle (`FOV`) it is Halo's
+/// zoomed angle.
+pub fn party_zoom_fov(player: f32, zoomed: f32) -> f32 {
+    2.0 * ((player.to_radians() / 2.0).tan() / magnification(zoomed)).atan().to_degrees()
+}
 
 /// The view-model settings Halo's own app starts with: the models at the
 /// camera's field of view, whatever the player's (`SettingsFollowPlayerFov`).

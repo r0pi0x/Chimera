@@ -198,6 +198,7 @@ fn remote_shots(
         let mut ctx = deliver::Shot {
             owner: s.shooter,
             weapon: active,
+            id: s.weapon,
             eye: s.origin,
             aim: deliver::aim_of(s.yaw, s.pitch),
             yaw: s.yaw,

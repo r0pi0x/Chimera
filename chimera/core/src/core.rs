@@ -2426,9 +2426,10 @@ impl DamageRules<'_, '_> {
 
 /// Subtract damage from health; announce deaths once (public so other
 /// systems can order themselves after it).
+#[allow(clippy::type_complexity)]
 pub fn apply_damage(
     mut damage: MessageReader<Damage>,
-    mut health: Query<(&mut Health, Option<&mut DamageRemainder>), Without<God>>,
+    mut health: Query<(&mut Health, Option<&mut DamageRemainder>, Option<&DamageScale>), Without<God>>,
     rules: DamageRules,
     mut died: MessageWriter<Died>,
     mut taken: MessageWriter<DamageTaken>,
@@ -2437,11 +2438,14 @@ pub fn apply_damage(
         if rules.refuse(d) {
             continue;
         }
-        let Ok((mut h, remainder)) = health.get_mut(d.target) else { continue };
+        let Ok((mut h, remainder, scale)) = health.get_mut(d.target) else { continue };
         if h.current <= 0.0 {
             continue;
         }
         let mut d = std::borrow::Cow::Borrowed(d);
+        if let Some(s) = scale.filter(|s| s.0 != 1.0) {
+            d.to_mut().amount *= s.0;
+        }
         if let Some(mut r) = remainder {
             // Whole points, the fraction carried (HL2's health): a hit
             // that comes to no whole point does nothing.
@@ -2464,6 +2468,18 @@ pub fn apply_damage(
         }
     }
 }
+
+/// What every hit on this character's health counts (a game's rule for
+/// its characters: Halo's player in a party app, where another game's
+/// damage counts 1.5 times, `halo_ce::game::cross_game`): `apply_damage`
+/// multiplies each `Damage` on it by this before health (and
+/// `DamageRemainder`) takes it, so `Damage::amount` stays what the hit
+/// dealt and its `DamageTaken` and `Died` carry what health lost. A game
+/// whose own hits must land as they are writes them divided by it.
+/// Without it, health takes the damage as it comes.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[component(storage = "SparseSet")]
+pub struct DamageScale(pub f32);
 
 /// Health that takes whole points and carries the fraction of each hit
 /// (Half-Life 2's, specs/hl2dm/suit.md "Fractional damage"): the
@@ -2507,6 +2523,55 @@ mod remainder_tests {
         let mut r = DamageRemainder::default();
         assert_eq!(r.take(62.5), Some(62.0));
         assert!((r.0 - 0.5).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod scale_tests {
+    use bevy::prelude::*;
+
+    use super::{Damage, DamageKind, DamageScale, DamageTaken, Died, Health, Hitgroup, apply_damage};
+
+    fn hit(target: Entity, amount: f32) -> Damage {
+        Damage {
+            target,
+            attacker: None,
+            amount,
+            point: Vec3::ZERO,
+            dir: Vec3::NEG_Z,
+            hitgroup: Hitgroup::Generic,
+            kind: DamageKind::Bullet,
+            weapon: None,
+            force: Vec3::ZERO,
+        }
+    }
+
+    /// `DamageScale` multiplies what health takes (and what `Died` and
+    /// `DamageTaken` carry); without it, the damage as it comes.
+    #[test]
+    fn a_damage_scale_multiplies_what_health_takes() {
+        let mut app = App::new();
+        app.add_message::<Damage>().add_message::<Died>().add_message::<DamageTaken>().add_systems(Update, apply_damage);
+        let plain = app.world_mut().spawn(Health::default()).id();
+        let scaled = app.world_mut().spawn((Health::default(), DamageScale(1.5))).id();
+        for e in [plain, scaled] {
+            app.world_mut().write_message(hit(e, 0.35));
+        }
+        app.update();
+        let health = |app: &App, e| app.world().get::<Health>(e).unwrap().current;
+        assert!((health(&app, plain) - 0.65).abs() < 1e-6);
+        assert!((health(&app, scaled) - 0.475).abs() < 1e-6);
+        let taken: Vec<f32> = app.world().resource::<Messages<DamageTaken>>().iter_current_update_messages().map(|t| t.damage.amount).collect();
+        assert!((taken[1] - 0.525).abs() < 1e-6, "{taken:?}");
+        // 0.35 x 1.5 is lethal on what is left; unscaled it isn't.
+        for e in [plain, scaled] {
+            app.world_mut().write_message(hit(e, 0.35));
+        }
+        app.update();
+        assert!(health(&app, plain) > 0.0);
+        assert_eq!(health(&app, scaled), 0.0);
+        let died: Vec<Entity> = app.world().resource::<Messages<Died>>().iter_current_update_messages().map(|d| d.entity).collect();
+        assert_eq!(died, [scaled]);
     }
 }
 

@@ -16,9 +16,11 @@
 //! mercenaries' aim).
 //!
 //! `post_stimuli` (after the weapons and damage): gunfire from every
-//! `Fired` round of a gun (radius: the fitted weapon's fire sound,
+//! shot of a gun (`WeaponEventKind::ShotMade`, every weapon frame's, Halo's
+//! own too; radius: the fitted weapon's fire sound,
 //! `attachments::CaMods`), footsteps, the shot's bookkeeping (a new aim
-//! for the next shot, the grenade count, letting go of the trigger), and
+//! for the next shot, letting go of the trigger; the grenade count by the
+//! engine frame's `Fired` rounds), and
 //! damage (a bot that hurt a player resets its grenade count; a bot hit
 //! moves and may dodge). `camping` keeps each human's camping time (5.5).
 //!
@@ -51,7 +53,7 @@ use super::super::{
 use crate::{
     core::{Damage, Dead, FreezeTime, Health, Intent, MovementState, SimClock, Spectating, Team},
     map::{SeeThrough, nav::NavMesh, nav_gen, vis::ActiveVisibility},
-    weapon::{Inventory, Magazine, Melee, Weapon, WeaponEvent, WeaponEventKind, grenade::Throwable},
+    weapon::{FiresOnRelease, Inventory, Magazine, Melee, Weapon, WeaponEvent, WeaponEventKind, grenade::Throwable},
 };
 
 /// Sight range (u), `SeeEnemyDistance`.
@@ -289,8 +291,25 @@ pub fn post_stimuli(
         if e.replay {
             continue;
         }
-        let WeaponEventKind::Fired { origin, .. } = e.kind else { continue };
+        // The grenade count goes by the engine frame's rounds (`Fired`);
+        // the rest by the shot fact every weapon frame sends (`ShotMade`:
+        // one with each `Fired`, and an own-frame weapon's shots).
+        let fired = matches!(e.kind, WeaponEventKind::Fired { .. });
+        let origin = match e.kind {
+            WeaponEventKind::ShotMade { origin, .. } => origin,
+            WeaponEventKind::Fired { .. } => Vec3::ZERO,
+            _ => continue,
+        };
         let Ok((w, fitted, gun, trigger)) = weapons.get(e.weapon) else { continue };
+        if fired {
+            if gun
+                && data.gun_type(w.id) != Some("Knife")
+                && let Ok(mut b) = bots.get_mut(e.owner)
+            {
+                b.grenades = b.grenades.saturating_sub(1);
+            }
+            continue;
+        }
         if gun {
             let radius = fitted.map_or(2000, |f| f.fire_sound().radius) as f32;
             let team = teams.get(e.owner).map_or(0, |t| t.0);
@@ -308,9 +327,6 @@ pub fn post_stimuli(
                 };
             b.aim_offset = None;
             b.release = true;
-            if gun && data.gun_type(w.id) != Some("Knife") {
-                b.grenades = b.grenades.saturating_sub(1);
-            }
         }
     }
     for d in damage.read() {
@@ -710,6 +726,9 @@ struct Gun {
     throw_time: f32,
     /// An auto turret to place (special_weapons.md 6.7).
     turret: bool,
+    /// Its trigger fires when released (`weapon::FiresOnRelease`): tapped,
+    /// never held to charge.
+    on_release: bool,
 }
 
 impl Gun {
@@ -1134,6 +1153,7 @@ fn guns_of(world: &World, e: Entity) -> Vec<Gun> {
                 turret: world
                     .get::<super::super::special::CaDeviceData>(w)
                     .is_some_and(|d| d.params.kind == super::super::special::DeviceKind::Turret),
+                on_release: world.get::<FiresOnRelease>(w).is_some(),
             })
         })
         .collect()
@@ -2242,6 +2262,11 @@ fn aim_and_fire(ctx: &Ctx, bot: &mut CaBot, me: &Char, target: &Char, guns: &[Gu
         && (knife || bot.burst_left > 0)
         && now >= bot.pause_until;
     io.fire = fire && !std::mem::take(&mut bot.release);
+    // A trigger that fires when released: tapped, the press let go on the
+    // next tick (the shot is the release's; never held to charge).
+    if io.fire && held.on_release {
+        bot.release = true;
+    }
 }
 
 /// The target is nearer than this (u): the close throw animation (8.5).

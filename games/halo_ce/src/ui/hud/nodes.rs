@@ -67,6 +67,10 @@ pub struct HaloHud {
     pub state: HudState,
     pub unit: Option<Unit>,
     pub quads: Vec<Quad>,
+    /// Where the quads' blocks are (`draw::Blocks`, canvas units).
+    pub blocks: draw::Blocks,
+    /// The canvas they are drawn on.
+    pub canvas: Option<Canvas>,
 }
 
 /// Halo's HUD root.
@@ -87,6 +91,16 @@ pub fn spawn_root(mut commands: Commands) {
     ));
 }
 
+/// The HUD read from the install's donor map (`body::load::DONOR_MAP`).
+pub fn read_donor() -> Result<HudData, String> {
+    let install = INFO.install().ok_or_else(|| format!("no `{GAME}` install"))?;
+    let mount = (INFO.open)(&install).map_err(|e| format!("{}: {e}", install.display()))?;
+    let path = map_path(DONOR_MAP);
+    let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
+    let map = MapFile::load(&bytes).map_err(|e| format!("{path}: {e}"))?;
+    HudData::load(&map).map_err(|e| format!("{path}: {e}"))
+}
+
 /// Read the donor map's HUD on a thread (once), and make its textures
 /// when it is read.
 pub fn load(mut load: ResMut<HudLoad>, mut images: ResMut<HudImages>, assets: Option<ResMut<Assets<Image>>>) {
@@ -95,15 +109,7 @@ pub fn load(mut load: ResMut<HudLoad>, mut images: ResMut<HudImages>, assets: Op
             let slot = Arc::new(Mutex::new(None));
             let out = slot.clone();
             std::thread::spawn(move || {
-                let read = || -> Result<HudData, String> {
-                    let install = INFO.install().ok_or_else(|| format!("no `{GAME}` install"))?;
-                    let mount = (INFO.open)(&install).map_err(|e| format!("{}: {e}", install.display()))?;
-                    let path = map_path(DONOR_MAP);
-                    let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
-                    let map = MapFile::load(&bytes).map_err(|e| format!("{path}: {e}"))?;
-                    HudData::load(&map).map_err(|e| format!("{path}: {e}"))
-                };
-                let r = read();
+                let r = read_donor();
                 *out.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
             });
             *load = HudLoad::Loading(slot);
@@ -239,7 +245,8 @@ pub fn collect(
         hud.state.tick(data, &unit, &others, yaw, tick);
     }
     let canvas = window.iter().next().map_or(Canvas::ORIGINAL, |w| Canvas::of(w.width(), w.height())).with_layout(layout);
-    hud.quads = draw::draw(data, &unit, &hud.state, &canvas, now);
+    (hud.quads, hud.blocks) = draw::draw_blocks(data, &unit, &hud.state, &canvas, now);
+    hud.canvas = Some(canvas);
     hud.unit = Some(unit);
 }
 

@@ -359,7 +359,9 @@ fn the_party_layouts_offset() {
     use halo_ce::ui::hud::layout::party_offset;
     let frame = [48, 36, 592, 444];
     // A top-right block onto a bottom-left tracker.
-    assert_eq!(party_offset([440.0, 40.0, 590.0, 80.0], [50.0, 330.0, 140.0, 440.0], frame), [-390.0, 360.0]);
+    assert_eq!(party_offset([440.0, 40.0, 590.0, 80.0], [50.0, 330.0, 140.0, 440.0], frame, 0.0), [-390.0, 360.0]);
     // A block reaching above the frame once moved is pulled back down.
-    assert_eq!(party_offset([440.0, 40.0, 590.0, 500.0], [50.0, 330.0, 140.0, 440.0], frame), [-390.0, -4.0]);
+    assert_eq!(party_offset([440.0, 40.0, 590.0, 500.0], [50.0, 330.0, 140.0, 440.0], frame, 0.0), [-390.0, -4.0]);
+    // Under the party's status band's top (`Canvas::party_floor`): lower.
+    assert_eq!(party_offset([440.0, 40.0, 590.0, 80.0], [50.0, 330.0, 140.0, 440.0], frame, 420.0), [-390.0, 380.0]);
 }

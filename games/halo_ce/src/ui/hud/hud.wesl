@@ -10,7 +10,8 @@
 import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 
 struct HudParams {
-    // x: mode (0 sprite, 1 meter, 2 sweep), y: meter value, z: flash
+    // x: mode (0 sprite, 1 meter, 2 sweep), y: meter value (a sprite's:
+    // 1 a party crosshair), z: flash
     // extension, w: tint grey.
     mode: vec4<f32>,
     color: vec4<f32>,
@@ -78,5 +79,9 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(linear(rgb) * texel.a, (1.0 - keep) * texel.a);
     }
     let c = texel * params.color;
+    // A party crosshair (mode.y 1): the frame also kept by 1 - its brightness.
+    if params.mode.y > 0.5 {
+        return vec4<f32>(linear(c.rgb), max(c.a, max(c.r, max(c.g, c.b))));
+    }
     return vec4<f32>(linear(c.rgb), c.a);
 }

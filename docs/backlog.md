@@ -59,6 +59,34 @@ the user's go-ahead: no Actions runs unless asked.
   - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
   - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
 
+- **Parties and friends: the social layer (user, 2026-11-15; needs a design first):** today only the front end exists. The lobby can group a party's rows with a coloured edge, but the server always sends party 0 (`chimera/net/src/prematch.rs`), so nobody is grouped. The "+" invite and Friends tiles in the shell's rack are disabled ("Coming soon"), and your party is you alone (`chimera_ui::shell`, `client::profile`, `client::lobby_panel`).
+  - **Friends** (needs accounts, hub.md S3/S4):
+    - add by username or invite link, accept or decline, remove, block;
+    - online and in-game presence ("in a match on de_dust2", away and idle from the avatar states);
+    - join a friend's server from the list;
+    - a Friends panel from the rack's tile.
+  - **Parties:**
+    - invite from Friends, the "+" tile, or an invite code for players without accounts;
+    - a leader, who can kick, promote and leave;
+    - the party follows its leader into a server, and stays together across map changes and matches;
+    - the server keeps a party on one team where the mode has teams and sends real party ids, so the lobby's edges and grouping show;
+    - party chat, and the party's avatars in the rack.
+  - **Design questions:**
+    - Session-only parties first, which work now with codes and no accounts, or account-backed only?
+    - Where presence and party state live: a hub service, or the game server only.
+    - Privacy: who can see you're online, and invite permissions.
+    - Moderation: blocking hides chat, voice and invites.
+  - Builds on hub phases S2–S4 and the Signal r8 shell's tiles. Related: sprays, profiles and stats, ranks per game.
+
+- **Sprays (user, 2026-11-15; needs a design first):** players put a picture on a wall with a key, as in TF2, CS:S, HL2:DM and the other Source games: one spray per life or on a cooldown, decaling the surface looked at, visible to everyone and fading out when replaced.
+  - **Design first:**
+    - **Upload:** how a player chooses and uploads their spray: a file picker in Settings, size and format limits, conversion to one texture format, and possibly the games' own .vtf sprays.
+    - **Storage:** where sprays live (on the account, with the hub services, see hub.md S3/S4) and how other players get them. Pre-fetch at join, as an asset-service download or peer to peer, never mid-match without the no-fetch guard.
+    - **Moderation:** reporting a spray, a per-player hide/mute, an owner's remove and ban, a client toggle to show no sprays, and age and content rules for public servers.
+    - **Abuse limits:** rate limits, the size cap, and the hash-based caching the Source games use.
+  - **Then:** the decal on map geometry (per game's decal system or a shared Chimera one), the spray sound, the "sprayed by" look-at text, and the settings.
+  - Belongs with accounts (S3/S4) once players have accounts; no implementation before the design is agreed.
+
 - **An Engineer rung (user, 2026-11-15, after TF2's guns and classes):** a special gun-game rung where you play TF2's Engineer with only a melee weapon (the Wrench), but can build a sentry gun, a dispenser and teleporters.
   - To advance, you need a kill made by your sentry, which is credited to you as the rung's kill; a Wrench kill might count too (to decide).
   - Needs TF2's buildables: placing them with the PDA, metal, building up and upgrading with the Wrench, the sentry's targeting and fire, the dispenser's healing and ammo, and teleporter pairs.
@@ -2410,6 +2438,13 @@ a first bot are in.
   swap are in, `weapon/drop.rs`): the throw and slide are measured (M20, 2026-10-15; ours stops at 72 of 95 units); the re-pick delay, pickup
   reach and mass, friction (0.5) and the box collider are guesses
   (measure on the probe server: how far a shot weapon skids).
+- Move the remaining listeners that mean "a shot happened" (spawn
+  scoring, third-person fire animation, the games' HUD and effects, the
+  bots' grenade count) from `Fired` to the shot fact (`ShotMade`,
+  DESIGN.md "A shot and the command to trace it").
+- Bots: a charged-shot tactic for a trigger that fires when released
+  (`weapon::FiresOnRelease`: today they only tap it; Halo's plasma
+  pistol's charged bolt strips a shield).
 - Ragdolls, remaining (`map/ragdoll.rs` has the spec's bodies, joints,
   self-collision pairs, death poses, impulse, bone velocities, bullet and
   blast pushes, separation repair, settling and removal): check the

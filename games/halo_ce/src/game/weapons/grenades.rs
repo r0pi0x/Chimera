@@ -45,6 +45,16 @@
 //! bits each: current, desired, wanted; 2 is none), so the network
 //! message is the one the selected kind had.
 //!
+//! **In the party apps** (`PartyGrenades`, registered by Halo's party
+//! bundle only: `party`; the console's `halo_party_grenades <0|1>`, 0 by
+//! default): off, a holder of a Halo gun there carries no grenades (a new
+//! life starts with none, any it has are taken at once, so a rung change
+//! and a respawn leave none, and the type stays none: the HUD draws no
+//! grenade plate), and the grenade and rotate-grenades buttons do nothing;
+//! on, as in Halo's own app. Halo's own app and server never register it
+//! and keep the counts above. The setting is each side's own (a host's
+//! change is not sent to its clients; their prediction is corrected).
+//!
 //! Known shortcuts: the starting
 //! equipment's grenade flags and the game types' grenade options are not
 //! read (the port's games are generic slayer); the thrown grenade's spin
@@ -311,4 +321,37 @@ pub fn cut(d: &ThrowData, full: Vec3, aim: Vec3, p: f32, u: f32) -> Vec3 {
     }
     let [lo, hi] = d.cut_speed;
     full * p + aim * (lo + (hi - lo) * u) * (1.0 - p)
+}
+
+/// Whether a party app's Halo players carry grenades (module doc, "In the
+/// party apps"): absent in Halo's own app (they do); `false` by default
+/// where Halo's party bundle registered it.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PartyGrenades(pub bool);
+
+impl PartyGrenades {
+    /// Grenades are kept from Halo's players: a party app with the switch
+    /// off.
+    pub fn none(this: Option<&PartyGrenades>) -> bool {
+        this.is_some_and(|p| !p.0)
+    }
+}
+
+/// The party bundle's grenade switch: `PartyGrenades(false)` and the
+/// console's `halo_party_grenades`.
+pub fn party(app: &mut App) {
+    app.init_resource::<PartyGrenades>();
+    chimera_core::console::ConsoleAppExt::console_command(
+        app,
+        "halo_party_grenades",
+        "halo_party_grenades <0|1>: Halo's frag and plasma grenades for a Halo gun's holder in a party app (0 by default: none, the buttons do nothing).",
+        |w, args| {
+            match args.first().map(String::as_str) {
+                Some("1") => w.insert_resource(PartyGrenades(true)),
+                Some("0") => w.insert_resource(PartyGrenades(false)),
+                _ => return Ok(Some(format!("halo_party_grenades {}", u8::from(w.get_resource::<PartyGrenades>().is_some_and(|p| p.0))))),
+            }
+            Ok(None)
+        },
+    );
 }
