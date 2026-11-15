@@ -347,8 +347,8 @@ pub fn drive(
             pose = Some(own.view.pose(&set));
         }
         // The displays on the gun (`displays`): one step per Halo tick.
-        let program = memos.as_deref().and_then(|m| m.get::<displays::GunDisplays>()).and_then(|d| Some((d.guns.get(weapon.id)?, d.local_north)));
-        if let Some((program, north)) = program
+        let program = memos.as_deref().and_then(|m| m.get::<displays::GunDisplays>()).and_then(|d| Some((d.guns.get(weapon.id)?, d.local_north, &d.tables)));
+        if let Some((program, north, tables)) = program
             && (n > 0 || fresh)
         {
             let f = displays::aim_forward(intent.yaw, intent.pitch);
@@ -357,7 +357,7 @@ pub fn drive(
                     program,
                     &|code| displays::export(code, &numbers.0, halo),
                     displays::compass(f, north),
-                    displays::tables(),
+                    tables,
                     &mut own.functions,
                 );
             }

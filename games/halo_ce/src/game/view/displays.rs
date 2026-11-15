@@ -96,10 +96,19 @@ pub struct GunProgram {
 
 /// The map's guns' programs by view model key, and the local north
 /// (radians) the compass reads (module doc).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GunDisplays {
     pub guns: BTreeMap<String, GunProgram>,
     pub local_north: f32,
+    /// The periodic tables the functions read, made with the map's
+    /// displays (no process-wide state).
+    pub tables: PeriodicTables,
+}
+
+impl Default for GunDisplays {
+    fn default() -> Self {
+        Self { guns: BTreeMap::new(), local_north: 0.0, tables: PeriodicTables::new() }
+    }
 }
 
 /// A held weapon's function state: its incoming values and outgoing
@@ -109,12 +118,6 @@ pub struct Functions {
     pub incoming: [f32; 4],
     pub outgoing: [FunctionOutput; 4],
     pub ticks: u32,
-}
-
-/// The periodic tables the functions read (made once).
-pub fn tables() -> &'static PeriodicTables {
-    static TABLES: std::sync::OnceLock<PeriodicTables> = std::sync::OnceLock::new();
-    TABLES.get_or_init(PeriodicTables::new)
 }
 
 /// The image a numeric shader's part shows (module doc): `limit` the

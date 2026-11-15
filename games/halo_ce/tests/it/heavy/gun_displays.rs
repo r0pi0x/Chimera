@@ -72,7 +72,7 @@ fn the_assault_rifles_counter_counts_its_rounds() {
     let mut f = Functions::default();
     let units = digits.iter().find(|p| p.2 == 0).unwrap().0;
     let mut shown = |state: &HaloGun| {
-        displays::step(program, &|c| displays::export(c, &g, state), None, displays::tables(), &mut f);
+        displays::step(program, &|c| displays::export(c, &g, state), None, &blam_formats::shader::PeriodicTables::new(), &mut f);
         displays::frames(program, &f.outgoing).into_iter().find(|p| p.0 == units).unwrap().1
     };
     assert_eq!(shown(&state), 0, "60 rounds");

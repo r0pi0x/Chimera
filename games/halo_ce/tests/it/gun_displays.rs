@@ -90,7 +90,7 @@ fn one_by(input: i16, lower: f32) -> ObjectFunction {
 /// The program's outgoing values after one tick of `state`.
 fn run(program: &GunProgram, gun: &halo_ce::game::weapons::params::Gun, state: &HaloGun) -> [FunctionOutput; 4] {
     let mut f = Functions::default();
-    displays::step(program, &|c| displays::export(c, gun, state), None, displays::tables(), &mut f);
+    displays::step(program, &|c| displays::export(c, gun, state), None, &blam_formats::shader::PeriodicTables::new(), &mut f);
     f.outgoing
 }
 
@@ -149,7 +149,7 @@ fn the_counter_follows_the_weapon_tick_by_tick() {
     let mut state = HaloGun::new(&g);
     let mut f = Functions::default();
     let mut shown = |state: &HaloGun| {
-        displays::step(&program, &|c| displays::export(c, &g, state), compass([1.0, 0.0, 0.0], 0.0), displays::tables(), &mut f);
+        displays::step(&program, &|c| displays::export(c, &g, state), compass([1.0, 0.0, 0.0], 0.0), &blam_formats::shader::PeriodicTables::new(), &mut f);
         displays::frames(&program, &f.outgoing)
     };
     assert_eq!(shown(&state), [(4, 6), (5, 0)], "60");
