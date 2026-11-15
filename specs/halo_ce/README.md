@@ -37,7 +37,7 @@ port adds the ones below.
 
 | File | Wave | Status | Covers |
 |---|---|---|---|
-| disc_image.md | 0 | being written | the Xbox disc image's file system |
+| [disc_image.md](disc_image.md) | 0 | draft | the Xbox disc image's file system |
 | cache_file.md | 0 | being written | the map cache file, the tag index, tag data conventions, tag classes, units and tick |
 | bitmaps.md | 1 | planned | bitmap tags and pixel formats |
 | structure_bsp.md | 1 | planned | the level's render geometry, lightmaps, clusters and visibility |
