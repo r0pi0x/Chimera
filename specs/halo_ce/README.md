@@ -49,7 +49,7 @@ port adds the ones below.
 | [animations.md](animations.md) | 1 | draft | animation graphs and compressed node animations |
 | [objects.md](objects.md) | 2 | draft | object, unit, biped, item and scenery tags as data |
 | [movement.md](movement.md) | 2 | draft | the player's movement |
-| health_shields.md | 2 | planned | vitality, shields, damage by material and region |
+| [health_shields.md](health_shields.md) | 2 | draft | vitality, shields, damage by material and region |
 | [weapons.md](weapons.md) | 2 | draft | weapons, with every multiplayer weapon's numbers |
 | projectiles.md | 2 | planned | projectiles, damage effects, grenades |
 | multiplayer_rules.md | 2 | planned | spawning, pickups, powerups, game type rules |
