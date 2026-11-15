@@ -1068,7 +1068,7 @@ the server's clock, s):
 | s | What happens |
 |---|---|
 | 0.07 | the joiner's character is staged (`minigame::Staged`: dead, no weapon, out of the game) |
-| 0.10 | the client joined: the lobby owns the screen: HUDs covered, world's view off, input to the menus (mouse free), Esc the lobby's menu |
+| 0.10 | the client joined: the lobby owns the screen: HUDs covered, world's view off, input to the menus (mouse free), Esc the lobby's (since `lobby-menus`: closes what is open over it, else nothing) |
 | 1.14 | countdown over: everyone let in (`prematch::let_in`), spawned on rung 1 with its gun at 1.16, the clock live at 1.19; the lobby leaves through the logo pass, the cameras and HUDs back |
 | 19.21 | `ChangingLevel` after the match's end: the loading panel covers the world (`WorldCover` `MENU`) and the map left is unloaded under it (`staging::UnloadAtCover`) |
 | 19.66 | the next lobby: everyone staged again (no gun, dead) while the clients load |
@@ -1092,25 +1092,45 @@ the server's clock, s):
 - **Client** (`chimera_client`): while the lobby shows
   (`prematch_lobby::lobby_shown`) the world's 3D cameras are off with a
   blank camera clearing the window (`staging::WorldCover`), the HUDs
-  covered, our Signal HUD too (`hud::LOBBY_COVER`); its Ready and Leave
-  are buttons (`LobbyAction`; Ready works while downloading or loading,
-  the server keeping it, `LobbyAsked`); Leave goes through the app's
-  `LobbyLeaveAsked` (the party's Escape menu answers it). A change of level once the match is over unloads the map
+  covered, our Signal HUD too (`hud::LOBBY_COVER`); its Ready, Settings,
+  Report a bug and Leave are buttons (`LobbyAction`, `lobby_press`;
+  they work while downloading or loading, the server keeping Ready,
+  `LobbyAsked`); Settings and Leave go through the app's
+  `LobbyAppAsked` (`LobbyAnswered`), Report a bug is the report dialog;
+  an app's overlay over it (`LobbyOverlay`) hides the panel's header and
+  key hints. A change of level once the match is over unloads the map
   left as soon as a cover is up (`staging::UnloadAtCover`, `MapLeft`).
 - **Party apps** (`party_kit`): the lobby owns the screen whatever the
   menu's screen (`main_menu::owned_by_lobby`): drawn on the menu's camera
-  with the shell's (HUDs') off, the mouse free (`AppMenu::open`), Esc its
-  menu (`esc_menu`, `[[escape]]` with `lobby = true`: Back to the lobby,
-  Settings, Report a bug, Leave the lobby with a confirm,
-  `Page::ConfirmLeave`), no pass for moves under it; the loading panel
-  covers the world too (`cover_world`). A mid-match join has no lobby:
-  straight in after loading, as before.
+  with the shell's (HUDs') off, the mouse free (`AppMenu::open`), no pass
+  for moves under it; the loading panel covers the world too
+  (`cover_world`). A mid-match join has no lobby: straight in after
+  loading, as before.
+- **Lobby menus** (user's call, 2026-11-14, `lobby-menus`; replaces the
+  lobby's Escape menu, whose `lobby = true` entries are gone): the
+  themed lobby is a full screen with its own header buttons: Invite and
+  Match settings (inert, as before), Settings, Report a bug, Leave.
+  Settings opens as an overlay over the lobby (`esc_menu`'s
+  `EscMenu::lobby`, Settings' `Context::Game` with "Lobby ▸ Settings",
+  the 86 % shade, `settings::LOBBY_SHADE`): the lobby stays live under
+  it (countdown, rows, Ready kept), every setting allowed; the match
+  starting under it keeps it open (now the match's, Back to the
+  Escape menu's first page, nothing pending lost; the logo pass
+  doesn't close it). Leave asks first (Stay focused first) on the same
+  flat shade, no panel. Esc only closes Settings, Leave's confirm and
+  the report dialog; with nothing open it does nothing. While anything
+  is over the lobby its header and key hints hide (no ghosted header,
+  no doubled hints: the old lobby menu drew its match gradient over
+  the lobby). Lucker Party's plain lobby keeps the match's Escape menu.
 - No network change (NET_VERSION stays).
 
 Tests (`apps/party_kit/tests/it/lobby_staging.rs`):
 `nobody_plays_in_the_lobby_and_everyone_spawns_at_its_end`,
-`escape_in_the_lobby_opens_the_lobby_menu`,
-`ready_and_leave_work_while_a_client_still_loads`,
+`escape_in_the_themed_lobby_only_closes_what_is_open`,
+`escape_in_the_plain_lobby_opens_the_match_menu`,
+`settings_over_the_lobby_keeps_it_live_and_ready_kept`,
+`settings_stay_open_across_the_match_start`,
+`the_lobby_buttons_work_while_a_client_still_loads`,
 `the_map_left_is_unloaded_before_the_next_lobby_shows`, and the trace
 (`--nocapture`). The prematch tests (`chimera/net/tests/it/
 prematch_lobby.rs`) check the staged players.

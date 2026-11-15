@@ -5,15 +5,20 @@
 //! matches"): the world's view off (`staging::WorldCover`), the HUDs
 //! covered (`hud::HudCover`'s `LOBBY_COVER`, our Signal HUD too), no
 //! player in play (the server stages everyone: `minigame::Staged`), and
-//! an app's menu owns the mouse and Esc (the party apps': their lobby
-//! menu). It shows over the loading panel of a player still downloading
+//! the app owns the mouse and Esc (the party apps under a themed lobby:
+//! Esc only closes what is open over it; Lucker Party's plain lobby: its
+//! Escape menu). It shows over the loading panel of a player still downloading
 //! or loading (an app whose menu draws on its own camera moves
 //! `LobbyRoot` there, as the party apps' main menu does with the
 //! console). Its actions (`LobbyAction`, the themed panel's buttons):
 //! Ready (the key's line; a player still downloading or loading readies
-//! up for when it has the map, `LobbyAsked`) and Leave (the app's way
-//! out, `LobbyLeaveAsked` where it answers it, `LeaveAnswered`, else
-//! `disconnect`).
+//! up for when it has the map, `LobbyAsked`), Settings and Leave (the
+//! app's, `LobbyAppAsked`, where it answers them, `LobbyAnswered`; else
+//! Leave is `disconnect` and Settings nothing) and Report a bug (the
+//! report dialog, `feedback::request`). An app's overlay over the lobby
+//! (its Settings, a confirm, the report dialog: `LobbyOverlay`) hides the
+//! panel's key hints; the lobby stays live under it. `lobby_press
+//! <button>` presses one (tests, screenshots).
 //!
 //! - **The head**: the mode (the minigame's name), the map big, and what
 //!   it waits for: "Waiting for 2 players..." with the time left of the
@@ -76,6 +81,7 @@ impl Plugin for PreMatchLobbyPlugin {
         app.init_resource::<LobbyView>()
             .init_resource::<LobbyGate>()
             .init_resource::<LobbyAsked>()
+            .init_resource::<LobbyOverlay>()
             .add_message::<LobbyAction>()
             .add_observer(pass_covered)
             .add_systems(Startup, spawn)
@@ -89,12 +95,28 @@ impl Plugin for PreMatchLobbyPlugin {
                 ),
             );
         super::lobby_panel::add(app);
+        use crate::console::ConsoleAppExt;
+        app.console_command(
+            "chimera:lobby_press",
+            "lobby_press <ready|settings|report|leave>: press that button of the pre-match lobby (tests, screenshots).",
+            |w, a| {
+                let action = match a.first().map(String::as_str) {
+                    Some("ready") => LobbyAction::Ready,
+                    Some("settings") => LobbyAction::Settings,
+                    Some("report") => LobbyAction::Report,
+                    Some("leave") => LobbyAction::Leave,
+                    other => return Err(format!("no button {other:?}")),
+                };
+                w.write_message(action);
+                Ok(None)
+            },
+        );
     }
 }
 
 /// Whether the lobby's screen is up (`LobbyView::shown`): it owns the
-/// screen and the input (no HUD, no world drawn, the mouse free; an app's
-/// Escape opens its lobby menu).
+/// screen and the input (no HUD, no world drawn, the mouse free, Esc the
+/// app's).
 pub fn lobby_shown(world: &World) -> bool {
     world.get_resource::<LobbyView>().is_some_and(|v| v.shown)
 }
@@ -112,11 +134,15 @@ fn cover(
 }
 
 /// What the lobby's buttons do (also sent by tests): the panel's Ready
-/// (the key's line: the host's start, a player's ready or not) and
-/// Leave.
+/// (the key's line: the host's start, a player's ready or not),
+/// Settings, Report a bug and Leave.
 #[derive(Message, Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LobbyAction {
     Ready,
+    /// The app's settings over the lobby (`LobbyAppAsked`).
+    Settings,
+    /// The report dialog (`feedback::request`).
+    Report,
     Leave,
 }
 
@@ -126,25 +152,33 @@ pub enum LobbyAction {
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LobbyAsked(pub bool);
 
-/// An app that answers the lobby's Leave itself (`LobbyLeaveAsked`: the
-/// party apps ask first, in their Escape menu); without it, Leave is
-/// `disconnect`.
+/// An app that answers the lobby's Settings and Leave itself
+/// (`LobbyAppAsked`: the party apps open their Settings over the lobby
+/// and ask before leaving); without it, Leave is `disconnect` and
+/// Settings does nothing.
 #[derive(Resource, Clone, Copy, Debug, Default)]
-pub struct LeaveAnswered;
+pub struct LobbyAnswered;
 
-/// The lobby's Leave was pressed (`LobbyAction::Leave`) in an app that
-/// answers it (`LeaveAnswered`).
+/// The lobby's Settings or Leave was pressed in an app that answers them
+/// (`LobbyAnswered`).
 #[derive(Event, Clone, Copy, Debug)]
-pub struct LobbyLeaveAsked;
+pub struct LobbyAppAsked(pub LobbyAction);
+
+/// An app's overlay is up over the lobby (its Settings, a confirm, the
+/// report dialog: the app keeps it): the themed panel hides its key
+/// hints; the lobby itself goes on under it.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LobbyOverlay(pub bool);
 
 /// The lobby's actions: Ready runs what the key would (a player not yet
 /// on the map readies up all the same: the server keeps it for when it
-/// is), Leave the app's way out (`LobbyLeaveAsked`, else `disconnect`).
+/// is), Settings and Leave the app's (`LobbyAppAsked`; else Leave is
+/// `disconnect`), Report a bug the report dialog.
 fn act(
     mut actions: MessageReader<LobbyAction>,
     view: Res<LobbyView>,
     mut asked: ResMut<LobbyAsked>,
-    answered: Option<Res<LeaveAnswered>>,
+    answered: Option<Res<LobbyAnswered>>,
     mut console: Option<ResMut<crate::console::Console>>,
     mut commands: Commands,
 ) {
@@ -171,11 +205,20 @@ fn act(
                 }
                 None => None,
             },
-            LobbyAction::Leave if answered.is_some() => {
-                commands.trigger(LobbyLeaveAsked);
+            LobbyAction::Settings | LobbyAction::Leave if answered.is_some() => {
+                commands.trigger(LobbyAppAsked(*a));
                 None
             }
+            LobbyAction::Settings => None,
             LobbyAction::Leave => Some("disconnect".to_string()),
+            LobbyAction::Report => {
+                commands.queue(|w: &mut World| {
+                    if w.contains_resource::<super::feedback::Feedback>() {
+                        super::feedback::request(w, true);
+                    }
+                });
+                None
+            }
         };
         if let (Some(line), Some(c)) = (line, console.as_deref_mut()) {
             c.submit(line);

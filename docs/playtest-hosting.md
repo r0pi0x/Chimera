@@ -401,10 +401,11 @@ Maps and matches:
   spawns together. During the lobby nobody is in play: no player has a
   body or a gun (the server stages them), and each client shows the
   lobby full screen in place of the match (no HUD, no world drawn, the
-  mouse free: Ready and Leave are buttons, F3 still readies up, and a
-  player still downloading or loading can ready up for when it has the
-  map; Esc opens the lobby's menu: Back to the lobby, Settings, Report a
-  bug, Leave the lobby, which asks first). The next map downloads and
+  mouse free: Ready is a button, F3 still readies up, and a player
+  still downloading or loading can ready up for when it has the map;
+  the header's Settings opens over the lobby, which goes on under it,
+  Report a bug opens the report, Leave asks first; there is no Escape
+  menu, Esc only closes what is open). The next map downloads and
   loads behind the lobby (each row's progress), and the map left after
   a match is unloaded under the logo pass's cover, before the lobby
   shows. At the countdown's end

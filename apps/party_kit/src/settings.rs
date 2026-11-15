@@ -6,7 +6,10 @@
 //!
 //! - **When**: the main menu's Options page (`PartyMenu::page`) over the
 //!   menu's ambient (`AmbientMaterial::MENU`), or the Escape menu's
-//!   Options or Host settings page over the match (a flat 86 % shade):
+//!   Options or Host settings page over the match (a flat 86 % shade), or
+//!   the pre-match lobby's Settings button over the lobby (`EscMenu::
+//!   lobby`: the same shade, "Lobby ▸ Settings", Back and Esc closing it;
+//!   the match starting under it keeps it open, nothing lost):
 //!   `Context`, from those menus' state, so their Esc, Back and actions
 //!   keep working. Without the Signal theme those menus draw their own
 //!   pages as before.
@@ -375,6 +378,10 @@ pub struct SettingsSystems;
 
 /// Over the menus (the main menu's root and the Escape menu's).
 pub const SETTINGS_Z: i32 = 92;
+
+/// The shade over the pre-match lobby (dimmed, still readable: its
+/// countdown and rows go on under Settings).
+pub const LOBBY_SHADE: f32 = 0.86;
 
 pub struct SettingsPlugin;
 
@@ -1324,6 +1331,8 @@ struct DrawKey {
     theme: String,
     /// The menu's UI camera (drawn again once it is up).
     camera: Option<Entity>,
+    /// Over the themed pre-match lobby (`EscMenu::lobby`).
+    lobby: bool,
 }
 
 fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
@@ -1343,6 +1352,7 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
     };
     let (Some(theme), Some(units)) = (world.get_resource::<Theme>().cloned(), world.get_resource::<UiUnits>().copied()) else { return };
     let t = now(world);
+    let lobby = ctx != Context::Menu && world.get_resource::<crate::esc_menu::EscMenu>().is_some_and(|m| m.lobby);
     let camera = if ctx == Context::Menu {
         world.query_filtered::<Entity, With<crate::main_menu::MenuUiCamera>>().iter(world).next()
     } else {
@@ -1358,6 +1368,7 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         units: ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32),
         theme: theme.name.clone(),
         camera,
+        lobby,
     };
     if drawn.as_ref() == Some(&key) {
         return;
@@ -1395,7 +1406,7 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         let mut queue = bevy::ecs::world::CommandQueue::default();
         let mut c = Commands::new(&mut queue, world);
         let ui = Ui::new(&theme, kit.as_ref(), units);
-        let d = Draw { ctx, s: &s, tabs: &tabs, help: &help, keys: &keys_of, bind_changed: &bind_changed, changes, now: t };
+        let d = Draw { ctx, lobby, s: &s, tabs: &tabs, help: &help, keys: &keys_of, bind_changed: &bind_changed, changes, now: t };
         let root = spawn(&mut c, &ui, &d, images.as_mut(), icons.as_mut(), ambients.as_mut());
         if let Some(cam) = camera {
             c.entity(root).insert(UiTargetCamera(cam));
@@ -1468,6 +1479,8 @@ fn help_of(world: &World, ctx: Context, tabs: &[(String, Vec<Setting>)], s: &Set
 
 struct Draw<'a> {
     ctx: Context,
+    /// Over the themed pre-match lobby (its own words and shade).
+    lobby: bool,
     s: &'a Settings,
     tabs: &'a [(String, Vec<Setting>)],
     help: &'a Help,
@@ -1503,7 +1516,11 @@ fn spawn(
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(t.tone_a(Tone::Ink, if d.ctx == Context::Menu { 1.0 } else { 0.86 })),
+            BackgroundColor(t.tone_a(Tone::Ink, match d.ctx {
+                Context::Menu => 1.0,
+                _ if d.lobby => LOBBY_SHADE,
+                _ => 0.86,
+            })),
             bevy::ui::FocusPolicy::Block,
         ))
         .id();
@@ -1527,6 +1544,7 @@ fn spawn(
     }
     let (title, crumb) = match d.ctx {
         Context::Menu => ("Settings", "Main menu ▸ Settings"),
+        Context::Game if d.lobby => ("Settings", "Lobby ▸ Settings • the lobby goes on"),
         Context::Game => ("Settings", "Esc menu ▸ Settings • the match goes on"),
         Context::Host => ("Host settings", "Esc menu ▸ Host settings • your server's"),
     };

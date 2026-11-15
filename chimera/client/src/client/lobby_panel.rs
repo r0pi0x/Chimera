@@ -12,10 +12,14 @@
 //!
 //! - **Header**: the lockup (the kit's `mark` icon, ULTIMATE spread over
 //!   the wordmark's width, the wordmark with `ss02`), "Lobby", and the
-//!   tabs Invite, Match settings (shown, not clickable) and Leave (a
-//!   button: `prematch_lobby::LobbyAction::Leave`, the app's way out,
-//!   which the party apps confirm first); a rule under it; `+` marks in
-//!   the corners.
+//!   header's buttons: Invite and Match settings (shown, not clickable),
+//!   Settings (`prematch_lobby::LobbyAction::Settings`: the party apps'
+//!   Settings over the lobby), Report a bug (`LobbyAction::Report`) and
+//!   Leave (`LobbyAction::Leave`, the app's way out, which the party apps
+//!   confirm first); a rule under it; `+` marks in the corners. There is
+//!   no Escape menu: Esc only closes what an app opened over the lobby.
+//!   Hidden under an app's overlay (`prematch_lobby::LobbyOverlay`),
+//!   which has its own header, so it doesn't ghost through the shade.
 //! - **Left**: the Ready tag and count ("5 / 7", "players • 8 slots"
 //!   when the slot count is known), the player table (`#`, player, tag,
 //!   status): the slot number, the bot slot left of every name (the robot
@@ -39,10 +43,11 @@
 //!   `layout.lobby.countdown_hot` seconds in the accent).
 //! - **Footer**: the keys: F3 and what it does now (`LobbyView::key_line`;
 //!   a player still downloading or loading readies up for when it has
-//!   the map), a button too (`LobbyAction::Ready`), Tab Players, Esc Menu
-//!   (the app's lobby menu). The lobby owns the screen and the mouse
-//!   (`prematch_lobby::lobby_shown`), so both buttons take clicks through
-//!   a download and a load.
+//!   the map), a button too (`LobbyAction::Ready`), and Tab Players;
+//!   hidden while an app's overlay is up (`prematch_lobby::LobbyOverlay`),
+//!   so the overlay's keys are the only ones on screen. The lobby owns
+//!   the screen and the mouse (`prematch_lobby::lobby_shown`), so its
+//!   buttons take clicks through a download and a load.
 //!
 //! Rebuilt when the view, the window's units or the theme change; the
 //! bar and the pops animate without a rebuild.
@@ -62,7 +67,7 @@ use chimera_ui::{
     widgets::{self, PingLevel, TagKind},
 };
 
-use super::prematch_lobby::{LobbyAction, LobbyAsked, LobbyContent, LobbyRoot, LobbyView};
+use super::prematch_lobby::{LobbyAction, LobbyAsked, LobbyContent, LobbyOverlay, LobbyRoot, LobbyView};
 
 /// The theme's lobby table.
 const L: &str = "lobby";
@@ -143,7 +148,7 @@ pub fn add(app: &mut App) {
         .add_systems(Update, press.before(super::prematch_lobby::LobbyFollow));
 }
 
-/// A click on Ready or Leave (`LobbyAction`).
+/// A click on one of the lobby's buttons (`LobbyAction`).
 fn press(pressed: Query<(&Interaction, &LobbyAction), Changed<Interaction>>, mut out: MessageWriter<LobbyAction>) {
     for (i, a) in &pressed {
         if *i == Interaction::Pressed {
@@ -248,7 +253,7 @@ impl Panel<'_> {
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn draw(
-    (view, asked): (Res<LobbyView>, Res<LobbyAsked>),
+    (view, asked, overlay): (Res<LobbyView>, Res<LobbyAsked>, Option<Res<LobbyOverlay>>),
     theme: Res<Theme>,
     units: Res<UiUnits>,
     clock: Res<UiClock>,
@@ -284,7 +289,7 @@ fn draw(
         view.clone(),
         (units.height * 8.0) as u32,
         (units.scale_factor * 1000.0) as u32,
-        format!("{}{}{}", theme.name, kit.is_some(), asked.0),
+        format!("{}{}{}{}", theme.name, kit.is_some(), asked.0, overlay.as_ref().is_some_and(|o| o.0)),
     );
     if drawn.key.as_ref() == Some(&key) && !theme.is_changed() && !kit.as_ref().is_some_and(|k| k.is_changed()) {
         return;
@@ -367,15 +372,23 @@ fn draw(
     p.text(c, header, Role::DisplayBold, p.lay("title"), Tone::Fg, "Lobby");
     p.boxed(c, header, style!(row).grow(1.0));
     let tabs = p.boxed(c, header, style!(row, gap: 0.45));
-    for (label, outline) in [("Invite", false), ("Match settings", false), ("Leave", true)] {
+    // Invite and Match settings are drawn only (not clickable yet).
+    let buttons = [
+        ("Invite", false, None),
+        ("Match settings", false, None),
+        ("Settings", false, Some(LobbyAction::Settings)),
+        ("Report a bug", false, Some(LobbyAction::Report)),
+        ("Leave", true, Some(LobbyAction::Leave)),
+    ];
+    for (label, outline, action) in buttons {
         let (bg, fg) = if outline { (Tone::Ink, Tone::Fg) } else { (Tone::Fg, Tone::Ink) };
         let mut s = style!(row, gap: 1.6, pad: [0.5, 0.6, 0.45, 0.7], min_w: 7.4).justify(JustifyContent::SpaceBetween).bg(bg);
         if outline {
             s = s.outline(Tone::Fg3, 1.0);
         }
         let tab = p.boxed(c, tabs, s);
-        if label == "Leave" {
-            c.entity(tab).insert((LobbyAction::Leave, chimera_ui::controls::clickable()));
+        if let Some(a) = action {
+            c.entity(tab).insert((a, chimera_ui::controls::clickable()));
         }
         p.text(c, tab, Role::Mono, p.lay("kv"), fg, label);
         let px = units.phys(units.cq(0.45)).round().max(1.0) as u32;
@@ -386,18 +399,27 @@ fn draw(
             ChildOf(tab),
         ));
     }
-    c.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            left: units.val(m),
-            right: units.val(m),
-            top: units.val(p.lay("rule_y")),
-            height: px(hair),
-            ..default()
-        },
-        BackgroundColor(theme.tone(Tone::Fg4)),
-        ChildOf(frame),
-    ));
+    let rule = c
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: units.val(m),
+                right: units.val(m),
+                top: units.val(p.lay("rule_y")),
+                height: px(hair),
+                ..default()
+            },
+            BackgroundColor(theme.tone(Tone::Fg4)),
+            ChildOf(frame),
+        ))
+        .id();
+    // Under an app's overlay (which has its own header) the header
+    // doesn't ghost through its shade.
+    let overlaid = overlay.as_ref().is_some_and(|o| o.0);
+    if overlaid {
+        c.entity(header).insert(Visibility::Hidden);
+        c.entity(rule).insert(Visibility::Hidden);
+    }
 
     // Left: the ready count and the players.
     let ready = view.rows.iter().filter(|r| r.status == status::READY).count();
@@ -627,7 +649,10 @@ fn draw(
         ChildOf(well),
     ));
 
-    // Footer: the keys.
+    // Footer: the keys (not under an app's overlay, which has its own).
+    if overlaid {
+        return;
+    }
     let key_words = match view.key_line() {
         Some("lobby_start") => Some("Start now"),
         Some(_) if view.rows.iter().any(|r| r.local && r.status == status::NOT_READY) => Some("Ready up"),
@@ -640,7 +665,6 @@ fn draw(
     let keys = [
         (super::prematch_lobby::LOBBY_KEY.to_uppercase(), key_words, Some(LobbyAction::Ready)),
         ("Tab".into(), Some("Players"), None),
-        ("Esc".into(), Some("Menu"), None),
     ];
     for (k, words, action) in keys {
         let Some(words) = words else { continue };

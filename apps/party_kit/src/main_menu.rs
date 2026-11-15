@@ -81,7 +81,8 @@
 //!   pre-match lobby's screen move to it, so a player still downloading
 //!   sees the lobby over the loading panel; while the lobby shows it owns
 //!   the screen whatever the menu's screen, `owned_by_lobby`: the menu's
-//!   camera on, the shell's off, Esc the lobby's menu, `esc_menu`, and
+//!   camera on, the shell's off, Esc the lobby's, `esc_menu` (under a
+//!   themed lobby it only closes what is open over it), and
 //!   no pass for a move under it; the loading panel and the lobby take
 //!   the world's view off, `cover_world` and `client::staging`, under
 //!   which a map a match left unloads), and so does the logo pass
@@ -192,8 +193,6 @@ pub enum EscDoes {
     Disconnect,
     /// The report dialog (`client::feedback`).
     Feedback,
-    /// Leave the pre-match lobby (asks first: `esc_menu::Page::ConfirmLeave`).
-    Leave,
     Quit,
 }
 
@@ -213,9 +212,6 @@ pub struct EscEntry {
     pub label: String,
     pub does: EscDoes,
     pub when: When,
-    /// In the pre-match lobby's menu (`lobby = true`) instead of the
-    /// match's.
-    pub lobby: bool,
 }
 
 /// How a Play row is set.
@@ -307,7 +303,6 @@ impl MenuData {
                 Some("disconnect") => EscDoes::Disconnect,
                 Some("quit") => EscDoes::Quit,
                 Some("feedback") => EscDoes::Feedback,
-                Some("leave") => EscDoes::Leave,
                 other => return Err(format!("{label}: no action {other:?}")),
             };
             let when = match s(&t, "when").as_deref() {
@@ -316,8 +311,7 @@ impl MenuData {
                 Some("main_menu") => When::MainMenu,
                 Some(w) => return Err(format!("{label}: no `when` {w}")),
             };
-            let lobby = t.get("lobby").and_then(|v| v.as_bool()).unwrap_or(false);
-            escape.push(EscEntry { label, does, when, lobby });
+            escape.push(EscEntry { label, does, when });
         }
         let mut play = Vec::new();
         for t in tables("play") {
@@ -1213,8 +1207,8 @@ fn typing(
             continue;
         }
         if e.key_code == KeyCode::Escape {
-            // The pre-match lobby over the loading panel: Esc opens its
-            // menu (`esc_menu`), never the panel's Cancel.
+            // The pre-match lobby over the loading panel: Esc is the
+            // lobby's (`esc_menu`), never the panel's Cancel.
             if lobby.as_ref().is_some_and(|l| l.shown) {
                 continue;
             }
@@ -1818,7 +1812,7 @@ fn ca_shows(world_ca: Option<&combat_arms::ui::loading::CaLoading>) -> bool {
 /// owns the screen and the input whatever the menu's screen (the loading
 /// panel at its foot, or the game entered under it): drawn on the
 /// menu's camera with the shell's (the HUDs') off, the world's view off
-/// (`staging::WorldCover`), the mouse free, Esc its menu (`esc_menu`).
+/// (`staging::WorldCover`), the mouse free, Esc the lobby's (`esc_menu`).
 pub fn owned_by_lobby(lobby: Option<&chimera_client::client::prematch_lobby::LobbyView>) -> bool {
     lobby.is_some_and(|l| l.shown)
 }
@@ -1942,8 +1936,9 @@ fn cameras(
             With<ConsoleRoot>,
             With<chimera_client::client::prematch_lobby::LobbyRoot>,
             With<chimera_client::client::logo_pass::LogoPassRoot>,
-            // What opens over the lobby: its menu, Settings, the
-            // Controls page, the report dialog.
+            // What opens over the lobby: Settings, the Leave confirm
+            // (the Escape menu's root), the Controls page, the report
+            // dialog.
             With<crate::esc_menu::MenuRoot>,
             With<crate::settings::SettingsRoot>,
             With<crate::controls::PageRoot>,
