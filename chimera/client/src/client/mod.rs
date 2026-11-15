@@ -180,7 +180,8 @@ pub fn usage(bin: &str, info: &crate::game_registry::GameInfo, server: Option<&s
     format!(
         "\
 usage: {bin} [options]
-  --screenshot <file.png>   save a screenshot after --frames frames, then exit
+  --screenshot <file.png>   save a screenshot after --frames frames (later while shaders
+                            still compile), then exit
   --frames <n>              frames to run before the screenshot or exit (default 60)
   --movement <id>           movement implementation for the local player
   --spawn <x,y,z>           spawn position in meters

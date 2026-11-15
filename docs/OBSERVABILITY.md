@@ -289,7 +289,9 @@ message of the day opens at the start, `+chooseteam` the team menu, and
 `+jointeam 2` after it the class menu). Live runs over the remote
 protocol that expect a player on a team: add `+jointeam 3`.
 
-Runs 90 frames, saves the primary window, exits. Read the PNG to check
+Runs 90 frames, saves the primary window, exits (the shot waits past
+the 90th frame while shaders still compile, so a busy machine doesn't
+save a black or half-drawn window). Read the PNG to check
 rendering. Write screenshots to a scratch directory, never into the repo.
 Needs a display, unless `--offscreen <WxH>` (below, "Offscreen"): on the
 Linux dev box set `WAYLAND_DISPLAY=wayland-1` and
