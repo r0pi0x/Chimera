@@ -167,7 +167,29 @@ impl Plugin for HaloVehiclesPlugin {
         app.console_command(
             "halo_vehicle_enter",
             "Seat the local player in the nearest vehicle's empty driver seat (screenshots)",
-            |w, _| enter_nearest(w).map(Some),
+            |w, _| match enter_nearest(w) {
+                Ok(m) => Ok(Some(m)),
+                // Not yet (a launch's `+halo_vehicle_enter` runs before
+                // the map loads): retried each tick until it works.
+                Err(_) => {
+                    w.insert_resource(EnterWhenReady);
+                    Ok(Some("will seat the local player once a vehicle is near".into()))
+                }
+            },
+        );
+        app.console_command(
+            "halo_vehicle_throttle",
+            "Hold every driver's throttle at <t> (-1 to 1; no argument: release) (screenshots, frame dumps)",
+            |w, args| {
+                match args.first().map(|a| a.parse::<f32>()) {
+                    Some(Ok(t)) => w.insert_resource(HeldThrottle(t.clamp(-1.0, 1.0))),
+                    Some(Err(_)) => return Err("expected a number".into()),
+                    None => {
+                        w.remove_resource::<HeldThrottle>();
+                    }
+                }
+                Ok(None)
+            },
         );
         app.init_resource::<VehicleDefs>().add_systems(
             FixedUpdate,
@@ -177,11 +199,42 @@ impl Plugin for HaloVehiclesPlugin {
                     .chain()
                     .run_if(authoritative),
                 carry,
+                enter_when_ready.run_if(resource_exists::<EnterWhenReady>),
             )
                 .chain()
                 .after(SimSet::Movement)
                 .before(SimSet::Weapons),
         );
+    }
+}
+
+/// `halo_vehicle_throttle`: every driver's forward throttle held.
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct HeldThrottle(pub f32);
+
+/// `halo_vehicle_enter` waiting for a local player and a vehicle.
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct EnterWhenReady;
+
+fn enter_when_ready(
+    players: Query<(Entity, &Transform), (With<crate::core::LocalPlayer>, Without<Seated>)>,
+    mut vehicles: Query<(Entity, &mut HaloVehicle)>,
+    defs: Res<VehicleDefs>,
+    mut commands: Commands,
+) {
+    let Some((p, at)) = players.iter().next() else { return };
+    let best = vehicles
+        .iter()
+        .filter_map(|(e, v)| {
+            let seat = defs.0[v.def].0.driver_seat().filter(|&s| v.riders[s].is_none())?;
+            Some(((to_engine(v.drive.body.position) - at.translation).length(), e, seat))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0));
+    let Some((_, ve, seat)) = best else { return };
+    if let Ok((_, mut v)) = vehicles.get_mut(ve) {
+        v.riders[seat] = Some(p);
+        commands.entity(p).insert(Seated { vehicle: ve, seat });
+        commands.remove_resource::<EnterWhenReady>();
     }
 }
 
@@ -448,6 +501,7 @@ fn simulate(
     clock: Res<SimClock>,
     query: SpatialQuery,
     materials: Option<Res<crate::game::weapons::materials::LevelMaterials>>,
+    held: Option<Res<HeldThrottle>>,
     shapes: Query<(
         &'static Collider,
         Option<&'static Position>,
@@ -459,6 +513,7 @@ fn simulate(
     if n == 0 {
         return;
     }
+    let held = held.as_deref().copied();
     let scales = ground_scales();
     let skip = |e: Entity| characters.contains(e);
     for (e, mut v, mut t) in &mut vehicles {
@@ -473,7 +528,13 @@ fn simulate(
         let c = v
             .driver(d)
             .and_then(|r| drivers.get(r).ok())
-            .map(controls)
+            .map(|i| {
+                let mut c = controls(i);
+                if let Some(h) = held {
+                    c.throttle[0] = h.0;
+                }
+                c
+            })
             .unwrap_or(Controls {
                 facing: v.drive.body.forward,
                 ..Default::default()
