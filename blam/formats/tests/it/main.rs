@@ -10,6 +10,7 @@ mod bsp_fixture;
 mod cache;
 mod collision;
 mod disc;
+mod effect;
 mod fixture;
 mod map_fixture;
 mod model;
@@ -24,6 +25,7 @@ mod damage_effect;
 mod vitality;
 mod globals;
 mod game_type;
+mod hud;
 
 mod heavy {
     mod animation_install;
@@ -31,6 +33,7 @@ mod heavy {
     mod bsp_install;
     mod cache_install;
     mod disc_install;
+    mod effect_install;
     mod maps;
     mod model_install;
     mod scenario_install;
@@ -40,4 +43,5 @@ mod heavy {
     mod projectile_install;
     mod vitality_install;
     mod weapon_install;
+    mod hud_install;
 }

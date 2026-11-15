@@ -309,7 +309,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
             // What its drawing writes to (no renderer here).
             .init_asset::<chimera_client::client::hud_text::HudGlyphMaterial>()
             .init_asset::<Image>()
-            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm::ui::Hl2dmHudPlugin))
+            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm::ui::Hl2dmHudPlugin, halo_ce::ui::hud::HaloHudPlugin))
             .insert_resource(HudLookOwner(cs_source::game::GAME))
             .insert_resource(crate::hud::cs_look())
             .insert_resource(chimera_world::map::hud::GuestLooks(vec![hl2_look()]));
@@ -321,7 +321,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
     });
     crate::gun_game::plain_rungs(sim.app.world_mut());
     crate::gun_game::no_finale(sim.app.world_mut());
-    sim.app.add_minigames(&[("hl2dm.toml", &crate::hl2dm_parts::mixed_text(false))]).unwrap();
+    sim.app.add_minigames(&[("hl2dm.toml", &crate::halo_maps::mixed_with_halo())]).unwrap();
     minigame::start(sim.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
     let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
     sim.app.world_mut().entity_mut(me).insert(chimera_core::core::LocalPlayer);

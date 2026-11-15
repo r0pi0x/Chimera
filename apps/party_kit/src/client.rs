@@ -92,8 +92,8 @@ pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 }
 
 /// Each game's front end (its `ui`'s `GameClient`, beside its bundle):
-/// the base game's first, then the guests' (HL2:DM's: M9; Halo's, which
-/// draws nothing of its own yet).
+/// the base game's first, then the guests' (HL2:DM's: M9; Halo's: its
+/// HUD while a Halo gun is in hand).
 pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 4] = [
     &combat_arms::ui::PARTY_CLIENT,
     &cs_source::ui::party::CLIENT,

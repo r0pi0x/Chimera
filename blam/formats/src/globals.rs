@@ -33,7 +33,9 @@
 //!   capped at 2 elements, the weapon list at 32, the vehicles at 8 and the
 //!   announcer sounds at 43.
 //! - The blocks the specs do not name are reported by offset and count only
-//!   (`OTHER_BLOCKS`); the struct is read as its first 0x1AC bytes.
+//!   (`OTHER_BLOCKS`); the struct is read as its first 0x1AC bytes. Of the
+//!   first person interface block (0x17C) only its first element's arms
+//!   model is read (`first_person_arms`, globals.md).
 
 use std::io;
 
@@ -60,6 +62,10 @@ pub const PLAYER_SIZE: usize = 0xF4;
 /// The falling damage block's offset and its element size.
 pub const FALLING_OFFSET: usize = 0x188;
 pub const FALLING_SIZE: usize = 0x98;
+/// The first person interface block (element 0xC0; globals.md): 0x00 the
+/// first-person arms model (`mode`).
+pub const FIRST_PERSON_OFFSET: usize = 0x17C;
+pub const FIRST_PERSON_SIZE: usize = 0xC0;
 /// The announcer sounds in the multiplayer information block.
 pub const ANNOUNCER_SOUNDS: usize = 43;
 /// Game ticks per second.
@@ -305,6 +311,9 @@ pub struct Globals {
     pub difficulty_count: usize,
     /// The element counts of the other blocks, by offset (`OTHER_BLOCKS`).
     pub block_counts: Vec<(usize, usize)>,
+    /// The first-person arms model (the first person interface's first
+    /// element; None without one).
+    pub first_person_arms: Option<TagRef>,
 }
 
 fn first<T: Clone>(v: &View<'_>, offset: usize, what: &str, items: &[T]) -> io::Result<T> {
@@ -386,7 +395,10 @@ impl Globals {
             .iter()
             .find(|(o, _)| *o == DIFFICULTY_OFFSET)
             .map_or(0, |(_, c)| *c);
+        let fp = v.block_max(FIRST_PERSON_OFFSET, FIRST_PERSON_SIZE, 1)?;
+        let first_person_arms = if !fp.is_empty() { Some(fp.get(0)?.tag_ref(0)?) } else { None };
         Ok(Globals {
+            first_person_arms,
             grenades,
             weapon_list,
             multiplayer,

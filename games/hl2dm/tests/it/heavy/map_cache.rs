@@ -18,6 +18,22 @@ use source_engine::content::bsp::{self, SourceGame};
 
 use super::map_stock::install_mount;
 
+/// Whether the cache can write here: room for a whole entry (a gigabyte at
+/// most) above the disk's free-space floor, else the cache skips its write
+/// (`chimera_assets::disk`) and a miss never becomes a hit. Says why not.
+fn room_for_entries(dir: &std::path::Path) -> bool {
+    use chimera_core::mount::assets::disk;
+    let room = disk::has_room(dir, 1_000_000_000, &disk::space);
+    if !room {
+        eprintln!(
+            "skipping: less than a gigabyte above the disk's free-space floor at {} ({} sets the floor)",
+            dir.display(),
+            disk::FLOOR_ENV
+        );
+    }
+    room
+}
+
 fn scratch(name: &str) -> PathBuf {
     let base = MapCache::default_dir()
         .and_then(|d| d.parent().map(PathBuf::from))
@@ -54,6 +70,9 @@ fn a_cached_map_is_the_converted_one() {
     let Some((cold, o)) = load(&maps::HL2DM, None) else { return };
     assert_eq!(o, Outcome::Off);
     let dir = scratch("hit");
+    if !room_for_entries(&dir) {
+        return;
+    }
     let cache = MapCache::at(&dir, u64::MAX);
     let (miss, o) = load(&maps::HL2DM, Some(&cache)).unwrap();
     assert_eq!(o, Outcome::Miss);
@@ -72,6 +91,9 @@ fn the_key_is_hl2dms() {
     assert_eq!(maps::CONVERTER.len(), maps::CONVERTER.trim().len());
     assert!(!maps::CONVERTER.is_empty());
     let dir = scratch("key");
+    if !room_for_entries(&dir) {
+        return;
+    }
     let cache = MapCache::at(&dir, u64::MAX);
     let Some((_, o)) = load(&maps::HL2DM, Some(&cache)) else { return };
     assert_eq!(o, Outcome::Miss);

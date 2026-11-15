@@ -8,11 +8,19 @@ base = "halo_ce:gun"
 slot = 0
 class = "rifle"
 
+# Its models (models.md "Which models the game draws where"; weapons.md
+# "References"): seen in first person with the arms (`game::view`), held
+# in the Spartan's hand.
+[models]
+view = 'weapons\assault rifle\fp\fp'
+world = 'weapons\assault rifle\assault rifle'
+
 [hud]
 name = "Assault Rifle"
 
 [hooks."halo_ce:weapon"]
 tag = 'weapons\assault rifle\assault rifle'
+label = "ar"
 # Weapon part ("Weapon part" table): flags, weapon type, zoom levels.
 flags = 0
 weapon_type = 0

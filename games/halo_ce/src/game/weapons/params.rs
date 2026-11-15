@@ -23,6 +23,9 @@ use super::super::vitality::{EffectId, ids};
 pub struct Gun {
     /// The weapon tag's path on the disc (the heavy test reads it).
     pub tag: String,
+    /// The label its holder's animation graph looks up (part 0x004: `ar`, `hp`; `game::view`).
+    #[serde(default)]
+    pub label: String,
     /// Weapon flags (part 0x000).
     pub flags: u32,
     /// The weapon type (0x1DA): 0 undefined, 1 shotgun, 3 plasma pistol,

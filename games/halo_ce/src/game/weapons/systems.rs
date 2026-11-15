@@ -34,10 +34,14 @@
 //!
 //! Known shortcuts: a shot starts at the eye (the weapon's trigger marker,
 //! moved onto the camera ray, has no model yet to come from), then the
-//! trigger's first-person offset; a fired projectile is the server's only
-//! (no replicated entity yet: the shooter's client predicts the weapon,
-//! ammo, heat, the grenade count and the shot's `HaloFired`, not the
-//! projectile); later updates of a projectile meet characters where they
+//! trigger's first-person offset; a fired projectile's flight is the
+//! server's (the shooter's client predicts the weapon, ammo, heat, the
+//! grenade count and the shot's `HaloFired`; every machine shows the nine
+//! guns' projectiles by flying them again from the shot with the same
+//! flight rules and their own random generator, `fx::shots`, the server
+//! sending others' shots (guided ones unguided; the grenades are not shown
+//! yet); later updates of a projectile meet
+//! characters where they
 //! are now (lag compensation rewinds the firing tick's update only); the
 //! hit's "shield or body" material is the target's shield above 0 before
 //! the hit (the seam knows the exact share only after); dead bodies are
@@ -315,6 +319,12 @@ impl HaloTrace<'_, '_> {
             }
         }
         best
+    }
+
+    /// Whether the level has Halo's material table (else its surfaces
+    /// are stone by default, `materials::NO_TABLE`).
+    pub fn has_materials(&self) -> bool {
+        self.materials.is_some()
     }
 
     /// The level alone: where the ray meets it and its material type.

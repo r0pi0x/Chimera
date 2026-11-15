@@ -10,10 +10,9 @@
 //! with its movement (`movement::ID`), so a gun game's automatic ladder
 //! deals them as rungs. Holding one makes the character Halo's where the
 //! identity follows the weapon (`chimera_sim::identity`): Halo's movement,
-//! and with it its vitality and shield (`vitality`'s wear). No
-//! characters or HUD of its own yet (a capsule body, the fallback HUD),
-//! and no view or world models: a rung draws no weapon model until those
-//! come (hud.md, models).
+//! and with it its vitality and shield (`vitality`'s wear), and its HUD
+//! (`ui::hud`). The Spartan body (`body`) and the guns' view and held
+//! models (`view`, from the donor map on another game's map).
 //!
 //! No grenade rung: Halo's grenades are not a held weapon but a count
 //! thrown on the grenade button beside the gun in hand (`weapons::grenades`),
@@ -55,7 +54,7 @@ pub static PARTS: GameParts = GameParts {
     knife: None,
     movement: Some(super::movement::ID),
     characters: Some("halo_ce:spartan"),
-    hud: None,
+    hud: Some(super::GAME),
     maps: &[],
     announcer: None,
     match_won_sound: None,
@@ -86,6 +85,6 @@ pub fn add_map_pool(app: &mut bevy::app::App) {
 pub fn add_guns(app: &mut bevy::app::App) {
     if !app.is_plugin_added::<super::weapons::HaloWeaponsPlugin>() {
         super::movement::register(app);
-        app.add_plugins((super::vitality::VitalityPlugin, super::damage::DamagePlugin, super::weapons::HaloWeaponsPlugin));
+        app.add_plugins((super::vitality::VitalityPlugin, super::damage::DamagePlugin, super::weapons::HaloWeaponsPlugin, super::fx::HaloFxPlugin));
     }
 }
