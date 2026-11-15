@@ -1551,6 +1551,8 @@ fn workspace_crates() {
         simulation crates and HL2:DM, no presentation, client shell or HL2:DM app \
         (`server_builds_without_presentation`), and never another game. Move what needs them into the \
         client's side (the app).";
+    const HALO_APP: &str = "is the Halo app's glue (docs/ARCHITECTURE.md, \"Crates\"): Chimera and Halo         composed into its game. It never uses another game or its app: what two games need moves into         Chimera or `blam_formats` (a lift), not across.";
+    const HALO_SERVER: &str = "is Halo's dedicated server (docs/ARCHITECTURE.md, \"Crates\"): Chimera's         simulation crates and Halo, no presentation, client shell or Halo app         (`server_builds_without_presentation`), and never another game. Move what needs them into the         client's side (the app).";
     const MASHUP_APP: &str = "is a mashup app (docs/ARCHITECTURE.md, \"Crates\"): it composes games as \
         libraries (`cs_source`, `combat_arms`) on Chimera, never another app: what it shares with a game's \
         own app moves into the game or Chimera (a map loader, a dressing, a hook), not across.";
@@ -1934,6 +1936,38 @@ fn workspace_crates() {
                 "mashup",
             ],
             HL2DM_SERVER,
+        ),
+        (
+            "apps/halo_ce",
+            &[
+                "mashup",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "originals",
+                "party_kit",
+                "lucker_party",
+                "cs_source_app",
+                "combat_arms_app",
+                "hl2dm_app",
+            ],
+            HALO_APP,
+        ),
+        (
+            "apps/halo_ce_server",
+            &[
+                "chimera_present",
+                "chimera_client",
+                "bevy_egui",
+                "bevy-inspector-egui",
+                "arboard",
+                "halo_ce_app",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "mashup",
+            ],
+            HALO_SERVER,
         ),
         (
             "apps/mashup_demo",
@@ -2765,8 +2799,8 @@ fn selections_share_one_build() {
 }
 
 /// The dedicated servers build without the presentation
-/// (docs/ARCHITECTURE.md, "Crates"): `cs_source_server`, `hl2dm_server`
-/// and `combat_arms_server` use Chimera's simulation crates and their
+/// (docs/ARCHITECTURE.md, "Crates"): `cs_source_server`, `hl2dm_server`,
+/// `halo_ce_server` and `combat_arms_server` use Chimera's simulation crates and their
 /// game without `ui`, and `lucker_party_server` the party kit
 /// (`party_kit`) without its `present`, so none depends on
 /// `chimera_present` or links render or audio code. (That they compile that way the pre-push hook checks:
@@ -2858,6 +2892,15 @@ fn server_builds_without_presentation() {
         "`hl2dm_server` (the HL2:DM dedicated server's build) depends on {present:?}. It uses Chimera's \
          simulation crates and `hl2dm` (apps/hl2dm_server/Cargo.toml): don't depend on the app \
          (`hl2dm_app`), and keep the new dependency out of the simulation crates."
+    );
+    let server = tree("halo_ce_server");
+    let present: Vec<&str> = server
+        .lines()
+        .filter(|l| CLIENT_ONLY.iter().any(|c| l.starts_with(&format!("{c} "))))
+        .collect();
+    assert!(
+        present.is_empty(),
+        "`halo_ce_server` (Halo's dedicated server's build) depends on {present:?}. It uses Chimera's          simulation crates and `halo_ce` (apps/halo_ce_server/Cargo.toml): don't depend on the app          (`halo_ce_app`), and keep the new dependency out of the simulation crates."
     );
     let server = tree("lucker_party_server");
     let present: Vec<&str> = server

@@ -40,6 +40,7 @@ crypto-common = { version = "0.1", default-features = false, features = ["getran
 derive_more = { version = "2", features = ["as_ref", "constructor", "deref", "deref_mut", "display", "from", "into", "is_variant", "try_unwrap", "unwrap"] }
 either = { version = "1", features = ["use_std"] }
 fixedbitset = { version = "0.5" }
+flate2 = { version = "1" }
 foldhash = { version = "0.2", default-features = false, features = ["std"] }
 glam = { version = "0.33", features = ["approx", "bytemuck", "encase", "nostd-libm", "rand", "serde"] }
 half = { version = "2", features = ["bytemuck", "num-traits", "serde"] }

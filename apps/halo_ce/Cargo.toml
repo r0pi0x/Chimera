@@ -1,0 +1,58 @@
+[package]
+name = "halo_ce_app"
+version = "0.1.0"
+description = "The Halo: Combat Evolved app: its game binary on Chimera (M1: the greybox with stand-in movement; its maps as their loader lands)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# The app composes Chimera and Halo: the simulation, the presentation,
+# the client shell and the network. Never another game's crates or
+# `mashup` (checks/tests/it/architecture.rs).
+[dependencies]
+chimera_core.workspace = true
+chimera_world.workspace = true
+chimera_sim.workspace = true
+chimera_net.workspace = true
+chimera_present.workspace = true
+chimera_client.workspace = true
+# Its front end: the HUD (`halo_ce::ui`, the game's `ui` feature).
+halo_ce = { workspace = true, features = ["ui"] }
+avian3d.workspace = true
+bevy.workspace = true
+workspace-hack.workspace = true
+
+# The game.
+[[bin]]
+name = "halo_ce"
+path = "src/main.rs"
+test = false
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[features]
+# Faster iteration: link Bevy as a dynamic library, serve the remote
+# protocol. `cargo run --features dev --bin halo_ce`. Never for release
+# builds.
+dev = [
+    "chimera_core/dev",
+    "chimera_world/dev",
+    "chimera_sim/dev",
+    "chimera_net/dev",
+    "chimera_present/dev",
+    "chimera_client/dev",
+    "halo_ce/dev",
+]
+
+# Profiling (docs/performance.md, "See a frame yourself"), as the other
+# apps'.
+trace = ["chimera_core/trace", "chimera_client/trace"]
+profile = ["chimera_core/profile", "chimera_client/profile"]
+tracy = ["chimera_core/tracy", "chimera_client/tracy"]

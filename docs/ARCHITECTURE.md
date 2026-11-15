@@ -26,9 +26,11 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    combat_arms_server (apps/combat_arms_server/)   Combat Arms' dedicated server: the game without `ui`
   |    hl2dm_app (apps/hl2dm/)   the HL2:DM app: its game binary `hl2dm` (its maps, the greybox)
   |    hl2dm_server (apps/hl2dm_server/)   HL2:DM's dedicated server: no presentation
+  |    halo_ce_app (apps/halo_ce/)   the Halo app: its game binary `halo_ce` (the greybox; the disc's maps as their loader lands)
+  |    halo_ce_server (apps/halo_ce_server/)   Halo's dedicated server: no presentation
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
-  |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, harness::HaloSim; `ui` its HUD (none yet)
+  |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, stand-in movement, harness::HaloSim; `ui` its HUD (none yet)
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -278,7 +280,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   shaders, bitmaps, lightmap pages packed into one atlas, collision BSP,
   player starts and sky fog as `MapData` in metres, through the
   converted-map cache), `SimPlugins`, `game::HaloPlugins` (the
-  registration only) and `harness::HaloSim`.
+  registration and the stand-in movement `halo_ce:movement`, Chimera's
+  placeholder with its own numbers) and `harness::HaloSim`.
   Layered as `hl2dm`: the engine crates and `blam_formats`, never another
   game, `mashup` or an app (checked); `ui` draws nothing of its own yet.
 - `chimera_net` is network play (`net`): the transport, the join
@@ -420,6 +423,13 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   the network and `hl2dm` on `chimera_net::dedicated` (its `SERVER`), no presentation, client shell
   or app (checked: `server_builds_without_presentation`); built alone with
   `-p` for release.
+- `halo_ce_app` (apps/halo_ce/) is the Halo app (binary `halo_ce`): Chimera
+  and `halo_ce` composed (`APP`, a `GameApp`), maps `halo_ce:<name>` from
+  the disc once its loader is written, the greybox otherwise, with the
+  game's stand-in movement; `halo_ce_server` (apps/halo_ce_server/) its
+  dedicated server on `chimera_net::dedicated` (its `SERVER`), no
+  presentation, client shell or app (`server_builds_without_presentation`);
+  built alone with `-p` for release.
 - `mashup` (the repository root; the old name) is a thin shim: `cs_source_app`
   re-exported at the old `mashup::` paths (src/lib.rs) for `dump` (an
   install inspector for several games; its test in tests/it/) and the host

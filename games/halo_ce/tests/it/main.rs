@@ -10,6 +10,7 @@
 
 mod info;
 mod maps;
+mod movement;
 mod skeleton;
 
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
