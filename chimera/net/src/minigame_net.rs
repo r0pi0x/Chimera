@@ -77,6 +77,10 @@
 //!   (`minigame::NextMatch`: the map picked for the next match as soon as
 //!   the match is decided, and when the change comes; `NetMinigame::next`),
 //!   which the shell's match-end screen shows.
+//! - **A failed rotation** (`rotate`, `RotateFailed`): a move to the next
+//!   match that fails (a ladder no game makes for these players, a map one
+//!   lacks the game for) is told once and tried again only when the
+//!   players or their mount reports change, not every frame.
 //! - **The pool by count** (a definition's `map_fit`, `minigame::map_fit`):
 //!   the rotation's pick and the vote's ballot are drawn by the players
 //!   present at the change (humans and bots): the maps too big for them
@@ -1078,9 +1082,43 @@ fn rotate(world: &mut World) {
     if !over || now < next.at {
         return;
     }
+    // A move that failed (a new ladder no game can make, a map a player
+    // lacks the game for) isn't tried again until the players or their
+    // mount reports change: once, not every frame.
+    let key = rotation_inputs(world);
+    if world.get_resource::<RotateFailed>().is_some_and(|f| f.0 == key) {
+        return;
+    }
     let target = if playable_on(world, def, Some(&target)).ok() { target } else { next_map(world, def) };
-    go_to(world, def, &target);
+    if go_to(world, def, &target) {
+        world.remove_resource::<RotateFailed>();
+    } else {
+        world.insert_resource(RotateFailed(key));
+    }
 }
+
+/// The inputs of a rotation's move (`rotate`): the connected players and
+/// their mount doctor reports, as a hash.
+fn rotation_inputs(world: &mut World) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut names: Vec<String> = world
+        .query::<&crate::net::NetCharacter>()
+        .iter(world)
+        .filter(|c| c.owner.is_some())
+        .map(|c| c.name.clone())
+        .collect();
+    names.sort();
+    let mut reports: Vec<String> = reports(world).into_iter().map(|r| format!("{r:?}")).collect();
+    reports.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (names, reports).hash(&mut h);
+    h.finish()
+}
+
+/// The inputs (`rotation_inputs`) of the rotation's move that failed;
+/// `rotate` waits for them to change before it tries again.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+struct RotateFailed(u64);
 
 /// The map vote opened when `def` has one (`minigame::vote`): the
 /// rotation's pick `first` and other playable maps of the pool on the
@@ -1215,14 +1253,18 @@ pub fn next_match(world: &mut World) -> Option<String> {
 
 /// The next match of `def` on `target`: the app's `NextMatchHooks` told
 /// (a new automatic ladder), then `change_match`.
-fn go_to(world: &mut World, def: &'static MinigameDef, target: &str) {
+fn go_to(world: &mut World, def: &'static MinigameDef, target: &str) -> bool {
     info!("{} is over: next, {} on {target}", def.id, def.name);
     let hooks = world.get_resource::<NextMatchHooks>().map(|h| h.0.clone()).unwrap_or_default();
     for hook in hooks {
         hook(world, &def.id, target);
     }
-    if let Err(e) = change_match(world, &def.id, Some(target)) {
-        warn!("rotating {}: {e}", def.id);
+    match change_match(world, &def.id, Some(target)) {
+        Ok(_) => true,
+        Err(e) => {
+            warn!("rotating {}: {e}", def.id);
+            false
+        }
     }
 }
 
