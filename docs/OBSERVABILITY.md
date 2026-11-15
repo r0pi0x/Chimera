@@ -1847,6 +1847,7 @@ cargo run --bin dump -- combat_arms --list --filter worlds2
 cargo run --bin dump -- combat_arms --filter worlds2/warehouse.dat --extract
 cargo run --bin dump -- hl2dm                          # gameinfo.txt's search path, then the summary
 cargo run --bin dump -- hl2dm --sequences models/combine_camera/combine_camera.mdl  # also its pose parameters
+cargo run --bin dump -- tf2                            # tf/gameinfo.txt's search path, then the summary
 ```
 
 Combat Arms' maps: `cargo run --features dev -p combat_arms_app --bin

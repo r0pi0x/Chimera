@@ -231,6 +231,10 @@ pub struct MapMesh {
     pub double_sided: bool,
     /// Tangent-space normal map (index into `MapData::textures`, linear).
     pub normal_map: Option<usize>,
+    /// `normal_map` is a self-shadowed bump map (Source's `$ssbump`): its
+    /// rgb are the weights of the three bumped lightmaps, not a normal
+    /// (specs/cs_source/shaders.md 2).
+    pub ssbump: bool,
     /// Source's Phong model shading (VertexLitGeneric `$phong` with a
     /// normal map, `map::phong`): None draws the plain model shader.
     pub phong: Option<Box<super::phong::MapPhong>>,
