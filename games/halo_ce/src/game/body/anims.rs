@@ -196,7 +196,7 @@ pub fn move_state(throttle: Vec2) -> State {
 
 /// One stored animation sampled into the engine's form (module doc), or
 /// why not.
-fn convert(graph: &AnimationGraph, index: usize, bones: usize, checksum: u32) -> Result<Animation, String> {
+pub fn convert(graph: &AnimationGraph, index: usize, bones: usize, checksum: u32) -> Result<Animation, String> {
     let a = graph.animation(index).ok_or_else(|| format!("no animation {index}"))?;
     if a.kind == AnimationType::Base && !a.fits_model(bones, checksum) {
         return Err(format!("`{}` does not fit the model", a.name));

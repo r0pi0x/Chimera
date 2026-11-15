@@ -12,11 +12,19 @@ base = "halo_ce:gun"
 slot = 0
 class = "smg"
 
+# Its models (models.md "Which models the game draws where"; weapons.md
+# "References"): seen in first person with the arms (`game::view`), held
+# in the Spartan's hand.
+[models]
+view = 'weapons\plasma rifle\fp\fp'
+world = 'weapons\plasma rifle\plasma rifle'
+
 [hud]
 name = "Plasma Rifle"
 
 [hooks."halo_ce:weapon"]
 tag = 'weapons\plasma rifle\plasma rifle'
+label = "pr"
 # Bit 11: cannot fire at maximum age.
 flags = 0x800
 # The plasma rifle type.

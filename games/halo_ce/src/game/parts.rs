@@ -5,10 +5,10 @@
 //! with its movement (`movement::ID`), so a gun game's automatic ladder
 //! deals them as rungs. Holding one makes the character Halo's where the
 //! identity follows the weapon (`chimera_sim::identity`): Halo's movement,
-//! and with it its vitality and shield (`vitality`'s wear). No
-//! characters or HUD of its own yet (a capsule body, the fallback HUD),
-//! and no view or world models: a rung draws no weapon model until those
-//! come (hud.md, models).
+//! and with it its vitality and shield (`vitality`'s wear). The Spartan
+//! body (`body`) and the guns' view and held models (`view`, from the
+//! donor map on another game's map); no HUD of its own yet (the fallback
+//! HUD, hud.md).
 //!
 //! No map is claimed (`PARTS.maps` is empty): a map enters an app's pool
 //! only from the disc image the machine holds (`auto::InstalledMaps`),

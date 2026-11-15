@@ -10,11 +10,19 @@ base = "halo_ce:gun"
 slot = 1
 class = "heavy_pistol"
 
+# Its models (models.md "Which models the game draws where"; weapons.md
+# "References"): seen in first person with the arms (`game::view`), held
+# in the Spartan's hand.
+[models]
+view = 'weapons\pistol\fp\fp'
+world = 'weapons\pistol\pistol'
+
 [hud]
 name = "Pistol"
 
 [hooks."halo_ce:weapon"]
 tag = 'weapons\pistol\pistol'
+label = "hp"
 flags = 0
 weapon_type = 0
 zoom_levels = 1
