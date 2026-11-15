@@ -22,7 +22,8 @@ fn app() -> App {
 fn build<R>(app: &mut App, f: impl FnOnce(&Ui, &mut Commands, Entity) -> R) -> R {
     let theme = app.world().resource::<Theme>().clone();
     let units = *app.world().resource::<UiUnits>();
-    let ui = Ui::new(&theme, None, units);
+    let kit = app.world().get_resource::<chimera_ui::KitFonts>().cloned();
+    let ui = Ui::new(&theme, kit.as_ref(), units);
     let world = app.world_mut();
     let root = world.spawn(Node::default()).id();
     let mut queue = bevy::ecs::world::CommandQueue::default();
@@ -48,6 +49,27 @@ fn texts_under(app: &mut App, e: Entity) -> Vec<String> {
     out
 }
 
+/// The texts under `e` run together (a field's characters, one node
+/// each).
+fn joined(app: &mut App, e: Entity) -> String {
+    texts_under(app, e).concat()
+}
+
+fn descendants_with_entity<C: Component>(app: &mut App, e: Entity) -> Vec<Entity> {
+    let w = app.world_mut();
+    let mut out = Vec::new();
+    let mut stack = vec![e];
+    while let Some(n) = stack.pop() {
+        if w.get::<C>(n).is_some() {
+            out.push(n);
+        }
+        if let Some(ch) = w.get::<Children>(n) {
+            stack.extend(ch.iter());
+        }
+    }
+    out
+}
+
 fn descendants_with<C: Component + Clone>(app: &mut App, e: Entity) -> Vec<C> {
     let w = app.world_mut();
     let mut out = Vec::new();
@@ -64,7 +86,8 @@ fn descendants_with<C: Component + Clone>(app: &mut App, e: Entity) -> Vec<C> {
 }
 
 /// A primary button: the white slab on the slant, ink text, its key cap;
-/// focus adds the accent tick (always shown).
+/// no tick, focused or hovered (the kit's design rules: a button's hover
+/// is its own lift, its focus the accent bar).
 #[test]
 fn buttons_carry_their_kind_and_focus() {
     let mut app = app();
@@ -73,7 +96,7 @@ fn buttons_carry_their_kind_and_focus() {
     let slants = descendants_with::<UiSlant>(&mut app, b);
     assert!(slants.iter().any(|s| s.fill == Tone::Fg && s.edges == (false, true)), "the white slab leans at the right");
     let ticks = descendants_with::<Tick>(&mut app, b);
-    assert_eq!(ticks, [Tick { always: true }], "focus: the tick shows always");
+    assert!(ticks.is_empty(), "no tick on a button");
     let texts = descendants_with::<UiText>(&mut app, b);
     assert_eq!(texts[0].tone, Tone::Ink);
     // Danger: the threat mark, never a threat fill.
@@ -84,23 +107,28 @@ fn buttons_carry_their_kind_and_focus() {
     assert_ne!(bg, app.world().resource::<Theme>().tone(Tone::Threat));
 }
 
-/// Hover is the tick and a faint tint, live from the pointer, back off
-/// when it leaves.
+/// Hover is the row's own fill lifting, live from the pointer, back off
+/// when it leaves; no tick on a row, focused or not (focus: the bar).
 #[test]
-fn hover_shows_the_tick_and_tint() {
+fn hover_lifts_the_fill_and_shows_no_tick() {
     let mut app = app();
     let (row, _) = build(&mut app, |ui, c, root| ui.row(c, root, "Field of view", None, 2.9, State::NONE));
-    let tick = app.world().get::<Children>(row).unwrap().iter().find(|e| app.world().get::<Tick>(*e).is_some()).unwrap();
-    assert_eq!(app.world().get::<Visibility>(tick), Some(&Visibility::Hidden));
+    assert!(descendants_with::<Tick>(&mut app, row).is_empty(), "no tick");
     let hover = *app.world().get::<Hover>(row).unwrap();
     *app.world_mut().get_mut::<Interaction>(row).unwrap() = Interaction::Hovered;
     app.update();
-    assert_eq!(app.world().get::<Visibility>(tick), Some(&Visibility::Inherited));
     assert_eq!(app.world().get::<BackgroundColor>(row).unwrap().0, hover.over);
     *app.world_mut().get_mut::<Interaction>(row).unwrap() = Interaction::None;
     app.update();
-    assert_eq!(app.world().get::<Visibility>(tick), Some(&Visibility::Hidden));
     assert_eq!(app.world().get::<BackgroundColor>(row).unwrap().0, hover.base);
+    let (focused, _) = build(&mut app, |ui, c, root| ui.row(c, root, "Field of view", None, 2.9, State::focused(true)));
+    assert!(descendants_with::<Tick>(&mut app, focused).is_empty(), "focused: the bar, no tick");
+    let k = build(&mut app, |ui, c, root| ui.key_field(c, root, &["SPACE".into()], false, 8.5, State::NONE));
+    assert!(descendants_with::<Tick>(&mut app, k).is_empty(), "no tick on a key field");
+    let (_, opts) = build(&mut app, |ui, c, root| ui.dropdown(c, root, &["A", "B"], 0, Some(1), 12.0, State::NONE));
+    for o in opts {
+        assert!(descendants_with::<Tick>(&mut app, o).is_empty(), "no tick on a list line");
+    }
 }
 
 /// A row: the label, the changed mark in accent, its least height; a
@@ -246,10 +274,13 @@ fn text_field_shows_text_caret_and_placeholder() {
     assert_eq!(caret_count(&mut app, f), 0);
     // What is typed keeps its case (the placeholder is a label).
     let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "Lan:27016", "", Some(3.into()), false, 15.0, State::focused(true)));
-    assert_eq!(texts_under(&mut app, f), ["Lan", ":27016"]);
+    assert_eq!(joined(&mut app, f), "Lan:27016");
     assert_eq!(caret_count(&mut app, f), 1);
     let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "pässwd", "", None, true, 15.0, State::NONE));
-    assert_eq!(texts_under(&mut app, f), ["******"]);
+    assert_eq!(joined(&mut app, f), "******");
+    // No hover tick on a text field (the kit's design rules): its own
+    // tint shows hover.
+    assert!(descendants_with::<Tick>(&mut app, f).is_empty());
 }
 
 /// Typed text keeps its case in our sentence face (`Role::Text`, Display
@@ -261,7 +292,7 @@ fn typed_text_keeps_its_case_in_our_face() {
     let mut app = app();
     let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "Zoë's Server", "", None, false, 15.0, State::NONE));
     app.update();
-    assert_eq!(texts_under(&mut app, f), ["Zoë's Server"]);
+    assert_eq!(joined(&mut app, f).replace('\u{a0}', " "), "Zoë's Server");
     let kit = app.world().resource::<KitFonts>().clone();
     let styled = descendants_with::<UiText>(&mut app, f);
     assert!(styled.iter().all(|t| t.role == Role::Text), "{styled:?}");
@@ -322,18 +353,19 @@ fn text_field_shows_its_selection() {
     let f = build(&mut app, |ui, c, root| {
         ui.text_field(c, root, "Lan:27016", "", Some(controls::TextCursor { at: 3, anchor: 0 }), false, 15.0, State::focused(true))
     });
-    assert_eq!(texts_under(&mut app, f), ["Lan", ":27016"]);
+    assert_eq!(joined(&mut app, f), "Lan:27016");
     let sel = selections(&mut app, f);
-    assert_eq!(sel.len(), 1);
-    assert_eq!(texts_under(&mut app, sel[0]), ["Lan"], "the selected text is on the tint");
+    assert_eq!(sel.len(), 3, "a tint behind each selected character");
+    let on: String = sel.iter().map(|e| joined(&mut app, *e)).collect::<Vec<_>>().concat();
+    assert_eq!(on.chars().count(), 3);
     assert_eq!(descendants_with::<controls::TextCaret>(&mut app, f).len(), 1);
     // "ä" is two bytes: the selection's ends are byte offsets.
     let f = build(&mut app, |ui, c, root| {
         ui.text_field(c, root, "pässwd", "", Some(controls::TextCursor { at: 1, anchor: 4 }), true, 15.0, State::focused(true))
     });
     let sel = selections(&mut app, f);
-    assert_eq!(texts_under(&mut app, sel[0]), ["**"], "two chars selected, as stars");
-    assert_eq!(texts_under(&mut app, f), ["*", "**", "***"]);
+    assert_eq!(sel.len(), 2, "two chars selected, as stars");
+    assert_eq!(joined(&mut app, f), "******");
 }
 
 /// A wipe cover clips away along the slant over its time and is gone at
@@ -376,11 +408,305 @@ fn a_sliders_value_box_types() {
     let mut app = app();
     let p = build(&mut app, |ui, c, root| ui.slider_ex(c, root, 0.5, None, "0.5", 15.0, State::NONE, None));
     assert!(app.world().get::<Interaction>(p.value).is_some(), "clickable");
-    assert_eq!(texts_under(&mut app, p.value), ["0.5"]);
-    let typing = controls::Typing { text: "1.6", caret: 3, anchor: 3, error: true };
+    assert_eq!(joined(&mut app, p.value), "0.5");
+    let typing = controls::Typing { text: "1.6", caret: 3, anchor: 3, error: true, suffix: None };
     let p = build(&mut app, |ui, c, root| ui.slider_ex(c, root, 1.0, None, "1.6", 15.0, State::NONE, Some(typing)));
-    assert_eq!(texts_under(&mut app, p.value), ["1.6"], "as typed");
+    assert_eq!(joined(&mut app, p.value), "1.6", "as typed");
     assert_eq!(descendants_with::<controls::TextCaret>(&mut app, p.value).len(), 1, "the caret");
     let s = build(&mut app, |ui, c, root| ui.stepper_ex(c, root, "8", 4.0, State::NONE, None));
     assert!(app.world().get::<Interaction>(s.value).is_some(), "a stepper's value too");
 }
+
+// ---------------------------------------------------------------------
+// Laid out by Bevy's own UI (a window and a camera, no renderer): the
+// typed text's places, the caret, a click, the toggle.
+
+/// `app()` with Bevy's UI layout, a 1920 x 1080 window (scale 1) and a
+/// camera on it.
+const KIT_FILES: chimera_ui::FontFiles<'static> = chimera_ui::fonts::OWN;
+
+fn laid_out() -> App {
+    use bevy::camera::{ComputedCameraValues, RenderTargetInfo, Viewport};
+    let mut app = app();
+    app.init_resource::<Assets<bevy::image::TextureAtlasLayout>>()
+        .init_resource::<ButtonInput<MouseButton>>()
+        .init_resource::<Touches>()
+        .init_resource::<bevy::picking::hover::HoverMap>()
+        .init_resource::<bevy::picking::pointer::PointerMap>()
+        .init_resource::<bevy::picking::events::PointerState>()
+        .add_message::<bevy::picking::pointer::PointerInput>()
+        .add_message::<bevy::picking::backend::PointerHits>()
+        .init_asset::<Image>()
+        .init_asset::<Mesh>()
+        .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>();
+    app.add_plugins((bevy::ui::UiPlugin, bevy::camera::visibility::VisibilityPlugin));
+    let mut window = Window::default();
+    window.resolution.set(1920.0, 1080.0);
+    window.resolution.set_scale_factor_override(Some(1.0));
+    app.world_mut().spawn((window, bevy::window::PrimaryWindow));
+    let size = UVec2::new(1920, 1080);
+    app.world_mut().spawn((
+        Camera2d,
+        Camera {
+            computed: ComputedCameraValues { target_info: Some(RenderTargetInfo { physical_size: size, scale_factor: 1.0 }), ..default() },
+            viewport: Some(Viewport { physical_size: size, ..default() }),
+            ..default()
+        },
+    ));
+    // The Ultimate Gun Game's faces (the value boxes' Mono), in before the
+    // first build (a text laid out).
+    let kit = chimera_ui::KitFonts::load(&mut app.world_mut().resource_mut::<Assets<Font>>(), KIT_FILES);
+    app.insert_resource(kit);
+    app.world_mut().spawn((Text::new("0"), Node { position_type: PositionType::Absolute, ..default() }));
+    for _ in 0..5 {
+        app.update();
+    }
+    app
+}
+
+/// `build` and two more frames (layout, then the transforms read).
+fn build_laid<R>(app: &mut App, f: impl FnOnce(&Ui, &mut Commands, Entity) -> R) -> R {
+    let r = build(app, f);
+    // A new text's font list resolves over a few frames.
+    for _ in 0..5 {
+        app.update();
+    }
+    r
+}
+
+/// Each character's centre x (physical px) of a field or value box.
+fn char_xs(app: &App, field: Entity) -> Vec<f32> {
+    let chars = &app.world().get::<controls::EditText>(field).expect("an EditText").chars;
+    chars.iter().map(|e| app.world().get::<bevy::ui::UiGlobalTransform>(*e).unwrap().affine().translation.x).collect()
+}
+
+fn size_of(app: &App, e: Entity) -> Vec2 {
+    app.world().get::<bevy::ui::ComputedNode>(e).unwrap().size
+}
+
+fn centre_of(app: &App, e: Entity) -> Vec2 {
+    app.world().get::<bevy::ui::UiGlobalTransform>(e).unwrap().affine().translation
+}
+
+/// The UiText of every text under `e`.
+fn faces(app: &mut App, e: Entity) -> Vec<(chimera_ui::Role, u32)> {
+    descendants_with::<UiText>(app, e).iter().map(|t| (t.role, (t.size * 1000.0).round() as u32)).collect()
+}
+
+/// A value box typed into keeps its box (the same size and place), its
+/// face and size, and its characters where they were at rest: clicking it
+/// moves nothing. The caret takes no room: its place never moves a
+/// character.
+#[test]
+fn a_value_box_typed_into_keeps_its_box_face_and_places() {
+    let mut app = laid_out();
+    let rest = build_laid(&mut app, |ui, c, root| ui.slider_ex(c, root, 0.8, None, "160", 15.0, State::focused(true), None)).value;
+    let typing = |caret: usize, anchor: usize| controls::Typing { text: "160", caret, anchor, error: false, suffix: None };
+    let all = build_laid(&mut app, |ui, c, root| ui.slider_ex(c, root, 0.8, None, "160", 15.0, State::focused(true), Some(typing(3, 0)))).value;
+    assert_eq!(size_of(&app, rest), size_of(&app, all), "the same box");
+    assert_eq!(centre_of(&app, rest), centre_of(&app, all), "in the same place");
+    let face_rest = faces(&mut app, rest);
+    assert!(!face_rest.is_empty());
+    assert_eq!(face_rest, faces(&mut app, all), "the same role and size");
+    assert_eq!(char_xs(&app, rest), char_xs(&app, all), "each character where it was");
+    // The caret at each place: the characters stay.
+    let at0 = build_laid(&mut app, |ui, c, root| ui.slider_ex(c, root, 0.8, None, "160", 15.0, State::focused(true), Some(typing(0, 0)))).value;
+    let at2 = build_laid(&mut app, |ui, c, root| ui.slider_ex(c, root, 0.8, None, "160", 15.0, State::focused(true), Some(typing(2, 2)))).value;
+    assert_eq!(char_xs(&app, at0), char_xs(&app, rest));
+    assert_eq!(char_xs(&app, at2), char_xs(&app, rest));
+    assert_eq!(size_of(&app, at2), size_of(&app, rest));
+    // The caret sits on the boundary between the second and third.
+    let caret = {
+        let w = app.world_mut();
+        let mut q = w.query_filtered::<Entity, With<controls::TextCaret>>();
+        q.iter(w).filter(|e| is_under(w, *e, at2)).collect::<Vec<_>>()
+    };
+    assert_eq!(caret.len(), 1);
+    assert_eq!(app.world().get::<Node>(caret[0]).unwrap().position_type, PositionType::Absolute, "it takes no room");
+    let xs = char_xs(&app, rest);
+    let cx = centre_of(&app, caret[0]).x;
+    assert!(cx > xs[1] && cx < xs[2], "between the 2nd and 3rd: {cx} in {xs:?}");
+    // A percentage's suffix stays after the typed number.
+    let pct = build_laid(&mut app, |ui, c, root| {
+        ui.slider_ex(c, root, 0.8, None, "160%", 15.0, State::NONE, Some(controls::Typing { suffix: Some("%"), ..typing(3, 3) }))
+    })
+    .value;
+    assert_eq!(joined(&mut app, pct), "160%");
+    let pct_rest = build_laid(&mut app, |ui, c, root| ui.slider_ex(c, root, 0.8, None, "160%", 15.0, State::NONE, None)).value;
+    assert_eq!(size_of(&app, pct), size_of(&app, pct_rest), "a percentage's box keeps its size too");
+}
+
+fn is_under(w: &World, mut e: Entity, root: Entity) -> bool {
+    while let Some(p) = w.get::<ChildOf>(e) {
+        if p.parent() == root {
+            return true;
+        }
+        e = p.parent();
+    }
+    false
+}
+
+/// The pointer at physical x `x` (y in the middle of `e`).
+fn point(app: &mut App, x: f32, e: Entity) {
+    let y = centre_of(app, e).y;
+    let w = app.world_mut();
+    let mut q = w.query::<&mut Window>();
+    q.single_mut(w).unwrap().set_physical_cursor_position(Some(bevy::math::DVec2::new(x as f64, y as f64)));
+    app.update();
+}
+
+fn char_at(app: &mut App, field: Entity) -> Option<usize> {
+    use bevy::ecs::system::RunSystemOnce;
+    app.world_mut().run_system_once(move |h: controls::TextHits| h.char_at(field)).unwrap()
+}
+
+/// A click places the caret at the boundary nearest the pointer (from
+/// the layout): before the first character, between any two, after the
+/// last; a text field's text alike.
+#[test]
+fn a_click_places_the_caret_between_characters() {
+    let mut app = laid_out();
+    let f = build_laid(&mut app, |ui, c, root| ui.text_field(c, root, "Lan:27016", "", Some(9.into()), false, 15.0, State::focused(true)));
+    let xs = char_xs(&app, f);
+    assert_eq!(xs.len(), 9);
+    point(&mut app, xs[0] - 6.0, f);
+    assert_eq!(char_at(&mut app, f), Some(0), "left of the text");
+    point(&mut app, (xs[3] + xs[4]) / 2.0, f);
+    assert_eq!(char_at(&mut app, f), Some(4), "between the 4th and 5th");
+    point(&mut app, xs[3] - 1.0, f);
+    assert_eq!(char_at(&mut app, f), Some(3), "just left of the 4th's middle");
+    point(&mut app, xs[8] + 200.0, f);
+    assert_eq!(char_at(&mut app, f), Some(9), "past the end");
+    // A value box too.
+    let v = build_laid(&mut app, |ui, c, root| ui.stepper_ex(c, root, "8.5", 4.0, State::NONE, None)).value;
+    let xs = char_xs(&app, v);
+    point(&mut app, (xs[0] + xs[1]) / 2.0, v);
+    assert_eq!(char_at(&mut app, v), Some(1));
+}
+
+/// The caret is thin (one physical pixel at 1080 lines) and sits just
+/// after the character before it, not over it.
+#[test]
+fn the_caret_is_thin_and_just_after_the_text() {
+    let mut app = laid_out();
+    let f = build_laid(&mut app, |ui, c, root| ui.text_field(c, root, "Lan", "", Some(3.into()), false, 15.0, State::focused(true)));
+    let caret = descendants_with_entity::<controls::TextCaret>(&mut app, f);
+    assert_eq!(caret.len(), 1);
+    let cw = size_of(&app, caret[0]).x;
+    assert!(cw <= 1.01, "one physical px wide, not {cw}");
+    let last = *app.world().get::<controls::EditText>(f).unwrap().chars.last().unwrap();
+    let right = centre_of(&app, last).x + size_of(&app, last).x / 2.0;
+    let left = centre_of(&app, caret[0]).x - cw / 2.0;
+    assert!((left - right).abs() <= 0.51, "the caret's left {left} at the text's end {right}");
+}
+
+/// The pointer's gestures in a text: a press places, a drag selects from
+/// it, a second press soon after near the first selects all.
+#[test]
+fn a_press_places_a_drag_selects_a_double_press_selects_all() {
+    let mut p = controls::TextPress::default();
+    assert_eq!(p.press(10.0, 2, 5), (2, 2));
+    assert_eq!(p.drag(4), Some((4, 2)), "dragged right from 2");
+    p.release();
+    assert_eq!(p.drag(1), None, "let go");
+    assert_eq!(p.press(10.2, 2, 5), (5, 0), "a double press: all of it");
+    assert_eq!(p.press(11.0, 3, 5), (3, 3));
+    assert_eq!(p.press(11.0 + controls::DOUBLE_CLICK_SECS + 0.1, 3, 5), (3, 3), "too slow for a double");
+    assert_eq!(p.press(20.0, 0, 5), (0, 0));
+    assert_eq!(p.press(20.1, 4, 5), (4, 4), "too far for a double");
+}
+
+/// The toggle: OFF and ON each centred on its slab's place (within a px),
+/// so ON sits as OFF does; flipped, its slab slides over in about 140 ms
+/// (eased; jumps under reduced motion); focus is a strip on the track's
+/// bottom edge, no straight underline.
+#[test]
+fn the_toggles_labels_are_centred_and_its_slab_slides() {
+    let mut app = laid_out();
+    let t = build_laid(&mut app, |ui, c, root| ui.toggle(c, root, true, State::focused(true)));
+    let units = *app.world().resource::<UiUnits>();
+    let left = centre_of(&app, t).x - size_of(&app, t).x / 2.0;
+    let labels: Vec<Entity> = {
+        let w = app.world_mut();
+        let mut q = w.query_filtered::<Entity, With<controls::ToggleLabel>>();
+        q.iter(w).filter(|e| is_under(w, *e, t)).collect()
+    };
+    assert_eq!(labels.len(), 2);
+    let mut offs = Vec::new();
+    for l in labels {
+        let text = descendants_of_text(&mut app, l);
+        let tc = centre_of(&app, text).x;
+        let want = left + if joined(&mut app, l) == "OFF" {
+            units.cq(controls::TOGGLE_OFF_LEFT + controls::TOGGLE_SLAB_W / 2.0)
+        } else {
+            units.cq(controls::TOGGLE_ON_LEFT + controls::TOGGLE_SLAB_W / 2.0)
+        };
+        offs.push(tc - want);
+        assert!((tc - want).abs() <= 1.0, "{} centred on its slab: {tc} vs {want}", joined(&mut app, l));
+    }
+    assert!((offs[0] - offs[1]).abs() <= 1.0, "ON sits as OFF does: {offs:?}");
+    assert_eq!(descendants_with::<controls::ToggleFocus>(&mut app, t).len(), 1, "focus: the strip");
+    assert!(descendants_with::<UiSlant>(&mut app, t).iter().any(|s| s.fill == Tone::Acc), "the strip is slanted, accent");
+
+    // The slide.
+    let now = app.world().resource::<UiClock>().now;
+    let slide = controls::ToggleSlide { since: now, now, reduced: false };
+    let t = build(&mut app, |ui, c, root| ui.toggle_ex(c, root, true, State::NONE, Some(slide)));
+    let slab = descendants_entities::<controls::ToggleSlab>(&mut app, t)[0];
+    let x = |app: &App| match app.world().get::<UiTransform>(slab).unwrap().translation.x {
+        Val::Px(v) => v,
+        _ => 0.0,
+    };
+    let start = x(&app);
+    let off = units.cq(controls::TOGGLE_OFF_LEFT - controls::TOGGLE_ON_LEFT);
+    assert!((start - off).abs() < 1.0, "starts at the off place: {start} vs {off}");
+    app.world_mut().resource_mut::<UiClock>().step(0.07);
+    app.update();
+    let mid = x(&app);
+    assert!(mid > off && mid < 0.0, "half-way it is between: {mid}");
+    app.world_mut().resource_mut::<UiClock>().step(0.1);
+    app.update();
+    assert_eq!(x(&app), 0.0, "at rest on the on side after {} s", controls::TOGGLE_SLIDE_SECS);
+    let reduced = controls::ToggleSlide { reduced: true, ..slide };
+    let r = build(&mut app, |ui, c, root| ui.toggle_ex(c, root, true, State::NONE, Some(reduced)));
+    let rs = descendants_entities::<controls::ToggleSlab>(&mut app, r)[0];
+    assert!(app.world().get::<chimera_ui::Timeline>(rs).is_none(), "reduced motion: it jumps");
+}
+
+fn descendants_entities<C: Component>(app: &mut App, e: Entity) -> Vec<Entity> {
+    let w = app.world_mut();
+    let mut out = Vec::new();
+    let mut stack = vec![e];
+    while let Some(n) = stack.pop() {
+        if w.get::<C>(n).is_some() {
+            out.push(n);
+        }
+        if let Some(ch) = w.get::<Children>(n) {
+            stack.extend(ch.iter());
+        }
+    }
+    out
+}
+
+fn descendants_of_text(app: &mut App, e: Entity) -> Entity {
+    descendants_entities::<Text>(app, e)[0]
+}
+
+/// The dropdown's mark is the kit's chevron icon, pointing down, up while
+/// the list is open.
+#[test]
+fn the_dropdown_shows_a_chevron_that_flips_open() {
+    let mut app = app();
+    let (f, _) = build(&mut app, |ui, c, root| ui.dropdown(c, root, &["A", "B"], 0, None, 12.0, State::NONE));
+    let shut = descendants_with::<controls::Chevron>(&mut app, f);
+    assert_eq!(shut, [controls::Chevron { up: false }]);
+    let img = descendants_entities::<controls::Chevron>(&mut app, f)[0];
+    assert!(!app.world().get::<ImageNode>(img).unwrap().flip_y);
+    assert_eq!(app.world().get::<controls::KitIcon>(img).unwrap().key, "chevron");
+    let (f, _) = build(&mut app, |ui, c, root| ui.dropdown(c, root, &["A", "B"], 0, Some(0), 12.0, State::NONE));
+    let img = descendants_entities::<controls::Chevron>(&mut app, f)[0];
+    assert!(app.world().get::<ImageNode>(img).unwrap().flip_y, "open: up");
+    assert!(chimera_ui::Icons::shipped().get("chevron").is_some(), "the icon ships");
+}
+
+

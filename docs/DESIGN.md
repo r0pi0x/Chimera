@@ -1010,7 +1010,9 @@ game's:
   many maps have no overview, so the party apps start it at 0 and
   `hud_radar 1` brings both games' radars back.
 - **The hit marker is an opt-in setting** (`client::hit_marker`,
-  `cl_hitmarker`, default 0): CS:S has no hit feedback and Combat Arms
+  `cl_hitmarker`, default 0; on in the party apps, which have no Options
+  row for it, nor for the radar or others' voice lines: the user's call,
+  2026-11-14): CS:S has no hit feedback and Combat Arms
   has its own indicator, so parity is none for CS:S guns. On, the shell
   draws a cross on the shooter's own client for damage actually dealt
   (headshot and kill variants), on every HUD but one that draws its own

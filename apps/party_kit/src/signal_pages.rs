@@ -252,10 +252,70 @@ impl Plugin for SignalPagesPlugin {
                 (follow, wheel, keys, line_clicks).chain().before(crate::main_menu::MainMenuSystems).before(crate::esc_menu::EscMenuSystems),
             )
             .add_systems(Update, crate::ui_cues::hover::<PageLine>.in_set(crate::main_menu::MainMenuSystems))
-            .add_systems(Update, draw.after(crate::main_menu::MainMenuSystems));
+            .add_systems(Update, (field_pointer, draw).chain().after(crate::main_menu::MainMenuSystems));
         use chimera_client::client::ui_scene::UiSceneHooks;
         UiSceneHooks::add(app.world_mut(), "play", |w, a| stage(w, MenuPage::Play, a));
         UiSceneHooks::add(app.world_mut(), "join", |w, a| stage(w, MenuPage::Join, a));
+    }
+}
+
+/// The pointer in a text field (Play's, Join's, the password's;
+/// `chimera_ui::controls::TextPress`): a press places the caret between
+/// the characters it is nearest (`TextHits`, from the layout; after the
+/// menu's `Focus`, which put it at the end), a drag from it selects, a
+/// double press selects all.
+#[allow(clippy::type_complexity)]
+fn field_pointer(
+    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    fields: Query<(Entity, &Interaction, &MainMenuAction), With<chimera_ui::controls::EditText>>,
+    hits: chimera_ui::controls::TextHits,
+    clock: Option<Res<UiClock>>,
+    mut st: Local<(chimera_ui::controls::TextPress, Option<Field>, bool)>,
+    mut menu: ResMut<PartyMenu>,
+) {
+    use chimera_client::client::widgets::Caret;
+    let Some(mouse) = mouse else { return };
+    let now = clock.map_or(0.0, |c| c.now);
+    let (press, held, dragged) = &mut *st;
+    let field_of = |a: &MainMenuAction| match a {
+        MainMenuAction::Focus(f) => Some(*f),
+        _ => None,
+    };
+    if mouse.just_pressed(MouseButton::Left) {
+        *dragged = false;
+        *held = None;
+        let hit = fields.iter().find_map(|(e, i, a)| (*i == Interaction::Pressed).then(|| field_of(a).map(|f| (e, f))).flatten());
+        let Some((e, f)) = hit else {
+            press.release();
+            return;
+        };
+        let (Some(at), Some(len)) = (hits.char_at(e), hits.len(e)) else { return };
+        let (c, a) = press.press(now, at, len);
+        *held = Some(f);
+        if menu.focus == Some(f) {
+            menu.caret = Caret { at: c, anchor: a };
+        }
+        return;
+    }
+    if !mouse.pressed(MouseButton::Left) {
+        press.release();
+        *held = None;
+        return;
+    }
+    let Some(f) = *held else { return };
+    if menu.focus != Some(f) {
+        return;
+    }
+    let Some(e) = fields.iter().find_map(|(e, _, a)| (field_of(a) == Some(f)).then_some(e)) else { return };
+    let Some(at) = hits.char_at(e) else { return };
+    if let Some((c, a)) = press.drag(at)
+        && (c != a || *dragged)
+    {
+        *dragged = true;
+        let next = Caret { at: c, anchor: a };
+        if menu.caret != next {
+            menu.caret = next;
+        }
     }
 }
 
@@ -1156,7 +1216,7 @@ fn play_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
             let Some(row) = cx.data.play.get(r) else { return };
             let v = menu.play.get(r).cloned().unwrap_or_default();
             let (e, vl) = ui.row(c, list, &row.label, None, row_h, State { focus, error: p.error == Some(i), ..State::NONE });
-            c.entity(e).insert(PageLine(i));
+            c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
             if focus && p.reveal {
                 chimera_ui::scroll_into_view(c, e);
             }
@@ -1183,7 +1243,7 @@ fn play_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
             let Some(s) = crate::main_menu::game_settings().get(g).cloned() else { return };
             let v = menu.values.get(&s.cvar).cloned().unwrap_or_default();
             let (e, vl) = ui.row(c, list, &s.label, Some("next match"), row_h, State::focused(focus));
-            c.entity(e).insert(PageLine(i));
+            c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
             if focus && p.reveal {
                 chimera_ui::scroll_into_view(c, e);
             }
@@ -1270,7 +1330,7 @@ fn join_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
                 ("Password", Field::Password, &menu.password, true, "None")
             };
             let (e, vl) = ui.row(c, list, label, None, row_h, st);
-            c.entity(e).insert(PageLine(i));
+            c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
             let caret = (menu.focus == Some(field) && p.ask.is_none()).then(|| menu.caret.cursor(value));
             let f = ui.text_field(c, vl, value, ph, caret, masked, 15.0, st);
             c.entity(f).insert(MainMenuAction::Focus(field));
@@ -1278,7 +1338,7 @@ fn join_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
         Line::Recent(r) => {
             let Some(a) = menu.recent.get(r) else { return };
             let (e, vl) = ui.row(c, list, a, None, row_h, State::focused(focus));
-            c.entity(e).insert(PageLine(i));
+            c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
             if focus {
                 ui.kbd(c, vl, "Enter", 0.56, Tone::Fg2);
             }
@@ -1380,7 +1440,7 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
         }
         let small = small.join(" • ");
         let (e, vl) = ui.row(c, list, &sv.name, Some(&small), row_h, State { focus, disabled: !sv.same_version || sv.status == Status::Down, ..State::NONE });
-        c.entity(e).insert(PageLine(i));
+        c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
         if sv.status == Status::Up {
             let players = format!("{}/{}", sv.players, sv.max_players);
             let bots = sv.bots.to_string();

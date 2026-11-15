@@ -109,7 +109,7 @@ impl Plugin for ChimeraUiPlugin {
             .init_resource::<UiMusic>()
             .add_message::<UiCue>()
             .init_resource::<UiClock>()
-            .add_plugins((KitMaterialsPlugin, widgets::HoverTicks, controls::ControlsPlugin, scroll::ScrollPlugin))
+            .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, scroll::ScrollPlugin))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare));
         pointer_lead::add(app);
         app

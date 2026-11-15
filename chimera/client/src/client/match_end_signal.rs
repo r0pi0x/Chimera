@@ -21,8 +21,7 @@
 //!   `ResultRow::wins`, `minigame::wins` per server run), the rung big (the winner's in the accent, with its
 //!   bar), kills and deaths under their marks, the ping (meter and number;
 //!   the loss mark for a connection losing packets). Your row is tinted
-//!   and outlined; hover is a tick at the right edge and a faint fill
-//!   (never an outline); the selected row (a click; the winner's at
+//!   and outlined; hover is a faint fill (no tick, never an outline); the selected row (a click; the winner's at
 //!   first) has a stronger fill and a pointer outside the row.
 //! - **The climb** (`ClimbChart`): rung against match time (to the
 //!   match's length rounded up to the finest of 0:30, 1, 2, 5, 10 ...
@@ -99,9 +98,7 @@ pub struct StandingsRow {
     pub you: bool,
 }
 
-/// A row's hover tick and its selection pointer.
-#[derive(Component)]
-struct RowTick;
+/// A row's selection pointer.
 #[derive(Component)]
 struct RowPointer;
 
@@ -680,7 +677,7 @@ fn build_static(
     });
 }
 
-/// One standings row's cells, its hover tick and its pointer.
+/// One standings row's cells and its pointer.
 #[allow(clippy::too_many_arguments)]
 fn row_cells(
     r: &mut EntityCommands,
@@ -747,17 +744,7 @@ fn row_cells(
             c.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.17), flex_shrink: 0.0, ..default() }, UiParityId(format!("{p}.ping")), Pickable::IGNORE))
                 .with_children(|c| ping_cell(c, look, row, slants.as_deref_mut()));
         });
-        // The hover tick (hidden until hovered) and the selection's pointer.
-        if let Some(slants) = slants.as_deref_mut() {
-            r.spawn((chimera_ui::widgets::hover_tick(slants, &look.theme, &look.units, row_h), RowTick)).insert(Node {
-                position_type: PositionType::Absolute,
-                right: look.val(0.45),
-                top: look.val(row_h * 0.22),
-                width: look.val(0.22 + row_h * 0.56 * look.theme.tan()),
-                height: look.val(row_h * 0.56),
-                ..default()
-            });
-        }
+        // The selection's pointer (hover is the row's fill alone).
         r.spawn((
             RowPointer,
             ImageNode { image: pointer.clone(), color: look.tone(Tone::Fg), ..default() },
@@ -1126,13 +1113,13 @@ fn build_climb(
         });
 }
 
-/// Rows' fills, hover ticks and pointers from the selection.
+/// Rows' fills and pointers from the selection.
 #[allow(clippy::type_complexity)]
 fn decorate_rows(
     look: Look,
     sel: Res<EndSelection>,
     mut rows: Query<(&StandingsRow, &mut BackgroundColor, &Children)>,
-    mut marks: Query<(&mut Visibility, Has<RowTick>), Or<(With<RowTick>, With<RowPointer>)>>,
+    mut marks: Query<&mut Visibility, With<RowPointer>>,
     new: Query<(), Added<StandingsRow>>,
     // The entrance's fade writes the rows' fills too: again after it.
     faded: Query<(), (With<StandingsRow>, Changed<Timeline>)>,
@@ -1155,9 +1142,8 @@ fn decorate_rows(
             bg.0 = c;
         }
         for c in children.iter() {
-            if let Ok((mut v, tick)) = marks.get_mut(c) {
-                let on = if tick { hovered } else { pinned };
-                v.set_if_neq(if on { Visibility::Inherited } else { Visibility::Hidden });
+            if let Ok(mut v) = marks.get_mut(c) {
+                v.set_if_neq(if pinned { Visibility::Inherited } else { Visibility::Hidden });
             }
         }
     }

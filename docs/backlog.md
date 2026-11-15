@@ -1656,7 +1656,7 @@ sections above already list.
   (parity), so CS:S rungs feel unresponsive next to Combat Arms ones.
   An opt-in party hit marker or hit sound for every gun (parity first,
   options later).
-  `cl_hitmarker 1` (archived, default 0 everywhere) draws a cross on the
+  `cl_hitmarker 1` (archived, default 0; 1 in the party apps) draws a cross on the
   shooter's own client when its round damages another player: white for
   a hit, yellow for a headshot, red for a kill (`client::hit_marker`,
   over any game's HUD; from `WeaponEvent::Hit`, which a network client
