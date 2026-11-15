@@ -12,10 +12,15 @@ mod disc;
 mod fixture;
 mod map_fixture;
 mod structure_bsp;
+mod scenario;
+mod shaders;
 
 mod heavy {
     mod bitmap_install;
     mod bsp_install;
     mod cache_install;
     mod disc_install;
+    mod maps;
+    mod scenario_install;
+    mod shader_install;
 }

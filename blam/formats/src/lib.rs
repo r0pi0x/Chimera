@@ -16,9 +16,16 @@
 //!   the rest of its structure BSP, vertices decoded on demand.
 //! - `collision`: the collision BSP of levels and collision models: polygons,
 //!   triangles, the point test and the line trace.
+//! - `scenario`: the scenario tag (spawns, netgame flags and equipment,
+//!   object placements), the sky and item collection tags and the
+//!   rotation convention.
+//! - `shader`: the eight shader tag classes and the periodic animation
+//!   functions.
 
 pub mod bitmap;
 pub mod cache;
 pub mod collision;
 pub mod disc;
 pub mod structure_bsp;
+pub mod scenario;
+pub mod shader;
