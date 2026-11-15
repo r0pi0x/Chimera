@@ -26,7 +26,9 @@
 //! - `objects`: render models as meshes, the scenery placements as props
 //!   with their collision;
 //! - `sky`: fog, a flat background, the sky model as a 3D skybox, and the
-//!   scenery's light.
+//!   scenery's light;
+//! - `audio`: the level's sounds (background sounds by cluster, sound
+//!   environments, sound scenery) and the kit's (`game::audio`).
 //!
 //! `MapLoadOptions::textures` off (the lean load) keeps every texture a
 //! placeholder of its size, everything else identical. Its kit is the
@@ -45,6 +47,7 @@
 //! the bots' generated mesh is held to the drawn level's box instead
 //! (`collision::nav_within`).
 
+pub mod audio;
 pub mod collision;
 pub mod geometry;
 pub mod lightmap;
@@ -219,6 +222,7 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
     sky::add(level_sky.as_ref(), &bsp, &mut map, decode);
     super::weapons::pickups::add_entities(&file, &scenario, &mut map, options.kit.pickups());
     super::rules::netgame::add_entities(&file, &scenario, &mut map, options.kit.pickups());
+    audio::add(&file, &scenario, &bsp, &level_collision, &mut map);
     Ok(map)
 }
 
