@@ -47,6 +47,7 @@ pub fn setup(app: &mut App) {
     if app.world().contains_resource::<SignalSetUp>() {
         return;
     }
+    super::ink_icon::setup(app);
     app.insert_resource(SignalSetUp).init_resource::<chimera_ui::icons::IconImages>().add_systems(
         PostUpdate,
         (icons::fill_icons, fade)
@@ -285,8 +286,12 @@ pub fn icon_class(data: &chimera_sim::weapon::data::WeaponData) -> Option<&'stat
     data.class.map(IconFor::gun_class)
 }
 
+/// The widest a game's gun icon is, in its height (`gun_icon`).
+pub const ICON_WIDE: f32 = 3.2;
+
 /// Gun `id`'s icon `h` logical px tall: its game's own (a glyph, or an
-/// image whose art is loaded) while `icons.prefer_game` is on, else the
+/// image whose art is loaded; its ink fitted into `h` by at most
+/// `ICON_WIDE` x `h`, `ink_icon`) while `icons.prefer_game` is on, else the
 /// kit's by class (`class`, `icon_class`; the kit's default without
 /// one), so the cell is never empty. Its node.
 pub fn gun_icon(p: &mut ChildSpawnerCommands, look: &Look, id: &str, class: Option<&str>, h: f32, color: Color) -> Option<Entity> {
@@ -297,9 +302,8 @@ pub fn gun_icon(p: &mut ChildSpawnerCommands, look: &Look, id: &str, class: Opti
         super::weapon_icons::WeaponIcon::Glyph { .. } => true,
     });
     match (choose(look.prefer_game_icons(), game.is_some()), game) {
-        (IconSource::Game, Some(icon)) => {
-            Some(super::kill_feed::icon_slot(p, &icon, look.units.height / 480.0 * 4.0, h, 1.0, look.images.as_deref()))
-        }
+        // Fitted by its ink, `h` tall (`ink_icon`; playtest 7).
+        (IconSource::Game, Some(icon)) => Some(super::ink_icon::spawn(p, &icon, h, h * ICON_WIDE, look.units.scale_factor, color)),
         _ => {
             // Never an empty cell: the class's, else the kit's default.
             let key = class.filter(|c| icons::has(c)).unwrap_or_else(|| chimera_ui::icons::IconFor::for_class(""));

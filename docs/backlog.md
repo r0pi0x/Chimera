@@ -223,11 +223,10 @@ started; the user asked to avoid server lag while testers play.
   and Ctrl+A, with the selection drawn (`chimera_ui::clipboard`,
   `widgets::text_key`; a password pastes but never copies). Still open:
   right-click paste (no context menu), the token entry when it comes.
-- **Kill feed gun icons are too small next to the names.** Make them
-  take more of the row (taller, fit by ink via `chimera_ui::icon_ink`);
-  same for the top HUD (the race chip's gun icon) and the headshot and
-  other kill-modifier icons. Re-check against the look book's
-  proportions and update the parity references if we deviate.
+- **Kill feed gun icons too small** (done after 7.1, confirm in a
+  playtest): game icons fitted by their ink (`client::ink_icon`): the
+  feed's 1.25 cq in its row, the headshot mark 1 cq, the race chip's
+  1.3 cq; parity references updated (ugg-ui.md, decision 7).
 - **Settings audit fixes** (done after 7.1, confirm in a playtest):
   `fps_max` and `party_music` archived (a test checks every Options
   cvar is); Combat Arms' options apply no longer sets the volume (it

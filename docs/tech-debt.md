@@ -67,6 +67,7 @@ fails when this file is stale; never edit the generated lines).
 - `chimera/client/src/client/exit_drain.rs`: - The wait is capped at `MAX_WAIT`; a driver compiling longer than that still races the exit, with a warning
 - `chimera/client/src/client/hit_marker.rs`: no sound (the cvar is a switch only); a plain text glyph, no animation
 - `chimera/client/src/client/hud_minimal.rs`: the weapon is called by its id (no display-name registry in the shell); no kill feed or scoreboard (the opt-in `cl_hitmarker` works over it)
+- `chimera/client/src/client/ink_icon.rs`: the node is empty (0 wide) until its art has loaded: a row built before then gains its icon a frame later
 - `chimera/client/src/client/kill_feed.rs`: no penetration (wallbang) flag: the killing hit doesn't say whether it went through something; names are taken at the kill (a later rename doesn't...
 - `chimera/client/src/client/lobby_panel.rs`: the map preview is a gradient; the tabs are drawn but not clickable; a downloader's bytes show as a percentage only; no packet-loss mark (the...
 - `chimera/client/src/client/logo_pass.rs`: a move asked once the slab has uncovered part of the window starts a new pass from the left edge

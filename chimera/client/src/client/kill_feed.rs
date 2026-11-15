@@ -52,8 +52,9 @@
 //!   right (`expo_out`, `motion.dur.feed.enter`), lives `feed.life` (5 s),
 //!   fades out over `feed.leave`, and the rows under it close the gap
 //!   (`cubic_in_out`, `feed.close_gap`). Killer, the gun's icon
-//!   (`signal::gun_icon`: its game's own, else the kit's by class, else
-//!   its name), the headshot mark, victim; a bot's name has the robot mark.
+//!   (`signal::gun_icon`: its game's own, fitted by its ink, `ink_icon`,
+//!   1.25 cq tall, `FEED_ICON_H`; else the kit's by class, else its
+//!   name), the headshot mark (1 cq, by its ink), victim; a bot's name has the robot mark.
 //!   Your kill: accent border, bar and name; your death: a quiet white
 //!   outline and your name bright. Its rows carry the look book's names
 //!   (`chimera_ui::UiParityId`: `feed.row.<n>` from the top, from 1, and
@@ -786,7 +787,7 @@ pub mod signal_feed {
                 let drawn = e.weapon.is_some_and(|w| {
                     r.spawn((Node { margin: UiRect::horizontal(look.val(0.15)), align_items: AlignItems::Center, ..default() }, Pickable::IGNORE))
                         .with_children(|g| {
-                            if let Some(icon) = signal::gun_icon(g, look, w, class, look.px(0.78), look.tone(Tone::Fg)) {
+                            if let Some(icon) = signal::gun_icon(g, look, w, class, look.px(FEED_ICON_H), look.tone(Tone::Fg)) {
                                 g.commands().entity(icon).insert(id(".icon"));
                             }
                         });
@@ -804,7 +805,8 @@ pub mod signal_feed {
                     let game = e.weapon.and_then(|w| w.split_once(':')).map(|(g, _)| g);
                     match game.and_then(|g| look.icons.as_deref()?.mark(g, HEADSHOT)) {
                         Some(m) => {
-                            icon_slot(r, &m, look.units.height / 480.0 * 4.0, look.px(0.78), 1.0, look.images.as_deref());
+                            let h = look.px(FEED_MARK_H);
+                            crate::client::ink_icon::spawn(r, &m, h, h * 2.5, look.units.scale_factor, look.tone(Tone::Fg));
                         }
                         None => {
                             r.spawn((look.text(Role::Mono, size, look.tone(Tone::Threat), "HS"), Pickable::IGNORE));
@@ -885,6 +887,14 @@ pub fn fallback_word(e: &KillEntry, name: impl Fn(&str) -> String) -> String {
         (None, _) => "killed".into(),
     }
 }
+
+/// The Signal feed's gun icons' height in cq (the row is 1.85): their
+/// ink fitted to it (`ink_icon`), at most `signal::ICON_WIDE` times as
+/// wide. Playtest 7 found the look book's .78 too small beside the names.
+pub const FEED_ICON_H: f32 = 1.25;
+
+/// The Signal feed's headshot mark's height in cq, fitted by its ink.
+pub const FEED_MARK_H: f32 = 1.0;
 
 /// The headshot mark's name in `WeaponIcons::mark`.
 pub const HEADSHOT: &str = "headshot";

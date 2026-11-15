@@ -327,8 +327,8 @@ canvas.tickbar{position:absolute;left:0;top:0;display:block;image-rendering:pixe
 .c0 .v span{display:block;position:absolute;left:0;top:0}
 .c0 .lead .v{color:var(--acc-tx)}
 .c0 .sep{width:1px;height:1.2cqw;background:var(--fg-4);margin:0 .25cqw}
-.c0 .gi{--gh:.9cqw;color:var(--fg)}
-.c0 .gw{position:relative;height:.9cqw;width:2.8cqw}
+.c0 .gi{--gh:1.3cqw;color:var(--fg)}
+.c0 .gw{position:relative;height:1.3cqw;width:4cqw}
 .c0 .gw .gi{position:absolute;left:0;top:0}
 .c0 .mt{display:flex;gap:.18cqw;position:relative}
 .c0 .mt i{width:.66cqw;height:.32cqw;background:var(--fg-4);transform:skewX(var(--slant));display:block}
@@ -367,7 +367,7 @@ canvas.tickbar{position:absolute;left:0;top:0;display:block;image-rendering:pixe
 .sbr .tag{font-size:.42cqw;padding:.18cqw .26cqw .14cqw}
 .kf{right:2.2cqw;top:2.2cqw;width:26cqw;height:9cqw}
 .kf .e{position:absolute;right:0;top:0;height:1.95cqw;display:flex;align-items:center;gap:.6cqw;padding:0 .7cqw;font:.64cqw/1 var(--f-mono);letter-spacing:.06em;white-space:nowrap;text-transform:uppercase;background:rgb(var(--ink-rgb)/.62);box-shadow:inset 0 0 0 1px #000,0 0 0 1px rgb(0 0 0/.35);color:var(--fg)}
-.kf .e .gi{--gh:.8cqw;color:var(--fg)}
+.kf .e .gi{--gh:1.25cqw;color:var(--fg)}
 .kf .e .vi{color:rgb(var(--fg-rgb)/.55)}
 .kf .e.me{box-shadow:inset 0 0 0 1px var(--fg-2)}
 .kf .e.s1{transform:translateY(2.3cqw)}.kf .e.s2{transform:translateY(4.6cqw)}
@@ -625,7 +625,7 @@ canvas.tickbar{position:absolute;left:0;top:0;display:block;image-rendering:pixe
 /* kill feed, refined */
 .kf .e{height:1.85cqw;gap:.55cqw;padding:0 .75cqw 0 .7cqw;font:.62cqw/1 var(--f-mono);letter-spacing:.06em;background:rgb(var(--ink-rgb)/.78);box-shadow:inset 0 0 0 1px rgb(0 0 0/.85);opacity:0}
 .kf .e .ki{color:var(--fg)}
-.kf .e .gi{--gh:.78cqw;color:var(--fg);margin:0 .15cqw}
+.kf .e .gi{--gh:1.25cqw;color:var(--fg);margin:0 .15cqw}
 .kf .e .vi{color:rgb(var(--fg-rgb)/.55)}
 .kf .e.me{background:rgb(var(--ink-rgb)/.8);box-shadow:inset 0 0 0 1px var(--acc),inset .22cqw 0 0 var(--acc)}
 .kf .e.me .ki{color:var(--acc-tx)}

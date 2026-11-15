@@ -18,10 +18,15 @@
 //! - `icon_ink`: the kit's fallback icon's own bounds (its polygons').
 //! - `fit_contain`: an ink box scaled to fit inside a box (keeping its
 //!   aspect) and centred on it; `Fit::map` takes a point of the source.
+//! - `rasterize_nonzero`, `glyph_image`: a glyph's ink drawn into an image
+//!   at a pixel height (white, its coverage the alpha), cropped to the ink.
 //! - `IconInk`: the images' and glyphs' results cached by asset (a
-//!   resource; `None` until the asset has loaded, then kept).
+//!   resource; `None` until the asset has loaded, then kept), and the
+//!   glyphs' ink images by height.
 //!
-//! Used by the menu's Ladder backdrop (`party_kit::menu_backdrops`); the
+//! Used by the menu's Ladder backdrop (`party_kit::menu_backdrops`) and
+//! the Signal HUD's game icons (`chimera_client::client::ink_icon`: the
+//! kill feed, the race chip, the board, the rank-up toast); the plain
 //! kill feed's rows find an image's ink rows with it
 //! (`chimera_client::weapon_icons::ink_rows`).
 //!
@@ -300,11 +305,89 @@ pub fn tessellate_nonzero(contours: &[Vec<Vec2>]) -> Vec<[Vec2; 3]> {
     out
 }
 
-/// The images' ink boxes and the glyphs' shapes by asset (module doc).
+/// Rows a pixel `rasterize_nonzero` samples.
+const SUB_ROWS: usize = 8;
+
+/// `contours`' nonzero fill (crossing contours and holes as
+/// `tessellate_nonzero`) over the source box `ink`, as coverage (0-255) in
+/// a `w` x `h` image (row-major): the ink box is the whole image.
+pub fn rasterize_nonzero(contours: &[Vec<Vec2>], ink: Rect, w: u32, h: u32) -> Vec<u8> {
+    let (w, h) = (w.max(1), h.max(1));
+    let size = ink.size().max(Vec2::splat(1e-6));
+    let (sx, sy) = (w as f32 / size.x, h as f32 / size.y);
+    let mut acc = vec![0f32; (w * h) as usize];
+    let mut cross: Vec<(f32, i32)> = Vec::new();
+    for y in 0..h {
+        for s in 0..SUB_ROWS {
+            let py = ink.min.y + (y as f32 + (s as f32 + 0.5) / SUB_ROWS as f32) / sy;
+            cross.clear();
+            for c in contours {
+                let n = c.len();
+                for i in 0..n {
+                    let (a, b) = (c[(i + n - 1) % n], c[i]);
+                    if (a.y > py) != (b.y > py) {
+                        let x = a.x + (py - a.y) * (b.x - a.x) / (b.y - a.y);
+                        cross.push(((x - ink.min.x) * sx, if b.y > a.y { 1 } else { -1 }));
+                    }
+                }
+            }
+            cross.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let row = &mut acc[(y * w) as usize..((y + 1) * w) as usize];
+            let mut wind = 0;
+            let mut from = 0.0;
+            for &(x, d) in &cross {
+                let was = wind;
+                wind += d;
+                if was == 0 && wind != 0 {
+                    from = x;
+                } else if was != 0 && wind == 0 {
+                    let (a, b) = (from.max(0.0), x.min(w as f32));
+                    if b <= a {
+                        continue;
+                    }
+                    let (ia, ib) = (a.floor() as usize, (b.ceil() as usize).min(w as usize));
+                    for (px, cell) in row.iter_mut().enumerate().take(ib).skip(ia) {
+                        *cell += (b.min(px as f32 + 1.0) - a.max(px as f32)).max(0.0) / SUB_ROWS as f32;
+                    }
+                }
+            }
+        }
+    }
+    acc.into_iter().map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8).collect()
+}
+
+/// A glyph's ink as a white image `h` physical pixels tall (as wide as its
+/// ink box's aspect, rounded up) whose alpha is its coverage: tinted by
+/// the `ImageNode`'s colour, cropped to the ink.
+pub fn glyph_image(shape: &GlyphShape, h: u32) -> Image {
+    use bevy::{
+        asset::RenderAssetUsages,
+        render::render_resource::{Extent3d, TextureDimension},
+    };
+    let h = h.max(1);
+    let s = shape.ink.size().max(Vec2::splat(1e-6));
+    let w = (h as f32 * s.x / s.y).ceil().max(1.0) as u32;
+    let cov = rasterize_nonzero(&shape.contours, shape.ink, w, h);
+    let mut rgba = Vec::with_capacity(cov.len() * 4);
+    for c in cov {
+        rgba.extend_from_slice(&[255, 255, 255, c]);
+    }
+    Image::new(
+        Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    )
+}
+
+/// The images' ink boxes and the glyphs' shapes by asset (module doc),
+/// and the glyphs' ink images by height (`glyph_image`).
 #[derive(Resource, Default)]
 pub struct IconInk {
     images: HashMap<AssetId<Image>, Option<Rect>>,
     glyphs: HashMap<(AssetId<Font>, char), Option<Arc<GlyphShape>>>,
+    glyph_images: HashMap<(AssetId<Font>, char, u32), Handle<Image>>,
 }
 
 /// What `IconInk` found for an asset.
@@ -348,6 +431,29 @@ impl IconInk {
         };
         found.map_or(Ink::None, Ink::Found)
     }
+
+    /// Glyph `ch`'s ink image `h` physical pixels tall (`glyph_image`),
+    /// made once per height; with its shape.
+    pub fn glyph_image(
+        &mut self,
+        fonts: &Assets<Font>,
+        images: &mut Assets<Image>,
+        font: &Handle<Font>,
+        ch: char,
+        h: u32,
+    ) -> Ink<(Arc<GlyphShape>, Handle<Image>)> {
+        let shape = match self.glyph(fonts, font, ch) {
+            Ink::Found(g) => g,
+            Ink::Pending => return Ink::Pending,
+            Ink::None => return Ink::None,
+        };
+        let image = self
+            .glyph_images
+            .entry((font.id(), ch, h))
+            .or_insert_with(|| images.add(glyph_image(&shape, h)))
+            .clone();
+        Ink::Found((shape, image))
+    }
 }
 
 #[cfg(test)]
@@ -364,6 +470,21 @@ mod tests {
             v.reverse();
         }
         v
+    }
+
+    /// The raster's nonzero fill: two overlapping squares wound alike
+    /// fill their union, an opposite-wound one inside is a hole; the ink
+    /// box is the whole image.
+    #[test]
+    fn rasterized_nonzero_fills_overlaps_and_holes() {
+        let ink = Rect::new(0.0, 0.0, 4.0, 4.0);
+        let cov = |c: &[Vec<Vec2>]| -> f32 { rasterize_nonzero(c, ink, 40, 40).iter().map(|v| *v as f32 / 255.0).sum::<f32>() / 100.0 };
+        assert!((cov(&[square(0.0, 0.0, 4.0, false)]) - 16.0).abs() < 0.05);
+        assert!((cov(&[square(0.0, 0.0, 3.0, false), square(1.0, 1.0, 3.0, false)]) - 14.0).abs() < 0.05);
+        assert!((cov(&[square(0.0, 0.0, 4.0, false), square(1.0, 1.0, 2.0, true)]) - 12.0).abs() < 0.05);
+        let shape = GlyphShape { contours: vec![square(0.0, -1.0, 1.0, false)], ink: Rect::new(0.0, -1.0, 1.0, 0.0), tris: Vec::new() };
+        let img = glyph_image(&shape, 16);
+        assert_eq!((img.width(), img.height()), (16, 16), "the ink box fills the image");
     }
 
     #[test]

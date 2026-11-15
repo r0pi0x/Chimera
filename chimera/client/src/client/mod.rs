@@ -44,6 +44,7 @@ pub mod rank_toast;
 pub mod signal;
 pub mod hud_text;
 pub mod input;
+pub mod ink_icon;
 pub mod kill_feed;
 pub mod interp;
 pub mod map_screen;
