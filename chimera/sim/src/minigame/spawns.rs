@@ -730,6 +730,7 @@ pub fn walker() -> NavGenParams {
 /// jump over a low wall doesn't leave the map).
 pub fn walker_for(world: &World) -> (NavGenParams, Option<NavGenParams>) {
     let mut p = walker();
+    p.within = nav_gen::NavWithin::of(world);
     if let (Some(game), Some(climbs)) = (world.get_resource::<MapGame>(), world.get_resource::<SpawnClimbs>())
         && let Some(h) = climbs.of(&game.0)
     {

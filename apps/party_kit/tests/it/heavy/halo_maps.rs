@@ -70,13 +70,13 @@ fn every_halo_pool_map_loads_with_spawns_for_both_teams_and_free_for_all() {
 }
 
 /// Every Halo pool map's spawn points are mutually reachable on the bots'
-/// generated mesh (`spot_checks::bots_mesh`, Combat Arms' walker), its
-/// teleporters counting as links (`spot_checks::teleport_links`, as the
-/// `map_fitness` tool measures the pool): a map cut in parts only its
-/// teleporters join measures as one.
+/// generated mesh (`spot_checks::bots_mesh`, Combat Arms' walker, held to
+/// the drawn level), through its own links: walks and the map's
+/// teleporters (`nav_gen::link_map`, the graph the bots plan on): a map
+/// cut in parts only its teleporters join measures as one.
 #[test]
 fn every_halo_pool_maps_spawns_reach_each_other_through_its_teleporters() {
-    use party_kit::spot_checks::{bots_mesh, region_linked, spawn_feet, teleport_links};
+    use party_kit::spot_checks::{bots_mesh, region, spawn_feet};
     if !disc() {
         return;
     }
@@ -86,10 +86,10 @@ fn every_halo_pool_maps_spawns_reach_each_other_through_its_teleporters() {
         let w = sim.app.world_mut();
         let feet = spawn_feet(w);
         let nav = bots_mesh(w, &feet);
-        let links = teleport_links(w, &nav);
-        let (inside, starts) = region_linked(&nav, &feet, &links);
+        let links = nav.teleports.len();
+        let (inside, starts) = region(&nav, &feet);
         let off = starts.iter().filter(|s| !s.is_some_and(|a| inside[a])).count();
-        eprintln!("{id}: {} spawns, {} areas, {} teleporter links, {off} spawns off the main region", feet.len(), nav.areas.len(), links.len());
+        eprintln!("{id}: {} spawns, {} areas, {links} teleporter links, {off} spawns off the main region", feet.len(), nav.areas.len());
         if off > 0 {
             failures.push(format!("{id}: {off} of {} spawns off the main region", feet.len()));
         }

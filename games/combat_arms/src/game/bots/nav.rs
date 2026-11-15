@@ -20,6 +20,12 @@
 //! - Following: the path's points are the crossings of each link (nearest
 //!   to the walker on the shared edge, as Chimera's `crossing`), then the
 //!   destination.
+//! - Teleporters (ours: a generated mesh's `Via::Teleport` links, a map's
+//!   teleporters, `nav_gen::link_map`): searched as a link whose
+//!   connection point is the pad's source, the next area entered at the
+//!   pad's destination; followed by walking onto the source (the map's
+//!   teleporter carries the bot), then on from the destination. Other
+//!   links than walks and teleporters (a file's ladders) are not taken.
 
 use bevy::prelude::*;
 
@@ -56,10 +62,11 @@ pub fn connection(mesh: &NavMesh, from: usize, to: usize, side: Side) -> Vec3 {
 }
 
 /// A found path: the areas from the start's to the goal's, each with the
-/// side it was entered across, and the total cost (u²).
+/// link it was entered by (a walk across a side, or a teleporter), and the
+/// total cost (u²).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Path {
-    pub areas: Vec<(usize, Option<Side>)>,
+    pub areas: Vec<(usize, Option<Via>)>,
     pub cost: f32,
 }
 
@@ -81,7 +88,7 @@ pub fn find(
     }
     let mut cost = vec![f32::INFINITY; n];
     let mut entry = vec![Vec3::ZERO; n];
-    let mut parent: Vec<Option<(usize, Side)>> = vec![None; n];
+    let mut parent: Vec<Option<(usize, Via)>> = vec![None; n];
     let mut done = vec![false; n];
     cost[start] = 0.0;
     entry[start] = from / unit;
@@ -100,21 +107,31 @@ pub fn find(
             break;
         }
         for &(next, via) in &mesh.areas[cur].links {
-            let Via::Walk(side) = via else { continue };
             if done[next] {
                 continue;
             }
-            let (lo, hi) = link_ends(mesh, cur, next, side);
-            if lo.distance(hi) / unit < min_link {
-                continue;
-            }
-            let c = (lo + hi) * 0.5 / unit;
+            // The connection point, and where the next area is entered.
+            let (c, enter) = match via {
+                Via::Walk(side) => {
+                    let (lo, hi) = link_ends(mesh, cur, next, side);
+                    if lo.distance(hi) / unit < min_link {
+                        continue;
+                    }
+                    let c = (lo + hi) * 0.5 / unit;
+                    (c, c)
+                }
+                Via::Teleport(t) => {
+                    let Some(pad) = mesh.teleports.get(t) else { continue };
+                    (pad.source / unit, pad.dest / unit)
+                }
+                _ => continue,
+            };
             let step = weight(cur) * entry[cur].distance_squared(c);
             let total = cost[cur] + step;
             if total < cost[next] {
                 cost[next] = total;
-                entry[next] = c;
-                parent[next] = Some((cur, side));
+                entry[next] = enter;
+                parent[next] = Some((cur, via));
                 open.push(std::cmp::Reverse((total.to_bits(), next)));
             }
         }
@@ -133,13 +150,23 @@ pub fn find(
 }
 
 /// The points to walk along `path` from `from` to `to` (m): each link's
-/// crossing nearest the walker, then `to`.
+/// crossing nearest the walker (a teleporter's source, then its
+/// destination), then `to`.
 pub fn points(mesh: &NavMesh, path: &Path, from: Vec3, to: Vec3) -> Vec<Vec3> {
     let mut out = Vec::new();
     let mut at = from;
     for w in path.areas.windows(2) {
-        let (prev, (next, side)) = (w[0].0, w[1]);
-        let Some(side) = side else { continue };
+        let (prev, (next, via)) = (w[0].0, w[1]);
+        let side = match via {
+            Some(Via::Walk(side)) => side,
+            Some(Via::Teleport(t)) => {
+                let pad = mesh.teleports[t];
+                out.extend([pad.source, pad.dest]);
+                at = pad.dest;
+                continue;
+            }
+            _ => continue,
+        };
         let (lo, hi) = link_ends(mesh, prev, next, side);
         // Nearest point on the edge, kept a little inside its ends.
         let d = hi - lo;

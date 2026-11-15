@@ -681,7 +681,9 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     // The bots' walker (Combat Arms', jump-ups included), bounded to the
     // playable space where the map has visibility data and meeting the
     // player clips: the space players play.
-    let p = combat_arms::game::bots::brain::nav_params();
+    let mut p = combat_arms::game::bots::brain::nav_params();
+    // Held to where the map is played where it says (`nav_gen::NavWithin`).
+    p.within = nav_gen::NavWithin::of(w);
     let vis = w.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let (nav, spots) = {
         let mut state = SystemState::<SpatialQuery>::new(w);
@@ -707,7 +709,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
         s.x * s.y
     };
     row.mesh_m2 = (0..nav.areas.len()).map(size).sum();
-    row.capped = row.mesh_m2 >= 0.95 * p.max_cells as f32 * p.cell * p.cell;
+    row.capped = row.mesh_m2 >= 0.95 * p.cell_limit() as f32 * p.cell * p.cell;
     {
         let (inside, _) = region(&spots, &feet, &spot_links);
         row.spot_area_m2 = (0..spots.areas.len())

@@ -1,6 +1,7 @@
 //! Debug overlays drawn with gizmos: the nav mesh around you
 //! (`chimera_drawnav 1`: areas coloured by place, links between them,
-//! ladders and their get-on points) and ragdolls (`chimera_ragdoll_debug
+//! ladders and their get-on points, teleporters from pad to exit in
+//! magenta) and ragdolls (`chimera_ragdoll_debug
 //! 1`: each body's bounds and axes, each joint from its parent body's
 //! anchor to the child body). A game's own overlays (CS:S's bots:
 //! `games::cs_source::ui::debug`) come from its front end. `fog_enable` (the
@@ -123,6 +124,13 @@ fn draw_nav(
         };
         cross(&mut gizmos, l.bottom + l.normal * out, Color::srgb(0.3, 1.0, 0.3));
         cross(&mut gizmos, l.top - l.normal * out, Color::srgb(1.0, 0.5, 0.1));
+    }
+    // Teleporters (a generated mesh's links): pad to exit, magenta.
+    for t in &nav.teleports {
+        if views.nav == 1 && here.is_some_and(|h| h.distance(t.source).min(h.distance(t.dest)) > NAV_RADIUS) {
+            continue;
+        }
+        gizmos.line(t.source + Vec3::Y * 0.2, t.dest + Vec3::Y * 0.2, Color::srgb(1.0, 0.2, 1.0));
     }
 }
 
