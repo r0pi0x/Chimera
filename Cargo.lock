@@ -2418,6 +2418,7 @@ name = "blam_formats"
 version = "0.1.0"
 dependencies = [
  "chimera_vfs",
+ "flate2",
  "toml",
 ]
 
