@@ -24,6 +24,15 @@
 # install outside Steam's libraries needs this or CHIMERA_HL2DM_ROOT.
 # path = "~/games/hl2dm"
 
+# [games.tf2]
+# Folder containing tf/, hl2/ and platform/: the retail client, Steam app
+# 440 (textures, sounds), found in Steam's libraries without this line; or
+# CHIMERA_TF2_ROOT for one run. A dedicated server's folder (SteamCMD app
+# 232250) mounts too, but lacks the texture and sound archives: its maps
+# load and play with stand-in textures and no sound
+# (docs/assets-for-developers.md).
+# path = "~/games/tf2"
+
 [games.combat_arms]
 # Folder containing the game (only with the local Combat Arms loader).
 path = "~/games/combat-arms-classic"

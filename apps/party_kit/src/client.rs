@@ -51,7 +51,7 @@ pub fn client_hooks() -> AppHooks {
 }
 
 /// The bytes of map `id`'s file as this app loads it, for the network's
-/// map check (`net::maps::MapFiles`): a CS:S or HL2:DM map's, from the
+/// map check (`net::maps::MapFiles`): a CS:S, HL2:DM or TF2 map's, from the
 /// install (or the asset store standing in for it). Combat Arms' maps have
 /// no file of their own (the server offers them by id and hash only:
 /// `net::maps`), so a client loads them by id. Without this a client
@@ -66,6 +66,7 @@ pub fn map_file_bytes(id: &str) -> Option<Vec<u8>> {
     match game {
         cs_source::game::GAME => cs_source::game::mount::open(&cs_source::game::INFO.install()?).ok()?.read(&file).ok(),
         hl2dm::game::GAME => hl2dm::game::mount::open(&hl2dm::game::INFO.install()?).ok()?.read(&file).ok(),
+        tf2::game::GAME => tf2::game::mount::open(&tf2::game::INFO.install()?).ok()?.read(&file).ok(),
         _ => None,
     }
 }
@@ -319,11 +320,12 @@ pub const PARTY: GameApp = GameApp {
         load_file: |id, _, _| Err(format!("{id}: Lucker Party loads maps by id only, not from a file")),
         file_bytes: map_file_bytes,
     },
-    // Every install as `cs_source://`, `hl2dm://` and `combat_arms://`
-    // assets.
+    // Every install as `cs_source://`, `hl2dm://`, `tf2://` and
+    // `combat_arms://` assets.
     installs: || {
         super::GUESTS
             .iter()
+            .chain(super::MAP_GAMES.iter())
             .map(|b| chimera_present::assets::InstallSource::of(b.info))
             .chain([chimera_present::assets::InstallSource::shared(
                 combat_arms::game::INFO.id,
@@ -459,6 +461,7 @@ pub fn map_installed(id: &str) -> bool {
         Some(cs_source::game::GAME) => &cs_source::game::INFO,
         Some(combat_arms::game::GAME) => &combat_arms::game::INFO,
         Some(hl2dm::game::GAME) => &hl2dm::game::INFO,
+        Some(tf2::game::GAME) => &tf2::game::INFO,
         _ => return true,
     };
     info.install().is_some() && !info.served_alone()

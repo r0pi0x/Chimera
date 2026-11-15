@@ -28,6 +28,8 @@ chimera_client = { workspace = true, optional = true }
 chimera_ui = { workspace = true, optional = true }
 cs_source.workspace = true
 hl2dm.workspace = true
+# Team Fortress 2's maps (`MAP_GAMES`; docs/plans/active/tf2.md, M1).
+tf2.workspace = true
 source_logic.workspace = true
 combat_arms.workspace = true
 originals.workspace = true
@@ -84,7 +86,7 @@ tools = []
 # and both games' front ends (`combat_arms/ui`; `cs_source/ui` for CS:S's
 # HUD, shown to a player holding a CS:S gun): everything but the
 # dedicated server.
-present = ["dep:chimera_present", "dep:chimera_client", "dep:chimera_ui", "combat_arms/ui", "cs_source/ui", "hl2dm/ui"]
+present = ["dep:chimera_present", "dep:chimera_client", "dep:chimera_ui", "combat_arms/ui", "cs_source/ui", "hl2dm/ui", "tf2/ui"]
 
 # Faster iteration: link Bevy as a dynamic library, serve the remote
 # protocol. `cargo run --features dev --bin lucker_party`. Never for
@@ -99,6 +101,7 @@ dev = [
     "chimera_ui?/dev",
     "cs_source/dev",
     "hl2dm/dev",
+    "tf2/dev",
     "source_logic/dev",
     "combat_arms/dev",
     "originals/dev",

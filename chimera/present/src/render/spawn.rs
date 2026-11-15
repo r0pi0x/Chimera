@@ -1131,7 +1131,8 @@ fn lit_world_material(
             selfillum_tint: m.selfillum.map_or(Vec4::ONE, |s| Vec3::from_array(s.tint).extend(1.0)),
             fog_color: fog_color(material_fog(data, view, m.skybox).as_ref()),
             fog_range: fog_range(material_fog(data, view, m.skybox).as_ref()),
-            bumped: if bumped { 1.0 } else { 0.0 },
+            // 2: a self-shadowed bump map's (`MapMesh::ssbump`).
+            bumped: if bumped && m.ssbump { 2.0 } else if bumped { 1.0 } else { 0.0 },
             normal_g_sign: g_sign,
             normal_x_sign: chimera_core::env::var("CHIMERA_NORMAL_X_SIGN")
                 .ok()

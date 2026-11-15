@@ -126,11 +126,18 @@ pub static GUESTS: [&GameBundle; 2] = [&cs_source::game::BUNDLE, &hl2dm::game::B
 /// The base game's bundle.
 pub static BASE: &GameBundle = &combat_arms::game::BUNDLE;
 
+/// Games whose maps alone the party plays, by id (`tf2:ctf_2fort`): they
+/// lend no parts yet, so they aren't `GUESTS` (an automatic ladder, the
+/// binds, the startup fetch of every composed game's files leave them
+/// out). TF2 (docs/plans/active/tf2.md, M1: its maps; its guns come with
+/// M2, when it joins `GUESTS`).
+pub static MAP_GAMES: [&GameBundle; 1] = [&tf2::game::BUNDLE];
+
 /// Every game the party composes: the guests, then the base.
 pub static BUNDLES: [&GameBundle; 3] = [GUESTS[0], GUESTS[1], BASE];
 
 /// CS:S's spawn teams as Combat Arms': terrorists (1) Alpha, counter-
-/// terrorists (2) Bravo.
+/// terrorists (2) Bravo; TF2's the same way: RED (1) Alpha, BLU (2) Bravo.
 pub const TEAMS: &[SpawnTeams] = &[
     SpawnTeams {
         game: cs_source::game::GAME,
@@ -142,9 +149,19 @@ pub const TEAMS: &[SpawnTeams] = &[
         from: 2,
         to: combat_arms::game::rules::state::BRAVO,
     },
+    SpawnTeams {
+        game: tf2::game::GAME,
+        from: 1,
+        to: combat_arms::game::rules::state::ALPHA,
+    },
+    SpawnTeams {
+        game: tf2::game::GAME,
+        from: 2,
+        to: combat_arms::game::rules::state::BRAVO,
+    },
 ];
 
-/// The Source games' surfaces (CS:S's and HL2:DM's: Source's names and
+/// The Source games' surfaces (CS:S's, HL2:DM's and TF2's: Source's names and
 /// material letters) as Combat Arms' surface types: the mashup's table.
 pub const SURFACES: &[SurfaceTable] = &[
     SurfaceTable {
@@ -154,6 +171,11 @@ pub const SURFACES: &[SurfaceTable] = &[
     },
     SurfaceTable {
         map: hl2dm::game::GAME,
+        gameplay: combat_arms::game::GAME,
+        text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
+    },
+    SurfaceTable {
+        map: tf2::game::GAME,
         gameplay: combat_arms::game::GAME,
         text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
     },
@@ -169,7 +191,7 @@ pub static GUEST_DRESSING: [&MapDressing; 2] = [GUESTS[0].guest.unwrap(), GUESTS
 /// Where this app's maps come from (a bare map name is the first guest's,
 /// CS:S's) and whose gameplay dresses them.
 pub static MAP_SOURCES: MapSources = MapSources {
-    loaders: &[GUESTS[0].loader, GUESTS[1].loader, BASE.loader],
+    loaders: &[GUESTS[0].loader, GUESTS[1].loader, MAP_GAMES[0].loader, BASE.loader],
     gameplay: Some(&combat_arms::game::world::DRESSING),
     teams: TEAMS,
     surfaces: SURFACES,
@@ -270,6 +292,11 @@ impl Plugin for PartyPartsPlugin {
         // play on Chimera's generic driver with its game's rules (Combat
         // Arms' driver lets go of a character holding another game's gun).
         for bundle in GUESTS {
+            (bundle.sim)(app);
+        }
+        // The games whose maps alone it plays: registered (their installs,
+        // map files), their maps' logic.
+        for bundle in MAP_GAMES {
             (bundle.sim)(app);
         }
         add_view_model_fovs(app);
