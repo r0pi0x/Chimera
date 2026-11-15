@@ -42,6 +42,8 @@
 //! - `game_type`: the saved game variant record and the 26 stock game types.
 //! - `weapon`: the weapon tag (the item and object layers, magazines,
 //!   triggers) and the pure formulas on its fields.
+//! - `hud`: the HUD tags (unit, weapon and grenade HUD interfaces, the HUD
+//!   globals and the HUD number tag).
 
 pub mod animation;
 pub mod bitmap;
@@ -58,5 +60,6 @@ pub mod vitality;
 pub mod globals;
 pub mod game_type;
 pub mod weapon;
+pub mod hud;
 pub mod sound;
 pub mod structure_bsp;
