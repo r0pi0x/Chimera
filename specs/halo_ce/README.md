@@ -43,7 +43,7 @@ port adds the ones below.
 | [structure_bsp.md](structure_bsp.md) | 1 | draft | the level's render geometry, lightmaps, clusters and visibility |
 | [collision.md](collision.md) | 1 | draft | collision BSPs and how a trace walks them |
 | [models.md](models.md) | 1 | draft | render models |
-| shaders.md | 1 | planned | the shader classes and what each draws |
+| [shaders.md](shaders.md) | 1 | draft | the shader classes and what each draws |
 | [scenario.md](scenario.md) | 1 | draft | spawns, netgame equipment, object placements, the sky |
 | sounds.md | 1 | planned | sound tags and the Xbox's compressed format |
 | animations.md | 1 | planned | animation graphs and compressed node animations |
