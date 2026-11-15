@@ -58,6 +58,7 @@ pub mod logo_pass;
 pub mod net;
 pub mod net_graph;
 pub mod night_vision;
+pub mod screen_post;
 pub mod offscreen;
 pub mod frame_metrics;
 pub mod memory;
@@ -579,6 +580,7 @@ impl PluginGroup for ClientPlugins {
             .add(ui_sound::UiSoundPlugin)
             .add(ui_cues::UiCuesPlugin)
             .add(gamma::GammaPlugin)
+            .add(screen_post::ScreenPostClientPlugin)
             .add(night_vision::NightVisionPlugin)
             .add(ShellCameraPlugin)
     }
@@ -802,6 +804,7 @@ pub fn zoom_camera(
     zoomed: Query<&crate::weapon::Zoomed>,
     mut cameras: Query<&mut Projection, With<FirstPersonCamera>>,
     player_fov: Option<Res<video::PlayerFov>>,
+    effects: Option<Res<screen_post::ViewEffects>>,
 ) {
     // Spectating in first person: the target's zoom; otherwise none.
     let zoom = match spectate::target_zoom(&spectating, &zoomed) {
@@ -810,7 +813,7 @@ pub fn zoom_camera(
         None => player.and_then(|z| z.map(|z| z.fov)),
     };
     let fov_43 = zoom.unwrap_or_else(|| player_fov.map_or(90.0, |f| f.0));
-    let fov = crate::map::view_model::vertical_fov(fov_43).to_radians();
+    let fov = (crate::map::view_model::vertical_fov(fov_43) + effects.map_or(0.0, |e| e.fov)).to_radians();
     for mut projection in &mut cameras {
         if let Projection::Perspective(p) = projection.as_ref()
             && (p.fov - fov).abs() > 1e-6
@@ -841,6 +844,7 @@ fn follow_eye(
     >,
     mut cameras: Query<&mut Transform, With<FirstPersonCamera>>,
     shake: Res<senses::ViewShake>,
+    effects: Res<screen_post::ViewEffects>,
     mode: Res<view::CameraMode>,
     free: Res<input::FreeLook>,
     mut freecam: ResMut<view::FreeCam>,
@@ -922,7 +926,7 @@ fn follow_eye(
         let mut cams = cameras.iter_many_mut(children).matched();
         // Blasts shake the eye's view (not a detached camera's).
         let (offset, look) = if watched.is_none() && freecam.mode == 0 && spectating.pose.is_none() && camera.is_none() {
-            (offset + shake.offset, look * Quat::from_rotation_z(shake.roll))
+            (offset + shake.offset, look * Quat::from_rotation_z(shake.roll + effects.roll))
         } else {
             (offset, look)
         };

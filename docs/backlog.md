@@ -1150,6 +1150,19 @@ the original's own behaviour isn't a bug (say so instead).
   the screen there, the stock `ZoomSpriteScale` is larger (the spec
   session couldn't read it: Open question 4) and the per-scope values
   want reading. The range readout stays a stretched HUD item.
+- **Combat Arms spec follow-ups of 2026-11-14: landed, confirm in a
+  playtest.** Zoom sounds on every accepted press and on the instant
+  reset while zoomed (local only); the focus blur with the `Shader`
+  option on (Chimera's `render::screen_post`; the 50 % grey mix is the
+  spec's inference, weapon_classes.md Open question 15: compare a
+  saturated colour inside the lens with `Shader` on and off); burn and
+  poison screen effects from the install's `damagefx.txt` (the server's
+  0.5 s pass, `CaProgress`, net54); kill call-outs from
+  `autocastsound.txt`; the stock hit-sphere priorities; the multi-kill
+  count kept through death. Left: the damage effects' third-person and
+  first-person effect groups and sprinkles, the Fireteam HUD picture
+  (no mode with that HUD yet), infected poison entries, a first-person
+  spectator's zoom sounds and blur.
 - **CS:S guns left no bullet holes on CS:S maps** (de_dust2; Combat
   Arms guns' did): the party loads CS:S's maps for Combat Arms'
   gameplay, so their kit was stripped (`GameKit::stay`) and its impact

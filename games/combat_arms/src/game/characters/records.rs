@@ -315,8 +315,9 @@ pub struct SphereRecord {
 }
 
 /// A skeleton's hit priority by location, for spheres that give none
-/// (the stock values are an open question, weapon_firing.md Corrections
-/// 5: ours rank the torso first).
+/// (weapon_firing.md Follow-up (2026-11-14) 2 and 3: 0.25 for every
+/// sphere of the stock male and female tables but the head, neck and
+/// torso ones, which carry their own).
 #[derive(Deserialize, Clone, Copy, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct HitPriority {

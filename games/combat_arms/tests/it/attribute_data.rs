@@ -677,7 +677,7 @@ fn case_33_node_priority_read() {
     let male = *combat_arms::game::weapons::MALE;
     let head = male.iter().find(|s| s.name == "Head").unwrap();
     let chest = male.iter().find(|s| s.name == "Upper_torso").unwrap();
-    assert!(chest.priority > head.priority, "ours: the torso first");
+    assert!(head.priority > chest.priority, "the stock table: the head first (weapon_firing.md Follow-up 2026-11-14)");
 }
 
 /// 34. Burst defaults: a record with `TripleShotMode=1` and no other

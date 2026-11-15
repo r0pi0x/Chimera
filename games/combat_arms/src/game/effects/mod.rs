@@ -141,8 +141,8 @@
 //! - Others' footstep animation rate is 1 by the spec (characters.md 7),
 //!   not for lack of animations (the stock bodies' load); a network client
 //!   takes others' gait from their movement state as replicated.
-//! - Kill call-outs are rules only (`rules::callouts`): the voice sets'
-//!   files aren't named; map `SoundFX` objects are `music::ambient`'s
+//! - Kill call-outs are `kill_callout`'s (the install's team auto-cast
+//!   records); map `SoundFX` objects are `music::ambient`'s
 //!   (`rules::SoundFxState` keeps the rules' view of them); a playing
 //!   sound's gain isn't updated as the listener moves and no 255-sound cap
 //!   is kept (Chimera's one-shots: `rules::PlayingSound`, `LiveSounds`
@@ -157,6 +157,7 @@ pub mod bomb;
 pub mod data;
 pub mod debris;
 pub mod fx;
+pub mod kill_callout;
 pub mod library;
 pub mod rules;
 pub mod sounds;
@@ -317,6 +318,21 @@ impl Plugin for CaEffectsPlugin {
         use crate::{map::impact::SurfaceClassesAppExt, net::NetAppExt, weapon::impact::ImpactAppExt};
         app.on_every_character::<OthersSteps>();
         app.net_part("combat_arms_flight_looks", attached::register);
+        // Kill call-outs (`kill_callout`): the install's records, and the
+        // server's message to a team.
+        let callouts = kill_callout::CaTeamCallouts::load(&crate::game::data::CaData::of(app));
+        app.insert_resource(callouts)
+            .add_message::<kill_callout::CaTeamCallout>()
+            .add_systems(
+                FixedLast,
+                // After the tick's deaths; it reads them and queues its
+                // sends: either order against the other systems is right.
+                kill_callout::send.ambiguous_with_all().run_if(authoritative),
+            );
+        app.net_part("combat_arms_kill_callout", |app| {
+            use bevy_replicon::prelude::{Channel, ServerMessageAppExt};
+            app.add_mapped_server_message::<kill_callout::CaTeamCallout>(Channel::Ordered);
+        });
         app.net_part("combat_arms_debris", |app| {
             use bevy_replicon::prelude::{Channel, ServerMessageAppExt};
             app.add_server_message::<debris::CaDebris>(Channel::Ordered);
@@ -354,6 +370,7 @@ impl Plugin for CaEffectsPlugin {
         .add_message::<debris::CaDebris>()
         .add_message::<crate::game::grenades::CaBlastSurface>()
         .add_message::<CaSound>()
+        .add_message::<crate::game::weapons::CaZoomSound>()
         .add_message::<CaFxRequest>()
         .add_message::<RemoteShot>()
         .add_message::<crate::map::GameSound>()
@@ -375,8 +392,8 @@ impl Plugin for CaEffectsPlugin {
                 remember_weapons,
                 shot_effects,
                 forget_weapons,
-                key_sounds,
-                crate::game::grenades::callout::hear,
+                (key_sounds, zoom_sounds),
+                (crate::game::grenades::callout::hear, kill_callout::hear),
                 (grenade_effects, turret_shots).chain(),
                 bomb::bomb_effects,
                 footsteps,
@@ -403,6 +420,20 @@ impl Plugin for CaEffectsPlugin {
                 .in_set(CaEffectsSet)
                 .before(sounds::play),
         );
+    }
+}
+
+/// The zoom steps' sounds (weapon_classes.md Follow-up (2026-11-14) 2):
+/// local, default volume, heard by the zooming player only.
+fn zoom_sounds(
+    mut steps: MessageReader<crate::game::weapons::CaZoomSound>,
+    local: Query<(), With<crate::core::LocalPlayer>>,
+    mut sounds: MessageWriter<CaSound>,
+) {
+    for s in steps.read() {
+        if local.contains(s.owner) {
+            sounds.write(CaSound::local(&s.file));
+        }
     }
 }
 

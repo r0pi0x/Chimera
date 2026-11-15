@@ -65,7 +65,17 @@ impl Plugin for SimBasePlugins {
             .add_plugins(game_log::GameLogPlugin)
             .add_plugins(weapon::WeaponPlugin)
             .add_plugins(announce::AnnouncePlugin)
-            .add_plugins(dominations::DominationsPlugin);
+            .add_plugins(dominations::DominationsPlugin)
+            // The mode's end of mission resets the multi-kill counts
+            // (kill_streaks.md A1): here, as the announcer and the mode
+            // runtime may not name each other.
+            .add_observer(|step: On<mode::ModeStep>, counter: Option<ResMut<announce::KillCounter<Entity>>>| {
+                if step.0 == mode::FlowEvent::ResetStats
+                    && let Some(mut counter) = counter
+                {
+                    counter.end_mission();
+                }
+            });
         map_cache_cvar(app);
     }
 }

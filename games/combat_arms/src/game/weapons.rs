@@ -183,10 +183,8 @@
 //!   the rounds' tick times (the client's timestamps). The server's clip
 //!   isn't separate: a shot dropped in its reload window spends the
 //!   client's round, and nothing refills at the window's end.
-//! - The hit priorities (`Node#Priority`) are ours by location
-//!   (data/characters.toml `hit_priority`: torso and groin 3, head 2,
-//!   limbs 1; the stock values are unknown). A wall-bang's band is applied
-//!   twice at the real distance (Q13's recommendation for the first).
+//! - A wall-bang's band is applied twice at the real distance (Q13's
+//!   recommendation for the first).
 //! - The side direction is drawn at the first side kick (the game draws it
 //!   as the player enters the map), from the command's shared random.
 //! - The spread runs per tick (the spec's per frame), its sub-steps on an
@@ -263,7 +261,7 @@ use super::attachments::{CaNpc, CaSpecialRoll, DamageMods, RecoilMods, SpecialKi
 
 pub use self::{
     classes::{ALT_FIRE, CaAltFire, CaAltVolley, CaSpin, CarryOver, PelletCarryOver, SPIN, SpinParams, SpinState, reported_hits},
-    zoom::{CaZoom, Scope, Sway, ZOOM, ZoomParams},
+    zoom::{CaFocusBlur, CaZoom, CaZoomSound, Scope, Sway, ZOOM, ZoomParams},
 };
 
 /// The M4A1 (data/weapons/m4a1.toml): the rifle players start with.
@@ -1184,7 +1182,8 @@ pub struct HitSphere {
     /// The skeleton (`characters::records` index: 0 male, 1 female).
     pub skeleton: usize,
     /// `Node#Priority`: the server's own walk picks the highest
-    /// (`priority_sphere`; data/characters.toml, ours by location).
+    /// (`priority_sphere`; data/characters.toml: weapon_firing.md
+    /// Follow-up (2026-11-14) 2 and 3, the install's for other tables).
     pub priority: f32,
 }
 
@@ -1835,6 +1834,9 @@ impl Plugin for CaWeaponsPlugin {
             .init_resource::<CaAiDamage>()
             .insert_resource(CaSurfaces::built_in().clone())
             .add_message::<WeaponEvent>()
+            .add_message::<zoom::CaZoomSound>()
+            .init_resource::<zoom::CaFocusBlur>()
+            .add_systems(Update, zoom::focus_blur)
             .add_message::<Damage>()
             .init_resource::<PelletCarryOver>()
             .add_systems(
@@ -2523,6 +2525,7 @@ fn after_shots(
             Option<&mut CaKick>,
             Option<&crate::weapon::impact::RecoilGame>,
             Option<&mut ViewBackPush>,
+            Option<&super::damage_fx::CaProgress>,
         ),
     >,
     mut weapons: Query<(
@@ -2540,6 +2543,7 @@ fn after_shots(
     clock: Res<SimClock>,
     scales: Res<SpreadScales>,
     (options, carry_over, server_settings): (Res<SpreadOptions>, Res<PelletCarryOver>, Res<CaServerSettings>),
+    fx_table: Option<Res<super::damage_fx::CaDamageFxTable>>,
     mut commands: Commands,
 ) {
     let now = clock.now;
@@ -2695,7 +2699,7 @@ fn after_shots(
     let dt = clock.dt();
     // The back push's offset (units) as the camera's metres.
     let back_metres = BACK_PUSH_SCALE * super::inventory::UNIT;
-    for (owner, inv, intent, state, vel, mut punch, ca_move, kick, recoil_game, push) in &mut owners {
+    for (owner, inv, intent, state, vel, mut punch, ca_move, kick, recoil_game, push, progress) in &mut owners {
         let active = inv.active.and_then(|a| weapons.get_mut(a).ok().map(|w| (a, w)));
         let (recoil, mode, burst_mode) = match &active {
             Some((_, (_, _, recoil, _, modes, burst, zoom, ca_zoom))) => {
@@ -2747,6 +2751,9 @@ fn after_shots(
                 punch: punch.as_deref(),
                 mode,
                 fired: !mine.is_empty(),
+                forced: progress
+                    .zip(fx_table.as_deref())
+                    .is_some_and(|(p, t)| super::damage_fx::forces_spread(t, p)),
                 now,
                 dt,
             };
@@ -2840,6 +2847,10 @@ struct SpreadTick<'a> {
     punch: Option<&'a ViewPunch>,
     mode: FireMode,
     fired: bool,
+    /// A poison or stun screen effect runs while its type deals damage
+    /// (effects_sounds.md Follow-up (2026-11-14) 4, `damage_fx::
+    /// forces_spread`): mu S is 1.
+    forced: bool,
     now: f64,
     dt: f32,
 }
@@ -2900,7 +2911,13 @@ fn step_spread(s: &mut CaSpread, scales: &SpreadScales, options: &SpreadOptions,
         None => WALK_SPEED,
     };
     let mu = movement_fraction(k.velocity.length() / s.unit, vmax);
-    let mu_s = if state.on_ladder { target } else { mu * target };
+    let mu_s = if k.forced {
+        1.0
+    } else if state.on_ladder {
+        target
+    } else {
+        mu * target
+    };
     s.clock += k.dt as f64;
     let mut n = ((s.clock / SPREAD_SUBSTEP + 1e-9).floor() as u32).min(SPREAD_SUBSTEP_MAX);
     if n > 0 {

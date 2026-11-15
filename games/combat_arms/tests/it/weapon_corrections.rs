@@ -1041,3 +1041,57 @@ fn es94_unknown_in_the_surface_table() {
         close(s.damage, damage, 0.0, name);
     }
 }
+
+/// The table entry `priority_sphere` picks of `table` when the line
+/// passes within the spheres named `on` only (they sit on the line, every
+/// other entry far off), as (name, location, factor).
+fn picked(table: &[HitSphere], on: &[&str]) -> (&'static str, ca::Location, f32) {
+    let spheres: Vec<(Vec3, f32)> = table
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let at = if on.contains(&s.name) {
+                Vec3::new(0.0, 0.0, i as f32)
+            } else {
+                Vec3::new(1000.0 + 50.0 * i as f32, 0.0, 0.0)
+            };
+            (at, s.radius.max(1.0))
+        })
+        .collect();
+    let i = ca::priority_sphere(&spheres, table, Vec3::new(0.0, 0.0, -100.0), Vec3::Z).expect("a sphere on the line");
+    (table[i].name, table[i].location, table[i].factor)
+}
+
+/// weapon_firing.md 71-73 (Follow-up 2026-11-14, node hit priorities):
+/// the male table's own priorities. Face over chest (a head hit, x6: 35 x
+/// 0.5 x 6 = 105 through wood); neck over chest (torso, x1: 17.5); a tie
+/// goes to the later entry (`Face_Eyelid1` over `Face_Jaw` and `Neck`;
+/// `Left_legu` over `left_hand`: 17.5 x 0.9).
+#[test]
+fn t71_73_male_priorities() {
+    let male: &[HitSphere] = &MALE;
+    let (name, location, factor) = picked(male, &["Face_Jaw", "Upper_torso"]);
+    assert_eq!((name, location), ("Face_Jaw", ca::Location::Head));
+    close(35.0 * 0.5 * factor, 105.0, 1e-4, "71: through wood");
+    let (name, location, factor) = picked(male, &["Neck", "Upper_torso"]);
+    assert_eq!((name, location), ("Neck", ca::Location::Torso));
+    close(35.0 * 0.5 * factor, 17.5, 1e-4, "72");
+    assert_eq!(picked(male, &["Neck", "Face_Jaw", "Face_Eyelid1"]).0, "Face_Eyelid1", "73: a tie, the later");
+    let (name, _, factor) = picked(male, &["left_hand", "Left_legu"]);
+    assert_eq!(name, "Left_legu", "73: the later of two 0.25 entries");
+    close(35.0 * 0.5 * factor, 15.75, 1e-4, "73");
+    // The table's values (Follow-up 2).
+    for (n, p) in [("Head", 1.0), ("Neck", 0.75), ("Face_Jaw", 0.75), ("Face_Eyelid1", 0.75), ("Torso", 0.5), ("Upper_torso", 0.5), ("Nuts", 0.25), ("Right_hand", 0.25)] {
+        assert_eq!(ca::male(n).priority, p, "{n}");
+    }
+}
+
+/// weapon_firing.md 74: the female table. Chest over a 3 u torso helper;
+/// of `Bip01 Head` and `Headfuck` (both 1.0) the later, factor 6.
+#[test]
+fn t74_female_priorities() {
+    let female: &[HitSphere] = &ca::FEMALE;
+    assert_eq!(picked(female, &["Upper_torso", "Bone_r_Clavicle01"]).0, "Upper_torso");
+    let (name, location, factor) = picked(female, &["Bip01 Head", "Headfuck"]);
+    assert_eq!((name, location, factor), ("Headfuck", ca::Location::Head, 6.0));
+}

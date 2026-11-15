@@ -15,14 +15,19 @@
 //!
 //! - Teammates' kills and suicides neither count nor reset (A1).
 //! - The killer's kill total (`KillFacts::total`) runs for the map.
-//! - The first kill and the counts start again with each round
-//!   (`core::RoundRestarts`) and map.
+//! - The first kill starts again with each round (`core::RoundRestarts`)
+//!   and map. The multi-kill counts and last-kill times (A1, answered
+//!   2026-11-14) start again only for a player who joins (a new entity),
+//!   at a map, and at the mode's end of mission (`KillCounter::
+//!   end_mission`, on the mode runtime's statistics reset, `ModeStep(
+//!   FlowEvent::ResetStats)`, which every mission start of a mode run by
+//!   the mode runtime raises: the crate root's `SimBasePlugins` observes
+//!   it, as neither layer may name the other); the killer's death and
+//!   respawn and a new round leave them (case 57).
 //!
 //! Known shortcuts: the kill total (`KillFacts::total`) is this counter's
 //! enemy kills per killer for the map, not a scoreboard entry (no
-//! training-round or Bounty Hunter exceptions); whether the killer's own death resets the count is
-//! open (kill_streaks.md Open question 2: the spec found nothing and
-//! gives no reason to think it does, so it doesn't here; tested); a
+//! training-round or Bounty Hunter exceptions); a
 //! knife's groin kill counts as a nutshot though the spec names no
 //! knife callout (its hit location is the killing hit's, melee not among
 //! the damage that can't headshot); Combat Arms' female skeleton data has
@@ -128,9 +133,15 @@ impl<K: Ord + Copy + Send + Sync + 'static> KillCounter<K> {
         Counted { multi, first, revenge, total: *total }
     }
 
-    /// A new round: the first kill again, counts from nothing.
+    /// A new round: the first kill again (the multi-kill counts carry on,
+    /// A1).
     pub fn new_round(&mut self) {
         self.first_done = false;
+    }
+
+    /// The mode's end of mission (A1): every player's multi-kill count and
+    /// last-kill time from nothing.
+    pub fn end_mission(&mut self) {
         self.streaks.clear();
     }
 
@@ -332,6 +343,23 @@ mod tests {
         // Killed at 1 s (by 2, a kill of 2's), killing again at 3 s.
         c.enemy_kill(2, 1, 1.0, W, 2);
         assert_eq!(kill(&mut c, 3.0).multi, 2);
+    }
+
+    /// Case 57: a kill at 0, the killer dies at 1.0 and respawns, kills
+    /// again at 4.5 → a double kill; at 5.0 → 1. A new round leaves the
+    /// count too; the end of the mission resets it.
+    #[test]
+    fn case_57_death_and_rounds_leave_the_count() {
+        let mut c = KillCounter::default();
+        kill(&mut c, 0.0);
+        c.enemy_kill(2, 1, 1.0, W, 2);
+        let mut d = c.clone();
+        assert_eq!(kill(&mut c, 4.5).multi, 2);
+        assert_eq!(kill(&mut d, 5.0).multi, 1, "the window");
+        c.new_round();
+        assert_eq!(kill(&mut c, 6.0).multi, 3, "a round leaves it");
+        c.end_mission();
+        assert_eq!(kill(&mut c, 7.0).multi, 1, "the mission's end resets it");
     }
 
     /// Head and groin from the gun's region; a groin shot's damage reads

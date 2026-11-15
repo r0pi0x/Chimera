@@ -96,6 +96,7 @@ impl Plugin for NightVisionPlugin {
                     .after(tonemapping)
                     .after(super::hdr::SourceTonemapSet)
                     .after(super::color_correction::ColorCorrectionSet)
+                    .after(crate::render::screen_post::ScreenPostSet)
                     .in_set(Core3dSystems::PostProcess),
             );
     }

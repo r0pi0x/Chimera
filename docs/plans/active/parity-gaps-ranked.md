@@ -90,13 +90,6 @@ and back push, HL2:DM's items, crates, prop rules and blast hearing).
     the models' ~107/150/67; no death layer). Spec:
     cs_source/animation.md 12, open questions. Code:
     `games/cs_source/src/game/player_anim.rs`. M. Capture C14.
-31. **Combat Arms: scopes silent, no focus blur** (`FocusTex`). Spec:
-    combat_arms/weapon_classes.md zoom; attachments.md (zoom sounds not
-    named). Code: `game/weapons/zoom.rs`, `ui/scope.rs`. S-M. Spec: the
-    zoom sound files.
-32. **Combat Arms: no burn or poison screen effects.** Spec:
-    combat_arms/effects_sounds.md Q26. Code: missing
-    (`game/volumes.rs` notes it). M. Spec: the damage-effect data.
 33. **CS:S: tracer every 4th bullet, and the damage indicator's side
     rule, are ours.** Spec: cs_source/tracers.md 1, Q1-Q2; damage
     indicator unspecified (parity-gaps.md, capture C8). Code:
@@ -122,18 +115,22 @@ settle first (a capture, a probe run or a spec session).
 | CS:S room reverb presets | blocked | cs_source/sounds.md "dsp" (presets not specified) | a spec session: the DSP preset table |
 | CS:S spread generator | done 2026-11-14 (`weapon::random::Ran1`, `deliver::cs_offsets`: bit-exact, T3b-T3d) | cs_source/weapons.md 4.2.1, 4.2.2 | none; the movement term at shot time is still unchecked (4.2.2) |
 | CS:S dominations and revenge | done 2026-11-14 (`chimera_sim::dominations`; events, own-client relationships, freeze panel, scoreboard icons) | cs_source/dominations.md | kill feed icon (Q4) and the scoreboard's layout (Q6): client captures |
-| Combat Arms kill call-out voice files (`EnemyDown`, `ManDown`) | blocked | combat_arms/effects_sounds.md 11 (rules only; no record or files named) | a spec session: the auto-cast records and their files per sound template |
-| Combat Arms hit-sphere priorities | rule done (`priority_sphere`); values ours | combat_arms/weapon_firing.md Corrections 5, Q16 | a spec session: `Node#Priority` per skeleton |
-| Combat Arms multi-kill reset on death | blocked | combat_arms/kill_streaks.md Q2 | a live check (kill, die, kill again within 5 s) |
 | HL2:DM combine camera's lock-on (amber eye, `Active`/`Angry`, flashes, clicks); the sweep, pings and glow are in (`combine_camera`) | blocked | hl2dm/maps_entities.md 14, Q2 | probe P8 for whether it locks on to players |
 
 ## Counts
 
-Do next 0, later 2, needs a spec or capture 10; lower: 0 spec-clear,
-10 blocked (the camera's lock-on joined them once its sweep landed).
+Do next 0, later 2, needs a spec or capture 8; lower: 0 spec-clear,
+6 blocked (the camera's lock-on joined them once its sweep landed).
 
 Landed from the lower list (2026-11-13): the M92FS's post-fire, the
 HL2:DM bolt's sounds, bolts through grates and breakable glass, the
 contact grenade set off when shot or blasted, the Combat Arms
 crossbow's alternate fire, HL2:DM's blood per viewer (net48), the HL2:DM combine camera's sweep,
 pings and eye glow.
+
+Landed 2026-11-14 from the Combat Arms spec follow-ups: the scopes' zoom
+sounds and the focus blur (`Shader` on; row 31), burn and poison screen
+effects from `damagefx.txt` (row 32), the kill call-outs' records and
+files read from the install, the stock hit-sphere priorities per
+skeleton, and the multi-kill count kept through death (reset at join and
+at mission end).

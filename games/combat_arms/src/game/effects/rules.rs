@@ -899,10 +899,11 @@ impl LiveSounds {
 /// The call-outs radius (u, 11).
 pub const CALLOUT_RADIUS: f32 = 1000.0;
 
-/// A death's call-outs (11, Open question 22): `EnemyDown` by the killer
-/// when the teams differ (none for a team kill or a suicide), `ManDown` by
-/// the victim's living teammate nearest the victim within 1000 u. People
-/// are (entity, team, position in u).
+/// A death's call-outs (11, Open question 22; Follow-up (2026-11-14) 7):
+/// `EnemyDown` by the killer when the teams differ (none for a team kill
+/// or a suicide; a killer with no player behind it is team 0), `ManDown`
+/// by the victim's living teammate nearest the victim, strictly closer
+/// than 1000 u. People are (entity, team, position in u).
 pub fn callouts(
     killer: Option<(Entity, u8, Vec3)>,
     victim: (Entity, u8, Vec3),
@@ -913,7 +914,7 @@ pub fn callouts(
         .iter()
         .filter(|p| p.1 == victim.1 && p.0 != victim.0)
         .map(|p| (p.0, p.2.distance(victim.2)))
-        .filter(|(_, d)| *d <= CALLOUT_RADIUS)
+        .filter(|(_, d)| *d < CALLOUT_RADIUS)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|p| p.0);
     (enemy_down, man_down)

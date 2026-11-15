@@ -1516,3 +1516,190 @@ fn a_spawn_protected_player_shows_and_takes_no_hit() {
     let lost = shoot_at(&mut sim, shooter, target, "Torso");
     assert!(lost > 0.0 && shown(&sim) > 0, "after it: {lost}");
 }
+
+// ---------------------------------------------------------------------------
+// Follow-up (2026-11-14): zoom sounds (cases 45-48 of that section)
+
+/// The zoom sounds written: (owner, file).
+#[derive(Resource, Default)]
+struct ZoomSounds(Vec<(Entity, String)>);
+
+fn log_zoom_sounds(mut steps: MessageReader<zoom::CaZoomSound>, mut log: ResMut<ZoomSounds>) {
+    log.0.extend(steps.read().map(|s| (s.owner, s.file.clone())));
+}
+
+/// The local sounds the effects played (files).
+#[derive(Resource, Default)]
+struct LocalSounds(Vec<String>);
+
+fn log_local_sounds(mut sounds: MessageReader<combat_arms::game::effects::sounds::CaSound>, mut log: ResMut<LocalSounds>) {
+    log.0.extend(sounds.read().filter(|s| s.at.is_none()).map(|s| s.file.clone()));
+}
+
+fn sound_sim() -> Sim {
+    let mut sim = new_sim();
+    sim.app
+        .init_resource::<ZoomSounds>()
+        .init_resource::<LocalSounds>()
+        .add_systems(FixedPostUpdate, log_zoom_sounds)
+        .add_systems(Last, log_local_sounds);
+    sim
+}
+
+fn zoom_sounds(sim: &mut Sim) -> Vec<(Entity, String)> {
+    std::mem::take(&mut sim.app.world_mut().resource_mut::<ZoomSounds>().0)
+}
+
+const M24_CLICK: &str = "GUNS_SND_SR\\M24\\zoom.wav";
+
+/// 45. One level: the press plays the scope part's click once on the
+/// press's tick, the zoom-out press the same file again; a press refused
+/// during a reload plays nothing.
+#[test]
+fn f45_zoom_sounds_one_level() {
+    let mut sim = sound_sim();
+    let (p, w) = holding(&mut sim, L96A1);
+    zoom_sounds(&mut sim);
+    press_zoom(&mut sim, p);
+    assert_eq!(zoom_sounds(&mut sim), vec![(p, M24_CLICK.to_string())], "zoom-in");
+    zoomed_in_wait(&mut sim, w);
+    press_zoom(&mut sim, p);
+    assert_eq!(zoom_sounds(&mut sim), vec![(p, M24_CLICK.to_string())], "zoom-out");
+    sim.seconds(0.5);
+    set_mag(&mut sim, w, 1, 20);
+    sim.intent(p).reload = true;
+    sim.ticks(1);
+    sim.intent(p).reload = false;
+    assert!(state(&sim, w).reloading());
+    zoom_sounds(&mut sim);
+    press_zoom(&mut sim, p);
+    assert_eq!(cz(&sim, w).level, 0, "refused");
+    assert!(zoom_sounds(&mut sim).is_empty(), "a refused press is silent");
+}
+
+fn zoomed_in_wait(sim: &mut Sim, w: Entity) {
+    for _ in 0..100 {
+        if cz(sim, w).transition.is_none() {
+            break;
+        }
+        sim.ticks(1);
+    }
+}
+
+/// 46. Two levels (the Barrett Scope): 0 → 1 → 2 → 0 plays in, in, out,
+/// all the M24 click.
+#[test]
+fn f46_zoom_sounds_two_levels() {
+    let mut sim = sound_sim();
+    let (p, w) = holding(&mut sim, "test:m107cq");
+    zoom_sounds(&mut sim);
+    let mut heard = Vec::new();
+    for _ in 0..3 {
+        press_zoom(&mut sim, p);
+        zoomed_in_wait(&mut sim, w);
+        heard.extend(zoom_sounds(&mut sim).into_iter().map(|(_, f)| f));
+    }
+    assert_eq!(cz(&sim, w).level, 0);
+    assert_eq!(heard, vec![M24_CLICK; 3]);
+}
+
+/// 47. The instant reset: zoomed at level 1, switching weapon → 90 degrees
+/// on that tick and the zoom-out sound once; not zoomed → no sound.
+#[test]
+fn f47_reset_sound() {
+    for zoomed in [true, false] {
+        let mut sim = sound_sim();
+        let p = player(&mut sim, Vec3::new(30.0, 1.0, 30.0), 0.0, 1.0);
+        arm(&mut sim, p, M92FS);
+        let w = arm(&mut sim, p, L96A1);
+        if zoomed {
+            zoomed_in(&mut sim, p, w);
+        }
+        zoom_sounds(&mut sim);
+        sim.intent(p).select = Some(1);
+        sim.ticks(1);
+        sim.intent(p).select = None;
+        assert_eq!(cz(&sim, w).fov, 90.0);
+        let want = if zoomed { vec![(p, M24_CLICK.to_string())] } else { vec![] };
+        assert_eq!(zoom_sounds(&mut sim), want, "zoomed {zoomed}");
+    }
+}
+
+/// 48. Who hears it: a local sound on the zooming player's machine only;
+/// another player's zoom plays nothing here.
+#[test]
+fn f48_only_the_zooming_player_hears() {
+    for local in [true, false] {
+        let mut sim = sound_sim();
+        let (a, w) = holding(&mut sim, L96A1);
+        let b = player(&mut sim, Vec3::new(30.0, 1.0, 30.0 + 100.0 * U), 0.0, 1.0);
+        let me = if local { a } else { b };
+        sim.app.world_mut().entity_mut(me).insert(chimera_core::core::LocalPlayer);
+        sim.ticks(2);
+        sim.app.world_mut().resource_mut::<LocalSounds>().0.clear();
+        press_zoom(&mut sim, a);
+        sim.ticks(1);
+        assert!(cz(&sim, w).level > 0);
+        let clicks = sim.app.world().resource::<LocalSounds>().0.iter().filter(|f| *f == M24_CLICK).count();
+        assert_eq!(clicks, usize::from(local), "A local: {local}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Follow-up (2026-11-14): the focus blur (cases 49 and 51; the kernel, 50,
+// is Chimera's: chimera_present's `render::screen_post` tests)
+
+fn blur(sim: &Sim) -> combat_arms::game::weapons::CaFocusBlur {
+    sim.app.world().resource::<combat_arms::game::weapons::CaFocusBlur>().clone()
+}
+
+fn local_with_shader(sim: &mut Sim, shader: bool) -> (Entity, Entity) {
+    let (p, w) = holding(sim, L96A1);
+    sim.app.world_mut().entity_mut(p).insert(chimera_core::core::LocalPlayer);
+    sim.app
+        .world_mut()
+        .resource_mut::<combat_arms::game::options::settings::CaSettings>()
+        .set("Shader", if shader { "1" } else { "0" });
+    (p, w)
+}
+
+/// 49. `Shader` off: zoomed, no blur (the overlay only).
+#[test]
+fn f49_no_blur_without_shaders() {
+    let mut sim = sound_sim();
+    let (p, w) = local_with_shader(&mut sim, false);
+    zoomed_in(&mut sim, p, w);
+    assert!(cz(&sim, w).level > 0);
+    assert!(!blur(&sim).on);
+}
+
+/// 51. With `Shader` on: the blur is on from the press's tick, through
+/// the zoom-out's transition, off the tick it ends; no fade. Its mask is
+/// the scope part's `FocusTex`.
+#[test]
+fn f51_blur_timing() {
+    let mut sim = sound_sim();
+    let (p, w) = local_with_shader(&mut sim, true);
+    assert!(!blur(&sim).on);
+    press_zoom(&mut sim, p);
+    assert!(blur(&sim).on, "on the press's tick");
+    let mask = cz(&sim, w).scope.unwrap().focus_tex;
+    assert!(!mask.is_empty());
+    assert_eq!(blur(&sim).mask, mask);
+    zoomed_in_wait(&mut sim, w);
+    assert!(blur(&sim).on);
+    sim.seconds(0.2);
+    press_zoom(&mut sim, p);
+    assert_eq!(cz(&sim, w).level, 0);
+    assert!(cz(&sim, w).transition.is_some());
+    assert!(blur(&sim).on, "through the zoom-out");
+    for _ in 0..100 {
+        if cz(&sim, w).transition.is_none() {
+            break;
+        }
+        assert!(blur(&sim).on);
+        sim.ticks(1);
+    }
+    assert!(!blur(&sim).on, "gone the tick the transition ends");
+    assert_eq!(blur(&sim).mask, mask, "the mask stays");
+}
