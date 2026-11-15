@@ -12,10 +12,14 @@
 //! - One local player only (no split screen: the second unit HUD, the
 //!   "split screen only" elements and the 0.5 crosshair scale are never
 //!   used).
-//! - Multitexture overlays (the sniper rifle's angle ticks) and the
-//!   screen effects' warp and night vision are not drawn; the zoom's mask
-//!   (`scope_mask`, one texel per canvas unit) is written but switched
-//!   off (`SCOPE_MASK`) until the spec settles what the pass draws.
+//! - Multitexture overlays (the sniper rifle's angle ticks) are not
+//!   drawn. Of the scopes' screen effect (section 9, `scope_mask`) only
+//!   the darkening by the mask's grey level is drawn (over the finished
+//!   scene, under the HUD, as the pass's last step): the radial blur
+//!   through the mask's alpha and the sniper's night vision (light
+//!   enhancement and desaturation) are not (the spec allows the blur to
+//!   degrade to none; both need the scene as a texture, a full-screen
+//!   pass this HUD does not have).
 //! - The sweep's compositing is ours (section 11 is inferred): the sweep
 //!   picture is added in its light blue through the disc's mask, and each
 //!   blip's brightness is scaled by the sweep's alpha where it lies.
@@ -49,6 +53,9 @@ pub enum Fill {
     /// The tracker's sweep: the picture sampled over a window of `half`
     /// about its centre, in `colour`, through `mask`.
     Sweep { colour: [f32; 3], half: f32, mask: Option<Picture> },
+    /// The scope's darkening (section 9): the frame multiplied by 1 - the
+    /// texel's grey level (its blue: Y of an A8Y8 or AY8 mask).
+    Darken,
 }
 
 /// One picture drawn: where (canvas units: left, top, right, bottom) and
@@ -83,6 +90,9 @@ pub struct Unit {
     pub throwing: bool,
     /// The current grenade type (0 frag, 1 plasma: the grenade HUD drawn).
     pub grenade_kind: usize,
+    /// The unit has no current grenade type (a new life before its first
+    /// update, or no grenades at all): no grenade HUD.
+    pub no_grenade_type: bool,
 }
 
 /// A unit the tracker may show: an id, its kind, its horizontal
@@ -258,21 +268,17 @@ fn one_window(map_type: i16) -> bool {
     matches!(map_type, 0 | 1)
 }
 
-/// Whether the zoom's mask is drawn. Off: as hud.md 9 infers it (the
-/// mask's alpha darkening the view, one texel a pixel) the sniper rifle's
-/// zoom is a window a third of the view wide in black, which the game's
-/// picture is not (the spec's open question 15: the mask is the screen
-/// effect's convolution mask). On again when the spec settles what the
-/// pass draws.
-pub const SCOPE_MASK: bool = false;
+/// Whether the zoom's mask is drawn (hud.md 9, the fourth errata: it dims,
+/// nothing is blacked out).
+pub const SCOPE_MASK: bool = true;
 
-/// The zoom's mask (section 9): the first screen effect of the weapon's HUD
-/// chain, its full-screen mask (black, alpha 255 at the rim falling to 0 in
-/// a window) one texel per pixel (a canvas unit each, scaled with the HUD)
-/// centred on the view (black whatever the texels' colour: the disc's masks
-/// are black), and the rim's colour beyond it, when zoomed or the
-/// effect's "only when zoomed" bit is clear. The warp and night vision are
-/// not drawn.
+/// The zoom's screen effect's darkening (section 9, step 5): the first
+/// screen effect of the weapon's HUD chain, when zoomed or its "only when
+/// zoomed" bit is clear: its full-screen mask one texel per 480-line pixel
+/// (a canvas unit, scaled with the HUD) centred on the view, the frame
+/// multiplied by 1 - the mask's grey level Y (0 in the window, 1 on the
+/// frame line, about 0.5 outside), and beyond the texture its edge texel
+/// (the address clamps: the disc's masks' border is Y 128 or 132).
 fn scope_mask(p: &mut Painter, chain: &[WeaponHud], zoomed: bool, canvas: &Canvas) {
     let Some(effect) = chain.iter().flat_map(|h| &h.screen_effects).next() else { return };
     if !zoomed && effect.mask_flags & 1 != 0 {
@@ -282,13 +288,14 @@ fn scope_mask(p: &mut Painter, chain: &[WeaponHud], zoomed: bool, canvas: &Canva
     let (w, h) = (mask.size[0] as i32, mask.size[1] as i32);
     let (cx, cy) = (canvas.width / 2, layout::CANVAS_HEIGHT / 2);
     let r = [cx - w / 2, cy - h / 2, cx - w / 2 + w, cy - h / 2 + h];
-    p.push(mask, r, Fill::Sprite([0.0, 0.0, 0.0, 1.0]));
-    // Beyond the mask: its corner texel (the rim: black, opaque).
-    let rim = Picture { uv: [0.0, 0.0, 1.0 / mask.size[0], 1.0 / mask.size[1]], size: [1.0, 1.0], ..mask };
+    p.push(mask, r, Fill::Darken);
+    // Beyond the mask: its corner texel (clamped addressing; the disc's
+    // masks' whole border is one grey).
+    let rim = Picture { uv: [0.25 / mask.size[0], 0.25 / mask.size[1], 0.75 / mask.size[0], 0.75 / mask.size[1]], size: [1.0, 1.0], ..mask };
     let (cw, ch) = (canvas.width, layout::CANVAS_HEIGHT);
     for b in [[0, 0, cw, r[1]], [0, r[3], cw, ch], [0, r[1], r[0], r[3]], [r[2], r[1], cw, r[3]]] {
         if b[2] > b[0] && b[3] > b[1] {
-            p.push(rim, b, Fill::Sprite([0.0, 0.0, 0.0, 1.0]));
+            p.push(rim, b, Fill::Darken);
         }
     }
 }
@@ -369,7 +376,7 @@ pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now:
         }
     }
     // 4. The grenade HUD of the current type.
-    if let Some(g) = data.grenades.get(unit.grenade_kind).or(data.grenades.first()).filter(|_| unit.alive) {
+    if let Some(g) = data.grenades.get(unit.grenade_kind).or(data.grenades.first()).filter(|_| unit.alive && !unit.no_grenade_type) {
         let anchor = Anchor::of(g.anchor);
         let count = unit.grenades;
         let flashing = count <= i32::from(g.flash_cutoff);
@@ -393,6 +400,7 @@ pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now:
         }
     }
     // 7. The unit HUD.
+    let block = p.out.len();
     let u = &data.unit;
     let anchor = Anchor::of(u.anchor);
     p.static_el(&u.background, anchor, rules::color(&u.background.colors, None, disabled_all, now));
@@ -414,8 +422,21 @@ pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now:
     p.static_el(&u.health.background, anchor, rules::color(&u.health.background.colors, start, disabled_all, now));
     // The motion tracker, anchored bottom left.
     let sensor = Anchor::BottomLeft;
+    let tracker_from = p.out.len();
     p.static_el(&u.sensor.background, sensor, rules::color(&u.sensor.background.colors, None, disabled_all, now));
     p.static_el(&u.sensor.foreground, sensor, rules::color(&u.sensor.foreground.colors, None, disabled_all, now));
+    if canvas.layout == layout::HudLayout::Party {
+        // The party's layout: the block in the tracker's place, no tracker.
+        let disc = layout::rect_bounds(p.out[tracker_from..].iter().map(|q| q.rect));
+        p.out.truncate(tracker_from);
+        if let (Some(tracker), Some(own)) = (disc, layout::rect_bounds(p.out[block..].iter().map(|q| q.rect))) {
+            let [dx, dy] = layout::party_offset(own, tracker, p.frame);
+            for q in &mut p.out[block..] {
+                q.rect = [q.rect[0] + dx, q.rect[1] + dy, q.rect[2] + dx, q.rect[3] + dy];
+            }
+        }
+        return p.out;
+    }
     if unit.alive {
         let centre = layout::anchor_point(sensor, u.blip_placement.offset, p.frame);
         tracker(&mut p, state, centre, now);

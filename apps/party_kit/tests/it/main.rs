@@ -15,6 +15,7 @@ mod cross_glass;
 mod cross_water_ladders;
 mod cs_parts;
 mod death_view;
+mod domination_ui;
 mod drawn_ladder;
 mod esc_menu;
 mod feedback;

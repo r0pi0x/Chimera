@@ -151,6 +151,10 @@ pub struct PropParams {
     /// slot of the same table (its first four rows; `bodies::FaceSlot`),
     /// rewritten every frame as the head moves. 0: the material's own.
     pub face_slot: u32,
+    /// The tint applies by `tint_mask`'s red (`MapMesh::tint_mask`): 1 on.
+    pub tint_masked: f32,
+    /// That tint (linear); `base_color` then holds no tint.
+    pub mask_tint: Vec4,
 }
 
 impl PropParams {
@@ -210,6 +214,9 @@ pub struct PropMaterial {
     pub lightwarp: Option<Handle<Image>>,
     #[texture(12)]
     pub phong_warp: Option<Handle<Image>>,
+    /// `MapMesh::tint_mask` (its red masks the tint).
+    #[texture(14)]
+    pub tint_mask: Option<Handle<Image>>,
     /// The probe table (`probe_lit::ProbeTable`): the same buffer in every
     /// material, read at `PropParams::probe_slot`.
     #[storage(13, read_only)]

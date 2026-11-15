@@ -819,6 +819,25 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
         .filter(|g| local.as_ref().is_some_and(|l| !l.has(g)))
         .map(String::from)
         .collect();
+    // This process reads from the offered service already: a game it has
+    // no files of is one the service doesn't serve. Only a required one
+    // fails the join (`bind_here` says why); a wanted one (another game's
+    // guns in a ladder) is left out with a note, as at a first join
+    // (2026-11-15: every start after the first left each UGG match with
+    // "the asset service doesn't serve tf2").
+    let missing = if reads_offered(&session, &offer) {
+        let required = world.get_resource::<JoinRequired>().cloned().unwrap_or_default().0;
+        let (lacking, wanted): (Vec<String>, Vec<String>) = missing.into_iter().partition(|g| required.contains(g));
+        for g in &wanted {
+            info!(
+                "the asset service doesn't serve {}: the match plays, but what it draws of it won't load",
+                super::manifest::game_name(world.get_resource::<Games>(), g)
+            );
+        }
+        lacking
+    } else {
+        missing
+    };
     if !missing.is_empty() {
         return bind_here(world, &offer, &session, &missing, then);
     }
@@ -867,6 +886,21 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
     }
     start_fetch(world, settings, wanted(&wants), false, then, Vec::new(), need);
     Next::Wait
+}
+
+/// Whether this process reads from `offer`'s service already: the one
+/// `bind_here` would bind (the hub account's, else the token's bound to
+/// the offer) is the one its session uses.
+fn reads_offered(session: &AssetSession, offer: &AssetOffer) -> bool {
+    let Some(using) = session.settings.as_ref().and_then(|s| s.remote.as_ref()) else {
+        return false;
+    };
+    let target = session.account_remote(offer).or_else(|| {
+        let mut access = Access::load_from(&session.access_path()?);
+        access.bind(&offer.url, &offer.fingerprint).ok()?;
+        access.remote()
+    });
+    target.is_some_and(|t| t.url == using.url && t.fingerprint == using.fingerprint)
 }
 
 /// Whether this client has a hub account for `offer`'s service or a token

@@ -347,12 +347,12 @@ fn the_switch_button_changes_the_kind_the_grenade_button_throws() {
     sim.ticks(2);
     sim.intent(p).actions = 0;
     sim.ticks(2);
-    assert_eq!(sim.app.world().get::<HaloHands>(p).unwrap().throw.selected(), 0);
+    assert_eq!(sim.app.world().get::<HaloHands>(p).unwrap().throw.selected(), Some(0));
     // With one: one press selects it, held, no second change.
     sim.app.world_mut().get_mut::<HaloHands>(p).unwrap().throw.counts[PLASMA] = 1;
     sim.intent(p).actions = switch;
     sim.ticks(5);
-    assert_eq!(sim.app.world().get::<HaloHands>(p).unwrap().throw.selected(), PLASMA);
+    assert_eq!(sim.app.world().get::<HaloHands>(p).unwrap().throw.selected(), Some(PLASMA));
     sim.intent(p).actions = 0;
     sim.ticks(2);
     // The grenade button throws the plasma grenade, and the choice goes
@@ -362,5 +362,5 @@ fn the_switch_button_changes_the_kind_the_grenade_button_throws() {
     sim.intent(p).actions = 0;
     sim.ticks(40);
     let h = sim.app.world().get::<HaloHands>(p).unwrap();
-    assert_eq!((h.throw.counts, h.throw.selected()), ([4, 0], 0));
+    assert_eq!((h.throw.counts, h.throw.selected()), ([4, 0], Some(0)));
 }

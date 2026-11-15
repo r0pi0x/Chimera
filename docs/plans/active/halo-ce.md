@@ -436,6 +436,46 @@ backlog.
   wanted in the gun game for now; a switch in Halo's party bundle,
   default off, places no vehicle on a Halo map there. Halo's own app
   and server have them.
+- **The user's decisions for the party apps** (2026-11-15):
+  - Order of work: first what Halo needs to play well in Ultimate Gun
+    Game (the HUD layout, scopes, audio, kill feed icons, the balance
+    follow-ups), then the arena cut from a big map as its own piece;
+    until then the two big maps stay out of draws and the eleven others
+    play.
+  - Field of view (a lean, not final): the user's setting for every
+    game's gun; Halo changes it only while zoomed, by the spec's
+    magnification. Unzoomed is already so; zoomed still uses Halo's own
+    angle (to do).
+  - Autoaim's bend off for mouse and keyboard (done: `halo_autoaim`);
+    guided projectiles keep their target.
+  - No Halo grenades in the party apps by default (to do: a switch in
+    Halo's party bundle, no grenade pickups placed, the counter hidden).
+  - A grenade rung later: the pistol with an empty magazine and no
+    reserve, grenades and melee only, left click throws, shown and named
+    as the frag grenade; after the health rule below is decided.
+  - Gravity: the user asked for the map to own gravity with no change to
+    any character's jump. NOT built: the numbers given then were wrong
+    (Source units are inches here). By the code: gravity 9.78 m/s2
+    (Halo), 20.3 (CS:S, TF2), 19.8 (Combat Arms), 15.2 (HL2:DM); standing
+    jumps 1.99 m, 1.45, 1.33, 0.89 and 0.54 m. Under Halo's gravity a
+    CS:S character would jump 3.0 m and TF2's 2.75 m, over the Spartan's
+    1.99 m; put back to the user.
+  - Kill feed icons: Halo registers none (the feed shows the gun's
+    name); to add from the disc's pictures.
+- **Balance in the party apps** (measured from code and data,
+  2026-11-15; nothing changed yet, the user decides): a Halo-rung holder
+  has 200 effective hit points against other games' guns (the shield is
+  100 armour that absorbs all of a hit, then 100 of body) and the shield
+  refills in 10 s; Halo's guns do about twice to other games' characters
+  what they do to a Spartan (one Halo point is 1.33 hit points, times
+  the Spartan's flesh modifier: the pistol kills in 2 body shots or any
+  headshot, the sniper rifle in one body shot); explosions and melee
+  kill other characters in one hit (a frag within 7.6 m); the shield is
+  kept as armour on the next rung (a bug: to fix); the ladder's power
+  reader scores against a plain 100-point target and misreads the plasma
+  pistol, the needler and the assault rifle (to fix). Proposed: one rule
+  (a character's full vitality in its own game is 100 in the party
+  apps), behind a switch.
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the
@@ -572,3 +612,35 @@ backlog.
   Halo's HUD in the party apps with the shield and health at the bottom
   left and no motion tracker (the shared kill feed is top right): being
   done.
+- 2026-11-15: explosions and trails by the corrected effects spec (the
+  earlier grey sheet was the spec's sizes read wrongly, not a sprite
+  bug: a frag is now a fireball and drifting smoke), the scopes' masks
+  dimming the view outside the window (the blur and night vision not
+  drawn: the engine's screen pass would need a two-pass blur), grenade
+  selection by weapons.md 14, the autoaim's aim point and its bend off
+  by default, Halo's party HUD layout (the shield and health bottom
+  left, no tracker: the party's kill feed is top right). The user's
+  decisions for the party apps and the balance findings are in the
+  backlog above.
+- 2026-11-15: Halo's lasting sounds (`game::audio`: the level's
+  background sound, sound scenery, projectile loops, footsteps by
+  material; reverb not applied, weapon loops not played) and the
+  shaders' looks (`maps::materials`: self-illumination on 16 level
+  shaders, cube reflections on 57, the model's multipurpose masks,
+  scrolling transparents; 334 shaders on the 13 maps). Left of the
+  look: bump shading (needs the lightmap's incident direction per
+  vertex), the indoor/outdoor fog switch, lens flares (a `lens` reader),
+  the transparents' later maps and periodic animations. Blood Gulch's
+  converted load went from 0.48 s to about 0.64 s (the cause not found;
+  from the cache 0.03 to 0.04 s); the frame time did not rise.
+- 2026-11-15: vehicles on every machine (`net62`): the seats
+  replicate, any game's character rides (the engine's `Carried`), a
+  rider's client is not predicted (its input shows after its ping plus
+  about 100 ms), stale seats cleaned on death, disconnect, round
+  restart and map change; a crash in a party round restart from the
+  Ghost's steering animation fixed. By the user's decision vehicles are
+  off in the party apps (`halo_ce:party_vehicles`, default 0: no
+  vehicle is placed there); Sidewinder stays out of the pool (bots do
+  not drive). The game type's vehicle set is not yet applied at a
+  game's start. Testing is kept light today by the user's instruction
+  (targeted tests only).

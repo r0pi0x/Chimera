@@ -365,6 +365,11 @@ impl Builder<'_> {
                 options: sound.to_string(),
             });
         }
+        for (foot, f) in [("left", stored.left_foot_frame), ("right", stored.right_foot_frame)] {
+            if f != 0 {
+                s.events.push(AnimEvent { cycle: 0.0, event: i32::from(f), name: FOOT_EVENT.into(), options: foot.into() });
+            }
+        }
         if let Some(b) = screen {
             s.grid = (b.columns(), b.rows());
             s.axes = screen_axes(b);
@@ -471,6 +476,17 @@ pub fn seat_death_key(seat: &str, slot: &str) -> String {
 /// A damage table slot's sequence name (`damage s-kill front gut`).
 pub fn damage_key(slot: UnitDamageSlot) -> String {
     format!("damage {} {} {}", slot.kind.label(), slot.direction.label(), slot.part.label())
+}
+
+/// The events that carry a sequence's foot frames (options `left` or
+/// `right`; animations.md "Footsteps": the footstep seam, `audio::steps`).
+pub const FOOT_EVENT: &str = "halo:foot";
+
+/// The feet (bit 0 left, bit 1 right) whose foot frame is frame `f` of
+/// sequence `s`.
+pub fn feet_at(set: &AnimSet, s: usize, f: usize) -> u8 {
+    let events = set.sequences.get(s).map_or(&[][..], |q| &q.events[..]);
+    events.iter().filter(|e| e.name == FOOT_EVENT && e.event as usize == f).fold(0, |b, e| b | if e.options == "left" { 1 } else { 2 })
 }
 
 /// A sequence's sound: its frame and the event's options (module doc of
@@ -643,6 +659,9 @@ pub struct HaloAnim {
     pub throwing: bool,
     /// The last pose made (a new blend's "from").
     pub last: Vec<BonePose>,
+    /// The feet that stepped this tick (`feet_at`): a move state, the
+    /// throttle above 0.5, the frame a foot frame.
+    pub feet: u8,
 }
 
 impl HaloAnim {
@@ -716,6 +735,11 @@ impl HaloAnim {
                 }
             }
         }
+        let moving = matches!(want, State::MoveFront | State::MoveBack | State::MoveLeft | State::MoveRight);
+        self.feet = match self.sequence {
+            Some(s) if moving && i.throttle.length_squared() > 0.25 => feet_at(set, s, self.frame),
+            _ => 0,
+        };
         let aim = set.names.get(&key(seat, label, want.aim())).copied();
         if aim != self.aim {
             if self.aim.is_some() {

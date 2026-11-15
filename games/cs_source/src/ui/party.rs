@@ -37,6 +37,9 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 /// own look, a look naming no game being CS:S's (`client::hud::HudLookOwner`),
 /// and what CS:S's bodies play.
 pub fn client_app(app: &mut App) {
-    app.insert_resource(crate::client::hud::HudLookOwner(crate::game::GAME))
+    // CS:S's domination parts (freeze panel cases and icons, scoreboard
+    // marks) stay out of a party app's HUD.
+    app.insert_resource(super::freeze_cam::DominationUi(false))
+        .insert_resource(crate::client::hud::HudLookOwner(crate::game::GAME))
         .add_plugins(crate::game::player_anim::PlayerAnimPlugin);
 }

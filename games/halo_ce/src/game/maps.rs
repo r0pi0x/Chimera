@@ -26,7 +26,9 @@
 //! - `objects`: render models as meshes, the scenery placements as props
 //!   with their collision;
 //! - `sky`: fog, a flat background, the sky model as a 3D skybox, and the
-//!   scenery's light.
+//!   scenery's light;
+//! - `audio`: the level's sounds (background sounds by cluster, sound
+//!   environments, sound scenery) and the kit's (`game::audio`).
 //!
 //! `MapLoadOptions::textures` off (the lean load) keeps every texture a
 //! placeholder of its size, everything else identical. Its kit is the
@@ -45,6 +47,7 @@
 //! the bots' generated mesh is held to the drawn level's box instead
 //! (`collision::nav_within`).
 
+pub mod audio;
 pub mod collision;
 pub mod geometry;
 pub mod lightmap;
@@ -204,7 +207,8 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
     }
 
     report(0.55, "Textures");
-    for (mesh, dest) in apply_looks(&file, pending, &mut map.textures, &mut map.warnings, decode) {
+    let cubes = Some(&mut map.cubemaps);
+    for (mesh, dest) in apply_looks_in(&file, pending, &mut map.textures, cubes, &mut map.warnings, decode) {
         match dest {
             Dest::Level | Dest::Sky => map.meshes.push(mesh),
             Dest::Model(i) => map.models[i].meshes.push(mesh),
@@ -222,12 +226,14 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
     sky::add(level_sky.as_ref(), &bsp, &mut map, decode);
     super::weapons::pickups::add_entities(&file, &scenario, &mut map, options.kit.pickups());
     super::rules::netgame::add_entities(&file, &scenario, &mut map, options.kit.pickups());
+    audio::add(&file, &scenario, &bsp, &level_collision, &mut map);
     Ok(map)
 }
 
 /// Pending meshes with their shaders' looks (`materials::look`): their
 /// textures decoded once each into `textures` (indices into it), a
 /// shader's problems told once in `warnings`; each mesh with where it goes.
+/// No reflections (`apply_looks_in` with the map's cube maps draws them).
 pub fn apply_looks(
     file: &MapFile,
     pending: Vec<Pending>,
@@ -235,20 +241,50 @@ pub fn apply_looks(
     warnings: &mut Vec<String>,
     decode: bool,
 ) -> Vec<(crate::map::MapMesh, Dest)> {
+    apply_looks_in(file, pending, textures, None, warnings, decode)
+}
+
+/// `apply_looks`, with the shaders' reflection cube maps decoded once each
+/// into `cubemaps` (`MapData::cubemaps`) when given (None: no reflections).
+pub fn apply_looks_in(
+    file: &MapFile,
+    pending: Vec<Pending>,
+    textures: &mut Vec<crate::map::MapTexture>,
+    cubemaps: Option<&mut Vec<crate::map::MapCubemap>>,
+    warnings: &mut Vec<String>,
+    decode: bool,
+) -> Vec<(crate::map::MapMesh, Dest)> {
     let mut out = Vec::with_capacity(pending.len());
     let mut looks: BTreeMap<u32, materials::Look> = BTreeMap::new();
+    let tables = blam_formats::shader::PeriodicTables::new();
     for m in &pending {
         looks
             .entry(m.shader.id.0)
-            .or_insert_with(|| materials::look(file, &m.shader));
+            .or_insert_with(|| materials::look(file, &m.shader, &tables));
     }
+    if cubemaps.is_none() {
+        for look in looks.values_mut() {
+            look.reflection = None;
+        }
+    }
+    // Every texture and cube map the looks want, each once.
     let mut requests = materials::Requests::default();
-    let mut wanted: Vec<(Option<usize>, Option<usize>)> = Vec::with_capacity(pending.len());
-    for m in &pending {
-        let look = &looks[&m.shader.id.0];
-        let base = look.base.map(|r| requests.want(r));
-        let detail = look.detail.map(|d| requests.want(d.texture));
-        wanted.push((base, detail));
+    let mut cube_requests: BTreeMap<materials::CubeRequest, usize> = BTreeMap::new();
+    for look in looks.values() {
+        let wanted = [
+            look.base,
+            look.detail.map(|d| d.texture),
+            look.reflection.and_then(|r| r.mask),
+            look.self_illumination.and_then(|s| s.mask),
+            look.tint_mask,
+        ];
+        for r in wanted.into_iter().flatten() {
+            requests.want(r);
+        }
+        if let Some(r) = look.reflection {
+            let n = cube_requests.len();
+            cube_requests.entry(r.cube).or_insert(n);
+        }
     }
     let decoded = materials::decode_all(file, &requests.list, decode);
     let mut slots: Vec<Option<usize>> = Vec::with_capacity(decoded.len());
@@ -264,8 +300,31 @@ pub fn apply_looks(
             }
         }
     }
+    let slot = |requests: &mut materials::Requests, r: Option<materials::TextureRequest>| {
+        r.and_then(|r| slots[requests.want(r)])
+    };
+    // The cube maps, in request order.
+    let mut cube_slots: BTreeMap<materials::CubeRequest, Option<usize>> = BTreeMap::new();
+    if let Some(cubes) = cubemaps {
+        let mut ordered: Vec<(materials::CubeRequest, usize)> = cube_requests.into_iter().collect();
+        ordered.sort_by_key(|(_, i)| *i);
+        let list: Vec<materials::CubeRequest> = ordered.into_iter().map(|(r, _)| r).collect();
+        let made = crate::map::parallel::par_map(list.clone(), |r| materials::cube(file, &r, decode));
+        for (r, c) in list.into_iter().zip(made) {
+            match c {
+                Ok(c) => {
+                    cubes.push(c);
+                    cube_slots.insert(r, Some(cubes.len() - 1));
+                }
+                Err(e) => {
+                    warnings.push(format!("reflection cube map unreadable, not drawn: {e}"));
+                    cube_slots.insert(r, None);
+                }
+            }
+        }
+    }
     let mut reported = std::collections::BTreeSet::new();
-    for (m, (base, detail)) in pending.into_iter().zip(wanted) {
+    for m in pending {
         let look = &looks[&m.shader.id.0];
         let mut mesh = m.mesh;
         if let Some(problem) = &look.problem
@@ -273,7 +332,7 @@ pub fn apply_looks(
         {
             warnings.push(format!("shader `{}`: {problem}", mesh.material));
         }
-        mesh.texture = base.and_then(|i| slots[i]);
+        mesh.texture = slot(&mut requests, look.base);
         mesh.color = if mesh.texture.is_some() || (look.base.is_none() && look.problem.is_none()) {
             [255; 3]
         } else {
@@ -291,7 +350,7 @@ pub fn apply_looks(
         mesh.detail = look
             .detail
             .as_ref()
-            .zip(detail.and_then(|i| slots[i]))
+            .zip(slot(&mut requests, look.detail.map(|d| d.texture)))
             .map(|(d, t)| materials::map_detail(d, t));
         mesh.alpha = look.alpha;
         mesh.double_sided = look.double_sided;
@@ -300,7 +359,32 @@ pub fn apply_looks(
         mesh.unlit = look.unlit || !m.lit;
         mesh.tint = look.tint;
         mesh.base_transform = look.transform;
+        mesh.tint_mask = slot(&mut requests, look.tint_mask);
         mesh.surface = look.surface.clone();
+        mesh.selfillum = look.self_illumination.and_then(|s| {
+            let mask = match s.mask {
+                Some(r) => Some(slot(&mut requests, Some(r))?),
+                None => None,
+            };
+            (mesh.texture.is_some()).then_some(crate::map::MapSelfIllum { tint: s.tint, mask })
+        });
+        mesh.envmap = look.reflection.and_then(|r| {
+            let cube = (*cube_slots.get(&r.cube)?)?;
+            let mask = match r.mask {
+                Some(t) => crate::map::EnvmapMask::Texture(slot(&mut requests, Some(t))?),
+                None => crate::map::EnvmapMask::None,
+            };
+            Some(crate::map::MapEnvmap {
+                cubemap: Some(cube),
+                mask,
+                tint: r.tint,
+                contrast: 0.0,
+                saturation: 1.0,
+                fresnel: r.fresnel,
+                imposter: false,
+                light_mask: if m.lit { r.light_mask } else { None },
+            })
+        });
         out.push((mesh, m.dest));
     }
     out

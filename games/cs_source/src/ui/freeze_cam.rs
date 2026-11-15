@@ -15,7 +15,10 @@
 //! `hud/freeze_nemesis`), else "KILLED YOU" with no icon. The kill's flags
 //! are its `dominations::KillMark` (`MyDeath`); "still my nemesis" is read
 //! from the local player's `Relationships` when the panel opens, as the
-//! spec keeps.
+//! spec keeps. A party app turns the whole of it off (`DominationUi`,
+//! set by `party::client_app`): its panel is the plain "KILLED YOU" and
+//! the scoreboard shows no marks, so nothing of CS:S's covers the app's
+//! own HUD.
 //!
 //! Known shortcuts (docs/tech-debt.md): Freeze cam (`client::spectate`,
 //! `client::freeze_cam`; the timings measured, the rest from the game's files
@@ -55,6 +58,7 @@ impl Plugin for FreezeCamPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Frozen>()
             .init_resource::<MyDeath>()
+            .init_resource::<DominationUi>()
             .add_message::<chimera_sim::dominations::KillMark>()
             .add_message::<crate::core::Died>()
             .add_systems(PreUpdate, remember_death)
@@ -84,6 +88,35 @@ pub struct Frozen {
 #[derive(Component)]
 #[require(crate::client::hud::HudPart)]
 struct FreezeOverlay;
+
+/// Whether this app shows CS:S's domination parts (the freeze panel's
+/// nemesis and revenge cases and icons, the scoreboard's domination marks).
+/// On by default (CS:S's parity); a party app (Ultimate Gun Game, Lucker
+/// Party) turns it off in `party::client_app` so its own HUD is not
+/// covered: the panel then shows only "KILLED YOU". The sim's counting
+/// (`chimera_sim::dominations`) is untouched.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DominationUi(pub bool);
+
+impl Default for DominationUi {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
+/// The panel's case for the local player's last death `mine`, by the
+/// killer and whether it still dominates the local player: the plain
+/// "killed you" when this app's `DominationUi` is off.
+pub fn case_for(ui: DominationUi, mine: Option<(Entity, bool, bool)>, killer: Entity, still: bool) -> FreezeCase {
+    if !ui.0 {
+        return FreezeCase::Killed;
+    }
+    let (dominated, revenge) = match mine {
+        Some((k, d, r)) if k == killer => (d, r),
+        _ => (false, false),
+    };
+    freeze_case(dominated, revenge, still)
+}
 
 /// The local player's last death: its killer and the kill's domination
 /// flags (dominated, revenge).
@@ -162,8 +195,8 @@ fn freeze(
     menu_ui: Option<Res<super::game_menu::MenuUi>>,
     sounds: Option<Res<Assets<crate::audio::clip_asset::SoundAsset>>>,
     clips: Option<ResMut<Assets<crate::audio::live_sound::LiveClip>>>,
-    (mine, me): (
-        Res<MyDeath>,
+    ((mine, ui), me): (
+        (Res<MyDeath>, Res<DominationUi>),
         Query<Option<&chimera_sim::dominations::Relationships>, With<crate::core::LocalPlayer>>,
     ),
     mut commands: Commands,
@@ -246,16 +279,12 @@ fn freeze(
         let name = name.map_or("Player", |n| n.as_str()).to_string();
         let health = health.map_or(0.0, |h| h.current.clamp(0.0, 1.0));
         // The domination case, "still my nemesis" read now (spec 4).
-        let (dominated, revenge) = match mine.0 {
-            Some((k, d, r)) if k == killer => (d, r),
-            _ => (false, false),
-        };
         let still = me
             .iter()
             .next()
             .flatten()
             .is_some_and(|r| r.nemeses.contains(&killer));
-        let case = freeze_case(dominated, revenge, still);
+        let case = case_for(*ui, mine.0, killer, still);
         if let Some(hud) = hud.as_deref() {
             panel(&mut commands, root, hud, &fonts, Vec2::new(width, height), &name, health, case);
         }
@@ -416,6 +445,11 @@ mod tests {
         assert_eq!(words(FreezeCase::NewNemesis).1, "IS YOUR NEW");
         assert_eq!(words(FreezeCase::OldNemesis).1, "IS STILL YOUR");
         assert_eq!(words(FreezeCase::Killed), ("Bot".into(), "KILLED YOU".into(), String::new()));
+        // A party app's switch off: plain whatever the kill was.
+        let k = Entity::from_raw_u32(7).unwrap();
+        let off = DominationUi(false);
+        assert_eq!(case_for(off, Some((k, true, true)), k, true), FreezeCase::Killed);
+        assert_eq!(case_for(DominationUi(true), Some((k, true, false)), k, true), FreezeCase::NewNemesis);
         assert_eq!(FreezeCase::Revenge.icon(), Some("freeze_revenge"));
         assert_eq!(FreezeCase::OldNemesis.icon(), Some("freeze_nemesis"));
         assert_eq!(FreezeCase::Killed.icon(), None);

@@ -63,7 +63,12 @@
 //! effects); a needle that sticks stays where it stuck (in a character it
 //! moves with it) until its detonation (`objects`) or `STUCK_TICKS`.
 //!
-//! Known shortcuts: the server's response draws depend on the weapon's own
+//! A long-lived trail's points (the rocket's) live through the contrail's
+//! point states, each point drawing its own lengths, quantised to the 30 Hz
+//! updates (`point_lengths`).
+//!
+//! Known shortcuts: a contrail point's density scale flags read a density
+//! of 1; the server's response draws depend on the weapon's own
 //! generator, which the shot does not carry, so a shown projectile uses a
 //! fixed seed per projectile of the shot: only a response with a random
 //! skip fraction (and the timer's draw, 0 here) can differ from the real
@@ -86,7 +91,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     ActiveFx, HaloLight,
-    load::{FxGun, FxLight, FxTracer, HaloFx},
+    load::{FxGun, FxLight, FxTracer, FxTracerState, HaloFx},
     place::{self, Frame, Placer},
     play::{Effects, Instance, Made, Running, start},
 };
@@ -109,7 +114,7 @@ use crate::{
         PlaceDecal, PlaySound,
         loose::ShownItem,
         impact::{ActiveImpacts, SurfaceClass, SurfaceClasses},
-        particles::{Fade, Particle, ParticleGroup, Particles, Ramp, Shape},
+        particles::{Fade, Particle, ParticleCurves, ParticleGroup, Particles, Ramp, Shape},
         sound::SurfaceGrid,
     },
 };
@@ -394,6 +399,7 @@ fn on_fired(
                 color: Vec3::from(light.color),
                 radius: light.radius * METERS_PER_UNIT,
                 seconds: muzzle_light_ticks(gun) / 30.0,
+                falloff: 0,
                 owner: Some(f.owner),
                 follow: true,
             });
@@ -635,9 +641,34 @@ pub fn draw_segment(particles: &mut Particles, tracer: Option<&FxTracer>, light:
     g.kill_after = Some(life + 0.004);
     // Its first state's width (the states' widening is not drawn).
     let wide = width;
+    // A long-lived trail's points live through the contrail's states: their
+    // colour and alpha, and the ribbon's width, follow them over the life,
+    // each point with its own lengths (`point_lengths`).
+    let mut life = life;
+    let curves = (long && t.states.len() > 1).then(|| {
+        let rng = &mut particles.rng;
+        let lengths = point_lengths(&t.states, 1.0 / 30.0, || rng.random());
+        let total: f32 = lengths.iter().map(|(s, tr)| s + tr).sum::<f32>().max(1.0 / 30.0);
+        life = total;
+        let (mut at, mut color_keys, mut size_keys) = (0.0f32, Vec::new(), Vec::new());
+        for (s, (state, transition)) in t.states.iter().zip(&lengths) {
+            for end in [at, at + state] {
+                let f = end / total;
+                color_keys.push((f, [s.color[1], s.color[2], s.color[3], s.color[0]]));
+                size_keys.push((f, s.width * METERS_PER_UNIT));
+            }
+            at += state + transition;
+        }
+        std::sync::Arc::new(ParticleCurves { color: color_keys, size: size_keys, ..Default::default() })
+    });
+    g.kill_after = Some(life + 0.004);
+    let has_curves = curves.is_some();
     let mut streak = Particle {
         color,
-        alpha: if long { t.color[3].clamp(0.0, 1.0) * 0.5 } else { t.color[3].max(0.5) },
+        curves,
+        alpha: if has_curves {
+            1.0
+        } else if long { t.color[3].clamp(0.0, 1.0) * 0.5 } else { t.color[3].max(0.5) },
         fade: if long { Fade::Ramp(Ramp::linear(1.0, 0.0)) } else { Fade::Ramp(Ramp::constant(1.0)) },
         shape: Shape::Ribbon { to: b, width: if long { [wide, width] } else { [width * 0.25, width] }, u: (0.0, 1.0), end_color: None, prev: None, next: None },
         ..Particle::new(a, life, material, width)
@@ -649,6 +680,47 @@ pub fn draw_segment(particles: &mut Particles, tracer: Option<&FxTracer>, light:
     }
     g.particles.push(streak);
     particles.add(g);
+}
+
+/// One contrail point's lengths (effects.md "Contrails", point life): per
+/// state, the seconds it spends in that state and in the transition to the
+/// next (none after the last state, whose own length ends the point's
+/// life). Each length is the point's own draw, `lower + U(0, upper -
+/// lower)` with `draw` the local generator's U(0, 1) (made even when the
+/// bounds are equal; the density scale flags are taken at a density of
+/// 1); it lasts the updates of `dt` until the progress `dt / length`
+/// summed passes 1 strictly, the overshoot dropped (a length of 0 passes
+/// at once).
+pub fn point_lengths(states: &[FxTracerState], dt: f32, mut draw: impl FnMut() -> f32) -> Vec<(f32, f32)> {
+    let n = states.len();
+    states
+        .iter()
+        .enumerate()
+        .map(|(k, s)| {
+            let state = updates_in(point_length(s.duration_bounds, draw()), dt) as f32 * dt;
+            let transition = if k + 1 < n { updates_in(point_length(s.transition_bounds, draw()), dt) as f32 * dt } else { 0.0 };
+            (state, transition)
+        })
+        .collect()
+}
+
+/// A point's length drawn from `(lower, upper)` with the draw `u` (0 to 1).
+pub fn point_length((lower, upper): (f32, f32), u: f32) -> f32 {
+    lower + (upper - lower).max(0.0) * u
+}
+
+/// How many updates of `dt` a stage of `length` seconds lasts: until its
+/// progress (dt / length a update) passes 1 strictly; 0 for a length of 0.
+pub fn updates_in(length: f32, dt: f32) -> u32 {
+    if length <= 0.0 || dt <= 0.0 {
+        return 0;
+    }
+    let (mut progress, mut n) = (0.0f32, 0);
+    while progress <= 1.0 && n < 100_000 {
+        progress += dt / length;
+        n += 1;
+    }
+    n
 }
 
 // Step the running effects a Halo tick and write what they made.

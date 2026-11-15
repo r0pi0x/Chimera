@@ -679,6 +679,7 @@ impl CaFx {
                     .map(|(f, _)| f.iter().filter_map(|t| materials.find(&material_name(t, additive(k)))).collect())
                     .unwrap_or_default(),
                 frame_time: frames.map_or(0.0, |(_, t)| *t),
+                motion: Vec::new(),
             };
             (!c.color.is_empty() || !c.size.is_empty() || !c.frames.is_empty()).then(|| std::sync::Arc::new(c))
         };
