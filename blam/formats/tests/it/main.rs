@@ -9,9 +9,13 @@ mod cache;
 mod disc;
 mod fixture;
 mod map_fixture;
+mod model;
+mod sound;
 
 mod heavy {
     mod bitmap_install;
     mod cache_install;
     mod disc_install;
+    mod model_install;
+    mod sound_install;
 }
