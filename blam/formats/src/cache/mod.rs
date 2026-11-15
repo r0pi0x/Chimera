@@ -6,7 +6,8 @@
 //!
 //! - `MapFile::load` (the file as the disc stores it) or
 //!   `MapFile::from_image` (an already decompressed image). Cheap to clone
-//!   (an `Arc`), `Send + Sync`.
+//!   (an `Arc`), `Send + Sync`. `Header::parse` checks and reads the
+//!   header alone (a map's name and build without inflating it).
 //! - The index: `tags`, `tag` (by id, with the salt check), `find` (by
 //!   class and path, ignoring case), `of_class`, `of_kind` (the class or a
 //!   class deriving from it), `scenario`.
@@ -220,6 +221,15 @@ struct Inner {
 impl fmt::Debug for MapFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "MapFile({}, {} tags)", self.0.header.name, self.0.tags.len())
+    }
+}
+
+impl Header {
+    /// The header alone, checked as `MapFile::load` checks it: `file` is
+    /// the file's first `HEADER_SIZE` bytes or more (what tells a map's
+    /// build and name without inflating it).
+    pub fn parse(file: &[u8]) -> io::Result<Header> {
+        parse_header(file)
     }
 }
 

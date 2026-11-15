@@ -822,6 +822,8 @@ pub enum MainMenuAction {
     Quit,
     /// The shell bar's Settings tile: Settings from wherever the menu is.
     OpenSettings,
+    /// Host's Maps field: the picker (`maps_picker`).
+    OpenMaps,
 }
 
 // ---------------------------------------------------------------------------
@@ -892,7 +894,7 @@ impl Plugin for MainMenuPlugin {
             .add_observer(joining)
             .add_observer(join_failed)
             .add_observer(map_load_failed)
-            .add_plugins((crate::signal_menu::SignalMenuPlugin, crate::signal_pages::SignalPagesPlugin))
+            .add_plugins((crate::signal_menu::SignalMenuPlugin, crate::signal_pages::SignalPagesPlugin, crate::loading_signal::LoadingSignalPlugin))
             .add_systems(Startup, ((start_look, init_play).chain(), spawn_backdrop))
             // After the browser's lists are read (`signal_pages`' Startup).
             .add_systems(PostStartup, remember_command_line_join)
@@ -1184,7 +1186,12 @@ fn typing(
     data: Res<MenuData>,
     mut out: MessageWriter<MainMenuAction>,
     settings: Option<Res<crate::settings::Settings>>,
-    (theme, lobby): (Option<Res<chimera_ui::Theme>>, Option<Res<chimera_client::client::prematch_lobby::LobbyView>>),
+    (theme, lobby, picker, loading): (
+        Option<Res<chimera_ui::Theme>>,
+        Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
+        Option<Res<crate::maps_picker::MapsPicker>>,
+        Option<Res<crate::loading_signal::LoadingSignal>>,
+    ),
     mut clipboard: Local<chimera_ui::clipboard::Clipboard>,
     shared_clipboard: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
@@ -1218,6 +1225,14 @@ fn typing(
                 // Settings spent it (a key capture, an open list, the keep).
                 continue;
             }
+            if picker.as_ref().is_some_and(|p| p.took_keys) {
+                // The Maps picker's Cancel.
+                continue;
+            }
+            if loading.as_ref().is_some_and(|l| l.esc_taken) {
+                // The Signal loading screen's Leave? (asks first).
+                continue;
+            }
             if menu.failure.is_some() {
                 out.write(MainMenuAction::CloseFailure);
             } else if menu.reconnecting.is_some() || matches!(menu.screen, Screen::Loading | Screen::Joining) {
@@ -1228,10 +1243,6 @@ fn typing(
             continue;
         }
         if e.key_code == KeyCode::Enter || e.key_code == KeyCode::NumpadEnter {
-            // The lobby's (the host's Start).
-            if lobby.as_ref().is_some_and(|l| l.shown) {
-                continue;
-            }
             if signal_page && menu.failure.is_none() {
                 continue;
             }
@@ -1371,6 +1382,13 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                     }
                 }
                 EntryDoes::Command(c) => submit(world, c),
+            }
+        }
+        A::OpenMaps => {
+            if let Some(mut p) = world.get_resource_mut::<crate::maps_picker::MapsPicker>() {
+                let off = p.off.clone();
+                p.open = Some(off);
+                p.cursor = 0;
             }
         }
         A::OpenSettings => {
@@ -1569,7 +1587,17 @@ pub fn start_lines(
 /// Play's Start: the rows' cvars, the map loading, the minigame once it is
 /// in.
 fn start(world: &mut World) {
-    let pool = map_pool(world);
+    let mut pool = map_pool(world);
+    // The Maps picker's choice: the first map on, and the rest of those
+    // off out of the rotation (`mp_maps_off`).
+    let off = world.get_resource::<crate::maps_picker::MapsPicker>().map(|p| (p.off.clone(), p.off_line()));
+    if let Some((off, line)) = &off {
+        let kept: Vec<String> = pool.iter().filter(|m| !off.contains(*m)).cloned().collect();
+        if !kept.is_empty() {
+            pool = kept;
+        }
+        submit(world, format!("mp_maps_off {}", chimera_core::console::quote(line)));
+    }
     let minigame = world.resource::<MenuMinigame>().0.clone();
     let (lines, after, map) = {
         let data = world.resource::<MenuData>();
@@ -3091,6 +3119,8 @@ mod tests {
             from: "asset service".into(),
             done: 25_000_000,
             total: 100_000_000,
+            files_done: 0,
+            files_total: 0,
         });
         let (line, f) = loading_state(None, Some(&join), None, false, "x");
         assert_eq!(line, "Downloading game files: 25.0 of 100.0 MB");

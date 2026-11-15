@@ -169,29 +169,32 @@ fn esc_menu_keys_open_settings_with_the_options_pages() {
     assert_eq!(set(&mut sim.app).ctx, None);
 }
 
+/// The UI clock moved on `secs` (instant apply's config write waits
+/// `settings::SAVE_AFTER`).
+fn after(app: &mut App, secs: f32) {
+    app.world_mut().resource_mut::<UiClock>().step(secs);
+    app.update();
+    app.update();
+}
+
 #[test]
-fn a_change_is_pending_until_apply_writes_it() {
+fn a_change_applies_at_once_and_the_config_is_written_soon() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
     let row = row_of(&sim.app, "fov_desired");
     let before = cvar(&mut sim.app, "fov_desired");
     let saves0 = saves(&sim.app);
     send(&mut sim.app, SettingsAction::Step { row, dir: -1 });
-    assert_eq!(cvar(&mut sim.app, "fov_desired"), before, "pending: the cvar waits");
-    let shown = set(&mut sim.app).values["fov_desired"].clone();
-    assert_ne!(shown, before, "the row shows the new value");
-    assert_eq!(set(&mut sim.app).pending.get("fov_desired"), Some(&shown), "marked changed");
-    assert_eq!(changes(&sim.app), 1, "the bar counts it");
-    // A second step builds on the pending value, not the cvar.
+    let now = cvar(&mut sim.app, "fov_desired");
+    assert_ne!(now, before, "the cvar at once");
+    assert_eq!(set(&mut sim.app).values["fov_desired"], now, "the row shows it");
+    assert_eq!(changes(&sim.app), 0, "nothing waits");
+    // Steps in a row write the config once, after the last.
     send(&mut sim.app, SettingsAction::Step { row, dir: -1 });
-    let shown2 = set(&mut sim.app).values["fov_desired"].clone();
-    assert_ne!(shown2, shown);
-    // Ctrl+S applies: the cvar set, the config written.
-    ctrl(&mut sim.app, KeyCode::KeyS);
-    assert_eq!(cvar(&mut sim.app, "fov_desired"), shown2, "Apply sets the cvar");
-    assert_eq!(saves(&sim.app), saves0 + 1, "Apply writes the config");
-    assert_eq!(changes(&sim.app), 0);
-    // Nothing pending: Esc leaves at once, writing nothing.
+    assert_eq!(saves(&sim.app), saves0, "not yet");
+    after(&mut sim.app, 0.6);
+    assert_eq!(saves(&sim.app), saves0 + 1, "written once, soon after");
+    // Nothing waits: Esc leaves at once, without asking.
     tap(&mut sim.app, KeyCode::Escape);
     sim.app.update();
     assert_eq!(set(&mut sim.app).ctx, None);
@@ -199,83 +202,64 @@ fn a_change_is_pending_until_apply_writes_it() {
 }
 
 #[test]
-fn revert_drops_the_pending_changes() {
+fn closing_writes_a_change_not_yet_saved() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
     let row = row_of(&sim.app, "fov_desired");
-    let before = cvar(&mut sim.app, "fov_desired");
+    let saves0 = saves(&sim.app);
     send(&mut sim.app, SettingsAction::Step { row, dir: -1 });
-    assert_eq!(changes(&sim.app), 1);
-    ctrl(&mut sim.app, KeyCode::KeyZ);
-    assert_eq!(changes(&sim.app), 0, "Ctrl+Z drops it");
-    assert_eq!(set(&mut sim.app).values["fov_desired"], before, "the row shows the cvar again");
-    assert_eq!(cvar(&mut sim.app, "fov_desired"), before);
-    // Stepping back to the applied value is no change either.
-    send(&mut sim.app, SettingsAction::Step { row, dir: -1 });
-    send(&mut sim.app, SettingsAction::Step { row, dir: 1 });
-    assert_eq!(changes(&sim.app), 0);
+    tap(&mut sim.app, KeyCode::Escape);
+    sim.app.update();
+    assert_eq!(set(&mut sim.app).ctx, None);
+    assert_eq!(saves(&sim.app), saves0 + 1, "written on the way out");
 }
 
 #[test]
-fn leaving_with_changes_pending_asks() {
+fn a_waiting_display_change_reverts_and_leaving_with_it_asks() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
-    let row = row_of(&sim.app, "fov_desired");
-    send(&mut sim.app, SettingsAction::Step { row, dir: -1 });
-    let next = set(&mut sim.app).values["fov_desired"].clone();
-    let saves0 = saves(&sim.app);
-    // Esc asks instead of leaving.
+    let row = row_of(&sim.app, "chimera_fullscreen");
+    send(&mut sim.app, SettingsAction::Pick { row, option: 2 });
+    assert_eq!(changes(&sim.app), 1, "the display waits for Apply");
+    ctrl(&mut sim.app, KeyCode::KeyZ);
+    assert_eq!(changes(&sim.app), 0, "Ctrl+Z drops it");
+    assert_eq!(cvar(&mut sim.app, "chimera_fullscreen"), "0");
+    send(&mut sim.app, SettingsAction::Pick { row, option: 2 });
+    // Esc asks instead of leaving; Esc again stays.
     tap(&mut sim.app, KeyCode::Escape);
     sim.app.update();
     assert_eq!(set(&mut sim.app).ctx, Some(Context::Game), "still open");
     assert_eq!(set(&mut sim.app).leave, Some(0), "the prompt, Apply focused");
     assert_eq!(sim.app.world().resource::<EscMenu>().page, Page::Options(0), "the Escape menu left Esc alone");
-    // Esc again stays.
     tap(&mut sim.app, KeyCode::Escape);
     sim.app.update();
     assert_eq!(set(&mut sim.app).leave, None, "Stay");
-    assert_eq!(set(&mut sim.app).ctx, Some(Context::Game));
-    assert_eq!(changes(&sim.app), 1, "still pending");
-    // The Back button asks too; Enter on Apply applies and leaves.
+    assert_eq!(changes(&sim.app), 1, "still waiting");
+    // → Discard, Enter: put back and left.
     send(&mut sim.app, SettingsAction::Back);
-    assert_eq!(set(&mut sim.app).leave, Some(0));
+    tap(&mut sim.app, KeyCode::ArrowRight);
     tap(&mut sim.app, KeyCode::Enter);
     sim.app.update();
-    assert_eq!(cvar(&mut sim.app, "fov_desired"), next, "applied");
-    assert_eq!(saves(&sim.app), saves0 + 1, "saved");
-    assert_eq!(set(&mut sim.app).ctx, None, "and left");
-    assert_eq!(sim.app.world().resource::<EscMenu>().page, Page::Main);
+    assert_eq!(cvar(&mut sim.app, "chimera_fullscreen"), "0", "discarded");
+    assert_eq!(set(&mut sim.app).ctx, None, "left");
 }
 
 #[test]
-fn discard_sets_a_previewed_volume_back() {
+fn a_volume_is_heard_and_kept_at_once() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
     send(&mut sim.app, SettingsAction::Tab(1));
     let row = row_of(&sim.app, "volume");
-    let fov = row_of_tab(&mut sim.app, 0, "fov_desired");
     let saves0 = saves(&sim.app);
-    // A drag along the track: heard at once.
     // (0 to 200 %: a quarter of the track is half volume.)
     send(&mut sim.app, SettingsAction::SetFrac { row, frac: 0.25 });
-    assert_eq!(cvar(&mut sim.app, "volume"), "0.5", "a volume previews live");
-    assert_eq!(changes(&sim.app), 1, "and is pending");
-    // A setting that doesn't preview waits.
-    send(&mut sim.app, SettingsAction::Tab(0));
-    let fov_before = cvar(&mut sim.app, "fov_desired");
-    send(&mut sim.app, SettingsAction::Step { row: fov, dir: -1 });
-    assert_eq!(cvar(&mut sim.app, "fov_desired"), fov_before);
-    assert_eq!(changes(&sim.app), 2, "pending across pages");
-    // Leave: the prompt; → Discard, Enter.
+    assert_eq!(cvar(&mut sim.app, "volume"), "0.5", "heard at once");
+    assert_eq!(changes(&sim.app), 0, "and kept");
     tap(&mut sim.app, KeyCode::Escape);
-    tap(&mut sim.app, KeyCode::ArrowRight);
-    assert_eq!(set(&mut sim.app).leave, Some(1));
-    tap(&mut sim.app, KeyCode::Enter);
     sim.app.update();
-    assert_eq!(cvar(&mut sim.app, "volume"), "1", "Discard sets the preview back");
-    assert_eq!(cvar(&mut sim.app, "fov_desired"), fov_before);
-    assert_eq!(saves(&sim.app), saves0, "nothing saved");
-    assert_eq!(set(&mut sim.app).ctx, None, "left");
+    assert_eq!(set(&mut sim.app).ctx, None, "leaving doesn't ask");
+    assert_eq!(cvar(&mut sim.app, "volume"), "0.5");
+    assert_eq!(saves(&sim.app), saves0 + 1, "saved");
 }
 
 /// The row of `cvar` on page `tab`.
@@ -285,46 +269,43 @@ fn row_of_tab(app: &mut App, tab: usize, cvar: &str) -> usize {
 }
 
 #[test]
-fn binds_join_the_pending_changes() {
+fn a_rebind_applies_at_once_and_is_saved() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
     send(&mut sim.app, SettingsAction::Tab(2));
     let row = rows(&sim.app).iter().position(|r| matches!(r, Row::Bind { command: "+use", .. })).unwrap();
     let keys = |app: &App| party_kit::controls::keys_on(app.world().resource::<Console>(), 0, "+use");
-    let before = keys(&sim.app);
-    assert_ne!(before, ["g"]);
+    assert_ne!(keys(&sim.app), ["g"]);
     let saves0 = saves(&sim.app);
     send(&mut sim.app, SettingsAction::Bind(row));
     tap(&mut sim.app, KeyCode::KeyG);
     sim.app.update();
-    assert_eq!(keys(&sim.app), ["g"], "the page shows the new key");
-    assert!(changes(&sim.app) > 0, "pending");
-    assert_eq!(saves(&sim.app), saves0, "not saved");
-    // Revert puts the keys back.
-    send(&mut sim.app, SettingsAction::Revert);
-    assert_eq!(keys(&sim.app), before, "Revert");
-    assert_eq!(changes(&sim.app), 0);
-    // Rebind and leave: the prompt; Discard puts them back.
-    send(&mut sim.app, SettingsAction::Bind(row));
-    tap(&mut sim.app, KeyCode::KeyG);
-    sim.app.update();
+    assert_eq!(keys(&sim.app), ["g"], "bound at once");
+    assert_eq!(changes(&sim.app), 0, "nothing waits");
+    after(&mut sim.app, 0.6);
+    assert_eq!(saves(&sim.app), saves0 + 1, "saved");
+    let _ = row_of_tab(&mut sim.app, 0, "fov_desired");
+}
+
+#[test]
+fn reset_tab_asks_and_sets_the_page_back_to_its_defaults() {
+    let mut sim = party(true);
+    open_settings(&mut sim.app);
+    let row = row_of(&sim.app, "fov_desired");
+    let def = sim.app.world().resource::<Console>().cvar("fov_desired").unwrap().default.clone();
+    send(&mut sim.app, SettingsAction::Step { row, dir: -1 });
+    assert_ne!(cvar(&mut sim.app, "fov_desired"), def);
+    send(&mut sim.app, SettingsAction::ResetTab);
+    assert_eq!(set(&mut sim.app).reset, Some(0), "asks, Stay first");
     tap(&mut sim.app, KeyCode::Escape);
-    assert_eq!(set(&mut sim.app).leave, Some(0), "leaving asks");
-    send(&mut sim.app, SettingsAction::LeaveDiscard);
-    assert_eq!(keys(&sim.app), before, "Discard");
-    assert_eq!(set(&mut sim.app).ctx, None);
-    // Again, applied this time: kept and saved.
+    sim.app.update();
+    assert_eq!(set(&mut sim.app).reset, None, "Esc stays");
+    assert_eq!(set(&mut sim.app).ctx, Some(Context::Game), "and doesn't leave");
+    send(&mut sim.app, SettingsAction::ResetTab);
+    tap(&mut sim.app, KeyCode::ArrowRight);
     tap(&mut sim.app, KeyCode::Enter);
     sim.app.update();
-    assert_eq!(set(&mut sim.app).ctx, Some(Context::Game), "Options again");
-    send(&mut sim.app, SettingsAction::Tab(2));
-    send(&mut sim.app, SettingsAction::Bind(row));
-    tap(&mut sim.app, KeyCode::KeyG);
-    sim.app.update();
-    send(&mut sim.app, SettingsAction::Apply);
-    assert_eq!(keys(&sim.app), ["g"], "kept");
-    assert_eq!(saves(&sim.app), saves0 + 1, "saved");
-    assert_eq!(changes(&sim.app), 0);
+    assert_eq!(cvar(&mut sim.app, "fov_desired"), def, "back to its default");
 }
 
 #[test]
@@ -578,18 +559,15 @@ fn a_slider_drags_and_its_release_commits_once() {
     assert_eq!(set(app).values["volume"], "0.7", "followed the pointer");
     app.update();
     assert_eq!(cvar(app, "volume"), "0.7", "a volume previews while dragged");
-    assert!(set(app).pending.is_empty(), "nothing pending mid-drag");
+    assert!(set(app).pending.is_empty(), "nothing waits");
     assert_eq!(slider_cues(app), 0, "no ticks while dragging");
     mouse(app).release(MouseButton::Left);
     app.update();
     app.update();
     assert!(set(app).slide.is_none());
-    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("0.7"), "pending at the release");
-    assert_eq!(changes(app), 1);
+    assert_eq!(cvar(app, "volume"), "0.7", "kept at the release");
+    assert_eq!(changes(app), 0, "instant apply: nothing waits");
     assert_eq!(slider_cues(app), 1, "one cue, at the release");
-    // Revert puts the previewed volume back.
-    ctrl(app, KeyCode::KeyZ);
-    assert_eq!(cvar(app, "volume"), "1");
 }
 
 /// A click without a drag: one cue; ←→: a cue each step.
@@ -599,7 +577,7 @@ fn a_click_cues_once_and_keys_cue_each_step() {
     let app = &mut sim.app;
     send(app, SettingsAction::SlideStart { row, frac: 0.2 });
     send(app, SettingsAction::SlideEnd(row));
-    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("0.4"));
+    assert_eq!(cvar(app, "volume"), "0.4");
     assert_eq!(slider_cues(app), 1, "a click-jump: once");
     send(app, SettingsAction::Row(row));
     tap(app, KeyCode::ArrowRight);
@@ -621,7 +599,7 @@ fn a_typed_value_is_kept_past_the_range_and_checked() {
     app.update();
     tap(app, KeyCode::Enter);
     assert!(set(app).edit.is_none(), "Enter keeps it");
-    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.6"), "160 % is 1.6");
+    assert_eq!(cvar(app, "volume"), "1.6", "160 % is 1.6");
     // Refused: past 200 %, a negative volume, and not a number.
     send(app, SettingsAction::EditValue(row));
     app.world_mut().resource_mut::<Console>().submit("settings_type 250%");
@@ -644,7 +622,7 @@ fn a_typed_value_is_kept_past_the_range_and_checked() {
     app.update();
     assert!(set(app).edit.is_none());
     assert_eq!(set(app).ctx, Some(Context::Game), "Esc only closed the box");
-    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.6"));
+    assert_eq!(cvar(app, "volume"), "1.6");
 }
 
 /// The volumes step in 5 %: ←→ moves one, a press on the track lands on
@@ -655,14 +633,14 @@ fn volumes_step_in_five_percent() {
     let app = &mut sim.app;
     send(app, SettingsAction::Row(row));
     tap(app, KeyCode::ArrowRight);
-    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.05"), "→: 100 % to 105 %");
+    assert_eq!(cvar(app, "volume"), "1.05", "→: 100 % to 105 %");
     tap(app, KeyCode::ArrowLeft);
     tap(app, KeyCode::ArrowLeft);
-    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("0.95"), "←←: 95 %");
+    assert_eq!(cvar(app, "volume"), "0.95", "←←: 95 %");
     // A press between the grid's marks lands on one (0 to 200 %).
     send(app, SettingsAction::SlideStart { row, frac: 0.513 });
     send(app, SettingsAction::SlideEnd(row));
-    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.05"), "51.3 % of the track: 102.6 % lands on 105 %");
+    assert_eq!(cvar(app, "volume"), "1.05", "51.3 % of the track: 102.6 % lands on 105 %");
     let tabs = party_kit::esc_menu::shown_tabs(app.world());
     for cvar in ["volume", "snd_musicvolume", "snd_uivolume"] {
         let Some(s) = tabs.iter().flat_map(|(_, s)| s.iter()).find(|s| s.cvar == cvar) else { continue };

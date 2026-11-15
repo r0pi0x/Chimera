@@ -44,9 +44,9 @@
 //!   countdown. A client reads it while it is still downloading too
 //!   (replication starts at the join's admission). The client shell
 //!   draws it (`chimera_client::client::prematch_lobby`).
-//! - **The host's start** (`mp_lobby_host_start 1`, default 0; the party
-//!   apps' Host page sets it): the server run's first lobby waits for the
-//!   host's `lobby_start` (`Lobby::host_start`, `NetLobby::host_start`):
+//! - **The host's start** (`mp_lobby_host_start`, default 1; the party
+//!   apps' Host page shows it): the server run's first lobby waits for the
+//!   host's `lobby_start` (a dedicated server's console or an RCON admin) (`Lobby::host_start`, `NetLobby::host_start`):
 //!   neither everyone being ready nor the longest wait counts it down.
 //!   Later lobbies (map changes) start as below.
 //! - **Avatars**: each row carries its player's `cl_avatar` userinfo
@@ -139,9 +139,11 @@ pub struct LobbySettings {
     /// 1: a remote player on the map is ready once it says so
     /// (`lobby_ready`); 0: once it is on the map.
     pub ready_up: u8,
-    /// 1: the server run's first lobby waits for the host's start
-    /// (`lobby_start`): nothing counts down by itself (the party apps'
-    /// Host page sets it; later lobbies start once everyone has loaded).
+    /// 1 (the default): the server run's first lobby waits for the host's
+    /// start (`lobby_start`: a listen host's Start, a dedicated server's
+    /// console or an RCON admin): nothing counts it down by itself; 0: it
+    /// counts down once everyone is ready or after the longest wait.
+    /// Later lobbies start once everyone has loaded.
     pub host_start: u8,
 }
 
@@ -153,7 +155,7 @@ impl Default for LobbySettings {
             max_wait: 90.0,
             min_players: 1,
             ready_up: 0,
-            host_start: 0,
+            host_start: 1,
         }
     }
 }
@@ -204,6 +206,9 @@ pub struct LobbyRow {
     /// colour, `chimera_ui::avatar::AvatarLook`'s byte); `NO_AVATAR` for a
     /// bot or a player who sent none.
     pub avatar: u8,
+    /// The player's party (players who came together share it; 0: alone).
+    /// No parties exist yet: the server sends 0 (the seam for them).
+    pub party: u8,
 }
 
 /// `LobbyRow::avatar` for none.
@@ -330,8 +335,9 @@ pub(crate) fn register(app: &mut App) {
     resource_cvar::<LobbySettings, u8>(
         app,
         "mp_lobby_host_start",
-        "Server: 1: the first pre-match lobby of the server's run waits for the host's start (lobby_start); \
-         nothing counts down by itself. Later lobbies start once everyone has the map.",
+        "Server: 1 (default): the first pre-match lobby of the server's run waits for the host's start \
+         (lobby_start); nothing counts down by itself. 0: it counts down once everyone is ready or after \
+         mp_lobby_max_wait. Later lobbies start once everyone has the map.",
         |s| &mut s.host_start,
     );
     resource_cvar::<LobbySettings, u8>(
@@ -603,6 +609,7 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
                     ping_ms: stats.map(|s| (s.rtt * 1000.0).round().clamp(0.0, 9999.0) as u16),
                     wins: 0,
                     avatar: avatars.get(&id.get()).copied().unwrap_or(NO_AVATAR),
+                    party: 0,
                 },
             )
         })

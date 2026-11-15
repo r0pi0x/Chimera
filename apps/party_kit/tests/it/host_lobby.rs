@@ -24,7 +24,7 @@ use chimera_core::{
 use chimera_net::{
     harness::NetSim,
     net::{self, memory::LinkConditions},
-    prematch::{LobbySettings, NetLobby, status},
+    prematch::{LobbySettings, status},
 };
 use chimera_sim::minigame::{ActiveMinigame, PreMatch};
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
@@ -197,6 +197,6 @@ fn hosting_from_the_menu_holds_the_match_in_the_lobby_until_the_host_starts_it()
 #[test]
 fn a_dedicated_servers_lobby_keeps_players_ready_once_they_have_the_map() {
     assert_eq!(LobbySettings::default().ready_up, 0, "no ready-up by default");
-    assert_eq!(LobbySettings::default().host_start, 0, "a dedicated server has no host to wait for");
+    assert_eq!(LobbySettings::default().host_start, 1, "the first match waits for the host's start (its console or an RCON admin)");
     assert_eq!(LobbySettings::default().min_players, 1);
 }

@@ -300,38 +300,12 @@ fn the_wheel_scrolls_eased() {
     assert!((scrolled_px(&app, p) - step * PX).abs() < 0.5, "one notch down: {}", scrolled_px(&app, p));
 }
 
+/// The right button is Back (the shell): it pans nothing and is left
+/// for what reads it after the view.
 #[test]
-fn a_right_drag_pans_then_flings_to_rest() {
+fn the_right_button_pans_nothing_and_is_left_alone() {
     let mut app = app();
     let p = view(&mut app);
-    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Right);
-    frame(&mut app);
-    assert!(state(&app).panning());
-    for i in 1..=8 {
-        pointer(&mut app, p, 10.0 - 0.5 * i as f32);
-        frame(&mut app);
-    }
-    assert!((state(&app).offset - 4.0).abs() < 1e-3, "1:1 with the pointer: {}", state(&app).offset);
-    assert!((scrolled_px(&app, p) - 4.0 * PX).abs() < 0.01);
-    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().release(MouseButton::Right);
-    frame(&mut app);
-    let after = app.world().resource::<ButtonInput<MouseButton>>();
-    assert!(!after.just_released(MouseButton::Right), "the release is the view's");
-    let s = state(&app);
-    assert!(!s.panning() && s.velocity > 20.0, "flung: {}", s.velocity);
-    for _ in 0..600 {
-        frame(&mut app);
-    }
-    let s = state(&app);
-    assert!(s.at_rest(), "decays to rest");
-    assert!(s.offset > 8.0 && s.offset <= s.max, "glided on: {}", s.offset);
-}
-
-#[test]
-fn the_right_press_is_taken_from_the_game() {
-    let mut app = app();
-    let p = view(&mut app);
-    // Bevy's input reads it in PreUpdate; the view takes it after the UI's focus.
     app.add_systems(Update, |m: Res<ButtonInput<MouseButton>>, mut seen: Local<bool>, mut out: ResMut<Seen>| {
         *seen |= m.just_pressed(MouseButton::Right);
         out.0 = *seen;
@@ -339,42 +313,17 @@ fn the_right_press_is_taken_from_the_game() {
     app.init_resource::<Seen>();
     app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Right);
     frame(&mut app);
-    assert!(!app.world().resource::<Seen>().0, "nothing after the view sees the press");
-    // A locked view leaves it.
-    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().release(MouseButton::Right);
-    frame(&mut app);
-    app.world_mut().entity_mut(p.view).insert(chimera_ui::scroll::ScrollLocked);
-    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Right);
-    frame(&mut app);
-    assert!(app.world().resource::<Seen>().0, "a locked view takes nothing");
+    assert!(!state(&app).panning(), "no pan");
+    for i in 1..=8 {
+        pointer(&mut app, p, 10.0 - 0.5 * i as f32);
+        frame(&mut app);
+    }
+    assert_eq!(state(&app).offset, 0.0, "nothing moved");
+    assert!(app.world().resource::<Seen>().0, "the press reaches the shell's Back");
 }
 
 #[derive(Resource, Default)]
 struct Seen(bool);
-
-#[test]
-fn a_pan_past_the_top_bands_and_springs_back() {
-    let mut app = app();
-    let p = view(&mut app);
-    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Right);
-    frame(&mut app);
-    for i in 1..=10 {
-        pointer(&mut app, p, 10.0 + 1.0 * i as f32);
-        frame(&mut app);
-    }
-    let s = state(&app);
-    assert!(s.offset < 0.0 && s.offset > -tune().overscroll, "on the band: {}", s.offset);
-    assert_eq!(scrolled_px(&app, p), 0.0, "Bevy's scroll stays at the top");
-    let tf = app.world().get::<UiTransform>(p.content).unwrap();
-    assert_eq!(tf.translation, Val2::px(0.0, -s.offset * PX), "the band is the content's shift");
-    app.world_mut().resource_mut::<ButtonInput<MouseButton>>().release(MouseButton::Right);
-    frame(&mut app);
-    for _ in 0..300 {
-        frame(&mut app);
-    }
-    assert_eq!(state(&app).offset, 0.0, "back at the top");
-    assert_eq!(app.world().get::<UiTransform>(p.content).unwrap().translation, Val2::px(0.0, 0.0));
-}
 
 #[test]
 fn a_row_scrolls_into_view() {

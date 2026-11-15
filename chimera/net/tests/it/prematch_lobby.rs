@@ -89,6 +89,9 @@ fn sim(clients: usize) -> NetSim {
         setup,
     );
     sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_max_wait 90");
+    // These trace the automatic starts (`the_first_lobby_waits_for_the_host`
+    // the default).
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_host_start 0");
     sim
 }
 
@@ -138,6 +141,8 @@ fn downloading(sim: &mut NetSim, i: usize, done: u64, total: u64) {
         from: "asset service".into(),
         done,
         total,
+        files_done: 0,
+        files_total: 0,
     });
 }
 
@@ -302,6 +307,34 @@ fn the_host_starts_it_now() {
     sim.ticks(2);
     assert_eq!(server_lobby(&mut sim).and_then(|l| l.countdown), Some(5));
     assert!(sim.until(6 * HZ, |s| !in_lobby(s)));
+}
+
+/// By default (`mp_lobby_host_start 1`) the server run's first lobby waits
+/// for the host's start: everyone ready and the longest wait start
+/// nothing; the next lobby starts by itself once everyone is ready.
+#[test]
+fn the_first_lobby_waits_for_the_host() {
+    let mut sim = sim(1);
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_host_start 1");
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_max_wait 2");
+    sim.ticks(2);
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts");
+    assert!(sim.until(600, |s| joined(s, 0)), "client 0 is in");
+    sim.ticks(4 * HZ);
+    assert!(in_lobby(&sim), "nothing starts it by itself");
+    let l = server_lobby(&mut sim).expect("the lobby");
+    assert!(l.host_start && l.countdown.is_none() && l.wait_left.is_none(), "{l:?}");
+    assert!(l.rows.iter().all(|r| r.ready()), "everyone ready: {l:?}");
+    assert!(sim.until(HZ, |s| client_lobby(s, 0).is_some_and(|l| l.host_start)), "the client hears it waits for the host");
+    sim.server.app.world_mut().resource_mut::<Console>().submit("lobby_start 0");
+    sim.ticks(2);
+    assert!(!in_lobby(&sim), "the host's start");
+    // The next lobby counts down by itself.
+    minigame::start(sim.server.app.world_mut(), ID).expect("again");
+    sim.ticks(2);
+    assert!(in_lobby(&sim));
+    assert!(!server_lobby(&mut sim).is_some_and(|l| l.host_start));
+    assert!(sim.until(10 * HZ, |s| !in_lobby(s)), "everyone ready: it starts");
 }
 
 /// A test map loading here: its id and the frames left.

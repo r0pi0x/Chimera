@@ -112,10 +112,16 @@ pub fn requirements() -> (String, bool) {
 
 /// The binaries' own: a ladder's rung extras differ every launch, and
 /// each new match waits in the pre-match lobby (`mp_lobby 1`;
-/// `chimera_net::prematch`).
+/// `chimera_net::prematch`). A dedicated server has no host to press
+/// Start, so its first lobby counts down once everyone is ready or after
+/// the longest wait (`mp_lobby_host_start 0`; the command line may set
+/// it back to 1 and start it with `lobby_start` on its console).
 pub fn launch(app: &mut bevy::app::App) {
     app.insert_resource(crate::launch_rung_seed());
     chimera_net::prematch::enable(app);
+    let mut s = *app.world().resource::<chimera_net::prematch::LobbySettings>();
+    s.host_start = 0;
+    app.insert_resource(s);
 }
 
 /// Lucker Party's server's command line (without the program's name).
