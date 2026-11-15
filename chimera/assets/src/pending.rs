@@ -3,7 +3,7 @@
 //! one in the same store (`CachedFiles`) waits for it to arrive instead of
 //! asking for it again, and its group leaves out the others (the 2026-11-11 rehearsal:
 //! a ladder's view models, loading while the join's sets downloaded,
-//! fetched 1-2 groups a second time). The paced background prefetch
+//! fetched 1-2 groups a second time). The paced background stream
 //! doesn't claim its records: it is held while a player joins or changes
 //! map, so a load would wait on it.
 //!

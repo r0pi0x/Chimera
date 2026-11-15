@@ -851,12 +851,23 @@ where the files are, the existing HTTP service carries the files):
   server's `chimera:asset_prefetch_max` (`AssetOffer::prefetch_rate`; 0:
   none), held while the client joins or changes level. Hosting table:
   playtest-hosting.md, "Download speed and your upload".
+- **A lean first join (2026-11-15):** docs/performance.md, "First join
+  download" and its "After the cuts". `base` made lean from client runs'
+  read logs (`chimera_pack lean`, `chimera_assets::resolve`; the recorder
+  logs checks apart and never reads for them), `common` offered with each
+  match, a set per music track streamed while playing
+  (`chimera_net::net::assets::Streams`, Combat Arms' `stream_tracks`), the
+  pool prefetch removed (the offer's `later` stays empty; the cvar
+  `chimera:asset_prefetch_rate` is gone), the next map fetched at the
+  vote's lock (`MapAhead`), records at zstd level 19 (`chimera_pack
+  repack`). Startup 376 to 159 MB, before the first match 476 to about
+  284 MB.
 - **Known shortcuts:** what the games read at startup beyond the `base`
   sets still comes on demand (console only); the startup fetch's progress
   shows only once a join waits for it; a bind's `remount` reads again only
   what its hooks name (a game's weapon set built at startup stays); Combat
   Arms has no `players` set (its character models come on demand); on-demand
-  fetches during a map load don't hold the prefetch (only the join and level
+  fetches during a map load don't hold the streams (only the join and level
   change around them do); a revoke stops a token's next request, not a batch
   being sent.
 - Tests: chimera_assets `service` (HTTPS pinned and refused, the limits, paths),
@@ -864,8 +875,8 @@ where the files are, the existing HTTP service carries the files):
   127.0.0.1 and fixture files: join, offer, fetch, spawn; the hybrid client
   fetching nothing; a revoked or mistyped token's reason; the progress; the
   token bound and the files fetched in the same game, the binding reused,
-  no token, another certificate; the
-  prefetch's rate, cap and hold; the startup fetch's plan, progress and
+  no token, another certificate; every needed set before the spawn; the
+  next map ahead and a stream paced to its time; the startup fetch's plan, progress and
   errors); chimera_assets `pace`, `sets`; party_kit's loading line.
 
 ## 10. Later, each justified by a measurement

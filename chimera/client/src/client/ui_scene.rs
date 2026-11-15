@@ -525,12 +525,7 @@ fn proof(m: &mut Makers, passes: &mut Assets<PassMaterial>, lines: &mut Assets<L
         }
         let slot = commands.spawn(widgets::bot_slot(m.images, m.icon_images, t, &u, !you, 0.9, Tone::Fg3)).id();
         let n = commands.spawn(m.text(Role::DisplayBold, 0.78, name, Tone::Fg)).id();
-        // The second row as if hovered (its tick shown; no `Hovered` to hide it).
-        let tick = commands.spawn(widgets::hover_tick(m.slants, t, &u, 2.15)).id();
-        if !you {
-            commands.entity(tick).insert(Visibility::Inherited);
-        }
-        commands.entity(r).add_children(&[slot, n, tick]);
+        commands.entity(r).add_children(&[slot, n]);
         commands.entity(ramp).add_child(r);
     }
     commands.entity(body).add_child(ramp);

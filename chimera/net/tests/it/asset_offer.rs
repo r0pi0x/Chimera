@@ -87,8 +87,8 @@ fn the_offer_names_weapon_sets_as_published() {
         });
     let mut m = MatchManifest { map: "src:de_test".into(), ..default() };
     assets::offer(&mut world, &mut m);
-    assert_eq!(sets_of(&m, "src"), ["base", "players", "map/de_test", "weapon/ak47"]);
-    assert_eq!(sets_of(&m, "lt"), ["base", "players", "weapon/m9_knife"]);
+    assert_eq!(sets_of(&m, "src"), ["base", "players", "common", "map/de_test", "weapon/ak47"]);
+    assert_eq!(sets_of(&m, "lt"), ["base", "players", "common", "weapon/m9_knife"]);
 }
 
 /// The weapons the playing ladder's extras hand out (a rung's melee
@@ -176,7 +176,7 @@ fn the_offer_names_the_ladders_drawn_bodies() {
     ladder.extras[1] = body("42");
     ladder.extras[2] = body("17");
     let m = manifest::current(world);
-    assert_eq!(sets_of(&m, "lt"), ["base", "players", "character/17", "character/42"]);
+    assert_eq!(sets_of(&m, "lt"), ["base", "players", "common", "character/17", "character/42"]);
 }
 
 /// A ladder with a knife finale and rung extras: the host draws its melee

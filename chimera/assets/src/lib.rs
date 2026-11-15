@@ -36,10 +36,14 @@
 //! half-life), and `accounts::TicketAuth` lets the asset service take
 //! tickets beside legacy tokens.
 //!
+//! `resolve`: which sets a player fetches when (startup, each match,
+//! ahead of need), the records a list of sets comes to, and the lean
+//! `base` made from client runs' read logs (`chimera_pack lean`).
+//!
 //! `progress` reports fetches in words people read: a live line for
 //! `chimera_assets fetch`, periodic lines while a load fetches on demand.
 //! `sets` fetches whole sets as the game does (a join's, the startup's,
-//! the prefetch's); `pace` caps a background fetch's rate, with a pause;
+//! the streams'); `pace` caps a background fetch's rate, with a pause;
 //! `pending` is what a foreground fill is fetching into a store now, which an
 //! on-demand miss in that store waits for rather than fetching twice.
 //!
@@ -79,6 +83,7 @@ pub mod pending;
 pub mod progress;
 pub mod recording;
 pub mod remote;
+pub mod resolve;
 pub mod server;
 pub mod sets;
 pub mod shared;
@@ -92,6 +97,6 @@ pub use config::{AssetSettings, AssetsConfig};
 pub use lock::AssetsLock;
 pub use manifest::{FileRecord, Manifest};
 pub use pack::{PackReport, pack};
-pub use recording::{LogLine, Recorder, Recording, read_log};
+pub use recording::{LogLine, Recorder, Recording, read_log, read_log_with_checks};
 pub use remote::{Fetcher, Remote, RemoteConfig};
 pub use store::{Store, sha256_hex};

@@ -5,8 +5,15 @@
 //! whose theme turns UI sound on (Ultimate Gun Game's Signal); Lucker
 //! Party hears nothing.
 //!
-//! - **Menus**: the pointer landing on a button (`ui_hover`, one voice:
-//!   `hover::<A>` for each menu's action component), a press (`ui_select`),
+//! - **Hover** (`hover::<A>` for each menu's action component, one
+//!   `HoverCue` among them): `ui_hover` once per logical item (a row, a
+//!   list line, a menu entry, a button; a `CueItem` on a row makes its
+//!   parts one item), never again for moving among its parts or back onto
+//!   it; at least `HOVER_GAP_SECS` (90 ms) apart, one too soon dropped;
+//!   none while a mouse button is held (a slider drag, a pan); the keys'
+//!   focus moves cue each step (the screens' own). Its level is 4 dB
+//!   under select (`ui_sounds.toml`).
+//! - **Menus**: a press (`ui_select`),
 //!   back, close or cancel and Esc (`ui_back`), a press the menu refuses
 //!   (`ui_denied`: while loading, a failure box or a reconnect shows), a
 //!   range setting's step (`ui_slider` at the value's place in its range,
@@ -48,36 +55,93 @@ pub fn step_cue(pick: &Pick, next: &str) -> UiCue {
     }
 }
 
-/// `ui_hover` when the pointer lands on a button carrying `A` (not again
-/// for the same button, nor on a press's release; a button keyed by its
-/// action, so a menu rebuilt under a resting pointer stays quiet).
-pub fn hover<A: Component + PartialEq + Clone>(
-    buttons: Query<(&A, &widgets::Interaction), Changed<widgets::Interaction>>,
-    mut over: Local<Option<A>>,
+/// A logical item's hover key (module doc, "Hover"): put on a row or a
+/// list line, it makes the pointer's moves among its parts (its label,
+/// slider, value box, keys, background) one item, cued once. Without one
+/// an entity's item is its action.
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct CueItem(pub String);
+
+/// Hover cues at least this far apart, seconds; one too soon is dropped.
+pub const HOVER_GAP_SECS: f64 = 0.09;
+
+/// An item not under the pointer this long is left (entering it again
+/// cues); shorter covers a page drawn again under a still pointer.
+pub const HOVER_FORGET_SECS: f64 = 0.25;
+
+/// The menus' hover cue (module doc), shared by every `hover::<A>`.
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct HoverCue {
+    /// The item under the pointer, and when it last was.
+    pub over: Option<String>,
+    pub seen: f64,
+    /// The last hover cue.
+    pub last: Option<f64>,
+}
+
+/// The item an entity belongs to: its own or an ancestor's `CueItem`,
+/// else its action.
+fn item_of<A: std::fmt::Debug>(e: Entity, a: &A, parents: &Query<&ChildOf>, items: &Query<&CueItem>) -> String {
+    let mut at = e;
+    for _ in 0..32 {
+        if let Ok(i) = items.get(at) {
+            return i.0.clone();
+        }
+        match parents.get(at) {
+            Ok(p) => at = p.parent(),
+            Err(_) => break,
+        }
+    }
+    format!("{}:{a:?}", std::any::type_name::<A>())
+}
+
+/// `ui_hover` when the pointer enters a new logical item carrying `A`
+/// (module doc): once per item (`CueItem`), not for its parts, not on a
+/// press, at least `HOVER_GAP_SECS` apart (one too soon dropped), none
+/// while a mouse button is held (a drag, a pan). Keyed by value, so a
+/// menu drawn again under a resting pointer stays quiet.
+#[allow(clippy::too_many_arguments)]
+pub fn hover<A: Component + std::fmt::Debug>(
+    buttons: Query<(Entity, &A, &widgets::Interaction)>,
+    parents: Query<&ChildOf>,
+    items: Query<&CueItem>,
+    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    clock: Option<Res<chimera_ui::UiClock>>,
+    time: Option<Res<Time<Real>>>,
+    mut st: ResMut<HoverCue>,
     mut out: MessageWriter<UiCue>,
 ) {
-    for (a, i) in &buttons {
-        let e = a.clone();
-        match i {
-            widgets::Interaction::Hovered | widgets::Interaction::Pressed => {
-                if over.as_ref() != Some(&e) {
-                    if *i == widgets::Interaction::Hovered {
-                        out.write(UiCue::new("ui_hover"));
-                    }
-                    *over = Some(e);
-                }
-            }
-            widgets::Interaction::None if over.as_ref() == Some(&e) => *over = None,
-            widgets::Interaction::None => {}
+    let now = clock.map(|c| c.now).or_else(|| time.map(|t| t.elapsed_secs_f64())).unwrap_or(0.0);
+    let held = mouse.is_some_and(|m| m.get_pressed().next().is_some());
+    let mut entered: Option<(String, bool)> = None;
+    for (e, a, i) in &buttons {
+        if *i == widgets::Interaction::None {
+            continue;
         }
+        let k = item_of(e, a, &parents, &items);
+        if st.over.as_ref() == Some(&k) && now - st.seen <= HOVER_FORGET_SECS {
+            // Still on the same item (a part of it, or it drawn again).
+            st.seen = now;
+            return;
+        }
+        entered = Some((k, *i == widgets::Interaction::Hovered));
+    }
+    let Some((k, hovered)) = entered else { return };
+    st.over = Some(k);
+    st.seen = now;
+    if hovered && !held && st.last.is_none_or(|l| now - l >= HOVER_GAP_SECS) {
+        st.last = Some(now);
+        out.write(UiCue::new("ui_hover"));
     }
 }
 
-/// Registers `UiCue` where the shell didn't (tests of a menu alone).
+/// Registers `UiCue` where the shell didn't (tests of a menu alone), and
+/// the hover cue's state.
 pub fn ensure_message(app: &mut App) {
     if !app.world().contains_resource::<Messages<UiCue>>() {
         app.add_message::<UiCue>();
     }
+    app.init_resource::<HoverCue>();
 }
 
 /// Under UI sound the air strike's own alert (`air_alert`, from the

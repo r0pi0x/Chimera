@@ -242,18 +242,21 @@ fn recording_logs_each_file_read_once() {
     mount.read("Sound/One.wav").unwrap();
     assert!(mount.contains("cfg/game.txt"));
     assert!(!mount.contains("cfg/none.txt"));
+    // A file only checked for is logged apart, never as a read.
     let lines = read_log(&log).unwrap();
     let got: Vec<(&str, u64)> = lines.iter().map(|l| (l.path.as_str(), l.size)).collect();
-    assert_eq!(got, [("sound/one.wav", 10), ("cfg/game.txt", 20)]);
+    assert_eq!(got, [("sound/one.wav", 10)]);
     assert_eq!(lines[0].id, sha256_hex(b"same bytes"));
-    assert_eq!(lines[1].game, "fixture");
-    assert_eq!(recorder.lines().len(), 2);
+    assert_eq!(lines[0].game, "fixture");
+    assert_eq!(recorder.lines().len(), 1);
+    let (_, checks) = chimera_assets::read_log_with_checks(&log).unwrap();
+    assert_eq!(checks, [("fixture".to_string(), "cfg/game.txt".to_string())]);
     // The log is a set the packer takes.
     let store = Store::new(dir.join("store"));
     let mut m = Manifest::new("fixture", "1", None);
     let paths: Vec<String> = lines.iter().map(|l| l.path.clone()).collect();
     let report = pack(&fixture(&dir.join("install")), &paths, &store, &mut m, Some("test"), 1).unwrap();
-    assert_eq!((report.files, m.sets["test"].len()), (2, 2));
+    assert_eq!((report.files, m.sets["test"].len()), (1, 1));
     let _: Arc<Recorder> = recorder;
     let _ = fs::remove_dir_all(&dir);
 }

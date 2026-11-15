@@ -175,6 +175,17 @@ Fixed ones are on branch `release-7.1` (tag v0.1.0-playtest7.1, not yet
 published): confirm each in a playtest, then delete it. The rest is not
 started; the user asked to avoid server lag while testers play.
 
+- **A first join that binds the token can't play a Combat Arms ladder**
+  (found 2026-11-15, `heavy::no_fetch_in_match` without
+  `CHIMERA_GUARD_BOUND`, with the published manifests and the lean ones
+  alike; the post-push run of `main` failed there too): after the bind
+  and the download, the client refuses the server's match, "weapon
+  combat_arms:makarov_ca: not in the weapon catalogue". The minigame's
+  weapon catalogue, built at startup with no Combat Arms files, isn't
+  built again when the files arrive (`net::assets::AssetsArrived`;
+  `combat_arms::game::data::reread_install` makes the data again, the
+  catalogue keeps the old). A tester's second start (token bound) is fine.
+
 - **Others' voice lines in 3D** (done on branch `voice-3d`, confirm in a
   playtest): grenade call-outs and radio calls were heard only by the
   speaker in the free-for-all. `party_voice_lines_3d` (on in the party
@@ -1645,7 +1656,7 @@ sections above already list.
   (parity), so CS:S rungs feel unresponsive next to Combat Arms ones.
   An opt-in party hit marker or hit sound for every gun (parity first,
   options later).
-  `cl_hitmarker 1` (archived, default 0 everywhere) draws a cross on the
+  `cl_hitmarker 1` (archived, default 0; 1 in the party apps) draws a cross on the
   shooter's own client when its round damages another player: white for
   a hit, yellow for a headshot, red for a kill (`client::hit_marker`,
   over any game's HUD; from `WeaponEvent::Hit`, which a network client
@@ -2384,6 +2395,15 @@ The console and overlays are in (chimera/core/src/console.rs, chimera/client/src
 ## 6. Sound, remaining
 
 docs/plans/active/sound.md.
+
+- **Synced jukebox (future, user 2026-11-15).** Every player in a match
+  hears the same music track at the same point: the server picks the
+  party playlist's order and sends each track's start time, the clients
+  stream it (`chimera_net::net::assets::Streams`, as the next track is
+  now) and start it on the server's clock. Today each client shuffles
+  its own playlist (`combat_arms::game::music::director`); the first
+  tracks come with the match's files and each next one streams while the
+  one before plays (docs/performance.md, "First join download").
 
 - Scrapes by ear: tune `games::cs_source::scrapes::friction_energy`
   against CS:S (a crate shoved across concrete, a ragdoll sliding down a

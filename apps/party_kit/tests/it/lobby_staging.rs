@@ -580,10 +580,10 @@ fn settings_stay_open_across_the_match_start() {
     in_lobby(&mut sim);
     sim.clients[0].app.world_mut().write_message(LobbyAction::Settings);
     sim.ticks(2);
-    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("settings_set cl_hitmarker 0");
+    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("settings_set party_swap_effect 0");
     sim.ticks(2);
     let pending = |s: &NetSim| s.clients[0].app.world().resource::<party_kit::settings::Settings>().pending.clone();
-    assert_eq!(pending(&sim).get("cl_hitmarker").map(String::as_str), Some("0"), "a change pending");
+    assert_eq!(pending(&sim).get("party_swap_effect").map(String::as_str), Some("0"), "a change pending");
     // The match starts under it (the host's start: a short countdown).
     sim.server.app.world_mut().resource_mut::<LobbySettings>().countdown = 1.0;
     sim.server.app.world_mut().resource_mut::<Console>().submit("lobby_start 1");
@@ -595,7 +595,7 @@ fn settings_stay_open_across_the_match_start() {
         assert!(m.open && !m.lobby && m.page == Page::Options(0), "Settings stays, now the match's: {m:?}");
     }
     assert_eq!(settings_ctx(&sim, 0), Some(party_kit::settings::Context::Game));
-    assert_eq!(pending(&sim).get("cl_hitmarker").map(String::as_str), Some("0"), "nothing lost");
+    assert_eq!(pending(&sim).get("party_swap_effect").map(String::as_str), Some("0"), "nothing lost");
     assert!(sim.clients[0].app.world().resource::<AppMenu>().open, "the input still Settings'");
     // Back goes to the match's menu, as for Settings opened in play.
     sim.clients[0].app.world_mut().resource_mut::<Console>().submit("settings_press leave_discard");

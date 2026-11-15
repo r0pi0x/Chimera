@@ -29,8 +29,8 @@
 //! `unknown_weight`, said once in the log (`draw_weights`). The rotation
 //! (`rotation::MapHistory::next_weighted`) and the map vote
 //! (`vote::candidates_weighted`) draw by these weights, the recently
-//! played held back as before; the asset offer prefetches the maps let
-//! in, likeliest first (`likeliest`).
+//! played held back as before; `likeliest` lists the maps let in,
+//! likeliest first.
 //!
 //! Known shortcuts: the count is the characters present at the change,
 //! not those who will join; a game without measurements has every map at
@@ -460,7 +460,7 @@ pub fn present(world: &World) -> usize {
 }
 
 /// `pool` as the next draw likely takes it with the characters present:
-/// the maps let in, heaviest first (the asset offer's prefetch order);
+/// the maps let in, heaviest first;
 /// `def`'s `map_fit` off: `pool` as it is.
 pub fn likeliest(world: &World, def: &MinigameDef, pool: &[String]) -> Vec<String> {
     let Ok(Some(settings)) = FitSettings::of(def) else {

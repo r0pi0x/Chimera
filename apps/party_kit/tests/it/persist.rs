@@ -190,9 +190,50 @@ fn options_rows_read_right() {
         assert_eq!(s.shown("0.5"), "50%");
     }
     assert_eq!(row("mat_monitorgamma").label, "Gamma");
-    assert!(row("cl_hitmarker").label.contains("CS:S"));
-    assert!(row("hud_radar").label.contains("Combat Arms"));
+    // The hit marker, others' voice lines and the radar have no row (the
+    // user's call): the party keeps its defaults (`party_defaults_hold`).
+    for gone in ["cl_hitmarker", "party_voice_lines_3d", "hud_radar"] {
+        assert!(tabs.iter().flat_map(|(_, s)| s.iter()).all(|s| s.cvar != gone), "{gone} has no Options row");
+    }
+    let party: Vec<&str> = tabs.iter().find(|(n, _)| n == "Party").map(|(_, s)| s.iter().map(|s| s.cvar.as_str()).collect()).unwrap_or_default();
+    assert_eq!(party, ["party_swap_effect", "party_music"], "the Party page keeps the swap effect and the music");
     let music = row("party_music");
     assert_eq!(music.shown("2"), "Combat Arms' loop");
     assert_eq!(row("fov_desired").shown("90"), "90", "a plain range stays a number");
+}
+
+/// A fresh profile's volumes as the Options page shows them: game 50 %,
+/// music 100 %, UI 80 % (not 5 %: the 0.05 is a step, never a default);
+/// the start's repair leaves any volume not both 0 alone (a 0.05 a
+/// player set stays theirs) and puts the bug's 0 and 0 back to 50 %.
+#[test]
+fn a_fresh_profile_hears_half_volume() {
+    let mut app = app(None);
+    let tabs = party_kit::esc_menu::option_tabs_for(true);
+    let row = |cvar: &str| tabs.iter().flat_map(|(_, s)| s.iter()).find(|s| s.cvar == cvar).unwrap().clone();
+    for (cvar, shown) in [("volume", "50%"), ("snd_musicvolume", "100%"), ("snd_uivolume", "80%")] {
+        let v = value(&mut app, cvar);
+        assert_eq!(row(cvar).shown(&v), shown, "{cvar} = {v}");
+    }
+    use chimera_client::client::console::repair_options;
+    assert!(repair_options(Some(0.05), Some(1.0), None).is_empty(), "a player's 5 % is theirs");
+    assert_eq!(repair_options(Some(0.0), Some(0.0), None), ["volume 0.5", "snd_musicvolume 1"]);
+}
+
+/// The settings without an Options row keep the party's defaults: the
+/// hit marker on, the radars off (others' voice lines on: voice_lines.rs).
+#[test]
+fn the_party_defaults_hold_without_their_rows() {
+    use chimera_client::client::hit_marker::{HitMarkerPlugin, HitMarkerSetting};
+    use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
+    use combat_arms::harness::CaSim;
+    let mut sim = Sim::with(CaSim, |app| {
+        app.add_plugins((GreyboxMapPlugin, party_kit::PartyPartsPlugin, HitMarkerPlugin, party_kit::PartyHudPlugin));
+    });
+    sim.ticks(2);
+    let w = sim.app.world_mut();
+    assert_eq!(cvar_value(w, "cl_hitmarker").as_deref(), Some("1"), "the hit marker on");
+    assert_eq!(w.resource::<HitMarkerSetting>().on, 1);
+    assert_eq!(w.resource::<Console>().cvar("cl_hitmarker").unwrap().default, "1", "1 is the party's default (a config leaves it out)");
+    assert_eq!(cvar_value(w, "hud_radar").as_deref(), Some("0"), "the radars off");
 }
