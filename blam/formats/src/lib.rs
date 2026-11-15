@@ -28,6 +28,11 @@
 //!   rotation convention.
 //! - `shader`: the eight shader tag classes and the periodic animation
 //!   functions.
+//! - `object`: the object tag family (biped, vehicle, equipment, scenery,
+//!   devices ...: the shared object base, the unit, item and device layers,
+//!   the object functions and their evaluation).
+//! - `weapon`: the weapon tag (the item and object layers, magazines,
+//!   triggers) and the pure formulas on its fields.
 
 pub mod animation;
 pub mod bitmap;
@@ -37,5 +42,7 @@ pub mod disc;
 pub mod model;
 pub mod scenario;
 pub mod shader;
+pub mod object;
+pub mod weapon;
 pub mod sound;
 pub mod structure_bsp;

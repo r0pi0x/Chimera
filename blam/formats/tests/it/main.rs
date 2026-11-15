@@ -17,6 +17,8 @@ mod scenario;
 mod shaders;
 mod sound;
 mod structure_bsp;
+mod object;
+mod weapon;
 
 mod heavy {
     mod animation_install;
@@ -29,4 +31,6 @@ mod heavy {
     mod scenario_install;
     mod shader_install;
     mod sound_install;
+    mod object_install;
+    mod weapon_install;
 }
