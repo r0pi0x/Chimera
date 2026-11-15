@@ -26,6 +26,9 @@
 //! - The autoaim's target (`game::weapons::aim`) does not reach the HUD:
 //!   the aim crosshair never turns red and the distance and elevation
 //!   numbers never draw.
+//! - In the party layout the crosshairs also hide the frame behind them by
+//!   their brightness (`Fill::Reticle`, ours: added on a bright map of
+//!   another game, the plasma pistol's light blue reticle vanished).
 //! - The flashlight meter, damage arrows, waypoints, teammate markers,
 //!   messages and prompts are not drawn; the warning sounds do not play.
 
@@ -56,6 +59,10 @@ pub enum Fill {
     /// The scope's darkening (section 9): the frame multiplied by 1 - the
     /// texel's grey level (its blue: Y of an A8Y8 or AY8 mask).
     Darken,
+    /// A crosshair in the party layout: a `Sprite` that also hides the
+    /// frame behind it by its brightness (the party's maps are other
+    /// games', often bright, where an added light blue disappears).
+    Reticle(Rgba),
 }
 
 /// One picture drawn: where (canvas units: left, top, right, bottom) and
@@ -329,6 +336,7 @@ pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canva
         scope_mask(&mut p, chain, w.zoom >= 0, canvas);
     }
     // 2. Crosshairs: the weapon's own HUD first, then each parent.
+    let crosshairs_from = p.out.len();
     if unit.alive {
         let xs = &state.crosshairs;
         for hud in chain {
@@ -340,6 +348,13 @@ pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canva
                 for item in &c.items {
                     crosshair_item(&mut p, c.kind, &c.bitmap, item, xs);
                 }
+            }
+        }
+    }
+    if canvas.layout == layout::HudLayout::Party {
+        for q in &mut p.out[crosshairs_from..] {
+            if let Fill::Sprite(c) = q.fill {
+                q.fill = Fill::Reticle(c);
             }
         }
     }

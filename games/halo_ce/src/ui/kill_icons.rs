@@ -7,7 +7,8 @@
 //! from their grenade HUDs' first overlay picture (the plate's grenade
 //! icon: the grenade HUD's own messaging icon is junk on the disc, 0x1B8).
 //! Each picture is cut out of its sprite page into an image of its own
-//! (`icon_rgba`), made when the HUD's data is read (`ui::hud::nodes::
+//! (`icon_rgba`), white with its brightness times its alpha as the ink
+//! (the HUD tints them; the feed's other icons are white), made when the HUD's data is read (`ui::hud::nodes::
 //! HudLoad`, from the donor map) and registered under Halo's game name;
 //! a weapon without one (the melee and other kinds of kill, any gun whose
 //! chain names none) keeps the feed's fallback, its display name. Nothing
@@ -78,7 +79,14 @@ pub fn pictures(data: &HudData) -> BTreeMap<&'static str, Picture> {
 pub fn images(data: &HudData, assets: &mut Assets<Image>) -> BTreeMap<&'static str, WeaponIcon> {
     let mut out = BTreeMap::new();
     for (id, p) in pictures(data) {
-        let Some((w, h, rgba)) = icon_rgba(data, &p) else { continue };
+        let Some((w, h, mut rgba)) = icon_rgba(data, &p) else { continue };
+        // As the HUD draws them: a light picture over its alpha, tinted
+        // there; here white with the picture's brightness as its ink, as
+        // the other games' feed icons are.
+        for t in rgba.chunks_mut(4) {
+            let ink = u16::from(t[0].max(t[1]).max(t[2])) * u16::from(t[3]) / 255;
+            t.copy_from_slice(&[255, 255, 255, ink as u8]);
+        }
         let image = Image::new(
             Extent3d { width: w, height: h, depth_or_array_layers: 1 },
             TextureDimension::D2,

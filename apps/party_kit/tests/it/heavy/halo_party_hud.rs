@@ -143,6 +143,28 @@ fn a_halo_rung_holders_hud_leaves_the_partys_overlay_free() {
         }
         eprintln!("{w}x{h}: Halo {ours:?}; feed {feed:?}; Signal {:?}", signal_places(w as f32, h as f32, 6.0));
     }
+    // Each of the eight rung guns in hand draws its crosshair in the party
+    // layout, as a party crosshair (`draw::Fill::Reticle`: it also hides the
+    // frame behind it by its brightness, so it shows on a bright map).
+    use halo_ce::game::weapons as hw;
+    for id in [hw::ASSAULT_RIFLE, hw::PISTOL, hw::PLASMA_RIFLE, hw::SHOTGUN, hw::SNIPER_RIFLE, hw::ROCKET_LAUNCHER, hw::NEEDLER, hw::PLASMA_PISTOL] {
+        let w = sim.app.world_mut();
+        let gun = chimera_sim::weapon::give(w, me, id).unwrap_or_else(|| panic!("{id} given"));
+        w.get_mut::<chimera_sim::weapon::Inventory>(me).unwrap().active = Some(gun);
+        sim.seconds(0.5);
+        for _ in 0..2 {
+            sim.app.update();
+        }
+        let hud = sim.app.world().resource::<HaloHud>();
+        let c = hud.canvas.expect("drawn");
+        let (cx, cy) = (c.width as f32 / 2.0, 240.0);
+        let reticles = hud
+            .quads
+            .iter()
+            .filter(|q| matches!(q.fill, halo_ce::ui::hud::draw::Fill::Reticle(_)) && q.rect[0] <= cx && q.rect[2] >= cx && q.rect[1] <= cy && q.rect[3] >= cy)
+            .count();
+        assert!(reticles > 0, "{id}: no crosshair in the party layout ({:?})", hud.unit.as_ref().and_then(|u| u.weapon.as_ref()).map(|w| &w.tag));
+    }
 }
 
 /// No Halo equipment on a Halo map in the party: its netgame equipment

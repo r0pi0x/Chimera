@@ -8,7 +8,9 @@
 //! change nothing; with `halo_party_grenades 1` a new life carries Halo's
 //! four frags (two players: the cap is 4) and the button throws one; back
 //! at 0 the grenades are gone at once. Halo's own simulation never
-//! registers the switch (its players keep their grenades).
+//! registers the switch (its players keep their grenades). And a Halo
+//! zoom keeps its holder's view in the party (Combat Arms' zoom step
+//! leaves a gun's own zoom alone).
 
 use bevy::prelude::*;
 use chimera_core::{
@@ -126,4 +128,30 @@ fn halos_own_simulation_has_no_party_switch() {
     let mut sim = Sim::new(halo_ce::harness::HaloSim, GreyboxMapPlugin);
     sim.ticks(2);
     assert!(sim.app.world().get_resource::<PartyGrenades>().is_none(), "Halo's own app keeps its grenades");
+}
+
+/// A Halo zoom keeps its view in the party: Combat Arms' zoom step (the
+/// party's base game) took the holder's `Zoomed` off every tick for any
+/// gun not its own and without the engine's `Zoom`, so a Halo sniper's
+/// scope showed its mask over an unzoomed camera with the gun in view; it
+/// now leaves a gun's own zoom (`weapon::OwnZoom`) alone.
+#[test]
+fn a_halo_zoom_keeps_its_holders_view_in_the_party() {
+    use chimera_sim::weapon::{Inventory, Zoomed, give};
+    let mut sim = party();
+    let a = soldier(&mut sim);
+    let _b = soldier(&mut sim);
+    sim.seconds(1.5);
+    set_rung(&mut sim, a, 1);
+    sim.seconds(1.0);
+    let w = sim.app.world_mut();
+    let sniper = give(w, a, halo_ce::game::weapons::SNIPER_RIFLE).expect("the sniper rifle");
+    w.get_mut::<Inventory>(a).unwrap().active = Some(sniper);
+    sim.seconds(1.5);
+    sim.intent(a).secondary = true;
+    sim.seconds(0.2);
+    sim.intent(a).secondary = false;
+    sim.seconds(0.5);
+    let z = sim.app.world().get::<Zoomed>(a).copied();
+    assert!(z.is_some_and(|z| z.fov < 40.0), "zoomed: {z:?}");
 }

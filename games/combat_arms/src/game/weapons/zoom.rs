@@ -81,7 +81,7 @@ use serde::Deserialize;
 use crate::{
     core::{FirstTimePredicted, Health, Intent, SimClock},
     map::interp::NetDrawn,
-    weapon::{Inventory, Magazine, NetPart, ShellReload, ViewPunch, WeaponEvent, WeaponEventKind, WeaponState, Zoom, Zoomed},
+    weapon::{Inventory, Magazine, NetPart, ShellReload, ViewPunch, WeaponEvent, WeaponEventKind, WeaponState, OwnZoom, Zoom, Zoomed},
 };
 
 /// The hook's name.
@@ -472,7 +472,9 @@ fn reload_allowed(mag: Option<&Magazine>, st: &WeaponState) -> bool {
 pub(super) fn zoom_input(
     owners: Query<(Entity, &Intent, &Inventory, Option<&Health>, Option<&Zoomed>), Without<NetDrawn>>,
     mut weapons: Query<(&mut CaZoom, &mut WeaponState, Option<&Magazine>)>,
-    chimera_zoom: Query<(), With<Zoom>>,
+    // Another game's zoom: the engine's (`Zoom`) or its own (`OwnZoom`:
+    // Halo's guns keep their holder's `Zoomed` themselves).
+    chimera_zoom: Query<(), Or<(With<Zoom>, With<OwnZoom>)>>,
     (clock, first): (Res<SimClock>, Res<FirstTimePredicted>),
     mut sounds: MessageWriter<CaZoomSound>,
     mut commands: Commands,

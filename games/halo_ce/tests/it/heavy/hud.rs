@@ -311,3 +311,37 @@ fn every_rung_gun_and_grenade_has_a_kill_feed_icon_with_ink() {
         seen.push(rgba);
     }
 }
+
+/// Every gun of the party's eight rung guns draws a crosshair (a picture
+/// of a crosshair page, centred) in the party layout and the disc's,
+/// at 1280x720, ready and unzoomed, as `nodes::weapon_now` reads a fresh
+/// gun.
+#[test]
+fn every_rung_gun_draws_its_crosshair_in_the_party_layout() {
+    use halo_ce::{
+        game::weapons::{self as w, HaloGun, HaloWeapon},
+        ui::hud::layout::HudLayout,
+    };
+    let Some(d) = data() else { return };
+    let guns = w::guns();
+    for id in [w::ASSAULT_RIFLE, w::PISTOL, w::PLASMA_RIFLE, w::SHOTGUN, w::SNIPER_RIFLE, w::ROCKET_LAUNCHER, w::NEEDLER, w::PLASMA_PISTOL] {
+        let gun = &guns.iter().find(|(g, _)| g == id).unwrap().1;
+        let now = weapon_now(&HaloGun::new(gun), &HaloWeapon(std::sync::Arc::new(gun.clone())), false);
+        let unit = held(&gun.tag, now);
+        for layout in [HudLayout::Disc, HudLayout::Party] {
+            let canvas = Canvas::of(1280.0, 720.0).with_layout(layout);
+            let mut s = HudState::default();
+            for t in 100..105 {
+                s.tick(&d, &unit, &[], 0.0, t);
+            }
+            let q = draw::draw(&d, &unit, &s, &canvas, 105);
+            let centre = canvas.width as f32 / 2.0;
+            let reticle: Vec<&str> = q
+                .iter()
+                .filter(|q| page(&d, q).contains("reticle") && q.rect[0] < centre && q.rect[2] > centre && q.rect[1] < 240.0 && q.rect[3] > 240.0)
+                .map(|q| page(&d, q))
+                .collect();
+            assert!(!reticle.is_empty(), "{id} in the {layout:?} layout: no crosshair; pages drawn {:?}", q.iter().map(|q| page(&d, q)).collect::<Vec<_>>());
+        }
+    }
+}
