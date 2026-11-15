@@ -300,9 +300,10 @@ looked into; it collides the same).
 Left (M2b): the scripts' field mapping (needs a spec written with the key,
 then the ICE probe and the publish above; the sets are now named
 `weapon/tf_weapon_*`); the knockback per point is ours (open question 9,
-probe P3), bullets push nobody; the Minigun's first-person idle sits low
-and angled up (the Heavy arms' `m_idle` as decoded puts `weapon_bone`
-0.9 m below the eye); no explosion look (particles, scorch), no muzzle
+probe P3), bullets push nobody; the Minigun's first-person idle sat low
+and angled up (the Heavy arms' `m_idle` as decoded holds the gun upright
+below the eye; since tf2-guns2 the first person shows the spun pose
+raised by a `view_offset`: `game::view`); no explosion look (particles, scorch), no muzzle
 flash seen in first person; the rocket's crouched offset and the
 per-class shotgun starts wait for classes (M3); a TF2 rung has no knife.
 
