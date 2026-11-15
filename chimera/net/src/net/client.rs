@@ -382,25 +382,38 @@ fn send_join(world: &mut World) {
             // game's `JoinRules`).
             let rules = super::JoinRules::active(world);
             info.push((super::server::JOIN_KEY.to_string(), (rules.choice)(world)));
-            // The formats of the data it reads from a server (`formats`).
-            let prints = super::formats::fingerprints(world);
-            if !prints.is_empty() {
-                info.push((super::formats::FORMATS_KEY.to_string(), super::formats::encode(&prints)));
-            }
-            // What this machine has (the mount doctor's report), if the
-            // app made one.
-            if let Some(m) = world.get_resource::<super::manifest::LocalMounts>() {
-                info.push((super::manifest::MOUNTS_KEY.to_string(), super::manifest::encode(&m.0)));
-                // It can fetch the files of games an offer names (`assets`).
-                if super::assets::session(world).can_fetch() {
-                    info.push((super::assets::ASSETS_KEY.to_string(), "1".to_string()));
-                }
-            }
+            info.extend(machine_info(world));
             info
         },
     };
     world.commands().client_trigger(join);
     world.flush();
+}
+
+/// What this machine says of itself in its userinfo, with the join and
+/// again whenever it changes (`chat::send_userinfo`: a join that bound
+/// the asset service made its games' files arrive, `assets::remount`, so
+/// the server's checks of the next match, `minigame_net::playable_on`,
+/// and its ladders, `installed_by_all`, count them): the formats of the
+/// data it reads from a server, the mount doctor's report if the app made
+/// one, and whether it can fetch an offer's games.
+pub(super) fn machine_info(world: &mut World) -> Vec<(String, String)> {
+    let mut info = Vec::new();
+    // The formats of the data it reads from a server (`formats`).
+    let prints = super::formats::fingerprints(world);
+    if !prints.is_empty() {
+        info.push((super::formats::FORMATS_KEY.to_string(), super::formats::encode(&prints)));
+    }
+    // What this machine has (the mount doctor's report), if the app made
+    // one.
+    if let Some(m) = world.get_resource::<super::manifest::LocalMounts>() {
+        info.push((super::manifest::MOUNTS_KEY.to_string(), super::manifest::encode(&m.0)));
+        // It can fetch the files of games an offer names (`assets`).
+        if super::assets::session(world).can_fetch() {
+            info.push((super::assets::ASSETS_KEY.to_string(), "1".to_string()));
+        }
+    }
+    info
 }
 
 fn refused(r: On<Refused>, mut commands: Commands) {

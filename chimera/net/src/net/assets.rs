@@ -96,7 +96,11 @@
 //! UI and weapon names) is built again by its `AssetsArrived` observers
 //! before the join checks the match (`remount` applies what they queue
 //! first): the weapon catalogue then has the game's install weapons a
-//! ladder names, at the registry indices the server has.
+//! ladder names, at the registry indices the server has. The client's
+//! mount report, now with those games, goes to the server again with its
+//! userinfo (`client::machine_info`, `chat::send_userinfo`), so the next
+//! match's checks and ladders (`minigame_net::playable_on`,
+//! `installed_by_all`) count them.
 //!
 //! Known shortcuts: a bind's `remount` reads again only what its hooks
 //! name (a part with no observer keeps what it read at startup without the

@@ -493,6 +493,14 @@ fn reads_from(sim: &NetSim, i: usize, url: &str) -> bool {
         && world.resource::<LocalMounts>().0.has(GAME)
 }
 
+/// The server's view of its one player's mount report (its userinfo's).
+fn server_report(sim: &mut NetSim) -> Option<MountReport> {
+    let world = sim.server.app.world_mut();
+    let mut q = world.query::<(&chimera_net::net::NetCharacter, &chimera_core::core::UserInfo)>();
+    let info = q.iter(world).find(|(c, _)| c.owner.is_some())?.1.0.clone();
+    chimera_net::net::manifest::from_userinfo(info.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+}
+
 /// Counts the remounts (`AssetsArrived`).
 static REMOUNTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -528,6 +536,13 @@ fn a_first_join_binds_the_token_and_fetches_in_the_same_game() {
     assert!(svc.ids("extra").iter().all(|id| !store.has(id)), "only what the match offers");
     assert!(reads_from(&sim, 0, &svc.front.url()), "the game is read from the store with the service now");
     assert_eq!(REMOUNTS.load(std::sync::atomic::Ordering::SeqCst), 1, "read again once");
+    // The server hears that the client has the game now (its mount report
+    // sent again: the next match's checks and ladders count it).
+    assert!(
+        until(&mut sim, 10.0, |s| server_report(s).is_some_and(|r| r.has(GAME))),
+        "the server's view of the client: {:?}",
+        server_report(&mut sim)
+    );
     let p = progress(&sim, 0);
     assert!(p.failure.is_none(), "{:?}", p.failure);
     let stages: Vec<JoinStage> = p.log.iter().map(|l| l.0).collect();
