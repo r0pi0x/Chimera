@@ -12,17 +12,25 @@
 //!   `info_player_teamspawn`, gravity 800; `MAP_LOADER` for `tf2:<map>`);
 //! - `movement`: `tf2:movement`, Chimera's placeholder walking with the
 //!   Soldier's numbers until TF2's movement (M3);
-//! - `parts`: what the game lends other games' apps (`PARTS`): nothing yet;
+//! - `parts`: what the game lends other games' apps (`PARTS`): its four
+//!   guns, its stand-in movement;
 //! - `ice`: the ICE cipher of the encrypted scripts (specs/tf2/ice.md),
 //!   with the spec's ambiguous readings selectable (M2a);
 //! - `scripts`: the weapon and class scripts (`.ctx`) through the mount,
 //!   plain from the asset store or decrypted with the user's key, and
 //!   which of the two served;
 //! - `sets`: what `chimera_pack tf2`'s `weapon/<id>` and `players` sets
-//!   hold.
+//!   hold;
+//! - `weapons` (M2b): the Scattergun, Rocket Launcher, Shotgun and
+//!   Minigun as data (data/weapons) with TF2's gun rules as hooks (the
+//!   distance modifier, the first pellet, the rocket's blast, the
+//!   Minigun's spin), where their numbers came from (`script_numbers`);
+//! - `view`: the guns' view models (the class's arms with the `c_` weapon
+//!   bone-merged) and their rules on Chimera's driver.
 //!
 //! `Tf2Plugins` adds the game's parts after `crate::SimPlugins`; `BUNDLE`
-//! is the game for a party app (its maps).
+//! is the game for a party app (its maps, its guns: `GUEST` on other
+//! games' maps).
 //!
 //! Known shortcuts:
 //! - `INFO`'s default binds are empty: the shell reads the install's
@@ -37,6 +45,8 @@ pub mod movement;
 pub mod parts;
 pub mod scripts;
 pub mod sets;
+pub mod view;
+pub mod weapons;
 
 pub use maps::MAP_LOADER;
 
@@ -91,7 +101,8 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
 };
 
 /// TF2's parts, after the engine's base (`crate::SimPlugins`): the game
-/// registered (`INFO`) and its stand-in movement (`movement`).
+/// registered (`INFO`), its stand-in movement (`movement`), its guns
+/// (`weapons`) and their view models' rules (`view`).
 pub struct Tf2Plugins;
 
 impl PluginGroup for Tf2Plugins {
@@ -99,28 +110,53 @@ impl PluginGroup for Tf2Plugins {
         PluginGroupBuilder::start::<Self>()
             .add(crate::game_registry::RegisterGame(&INFO))
             .add(movement::Tf2MovementPlugin)
+            .add(weapons::Tf2GunsPlugin)
+            .add(Tf2ViewPlugin)
+    }
+}
+
+/// TF2's view models in its own simulation: the rules and settings.
+pub struct Tf2ViewPlugin;
+
+impl bevy::app::Plugin for Tf2ViewPlugin {
+    fn build(&self, app: &mut bevy::app::App) {
+        view::add_rules(app);
+        app.insert_resource(crate::map::ViewModelSettings {
+            fov: view::VIEWMODEL_FOV,
+            default_fov: view::DEFAULT_FOV,
+            right_hand: 1,
+            draw: 1,
+        });
     }
 }
 
 /// TF2 as one bundle for an app made of several games
-/// (`chimera_world::game_bundle`): its info, parts and maps. It brings no
-/// players or guns to other games' maps yet (`guest: None`, nothing
-/// `kept`), and adds its registration, map logic and stand-in movement to
-/// a composed simulation (`party_sim`).
+/// (`chimera_world::game_bundle`): its info, parts and maps, its guns'
+/// view and held models on other games' maps (`GUEST`; no bodies yet:
+/// M3), its view models' field of view, its guns' names, and its parts
+/// in a composed simulation (`party_sim`). No binds of its own (TF2's
+/// are the shared ones).
 pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_bundle::GameBundle {
     info: &INFO,
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
-    guest: None,
-    kept: &[],
+    guest: Some(&GUEST),
+    kept: &["tf2:tf_weapon_"],
     binds: &[],
-    view_model_fov: None,
+    view_model_fov: Some(view::fov),
     sim: party_sim,
-    display_names: None,
+    display_names: Some(weapons::display_names),
+};
+
+/// TF2's guns on the maps of other games.
+pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
+    game: GAME,
+    dress: |map, options| maps::dress_guest_with(map, BUNDLE.kept, !options.textures),
 };
 
 /// What TF2 adds to a game of several games: the game registered, map
-/// logic for its maps, its stand-in movement (not the match's).
+/// logic for its maps, its stand-in movement (not the match's), its guns
+/// and their view models' rules.
 pub fn party_sim(app: &mut bevy::app::App) {
     use crate::game_registry::GameAppExt;
     app.register_game(&INFO);
@@ -128,4 +164,6 @@ pub fn party_sim(app: &mut bevy::app::App) {
         app.add_plugins(source_logic::logic::LogicPlugin);
     }
     movement::add_movement(app);
+    app.add_plugins(weapons::Tf2GunsPlugin);
+    view::add_rules(app);
 }

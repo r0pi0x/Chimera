@@ -345,10 +345,16 @@ pub fn take(world: &mut World) {
     // The clock has stepped: the time items are held at.
     let now = world.get_resource::<ItemClock>().map_or(0, |c| c.time - 1);
     let reach = grenades.explosions.biped_bounding_radius * super::METERS_PER_WU;
-    let mut units = world.query_filtered::<(Entity, &Transform, &Health, &Intent), With<Inventory>>();
-    let units: Vec<(Entity, Vec3, bool, bool)> = units.iter(world).map(|(e, t, h, i)| (e, t.translation, h.current > 0.0, i.use_key)).collect();
-    let mut items = world.query::<(Entity, &Transform, &HaloItem)>();
-    let lying: Vec<(Entity, Vec3, HaloItem)> = items.iter(world).map(|(e, t, i)| (e, t.translation, i.clone())).collect();
+    // Kept query states (`chimera_core::query_cache`): a new one each Halo
+    // tick walked every archetype (the party's archetypes test).
+    use chimera_core::query_cache::cached_query;
+    let units: Vec<(Entity, Vec3, bool, bool)> =
+        cached_query::<(Entity, &Transform, &Health, &Intent), With<Inventory>, _>(world, |q, world| {
+            q.iter(world).map(|(e, t, h, i)| (e, t.translation, h.current > 0.0, i.use_key)).collect()
+        });
+    let lying: Vec<(Entity, Vec3, HaloItem)> = cached_query::<(Entity, &Transform, &HaloItem), (), _>(world, |q, world| {
+        q.iter(world).map(|(e, t, i)| (e, t.translation, i.clone())).collect()
+    });
     let mut gone: Vec<Entity> = Vec::new();
     for (unit, centre, alive, use_key) in units {
         let mut holds = world.get_resource_or_insert_with(UseHolds::default);

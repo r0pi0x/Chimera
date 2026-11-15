@@ -1,5 +1,5 @@
 //! TF2's maps in the party (docs/plans/active/tf2.md, M1): `tf2:ctf_2fort`
-//! loads through the party's map sources (`party_kit::MAP_GAMES`) as the
+//! loads through the party's map sources (`party_kit::GUESTS`) as the
 //! dedicated server loads it, with the party's parts and the gun game
 //! started; its spawn points are RED's and BLU's `info_player_teamspawn`s,
 //! none of them a spot a standing player is stuck in; and a Combat Arms

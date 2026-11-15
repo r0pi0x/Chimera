@@ -1,7 +1,9 @@
 //! Model animations from `.mdl` files (versions 44–48:
 //! specs/cs_source/mdl_v48.md): bones, animations, sequences, pose
 //! parameters and include models, merged into one `AnimSet` for a target
-//! model (specs/cs_source/animation.md §1–§3, §8). Animation data may sit
+//! model (specs/cs_source/animation.md §1–§3, §8; a same-named sequence of
+//! an include over the model's own 1-frame stub, specs/tf2/install.md
+//! 4.3). Animation data may sit
 //! in sections and in external `.ani` blocks (HL2 content such as the
 //! hostages' `humans/male_*` models, mdl_v48.md §8); data that is missing
 //! falls back to the zero-frame cache (§6). Read from raw bytes.
@@ -978,16 +980,32 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
         }
         chain_maps.push(local);
     }
-    // Sequences: first name wins; autolayers resolve by name afterwards.
+    // Sequences: first name wins, but over a stub (a sequence with no
+    // activity whose animations are one frame) a later model's real one
+    // of the same name wins, in the stub's place: TF2's arms models carry
+    // 1-frame stubs of the sequences their animation include holds
+    // (specs/tf2/install.md 4.3). Autolayers resolve by name afterwards.
     let mut seq_names: HashMap<String, usize> = HashMap::new();
+    let mut stubs: Vec<bool> = Vec::new();
     let mut pending: Vec<(usize, usize)> = Vec::new(); // (merged, model)
     for (mi, m) in models.iter().enumerate() {
         for (si, s) in m.sequences.iter().enumerate() {
             let key = s.name.to_lowercase();
-            if seq_names.contains_key(&key) {
-                continue;
-            }
-            seq_names.insert(key, set.sequences.len());
+            let stub = s.activity.is_empty()
+                && s.anims.iter().all(|a| anim_maps[mi].get(*a).is_none_or(|i| set.animations[*i].frames <= 1));
+            let at = match seq_names.get(&key) {
+                Some(&i) if stubs[i] && !stub => {
+                    pending.retain(|(merged, _)| *merged != i);
+                    i
+                }
+                Some(_) => continue,
+                None => {
+                    seq_names.insert(key, set.sequences.len());
+                    stubs.push(stub);
+                    set.sequences.len()
+                }
+            };
+            stubs[at] = stub;
             let mut weights = vec![0.0; set.defaults.len()];
             for (w, t) in s.weights.iter().zip(&bone_maps[mi]) {
                 if let Some(t) = t {
@@ -999,8 +1017,8 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
                 keys: s.keys[k].clone(),
                 range: s.range[k],
             };
-            pending.push((set.sequences.len(), mi * 100_000 + si));
-            set.sequences.push(Sequence {
+            pending.push((at, mi * 100_000 + si));
+            let sequence = Sequence {
                 name: s.name.clone(),
                 activity: s.activity.clone(),
                 activity_weight: s.activity_weight,
@@ -1036,7 +1054,12 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
                         })
                     })
                     .collect(),
-            });
+            };
+            if at == set.sequences.len() {
+                set.sequences.push(sequence);
+            } else {
+                set.sequences[at] = sequence;
+            }
         }
     }
     for (merged, key) in pending {

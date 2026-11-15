@@ -1,0 +1,32 @@
+# Every TF2 bullet gun (weapons.md 2, 6): pellets traced from the eye up
+# to ~56754 units, no recoil, no headshots, no penetration; the distance
+# modifier (`tf2:gun`, the falloff below unused) on each target's summed
+# pellets; deploys in 0.5 s (3); held attack fires again at the interval
+# (the next shot timed from the last, per-tick order 3).
+id = "tf2:gun"
+base = "tf2:base"
+abstract = true
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 0.625
+timing = "accumulate"
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 0.0
+
+[damage]
+amount = 1.0
+# The distance modifier is `tf2:gun`'s (`DamageEffect::by_distance`).
+falloff = 1.0
+falloff_step = 1024.0
+# No headshots on these guns (weapons.md 2.7).
+hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
+# Bullets push nobody (the knockback per point is open: weapons.md,
+# open question 9).
+impulse = 0.0
+# The rule rounds each target's damage to whole points.
+quantum = 0.0

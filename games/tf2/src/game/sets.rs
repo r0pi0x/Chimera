@@ -1,17 +1,18 @@
 //! What TF2's asset sets hold (docs/plans/active/tf2.md, section 3,
 //! decision 4), for `chimera_pack sets tf2` and the pack test: per M2 gun
-//! (`M2_WEAPONS`) its `weapon/<id>` set, read by loading its pieces
-//! through the mount and noting every file read (`Mount::track`): the `c_`
-//! weapon model with its materials and textures, the arms of the class it
-//! goes with (`c_<class>_arms.mdl` and the `c_<class>_animations.mdl` it
-//! includes), the waves of its sound entries (specs/tf2/weapons.md 8), the
-//! rocket model for the Rocket Launcher, and its script
+//! (`M2_WEAPONS`) its `weapon/<id>` set (`<id>` the gun's id past `tf2:`,
+//! as a match's offer names a gun's set: `weapon/tf_weapon_scattergun`),
+//! read by loading the gun as a match does (`maps::add_guns`: its view
+//! model, the class's arms with their animations include and the `c_`
+//! weapon model bone-merged, the held model, the rocket's model) through
+//! the mount and noting every file read (`Mount::track`), with the waves
+//! of its sound entries (specs/tf2/weapons.md 8) and its script
 //! (`scripts/tf_weapon_<id>.ctx`, packed decrypted: `scripts::decrypting`);
 //! `players` the nine class models (`PLAYER_MODELS`) with what they read.
 //!
 //! Known shortcuts:
-//! - The sound entries and models are the spec's lists, not read from the
-//!   scripts (which M2b's weapon data will name).
+//! - The sound entries are the spec's lists (weapons.md 8.3), not read
+//!   from the scripts.
 //! - The class models are read as view models are (model, materials,
 //!   include models), until TF2's bodies (M3) have their own loader.
 
@@ -23,7 +24,7 @@ use crate::mount::{Access, Mount};
 /// One gun of M2 and what its set holds.
 #[derive(Clone, Copy, Debug)]
 pub struct WeaponSet {
-    /// The set's id: `weapon/<id>`.
+    /// The set's id, `weapon/<id>`: the gun's id past `tf2:`.
     pub id: &'static str,
     /// The script's name (`scripts/<script>.ctx`).
     pub script: &'static str,
@@ -40,7 +41,7 @@ pub struct WeaponSet {
 /// The four guns of M2 (weapons.md 8).
 pub const M2_WEAPONS: &[WeaponSet] = &[
     WeaponSet {
-        id: "scattergun",
+        id: "tf_weapon_scattergun",
         script: "tf_weapon_scattergun",
         model: "models/weapons/c_models/c_scattergun.mdl",
         classes: &["scout"],
@@ -56,7 +57,7 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
         models: &[],
     },
     WeaponSet {
-        id: "rocketlauncher",
+        id: "tf_weapon_rocketlauncher",
         script: "tf_weapon_rocketlauncher",
         model: "models/weapons/c_models/c_rocketlauncher/c_rocketlauncher.mdl",
         classes: &["soldier"],
@@ -71,7 +72,7 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
         models: &["models/weapons/w_models/w_rocket.mdl"],
     },
     WeaponSet {
-        id: "shotgun",
+        id: "tf_weapon_shotgun_primary",
         script: "tf_weapon_shotgun_primary",
         model: "models/weapons/c_models/c_shotgun/c_shotgun.mdl",
         classes: &["engineer"],
@@ -89,7 +90,7 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
         models: &[],
     },
     WeaponSet {
-        id: "minigun",
+        id: "tf_weapon_minigun",
         script: "tf_weapon_minigun",
         model: "models/weapons/c_models/c_minigun/c_minigun.mdl",
         classes: &["heavy"],
@@ -141,15 +142,11 @@ fn read_by(mount: &Mount, load: impl FnOnce()) -> Vec<String> {
 /// The files of gun `w`'s set (module doc). `scripts`: the sound scripts
 /// (`SoundScripts::load_with`).
 pub fn weapon_files(mount: &Mount, w: &WeaponSet, sound_scripts: &SoundScripts) -> Vec<String> {
+    let gun = format!("{}:{}", super::GAME, w.id);
     let mut files = read_by(mount, || {
         let mut materials = MaterialLoader::guest(mount, 0, 0);
-        let _ = props::load_view_model(&mut materials, w.model, w.id, true);
-        for class in w.classes {
-            let _ = props::load_view_model(&mut materials, &arms_model(class), class, true);
-        }
-        for model in w.models {
-            let _ = props::load_shell(&mut materials, model);
-        }
+        let (mut kit, mut warnings) = (crate::map::GameKit::default(), Vec::new());
+        super::maps::add_guns(&mut materials, &|g| g == gun, &mut kit, &mut warnings);
         for name in w.sounds {
             for wave in sound_scripts.waves(name) {
                 let _ = mount.read(&wave);

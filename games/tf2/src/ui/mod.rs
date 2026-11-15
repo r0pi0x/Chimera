@@ -13,8 +13,10 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 }
 
 /// TF2's front end in an app made of several games (beside its
-/// `game::BUNDLE`).
-pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, hud: Some(with_hud), app: None };
+/// `game::BUNDLE`): no HUD of its own yet (`hud: None`), so a party's
+/// checks of every game's HUD (its kill feed, the overlay's layout) leave
+/// it out and a TF2 rung shows the party's.
+pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, hud: None, app: None };
 
 /// TF2's front end under the name every game's has it (`ui::party::CLIENT`;
 /// docs/new-game.md).

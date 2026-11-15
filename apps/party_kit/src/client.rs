@@ -93,12 +93,14 @@ pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 
 /// Each game's front end (its `ui`'s `GameClient`, beside its bundle):
 /// the base game's first, then the guests' (HL2:DM's: M9; Halo's: its
-/// HUD while a Halo gun is in hand).
-pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 4] = [
+/// HUD while a Halo gun is in hand; TF2's: nothing drawn yet, the shell's
+/// own HUD).
+pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 5] = [
     &combat_arms::ui::PARTY_CLIENT,
     &cs_source::ui::party::CLIENT,
     &hl2dm::ui::party::CLIENT,
     &halo_ce::ui::party::CLIENT,
+    &tf2::ui::party::CLIENT,
 ];
 
 /// The client after the shell with both games' HUDs (`PARTY`'s front
@@ -332,7 +334,6 @@ pub const PARTY: GameApp = GameApp {
     installs: || {
         super::GUESTS
             .iter()
-            .chain(super::MAP_GAMES.iter())
             .map(|b| chimera_present::assets::InstallSource::of(b.info))
             .chain([chimera_present::assets::InstallSource::shared(
                 combat_arms::game::INFO.id,
