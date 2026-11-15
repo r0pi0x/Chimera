@@ -18,9 +18,11 @@ mod info;
 mod scripts;
 mod skeleton;
 mod spawns;
+mod weapons;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
+    mod guns;
     mod map_cache;
     mod maps;
     mod mount;

@@ -193,6 +193,9 @@ pub struct Flyer {
     /// by this instead of following its flight. Zero: it faces its
     /// flight.
     pub spin: Vec3,
+    /// It passes its owner's teammates (characters on the owner's
+    /// non-zero `core::Team`, friendly fire off: TF2's rockets).
+    pub pass_teammates: bool,
 }
 
 /// How a flyer ends on the sky: the line ahead that finds it (m), and
@@ -241,6 +244,7 @@ impl Flyer {
             last_hit: None,
             turn: Quat::IDENTITY,
             spin: Vec3::ZERO,
+            pass_teammates: false,
         }
     }
 }
@@ -384,6 +388,16 @@ pub struct LauncherParams {
     /// Ends on the sky a line this long finds (data length; 0: never).
     #[serde(default)]
     pub sky_probe: f32,
+    /// Where it starts from the eye, along the aim's forward, right and up
+    /// (data lengths; none: the eye), and crouched (none: `offset`):
+    /// TF2's rocket under the gun (specs/tf2/weapons.md 5.1).
+    #[serde(default)]
+    pub offset: Option<[f32; 3]>,
+    #[serde(default)]
+    pub offset_crouched: Option<[f32; 3]>,
+    /// It passes its owner's teammates (`Flyer::pass_teammates`).
+    #[serde(default)]
+    pub pass_teammates: bool,
 }
 
 fn report() -> String {
@@ -414,6 +428,10 @@ pub struct Launcher {
     pub water_speed: Option<f32>,
     pub shown: String,
     pub template: Flyer,
+    /// Its start from the eye along the aim's forward, right and up, m,
+    /// standing and crouched (`LauncherParams::offset`).
+    pub offset: Vec3,
+    pub offset_crouched: Vec3,
 }
 
 impl LauncherParams {
@@ -433,6 +451,7 @@ impl LauncherParams {
             expired: false,
         });
         f.hitboxes = self.hitboxes;
+        f.pass_teammates = self.pass_teammates;
         if self.x_forward {
             f.turn = MODEL_X_FORWARD;
         } else if self.y_forward {
@@ -466,6 +485,8 @@ impl LauncherParams {
             water_speed: self.water_speed.map(|s| s * unit),
             shown: self.shown.clone().unwrap_or_else(|| weapon.to_string()),
             template: f,
+            offset: self.offset.map_or(Vec3::ZERO, |o| Vec3::from(o) * unit),
+            offset_crouched: self.offset_crouched.or(self.offset).map_or(Vec3::ZERO, |o| Vec3::from(o) * unit),
         }
     }
 }
@@ -608,6 +629,7 @@ fn launch_from_fired(
     mut events: MessageReader<WeaponEvent>,
     launchers: Query<&Launcher>,
     under: Query<(), With<LaunchUnderWater>>,
+    stances: Query<&crate::core::MovementState>,
     clock: Res<SimClock>,
     mut commands: Commands,
 ) {
@@ -623,14 +645,19 @@ fn launch_from_fired(
             Some(s) if under.contains(e.owner) => s,
             _ => l.speed,
         };
-        let dir = super::aim_of(yaw, pitch) * Vec3::NEG_Z;
+        let aim = super::aim_of(yaw, pitch);
+        let dir = aim * Vec3::NEG_Z;
         let mut f = l.template.clone();
         f.owner = Some(e.owner);
         f.velocity = dir * speed;
         if let Some(life) = f.expires {
             f.expires = Some(clock.now + life);
         }
-        spawn_flyer(&mut commands, f, origin, l.shown.clone(), &clock);
+        // Its start: the eye, moved along the aim's forward, right and up.
+        let crouched = stances.get(e.owner).is_ok_and(|s| s.crouching);
+        let o = if crouched { l.offset_crouched } else { l.offset };
+        let start = origin + dir * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z;
+        spawn_flyer(&mut commands, f, start, l.shown.clone(), &clock);
     }
 }
 
@@ -681,6 +708,8 @@ struct FlyWorld<'w, 's> {
     clips: Query<'w, 's, (&'static crate::map::physics_clip::ClipPasses, Has<ColliderDisabled>)>,
     see_through: Query<'w, 's, (), With<crate::map::SeeThrough>>,
     grates: Query<'w, 's, (), With<crate::map::Grate>>,
+    teams: Query<'w, 's, (Entity, &'static crate::core::Team), With<Intent>>,
+    friendly_fire: Option<Res<'w, crate::core::FriendlyFire>>,
     armor: HitArmor<'w, 's>,
     damage: MessageWriter<'w, Damage>,
     inflicted: MessageWriter<'w, Inflicted>,
@@ -875,11 +904,20 @@ fn fly(
         if f.meets_clips {
             mask |= PHYSICS_CLIP_LAYER.0;
         }
+        // Its owner's teammates, when it passes them (friendly fire off;
+        // team 0 is nobody's).
+        let ff = world.friendly_fire.as_deref().is_some_and(|x| x.0 != 0);
+        let owner_team = f.owner.and_then(|o| world.teams.get(o).ok()).map(|(_, t)| *t).filter(|t| t.0 != 0);
+        let mates: Vec<Entity> = match owner_team {
+            Some(team) if f.pass_teammates && !ff => world.teams.iter().filter(|(_, t)| **t == team).map(|(e, _)| e).collect(),
+            _ => Vec::new(),
+        };
         let excluded: Vec<Entity> = f
             .owner
             .into_iter()
             .chain(dead.iter().copied())
             .chain(f.passed.iter().copied())
+            .chain(mates)
             .collect();
         let filter = SpatialQueryFilter::from_excluded_entities(excluded).with_mask(LayerMask(mask));
         let flyers_q = &world.flyers;

@@ -1,0 +1,64 @@
+# The Minigun (specs/tf2/weapons.md 1, 6, 7): the Heavy's primary; spins
+# up 0.75 s before its first shot and down 1.15 s after (1.4 after a spin
+# on attack2 alone), its holder at 110 units/s and unable to jump or
+# switch while it spins; 4 bullets of 9 every 0.105 s, spread 0.08, 200
+# rounds and no reload; damage 50 % to 100 % over the first second spun
+# (the 2017 rule). `tf2:minigun` runs the spin.
+id = "tf2:tf_weapon_minigun"
+base = "tf2:gun"
+class = "heavy"
+slot = 0
+
+[trigger]
+automatic = true
+cycle = 0.105
+timing = "accumulate"
+
+[magazine]
+clip = 200
+ammo = "tf2:minigun"
+reload = 1.0
+
+[hitscan]
+range = 56754.0
+pellets = 4
+punch_scale = 0.0
+spread = { template = 0.08 }
+
+[damage]
+amount = 9.0
+falloff = 1.0
+falloff_step = 1024.0
+hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
+impulse = 0.0
+
+# Its shots' sound is the spin's loop (`tf2:minigun`).
+[sounds]
+draw = [[0.0, "Weapon_Minigun.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_minigun/c_minigun.mdl"
+view = "models/weapons/c_models/c_minigun/c_minigun.mdl"
+view_right_handed = true
+
+[hud]
+name = "Minigun"
+icon = "minigun"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+arms = "heavy"
+script = "tf_weapon_minigun"
+
+[hooks."tf2:minigun"]
+wind_up = 0.75
+wind_down = 1.15
+wind_down_alt = 1.4
+ramp_time = 1.0
+ramp_start = 0.5
+spun_speed = 110.0
+wind_up_sound = "Weapon_Minigun.WindUp"
+spin_sound = "Weapon_Minigun.Spin"
+fire_sound = "Weapon_Minigun.Fire"
+empty_sound = "Weapon_Minigun.ClipEmpty"
+wind_down_sound = "Weapon_Minigun.WindDown"

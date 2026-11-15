@@ -1,7 +1,7 @@
 [package]
 name = "tf2"
 version = "0.1.0"
-description = "Team Fortress 2 as a game crate: its install, registration and maps so far (docs/plans/active/tf2.md)"
+description = "Team Fortress 2 as a game crate: its install, registration, maps and guns so far (docs/plans/active/tf2.md)"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
@@ -42,6 +42,10 @@ source_logic.workspace = true
 source_formats.workspace = true
 bevy.workspace = true
 vbsp.workspace = true
+# The rocket's blast lines (`game::weapons::rocket`).
+avian3d.workspace = true
+# The weapon hooks' parameters.
+serde.workspace = true
 # The front end (`ui`, the `ui` feature): the client shell and the
 # presentation it draws with.
 chimera_client = { workspace = true, optional = true }
@@ -66,7 +70,6 @@ avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_
 # bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it.
 bevy_winit.workspace = true
 # Digests of converted maps (tests/it/heavy/map_cache.rs).
-serde.workspace = true
 postcard.workspace = true
 sha2.workspace = true
 

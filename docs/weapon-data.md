@@ -8,6 +8,11 @@ name the data asks for (a hook). A game's weapons, another game's, or new
 ones become mixable: an app loads any documents on top of the games it runs,
 with no Rust (`App::add_weapon_data`).
 
+TF2's are `games/tf2/data/weapons/*.toml`: the four M2 guns with
+specs/tf2/weapons.md's public numbers, the committed fallback until the
+game's own (encrypted) scripts' fields are mapped (`tf2::game::weapons::
+script_numbers`, which logs where each gun's numbers came from).
+
 HL2:DM's are `games/hl2dm/data/weapons/*.toml`, the spec's numbers
 (specs/hl2dm/weapons.md); its install's weapon scripts are plain text
 beside the encrypted ones, and `games/hl2dm/tests/it/heavy/scripts.rs`
@@ -233,7 +238,22 @@ hud_icon = "ammo_762"
   degrees, `reset`, `alt_pitch`, `alt_yaw`), `hl2dm:machine_gun` (`max`,
   `slide`), `hl2dm:shotgun` (`pump`, `pump_sound`, `dry`) and
   `hl2dm:dry_under_water` (`wait`: the guns that won't fire with the eyes
-  under water).
+  under water). TF2's (games/tf2/src/game/weapons/, data in
+  games/tf2/data/weapons): `tf2:gun` (`ramp`: the distance modifier's
+  near-range scale, put on the gun's `DamageEffect::by_distance`;
+  `arms`, the class whose arms hold it; `script`; `reload_start` by
+  class; `first_pellet_pause`, after which the next shot's first pellet
+  goes dead centre, `Hitscan::centre_first`), `tf2:rocket` (`damage`,
+  `radius`, `edge`, `self_air_scale`, `push_other`, `push_self_air`,
+  `push_self_ground`, `sound`: the blast where a `chimera:projectile`
+  rocket touched) and `tf2:minigun` (`wind_up`, `wind_down`,
+  `wind_down_alt`, `ramp_time`, `ramp_start`, `spun_speed` and the spin's
+  sound entries).
+- **Chimera's flyers** (`chimera:projectile`, `LauncherParams`): beside
+  speed, gravity, box, touch and direct damage, `offset` and
+  `offset_crouched` (where a round starts from the eye, along the aim's
+  forward, right and up: TF2's rocket under the gun) and
+  `pass_teammates` (it flies through its owner's teammates).
 - **Errors.** Unknown keys, an unknown base, ammo type or hook, a loop of
   bases, a duplicate ID and hook parameters the hook can't read are load
   errors naming the document and key. A game's own data failing to load

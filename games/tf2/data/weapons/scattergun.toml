@@ -1,0 +1,55 @@
+# The Scattergun (specs/tf2/weapons.md 1, 2, 4, 6): the Scout's primary;
+# 10 pellets of 6, spread 0.0675 (the first pellet dead centre after
+# 0.25 s without firing), 0.625 s between shots, 6 in the clip and 32
+# carried, shells one at a time (start 0.2, then 0.5 each: the first in
+# at 0.7), the distance modifier's near half x1.5 (175 % at 0 units).
+id = "tf2:tf_weapon_scattergun"
+base = "tf2:gun"
+class = "shotgun"
+slot = 0
+
+[trigger]
+automatic = true
+cycle = 0.625
+timing = "accumulate"
+
+[magazine]
+clip = 6
+ammo = "tf2:scattergun"
+reload = 0.5
+auto_reload = true
+shells = { start = 0.2, insert = 0.5, back_to_back = true }
+
+[hitscan]
+range = 56754.0
+pellets = 10
+punch_scale = 0.0
+# a, b each in [-1, 1] (the sum of two halves: open question 1).
+spread = { template = 0.0675 }
+
+[damage]
+amount = 6.0
+falloff = 1.0
+falloff_step = 1024.0
+hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
+impulse = 0.0
+
+[sounds]
+fire = "Weapon_Scatter_Gun.Single"
+empty = "Weapon_Scatter_Gun.Empty"
+reload = [[0.0, "Weapon_Scatter_Gun.Reload"]]
+draw = [[0.0, "Weapon_Scatter_Gun.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_scattergun.mdl"
+view = "models/weapons/c_models/c_scattergun.mdl"
+view_right_handed = true
+
+[hud]
+name = "Scattergun"
+icon = "scattergun"
+
+[hooks."tf2:gun"]
+ramp = 1.5
+arms = "scout"
+script = "tf_weapon_scattergun"

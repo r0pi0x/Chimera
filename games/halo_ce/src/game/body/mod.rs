@@ -204,19 +204,32 @@ pub fn animate(
         animator.fixed = fixed.clone();
         animator.main = Some(0);
         animator.yaw = None;
-        match sim {
+        // What the body gains goes on in one move (each part alone is an
+        // archetype for every combination of the others: docs/DESIGN.md,
+        // "ECS style").
+        let made = match sim {
             Some(mut s) => {
                 s.0.fixed = fixed;
                 s.0.main = Some(0);
+                None
             }
             None => {
                 let mut s = animator.clone();
                 s.fixed = fixed;
-                commands.entity(e).insert(SimAnimator(s));
+                Some(SimAnimator(s))
             }
-        }
-        if first {
-            commands.entity(e).insert(fresh);
+        };
+        match (made, first) {
+            (Some(s), true) => {
+                commands.entity(e).insert((s, fresh));
+            }
+            (Some(s), false) => {
+                commands.entity(e).insert(s);
+            }
+            (None, true) => {
+                commands.entity(e).insert(fresh);
+            }
+            (None, false) => {}
         }
     }
 }

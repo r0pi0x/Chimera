@@ -1000,6 +1000,10 @@ pub struct Hitscan {
     /// box of this half size instead of a line, m (HL2:DM's 3 units,
     /// specs/hl2dm/weapons.md 5); None: all lines.
     pub odd_box: Option<f32>,
+    /// The shot's first pellet goes exactly along the aim, the rest
+    /// scattered (TF2's after a pause, specs/tf2/weapons.md 6.1: a game
+    /// sets it before the frame as it changes).
+    pub centre_first: bool,
 }
 
 /// Delivery add-on: bullets that pass through things (Source's bullet
@@ -1347,6 +1351,23 @@ pub struct DamageEffect {
     /// How much of a hit armour lets through to health (`Armor`); None:
     /// armour doesn't apply.
     pub armor_ratio: Option<f32>,
+    /// A game's damage by distance in place of `falloff` (TF2's distance
+    /// modifier): each target's damage of one shot, summed over its
+    /// pellets, through `ByDistance::rule`; None: `falloff`.
+    pub by_distance: Option<ByDistance>,
+}
+
+/// A game's damage by distance for a hitscan weapon (`DamageEffect::
+/// by_distance`): what a target takes of one shot from its pellets'
+/// summed damage (after hitgroups, normalized like `Health`), the
+/// distance between the shooter's and the target's centres (m; a
+/// rewound target where the shooter saw it) and the weapon's `param`
+/// (TF2: its near-range scale). It decides the rounding too; the
+/// effect's `quantum` still applies after it.
+#[derive(Clone, Copy, Debug)]
+pub struct ByDistance {
+    pub rule: fn(sum: f32, distance: f32, param: f32) -> f32,
+    pub param: f32,
 }
 
 /// Body armour, one per character whatever its game, normalized like

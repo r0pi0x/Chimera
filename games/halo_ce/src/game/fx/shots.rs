@@ -230,11 +230,14 @@ pub fn shown_seed(i: usize) -> u32 {
     0x5EED_5409 ^ (i as u32).wrapping_mul(0x9E37_79B9)
 }
 
-/// The kick left on a shooter: its rotation (rad) and ticks.
-#[derive(Component, Clone, Copy, Debug)]
+/// The kick left on a shooter: its rotation (rad) and ticks; on every
+/// character from the spawn, `active` while one is left (a part that came
+/// and went would make archetypes: docs/DESIGN.md, "ECS style").
+#[derive(Component, Clone, Copy, Debug, Default)]
 pub struct HaloKick {
     pub rotation: f32,
     pub ticks: u32,
+    pub active: bool,
 }
 
 /// Animation sounds waiting for their frame: (ticks left, entry, at whom).
@@ -396,7 +399,7 @@ fn on_fired(
             });
         }
         if fp && let Some((rotation, ticks)) = look.kick {
-            commands.entity(f.owner).insert(HaloKick { rotation, ticks });
+            commands.entity(f.owner).insert(HaloKick { rotation, ticks, active: true });
         }
     }
 }
@@ -421,8 +424,11 @@ fn kick(mut shooters: Query<(Entity, &mut HaloKick, Option<&mut ViewPunch>, Opti
         return;
     }
     for (e, mut k, punch, game) in &mut shooters {
+        if !k.active {
+            continue;
+        }
         if !RecoilGame::is(game, GAME) {
-            commands.entity(e).remove::<HaloKick>();
+            k.active = false;
             continue;
         }
         let v = if k.ticks > 0 {
@@ -438,7 +444,7 @@ fn kick(mut shooters: Query<(Entity, &mut HaloKick, Option<&mut ViewPunch>, Opti
             }
         }
         if k.ticks == 0 {
-            commands.entity(e).remove::<HaloKick>();
+            k.active = false;
         } else {
             k.ticks -= 1;
         }
@@ -854,6 +860,7 @@ fn register_net(app: &mut App) {
 pub(super) fn plugin(app: &mut App) {
     use chimera_net::net::parts::NetAppExt;
     chimera_sim::weapon::impact::ImpactAppExt::register_impact_provider(app, GAME);
+    chimera_core::character::CharacterPartsExt::on_every_character::<HaloKick>(app);
     app.init_resource::<Guns>()
         .init_resource::<PendingSounds>()
         .add_message::<HaloFired>()

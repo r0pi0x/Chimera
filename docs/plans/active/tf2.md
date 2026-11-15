@@ -19,7 +19,7 @@ from specs, measurements and the game's own data.
 | M0 plan and first specs | done (2026-11-15) | this plan; specs/tf2/: install, movement, classes, weapons, ICE |
 | M1 a map you can walk on | done (2026-11-15) | `games/tf2`; mount (missing archives skipped); ctf_2fort and cp_badlands converted with team spawns; `tf2:<map>` in the party apps; `$ssbump` drawn |
 | M2a the weapon scripts, `chimera_pack tf2` | done (2026-11-15) | our ICE (`game::ice`) with the spec's readings selectable; `game::scripts` (store/plain, install plus key, none); `dump tf2 --script`, `--ice-probe`; `chimera_pack tf2` (`weapon/<id>` for M2's guns with the decrypted script, `players`, `map/<name>`); not published. No reading reproduces the paper's triplets: the user's `--ice-probe` settles the reading |
-| M2b TF2 guns as UGG rungs | not started | Scattergun, Rocket Launcher, Shotgun, Minigun as data; `c_` view models on the arms; sounds; a ladder |
+| M2b TF2 guns as UGG rungs | done (2026-11-15) | the four guns as data with the spec's numbers (the scripts' field mapping a seam), TF2's gun rules as hooks, `c_` weapons bone-merged on the class arms, sounds, TF2 in the party's `GUESTS`, `originals:gun_game_2fort` |
 | M3 classes as bodies, TF2's movement | not started | |
 | M4 more maps and weapons | not started | |
 
@@ -173,7 +173,8 @@ What landed (2026-11-15):
   walls lost the dark speckles a self-shadowed bump map read as a normal
   map gave them. The shared conversion already read the LZMA lumps, the
   LZMA static-prop lump (v10) and the LZMA pak entries.
-- The party: `party_kit::MAP_GAMES` (TF2), whose loaders join the
+- The party (M1; since M2b TF2 is one of `party_kit::GUESTS`, and
+  `MAP_GAMES` is gone): `party_kit::MAP_GAMES` (TF2), whose loaders join the
   party's map sources (`tf2:ctf_2fort` from `--map`, `changelevel`,
   the server), registered with its map logic; TF2's teams as Combat
   Arms' (RED Alpha, BLU Bravo) and its surfaces as CS:S's. Not in
@@ -244,6 +245,67 @@ looked into; it collides the same).
   `base` and `common` come from client runs' `CHIMERA_VFS_LOG` logs
   (`pack tf2 --set base --from <log>`, then `lean`), as for HL2:DM.
 
+#### M2b: what landed (2026-11-15)
+
+- **The guns as data** (`games/tf2/data/weapons`, `game::weapons`):
+  `tf2:tf_weapon_scattergun`, `tf2:tf_weapon_rocketlauncher`,
+  `tf2:tf_weapon_shotgun_primary` (the Engineer's) and
+  `tf2:tf_weapon_minigun` with specs/tf2/weapons.md's numbers, classes
+  shotgun, launcher, shotgun, heavy. `weapons::script_numbers` asks
+  `scripts::read` for each gun's script at every load of the guns and
+  logs (a warning) where the numbers came from: "spec fallback" until
+  `numbers_from_script` maps the scripts' fields (no spec names them yet).
+- **The rules as hooks** (scenario tests on `Tf2Sim`,
+  `tests/it/weapons.rs`): `tf2:gun`, the distance modifier (smoothstep,
+  the 921.6 clamp, the near half x1.5 / x0.5 / x1) on each target's summed
+  pellets rounded to whole points, the first pellet dead centre after
+  0.25 s, the reload's start by class; `tf2:rocket`, the rocket on
+  Chimera's flyers (1100 u/s from the spec's offset, through teammates)
+  and its blast (146 units, 50 % at the edge, the touched player full,
+  the owner's own x0.6 airborne, the push 6 / 10 / 5 per point: a rocket
+  jump lifts the Soldier); `tf2:minigun`, the spin (0.75 s up, 1.15 / 1.4
+  down, 110 u/s, no jump, no switch) and the 2017 damage ramp. Shells one
+  at a time, a shot stops them (Chimera's `ShellReload`). Random crits
+  and the damage spread's jitter stay off (the server defaults are spread
+  off; crits off is the party's choice); the power curve reads the
+  modifier, the blast and the spin-up.
+- **View models** (`game::view`): the class's arms with the `c_` weapon
+  bone-merged by bone name; the draw, idle, fire, reload start/shell/end
+  and the Minigun's spin up/idle/down picked by the spec's activities;
+  `tf2_viewmodel_fov` 54. The same `c_` model is the held one (on a
+  body with a `weapon_bone`: TF2's, M3).
+- **Sounds**: the spec's entries per gun (fire, empty, reload, draw, the
+  Minigun's wind-up, spin, fire, dry and wind-down loops on the weapon
+  channel, the rocket's `BaseExplosionEffect.Sound` heard by every client).
+- **The party**: TF2 in `party_kit::GUESTS` (`MAP_GAMES` gone), its
+  `ui::party::CLIENT` in `CLIENTS` (no HUD of its own), `BUNDLE` with its
+  parts (the four guns, `tf2:movement`: playable in an automatic ladder),
+  `GUEST` dressing, `kept`, names, the view-model FOV. `weapon/<id>` sets
+  renamed to the guns' ids past `tf2:` (`weapon/tf_weapon_scattergun`), as
+  a match's offer names them, and read as a match loads the gun
+  (`maps::add_guns`; heavy test `guns::each_guns_set_covers_what_a_match_
+  loads_for_it`). `originals:gun_game_2fort` (minigames/
+  gun_game_2fort.toml): TF2's four guns among CS:S's, HL2:DM's and Combat
+  Arms', no Halo (`party_kit` `tf2_rungs.rs`: a TF2 rung gives its gun
+  and TF2's identity, a kill climbs to the next game's, the rocket kills).
+- **Generic**: `DamageEffect::by_distance` (a game's damage per target
+  by the centres' distance), `Hitscan::centre_first`, the flyers'
+  `offset`/`offset_crouched`/`pass_teammates`, the placeholder movement
+  flying after a push that cleared `on_ground`, `map::merge_by_bone_name`
+  (arms plus a bone-merged weapon as one view model), and Source's
+  animation loader putting an include's real sequence in place of the
+  model's same-named 1-frame stub (install.md 4.3). Network version
+  `net57`.
+
+Left (M2b): the scripts' field mapping (needs a spec written with the key,
+then the ICE probe and the publish above; the sets are now named
+`weapon/tf_weapon_*`); the knockback per point is ours (open question 9,
+probe P3), bullets push nobody; the Minigun's first-person idle sits low
+and angled up (the Heavy arms' `m_idle` as decoded puts `weapon_bone`
+0.9 m below the eye); no explosion look (particles, scorch), no muzzle
+flash seen in first person; the rocket's crouched offset and the
+per-class shotgun starts wait for classes (M3); a TF2 rung has no knife.
+
 ### M3: the classes as bodies, TF2's movement
 
 The class player models with animation (activities by weapon, pose
@@ -308,3 +370,10 @@ server probe for parity checks, TF2's own app.
   scratch store by a heavy test and read back from it alone; not
   published). Generic: `[games.<id>]` may hold keys without `path`, a key
   without an IV; `chimera_core::mount::Access` re-exported.
+- 2026-11-15: M2b landed: the four guns as data with TF2's rules as hooks
+  (the distance modifier, the first pellet, the rocket's blast and jump,
+  the Minigun's spin), the `c_` weapons bone-merged on the class arms
+  (generic `map::merge_by_bone_name`; the include's sequences over the
+  arms' stubs), sounds, TF2 in the party's `GUESTS` and
+  `originals:gun_game_2fort`; the scripts' numbers a logged seam.
+  Screenshots in UGG on ctf_2fort and de_dust2.
