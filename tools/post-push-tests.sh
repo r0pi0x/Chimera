@@ -15,7 +15,11 @@
 #    included (`affected --range <base>..<pushed>`; nextest when installed).
 #    [base] defaults to the last commit this script passed, else the
 #    pushed commit's first parent. CHIMERA_PUSH_TESTS=all runs the full
-#    suite, =0 skips the tests (keeping the build checks). The test
+#    suite, =fast tests only what the pushed commits changed (base: the
+#    pushed commit's first parent, never the last pass) and leaves out
+#    the heavy tests, =0 skips the tests (keeping the build checks). The
+#    mode can also come from the untracked file .claude/post-push/mode
+#    (one word), which sets the default for every agent on this box. The test
 #    binaries are linked without debug info (CARGO_PROFILE_TEST_STRIP=
 #    debuginfo, set for the test step only; CHIMERA_POST_PUSH_STRIP=none
 #    keeps it) to cut the bytes written: a failure's panic keeps its
@@ -41,8 +45,9 @@ dir=${CHIMERA_POST_PUSH_DIR:-$repo/.claude/slots/post-push}
 out=$repo/.claude/post-push
 remote=${CHIMERA_POST_PUSH_REMOTE:-origin}
 ref=${CHIMERA_POST_PUSH_REF:-$remote/main}
-mode=${CHIMERA_PUSH_TESTS:-${MASHUP_PUSH_TESTS:-affected}}
 mkdir -p "$out"
+mode=${CHIMERA_PUSH_TESTS:-${MASHUP_PUSH_TESTS:-$(tr -d '[:space:]' <"$out/mode" 2>/dev/null)}}
+mode=${mode:-affected}
 # shellcheck source=/dev/null
 . "$here/disk-free.sh"
 if ! disk_check "$repo"; then
@@ -76,6 +81,7 @@ if [ -z "${1:-}" ] && [ "${CHIMERA_POST_PUSH_AGAIN:-0}" = 0 ] \
     exit 0
 fi
 base=${1:-$(cat "$out/last-pass" 2>/dev/null)}
+[ "$mode" = fast ] && [ -z "${1:-}" ] && base=
 [ -n "$base" ] || base=$(git -C "$repo" rev-parse --verify --quiet "$sha^1") || base=
 # One log per run: two runs of a commit never share (nor truncate) one.
 log=$out/$sha.$(date -u +%Y%m%dT%H%M%SZ).$$.log
@@ -144,10 +150,12 @@ if [ "$mode" != 0 ]; then
         format=cargo
         runner=(env "$strip" cargo test --features dev --quiet --no-fail-fast)
     fi
+    skip_heavy=
+    [ "$mode" = fast ] && [ "$format" = nextest ] && skip_heavy=--skip-heavy
     if [ "$mode" = all ] || [ -z "$base" ]; then
         args=--workspace
         echo "post-push: the full suite (CHIMERA_PUSH_TESTS=$mode, base ${base:-none})" >&2
-    elif ! args=$(agent_run cargo run --quiet -p repo_checks --bin affected -- --range "$base..$sha" --remote "$remote" --format $format 2>"$out/affected.txt"); then
+    elif ! args=$(agent_run cargo run --quiet -p repo_checks --bin affected -- --range "$base..$sha" --remote "$remote" --format $format ${skip_heavy:-} 2>"$out/affected.txt"); then
         cat "$out/affected.txt" >&2
         echo "post-push: couldn't select the affected tests; running the full suite." >&2
         args=--workspace

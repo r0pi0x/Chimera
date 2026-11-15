@@ -213,8 +213,10 @@ fetch) is fetched first.
   heavy ones included, of the crates the push can affect (`affected
   --range <base>..<pushed>`; `base` defaults to the last commit the script
   passed, else the pushed commit's first parent; it prints the selection
-  and why). `CHIMERA_PUSH_TESTS=all` runs the full suite, `=0` no tests
-  (the build checks still run). The heavy tests that need the games'
+  and why). `CHIMERA_PUSH_TESTS=all` runs the full suite, `=fast` only what the
+  pushed commits change (base: the pushed commit's first parent) without
+  the heavy tests, `=0` no tests (the build checks still run). A one-word
+  untracked file `.claude/post-push/mode` sets the default for the box. The heavy tests that need the games'
   installs run there too: the script points `CHIMERA_CONFIG` at the main
   checkout's `chimera.local.toml` (or `mashup.local.toml`) when it has one
   and the caller set none (the post-push checkout has no local config of
