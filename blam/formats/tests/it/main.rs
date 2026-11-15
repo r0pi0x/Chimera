@@ -8,8 +8,13 @@ mod cache;
 mod disc;
 mod fixture;
 mod map_fixture;
+mod scenario;
+mod shaders;
 
 mod heavy {
     mod cache_install;
     mod disc_install;
+    mod maps;
+    mod scenario_install;
+    mod shader_install;
 }

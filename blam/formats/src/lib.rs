@@ -10,6 +10,13 @@
 //! - `cache`: the map cache file (`.map`): the decompressed image, the tag
 //!   index, address spaces and bounds-checked views of tag data, the
 //!   foundation every tag-class reader is written on.
+//! - `scenario`: the scenario tag (spawns, netgame flags and equipment,
+//!   object placements), the sky and item collection tags and the
+//!   rotation convention.
+//! - `shader`: the eight shader tag classes and the periodic animation
+//!   functions.
 
 pub mod cache;
 pub mod disc;
+pub mod scenario;
+pub mod shader;
