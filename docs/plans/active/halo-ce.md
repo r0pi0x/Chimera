@@ -662,3 +662,21 @@ backlog.
   asset service, nothing missing from the published sets). Bots fire
   the battery guns now; the engine's `ShotMade` fact for bots is being
   added.
+- 2026-11-15: by the user's instruction work moves fast now and is
+  validated at milestones: commits skip the hook's tests by its own
+  switch, each change runs its new tests, `main` is compile-checked at
+  each landing, and the whole fast tier with Halo's and the party's
+  heavy tests runs once Halo is fully in Ultimate Gun Game. Landed this
+  way: Halo in the party apps (the HUD clear of the chat and feed at
+  4:3 too, zooms on the player's own field of view after Combat Arms'
+  zoom filter stopped removing other games' zooms, no grenades by
+  default, kill-feed icons from the disc, crosshairs readable on bright
+  maps) and the bots on Halo's guns (the engine's `ShotMade` fact and
+  `FiresOnRelease`: the sniper rifle 3 -> 15 kills a minute, the plasma
+  pistol 0 -> 4). Measured: a Spartan-sized walker reaches 64% of
+  de_dust2 (87% with jump-ups), 56% of cs_office (78%) and 7% of
+  Combat Arms' warehouse; the user made the fix a party essential: on
+  any map a character's movement body no wider or taller than the
+  map's own characters (hit boxes and model unchanged). Next after it:
+  the grenade rung (the pistol with an empty magazine), then the
+  milestone's full validation.

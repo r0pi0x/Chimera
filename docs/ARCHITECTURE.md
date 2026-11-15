@@ -392,6 +392,18 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   damage table (`chimera_sim`'s `GameDamage`, party_kit's
   data/party_damage.toml: `halo_ce = 0.75`, `hl2dm = 1.5`), which the
   ladder's power readers see too.
+  In the party apps Halo's HUD avoids the party's chat and top-centre
+  column, its zooms narrow the player's own field of view
+  (`ui::party_view`), its grenades are off by default
+  (`halo_party_grenades`), and its guns' kill-feed icons come from the
+  disc's HUD (`ui::kill_icons`). Halo's battery weapons carry the
+  engine's `Magazine` with the battery's shots left; each shot Halo's
+  own weapon code fires is stated as the engine's shot fact
+  (`WeaponEventKind::ShotMade`: the fact that a weapon discharged, sent
+  by every weapon frame, never traced or replicated; `Fired` stays the
+  engine frame's hitscan command), and the plasma pistol's trigger as
+  one that fires when released (`weapon::FiresOnRelease`), so the
+  party's bots fire, pace, hear and tap every Halo rung gun.
   Halo's lasting sounds (`game::audio`) play on the engine's
   `SoundControl`/`PlaySound` seams: the level's background sound by the
   listener's cluster, its sound scenery, the shown projectiles' flight

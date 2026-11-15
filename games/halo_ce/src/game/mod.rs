@@ -59,6 +59,13 @@
 //!   `halo_ce:party_vehicles` on (off by default);
 //! - `cross_game`: the party balance (the incoming scale, the armour
 //!   brought back, the power reader's hand);
+//! - `weapons::systems::BatteryRoundsPlugin`: what Halo's weapons state
+//!   to the engine beyond their own weapon code: the battery weapons'
+//!   rounds as a `Magazine`, the triggers that fire when released, each
+//!   shot as the engine's shot fact;
+//! - the front end's `ui::party_view` (the party zoom on the player's
+//!   field of view) and `ui::kill_icons` (the kill-feed icons from the
+//!   disc);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `audio`: looping sounds, the level's background sound, environment
