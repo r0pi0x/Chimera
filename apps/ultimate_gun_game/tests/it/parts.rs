@@ -51,11 +51,11 @@ fn each_game_reports_what_it_lends() {
     let mut report = auto::report(sim.app.world());
     let games: Vec<&str> = report.iter().map(|c| c.game).collect();
     assert_eq!(games, ["cs_source", "hl2dm", "halo_ce", "tf2", "combat_arms"]);
-    // TF2 lends its four guns with its stand-in movement (M2b), no knife,
-    // body or pool map yet (docs/plans/active/tf2.md).
+    // TF2 lends its twelve guns (M2b's four, tf2-guns2's eight) with its
+    // movement, no knife, body or pool map yet (docs/plans/active/tf2.md).
     let tf2 = report.remove(3);
     assert!(tf2.playable() && tf2.missing.is_empty() && tf2.maps.is_empty(), "{}", tf2.line());
-    assert_eq!(tf2.guns.len(), 4, "{}", tf2.line());
+    assert_eq!(tf2.guns.len(), 12, "{}", tf2.line());
     // Halo lends eight held guns (not the flamethrower) with its
     // movement, and claims no map (they come from its disc image:
     // tests/it/halo_maps.rs in party_kit). The others as before.

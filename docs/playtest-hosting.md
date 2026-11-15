@@ -196,6 +196,47 @@ The weapon sets are named as the offer asks (`weapon/ak47`, not
 weapons too. A set the service lacks is skipped: its files arrive on
 demand while the map loads, slower (a request per group of files).
 
+### TF2 (2026-11-15)
+
+TF2's guns' numbers come from its weapon scripts (specs/tf2/weapon_scripts.md),
+which are encrypted in the install: the host packs them decrypted into
+each gun's `weapon/<id>` set, so testers need neither the install nor the
+key. The key reaches the packer only through the host's helper
+(`chimera-tf2-keyed`, run from the checkout's root with `chimera_pack`
+built in `target/debug` or `target/release`); it is never on a command
+line. Rather than a whole publish (31 GB at level 19), TF2 is packed
+from two client runs' reads (another game's map: every TF2 gun is
+dressed on it; and `tf2:ctf_2fort`), then its sets recorded from what
+was packed:
+
+```
+S=<server store>; B=<backup>/manifests-$(date -u +%Y%m%d-%H%M)
+cp -a $S/manifests $B                      # the snapshot (undo: below)
+CHIMERA_VFS_LOG=/tmp/dust2.log cargo run --features dev --bin ultimate_gun_game -- --map cs_source:de_dust2 --offscreen 1280x720 --frames 400 --dump /tmp/d1
+CHIMERA_VFS_LOG=/tmp/2fort.log cargo run --features dev --bin ultimate_gun_game -- --map tf2:ctf_2fort --offscreen 1280x720 --frames 400 --dump /tmp/d2
+chimera-tf2-keyed chimera_pack publish tf2 --store $S --from /tmp/dust2.log --set base --sets-from /nonexistent
+chimera-tf2-keyed chimera_pack publish tf2 --store $S --from /tmp/2fort.log --set map/ctf_2fort --sets-from /nonexistent
+chimera-tf2-keyed chimera_pack sets tf2 --store $S --sign --only weapon/
+chimera-tf2-keyed chimera_pack sets tf2 --store $S --sign --only players
+chimera-tf2-keyed dump tf2 --gun-numbers   # each gun: "script ... from ...", names only
+```
+
+Undo: `rm -r $S/manifests/tf2` (TF2 was never published before), or
+`rm -r $S/manifests && cp -a $B $S/manifests` for the whole snapshot;
+records are only added, so nothing else changes. The service reads a
+manifest again within a second.
+
+The game server needs the scripts too, or every client plays the
+spec's fallback numbers (the clients take the server's: `server_docs`
+`tf2:weapons`). The server finds TF2 as any game (`[games.tf2] path`,
+or `CHIMERA_TF2_ROOT`) and reads the scripts from the install with the
+key (`CHIMERA_TF2_CTX_KEY` in its environment, or `[games.tf2.keys.ctx]`)
+or, without a key, from a plain copy in its own asset store (the user's
+cache, under the install): pack them there once with
+`chimera-tf2-keyed chimera_pack pack tf2 --from /tmp/dust2.log` (no
+`--store`: the user's cache). Its log says, per gun, `tf2: <gun>'s
+numbers: script ...` or `spec fallback (...)`.
+
 ### A lean `base`, `common`, music tracks and level 19 (2026-11-15)
 
 `base` is what a game's client fetches at startup, so it holds only what

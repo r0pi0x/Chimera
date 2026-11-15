@@ -30,8 +30,8 @@
 //! (`net::assets::Streams`): a stream that missed would be an on-demand
 //! fetch in the match, which fails the test as any other.
 //!
-//! The session (`SESSION`, then `HL2DM_MAP` when HL2:DM is installed and
-//! published: its sprays come with its map's `map/<name>` set, its guns'
+//! The session (`SESSION`, then `HL2DM_MAP` and `TF2_MAP` when HL2:DM or
+//! TF2 is installed and published: its sprays come with its map's `map/<name>` set, its guns'
 //! effect materials and flashes with its `base`, on every map): a ladder (`ugg_new <seed> 13 <map>`) per map;
 //! once the client says its match started, every character on the server
 //! (the bots and the client's player) climbs the whole ladder, a rung every
@@ -91,6 +91,10 @@ const SESSION: [(u64, &str); 3] = [
 /// `map/<name>` set); its guns' effect materials and flashes it loads on
 /// every map, from its `base`.
 const HL2DM_MAP: (u64, &str) = (217_380, "hl2dm:dm_overwatch");
+/// TF2's map, played last when its install and published manifest are
+/// there (its guns, dressed on every map, come with its `base` and their
+/// `weapon/<id>` sets, their numbers with the scripts in those sets).
+const TF2_MAP: (u64, &str) = (217_381, "tf2:ctf_2fort");
 /// The rungs' extras' seed (bodies, parts, melee).
 const RUNG_SEED: u64 = 4242;
 /// How long each rung is held.
@@ -141,12 +145,15 @@ fn published() -> Option<Store> {
         .then_some(store)
 }
 
-/// The session's maps: `SESSION`, then `HL2DM_MAP` when the HL2:DM install
-/// and its published manifest are there.
+/// The session's maps: `SESSION`, then `HL2DM_MAP` and `TF2_MAP` when
+/// those games' installs and published manifests are there.
 fn session(config: &LocalConfig, store: &Store) -> Vec<(u64, &'static str)> {
     let mut maps = SESSION.to_vec();
     if installed(config, "hl2dm", "hl2mp") && store.root.join("manifests").join("hl2dm").is_dir() {
         maps.push(HL2DM_MAP);
+    }
+    if installed(config, "tf2", "tf") && store.root.join("manifests").join("tf2").is_dir() {
+        maps.push(TF2_MAP);
     }
     maps
 }

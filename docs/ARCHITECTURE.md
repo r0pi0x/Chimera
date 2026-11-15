@@ -31,7 +31,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
-  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), stand-in movement, its four guns and their c_ view models, harness::Tf2Sim; `ui` its HUD (none yet)
+  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), movement, its twelve guns and their c_ view models, harness::Tf2Sim; `ui` its HUD (none yet)
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -465,10 +465,21 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   the first pellet through `Hitscan::centre_first`; `tf2:rocket`: the
   blast of a rocket Chimera's flyers fly; `tf2:minigun`: the spin), its
   view models (`game::view`: the class's arms with the `c_` weapon
-  bone-merged by `map::merge_by_bone_name`), and `BUNDLE`: its maps by
+  bone-merged by `map::merge_by_bone_name`, a gun's `view_offset`); and
+  (tf2-guns2) eight more guns from specs/tf2/weapons_more.md (the
+  Pistol, SMG, Sniper Rifle, Revolver, Grenade and Stickybomb Launchers,
+  Flame Thrower, Syringe Gun) with their hooks (`tf2:sniper`: the scoped
+  charge and headshot on Chimera's scope; `tf2:grenade`, `tf2:sticky`,
+  `tf2:needle` on Chimera's flyers, the grenade's arc by the flyers'
+  `up_speed`; `tf2:flame`: a cone each flame tick and afterburn), one
+  explosion for the rocket, grenade and sticky (`weapons::blast`), and
+  their looks (`weapons::looks`: TF2's own `.pcf` explosion and muzzle
+  flashes on its maps, Source's explosion elsewhere, explosions sent to
+  clients as the `tf2_looks` net part), and `BUNDLE`: its maps by
   id, its guns lent to the party's ladders (`party_kit::GUESTS`, its
   `GUEST` dressing on other games' maps).
-  Layered as `hl2dm`; `ui` draws nothing of its own yet.
+  Layered as `hl2dm` (it uses `chimera_net` for its looks' message);
+  `ui` draws nothing of its own yet.
 - `chimera_net` is network play (`net`): the transport, the join
   handshake, replication of what every game has, prediction and
   interpolation. A game and Source's logic register what they replicate
