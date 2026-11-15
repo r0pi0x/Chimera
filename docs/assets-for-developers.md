@@ -216,8 +216,8 @@ passes with a note. Once TF2's sets are on the asset service, their
 records hold the scripts already decrypted (the host packs them with its
 key), so a developer or player served from it needs no key. `dump tf2
 --script <name>` prints one script to stdout; `dump tf2 --ice-probe` says
-which reading of the cipher decrypts the files (specs/tf2/ice.md, open
-question 1).
+which ICE level decrypts the files with your key and how many of the
+install's `.ctx` scripts decrypt (Thin-ICE, all of them, on 2026-11-15).
 
 ## When something goes wrong
 

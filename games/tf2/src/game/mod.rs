@@ -18,8 +18,8 @@
 //!   max health);
 //! - `parts`: what the game lends other games' apps (`PARTS`): its four
 //!   guns, its movement;
-//! - `ice`: the ICE cipher of the encrypted scripts (specs/tf2/ice.md),
-//!   with the spec's ambiguous readings selectable (M2a);
+//! - `ice`: the ICE cipher of the encrypted scripts, ported from the
+//!   designer's public-domain reference (THIRD_PARTY.md; M2a);
 //! - `scripts`: the weapon and class scripts (`.ctx`) through the mount,
 //!   plain from the asset store or decrypted with the user's key, and
 //!   which of the two served;

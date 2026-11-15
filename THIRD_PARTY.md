@@ -55,3 +55,26 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## ICE
+
+The designer's reference implementation of the ICE block cipher (ANSI C),
+ported to Rust in `games/tf2/src/game/ice.rs` (TF2's encrypted `.ctx`
+scripts). Taken: `ice.c`'s S-box constants (moduli, XOR offsets), P-box,
+key rotation schedule, GF(2^8) arithmetic, S-box construction, round
+function, key schedule (Thin-ICE, ICE, ICE-n) and block encrypt/decrypt.
+The source files carry no licence or copyright line; the project's home
+page states the public-domain dedication quoted below.
+
+- URL: https://darkside.com.au/ice/index.html (source: https://darkside.com.au/ice/ice.c, https://darkside.com.au/ice/ice.h)
+- Licence: public domain (dedication on the home page, quoted below)
+- Copyright: none claimed ("There are no patents or copyrights"); written by Matthew Kwan, July 1996 ("Written by Matthew Kwan - July 1996", ice.c's header)
+- Commit: none (not version-controlled); `ice.c` as fetched 2026-11-15, sha256 ecd05c5f778895aec9ff3433a5117382492417a938b988c7c053333664ceacf1 (the page dates its last source change 28 November 1998)
+- Approved: 2026-11-15 (user)
+
+```text
+The ICE algorithm is public domain, and source code can be downloaded
+from this page. There are no patents or copyrights, so its
+use is unrestricted. Naturally, if you do decide to use it, the
+author would love to hear about it.
+```

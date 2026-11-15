@@ -13,6 +13,7 @@
 //! - **The first pellet dead centre** (6.1): a gun that hasn't fired for
 //!   0.25 s puts its next shot's first pellet exactly along the aim
 //!   (`centre_first`, before the frame; `note_shots` after it).
+//!   `flat` leaves it out (the Sniper Rifle, weapons_more.md 3.2).
 //! - **The reload's start by class** (4): `reload_start` per class, the
 //!   arms' (`arms`) one taken (the Shotgun's 0.3333 for the Engineer).
 //!
@@ -108,6 +109,9 @@ pub struct GunParams {
     /// Seconds without a shot before the first pellet goes dead centre.
     #[serde(default = "pause")]
     pub first_pellet_pause: f32,
+    /// No distance modifier (the Sniper Rifle: 1 at every range).
+    #[serde(default)]
+    pub flat: bool,
 }
 
 fn pause() -> f32 {
@@ -139,7 +143,9 @@ pub fn attach(e: &mut EntityWorldMut, p: &GunParams) {
         pause: p.first_pellet_pause,
         last_shot: f64::MIN,
     });
-    if let Some(mut d) = e.get_mut::<DamageEffect>() {
+    if let Some(mut d) = e.get_mut::<DamageEffect>()
+        && !p.flat
+    {
         d.by_distance = Some(ByDistance { rule, param: p.ramp });
     }
     if let Some(start) = p.reload_start.and_then(|t| t.of(&p.arms))

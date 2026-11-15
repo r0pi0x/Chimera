@@ -59,6 +59,15 @@ the user's go-ahead: no Actions runs unless asked.
   - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
   - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
 
+- **Sprays (user, 2026-11-15; needs a design first):** players put a picture on a wall with a key, as in TF2, CS:S, HL2:DM and the other Source games: one spray per life or on a cooldown, decaling the surface looked at, visible to everyone and fading out when replaced.
+  - **Design first:**
+    - **Upload:** how a player chooses and uploads their spray: a file picker in Settings, size and format limits, conversion to one texture format, and possibly the games' own .vtf sprays.
+    - **Storage:** where sprays live (on the account, with the hub services, see hub.md S3/S4) and how other players get them. Pre-fetch at join, as an asset-service download or peer to peer, never mid-match without the no-fetch guard.
+    - **Moderation:** reporting a spray, a per-player hide/mute, an owner's remove and ban, a client toggle to show no sprays, and age and content rules for public servers.
+    - **Abuse limits:** rate limits, the size cap, and the hash-based caching the Source games use.
+  - **Then:** the decal on map geometry (per game's decal system or a shared Chimera one), the spray sound, the "sprayed by" look-at text, and the settings.
+  - Belongs with accounts (S3/S4) once players have accounts; no implementation before the design is agreed.
+
 - **An Engineer rung (user, 2026-11-15, after TF2's guns and classes):** a special gun-game rung where you play TF2's Engineer with only a melee weapon (the Wrench), but can build a sentry gun, a dispenser and teleporters.
   - To advance, you need a kill made by your sentry, which is credited to you as the rung's kill; a Wrench kill might count too (to decide).
   - Needs TF2's buildables: placing them with the PDA, metal, building up and upgrading with the Wrench, the sentry's targeting and fire, the dispenser's healing and ammo, and teleporter pairs.

@@ -1,0 +1,53 @@
+# The Revolver, the Spy's gun (specs/tf2/weapons_more.md 1, 2): one
+# bullet of 40 every 0.5 s (held attack refires: open question 6),
+# spread 0.025 (dead centre after 1.25 s), near half x1, 6 in the
+# cylinder and 24 carried, the whole cylinder in 1.133 s.
+id = "tf2:tf_weapon_revolver"
+base = "tf2:gun"
+class = "heavy_pistol"
+slot = 1
+
+[trigger]
+automatic = true
+cycle = 0.5
+timing = "accumulate"
+
+[magazine]
+clip = 6
+ammo = "tf2:revolver"
+reload = 1.133
+auto_reload = true
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 0.0
+spread = { template = 0.025 }
+
+[damage]
+amount = 40.0
+falloff = 1.0
+falloff_step = 1024.0
+hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
+impulse = 0.0
+
+[sounds]
+fire = "Weapon_Revolver.Single"
+empty = "Weapon_Revolver.ClipEmpty"
+reload = [[0.0, "Weapon_Revolver.Reload1"], [0.4, "Weapon_Revolver.Reload2"], [0.8, "Weapon_Revolver.Reload3"]]
+draw = [[0.0, "Weapon_Revolver.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_revolver/c_revolver.mdl"
+view = "models/weapons/c_models/c_revolver/c_revolver.mdl"
+view_right_handed = true
+
+[hud]
+name = "Revolver"
+icon = "revolver"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+arms = "spy"
+script = "tf_weapon_revolver"
+first_pellet_pause = 1.25

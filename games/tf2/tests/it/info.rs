@@ -25,7 +25,7 @@ fn names_its_game_folder_app_and_namespaces() {
 /// movement), dresses other games' maps with them, keeps them on its own,
 /// names them; its maps aren't in an automatic pool yet.
 #[test]
-fn the_bundle_lends_its_four_guns() {
+fn the_bundle_lends_its_guns() {
     use tf2::game::weapons::GUNS;
     let b = &tf2::game::BUNDLE;
     assert!(std::ptr::eq(b.info, &INFO));
@@ -38,5 +38,21 @@ fn the_bundle_lends_its_four_guns() {
     assert_eq!((b.view_model_fov.unwrap())().fov, 54.0);
     let names = tf2::game::weapons::tf2_weapons();
     let names: Vec<String> = names.weapons.iter().filter_map(|w| w.hud.name.clone()).collect();
-    assert_eq!(names, ["Scattergun", "Rocket Launcher", "Shotgun", "Minigun"]);
+    assert_eq!(
+        names,
+        [
+            "Scattergun",
+            "Rocket Launcher",
+            "Shotgun",
+            "Minigun",
+            "Pistol",
+            "SMG",
+            "Sniper Rifle",
+            "Revolver",
+            "Grenade Launcher",
+            "Stickybomb Launcher",
+            "Flame Thrower",
+            "Syringe Gun"
+        ]
+    );
 }

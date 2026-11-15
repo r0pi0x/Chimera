@@ -1,0 +1,52 @@
+# The SMG, the Sniper's secondary (specs/tf2/weapons_more.md 1, 2): one
+# bullet of 8 every 0.105 s, spread 0.025 (dead centre after 1.25 s),
+# near half x1, 25 in the clip and 75 carried, the whole clip in 1.1 s.
+id = "tf2:tf_weapon_smg"
+base = "tf2:gun"
+class = "smg"
+slot = 1
+
+[trigger]
+automatic = true
+cycle = 0.105
+timing = "accumulate"
+
+[magazine]
+clip = 25
+ammo = "tf2:smg"
+reload = 1.1
+auto_reload = true
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 0.0
+spread = { template = 0.025 }
+
+[damage]
+amount = 8.0
+falloff = 1.0
+falloff_step = 1024.0
+hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
+impulse = 0.0
+
+[sounds]
+fire = "Weapon_SMG.Single"
+empty = "Weapon_SMG.ClipEmpty"
+reload = [[0.0, "Weapon_SMG.ClipOut"], [0.6, "Weapon_SMG.ClipIn"]]
+draw = [[0.0, "Weapon_SMG.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_smg/c_smg.mdl"
+view = "models/weapons/c_models/c_smg/c_smg.mdl"
+view_right_handed = true
+
+[hud]
+name = "SMG"
+icon = "smg"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+arms = "sniper"
+script = "tf_weapon_smg"
+first_pellet_pause = 1.25

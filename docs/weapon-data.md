@@ -9,7 +9,9 @@ ones become mixable: an app loads any documents on top of the games it runs,
 with no Rust (`App::add_weapon_data`).
 
 TF2's are `games/tf2/data/weapons/*.toml`: the four M2 guns with
-specs/tf2/weapons.md's public numbers, the committed fallback until the
+specs/tf2/weapons.md's public numbers and the next eight (Pistol, SMG,
+Sniper Rifle, Revolver, Grenade and Stickybomb Launchers, Flame Thrower,
+Syringe Gun) with specs/tf2/weapons_more.md's, the committed fallback until the
 game's own (encrypted) scripts' fields are mapped (`tf2::game::weapons::
 script_numbers`, which logs where each gun's numbers came from).
 
@@ -245,12 +247,25 @@ hud_icon = "ammo_762"
   class; `first_pellet_pause`, after which the next shot's first pellet
   goes dead centre, `Hitscan::centre_first`), `tf2:rocket` (`damage`,
   `radius`, `edge`, `self_air_scale`, `push_other`, `push_self_air`,
-  `push_self_ground`, `sound`: the blast where a `chimera:projectile`
-  rocket touched) and `tf2:minigun` (`wind_up`, `wind_down`,
-  `wind_down_alt`, `ramp_time`, `ramp_start`, `spun_speed` and the spin's
-  sound entries).
+  `push_self_ground`, `by_distance`, `sound`: the blast where a
+  `chimera:projectile` rocket touched), `tf2:minigun` (`wind_up`,
+  `wind_down`, `wind_down_alt`, `ramp_time`, `ramp_start`, `spun_speed`
+  and the spin's sound entries), `tf2:sniper` (`base`, `charge_max`,
+  `charge_rate`, `charge_delay`, `headshot_delay`, `headshot`: the scoped
+  charge and headshot; `tf2:gun`'s `flat` drops the distance modifier),
+  `tf2:grenade` (the rocket's keys and `bounce_sound`: explodes on an
+  enemy before touching anything, else bounces until its flyer's `life`),
+  `tf2:sticky` (the blast's keys, `flat_after`, `arm`, `air_radius_start`,
+  `air_radius_time`, `max`, `speed_min`, `speed_max`, `up_speed`,
+  `charge_time`, `gravity`, `offset` and sounds: the charged launch,
+  sticking, attack2's detonation), `tf2:flame` (`damage`, `tick`,
+  `range`, `cone`, `reach`, `life`, the age and burn ramps, the afterburn
+  and sounds: a cone tested every flame tick) and `tf2:needle`
+  (`damage`: a `chimera:projectile` needle's hit by distance). A gun's
+  `[models] view_offset` moves its view model (`tf2::game::view`).
 - **Chimera's flyers** (`chimera:projectile`, `LauncherParams`): beside
-  speed, gravity, box, touch and direct damage, `offset` and
+  speed, gravity, box, touch and direct damage, `up_speed` (added along
+  the aim's up: TF2's grenades), `offset` and
   `offset_crouched` (where a round starts from the eye, along the aim's
   forward, right and up: TF2's rocket under the gun) and
   `pass_teammates` (it flies through its owner's teammates).
