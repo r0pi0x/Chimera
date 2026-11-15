@@ -18,7 +18,7 @@ from specs, measurements and the game's own data.
 |---|---|---|
 | M0 plan and first specs | done (2026-11-15) | this plan; specs/tf2/: install, movement, classes, weapons, ICE |
 | M1 a map you can walk on | done (2026-11-15) | `games/tf2`; mount (missing archives skipped); ctf_2fort and cp_badlands converted with team spawns; `tf2:<map>` in the party apps; `$ssbump` drawn |
-| M2a the weapon scripts, `chimera_pack tf2` | done (2026-11-15) | our ICE (`game::ice`) with the spec's readings selectable; `game::scripts` (store/plain, install plus key, none); `dump tf2 --script`, `--ice-probe`; `chimera_pack tf2` (`weapon/<id>` for M2's guns with the decrypted script, `players`, `map/<name>`); not published. No reading reproduces the paper's triplets: the user's `--ice-probe` settles the reading |
+| M2a the weapon scripts, `chimera_pack tf2` | done (2026-11-15) | ICE (`game::ice`, ported from the designer's public-domain reference, 2026-11-15; the published triplets pass); `game::scripts` (store/plain, install plus key, none); `dump tf2 --script`, `--ice-probe`; `chimera_pack tf2` (`weapon/<id>` for M2's guns with the decrypted script, `players`, `map/<name>`); not published. Every `.ctx` script (88) decrypts with Thin-ICE and the user's key |
 | M2b TF2 guns as UGG rungs | done (2026-11-15) | the four guns as data with the spec's numbers (the scripts' field mapping a seam), TF2's gun rules as hooks, `c_` weapons bone-merged on the class arms, sounds, TF2 in the party's `GUESTS`, `originals:gun_game_2fort` |
 | M3 classes as bodies, TF2's movement | not started | |
 | M4 more maps and weapons | not started | |
@@ -214,34 +214,31 @@ looked into; it collides the same).
 
 #### M2a: what landed, and the publish (for the orchestrator)
 
-- `games/tf2`: `game::ice` (ICE from ice.md; `Reading`, the spec's
-  ambiguous places as switches, 55,296 combinations; `CtxCipher`, a level
-  with a reading, named `thin/cycled-0123-bi-123`; `probe_ctx`),
+- `games/tf2`: `game::ice` (ICE, since 2026-11-15 a port of the
+  designer's public-domain reference, THIRD_PARTY.md; `CtxCipher`, the
+  level, `thin` by default; `probe_ctx`),
   `game::scripts` (the key from `CHIMERA_TF2_CTX_KEY` or
   `[games.tf2.keys.ctx] key`; `read`, `ScriptSource`, `KvView`;
   `decrypting`, the packer's view), `game::sets` (`M2_WEAPONS`,
   `pieces`). The Shotgun's script is `tf_weapon_shotgun_primary`
   (the Engineer's).
-- **The ICE reading is not settled.** None reproduces the paper's
-  triplets (ice.md, open question 1). The user runs, with the key in the
-  environment only:
-  `CHIMERA_TF2_CTX_KEY=... cargo run --features dev --bin dump -- tf2 --ice-probe`
-  It prints the name of each level and reading that decrypts the Rocket
-  Launcher's script. Then `CtxCipher::DEFAULT` becomes that name (until
-  then `CHIMERA_TF2_ICE_READING=<name>` selects it), and
-  `CHIMERA_TF2_CTX_KEY=... cargo test -p tf2 --features dev --test it heavy::`
-  checks every weapon and class script with it. If it prints nothing,
-  open question 1 needs a spec session.
+- **ICE settled (2026-11-15).** The prose-only ICE never reproduced the
+  paper's triplets (ice.md, open question 1); the user approved the
+  designer's public-domain reference as a source and `game::ice` is now
+  its port: the three triplets pass, and `dump tf2 --ice-probe` with the
+  user's key decrypts every one of the install's 88 `.ctx` scripts at
+  Thin-ICE (level 0, the default; `CHIMERA_TF2_ICE_LEVEL=ice` would pick
+  level 1). `CHIMERA_TF2_CTX_KEY=... cargo test -p tf2 --features dev
+  --test it heavy::` checks every weapon and class script.
 - **The publish** (not done; after the probe, with the key from the
   host's environment only; `chimera_pack` warns loudly and leaves the
   scripts out without one):
   ```
-  CHIMERA_TF2_CTX_KEY=... CHIMERA_TF2_ICE_READING=<the probe's name> \
+  CHIMERA_TF2_CTX_KEY=... \
     cargo run --features dev,tools --bin chimera_pack -- publish tf2
-  CHIMERA_TF2_CTX_KEY=... CHIMERA_TF2_ICE_READING=<the probe's name> \
+  CHIMERA_TF2_CTX_KEY=... \
     cargo run --features dev,tools --bin chimera_pack -- sets tf2 --store <server store> --sign
   ```
-  (`CHIMERA_TF2_ICE_READING` only until the probe's name is the default.)
   `base` and `common` come from client runs' `CHIMERA_VFS_LOG` logs
   (`pack tf2 --set base --from <log>`, then `lean`), as for HL2:DM.
 
@@ -331,9 +328,9 @@ server probe for parity checks, TF2's own app.
 
 ## 6. Open questions
 
-1. ICE: the paper's test vectors don't reproduce from its prose alone
-   (ice.md, open question 1). The readings the spec lists are tried
-   against a real `.ctx` with the user's key: KeyValues text settles it.
+1. ICE: settled 2026-11-15. The prose alone never reproduced the test
+   vectors; the port of the designer's public-domain reference does, and
+   decrypts every `.ctx` script at Thin-ICE.
 2. Does the engine fall through to later search paths for a file whose
    archive is missing (install.md)? Our mount does; it matters only for
    the server layout.
@@ -370,6 +367,9 @@ server probe for parity checks, TF2's own app.
   scratch store by a heavy test and read back from it alone; not
   published). Generic: `[games.<id>]` may hold keys without `path`, a key
   without an IV; `chimera_core::mount::Access` re-exported.
+- 2026-11-15: ICE replaced by a port of the designer's public-domain
+  reference (user-approved source, THIRD_PARTY.md): the triplets pass and
+  all 88 of the install's `.ctx` scripts decrypt at Thin-ICE.
 - 2026-11-15: M2b landed: the four guns as data with TF2's rules as hooks
   (the distance modifier, the first pellet, the rocket's blast and jump,
   the Minigun's spin), the `c_` weapons bone-merged on the class arms

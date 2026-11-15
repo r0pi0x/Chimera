@@ -42,9 +42,9 @@ usage: dump <game> [options]
                        name or a property value contains <text>
   --script <name>      tf2: a script (`tf_weapon_scattergun`, `playerclasses/scout`) as text on
                        stdout only (decrypted with the local key when encrypted; the source on stderr)
-  --ice-probe          tf2: which ICE level and reading decrypt scripts/tf_weapon_rocketlauncher.ctx
-                       with the local key (CHIMERA_TF2_CTX_KEY or [games.tf2.keys.ctx]): prints the
-                       name to set as CHIMERA_TF2_ICE_READING (specs/tf2/ice.md, open question 1)
+  --ice-probe          tf2: which ICE level (thin, ice) decrypts scripts/tf_weapon_rocketlauncher.ctx
+                       with the local key (CHIMERA_TF2_CTX_KEY or [games.tf2.keys.ctx]), and how many
+                       of the install's .ctx scripts decrypt at the configured level
   --filter <text>      only paths containing <text> (case-insensitive)
   --extract            write the (filtered) files to --out
   --out <dir>          extraction folder (default: per-user data dir; never inside the repo)
@@ -229,8 +229,10 @@ fn tf2_script(install: &Path, name: &str) -> Result<(), String> {
     std::io::stdout().write_all(tf2::scripts::text_of(&text).unwrap_or_default().as_bytes()).map_err(|e| e.to_string())
 }
 
-/// `--ice-probe`: every level and reading against the Rocket Launcher's
-/// script with the local key; prints the names of those that decrypt it.
+/// `--ice-probe`: which levels decrypt the Rocket Launcher's script with
+/// the local key, then how many of the install's `.ctx` scripts decrypt
+/// to KeyValues at the configured level. Prints names and counts only,
+/// never a script's text.
 fn tf2_ice_probe(install: &Path) -> Result<(), String> {
     let mount = tf2::mount::open(install).map_err(|e| e.to_string())?;
     let path = "scripts/tf_weapon_rocketlauncher.ctx";
@@ -241,20 +243,29 @@ fn tf2_ice_probe(install: &Path) -> Result<(), String> {
     let key = tf2::scripts::key()?.ok_or_else(|| format!("no key: set {} or [games.tf2.keys.ctx] key", tf2::scripts::KEY_ENV))?;
     let found = tf2::ice::probe_ctx(&key.0, &bytes);
     if found.is_empty() {
-        return Err(format!(
-            "no level and reading decrypts {path} with this key ({} tried): the key is wrong, or the cipher differs \
-             from every reading of specs/tf2/ice.md",
-            2 * tf2::ice::Reading::all().len()
-        ));
+        return Err(format!("no ICE level decrypts {path} with this key: the key is wrong"));
     }
     for c in &found {
-        println!("{}", c.name());
+        println!("{path}: decrypts at level {}", c.name());
     }
-    eprintln!(
-        "{} cipher(s) decrypt it; set {}=<name> to use one, and make it CtxCipher::DEFAULT (games/tf2/src/game/ice.rs)",
-        found.len(),
-        tf2::ice::READING_ENV
-    );
+    let cipher = tf2::ice::CtxCipher::configured();
+    let ice = cipher.ice(&key.0);
+    let (mut ok, mut failed) = (0, Vec::new());
+    for (e, _) in mount.entries() {
+        if !(e.path.starts_with("scripts/") && e.path.ends_with(".ctx")) {
+            continue;
+        }
+        let bytes = mount.read(&e.path).map_err(|err| format!("{}: {err}", e.path))?;
+        if tf2::scripts::parses(&tf2::ice::decrypt_ctx(&ice, &bytes)) {
+            ok += 1;
+        } else {
+            failed.push(e.path.clone());
+        }
+    }
+    println!("level {}: {ok} .ctx scripts decrypt, {} don't {failed:?}", cipher.name(), failed.len());
+    if !found.contains(&cipher) {
+        eprintln!("set {}=<level> to use another level (games/tf2/src/game/ice.rs)", tf2::ice::LEVEL_ENV);
+    }
     Ok(())
 }
 

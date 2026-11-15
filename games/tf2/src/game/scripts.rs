@@ -9,8 +9,8 @@
 //!    they are: the asset store's record (`chimera_pack` packs the
 //!    scripts decrypted) or a plain file;
 //! 2. `ScriptSource::Decrypted`: the install's encrypted file, decrypted
-//!    in memory with the user's key (`CtxCipher::configured`, ICE in the
-//!    reading `dump tf2 --ice-probe` names);
+//!    in memory with the user's key (`CtxCipher::configured`: Thin-ICE
+//!    unless `CHIMERA_TF2_ICE_LEVEL` says otherwise);
 //! 3. `ScriptSource::Missing`: neither (no file, no key, or a key that
 //!    doesn't decrypt it); the caller falls back to the specs' numbers.
 //!

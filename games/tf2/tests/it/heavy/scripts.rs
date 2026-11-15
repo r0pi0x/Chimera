@@ -1,10 +1,9 @@
 //! The install's encrypted scripts with the user's key (specs/tf2/ice.md
 //! case 18): every `scripts/tf_weapon_*.ctx` and
 //! `scripts/playerclasses/*.ctx` decrypts into KeyValues with a block at
-//! its top, and encrypting it again gives the file byte for byte; and,
-//! for open question 1, which ciphers (level and reading) decrypt the
-//! Rocket Launcher's script. The key comes from `CHIMERA_TF2_CTX_KEY` or
-//! `[games.tf2.keys.ctx]` at run time; each test passes with a note
+//! its top, and encrypting it again gives the file byte for byte; and
+//! which levels decrypt the Rocket Launcher's script. The key comes from
+//! `CHIMERA_TF2_CTX_KEY` or `[games.tf2.keys.ctx]` at run time; each test passes with a note
 //! without it or without the install. Decrypted text is never written
 //! anywhere and never printed.
 
@@ -65,10 +64,10 @@ fn the_probe_names_the_cipher_of_the_rocket_launchers_script() {
     let bytes = mount.read("scripts/tf_weapon_rocketlauncher.ctx").expect("the Rocket Launcher's script");
     let found = ice::probe_ctx(&key.0, &bytes);
     eprintln!("ciphers that decrypt it: {:?}", found.iter().map(CtxCipher::name).collect::<Vec<_>>());
-    assert!(!found.is_empty(), "no level and reading decrypts it (ice.md, open question 1)");
+    assert!(!found.is_empty(), "no level decrypts it with the key");
     assert!(
         found.contains(&CtxCipher::configured()),
-        "set {} or Reading::SPEC to one of them",
-        ice::READING_ENV
+        "set {} or CtxCipher::DEFAULT to one of them",
+        ice::LEVEL_ENV
     );
 }
