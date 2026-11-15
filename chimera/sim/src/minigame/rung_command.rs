@@ -232,8 +232,15 @@ fn run(world: &mut World, a: &[String], may_wait: bool) -> Result<Option<String>
     Ok(Some(said.join("\n")))
 }
 
-/// Apply a waiting `+rung` once the local player has a rung.
-fn apply_pending(world: &mut World) {
+/// Apply a waiting `+rung` once the local player has a rung: a cheap
+/// check each frame, the world's work only on the frame it applies.
+fn apply_pending(pending: Option<Res<PendingRung>>, ladder: Option<Res<Ladder>>, mut commands: Commands) {
+    if pending.is_some() && ladder.is_some() {
+        commands.queue(apply_pending_now);
+    }
+}
+
+fn apply_pending_now(world: &mut World) {
     let ready = world.contains_resource::<Ladder>()
         && command_player(world).is_ok_and(|e| world.get::<Rung>(e).is_some());
     if !ready {
@@ -248,33 +255,38 @@ fn apply_pending(world: &mut World) {
 }
 
 /// The sandbox's rule: every player back on the rung they were put on.
-fn hold(world: &mut World) {
-    if !holding(world) {
+/// Reads each tick; the world is touched only for a player who moved.
+fn hold(
+    hold: Option<Res<HoldRungs>>,
+    active: Option<Res<super::ActiveMinigame>>,
+    ladder: Option<Res<Ladder>>,
+    players: Query<(Entity, &Rung, Option<&Chosen>, Has<crate::core::Dead>)>,
+    mut commands: Commands,
+) {
+    let (Some(hold), Some(active), Some(ladder)) = (hold, active, ladder) else { return };
+    if active.def.id != hold.0 {
         return;
     }
-    let Some(ladder) = world.get_resource::<Ladder>().cloned() else { return };
     // A new ladder (a new match) starts everyone over.
-    if world.resource_ref::<Ladder>().is_changed() {
-        let all: Vec<Entity> = world.query_filtered::<Entity, With<Chosen>>().iter(world).collect();
-        for e in all {
-            world.entity_mut(e).remove::<Chosen>();
-        }
-    }
-    let rows: Vec<(Entity, usize, Option<usize>, bool)> = world
-        .query::<(Entity, &Rung, Option<&Chosen>, Has<crate::core::Dead>)>()
-        .iter(world)
-        .map(|(e, r, c, d)| (e, r.0, c.map(|c| c.0), d))
-        .collect();
-    for (e, now, chosen, dead) in rows {
-        match chosen {
+    let fresh = ladder.is_changed();
+    for (e, now, chosen, dead) in &players {
+        let now = now.0;
+        match chosen.map(|c| c.0).filter(|_| !fresh) {
             None => {
-                world.entity_mut(e).insert(Chosen(now.min(ladder.rungs.len().saturating_sub(2))));
+                commands.entity(e).try_insert(Chosen(now.min(ladder.rungs.len().saturating_sub(2))));
             }
             Some(c) if c != now && dead => {
                 // The weapon is the next life's: only the number.
-                world.entity_mut(e).insert(Rung(c));
+                commands.entity(e).try_insert(Rung(c));
             }
-            Some(c) if c != now => ladder::set_rung(world, e, c, &ladder),
+            Some(c) if c != now => {
+                let ladder = ladder.clone();
+                commands.queue(move |world: &mut World| {
+                    if world.get_entity(e).is_ok() {
+                        ladder::set_rung(world, e, c, &ladder);
+                    }
+                });
+            }
             _ => {}
         }
     }
