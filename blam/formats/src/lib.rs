@@ -10,6 +10,12 @@
 //! - `cache`: the map cache file (`.map`): the decompressed image, the tag
 //!   index, address spaces and bounds-checked views of tag data, the
 //!   foundation every tag-class reader is written on.
+//! - `structure_bsp`: a level's render geometry, clusters, portals, fog and
+//!   the rest of its structure BSP, vertices decoded on demand.
+//! - `collision`: the collision BSP of levels and collision models: polygons,
+//!   triangles, the point test and the line trace.
 
 pub mod cache;
+pub mod collision;
 pub mod disc;
+pub mod structure_bsp;

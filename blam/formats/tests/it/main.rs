@@ -4,12 +4,16 @@
 //! them with `-- --skip heavy::`). `cargo test -p blam_formats`. A new
 //! file here gets a `mod` line below.
 
+mod bsp_fixture;
 mod cache;
+mod collision;
 mod disc;
 mod fixture;
 mod map_fixture;
+mod structure_bsp;
 
 mod heavy {
+    mod bsp_install;
     mod cache_install;
     mod disc_install;
 }
