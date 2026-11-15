@@ -1,15 +1,16 @@
 //! Halo's parts, one module per subsystem, and what the game tells the
 //! shell about itself (`INFO`). M1 of docs/plans/active/halo-ce.md: the
-//! game registers, its install mounts and its maps load; movement,
-//! weapons and the rest come with their specs (specs/halo_ce/<name>.md):
+//! game registers, its install mounts and its maps load; M2 begins with
+//! its movement; weapons and the rest come with their specs
+//! (specs/halo_ce/<name>.md):
 //!
 //! - `mount`: the install, a disc image or a folder of the disc's files, as
 //!   a mount (`INFO.open`; specs/halo_ce/disc_image.md);
 //! - `maps`: the install's map cache files as Chimera's `MapData`
 //!   (`MAP_LOADER`; cache_file.md, structure_bsp.md, collision.md,
 //!   shaders.md, scenario.md);
-//! - `movement`: `halo_ce:movement`, Chimera's placeholder walking under
-//!   Halo's id until specs/halo_ce/movement.md is implemented;
+//! - `movement`: `halo_ce:movement`, Halo's player movement
+//!   (specs/halo_ce/movement.md; its numbers in data/movement.toml);
 //! - `parts`: what the game lends other games' apps (`PARTS`): its maps,
 //!   by its pool rules and measurements (data/map_pool.toml,
 //!   data/map_fitness.toml), played with other games' players and guns.
@@ -109,7 +110,7 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
 ];
 
 /// Halo's parts, after `crate::SimPlugins`: the game registered (`INFO`) and
-/// its stand-in movement (`movement`).
+/// its movement (`movement`).
 pub struct HaloPlugins;
 
 impl PluginGroup for HaloPlugins {
