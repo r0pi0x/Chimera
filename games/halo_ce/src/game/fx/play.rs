@@ -18,14 +18,28 @@
 //! in its life start where the marker is then.
 //!
 //! A particle system part (`system`) is made at once as a free system.
+//! Its particles live through their particle states (`system_particle`,
+//! effects.md "Particle systems"): sizes in WU per sprite pixel x the
+//! type's live scale multiplier, colours x the type's colour multiplier,
+//! blended through each transition; cross-faded sprites only between
+//! states drawn differently; each particle moving by the point physics of
+//! the state it is in (blended in reverse through a transition) as its own
+//! motion keys (`ParticleCurves::motion`); the rotational render mode's
+//! face-on sprite following the rotation. A plain particle's sprite spans
+//! 2R x its pixels x the tag's sprite size field.
 //!
-//! Known shortcuts: a particle system's particles are made at its
-//! creation only (its creation rate counted over its birth state), ride
-//! one shared drag and rise (`SYSTEM_DAMPING`, `SYSTEM_RISE`) instead of
-//! their states' point physics, keep their first draw of each state's
-//! numbers (no blend between states: each state is its own particle, shown
-//! in its time), and an attached system (the rocket's exhaust, the
-//! flamethrower's stream) is made once where it starts; particles attached to a marker are made where the
+//! Known shortcuts: a free particle system's particles are made at its
+//! creation only (its creation rate counted over its birth state; an
+//! attached one's rate runs on `emit`, the rocket's exhaust: the
+//! flamethrower's stream is made once where it starts); each particle
+//! state is its own engine particle on the same path; the rotational
+//! render mode's edge-on sprites (the next sequence, by the view angle)
+//! are not drawn and every face-on sprite starts at the sequence's first
+//! (not at the rotation's), and only the bitmap's first page is loaded;
+//! the system's scale (type flag 13), the minimum count's hurrying of the
+//! states, the lighting of alpha-blended states and the sprite frames'
+//! animation
+//! across states are not done); particles attached to a marker are made where the
 //! marker was and then move freely; a particle parallel to its direction
 //! is a strip of its sprite along its velocity (2R long, shortening over
 //! its life as the pool's trails do), or along its direction at creation
@@ -41,13 +55,13 @@ use bevy::prelude::*;
 
 use super::{
     HaloLight,
-    load::{FxEffect, FxEntry, FxParticle, FxPartKind, FxSystem, HaloFx},
+    load::{FxEffect, FxEntry, FxParticle, FxPartKind, FxSysState, FxSysType, FxSystem, HaloFx},
     place::Frame,
 };
 use super::super::METERS_PER_UNIT;
 use crate::map::{
     DecalGroup, ParticleRng, PlaceDecal, PlaySound,
-    particles::{Bounce, Fade, Motion, Particle, ParticleGroup, Ramp, Shape, WorldTrace, probe_planes},
+    particles::{Bounce, Fade, Motion, Particle, ParticleCurves, ParticleGroup, Ramp, Shape, WorldTrace, probe_planes},
 };
 
 /// One location's instance: as the shooter sees it in first person and as
@@ -250,6 +264,7 @@ impl Running {
                         color: Vec3::from(l.color),
                         radius: l.radius * METERS_PER_UNIT,
                         seconds: l.ticks.max(1.0) / 30.0,
+                        falloff: l.falloff,
                         owner: self.owner,
                         follow: false,
                     }),
@@ -339,7 +354,9 @@ pub fn particle(def: &FxParticle, entry: &FxEntry, frame: &Frame, rng: &mut Part
     let at = frame.point(entry.offset) + o * e * METERS_PER_UNIT;
     let speed = range(rng, entry.velocity);
     let dir = in_cone(frame.vector(entry.direction).normalize_or(frame.forward), entry.cone, rng);
-    let radius = range(rng, entry.radius) * METERS_PER_UNIT;
+    // 2R x the sprite's pixels x the sprite size field: the bitmap's
+    // largest sprite spans 2R (effects.md "Size, alpha and drawing").
+    let radius = range(rng, entry.radius) * def.sprite_scale * METERS_PER_UNIT;
     let spin = range(rng, entry.angular_velocity);
     let roll = if entry.flags & 2 != 0 { rng.random() * std::f32::consts::TAU } else { 0.0 };
     let q = rng.random();
@@ -389,82 +406,302 @@ pub fn particle(def: &FxParticle, entry: &FxEntry, frame: &Frame, rng: &mut Part
     })
 }
 
-/// The particles' drag and rise of a particle system's (`system`): its
-/// states' point physics are not read, so its particles slow by this and
-/// drift up a little (m/s, per second).
-const SYSTEM_DAMPING: f32 = 4.0;
-const SYSTEM_RISE: f32 = 0.6;
-
 /// A free particle system made at `f` (effects.md "Particle systems"):
 /// each type's initial count and its birth state's creation rate over the
 /// birth's length (at most 128), created by its creation physics (default:
 /// at the point; explosion: a random direction scaled by the xy and z
 /// spreads, moving at that times the intensity; jet: along the forward,
-/// spread by the spread fraction, at the constant velocity), each living
-/// through its particle states in order: one engine particle per state, on
-/// the same path, hidden until its state begins (an empty fade-in window)
-/// and fading out at its end (the last over its second half).
+/// spread by the spread fraction, at the constant velocity).
 pub fn system(sys: &FxSystem, f: &Frame, rng: &mut ParticleRng, out: &mut Made) {
     for t in &sys.types {
         if t.states.is_empty() {
             continue;
         }
         let n = (t.initial.max(0) as f32 + t.rate * range(rng, t.birth)).round().clamp(0.0, 128.0) as usize;
-        let c = |i: usize| t.constants.get(i).copied().unwrap_or(0.0);
-        let mut g = ParticleGroup::new(Motion { gravity: -SYSTEM_RISE, damping: SYSTEM_DAMPING, ..Default::default() });
+        let mut g = ParticleGroup::new(system_motion(t));
         g.capped = false;
+        // The type's colour multiplier over its own clock: its first state
+        // lasts D, then it moves to the next state's over Tr.
+        let (hold, change) = match t.type_states.first() {
+            Some(s) if t.type_states.len() > 1 => (range(rng, s.duration), range(rng, s.transition)),
+            _ => (f32::INFINITY, 0.0),
+        };
         for _ in 0..n {
-            let (offset, velocity) = match t.creation {
-                1 => {
-                    let d = direction(rng);
-                    // Halo's z spread is the engine's up (y).
-                    let o = Vec3::new(d.x * c(0), d.y * c(1), d.z * c(0));
-                    (o, o * c(2))
-                }
-                2 => {
-                    let spread = c(1).clamp(0.0, 1.0);
-                    (Vec3::ZERO, (f.forward * (1.0 - spread) + direction(rng) * spread) * c(0))
-                }
-                _ => (Vec3::ZERO, Vec3::ZERO),
-            };
-            let at = f.at + offset * METERS_PER_UNIT;
-            let velocity = velocity * METERS_PER_UNIT;
-            let roll = rng.random() * std::f32::consts::TAU;
-            let last = t.states.len() - 1;
-            let mut start = 0.0f32;
-            for (k, st) in t.states.iter().enumerate() {
-                let end = start + range(rng, st.duration).max(1.0 / 30.0);
-                if let Some(material) = st.material {
-                    let q = rng.random();
-                    let (lo, hi) = (st.color_lower, st.color_upper);
-                    let color = Vec3::new(lo[1] + (hi[1] - lo[1]) * q, lo[2] + (hi[2] - lo[2]) * q, lo[3] + (hi[3] - lo[3]) * q);
-                    let alpha = (lo[0] + (hi[0] - lo[0]) * rng.random()).clamp(0.0, 1.0);
-                    let s0 = start / end;
-                    let fade_out = if k == last { s0 + (1.0 - s0) * 0.5 } else { s0 + (1.0 - s0) * 0.8 };
-                    let fade = Fade::Windows {
-                        start_alpha: if k == 0 { 1.0 } else { 0.0 },
-                        fade_in: if k == 0 { (0.0, 0.0) } else { (s0, (s0 + (1.0 - s0) * 0.2).min(1.0)) },
-                        fade_out: (fade_out, 1.0),
-                    };
-                    let radius = range(rng, st.radius) * METERS_PER_UNIT;
-                    g.particles.push(Particle {
-                        velocity,
-                        sequence: st.sequence.max(0) as u16,
-                        fps: range(rng, st.animation_rate),
-                        frame_loop: true,
-                        color,
-                        alpha,
-                        fade,
-                        roll,
-                        ..Particle::new(at, end, material, radius.max(0.01))
-                    });
-                }
-                start = end;
-            }
+            let (offset, velocity) = creation(t, f, rng);
+            system_particle(t, f.at + offset * METERS_PER_UNIT, velocity * METERS_PER_UNIT, (hold, change), rng, &mut g);
         }
         if !g.particles.is_empty() {
             out.groups.push(g);
         }
+    }
+}
+
+/// A system's particles for a span of `dt` seconds of its creation rate
+/// (an attached system's, the rocket's exhaust: the type's first state is
+/// the one that makes them, looping): `rate x dt` particles, the fraction
+/// by a draw, at most 128, each at `f` by the creation physics.
+pub fn emit(sys: &FxSystem, f: &Frame, dt: f32, rng: &mut ParticleRng, out: &mut Made) {
+    for t in &sys.types {
+        if t.states.is_empty() || t.rate <= 0.0 {
+            continue;
+        }
+        let x = t.rate * dt;
+        let n = (x.floor() + if rng.random() < x.fract() { 1.0 } else { 0.0 }).clamp(0.0, 128.0) as usize;
+        let mut g = ParticleGroup::new(system_motion(t));
+        g.capped = false;
+        for _ in 0..n {
+            let (offset, velocity) = creation(t, f, rng);
+            system_particle(t, f.at + offset * METERS_PER_UNIT, velocity * METERS_PER_UNIT, (f32::INFINITY, 0.0), rng, &mut g);
+        }
+        if !g.particles.is_empty() {
+            out.groups.push(g);
+        }
+    }
+}
+
+/// A new particle's offset and velocity (WU, WU per second) by the type's
+/// creation physics.
+fn creation(t: &FxSysType, f: &Frame, rng: &mut ParticleRng) -> (Vec3, Vec3) {
+    let c = |i: usize| t.constants.get(i).copied().unwrap_or(0.0);
+    match t.creation {
+        1 => {
+            let d = direction(rng);
+            // Halo's z spread is the engine's up (y).
+            let o = Vec3::new(d.x * c(0), d.y * c(1), d.z * c(0));
+            (o, o * c(2))
+        }
+        2 => {
+            let spread = c(1).clamp(0.0, 1.0);
+            (Vec3::ZERO, (f.forward * (1.0 - spread) + direction(rng) * spread) * c(0))
+        }
+        _ => (Vec3::ZERO, Vec3::ZERO),
+    }
+}
+
+/// A point physics' motion at radius `r` (WU) as the engine's (metres):
+/// [gravity (down, m/s^2), damping (1/s)], from the stored fields
+/// (effects.md "Point physics": the rise 3.2086613 x b, the drag friction x
+/// r^2 / ((mass/r^3 + air) x r^3)).
+pub fn physics_motion(ph: Option<&blam_formats::effect::PointPhysics>, r: f32) -> [f32; 2] {
+    use blam_formats::effect::PointPhysics as P;
+    let Some(ph) = ph else { return [0.0, 0.0] };
+    let r = r.max(1e-3);
+    let b = if ph.flags & P::NO_GRAVITY != 0 { 0.0 } else { ph.air_buoyancy };
+    let mass = (ph.mass_per_r3 + P::AIR_MASS_PER_R3) * r;
+    [-P::GRAVITY * b * METERS_PER_UNIT, if mass > 0.0 { ph.air_friction / mass } else { 0.0 }]
+}
+
+/// The point physics of a particle in transition from `s` to `n` with `w`
+/// = time left / the transition's length (effects.md "Particle systems",
+/// Physics): every numeric field `(1 - w) s + w n` (the quirk: the reverse
+/// of the other blends), the flags `s`'s. Either missing: the other's.
+pub fn blended_physics(
+    s: Option<&blam_formats::effect::PointPhysics>,
+    n: Option<&blam_formats::effect::PointPhysics>,
+    w: f32,
+) -> Option<blam_formats::effect::PointPhysics> {
+    let (s, n) = match (s, n) {
+        (Some(s), Some(n)) => (s, n),
+        (Some(x), None) | (None, Some(x)) => return Some(x.clone()),
+        (None, None) => return None,
+    };
+    let mix = |a: f32, b: f32| (1.0 - w) * a + w * b;
+    Some(blam_formats::effect::PointPhysics {
+        flags: s.flags,
+        mass_per_r3: mix(s.mass_per_r3, n.mass_per_r3),
+        water_buoyancy: mix(s.water_buoyancy, n.water_buoyancy),
+        air_buoyancy: mix(s.air_buoyancy, n.air_buoyancy),
+        density: mix(s.density, n.density),
+        air_friction: mix(s.air_friction, n.air_friction),
+        water_friction: mix(s.water_friction, n.water_friction),
+        surface_friction: mix(s.surface_friction, n.surface_friction),
+        elasticity: mix(s.elasticity, n.elasticity),
+    })
+}
+
+/// The radius a particle's physics uses in a transition from state `s` to
+/// `n` at `w` (time left / length; 1 outside one): the type radius x the
+/// type's live radius multiplier x the states' radius multipliers blended
+/// `w s + (1 - w) n`.
+pub fn physics_radius(type_radius: f32, type_multiplier: f32, s: f32, n: f32, w: f32) -> f32 {
+    type_radius * type_multiplier * (w * s + (1.0 - w) * n)
+}
+
+/// The group's motion: none (each particle of a system carries its own
+/// motion keys, `system_particle`).
+fn system_motion(_: &FxSysType) -> Motion {
+    Motion::default()
+}
+
+/// A multiplier of 0 read as 1 (an unset field).
+fn or_one(m: f32) -> f32 {
+    if m == 0.0 { 1.0 } else { m }
+}
+
+/// One particle of a system's type living through its particle states
+/// (effects.md "Particle systems", Behaviour): each state lasts its draw,
+/// then the particle transitions to the next over its draw (the last
+/// state's end is its death). Drawing: the scale k (the state's draw, in
+/// the sprite's pixels: `FxSysState::radius`) x the type's live scale
+/// multiplier, the colour (the state's draw) x the type's live colour
+/// multiplier, both blended `w x current + (1 - w) x next` through a
+/// transition (`hold`, `change`: seconds of the type's first state and of
+/// its change to the next). Each state's sprite is one engine particle on
+/// the same path: cross-faded through a transition (weight w, the next's
+/// 1 - w) only when the two states differ in texture, blend or sequence,
+/// else the current one alone carries the blended look. Physics: the state
+/// the particle is in, blended in reverse through a transition
+/// (`blended_physics`), at its radius (`physics_radius`), as the
+/// particle's motion keys. Rotational render mode (1): the face-on sprite
+/// follows the rotation (count x spin / 2 pi sprites a second), the sprite
+/// itself not spun.
+fn system_particle(t: &FxSysType, at: Vec3, velocity: Vec3, (hold, change): (f32, f32), rng: &mut ParticleRng, g: &mut ParticleGroup) {
+    let n = t.states.len();
+    let (mut begin, mut end) = (vec![0.0f32; n], vec![0.0f32; n]);
+    let mut clock = 0.0f32;
+    for (k, st) in t.states.iter().enumerate() {
+        begin[k] = clock;
+        end[k] = clock + range(rng, st.duration).max(0.0);
+        clock = end[k] + if k + 1 < n { range(rng, st.transition).max(0.0) } else { 0.0 };
+    }
+    let life = end[n - 1].max(1.0 / 30.0);
+    let roll = rng.random() * std::f32::consts::TAU;
+    // Each state's draws: radius (metres), colour and alpha, spin.
+    let mut draws: Vec<(f32, [f32; 4], f32)> = Vec::with_capacity(n);
+    for st in &t.states {
+        let radius = range(rng, st.radius) * METERS_PER_UNIT;
+        let q = rng.random();
+        let (lo, hi) = (st.color_lower, st.color_upper);
+        let rgb = |i: usize| lo[i] + (hi[i] - lo[i]) * q;
+        let alpha = range(rng, (lo[0].min(hi[0]), lo[0].max(hi[0]))).clamp(0.0, 1.0);
+        let spin = range(rng, st.rotation_rate);
+        draws.push((radius, [rgb(1), rgb(2), rgb(3), alpha], spin));
+    }
+    // The type's live multipliers at time `x`: colour (argb), scale, radius.
+    let type_at = |x: f32| -> ([f32; 4], f32, f32) {
+        let Some(a) = t.type_states.first() else { return ([1.0; 4], 1.0, 1.0) };
+        let Some(b) = t.type_states.get(1) else { return (a.color, or_one(a.scale_multiplier), or_one(a.radius_multiplier)) };
+        let u = if change > 0.0 {
+            ((x - hold) / change).clamp(0.0, 1.0)
+        } else if x >= hold {
+            1.0
+        } else {
+            0.0
+        };
+        let mix = |p: f32, q: f32| p + (q - p) * u;
+        (
+            std::array::from_fn(|i| mix(a.color[i], b.color[i])),
+            mix(or_one(a.scale_multiplier), or_one(b.scale_multiplier)),
+            mix(or_one(a.radius_multiplier), or_one(b.radius_multiplier)),
+        )
+    };
+    // Where time `x` is: the state k, and w (1 in the state, time left /
+    // length in the transition out of it).
+    let place = |x: f32| -> (usize, f32) {
+        let mut k = 0;
+        while k + 1 < n && x >= begin[k + 1] {
+            k += 1;
+        }
+        if k + 1 < n && x > end[k] {
+            (k, ((begin[k + 1] - x) / (begin[k + 1] - end[k]).max(1e-6)).clamp(0.0, 1.0))
+        } else {
+            (k, 1.0)
+        }
+    };
+    // The path's size and colour at time `x`.
+    let look = |x: f32| -> (f32, [f32; 4]) {
+        let (k, w) = place(x);
+        let (r0, c0, _) = draws[k];
+        let (r1, c1, _) = draws[(k + 1).min(n - 1)];
+        let size = w * r0 + (1.0 - w) * r1;
+        let rgba: [f32; 4] = std::array::from_fn(|i| w * c0[i] + (1.0 - w) * c1[i]);
+        let (m, scale, _) = type_at(x);
+        (size * scale, [rgba[0] * m[1], rgba[1] * m[2], rgba[2] * m[3], rgba[3] * m[0]])
+    };
+    // Two states drawn alike are not cross-faded.
+    let alike = |a: &FxSysState, b: &FxSysState| a.texture == b.texture && a.additive == b.additive && a.sequence == b.sequence;
+    // The times anything bends at, a transition's insides sampled for the
+    // physics' blend (not linear in w).
+    let mut times: Vec<f32> = begin.iter().chain(&end).copied().chain([0.0, life]).collect();
+    for k in 0..n.saturating_sub(1) {
+        for i in 1..4 {
+            times.push(end[k] + (begin[k + 1] - end[k]) * i as f32 / 4.0);
+        }
+    }
+    if hold.is_finite() {
+        times.extend([hold, hold + change]);
+    }
+    times.retain(|x| *x >= 0.0 && *x <= life);
+    times.sort_by(f32::total_cmp);
+    times.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+    let size: Vec<(f32, f32)> = times.iter().map(|x| (x / life, look(*x).0)).collect();
+    // The motion keys: at each time, the physics in force; a transition's
+    // start and a state's start are jumps (two keys at one time).
+    let motion_at = |x: f32, k: usize, w: f32| -> [f32; 2] {
+        let s = &t.states[k];
+        let nx = &t.states[(k + 1).min(n - 1)];
+        let ph = if w < 1.0 { blended_physics(s.physics.as_ref(), nx.physics.as_ref(), w) } else { s.physics.clone() };
+        let (_, _, type_radius) = type_at(x);
+        let r = physics_radius(t.radius, type_radius, or_one(s.radius_multiplier), or_one(nx.radius_multiplier), w);
+        physics_motion(ph.as_ref(), r)
+    };
+    let mut motion = Vec::new();
+    for x in &times {
+        let (k, w) = place(*x);
+        let f = x / life;
+        if k + 1 < n && (*x - end[k]).abs() < 1e-6 && begin[k + 1] > end[k] {
+            // The state's last moment, then the transition's first (w = 1:
+            // already the next state's fields).
+            motion.push((f, motion_at(*x, k, 1.0)));
+            motion.push((f, motion_at(*x, k, 1.0 - 1e-6)));
+        } else if k > 0 && (*x - begin[k]).abs() < 1e-6 && begin[k] > end[k - 1] {
+            // The transition's last moment (w = 0), then the new state.
+            motion.push((f, motion_at(*x, k - 1, 0.0)));
+            motion.push((f, motion_at(*x, k, 1.0)));
+        } else {
+            motion.push((f, motion_at(*x, k, w)));
+        }
+    }
+    for (k, st) in t.states.iter().enumerate() {
+        let (Some(material), true) = (st.material, st.color_lower[0] > 0.0 || st.color_upper[0] > 0.0) else { continue };
+        let out_alike = k + 1 < n && alike(st, &t.states[k + 1]);
+        let in_alike = k > 0 && alike(&t.states[k - 1], st);
+        let weight = |x: f32| -> f32 {
+            if x >= begin[k] && x <= end[k] {
+                1.0
+            } else if k > 0 && x > end[k - 1] && x < begin[k] {
+                if in_alike { 0.0 } else { (x - end[k - 1]) / (begin[k] - end[k - 1]).max(1e-6) }
+            } else if k + 1 < n && x > end[k] && x < begin[k + 1] {
+                if out_alike { 1.0 } else { 1.0 - (x - end[k]) / (begin[k + 1] - end[k]).max(1e-6) }
+            } else {
+                0.0
+            }
+        };
+        let color: Vec<(f32, [f32; 4])> = times
+            .iter()
+            .map(|x| {
+                let (_, c) = look(*x);
+                (x / life, [c[0], c[1], c[2], c[3] * weight(*x)])
+            })
+            .collect();
+        let first = color.first().map_or([1.0; 4], |c| c.1);
+        let spin = draws[k].2;
+        let (fps, roll_speed) = if t.render_mode == 1 {
+            (st.sprites as f32 * spin.abs() / std::f32::consts::TAU, 0.0)
+        } else {
+            (range(rng, st.animation_rate), spin)
+        };
+        g.particles.push(Particle {
+            velocity,
+            sequence: st.sequence.max(0) as u16,
+            fps,
+            frame_loop: true,
+            color: Vec3::new(first[0], first[1], first[2]),
+            roll,
+            roll_speed,
+            curves: Some(std::sync::Arc::new(ParticleCurves { color, size: size.clone(), motion: motion.clone(), ..Default::default() })),
+            ..Particle::new(at, life, material, size.first().map_or(0.01, |s| s.1.max(0.001)))
+        });
     }
 }
 

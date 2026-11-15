@@ -15,8 +15,8 @@ Status: draft
 
 Sections: Summary; Units and conventions; Constants; Struct sizes and
 where each class's own fields begin; The object base; Object functions;
-Change colours; The unit base; The biped; Items, equipment, garbage;
-Scenery, sound scenery and devices; The disc's values; Per-tick order;
+Change colours; The unit base; The biped; Items, equipment, garbage
+(with Items in the world: falling, bouncing and resting); Scenery, sound scenery and devices; The disc's values; Per-tick order;
 Edge cases; Quirks; Test cases; Verification performed; Confidence per
 section; Open questions.
 
@@ -784,8 +784,9 @@ physics); campaign bipeds use 0, 0x2, 0x200 and 0x202.
 The item layer ends at 0x308. Item flag bit 1 (destroyed by explosions)
 is acted on only when no multiplayer game engine is running: a blast
 then sets the item off (detonation delay and effects below). Disc
-values: the flag weapon 1; frag grenade,
-plasma grenade and rocket launcher ammo 2; all others 0.
+values of the flags word: the flag weapon 0x1 (bit 0, always maintains
+z up); frag grenade, plasma grenade and rocket launcher ammo 0x2 (bit
+1); all others 0. No disc item sets bit 2 (unaffected by gravity).
 
 ### Equipment (`eqip`, struct 0x3B0)
 
@@ -805,6 +806,163 @@ rules).
 
 The item layer and then 0xA8 bytes of zero padding; it has no fields of
 its own. (Debris that comes off a destroyed object: two tags on a10.)
+
+### Items in the world: falling, bouncing and resting
+
+Every weapon, equipment and garbage object that lies loose in the
+level (no parent: not held, not in an inventory, not attached) runs
+this each tick; a held or carried item runs none of it. Velocities are
+in WU per tick, g = 0.0035651792 WU/tick^2 (`movement.md` GRAVITY,
+the same for items). **An item is a point**: its collision is the line
+its origin travels in the tick, not a volume, and its model can dip
+into walls. State: velocity v, angular velocity w (a vector, rad per
+tick), an at-rest flag, what it rests on (a level surface, or an
+object plus the contact point in that object's root-node frame), a
+spin axis, and an ignored object (its dropper, until it first comes
+to rest).
+
+**Every tick, at rest or not.** If the item flag "always maintains z
+up" (bit 0) is set and up.z differs from 1 by 1e-4 or more, up becomes
+world up and forward is made horizontal (its vertical part removed,
+renormalised; world +x if it was vertical). Disc: only the flag
+weapon, which therefore always stands upright.
+
+**Moving (not at rest)**, in order:
+
+1. v.z -= g (skipped for "unaffected by gravity", bit 2: no disc item).
+2. A line from the origin p to p + v is traced against: front-facing
+   level surfaces (invisible surfaces ignored), water surfaces, and
+   objects of these kinds: bipeds, vehicles, garbage, projectiles,
+   scenery, machines, controls, light fixtures. **Weapons and
+   equipment are not tested**: loose items pass through each other.
+   The ignored object is skipped.
+3. No hit: p += v.
+4. A hit at point c with surface normal n: the impact scale k =
+   clamp(|v| / 0.1, 0, 1) (|v| after this tick's gravity); the item's
+   material effects (item layer 0x248, for the surface's material) are
+   created at c with normal n and scale k when the point is visible,
+   and its collision sound (0x258) plays at the line's end point moved
+   0.05 WU along n, with scale k. Disc: every multiplayer weapon has
+   `sound\sfx\impulse\material_effects\weapon` and a drop sound
+   (`sound\sfx\impulse\weapon_drops\...`: assault, pistol, shotgun
+   (also the sniper rifle), plasma (plasma rifle and pistol),
+   rlauncher, flame); the needler, ball and flag have the material
+   effects only; equipment (grenades, powerups, ammunition) has
+   neither and lands silently.
+5. **Rest test.** The item comes to rest (below) when all hold: the hit
+   is level geometry or an object of kind scenery, machine, control or
+   light fixture; n.z > 0.7071 (the surface is less than 45 degrees
+   from flat); and the approach speed -n·v < 0.05 WU/tick (1.5 WU/s).
+6. **Otherwise it bounces**: r = 1.4 (-n·v); if the hit is not level
+   geometry (an object or a water surface) r = min(r, 1.5); v += r n.
+   The normal part of the velocity is reversed and scaled by 0.4; the
+   tangential part is kept whole (no friction, no spin transfer). The
+   item is placed at c (the rest of the tick's travel is lost); if c
+   tests as inside solid, at c + 0.05 n instead.
+7. If w is not zero, forward and up are rotated about w's direction by
+   |w| (one tick's turn), then re-orthonormalised (up normalised,
+   forward rebuilt perpendicular to it).
+
+**Coming to rest.** v = 0. The item is turned by the shortest rotation
+that takes its **"ground point" marker**'s up onto n (when the marker's
+up is almost exactly opposite n, sqrt(2 (1 + up·n)) <= 0.01, the
+marker's forward is instead projected onto the surface plane), keeping
+the marker's heading otherwise, and moved so that the marker sits
+exactly at c. An item with no ground point marker (the flag) is placed
+with its origin at c and its orientation unchanged. w is replaced by its
+component along n (tumbling stops, a spin about the normal survives),
+the spin axis becomes n, the ignored object is cleared, and the item
+records what it rests on: the level surface, or the object and c in
+that object's root-node frame. (Outside a multiplayer game a resting
+item nobody owns is also marked as garbage, for the campaign's cleanup.)
+
+**At rest**, each tick:
+
+- on a level surface: it does not move. If that surface is a breakable
+  surface that has been broken, the item gets a downward push of g and
+  falls;
+- on an object: it is re-placed (the same alignment, with the recorded
+  world normal) so its ground point is at the recorded point in the
+  object's current root-node frame: it rides moving machines. If the
+  object no longer exists it gets a downward push of g and falls;
+- w is multiplied by 0.9 and the item turns about n by |w| that tick
+  (about the ground point, which stays put). A spin w0 therefore turns
+  it 9 w0 radians in all;
+- a resting item placed in the air (a levitating map item) simply
+  stays where it is.
+
+**Pushes.** An item is pushed by damage (the push of
+`health_shields.md`; an item whose tag acceleration scale is 0 is never
+pushed: on the disc the flag, double speed and full-spectrum vision)
+and by being dropped (`weapons.md` section 3, Drop). A push a (WU/tick)
+does nothing to an item flagged "does not accelerate" (a campaign
+placement without "does accelerate") or to one that has a parent.
+Otherwise:
+
+1. Resting on a level surface and |a| >= 0.01: the item is lifted so
+   its ground point is 0.05 WU above the surface's plane (along the
+   plane's normal), it is no longer at rest, and v += a.
+2. Resting on a level surface and |a| < 0.01: it **stays at rest**; v
+   += a all the same (kept, and used when it is next woken); and a spin
+   about its ground point's up, uniform in -pi/2 .. +pi/2 rad per tick,
+   is added to w (only when it has no ignored object).
+3. Any other case (falling, resting on an object, a levitating map
+   item, whatever the size of the push): it is no longer at rest and v
+   += a.
+4. Except in case 2, a tumble is added: w += axis × u × (pi/2) × |a|,
+   with axis = normalise(world up × a) (a uniformly random direction
+   when a is vertical), u uniform in [0, 1), and |a| replaced by a
+   uniform random number in [0, 1) when it is under 0.0001. A drop
+   (|a| about 0.027 to 0.04 when the dropper stands still) tumbles at
+   most pi/2 × 0.04 = 0.063 rad per tick (1.9 rad/s) about a
+   horizontal axis; landing on flat ground ends that tumble entirely.
+
+**Water.** A water surface crossed from above is a hit but never a
+resting surface: the item bounces off it (r capped at 1.5) with the
+material effect for water. From inside the water no surface is hit:
+an item under water falls at the full g (no drag, no buoyancy) to the
+bottom and rests there. See Open questions 14 for what the bounces on
+the surface end in.
+
+**Despawn.** Falling and resting do not change the multiplayer purge
+(`multiplayer_rules.md` 5.4): a loose item is deleted 901 ticks after
+the last tick it was held (a dropped weapon), after it was created (a
+grenade dropped at death, which was never held as an item), or as its
+map entry's period sets (map items); flags and balls never. An item
+that falls out of the level is not otherwise removed: it falls for
+ever until that purge.
+
+**Map items.** A multiplayer item entry's item (`multiplayer_rules.md`
+5.1) is created with its origin exactly at the entry's position, not
+raised, in the default orientation (forward world +x, up world +z) on
+the Xbox. With the entry's levitate flag it is created at rest and
+stays exactly there, unaligned, until a push wakes it (any push, case
+3, after which it falls). Otherwise it falls from the first tick: an
+entry within g (0.0036 WU) of the floor lands on tick 1 at an approach
+speed of g and rests at once, aligned to the floor; one higher falls
+and lands as above. (Campaign placements of weapons and equipment are
+raised 0.05 WU when not created at rest.)
+
+**How each item lies** (the ground point's up in the item's model
+axes, x forward, y left, z up; the marker is within 0.2 WU of the
+origin in the model, and scales with the item's world scale; read from
+the disc's models):
+
+| Item | Ground point up (model) | At rest on flat ground |
+|---|---|---|
+| assault rifle, pistol, plasma rifle, plasma pistol, needler | +y (within 2 degrees) | on its right side, left side up, barrel horizontal |
+| flamethrower | (−0.16, 0.99, −0.05) | on its right side, tilted about 10 degrees |
+| shotgun, rocket launcher, sniper rifle | (0, −0.98, 0.19), (0, −0.97, 0.22), (0, −1.00, 0.03) | on its left side, rolled 11, 13 and 2 degrees |
+| ball | (0.07, 0, 1.00) | upright, tipped 4 degrees |
+| frag grenade | (1, 0, 0) | standing on its end (model +x up) |
+| plasma grenade | (0, −0.71, 0.71) | tipped 45 degrees |
+| ammunition, health pack, overshield, active camouflage, rocket ammo | +z | upright (flamethrower ammo tipped 6 degrees, needler ammo 23) |
+| flag | none (always z up) | upright, origin on the ground |
+| gravity rifle, double speed, full-spectrum vision | none | not placed or substituted in multiplayer |
+
+The shortest rotation keeps the heading: an assault rifle that lands
+in the default orientation turns 90 degrees about its barrel and
+keeps the barrel along world +x.
 
 ## Scenery, sound scenery and devices
 
@@ -1088,7 +1246,9 @@ power), scorpion C 1, ghost A 1; one powered seat and one weapon each;
 
 For each object (the engine updates parents before their children):
 
-1. The class's own update (physics, movement, animation; other specs).
+1. The class's own update (physics, movement, animation; other specs;
+   for a loose item: Items in the world, then its detonation countdown,
+   then, while it is held, its last-owned time set to now).
 2. The damage update, for objects that have a collision model.
 3. Export the incoming values: the object layer's inputs A to D, then
    the unit layer's, then the biped's (or item, weapon, vehicle, device
@@ -1314,6 +1474,33 @@ Team colours: a team 0 player spawns with all four slots (1, 0, 0), team
 | every object-derived tag of the map (70) | type code equals class; every model, collision, animation, physics, modifier and creation effect reference is null or of the right class; flags only in bits 0 to 3; function types 0 to 11, map to 0 to 5, bounds mode 0 to 2, function inputs 0 to 8, turn off -1 to 3; runtime function fields consistent; no padding byte non-zero |
 | the same checks on `hangemhigh`, `sidewinder`, `chillout` | same values for all 34 weapon, equipment, biped, vehicle tags |
 
+### (c) Items falling (Items in the world; single precision, flat level floor at z = 0, n = (0, 0, 1), origins as the item's point, the inside test after a bounce taken as false)
+
+| Setup | Input | After | Expected |
+|---|---|---|---|
+| item at rest in the air, origin z = 1.0 | released (not at rest), v = 0 | tick 24 | hit, approach speed 0.085564 (>= 0.05): bounce, v.z = +0.034226, impact scale 0.856, placed at z = 0 |
+| same | | tick 43 | hit at approach 0.033513: at rest, v = 0, aligned to the floor |
+| origin z = 0.5, v = (0.03, 0, 0) | released | tick 17 | bounce at x = 0.48749, approach 0.060608, v = (0.03, 0, 0.024243) |
+| same | | tick 30 | at rest at x = 0.86491 (approach 0.022104); the horizontal 0.03 is lost at once (no sliding) |
+| origin z = 2.0, v = 0 | released | ticks 33, 59 | bounce at approach 0.117651 (impact scale 1.0, v.z after 0.047060); at rest on tick 59 (approach 0.045634) |
+| any height up to 0.3743 WU (g × 14 × 15 / 2), v = 0 | released | first contact | at rest at once (approach at most 14 g = 0.0499) |
+| map item, no levitate, origin 0.002 above the floor | created | tick 1 | at rest, approach 0.0035652, ground point on the floor |
+| map item with levitate, 1 WU above the floor | 900 ticks, no push | | not moved, not aligned |
+| levitating item | a push of (0.001, 0, 0) | next tick | falling (any push wakes it), v = (0.001, 0, −g) after its first update |
+| item at rest on the level floor | push (0.005, 0, 0) | | still at rest; v = (0.005, 0, 0) stored; a spin of at most pi/2 rad/tick about the ground point's up added |
+| item at rest on the level floor | push (0.02, 0, 0.01) | at once | ground point lifted to 0.05 WU above the floor; not at rest; v = (0.02, 0, 0.01) |
+| item landing on a 50 degree slope (n.z = 0.643) | any speed | | bounces (never rests on it); the tangential velocity is kept |
+| item landing on a 40 degree slope | approach 0.03 | | at rest |
+| item landing on a vehicle's roof, a player, a projectile | approach 0.01 | | bounces (r = 0.014: v.z after = +0.004 for v.z = −0.01): not a resting surface |
+| item landing on scenery that later is deleted | | the tick after | falls (push of g downward) |
+| two dropped weapons at the same spot | | | both lie there, overlapping (items do not collide with items) |
+| at rest, spin 0.1 rad/tick about n | | until stopped | turns 0.9 rad in all (0.09, 0.081, ...) |
+| assault rifle in the default orientation | lands on the floor | | turned 90 degrees about world +x: model +y up, barrel along world +x, ground point at the contact point |
+| flag (no ground point, z up) | lands | | origin at the contact point, upright |
+| item falling onto a water surface from above | approach 0.06 | | bounce, v.z = +0.024; not at rest |
+| dropped weapon (dropper still) | | | speed 0.0266667 to 0.04, within 22.5 degrees of the aim; tumble rate at most pi/2 times the push's length (<= 0.0628 rad/tick) |
+| dropped weapon in multiplayer, never picked up | last held tick T | | deleted on tick T + 901, at rest or not |
+
 ## Verification performed
 
 A scratch reader with the layouts above parsed every object-derived tag
@@ -1374,7 +1561,8 @@ diagonal wave and slide tables are deterministic).
 | Biped layout and the Spartan's values | checked against the disc |
 | Biped units (per tick or second) | jump per tick checked against the conventions spec's disc check and the engine's use; landing per second reference only (plausible values) |
 | Item layer, equipment, garbage, scenery sizes and values | checked against the disc |
-| Item flags meaning | reference only |
+| Item flags meaning | reference only; which disc items set bits 0 and 1 checked |
+| Items in the world (falling, bouncing, resting, pushes, map items) | reference for the rules and constants (0.05, 0.7071, 1.4, 1.5, 0.1, 0.9, pi/2); ground point markers, material effects and collision sounds read from the disc's models and tags (Blood Gulch); the fall test cases simulated from the rules, not observed |
 | Device base and machine part | checked on a10's 19 machines (plausible values); control part reference only |
 | Disc value tables | checked against the disc |
 
@@ -1419,3 +1607,16 @@ diagonal wave and slide tables are deterministic).
 13. **Cross-region builds.** The disc is the NTSC build. The reference's
     PAL build agrees on every layout checked; a PAL disc was not
     available.
+14. **Items on water and the inside test after a bounce.** After a
+    bounce the item sits exactly on the surface it hit, and whether the
+    next tick's line from there hits that surface again (or the point
+    tests as inside, moving it 0.05 WU out) depends on single-precision
+    rounding. On a water surface this decides between floating (it
+    keeps bouncing ever smaller, never at rest) and slipping through
+    to sink once the bounces are small. Suggested: treat a point on a
+    surface as outside, and let an item that starts a tick on a water
+    surface moving down pass through it. Check on the live game by
+    dropping a weapon onto water from a height.
+15. **Items in other machines' games.** How a client sees a falling
+    item (simulated locally or placed from the host's updates) is
+    the networking spec's question, not settled here.

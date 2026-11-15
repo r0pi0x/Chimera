@@ -13,6 +13,12 @@
 //! sized from the canvas, `Canvas::to_screen`).
 //!
 //! Rectangles are (left, top, right, bottom) in canvas units.
+//!
+//! **The layout** (`HudLayout`): the disc's, or the party apps' (their
+//! shared kill feed sits at the top right, where the shield and health
+//! block is): there the block moves to the bottom left, its bottom-left
+//! corner where the motion tracker's is, kept inside the safe frame
+//! (`party_offset`), and the tracker is not drawn.
 
 use blam_formats::hud::Anchor;
 
@@ -23,6 +29,17 @@ pub const CANVAS_WIDTH: i32 = 640;
 pub const SAFE_X: i32 = 48;
 pub const SAFE_Y: i32 = 36;
 
+/// Which layout the HUD draws in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HudLayout {
+    /// The disc's, exactly (Halo's own app).
+    #[default]
+    Disc,
+    /// The party apps': the shield and health block at the bottom left in
+    /// the tracker's place, no tracker.
+    Party,
+}
+
 /// A window's design canvas: its scale and its virtual width.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Canvas {
@@ -30,17 +47,24 @@ pub struct Canvas {
     pub scale: f32,
     /// The virtual canvas's width in units (640 for a 4:3 window).
     pub width: i32,
+    /// The layout drawn (`Canvas::of` gives the disc's).
+    pub layout: HudLayout,
 }
 
 impl Canvas {
     /// The canvas of a `width` x `height` window (logical pixels).
     pub fn of(width: f32, height: f32) -> Canvas {
         let scale = (height / CANVAS_HEIGHT as f32).max(1e-3);
-        Canvas { scale, width: (width / scale).round().max(1.0) as i32 }
+        Canvas { scale, width: (width / scale).round().max(1.0) as i32, layout: HudLayout::Disc }
+    }
+
+    /// This canvas drawn in `layout`.
+    pub fn with_layout(self, layout: HudLayout) -> Canvas {
+        Canvas { layout, ..self }
     }
 
     /// The original's 640 by 480.
-    pub const ORIGINAL: Canvas = Canvas { scale: 1.0, width: CANVAS_WIDTH };
+    pub const ORIGINAL: Canvas = Canvas { scale: 1.0, width: CANVAS_WIDTH, layout: HudLayout::Disc };
 
     /// The safe frame (x0, y0, x1, y1).
     pub fn frame(&self) -> [i32; 4] {
@@ -178,6 +202,22 @@ pub fn number_glyphs(
         out.push((12, x));
     }
     out
+}
+
+/// The bounding box of rectangles (None: none).
+pub fn rect_bounds(rects: impl IntoIterator<Item = [f32; 4]>) -> Option<[f32; 4]> {
+    rects.into_iter().reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])])
+}
+
+/// The party layout's move of the shield and health `block` (its bounding
+/// box): its bottom-left corner onto the `tracker`'s, then back inside the
+/// safe `frame` if it pokes out (canvas units, x and y).
+pub fn party_offset(block: [f32; 4], tracker: [f32; 4], frame: [i32; 4]) -> [f32; 2] {
+    let mut d = [tracker[0] - block[0], tracker[3] - block[3]];
+    let f = frame.map(|v| v as f32);
+    d[0] += (f[0] - (block[0] + d[0])).max(0.0) - ((block[2] + d[0]) - f[2]).max(0.0);
+    d[1] += (f[1] - (block[1] + d[1])).max(0.0) - ((block[3] + d[1]) - f[3]).max(0.0);
+    d
 }
 
 #[cfg(test)]

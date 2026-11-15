@@ -27,16 +27,23 @@
 //! goes down: the most characters seen); a grenade item adds one up to
 //! the globals' maximum (4).
 //!
-//! The selected kind (`Throw::selected`: projectiles.md 15, hud.md 10):
-//! the frag at a new life (the plasma grenade when only that is carried),
-//! changed by the rotate-grenades button (the named action
-//! `SWITCH_ACTION`, one change per press, riding the command's action
-//! bits) to the other kind when it has any, else not at all; a throw takes
-//! the selected kind (none when its count is 0), the last one thrown moves
-//! the choice to the other kind when that has any, and a grenade picked
-//! up while the selected kind is out becomes the selected kind
-//! (`Throw::pick_up`). The specs name the control and the HUD's "current
-//! type" but not these three rules: they are the port's.
+//! The selected kind (weapons.md 14 "Selecting the grenade type", hud.md
+//! 10): the unit's *current* type (thrown and shown), its *desired* type
+//! and the input layer's *wanted* type, all none at a new life. Each tick
+//! the input layer (`Throw::input`) takes wanted from desired when wanted
+//! is none or empty, moves it to "the next type from wanted" on the
+//! rotate-grenades press (the named action `SWITCH_ACTION`, one step per
+//! press, riding the command's action bits) or when it is none or empty,
+//! and makes it the desired type when it is not none; the unit's update
+//! (`Throw::update`), when not busy (a throw, a melee), makes current
+//! "settle from desired" when that is not none. So: frag after a stock
+//! spawn, plasma after one with both kinds, the other kind once the shown
+//! one runs out (when the throw ends), the empty kind kept when both are
+//! out, a pickup never changing a kind that has grenades.
+//!
+//! The three types share the one replicated byte `Throw::selected` (two
+//! bits each: current, desired, wanted; 2 is none), so the network
+//! message is the one the selected kind had.
 //!
 //! Known shortcuts: the starting
 //! equipment's grenade flags and the game types' grenade options are not
@@ -141,9 +148,44 @@ pub struct Throw {
     pub kind: u8,
     /// The counts carried (frag, plasma).
     pub counts: [u8; 2],
-    /// The selected kind (0 frag, 1 plasma): what a press throws and the
-    /// HUD shows.
+    /// The current, desired and wanted types, two bits each from bit 0
+    /// (0 frag, 1 plasma, 2 none; module doc): `selected()`, `desired()`,
+    /// `wanted()`.
     pub selected: u8,
+}
+
+/// No grenade type (in `Throw::selected`'s two-bit fields).
+const NONE: u8 = 2;
+
+/// A type read from two bits.
+fn kind(bits: u8) -> Option<usize> {
+    (bits & 3 < NONE).then_some(usize::from(bits & 3))
+}
+
+/// The count of `k` (none read as 0).
+fn count_of(counts: [u8; 2], k: Option<usize>) -> u8 {
+    counts[k.unwrap_or(FRAG).min(PLASMA)]
+}
+
+/// "Next type from k" (weapons.md 14): the type other than k (none read as
+/// 0) when it has grenades, else k when it has, else none.
+pub fn next_from(counts: [u8; 2], k: Option<usize>) -> Option<usize> {
+    let k = k.unwrap_or(FRAG).min(PLASMA);
+    let other = PLASMA - k;
+    if counts[other] > 0 {
+        Some(other)
+    } else if counts[k] > 0 {
+        Some(k)
+    } else {
+        None
+    }
+}
+
+/// "Settle from k": k when it has grenades, else the other type when it
+/// has, else none.
+pub fn settle_from(counts: [u8; 2], k: Option<usize>) -> Option<usize> {
+    let k = k.unwrap_or(FRAG).min(PLASMA);
+    if counts[k] > 0 { Some(k) } else { next_from(counts, Some(k)) }
 }
 
 impl Throw {
@@ -152,36 +194,67 @@ impl Throw {
         self.frame.is_some()
     }
 
-    /// A throw state for a new life with these counts: the frag selected,
-    /// or the plasma grenade when only that is carried.
+    /// A throw state for a new life with these counts: every type none
+    /// (set by the first update).
     pub fn new(counts: [u8; 2]) -> Self {
-        Self { counts, selected: if counts[FRAG] == 0 && counts[PLASMA] > 0 { PLASMA as u8 } else { FRAG as u8 }, ..default() }
+        Self { counts, selected: NONE | NONE << 2 | NONE << 4, ..default() }
     }
 
-    /// The selected kind (the HUD's, even at a count of 0).
-    pub fn selected(&self) -> usize {
-        usize::from(self.selected).min(PLASMA)
+    fn field(&self, shift: u8) -> Option<usize> {
+        kind(self.selected >> shift)
     }
 
-    /// The kind a press throws: the selected one, while any are left.
+    fn set(&mut self, shift: u8, k: Option<usize>) {
+        let bits = k.map_or(NONE, |k| k.min(PLASMA) as u8);
+        self.selected = (self.selected & !(3 << shift)) | bits << shift;
+    }
+
+    /// The current type: thrown and shown on the HUD (even at a count of
+    /// 0); none on a new life before its first update.
+    pub fn selected(&self) -> Option<usize> {
+        self.field(0)
+    }
+
+    /// The unit's desired type.
+    pub fn desired(&self) -> Option<usize> {
+        self.field(2)
+    }
+
+    /// The input layer's wanted type.
+    pub fn wanted(&self) -> Option<usize> {
+        self.field(4)
+    }
+
+    /// The kind a press throws: the current one, while any are left.
     pub fn current(&self) -> Option<usize> {
-        let k = self.selected();
-        (self.counts[k] > 0).then_some(k)
+        self.selected().filter(|k| self.counts[*k] > 0)
     }
 
-    /// The rotate-grenades press: the other kind when it has any.
-    pub fn switch(&mut self) {
-        let other = PLASMA - self.selected();
-        if self.counts[other] > 0 {
-            self.selected = other as u8;
+    /// The input layer's tick (weapons.md 14, steps 1 to 3): `press` the
+    /// rotate-grenades button went down this tick.
+    pub fn input(&mut self, press: bool) {
+        let mut wanted = self.wanted();
+        if wanted.is_none() || count_of(self.counts, wanted) == 0 {
+            wanted = self.desired();
+        }
+        if press || wanted.is_none() || count_of(self.counts, wanted) == 0 {
+            wanted = next_from(self.counts, wanted);
+        }
+        self.set(4, wanted);
+        if wanted.is_some() {
+            self.set(2, wanted);
         }
     }
 
-    /// A grenade of `kind` picked up (the count already raised): it
-    /// becomes the selected kind when the selected one has none.
-    pub fn pick_up(&mut self, kind: usize) {
-        if self.counts[self.selected()] == 0 {
-            self.selected = kind.min(PLASMA) as u8;
+    /// The unit's update: when the desired type differs from the current
+    /// one and the unit is not `busy`, current becomes "settle from
+    /// desired" when that is not none.
+    pub fn update(&mut self, busy: bool) {
+        if self.desired() != self.selected()
+            && !busy
+            && let Some(k) = settle_from(self.counts, self.desired())
+        {
+            self.set(0, Some(k));
         }
     }
 
@@ -196,9 +269,6 @@ impl Throw {
                 let kind = self.kind as usize;
                 if f == d.created_frame {
                     self.counts[kind] = self.counts[kind].saturating_sub(1);
-                    if self.counts[kind] == 0 && self.counts[PLASMA - kind.min(PLASMA)] > 0 {
-                        self.selected = (PLASMA - kind.min(PLASMA)) as u8;
-                    }
                     out.push(ThrowEvent::Created(kind));
                 }
                 if f == d.key_frame {

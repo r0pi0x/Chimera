@@ -384,6 +384,10 @@ fn a_particle_systems_explosion() {
     };
     let state = |additive: bool, d: f32| FxSysState {
         duration: (d, d),
+        transition: (0.1, 0.1),
+        rotation_rate: (0.0, 0.0),
+        radius_multiplier: 1.0,
+        physics: None,
         material: Some(0),
         sequence: 0,
         radius: (0.1, 0.1),
@@ -391,10 +395,12 @@ fn a_particle_systems_explosion() {
         color_upper: [1.0; 4],
         additive,
         animation_rate: (0.0, 0.0),
+        texture: Some(0),
+        sprites: 1,
     };
     let sys = FxSystem {
         path: "explosion med".into(),
-        types: vec![FxSysType { flags: 0, initial: 35, creation: 1, constants: vec![0.012, 0.08, 200.0], birth: (1.0, 1.0), rate: 0.0, states: vec![state(true, 0.2), state(false, 0.5)] }],
+        types: vec![FxSysType { flags: 0, initial: 35, creation: 1, constants: vec![0.012, 0.08, 200.0], birth: (1.0, 1.0), rate: 0.0, states: vec![state(true, 0.2), state(false, 0.5)], radius: 1.5, type_states: Vec::new(), render_mode: 0 }],
     };
     let mut rng = chimera_world::map::ParticleRng::new(3);
     let mut made = Made::default();
@@ -409,12 +415,18 @@ fn a_particle_systems_explosion() {
         let o = fire.position / m;
         assert!(o.x.abs() <= 0.012 + 1e-5 && o.z.abs() <= 0.012 + 1e-5 && o.y.abs() <= 0.08 + 1e-5, "{o}");
         assert!(fire.velocity.abs_diff_eq(fire.position * 200.0, 1e-3), "moving at the spread times the intensity");
-        assert!((fire.life - 0.2).abs() < 1e-5 && (smoke.life - 0.7).abs() < 1e-5);
-        let mut s = smoke.clone();
+        // 0.2 s of fire, 0.1 s of transition, 0.5 s of smoke: one life.
+        assert!((fire.life - 0.8).abs() < 1e-5 && (smoke.life - 0.8).abs() < 1e-5);
+        let (mut f, mut s) = (fire.clone(), smoke.clone());
+        f.age = 0.1;
         s.age = 0.1;
-        assert_eq!(s.current_alpha(), 0.0, "the smoke hidden while the fire burns");
-        s.age = 0.35;
-        assert!(s.current_alpha() > 0.0);
+        assert_eq!((f.current_alpha(), s.current_alpha()), (1.0, 0.0), "the smoke hidden while the fire burns");
+        f.age = 0.25;
+        s.age = 0.25;
+        assert!((f.current_alpha() - 0.5).abs() < 1e-4 && (s.current_alpha() - 0.5).abs() < 1e-4, "crossing: the fire's weight falls as the smoke's rises");
+        s.age = 0.5;
+        f.age = 0.5;
+        assert_eq!((f.current_alpha(), s.current_alpha()), (0.0, 1.0));
     }
 }
 
@@ -482,4 +494,248 @@ fn the_held_weapons_drop_waits_part_of_the_death() {
     }
     assert_eq!(held_drop_delay(1, &mut rng), 1);
     assert_eq!(held_drop_delay(0, &mut rng), 1);
+}
+
+/// effects.md "Point physics", "Particle systems": a system's particles
+/// move by their state's physics at the type's radius (the frag
+/// explosion's fire: friction 2000, density 0.0005, radius 1.5: a drag of
+/// 7.025 a second, rising by 3.2086613 x 0.375 WU/s^2), live through the
+/// states and their transitions, and an attached system makes `rate x dt`
+/// particles.
+#[test]
+fn a_particle_systems_physics_lifetime_and_rate() {
+    use blam_formats::effect::PointPhysics;
+    use halo_ce::game::fx::{
+        load::{FxSysState, FxSysType, FxSystem, FxTypeState},
+        place::Frame,
+        play::{Made, emit, system},
+    };
+    let physics = PointPhysics {
+        flags: 0,
+        mass_per_r3: 59.306675,
+        water_buoyancy: 0.9990005,
+        air_buoyancy: 0.375,
+        density: 0.0005,
+        air_friction: 2000.0,
+        water_friction: 2000.0,
+        surface_friction: 0.01,
+        elasticity: 0.0,
+    };
+    let state = |d: (f32, f32), t: (f32, f32), alpha: f32| FxSysState {
+        duration: d,
+        transition: t,
+        material: Some(0),
+        sequence: 0,
+        radius: (0.2, 0.4),
+        color_lower: [alpha, 1.0, 1.0, 1.0],
+        color_upper: [alpha, 1.0, 1.0, 1.0],
+        additive: false,
+        animation_rate: (0.0, 0.0),
+        rotation_rate: (1.0, 2.0),
+        radius_multiplier: 1.0,
+        physics: Some(physics.clone()),
+        texture: Some(0),
+        sprites: 1,
+    };
+    let sys = FxSystem {
+        path: "s".into(),
+        types: vec![FxSysType {
+            flags: 0,
+            initial: 5,
+            creation: 0,
+            constants: Vec::new(),
+            birth: (1.0, 1.0),
+            rate: 30.0,
+            states: vec![state((0.1, 0.1), (0.2, 0.2), 1.0), state((0.3, 0.3), (0.3, 0.3), 0.5), state((0.0, 0.0), (0.0, 0.0), 0.0)],
+            radius: 1.5,
+            // Full colour for 1 s, then to nothing over 4 s.
+            type_states: vec![
+                FxTypeState { duration: (1.0, 1.0), transition: (4.0, 4.0), color: [1.0; 4], radius_multiplier: 1.0, scale_multiplier: 1.0 },
+                FxTypeState { duration: (0.0, 0.0), transition: (0.0, 0.0), color: [0.0; 4], radius_multiplier: 1.0, scale_multiplier: 1.0 },
+            ],
+            render_mode: 0,
+        }],
+    };
+    let m = halo_ce::game::METERS_PER_UNIT;
+    let mut rng = chimera_world::map::ParticleRng::new(5);
+    let mut made = Made::default();
+    system(&sys, &Frame::facing(Vec3::ZERO, Vec3::NEG_Y), &mut rng, &mut made);
+    let g = &made.groups[0];
+    let damping = 2000.0 / ((59.306675 + 130.47474) * 1.5);
+    // Each particle carries its state's physics as its own motion keys.
+    let keys = &g.particles[0].curves.as_ref().unwrap().motion;
+    assert!((keys[0].1[1] - damping).abs() < 1e-3, "{:?}", keys[0]);
+    assert!((keys[0].1[0] + 3.2086613 * 0.375 * m).abs() < 1e-4, "{:?}", keys[0]);
+    // The visible states (the last, of alpha 0, is not drawn): fire, smoke.
+    assert_eq!(g.particles.len(), 70, "5 at once and 30 for the birth second, two sprites each");
+    // Life: 0.1 + 0.2 + 0.3 + 0.3 = 0.9 s; the smoke's alpha through its
+    // state is its 0.5 (the type's multiplier still 1 before 1 s), then it
+    // falls to 0 over the last transition.
+    let smoke = &g.particles[1];
+    assert!((smoke.life - 0.9).abs() < 1e-5, "{}", smoke.life);
+    let mut s = smoke.clone();
+    s.age = 0.45;
+    assert!((s.current_alpha() - 0.5).abs() < 1e-4, "{}", s.current_alpha());
+    s.age = 0.75;
+    assert!((s.current_alpha() - 0.25).abs() < 1e-4, "halfway through the fade out: {}", s.current_alpha());
+    assert!(s.current_alpha() < smoke.clone().current_alpha() + 1.0);
+    // An attached system: its rate over a tick (30 a second: one a tick).
+    let mut count = 0;
+    for _ in 0..30 {
+        let mut made = Made::default();
+        emit(&sys, &Frame::facing(Vec3::ZERO, Vec3::NEG_Y), 1.0 / 30.0, &mut rng, &mut made);
+        count += made.groups.iter().map(|g| g.particles.len() / 2).sum::<usize>();
+    }
+    assert_eq!(count, 30);
+}
+
+/// effects.md "Contrails": a point of a long-lived trail lives through the
+/// contrail's states (the rocket's: bright and thin, then grey smoke that
+/// widens and fades to nothing).
+#[test]
+fn a_rockets_trail_follows_its_contrails_states() {
+    use chimera_world::map::particles::Particles;
+    use halo_ce::game::fx::{
+        load::{FxTracer, FxTracerState},
+        shots::draw_segment,
+    };
+    let state = |duration: f32, transition: f32, width: f32, color: [f32; 4]| FxTracerState { duration, transition, width, color, duration_bounds: (duration, duration), transition_bounds: (transition, transition), scale_flags: 0 };
+    let tracer = FxTracer {
+        width: 0.15,
+        color: [1.0, 1.0, 0.7, 0.0],
+        material: Some(0),
+        additive: false,
+        life: 1.0,
+        end_width: 0.5,
+        states: vec![
+            state(0.1, 0.1, 0.15, [1.0, 1.0, 0.7, 0.0]),
+            state(0.5, 0.3, 0.3, [0.25, 0.4, 0.4, 0.4]),
+            state(0.0, 0.0, 0.5, [0.0, 0.3, 0.3, 0.3]),
+        ],
+    };
+    let mut particles = Particles::default();
+    draw_segment(&mut particles, Some(&tracer), None, Vec3::ZERO, Vec3::X, true, true);
+    let p = &particles.groups[0].particles[0];
+    // 0.1 + 0.1 + 0.5 + 0.3 s, each as the updates that pass it at 30 a
+    // second (4, 4, 16 and 10: the progress must pass 1 strictly): 34 / 30.
+    assert!((p.life - 34.0 / 30.0).abs() < 1e-4, "{}", p.life);
+    let mut q = p.clone();
+    assert!((q.current_alpha() - 1.0).abs() < 1e-5 && q.size_scale() == 1.0);
+    q.age = 0.4;
+    assert!((q.current_alpha() - 0.25).abs() < 1e-5 && (q.size_scale() - 2.0).abs() < 1e-5, "smoke: {} {}", q.current_alpha(), q.size_scale());
+    assert!(q.current_color().x < 0.5, "grey, not the flame's");
+    q.age = 29.0 / 30.0;
+    assert!((q.current_alpha() - 0.125).abs() < 1e-4, "halfway to nothing: {}", q.current_alpha());
+}
+
+/// effects.md "Effect lights": intensity = 1 - the fall-off function of the
+/// elapsed fraction (the frag's linear, the plasma grenade's late, the
+/// tank shell's early).
+#[test]
+fn an_effect_lights_intensity_follows_its_falloff_function() {
+    use halo_ce::ui::fx_lights::intensity;
+    assert!((intensity(0, 0.5) - 0.5).abs() < 1e-6);
+    assert!((intensity(3, 0.5) - 0.75).abs() < 1e-6, "late: stays bright");
+    assert!((intensity(1, 0.25) - 0.5).abs() < 1e-6, "early: drops fast");
+    assert_eq!((intensity(0, 0.0), intensity(0, 1.0)), (1.0, 0.0));
+}
+
+/// effects.md test cases, "Particle systems and contrails (fourth errata
+/// batch)": each state's own physics, blended in reverse through a
+/// transition; the radius the physics uses.
+#[test]
+fn errata4_a_particle_states_physics() {
+    use blam_formats::effect::PointPhysics;
+    use halo_ce::game::fx::play::{blended_physics, physics_radius};
+    let p = |friction: f32, flags: u32| PointPhysics {
+        flags,
+        mass_per_r3: 59.3,
+        water_buoyancy: 1.0,
+        air_buoyancy: 0.375,
+        density: 0.0005,
+        air_friction: friction,
+        water_friction: 0.0,
+        surface_friction: 0.0,
+        elasticity: 0.0,
+    };
+    let (p0, p1) = (p(2000.0, 0), p(200.0, 0x18));
+    // In state 0 (w = 1 outside a transition the code uses the state's as
+    // stored); in transition at w = 0.75: 0.25 x 2000 + 0.75 x 200 = 650.
+    let b = blended_physics(Some(&p0), Some(&p1), 0.75).unwrap();
+    assert!((b.air_friction - 650.0).abs() < 1e-3, "{}", b.air_friction);
+    assert_eq!(b.flags, 0, "the current state's flags");
+    assert_eq!(blended_physics(Some(&p0), Some(&p1), 0.0).unwrap().air_friction, 2000.0, "the transition's end: the current state's");
+    assert!((physics_radius(1.5, 1.0, 1.0, 2.0, 0.75) - 1.875).abs() < 1e-6);
+}
+
+/// Same batch: a particle system's drawn size is the scale in WU per sprite
+/// pixel (a 36 pixel sprite at k = 0.02: 0.72 WU; the type's scale
+/// multiplier 0.5: 0.36 WU, nothing else multiplying it); a plain
+/// particle's is 2R (radius 1.5, sprite size field 1/33, 33 pixels: 3.0 WU).
+#[test]
+fn errata4_drawing_sizes() {
+    use halo_ce::game::fx::{
+        load::{FxSysState, FxSysType, FxSystem, FxTypeState},
+        place::Frame,
+        play::{Made, particle, system},
+    };
+    let m = halo_ce::game::METERS_PER_UNIT;
+    // As compiled: half the sprite's pixels times k (WU).
+    let state = FxSysState {
+        duration: (1.0, 1.0),
+        transition: (0.0, 0.0),
+        rotation_rate: (0.0, 0.0),
+        radius_multiplier: 1.0,
+        physics: None,
+        material: Some(0),
+        sequence: 0,
+        radius: (0.02 * 36.0 / 2.0, 0.02 * 36.0 / 2.0),
+        color_lower: [1.0; 4],
+        color_upper: [1.0; 4],
+        additive: true,
+        animation_rate: (0.0, 0.0),
+        texture: Some(0),
+        sprites: 1,
+    };
+    let ts = |scale: f32| FxTypeState { duration: (10.0, 10.0), transition: (0.0, 0.0), color: [1.0; 4], radius_multiplier: 1.0, scale_multiplier: scale };
+    for (scale, quad) in [(1.0, 0.72), (0.5, 0.36)] {
+        let sys = FxSystem {
+            path: "s".into(),
+            types: vec![FxSysType { flags: 0, initial: 1, creation: 0, constants: Vec::new(), birth: (0.0, 0.0), rate: 0.0, states: vec![state.clone()], radius: 1.5, type_states: vec![ts(scale), ts(scale)], render_mode: 0 }],
+        };
+        let mut made = Made::default();
+        system(&sys, &Frame::facing(Vec3::ZERO, Vec3::NEG_Y), &mut chimera_world::map::ParticleRng::new(1), &mut made);
+        let size = made.groups[0].particles[0].current_size();
+        assert!((2.0 * size / m - quad).abs() < 1e-4, "{} WU", 2.0 * size / m);
+    }
+    let mut def = super::fx::particle();
+    def.radius_animation = (1.0, 1.0);
+    def.sprite_scale = 33.0 / 33.0;
+    let mut e = super::fx::entry(0, 1, 0);
+    e.radius = (1.5, 1.5);
+    let p = particle(&def, &e, &Frame::facing(Vec3::ZERO, Vec3::NEG_Y), &mut chimera_world::map::ParticleRng::new(1)).unwrap();
+    assert!((2.0 * p.current_size() / m - 3.0).abs() < 1e-4, "2R: {}", 2.0 * p.current_size() / m);
+}
+
+/// Same batch: a contrail point's lengths, each its own draw, quantised to
+/// the updates that pass a progress of 1 strictly (the overshoot dropped);
+/// a last state of 0 expires with the transition into it, one of 0.5 s
+/// lives that long more.
+#[test]
+fn errata4_contrail_point_lengths() {
+    use halo_ce::game::fx::{
+        load::FxTracerState,
+        shots::{point_length, point_lengths, updates_in},
+    };
+    let dt = 1.0 / 30.0;
+    let l = point_length((0.1, 0.25), 0.5);
+    assert!((l - 0.175).abs() < 1e-6);
+    assert!((5.0 * dt / l - 0.952).abs() < 1e-3 && 6.0 * dt / l > 1.0);
+    assert_eq!(updates_in(l, dt), 6, "it leaves state 0 on the 6th update");
+    assert_eq!((point_length((0.1, 0.3), 0.0), point_length((0.1, 0.3), 1.0)), (0.1, 0.3), "each point its own draw");
+    let st = |d: f32, t: f32| FxTracerState { duration_bounds: (d, d), transition_bounds: (t, t), ..Default::default() };
+    let zero_last = point_lengths(&[st(0.1, 0.2), st(0.0, 0.0)], dt, || 0.0);
+    assert_eq!(zero_last[1], (0.0, 0.0), "expires the update the transition into it ends");
+    let half_last = point_lengths(&[st(0.1, 0.2), st(0.5, 0.0)], dt, || 0.0);
+    assert!((half_last[1].0 - 0.5).abs() <= dt + 1e-6 && half_last[1].1 == 0.0, "{:?}", half_last);
 }

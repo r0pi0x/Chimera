@@ -453,7 +453,6 @@ pub fn take(world: &mut World) {
                     let Some(mut h) = world.get_mut::<HaloHands>(unit) else { continue };
                     if h.throw.counts[*k] < grenades.throw.maximum[*k] {
                         h.throw.counts[*k] += 1;
-                        h.throw.pick_up(*k);
                         true
                     } else {
                         false

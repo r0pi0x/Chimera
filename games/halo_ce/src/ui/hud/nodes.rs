@@ -179,7 +179,9 @@ pub fn collect(
     camera: Query<&GlobalTransform, With<FirstPersonCamera>>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut hud: ResMut<HaloHud>,
+    layout: Option<Res<super::HaloHudLayout>>,
 ) {
+    let layout = layout.map_or_else(Default::default, |l| l.0);
     let Some(data) = load.data() else { return };
     let now = (time.elapsed_secs_f64() * 30.0).floor() as i64;
     let Some((me_e, at, vitality, health, dead, inventory, intent, team)) = me.iter().next() else {
@@ -197,9 +199,10 @@ pub fn collect(
         depleted: vitality.is_some_and(|v| v.depleted),
         weapon,
         // The selected type's count (`grenades::Throw::selected`).
-        grenades: hands.get(me_e).map_or(0, |h| i32::from(h.throw.counts[h.throw.selected()])),
+        grenades: hands.get(me_e).map_or(0, |h| h.throw.selected().map_or(0, |k| i32::from(h.throw.counts[k]))),
         throwing: hands.get(me_e).is_ok_and(|h| h.grenade_held),
-        grenade_kind: hands.get(me_e).map_or(0, |h| h.throw.selected()),
+        grenade_kind: hands.get(me_e).map_or(0, |h| h.throw.selected().unwrap_or(0)),
+        no_grenade_type: hands.get(me_e).is_ok_and(|h| h.throw.selected().is_none()),
     };
     let eye = camera.iter().next().unwrap_or(at);
     let f = eye.forward();
@@ -230,10 +233,12 @@ pub fn collect(
         .collect();
     let hud = &mut *hud;
     let from = hud.state.tick.map_or(now, |t| (t + 1).max(now - 30));
+    // The party's layout draws no tracker: its units are not followed.
+    let others = if layout == super::layout::HudLayout::Party { Vec::new() } else { others };
     for tick in from..=now {
         hud.state.tick(data, &unit, &others, yaw, tick);
     }
-    let canvas = window.iter().next().map_or(Canvas::ORIGINAL, |w| Canvas::of(w.width(), w.height()));
+    let canvas = window.iter().next().map_or(Canvas::ORIGINAL, |w| Canvas::of(w.width(), w.height())).with_layout(layout);
     hud.quads = draw::draw(data, &unit, &hud.state, &canvas, now);
     hud.unit = Some(unit);
 }

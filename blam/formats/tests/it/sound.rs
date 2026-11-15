@@ -481,3 +481,30 @@ fn a_looping_sound_reads() {
         (0.75, -3.0, 1.5, 0.0)
     );
 }
+
+/// A sound environment tag reads field by field (the spec's layout, with
+/// a30's `hallway` values).
+#[test]
+fn a_sound_environment_reads() {
+    use blam_formats::sound::environment::SoundEnvironment;
+    let mut td = TagData::new(&[("scnr", r"levels\tiny"), ("snde", r"sound\sfx\environments\hallway")]);
+    let e = Struct::new(0x48)
+        .i16(0x04, 0)
+        .f32s(0x08, &[0.316, 0.71, 0.0, 1.49, 0.59, 0.077, 0.007, 0.166, 0.011, 1.0, 1.0, 5000.0]);
+    td.set_struct(1, &e.0);
+    let map = MapFile::from_image(CacheFile::new("tiny", 1, td.finish()).image()).unwrap();
+    let tag = map.of_class(class::SOUND_ENVIRONMENT).next().unwrap().clone();
+    let env = SoundEnvironment::read(&map, &tag).unwrap();
+    assert_eq!(
+        (env.room_intensity, env.room_intensity_hf, env.decay_time, env.decay_hf_ratio),
+        (0.316, 0.71, 1.49, 0.59)
+    );
+    assert_eq!(
+        (env.reflections_intensity, env.reflections_delay, env.reverb_intensity, env.reverb_delay),
+        (0.077, 0.007, 0.166, 0.011)
+    );
+    assert_eq!((env.diffusion, env.density, env.hf_reference), (1.0, 1.0, 5000.0));
+    // Another class is refused.
+    let scnr = map.tags()[0].clone();
+    assert!(SoundEnvironment::read(&map, &scnr).is_err());
+}

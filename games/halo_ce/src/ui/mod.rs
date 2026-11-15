@@ -33,9 +33,18 @@ pub fn binds(app: &mut bevy::app::App) {
 }
 
 /// Halo's front end in an app made of several games (beside its
-/// `game::BUNDLE`): its HUD while a Halo gun is in hand (`with_hud`) and
-/// its weapons' buttons (`binds`).
-pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, hud: Some(with_hud), app: Some(binds) };
+/// `game::BUNDLE`): its HUD while a Halo gun is in hand (`with_hud`), its
+/// weapons' buttons (`binds`) and the HUD's party layout (`party_app`).
+pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, hud: Some(with_hud), app: Some(party_app) };
+
+/// The party apps' front end: the buttons, and the HUD's shield and
+/// health block moved to the bottom left in the motion tracker's place
+/// (the shared kill feed is at the top right), no tracker
+/// (`hud::layout::HudLayout::Party`). Halo's own app keeps the disc's.
+pub fn party_app(app: &mut bevy::app::App) {
+    binds(app);
+    app.insert_resource(hud::HaloHudLayout(hud::layout::HudLayout::Party));
+}
 
 /// Halo's front end under the name every game's has it (`ui::party::CLIENT`;
 /// docs/new-game.md).
