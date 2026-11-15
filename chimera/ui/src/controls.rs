@@ -505,8 +505,8 @@ impl<'a> Ui<'a> {
             .id();
         self.hairline(c, bar, Tone::Fg4, 1.0);
         let cap = |c: &mut Commands, k: &str| {
-            let w = self.boxed(c, bar, UiStyle { pad: Some([0.0, 0.0, 0.9, 0.0].into()), ..UiStyle::row() });
-            let e = self.kbd(c, w, k, 0.6, Tone::Fg3);
+            let w = self.boxed(c, bar, UiStyle { pad: Some([0.0, 0.0, 0.75, 0.0].into()), ..UiStyle::row() });
+            let e = self.kbd(c, w, k, 0.74, Tone::Fg2);
             c.entity(e).insert(TabKey);
         };
         if let Some((q, _)) = keys {
