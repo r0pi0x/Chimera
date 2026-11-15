@@ -22,7 +22,7 @@ plays as the real game, from specs and the disc's own data.
 | M1 a map you can walk on | done (2026-11-15) | every multiplayer map loads from the disc image with textures, one lightmap atlas, the sky model, scenery and collision; Halo's own app and server (`halo_ce`, `halo_ce_server`); six maps in the party apps' pool, played by the other games' characters; summary below |
 | M2 Halo guns as UGG rungs | done (2026-11-15) | the assault rifle, pistol, plasma rifle and shotgun as data-driven rungs with their view models, animations, sounds and effects; a Halo rung's holder is a Halo player (movement, shields over health, the Spartan, Halo's HUD); a mixed ladder climbed by real fire as a party test; Halo's sets published to the asset service; summary below |
 | M3 the full multiplayer arsenal | in progress (2026-11-15) | simulated: the sniper rifle, rocket launcher, needler, plasma pistol and flamethrower, frag and plasma grenades, explosions, the level's materials at each hit, pickups on the item clock; four more rungs (eight in all); Halo's HUD from the disc's tags (shield, health, ammunition, heat, crosshairs, motion tracker). Being built: the five guns in hand with their sounds and effects, grenades thrown and seen, pickups seen |
-| M4 every multiplayer map | in progress (2026-11-15) | teleporters and ladders for every game's characters, the other seven maps measured for the pool, the bots' navigation held to the played area: being built |
+| M4 every multiplayer map | done but bots' bound (2026-11-15) | teleporters for every game's characters (`chimera_world::map::teleport`, from the scenario's pairs), climbable surfaces as ladders (Halo's movement climbs them by movement.md, the others by their own rules), no machine play depends on (Wizard's 4 alert lights), twelve of thirteen maps in the pool (Sidewinder waits for vehicles), the pool measured with teleporters as links; open: the bots' mesh bounded to the played space and teleporter and ladder links for bots (backlog) |
 | M5 feel and parity pass | not started | |
 | M6 vehicles | not started | |
 | M7 and on (effects, ragdolls, the classic look, the backlog) | not started | |
@@ -326,15 +326,26 @@ backlog.
   (`nav_gen`, seeded at the spawn points), so they walk Halo's maps
   today, but unbounded: Halo's visibility (clusters, portals, the PVS)
   is not handed to the engine, so the flood is not held to the played
-  space (Blood Gulch's reaches the flood's cell limit, with 967 of its
-  spawn spots off the main region). Missing: the
-  level's clusters as `map::vis` data (or a nav mesh of Halo's own),
-  jump links for its lifts, and teleporters as nav links.
-- **The maps kept out of the pool** (games/halo_ce/data/map_pool.toml):
-  putput (30 teleporter pairs), boardingaction (8), carousel, ratrace,
-  wizard (4 each), chillout (3), sidewinder (vehicles, 4 pairs): in with
-  teleporters (M4) and, for Sidewinder, vehicles (M6). Ratrace has no
-  capture the flag starts: its team spawns would be none.
+  space (Blood Gulch's reaches the flood's cell limit, with 972 of its
+  spawn spots off the main region; Sidewinder's 69000 m2 too; every
+  other map's measures as its rooms, no spot off). The engine's
+  generator takes one bound, `map::vis` clusters (`nav_gen::Bounds`):
+  Halo's would be the collision BSP's leaves with the structure's leaf
+  clusters, but handing `MapData::visibility` over also turns on the
+  renderer's culling, a change of its own. Missing: that bound (or a
+  nav mesh of Halo's own), and links for bots through teleporters and
+  up ladders (`nav::Via` has walks and the `.nav` file's ladders only;
+  the generator makes neither). No multiplayer map has a lift.
+- **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
+  a vehicle map too large on foot; in with vehicles (M6).
+- **Teleporters' extras**: the blocked message, the "teleporter activate"
+  sound for the teleported player, the pads' shimmer (Blood Gulch's
+  `teleporter_loop` sound scenery plays as any sound scenery would, when
+  sound scenery is placed); the edge neighbour's hold on a ladder
+  (movement.md). Spec questions: whether a player can mount a ladder
+  from the floor (the ground test keeps the floor, the higher normal);
+  movement.md says only Boarding Action has climbable surfaces, the disc
+  has them on nine maps (collision.md's 120 surfaces).
 - **Blood Gulch in a draw**: it is in the pool (allowed), but the pool's
   count rule keeps it out of every draw by players present (its wander
   time, 21 s at 8 players, over the 10 s target: a vehicle map walked).
@@ -387,3 +398,16 @@ backlog.
   the asset service. M3's simulation and Halo's HUD landed; the
   vehicles spec (M6) is being written. The specs were corrected a
   second time from the implementations' findings.
+- 2026-11-15: M4 (but the bots' bound): `chimera_world::map::teleport`
+  (pads in a map's typed extras, acted on by one system for every
+  character with its movement's footing: radius, re-arm, velocity kept
+  or zeroed, the look turned, blocking and telefrags), Halo's teleporter
+  pairs as its pads (`game::maps::teleporters`), climbable sheets as
+  ladder brushes every movement climbs (`game::maps::collision`), Halo's
+  movement climbing by the aim (movement.md); `map_fitness` counts
+  teleporters as links; putput, boardingaction, carousel, chillout,
+  ratrace and wizard joined the pool. Heavy tests: each map's teleporter
+  count, a Halo player on each of the 61 pads arriving on the ground at
+  its target, CS:S and Combat Arms characters through Chill Out's and
+  Wizard's, boardingaction's 40 ladder sheets, spawns for both teams on
+  all 13 maps, every pool map's spawns reachable with teleporter links.

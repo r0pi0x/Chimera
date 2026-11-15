@@ -38,8 +38,11 @@ fn read<T: Any + Clone + Send + Sync + Serialize + DeserializeOwned>(bytes: &[u8
 
 /// The extension types a serialized map can hold (`cache`): add a new
 /// one here.
-fn known() -> [(&'static str, Read); 1] {
-    [(name_of::<SourceEffects>(), read::<SourceEffects>)]
+fn known() -> [(&'static str, Read); 2] {
+    [
+        (name_of::<SourceEffects>(), read::<SourceEffects>),
+        (name_of::<super::teleport::MapTeleporters>(), read::<super::teleport::MapTeleporters>),
+    ]
 }
 
 /// One extension value: any `Clone` type that serializes, cloneable

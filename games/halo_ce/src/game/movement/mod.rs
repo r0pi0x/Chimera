@@ -18,6 +18,9 @@
 //!   velocity, the virtual crease contact) on a `mover::Space`.
 //! - `space`: that space on the engine's collision (avian shape casts).
 //!
+//! Teleporters are the engine's (`map::teleport`, from the map's netgame
+//! flags: `maps::teleporters`), which move a Halo player as any other.
+//!
 //! Here: the system (`Predict::Movement`) that reads a player's `Intent`,
 //! `Transform` (the pill's centre, metres) and `Velocity` (m/s), runs the
 //! tick in world units and writes them back with `MovementState` (eye
@@ -85,10 +88,17 @@
 //!   30 Hz); a fall's hit is written only on a first-time prediction.
 //! - Stun is read as its value s_b alone: the stunned moving animations
 //!   (above 0.2) have no body to play on yet.
+//! - Climbable surfaces: a contact inside any ladder volume the engine
+//!   publishes (`core::MapLadders`: a Halo map's climbable sheets,
+//!   `maps::collision`; another game's map's ladders; games'
+//!   `LadderZone`s) is climbable (`space::EngineSpace::ladders`, within
+//!   3 cm), and counts as ground by the spec's rule (`tick`); the edge
+//!   neighbour's hold (a sweep meeting nothing while on a ladder snapping
+//!   onto a climbable neighbour) is not modelled.
 //! - Not modelled: body facing and the animation states (cosmetic: no
-//!   bodies yet), climbable surfaces (ladders: Boarding Action only),
-//!   slipping (an impulse, `push`, is added to the velocity and makes the
-//!   player airborne, but does not slip), elevators, teleporters,
+//!   bodies yet), slipping (an impulse, `push`, is added to the velocity
+//!   and makes the player airborne, but does not slip), elevators (no
+//!   multiplayer map has one),
 //!   volatile contacts and the 16-contact splatter flag, the pitch clamp
 //!   (the input layer's), the airborne tick counter (animation only).
 //! - The virtual contact's normal for two planes, one facing down, is of
@@ -115,7 +125,7 @@ use super::{
     vitality::{DamageEffects, Stun, UnitStep},
 };
 use crate::core::{
-    CHARACTER_FILTER, Dead, FirstTimePredicted, Intent, MovementState, Predict, PredictedAppExt, SimClock, Velocity,
+    CHARACTER_FILTER, Dead, LadderZone, MapBrush, MapLadders, FirstTimePredicted, Intent, MovementState, Predict, PredictedAppExt, SimClock, Velocity,
 };
 
 /// The movement's id.
@@ -226,8 +236,16 @@ fn step(
     first: Option<Res<FirstTimePredicted>>,
     effects: Res<DamageEffects>,
     mut hits: MessageWriter<HaloHit>,
+    (map_ladders, zones): (Option<Res<MapLadders>>, Query<&LadderZone>),
 ) {
     let d = &*data;
+    // Every ladder volume, climbed by Halo's rule (docs/DESIGN.md,
+    // "Ladders across games"): the map's and the games' zones.
+    let ladders: Vec<MapBrush> = map_ladders
+        .iter()
+        .flat_map(|l| l.volumes.iter().cloned())
+        .chain(zones.iter().map(|z| z.0.clone()))
+        .collect();
     let s = crate::game::METERS_PER_UNIT;
     let per_tick = s * data::TICKS_PER_SECOND;
     let k = tick_scale(&clock);
@@ -238,7 +256,7 @@ fn step(
             continue;
         }
         let filter = SpatialQueryFilter::from_excluded_entities([e]).with_mask(CHARACTER_FILTER);
-        let space = space::EngineSpace::new(&move_and_slide, filter.clone(), d);
+        let space = space::EngineSpace::new(&move_and_slide, filter.clone(), d).with_ladders(&ladders);
         if me.was_dead {
             // A respawn: a new biped.
             *me = HaloMovement::default();
@@ -265,6 +283,7 @@ fn step(
             throttle: Vec2::new(intent.move_axis.y, -intent.move_axis.x),
             forward: rot * Vec3::NEG_Z,
             left: rot * Vec3::NEG_X,
+            aim: rot * Quat::from_rotation_x(intent.pitch) * Vec3::NEG_Z,
             jump: intent.jump,
             crouch: intent.crouch,
             controller,

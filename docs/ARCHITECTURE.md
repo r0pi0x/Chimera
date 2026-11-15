@@ -326,7 +326,13 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   plasma grenades, the scenario's item clock pickups); the level's
   material types reach the traces as a map entity, and every shot, on
   every machine, is flown again by the server's flight rules with the
-  level's material at each hit. Halo's
+  level's material at each hit. Halo's maps carry their teleporter
+  pairs as the engine's game-neutral teleporters
+  (`chimera_world::map::teleport`, a typed map extra run from the map's
+  tick system after movement) and their climbable sheets as ladder
+  brushes (`core::MapLadders`), so every game's characters teleport and
+  climb on them; Halo's movement climbs by movement.md's aim rule.
+  Halo's
   files reach
   players without the disc through the asset store: `chimera_pack
   pack|sets halo_ce` packs the disc's own files under the build its
