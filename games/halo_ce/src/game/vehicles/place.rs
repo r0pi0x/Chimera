@@ -307,6 +307,11 @@ fn kind_of(
             markers.insert(m.name.to_lowercase(), at.position);
         }
     }
+    // The root node's place: the camera's focus when a seat's named camera
+    // marker is missing (the Ghost's).
+    if let Some(root) = bind.first() {
+        markers.insert(super::camera::ROOT_NODE.to_string(), root.apply_point([0.0; 3]));
+    }
     let mut hull = Vec::new();
     if let Some(ct) = file.tag(vehicle.object.collision_model.id)
         && let Ok(c) = collision::read_model(file, ct)

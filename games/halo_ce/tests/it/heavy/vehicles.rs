@@ -136,3 +136,29 @@ fn blood_gulchs_warthogs_rest_and_drive() {
     assert!(gone > 20.0, "drove {gone} WU in 10 s");
     assert!(lowest > -0.5, "never through the terrain: {lowest}");
 }
+
+/// A placed vehicle's markers (model frame, WU) by its document's name.
+fn markers_of(map: &chimera_world::map::MapData, vehicle: &str) -> Option<std::collections::BTreeMap<String, [f32; 3]>> {
+    map.entities
+        .iter()
+        .filter_map(halo_ce::game::vehicles::place::Placed::from_entity)
+        .find(|p| p.vehicle == vehicle)
+        .map(|p| p.markers)
+}
+
+#[test]
+fn the_seat_cameras_on_the_disc() {
+    use halo_ce::game::vehicles::camera::{command, track_point};
+    let Some(mount) = mount() else { return };
+    let map = load(&mount, "bloodgulch", false);
+    let d = halo_ce::game::vehicles::data::VehicleDef::warthog();
+    let m = markers_of(&map, "warthog").expect("a placed Warthog");
+    let near = |a: Vec3, b: Vec3, what: &str| assert!((a - b).abs().max_element() < 2e-3, "{what}: {a} against {b}");
+    // The gunner's focus `camera gunner`; level, turret forward.
+    let gunner = Vec3::from(m["camera gunner"]);
+    near(gunner, Vec3::new(-0.2235, 0.0, 0.8131), "camera gunner");
+    let o = track_point(&d.tracks["warthog_driver_loose"].points, 0.0);
+    near(command(gunner, o, 0.0, 0.0).camera, Vec3::new(-2.9759, 0.0, 1.4958), "gunner camera");
+    // The passenger's eye.
+    near(Vec3::from(m["camera rider"]), Vec3::new(0.0715, -0.1586, 0.8056), "camera rider");
+}

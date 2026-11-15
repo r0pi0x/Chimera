@@ -29,8 +29,9 @@
 //!   ground to its points; vehicles meet each other by the pair rule
 //!   (`physics::pair_contact`, into the next step's accumulators).
 //! - `carry`: riders sit at their seat's marker (their movement skips them:
-//!   `Seated`), moving with the vehicle; the driver's camera is the seat's
-//!   camera track (`seats::track_offset`) as the character's `MapView`.
+//!   `Seated`), moving with the vehicle; `camera::view`: a third-person
+//!   seat's camera (the spec's focus, track point and pull-in) as the
+//!   character's `MapView`.
 //! - `splatter`: a character touching a moving vehicle is pushed and takes
 //!   the globals' vehicle collision damage by the spec's rule (`HaloHit`,
 //!   area, owned by the driver), with the 90-tick grace after leaving it.
@@ -44,13 +45,15 @@
 //!   rider leaves 1 WU to its seat's side); the use key is edge-triggered.
 //! - The rider's body is not posed by the seat's animation, the driver's
 //!   own weapon is not put away, and the seat's look rates and limits and
-//!   the camera's auto-level are not applied (the mouse look is free; the
-//!   camera's focus is the seat marker raised 0.5 WU).
+//!   the camera's auto-level are not applied (the mouse look is free); a
+//!   first-person seat's eye is the rider's own, not the seat's camera
+//!   marker.
 //! - Wheels, steering and suspension are not shown on the model's nodes
 //!   (the model is drawn rigid, as the scenery is).
 //! - The seated state is not replicated: a networked client's own player
 //!   is not shown seated (the party apps come with stage 2).
 
+pub mod camera;
 pub mod data;
 pub mod drive;
 pub mod level;
@@ -200,6 +203,7 @@ impl Plugin for HaloVehiclesPlugin {
                     .chain()
                     .run_if(authoritative),
                 carry,
+                camera::view,
                 enter_when_ready.run_if(resource_exists::<EnterWhenReady>),
             )
                 .chain()
@@ -576,34 +580,22 @@ fn simulate(
     }
 }
 
-/// Riders follow their seats; the driver's camera.
+/// Riders follow their seats (their camera: `camera::view`).
 #[allow(clippy::type_complexity)]
 fn carry(
     vehicles: Query<&HaloVehicle>,
-    mut riders: Query<
-        (
-            Entity,
-            &Seated,
-            &Intent,
-            &mut Transform,
-            &mut Velocity,
-            Option<&mut Position>,
-            Option<&MapView>,
-        ),
-        Without<HaloVehicle>,
-    >,
+    mut riders: Query<(&Seated, &mut Transform, &mut Velocity, Option<&mut Position>), Without<HaloVehicle>>,
     defs: Res<VehicleDefs>,
     data: Res<MovementData>,
     mut commands: Commands,
     mut gone: RemovedComponents<Seated>,
 ) {
-    let s = crate::game::METERS_PER_UNIT;
     for e in gone.read() {
         if let Ok(mut ec) = commands.get_entity(e) {
             ec.try_remove::<MapView>();
         }
     }
-    for (e, seat, intent, mut t, mut vel, pos, view) in &mut riders {
+    for (seat, mut t, mut vel, pos) in &mut riders {
         let Ok(v) = vehicles.get(seat.vehicle) else { continue };
         let (d, phys) = &defs.0[v.def];
         let marker = v.world(phys, v.seat_marker(d, seat.seat));
@@ -612,36 +604,7 @@ fn carry(
         if let Some(mut p) = pos {
             p.0 = centre;
         }
-        vel.0 = to_engine(v.drive.body.velocity) * 30.0 / 1.0;
-        let _ = s;
-        let seat_def = &d.seats[seat.seat];
-        let track = d.tracks.get(&seat_def.track);
-        let focus = match d.seats[seat.seat].camera_marker.to_lowercase() {
-            n if !n.is_empty() && v.markers.contains_key(&n) => v.world(phys, v.markers[&n]),
-            _ => marker + Vec3::Z * 0.5,
-        };
-        let third =
-            seat_def.flags & (seat_flags::DRIVER | seat_flags::THIRD_PERSON_CAMERA | seat_flags::INVISIBLE) != 0;
-        let want = (third && track.is_some()).then(|| {
-            let o = seats::track_offset(&track.unwrap().points, intent.pitch);
-            let look = Quat::from_rotation_y(intent.yaw) * Vec3::NEG_Z;
-            let horizontal = to_halo_dir(look);
-            let at = focus + horizontal * o.x + Vec3::Z * o.y;
-            MapView {
-                origin: to_engine(at),
-                rotation: Quat::from_rotation_y(intent.yaw) * Quat::from_rotation_x(intent.pitch),
-            }
-        });
-        match (want, view) {
-            (Some(w), Some(have)) if *have == w => {}
-            (Some(w), _) => {
-                commands.entity(e).insert(w);
-            }
-            (None, Some(_)) => {
-                commands.entity(e).remove::<MapView>();
-            }
-            (None, None) => {}
-        }
+        vel.0 = to_engine(v.drive.body.velocity) * 30.0;
     }
 }
 

@@ -238,3 +238,24 @@ fn riders_take_a_share_of_direct_hits_only() {
         assert!((got[0].amount - want).abs() < 1e-5, "{} against {want}", got[0].amount);
     }
 }
+
+#[test]
+fn the_drivers_camera_is_the_track_point_from_the_centre_of_mass() {
+    use chimera_core::core::MapView;
+    let (mut t, w) = setup(Vec3::new(0.0, 0.8, 0.0), Vec3::ZERO, 1.0 / TICK_INTERVAL);
+    let p = t.p;
+    press_use(&mut t, p);
+    {
+        let mut i = t.sim.intent(p);
+        i.yaw = space::yaw(0.0);
+        i.pitch = 0.0;
+    }
+    t.sim.ticks(2);
+    let v = vehicle(&t, w);
+    let view = *t.sim.app.world().get::<MapView>(p).expect("a third-person view");
+    // Level look along +x: the camera at the centre of mass plus the
+    // track's pitch-0 point (-2.7524, 0, 0.6827) in the heading frame.
+    let want = v.drive.body.position + Vec3::new(-2.7524, 0.0, 0.6827);
+    let got = game(view.origin);
+    assert!((got - want).length() < 0.01, "camera {got} against {want}");
+}
