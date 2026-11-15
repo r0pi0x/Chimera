@@ -583,6 +583,7 @@ the original's own behaviour isn't a bug (say so instead).
   at most; the last rung is melee either way and its kill wins. The
   draw is the host's and replicated (`NetMinigame::rungs`). Docs/DESIGN.md
   "Gun game rules".
+- Grenade rungs' supply over time for every game (Halo's rung has its own timer: `refill_seconds`); make it the grenade band's rule in the ladder.
 - **The All-Star chainsaw's attached effects (user, 2026-10-29): done
   except what the spec doesn't say.** The attached groups and their
   looping sounds are made with the view model (`view_model::attached`,

@@ -16,10 +16,18 @@
 //! button dry-fires as an empty pistol does), frag grenades by the
 //! ladder's grenade-band supply rule whatever `PartyGrenades` says (that
 //! switch governs the other Halo rungs): with the ladder's `refill_ammo`
-//! (both gun games) a rung's grenade comes back once thrown, so the count
-//! is kept at the frag's maximum (4) at every Halo tick (as the ladder's
-//! `refill` keeps a `Throwable` at its `max`); without it a new life, or
-//! the arrival on the rung, gives the frag's start count once. No plasma
+//! (both gun games) the supply is TIMED, the rung's own (user, 2026-11-15:
+//! a thrown grenade is not given back at once, so it cannot be spammed):
+//! the player arrives, and every new life starts, with `max` frags (4); a
+//! throw spends one as any throw does; while the count is below `max` the
+//! server counts Halo ticks (`ticks`, from the 30 Hz tick counting, so the
+//! same seconds at any engine tick rate) and gives one frag back every
+//! `refill_seconds` (5.0, the hook's data), one per interval from the
+//! moment the count dropped below `max` (not from each throw), never above
+//! `max`. The timer is the server's alone: the count (`HaloHands`) is
+//! what replicates, so a client's HUD follows it. Without `refill_ammo` a
+//! new life, or the arrival on the rung, gives the frag's start count once.
+//! No plasma
 //! grenades; the rotate-grenades button does nothing. The throw is
 //! Halo's own on the grenade button (`grenades::Throw`), with the throw
 //! animation the pistol's view model plays.
@@ -59,6 +67,12 @@ pub struct RungParams {
     pub kind: String,
     /// The named action that throws.
     pub action: String,
+    /// The most frags the rung's holder has (the frag's own maximum caps
+    /// it).
+    pub max: u8,
+    /// Seconds of simulation time between one frag coming back and the
+    /// next, while the count is below `max` (the party ladder's refill).
+    pub refill_seconds: f32,
 }
 
 /// On a grenade rung's weapon: the kind it throws, and whether the start
@@ -67,6 +81,13 @@ pub struct RungParams {
 pub struct GrenadeRung {
     pub kind: usize,
     pub given: bool,
+    /// The most frags carried.
+    pub max: u8,
+    /// Halo ticks (30 Hz) between two frags coming back (at least 1).
+    pub refill_ticks: u32,
+    /// Halo ticks counted toward the next frag: the server's alone (the
+    /// count is what replicates); 0 while the count is full.
+    pub ticks: u32,
 }
 
 /// The hook: the rung's part and the engine's fact.
@@ -74,7 +95,13 @@ pub fn register(app: &mut App) {
     chimera_sim::weapon::data::WeaponDataAppExt::register_weapon_hook::<RungParams>(app, HOOK, |e, _, p| {
         let kind = if p.kind == "plasma" { grenades::PLASMA } else { grenades::FRAG };
         e.insert((
-            GrenadeRung { kind, given: false },
+            GrenadeRung {
+                kind,
+                given: false,
+                max: p.max,
+                refill_ticks: ((p.refill_seconds as f64 / crate::game::TICK_INTERVAL).round() as u32).max(1),
+                ticks: 0,
+            },
             chimera_sim::weapon::AttackAction { action: p.action.clone() },
         ));
     });

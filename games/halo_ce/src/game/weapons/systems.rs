@@ -938,6 +938,7 @@ pub fn run(
         let rung = inv.weapons.iter().find(|w| rungs.contains(**w)).copied();
         let no_grenades = party_off && rung.is_none();
         // A new life's grenades.
+        let new_life = alive && !hands.armed;
         if !alive {
             hands.armed = false;
         } else if !hands.armed {
@@ -951,14 +952,36 @@ pub fn run(
             && alive
             && let Ok(mut r) = rungs.get_mut(w)
         {
-            // Its kind alone; the band's rule: kept full with the ladder's
-            // refill, else the start count once on arrival.
+            // Its kind alone; the band's rule: with the ladder's refill a
+            // timed supply (the server's: the count replicates), else the
+            // start count once on arrival.
             let k = r.kind;
-            let n = if refill { grenades.throw.maximum[k] } else { grenades.throw.maximum[k].min(grenades.cap(players)) };
             let mut counts = hands.throw.counts;
             counts[grenades::PLASMA - k] = 0;
-            if (refill || !r.given) && counts[k] < n {
-                counts[k] = n;
+            if refill {
+                let max = r.max.min(grenades.throw.maximum[k]);
+                if new_life || !r.given {
+                    counts[k] = max;
+                    r.ticks = 0;
+                } else if server {
+                    if counts[k] >= max {
+                        r.ticks = 0;
+                    } else {
+                        r.ticks += n;
+                        while r.ticks >= r.refill_ticks && counts[k] < max {
+                            r.ticks -= r.refill_ticks;
+                            counts[k] += 1;
+                        }
+                        if counts[k] >= max {
+                            r.ticks = 0;
+                        }
+                    }
+                }
+            } else {
+                let cap = grenades.throw.maximum[k].min(grenades.cap(players));
+                if !r.given && counts[k] < cap {
+                    counts[k] = cap;
+                }
             }
             r.given = true;
             if counts != hands.throw.counts {
