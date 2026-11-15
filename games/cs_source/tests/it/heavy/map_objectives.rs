@@ -517,6 +517,12 @@ fn office_hostage_shots_from_150_units() {
         sim.intent(p).pitch = d.y.atan2(d.xz().length());
         sim.ticks(2);
         sim.app.world_mut().resource_mut::<Segments>().0.clear();
+        // The shot's tick runs on the centred command (CS:S's spread is
+        // drawn from the command's seed): the round follows the aim line,
+        // so this checks the boxes, not a random draw.
+        let next = sim.app.world().resource::<SimTick>().0 + 1;
+        let command = chimera_sim::weapon::centred_command().wrapping_sub(next as u32);
+        sim.app.world_mut().entity_mut(p).insert(chimera_core::core::Seed(command as u64));
         sim.intent(p).fire = true;
         sim.ticks(1);
         sim.intent(p).fire = false;
