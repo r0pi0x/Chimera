@@ -145,8 +145,11 @@ replace one part at a time, each behind its spec and a scenario test.
 9. **Party**: `PARTS` (`GameParts`: what it lends), `BUNDLE`, `CLIENT`;
    add the bundle to the party kit's list. Its gun rungs appear in the
    Ultimate Gun Game from the parts registry.
-10. **Tools and docs**: the game in `dump` and `chimera_pack`; its
-    commands in CLAUDE.md; its paragraphs in docs/ARCHITECTURE.md.
+10. **Tools and docs**: the game in `dump` and `chimera_pack` (its row
+    in `games()`: a game without a Steam app names how its install's
+    build is read, `Game::build`, as Halo does from its maps' headers;
+    its sets in `record_pieces`); its commands in CLAUDE.md; its
+    paragraphs in docs/ARCHITECTURE.md.
 
 ## Don't rely on
 

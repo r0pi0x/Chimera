@@ -2,7 +2,9 @@
 //! See docs/OBSERVABILITY.md ("Exploring game files").
 //!
 //! Dev tool: summarize, list and extract a game install's files; `--sequences`
-//! lists a model's bones and sequences (CS:S's and HL2:DM's).
+//! lists a model's bones and sequences (CS:S's and HL2:DM's). Halo's
+//! (`halo_ce`): the disc image's files through its mount, with the build
+//! its maps name (`halo_ce::game::mount::build`).
 
 use std::{
     collections::BTreeMap,
@@ -12,6 +14,7 @@ use std::{
 };
 
 use bevy::math::{Quat, Vec3};
+use halo_ce::game as halo;
 use hl2dm::game as hl2dm;
 use lithtech_formats::rez;
 use mashup::{
@@ -24,7 +27,7 @@ use mashup::{
 
 const USAGE: &str = "\
 usage: dump <game> [options]
-  games: cs_source, combat_arms, hl2dm
+  games: cs_source, combat_arms, hl2dm, halo_ce
   (no option)          summary: file counts and sizes by extension (hl2dm: its
                        search path from gameinfo.txt first, each entry and whether it's there)
   --list               list every file with its size
@@ -134,7 +137,8 @@ fn run(args: &Args) -> Result<(), String> {
         cs_source::GAME => dump_cs_source(args, &install),
         COMBAT_ARMS => dump_combat_arms(args, &install),
         hl2dm::GAME => dump_hl2dm(args, &install),
-        other => Err(format!("unknown game `{other}`; expected cs_source, combat_arms or hl2dm")),
+        halo::GAME => dump_halo(args, &install),
+        other => Err(format!("unknown game `{other}`; expected cs_source, combat_arms, hl2dm or halo_ce")),
     }
 }
 
@@ -151,6 +155,15 @@ fn dump_hl2dm(args: &Args, install: &Path) -> Result<(), String> {
     if let Some(path) = &args.sequences {
         return sequences(&mount, path);
     }
+    report(args, &mount, &[])
+}
+
+/// Halo: the disc image's (or folder's) build, then the mount's summary.
+fn dump_halo(args: &Args, install: &Path) -> Result<(), String> {
+    if let Ok(build) = halo::mount::build(install) {
+        println!("build {build} (its maps' headers)");
+    }
+    let mount = halo::mount::open(install).map_err(|e| e.to_string())?;
     report(args, &mount, &[])
 }
 

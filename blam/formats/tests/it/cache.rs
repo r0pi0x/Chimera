@@ -7,7 +7,7 @@
 use std::io;
 
 use blam_formats::cache::{
-    Argb8, Bounds, ClassCode, Euler2d, Euler3d, MapFile, MapType, Plane2d, Plane3d, RealAhsv, RealArgb, RealHsv,
+    Argb8, Bounds, ClassCode, Euler2d, Euler3d, Header, MapFile, MapType, Plane2d, Plane3d, RealAhsv, RealArgb, RealHsv,
     RealRect2d, RealRect3d, RealRgb, Rect2d, Rgb8, SpaceId, TAG_BASE, TAG_CACHE_END, TagId, TagStruct, class,
 };
 
@@ -116,6 +116,21 @@ fn spec_a_from_the_image() {
     let image = spec_a().image();
     assert_eq!(image.len(), 0x900);
     check_spec_a(&MapFile::from_image(image).unwrap());
+}
+
+/// The header alone (the first 0x800 bytes: what an install's build is
+/// read from) says what the whole file's header says, and is refused as
+/// it is.
+#[test]
+fn the_header_alone_parses_as_the_whole_file() {
+    let file = spec_a().file();
+    let header = Header::parse(&file[..HEADER]).unwrap();
+    assert_eq!(&header, MapFile::load(&file).unwrap().header());
+    assert_eq!(header.build, "01.10.12.2276");
+    assert!(Header::parse(&file[..HEADER - 1]).is_err(), "shorter than the header");
+    let mut bad = file[..HEADER].to_vec();
+    bad[0] ^= 1;
+    assert!(Header::parse(&bad).unwrap_err().to_string().contains("header magic"));
 }
 
 #[test]

@@ -26,6 +26,7 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod sets;
 pub mod vitality;
 
 pub use maps::MAP_LOADER;

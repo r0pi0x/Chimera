@@ -220,9 +220,13 @@ backlog.
 
 ## 6. Open questions
 
-- How the asset store's build id is named for a game without a Steam
-  build (the packer and `mount::served` key a store's manifest by it):
-  decided when the game enters `chimera_pack` (M2).
+- ~~How the asset store's build id is named for a game without a Steam
+  build~~ Decided (M2, the game in `chimera_pack`): the build string of
+  the disc's map headers (`01.10.12.2276`; another region's disc has
+  another), read from 2 KB of one map (`game::mount::build`); the store
+  serves Halo instead of the disc, never under it (a player has the
+  whole disc or none of it). What is packed and the sets:
+  [assets-for-developers.md](../../assets-for-developers.md), "Halo".
 - The movement, weapon and vitality specs' numbers come from the disc
   and their rules from the reference; nothing is measured in the real
   game yet (M5).
