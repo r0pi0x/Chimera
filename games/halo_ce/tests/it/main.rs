@@ -27,6 +27,7 @@ mod bot_triggers;
 mod cross_game;
 mod party_balance;
 mod death;
+mod flinch;
 mod fx;
 mod fx_place;
 mod gun_displays;

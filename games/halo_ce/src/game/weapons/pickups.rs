@@ -28,8 +28,8 @@
 //! ticks, and every item not held for 900 ticks is deleted (so a map item
 //! untaken is replaced, the two overlapping one tick; a dropped weapon
 //! lives 901 ticks). A dead unit drops its Halo weapons and grenades where
-//! it died, the weapon in hand last (`drop_on_death`), on a map whose
-//! pickups play.
+//! it died, the weapon in hand last (`drop_on_death`; at once for a push
+//! of 2 or more or a death in the air), on a map whose pickups play.
 //!
 //! Taking (`take`, each tick, an item within a living unit's bounding
 //! sphere): a powerup is used at once unless its effect refuses it
@@ -560,7 +560,7 @@ pub fn drop_on_death(
     entries: Query<(), With<NetgameEntry>>,
     mut units: Query<(&Transform, &Inventory, Option<&mut HaloHands>)>,
     guns: Query<(&Weapon, &HaloGun, &HaloWeapon)>,
-    bodies: Query<&super::super::body::death::HaloCorpse>,
+    bodies: Query<(&super::super::body::death::HaloCorpse, Option<&super::super::body::death::DeathPush>)>,
     models: Option<Res<crate::map::CharacterModels>>,
     (mut clock, sim): (ResMut<ItemClock>, Res<SimClock>),
     mut pending: Local<Vec<(u32, Vec3, Item)>>,
@@ -595,12 +595,13 @@ pub fn drop_on_death(
                 continue;
             }
             let it = Item::Weapon { id: weapon.id, loaded: g.loaded, reserve: g.reserve, age: g.age };
-            if inv.active == Some(*w) {
-                let frames = bodies
-                    .iter()
-                    .find(|b| b.owner == unit)
+            let body = bodies.iter().find(|b| b.0.owner == unit);
+            // At once for a push of 2 or more, an airborne death or none
+            // (`death::drops_at_once`).
+            if inv.active == Some(*w) && !body.is_some_and(|(b, p)| super::super::body::death::drops_at_once(b, p)) {
+                let frames = body
                     .zip(set.as_deref())
-                    .map_or(1, |(b, set)| super::super::body::death::death_frames(set, &b.animation));
+                    .map_or(1, |((b, _), set)| super::super::body::death::death_frames(set, &b.animation));
                 let mut rng = HaloRng(clock.rng);
                 let delay = held_drop_delay(frames as u32, &mut rng);
                 clock.rng = rng.0;
