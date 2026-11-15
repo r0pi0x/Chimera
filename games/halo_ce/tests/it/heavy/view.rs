@@ -411,7 +411,8 @@ fn the_guns_in_hand_load_from_bloodgulch() {
             assert_eq!(v.attachments[1].name, EJECTION, "{id}: the ejection port second");
         }
         // The document's timers are the animations' lengths.
-        let a = gun(id).animations;
+        // The grenade rung shows the pistol under its own id: the pistol's numbers.
+        let a = gun(if id == "halo_ce:frag_grenade" { PISTOL } else { id }).animations;
         let frames = |s: S| sequence(set, s).map(|q| numbers(set, q));
         assert_eq!(frames(S::Ready).map(|f| f.0), Some(a.ready as usize), "{id}: the draw");
         assert_eq!(

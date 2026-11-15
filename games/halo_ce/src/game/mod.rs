@@ -68,6 +68,8 @@
 //!   disc);
 //! - `weapons::rung`: the party ladder's grenade rung; `movement` also
 //!   fits the pill to the map's envelope (`body`, `envelope`);
+//! - `view::displays`: the counter, compass and gauges on the guns
+//!   (weapons.md 18);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `audio`: looping sounds, the level's background sound, environment

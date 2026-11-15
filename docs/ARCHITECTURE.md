@@ -412,6 +412,10 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   (`chimera_core::envelope`): on another game's map its pill is no
   wider or taller than that game's character and steps as high
   (`movement::body`, `mover::step_up`); its own maps are unchanged.
+  Halo's on-gun displays (the assault rifle's counter and compass, the
+  plasma gauges) drive view-model texture frames
+  (`ViewAnimator::mesh_frames`) from the held weapon's tag functions
+  each Halo tick (`view::displays`), in first person.
   Halo's lasting sounds (`game::audio`) play on the engine's
   `SoundControl`/`PlaySound` seams: the level's background sound by the
   listener's cluster, its sound scenery, the shown projectiles' flight

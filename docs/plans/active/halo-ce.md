@@ -710,3 +710,16 @@ backlog.
   needles) are specified (weapons.md 18) and being built. With these
   Halo is in Ultimate Gun Game: the milestone's full validation runs
   next.
+- 2026-11-15: the milestone's validation, Halo in Ultimate Gun Game.
+  The whole fast tier of every crate, Halo's and the format readers'
+  tests with the disc and the party's heavy Halo tests ran on `main`:
+  six failures. Four were Halo's tests' own stale counts after the
+  grenade rung (its parts are eight guns and a grenade; its view and
+  held models ten), corrected; two are TF2's on `main` (a parts count
+  of 4 against 12 lent, its flamethrower's power 0), the other
+  session's. After the corrections Halo's suite passes whole (442 with
+  the disc). The displays on the guns landed with it (the assault
+  rifle's counter and compass, the plasma gauges, the flamethrower's
+  bars; first person: other players' weapon state does not reach a
+  client). Next by the user's order: the backlog's high items (timed
+  grenades on the grenade rung), then the arena cut from a big map.
