@@ -7,5 +7,9 @@
 //!   directory trees, partition probing) as a mount layer
 //!   (`chimera_vfs::FileSource`) over an image file or bytes, and
 //!   `open_install`, which mounts an image or a folder of the disc's files.
+//! - `cache`: the map cache file (`.map`): the decompressed image, the tag
+//!   index, address spaces and bounds-checked views of tag data, the
+//!   foundation every tag-class reader is written on.
 
+pub mod cache;
 pub mod disc;
