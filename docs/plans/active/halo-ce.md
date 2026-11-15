@@ -410,6 +410,32 @@ backlog.
   Arms' movement climbs the made ladder (docs/DESIGN.md, "Ladders across
   games"). No pool map's spawns need one (every map's spawns reach each
   other on walks and teleporters: `heavy::halo_maps`).
+- **An arena cut from a big map** (the user's idea, 2026-11-15; a
+  party-app feature for any game's big map, not only Halo's): Blood
+  Gulch (78,000 m2) and Sidewinder (69,500 m2) are six to forty times
+  the other eleven maps (1,700 to 11,400 m2), so a gun game never draws
+  them. Instead of leaving them out, play a slice of one, sized to the
+  players present (the pool's own target: the wander time under 10 s).
+  Parts: (1) candidates: closed boundaries in plan view over the bots'
+  generated mesh, cut where the mesh is narrow (a boundary across a
+  pass needs less wall than one across a field), each scored by the
+  `map_fitness` measures recomputed inside it (area, mean sight, wander
+  time) plus a new one, the share of spawn-spot pairs that see each
+  other, so a flat open slice where players spawn in each other's view
+  is refused; (2) a curated list per map chosen from the scored
+  candidates (the algorithm proposes, a person picks), kept as data
+  beside the pool rules; (3) play: the boundary solid to players, the
+  bots' mesh and the spawn spots held inside it (`nav_gen::NavWithin`
+  is the box-shaped start of this), items and objectives outside it
+  left out; (4) the look, in the party apps' own style (the party UI's
+  owner draws it): a line along the ground and a faint curtain that
+  read from afar, the wall glowing near a player who approaches it,
+  the world beyond it dimmed. Until then the simple rule holds: the
+  pool leaves the big maps out of every draw.
+- **Vehicles in the party apps are off** (the user, 2026-11-15): not
+  wanted in the gun game for now; a switch in Halo's party bundle,
+  default off, places no vehicle on a Halo map there. Halo's own app
+  and server have them.
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the
