@@ -20,6 +20,9 @@
 //! - `UiSlant` (component): a 12° slanted fill (`SlantMaterial`) in a tone,
 //!   which edges lean, an accent bar.
 //!
+//! `case_texts` upper-cases a `UiText` whose role does (`TypeSpec::upper`)
+//! whenever its text changes, unless it is marked `KeepCase`.
+//!
 //! `resolve_styles` (in `UiKitSystems`) writes the Bevy components when a
 //! style is added or changed and again for every styled node when
 //! `UiUnits`, the theme or the faces change. Sizes snap to whole physical
@@ -377,10 +380,26 @@ impl UiSlant {
     }
 }
 
-/// A text a person typed (`Ui::text_plain`): drawn in Bevy's default face
-/// (a system one in the client, with lower case), the kit's as fallback.
+/// A styled text that keeps its case although its role upper-cases
+/// (`Ui::text_plain`: a cvar name in Mono, a server's name).
 #[derive(Component, Clone, Copy, Debug, Default)]
-pub struct PlainText;
+pub struct KeepCase;
+
+/// A styled text whose role upper-cases (`TypeSpec::upper`) shows in
+/// capitals however its text was set (a screen that writes its `Text`
+/// later need not upper-case it): the faces have lower case since v0.5,
+/// and titles, labels and buttons stay as they were. `KeepCase` opts out.
+#[allow(clippy::type_complexity)]
+pub fn case_texts(
+    theme: Res<Theme>,
+    mut texts: Query<(&UiText, &mut Text), (Without<KeepCase>, Or<(Changed<Text>, Changed<UiText>)>)>,
+) {
+    for (t, mut text) in &mut texts {
+        if theme.type_spec(t.role.key()).is_some_and(|s| s.upper) && text.0.chars().any(char::is_lowercase) {
+            text.0 = text.0.to_uppercase();
+        }
+    }
+}
 
 /// Writes styled nodes' Bevy components (module doc).
 #[allow(clippy::type_complexity)]
@@ -390,7 +409,7 @@ pub fn resolve_styles(
     kit: Option<Res<KitFonts>>,
     mut slants: Option<ResMut<Assets<SlantMaterial>>>,
     styles: Query<(Entity, Ref<UiStyle>)>,
-    texts: Query<(Entity, Ref<UiText>, Has<PlainText>, Has<InkWeight>)>,
+    texts: Query<(Entity, Ref<UiText>, Has<InkWeight>)>,
     slanted: Query<(Entity, Ref<UiSlant>, Option<&MaterialNode<SlantMaterial>>)>,
     mut commands: Commands,
 ) {
@@ -408,18 +427,12 @@ pub fn resolve_styles(
             c.insert(Outline::new(Val::Px(units.hairline()), Val::Px(-units.hairline()), theme.tone_a(t, a)));
         }
     }
-    for (e, t, plain, weighted) in &texts {
+    for (e, t, weighted) in &texts {
         if !(all || t.is_changed()) {
             continue;
         }
         let s = fonts::text(&theme, kit.as_deref(), t.role, units.text_px(t.size));
-        let mut bundle = s.bundle();
-        if plain {
-            // The kit's faces draw capitals only: a person's own text takes
-            // Bevy's default face first (the client puts a system face there:
-            // `client::fonts`), the kit's one as fallback (none there: tests).
-            bundle.0.font = FontSource::List(vec![FontSource::default(), bundle.0.font.clone()]);
-        }
+        let bundle = s.bundle();
         let color = theme.tone_a(t.tone, t.alpha);
         let mut c = commands.entity(e);
         c.insert((bundle, TextColor(color)));

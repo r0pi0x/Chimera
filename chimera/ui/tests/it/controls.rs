@@ -3,7 +3,7 @@
 
 use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_ui::{
-    ChimeraUiPlugin, Theme, Tone, UiClock, UiSlant, UiText, UiUnits,
+    ChimeraUiPlugin, KitFonts, Role, Theme, Tone, UiClock, UiSlant, UiText, UiUnits,
     controls::{self, Hover, Kind, State, Tick, Ui, Wipe},
 };
 
@@ -53,6 +53,21 @@ fn texts_under(app: &mut App, e: Entity) -> Vec<String> {
 /// each).
 fn joined(app: &mut App, e: Entity) -> String {
     texts_under(app, e).concat()
+}
+
+fn descendants_with_entity<C: Component>(app: &mut App, e: Entity) -> Vec<Entity> {
+    let w = app.world_mut();
+    let mut out = Vec::new();
+    let mut stack = vec![e];
+    while let Some(n) = stack.pop() {
+        if w.get::<C>(n).is_some() {
+            out.push(n);
+        }
+        if let Some(ch) = w.get::<Children>(n) {
+            stack.extend(ch.iter());
+        }
+    }
+    out
 }
 
 fn descendants_with<C: Component + Clone>(app: &mut App, e: Entity) -> Vec<C> {
@@ -268,6 +283,52 @@ fn text_field_shows_text_caret_and_placeholder() {
     assert!(descendants_with::<Tick>(&mut app, f).is_empty());
 }
 
+/// Typed text keeps its case in our sentence face (`Role::Text`, Display
+/// Regular): no system face, no fallback list; a sentence and a cvar name
+/// in Mono keep their case too, a label does not.
+#[test]
+fn typed_text_keeps_its_case_in_our_face() {
+    use bevy::text::FontSource;
+    let mut app = app();
+    let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "Zoë's Server", "", None, false, 15.0, State::NONE));
+    app.update();
+    assert_eq!(joined(&mut app, f).replace('\u{a0}', " "), "Zoë's Server");
+    let kit = app.world().resource::<KitFonts>().clone();
+    let styled = descendants_with::<UiText>(&mut app, f);
+    assert!(styled.iter().all(|t| t.role == Role::Text), "{styled:?}");
+    let fonts: Vec<TextFont> = descendants_with::<TextFont>(&mut app, f);
+    assert!(!fonts.is_empty());
+    for font in fonts {
+        assert_eq!(font.font, FontSource::Handle(kit.display_regular.clone().unwrap()), "typed text in UGG Display Regular");
+    }
+    let s = build(&mut app, |ui, c, root| ui.sentence(c, root, controls::SENTENCE, Tone::Fg2, "Paused for you only"));
+    let v = build(&mut app, |ui, c, root| ui.text_plain(c, root, Role::Mono, 0.6, Tone::Fg, "fov_desired"));
+    let l = build(&mut app, |ui, c, root| ui.text(c, root, Role::Mono, 0.6, Tone::Fg, "Console"));
+    app.update();
+    assert_eq!(texts_under(&mut app, s), ["Paused for you only"]);
+    assert_eq!(texts_under(&mut app, v), ["fov_desired"]);
+    assert_eq!(texts_under(&mut app, l), ["CONSOLE"]);
+}
+
+/// A text in an upper-casing role shows in capitals however a screen sets
+/// it later (`style::case_texts`), unless it keeps its case (`KeepCase`).
+#[test]
+fn upper_roles_stay_in_capitals_when_set_later() {
+    let mut app = app();
+    let label = app.world_mut().spawn((Text::new("x"), UiText::new(Role::DisplayBold, 1.0, Tone::Fg))).id();
+    let kept = app.world_mut().spawn((Text::new("x"), UiText::new(Role::Mono, 0.6, Tone::Fg), chimera_ui::KeepCase)).id();
+    let sentence = app.world_mut().spawn((Text::new("x"), UiText::new(Role::Text, 0.86, Tone::Fg))).id();
+    app.update();
+    for e in [label, kept, sentence] {
+        app.world_mut().get_mut::<Text>(e).unwrap().0 = "Waiting for 2 players".into();
+    }
+    app.update();
+    let text = |app: &App, e| app.world().get::<Text>(e).unwrap().0.clone();
+    assert_eq!(text(&app, label), "WAITING FOR 2 PLAYERS");
+    assert_eq!(text(&app, kept), "Waiting for 2 players");
+    assert_eq!(text(&app, sentence), "Waiting for 2 players");
+}
+
 /// The `TextSelection` nodes under `e`.
 fn selections(app: &mut App, e: Entity) -> Vec<Entity> {
     let w = app.world_mut();
@@ -362,12 +423,7 @@ fn a_sliders_value_box_types() {
 
 /// `app()` with Bevy's UI layout, a 1920 x 1080 window (scale 1) and a
 /// camera on it.
-const KIT_FILES: chimera_ui::FontFiles<'static> = chimera_ui::FontFiles {
-    display_black: include_bytes!("../../../../apps/ultimate_gun_game/fonts/ugg-display-black.ttf"),
-    display_bold: include_bytes!("../../../../apps/ultimate_gun_game/fonts/ugg-display-bold.ttf"),
-    display_regular: include_bytes!("../../../../apps/ultimate_gun_game/fonts/ugg-display-regular.ttf"),
-    mono: include_bytes!("../../../../apps/ultimate_gun_game/fonts/ugg-mono-regular.ttf"),
-};
+const KIT_FILES: chimera_ui::FontFiles<'static> = chimera_ui::fonts::OWN;
 
 fn laid_out() -> App {
     use bevy::camera::{ComputedCameraValues, RenderTargetInfo, Viewport};
@@ -526,6 +582,22 @@ fn a_click_places_the_caret_between_characters() {
     let xs = char_xs(&app, v);
     point(&mut app, (xs[0] + xs[1]) / 2.0, v);
     assert_eq!(char_at(&mut app, v), Some(1));
+}
+
+/// The caret is thin (one physical pixel at 1080 lines) and sits just
+/// after the character before it, not over it.
+#[test]
+fn the_caret_is_thin_and_just_after_the_text() {
+    let mut app = laid_out();
+    let f = build_laid(&mut app, |ui, c, root| ui.text_field(c, root, "Lan", "", Some(3.into()), false, 15.0, State::focused(true)));
+    let caret = descendants_with_entity::<controls::TextCaret>(&mut app, f);
+    assert_eq!(caret.len(), 1);
+    let cw = size_of(&app, caret[0]).x;
+    assert!(cw <= 1.01, "one physical px wide, not {cw}");
+    let last = *app.world().get::<controls::EditText>(f).unwrap().chars.last().unwrap();
+    let right = centre_of(&app, last).x + size_of(&app, last).x / 2.0;
+    let left = centre_of(&app, caret[0]).x - cw / 2.0;
+    assert!((left - right).abs() <= 0.51, "the caret's left {left} at the text's end {right}");
 }
 
 /// The pointer's gestures in a text: a press places, a drag selects from

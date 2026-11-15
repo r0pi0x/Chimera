@@ -64,7 +64,7 @@ use chimera_client::client::ui_sound::UiCue;
 use chimera_net::net::query::{LanSettings, QueryResult, QueryState, ServerInfo, ServerQueries};
 use chimera_ui::{
     AmbientMaterial, IconImages, KitFonts, Role, Theme, Tone, UiClock, UiStyle, UiUnits,
-    controls::{Kind, State, Ui},
+    controls::{Kind, NOTE, SENTENCE, State, Ui},
 };
 
 use crate::{
@@ -1116,7 +1116,7 @@ fn spawn(
         (None, _) => (Tone::Fg4, "Enter joins the focused line • the port is 27015 unless given".to_string()),
     };
     ui.mark(c, st, mark, 0.42, 0.42);
-    ui.text(c, st, Role::Mono, 0.6, if p.notice.is_some() { Tone::Fg } else { Tone::Fg3 }, &line);
+    ui.sentence(c, st, NOTE, if p.notice.is_some() { Tone::Fg } else { Tone::Fg3 }, &line);
     let back = ui.button(c, bar, Kind::Ghost, "Back", Some("Esc"), 2.0, State::NONE);
     c.entity(back).insert(MainMenuAction::Back);
     let (label, action) = match (page, ls.get(p.focus)) {
@@ -1167,14 +1167,14 @@ fn password_modal(c: &mut Commands, ui: &Ui, root: Entity, menu: &PartyMenu, p: 
     let m = ui.modal(c, shade, 30.0, false);
     ui.text(c, m, Role::DisplayBold, 1.35, Tone::Fg, "Password");
     let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 1.0, 0.0].into()), ..UiStyle::column() });
-    ui.paragraph(c, tx, Role::Mono, 0.62, Tone::Fg2, &format!("{} is locked. Type its password to join.", ask.name));
+    ui.paragraph(c, tx, Role::Text, SENTENCE, Tone::Fg2, &format!("{} is locked. Type its password to join.", ask.name));
     let st = State { focus: true, error: p.notice.is_some(), ..State::NONE };
     let f = ui.text_field(c, m, &menu.password, "Password", Some(menu.caret.cursor(&menu.password)), true, 26.0, st);
     c.entity(f).insert(MainMenuAction::Focus(Field::Password));
     if let Some(n) = &p.notice {
         let row = ui.boxed(c, m, UiStyle { gap: Some(0.6), margin: Some([0.7, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
         ui.mark(c, row, Tone::Threat, 0.42, 0.42);
-        ui.text(c, row, Role::Mono, 0.58, Tone::Fg, n);
+        ui.sentence(c, row, NOTE, Tone::Fg, n);
     }
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
     let join = ui.button(c, acts, Kind::Primary, "Join", Some("Enter"), 2.4, State::NONE);
@@ -1305,13 +1305,14 @@ fn summary(c: &mut Commands, ui: &Ui, cols: Entity, menu: &PartyMenu, cx: &Ctx) 
     };
     let password = if value_of(cx.data, menu, "sv_password").is_empty() { "None".to_string() } else { "Set".to_string() };
     let port = value_of(cx.data, menu, "hostport");
+    // Values in capitals, the server's name as its host typed it.
     let kv: Vec<(&str, String)> = vec![
-        ("Map", map),
-        ("Bots", value_of(cx.data, menu, "MaxPlayer")),
-        ("Players", value_of(cx.data, menu, "maxplayers")),
-        ("Lobby", value_of(cx.data, menu, "mp_lobby")),
+        ("Map", map.to_uppercase()),
+        ("Bots", value_of(cx.data, menu, "MaxPlayer").to_uppercase()),
+        ("Players", value_of(cx.data, menu, "maxplayers").to_uppercase()),
+        ("Lobby", value_of(cx.data, menu, "mp_lobby").to_uppercase()),
         ("Server", value_of(cx.data, menu, "hostname")),
-        ("Password", password),
+        ("Password", password.to_uppercase()),
         ("Port", if port.trim().is_empty() { "27015".into() } else { port }),
     ];
     ui.kv(c, pane, &kv, 6.0);
@@ -1414,7 +1415,7 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
             BrowserTab::Favourites => "No favourites yet: focus a server and press F",
             BrowserTab::History => "No server joined yet",
         };
-        ui.text(c, e, Role::Mono, 0.56, Tone::Fg3, none);
+        ui.sentence(c, e, NOTE, Tone::Fg3, none);
         return;
     }
     let list = ui.boxed(c, right, UiStyle::column());

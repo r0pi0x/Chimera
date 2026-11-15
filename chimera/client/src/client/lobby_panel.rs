@@ -23,7 +23,8 @@
 //! - **Left**: the Ready tag and count ("5 / 7", "players • 8 slots"
 //!   when the slot count is known), the player table (`#`, player, tag,
 //!   status): the slot number, the bot slot left of every name (the robot
-//!   for a bot, `LobbyMark::Bot`), the name; HOST as a solid tag
+//!   for a bot, `LobbyMark::Bot`), the name (as its player typed it, in
+//!   the sentence face `Role::Text`); HOST as a solid tag
 //!   (`LobbyMark::Host`), YOU and HOST as the fused chip
 //!   (`LobbyMark::YouHost`); the session wins after the name (trophy
 //!   and count, only with any, the leader's in the accent: `LobbyWins`,
@@ -37,7 +38,8 @@
 //! - **Right**: the map's name big and its game, a map preview (a
 //!   gradient tinted by the map's name stands in: no thumbnails yet),
 //!   Mode and Guns from (the ladder's games), and "Starts in" with the
-//!   countdown big and the waiting line beside it, over a tick bar
+//!   countdown big and the waiting line beside it (a sentence:
+//!   `Role::Text`), over a tick bar
 //!   (`CountdownBar`: pixel-snapped ticks lit as the countdown runs,
 //!   stepped every frame from `UiClock`, the last
 //!   `layout.lobby.countdown_hot` seconds in the accent).
@@ -199,11 +201,15 @@ impl Panel<'_> {
         c.spawn((s, Node::default(), ChildOf(parent))).id()
     }
 
-    /// A text in a role at `size` cq under `parent` (upper case: the UGG
-    /// faces draw caps only, a fallback face as well).
+    /// A text in a role at `size` cq under `parent`, in capitals.
     fn text(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, text: &str) -> Entity {
+        self.cased(c, parent, role, size, tone, &text.to_uppercase())
+    }
+
+    /// A text as it is (a sentence, a player's name): `Role::Text`, ours.
+    fn cased(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, text: &str) -> Entity {
         c.spawn((
-            Text::new(text.to_uppercase()),
+            Text::new(text),
             UiText::new(role, size, tone),
             TextLayout::new(Justify::Left, LineBreak::NoWrap),
             ChildOf(parent),
@@ -224,11 +230,17 @@ impl Panel<'_> {
         self.tag(c, wrap, TagKind::Accent, text);
     }
 
-    /// A value big with its unit beside it.
-    fn big(&self, c: &mut Commands, parent: Entity, value: &str, size: f32, unit: &str, top: f32) {
+    /// A value big with its unit beside it: a small label, or (`sentence`)
+    /// a line in the sentence face.
+    #[allow(clippy::too_many_arguments)]
+    fn big(&self, c: &mut Commands, parent: Entity, value: &str, size: f32, unit: &str, top: f32, sentence: bool) {
         let row = self.boxed(c, parent, style!(row, gap: 1.0, margin: [top, 0.0, 0.0, 0.0]).align(AlignItems::Baseline));
         self.text(c, row, Role::DisplayBold, size, Tone::Fg, value);
-        let u = self.text(c, row, Role::Mono, self.lay("label"), Tone::Fg3, unit);
+        let u = if sentence {
+            self.cased(c, row, Role::Text, chimera_ui::controls::NOTE, Tone::Fg2, unit)
+        } else {
+            self.text(c, row, Role::Mono, self.lay("label"), Tone::Fg3, unit)
+        };
         c.entity(u).insert(TextLayout::new(Justify::Left, LineBreak::WordBoundary));
     }
 
@@ -429,7 +441,7 @@ fn draw(
         Some(s) => format!("players \u{2022} {s} slots"),
         None => "players".into(),
     };
-    p.big(c, left, &format!("{ready} / {}", view.rows.len()), p.lay("big"), &unit, 0.7);
+    p.big(c, left, &format!("{ready} / {}", view.rows.len()), p.lay("big"), &unit, 0.7, false);
     let table = p.boxed(c, left, style!(column, margin: [2.3, 0.0, 0.0, 0.0]));
     // The four columns: #, player, tag, status.
     let widths = [Some(p.lay("col_pos")), None, Some(p.lay("col_tag")), Some(p.lay("col_status"))];
@@ -482,8 +494,9 @@ fn draw(
         if row.bot {
             c.entity(slot).insert(LobbyMark::Bot);
         }
-        let name = p.text(c, who, Role::DisplayBold, p.lay("name"), Tone::Fg, &row.name);
-        c.entity(name).insert(chimera_ui::Ellipsize::in_parent(row.name.to_uppercase()));
+        // The name as its player typed it, in the sentence face.
+        let name = p.cased(c, who, Role::Text, p.lay("name"), Tone::Fg, &row.name);
+        c.entity(name).insert(chimera_ui::Ellipsize::in_parent(row.name.clone()));
         if row.wins > 0 {
             // The session wins: the leader's in the accent.
             let leader = row.wins == top_wins;
@@ -623,7 +636,7 @@ fn draw(
         Some(s) => format!("{:02}:{:02}", s / 60, s % 60),
         None => "--:--".into(),
     };
-    p.big(c, cd, &big, p.lay("big"), &view.line, 0.6);
+    p.big(c, cd, &big, p.lay("big"), &view.line, 0.6, true);
     let n = p.lay("countdown_ticks").max(1.0) as u32;
     let box_w = units.phys(units.cq(right_w)).floor() as u32;
     let box_h = units.phys(units.cq(p.lay("ticks_h"))).floor() as u32;

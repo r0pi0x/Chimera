@@ -564,9 +564,13 @@ Only `Reflect`-registered types are visible; register new core components in
   retry` presses Retry. Discovery is unit-tested with fake Steam trees
   (`mount::install`), and `games/cs_source/tests/it/mount_install.rs` mounts an install
   found through one.
-- Fonts: the startup log line `fonts: tahoma -> tahoma.ttf, ...` says
-  which file each scheme family resolved to (`(stand-in)` when the
-  system lacks the real face, e.g. Liberation Sans for Tahoma on Linux;
+- Fonts: the shell's and the apps' own text is in our faces
+  (`chimera_ui::fonts::OWN`, also Bevy's default font:
+  `chimera/ui/tests/it/fonts.rs`, `the_default_font_is_ours`,
+  `every_role_is_one_of_our_faces`). For a game's own HUD and menus,
+  the startup log line `fonts: tahoma -> tahoma.ttf, ...` says which
+  file each scheme family resolved to (`(stand-in)` when the system
+  lacks the real face, e.g. Liberation Sans for Tahoma on Linux;
   `client::fonts`). Text sizes and faces per element are unit-tested
   there; screenshots of the console, chat, scoreboard, buy menu, main
   menu and `debugui` at 1280x720 show them.
@@ -2387,8 +2391,9 @@ what follows it a few px along; a width that differs only by that ratio
 tolerance) is expected: marked `~`, counted apart and not past tolerance;
 the rest are listed with their font sizes (`font 11.5/12`). Only the screen's ids count (`screens.json`'s
 `include`), so a game playing behind the staged screen adds nothing.
-`lobby` has no `ui_scene lobby` yet (M1): its report lists the mockup's
-ids only.
+`ui_scene lobby` stages the lobby with made-up players (for
+screenshots; no parity ids or fixture yet), so `lobby`'s report lists
+the mockup's ids only.
 
 Ids are the look book's (`board.row.3.name`, rows from 1): the
 generator writes `data-ui` attributes, the game puts `UiParityId` on the

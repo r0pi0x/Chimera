@@ -48,8 +48,8 @@
 //! (`MinigameHud::results_shown`): their title and status lines sat over
 //! the winner's name. Sized by the window's height (`scale`: for a
 //! 720-line screen, as the kill feed; smaller when the standings have
-//! too many rows to fit), in the HUD's face (`fonts::overlay_font`: CS:S's
-//! centre-print Trebuchet MS; the winner and the highlighted rows bold),
+//! too many rows to fit), in the overlay's face (`fonts::overlay_font`:
+//! ours, UGG Display; the winner and the highlighted rows bold),
 //! its shades as they would be blended in display space
 //! (`widgets::display_alpha`). `MatchEndView` is the state,
 //! headless too (tests read it); drawing is Bevy UI. Nothing shows

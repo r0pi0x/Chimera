@@ -31,7 +31,7 @@
 use bevy::prelude::*;
 use chimera_ui::{
     IconImages, Role, ShadeMaterial, Tone, UiSlant, UiStyle,
-    controls::{Kind, State, Tick, Ui, Wipe},
+    controls::{Kind, NOTE, SENTENCE, State, Tick, Ui, Wipe},
     widgets::{self, TagKind},
     Prop, Timeline, Track,
 };
@@ -126,7 +126,7 @@ pub fn spawn(
     ui.lockup(c, panel, images, icons, lay("lockup"));
     let ps = ui.boxed(c, panel, UiStyle { gap: Some(0.7), margin: Some([2.4, 0.0, 1.4, 0.0].into()), ..UiStyle::row() });
     ui.mark(c, ps, Tone::Acc, 0.5, 0.5);
-    ui.text(c, ps, Role::Mono, 0.58, Tone::Fg2, "Paused for you only: the match goes on");
+    ui.sentence(c, ps, NOTE, Tone::Fg2, "Paused for you only: the match goes on");
     let list = ui.boxed(c, panel, UiStyle::column());
     for (i, e) in d.entries.iter().enumerate() {
         entry(c, ui, list, i, e, d);
@@ -149,7 +149,7 @@ pub fn spawn(
     // In the keys' line.
     let live = ui.boxed(c, foot, UiStyle { gap: Some(0.6), margin: Some([0.0, 0.0, 0.0, 1.4].into()), ..UiStyle::row() });
     ui.mark(c, live, Tone::Threat, 0.6, 0.6);
-    ui.text(c, live, Role::Mono, 0.52, Tone::Fg2, "Match live • you can still be hit");
+    ui.sentence(c, live, NOTE, Tone::Fg2, "Match live • you can still be hit");
     if let Page::ConfirmDisconnect(n) = d.page {
         let who = if n == 1 { "1 player".to_string() } else { format!("{n} players") };
         confirm(c, ui, root, 0.72, &format!("End the game for {who}?"), "You are the host: leaving closes the server.", "End the game", d.focus);
@@ -256,10 +256,10 @@ fn vote_box(c: &mut Commands, ui: &Ui, panel: Entity, v: &VoteShown) {
             c.entity(n).insert(Action::VoteNo);
         }
         None => {
-            ui.text(c, acts, Role::Mono, 0.56, Tone::Fg3, "You can't vote on this one");
+            ui.sentence(c, acts, NOTE, Tone::Fg3, "You can't vote on this one");
         }
         Some(m) => {
-            ui.text(c, acts, Role::Mono, 0.56, Tone::Fg2, if m == 1 { "You voted yes" } else { "You voted no" });
+            ui.sentence(c, acts, NOTE, Tone::Fg2, if m == 1 { "You voted yes" } else { "You voted no" });
         }
     }
 }
@@ -287,7 +287,7 @@ fn confirm(c: &mut Commands, ui: &Ui, root: Entity, shade: f32, title: &str, lin
     let ttl = ui.boxed(c, m, UiStyle { gap: Some(0.6), margin: Some([0.7, 0.0, 0.6, 0.0].into()), ..UiStyle::row() });
     ui.mark(c, ttl, Tone::Threat, 0.8, 0.9);
     ui.text(c, ttl, Role::DisplayBold, 1.35, Tone::Fg, title);
-    ui.paragraph(c, m, Role::Mono, 0.62, Tone::Fg2, line);
+    ui.paragraph(c, m, Role::Text, SENTENCE, Tone::Fg2, line);
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
     let stay = ui.button(c, acts, Kind::Primary, "Stay", Some("Esc"), 2.4, State::focused(focus == 0));
     c.entity(stay).insert(Action::Back);

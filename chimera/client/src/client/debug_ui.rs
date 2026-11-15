@@ -462,23 +462,21 @@ fn units(v: Vec3) -> Vec3 {
     Vec3::new(v.x, -v.z, v.y) / 0.0254
 }
 
-/// Labels in the GameUI scheme's default face (Tahoma, or its stand-in);
-/// egui's own mono stays for numbers and fields.
-fn set_egui_font(world: &World, ctx: &egui::Context) {
-    let Some(face) = world.get_resource::<super::fonts::UiFonts>().and_then(|f| f.face("Tahoma", false)) else {
-        return;
-    };
-    let Some(font) = world.get_resource::<Assets<Font>>().and_then(|a| a.get(&face.handle)) else {
-        return;
-    };
-    ctx.add_font(egui::epaint::text::FontInsert::new(
-        "scheme-default",
-        egui::FontData::from_owned(font.data.data().to_vec()),
-        vec![egui::epaint::text::InsertFontFamily {
-            family: egui::FontFamily::Proportional,
-            priority: egui::epaint::text::FontPriority::Highest,
-        }],
-    ));
+/// Our faces first (`chimera_ui::fonts::OWN`): labels in the text face
+/// (UGG Display Regular), numbers and fields in UGG Mono; egui's own
+/// faces stay behind them for what ours lack.
+fn set_egui_font(_world: &World, ctx: &egui::Context) {
+    let own = chimera_ui::fonts::OWN;
+    for (name, bytes, family) in [
+        ("ugg-text", own.display_regular, egui::FontFamily::Proportional),
+        ("ugg-mono", own.mono, egui::FontFamily::Monospace),
+    ] {
+        ctx.add_font(egui::epaint::text::FontInsert::new(
+            name,
+            egui::FontData::from_static(bytes),
+            vec![egui::epaint::text::InsertFontFamily { family, priority: egui::epaint::text::FontPriority::Highest }],
+        ));
+    }
 }
 
 fn draw(world: &mut World, mut fonts_set: Local<bool>) {

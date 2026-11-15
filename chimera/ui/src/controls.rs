@@ -25,8 +25,10 @@
 //!   with a top bar, white or threat).
 //! - **Text** in a value box or a text field (`edit_chars`): one node a
 //!   character, at rest and typing alike, so opening one moves nothing
-//!   (the same box, face and size); the caret an overlay over the
-//!   boundary that takes no room; the selection a tint behind its
+//!   (the same box, face and size; typed text in `Role::Text` at
+//!   `TYPED`, stars and numbers in Mono); the caret a thin overlay (one
+//!   physical pixel, two over 1440 lines) just after the character
+//!   before it, taking no room; the selection a tint behind its
 //!   characters. `TextHits` finds the boundary under the pointer from the
 //!   layout; `TextPress` makes a press place the caret, a drag select and
 //!   a double press select all (the screens keep one).
@@ -46,10 +48,9 @@
 //! Builders spawn under a parent (`ChildOf`) and return the entity a
 //! screen gives its action (with `clickable`), sized from `UiUnits` at
 //! the time: screens rebuild when the units change, as the lobby does.
-//! Labels go upper case (the UGG faces draw capitals only); what a person
-//! types (`text_field`, `text_plain`) keeps its case, and is drawn in
-//! Bevy's default face, a system one in the client (`style::PlainText`;
-//! the kit's face is its fallback).
+//! Labels go upper case (`text`); sentences (`paragraph`) and what a
+//! person types or is called (`text_field`, `text_plain`) keep their case,
+//! in the sentence face (`Role::Text`), ours like every other text.
 
 use bevy::{
     prelude::*,
@@ -132,6 +133,14 @@ pub fn clickable() -> (Interaction, FocusPolicy) {
 pub const BUTTON_H: f32 = 2.4;
 /// A row's least height, cq.
 pub const ROW_H: f32 = 2.9;
+/// Typed text's size in a field, cq (`Role::Text`).
+pub const TYPED: f32 = 0.74;
+/// A sentence's size, cq (`Role::Text`: descriptions, help, dialog
+/// bodies, notices).
+pub const SENTENCE: f32 = 0.86;
+/// A small sentence's size, cq (`Role::Text`: a dialog's footnote, a
+/// field's hint, a status line under a list).
+pub const NOTE: f32 = 0.72;
 
 impl<'a> Ui<'a> {
     pub fn new(theme: &'a Theme, kit: Option<&'a KitFonts>, units: UiUnits) -> Self {
@@ -158,11 +167,24 @@ impl<'a> Ui<'a> {
         self.text_with_case(c, parent, role, size, tone, alpha, &text.to_uppercase())
     }
 
-    /// `text` as it is (a person's own: what they type in a field), in a
-    /// role at `size` cq, on one line. Labels use `text` (capitals).
+    /// `text` as it is (a sentence, a name, what a person types in a
+    /// field, a cvar name in Mono), in a role at `size` cq, on one line.
+    /// Labels use `text` (capitals).
     pub fn text_plain(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, text: &str) -> Entity {
-        let e = self.text_with_case(c, parent, role, size, tone, 1.0, text);
-        c.entity(e).insert(style::PlainText);
+        self.text_plain_a(c, parent, role, size, tone, 1.0, text)
+    }
+
+    /// A sentence on one line in its own case (`Role::Text` at `size` cq:
+    /// `SENTENCE`, `NOTE`).
+    pub fn sentence(&self, c: &mut Commands, parent: Entity, size: f32, tone: Tone, text: &str) -> Entity {
+        self.text_with_case(c, parent, Role::Text, size, tone, 1.0, text)
+    }
+
+    /// `text_plain` with the tone at `alpha`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_plain_a(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, alpha: f32, text: &str) -> Entity {
+        let e = self.text_with_case(c, parent, role, size, tone, alpha, text);
+        c.entity(e).insert(style::KeepCase);
         e
     }
 
@@ -177,14 +199,14 @@ impl<'a> Ui<'a> {
         .id()
     }
 
-    /// Text that wraps within its parent's width.
+    /// Text that wraps within its parent's width, in its own case: a
+    /// sentence (descriptions, help, dialog bodies) in `Role::Text`, whose
+    /// lines are 1.3 em (`TypeSpec::line`).
     pub fn paragraph(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, text: &str) -> Entity {
         c.spawn((
-            Text::new(text.to_uppercase()),
+            Text::new(text),
             UiText::new(role, size, tone),
-            // Wrapped lines need room: 1.5 lines.
             TextLayout::new(Justify::Left, LineBreak::WordBoundary),
-            bevy::text::LineHeight::RelativeToFont(1.55),
             ChildOf(parent),
         ))
         .id()
@@ -776,7 +798,7 @@ impl<'a> Ui<'a> {
             let shown = if ch == ' ' && face.plain { '\u{a0}'.to_string() } else { ch.to_string() };
             let t = self.text_with_case(c, cell, face.role, face.size, face.tone, 1.0, &shown);
             if face.plain {
-                c.entity(t).insert(style::PlainText);
+                c.entity(t).insert(style::KeepCase);
             }
             out.push(cell);
         }
@@ -786,13 +808,15 @@ impl<'a> Ui<'a> {
                 Some(cell) => (*cell, Val::ZERO),
                 None => (out.last().copied().unwrap_or(wrap), if n == 0 { Val::ZERO } else { percent(100.0) }),
             };
-            let w = self.units.hairline() * 2.0;
+            // Thin: one physical pixel, two on a window over 1440 lines;
+            // just after the character before it (at the boundary's left).
+            let w = self.units.hairline() * if self.units.phys(self.units.height) > 1440.0 { 2.0 } else { 1.0 };
             c.spawn((
                 Node {
                     position_type: PositionType::Absolute,
                     left,
                     top: percent(50.0),
-                    margin: UiRect { left: Val::Px(-w / 2.0), top: self.units.val(-0.5), ..default() },
+                    margin: UiRect { top: self.units.val(-0.5), ..default() },
                     width: Val::Px(w),
                     height: self.units.val(1.0),
                     ..default()
@@ -1051,11 +1075,15 @@ impl<'a> Ui<'a> {
             ))
             .id();
         let shown: String = if masked { "*".repeat(value.chars().count()) } else { value.to_string() };
+        // Typed text in the sentence face, its own case; stars in Mono.
+        let (role, size) = if masked { (Role::Mono, 0.66) } else { (Role::Text, TYPED) };
         if value.is_empty() && !typing {
             self.text(c, f, Role::Mono, 0.62, Tone::Fg3, placeholder);
             c.entity(f).insert(EditText { chars: Vec::new() });
         } else {
-            let face = Face { role: Role::Mono, size: 0.66, tone: Tone::Fg, plain: true };
+            // Typed text in the sentence face (`TYPED`), its own case;
+            // stars in Mono.
+            let face = Face { role, size, tone: Tone::Fg, plain: !masked };
             let k = caret.map(|k| (char_of(value, k.at), char_of(value, k.anchor)));
             let chars = self.edit_chars(c, f, &shown, face, k);
             c.entity(f).insert(EditText { chars });
@@ -1071,8 +1099,9 @@ impl<'a> Ui<'a> {
     }
 
     /// Key/value lines (the help pane's console name, default, range):
-    /// keys Mono .6 `fg_3` in a `kw` cq column, values `fg`, a hairline
-    /// under each.
+    /// keys Mono .6 `fg_3` in a `kw` cq column (capitals), values `fg` in
+    /// Mono as given (a cvar name in its lower case; callers upper-case
+    /// word values), a hairline under each.
     pub fn kv(&self, c: &mut Commands, parent: Entity, pairs: &[(&str, String)], kw: f32) -> Entity {
         let list = self.boxed(c, parent, UiStyle::column());
         for (k, v) in pairs {
@@ -1080,7 +1109,7 @@ impl<'a> Ui<'a> {
             self.hairline(c, line, Tone::Fg, 0.07);
             let kc = self.boxed(c, line, UiStyle { w: Some(kw), shrink: Some(0.0), ..UiStyle::row() });
             self.text(c, kc, Role::Mono, 0.6, Tone::Fg3, k);
-            self.text(c, line, Role::Mono, 0.6, Tone::Fg, v);
+            self.text_plain(c, line, Role::Mono, 0.6, Tone::Fg, v);
         }
         list
     }
@@ -1181,7 +1210,7 @@ struct Face {
     role: Role,
     size: f32,
     tone: Tone,
-    /// A person's own text (`style::PlainText`).
+    /// A person's own text, in its own case (`style::KeepCase`).
     plain: bool,
 }
 

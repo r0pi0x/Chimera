@@ -88,7 +88,7 @@ use chimera_client::client::{binds, ui_sound::UiCue};
 use chimera_core::console::{Console, ConsoleAppExt};
 use chimera_ui::{
     IconImages, KitFonts, Role, ScrollViews, Theme, Tone, UiClock, UiStyle, UiUnits,
-    controls::{self, Kind, State, Ui},
+    controls::{self, Kind, NOTE, SENTENCE, State, Ui},
     scroll::ScrollLocked,
 };
 
@@ -1684,8 +1684,10 @@ fn spawn(
         c.spawn((label, ChildOf(tag)));
         ui.text(c, help, Role::DisplayBold, 1.3, Tone::Fg, &d.help.title);
         let tx = ui.boxed(c, help, UiStyle { w_pct: Some(100.0), ..UiStyle::column() });
-        ui.paragraph(c, tx, Role::Mono, 0.62, Tone::Fg2, &d.help.text);
-        let kv: Vec<(&str, String)> = d.help.kv.iter().map(|(k, v)| (*k, v.clone())).collect();
+        ui.paragraph(c, tx, Role::Text, SENTENCE, Tone::Fg2, &d.help.text);
+        // Console names in their own (lower) case, other values in capitals.
+        let kv: Vec<(&str, String)> =
+            d.help.kv.iter().map(|(k, v)| (*k, if *k == "Console" { v.clone() } else { v.to_uppercase() })).collect();
         ui.kv(c, help, &kv, 6.0);
     }
 
@@ -1708,7 +1710,7 @@ fn spawn(
     let changed = d.changes;
     if d.ctx == Context::Host {
         ui.mark(c, st, Tone::Fg4, 0.42, 0.42);
-        ui.text(c, st, Role::Mono, 0.6, Tone::Fg3, "Your server's settings: some now, some from the next match");
+        ui.sentence(c, st, NOTE, Tone::Fg3, "Your server's settings: some now, some from the next match");
     } else {
         ui.mark(c, st, if changed > 0 { Tone::Acc } else { Tone::Fg4 }, 0.42, 0.42);
         let line = match changed {
@@ -1716,7 +1718,7 @@ fn spawn(
             1 => "1 change not applied".to_string(),
             n => format!("{n} changes not applied"),
         };
-        ui.text(c, st, Role::Mono, 0.6, if changed > 0 { Tone::Fg } else { Tone::Fg3 }, &line);
+        ui.sentence(c, st, NOTE, if changed > 0 { Tone::Fg } else { Tone::Fg3 }, &line);
     }
     let on_binds = names.get(s.tab).is_some_and(|n| n == "Controls");
     if on_binds {
@@ -1813,7 +1815,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                         // Refused: why, beside the box (threat as a mark).
                         let n = ui.boxed(c, vl, UiStyle { gap: Some(0.4), margin: Some([0.0, 0.0, 0.0, 0.6].into()), ..UiStyle::row() });
                         ui.mark(c, n, Tone::Threat, 0.36, 0.36);
-                        ui.text(c, n, Role::Mono, 0.5, Tone::Fg2, why);
+                        ui.sentence(c, n, NOTE, Tone::Fg2, why);
                     }
                 }
                 (Widget::Toggle, Pick::Choices(ch)) => {
@@ -1872,7 +1874,7 @@ fn keep_modal(c: &mut Commands, ui: &Ui, root: Entity, left: u64) {
     ui.text(c, m, Role::DisplayBold, 1.35, Tone::Fg, "Keep this display mode?");
     let big = ui.boxed(c, m, UiStyle { gap: Some(0.8), margin: Some([1.0, 0.0, 0.3, 0.0].into()), ..UiStyle::row() }.align(AlignItems::Baseline));
     ui.text(c, big, Role::DisplayBold, 2.6, Tone::Fg, &format!("{left}"));
-    ui.text(c, big, Role::Mono, 0.62, Tone::Fg2, "s, then it goes back");
+    ui.sentence(c, big, SENTENCE, Tone::Fg2, "s, then it goes back");
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
     let k = ui.button(c, acts, Kind::Primary, "Keep", Some("Enter"), 2.4, State::focused(true));
     c.entity(k).insert(SettingsAction::Keep);
@@ -1902,7 +1904,7 @@ fn leave_modal(c: &mut Commands, ui: &Ui, root: Entity, at: usize, changes: usiz
     ui.text(c, m, Role::DisplayBold, 1.35, Tone::Fg, "Apply your changes?");
     let line = if changes == 1 { "1 change is not applied yet.".to_string() } else { format!("{changes} changes are not applied yet.") };
     let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
-    ui.paragraph(c, tx, Role::Mono, 0.62, Tone::Fg2, &format!("{line} Apply keeps them and saves; Discard puts them back."));
+    ui.paragraph(c, tx, Role::Text, SENTENCE, Tone::Fg2, &format!("{line} Apply keeps them and saves; Discard puts them back."));
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
     let buttons = [(Kind::Primary, "Apply"), (Kind::Secondary, "Discard"), (Kind::Ghost, "Stay")];
     for (k, ((kind, label), action)) in buttons.into_iter().zip(LEAVE_CHOICES).enumerate() {

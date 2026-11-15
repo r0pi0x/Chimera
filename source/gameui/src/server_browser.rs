@@ -2024,6 +2024,7 @@ fn draw(
         s: (size.y / 720.0).clamp(0.6, 3.0),
         height: size.y,
         accent,
+        own_faces: false,
     };
     let root = commands
         .spawn((

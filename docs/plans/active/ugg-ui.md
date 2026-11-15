@@ -24,7 +24,7 @@ an ambient shader background), and an in-engine Showcase backdrop.
 
 | Need | Have | Where |
 |---|---|---|
-| One engine-owned layer over every game's HUD, sized for 720 lines and scaled by the window's height, one face, tooltips, text fitting | `OverlayRoot`, `OverlayLayer`, `overlay::scale`, `overlay::font` (Trebuchet MS), `overlay::fit`, `Tooltip` | `chimera/client/src/client/overlay.rs`; DESIGN.md "One HUD layer over several games' HUDs" |
+| One engine-owned layer over every game's HUD, sized for 720 lines and scaled by the window's height, one face, tooltips, text fitting | `OverlayRoot`, `OverlayLayer`, `overlay::scale`, `overlay::font` (our text face, UGG Display), `overlay::fit`, `Tooltip` | `chimera/client/src/client/overlay.rs`; DESIGN.md "One HUD layer over several games' HUDs" |
 | Games kept off that layer | `games_leave_the_overlay_alone` (a game crate naming `overlay` or `UiScale` fails) | `checks/tests/it/architecture.rs` |
 | One layout at 16:9, 4:3, 21:9 under every game's HUD | `the_overlay_is_laid_out_alike_under_every_games_hud` | `apps/party_kit/tests/it/overlay_guard.rs` |
 | Minigame panel (top centre), callouts, Tab board, match end, kill feed, respawn countdown, swap flash | `minigame_panel`, `callouts`, `minigame_scoreboard`, `match_end`, `kill_feed`, `respawn_countdown`, `swap_effect` | `chimera/client/src/client/` |
@@ -89,9 +89,10 @@ text, sprite) and `chimera_core` (console cvars) only, so
 - `theme`: `Theme` (resource) read from TOML: palette tokens, the type
   roles, motion durations and easings, layout numbers per screen (2.3).
 - `fonts`: `KitFonts` (handles of the four faces, registered with
-  `Font::from_bytes`), `Role` (`Wordmark`, `DisplayBlack`, `DisplayBold`,
-  `DisplayRegular`, `Mono`) to `TextFont` with weight, `ss02` where the
-  role says, letter spacing in em.
+  `Font::from_bytes`; `install`), `Role` (`Wordmark`, `DisplayBlack`,
+  `DisplayBold`, `DisplayRegular`, `Mono`, `Text`) to `TextFont` with
+  weight, `ss02` where the role says, letter spacing in em, line height
+  and case.
 - `units`: `Cq` (the look book's unit, 1 % of a 16:9 frame's width =
   12.8 px at 720 lines) to overlay pixels, `overlay::scale` applied;
   `snap_px` (a logical position to whole physical pixels).
@@ -123,16 +124,17 @@ Screens stay where they are, restyled from the theme:
   board, kill feed, rank-up toast, effects chips and banner, match end,
   the logo pass, the respawn countdown. They name no game and serve any
   app with a minigame; the Signal look comes from the `Theme` the app
-  inserts. Without one they keep today's look (`Theme::shell_default`:
-  Trebuchet MS, today's colours), so Lucker Party and plain games are
-  unchanged.
+  inserts. Without one they keep today's colours (`Theme::shell_default`,
+  in our faces since 2026-11-15), so Lucker Party and plain games keep
+  their layout.
 - **App screens** (`party_kit`, feature `present`): the main menu, the
   Esc menu, the backdrops, the Showcase. UGG-only data lives in
-  `apps/ultimate_gun_game/` (theme, fonts, menu data).
+  `apps/ultimate_gun_game/` (theme, menu data); the faces are
+  Chimera's (`chimera/ui/fonts/`).
 
 DESIGN.md "HUD layers" changes in M0: the overlay's face is the app's
-theme's (one set of faces for the whole layer, never a game's), Trebuchet
-MS only as the default theme's.
+theme's (one set of faces for the whole layer, never a game's); since
+2026-11-15 ours in every theme.
 
 ### 2.2 Game HUDs and the fallback HUD
 
@@ -214,19 +216,48 @@ numbers in the theme.
 
 Our own fonts (OFL-1.1, authored for this project) may be committed:
 
-- `apps/ultimate_gun_game/fonts/`: `ugg-display-black.ttf`,
+- `chimera/ui/fonts/` (moved from `apps/ultimate_gun_game/fonts/` on
+  2026-11-15: they are every app's faces now): `ugg-display-black.ttf`,
   `ugg-display-bold.ttf`, `ugg-display-regular.ttf`,
-  `ugg-mono-regular.ttf` (TTF, 8-20 KB each; no WOFF2 needed),
+  `ugg-mono-regular.ttf` (TTF, 19-40 KB each; no WOFF2 needed),
   `OFL.txt` (the licence with our copyright line and the Reserved Font
-  Name, if any) and `FONTLOG.txt` (version v0.4, what changed).
-- Loaded by the app at start (`include_bytes!` in the app crate, then
-  `Font::from_bytes` into `Assets<Font>`: no file I/O, the same on Linux
-  and Windows, works offscreen and headless), handed to `chimera_ui::
-  KitFonts`, referenced by family name and weight.
+  Name, if any) and `FONTLOG.txt` (version v0.5, what changed). v0.5
+  adds a real lower case, the missing ASCII and Latin-1
+  (`tools/fonts/lower.py`); the roles that must stay in capitals
+  upper-case their own text (`TypeSpec::upper`; `style::case_texts`
+  keeps a styled text in capitals however it is set later, `KeepCase`
+  opts out). `UGG_FONTS_LOWER=0` builds the old caps-only mapping.
+- Embedded in `chimera_ui` (`fonts::OWN`, `include_bytes!`) and loaded
+  once per app by `KitFonts::install` (`ChimeraUiPlugin` and the
+  client's `FontsPlugin`): `Font::from_bytes` into `Assets<Font>`, no
+  file I/O, the same on Linux and Windows, offscreen and headless.
+  Display Regular also replaces Bevy's default font, so text that names
+  no font is ours.
+- **Our faces everywhere** (user decision, 2026-11-15): every text the
+  shell and the apps draw is in UGG Display or UGG Mono: the kit's roles
+  in both themes (the shell's default too), the overlay layer
+  (`overlay::font`), the console and its overlay lines, chat lines and
+  hints, net_graph, the perf and debug readouts (and the egui debug UI),
+  the kill feed, the party apps' GameUI-look menus (`widgets::Look::
+  own_faces`). A game's own fonts stay where its own HUD or menu code
+  draws them (CS:S's, HL2:DM's and Combat Arms' HUDs and icon fonts,
+  GameUI's menus, VGUI panels, `game_text`), with the system faces their
+  schemes name.
+- **The sentence face** (`Role::Text`, `[type.text]`): Display Regular
+  in its own case, tracking .01 em, lines 1.3 em (the descenders reach
+  -200 units, 0.05 em under the faces' 850/-150 line box);
+  `controls::SENTENCE` (.86 cq) for bodies and help, `NOTE` (.72 cq) for
+  footnotes and status lines, `TYPED` (.74 cq) for typed text. Used for
+  the Settings help pane, dialog bodies (report, crash, leave, keep
+  display), notices and status lines, the Esc menu's paused and vote
+  lines, Join's "is locked" line, the lobby's waiting line and player
+  names, and typed text (`Ui::text_field`, `Ui::text_plain`; the old
+  system-face fallback `style::PlainText` is gone). Console and cvar
+  names show in lower-case Mono.
 - THIRD_PARTY.md lists code we copy from others; our own fonts are not
   third party, so no entry there. The README's "Assets, code and legal"
   section gets one line: the UGG fonts are ours, OFL-1.1, in
-  `apps/ultimate_gun_game/fonts/`. `no_game_assets_tracked` allows `.ttf`
+  `chimera/ui/fonts/`. `no_game_assets_tracked` allows `.ttf`
   under 1 MB already; a new check, `own_fonts_carry_their_licence`,
   requires an `OFL.txt` beside any tracked font file.
 - The font build scripts are ours too (open question 3).

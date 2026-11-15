@@ -162,7 +162,7 @@ fn a_fonts_glyphs_are_fitted_by_their_outlines_ink() {
     use chimera_ui::icon_ink::{fit_contain, glyph_shape};
     // Real outlines: a capital on the baseline, a dash high above it, a
     // comma hanging below it (an icon font's guns sit anywhere in the em).
-    let font = include_bytes!("../../../ultimate_gun_game/fonts/ugg-mono-regular.ttf");
+    let font = include_bytes!("../../../../chimera/ui/fonts/ugg-mono-regular.ttf");
     let (cap, dash, comma) = (
         glyph_shape(font, 'H').expect("H"),
         glyph_shape(font, '-').expect("-"),
