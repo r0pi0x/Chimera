@@ -8,6 +8,8 @@
 //!   a mount (`INFO.open`; specs/halo_ce/disc_image.md);
 //! - `maps`: the install's map cache files as Chimera's `MapData`
 //!   (`MAP_LOADER`; cache_file.md, structure_bsp.md): not written yet;
+//! - `movement`: `halo_ce:movement`, Chimera's placeholder walking under
+//!   Halo's id until specs/halo_ce/movement.md is implemented;
 //! - `parts`: what the game lends other games' apps (`PARTS`): nothing yet.
 //!
 //! `HaloPlugins` adds the game's parts after `crate::SimPlugins`; none yet
@@ -15,6 +17,7 @@
 
 pub mod maps;
 pub mod mount;
+pub mod movement;
 pub mod parts;
 
 pub use maps::MAP_LOADER;
@@ -103,13 +106,13 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
     ("tab", "+showscores"),
 ];
 
-/// Halo's parts, after `crate::SimPlugins`: the game registered (`INFO`);
-/// nothing else yet.
+/// Halo's parts, after `crate::SimPlugins`: the game registered (`INFO`) and
+/// its stand-in movement (`movement`).
 pub struct HaloPlugins;
 
 impl PluginGroup for HaloPlugins {
     fn build(self) -> PluginGroupBuilder {
-        PluginGroupBuilder::start::<Self>().add(RegisterGame(&INFO))
+        PluginGroupBuilder::start::<Self>().add(RegisterGame(&INFO)).add(movement::HaloMovementPlugin)
     }
 }
 

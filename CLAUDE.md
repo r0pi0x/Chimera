@@ -93,6 +93,9 @@ cargo run --features dev --bin ultimate_gun_game   # Ultimate Gun Game (every ga
 cargo run --features dev --bin ultimate_gun_game_server -- +map greybox   # its server
 cargo run --features dev --bin hl2dm -- --map hl2dm:dm_lockdown   # HL2:DM (its maps;
                                    # `hl2dm_server` its server)
+cargo run --features dev --bin halo_ce -- --map halo_ce:hangemhigh   # Halo: CE (the disc image in
+                                   # $CHIMERA_HALO_CE_ROOT; no map: the greybox;
+                                   # `halo_ce_server` its server)
 tools/agent-slot.sh acquire <branch>   # an agent's warm checkout: cd to the
                                    # printed path, work and commit there; then
                                    # `tools/agent-slot.sh release` (OBSERVABILITY 3e)

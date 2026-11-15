@@ -7,6 +7,7 @@
 //! docs/OBSERVABILITY.md, section 1.
 
 mod info;
+mod movement;
 mod skeleton;
 
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
