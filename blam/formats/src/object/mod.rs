@@ -18,9 +18,10 @@
 //!   evaluation of one or all four at a time from incoming inputs, with the
 //!   periodic tables the shaders share (`crate::shader::PeriodicTables`).
 //!
-//! Where another spec owns a derived class's fields (vehicles, projectiles)
-//! the reader stops at the offset the objects spec states: `Vehicle` holds
-//! the object and unit layers, `Projectile` the object layer.
+//! Where another spec owns a derived class's fields (vehicles) the reader
+//! stops at the offset the objects spec states: `Vehicle` holds the object
+//! and unit layers. The projectile's own fields are `crate::projectile`'s
+//! (`Projectile` is re-exported here).
 //!
 //! Known shortcuts:
 //! - Out-of-table enumerations are refused at read time (the error names the
@@ -64,6 +65,7 @@ pub use device::{
 pub use function::{
     BoundsMode, FunctionFlags, FunctionOutput, ObjectFunction, TransitionFunction, attachment_function, evaluate_all, object_time,
 };
+pub use crate::projectile::Projectile;
 pub use item::{EquipmentPart, ItemBase, ItemFlags, Powerup};
 pub use unit::{
     BipedFlags, BipedInput, BipedPart, BlipSize, CameraTrack, ContactPoint, DialogueVariant, PoweredSeat, Seat,
@@ -347,13 +349,6 @@ pub struct Garbage {
     pub item: ItemBase,
 }
 
-/// A projectile tag as far as the objects spec goes: the object layer
-/// (projectiles.md owns the rest, from 0x17C).
-#[derive(Clone, Debug, PartialEq)]
-pub struct Projectile {
-    pub object: ObjectBase,
-}
-
 /// A scenery tag: the object layer (128 bytes of padding follow).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scenery {
@@ -414,8 +409,6 @@ macro_rules! simple_reads {
 }
 
 simple_reads! {
-    /// Read a `proj` tag's object layer.
-    Projectile, class::PROJECTILE, "projectile", size::PROJECTILE, ObjectType::Projectile;
     /// Read a `scen` tag.
     Scenery, class::SCENERY, "scenery", size::SCENERY, ObjectType::Scenery;
     /// Read an `ssce` tag.
@@ -530,7 +523,7 @@ pub enum ObjectTag {
     Weapon(crate::weapon::Weapon),
     Equipment(Equipment),
     Garbage(Garbage),
-    Projectile(Projectile),
+    Projectile(crate::projectile::Projectile),
     Scenery(Scenery),
     Machine(Machine),
     Control(Control),
@@ -550,7 +543,7 @@ impl ObjectTag {
             class::WEAPON => ObjectTag::Weapon(crate::weapon::Weapon::read(map, tag)?),
             class::EQUIPMENT => ObjectTag::Equipment(Equipment::read(map, tag)?),
             class::GARBAGE => ObjectTag::Garbage(Garbage::read(map, tag)?),
-            class::PROJECTILE => ObjectTag::Projectile(Projectile::read(map, tag)?),
+            class::PROJECTILE => ObjectTag::Projectile(crate::projectile::Projectile::read(map, tag)?),
             class::SCENERY => ObjectTag::Scenery(Scenery::read(map, tag)?),
             class::DEVICE_MACHINE => ObjectTag::Machine(Machine::read(map, tag)?),
             class::DEVICE_CONTROL => ObjectTag::Control(Control::read(map, tag)?),
