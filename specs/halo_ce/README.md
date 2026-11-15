@@ -48,7 +48,7 @@ port adds the ones below.
 | sounds.md | 1 | planned | sound tags and the Xbox's compressed format |
 | animations.md | 1 | planned | animation graphs and compressed node animations |
 | objects.md | 2 | planned | object, unit, biped, item and scenery tags as data |
-| movement.md | 2 | planned | the player's movement |
+| [movement.md](movement.md) | 2 | draft | the player's movement |
 | health_shields.md | 2 | planned | vitality, shields, damage by material and region |
 | weapons.md | 2 | planned | weapons, with every multiplayer weapon's numbers |
 | projectiles.md | 2 | planned | projectiles, damage effects, grenades |
