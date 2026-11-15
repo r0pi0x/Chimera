@@ -675,7 +675,7 @@ Console commands on the server's stdin (type in its window; run it inside
 `tick_stats` (the last ticks' cost and the server's memory),
 `minigames`, `minigame_status`, `minigame_restart`,
 `change_match <minigame> [map]`, `ugg_new [seed] [rungs]` (a new ladder now;
-a seed replays one), `parts` (what each game lends), `changelevel <map>`
+a seed replays one), `rung <n|gun id|next|prev|list> [player|all]` (put a player on a rung: a developer command; `sandbox` is the solo version), `parts` (what each game lends), `changelevel <map>`
 (the next match there, with its lobby; no map: the next match on a map
 drawn for the players present), `map_pool [players]` (the pool at that
 count), `quit` (Ctrl+C is the same).

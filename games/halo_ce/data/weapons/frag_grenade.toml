@@ -2,7 +2,7 @@
 # user's choice of presentation): the pistol in hand with an empty
 # magazine and no reserve that nothing refills (its numbers, models and
 # animations are the pistol's: `base`), the frag grenades thrown with the
-# grenade button by the ladder's grenade-band supply rule. Its id is the
+# grenade button by a supply that comes back over time (refill_seconds). Its id is the
 # frag grenade's own (the kill feed's name and icon, the ladder's rung).
 # Halo's own app has no ladder and never hands it out.
 id = "halo_ce:frag_grenade"
@@ -28,3 +28,10 @@ verb = "throw"
 [hooks."halo_ce:grenade_rung"]
 kind = "frag"
 action = "grenade"
+# The most frags the holder has (arriving, and every new life, gives this
+# many).
+max = 4
+# Seconds of simulation time for one thrown frag to come back, one at a
+# time while the count is below `max` (the party ladder's refill), so the
+# rung cannot be spammed.
+refill_seconds = 5.0
