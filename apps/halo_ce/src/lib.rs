@@ -1,8 +1,8 @@
 //! The Halo: Combat Evolved app's glue (apps/halo_ce, crate `halo_ce_app`):
 //! what composes Chimera and Halo (games/halo_ce) into the game binary
 //! (`halo_ce`, main.rs). M1 of docs/plans/active/halo-ce.md: the greybox
-//! with Halo's stand-in movement (`halo_ce::game::movement`), and the
-//! disc's maps (`--map halo_ce:<name>`) as their loader lands.
+//! with Halo's movement (`halo_ce::game::movement`), and the disc's maps
+//! (`--map halo_ce:<name>`).
 //!
 //! `SimPlugin`: the simulation as the binary runs it (its tests run it on
 //! the headless harness, tests/it/).
@@ -49,7 +49,7 @@ pub static APP: GameApp = GameApp {
     info: &game::INFO,
     title: "Halo: Combat Evolved",
     about: || {
-        "halo_ce: Halo: Combat Evolved on Chimera (M1: the greybox with a stand-in movement;\n\
+        "halo_ce: Halo: Combat Evolved on Chimera (Halo's movement on the greybox;\n\
          --map halo_ce:<name>, e.g. halo_ce:hangemhigh, from the disc image named by\n\
          $CHIMERA_HALO_CE_ROOT or [games.halo_ce] path, else the greybox).\n"
             .into()
