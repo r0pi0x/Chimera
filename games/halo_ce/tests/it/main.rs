@@ -29,6 +29,7 @@ mod party_balance;
 mod death;
 mod fx;
 mod fx_place;
+mod gun_displays;
 mod hud;
 mod hud_score;
 mod info;
@@ -67,6 +68,7 @@ mod heavy {
     mod body;
     mod death;
     mod fx;
+    mod gun_displays;
     mod hud;
     mod ladder;
     mod looks;
