@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 
 /// Folders searched for Rust files, in the order of the module list.
 const ROOTS: &[&str] = &[
-    "chimera", "source", "lithtech", "games", "apps", "tools", "checks", "src",
+    "chimera", "source", "lithtech", "blam", "games", "apps", "tools", "checks", "src",
 ];
 /// Longest summary in the module list, in characters.
 pub const MODULE_LINE: usize = 150;
@@ -163,7 +163,7 @@ fn sources(root: &Path) -> Vec<String> {
 fn group(path: &str) -> String {
     let parts: Vec<&str> = path.split('/').collect();
     match parts[0] {
-        "chimera" | "source" | "lithtech" | "games" | "apps" | "tools" if parts.len() > 2 => {
+        "chimera" | "source" | "lithtech" | "blam" | "games" | "apps" | "tools" if parts.len() > 2 => {
             format!("{}/{}", parts[0], parts[1])
         }
         _ => parts[0].to_string(),

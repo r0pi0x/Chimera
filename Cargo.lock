@@ -2414,6 +2414,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "blam_formats"
+version = "0.1.0"
+dependencies = [
+ "chimera_vfs",
+ "toml",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
