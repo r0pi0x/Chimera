@@ -26,6 +26,22 @@ fn install_mount() -> Option<Mount> {
     mount::open(&install).ok()
 }
 
+/// Whether the cache can write here: room for a whole entry (a gigabyte at
+/// most) above the disk's free-space floor, else the cache skips its write
+/// (`chimera_assets::disk`) and a miss never becomes a hit. Says why not.
+fn room_for_entries(dir: &std::path::Path) -> bool {
+    use chimera_core::mount::assets::disk;
+    let room = disk::has_room(dir, 1_000_000_000, &disk::space);
+    if !room {
+        eprintln!(
+            "skipping: less than a gigabyte above the disk's free-space floor at {} ({} sets the floor)",
+            dir.display(),
+            disk::FLOOR_ENV
+        );
+    }
+    room
+}
+
 fn scratch(name: &str) -> PathBuf {
     // Beside the user's cache, on disk: a whole entry is a gigabyte, and
     // the temporary folder may be memory (tmpfs).
@@ -119,6 +135,9 @@ fn entry_size(dir: &std::path::Path) -> u64 {
 fn cold_and_warm(options: &MapLoadOptions, what: &str) {
     let Some(mount) = install_mount() else { return };
     let dir = scratch(what);
+    if !room_for_entries(&dir) {
+        return;
+    }
     let cache = MapCache::at(&dir, u64::MAX);
     let (cold, o, t_cold) = load(&mount, options, None);
     assert_eq!(o, Outcome::Off);
@@ -173,6 +192,9 @@ fn a_changed_input_or_a_damaged_entry_converts_again() {
     // A loose folder in front of the install's layers: what a mod or a
     // patched file would be.
     let dir = scratch("inputs");
+    if !room_for_entries(&dir) {
+        return;
+    }
     let front = dir.join("front");
     std::fs::create_dir_all(front.join("maps")).unwrap();
     let mut mount = Mount::default();

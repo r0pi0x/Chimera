@@ -58,6 +58,22 @@ fn digest(map: &MapData) -> Vec<(&'static str, u64)> {
     ]
 }
 
+/// Whether the cache can write here: room for a whole entry (a gigabyte at
+/// most) above the disk's free-space floor, else the cache skips its write
+/// (`chimera_assets::disk`) and a miss never becomes a hit. Says why not.
+fn room_for_entries(dir: &std::path::Path) -> bool {
+    use chimera_core::mount::assets::disk;
+    let room = disk::has_room(dir, 1_000_000_000, &disk::space);
+    if !room {
+        eprintln!(
+            "skipping: less than a gigabyte above the disk's free-space floor at {} ({} sets the floor)",
+            dir.display(),
+            disk::FLOOR_ENV
+        );
+    }
+    room
+}
+
 fn load(mount: &Mount, cache: Option<&MapCache>) -> (MapData, Outcome, f32) {
     let t = Instant::now();
     let (map, o) = world::load_world_in(mount, "warehouse", &MapLoadOptions::default(), cache).expect("warehouse");
@@ -73,6 +89,9 @@ fn a_cached_warehouse_is_the_converted_one() {
         .unwrap_or_else(std::env::temp_dir);
     let dir = base.join(format!("maps-test-ca-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
+    if !room_for_entries(&dir) {
+        return;
+    }
     let cache = MapCache::at(&dir, u64::MAX);
     // The first load also reads the session's data once (weapons, effect
     // file): time a second cold one.
