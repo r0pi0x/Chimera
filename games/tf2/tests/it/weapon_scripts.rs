@@ -1,0 +1,178 @@
+//! The weapon scripts' numbers over the data (specs/tf2/weapon_scripts.md,
+//! "Test cases"): synthetic scripts made up here (invented numbers, never
+//! the game's) mapped onto the guns' documents (`script_numbers`), and a
+//! headless match (`Tf2Sim`) whose guns registered from them: the given
+//! guns carry the script's clip, pellets and interval, a Scattergun's shot
+//! does the script's damage, the rocket's blast is the script's, and each
+//! gun says where its numbers came from.
+
+use chimera_sim::weapon::{Hitscan, Magazine, Trigger, data::WeaponCatalog, give};
+use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
+use source_formats::keyvalues::{Kv, parse_pc};
+use tf2::{
+    game::{
+        TICK_INTERVAL,
+        scripts::{Script, ScriptSource},
+        weapons::{
+            FLAMETHROWER, GRENADE_LAUNCHER, ROCKET_LAUNCHER, SCATTERGUN, SNIPER_RIFLE, SHOTGUN,
+            rocket::RocketRules,
+            script_numbers::{GunNumbers, apply_script, gun_doc},
+        },
+    },
+    harness::Tf2Sim,
+};
+use toml::Table;
+
+fn plain(name: &str, text: &str) -> Script {
+    Script { name: name.into(), source: ScriptSource::Plain, root: parse_pc(text), note: None }
+}
+
+fn missing(name: &str) -> Script {
+    Script { name: name.into(), source: ScriptSource::Missing, root: Kv::Block(Vec::new()), note: Some("not in this test".into()) }
+}
+
+/// Invented scripts for four guns; every other gun has none.
+fn made_up(name: &str) -> Script {
+    match name {
+        "tf_weapon_scattergun" => plain(
+            name,
+            r#""WeaponData" { "WeaponType" "primary" "Damage" "7" "BulletsPerShot" "3" "Spread" "0.05"
+               "TimeFireDelay" "0.3" "clip_size" "5" "default_clip" "5" "TimeReload" "0.4" "TimeReloadStart" "0.01"
+               "Range" "1000" "PunchAngle" "2" "ProjectileType" "projectile_bullet" }"#,
+        ),
+        // Another root name, lower-case keys.
+        "tf_weapon_rocketlauncher" => plain(
+            name,
+            r#""SomethingElse" { "damage" "60" "DamageRadius" "120" "ProjectileType" "projectile_rocket" "clip_size" "3" }"#,
+        ),
+        "tf_weapon_grenadelauncher" => plain(
+            name,
+            r#""WeaponData" { "damage" "60" "DamageRadius" "120" "ProjectileType" "projectile_pipe" }"#,
+        ),
+        "tf_weapon_flamethrower" => plain(name, r#""WeaponData" { "Damage" "200" "TimeFireDelay" "0.03" }"#),
+        "tf_weapon_sniperrifle" => plain(name, r#""WeaponData" { "Damage" "3" "TimeFireDelay" "1.1" }"#),
+        // The kind check: a rocket's script on a shotgun.
+        "tf_weapon_shotgun_primary" => plain(name, r#""WeaponData" { "Damage" "99" "ProjectileType" "projectile_rocket" }"#),
+        _ => missing(name),
+    }
+}
+
+struct WithNumbers(GunNumbers);
+
+impl bevy::app::Plugin for WithNumbers {
+    fn build(&self, app: &mut bevy::app::App) {
+        app.insert_resource(self.0.clone());
+        bevy::app::Plugin::build(&Tf2Sim, app);
+    }
+}
+
+#[test]
+fn a_match_plays_with_the_scripts_numbers() {
+    let numbers = GunNumbers::with_scripts(made_up);
+    let source = |gun: &str| numbers.sources.iter().find(|s| s.gun == gun).unwrap().clone();
+    assert!(source(SCATTERGUN).from_script, "{:?}", source(SCATTERGUN));
+    assert!(source(ROCKET_LAUNCHER).from_script);
+    assert!(source(SNIPER_RIFLE).from_script, "its interval");
+    assert!(!source(SHOTGUN).from_script && source(SHOTGUN).source.contains("ProjectileType"), "{:?}", source(SHOTGUN));
+    assert!(source(tf2::game::weapons::MINIGUN).source.starts_with("spec fallback"));
+    assert_eq!(numbers.sources.len(), 12);
+
+    let mut sim = Sim::new(WithNumbers(numbers), GreyboxMapPlugin);
+    sim.set_tick_interval(TICK_INTERVAL);
+    let catalog = sim.app.world().resource::<WeaponCatalog>().clone();
+    let scatter = catalog.get(SCATTERGUN).unwrap();
+    assert_eq!(scatter.damage.as_ref().unwrap().amount, 7.0);
+    assert_eq!(scatter.hitscan.as_ref().unwrap().pellets, 3);
+    assert_eq!(scatter.hitscan.as_ref().unwrap().range, 56754.0, "Range isn't mapped");
+    assert_eq!(scatter.hitscan.as_ref().unwrap().punch_scale, 0.0, "PunchAngle isn't mapped");
+    let mag = scatter.magazine.as_ref().unwrap();
+    assert_eq!((mag.clip, mag.reload), (5, 0.4));
+    let shells = mag.shells.as_ref().unwrap();
+    assert_eq!((shells.start, shells.insert), (0.2, 0.4), "the start stays the data's");
+    // The rest of the base's tables stay (inherited, merged).
+    assert_eq!(scatter.damage.as_ref().unwrap().falloff_step, 1024.0);
+    let sniper = catalog.get(SNIPER_RIFLE).unwrap();
+    assert_eq!(sniper.trigger.as_ref().unwrap().cycle, 1.1);
+    assert_ne!(sniper.damage.as_ref().unwrap().amount, 3.0, "the rifle's Damage isn't its damage");
+    let flame = catalog.get(FLAMETHROWER).unwrap();
+    assert_eq!(flame.hooks["tf2:flame"]["damage"].as_float(), Some(15.0), "200 per second x 0.075, rounded");
+    assert_eq!(flame.trigger.as_ref().unwrap().cycle, 0.08, "its TimeFireDelay isn't the cycle");
+    let grenade = catalog.get(GRENADE_LAUNCHER).unwrap();
+    assert_eq!(grenade.hooks["tf2:grenade"]["radius"].as_float(), Some(120.0));
+    assert_eq!(catalog.get(SHOTGUN).unwrap().damage.as_ref().unwrap().amount, 6.0, "refused: the data's");
+
+    // The rocket's blast rules read the registered set: the script's
+    // damage, the data's radius (the rocket's script has none to map).
+    let rules = sim.app.world().resource::<RocketRules>();
+    let (rocket, _) = rules.get(ROCKET_LAUNCHER).unwrap();
+    assert_eq!((rocket.damage, rocket.radius), (60.0, 146.0));
+
+    // A player given the guns holds the script's numbers.
+    let p = sim.spawn_character(bevy::math::Vec3::new(0.0, 1.0, 0.0), tf2::game::movement::ID);
+    sim.seconds(0.5);
+    let w = give(sim.app.world_mut(), p, SCATTERGUN).unwrap();
+    let world = sim.app.world();
+    assert_eq!(world.get::<Magazine>(w).unwrap().clip, 5);
+    assert_eq!(world.get::<Hitscan>(w).unwrap().pellets, 3);
+    assert!((world.get::<Trigger>(w).unwrap().cycle - 0.3).abs() < 1e-6);
+    let r = give(sim.app.world_mut(), p, ROCKET_LAUNCHER).unwrap();
+    assert_eq!(sim.app.world().get::<Magazine>(r).unwrap().clip, 3);
+}
+
+/// The built-in numbers are the committed documents as they are.
+#[test]
+fn the_harness_plays_with_the_committed_numbers() {
+    let sim = Sim::new(Tf2Sim, GreyboxMapPlugin);
+    let numbers = sim.app.world().resource::<GunNumbers>();
+    assert!(numbers.is_builtin());
+    let catalog = sim.app.world().resource::<WeaponCatalog>();
+    assert_eq!(catalog.get(SCATTERGUN).unwrap().damage.as_ref().unwrap().amount, 6.0);
+}
+
+fn doc(text: &str) -> Table {
+    text.parse().unwrap()
+}
+
+const BULLET: &str = "id = \"tf2:x\"\nslot = 0\n[trigger]\ncycle = 0.3\n[magazine]\nclip = 9\nreload = 1.2\n[hitscan]\npellets = 1\nspread = { template = 0.01 }\n[damage]\namount = 5.0\n";
+
+#[test]
+fn the_spec_rows_on_a_bullet_gun() {
+    // Only Damage: the rest stays.
+    let mut d = doc(BULLET);
+    let a = apply_script(plain("x", r#""W" { "Damage" "7" }"#).data().unwrap(), &mut d);
+    assert_eq!(a.set, ["[damage] amount"]);
+    assert_eq!((d["trigger"]["cycle"].as_float(), d["magazine"]["clip"].as_integer()), (Some(0.3), Some(9)));
+    // clip -1: no clip, the data's.
+    let mut d = doc(BULLET);
+    apply_script(plain("x", r#""W" { "clip_size" "-1" }"#).data().unwrap(), &mut d);
+    assert_eq!(d["magazine"]["clip"].as_integer(), Some(9));
+    // A whole-clip gun's TimeReload isn't its reload.
+    let mut d = doc(BULLET);
+    apply_script(plain("x", r#""W" { "TimeReload" "0.3" }"#).data().unwrap(), &mut d);
+    assert_eq!(d["magazine"]["reload"].as_float(), Some(1.2));
+    // A secondary's script on a primary: nothing.
+    let mut d = doc(BULLET);
+    let a = apply_script(plain("x", r#""W" { "Damage" "7" "WeaponType" "secondary" }"#).data().unwrap(), &mut d);
+    assert!(a.refused.is_some() && a.set.is_empty());
+    assert_eq!(d["damage"]["amount"].as_float(), Some(5.0));
+    // AmmoPerShot and default_clip are noted, not applied.
+    let mut d = doc(BULLET);
+    let a = apply_script(plain("x", r#""W" { "clip_size" "8" "default_clip" "6" "AmmoPerShot" "2" }"#).data().unwrap(), &mut d);
+    assert_eq!(d["magazine"]["clip"].as_integer(), Some(8));
+    assert_eq!(a.notes.len(), 2, "{:?}", a.notes);
+}
+
+#[test]
+fn a_needle_gun_takes_the_damage_as_its_needles() {
+    let mut d = doc("id = \"tf2:n\"\nslot = 0\n[hooks.\"tf2:needle\"]\ndamage = 10.0\n");
+    let a = apply_script(plain("x", r#""W" { "Damage" "12" "ProjectileType" "projectile_syringe" }"#).data().unwrap(), &mut d);
+    assert_eq!(a.set, ["tf2:needle damage"]);
+    assert_eq!(d["hooks"]["tf2:needle"]["damage"].as_float(), Some(12.0));
+}
+
+#[test]
+fn a_gun_without_a_script_keeps_its_text() {
+    let (text, s) = gun_doc("tf2:x", BULLET, &missing("x"));
+    assert_eq!(text, BULLET);
+    assert!(s.source.starts_with("spec fallback"));
+}

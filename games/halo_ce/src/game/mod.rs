@@ -57,6 +57,15 @@
 //!   `Carried`) and replicates who sits where (`NetSeat`, net part
 //!   `halo_ce_vehicles`); in the party apps vehicles are placed only with
 //!   `halo_ce:party_vehicles` on (off by default);
+//! - `cross_game`: the party balance (the incoming scale, the armour
+//!   brought back, the power reader's hand);
+//! - `weapons::systems::BatteryRoundsPlugin`: what Halo's weapons state
+//!   to the engine beyond their own weapon code: the battery weapons'
+//!   rounds as a `Magazine`, the triggers that fire when released, each
+//!   shot as the engine's shot fact;
+//! - the front end's `ui::party_view` (the party zoom on the player's
+//!   field of view) and `ui::kill_icons` (the kill-feed icons from the
+//!   disc);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `audio`: looping sounds, the level's background sound, environment
@@ -75,6 +84,7 @@
 
 pub mod audio;
 pub mod body;
+pub mod cross_game;
 pub mod damage;
 pub mod fx;
 pub mod maps;
@@ -199,6 +209,7 @@ impl PluginGroup for HaloPlugins {
             .add(vitality::VitalityPlugin)
             .add(damage::DamagePlugin)
             .add(weapons::HaloWeaponsPlugin)
+            .add(weapons::systems::BatteryRoundsPlugin)
             .add(fx::HaloFxPlugin)
             .add(audio::HaloAudioPlugin)
             .add(body::HaloBodyPlugin)
@@ -237,6 +248,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         // Its guns as rungs: its movement (not the match's), its vitality
         // and damage seam, its weapons (`parts::add_guns`).
         parts::add_guns(app);
+        weapons::grenades::party(app);
         // Its players' body, worn by its guns' holders (`body`).
         app.add_plugins(body::HaloBodyPlugin);
         app.add_plugins(view::HaloViewPlugin);

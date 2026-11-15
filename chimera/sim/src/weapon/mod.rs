@@ -863,6 +863,14 @@ pub struct Weapon {
     pub max_speed: Option<f32>,
 }
 
+/// A fact about a weapon's primary trigger: it fires when RELEASED (a
+/// press only starts a charge; held, it charges). What pulls a trigger
+/// only to fire (a bot) taps it: a press, then a release. Absent: the
+/// trigger fires on the press (every engine-frame gun). Set by the game
+/// from its data (Halo's plasma pistol).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FiresOnRelease;
+
 /// A weapon's auto-switch priority (Source weapon scripts' `weight`): a
 /// player with `cl_autowepswitch` on draws a weapon it walks over when it
 /// weighs more than the one in hand (`drop::auto_switch`). None counts
@@ -1494,8 +1502,45 @@ pub struct ArmorHit {
     pub helmet: bool,
 }
 
+/// A scale on the damage each game's weapons deal, by the dealing
+/// weapon's game (an app made of several games tunes them against each
+/// other: the party apps' table, party_kit's data/party_damage.toml);
+/// a game it doesn't name deals as it is, and without the resource (each
+/// game's own app) nothing is scaled. `HitArmor` applies it to a weapon's
+/// hit before armour (the weapon's game: the firing gun's id for rounds
+/// and swings, `Damage::weapon` for blasts and projectiles, the game a
+/// game's own seam names: `HitArmor::apply_region_of`), not to the map's
+/// damage (`HitArmor::apply_environment`); the power curve counts it
+/// (`minigame::power::PowerReaders::game_damage`). Combat Arms' guns take armour in their own step
+/// (`combat_arms::game::weapons::armour_and_zone`), which doesn't read
+/// the table (Combat Arms' scale is 1 in the party's table).
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct GameDamage(pub std::collections::BTreeMap<String, f32>);
+
+impl GameDamage {
+    /// A table of `game = scale` (each finite, at least 0).
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let t: std::collections::BTreeMap<String, f32> = toml::from_str(text).map_err(|e| e.to_string())?;
+        if let Some((g, s)) = t.iter().find(|(_, s)| !(s.is_finite() && **s >= 0.0)) {
+            return Err(format!("{g} = {s}: a scale is a number, at least 0"));
+        }
+        Ok(Self(t))
+    }
+
+    /// `game`'s scale (1: not named).
+    pub fn of(&self, game: &str) -> f32 {
+        self.0.get(game).copied().unwrap_or(1.0)
+    }
+
+    /// The scale of weapon `id`'s game (`game:name`).
+    pub fn of_weapon(&self, id: &str) -> f32 {
+        self.of(id.split(':').next().unwrap_or(id))
+    }
+}
+
 /// The one place hits take armour: bullets, knives (`deliver`) and blasts
-/// (`grenade`). A hit takes armour only when it lands (`core::DamageRules::lands`):
+/// (`grenade`); where a weapon's hit takes its game's scale (`GameDamage`)
+/// first. A hit takes armour only when it lands (`core::DamageRules::lands`):
 /// a teammate's hit with friendly fire off, a noclipping or `God` target,
 /// a map's invulnerability or damage filter leave it whole (CS:S, measured
 /// 2026-10-17 for teammates and noclip: specs/cs_source/weapons.md
@@ -1505,6 +1550,7 @@ pub struct HitArmor<'w, 's> {
     armor: Query<'w, 's, (&'static mut Armor, Option<&'static ArmorPieces>, Option<&'static ArmorRatio>)>,
     rules: crate::core::DamageRules<'w, 's>,
     shares: Option<ResMut<'w, Messages<ArmourShare>>>,
+    game_damage: Option<Res<'w, GameDamage>>,
 }
 
 impl HitArmor<'_, '_> {
@@ -1524,9 +1570,58 @@ impl HitArmor<'_, '_> {
         self.apply_region(damage, region, raw, ratio, quantum)
     }
 
+    /// The scale of the game of `weapon` (an id, `game:name`, or a
+    /// game's name), else of `damage.weapon`, on a hit (`GameDamage`; 1
+    /// without the table or a weapon).
+    pub fn game_scale(&self, damage: &crate::core::Damage, weapon: Option<&str>) -> f32 {
+        let Some(table) = self.game_damage.as_deref().filter(|t| !t.0.is_empty()) else { return 1.0 };
+        weapon.or(damage.weapon).map_or(1.0, |id| table.of_weapon(id))
+    }
+
+    /// `apply` of the map's damage (a trigger's, `core::MapDamage`): no
+    /// game's scale.
+    pub fn apply_environment(&mut self, damage: &mut crate::core::Damage, raw: f32, ratio: Option<f32>, quantum: f32) -> ArmorHit {
+        let region = crate::core::BodyRegion::from_hitgroup(damage.hitgroup);
+        self.armour(damage, region, raw, ratio, quantum)
+    }
+
     /// `apply` on a body region (the damage's class by its kind,
-    /// `hits::DamageClass::of`).
+    /// `hits::DamageClass::of`), `raw` and `damage.amount` first scaled by
+    /// the game of `damage.weapon` (`game_scale`).
     pub fn apply_region(
+        &mut self,
+        damage: &mut crate::core::Damage,
+        region: crate::core::BodyRegion,
+        raw: f32,
+        ratio: Option<f32>,
+        quantum: f32,
+    ) -> ArmorHit {
+        self.apply_region_of(None, damage, region, raw, ratio, quantum)
+    }
+
+    /// `apply_region` of a hit dealt by `weapon` (an id, or a game's
+    /// name; None: `damage.weapon`), scaled by its game's.
+    pub fn apply_region_of(
+        &mut self,
+        weapon: Option<&str>,
+        damage: &mut crate::core::Damage,
+        region: crate::core::BodyRegion,
+        raw: f32,
+        ratio: Option<f32>,
+        quantum: f32,
+    ) -> ArmorHit {
+        let scale = self.game_scale(damage, weapon);
+        let raw = if scale != 1.0 {
+            damage.amount = deliver::quantize(damage.amount * scale, quantum);
+            raw * scale
+        } else {
+            raw
+        };
+        self.armour(damage, region, raw, ratio, quantum)
+    }
+
+    /// The armour step of `apply_region`, unscaled.
+    fn armour(
         &mut self,
         damage: &mut crate::core::Damage,
         region: crate::core::BodyRegion,
@@ -1601,7 +1696,7 @@ pub fn map_damage_armor(
         let mut d = m.damage.clone();
         let raw = d.amount;
         if m.armour {
-            armor.apply(&mut d, raw, Some(1.0), 0.01);
+            armor.apply_environment(&mut d, raw, Some(1.0), 0.01);
         }
         d.amount = crate::core::whole_points(d.amount);
         if d.amount > 0.0 {
@@ -1776,6 +1871,16 @@ pub enum WeaponEventKind {
         spread: SpreadShape,
         mode: u8,
     },
+    /// The fact that a weapon discharged one shot (a round, a shell, a
+    /// bolt, a rocket): from `origin` (the shooter's eye) along `dir`.
+    /// Sent by every weapon frame: the engine's once per `Fired`, a game
+    /// that runs its own (`OwnFrame`: Halo's) once per shot it fires.
+    /// Never replicated and never traced: it is what reacts to a shot
+    /// (a bot letting go of the trigger, pacing and re-aiming, its
+    /// hearing) that reads it. `Fired` stays the engine frame's command,
+    /// a hitscan round to trace and replicate (docs/DESIGN.md, "A shot
+    /// and the command to trace it").
+    ShotMade { id: &'static str, origin: Vec3, dir: Vec3 },
     /// One trace: from the eye to where it stopped.
     Shot {
         from: Vec3,
@@ -2035,6 +2140,8 @@ impl WeaponPartsItem<'_, '_> {
             mode: self.mode().max(1),
         };
         ctx.w.event(ctx.owner, self.entity, fired);
+        let made = shot_made(self.weapon.id, ctx);
+        ctx.w.event(ctx.owner, self.entity, made);
         if let Some(effect) = self.effect {
             let scan = Hitscan { pellets, ..scan.clone() };
             ctx.fire(&scan, effect, self.penetration);
@@ -2070,6 +2177,8 @@ impl WeaponPartsItem<'_, '_> {
                     mode: self.mode(),
                 };
                 ctx.w.event(ctx.owner, self.entity, fired);
+                let made = shot_made(self.weapon.id, ctx);
+                ctx.w.event(ctx.owner, self.entity, made);
                 // Without an effect the game delivers it (`Hitscan`).
                 if let Some(effect) = self.effect {
                     ctx.fire(scan, effect, self.penetration);
@@ -2224,6 +2333,7 @@ fn weapon_frame(
         let mut ctx = deliver::Shot {
             owner,
             weapon: active,
+            id: w.weapon.id,
             eye,
             aim: deliver::aim_of(yaw, pitch),
             yaw,
@@ -2784,5 +2894,15 @@ fn timed_sounds(
                 true
             }
         });
+    }
+}
+
+/// The shot fact (`WeaponEventKind::ShotMade`) of a `Fired` round of
+/// weapon `id` from `ctx`'s eye and angles.
+fn shot_made(id: &'static str, ctx: &deliver::Shot) -> WeaponEventKind {
+    WeaponEventKind::ShotMade {
+        id,
+        origin: ctx.eye,
+        dir: deliver::aim_of(ctx.yaw, ctx.pitch) * Vec3::NEG_Z,
     }
 }

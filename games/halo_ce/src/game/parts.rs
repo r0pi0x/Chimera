@@ -86,5 +86,6 @@ pub fn add_guns(app: &mut bevy::app::App) {
     if !app.is_plugin_added::<super::weapons::HaloWeaponsPlugin>() {
         super::movement::register(app);
         app.add_plugins((super::vitality::VitalityPlugin, super::damage::DamagePlugin, super::weapons::HaloWeaponsPlugin, super::fx::HaloFxPlugin));
+        app.add_plugins(super::weapons::systems::BatteryRoundsPlugin);
     }
 }

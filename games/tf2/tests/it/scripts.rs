@@ -133,6 +133,20 @@ fn the_reader_and_the_packers_layer_read_through_a_mount() {
     assert!(hidden.files_in("scripts").iter().all(|p| !p.ends_with(".ctx")));
 }
 
+/// The install's encrypted copy first and no key: the asset store's plain
+/// record under it serves (a host's server or a client with both).
+#[test]
+fn a_store_copy_under_an_encrypted_install_copy_serves_without_a_key() {
+    let plain = fixture();
+    let key = throwaway_key();
+    let enc = ice::encrypt_ctx(&CtxCipher::configured().ice(&key.0), &plain);
+    let mut mount = mount_of(&[("scripts/tf_weapon_fixture.ctx", enc)]);
+    mount.push(Files(vec![("scripts/tf_weapon_fixture.ctx".into(), plain)]));
+    let s = scripts::read(&mount, "tf_weapon_fixture", None);
+    assert_eq!(s.source, ScriptSource::Plain);
+    assert_eq!(s.data().and_then(|d| d.integer("Damage")), Some(6));
+}
+
 #[test]
 fn the_probe_finds_the_cipher_a_file_was_written_with() {
     let plain = fixture();

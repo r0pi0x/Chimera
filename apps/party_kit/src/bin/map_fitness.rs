@@ -59,6 +59,14 @@
 //!   top-down height map and the map's entities as files. `--bare`:
 //!   without the map logic; `--client`: loaded as a client loads it.
 //!
+//! - `--walker r,h,s`: the same flood with another body (half width,
+//!   height, highest step, m), printed against the bots' walker: both main
+//!   regions' areas, the spawn points off each, and the places the bots'
+//!   walker reaches and that body does not (the bots' areas no area of its
+//!   region covers, gathered within 3 m, largest first, in the map's own
+//!   units): e.g. a Spartan's 0.61,2.13,0.38 (walking) or 0.61,2.13,0.8
+//!   (the bots' jump-ups) on another game's map.
+//!
 //! Paths are Dijkstra over the mesh's areas, centre to centre (an area is
 //! at most 4 m a side, so paths come out a few percent long). One run
 //! speed for every game (`--speed`, default CS:S's 250 units/s, 6.35 m/s),
@@ -125,7 +133,10 @@ usage: map_fitness [options]
   --samples <n>      area samples for the path statistics (default 256)
   --min-free-gb <n>  wait while less memory than this is available (default 8)
   --write <repo>     then write games/<game>/data/map_fitness.toml under <repo> from the CSV
-  --csv <file>       with --write: write from this sweep's CSV, measuring nothing";
+  --csv <file>       with --write: write from this sweep's CSV, measuring nothing
+  --walker <r,h,s>   also flood with another walker (half width, height, highest step, m) and
+                     print what it reaches against the bots' walker: area, spawn points off its
+                     main region, and the places the bots' walker reaches and it does not";
 
 const N_PLAYERS: [usize; 5] = [2, 4, 8, 12, 16];
 const HEADER: &str = "game,map,loads,error,load_s,nav_s,spawns,spawns_in_region,own_nav,spots,spots_off,has_nav_file,off_region,off_nav_file,off_box,spots_off_at,stuck,stuck_at,spawn_min_m,spawn_median_m,\
@@ -164,6 +175,7 @@ struct Opts {
     min_free_gb: f64,
     write: Option<PathBuf>,
     csv: Option<PathBuf>,
+    walker: Option<[f32; 3]>,
 }
 
 fn parse() -> Result<Opts, String> {
@@ -183,6 +195,7 @@ fn parse() -> Result<Opts, String> {
         dump: false,
         write: None,
         csv: None,
+        walker: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -210,6 +223,13 @@ fn parse() -> Result<Opts, String> {
             "--min-free-gb" => o.min_free_gb = val()?.parse().map_err(|e| format!("--min-free-gb: {e}"))?,
             "--write" => o.write = Some(PathBuf::from(val()?)),
             "--csv" => o.csv = Some(PathBuf::from(val()?)),
+            "--walker" => {
+                let v: Vec<f32> = val()?.split(',').filter_map(|v| v.parse().ok()).collect();
+                let [r, h, step] = v[..] else {
+                    return Err("--walker radius,height,step".into());
+                };
+                o.walker = Some([r, h, step]);
+            }
             "-h" | "--help" => return Err(String::new()),
             _ => return Err(format!("unknown option {a}")),
         }
@@ -685,7 +705,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     // Held to where the map is played where it says (`nav_gen::NavWithin`).
     p.within = nav_gen::NavWithin::of(w);
     let vis = w.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
-    let (nav, spots) = {
+    let (nav, spots, other) = {
         let mut state = SystemState::<SpatialQuery>::new(w);
         let q = state.get(w).expect("the spatial query");
         let bounds = vis.as_deref().map(|vis| nav_gen::Bounds {
@@ -696,7 +716,13 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
         // The spawn spots' walker (`spawns::walker`).
         let spot_bounds = spot_bound.zip(vis.as_deref()).map(|(walker, vis)| nav_gen::Bounds { vis, walker });
         let spots = nav_gen::generate_within(&q, &|_| false, &feet, &spot_walker, spot_bounds);
-        (nav, spots)
+        // `--walker`: the same flood with another body.
+        let other = o.walker.map(|[radius, height, step]| {
+            let p = nav_gen::NavGenParams { radius, height, step, ..p };
+            let bounds = vis.as_deref().map(|vis| nav_gen::Bounds { vis, walker: chimera_sim::minigame::spawns::walker() });
+            nav_gen::generate_within(&q, &|_| false, &feet, &p, bounds)
+        });
+        (nav, spots, other)
     };
     row.nav_s = t.elapsed().as_secs_f32();
     // The map's teleporters as links of each mesh (`spot_checks::
@@ -724,6 +750,9 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     let ids: Vec<usize> = (0..nav.areas.len()).filter(|i| inside[*i]).collect();
     row.areas = ids.len();
     row.area_m2 = ids.iter().map(|i| size(*i)).sum();
+    if let Some(other) = &other {
+        compare_walker(w, id, &nav, &inside, &starts, other, &feet, &at);
+    }
     // On the main region: over one of its areas (0.75 m slack) within
     // 1.5 m of its floor.
     let on_region = |q: Vec3| {
@@ -1083,6 +1112,77 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
 
 /// The areas walked to from a spawn point and back (the spawn spots'
 /// region, `chimera_sim::minigame::spawns`), and each spawn point's area.
+/// `--walker`: what `other`'s main region reaches against the bots'
+/// (`nav`, its main region `inside`, the spawn points' areas `starts`):
+/// areas, the spawn points off it, and the bots' areas it misses gathered
+/// into places (within 3 m of each other), largest first, printed.
+#[allow(clippy::too_many_arguments)]
+fn compare_walker(
+    w: &mut World,
+    map: &str,
+    nav: &NavMesh,
+    inside: &[bool],
+    starts: &[Option<usize>],
+    other: &NavMesh,
+    feet: &[Vec3],
+    at: &dyn Fn(Vec3) -> String,
+) {
+    let links = party_kit::spot_checks::teleport_links(w, other);
+    let (o_inside, o_starts) = region(other, feet, &links);
+    let area = |m: &NavMesh, i: usize| {
+        let s = m.areas[i].max - m.areas[i].min;
+        s.x * s.y
+    };
+    let centre = |a: &chimera_world::map::nav::NavArea| {
+        let c = (a.min + a.max) / 2.0;
+        Vec3::new(c.x, a.height_at(c.x, c.y), c.y)
+    };
+    let a_bots: f32 = (0..nav.areas.len()).filter(|i| inside[*i]).map(|i| area(nav, i)).sum();
+    let a_other: f32 = (0..other.areas.len()).filter(|i| o_inside[*i]).map(|i| area(other, i)).sum();
+    let off = |ins: &[bool], st: &[Option<usize>]| -> Vec<usize> {
+        (0..feet.len()).filter(|k| !st.get(*k).copied().flatten().is_some_and(|i| ins[i])).collect()
+    };
+    let (off_bots, off_other) = (off(inside, starts), off(&o_inside, &o_starts));
+    // The bots' region's areas whose centre no area of the other's region
+    // covers (1 m of slack across, 1.5 m up and down).
+    let covered = |q: Vec3| {
+        (0..other.areas.len()).filter(|i| o_inside[*i]).any(|i| {
+            let a = &other.areas[i];
+            let (lo, hi) = (a.min - Vec2::splat(1.0), a.max + Vec2::splat(1.0));
+            q.x >= lo.x && q.x <= hi.x && q.z >= lo.y && q.z <= hi.y && (a.height_at(q.x, q.z) - q.y).abs() < 1.5
+        })
+    };
+    let missed: Vec<(Vec3, f32)> = (0..nav.areas.len())
+        .filter(|i| inside[*i])
+        .map(|i| (centre(&nav.areas[i]), area(nav, i)))
+        .filter(|(c, _)| !covered(*c))
+        .collect();
+    let mut places: Vec<(Vec3, f32, f32, f32)> = Vec::new(); // centre, m2, lowest, highest floor
+    for (c, a) in missed {
+        match places.iter_mut().find(|p| p.0.distance(c) < 3.0 + (p.1 / std::f32::consts::PI).sqrt()) {
+            Some(p) => {
+                p.0 = (p.0 * p.1 + c * a) / (p.1 + a);
+                p.1 += a;
+                p.2 = p.2.min(c.y);
+                p.3 = p.3.max(c.y);
+            }
+            None => places.push((c, a, c.y, c.y)),
+        }
+    }
+    places.sort_by(|a, b| b.1.total_cmp(&a.1));
+    println!(
+        "walker {map}: bots' region {a_bots:.0} m2, the walker's {a_other:.0} m2 ({:.0} %); spawn points off the region: bots' {} of {}, the walker's {} ({})",
+        100.0 * a_other / a_bots.max(1.0),
+        off_bots.len(),
+        feet.len(),
+        off_other.len(),
+        off_other.iter().map(|k| at(feet[*k])).collect::<Vec<_>>().join("; ")
+    );
+    for (c, a, lo, hi) in places.iter().take(10) {
+        println!("walker {map}:   missed {a:.0} m2 about {} (floors {lo:.1} to {hi:.1} m)", at(*c));
+    }
+}
+
 fn region(nav: &NavMesh, feet: &[Vec3], links: &[(usize, usize)]) -> (Vec<bool>, Vec<Option<usize>>) {
     party_kit::spot_checks::region_linked(nav, feet, links)
 }

@@ -85,6 +85,9 @@ pub struct FixtureKill {
     pub you_victim: bool,
     pub killer_bot: bool,
     pub victim_bot: bool,
+    /// A game's weapon id (`halo_ce:needler`): the row shows that gun (its
+    /// game's icon, else its name) instead of the class's made-up one.
+    pub weapon: Option<String>,
 }
 
 /// The kit's gun and mark names a fixture's class can be.
@@ -178,7 +181,8 @@ impl Fixture {
                 id: 2_000_000 + i as u64,
                 killer: Some(side(&k.killer, k.you_killer, k.killer_bot)),
                 victim: side(&k.victim, k.you_victim, k.victim_bot),
-                weapon: gun_id(&k.class),
+                // A staged scene's id lives as long as the process.
+                weapon: k.weapon.as_deref().map(|w| &*Box::leak(w.to_string().into_boxed_str())).or_else(|| gun_id(&k.class)),
                 kind: DamageKind::Bullet,
                 headshot: false,
                 suicide: false,

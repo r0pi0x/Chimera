@@ -34,3 +34,4 @@ from HL2:DM.** Every later TF2 spec continues it.
 | T5 | [weapons_more.md](weapons_more.md) | draft | the Pistol, SMG, Sniper Rifle (charge, headshots), Revolver, Grenade Launcher, Stickybomb Launcher, Flame Thrower and Syringe Gun: numbers, projectiles, assets, sounds, kill icons |
 | T6 | [hud.md](hud.md) | draft | the scheme's fonts and colours, the layout's scaling, the health, ammo, crosshair and kill feed panels, their animation events, the kill icons, the hit sound |
 | T7 | [player_animation.md](player_animation.md) | draft | the class player models' animations: include models, pose parameters, the move and aim grids, sequences by weapon kind, gestures, the spun minigun set, the held weapon's bone, hitboxes, ragdolls |
+| T8 | [weapon_scripts.md](weapon_scripts.md) | draft | the per-weapon `.ctx` scripts' fields: meaning, unit, type, which guns carry them, and how each maps onto our weapon TOML and hook params (applied, checked or ignored); no values |
