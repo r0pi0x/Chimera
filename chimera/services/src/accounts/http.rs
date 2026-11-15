@@ -164,6 +164,8 @@ struct DisplayName {
 impl Http {
     pub fn new(accounts: Arc<Accounts>, peers: Option<Peers>) -> Self {
         let log = OpenOptions::new().create(true).append(true).open(accounts.paths.access_log()).ok();
+        // Addresses and usernames: owner-only.
+        crate::restrict(&accounts.paths.access_log());
         Self { accounts, peers, log: Mutex::new(log), started: std::time::Instant::now() }
     }
 

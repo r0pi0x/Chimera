@@ -406,6 +406,66 @@ fn a_legacy_token_still_works() {
     assert_eq!((view.display_name.as_str(), view.devices[0].kind.as_str()), ("Old.Tester", "legacy"));
 }
 
+/// An import carries `accounts.toml`'s revocations over, also to accounts
+/// imported before, and never re-enables what the database revoked; a
+/// revocation made here reaches the file, so the asset service refuses the
+/// token itself too.
+#[test]
+fn an_import_carries_revocations_and_never_reenables() {
+    use chimera_assets::accounts::Accounts as Legacy;
+    let hub = Hub::new("legacy-revoked");
+    let path = Legacy::path(&hub.paths.store);
+    let mut legacy = Legacy::default();
+    let (_, gone) = legacy.add("gone", None, "pc").unwrap();
+    let (_, late) = legacy.add("late", None, "pc").unwrap();
+    let (_, kept) = legacy.add("kept", None, "pc").unwrap();
+    legacy.revoke("gone", None).unwrap();
+    legacy.save(&path).unwrap();
+    let import = |text: &str| -> serde_json::Value {
+        hub.admin.post("/admin/import-legacy", &serde_json::json!({ "toml": text })).unwrap()
+    };
+    let count = |v: &serde_json::Value, k: &str| v[k].as_u64().unwrap_or(0);
+    let file = || fs::read_to_string(&path).unwrap();
+    let state = |name: &str| hub.accounts().into_iter().find(|a| a.username == name).unwrap().state;
+    let ticket_status = |token: &str| account::legacy_ticket(&hub.running.url(), None, token).err().map(|e| status(&e));
+
+    // A token revoked before the import: its account comes in revoked.
+    let done = import(&file());
+    assert_eq!(count(&done, "accounts"), 3);
+    assert_eq!(state("gone"), "revoked");
+    assert_eq!(ticket_status(&gone), Some(401));
+    assert!(hub.remote(&gone).whoami().is_err());
+    assert_eq!(ticket_status(&late), None, "a live token gets tickets");
+
+    // Revoked in the file after the import: a re-import carries it over.
+    let mut legacy = Legacy::load(&path).unwrap();
+    legacy.revoke("late", None).unwrap();
+    legacy.save(&path).unwrap();
+    let again = import(&file());
+    assert_eq!((count(&again, "accounts"), count(&again, "skipped"), count(&again, "revoked")), (0, 3, 1));
+    assert_eq!(ticket_status(&late), Some(401), "no more tickets for a token the file revoked");
+    assert_eq!(state("late"), "revoked");
+
+    // Revoked here: the file follows, and importing the old file (the
+    // token still live in it) doesn't bring the account back.
+    let before = file();
+    assert!(hub.remote(&kept).whoami().is_ok());
+    hub.admin.post::<()>("/admin/account/revoke", &serde_json::json!({ "username": "kept" })).unwrap();
+    assert!(hub.remote(&kept).whoami().is_err(), "the asset service refuses the token itself");
+    let old = import(&before);
+    assert_eq!((count(&old, "accounts"), count(&old, "revoked")), (0, 0));
+    assert_eq!(state("kept"), "revoked");
+    assert_eq!(ticket_status(&kept), Some(401));
+
+    // A deleted account's token is revoked in the file, so an import
+    // brings it back revoked, never live.
+    hub.admin.post::<()>("/admin/account/delete", &serde_json::json!({ "username": "kept" })).unwrap();
+    let after = import(&file());
+    assert_eq!(count(&after, "accounts"), 1);
+    assert_eq!(state("kept"), "revoked");
+    assert_eq!(ticket_status(&kept), Some(401));
+}
+
 /// The admin API answers only this machine with the secret; other paths
 /// are 421; nothing is anonymous.
 #[test]
