@@ -218,6 +218,7 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
     teleporters::add(&scenario, &mut map);
     sky::add(level_sky.as_ref(), &bsp, &mut map, decode);
     super::weapons::pickups::add_entities(&file, &scenario, &mut map, options.kit.pickups());
+    super::rules::netgame::add_entities(&file, &scenario, &mut map, options.kit.pickups());
     Ok(map)
 }
 

@@ -595,25 +595,73 @@ rapid fire stacks the ticks up to 37. Bolts slowed by distance
 **Shield delay** is also called stun in the tag (minimum stun damage,
 stun time); it is the counter d above and does not slow anyone.
 
-**Pings (flinches).** After a hit that is not silent, on a living unit
-(or the killing hit), with no "does not ping units" flag on the damage
-effect:
+**Pings (flinches).** A ping is the unit's reaction animation to a hit.
+It is decided right after the hit's damage, in the same damage event,
+when all of these hold: the hit is not silent; the unit is alive before
+the hit or this hit kills it (a corpse never pings); the unit is not
+impervious; the damage effect does not have the "does not ping units"
+flag (no multiplayer effect has it, so **every damaging hit on a living
+player is considered**).
 
-- soft ping if c_b or c_s (after the hit) exceeds the unit's soft ping
-  threshold (0 on the Spartan: every hit); not restarted while a soft
-  ping animation is in its first 9 frames (soft ping interrupt ticks);
-- hard ping if c_b exceeds the hard ping threshold (1.0: never on the
-  Spartan, since c_b ≤ 1) unless the unit "resists pings" and the
-  effect does not "ping resistant units"; **forced** (soft and hard)
-  when this hit depleted the shield, destroyed a region, or was a
-  headshot as in step 8. A hard ping does not play in a seat.
-- direction: the signed angle between the hit's direction and the
-  unit's facing, both flattened to the ground plane: |angle| < 0.7854
-  back, > 2.1598 front, else left (positive) or right. In multiplayer,
-  a hard-ping kill on the head part always uses the left set.
-- the animation is picked by (soft ping, hard ping, soft kill, hard
-  kill) × direction × the node's damage part from the animation graph
-  (`animations.md`).
+1. **Which kind.** For a hit that does not kill: soft ping if c_b or
+   c_s (the current damage after the hit) exceeds the unit's soft ping
+   threshold (0 on the Spartan: every hit that did any damage); hard
+   ping if c_b exceeds the hard ping threshold (1.0 on the multiplayer
+   Spartan: never by amount, since c_b ≤ 1), unless the unit "resists
+   pings" (not the Spartan) and the effect does not "ping resistant
+   units". **Forced hard** (and pinging) when this hit depleted the
+   shield, destroyed a region, or set the forced-hard flag of a
+   multiplayer headshot (Applying a damage event, step 8). For the
+   killing hit: a hard kill if the unit's hard death threshold is above
+   0 and c_b exceeds it (the Spartan's is 0, so never by amount), or if
+   forced as above; otherwise a soft kill.
+2. **Direction.** The signed angle between the hit's direction of travel
+   and the unit's facing, both flattened to the ground plane:
+   |angle| < 0.7853982 back (the shot travels the way the unit faces,
+   so it came from behind), > 2.1598450 front, else left (positive) or
+   right. A hit with no horizontal direction (an explosion centred on
+   the unit) has angle 0: back. In a running multiplayer game a **hard
+   kill on the head part always uses the left set.**
+3. **Body part.** The damage part of the collision node that was hit
+   (`animations.md`, Index tables: gut, chest, head, left and right arm,
+   hand, leg, foot); a hit with no part (area damage, a vehicle's
+   passed-on hit) counts as gut.
+4. **Soft ping (not a kill, not hard).** If a soft ping is already
+   playing and its frame is at most the unit's soft ping interrupt
+   ticks (9 on the Spartan) nothing happens; otherwise the s-ping slot
+   for (direction, part) is looked up, a random permutation of it is
+   chosen, and it starts at frame 0 as an **overlay** on top of whatever
+   the body is doing (`animations.md`, Damage and death). It changes no
+   state, does not turn the body, and plays in a vehicle seat too.
+5. **Hard ping (not a kill).** Only if the unit is not seated, its state
+   lets a hard ping in (or a hard ping already running is past its
+   interrupt ticks) and the h-ping slot holds an animation. **The
+   multiplayer Spartan's graph has no h-ping animation**, so a forced
+   hard ping (the hit that breaks the shield but does not kill) shows
+   **nothing at all**: neither a hard nor a soft flinch.
+6. **Kill.** The s-kill or h-kill slot for (direction, part), or the
+   airborne set (Death, below).
+
+**The multiplayer Spartan's pings, from the disc.** All 44 s-ping slots
+(every direction and every part) hold the same animation, `s-ping front
+gut`, a 9-frame overlay with three permutations chosen at random. So for
+the Spartan neither the hit's direction nor its body part changes the
+flinch; only the random permutation does. It advances one frame per
+unit update and is removed by the update in which it reaches its last
+frame, so it is posed for 8 updates after the hit (frames 1 to 7, plus
+frame 0 if a pose is built between the hit and the victim's next
+update): about 0.27 s. Because frame ≤ 9 is always true for a 9-frame
+ping, **a second hit never restarts a running flinch**; a new one can
+start only after the old one is gone. While a soft ping plays, the
+weapon's hand IK is off (`animations.md`, Inverse kinematics).
+
+**What other machines see.** The Xbox game plays system link in
+lockstep: every machine simulates every hit from the same inputs and
+the same random seed, so each machine plays the same flinch (and the
+same permutation, and the same death) on the same tick; nothing about
+pings is sent. A port whose clients do not simulate hits must send each
+hit's outcome (the unit, soft ping or kill, the direction and part, the
+permutation chosen) to the clients, or they show no flinch.
 
 Camera shake and screen flashes of a hit belong to `effects.md`.
 
@@ -627,16 +675,205 @@ On the tick the body goes below zero (or an instant kill):
 2. Kill statistics: the kill is recorded against the instigator's
    player (below).
 3. The unit's reaction: the death animation by direction and part
-   (Pings), or the airborne death set if airborne. The unit stops
-   being controlled, loses its camouflage state, leaves its seat, and
-   drops its other weapons, its equipment and **all its grenades** (one
-   grenade object per grenade) at once; the held weapon is dropped
-   after a random delay between a quarter and three quarters of the
-   death animation's frames (at least 1 tick), or at once if the
-   killing effect's instantaneous acceleration is 2 or more. The body
-   is the biped itself (the Spartan uses limp body physics once the
-   animation ends, `animations.md`). The player is detached from the
-   unit; respawning is `multiplayer_rules.md`'s.
+   (Pings), or the airborne death set if airborne (The body, below).
+   The unit stops being controlled, loses its camouflage state, leaves
+   its seat, and drops its other weapons, its equipment and **all its
+   grenades** (one grenade object per grenade) at once; the held weapon
+   follows the weapon drop rule below. The death sound plays (Death
+   sounds, below). The player is detached from the unit; respawning is
+   `multiplayer_rules.md`'s.
+
+**The held weapon's drop.** When the kill chose a ground death
+animation of N frames, a delay D is drawn uniformly from the integers
+floor(N/4) .. floor(N/4) + floor(N/2) − 1 (at least 1); each unit update
+takes 1 off and the weapon is dropped by the update that brings it to
+0. It is dropped **at once** (in the death itself) when:
+
+- the killing damage effect's instantaneous acceleration is 2 WU/s or
+  more (on the disc: the frag and plasma grenade explosions and the
+  stuck plasma grenade, 4; the rocket and tank shell explosions, 6; the
+  needler's supercombine explosion, 2; every bullet, bolt, needle,
+  pellet, melee, flame, fall and vehicle effect is 0), or
+- the unit was airborne when killed (the airborne death draws no
+  delay), or
+- no death animation was found.
+
+| Death animation (Spartan) | N | D (ticks) |
+|---|---|---|
+| s-kill front gut | 69 | 17 to 50 |
+| s-kill front chest, h-kill left head, h-kill right head | 44 | 11 to 32 |
+| s-kill back gut | 43 | 10 to 30 |
+| s-kill left gut, s-kill right gut | 30 | 7 to 21 |
+| h-kill front gut | 46 | 11 to 33 |
+| h-kill front head | 60 | 15 to 44 |
+| h-kill left gut, h-kill right gut | 41 | 10 to 29 |
+| h-kill back gut | 40 | 10 to 29 |
+
+**Which death animation (the multiplayer Spartan).** Hard or soft
+(Pings, step 1): with a hard death threshold of 0, a kill is hard only
+when the killing hit also depleted the shield or was a headshot (and in
+a running game a hard head kill is always `h-kill left head`); every
+other kill is soft. The graph's 88 kill slots resolve to these
+animations (the empty slots were filled by the build tool):
+
+| Kind, direction | gut, legs, feet | chest, arms, hands | head |
+|---|---|---|---|
+| soft, front | s-kill front gut | s-kill front chest | s-kill front chest |
+| soft, left / right / back | s-kill left gut / right gut / back gut (every part) | same | same |
+| hard, front | h-kill front gut | h-kill front gut | h-kill front head |
+| hard, left / right | h-kill left gut / right gut | same as gut | h-kill left head / right head |
+| hard, back | h-kill back gut (every part) | same | same |
+
+So **a hand hit and an arm hit pick the same death** in every direction
+(and so do a leg and a foot); the part matters only between the lower
+body (gut, legs, feet), the upper body (chest, arms, hands) and the
+head, and only for frontal soft kills and hard kills. When a direction
+other than front was chosen but its animation is only a stand-in for
+the front one (the build tool copied the front animation into the
+slot), the direction is treated as front for the body's turn below.
+
+**The body's turn.** On a kill (and a hard ping), a biped that is not
+seated is turned at once so that the hit comes from the chosen side:
+for back its facing becomes the hit's horizontal direction, for front
+the opposite (it faces the shot's origin), for left the hit's
+direction turned 90 degrees anticlockwise, for right 90 degrees
+clockwise; up becomes world up. A hit with no horizontal direction
+turns nothing.
+
+### The body
+
+The body is the biped itself; it stays a unit with the dead flag. Its
+animation state machine (`animations.md`, Damage and death) runs every
+tick, and so does its movement while it is not at rest:
+
+1. **Killed on the ground.** The kill animation plays (3-tick blend
+   in), then holds its last frame.
+2. **Killed in the air** (the biped's airborne flag is set at the
+   kill): the state becomes dying-airborne at once and plays the seat's
+   `airborne-dead` animation (the Spartan's: 37 frames, loop frame 0,
+   so it repeats every 37 ticks while the body falls; 6-tick blend in).
+   No direction or part is used and no weapon delay is drawn.
+3. **Each tick of a dead biped**: if it has been airborne for 3 or more
+   consecutive updates, the wanted state is dying-airborne; otherwise
+   it is dying. The airborne count is raised at the start of the
+   biped's update while the airborne flag is set and reset to 0 at the
+   start of an update in which it is not, so **the landing death
+   starts one tick after the tick on which the body touched down**:
+   that update sees a count of 0, wants dying, and the change from
+   dying-airborne plays the seat's `landing-dead` animation (42 frames,
+   a body-fall sound at frame 2; 6-tick blend), with the body's bank
+   cleared and its facing snapped level. A body killed on the ground
+   and then thrown into the air (an explosion's push) switches to
+   dying-airborne after 3 airborne updates and to landing-dead on
+   landing, like one killed in the air; one airborne for only 1 or 2
+   updates keeps its ground death. (A body killed in its first 1 or 2
+   airborne updates, just after a jump, wants dying at once and shows
+   landing-dead while still rising, then airborne-dead from the third
+   update; an edge case.)
+4. **End of a ground death animation** (kill or landing-dead): the last
+   frame is held (each tick the frame steps back by one and is advanced
+   again) and the body's root translation is ignored from then on. On
+   each such tick, if the biped tag has "uses limp body physics" (the
+   Spartan does: biped flags bit 9) and the body is **at rest** and not
+   airborne, the limp body starts (below). The airborne death never
+   ends this way; it repeats until the landing.
+5. **At rest** means: on the ground, not airborne, no volatile contact,
+   and speed squared below 0.0001 (WU per tick)^2, that is below 0.01
+   WU per tick (0.3 WU/s). It is recomputed by each movement update. A
+   dead biped that is at rest **and** whose death animation has ended
+   skips its movement update entirely: it stays exactly where it is
+   (and stays at rest) until something pushes it.
+6. **A push** on a dead biped (any damage effect with an instantaneous
+   acceleration, `projectiles.md` behaviour 11) adds the full push (a
+   living biped takes half), stops the limp body, clears at rest, sets
+   the airborne flag and adds a random spin: angular velocity about
+   (up × push direction, normalised) of up to |push| × π/2 (uniform
+   fraction). The body then falls and slides with the normal biped
+   movement until it is at rest again, playing airborne-dead and
+   landing-dead by rule 3 if it is in the air long enough.
+
+**The limp body** (not a ragdoll: a short settling of the frozen pose
+onto the ground). When it starts, the node matrices stop being rebuilt
+from the animation: the pose is frozen as last posed, and for the next
+**20 unit updates** (one relaxation step per update) the nodes are
+moved, then never again (the frozen, relaxed pose stays until the body
+is pushed or deleted). Step k (k = 1 .. 20), with fraction f = k/20,
+r = the graph's limp body node radius (0 on the disc, so 0.03 WU; any
+value outside (0, 0.07] means 0.03):
+
+1. The collision surfaces near the body are gathered once (the
+   structure, scenery and machines within the bounding radius + 0.0625
+   WU; invisible surfaces ignored; no bipeds, vehicles or items).
+2. Four sweeps over the node tree (breadth first from the root, which
+   never moves). In the first sweep only, each node whose sphere of
+   radius r is free is moved down by f × 0.032086615 WU (9 times the
+   per-tick gravity of 0.0035651792) against the surfaces; if the move
+   was not deflected sideways, the move is accepted only if it keeps
+   the parent's joint within its limits (below), and only if it lowers
+   the node.
+3. In every sweep, the segment from the parent to the node (started
+   0.015 WU behind the parent, 1.03 times long) is tested against the
+   surfaces; if it crosses one and either end is embedded (its 0.03 WU
+   sphere touches a surface), the embedded end or ends are pushed out
+   along the surface normal by f × (their distance through the plane +
+   2.5 r).
+4. In every sweep, the bone is brought back toward its rest length
+   (the model's node distance from its parent, if between 0 and 10 WU):
+   correction c = (rest − current)/current; a node whose parent is not
+   the root moves its parent by −c/2 and itself by +c/2 of the parent-
+   to-node vector, both against the surfaces; a node whose parent is
+   the root moves only itself by c, unless it is embedded.
+5. Then each node's parent is rotated by the rotation that takes the
+   old parent-to-node direction to the new one, so the bones follow the
+   moved joints; a change of π/4 or more (and a zero change) is not
+   applied, nor is any child of a fixed parent.
+
+Joint limits come from the graph's node block: per node a joint type
+(flags bit 0 ball and socket, bit 1 hinge, bit 2 no movement), a base
+vector and a range in radians. Moving a node is allowed when its
+parent is not fixed and: for a hinge parent, the target is projected
+onto the plane through the parent with the parent's up as normal and
+accepted only if that point is free of the surfaces and not higher
+than the node; for a ball parent, if the parent's forward axis, rotated
+by the move, stays within the range of the base vector, and the move
+lowers the node; and a node whose parent moved follows it downward.
+The Spartan's graph (19 nodes): spine, spine1 and neck are fixed; both
+calves and forearms are hinges; everything else is ball and socket
+(ranges 1.39 to 2.79 rad).
+
+The whole settling lowers a free node by at most 0.032086615 × (1 + 2 +
+... + 20)/20 = 0.337 WU (about 1 m) over 20 ticks, much less on
+ground. **An implementation may approximate it** by holding the death
+animation's last frame and then, over 20 ticks, letting each limb node
+drop onto the ground under its bone-length and joint constraints; the
+visible error of simply holding the last frame is limbs hanging up to a
+few centimetres in the air or through a slope where the animation's
+ground differs from the level's.
+
+**Collision of a dead body.**
+
+| Against | Result |
+|---|---|
+| players and other living bipeds | no collision: the movement of every biped skips dead bipeds, so players walk through corpses |
+| vehicles | no collision: a vehicle neither hits nor pushes a corpse, and does not damage it |
+| shots, melee and explosions | hit as usual: a dead biped's collision model is tested by projectile rays and area damage like a living one's (in its current, possibly limp, pose); the hit damages nothing further (it is already dead) but its push moves the body (rule 6) |
+| the level | its own movement uses the structure, scenery and machines only (no bipeds, vehicles, items) |
+
+**How long a body lasts.** The body has an idle count, raised by 1
+every biped update in which it is dead **and** at rest, and reset to 0
+in any update in which it is not (it moves, is pushed, falls). In a
+running game, every tick, every dead biped whose idle count exceeds 900
+is deleted: a body vanishes on the 901st consecutive tick at rest
+(30.03 s). "No activity" therefore means only "not moving": being shot
+without a push does not reset it, a grenade's push does. A body that
+never comes to rest (sliding on a slope steeper than it can rest on)
+is never deleted by this rule.
+
+**Death sounds.** The unit's dialogue (`sounds.md`, Unit dialogue)
+chooses the death line at the moment of death; see there. In short, for
+the multiplayer Spartan: a quiet death line normally, a violent one for
+falls, flame and explosive (push 2 or more) kills; no pain lines exist,
+so living players make no sound when hit.
 
 **Credit.** Every hit with an instigator is recorded in the victim's
 list of 4 attackers (player, object, damage dealt, time; the oldest
@@ -743,8 +980,13 @@ Within one game tick (`movement.md` and `objects.md` give the rest):
 3. The objects' update, each object in turn. For each object:
    1. its type update; for a unit, first the unit part: camouflage
       step, **body stun counter step**, delayed weapon drop; then the
-      biped part (`movement.md`: movement, landing, **falling damage**;
-      the player's **melee** strikes here);
+      biped part (airborne count; `movement.md`: movement, landing,
+      **falling damage**; for a dead biped, the limp body step or the
+      dying/dying-airborne choice; the player's **melee** strikes
+      here), then the unit's animation update (soft ping advance, death
+      animation end, limp body start), then the body's idle count; the
+      unit's dialogue update (death line playback) is part of the unit
+      update;
    2. for objects with a collision model, the **damage update**: acts
       of god (scripted kills), then the shield step (Shield recharge),
       then the current/recent damage fades (below);
@@ -758,6 +1000,10 @@ Within one game tick (`movement.md` and `objects.md` give the rest):
 4. Players' update: pickups (health pack, overshield, camouflage),
    powerup timers count down (camouflage ends at 0).
 5. HUD and player screen effects.
+
+The game type's update of step 2 includes the purge: dead bipeds whose
+idle count (from the previous tick's updates) exceeds 900 are deleted,
+with unheld items (`multiplayer_rules.md` 5.4).
 
 **Damage fades** (in the damage update): each of the body and shield
 pairs has a timer, restarted to 0 by a hit (step 6.4 and step 8),
@@ -797,6 +1043,18 @@ No death check exists in the update: death happens inside the hit.
   multipliers (Quirks).
 - Ice (31) and hunter shield (32) material modifiers read 0 on every
   disc damage effect; no multiplayer body uses them.
+- The hit that breaks the shield without killing forces a hard ping,
+  and the Spartan has none: that hit shows no flinch at all, while the
+  hits before and after it flinch.
+- A kill by a frag grenade on the ground: the soft or hard kill
+  animation starts (3-tick blend), the weapon drops at once (push 4),
+  the push throws the body; after 3 airborne updates it switches to
+  airborne-dead, and to landing-dead the tick after it lands.
+- A player killed while seated: the kill animation is chosen after the
+  seat is left in the death (stand seat), so a rider dies like a
+  standing unit at the seat's position.
+- A body is pushed every 30 s by a teammate's grenade: its idle count
+  restarts each time and it is never deleted while that goes on.
 
 ## Quirks
 
@@ -930,6 +1188,21 @@ update in the same tick (Per-tick order).
 | κ = 1, pistol in hand | fire | | κ = 0.35; regrows 0.01 per tick |
 | κ = 1 | hit by an assault rifle bullet | | κ = 0.75 |
 | hit by AR, AR, AR on ticks 0, 1, 2 | | at the third hit; after the update of tick 2 | d = 180 (restarted), r_s = 0.4 (recent damage does not fade before 60 ticks); then d = 179 |
+| full, facing +X | AR bullet travelling along +X (from behind) on "body" | at the hit | angle 0: back; soft ping, animation `s-ping front gut` (one of 3 permutations), frame 0 |
+| same | AR bullet travelling along −X (from the front) / along −Y (from his left) | at the hit | angle π: front / angle +π/2: left; the same animation |
+| soft ping started at the hit on tick 0 | AR hit on tick 3 | | not restarted (frame 3 ≤ 9); the first ping is removed by the victim's update that reaches frame 8 |
+| full | pistol body shots 1, 2, 3, 4 | flinch | soft, soft, none (shield depleted: forced hard, no h-ping), soft |
+| full, facing +X | sniper on "head" from the front | death | hard kill forced, head part, multiplayer: left set, `h-kill left head` (44 frames); body turned to face the hit direction turned 90 degrees anticlockwise; weapon drop delay 11 to 32 ticks |
+| σ = 0, β = 0.1, facing +X | AR bullet from the front on "chest" / "left hand" / "left arm" / "left leg" | death | soft kill: `s-kill front chest` / `s-kill front chest` / `s-kill front chest` / `s-kill front gut` |
+| σ = 0, β = 0.1 | AR bullet from behind on any part | death | `s-kill back gut` (43 frames), weapon drop 10 to 30 ticks after |
+| σ = 0, β = 0.1 | frag explosion | death | weapon dropped in the death itself (push 4 ≥ 2); death line `deathviolent` |
+| σ = 0, β = 0.1, airborne 10 ticks into a fall | AR bullet | death | state dying-airborne, `stand airborne-dead` (6-tick blend), weapon dropped at once; repeats every 37 ticks while falling |
+| killed in the air, lands (touches down) during tick T | | | tick T: still airborne-dead; tick T + 1: `stand landing-dead` frame 0 (bodyfall sound when it reaches frame 2) |
+| killed on flat ground by an AR bullet, death animation of N frames | | | at rest from its first movement update; limp body starts on the update after the animation's end; 20 relaxation updates; deleted when its idle count reaches 901 (about 30 s after it stopped) |
+| a body at rest with idle count 600 | rocket explosion beside it | | push 0.14 WU/tick (full, dead), idle count 0, limp stopped, random spin; it starts counting again once at rest |
+| a player walks into a corpse | | | passes through it |
+| the multiplayer Spartan | killed by an AR bullet / by a fall / by a frag / by the flamethrower | death line | `deathquiet` / `deathviolent` / `deathviolent` / `deathviolent` |
+| the multiplayer Spartan | any non-lethal hit | | no pain line (the dialogue has none) |
 
 ## Confidence per section
 
@@ -943,8 +1216,10 @@ update in the same tick (Per-tick order).
 | f32 behaviour | inferred (the pistol's three-shot kill needs it) |
 | Shield recharge (delay, rate, linearity, timing) | rate and delay from the disc; the update logic reference only |
 | Health packs, overshield, camouflage | durations and types from the disc; logic reference only |
-| Stun and pings | thresholds and stun values from the disc; logic reference only |
+| Stun and pings | thresholds, stun values and the Spartan's damage table (every s-ping slot, no h-ping) from the disc; logic reference only; lockstep replication from the reference's netcode notes |
 | Death and credit | reference only |
+| The body (death states, landing tick, weapon drop, limp body, collision, 900-tick purge) | reference; the Spartan's flags, kill slots, frame counts, node joints and damage effects' accelerations from the disc; the limp body's exact node motion is reference only and was not simulated |
+| Death sounds | reference for the choice; the Spartan's dialogue tag read from the disc |
 | Melee (scale, unsuspecting rule) | effect values from the disc; logic reference only |
 | Friendly fire option | not found in the reference's damage code: inferred (Open questions) |
 | Shots-to-kill table | computed from the rules with the disc's numbers |
@@ -988,10 +1263,10 @@ update in the same tick (Per-tick order).
 7. **Frag grenade strength.** A centred frag does 120 points and
    leaves a full Spartan alive at 30 health points. Measure with a
    partner standing on a grenade.
-8. **Hard pings on shield break.** The rule forces a hard flinch when
-   the shield breaks; whether the multiplayer Spartan's animation
-   graph has hard ping animations (so that it shows) is
-   `animations.md`'s.
+8. **Hard pings on shield break** (settled): the Spartan's graph has no
+   h-ping animation, so the shield-breaking hit shows no flinch at all
+   (Pings, step 5). Measure if wanted: shoot a partner with the pistol
+   and watch the third (breaking) shot for a missing flinch.
 9. **Melee scale while strafing or backing**: the scale uses only the
    velocity along the facing (negative gives 0, the minimum damage).
    Measure: a backpedalling melee should do the standing 56 shield
@@ -1000,3 +1275,15 @@ update in the same tick (Per-tick order).
     body and 0 shield vitality, so by the reference's rules damage
     cannot destroy a vehicle. Measure: empty a rocket launcher into a
     parked warthog and a scorpion and check that they never blow up.
+11. **Limp body settle.** The limp body's node motion is stated from
+    the reference and not simulated here; how far the Spartan's limbs
+    actually move on flat ground (expected: centimetres) should be seen
+    in game by watching a corpse for the first second after its death
+    animation ends.
+12. **Death line severity for players.** For a unit with no AI the
+    "severe" test compares the recent body damage (a fraction of
+    vitality, at most 1) with the killing hit's body damage in points
+    plus 0.2, so it is true only for kills whose body damage is under
+    0.8 points; such kills would play `deathviolent` instead of
+    `deathquiet`. This mixes units and may be a slip in the original;
+    kept as stated.

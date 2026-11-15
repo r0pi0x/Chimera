@@ -904,6 +904,10 @@ pub fn compile(file: &MapFile, guns: &[&str], decode: bool) -> FxSet {
             c.set.library.pickups.insert(i, sound);
         }
     }
+    // The Spartan's animation sounds (its deaths': `body::death`).
+    for r in super::super::body::load::sound_tags(file) {
+        c.sound(&r);
+    }
     c.set
 }
 

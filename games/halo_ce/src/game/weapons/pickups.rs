@@ -5,13 +5,17 @@
 //! an item does.
 //!
 //! From the map to the simulation: the loader (`add_entities`) writes each
-//! netgame equipment entry eligible for free-for-all slayer as one map
-//! entity (`ENTRY_CLASS`: its position, levitate flag, own and collection
-//! spawn times, and its item collection's weighted items by tag), only
+//! netgame equipment entry as one map entity (`ENTRY_CLASS`: its position,
+//! levitate flag, own and collection spawn times, its game type slots and
+//! its item collection's weighted items by tag), only
 //! when the map's game is the gameplay's (`map::KitLoad::pickups`: a
 //! party's Halo map has none, as HL2:DM's: a ladder decides the guns), and
 //! the level's material types (`materials`). `spawn_entries` makes the
-//! entries from the map's entities.
+//! entries eligible for the game in play from the map's entities (the game
+//! type's base, `rules::items::ItemRules`; free-for-all slayer without
+//! one); the item clock passes each created item through the game type's
+//! substitution (`rules::items::substitute_item`: the weapon set, grenades
+//! and powerups by its options).
 //!
 //! The item clock (`clock`): game time is ticks since the entries were
 //! made; an entry creates its item whenever game time is a multiple of its
@@ -23,8 +27,9 @@
 //! created item's "last owned" time is advanced by its period less 900
 //! ticks, and every item not held for 900 ticks is deleted (so a map item
 //! untaken is replaced, the two overlapping one tick; a dropped weapon
-//! lives 901 ticks). A dead unit drops its Halo weapons where it died
-//! (`drop_on_death`), on a map whose pickups play.
+//! lives 901 ticks). A dead unit drops its Halo weapons and grenades where
+//! it died, the weapon in hand last (`drop_on_death`), on a map whose
+//! pickups play.
 //!
 //! Taking (`take`, each tick, an item within a living unit's bounding
 //! sphere): a powerup is used at once unless its effect refuses it
@@ -36,13 +41,13 @@
 //! which drops where the unit stands.
 //!
 //! Known shortcuts: items do not fall (a map item stays where the entry
-//! puts it, levitating or not; a dropped weapon where it was dropped); the
-//! weapon set substitution is set 0's (normal) and only the flamethrower
-//! and gravity rifle rule applies; the game type's options (no shields,
-//! invisible players, infinite grenades) are not read; a swap with a weapon
+//! puts it, levitating or not; a dropped weapon where it was dropped);
+//! without a game type's rules (a test's `HaloSim`) the weapon set is set
+//! 0's (only the flamethrower and gravity rifle rule); a swap with a weapon
 //! of the same tag (a fresher plasma weapon) is not offered; a dead
-//! player's weapons drop where its body stands, at once (no throw), and its
-//! grenades are not dropped.
+//! player's weapons and grenades drop where its body stands (no throw), the
+//! held weapon after its delay (not at once for a killing blow's push of 2
+//! or more: the push is not known here).
 
 use blam_formats::{
     cache::{MapFile, class},
@@ -70,9 +75,6 @@ pub fn add_entities(file: &MapFile, scenario: &Scenario, map: &mut MapData, pick
         return;
     }
     for (i, e) in scenario.netgame_equipment.iter().enumerate() {
-        if !e.eligible_for(GameType::Slayer) {
-            continue;
-        }
         let collection = blam_formats::weapon::ref_id(&e.item_collection)
             .and_then(|id| file.tag(id))
             .filter(|t| t.class == class::ITEM_COLLECTION)
@@ -97,6 +99,7 @@ pub fn add_entities(file: &MapFile, scenario: &Scenario, map: &mut MapData, pick
                 ("spawn_time".into(), e.spawn_time.to_string()),
                 ("collection_spawn_time".into(), collection.spawn_time.to_string()),
                 ("items".into(), items.join("|")),
+                ("game_types".into(), e.game_types.0.map(|g| g.to_string()).join(" ")),
             ],
             ..Default::default()
         });
@@ -119,6 +122,7 @@ use super::{
     systems::{HaloHands, HaloWeapon, halo_ticks},
     tick::HaloGun,
 };
+use super::super::rules::items::{ItemRules, substitute_item};
 use crate::{
     core::{Health, Intent, SimClock},
     map::MapEntities,
@@ -275,10 +279,8 @@ pub fn item_of(tag: &str, grenades: &GrenadeData, spartan: &super::super::vitali
     } else {
         tag
     };
-    if let Some((id, g)) = guns().into_iter().find(|(_, g)| g.tag.eq_ignore_ascii_case(tag)) {
-        let id = super::GUNS.into_iter().find(|i| *i == id)?;
-        let (loaded, reserve) = g.magazine.map_or((0, 0), |m| m.new_rounds());
-        return Some(Item::Weapon { id, loaded, reserve, age: 0.0 });
+    if let Some((id, _)) = guns().into_iter().find(|(_, g)| g.tag.eq_ignore_ascii_case(tag)) {
+        return new_weapon(&id);
     }
     if grenades.frag.tag.eq_ignore_ascii_case(tag) {
         return Some(Item::Grenade(FRAG));
@@ -293,17 +295,47 @@ pub fn item_of(tag: &str, grenades: &GrenadeData, spartan: &super::super::vitali
         .map(|(_, k)| Item::Powerup(k))
 }
 
-/// The entries from the map's entities (made again when they change; the
-/// clock starts at 0).
+/// Weapon `id` as a new item, its rounds a new weapon's.
+pub fn new_weapon(id: &str) -> Option<Item> {
+    let (_, g) = guns().into_iter().find(|(i, _)| i == id)?;
+    let id = super::GUNS.into_iter().find(|i| *i == id)?;
+    let (loaded, reserve) = g.magazine.map_or((0, 0), |m| m.new_rounds());
+    Some(Item::Weapon { id, loaded, reserve, age: 0.0 })
+}
+
+/// Whether a map entity's entry is eligible for `game` (its `game_types`;
+/// an entry without them is).
+pub fn eligible(e: &MapEntity, game: GameType) -> bool {
+    let Some(text) = e.get("game_types") else { return true };
+    let mut slots = [0i16; 4];
+    for (i, n) in text.split_whitespace().take(4).enumerate() {
+        slots[i] = n.parse().unwrap_or(0);
+    }
+    blam_formats::scenario::GameTypes(slots).eligible_for(game)
+}
+
+/// Start the item clock again (a fresh game on the same map): the entries
+/// are made again from the map, the items lying are gone, the clock at 0.
+pub fn restart(world: &mut World) {
+    if let Some(mut c) = world.get_resource_mut::<ItemClock>() {
+        c.seen = 0;
+    }
+}
+
+/// The entries from the map's entities eligible for the game in play
+/// (free-for-all slayer without a game type's rules, `rules::items::
+/// ItemRules`), made again when they change (the clock starts at 0).
 #[allow(clippy::type_complexity)]
 fn spawn_entries(
     entities: Option<Res<MapEntities>>,
     old: Query<Entity, Or<(With<NetgameEntry>, With<HaloItem>)>>,
+    item_rules: Option<Res<ItemRules>>,
     mut clock: ResMut<ItemClock>,
     mut commands: Commands,
 ) {
     let Some(map) = entities else { return };
-    let key = Arc::as_ptr(&map.entities) as usize;
+    let game = item_rules.map_or(GameType::Slayer, |r| r.game);
+    let key = Arc::as_ptr(&map.entities) as usize ^ (game.code() as usize) << 1;
     if clock.seen == key {
         return;
     }
@@ -312,7 +344,7 @@ fn spawn_entries(
     for e in &old {
         commands.entity(e).despawn();
     }
-    for e in map.entities.iter().filter_map(NetgameEntry::from_entity) {
+    for e in map.entities.iter().filter(|e| eligible(e, game)).filter_map(NetgameEntry::from_entity) {
         commands.spawn((Name::new(format!("halo_ce netgame equipment {}", e.index)), e));
     }
 }
@@ -327,6 +359,7 @@ pub fn clock(
     sim: Res<SimClock>,
     grenades: Res<GrenadeData>,
     spartan: Res<super::super::vitality::Spartan>,
+    item_rules: Option<Res<ItemRules>>,
     mut commands: Commands,
 ) {
     for _ in 0..halo_ticks(&sim) {
@@ -344,6 +377,14 @@ pub fn clock(
             }
             let r = rng.int_range(0, total as i32) as u32;
             let Some(item) = e.pick(r).and_then(|t| item_of(t, &grenades, &spartan)) else { continue };
+            // The game type's substitution (5.3).
+            let item = match &item_rules {
+                Some(ir) => match substitute_item(&ir.rules, ir.players, item, || rng.real()) {
+                    Some(i) => i,
+                    None => continue,
+                },
+                None => item,
+            };
             debug!("halo_ce: entry {} makes {:?} at {}", e.index, item, now);
             commands.spawn((
                 Name::new("halo_ce item"),
@@ -505,38 +546,87 @@ fn swap(world: &mut World, unit: Entity, at: Vec3, id: &'static str, loaded: i16
     }
 }
 
-/// A dead unit's Halo weapons dropped where it died (multiplayer_rules.md
-/// 5.4: unattached from then, so they live 901 ticks; one that cannot be
-/// fired is deleted at once, weapons.md 3), on maps whose pickups play (a
-/// netgame entry exists: a party's gun game drops nothing).
-#[allow(clippy::type_complexity)]
+/// A dead unit's Halo weapons and grenades dropped where it died
+/// (health_shields.md "Death": its other weapons and every grenade, one
+/// item per grenade, at once; the weapon in hand last, after a random
+/// delay of N/4 to N/2 + N/4 ticks of its death animation, N its frames,
+/// at least 1: `held_drop_delay`; multiplayer_rules.md 5.4: unattached
+/// from then, so they live 901 ticks; one that cannot be fired is deleted
+/// at once, weapons.md 3), on maps whose pickups play (a netgame entry
+/// exists: a party's gun game drops nothing).
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn drop_on_death(
     mut died: MessageReader<chimera_core::core::Died>,
     entries: Query<(), With<NetgameEntry>>,
-    units: Query<(&Transform, &Inventory)>,
+    mut units: Query<(&Transform, &Inventory, Option<&mut HaloHands>)>,
     guns: Query<(&Weapon, &HaloGun, &HaloWeapon)>,
-    clock: Res<ItemClock>,
+    bodies: Query<&super::super::body::death::HaloCorpse>,
+    models: Option<Res<crate::map::CharacterModels>>,
+    (mut clock, sim): (ResMut<ItemClock>, Res<SimClock>),
+    mut pending: Local<Vec<(u32, Vec3, Item)>>,
     mut commands: Commands,
 ) {
     let deaths: Vec<Entity> = died.read().map(|d| d.entity).collect();
     if entries.is_empty() {
+        pending.clear();
         return;
     }
+    let item = |at: Vec3, item: Item, time: i64| {
+        (Name::new("halo_ce item"), Transform::from_translation(at), HaloItem { item, last_owned: time, entry: None })
+    };
+    // The held weapons whose delay ran out.
+    let n = halo_ticks(&sim);
+    pending.retain_mut(|(left, at, it)| {
+        *left = left.saturating_sub(n);
+        if *left == 0 {
+            commands.spawn(item(*at, it.clone(), clock.time));
+            return false;
+        }
+        true
+    });
+    let set = models.as_deref().and_then(|m| m.0.iter().find(|m| m.game == Some(super::super::GAME))?.animations.clone());
     for unit in deaths {
-        let Ok((at, inv)) = units.get(unit) else { continue };
+        let Ok((at, inv, hands)) = units.get_mut(unit) else { continue };
+        let at = at.translation;
         for w in &inv.weapons {
             let Ok((weapon, g, hw)) = guns.get(*w) else { continue };
             let size = hw.0.magazine.map_or(0, |m| m.rounds_loaded_maximum);
             if g.age >= 1.0 || (size > 0 && g.loaded <= 0 && g.reserve <= 0) {
                 continue;
             }
-            commands.spawn((
-                Name::new("halo_ce item"),
-                Transform::from_translation(at.translation),
-                HaloItem { item: Item::Weapon { id: weapon.id, loaded: g.loaded, reserve: g.reserve, age: g.age }, last_owned: clock.time, entry: None },
-            ));
+            let it = Item::Weapon { id: weapon.id, loaded: g.loaded, reserve: g.reserve, age: g.age };
+            if inv.active == Some(*w) {
+                let frames = bodies
+                    .iter()
+                    .find(|b| b.owner == unit)
+                    .zip(set.as_deref())
+                    .map_or(1, |(b, set)| super::super::body::death::death_frames(set, &b.animation));
+                let mut rng = HaloRng(clock.rng);
+                let delay = held_drop_delay(frames as u32, &mut rng);
+                clock.rng = rng.0;
+                pending.push((delay, at, it));
+            } else {
+                commands.spawn(item(at, it, clock.time));
+            }
+        }
+        // Every grenade, one item each.
+        if let Some(mut hands) = hands {
+            for (kind, count) in [(FRAG, hands.throw.counts[0]), (PLASMA, hands.throw.counts[1])] {
+                for _ in 0..count {
+                    commands.spawn(item(at, Item::Grenade(kind), clock.time));
+                }
+            }
+            hands.throw.counts = [0, 0];
         }
     }
+}
+
+/// The held weapon's drop delay at death in ticks (health_shields.md
+/// "Death"): a draw between a quarter and three quarters of the death
+/// animation's `frames`, at least 1.
+pub fn held_drop_delay(frames: u32, rng: &mut HaloRng) -> u32 {
+    let (lo, hi) = (frames / 4, frames / 2 + frames / 4);
+    (rng.int_range(lo as i32, hi as i32).max(0) as u32).max(1)
 }
 
 /// Spawn an entry (tests and tools): what the map's entity would make.

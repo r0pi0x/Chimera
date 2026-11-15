@@ -113,7 +113,8 @@ ones in `tests/it/heavy/`), in the lowest crate whose API they need;
 scenario tests run on Chimera's `harness::Sim` with their layer's base
 (`SimBasePlugins` in Chimera, `CsSim` in cs_source); docs/OBSERVABILITY.md
 section 1 says where new ones go. `tools/post-push-tests.sh` runs the
-affected crates' tests (`CHIMERA_PUSH_TESTS=all`: everything, `=0`: none).
+affected crates' tests (`CHIMERA_PUSH_TESTS=all`: everything, `=fast`: the pushed commits'
+crates without heavy, `=0`: none; `.claude/post-push/mode` sets the default).
 Environment variables are `CHIMERA_*` and the local config
 `chimera.local.toml`; the old names (`MASHUP_*`, `mashup.local.toml`)
 still work.

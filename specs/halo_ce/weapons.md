@@ -473,10 +473,28 @@ not lower.
   player. Equipment named in a magazine's ammunition objects gives
   min(its rounds, rounds needed) and is deleted. (The trigger for
   these pickups is multiplayer_rules.md's.)
-- **Drop.** A dropped weapon leaves from the unit's "left hand" marker
-  if it was not attached, with velocity = a direction drawn in a cone of
-  pi/8 around the aim times a speed drawn in 0.0266667..0.04 WU/tick,
-  plus the dropper's velocity; it ignores the dropper for collision.
+- **Drop.** A dropped weapon leaves from where it is: the weapon in
+  hand from its place in the hand, any other item (a holstered weapon,
+  each carried grenade, equipment) from the unit's "left hand" marker,
+  in that marker's orientation. Its velocity and spin are first zeroed,
+  then it gets velocity = a direction drawn uniformly in a cone of pi/8
+  around the unit's aiming vector times a speed drawn in
+  0.0266667..0.04 WU/tick, plus the dropper's velocity (WU/tick), given
+  as a push, so it also starts tumbling (`objects.md`, Items in the
+  world: pushes). It ignores the dropper for collision until it first
+  comes to rest. Then a line from the unit's eye (camera position) to
+  the item's origin is traced against the level and water surfaces; if
+  it hits, the item is moved to the hit point, so an item is never
+  dropped through a wall the hand reaches past. (Outside a multiplayer
+  game an item that ends outside the level is deleted.) A unit flagged
+  "doesn't drop items" deletes it instead. At death each carried
+  grenade is created as its own grenade item (`weapons\frag
+  grenade\frag grenade` or `weapons\plasma grenade\plasma grenade`
+  equipment) and dropped this way, one at a time, each with its own
+  random velocity; in a multiplayer game each passes the item
+  substitution of `multiplayer_rules.md` 5.3 as it is created. How the
+  dropped item then falls, bounces and comes to rest, and how it lies,
+  is `objects.md`, Items in the world.
   In a multiplayer game a dropped weapon that cannot be fired (age 1,
   or both its loaded rounds and its reserve 0 in a magazine of nonzero
   size) is deleted. A unit that dies drops every weapon (the one in

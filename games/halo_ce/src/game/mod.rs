@@ -28,6 +28,8 @@
 //! - `body`: the players' Spartan body (model, animations from the graph's
 //!   unit tables, hit boxes from the collision model, armour colours), on
 //!   Halo's maps and, from the donor map, on any other;
+//! - `body::death`: a dead player's body, its death animation, sound
+//!   and removal;
 //! - `view`: the guns in hand: each gun's first-person view model with the
 //!   arms, played from the weapons' events one frame a tick, hidden while
 //!   zoomed, and its held model and stance; on Halo's maps and, from the
@@ -42,6 +44,9 @@
 //!   physics on the engine's collision, driving, seats, the seat camera
 //!   (`camera`) and the model's overlays (`look`), splatter and riders'
 //!   damage;
+//! - `rules`: Halo's game types (multiplayer_rules.md): the variant
+//!   chosen by `halo_ce:gametype`, slayer, capture the flag, king of the
+//!   hill, oddball, spawns, equipment and scoring, the match's view;
 //! - `respawn`: Halo's players' loadout and respawn by
 //!   multiplayer_rules.md 4 (`HaloRules`, Halo's own app only);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
@@ -65,6 +70,7 @@ pub mod mount;
 pub mod movement;
 pub mod parts;
 pub mod respawn;
+pub mod rules;
 pub mod sets;
 pub mod ticks;
 pub mod vehicles;
@@ -186,6 +192,7 @@ impl PluginGroup for HaloPlugins {
             .add(view::HaloViewPlugin)
             .add(respawn::HaloRespawnPlugin)
             .add(vehicles::HaloVehiclesPlugin)
+            .add(rules::HaloRulesPlugin)
     }
 }
 
