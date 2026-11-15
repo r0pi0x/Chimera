@@ -4,6 +4,7 @@
 
 mod controls;
 mod fonts;
+mod glyphs;
 mod icons;
 mod motion;
 mod scroll;

@@ -224,3 +224,15 @@ pub fn text(theme: &Theme, fonts: Option<&KitFonts>, role: Role, px: f32) -> Sty
         line: if spec.line == 1.0 { LINE_HEIGHT } else { LineHeight::RelativeToFont(spec.line) },
     }
 }
+
+/// Whether the font in `data` (the first face) maps a glyph for `ch`
+/// (its cmap; a space or control character always counts).
+pub fn has_glyph(data: &[u8], ch: char) -> bool {
+    if ch.is_whitespace() || ch.is_control() {
+        return true;
+    }
+    skrifa::FontRef::from_index(data, 0).is_ok_and(|f| {
+        use skrifa::MetadataProvider;
+        f.charmap().map(ch).is_some()
+    })
+}
