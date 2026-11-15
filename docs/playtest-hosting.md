@@ -23,9 +23,11 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net60` since Halo's match (its game type, team
-   scores, clock and game over) is sent to every client (net part
-   `halo_ce_match`); `net59` (Halo's players carry the grenade
+   The network version is `net61` since a dead Halo player's body is an
+   object of its own sent to every client (its death animation, colour and
+   fall: net part `halo_ce_corpses`); `net60` (Halo's match (its game
+   type, team scores, clock and game over) is sent to every client: net
+   part `halo_ce_match`), `net59` (Halo's players carry the grenade
    kind they have selected: the rotate-grenades button, `+grenade_switch`,
    rides the command's action bits; the kind is in the predicted state),
    `net58` (Halo's shots carry their trigger

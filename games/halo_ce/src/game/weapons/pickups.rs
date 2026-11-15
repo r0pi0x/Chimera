@@ -27,8 +27,9 @@
 //! created item's "last owned" time is advanced by its period less 900
 //! ticks, and every item not held for 900 ticks is deleted (so a map item
 //! untaken is replaced, the two overlapping one tick; a dropped weapon
-//! lives 901 ticks). A dead unit drops its Halo weapons where it died
-//! (`drop_on_death`), on a map whose pickups play.
+//! lives 901 ticks). A dead unit drops its Halo weapons and grenades where
+//! it died, the weapon in hand last (`drop_on_death`), on a map whose
+//! pickups play.
 //!
 //! Taking (`take`, each tick, an item within a living unit's bounding
 //! sphere): a powerup is used at once unless its effect refuses it
@@ -44,8 +45,9 @@
 //! without a game type's rules (a test's `HaloSim`) the weapon set is set
 //! 0's (only the flamethrower and gravity rifle rule); a swap with a weapon
 //! of the same tag (a fresher plasma weapon) is not offered; a dead
-//! player's weapons drop where its body stands, at once (no throw), and its
-//! grenades are not dropped.
+//! player's weapons and grenades drop where its body stands (no throw), the
+//! held weapon after its delay (not at once for a killing blow's push of 2
+//! or more: the push is not known here).
 
 use blam_formats::{
     cache::{MapFile, class},
@@ -545,38 +547,87 @@ fn swap(world: &mut World, unit: Entity, at: Vec3, id: &'static str, loaded: i16
     }
 }
 
-/// A dead unit's Halo weapons dropped where it died (multiplayer_rules.md
-/// 5.4: unattached from then, so they live 901 ticks; one that cannot be
-/// fired is deleted at once, weapons.md 3), on maps whose pickups play (a
-/// netgame entry exists: a party's gun game drops nothing).
-#[allow(clippy::type_complexity)]
+/// A dead unit's Halo weapons and grenades dropped where it died
+/// (health_shields.md "Death": its other weapons and every grenade, one
+/// item per grenade, at once; the weapon in hand last, after a random
+/// delay of N/4 to N/2 + N/4 ticks of its death animation, N its frames,
+/// at least 1: `held_drop_delay`; multiplayer_rules.md 5.4: unattached
+/// from then, so they live 901 ticks; one that cannot be fired is deleted
+/// at once, weapons.md 3), on maps whose pickups play (a netgame entry
+/// exists: a party's gun game drops nothing).
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn drop_on_death(
     mut died: MessageReader<chimera_core::core::Died>,
     entries: Query<(), With<NetgameEntry>>,
-    units: Query<(&Transform, &Inventory)>,
+    mut units: Query<(&Transform, &Inventory, Option<&mut HaloHands>)>,
     guns: Query<(&Weapon, &HaloGun, &HaloWeapon)>,
-    clock: Res<ItemClock>,
+    bodies: Query<&super::super::body::death::HaloCorpse>,
+    models: Option<Res<crate::map::CharacterModels>>,
+    (mut clock, sim): (ResMut<ItemClock>, Res<SimClock>),
+    mut pending: Local<Vec<(u32, Vec3, Item)>>,
     mut commands: Commands,
 ) {
     let deaths: Vec<Entity> = died.read().map(|d| d.entity).collect();
     if entries.is_empty() {
+        pending.clear();
         return;
     }
+    let item = |at: Vec3, item: Item, time: i64| {
+        (Name::new("halo_ce item"), Transform::from_translation(at), HaloItem { item, last_owned: time, entry: None })
+    };
+    // The held weapons whose delay ran out.
+    let n = halo_ticks(&sim);
+    pending.retain_mut(|(left, at, it)| {
+        *left = left.saturating_sub(n);
+        if *left == 0 {
+            commands.spawn(item(*at, it.clone(), clock.time));
+            return false;
+        }
+        true
+    });
+    let set = models.as_deref().and_then(|m| m.0.iter().find(|m| m.game == Some(super::super::GAME))?.animations.clone());
     for unit in deaths {
-        let Ok((at, inv)) = units.get(unit) else { continue };
+        let Ok((at, inv, hands)) = units.get_mut(unit) else { continue };
+        let at = at.translation;
         for w in &inv.weapons {
             let Ok((weapon, g, hw)) = guns.get(*w) else { continue };
             let size = hw.0.magazine.map_or(0, |m| m.rounds_loaded_maximum);
             if g.age >= 1.0 || (size > 0 && g.loaded <= 0 && g.reserve <= 0) {
                 continue;
             }
-            commands.spawn((
-                Name::new("halo_ce item"),
-                Transform::from_translation(at.translation),
-                HaloItem { item: Item::Weapon { id: weapon.id, loaded: g.loaded, reserve: g.reserve, age: g.age }, last_owned: clock.time, entry: None },
-            ));
+            let it = Item::Weapon { id: weapon.id, loaded: g.loaded, reserve: g.reserve, age: g.age };
+            if inv.active == Some(*w) {
+                let frames = bodies
+                    .iter()
+                    .find(|b| b.owner == unit)
+                    .zip(set.as_deref())
+                    .map_or(1, |(b, set)| super::super::body::death::death_frames(set, &b.animation));
+                let mut rng = HaloRng(clock.rng);
+                let delay = held_drop_delay(frames as u32, &mut rng);
+                clock.rng = rng.0;
+                pending.push((delay, at, it));
+            } else {
+                commands.spawn(item(at, it, clock.time));
+            }
+        }
+        // Every grenade, one item each.
+        if let Some(mut hands) = hands {
+            for (kind, count) in [(FRAG, hands.throw.counts[0]), (PLASMA, hands.throw.counts[1])] {
+                for _ in 0..count {
+                    commands.spawn(item(at, Item::Grenade(kind), clock.time));
+                }
+            }
+            hands.throw.counts = [0, 0];
         }
     }
+}
+
+/// The held weapon's drop delay at death in ticks (health_shields.md
+/// "Death"): a draw between a quarter and three quarters of the death
+/// animation's `frames`, at least 1.
+pub fn held_drop_delay(frames: u32, rng: &mut HaloRng) -> u32 {
+    let (lo, hi) = (frames / 4, frames / 2 + frames / 4);
+    (rng.int_range(lo as i32, hi as i32).max(0) as u32).max(1)
 }
 
 /// Spawn an entry (tests and tools): what the map's entity would make.

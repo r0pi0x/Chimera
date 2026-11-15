@@ -535,3 +535,14 @@ backlog.
   redone by the corrected specs: the scope's mask (drawn as first
   inferred it blacked out the zoomed view) and the particle systems'
   states (the frag's smoke drew as one grey sheet).
+- 2026-11-15: the Spartan's death (`body::death`, `net61`): a body of
+  its own on every machine playing the death the killing hit picks
+  (direction and body part; the airborne death, landing), lying where it
+  fell for 900 idle ticks, its sound at the animation's sound frame; in
+  Halo's own app the grenades and the weapon in hand drop as items (a
+  dropped item stays in the air where it was dropped: items do not fall
+  yet). Not done: flinches on a hit (non-lethal hits do not reach
+  clients), limp bodies, the unit's dialogue. Asked for by the user:
+  Halo's HUD in the party apps with the shield and health at the bottom
+  left and no motion tracker (the shared kill feed is top right): being
+  done.

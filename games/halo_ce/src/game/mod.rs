@@ -28,6 +28,8 @@
 //! - `body`: the players' Spartan body (model, animations from the graph's
 //!   unit tables, hit boxes from the collision model, armour colours), on
 //!   Halo's maps and, from the donor map, on any other;
+//! - `body::death`: a dead player's body, its death animation, sound
+//!   and removal;
 //! - `view`: the guns in hand: each gun's first-person view model with the
 //!   arms, played from the weapons' events one frame a tick, hidden while
 //!   zoomed, and its held model and stance; on Halo's maps and, from the

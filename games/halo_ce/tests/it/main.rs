@@ -23,6 +23,7 @@ mod assets;
 mod autoaim;
 mod body;
 mod cross_game;
+mod death;
 mod fx;
 mod fx_place;
 mod hud;
@@ -57,6 +58,7 @@ mod vehicles;
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
 mod heavy {
     mod body;
+    mod death;
     mod fx;
     mod hud;
     mod ladder;
