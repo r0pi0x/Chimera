@@ -57,12 +57,6 @@ pub struct Gun {
     /// a button of its own.
     #[serde(default)]
     pub secondary: Option<Secondary>,
-    /// The port's switch: a guided projectile (the needle, the charged
-    /// bolt) gets the target section 15's rule picks (weapons.md 6 step 7:
-    /// "its target is the aim assist target") although aim assist itself
-    /// (the bending, magnetism) is off. Off: no target, no guidance.
-    #[serde(default)]
-    pub guidance_targets: bool,
 }
 
 /// Trigger 1 with the projectile it fires.
@@ -121,18 +115,22 @@ pub struct Age {
 }
 
 /// Aim assist (0x0DC to 0x0EC), radians and world units, and the switch
-/// that turns it on (weapons.md 15: off by default, a controller
-/// feature; not implemented beyond the data, see the module doc).
+/// of its autoaim (weapons.md 15: on for every player whatever the input
+/// device, so on unless the data says `enabled = false`; `super::aim`).
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AimAssist {
-    #[serde(default)]
+    #[serde(default = "on")]
     pub enabled: bool,
     pub autoaim_angle: f32,
     pub autoaim_range: f32,
     pub magnetism_angle: f32,
     pub magnetism_range: f32,
     pub deviation_angle: f32,
+}
+
+fn on() -> bool {
+    true
 }
 
 /// A magazine element (0x70).

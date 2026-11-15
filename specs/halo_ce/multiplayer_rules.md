@@ -539,7 +539,12 @@ Order, as the reference does it after the unit exists:
    (9): frag += plasma, plasma = 0; no grenades (10): both 0 unless
    infinite grenades is on. Finally each count is limited to the cap
    (4, 2 or 1) and stored. With infinite grenades on, throwing does
-   not decrease the counts (`weapons.md`).
+   not decrease the counts (`weapons.md`). Only the counts are set: the
+   selected grenade type starts as none and is chosen on the first tick
+   by `weapons.md` section 14 ("Selecting the grenade type"): frag with
+   frags only, plasma with plasma only, **plasma** when both kinds are
+   above 0 (infinite grenades). A grenade pickup (section 5) changes
+   the selection only when the selected kind is empty.
 4. **Ammunition.** A new weapon has its loaded rounds = min(initial
    total, loaded maximum) and spare rounds = initial total - loaded
    (`weapons.md` magazines): assault rifle 60 loaded + 180 spare,

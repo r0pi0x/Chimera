@@ -1144,10 +1144,73 @@ are first person throughout.
    camera is at Q − L × that distance. No hit: C as above. Finally a
    camera within 0.05 WU of a water surface is moved to 0.05 WU from it
    on its own side.
-6. **Field of view** 70 degrees, whatever the zoom. **Smoothing** is the
-   observer's (`hud.md`): a change of vehicle or seat starts a 1 s
-   transition; pressing or releasing crouch or jump a 0.5 s one on the
-   offset parameter.
+6. **Field of view** 70 degrees, whatever the zoom. **Smoothing:** none
+   in steady play. The camera is placed exactly where steps 1 to 5 put
+   it, every frame, with no lag, spring or low-pass filter, whether the
+   vehicle is still, turning or crashing. Easing happens only during a
+   timed transition, below (The observer's transitions).
+
+**The observer's transitions.** The camera is held as five parameters,
+each with its own transition timer in seconds: the focus position F
+(3 values), the focus offset (the track offset, 3), the distance (1),
+the field of view (1) and the orientation (forward and up; its change is
+a rotation vector, 3 values). Each frame the camera mode (third-person
+seat camera, first-person camera) issues a target for all five and a
+timer, and the observer:
+
+1. **Merges the timers.** For each parameter: if the target names its
+   own timer for that parameter and it is shorter than the one still
+   running, the running one continues (capped at 2 s); if it names
+   none, the target's general timer is used, unless that is shorter
+   than the running one, in which case the running one continues
+   (capped at 2 s). A forced timer is taken as given. So a transition,
+   once started, runs to its end even though later frames ask for 0.
+2. For each parameter whose remaining time T is greater than the frame
+   time dt: with D = target minus current value, it takes the unique
+   quintic polynomial in time that starts at the current value with the
+   parameter's current velocity and acceleration and reaches the target
+   after T with zero acceleration and zero velocity (the focus position:
+   see below), and moves the parameter along it by dt (the orientation
+   by the resulting rotation vector, about its own axis); the velocity
+   and acceleration at that point are kept for the next frame. In
+   terms of the time r still to go, the amount covered is
+   y(r) = A r^5 + B r^4 + C r^3 + D, with
+   A = a / (2 T^3) - 3 w / T^4 - 6 D / T^5,
+   B = 7 w / T^3 + 15 D / T^4 - a / T^2,
+   C = a / (2 T) - 4 w / T^2 - 10 D / T^3,
+   a the current acceleration and w = minus the current velocity (the
+   derivative taken with respect to r); y(T) = 0, y(0) = D, and the
+   parameter moves by y(T - dt). With w = a = 0 this is the
+   "smootherstep" ease: the fraction covered after time s of T is
+   10 q^3 - 15 q^4 + 6 q^5, q = s / T. The fit is redone every frame
+   against that frame's target, so a moving target is followed smoothly
+   and reached exactly when the timer ends. For the focus position the
+   curve also carries an end-velocity term built from the command's
+   focus velocity u (per tick, x 30 for per second): A -= 3 u / T^4,
+   B += 8 u / T^3, C -= 6 u / T^2 and u r is added to y. (Its sign
+   convention was not traced through; a port that ends the focus at
+   the vehicle's own velocity, or at rest, differs only during the
+   1 s transitions.)
+3. **Acceleration cap.** If any value's acceleration at r = T - dt
+   exceeds 1500 WU/s^2 (focus position, focus offset) or 100 000 (the
+   distance, field of view and orientation), that parameter's timer
+   and every other parameter's timer with exactly the same remaining
+   time are set to 0: they snap this frame.
+4. Every parameter whose remaining time is at most dt **snaps** to its
+   target.
+5. Every timer drops by dt (not below 0).
+
+**What starts a transition** (in multiplayer):
+
+| Event | Parameters | Length |
+|---|---|---|
+| the unit or seat the camera follows changes while the third-person camera is in use (entering a third-person seat from another seat, switching seats, leaving into another third-person view) | all five (the general timer) | 1 s |
+| the camera mode changes between first person and third person (entering a vehicle with a third-person seat, leaving one, a seat with the third-person-on-enter flag starting or ending its animation) | all five; the general timer is held at least at the remaining "change pause", which starts at 1 s and falls by the frame time | 1 s; when changing **into** first person, once less than 0.2 s remains, the focus position and the distance are forced to snap |
+| the rider's crouch-or-jump state changes in a third-person seat (crouch held or jump held: for the Warthog driver, brake or not) | the focus offset only | at least 0.5 s |
+
+Nothing else starts one: driving, turning the look, the turret and the
+vehicle's bumps and flips are followed exactly. (The first-person camera
+always issues timer 0.)
 
 The common mistakes are taking F at the seat marker or the rider's
 eye, turning o by the vehicle's orientation instead of the heading, or
@@ -1244,6 +1307,27 @@ screen, and the seat's IK points. The Spartan's sets
 | G-driver | unarmed only | `G-driver unarmed idle` (50) | none (zero bounds) | hands to wheel grips (the Ghost model has none of that name) |
 | scorpion-driver | unarmed only | `scorpion-driver unarmed idle` (5 frames, no node moves: the bind pose) | 3 × 3, ±90 | none |
 | scorpionLF, RF, LB, RB | rifle ("", ar, pr, ne, sg, sr, f), pistol ("", hp, pp, b), missile ("", rl), support ("") | `scorpionLF rifle idle` (30) for every class | 3 × 3: yaw ±90, pitch −30 to +60 | left hand to `left hand lf` (`lb`, `rf`, `rb`) on the tread node |
+
+**IK to a missing marker.** Each IK point names a marker on the rider
+(the hand) and a marker on the vehicle (seat IK) or on the rider's
+current weapon (class IK). The hand is pulled onto the grip only when
+**both** markers exist by those names; if either is missing the point
+is skipped entirely and that hand keeps the pose the animation gives
+it (no pull toward the vehicle's origin or root node: the root-node
+fallback of a failed marker lookup is not used here). So:
+
+| Seat | IK point | Result |
+|---|---|---|
+| Warthog driver | hands to `left/right hand wheel grip` | the Warthog has them: hands on the wheel, moving with the steering |
+| Warthog gunner | feet and hands to the gun mount and gun | applied |
+| Warthog gunner, class IK | hands to `left/right hand gun grip` on the current weapon | missing: skipped (hands stay where the seat IK put them) |
+| Ghost driver | hands to `left/right hand wheel grip` | the Ghost has no such markers: skipped; the hands stay in `G-driver unarmed idle`'s pose |
+| Warthog passenger, Scorpion riders | left hand to the weapon's or the tread's marker | applied when the marker exists |
+
+The seat IK applies only while the rider is attached to the vehicle,
+the seat's IK is enabled in the animation state and no grenade throw
+releases it; the class IK only while the rider holds a weapon and
+weapon IK is enabled.
 
 **Acceleration lean.** Each tick a seated unit takes the change of the
 vehicle's per-tick displacement (its acceleration, WU/t^2) in the seat
@@ -2018,6 +2102,9 @@ the vehicle.)
 | Ghost driver camera, level | focus = hull node (0.3928, 0, 0.1711) (the named marker is missing); camera at model (−2.3596, 0, 0.8538) |
 | Warthog gunner camera, level, turret forward | focus `camera gunner` (−0.2235, 0, 0.8131); camera at model (−2.9759, 0, 1.4958) |
 | Warthog passenger eye (first person) | `camera rider` at model (0.0715, −0.1586, 0.8056) |
+| third-person camera, no transition running, Warthog driving at 0.1 WU/tick | camera each frame exactly at the computed C (no lag: the offset between computed and shown is 0) |
+| a parameter at 0 with target 1 (fixed), w = a = 0, a 1 s transition, frames of 1/30 s | value after 15 frames 0.5, after 6 frames 0.0579 (10 q^3 − 15 q^4 + 6 q^5 at q = 0.2), after 30 frames exactly 1 |
+| Ghost driver seated | hands: the IK points are skipped (no `hand wheel grip` markers); hand nodes equal the idle animation's |
 | entry points (model frame) | W-driver (−0.0068, 0.5478, 0.3921); W-passenger (−0.0247, −0.5642, 0.4723); W-gunner (−1.1789, 0, 0.3658); G-driver (−0.0830, −0.3165, 0.1110); Scorpion driver (−0.0849, 1.0491, 0.3595); scorpionLF (0.1762, 1.2389, 0.3958) |
 | player whose bounding sphere centre is 0.9 WU from the W-driver entry point and 1.3 WU from the driver marker, still, Warthog upright | offered W-driver |
 | enter and exit lengths (ticks) | W-driver 50 / 26, W-passenger 28 / 30, W-gunner 46 / 24, G-driver 35 / 24, Scorpion driver 65 / 55, Scorpion riders 30 / 22 |
@@ -2046,7 +2133,8 @@ the vehicle.)
 | Mass-point step | reference only; the sphere query's depth is the reading of the collision features (collision.md) |
 | Jeep, tank, scout, fighter models | reference only; the jeep's wheel yaw sign traced through the engine's quaternion and matrix conventions |
 | Placement | reference (creation path and game-type substitution) and the disc (flags) |
-| Camera | reference (track evaluation, command, observer placement and pull-in); tracks and markers from the disc; worked examples computed from them |
+| Camera | reference (track evaluation, command, observer placement and pull-in, the observer's transitions and timers); tracks and markers from the disc; worked examples computed from them; the focus end-velocity term's sign not traced |
+| Rider IK with missing markers | reference (the point is skipped when either marker is missing) |
 | Entering, exiting, seated riders | reference for the rules; marker positions, animation lengths, root tracks, classes and bounds read from the disc (the Spartan's graph and the three models, bind pose) |
 | Turrets, vehicle animation | reference for the rules; screens, nodes, overlays and suspension elements from the disc |
 | Sleep and slow stop | reference only |
@@ -2092,21 +2180,22 @@ the vehicle.)
 10. **Function sources 15, 18 and 24 to 31.** The reference's reading
     disagrees with the source names in places; only 1, 12, 20, 21,
     35, 36 are on the disc, so only those matter.
-11. **The observer's smoothing.** Where the camera goes is now stated
-    (Third-person camera); how the observer eases its parameters over
-    the 1 s and 0.5 s transitions (and how fast it follows the focus
-    between them) is not traced here. A port that snaps to the computed
-    position each tick shows the right place; the lag is the open part.
+11. **The observer's smoothing.** Settled from the reference (Third-
+    person camera, The observer's transitions): no lag in steady play;
+    quintic eases only over the 1 s and 0.5 s transitions. Open: the
+    sign of the focus end-velocity term, and the exact frame on which a
+    seat change is seen (it compares the followed unit and seat with
+    the previous frame's). Check on video that entering a Warthog eases
+    the camera out over 1 s and that driving shows no trailing.
 12. **Splatter and friendly fire.** The damage goes through the normal
     rules with the driver as owner; whether a teammate is splattered
     depends on the game type's friendly fire (`health_shields.md`).
-13. **IK to missing markers.** The Ghost driver's seat pins the hands
-    to `left/right hand wheel grip`, and the W-gunner class adds `left/
-    right hand gun grip`; the models lack these names. A marker lookup
-    that finds nothing yields the vehicle's root node frame, so the IK
-    may pull those hands toward the hull's root; check in the game
-    whether the Ghost driver's hands sit on the grips (the model's
-    `left/right hand elite` markers are for the Elite) or float.
+13. **IK to missing markers.** Settled from the reference (Seated
+    riders, "IK to a missing marker"): an IK point whose grip marker is
+    missing from the vehicle (or weapon), or whose hand marker is
+    missing from the rider, is skipped; the hand keeps the animation's
+    pose. Not checked on hardware: whether the Ghost driver's idle
+    animation alone puts the Spartan's hands near the Ghost's handles.
 14. **Marker positions are bind pose.** The seat, camera and trigger
     markers above are given in the bind pose; the turret, steering and
     suspension overlays move the ones on animated nodes (gunner, gunner

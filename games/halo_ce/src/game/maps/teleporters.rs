@@ -12,27 +12,40 @@
 //! spec's heading rule). The rule's numbers: a unit within 0.5 WU (3D) of a
 //! source is taken (`TELEPORT_RADIUS`), the source it arrives beside stays
 //! disarmed until it is more than 1 WU away (`TELEPORT_REARM`), the
-//! velocity is kept in world axes (movement.md), and a player refused by
-//! a unit on the exit for 90 ticks (`TELEFRAG_TICKS`) kills that unit.
+//! velocity is kept in world axes (movement.md). The exit's test is the
+//! engine's `Exit::Pill` with the spec's table (multiplayer_rules.md 6.8):
+//! the arriving pill (the movement's radius, 0.2, and segment, 0.3
+//! standing and 0.1 crouched) with its bottom sphere's centre on the
+//! target flag blocked by a living character's pill; the deepest blocker's
+//! count rises one per refused try and falls one per tick it blocks
+//! nobody, and it dies in the tick of the count's 90th
+//! (`TELEFRAG_TICKS`); the blocked message on the first refusal and every
+//! 121st (`MESSAGE_EVERY`).
 //! A source without a target (none on the disc) is no pad.
 //!
-//! Known shortcuts: "a unit within the exit" is read as a character's feet
-//! within the source radius of the target (the spec gives no exit size);
-//! the blocked message, the "teleporter activate" sound for the
-//! teleported player and the pads' shimmer are not played (the engine's
-//! teleporter has no hook for them yet).
+//! Known shortcuts: every living character blocks (no vehicles yet; the
+//! dead never do); a crouch is the footing's (crouched or not: the
+//! segment of a crouch in progress is the nearer end's); the blocked
+//! message (`teleport::TeleportRefused`) has no text on screen, and the
+//! "teleporter activate" sound for the teleported player and the pads'
+//! shimmer are not played (the engine's teleporter has no hook for them
+//! yet).
 
 use blam_formats::scenario::{NetgameFlag, Scenario, netgame};
 
 use super::space;
 use crate::map::{
     MapData,
-    teleport::{MapTeleporters, Teleporter},
+    teleport::{Exit, MapTeleporters, Teleporter},
 };
 
-/// Ticks a refused player's count must reach to kill the blocker
-/// (multiplayer_rules.md, TELEFRAG_TICKS).
+/// Refused tries a blocker's count must reach to kill it
+/// (multiplayer_rules.md 6.8: the 90th).
 pub const TELEFRAG_TICKS: f32 = 90.0;
+
+/// The blocked message's period in refused tries (multiplayer_rules.md
+/// 6.8: the first and every 121st).
+pub const MESSAGE_EVERY: u32 = 121;
 
 /// The netgame flags' teleporters in the engine's form (module doc).
 pub fn teleporters(flags: &[NetgameFlag]) -> MapTeleporters {
@@ -54,7 +67,22 @@ pub fn teleporters(flags: &[NetgameFlag]) -> MapTeleporters {
         radius: netgame::TELEPORT_RADIUS * space::METERS_PER_UNIT,
         rearm: netgame::TELEPORT_REARM * space::METERS_PER_UNIT,
         keep_velocity: true,
-        telefrag: Some(TELEFRAG_TICKS * crate::game::TICK_INTERVAL as f32),
+        telefrag: None,
+        exit: exit(),
+    }
+}
+
+/// Halo's exit test (module doc), in metres.
+pub fn exit() -> Exit {
+    let d = crate::game::movement::MovementData::builtin();
+    let m = space::METERS_PER_UNIT;
+    Exit::Pill {
+        radius: d.radius * m,
+        standing: d.segment(0.0) * m,
+        crouched: d.segment(1.0) * m,
+        tick: crate::game::TICK_INTERVAL as f32,
+        telefrag_ticks: TELEFRAG_TICKS,
+        message_every: MESSAGE_EVERY,
     }
 }
 
