@@ -18,7 +18,18 @@
 //!
 //! Known shortcuts: no view-model bob or sway of TF2's own yet (Source's
 //! motion rules are its own spec); the minigun's barrel doesn't spin in
-//! first person (its spin is the world model's own sequence).
+//! first person (its spin is the world model's own sequence). The
+//! Minigun's idle `m_idle` as decoded holds the gun upright, low and off
+//! the left hand's grip (M2b's "low and angled up"); not the bone merge
+//! (its `weapon_bone` itself points up), not the include's root (the same
+//! in the spun sequences, which aim right) and not `min_viewmodel_offset`
+//! (the minimal view models' only). `m_draw` and `m_spool_down` end in the
+//! same pose, so it is in the data as we read it; the Minigun shows its
+//! spun pose instead (`SEQUENCES`), raised by its data's `view_offset`,
+//! until a capture of the real game settles it.
+//!
+//! A gun's `[models] view_offset` (Source's forward, left, up) moves its
+//! view model in the eye's space (`source_offset`).
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{
@@ -93,18 +104,25 @@ pub const SEQUENCES: &[(&str, Sequences)] = &[
             spin_down: None,
         },
     ),
+    // The Minigun's `m_idle` (and the ends of `m_draw` and
+    // `m_spool_down`, which settle into it) holds the gun upright below
+    // the eye, its barrels at the ceiling and the left hand 28 cm off its
+    // grip: decoded per the spec, consistently across those sequences
+    //. Until the cause is known, the first person keeps
+    // the spun pose: drawn by `m_spool_up` (from that low pose up to the
+    // aim), idle and winding down in `m_spool_idle`.
     (
         MINIGUN,
         Sequences {
-            draw: ("ACT_PRIMARY_VM_DRAW", "m_draw"),
-            idle: ("ACT_PRIMARY_VM_IDLE", "m_idle"),
+            draw: ("ACT_PRIMARY_ATTACK_STAND_PREFIRE", "m_spool_up"),
+            idle: ("ACT_PRIMARY_VM_SECONDARYATTACK", "m_spool_idle"),
             fire: ("ACT_PRIMARY_VM_PRIMARYATTACK", "m_fire"),
             reload_start: None,
             reload_loop: None,
             reload_end: None,
             spin_up: Some(("ACT_PRIMARY_ATTACK_STAND_PREFIRE", "m_spool_up")),
             spin_idle: Some(("ACT_PRIMARY_VM_SECONDARYATTACK", "m_spool_idle")),
-            spin_down: Some(("ACT_PRIMARY_ATTACK_STAND_POSTFIRE", "m_spool_down")),
+            spin_down: Some(("ACT_PRIMARY_VM_SECONDARYATTACK", "m_spool_idle")),
         },
     ),
 ];
@@ -223,7 +241,9 @@ pub fn load(
         if !wants(gun) {
             continue;
         }
-        let Some(path) = set.weapons.iter().find(|w| w.id == gun).and_then(|w| w.models.view.clone()) else { continue };
+        let Some(data) = set.weapons.iter().find(|w| w.id == gun) else { continue };
+        let Some(path) = data.models.view.clone() else { continue };
+        let offset = data.models.view_offset;
         let merged = props::load_view_model(materials, &super::sets::arms_model(&arms), gun, true).and_then(|arms| {
             let weapon = props::load_view_model(materials, &path, gun, true)?;
             crate::map::merge_by_bone_name(arms, &weapon, own_idle(&weapon).as_deref())
@@ -231,10 +251,27 @@ pub fn load(
         match merged {
             Ok(mut v) => {
                 v.key = gun.to_string();
+                if let Some(o) = offset {
+                    // The meshes are in the eye's space of the bind pose:
+                    // they move with the root.
+                    let o = source_offset(o);
+                    v.root.translation += o;
+                    for m in &mut v.model.meshes {
+                        for p in &mut m.positions {
+                            *p = (Vec3::from(*p) + o).to_array();
+                        }
+                    }
+                }
                 v.allow_flipping = false;
                 into.push(v);
             }
             Err(e) => warnings.push(e),
         }
     }
+}
+
+/// A `[models] view_offset` (Source's forward, left, up, units) in the
+/// eye's space (metres: right, up, back).
+pub fn source_offset(o: [f32; 3]) -> Vec3 {
+    Vec3::new(-o[1], o[2], -o[0]) * super::METERS_PER_UNIT
 }
