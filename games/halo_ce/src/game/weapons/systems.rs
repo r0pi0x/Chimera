@@ -711,10 +711,12 @@ fn detonate(e: Entity, projectiles: &mut Query<(Entity, &mut HaloProjectile)>, t
         let mut clear = |a: Vec3, b: Vec3| trace.clear(a * METERS_PER_WU, b * METERS_PER_WU);
         let mut draw = || rng.real();
         for h in explode::area(fx, at, &candidates, &mut clear, &mut draw) {
+            debug!("{} {}: {:?} at scale {} takes {} points", p.id, id.0, h.object, h.scale, h.amount);
             out.hits.write(HaloHit::area(h.object, *id, h.amount, h.scale, em, h.dir, Some(p.owner)).weapon(p.id));
             if h.amount > 0.0
                 && let Some(dv) = explode::push(&x, fx, h.dir, x.biped_acceleration_scale, true)
             {
+                debug!("{} pushes {:?} by {dv} WU a tick", p.id, h.object);
                 blasts.pushes.write(HaloPush { target: h.object, dv: dv * METERS_PER_WU * 30.0 });
             }
         }
