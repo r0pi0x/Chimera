@@ -350,7 +350,7 @@ impl Plugin for Tf2GunsPlugin {
 mod tests {
     use super::*;
 
-    /// Every file in data/weapons is built in, and the four guns load
+    /// Every file in data/weapons is built in, and the twelve guns load
     /// with their classes for the automatic ladder.
     #[test]
     fn the_data_is_built_in_and_loads() {
