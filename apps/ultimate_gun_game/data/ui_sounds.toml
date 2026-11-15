@@ -100,6 +100,15 @@ cents = 25
 db = 1.0
 on = false
 
+# ---- chat: another's line (client::signal_chat; at most one a 1.5 s, none
+# for your own): the lobby's peer tick, 6 dB under it (quieter than a tap).
+[event.chat_in]
+file = "lobby_peer"
+gain = -6
+cents = 30
+db = 1.0
+voices = 1
+
 [event.tab_open]
 cents = 20
 db = 1.0

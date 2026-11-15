@@ -23,6 +23,8 @@
 //! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
 //! to `SCENES`. An app's own screens register theirs in `UiSceneHooks`
 //! (`menu`: the party menu's first page, `party_kit::signal_menu::stage`).
+//! The shell's chat registers `chat [open|notice]` and `chat_lobby` the
+//! same way (`signal_chat`).
 //!
 //! A scene is a root of its own over everything (`UI_SCENE_Z`), on the
 //! default UI camera, laid out for the window's size at the time it is

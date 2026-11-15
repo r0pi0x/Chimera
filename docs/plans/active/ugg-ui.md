@@ -1188,6 +1188,89 @@ buttons (F3 and Esc only); M8's loading screens (the "Next map" screen
 lobby; offscreen screenshots of a real level change (not just
 `ui_scene lobby`).
 
+### M10: Chat
+
+Status (2026-11-15): in on `ugg-chat`. The user: "add a chat to
+Ultimate Gun Game ... centralize it, make sure it's consistent, and use
+our new font with it."
+
+**Audit (before)**. Chat-like text came from five places and drew in
+three looks, none of them Signal:
+
+| What | Fed by | Drawn by |
+|---|---|---|
+| CS:S chat (`messagemode` Y, `messagemode2` U; `say`, `say_team`) | `net::chat` (`SayRequest` to the server, which picks the readers and sends `ChatMessage`); a game of one's own in `client::chat::say` | `client::chat` at CS:S's `HudChat` place (its scheme's ChatFont, 12 s a line, `hud_saytext_time`), its "Say :" line under it; always on, under every game's HUD |
+| Radio lines (CS:S Z/X/C) | `games/cs_source/ui/radio.rs` writes `ChatLine`s | the same box |
+| Joins, leaves, renames, team joins, CS:S objectives, a dedicated server's `say` | `net::PlayerCame`, `NameChanged`, `ChatMessage::console`, `team_joins`, `objectives_hud` as `ChatLine`s | the same box |
+| Refusals ("You are flooding the server") | `net::Notice` | `client::chat`'s hint box (`HudHintDisplay`) |
+| Combat Arms' chat and radio (Enter, F2, F3; B, V, N) | its own protocol (`CaSayRequest`, `CaSayIn`, `CaRadioIn`) and log | `games/combat_arms/src/ui/talk.rs` (its panel, input bar with tabs, radio menu): always drawn, not under a `HudRoot`; in the party apps the shared binds are Combat Arms', so Enter opened this one and Y/U were unbound |
+| Bot chat ("AI_Alpha_3 : Gotcha, friend.", seen in the playtest) | `combat_arms::game::bots::chat` (`CaBotChat`, only on a host: not sent to clients) | `ui::bot_chat` as a `ChatLine` in the CS:S box |
+| HL2:DM | no chat of its own: its team colours in `client::chat::run_color` | the CS:S box |
+| "X is on the last level!" | the minigame's callout (`last_rung_other`) | `client::callouts`, centre screen (not chat) |
+| Votes | `net::vote::VoteView` | the Esc menu's vote box (no line) |
+| Voice | `net::voice` (`VoiceActivity`) | Combat Arms' talk icon; no Signal indicator |
+| The console | every `ChatLine` printed by `client::chat::collect` | the console |
+| The lobby | no chat | - |
+
+Moderation was already on the server (`net::chat`): `clean_say` (control
+characters out, trimmed, 127 bytes), a flood limit (four lines in a
+burst, then one a second; radio three, then one every 1.5 s; the sender
+told), names cut at 20.
+
+**After**:
+
+- **Entries** (`client::chat::ChatEntry`): every player line, notice and
+  word of the server is one structured message (kind, sender, name, team,
+  text) carrying its line in the game's format. Without the Signal look
+  `route_classic` turns it into the game's `ChatLine` and sound as before
+  (CS:S, Combat Arms, HL2:DM, Lucker Party unchanged).
+- **One feed** (`client::signal_chat`, on the kit's `chimera_ui::chat`)
+  under the Signal look (`SignalChatActive`): players' lines (name in
+  the player's colour, `name_color`, yours in the accent; BOT or HOST
+  beside it; TEAM or RADIO before it), notices (a slanted accent mark, the
+  sentence in `fg_2`: joins, leaves, renames, team joins and objectives,
+  "X is on the last level!", votes called and ended) and the server's word
+  (SERVER tag, `fg_3`: the dedicated server's console, refusals, the
+  flood warning). Kills stay in the kill feed. Bottom left above the
+  health (`[layout.chat]` left 2.2, bottom 8.4, w 30 cq), six lines, each
+  held 8.5 s then faded over 1 s (`hold`, `fade`). The game's chat box,
+  its typing line and hints stand down; Combat Arms' panel draws no
+  queue or input (its radio menu stays), its radio and lines go to the
+  feed (`talk::signal_entry`), its bot chat too (with the BOT tag).
+- **Input**: Y and U (`messagemode`, `messagemode2`, now the app's own
+  default binds, `APP_BINDS`; `APP_BINDS_MARK` 2 puts them on free keys
+  of saved configs once) and Combat Arms' Enter, F2, F3 open one field:
+  the kit's caret, selection, copy, cut and paste; Tab switches all and
+  team; Enter sends, Esc cancels; 127 bytes; every key taken while open.
+  Open, the history (12 lines, with session time stamps) and the field
+  sit on one plate whose right edge leans 12° (the user's "slanted plate";
+  the left edge straight, as rule 1 keeps text in straight edges).
+- **Docked** in the lobby (under `LobbyRoot`) and on the match end
+  (under `SignalEndRoot`): the history always shown, the field below
+  ("Press Enter to chat"), Enter opens it there too; hidden while
+  Settings or the report is over the lobby.
+- **Mute**: `ignore <name>`, `unignore`, `ignorelist`, or a click on a
+  name in the open history (people by user id, bots by name, for the
+  session); past lines hide too. **`cl_chat`** (Settings, Party: On,
+  Team only, Off; archived) for everyone's lines.
+- **Sound**: `chat_in` (the lobby's peer tick, 6 dB under) for another's
+  line, at most one in 1.5 s; none for your own, notices or the server.
+- No network change (NET_VERSION stays): the existing messages carry
+  everything.
+
+Tests: `chimera_client` `signal_chat::` (the game's chat without the
+look, notices apart, the fade, the keys taken and Enter/Esc/Tab, mutes,
+`cl_chat` and the cue's limit, the lobby dock); `ultimate_gun_game`
+`chat::` on `NetSim` (two clients' lines and cues, team lines within the
+team and `cl_chat 2`, the flood limit and its warning, `ignore`, the
+lobby's chat and joins as notices). Scenes: `ui_scene chat [open|notice]`,
+`ui_scene chat_lobby`.
+
+Lines and the field are set in the text face (`Role::Text`, with lower
+case, at `controls::TYPED`) since `fonts-wire` merged. Left: a mute button on the Tab board (held open with the
+cursor captured today); a talking indicator in the feed (voice); wall
+clock stamps; bot chat for network clients (a host's only today).
+
 ## 6. Decisions (user, 2026-11-14)
 
 1. Icons (revised 2026-11-14): each game's own kill icon everywhere it
