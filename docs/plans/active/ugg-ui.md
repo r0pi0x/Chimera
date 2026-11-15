@@ -931,6 +931,19 @@ licence, 5 MB a file, 20 MB in all.
   place of Combat Arms' playlist (Combat Arms' music silent meanwhile:
   `combat_arms::game::music::AppMusicPlays`). The backdrop swap stays
   off.
+- **Remote clients** (audit 2026-11-14, after playtest 7's report of no
+  rank-up sound for players): every cue reads state a remote client of a
+  dedicated server has (the replicated `Rung` and ladder, `NetLobby`, the
+  match's effects, results and vote), none a server-only event; on
+  `NetSim` with a dedicated server and two clients each hears its own
+  cues once (ultimate_gun_game `net_ui_sounds`: rank-up, knife, no cue on
+  a rung down, lobby, countdown, air strike over a slow link and a late
+  join, match end, vote, `snd_uivolume`). One fix: a remote voter's own
+  vote, shown at once but counted when the server's count comes back,
+  also played `vote_other` (`match_end_cues`' owed votes). The playtest's
+  silence did not reproduce there; the bus is under the master
+  `GlobalVolume`, which Combat Arms' unloaded profile set to 0 at every
+  start of the party apps (`ShellOptions`, branch `pt7-ui`, fixes it).
 - **The loop's level**: the music bus, `snd_musicvolume`, which the party
   apps take from Combat Arms' music option; a first play's profile (the
   template) has music 50 and effects 70, so a fresh player hears it
