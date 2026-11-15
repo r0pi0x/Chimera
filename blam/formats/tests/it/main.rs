@@ -5,13 +5,17 @@
 //! file here gets a `mod` line below.
 
 mod bitmap;
+mod bsp_fixture;
 mod cache;
+mod collision;
 mod disc;
 mod fixture;
 mod map_fixture;
+mod structure_bsp;
 
 mod heavy {
     mod bitmap_install;
+    mod bsp_install;
     mod cache_install;
     mod disc_install;
 }

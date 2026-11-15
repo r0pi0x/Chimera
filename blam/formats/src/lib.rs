@@ -12,7 +12,13 @@
 //!   foundation every tag-class reader is written on.
 //! - `bitmap`: the bitmap tag reader and pixel decoder (every format on the
 //!   disc to RGBA8; block compressed levels also as stored, for a GPU).
+//! - `structure_bsp`: a level's render geometry, clusters, portals, fog and
+//!   the rest of its structure BSP, vertices decoded on demand.
+//! - `collision`: the collision BSP of levels and collision models: polygons,
+//!   triangles, the point test and the line trace.
 
 pub mod bitmap;
 pub mod cache;
+pub mod collision;
 pub mod disc;
+pub mod structure_bsp;
