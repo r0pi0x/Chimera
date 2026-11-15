@@ -401,6 +401,8 @@ Y/U and Combat Arms' keys, docked in the lobby and the match end,
   crate).
 - Lucker Party keeps the games' chat until its theme turns the Signal
   HUD on.
+- The rung hint (key cap + verb, bottom centre, opt-in per rung) is a
+  first cut: review with the rest of the Signal look.
 
 ### Spectators (user, 2026-11-14)
 
@@ -2458,6 +2460,12 @@ a first bot are in.
 - Bots: a charged-shot tactic for a trigger that fires when released
   (`weapon::FiresOnRelease`: today they only tap it; Halo's plasma
   pistol's charged bolt strips a shield).
+- Bots: a weapon whose attack is a named action states it
+  (`weapon::AttackAction`: Halo's grenade rung's grenade button); the
+  brain presses that action where it would press fire.
+- Special rungs (Combat Arms' turret, Halo's grenade rung, a TF2
+  engineer's sentry later): when the third arrives, see what the rung
+  extras lack.
 - Ragdolls, remaining (`map/ragdoll.rs` has the spec's bodies, joints,
   self-collision pairs, death poses, impulse, bone velocities, bullet and
   blast pushes, separation repair, settling and removal): check the

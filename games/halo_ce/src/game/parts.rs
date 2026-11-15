@@ -14,11 +14,12 @@
 //! (`ui::hud`). The Spartan body (`body`) and the guns' view and held
 //! models (`view`, from the donor map on another game's map).
 //!
-//! No grenade rung: Halo's grenades are not a held weapon but a count
+//! And one grenade rung: Halo's grenades are not a held weapon but a count
 //! thrown on the grenade button beside the gun in hand (`weapons::grenades`),
-//! so a Halo player on any rung carries and throws them as the game does;
-//! the ladder's grenade band (class `grenade`, a thrown weapon of the
-//! engine's `Throwable`) holds the games whose grenades are weapons.
+//! so Halo lends a part of class `grenade` of its own, the frag grenade's
+//! rung (`weapons::rung`: the empty pistol in hand, frags on the grenade
+//! button), which the ladder's grenade band deals as it deals the other
+//! games' grenades.
 //!
 //! No map is claimed (`PARTS.maps` is empty): a map enters an app's pool
 //! only from the disc image the machine holds (`auto::InstalledMaps`),
@@ -31,6 +32,7 @@
 use chimera_core::game_parts::{GameParts, GunClass, GunPart};
 
 use super::weapons::{
+    rung::FRAG_RUNG,
     ASSAULT_RIFLE, NEEDLER, PISTOL, PLASMA_PISTOL, PLASMA_RIFLE, ROCKET_LAUNCHER, SHOTGUN, SNIPER_RIFLE,
 };
 
@@ -50,6 +52,7 @@ pub static PARTS: GameParts = GameParts {
         gun(ROCKET_LAUNCHER, GunClass::Launcher),
         gun(NEEDLER, GunClass::Smg),
         gun(PLASMA_PISTOL, GunClass::Pistol),
+        gun(FRAG_RUNG, GunClass::Grenade),
     ],
     knife: None,
     movement: Some(super::movement::ID),
