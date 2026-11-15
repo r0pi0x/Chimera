@@ -17,6 +17,7 @@
 //! docs/OBSERVABILITY.md, section 1.
 
 mod assets;
+mod body;
 mod cross_game;
 mod info;
 mod maps;
@@ -32,6 +33,7 @@ mod weapons_rules;
 
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
 mod heavy {
+    mod body;
     mod maps;
     mod mount;
     mod served;

@@ -37,7 +37,7 @@ pub static PARTS: GameParts = GameParts {
     ],
     knife: None,
     movement: Some(super::movement::ID),
-    characters: None,
+    characters: Some("halo_ce:spartan"),
     hud: None,
     maps: &[],
     announcer: None,

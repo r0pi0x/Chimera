@@ -1,0 +1,238 @@
+//! The Spartan body from a map file (`spartan`), on Halo's maps
+//! (`add_own`, from the map's own file: the converted-map cache keeps it)
+//! and on any other game's (`GUEST`, the bundle's dressing: from the donor
+//! map, `DONOR_MAP`, read once per app through its `LoadContext`).
+//!
+//! - The biped `BIPED` names the model, the animation graph and the
+//!   collision model (objects.md, the object base).
+//! - Meshes: the map loader's model meshes (`maps::objects::
+//!   skinned_meshes`: highest detail, first permutation, parts merged by
+//!   shader) with joints, in the character's frame (metres, the engine's
+//!   axes, feet at the origin: `maps::space::point` is the body's root
+//!   applied); their looks are the loader's (`maps::apply_looks`: the model
+//!   shader's minimum approximation), their textures the body's own.
+//! - Armour colour: a mesh whose model shader takes its change colour from
+//!   slot C (the armour: objects.md, "Spartan multiplayer colour") is
+//!   tinted by the player's colour over the whole base map (shaders.md's
+//!   minimum approximation without a mask): one skin per colour of
+//!   `body::COLOURS`, the meshes themselves showing skin 0 (white).
+//! - Skeleton, animations and hit volumes: `skeleton`, `anims`, `hits`.
+//!
+//! Known shortcuts: the multipurpose map's change-colour mask is not used
+//! (the whole armour base is tinted); the light-shield parts (transparent
+//! chicago shaders) are drawn as the loader draws them, always.
+
+use std::sync::{Arc, Mutex};
+
+use blam_formats::{
+    animation::AnimationGraph,
+    cache::{MapFile, TagRef, class},
+    collision,
+    model::Model,
+    object::Biped,
+    shader::{AnimationSource, Shader},
+};
+
+use super::super::{
+    GAME,
+    maps::{
+        self,
+        objects::{self, Dest, Pending},
+        space,
+    },
+};
+use super::{COLOURS, anims, colour, hits, skeleton};
+use crate::map::{
+    LoadContext, MapCharacterModel, MapData, MapDressing, MapLoadOptions, MapMesh, MapMeshLook, MapModel, MapTexture,
+};
+
+/// The multiplayer Spartan's biped tag.
+pub const BIPED: &str = "characters\\cyborg_mp\\cyborg_mp";
+
+/// The map the body comes from on other games' maps (every multiplayer
+/// map holds the same biped; the plan's choice).
+pub const DONOR_MAP: &str = "bloodgulch";
+
+/// The body and its textures (its meshes' texture indices point into
+/// `textures`).
+#[derive(Clone, Debug)]
+pub struct Spartan {
+    pub character: MapCharacterModel,
+    pub textures: Vec<MapTexture>,
+    pub warnings: Vec<String>,
+}
+
+fn tag<'a>(file: &'a MapFile, r: &TagRef, what: &str) -> Result<&'a blam_formats::cache::TagEntry, String> {
+    file.tag(r.id).ok_or_else(|| format!("the biped's {what} is missing"))
+}
+
+/// Whether a shader takes its change colour from slot C (the armour).
+fn armour(file: &MapFile, shader: &TagRef) -> bool {
+    file.tag(shader.id)
+        .and_then(|t| Shader::read(file, t).ok())
+        .is_some_and(|s| matches!(s, Shader::Model(m) if m.change_color_source == AnimationSource::C))
+}
+
+/// A mesh's look with `tint`.
+fn look(m: &MapMesh, tint: Option<[f32; 3]>) -> MapMeshLook {
+    MapMeshLook {
+        material: m.material.clone(),
+        texture: m.texture,
+        alpha: m.alpha,
+        double_sided: m.double_sided,
+        unlit: m.unlit,
+        normal_map: m.normal_map,
+        phong: m.phong.clone(),
+        envmap: m.envmap,
+        tint,
+        detail: m.detail,
+        base_transform: m.base_transform,
+        selfillum: m.selfillum,
+        skin_frames: None,
+        layer: None,
+    }
+}
+
+/// The Spartan of map `file` (module doc); `decode` false: textures as
+/// placeholders of their size (a lean load).
+pub fn spartan(file: &MapFile, decode: bool) -> Result<Spartan, String> {
+    let biped_tag = file
+        .find(class::BIPED, BIPED)
+        .ok_or_else(|| format!("no biped `{BIPED}`"))?;
+    let biped = Biped::read(file, biped_tag).map_err(|e| e.to_string())?;
+    let o = &biped.object;
+    let model = Model::read(file, tag(file, &o.model, "model")?).map_err(|e| e.to_string())?;
+    let graph =
+        AnimationGraph::read(file, tag(file, &o.animation_graph, "animation graph")?).map_err(|e| e.to_string())?;
+    let coll =
+        collision::read_model(file, tag(file, &o.collision_model, "collision model")?).map_err(|e| e.to_string())?;
+    let bones = skeleton::bones(&model);
+    let found = objects::skinned_meshes(file, &model, &|p| space::point(p));
+    let tinted: Vec<bool> = found.iter().map(|(_, s)| armour(file, s)).collect();
+    let pending = found
+        .into_iter()
+        .map(|(mesh, shader)| Pending {
+            mesh,
+            shader,
+            lit: true,
+            dest: Dest::Model(0),
+        })
+        .collect();
+    let mut textures = Vec::new();
+    let mut warnings = Vec::new();
+    let meshes: Vec<MapMesh> = maps::apply_looks(file, pending, &mut textures, &mut warnings, decode)
+        .into_iter()
+        .map(|(m, _)| m)
+        .collect();
+    let skins: Vec<Vec<MapMeshLook>> = (0..COLOURS.len())
+        .map(|k| {
+            meshes
+                .iter()
+                .zip(&tinted)
+                .map(|(m, t)| look(m, t.then(|| colour(k))))
+                .collect()
+        })
+        .collect();
+    let (lo, hi) = meshes.iter().flat_map(|m| &m.positions).fold(
+        (bevy::math::Vec3::splat(f32::MAX), bevy::math::Vec3::splat(f32::MIN)),
+        |(lo, hi), p| (lo.min((*p).into()), hi.max((*p).into())),
+    );
+    let (set, left_out) = anims::build(&graph, &bones, model.node_list_checksum);
+    warnings.extend(left_out);
+    let root = skeleton::root();
+    let boxes = hits::boxes(&coll, &bones);
+    let regions = hits::regions(&bones, &boxes);
+    let hitboxes = hits::hitboxes(&boxes, &regions, &bones, &set.defaults, &root);
+    Ok(Spartan {
+        character: MapCharacterModel {
+            game: Some(GAME),
+            team: None,
+            name: None,
+            class: None,
+            model: MapModel {
+                meshes,
+                bounds: if lo.x <= hi.x { (lo, hi) } else { Default::default() },
+                skins,
+                ..Default::default()
+            },
+            hitboxes,
+            bones,
+            root,
+            animations: Some(Arc::new(set)),
+            boxes,
+            ragdoll: None,
+        },
+        textures,
+        warnings,
+    })
+}
+
+/// `body`'s character added to `map`'s kit, its textures appended to the
+/// map's (the indices moved past the map's own).
+pub fn add(map: &mut MapData, body: &Spartan) {
+    let offset = map.textures.len();
+    let mut c = body.character.clone();
+    let shift = |t: &mut Option<usize>| {
+        if let Some(i) = t {
+            *i += offset;
+        }
+    };
+    for m in &mut c.model.meshes {
+        shift(&mut m.texture);
+        shift(&mut m.normal_map);
+        if let Some(d) = &mut m.detail {
+            d.texture += offset;
+        }
+    }
+    for l in c.model.skins.iter_mut().flatten() {
+        shift(&mut l.texture);
+        shift(&mut l.normal_map);
+        if let Some(d) = &mut l.detail {
+            d.texture += offset;
+        }
+    }
+    map.textures.extend(body.textures.iter().cloned());
+    map.warnings
+        .extend(body.warnings.iter().map(|w| format!("the Spartan: {w}")));
+    map.kit.characters.push(c);
+}
+
+/// The body of a Halo map's own file added to it (or a warning).
+pub fn add_own(file: &MapFile, map: &mut MapData, decode: bool) {
+    match spartan(file, decode) {
+        Ok(b) => add(map, &b),
+        Err(e) => map.warnings.push(format!("no Spartan body: {e}")),
+    }
+}
+
+/// The donor's bodies an app's loads share (`LoadContext`): with and
+/// without textures.
+#[derive(Default)]
+struct Donor(Mutex<[Option<Arc<Spartan>>; 2]>);
+
+/// The donor map's body for an app (made once per app and `decode`).
+pub fn donor(context: &LoadContext, decode: bool) -> Result<Arc<Spartan>, String> {
+    let memo = context.get_or_init(Donor::default);
+    let mut slots = memo.0.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(b) = &slots[usize::from(decode)] {
+        return Ok(b.clone());
+    }
+    let mount = maps::mount_for(context)?;
+    let path = maps::map_path(DONOR_MAP);
+    let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
+    let file = MapFile::load(&bytes).map_err(|e| format!("{path}: {e}"))?;
+    let body = Arc::new(spartan(&file, decode).map_err(|e| format!("{path}: {e}"))?);
+    slots[usize::from(decode)] = Some(body.clone());
+    Ok(body)
+}
+
+/// The Spartan on another game's map (the donor's).
+pub fn dress(map: &mut MapData, options: &MapLoadOptions) -> Result<(), String> {
+    let body = donor(&options.context, options.textures)?;
+    add(map, &body);
+    Ok(())
+}
+
+/// Halo's players on the maps of other games: the Spartan body
+/// (`game::BUNDLE`'s guest dressing).
+pub static GUEST: MapDressing = MapDressing { game: GAME, dress };

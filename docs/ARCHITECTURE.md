@@ -304,7 +304,16 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   data (data/weapons/*.toml) run by Halo's own 30 Hz per-tick rules
   beside the engine's frame (`weapon::OwnFrame`), firing per-tick
   projectiles whose hits go through `damage::HaloHit`; its `PARTS`
-  lends them as gun-game rungs with its movement. Its spawns
+  lends them as gun-game rungs with its movement. Halo's players wear
+  the multiplayer Spartan (`game::body`): its model, unit animation
+  tables and collision nodes as the engine's character model, posed in
+  the fixed tick into `SimAnimator` so the server's hitboxes follow it,
+  and dressed onto other games' maps from bloodgulch. Halo's files reach
+  players without the disc through the asset store: `chimera_pack
+  pack|sets halo_ce` packs the disc's own files under the build its
+  maps' headers name (`game::mount::build`), `base` the donor map and
+  `map/<name>` per map (`game::sets`); the store serves Halo instead of
+  the disc, never under it. Its spawns
   are the slayer starts (no team) and capture the flag's red and blue
   bases (`Team(1)`, `Team(2)`, after the game's flag check;
   `game::maps::spawns`). In the party apps (`game::BUNDLE`, one of

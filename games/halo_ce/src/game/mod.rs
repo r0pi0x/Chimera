@@ -19,12 +19,19 @@
 //!   (weapons.md, projectiles.md): data/weapons/*.toml, the per-tick weapon
 //!   rules, projectiles and melee, hits through `damage::HaloHit`, lent as
 //!   rungs in `parts`;
+//! - `body`: the players' Spartan body (model, animations from the graph's
+//!   unit tables, hit boxes from the collision model, armour colours), on
+//!   Halo's maps and, from the donor map, on any other;
+//! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
+//!   the donor map, `map/<name>` per multiplayer map); `mount::build` reads
+//!   the install's build from a map header;
 //! - `parts`: what the game lends other games' apps (`PARTS`): its maps,
 //!   by its pool rules and measurements (data/map_pool.toml,
 //!   data/map_fitness.toml), played with other games' players and guns.
 //!
 //! `HaloPlugins` adds the game's parts after `crate::SimPlugins`.
 
+pub mod body;
 pub mod damage;
 pub mod maps;
 pub mod mount;
@@ -122,8 +129,8 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
 ];
 
 /// Halo's parts, after `crate::SimPlugins`: the game registered (`INFO`),
-/// its movement (`movement`), its players' vitality (`vitality`) and its
-/// damage seam (`damage`).
+/// its movement (`movement`), its players' vitality (`vitality`), its
+/// damage seam (`damage`) and its players' bodies (`body`).
 pub struct HaloPlugins;
 
 impl PluginGroup for HaloPlugins {
@@ -134,13 +141,15 @@ impl PluginGroup for HaloPlugins {
             .add(vitality::VitalityPlugin)
             .add(damage::DamagePlugin)
             .add(weapons::HaloWeaponsPlugin)
+            .add(body::HaloBodyPlugin)
     }
 }
 
 /// Halo as one bundle for an app made of several games
-/// (`chimera_world::game_bundle`): its info, parts and maps; it brings no
-/// players or guns to other games' maps yet (`guest: None`) and adds
-/// its registration, its surface names' classes (`maps::surfaces::
+/// (`chimera_world::game_bundle`): its info, parts and maps; it brings its
+/// players' body to other games' maps (`guest`: the Spartan, from the
+/// donor map, `body::load::GUEST`) and adds its registration, its bodies'
+/// animation and colours (`body::HaloBodyPlugin`), its surface names' classes (`maps::surfaces::
 /// SURFACES`) and its map pool's rules and measurements
 /// (`parts::add_map_pool`) to a composed simulation: its maps are played
 /// there with the other games' movement and guns.
@@ -148,7 +157,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     info: &INFO,
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
-    guest: None,
+    guest: Some(&body::load::GUEST),
     kept: &[],
     binds: &[],
     view_model_fov: None,
@@ -162,6 +171,8 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         // Its guns as rungs: its movement (not the match's), its vitality
         // and damage seam, its weapons (`parts::add_guns`).
         parts::add_guns(app);
+        // Its players' body, worn by its guns' holders (`body`).
+        app.add_plugins(body::HaloBodyPlugin);
     },
     display_names: None,
 };
