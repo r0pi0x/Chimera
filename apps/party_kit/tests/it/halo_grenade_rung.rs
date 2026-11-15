@@ -4,10 +4,10 @@
 //! band (an automatic ladder's report deals it as a grenade, and no other
 //! weapon of any game declares a rung hint); its holder has the pistol
 //! with no round loaded and none in reserve that nothing refills, and
-//! Halo's four frags (the band's rule with the ladder's `refill_ammo`:
-//! kept full), no plasma grenade, with `halo_party_grenades` off; the fire
+//! Halo's four frags (the rung's own supply with the ladder's
+//! `refill_ammo`: timed, one back every `refill_seconds`), no plasma grenade, with `halo_party_grenades` off; the fire
 //! button dry-fires and throws nothing, the grenade button throws a frag
-//! (given back at once); a frag kill is in the kill feed as the frag
+//! (spent, coming back over time); a frag kill is in the kill feed as the frag
 //! grenade (name and id) and advances the thrower; the next Halo rung has
 //! no grenades again. The rung hint: set on arriving (Halo's grenade
 //! action, "throw"), gone after its seconds, back on a dry fire; the key it
@@ -150,7 +150,7 @@ fn the_holder_has_an_empty_pistol_and_frags_and_throws_with_the_grenade_button()
     sim.intent(a).actions &= !bit;
     assert!(thrown, "a frag in flight");
     sim.seconds(1.0);
-    assert_eq!(hands(&sim, a).throw.counts, [4, 0], "given back (the band's rule)");
+    assert!(hands(&sim, a).throw.counts[0] < 4, "not given back at once (the supply is timed)");
     // The next Halo rung: no grenades with the switch off.
     set_rung(&mut sim, a, 2);
     sim.seconds(1.5);
@@ -234,4 +234,127 @@ fn the_hint_sits_bottom_centre_clear_of_the_huds() {
         // In the lower half: nowhere near the top's feed and column.
         assert!(r[1] > h / 2.0, "{w}x{h}: {r:?}");
     }
+}
+
+/// The frag count of `e` (what the HUD shows).
+fn frags(sim: &Sim, e: Entity) -> u8 {
+    hands(sim, e).throw.counts[0]
+}
+
+/// A holder on the frag rung at engine tick length `dt`, settled.
+fn holder(dt: f64) -> (Sim, Entity) {
+    let mut sim = party();
+    sim.set_tick_interval(dt);
+    let a = soldier(&mut sim);
+    let _b = soldier(&mut sim);
+    sim.seconds(1.5);
+    set_rung(&mut sim, a, 1);
+    sim.seconds(1.5);
+    assert_eq!(held(&sim, a), Some(FRAG_RUNG));
+    (sim, a)
+}
+
+fn set_frags(sim: &mut Sim, e: Entity, n: u8) {
+    sim.app.world_mut().get_mut::<HaloHands>(e).unwrap().throw.counts[0] = n;
+}
+
+/// Seconds (from the call) at which the count rose, over `secs`.
+fn rises(sim: &mut Sim, e: Entity, secs: f64) -> Vec<f64> {
+    let dt = 1.0 / sim.tick_hz();
+    let (mut out, mut last) = (vec![], frags(sim, e));
+    for i in 1..=(secs / dt).round() as u64 {
+        sim.ticks(1);
+        let n = frags(sim, e);
+        assert!(n <= 4, "never above the maximum");
+        if n > last {
+            out.push(i as f64 * dt);
+        }
+        last = n;
+    }
+    out
+}
+
+#[test]
+fn four_throws_in_quick_succession_empty_the_hand_and_nothing_gives_one_back_at_once() {
+    let (mut sim, a) = holder(1.0 / 30.0);
+    assert_eq!(frags(&sim, a), 4);
+    let bit = grenade_bit(&sim);
+    let mut most = 4;
+    let mut at = None;
+    for i in 0..(8.0 * sim.tick_hz()) as u32 {
+        let down = (i / 8) % 2 == 0;
+        let mut intent = sim.intent(a);
+        intent.actions = if down { intent.actions | bit } else { intent.actions & !bit };
+        drop(intent);
+        sim.ticks(1);
+        most = most.min(frags(&sim, a));
+        if frags(&sim, a) == 0 && at.is_none() {
+            at = Some(i);
+        }
+        if at.is_some() {
+            break;
+        }
+    }
+    sim.intent(a).actions &= !bit;
+    assert_eq!((most, frags(&sim, a)), (0, 0), "four thrown, none left");
+    let t = at.expect("emptied") as f64 / sim.tick_hz();
+    assert!(t < 5.0, "four thrown before the first returns: {t} s");
+}
+
+#[test]
+fn a_frag_returns_every_refill_seconds_up_to_the_maximum_and_no_further() {
+    let (mut sim, a) = holder(1.0 / 30.0);
+    set_frags(&mut sim, a, 0);
+    let r = rises(&mut sim, a, 24.0);
+    assert_eq!(frags(&sim, a), 4);
+    assert_eq!(r.len(), 4, "four returns and no more: {r:?}");
+    for (k, t) in r.iter().enumerate() {
+        let want = 5.0 * (k + 1) as f64;
+        assert!((t - want).abs() < 0.1, "return {k} at {t}, wanted {want}");
+        // None before the interval.
+    }
+    // From 3 (one thrown): one interval, not from the last throw.
+    set_frags(&mut sim, a, 3);
+    sim.seconds(3.0);
+    set_frags(&mut sim, a, 2);
+    let r = rises(&mut sim, a, 11.0);
+    assert_eq!(r.len(), 2, "{r:?}");
+    assert!((r[0] - 2.0).abs() < 0.2 && (r[1] - 7.0).abs() < 0.2, "the interval runs from the drop below the maximum, not each throw: {r:?}");
+}
+
+#[test]
+fn the_refill_times_are_the_same_at_two_tick_rates() {
+    let times = |dt: f64| {
+        let (mut sim, a) = holder(dt);
+        set_frags(&mut sim, a, 1);
+        rises(&mut sim, a, 16.0)
+    };
+    let (slow, fast) = (times(1.0 / 30.0), times(0.015));
+    assert_eq!((slow.len(), fast.len()), (3, 3), "{slow:?} {fast:?}");
+    for (s, f) in slow.iter().zip(&fast) {
+        assert!((s - f).abs() < 0.07, "{slow:?} vs {fast:?}");
+    }
+}
+
+#[test]
+fn arriving_on_the_rung_and_respawning_give_four() {
+    let (mut sim, a) = holder(1.0 / 30.0);
+    assert_eq!(frags(&sim, a), 4, "on arriving");
+    set_frags(&mut sim, a, 1);
+    sim.seconds(2.0);
+    // Away and back: the arrival gives four again.
+    set_rung(&mut sim, a, 2);
+    sim.seconds(1.5);
+    set_rung(&mut sim, a, 1);
+    sim.seconds(1.5);
+    assert_eq!(frags(&sim, a), 4, "on arriving again");
+    // A new life.
+    set_frags(&mut sim, a, 0);
+    sim.seconds(1.0);
+    assert_eq!(frags(&sim, a), 0);
+    sim.app.world_mut().get_mut::<chimera_core::core::Health>(a).unwrap().current = 0.0;
+    sim.seconds(0.5);
+    sim.app.world_mut().get_mut::<chimera_core::core::Health>(a).unwrap().current = 100.0;
+    sim.seconds(0.5);
+    assert_eq!(frags(&sim, a), 4, "on respawning");
 }
