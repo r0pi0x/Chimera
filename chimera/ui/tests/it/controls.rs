@@ -169,9 +169,16 @@ fn rows_toggles_and_segments_show_their_state() {
     assert_eq!(texts_under(&mut app, tog), ["OFF", "ON"]);
     let opts = build(&mut app, |ui, c, root| ui.segmented(c, root, &["None", "60", "144"], Some(1), State::NONE));
     assert_eq!(opts.len(), 3);
-    let theme = app.world().resource::<Theme>().clone();
-    assert_eq!(app.world().get::<BackgroundColor>(opts[1]).unwrap().0, theme.tone_a(Tone::Fg, 1.0));
-    assert_eq!(app.world().get::<BackgroundColor>(opts[0]).unwrap().0, Color::NONE);
+    // Segmented (slanted): the pick a white slanted slab, the others none.
+    assert_eq!(descendants_with_entity::<controls::SegmentedPick>(&mut app, opts[1]).len(), 1);
+    assert!(descendants_with_entity::<controls::SegmentedPick>(&mut app, opts[0]).is_empty());
+    let pick = descendants_with::<UiSlant>(&mut app, opts[1]);
+    assert!(pick.iter().any(|s| s.fill == Tone::Fg && s.outline == 0.0), "the pick is a UiSlant");
+    // Words in Display, numbers in Mono.
+    let roles: Vec<Role> = descendants_with::<UiText>(&mut app, opts[0]).iter().map(|t| t.role).collect();
+    assert_eq!(roles, [Role::DisplayRegular], "NONE is a word");
+    let roles: Vec<Role> = descendants_with::<UiText>(&mut app, opts[1]).iter().map(|t| t.role).collect();
+    assert_eq!(roles, [Role::Mono], "60 is a number");
 }
 
 /// Text on white is ink at full strength and one pixel heavier (the

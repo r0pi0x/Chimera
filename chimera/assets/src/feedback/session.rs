@@ -727,7 +727,9 @@ pub fn panic_text(info: &std::panic::PanicHookInfo<'_>) -> (String, String) {
         .unwrap_or_else(|| "(not a string)".into());
     let place = info.location().map_or(String::new(), |l| format!(" at {}:{}", l.file(), l.line()));
     let thread = std::thread::current().name().unwrap_or("unnamed").to_string();
-    let what = format!("panic in thread '{thread}': {}{place}", cut(&message, 500));
+    // The place before the message: a message naming a secret has the
+    // rest of its line hidden (`redact::line`), the place would go with it.
+    let what = format!("panic in thread '{thread}'{place}: {}", cut(&message, 500));
     let backtrace = format!("{what}\n\n{}", std::backtrace::Backtrace::force_capture());
     (what, backtrace)
 }
@@ -840,7 +842,16 @@ pub fn signature(backtrace: Option<&str>, log: Option<&str>, text: &str) -> Stri
             .take(3)
             .collect();
         let head = bt.lines().next().unwrap_or("");
-        let place = head.rsplit_once(" at ").map(|(_, p)| p.to_string()).unwrap_or_default();
+        // `panic in thread 'main' at chimera/x.rs:3: boom` (older reports:
+        // `panic in thread 'main': boom at chimera/x.rs:3`).
+        let place = head
+            .strip_prefix("panic in thread '")
+            .and_then(|r| r.split_once("' at "))
+            .and_then(|(_, r)| r.split_once(": "))
+            .map(|(p, _)| p)
+            .or_else(|| head.rsplit_once(" at ").map(|(_, p)| p))
+            .unwrap_or_default()
+            .to_string();
         if !frames.is_empty() {
             return format!("panic {}{}", frames.join(" < "), if place.is_empty() { String::new() } else { format!(" ({place})") });
         }
@@ -998,6 +1009,12 @@ mod tests {
             signature(Some(bt), None, ""),
             "panic chimera_client::client::foo::bar < chimera_client::client::foo::baz < game::main (chimera/x.rs:3)"
         );
+        let now = bt.replace("'main': boom at chimera/x.rs:3", "'main' at chimera/x.rs:3: boom, token (hidden)");
+        assert_eq!(
+            signature(Some(&now), None, ""),
+            "panic chimera_client::client::foo::bar < chimera_client::client::foo::baz < game::main (chimera/x.rs:3)"
+        );
+        assert_eq!(signature(Some("panic in thread 'main' at chimera/x.rs:3: boom\n"), None, ""), "panic at chimera/x.rs:3");
         assert_eq!(signature(None, Some("a\n12:00 native crash: exception 0xc0000005 at 0x1, minidump written\n"), "x"), "native 0xc0000005");
         assert_eq!(signature(None, None, "The session ended unexpectedly (no clean exit)\n..."), "unclean exit");
         assert_eq!(signature(None, None, "render error: DeviceLost: gone"), "render DeviceLost");

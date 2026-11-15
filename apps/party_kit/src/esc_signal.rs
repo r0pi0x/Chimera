@@ -289,7 +289,7 @@ fn confirm(c: &mut Commands, ui: &Ui, root: Entity, shade: f32, title: &str, lin
     ui.text(c, ttl, Role::DisplayBold, 1.35, Tone::Fg, title);
     ui.paragraph(c, m, Role::Text, SENTENCE, Tone::Fg2, line);
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
-    let stay = ui.button(c, acts, Kind::Primary, "Stay", Some("Esc"), 2.4, State::focused(focus == 0));
+    let stay = ui.button(c, acts, Kind::Primary, "Stay", Some("Esc"), chimera_ui::controls::HERO_H, State::focused(focus == 0));
     c.entity(stay).insert(Action::Back);
     let end = ui.button(c, acts, Kind::Danger, go, None, 2.4, State::focused(focus == 1));
     c.entity(end).insert(Action::DisconnectYes);

@@ -3503,6 +3503,20 @@ without):
 | warehouse | 5.89M / 6.52M / 6.09M | 5.78M / 6.24M / 5.63M |
 | de_inferno | 13.98M / 13.48M / 14.70M | 13.86M / 13.20M / 14.23M |
 
+### The bots hold still while measured (2026-11-15)
+
+`heavy::session_maps` failed on main at 00e2aa76: warehouse's quiet ticks
+cost 5.93M on the second lap and 7.77M on the third (limit 1.3 times),
++1.55M of it the movement step and +1.38M shot effects: the third lap's
+fight (who ran, who fired what) differed, not the session's state. The
+play is the same on every run of one build, but another build's play
+moves it. `tick_cost` now measures with the bots standing and their fire
+held (`BotSettings::stop`, `dont_shoot`; play between the measures is
+unchanged), so a tick is the map's and the session's cost. Laps 1 / 2 / 3
+then: de_dust2 - / 7.04M / 7.27M, cs_office 10.80M / 10.91M / 10.68M,
+dm_lockdown 10.07M / 10.51M / 10.35M, warehouse 5.71M / 6.14M / 5.76M,
+de_inferno 12.46M / 12.21M / 12.18M.
+
 ### A ragdoll's cost (2026-11-12)
 
 `cs_source`'s `heavy::map_ragdoll_cost`: ten CS:S players killed by a head

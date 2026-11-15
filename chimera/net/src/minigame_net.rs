@@ -218,6 +218,15 @@ impl Plugin for MinigameNetPlugin {
 
 /// The protocol (in this order on every side) and the systems.
 fn register(app: &mut App) {
+    // The maps a host took out of the rotation (the party apps' Maps
+    // picker): `mp_maps_off`.
+    app.init_resource::<MapsOff>();
+    crate::console::resource_cvar::<MapsOff, String>(
+        app,
+        "mp_maps_off",
+        "Server: the maps out of the minigame's rotation and vote, comma-separated (`game:map`; the Host page's Maps picker sets it). Taking every map out takes none.",
+        |m| &mut m.0,
+    );
     // A host's `changelevel` is the minigame's next match there.
     app.insert_resource(crate::net::HostChangeLevel(host_changelevel));
     app.insert_resource(crate::net::HostNextLevel(host_next_level));
@@ -1128,7 +1137,7 @@ struct RotateFailed(u64);
 fn open_vote(world: &mut World, def: &'static MinigameDef, first: &str) -> bool {
     let Ok(Some(settings)) = MapVoteSettings::of(def) else { return false };
     let here = crate::net::current_map(world);
-    let pool: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
+    let pool = rotation_pool(world, def);
     let ok: Vec<String> = pool.iter().filter(|m| playable_on(world, def, Some(m)).ok()).cloned().collect();
     let here_ok = playable_on(world, def, Some(&here)).ok();
     // The rotation's own draw: the maps too big for the players present
@@ -1307,6 +1316,27 @@ pub fn host_changelevel(world: &mut World, map: &str) -> Option<Result<Option<St
     Some(change_match(world, &def.id, Some(&target)).map(Some))
 }
 
+/// `mp_maps_off`: the maps out of the rotation (comma-separated).
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct MapsOff(pub String);
+
+impl MapsOff {
+    /// Whether `map` (any form `normalize_map` takes) is out.
+    pub fn has(&self, map: &str) -> bool {
+        let map = crate::net::normalize_map(map);
+        self.0.split(',').map(str::trim).filter(|m| !m.is_empty()).any(|m| crate::net::normalize_map(m) == map)
+    }
+}
+
+/// `def`'s rotation pool without the maps a host took out
+/// (`mp_maps_off`); all of it when that would leave none.
+pub fn rotation_pool(world: &World, def: &MinigameDef) -> Vec<String> {
+    let pool: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
+    let Some(off) = world.get_resource::<MapsOff>().filter(|o| !o.0.trim().is_empty()) else { return pool };
+    let kept: Vec<String> = pool.iter().filter(|m| !off.has(m)).cloned().collect();
+    if kept.is_empty() { pool } else { kept }
+}
+
 /// What an app does as a rotation moves a minigame on (called with its id
 /// and the next map, before the match changes): Ultimate Gun Game makes a
 /// new ladder. Host only.
@@ -1324,7 +1354,7 @@ fn next_map(world: &mut World, def: &'static MinigameDef) -> String {
     if !def.rotate {
         return here;
     }
-    let pool: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
+    let pool = rotation_pool(world, def);
     let ok: Vec<String> = pool.iter().filter(|m| playable_on(world, def, Some(m)).ok()).cloned().collect();
     // By the players present (`minigame::map_fit`): the maps too big for
     // them out, the rest drawn by weight.

@@ -43,19 +43,39 @@ What the server has (sizes as stored, i.e. transferred; build 25338318 of
 CS:S, 26236938 of Combat Arms, 24600434 of HL2:DM; measured 2026-10-31, HL2:DM
 2026-11-03):
 
-| | CS:S | Combat Arms | HL2:DM |
-|---|---|---|---|
-| every file the game mounts (`fetch <game>`; CS:S: with the publisher's content cache, 89 community maps) | 47,692 records, 4.4 GB (7.5 GB plain) | 29,431 records, 3.8 GB (9.8 GB plain; music included) | 30,792 files, 30,390 records, 1.9 GB (3.2 GB plain; its `hl2/` records are CS:S's, shared) |
-| `base` (what every start and match reads: menus, fonts, data, what every match loads; lean since 2026-11-15, `chimera_pack lean`) | 1,753 files, 57 MB | 2,224 files, 63 MB | 1,475 files, 55 MB (scripts, decals, impact and footstep sounds, every gun and player model) |
-| `common` (what a match may play beyond `base`: event sounds, debris, loading images; each join) | 13 files, 0.6 MB | 447 files, 19 MB | 85 files, 1.5 MB |
-| `map/<name>` for every installed map (2026-11-12, `chimera_pack sets`; the pool's also from a client's load) | 109 maps, 0.3-196 MB each (`map/de_dust2` 143 MB) | 105 maps, 0.9-174 MB each (`map/warehouse` 93 MB) | `map/<dm_lockdown, dm_overwatch, dm_powerhouse, dm_resistance, dm_runoff, dm_steamlab, dm_underpass, halls3>`: 2,014-3,318 records, 90-153 MB each (the app on the map) |
-| `weapon/<id>` (view and world models, materials, sounds; CA: view models with hands and parts, the held model and the gun's own sounds) | 29 sets, 0.7-1.9 MB each, 21 MB together | 2,363 sets, 0.4-20 MB each, 1.0 GB together (2026-11-11, with the held models) | 12 sets, 0.7-1.8 MB each, 13 MB together (view and world models, projectile models, materials, sounds) |
-| `character/<record>` (a rung's body: model, faces, head pieces, textures, and its rung look's first-person hand model and sleeves when they aren't the default character's; 2026-11-12) | - | 691 sets, 1,729 records, 378 MB together (the hands 322 records, 73 MB); beyond `base` and `players` 0.3 MB at the median, the hands 0.3 MB more | - |
-| `players` (the eight class models) | 12.9 MB | 257 files, 66 MB (the stock characters, footsteps) | 166 records, 18 MB (the 19 player models) |
-| `music` (`Game/BGM`, loose files), and `music/<track>` per file | - | 71 MB; 64 track sets, 0.9 MB at the median | - |
-| `heavy-tests` (what the whole suite reads) | 15,703 records, 922 MB | 13,322 records, 2.6 GB | 6,598 records, 366 MB |
+| | CS:S | Combat Arms | HL2:DM | Halo (staged 2026-11-15, not yet on the server) |
+|---|---|---|---|---|
+| every file the game mounts (`fetch <game>`; CS:S: with the publisher's content cache, 89 community maps) | 47,692 records, 4.4 GB (7.5 GB plain) | 29,431 records, 3.8 GB (9.8 GB plain; music included) | 30,792 files, 30,390 records, 1.9 GB (3.2 GB plain; its `hl2/` records are CS:S's, shared) | 30 files, 30 records, 2.50 GB (2.51 GB plain: the maps are zlib inside and the videos Bink, so zstd gains 0.5%; `xdemos/` left out) |
+| `base` (what every start and match reads: menus, fonts, data, what every match loads; lean since 2026-11-15, `chimera_pack lean`) | 1,753 files, 57 MB | 2,224 files, 63 MB | 1,475 files, 55 MB (scripts, decals, impact and footstep sounds, every gun and player model) | the donor map `maps/bloodgulch.map`, 1 record, 22.5 MB |
+| `common` (what a match may play beyond `base`: event sounds, debris, loading images; each join) | 13 files, 0.6 MB | 447 files, 19 MB | 85 files, 1.5 MB | - |
+| `map/<name>` for every installed map (2026-11-12, `chimera_pack sets`; the pool's also from a client's load) | 109 maps, 0.3-196 MB each (`map/de_dust2` 143 MB) | 105 maps, 0.9-174 MB each (`map/warehouse` 93 MB) | `map/<dm_lockdown, dm_overwatch, dm_powerhouse, dm_resistance, dm_runoff, dm_steamlab, dm_underpass, halls3>`: 2,014-3,318 records, 90-153 MB each (the app on the map) | 13 maps, one record each, 19.6-24.8 MB (`map/hangemhigh` 21.3 MB; `map/bloodgulch` is `base`'s record) |
+| `weapon/<id>` (view and world models, materials, sounds; CA: view models with hands and parts, the held model and the gun's own sounds) | 29 sets, 0.7-1.9 MB each, 21 MB together | 2,363 sets, 0.4-20 MB each, 1.0 GB together (2026-11-11, with the held models) | 12 sets, 0.7-1.8 MB each, 13 MB together (view and world models, projectile models, materials, sounds) | - (every Halo weapon is in the donor map, `base`; none recorded while Halo has no guns) |
+| `character/<record>` (a rung's body: model, faces, head pieces, textures, and its rung look's first-person hand model and sleeves when they aren't the default character's; 2026-11-12) | - | 691 sets, 1,729 records, 378 MB together (the hands 322 records, 73 MB); beyond `base` and `players` 0.3 MB at the median, the hands 0.3 MB more | - | - |
+| `players` (the eight class models) | 12.9 MB | 257 files, 66 MB (the stock characters, footsteps) | 166 records, 18 MB (the 19 player models) | the donor map, `base`'s record |
+| `music` (`Game/BGM`, loose files), and `music/<track>` per file | - | 71 MB; 64 track sets, 0.9 MB at the median | - | - |
+| `heavy-tests` (what the whole suite reads) | 15,703 records, 922 MB | 13,322 records, 2.6 GB | 6,598 records, 366 MB | - |
 
 `chimera_assets status` lists the sets and sizes of what you have.
+
+**Halo** (`halo_ce`): its install is the Xbox disc image
+(`CHIMERA_HALO_CE_ROOT`), so its build is no Steam build but the build
+string its maps' headers carry (`01.10.12.2276` for the NTSC disc,
+`halo_ce::game::mount::build`), and the store serves it instead of the
+disc, never under it (a player has the whole disc or none of it).
+`chimera_pack pack halo_ce` packs the game's own files: the 24 map files
+(the 13 multiplayer maps, the menu's and the ten campaign maps, up to
+187 MB each, one record apiece), `default.xbe` and the five `bink/`
+videos; it leaves out `xdemos/` (1,136 files, 1.2 GB: other games'
+demos the disc carries, which nothing in Chimera reads; `--all-files`
+packs them). Measured on the Windows PC: 125 s on 4 threads, a peak of
+1.6 GB of memory (whole records of up to 200 MB in memory at once).
+`chimera_pack sets halo_ce` makes `base` the donor map
+(`maps/bloodgulch.map`: every multiplayer map holds the same weapons and
+bipeds, so Halo's guns and the Spartan will be read from it on any map),
+`players` the same record, and `map/<name>` each map's one file;
+`weapon/<id>` sets would all be the donor map and aren't recorded while
+Halo has no guns. A client with the store and no disc plays Halo's maps
+from it (`CHIMERA_ASSET_USE_INSTALL=0`, or no disc configured).
 
 Players rather than developers (a playtest over the internet, no
 checkout): the game server names the service at join and the client
@@ -149,6 +169,33 @@ own VPK and layer checks, Combat Arms' `BGM.rez`, `ATTRIBUTES.rez` and
 archive listings, the `heavy::served` tests (they pack from an install),
 `dump`. Local demo and probe files (`target/demos`, probe logs) aren't
 served either: those tests skip as they do for us without them.
+
+## Team Fortress 2: an install of your own (not served yet)
+
+TF2 (docs/plans/active/tf2.md) isn't on the asset service yet (its sets
+come with M2). Its tests and the party's `tf2:` maps read an install,
+found as the other games' are: `$CHIMERA_TF2_ROOT` for one run, else
+`[games.tf2] path` in `chimera.local.toml`, else Steam's libraries
+(app 440). Two layouts work:
+
+- **The client** (Steam app 440, "Team Fortress 2"; free to play, but
+  even through SteamCMD it needs a Steam login: `steamcmd +force_install_dir
+  <folder> +login <your account> +app_update 440 validate +quit`):
+  everything, maps, models, textures, sounds. The heavy tests' "no
+  missing material" checks need it.
+- **The dedicated server** (app 232250, anonymous):
+  ```
+  steamcmd +force_install_dir <folder> +login anonymous +app_update 232250 validate +quit
+  ```
+  About 15 GB: maps, models, material text, scripts, but no textures
+  and no sounds (their VPKs' `_dir` files are there, their archives
+  aren't; the mount leaves those files out). Maps convert and play with
+  stand-in textures and no sound; geometry, collision and spawns are the
+  same. `CHIMERA_TF2_SERVER_ROOT=<folder>` lets `cargo test -p tf2
+  --features dev` check this layout too.
+
+Both are folders holding `tf/`, `hl2/` and `platform/`; a SteamCMD
+install outside Steam's libraries needs the config line or the variable.
 
 ## When something goes wrong
 

@@ -57,6 +57,7 @@ pub static CS_SOURCE: SourceGame = SourceGame {
     id: super::GAME,
     converter: CONVERTER,
     spawns: SPAWNS,
+    spawn_rule: source_engine::content::bsp::no_spawn_rule,
     gravity: GRAVITY,
     kit,
     extra_particles,

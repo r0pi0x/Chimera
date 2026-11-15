@@ -100,9 +100,12 @@ fn setup(app: &mut App) {
         (chimera_client::client::console::finish_map_load, file_of_loaded_map).chain().before(MainMenuSystems),
     );
     chimera_net::prematch::enable(app);
+    // Started by everyone being ready (these trace the start, not the
+    // host's Start, which `host_lobby` covers).
     app.insert_resource(LobbySettings {
         enabled: 1,
         countdown: 1.0,
+        host_start: 0,
         ..default()
     });
 }
@@ -582,10 +585,10 @@ fn settings_stay_open_across_the_match_start() {
     in_lobby(&mut sim);
     sim.clients[0].app.world_mut().write_message(LobbyAction::Settings);
     sim.ticks(2);
-    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("settings_set party_swap_effect 0");
+    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("settings_set chimera_fullscreen 2");
     sim.ticks(2);
     let pending = |s: &NetSim| s.clients[0].app.world().resource::<party_kit::settings::Settings>().pending.clone();
-    assert_eq!(pending(&sim).get("party_swap_effect").map(String::as_str), Some("0"), "a change pending");
+    assert_eq!(pending(&sim).get("chimera_fullscreen").map(String::as_str), Some("2"), "a display change waiting");
     // The match starts under it (the host's start: a short countdown).
     sim.server.app.world_mut().resource_mut::<LobbySettings>().countdown = 1.0;
     sim.server.app.world_mut().resource_mut::<Console>().submit("lobby_start 1");
@@ -597,7 +600,7 @@ fn settings_stay_open_across_the_match_start() {
         assert!(m.open && !m.lobby && m.page == Page::Options(0), "Settings stays, now the match's: {m:?}");
     }
     assert_eq!(settings_ctx(&sim, 0), Some(party_kit::settings::Context::Game));
-    assert_eq!(pending(&sim).get("party_swap_effect").map(String::as_str), Some("0"), "nothing lost");
+    assert_eq!(pending(&sim).get("chimera_fullscreen").map(String::as_str), Some("2"), "nothing lost");
     assert!(sim.clients[0].app.world().resource::<AppMenu>().open, "the input still Settings'");
     // Back goes to the match's menu, as for Settings opened in play.
     sim.clients[0].app.world_mut().resource_mut::<Console>().submit("settings_press leave_discard");

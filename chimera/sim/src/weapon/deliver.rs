@@ -967,6 +967,21 @@ pub fn cs_offsets(seed: u32, inaccuracy: f32, spread: f32, pellets: u32) -> Vec<
         })
         .collect()
 }
+/// The command number (of the first 4096) nearest the middle of CS:S's
+/// pattern: its shot seed's inaccuracy and spread draws (`cs_offsets`, `r`
+/// = U(0, 1) times each) are both the smallest of the 256 patterns'. A
+/// round fired on it goes where it is aimed to within a few percent of the
+/// weapon's cone, whatever the gun: what a test of where hitboxes are (not
+/// of the draw) fires on, by setting the shooter's `Seed` for that tick.
+pub fn centred_command() -> u32 {
+    let draws = |c: u32| {
+        let seed = super::random::shot_seed(c);
+        let r1 = cs_offsets(seed, 1.0, 0.0, 1)[0].length();
+        let r2 = cs_offsets(seed, 0.0, 1.0, 1)[0].length();
+        r1.max(r2)
+    };
+    (0..4096).min_by(|x, y| draws(*x).total_cmp(&draws(*y))).unwrap()
+}
 
 /// Backstab facing test: within 36.87° (CS:S measured: 36° backstab, 37°
 /// front).

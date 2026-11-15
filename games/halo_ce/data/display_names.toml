@@ -1,0 +1,22 @@
+# Halo's guns' names (chimera_sim::weapon::names;
+# docs/plans/active/gun-display-names.md). The disc has no strings the
+# simulation reads, so the full names are given here (and as each weapon
+# document's `hud.name`); each is short enough to be its own short name.
+# `gun_names halo_ce` in the console lists them.
+game = "halo_ce"
+
+[[name]]
+weapons = ["halo_ce:assault_rifle"]
+full = "Assault Rifle"
+
+[[name]]
+weapons = ["halo_ce:pistol"]
+full = "Pistol"
+
+[[name]]
+weapons = ["halo_ce:plasma_rifle"]
+full = "Plasma Rifle"
+
+[[name]]
+weapons = ["halo_ce:shotgun"]
+full = "Shotgun"

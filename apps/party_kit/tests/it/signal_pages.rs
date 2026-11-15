@@ -56,6 +56,12 @@ fn sim(theme: &str) -> Sim {
             w.resource_mut::<Asked>().0.push(format!("connect {}", a.join(" ")));
             Ok(None)
         });
+    if sim.app.world().resource::<Console>().cvar("mp_maps_off").is_none() {
+        sim.app.console_command("mp_maps_off", "a test's: asked only", |w, a| {
+            w.resource_mut::<Asked>().0.push(format!("mp_maps_off {}", a.join(" ")));
+            Ok(None)
+        });
+    }
     sim.ticks(2);
     sim
 }
@@ -136,14 +142,16 @@ fn without_the_pages_layout_play_is_the_vgui_frame() {
 #[test]
 fn play_keys_change_a_row_and_enter_starts_the_game() {
     let mut sim = sim(PAGES_THEME);
-    // Enter on the first entry opens Play.
+    // Enter on the first entry opens Host.
     press(&mut sim, KeyCode::Enter);
     sim.ticks(2);
     assert_eq!(menu(&sim).page, MenuPage::Play);
     assert_eq!(roots(&mut sim), 1, "drawn");
     assert_eq!(pages(&sim).up, Some(MenuPage::Play));
-    assert_eq!(pages(&sim).focus, 0, "the map row first");
+    assert_eq!(pages(&sim).focus, 0, "the first row");
     let data = MenuData::shipped();
+    let name = data.play.iter().position(|r| r.cvar == "hostname").unwrap();
+    assert_eq!(name, 0, "Server name, Password and Port come first");
     let bots = data.play.iter().position(|r| r.cvar == "MaxPlayer").unwrap();
     for _ in 0..bots {
         press(&mut sim, KeyCode::ArrowDown);
@@ -154,16 +162,7 @@ fn play_keys_change_a_row_and_enter_starts_the_game() {
     press(&mut sim, KeyCode::ArrowRight);
     sim.ticks(1);
     assert_eq!(menu(&sim).play[bots], (before + 2).to_string(), "→ steps the bots");
-    // A text row takes the keys (the menu's field follows the focus).
-    let name = data.play.iter().position(|r| r.cvar == "hostname").unwrap();
-    for _ in bots..name {
-        press(&mut sim, KeyCode::ArrowDown);
-    }
-    assert_eq!(menu(&sim).focus, Some(party_kit::main_menu::Field::Play(name)));
     // Q switches to the Game tab, E back; not while typing.
-    press(&mut sim, KeyCode::KeyQ);
-    assert_eq!(menu(&sim).play_tab, 0, "typing: Q is a letter");
-    press(&mut sim, KeyCode::ArrowUp);
     press(&mut sim, KeyCode::KeyQ);
     sim.ticks(1);
     assert_eq!(menu(&sim).play_tab, 1);
@@ -171,6 +170,10 @@ fn play_keys_change_a_row_and_enter_starts_the_game() {
     press(&mut sim, KeyCode::KeyE);
     sim.ticks(1);
     assert_eq!(menu(&sim).play_tab, 0);
+    // A text row takes the keys (the menu's field follows the focus).
+    assert_eq!(menu(&sim).focus, Some(party_kit::main_menu::Field::Play(name)));
+    press(&mut sim, KeyCode::KeyQ);
+    assert_eq!(menu(&sim).play_tab, 0, "typing: Q is a letter");
     press(&mut sim, KeyCode::Enter);
     sim.ticks(4);
     let a = asked(&sim);
@@ -178,6 +181,69 @@ fn play_keys_change_a_row_and_enter_starts_the_game() {
     assert_eq!(menu(&sim).screen, Screen::InGame);
     assert_eq!(pages(&sim).up, None);
     assert_eq!(roots(&mut sim), 0, "gone in the game");
+}
+
+/// Host's Maps field opens the picker (Enter on its row): a game's box
+/// sets every map under it, a map alone makes its game "some on", Esc
+/// cancels and Done keeps; Start sends the maps off (`mp_maps_off`).
+#[test]
+fn the_maps_picker_sets_the_rotation() {
+    use party_kit::maps_picker::{MapsDialog, MapsPicker, PickerAction as P, Tri, TreeRow};
+    let mut sim = sim(PAGES_THEME);
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    let data = MenuData::shipped();
+    let maps = data.play.iter().position(|r| r.kind == party_kit::main_menu::PlayKind::Map).unwrap();
+    for _ in 0..maps {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    let picker = |s: &Sim| s.app.world().resource::<MapsPicker>().clone();
+    assert!(picker(&sim).open.is_some(), "Enter on Maps opens the picker");
+    assert_eq!(menu(&sim).screen, Screen::MainMenu, "not started");
+    let dialogs = sim.app.world_mut().query_filtered::<(), With<MapsDialog>>().iter(sim.app.world()).count();
+    assert_eq!(dialogs, 1, "drawn over the page");
+    use party_kit::maps_picker::MapCatalogue;
+    let id = sim.app.world().resource::<party_kit::main_menu::MenuMinigame>().0.clone();
+    let pool: Vec<String> = sim
+        .app
+        .world()
+        .get_resource::<chimera_sim::minigame::Minigames>()
+        .and_then(|m| m.get(&id))
+        .map(|d| d.maps.iter().map(|m| chimera_net::net::normalize_map(m)).collect())
+        .unwrap_or_default();
+    let games = party_kit::maps_picker::LocalCatalogue.listing(&pool);
+    assert!(!games.is_empty(), "the pool's games");
+    // Space on the first game: all of it off; again: on.
+    press(&mut sim, KeyCode::Space);
+    assert_eq!(picker(&sim).state(&games, &TreeRow::Game(0)), Tri::Off);
+    press(&mut sim, KeyCode::Space);
+    assert_eq!(picker(&sim).state(&games, &TreeRow::Game(0)), Tri::On);
+    // A map alone: its game is "some on" (or off, when it has one map).
+    sim.app.world_mut().write_message(P::Toggle(2));
+    sim.ticks(2);
+    let n = MapsPicker::maps_of(&games, &TreeRow::Game(0)).len();
+    assert_eq!(picker(&sim).state(&games, &TreeRow::Game(0)), if n > 1 { Tri::Mixed } else { Tri::Off }, "{n} maps");
+    assert_eq!(picker(&sim).state(&games, &TreeRow::Map(0, 0, 0)), Tri::Off);
+    // Esc cancels: nothing kept.
+    press(&mut sim, KeyCode::Escape);
+    assert!(picker(&sim).open.is_none() && picker(&sim).off.is_empty(), "cancelled");
+    assert_eq!(menu(&sim).page, MenuPage::Play, "Esc only closed the picker");
+    // Again, Done keeps it; Start sends it.
+    press(&mut sim, KeyCode::Enter);
+    sim.app.world_mut().write_message(P::Toggle(2));
+    sim.ticks(2);
+    press(&mut sim, KeyCode::Enter);
+    let off = picker(&sim).off;
+    assert_eq!(off.len(), 1, "Done kept one map off");
+    act(&mut sim, A::Start);
+    sim.ticks(4);
+    let sent = match sim.app.world().get_resource::<chimera_net::minigame_net::MapsOff>() {
+        Some(m) => m.0.clone(),
+        None => asked(&sim).iter().find_map(|l| l.strip_prefix("mp_maps_off ").map(str::to_string)).unwrap_or_default(),
+    };
+    assert_eq!(sent.trim_matches('"'), off.iter().next().unwrap().as_str(), "mp_maps_off set at the start");
 }
 
 #[test]

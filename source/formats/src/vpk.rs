@@ -3,6 +3,12 @@
 //!
 //! A `<name>_dir.vpk` holds a directory tree and sometimes file data; most
 //! data lives in numbered siblings `<name>_000.vpk`, `<name>_001.vpk`, ...
+//!
+//! A numbered archive the tree names but that isn't on disk leaves its
+//! files out (`Vpk::open`), file by file: a mount then finds them in a
+//! later layer or not at all, never "listed but unreadable". TF2's
+//! dedicated server ships its textures' and sounds' `_dir` files without
+//! their archives (specs/tf2/install.md 1.1, 1.5).
 
 use std::{
     collections::HashMap,
@@ -34,6 +40,8 @@ pub struct Vpk {
     /// Offset of in-dir file data: header plus tree.
     data_start: u64,
     entries: HashMap<String, VpkEntry>,
+    /// Files the tree lists in numbered archives missing on disk, left out.
+    skipped: usize,
 }
 
 /// The shared reader with VPK's error shape.
@@ -139,12 +147,33 @@ impl Vpk {
             }
         }
 
+        // Files whose data lies in a numbered archive that isn't there are
+        // left out (a file wholly in the tree's preload stays).
+        let mut present: HashMap<u16, bool> = HashMap::new();
+        let before = entries.len();
+        entries.retain(|_, e| {
+            if e.archive == IN_DIR_FILE || e.length == 0 {
+                return true;
+            }
+            *present
+                .entry(e.archive)
+                .or_insert_with(|| archive_path(&stem, e.archive).is_file())
+        });
+        let skipped = before - entries.len();
+
         Ok(Self {
             dir_path,
             stem,
             data_start: header_size + tree_size as u64,
             entries,
+            skipped,
         })
+    }
+
+    /// How many files the tree lists in numbered archives that are missing
+    /// on disk (left out of the archive).
+    pub fn skipped(&self) -> usize {
+        self.skipped
     }
 
     pub fn len(&self) -> usize {
@@ -167,9 +196,7 @@ impl Vpk {
             let (path, offset) = if e.archive == IN_DIR_FILE {
                 (self.dir_path.clone(), self.data_start + e.offset as u64)
             } else {
-                let mut p = self.stem.clone().into_os_string();
-                p.push(format!("_{:03}.vpk", e.archive));
-                (PathBuf::from(p), e.offset as u64)
+                (archive_path(&self.stem, e.archive), e.offset as u64)
             };
             let mut f = File::open(&path)?;
             f.seek(SeekFrom::Start(offset))?;
@@ -179,6 +206,13 @@ impl Vpk {
         }
         Ok(out)
     }
+}
+
+/// Numbered archive `index` beside the directory file: `<stem>_NNN.vpk`.
+fn archive_path(stem: &Path, index: u16) -> PathBuf {
+    let mut p = stem.to_path_buf().into_os_string();
+    p.push(format!("_{index:03}.vpk"));
+    PathBuf::from(p)
 }
 
 impl FileSource for Vpk {
@@ -223,5 +257,80 @@ impl FileSource for Vpk {
             .filter(|p| p.rsplit_once('/').is_some_and(|(d, _)| d == dir))
             .cloned()
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A version 1 directory file listing `files` (path, archive, data):
+    /// data of archive 0x7fff follows the tree; any other archive's is at
+    /// offset 0 of `<stem>_NNN.vpk`, whose bytes the caller writes.
+    fn dir_file(files: &[(&str, u16, &[u8])]) -> Vec<u8> {
+        let mut tree = Vec::new();
+        let mut tail: Vec<u8> = Vec::new();
+        for (path, archive, data) in files {
+            let (dir, file) = path.rsplit_once('/').unwrap();
+            let (stem, ext) = file.rsplit_once('.').unwrap();
+            for s in [ext, dir, stem] {
+                tree.extend(s.as_bytes());
+                tree.push(0);
+            }
+            tree.extend(0u32.to_le_bytes());
+            tree.extend(0u16.to_le_bytes());
+            tree.extend(archive.to_le_bytes());
+            let offset = if *archive == IN_DIR_FILE { tail.len() } else { 0 };
+            tree.extend((offset as u32).to_le_bytes());
+            tree.extend((data.len() as u32).to_le_bytes());
+            tree.extend(0xffffu16.to_le_bytes());
+            // The end of this directory's names, of this extension's directories.
+            tree.extend([0, 0]);
+            if *archive == IN_DIR_FILE {
+                tail.extend(*data);
+            }
+        }
+        // The end of the extensions.
+        tree.push(0);
+        let mut v = Vec::new();
+        v.extend(SIGNATURE.to_le_bytes());
+        v.extend(1u32.to_le_bytes());
+        v.extend((tree.len() as u32).to_le_bytes());
+        v.extend(tree);
+        v.extend(tail);
+        v
+    }
+
+    #[test]
+    fn files_of_a_missing_archive_are_left_out() {
+        let dir = std::env::temp_dir().join(format!("vpk-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir_path = dir.join("pak_dir.vpk");
+        std::fs::write(
+            &dir_path,
+            dir_file(&[
+                ("materials/a.vmt", IN_DIR_FILE, b"in the tree"),
+                ("materials/b.vtf", 0, b"archive zero"),
+                ("materials/c.vtf", 1, b"archive one"),
+                ("sound/d.wav", 1, b"archive one too"),
+            ]),
+        )
+        .unwrap();
+        std::fs::write(dir.join("pak_000.vpk"), b"archive zero").unwrap();
+        // pak_001.vpk is missing (a dedicated server's texture archives).
+        let vpk = Vpk::open(&dir_path).unwrap();
+        assert_eq!(vpk.len(), 2);
+        assert_eq!(vpk.skipped(), 2);
+        assert!(vpk.contains("materials/a.vmt") && vpk.contains("materials/b.vtf"));
+        assert!(!vpk.contains("materials/c.vtf") && vpk.read("sound/d.wav").is_none());
+        assert_eq!(vpk.read("materials/a.vmt").unwrap().unwrap(), b"in the tree");
+        assert_eq!(vpk.read("materials/b.vtf").unwrap().unwrap(), b"archive zero");
+        // With the archive there, its files are back.
+        std::fs::write(dir.join("pak_001.vpk"), b"archive one").unwrap();
+        let vpk = Vpk::open(&dir_path).unwrap();
+        assert_eq!((vpk.len(), vpk.skipped()), (4, 0));
+        assert_eq!(vpk.read("materials/c.vtf").unwrap().unwrap(), b"archive one");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

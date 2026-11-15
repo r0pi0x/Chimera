@@ -1847,6 +1847,7 @@ cargo run --bin dump -- combat_arms --list --filter worlds2
 cargo run --bin dump -- combat_arms --filter worlds2/warehouse.dat --extract
 cargo run --bin dump -- hl2dm                          # gameinfo.txt's search path, then the summary
 cargo run --bin dump -- hl2dm --sequences models/combine_camera/combine_camera.mdl  # also its pose parameters
+cargo run --bin dump -- tf2                            # tf/gameinfo.txt's search path, then the summary
 ```
 
 Combat Arms' maps: `cargo run --features dev -p combat_arms_app --bin
@@ -2397,7 +2398,11 @@ not-looking eye, the idle grey), `cl_avatar <0-31>` (your avatar: glyph x
 8 + colour), `menu_news <title> | <body> | <source>` (the main menu's
 news card; none hides it). The party pages need `+mainmenu` on a tool
 run: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
-<out>.png +ui_scene play server +mainmenu`.
+<out>.png +ui_scene play server +mainmenu`. Revision 8's screens add
+`ui_scene play maps` (Host's Maps picker open), `ui_scene load [ask]` (the
+Signal loading screen, the Leave? dialog with `ask`; `+mainmenu` too) and
+`ui_scene lobby host` (the host's view of a first lobby waiting for its
+Start, two parties with their edges).
 `ui_scene lobby` stages the lobby with made-up players (for
 screenshots; no parity ids or fixture yet), so `lobby`'s report lists
 the mockup's ids only.

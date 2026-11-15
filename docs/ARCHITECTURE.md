@@ -31,6 +31,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
+  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), stand-in movement, harness::Tf2Sim; `ui` its HUD (none yet)
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -299,7 +300,20 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   before `core::apply_damage` and turns into the engine's `Damage`, so
   deaths, credit and a gun game's ladder are the engine's; on another
   game's character it is an unshielded Spartan's body hit through that
-  character's own armour. Its spawns
+  character's own armour. Halo's first four guns (`game::weapons`) are
+  data (data/weapons/*.toml) run by Halo's own 30 Hz per-tick rules
+  beside the engine's frame (`weapon::OwnFrame`), firing per-tick
+  projectiles whose hits go through `damage::HaloHit`; its `PARTS`
+  lends them as gun-game rungs with its movement. Halo's players wear
+  the multiplayer Spartan (`game::body`): its model, unit animation
+  tables and collision nodes as the engine's character model, posed in
+  the fixed tick into `SimAnimator` so the server's hitboxes follow it,
+  and dressed onto other games' maps from bloodgulch. Halo's files reach
+  players without the disc through the asset store: `chimera_pack
+  pack|sets halo_ce` packs the disc's own files under the build its
+  maps' headers name (`game::mount::build`), `base` the donor map and
+  `map/<name>` per map (`game::sets`); the store serves Halo instead of
+  the disc, never under it. Its spawns
   are the slayer starts (no team) and capture the flag's red and blue
   bases (`Team(1)`, `Team(2)`, after the game's flag check;
   `game::maps::spawns`). In the party apps (`game::BUNDLE`, one of
@@ -313,6 +327,19 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   from its collision as on any map without its own.
   Layered as `hl2dm`: the engine crates and `blam_formats`, never another
   game, `mashup` or an app (checked); `ui` draws nothing of its own yet.
+- `tf2` (games/tf2/) is Team Fortress 2, M1 of docs/plans/active/tf2.md:
+  its `GameInfo` (`game::INFO`: Steam app 440, folder `tf`, tick 0.015 s,
+  console namespaces `tf2` and `tf`), its install mounted from
+  `tf/gameinfo.txt` (`game::mount`, through `mount::served`; the
+  dedicated server's layout too, whose texture and sound archives are
+  missing: `source_formats::vpk` leaves their files out), its maps
+  (`game::maps`, `game::MAP_LOADER`: `source_engine`'s conversion with
+  TF2's data; spawns from `info_player_teamspawn` by `TeamNum`, through
+  the conversion's `SourceGame::spawn_rule`), the stand-in
+  `tf2:movement` (Chimera's placeholder with the Soldier's numbers),
+  `SimPlugins`, `game::Tf2Plugins`, `harness::Tf2Sim`, and `BUNDLE`,
+  maps only, which the party plays by id (`party_kit::MAP_GAMES`).
+  Layered as `hl2dm`; `ui` draws nothing of its own yet.
 - `chimera_net` is network play (`net`): the transport, the join
   handshake, replication of what every game has, prediction and
   interpolation. A game and Source's logic register what they replicate

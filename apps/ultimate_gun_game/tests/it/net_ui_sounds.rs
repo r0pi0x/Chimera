@@ -63,12 +63,13 @@ fn setup(app: &mut App) {
 }
 
 /// A dedicated server and `clients` clients, with or without the
-/// pre-match lobby (ready-up on, two players, 5 s of countdown).
+/// pre-match lobby (ready-up on, two players, 5 s of countdown, started
+/// by everyone being ready rather than the host).
 fn sim(clients: usize, lobby: bool) -> NetSim {
     let mut sim = NetSim::new(CaSim, LINK, 7, clients, setup);
     sim.set_frame(TICK_INTERVAL);
     let lines: &[&str] =
-        if lobby { &["mp_lobby 1", "mp_lobby_ready_up 1", "mp_lobby_min_players 2", "mp_lobby_countdown 5"] } else { &["mp_lobby 0"] };
+        if lobby { &["mp_lobby 1", "mp_lobby_host_start 0", "mp_lobby_ready_up 1", "mp_lobby_min_players 2", "mp_lobby_countdown 5"] } else { &["mp_lobby 0"] };
     for l in lines {
         con(&mut sim, l);
     }

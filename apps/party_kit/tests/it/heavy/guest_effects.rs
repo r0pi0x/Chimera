@@ -43,7 +43,9 @@ fn every_games_effects_have_their_materials_on_every_map() {
             .is_some_and(|p| chimera_core::mount::served::usable("cs_source", &p, "cstrike"))
             && c.game_path(combat_arms::game::GAME)
                 .is_some_and(|p| chimera_core::mount::served::usable("combat_arms", &p, "Game"))
-    }) && hl2dm::game::INFO.install().is_some();
+    }) && hl2dm::game::INFO
+        .install()
+        .is_some_and(|p| chimera_core::mount::served::usable(hl2dm::game::GAME, &p, "hl2mp"));
     if !usable {
         eprintln!("skipping: needs the CS:S, Combat Arms and HL2:DM installs");
         return;

@@ -330,6 +330,13 @@ w = 8
 h = 12
 shapes = [[[[6, 0], [8, 1.6], [3.4, 6], [8, 10.4], [6, 12], [0, 6]]]]
 
+# A folded tree row's chevron (party_kit's Maps picker): pointing right.
+[chev_right]
+name = "Folded"
+w = 9
+h = 12
+shapes = [[[[1, 0], [3.4, 0], [8.6, 6], [3.4, 12], [1, 12], [6.2, 6]]]]
+
 # The party's invite slot.
 [plus]
 name = "Add"

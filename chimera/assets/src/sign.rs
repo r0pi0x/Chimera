@@ -73,3 +73,57 @@ pub fn sign_manifest_file(key: &SigningKey, manifest: &Path) -> io::Result<Strin
     write_atomic(&sig_path(manifest), signature.as_bytes())?;
     Ok(signature)
 }
+
+/// Sign `game`'s manifest of `build` (None: its newest) in a server's
+/// `store` with that store's key (`server::key_path`, created on first
+/// use), and nothing else: a manifest packed on another machine and
+/// copied in with its records is signed where it is served, with no
+/// install there (`chimera_pack sign`). The build signed and the key's
+/// public half (hex).
+pub fn sign_stored(store: &crate::Store, game: &str, build: Option<&str>) -> io::Result<(String, String)> {
+    let build = match build {
+        Some(b) => b.to_string(),
+        None => store
+            .latest_build(game)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no manifest of {game} in the store")))?,
+    };
+    let path = store.manifest_path(game, &build);
+    if !path.is_file() {
+        return Err(io::Error::new(io::ErrorKind::NotFound, format!("{}: no such manifest", path.display())));
+    }
+    let key = load_or_create_key(&crate::server::key_path(store))?;
+    sign_manifest_file(&key, &path)?;
+    Ok((build, public_hex(&key)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Manifest, Store};
+
+    /// Signing one game's newest manifest (or a named build) writes its
+    /// `.sig` alone, verifiable with the store's key; another game's and
+    /// an older build's stay unsigned.
+    #[test]
+    fn sign_stored_signs_one_games_manifest_only() {
+        let dir = std::env::temp_dir().join(format!("chimera-sign-stored-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let store = Store::new(&dir);
+        for (game, build) in [("disc_game", "01.10.12.2276"), ("disc_game", "01.01.14.2342"), ("other", "7")] {
+            Manifest::new(game, build, None).save(&store.manifest_path(game, build)).unwrap();
+        }
+        let (build, public) = sign_stored(&store, "disc_game", None).unwrap();
+        assert_eq!(build, "01.10.12.2276", "the newest by name");
+        let path = store.manifest_path("disc_game", &build);
+        let signature = fs::read_to_string(sig_path(&path)).unwrap();
+        verify(&public, &fs::read(&path).unwrap(), &signature).unwrap();
+        assert!(!sig_path(&store.manifest_path("disc_game", "01.01.14.2342")).exists());
+        assert!(!sig_path(&store.manifest_path("other", "7")).exists());
+        // A named build; a missing one is an error, not a new key's use.
+        sign_stored(&store, "disc_game", Some("01.01.14.2342")).unwrap();
+        assert!(sig_path(&store.manifest_path("disc_game", "01.01.14.2342")).exists());
+        assert!(sign_stored(&store, "disc_game", Some("2")).is_err());
+        assert!(sign_stored(&store, "absent", None).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

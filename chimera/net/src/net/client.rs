@@ -201,6 +201,10 @@ pub struct DownloadInfo {
     pub done: u64,
     /// 0 while unknown.
     pub total: u64,
+    /// Files (the asset service's records) arrived and expected (0: not
+    /// told).
+    pub files_done: u64,
+    pub files_total: u64,
 }
 
 /// Why joining (or the game) ended, for the dialog's wording (the game's

@@ -15,6 +15,16 @@
 //!   camouflage and stun (health_shields.md; its numbers in
 //!   data/vitality.toml and data/damage.toml), and `damage`: the seam every
 //!   Halo damage source delivers through (`damage::HaloHit`);
+//! - `weapons`: the assault rifle, pistol, plasma rifle and shotgun
+//!   (weapons.md, projectiles.md): data/weapons/*.toml, the per-tick weapon
+//!   rules, projectiles and melee, hits through `damage::HaloHit`, lent as
+//!   rungs in `parts`;
+//! - `body`: the players' Spartan body (model, animations from the graph's
+//!   unit tables, hit boxes from the collision model, armour colours), on
+//!   Halo's maps and, from the donor map, on any other;
+//! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
+//!   the donor map, `map/<name>` per multiplayer map); `mount::build` reads
+//!   the install's build from a map header;
 //! - `parts`: what the game lends other games' apps (`PARTS`): its maps,
 //!   by its pool rules and measurements (data/map_pool.toml,
 //!   data/map_fitness.toml), played with other games' players and guns.
@@ -27,7 +37,9 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod sets;
 pub mod vitality;
+pub mod weapons;
 
 pub use maps::MAP_LOADER;
 
@@ -111,6 +123,7 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
     ("mouse1", "+attack"),
     ("mouse2", "+attack2"),
     ("r", "+reload"),
+    ("f", "+melee"),
     ("e", "+use"),
     ("tab", "+showscores"),
 ];
@@ -127,6 +140,7 @@ impl PluginGroup for HaloPlugins {
             .add(movement::HaloMovementPlugin)
             .add(vitality::VitalityPlugin)
             .add(damage::DamagePlugin)
+            .add(weapons::HaloWeaponsPlugin)
             .add(body::HaloBodyPlugin)
     }
 }
@@ -154,6 +168,10 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         // played on them.
         crate::map::impact::SurfaceClassesAppExt::register_surface_classes(app, maps::surfaces::SURFACES);
         parts::add_map_pool(app);
+        // Its guns as rungs: its movement (not the match's), its vitality
+        // and damage seam, its weapons (`parts::add_guns`).
+        parts::add_guns(app);
+        // Its players' body, worn by its guns' holders (`body`).
         app.add_plugins(body::HaloBodyPlugin);
     },
     display_names: None,

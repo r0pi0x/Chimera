@@ -276,6 +276,8 @@ pub struct LobbyViewRow {
     pub wins: u32,
     /// The avatar's byte (`LobbyRow::avatar`; `prematch::NO_AVATAR`: none).
     pub avatar: u8,
+    /// The party (`LobbyRow::party`; 0 alone).
+    pub party: u8,
 }
 
 /// What the screen shows (headless too).
@@ -402,11 +404,20 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
         local,
         wins: r.wins,
         avatar: r.avatar,
+        party: r.party,
     }
+}
+
+/// `ui_scene lobby host`: the staged lobby seen as its listen host (the
+/// `HOST_ID` row is yours, Start is yours), its slots.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StagedLobbyHost {
+    pub slots: u32,
 }
 
 #[allow(clippy::too_many_arguments)]
 fn follow(
+    staged: Option<Res<StagedLobbyHost>>,
     lobby: Query<&NetLobby>,
     me: Option<Res<chimera_net::net::client::LocalClientId>>,
     role: Option<Res<NetRole>>,
@@ -449,6 +460,7 @@ fn follow(
         }
     }
     let mine = match role.as_deref() {
+        _ if staged.is_some() => Some(HOST_ID),
         Some(NetRole::Client) => me.map(|m| m.0),
         Some(NetRole::Server) if !host.is_empty() => Some(HOST_ID),
         _ => None,
@@ -460,7 +472,7 @@ fn follow(
         line: waiting_line(l),
         rows: l.rows.iter().map(|r| view_row(r, mine.is_some() && r.id == mine)).collect(),
         countdown: l.countdown,
-        hosting: role.as_deref() == Some(&NetRole::Server) && !host.is_empty(),
+        hosting: staged.is_some() || (role.as_deref() == Some(&NetRole::Server) && !host.is_empty()),
         hint: String::new(),
         game: String::new(),
         slots: None,
@@ -471,6 +483,7 @@ fn follow(
     let short = |id: &str| games.as_ref().and_then(|g| g.get(id)).map(|g| g.short_name.to_string());
     v.game = l.map.split_once(':').and_then(|(g, _)| short(g)).unwrap_or_default();
     v.slots = match role.as_deref() {
+        _ if staged.is_some() => staged.map(|s| s.slots),
         Some(NetRole::Server) => settings.map(|s| s.maxplayers).filter(|&n| n > 1),
         Some(NetRole::Client) => join.and_then(|j| j.server.as_ref().map(|s| s.max_players)).filter(|&n| n > 0),
         _ => None,
@@ -809,6 +822,7 @@ mod tests {
             ping_ms: id.map(|_| 48),
             wins: 0,
             avatar: 0,
+            party: 0,
         };
         let mut l = NetLobby {
             map: "cs_source:de_dust2".into(),

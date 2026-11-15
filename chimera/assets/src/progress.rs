@@ -124,6 +124,11 @@ impl Transfer {
         (s.files, s.bytes, self.bytes)
     }
 
+    /// The files (records) expected in all.
+    pub fn files(&self) -> u64 {
+        self.files
+    }
+
     /// How long since it started.
     pub fn elapsed(&self) -> Duration {
         self.started.elapsed()
