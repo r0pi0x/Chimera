@@ -6,9 +6,12 @@ algorithm, its variants and its certification triplets, and the slides of
 the paper's presentation; for the game's use of it, public community
 documentation of the engine's encrypted script files. No implementation
 of the cipher and no game or engine code was read.
-Status: draft. **A model written from this description does not yet
-reproduce the paper's certification triplets** (Open question 1). Every
-other check the paper makes possible passes; see Test cases.
+Status: draft. **No reading of this description reproduces the paper's
+certification triplets** (Open question 1): an implementation of it
+(`games/tf2`, M2a) matches this spec's own derived values (cases 6, 7,
+11–14), and none of 55,296 combinations of the listed alternatives
+reproduces any of the three triplets. Which combination the game's files
+use is to be settled with a real file and the user's key (case 18).
 
 ## Summary
 
@@ -375,6 +378,24 @@ fails they may change with the fix. Cases 1–3 are the arbiter.
    further published prose on ICE (e.g. the 1998 FSE differential
    cryptanalysis paper on ICE, which restates the cipher) and amends this
    spec.
+   Update (implementation session, M2a): the implementation follows this
+   spec and agrees with cases 6, 7 and 11–14, so the description and the
+   code match each other. Every combination of these alternatives was
+   then tried against cases 1–3 at once: the three subkey fills (blocked,
+   cycled by groups of four, cycled bit by bit), all 24 assignments of
+   the key's four 16-bit words to the registers, each word's bytes as
+   they are or swapped, bits drawn from the bottom or the top of a
+   register, the drawn bit put back inverted or not, subkeys filled from
+   their low or high end, all six assignments of the three generated
+   values to SK1, SK2 and SK3, the rotation added or subtracted, the
+   block's halves big- or little-endian, and the P-box read either way.
+   None of the 55,296 reproduces even one of the three triplets. So the
+   difference lies outside these switches (the inverted bit put back at a
+   position other than 15 or 0, register widths, or something not yet
+   listed). The way forward is (a) above, case 18: the implementation
+   tries every combination at levels 0 and 1 on the Rocket Launcher's
+   script with the user's key and names those that give KeyValues text;
+   if none does, (b) a spec session with further published prose.
 2. Byte order of block and key: big-endian is assumed (the paper's
    triplets are written as hex strings of the bytes; the paper never states
    the packing). Settled once case 1 passes.

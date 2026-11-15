@@ -81,6 +81,22 @@ pub fn sign_manifest_file(key: &SigningKey, manifest: &Path) -> io::Result<Strin
 /// install there (`chimera_pack sign`). The build signed and the key's
 /// public half (hex).
 pub fn sign_stored(store: &crate::Store, game: &str, build: Option<&str>) -> io::Result<(String, String)> {
+    sign_in(store, game, build, true)
+}
+
+/// `sign_stored` for a store that already has its server's key: no key is
+/// created (a folder that isn't a server's store is refused, not turned
+/// into one), as `chimera_assets sign` runs it on the asset server's
+/// machine.
+pub fn sign_stored_with_existing_key(
+    store: &crate::Store,
+    game: &str,
+    build: Option<&str>,
+) -> io::Result<(String, String)> {
+    sign_in(store, game, build, false)
+}
+
+fn sign_in(store: &crate::Store, game: &str, build: Option<&str>, create_key: bool) -> io::Result<(String, String)> {
     let build = match build {
         Some(b) => b.to_string(),
         None => store
@@ -91,7 +107,17 @@ pub fn sign_stored(store: &crate::Store, game: &str, build: Option<&str>) -> io:
     if !path.is_file() {
         return Err(io::Error::new(io::ErrorKind::NotFound, format!("{}: no such manifest", path.display())));
     }
-    let key = load_or_create_key(&crate::server::key_path(store))?;
+    let key_file = crate::server::key_path(store);
+    if !create_key && !key_file.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "{}: this store has no signing key (it is not a running asset server's store; the server creates its key when it first starts)",
+                key_file.display()
+            ),
+        ));
+    }
+    let key = load_or_create_key(&key_file)?;
     sign_manifest_file(&key, &path)?;
     Ok((build, public_hex(&key)))
 }
@@ -124,6 +150,21 @@ mod tests {
         assert!(sig_path(&store.manifest_path("disc_game", "01.01.14.2342")).exists());
         assert!(sign_stored(&store, "disc_game", Some("2")).is_err());
         assert!(sign_stored(&store, "absent", None).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The existing-key signing never makes a key: a store without one is
+    /// refused and stays without.
+    #[test]
+    fn signing_with_the_existing_key_refuses_a_store_without_one() {
+        let dir = std::env::temp_dir().join(format!("chimera-sign-nokey-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let store = Store::new(&dir);
+        Manifest::new("g", "1", None).save(&store.manifest_path("g", "1")).unwrap();
+        let e = sign_stored_with_existing_key(&store, "g", None).unwrap_err();
+        assert!(e.to_string().contains("no signing key"), "{e}");
+        assert!(!crate::server::key_path(&store).exists(), "no key made");
+        assert!(!sig_path(&store.manifest_path("g", "1")).exists());
         let _ = fs::remove_dir_all(&dir);
     }
 }

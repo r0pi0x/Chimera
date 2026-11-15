@@ -458,9 +458,11 @@ fails when this file is stale; never edit the generated lines).
 - `games/hl2dm/src/game/weapons/vent.rs`: a deploy doesn't reset the count (the shared frame resets it when attack is let go only; weapons.md 2 resets it at a deploy too)
 - `games/hl2dm/src/ui/lights.rs`: the colour is a sixteenth of the spec's, as the muzzle flash's (it burnt walls out); it fades linearly over its life
 - `games/hl2dm/src/ui/mod.rs`: - The menus: the Internet tab is greyed (no master server), and the layout's look is unmeasured against the real game (no refcmp of GameUI)
+- `games/tf2/src/game/ice.rs`: - No reading reproduces the paper's triplets (ice.md, open question 1; the tests record it)
 - `games/tf2/src/game/maps.rs`: - Spawns are the round start's: a point captured later doesn't move a team's spawns forward, and multi-stage maps' per-round spawns...
 - `games/tf2/src/game/mod.rs`: - `INFO`'s default binds are empty: the shell reads the install's `cfg/config_default.cfg`
 - `games/tf2/src/game/movement.rs`: not Source movement and no classes: no friction, acceleration or air-strafe rules, no backward scale (0.9), air duck, the Scout's double jump...
+- `games/tf2/src/game/sets.rs`: - The sound entries and models are the spec's lists, not read from the scripts (which M2b's weapon data will name)
 - `lithtech/formats/src/anim.rs`: - `AniRateInterpolation` is always 1 (the carry is kept)
 - `lithtech/formats/src/attributes.rs`: - The event "text-change overwrite" layer ("Defaults and overrides", item 3) isn't implemented: it is optional and no shipped file has it
 - `lithtech/formats/src/dtx.rs`: only what drawing a world needs

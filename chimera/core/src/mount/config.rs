@@ -1,7 +1,7 @@
 //! Machine-local settings from `chimera.local.toml` (gitignored; its old
 //! name `mashup.local.toml`, `OLD_FILE_NAME`, is read when there is no new
 //! one): install paths (optional: `install` finds them otherwise),
-//! Combat Arms keys and `[assets]` (the record store, `mount::served`). See
+//! Combat Arms' and TF2's keys and `[assets]` (the record store, `mount::served`). See
 //! `chimera.local.example.toml`.
 
 use std::{
@@ -33,16 +33,21 @@ pub struct LocalConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct GameConfig {
-    pub path: PathBuf,
-    /// Decryption keys by scheme name (Combat Arms: `V1`, `V2`).
+    /// The install (optional: a section may hold only keys, as TF2's
+    /// `[games.tf2.keys.ctx]`; the install is then found as without one).
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+    /// Decryption keys by scheme name (Combat Arms: `V1`, `V2`; TF2: `ctx`).
     #[serde(default)]
     pub keys: BTreeMap<String, KeyConfig>,
 }
 
-/// A key and IV as hexadecimal text. Never logged or echoed in errors.
+/// A key and IV as text (Combat Arms': hexadecimal; TF2's `ctx`: the
+/// 8-character key, no IV). Never logged or echoed in errors.
 #[derive(Deserialize)]
 pub struct KeyConfig {
     pub key: String,
+    #[serde(default)]
     pub iv: String,
 }
 

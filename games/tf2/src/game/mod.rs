@@ -12,7 +12,14 @@
 //!   `info_player_teamspawn`, gravity 800; `MAP_LOADER` for `tf2:<map>`);
 //! - `movement`: `tf2:movement`, Chimera's placeholder walking with the
 //!   Soldier's numbers until TF2's movement (M3);
-//! - `parts`: what the game lends other games' apps (`PARTS`): nothing yet.
+//! - `parts`: what the game lends other games' apps (`PARTS`): nothing yet;
+//! - `ice`: the ICE cipher of the encrypted scripts (specs/tf2/ice.md),
+//!   with the spec's ambiguous readings selectable (M2a);
+//! - `scripts`: the weapon and class scripts (`.ctx`) through the mount,
+//!   plain from the asset store or decrypted with the user's key, and
+//!   which of the two served;
+//! - `sets`: what `chimera_pack tf2`'s `weapon/<id>` and `players` sets
+//!   hold.
 //!
 //! `Tf2Plugins` adds the game's parts after `crate::SimPlugins`; `BUNDLE`
 //! is the game for a party app (its maps).
@@ -23,10 +30,13 @@
 //! - The tick is the measured default (0.015 s, specs/tf2/movement.md,
 //!   "Units and conventions"); no `-tickrate`.
 
+pub mod ice;
 pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod scripts;
+pub mod sets;
 
 pub use maps::MAP_LOADER;
 

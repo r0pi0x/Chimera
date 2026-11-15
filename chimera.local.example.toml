@@ -32,6 +32,13 @@
 # load and play with stand-in textures and no sound
 # (docs/assets-for-developers.md).
 # path = "~/games/tf2"
+#
+# TF2's encrypted weapon and class scripts (scripts/*.ctx): the
+# 8-character key you supply yourself; never commit it. The environment's
+# CHIMERA_TF2_CTX_KEY wins over this. (A section may hold only the key: the
+# install is then found as without `path`.)
+# [games.tf2.keys.ctx]
+# key = ""
 
 [games.combat_arms]
 # Folder containing the game (only with the local Combat Arms loader).
