@@ -8,11 +8,17 @@
 //! launch, their main menu's Play does for a listen host); a standalone
 //! game never has one; late joiners of a running match join as before.
 //!
-//! - **The hold** (`minigame::PreMatch`, the simulation's): players join
-//!   and spawn as usual but stand frozen (the match's end freeze) and the
-//!   phases don't step. It ends with `minigame::restart`: everyone joins
-//!   again, spawns together and the round starts as any match does
-//!   (waiting for the definition's `players.min`).
+//! - **The hold** (`minigame::PreMatch`, the simulation's): nobody plays.
+//!   Every character (remote players, a listen host's, bots) is staged
+//!   (`minigame::Staged`: no weapons, dead, not solid, out of the game),
+//!   those joining as they come (a client's map loaded during the lobby
+//!   doesn't take its player into the game: `server::EntryHeld`);
+//!   the phases don't step and the end freeze holds. It ends with
+//!   `minigame::restart` and everyone let in (`let_in`: the join rules'
+//!   `enter`), so all spawn together on the first rung and the round
+//!   starts as any match does (waiting for the definition's
+//!   `players.min`); a player whose client still loads comes in when it
+//!   has the map.
 //! - **Each player's status** (`LobbyRow`, `status::*`): bots are ready
 //!   at once, a listen host once its own load is done
 //!   (`map::LocalMapLoad`); a remote player is ready once its client
@@ -80,7 +86,7 @@ use crate::{
     net::{
         HOST_ID, NetCharacter, NetHooks,
         client::{JoinProgress, JoinStage},
-        server::{ClientMap, Player},
+        server::{ClientMap, EntryHeld, Player},
     },
 };
 
@@ -423,6 +429,7 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
         world.entity_mut(e).remove::<LobbyReady>();
     }
     world.insert_resource(PreMatch);
+    world.insert_resource(EntryHeld);
     world.insert_resource(Lobby {
         began: now,
         humans_since: None,
@@ -441,6 +448,7 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
 /// the match begins (`minigame::restart`: everyone spawns together).
 fn end(world: &mut World, start: bool) {
     world.remove_resource::<Lobby>();
+    world.remove_resource::<EntryHeld>();
     let had = world.remove_resource::<PreMatch>().is_some();
     let entities: Vec<Entity> = world.query_filtered::<Entity, With<NetLobby>>().iter(world).collect();
     for e in entities {
@@ -449,6 +457,34 @@ fn end(world: &mut World, start: bool) {
     if start && had && world.contains_resource::<ActiveMinigame>() {
         minigame::restart(world);
         info!("pre-match lobby over: the match starts");
+    }
+    let_in(world);
+}
+
+/// Everyone the lobby held out (`minigame::Staged`) let in: into the game
+/// by the join rules (`JoinRules::enter`), whereupon the runtime takes
+/// them in and spawns them together on the first rung; a remote player
+/// whose client hasn't the map yet stays out of the game
+/// (`core::Connecting`) until it reports it loaded (`server::
+/// receive_loaded`), as a late joiner.
+fn let_in(world: &mut World) {
+    let staged: Vec<Entity> = world.query_filtered::<Entity, With<minigame::Staged>>().iter(world).collect();
+    if staged.is_empty() {
+        return;
+    }
+    let map = serving_map(world);
+    let loading: Vec<Entity> = world
+        .query::<(&Player, Option<&ClientMap>)>()
+        .iter(world)
+        .filter(|(_, have)| !have.is_some_and(|m| m.0.eq_ignore_ascii_case(&map)))
+        .map(|(p, _)| p.character)
+        .collect();
+    let rules = crate::net::JoinRules::active(world);
+    for e in staged {
+        minigame::runtime::unstage(world, e);
+        if !loading.contains(&e) {
+            (rules.enter)(world, e);
+        }
     }
 }
 

@@ -20,10 +20,10 @@
 //! `PutAway`), and none for a HUD without one: a game's HUD takes its parts
 //! down when the look goes and builds them when it is back.
 //! A screen over the whole HUD (the Signal match end, Esc menu and
-//! Settings) covers it (`HudCover`): every game's roots and parts
+//! Settings, the pre-match lobby) covers it (`HudCover`): every game's roots and parts
 //! (`HudRoot`, `HudPart`) hidden while it is up, set back after; our own
 //! Signal HUD (`SignalHud`: race chip, feed, chips) hides only under the
-//! "settings" cover (Settings over the match), the Esc menu keeps it; the
+//! "settings" and "lobby" covers (Settings over the match, the lobby), the Esc menu keeps it; the
 //! Tab board's cover (`BOARD_COVER`) also hides the shared crosshair.
 //! `Radars` (`hud_radar`) says whether the games' radars draw; an app with
 //! one kill feed for all its HUDs (`kill_feed::SharedKillFeed`) has this
@@ -127,8 +127,8 @@ pub struct HudRoot(pub &'static str);
 pub struct HudPart;
 
 /// A node of our own Signal HUD (race chip, kill feed, effects chips,
-/// banners, rank toast): hidden only under the `SETTINGS_COVER` cover
-/// (Settings over the match), not under the Esc menu, which keeps them
+/// banners, rank toast): hidden only under the `SETTINGS_COVER` and
+/// `LOBBY_COVER` covers (Settings over the match, the lobby), not under the Esc menu, which keeps them
 /// readable.
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct SignalHud;
@@ -139,6 +139,9 @@ pub const BOARD_COVER: &str = "board";
 
 /// The `HudCover` name of Settings over the match.
 pub const SETTINGS_COVER: &str = "settings";
+/// The `HudCover` name of the pre-match lobby (`prematch_lobby`): like
+/// Settings, it hides our own Signal HUD too.
+pub const LOBBY_COVER: &str = "lobby";
 
 /// Screens that cover the games' HUDs while they are up, by name (the
 /// Signal match end, Esc menu and Settings over the match): while any is,
@@ -201,7 +204,8 @@ pub fn hud_cover(app: &mut App) {
 }
 
 /// The HUDs hidden while covered (`HudCover`), each set back after.
-/// A `SignalHud` node hides only while the "settings" cover is up.
+/// A `SignalHud` node hides only while the "settings" or "lobby" cover
+/// is up.
 fn cover_huds(
     cover: Res<HudCover>,
     gameplay: Option<Res<crate::gameplay::Gameplay>>,
@@ -211,7 +215,7 @@ fn cover_huds(
     if !cover.covered() && hidden.is_empty() {
         return;
     }
-    let settings = cover.is(SETTINGS_COVER);
+    let settings = cover.is(SETTINGS_COVER) || cover.is(LOBBY_COVER);
     for (e, mut v, root, signal) in &mut nodes {
         let want = if signal { settings } else { cover.covered() };
         if want {

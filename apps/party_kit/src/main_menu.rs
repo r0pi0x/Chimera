@@ -79,7 +79,12 @@
 //!   shows by drawing the UI on a camera of its own (`MenuUiCamera`; the
 //!   shell's UI camera, which the HUD draws on, off; the console and the
 //!   pre-match lobby's screen move to it, so a player still downloading
-//!   sees the lobby over the loading panel, and so does the logo pass
+//!   sees the lobby over the loading panel; while the lobby shows it owns
+//!   the screen whatever the menu's screen, `owned_by_lobby`: the menu's
+//!   camera on, the shell's off, Esc the lobby's menu, `esc_menu`, and
+//!   no pass for a move under it; the loading panel and the lobby take
+//!   the world's view off, `cover_world` and `client::staging`, under
+//!   which a map a match left unloads), and so does the logo pass
 //!   between screens, `client::logo_pass`, so it covers the menu too).
 //!   Under a theme with a logo pass (the Ultimate Gun Game's) the menu,
 //!   the loading panel and the game change at its swap: what is drawn
@@ -187,6 +192,8 @@ pub enum EscDoes {
     Disconnect,
     /// The report dialog (`client::feedback`).
     Feedback,
+    /// Leave the pre-match lobby (asks first: `esc_menu::Page::ConfirmLeave`).
+    Leave,
     Quit,
 }
 
@@ -206,6 +213,9 @@ pub struct EscEntry {
     pub label: String,
     pub does: EscDoes,
     pub when: When,
+    /// In the pre-match lobby's menu (`lobby = true`) instead of the
+    /// match's.
+    pub lobby: bool,
 }
 
 /// How a Play row is set.
@@ -297,6 +307,7 @@ impl MenuData {
                 Some("disconnect") => EscDoes::Disconnect,
                 Some("quit") => EscDoes::Quit,
                 Some("feedback") => EscDoes::Feedback,
+                Some("leave") => EscDoes::Leave,
                 other => return Err(format!("{label}: no action {other:?}")),
             };
             let when = match s(&t, "when").as_deref() {
@@ -305,7 +316,8 @@ impl MenuData {
                 Some("main_menu") => When::MainMenu,
                 Some(w) => return Err(format!("{label}: no `when` {w}")),
             };
-            escape.push(EscEntry { label, does, when });
+            let lobby = t.get("lobby").and_then(|v| v.as_bool()).unwrap_or(false);
+            escape.push(EscEntry { label, does, when, lobby });
         }
         let mut play = Vec::new();
         for t in tables("play") {
@@ -675,12 +687,20 @@ fn screen_class(s: Screen) -> u8 {
 }
 
 /// `ShownScreen` follows the menu, through the pass on a move.
-fn follow_shown(menu: Res<PartyMenu>, mut shown: ResMut<ShownScreen>, mut passes: chimera_client::client::logo_pass::Passes) {
+fn follow_shown(
+    menu: Res<PartyMenu>,
+    lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
+    mut shown: ResMut<ShownScreen>,
+    mut passes: chimera_client::client::logo_pass::Passes,
+) {
     let want = ShownScreen::of(&menu);
     if *shown == want {
         return;
     }
-    let moved = screen_class(shown.screen) != screen_class(want.screen) || shown.lobby_ready != want.lobby_ready;
+    // Under the pre-match lobby (which owns the screen) a move shows
+    // nothing: no pass of its own (the lobby's own comes when it goes).
+    let under_lobby = lobby.is_some_and(|l| l.shown);
+    let moved = !under_lobby && (screen_class(shown.screen) != screen_class(want.screen) || shown.lobby_ready != want.lobby_ready);
     if !moved || !passes.ask("menu_screen") {
         *shown = want;
     }
@@ -856,6 +876,7 @@ impl Plugin for MainMenuPlugin {
             app.init_resource::<BackgroundMaps>();
         }
         crate::ui_cues::ensure_message(app);
+        chimera_client::client::staging::staging(app);
         app.insert_resource(data)
             .insert_resource(last)
             .init_resource::<BackgroundState>()
@@ -881,7 +902,7 @@ impl Plugin for MainMenuPlugin {
             .add_systems(PostStartup, remember_command_line_join)
             .add_systems(
                 Update,
-                (look_loaded, typing, clicks, act, follow_loads, follow_reconnect, refresh_values, ca_loading_gate, fly, follow_shown, cameras, show, backdrop, progress, loading_under_lobby, entry_hover, music)
+                (look_loaded, typing, clicks, act, follow_loads, follow_reconnect, refresh_values, ca_loading_gate, fly, follow_shown, cover_world, cameras, show, backdrop, progress, loading_under_lobby, entry_hover, music)
                     .chain()
                     .in_set(MainMenuSystems)
                     .before(crate::esc_menu::EscMenuSystems),
@@ -1167,7 +1188,7 @@ fn typing(
     data: Res<MenuData>,
     mut out: MessageWriter<MainMenuAction>,
     settings: Option<Res<crate::settings::Settings>>,
-    theme: Option<Res<chimera_ui::Theme>>,
+    (theme, lobby): (Option<Res<chimera_ui::Theme>>, Option<Res<chimera_client::client::prematch_lobby::LobbyView>>),
     mut clipboard: Local<chimera_ui::clipboard::Clipboard>,
     shared_clipboard: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
@@ -1192,6 +1213,11 @@ fn typing(
             continue;
         }
         if e.key_code == KeyCode::Escape {
+            // The pre-match lobby over the loading panel: Esc opens its
+            // menu (`esc_menu`), never the panel's Cancel.
+            if lobby.as_ref().is_some_and(|l| l.shown) {
+                continue;
+            }
             if settings.as_ref().is_some_and(|s| s.esc_taken) {
                 // Settings spent it (a key capture, an open list, the keep).
                 continue;
@@ -1788,6 +1814,24 @@ fn ca_shows(world_ca: Option<&combat_arms::ui::loading::CaLoading>) -> bool {
     world_ca.is_some_and(|c| c.label.is_some())
 }
 
+/// The server's pre-match lobby is up (`prematch_lobby::LobbyView`): it
+/// owns the screen and the input whatever the menu's screen (the loading
+/// panel at its foot, or the game entered under it): drawn on the
+/// menu's camera with the shell's (the HUDs') off, the world's view off
+/// (`staging::WorldCover`), the mouse free, Esc its menu (`esc_menu`).
+pub fn owned_by_lobby(lobby: Option<&chimera_client::client::prematch_lobby::LobbyView>) -> bool {
+    lobby.is_some_and(|l| l.shown)
+}
+
+/// The loading panel (joining, a map loading, a level change) stands in
+/// for the world: its view off (`staging::WorldCover`'s `MENU`), so a
+/// map being left or coming in draws nothing behind it; the map a match
+/// left unloads then (`staging::UnloadAtCover`).
+fn cover_world(shown: Res<ShownScreen>, mut cover: ResMut<chimera_client::client::staging::WorldCover>) {
+    let loading = matches!(shown.screen, Screen::Joining | Screen::Loading);
+    chimera_client::client::staging::WorldCover::put(&mut cover, chimera_client::client::staging::MENU, loading);
+}
+
 // ---------------------------------------------------------------------------
 // The background: the camera's orbit, the HUD hidden.
 
@@ -1885,9 +1929,11 @@ fn music(
 pub struct MenuUiCamera;
 
 #[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity)]
 fn cameras(
     shown: Res<ShownScreen>,
     ca: Option<Res<combat_arms::ui::loading::CaLoading>>,
+    lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
     mut shell: Query<&mut Camera, (With<IsDefaultUiCamera>, Without<MenuUiCamera>)>,
     mut ours: Query<(Entity, &mut Camera), With<MenuUiCamera>>,
     consoles: Query<
@@ -1896,6 +1942,13 @@ fn cameras(
             With<ConsoleRoot>,
             With<chimera_client::client::prematch_lobby::LobbyRoot>,
             With<chimera_client::client::logo_pass::LogoPassRoot>,
+            // What opens over the lobby: its menu, Settings, the
+            // Controls page, the report dialog.
+            With<crate::esc_menu::MenuRoot>,
+            With<crate::settings::SettingsRoot>,
+            With<crate::controls::PageRoot>,
+            With<crate::feedback_signal::DialogRoot>,
+            With<crate::feedback_signal::NoticeRoot>,
         )>,
     >,
     mut commands: Commands,
@@ -1903,7 +1956,7 @@ fn cameras(
     if shell.is_empty() {
         return;
     }
-    let menu_owns = shown.screen != Screen::InGame && !ca_shows(ca.as_deref());
+    let menu_owns = owned_by_lobby(lobby.as_deref()) || (shown.screen != Screen::InGame && !ca_shows(ca.as_deref()));
     let Some((cam, mut camera)) = ours.iter_mut().next() else {
         if menu_owns {
             let cam = commands

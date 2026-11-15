@@ -1,6 +1,6 @@
 //! The command clock and prediction through a session's rough spots, on
 //! `NetSim` with the engine's base, the greybox and a minigame with the
-//! pre-match lobby (`mp_lobby`), its players frozen: the join and its
+//! pre-match lobby (`mp_lobby`), its players staged (out of play): the join and its
 //! lobby, the match, a map change (`MapSettling` and the load's one-tick
 //! frames, as `client::console` has them) and its lobby, the server
 //! restarted and the client back on its own (`net::reconnect`) into the
@@ -15,7 +15,8 @@
 //! (twice for one, the smoothed lead lagging the step) and restart for
 //! every server state that came ahead of its clock. Now, per load, two
 //! restarts and no jump: the clock's start (nothing predicted yet) and the
-//! server letting the player in (`OwnState::alive`); a hitch that drops
+//! server letting the player in (`OwnState::alive`: at the lobby's end,
+//! the player being staged through it); a hitch that drops
 //! time skips the ticks at once (`CommandClock::stalls`, `skipped`), a
 //! late frame's states wait for their ticks (`predict`'s module doc).
 //! A server hitch that drops time costs each client one jump back (the
@@ -324,7 +325,7 @@ fn hitches_through_a_join_a_lobby_a_map_change_and_a_rejoin_make_no_clock_jumps(
     let mut count = Count::default();
     let mut phases = Vec::new();
 
-    // The join and 6 s of its lobby, frozen.
+    // The join and 6 s of its lobby, staged.
     let before = count;
     assert!(frames.until(&mut sim, 20.0, &mut count, joined), "the client joined");
     frames.run(&mut sim, 6.0, &mut count);
@@ -361,9 +362,10 @@ fn hitches_through_a_join_a_lobby_a_map_change_and_a_rejoin_make_no_clock_jumps(
     println!("(jumps, restarts, hitches that dropped time) per phase: {phases:?}");
     for (phase, (jumps, restarts, _)) in phases {
         assert_eq!(jumps, 0, "{phase}: the clock jumped");
-        // The clock's start and the server letting the player in; none
-        // in the match (its spawn is the lobby's).
-        let most = if phase == "the match" { 0 } else { 2 };
+        // The clock's start and the server letting the player in; in the
+        // match only the latter (the lobby stages the player: it comes
+        // into play at the lobby's end).
+        let most = if phase == "the match" { 1 } else { 2 };
         assert!(restarts <= most, "{phase}: {restarts} prediction restarts");
     }
     assert!(count.stalls >= 4, "the client's hitches dropped time: {count:?}");

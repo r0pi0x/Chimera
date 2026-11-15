@@ -38,10 +38,10 @@ const WIDTH: f32 = 46.0;
 pub const NOTICE: &str = "Sent to this playtest's host only. No passwords, tokens or game files.";
 
 #[derive(Component)]
-struct DialogRoot;
+pub(crate) struct DialogRoot;
 
 #[derive(Component)]
-struct NoticeRoot;
+pub(crate) struct NoticeRoot;
 
 pub struct FeedbackSignalPlugin;
 

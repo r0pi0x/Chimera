@@ -12,8 +12,10 @@
 //!
 //! - **Header**: the lockup (the kit's `mark` icon, ULTIMATE spread over
 //!   the wordmark's width, the wordmark with `ss02`), "Lobby", and the
-//!   tabs Invite, Match settings, Leave (shown, not clickable: Leave is
-//!   Esc); a rule under it; `+` marks in the corners.
+//!   tabs Invite, Match settings (shown, not clickable) and Leave (a
+//!   button: `prematch_lobby::LobbyAction::Leave`, the app's way out,
+//!   which the party apps confirm first); a rule under it; `+` marks in
+//!   the corners.
 //! - **Left**: the Ready tag and count ("5 / 7", "players • 8 slots"
 //!   when the slot count is known), the player table (`#`, player, tag,
 //!   status): the slot number, the bot slot left of every name (the robot
@@ -35,14 +37,18 @@
 //!   (`CountdownBar`: pixel-snapped ticks lit as the countdown runs,
 //!   stepped every frame from `UiClock`, the last
 //!   `layout.lobby.countdown_hot` seconds in the accent).
-//! - **Footer**: the keys: F3 and what it does now (`LobbyView::key_line`),
-//!   Tab Players, Esc Leave.
+//! - **Footer**: the keys: F3 and what it does now (`LobbyView::key_line`;
+//!   a player still downloading or loading readies up for when it has
+//!   the map), a button too (`LobbyAction::Ready`), Tab Players, Esc Menu
+//!   (the app's lobby menu). The lobby owns the screen and the mouse
+//!   (`prematch_lobby::lobby_shown`), so both buttons take clicks through
+//!   a download and a load.
 //!
 //! Rebuilt when the view, the window's units or the theme change; the
 //! bar and the pops animate without a rebuild.
 //!
-//! Known shortcuts: the map preview is a gradient; the tabs are drawn
-//! but not clickable; a downloader's bytes show as a percentage only;
+//! Known shortcuts: the map preview is a gradient; Invite and Match
+//! settings are drawn but not clickable; a downloader's bytes show as a percentage only;
 //! no packet-loss mark (the lobby has no loss figure).
 
 use std::collections::HashMap;
@@ -56,7 +62,7 @@ use chimera_ui::{
     widgets::{self, PingLevel, TagKind},
 };
 
-use super::prematch_lobby::{LobbyContent, LobbyRoot, LobbyView};
+use super::prematch_lobby::{LobbyAction, LobbyAsked, LobbyContent, LobbyRoot, LobbyView};
 
 /// The theme's lobby table.
 const L: &str = "lobby";
@@ -133,7 +139,17 @@ impl CountdownBar {
 
 /// The lobby panel's systems (added by `PreMatchLobbyPlugin`).
 pub fn add(app: &mut App) {
-    app.add_systems(Update, (draw, step_bar).chain().after(super::prematch_lobby::LobbyFollow).run_if(themed));
+    app.add_systems(Update, (draw, step_bar).chain().after(super::prematch_lobby::LobbyFollow).run_if(themed))
+        .add_systems(Update, press.before(super::prematch_lobby::LobbyFollow));
+}
+
+/// A click on Ready or Leave (`LobbyAction`).
+fn press(pressed: Query<(&Interaction, &LobbyAction), Changed<Interaction>>, mut out: MessageWriter<LobbyAction>) {
+    for (i, a) in &pressed {
+        if *i == Interaction::Pressed {
+            out.write(*a);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -232,7 +248,7 @@ impl Panel<'_> {
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn draw(
-    view: Res<LobbyView>,
+    (view, asked): (Res<LobbyView>, Res<LobbyAsked>),
     theme: Res<Theme>,
     units: Res<UiUnits>,
     clock: Res<UiClock>,
@@ -268,7 +284,7 @@ fn draw(
         view.clone(),
         (units.height * 8.0) as u32,
         (units.scale_factor * 1000.0) as u32,
-        format!("{}{}", theme.name, kit.is_some()),
+        format!("{}{}{}", theme.name, kit.is_some(), asked.0),
     );
     if drawn.key.as_ref() == Some(&key) && !theme.is_changed() && !kit.as_ref().is_some_and(|k| k.is_changed()) {
         return;
@@ -358,6 +374,9 @@ fn draw(
             s = s.outline(Tone::Fg3, 1.0);
         }
         let tab = p.boxed(c, tabs, s);
+        if label == "Leave" {
+            c.entity(tab).insert((LobbyAction::Leave, chimera_ui::controls::clickable()));
+        }
         p.text(c, tab, Role::Mono, p.lay("kv"), fg, label);
         let px = units.phys(units.cq(0.45)).round().max(1.0) as u32;
         let tri = drawn.tri.entry(px).or_insert_with(|| images.add(icons::image(&triangle(), px))).clone();
@@ -612,17 +631,22 @@ fn draw(
         Some("lobby_start") => Some("Start now"),
         Some(_) if view.rows.iter().any(|r| r.local && r.status == status::NOT_READY) => Some("Ready up"),
         Some(_) => Some("Not ready"),
+        // Still downloading or loading: ready up for when the map is in.
+        None if !view.hosting && view.rows.iter().any(|r| r.local) => Some(if asked.0 { "Not ready" } else { "Ready up" }),
         None => None,
     };
     let foot = p.boxed(c, frame, style!(row, gap: 2.2).abs([Some(m), None, None, Some(p.lay("foot_y"))]));
     let keys = [
-        (super::prematch_lobby::LOBBY_KEY.to_uppercase(), key_words),
-        ("Tab".into(), Some("Players")),
-        ("Esc".into(), Some("Leave")),
+        (super::prematch_lobby::LOBBY_KEY.to_uppercase(), key_words, Some(LobbyAction::Ready)),
+        ("Tab".into(), Some("Players"), None),
+        ("Esc".into(), Some("Menu"), None),
     ];
-    for (k, words) in keys {
+    for (k, words, action) in keys {
         let Some(words) = words else { continue };
         let item = p.boxed(c, foot, style!(row, gap: 0.55));
+        if let Some(a) = action {
+            c.entity(item).insert((a, chimera_ui::controls::clickable()));
+        }
         let cap = widgets::spawn_pair(c, widgets::kbd(&theme, kit.as_deref(), &units, &k, p.lay("key")));
         c.entity(cap).insert(ChildOf(item));
         p.text(c, item, Role::Mono, p.lay("key"), Tone::Fg2, words);

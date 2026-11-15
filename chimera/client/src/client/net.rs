@@ -72,6 +72,8 @@ fn react(world: &mut World, mut cursor: Local<bevy::ecs::message::MessageCursor<
                 world
                     .resource_mut::<Console>()
                     .info(format!("The server is changing level to {map}..."));
+                // The match over: the map left goes under the cover.
+                super::staging::changing_level(world);
                 let name = crate::net::maps::map_name(&map).to_string();
                 super::front_end::joining(world, &name);
             }

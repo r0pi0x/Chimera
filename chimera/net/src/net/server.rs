@@ -9,7 +9,8 @@
 //! fewer players, out of the game (`core::Connecting`: dead, not solid, no
 //! health) until its client reports the map loaded (`Loaded`, also after each
 //! map change; the map kept on its client's entity: `ClientMap`), then
-//! spawned as the rules allow (`rules::enter_game`), `Seed` from its id), each player's commands queued by tick (`CommandBuffer`: late
+//! spawned as the rules allow (`rules::enter_game`; not while entry is
+//! held, `EntryHeld`: the pre-match lobby lets everyone in at its end), `Seed` from its id), each player's commands queued by tick (`CommandBuffer`: late
 //! and too-early ones dropped; the lead reported for the client's newest clock
 //! epoch only, counted from the tick a frame catching up after a hitch
 //! gets to), `kick <name>` and `kickid <id> [message]` ("Kicked by Console")
@@ -793,9 +794,15 @@ pub const JOIN_KEY: &str = "_jointeam";
 #[derive(Component, Clone, Debug, PartialEq, Eq)]
 pub struct ClientMap(pub String);
 
+/// While in, a client's map loaded doesn't take its player into the game
+/// (`receive_loaded` records it only): the pre-match lobby holds everyone
+/// out of play and lets them in at its end (`prematch`).
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct EntryHeld;
+
 /// A client has the map loaded: its player comes into the game, if it's
 /// the map the server is on (a report from before a map change counts
-/// for nothing).
+/// for nothing), unless entry is held (`EntryHeld`).
 fn receive_loaded(mut loaded: MessageReader<FromClient<super::Loaded>>, players: Query<&Player>, mut commands: Commands) {
     for l in loaded.read() {
         let Some(client) = l.client_id.entity() else { continue };
@@ -811,6 +818,12 @@ fn receive_loaded(mut loaded: MessageReader<FromClient<super::Loaded>>, players:
             }
             if let Ok(mut c) = world.get_entity_mut(client) {
                 c.insert(ClientMap(serving));
+            }
+            // Held (the pre-match lobby's: everyone out of play until
+            // it ends, which lets this player in: `prematch`).
+            if world.contains_resource::<EntryHeld>() {
+                super::decals::send(world, client);
+                return;
             }
             let rules = super::JoinRules::active(world);
             (rules.enter)(world, character);
