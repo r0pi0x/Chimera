@@ -22,6 +22,10 @@
 //! - `body`: the players' Spartan body (model, animations from the graph's
 //!   unit tables, hit boxes from the collision model, armour colours), on
 //!   Halo's maps and, from the donor map, on any other;
+//! - `view`: the guns in hand: each gun's first-person view model with the
+//!   arms, played from the weapons' events one frame a tick, hidden while
+//!   zoomed, and its held model and stance; on Halo's maps and, from the
+//!   donor map, on any other;
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
 //!   the donor map, `map/<name>` per multiplayer map); `mount::build` reads
 //!   the install's build from a map header;
