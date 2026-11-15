@@ -264,6 +264,14 @@ impl AssetHost {
 #[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
 pub struct JoinedService(pub Option<(String, String)>);
 
+/// On a client: the games the match being joined requires (its manifest's
+/// required ones, the map's game). A game bound for the join that the
+/// service doesn't serve fails the join only when it is one of these; a
+/// wanted one (another game's guns in a ladder, which the service may not
+/// publish yet) is left out with a note, as an uninstalled wanted game is.
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+struct JoinRequired(Vec<String>);
+
 /// On a client: the asset settings this process opened its mounts with,
 /// and which games it reads from the store alone (made at the first join:
 /// `session`; tests insert their own).
@@ -796,6 +804,9 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
     world.insert_resource(JoinedService(
         manifest.assets.as_ref().map(|o| (o.url.clone(), o.fingerprint.clone())),
     ));
+    world.insert_resource(JoinRequired(
+        manifest.games.iter().filter(|n| n.required).map(|n| n.game.clone()).collect(),
+    ));
     let Some(offer) = manifest.assets.clone() else {
         return Next::Go;
     };
@@ -1217,12 +1228,17 @@ fn poll_fetch(world: &mut World) {
             info!("{summary}");
             if !f.bound.is_empty() {
                 let arrived = remount(world, &f.bound);
-                let lacking: Vec<String> = f
-                    .bound
-                    .iter()
-                    .filter(|g| !arrived.contains(g))
-                    .map(|g| super::manifest::game_name(world.get_resource::<Games>(), g))
-                    .collect();
+                let required = world.get_resource::<JoinRequired>().cloned().unwrap_or_default().0;
+                let (lacking, wanted): (Vec<&String>, Vec<&String>) =
+                    f.bound.iter().filter(|g| !arrived.contains(g)).partition(|g| required.contains(g));
+                let name = |g: &String| super::manifest::game_name(world.get_resource::<Games>(), g);
+                for g in wanted {
+                    info!(
+                        "the asset service doesn't serve {}: the match plays, but what it draws of it won't load",
+                        name(g)
+                    );
+                }
+                let lacking: Vec<String> = lacking.into_iter().map(name).collect();
                 if !lacking.is_empty() {
                     let why = format!(
                         "the asset service doesn't serve {}; tell the server's admin",

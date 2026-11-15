@@ -564,6 +564,37 @@ fn a_first_join_binds_the_token_and_fetches_in_the_same_game() {
     assert!(progress(&sim, 0).failure.is_none());
 }
 
+/// A game the match only wants (another game's guns in a ladder, here
+/// `unpublished_game`), which the service doesn't serve.
+const UNPUBLISHED: &str = "unpublished_game";
+
+fn wants_unpublished(_: &mut World, m: &mut MatchManifest) {
+    m.need(UNPUBLISHED, false);
+}
+
+/// A first join to a match that also wants a game the service doesn't
+/// publish (2026-11-15: Halo's guns joined the party's ladders before its
+/// sets were published, and every first join failed with "the asset
+/// service doesn't serve Halo"): the required game's files come, the
+/// wanted one is left out with a note, and the client joins.
+#[test]
+fn a_first_join_goes_on_without_a_wanted_game_the_service_lacks() {
+    let svc = Fixture::new("bind_wanted", 4, Duration::ZERO);
+    let token = svc.user("tester");
+    let (session, _access) = fresh_client(&svc, "fresh_wanted", &token);
+    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
+    let base = setup(svc.host());
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, move |app: &mut App| {
+        base(app);
+        app.world_mut().resource_mut::<NetHooks>().manifest.push(wants_unpublished);
+    });
+    sim.add_client(client_with(session, false));
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
+    assert!(svc.ids("base").iter().all(|id| store.has(id)), "the required game's base fetched");
+    assert!(reads_from(&sim, 0, &svc.front.url()));
+    assert!(progress(&sim, 0).failure.is_none(), "{:?}", progress(&sim, 0).failure);
+}
+
 /// The stand-in game's weapon documents: what a machine has without its
 /// files (`first`), and with them (`first` and `arrived`: a game whose
 /// weapon set is built from its install, Combat Arms').
