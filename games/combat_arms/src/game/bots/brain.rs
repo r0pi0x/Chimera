@@ -443,7 +443,7 @@ pub fn settle_nav(world: &mut World) -> bool {
 }
 
 /// What a flood of the map starts from: its seeds (the spawn points, the
-/// living characters' feet), the moving bodies it looks through, the walker
+/// living characters' feet, the teleporters' exits), the moving bodies it looks through, the walker
 /// and the map's visibility (the bound, `nav_gen::Bounds`).
 struct NavStart {
     seeds: Vec<Vec3>,
@@ -465,6 +465,10 @@ impl NavStart {
                 .iter(world)
                 .map(|t| t.translation - Vec3::Y * 0.8),
         );
+        // A room reached only through a teleporter (ours): its exit.
+        if let Some(t) = world.get_resource::<crate::map::teleport::MapTeleporters>() {
+            seeds.extend(t.pads.iter().map(|p| p.dest));
+        }
         let ignore = SnapQueries::new(world).moving_bodies(world);
         // Bounded to the rooms a walking player reaches (`nav_gen::Bounds`):
         // the jump-ups climb out of de_aztec otherwise.
@@ -473,6 +477,8 @@ impl NavStart {
         if let Some(radius) = world.get_resource::<BotSettings>().and_then(|s| s.walker_radius) {
             params.radius = radius;
         }
+        // Where the map says it is played (`nav_gen::NavWithin`: Halo's).
+        params.within = nav_gen::NavWithin::of(world);
         Self { seeds, ignore, params, vis }
     }
 
@@ -491,12 +497,17 @@ impl NavStart {
     }
 }
 
-/// The mesh in, said in the log.
-fn insert_mesh(world: &mut World, mesh: NavMesh, ai: bool) {
+/// The mesh in, said in the log, with the map's teleporters as links
+/// (`nav_gen::link_map`; a map without them: none).
+fn insert_mesh(world: &mut World, mut mesh: NavMesh, ai: bool) {
+    let links = nav_gen::link_map(&mut mesh, world);
     if ai {
         info!("bots: the map's {} AI volumes as navigation areas", mesh.areas.len());
     } else {
         info!("bots: generated a navigation mesh of {} areas", mesh.areas.len());
+    }
+    if links > 0 {
+        info!("bots: {links} teleporters as navigation links");
     }
     world.insert_resource(mesh);
 }
@@ -2297,6 +2308,10 @@ fn chase_fire(ctx: &Ctx, bot: &mut CaBot, me: &Char, target: &Char, guns: &[Gun]
 /// instructions a tick).
 pub const REPLAN_AFTER_FAIL: f64 = 1.0;
 
+/// Ours: a bot this close (m) to a teleporter's destination on its route,
+/// and twice as far from its source, was carried by it.
+pub const TELEPORT_ARRIVED: f32 = 1.5;
+
 /// Walk toward `goal` (feet, m) along a planned path (3).
 fn walk(ctx: &Ctx, bot: &mut CaBot, me: &Char, goal: Vec3, diverge: bool, io: &mut IntentOut) {
     let feet = me.feet();
@@ -2332,6 +2347,15 @@ fn walk(ctx: &Ctx, bot: &mut CaBot, me: &Char, goal: Vec3, diverge: bool, io: &m
         if bot.route.is_empty() {
             bot.plan_after = ctx.now + REPLAN_AFTER_FAIL;
         }
+    }
+    // Carried by a teleporter (ours, `nav` "Teleporters"): its source far
+    // behind, its destination here; on to what follows it.
+    if ctx.mesh.is_some_and(|m| !m.teleports.is_empty())
+        && bot.route.len() >= 2
+        && bot.route[1].distance(feet) < TELEPORT_ARRIVED
+        && bot.route[0].distance(feet) > 2.0 * TELEPORT_ARRIVED
+    {
+        bot.route.drain(..2);
     }
     while let Some(&p) = bot.route.first() {
         if p.xz().distance(feet.xz()) < 0.35 && (p.y - feet.y).abs() < 1.2 {

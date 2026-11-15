@@ -35,6 +35,21 @@
 //! their players-only collider (`core::MapPlayerClips`); it may stand off
 //! a cell's centre to fit (`NavGenParams::slide`).
 //!
+//! Held to a box (`NavGenParams::within`): a map whose collision reaches
+//! past where it is played says where it is played (`NavWithin`, a map
+//! extra the map's loader sets: Halo's levels, whose material-less
+//! boundary walls and lid stand beyond the drawn level, give the drawn
+//! level's box); a cell is kept only when its floor point is inside it
+//! (the seeds always). Callers take it from the loaded map
+//! (`NavWithin::of`). A held flood may grow to a floor over the box's
+//! whole footprint (`NavGenParams::cell_limit`): Blood Gulch's drawn
+//! level, 384 by 442 m, has 78,000 m2 of floor the bots walk, past the
+//! 300,000 cells (75,000 m2) that end an unheld flood.
+//!
+//! Links of the map (`link_map`): a generated mesh gets the loaded map's
+//! teleporters (`map::teleport::MapTeleporters`) as `Via::Teleport` links
+//! (`NavMesh::add_teleport`).
+//!
 //! Known shortcuts: no ladders, jumps, crouch-only areas, hiding spots or
 //! visibility data; cells are tested at their centres only (a wall
 //! thinner than a cell between two cell centres is found by the sweep,
@@ -78,7 +93,8 @@ pub struct NavGenParams {
     pub min_normal_y: f32,
     /// Deepest drop walked off (one way).
     pub max_drop: f32,
-    /// Stop growing the grid at this many cells.
+    /// Stop growing the grid at this many cells (or more when held to a
+    /// box: `cell_limit`).
     pub max_cells: usize,
     /// Merged areas are at most this many cells a side.
     pub max_area: u32,
@@ -94,6 +110,9 @@ pub struct NavGenParams {
     /// centre (half the walker's width) is inside one that fits (0:
     /// centres only).
     pub slide: f32,
+    /// Only cells whose floor point is inside this box (engine space, min
+    /// and max; the module doc, `NavWithin`); None: anywhere.
+    pub within: Option<(Vec3, Vec3)>,
 }
 
 impl Default for NavGenParams {
@@ -109,7 +128,17 @@ impl Default for NavGenParams {
             max_area: 8,
             mask: crate::core::CHARACTER_FILTER,
             slide: 0.0,
+            within: None,
         }
+    }
+}
+
+impl NavGenParams {
+    /// The most cells a flood takes: `max_cells`, or held to a box
+    /// (`within`) as many as cover its footprint if that is more.
+    pub fn cell_limit(&self) -> usize {
+        let footprint = self.within.map_or(0.0, |(lo, hi)| ((hi.x - lo.x) * (hi.z - lo.z)).max(0.0) / (self.cell * self.cell));
+        self.max_cells.max(footprint.min(1e8) as usize)
     }
 }
 
@@ -121,6 +150,34 @@ pub fn walking_player() -> NavGenParams {
         max_drop: 3.0,
         ..Default::default()
     }
+}
+
+/// Where a map is played, when its collision reaches past it (a map
+/// extra, `MapData::extras`, and the loaded map's resource): the box a
+/// generated mesh is held to (`NavGenParams::within`; module doc).
+#[derive(Resource, Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NavWithin {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
+impl NavWithin {
+    /// The loaded map's box, if it has one.
+    pub fn of(world: &World) -> Option<(Vec3, Vec3)> {
+        world.get_resource::<Self>().map(|b| (b.min, b.max))
+    }
+
+    /// Whether `p` is inside the box (edges included).
+    pub fn contains(min: Vec3, max: Vec3, p: Vec3) -> bool {
+        p.cmpge(min).all() && p.cmple(max).all()
+    }
+}
+
+/// The loaded map's links on a generated mesh (module doc): its
+/// teleporters; how many were added.
+pub fn link_map(mesh: &mut NavMesh, world: &World) -> usize {
+    let Some(t) = world.get_resource::<super::teleport::MapTeleporters>() else { return 0 };
+    t.pads.iter().filter_map(|p| mesh.add_teleport(p.source, p.dest)).count()
 }
 
 /// What bounds a generated mesh to the map's playable space
@@ -555,7 +612,12 @@ impl<'a> Grid<'a> {
                     Some(j) => j,
                     None => {
                         let (x, z) = self.centre(jx, jz);
-                        if self.cells.len() >= p.max_cells || !keep(Vec3::new(x, y1, z)) || !self.stands(jx, jz, y1) {
+                        let at = Vec3::new(x, y1, z);
+                        if self.cells.len() >= p.cell_limit()
+                            || p.within.is_some_and(|(lo, hi)| !NavWithin::contains(lo, hi, at))
+                            || !keep(at)
+                            || !self.stands(jx, jz, y1)
+                        {
                             continue;
                         }
                         let j = self.add(jx, jz, y1);

@@ -364,6 +364,7 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<MapBrushTree>()
         .map_scoped::<KillHeight>()
         .map_scoped::<super::teleport::MapTeleporters>()
+        .map_scoped::<super::nav_gen::NavWithin>()
         .map_scoped::<MapWater>()
         .map_scoped::<water::WaterMovers>()
         .map_scoped::<RoundSounds>()

@@ -45,6 +45,7 @@ mod heavy {
     mod fx;
     mod hud;
     mod map_objects;
+    mod nav_within;
     mod maps;
     mod mount;
     mod served;

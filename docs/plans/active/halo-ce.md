@@ -22,7 +22,7 @@ plays as the real game, from specs and the disc's own data.
 | M1 a map you can walk on | done (2026-11-15) | every multiplayer map loads from the disc image with textures, one lightmap atlas, the sky model, scenery and collision; Halo's own app and server (`halo_ce`, `halo_ce_server`); six maps in the party apps' pool, played by the other games' characters; summary below |
 | M2 Halo guns as UGG rungs | done (2026-11-15) | the assault rifle, pistol, plasma rifle and shotgun as data-driven rungs with their view models, animations, sounds and effects; a Halo rung's holder is a Halo player (movement, shields over health, the Spartan, Halo's HUD); a mixed ladder climbed by real fire as a party test; Halo's sets published to the asset service; summary below |
 | M3 the full multiplayer arsenal | in progress (2026-11-15) | simulated: the sniper rifle, rocket launcher, needler, plasma pistol and flamethrower, frag and plasma grenades, explosions, the level's materials at each hit, pickups on the item clock; four more rungs (eight in all); Halo's HUD from the disc's tags (shield, health, ammunition, heat, crosshairs, motion tracker). Being built: the five guns in hand with their sounds and effects, grenades thrown and seen, pickups seen |
-| M4 every multiplayer map | done but bots' bound (2026-11-15) | teleporters for every game's characters (`chimera_world::map::teleport`, from the scenario's pairs), climbable surfaces as ladders (Halo's movement climbs them by movement.md, the others by their own rules), no machine play depends on (Wizard's 4 alert lights), twelve of thirteen maps in the pool (Sidewinder waits for vehicles), the pool measured with teleporters as links; open: the bots' mesh bounded to the played space and teleporter and ladder links for bots (backlog) |
+| M4 every multiplayer map | done (2026-11-15) | teleporters for every game's characters (`chimera_world::map::teleport`, from the scenario's pairs), climbable surfaces as ladders (Halo's movement climbs them by movement.md, the others by their own rules), no machine play depends on (Wizard's 4 alert lights), twelve of thirteen maps in the pool (Sidewinder waits for vehicles), the pool measured with teleporters as links; the bots' generated mesh held to the drawn level (`nav_gen::NavWithin`, the structure BSP's world bounds) and grown to it (Blood Gulch's 78,000 m2 whole), teleporters as navigation links the bots plan through and walk onto (`Via::Teleport`); ladders for bots open (backlog) |
 | M5 feel and parity pass | not started | |
 | M6 vehicles | not started | |
 | M7 and on (effects, ragdolls, the classic look, the backlog) | not started | |
@@ -321,21 +321,16 @@ backlog.
 
 ## Backlog
 
-- **Bot navigation on Halo's maps** (M4): Combat Arms' bots generate
-  their mesh from a map's collision when it has no AI volumes
-  (`nav_gen`, seeded at the spawn points), so they walk Halo's maps
-  today, but unbounded: Halo's visibility (clusters, portals, the PVS)
-  is not handed to the engine, so the flood is not held to the played
-  space (Blood Gulch's reaches the flood's cell limit, with 972 of its
-  spawn spots off the main region; Sidewinder's 69000 m2 too; every
-  other map's measures as its rooms, no spot off). The engine's
-  generator takes one bound, `map::vis` clusters (`nav_gen::Bounds`):
-  Halo's would be the collision BSP's leaves with the structure's leaf
-  clusters, but handing `MapData::visibility` over also turns on the
-  renderer's culling, a change of its own. Missing: that bound (or a
-  nav mesh of Halo's own), and links for bots through teleporters and
-  up ladders (`nav::Via` has walks and the `.nav` file's ladders only;
-  the generator makes neither). No multiplayer map has a lift.
+- **Bots up Halo's ladders**: the bots' generated mesh has walks and
+  teleporters (`Via::Teleport`, `nav_gen::link_map`) but no ladders: the
+  generator makes no `NavLadder` from the map's ladder volumes
+  (`core::MapLadders`), and Combat Arms' path search and follower take
+  walks and teleporters only. Needed: a ladder link from each climbable
+  sheet's foot to the floor over its top (as HL2:DM's `to_floors` finds
+  it), and the follower facing the sheet and pressing on while Combat
+  Arms' movement climbs the made ladder (docs/DESIGN.md, "Ladders across
+  games"). No pool map's spawns need one (every map's spawns reach each
+  other on walks and teleporters: `heavy::halo_maps`).
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message, the "teleporter activate"
@@ -411,3 +406,20 @@ backlog.
   its target, CS:S and Combat Arms characters through Chill Out's and
   Wizard's, boardingaction's 40 ladder sheets, spawns for both teams on
   all 13 maps, every pool map's spawns reachable with teleporter links.
+- 2026-11-15: M4 done: the bots on Halo's maps. Measured first: the
+  bots' walker (0.8 m rises, 45 degree floors) never left Blood Gulch's
+  drawn level (its flood unlimited and held to the drawn box are the
+  same 78,000 m2); it stopped at the flood's 300,000-cell limit (75,000
+  m2), which left 972 spawn spots off its region. So Halo's maps say
+  where they are played, the structure BSP's world bounds
+  (`maps::collision::nav_within`, the engine's `nav_gen::NavWithin`, a
+  map extra): a generated mesh keeps cells inside that box only (a guard
+  against the material-less walls and lid) and may grow to its whole
+  footprint (`NavGenParams::cell_limit`). Every held area's chest is in
+  a leaf with a cluster by the collision BSP's point test. Teleporters
+  are links of the bots' mesh (`nav::Via::Teleport`,
+  `nav_gen::link_map`): Combat Arms' bots plan through them and walk
+  onto the pad (a bot on putput left its room through one in 10 s);
+  the flood is seeded at their exits too. `map_fitness`: Blood Gulch
+  77,996 m2, no spot off, wander 52.7/22.6/14.4 s; the other maps
+  unchanged. Ladders for bots stay open (backlog).

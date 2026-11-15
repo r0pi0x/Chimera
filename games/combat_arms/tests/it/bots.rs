@@ -1154,6 +1154,16 @@ fn case_43_path_cost() {
     let path = bot_nav::find(&m, 0, start, 2, s, bot_nav::MIN_LINK, |_| 1.0).unwrap();
     assert_eq!(path.areas.iter().map(|a| a.0).collect::<Vec<_>>(), vec![0, 1, 2]);
     assert!((path.cost - 100_000.0).abs() < 5.0, "{}", path.cost);
+    // Ours: a teleporter from A to C (a generated mesh's `Via::Teleport`)
+    // is searched as a link whose connection point is the pad, C entered
+    // at its exit; the points walk onto the pad and on from the exit.
+    let (pad, exit) = (Vec3::new(150.0 * s, 0.0, 50.0 * s), Vec3::new(650.0 * s, 0.0, 50.0 * s));
+    assert_eq!(m.add_teleport(pad, exit), Some(0));
+    let path = bot_nav::find(&m, 0, start, 2, s, bot_nav::MIN_LINK, |_| 1.0).unwrap();
+    assert_eq!(path.areas, vec![(0, None), (2, Some(Via::Teleport(0)))]);
+    assert!((path.cost - 2_500.0).abs() < 1.0, "50² u² to the pad: {}", path.cost);
+    let goal = Vec3::new(690.0 * s, 0.0, 50.0 * s);
+    assert_eq!(bot_nav::points(&m, &path, start, goal), vec![pad, exit, goal]);
 }
 
 /// Case 44: the round reaches the kill goal: every bot stops moving and
