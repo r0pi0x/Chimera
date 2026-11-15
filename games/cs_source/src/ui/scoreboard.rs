@@ -303,9 +303,11 @@ fn update(
     mut last: Local<Option<Shot>>,
     minigame: Option<Res<chimera_sim::minigame::hud::MinigameHud>>,
     mine: Query<&chimera_sim::dominations::Relationships, With<LocalPlayer>>,
+    dom_ui: Option<Res<super::freeze_cam::DominationUi>>,
     mut commands: Commands,
 ) {
-    let mine = mine.iter().next();
+    // Off in a party app: no domination marks on the board.
+    let mine = mine.iter().next().filter(|_| dom_ui.is_none_or(|u| u.0));
     let typing = console.is_some_and(|c| c.open);
     let tab = match (&binds, &mouse) {
         (Some(b), Some(m)) => crate::client::binds::pressed(&b.binds, &keys, m, "+showscores"),
