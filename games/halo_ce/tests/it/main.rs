@@ -16,6 +16,7 @@
 //! `cargo test -p halo_ce --features dev --test it`; where tests go:
 //! docs/OBSERVABILITY.md, section 1.
 
+mod arsenal_rules;
 mod assets;
 mod body;
 mod cross_game;

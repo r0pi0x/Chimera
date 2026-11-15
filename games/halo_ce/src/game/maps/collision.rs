@@ -88,6 +88,8 @@ pub fn add(level: &LevelCollision, map: &mut MapData) -> io::Result<Counts> {
             glass.push(tri);
         } else {
             map.collision_indices.push(tri);
+            let code = level.surface_material_type(s).map_or(-1, |t| t.code() as i8);
+            map.extras.entry::<crate::game::weapons::materials::LevelCodes>().0.push(code);
         }
     }
     if !glass.is_empty() {

@@ -16,12 +16,29 @@
 //! counter), then the rate of fire and the error ramp, all in single
 //! precision with the tag's per-tick rates.
 //!
-//! Known shortcuts: one trigger and one magazine (the plasma pistol's
-//! second trigger, charging, spewing, overloading and tracking are not
-//! here: none of the four weapons has them); no under-water check (the
-//! level's water is not known to the simulation yet); ejection port,
-//! illumination and the export functions are not kept (presentation
-//! reads the events and `HaloGun` itself).
+//! Two triggers (weapons.md 4 and 10): trigger 0 is the fire button's;
+//! trigger 1 (`params::Gun::secondary`, the plasma pistol's charged bolt)
+//! has its own cursor (`HaloGun::second`) and fires only from trigger 0's
+//! charge: a trigger with a charging time enters charging on the press
+//! (with two triggers nothing fires; with one and a rate above 0 it fires
+//! now and charges in the background), fires on a release before the
+//! charge completes (two triggers) or goes idle, becomes charged when the
+//! timer runs out (the charged time on its timer, the overcharged amount
+//! 1 - (timer / 30) / charged time while held, which stops the next tick's
+//! cooling), and on a release while charged fires trigger 1 directly
+//! (no overheat check), trigger 0 recovering with its rate of fire 0; the
+//! overcharged action runs every tick a full hold goes on (none: nothing;
+//! discharges: as a release; explodes: `GunEvent::Detonated`).
+//!
+//! Known shortcuts: at most one magazine (no multiplayer weapon has two:
+//! the plasma weapons' is all zeros); trigger 1 is never pressed by a
+//! button (the grenade button pulls it only with weapon flag 12, which no
+//! held multiplayer weapon has) and its rate of fire and error stay 0;
+//! spewing, overloading, tracking and the secondary trigger modes are not
+//! here (no multiplayer weapon has them: their times and modes are 0);
+//! no under-water check (the level's water is not known to the simulation
+//! yet); ejection port, illumination and the export functions are not
+//! kept (presentation reads the events and `HaloGun` itself).
 
 use bevy::math::Vec3;
 use serde::{Deserialize, Serialize};
@@ -57,6 +74,10 @@ pub enum TriggerMode {
     Locked,
     /// After a draw or a put-away: idle once its timer is 0.
     Uninitialised,
+    /// Charging toward a full charge (the timer: ticks left).
+    Charging,
+    /// Fully charged (the timer: ticks before the overcharged action).
+    Charged,
 }
 
 /// The magazine's state (weapons.md 11).
@@ -114,6 +135,22 @@ pub struct HaloGun {
     pub zoom_held: bool,
     /// In its holder's hand (a change readies or puts it away).
     pub in_hand: bool,
+    /// Trigger 0 fired on a press that also started a charge (a weapon
+    /// with one trigger).
+    pub fired_before_charging: bool,
+    /// Trigger 1's own cursor (weapons with a second trigger).
+    pub second: Cursor,
+}
+
+/// A trigger's firing-effect cursor and tracer count (trigger 1's; trigger
+/// 0's are `HaloGun`'s own fields).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Cursor {
+    pub idle_ticks: i32,
+    pub effect_index: u8,
+    pub effect_remaining: i32,
+    pub effect_used: u32,
+    pub tracer_count: i32,
 }
 
 /// What the holder passes the weapon for one tick (weapons.md 4,
@@ -137,10 +174,18 @@ pub struct Inputs {
 /// What one tick did, for the game and its presentation.
 #[derive(Clone, Debug, PartialEq)]
 pub enum GunEvent {
-    /// A round left (or misfired): the projectiles' directions and
-    /// whether each is a tracer; `last_round`: the magazine is now empty;
-    /// `effect`: the firing effect entry (the plasma rifle's barrels).
-    Fired { misfired: bool, last_round: bool, effect: u8, projectiles: Vec<(Vec3, bool)> },
+    /// A round left (or misfired): the trigger, the projectiles'
+    /// directions and whether each is a tracer; `last_round`: the magazine
+    /// is now empty; `effect`: the firing effect entry (the plasma rifle's
+    /// barrels).
+    Fired { trigger: u8, misfired: bool, last_round: bool, effect: u8, projectiles: Vec<(Vec3, bool)> },
+    /// A charge began (the charging effect; no disc trigger has one).
+    Charging,
+    /// The charge completed: the first-person charged state.
+    Charged,
+    /// The overcharged action "explodes" ran: the weapon's detonation
+    /// effect, the weapon deleted (no multiplayer trigger reaches it).
+    Detonated,
     /// A pull with too few rounds (the empty effect, once a pull).
     Empty,
     /// A reload began; `shell`: one shotgun shell, `first`: the loop's
@@ -161,7 +206,32 @@ impl HaloGun {
     /// counter at its cap.
     pub fn new(gun: &Gun) -> Self {
         let (loaded, reserve) = gun.magazine.map_or((0, 0), |m| m.new_rounds());
-        HaloGun { idle_ticks: IDLE_TICKS_CAP, loaded, reserve, zoom: -1, ..Default::default() }
+        HaloGun {
+            idle_ticks: IDLE_TICKS_CAP,
+            loaded,
+            reserve,
+            zoom: -1,
+            second: Cursor { idle_ticks: IDLE_TICKS_CAP, ..Default::default() },
+            ..Default::default()
+        }
+    }
+
+    /// The trigger charges or holds a charge (melee is refused then:
+    /// weapons.md 13).
+    pub fn charging(&self) -> bool {
+        matches!(self.trigger, TriggerMode::Charging | TriggerMode::Charged)
+    }
+
+    /// The charged fraction (weapons.md 17): 1 - (timer / 30) / charging
+    /// time while charging, 1 when charged, else 0.
+    pub fn charge(&self, gun: &Gun) -> f32 {
+        match self.trigger {
+            TriggerMode::Charging if gun.trigger.charging_time > 0.0 => {
+                1.0 - (self.trigger_timer as f32 / 30.0) / gun.trigger.charging_time
+            }
+            TriggerMode::Charged => 1.0,
+            _ => 0.0,
+        }
     }
 
     /// The generator.
@@ -437,7 +507,7 @@ impl HaloGun {
                     // Begin firing: refused while the magazine is busy or
                     // the weapon overheated (the counter stays).
                     if !(t.magazine >= 0 && gun.magazine.is_some() && self.magazine != MagazineMode::Idle) && !self.overheated {
-                        self.fire(gun, inputs, out);
+                        self.begin_firing(gun, inputs, out);
                     }
                 } else {
                     self.idle_ticks = (self.idle_ticks + 1).min(IDLE_TICKS_CAP);
@@ -453,6 +523,43 @@ impl HaloGun {
                     self.trigger = TriggerMode::Idle;
                 }
             }
+            TriggerMode::Charging => {
+                if self.trigger_timer > 0 {
+                    if !down {
+                        // A release before the charge completes: a weapon
+                        // with two triggers that did not fire on the press
+                        // fires trigger 0 now; else idle.
+                        if gun.secondary.is_some() && !self.fired_before_charging {
+                            self.fire(gun, inputs, out);
+                        } else {
+                            self.trigger = TriggerMode::Idle;
+                        }
+                        self.fired_before_charging = false;
+                    }
+                } else {
+                    self.trigger = TriggerMode::Charged;
+                    self.trigger_timer = t.charged_ticks();
+                    self.fired_before_charging = false;
+                    out.push(GunEvent::Charged);
+                }
+            }
+            TriggerMode::Charged => {
+                if !down {
+                    self.release_charge(gun, inputs, out);
+                } else {
+                    if t.charged_time > 0.0 {
+                        self.overcharged = 1.0 - (self.trigger_timer as f32 / 30.0) / t.charged_time;
+                    }
+                    if self.trigger_timer == 0 {
+                        self.overcharged = 1.0;
+                        match t.overcharged_action {
+                            OVERCHARGED_EXPLODES => out.push(GunEvent::Detonated),
+                            OVERCHARGED_DISCHARGES => self.release_charge(gun, inputs, out),
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
         // The ramps.
         if down {
@@ -462,6 +569,103 @@ impl HaloGun {
             self.rate_of_fire = (self.rate_of_fire - t.rate_of_fire_deceleration).max(0.0);
             self.error = (self.error - t.error_deceleration).max(0.0);
         }
+    }
+
+    /// Begin firing (weapons.md 4): a trigger with a charging time
+    /// charges (firing first only with one trigger and a rate above 0, or
+    /// at maximum age to click), else fires.
+    fn begin_firing(&mut self, gun: &Gun, inputs: &Inputs, out: &mut Vec<GunEvent>) {
+        let t = &gun.trigger;
+        let charging = t.charging_ticks();
+        if charging <= 0 {
+            self.fire(gun, inputs, out);
+            return;
+        }
+        if gun.has(weapon_flags::CANNOT_FIRE_AT_MAXIMUM_AGE) && self.age >= 1.0 {
+            self.fire(gun, inputs, out);
+            return;
+        }
+        self.fired_before_charging = false;
+        if gun.secondary.is_some() {
+            out.push(GunEvent::Charging);
+        } else if t.rate(self.rate_of_fire) > 0.0 {
+            self.fire(gun, inputs, out);
+            self.fired_before_charging = true;
+        }
+        self.trigger = TriggerMode::Charging;
+        self.trigger_timer = charging;
+    }
+
+    /// A charge released (weapons.md 10): trigger 1 fires directly (no
+    /// overheat check), trigger 0 recovers with its rate of fire 0.
+    fn release_charge(&mut self, gun: &Gun, inputs: &Inputs, out: &mut Vec<GunEvent>) {
+        if gun.secondary.is_some() {
+            self.fire_secondary(gun, inputs, out);
+        }
+        self.idle_ticks = 0;
+        self.trigger = TriggerMode::Idle;
+        self.rate_of_fire = 0.0;
+        self.overcharged = 0.0;
+    }
+
+    /// Trigger 1 fires (weapons.md 5): its magazine (the plasma weapons'
+    /// all-zero one always fires), its one firing-effect entry, misfire by
+    /// the battery, heat and age per round, its projectiles straight (its
+    /// error angles are 0; the cone's draws still happen).
+    fn fire_secondary(&mut self, gun: &Gun, inputs: &Inputs, out: &mut Vec<GunEvent>) {
+        let Some(sec) = &gun.secondary else { return };
+        let t = &sec.trigger;
+        let mut rng = self.rng();
+        let dead = gun.has(weapon_flags::CANNOT_FIRE_AT_MAXIMUM_AGE) && self.age >= 1.0;
+        let mut fired = !dead;
+        if fired
+            && t.magazine >= 0
+            && gun.magazine.is_some_and(|m| m.rounds_loaded_maximum > 0)
+        {
+            fired = self.loaded >= t.rounds_per_shot || t.has(trigger_flags::CAN_FIRE_WITH_PARTIAL_AMMO);
+            if fired {
+                self.loaded = (self.loaded - t.rounds_per_shot).max(0);
+            }
+        }
+        let c = &mut self.second;
+        if t.firing_effects > 0 && c.effect_remaining <= 0 {
+            let entries = t.firing_effects as u32;
+            let mut index = c.effect_index as u32;
+            let all = (1u32 << entries) - 1;
+            if c.effect_used & all == all {
+                c.effect_used = 0;
+            }
+            index = (index + 1) % entries;
+            c.effect_used |= 1 << index;
+            c.effect_remaining = rng.int_range(1, 1);
+            c.effect_index = index as u8;
+        }
+        c.effect_remaining -= 1;
+        let a = &gun.age;
+        let mut misfired = false;
+        if fired && a.misfire_start > 0.0 && a.misfire_start < 1.0 && self.age > a.misfire_start {
+            let chance = (self.age - a.misfire_start) * a.misfire_chance / (1.0 - a.misfire_start);
+            misfired = rng.real() < chance;
+        }
+        if !fired {
+            out.push(GunEvent::Empty);
+            self.rng = rng.0;
+            return;
+        }
+        self.heat = (self.heat + t.heat_per_round).min(1.0);
+        self.age = (self.age + t.age_per_round).min(1.0);
+        let mut projectiles = Vec::new();
+        if !misfired {
+            for _ in 0..t.projectiles_per_shot.max(0) {
+                let d = cone(&mut rng, inputs.aim, t.minimum_error, t.theta_max(0.0));
+                // Trigger 1's rate of fire is 0: every round a tracer.
+                self.second.tracer_count = 0;
+                projectiles.push((d, true));
+            }
+        }
+        out.push(GunEvent::Fired { trigger: 1, misfired, last_round: false, effect: self.second.effect_index, projectiles });
+        self.second.idle_ticks = 0;
+        self.rng = rng.0;
     }
 
     /// A trigger fires (weapons.md 5 and 6).
@@ -552,6 +756,7 @@ impl HaloGun {
                 let _ = rng.real() < gun.heat.detonation_fraction;
             }
             out.push(GunEvent::Fired {
+                trigger: 0,
                 misfired,
                 last_round: gun.magazine.is_some_and(|m| m.rounds_loaded_maximum > 0) && self.loaded == 0,
                 effect: self.effect_index,
@@ -581,3 +786,7 @@ impl HaloGun {
 
 /// The shotgun's weapon type (its shell-by-shell loop).
 pub const SHOTGUN: u16 = 1;
+
+/// Overcharged actions (trigger 0x050).
+pub const OVERCHARGED_EXPLODES: u16 = 1;
+pub const OVERCHARGED_DISCHARGES: u16 = 2;

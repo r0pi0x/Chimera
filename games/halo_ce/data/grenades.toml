@@ -1,0 +1,123 @@
+# Halo's grenades and explosions (specs/halo_ce/projectiles.md 10, 11, 15
+# and "Flight numbers", "Material responses"; weapons.md 14; animations.md
+# "Gameplay events driven by animations"; objects.md "The multiplayer
+# Spartan"; multiplayer_rules.md 4.6, 5.5), read by game::weapons::grenades
+# and explode. tests/it/heavy/weapon_data.rs checks the projectiles against
+# bloodgulch.map.
+
+[throw]
+# The globals' grenade entries: maximum count 4 each.
+maximum = [4, 4]
+# The multiplayer Spartan's grenade velocity, WU per second.
+velocity = 10.0
+# The globals' player grenade origin (forward, left, up), WU: 0.05 WU to
+# the left of the camera.
+origin = [0.0, 0.05, 0.0]
+# `stand rifle throw-grenade`: 38 frames, key frame 8 (the release); the
+# grenade is created in the hand once the frame is at least 2.
+frames = 38
+key_frame = 8
+created_frame = 2
+# A cut throw: U(0.02, 0.046667) WU per tick along the aim.
+cut_speed = [0.02, 0.046667]
+# A new life: the frag grenade's maximum of frags, no plasma grenades
+# (multiplayer_rules.md 4.6 step 3), each limited by the cap the player
+# count sets when the game begins: 1 from 9 players, 2 from 5, else 4.
+start = [4, 0]
+caps = [[9, 1], [5, 2], [0, 4]]
+
+[explosions]
+# Behaviour 11: added to the up part of the push's direction, and a living
+# biped's share of the push.
+upward_bias = 0.45
+biped_push_scale = 0.5
+# The multiplayer Spartan (objects.md): acceleration scale 0.7, bounding
+# radius 0.42 WU.
+biped_acceleration_scale = 0.7
+biped_bounding_radius = 0.42
+# A thrown grenade (behaviour 10): pushed at 2.0, never damaged.
+grenade_acceleration_scale = 2.0
+
+# The frag grenade: gravity 1, armed after 1.5 s (counted from its
+# creation in the hand), its 0.5 s fuse running once it has stopped
+# ("after first bounce" acts as "when at rest": behaviour 2); it bounces
+# off everything; its explosion is 120 points within 1.5 WU falling to 80
+# at 2.5 WU, a push of 4 WU/s.
+[frag]
+tag = 'weapons\frag grenade\frag grenade'
+flags = 2
+timer_starts = 1
+initial_velocity = 0.0
+final_velocity = 0.0
+air_damage_range = [0.0, 10.0]
+water_damage_range = [0.0, 10.0]
+maximum_range = 0.0
+air_gravity_scale = 1.0
+water_gravity_scale = 1.0
+collision_radius = 0.0
+minimum_velocity = 0.0
+timer = [0.5, 0.5]
+arming_time = 1.5
+impact_damage = ""
+detonation = ["frag_explosion", "frag_shock_wave"]
+
+# Material responses: the summary table's reflections (dirt 0.8/0.9, stone
+# and metal 0.7/0.8, the cyborg body and shield 0.8/0.9, snow, force field,
+# carrier, engineer, ice; the jackal shield's element is unstated), water (through; skims at a
+# shallow angle) and leaves (reflect; through but one in five). The table
+# does not state the other types (sand, wood, rubber, glass and the bodies
+# Halo's multiplayer has none of): they take dirt's (`unstated`), a choice
+# of the port, not the disc's numbers.
+[frag.responses]
+count = 33
+unstated = 0
+elements = [
+    { types = [0, 21, 22], default = "reflect", parallel_friction = 0.8, perpendicular_friction = 0.9 },
+    { types = [2, 5, 6, 7], default = "reflect", parallel_friction = 0.7, perpendicular_friction = 0.8 },
+    { types = [3], default = "reflect", parallel_friction = 0.9, perpendicular_friction = 0.95 },
+    { types = [10, 20], default = "reflect", parallel_friction = 0.6, perpendicular_friction = 0.7 },
+    { types = [17], default = "reflect", parallel_friction = 0.5, perpendicular_friction = 0.7 },
+    { types = [31], default = "reflect", parallel_friction = 0.55, perpendicular_friction = 0.65 },
+    { types = [28], default = "overpenetrate", potential = "reflect", angle = [0.0, 0.5236], velocity = [0.0333, 33.3], parallel_friction = 0.7, perpendicular_friction = 0.7 },
+    { types = [29], default = "reflect", potential = "overpenetrate", skip = 0.2 },
+]
+
+# The plasma grenade: gravity 1, no arming, its 2 s fuse running once it
+# has stopped or stuck (flag 2: re-armed to the upper bound on sticking);
+# it sticks to units (a potential attach "only against units") on every
+# material but glass, force field, jackal shield, engineer force field,
+# monitor, water and hunter shield; stuck, it deals 120 (emp) to what holds
+# it, then explodes: 120 within 0.5 WU falling to 80 at 2 WU, emp.
+[plasma]
+tag = 'weapons\plasma grenade\plasma grenade'
+flags = 6
+timer_starts = 2
+initial_velocity = 0.0
+final_velocity = 0.0
+air_damage_range = [0.0, 10.0]
+water_damage_range = [0.0, 10.0]
+maximum_range = 0.0
+air_gravity_scale = 1.0
+water_gravity_scale = 1.0
+collision_radius = 0.0
+minimum_velocity = 0.0
+timer = [2.0, 2.0]
+impact_damage = ""
+detonation = ["plasma_grenade_shock_wave", "plasma_grenade_explosion"]
+attached_damage = "plasma_grenade_attached"
+
+# Material responses: the summary table's (dirt, stone, metal, the cyborg
+# body and shield: reflect 0.9/0.95, potential attach to units; glass and
+# force field 0.7/0.8, engineer force field, monitor
+# and hunter shield reflect without sticking, ice 0.65/0.75 sticking to
+# units, water through 0.5/0.5). Unstated types take dirt's (`unstated`).
+[plasma.responses]
+count = 33
+unstated = 0
+elements = [
+    { types = [0, 2, 5, 6, 7, 21, 22], default = "reflect", potential = "attach", only_against_units = true, parallel_friction = 0.9, perpendicular_friction = 0.95 },
+    { types = [9, 10], default = "reflect", parallel_friction = 0.7, perpendicular_friction = 0.8 },
+    { types = [18, 26, 32], default = "reflect" },
+    { types = [31], default = "reflect", potential = "attach", only_against_units = true, parallel_friction = 0.65, perpendicular_friction = 0.75 },
+    { types = [28], default = "overpenetrate", parallel_friction = 0.5, perpendicular_friction = 0.5 },
+]

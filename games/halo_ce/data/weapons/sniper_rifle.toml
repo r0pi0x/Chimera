@@ -1,0 +1,106 @@
+# The sniper rifle (specs/halo_ce/weapons.md "Multiplayer weapon numbers",
+# 12, "Test cases"; projectiles.md "Flight numbers", "Material responses";
+# animations.md "First-person graphs"): 4 + 8 rounds (24 most in reserve),
+# semi-automatic, 2 a second (15 ticks), 0.5 degrees of error unzoomed and
+# none zoomed (trigger flag 10), two zoom levels (2x then 8x), a 5-frame
+# recoil animation of its own that holds a reload back; its bullet at
+# 33.33 WU a tick to 1000 WU passes through an unshielded body and the
+# organic ones at full speed (101 points: a headshot kills a full Spartan).
+id = "halo_ce:sniper_rifle"
+base = "halo_ce:gun"
+slot = 2
+class = "sniper"
+
+[hud]
+name = "Sniper Rifle"
+
+[hooks."halo_ce:weapon"]
+tag = 'weapons\sniper rifle\sniper rifle'
+# Bits 5 (aim assists only when zoomed) and 14 (night vision).
+flags = 0x4020
+weapon_type = 0
+zoom_levels = 2
+magnification = [2.0, 8.0]
+camo = [0.55, 0.0]
+melee_damage = "sniper_rifle_melee"
+
+[hooks."halo_ce:weapon".heat]
+recovery_threshold = 0.0
+overheated_threshold = 0.0
+detonation_threshold = 0.0
+detonation_fraction = 0.0
+loss_per_second = 0.0
+illumination = 0.0
+
+[hooks."halo_ce:weapon".age]
+heat_recovery_penalty = 0.0
+rate_of_fire_penalty = 0.0
+misfire_start = 0.0
+misfire_chance = 0.0
+
+[hooks."halo_ce:weapon".aim_assist]
+autoaim_angle = 0.0174533
+autoaim_range = 35.0
+magnetism_angle = 0.0349066
+magnetism_range = 35.0
+deviation_angle = 0.0
+
+[hooks."halo_ce:weapon".magazine]
+flags = 0
+rounds_recharged = 0
+rounds_total_initial = 12
+rounds_total_maximum = 24
+rounds_loaded_maximum = 4
+rounds_reloaded = 4
+chamber_time = 0.0
+
+[hooks."halo_ce:weapon".trigger]
+flags = 0x408
+rounds_per_second = [2.0, 2.0]
+rate_of_fire_acceleration = 1.0
+rate_of_fire_deceleration = 1.0
+error_acceleration = 1.0
+error_deceleration = 1.0
+magazine = 0
+rounds_per_shot = 1
+minimum_rounds_loaded = 0
+rounds_between_tracers = 0
+minimum_error = 0.0
+error_angle = [0.00872665, 0.00872665]
+projectiles_per_shot = 1
+distribution = 0
+first_person_offset = [0.0, 0.0, 0.0]
+heat_per_round = 0.0
+age_per_round = 0.0
+firing_effects = 1
+projectile = 'weapons\sniper rifle\sniper bullet'
+
+[hooks."halo_ce:weapon".animations]
+ready = 29
+reload_empty = 94
+melee = 36
+melee_key = 6
+world_recoil = 5
+
+[hooks."halo_ce:weapon".projectile]
+tag = 'weapons\sniper rifle\sniper bullet'
+timer_starts = 1
+initial_velocity = 33.333336
+final_velocity = 33.333336
+air_damage_range = [1000.0, 1000.0]
+water_damage_range = [0.0, 10.0]
+maximum_range = 1000.0
+air_gravity_scale = 0.0
+water_gravity_scale = 0.0
+collision_radius = 0.0
+minimum_velocity = 0.0
+timer = [0.0, 0.0]
+impact_damage = "sniper_bullet"
+
+[hooks."halo_ce:weapon".projectile.responses]
+count = 33
+elements = [
+    { types = [9, 11, 13, 14, 15, 17, 19, 20, 21, 23, 24, 28, 29, 30], default = "overpenetrate", initial_friction = 0.0 },
+    { types = [16, 32], default = "reflect" },
+    { types = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 18, 22, 25, 26, 27, 31], default = "disappear" },
+]

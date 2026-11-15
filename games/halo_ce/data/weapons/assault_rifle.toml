@@ -100,7 +100,18 @@ water_gravity_scale = 0.4
 collision_radius = 0.0
 minimum_velocity = 0.0
 timer = [0.0, 0.0]
+timer_starts = 1
 impact_damage = "assault_rifle_bullet"
-on_body = { response = "overpenetrate", initial_friction = 0.7 }
-on_shield = { response = "disappear" }
-on_level = { response = "disappear" }
+
+# Material responses (projectiles.md "Material responses", by material type):
+# disappear but on every organic body and the cyborg body (through at 30 %),
+# flood, glass, water and leaves (through at full speed), the jackal and
+# hunter shields (reflect; their frictions not stated).
+[hooks."halo_ce:weapon".projectile.responses]
+count = 33
+elements = [
+    { types = [11, 13, 14, 15, 17, 23, 24, 21], default = "overpenetrate", initial_friction = 0.7 },
+    { types = [9, 19, 20, 28, 29], default = "overpenetrate", initial_friction = 0.0 },
+    { types = [16, 32], default = "reflect" },
+    { types = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 18, 22, 25, 26, 27, 30, 31], default = "disappear" },
+]
