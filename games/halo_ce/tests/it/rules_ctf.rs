@@ -182,3 +182,36 @@ fn the_third_capture_ends_the_game_and_the_carrier_cannot_fire() {
     assert!(g.sim.app.world().resource::<HaloMatch>().over);
     assert_eq!(g.sim.app.world().resource::<Match>().winner, Some(RED));
 }
+
+/// Over the network: both flags as items on both clients (the flag's
+/// model), and the match's view says capture the flag.
+#[test]
+fn the_flags_are_seen_by_every_client() {
+    use chimera_net::{harness::NetSim, net::{NetItem, memory::LinkConditions}};
+    use halo_ce::game::{rules::{ctf::FLAG_TAG, view::HaloMatchView}, view::load::item_key};
+    let link = LinkConditions { latency: std::time::Duration::from_millis(20), jitter: std::time::Duration::ZERO, loss: 0.0 };
+    let mut sim = NetSim::new(HaloSim, link, 13, 2, |app: &mut App| {
+        app.add_plugins(GreyboxMapPlugin);
+    });
+    sim.set_frame(halo_ce::game::TICK_INTERVAL);
+    sim.until_joined(600);
+    let all = GameTypes([SLOT_ALL, 0, 0, 0]);
+    let spots = [Vec3::new(0.0, 0.0, 12.0), Vec3::new(0.0, 0.0, -30.0)];
+    let n = Netgame {
+        starts: (0..2).map(|i| Start { at: spots[i], yaw: 0.0, team: i as i16, game_types: all }).collect(),
+        flags: (0..2).map(|i| Flag { at: spots[i] + Vec3::X * 5.0, yaw: 0.0, kind: NetgameFlagType::CaptureTheFlag, team: i as i16 }).collect(),
+        equipment: Vec::new(),
+        seen: 0,
+    }
+    .pinned();
+    sim.server.app.world_mut().insert_resource(n);
+    rules::start_as(sim.server.app.world_mut(), "ctf");
+    sim.ticks(30);
+    for c in 0..2 {
+        let w = sim.clients[c].app.world_mut();
+        let flags = w.query::<&NetItem>().iter(w).filter(|i| i.model == item_key(FLAG_TAG)).count();
+        assert_eq!(flags, 2, "client {c}");
+        let view: Vec<HaloMatchView> = w.query::<&HaloMatchView>().iter(w).cloned().collect();
+        assert_eq!((view.len(), view[0].base, view[0].team_play), (1, 1, true), "client {c}");
+    }
+}

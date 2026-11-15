@@ -217,8 +217,10 @@ pub fn died(world: &mut World, d: &Died) {
         }
     }
     // 3. The game type's handler.
-    if r.base() == blam_formats::game_type::BaseGameType::Slayer {
-        slayer_kill(world, credited, victim, friendly);
+    match r.base() {
+        blam_formats::game_type::BaseGameType::Slayer => slayer_kill(world, credited, victim, friendly),
+        blam_formats::game_type::BaseGameType::Oddball => super::oddball::kill(world, credited, victim, friendly),
+        _ => {}
     }
     // 4. The respawn timer.
     let kill = credited.is_some() && !friendly;

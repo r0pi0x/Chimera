@@ -38,6 +38,7 @@ mod projectile_rules;
 mod respawn;
 mod rules;
 mod rules_ctf;
+mod rules_king_ball;
 mod skeleton;
 mod ticks;
 mod view;

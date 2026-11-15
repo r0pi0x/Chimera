@@ -17,7 +17,7 @@
 //!   fire (1.6) are cvars beside it (`halo_ce:timelimit`,
 //!   `halo_ce:friendlyfire`).
 //! - *One mode per base type and teams* (`halo_ce:slayer`, `team_slayer`,
-//!   `ctf`, ...) is registered with the runtime, which steps the match
+//!   `ctf`, `king`, `team_king`, `oddball`, `team_oddball`) is registered with the runtime, which steps the match
 //!   through Halo's flow (`FLOW`: every tick, no waiting, one round from
 //!   the game's start to its end, the round over being the 7 s postgame,
 //!   the match over after it, `direct`); the end test is the runtime's
@@ -36,7 +36,10 @@
 //!   slayer's score (6.1, 6.2, 4.2), `slayer` its per-tick work, `items`
 //!   the weapon set's substitutions (5.3: the pickups' item clock reads
 //!   `items::ItemRules`), `netgame` the map's starts, flags and starting
-//!   equipment (the loader writes them as map entities).
+//!   equipment (the loader writes them as map entities); the objective
+//!   game types are `ctf` (the flags, 6.4), `king` (the hill, 6.6) and
+//!   `oddball` (the ball, 6.5), each set up by its mode's `setup` hook and
+//!   stepped each Halo tick after the spawns.
 //! - *Over the network* the engine's seams carry what they can: a player's
 //!   score and deaths are `core::Score` (the network's `NetScore`), its
 //!   team `core::Team`; the rest a client needs (the game type, the team
@@ -66,7 +69,9 @@
 
 pub mod ctf;
 pub mod items;
+pub mod king;
 pub mod netgame;
+pub mod oddball;
 pub mod scoring;
 pub mod slayer;
 pub mod spawning;
@@ -193,7 +198,7 @@ pub fn rules_on(m: Option<Res<HaloMatch>>) -> bool {
 
 /// The base types a game can play now (race needs the race vehicles).
 pub fn supported(base: BaseGameType) -> bool {
-    matches!(base, BaseGameType::Slayer | BaseGameType::CaptureTheFlag)
+    base != BaseGameType::Race
 }
 
 /// The modes (module doc).
@@ -228,6 +233,39 @@ pub static CTF: Mode = Mode {
     teams: Teams::Two,
     hooks: Hooks { decide, round_over: game_over, setup: ctf::setup, ..NO_HOOKS },
     ..SLAYER
+};
+
+pub static KING: Mode = Mode {
+    id: "halo_ce:king",
+    key: "king",
+    shown_as: "King of the Hill",
+    description: "Hold the hill: time on it scores.",
+    hooks: Hooks { decide, round_over: game_over, setup: king::setup, ..NO_HOOKS },
+    ..SLAYER
+};
+pub static TEAM_KING: Mode = Mode {
+    id: "halo_ce:team_king",
+    key: "team_king",
+    shown_as: "Team King",
+    description: "Red against blue on the hill.",
+    teams: Teams::Two,
+    ..KING
+};
+pub static ODDBALL: Mode = Mode {
+    id: "halo_ce:oddball",
+    key: "oddball",
+    shown_as: "Oddball",
+    description: "Hold the ball: time with it scores.",
+    hooks: Hooks { decide, round_over: game_over, setup: oddball::setup, ..NO_HOOKS },
+    ..SLAYER
+};
+pub static TEAM_ODDBALL: Mode = Mode {
+    id: "halo_ce:team_oddball",
+    key: "team_oddball",
+    shown_as: "Team Ball",
+    description: "Red against blue for the ball.",
+    teams: Teams::Two,
+    ..ODDBALL
 };
 
 /// Halo's side of the runtime (module doc).
@@ -443,6 +481,7 @@ fn begin(world: &mut World, rules: HaloRules) {
     world.insert_resource(FriendlyFire(rules.friendlyfire));
     super::weapons::pickups::restart(world);
     ctf::clear(world);
+    oddball::clear(world);
     let all: Vec<Entity> = world.query_filtered::<Entity, With<HaloPlayer>>().iter(world).collect();
     for e in all {
         let slot = world.get::<HaloPlayer>(e).map_or(0, |p| p.slot);
@@ -474,20 +513,36 @@ fn tick_once(world: &mut World) {
     match world.resource::<HaloGameType>().0.rules.base() {
         BaseGameType::Slayer => slayer::tick(world),
         BaseGameType::CaptureTheFlag => ctf::tick(world),
-        _ => {}
+        BaseGameType::KingOfTheHill => king::tick(world),
+        BaseGameType::Oddball => oddball::tick(world),
+        BaseGameType::Race => {}
     }
     world.resource_mut::<HaloMatch>().time += 1;
 }
 
 /// The variant's health divides every hit on a Halo player (4.7).
-fn health_setting(mut hits: MessageMutator<super::damage::HaloHit>, players: Query<(), With<HaloPlayer>>, game: Res<HaloGameType>) {
-    let h = game.0.rules.health;
-    if h == 1.0 {
+/// With oddball's traits: extra damage dealt, damage resistance taken.
+fn health_setting(
+    mut hits: MessageMutator<super::damage::HaloHit>,
+    players: Query<(), With<HaloPlayer>>,
+    game: Res<HaloGameType>,
+    balls: Query<&oddball::HaloBall>,
+    state: Option<Res<oddball::OddballState>>,
+) {
+    let h = game.0.rules.health.clamp(0.25, 4.0);
+    let odd = oddball::options(&game.0.rules);
+    if h == 1.0 && odd.is_none() {
         return;
     }
+    let holds = |e: Entity| balls.iter().any(|b| b.carrier == Some(e)) || state.as_ref().is_some_and(|s| s.holders.contains(&Some(e)));
     for hit in hits.read() {
-        if players.contains(hit.target) {
-            hit.amount /= h.clamp(0.25, 4.0);
+        if !players.contains(hit.target) {
+            continue;
+        }
+        hit.amount /= h;
+        if let Some(o) = &odd {
+            let by = hit.instigator.filter(|i| players.contains(*i)).map(holds);
+            hit.amount *= oddball::trait_factor(o, by, holds(hit.target));
         }
     }
 }
@@ -508,7 +563,7 @@ impl Plugin for HaloRulesPlugin {
                 },
                 flow: FLOW,
             },
-            &[&SLAYER, &TEAM_SLAYER, &CTF],
+            &[&SLAYER, &TEAM_SLAYER, &CTF, &KING, &TEAM_KING, &ODDBALL, &TEAM_ODDBALL],
         )
         .init_resource::<HaloGameType>()
         .init_resource::<HaloMatch>()
@@ -527,7 +582,7 @@ impl Plugin for HaloRulesPlugin {
         .add_systems(
             FixedUpdate,
             (
-                (join, halo_tick, mode::flow::mission_update, ctf::carriers, chimera_sim::spawning::hold_the_dead)
+                (join, halo_tick, mode::flow::mission_update, ctf::carriers, oddball::carriers, chimera_sim::spawning::hold_the_dead)
                     .chain()
                     .in_set(SimSet::Rules)
                     .after(netgame::follow_map),
