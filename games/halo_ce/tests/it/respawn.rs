@@ -29,11 +29,11 @@ fn the_respawn_timelines_of_the_spec() {
     // Slayer, suicide: 0 + 0 + 300.
     assert_eq!(timer(&slayer, 0, false).0, 300);
     // Team Slayer (respawn 10 s), killed by an enemy: 300; by a teammate: 600.
-    let team = HaloRules { respawn_time: 300, growth: 0, suicide: 300 };
+    let team = HaloRules { respawn_time: 300, growth: 0, suicide: 300, ..HaloRules::default() };
     assert_eq!((timer(&team, 0, true).0, timer(&team, 0, false).0), (300, 600));
     // Snipers (respawn 0, growth 150, suicide 300), enemy kills, no kills of
     // its own: deaths 1 to 8 wait 90, 150, 300, 450, 600, 750, 750, 750.
-    let snipers = HaloRules { respawn_time: 0, growth: 150, suicide: 300 };
+    let snipers = HaloRules { respawn_time: 0, growth: 150, suicide: 300, ..HaloRules::default() };
     let mut p = 0;
     let waits: Vec<i32> = (0..8)
         .map(|_| {

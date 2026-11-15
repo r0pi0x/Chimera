@@ -36,6 +36,8 @@ mod movement_vitality;
 mod net_vitality;
 mod projectile_rules;
 mod respawn;
+mod rules;
+mod rules_ctf;
 mod skeleton;
 mod ticks;
 mod view;
@@ -54,6 +56,7 @@ mod heavy {
     mod ladder;
     mod map_objects;
     mod nav_within;
+    mod rules;
     mod maps;
     mod mount;
     mod served;
