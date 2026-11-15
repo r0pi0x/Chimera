@@ -570,6 +570,7 @@ impl Plugin for HaloRulesPlugin {
         .init_resource::<Match>()
         .init_resource::<FriendlyFire>()
         .add_message::<scoring::HaloAnnounce>()
+        .init_resource::<ctf::CtfGo>()
         .add_message::<crate::core::Died>()
         .game_hook(super::GAME, crate::gameplay::NewGame(new_game))
         .add_plugins(view::HaloMatchViewPlugin)
@@ -582,7 +583,7 @@ impl Plugin for HaloRulesPlugin {
         .add_systems(
             FixedUpdate,
             (
-                (join, halo_tick, mode::flow::mission_update, ctf::carriers, oddball::carriers, chimera_sim::spawning::hold_the_dead)
+                (join, ctf::ctf_go, halo_tick, mode::flow::mission_update, ctf::carriers, oddball::carriers, chimera_sim::spawning::hold_the_dead)
                     .chain()
                     .in_set(SimSet::Rules)
                     .after(netgame::follow_map),
@@ -606,6 +607,7 @@ impl Plugin for HaloRulesPlugin {
         resource_cvar::<HaloRules, u8>(app, "halo_ce:friendlyfire", "1: teammates' hits hurt (the Xbox's rule); 0: they don't.", |r| {
             &mut r.friendlyfire
         });
+        resource_cvar::<ctf::CtfGo, String>(app, "halo_ce:ctf_go", "Once: red or blue puts the local player before that flag, carry_red or carry_blue on it (screenshots, play tests).", |g| &mut g.0);
         app.console_command("halo_ce:restart", "Begin a new game now with halo_ce:gametype.", |w, _| {
             start(w);
             Ok(Some(w.resource::<HaloGameType>().0.name.clone()))

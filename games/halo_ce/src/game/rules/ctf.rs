@@ -337,3 +337,44 @@ pub fn carriers(
         }
     }
 }
+
+/// A look at the flags for screenshots and play tests (the
+/// `halo_ce:ctf_go` cvar, once, then cleared): `red` or `blue` puts the
+/// local player 3 m from that team's flag spot towards the other's,
+/// facing it; `carry_red` or
+/// `carry_blue` puts it on the spot (an enemy then carries the flag).
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct CtfGo(pub String);
+
+#[allow(clippy::type_complexity)]
+pub fn ctf_go(
+    mut go: ResMut<CtfGo>,
+    flags: Query<&HaloFlag>,
+    local: Query<Entity, (With<crate::core::LocalPlayer>, With<HaloPlayer>, Without<Dead>)>,
+    mut commands: Commands,
+) {
+    if go.0.is_empty() {
+        return;
+    }
+    let (team, carry) = match go.0.as_str() {
+        "red" => (RED, false),
+        "blue" => (BLUE, false),
+        "carry_red" => (RED, true),
+        "carry_blue" => (BLUE, true),
+        _ => {
+            go.0.clear();
+            return;
+        }
+    };
+    let (Some(flag), Ok(e)) = (flags.iter().find(|f| f.team == team), local.single()) else { return };
+    let other = flags.iter().find(|f| f.team != team).map_or(flag.home + Vec3::Z, |f| f.home);
+    let towards = ((other - flag.home) * Vec3::new(1.0, 0.0, 1.0)).normalize_or(Vec3::Z);
+    let off = if carry { Vec3::ZERO } else { towards * 3.0 };
+    let d = -towards;
+    let look = Quat::from_euler(EulerRot::YXZ, (-d.x).atan2(-d.z), -0.3, 0.0);
+    let at = Transform::from_translation(flag.home + off + Vec3::Y * centre_above_feet()).with_rotation(look);
+    commands.queue(move |w: &mut World| {
+        chimera_sim::spawning::revive(w, e, Some(at));
+    });
+    go.0.clear();
+}
