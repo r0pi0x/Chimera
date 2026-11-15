@@ -3,8 +3,8 @@
 //! it has (the party apps play one game's maps with every game's
 //! characters). A loader publishes them as `MapTeleporters` in its map's
 //! typed extras (`MapData::extras`); the map's spawn makes them the
-//! world's resource, and one system (`teleport`, the server's: after the
-//! tick's movement, before the weapons) acts on them. Halo's netgame
+//! world's resource, and the map's tick system after the movement
+//! (`map::fall_out_of_map`, the server's) has them act (`busy`, `apply`). Halo's netgame
 //! teleporters are the first (games/halo_ce `maps::teleporters`); Source's
 //! `trigger_teleport`s stay its map logic's (`source_logic`).
 //!
@@ -155,31 +155,26 @@ fn feet(world: &World, e: Entity) -> Option<Vec3> {
     }
 }
 
-/// The map's teleporters acting on every character (module doc): the
-/// server's, after the tick's movement. While no character is near a pad
-/// (its body within the radius and a body's height of a source) and none
-/// has an arrival or refusals to count down, it does nothing; else the
-/// rule runs on the world (`apply`, queued: feet come from each movement's
-/// `Footing`, which reads the world).
-pub fn teleport(
-    t: Option<Res<MapTeleporters>>,
-    q: Query<(&Transform, Option<&TeleportArrival>, Option<&TeleportBlocked>), With<Intent>>,
-    mut commands: Commands,
-) {
-    let Some(t) = t.filter(|t| !t.pads.is_empty()) else { return };
-    let reach = t.radius + 2.0 * CAPSULE_HEIGHT;
-    let busy = q.iter().any(|(tr, a, b)| {
-        a.is_some_and(|a| a.0.is_some())
-            || b.is_some_and(|b| b.0 > 0.0)
-            || t.pads.iter().any(|p| tr.translation.distance(p.source) <= reach)
-    });
-    if busy {
-        commands.queue(apply);
+/// Whether the teleporters have work this tick (characters as their
+/// body's place, arrival and refusals): a character near a pad (its body
+/// within the radius and a body's height of a source), or one with an
+/// arrival or refusals to count down. Else the rule needs no run.
+pub fn busy<'a>(t: &MapTeleporters, chars: impl Iterator<Item = (Vec3, Option<&'a TeleportArrival>, Option<&'a TeleportBlocked>)>) -> bool {
+    if t.pads.is_empty() {
+        return false;
     }
+    let reach = t.radius + 2.0 * CAPSULE_HEIGHT;
+    let mut chars = chars;
+    chars.any(|(at, a, b)| {
+        a.is_some_and(|a| a.0.is_some()) || b.is_some_and(|b| b.0 > 0.0) || t.pads.iter().any(|p| at.distance(p.source) <= reach)
+    })
 }
 
-/// The rule on the world (`teleport`).
-fn apply(world: &mut World) {
+/// The map's teleporters acting on every character (module doc), on the
+/// world: queued by the map's tick system after the movement
+/// (`map::fall_out_of_map`, when `busy`) on the server; feet come from each
+/// movement's `Footing`, which reads the world.
+pub fn apply(world: &mut World) {
     let Some(t) = world.get_resource::<MapTeleporters>().filter(|t| !t.pads.is_empty()).cloned() else {
         return;
     };
@@ -259,8 +254,6 @@ fn apply(world: &mut World) {
 
 #[cfg(test)]
 mod tests {
-    use bevy::ecs::system::RunSystemOnce;
-
     use super::*;
 
     /// The spec's example (specs/halo_ce/scenario.md, "Test cases"), in
@@ -385,14 +378,14 @@ mod tests {
                 },
             ))
             .id();
-        world.run_system_once(teleport).unwrap();
+        apply(&mut world);
         let p = world.get::<Transform>(e).unwrap().translation;
         assert!((p - (Vec3::new(10.0, 0.0, 0.0) + half)).length() < 1e-5, "{p}");
         assert_eq!(world.get::<Velocity>(e).unwrap().0, Vec3::new(1.0, 0.0, 2.0));
         assert!((world.get::<Intent>(e).unwrap().yaw - 2.0707964).abs() < 1e-5);
         assert_eq!(world.get::<TeleportArrival>(e), Some(&TeleportArrival(Some(1))));
         // Standing still beside B: not sent on.
-        world.run_system_once(teleport).unwrap();
+        apply(&mut world);
         let q = world.get::<Transform>(e).unwrap().translation;
         assert_eq!(p, q);
     }

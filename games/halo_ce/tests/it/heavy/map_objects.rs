@@ -94,7 +94,7 @@ fn a_player_on_each_source_arrives_on_the_ground_at_its_target() {
             let ground = sim.state(p).on_ground;
             let inside = at.cmpge(lo).all() && at.cmple(hi).all();
             let off = (feet - pad.dest).length();
-            eprintln!("{name} pad {i}: arrived {arrived}, feet {feet} ({off:.2} m from the target), on the ground {ground}");
+            eprintln!("{name} pad {i} from {}: arrived {arrived}, feet {feet} ({off:.2} m from the target), on the ground {ground}", pad.source);
             if !(arrived && ground && inside && off < 1.5) {
                 failures.push(format!("{name} pad {i}: arrived {arrived}, at {feet}, target {}, ground {ground}, inside {inside}", pad.dest));
             }
