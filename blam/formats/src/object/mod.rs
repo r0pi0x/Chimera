@@ -18,10 +18,10 @@
 //!   evaluation of one or all four at a time from incoming inputs, with the
 //!   periodic tables the shaders share (`crate::shader::PeriodicTables`).
 //!
-//! Where another spec owns a derived class's fields (vehicles) the reader
-//! stops at the offset the objects spec states: `Vehicle` holds the object
-//! and unit layers. The projectile's own fields are `crate::projectile`'s
-//! (`Projectile` is re-exported here).
+//! Where another spec owns a derived class's fields the reader composes that
+//! spec's module: `Vehicle` holds the object and unit layers and
+//! `crate::vehicle::VehiclePart` (vehicles.md). The projectile's own fields
+//! are `crate::projectile`'s (`Projectile` is re-exported here).
 //!
 //! Known shortcuts:
 //! - Out-of-table enumerations are refused at read time (the error names the
@@ -326,12 +326,13 @@ pub struct Biped {
     pub own: BipedPart,
 }
 
-/// A vehicle tag as far as the objects spec goes: the object and unit
-/// layers (vehicles.md owns the rest, from 0x2F0).
+/// A vehicle tag: the object and unit layers and the vehicle's own part
+/// (`crate::vehicle`, vehicles.md, from 0x2F0).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Vehicle {
     pub object: ObjectBase,
     pub unit: UnitBase,
+    pub own: crate::vehicle::VehiclePart,
 }
 
 /// An equipment tag: the object and item layers and the powerup fields.
@@ -432,7 +433,7 @@ impl Biped {
 }
 
 impl Vehicle {
-    /// Read a `vehi` tag's object and unit layers.
+    /// Read a `vehi` tag: the object, unit and vehicle layers.
     pub fn read(map: &MapFile, tag: &TagEntry) -> io::Result<Self> {
         let v = check_class(map, tag, class::VEHICLE, "vehicle", size::VEHICLE)?;
         let object = ObjectBase::read_view(&v)?;
@@ -440,6 +441,7 @@ impl Vehicle {
         Ok(Vehicle {
             object,
             unit: UnitBase::read_view(&v)?,
+            own: crate::vehicle::VehiclePart::read_view(&v)?,
         })
     }
 }

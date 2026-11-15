@@ -26,6 +26,7 @@ mod vitality;
 mod globals;
 mod game_type;
 mod hud;
+mod vehicle;
 
 mod heavy {
     mod animation_install;
@@ -44,4 +45,5 @@ mod heavy {
     mod vitality_install;
     mod weapon_install;
     mod hud_install;
+    mod vehicle_install;
 }

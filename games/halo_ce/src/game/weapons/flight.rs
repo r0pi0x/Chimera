@@ -8,10 +8,12 @@
 //! stuck), then up to 10 segments: guidance (`Steer`: the target point
 //! and the turn per segment, exactly that angle, never chasing a target
 //! behind), the deceleration window (its timer's step lower / v0, the
-//! disc's quirk), the final-speed floor and the slowed bolt's
-//! disappearance, gravity, the range cut, a trace of the segment through a
-//! callback (the level and characters: `super::systems`), and at a hit
-//! gravity and deceleration taken back for the unused part of the tick,
+//! disc's quirk), the final-speed floor (never for a projectile whose
+//! initial and final velocities are equal: Quirks 11) and the slowed
+//! bolt's disappearance, gravity, the range cut, a trace of the segment
+//! through a callback (the level and characters: `super::systems`), and at
+//! a hit gravity taken back for the unused part of the tick and the speed
+//! clamp (only on a segment the deceleration slowed),
 //! the direct-hit damage (a callback, which says which material took it:
 //! the shield's when the shield took the larger share), and the material
 //! response of behaviours 6 and 7 by the hit's material type
@@ -247,12 +249,14 @@ impl Flight {
             let mut v2 = vt;
             let mut avg_v = v;
             let mut avg_s = s;
-            let mut decelerated = false;
+            // The speed step 2 makes for the segment's end (s where it
+            // makes none).
+            let mut s_end = s;
             // 2. Deceleration.
             if self.deceleration_timer >= 1.0 {
                 if s > vf && a != 0.0 {
-                    decelerated = true;
                     let s2 = s - a * r;
+                    s_end = s2;
                     if s2 > vf {
                         v2 = vt * (s2 / s);
                         avg_v = (v2 + v) / 2.0;
@@ -260,6 +264,7 @@ impl Flight {
                     } else {
                         let f = (s - vf) / (a * r);
                         let s2 = 0.99 * vf;
+                        s_end = s2;
                         v2 = vt * (s2 / s);
                         avg_s = (s2 + s) * f / 2.0 + (1.0 - f) * vf;
                         avg_v = (v2 + v) * f / 2.0 + v2 * (1.0 - f);
@@ -272,8 +277,12 @@ impl Flight {
                     // Gone where it is (no further move once slowed).
                     self.ask(Request::Disappear);
                     break;
-                } else if s > 0.0 && s < vf {
-                    v2 = vt * (0.99 * vf / s);
+                } else if s > 0.0 && s < vf && p.initial_velocity != vf {
+                    // Never for a projectile whose initial and final
+                    // velocities are equal (Quirks 11: its speed lands a
+                    // rounding step under vf by chance).
+                    s_end = 0.99 * vf;
+                    v2 = vt * (s_end / s);
                 }
             }
             // 3. Gravity (engine +Y up).
@@ -308,16 +317,17 @@ impl Flight {
             // back.
             let rest = r * (1.0 - hit.t);
             v2.y += g * rest;
-            // The deceleration taken back, where it was applied (with none,
-            // as for a grenade, the speed is gravity's alone: the spec's
-            // grenade table has it so).
-            let s2 = v2.length();
-            if decelerated && s2 != 0.0 {
-                v2 *= (rest * a + s2).min(s) / s2;
+            // The speed clamp (behaviour 3 step 7): the deceleration taken
+            // back for the unused part, never above the starting speed, on
+            // a segment step 2 slowed (s' < s, s' its number, not the
+            // length after gravity); elsewhere the factor is 1 and
+            // gravity's gain in speed is kept (a grenade's bounce).
+            if s_end < s && s_end != 0.0 {
+                v2 *= (rest * a + s_end).min(s) / s_end;
             }
             r = rest;
             *ignored = None;
-            self.travelled += (avg_v * (q * r * hit.t)).length();
+            self.travelled += (hit.point - from).length();
             self.position = hit.point;
             out.segments.push((from, hit.point, Some(hit)));
             // Behaviour 6: the direct hit, then the material.

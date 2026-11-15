@@ -10,8 +10,8 @@
 //!
 //! A projectile (`HaloProjectile`) carries its tag's numbers (a weapon's
 //! trigger's, or a grenade's), its owner, its flight, its guidance target
-//! (a needle's and the charged bolt's: section 15's target of the shot,
-//! `params::Gun::guidance_targets`; turned by the guided rate / 30, half
+//! (a needle's and the charged bolt's: the autoaim's target of the shot,
+//! weapons.md 15 and `aim`; turned by the guided rate / 30, half
 //! against a player's unit, toward the target's centre moved by the
 //! wander), and what holds it: stuck in a character (it moves with it;
 //! a needle sticking resets the other unconsumed needles of the same tag
@@ -67,14 +67,14 @@ use chimera_sim::weapon::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    METERS_PER_WU,
+    METERS_PER_WU, aim,
     explode::{self, Candidate},
     flight::{End, Flight, Hit, Steer, wandered},
     grenades::{self, GrenadeData, Throw, ThrowEvent},
     materials::LevelMaterials,
     params::{Gun, Projectile, effect_id, projectile_flags, weapon_flags},
     random::HaloRng,
-    tick::{GunEvent, HaloGun, Inputs},
+    tick::{GunEvent, HaloGun, Inputs, TriggerMode},
 };
 use crate::{
     core::{
@@ -395,21 +395,13 @@ impl HaloTrace<'_, '_> {
     /// Section 15's target for a shot (weapons.md: the autoaim and
     /// magnetism levels by distance and angle from the camera ray, sorted
     /// by them, then distance, then angle; the first in sight): living
-    /// enemies not fully camouflaged.
-    pub fn target(&self, owner: Entity, eye: Vec3, aim: Vec3, g: &Gun) -> Option<Entity> {
-        let a = &g.aim_assist;
+    /// enemies not fully camouflaged. The target, its aim point (metres)
+    /// and its autoaim level.
+    pub fn target(&self, owner: Entity, eye: Vec3, aim: Vec3, a: &super::aim::Assist) -> Option<(Entity, Vec3, f32)> {
+        use super::aim::level;
         let (range, angle) = (a.autoaim_range.max(a.magnetism_range), a.autoaim_angle.max(a.magnetism_angle));
-        let level = |x: f32, max: f32| {
-            if max <= 0.0 || x >= max {
-                0.0
-            } else if x <= max / 2.0 {
-                1.0
-            } else {
-                (max - x) / (max / 2.0)
-            }
-        };
         let me = self.team(owner);
-        let mut found: Vec<(f32, f32, f32, f32, Entity)> = self
+        let mut found: Vec<(f32, f32, f32, f32, Entity, Vec3)> = self
             .living()
             .filter(|(e, _, camo)| *e != owner && *camo < 1.0 && (me == 0 || self.team(*e) != me))
             .filter_map(|(e, c, _)| {
@@ -421,14 +413,18 @@ impl HaloTrace<'_, '_> {
                 }
                 let auto = level(d, a.autoaim_range) * level(ang, a.autoaim_angle);
                 let magnet = level(d, a.magnetism_range) * level(ang, a.magnetism_angle);
-                (auto > 0.0 || magnet > 0.0).then_some((auto, magnet, d, ang, e))
+                (auto > 0.0 || magnet > 0.0).then_some((auto, magnet, d, ang, e, c))
             })
             .collect();
         found.sort_by(|x, y| y.0.total_cmp(&x.0).then(y.1.total_cmp(&x.1)).then(x.2.total_cmp(&y.2)).then(x.3.total_cmp(&y.3)));
-        found
-            .into_iter()
-            .find(|f| self.centre(f.4).is_some_and(|c| self.clear(eye, c)))
-            .map(|f| f.4)
+        found.into_iter().find(|f| self.clear(eye, f.5)).map(|f| (f.4, f.5, f.0))
+    }
+
+    /// Where the camera at `eye` looking along `aim` (unit) looks: the
+    /// level's surface within `aim::LOOK_RANGE`, else that far (metres).
+    pub fn look_at(&self, eye: Vec3, aim: Vec3) -> Vec3 {
+        let len = super::aim::LOOK_RANGE * METERS_PER_WU;
+        self.level(eye, aim, len).map_or(eye + aim * len, |m| m.1)
     }
 }
 
@@ -934,6 +930,27 @@ pub fn run(
                     gun.loaded = m.clip as i16;
                     gun.reserve = m.reserve as i16;
                 }
+                // The aim assist (weapons.md 15, `aim`): while the weapon
+                // in hand may fire, its autoaim target (when the switch is
+                // on) and the shot bent toward it and the look point.
+                let may_fire = held && (hands.fire || matches!(gun.trigger, TriggerMode::Charging | TriggerMode::Charged));
+                let assist = may_fire.then(|| aim::assist(&hw.0, gun.zoom)).flatten();
+                let picked = assist
+                    .filter(|_| hw.0.aim_assist.enabled)
+                    .and_then(|a| trace.target(owner, eye, aim, &a));
+                let shot_aim = match assist {
+                    Some(a) => {
+                        let [x, y, z] = hw.0.trigger.first_person_offset;
+                        let mut origin = eye / METERS_PER_WU;
+                        if !hw.0.trigger.has(super::params::trigger_flags::PROJECTILE_VECTOR_CANNOT_BE_ADJUSTED) {
+                            let left = Vec3::Y.cross(aim).try_normalize().unwrap_or(Vec3::Y);
+                            origin += aim * x + left * y + aim.cross(left) * z;
+                        }
+                        let look = trace.look_at(eye, aim) / METERS_PER_WU;
+                        aim::bend(aim, origin, look, picked.map(|(_, at, l)| (at / METERS_PER_WU, l)), a.deviation)
+                    }
+                    None => aim,
+                };
                 let inputs = Inputs {
                     fire: held && hands.fire,
                     reload: held && hands.reload,
@@ -941,7 +958,7 @@ pub fn run(
                     busy,
                     held,
                     switching: false,
-                    aim,
+                    aim: shot_aim,
                 };
                 let evs = gun.tick(&hw.0, &inputs);
                 if let Some(mut m) = mag {
@@ -962,7 +979,9 @@ pub fn run(
                                 (Some(s), 1) => s.projectile.guided_angular_velocity,
                                 _ => hw.0.projectile.guided_angular_velocity,
                             } > 0.0;
-                            let target = (first.0 && guided && hw.0.guidance_targets).then(|| trace.target(owner, eye, aim, &hw.0)).flatten();
+                            // The autoaim's target (projectiles.md 12: no
+                            // separate test for guided projectiles).
+                            let target = picked.filter(|_| first.0 && guided).map(|(e, ..)| e);
                             if first.0 {
                                 fired.write(HaloFired {
                                     owner,

@@ -1,6 +1,7 @@
 //! Halo's map objects on synthetic data: teleporter pairs as the engine's
 //! teleporters (`game::maps::teleporters`: pairing by team index, placed
-//! and sized by scenario.md's rule) and climbable sheets as ladder brushes
+//! and sized by scenario.md's rule, the exit's test, message and telefrag
+//! by multiplayer_rules.md 6.8) and climbable sheets as ladder brushes
 //! (`game::maps::collision::ladder_brush`: the sheet's extent, a thin slab).
 
 use bevy::math::Vec3;
@@ -8,6 +9,7 @@ use blam_formats::{
     cache::{TagId, TagRef, class},
     scenario::{NetgameFlag, NetgameFlagType},
 };
+use chimera_world::map::teleport::{Exit, Outcome, Walker, step, step_counting};
 use halo_ce::game::{
     METERS_PER_UNIT,
     maps::{
@@ -53,7 +55,45 @@ fn teleporter_pairs_become_pads_by_team_index() {
     assert!((t.radius - 0.5 * METERS_PER_UNIT).abs() < 1e-5);
     assert!((t.rearm - METERS_PER_UNIT).abs() < 1e-5);
     assert!(t.keep_velocity);
-    assert!((t.telefrag.unwrap() - 3.0).abs() < 1e-5, "90 ticks at 30 Hz");
+    assert_eq!(t.telefrag, None, "the count is the blocker's (the pill's rule)");
+    let Exit::Pill { radius, standing, crouched, telefrag_ticks, message_every, .. } = t.exit else { panic!("{:?}", t.exit) };
+    assert!((radius - 0.2 * METERS_PER_UNIT).abs() < 1e-5);
+    assert!((standing - 0.3 * METERS_PER_UNIT).abs() < 1e-5 && (crouched - 0.1 * METERS_PER_UNIT).abs() < 1e-5);
+    assert_eq!((telefrag_ticks, message_every), (90.0, 121));
+}
+
+/// multiplayer_rules.md 6.8's exit on the pads above: a Spartan standing
+/// 0.39 WU from the target flag blocks (0.41 does not; nor does one 0.45
+/// away, inside the old "source radius" reading); the blocked message
+/// shows on the first refusal and the 122nd; the blocker dies in the tick
+/// of the 90th refused try.
+#[test]
+fn a_teleporters_exit_is_blocked_by_the_arriving_pill() {
+    use NetgameFlagType::{TeleporterSource as S, TeleporterTarget as T};
+    let t = teleporters(&[flag(S, 0, [0.0, 0.0, 0.0], 0.0), flag(T, 0, [10.0, 0.0, 0.0], 0.0)]);
+    let walker = |p: [f32; 3]| Walker { feet: space::point(p), alive: true, ..Default::default() };
+    let blocked = |off: f32| {
+        let mut w = [walker([0.1, 0.0, 0.0]), walker([10.0, off, 0.0])];
+        matches!(step(&t, &mut w, 1.0 / 30.0).0[0].1, Outcome::Blocked { .. })
+    };
+    assert!(blocked(0.39));
+    assert!(!blocked(0.41));
+    assert!(!blocked(0.45));
+    let mut w = [walker([0.1, 0.0, 0.0]), walker([10.0, 0.1, 0.0])];
+    let mut countdown = 0;
+    let mut shown = Vec::new();
+    let mut killed = None;
+    for n in 1..=130 {
+        let (out, kill) = step_counting(&t, &mut w, 1.0 / 30.0, &mut countdown);
+        if let Outcome::Blocked { message: true, .. } = out[0].1 {
+            shown.push(n);
+        }
+        if !kill.is_empty() && killed.is_none() {
+            killed = Some(n);
+        }
+    }
+    assert_eq!(killed, Some(90), "the telefrag in the tick of the 90th refused try");
+    assert_eq!(shown, vec![1, 122]);
 }
 
 #[test]

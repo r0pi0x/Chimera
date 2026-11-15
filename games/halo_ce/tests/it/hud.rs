@@ -296,6 +296,19 @@ fn s10_blips_their_fades_and_the_sweep() {
     assert!(at(20.0, 0.0, 0.0).is_none(), "at the range: not drawn");
     assert!(near(at(19.95, 0.0, 0.0), [0.0, -41.8]), "just inside: byte 126");
     assert!(rules::blip_offset(127, 127, 0.0, 20.0, 32.0, 42.0).is_none(), "past the range");
+    // The table's quantised column: the bytes, truncated toward zero.
+    let q = |dx: f32, dy: f32| (rules::quantise(dx, 20.0), rules::quantise(dy, 20.0));
+    assert_eq!([q(10.0, 0.0), q(0.0, 10.0), q(-10.0, 0.0)], [(63, 0), (0, 63), (-63, 0)]);
+    assert_eq!([q(19.9, 0.0), q(0.1, 0.0), q(20.0, 0.0), q(19.99, 0.0)], [(126, 0), (0, 0), (127, 0), (126, 0)]);
+    assert!(near(at(19.99, 0.0, 0.0), [0.0, -41.8]), "19.99: byte 126, drawn");
+    assert!(at(25.0, 0.0, 0.0).is_none(), "out of range");
+    // hud.md 11 step 4: a unit 1 WU ahead is byte 6 (0.945 WU), 5.0
+    // pixels out (5.2 unquantised); 10 WU decodes to 9.92 WU.
+    assert_eq!(q(1.0, 0.0), (6, 0));
+    let one = at(1.0, 0.0, 0.0).unwrap();
+    assert!(one[0].abs() < 1e-4 && (one[1] + 4.96).abs() < 0.01, "1 WU: {one:?}");
+    assert!((42.0 * (1.0f32 / 20.0).powf(0.7) - 5.16).abs() < 0.01, "unquantised");
+    assert!((f32::from(q(10.0, 0.0).0) * 20.0 / 127.0 - 9.92).abs() < 0.005);
     let fade = |h| rules::blip_fade(h);
     let close = |a: f32, b: f32| (a - b).abs() < 1e-3;
     assert!(close(fade(0).0, 1.0) && close(fade(0).1, 1.0));

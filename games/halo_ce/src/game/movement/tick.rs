@@ -214,7 +214,10 @@ pub fn tick(
             let left = left - n * left.dot(n);
             let mut dir = forward * a + left * b;
             dir.y *= 5.0;
-            dir.normalize_or_zero()
+            // Normalised only when at least epsilon long: a shorter one
+            // is used as it is (almost no motion).
+            let len = dir.length();
+            if len >= eps { dir / len } else { dir }
         };
         let sigma = (a * a + b * b).sqrt() * d.slope_scale(dir.y);
         let w = dir * sigma;
@@ -232,25 +235,53 @@ pub fn tick(
     let swept = v + Vec3::Y * lift_v;
     let r = d.radius;
     let p = origin + Vec3::Y * r;
-    let moved = mover::sweep(space, d, p, h, swept * k + Vec3::Y * gravity_fix);
-    // 10. The ground test.
-    // A climbable surface counts at any steepness unless it is behind the
-    // player (its level normal along the facing by more than 0.5).
-    let counts = |n: &Vec3| {
-        n.y >= d.max_slope_cos
-            || (moved.climbable.contains(n) && Vec3::new(n.x, 0.0, n.z).normalize_or_zero().dot(c.forward) <= 0.5)
+    let mut moved = mover::sweep(space, d, p, h, swept * k + Vec3::Y * gravity_fix);
+    // The landing velocity's V (before the edge neighbour's hold).
+    let landing_v = swept;
+    let mut swept = swept;
+    // The edge neighbour's hold (movement.md section 8, ladders item 8): a
+    // sweep that met nothing while the pill had a support surface.
+    if moved.contacts.is_empty()
+        && !me.airborne
+        && let Some(support) = space.support(p, me.ground_normal)
+        && let Some((at, held, n)) = mover::hold_on_neighbour(&support, moved.p, swept, r)
+    {
+        moved.p = at;
+        swept = held;
+        moved.contacts = vec![n];
+        moved.climbable = vec![false];
+    }
+    // 10. The ground test (movement.md section 8, ladders item 1): a
+    // climbable ("walkable") contact beats any other unless it faces along
+    // the horizontal wish by more than 0.5; among walkable ones the
+    // largest push into it wins, among the others the largest n_z (the
+    // first of equals). A walkable best grounds at any steepness.
+    let wish_dir = if me.airborne {
+        Vec3::ZERO
+    } else {
+        Vec3::new(wish_h.x, 0.0, wish_h.z).normalize_or_zero()
     };
-    let ground = moved
-        .contacts
-        .iter()
-        .copied()
-        .filter(counts)
-        .fold(None, |best: Option<Vec3>, n| match best {
-            Some(b) if b.y >= n.y => Some(b),
-            _ => Some(n),
-        });
+    let mut best: Option<(Vec3, bool)> = None;
+    for (&n, &walkable) in moved.contacts.iter().zip(&moved.climbable) {
+        if walkable {
+            if n.x * wish_dir.x + n.z * wish_dir.z > 0.5 {
+                continue;
+            }
+            match best {
+                Some((b, true)) if -b.dot(landing_v) >= -n.dot(landing_v) => {}
+                _ => best = Some((n, true)),
+            }
+        } else {
+            match best {
+                Some((_, true)) => {}
+                Some((b, false)) if b.y >= n.y => {}
+                _ => best = Some((n, false)),
+            }
+        }
+    }
+    let ground = best.filter(|&(n, walkable)| walkable || n.y >= d.max_slope_cos).map(|(n, _)| n);
     let grounded = ground.is_some();
-    let lambda = ground.map_or(0.0, |n| -n.dot(swept));
+    let lambda = ground.map_or(0.0, |n| -n.dot(landing_v));
     // 11. Standing room.
     let no_room = c1 > 0.0 && !crouch_held && space.sphere_blocked(moved.p, Vec3::Y * (d.height_stand - 2.0 * r));
     // 12. Store.

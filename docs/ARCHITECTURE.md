@@ -345,6 +345,20 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   (`fx::objects`, net part `halo_ce_objects`); thrown grenades and items
   are the server's entities, drawn as shown items through the engine's
   `NetItem`; particle systems come from `blam_formats::effect::system`.
+  Halo's ladders follow the corrected ground test (a ladder beats the
+  floor, so walking at one mounts it); its guns autoaim by default
+  (`weapons::aim`), with guided projectiles following the autoaim
+  target; its teleporter exits use the engine's `teleport::Exit::Pill`.
+  Halo's own app runs the spec's respawn and starting loadout
+  (`game::respawn`, `HaloRules`, not in the party apps); a zoomed gun
+  shows its scope's mask, the grenade kind is switched
+  (`+grenade_switch`, `net59`), and explosions play through the particle
+  systems' states.
+  `game::vehicles` runs Halo's vehicles (the Warthog as data in
+  `data/vehicles/`) by the spec's own mass-point step at 30 Hz on avian's
+  spatial queries, writing a kinematic body that replicates as a moving
+  map prop (`NetProp`); seats suspend the rider's movement, and the
+  driver's camera is the seat's track through `MapView`.
   Halo's
   files reach
   players without the disc through the asset store: `chimera_pack

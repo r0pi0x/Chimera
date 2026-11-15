@@ -23,6 +23,8 @@
 //!   data/grenades.toml, per-tick weapon rules with charging, projectiles
 //!   with material responses, explosions and pickups, hits through
 //!   `damage::HaloHit`, lent as rungs in `parts`;
+//! - `weapons::aim`: the aim assist's parameters, levels and the bent
+//!   shot (weapons.md section 15), on by default;
 //! - `body`: the players' Spartan body (model, animations from the graph's
 //!   unit tables, hit boxes from the collision model, armour colours), on
 //!   Halo's maps and, from the donor map, on any other;
@@ -35,6 +37,12 @@
 //!   decals and lights, shots shown on every machine; `fx::objects`: thrown
 //!   grenades, explosions, plasma countdowns, items on the ground and their
 //!   pickup sounds, on every machine;
+//! - `vehicles`: the scenario's vehicles (the Warthog; vehicles.md):
+//!   placement as moving props, the mass-point physics on the engine's
+//!   collision, driving, seats and the seat camera, splatter and riders'
+//!   damage;
+//! - `respawn`: Halo's players' loadout and respawn by
+//!   multiplayer_rules.md 4 (`HaloRules`, Halo's own app only);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
@@ -58,6 +66,7 @@ pub mod parts;
 pub mod respawn;
 pub mod sets;
 pub mod ticks;
+pub mod vehicles;
 pub mod view;
 pub mod vitality;
 pub mod weapons;
@@ -175,6 +184,7 @@ impl PluginGroup for HaloPlugins {
             .add(body::HaloBodyPlugin)
             .add(view::HaloViewPlugin)
             .add(respawn::HaloRespawnPlugin)
+            .add(vehicles::HaloVehiclesPlugin)
     }
 }
 

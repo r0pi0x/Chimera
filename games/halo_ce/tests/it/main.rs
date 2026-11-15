@@ -20,18 +20,21 @@ mod arsenal;
 mod arsenal_fx;
 mod arsenal_rules;
 mod assets;
+mod autoaim;
 mod body;
 mod cross_game;
 mod fx;
 mod fx_place;
 mod hud;
 mod info;
+mod ladders;
 mod map_objects;
 mod maps;
 mod movement;
 mod movement_net;
 mod movement_vitality;
 mod net_vitality;
+mod projectile_rules;
 mod respawn;
 mod skeleton;
 mod ticks;
@@ -40,12 +43,15 @@ mod vitality;
 mod vitality_data;
 mod weapons;
 mod weapons_rules;
+mod vehicle_physics;
+mod vehicles;
 
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
 mod heavy {
     mod body;
     mod fx;
     mod hud;
+    mod ladder;
     mod map_objects;
     mod nav_within;
     mod maps;
@@ -56,4 +62,6 @@ mod heavy {
     mod vitality_data;
     mod weapon_data;
     mod walk;
+    mod vehicle_data;
+    mod vehicles;
 }
