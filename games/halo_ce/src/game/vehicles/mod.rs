@@ -9,7 +9,8 @@
 //!   entities) becomes a `HaloVehicle`: a kinematic body with the convex
 //!   hull of its collision model as collider (characters stand on it and
 //!   bump into it, shots stop on it and do nothing to it: no vitality on the
-//!   disc), at its placement raised by half its bounding radius.
+//!   disc), its centre of mass at its placement raised by half its
+//!   bounding radius.
 //! - `seat_input` (authoritative): the use key (pressed) on foot near a
 //!   seat marker enters by the spec's seat search (`seats::best_seat`:
 //!   within 1 WU, slower than 0.1 WU/t, the vehicle turning slower than
@@ -24,15 +25,18 @@
 //!   brake), `drive::Drive::tick` on `level::EngineLevel`, the pose written
 //!   to the prop's `Transform` (replicated to clients as the engine's other
 //!   moving props: `chimera_net`'s `NetProp`, the vehicle carrying
-//!   `PhysicsProp`; no new message).
+//!   `PhysicsProp`; no new message). Other vehicles and characters are not
+//!   ground to its points; vehicles meet each other by the pair rule
+//!   (`physics::pair_contact`, into the next step's accumulators).
 //! - `carry`: riders sit at their seat's marker (their movement skips them:
 //!   `Seated`), moving with the vehicle; the driver's camera is the seat's
 //!   camera track (`seats::track_offset`) as the character's `MapView`.
 //! - `splatter`: a character touching a moving vehicle is pushed and takes
 //!   the globals' vehicle collision damage by the spec's rule (`HaloHit`,
 //!   area, owned by the driver), with the 90-tick grace after leaving it.
-//! - `rider_damage`: a hit on a vehicle passes to each rider at (1 −
-//!   passthrough penalty) × rider damage fraction (0.18).
+//! - `rider_damage`: a hit on a vehicle that is not area damage passes to
+//!   each rider at (1 − passthrough penalty) × rider damage fraction
+//!   (0.18).
 //!
 //! Known shortcuts:
 //! - Entering and exiting are instant (no enter or exit animation, so no
@@ -46,9 +50,6 @@
 //!   (the model is drawn rigid, as the scenery is).
 //! - The seated state is not replicated: a networked client's own player
 //!   is not shown seated (the party apps come with stage 2).
-//! - Other vehicles' contacts (mass point against mass point) and
-//!   vehicle-vehicle collision accumulators are not gathered; vehicles meet
-//!   each other's hulls through the ground query.
 
 pub mod data;
 pub mod drive;
@@ -311,18 +312,18 @@ fn attach(
     }
 }
 
-/// Spawn the vehicle `name` with its model origin at `origin` (WU, Halo
-/// axes) facing `heading` (radians), raised as created: a vehicle without a
-/// map (tests, a game's own spawns). Its collider is a box around its mass
-/// points (no collision model). Returns the entity.
-pub fn spawn_vehicle(world: &mut World, name: &str, origin: Vec3, heading: f32) -> Option<Entity> {
+/// Spawn the vehicle `name` as placed at `position` (its centre of mass,
+/// WU, Halo axes) facing `heading` (radians), raised as created: a vehicle
+/// without a map (tests, a game's own spawns). Its collider is a box
+/// around its mass points (no collision model). Returns the entity.
+pub fn spawn_vehicle(world: &mut World, name: &str, position: Vec3, heading: f32) -> Option<Entity> {
     let defs = world.get_resource_or_init::<VehicleDefs>().clone();
     let def = defs.0.iter().position(|(d, _)| d.name == name)?;
     let (d, phys) = &defs.0[def];
     let placed = Placed {
         prop: usize::MAX,
         vehicle: name.to_string(),
-        position: origin.to_array(),
+        position: position.to_array(),
         forward: [heading.cos(), heading.sin(), 0.0],
         up: [0.0, 0.0, 1.0],
         markers: Default::default(),
@@ -344,14 +345,17 @@ pub fn spawn_vehicle(world: &mut World, name: &str, origin: Vec3, heading: f32) 
     )
 }
 
-/// A placed vehicle's starting state: its centre of mass where its origin
-/// at the placement raised by half its bounding radius puts it.
+/// A placed vehicle's starting state: its centre of mass at the placement
+/// raised by half its bounding radius (vehicles.md "Units and
+/// conventions").
 pub fn spawn_state(d: &VehicleDef, phys: &PhysicsDef, def: usize, p: &Placed) -> HaloVehicle {
     let mut body = Body::at(Vec3::ZERO, 0.0);
     body.forward = Vec3::from(p.forward).normalize_or(Vec3::X);
     body.up = Vec3::from(p.up).normalize_or(Vec3::Z);
-    let origin = Vec3::from(p.position) + Vec3::Z * (d.bounding_radius / 2.0);
-    body.position = origin + body.frame() * phys.center_of_mass;
+    // The placement's position is the centre of mass, raised by half the
+    // bounding radius.
+    body.position = Vec3::from(p.position) + Vec3::Z * (d.bounding_radius / 2.0);
+    let _ = phys;
     HaloVehicle {
         def,
         drive: Drive::new(body),
@@ -515,7 +519,10 @@ fn simulate(
     }
     let held = held.as_deref().copied();
     let scales = ground_scales();
-    let skip = |e: Entity| characters.contains(e);
+    // Other vehicles and characters are never ground to a vehicle (they
+    // meet it through the pair rule and the splatter rule).
+    let all: Vec<Entity> = vehicles.iter().map(|(e, ..)| e).collect();
+    let skip = |e: Entity| characters.contains(e) || all.contains(&e);
     for (e, mut v, mut t) in &mut vehicles {
         let (d, phys) = &defs.0[v.def];
         let level = EngineLevel {
@@ -547,6 +554,24 @@ fn simulate(
         if t.translation != origin || t.rotation != rotation {
             t.translation = origin;
             t.rotation = rotation;
+        }
+    }
+    // Step 7: vehicle against vehicle, the pair rule, into each one's
+    // accumulators for its next step.
+    let mut pairs = vehicles.iter_combinations_mut::<2>();
+    while let Some([(_, mut a, _), (_, mut b, _)]) = pairs.fetch_next() {
+        let ((da, pa), (db, pb)) = (&defs.0[a.def], &defs.0[b.def]);
+        let reach = da.bounding_radius + db.bounding_radius + 1.0;
+        if (a.drive.body.position - b.drive.body.position).length() > reach {
+            continue;
+        }
+        if let Some([(fa, ta), (fb, tb)]) = physics::pair_contact(&a.drive.body, pa, &b.drive.body, pb) {
+            a.drive.collision_force += fa;
+            a.drive.collision_torque += ta;
+            b.drive.collision_force += fb;
+            b.drive.collision_torque += tb;
+            a.drive.wake();
+            b.drive.wake();
         }
     }
 }
@@ -705,6 +730,10 @@ fn rider_damage(
 ) {
     let mut out = Vec::new();
     for hit in cursor.read(&messages) {
+        // Area damage reaches riders, if at all, through their own bodies.
+        if hit.flags & super::damage::hit_flags::AREA != 0 {
+            continue;
+        }
         let Ok(v) = vehicles.get(hit.target) else { continue };
         let d = &defs.0[v.def].0;
         let penalty = effects.get(hit.effect).map_or(0.0, |e| e.passthrough);

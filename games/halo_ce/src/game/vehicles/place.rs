@@ -1,8 +1,12 @@
 //! The scenario's vehicle placements as the engine's props and map
 //! entities (specs/halo_ce/scenario.md vehicle placements;
-//! vehicles.md "Multiplayer"): every placement whose palette entry is in
-//! range (the on-BSP flags are scenery's alone) of a vehicle with a document in
-//! data/vehicles/ (`VehicleDef::builtin`: the Warthog) becomes
+//! vehicles.md "Multiplayer", "Which placements spawn"): a placement spawns
+//! (`spawns`) when its palette entry is in range, its "not automatic" bit
+//! (flags bit 0) is clear and the game type's vehicle set keeps its tag,
+//! which must be one of the globals' three multiplayer vehicles
+//! (`MULTIPLAYER_VEHICLES`); the on-BSP flags are scenery's alone and the
+//! difficulty bits are ignored. Each one of a vehicle with a document in
+//! data/vehicles/ (`VehicleDef::builtin`) becomes
 //!
 //! - a `MapProp` of the vehicle's render model (drawn as the scenery is,
 //!   `objects::model_meshes`), with `physics` set so the engine treats it as
@@ -13,9 +17,10 @@
 //!   seats' markers, and the collision model's vertices (the hull the
 //!   vehicle's collider is built from), all in world units.
 //!
-//! The Ghost and Scorpion placements are not placed until their driving
-//! rules exist (no document); the game type's vehicle set is not read: the
-//! default set ("all", multiplayer_rules.md) keeps every Warthog.
+//! Halo's game does not model game types yet: `vehicles` places with the
+//! default vehicle set (`VehicleSet::Default`, all three kinds); a game
+//! type's set goes through `vehicles_in`. The placement's position is the
+//! vehicle's centre of mass (`super::spawn_state` raises it).
 //!
 //! Known shortcuts:
 //! - The vehicle's collider is the convex hull of its collision model's
@@ -24,7 +29,7 @@
 
 use std::collections::BTreeMap;
 
-use blam_formats::{cache::MapFile, collision, model::Model, object::Vehicle, scenario::Scenario};
+use blam_formats::{cache::MapFile, collision, game_type::VehicleSet, model::Model, object::Vehicle, scenario::Scenario};
 
 use super::data::VehicleDef;
 use crate::game::maps::{
@@ -115,10 +120,51 @@ impl Placed {
     }
 }
 
-/// Place the scenario's vehicles of `defs` in `map` (module doc); returns
-/// the models' meshes waiting for their looks.
+/// The globals' three multiplayer vehicles (globals.md multiplayer
+/// information), in the vehicle sets' order: Warthog, Ghost, Scorpion.
+pub const MULTIPLAYER_VEHICLES: [&str; 3] = [
+    r"vehicles\warthog\warthog",
+    r"vehicles\ghost\ghost_mp",
+    r"vehicles\scorpion\scorpion_mp",
+];
+
+/// Whether a vehicle placement with placement flags `flags` naming the tag
+/// `tag` (`None`: its palette index names no entry) is created in a
+/// multiplayer game of vehicle set `set` (vehicles.md "Which placements
+/// spawn"; the name rule is moot: the disc's placements have none).
+pub fn spawns(flags: u16, tag: Option<&str>, set: VehicleSet) -> bool {
+    let Some(tag) = tag else { return false };
+    if flags & 1 != 0 {
+        return false;
+    }
+    let Some(kind) = MULTIPLAYER_VEHICLES.iter().position(|t| t.eq_ignore_ascii_case(tag)) else {
+        return false;
+    };
+    match set {
+        VehicleSet::Default => true,
+        VehicleSet::None => false,
+        VehicleSet::Warthog => kind == 0,
+        VehicleSet::Ghost => kind == 1,
+        VehicleSet::Scorpion => kind == 2,
+    }
+}
+
+/// Place the scenario's vehicles of `defs` in `map` with the default
+/// vehicle set (module doc); returns the models' meshes waiting for their
+/// looks.
 pub fn vehicles(file: &MapFile, scenario: &Scenario, light: &LightProbe, map: &mut MapData) -> Vec<Pending> {
-    vehicles_of(file, scenario, light, map, &VehicleDef::builtin())
+    vehicles_in(file, scenario, light, map, VehicleSet::Default)
+}
+
+/// `vehicles` under a game type's vehicle set.
+pub fn vehicles_in(
+    file: &MapFile,
+    scenario: &Scenario,
+    light: &LightProbe,
+    map: &mut MapData,
+    set: VehicleSet,
+) -> Vec<Pending> {
+    vehicles_of(file, scenario, light, map, &VehicleDef::builtin(), set)
 }
 
 /// What one vehicle tag gives every placement of it.
@@ -135,18 +181,16 @@ fn vehicles_of(
     light: &LightProbe,
     map: &mut MapData,
     defs: &[VehicleDef],
+    set: VehicleSet,
 ) -> Vec<Pending> {
     let palette = &scenario.vehicle_palette;
     let mut pending = Vec::new();
     let mut kinds: BTreeMap<usize, Option<Kind>> = BTreeMap::new();
     for p in &scenario.vehicles {
         let h = &p.header;
-        // The on-BSP flags are scenery's and light fixtures' alone
-        // (scenario.md): a vehicle needs only its palette entry.
-        if !h.is_created(palette.len(), None) {
-            continue;
-        }
-        let Some(pi) = h.palette_entry(palette.len()) else {
+        let pi = h.palette_entry(palette.len());
+        let tag = pi.and_then(|i| file.tag(palette[i].object.id)).map(|t| t.path.as_str());
+        let Some(pi) = pi.filter(|_| spawns(h.flags, tag, set)) else {
             continue;
         };
         let kind = kinds

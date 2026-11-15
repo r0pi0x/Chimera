@@ -125,6 +125,10 @@ pub struct Drive {
     pub stop_ticks: u8,
     pub flip: Option<Flip>,
     pub on_ground: bool,
+    /// Consecutive ticks with some point touching the ground (capped 255).
+    pub ground_ticks: u32,
+    /// Ticks with no point touching and no antigravity trace hitting
+    /// (capped 255).
     pub airborne_ticks: u32,
     /// Collision force and torque gathered for the next step.
     pub collision_force: Vec3,
@@ -149,6 +153,7 @@ impl Drive {
             stop_ticks: 0,
             flip: None,
             on_ground: false,
+            ground_ticks: 0,
             airborne_ticks: 0,
             collision_force: Vec3::ZERO,
             collision_torque: Vec3::ZERO,
@@ -254,8 +259,9 @@ impl Drive {
         self.stop_ticks = 0;
     }
 
-    /// One Halo tick: power, flip, variables, wake checks, then the step
-    /// (or the slow stop while asleep).
+    /// One Halo tick of the vehicle, in the order of the spec's "Per-tick
+    /// order" (its step numbers; 1, 3 and 4 are the caller's: the riders'
+    /// controls in `c`, aiming, attachment).
     pub fn tick(
         &mut self,
         def: &VehicleDef,
@@ -264,12 +270,18 @@ impl Drive {
         level: &dyn Level,
         scales: &[GroundScales],
     ) {
+        // 2. The driver's seat power.
         self.update_power(def, c.driver);
+        // 5 to 7. The brake flag and the steering angle, the flip, the
+        // speed, slide and turn variables (the flip sets the angular
+        // velocity only, so σ is the same before and after it).
         self.flip_step(def);
         self.update_variables(def, c);
+        // 8. Wake checks.
         if self.wakes(def) {
             self.wake();
         }
+        // 9. The physics, or the slow stop while asleep.
         if !self.asleep {
             let channels = self.prepare(def);
             let (f, t) = (self.collision_force, self.collision_torque);
@@ -277,7 +289,12 @@ impl Drive {
             self.collision_torque = Vec3::ZERO;
             self.last = physics::step(phys, &mut self.body, &channels, level, scales, f, t);
             self.on_ground = self.last.touching > 0;
-            self.airborne_ticks = if self.on_ground { 0 } else { self.airborne_ticks + 1 };
+            self.ground_ticks = if self.on_ground { (self.ground_ticks + 1).min(255) } else { 0 };
+            self.airborne_ticks = if self.on_ground || self.last.antigraving > 0 {
+                0
+            } else {
+                (self.airborne_ticks + 1).min(255)
+            };
             if self.sleep_enabled && self.last.at_rest {
                 self.asleep = true;
                 self.stop_ticks = STOP_TICKS;
@@ -322,23 +339,29 @@ impl Drive {
     /// The flip's tick: the angular velocity is set.
     fn flip_step(&mut self, def: &VehicleDef) {
         let Some(mut flip) = self.flip else { return };
-        let (f, u) = (self.body.forward, self.body.up);
-        if flip.ticks >= FLIP_TICKS || u.z > FLIP_DONE_UP {
+        if flip.ticks >= FLIP_TICKS || self.body.up.z > FLIP_DONE_UP {
             self.flip = None;
             return;
         }
-        let [lo, hi] = def.flipping_angular_velocity;
-        let k = (-2.0 * u.z).clamp(lo, hi);
-        let axis = match flip.kind {
-            3 | 4 => f.cross(u),
-            _ => f + f.cross(u) * (-f.z),
-        };
-        let sign = if matches!(flip.kind, 2 | 4) { 1.0 } else { -1.0 };
-        self.body.angular_velocity = axis * (sign * FLIP_RATE * k);
+        self.body.angular_velocity = flip_omega(&self.body, flip.kind, def.flipping_angular_velocity);
         flip.ticks += 1;
         self.flip = Some(flip);
         self.wake();
     }
+}
+
+/// The angular velocity a flip of approach type `kind` (1 to 4) sets on
+/// `body` (vehicles.md "Flipping"): strength k = clamp(−2 up.z, min, max),
+/// about f × u (types 3, 4) or f + (f × u)(−f_z) (1, 2), at ±0.3 k.
+pub fn flip_omega(body: &Body, kind: u8, limits: [f32; 2]) -> Vec3 {
+    let (f, u) = (body.forward, body.up);
+    let k = (-2.0 * u.z).clamp(limits[0], limits[1]);
+    let axis = match kind {
+        3 | 4 => f.cross(u),
+        _ => f + f.cross(u) * (-f.z),
+    };
+    let sign = if matches!(kind, 2 | 4) { 1.0 } else { -1.0 };
+    axis * (sign * FLIP_RATE * k)
 }
 
 fn turned(b: &Body, w: Vec3) -> (Vec3, Vec3) {
