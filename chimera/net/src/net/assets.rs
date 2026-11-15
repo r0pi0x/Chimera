@@ -57,6 +57,14 @@
 //!   nothing new would come. A refused token, an unreachable service or
 //!   another certificate than the bound one fails the join with the reason
 //!   on screen (`JoinFailure::Download`).
+//! - **A hub account** (`chimera_assets::account`, `+chimera:hub <invite
+//!   link>`; docs/plans/active/hub.md) goes before a legacy token: when the
+//!   offered service has the account's hub certificate
+//!   (`AssetSession::account_remote`), the join uses it with the account's
+//!   current ticket, binding nothing in the access file; a service of
+//!   another certificate gets the legacy token, never the ticket. A
+//!   signed-in client says it can fetch (`ASSETS_KEY`, `has_token`), and
+//!   keeps the ticket fresh in the background (`keep_account_fresh`).
 //!
 //! The startup fetch (what the games read at startup, fetched in the
 //! background from the start when a service is bound and the store lacks
@@ -88,6 +96,7 @@ use serde::{Deserialize, Serialize};
 use chimera_assets::{
     AssetSettings,
     access::Access,
+    account,
     pace::Pace,
     progress::Transfer,
     sets::{self, Wanted},
@@ -243,6 +252,9 @@ pub struct AssetSession {
     pub served: BTreeSet<String>,
     /// The access file (None: the user's, `Access::path`).
     pub access: Option<PathBuf>,
+    /// The hub account's file (None: the user's,
+    /// `chimera_assets::account::AccountFile::path`).
+    pub account: Option<PathBuf>,
 }
 
 impl AssetSession {
@@ -250,13 +262,31 @@ impl AssetSession {
         self.access.clone().or_else(Access::path)
     }
 
+    /// This user's hub account, if signed in (its session made live, so
+    /// requests carry its current ticket).
+    pub fn account_session(&self) -> Option<Arc<account::Session>> {
+        match &self.account {
+            Some(path) => account::session_at(path),
+            None => account::user_session(),
+        }
+    }
+
+    /// The offered service with the account's current ticket, when it is
+    /// the account's hub (the same certificate): preferred over a legacy
+    /// token. None for another service (a ticket never goes there), with
+    /// no account, or with no valid ticket.
+    pub fn account_remote(&self, offer: &AssetOffer) -> Option<chimera_assets::RemoteConfig> {
+        self.account_session()?.remote_for(&offer.url, &offer.fingerprint)
+    }
+
     /// Whether this client can fetch from an offered service (it has a
-    /// service or a token).
+    /// service, a token or a hub account).
     pub fn can_fetch(&self) -> bool {
         self.settings.as_ref().is_some_and(|s| s.remote.is_some())
             || self
                 .access_path()
                 .is_some_and(|p| Access::load_from(&p).token.is_some())
+            || self.account_session().is_some()
     }
 }
 
@@ -277,6 +307,7 @@ pub fn session(world: &mut World) -> AssetSession {
         settings,
         served,
         access: None,
+        account: None,
     };
     world.insert_resource(s.clone());
     s
@@ -529,9 +560,17 @@ pub fn access_path() -> Option<PathBuf> {
     Access::path()
 }
 
-/// Whether this user has entered an asset token.
+/// Whether this user can fetch from an offered asset service: an asset
+/// token entered, or signed in to a hub (`chimera_assets::account`).
 pub fn has_token() -> bool {
-    access_path().is_some_and(|p| Access::load_from(&p).token.is_some())
+    access_path().is_some_and(|p| Access::load_from(&p).token.is_some()) || account::has_account()
+}
+
+/// Keep a signed-in account's ticket fresh in the background while the
+/// game runs (`chimera_assets::account::keep_fresh`: checked every minute,
+/// refreshed past half its life).
+pub fn keep_account_fresh() {
+    account::keep_fresh(std::time::Duration::from_secs(60));
 }
 
 /// Keep `token` in the access file at `path` (any binding forgotten).
@@ -653,8 +692,8 @@ pub fn count_offered(manifest: &MatchManifest, userinfo: &[(String, String)], re
 pub fn refusal_hint(manifest: &MatchManifest) -> Option<String> {
     manifest.assets.as_ref().map(|_| {
         format!(
-            " This server offers its game files: start the game once with +{TOKEN_COMMAND} <your token> (the \
-             server's admin gives you one), then join again."
+            " This server offers its game files: start the game once with +{HUB_COMMAND} <your invite link> or \
+             +{TOKEN_COMMAND} <your token> (the server's admin gives you one), then join again."
         )
     })
 }
@@ -701,7 +740,7 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
         let unbound = session.access_path().is_some_and(|p| {
             let a = Access::load_from(&p);
             a.token.is_some() && a.remote().is_none()
-        });
+        }) || session.account_remote(&offer).is_some();
         if !unfilled.is_empty() && unbound {
             return bind_here(world, &offer, &session, &unfilled, then);
         }
@@ -716,7 +755,7 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
     // gg_mario_vs_wario asked the game server, which has no file to send).
     let settings = match settings {
         Some(s) => s,
-        None if need.as_ref().is_some_and(|n| n.installed) && can_bind(&session) => match bind(world, &offer, &session) {
+        None if need.as_ref().is_some_and(|n| n.installed) && can_bind(&session, &offer) => match bind(world, &offer, &session) {
             Ok(s) => s,
             Err(e) => {
                 info!("the match's map from the asset service: {e}");
@@ -732,12 +771,14 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
     Next::Wait
 }
 
-/// Whether this client has a token bound to no service (`bind` can bind it).
-fn can_bind(session: &AssetSession) -> bool {
-    session.access_path().is_some_and(|p| {
-        let a = Access::load_from(&p);
-        a.token.is_some() && a.remote().is_none()
-    })
+/// Whether this client has a hub account for `offer`'s service or a token
+/// bound to no service (`bind` can bind it).
+fn can_bind(session: &AssetSession, offer: &AssetOffer) -> bool {
+    session.account_remote(offer).is_some()
+        || session.access_path().is_some_and(|p| {
+            let a = Access::load_from(&p);
+            a.token.is_some() && a.remote().is_none()
+        })
 }
 
 /// The offer's later sets of the games `served` takes, to prefetch once
@@ -857,10 +898,12 @@ fn bind_here(world: &mut World, offer: &AssetOffer, session: &AssetSession, game
         );
         return Next::Left;
     };
-    if Access::load_from(&path).token.is_none() {
+    let account = session.account_remote(offer);
+    if account.is_none() && Access::load_from(&path).token.is_none() {
         let why = format!(
             "{}{names}, which isn't installed here. The server offers its game files: start the game once with \
-             +{TOKEN_COMMAND} <your token> (the server's admin gives you one), then join again.",
+             +{HUB_COMMAND} <your invite link> or +{TOKEN_COMMAND} <your token> (the server's admin gives you \
+             one), then join again.",
             super::manifest::MISSING
         );
         client::fail(world, JoinFailure::Mounts, &why);
@@ -879,11 +922,22 @@ fn bind_here(world: &mut World, offer: &AssetOffer, session: &AssetSession, game
         );
         Next::Left
     };
-    let mut access = Access::load_from(&path);
-    if let Err(e) = access.bind(&offer.url, &offer.fingerprint) {
-        return fail(world, e);
-    }
-    if let Some(remote) = using.filter(|u| Some(u) == access.remote().as_ref()) {
+    // The service it would bind: the account's hub with a ticket, else the
+    // legacy token's.
+    let target = match account {
+        Some(remote) => Some(remote),
+        None => {
+            let mut access = Access::load_from(&path);
+            if let Err(e) = access.bind(&offer.url, &offer.fingerprint) {
+                return fail(world, e);
+            }
+            access.remote()
+        }
+    };
+    let same = |u: &chimera_assets::RemoteConfig| {
+        target.as_ref().is_some_and(|t| t.url == u.url && t.fingerprint == u.fingerprint)
+    };
+    if let Some(remote) = using.filter(|u| same(u)) {
         // This process already reads from that service, which didn't serve
         // the game: say why (a refused token, an unreachable service),
         // else that it lacks the game.
@@ -926,15 +980,25 @@ fn bind_here(world: &mut World, offer: &AssetOffer, session: &AssetSession, game
     Next::Wait
 }
 
-/// Bind the token to the offered service: in the access file and in this
-/// process (`access::bind_live`), the session reading from it from now
-/// on. The session's settings with the service; Err: why not.
+/// Use the offered service from now on: with the hub account's ticket
+/// when it is the account's hub (`AssetSession::account_remote`), else
+/// with the legacy token, bound to it in the access file. Either way in
+/// this process too (`access::bind_live`), the session reading from it
+/// from now on. The session's settings with the service; Err: why not.
 fn bind(world: &mut World, offer: &AssetOffer, session: &AssetSession) -> Result<AssetSettings, String> {
-    let path = session.access_path().ok_or("no per-user data folder")?;
-    let mut access = Access::load_from(&path);
-    access.bind(&offer.url, &offer.fingerprint)?;
-    access.save_to(&path)?;
-    let remote = access.remote().ok_or("the token isn't bound")?;
+    let remote = match session.account_remote(offer) {
+        Some(remote) => {
+            info!("the hub account's ticket is used for {}", offer.url);
+            remote
+        }
+        None => {
+            let path = session.access_path().ok_or("no per-user data folder")?;
+            let mut access = Access::load_from(&path);
+            access.bind(&offer.url, &offer.fingerprint)?;
+            access.save_to(&path)?;
+            access.remote().ok_or("the token isn't bound")?
+        }
+    };
     let mut settings = session.settings.clone().unwrap_or_else(|| {
         chimera_core::mount::config::LocalConfig::load()
             .map(|c| c.assets.resolve())
@@ -948,7 +1012,7 @@ fn bind(world: &mut World, offer: &AssetOffer, session: &AssetSession) -> Result
     let mut now = session.clone();
     now.settings = Some(settings.clone());
     world.insert_resource(now);
-    info!("the asset token is bound to {} now", offer.url);
+    info!("the asset service at {} is used now", offer.url);
     Ok(settings)
 }
 

@@ -1,0 +1,21 @@
+# The accounts service on loopback (docs/plans/active/hub.md 2.6): its
+# database, ticket key and nightly backups live in the store. Written by
+# `chimera_accounts install-units`.
+[Unit]
+Description=Chimera accounts service (loopback @ACCOUNTS_PORT@)
+PartOf=chimera-services.target
+After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+ExecStart=@BIN@/chimera_accounts serve --store @STORE@ --listen 127.0.0.1:@ACCOUNTS_PORT@@ACCOUNTS_ARGS@
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@STORE@
+
+[Install]
+WantedBy=chimera-services.target

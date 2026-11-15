@@ -2,10 +2,13 @@
 //! per service, so each is updated and restarted on its own (the user's
 //! decision, section 11). Now: the accounts service (`accounts`, binary
 //! `chimera_accounts`) on its SQLite database (`db`), with the owner's
-//! command line (`admin`); the asset service stays `chimera_asset_server`
-//! (in `chimera_assets`), which takes this service's tickets
-//! (`chimera_assets::accounts::TicketAuth`). Later: the front, the hub and
-//! feedback.
+//! command line (`admin`) and page (`accounts::page`); the front
+//! (`front`, binary `chimera_front`: the one public TLS port, routing by
+//! path to the services on loopback); where they listen (`config`,
+//! `services.toml`); their systemd user units (`units`). The asset service
+//! stays `chimera_asset_server` (in `chimera_assets`), which takes this
+//! service's tickets (`chimera_assets::accounts::TicketAuth`). Later: the
+//! hub and feedback.
 //!
 //! `codes`: invite and link codes, recovery keys, usernames and display
 //! names. Host tools, plain data (no Bevy); SQLite lives only here, so no
@@ -14,7 +17,10 @@
 pub mod accounts;
 pub mod admin;
 pub mod codes;
+pub mod config;
 pub mod db;
+pub mod front;
+pub mod units;
 
 /// Unix seconds.
 pub fn now() -> u64 {

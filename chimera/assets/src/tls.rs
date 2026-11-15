@@ -14,7 +14,10 @@
 //!   service over a loopback connection; `Peers` maps that loopback
 //!   connection back to the client's address, for the access log and the
 //!   per-address limits (`FrontLimits`: connections at once per address
-//!   and in all, an idle timeout).
+//!   and in all, an idle timeout). The hub's own front (`chimera_front`,
+//!   docs/plans/active/hub.md 2.3) serves the same certificate, routes by
+//!   path to several services and names the client in a header instead
+//!   (`PEER_HEADER`, trusted from loopback only: `forwarded_peer`).
 //! - **The client side** (`PinnedTls`): a ureq connector that wraps the
 //!   TCP connection in rustls with a verifier that accepts only the pinned
 //!   certificate (the handshake's signature is still checked against that
@@ -380,6 +383,23 @@ impl Transport for PinnedTransport {
 
 // --- The server side.
 
+/// The header the hub's front (`chimera_front`, `chimera_services::front`)
+/// sets on every request it relays: the client's `ip:port` as the front
+/// saw it (an incoming one is stripped). Services trust it only on a
+/// loopback connection (`forwarded_peer`).
+pub const PEER_HEADER: &str = "X-Chimera-Peer";
+
+/// The client's address a request relayed by the front names
+/// (`PEER_HEADER`'s `value`), trusted only when the request came over a
+/// loopback connection (`remote`); None otherwise or when malformed.
+pub fn forwarded_peer(remote: &SocketAddr, value: Option<&str>) -> Option<IpAddr> {
+    if !remote.ip().is_loopback() {
+        return None;
+    }
+    let value = value?.trim();
+    value.parse::<SocketAddr>().map(|a| a.ip()).or_else(|_| value.parse::<IpAddr>()).ok()
+}
+
 /// Loopback connection (the front's end, as the service sees it) -> the
 /// client's address.
 pub type Peers = Arc<Mutex<HashMap<SocketAddr, IpAddr>>>;
@@ -655,6 +675,19 @@ mod tests {
         );
         assert_eq!(normalize_fingerprint("abcd"), None);
         assert_eq!(normalize_fingerprint(&"zz".repeat(32)), None);
+    }
+
+    #[test]
+    fn a_forwarded_peer_is_trusted_from_loopback_only() {
+        let local: SocketAddr = "127.0.0.1:5000".parse().unwrap();
+        let outside: SocketAddr = "192.0.2.7:5000".parse().unwrap();
+        let want: IpAddr = "198.51.100.4".parse().unwrap();
+        assert_eq!(forwarded_peer(&local, Some("198.51.100.4:61000")), Some(want));
+        assert_eq!(forwarded_peer(&local, Some(" 198.51.100.4 ")), Some(want));
+        assert_eq!(forwarded_peer(&local, Some("[2001:db8::1]:443")), Some("2001:db8::1".parse().unwrap()));
+        assert_eq!(forwarded_peer(&outside, Some("198.51.100.4:61000")), None, "not from loopback");
+        assert_eq!(forwarded_peer(&local, Some("nonsense")), None);
+        assert_eq!(forwarded_peer(&local, None), None);
     }
 
     #[test]

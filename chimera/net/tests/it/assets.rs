@@ -87,6 +87,16 @@ struct Fixture {
 
 impl Fixture {
     fn new(name: &str, files: usize, latency: Duration) -> Self {
+        Self::make(name, files, latency, false)
+    }
+
+    /// With the hub's account tickets taken too (`TicketAuth`, its keys in
+    /// the store's `server/accounts/ticket.pub`; no revocation feed).
+    fn with_tickets(name: &str, files: usize) -> Self {
+        Self::make(name, files, Duration::ZERO, true)
+    }
+
+    fn make(name: &str, files: usize, latency: Duration, tickets: bool) -> Self {
         let dir = std::env::temp_dir().join(format!("chimera_net_assets_{name}_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let store = Store::new(dir.join("server"));
@@ -127,12 +137,18 @@ impl Fixture {
             put(format!("maps/later{i}.dat"), bytes, "map/later");
         }
         m.save(&store.manifest_path(GAME, "7")).unwrap();
-        let running = server::serve(
-            Service::new(store.clone()).unwrap().with_latency(latency),
-            "127.0.0.1:0",
-            4,
-        )
-        .unwrap();
+        let service = if tickets {
+            let auth: Vec<Box<dyn chimera_assets::accounts::Authenticator>> = vec![
+                Box::new(chimera_assets::accounts::TicketAuth::new(
+                    chimera_assets::accounts::ticket_keys_path(&store.root),
+                )),
+                Box::new(chimera_assets::accounts::Internal::new(Accounts::path(&store.root))),
+            ];
+            Service::with_authenticators(store.clone(), auth).unwrap()
+        } else {
+            Service::new(store.clone()).unwrap()
+        };
+        let running = server::serve(service.with_latency(latency), "127.0.0.1:0", 4).unwrap();
         let identity = Identity::from_seed(&[3; 32], [5; 16]);
         let front = tls::front(
             "127.0.0.1:0",
@@ -194,6 +210,7 @@ impl Fixture {
                 BTreeSet::new()
             },
             access: Some(self.dir.join(format!("{client}-access.toml"))),
+            account: Some(self.dir.join(format!("{client}-account.toml"))),
         }
     }
 
@@ -513,6 +530,74 @@ fn a_first_join_binds_the_token_and_fetches_in_the_same_game() {
     assert_eq!(REMOUNTS.load(std::sync::atomic::Ordering::SeqCst), 1, "nothing read again");
     assert!(reads_from(&sim, 0, &svc.front.url()));
     assert!(progress(&sim, 0).failure.is_none());
+}
+
+/// A player signed in to the hub (an account file, no asset token at all)
+/// with no files of the game: the offered service has the hub's
+/// certificate, so the join uses the account's ticket (nothing bound in
+/// the access file), fetches the offered sets and spawns; the service
+/// logs the account. The ticket here is made with a test key the service
+/// trusts (`ticket.pub`), as the accounts service would make it.
+#[test]
+fn a_hub_account_joins_with_its_ticket_and_no_token() {
+    use chimera_assets::{account::AccountFile, ticket};
+    let svc = Fixture::with_tickets("account_join", 3);
+    let key = chimera_assets::sign::load_or_create_key(&svc.dir.join("ticket.key")).unwrap();
+    let keys_path = chimera_assets::accounts::ticket_keys_path(&svc.store.root);
+    fs::create_dir_all(keys_path.parent().unwrap()).unwrap();
+    fs::write(&keys_path, ticket::TicketKeys::single(key.verifying_key()).to_text()).unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let (account, device) = ([1u8; 16], [2u8; 16]);
+    let claims = ticket::Claims {
+        version: ticket::VERSION,
+        key_id: String::new(),
+        account,
+        device,
+        username: "ann".into(),
+        role: "tester".into(),
+        content: vec!["*".into()],
+        games: vec!["*".into()],
+        list: 1,
+        report: false,
+        muted: false,
+        audience: ticket::SERVICES.into(),
+        issued: now,
+        expires: now + ticket::LIFETIME_SECS,
+    };
+    let file = AccountFile {
+        url: svc.front.url(),
+        fingerprint: Some(svc.fingerprint.clone()),
+        assets_url: None,
+        account: ticket::id_hex(&account),
+        device: ticket::id_hex(&device),
+        username: "ann".into(),
+        display_name: "ann".into(),
+        device_key: "03".repeat(32),
+        ticket: Some(ticket::issue(&key, &claims)),
+    };
+    let account_path = svc.dir.join("ann-account.toml");
+    file.save_to(&account_path).unwrap();
+    let access = svc.dir.join("ann-access.toml");
+    let mut session = svc.session("ann", "", false);
+    if let Some(s) = session.settings.as_mut() {
+        s.remote = None;
+    }
+    session.access = Some(access.clone());
+    session.account = Some(account_path);
+    assert!(session.can_fetch(), "an account can fetch");
+    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
+    sim.add_client(client_with(session, false));
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
+    for set in ["base", "players"] {
+        assert!(svc.ids(set).iter().all(|id| store.has(id)), "{set} fetched");
+    }
+    assert!(reads_from(&sim, 0, &svc.front.url()));
+    let token = sim.clients[0].app.world().resource::<AssetSession>().settings.as_ref().unwrap().remote.as_ref().unwrap().token.clone();
+    assert!(token.starts_with(ticket::PREFIX), "the account's ticket, not a token");
+    assert!(Access::load_from(&access).token.is_none(), "nothing bound in the access file");
+    let log = fs::read_to_string(svc.store.root.join("server").join("access.log")).unwrap();
+    assert!(log.lines().any(|l| l.contains("account:ann") && l.contains(" 200 ")), "{log}");
 }
 
 /// Files in the store from an earlier session and the token entered again

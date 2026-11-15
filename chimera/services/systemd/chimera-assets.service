@@ -1,0 +1,21 @@
+# The asset service on loopback, behind the front (docs/plans/active/hub.md
+# 2.6). Feedback reports stay in it until S5. Written by `chimera_accounts
+# install-units`.
+[Unit]
+Description=Chimera asset service (loopback @ASSETS_PORT@)
+PartOf=chimera-services.target
+After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+ExecStart=@BIN@/chimera_asset_server --store @STORE@ --listen 127.0.0.1:@ASSETS_PORT@ --accounts http://127.0.0.1:@ACCOUNTS_PORT@@ASSETS_ARGS@
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@STORE@
+
+[Install]
+WantedBy=chimera-services.target

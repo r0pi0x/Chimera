@@ -150,8 +150,12 @@ fn a_valid_token_gets_signed_manifests_and_records() {
     assert!(bytes > 0);
     assert_eq!(remote.fill(&client, &wanted, None).0, 0, "nothing again");
     // The access log names the account and what it got.
-    let log = f.access_log_with("internal:tester#1 POST /batch 200 records=3");
-    assert!(log.contains(&format!("internal:tester#1 GET /r/{id} 200 records=1 bytes=")), "{log}");
+    // Each request's line is written just after its answer, so the record's
+    // line can land after the batch's: wait for both.
+    let record_line = format!("internal:tester#1 GET /r/{id} 200 records=1 bytes=");
+    f.access_log_with("internal:tester#1 POST /batch 200 records=3");
+    let log = f.access_log_with(&record_line);
+    assert!(log.contains(&record_line), "{log}");
     assert!(log.contains("internal:tester#1 POST /batch 200 records=3"), "{log}");
 }
 

@@ -478,3 +478,72 @@ fn no_secrets_are_logged_or_stored() {
         }
     }
 }
+
+/// The owner's account commands: `set` changes rights (the old ticket
+/// keeps the old ones), `refresh` makes the devices ask again at once (the
+/// old ticket refused within a feed poll, a new one asked in the same
+/// second carries the new rights), `show` lists the changes, a username
+/// change is refused when taken, `delete` stops its tickets and frees the
+/// name.
+#[test]
+fn the_owner_sets_shows_refreshes_and_deletes_accounts() {
+    use chimera_services::accounts::{AccountChange, AccountDetail};
+    let hub = Hub::new("owner_cmds");
+    let (file, _) = hub.redeem(&hub.invite_named("Frank"), None).unwrap();
+    let ticket = file.ticket.clone().unwrap();
+    let change = AccountChange {
+        username: "frank".into(),
+        role: Some("host".into()),
+        content: Some("fixture,other".into()),
+        note: Some("runs the Tuesday server".into()),
+        muted: Some(true),
+        ..Default::default()
+    };
+    let a: AccountView = hub.admin.post("/admin/account/set", &change).unwrap();
+    assert_eq!((a.role.as_str(), a.content.as_str(), a.list_slots, a.report, a.muted), ("host", "fixture,other", 4, true, true));
+    let e = hub.remote(&ticket).record(&hub.records.1).unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::PermissionDenied, "the old ticket has the old rights: {e}");
+
+    hub.admin.post::<()>("/admin/account/refresh", &serde_json::json!({ "username": "frank" })).unwrap();
+    assert!(hub.until(Duration::from_secs(5), || hub.remote(&ticket).whoami().is_err()), "the old ticket stops");
+    let fresh = account::request_ticket(&file).unwrap();
+    assert!(hub.remote(&fresh).record(&hub.records.1).is_ok(), "the new ticket has the new rights");
+
+    let d: AccountDetail = hub.admin.get("/admin/account?username=Frank").unwrap();
+    let actions: Vec<&str> = d.audit.iter().map(|e| e.action.as_str()).collect();
+    for want in ["invite.redeem", "account.set", "account.refresh"] {
+        assert!(actions.contains(&want), "{want} in {actions:?}");
+    }
+    assert_eq!(d.account.note, "runs the Tuesday server");
+
+    let _ = hub.redeem(&hub.invite_named("Gina"), None).unwrap();
+    let taken = AccountChange { username: "frank".into(), new_username: Some("gina".into()), ..Default::default() };
+    assert!(hub.admin.post::<AccountView>("/admin/account/set", &taken).unwrap_err().contains("409"));
+    let long = AccountChange { username: "frank".into(), display_name: Some("x".repeat(21)), ..Default::default() };
+    assert!(hub.admin.post::<AccountView>("/admin/account/set", &long).unwrap_err().contains("400"));
+    let renamed = AccountChange { username: "frank".into(), new_username: Some("Franky".into()), ..Default::default() };
+    assert_eq!(hub.admin.post::<AccountView>("/admin/account/set", &renamed).unwrap().username, "franky");
+
+    hub.admin.post::<()>("/admin/account/delete", &serde_json::json!({ "username": "franky" })).unwrap();
+    assert!(!hub.accounts().iter().any(|a| a.username == "franky"));
+    assert!(hub.until(Duration::from_secs(5), || hub.remote(&fresh).whoami().is_err()), "a deleted account's tickets stop");
+    assert!(account::request_ticket(&file).is_err(), "and it gets no new one");
+    let (again, _) = hub.redeem(&hub.invite_named("someone"), Some("franky")).unwrap();
+    assert_eq!(again.username, "franky", "the username is free again");
+}
+
+/// The admin page: served to this machine with a local `Host` only; it
+/// holds no secret (its calls need one).
+#[test]
+fn the_admin_page_is_for_this_machine() {
+    let hub = Hub::new("page");
+    let agent = chimera_assets::remote::agent(None).unwrap();
+    let mut r = agent.get(&format!("{}/admin/", hub.running.url())).call().unwrap();
+    assert_eq!(r.status().as_u16(), 200);
+    let page = r.body_mut().read_to_string().unwrap();
+    assert!(page.contains("Hub accounts") && page.contains("X-Chimera-Service"));
+    let secret = fs::read_to_string(hub.paths.secret()).unwrap();
+    assert!(!page.contains(secret.trim()), "the page holds no secret");
+    let rebound = agent.get(&format!("{}/admin/", hub.running.url())).header("Host", "evil.example").call().unwrap();
+    assert_eq!(rebound.status().as_u16(), 404, "another Host (DNS rebinding)");
+}

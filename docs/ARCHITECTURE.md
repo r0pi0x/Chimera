@@ -51,7 +51,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
  (chimera/core/)       core, console, console_names, console_scope, slots, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
                       chimera_vfs (chimera/vfs/)   the neutral VFS (`FileSource`, `Mount`) under both format crates and `mount`
                       chimera_assets (chimera/assets/)   the asset store over the VFS: records, manifests and sets, `CachedFiles`, the vfs log, the asset service (server, HTTPS client), account tickets and the player's account file; `mount::served` layers it
-                      chimera_services (chimera/services/)   the hub's services, a binary each (`chimera_accounts` now): accounts on SQLite; on chimera_assets, host tools only
+                      chimera_services (chimera/services/)   the hub's services, a binary each (`chimera_accounts`, `chimera_front`): accounts on SQLite, the front; on chimera_assets, host tools only
                       chimera_formats (chimera/formats/)   formats no engine owns, plain data: `wav` (sound files), `keyvalues` (Steam's library files); under `mount`, `map::sound` and both format crates
                       lithtech_formats (lithtech/formats/)   LithTech's formats as plain data (`.rez`, attribute files, worlds, textures, models, animation, effect files)
 ```
@@ -100,9 +100,14 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   hub's services as a library with a binary per service (the user's
   decision: each updated and deployed on its own): `chimera_accounts`
   (invites, devices, link codes, recovery, tickets, revocations; the
-  owner's command line) over `accounts.db` (`db`: rusqlite with SQLite
-  bundled, migrations, backups). SQLite lives only here, so no game or
-  client build compiles it. Later the front, the hub and feedback.
+  owner's command line and loopback admin page) over `accounts.db`
+  (`db`: rusqlite with SQLite bundled, migrations, backups) and
+  `chimera_front` (`front`: the one public TLS port with the asset
+  service's certificate, routing each connection by path to the services
+  on loopback and naming the client in `X-Chimera-Peer`), with their
+  systemd user units (`units`) and ports (`config`, `services.toml`).
+  SQLite lives only here, so no game or client build compiles it. Later
+  the hub and feedback.
 
 - `source_formats` turns bytes and text into Rust values (glam vectors,
   Source units); it never depends on Bevy, avian or `mashup` (checked).
