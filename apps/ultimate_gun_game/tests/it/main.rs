@@ -35,6 +35,7 @@ mod net_ui_sounds;
 mod parts;
 mod pickups;
 mod power_curve;
+mod sandbox;
 mod session;
 mod ui_sounds;
 mod variety;
