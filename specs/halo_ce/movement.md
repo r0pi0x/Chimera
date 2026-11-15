@@ -60,7 +60,8 @@ Values read from the disc (bloodgulch, identical on four other
 multiplayer maps). "bipd" means the multiplayer Spartan
 `characters\cyborg_mp\cyborg_mp` (the biped the globals' multiplayer
 information block names as the multiplayer player); "matg" means
-`globals\globals`; field names are the tags' own.
+`globals\globals` (its layout is in `globals.md`); field names are the
+tags' own.
 
 | Name (ours) | Value | Unit | Meaning, source |
 |---|---|---|---|
@@ -883,7 +884,10 @@ needed to read the values: the biped part of a `bipd` begins 0x2F0
 into the tag's main struct (after the object and unit parts); the
 globals' player information block is the field at 0x170 of `matg`,
 falling damage 0x188, multiplayer information 0x164. `objects.md` owns
-the layouts.
+the biped layout and `globals.md` owns the globals' (every field of
+player information, falling damage and the rest). The globals hold no
+gravity field: all 61 spare words at the start of `matg` are zero, and
+the gravity constant is the engine's (checked in `globals.md`).
 
 ## Open questions
 
@@ -913,10 +917,6 @@ the layouts.
   teleporter keeps world-space velocity (exits moving in the same
   world direction, not the new facing). Run through the Hang 'Em High
   or Chill Out teleporters at full speed and watch the first ticks.
-- **Gravity scale.** `cache_file.md` lists gravity as "scaled by the
-  globals tag"; no field of `matg` on the disc or in the reference
-  scales the bipeds' gravity. One of the two specs should be
-  corrected.
 - **Falling damage in multiplayer.** Nothing exempts players in a
   match; confirm a 6 WU drop (Blood Gulch's cliffs) kills a player at
   full health and shields as `health_shields.md` computes it.

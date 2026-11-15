@@ -214,30 +214,14 @@ pub(crate) fn shape_at(sim: &Sim, b: Entity, region: chimera_core::core::BodyReg
     feet + w.get::<chimera_core::core::Intent>(b).unwrap().yaw_rotation() * shape.center
 }
 
-/// The command number nearest the middle of CS:S's pattern: its shot
-/// seed's inaccuracy and spread draws (specs/cs_source/weapons.md 4.2.2,
-/// `r = U(0, 1)` times each) are both the smallest of the 256 patterns'.
-/// A round of it goes where it is aimed to within a few percent of the
-/// weapon's cone, whatever the gun; any other command's is a fair random
-/// shot that a one-round test at a small hitbox can miss.
-fn centred_command() -> u32 {
-    use chimera_sim::weapon::random::shot_seed;
-    let draws = |c: u32| {
-        let r1 = chimera_sim::weapon::cs_offsets(shot_seed(c), 1.0, 0.0, 1)[0].length();
-        let r2 = chimera_sim::weapon::cs_offsets(shot_seed(c), 0.0, 1.0, 1)[0].length();
-        r1.max(r2)
-    };
-    (0..4096).min_by(|x, y| draws(*x).total_cmp(&draws(*y))).unwrap()
-}
-
-/// `a`'s next tick runs on `centred_command`: its `Seed` set so that
-/// tick's command number is that one.
+/// `a`'s next tick runs on `chimera_sim::weapon::centred_command`: its
+/// `Seed` set so that tick's command number is that one.
 pub(crate) fn centre_next_shot(sim: &mut Sim, a: Entity) {
     let next = sim.app.world().resource::<chimera_core::core::SimTick>().0 + 1;
     sim.app
         .world_mut()
         .entity_mut(a)
-        .insert(chimera_core::core::Seed(centred_command().wrapping_sub(next as u32) as u64));
+        .insert(chimera_core::core::Seed(chimera_sim::weapon::centred_command().wrapping_sub(next as u32) as u64));
 }
 
 /// One round from `a` at `point`; the hitgroups `b` was hit in. The round

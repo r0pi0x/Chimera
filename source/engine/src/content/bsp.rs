@@ -91,6 +91,12 @@ pub struct SourceGame {
     /// in the entity lump's order), each with the team that spawns there
     /// (None: anyone).
     pub spawns: &'static [(&'static str, Option<Team>)],
+    /// Spawn points by the game's own rule, for entities `spawns` doesn't
+    /// name (TF2's `info_player_teamspawn`, whose team is a key): the
+    /// entity and every entity of the map (to look up one it names) to
+    /// Some(team) for a spawn point (None: anyone), None for the rest.
+    /// `no_spawn_rule` for none.
+    pub spawn_rule: SpawnRule,
     /// Its `sv_gravity` (units/s²): physics bodies fall at it, ropes hang
     /// at it, gibs fall at half of it.
     pub gravity: f32,
@@ -117,6 +123,14 @@ pub struct SourceGame {
     /// says (HL2:DM's items and ammo crates; `props::no_fixed_models`
     /// for none).
     pub fixed_models: super::props::FixedModels,
+}
+
+/// A game's spawn rule (`SourceGame::spawn_rule`).
+pub type SpawnRule = fn(&crate::map::MapEntity, &[crate::map::MapEntity]) -> Option<Option<Team>>;
+
+/// No spawn points beyond `SourceGame::spawns`' classes.
+pub fn no_spawn_rule(_: &crate::map::MapEntity, _: &[crate::map::MapEntity]) -> Option<Option<Team>> {
+    None
 }
 
 /// What a `SourceGame`'s kit hooks read and fill: the map being converted
@@ -286,6 +300,7 @@ fn convert_level_bytes(
         let r = materials.resolve(&mesh.material);
         mesh.texture = r.texture;
         mesh.normal_map = r.normal_map;
+        mesh.ssbump = r.ssbump;
         mesh.blend = r.blend;
         mesh.detail = r.detail;
         mesh.base_transform = r.base_transform;
@@ -1011,11 +1026,13 @@ pub fn convert_level(game: &SourceGame, bsp: &Bsp, bytes: &[u8], name: &str, hdr
         white,
     };
 
-    for ent in bsp.entities.iter() {
-        let Some(&(_, team)) = ent
+    for (index, ent) in bsp.entities.iter().enumerate() {
+        let team = ent
             .prop("classname")
             .and_then(|c| game.spawns.iter().find(|(class, _)| *class == c))
-        else {
+            .map(|&(_, team)| team)
+            .or_else(|| data.entities.get(index).and_then(|e| (game.spawn_rule)(e, &data.entities)));
+        let Some(team) = team else {
             continue;
         };
         if let Some(origin) = ent.prop("origin").and_then(parse_vector) {

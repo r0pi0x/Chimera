@@ -150,6 +150,33 @@ archive listings, the `heavy::served` tests (they pack from an install),
 `dump`. Local demo and probe files (`target/demos`, probe logs) aren't
 served either: those tests skip as they do for us without them.
 
+## Team Fortress 2: an install of your own (not served yet)
+
+TF2 (docs/plans/active/tf2.md) isn't on the asset service yet (its sets
+come with M2). Its tests and the party's `tf2:` maps read an install,
+found as the other games' are: `$CHIMERA_TF2_ROOT` for one run, else
+`[games.tf2] path` in `chimera.local.toml`, else Steam's libraries
+(app 440). Two layouts work:
+
+- **The client** (Steam app 440, "Team Fortress 2"; free to play, but
+  even through SteamCMD it needs a Steam login: `steamcmd +force_install_dir
+  <folder> +login <your account> +app_update 440 validate +quit`):
+  everything, maps, models, textures, sounds. The heavy tests' "no
+  missing material" checks need it.
+- **The dedicated server** (app 232250, anonymous):
+  ```
+  steamcmd +force_install_dir <folder> +login anonymous +app_update 232250 validate +quit
+  ```
+  About 15 GB: maps, models, material text, scripts, but no textures
+  and no sounds (their VPKs' `_dir` files are there, their archives
+  aren't; the mount leaves those files out). Maps convert and play with
+  stand-in textures and no sound; geometry, collision and spawns are the
+  same. `CHIMERA_TF2_SERVER_ROOT=<folder>` lets `cargo test -p tf2
+  --features dev` check this layout too.
+
+Both are folders holding `tf/`, `hl2/` and `platform/`; a SteamCMD
+install outside Steam's libraries needs the config line or the variable.
+
 ## When something goes wrong
 
 - `asset service <url> (<game>): ... HTTP 401`: the token is missing,
