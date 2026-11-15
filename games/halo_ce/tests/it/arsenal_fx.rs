@@ -13,7 +13,9 @@
 //! item lying on the map has a drawn look until taken, and its taker hears
 //! the pickup sound. On `NetSim`: a client sees another player's thrown
 //! grenade within two ticks of the server and its detonation's sound, and
-//! an item appear and disappear.
+//! an item appear and disappear. A dead player drops its weapon (the held
+//! one after its share of the death) and its grenades, one item each, only
+//! where pickups play.
 
 use std::{sync::Arc, time::Duration};
 
@@ -416,18 +418,22 @@ fn a_particle_systems_explosion() {
     }
 }
 
-/// multiplayer_rules.md 5.4: a dead player's weapon lies where it died, as
-/// an item (on a map whose pickups play).
-#[test]
-fn a_dead_players_weapon_is_dropped() {
-    use halo_ce::game::weapons::{PISTOL, ROCKET_LAUNCHER, pickups::{NetgameEntry, spawn_entry}};
+/// multiplayer_rules.md 5.4, health_shields.md "Death": a dead player's
+/// weapon lies where it died, as an item, with its grenades (one item
+/// each, its counts emptied), on a map whose pickups play; on a map whose
+/// pickups do not (a party's gun game) nothing drops.
+fn dead_players_drops(entry: bool) -> (Vec<(Item, Vec3)>, Vec3, [u8; 2]) {
+    use halo_ce::game::weapons::{PISTOL, ROCKET_LAUNCHER, pickups::{NetgameEntry, spawn_entry}, systems::HaloHands};
     let (mut sim, p, _) = super::weapons::armed(ROCKET_LAUNCHER);
-    spawn_entry(sim.app.world_mut(), NetgameEntry { index: 0, at: Vec3::new(500.0, 0.0, 500.0), period: 900, items: Vec::new(), levitate: false });
+    if entry {
+        spawn_entry(sim.app.world_mut(), NetgameEntry { index: 0, at: Vec3::new(500.0, 0.0, 500.0), period: 900, items: Vec::new(), levitate: false });
+    }
     let at = sim.position(p) - Vec3::Z * 4.0;
     let t = sim.spawn_character(at, movement::ID);
     sim.ticks(2);
     give(sim.app.world_mut(), t, PISTOL).unwrap();
     sim.seconds(2.0);
+    sim.app.world_mut().get_mut::<HaloHands>(t).expect("hands").throw.counts = [2, 1];
     let mut died = sim.app.world().resource::<Messages<chimera_core::core::Died>>().get_cursor_current();
     let mut dead = false;
     for k in 0..60 {
@@ -440,10 +446,40 @@ fn a_dead_players_weapon_is_dropped() {
         }
     }
     assert!(dead, "the rocket killed");
+    let counts = sim.app.world().get::<HaloHands>(t).unwrap().throw.counts;
     let w = sim.app.world_mut();
-    let items: Vec<(Item, Vec3)> = w.query::<(&HaloItem, &Transform)>().iter(w).map(|(i, t)| (i.item.clone(), t.translation)).collect();
+    (w.query::<(&HaloItem, &Transform)>().iter(w).map(|(i, t)| (i.item.clone(), t.translation)).collect(), at, counts)
+}
+
+#[test]
+fn a_dead_players_weapon_and_grenades_are_dropped() {
+    use halo_ce::game::weapons::{PISTOL, grenades::{FRAG, PLASMA}};
+    let (items, at, counts) = dead_players_drops(true);
     assert!(
         items.iter().any(|(i, x)| matches!(i, Item::Weapon { id, .. } if *id == PISTOL) && x.distance(at) < 2.0),
         "the pistol lies where it died: {items:?}"
     );
+    let n = |k| items.iter().filter(|(i, x)| *i == Item::Grenade(k) && x.distance(at) < 2.0).count();
+    assert_eq!((n(FRAG), n(PLASMA)), (2, 1), "one item per grenade: {items:?}");
+    assert_eq!(counts, [0, 0], "the dead holds none");
+}
+
+#[test]
+fn nothing_drops_where_pickups_do_not_play() {
+    let (items, ..) = dead_players_drops(false);
+    assert!(items.is_empty(), "{items:?}");
+}
+
+/// health_shields.md "Death": the held weapon drops after a quarter to
+/// three quarters of the death animation's frames, at least 1 tick.
+#[test]
+fn the_held_weapons_drop_waits_part_of_the_death() {
+    use halo_ce::game::weapons::{pickups::held_drop_delay, random::HaloRng};
+    let mut rng = HaloRng(12345);
+    for _ in 0..500 {
+        let d = held_drop_delay(44, &mut rng);
+        assert!((11..33).contains(&d), "{d}");
+    }
+    assert_eq!(held_drop_delay(1, &mut rng), 1);
+    assert_eq!(held_drop_delay(0, &mut rng), 1);
 }
