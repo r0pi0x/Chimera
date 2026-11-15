@@ -13,8 +13,9 @@
 //! each costs every tick (about 800 instructions with no character on the
 //! map: docs/performance.md, "A session's frame rate"); de_dust2, the first
 //! map, pays all of them on its second visit. A tick is the median of
-//! its map's quiet ticks' work counts (`Sim::work`; quiet: making no
-//! archetype and with no ragdoll body awake): a death, a grenade or a
+//! its map's quiet ticks' work counts (`Sim::work`; the bots standing
+//! with their fire held, so a tick is the session's cost and not the
+//! fight's; quiet: making no archetype and with no ragdoll body awake): a death, a grenade or a
 //! ragdoll makes a tick several times another, and each lap's fights
 //! differ, so a mean follows the fight. A ragdoll stays awake for seconds
 //! (15 bodies against the map: 2-3M a tick more), so 300 ticks are played
@@ -107,7 +108,8 @@ const QUIET: usize = 100;
 const MOST: u64 = 1500;
 
 /// The median of a map's quiet ticks' instructions (`Sim::work`, the same
-/// on every run), and the systems' counts per quiet tick. A quiet tick made
+/// on every run), and the systems' counts per quiet tick, the bots standing
+/// with their fire held (`BotSettings::stop`, `dont_shoot`). A quiet tick made
 /// no new archetype, nor followed one that did, and had no ragdoll body
 /// awake. `MEASURED` ticks are played, then more until `QUIET` of them
 /// were quiet: every lap's median is then of the same kind of tick, however
@@ -122,6 +124,16 @@ fn tick_cost(sim: &mut Sim, map: &str) -> Option<(f64, chimera_core::metrics::wo
     // Held over the ticks, as one `Sim::work(n)` holds it: taking the
     // pool's threads again for every tick takes as long as the ticks.
     let _pool = chimera_core::metrics::work::hold_compute_pool();
+    // The bots stand and hold their fire while measured: a tick is then the
+    // map's and the session's cost, not the fight's (how many shots, which
+    // guns, who runs where), which another build's play changes. A lap's
+    // play had warehouse's quiet ticks at 5.9M, the next lap's at 7.8M, all
+    // of it movement and shot effects.
+    let hold = |sim: &mut Sim, on: u8| {
+        let mut s = sim.app.world_mut().resource_mut::<combat_arms::game::bots::BotSettings>();
+        (s.stop, s.dont_shoot) = (on, on);
+    };
+    hold(sim, 1);
     let mut played = 0;
     while played < MEASURED || quiet.len() < QUIET {
         assert!(
@@ -144,6 +156,7 @@ fn tick_cost(sim: &mut Sim, map: &str) -> Option<(f64, chimera_core::metrics::wo
             systems.add(&w.systems);
         }
     }
+    hold(sim, 0);
     let n = quiet.len() as u64;
     quiet.sort_unstable();
     quiet.get(quiet.len() / 2).map(|m| (*m as f64, systems.per(n)))
