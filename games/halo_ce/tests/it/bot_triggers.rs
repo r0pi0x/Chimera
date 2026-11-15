@@ -4,7 +4,7 @@
 //! `heavy::halo_gun_bots` measures the bots themselves):
 //!
 //! - a release between two Halo ticks is a release (`weapons::systems`,
-//!   `release_between_ticks`): the sniper rifle (a trigger that does not
+//!   `latch_fire`): the sniper rifle (a trigger that does not
 //!   repeat) fires again and again, where every Halo tick saw the latched
 //!   press and it fired once; the plasma pistol lets its charge go, where
 //!   it charged and held the bolt;

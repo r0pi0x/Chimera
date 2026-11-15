@@ -217,6 +217,17 @@ per-game components that travel with the weapon.
 
 Prior art: Minecraft's item data components; Unreal's Gameplay Ability System.
 
+**A shot and the command to trace it** are separate weapon events
+(`chimera_sim::weapon::WeaponEventKind`). `ShotMade` is the fact that a
+weapon discharged one shot (the weapon, the eye, the direction): every
+weapon frame sends it, the engine's once per `Fired`, a game that runs its
+own frame (`OwnFrame`: Halo) once per shot it fires; it is never traced
+and never replicated. `Fired` is the engine frame's command: a hitscan
+round to trace and to send other clients as `FireBullets`. What only needs
+to know that a shot happened (the bots' trigger, pacing, aim and hearing)
+reads `ShotMade`, so an own-frame weapon can say it fired without its
+shots being traced or replicated twice.
+
 ### Components and categorization
 
 - Core vocabulary: Transform, Velocity, Health, Team, Hitbox, Inventory,

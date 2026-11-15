@@ -785,24 +785,40 @@ pub fn apply_pushes(
     }
 }
 
-/// The fire button up on an engine tick (between two Halo ticks under
-/// another game's tick, or on one at Halo's own): the weapon in hand saw
-/// its trigger released (a semi-automatic's next pull fires though the
-/// press latched since is still down at the next Halo tick), and a trigger
-/// waiting for a release (locked, charging, charged) gets it: the latched
-/// press is dropped, so a charge is let go. At Halo's own tick this is
-/// what the Halo tick itself does with the button up. Without it a press
-/// every other engine tick (Combat Arms' bots' trigger) reached every
-/// Halo tick as held: the sniper rifle never fired again after its first
-/// round and the plasma pistol charged and held its bolt.
-fn release_between_ticks(inv: &Inventory, guns: &mut Query<(&Weapon, &HaloWeapon, &mut HaloGun, Option<&mut Magazine>)>, hands: &mut HaloHands) {
-    let Some(Ok((_, _, mut gun, _))) = inv.active.map(|w| guns.get_mut(w)) else { return };
+/// The fire button on an engine tick, kept for the next Halo tick
+/// (between two under another game's tick; at Halo's own the tick sees
+/// it at once): a press latches (a press between two Halo ticks is not
+/// lost). Up, the weapon in hand saw its trigger released (a
+/// semi-automatic's next pull fires though a press latched since is down
+/// at the next Halo tick), and a trigger waiting for a release (locked,
+/// charging, charged) gets it: the latched press is dropped, and a press
+/// after that release, before the Halo tick, does not latch again (the
+/// weapon's `released_since_shot` marks it while the trigger waits; the
+/// Halo tick clears it, `awaits_release`). Without it a press every other
+/// engine tick (Combat Arms' bots' trigger) reached every Halo tick as
+/// held: the sniper rifle fired once, the plasma pistol held its charge.
+fn latch_fire(inv: &Inventory, guns: &mut Query<(&Weapon, &HaloWeapon, &mut HaloGun, Option<&mut Magazine>)>, hands: &mut HaloHands, fire: bool) {
+    let Some(Ok((_, _, mut gun, _))) = inv.active.map(|w| guns.get_mut(w)) else {
+        hands.fire |= fire;
+        return;
+    };
+    if fire {
+        if !(awaits_release(&gun) && gun.released_since_shot) {
+            hands.fire = true;
+        }
+        return;
+    }
     if !gun.released_since_shot {
         gun.released_since_shot = true;
     }
     if gun.trigger != TriggerMode::Idle {
         hands.fire = false;
     }
+}
+
+/// The trigger waits for a release (`latch_fire`).
+fn awaits_release(gun: &HaloGun) -> bool {
+    matches!(gun.trigger, TriggerMode::Locked | TriggerMode::Charging | TriggerMode::Charged)
 }
 
 /// A battery weapon's battery used per round of its first trigger (the
@@ -895,11 +911,8 @@ pub fn run(
             hands.throw = Throw::new(grenades.start(grenades.cap(players)));
         }
         // The inputs seen since the last Halo tick.
-        hands.fire |= intent.fire;
-        if !intent.fire {
-            release_between_ticks(inv, &mut guns, &mut hands);
-        }
-        hands.zoom |=intent.secondary || intent.actions & zoom_bit != 0;
+        latch_fire(inv, &mut guns, &mut hands, intent.fire);
+        hands.zoom |= intent.secondary || intent.actions & zoom_bit != 0;
         hands.melee_button |= intent.actions & melee_bit != 0;
         hands.reload |= intent.reload;
         hands.grenade_button |= grenade_bit != 0 && intent.actions & grenade_bit != 0;
@@ -1063,6 +1076,11 @@ pub fn run(
                     aim: shot_aim,
                 };
                 let evs = gun.tick(&hw.0, &inputs);
+                // A trigger left waiting for a release: none seen yet
+                // (`latch_fire`).
+                if awaits_release(&gun) && gun.released_since_shot {
+                    gun.released_since_shot = false;
+                }
                 if let Some(mut m) = mag {
                     match battery(&hw.0) {
                         Some(per_round) => {
@@ -1085,6 +1103,11 @@ pub fn run(
                                 debug!("{} fired trigger {trigger} on tick {}: {} loaded, {} reserve, heat {}", weapon.id, clock.tick, gun.loaded, gun.reserve, gun.heat);
                             }
                             event(&mut events, &first, owner, w, WeaponEventKind::Action(if trigger == 1 { "fire_charged" } else { kind }));
+                            // The shot fact (the engine's own frame sends
+                            // it with each `Fired`): a round that went.
+                            if !misfired {
+                                event(&mut events, &first, owner, w, WeaponEventKind::ShotMade { id: weapon.id, origin: eye, dir: aim });
+                            }
                             // A guided projectile's target, the same on
                             // both sides of the prediction.
                             let guided = match (&hw.0.secondary, trigger) {

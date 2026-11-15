@@ -19,15 +19,20 @@
 //! 11.3 (3.3). Found: Halo's battery guns carry no magazine of rounds, so
 //! the bots, reading a gun's rounds off its `Magazine`, took the plasma
 //! rifle and pistol for empty and never fired them (0 rounds in 3 min;
-//! `halo_ce::game::weapons::systems::battery_rounds` since). Left to the
-//! bots' brain (Combat Arms' `bots::brain::post_stimuli`): it lets go of
-//! the trigger, resets its aim and paces the next round on the engine's
-//! `WeaponEventKind::Fired`, which Halo's guns don't send (theirs are
-//! `Action("fire")`), so a bot holds a semi-automatic Halo gun's trigger
-//! down through a burst of two: a sniper rifle bot stood 34 s engaged
-//! without a round (149 bot-seconds in spells of 5 s or more in 3 min);
-//! the plasma pistol, held, charges and overheats on its charged bolt (36
-//! overheats, no kill); and no bot hears a Halo gun's shots.
+//! `halo_ce::game::weapons::systems::battery_rounds` since). And the
+//! bots let go of the trigger, re-aimed, paced the next round and heard
+//! gunfire only on the engine's `WeaponEventKind::Fired`, the engine
+//! frame's hitscan command, which an own-frame weapon such as Halo's
+//! doesn't send, so a bot held a semi-automatic Halo gun's trigger down:
+//! in a minute the sniper rifle's bots fired 29 rounds for 3 kills (one
+//! stood 29 s engaged without a round) and no bot heard a Halo shot. Since
+//! they read the shot fact (`WeaponEventKind::ShotMade`, which Halo's
+//! frame sends too): 59 rounds, 15 kills, its magazines and reloads
+//! (asserted), and a Halo shot behind a bot is heard (asserted). Open:
+//! the plasma pistol's press only begins a charge (no shot to let go on),
+//! so its bots still hold each charge to the charged bolt and overheat
+//! (53 bolts, 35 overheats, no kill a minute); a fact for "the trigger
+//! waits for a release" is the interface's next step (not asserted).
 
 use std::collections::HashMap;
 
@@ -98,6 +103,8 @@ pub(crate) struct Tally {
     pub reloads: u32,
     pub overheats: u32,
     pub dry: u32,
+    /// The plasma pistol's charged bolts.
+    pub charged: u32,
     /// Per bot: the last round's time (s).
     last: HashMap<Entity, f64>,
     /// Per bot: since when it has been engaged without a round (s).
@@ -125,6 +132,9 @@ fn count(mut events: MessageReader<WeaponEvent>, mut damage: MessageReader<Damag
             WeaponEventKind::Action("overheated") => t.overheats += 1,
             WeaponEventKind::DryFire => t.dry += 1,
             _ => {}
+        }
+        if matches!(e.kind, WeaponEventKind::Action("fire_charged")) {
+            t.charged += 1;
         }
     }
     for d in damage.read() {
@@ -200,7 +210,56 @@ fn table(map: &str, map_data: impl Fn() -> Option<chimera_world::map::MapData>) 
 fn check(rows: &[(&str, Tally)]) {
     for (gun, t) in rows {
         assert!(t.rounds > 0, "{gun}: the bots never fired");
+        // Every gun's bots let go of the trigger after a round (Halo's by
+        // the shot fact, `WeaponEventKind::ShotMade`): none stands engaged
+        // without a round for 10 s (the sniper rifle's did for 29 s).
+        assert!(t.longest_idle < 10.0, "{gun}: a bot engaged {:.1} s without a round", t.longest_idle);
     }
+    let row = |id| &rows.iter().find(|(g, _)| *g == id).unwrap().1;
+    let sniper = row(weapons::SNIPER_RIFLE);
+    assert!(sniper.reloads > 0 && sniper.rounds >= 4 * sniper.reloads, "the sniper rifle's magazines: {sniper:?}");
+}
+
+/// A Halo player's shots behind a bot are gunfire it hears (as another
+/// game's `Fired` rounds are): the stimulus from the shooter, and the bot
+/// leaves its patrol.
+#[test]
+fn a_bot_hears_a_halo_shot_behind_it() {
+    use combat_arms::game::bots::brain::{Kind, Stimuli};
+    let mut sim = party(None, weapons::ASSAULT_RIFLE, 1);
+    sim.seconds(6.0);
+    let shooter = crate::gun_game::soldier(&mut sim);
+    sim.ticks(2);
+    {
+        let w = sim.app.world_mut();
+        let l = w.resource::<chimera_sim::minigame::ladder::Ladder>().clone();
+        chimera_sim::minigame::ladder::set_rung(w, shooter, 0, &l);
+    }
+    sim.seconds(2.0);
+    let w = sim.app.world_mut();
+    let (bot, at) = w.query::<(Entity, &Transform, &CaBot)>().iter(w).map(|(e, t, _)| (e, t.translation)).next().expect("a bot");
+    assert_eq!(w.get::<CaBot>(bot).unwrap().state, BotState::Patrol, "patrolling first");
+    let mut heard = false;
+    // A short burst (a shot is reacted to 0.5-1.5 s later; another shot
+    // sets that back), then 3 s to react.
+    for _ in 0..20 {
+        // 8 m behind the bot (it looks down its yaw), aiming away.
+        let yaw = sim.intent(bot).yaw;
+        let behind = at + Vec3::new(yaw.sin(), 0.0, yaw.cos()) * 8.0;
+        sim.app.world_mut().get_mut::<Transform>(shooter).unwrap().translation = behind;
+        sim.intent(shooter).yaw = yaw + std::f32::consts::PI;
+        sim.intent(shooter).fire = true;
+        sim.ticks(1);
+        heard |= sim.app.world().resource::<Stimuli>().list.iter().any(|s| s.kind == Kind::Gunfire && s.source == shooter);
+    }
+    assert!(heard, "no gunfire stimulus from the Halo player");
+    sim.intent(shooter).fire = false;
+    let mut left = false;
+    for _ in 0..200 {
+        sim.ticks(1);
+        left |= sim.app.world().get::<CaBot>(bot).unwrap().state != BotState::Patrol;
+    }
+    assert!(left, "the bot never left its patrol");
 }
 
 #[test]
