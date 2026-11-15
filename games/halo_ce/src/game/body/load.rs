@@ -13,14 +13,14 @@
 //!   shader's minimum approximation), their textures the body's own.
 //! - Armour colour: a mesh whose model shader takes its change colour from
 //!   slot C (the armour: objects.md, "Spartan multiplayer colour") is
-//!   tinted by the player's colour over the whole base map (shaders.md's
-//!   minimum approximation without a mask): one skin per colour of
-//!   `body::COLOURS`, the meshes themselves showing skin 0 (white).
+//!   tinted by the player's colour where its multipurpose map's alpha
+//!   says (the change-colour mask, `MapMesh::tint_mask`, which the loader's
+//!   look sets): one skin per colour of `body::COLOURS`, the meshes
+//!   themselves showing skin 0 (white).
 //! - Skeleton, animations and hit volumes: `skeleton`, `anims`, `hits`.
 //!
-//! Known shortcuts: the multipurpose map's change-colour mask is not used
-//! (the whole armour base is tinted); the light-shield parts (transparent
-//! chicago shaders) are drawn as the loader draws them, always.
+//! Known shortcuts: the light-shield parts (transparent chicago shaders)
+//! are drawn as the loader draws them, always.
 
 use std::sync::{Arc, Mutex};
 
