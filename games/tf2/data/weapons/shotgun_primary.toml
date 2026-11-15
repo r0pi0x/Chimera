@@ -1,0 +1,56 @@
+# The Shotgun as the Engineer's primary (specs/tf2/weapons.md 1, 4, 6;
+# docs/plans/active/tf2.md decision 6: the Engineer's arms hold it): 10
+# pellets of 6, spread 0.0675 (the first pellet dead centre after a
+# pause), 0.625 s between shots, 6 in the clip and 32 carried, shells
+# one at a time: the start by class (the Engineer's 0.3333; Soldier,
+# Pyro, Heavy below for their arms), then 0.5 each.
+id = "tf2:tf_weapon_shotgun_primary"
+base = "tf2:gun"
+class = "shotgun"
+slot = 0
+
+[trigger]
+automatic = true
+cycle = 0.625
+timing = "accumulate"
+
+[magazine]
+clip = 6
+ammo = "tf2:shotgun"
+reload = 0.5
+auto_reload = true
+shells = { start = 0.3333, insert = 0.5, back_to_back = true }
+
+[hitscan]
+range = 56754.0
+pellets = 10
+punch_scale = 0.0
+spread = { template = 0.0675 }
+
+[damage]
+amount = 6.0
+falloff = 1.0
+falloff_step = 1024.0
+hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
+impulse = 0.0
+
+[sounds]
+fire = "Weapon_Shotgun.Single"
+empty = "Weapon_Shotgun.Empty"
+reload = [[0.0, "Weapon_Shotgun.Reload"]]
+draw = [[0.0, "Weapon_Shotgun.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_shotgun/c_shotgun.mdl"
+view = "models/weapons/c_models/c_shotgun/c_shotgun.mdl"
+view_right_handed = true
+
+[hud]
+name = "Shotgun"
+icon = "shotgun_primary"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+arms = "engineer"
+script = "tf_weapon_shotgun_primary"
+reload_start = { soldier = 0.4667, pyro = 0.5, heavy = 0.3333, engineer = 0.3333 }

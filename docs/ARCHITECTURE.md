@@ -31,7 +31,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
-  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), stand-in movement, harness::Tf2Sim; `ui` its HUD (none yet)
+  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), stand-in movement, its four guns and their c_ view models, harness::Tf2Sim; `ui` its HUD (none yet)
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -348,8 +348,19 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   TF2's data; spawns from `info_player_teamspawn` by `TeamNum`, through
   the conversion's `SourceGame::spawn_rule`), the stand-in
   `tf2:movement` (Chimera's placeholder with the Soldier's numbers),
-  `SimPlugins`, `game::Tf2Plugins`, `harness::Tf2Sim`, and `BUNDLE`,
-  maps only, which the party plays by id (`party_kit::MAP_GAMES`).
+  `SimPlugins`, `game::Tf2Plugins`, `harness::Tf2Sim`; (M2a) its
+  encrypted scripts (`game::ice`, `game::scripts`) and asset sets
+  (`game::sets`); and (M2b) its four guns as data (`game::weapons`,
+  data/weapons: the Scattergun, Rocket Launcher, Engineer's Shotgun and
+  Minigun with the spec's numbers, the scripts' numbers a seam,
+  `weapons::script_numbers`) with TF2's gun rules as hooks (`tf2:gun`:
+  the distance modifier through Chimera's `DamageEffect::by_distance`,
+  the first pellet through `Hitscan::centre_first`; `tf2:rocket`: the
+  blast of a rocket Chimera's flyers fly; `tf2:minigun`: the spin), its
+  view models (`game::view`: the class's arms with the `c_` weapon
+  bone-merged by `map::merge_by_bone_name`), and `BUNDLE`: its maps by
+  id, its guns lent to the party's ladders (`party_kit::GUESTS`, its
+  `GUEST` dressing on other games' maps).
   Layered as `hl2dm`; `ui` draws nothing of its own yet.
 - `chimera_net` is network play (`net`): the transport, the join
   handshake, replication of what every game has, prediction and

@@ -21,11 +21,22 @@ fn names_its_game_folder_app_and_namespaces() {
     assert!(!INFO.movement_cvars.is_empty(), "Source's movement cvars");
 }
 
+/// M2b: the bundle lends the four guns (playable: with its stand-in
+/// movement), dresses other games' maps with them, keeps them on its own,
+/// names them; its maps aren't in an automatic pool yet.
 #[test]
-fn the_bundle_is_its_maps_only() {
+fn the_bundle_lends_its_four_guns() {
+    use tf2::game::weapons::GUNS;
     let b = &tf2::game::BUNDLE;
     assert!(std::ptr::eq(b.info, &INFO));
     assert_eq!(b.loader.game, GAME);
-    assert!(b.parts.guns.is_empty() && b.parts.maps.is_empty(), "no rungs or pool maps yet (M2)");
-    assert!(b.guest.is_none() && b.kept.is_empty());
+    let guns: Vec<&str> = b.parts.guns.iter().map(|g| g.id).collect();
+    assert_eq!(guns, GUNS);
+    assert!(b.parts.playable() && b.parts.maps.is_empty(), "rungs, no pool maps yet");
+    assert!(b.guest.is_some() && b.kept == ["tf2:tf_weapon_"]);
+    assert!(GUNS.iter().all(|g| g.starts_with(b.kept[0])));
+    assert_eq!((b.view_model_fov.unwrap())().fov, 54.0);
+    let names = tf2::game::weapons::tf2_weapons();
+    let names: Vec<String> = names.weapons.iter().filter_map(|w| w.hud.name.clone()).collect();
+    assert_eq!(names, ["Scattergun", "Rocket Launcher", "Shotgun", "Minigun"]);
 }

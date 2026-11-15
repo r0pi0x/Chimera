@@ -23,7 +23,9 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net56` since Halo's players travel (its
+   The network version is `net57` since TF2's guns joined the party's
+   ladders (their predicted state, the Minigun's spin and the guns' last
+   shot; the flyers' launch offset); `net56` (Halo's players travel: its
    movement's and weapons' predicted state, its vitality, its shots
    shown on every machine: the party apps add them for Halo's guns);
    `net55` (the lobby's rows carry each player's avatar, its

@@ -1,0 +1,12 @@
+# TF2's weapons' shared base (docs/weapon-data.md): Source units (inches)
+# and hit points (specs/tf2/weapons.md, "Units and conventions").
+#
+# Each gun's numbers are the spec's public ones (weapons.md 1-7): the
+# committed fallback. The game's own weapon scripts
+# (`scripts/tf_weapon_*.ctx`) override them at run time once their
+# fields are specced (`game::weapons::script_numbers`; decision 3 of
+# docs/plans/active/tf2.md); until then the log says, once per gun, that
+# the numbers are the spec's.
+id = "tf2:base"
+abstract = true
+units = { length = 0.0254, damage = 0.01 }

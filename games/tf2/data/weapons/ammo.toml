@@ -1,0 +1,15 @@
+# TF2's ammo (specs/tf2/weapons.md 1): each gun's reserve. The Minigun's
+# 200 are its clip (no reserve, it never reloads).
+units = { length = 0.0254 }
+
+[ammo."tf2:scattergun"]
+max = 32
+
+[ammo."tf2:rockets"]
+max = 20
+
+[ammo."tf2:shotgun"]
+max = 32
+
+[ammo."tf2:minigun"]
+max = 0

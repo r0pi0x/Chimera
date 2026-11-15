@@ -522,7 +522,14 @@ impl Shot<'_, '_, '_> {
         self.traced = true;
         let pellets = scan.pellets.max(1);
         let (round, rounds) = self.round;
-        for (pellet, dir) in pellet_dirs(self.aim, self.seed, scan.spread, scan.pellets).into_iter().enumerate() {
+        let mut dirs = pellet_dirs(self.aim, self.seed, scan.spread, scan.pellets);
+        // The first pellet dead along the aim (`Hitscan::centre_first`).
+        if scan.centre_first
+            && let Some(first) = dirs.first_mut()
+        {
+            *first = Dir3::new(self.aim * Vec3::NEG_Z).unwrap_or(Dir3::NEG_Z);
+        }
+        for (pellet, dir) in dirs.into_iter().enumerate() {
             // The call's bullet number: odd ones of a call of several are
             // boxes (`Hitscan::odd_box`).
             let bullet = round * pellets + pellet as u32;
@@ -575,8 +582,11 @@ impl Shot<'_, '_, '_> {
                     break;
                 }
                 self.push(hit.entity, hit.point, hit.dir * effect.impulse);
-                // Falloff again at every hit, by the distance from the eye.
-                carried *= falloff(effect.falloff, effect.falloff_step, hit.distance);
+                // Falloff again at every hit, by the distance from the eye
+                // (a game's own rule by distance instead: per target, below).
+                if effect.by_distance.is_none() {
+                    carried *= falloff(effect.falloff, effect.falloff_step, hit.distance);
+                }
                 if let Ok(t) = self.w.targets.get(hit.entity)
                     && (t.health.is_some() || t.damageable.is_some())
                 {
@@ -653,6 +663,12 @@ impl Shot<'_, '_, '_> {
             }
         }
         for (target, amount, hitgroup, point, dir) in total {
+            // A game's damage by distance: the target's sum, by how far
+            // the shooter's centre is from its own.
+            let amount = match effect.by_distance {
+                Some(b) => (b.rule)(amount, self.centre_distance(target), b.param),
+                None => amount,
+            };
             let exact = self.w.targets.get(target).ok().and_then(|t| t.bullet).is_some_and(|b| b.exact);
             self.apply(
                 target,
@@ -666,6 +682,24 @@ impl Shot<'_, '_, '_> {
                 true,
                 dir * effect.impulse,
             );
+        }
+    }
+
+    /// The distance between the shooter's centre and `target`'s (m): each
+    /// one's box centre (a rewound target's where the shooter saw it), its
+    /// origin without a box.
+    fn centre_distance(&self, target: Entity) -> f32 {
+        let centre = |e: Entity| -> Option<Vec3> {
+            if let Some(r) = self.rewound.iter().find(|r| r.entity == e) {
+                let b = r.aabb();
+                return Some((b.min + b.max) / 2.0);
+            }
+            let t = self.w.targets.get(e).ok()?;
+            Some(t.aabb.map_or(t.transform.translation, |b| (b.min + b.max) / 2.0))
+        };
+        match (centre(self.owner), centre(target)) {
+            (Some(a), Some(b)) => a.distance(b),
+            _ => 0.0,
         }
     }
 

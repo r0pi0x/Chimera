@@ -50,14 +50,19 @@ fn each_game_reports_what_it_lends() {
     let sim = ugg();
     let mut report = auto::report(sim.app.world());
     let games: Vec<&str> = report.iter().map(|c| c.game).collect();
-    assert_eq!(games, ["cs_source", "hl2dm", "halo_ce", "combat_arms"]);
+    assert_eq!(games, ["cs_source", "hl2dm", "halo_ce", "tf2", "combat_arms"]);
+    // TF2 lends its four guns with its stand-in movement (M2b), no knife,
+    // body or pool map yet (docs/plans/active/tf2.md).
+    let tf2 = report.remove(3);
+    assert!(tf2.playable() && tf2.missing.is_empty() && tf2.maps.is_empty(), "{}", tf2.line());
+    assert_eq!(tf2.guns.len(), 4, "{}", tf2.line());
     // Halo lends its four guns with its movement, and claims no map (they
     // come from its disc image: tests/it/halo_maps.rs in party_kit). The
     // others as before.
     let halo = report.remove(2);
     assert!(halo.playable() && halo.missing.is_empty() && halo.maps.is_empty(), "{}", halo.line());
     assert_eq!(halo.guns.len(), 4, "{}", halo.line());
-    let parts: Vec<_> = party_kit::GAME_PARTS.iter().filter(|p| p.game != "halo_ce").collect();
+    let parts: Vec<_> = party_kit::GAME_PARTS.iter().filter(|p| p.game != "halo_ce" && p.game != "tf2").collect();
     let claimed_guns = |i: usize| parts[i].guns.iter().filter(|g| g.class != GunClass::Grenade).count();
     for c in &report {
         assert!(c.missing.is_empty(), "every claimed part is in the app: {}", c.line());
@@ -145,6 +150,7 @@ fn a_player_climbs_as_each_guns_game() {
             "cs_source" => "cs_source:movement",
             "hl2dm" => hl2dm::game::movement::ID,
             "halo_ce" => "halo_ce:movement",
+            "tf2" => "tf2:movement",
             _ => movement::ID,
         };
         assert_eq!(w.get::<MovementSlot>(a).map(|m| m.0), Some(want), "rung {i}: {id}");

@@ -1174,6 +1174,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             tracer_every: h.tracer_every,
             redrawn_through_characters: h.redrawn_through_characters,
             odd_box: h.odd_box.map(|b| b * len),
+            centre_first: false,
         });
     }
     if let Some(x) = &d.damage {
@@ -1191,6 +1192,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             impulse: x.impulse * len,
             quantum: x.quantum * dmg,
             armor_ratio: x.armor_ratio,
+            by_distance: None,
         });
     }
     if let Some(p) = &d.penetration {

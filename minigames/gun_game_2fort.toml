@@ -1,0 +1,60 @@
+# Gun Game on 2Fort (docs/plans/active/tf2.md, M2b): every player for
+# themselves up a ladder that mixes Team Fortress 2's four guns (the
+# Scattergun, the Engineer's Shotgun, the Minigun, the Rocket Launcher)
+# with Counter-Strike: Source's, Half-Life 2: Deathmatch's and Combat
+# Arms' (no Halo), a rung a kill; a knife death or a suicide costs a rung;
+# the last gun's kill wins. Each player is the game of the gun in hand
+# (`identity = "weapon"`): a TF2 gun moves as TF2 (its stand-in movement,
+# the class's arms in first person; its bodies come with M3), a CS:S gun
+# as CS:S, and so on; the knife is the gun's game's (TF2 lends none yet:
+# its rungs carry only the gun). On TF2's ctf_2fort, then CS:S's de_dust2.
+id = "originals:gun_game_2fort"
+name = "Gun Game: {map}"
+description = "Climb a ladder that mixes TF2's guns with CS:S, HL2:DM and Combat Arms guns; a knife death or a suicide costs a rung; the last gun's kill wins."
+players = { min = 2, max = 16 }
+maps = ["tf2:ctf_2fort", "cs_source:de_dust2"]
+teams = "free_for_all"
+time_limit = "10m"
+rotate = true
+
+[slots]
+hud = "combat_arms"
+binds = "combat_arms"
+tick = "combat_arms"
+bots = "combat_arms"
+movement = "combat_arms:movement"
+character = "combat_arms:soldier"
+identity = "weapon"
+weapons = ["cs_source", "combat_arms", "hl2dm", "tf2"]
+
+[spawn]
+respawn = { delay = "2s", protection = "2s" }
+points = "scored"
+min_distance = 20.32
+kit = { cs_source = ["cs_source:weapon_knife"], combat_arms = ["combat_arms:m9_knife"], hl2dm = ["hl2dm:weapon_crowbar"] }
+
+[rules]
+module = "chimera:ladder"
+# Written by hand: a TF2 rung after each other game's.
+ladder = [
+    "cs_source:weapon_glock",
+    "tf2:tf_weapon_scattergun",
+    "hl2dm:weapon_pistol",
+    "combat_arms:mp5a4",
+    "tf2:tf_weapon_shotgun_primary",
+    "cs_source:weapon_ak47",
+    "hl2dm:weapon_ar2",
+    "tf2:tf_weapon_minigun",
+    "combat_arms:m4a1",
+    "tf2:tf_weapon_rocketlauncher",
+    "cs_source:weapon_awp",
+]
+advance_on = "kill"
+demote_on = "melee_death"
+demote_on_suicide = true
+join_rung = "lowest"
+knife_finale = true
+melee_rungs = "auto"
+refill_ammo = true
+rung_extras = true
+win = { kind = "ladder_end" }
