@@ -96,6 +96,7 @@ fn dm_lockdown_converts_from_the_asset_service_with_no_install() {
     let settings = AssetSettings {
         store: Some(client.clone()),
         use_install: false,
+        service_first: false,
         builds: Default::default(),
         remote: Some(RemoteConfig { url: running.url(), token, key: None, fingerprint: None }),
         lock: None,

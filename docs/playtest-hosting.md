@@ -9,8 +9,12 @@ tester their address and token privately.
 How testers without the games get them: the game server names the asset
 service when a player joins (its URL and its certificate's fingerprint);
 the client downloads what the match needs over HTTPS, pinning that
-certificate, before it spawns. A tester with the games installed uses the
-installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-service.md),
+certificate, before it spawns. A tester with the games installed downloads
+them too and plays from the store, so everyone plays the published files
+(since 2026-11-15; a tester's Settings ▸ Network ▸ "Use my installed
+games" opts into the installs, at the next start;
+[assets-for-developers.md](assets-for-developers.md), "Installs and the
+service"). Design and limits: [plans/active/asset-service.md](plans/active/asset-service.md),
 "Playtest delivery"; the service in general:
 [assets-for-developers.md](assets-for-developers.md).
 
@@ -488,7 +492,11 @@ cargo build --release -p ultimate_gun_game_server
 It has no window, render or audio. It needs the maps and guns of the games
 to serve a match, from this machine's installs or its asset store
 (`[assets]` in `chimera.local.toml` or `CHIMERA_ASSET_URL`/`CHIMERA_ASSET_TOKEN`;
-see assets-for-developers.md). Missing pieces are told at start (`error:` stops
+see assets-for-developers.md). With an asset service set there, it reads
+every game the service serves from the store, as the testers do, the
+installs only for a game the service doesn't serve; `+chimera:asset_use_install 1`
+(or `[assets] use_install = true`) makes it read the installs first, as before
+2026-11-15. Missing pieces are told at start (`error:` stops
 the server, `warning:` only spoils something). Do not paste the config file
 anywhere; it holds keys.
 
@@ -644,7 +652,9 @@ What a tester without the games downloads from the asset service:
   lacks some, in the background from the start, a join waiting for it.
   Errors (a refused token, the service unreachable, another certificate)
   show on the loading panel with what to do. No second window, no restart.
-  Testers with the games installed download nothing of those games.
+  Testers with the games installed download the same (since 2026-11-15:
+  everyone plays the published files), unless they turned on "Use my
+  installed games".
 - **Each join**: what the match needs that isn't there yet (the first one
   about 100-125 MB: `players`, `common`, the map, the ladder, the music's
   first tracks), at full speed, on the loading panel and behind the

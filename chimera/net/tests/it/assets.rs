@@ -212,6 +212,7 @@ impl Fixture {
             settings: Some(AssetSettings {
                 store: Some(Store::new(self.dir.join(client))),
                 use_install: false,
+                service_first: false,
                 builds: Default::default(),
                 remote: Some(RemoteConfig {
                     url: self.front.url(),

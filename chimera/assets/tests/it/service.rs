@@ -167,6 +167,7 @@ fn files_arrive_on_demand_through_the_settings_a_game_uses() {
     let settings = AssetSettings {
         store: Some(client.clone()),
         use_install: false,
+        service_first: false,
         builds: Default::default(),
         remote: Some(f.config(&token)),
         lock: None,
@@ -266,6 +267,7 @@ fn the_client_refuses_a_tampered_record_or_manifest() {
     let settings = AssetSettings {
         store: Some(client.clone()),
         use_install: false,
+        service_first: false,
         builds: Default::default(),
         remote: Some(f.config(&token)),
         lock: None,
@@ -435,6 +437,7 @@ fn a_fetch_asks_again_for_what_did_not_arrive() {
     let settings = AssetSettings {
         store: Some(f.client_store("client")),
         use_install: false,
+        service_first: false,
         builds: Default::default(),
         remote: Some(f.config(&f.user("tester", None))),
         lock: None,
@@ -464,6 +467,7 @@ fn a_miss_while_a_fetch_starts_waits_for_it() {
     let settings = AssetSettings {
         store: Some(client.clone()),
         use_install: false,
+        service_first: false,
         builds: Default::default(),
         remote: Some(f.config(&token)),
         lock: None,

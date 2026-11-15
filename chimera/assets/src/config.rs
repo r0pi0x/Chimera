@@ -18,11 +18,28 @@
 //! records a `CachedFiles` lacks. A service that can't be reached or
 //! refuses is reported once per game and process, and the game is then
 //! treated as not served.
+//!
+//! Whether an install is used (`use_install`, `service_first`): the
+//! environment's `CHIMERA_ASSET_USE_INSTALL` (0/1), else `[assets]
+//! use_install`, else the process's default (`InstallDefault`,
+//! `set_install_default`). Tests and tools keep the default `Install`
+//! (an install first, the store under it: as before 2026-11-15); the game
+//! apps set `ServiceFirst` (a client: `ServiceFirstClient`; the player's
+//! "Use my installed games" setting sets `Install`), with which a game the
+//! store and its service serve is read from them alone whenever a service
+//! is set (`[assets]`, a hub account, a bound token) or, on a client, a
+//! token or account waits for the first join to bind it: everyone plays
+//! the published build's files and data, keys or no keys. A game they
+//! don't serve still reads its install; with no service at all, the
+//! installs are used as before (`resolve`, `policy`).
 
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU8, Ordering},
+    },
 };
 
 use serde::Deserialize;
@@ -41,8 +58,10 @@ pub struct AssetsConfig {
     /// The store folder (`~` expanded); default: the user's cache.
     pub store: Option<PathBuf>,
     /// False: games with a manifest in the store load from it alone, the
-    /// install hidden. Default true: the store is layered under the
-    /// install (and stands in for a missing one).
+    /// install hidden. True: the store is layered under the install (and
+    /// stands in for a missing one). Unset: the process's default
+    /// (`InstallDefault`: tests and tools the install, the game apps the
+    /// service first).
     pub use_install: Option<bool>,
     /// The build to mount per game when the store serves it alone
     /// (default: the newest in the store); under an install, only the
@@ -64,12 +83,77 @@ pub struct AssetsConfig {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssetSettings {
     pub store: Option<Store>,
+    /// Whether an install may be read (false: the store alone, an
+    /// install hidden even for a game the store doesn't serve).
     pub use_install: bool,
+    /// The service first (`InstallDefault::ServiceFirst`, nothing chosen):
+    /// a game the store and its service serve is read from them alone,
+    /// its install unused; only a game they don't serve reads its install
+    /// (and only while a service is set: a client's token waiting for its
+    /// first join hides the installs until the join binds it).
+    pub service_first: bool,
     pub builds: BTreeMap<String, String>,
     /// The asset service, when `url` and `token` are both set.
     pub remote: Option<RemoteConfig>,
     /// The repository's `assets.lock`, when there is one.
     pub lock: Option<AssetsLock>,
+}
+
+/// How a process uses an install when neither `CHIMERA_ASSET_USE_INSTALL`
+/// nor `[assets] use_install` says (`set_install_default`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum InstallDefault {
+    /// The install first, the store under it (tests, tools, a player's
+    /// "Use my installed games").
+    #[default]
+    Install,
+    /// The store and its service first whenever a service is set (a
+    /// dedicated server).
+    ServiceFirst,
+    /// `ServiceFirst`, and a token or hub account waiting for its first
+    /// join counts as a service: the installs stay hidden until the join
+    /// binds it (a game client).
+    ServiceFirstClient,
+}
+
+static INSTALL_DEFAULT: AtomicU8 = AtomicU8::new(0);
+
+/// This process's default (`InstallDefault`), set by an app at its start,
+/// before anything mounts a game.
+pub fn set_install_default(default: InstallDefault) {
+    INSTALL_DEFAULT.store(default as u8, Ordering::Relaxed);
+}
+
+/// This process's default (`Install` unless an app set another).
+pub fn install_default() -> InstallDefault {
+    match INSTALL_DEFAULT.load(Ordering::Relaxed) {
+        1 => InstallDefault::ServiceFirst,
+        2 => InstallDefault::ServiceFirstClient,
+        _ => InstallDefault::Install,
+    }
+}
+
+/// `CHIMERA_ASSET_USE_INSTALL`'s value as a choice (None: unset or not
+/// a yes/no word).
+pub fn parse_use_install(value: Option<&str>) -> Option<bool> {
+    match value.map(str::trim) {
+        Some("0" | "false" | "no" | "off") => Some(false),
+        Some("1" | "true" | "yes" | "on") => Some(true),
+        _ => None,
+    }
+}
+
+/// `(use_install, service_first)` for a choice (`chosen`: the variable's,
+/// else `[assets] use_install`), the process's `default`, whether a
+/// service is set (`remote`) and whether a token or account waits for a
+/// join to bind it (`waiting`).
+pub fn policy(chosen: Option<bool>, default: InstallDefault, remote: bool, waiting: bool) -> (bool, bool) {
+    match (chosen, default) {
+        (Some(chosen), _) => (chosen, false),
+        (None, InstallDefault::Install) => (true, false),
+        (None, InstallDefault::ServiceFirst) => (true, remote),
+        (None, InstallDefault::ServiceFirstClient) => (true, remote || waiting),
+    }
 }
 
 /// The user-wide store folder.
@@ -101,6 +185,12 @@ impl AssetsConfig {
             .or_else(crate::account::user_remote)
             .or_else(|| crate::access::Access::load().remote());
         s.lock = AssetsLock::current();
+        let default = install_default();
+        let waiting = default == InstallDefault::ServiceFirstClient
+            && s.remote.is_none()
+            && (crate::access::Access::load().token.is_some() || crate::account::has_account());
+        let chosen = parse_use_install(std::env::var(USE_INSTALL_ENV).ok().as_deref()).or(self.use_install);
+        (s.use_install, s.service_first) = policy(chosen, default, s.remote.is_some(), waiting);
         s
     }
 
@@ -111,13 +201,9 @@ impl AssetsConfig {
             .map(expand_home)
             .or_else(default_store)
             .map(Store::new);
-        let use_install = match use_install_env.as_deref().map(str::trim) {
-            Some("0" | "false" | "no" | "off") => false,
-            Some("1" | "true" | "yes" | "on") => true,
-            _ => self.use_install.unwrap_or(true),
-        };
+        let use_install = parse_use_install(use_install_env.as_deref()).or(self.use_install).unwrap_or(true);
         let remote = remote_config(self.url.clone(), self.token.clone(), self.key.clone());
-        AssetSettings { store, use_install, builds: self.builds.clone(), remote, lock: None }
+        AssetSettings { store, use_install, service_first: false, builds: self.builds.clone(), remote, lock: None }
     }
 }
 
@@ -199,6 +285,25 @@ impl AssetSettings {
     /// Whether the store (or the service through it) can serve `game`.
     pub fn serves(&self, game: &str) -> bool {
         self.build(game).is_some()
+    }
+
+    /// Where `game`'s files are read from, given the install found
+    /// (`found`, asked only when it may be used): the store's stand-in
+    /// (`stand_in_install`) when the store serves the game alone (the
+    /// install off, or the service first), else the install, else the
+    /// stand-in for a missing one. None: neither.
+    pub fn game_path(&self, game: &str, found: impl FnOnce() -> Option<PathBuf>) -> Option<PathBuf> {
+        let served = || self.serves(game).then(|| self.stand_in_install(game)).flatten();
+        if !self.use_install {
+            return served();
+        }
+        if self.service_first {
+            // A game the service doesn't serve reads its install, but not
+            // while a client's token waits for the join that binds it (the
+            // join fetches what the service has, then reads again).
+            return served().or_else(|| self.remote.is_some().then(found).flatten());
+        }
+        found().or_else(served)
     }
 
     /// The path that stands for `game`'s install when it is served from

@@ -911,6 +911,10 @@ pub fn run(server: &'static GameServer) {
             std::process::exit(2);
         }
     };
+    // The service first whenever one is set, as on a client, unless
+    // `+chimera:asset_use_install 1` (or `[assets] use_install`) chooses
+    // the installs; before anything mounts a game.
+    crate::net::assets::set_install_default_here(&options.console, false);
     let (lacks, fatal) = server.requirements(&options.map);
     if !lacks.is_empty() {
         eprintln!("{lacks}");
