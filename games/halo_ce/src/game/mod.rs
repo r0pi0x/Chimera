@@ -49,6 +49,8 @@
 //!   hill, oddball, spawns, equipment and scoring, the match's view;
 //! - `respawn`: Halo's players' loadout and respawn by
 //!   multiplayer_rules.md 4 (`HaloRules`, Halo's own app only);
+//! - `weapons::aim`'s `Bend` is off by default (`halo_autoaim`); `fx`
+//!   has the dev command `halo_ce_blast` (a detonation at a point);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`

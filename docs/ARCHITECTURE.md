@@ -362,6 +362,14 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   picked from the unit's damage table, falling and lying where it fell,
   removed after 900 idle ticks; in Halo's own app its weapon and
   grenades drop as items.
+  Halo's effects play particle systems by state (sprite sizes in world
+  units per sprite pixel, at most 11 view-filling sprites a frame); a
+  zoomed gun's scope mask dims the view outside its window; grenade
+  kinds follow weapons.md 14; the autoaim's bend is off by default
+  (`halo_autoaim`: every player is on mouse and keyboard) while guided
+  projectiles still take their target; in the party apps Halo's HUD
+  uses its party layout (`ui::party_app`: the shield and health at the
+  bottom left, no motion tracker).
   `game::vehicles` runs Halo's vehicles (the Warthog, the Ghost and the
   Scorpion as data in `data/vehicles/`) by the spec's own mass-point
   step at 30 Hz on avian's spatial queries, writing a kinematic body
