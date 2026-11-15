@@ -274,6 +274,7 @@ pub struct HaloTrace<'w, 's> {
             Option<&'static Intent>,
             &'static Health,
             Option<&'static Vitality>,
+            Option<&'static MovementState>,
         ),
         With<Intent>,
     >,
@@ -296,7 +297,7 @@ impl HaloTrace<'_, '_> {
         let (dir, len) = Dir3::new_and_length(to - from).ok()?;
         let mut best: Option<Met> = if level { self.level(from, *dir, len) } else { None };
         let limit = |b: &Option<Met>| b.as_ref().map_or(len, |b| b.0);
-        for (e, t, aabb, shapes, intent, health, _) in &self.characters {
+        for (e, t, aabb, shapes, intent, health, _, _) in &self.characters {
             if skip.contains(&e) || health.current <= 0.0 || rewound.iter().any(|r| r.entity == e) {
                 continue;
             }
@@ -370,6 +371,17 @@ impl HaloTrace<'_, '_> {
         self.characters.get(target).ok().and_then(|c| c.6).is_some_and(|v| v.shield > 0.0)
     }
 
+    /// A living character's autoaim pill (metres): its pelvis and head,
+    /// `aim::PELVIS_HEIGHT` and `HEAD_HEIGHT` above its feet, the feet
+    /// placed `aim::EYE_HEIGHT` below its eye (so a crouch lowers the pill
+    /// with the eye; no eye: its centre is the feet).
+    pub fn pill(&self, e: Entity) -> Option<(Vec3, Vec3)> {
+        let c = self.characters.get(e).ok().filter(|c| c.5.current > 0.0)?;
+        let at = c.1.translation;
+        let feet = c.7.map_or(at, |m| at + m.eye_offset - Vec3::Y * super::aim::EYE_HEIGHT * METERS_PER_WU);
+        Some((feet + Vec3::Y * super::aim::PELVIS_HEIGHT * METERS_PER_WU, feet + Vec3::Y * super::aim::HEAD_HEIGHT * METERS_PER_WU))
+    }
+
     /// A living character's centre (metres).
     pub fn centre(&self, e: Entity) -> Option<Vec3> {
         self.characters.get(e).ok().filter(|c| c.5.current > 0.0).map(|c| c.1.translation)
@@ -404,7 +416,10 @@ impl HaloTrace<'_, '_> {
         let mut found: Vec<(f32, f32, f32, f32, Entity, Vec3)> = self
             .living()
             .filter(|(e, _, camo)| *e != owner && *camo < 1.0 && (me == 0 || self.team(*e) != me))
-            .filter_map(|(e, c, _)| {
+            .filter_map(|(e, _, _)| {
+                // Its aim point on its pelvis-to-head pill.
+                let (pelvis, head) = self.pill(e)?;
+                let c = super::aim::aim_point(pelvis, head, super::aim::AUTOAIM_WIDTH * METERS_PER_WU, eye, aim);
                 let to = c - eye;
                 let d = to.length() / METERS_PER_WU;
                 let ang = aim.angle_between(to);
@@ -420,11 +435,15 @@ impl HaloTrace<'_, '_> {
         found.into_iter().find(|f| self.clear(eye, f.5)).map(|f| (f.4, f.5, f.0))
     }
 
-    /// Where the camera at `eye` looking along `aim` (unit) looks: the
-    /// level's surface within `aim::LOOK_RANGE`, else that far (metres).
-    pub fn look_at(&self, eye: Vec3, aim: Vec3) -> Vec3 {
-        let len = super::aim::LOOK_RANGE * METERS_PER_WU;
-        self.level(eye, aim, len).map_or(eye + aim * len, |m| m.1)
+    /// Where the camera at `eye` looking along `aim` (unit) looks (step 1
+    /// of the bend): a ray from `ahead` metres along the aim (the camera's
+    /// distance from the holder's origin), `aim::LOOK_RANGE` long, stopped
+    /// by the level or a character other than `owner` (the first hit),
+    /// else its end (metres).
+    pub fn look_at(&self, owner: Entity, eye: Vec3, ahead: f32, aim: Vec3, rewound: &[Rewound]) -> Vec3 {
+        let start = eye + aim * ahead;
+        let end = start + aim * super::aim::LOOK_RANGE * METERS_PER_WU;
+        self.trace(start, end, &[owner], rewound).map_or(end, |m| m.1)
     }
 }
 
@@ -785,7 +804,7 @@ pub fn run(
     role: Option<Res<NetRole>>,
     actions: Option<Res<ActionRegistry>>,
     spartan: Option<Res<Spartan>>,
-    grenades: Res<GrenadeData>,
+    (grenades, bend): (Res<GrenadeData>, Option<Res<aim::Bend>>),
     mut most: Local<u32>,
     mut commands: Commands,
 ) {
@@ -946,7 +965,10 @@ pub fn run(
                 let picked = assist
                     .filter(|_| hw.0.aim_assist.enabled)
                     .and_then(|a| trace.target(owner, eye, aim, &a));
-                let shot_aim = match assist {
+                // The bend (and its convergence) only with the switch on
+                // (`aim::Bend`: a controller's); the target above is still
+                // the guided projectiles'.
+                let shot_aim = match assist.filter(|_| bend.as_deref().is_some_and(|b| b.0)) {
                     Some(a) => {
                         let [x, y, z] = hw.0.trigger.first_person_offset;
                         let mut origin = eye / METERS_PER_WU;
@@ -954,7 +976,7 @@ pub fn run(
                             let left = Vec3::Y.cross(aim).try_normalize().unwrap_or(Vec3::Y);
                             origin += aim * x + left * y + aim.cross(left) * z;
                         }
-                        let look = trace.look_at(eye, aim) / METERS_PER_WU;
+                        let look = trace.look_at(owner, eye, eye.distance(at.translation), aim, &[]) / METERS_PER_WU;
                         aim::bend(aim, origin, look, picked.map(|(_, at, l)| (at / METERS_PER_WU, l)), a.deviation)
                     }
                     None => aim,
