@@ -1,10 +1,13 @@
 //! TF2's guns as data (docs/weapon-data.md): one TOML file per gun in
 //! games/tf2/data/weapons (built in, parsed at run time: `tf2_weapons`)
-//! with specs/tf2/weapons.md's public numbers: the Scattergun, the Rocket
-//! Launcher, the Engineer's Shotgun and the Minigun (M2b of
-//! docs/plans/active/tf2.md). The game's own weapon scripts override them
-//! once their fields are specced (`script_numbers`: the seam, logging
-//! which source served).
+//! with the specs' public numbers: the Scattergun, the Rocket Launcher,
+//! the Engineer's Shotgun and the Minigun (specs/tf2/weapons.md, M2b of
+//! docs/plans/active/tf2.md), and the Scout's Pistol, the SMG, the Sniper
+//! Rifle, the Revolver, the Grenade and Stickybomb Launchers, the Flame
+//! Thrower and the Syringe Gun (specs/tf2/weapons_more.md, the plan's
+//! "More guns"). The game's own weapon scripts override them once their
+//! fields are specced (`script_numbers`: the seam, logging which source
+//! served).
 //!
 //! The shared frame (`chimera_sim::weapon`) runs them: pellets in a fixed
 //! cone (`SpreadShape::Template`: each axis the sum of two halves, open
@@ -21,7 +24,16 @@
 //! - `tf2:rocket` (`rocket`): the rocket's explosion on Chimera's flyers
 //!   (`chimera:projectile` flies it): splash, self-damage, knockback;
 //! - `tf2:minigun` (`minigun`): the spin, its slowed and grounded holder,
-//!   the damage ramp, its sound loops.
+//!   the damage ramp, its sound loops;
+//! - `tf2:sniper` (`sniper`): the scoped charge and the scoped headshot
+//!   (the scope itself is Chimera's `[alt] scope`);
+//! - `tf2:grenade` (`grenade`): the grenade's direct hit, bounces and fuse;
+//! - `tf2:sticky` (`sticky`): the charged launch, sticking, arming, the
+//!   limit and attack2's detonation;
+//! - `tf2:flame` (`flame`): the flame cone's ticks and the afterburn;
+//! - `tf2:needle` (`needle`): a needle's hit by distance.
+//!
+//! The rocket, grenade and sticky explode alike (`blast`).
 //!
 //! Random critical hits stay off (the party's choice: a gun game has no
 //! damage history to roll on, and `tf_weapon_criticals` is the server's;
@@ -40,10 +52,16 @@
 //! - A network client redraws another's shot without its centred first
 //!   pellet (its own and the server's have it).
 
+pub mod blast;
 pub mod damage;
+pub mod flame;
+pub mod grenade;
 pub mod minigun;
+pub mod needle;
 pub mod rocket;
 pub mod script_numbers;
+pub mod sniper;
+pub mod sticky;
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{
@@ -70,24 +88,68 @@ pub const DATA: &[(&str, &str)] = &[
     data_file!("rocketlauncher.toml"),
     data_file!("shotgun_primary.toml"),
     data_file!("minigun.toml"),
+    data_file!("pistol_scout.toml"),
+    data_file!("smg.toml"),
+    data_file!("sniperrifle.toml"),
+    data_file!("revolver.toml"),
+    data_file!("grenadelauncher.toml"),
+    data_file!("pipebomblauncher.toml"),
+    data_file!("flamethrower.toml"),
+    data_file!("syringegun_medic.toml"),
 ];
 
 pub const SCATTERGUN: &str = "tf2:tf_weapon_scattergun";
 pub const ROCKET_LAUNCHER: &str = "tf2:tf_weapon_rocketlauncher";
 pub const SHOTGUN: &str = "tf2:tf_weapon_shotgun_primary";
 pub const MINIGUN: &str = "tf2:tf_weapon_minigun";
+pub const PISTOL_SCOUT: &str = "tf2:tf_weapon_pistol_scout";
+pub const SMG: &str = "tf2:tf_weapon_smg";
+pub const SNIPER_RIFLE: &str = "tf2:tf_weapon_sniperrifle";
+pub const REVOLVER: &str = "tf2:tf_weapon_revolver";
+pub const GRENADE_LAUNCHER: &str = "tf2:tf_weapon_grenadelauncher";
+pub const STICKY_LAUNCHER: &str = "tf2:tf_weapon_pipebomblauncher";
+pub const FLAMETHROWER: &str = "tf2:tf_weapon_flamethrower";
+pub const SYRINGE_GUN: &str = "tf2:tf_weapon_syringegun_medic";
 
-/// The four guns, in the ladder's order.
-pub const GUNS: [&str; 4] = [SCATTERGUN, ROCKET_LAUNCHER, SHOTGUN, MINIGUN];
+/// The guns, in the ladder's order (M2b's four, then weapons_more.md's
+/// eight).
+pub const GUNS: [&str; 12] = [
+    SCATTERGUN,
+    ROCKET_LAUNCHER,
+    SHOTGUN,
+    MINIGUN,
+    PISTOL_SCOUT,
+    SMG,
+    SNIPER_RIFLE,
+    REVOLVER,
+    GRENADE_LAUNCHER,
+    STICKY_LAUNCHER,
+    FLAMETHROWER,
+    SYRINGE_GUN,
+];
 
 /// The hooks the data names.
 pub const GUN_HOOK: &str = "tf2:gun";
 pub const ROCKET_HOOK: &str = "tf2:rocket";
 pub const MINIGUN_HOOK: &str = "tf2:minigun";
+pub const SNIPER_HOOK: &str = "tf2:sniper";
+pub const GRENADE_HOOK: &str = "tf2:grenade";
+pub const STICKY_HOOK: &str = "tf2:sticky";
+pub const FLAME_HOOK: &str = "tf2:flame";
+pub const NEEDLE_HOOK: &str = "tf2:needle";
 
 /// The rocket's model key (`ShownItem`) and model.
 pub const ROCKET_SHOWN: &str = "tf2:rocket";
 pub const ROCKET_MODEL: &str = "models/weapons/w_models/w_rocket.mdl";
+
+/// Each gun's projectile models: (gun, model key, model)
+/// (weapons_more.md 9.1).
+pub const PROJECTILES: &[(&str, &str, &str)] = &[
+    (ROCKET_LAUNCHER, ROCKET_SHOWN, ROCKET_MODEL),
+    (GRENADE_LAUNCHER, "tf2:grenade", "models/weapons/w_models/w_grenade_grenadelauncher.mdl"),
+    (STICKY_LAUNCHER, sticky::SHOWN, sticky::MODEL),
+    (SYRINGE_GUN, "tf2:syringe", "models/weapons/w_models/w_syringe_proj.mdl"),
+];
 
 /// TF2's weapons as data, parsed (a fresh copy each call).
 pub fn tf2_weapons() -> WeaponSet {
@@ -127,16 +189,30 @@ pub fn register_hooks(app: &mut App) {
         .register_weapon_hook::<rocket::RocketParams>(ROCKET_HOOK, |e, _, p| {
             e.insert(rocket::Tf2Rocket(p.clone()));
         })
-        .register_weapon_hook::<minigun::MinigunParams>(MINIGUN_HOOK, |e, _, p| minigun::attach(e, p));
+        .register_weapon_hook::<minigun::MinigunParams>(MINIGUN_HOOK, |e, _, p| minigun::attach(e, p))
+        .register_weapon_hook::<sniper::SniperParams>(SNIPER_HOOK, |e, _, p| sniper::attach(e, p))
+        .register_weapon_hook::<blast::BlastParams>(GRENADE_HOOK, |_, _, _| {})
+        .register_weapon_hook::<sticky::StickyParams>(STICKY_HOOK, |e, _, p| sticky::attach(e, p))
+        .register_weapon_hook::<flame::FlameParams>(FLAME_HOOK, |e, _, p| flame::attach(e, p))
+        .register_weapon_hook::<needle::NeedleParams>(NEEDLE_HOOK, |_, _, _| {});
     // Whether each hurts a player (an automatic ladder draws only those
-    // that do): the rocket's blast; the guns' damage is their `[damage]`.
-    app.add_harm_reader(ROCKET_HOOK, |p| chimera_sim::weapon::harm::num(p, "damage").is_some_and(|d| d > 0.0));
+    // that do): the blasts, the flames, the needles; the guns' damage is
+    // their `[damage]`.
+    let hurts = |p: &chimera_sim::weapon::harm::HookParams| chimera_sim::weapon::harm::num(p, "damage").is_some_and(|d| d > 0.0);
+    for hook in [ROCKET_HOOK, GRENADE_HOOK, STICKY_HOOK, FLAME_HOOK, NEEDLE_HOOK] {
+        app.add_harm_reader(hook, hurts);
+    }
     // What a drawn ladder's power curve reads of them: the distance
     // modifier on a pellet, the rocket's blast, the Minigun's spin-up.
     use chimera_sim::minigame::power::PowerAppExt;
     app.add_power_reader(GUN_HOOK, power_gun)
         .add_power_reader(ROCKET_HOOK, power_rocket)
-        .add_power_reader(MINIGUN_HOOK, power_minigun);
+        .add_power_reader(MINIGUN_HOOK, power_minigun)
+        .add_power_reader(SNIPER_HOOK, power_sniper)
+        .add_power_reader(GRENADE_HOOK, power_grenade)
+        .add_power_reader(STICKY_HOOK, power_rocket)
+        .add_power_reader(FLAME_HOOK, power_flame)
+        .add_power_reader(NEEDLE_HOOK, power_rocket);
 }
 
 use chimera_sim::{
@@ -160,6 +236,26 @@ fn power_rocket(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
     s.pellets = 1;
 }
 
+/// The grenade's flat blast.
+fn power_grenade(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
+    s.damage = num(p, "damage").unwrap_or(0.0) * at.data.units.damage;
+    s.pellets = 1;
+}
+
+/// The rifle's uncharged body shot, flat (its charge waits on the
+/// scope).
+fn power_sniper(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
+    s.damage = num(p, "base").unwrap_or(0.0) * at.data.units.damage;
+}
+
+/// A flame tick at half its burn ramp, every tick, within its range.
+fn power_flame(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
+    let range = num(p, "range").unwrap_or(0.0);
+    s.damage = if at.distance <= range { num(p, "damage").unwrap_or(0.0) * 0.75 * at.data.units.damage } else { 0.0 };
+    s.pellets = 1;
+    s.interval = num(p, "tick").unwrap_or(s.interval);
+}
+
 /// The spin-up before the first shot.
 fn power_minigun(p: &HookParams, _: &ReadAt, s: &mut GunStats) {
     s.latency += num(p, "wind_up").unwrap_or(0.0);
@@ -175,20 +271,37 @@ impl Plugin for Tf2GunsPlugin {
         if let Err(e) = app.add_weapon_data(DATA) {
             panic!("TF2 weapon data: {e}");
         }
-        app.insert_resource(rocket::RocketRules::from_set(&tf2_weapons()))
+        let set = tf2_weapons();
+        app.insert_resource(rocket::RocketRules::from_set(&set))
+            .insert_resource(grenade::GrenadeRules(rocket::RocketRules::of_hook(&set, GRENADE_HOOK)))
+            .insert_resource(sticky::StickyRules::from_set(&set))
+            .insert_resource(needle::NeedleRules::from_set(&set))
             .add_message::<crate::map::GameSound>()
             .add_message::<crate::map::PredictedSound>()
+            .add_message::<blast::Tf2Explosion>()
             .add_systems(
                 Predict::Weapons,
-                (damage::centre_first.before(WeaponFrame), damage::note_shots.after(WeaponFrame)),
+                (
+                    (damage::centre_first, sniper::charge).before(WeaponFrame),
+                    (damage::note_shots, flame::sounds).chain().after(WeaponFrame),
+                ),
             )
-            .add_systems(Predict::Select, minigun::spin.before(SelectWeapons))
+            .add_systems(Predict::Select, (minigun::spin, sticky::charge).before(SelectWeapons))
             .add_systems(
                 FixedUpdate,
-                rocket::explode.in_set(FlyerSet::Touch).run_if(crate::core::authoritative),
+                (
+                    sticky::launch.in_set(FlyerSet::Launch),
+                    (rocket::explode, grenade::touch, grenade::fuse, sticky::touch, needle::touch, sticky::detonate, flame::burn_cone, flame::afterburn)
+                        .chain()
+                        .in_set(FlyerSet::Touch),
+                )
+                    .run_if(crate::core::authoritative),
             )
             .predicted_part::<damage::Tf2Gun>()
-            .predicted_part::<minigun::Tf2Minigun>();
+            .predicted_part::<minigun::Tf2Minigun>()
+            .predicted_part::<sniper::Tf2Sniper>()
+            .predicted_part::<sticky::Tf2Sticky>()
+            .predicted_part::<flame::Tf2Flame>();
     }
 }
 
@@ -216,7 +329,11 @@ mod tests {
         assert_eq!(class(SHOTGUN), Some(GunClass::Shotgun));
         assert_eq!(class(ROCKET_LAUNCHER), Some(GunClass::Launcher));
         assert_eq!(class(MINIGUN), Some(GunClass::Heavy));
+        assert_eq!(class(SNIPER_RIFLE), Some(GunClass::Sniper));
+        assert_eq!(class(REVOLVER), Some(GunClass::HeavyPistol));
+        assert_eq!(class(FLAMETHROWER), Some(GunClass::Flamethrower));
+        assert_eq!(class(STICKY_LAUNCHER), Some(GunClass::Launcher));
         let arms: Vec<String> = arms_by_gun().into_iter().map(|(_, a)| a).collect();
-        assert_eq!(arms, ["scout", "soldier", "engineer", "heavy"]);
+        assert_eq!(arms, ["scout", "soldier", "engineer", "heavy", "scout", "sniper", "sniper", "spy", "demo", "demo", "pyro", "medic"]);
     }
 }

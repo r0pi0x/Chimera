@@ -1,0 +1,71 @@
+# The Sniper Rifle, the Sniper's primary (specs/tf2/weapons_more.md 1,
+# 3): one bullet every 1.5 s, no spread, 25 rounds and no reload, no
+# distance modifier. attack2 scopes in (field of view 20, the holder at
+# 80 units/s, the view model hidden); a shot leaves the scope and it
+# comes back at the next shot's time (auto re-zoom). Scoped, the damage
+# charges from 50 to 150 (`tf2:sniper`: 50/s after 0.3 s) and a head hit
+# after 0.2 s scoped is a crit, x3; unscoped every hit is 50.
+id = "tf2:tf_weapon_sniperrifle"
+base = "tf2:gun"
+class = "sniper"
+slot = 0
+
+[trigger]
+automatic = true
+cycle = 1.5
+timing = "accumulate"
+
+[magazine]
+clip = 25
+ammo = "tf2:sniperrifle"
+reload = 1.0
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 0.0
+spread = { template = 0.0 }
+
+[damage]
+amount = 50.0
+falloff = 1.0
+falloff_step = 1024.0
+hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
+impulse = 0.0
+
+[alt]
+kind = "scope"
+fov = [20.0]
+max_speed = 80.0
+unzoom_after_shot = true
+overlay = true
+step = 0.3
+
+[sounds]
+fire = "Weapon_SniperRifle.Single"
+empty = "Weapon_SniperRifle.ClipEmpty"
+draw = [[0.0, "Weapon_SniperRifle.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_sniperrifle/c_sniperrifle.mdl"
+view = "models/weapons/c_models/c_sniperrifle/c_sniperrifle.mdl"
+view_right_handed = true
+
+[hud]
+name = "Sniper Rifle"
+icon = "sniperrifle"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+arms = "sniper"
+script = "tf_weapon_sniperrifle"
+flat = true
+
+[hooks."tf2:sniper"]
+base = 50.0
+charge_max = 150.0
+charge_rate = 50.0
+charge_delay = 0.3
+headshot_delay = 0.2
+headshot = 3.0
+headshot_icon = "headshot"

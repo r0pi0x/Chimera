@@ -122,3 +122,37 @@ fn tf2s_hud_follows_its_gun() {
     assert_ne!(crate::hud::hud(&sim), tf2::game::GAME);
     assert!(!crate::hud::shown(&mut sim, tf2::game::GAME));
 }
+
+/// weapons_more.md's eight guns as rungs (the brief's ladder on the
+/// greybox, TF2 among the weapon games): each gives its gun and TF2's
+/// identity; the Pistol, Revolver, Flame Thrower, Syringe Gun and Grenade
+/// Launcher each kill.
+#[test]
+fn the_next_eight_tf2_guns_are_rungs_and_kill() {
+    use tf2::game::weapons::{
+        FLAMETHROWER, GRENADE_LAUNCHER, PISTOL_SCOUT, REVOLVER, SMG, SNIPER_RIFLE, STICKY_LAUNCHER, SYRINGE_GUN,
+    };
+    let guns = [PISTOL_SCOUT, SMG, SNIPER_RIFLE, REVOLVER, GRENADE_LAUNCHER, STICKY_LAUNCHER, FLAMETHROWER, SYRINGE_GUN];
+    let text = crate::hl2dm_parts::ladder_text(&guns, false)
+        .replace("\"hl2dm\", \"combat_arms\"]", "\"hl2dm\", \"tf2\", \"combat_arms\"]");
+    let mut sim = Sim::new(CaSim, (GreyboxMapPlugin, PartyPartsPlugin));
+    crate::gun_game::no_finale(sim.app.world_mut());
+    use chimera_sim::minigame::MinigameAppExt;
+    sim.app.add_minigames(&[("tf2_more.toml", &text)]).unwrap();
+    minigame::start(sim.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
+    let a = soldier(&mut sim);
+    let b = soldier(&mut sim);
+    sim.seconds(1.5);
+    for (r, gun) in guns.iter().enumerate() {
+        set_rung(&mut sim, a, r);
+        assert_eq!(held(&sim, a), Some(*gun));
+        assert_eq!(identity(sim.app.world(), a).as_deref(), Some("tf2"), "{gun}");
+    }
+    for gun in [GRENADE_LAUNCHER, PISTOL_SCOUT, REVOLVER, FLAMETHROWER, SYRINGE_GUN] {
+        let r = guns.iter().position(|g| *g == gun).unwrap();
+        set_rung(&mut sim, a, r);
+        line_up(&mut sim, a, b, 3.0);
+        // The Syringe Gun's rung is the last: its kill wins the match.
+        assert!(shoot_until_dead(&mut sim, a, b, 12.0), "{gun} kills");
+    }
+}

@@ -40,6 +40,11 @@ draw = [[0.0, "Weapon_Minigun.Draw"]]
 world = "models/weapons/c_models/c_minigun/c_minigun.mdl"
 view = "models/weapons/c_models/c_minigun/c_minigun.mdl"
 view_right_handed = true
+# The first person shows the spun pose (game::view), 7 right and 11 up
+# of where the arms put it: the hand on the top grip, the barrels ahead
+# (ours, matched by eye; the minimal view models' `min_viewmodel_offset`
+# is another thing).
+view_offset = [0.0, -7.0, 11.0]
 
 [hud]
 name = "Minigun"

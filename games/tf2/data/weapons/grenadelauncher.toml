@@ -1,0 +1,75 @@
+# The Grenade Launcher, the Demoman's primary (specs/tf2/weapons_more.md
+# 1, 4, 6): a grenade every 0.6 s, 4 in the drum and 16 carried, one at a
+# time (first in at 1.2, then 0.6 each). The grenade (Chimera's flyers)
+# starts 16 forward, 8 right and 6 down from the eye at 1200 along the aim
+# and 200 up, falls with gravity 800 and bounces off the world; it passes
+# teammates. `tf2:grenade`: on an enemy before it has touched the world it
+# explodes there (full splash), after that it only bounces; at 2.3 s it
+# explodes wherever it is: 100 x the splash (to 50 % at 146), no
+# distance modifier, the owner's own x0.75 airborne.
+id = "tf2:tf_weapon_grenadelauncher"
+base = "tf2:base"
+class = "launcher"
+slot = 0
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 0.6
+timing = "accumulate"
+
+[magazine]
+clip = 4
+ammo = "tf2:grenades"
+reload = 0.6
+auto_reload = true
+shells = { start = 0.6, insert = 0.6, back_to_back = true }
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 0.0
+spread = { template = 0.0 }
+
+[sounds]
+fire = "Weapon_GrenadeLauncher.Single"
+reload = [[0.0, "Weapon_GrenadeLauncher.DrumLoad"]]
+draw = [[0.0, "Weapon_GrenadeLauncher.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_grenadelauncher/c_grenadelauncher.mdl"
+view = "models/weapons/c_models/c_grenadelauncher/c_grenadelauncher.mdl"
+view_right_handed = true
+
+[hud]
+name = "Grenade Launcher"
+icon = "tf_projectile_pipe"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+arms = "demo"
+script = "tf_weapon_grenadelauncher"
+
+[hooks."chimera:projectile"]
+speed = 1200.0
+up_speed = 200.0
+gravity = 800.0
+half = [2.0, 2.0, 2.0]
+touch = "report"
+shown = "tf2:grenade"
+offset = [16.0, 8.0, -6.0]
+pass_teammates = true
+life = 2.3
+x_forward = true
+
+[hooks."tf2:grenade"]
+damage = 100.0
+radius = 146.0
+edge = 0.5
+self_air_scale = 0.75
+push_other = 6.0
+push_self_air = 10.0
+push_self_ground = 5.0
+by_distance = false
+sound = "Weapon_Grenade_Pipebomb.Explode"
+bounce_sound = "Weapon_Grenade_Pipebomb.Bounce"

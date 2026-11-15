@@ -378,6 +378,11 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   track in the heading frame with its pull-in, through `MapView`; the
   wheels, steering and suspension are posed on the rigged prop
   (`vehicles::look`), on a client from the replicated motion.
+  Halo's vehicles are server state on every machine: who sits where
+  replicates (`NetSeat`, `net62`), any game's character rides through
+  the engine's `Carried` (every movement skips a carried character and
+  a carried player is not predicted); in the party apps vehicles are
+  off by default (`halo_ce:party_vehicles`: none is placed).
   Halo's lasting sounds (`game::audio`) play on the engine's
   `SoundControl`/`PlaySound` seams: the level's background sound by the
   listener's cluster, its sound scenery, the shown projectiles' flight

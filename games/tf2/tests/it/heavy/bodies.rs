@@ -116,7 +116,8 @@ fn the_guns_kill_icons_are_cut_from_the_sheet() {
     app.init_resource::<Assets<Image>>().init_resource::<WeaponIcons>().add_systems(Update, tf2::ui::systems::register_kill_icons);
     app.update();
     let icons = app.world().resource::<WeaponIcons>();
-    for gun in tf2::game::weapons::GUNS {
+    use tf2::game::weapons::{MINIGUN, ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN};
+    for gun in [SCATTERGUN, ROCKET_LAUNCHER, SHOTGUN, MINIGUN] {
         match icons.icon(gun) {
             Some(WeaponIcon::Image { image, size }) => {
                 assert_eq!(size, Vec2::new(96.0, 32.0), "{gun}");

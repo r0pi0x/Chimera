@@ -177,11 +177,12 @@ fn held_kit(kit: &mut Kit) {
 
 /// TF2's guns that `wants`, into `into`: their view models
 /// (`view::load`), their `c_` models held (bone-merged by the first bone
-/// they share with their class's arms, `weapon_bone`) and, with the Rocket
-/// Launcher, the rocket's model (`weapons::ROCKET_SHOWN`). What a gun's
+/// they share with their class's arms, `weapon_bone`) and their
+/// projectiles' models (`weapons::PROJECTILES`: the rocket, the grenade,
+/// the sticky, the needle). What a gun's
 /// `weapon/<id>` set holds is what this reads for it (`sets`).
 pub fn add_guns(materials: &mut MaterialLoader, wants: &dyn Fn(&str) -> bool, into: &mut crate::map::GameKit, warnings: &mut Vec<String>) {
-    use super::weapons::{self as w, ROCKET_LAUNCHER, ROCKET_MODEL, ROCKET_SHOWN};
+    use super::weapons::{self as w, PROJECTILES};
     super::view::load(materials, wants, &mut into.view_models, warnings);
     let set = w::tf2_weapons();
     for (gun, arms) in w::arms_by_gun() {
@@ -200,10 +201,10 @@ pub fn add_guns(materials: &mut MaterialLoader, wants: &dyn Fn(&str) -> bool, in
             Ok(h) => into.held.push(h),
             Err(e) => warnings.push(e),
         }
-        if gun == ROCKET_LAUNCHER {
+        for (_, key, model) in PROJECTILES.iter().filter(|(g, ..)| *g == gun) {
             // In its bone's frame, as a held model (its nose then along +X:
             // `chimera:projectile`'s `x_forward`).
-            match props::load_held(materials, ROCKET_MODEL, ROCKET_SHOWN, &skeleton) {
+            match props::load_held(materials, model, key, &skeleton) {
                 Ok(h) => into.held.push(h),
                 Err(e) => warnings.push(e),
             }

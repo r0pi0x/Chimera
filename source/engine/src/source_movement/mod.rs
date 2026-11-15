@@ -2916,7 +2916,7 @@ fn step(
             Option<&mut crate::core::IgnoreFallDamage>,
             Option<&SourceTraits>,
         ),
-    )>,
+    ), Without<crate::core::Carried>>,
     query: SpatialQuery,
     brushes: Option<Res<MapBrushes>>,
     water: Option<Res<MapWater>>,
