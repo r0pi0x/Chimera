@@ -4,7 +4,9 @@
 //!
 //! - **Startup** (`sets::STARTUP_SETS`): a game's `base`, fetched behind
 //!   the client's window: what the menus read and what every match reads
-//!   (the doc's classes (a) and (b)), nothing more.
+//!   (the doc's classes (a) and (b)), nothing more. A game of
+//!   `sets::MATCH_BASE_GAMES` (Halo's: its donor map) has none: its `base`
+//!   comes with the first match that plays its map, guns or bodies.
 //! - **Each match, before it starts** (the join's or level change's
 //!   download, during the loading screen and the pre-match lobby): the
 //!   match's own sets, which the server's offer names

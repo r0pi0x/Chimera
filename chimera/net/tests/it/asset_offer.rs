@@ -91,6 +91,45 @@ fn the_offer_names_weapon_sets_as_published() {
     assert_eq!(sets_of(&m, "lt"), ["base", "players", "common", "weapon/m9_knife"]);
 }
 
+/// The offer of a match on `map` whose hooks name `weapons` and `sets`
+/// (as the ladder's rungs and a game's rung bodies do).
+fn offer_for(map: &str, weapons: &[&str], sets: &[&str]) -> MatchManifest {
+    let mut world = World::new();
+    world.insert_resource(AssetHost::new("https://assets.invalid:1", "ab".repeat(32)));
+    world.init_resource::<AssetHooks>();
+    let names = AssetNames {
+        weapons: weapons.iter().map(|s| s.to_string()).collect(),
+        sets: sets.iter().map(|s| s.to_string()).collect(),
+    };
+    world.insert_resource(Names(names));
+    world.resource_mut::<AssetHooks>().0.push(|w| w.resource::<Names>().0.clone());
+    let mut m = MatchManifest { map: map.into(), ..default() };
+    assets::offer(&mut world, &mut m);
+    m
+}
+
+#[derive(Resource)]
+struct Names(AssetNames);
+
+/// Halo's `base` is its donor map, not a startup download
+/// (`sets::startup_sets`), so a match's offer names it exactly when Halo
+/// is in the match: its map, a gun on the ladder or a body worn.
+#[test]
+fn the_offer_names_halos_base_only_when_halo_is_in_the_match() {
+    let none = offer_for("src:de_test", &["src:weapon_ak47"], &[]);
+    assert!(none.assets.as_ref().unwrap().games().all(|g| g != "halo_ce"), "nothing of Halo: {none:?}");
+    let map = offer_for("halo_ce:bloodgulch", &[], &[]);
+    assert_eq!(sets_of(&map, "halo_ce"), ["base", "players", "common", "map/bloodgulch"]);
+    // A gun on the ladder, whatever the map (the rung list's synthetic).
+    let gun = offer_for("src:de_test", &["src:weapon_ak47", "halo_ce:assault_rifle"], &[]);
+    let halo = sets_of(&gun, "halo_ce");
+    assert_eq!(halo, ["base", "players", "common", "weapon/assault_rifle"]);
+    assert!(sets_of(&gun, "src").contains(&"map/de_test".to_string()));
+    // A body worn: its set names the game.
+    let body = offer_for("src:de_test", &[], &["halo_ce:character/spartan"]);
+    assert_eq!(sets_of(&body, "halo_ce"), ["base", "players", "common", "character/spartan"]);
+}
+
 /// The weapons the playing ladder's extras hand out (a rung's melee
 /// weapon, a rung character's weapon: the host's draw, not in the
 /// definition) are the match's weapons too, once each.
