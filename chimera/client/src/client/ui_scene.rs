@@ -58,8 +58,10 @@ pub const SCENES: &[&str] =
 pub struct StagedLobby;
 
 /// `ui_scene lobby`: a lobby waiting for players, its names as their
-/// players typed them.
-fn stage_lobby(w: &mut World) {
+/// players typed them; `ui_scene lobby host`: the host's view of a first
+/// lobby waiting for its Start, with two parties (you and two friends,
+/// another pair), a stranger and a bot, 8 slots.
+fn stage_lobby(w: &mut World, how: Option<&str>) {
     use chimera_net::prematch::{LobbyRow, NetLobby, status};
     let row = |id: Option<u64>, name: &str, st: u8, ping: Option<u16>, wins: u32| LobbyRow {
         id,
@@ -70,7 +72,37 @@ fn stage_lobby(w: &mut World) {
         ping_ms: ping,
         wins,
         avatar: if id.is_some() { (name.len() as u8 * 7) % 32 } else { chimera_net::prematch::NO_AVATAR },
+        party: 0,
     };
+    if how == Some("host") {
+        use chimera_net::net::HOST_ID;
+        let mut dl = row(Some(2), "AI_alpha_9", status::DOWNLOADING, Some(31), 0);
+        (dl.done, dl.total, dl.party, dl.avatar) = (42, 100, 1, 6 * 1 + 8 * 2);
+        let mut ld = row(Some(3), "AI_alpha_3", status::LOADING, Some(28), 0);
+        (ld.party, ld.avatar) = (1, 8 * 3 + 3);
+        let mut me = row(Some(HOST_ID), "Player", status::READY, None, 0);
+        (me.party, me.avatar) = (1, 8 * 1);
+        let mut nj = row(Some(4), "Nightjar", status::READY, Some(44), 0);
+        (nj.party, nj.avatar) = (2, 8 * 3 + 1);
+        let mut wr = row(Some(5), "wren_77", status::CONNECTING, Some(95), 0);
+        (wr.party, wr.avatar) = (2, 8 * 1 + 5);
+        let mut st = row(Some(6), "Stranger", status::READY, Some(140), 0);
+        st.avatar = 8 * 2 + 7;
+        w.insert_resource(super::prematch_lobby::StagedLobbyHost { slots: 8 });
+        w.spawn((
+            StagedLobby,
+            NetLobby {
+                map: "cs_source:de_dust2".into(),
+                mode: "Ultimate Gun Game".into(),
+                rows: vec![me, dl, ld, nj, wr, st, row(None, "Bot_Kilo", status::READY, None, 0)],
+                waiting: 3,
+                wait_left: None,
+                countdown: None,
+                host_start: true,
+            },
+        ));
+        return;
+    }
     w.spawn((
         StagedLobby,
         NetLobby {
@@ -85,7 +117,7 @@ fn stage_lobby(w: &mut World) {
             waiting: 2,
             wait_left: Some(72),
             countdown: None,
-            host_start: false,
+            host_start: true,
         },
     ));
 }
@@ -122,6 +154,7 @@ fn clear_staged(w: &mut World) {
     for e in lobbies {
         w.despawn(e);
     }
+    w.remove_resource::<super::prematch_lobby::StagedLobbyHost>();
     super::race_chip::stage(w, None);
     super::rank_toast::stage(w, None);
     super::match_effects::stage(w, None);
@@ -272,7 +305,7 @@ impl Plugin for UiScenePlugin {
                             return Ok(None);
                         }
                         "lobby" => {
-                            stage_lobby(w);
+                            stage_lobby(w, a.get(1).map(String::as_str));
                             return Ok(None);
                         }
                         "feed" => {

@@ -12,15 +12,17 @@
 //! the theme (Lucker Party, the plain apps) `main_menu` draws its VGUI
 //! frames.
 //!
-//! - **Play**: sub-tabs Server (data/main_menu.toml's `[[play]]` rows:
-//!   the map a stepper through "Rotation" and the pool, ranges steppers,
-//!   Off/On a toggle, up to five choices segmented, text a text field)
-//!   and Game (host_settings.toml's next-match rows, `main_menu::
-//!   game_settings`); a pane at the right sums the match up (minigame,
-//!   map, bots, players, lobby, server, password). Enter starts.
+//! - **Host** (`MenuPage::Play`): sub-tabs Server (data/main_menu.toml's
+//!   `[[play]]` rows: Server name, Password and Port first; the Maps
+//!   field opening the picker, `maps_picker`; ranges steppers, Off/On a
+//!   toggle, up to five choices segmented, one choice its words, text a
+//!   text field; UPnP's outcome a STATUS block, its words on hover) and
+//!   Game (host_settings.toml's next-match rows, `main_menu::
+//!   game_settings`), Q and E at the tab strip's ends; a pane at the right
+//!   sums the match up. Enter starts (on the Maps row: opens the picker).
 //!   Its rows scroll in the kit's container (`chimera_ui::scroll`: the
-//!   bar, the eased wheel, the right-button pan and fling); ↑↓ keep the
-//!   focused row in view (`SignalPages::reveal`).
+//!   bar, the eased wheel); ↑↓ keep the focused row in view
+//!   (`SignalPages::reveal`).
 //! - **Join**: Direct (the address and the password, text fields), the
 //!   recent addresses, and the **server browser** (main-menu.md M2; its
 //!   rows and files are `server_list`'s) in three tabs: **LAN** (every
@@ -50,7 +52,7 @@
 //!   12° slant (`Ui::wipe_cover`); the menu's cues (`ui_cues`: hover,
 //!   select, back, denied, the steppers' slider).
 //!
-//! `ui_scene play [server|game]` and `ui_scene join [lan|favourites|
+//! `ui_scene play [server|game|maps]` (`maps`: the picker open) and `ui_scene join [lan|favourites|
 //! history|password]` stage them for screenshots (`join` with made-up
 //! servers, none of them saved).
 //!
@@ -245,6 +247,9 @@ pub struct SignalPagesPlugin;
 impl Plugin for SignalPagesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SignalPages>()
+            .init_resource::<crate::maps_picker::MapsPicker>()
+            .init_resource::<crate::maps_picker::MapsSource>()
+            .add_message::<crate::maps_picker::PickerAction>()
             .init_resource::<LanList>()
             .init_resource::<BrowserFiles>()
             .init_resource::<ButtonInput<KeyCode>>()
@@ -252,13 +257,131 @@ impl Plugin for SignalPagesPlugin {
             .add_systems(Startup, load_saved)
             .add_systems(
                 Update,
-                (follow, wheel, keys, line_clicks).chain().before(crate::main_menu::MainMenuSystems).before(crate::esc_menu::EscMenuSystems),
+                (follow, wheel, picker_keys, picker_clicks, keys, line_clicks)
+                    .chain()
+                    .before(crate::main_menu::MainMenuSystems)
+                    .before(crate::esc_menu::EscMenuSystems),
             )
             .add_systems(Update, crate::ui_cues::hover::<PageLine>.in_set(crate::main_menu::MainMenuSystems))
             .add_systems(Update, (field_pointer, draw).chain().after(crate::main_menu::MainMenuSystems));
         use chimera_client::client::ui_scene::UiSceneHooks;
         UiSceneHooks::add(app.world_mut(), "play", |w, a| stage(w, MenuPage::Play, a));
         UiSceneHooks::add(app.world_mut(), "join", |w, a| stage(w, MenuPage::Join, a));
+    }
+}
+
+/// The Maps picker's keys while it is open (`maps_picker` module doc):
+/// ↑↓ the row, Space on or off, ←→ fold or open, Enter Done, Esc Cancel
+/// (a right click is Esc).
+#[allow(clippy::too_many_arguments)]
+fn picker_keys(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut picker: ResMut<crate::maps_picker::MapsPicker>,
+    source: Res<crate::maps_picker::MapsSource>,
+    pages: Res<SignalPages>,
+    (minigames, game_id): (Option<Res<chimera_sim::minigame::Minigames>>, Res<MenuMinigame>),
+    mut out: MessageWriter<crate::maps_picker::PickerAction>,
+    mut cues: MessageWriter<UiCue>,
+) {
+    use crate::maps_picker::{PickerAction as P, TreeRow};
+    picker.took_keys = picker.open.is_some();
+    if picker.open.is_none() {
+        return;
+    }
+    if pages.up != Some(MenuPage::Play) {
+        // Not on Host (yet: a staged scene opens it first): no keys.
+        if pages.up.is_some() {
+            picker.open = None;
+        }
+        picker.took_keys = false;
+        return;
+    }
+    let pool = picker_pool(minigames.as_deref(), &game_id.0);
+    let games = source.0.listing(&pool);
+    let rows = picker.rows(&games);
+    let k = |c: KeyCode| keys.just_pressed(c);
+    if k(KeyCode::Escape) {
+        out.write(P::Cancel);
+    } else if k(KeyCode::Enter) || k(KeyCode::NumpadEnter) {
+        out.write(P::Done);
+    } else if k(KeyCode::Space) {
+        out.write(P::Toggle(picker.cursor));
+    } else if (k(KeyCode::ArrowUp) || k(KeyCode::ArrowDown)) && !rows.is_empty() {
+        let next = if k(KeyCode::ArrowUp) { picker.cursor.saturating_sub(1) } else { (picker.cursor + 1).min(rows.len() - 1) };
+        if next != picker.cursor {
+            picker.cursor = next;
+            cues.write(UiCue::new("ui_hover"));
+        }
+    } else if (k(KeyCode::ArrowLeft) || k(KeyCode::ArrowRight))
+        && let Some(row) = rows.get(picker.cursor)
+        && !matches!(row, TreeRow::Map(..))
+    {
+        picker.fold(&games, row, k(KeyCode::ArrowRight));
+        cues.write(UiCue::new("ui_select"));
+    }
+}
+
+/// The minigame's pool, the picker's listing's source.
+fn picker_pool(minigames: Option<&chimera_sim::minigame::Minigames>, id: &str) -> Vec<String> {
+    minigames
+        .and_then(|m| m.get(id))
+        .map(|d| d.maps.iter().map(|m| chimera_net::net::normalize_map(m)).collect())
+        .unwrap_or_default()
+}
+
+/// The picker's clicks and what its actions do.
+#[allow(clippy::too_many_arguments)]
+fn picker_clicks(
+    pressed: Query<(&Interaction, &crate::maps_picker::PickerAction), Changed<Interaction>>,
+    mut actions: ResMut<Messages<crate::maps_picker::PickerAction>>,
+    mut picker: ResMut<crate::maps_picker::MapsPicker>,
+    source: Res<crate::maps_picker::MapsSource>,
+    (minigames, game_id): (Option<Res<chimera_sim::minigame::Minigames>>, Res<MenuMinigame>),
+    mut cues: MessageWriter<UiCue>,
+) {
+    use crate::maps_picker::PickerAction as P;
+    let mut todo: Vec<P> = actions.drain().collect();
+    todo.extend(pressed.iter().filter(|(i, _)| **i == Interaction::Pressed).map(|(_, a)| *a));
+    if todo.is_empty() || picker.open.is_none() {
+        return;
+    }
+    let pool = picker_pool(minigames.as_deref(), &game_id.0);
+    let games = source.0.listing(&pool);
+    let rows = picker.rows(&games);
+    for a in todo {
+        match a {
+            P::Toggle(i) => {
+                if let Some(row) = rows.get(i) {
+                    picker.cursor = i;
+                    picker.toggle(&games, row);
+                    cues.write(UiCue::new("ui_select"));
+                }
+            }
+            P::Fold(i) => {
+                if let Some(row) = rows.get(i) {
+                    // A folded one opens, an open one folds.
+                    let open = picker.is_folded(&games, row);
+                    picker.cursor = i;
+                    picker.fold(&games, row, open);
+                    cues.write(UiCue::new("ui_select"));
+                }
+            }
+            P::AllOff => {
+                let all: Vec<String> = games.iter().flat_map(|g| g.groups.iter().flat_map(|k| k.maps.iter().cloned())).collect();
+                picker.open = Some(all.into_iter().collect());
+                cues.write(UiCue::new("ui_select"));
+            }
+            P::Done => {
+                if let Some(off) = picker.open.take() {
+                    picker.off = off;
+                }
+                cues.write(UiCue::new("ui_select"));
+            }
+            P::Cancel => {
+                picker.open = None;
+                cues.write(UiCue::new("ui_back"));
+            }
+        }
     }
 }
 
@@ -354,6 +477,13 @@ pub fn stage(w: &mut World, page: MenuPage, args: &[String]) -> Result<(), Strin
         _ => 0,
     };
     w.resource_mut::<SignalPages>().stage = Some((page, tab));
+    // `ui_scene play maps`: the Maps picker open, a game folded and a few
+    // maps off.
+    if page == MenuPage::Play && arg.as_deref() == Some("maps") {
+        let mut pk = w.resource_mut::<crate::maps_picker::MapsPicker>();
+        pk.open = Some(Default::default());
+        pk.cursor = 6;
+    }
     if page == MenuPage::Join {
         let mut l = w.resource_mut::<LanList>();
         let (results, favs, visits) = staged_servers(sl::unix_now());
@@ -758,9 +888,10 @@ fn keys(
     mut p: ResMut<SignalPages>,
     mut out: MessageWriter<MainMenuAction>,
     mut cues: MessageWriter<UiCue>,
+    picker: Res<crate::maps_picker::MapsPicker>,
 ) {
     let (Some(page), Some(keys)) = (p.up, keys) else { return };
-    if console.is_some_and(|c| c.open) {
+    if console.is_some_and(|c| c.open) || picker.took_keys {
         return;
     }
     let k = |c: KeyCode| keys.just_pressed(c);
@@ -788,6 +919,11 @@ fn keys(
             reveal(&mut lan, ls.get(next).copied());
             cues.write(UiCue::new("ui_hover"));
         }
+        return;
+    }
+    let on_maps = matches!(line, Some(Line::Play(r)) if data.play.get(r).is_some_and(|row| row.kind == PlayKind::Map));
+    if on_maps && (k(KeyCode::Enter) || k(KeyCode::NumpadEnter) || k(KeyCode::Space)) {
+        out.write(MainMenuAction::OpenMaps);
         return;
     }
     if k(KeyCode::Enter) || k(KeyCode::NumpadEnter) {
@@ -914,6 +1050,8 @@ struct DrawKey {
     camera: Option<Entity>,
     pool: Vec<String>,
     party: Option<chimera_ui::shell::Party>,
+    upnp: String,
+    picker: crate::maps_picker::MapsPicker,
 }
 
 /// What the drawing reads besides the state.
@@ -926,6 +1064,12 @@ struct Ctx<'a> {
     /// Unix seconds (History's "5 min ago"), at the draw.
     unix: u64,
     party: &'a chimera_ui::shell::Party,
+    /// UPnP's outcome: its light and the plain words (the status block's
+    /// hover).
+    upnp: (chimera_ui::controls::StatusLight, String),
+    /// The Maps picker and its listing.
+    picker: &'a crate::maps_picker::MapsPicker,
+    games: Vec<crate::maps_picker::CatalogueGame>,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -936,7 +1080,12 @@ fn draw(
     (mut images, mut icons, mut ambients): (Option<ResMut<Assets<Image>>>, Option<ResMut<IconImages>>, Option<ResMut<Assets<AmbientMaterial>>>),
     camera: Query<Entity, With<MenuUiCamera>>,
     roots: Query<Entity, With<SignalPagesRoot>>,
-    party: Res<chimera_ui::shell::Party>,
+    (party, upnp, picker, maps_source): (
+        Res<chimera_ui::shell::Party>,
+        Option<Res<chimera_net::net::upnp::Upnp>>,
+        Res<crate::maps_picker::MapsPicker>,
+        Option<Res<crate::maps_picker::MapsSource>>,
+    ),
     mut drawn: Local<DrawKey>,
     mut commands: Commands,
 ) {
@@ -953,6 +1102,8 @@ fn draw(
         camera: cam,
         pool: pool.clone(),
         party: Some(party.clone()),
+        upnp: upnp.as_ref().map(|u| format!("{:?}", u.state)).unwrap_or_default(),
+        picker: picker.clone(),
     };
     if *drawn == key {
         return;
@@ -971,10 +1122,38 @@ fn draw(
         now: now(&clock),
         unix: sl::unix_now(),
         party: &party,
+        upnp: upnp_status(upnp.as_deref(), &menu, &data),
+        picker: &picker,
+        games: maps_source.as_ref().map(|m| m.0.listing(&pool)).unwrap_or_default(),
     };
     let root = spawn(&mut commands, &ui, page, &menu, &p, &cx, images.as_deref_mut(), icons.as_deref_mut(), ambients.as_deref_mut());
     if let Some(c) = cam {
         commands.entity(root).insert(UiTargetCamera(c));
+    }
+}
+
+/// UPnP's light and its words, plainly: forwarded, asking, failed with
+/// the reason, or off (and what the toggle will do at Start).
+fn upnp_status(u: Option<&chimera_net::net::upnp::Upnp>, menu: &PartyMenu, data: &MenuData) -> (chimera_ui::controls::StatusLight, String) {
+    use chimera_net::net::upnp::UpnpState;
+    use chimera_ui::controls::StatusLight as L;
+    let line = u.and_then(|u| u.state.line()).map(|l| {
+        let mut ch = l.chars();
+        ch.next().map(|f| f.to_uppercase().collect::<String>() + ch.as_str()).unwrap_or_default()
+    });
+    match (u.map(|u| &u.state), line) {
+        (Some(UpnpState::Mapped(..)), Some(l)) => (L::Ok, l),
+        (Some(UpnpState::Failed(..)), Some(l)) => (L::Failed, l),
+        (Some(UpnpState::Asking(..)), Some(l)) => (L::Busy, l),
+        _ => {
+            let on = data.play.iter().position(|r| r.cvar == "net_upnp").and_then(|i| menu.play.get(i)).is_some_and(|v| v.trim() == "1");
+            let words = if on {
+                "Off until you start: then it asks your router to forward the port, and says here whether it did."
+            } else {
+                "Off: friends outside your network need the port forwarded by hand."
+            };
+            (L::Off, words.to_string())
+        }
     }
 }
 
@@ -1031,7 +1210,8 @@ fn spawn(
     // The shell's bar: the breadcrumb back to the main menu over the
     // title, the party and the system tiles.
     let title = if page == MenuPage::Play { "Host" } else { "Join" };
-    if let (Some(images), Some(icons)) = (images, icons) {
+    let (mut images, mut icons) = (images, icons);
+    if let (Some(images), Some(icons)) = (images.as_deref_mut(), icons.as_deref_mut()) {
         let bar = chimera_ui::shell::Bar {
             left: chimera_ui::shell::Left::Crumb { parent: "Main menu", title },
             party: &cx.party.members,
@@ -1065,13 +1245,17 @@ fn spawn(
     match page {
         MenuPage::Play => {
             // The kit's scroll container: its bar, the wheel, a
-            // right-button pan; ↑↓ keep the focused row in view.
+            // the thumb; ↑↓ keep the focused row in view.
             let sc = ui.scroll(c, cols, PLAY_SCROLL, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() }, UiStyle::column());
             if p.ask.is_some() {
                 c.entity(sc.view).insert(chimera_ui::scroll::ScrollLocked);
             }
             for (i, l) in ls.iter().enumerate() {
-                play_line(c, ui, sc.content, i, *l, menu, p, cx, row_h);
+                let res = match (images.as_deref_mut(), icons.as_deref_mut()) {
+                    (Some(a), Some(b)) => Some((a, b)),
+                    _ => None,
+                };
+                play_line(c, ui, sc.content, i, *l, menu, p, cx, row_h, res);
             }
             ui.wipe_cover(c, sc.frame, Tone::Ink, p.since, cx.now, lay(t, "wipe", 0.26));
             summary(c, ui, cols, menu, cx);
@@ -1092,7 +1276,7 @@ fn spawn(
             if menu.recent.is_empty() {
                 ui.section(c, left, "Recent", None);
                 let e = ui.boxed(c, left, UiStyle { pad: Some([0.4, 0.0, 0.0, 1.1].into()), ..UiStyle::row() });
-                ui.text(c, e, Role::Mono, 0.56, Tone::Fg3, "None yet");
+                ui.sentence(c, e, chimera_ui::controls::SENTENCE, Tone::Fg2, "None yet.");
             }
             lan_list(c, ui, right, &ls, p, cx, row_h);
             ui.wipe_cover(c, cols, Tone::Ink, p.since, cx.now, lay(t, "wipe", 0.26));
@@ -1130,6 +1314,13 @@ fn spawn(
         _ => &[("↑↓", "Row"), ("F", "Favourite"), ("Enter", "Join"), ("F5", "Refresh")],
     };
     chimera_ui::shell::keys(ui, c, frame, keys);
+    if page == MenuPage::Play && cx.picker.open.is_some() {
+        let res = match (images.as_deref_mut(), icons.as_deref_mut()) {
+            (Some(a), Some(b)) => Some((a, b)),
+            _ => None,
+        };
+        crate::maps_picker::spawn(c, ui, root, cx.picker, &cx.games, res);
+    }
     if let Some(ask) = &p.ask {
         password_modal(c, ui, root, menu, p, ask);
     }
@@ -1168,7 +1359,7 @@ fn password_modal(c: &mut Commands, ui: &Ui, root: Entity, menu: &PartyMenu, p: 
         ui.sentence(c, row, NOTE, Tone::Fg, n);
     }
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
-    let join = ui.button(c, acts, Kind::Primary, "Join", Some("Enter"), 2.4, State::NONE);
+    let join = ui.button(c, acts, Kind::Primary, "Join", Some("Enter"), chimera_ui::controls::HERO_H, State::NONE);
     c.entity(join).insert(MainMenuAction::PasswordJoin);
     let cancel = ui.button(c, acts, Kind::Secondary, "Cancel", Some("Esc"), 2.4, State::NONE);
     c.entity(cancel).insert(MainMenuAction::PasswordCancel);
@@ -1199,7 +1390,19 @@ fn pick_widget(pick: &Pick) -> u8 {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn play_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu: &PartyMenu, p: &SignalPages, cx: &Ctx, row_h: f32) {
+#[allow(clippy::too_many_arguments)]
+fn play_line(
+    c: &mut Commands,
+    ui: &Ui,
+    list: Entity,
+    i: usize,
+    line: Line,
+    menu: &PartyMenu,
+    p: &SignalPages,
+    cx: &Ctx,
+    row_h: f32,
+    res: Option<(&mut Assets<Image>, &mut IconImages)>,
+) {
     let focus = p.focus == i;
     let vst = State::focused(focus);
     match line {
@@ -1213,10 +1416,23 @@ fn play_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
             }
             match &row.kind {
                 PlayKind::Map => {
-                    let shown = if v.is_empty() { format!("Rotation • {} maps", cx.pool.len()) } else { map_label(&v) };
-                    let (minus, plus) = ui.stepper(c, vl, &shown, 13.0, vst);
-                    c.entity(minus).insert(MainMenuAction::PlayStep { row: r, dir: -1 });
-                    c.entity(plus).insert(MainMenuAction::PlayStep { row: r, dir: 1 });
+                    // The Maps field: opens the picker (the list-with-
+                    // chevron icon: a dialog, not a dropdown or a link).
+                    let shown = if v.is_empty() { cx.picker.summary(&cx.games) } else { map_label(&v) };
+                    if let Some((images, icons)) = res {
+                        let f = ui.dialog_field(c, vl, images, icons, &shown, 14.0, vst);
+                        c.entity(f).insert(MainMenuAction::OpenMaps);
+                    }
+                }
+                PlayKind::Pick(pick) if row.cvar == "net_upnp" => {
+                    // The outcome as a status block (its words on hover),
+                    // then the toggle.
+                    let b = ui.status_block(c, vl, cx.upnp.0);
+                    c.entity(b).insert(chimera_ui::shell::Tip::new("UPnP").note(&cx.upnp.1));
+                    pick_value(c, ui, vl, pick, &v, vst, |k| match k {
+                        PickAct::Step(dir) => MainMenuAction::PlayStep { row: r, dir },
+                        PickAct::Option(option) => MainMenuAction::PlayPick { row: r, option },
+                    })
                 }
                 PlayKind::Pick(pick) => pick_value(c, ui, vl, pick, &v, vst, |k| match k {
                     PickAct::Step(dir) => MainMenuAction::PlayStep { row: r, dir },
@@ -1294,7 +1510,7 @@ fn summary(c: &mut Commands, ui: &Ui, cols: Entity, menu: &PartyMenu, cx: &Ctx) 
     let map_row = cx.data.play.iter().position(|r| r.kind == PlayKind::Map);
     let map = map_row.and_then(|i| menu.play.get(i)).cloned().unwrap_or_default();
     let map = if map.is_empty() {
-        format!("Rotation, from {}", cx.pool.first().map_or("the pool".into(), |m| map_label(m)))
+        cx.picker.summary(&cx.games)
     } else {
         map_label(&map)
     };

@@ -174,6 +174,8 @@ fn joining_shows_its_stages_and_the_download() {
         from: "server".into(),
         done: 250,
         total: 1000,
+        files_done: 0,
+        files_total: 0,
     });
     assert_eq!(
         dialog_state(&m, Some(&j), None, false, "x"),

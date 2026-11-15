@@ -106,10 +106,9 @@ text, sprite) and `chimera_core` (console cvars) only, so
 - `scroll` (M7): the scroll container, `Ui::scroll(key)`: a view, its
   content and a Signal bar (hairline track, a thumb the visible share
   long with 12° ends, hover `fg`, drag `acc`; drag it, click the track
-  to page), shown only on overflow; the wheel eased to its target; the
-  right button held pans 1:1 and flings on release (speed of the last
-  0.1 s, exponential friction, an elastic stop at the edges, stopped by
-  the next press); `ScrollIntoView` keeps a row in view; state by key in
+  to page), shown only on overflow; the wheel eased to its target (the
+  right-button pan and fling are gone since revision 8: the right button
+  is Back); `ScrollIntoView` keeps a row in view; state by key in
   `ScrollViews` (screens rebuild); `[layout.scroll]` tunes it,
   `ReducedMotion` (`ui_reduce_motion`) cuts the ease and the fling.
 
@@ -1225,17 +1224,55 @@ four stages, each merged on its own:
    `presence` fakes them). The lobby already is revision 8's list (one
    list, you first, avatars, the progress bars, ping bars and ms, no
    ready-up: `mp_lobby_host_start`, the host's Start as the hero).
-3. **Controls**: the hero (white on #2D6BEB; the dialog's hero bigger
-   than its secondary), the thin caret, the progress component (variant
-   B), ping bars and ms with the loss mark, the list-with-chevron field,
-   STATUS beside status blocks, Q/E caps at the tab strips' ends,
-   slanted segmented groups, Mono only for data, instant apply (display
-   mode and resolution wait for Apply and the 15 s keep).
-4. **Screens**: the main menu, Settings, Host (name, password, port
-   first; the Maps field opening the picker dialog; "Start when: host
-   presses Start"; the UPnP status block), Join (section 13's fixes), the
-   lobby (one list, your party first, no ready-up, Start the host's
-   hero), Loading (MB of MB, files, speed, time left; the leave dialog).
+3. **Controls** (in): the hero white on #2D6BEB (`Tone::Hero`; hover
+   `acc` and its edge leaning out), a dialog's hero the big one (`HERO_H`,
+   Display Bold .9) beside a regular secondary, labels in Display, key
+   caps as the lockup; the thin white caret just after the text; the
+   progress component (`Ui::progress`, variant B: hollow and filling,
+   filled when ready, striped while connecting, dim pending, the word and
+   share inside); ping bars and ms with the loss mark (the lobby);
+   `Ui::dialog_field` (the list-with-chevron icon, `listchev`);
+   `Ui::status_block` (a light and STATUS on a hairline, its words the
+   tooltip); `tabs_ex` (Q and E caps at the strip's ends, the active tab's
+   cobalt strip); the segmented group slanted (a slanted track, dividers
+   and white pick; words in Display, numbers in Mono); the dropdown's
+   upright chevron (M7's). Settings apply at once (`settings::DEFERRED`:
+   display mode and resolution wait for Apply and the 15 s keep): the
+   cvar at once, the config written `SAVE_AFTER` (0.5 s) after the last
+   change or on closing; the accent square means "differs from the
+   default"; the action bar says how many differ ("Saved") with Reset tab
+   (a confirm, Stay first), or "Display change waiting" with Revert and
+   Apply; leaving asks only with a display change waiting.
+4. **Screens** (in): the main menu (stage 1); Settings (stage 3); Host:
+   Server name, Password and Port first, the Maps field opening the picker
+   (`party_kit::maps_picker`: games, Official/Custom groups, maps, each a
+   slanted tri-state box; a game or group sets all under it; Done the
+   hero, Cancel, All off; the exclusive scrim; Start sends the maps off as
+   `mp_maps_off`, which the server's rotation and vote leave out:
+   `chimera_net::minigame_net::MapsOff`); the listing comes from
+   `MapsSource` (`LocalCatalogue`: the minigame's pool, all Official) —
+   **the seam** for the asset service's listing API (by game, official or
+   custom, filters): another `MapCatalogue` in its place. "Start when:
+   Host presses Start" (`mp_lobby_host_start`, default 1 on listen and
+   ordinary servers; the party apps' dedicated servers set 0, nobody
+   being there to press it); UPnP's STATUS block with its outcome in
+   words on hover. Join: the tools in the tab row, Q/E on its tabs, "None
+   yet." in the text face. The lobby (stage 2): parties grouped (`LobbyRow::
+   party`, 0 until parties exist: the seam), each party's thin coloured
+   edge (yours cobalt), the host's view `ui_scene lobby host`. Loading
+   (`party_kit::loading_signal`): the map's card, the stage's big bar with
+   MB of MB, files (the asset service's `progress::Transfer` counts, now
+   in `DownloadInfo::files_*`), speed and time left, the stage list, the
+   sentence; Esc or a right click asks Leave? (Leave the hero on Enter,
+   Stay on Esc or a right click).
+
+Left after revision 8: parties and friends (the "+", Friends, party
+edges with real data, the party panel), a Profile screen (your avatar
+opens nothing yet), the asset service's map listing and news line, map
+previews (gradients stand in), a loader's share (striped while loading),
+the Esc menu over play on the shell (the over-play bar of 9 and 10.1),
+↑ from the content into the bar's tiles, the "no enabled clickable
+without an action" audit test.
 
 ### M10: Chat
 

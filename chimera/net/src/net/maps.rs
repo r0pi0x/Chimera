@@ -929,6 +929,8 @@ fn request(world: &mut World, map: &str) -> Fetch {
             from: "server".into(),
             done: 0,
             total,
+            files_done: 0,
+            files_total: 0,
         });
     }
     world.write_message(MapRequest { map: map.to_string() });
@@ -948,6 +950,8 @@ fn show_download(world: &mut World, map: &str, from: &str, progress: &super::htt
             from: from.into(),
             done,
             total,
+            files_done: 0,
+            files_total: 0,
         });
     }
 }
