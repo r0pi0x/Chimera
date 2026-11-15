@@ -1,0 +1,306 @@
+//! The map converter's pure pieces on synthetic inputs (`game::maps`): the
+//! coordinate, winding and yaw conversion (specs/halo_ce/cache_file.md,
+//! "The world"), the lightmap atlas packer, the material-type table, the
+//! fog conversion (shaders.md, "Atmospheric fog"), the cut-out bake, the
+//! spawns with their teams (scenario.md, multiplayer_rules.md 4.3) and the
+//! surface names as other games' impact classes.
+
+use bevy::math::{Quat, Vec3};
+use blam_formats::{cache::RealRgb, collision::MaterialType, scenario::Fog};
+use halo_ce::game::maps::{
+    lightmap::{Atlas, Page, UNWRITTEN, light_value},
+    materials::bake_cutout,
+    sky, space, surfaces,
+};
+
+fn close(a: Vec3, b: Vec3) -> bool {
+    (a - b).length() < 1e-5
+}
+
+/// The spec's frame: forward +X, left +Y, up +Z become the engine's -Z,
+/// -X and +Y.
+#[test]
+fn halo_axes_map_onto_the_engines() {
+    assert!(close(space::direction([1.0, 0.0, 0.0]), Vec3::NEG_Z), "forward");
+    assert!(close(space::direction([0.0, 1.0, 0.0]), Vec3::NEG_X), "left");
+    assert!(close(space::direction([0.0, 0.0, 1.0]), Vec3::Y), "up");
+    // Right-handed to right-handed: forward x left = up on both sides.
+    let (f, l, u) = (Vec3::NEG_Z, Vec3::NEG_X, Vec3::Y);
+    assert!(close(f.cross(l), u));
+}
+
+/// One world unit is 3.048 m, and `to_game` undoes `point`.
+#[test]
+fn points_are_scaled_to_metres_and_back() {
+    let p = [10.0, -2.0, 1.5];
+    let e = space::point(p);
+    assert!(close(e, Vec3::new(2.0, 1.5, -10.0) * 3.048));
+    let back = space::to_game(e);
+    for k in 0..3 {
+        assert!((back[k] - p[k]).abs() < 1e-5);
+    }
+    let (lo, hi) = space::bounds([0.0, 1.0], [0.0, 2.0], [0.0, 3.0]);
+    assert!(close(lo, Vec3::new(-2.0, 0.0, -1.0) * 3.048));
+    assert!(close(hi, Vec3::new(0.0, 3.0, 0.0) * 3.048));
+}
+
+/// A stored render triangle is clockwise seen from its front (the normal's
+/// side; structure_bsp.md); after the swap it is counter-clockwise from
+/// the front in the engine: (p1 - p0) x (p2 - p0) points along the
+/// mapped normal. A collision polygon (already counter-clockwise about
+/// its outward normal) keeps its order and its facing.
+#[test]
+fn windings_end_counter_clockwise_from_the_front() {
+    // Floor triangle seen from above (+Z): clockwise from above is
+    // (0,0) -> (0,1) -> (1,0) in x, y.
+    let tri = [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]];
+    let normal = space::direction([0.0, 0.0, 1.0]);
+    let [a, b, c] = space::render_triangle([0, 1, 2]).map(|i| space::point(tri[i as usize]));
+    assert!((b - a).cross(c - a).dot(normal) > 0.0, "front is counter-clockwise");
+    // Stored order would face down.
+    let [a, b, c] = [0, 1, 2].map(|i: usize| space::point(tri[i]));
+    assert!((b - a).cross(c - a).dot(normal) < 0.0);
+    // Collision: counter-clockwise about +Z in Halo stays so.
+    let ccw = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let [a, b, c] = ccw.map(space::point);
+    assert!((b - a).cross(c - a).dot(Vec3::Y) > 0.0);
+}
+
+/// A heading's engine yaw looks where the heading's forward maps:
+/// `Quat::from_rotation_y(yaw) * -Z` (the `Intent` convention). Facing
+/// +Y (pi/2, Halo's left) looks along the engine's -X.
+#[test]
+fn headings_become_intent_yaws() {
+    for h in [0.0f32, 0.3, 1.5707964, -1.2, 3.0, -3.1] {
+        let yaw = space::yaw(h);
+        let looking = Quat::from_rotation_y(yaw) * Vec3::NEG_Z;
+        assert!(close(looking, space::direction([h.cos(), h.sin(), 0.0])), "heading {h}");
+    }
+    let looking = Quat::from_rotation_y(space::yaw(std::f32::consts::FRAC_PI_2)) * Vec3::NEG_Z;
+    assert!(close(looking, Vec3::NEG_X));
+}
+
+fn page(w: u32, h: u32, seed: u32) -> Page {
+    Page {
+        width: w,
+        height: h,
+        rgb: (0..w * h)
+            .map(|i| {
+                let v = ((i + seed * 7919) % 251) as f32 / 251.0 + 0.001;
+                [v, v * 0.5, seed as f32]
+            })
+            .collect(),
+    }
+}
+
+/// The atlas: no two pages (with their borders) overlap; each border
+/// texel repeats the page's nearest edge texel; a page coordinate lands
+/// on the same texel in the atlas; texels no page covers are `UNWRITTEN`.
+#[test]
+fn the_atlas_packs_pages_with_copied_borders() {
+    let sizes = [(256, 128), (128, 256), (64, 32), (8, 8), (512, 512), (32, 16), (3, 5), (1, 1)];
+    let mut atlas = Atlas::default();
+    let pages: Vec<Page> = sizes.iter().enumerate().map(|(i, &(w, h))| page(w, h, i as u32 + 1)).collect();
+    for p in &pages {
+        atlas.add(p.clone());
+    }
+    let packed = atlas.finish();
+    let (aw, ah) = (packed.map.width, packed.map.height);
+    assert_eq!(packed.map.rgb.len(), (aw * ah) as usize);
+    let rects: Vec<(u32, u32, u32, u32)> = packed
+        .places
+        .iter()
+        .zip(&packed.sizes)
+        .map(|(&(x, y), &(w, h))| (x, y, x + w + 2, y + h + 2))
+        .collect();
+    for (i, a) in rects.iter().enumerate() {
+        assert!(a.2 <= aw && a.3 <= ah, "page {i} inside the atlas");
+        for b in &rects[i + 1..] {
+            let apart = a.2 <= b.0 || b.2 <= a.0 || a.3 <= b.1 || b.3 <= a.1;
+            assert!(apart, "{a:?} and {b:?} overlap");
+        }
+    }
+    let mut covered = vec![false; (aw * ah) as usize];
+    for (i, p) in pages.iter().enumerate() {
+        let (px, py) = packed.places[i];
+        for ty in 0..p.height + 2 {
+            for tx in 0..p.width + 2 {
+                let sx = tx.saturating_sub(1).min(p.width - 1);
+                let sy = ty.saturating_sub(1).min(p.height - 1);
+                assert_eq!(packed.texel(px + tx, py + ty), p.rgb[(sy * p.width + sx) as usize]);
+                covered[((py + ty) * aw + px + tx) as usize] = true;
+            }
+        }
+        // Each texel centre of the page maps onto the same texel's centre.
+        for (x, y) in [(0, 0), (p.width - 1, p.height - 1), (p.width / 2, p.height / 3)] {
+            let uv = [(x as f32 + 0.5) / p.width as f32, (y as f32 + 0.5) / p.height as f32];
+            let [u, v] = packed.uv(i, uv);
+            let (ax, ay) = ((u * aw as f32 - 0.5).round() as u32, (v * ah as f32 - 0.5).round() as u32);
+            assert_eq!((ax, ay), (px + 1 + x, py + 1 + y));
+            assert!((u * aw as f32 - (ax as f32 + 0.5)).abs() < 1e-3);
+            assert_eq!(packed.texel(ax, ay), p.rgb[(y * p.width + x) as usize]);
+        }
+    }
+    for (i, c) in covered.iter().enumerate() {
+        if !c {
+            assert_eq!(packed.map.rgb[i], UNWRITTEN);
+        }
+    }
+}
+
+/// A stored lightmap byte is its sRGB value decoded: 0 is no light, 255
+/// the texture's own brightness, mid-grey 128 about 0.216; no decoded
+/// byte is the unwritten marker.
+#[test]
+fn lightmap_bytes_are_srgb_decoded() {
+    assert_eq!(light_value(0), 0.0);
+    assert!((light_value(255) - 1.0).abs() < 1e-6);
+    assert!((light_value(128) - 0.2158).abs() < 1e-3);
+    for b in 0..=255u8 {
+        assert_ne!(light_value(b), UNWRITTEN[0]);
+        if b > 0 {
+            assert!(light_value(b) > light_value(b - 1));
+        }
+    }
+    let p = Page::from_rgba8(1, 1, &[255, 128, 0, 255]);
+    assert_eq!(p.rgb[0][0], 1.0);
+    assert_eq!(p.rgb[0][2], 0.0);
+}
+
+/// The material-type table (data/surfaces.toml) covers the 33 codes in
+/// collision.md's order, and names only the engine's generic surfaces.
+#[test]
+fn every_material_type_has_a_generic_surface() {
+    let generic = [
+        "concrete", "metal", "wood", "dirt", "sand", "grass", "snow", "glass", "tile", "plastic", "cloth", "flesh",
+        "water", "default",
+    ];
+    let table = surfaces::table();
+    assert_eq!(table.len(), 33);
+    for t in MaterialType::ALL {
+        let row = &table[&t.code()];
+        assert!(generic.contains(&row.surface.as_str()), "{row:?}");
+        assert_eq!(surfaces::surface_name(t).as_deref(), Some(row.surface.as_str()));
+    }
+    assert_eq!(surfaces::surface_name(MaterialType::MetalThick).as_deref(), Some("metal"));
+    assert_eq!(surfaces::surface_name(MaterialType::Stone).as_deref(), Some("concrete"));
+    assert_eq!(surfaces::surface_name(MaterialType::Glass).as_deref(), Some("glass"));
+    assert_eq!(table[&0].name, "dirt");
+    assert_eq!(table[&32].name, "hunter shield");
+    assert_eq!(surfaces::surface_of_code(-1), None);
+    assert_eq!(surfaces::surface_of_code(33), None);
+}
+
+/// The engine's fog from a Halo fog gives the game's factor at every
+/// depth: clamp((d - start) / (opaque - start)) x density (the engine's
+/// linear fog: min(max density, (d - start) / (end - start))).
+#[test]
+fn halo_fog_is_the_engines_linear_fog() {
+    let halo = Fog {
+        color: RealRgb { r: 0.533, g: 0.643, b: 0.710 },
+        max_density: 0.2,
+        start_distance: 0.0,
+        opaque_distance: 32.0,
+    };
+    let f = sky::fog(&halo).unwrap();
+    assert!(f.linear);
+    assert_eq!(f.color, [0.533, 0.643, 0.710]);
+    for d in [0.0f32, 1.0, 5.0, 16.0, 31.9, 32.0, 50.0, 400.0] {
+        let m = d * 3.048;
+        let engine = ((m - f.start) / (f.end - f.start)).min(f.max_density).clamp(0.0, 1.0);
+        assert!((engine - halo.factor(d)).abs() < 1e-5, "depth {d}: {engine} vs {}", halo.factor(d));
+    }
+    // Off when the opaque distance is 0; density 0 counts as 1.
+    assert!(sky::fog(&Fog { opaque_distance: 0.0, ..halo }).is_none());
+    let full = sky::fog(&Fog { max_density: 0.0, start_distance: 3.0, opaque_distance: 100.0, ..halo }).unwrap();
+    assert_eq!(full.max_density, 1.0);
+    assert!((full.start - 3.0 * 3.048).abs() < 1e-4 && (full.end - 100.0 * 3.048).abs() < 1e-3);
+}
+
+/// The cut-out bake (shaders.md, "Alpha testing"): a base texel's alpha is
+/// 255 where the bump texel under it has alpha above 127, else 0; a bump
+/// scale of 2 repeats the bump map twice across the base.
+#[test]
+fn the_bump_maps_alpha_cuts_the_base() {
+    // Bump 2 x 1: left texel alpha 200, right 100.
+    let bump = [0, 0, 0, 200, 0, 0, 0, 100];
+    let mut base = vec![9u8; 4 * 4];
+    bake_cutout(&mut base, 4, 1, &bump, 2, 1, [1.0, 1.0]);
+    let alphas: Vec<u8> = base.chunks(4).map(|t| t[3]).collect();
+    assert_eq!(alphas, [255, 255, 0, 0]);
+    assert!(base.chunks(4).all(|t| t[..3] == [9, 9, 9]), "colour kept");
+    let mut base = vec![9u8; 4 * 4];
+    bake_cutout(&mut base, 4, 1, &bump, 2, 1, [2.0, 1.0]);
+    let alphas: Vec<u8> = base.chunks(4).map(|t| t[3]).collect();
+    assert_eq!(alphas, [255, 0, 255, 0]);
+}
+
+fn start(position: [f32; 3], team_index: i16, slot: i16) -> blam_formats::scenario::PlayerStart {
+    blam_formats::scenario::PlayerStart {
+        position,
+        facing: 0.0,
+        team_index,
+        bsp_index: 0,
+        game_types: blam_formats::scenario::GameTypes([slot, 0, 0, 0]),
+    }
+}
+
+fn ctf_flag(position: [f32; 3], team_index: i16) -> blam_formats::scenario::NetgameFlag {
+    use blam_formats::cache::{ClassCode, TagId, TagRef};
+    blam_formats::scenario::NetgameFlag {
+        position,
+        facing: 0.0,
+        flag_type: blam_formats::scenario::NetgameFlagType::CaptureTheFlag,
+        team_index,
+        reference: TagRef { class: ClassCode::new(b"itmc"), path_address: 0, id: TagId::NONE },
+    }
+}
+
+/// The map's spawns: each slayer start (no team) and each capture the
+/// flag start of team 0 or 1 (red `Team(1)`, blue `Team(2)`) once, in
+/// block order; a CTF start nearer its enemy's flag than its own is
+/// dropped (multiplayer_rules.md 4.3), as are race starts and team 2/3's.
+#[test]
+fn spawns_are_slayers_starts_and_the_teams_bases() {
+    use chimera_core::core::Team;
+    use halo_ce::game::maps::spawns;
+    let starts = [
+        start([0.0, 0.0, 0.0], 0, 1),  // red base, by the red flag
+        start([10.0, 0.0, 0.0], 1, 1), // blue base
+        start([5.0, 0.0, 0.0], 0, 14), // slayer (team ignored)
+        start([1.0, 1.0, 0.0], 1, 12), // all games, blue, but by red's flag
+        start([9.0, 0.0, 0.0], 0, 1),  // red but by the blue flag: dropped
+        start([2.0, 0.0, 0.0], 2, 1),  // team 2: never a CTF start
+        start([3.0, 0.0, 0.0], 1, 5),  // race only
+    ];
+    let flags = [ctf_flag([0.0, 0.0, 0.0], 0), ctf_flag([10.0, 0.0, 0.0], 1)];
+    let got: Vec<(Vec3, Option<u8>)> =
+        spawns::spawns(&starts, &flags).into_iter().map(|(p, t, _)| (p, t.map(|t| t.0))).collect();
+    let at = |x: f32, y: f32| space::point([x, y, 0.0]);
+    // Start 3 (all games, team 1) is nearer red's flag: not blue's base,
+    // but its slot 12 keeps it a slayer start.
+    assert_eq!(
+        got,
+        [(at(0.0, 0.0), Some(1)), (at(10.0, 0.0), Some(2)), (at(5.0, 0.0), None), (at(1.0, 1.0), None)]
+    );
+    assert!(spawns::ctf_team(&flags, &starts[3]).is_none());
+    // Without flags no start is dropped.
+    assert_eq!(spawns::ctf_team(&[], &starts[4]), Some(Team(1)));
+    assert_eq!(spawns::spawns(&starts, &[]).len(), 5);
+}
+
+/// Halo's surface names are the engine's classes by name, for other
+/// games' impacts on its maps (`surfaces::SURFACES`).
+#[test]
+fn surface_names_are_impact_classes() {
+    use chimera_world::map::impact::SurfaceClass;
+    for c in SurfaceClass::ALL {
+        assert_eq!(surfaces::class_of(surfaces::class_name(c)), Some(c));
+    }
+    for row in surfaces::table().values() {
+        assert!(surfaces::class_of(&row.surface).is_some(), "{row:?}");
+    }
+    assert_eq!(surfaces::class_of("Metal"), Some(SurfaceClass::Metal));
+    assert_eq!(surfaces::class_of("hunter shield"), None);
+    assert_eq!(surfaces::SURFACES.game, halo_ce::game::GAME);
+}

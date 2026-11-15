@@ -4,6 +4,7 @@
 //! `UltimateGunGamePlugin`). `cargo test -p ultimate_gun_game --features
 //! dev --test it`; where tests go: docs/OBSERVABILITY.md, section 1.
 
+mod chat;
 mod fallbacks;
 mod hl2_alt_ammo;
 mod hl2_set_pieces;

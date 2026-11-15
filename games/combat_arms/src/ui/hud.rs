@@ -1286,6 +1286,9 @@ impl Plugin for CaHudPlugin {
         // Other games' HUDs draw our guns with the install's art
         // (`WeaponIcons`), whichever HUD is up.
         app.init_resource::<WeaponIcons>().add_systems(Update, register_icons);
+        // A join that bound the asset service: the install's UI, art and
+        // names read again from the arrived files (`renew_ui`).
+        app.add_observer(renew_ui);
         app
             .add_systems(
                 Startup,
@@ -2239,6 +2242,38 @@ fn foreign_weapon(
             hud_text_at(p, pen, Vec2::new(at.x, at.y + 3.0), &name, FEED_FONT, Effect::Stroke, [200, 200, 200, FEED_TEXT_ALPHA]);
         }
     }
+}
+
+/// After Combat Arms' data was read anew from files a join fetched
+/// (`game::data::CaDataRenewed`): an app whose UI read no install takes
+/// the install's (`CaUi::installed`), its HUD panels and bindings, its
+/// art and faces (`draw::load_art`, `load_faces`), the weapon and part
+/// names (`ItemNames`, kept beside the other games' an app added;
+/// `rungs::CaPartNames`) and the scoreboard's bindings. An app that set
+/// its own UI, or read an install's, keeps it.
+fn renew_ui(renewed: On<crate::game::data::CaDataRenewed>, mut commands: Commands) {
+    let data = renewed.data.clone();
+    commands.queue(move |world: &mut World| {
+        if world.get_resource::<CaUi>().is_some_and(|u| u.install.is_some()) {
+            return;
+        }
+        let ui = CaUi::installed(&data);
+        let Some(inst) = ui.install.clone() else { return };
+        world.get_resource_or_init::<ItemNames>().0.extend(inst.weapon_names.iter().cloned());
+        world.insert_resource(crate::game::rungs::CaPartNames::new(inst.part_names.iter().cloned()));
+        world.insert_resource(InstallHud(inst.hud.as_ref().and_then(install::HudPanels::new)));
+        world.insert_resource(BoundHud::of(&ui));
+        if world.contains_resource::<super::scoreboard::BoundBoard>() {
+            world.insert_resource(super::scoreboard::BoundBoard::of(&ui));
+        }
+        world.insert_resource(ui);
+        for run in [world.run_system_cached(draw::load_art), world.run_system_cached(draw::load_faces)] {
+            if let Err(e) = run {
+                warn!("combat_arms ui: the install's art not read again: {e}");
+            }
+        }
+        info!("combat_arms ui: the install's UI read from the arrived files ({} weapon names)", inst.weapon_names.len());
+    });
 }
 
 /// Registers the install's kill icons for other games' HUDs

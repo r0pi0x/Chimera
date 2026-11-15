@@ -43,17 +43,17 @@ port adds the ones below.
 | [structure_bsp.md](structure_bsp.md) | 1 | draft | the level's render geometry, lightmaps, clusters and visibility |
 | [collision.md](collision.md) | 1 | draft | collision BSPs and how a trace walks them |
 | [models.md](models.md) | 1 | draft | render models |
-| shaders.md | 1 | planned | the shader classes and what each draws |
+| [shaders.md](shaders.md) | 1 | draft | the shader classes and what each draws |
 | [scenario.md](scenario.md) | 1 | draft | spawns, netgame equipment, object placements, the sky |
-| sounds.md | 1 | planned | sound tags and the Xbox's compressed format |
-| animations.md | 1 | planned | animation graphs and compressed node animations |
-| objects.md | 2 | planned | object, unit, biped, item and scenery tags as data |
-| movement.md | 2 | planned | the player's movement |
-| health_shields.md | 2 | planned | vitality, shields, damage by material and region |
-| weapons.md | 2 | planned | weapons, with every multiplayer weapon's numbers |
-| projectiles.md | 2 | planned | projectiles, damage effects, grenades |
-| multiplayer_rules.md | 2 | planned | spawning, pickups, powerups, game type rules |
-| effects.md | 3 | planned | effects, particles, lights, decals |
+| [sounds.md](sounds.md) | 1 | draft | sound tags and the Xbox's compressed format |
+| [animations.md](animations.md) | 1 | draft | animation graphs and compressed node animations |
+| [objects.md](objects.md) | 2 | draft | object, unit, biped, item and scenery tags as data |
+| [movement.md](movement.md) | 2 | draft | the player's movement |
+| [health_shields.md](health_shields.md) | 2 | draft | vitality, shields, damage by material and region |
+| [weapons.md](weapons.md) | 2 | draft | weapons, with every multiplayer weapon's numbers |
+| [projectiles.md](projectiles.md) | 2 | draft | projectiles, damage effects, grenades |
+| [multiplayer_rules.md](multiplayer_rules.md) | 2 | draft | spawning, pickups, powerups, game type rules |
+| [effects.md](effects.md) | 3 | draft | effects, particles, lights, decals |
 | hud.md | 3 | planned | the HUD's pieces |
 | vehicles.md | 3 | planned | vehicles |
 

@@ -44,6 +44,21 @@ the user's go-ahead: no Actions runs unless asked.
   backups; stats at match end. Phases S1-S5:
   [plans/active/hub.md](plans/active/hub.md) section 10.
 
+- **Player stats over time (user, 2026-11-15):**
+  - Keep each player's stats across matches, not only running totals: a per-match history (kills, deaths, rung reached, place, guns used, game) kept per account and per game.
+  - Trends over time: the last N matches, best runs, per-gun and per-game breakdowns.
+  - A Profile screen showing them, tied to the avatar.
+  - Needs the hub's accounts and database (S1a and S1b, deployed) and S4's profiles, results outbox and schema ([plans/active/hub.md](plans/active/hub.md) sections 9 and 10). S4 stores totals; extend it with the match-history table and queries for trends.
+
+- **Ranks per game, earned with that game's guns (user, 2026-11-15, future):**
+  - Each game the guns come from has its own level, which rises by using and doing well with that game's guns in any mode (kills, accuracy, rungs cleared with them).
+  - Profiles show per-gun stats grouped by game.
+  - Where the game has its own rank art, use it, loaded from the install or asset service like other assets. Combat Arms' rank insignia already sit in its data unused, so a Combat Arms level shows CA's ranks.
+  - Games without rank art show a plain level number with XP.
+  - An overall account level is derived from the per-game levels and other account factors.
+  - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
+  - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
+
 - **Player requests (playtest 7, 2026-11-14):** games and guns wanted by
   players: Halo guns (Halo CE is already on this roadmap), Fortnite guns,
   Natural Selection 2 (one tester said no), Left 4 Dead infected, and
@@ -114,7 +129,8 @@ the user's go-ahead: no Actions runs unless asked.
   Source games, so most loaders exist (VPK, BSP, MDL); the work is each
   game's movement, weapons and HUD as specs, then games-as-libraries
   crates. HL2:DM's plan (2026-11-01):
-  [plans/active/hl2dm.md](plans/active/hl2dm.md).
+  [plans/active/hl2dm.md](plans/active/hl2dm.md). TF2's (2026-11-15):
+  [plans/active/tf2.md](plans/active/tf2.md).
 - **Then more modern games:** Call of Duty: Modern Warfare 1 or the
   earlier Call of Duties (new engines and formats: plan first).
 - **Asset browser and sandbox (user idea, 2026-11-14).** For later, a
@@ -175,16 +191,13 @@ Fixed ones are on branch `release-7.1` (tag v0.1.0-playtest7.1, not yet
 published): confirm each in a playtest, then delete it. The rest is not
 started; the user asked to avoid server lag while testers play.
 
-- **A first join that binds the token can't play a Combat Arms ladder**
-  (found 2026-11-15, `heavy::no_fetch_in_match` without
-  `CHIMERA_GUARD_BOUND`, with the published manifests and the lean ones
-  alike; the post-push run of `main` failed there too): after the bind
-  and the download, the client refuses the server's match, "weapon
-  combat_arms:makarov_ca: not in the weapon catalogue". The minigame's
-  weapon catalogue, built at startup with no Combat Arms files, isn't
-  built again when the files arrive (`net::assets::AssetsArrived`;
-  `combat_arms::game::data::reread_install` makes the data again, the
-  catalogue keeps the old). A tester's second start (token bound) is fine.
+- **Combat Arms' "enemy down" voice line is in no set** (found
+  2026-11-15, `heavy::no_fetch_in_match` in its default mode, a first
+  join): `chars_snd/female/vm_enemydown_fa.wav` (a kill call-out,
+  `effects::kill_callout`) is fetched on demand during the first match;
+  the published manifests and the lean ones list it in no set. Put the
+  kill call-outs' sounds in `common` (`chimera_pack sets`, `lean`) and
+  publish.
 
 - **Others' voice lines in 3D** (done on branch `voice-3d`, confirm in a
   playtest): grenade call-outs and radio calls were heard only by the
@@ -316,6 +329,23 @@ started; the user asked to avoid server lag while testers play.
 - On main already, for the next build: the scroll container and slider
   drag and typed values (ui-scroll, merging); the screenshot-tour UI
   fixes (cb133450).
+
+### Chat (UGG UI M10, 2026-11-15)
+
+The one Signal chat is in on `ugg-chat` (plan ugg-ui.md, M10: one feed,
+Y/U and Combat Arms' keys, docked in the lobby and the match end,
+`ignore`, `cl_chat`, the `chat_in` cue). Left:
+
+- A mute button on the Tab board (the board is held open with the cursor
+  captured); today a click on a name in the open chat, or `ignore`.
+- Who is talking (voice) in the feed or by the names; Combat Arms' talk
+  icon is the only indicator.
+- Bot chat reaches only a listen server's host (`CaBotChat` isn't sent
+  to clients): send it as a `ChatMessage` from the server.
+- Time stamps are the session's clock (no local time zone without a date
+  crate).
+- Lucker Party keeps the games' chat until its theme turns the Signal
+  HUD on.
 
 ### Spectators (user, 2026-11-14)
 

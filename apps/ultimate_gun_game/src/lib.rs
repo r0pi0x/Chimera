@@ -318,10 +318,16 @@ fn with_installs(world: &mut World) {
 /// F10 opens the report dialog (`client::feedback`), in the shared binds
 /// and so under every game's layer; CS:S's `quit prompt` there is
 /// dropped (quitting is the Escape menu's), and a saved config whose F10
-/// still holds it gets the report key once.
+/// still holds it gets the report key once. Y and U open the chat to
+/// everyone and to the team (`messagemode`, `messagemode2`: the Signal
+/// chat, `client::signal_chat`), as in CS:S; Combat Arms' Enter, F2 and F3
+/// open it too.
 #[cfg(feature = "present")]
-pub const APP_BINDS: &[chimera_client::client::binds::AppBind] =
-    &[chimera_client::client::binds::AppBind { key: "f10", command: "feedback", replaces: &["quit prompt"] }];
+pub const APP_BINDS: &[chimera_client::client::binds::AppBind] = &[
+    chimera_client::client::binds::AppBind { key: "f10", command: "feedback", replaces: &["quit prompt"] },
+    chimera_client::client::binds::AppBind { key: "y", command: "messagemode", replaces: &[] },
+    chimera_client::client::binds::AppBind { key: "u", command: "messagemode2", replaces: &[] },
+];
 
 /// The game binary's app (`ultimate_gun_game`, main.rs): the party's
 /// client app (`party_kit::client::PARTY`) on Chimera's client app,

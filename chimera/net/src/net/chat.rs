@@ -33,7 +33,10 @@
 //! then one a second / every 1.5 s; more dropped, the sender told); names: a
 //! client's `name` change as `NameRequest`, the host's own, renamed for
 //! everyone and announced (`NameChanged`, "* X changed name to Y"); userinfo: a
-//! client's userinfo cvars go with `Join` and, changed, as `UserInfoRequest`,
+//! client's userinfo cvars, with what the machine says of itself
+//! (`client::machine_info`: its mount report, data formats, whether it
+//! fetches), go with `Join` and, changed, as `UserInfoRequest` (the mount
+//! report once a join's files arrived),
 //! kept as its character's `core::UserInfo` (and `ClientUserInfo`: what the
 //! client has), a server-side change sent back as `UserInfoSet`, which the
 //! client sets in its cvars; a map's `say` lines
@@ -504,10 +507,29 @@ fn send_name(settings: Res<NetSettings>, mut last: Local<Option<String>>, mut ou
     }
 }
 
-/// Our userinfo cvars changed while connected: tell the server (the
-/// first values went with `Join`).
-fn send_userinfo(world: &mut World, mut last: Local<Option<Vec<(String, String)>>>) {
-    let values: Vec<(String, String)> = crate::console::userinfo(world).into_iter().collect();
+/// `client::machine_info` as last made, and the change ticks of what it
+/// is made from.
+struct MachineInfo {
+    ticks: (Option<bevy::ecs::change_detection::Tick>, Option<bevy::ecs::change_detection::Tick>),
+    info: Vec<(String, String)>,
+}
+
+/// Our userinfo cvars, or what this machine says of itself
+/// (`client::machine_info`: its mount report once a join's files
+/// arrived), changed while connected: tell the server (the first values
+/// went with `Join`). The server keeps the values sent last, whole.
+fn send_userinfo(world: &mut World, mut last: Local<Option<Vec<(String, String)>>>, mut machine: Local<Option<MachineInfo>>) {
+    // What this machine says of itself, made again when its mount report
+    // or its asset session changed (not each frame).
+    let ticks = (
+        world.get_resource_ref::<super::manifest::LocalMounts>().map(|m| m.last_changed()),
+        world.get_resource_ref::<super::assets::AssetSession>().map(|s| s.last_changed()),
+    );
+    if machine.as_ref().is_none_or(|m| m.ticks != ticks) {
+        *machine = Some(MachineInfo { ticks, info: super::client::machine_info(world) });
+    }
+    let mut values: Vec<(String, String)> = crate::console::userinfo(world).into_iter().collect();
+    values.extend(machine.as_ref().map(|m| m.info.clone()).unwrap_or_default());
     if last.as_ref() == Some(&values) {
         return;
     }

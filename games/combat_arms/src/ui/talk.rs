@@ -20,6 +20,11 @@
 //!   (`client::binds::CapturedKeys`) until let go, so the pick doesn't
 //!   switch weapon once the menu has closed either). Binds (Enter, F2 to F4, B, V, N, T, F8)
 //!   are `game::chat`'s commands.
+//! - Under the Signal chat of an app that has it (`client::chat::
+//!   SignalChatActive`, the Ultimate Gun Game) the lines go there as
+//!   entries (`signal_entry`: radio calls, players' lines, notices), the
+//!   panel draws no queue or input bar (the radio menu and the talk icon
+//!   stay), and Enter, F2 and F3 open the Signal chat (`ui::CaUiPlugin`).
 //!
 //! Known shortcuts: the panel, the input bar and the radio window are
 //! drawn in code at places of ours (the HUD layouts' chat controls were
@@ -147,6 +152,28 @@ pub fn shown_line(strings: &super::layout::text::Strings, l: &crate::game::chat:
     (text, name)
 }
 
+/// A line of the panel as the Signal chat's entry: "[class] name : text"
+/// a radio call, "name : text" a player's line, anything else a notice.
+pub fn signal_entry(line: &str) -> crate::client::chat::ChatEntry {
+    use crate::client::chat::LineKind;
+    let (kind, rest) = match line.strip_prefix('[').and_then(|r| r.split_once("] ")) {
+        Some((_, rest)) => (LineKind::Radio, rest),
+        None => (LineKind::All, line),
+    };
+    match rest.split_once(" : ") {
+        Some((name, text)) => crate::client::chat::ChatEntry {
+            kind,
+            sender: None,
+            name: Some(name.to_string()),
+            team: None,
+            text: text.to_string(),
+            classic: None,
+            sound: None,
+        },
+        None => crate::client::chat::ChatEntry::notice(line, None),
+    }
+}
+
 fn update(world: &mut World) {
     let now = now_ms(world);
     let screen = world.get_resource::<HudScreen>().map_or(Screen::default(), |s| s.0);
@@ -176,6 +203,28 @@ fn update(world: &mut World) {
         })
     });
     let shown: Vec<(String, Option<(usize, usize, [u8; 4])>)> = lines.iter().map(|l| shown_line(&ui.strings, l)).collect();
+    // Under the Signal chat the lines go to it (`signal_chat`), not to
+    // this panel.
+    if world.get_resource::<crate::client::chat::SignalChatActive>().is_some_and(|a| a.0) {
+        let mut talk = world.resource_mut::<CaTalk>();
+        talk.seen = lines.iter().map(|l| l.id).max().unwrap_or(talk.seen).max(talk.seen);
+        for (text, _) in &shown {
+            world.write_message(signal_entry(text));
+        }
+        let mut talk = world.resource_mut::<CaTalk>();
+        talk.queue.frame(now);
+        let input = input.map(|(tab, text)| InputView { tab, text });
+        if talk.input != input {
+            talk.input = input;
+        }
+        if talk.radio != menu {
+            talk.radio = menu;
+        }
+        if talk.talking != talking {
+            talk.talking = talking;
+        }
+        return;
+    }
     let mut talk = world.resource_mut::<CaTalk>();
     for (l, (shown, name)) in lines.into_iter().zip(shown) {
         talk.seen = talk.seen.max(l.id);
@@ -340,11 +389,13 @@ fn draw(
     screen: Option<Res<HudScreen>>,
     params: PenParams,
     root: Single<Entity, With<TalkRoot>>,
-    mut last: Local<Option<(CaTalk, Screen)>>,
+    active: Option<Res<crate::client::chat::SignalChatActive>>,
+    mut last: Local<Option<(CaTalk, Screen, bool)>>,
     mut commands: Commands,
 ) {
     let screen = screen.map_or(Screen::default(), |s| s.0);
-    if !rebuild(&mut last, (talk.clone(), screen), *root, &mut commands) {
+    let signal = active.is_some_and(|a| a.0);
+    if !rebuild(&mut last, (talk.clone(), screen, signal), *root, &mut commands) {
         return;
     }
     let pen = pen(&params, screen);
@@ -353,8 +404,8 @@ fn draw(
     let centred = (HAlign::Default, VAlign::Centre);
     let font = params.0.fonts.get(FONT).cloned();
     commands.entity(*root).with_children(|p| {
-        // The queue.
-        for (m, top) in talk.queue.messages.iter().zip(talk.queue.tops()) {
+        // The queue (none under the Signal chat: its lines go there).
+        for (m, top) in talk.queue.messages.iter().zip(talk.queue.tops()).filter(|_| !signal) {
             let at = Vec2::new(TEMPLATE_AT.0 as f32, top as f32);
             let size = Vec2::new(TEMPLATE_WRAP as f32, m.height as f32);
             let one_line = m.height <= font.as_ref().map_or(14, |f| text::measure("A", f, 0, s).reference.y);
@@ -369,7 +420,7 @@ fn draw(
             }
         }
         // The input bar: the tabs, then the typed text.
-        if let Some(input) = &talk.input {
+        if let Some(input) = talk.input.as_ref().filter(|_| !signal) {
             let bar = (Vec2::new(INPUT_AT.0, INPUT_AT.1), Vec2::new(INPUT_SIZE.0, INPUT_SIZE.1));
             p.spawn(rect(screen.rect(bar.0, bar.1), Color::srgba(0.04, 0.05, 0.06, 0.8)));
             for (i, (tab, name)) in [(Tab::All, "All"), (Tab::Team, "Team"), (Tab::Clan, "Clan")].into_iter().enumerate() {

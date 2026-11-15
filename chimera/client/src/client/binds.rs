@@ -777,8 +777,10 @@ pub const DEFAULTS_MARK: &str = "// bind defaults: cs";
 /// A config.cfg written since apps have their own defaults (`AppBind`)
 /// says so; one without it gets them once (`binddefaults app`,
 /// `migrate_app_binds`). Written by an app with its own defaults, and
-/// kept by one that read it (`Console::config_marks`).
-pub const APP_BINDS_MARK: &str = "// app binds: 1";
+/// kept by one that read it (`Console::config_marks`). Its number goes up
+/// when an app adds defaults (2: Ultimate Gun Game's Y and U chat keys),
+/// so configs marked before get the new ones once (on free keys).
+pub const APP_BINDS_MARK: &str = "// app binds: 2";
 
 pub fn commands(app: &mut App) {
     // The polled binds are read by their short names: binds store them so

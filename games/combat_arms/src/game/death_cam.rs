@@ -289,6 +289,13 @@ impl Plugin for CaDeathCamPlugin {
                 tips,
                 ..default()
             })
+            // The install's tips read again from files a join fetched
+            // (`data::renew`).
+            .add_observer(|r: On<super::data::CaDataRenewed>, cam: Option<ResMut<CaDeathCam>>| {
+                if let Some(mut cam) = cam {
+                    cam.tips = install_tips(&r.data);
+                }
+            })
             .add_message::<Died>()
             .add_message::<crate::game::net::CaRespawnRequest>()
             .add_message::<Damage>()

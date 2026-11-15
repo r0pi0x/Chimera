@@ -57,6 +57,17 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    entering it again forgets which service it is for (the next join binds
    it anew, in the same window).
 
+## Halo's maps (optional)
+
+Halo: Combat Evolved's multiplayer maps join the Ultimate Gun Game's pool
+only where the Xbox disc image is: set `CHIMERA_HALO_CE_ROOT` to the image
+(or `[games.halo_ce] path` in chimera.local.toml) on the server, and every
+player who should get them needs it too. Its files are not published to
+the asset store, so each match's pool (made for the players then
+connected) leaves Halo's maps out when one of them lacks the image (their
+mount report says so); without the image nothing changes. Halo lends only maps for now (no guns, bodies or movement), and
+its pool is `games/halo_ce/data/map_pool.toml`'s.
+
 ## Publishing the game files (once, and after a game update)
 
 On the machine with the installs and Combat Arms' keys, from a checkout

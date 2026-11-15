@@ -258,6 +258,10 @@ impl Plugin for CaChatPlugin {
             .init_resource::<ChatRng>()
             .init_resource::<ChatRegion>()
             .insert_resource(CaRadio(radio))
+            // Read again from files a join fetched (`data::renew`).
+            .add_observer(|r: On<super::data::CaDataRenewed>, mut commands: Commands| {
+                commands.insert_resource(CaRadio(RadioData::load(&r.data)));
+            })
             .add_message::<CaSayRequest>()
             .add_message::<CaRadioRequest>()
             .add_message::<CaSayIn>()
@@ -478,6 +482,17 @@ pub fn radio_number_with(world: &mut World, n: usize, draw: Option<usize>) -> bo
 }
 
 // --- Console commands the keys are bound to.
+
+/// What Enter (None), F2 (Some(false)) and F3 (Some(true)) do: open the
+/// input on the current tab, all or team (the front end's `chat_open`,
+/// `chat_all`, `chat_team`, which an app with the Signal chat hands over).
+pub fn open_key(world: &mut World, team: Option<bool>) {
+    let _ = match team {
+        None => open_enter(world),
+        Some(false) => open_tab(world, Tab::All),
+        Some(true) => open_tab(world, Tab::Team),
+    };
+}
 
 fn commands(app: &mut App) {
     app.console_command("combat_arms:chat_open", "Open the chat input on the current tab (Enter).", |w, _| {

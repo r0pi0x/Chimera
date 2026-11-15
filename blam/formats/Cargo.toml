@@ -18,6 +18,10 @@ doctest = false
 # image is a mount layer like a VPK or a `.rez`.
 [dependencies]
 chimera_vfs.workspace = true
+# The map cache file's body is one zlib stream (src/cache): flate2 on its
+# pure-Rust backend (miniz_oxide), so no C toolchain is needed. The version
+# already in Cargo.lock (chimera_assets uses it).
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 
 # The heavy tests find the install in chimera.local.toml themselves (no
 # Chimera crate here).

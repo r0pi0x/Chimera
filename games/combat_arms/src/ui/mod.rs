@@ -148,18 +148,57 @@ impl Plugin for CaUiPlugin {
         .insert_resource(crate::client::senses::FlashFade(crate::game::grenades::blinded_alpha))
         .add_message::<crate::game::bots::chat::CaBotChat>()
         .add_systems(Update, bot_chat);
+        // Enter, F2 and F3 open the Signal chat in an app that has it
+        // (`client::signal_chat`), else this game's own input.
+        for (name, team) in [("chat_open", None), ("chat_all", Some(false)), ("chat_team", Some(true))] {
+            app.console_command(&format!("combat_arms:{name}"), "Open the chat input (Enter: the current tab; F2 all, F3 team).", move |w, _| {
+                if w.get_resource::<crate::client::chat::SignalChatActive>().is_some_and(|a| a.0) {
+                    crate::client::chat::open_input(w, team.unwrap_or(false));
+                } else {
+                    crate::game::chat::open_key(w, team);
+                }
+                Ok(None)
+            });
+        }
     }
 }
 
 /// A bot's chat line in the chat box (bots.md 10): "nickname : line", the
 /// line its string-table key resolved, for its team (our own text when
-/// the table lacks the key: `bots::chat::shown_line`).
+/// the table lacks the key: `bots::chat::shown_line`). Under the Signal
+/// chat (`chat::SignalChatActive`) it is the bot's entry there (its BOT
+/// tag by the sender).
 pub fn bot_chat(
     mut lines: MessageReader<crate::game::bots::chat::CaBotChat>,
     ui: Option<Res<CaUi>>,
     names: Query<(&Name, Option<&crate::core::Team>)>,
     mut out: MessageWriter<crate::client::chat::ChatLine>,
+    (active, entries): (
+        Option<Res<crate::client::chat::SignalChatActive>>,
+        Option<ResMut<Messages<crate::client::chat::ChatEntry>>>,
+    ),
 ) {
+    if active.is_some_and(|a| a.0)
+        && let Some(mut entries) = entries
+    {
+        for l in lines.read() {
+            let line = crate::game::bots::chat::shown_line(
+                |k| ui.as_ref().map_or_else(|| k.to_string(), |ui| ui.strings.resolve(k)),
+                &l.key,
+            );
+            let (name, team) = names.get(l.bot).map_or(("bot".to_string(), None), |(n, t)| (n.to_string(), t.copied()));
+            entries.write(crate::client::chat::ChatEntry {
+                kind: crate::client::chat::LineKind::All,
+                sender: Some(l.bot),
+                name: Some(name),
+                team,
+                text: line,
+                classic: None,
+                sound: None,
+            });
+        }
+        return;
+    }
     for l in lines.read() {
         let line = crate::game::bots::chat::shown_line(
             |k| ui.as_ref().map_or_else(|| k.to_string(), |ui| ui.strings.resolve(k)),

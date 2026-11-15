@@ -160,6 +160,8 @@ fn every_option_is_archived() {
     let sim = Sim::with(CaSim, |app| {
         app.add_plugins((GreyboxMapPlugin, party_kit::PartyPartsPlugin))
             .add_plugins((VideoPlugin, SoundOptionsPlugin, GammaPlugin, HitMarkerPlugin, SwapEffectPlugin))
+            // `cl_chat` (the chat's).
+            .add_plugins(chimera_client::client::chat::GameMessagesPlugin)
             .init_resource::<MouseSettings>();
         mouse_cvars(app);
         perf::frame_limit_cvar(app);
@@ -196,7 +198,8 @@ fn options_rows_read_right() {
         assert!(tabs.iter().flat_map(|(_, s)| s.iter()).all(|s| s.cvar != gone), "{gone} has no Options row");
     }
     let party: Vec<&str> = tabs.iter().find(|(n, _)| n == "Party").map(|(_, s)| s.iter().map(|s| s.cvar.as_str()).collect()).unwrap_or_default();
-    assert_eq!(party, ["party_swap_effect", "party_music"], "the Party page keeps the swap effect and the music");
+    // The chat's row joined the page with the Signal chat (ugg-ui M10).
+    assert_eq!(party, ["party_swap_effect", "party_music", "cl_chat"], "the Party page keeps the swap effect and the music");
     let music = row("party_music");
     assert_eq!(music.shown("2"), "Combat Arms' loop");
     assert_eq!(row("fov_desired").shown("90"), "90", "a plain range stays a number");

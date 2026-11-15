@@ -36,6 +36,11 @@
 //!   and a Signal scroll bar), eased wheel steps, the right-button pan
 //!   with a fling, `ScrollIntoView`; state by key in `ScrollViews`,
 //!   tuned by `[layout.scroll]`, cut down by `ReducedMotion`.
+//! - `chat`: the one chat feed's look (`FeedLine`, `LineKind`: player,
+//!   team, radio lines, notices and the server's word; `line_alpha`, the
+//!   fade after `HOLD` s; `stamp`; `name_color`; `Ui::chat_line`,
+//!   `chat_plate`, `chat_field`), placed and fed by the shell's
+//!   `signal_chat`.
 //! - `clipboard`: `Clipboard` (the system's through arboard, or one of
 //!   its own for tests) that text fields copy to and paste from.
 //! - `parity`: `UiParityId`, a node's name in the look book, and its
@@ -54,6 +59,7 @@
 //! installs our faces (`KitFonts::install`).
 
 pub mod avatar;
+pub mod chat;
 pub mod clipboard;
 pub mod controls;
 pub mod fonts;

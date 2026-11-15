@@ -344,6 +344,7 @@ const CRATE_SRC: &[&str] = &[
     "games/cs_source/src",
     "games/combat_arms/src",
     "games/hl2dm/src",
+    "games/halo_ce/src",
 ];
 
 /// The CS:S app's glue (crate `cs_source_app`): `lib.rs` (`SimPlugins`,
@@ -1550,6 +1551,8 @@ fn workspace_crates() {
         simulation crates and HL2:DM, no presentation, client shell or HL2:DM app \
         (`server_builds_without_presentation`), and never another game. Move what needs them into the \
         client's side (the app).";
+    const HALO_APP: &str = "is the Halo app's glue (docs/ARCHITECTURE.md, \"Crates\"): Chimera and Halo         composed into its game. It never uses another game or its app: what two games need moves into         Chimera or `blam_formats` (a lift), not across.";
+    const HALO_SERVER: &str = "is Halo's dedicated server (docs/ARCHITECTURE.md, \"Crates\"): Chimera's         simulation crates and Halo, no presentation, client shell or Halo app         (`server_builds_without_presentation`), and never another game. Move what needs them into the         client's side (the app).";
     const MASHUP_APP: &str = "is a mashup app (docs/ARCHITECTURE.md, \"Crates\"): it composes games as \
         libraries (`cs_source`, `combat_arms`) on Chimera, never another app: what it shares with a game's \
         own app moves into the game or Chimera (a map loader, a dressing, a hook), not across.";
@@ -1606,6 +1609,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1630,6 +1634,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1659,6 +1664,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1690,6 +1696,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1716,6 +1723,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1739,6 +1747,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1747,7 +1756,7 @@ fn workspace_crates() {
             ],
             PURE_DATA,
         ),
-        ("chimera/core", &["mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"], ENGINE),
+        ("chimera/core", &["mashup", "cs_source", "combat_arms", "hl2dm", "halo_ce", "games", "originals", "lucker_party", "party_kit"], ENGINE),
         // The UI kit: Bevy and the engine's base only, so the shell and any
         // app build their screens on it (docs/plans/active/ugg-ui.md, 2.1).
         (
@@ -1765,6 +1774,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1774,17 +1784,17 @@ fn workspace_crates() {
         ),
         (
             "chimera/world",
-            &["chimera_present", "mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
+            &["chimera_present", "mashup", "cs_source", "combat_arms", "hl2dm", "halo_ce", "games", "originals", "lucker_party", "party_kit"],
             WORLD,
         ),
         (
             "chimera/present",
-            &["mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
+            &["mashup", "cs_source", "combat_arms", "hl2dm", "halo_ce", "games", "originals", "lucker_party", "party_kit"],
             PRESENT,
         ),
         (
             "chimera/sim",
-            &["chimera_present", "mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
+            &["chimera_present", "mashup", "cs_source", "combat_arms", "hl2dm", "halo_ce", "games", "originals", "lucker_party", "party_kit"],
             SIM,
         ),
         (
@@ -1797,6 +1807,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1814,6 +1825,7 @@ fn workspace_crates() {
                 "mashup",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "originals",
                 "lucker_party",
                 "party_kit",
@@ -1830,6 +1842,7 @@ fn workspace_crates() {
                 "source_engine",
                 "cs_source",
                 "combat_arms_app",
+                "halo_ce",
                 "mashup",
                 "originals",
                 "lucker_party",
@@ -1839,7 +1852,7 @@ fn workspace_crates() {
         ),
         (
             "source/logic",
-            &["chimera_present", "mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
+            &["chimera_present", "mashup", "cs_source", "combat_arms", "hl2dm", "halo_ce", "games", "originals", "lucker_party", "party_kit"],
             SOURCE,
         ),
         // Source engine behaviour every Source game shares: on the engine's
@@ -1853,6 +1866,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1864,7 +1878,7 @@ fn workspace_crates() {
         // shell and Source's readers, below the games (hl2dm.md, lift S7).
         (
             "source/gameui",
-            &["mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
+            &["mashup", "cs_source", "combat_arms", "hl2dm", "halo_ce", "games", "originals", "lucker_party", "party_kit"],
             SOURCE,
         ),
         (
@@ -1875,6 +1889,7 @@ fn workspace_crates() {
                 "chimera_ui",
                 "cs_source",
                 "combat_arms",
+                "halo_ce",
                 "mashup",
                 "originals",
                 "lucker_party",
@@ -1882,7 +1897,25 @@ fn workspace_crates() {
             ],
             GAME,
         ),
-        ("apps/cs_source", &["mashup", "combat_arms", "hl2dm"], APP),
+        (
+            "games/halo_ce",
+            &[
+                "chimera_present",
+                "chimera_client",
+                "chimera_ui",
+                "source_",
+                "lithtech_",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "mashup",
+                "originals",
+                "lucker_party",
+                "party_kit",
+            ],
+            GAME,
+        ),
+        ("apps/cs_source", &["mashup", "combat_arms", "hl2dm", "halo_ce"], APP),
         ("apps/combat_arms", &["mashup", "cs_source", "source_logic", "source_engine"], CA_APP),
         (
             "apps/hl2dm",
@@ -1905,6 +1938,38 @@ fn workspace_crates() {
             HL2DM_SERVER,
         ),
         (
+            "apps/halo_ce",
+            &[
+                "mashup",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "originals",
+                "party_kit",
+                "lucker_party",
+                "cs_source_app",
+                "combat_arms_app",
+                "hl2dm_app",
+            ],
+            HALO_APP,
+        ),
+        (
+            "apps/halo_ce_server",
+            &[
+                "chimera_present",
+                "chimera_client",
+                "bevy_egui",
+                "bevy-inspector-egui",
+                "arboard",
+                "halo_ce_app",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "mashup",
+            ],
+            HALO_SERVER,
+        ),
+        (
             "apps/mashup_demo",
             &["mashup", "cs_source_app", "combat_arms_app", "lucker_party", "party_kit"],
             MASHUP_APP,
@@ -1920,6 +1985,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "mashup",
                 "lucker_party",
                 "party_kit",
@@ -1940,6 +2006,7 @@ fn workspace_crates() {
                 "source_engine",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "originals",
                 "ultimate_gun_game",
                 "lucker_party_server",
@@ -1957,6 +2024,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "mashup",
                 "ultimate_gun_game",
                 "lucker_party",
@@ -1979,6 +2047,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "mashup",
                 "lucker_party",
             ],
@@ -1986,7 +2055,7 @@ fn workspace_crates() {
         ),
         (
             "chimera/tools",
-            &["source_", "cs_source", "combat_arms", "hl2dm", "games", "mashup"],
+            &["source_", "cs_source", "combat_arms", "hl2dm", "halo_ce", "games", "mashup"],
             TOOLS,
         ),
         (
@@ -1998,6 +2067,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -2016,6 +2086,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -2025,7 +2096,7 @@ fn workspace_crates() {
             ],
             CHECKS,
         ),
-        ("games/cs_source/tools", &["mashup", "combat_arms", "hl2dm"], TOOLS),
+        ("games/cs_source/tools", &["mashup", "combat_arms", "hl2dm", "halo_ce"], TOOLS),
         (
             "apps/cs_source_server",
             &[
@@ -2037,6 +2108,7 @@ fn workspace_crates() {
                 "cs_source_app",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "source_gameui",
                 "mashup",
             ],
@@ -2068,6 +2140,7 @@ fn workspace_crates() {
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
+                "halo_ce",
                 "games",
                 "originals",
                 "lucker_party",
@@ -2566,6 +2639,7 @@ const UI_FEATURES: &[(&str, &str, &[&str])] = &[
     ("games/cs_source", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
     ("games/combat_arms", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
     ("games/hl2dm", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
+    ("games/halo_ce", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
 ];
 
 /// Crates a member's `FORBIDDEN` list names that its tests alone may use
@@ -2725,8 +2799,8 @@ fn selections_share_one_build() {
 }
 
 /// The dedicated servers build without the presentation
-/// (docs/ARCHITECTURE.md, "Crates"): `cs_source_server`, `hl2dm_server`
-/// and `combat_arms_server` use Chimera's simulation crates and their
+/// (docs/ARCHITECTURE.md, "Crates"): `cs_source_server`, `hl2dm_server`,
+/// `halo_ce_server` and `combat_arms_server` use Chimera's simulation crates and their
 /// game without `ui`, and `lucker_party_server` the party kit
 /// (`party_kit`) without its `present`, so none depends on
 /// `chimera_present` or links render or audio code. (That they compile that way the pre-push hook checks:
@@ -2818,6 +2892,15 @@ fn server_builds_without_presentation() {
         "`hl2dm_server` (the HL2:DM dedicated server's build) depends on {present:?}. It uses Chimera's \
          simulation crates and `hl2dm` (apps/hl2dm_server/Cargo.toml): don't depend on the app \
          (`hl2dm_app`), and keep the new dependency out of the simulation crates."
+    );
+    let server = tree("halo_ce_server");
+    let present: Vec<&str> = server
+        .lines()
+        .filter(|l| CLIENT_ONLY.iter().any(|c| l.starts_with(&format!("{c} "))))
+        .collect();
+    assert!(
+        present.is_empty(),
+        "`halo_ce_server` (Halo's dedicated server's build) depends on {present:?}. It uses Chimera's          simulation crates and `halo_ce` (apps/halo_ce_server/Cargo.toml): don't depend on the app          (`halo_ce_app`), and keep the new dependency out of the simulation crates."
     );
     let server = tree("lucker_party_server");
     let present: Vec<&str> = server

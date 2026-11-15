@@ -2418,6 +2418,7 @@ name = "blam_formats"
 version = "0.1.0"
 dependencies = [
  "chimera_vfs",
+ "flate2",
  "toml",
 ]
 
@@ -4430,6 +4431,57 @@ dependencies = [
  "num-traits",
  "serde",
  "zerocopy",
+]
+
+[[package]]
+name = "halo_ce"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "blam_formats",
+ "chimera_client",
+ "chimera_core",
+ "chimera_present",
+ "chimera_sim",
+ "chimera_world",
+ "halo_ce",
+ "serde",
+ "sha2",
+ "toml",
+ "workspace-hack",
+]
+
+[[package]]
+name = "halo_ce_app"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "chimera_client",
+ "chimera_core",
+ "chimera_net",
+ "chimera_present",
+ "chimera_sim",
+ "chimera_world",
+ "halo_ce",
+ "workspace-hack",
+]
+
+[[package]]
+name = "halo_ce_server"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "chimera_core",
+ "chimera_net",
+ "chimera_sim",
+ "chimera_world",
+ "halo_ce",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -6471,6 +6523,7 @@ dependencies = [
  "chimera_world",
  "combat_arms",
  "cs_source",
+ "halo_ce",
  "hl2dm",
  "originals",
  "source_engine",
@@ -9611,6 +9664,7 @@ dependencies = [
  "derive_more-impl",
  "either",
  "fixedbitset",
+ "flate2",
  "foldhash 0.2.0",
  "getrandom 0.4.3",
  "glam 0.33.12",

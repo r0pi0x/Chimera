@@ -59,7 +59,9 @@ pub fn client_hooks() -> AppHooks {
 /// copy, asked the server for a file the server doesn't have, and stayed
 /// in its own greybox game with a minigame that nobody plays; an HL2:DM
 /// map (offered with its hash, never sent) disconnected every player
-/// ("The server has no file to send", rehearsal 2026-11-12).
+/// ("The server has no file to send", rehearsal 2026-11-12). Halo's maps,
+/// like Combat Arms', are offered by id and hash only (`GameInfo::
+/// map_file` names none: a disc's file is never sent), so none here.
 pub fn map_file_bytes(id: &str) -> Option<Vec<u8>> {
     let (game, name) = id.split_once(':')?;
     let file = format!("maps/{name}.bsp");
@@ -89,9 +91,14 @@ pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 }
 
 /// Each game's front end (its `ui`'s `GameClient`, beside its bundle):
-/// the base game's first, then the guests' (HL2:DM's: M9).
-pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 3] =
-    [&combat_arms::ui::PARTY_CLIENT, &cs_source::ui::party::CLIENT, &hl2dm::ui::party::CLIENT];
+/// the base game's first, then the guests' (HL2:DM's: M9; Halo's, which
+/// draws nothing of its own yet).
+pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 4] = [
+    &combat_arms::ui::PARTY_CLIENT,
+    &cs_source::ui::party::CLIENT,
+    &hl2dm::ui::party::CLIENT,
+    &halo_ce::ui::party::CLIENT,
+];
 
 /// The client after the shell with both games' HUDs (`PARTY`'s front
 /// end; `with_huds` puts them among the shell's plugins, each drawing in
@@ -398,6 +405,7 @@ pub fn background_at_hand(id: &str) -> bool {
         cs_source::game::GAME => &cs_source::game::INFO,
         combat_arms::game::GAME => &combat_arms::game::INFO,
         hl2dm::game::GAME => &hl2dm::game::INFO,
+        halo_ce::game::GAME => &halo_ce::game::INFO,
         _ => return false,
     };
     if info.install().is_none() {
@@ -459,6 +467,7 @@ pub fn map_installed(id: &str) -> bool {
         Some(cs_source::game::GAME) => &cs_source::game::INFO,
         Some(combat_arms::game::GAME) => &combat_arms::game::INFO,
         Some(hl2dm::game::GAME) => &hl2dm::game::INFO,
+        Some(halo_ce::game::GAME) => &halo_ce::game::INFO,
         _ => return true,
     };
     info.install().is_some() && !info.served_alone()

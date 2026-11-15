@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use blam_formats::disc::{DiscImage, fold_cmp, open_install};
 use chimera_vfs::FileSource;
 
-const SKIP: &str = "skipping: no Halo CE disc image ($CHIMERA_HALO_CE_ROOT or [games.halo_ce] path)";
+pub(crate) const SKIP: &str = "skipping: no Halo CE disc image ($CHIMERA_HALO_CE_ROOT or [games.halo_ce] path)";
 
 /// The local config's `[games.halo_ce]` table: `$CHIMERA_CONFIG` (or
 /// `$MASHUP_CONFIG`), else chimera.local.toml at the repository root.
@@ -26,7 +26,7 @@ fn config() -> Option<toml::Table> {
 
 /// The disc image file: the environment's path, else the config's; a
 /// folder holding an image (`*.iso`) counts too.
-fn image_path() -> Option<PathBuf> {
+pub(crate) fn image_path() -> Option<PathBuf> {
     let path = std::env::var_os("CHIMERA_HALO_CE_ROOT")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
