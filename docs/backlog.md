@@ -50,6 +50,15 @@ the user's go-ahead: no Actions runs unless asked.
   - A Profile screen showing them, tied to the avatar.
   - Needs the hub's accounts and database (S1a and S1b, deployed) and S4's profiles, results outbox and schema ([plans/active/hub.md](plans/active/hub.md) sections 9 and 10). S4 stores totals; extend it with the match-history table and queries for trends.
 
+- **Ranks per game, earned with that game's guns (user, 2026-11-15, future):**
+  - Each game the guns come from has its own level, which rises by using and doing well with that game's guns in any mode (kills, accuracy, rungs cleared with them).
+  - Profiles show per-gun stats grouped by game.
+  - Where the game has its own rank art, use it, loaded from the install or asset service like other assets. Combat Arms' rank insignia already sit in its data unused, so a Combat Arms level shows CA's ranks.
+  - Games without rank art show a plain level number with XP.
+  - An overall account level is derived from the per-game levels and other account factors.
+  - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
+  - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
+
 - **Player requests (playtest 7, 2026-11-14):** games and guns wanted by
   players: Halo guns (Halo CE is already on this roadmap), Fortnite guns,
   Natural Selection 2 (one tester said no), Left 4 Dead infected, and
