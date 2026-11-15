@@ -5,10 +5,9 @@
 //! with its movement (`movement::ID`), so a gun game's automatic ladder
 //! deals them as rungs. Holding one makes the character Halo's where the
 //! identity follows the weapon (`chimera_sim::identity`): Halo's movement,
-//! and with it its vitality and shield (`vitality`'s wear). The Spartan
-//! body (`body`) and the guns' view and held models (`view`, from the
-//! donor map on another game's map); no HUD of its own yet (the fallback
-//! HUD, hud.md).
+//! and with it its vitality and shield (`vitality`'s wear), and its HUD
+//! (`ui::hud`). The Spartan body (`body`) and the guns' view and held
+//! models (`view`, from the donor map on another game's map).
 //!
 //! No map is claimed (`PARTS.maps` is empty): a map enters an app's pool
 //! only from the disc image the machine holds (`auto::InstalledMaps`),
@@ -38,7 +37,7 @@ pub static PARTS: GameParts = GameParts {
     knife: None,
     movement: Some(super::movement::ID),
     characters: Some("halo_ce:spartan"),
-    hud: None,
+    hud: Some(super::GAME),
     maps: &[],
     announcer: None,
     match_won_sound: None,

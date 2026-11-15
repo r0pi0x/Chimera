@@ -32,6 +32,8 @@
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
 //!   the donor map, `map/<name>` per multiplayer map); `mount::build` reads
 //!   the install's build from a map header;
+//! - the HUD is the front end's (`ui::hud`): `parts` names it (`hud:
+//!   Some(GAME)`), so a Halo gun in a party app shows it;
 //! - `parts`: what the game lends other games' apps (`PARTS`): its maps,
 //!   by its pool rules and measurements (data/map_pool.toml,
 //!   data/map_fitness.toml), played with other games' players and guns.

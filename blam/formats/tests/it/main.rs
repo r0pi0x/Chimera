@@ -25,6 +25,7 @@ mod damage_effect;
 mod vitality;
 mod globals;
 mod game_type;
+mod hud;
 
 mod heavy {
     mod animation_install;
@@ -42,4 +43,5 @@ mod heavy {
     mod projectile_install;
     mod vitality_install;
     mod weapon_install;
+    mod hud_install;
 }
