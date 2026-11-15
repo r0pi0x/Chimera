@@ -11,7 +11,7 @@ Chimera is a Rust game engine (Bevy 0.20) that rebuilds first-person games
 from the player's own installs and mixes their parts: a Combat Arms soldier
 on a Counter-Strike: Source map. **Lucker Party**, a party game of
 minigames built from those parts, is where it is heading. Layers, lowest
-first: the engine (`chimera/`), loaders (`source/`, `lithtech/`), games as
+first: the engine (`chimera/`), loaders (`source/`, `lithtech/`, `blam/`), games as
 libraries (`games/`), apps (`apps/`). Each layer uses only the ones below.
 [README.md](README.md) says what works; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 maps the code; [docs/DESIGN.md](docs/DESIGN.md) gives the reasons.

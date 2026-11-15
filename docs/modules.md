@@ -97,6 +97,11 @@ Change a file's `//!` doc with the code, then run
 
 - `apps/ultimate_gun_game_server/src/main.rs`: Ultimate Gun Game's dedicated server (apps/ultimate_gun_game_server, binary `ultimate_gun_game_server`): the party's server...
 
+## blam/formats
+
+- `blam/formats/src/disc.rs`: The Xbox disc image's file system (specs/halo_ce/disc_image.md): a volume descriptor, directory tables linked as binary trees, files as runs of...
+- `blam/formats/src/lib.rs`: Halo: Combat Evolved's file formats as plain data (the `blam/` loader layer, beside `source/` and `lithtech/`; docs/ARCHITECTURE.md, "Crates")...
+
 ## checks
 
 - `checks/src/affected.rs`: Which packages' tests a change can affect (the `affected` binary; the git hooks, .githooks/pre-commit and pre-push, run only those)

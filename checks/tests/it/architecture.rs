@@ -900,6 +900,7 @@ fn own_sounds_carry_their_licence() {
 fn no_game_assets_tracked() {
     const FORBIDDEN: &[&str] = &[
         "vpk", "bsp", "vtf", "vmt", "mdl", "vvd", "vtx", "phy", "rez", "ltb", "dtx", "dat", "wav", "mp3", "ogg",
+        "iso", "xiso", "xbe",
     ];
     const MAX_BYTES: u64 = 1024 * 1024;
     let mut errors = Vec::new();
@@ -1475,6 +1476,7 @@ fn workspace_crates() {
         "chimera/services",
         "source/formats",
         "lithtech/formats",
+        "blam/formats",
         "source/tools",
         "checks",
     ];
@@ -1599,6 +1601,7 @@ fn workspace_crates() {
                 "mashup",
                 "source_",
                 "lithtech_",
+                "blam_",
                 "chimera_",
                 "cs_source",
                 "combat_arms",
@@ -1622,6 +1625,7 @@ fn workspace_crates() {
                 "mashup",
                 "source_",
                 "lithtech_",
+                "blam_",
                 "chimera_",
                 "cs_source",
                 "combat_arms",
@@ -1644,6 +1648,7 @@ fn workspace_crates() {
                 "mashup",
                 "source_",
                 "lithtech_",
+                "blam_",
                 "chimera_core",
                 "chimera_world",
                 "chimera_present",
@@ -1673,6 +1678,7 @@ fn workspace_crates() {
                 "mashup",
                 "source_",
                 "lithtech_",
+                "blam_",
                 "chimera_core",
                 "chimera_world",
                 "chimera_present",
@@ -1694,11 +1700,34 @@ fn workspace_crates() {
         ),
         // Source's formats may use the VFS (`chimera_vfs`) and no other
         // Chimera crate.
-        ("source/formats", &["bevy", "avian", "mashup", "lithtech_", "chimera_"], PURE_DATA),
+        ("source/formats", &["bevy", "avian", "mashup", "lithtech_", "blam_", "chimera_"], PURE_DATA),
         // LithTech's loader layer, like Source's: plain data (the VFS from
         // `chimera_vfs` only).
         (
             "lithtech/formats",
+            &[
+                "bevy",
+                "avian",
+                "mashup",
+                "chimera_",
+                "source_logic",
+                "source_engine",
+                "source_tools",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "games",
+                "originals",
+                "lucker_party",
+                "party_kit",
+                "workspace-hack",
+            ],
+            PURE_DATA,
+        ),
+        // Halo's loader layer, the same: plain data (the VFS from
+        // `chimera_vfs` only).
+        (
+            "blam/formats",
             &[
                 "bevy",
                 "avian",
@@ -1731,6 +1760,7 @@ fn workspace_crates() {
                 "chimera_client",
                 "source_",
                 "lithtech_",
+                "blam_",
                 "mashup",
                 "cs_source",
                 "combat_arms",
@@ -1886,6 +1916,7 @@ fn workspace_crates() {
                 "chimera_client",
                 "source_",
                 "lithtech_",
+                "blam_",
                 "cs_source",
                 "combat_arms",
                 "hl2dm",
@@ -2519,6 +2550,7 @@ fn layers_by_path() {
     assert_eq!(layer_of("chimera/core"), Layer::Engine);
     assert_eq!(layer_of("source/formats"), Layer::Loader("source".into()));
     assert_eq!(layer_of("lithtech/formats"), Layer::Loader("lithtech".into()));
+    assert_eq!(layer_of("blam/formats"), Layer::Loader("blam".into()));
     assert_eq!(layer_of("games/hl2dm"), Layer::Game);
     assert_eq!(layer_of("games/cs_source/tools"), Layer::App);
     assert_eq!(layer_of("apps/party_kit"), Layer::App);
