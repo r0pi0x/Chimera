@@ -32,6 +32,8 @@
 //!   `Seated`), moving with the vehicle; `camera::view`: a third-person
 //!   seat's camera (the spec's focus, track point and pull-in) as the
 //!   character's `MapView`.
+//! - `look` (every machine): the wheels' spin, the steering and the
+//!   suspension on the drawn model's joints.
 //! - `splatter`: a character touching a moving vehicle is pushed and takes
 //!   the globals' vehicle collision damage by the spec's rule (`HaloHit`,
 //!   area, owned by the driver), with the 90-tick grace after leaving it.
@@ -48,8 +50,6 @@
 //!   the camera's auto-level are not applied (the mouse look is free); a
 //!   first-person seat's eye is the rider's own, not the seat's camera
 //!   marker.
-//! - Wheels, steering and suspension are not shown on the model's nodes
-//!   (the model is drawn rigid, as the scenery is).
 //! - The seated state is not replicated: a networked client's own player
 //!   is not shown seated (the party apps come with stage 2).
 
@@ -57,6 +57,7 @@ pub mod camera;
 pub mod data;
 pub mod drive;
 pub mod level;
+pub mod look;
 pub mod physics;
 pub mod place;
 pub mod seats;
@@ -195,6 +196,7 @@ impl Plugin for HaloVehiclesPlugin {
                 Ok(None)
             },
         );
+        app.add_systems(Update, look::pose);
         app.init_resource::<VehicleDefs>().add_systems(
             FixedUpdate,
             (
@@ -204,6 +206,7 @@ impl Plugin for HaloVehiclesPlugin {
                     .run_if(authoritative),
                 carry,
                 camera::view,
+                look::track,
                 enter_when_ready.run_if(resource_exists::<EnterWhenReady>),
             )
                 .chain()
@@ -305,7 +308,14 @@ fn attach(
         let t = Transform::from_translation(to_engine(vehicle.drive.body.origin(phys.center_of_mass)))
             .with_rotation(engine_rotation(&vehicle.drive.body));
         let mut ec = commands.entity(e);
-        ec.insert((vehicle, t, RigidBody::Kinematic, collider, contact_filter::hooks()));
+        ec.insert((
+            vehicle,
+            look::VehicleLook::new(p.suspension.clone()),
+            t,
+            RigidBody::Kinematic,
+            collider,
+            contact_filter::hooks(),
+        ));
         if server {
             ec.insert(PhysicsProp {
                 push: PushAway::Collide,
@@ -332,6 +342,7 @@ pub fn spawn_vehicle(world: &mut World, name: &str, position: Vec3, heading: f32
         up: [0.0, 0.0, 1.0],
         markers: Default::default(),
         hull: Vec::new(),
+        suspension: Vec::new(),
     };
     let v = spawn_state(d, phys, def, &placed);
     let (lo, hi) = phys.points.iter().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| {
@@ -344,7 +355,14 @@ pub fn spawn_vehicle(world: &mut World, name: &str, position: Vec3, heading: f32
         .with_rotation(engine_rotation(&v.drive.body));
     Some(
         world
-            .spawn((v, t, RigidBody::Kinematic, collider, contact_filter::hooks()))
+            .spawn((
+                v,
+                look::VehicleLook::default(),
+                t,
+                RigidBody::Kinematic,
+                collider,
+                contact_filter::hooks(),
+            ))
             .id(),
     )
 }

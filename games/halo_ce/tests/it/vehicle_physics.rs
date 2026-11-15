@@ -607,6 +607,7 @@ fn which_placements_spawn_and_where() {
         up: [0.0, 0.0, 1.0],
         markers: Default::default(),
         hull: Vec::new(),
+        suspension: Vec::new(),
     };
     let v = halo_ce::game::vehicles::spawn_state(&d, &p, 0, &placed);
     close(v.drive.body.position.z, 0.84, 1e-6, "centre of mass");

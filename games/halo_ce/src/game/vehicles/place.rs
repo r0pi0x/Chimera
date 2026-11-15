@@ -8,14 +8,17 @@
 //! difficulty bits are ignored. Each one of a vehicle with a document in
 //! data/vehicles/ (`VehicleDef::builtin`) becomes
 //!
-//! - a `MapProp` of the vehicle's render model (drawn as the scenery is,
-//!   `objects::model_meshes`), with `physics` set so the engine treats it as
-//!   a moving body (its node under the map's root, replicated as a prop),
-//!   and no collider of the engine's: `super` gives it its own; and
+//! - a `MapProp` of the vehicle's render model, rigged (its nodes as bones,
+//!   skinned meshes, the graph's vehicle overlays as its animation set:
+//!   `look::anim_set`) and naming its map entity, so the drawn prop has
+//!   joints `look::pose` moves; with `physics` set so the engine treats it
+//!   as a moving body (its node under the map's root, replicated as a
+//!   prop), and no collider of the engine's: `super` gives it its own; and
 //! - a map entity of class `ENTITY_CLASS` naming the prop, the vehicle, the
 //!   placement's position and axes, the model-space positions of the
-//!   seats' markers, and the collision model's vertices (the hull the
-//!   vehicle's collider is built from), all in world units.
+//!   seats' markers (and the root node's, `camera::ROOT_NODE`), the
+//!   collision model's vertices (the hull the vehicle's collider is built
+//!   from), all in world units, and the graph's suspension elements.
 //!
 //! Halo's game does not model game types yet: `vehicles` places with the
 //! default vehicle set (`VehicleSet::Default`, all three kinds); a game
@@ -29,14 +32,21 @@
 
 use std::collections::BTreeMap;
 
-use blam_formats::{cache::MapFile, collision, game_type::VehicleSet, model::Model, object::Vehicle, scenario::Scenario};
+use std::sync::Arc;
+
+use blam_formats::{
+    animation::AnimationGraph, cache::MapFile, collision, game_type::VehicleSet, model::Model, object::Vehicle,
+    scenario::Scenario,
+};
 
 use super::data::VehicleDef;
+use super::look::{self, Suspension};
+use crate::game::body::skeleton;
 use crate::game::maps::{
     objects::{self, Dest, Pending},
     space,
 };
-use crate::map::{LightProbe, MapData, MapEntity, MapModel, MapPhysics, MapProp, PropSolid, PushAway};
+use crate::map::{LightProbe, MapData, MapEntity, MapModel, MapPhysics, MapProp, MapRig, PropSolid, PushAway};
 
 /// The map entity of a placed vehicle.
 pub const ENTITY_CLASS: &str = "halo_ce_vehicle";
@@ -55,6 +65,9 @@ pub struct Placed {
     pub markers: BTreeMap<String, [f32; 3]>,
     /// The collision model's vertices, model space.
     pub hull: Vec<[f32; 3]>,
+    /// The graph's suspension elements (`look::suspension_key` names
+    /// their overlays in the model's rig).
+    pub suspension: Vec<Suspension>,
 }
 
 fn fmt3(p: [f32; 3]) -> String {
@@ -71,6 +84,11 @@ impl Placed {
     pub fn entity(&self) -> MapEntity {
         let markers: Vec<String> = self.markers.iter().map(|(n, p)| format!("{n}:{}", fmt3(*p))).collect();
         let hull: Vec<String> = self.hull.iter().map(|p| fmt3(*p)).collect();
+        let suspension: Vec<String> = self
+            .suspension
+            .iter()
+            .map(|s| format!("{},{},{}", s.point, s.extension, s.compression))
+            .collect();
         MapEntity {
             keyvalues: vec![
                 ("classname".into(), ENTITY_CLASS.into()),
@@ -81,6 +99,7 @@ impl Placed {
                 ("up".into(), fmt3(self.up)),
                 ("markers".into(), markers.join(";")),
                 ("hull".into(), hull.join(";")),
+                ("suspension".into(), suspension.join(";")),
             ],
             ..Default::default()
         }
@@ -116,6 +135,19 @@ impl Placed {
             up: parse3(e.get("up")?)?,
             markers,
             hull,
+            suspension: e
+                .get("suspension")
+                .unwrap_or("")
+                .split(';')
+                .filter_map(|s| {
+                    let mut it = s.split(',');
+                    Some(Suspension {
+                        point: it.next()?.trim().parse().ok()?,
+                        extension: it.next()?.trim().parse().ok()?,
+                        compression: it.next()?.trim().parse().ok()?,
+                    })
+                })
+                .collect(),
         })
     }
 }
@@ -173,6 +205,7 @@ struct Kind {
     model: usize,
     markers: BTreeMap<String, [f32; 3]>,
     hull: Vec<[f32; 3]>,
+    suspension: Vec<Suspension>,
 }
 
 fn vehicles_of(
@@ -223,7 +256,9 @@ fn vehicles_of(
             }),
             fade: None,
             parent: None,
-            entity: None,
+            // Its map entity (next): an entity prop gets its rig's joints
+            // (`look::pose`).
+            entity: Some(map.entities.len()),
             skin: 0,
             body: 0,
             detail: false,
@@ -236,6 +271,7 @@ fn vehicles_of(
             up: o.up,
             markers: kind.markers.clone(),
             hull: kind.hull.clone(),
+            suspension: kind.suspension.clone(),
         };
         map.entities.push(placed.entity());
     }
@@ -272,8 +308,23 @@ fn kind_of(
             return None;
         }
     };
-    let meshes = objects::model_meshes(file, &model, &|p| space::point(p));
+    let meshes = objects::skinned_meshes(file, &model, &|p| space::point(p));
     let index = map.models.len();
+    // Its nodes as a rig and the graph's vehicle overlays (`look`).
+    let bones = skeleton::bones(&model);
+    let (set, suspension) = match file.tag(vehicle.object.animation_graph.id).map(|t| AnimationGraph::read(file, t)) {
+        Some(Ok(graph)) => {
+            let (set, suspension, left_out) = look::anim_set(&graph, &bones, model.node_list_checksum);
+            map.warnings.extend(left_out);
+            (set, suspension)
+        }
+        Some(Err(e)) => {
+            map.warnings
+                .push(format!("vehicle `{}`: animation graph unreadable, drawn still: {e}", tag.path));
+            (look::anim_set_still(&bones), Vec::new())
+        }
+        None => (look::anim_set_still(&bones), Vec::new()),
+    };
     let mut lo = bevy::math::Vec3::splat(f32::MAX);
     let mut hi = bevy::math::Vec3::splat(f32::MIN);
     for (m, _) in &meshes {
@@ -284,6 +335,11 @@ fn kind_of(
     }
     map.models.push(MapModel {
         bounds: if lo.x <= hi.x { (lo, hi) } else { Default::default() },
+        rig: Some(Arc::new(MapRig {
+            bones,
+            root: skeleton::root(),
+            animations: Arc::new(set),
+        })),
         ..Default::default()
     });
     pending.extend(meshes.into_iter().map(|(mesh, shader)| Pending {
@@ -330,5 +386,6 @@ fn kind_of(
         model: index,
         markers,
         hull,
+        suspension,
     })
 }

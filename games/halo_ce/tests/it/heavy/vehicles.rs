@@ -162,3 +162,52 @@ fn the_seat_cameras_on_the_disc() {
     // The passenger's eye.
     near(Vec3::from(m["camera rider"]), Vec3::new(0.0715, -0.1586, 0.8056), "camera rider");
 }
+
+#[test]
+fn the_warthogs_overlays_on_the_disc() {
+    use halo_ce::game::body::anims;
+    use halo_ce::game::vehicles::look::{self, GROUND_SPEED, STEERING, VehicleLook};
+    let Some(mount) = mount() else { return };
+    let map = load(&mount, "bloodgulch", false);
+    let placed = map
+        .entities
+        .iter()
+        .filter_map(halo_ce::game::vehicles::place::Placed::from_entity)
+        .find(|p| p.vehicle == "warthog")
+        .expect("a placed Warthog");
+    let rig = map.models[map.props[placed.prop].model].rig.clone().expect("a rigged model");
+    let set = &rig.animations;
+    // Four suspension elements, the tyres 11 to 14, E -0.31445, C -0.13452.
+    let points: Vec<usize> = placed.suspension.iter().map(|s| s.point).collect();
+    assert_eq!(points.len(), 4, "{points:?}");
+    assert!(points.iter().all(|p| (11..=14).contains(p)), "{points:?}");
+    for s in &placed.suspension {
+        assert!((s.extension + 0.31445).abs() < 1e-4 && (s.compression + 0.13452).abs() < 1e-4, "{s:?}");
+    }
+    // The steering screen: 3 frames, 35 degrees per column; tau = 30
+    // degrees is 6/7 of the way to the full-left frame.
+    let steering = set.names[STEERING];
+    assert_eq!(anims::frames(set, steering), 3);
+    let bounds = anims::screen_bounds(&set.sequences[steering]).expect("a screen");
+    let cell = bounds.locate(30f32.to_radians(), 0.0).unwrap();
+    assert!((cell.u - 6.0 / 7.0).abs() < 1e-3, "{cell:?}");
+    assert_eq!(anims::frames(set, set.names[GROUND_SPEED]), 4);
+    // Turned and spun, the pose moves bones the bind pose has elsewhere.
+    let still = look::posed(set, &VehicleLook::default(), 1.0);
+    let turned = look::posed(
+        set,
+        &VehicleLook {
+            turn: 30f32.to_radians(),
+            wheel: 0.3,
+            ..Default::default()
+        },
+        1.0,
+    );
+    let moved = still
+        .iter()
+        .zip(&turned)
+        .filter(|(a, b)| a.0.angle_between(b.0) > 0.05)
+        .count();
+    assert!(moved >= 5, "the steering wheel and the four hubs or tyres: {moved} bones moved");
+}
+

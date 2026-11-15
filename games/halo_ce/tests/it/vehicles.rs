@@ -259,3 +259,24 @@ fn the_drivers_camera_is_the_track_point_from_the_centre_of_mass() {
     let got = game(view.origin);
     assert!((got - want).length() < 0.01, "camera {got} against {want}");
 }
+
+#[test]
+fn the_suspension_follows_the_ground() {
+    use halo_ce::game::vehicles::look::{Suspension, VehicleLook};
+    let (mut t, w) = setup(Vec3::new(0.0, 5.0, 0.0), Vec3::ZERO, 1.0 / TICK_INTERVAL);
+    let elements = (11..=14)
+        .map(|point| Suspension {
+            point,
+            extension: -0.31445,
+            compression: -0.13452,
+        })
+        .collect();
+    t.sim.app.world_mut().entity_mut(w).insert(VehicleLook::new(elements));
+    t.sim.ticks(60);
+    let look = t.sim.app.world().get::<VehicleLook>(w).unwrap().clone();
+    // At rest on flat ground the tyres sit about half way (k 0.51 at the
+    // spec's equilibrium; here frozen a little above it).
+    for v in &look.suspension {
+        assert!(*v > 0.3 && *v < 0.7, "{:?}", look.suspension);
+    }
+}

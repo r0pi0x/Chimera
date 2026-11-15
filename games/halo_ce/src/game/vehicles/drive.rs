@@ -116,6 +116,8 @@ pub struct Drive {
     pub turn: f32,
     /// The wheel spin in [0, circumference).
     pub wheel: f32,
+    /// The left and right tread positions in [0, circumference).
+    pub treads: [f32; 2],
     /// The driver's seat power P0.
     pub power: f32,
     pub brake: bool,
@@ -146,6 +148,7 @@ impl Drive {
             slide: 0.0,
             turn: 0.0,
             wheel: 0.0,
+            treads: [0.0; 2],
             power: 0.0,
             brake: false,
             asleep: false,
