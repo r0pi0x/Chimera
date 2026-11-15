@@ -109,3 +109,37 @@ fn halo_against_halo_is_the_spec_s_table_with_the_switch_on_and_off() {
         assert!(v.shield == 0.0 && (v.body - 0.4).abs() < 1e-5 && !v.dead, "frag: {v:?}");
     }
 }
+
+/// The ladder's power reader with the party balance's hand (`[power]`):
+/// the plasma pistol tapped at 7 a second, overheating after its shots and
+/// pausing 1.15 s (to 0.25 heat at 0.65 a second); the needler's needles
+/// flying 12.2 m/s and detonating 0.75 s after they stick, their homing
+/// taking the cone off at 10 m; the assault rifle in 0.2 s bursts.
+#[test]
+fn the_power_reader_counts_a_hand() {
+    use chimera_sim::{
+        minigame::power::{PowerCurve, PowerReaders, stats},
+        weapon::data::WeaponCatalog,
+    };
+    let sim = sim();
+    let w = sim.app.world();
+    let catalog = w.resource::<WeaponCatalog>();
+    let readers = w.get_resource::<PowerReaders>().cloned().unwrap_or_default();
+    let curve = PowerCurve::shipped();
+    let at = |id: &str| stats(catalog.get(id).unwrap(), &readers, &curve, 10.0);
+    let hand = CrossGame::load().power;
+    let pp = at(halo_ce::game::weapons::PLASMA_PISTOL);
+    assert!((pp.interval - 1.0 / hand.hand_taps_per_second).abs() < 1e-6, "{pp:?}");
+    // 0.16 a bolt, 0.65 / 7 lost between: the 14th overheats.
+    assert_eq!(pp.clip, 14, "{pp:?}");
+    assert!((pp.reload - 0.75 / 0.65).abs() < 1e-4, "{pp:?}");
+    let ne = at(halo_ce::game::weapons::NEEDLER);
+    // 10 m at 4 WU a second (3.28 WU), then the fuse.
+    assert!((ne.latency - (10.0 / 3.048 / 4.0 + 0.75)).abs() < 0.01, "{ne:?}");
+    assert_eq!((ne.spread, ne.follow), (0.0, Some(0.0)), "homed onto the target");
+    let ar = at(halo_ce::game::weapons::ASSAULT_RIFLE);
+    // 3 rounds 2 ticks apart, then 10 ticks for the error (0.33) to go.
+    assert!((ar.interval - 16.0 / 3.0 / 30.0).abs() < 1e-5, "{ar:?}");
+    let mean = (0.034_906_585_f32 + (0.113_446_4 - 0.034_906_585) / 9.0).tan();
+    assert!((ar.follow.unwrap() - mean).abs() < 1e-4, "{ar:?}");
+}

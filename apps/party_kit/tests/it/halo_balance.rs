@@ -41,12 +41,14 @@ use crate::{
 const HALO_RUNG: usize = 1;
 
 /// A gun's body hit at 10 m, every pellet landing, from its data and its
-/// game's power reader (normalized: 1 = 100 hit points), and its head's
-/// multiplier.
+/// game's power reader (normalized: 1 = 100 hit points), as its own game
+/// deals it (the party's per-game scale is the hit's, `gun_hit`), and its
+/// head's multiplier.
 pub(crate) fn per_hit(sim: &Sim, id: &str) -> (f32, f32) {
     let w = sim.app.world();
     let data = w.resource::<WeaponCatalog>().get(id).unwrap_or_else(|| panic!("{id} in the catalogue"));
-    let readers = w.get_resource::<PowerReaders>().cloned().unwrap_or_default();
+    let mut readers = w.get_resource::<PowerReaders>().cloned().unwrap_or_default();
+    readers.game_damage = Default::default();
     let s = power::stats(data, &readers, &PowerCurve::shipped(), 10.0);
     (s.damage * s.pellets as f32, s.head.unwrap_or(1.0))
 }
@@ -165,15 +167,18 @@ fn other_games_guns_on_a_halo_player_count_the_incoming_scale() {
     let k = CrossGame::load().incoming();
     assert_eq!(k, 1.5);
     println!("gun, region, per hit (HP), bare 100, Halo off (200), Halo on (133)");
+    let table = party_kit::party_damage::table();
     for ((id, region, raw, today), (_, _, raw_on, now)) in off.iter().zip(&on) {
         assert_eq!(raw, raw_on);
+        // As the party deals it (its per-game table: HL2:DM's 1.5).
+        let raw = &(raw * table.of_weapon(id));
         println!("{id} {region:?}: {:.1} {} {today} {now}", raw * 100.0, bare(*raw));
         // The counted pool: 200 points as they come, 200 / 1.5 with it on.
         assert_eq!(*today, (2.0 / raw - 1e-4).ceil() as u32, "{id} {region:?} off");
         assert_eq!(*now, (2.0 / (raw * k) - 1e-4).ceil() as u32, "{id} {region:?} on");
     }
     let row = |t: &[(&str, BodyRegion, f32, u32)], id: &str, region: BodyRegion| {
-        t.iter().find(|r| r.0 == id && r.1 == region).map(|r| (bare(r.2), r.3)).unwrap()
+        t.iter().find(|r| r.0 == id && r.1 == region).map(|r| (bare(r.2 * table.of_weapon(id)), r.3)).unwrap()
     };
     // The brief's two: the AK-47 3 on a bare character, 6 today, 4 now; the
     // AWP 1, 2 and still 2 (one shot from a scale of 200 / 114 = 1.754).
@@ -477,5 +482,123 @@ fn leaving_halo_gives_back_the_armour_it_brought() {
         let v = sim.app.world().get::<Vitality>(a).unwrap();
         assert_eq!(v.shield, before, "on {on}: the shield kept from one Halo rung to the next");
         assert!(v.delay > 0, "still waiting to recharge");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HL2:DM's guns in the party (data/party_damage.toml: `hl2dm = 1.5`), by
+// their real data, on a bare character, a Combat Arms soldier with its
+// gear and a full Halo player; and the ladder's power of every gun.
+
+/// HL2:DM's five guns of the ladder.
+const HL2: [&str; 5] = ["hl2dm:weapon_pistol", "hl2dm:weapon_357", "hl2dm:weapon_smg1", "hl2dm:weapon_ar2", "hl2dm:weapon_shotgun"];
+
+/// `target` on rung `r` (0 bare CS:S, 1 Halo, 2 Combat Arms), back in
+/// play and full: no armour on CS:S, the full gear on Combat Arms, a full
+/// shield on Halo.
+fn full_on(sim: &mut Sim, a: Entity, target: Entity, r: usize) {
+    line_up(sim, a, target, 3.0);
+    if crate::gun_game::rung(sim, target) != r {
+        set_rung(sim, target, r);
+        sim.seconds(1.2);
+        line_up(sim, a, target, 3.0);
+    }
+    match r {
+        0 => {
+            sim.app.world_mut().entity_mut(target).remove::<chimera_sim::weapon::Armor>();
+        }
+        2 => {
+            sim.app.world_mut().entity_mut(target).insert(chimera_sim::weapon::Armor { amount: 1.0, helmet: false });
+        }
+        _ => {
+            for _ in 0..(11.0 * sim.tick_hz()) as u32 {
+                if sim.app.world().get::<Vitality>(target).is_some_and(|v| v.shield == 1.0 && v.body == 1.0) {
+                    break;
+                }
+                sim.ticks(1);
+            }
+        }
+    }
+    sim.ticks(2);
+}
+
+/// HL2:DM's guns' hits to kill at the party's scale `scale`: for each gun
+/// (bare, Combat Arms with gear, Halo player), and its own shot (all
+/// pellets, before the scale) and cycle.
+fn hl2_rows(scale: f32) -> Vec<(&'static str, f32, f32, [u32; 3])> {
+    let mut sim = party();
+    let mut table = party_kit::party_damage::table();
+    table.0.insert("hl2dm".into(), scale);
+    sim.app.insert_resource(table);
+    let a = soldier(&mut sim);
+    let b = soldier(&mut sim);
+    sim.seconds(1.5);
+    let mut out = Vec::new();
+    for id in HL2 {
+        let (shot, _) = per_hit(&sim, id);
+        let data = sim.app.world().resource::<WeaponCatalog>().get(id).unwrap();
+        let readers = sim.app.world().get_resource::<PowerReaders>().cloned().unwrap_or_default();
+        let cycle = power::stats(data, &readers, &PowerCurve::shipped(), 10.0).interval;
+        let mut hits = [0; 3];
+        for (k, r) in [0, 2, HALO_RUNG].into_iter().enumerate() {
+            full_on(&mut sim, a, b, r);
+            hits[k] = hits_to_kill(&mut sim, b, id, shot, BodyRegion::Chest);
+        }
+        out.push((id, shot, cycle, hits));
+    }
+    out
+}
+
+/// HL2:DM's guns at 1.0, 1.5 (the party's) and 2.0: hits to kill and
+/// seconds (hits - 1 cycles) on each victim; printed (`-- --nocapture`).
+#[test]
+fn hl2dms_guns_take_the_party_s_scale() {
+    assert_eq!(party_kit::party_damage::table().of("hl2dm"), 1.5);
+    let mut at = Vec::new();
+    for scale in [1.0, 1.5, 2.0] {
+        let rows = hl2_rows(scale);
+        for (id, shot, cycle, hits) in &rows {
+            let secs = hits.map(|n| (n - 1) as f32 * cycle);
+            println!(
+                "x{scale}: {id}: {:.1} a shot, every {:.3} s: bare {} ({:.2} s), Combat Arms {} ({:.2} s), Halo {} ({:.2} s)",
+                shot * 100.0 * scale,
+                cycle,
+                hits[0],
+                secs[0],
+                hits[1],
+                secs[1],
+                hits[2],
+                secs[2]
+            );
+        }
+        at.push(rows);
+    }
+    let bare = |k: usize, id: &str| at[k].iter().find(|r| r.0 == id).map(|r| (r.1, r.3[0])).unwrap();
+    // At 1.0 HL2:DM's own numbers: the SMG1 20, the AR2 10, the pistol 13,
+    // the .357 2, the shotgun 2 shells.
+    let own: Vec<u32> = HL2.iter().map(|id| bare(0, id).1).collect();
+    assert_eq!(own, [13, 2, 20, 10, 2]);
+    // At 1.5: 9, 1 (112.5), 14, 7 and still 2 shells (94.5).
+    let party: Vec<u32> = HL2.iter().map(|id| bare(1, id).1).collect();
+    assert_eq!(party, [9, 1, 14, 7, 2]);
+    assert!((bare(1, "hl2dm:weapon_357").0 * 1.5 - 1.125).abs() < 1e-4);
+    assert!((bare(1, "hl2dm:weapon_shotgun").0 * 1.5 - 0.945).abs() < 1e-4);
+}
+
+/// The ladder's power of every classed gun of the party, by band then
+/// score (`ladder_power`'s table), with the party's per-game table and
+/// without it; HL2:DM's guns marked `*`, Halo's `#` (`-- --nocapture`).
+#[test]
+fn the_ladder_s_power_with_and_without_the_party_s_table() {
+    let mut sim = crate::gun_game::party();
+    let curve = PowerCurve::shipped();
+    for with in [false, true] {
+        let table = if with { party_kit::party_damage::table() } else { Default::default() };
+        sim.app.world_mut().resource_mut::<PowerReaders>().game_damage = table;
+        println!("ladder power, {}:", if with { "the party's table" } else { "no table" });
+        for (id, class, p) in power::table(sim.app.world(), &curve) {
+            let mark = if id.starts_with("hl2dm:") { "*" } else if id.starts_with("halo_ce:") { "#" } else { " " };
+            println!("{mark} {:<9} {:>6.3}  ttk {:>5.2} s  {} ({})", p.band.name(), p.score, p.ttk, id, class.name());
+        }
     }
 }
