@@ -1,0 +1,285 @@
+//! The scenario's vehicle placements as the engine's props and map
+//! entities (specs/halo_ce/scenario.md vehicle placements;
+//! vehicles.md "Multiplayer"): every placement whose palette entry is in
+//! range (the on-BSP flags are scenery's alone) of a vehicle with a document in
+//! data/vehicles/ (`VehicleDef::builtin`: the Warthog) becomes
+//!
+//! - a `MapProp` of the vehicle's render model (drawn as the scenery is,
+//!   `objects::model_meshes`), with `physics` set so the engine treats it as
+//!   a moving body (its node under the map's root, replicated as a prop),
+//!   and no collider of the engine's: `super` gives it its own; and
+//! - a map entity of class `ENTITY_CLASS` naming the prop, the vehicle, the
+//!   placement's position and axes, the model-space positions of the
+//!   seats' markers, and the collision model's vertices (the hull the
+//!   vehicle's collider is built from), all in world units.
+//!
+//! The Ghost and Scorpion placements are not placed until their driving
+//! rules exist (no document); the game type's vehicle set is not read: the
+//! default set ("all", multiplayer_rules.md) keeps every Warthog.
+//!
+//! Known shortcuts:
+//! - The vehicle's collider is the convex hull of its collision model's
+//!   vertices, not its surfaces (an open-topped Warthog is solid to its
+//!   rim for players and shots).
+
+use std::collections::BTreeMap;
+
+use blam_formats::{cache::MapFile, collision, model::Model, object::Vehicle, scenario::Scenario};
+
+use super::data::VehicleDef;
+use crate::game::maps::{
+    objects::{self, Dest, Pending},
+    space,
+};
+use crate::map::{LightProbe, MapData, MapEntity, MapModel, MapPhysics, MapProp, PropSolid, PushAway};
+
+/// The map entity of a placed vehicle.
+pub const ENTITY_CLASS: &str = "halo_ce_vehicle";
+
+/// A placed vehicle as its map entity carries it (world units, Halo axes).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Placed {
+    /// Index into `MapData::props`.
+    pub prop: usize,
+    /// The document's name.
+    pub vehicle: String,
+    pub position: [f32; 3],
+    pub forward: [f32; 3],
+    pub up: [f32; 3],
+    /// Marker name to model-space position.
+    pub markers: BTreeMap<String, [f32; 3]>,
+    /// The collision model's vertices, model space.
+    pub hull: Vec<[f32; 3]>,
+}
+
+fn fmt3(p: [f32; 3]) -> String {
+    format!("{},{},{}", p[0], p[1], p[2])
+}
+
+fn parse3(s: &str) -> Option<[f32; 3]> {
+    let mut it = s.split(',').map(|v| v.trim().parse::<f32>().ok());
+    Some([it.next()??, it.next()??, it.next()??])
+}
+
+impl Placed {
+    /// As a map entity.
+    pub fn entity(&self) -> MapEntity {
+        let markers: Vec<String> = self.markers.iter().map(|(n, p)| format!("{n}:{}", fmt3(*p))).collect();
+        let hull: Vec<String> = self.hull.iter().map(|p| fmt3(*p)).collect();
+        MapEntity {
+            keyvalues: vec![
+                ("classname".into(), ENTITY_CLASS.into()),
+                ("prop".into(), self.prop.to_string()),
+                ("vehicle".into(), self.vehicle.clone()),
+                ("position".into(), fmt3(self.position)),
+                ("forward".into(), fmt3(self.forward)),
+                ("up".into(), fmt3(self.up)),
+                ("markers".into(), markers.join(";")),
+                ("hull".into(), hull.join(";")),
+            ],
+            ..Default::default()
+        }
+    }
+
+    /// Read back from a map entity of `ENTITY_CLASS`.
+    pub fn from_entity(e: &MapEntity) -> Option<Placed> {
+        if e.classname() != ENTITY_CLASS {
+            return None;
+        }
+        let markers = e
+            .get("markers")
+            .unwrap_or("")
+            .split(';')
+            .filter(|s| !s.is_empty())
+            .filter_map(|m| {
+                let (n, p) = m.rsplit_once(':')?;
+                Some((n.to_string(), parse3(p)?))
+            })
+            .collect();
+        let hull = e
+            .get("hull")
+            .unwrap_or("")
+            .split(';')
+            .filter(|s| !s.is_empty())
+            .filter_map(parse3)
+            .collect();
+        Some(Placed {
+            prop: e.get("prop")?.parse().ok()?,
+            vehicle: e.get("vehicle")?.to_string(),
+            position: parse3(e.get("position")?)?,
+            forward: parse3(e.get("forward")?)?,
+            up: parse3(e.get("up")?)?,
+            markers,
+            hull,
+        })
+    }
+}
+
+/// Place the scenario's vehicles of `defs` in `map` (module doc); returns
+/// the models' meshes waiting for their looks.
+pub fn vehicles(file: &MapFile, scenario: &Scenario, light: &LightProbe, map: &mut MapData) -> Vec<Pending> {
+    vehicles_of(file, scenario, light, map, &VehicleDef::builtin())
+}
+
+/// What one vehicle tag gives every placement of it.
+struct Kind {
+    def: usize,
+    model: usize,
+    markers: BTreeMap<String, [f32; 3]>,
+    hull: Vec<[f32; 3]>,
+}
+
+fn vehicles_of(
+    file: &MapFile,
+    scenario: &Scenario,
+    light: &LightProbe,
+    map: &mut MapData,
+    defs: &[VehicleDef],
+) -> Vec<Pending> {
+    let palette = &scenario.vehicle_palette;
+    let mut pending = Vec::new();
+    let mut kinds: BTreeMap<usize, Option<Kind>> = BTreeMap::new();
+    for p in &scenario.vehicles {
+        let h = &p.header;
+        // The on-BSP flags are scenery's and light fixtures' alone
+        // (scenario.md): a vehicle needs only its palette entry.
+        if !h.is_created(palette.len(), None) {
+            continue;
+        }
+        let Some(pi) = h.palette_entry(palette.len()) else {
+            continue;
+        };
+        let kind = kinds
+            .entry(pi)
+            .or_insert_with(|| kind_of(file, &palette[pi].object, map, defs, &mut pending));
+        let Some(kind) = kind else { continue };
+        let o = h.orientation();
+        let prop = map.props.len();
+        map.props.push(MapProp {
+            model: kind.model,
+            pose: None,
+            ragdoll: None,
+            translation: space::point(h.position),
+            rotation: objects::placement_rotation(&o),
+            solid: PropSolid::None,
+            skybox: false,
+            lighting: Some(light.clone()),
+            vertex_light: None,
+            casts_shadow: false,
+            physics: Some(MapPhysics {
+                mass: defs[kind.def].physics.mass,
+                friction: 0.0,
+                elasticity: 0.0,
+                damping: 0.0,
+                rotdamping: 0.0,
+                inertia: None,
+                push: PushAway::Collide,
+                frozen: false,
+                asleep: false,
+            }),
+            fade: None,
+            parent: None,
+            entity: None,
+            skin: 0,
+            body: 0,
+            detail: false,
+        });
+        let placed = Placed {
+            prop,
+            vehicle: defs[kind.def].name.clone(),
+            position: h.position,
+            forward: o.forward,
+            up: o.up,
+            markers: kind.markers.clone(),
+            hull: kind.hull.clone(),
+        };
+        map.entities.push(placed.entity());
+    }
+    pending
+}
+
+fn kind_of(
+    file: &MapFile,
+    r: &blam_formats::cache::TagRef,
+    map: &mut MapData,
+    defs: &[VehicleDef],
+    pending: &mut Vec<Pending>,
+) -> Option<Kind> {
+    let tag = file.tag(r.id)?;
+    let def = defs.iter().position(|d| d.tag.eq_ignore_ascii_case(&tag.path))?;
+    let vehicle = match Vehicle::read(file, tag) {
+        Ok(v) => v,
+        Err(e) => {
+            map.warnings
+                .push(format!("vehicle `{}` unreadable, not placed: {e}", tag.path));
+            return None;
+        }
+    };
+    let model = match file.tag(vehicle.object.model.id).map(|t| Model::read(file, t)) {
+        Some(Ok(m)) => m,
+        Some(Err(e)) => {
+            map.warnings
+                .push(format!("vehicle `{}`: model unreadable, not placed: {e}", tag.path));
+            return None;
+        }
+        None => {
+            map.warnings
+                .push(format!("vehicle `{}` has no model, not placed", tag.path));
+            return None;
+        }
+    };
+    let meshes = objects::model_meshes(file, &model, &|p| space::point(p));
+    let index = map.models.len();
+    let mut lo = bevy::math::Vec3::splat(f32::MAX);
+    let mut hi = bevy::math::Vec3::splat(f32::MIN);
+    for (m, _) in &meshes {
+        for p in &m.positions {
+            lo = lo.min((*p).into());
+            hi = hi.max((*p).into());
+        }
+    }
+    map.models.push(MapModel {
+        bounds: if lo.x <= hi.x { (lo, hi) } else { Default::default() },
+        ..Default::default()
+    });
+    pending.extend(meshes.into_iter().map(|(mesh, shader)| Pending {
+        mesh,
+        shader,
+        lit: true,
+        dest: Dest::Model(index),
+    }));
+    let bind = model.bind_pose();
+    let mut markers = BTreeMap::new();
+    let wanted: Vec<&str> = defs[def]
+        .seats
+        .iter()
+        .flat_map(|s| [s.marker.as_str(), s.camera_marker.as_str()])
+        .filter(|n| !n.is_empty())
+        .collect();
+    for m in &model.markers {
+        if wanted.iter().any(|w| w.eq_ignore_ascii_case(&m.name))
+            && let Some(at) = m.instances.first().and_then(|i| model.marker_world(i, &bind))
+        {
+            markers.insert(m.name.to_lowercase(), at.position);
+        }
+    }
+    let mut hull = Vec::new();
+    if let Some(ct) = file.tag(vehicle.object.collision_model.id)
+        && let Ok(c) = collision::read_model(file, ct)
+    {
+        for (ni, node) in c.nodes.iter().enumerate() {
+            let Some(bsp) = node.bsps.first() else { continue };
+            let t = bind
+                .get(ni)
+                .copied()
+                .unwrap_or(blam_formats::model::Transform::IDENTITY);
+            hull.extend(bsp.vertices.iter().map(|v| t.apply_point(v.point)));
+        }
+    }
+    Some(Kind {
+        def,
+        model: index,
+        markers,
+        hull,
+    })
+}

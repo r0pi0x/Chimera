@@ -39,6 +39,7 @@ mod vitality_data;
 mod weapons;
 mod weapons_rules;
 mod vehicle_physics;
+mod vehicles;
 
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
 mod heavy {
@@ -55,4 +56,5 @@ mod heavy {
     mod weapon_data;
     mod walk;
     mod vehicle_data;
+    mod vehicles;
 }

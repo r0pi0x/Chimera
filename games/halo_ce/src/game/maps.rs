@@ -195,6 +195,7 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
     pending.extend(sky::sky_model(&file, level_sky.as_ref(), &mut map));
     let light = sky::prop_light(level_sky.as_ref());
     pending.extend(objects::scenery(&file, &scenario, &light, &mut map));
+    pending.extend(super::vehicles::place::vehicles(&file, &scenario, &light, &mut map));
 
     report(0.55, "Textures");
     for (mesh, dest) in apply_looks(&file, pending, &mut map.textures, &mut map.warnings, decode) {

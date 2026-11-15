@@ -163,6 +163,7 @@ impl PluginGroup for HaloPlugins {
             .add(fx::HaloFxPlugin)
             .add(body::HaloBodyPlugin)
             .add(view::HaloViewPlugin)
+            .add(vehicles::HaloVehiclesPlugin)
     }
 }
 
