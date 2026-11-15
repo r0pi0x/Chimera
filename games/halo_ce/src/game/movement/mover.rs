@@ -63,6 +63,73 @@ pub trait Space {
     /// Whether a sphere of the data's radius swept from `p` by `motion`
     /// meets anything (the standing-room test).
     fn sphere_blocked(&self, p: Vec3, motion: Vec3) -> bool;
+    /// The surface a pill whose point is `p` rested on with contact normal
+    /// `n` last tick, with its climbable edge neighbours (the edge
+    /// neighbour's hold: `hold_on_neighbour`). None by default: no
+    /// surface known.
+    fn support(&self, p: Vec3, n: Vec3) -> Option<Support> {
+        let _ = (p, n);
+        None
+    }
+}
+
+/// A climbable surface beyond an edge of the support (`Support`): its
+/// plane (`normal . x = offset` on the surface itself) and the shared edge.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Neighbour {
+    pub normal: Vec3,
+    pub offset: f32,
+    pub edge: [Vec3; 2],
+}
+
+/// The surface of last tick's best contact: its plane (`normal . x =
+/// offset` on the surface) and the climbable surfaces across its edges.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Support {
+    pub normal: Vec3,
+    pub offset: f32,
+    pub neighbours: Vec<Neighbour>,
+}
+
+/// The squared distance from `q` to the segment `e` (ends included).
+fn segment_distance_squared(q: Vec3, e: [Vec3; 2]) -> f32 {
+    let d = e[1] - e[0];
+    let len2 = d.length_squared();
+    let t = if len2 > 0.0 { ((q - e[0]).dot(d) / len2).clamp(0.0, 1.0) } else { 0.0 };
+    (e[0] + d * t - q).length_squared()
+}
+
+/// The edge neighbour's hold (movement.md section 8, ladders item 8): on
+/// a tick whose sweep met nothing while the pill had the support `s`,
+/// the climbable neighbour across the nearest edge takes the point `p`
+/// (the sweep's end) of a pill of radius `r` moving at `v` (the swept
+/// velocity, WU per tick) when it is close and slow enough. The new
+/// point, the new velocity and the contact's normal (a contact whose
+/// flags are cleared: not climbable).
+pub fn hold_on_neighbour(s: &Support, p: Vec3, v: Vec3, r: f32) -> Option<(Vec3, Vec3, Vec3)> {
+    let q = p - s.normal * (s.normal.dot(p) - s.offset);
+    let mut best: Option<(f32, Neighbour)> = None;
+    for nb in &s.neighbours {
+        if nb.normal.dot(v) <= 0.0 || nb.normal.dot(p) - nb.offset <= -r / 2.0 {
+            continue;
+        }
+        let d2 = segment_distance_squared(q, nb.edge);
+        if best.is_none_or(|(b, _)| d2 < b) {
+            best = Some((d2, *nb));
+        }
+    }
+    let (d2, nb) = best?;
+    let n = nb.normal;
+    let gap = n.dot(p) - (nb.offset + r);
+    if d2 > (2.0 * r) * (2.0 * r) || n.dot(v) > 1.6 / 30.0 || gap.abs() > 0.1 {
+        return None;
+    }
+    let mut v = v;
+    let vn = v.dot(n);
+    if vn > -1.0 / 30.0 {
+        v += n * (-1.0 / 30.0 - vn);
+    }
+    Some((p - n * gap, v, n))
 }
 
 /// A plane of the clip set: its normal and its offset for the point
@@ -80,8 +147,9 @@ pub struct Moved {
     pub p: Vec3,
     /// The contacts' normals in order (real ones, then the virtual one).
     pub contacts: Vec<Vec3>,
-    /// The normals of those on climbable surfaces.
-    pub climbable: Vec<Vec3>,
+    /// Whether each contact is on a climbable surface (in step with
+    /// `contacts`; the virtual one never is).
+    pub climbable: Vec<bool>,
     /// The final clip set, the newest plane first.
     pub clip: Vec<Plane>,
 }
@@ -140,7 +208,7 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
     let max = d.max_contacts as usize;
     let mut clip: Vec<Plane> = Vec::new();
     let mut contacts: Vec<Vec3> = Vec::new();
-    let mut climbable: Vec<Vec3> = Vec::new();
+    let mut climbable: Vec<bool> = Vec::new();
     // Surfaces the sweep was restarted off (module doc).
     let mut lifted: Vec<Plane> = Vec::new();
     let mut rem = motion;
@@ -197,9 +265,7 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
         p += rem * t;
         p += n * (plane.offset - p.dot(n));
         settle(&mut p, &mut lifted);
-        if hit.climbable {
-            climbable.push(n);
-        }
+        climbable.push(hit.climbable);
         contacts.push(n);
         // The clip (module doc): the tick's motion scaled by every (1 - t) so far, never the
         // clipped one, clipped to the new plane is the candidate; it is checked against the
@@ -242,6 +308,7 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
         && let Some(n) = virtual_contact(&clip)
     {
         contacts.push(n);
+        climbable.push(false);
     }
     Moved { p, contacts, climbable, clip }
 }

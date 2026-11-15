@@ -311,7 +311,7 @@ pickups; the HUD pieces a Halo rung shows, on UGG's HUD hooks.
   sprites drawn soft-edged, the rocket's trail, respawning in the
   offline app; the corrected specs' second list (ladders mounted from
   the floor, the grenades' real material tables, guidance, autoaim on by
-  default, teleporter exits: being done).
+  default, teleporter exits: done, the log's last entries).
 
 ### M4: maps
 
@@ -400,14 +400,16 @@ backlog.
   other on walks and teleporters: `heavy::halo_maps`).
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
-- **Teleporters' extras**: the blocked message, the "teleporter activate"
-  sound for the teleported player, the pads' shimmer (Blood Gulch's
-  `teleporter_loop` sound scenery plays as any sound scenery would, when
-  sound scenery is placed); the edge neighbour's hold on a ladder
-  (movement.md). Spec questions: whether a player can mount a ladder
-  from the floor (the ground test keeps the floor, the higher normal);
-  movement.md says only Boarding Action has climbable surfaces, the disc
-  has them on nine maps (collision.md's 120 surfaces).
+- **Teleporters' extras**: the blocked message is counted by the
+  spec's rule (multiplayer_rules.md 6.8) but no HUD text shows it; the
+  "teleporter activate" sound for the teleported player; the pads'
+  shimmer (Blood Gulch's `teleporter_loop` sound scenery plays as any
+  sound scenery would, when sound scenery is placed); the exit's crouch
+  test knows crouched or not, not the crouch fraction.
+- **Autoaim's shortcuts**: the aim point is the character's centre;
+  magnetism (the stick's slowdown) is not implemented; where the
+  convergence point goes on a miss is not in the spec (the end of the
+  128 WU ray is used).
 - **Blood Gulch in a draw**: it is in the pool (allowed), but the pool's
   count rule keeps it out of every draw by players present (its wander
   time, 21 s at 8 players, over the 10 s target: a vehicle map walked).
@@ -496,3 +498,16 @@ backlog.
   (Ultimate Gun Game's bound on tables over a session). M6 stage 1: the
   Warthog (its section above). Being done: the corrected specs' second
   list, and the vehicles spec's gaps for stage 2.
+- 2026-11-15: the corrected specs' second list: ladders mounted from
+  the floor (a ladder beats the floor in the ground test), the aim's
+  climb wish and the edge neighbour's hold, all four of Prisoner's
+  ladders climbed in a heavy test; the grenades' and the needle's
+  material tables from the disc (no stand-ins), the speed clamp only
+  on a slowed segment; guidance by the corrected rules; autoaim on by
+  default (`weapons::aim`; guided projectiles take its target);
+  teleporter exits by the arriving pill (`teleport::Exit::Pill`, the
+  engine's default unchanged); the tracker's quantised examples as
+  tests. Spec questions left: the needle's heading at update 60 (57.0
+  stated, 55.5 from its own positions), the tracker's (0.1, 0) blip.
+  The vehicles spec was corrected from the Warthog (the drop case's
+  number was the spec's mistake).

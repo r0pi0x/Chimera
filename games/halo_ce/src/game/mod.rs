@@ -23,6 +23,8 @@
 //!   data/grenades.toml, per-tick weapon rules with charging, projectiles
 //!   with material responses, explosions and pickups, hits through
 //!   `damage::HaloHit`, lent as rungs in `parts`;
+//! - `weapons::aim`: the aim assist's parameters, levels and the bent
+//!   shot (weapons.md section 15), on by default;
 //! - `body`: the players' Spartan body (model, animations from the graph's
 //!   unit tables, hit boxes from the collision model, armour colours), on
 //!   Halo's maps and, from the donor map, on any other;

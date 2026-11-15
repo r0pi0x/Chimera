@@ -154,6 +154,7 @@ fn rooms() -> (Sim, Teleporter) {
         rearm: 1.0,
         keep_velocity: false,
         telefrag: None,
+        ..Default::default()
     });
     (sim, pad)
 }

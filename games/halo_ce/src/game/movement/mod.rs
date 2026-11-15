@@ -94,9 +94,11 @@
 //!   publishes (`core::MapLadders`: a Halo map's climbable sheets,
 //!   `maps::collision`; another game's map's ladders; games'
 //!   `LadderZone`s) is climbable (`space::EngineSpace::ladders`, within
-//!   3 cm), and counts as ground by the spec's rule (`tick`); the edge
-//!   neighbour's hold (a sweep meeting nothing while on a ladder snapping
-//!   onto a climbable neighbour) is not modelled.
+//!   3 cm), and counts as ground by the spec's rule (`tick`). The edge
+//!   neighbour's hold (`mover::hold_on_neighbour`) knows only ladder
+//!   sheets as support surfaces (`space::ladder_support`, from the
+//!   ladder brushes' planes): a floor whose edge neighbour is climbable
+//!   (no multiplayer map has one) does not hold.
 //! - Not modelled: body facing and the animation states (cosmetic: no
 //!   bodies yet), slipping (an impulse, `push`, is added to the velocity
 //!   and makes the player airborne, but does not slip), elevators (no
