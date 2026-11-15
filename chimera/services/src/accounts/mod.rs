@@ -26,17 +26,23 @@
 //!   time or for good) refuse redeeming, recovering and tickets.
 //! - **The owner's side** (`list_accounts`, `list_invites`, `revoke_*`,
 //!   `ban`, `import_legacy`, `backup`): through the admin API on loopback
-//!   (`http`), every change an `audit` row.
+//!   (`http`) and its page (`page`), every change an `audit` row.
 //!
 //! Nothing secret is logged: codes, recovery keys, tickets and device
 //! keys never reach the access log, the audit rows or stderr.
 //!
+//! - **The owner's account commands** (`set_account`, `show_account`,
+//!   `refresh_account`: its tickets into the feed so its clients ask again
+//!   with the new rights; `delete_account`): the same admin API, which the
+//!   admin page (`page`) uses too.
+//!
 //! Known shortcuts: seen nonces are kept in memory (a restart within 5
-//! minutes forgets them); the admin page (7.2) and `account set`, `show`,
-//! `delete` and `refresh` aren't built yet; one connection behind a mutex
-//! serves every request (plenty for invite-only accounts).
+//! minutes forgets them); a deleted account's username is free at once
+//! (the plan's 30 days aren't kept); one connection behind a mutex serves
+//! every request (plenty for invite-only accounts).
 
 pub mod http;
+pub mod page;
 
 use std::{
     collections::HashMap,
@@ -241,6 +247,57 @@ pub struct AccountView {
     pub created: u64,
     pub last_seen: Option<u64>,
     pub devices: Vec<DeviceView>,
+    /// Servers it may list at once (`list` right).
+    #[serde(default)]
+    pub list_slots: u32,
+    /// Its match results count.
+    #[serde(default)]
+    pub report: bool,
+    /// Its feedback is dropped.
+    #[serde(default)]
+    pub muted: bool,
+}
+
+/// What `set_account` changes (None: unchanged).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AccountChange {
+    /// The account (its current username).
+    pub username: String,
+    #[serde(default)]
+    pub new_username: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    /// tester, host or owner; its `list` and `report` defaults come with
+    /// it unless `list` is given.
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub games: Option<String>,
+    #[serde(default)]
+    pub list: Option<u32>,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub muted: Option<bool>,
+}
+
+/// One audit row as the owner reads it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuditView {
+    pub at: u64,
+    pub actor: String,
+    pub action: String,
+    pub target: String,
+    pub detail: String,
+}
+
+/// `account show`: the account and its latest audit rows.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AccountDetail {
+    pub account: AccountView,
+    pub audit: Vec<AuditView>,
 }
 
 /// What `import_legacy` did.
@@ -349,8 +406,13 @@ impl Accounts {
         .map_err(internal)
     }
 
+    /// A row of the revocation feed. Its time is at least one past the
+    /// feed's latest: a ticket issued after an earlier row in this same
+    /// second (`issue` dates it past that row) is still covered.
     fn revoke_row(tx: &Connection, kind: &str, target: &Id, at: u64) -> R<()> {
-        tx.execute("INSERT INTO revocations (kind, target, at) VALUES (?1, ?2, ?3)", params![kind, blob(target), at as i64])
+        let last: Option<i64> = tx.query_row("SELECT MAX(at) FROM revocations", [], |r| r.get(0)).map_err(internal)?;
+        let at = last.map_or(at as i64, |l| (at as i64).max(l + 1));
+        tx.execute("INSERT INTO revocations (kind, target, at) VALUES (?1, ?2, ?3)", params![kind, blob(target), at])
             .map(drop)
             .map_err(internal)
     }
@@ -461,6 +523,17 @@ impl Accounts {
         .map_err(internal)?;
         conn.execute("UPDATE accounts SET last_seen = ?1 WHERE id = ?2", params![now as i64, blob(account)])
             .map_err(internal)?;
+        // After a refresh (`refresh_account`) in this same second the new
+        // ticket must postdate it: the feed refuses those issued at or
+        // before its entries.
+        let last: Option<i64> = conn
+            .query_row(
+                "SELECT MAX(at) FROM revocations WHERE target = ?1 OR target = ?2",
+                params![blob(account), blob(device)],
+                |r| r.get(0),
+            )
+            .map_err(internal)?;
+        let issued = last.map_or(now, |at| now.max(at.max(0) as u64 + 1));
         let claims = Claims {
             version: ticket::VERSION,
             key_id: String::new(),
@@ -474,8 +547,8 @@ impl Accounts {
             report: report != 0,
             muted: muted != 0,
             audience: ticket::SERVICES.into(),
-            issued: now,
-            expires: now + ticket::LIFETIME_SECS,
+            issued,
+            expires: issued + ticket::LIFETIME_SECS,
         };
         Ok(ticket::issue(&self.key, &claims))
     }
@@ -1000,7 +1073,8 @@ impl Accounts {
         }
         let mut stmt = conn
             .prepare(
-                "SELECT id, username, display_name, role, state, content, games, note, created, last_seen
+                "SELECT id, username, display_name, role, state, content, games, note, created, last_seen,
+                        list_slots, report, muted
                  FROM accounts ORDER BY username",
             )
             .map_err(internal)?;
@@ -1019,6 +1093,9 @@ impl Accounts {
                     created: r.get::<_, i64>(8)? as u64,
                     last_seen: r.get::<_, Option<i64>>(9)?.map(|t| t as u64),
                     devices: devices.remove(&id).unwrap_or_default(),
+                    list_slots: r.get::<_, i64>(10)?.max(0) as u32,
+                    report: r.get::<_, i64>(11)? != 0,
+                    muted: r.get::<_, i64>(12)? != 0,
                 })
             })
             .map_err(internal)?;
@@ -1046,6 +1123,149 @@ impl Accounts {
             .map_err(internal)?;
         Self::revoke_row(&tx, "account", &account, now)?;
         Self::audit(&tx, now, "cli", "account.revoke", username, "")?;
+        tx.commit().map_err(internal)
+    }
+
+    /// `account set`: change an account's username, display name, role,
+    /// rights or note. Takes effect at its devices' next tickets (within 3
+    /// hours), at once after `refresh_account`.
+    pub fn set_account(&self, change: &AccountChange) -> R<AccountView> {
+        let now = self.now();
+        let mut conn = self.db();
+        let account = Self::account_by_username(&conn, &change.username)?;
+        let tx = conn.transaction().map_err(internal)?;
+        let mut done = Vec::new();
+        if let Some(u) = &change.new_username {
+            let u = codes::username(u).map_err(|e| refuse(400, e))?;
+            let taken: i64 = tx
+                .query_row("SELECT COUNT(*) FROM accounts WHERE username = ?1 AND id != ?2", params![u, blob(&account)], |r| r.get(0))
+                .map_err(internal)?;
+            if taken > 0 {
+                return Err(refuse(409, format!("the username {u:?} is taken")));
+            }
+            tx.execute("UPDATE accounts SET username = ?1 WHERE id = ?2", params![u, blob(&account)]).map_err(internal)?;
+            done.push(format!("username={u}"));
+        }
+        if let Some(d) = &change.display_name {
+            let d = codes::display_name(d).map_err(|e| refuse(400, e))?;
+            tx.execute("UPDATE accounts SET display_name = ?1 WHERE id = ?2", params![d, blob(&account)]).map_err(internal)?;
+            done.push("display_name".into());
+        }
+        if let Some(role) = &change.role {
+            let (_, list, report) = role_defaults(role)?;
+            tx.execute(
+                "UPDATE accounts SET role = ?1, list_slots = ?2, report = ?3 WHERE id = ?4",
+                params![role, list, i64::from(report), blob(&account)],
+            )
+            .map_err(internal)?;
+            done.push(format!("role={role}"));
+        }
+        if let Some(c) = &change.content {
+            let c = clean_list(c)?;
+            tx.execute("UPDATE accounts SET content = ?1 WHERE id = ?2", params![c, blob(&account)]).map_err(internal)?;
+            done.push(format!("content={c}"));
+        }
+        if let Some(g) = &change.games {
+            let g = clean_list(g)?;
+            tx.execute("UPDATE accounts SET games = ?1 WHERE id = ?2", params![g, blob(&account)]).map_err(internal)?;
+            done.push(format!("games={g}"));
+        }
+        if let Some(n) = change.list {
+            tx.execute("UPDATE accounts SET list_slots = ?1 WHERE id = ?2", params![n, blob(&account)]).map_err(internal)?;
+            done.push(format!("list={n}"));
+        }
+        if let Some(note) = &change.note {
+            let note: String = note.chars().filter(|c| !c.is_control()).take(200).collect();
+            tx.execute("UPDATE accounts SET note = ?1 WHERE id = ?2", params![note, blob(&account)]).map_err(internal)?;
+            done.push("note".into());
+        }
+        if let Some(m) = change.muted {
+            tx.execute("UPDATE accounts SET muted = ?1 WHERE id = ?2", params![i64::from(m), blob(&account)]).map_err(internal)?;
+            done.push(format!("muted={m}"));
+        }
+        if done.is_empty() {
+            return Err(refuse(400, "nothing to change"));
+        }
+        Self::audit(&tx, now, "cli", "account.set", &id_hex(&account), &done.join(" "))?;
+        tx.commit().map_err(internal)?;
+        drop(conn);
+        self.account_view(&account)
+    }
+
+    fn account_view(&self, account: &Id) -> R<AccountView> {
+        self.list_accounts()?
+            .into_iter()
+            .find(|a| a.id == id_hex(account))
+            .ok_or_else(|| refuse(404, "no such account"))
+    }
+
+    /// `account show`: the account, its devices and rights, and its latest
+    /// 50 audit rows.
+    pub fn show_account(&self, username: &str) -> R<AccountDetail> {
+        let (account, name) = {
+            let conn = self.db();
+            let id = Self::account_by_username(&conn, username)?;
+            (id, username.trim().to_ascii_lowercase())
+        };
+        let view = self.account_view(&account)?;
+        let conn = self.db();
+        let mut stmt = conn
+            .prepare(
+                "SELECT at, actor, action, target, detail FROM audit
+                 WHERE target = ?1 OR target = ?2 OR actor IN (SELECT lower(hex(id)) FROM devices WHERE account_id = ?3)
+                 ORDER BY seq DESC LIMIT 50",
+            )
+            .map_err(internal)?;
+        let rows = stmt
+            .query_map(params![id_hex(&account), name, blob(&account)], |r| {
+                Ok(AuditView {
+                    at: r.get::<_, i64>(0)? as u64,
+                    actor: r.get(1)?,
+                    action: r.get(2)?,
+                    target: r.get(3)?,
+                    detail: r.get(4)?,
+                })
+            })
+            .map_err(internal)?;
+        let audit = rows.collect::<Result<_, _>>().map_err(internal)?;
+        Ok(AccountDetail { account: view, audit })
+    }
+
+    /// `account refresh`: its devices' current tickets go into the
+    /// revocation feed, so its clients ask again (with its rights as they
+    /// are now) within one poll of the services.
+    pub fn refresh_account(&self, username: &str) -> R<()> {
+        let now = self.now();
+        let mut conn = self.db();
+        let account = Self::account_by_username(&conn, username)?;
+        let tx = conn.transaction().map_err(internal)?;
+        Self::revoke_row(&tx, "account", &account, now)?;
+        Self::audit(&tx, now, "cli", "account.refresh", &id_hex(&account), "")?;
+        tx.commit().map_err(internal)
+    }
+
+    /// `account delete`: the account, its devices, invites into it and
+    /// link codes go (into the feed first, so its tickets stop within a
+    /// poll); the username is free again.
+    pub fn delete_account(&self, username: &str) -> R<()> {
+        let now = self.now();
+        let mut conn = self.db();
+        let account = Self::account_by_username(&conn, username)?;
+        let tx = conn.transaction().map_err(internal)?;
+        Self::revoke_row(&tx, "account", &account, now)?;
+        // Rows that point at its devices without cascading.
+        tx.execute(
+            "UPDATE invites SET redeemed_device = NULL WHERE redeemed_device IN (SELECT id FROM devices WHERE account_id = ?1)",
+            params![blob(&account)],
+        )
+        .map_err(internal)?;
+        tx.execute(
+            "UPDATE link_codes SET used_device = NULL WHERE used_device IN (SELECT id FROM devices WHERE account_id = ?1)",
+            params![blob(&account)],
+        )
+        .map_err(internal)?;
+        tx.execute("DELETE FROM accounts WHERE id = ?1", params![blob(&account)]).map_err(internal)?;
+        Self::audit(&tx, now, "cli", "account.delete", &id_hex(&account), &username.trim().to_ascii_lowercase())?;
         tx.commit().map_err(internal)
     }
 

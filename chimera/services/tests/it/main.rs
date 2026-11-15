@@ -1,10 +1,12 @@
 //! The accounts service end to end on scratch stores and free loopback
 //! ports (docs/plans/active/hub.md, S1a): invites, sign-up, link codes,
 //! recovery, tickets at the asset service, revocation, legacy tokens, the
-//! database's migrations and backups.
+//! database's migrations and backups, the owner's account commands; the
+//! front before them all (S1b).
 
 mod accounts;
 mod db;
+mod front;
 
 use std::{fs, path::PathBuf};
 

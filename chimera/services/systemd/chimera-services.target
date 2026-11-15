@@ -1,0 +1,8 @@
+# The hub's services (docs/plans/active/hub.md 2.6), started together.
+# Written by `chimera_accounts install-units`; edit the template in the
+# repository (chimera/services/systemd/), not this copy.
+[Unit]
+Description=Chimera hub services
+
+[Install]
+WantedBy=default.target

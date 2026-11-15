@@ -347,6 +347,8 @@ impl Args {
             Ok(mut args) => {
                 args.take_asset_token();
                 args.take_hub_link();
+                // A hub account's ticket stays fresh while the game runs.
+                chimera_net::net::assets::keep_account_fresh();
                 args
             }
             Err(e) if e == HELP => {

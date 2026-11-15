@@ -30,6 +30,11 @@
 //!   (`feedback::page`), only to this machine's own connections on the
 //!   plain listener (not through the TLS front; a local `Host`), no token;
 //!   404 to everyone else.
+//! - `GET /health` (this machine's own connections only, as the page):
+//!   `ok <version> uptime=<s> games=<n> revocations=<age>`, for
+//!   `chimera_accounts status`.
+//! - The other hub services' paths (`/accounts/`, `/hub`, `/internal/`,
+//!   `/admin/`) are 421: a request the front misrouted is loud.
 //!
 //! Manifests are read again when the manifest folder changes (checked at
 //! most once a second), so a publish needs no restart; one without a
@@ -51,8 +56,10 @@
 //! second on average (bursts of `burst`) and fetch `daily_bytes` of records
 //! a day; an address that sends `bad_tokens` unknown or revoked tokens in a
 //! minute is refused for `ban`. Past a limit the answer is 429 with the
-//! reason. Behind the front, each request's address is the client's
-//! (`tls::Peers`), and the log names it (`ip=`).
+//! reason. Behind a front, each request's address is the client's (the
+//! hub's front: `X-Chimera-Peer`, trusted from loopback connections only,
+//! `tls::forwarded_peer`; the in-process one: `tls::Peers`), and the log
+//! names it (`ip=`); a relayed request never reaches the feedback page.
 //!
 //! Known shortcuts: a revoke stops a token's next request, not a batch
 //! already being sent; a batch answer is sent with chunked encoding, so a client
@@ -197,6 +204,7 @@ pub struct Service {
     peers: Option<crate::tls::Peers>,
     /// Feedback reports (`POST /feedback`, the page).
     feedback: crate::feedback::inbox::Inbox,
+    started: Instant,
 }
 
 fn now_secs() -> u64 {
@@ -270,6 +278,7 @@ impl Service {
             peers: None,
             feedback: crate::feedback::inbox::Inbox::open(feedback_dir(&store)),
             store,
+            started: Instant::now(),
         })
     }
 
@@ -299,9 +308,14 @@ impl Service {
         self
     }
 
-    /// The client's address of `request` (through the front, its own).
+    /// The client's address of `request`: behind the hub's front, the one
+    /// its `X-Chimera-Peer` names (trusted from loopback only); behind the
+    /// in-process TLS front, the one it relayed; else the connection's own.
     fn address(&self, request: &Request) -> Option<IpAddr> {
         let at = *request.remote_addr()?;
+        if let Some(ip) = self.forwarded(request) {
+            return Some(ip);
+        }
         let relayed = self
             .peers
             .as_ref()
@@ -309,14 +323,34 @@ impl Service {
         Some(relayed.unwrap_or(at.ip()))
     }
 
+    /// The client `X-Chimera-Peer` names on a loopback connection (the hub's
+    /// front relayed the request).
+    fn forwarded(&self, request: &Request) -> Option<IpAddr> {
+        let at = request.remote_addr()?;
+        let value = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv(crate::tls::PEER_HEADER))
+            .map(|h| h.value.as_str());
+        crate::tls::forwarded_peer(at, value)
+    }
+
+    /// Whether `request` came over a connection a front relayed (the
+    /// in-process TLS front, or any with `X-Chimera-Peer`).
+    fn relayed(&self, request: &Request) -> bool {
+        let Some(at) = request.remote_addr() else { return true };
+        request.headers().iter().any(|h| h.field.equiv(crate::tls::PEER_HEADER))
+            || self
+                .peers
+                .as_ref()
+                .is_some_and(|p| p.lock().unwrap_or_else(|e| e.into_inner()).contains_key(at))
+    }
+
     /// Whether `request` may see the feedback page: from this machine, not
     /// relayed by the TLS front, to a local `Host` (no DNS rebinding).
     fn local_admin(&self, request: &Request) -> bool {
         let Some(at) = request.remote_addr() else { return false };
-        let relayed = self
-            .peers
-            .as_ref()
-            .is_some_and(|p| p.lock().unwrap_or_else(|e| e.into_inner()).contains_key(at));
+        let relayed = self.relayed(request);
         let host = request
             .headers()
             .iter()
@@ -453,6 +487,23 @@ impl Service {
         if let Some(m) = guard.accounts.get_mut(&who.label()) {
             m.bytes += bytes;
         }
+    }
+
+    /// `GET /health` (this machine only): `ok <version> uptime=<s>
+    /// games=<n>` and each account kind's word (the revocation feed's age).
+    pub fn health(&self) -> String {
+        let mut line = format!(
+            "ok {} uptime={}s games={}",
+            env!("CARGO_PKG_VERSION"),
+            self.started.elapsed().as_secs(),
+            self.catalog().games.len()
+        );
+        for word in self.auth.iter().filter_map(|a| a.status()) {
+            line.push(' ');
+            line.push_str(&word);
+        }
+        line.push('\n');
+        line
     }
 
     pub fn public_key(&self) -> String {
@@ -595,6 +646,18 @@ impl Service {
             return Err(Outcome::text(200, format!("{}\n", self.public_key())));
         }
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        if *method == Method::Get && parts.as_slice() == ["health"] {
+            let local = request.remote_addr().is_some_and(|a| a.ip().is_loopback()) && !self.relayed(request);
+            if !local {
+                return Err(Outcome::text(404, "no such endpoint\n"));
+            }
+            return Err(Outcome::text(200, self.health()));
+        }
+        // Another hub service's paths (docs/plans/active/hub.md 2.3): loud,
+        // never answered as if they were ours.
+        if matches!(parts.first(), Some(&("accounts" | "hub" | "internal" | "admin"))) {
+            return Err(Outcome::text(421, "not the asset service's path\n"));
+        }
         if let ["feedback", "admin", rest @ ..] = parts.as_slice() {
             if !self.local_admin(request) {
                 return Err(Outcome::text(404, "no such endpoint\n"));

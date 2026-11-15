@@ -14,21 +14,30 @@
 //!
 //! Every other command asks the running service (its admin API, with the
 //! secret from the store): `invite <name>` (prints the link or code once),
-//! `invite revoke <name>`, `invites`, `account list`, `account revoke
-//! <username>`, `device revoke <id>`, `ban <username|address>`,
-//! `import-legacy [<accounts.toml>]`, `backup`, `status`; `restore
-//! <backup>` puts a backup in place while the service is stopped. A host
-//! tool: not in releases.
+//! `invite revoke <name>`, `invites`, `account list`, `account show
+//! <username>`, `account set <username> ...`, `account refresh
+//! <username>` (its tickets asked again, so new rights apply at once),
+//! `account revoke <username>`, `account delete <username>`, `device
+//! revoke <id>`, `ban <username|address>`, `import-legacy
+//! [<accounts.toml>]`, `backup`; `page` prints the admin page's address
+//! with its key (`accounts::page`). `restore <backup>` puts a backup in
+//! place while the service is stopped. `status` asks every service on
+//! this machine (`services.toml`'s ports: accounts, assets, the hub, the
+//! front over TLS) for its `/health` line; `install-units` writes the
+//! systemd user units (`units`) and prints the steps after. A host tool:
+//! not in releases.
 
 use std::{path::PathBuf, process::ExitCode, sync::Arc, time::Duration};
 
 use chimera_services::{
     accounts::{
-        AccountView, Accounts, Clock, DEFAULT_PORT, Imported, InviteSpec, InviteView, Invited, Options, Paths,
+        AccountChange, AccountDetail, AccountView, Accounts, Clock, DEFAULT_PORT, Imported, InviteSpec, InviteView,
+        Invited, Options, Paths,
         http::{Http, serve},
     },
     admin::Admin,
-    db,
+    config::ServicesConfig,
+    db, units,
 };
 
 const USAGE: &str = "usage: chimera_accounts <command> [--store <dir>] [--accounts <url>]
@@ -36,14 +45,21 @@ const USAGE: &str = "usage: chimera_accounts <command> [--store <dir>] [--accoun
   invite <name> [--role tester|host|owner] [--content a,b|*] [--games a,b|*] [--list <n>]
                 [--expires <days>] [--for <username> [--keep]] [--hub <host:port>]
   invite revoke <name>        invites
-  account list [--json]       account revoke <username>
+  account list [--json]       account show <username> [--json]
+  account set <username> [--username <new>] [--display-name <name>] [--role tester|host|owner]
+              [--content a,b|*] [--games a,b|*] [--list <n>] [--note <text>] [--mute | --unmute]
+  account refresh <username>  (its tickets asked again: rights at once)
+  account revoke <username>   account delete <username>
   device revoke <device id>
   ban <username|address> [--for <days>] --reason <text>
   import-legacy [<accounts.toml>]   (default: the store's server/accounts.toml)
   backup                      restore <backup file>   (the service stopped)
-  status
+  page                        (the admin page's address, with its key: open it on this machine)
+  status                      (every service on this machine: front, accounts, assets, hub)
+  install-units [--bin <dir>] [--front <ip:port>] [--to <dir>] [--assets-args \"<args>\"]
+                [--accounts-args \"<args>\"] [--rw <dir>]   (systemd user units)
   --store     the server store (default: the asset service's, <data_local>/chimera/asset-server)
-  --accounts  the running service (default http://127.0.0.1:8741)";
+  --accounts  the running service (default http://127.0.0.1:8741, or services.toml's port)";
 
 struct Args {
     words: Vec<String>,
@@ -52,7 +68,7 @@ struct Args {
 
 impl Args {
     fn parse() -> Result<Self, String> {
-        const SWITCHES: &[&str] = &["--keep", "--json"];
+        const SWITCHES: &[&str] = &["--keep", "--json", "--mute", "--unmute"];
         let mut words = Vec::new();
         let mut flags = Vec::new();
         let mut it = std::env::args().skip(1);
@@ -90,7 +106,15 @@ impl Args {
     }
 
     fn url(&self) -> String {
-        self.flag("--accounts").unwrap_or_else(|| format!("http://127.0.0.1:{DEFAULT_PORT}"))
+        self.flag("--accounts").unwrap_or_else(|| {
+            let port = self.services().map_or(DEFAULT_PORT, |c| c.ports.accounts);
+            format!("http://127.0.0.1:{port}")
+        })
+    }
+
+    /// `services.toml` in the store (the defaults without one).
+    fn services(&self) -> Result<ServicesConfig, String> {
+        ServicesConfig::load(&self.paths()?.store)
     }
 
     fn admin(&self) -> Result<Admin, String> {
@@ -194,6 +218,105 @@ fn run() -> Result<(), String> {
             }
             Ok(())
         }
+        ["account", "show", username] => {
+            let d: AccountDetail = args.admin()?.get(&format!("/admin/account?username={username}"))?;
+            if args.has("--json") {
+                println!("{}", serde_json::to_string_pretty(&d).map_err(|e| e.to_string())?);
+                return Ok(());
+            }
+            let a = &d.account;
+            println!("{} ({}), id {}, {}", a.username, a.display_name, a.id, a.state);
+            println!("  role {}, content {}, games {}, list {}{}{}", a.role, if a.content.is_empty() { "none" } else { &a.content }, a.games, a.list_slots, if a.report { ", reports results" } else { "" }, if a.muted { ", muted" } else { "" });
+            if !a.note.is_empty() {
+                println!("  note: {}", a.note);
+            }
+            println!("  made {}, last seen {}", when(a.created), a.last_seen.map_or("never".into(), when));
+            println!("  devices:");
+            for dev in &a.devices {
+                let seen = dev.last_seen.map_or("never".into(), when);
+                println!("    {} {:<6} {} (seen {seen}){}", dev.id, dev.kind, dev.label, if dev.revoked { " revoked" } else { "" });
+            }
+            println!("  profiles and stats: none yet (S4)");
+            println!("  latest changes:");
+            for e in &d.audit {
+                println!("    {} {:<16} by {} {}", when(e.at), e.action, e.actor, e.detail);
+            }
+            Ok(())
+        }
+        ["account", "set", username] => {
+            let change = AccountChange {
+                username: username.to_string(),
+                new_username: args.flag("--username"),
+                display_name: args.flag("--display-name"),
+                role: args.flag("--role"),
+                content: args.flag("--content"),
+                games: args.flag("--games"),
+                list: args.number("--list")?.map(|n| n as u32),
+                note: args.flag("--note"),
+                muted: if args.has("--mute") { Some(true) } else if args.has("--unmute") { Some(false) } else { None },
+            };
+            let a: AccountView = args.admin()?.post("/admin/account/set", &change)?;
+            println!("{}: role {}, content {}, games {}, list {}{}", a.username, a.role, a.content, a.games, a.list_slots, if a.muted { ", muted" } else { "" });
+            eprintln!("its devices get the new rights with their next ticket; `chimera_accounts account refresh {}` makes it now", a.username);
+            Ok(())
+        }
+        ["account", "refresh", username] => {
+            args.admin()?.post::<()>("/admin/account/refresh", &serde_json::json!({ "username": username }))?;
+            println!("{username}: its tickets are asked again (the services drop the old ones within 30 s)");
+            Ok(())
+        }
+        ["account", "delete", username] => {
+            args.admin()?.post::<()>("/admin/account/delete", &serde_json::json!({ "username": username }))?;
+            println!("{username}: deleted with its devices; the username is free");
+            Ok(())
+        }
+        ["page"] => {
+            let admin = args.admin()?;
+            if admin.health().is_none() {
+                return Err(format!("the accounts service at {} isn't answering: start it first", args.url()));
+            }
+            let secret = std::fs::read_to_string(args.paths()?.secret()).map_err(|e| e.to_string())?;
+            println!("{}/admin/#key={}", args.url().replace("://127.0.0.1", "://localhost"), secret.trim());
+            eprintln!("open it in a browser on this machine (from another: ssh -L <port>:127.0.0.1:<port> to it); the key is the services' secret: don't share the address");
+            Ok(())
+        }
+        ["install-units"] => {
+            let paths = args.paths()?;
+            let config = args.services()?;
+            let front_listen = args
+                .flag("--front")
+                .or(config.front.listen.clone())
+                .ok_or("the front's public address: --front <ip:port> (or [front] listen in services.toml)")?;
+            let split = |v: Option<String>| v.map(|v| v.split_whitespace().map(String::from).collect()).unwrap_or_default();
+            let bin = match args.flag("--bin") {
+                Some(b) => PathBuf::from(b),
+                None => dirs::home_dir().ok_or("no home folder: pass --bin")?.join(".local").join("lib").join("chimera"),
+            };
+            let settings = units::UnitSettings {
+                bin: bin.clone(),
+                store: std::path::absolute(&paths.store).map_err(|e| e.to_string())?,
+                config,
+                front_listen,
+                assets_args: split(args.flag("--assets-args")),
+                accounts_args: split(args.flag("--accounts-args")),
+                writable: args.flags.iter().filter(|(n, _)| n == "--rw").filter_map(|(_, v)| v.clone().map(PathBuf::from)).collect(),
+            };
+            let to = match args.flag("--to") {
+                Some(t) => PathBuf::from(t),
+                None => units::user_unit_dir().ok_or("no config folder: pass --to")?,
+            };
+            for path in units::install(&settings, &to)? {
+                println!("wrote {}", path.display());
+            }
+            println!("next:");
+            println!("  install -D -m 0755 -t {} target/release/chimera_front target/release/chimera_accounts target/release/chimera_asset_server", bin.display());
+            println!("  systemctl --user daemon-reload");
+            println!("  systemctl --user enable chimera-front chimera-accounts chimera-assets chimera-services.target");
+            println!("  systemctl --user start chimera-services.target");
+            println!("  loginctl enable-linger \"$USER\"   # once: they run without a login session");
+            println!("  chimera_accounts status          # one line per service");
+            Ok(())
+        }
         ["account", "revoke", username] => {
             args.admin()?.post::<()>("/admin/account/revoke", &serde_json::json!({ "username": username }))?;
             println!("{username}: revoked with all its devices");
@@ -237,9 +360,31 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         ["status"] => {
-            match Admin::new(&args.url(), "").health() {
-                Some(line) => println!("accounts {}: {}", args.url(), line.trim()),
-                None => println!("accounts {}: not answering", args.url()),
+            let config = args.services().unwrap_or_default();
+            let line = |name: &str, url: String| match Admin::new(&url, "").health() {
+                Some(line) => println!("{name:<9} {url}: {}", line.trim()),
+                None => println!("{name:<9} {url}: not answering"),
+            };
+            let routes = config.routes();
+            line("accounts", args.url());
+            line("assets", format!("http://{}", routes.assets));
+            line("hub", format!("http://{}", routes.hub));
+            if routes.feedback != routes.assets {
+                line("feedback", format!("http://{}", routes.feedback));
+            }
+            match config.front.listen.as_deref().and_then(|l| l.rsplit_once(':')).map(|(_, port)| port.to_string()) {
+                Some(port) => {
+                    let url = format!("https://127.0.0.1:{port}");
+                    let fingerprint = chimera_assets::tls::fingerprint_in(&args.paths()?.tls());
+                    let answer = fingerprint
+                        .ok_or_else(|| "no certificate in the store".to_string())
+                        .and_then(|f| chimera_services::front::health(&url, &f));
+                    match answer {
+                        Ok(text) => println!("{:<9} {url}: {}", "front", text.trim()),
+                        Err(e) => println!("{:<9} {url}: not answering ({e})", "front"),
+                    }
+                }
+                None => println!("{:<9} (no [front] listen in services.toml)", "front"),
             }
             Ok(())
         }

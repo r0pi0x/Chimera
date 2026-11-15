@@ -107,6 +107,11 @@ pub trait Authenticator: Send + Sync {
     fn kind(&self) -> &str;
     /// None: not a token of this kind (the next authenticator is asked).
     fn authenticate(&self, token: &str) -> Option<Verdict>;
+    /// A word for the service's `/health` line (`TicketAuth`: the
+    /// revocation feed's age).
+    fn status(&self) -> Option<String> {
+        None
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -315,6 +320,8 @@ pub struct TicketAuth {
     keys_path: PathBuf,
     keys: Mutex<(Option<(SystemTime, u64)>, crate::ticket::TicketKeys)>,
     revoked: std::sync::Arc<std::sync::RwLock<crate::ticket::Revocations>>,
+    /// When the feed last answered (Unix seconds; 0: never).
+    fed_at: std::sync::Arc<std::sync::atomic::AtomicU64>,
     feed: Option<Feed>,
 }
 
@@ -360,6 +367,7 @@ impl TicketAuth {
             keys_path,
             keys: Mutex::new((None, Default::default())),
             revoked: Default::default(),
+            fed_at: Default::default(),
             feed: None,
         }
     }
@@ -369,7 +377,7 @@ impl TicketAuth {
     /// (read again each time: accounts makes it at its first start).
     pub fn with_feed(mut self, accounts_url: String, secret_path: PathBuf, every: std::time::Duration) -> Self {
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (revoked, stop2) = (self.revoked.clone(), stop.clone());
+        let (revoked, stop2, fed_at) = (self.revoked.clone(), stop.clone(), self.fed_at.clone());
         let thread = std::thread::Builder::new()
             .name("revocation-feed".into())
             .spawn(move || {
@@ -386,6 +394,7 @@ impl TicketAuth {
                             if let Err(e) = r.apply(&text) {
                                 eprintln!("tickets: {e}");
                             }
+                            fed_at.store(now(), std::sync::atomic::Ordering::Relaxed);
                             said = false;
                         }
                         // Keep the last list; say so once until it answers again.
@@ -427,6 +436,15 @@ impl TicketAuth {
 impl Authenticator for TicketAuth {
     fn kind(&self) -> &str {
         "account"
+    }
+
+    fn status(&self) -> Option<String> {
+        let at = self.fed_at.load(std::sync::atomic::Ordering::Relaxed);
+        Some(match (&self.feed, at) {
+            (None, _) => "revocations=off".into(),
+            (Some(_), 0) => "revocations=never".into(),
+            (Some(_), at) => format!("revocations={}s", now().saturating_sub(at)),
+        })
     }
 
     fn authenticate(&self, token: &str) -> Option<Verdict> {

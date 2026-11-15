@@ -23,7 +23,11 @@
 //!   while it is valid, asked again at most once a minute.
 //!   `Remote` sends the live session's current ticket (`fresh_ticket`), and
 //!   `AssetsConfig::resolve` uses a signed-in account's asset service
-//!   before a bound legacy token (`user_remote`).
+//!   before a bound legacy token (`user_remote`). A game client keeps the
+//!   ticket fresh in the background (`keep_fresh`), and a join uses the
+//!   account's ticket for an asset service a game server offers when that
+//!   service has the hub's certificate (`Session::remote_for`; any other
+//!   gets the legacy token, never a ticket: `chimera_net::net::assets`).
 //!
 //! Known shortcuts: the private key sits in the file in the clear (0600 on
 //! Unix; DPAPI on Windows later); no UI yet (S3): `+chimera:hub <link>
@@ -436,6 +440,30 @@ impl Session {
         let ticket = self.ticket().ok()?;
         Some(RemoteConfig { token: ticket, ..self.file().remote()? })
     }
+
+    /// The file this session is kept in (None: in memory only).
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    /// An asset service a game server offers (`url`, its certificate's
+    /// `fingerprint`) with this account's current ticket, when it is this
+    /// account's hub (the same certificate): a ticket never goes to a
+    /// service of another certificate. None too without a valid ticket
+    /// (accounts down past its expiry).
+    pub fn remote_for(&self, url: &str, fingerprint: &str) -> Option<RemoteConfig> {
+        let offered = crate::tls::normalize_fingerprint(fingerprint)?;
+        let ours = crate::tls::normalize_fingerprint(self.file().fingerprint.as_deref()?)?;
+        if offered != ours {
+            return None;
+        }
+        Some(RemoteConfig {
+            url: url.trim().trim_end_matches('/').to_string(),
+            token: self.ticket().ok()?,
+            key: None,
+            fingerprint: Some(offered),
+        })
+    }
 }
 
 static LIVE: RwLock<Option<Arc<Session>>> = RwLock::new(None);
@@ -459,21 +487,56 @@ pub fn fresh_ticket(token: &str) -> Option<String> {
     (ticket::parse_id(&session.file().device) == Some(device)).then(|| session.ticket().ok()).flatten()
 }
 
+/// The session of the account file at `path`: the live one when it is
+/// that file's, else read from it and made live. None: no account there.
+pub fn session_at(path: &Path) -> Option<Arc<Session>> {
+    if let Some(s) = live().filter(|s| s.path() == Some(path)) {
+        return Some(s);
+    }
+    let file = AccountFile::load_from(path).unwrap_or_else(|e| {
+        eprintln!("account: {e}");
+        None
+    })?;
+    let s = Arc::new(Session::new(file, Some(path.to_path_buf())));
+    set_live(Some(s.clone()));
+    Some(s)
+}
+
+/// The user's signed-in session (`AccountFile::path`), if any: the live
+/// one when it is that file's, else read and made live.
+pub fn user_session() -> Option<Arc<Session>> {
+    session_at(&AccountFile::path()?)
+}
+
+/// Whether this user is signed in to a hub (an account file).
+pub fn has_account() -> bool {
+    AccountFile::path().is_some_and(|p| matches!(AccountFile::load_from(&p), Ok(Some(_))))
+}
+
 /// The user's signed-in account's asset service (and the session made
 /// live), if there is one.
 pub fn user_remote() -> Option<RemoteConfig> {
-    let session = match live() {
-        Some(s) => s,
-        None => {
-            let s = Arc::new(Session::load().unwrap_or_else(|e| {
-                eprintln!("account: {e}");
-                None
-            })?);
-            set_live(Some(s.clone()));
-            s
-        }
-    };
-    session.remote()
+    user_session()?.remote()
+}
+
+/// Keep the live session's ticket fresh in the background: a thread (one
+/// per process, started by the first call) that asks `Session::ticket`
+/// every `every`, which refreshes it past half its life, so a long game
+/// session never meets an expired ticket and the file on disk always has
+/// the newest one for the next start. Quiet when accounts doesn't answer
+/// (the old ticket serves while valid).
+pub fn keep_fresh(every: Duration) {
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        let _ = std::thread::Builder::new().name("account-ticket".into()).spawn(move || {
+            loop {
+                std::thread::sleep(every);
+                if let Some(session) = live() {
+                    let _ = session.ticket();
+                }
+            }
+        });
+    });
 }
 
 /// `+chimera:hub <link> [username]`: redeem the link's code, keep the

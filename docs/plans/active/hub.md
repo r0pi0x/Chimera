@@ -1,17 +1,33 @@
 # Plan: the hub and its services (accounts, server list, assets, feedback)
 
-Status: S1a built (2026-11-14), not deployed; S1b next. The user's
-decisions are in section 11; the plan below follows them. Built in S1a:
-`chimera_services` with `chimera_accounts` (SQLite, migrations, WAL,
+Status: S1a and S1b built (2026-11-14), not deployed; S2 next. The
+user's decisions are in section 11; the plan below follows them. Built in
+S1a: `chimera_services` with `chimera_accounts` (SQLite, migrations, WAL,
 nightly local backups and restore; invites, sign-up, link codes, recovery,
 re-invites, tickets, the revocation feed, bans, legacy import and legacy
 tickets; the admin API and command line), `chimera_assets::ticket` and
 `account` (the client's file, redeem, ticket refresh at half-life,
 `+chimera:hub <link> [username]` on the command line) and `TicketAuth` in
-`chimera_asset_server`. Moved to S1b: the admin page (7.2), `account
-set`, `show`, `delete` and `refresh`, `X-Chimera-Peer` (the front's), the
-join flow's use of an account's tickets for a game server's offered
-asset service (today a join binds a legacy token, `net::assets`).
+`chimera_asset_server`. Built in S1b: `chimera_front` (`front`: the one
+public TLS port on the asset service's certificate, routing by path,
+`X-Chimera-Peer` set and a forged one dropped, 421 for another service's
+path on a connection, `/admin`, `/internal`, `/health` and
+`/feedback/admin` never relayed; the services believe the header from
+loopback only and treat a relayed request as not this machine's);
+`services.toml` (`config`); systemd user units for front, accounts and
+assets with a target (`units`, `chimera_accounts install-units`; templates
+in `chimera/services/systemd/`, not `tools/`); `chimera_accounts status`
+across the services (each `/health`, the front's over TLS); the owner's
+admin page (`accounts::page`, loopback, its key in the address's fragment
+from `chimera_accounts page`) and `account set`, `show`, `refresh`,
+`delete`; the join flow preferring the account's ticket for an offered
+asset service with the hub's certificate (`net::assets`,
+`Session::remote_for`; any other service gets the legacy token, never a
+ticket), `has_token` and `ASSETS_KEY` counting an account, the ticket
+refreshed in the background in the game client
+(`account::keep_fresh`). Not done in S1b: graceful drain on SIGTERM (a
+stop cuts connections under way; clients retry), the hub's unit (S2),
+a deleted username's 30-day hold.
 The user's direction: a master server players connect to up front, which
 serves the game files by default, lists every lobby (hosting one lists it
 for everyone on the same master) and holds everyone's **accounts**, which
@@ -213,9 +229,10 @@ Today's per-account limits, bans and access log stay as they are.
   `chimera-accounts.service`, `chimera-hub.service`,
   `chimera-assets.service`, `chimera-feedback.service`, all
   `PartOf=chimera-services.target`; `loginctl enable-linger` once so they
-  run without a login session. Templates in `tools/services/systemd/`
-  using `%h` and `<server store>` placeholders; an install script
-  (S1b) writes them to `~/.config/systemd/user/`.
+  run without a login session. Templates in `chimera/services/systemd/`
+  (compiled in) with the binaries' folder, the store and the ports as
+  placeholders; `chimera_accounts install-units` (S1b) writes them to
+  `~/.config/systemd/user/`.
 - **Restart policy**: `Restart=on-failure`, `RestartSec=2`,
   `StartLimitIntervalSec=120`, `StartLimitBurst=5` (a crash loop stops
   and shows in `systemctl --user status`). Hardening that costs nothing:

@@ -12,14 +12,24 @@
 //! - `POST /accounts/link`, `POST /accounts/display-name`, `GET
 //!   /accounts/me`: with `Authorization: Bearer <ticket>`.
 //!
-//! This machine only (a loopback connection not relayed by a TLS front,
-//! with the services' secret in `X-Chimera-Service`):
+//! This machine only (a loopback connection relayed by no front: neither
+//! the in-process TLS one nor the hub's, whose `X-Chimera-Peer` marks a
+//! request as relayed; with the services' secret in `X-Chimera-Service`):
 //! - `GET /internal/revoked?since=<seq>`: the revocation feed.
-//! - `/admin/...`: the owner's API (`admin`'s command line): `POST invite`,
-//!   `GET invites`, `POST invite/revoke`, `GET accounts`, `POST
-//!   account/revoke`, `POST device/revoke`, `POST ban`, `POST
-//!   import-legacy`, `POST backup`.
-//! - `GET /health`: `ok <version> db=<schema>` (loopback, no secret).
+//! - `/admin/...`: the owner's API (`admin`'s command line and the page):
+//!   `POST invite`, `GET invites`, `POST invite/revoke`, `GET accounts`,
+//!   `GET account?username=` (show), `POST account/set`, `POST
+//!   account/refresh`, `POST account/delete`, `POST account/revoke`,
+//!   `POST device/revoke`, `POST ban`, `POST import-legacy`, `POST
+//!   backup`.
+//! - `GET /admin/`: the owner's page (`page`; no secret needed to load it,
+//!   only to use it; a local `Host` too).
+//! - `GET /health`: `ok <version> uptime=<s> db=<schema> accounts=<n>`
+//!   (loopback, no secret).
+//!
+//! The client's address (limits, bans, the log) is the one the hub's
+//! front names in `X-Chimera-Peer`, believed only on a loopback
+//! connection (`chimera_assets::tls::forwarded_peer`).
 //!
 //! Any other path is 421 (not this service's), so a stray request is loud.
 //! Each request is one line of `<store>/server/accounts/access.log`: time,
@@ -41,12 +51,12 @@ use std::{
 use chimera_assets::{
     account::{RecoverRequest, RedeemRequest, TicketRequest},
     accounts::SERVICE_HEADER,
-    tls::Peers,
+    tls::{PEER_HEADER, Peers, forwarded_peer},
 };
 use serde::{Deserialize, Serialize};
 use tiny_http::{Header, Method, Request, Response, ResponseBox};
 
-use super::{Accounts, InviteSpec, R, Refusal, refuse};
+use super::{AccountChange, Accounts, InviteSpec, R, Refusal, refuse};
 
 /// Largest request body.
 const MAX_BODY: u64 = 256 * 1024;
@@ -101,11 +111,26 @@ fn bearer(request: &Request) -> Option<String> {
         .filter(|t| !t.is_empty())
 }
 
+/// The admin page (`page`), with headers that keep it to itself.
+fn page() -> ResponseBox {
+    Response::from_string(super::page::PAGE)
+        .with_header(header("Content-Type", "text/html; charset=utf-8"))
+        .with_header(header("X-Content-Type-Options", "nosniff"))
+        .with_header(header("Cache-Control", "no-store"))
+        .with_header(header(
+            "Content-Security-Policy",
+            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+        ))
+        .with_header(header("Referrer-Policy", "no-referrer"))
+        .boxed()
+}
+
 /// The HTTP side of an `Accounts`.
 pub struct Http {
     pub accounts: Arc<Accounts>,
     peers: Option<Peers>,
     log: Mutex<Option<File>>,
+    started: std::time::Instant,
 }
 
 #[derive(Deserialize)]
@@ -139,22 +164,39 @@ struct DisplayName {
 impl Http {
     pub fn new(accounts: Arc<Accounts>, peers: Option<Peers>) -> Self {
         let log = OpenOptions::new().create(true).append(true).open(accounts.paths.access_log()).ok();
-        Self { accounts, peers, log: Mutex::new(log) }
+        Self { accounts, peers, log: Mutex::new(log), started: std::time::Instant::now() }
     }
 
     fn relayed(&self, at: &SocketAddr) -> Option<IpAddr> {
         self.peers.as_ref().and_then(|p| p.lock().unwrap_or_else(|e| e.into_inner()).get(at).copied())
     }
 
-    /// The client's address (through a TLS front, the one it relayed).
+    /// The client's address: behind the hub's front, the one its
+    /// `X-Chimera-Peer` names (trusted from loopback only); behind the
+    /// in-process TLS front, the one it relayed; else the connection's.
     fn address(&self, request: &Request) -> Option<IpAddr> {
         let at = *request.remote_addr()?;
+        if let Some(ip) = forwarded_peer(&at, header_value(request, PEER_HEADER).as_deref()) {
+            return Some(ip);
+        }
         Some(self.relayed(&at).unwrap_or(at.ip()))
     }
 
-    /// From this machine, not relayed.
+    /// From this machine, relayed by no front.
     fn local(&self, request: &Request) -> bool {
         request.remote_addr().is_some_and(|at| at.ip().is_loopback() && self.relayed(at).is_none())
+            && header_value(request, PEER_HEADER).is_none()
+    }
+
+    /// `local`, to a `Host` naming this machine (no DNS rebinding): what a
+    /// browser may load the page from.
+    fn local_page(&self, request: &Request) -> bool {
+        let host = header_value(request, "Host").unwrap_or_default().to_ascii_lowercase();
+        let host = match host.strip_prefix('[') {
+            Some(v6) => v6.split(']').next().unwrap_or("").to_string(),
+            None => host.split(':').next().unwrap_or("").to_string(),
+        };
+        self.local(request) && matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1")
     }
 
     fn trusted(&self, request: &Request) -> bool {
@@ -182,9 +224,27 @@ impl Http {
         let a = &self.accounts;
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
         match (method, parts.as_slice()) {
-            (Method::Get, ["health"]) if self.local(request) => {
-                (200, text(200, format!("ok {} db={}\n", env!("CARGO_PKG_VERSION"), a.db_version())))
-            }
+            (Method::Get, ["health"]) if self.local(request) => (
+                200,
+                text(
+                    200,
+                    format!(
+                        "ok {} uptime={}s db={} accounts={}\n",
+                        env!("CARGO_PKG_VERSION"),
+                        self.started.elapsed().as_secs(),
+                        a.db_version(),
+                        a.list_accounts().map_or(0, |l| l.len())
+                    ),
+                ),
+            ),
+            (_, ["health"]) => (404, text(404, "no such endpoint\n")),
+            // The owner's page (it holds nothing secret: its calls need the
+            // secret, `page`).
+            (Method::Get, ["admin"]) if self.local_page(request) => (
+                301,
+                Response::empty(301).with_header(header("Location", "/admin/")).boxed(),
+            ),
+            (Method::Get, ["admin", ""]) if self.local_page(request) => (200, page()),
             (_, ["internal", ..]) | (_, ["admin", ..]) if !self.trusted(request) => (404, text(404, "no such endpoint\n")),
             (Method::Get, ["internal", "revoked"]) => {
                 let since = query.split('&').find_map(|p| p.strip_prefix("since=")).and_then(|v| v.parse().ok()).unwrap_or(0);
@@ -226,6 +286,19 @@ impl Http {
                 answer(200, body::<Name>(request).and_then(|n| a.revoke_invite(&n.name)))
             }
             (Method::Get, ["admin", "accounts"]) => answer(200, a.list_accounts()),
+            (Method::Get, ["admin", "account"]) => {
+                let username = query.split('&').find_map(|p| p.strip_prefix("username=")).unwrap_or_default();
+                answer(200, a.show_account(username))
+            }
+            (Method::Post, ["admin", "account", "set"]) => {
+                answer(200, body::<AccountChange>(request).and_then(|c| a.set_account(&c)))
+            }
+            (Method::Post, ["admin", "account", "refresh"]) => {
+                answer(200, body::<Username>(request).and_then(|u| a.refresh_account(&u.username)))
+            }
+            (Method::Post, ["admin", "account", "delete"]) => {
+                answer(200, body::<Username>(request).and_then(|u| a.delete_account(&u.username)))
+            }
             (Method::Post, ["admin", "account", "revoke"]) => {
                 answer(200, body::<Username>(request).and_then(|u| a.revoke_account(&u.username)))
             }

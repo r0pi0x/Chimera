@@ -1,0 +1,22 @@
+# The hub's one public TLS port (docs/plans/active/hub.md 2.3, 2.6): routes
+# each connection to a service on loopback by its path. It reads the
+# certificate at start and writes nothing. Written by `chimera_accounts
+# install-units`.
+[Unit]
+Description=Chimera front (public @FRONT_LISTEN@)
+PartOf=chimera-services.target
+After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+ExecStart=@BIN@/chimera_front --store @STORE@ --listen @FRONT_LISTEN@
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadOnlyPaths=@STORE@
+
+[Install]
+WantedBy=chimera-services.target

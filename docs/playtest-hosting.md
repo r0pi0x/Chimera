@@ -463,7 +463,9 @@ On the router and the host's firewall:
   need to reach it from outside your network. Linux: `sudo ufw allow
   <asset port>/tcp`; Windows: `New-NetFirewallRule -DisplayName "Chimera
   assets" -Direction Inbound -Protocol TCP -LocalPort <asset port> -Action
-  Allow`. The plain port 8731 stays closed.
+  Allow`. The plain port 8731 stays closed. With the hub's front
+  ("Platform accounts and the front", below) this one TCP port is the
+  front's instead (the same number and certificate); 8741 stays closed too.
 - Windows: allow `ultimate_gun_game_server.exe` through Defender Firewall
   (the first-run prompt) for the networks that matter.
 
@@ -557,28 +559,66 @@ address the server names. To change the certificate (a lost `tls` folder),
 every tester enters their token again (`+chimera:asset_token <token>`),
 which clears the binding.
 
-### Platform accounts (being built: docs/plans/active/hub.md, S1a)
+### Platform accounts and the front (docs/plans/active/hub.md, S1a-S1b)
 
-The accounts service (`chimera_accounts`) runs beside the asset service
-over the same server store and replaces tokens with invites once the
-front and the first-run page are in (S1b, S3). Until then tokens above
-stay the way testers get in; the asset service takes both. On loopback
-only:
+The hub runs as separate services over the same server store, each its
+own binary, restarted on its own:
+
+| Service | Binary | Listens | Job |
+|---|---|---|---|
+| front | `chimera_front` | the public `<hub port>` (TLS, the asset service's certificate) | routes each connection by path: `/accounts/` to accounts, `/hub` to the hub (S2), `/feedback` and everything else to assets; adds `X-Chimera-Peer`; never relays `/admin`, `/internal`, `/feedback/admin` |
+| accounts | `chimera_accounts serve` | 127.0.0.1:8741 | invites, devices, tickets, revocations (`accounts.db`), the admin page |
+| assets | `chimera_asset_server` | 127.0.0.1:8731 | game files and feedback reports, legacy tokens and tickets |
+
+Ports live in `<server store>/server/services.toml` (`[front] listen`,
+`[ports] assets/accounts/hub`); defaults as above. With the front, the
+asset service runs **without** `--tls` (loopback only) and the front takes
+the public port, with the same certificate (`<server store>/server/tls/`),
+so testers' pinned fingerprint and tokens keep working. One router
+forward and one firewall rule (TCP `<hub port>`).
 
 ```
-cargo build --release -p chimera_services --bin chimera_accounts
-target/release/chimera_accounts serve        # 127.0.0.1:8741, <server store>/server/accounts/
-target/release/chimera_accounts import-legacy   # an account per accounts.toml account; tokens keep working
-target/release/chimera_accounts invite <name>   # prints the code once (test invites for now)
-target/release/chimera_accounts account list | invites | backup | status
+cargo build --release -p chimera_services -p chimera_assets --bin chimera_front --bin chimera_accounts --bin chimera_asset_server
+target/release/chimera_accounts import-legacy   # once: an account per accounts.toml account; tokens keep working
+target/release/chimera_accounts invite <name> --hub <public address>:<hub port>   # the link, printed once
+target/release/chimera_accounts invites | account list | account show <username>
+target/release/chimera_accounts account set <username> --content cs_source,combat_arms --role host ...
+target/release/chimera_accounts account refresh <username>   # new rights at once (tickets asked again)
+target/release/chimera_accounts account revoke|delete <username>    device revoke <id>
+target/release/chimera_accounts page     # the admin page's address with its key (this machine; ssh -L from another)
+target/release/chimera_accounts status   # one line per service: front, accounts, assets, hub
 ```
 
-It backs `accounts.db` up nightly into `<server store>/server/backups/`
-(local only for now). Invites are for trying it out until the front
-(S1b) puts accounts and assets behind the one public port: a hub link
-names one origin for both. `chimera_asset_server` checks tickets with
-`<server store>/server/accounts/ticket.pub` and polls revocations from
-127.0.0.1:8741 every 30 s (`--no-tickets`: tokens only).
+A tester signs in once with the link: `+chimera:hub <link> [username]`
+on the game's command line (the first-run page comes with S3); the
+account file and recovery key land in `<data_local>/chimera/`. From then
+on the game asks tickets with its device key and uses them for the hub's
+asset service (any server that offers that service at join), refreshing
+them in the background; a tester with a token keeps working as before.
+
+**Under systemd** (user units, this box): `chimera_accounts install-units
+--front 0.0.0.0:<hub port>` writes `chimera-front`, `chimera-accounts`,
+`chimera-assets` and `chimera-services.target` to
+`~/.config/systemd/user/` (`--assets-args "<the asset server's limits,
+--on-report ...>"`, `--accounts-args "--public <public address>:<hub
+port>"`, `--rw <dir>` for an `--on-report` command's own folder: the
+units may write only the store) and prints the steps after: copy the
+release binaries to `~/.local/lib/chimera/`, `systemctl --user
+daemon-reload`, enable and start the target, `loginctl enable-linger
+$USER` once (they run without a login session). Each restarts on failure
+(2 s, at most 5 times in 2 minutes); logs: `journalctl --user -u
+chimera-accounts -f`. An update is a copy of that binary and `systemctl
+--user restart chimera-<service>`. If a unit fails with `status=218`,
+the box lacks the user namespaces the hardening lines need: delete the
+`Protect*`/`Private*`/`*Paths` lines from that unit.
+
+What keeps working when one is down: accounts down, downloads with a
+ticket go on (6-hour tickets, refreshed at half-life; a game started
+meanwhile uses the ticket in its account file), redeeming fails with
+"the hub's accounts service isn't answering"; assets down, accounts and
+sign-ups work; front down, nothing public works (this box's loopback
+does). `accounts.db` is backed up nightly into `<server store>/server/backups/`
+(local only for now).
 
 ## Pre-flight smoke test (the evening before, and an hour before)
 
