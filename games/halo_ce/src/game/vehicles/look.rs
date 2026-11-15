@@ -337,6 +337,12 @@ pub fn anim_set(graph: &AnimationGraph, bones: &[MapBone], checksum: u32) -> (An
                 if let Some(b) = screen {
                     s.grid = (b.columns(), b.rows());
                     s.axes = anims::screen_axes(b);
+                    // One animation holds the whole screen (`apply_screen`
+                    // reads its frames); every cell names it, so the
+                    // engine's prop animator (which a party's new round
+                    // starts on a prop's first sequence) indexes the grid
+                    // safely.
+                    s.anims = vec![set.animations.len() - 1; (s.grid.0 * s.grid.1).max(1)];
                 }
                 set.sequences.push(s);
                 set.names.insert(name, set.sequences.len() - 1);

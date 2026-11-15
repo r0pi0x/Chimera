@@ -28,9 +28,11 @@
 //! Whether a load places them at all (`placed_with`): always on Halo's
 //! own gameplay (its app and server: the load reads the whole kit); in
 //! another game's app (a party app's Halo map) only with the console
-//! variable `halo_ce:party_vehicles` 1 (default 0: `PartyVehicles` in the
-//! app's load context, set by `party_vehicles`, read by the loader when a
-//! map loads): off, no vehicle prop, entity or model is in the map at all.
+//! variable `halo_ce:party_vehicles` 1 (default 0; `party_vehicles` puts
+//! it in the app's load context as `PartyVehicles`, which a listen
+//! server's loads use too; the loader reads it when a map loads, so it applies from the next map: the first map of a launch with
+//! `--map` is loaded before the console runs): off, no vehicle prop, entity
+//! or model is in the map at all.
 //!
 //! Known shortcuts:
 //! - The vehicle's collider is the convex hull of its collision model's
@@ -200,33 +202,35 @@ pub const PARTY_VEHICLES_CVAR: &str = "halo_ce:party_vehicles";
 /// own gameplay (the whole kit), or another game's app with
 /// `PartyVehicles` on.
 pub fn placed_with(options: &crate::map::MapLoadOptions) -> bool {
-    options.kit.pickups() || options.context.get::<PartyVehicles>().is_some_and(|p| p.0)
+    options.kit.pickups()
+        || options.context.get::<PartyVehicles>().is_some_and(|p| p.0)
 }
 
-/// `halo_ce:party_vehicles` (0 or 1) as the console sets it.
-#[derive(bevy::prelude::Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PartyVehiclesCvar(pub u8);
-
-/// The console variable and its sync into the app's load context: what
+/// The console variable (0 or 1) and what it sets: the app's load context
+/// (`PartyVehicles`, the context a listen server's loads use too), at
+/// once, so a map load right after it (the next command of the same line)
+/// sees it. What
 /// Halo's party bundle adds (`game::BUNDLE`'s `sim`).
 pub fn party_vehicles(app: &mut bevy::prelude::App) {
-    use bevy::prelude::*;
-    app.init_resource::<PartyVehiclesCvar>();
-    chimera_core::console::resource_cvar::<PartyVehiclesCvar, u8>(
-        app,
+    use chimera_core::console::ConsoleAppExt;
+    app.console_cvar(
         PARTY_VEHICLES_CVAR,
         "1: Halo's vehicles are placed on its maps in this app (read when a map loads; default 0: none).",
-        |r| &mut r.0,
+        "0",
+        |w| {
+            let on = crate::map::LoadContext::of(w).get::<PartyVehicles>().is_some_and(|p| p.0);
+            Some(if on { "1" } else { "0" }.to_string())
+        },
+        |w, v| {
+            let on = match v.trim() {
+                "0" => false,
+                "1" => true,
+                other => return Err(format!("bad value \"{other}\" (0 or 1)")),
+            };
+            crate::map::LoadContext::of(w).insert(PartyVehicles(on));
+            Ok(())
+        },
     );
-    app.add_systems(First, sync_party_vehicles);
-}
-
-fn sync_party_vehicles(world: &mut bevy::prelude::World) {
-    let on = world.get_resource::<PartyVehiclesCvar>().is_some_and(|c| c.0 != 0);
-    let context = crate::map::LoadContext::of(world);
-    if context.get::<PartyVehicles>().map(|p| p.0) != Some(on) {
-        context.insert(PartyVehicles(on));
-    }
 }
 
 /// Place the scenario's vehicles of `defs` in `map` with the default

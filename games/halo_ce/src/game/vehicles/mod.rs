@@ -322,6 +322,7 @@ fn enter_when_ready(
     if let Ok((_, mut v, prop)) = vehicles.get_mut(ve) {
         v.riders[seat] = Some(p);
         sit(&mut commands, p, ve, seat, prop);
+        info!("halo_vehicle_enter: seated {p} in {} {ve}", defs.0[v.def].0.name);
         commands.remove_resource::<EnterWhenReady>();
     }
 }
