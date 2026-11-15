@@ -19,7 +19,9 @@ switching, 3 inventory, pickup, swap and drop, 4 the trigger, 5 firing
 a round, 6 where the shot starts and where it goes, 7 error and
 spread, 8 heat, 9 the battery, 10 charging, 11 magazines and reloading,
 12 zoom, 13 melee, 14 grenades, 15 aim assist, 16 recoil and the
-first-person weapon, 17 smaller systems); Multiplayer weapon numbers;
+first-person weapon, 17 smaller systems, 18 displays on the weapon
+model: the assault rifle's counter and compass, gauges, the needler's
+needles); Multiplayer weapon numbers;
 Per-tick order; Edge cases; Quirks; Test cases; Confidence per section;
 Open questions.
 
@@ -1252,6 +1254,200 @@ frames; the others have none.
 - **Night vision:** a weapon with flag 14 lets the holder's night vision
   work while zoomed (hud.md / rendering); leaving zoom turns it off.
 
+### 18. Displays on the weapon model
+
+The assault rifle's round counter and compass, the plasma weapons'
+gauges and the needler's needles are not HUD (`hud.md` section 17 only
+points here). They are parts of the weapon's own models, drawn with
+ordinary shaders whose inputs are the **weapon object's outgoing
+functions A to D**. One mechanism serves all of them:
+
+1. **Export, each tick.** The weapon writes its export values (weapon
+   part 0x028, "A in" to "D in"; section 17) into the weapon object's
+   incoming values; the object layer's own sources (object 0x108 to
+   0x10E) are written first and a weapon slot of 0 leaves them alone
+   (`objects.md`, Function input sources). The weapon's own update
+   (firing, reloading) runs before the export in the same tick, so a
+   shot or a reload shows on the tick it happens.
+2. **Functions, each tick.** The object computes its four outgoing
+   functions from those inputs (`objects.md`, Object functions) and
+   stores them.
+3. **Draw, each frame.** Whenever a model of the weapon is drawn (the
+   first-person model of weapon part 0x154, or the world model of
+   object 0x28 in a hand or on the ground), every part's shader
+   receives the weapon object's four stored outgoing values, as they
+   were left by the last tick (no recomputation per frame, no
+   interpolation; the functions' active flags are not passed). The
+   first-person arms model is drawn with the holder unit's values
+   instead (`shaders.md`, Animation sources).
+4. **Value to picture.** By one of three shader mechanisms, all owned
+   by `shaders.md`: a numeric chicago shader picks one image of its
+   bitmap (Numeric shaders); a meter shader cuts a bar at the value
+   (Meter); a texture animation with an animation source slides or
+   turns a map (Texture animation block). The needler's first-person
+   needles are a fourth mechanism, an animation overlay
+   (`animations.md`, The pose each drawn frame).
+
+So the pictures change at most once per tick (30 Hz) and hold between
+ticks. Nothing about them differs between campaign and multiplayer:
+the tags are identical on every multiplayer map and nothing gates them.
+
+#### The assault rifle's display
+
+The first-person model `weapons\assault rifle\fp\fp` (one region, one
+permutation, one geometry) has eight parts. The display parts sit on a
+small screen at the rear of the carry handle, facing the player
+(normals about (-0.95, 0, 0.30): back toward the camera and up),
+rigidly on node 1 `frame display`:
+
+| Part | Shader (class) | Shader permutation | What it is | Where (model space, y is left) |
+|---|---|---|---|---|
+| 0, 1 | `grip`, `gun` (model) | 0 | the gun | |
+| 2 | `compass` (chicago, numeric) | 0 | compass dial, 6 vertices | y -0.0019 to 0.0019, z 0.0718 to 0.0754 |
+| 3 | `ar data` (chicago) | 0 | static legend, `display_fp` 256 x 256 | below the digits |
+| 4 | `numbers` (chicago, numeric) | **1** | **tens digit**, a quad | y 0.0002 to 0.0030 (player's left) |
+| 5 | `numbers` (chicago, numeric) | **0** | **units digit**, a quad | y -0.0030 to -0.0001 (player's right) |
+| 6 | `icons` (chicago) | 0 | static icons, `display_fp` | around the dial |
+| 7 | `display` (model shader, node 0) | 0 | the screen's backing | |
+
+The model's shader block holds `numbers` twice, with permutations 0 and
+1 (`models.md`, Shaders); a part's shader index picks the entry, and the
+entry's permutation is the **digit position** the numeric rule uses.
+
+**The digit shader** `weapons\assault rifle\fp\shaders\numbers`:
+transparent chicago; flags numeric and decal (0x82); numeric counter
+limit **60**; framebuffer blend **add**; extra flags bit 0 (do not fade
+with active camouflage); one map, colour and alpha functions 0, scale
+1, 1, offset 0, 0, rotation 0, no texture animation, map
+`weapons\assault rifle\fp\bitmaps\numbers_plate`.
+
+**The digit bitmap** `numbers_plate`: a 2D bitmap of **10 images**, each
+64 x 64 DXT1, one sequence (first image 0, count 10, no sprites). Image
+k shows the digit k, upright, as a seven-segment numeral in a cyan blue
+(about (38, 80, 98) in its strokes) on black; the numeral spans about x
+20 to 46 and y 12 to 52 of the image. The quads map u 0.257 to 0.757
+and v 0.114 to 0.849 (u grows to the player's right, v downward, so the
+image appears upright and unmirrored). A digit changes by **switching
+the whole image**; there is no texture offset, no sprite and no
+animation.
+
+**The value.** Rounds loaded in magazine 0 reach the shader as:
+
+1. Export B (weapon "B in" = 2, primary ammunition) = rounds loaded in
+   magazine 0 / that magazine's rounds-loaded maximum (60), as a
+   single-precision quotient; 0 when the maximum is 0.
+2. Function A (`ammo display`): flags 0, function type one, scale
+   function by input B, transition linear, bounds mode clip, lower 0,
+   upper 1, no other modifier. So A = B (a value at or below 0.0001
+   becomes 0 and the function is inactive, which the shader ignores).
+3. The numeric rule (map 0's bitmap has 10 images, not 8, so it reads
+   function A): N = clamp(floor(60 x A + 0.5), 0, 60), in single
+   precision. The units part (permutation 0) shows image N mod 10; the
+   tens part (permutation 1) shows image floor(N / 10) mod 10.
+
+In one line: **tens image = floor(L / 10), units image = L mod 10,
+with L the rounds loaded** (exact for every L from 0 to 60, because the
+magazine size equals the counter limit).
+
+- **Empty:** "00". Both parts always draw, so a leading zero shows (5
+  rounds read "05").
+- **Reloading:** the rounds loaded do not change until the reload's
+  last tick (section 11), so the display keeps the old count ("00"
+  after an empty magazine, "23" after a partial one) for the whole
+  reload and jumps to the new count on the tick the rounds go in (from
+  empty: reload start + 86 ticks). No count-up.
+- **Firing:** one less per round, on the tick of the shot.
+- **Above the limit:** N is capped at the limit (60); a 99 cannot occur
+  on this weapon. A numeric value above 99 would lose its hundreds
+  (only two parts exist).
+- **Lighting:** none. Chicago shaders are unlit; the digits are added
+  to the frame (bright on the dark screen), drawn as decals (at once,
+  not sorted, no fog, depth bias; `shaders.md`, Transparent shaders:
+  shared block). Under active camouflage the first-person model is
+  drawn with the camouflage effect like the rest of the gun (the
+  shader lacks "ignore effect").
+- **Third person:** the world model `weapons\assault rifle\assault
+  rifle` carries the same parts in its highest-detail geometry
+  (`display`, `compass`, `numbers` permutation 0, `ar data`, `numbers`
+  permutation 1, plus the `bolt` streak), so a held or dropped rifle
+  shows its own count and compass whenever level 4 is chosen (bounding
+  sphere at least 80 pixels; `models.md`, Choosing a level of detail).
+  Lower levels draw the `ar lod` shader only.
+
+#### The assault rifle's compass
+
+**The shader** `weapons\assault rifle\fp\shaders\compass`: the same
+form as `numbers` (chicago, numeric and decal, add, extra flags bit 0,
+one plain map) with counter limit **8** and map
+`weapons\assault rifle\fp\bitmaps\compass_plate`: **8 images**, each 64
+x 64 DXT1, one sequence of 8. Each image is a ring with a pointed tip;
+in image k the tip points k x 45 degrees **counter-clockwise from the
+image's top** (0 up, 2 left, 4 down, 6 right; inferred from the
+pictures). The dial quad maps u 0.005 to 0.979 and v 0.011 to 0.989,
+upright and unmirrored like the digits; the image's top is the screen's
+far edge (toward the muzzle). The compass does not rotate or scroll a
+texture: it **switches among 8 pictures**.
+
+**The value.** Because map 0's bitmap has exactly 8 images, the numeric
+rule reads **function D**:
+
+1. Object layer input D = 19, compass (the weapon layer's D = 0 leaves
+   it). Its value (`objects.md`, Function input sources, Compass): with
+   f the forward axis of the weapon object's node 0 (its world
+   orientation as last computed: in a hand, as attached to the holder's
+   hand marker, so it follows the third-person aim), if |f.z| < 0.995,
+   bearing b = atan2(f.x, f.y) (measured from +Y toward +X; note the
+   argument order), δ = b - N with N the scenario's local north,
+   wrapped once (δ at or above π: minus 2π; at or below -π: plus 2π),
+   value c = clamp(0.5 + δ / (2π), 0, 1). Otherwise c keeps its last
+   value.
+2. Function D (`compass`): flags 0, function one, scale function by
+   input D, linear, clip to [0, 1]. So D = c.
+3. Image = clamp(floor(8 x D + 0.5), 0, 8) mod 8.
+
+In one line: **image = (4 + round(δ / 45 degrees)) mod 8**, halves
+rounding up, with δ = b - N in degrees. In terms of the yaw ψ =
+atan2(f.y, f.x) (counter-clockwise from +X): b = 90 degrees - ψ, so
+image = (4 + round((90 - ψ - N) / 45)) mod 8.
+
+- Turning right lowers ψ, raises the index and turns the tip
+  counter-clockwise on the screen: the tip stays on one world direction,
+  the bearing N + 180 degrees (yaw 270 degrees - N), to the nearest 45
+  degrees relative to the gun. Facing exactly local north (δ = 0) shows
+  image 4, tip toward the player. (Whether the art means the tip as
+  "north" is not known; the picture is what matters.)
+- Local north on the multiplayer maps: π on beavercreek, bloodgulch,
+  hangemhigh and wizard; π/2 on longest and sidewinder; 0 on the others
+  (`scenario.md`).
+- The compass is shown in multiplayer exactly as in the campaign.
+- The value freezes while the weapon's forward axis is within about 5.7
+  degrees of vertical (|f.z| >= 0.995), if the held pose ever tilts it
+  that far.
+
+#### Every other weapon (all 15 weapon tags of the multiplayer maps)
+
+"Fn X" is the weapon object's outgoing function X; "in X" the incoming
+value X. Function fields not listed are neutral (period 1, flags 0,
+linear, clip to [lower, upper]).
+
+| Weapon | Part and shader | What it shows | Driven by | Mapping |
+|---|---|---|---|---|
+| plasma rifle (first-person and world model) | `weapons\plasma rifle\fp\shaders\gauge`, meter; map `heat gauge` 256 x 128 DXT3 | **heat** bar | meter value source 2 = Fn B (`lens flare scale`: one x in A; in A = 1 heat; bounds clip, lower **0.1**, upper 1; turn off with D) | bar value x = heat, but 0.1 while heat <= 0.1001 (a sliver always lit). Bar texels with blue < x lit, coloured from green (0, 1, 0) to red (1, 0, 0) by the texel's blue (gradient source none, g = 1); the rest background (0.4, 0.4, 1) with alpha 0; brightness 1; tint (0.8, 1, 0.8); not tint mode 2 (`shaders.md`, Meter) |
+| plasma pistol (both models) | `weapons\plasma pistol\shaders\pp gauge`, meter; map `pp display` 64 x 64 DXT3 | **charge** of the first trigger (not the battery) | value source 4 = Fn D (no usage label: one x in B; in B = 10 primary charged) | x = the first trigger's charged fraction: 0 when not charging, 1 - (timer / 30) / charging time while charging (0 to 1 over the 18-tick charge), 1 while charged (sections 10, 17). Colours as the plasma rifle's. Fn A (`age`: inverted in D = age, i.e. 1 - age) feeds no shader |
+| needler, first person | none: the **ammunition overlay** of its first-person animation graph (slot 17, 21 frames) | **needles left** on top of the gun | rounds loaded in magazine 0 (0 to 20) | overlay frame = rounds loaded, applied when that frame exists; during a reload, from 44 ticks in, the frame moves toward the coming count (`animations.md`, The pose each drawn frame, step 2). The model has one region (`__unnamed`) and one permutation (`needler fp`): **no permutation or region switching** |
+| needler, world model | `weapons\needler\shaders\needler luminous 3p`, chicago, add, two-sided; map `needler needles 3p` 128 x 8 DXT1, wrapping | needles left, as a sliding strip | map 0 U animation: source 3 = Fn C (`needles remaining`: invert flag, one x in B; in B = 2 primary ammunition), function one, scale -1 | Fn C = 1 - loaded / 20; U offset = -(1 - loaded / 20) texture widths (shaders.md texture transform; which part of the strip shows depends on the part's u range, not measured) |
+| flamethrower (both models) | meters `ft hundreds`, `ft tens`, `ft ones` on map `gauge` 256 x 128 DXT3; flags decal and tint mode 2 | three bars (the names are not digits) | hundreds: source 4 = Fn D (`heat`: one x in C; in C = 1 heat; upper 0.875); tens: source 1 = Fn A (`flames of death`: one x in A; in A = 15 primary firing); ones: source 3 = Fn C (`fuel level`: one x in B; in B = 2 primary ammunition; scale to fit [0, 1]) | hundreds: x = min(heat, 0.875); tens: x = the primary trigger's firing value (rate of fire while it fired within the last tick, else 0); ones: x = loaded / 100. Hundreds red gradient, the others cyan; meter transparency 0.75, background transparency 0.5 |
+| assault rifle (world model only) | `weapons\assault rifle\shaders\bolt`, generic | the bolt streak | map 0 U animation: source 2 = Fn B (`muzzle flash`: one x in C; in C = 12 illumination), scale -1 | U offset = -illumination (not a display) |
+| sniper rifle (both models) | `sniper rifle primary`, generic | the bolt streak | U animation source 1 = Fn A (`muzzle flash`: one x in A = 12 illumination), scale -1 | U offset = -illumination (not a display) |
+| shotgun (both models) | `shotgun primary`, generic | the ejection streak | U animation source 1 = Fn A (`primary ejection port`: one x in A = 7 primary ejection port), scale -1 | U offset = -ejection port value (not a display) |
+| sniper rifle | `sniper rifle screen`, `sniper rifle subscreen` (chicago, no sources, not numeric) | static screens | nothing | none. Fn B (`scope activity`: 9 steps of in B = 6 ready) feeds no shader. The zoom readout is HUD (`hud.md`) |
+| pistol, rocket launcher, ball, flag, gravity rifle, vehicle guns | none | no live display | | their functions (muzzle flash, firing flash, blur) feed lights, effects and attachments only |
+
+No model shader (`soso`) of any weapon reads a function: every
+self-illumination, change-colour and texture-animation source on them
+is 0. The plasma and needler glows are constant self-illumination
+(animation function one, so the upper colour), not values.
+
 ## Multiplayer weapon numbers
 
 All values from `bloodgulch.map`, identical on the other multiplayer
@@ -1658,6 +1854,45 @@ where a row prints the single-precision value on purpose.
 | autoaim target: Spartan standing with feet at (20, 0, 0), pelvis (20, 0, 0.36), head (20, 0, 0.56) (identity pose), camera at (0, 0, 0.62) looking along +X | target chosen | aim point | (20, 0, 0.56) closest point is the head (the segment's parameter clamps at 1), then raised toward the ray by min(0.06, 0.08) to (20, 0, 0.62) |
 | same, camera at (0, 0, 0.45) | target chosen | aim point | (20, 0, 0.45): the ray crosses the segment, offset 0 |
 
+**On-model displays (section 18).** Synthetic cases use the numeric
+rule N = clamp(floor(limit x A + 0.5), 0, limit) in single precision,
+digit position k shows floor(N / n^k) mod n with n the image count.
+
+| Setup | Input | After | Expected |
+|---|---|---|---|
+| assault rifle counter (limit 60, 10 images, A = loaded / 60) | rounds loaded 0, 1, 9, 10, 32, 60 | A = 0, 0.016666668, 0.15, 0.16666667, 0.53333336, 1.0; N = 0, 1, 9, 10, 32, 60 | (tens, units) images (0, 0), (0, 1), (0, 9), (1, 0), (3, 2), (6, 0) |
+| same | rounds loaded 59 | A = 0.98333335, 60A + 0.5 = 59.5 | N 59: images (5, 9) |
+| synthetic numeric shader, limit 99, 10 images, two positions | A = 99/99 | N 99 | images (9, 9) |
+| synthetic, limit 99 | A = 1.2 (any value above 1) | N clamps to 99 | (9, 9) |
+| synthetic, limit 60 | A = 99/60 | N clamps to 60 | (6, 0): a value above the limit shows the limit |
+| synthetic, limit 255, 10 images, positions 0, 1 only | A = 1 | N 255 | units 5, tens 5; the hundreds digit is not drawn |
+| assault rifle counter | reload from empty (reserve 180) | ticks start .. start + 85 / start + 86 | "00" / "60" |
+| assault rifle counter | fire 1 round from 60 | the tick of the shot | "59" |
+| compass, local north 0 (8 images, limit 8, Fn D = c) | yaw 0, 90, 180, 270 deg (f = (cos, sin, 0)) | bearing b = 90, 0, -90, 180 (or -180 + tiny when cos 270 deg is -4.4e-8) deg; c = 0.75, 0.5, 0.25, 1.0 (or about 0) | images 6, 4, 2, 0 (8 mod 8 = 0 either way) |
+| compass, local north π (bloodgulch) | yaw 0, 90, 180, 270 deg | δ = -90, 180 (0 - π wraps to +π), 90, 0 deg; c = 0.25, 1.0, 0.75, 0.5 | images 2, 0, 6, 4 |
+| compass, local north 0 | δ = 22.4 / 22.5 / -22.5 / -22.6 deg | 8c + 0.5 = 4.998 / 5.0 / 4.0 / 3.998 | images 4 / 5 / 4 / 3 |
+| compass | forward f = (0.05, 0, 0.9987) | |f.z| >= 0.995 | input unchanged from the last tick |
+| plasma rifle gauge | heat 0, 0.05, 0.1, 0.5, 1 | Fn B | 0.1, 0.1, 0.1, 0.5, 1.0 (inactive at 0.1) |
+| plasma pistol gauge | idle; 9 of 18 charging ticks done; charged | Fn D | 0, 0.5, 1 |
+| needler, world model | loaded 20, 10, 0 | Fn C; map 0 U offset | 0, 0.5, 1; 0, -0.5, -1 |
+| needler, first person | loaded 20, 7, 0 | ammunition overlay frame | 20, 7, 0 |
+
+Disc-backed (any multiplayer map; bloodgulch checked):
+
+| Tag | Expected |
+|---|---|
+| `weapons\assault rifle\fp\bitmaps\numbers_plate` | 10 images, all 64 x 64 DXT1; one sequence, first 0, count 10 |
+| `weapons\assault rifle\fp\bitmaps\compass_plate` | 8 images, all 64 x 64 DXT1; one sequence, first 0, count 8 |
+| `weapons\assault rifle\fp\shaders\numbers`, `...\compass` | chicago; flags 0x82; limits 60 and 8; blend function 3; extra flags 1; one map each |
+| `weapons\assault rifle\fp\shaders\ar data`, `...\icons` | chicago, flags 0x02, limit 0, map `display_fp` 256 x 256 DXT1 |
+| `weapons\assault rifle\assault rifle` (`weap`) | object inputs A to D 0, 0, 0, 19; weapon inputs 14, 2, 12, 0; functions (usage labels) `ammo display` (scale function by input 2), `muzzle flash` (3), `flashlight` (1, flags 4), `compass` (4); all type one, bounds 0 to 1 |
+| `weapons\assault rifle\fp\fp` | parts 4 and 5 use the shader entries `numbers` with permutations 1 and 0; part 2 `compass` permutation 0 |
+| `weapons\plasma rifle\fp\shaders\gauge` | meter; value source 2, other sources 0; gradient (0, 1, 0) to (1, 0, 0); background (0.4, 0.4, 1); tint (0.8, 1, 0.8) |
+| `weapons\plasma pistol\shaders\pp gauge` | meter; value source 4; same colours |
+| `weapons\plasma rifle\plasma rifle` | weapon inputs 1, 12, 0, 13; Fn B `lens flare scale` scale function by 1, lower 0.1, turn off with 3 |
+| `weapons\plasma pistol\plasma pistol` | weapon inputs 1, 10, 12, 13; Fn D (no label) scale function by 2 |
+| `weapons\needler\needler` | weapon inputs 12, 2, 0, 0; Fn C `needles remaining` flags 1 (invert), scale function by 2; first-person model region `__unnamed`, one permutation `needler fp` |
+
 ## Confidence per section
 
 | Section | Basis |
@@ -1672,6 +1907,7 @@ where a row prints the single-precision value on purpose.
 | Random generator, direction table size and order | reference only (the table's construction was rebuilt and checked for count and unit length; not compared with a recording) |
 | Pickup and swap | reference only; the swap's 7 frames is from the disc's globals |
 | Unused fields (ready time, reload time, error bounds, movement penalties, light times) | reference only: no code reads them |
+| 18 Displays on the weapon model | tags, bitmaps (image counts, sizes, and the pictures decoded and looked at), part positions and texture coordinates, function and source fields checked on the disc (bloodgulch); the numeric, meter and compass rules, which object's values a drawn model gets, and the update timing from the reference; the compass tip's meaning inferred from the pictures; synthetic cases computed in single precision |
 
 ## Open questions
 
@@ -1723,3 +1959,18 @@ where a row prints the single-precision value on purpose.
     overheating, switching away and back.
 11. **Melee while zoomed** is ignored in the reference. Check with the
     pistol zoomed.
+12. **Compass direction.** The reference computes the bearing as
+    atan2(f.x, f.y), and with it the dial's tip stays on the world
+    bearing local north + 180 degrees (section 18). If that argument
+    order were a decompilation slip (atan2(f.y, f.x)), the tip would
+    turn the wrong way as the player turns. Check in the game: on Blood
+    Gulch (local north π) face along +Y (yaw 90 degrees) and turn right
+    by 90 degrees; this spec predicts images 0 then 2 (tip forward, then
+    tip to the player's left).
+13. **Held weapon's forward axis.** The compass reads the weapon
+    object's node 0 orientation, which in a hand follows the third-person
+    hand marker; its yaw is assumed to match the player's aim to within
+    the 45-degree steps. Not measured.
+14. **Needler world-model strip.** Which part of `needler needles 3p`
+    shows for a given offset depends on the part's u range (not
+    measured); the offset rule is from the tags.
