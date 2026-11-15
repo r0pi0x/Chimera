@@ -146,3 +146,49 @@ fn a_hit_marks_the_lost_shield_and_a_wide_canvas_moves_the_corners() {
     assert_eq!((w.loaded, w.reserve, w.loaded_max), (60, 180, 60));
 }
 
+
+/// A scenario on Halo's harness with the HUD's plugin (the disc's HUD put
+/// in place of the thread's read): a local Spartan's shield meter is full,
+/// a hit lowers its fill (the lost part marked, then snapped), and the
+/// recharge after the delay fills it again.
+#[test]
+fn a_hit_lowers_the_shield_meter_and_the_recharge_restores_it() {
+    use std::sync::Arc;
+
+    use bevy::prelude::*;
+    use chimera_core::core::LocalPlayer;
+    use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
+    use halo_ce::{
+        game::{damage::HaloHit, movement, vitality::{DamageEffects, ids}},
+        harness::HaloSim,
+        ui::hud::{HaloHudPlugin, nodes::{HaloHud, HudLoad}},
+    };
+    let Some(d) = data() else { return };
+    let mut sim = Sim::with(HaloSim, move |app| {
+        app.add_plugins((GreyboxMapPlugin, HaloHudPlugin)).insert_resource(HudLoad::Ready(Arc::new(d)));
+    });
+    let me = sim.spawn_character(chimera_world::greybox::SPAWNS[0], movement::ID);
+    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
+    sim.seconds(0.5);
+    let fill = |sim: &Sim| {
+        let hud = sim.app.world().resource::<HaloHud>();
+        let meter = hud.quads.iter().find_map(|q| match q.fill {
+            Fill::Meter(m) if q.rect[1] == 36.0 => Some((m.value, m.extension)),
+            _ => None,
+        });
+        meter.expect("the shield meter")
+    };
+    assert_eq!(fill(&sim), (253.0 / 255.0, 253.0 / 255.0), "a full shield");
+    let fx = sim.app.world().resource::<DamageEffects>().clone();
+    let effect = ids::ASSAULT_RIFLE_BULLET;
+    let amount = fx.get(effect).unwrap().amount_with(1.0, 1.0) * 4.0;
+    sim.app.world_mut().write_message(HaloHit::direct(me, effect, amount, 1.0, None, Vec3::ZERO, Vec3::NEG_Z, None));
+    sim.ticks(2);
+    let (value, mark) = fill(&sim);
+    assert!(value < 253.0 / 255.0 && mark == 253.0 / 255.0, "lowered, the lost part marked: {value} {mark}");
+    sim.seconds(1.0);
+    let (after, mark) = fill(&sim);
+    assert!((after - mark).abs() < 1e-6 && after < 253.0 / 255.0, "the mark snapped: {after} {mark}");
+    sim.seconds(11.0);
+    assert_eq!(fill(&sim), (253.0 / 255.0, 253.0 / 255.0), "recharged");
+}
