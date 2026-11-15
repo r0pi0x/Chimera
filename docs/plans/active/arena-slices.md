@@ -42,60 +42,17 @@ not sliced).
 
 What the design stands on:
 
-- **The pool by player count** (`chimera_sim::minigame::map_fit`): per
-  map an area and a mean sight (`Fitness`), the wander time
-  `area / ((N - 1) * 2 * sight * 4/pi * speed)` at N players, in the
-  pool when at most `target_s` (10 s), weighted by a curve flat at 1.0
-  from 4 to 8 s (chimera/sim/data/map_fit.toml). Rules per game in
-  `games/<game>/data/map_pool.toml`, measurements in `map_fitness.toml`,
-  both registered into `MapPool`; the draw (`rotation::MapHistory::
-  next_weighted`, `vote::candidates_weighted`) counts the characters
-  present (`map_fit::present`).
-- **The measuring tool** (`apps/party_kit/src/bin/map_fitness.rs`): loads
-  a map as the dedicated server does, floods the bots' mesh, measures
-  area, sight (16 level rays from eye height, capped at 50 m), walking
-  times, meeting and wander times, spawn points and spots; `--dump`
-  writes the spots, the floors and a top-down height map as CSV files
-  (not a picture).
-- **The bots' generated mesh** (`chimera_world::map::nav_gen`): a flood
-  over a 0.5 m grid merged into axis-aligned areas up to 4 m a side,
-  linked by the sides they share (`map::nav`: `NavArea`, `Via::Walk`,
-  `Via::Teleport` from `link_map`). Held to a box (`NavWithin`, a map
-  extra Halo's loader sets from the drawn level; a cell is kept when its
-  floor point is inside, the seeds always; `cell_limit` grows the flood
-  to the box's footprint: Blood Gulch's 78,000 m2, about 27,000 areas).
-  Read by the spawn spots (`spawns.rs`), Combat Arms' bots (`bots/
-  brain.rs`), `map_fitness` and `party_kit::spot_checks`.
-- **Spawning** (`spawns.rs`, `spawn_score.rs`): spots on a 1.5 m grid of
-  the walkable main region (at most 1500 a map), each checked for a
-  standing box; `random_hidden` takes the first spot out of every
-  enemy's sight, `scored` the best of a sample with each enemy's line of
-  sight taking points off, and a match's opening places players one at
-  a time against those already placed. So spawns already avoid sight
-  when the map lets them; on open ground every spot is seen and the
-  least bad wins, which is the owner's worry.
-- **Map extras and load** (`map::extras`, `map::cache`): a map's typed
-  extras ride in the converted-map cache, keyed by loader, converter,
-  format and load options (HDR, textures, kit); runtime resources made
-  after the load (`NavWithin` as a resource, the spots, the bots' mesh)
-  are map-scoped and not cached.
-- **The match on the wire** (`chimera_net::minigame_net`): `NetMinigame`,
-  one replicated entity (id, phase, rung extras, rungs, the vote,
-  effects); `ChangeLevel` carries the map and the manifest; a match is
-  held until every client has the map.
-- **Invisible walls** (`core::PLAYER_CLIP_LAYER`, `MapPlayerClips`):
-  surfaces only characters' movement meets, not traces; `PHYSICS_CLIP_
-  LAYER` only physics objects meet.
-- **Map death and teleporters** (`map::fall_out_of_map`, `KillHeight`,
-  `map::teleport::MapTeleporters`): one server system after movement.
-- **What the renderer can draw**: camera-facing strips (`BeamMaterial`,
-  beams.rs), glow and plain sprites, additive surfaces (`MapAlpha::Add`),
-  Source's range fog (`fog.rs`), full-screen passes after the world
-  (`screen_post.rs`: a tint and a blur, no depth read).
-- **The Signal look** ([ugg-ui.md](ugg-ui.md)): the Cobalt palette (ink
-  #06080C, fg #E8EDF5, acc #3B7BFF, threat #FF3B4E; alphas fg_4 .15,
-  fg_5 .07, acc_2 .16), the motion kit's easings (`expo_out`, `pulse`),
-  `ReducedMotion`, the theme file the party UI owner keeps.
+| What | Where | What the design takes from it |
+|---|---|---|
+| The pool by player count: per map area and mean sight (`Fitness`), wander time `area / ((N - 1) * 2 * sight * 4/pi * speed)`, in at most 10 s, weighted fully from 4 to 8 s; rules (`map_pool.toml`) and measurements (`map_fitness.toml`) per game into `MapPool`; the draw counts the characters present | `chimera_sim::minigame::map_fit`, chimera/sim/data/map_fit.toml, `rotation::MapHistory::next_weighted`, `vote::candidates_weighted` | a slice is one more pool entry with its own `Fitness` |
+| The measuring tool: loads a map as the server does, floods the bots' mesh, measures area, sight (16 level rays, capped at 50 m), walks, meeting and wander times, spots; `--dump` writes the spots, floors and a top-down height map as CSV (no picture) | `apps/party_kit/src/bin/map_fitness.rs` | the home of the slice measures and the generator |
+| The bots' generated mesh: a 0.5 m grid flood merged into areas up to 4 m a side, linked by shared sides; held to a box (`NavWithin`, Halo's drawn level; the seeds always kept; `cell_limit` grows to the box: Blood Gulch's 78,000 m2, about 27,000 areas); teleporters as links | `chimera_world::map::nav_gen`, `map::nav` (`NavArea`, `Via::Walk`, `Via::Teleport`) | the graph the cuts run on; the box becomes box and polygon |
+| Spawning: spots on a 1.5 m grid of the main region (1500 at most), `random_hidden` out of every enemy's sight, `scored` the best of a sample with sight taking points off, the opening placed one by one. On open ground every spot is seen and the least bad wins: the owner's worry | `chimera_sim::minigame::spawns`, `spawn_score` | spots held inside; the measures model `scored` |
+| Map extras in the converted-map cache (keyed by loader, converter, format, HDR, textures, kit); spots, bots' mesh and `NavWithin`'s resource made after load, map-scoped | `map::extras`, `map::cache` | the slice stays out of the cache |
+| The match on the wire: `NetMinigame` (id, phase, rung extras, rungs, vote, effects); `ChangeLevel` with the map and manifest; a match held until clients have the map | `chimera_net::minigame_net`, `net::mod` | the slice rides in `NetMinigame` |
+| Players-only walls (`PLAYER_CLIP_LAYER`, `MapPlayerClips`); physics-only (`PHYSICS_CLIP_LAYER`); map death and teleporters in one server system | `chimera_core::core`, `map::fall_out_of_map`, `map::teleport` | the wall's layer; the put-back |
+| Camera-facing strips, sprites, additive surfaces, range fog, full-screen passes (tint, blur; no depth read) | `chimera_present::render` (`beams.rs`, `fog.rs`, `screen_post.rs`) | the look's pieces |
+| The Signal look: Cobalt (ink #06080C, fg #E8EDF5, acc #3B7BFF, threat #FF3B4E; fg_5 .07, acc_2 .16), easings (`expo_out`, `pulse`), `ReducedMotion`, the theme the party UI owner keeps | [ugg-ui.md](ugg-ui.md) | the look's numbers |
 
 What does not exist: a polygon type or any notion of "where this match is
 played" finer than `NavWithin`'s box; data for slices; a map change that
@@ -109,10 +66,10 @@ Maps it serves (wander over 10 s at 8 players, or over 15,000 m2): Halo's
 Blood Gulch (78,000 m2, sight 30.5 m) and Sidewinder (69,500 m2, 33.9 m);
 Combat Arms' darkthandark (23,700 m2, 49 m), deserthole and
 desertholezone (19,700 m2), denied as "huge and open"; CS:S's surf_demise
-and surf_sedona (denied as courses: not candidates). At 2 to 4 players
-31 more maps are out by size, a few of them denied variants (14 CS:S, among them de_dust, de_nuke,
-de_port; 15 Combat Arms; hangemhigh; dm_powerhouse): question 3. TF2 has
-no pool data yet.
+and surf_sedona (courses: not candidates). At 2 to 4 players 31 more
+are out by size, a few of them denied variants (14 CS:S, among them
+de_dust, de_nuke, de_port; 15 Combat Arms; hangemhigh; dm_powerhouse):
+question 3. TF2 has no pool data yet.
 
 ## 3. The slice as data
 
@@ -131,19 +88,15 @@ A slice is:
   measures of section 5, written by the tool.
 - **Name**: shown to players ("Blood Gulch: Red Hill").
 
-Why a vertical prism over a polygon, against arbitrary surfaces or a
-volume per floor: the test is a 2D point in polygon (cheap on server and
-GPU); the wall is one thin box per edge; it is drawn by hand over a
-top-down picture in a minute and fits in a few hundred bytes; it is what
-"cut where the ground narrows" means on outdoor maps, which are the
-maps that need it (canyons, open fields). What it cannot do is put one
-floor of a building inside and the floor above outside; on the maps in
-view stacked floors (Blood Gulch's bases, Sidewinder's tunnels) belong
-together. A slice of a stacked indoor map can wait until one needs it;
-then the extension is a height range per slice (`bottom`, `top`), not
-arbitrary surfaces. Unlimited height because Halo jumps 2 m and other
-games' characters may rocket- or grenade-jump; a lid would be one more
-thing to draw and to get wrong.
+Why a vertical prism over a polygon, not arbitrary surfaces: the test is
+a 2D point in polygon (cheap on server and GPU), the wall one thin box
+per edge, drawn by hand over a top-down picture in a minute, a few
+hundred bytes; and it is what "cut where the ground narrows" means on
+the outdoor maps that need it. It cannot put one floor of a building in
+and the floor above out; on these maps stacked floors (Blood Gulch's
+bases, Sidewinder's tunnels) belong together, and the later extension
+is a height range per slice, not surfaces. No lid: Halo jumps 2 m and
+others rocket- or grenade-jump; a lid is one more thing to get wrong.
 
 Where it lives: `games/<game>/data/arena_slices.toml`, beside
 `map_pool.toml` and `map_fitness.toml`, registered the same way
@@ -386,10 +339,8 @@ minigame on the server, from `NetMinigame::arena` on a client).
 - **Teleporters**: a pad is kept only when its source and destination
   are both inside; the others are not placed (`MapTeleporters` filtered
   before the mesh links them). Blood Gulch's base-to-base pairs go.
-- **Kill plane**: unchanged (`KillHeight`).
-- **Network**: the slice travels once in `NetMinigame::arena` (section
-  3). Everything else follows from what already replicates: positions
-  never leave the slice, removed pickups are never spawned.
+- **Kill plane**: unchanged (`KillHeight`). **Network**: only
+  `NetMinigame::arena` (section 3); the rest already replicates.
 
 ## 8. The look
 
@@ -451,9 +402,7 @@ the slice's name in the vote, loading screen and Tab board.
 
 Risks:
 
-- Every game's movement must meet the wall: Source's movement sweeps
-  brushes and Halo's has its own collision; a wall some character walks
-  through is the first thing A1's tests catch.
+- A movement that walks through the wall (section 7): A1's first test.
 - The measures may disagree with play: a slice can pass and still feel
   open. A4 measures spawn deaths in play so the thresholds learn.
 - Plan view joins stacked floors (section 3); a candidate that cuts a
