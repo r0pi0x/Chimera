@@ -100,21 +100,21 @@
 //!   `view::camera_fov`); `systems::HaloHands::melee`,
 //!   `HaloHands::throw` (the grenade counts, the throw's frame).
 //!
-//! Aim assist is a controller feature the port leaves off (weapons.md
-//! 15): its numbers are data and `params::AimAssist::enabled` is the
-//! switch, false for all nine; with it off, only the convergence
-//! correction would remain, which is the identity while shots start on
-//! the camera ray (as here). A guided projectile still gets section 15's
-//! target where its data says so (`params::Gun::guidance_targets`: the
-//! needler and the plasma pistol).
+//! The autoaim (weapons.md 15, `aim`) runs for every player whatever the
+//! input device: the target, the shot bent toward it within the
+//! deviation cone (with the convergence correction), and the target a
+//! guided projectile (the needle, the charged bolt) follows;
+//! `params::AimAssist::enabled` is the data's switch, on for all nine.
+//! The magnetism (look stickiness) is left off.
 //!
 //! Known shortcuts: see `tick`, `flight`, `systems`, `grenades`,
-//! `pickups`, `explode` and `random`; aim assist and magnetism are not
-//! implemented beyond the switch; inventory weapons only tick while
+//! `pickups`, `explode`, `random` and `aim`; the magnetism is not
+//! implemented; inventory weapons only tick while
 //! carried by a holder (a dropped plasma rifle does not cool on the
 //! ground); the grenade button is the named action `grenade`, which the
 //! front end binds (`ui::binds`, G in `DEFAULT_BINDS` and the bundle's).
 
+pub mod aim;
 pub mod explode;
 pub mod flight;
 pub mod grenades;
@@ -291,7 +291,8 @@ impl Plugin for HaloWeaponsPlugin {
         chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(app, "halo_ce data/display_names.toml", DISPLAY_NAMES);
         app.intent_action(systems::MELEE_ACTION)
             .intent_action(systems::ZOOM_ACTION)
-            .intent_action(grenades::GRENADE_ACTION);
+            .intent_action(grenades::GRENADE_ACTION)
+            .intent_action(grenades::SWITCH_ACTION);
         app.insert_resource(grenades::GrenadeData::load()).init_resource::<pickups::ItemClock>();
         app.on_every_character::<HaloHands>();
         app.add_message::<HaloFired>()

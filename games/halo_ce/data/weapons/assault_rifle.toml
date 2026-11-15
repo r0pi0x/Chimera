@@ -45,7 +45,8 @@ rate_of_fire_penalty = 0.0
 misfire_start = 0.0
 misfire_chance = 0.0
 
-# "Aim assist and movement" (radians, WU); off: weapons.md 15.
+# "Aim assist and movement" (radians, WU): the autoaim is on (weapons.md
+# 15; `enabled = false` here would turn it off), the magnetism is not used.
 [hooks."halo_ce:weapon".aim_assist]
 autoaim_angle = 0.10471976
 autoaim_range = 25.0

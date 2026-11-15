@@ -8,8 +8,11 @@
 //! move; the driver's client views through the seat's camera and does not
 //! fight the server (no prediction error while seated); the passenger's
 //! own player stays in its seat of the Warthog it draws. Then the driver
-//! gets out (no seat left on any machine) and the passenger's client
-//! leaves (its seat empties on the server). Passes with a note without an
+//! gets out (no seat left on any machine). A Ghost (the first client
+//! driving) and a Scorpion (the first driving, the second in a rider's
+//! seat) the same way: seated on every machine, driven, seen moving, no
+//! prediction error, out again. Last the passenger's client leaves from
+//! the Warthog (its seat empties on the server). Passes with a note without an
 //! install.
 
 use std::time::Duration;
@@ -32,12 +35,14 @@ use halo_ce::{
 
 use super::maps::{load, mount};
 
-/// The Warthog nearest the map's first placement, in a world: (entity,
-/// its prop index).
-fn warthog(world: &mut World) -> (Entity, usize) {
+/// The westmost vehicle of kind `name` in a world: (entity, its prop
+/// index).
+fn first_of(world: &mut World, name: &str) -> (Entity, usize) {
+    let defs = world.resource::<VehicleDefs>().clone();
     let mut q = world.query::<(Entity, &PropIndex, &HaloVehicle)>();
     let mut all: Vec<(Entity, usize, f32)> = q
         .iter(world)
+        .filter(|(_, _, v)| defs.0[v.def].0.name == name)
         .map(|(e, p, v)| (e, p.0, v.drive.body.position.x))
         .collect();
     all.sort_by(|a, b| a.2.total_cmp(&b.2));
@@ -101,7 +106,7 @@ fn a_warthog_in_a_network_game() {
     sim.until_joined(900);
     sim.until_looks_taken(300);
     sim.ticks(60);
-    let (w, prop) = warthog(sim.server.app.world_mut());
+    let (w, prop) = first_of(sim.server.app.world_mut(), "warthog");
     let driver = sim.character_of(0).unwrap();
     let passenger = sim.character_of(1).unwrap();
 
@@ -269,7 +274,113 @@ fn a_warthog_in_a_network_game() {
         .distance(before);
     assert!(walked > 1.0, "walked {walked} m after getting out");
 
-    // The passenger's client leaves: its seat empties.
+    // The passenger out of the Warthog; then a Ghost and a Scorpion.
+    press_use(&mut sim, 1);
+    sim.ticks(30);
+    assert_eq!(
+        sim.server.app.world().get::<Seated>(passenger),
+        None,
+        "the passenger out"
+    );
+    for (kind, seats) in [("ghost", 1), ("scorpion", 2)] {
+        let (v, vprop) = first_of(sim.server.app.world_mut(), kind);
+        let who = [driver, passenger];
+        for c in 0..seats {
+            let at = seat_at(sim.server.app.world(), v, c);
+            teleport(sim.server.app.world_mut(), who[c], at + Vec3::Y * 0.1);
+            sim.ticks(20);
+            press_use(&mut sim, c);
+        }
+        sim.ticks(30);
+        for c in 0..seats {
+            let s = sim.server.app.world();
+            assert_eq!(
+                s.get::<Seated>(who[c]).map(|s| (s.vehicle, s.seat)),
+                Some((v, c)),
+                "{kind}: seat {c} on the server"
+            );
+            let vc = by_prop(sim.clients[c].app.world_mut(), vprop);
+            let world = sim.clients[c].app.world();
+            assert_eq!(
+                seated_on(world, riders[c]).0.map(|s| (s.vehicle, s.seat)),
+                Some((vc, c)),
+                "{kind}: client {c} seated"
+            );
+            assert!(seated_on(world, riders[c]).1, "{kind}: client {c} carried");
+        }
+        *sim.clients[0].app.world_mut().resource_mut::<NetGraph>() = NetGraph::default();
+        let start = sim.server.app.world().get::<Transform>(v).unwrap().translation;
+        let v1 = by_prop(sim.clients[1].app.world_mut(), vprop);
+        let seen = sim.clients[1].app.world().get::<Transform>(v1).unwrap().translation;
+        for _ in 0..90 {
+            sim.clients[0]
+                .app
+                .world_mut()
+                .get_mut::<Intent>(riders[0])
+                .unwrap()
+                .move_axis = Vec2::Y;
+            sim.step();
+        }
+        sim.clients[0]
+            .app
+            .world_mut()
+            .get_mut::<Intent>(riders[0])
+            .unwrap()
+            .move_axis = Vec2::ZERO;
+        let moved = sim
+            .server
+            .app
+            .world()
+            .get::<Transform>(v)
+            .unwrap()
+            .translation
+            .distance(start);
+        let saw = sim.clients[1]
+            .app
+            .world()
+            .get::<Transform>(v1)
+            .unwrap()
+            .translation
+            .distance(seen);
+        let g = sim.clients[0].app.world().resource::<NetGraph>().clone();
+        eprintln!(
+            "{kind}: moved {moved} m, client 1 saw {saw} m; driver's errors {}",
+            g.errors
+        );
+        assert!(moved > 2.0, "{kind} moved {moved} m");
+        assert!(saw > moved * 0.5, "{kind}: the other client saw {saw} m");
+        assert_eq!(g.errors, 0, "{kind}: the driver's prediction fought the server");
+        sim.ticks(60);
+        for c in (0..seats).rev() {
+            press_use(&mut sim, c);
+        }
+        sim.ticks(30);
+        for c in 0..seats {
+            assert_eq!(
+                sim.server.app.world().get::<Seated>(who[c]),
+                None,
+                "{kind}: seat {c} out"
+            );
+            assert_eq!(
+                seated_on(sim.clients[c].app.world(), riders[c]).0,
+                None,
+                "{kind}: client {c} out"
+            );
+        }
+    }
+
+    // In the Warthog again, and the passenger's client leaves: its seat
+    // empties.
+    let at = seat_at(sim.server.app.world(), w, 1);
+    teleport(sim.server.app.world_mut(), passenger, at + Vec3::Y * 0.1);
+    sim.ticks(20);
+    press_use(&mut sim, 1);
+    sim.ticks(30);
+    assert_eq!(
+        sim.server.app.world().get::<Seated>(passenger).map(|s| s.seat),
+        Some(1),
+        "in again"
+    );
     sim.remove_client(1);
     sim.ticks(30);
     let s = sim.server.app.world();

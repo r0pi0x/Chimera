@@ -331,3 +331,36 @@ fn a_health_pack_heals_a_hurt_body_and_an_overshield_needs_a_shield_at_most_full
     sim.ticks(2);
     assert_eq!(sim.app.world().get::<HaloHands>(p).unwrap().throw.counts, [4, 0]);
 }
+
+#[test]
+fn the_switch_button_changes_the_kind_the_grenade_button_throws() {
+    use halo_ce::game::weapons::grenades::{SWITCH_ACTION, PLASMA};
+    let (mut sim, p, _) = armed(ASSAULT_RIFLE);
+    let (switch, throw) = {
+        let r = sim.app.world().resource::<ActionRegistry>();
+        (r.bit(SWITCH_ACTION), r.bit(GRENADE_ACTION))
+    };
+    assert_ne!(switch, 0, "the switch action is registered");
+    assert_ne!(switch, throw);
+    // No plasma grenades: the press changes nothing.
+    sim.intent(p).actions = switch;
+    sim.ticks(2);
+    sim.intent(p).actions = 0;
+    sim.ticks(2);
+    assert_eq!(sim.app.world().get::<HaloHands>(p).unwrap().throw.selected(), 0);
+    // With one: one press selects it, held, no second change.
+    sim.app.world_mut().get_mut::<HaloHands>(p).unwrap().throw.counts[PLASMA] = 1;
+    sim.intent(p).actions = switch;
+    sim.ticks(5);
+    assert_eq!(sim.app.world().get::<HaloHands>(p).unwrap().throw.selected(), PLASMA);
+    sim.intent(p).actions = 0;
+    sim.ticks(2);
+    // The grenade button throws the plasma grenade, and the choice goes
+    // back to the frags.
+    sim.intent(p).actions = throw;
+    sim.ticks(1);
+    sim.intent(p).actions = 0;
+    sim.ticks(40);
+    let h = sim.app.world().get::<HaloHands>(p).unwrap();
+    assert_eq!((h.throw.counts, h.throw.selected()), ([4, 0], 0));
+}

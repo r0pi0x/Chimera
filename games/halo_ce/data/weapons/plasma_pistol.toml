@@ -33,8 +33,6 @@ weapon_type = 3
 zoom_levels = 0
 camo = [1.0, 0.04]
 melee_damage = "plasma_pistol_melee"
-# The port gives its charged bolt section 15's target with aim assist off.
-guidance_targets = true
 
 [hooks."halo_ce:weapon".heat]
 recovery_threshold = 0.25

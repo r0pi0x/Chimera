@@ -2,7 +2,7 @@
 //! Arms parts' pool, CS:S's, the parts pool Ultimate Gun Game builds from,
 //! and each `maps = [...]` list of `minigames/*.toml`. A Combat Arms name is
 //! a `worlds*/<name>.dat` of the install's archives (`world::find`), a CS:S
-//! one a `maps/<name>.bsp` in its mount. Passes with a note for a game without
+//! or TF2 one a `maps/<name>.bsp` in its mount. Passes with a note for a game without
 //! an install (or served by the asset store alone); only file names are listed, nothing is read or written.
 
 use chimera_core::mount::config::LocalConfig;
@@ -40,6 +40,13 @@ fn every_map_in_every_pool_resolves() {
         .and_then(|c| c.game_path_in(cs_source::game::GAME, cs_source::game::INFO.steam.as_ref()))
         .filter(|p| chimera_core::mount::served::usable("cs_source", p, "cstrike/maps"))
         .and_then(|_| cs_source::game::INFO.mount());
+    let tf2 = tf2::game::INFO
+        .install()
+        .filter(|p| chimera_core::mount::served::usable(tf2::game::GAME, p, "tf"))
+        .and_then(|_| tf2::game::INFO.mount());
+    if tf2.is_none() {
+        eprintln!("note: no TF2 install, its pools are not checked");
+    }
     if ca.is_none() {
         eprintln!("note: no Combat Arms install, its pools are not checked");
     }
@@ -59,6 +66,13 @@ fn every_map_in_every_pool_resolves() {
             }
             "cs_source" => {
                 if let Some(m) = &css
+                    && !m.contains(&format!("maps/{name}.bsp"))
+                {
+                    missing.push(format!("{id} ({from})"));
+                }
+            }
+            "tf2" => {
+                if let Some(m) = &tf2
                     && !m.contains(&format!("maps/{name}.bsp"))
                 {
                     missing.push(format!("{id} ({from})"));

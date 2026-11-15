@@ -459,7 +459,7 @@ weapon HUDs have one: pistol, rocket launcher, sniper rifle):
 | 0x40 | 2 | flags16 | convolution flags | bit 0 only when zoomed |
 | 0x42 | 2 | | padding | |
 | 0x44 | 8 | real_bounds | convolution radius in bounds | vertical field of view, radians |
-| 0x4C | 8 | real_bounds | convolution radius out bounds | the warp radius, in the effect's units |
+| 0x4C | 8 | real_bounds | convolution radius out bounds | the warp radius r, in viewport pixels (section 9) |
 | 0x54 | 24 | | unused | |
 | 0x6C | 2 | flags16 | light enhancement flags | bit 0 only when zoomed, bit 1 connect to the flashlight, bit 2 uses the convolution mask |
 | 0x6E | 2 | i16 | light enhancement script source | which scripted value scales it (0 none) |
@@ -1105,58 +1105,177 @@ rad (offset 0.0)) and fades in with the zoom level (alpha 0 at level -1,
 1 from level 0), so the pitch ladder appears only zoomed.
 
 **The screen effect** (`wphi` block; pistol, rocket launcher, sniper
-rifle): once a frame, from the weapon HUD of the current weapon (the
-same selection as section 7, with the HUD shown): **(ref)**
+rifle): once a frame per view, from the weapon HUD of the current weapon
+(the same selection as section 7, with the HUD shown), **after** the
+whole 3D scene (level, objects, the first-person weapon, particles,
+lens flares) and **before** the HUD and the screen flash, which it never
+touches. **(ref; masks and values disc)**
 
-- *zoomed* = the player's zoom level is not NONE.
-- The mask bitmap (full screen with one window, split screen otherwise)
-  is passed to the screen effect pass as its convolution mask, when
-  zoomed or the mask's "only when zoomed" bit is clear. **It is not a
-  HUD picture** (no placement, no tint, no blend of section 3 and no
-  position from a HUD element): it is a texture of the full-viewport
-  post-processing pass that runs after the scene is drawn, sampled one
-  texel per viewport pixel and centred on the viewport (the texture
-  coordinate offset is (mask size + 1 - viewport size) / 2 texels on
-  each axis, shifted by the difference between the window's and the
-  viewport's centres in split screen), and the pass is where the warp
-  below is applied to the scene. With no convolution (radius 0, a
-  single pass) the mask is the pass's only texture. The disc's masks
-  are black in colour with an alpha that is 255 at the border and
-  falls smoothly to 0 in a soft rounded window in the middle (decoded
-  sniper mask, 512 by 256: alpha 0 over a central window and 255 at
-  the rim; along the middle row, 16 samples 32 pixels apart:
-  255, 255, 255, 250, 187, 19, 0, 0, 0, 0, 0, 23, 190, 251, 255, 255;
-  the pistol's and rocket launcher's are 256 by 256 with the same
-  shape), so the border darkens the scene and the window leaves it
-  clear (the reference shows the plumbing, not the pixel shader: the
-  darkening is inferred from the data, open question 15). The warp
-  radius r of the next item is applied to the scene's texture
-  coordinates in that pass: scaled by 1 + r / viewport size about the
-  centre, so the scene is sampled r pixels wider than the viewport
-  while the mask's own coordinates stay one texel per pixel.
-- *Convolution* (single window only; zoomed or bit clear): the radius =
+*Which parameters are in force* (zoomed = the player's zoom level is
+not none; every disc screen effect has all its "only when zoomed" bits
+set, so nothing at all happens unzoomed):
+
+- **Mask**: the full-screen mask with one view, the split-screen mask
+  with several. **It is not a HUD picture** (no placement, tint or HUD
+  blend): it is a texture read by the post-processing pass below.
+- **Convolution** (one view only, never in split screen): radius r =
   the out upper bound when the in bounds are equal, else the out bounds
-  interpolated by clamp((vertical field of view - in lower) / (in upper -
-  in lower), 0, 1); a positive radius applies a **warp** convolution of
-  that radius. Disc: in bounds (1.1234, 0.1146) rad (64.4 to 6.6
-  degrees), out bounds (0, 15) for the pistol and (0, 11) for the rocket
-  launcher and sniper rifle: the picture warps more toward the edge the
-  deeper the zoom. The "vertical field of view" is the render camera's,
-  i.e. the unit's nominal angle after the conversion of `weapons.md`
-  section 12 (70 degrees unzoomed is 0.83968 rad, not 1.2217), divided
-  by the zoom first: with t = clamp((v - 1.1234) / (0.1146 - 1.1234), 0,
-  1), the pistol zoomed 2x has v = 0.39672 and t = 0.7203, radius
-  10.81; the sniper rifle at 2x radius 7.92 (11 t) and at 8x (v =
-  0.09747, t clamps to 1) radius 11.
-- *Light enhancement* (zoomed or bit 0 clear): intensity = the tag's x
-  (the flashlight power, 0..1, when bit 1 is set) x clamp(the scripted
-  value of the script source, 0, 1); applied when above 0. *Desaturation*
-  likewise, with bit 2 "additive" and the tint colour. The sniper rifle:
-  light enhancement flags 3, source 1, intensity 1; desaturation flags 15,
-  source 1, intensity 1, tint (0, 1, 0): with the night-vision power on
-  (the flashlight key while zoomed: `weapons.md` section 17) the zoomed
-  view is brightened and tinted green inside the mask. The scripted
-  value of source 1 is 1 unless a script changes it (open question 8).
+  interpolated by t = clamp((v - in lower) / (in upper - in lower), 0,
+  1), v the render camera's vertical field of view (the unit's nominal
+  angle after the conversion of `weapons.md` section 12, divided by the
+  zoom). r > 0 selects the **warp** convolution (the only kind the HUD
+  uses).
+- **Light enhancement** intensity I_L = the tag's intensity x (the
+  flashlight power, 0..1, when bit 1 is set) x clamp(script value of
+  the source, 0, 1); used when above 0. **Desaturation** intensity I_D
+  likewise, with its tint and "additive" bit. The script values (four,
+  indices 0 to 3) are all set to 1 when a map loads and change only by
+  script, so in multiplayer the factor is 1.
+
+| Weapon HUD | Masks (full / split) | Radius out bounds | r at 2x | r at 8x | Light enhancement | Desaturation |
+|---|---|---|---|---|---|---|
+| pistol | `pistol_scope_mask` (256 x 256, A8Y8) / `pistol_scope_mask split` (256 x 256, AY8) | 0 to 15 | 10.81 | - | none | none |
+| rocket launcher | the pistol's two masks | 0 to 11 | 7.92 | - | none | none |
+| sniper rifle | `sniper_scope_mask2` (512 x 256, A8Y8) / `sniper_scope_mask_sm` (256 x 256, AY8) | 0 to 11 | 7.92 | 11 | flags 3 (zoomed only, flashlight), source 1, intensity 1; does **not** use the mask | flags 15 (zoomed only, flashlight, additive, uses the mask), source 1, intensity 1, tint (0, 1, 0) |
+
+All three: in bounds (1.1234, 0.1146) rad (64.4 to 6.6 degrees),
+convolution and mask flags "only when zoomed". At 2x v = 0.39672 and
+t = 0.7203; at 8x v = 0.09747 and t clamps to 1. No other weapon or
+vehicle HUD on the disc has a screen effect.
+
+**The mask's two channels.** The full-screen masks are A8Y8: a grey
+level Y and a separate alpha A (sampled as RGB = Y, Y, Y and alpha =
+A); the split-screen masks are AY8 (one channel serving as both, Y =
+A). They mean different things:
+
+- **Y (the grey level) darkens**: the final picture is multiplied by
+  (1 - Y). Y is 0 in the scope's window, 1 on a thin frame line, and
+  about 0.5 outside (so the outside is dimmed to half, not blacked out).
+- **A (the alpha) selects the blur**: A = 0 keeps the scene sharp, A = 1
+  shows the convolution's blurred picture, values between blend
+  linearly. A is 0 only in a small soft-edged centre and 1 over most of
+  the screen.
+
+**How the mask is addressed.** One mask texel per viewport pixel, the
+mask centred on the viewport: viewport pixel column x shows mask column
+x - (W - S_w) / 2 and row y shows mask row y - (H - S_h) / 2 (W, H the
+viewport's size, S the mask's), exactly on texel centres; in split
+screen the mask is further shifted by the offset between the view's and
+the window's centres. It is **not** stretched. Filtering is bilinear and
+addressing **clamps** to the edge, so every pixel beyond the texture
+takes the mask's border texel: on all four disc full-screen and split
+masks the whole border is Y = 128 or 132 (0.50 or 0.52) with A = 255
+(AY8: 128 or 132 for both), i.e. "dim to half and blur". (So on a 640
+by 480 view the 512 by 256 sniper mask covers columns 64 to 575 and rows
+112 to 367, and the pistol's 256 by 256 mask columns 192 to 447 and
+rows 112 to 367; everything outside is border.) The Xbox's views are
+640 by 480 (or its split-screen parts); at another resolution (ours, not
+the original's) treat a mask texel and r as one 480-line pixel: scale
+both by the view height / 480 about the centre, so the window keeps its
+size relative to the screen's height.
+
+**The pass, step by step** (one view with a convolution; two passes,
+the first drawing into an off-screen copy, the second back into the
+frame; texture reads bilinear and clamped):
+
+1. For every pixel p of the view, three samples of the current picture
+   are taken: S0 at p itself, S1 at c + (p - c) x (1 - r / W, 1 - r /
+   H) and S2 at c + (p - c) x (1 + r / W, 1 + r / H), c the view's
+   centre (each axis scaled about the centre: S1 is pulled toward the
+   centre and S2 pushed away from it by r x (distance from the centre on
+   that axis) / (view size on that axis) pixels, which is r / 2 pixels
+   at every edge of the view and 0 at the centre).
+2. Blurred value B = (S0 + S1 + S2) / 3 (equal weights).
+3. Out = (1 - A) x S0 + A x B, A the mask's alpha at p.
+4. The second pass repeats 1 to 3 on the first pass's output with the
+   same r and mask, so where A = 1 the picture is two compounded radial
+   blurs (samples spread over -2 to +2 steps with weights 1, 2, 3, 2, 1
+   over 9), while where A = 0 it stays exactly the original scene.
+5. On the second (last) pass only: the colour filters (below), then the
+   darkening: written colour = colour x (1 - Y). (The first pass writes
+   its colour unchanged.)
+
+With no convolution (split screen) the first pass copies the frame and
+the second writes the copy back through step 5 alone: the scene, dimmed
+outside the window, filters applied, no blur.
+
+**Light enhancement** (per channel, on the colour C after the blur):
+C_L = (1 - a_L) x C + a_L x (1 - (1 - C)^4), with a_L = I_L, or with
+the "uses mask" bit a_L = I_L x clamp(1 - 2 Y, 0, 1) (full where Y = 0,
+none where Y >= 0.5). At a_L = 1 it brightens darks strongly: 0.1
+becomes 0.344, 0.2 becomes 0.590, 0.5 becomes 0.938.
+
+**Desaturation**: L = (C_L.r + C_L.g + C_L.b) / 3 (equal weights);
+a_D = I_D, or I_D x clamp(1 - 2 Y, 0, 1) with the "uses mask" bit.
+Additive: colour = C_L + a_D x L x tint. Not additive: colour = (1 -
+a_D) x C_L + a_D x L x tint. The result is clamped to 0..1, then step
+5's darkening.
+
+So the sniper's night vision (flashlight on while zoomed, power 1): the
+whole view is brightened by the curve, then inside the frame (Y = 0)
+the green channel gains the brightened grey level L (a dark grey 0.1
+becomes (0.344, 0.688, 0.344)); in the dimmed border (Y about 0.5) no
+green is added and the brightened picture is halved; the frame line
+stays black. While the flashlight power ramps, a_L and a_D follow it.
+
+**The expected pictures** (one 640 by 480 view, centre (320, 240);
+pixel positions are the mask's, mapped as above; they agree with the
+scope furniture of the HUD):
+
+- **Sniper rifle, 2x (r = 7.92).** A sharp, full-brightness rectangle,
+  columns 127 to 512 and rows 120 to 359 (mask Y = 0), outlined by a
+  black line two pixels wide just outside it (columns 125, 126, 513,
+  514; rows 118, 119, 360, 361); the HUD's vertical bars at +/- 189
+  pixels sit on its left and right edges. Outside the rectangle the
+  scene is at half brightness (x 0.498) out to the screen's edges, and
+  fully blurred. Inside, the blur weight A is 0 in a central band
+  (about columns 234 to 405 on the middle row, rows 226 to 253 on the
+  middle column), 0.5 at about columns 208 and 431 and rows 200 and 279,
+  and 1 from about column 144 / 495 and row 136 / 343 outward. The blur
+  is radial: per pass the outer samples sit d x 7.92 / 640 pixels either
+  side horizontally (d the distance from the centre): 2.4 pixels at the
+  rectangle's side edges, 4.0 at the screen's side edges, 2.0 at the
+  rectangle's top and bottom (d x 7.92 / 480); after the two passes the
+  spread is twice that. The look is a soft smear growing outward, never
+  darkness: the only black is the frame line.
+- **Sniper rifle, 8x (r = 11).** The same frame, dimming and blur
+  weights; the smear is 11 / 7.92 = 1.39 times wider (3.3 pixels per
+  pass at the rectangle's side edges, 5.5 at the screen's).
+- **Sniper rifle with night vision**: as above plus the brightening
+  everywhere and the green tint inside the rectangle only.
+- **Pistol, 2x (r = 10.81).** A full-brightness disc of radius about
+  119 pixels (mask Y = 0 for columns and rows 9 to 246 through the
+  centre) centred on the view, ringed by a dark line about two pixels
+  wide (one texel of Y = 1 and a partial one, Y 0.4 to 0.9, beside it
+  as the circle crosses the texel grid), and outside the
+  disc the scene at x 0.482 brightness (Y = 132) out to the screen's
+  edges. The blur weight is 0 only within about 6 pixels of the centre,
+  0.5 at about 37 pixels, 1 beyond about 70 pixels: most of the disc is
+  softly blurred, sharp only at the crosshair. Per pass the outer
+  samples are d x 10.81 / 640 pixels either side horizontally: 1.2
+  pixels at d = 70, 2.0 at the disc's edge, 5.4 at the screen's sides.
+- **Rocket launcher, 2x (r = 7.92).** The pistol's disc, ring, dimming
+  and blur weights with the smaller radius (1.5 pixels at the disc's
+  edge).
+- **Split screen** (any of them zoomed): no blur; the split mask's
+  window (the sniper's: columns 11 to 244, rows 53 to 202 of its 256 by
+  256 mask; the pistol's: about 76 texels in radius) at full
+  brightness, the rest dimmed by Y = A = 128 or 132 (to about half);
+  night vision as above.
+
+**Certainty.** From the reference: which textures and passes are bound,
+the mask's texel-per-pixel centred addressing with clamping and
+bilinear filtering, the three sample positions, and the combiner
+arithmetic of steps 2 to 5 and the filters (read from the pass's
+register-combiner setup: the alpha portion's input reads the mask's
+blue, which is Y for these formats). From the disc: the masks' formats
+and pixels, the values in the table. Inferred: that the two passes'
+sample positions are assigned to the stages as described (the
+in-place sample is the one with no offset, which is the one the mask
+mixes against); that A8Y8 samples as (Y, Y, Y, A) on the Xbox (the
+usual luminance-alpha meaning). A port that is unsure of the blur
+should keep the darkening by Y exactly and may degrade the blur to "no
+blur" without changing the picture's layout.
 
 ### 10. Grenades
 
@@ -1177,8 +1296,13 @@ states.
    colour (0xFFFFE6E6) at count 1 and 0, and in its normal colour
    (0xFFE6F0FF) at 2 or more; likewise the plasma HUD's.
 
-The type shown is the unit's current grenade type (frag first; switched
-by the rotate-grenades control: `projectiles.md`). With count 0 the plates
+The type shown is the unit's current grenade type, selected and
+switched by the rules of `weapons.md` section 14 ("Selecting the grenade
+type"): frag after a stock spawn, plasma after a spawn with both kinds
+(infinite grenades), the other kind automatically once the shown kind
+runs out and the other has grenades, and still the empty kind (count 0,
+disabled colours) when both are empty. Nothing is drawn while the type
+is none (the spawn tick, or a spawn with no grenades). With count 0 the plates
 draw in their disabled colours (0xC8FF552B and 0xDCFF552B, an orange red)
 and the number shows "0" in its disabled colour 0xFFFFE6E6; the overlay
 mask at count 0 is flashing + empty + always, so item 0 (type 1) still
@@ -1242,7 +1366,10 @@ in it):
    result: with the viewer facing any direction, a unit straight ahead of
    the viewer lands straight **up** from the disc's centre, a unit to the
    viewer's left lands to the **left**, behind lands **down**.
-3. d = the length of the rotated vector (at least 0.015625). If d >= 20
+3. d = the length of the rotated vector, floored at 0.015625 only for
+   the division in step 4 (the position is the unit direction, the
+   vector divided by d, times r: a zero vector, a unit within 0.157 WU
+   on both axes, is drawn exactly at the centre). If d >= 20
    the blip is not drawn (it can leave the disc between the scan and the
    draw as the viewer moves). The comparison is strict in the drawing
    (d squared below 400 draws) and not strict in the scan (a unit whose
@@ -2066,7 +2193,7 @@ component):
 | (-10, 0) | 0 | (-63, 0) | (0, +25.7): down |
 | (0, 10) | pi/2 (looking +y) | (0, 63) | (0, -25.7): up |
 | (19.9, 0) | 0 | (126, 0) = 19.8 WU | (0, -41.8) |
-| (0.1, 0) | 0 | (0, 0) | the centre (d is raised to 0.015625: 0.28 pixel out) |
+| (0.1, 0) | 0 | (0, 0) | (0, 0): **exactly the centre**. The zero vector is divided by the floored d (0.015625) and scaled by the curve, so it stays zero; the floor only prevents the division by zero and moves nothing. (No non-zero quantised vector is shorter than 0.157 WU, so the floor never changes a drawn position.) |
 | (20, 0) | 0 | (127, 0) decodes to exactly 20.0 | scanned (squared distance 400 is within the range) but **not drawn**: d >= 20 |
 | (19.99, 0) | 0 | (126, 0) = 19.84 WU (truncation) | (0, -41.8): drawn |
 | (25, 0) | 0 | out of range | not drawn |
@@ -2094,6 +2221,23 @@ for an ammunition pickup of 60 rounds shows "60" (value scale 0 reads as
 pickup of the same item within the message's life adds its count and
 refreshes it. A message created at tick 0 is at full alpha through tick
 60, alpha 0.5^1.9 = 0.268 at tick 90, and removed at tick 120.
+
+**S13. Scope screen effect** (640 by 480, one view; mask values as
+decoded from the disc; colours in 0..1):
+
+| Case | Expected |
+|---|---|
+| sniper rifle zoomed 2x, pixel (320, 240), scene colour 0.6 everywhere | 0.6 (A = 0, Y = 0): unchanged |
+| same, pixel (20, 240) (beyond the mask: border texel Y = 128, A = 255), uniform scene 0.6 | 0.6 x (1 - 128/255) = 0.2988 (the blur of a uniform scene is the scene) |
+| same, pixel (126, 240) (frame line, Y = 255) | 0 |
+| sniper 2x, pixel (130, 240) (inside the frame, A = 255, Y = 0), one pass | S0 at x 130, S1 at x 132.35, S2 at x 127.65 (320 - 190 x (1 -/+ 7.92 / 640)), y 240 for all three; out = (S0 + S1 + S2) / 3 |
+| sample positions, r = 7.92, pixel (640, 480) corner | S1 at (636.04, 476.04), S2 at (643.96, 483.96) (clamped to the edge texel) |
+| sample positions, r = 10.81 (pistol), pixel (320 + 119, 240) | S1 at x 437.0, S2 at x 441.0 (+/- 2.01) |
+| night vision a_L = 1, a_D = 1 additive tint (0, 1, 0), C = (0.1, 0.1, 0.1), Y = 0 | (0.3439, 0.6878, 0.3439) |
+| same, Y = 128/255 (border) | a_D = 0: (0.3439, 0.3439, 0.3439) x 0.498 = 0.1713 each |
+| light enhancement only, C = 0.5, a_L = 0.5 | 0.5 x 0.5 + 0.5 x 0.9375 = 0.71875 |
+| split screen, sniper zoomed | no blur (r unused); pixels in the window unchanged, outside x (1 - 128/255) |
+| sniper unzoomed | no pass at all (every bit "only when zoomed") |
 
 ### (b) Disc-backed expectations (slow; `bloodgulch.map`)
 
@@ -2177,7 +2321,7 @@ refreshes it. A message created at tick 0 is at full alpha through tick
 | 5, 6 Shield, health, sounds | reference only; thresholds and counts consistent with the disc's tags; the overshield colour list also checked in the disc's executable |
 | 7 Weapon HUD | reference only; every disc element's consistency checked (states and maps used as the rules say) |
 | 8 Crosshairs | reference only; the disc elements checked for consistency |
-| 9 Scopes, screen effects | layout checked against the disc; the mask bitmaps decoded; the effect application and the mask's plumbing reference only; the look (the mask as a darkening border) inferred; the vertical field of view from the reference and the disc's executable |
+| 9 Scopes, screen effects | layout checked against the disc; the mask bitmaps decoded (formats A8Y8 and AY8, both channels); the pass's textures, addressing, sample positions and combiner arithmetic from the reference (Y darkens, A selects the blur); the stage assignment of the samples and the A8Y8 sampling inferred (see Certainty); the vertical field of view from the reference and the disc's executable |
 | 10 Grenades | reference only; values disc |
 | 11 Motion tracker | numbers checked against the disc; the blip rule and the equality behaviour at the range (scan not strict, draw strict, decode exactly 20 at byte 127, checked in single precision) reference only; the sweep compositing inferred |
 | 12 Damage indicators | values disc; the direction rule reference only (suspect) |
@@ -2212,8 +2356,9 @@ refreshes it. A message created at tick 0 is at full alpha through tick
 7. **Warning sound scale 0.** Every warning sound element stores scale 0;
    the sounds are assumed to play at normal level. Check: whether the
    shield-low loop is audible and at what level.
-8. **Script value for the night-vision scale** (screen effect source 1,
-   assumed 1). Check: night vision in the sniper scope.
+8. **Script value for the night-vision scale.** Settled from the
+   reference: the four script values are set to 1 at every map load and
+   only scripts change them (section 9).
 9. **Waypoint opacity rounding** (0.5 to 0 or 255 alpha). Check: a flag
    waypoint's brightness against the background.
 10. **The viewer's own blip.** The reference scans every living unit
@@ -2230,12 +2375,14 @@ refreshes it. A message created at tick 0 is at full alpha through tick
     expected in one window).
 14. **Whether the objective, timer and help text apply in multiplayer**
     (scripted only here); none of this spec's tests need them.
-15. **What the scope masks do in the pixel shader.** The reference shows
-    the mask bound as a texture of the screen-effect pass but not the
-    shader; the black border over the warped scene is inferred from the
-    mask's data. Check: a zoomed screenshot, whether the corners are
-    black, how soft the window's edge is, and whether the warp reaches
-    into the border.
+15. **What the scope masks do.** Settled from the reference's pass
+    setup and the masks' two channels (section 9): the grey level Y
+    dims (x (1 - Y): half outside the window, black on the frame line),
+    the alpha A blends in a radial blur; nothing is blacked out. Still
+    to check on hardware: a zoomed sniper screenshot should show the
+    full-brightness rectangle of columns 127 to 512 and rows 120 to 359
+    with a two-pixel black outline, half-bright blurred surroundings
+    and a sharp centre band; the pistol a 238-pixel bright disc.
 16. **Overshield colours.** Stage 1 red and stage 2 green follow the disc
     executable's colour list (an earlier draft had them shifted by one,
     green and yellow); check on a real game that the shield bar shows a

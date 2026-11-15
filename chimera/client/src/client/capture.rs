@@ -1,19 +1,36 @@
 //! Agent-facing capture modes:
 //! - `--screenshot` / `--frames`: run a fixed number of frames, optionally
-//!   save a screenshot of the window, then exit.
+//!   save a screenshot of the window, then exit. The screenshot waits past
+//!   `--frames` while the render world's pipelines still compile (at most
+//!   `SHOT_PIPELINE_WAIT`; `PendingPipelines`): until the first ones are
+//!   made nothing reaches the window, and a loaded machine (the post-push
+//!   tests, other agents' builds) took 40 frames of a black image in about
+//!   one offscreen run in five. The exit comes the frame after the shot
+//!   arrives (`ShotSaved`), not in its observer: that runs during the
+//!   render world's extraction (`gpu_readback`'s `sync_readbacks`), where
+//!   `exit_drain` may already have looked for the exit and missed it, so
+//!   the run ended while pipelines compiled (the driver crash it avoids).
 //! - `screenshot <file.png>` (console, also over the remote console):
 //!   save the window now, so a live run can be photographed step by step.
 //! - `--views <file.json> --capture-dir <dir>`: visit a list of camera views
 //!   and save one PNG per view, rendered off-screen at a fixed size so the
 //!   result doesn't depend on how the window manager sizes the window.
 
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 use bevy::{
     camera::RenderTarget,
     prelude::*,
     render::{
-        render_resource::TextureFormat,
+        Render, RenderApp, RenderSystems,
+        render_resource::{CachedPipelineState, PipelineCache, TextureFormat},
         view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     },
 };
@@ -33,6 +50,33 @@ const SETTLE_FRAMES: u32 = 30;
 const FIRST_SETTLE_FRAMES: u32 = 150;
 /// Frames timed per view by `--bench`, after settling.
 const BENCH_FRAMES: u32 = 200;
+/// The longest `--screenshot` waits past `--frames` for pipelines.
+const SHOT_PIPELINE_WAIT: Duration = Duration::from_secs(30);
+
+/// The render world's pipelines queued or compiling after its last frame,
+/// shared by both worlds (`count_pending_pipelines`). Starts at 1: none
+/// counted yet.
+#[derive(Resource, Clone)]
+struct PendingPipelines(Arc<AtomicUsize>);
+
+impl Default for PendingPipelines {
+    fn default() -> Self {
+        Self(Arc::new(AtomicUsize::new(1)))
+    }
+}
+
+fn count_pending_pipelines(cache: Option<Res<PipelineCache>>, pending: Res<PendingPipelines>) {
+    let n = cache.map_or(0, |c| {
+        c.pipelines()
+            .filter(|p| matches!(p.state, CachedPipelineState::Queued | CachedPipelineState::Creating(_)))
+            .count()
+    });
+    pending.0.store(n, Ordering::Relaxed);
+}
+
+/// `--screenshot`'s shot has arrived: the run ends next frame.
+#[derive(Resource)]
+struct ShotSaved;
 
 /// One camera view, in engine space: eye position (meters) and look angles
 /// in degrees (yaw 0 = -Z, positive pitch looks up).
@@ -186,7 +230,16 @@ pub struct CapturePlugin;
 
 impl Plugin for CapturePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (countdown, start_views, run_views.after(start_views)));
+        app.init_resource::<PendingPipelines>()
+            .add_systems(Update, (countdown, start_views, run_views.after(start_views)));
+        let pending = app.world().resource::<PendingPipelines>().clone();
+        if let Some(render) = app.get_sub_app_mut(RenderApp) {
+            render
+                .insert_resource(pending)
+                .add_systems(Render, count_pending_pipelines.in_set(RenderSystems::Cleanup));
+        } else {
+            pending.0.store(0, Ordering::Relaxed);
+        }
         app.add_systems(
             PostUpdate,
             resync_image_targets.before(bevy::camera::CameraUpdateSystems),
@@ -240,23 +293,48 @@ pub fn numbered_shot(dir: &std::path::Path, map: &str) -> PathBuf {
     (0..10000).map(name).find(|p| !p.exists()).unwrap_or_else(|| name(9999))
 }
 
-fn countdown(mut commands: Commands, args: Res<ClientArgs>, mut frame: Local<u32>, mut exit: MessageWriter<AppExit>) {
+fn countdown(
+    mut commands: Commands,
+    args: Res<ClientArgs>,
+    pending: Res<PendingPipelines>,
+    saved: Option<Res<ShotSaved>>,
+    mut frame: Local<u32>,
+    mut waiting: Local<Option<Instant>>,
+    mut exit: MessageWriter<AppExit>,
+) {
     let args = &args.0;
     if args.views.is_some() || (args.screenshot.is_none() && args.frames.is_none()) {
         return;
     }
-    *frame += 1;
-    if *frame != args.frames.unwrap_or(DEFAULT_FRAMES) {
+    if saved.is_some() {
+        exit.write(AppExit::Success);
+        return;
+    }
+    let target = args.frames.unwrap_or(DEFAULT_FRAMES);
+    if *frame < target {
+        *frame += 1;
+    }
+    if *frame != target {
         return;
     }
     match &args.screenshot {
         Some(path) => {
+            let left = pending.0.load(Ordering::Relaxed);
+            let since = *waiting.get_or_insert_with(Instant::now);
+            if left > 0 && since.elapsed() < SHOT_PIPELINE_WAIT {
+                return;
+            }
+            if left > 0 {
+                warn!("screenshot: {left} pipelines still compiling after {}s", SHOT_PIPELINE_WAIT.as_secs());
+            }
             info!("saving screenshot to {}", path.display());
+            // Once: the frame count moves past the target.
+            *frame += 1;
             commands
                 .spawn(Screenshot::primary_window())
                 .observe(save_to_disk(path.clone()))
-                .observe(|_: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
-                    exit.write(AppExit::Success);
+                .observe(|_: On<ScreenshotCaptured>, mut commands: Commands| {
+                    commands.insert_resource(ShotSaved);
                 });
         }
         None => {

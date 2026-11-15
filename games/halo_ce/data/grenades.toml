@@ -61,25 +61,22 @@ arming_time = 1.5
 impact_damage = ""
 detonation = ["frag_explosion", "frag_shock_wave"]
 
-# Material responses: the summary table's reflections (dirt 0.8/0.9, stone
-# and metal 0.7/0.8, the cyborg body and shield 0.8/0.9, snow, force field,
-# carrier, engineer, ice; the jackal shield's element is unstated), water (through; skims at a
-# shallow angle) and leaves (reflect; through but one in five). The table
-# does not state the other types (sand, wood, rubber, glass and the bodies
-# Halo's multiplayer has none of): they take dirt's (`unstated`), a choice
-# of the port, not the disc's numbers.
+# Material responses: projectiles.md "Complete material response tables",
+# every element of the disc's block: all 33 reflect but water (through,
+# skimming at a shallow angle) and leaves (reflect; through but one in
+# five), each with its own frictions.
 [frag.responses]
 count = 33
-unstated = 0
 elements = [
-    { types = [0, 21, 22], default = "reflect", parallel_friction = 0.8, perpendicular_friction = 0.9 },
-    { types = [2, 5, 6, 7], default = "reflect", parallel_friction = 0.7, perpendicular_friction = 0.8 },
+    { types = [0, 1, 4, 9, 11, 12, 13, 14, 15, 18, 19, 21, 22, 23, 24, 25, 26, 27, 30, 32], default = "reflect", parallel_friction = 0.8, perpendicular_friction = 0.9 },
+    { types = [2, 5, 6, 7, 8], default = "reflect", parallel_friction = 0.7, perpendicular_friction = 0.8 },
     { types = [3], default = "reflect", parallel_friction = 0.9, perpendicular_friction = 0.95 },
     { types = [10, 20], default = "reflect", parallel_friction = 0.6, perpendicular_friction = 0.7 },
+    { types = [16], default = "reflect", parallel_friction = 0.8, perpendicular_friction = 0.8 },
     { types = [17], default = "reflect", parallel_friction = 0.5, perpendicular_friction = 0.7 },
     { types = [31], default = "reflect", parallel_friction = 0.55, perpendicular_friction = 0.65 },
-    { types = [28], default = "overpenetrate", potential = "reflect", angle = [0.0, 0.5236], velocity = [0.0333, 33.3], parallel_friction = 0.7, perpendicular_friction = 0.7 },
-    { types = [29], default = "reflect", potential = "overpenetrate", skip = 0.2 },
+    { types = [28], default = "overpenetrate", potential = "reflect", angle = [0.0, 0.5236], velocity = [0.0333, 33.3333], parallel_friction = 0.7, perpendicular_friction = 0.7 },
+    { types = [29], default = "reflect", potential = "overpenetrate", skip = 0.2, parallel_friction = 0.8, perpendicular_friction = 0.9 },
 ]
 
 # The plasma grenade: gravity 1, no arming, its 2 s fuse running once it
@@ -106,18 +103,18 @@ impact_damage = ""
 detonation = ["plasma_grenade_shock_wave", "plasma_grenade_explosion"]
 attached_damage = "plasma_grenade_attached"
 
-# Material responses: the summary table's (dirt, stone, metal, the cyborg
-# body and shield: reflect 0.9/0.95, potential attach to units; glass and
-# force field 0.7/0.8, engineer force field, monitor
-# and hunter shield reflect without sticking, ice 0.65/0.75 sticking to
-# units, water through 0.5/0.5). Unstated types take dirt's (`unstated`).
+# Material responses: projectiles.md "Complete material response tables",
+# every element of the disc's block: all reflect but water (through), with
+# a potential attach to units on all but glass, force field, jackal shield
+# (an unconditional potential reflect), engineer force field, monitor,
+# water and hunter shield.
 [plasma.responses]
 count = 33
-unstated = 0
 elements = [
-    { types = [0, 2, 5, 6, 7, 21, 22], default = "reflect", potential = "attach", only_against_units = true, parallel_friction = 0.9, perpendicular_friction = 0.95 },
+    { types = [0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 17, 19, 20, 21, 22, 23, 24, 25, 27, 29, 30], default = "reflect", potential = "attach", only_against_units = true, parallel_friction = 0.9, perpendicular_friction = 0.95 },
     { types = [9, 10], default = "reflect", parallel_friction = 0.7, perpendicular_friction = 0.8 },
-    { types = [18, 26, 32], default = "reflect" },
+    { types = [16], default = "reflect", potential = "reflect", parallel_friction = 0.8, perpendicular_friction = 0.8 },
+    { types = [18, 26, 32], default = "reflect", parallel_friction = 0.9, perpendicular_friction = 0.95 },
     { types = [31], default = "reflect", potential = "attach", only_against_units = true, parallel_friction = 0.65, perpendicular_friction = 0.75 },
     { types = [28], default = "overpenetrate", parallel_friction = 0.5, perpendicular_friction = 0.5 },
 ]

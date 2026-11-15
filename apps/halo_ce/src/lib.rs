@@ -95,6 +95,8 @@ impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         use chimera_core::gameplay::{Gameplay, GameplayAppExt};
         app.add_plugins((halo_ce::SimPlugins, game::HaloPlugins)).set_gameplay(Gameplay::of(&game::INFO));
+        // Its own game's respawn rules (`game::respawn`): Slayer's.
+        app.init_resource::<game::respawn::HaloRules>();
     }
 }
 

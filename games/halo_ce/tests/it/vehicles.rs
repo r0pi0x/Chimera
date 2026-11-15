@@ -57,20 +57,21 @@ fn a_warthog_settles_on_its_springs() {
     let (mut t, w) = setup(Vec3::new(0.0, 5.0, 0.0), Vec3::ZERO, 1.0 / TICK_INTERVAL);
     t.sim.ticks(60);
     let v = vehicle(&t, w);
-    // Created 0.55 WU up, it falls onto its springs and falls asleep mid-
-    // bounce, frozen 0.062 above its equilibrium (centre of mass 0.35360):
-    // vehicles.md's spawn case and quirk, here on a trimesh floor through
-    // the engine's point projection.
+    // Placed with its centre of mass on the floor, created 0.55 WU up, it
+    // falls onto its springs and falls asleep mid-bounce, frozen 0.033
+    // above its equilibrium (centre of mass 0.35360): vehicles.md's spawn
+    // case and quirk, here on a trimesh floor through the engine's point
+    // projection.
     assert!(v.drive.asleep);
     assert!(
-        (v.drive.body.position.z - (0.3536 + 0.062)).abs() < 0.01,
+        (v.drive.body.position.z - (0.3536 + 0.033)).abs() < 0.01,
         "{:?}",
         v.drive.body.position
     );
     assert!(v.drive.body.up.z > 0.999);
     // The prop's transform is the model origin.
     let origin = position(&t, w);
-    assert!((origin.z - (0.0318 + 0.062)).abs() < 0.03, "origin {origin}");
+    assert!((origin.z - (0.0318 + 0.033)).abs() < 0.03, "origin {origin}");
 }
 
 #[test]
@@ -220,4 +221,78 @@ fn a_body_is_posed_back_from_its_props_transform() {
     vehicles::pose_from(&mut back, &t, phys.center_of_mass);
     assert!(back.position.distance(b.position) < 1e-4, "{} against {}", back.position, b.position);
     assert!(back.forward.distance(b.forward) < 1e-4 && back.up.distance(b.up) < 1e-4, "{back:?} against {b:?}");
+}
+
+#[test]
+fn riders_take_a_share_of_direct_hits_only() {
+    use halo_ce::game::vitality::{DamageEffects, ids};
+    let (mut t, w) = setup(Vec3::new(0.0, 0.8, 0.0), Vec3::ZERO, 1.0 / TICK_INTERVAL);
+    t.sim.app.init_resource::<Hits>().add_systems(Last, log);
+    let driver = t.p;
+    let passenger = t.sim.spawn_character(eng(Vec3::new(0.0, -0.8, 0.35)), movement::ID);
+    t.sim.ticks(5);
+    press_use(&mut t, driver);
+    press_use(&mut t, passenger);
+    assert!(seated(&t, passenger).is_some());
+    let penalty = t
+        .sim
+        .app
+        .world()
+        .resource::<DamageEffects>()
+        .get(ids::ASSAULT_RIFLE_BULLET)
+        .map_or(0.0, |e| e.passthrough);
+    let bullet = HaloHit::direct(w, ids::ASSAULT_RIFLE_BULLET, 10.0, 1.0, None, Vec3::ZERO, Vec3::X, None);
+    let blast = HaloHit::area(w, ids::ASSAULT_RIFLE_BULLET, 10.0, 1.0, Vec3::ZERO, Vec3::X, None);
+    t.sim.app.world_mut().write_message(bullet);
+    t.sim.app.world_mut().write_message(blast);
+    t.sim.ticks(2);
+    let hits = &t.sim.app.world().resource::<Hits>().0;
+    for rider in [driver, passenger] {
+        let got: Vec<&HaloHit> = hits.iter().filter(|h| h.target == rider).collect();
+        assert_eq!(got.len(), 1, "one share each (the area hit passes nothing)");
+        let want = 10.0 * (1.0 - penalty) * 0.18;
+        assert!((got[0].amount - want).abs() < 1e-5, "{} against {want}", got[0].amount);
+    }
+}
+
+#[test]
+fn the_drivers_camera_is_the_track_point_from_the_centre_of_mass() {
+    use chimera_core::core::MapView;
+    let (mut t, w) = setup(Vec3::new(0.0, 0.8, 0.0), Vec3::ZERO, 1.0 / TICK_INTERVAL);
+    let p = t.p;
+    press_use(&mut t, p);
+    {
+        let mut i = t.sim.intent(p);
+        i.yaw = space::yaw(0.0);
+        i.pitch = 0.0;
+    }
+    t.sim.ticks(2);
+    let v = vehicle(&t, w);
+    let view = *t.sim.app.world().get::<MapView>(p).expect("a third-person view");
+    // Level look along +x: the camera at the centre of mass plus the
+    // track's pitch-0 point (-2.7524, 0, 0.6827) in the heading frame.
+    let want = v.drive.body.position + Vec3::new(-2.7524, 0.0, 0.6827);
+    let got = game(view.origin);
+    assert!((got - want).length() < 0.01, "camera {got} against {want}");
+}
+
+#[test]
+fn the_suspension_follows_the_ground() {
+    use halo_ce::game::vehicles::look::{Suspension, VehicleLook};
+    let (mut t, w) = setup(Vec3::new(0.0, 5.0, 0.0), Vec3::ZERO, 1.0 / TICK_INTERVAL);
+    let elements = (11..=14)
+        .map(|point| Suspension {
+            point,
+            extension: -0.31445,
+            compression: -0.13452,
+        })
+        .collect();
+    t.sim.app.world_mut().entity_mut(w).insert(VehicleLook::new(elements));
+    t.sim.ticks(60);
+    let look = t.sim.app.world().get::<VehicleLook>(w).unwrap().clone();
+    // At rest on flat ground the tyres sit about half way (k 0.51 at the
+    // spec's equilibrium; here frozen a little above it).
+    for v in &look.suspension {
+        assert!(*v > 0.3 && *v < 0.7, "{:?}", look.suspension);
+    }
 }

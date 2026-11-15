@@ -1,5 +1,8 @@
-//! Halo's Warthogs in the party (Blood Gulch from the disc image, on the
-//! party's simulation, `CaSim` with `PartyPartsPlugin`): the scenario's two
+//! Halo's vehicles in the party (Blood Gulch from the disc image, on the
+//! party's simulation, `CaSim` with `PartyPartsPlugin`). By default (the
+//! console variable `halo_ce:party_vehicles` 0) none is placed: no vehicle
+//! entity, prop or `HaloVehicle`, the map's other props as with them. With
+//! it on (`PartyVehicles` in the load's context) the scenario's two
 //! Warthogs are there; a Combat Arms soldier (another game's movement)
 //! takes the driver's seat with the use key, its own movement suspended
 //! (the engine's `Carried`: jumping and walking move it nowhere but with
@@ -9,16 +12,21 @@
 //! seated at a round restart stands and the Warthog is back at its
 //! placement; a rider whose character goes away (a disconnect) leaves its
 //! seat empty; a map change with a rider seated leaves no seat behind.
+//! A CS:S character drives a Ghost; a Scorpion takes a Combat Arms driver
+//! and four riders of both games, carries them and lets them out.
 //! Passes with a note without the disc image.
 
 use bevy::prelude::*;
 use chimera_core::core::{Carried, Damage, Dead, Health, restart_round};
 use chimera_world::{
     harness::Sim,
-    map::{MapDebugView, MapSimPlugin, change_map},
+    map::{LoadContext, MapData, MapDebugView, MapLoadOptions, MapSimPlugin, change_map},
 };
 use combat_arms::harness::CaSim;
-use halo_ce::game::vehicles::{HaloVehicle, Seated, VehicleDefs, level};
+use halo_ce::game::vehicles::{
+    HaloVehicle, Seated, VehicleDefs, level,
+    place::{PartyVehicles, Placed},
+};
 use party_kit::PartyPartsPlugin;
 
 fn disc() -> bool {
@@ -29,11 +37,17 @@ fn disc() -> bool {
     there
 }
 
-/// The Warthogs, west to east: (entity, its state).
-fn warthogs(sim: &mut Sim) -> Vec<(Entity, HaloVehicle)> {
+/// The vehicles of kind `name` (`warthog`, `ghost`, `scorpion`), west to
+/// east: (entity, its state).
+fn of_kind(sim: &mut Sim, name: &str) -> Vec<(Entity, HaloVehicle)> {
     let w = sim.app.world_mut();
+    let defs = w.resource::<VehicleDefs>().clone();
     let mut q = w.query::<(Entity, &HaloVehicle)>();
-    let mut out: Vec<(Entity, HaloVehicle)> = q.iter(w).map(|(e, v)| (e, v.clone())).collect();
+    let mut out: Vec<(Entity, HaloVehicle)> = q
+        .iter(w)
+        .filter(|(_, v)| defs.0[v.def].0.name == name)
+        .map(|(e, v)| (e, v.clone()))
+        .collect();
     out.sort_by(|a, b| a.1.drive.body.position.x.total_cmp(&b.1.drive.body.position.x));
     out
 }
@@ -75,8 +89,21 @@ fn position(sim: &Sim, e: Entity) -> Vec3 {
     sim.app.world().get::<Transform>(e).unwrap().translation
 }
 
+/// Blood Gulch as the party loads it, with `halo_ce:party_vehicles` `on`.
+fn blood_gulch(on: bool) -> MapData {
+    let context = LoadContext::default();
+    if on {
+        context.insert(PartyVehicles(true));
+    }
+    let options = MapLoadOptions {
+        context,
+        ..MapLoadOptions::hdr(0)
+    };
+    party_kit::load_map_with("halo_ce:bloodgulch", &options).expect("Blood Gulch")
+}
+
 fn party_on_blood_gulch() -> Sim {
-    let map = party_kit::load_map("halo_ce:bloodgulch", 0).expect("Blood Gulch");
+    let map = blood_gulch(true);
     let mut sim = Sim::new(CaSim, (MapSimPlugin::new(map), PartyPartsPlugin));
     sim.seconds(3.0);
     sim
@@ -88,7 +115,7 @@ fn another_games_characters_ride_blood_gulchs_warthogs() {
         return;
     }
     let mut sim = party_on_blood_gulch();
-    let found = warthogs(&mut sim);
+    let found = of_kind(&mut sim, "warthog");
     assert_eq!(found.len(), 2, "Blood Gulch's two Warthogs in the party");
     let (w, _) = found[0];
     let placed = found[0].1.drive.body.position;
@@ -207,5 +234,143 @@ fn another_games_characters_ride_blood_gulchs_warthogs() {
     sim.seconds(1.0);
     assert_eq!(seated(&sim, rider), None, "the map change stands the rider");
     assert!(!carried(&sim, rider), "its movement its own again");
-    assert!(warthogs(&mut sim).is_empty(), "no Warthog on Hang 'Em High");
+    assert!(of_kind(&mut sim, "warthog").is_empty(), "no Warthog on Hang 'Em High");
+}
+
+/// How far each rider is off where it rode at first, in its seat (m).
+fn drift(sim: &Sim, v: Entity, riders: &[(Entity, usize, Vec3)]) -> f32 {
+    riders
+        .iter()
+        .map(|(p, seat, over)| (position(sim, *p) - seat_at(sim, v, *seat) - *over).length())
+        .fold(0.0, f32::max)
+}
+
+#[test]
+fn another_games_characters_ride_a_ghost_and_a_scorpion() {
+    if !disc() {
+        return;
+    }
+    let mut sim = party_on_blood_gulch();
+    let ghosts = of_kind(&mut sim, "ghost");
+    let scorpions = of_kind(&mut sim, "scorpion");
+    assert_eq!(
+        (ghosts.len(), scorpions.len()),
+        (4, 2),
+        "Blood Gulch's Ghosts and Scorpions in the party"
+    );
+
+    // A CS:S character drives a Ghost.
+    let g = ghosts[0].0;
+    let css = walk_up_and_use(&mut sim, g, 0, cs_source::game::movement::ID);
+    assert_eq!(seated(&sim, css), Some((g, 0)), "the CS:S character drives the Ghost");
+    assert!(carried(&sim, css));
+    let over = position(&sim, css) - seat_at(&sim, g, 0);
+    let start = position(&sim, g);
+    sim.intent(css).move_axis = Vec2::Y;
+    sim.seconds(3.0);
+    sim.intent(css).move_axis = Vec2::ZERO;
+    let gone = position(&sim, g).distance(start);
+    let off = drift(&sim, g, &[(css, 0, over)]);
+    eprintln!("the Ghost went {gone} m, its rider {off} m off its seat");
+    assert!(gone > 5.0, "the Ghost moved {gone} m");
+    assert!(off < 0.01, "rode {off} m off its seat");
+    sim.seconds(2.0);
+    press_use(&mut sim, css);
+    assert_eq!(seated(&sim, css), None, "out of the Ghost");
+
+    // A Scorpion: a Combat Arms driver, then four riders of both games.
+    let sc = scorpions[0].0;
+    let seats = sim.app.world().get::<HaloVehicle>(sc).unwrap().riders.len();
+    assert_eq!(seats, 5, "the Scorpion's driver and four riders");
+    let mut riders = Vec::new();
+    for seat in 0..seats {
+        let movement = if seat % 2 == 0 {
+            combat_arms::game::movement::ID
+        } else {
+            cs_source::game::movement::ID
+        };
+        let p = walk_up_and_use(&mut sim, sc, seat, movement);
+        assert_eq!(
+            seated(&sim, p),
+            Some((sc, seat)),
+            "a rider in the Scorpion's seat {seat}"
+        );
+        assert!(carried(&sim, p), "seat {seat}: its movement suspended");
+        riders.push((p, seat, position(&sim, p) - seat_at(&sim, sc, seat)));
+    }
+    let driver = riders[0].0;
+    let start = position(&sim, sc);
+    sim.intent(driver).move_axis = Vec2::Y;
+    sim.seconds(3.0);
+    sim.intent(driver).move_axis = Vec2::ZERO;
+    let gone = position(&sim, sc).distance(start);
+    let off = drift(&sim, sc, &riders);
+    eprintln!("the Scorpion went {gone} m, its riders at most {off} m off their seats");
+    assert!(gone > 2.0, "the Scorpion moved {gone} m");
+    assert!(off < 0.01, "riders {off} m off their seats");
+    sim.seconds(2.0);
+    for (p, seat, _) in riders.iter().rev() {
+        press_use(&mut sim, *p);
+        assert_eq!(seated(&sim, *p), None, "seat {seat}'s rider out");
+        assert!(!carried(&sim, *p));
+    }
+    assert!(
+        sim.app
+            .world()
+            .get::<HaloVehicle>(sc)
+            .unwrap()
+            .riders
+            .iter()
+            .all(Option::is_none)
+    );
+}
+
+/// The default: no vehicle at all on Blood Gulch in a party app (no map
+/// entity, no prop, no `HaloVehicle`), every other prop as with vehicles
+/// (the vehicles' props are the last ones; the scenery's before them the
+/// same).
+#[test]
+fn by_default_the_party_places_no_vehicle() {
+    if !disc() {
+        return;
+    }
+    let off = party_kit::load_map("halo_ce:bloodgulch", 0).expect("Blood Gulch");
+    let on = blood_gulch(true);
+    let placed = |m: &MapData| m.entities.iter().filter_map(Placed::from_entity).collect::<Vec<_>>();
+    let (p_off, p_on) = (placed(&off), placed(&on));
+    eprintln!(
+        "off: {} props, {} vehicles; on: {} props, {} vehicles",
+        off.props.len(),
+        p_off.len(),
+        on.props.len(),
+        p_on.len()
+    );
+    assert!(p_off.is_empty(), "no vehicle entity by default");
+    assert_eq!(p_on.len(), 8, "with the switch: 2 Warthogs, 4 Ghosts, 2 Scorpions");
+    assert_eq!(
+        on.props.len(),
+        off.props.len() + p_on.len(),
+        "one prop per vehicle, no other prop"
+    );
+    assert!(
+        p_on.iter().all(|p| p.prop >= off.props.len()),
+        "the vehicles' props come last"
+    );
+    for (i, (a, b)) in off.props.iter().zip(&on.props).enumerate() {
+        assert!(
+            a.translation == b.translation && a.rotation == b.rotation,
+            "prop {i} the same both ways"
+        );
+    }
+    let mut sim = Sim::new(CaSim, (MapSimPlugin::new(off.clone()), PartyPartsPlugin));
+    sim.seconds(1.0);
+    let w = sim.app.world_mut();
+    let vehicles = w.query::<&HaloVehicle>().iter(w).count();
+    let props: Vec<usize> = w
+        .query::<&chimera_world::map::PropIndex>()
+        .iter(w)
+        .map(|p| p.0)
+        .collect();
+    assert_eq!(vehicles, 0, "no HaloVehicle");
+    assert!(props.iter().all(|&i| i < off.props.len()), "no prop beyond the map's");
 }

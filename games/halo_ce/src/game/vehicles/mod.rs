@@ -9,7 +9,8 @@
 //!   entities) becomes a `HaloVehicle`: a kinematic body with the convex
 //!   hull of its collision model as collider (characters stand on it and
 //!   bump into it, shots stop on it and do nothing to it: no vitality on the
-//!   disc), at its placement raised by half its bounding radius.
+//!   disc), its centre of mass at its placement raised by half its
+//!   bounding radius.
 //! - `seat_input` (authoritative): the use key (pressed) on foot near a
 //!   seat marker, by any game's character (anything with a movement slot:
 //!   a party app's CS:S or Combat Arms player too), enters by the spec's
@@ -26,7 +27,9 @@
 //!   brake), `drive::Drive::tick` on `level::EngineLevel`, the pose written
 //!   to the prop's `Transform` (replicated to clients as the engine's other
 //!   moving props: `chimera_net`'s `NetProp`, the vehicle carrying
-//!   `PhysicsProp`; no new message).
+//!   `PhysicsProp`; no new message). Other vehicles and characters are not
+//!   ground to its points; vehicles meet each other by the pair rule
+//!   (`physics::pair_contact`, into the next step's accumulators).
 //! - `sit` and `stand`: a rider takes `Seated`, the engine's `Carried`
 //!   (every game's movement skips it: its own movement suspended whatever
 //!   game's it is) and the replicated `NetSeat` in one move, and leaves
@@ -34,15 +37,25 @@
 //!   spawn); each counts a change of the server's (`core::rebase`).
 //! - `carry` (authoritative): riders sit at their seat's marker, upright,
 //!   their centre over it by their body's (Halo's biped's, or another
-//!   game's collider's half height), moving with the vehicle; the seat's
-//!   camera track (`seats::track_offset`) is the character's `MapView`.
+//!   game's collider's half height), moving with the vehicle;
+//!   `camera::view` (authoritative): a third-person seat's camera (the
+//!   spec's focus, track point and pull-in) as the character's `MapView`.
 //! - `tidy` (every tick, every role): no stale seat: a rider that is gone
 //!   (a disconnect, a death that took the character away) or sits
 //!   elsewhere leaves its seat empty; a rider of a vehicle that is gone (a
 //!   map change) stands. `round_restart` (the engine's `RoundRestart`):
 //!   every rider stands and every placed vehicle is back at its placement,
-//!   at rest. Dying in a seat puts the rider out beside it (`seat_input`);
-//!   a driver gone leaves the vehicle coasting.
+//!   at rest. Dying in a seat (marked dead, or no health left) puts the
+//!   rider out beside it (`seat_input`); a driver gone leaves the vehicle
+//!   coasting.
+//! - `look` (every machine): the wheels' spin, the steering and the
+//!   suspension on the drawn model's joints.
+//! - `splatter`: a character touching a moving vehicle is pushed and takes
+//!   the globals' vehicle collision damage by the spec's rule (`HaloHit`,
+//!   area, owned by the driver), with the 90-tick grace after leaving it.
+//! - `rider_damage`: a hit on a vehicle that is not area damage passes to
+//!   each rider at (1 − passthrough penalty) × rider damage fraction
+//!   (0.18).
 //!
 //! **Network.** The vehicle is the server's: simulated there and sent as a
 //! moving prop; who sits where goes to every client as `NetSeat` (the
@@ -51,8 +64,9 @@
 //! (`seat_from_server`: `Seated` and `Carried`, its own player's movement
 //! suspended), poses its copy of each vehicle where it draws it
 //! (`follow_drawn`, `pose_from`), and each frame puts its own seated
-//! player in its seat of that drawn vehicle with the seat's camera at its
-//! own mouse look (`ride_drawn`, before the eye is placed); others are
+//! player in its seat of that drawn vehicle with the seat's camera
+//! (`camera::seat_view`) at its own mouse look (`ride_drawn`, before the
+//! eye is placed); others are
 //! drawn as the server sends them (in their seats in its snapshots). The
 //! seated player isn't predicted: its client takes the server's state as
 //! it comes (`chimera_net`'s prediction skips the comparison for a
@@ -73,22 +87,20 @@
 //!   rider leaves 1 WU to its seat's side); the use key is edge-triggered.
 //! - The rider's body is not posed by the seat's animation, the driver's
 //!   own weapon is not put away, and the seat's look rates and limits and
-//!   the camera's auto-level are not applied (the mouse look is free; the
-//!   camera's focus is the seat marker raised 0.5 WU).
-//! - Wheels, steering and suspension are not shown on the model's nodes
-//!   (the model is drawn rigid, as the scenery is).
+//!   the camera's auto-level are not applied (the mouse look is free); a
+//!   first-person seat's eye is the rider's own, not the seat's camera
+//!   marker.
 //! - The vehicle is not predicted on the driver's client (module doc,
 //!   "Network": its input shows after the round trip and the
 //!   interpolation delay).
 //! - Another game's rider sits upright with its standing hull, its feet at
 //!   the seat marker; its weapon stays in hand and works.
-//! - Other vehicles' contacts (mass point against mass point) and
-//!   vehicle-vehicle collision accumulators are not gathered; vehicles meet
-//!   each other's hulls through the ground query.
 
+pub mod camera;
 pub mod data;
 pub mod drive;
 pub mod level;
+pub mod look;
 pub mod physics;
 pub mod place;
 pub mod seats;
@@ -210,13 +222,13 @@ impl Plugin for HaloVehiclesPlugin {
         use chimera_core::console::ConsoleAppExt;
         app.console_command(
             "halo_vehicle_enter",
-            "Seat the local player in the nearest vehicle's empty driver seat (screenshots)",
-            |w, _| match enter_nearest(w) {
+            "Seat the local player in the nearest vehicle's empty driver seat; <name>: of that vehicle (screenshots)",
+            |w, args| match enter_nearest(w, args.first().map(String::as_str)) {
                 Ok(m) => Ok(Some(m)),
                 // Not yet (a launch's `+halo_vehicle_enter` runs before
                 // the map loads): retried each tick until it works.
                 Err(_) => {
-                    w.insert_resource(EnterWhenReady);
+                    w.insert_resource(EnterWhenReady(args.first().cloned()));
                     Ok(Some("will seat the local player once a vehicle is near".into()))
                 }
             },
@@ -236,6 +248,7 @@ impl Plugin for HaloVehiclesPlugin {
             },
         );
         use chimera_net::net::parts::NetAppExt;
+        app.add_systems(Update, look::pose);
         app.init_resource::<VehicleDefs>()
             .net_part("halo_ce_vehicles", |app| {
                 use bevy_replicon::prelude::AppRuleExt;
@@ -248,9 +261,10 @@ impl Plugin for HaloVehiclesPlugin {
                     attach,
                     tidy,
                     seat_from_server.run_if(on_client),
-                    (seat_input, simulate, splatter, rider_damage, carry)
+                    (seat_input, simulate, splatter, rider_damage, carry, camera::view)
                         .chain()
                         .run_if(authoritative),
+                    look::track,
                     enter_when_ready.run_if(resource_exists::<EnterWhenReady>),
                 )
                     .chain()
@@ -275,19 +289,22 @@ fn on_client(role: Option<Res<NetRole>>) -> bool {
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct HeldThrottle(pub f32);
 
-/// `halo_vehicle_enter` waiting for a local player and a vehicle.
-#[derive(Resource, Clone, Copy, Debug)]
-pub struct EnterWhenReady;
+/// `halo_vehicle_enter` waiting for a local player and a vehicle (of
+/// that name).
+#[derive(Resource, Clone, Debug)]
+pub struct EnterWhenReady(pub Option<String>);
 
 fn enter_when_ready(
     players: Query<(Entity, &Transform), (With<crate::core::LocalPlayer>, Without<Seated>)>,
     mut vehicles: Query<(Entity, &mut HaloVehicle, Option<&PropIndex>)>,
     defs: Res<VehicleDefs>,
+    wanted: Res<EnterWhenReady>,
     mut commands: Commands,
 ) {
     let Some((p, at)) = players.iter().next() else { return };
     let best = vehicles
         .iter()
+        .filter(|(_, v, _)| wanted.0.as_ref().is_none_or(|n| *n == defs.0[v.def].0.name))
         .filter_map(|(e, v, _)| {
             let seat = defs.0[v.def].0.driver_seat().filter(|&s| v.riders[s].is_none())?;
             Some(((to_engine(v.drive.body.position) - at.translation).length(), e, seat))
@@ -302,7 +319,7 @@ fn enter_when_ready(
 }
 
 /// The local player into the nearest vehicle's empty driver seat.
-fn enter_nearest(w: &mut World) -> Result<String, String> {
+fn enter_nearest(w: &mut World, name: Option<&str>) -> Result<String, String> {
     let mut players = w.query_filtered::<(Entity, &Transform), (With<crate::core::LocalPlayer>, Without<Seated>)>();
     let (p, at) = players
         .iter(w)
@@ -313,6 +330,7 @@ fn enter_nearest(w: &mut World) -> Result<String, String> {
     let mut vehicles = w.query::<(Entity, &HaloVehicle)>();
     let (ve, seat) = vehicles
         .iter(w)
+        .filter(|(_, v)| name.is_none_or(|n| n == defs.0[v.def].0.name))
         .filter_map(|(e, v)| {
             let d = &defs.0[v.def].0;
             let seat = d.driver_seat().filter(|&s| v.riders[s].is_none())?;
@@ -366,7 +384,14 @@ fn attach(
         let t = Transform::from_translation(to_engine(vehicle.drive.body.origin(phys.center_of_mass)))
             .with_rotation(engine_rotation(&vehicle.drive.body));
         let mut ec = commands.entity(e);
-        ec.insert((vehicle, t, RigidBody::Kinematic, collider, contact_filter::hooks()));
+        ec.insert((
+            vehicle,
+            look::VehicleLook::new(p.suspension.clone()),
+            t,
+            RigidBody::Kinematic,
+            collider,
+            contact_filter::hooks(),
+        ));
         if server {
             ec.insert(PhysicsProp {
                 push: PushAway::Collide,
@@ -377,22 +402,23 @@ fn attach(
     }
 }
 
-/// Spawn the vehicle `name` with its model origin at `origin` (WU, Halo
-/// axes) facing `heading` (radians), raised as created: a vehicle without a
-/// map (tests, a game's own spawns). Its collider is a box around its mass
-/// points (no collision model). Returns the entity.
-pub fn spawn_vehicle(world: &mut World, name: &str, origin: Vec3, heading: f32) -> Option<Entity> {
+/// Spawn the vehicle `name` as placed at `position` (its centre of mass,
+/// WU, Halo axes) facing `heading` (radians), raised as created: a vehicle
+/// without a map (tests, a game's own spawns). Its collider is a box
+/// around its mass points (no collision model). Returns the entity.
+pub fn spawn_vehicle(world: &mut World, name: &str, position: Vec3, heading: f32) -> Option<Entity> {
     let defs = world.get_resource_or_init::<VehicleDefs>().clone();
     let def = defs.0.iter().position(|(d, _)| d.name == name)?;
     let (d, phys) = &defs.0[def];
     let placed = Placed {
         prop: usize::MAX,
         vehicle: name.to_string(),
-        position: origin.to_array(),
+        position: position.to_array(),
         forward: [heading.cos(), heading.sin(), 0.0],
         up: [0.0, 0.0, 1.0],
         markers: Default::default(),
         hull: Vec::new(),
+        suspension: Vec::new(),
     };
     let v = spawn_state(d, phys, def, &placed);
     let (lo, hi) = phys.points.iter().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| {
@@ -405,19 +431,29 @@ pub fn spawn_vehicle(world: &mut World, name: &str, origin: Vec3, heading: f32) 
         .with_rotation(engine_rotation(&v.drive.body));
     Some(
         world
-            .spawn((v, t, RigidBody::Kinematic, collider, contact_filter::hooks()))
+            .spawn((
+                v,
+                look::VehicleLook::default(),
+                t,
+                RigidBody::Kinematic,
+                collider,
+                contact_filter::hooks(),
+            ))
             .id(),
     )
 }
 
-/// A placed vehicle's starting state: its centre of mass where its origin
-/// at the placement raised by half its bounding radius puts it.
+/// A placed vehicle's starting state: its centre of mass at the placement
+/// raised by half its bounding radius (vehicles.md "Units and
+/// conventions").
 pub fn spawn_state(d: &VehicleDef, phys: &PhysicsDef, def: usize, p: &Placed) -> HaloVehicle {
     let mut body = Body::at(Vec3::ZERO, 0.0);
     body.forward = Vec3::from(p.forward).normalize_or(Vec3::X);
     body.up = Vec3::from(p.up).normalize_or(Vec3::Z);
-    let origin = Vec3::from(p.position) + Vec3::Z * (d.bounding_radius / 2.0);
-    body.position = origin + body.frame() * phys.center_of_mass;
+    // The placement's position is the centre of mass, raised by half the
+    // bounding radius.
+    body.position = Vec3::from(p.position) + Vec3::Z * (d.bounding_radius / 2.0);
+    let _ = phys;
     HaloVehicle {
         def,
         drive: Drive::new(body),
@@ -581,7 +617,10 @@ fn simulate(
     }
     let held = held.as_deref().copied();
     let scales = ground_scales();
-    let skip = |e: Entity| characters.contains(e);
+    // Other vehicles and characters are never ground to a vehicle (they
+    // meet it through the pair rule and the splatter rule).
+    let all: Vec<Entity> = vehicles.iter().map(|(e, ..)| e).collect();
+    let skip = |e: Entity| characters.contains(e) || all.contains(&e);
     for (e, mut v, mut t) in &mut vehicles {
         let (d, phys) = &defs.0[v.def];
         let level = EngineLevel {
@@ -615,6 +654,24 @@ fn simulate(
             t.rotation = rotation;
         }
     }
+    // Step 7: vehicle against vehicle, the pair rule, into each one's
+    // accumulators for its next step.
+    let mut pairs = vehicles.iter_combinations_mut::<2>();
+    while let Some([(_, mut a, _), (_, mut b, _)]) = pairs.fetch_next() {
+        let ((da, pa), (db, pb)) = (&defs.0[a.def], &defs.0[b.def]);
+        let reach = da.bounding_radius + db.bounding_radius + 1.0;
+        if (a.drive.body.position - b.drive.body.position).length() > reach {
+            continue;
+        }
+        if let Some([(fa, ta), (fb, tb)]) = physics::pair_contact(&a.drive.body, pa, &b.drive.body, pb) {
+            a.drive.collision_force += fa;
+            a.drive.collision_torque += ta;
+            b.drive.collision_force += fb;
+            b.drive.collision_torque += tb;
+            a.drive.wake();
+            b.drive.wake();
+        }
+    }
 }
 
 /// A character into a seat: `Seated` with the engine's `Carried` (its
@@ -645,29 +702,10 @@ pub fn stand(commands: &mut Commands, e: Entity) {
     commands.queue(move |w: &mut World| crate::core::rebase(w, e));
 }
 
-/// Where a rider sits and the camera it views through: its centre (engine
-/// metres) for a body whose centre is `above` metres over its feet, and the
-/// seat's camera if the seat has one (module doc).
-fn ride(v: &HaloVehicle, d: &VehicleDef, phys: &PhysicsDef, seat: usize, intent: &Intent, above: f32) -> (Vec3, Option<MapView>) {
-    let marker = v.world(phys, v.seat_marker(d, seat));
-    let centre = to_engine(marker) + Vec3::Y * above;
-    let seat_def = &d.seats[seat];
-    let track = d.tracks.get(&seat_def.track);
-    let focus = match seat_def.camera_marker.to_lowercase() {
-        n if !n.is_empty() && v.markers.contains_key(&n) => v.world(phys, v.markers[&n]),
-        _ => marker + Vec3::Z * 0.5,
-    };
-    let third = seat_def.flags & (seat_flags::DRIVER | seat_flags::THIRD_PERSON_CAMERA | seat_flags::INVISIBLE) != 0;
-    let view = track.filter(|_| third).map(|track| {
-        let o = seats::track_offset(&track.points, intent.pitch);
-        let look = Quat::from_rotation_y(intent.yaw) * Vec3::NEG_Z;
-        let at = focus + to_halo_dir(look) * o.x + Vec3::Z * o.y;
-        MapView {
-            origin: to_engine(at),
-            rotation: Quat::from_rotation_y(intent.yaw) * Quat::from_rotation_x(intent.pitch),
-        }
-    });
-    (centre, view)
+/// Where a rider sits: its centre (engine metres) upright over its seat's
+/// marker, for a body whose centre is `above` metres over its feet.
+fn ride(v: &HaloVehicle, d: &VehicleDef, phys: &PhysicsDef, seat: usize, above: f32) -> Vec3 {
+    to_engine(v.world(phys, v.seat_marker(d, seat))) + Vec3::Y * above
 }
 
 /// How far a rider's centre is over its feet (m): Halo's biped standing,
@@ -693,21 +731,18 @@ fn set_view(commands: &mut Commands, e: Entity, want: Option<MapView>, have: Opt
     }
 }
 
-/// Riders follow their seats; the driver's camera (authoritative: a
-/// network client draws its own player with `ride_drawn`, the others as the
-/// server sends them).
+/// Riders follow their seats (authoritative; their camera:
+/// `camera::view`; a network client draws its own player with
+/// `ride_drawn`, the others as the server sends them).
 #[allow(clippy::type_complexity)]
 fn carry(
     vehicles: Query<&HaloVehicle>,
     mut riders: Query<
         (
-            Entity,
             &Seated,
-            &Intent,
             &mut Transform,
             &mut Velocity,
             Option<&mut Position>,
-            Option<&MapView>,
             (Has<HaloMovement>, Option<&Collider>),
         ),
         Without<HaloVehicle>,
@@ -722,16 +757,15 @@ fn carry(
             ec.try_remove::<MapView>();
         }
     }
-    for (e, seat, intent, mut t, mut vel, pos, view, (halo, collider)) in &mut riders {
+    for (seat, mut t, mut vel, pos, (halo, collider)) in &mut riders {
         let Ok(v) = vehicles.get(seat.vehicle) else { continue };
         let (d, phys) = &defs.0[v.def];
-        let (centre, want) = ride(v, d, phys, seat.seat, intent, centre_above(halo, collider, &data));
+        let centre = ride(v, d, phys, seat.seat, centre_above(halo, collider, &data));
         t.translation = centre;
         if let Some(mut p) = pos {
             p.0 = centre;
         }
         vel.0 = to_engine(v.drive.body.velocity) * 30.0;
-        set_view(&mut commands, e, want, view);
     }
 }
 
@@ -827,33 +861,37 @@ fn follow_drawn(mut vehicles: Query<(&mut HaloVehicle, &Transform)>, defs: Res<V
 }
 
 /// A body posed where its prop's `Transform` (the model origin, engine
-/// space) puts it: `engine_rotation` and the origin undone.
+/// space) puts it (`look::body_from`), its motion kept.
 pub fn pose_from(b: &mut Body, t: &Transform, center_of_mass: Vec3) {
-    let axis = |v: Vec3| to_halo_dir(t.rotation * crate::game::maps::space::direction(v.to_array()));
-    b.forward = axis(Vec3::X).normalize_or(Vec3::X);
-    b.up = axis(Vec3::Z).normalize_or(Vec3::Z);
-    b.position = to_halo(t.translation) + b.frame() * center_of_mass;
+    let drawn = look::body_from(t, center_of_mass);
+    b.forward = drawn.forward;
+    b.up = drawn.up;
+    b.position = drawn.position;
 }
 
 /// A network client's own seated player, each frame: in its seat of the
-/// vehicle as drawn, viewing through the seat's camera at its own look (not
-/// predicted: the vehicle is the server's; module doc "Network").
-#[allow(clippy::type_complexity)]
+/// vehicle as drawn, viewing through the seat's camera (`camera::seat_view`)
+/// at its own look (not predicted: the vehicle is the server's; module doc
+/// "Network").
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn ride_drawn(
     vehicles: Query<&HaloVehicle>,
     mut me: Query<
         (Entity, &Seated, &Intent, &mut Transform, Option<&MapView>, Has<HaloMovement>, Option<&Collider>),
         (With<LocalPlayer>, Without<HaloVehicle>),
     >,
+    characters: Query<(), With<Intent>>,
     defs: Res<VehicleDefs>,
     data: Res<MovementData>,
+    query: SpatialQuery,
     mut commands: Commands,
 ) {
     for (e, seat, intent, mut t, view, halo, collider) in &mut me {
         let Ok(v) = vehicles.get(seat.vehicle) else { continue };
         let (d, phys) = &defs.0[v.def];
-        let (centre, want) = ride(v, d, phys, seat.seat, intent, centre_above(halo, collider, &data));
-        t.translation = centre;
+        t.translation = ride(v, d, phys, seat.seat, centre_above(halo, collider, &data));
+        let skip = |x: Entity| characters.contains(x) || vehicles.contains(x);
+        let want = camera::seat_view(v, d, phys, seat.seat, intent, &query, &skip);
         set_view(&mut commands, e, want, view);
     }
 }
@@ -974,6 +1012,10 @@ fn rider_damage(
 ) {
     let mut out = Vec::new();
     for hit in cursor.read(&messages) {
+        // Area damage reaches riders, if at all, through their own bodies.
+        if hit.flags & super::damage::hit_flags::AREA != 0 {
+            continue;
+        }
         let Ok(v) = vehicles.get(hit.target) else { continue };
         let d = &defs.0[v.def].0;
         let penalty = effects.get(hit.effect).map_or(0.0, |e| e.passthrough);
