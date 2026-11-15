@@ -76,9 +76,16 @@
 //! step); every record is written whole or not at all, so the process may
 //! end in the middle of any fetch.
 //!
+//! What a game built at startup from its files (Combat Arms' install data,
+//! weapon set, attachment, movement and gear records, its HUD's install
+//! UI and weapon names) is built again by its `AssetsArrived` observers
+//! before the join checks the match (`remount` applies what they queue
+//! first): the weapon catalogue then has the game's install weapons a
+//! ladder names, at the registry indices the server has.
+//!
 //! Known shortcuts: a bind's `remount` reads again only what its hooks
-//! name (data leaked as `&'static`, a game's weapon set, keeps what it was
-//! built from); sets the service doesn't have are skipped (their files come on
+//! name (a part with no observer keeps what it read at startup without the
+//! files); sets the service doesn't have are skipped (their files come on
 //! demand as the loaders read them); files fetched on demand (a map's
 //! load) don't hold the prefetch, only the join and level change around
 //! them do.
@@ -1018,7 +1025,9 @@ fn bind(world: &mut World, offer: &AssetOffer, session: &AssetSession) -> Result
 
 /// After a bind's files arrived: `bound`'s games the store now has are
 /// read from it (served, in the mount report), then the parts read again
-/// what they read at startup (`AssetsArrived`). The games that arrived.
+/// what they read at startup (`AssetsArrived`; what its observers queue
+/// is applied before this returns, so the join's checks see it). The
+/// games that arrived.
 fn remount(world: &mut World, bound: &[String]) -> Vec<String> {
     let store = world
         .get_resource::<AssetSession>()
@@ -1046,6 +1055,9 @@ fn remount(world: &mut World, bound: &[String]) -> Vec<String> {
         }
     }
     world.trigger(AssetsArrived { games: arrived.clone() });
+    // What the observers queued (a game's data and weapon set made again)
+    // is done before the join goes on and checks the match against it.
+    world.flush();
     info!(
         "game files read again for {}",
         if arrived.is_empty() { "no game".to_string() } else { arrived.join(", ") }
