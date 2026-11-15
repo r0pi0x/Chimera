@@ -52,7 +52,7 @@ port adds the ones below.
 | [health_shields.md](health_shields.md) | 2 | draft | vitality, shields, damage by material and region |
 | [weapons.md](weapons.md) | 2 | draft | weapons, with every multiplayer weapon's numbers |
 | projectiles.md | 2 | planned | projectiles, damage effects, grenades |
-| multiplayer_rules.md | 2 | planned | spawning, pickups, powerups, game type rules |
+| [multiplayer_rules.md](multiplayer_rules.md) | 2 | draft | spawning, pickups, powerups, game type rules |
 | effects.md | 3 | planned | effects, particles, lights, decals |
 | hud.md | 3 | planned | the HUD's pieces |
 | vehicles.md | 3 | planned | vehicles |
