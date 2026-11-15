@@ -739,7 +739,7 @@ fn t26_input_under_the_esc_menu() {
             if chat {
                 sim.app.world_mut().insert_resource(chimera_client::client::chat::ChatInput {
                     open: on.then_some(false),
-                    text: String::new(),
+                    ..Default::default()
                 });
             } else {
                 sim.app.world_mut().resource_mut::<InGameMenu>().set_open(on);

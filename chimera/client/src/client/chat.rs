@@ -26,6 +26,18 @@
 //! game `say` asks the server (`net::SayRequest`) and the lines it sends
 //! (`net::ChatMessage`) are formatted here, its refusals (`net::Notice`) shown
 //! as hints.
+//!
+//! Entries (`ChatEntry`): what is said and by whom (players' lines heard
+//! or said here, a bot's, joins, leaves and renames as notices, the
+//! server's word), each with its line in the game's format; the game's
+//! chat shows that line (`route_classic`: a `ChatLine`, with its sound)
+//! unless the Signal chat owns the chat (`SignalChatActive`:
+//! `signal_chat`, the Ultimate Gun Game's look), which draws its own and
+//! stands this box, its typing line and the refusals' hints down. Both
+//! honour `cl_chat` (`ChatFilter`: 1 everyone's lines, 2 the team's only,
+//! 0 none; notices and your own always) and the mutes (`ChatMutes`:
+//! `ignore <name>`, `unignore`, `ignorelist`; people by user id, bots by
+//! name, for the session) through `shows`.
 
 use std::collections::VecDeque;
 
@@ -39,6 +51,8 @@ use bevy::{
 };
 
 use super::fonts::UiFonts;
+/// What a chat entry is (the kit's, for games without the kit).
+pub use chimera_ui::chat::LineKind;
 use crate::{
     console::{Console, ConsoleAppExt, Level},
     core::{Health, LocalPlayer, Team},
@@ -50,13 +64,18 @@ pub struct ChatPlugin;
 
 impl Plugin for ChatPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(GameMessagesPlugin)
+        if !app.is_plugin_added::<GameMessagesPlugin>() {
+            app.add_plugins(GameMessagesPlugin);
+        }
+        app.add_plugins(super::signal_chat::SignalChatPlugin)
             .add_message::<Hint>()
             .init_resource::<ChatLog>()
             .init_resource::<HintState>()
             .init_resource::<ChatInput>()
-            .add_systems(PreUpdate, typing.after(InputSystems))
-            .add_systems(Update, ((collect, draw_chat, draw_input).chain(), draw_hint));
+            // The game's own chat line and box, unless the Signal chat
+            // owns the chat (`signal_chat`).
+            .add_systems(PreUpdate, typing.after(InputSystems).run_if(classic))
+            .add_systems(Update, ((collect, (draw_chat, draw_input).run_if(classic)).chain(), draw_hint));
         super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
         crate::console::resource_cvar::<ChatLog, f32>(
             app,
@@ -67,19 +86,184 @@ impl Plugin for ChatPlugin {
         if let Some(mut console) = app.world_mut().get_resource_mut::<crate::console::Console>() {
             console.archive("hud_saytext_time");
         }
-        for (name, team, help) in [
-            ("messagemode", false, "Type a chat line to everyone (Y)."),
-            ("messagemode2", true, "Type a chat line to your team (U)."),
-        ] {
-            app.console_command(name, help, move |w, _| {
-                *w.resource_mut::<ChatInput>() = ChatInput {
-                    open: Some(team),
-                    text: String::new(),
-                };
-                Ok(None)
-            });
+    }
+}
+
+/// Open the typing line (to the team: `team`), empty.
+pub fn open_input(w: &mut World, team: bool) {
+    *w.get_resource_or_init::<ChatInput>() = ChatInput { open: Some(team), ..default() };
+}
+
+/// The game's own chat draws (no Signal chat: `SignalChatActive`).
+pub fn classic(active: Option<Res<SignalChatActive>>) -> bool {
+    !active.is_some_and(|a| a.0)
+}
+
+/// The Signal chat owns the chat (`signal_chat`: the app's theme turns
+/// the Signal HUD on and the chat's state is in): the entries
+/// (`ChatEntry`) go to it, not to the game's lines (`ChatLine`), and the
+/// game's chat box and typing line stand down. A game's own chat (Combat
+/// Arms') reads it too.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SignalChatActive(pub bool);
+
+/// A chat entry with what it is (`chimera_ui::chat::LineKind`) and who
+/// said it: players' lines (heard from the server, a game of one's own,
+/// a bot's), notices (joins, leaves, renames) and the server's word.
+/// The game's own chat shows its `classic` line (`route_classic`: as a
+/// `ChatLine`, with its `sound`); the Signal chat its own
+/// (`signal_chat`).
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct ChatEntry {
+    pub kind: chimera_ui::chat::LineKind,
+    pub sender: Option<Entity>,
+    pub name: Option<String>,
+    pub team: Option<Team>,
+    pub text: String,
+    /// How the game's own chat shows it.
+    pub classic: Option<ChatLine>,
+    /// The game's chat sound with it.
+    pub sound: Option<String>,
+}
+
+impl ChatEntry {
+    /// A notice (`text` a sentence), shown as `classic` in the game's chat.
+    pub fn notice(text: impl Into<String>, classic: Option<ChatLine>) -> Self {
+        Self { kind: chimera_ui::chat::LineKind::Notice, sender: None, name: None, team: None, text: text.into(), classic, sound: None }
+    }
+}
+
+/// The players whose lines this client hides (`ignore <name>`, a click on
+/// a name in the open chat): people by user id (`NetCharacter::owner`,
+/// kept through map changes and new characters), bots by name. For the
+/// session, not saved (as `net::voice::VoiceMutes`).
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct ChatMutes {
+    pub users: std::collections::BTreeSet<u64>,
+    pub names: std::collections::BTreeSet<String>,
+}
+
+impl ChatMutes {
+    /// Whether a sender with this user id (None: a bot) and name is muted.
+    pub fn muted(&self, owner: Option<u64>, name: &str) -> bool {
+        match owner {
+            Some(id) => self.users.contains(&id),
+            None => self.names.contains(&name.to_lowercase()),
         }
     }
+
+    /// Mute (`on`) or unmute; whether it changed.
+    pub fn set(&mut self, owner: Option<u64>, name: &str, on: bool) -> bool {
+        match (owner, on) {
+            (Some(id), true) => self.users.insert(id),
+            (Some(id), false) => self.users.remove(&id),
+            (None, true) => self.names.insert(name.to_lowercase()),
+            (None, false) => self.names.remove(&name.to_lowercase()),
+        }
+    }
+}
+
+/// `cl_chat`: whose lines this client shows (1 everyone's, 2 the team's
+/// only, 0 none but its own); notices and the server's word always.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChatFilter(pub u8);
+
+impl Default for ChatFilter {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+/// Whether this client shows `e` (`own`: the local player said it;
+/// `owner`: the sender's user id, None for a bot): `cl_chat`, then the
+/// mutes. Your own lines always show.
+pub fn shows(e: &ChatEntry, own: bool, owner: Option<u64>, mutes: &ChatMutes, filter: ChatFilter) -> bool {
+    use chimera_ui::chat::LineKind;
+    if own || !e.kind.player() {
+        return true;
+    }
+    let by_filter = match filter.0 {
+        0 => false,
+        2 => e.kind == LineKind::Team,
+        _ => true,
+    };
+    by_filter && !(e.sender.is_some() && mutes.muted(owner, e.name.as_deref().unwrap_or_default()))
+}
+
+/// The sender's user id and whether it is the local player.
+pub type SenderInfo<'a> = (Option<&'a crate::net::NetCharacter>, Has<LocalPlayer>);
+
+/// `(own, owner)` of an entry's sender.
+pub fn sender_of(e: &ChatEntry, who: &Query<SenderInfo>) -> (bool, Option<u64>) {
+    match e.sender.and_then(|s| who.get(s).ok()) {
+        Some((net, local)) => (local, net.and_then(|n| n.owner)),
+        None => (false, None),
+    }
+}
+
+/// The entries in the game's own chat (no Signal chat): each its classic
+/// line and sound, unless muted or filtered out (`shows`).
+#[allow(clippy::too_many_arguments)]
+pub fn route_classic(
+    mut entries: MessageReader<ChatEntry>,
+    active: Option<Res<SignalChatActive>>,
+    mutes: Option<Res<ChatMutes>>,
+    filter: Option<Res<ChatFilter>>,
+    who: Query<SenderInfo>,
+    mut chat: MessageWriter<ChatLine>,
+    mut play: MessageWriter<crate::map::PlaySound>,
+) {
+    if active.is_some_and(|a| a.0) {
+        entries.clear();
+        return;
+    }
+    let mutes = mutes.as_deref().cloned().unwrap_or_default();
+    let filter = filter.as_deref().copied().unwrap_or_default();
+    for e in entries.read() {
+        let (own, owner) = sender_of(e, &who);
+        if !shows(e, own, owner, &mutes, filter) {
+            continue;
+        }
+        if let Some(line) = &e.classic {
+            chat.write(line.clone());
+        }
+        if let Some(s) = &e.sound {
+            play.write(crate::map::PlaySound::ui(s.clone()));
+        }
+    }
+}
+
+/// The player named `name` (any case; a unique start of a name will do):
+/// their user id (None: a bot) and their name.
+fn find_player(w: &mut World, name: &str) -> Result<(Option<u64>, String), String> {
+    let want = name.to_lowercase();
+    let mut all: Vec<(Option<u64>, String)> = w
+        .query::<(&crate::net::NetCharacter, Has<LocalPlayer>)>()
+        .iter(w)
+        .filter(|(_, local)| !local)
+        .map(|(c, _)| (c.owner, c.name.clone()))
+        .collect();
+    all.extend(
+        w.query_filtered::<&Name, (With<crate::core::Bot>, Without<crate::net::NetCharacter>)>()
+            .iter(w)
+            .map(|n| (None, n.to_string())),
+    );
+    if let Some(p) = all.iter().find(|(_, n)| n.to_lowercase() == want) {
+        return Ok(p.clone());
+    }
+    let starts: Vec<&(Option<u64>, String)> = all.iter().filter(|(_, n)| n.to_lowercase().starts_with(&want)).collect();
+    match starts.as_slice() {
+        [one] => Ok((*one).clone()),
+        [] => Err(format!("No player called {name}.")),
+        _ => Err(format!("More than one player's name starts with {name}.")),
+    }
+}
+
+/// `ignore` / `unignore`: mute or unmute a player's chat lines here.
+pub fn ignore(w: &mut World, name: &str, on: bool) -> Result<Option<String>, String> {
+    let (owner, shown) = find_player(w, name)?;
+    w.get_resource_or_init::<ChatMutes>().set(owner, &shown, on);
+    Ok(Some(if on { format!("Not showing {shown}'s chat.") } else { format!("Showing {shown}'s chat again.") }))
 }
 
 /// Game messages in the chat, without a window (tests): `say` and
@@ -91,6 +275,9 @@ pub struct GameMessagesPlugin;
 impl Plugin for GameMessagesPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<ChatLine>()
+            .add_message::<ChatEntry>()
+            .init_resource::<ChatMutes>()
+            .init_resource::<ChatFilter>()
             .add_message::<Hint>()
             .add_message::<crate::net::ChatMessage>()
             .add_message::<crate::net::Notice>()
@@ -100,7 +287,7 @@ impl Plugin for GameMessagesPlugin {
             .add_message::<crate::map::MapSay>()
             .add_systems(
                 Update,
-                (team_joins, heard_says, notices, name_changes, comings_and_goings, map_says),
+                ((team_joins, heard_says, notices, name_changes, comings_and_goings, map_says), route_classic).chain(),
             );
         for (name, team, help) in [
             ("say", false, "Say something to everyone."),
@@ -111,6 +298,40 @@ impl Plugin for GameMessagesPlugin {
                 Ok(None)
             });
         }
+        app.init_resource::<ChatInput>();
+        for (name, team, help) in [
+            ("messagemode", false, "Type a chat line to everyone (Y)."),
+            ("messagemode2", true, "Type a chat line to your team (U)."),
+        ] {
+            app.console_command(name, help, move |w, _| {
+                open_input(w, team);
+                Ok(None)
+            });
+        }
+        app.console_command("ignore", "ignore <name>: hide that player's chat lines (this session).", |w, a| {
+            ignore(w, &a.join(" "), true)
+        })
+        .console_command("unignore", "unignore <name>: show that player's chat lines again.", |w, a| ignore(w, &a.join(" "), false))
+        .console_command("ignorelist", "The players whose chat lines are hidden.", |w, _| {
+            let mutes = w.get_resource::<ChatMutes>().cloned().unwrap_or_default();
+            let users: Vec<String> = w
+                .query::<&crate::net::NetCharacter>()
+                .iter(w)
+                .filter(|c| c.owner.is_some_and(|o| mutes.users.contains(&o)))
+                .map(|c| c.name.clone())
+                .chain(mutes.names.iter().cloned())
+                .collect();
+            Ok(Some(if users.is_empty() { "Nobody is ignored.".into() } else { users.join(", ") }))
+        });
+        crate::console::resource_cvar::<ChatFilter, u8>(
+            app,
+            "cl_chat",
+            "Whose chat lines show: 1 everyone's, 2 the team's only, 0 none (notices and your own always).",
+            |f| &mut f.0,
+        );
+        if let Some(mut console) = app.world_mut().get_resource_mut::<crate::console::Console>() {
+            console.archive("cl_chat");
+        }
     }
 }
 
@@ -119,20 +340,33 @@ impl Plugin for GameMessagesPlugin {
 fn heard_says(
     mut heard: MessageReader<crate::net::ChatMessage>,
     radio: Option<Res<crate::map::radio::RadioCommands>>,
-    mut chat: MessageWriter<ChatLine>,
-    mut play: MessageWriter<crate::map::PlaySound>,
+    mut out: MessageWriter<ChatEntry>,
 ) {
+    use chimera_ui::chat::LineKind;
     let formats = radio.map(|r| r.say.clone()).unwrap_or_default();
     for m in heard.read() {
         if m.console {
-            chat.write(ChatLine::plain(format!("Console: {}", m.text)));
+            out.write(ChatEntry {
+                kind: LineKind::System,
+                sender: None,
+                name: None,
+                team: None,
+                text: m.text.clone(),
+                classic: Some(ChatLine::plain(format!("Console: {}", m.text))),
+                sound: None,
+            });
             continue;
         }
         let runs = formats.line(&m.name, &m.text, m.team, m.alive, m.team_only, m.place.as_deref());
-        chat.write(ChatLine(runs, m.team.map(Team)));
-        if let Some(s) = &formats.sound {
-            play.write(crate::map::PlaySound::ui(s.clone()));
-        }
+        out.write(ChatEntry {
+            kind: if m.team_only { LineKind::Team } else { LineKind::All },
+            sender: m.sender,
+            name: Some(m.name.clone()),
+            team: m.team.map(Team),
+            text: m.text.clone(),
+            classic: Some(ChatLine(runs, m.team.map(Team))),
+            sound: formats.sound.clone(),
+        });
     }
 }
 
@@ -158,11 +392,11 @@ fn map_says(
 fn name_changes(
     mut renamed: MessageReader<crate::net::NameChanged>,
     radio: Option<Res<crate::map::radio::RadioCommands>>,
-    mut chat: MessageWriter<ChatLine>,
+    mut out: MessageWriter<ChatEntry>,
 ) {
     let formats = radio.map(|r| r.say.clone()).unwrap_or_default();
     for n in renamed.read() {
-        chat.write(ChatLine(formats.renamed(&n.old, &n.new), None));
+        out.write(ChatEntry::notice(format!("{} is now {}", n.old, n.new), Some(ChatLine(formats.renamed(&n.old, &n.new), None))));
     }
 }
 
@@ -172,18 +406,42 @@ fn name_changes(
 fn comings_and_goings(
     mut came: MessageReader<crate::net::PlayerCame>,
     radio: Option<Res<crate::map::radio::RadioCommands>>,
-    mut chat: MessageWriter<ChatLine>,
+    mut out: MessageWriter<ChatEntry>,
 ) {
     let formats = radio.map(|r| r.say.clone()).unwrap_or_default();
     for c in came.read() {
-        chat.write(ChatLine(formats.came(&c.name, c.left.as_deref()), None));
+        let text = match &c.left {
+            None => format!("{} joined the game", c.name),
+            Some(why) if !why.trim().is_empty() => format!("{} left the game ({})", c.name, why.trim().trim_end_matches('.')),
+            Some(_) => format!("{} left the game", c.name),
+        };
+        out.write(ChatEntry::notice(text, Some(ChatLine(formats.came(&c.name, c.left.as_deref()), None))));
     }
 }
 
-/// Why the server refused a request (a buy, a team), as a hint.
-fn notices(mut notices: MessageReader<crate::net::Notice>, mut hints: MessageWriter<Hint>) {
+/// Why the server refused a request (a buy, a team, a line while
+/// flooding), as a hint; under the Signal chat as the server's word in it.
+fn notices(
+    mut notices: MessageReader<crate::net::Notice>,
+    active: Option<Res<SignalChatActive>>,
+    mut hints: MessageWriter<Hint>,
+    mut out: MessageWriter<ChatEntry>,
+) {
+    let signal = active.is_some_and(|a| a.0);
     for n in notices.read() {
-        hints.write(Hint(n.text.clone()));
+        if signal {
+            out.write(ChatEntry {
+                kind: chimera_ui::chat::LineKind::System,
+                sender: None,
+                name: None,
+                team: None,
+                text: n.text.clone(),
+                classic: None,
+                sound: None,
+            });
+        } else {
+            hints.write(Hint(n.text.clone()));
+        }
     }
 }
 
@@ -239,6 +497,8 @@ pub struct ChatInput {
     /// Some(true): to the team.
     pub open: Option<bool>,
     pub text: String,
+    /// The caret and selection in `text` (the Signal chat's field).
+    pub caret: super::widgets::Caret,
 }
 
 /// Most characters a chat line takes (Source's say limit, 127 bytes).
@@ -263,6 +523,7 @@ pub fn say(w: &mut World, text: &str, team_only: bool) {
         return;
     }
     type Me<'a> = (
+        Entity,
         Option<&'a Team>,
         Option<&'a Health>,
         Has<crate::core::Dead>,
@@ -270,12 +531,13 @@ pub fn say(w: &mut World, text: &str, team_only: bool) {
         Has<crate::core::Spectating>,
     );
     // A spectator speaks with no team ("*SPEC*", "(Spectator)").
-    let Some((team, alive, at)) = w
+    let Some((me_e, team, alive, at)) = w
         .query_filtered::<Me, With<LocalPlayer>>()
         .iter(w)
         .next()
-        .map(|(t, h, dead, at, spec)| {
+        .map(|(e, t, h, dead, at, spec)| {
             (
+                e,
                 t.copied().filter(|_| !spec),
                 !dead && h.is_none_or(|h| h.current > 0.0),
                 at.map(|g| g.translation()),
@@ -296,10 +558,16 @@ pub fn say(w: &mut World, text: &str, team_only: bool) {
         .get_resource::<crate::net::NetSettings>()
         .map_or_else(|| "Player".to_string(), |s| s.name.clone());
     let runs = formats.line(&me, text, team.map(|t| t.0), alive, team_only, place.as_deref());
-    w.write_message(ChatLine(runs, team));
-    if let Some(s) = formats.sound {
-        w.write_message(crate::map::PlaySound::ui(s));
-    }
+    let text = crate::net::chat::clean_say(text);
+    w.write_message(ChatEntry {
+        kind: if team_only { chimera_ui::chat::LineKind::Team } else { chimera_ui::chat::LineKind::All },
+        sender: Some(me_e),
+        name: Some(me),
+        team,
+        text,
+        classic: Some(ChatLine(runs, team)),
+        sound: formats.sound,
+    });
 }
 
 /// The typing line: Y / U open it while playing; then the keyboard types

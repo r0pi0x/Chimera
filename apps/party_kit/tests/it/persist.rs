@@ -160,6 +160,8 @@ fn every_option_is_archived() {
     let sim = Sim::with(CaSim, |app| {
         app.add_plugins((GreyboxMapPlugin, party_kit::PartyPartsPlugin))
             .add_plugins((VideoPlugin, SoundOptionsPlugin, GammaPlugin, HitMarkerPlugin, SwapEffectPlugin))
+            // `cl_chat` (the chat's).
+            .add_plugins(chimera_client::client::chat::GameMessagesPlugin)
             .init_resource::<MouseSettings>();
         mouse_cvars(app);
         perf::frame_limit_cvar(app);
