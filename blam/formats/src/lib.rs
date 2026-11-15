@@ -10,6 +10,10 @@
 //! - `cache`: the map cache file (`.map`): the decompressed image, the tag
 //!   index, address spaces and bounds-checked views of tag data, the
 //!   foundation every tag-class reader is written on.
+//! - `model`: the render model tag (skeleton, markers, regions, parts with
+//!   decoded vertices and triangles).
+//! - `sound`: the sound and looping sound tags, the Xbox ADPCM decoder and
+//!   the distance attenuation rules.
 //! - `bitmap`: the bitmap tag reader and pixel decoder (every format on the
 //!   disc to RGBA8; block compressed levels also as stored, for a GPU).
 //! - `structure_bsp`: a level's render geometry, clusters, portals, fog and
@@ -29,3 +33,5 @@ pub mod disc;
 pub mod structure_bsp;
 pub mod scenario;
 pub mod shader;
+pub mod model;
+pub mod sound;

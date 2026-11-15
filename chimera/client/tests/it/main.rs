@@ -24,5 +24,6 @@ mod race_chip;
 mod rank_toast;
 mod match_effects;
 mod signal_feed;
+mod signal_chat;
 mod respawn_countdown;
 mod ui_sound;

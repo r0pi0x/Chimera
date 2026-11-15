@@ -44,6 +44,7 @@ pub mod minigame_scoreboard;
 pub mod race_chip;
 pub mod rank_toast;
 pub mod signal;
+pub mod signal_chat;
 pub mod hud_text;
 pub mod input;
 pub mod ink_icon;

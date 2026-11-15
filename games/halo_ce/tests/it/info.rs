@@ -55,8 +55,11 @@ fn lists_the_maps_the_mount_holds() {
     assert_eq!((INFO.map_cycle)(&mount), ["bloodgulch", "wizard"]);
 }
 
+/// The map loader is Halo's, and a map the mount lacks fails with its
+/// file's path (no panic, no install needed).
 #[test]
-fn the_map_loader_says_it_is_not_written() {
-    let err = (halo_ce::game::MAP_LOADER.load)("bloodgulch", &Default::default()).unwrap_err();
-    assert!(err.contains("not implemented yet"), "{err}");
+fn the_map_loader_names_a_missing_maps_file() {
+    assert_eq!(halo_ce::game::MAP_LOADER.game, halo_ce::game::GAME);
+    let err = halo_ce::game::maps::load_in(&Mount::default(), "nowhere", &Default::default(), None).unwrap_err();
+    assert!(err.contains("maps/nowhere.map"), "{err}");
 }

@@ -329,6 +329,23 @@ started; the user asked to avoid server lag while testers play.
   drag and typed values (ui-scroll, merging); the screenshot-tour UI
   fixes (cb133450).
 
+### Chat (UGG UI M10, 2026-11-15)
+
+The one Signal chat is in on `ugg-chat` (plan ugg-ui.md, M10: one feed,
+Y/U and Combat Arms' keys, docked in the lobby and the match end,
+`ignore`, `cl_chat`, the `chat_in` cue). Left:
+
+- A mute button on the Tab board (the board is held open with the cursor
+  captured); today a click on a name in the open chat, or `ignore`.
+- Who is talking (voice) in the feed or by the names; Combat Arms' talk
+  icon is the only indicator.
+- Bot chat reaches only a listen server's host (`CaBotChat` isn't sent
+  to clients): send it as a `ChatMessage` from the server.
+- Time stamps are the session's clock (no local time zone without a date
+  crate).
+- Lucker Party keeps the games' chat until its theme turns the Signal
+  HUD on.
+
 ### Spectators (user, 2026-11-14)
 
 - **Spectators on the Tab board.** Check whether the party apps support

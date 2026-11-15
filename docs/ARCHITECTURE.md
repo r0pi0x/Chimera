@@ -30,7 +30,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    halo_ce_server (apps/halo_ce_server/)   Halo's dedicated server: no presentation
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
-  |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox), a skeleton: GameInfo, disc-image mount, map names, stand-in movement, harness::HaloSim; `ui` its HUD (none yet)
+  |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, stand-in movement, harness::HaloSim; `ui` its HUD (none yet)
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -275,10 +275,13 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   install, a disc image file or a folder of the disc's files, mounted by
   `blam_formats::disc::open_install` through `mount::served`
   (`game::mount`; a single-file install is `served::usable(game, path,
-  "")`), the 13 multiplayer maps' names, a map loader that fails with
-  "not implemented yet" (`game::MAP_LOADER`), `SimPlugins`,
-  `game::HaloPlugins` (the registration and the stand-in movement
-  `halo_ce:movement`, Chimera's placeholder with its own numbers) and `harness::HaloSim`.
+  "")`), the 13 multiplayer maps' names and their conversion
+  (`game::maps`, `game::MAP_LOADER`: a map cache file's structure BSP,
+  shaders, bitmaps, lightmap pages packed into one atlas, collision BSP,
+  player starts and sky fog as `MapData` in metres, through the
+  converted-map cache), `SimPlugins`, `game::HaloPlugins` (the
+  registration and the stand-in movement `halo_ce:movement`, Chimera's
+  placeholder with its own numbers) and `harness::HaloSim`.
   Layered as `hl2dm`: the engine crates and `blam_formats`, never another
   game, `mashup` or an app (checked); `ui` draws nothing of its own yet.
 - `chimera_net` is network play (`net`): the transport, the join

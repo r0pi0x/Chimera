@@ -14,6 +14,8 @@ mod map_fixture;
 mod structure_bsp;
 mod scenario;
 mod shaders;
+mod model;
+mod sound;
 
 mod heavy {
     mod bitmap_install;
@@ -23,4 +25,6 @@ mod heavy {
     mod maps;
     mod scenario_install;
     mod shader_install;
+    mod model_install;
+    mod sound_install;
 }

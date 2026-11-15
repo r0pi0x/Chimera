@@ -4447,6 +4447,9 @@ dependencies = [
  "chimera_sim",
  "chimera_world",
  "halo_ce",
+ "serde",
+ "sha2",
+ "toml",
  "workspace-hack",
 ]
 
