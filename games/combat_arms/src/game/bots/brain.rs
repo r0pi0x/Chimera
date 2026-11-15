@@ -31,6 +31,7 @@ use avian3d::prelude::*;
 use bevy::{
     ecs::{query::QueryState, system::SystemState},
     prelude::*,
+    tasks::{AsyncComputeTaskPool, Task, TaskPool},
 };
 
 use super::{
@@ -232,7 +233,9 @@ pub struct PatrolClock {
 /// The brains' shared copy of the navigation mesh (`ensure_nav`).
 #[derive(Resource, Clone)]
 pub struct BotNav {
-    pub id: usize,
+    /// When the map's mesh (`NavMesh`) it copies last changed: another
+    /// change makes it again.
+    pub made_for: bevy::ecs::change_detection::Tick,
     pub mesh: std::sync::Arc<NavMesh>,
     pub patrol: std::sync::Arc<nav::PatrolGraph>,
 }
@@ -383,9 +386,17 @@ pub fn camping(
 // Navigation mesh
 
 /// The navigation mesh on its way (`ensure_nav`): flooded on a
-/// task (`nav_gen::NavGenTask`). Goes with the map (and the task with it).
+/// task (`nav_gen::NavGenTask`), then the brains' copy of it and its
+/// patrol graph (`BotNav`) made on a task too, so the tick it lands on
+/// only inserts them (8 M instructions on de_dust2 on the main thread,
+/// docs/performance.md). Goes with the map (and the task with it).
 #[derive(Resource)]
-pub struct NavJob(nav_gen::NavGenTask);
+pub struct NavJob(NavStage);
+
+enum NavStage {
+    Flood(nav_gen::NavGenTask),
+    Share(Task<(NavMesh, NavMesh, nav::PatrolGraph)>),
+}
 
 /// The map's navigation mesh: generated from the collision
 /// (`map::nav_gen`) once bots play on a map that has none, from its
@@ -396,20 +407,21 @@ pub struct NavJob(nav_gen::NavGenTask);
 /// server's new map settles (`settle_nav`) or, on a map nothing loaded that
 /// way (the command line's `--map`, a server's start map), from the third
 /// tick, bots standing until it is done (a second or two on de_dust2);
-/// without `nav_gen::SliceFloods` (a test) it is flooded at once.
+/// without `nav_gen::SliceFloods` (a test) it is flooded at once. The
+/// brains' copy (`BotNav`, with our patrol graph) is made with a mesh off
+/// the task on a task of its own (`NavJob`), else here when the map's mesh
+/// changes.
 pub fn ensure_nav(world: &mut World) {
-    if world.contains_resource::<NavMesh>() {
+    if let Some(changed) = world.get_resource_change_ticks::<NavMesh>().map(|t| t.changed) {
         // The brains' shared copy, kept with the map's mesh.
-        let stale = world.get_resource::<BotNav>().is_none_or(|n| n.id != world.resource::<NavMesh>().areas.len())
-            || world.is_resource_changed::<NavMesh>();
-        if stale {
+        if world.get_resource::<BotNav>().is_none_or(|n| n.made_for != changed) {
             let mesh = world.resource::<NavMesh>().clone();
             // The map's patrol nodes, else ours.
             let patrol = MapAi::of(world)
                 .and_then(|ai| ai.patrol_graph(&mesh))
                 .unwrap_or_else(|| nav::PatrolGraph::build(&mesh));
             world.insert_resource(BotNav {
-                id: mesh.areas.len(),
+                made_for: changed,
                 patrol: std::sync::Arc::new(patrol),
                 mesh: std::sync::Arc::new(mesh),
             });
@@ -500,16 +512,21 @@ impl NavStart {
 /// The mesh in, said in the log, with the map's teleporters as links
 /// (`nav_gen::link_map`; a map without them: none).
 fn insert_mesh(world: &mut World, mut mesh: NavMesh, ai: bool) {
-    let links = nav_gen::link_map(&mut mesh, world);
+    nav_gen::link_map(&mut mesh, world);
+    say_mesh(&mesh, ai);
+    world.insert_resource(mesh);
+}
+
+/// The mesh coming in, in the log (its areas and teleporters).
+fn say_mesh(mesh: &NavMesh, ai: bool) {
     if ai {
         info!("bots: the map's {} AI volumes as navigation areas", mesh.areas.len());
     } else {
         info!("bots: generated a navigation mesh of {} areas", mesh.areas.len());
     }
-    if links > 0 {
-        info!("bots: {links} teleporters as navigation links");
+    if !mesh.teleports.is_empty() {
+        info!("bots: {} teleporters as navigation links", mesh.teleports.len());
     }
-    world.insert_resource(mesh);
 }
 
 /// The whole mesh on this thread (a test, without `nav_gen::SliceFloods`).
@@ -538,10 +555,39 @@ fn nav_whole(world: &mut World) {
 /// The mesh's task polled, or started (on a copy of the world's collision):
 /// inserted when it is done.
 fn nav_on_task(world: &mut World) {
-    if let Some(mut job) = world.remove_resource::<NavJob>() {
-        match job.0.poll(chimera_core::tasks::waits(world)) {
-            Some(mesh) => insert_mesh(world, mesh, false),
-            None => world.insert_resource(job),
+    if let Some(job) = world.remove_resource::<NavJob>() {
+        let wait = chimera_core::tasks::waits(world);
+        match job.0 {
+            NavStage::Flood(mut flood) => match flood.poll(wait) {
+                // The map's own patrol nodes are read from the world
+                // (`ensure_nav` makes the copy); else the copy and ours on
+                // a task.
+                Some(mesh) if MapAi::of(world).is_some() => insert_mesh(world, mesh, false),
+                Some(mut mesh) => {
+                    nav_gen::link_map(&mut mesh, world);
+                    let pool = AsyncComputeTaskPool::get_or_init(TaskPool::default);
+                    let share = pool.spawn(async move {
+                        let patrol = nav::PatrolGraph::build(&mesh);
+                        let copy = mesh.clone();
+                        (mesh, copy, patrol)
+                    });
+                    world.insert_resource(NavJob(NavStage::Share(share)));
+                }
+                None => world.insert_resource(NavJob(NavStage::Flood(flood))),
+            },
+            NavStage::Share(mut share) => match chimera_core::tasks::poll(&mut share, wait) {
+                Some((mesh, copy, patrol)) => {
+                    say_mesh(&mesh, false);
+                    world.insert_resource(mesh);
+                    let made_for = world.get_resource_change_ticks::<NavMesh>().map(|t| t.changed).unwrap_or_default();
+                    world.insert_resource(BotNav {
+                        made_for,
+                        mesh: std::sync::Arc::new(copy),
+                        patrol: std::sync::Arc::new(patrol),
+                    });
+                }
+                None => world.insert_resource(NavJob(NavStage::Share(share))),
+            },
         }
         return;
     }
@@ -551,7 +597,7 @@ fn nav_on_task(world: &mut World) {
     }
     let job = start.job();
     let snapshot = nav_gen::CollisionSnapshot::of(world);
-    world.insert_resource(NavJob(nav_gen::NavGenTask::spawn(job, snapshot, start.ignore, start.vis)));
+    world.insert_resource(NavJob(NavStage::Flood(nav_gen::NavGenTask::spawn(job, snapshot, start.ignore, start.vis))));
 }
 
 /// How far under an AI volume's box its floor may be (m, ours).

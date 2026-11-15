@@ -6,8 +6,10 @@
 //! thread (`nav_gen::NavGenTask`) arrives and a bot walks within
 //! `BOTS_WALK_WITHIN`, no tick meanwhile over `WORST_TICK` instructions
 //! (work counts: `Sim::work`, the tick's systems), and the task's start
-//! (`ensure_nav`: the collision's copy) under `TASK_START`. Passes with a
-//! note without the installs.
+//! (`ensure_nav`: the collision's copy) under `TASK_START`, as is
+//! `ensure_nav` on every later tick (the mesh's arrival: the brains' copy
+//! and patrol graph are made on a task). Passes with a note without the
+//! installs.
 
 use std::time::{Duration, Instant};
 
@@ -90,11 +92,22 @@ fn bots_walk_soon_on_a_map_loaded_without_a_screen() {
     let mut ticks = 0;
     let mut started_on: Option<(u64, u64, u64, chimera_core::metrics::work::WorkCounts)> = None;
     let mut worst_systems = None;
+    let ensure_nav = |w: &chimera_core::metrics::work::WorkCounts| {
+        w.0.iter().filter(|(k, _)| k.ends_with(" ensure_nav")).map(|(_, v)| v.0).sum::<u64>()
+    };
+    // The costliest `ensure_nav` after the task's start: (instructions, tick).
+    let mut nav_later = (0u64, 0);
     while start.elapsed() < Duration::from_secs(30) && walked_at.is_none() {
         let frame = Instant::now();
         let w = sim.work(1);
         ticks += 1;
         let spent = w.as_ref().map_or(0, |w| w.ticks[0]);
+        if let Some(w) = w.as_ref()
+            && started_on.is_some()
+            && ensure_nav(&w.systems) > nav_later.0
+        {
+            nav_later = (ensure_nav(&w.systems), ticks);
+        }
         if ticks >= 10 && spent > worst.0 {
             worst = (spent, start.elapsed());
             worst_systems = w.as_ref().map(|w| w.systems.clone());
@@ -105,7 +118,7 @@ fn bots_walk_soon_on_a_map_loaded_without_a_screen() {
         // The tick that started the flood's task (the collision copied).
         if started_on.is_none() && sim.app.world().contains_resource::<NavJob>() {
             let systems = w.map(|w| w.systems).unwrap_or_default();
-            let nav = systems.0.iter().filter(|(k, _)| k.ends_with(" ensure_nav")).map(|(_, v)| v.0).sum::<u64>();
+            let nav = ensure_nav(&systems);
             started_on = Some((ticks, spent, nav, systems));
         }
         if mesh_at.is_none() && sim.app.world().contains_resource::<NavMesh>() {
@@ -168,6 +181,14 @@ fn bots_walk_soon_on_a_map_loaded_without_a_screen() {
         );
     }
     if hw {
+        // The mesh's arrival: on a tick of the props' settling it went over
+        // `WORST_TICK` when the brains' copy was made here (8.1 M).
+        assert!(
+            nav_later.0 < TASK_START,
+            "ensure_nav cost {} instructions on tick {} after the task's start (limit {TASK_START})",
+            nav_later.0,
+            nav_later.1
+        );
         assert!(
             worst.0 < WORST_TICK,
             "a tick of {} instructions at {:?} (limit {WORST_TICK}); its costliest systems:\n{}",

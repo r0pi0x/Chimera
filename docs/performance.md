@@ -4523,6 +4523,44 @@ is fewer systems iterating characters to find nothing changed
 (`follow_lead` each tick, the physics shadow's `attach`, HL2:DM's
 `wear`), not tried here.
 
+## The navigation mesh's arrival (2026-11-15)
+
+`ultimate_gun_game`'s `heavy::nav_in_play` failed after the push of
+11b9d144: a tick of 64.2 M instructions against its 60 M limit
+(`update_narrow_phase` 16.2 M, `prepare_spots` 10.6 M, `ensure_nav` 8.1
+M, `settle_props` 3.8 M, `sleep_islands` 1.8 M). No merge raised it:
+the test's ticks, one by one (`Sim::work`, the same seeded match on
+de_dust2), at 6c8cbea2 (passing after its push) and at 28291c80 match
+within 0.6 M on every tick:
+
+| ticks | what runs | 6c8cbea2 | 28291c80 |
+|---|---|---|---|
+| 2-5 | the match's start | 60.0, 65.9, 60.9, 52.6 M | 60.0, 65.8, 60.1, 52.0 M |
+| 6-34 | the props settling (narrow phase 16 M), spots sliced (9-12 M) | 44-48 M | 44-48 M |
+| 35 | the props fall asleep (`settle_props`, `sleep_islands`) | 52.3 M | 52.3 M |
+| 36- | props asleep (narrow phase 1.7 M) | 20-23 M | 20-23 M |
+| the tick after the mesh lands | `ensure_nav` makes the brains' copy | 32.2 M (8.1 M of it) | 32.7 M (8.2 M) |
+
+The mesh is flooded on a task and lands on whichever tick its thread
+finishes, by wall time: 0.6-2.3 s here, so after the props' sleep, but
+0.51 s in the after-push run's load, on tick 35. `ensure_nav` then
+cloned the mesh and built the patrol graph (`BotNav`) on the main
+thread the tick after: 52.3 M + 8.1 M + the bots' first `think`, 64.2 M.
+
+**The fix**: the brains' copy and our patrol graph are made on a task
+of their own once the flood's mesh is in (`brain::NavJob`'s second
+stage; a map with its own patrol nodes, `MapAi`, still makes them on the
+main thread), and the mesh and the copy go in together (`BotNav::made_for`:
+the mesh's change tick, which replaces the area count and
+`is_resource_changed` as the staleness check). The tick the mesh lands
+on is now 24.6 M (`ensure_nav` under 0.4 M; was 32.7 M), and the bots
+still walk on it. A run since had the mesh land at 0.51 s, during the
+props' settling, as in the failure: its worst tick was 50.3 M, that
+one. The worst a landing can now make is the props' last
+tick and the bots' first `think`: about 54 M. The test also holds
+`ensure_nav` under 5 M on every tick after the task's start, so the
+coincidence is no longer needed to catch this again.
+
 ## First join download, 2026-11-14
 
 The playtest's first join downloaded "300+ MB". Measured from the asset
