@@ -124,7 +124,7 @@ uses, with no conversion on load.
 | FIRST_TAG_SALT | 0xE174 | u16 | the salt (high half) of tag 0's id on every disc map |
 | TICK_RATE | 30 | ticks/s | game tick |
 | WORLD_UNIT | 3.048 | m | 10 ft |
-| GRAVITY | 0.0035651792 | WU/tick^2 | engine default; the globals tag scales it |
+| GRAVITY | 0.0035651792 | WU/tick^2 | engine constant (no tag scales it for players: the movement spec) |
 | TAG_STRING | 32 | bytes | a short string field: up to 31 characters and a NUL |
 
 ## The map file on disc

@@ -18,8 +18,8 @@ plays as the real game, from specs and the disc's own data.
 
 | Milestone | State | Summary |
 |---|---|---|
-| M0 specs (formats and core rules) | in progress (2026-11-15) | plan and spec index written; spec waves below |
-| M1 a map you can walk on | not started | |
+| M0 specs (formats and core rules) | in progress (2026-11-15) | waves 0 and 1 landed but sounds and animations (disc image, cache file, structure BSP, collision, models, bitmaps, scenario, shaders), and of wave 2 movement and objects; weapons, projectiles, health and shields, multiplayer rules, sounds and animations being written |
+| M1 a map you can walk on | in progress (2026-11-15) | `blam_formats` reads the disc image and the map cache file (tag index, address spaces, typed tag reads); `games/halo_ce` is a skeleton that mounts the disc; the class readers (bitmaps, structure BSP and collision, scenario and shaders) are being written; the map converter is next |
 | M2 Halo guns as UGG rungs | not started | |
 | M3 the full multiplayer arsenal | not started | |
 | M4 every multiplayer map | not started | |
@@ -55,8 +55,12 @@ plays as the real game, from specs and the disc's own data.
   names the player's own Xbox disc image (`.iso`), or a folder holding
   the disc's files. The image is a mount layer (`blam_formats`' reader
   of the disc's file system as a `FileSource`), so the mount shows the
-  disc's files (`maps/<name>.map`, ...) and `mount::served` puts the
-  asset store under or instead of it, as for every game.
+  disc's files (`maps/<name>.map`, ...) and `mount::served` serves the
+  asset store instead of it for a player without the disc (the engine
+  layers a store under an install only by a Steam build id, which this
+  game has none of). Tools, tests and agents name the image with
+  `CHIMERA_HALO_CE_ROOT`, the engine's per-game variable, so no local
+  config file changes.
 - **Halo's files go to the asset service (user, 2026-11-15).** This
   replaces the brief's "never publish" for this game only: players
   without the disc get Halo's files from the asset service at the join,
@@ -83,6 +87,19 @@ plays as the real game, from specs and the disc's own data.
   Shared crates change only through small generic extension points
   (new-game.md). The UGG UI and the platform services belong to another
   session: no restyling, no service changes.
+
+- **What the specs settled (2026-11-15).** One world unit is 3.048 m
+  (10 ft); +Z is up, +X forward, +Y left; the game ticks 30 times a
+  second. A map is a 2 KB header and one zlib stream, inflated whole.
+  Every multiplayer map holds the same 15 weapons, 16 projectiles, 14
+  equipment tags, 2 bipeds and 3 vehicles, so one map (Blood Gulch) is
+  the donor for Halo's guns on other games' maps. The disc's
+  multiplayer has no fuel rod gun and no rocket Warthog. The reference
+  describes another Xbox build than the disc; where they differ the
+  specs follow the disc.
+- **M1's first map is Hang 'Em High** (one cluster, no portals, two
+  lightmap pages, ten opaque materials); Blood Gulch second, for
+  culling and its sky.
 
 ## 3. What is on the disc (measured 2026-11-15)
 
@@ -203,12 +220,12 @@ backlog.
 
 ## 6. Open questions
 
-- Which map is M1's (Blood Gulch is open terrain with few materials;
-  Hang 'Em High is indoor with more geometry): decided when the
-  structure spec lands.
-- Whether every multiplayer map holds every multiplayer weapon's tags
-  (then one map file is the donor for Halo's guns on other games' maps):
-  wave 0 measures it.
+- How the asset store's build id is named for a game without a Steam
+  build (the packer and `mount::served` key a store's manifest by it):
+  decided when the game enters `chimera_pack` (M2).
+- The movement, weapon and vitality specs' numbers come from the disc
+  and their rules from the reference; nothing is measured in the real
+  game yet (M5).
 - Halo's own app and server (`apps/halo_ce`, `apps/halo_ce_server`):
   after the party apps play it.
 
@@ -218,3 +235,11 @@ backlog.
   extracted outside the repository; the Windows checkout's line endings
   and missing crate fixed so the hooks pass; wave 0 and the first of
   wave 1 started.
+- 2026-11-15: ten specs landed (each checked against the disc by its
+  writer and read by the orchestrator); `blam_formats` (the disc image
+  reader, then the cache file and tag-reading foundation: 76 tests, 27
+  of them on the disc's 24 maps) and the `halo_ce` skeleton merged.
+  Measured on the PC: a first Bevy build in a new worktree takes 12
+  minutes at six jobs, a plain-data crate seconds, so format readers
+  run in parallel worktrees and game-crate work reuses one warm
+  worktree.
