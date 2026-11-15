@@ -682,6 +682,91 @@ dialogue to others not yet playing is dropped.
    linear distance fade of a stereo sound, the gain (formula above) and
    the pitch; queue the next permutation of a chain.
 
+## Unit dialogue (`udlg`)
+
+A unit's voice lines (pain, death, screams, AI chatter) come from a
+dialogue tag chosen per unit, and are played by the game simulation,
+not by the sound system: they are ordinary impulse sounds once
+started.
+
+**The tag.** After a 0x10-byte header, a fixed list of tag references
+(0x10 bytes each, class `snd!`), one per vocalization, by index. The
+ones the game's damage code uses:
+
+| Index | Vocalization | Falls back to (when empty) |
+|---|---|---|
+| 6 | pain body minor | none |
+| 7 | pain body major | 6 |
+| 8 | pain shield | 6 |
+| 9 | pain falling | 6 |
+| 10 | scream fear | none |
+| 11 | scream pain | 10 |
+| 12 | maimed limb | none |
+| 13 | maimed head | 12 |
+| 14 | death quiet | 15 |
+| 15 | death violent | none |
+| 16 | death falling | 14 |
+| 17 | death agonizing | 15 |
+| 18 | death instant | 14 |
+| 19 | death flying | 15 |
+
+The fallback is followed until a line exists or the chain ends (so
+death falling, when empty, tries death quiet, then death violent).
+
+**Which dialogue a unit has.** The unit tag's dialogue variants block
+(element 0x18: a variant number, then the dialogue reference at 0x08):
+the unit's variant number's entries, else variant 0's, else any, a
+random one among several. The multiplayer Spartan (`characters\
+cyborg_mp\cyborg_mp`) has one: variant 0, `sound\dialog\chief\chief`.
+That tag fills only:
+
+| Index | Sound | Permutations | Longest (tag's estimate) |
+|---|---|---|---|
+| 14 death quiet | `sound\dialog\chief\deathquiet` | 7 | 2315 ms |
+| 15 death violent | `sound\dialog\chief\deathviolent` | 16 | 2566 ms |
+| 16 death falling, 18 death instant, 19 death flying | `sound\dialog\chief\deathviolent` | | |
+
+Both are class unit dialog, gain modifier 0.85, the class's distances.
+**There are no pain, scream or maimed lines**: in multiplayer a living
+player is silent when hit, and only the death line plays. Multiplayer
+does not switch the dialogue off: the death line plays in every game
+type.
+
+**Death line choice** (at the killing hit, if the hit is not silent and
+did some damage or depleted the body): falling-category damage (falls,
+`globals\distance`) gives death falling; flame-category gives death
+agonizing; a damage effect with an instantaneous acceleration of 2 WU/s
+or more gives death flying; otherwise, if the death is not severe,
+death quiet; if severe, death instant when the unit was killed
+instantly (a headshot instant kill) and death violent otherwise. A
+unit without AI is severe when its recent body damage (a fraction of
+vitality) exceeds the killing hit's body damage in points plus 0.2,
+which practically never holds (`health_shields.md`, Open questions).
+So for the multiplayer Spartan: **`deathviolent`** for falls, flame,
+grenades, rockets, tank shells and the supercombine; **`deathquiet`**
+for bullets, bolts, needles, pellets, melee and vehicle hits.
+
+**Pain line choice** (a non-lethal hit; listed for completeness, the
+Spartan has none): only while the major-pain timer is 0: falling gives
+pain falling; recent body damage of 0.6 or more pain body major; else,
+if the minor timer is 0, fewer than 3 minor lines are counted and the
+unit is silent or a random draw is below 0.4, pain body minor (body
+damage taken) or pain shield. A major line sets the major timer to 60
+ticks, a minor line the minor timer to 30, raises the minor count and
+sets its decay timer to 22. Each tick the minor timer falls by 2, the
+minor count falls by 1 every 22 ticks; the major timer never counts
+down, so a unit makes at most one major pain line per life.
+
+**Playing a line.** A line has a priority (pain 2, involuntary 7,
+death 10; a death line overrides anything the unit is saying, and
+nothing but a death line may start once the unit is dead). It starts at
+the unit's next dialogue update (no delay for these lines) as an impulse
+sound on the unit's `head` marker (its node and position), followed by
+a 7-tick pause; while it lasts (its longest permutation length × 30 /
+1000 ticks) the unit is "speaking". The permutation is the sound
+system's choice (Permutation choice). In the Xbox game's lockstep
+system link every machine plays the same line.
+
 ## Looping sounds (`lsnd`)
 
 A looping sound is what plays music, ambience, engines, projectile
@@ -1216,6 +1301,16 @@ warthog_engine5` (class 23, 3.0 / 15.0 WU, gain modifier 1.0, flags 1): ranges
 1.1 to 1.5, 3), `idle` (1.1, 1.0 to 1.1, 3), `high` (2.3, 1.75 to 2.3,
 1); playback rates 1 / natural.
 
+**bloodgulch.map**, unit dialogue:
+
+| Check | Expected |
+|---|---|
+| `characters\cyborg_mp\cyborg_mp` dialogue variants | one: variant 0, `sound\dialog\chief\chief` |
+| `sound\dialog\chief\chief`, vocalizations 6 to 19 | only 14 (`deathquiet`), 15, 16, 18, 19 (`deathviolent`) are set |
+| `sound\dialog\chief\deathquiet` / `deathviolent` | class unit dialog, 7 / 16 permutations in one range, longest 2315 / 2566 ms, gain modifier 0.85 |
+| death line choice for the Spartan: AR kill, fall, frag, flamethrower, melee | `deathquiet`, `deathviolent`, `deathviolent`, `deathviolent` (agonizing falls back to violent), `deathquiet` |
+| a non-lethal hit on the Spartan | no line (6 to 13 empty, and their fallbacks too) |
+
 ## Confidence per section
 
 | Section | Confidence |
@@ -1238,6 +1333,7 @@ warthog_engine5` (class 23, 3.0 / 15.0 WU, gain modifier 1.0, flags 1): ranges
 | Sound environment layout | checked against the disc (three tags) |
 | Background sound and sound scenery | layout checked against the disc; behaviour from the decompilation |
 | Measured facts | checked against the disc |
+| Unit dialogue | tag layout and the Spartan's lines read from the disc; the choice of line, fallbacks, timers and priorities reference only |
 
 ## Open questions
 
