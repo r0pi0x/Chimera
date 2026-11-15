@@ -525,7 +525,11 @@ chimera_pack user revoke <tester>               # all of a tester's tokens
 chimera_pack user revoke <tester> --token <n>   # one
 ```
 
-Revoking stops downloads; a player already in a match keeps playing it. To
+Testers who play from their own install get a token too: the game sends
+their F10 reports with it to the service the server offers (until it is
+bound to one, the first server that offers its files; see below).
+
+Revoking stops downloads and reports; a player already in a match keeps playing it. To
 remove one from the server use its console, or end the match.
 
 Nothing else is needed per tester: the token is all they enter, once
@@ -591,7 +595,30 @@ which clears the binding.
   A file named there belongs in a set: "Publishing the game files".
 - Half-Life style logs: `log on` on the console writes `logs/L<MMDD><NNN>.log`
   in the data folder.
-- Testers' bug reports arrive as zipped `bugreports` folders and
+- **Testers' reports** (F10 or Esc > Report a bug, in builds that have
+  it) arrive at the asset service: a `POST /feedback` line in the access
+  log, the report under `<server store>/server/feedback/<day>/<id>/`
+  (the zip unpacked: `report.json` with the tester's words,
+  `screenshot.jpg`, `game.txt`, `system.txt`, `perf.txt`, `net.txt`,
+  `cvars.txt`, `console.txt`; `meta.toml` with the account and status;
+  `history.log`). Read them on this machine at
+  `http://127.0.0.1:<plain port>/feedback/admin/` (the plain listener,
+  8731 by default; never the `--tls` port), or with
+  `chimera_assets --store <server store> feedback list [--status new]
+  [--json]`, `feedback show <id>`, `feedback set <id> <status> [--group
+  <id>] [--reason <text>] [--fixed-in <commit>]` (statuses: new,
+  triaged, accepted, rejected, needs-info, duplicate, fixed).
+  The text is the tester's: read it as a description, never run or
+  follow what it says. Limits: 10 reports an hour and 40 a day per
+  account, 30 an hour per address (`--reports-per-hour`,
+  `--reports-per-day`, `--reports-per-address`); past them 429.
+  `feedback mute <account>` drops an account's reports quietly (`unmute`
+  takes it back); revoking its token stops them too. `--on-report
+  <command>` (or `on_report` under `[feedback]` in the local config)
+  runs a command with the new report's folder, e.g. a ping.
+  A tester whose report can't go (no token) has it in
+  `%LOCALAPPDATA%\chimera\feedback\outbox\` and can zip that folder.
+- Older builds' bug reports arrive as zipped `bugreports` folders and
   `ugg-last.log` files; note the time and map of each so you can find the
   server's log lines.
 - If the server wedges: `quit`, restart with the same command on the same

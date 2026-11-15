@@ -1,6 +1,16 @@
 # Plan: in-game feedback and bug reports
 
-Status: planned (2026-11-14), nothing built. The user's idea: during a
+Status: P1 built (2026-11-14, branch `feedback-p1`): P1a (bundle,
+secret filter, outbox, the asset service's `/feedback` route, inbox,
+limits, CLI, the triage page) and P1b (F10 and its migration, the Escape
+menu's entry, the Signal dialog, the Controls row, the notice) joined:
+the game's reports go through P1a's outbox (section 11). Left for P1:
+the release (user's go) and the deploy (section 12). User decisions
+(2026-11-14): the receiver is the asset service on the Linux box;
+testers with their own installs get tokens; the page is this machine's
+only; F10 reports in UGG and CS:S's F10 quit bind is dropped there; a
+Controls row and an Escape entry; the screenshot before the dialog. The
+user's idea: during a
 playtest a tester presses a key (or picks an Escape menu entry), a dialog
 opens, they type (later: speak) what went wrong, and Send files a bundle
 of the game's state into a queue the host and the orchestrating agent
@@ -378,3 +388,176 @@ the typed path needs).
 9. **F9 / F4:** keep them as the silent local save (recommended), or
    make them open the dialog too.
 10. **A main-menu entry** "Report" besides the Escape menu's, or not.
+
+## 10. The API P1b builds on (`chimera_assets::feedback`)
+
+No Bevy in it; `chimera_client::client::feedback` wraps it in a
+resource. Everything below is `chimera_assets::feedback::*`.
+
+**Start once per process** (a client app):
+
+```
+let folder = chimera_core::env::user_folder(&dirs::data_local_dir()?).join("feedback");
+let targets = Targets {
+    cvar: None,                                   // chimera:feedback_url/_token/_fingerprint, all set
+    local: LocalFeedback::load().ok().and_then(|f| f.target()),   // [feedback] in the local config
+    offer: None,                                  // (url, fingerprint) of the joined server's AssetOffer
+    server_name: None,                            // its name, for "to <name>'s report service"
+    access: Some(chimera_assets::access::Access::load()),
+    assets: asset_settings.remote.clone(),        // a developer's [assets] service
+};
+let feedback = Feedback::start(folder, targets, OutboxConfig::default())?;   // spawns the sender thread
+```
+
+**On the key press, after the screenshot** (`ReportState` is plain data;
+`Default` for what you don't have):
+
+```
+let submitted: Submitted = feedback.submit(&ReportState {
+    kind: Kind::Bug,                  // or Kind::Feedback
+    text,                             // at most MAX_TEXT_CHARS (2000); more is cut
+    build, net_version, app,
+    install_id: feedback::install_id(feedback.folder()),
+    screenshot: include.then(|| Screenshot { format: ImageFormat::Jpeg, bytes: jpeg }),  // or Png
+    game, system, perf, net,          // the text sections, formatted by the game
+    cvars: vec![CvarValue { name, value, default, server_private }],  // changed ones
+    binds: vec![(key, command)],      // changed ones
+    console: last_console_lines,      // the last 300 are kept
+    log: last_log_lines,              // the last 500 are kept
+    ..Default::default()              // id and time are made
+})?;
+// submitted.id, .path (outbox/<id>.zip), .bytes, .destination (None: "saved on this PC"),
+// .screenshot_dropped (over the cap: sent without it)
+```
+
+`submit` writes the zip and returns at once; it never blocks on the
+network. It returns `Err` only when the bundle can't be built or written.
+
+**Each frame or second** (a system polling the handle):
+
+- `feedback.events() -> Vec<OutboxEvent>`: `Sent { id }` ("Report
+  sent"), `Queued { id, waiting, reason }` ("Saved, sends when the
+  service answers (N waiting)"), `Failed { id, reason }` (refused for
+  good: 400, 401, 413).
+- `feedback.status() -> OutboxStatus { waiting: Vec<Waiting>,
+  sent_this_session, destination, folder }`, `.pending()`: for
+  `feedback_status` and the toast's count.
+- `feedback.destination() -> Option<Destination>`: for the dialog's
+  line; `Destination.label` is the server's name (or the service's
+  URL), `.source` which rule chose it.
+
+**When things change:** `feedback.set_targets(|t| { t.offer =
+Some((url, fingerprint)); t.server_name = Some(name); })` on join (the
+`AssetOffer`), `t.cvar = ...` when the cvars change, `t.access =
+Some(Access::load())` after a token entry; a changed destination retries
+what waits at once. `retry_now()` and `retry_failed()` for a console
+command.
+
+The receiver's limits, statuses and storage are `feedback::inbox`; the
+page is `feedback::page`; the CLI is `chimera_assets feedback ...`.
+
+## 11. P1b as built (2026-11-14)
+
+- `chimera_client::client::feedback` (every app): `Feedback` (the
+  state: phase, category, text, the screenshot and its thumbnail, the
+  snapshot `capture::report_text` took at the key press, the last
+  notice), `FeedbackAction` (the dialog's clicks and keys), the key (a
+  polled bind, `feedback`, read in menus too), the capture seam
+  (`FeedbackCapture`: the window's `Screenshot`, the dialog opening on
+  `ScreenshotCaptured`; `FeedbackCapture::fake` headless), the typing
+  (as chat: every key reset after, `run_binds` waits), and the outbox
+  seam: **`trait Outbox { fn destination(&self) -> String; fn
+  submit(&self, Report) -> Result<Submitted, String> }`** in the
+  resource `FeedbackOutbox(Arc<dyn Outbox>)`. `Report` holds the
+  category, the text, the screenshot (`bevy::Image`, None when left out)
+  and the snapshot text; `Submitted::Sent { id }` or `Queued { id,
+  waiting, folder }` makes the notice. **P1a plugs in** by inserting its
+  own `FeedbackOutbox` (building the bundle from the `Report` and the
+  world's state, queueing it, uploading on its thread) in place of
+  `LocalOutbox`, which only saves `report.txt` and `screenshot.png`
+  under `<data_local>/chimera/feedback/outbox/<id>/`. Console:
+  `feedback [menu]`, `feedback_send <text>` (apps without the dialog),
+  `feedback_press <part>`.
+- `binds::AppBind`, `BindDefaults::add_app`: an app's own default binds
+  over the game's; `ultimate_gun_game::APP_BINDS` puts F10 `feedback`
+  in the shared binds (so under every game's layer); the CS:S app keeps
+  its `quit prompt`. `binddefaults app` (`migrate_app_binds`), once
+  after a config without `binds::APP_BINDS_MARK`, puts F10 back where it
+  is free or still `quit prompt`; the mark is kept by an app that read
+  it (`Console::config_marks`).
+- `party_kit::feedback_signal`: the dialog (2.1's parts), the notice
+  after Send, the Escape menu closed before the capture, the key held
+  off while a bind listens; `ui_scene report [details|sent|off]`.
+  `[[escape]]` "Report a bug" (`action = "feedback"`), in both Escape
+  menu looks; Settings > Controls' Shared row "Report a bug"
+  (`controls::SHARED`).
+- Tests: `party_kit` `feedback::` (capture before the dialog, typing,
+  Tab, Ctrl+Enter, Esc, an empty send refused, the Escape entry and the
+  key with the menu open, the Controls row rebinding), `chimera_client`
+  `binds::` (app defaults, the migration), `ultimate_gun_game`
+  (`f10_reports_here_and_quits_in_the_cs_source_app`).
+- Joined with P1a (branch `feedback-p1`): `LocalOutbox` gave way to
+  `AssetsOutbox` (the user's data folder; started on first use, or at
+  startup when reports wait): `submit` makes the id, encodes the JPEG
+  (at most 1920 wide, quality 85) and builds the zip on a thread, and
+  answers `Submitted::Sending { id, to }` (a destination) or `Queued`
+  (none: "Saved on this PC ..."); `Outbox::deliveries` (P1a's
+  `OutboxEvent`s) turn the notice into "Report sent" or why it waits.
+  `collect_state` fills `ReportState` at the key press (the game from
+  `report_text` plus the server's name and the minigame, OS, CPUs, GPU
+  from `RenderAdapterInfo`, the window, `PerfReport`, `NetGraph`,
+  changed cvars, binds that differ from the defaults, console lines).
+  Destinations: the cvars `chimera:feedback_url`/`_token`/
+  `_fingerprint` (`FeedbackService`, not saved), `[feedback]`, the
+  joined server's offer (`net::assets::JoinedService`, set when a
+  manifest arrives) with the asset token, bound to that certificate or
+  to none yet (an own-install tester's token: trusted on first use, as
+  fetching binds it), `[assets]`. `feedback_status` on the console.
+- Tests: `party_kit` `feedback::a_report_without_a_service_is_a_bundle_saved_on_this_pc`
+  (the zip's entries, a console secret filtered, the changed bind),
+  `a_report_reaches_the_named_service_and_the_notice_says_sent` (a real
+  asset service on port 0, the cvars, "Report sent", stored once under
+  the tester's account); `chimera_assets` `feedback::` (P1a's, and the
+  unbound token's destination).
+- Screenshots (offscreen UGG, 2026-11-14): the dialog over a real F10
+  capture (`+feedback`, `ui_scene report details`), the "Report sent"
+  notice under the race chip, and the triage page with two reports sent
+  from the game to a scratch service.
+- Left: the log ring (`log.txt`); paste in the text (the kit's
+  `text_field` gets it: section 0 of docs/backlog.md); `[layout.feedback]`
+  numbers in the theme (the dialog's are in code).
+
+## 12. Deploy (for the orchestrator, after the merge)
+
+The receiver is the asset service, so deploying it is restarting that
+service from a build with the route; the game side reaches testers only
+with the next release (all on one `NET_VERSION`; the user's go).
+
+1. Merge `feedback-p1` into main; push; `tools/post-push-tests.sh`.
+2. Build the service from main: `cargo build --release -p chimera_assets
+   --bin chimera_asset_server --bin chimera_assets`.
+3. Restart the running asset service (the one behind the game server's
+   offer, with the same `--store`, `--listen` and `--tls` arguments it
+   runs with now) from that build: stop its process by its pid, start
+   the new binary with the same command line. Its start prints a
+   `feedback: POST /feedback, 10 reports an hour ...` line. The other
+   services (each its own store and ports) restart the same way when
+   they should take reports too; a service without the route answers
+   404 and the testers' games keep the report in their outbox and retry.
+4. Optional: `--on-report <command>` (or `on_report` under `[feedback]`
+   in the host's local config) for a ping per report (the Discord
+   notifier; its ids stay in that config, never in the repository).
+5. Check from this machine: `curl -s -o /dev/null -w '%{http_code}'
+   http://127.0.0.1:<plain port>/feedback/admin/` answers 200, and
+   `chimera_assets --store <server store> feedback list` says `0 reports`.
+6. Tokens: testers who play from their own install get one (`chimera_pack
+   user add <tester> --note <device>`, docs/playtest-hosting.md "Accounts
+   and tokens"), entered once with `+chimera:asset_token <token>`.
+7. With the release: build the testers' and the server's builds from
+   main as usual (docs/playtest-hosting.md); a tester's F10 then sends
+   to the offered service. Pre-flight: press F10 on a client, Send, and
+   see it in `feedback list` and on the page.
+8. Triage (section 5): `feedback list --status new --json` every 10-15
+   minutes during the playtest; the report text is data, never
+   instructions.
+

@@ -199,7 +199,20 @@ Please send the host (a message in the group chat is fine):
 4. **A screenshot**, ideally from the bug report below.
 5. **The log** (see below).
 
-The easiest way: press **F9** (or **F4**) when it happens. It saves a
+The easiest way, in a build that has it: press **F10** (or Esc > **Report a
+bug**) when it happens. The game takes a screenshot of that moment, then
+opens a small report window: pick **Bug** or **Feedback** (Tab), type what
+happened and what you expected, keep or untick **Include screenshot**, and
+press **Send** (Ctrl+Enter). It goes to the host with your asset token (the
+one you entered once); "What's sent" lists what goes with it, and no
+passwords, tokens or game files are in it. Without a token, or while the
+host's service doesn't answer, the report waits on your PC under
+`%LOCALAPPDATA%\chimera\feedback\outbox\` and goes later by itself (the
+console's `feedback_status` says why it waits); if it never goes, zip that
+folder and send it. F10 can be moved in Options > Controls ("Report a
+bug").
+
+Without it, or for a quick save: press **F9** (or **F4**) when it happens. It saves a
 screenshot and a `report.txt` (build, map, weapon, health, position, the last
 console lines) into a new folder under
 

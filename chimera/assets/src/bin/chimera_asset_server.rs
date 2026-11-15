@@ -17,6 +17,13 @@
 //! `--daily-gb` and `--bad-tokens` set the limits (`server::Limits`),
 //! `--connections` the HTTPS connections at once per address
 //! (`tls::FrontLimits`).
+//!
+//! Feedback reports (`feedback::inbox`): `POST /feedback` takes them with
+//! the testers' tokens; `--reports-per-hour`, `--reports-per-day` and
+//! `--reports-per-address` set its limits; `--on-report <command>` (else
+//! `[feedback] on_report` in the local config) runs a command for each new
+//! one (a Discord ping). The triage page is at
+//! `http://127.0.0.1:<port>/feedback/admin/` on this machine only.
 //! docs/playtest-hosting.md has the steps. A host tool: not in releases.
 
 use std::process::ExitCode;
@@ -28,9 +35,11 @@ use chimera_assets::{
 
 const USAGE: &str = "usage: chimera_asset_server [--store <dir>] [--listen <ip:port>] [--tls <ip:port>] [--threads <n>]
        [--latency-ms <n>] [--rate <requests/s>] [--burst <n>] [--daily-gb <n>] [--bad-tokens <n per minute>]
-       [--connections <n per address>]
+       [--connections <n per address>] [--on-report <command>] [--reports-per-hour <n>]
+       [--reports-per-day <n>] [--reports-per-address <n per hour>]
   --listen     plain HTTP, default 127.0.0.1:8731 (keep it on this machine)
-  --tls        HTTPS with the server's own certificate (its fingerprint is printed), e.g. 0.0.0.0:27031";
+  --tls        HTTPS with the server's own certificate (its fingerprint is printed), e.g. 0.0.0.0:27031
+  --on-report  a command run for each new feedback report (default: [feedback] on_report in the local config)";
 
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -39,6 +48,8 @@ fn run() -> Result<(), String> {
     let mut tls = None;
     let mut limits = chimera_assets::server::Limits::default();
     let mut front_limits = chimera_assets::tls::FrontLimits::default();
+    let mut feedback_limits = chimera_assets::feedback::inbox::FeedbackLimits::default();
+    let mut on_report = None;
     let number = |v: String, what: &str| v.parse::<f64>().map_err(|_| format!("{what}: a number"));
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -54,16 +65,25 @@ fn run() -> Result<(), String> {
             "--daily-gb" => limits.daily_bytes = (number(value()?, arg)? * 1e9) as u64,
             "--bad-tokens" => limits.bad_tokens = number(value()?, arg)? as u32,
             "--connections" => front_limits.per_address = number(value()?, arg)?.max(1.0) as usize,
+            "--on-report" => on_report = Some(value()?),
+            "--reports-per-hour" => feedback_limits.per_account_hour = number(value()?, arg)? as usize,
+            "--reports-per-day" => feedback_limits.per_account_day = number(value()?, arg)? as usize,
+            "--reports-per-address" => feedback_limits.per_address_hour = number(value()?, arg)? as usize,
             _ => return Err(USAGE.into()),
         }
     }
     let store = store.or_else(default_store).ok_or("no store: pass --store")?;
+    let on_report = match on_report {
+        Some(c) => Some(c),
+        None => chimera_assets::feedback::LocalFeedback::load()?.on_report,
+    };
     let peers = chimera_assets::tls::Peers::default();
     let service = Service::new(store.clone())
         .map_err(|e| format!("{}: {e}", store.root.display()))?
         .with_latency(std::time::Duration::from_millis(latency))
         .with_limits(limits)
-        .with_peers(peers.clone());
+        .with_peers(peers.clone())
+        .with_feedback(feedback_limits, on_report.clone());
     let key = service.public_key();
     let running = serve(service, &listen, threads).map_err(|e| e.to_string())?;
     println!("serving {} at {}", store.root.display(), running.url());
@@ -88,6 +108,15 @@ fn run() -> Result<(), String> {
         limits.burst,
         if limits.daily_bytes == 0 { "no cap".to_string() } else { chimera_assets::progress::mb(limits.daily_bytes) },
         limits.bad_tokens
+    );
+    println!(
+        "feedback: POST /feedback, {} reports an hour and {} a day per account, {} an hour per address{}; \
+         the page at {}/feedback/admin/ (this machine only)",
+        feedback_limits.per_account_hour,
+        feedback_limits.per_account_day,
+        feedback_limits.per_address_hour,
+        if on_report.is_some() { ", a command per report" } else { "" },
+        running.url()
     );
     for game in store.games() {
         println!("  {game}: builds {}", store.builds(&game).join(", "));

@@ -750,6 +750,18 @@ Only `Reflect`-registered types are visible; register new core components in
   40 console lines) to `<data dir>/chimera/bugreports/report-<time>/`
   (`~/.local/share` on Linux, `%LOCALAPPDATA%` on Windows) and prints the
   path.
+- **Testers' reports (F10, Esc > Report a bug; `chimera_client::client::
+  feedback`):** a zip bundle (`chimera_assets::feedback::bundle`:
+  `report.json`, `screenshot.jpg`, `game.txt`, `system.txt`, `perf.txt`,
+  `net.txt`, `cvars.txt`, `console.txt`; every line through the secret
+  filter, `redact`) queued in `<data dir>/chimera/feedback/outbox/` and
+  sent to the asset service's `POST /feedback`. Read them with
+  `chimera_assets feedback list|show` or the page at
+  `http://127.0.0.1:<plain port>/feedback/admin/` (docs/playtest-hosting.md,
+  "During the session"). Headless: `FeedbackCapture::fake`, a test's own
+  `Outbox`, or `AssetsOutbox::at(<dir>, targets)` against a service on
+  port 0 (apps/party_kit/tests/it/feedback.rs); staged:
+  `ui_scene report [details|sent|queued|off]`.
 - `version` (console, client and server) prints the build: tag or `git
   describe`, short commit hash and the commit's UTC date, e.g.
   `v0.1.0-playtest3 (feac156, 2026-10-11)` (no tag: `feac156,

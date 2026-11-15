@@ -240,6 +240,30 @@ impl Remote {
         Ok(reader)
     }
 
+    /// POST `body` to `path` with `content_type` and extra `headers`, any
+    /// status: (status, the `Retry-After` header, up to 4 KiB of the
+    /// answer's body). A feedback upload (`feedback::outbox`).
+    pub fn post_raw(
+        &self,
+        path: &str,
+        content_type: &str,
+        headers: &[(&str, &str)],
+        body: &[u8],
+    ) -> io::Result<(u16, Option<String>, String)> {
+        let url = format!("{}{path}", self.base);
+        let auth = format!("Bearer {}", self.config.token);
+        let mut request = self.agent.post(&url).header("Authorization", &auth).header("Content-Type", content_type);
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let response = request.send(body).map_err(|e| io::Error::other(format!("{url}: {e}")))?;
+        let status = response.status().as_u16();
+        let retry = response.headers().get("Retry-After").and_then(|v| v.to_str().ok()).map(String::from);
+        let mut text = String::new();
+        let _ = response.into_body().into_reader().take(4096).read_to_string(&mut text);
+        Ok((status, retry, text))
+    }
+
     fn text(&self, path: &str) -> io::Result<String> {
         let (status, _, body) = self.call(path, None, &[])?;
         let body = String::from_utf8_lossy(&body).into_owned();

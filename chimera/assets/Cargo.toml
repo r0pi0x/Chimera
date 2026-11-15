@@ -55,6 +55,10 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # The dev server's HTTP/1.1 listener (plain HTTP on localhost; Tailscale
 # serve or a reverse proxy adds HTTPS in front). Small and blocking.
 tiny_http = "0.12"
+# Feedback bundles (`feedback`): zips we write and read ourselves
+# (`feedback::zip`), deflated by flate2 (its CRC-32 too); `report.json`.
+flate2 = "1.1"
+serde_json.workspace = true
 
 # TCP_NODELAY on the server's listening socket (accepted connections
 # inherit it): without it a record's last segment waits for the client's

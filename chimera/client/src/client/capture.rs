@@ -654,7 +654,7 @@ fn chrono_stamp() -> String {
 }
 
 /// What a bug report says besides the screenshot.
-fn report_text(w: &mut World, note: &str) -> String {
+pub fn report_text(w: &mut World, note: &str) -> String {
     use crate::{console::Console, core::LocalPlayer};
     let version = w.get_resource::<crate::core::BuildVersion>().map_or("unknown", |v| v.0);
     let mut out = format!("Chimera build {version} ({})\n", crate::net::NET_VERSION);

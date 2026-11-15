@@ -17,7 +17,10 @@
 //! key was a bind (they lack `CONFIG_MARK`); `binddefaults new` once after
 //! a config lacking `DEFAULTS_MARK`, which puts `added_defaults` (the
 //! defaults not among the game's `GameInfo::old_default_binds`) on free
-//! keys, so older configs get defaults added since; saved binds win.
+//! keys, so older configs get defaults added since; saved binds win;
+//! `binddefaults app` once after a config lacking `APP_BINDS_MARK`, which
+//! puts the app's own on their keys where free or still holding the old
+//! default they replace (`migrate_app_binds`).
 //!
 //! Binds whose whole line is polled (Chimera's `POLLED`: `+forward`,
 //! `slot1`, `lastinv` ...; a game's own, `BindsAppExt::polled_bind`:
@@ -209,6 +212,21 @@ struct GameBinds {
 pub struct BindDefaults {
     games: BTreeMap<&'static str, GameBinds>,
     active: Option<&'static str>,
+    /// The app's own defaults (`AppBind`), over the game's and Chimera's.
+    app: Vec<AppBind>,
+}
+
+/// An app's own default bind (`BindDefaults::add_app`): `key` runs
+/// `command` in this app whatever the game's defaults put there (Ultimate
+/// Gun Game's F10 `feedback` over CS:S's `quit prompt`). `replaces`: the
+/// lines an older default left on the key, which the one-time migration
+/// of saved configs (`migrate_app_binds`, `APP_BINDS_MARK`) replaces; a
+/// key holding anything else is the player's and stays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AppBind {
+    pub key: &'static str,
+    pub command: &'static str,
+    pub replaces: &'static [&'static str],
 }
 
 /// Whether a key name is one we know (keyboard, mouse or wheel).
@@ -303,9 +321,29 @@ impl BindDefaults {
 
     /// The binds a fresh config starts with (and "Use Defaults" restores):
     /// the game's in use (from its install's file when it was read, else
-    /// its built-in table), plus Chimera's own (`CHIMERA_BINDS`).
+    /// its built-in table), plus Chimera's own (`CHIMERA_BINDS`), the
+    /// app's own (`AppBind`) over both.
     pub fn default_binds(&self) -> Vec<(String, String)> {
-        defaults_from(self.active().map_or(&[], |g| &g.binds))
+        let mut out = defaults_from(self.active().map_or(&[], |g| &g.binds));
+        for b in &self.app {
+            match out.iter_mut().find(|(k, _)| k == b.key) {
+                Some(slot) => slot.1 = b.command.to_string(),
+                None => out.push((b.key.to_string(), b.command.to_string())),
+            }
+        }
+        out
+    }
+
+    /// Add an app's own default (see `AppBind`); one per key, the later
+    /// wins.
+    pub fn add_app(&mut self, bind: AppBind) {
+        self.app.retain(|b| b.key != bind.key);
+        self.app.push(bind);
+    }
+
+    /// The app's own defaults.
+    pub fn app_binds(&self) -> &[AppBind] {
+        &self.app
     }
 
     /// Defaults a config written before the game's current ones lacks
@@ -328,6 +366,29 @@ pub fn bind_added_defaults(binds: &mut BTreeMap<String, String>, added: &[(Strin
             binds.insert(key, command);
         }
     }
+}
+
+/// The one-time migration of a saved config to the app's own defaults
+/// (`AppBind`; `binddefaults app`, run once after a config without
+/// `APP_BINDS_MARK`): each goes on its key when no key runs its command
+/// yet and the key is free or still holds a line it `replaces`. Returns
+/// whether anything changed.
+pub fn migrate_app_binds(binds: &mut BTreeMap<String, String>, app: &[AppBind]) -> bool {
+    let mut changed = false;
+    for b in app {
+        if !keys_for(binds, b.command).is_empty() {
+            continue;
+        }
+        let free = match binds.get(b.key) {
+            None => true,
+            Some(line) => line.trim().is_empty() || b.replaces.iter().any(|r| norm(r) == norm(line)),
+        };
+        if free {
+            binds.insert(b.key.to_string(), b.command.to_string());
+            changed = true;
+        }
+    }
+    changed
 }
 
 /// Chimera's own polled commands: read from the held keys by the systems
@@ -362,6 +423,9 @@ pub const POLLED: &[&str] = &[
     "messagemode2",
     "bug",
     "bugreport",
+    // The report dialog's key (`feedback`, F10 in Ultimate Gun Game):
+    // read in menus too (`client::feedback`).
+    "feedback",
 ];
 
 /// A bind's line normalised for comparing (trimmed, lower-case).
@@ -710,6 +774,12 @@ pub const CONFIG_MARK: &str = "// binds: all";
 /// saved configs keep reading.
 pub const DEFAULTS_MARK: &str = "// bind defaults: cs";
 
+/// A config.cfg written since apps have their own defaults (`AppBind`)
+/// says so; one without it gets them once (`binddefaults app`,
+/// `migrate_app_binds`). Written by an app with its own defaults, and
+/// kept by one that read it (`Console::config_marks`).
+pub const APP_BINDS_MARK: &str = "// app binds: 1";
+
 pub fn commands(app: &mut App) {
     // The polled binds are read by their short names: binds store them so
     // (`Console::keep_short`).
@@ -721,8 +791,9 @@ pub fn commands(app: &mut App) {
     }
     app.init_resource::<BindDefaults>().console_command(
         "chimera:binddefaults",
-        "binddefaults [missing|new]: put the default binds back (missing: only on free keys for unbound commands; \
-         new: only the defaults added lately, likewise).",
+        "binddefaults [missing|new|app]: put the default binds back (missing: only on free keys for unbound commands; \
+         new: only the defaults added lately, likewise; app: the app's own on keys free or still holding the \
+         default they replace).",
         |w, a| {
             let mode = a.first().map(String::as_str);
             let defaults = w.get_resource::<BindDefaults>().cloned().unwrap_or_default();
@@ -735,6 +806,11 @@ pub fn commands(app: &mut App) {
                     c.dirty = true;
                 }
                 Some("missing") => bind_defaults(&mut c.binds, false, &defaults.default_binds()),
+                Some("app") => {
+                    migrate_app_binds(&mut c.binds, defaults.app_binds());
+                    // Written again with `APP_BINDS_MARK`, so it runs once.
+                    c.dirty = true;
+                }
                 _ => bind_defaults(&mut c.binds, true, &defaults.default_binds()),
             }
             if c.binds != before {
@@ -934,6 +1010,60 @@ bind "MOUSE1" "+attack"
         for a in &added {
             assert!(d.default_binds().contains(a), "{a:?} is a default too");
         }
+    }
+
+    const REPORT: AppBind = AppBind { key: "f10", command: "feedback", replaces: &["quit prompt"] };
+
+    #[test]
+    fn an_apps_own_defaults_win_over_the_games() {
+        let mut d = sample_resource();
+        let game = d.default_binds();
+        d.add_app(REPORT);
+        let app = d.default_binds();
+        assert_eq!(app.iter().filter(|(k, _)| k == "f10").count(), 1);
+        assert!(app.contains(&("f10".into(), "feedback".into())));
+        assert_eq!(app.len(), game.len() + usize::from(!game.iter().any(|(k, _)| k == "f10")));
+        // A fresh config, and "Use Defaults", get it.
+        let mut b = BTreeMap::new();
+        bind_defaults(&mut b, true, &app);
+        assert_eq!(b["f10"], "feedback");
+    }
+
+    #[test]
+    fn the_migration_replaces_only_the_old_default() {
+        // F10 still CS:S's quit prompt: replaced; free: taken.
+        for before in [Some("quit prompt"), Some("Quit Prompt "), None] {
+            let mut b = binds(&[("w", "+forward")]);
+            if let Some(l) = before {
+                b.insert("f10".into(), l.into());
+            }
+            assert!(migrate_app_binds(&mut b, &[REPORT]), "{before:?}");
+            assert_eq!(b["f10"], "feedback");
+        }
+        // The player's own F10 stays; so does a report key moved elsewhere.
+        let mut b = binds(&[("f10", "say hi")]);
+        assert!(!migrate_app_binds(&mut b, &[REPORT]));
+        assert_eq!(b["f10"], "say hi");
+        let mut b = binds(&[("f10", "quit prompt"), ("f7", "feedback")]);
+        assert!(!migrate_app_binds(&mut b, &[REPORT]));
+        assert_eq!(b["f10"], "quit prompt");
+    }
+
+    #[test]
+    fn the_migration_runs_once_and_marks_the_config() {
+        let mut app = App::new();
+        app.add_plugins(crate::console::ConsolePlugin);
+        commands(&mut app);
+        let mut d = sample_resource();
+        d.add_app(REPORT);
+        app.insert_resource(d);
+        app.world_mut().resource_mut::<Console>().config_marks.insert(APP_BINDS_MARK.into());
+        app.world_mut().resource_mut::<Console>().submit("bind f10 \"quit prompt\"; binddefaults app");
+        app.update();
+        assert_eq!(app.world().resource::<Console>().binds["f10"], "feedback");
+        assert!(app.world().resource::<Console>().dirty);
+        let text = crate::console::config_text(app.world_mut());
+        assert!(text.contains(APP_BINDS_MARK), "{text}");
     }
 
     #[test]

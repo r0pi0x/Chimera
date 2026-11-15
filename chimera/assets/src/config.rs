@@ -215,6 +215,13 @@ fn warn_once(url: &str, game: &str, e: &str) {
 /// reads (`CHIMERA_CONFIG`, else `chimera.local.toml` here, else in the
 /// checkout; the old `mashup` names too). No file: an empty section.
 pub fn load_local() -> Result<AssetsConfig, String> {
+    local_section("assets")
+}
+
+/// One section of the local config (`[assets]`, `[feedback]`), and only
+/// it: the rest of the file (the games' keys) is never kept. No file or
+/// no section: the default.
+pub fn local_section<T: serde::de::DeserializeOwned + Default>(name: &str) -> Result<T, String> {
     let checkout = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let candidates = [
         std::env::var_os("CHIMERA_CONFIG").or_else(|| std::env::var_os("MASHUP_CONFIG")).map(PathBuf::from),
@@ -224,15 +231,14 @@ pub fn load_local() -> Result<AssetsConfig, String> {
         Some(checkout.join("mashup.local.toml")),
     ];
     let Some(path) = candidates.into_iter().flatten().find(|p| p.is_file()) else {
-        return Ok(AssetsConfig::default());
+        return Ok(T::default());
     };
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    // Only `[assets]` is read; the rest of the file is the games'.
     let table: toml::Table = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
-    match table.get("assets") {
+    match table.get(name) {
         Some(section) => {
-            section.clone().try_into().map_err(|e: toml::de::Error| format!("{}: [assets]: {e}", path.display()))
+            section.clone().try_into().map_err(|e: toml::de::Error| format!("{}: [{name}]: {e}", path.display()))
         }
-        None => Ok(AssetsConfig::default()),
+        None => Ok(T::default()),
     }
 }

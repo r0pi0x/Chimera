@@ -248,6 +248,10 @@ pub struct Console {
     /// `console`): the client sets it, so a run's log holds the results of
     /// its `+commands` (the dedicated servers print them on stdout).
     pub log_output: bool,
+    /// Comment lines `config_text` writes after its own marks: one-time
+    /// migrations done (`client::binds::APP_BINDS_MARK`), kept by an app
+    /// that read them so another app's config keeps saying so.
+    pub config_marks: std::collections::BTreeSet<String>,
 }
 
 /// Chimera's own namespace: the console's language (`bind`, `alias`,
@@ -1752,8 +1756,13 @@ pub fn config_text(w: &mut World) -> String {
     // The second line tells the client every key's bind is in here
     // (`client::binds::CONFIG_MARK`), the third that the defaults it was
     // written over were the game's current ones (`client::binds::DEFAULTS_MARK`;
-    // its text, "cs", from when CS:S's changed, kept for saved configs).
+    // its text, "cs", from when CS:S's changed, kept for saved configs);
+    // then the migrations' marks (`Console::config_marks`).
     let mut out = String::from("// Written by Chimera (host_writeconfig).\n// binds: all\n// bind defaults: cs\n");
+    for m in &w.resource::<Console>().config_marks {
+        out += m;
+        out.push('\n');
+    }
     let (binds, layers, aliases, cvars) = {
         let c = w.resource::<Console>();
         (

@@ -1,6 +1,7 @@
 //! The store, manifests, `CachedFiles`, the packer and the recorder on our
 //! own fixture bytes (no game's files).
 
+mod feedback;
 mod service;
 
 use std::{fs, path::PathBuf, sync::Arc};

@@ -80,8 +80,12 @@ impl Plugin for ConsoleUiPlugin {
                     run_binds.run_if(
                         |ui: Res<ConsoleUi>,
                          menu: Option<Res<super::front_end::MenuStatus>>,
-                         chat: Option<Res<super::chat::ChatInput>>| {
-                            !ui.open && !menu.is_some_and(|m| m.open) && !chat.is_some_and(|c| c.open.is_some())
+                         chat: Option<Res<super::chat::ChatInput>>,
+                         report: Option<Res<super::feedback::Feedback>>| {
+                            !ui.open
+                                && !menu.is_some_and(|m| m.open)
+                                && !chat.is_some_and(|c| c.open.is_some())
+                                && !report.is_some_and(|r| r.shown())
                         },
                     ),
                     drain_log,
@@ -1055,6 +1059,20 @@ fn autoexec(
         // wheel, ...), on the keys it leaves free: once, as the config is
         // written again with the mark.
         console.submit("binddefaults new");
+    }
+    // The app's own defaults (`binds::AppBind`: Ultimate Gun Game's F10)
+    // on a saved config, once: where the key is free or still holds the
+    // default they replace.
+    // The mark is written by an app that has them, or read them (so an
+    // app without its own keeps the mark of one that has).
+    let app_marked = config.as_ref().is_some_and(|t| t.contains(super::binds::APP_BINDS_MARK));
+    if !defaults.app_binds().is_empty() {
+        if config.is_some() && !app_marked {
+            console.submit("binddefaults app");
+        }
+        console.config_marks.insert(super::binds::APP_BINDS_MARK.into());
+    } else if app_marked {
+        console.config_marks.insert(super::binds::APP_BINDS_MARK.into());
     }
     console.submit("execifexists autoexec.cfg");
     console.log_output = true;
