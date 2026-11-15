@@ -101,7 +101,7 @@ use serde::{Deserialize, Serialize};
 pub use params::ParamsAppExt;
 pub use sync::{CarriedAppExt, NetPart};
 
-pub use deliver::{aim_of, armor_split, cone_dir, falloff, hitgroup_at, pellet_dirs, quantize, spread_dir};
+pub use deliver::{aim_of, armor_split, cone_dir, cs_offsets, falloff, hitgroup_at, pellet_dirs, quantize, spread_dir};
 pub use hits::{Absorbed, Coverage, DamageClass, Depletion, RegionScale, absorb};
 
 use crate::{
@@ -1079,9 +1079,11 @@ pub struct CharacterPass {
 pub enum SpreadShape {
     /// SDK template: each axis U(-.5,.5)+U(-.5,.5), times the scale.
     Template(f32),
-    /// CS:S (measured M2): a uniform radius up to `inaccuracy` at a random
-    /// angle, plus one up to `spread` at another. Game code updates
-    /// `inaccuracy` as it changes.
+    /// CS:S (measured M2, 4.2.2): a uniform radius up to `inaccuracy` at a
+    /// random angle, plus one up to `spread` at another per pellet, drawn
+    /// bit-exactly from Source's generator (`deliver::cs_offsets`). Game
+    /// code updates `inaccuracy` as it changes. (Combat Arms sets one too,
+    /// for its crosshair; its own delivery draws its rounds.)
     Disc { inaccuracy: f32, spread: f32 },
     /// Source's generic rule (the HL2 family's, specs/cs_source/weapons.md
     /// 4.3 with a player's bias): each axis 0.5 U(-1, 1) + 0.5 U(-1, 1),

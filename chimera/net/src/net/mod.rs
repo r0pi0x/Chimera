@@ -266,7 +266,7 @@ pub const PROTOCOL_ID: u64 = 0x4C55_434B_4552_5059;
 /// This build's network version. A server refuses clients of another
 /// version. Bump the suffix when the protocol changes in a way the
 /// replicon protocol hash can't see (a field added to a message).
-pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net52");
+pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net53");
 
 /// What a host's `changelevel` is in this app beyond a new map
 /// (`host_changelevel`): set by an app part (`minigame_net`'s, a party
@@ -1056,6 +1056,17 @@ pub struct Killed {
     /// kill, head or groin shot, revenge: `announcer::KillFacts`), when the
     /// server announces (specs/combat_arms/kill_streaks.md A1).
     pub facts: Option<chimera_core::announcer::KillFacts>,
+    /// The kill's domination flags (`dominations::KillMark`;
+    /// `kill_marks` bits), 0 for none.
+    pub marks: u8,
+}
+
+/// `Killed::marks` bits.
+pub mod kill_marks {
+    /// The kill started a domination.
+    pub const DOMINATED: u8 = 1;
+    /// The kill was a revenge.
+    pub const REVENGE: u8 = 2;
 }
 
 /// Server -> clients: a thing that is no character was destroyed

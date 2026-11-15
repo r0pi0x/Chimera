@@ -8,6 +8,15 @@
 //! and `spec_freeze_time` (5 s), CS:S's defaults (measured on its
 //! dedicated server; replicated, `core::SpectatorRules`).
 //!
+//! Dominations (specs/cs_source/dominations.md 4): the panel's two lines
+//! and its icon by the case table (`freeze_case`): the killer's revenge
+//! ("HAS GOTTEN" / "REVENGE", `hud/freeze_revenge`), a new nemesis ("IS
+//! YOUR NEW" / "NEMESIS") or an old one ("IS STILL YOUR" / "NEMESIS", both
+//! `hud/freeze_nemesis`), else "KILLED YOU" with no icon. The kill's flags
+//! are its `dominations::KillMark` (`MyDeath`); "still my nemesis" is read
+//! from the local player's `Relationships` when the panel opens, as the
+//! spec keeps.
+//!
 //! Known shortcuts (docs/tech-debt.md): Freeze cam (`client::spectate`,
 //! `client::freeze_cam`; the timings measured, the rest from the game's files
 //! and general CS:S knowledge): it follows a 2 s death cam (a guess; no
@@ -17,8 +26,8 @@
 //! HUD of that moment is in it and live HUD parts drawn over it (chat, notices)
 //! can double; the white flash (70 % fading over 0.35 s) is a guess; the panel
 //! shows the killer's name, "KILLED YOU", "[F5] Save this moment" and the
-//! killer's health gauge (its colours ours: the file gives none) but no avatar
-//! or nemesis/revenge lines; keys wait until spectating starts;
+//! killer's health gauge (its colours ours: the file gives none) but no
+//! avatar; keys wait until spectating starts;
 //! the spectator bars hide during it (and so are not in its picture). Captures
 //! to confirm: in CS:S, killed by a bot at a known spot (`bot_stop 1`,
 //! `setpos`/`setang` both), frames every 0.1 s from the death to 8 s after
@@ -45,6 +54,10 @@ pub struct FreezeCamPlugin;
 impl Plugin for FreezeCamPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Frozen>()
+            .init_resource::<MyDeath>()
+            .add_message::<chimera_sim::dominations::KillMark>()
+            .add_message::<crate::core::Died>()
+            .add_systems(PreUpdate, remember_death)
             .add_systems(
                 Update,
                 (
@@ -72,6 +85,57 @@ pub struct Frozen {
 #[require(crate::client::hud::HudPart)]
 struct FreezeOverlay;
 
+/// The local player's last death: its killer and the kill's domination
+/// flags (dominated, revenge).
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
+pub struct MyDeath(pub Option<(Entity, bool, bool)>);
+
+fn remember_death(
+    mut died: MessageReader<crate::core::Died>,
+    mut marks: MessageReader<chimera_sim::dominations::KillMark>,
+    local: Query<(), With<crate::core::LocalPlayer>>,
+    mut mine: ResMut<MyDeath>,
+) {
+    let marks: Vec<_> = marks.read().copied().collect();
+    for d in died.read().filter(|d| local.contains(d.entity)) {
+        let mark = marks.iter().find(|m| m.victim == d.entity && Some(m.killer) == d.attacker);
+        mine.0 = d
+            .attacker
+            .map(|k| (k, mark.is_some_and(|m| m.dominated), mark.is_some_and(|m| m.revenge)));
+    }
+}
+
+/// The freeze panel's case (dominations.md 4's table, first match).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FreezeCase {
+    Revenge,
+    NewNemesis,
+    OldNemesis,
+    Killed,
+}
+
+/// The case for a kill flagged `dominated`/`revenge`, the killer `still`
+/// dominating the victim when the panel opens.
+pub fn freeze_case(dominated: bool, revenge: bool, still: bool) -> FreezeCase {
+    match (revenge, dominated, still) {
+        (true, ..) => FreezeCase::Revenge,
+        (_, true, true) => FreezeCase::NewNemesis,
+        (_, _, true) => FreezeCase::OldNemesis,
+        _ => FreezeCase::Killed,
+    }
+}
+
+impl FreezeCase {
+    /// The icon (a `GameHud::sprites` key), if any.
+    pub fn icon(self) -> Option<&'static str> {
+        match self {
+            FreezeCase::Revenge => Some("freeze_revenge"),
+            FreezeCase::NewNemesis | FreezeCase::OldNemesis => Some("freeze_nemesis"),
+            FreezeCase::Killed => None,
+        }
+    }
+}
+
 #[derive(Component)]
 struct FreezeFlash;
 
@@ -98,6 +162,10 @@ fn freeze(
     menu_ui: Option<Res<super::game_menu::MenuUi>>,
     sounds: Option<Res<Assets<crate::audio::clip_asset::SoundAsset>>>,
     clips: Option<ResMut<Assets<crate::audio::live_sound::LiveClip>>>,
+    (mine, me): (
+        Res<MyDeath>,
+        Query<Option<&chimera_sim::dominations::Relationships>, With<crate::core::LocalPlayer>>,
+    ),
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
@@ -177,8 +245,19 @@ fn freeze(
         let (name, health) = who.get(killer).unwrap_or((None, None));
         let name = name.map_or("Player", |n| n.as_str()).to_string();
         let health = health.map_or(0.0, |h| h.current.clamp(0.0, 1.0));
+        // The domination case, "still my nemesis" read now (spec 4).
+        let (dominated, revenge) = match mine.0 {
+            Some((k, d, r)) if k == killer => (d, r),
+            _ => (false, false),
+        };
+        let still = me
+            .iter()
+            .next()
+            .flatten()
+            .is_some_and(|r| r.nemeses.contains(&killer));
+        let case = freeze_case(dominated, revenge, still);
         if let Some(hud) = hud.as_deref() {
-            panel(&mut commands, root, hud, &fonts, Vec2::new(width, height), &name, health);
+            panel(&mut commands, root, hud, &fonts, Vec2::new(width, height), &name, health, case);
         }
     }
     // The flash fades from when the picture shows.
@@ -192,9 +271,10 @@ fn freeze(
 /// The game's freeze panel: its frame and, in it, the killer's name, the
 /// words over it, the screenshot hint (`ScreenshotLabel`, "[F5] Save this
 /// moment": F5 is bound to `jpeg`) and the killer's health (`KillerHealth`,
-/// a gauge `health` 0..1 full). The avatar is left out (no avatars), as are
-/// the nemesis icon (no domination counts) and the avatar's glow (its
-/// picture isn't in the install).
+/// a gauge `health` 0..1 full), the domination icon by `case`. The avatar
+/// is left out (no avatars), as is the avatar's glow (its picture isn't in
+/// the install).
+#[allow(clippy::too_many_arguments)]
 fn panel(
     commands: &mut Commands,
     root: Entity,
@@ -203,6 +283,7 @@ fn panel(
     size: Vec2,
     killer: &str,
     health: f32,
+    case: FreezeCase,
 ) {
     let Some(menus) = hud.0.menus.as_ref() else { return };
     let Some((outer, inner)) = menus
@@ -237,9 +318,16 @@ fn panel(
             ChildOf(root),
         ))
         .id();
-    let words = freeze_words(&|t, f| menus.string(t, f).to_string(), killer);
+    let words = freeze_words(&|t, f| menus.string(t, f).to_string(), killer, case);
     let mut shown = |c: &crate::map::hud::UiControl| {
         let mut s = crate::client::vgui::Shown::of(c);
+        // The domination icon: the image control whose default picture
+        // is the nemesis one.
+        if c.kind == crate::map::hud::UiKind::Image && c.image.as_ref().is_some_and(|i| i.ends_with("freeze_nemesis")) {
+            s.visible = case.icon().is_some();
+            s.image = case.icon().map(String::from);
+            return s;
+        }
         match c.name.to_lowercase().as_str() {
             "killername" => s.text = Some(words.0.clone()),
             "infolabel1" => s.text = Some(words.1.clone()),
@@ -293,12 +381,43 @@ fn panel(
 pub struct KillerHealthGauge(pub f32);
 
 /// The freeze panel's three lines: the killer's name, then the game's
-/// `FreezePanel_Killer1` and `FreezePanel_Killer2` ("KILLED YOU", "").
-/// (Nemesis and revenge need the domination counts CS:S keeps; we don't.)
-pub fn freeze_words(string: &dyn Fn(&str, &str) -> String, killer: &str) -> (String, String, String) {
+/// two words for the case (dominations.md 4): `FreezePanel_Revenge1/2`,
+/// `FreezePanel_NewNemesis1/2`, `FreezePanel_OldNemesis1/2` or
+/// `FreezePanel_Killer1/2` ("KILLED YOU", "").
+pub fn freeze_words(string: &dyn Fn(&str, &str) -> String, killer: &str, case: FreezeCase) -> (String, String, String) {
+    let (key, one, two) = match case {
+        FreezeCase::Revenge => ("Revenge", "HAS GOTTEN", "REVENGE"),
+        FreezeCase::NewNemesis => ("NewNemesis", "IS YOUR NEW", "NEMESIS"),
+        FreezeCase::OldNemesis => ("OldNemesis", "IS STILL YOUR", "NEMESIS"),
+        FreezeCase::Killed => ("Killer", "KILLED YOU", ""),
+    };
     (
         killer.to_string(),
-        string("#FreezePanel_Killer1", "KILLED YOU"),
-        string("#FreezePanel_Killer2", ""),
+        string(&format!("#FreezePanel_{key}1"), one),
+        string(&format!("#FreezePanel_{key}2"), two),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_panel_follows_the_specs_case_table() {
+        // dominations.md 4 and its test rows.
+        assert_eq!(freeze_case(false, true, false), FreezeCase::Revenge);
+        assert_eq!(freeze_case(true, false, true), FreezeCase::NewNemesis);
+        assert_eq!(freeze_case(false, false, true), FreezeCase::OldNemesis);
+        assert_eq!(freeze_case(false, false, false), FreezeCase::Killed);
+        // A new nemesis avenged since (no longer dominating): plain.
+        assert_eq!(freeze_case(true, false, false), FreezeCase::Killed);
+        let words = |c| freeze_words(&|_, f: &str| f.to_string(), "Bot", c);
+        assert_eq!(words(FreezeCase::Revenge), ("Bot".into(), "HAS GOTTEN".into(), "REVENGE".into()));
+        assert_eq!(words(FreezeCase::NewNemesis).1, "IS YOUR NEW");
+        assert_eq!(words(FreezeCase::OldNemesis).1, "IS STILL YOUR");
+        assert_eq!(words(FreezeCase::Killed), ("Bot".into(), "KILLED YOU".into(), String::new()));
+        assert_eq!(FreezeCase::Revenge.icon(), Some("freeze_revenge"));
+        assert_eq!(FreezeCase::OldNemesis.icon(), Some("freeze_nemesis"));
+        assert_eq!(FreezeCase::Killed.icon(), None);
+    }
 }

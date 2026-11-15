@@ -30,13 +30,19 @@
 //! Characters rewound by lag compensation are tested as before; a swing's
 //! box sweep meets them as their box then grown by its half size (the
 //! box swept into it), the world and everyone else as the sweep finds them.
+//!
+//! A CS:S shot's pellets (`SpreadShape::Disc`) follow the game's pattern
+//! bit for bit (`cs_offsets`, specs/cs_source/weapons.md 4.2.2: one reseed
+//! of Source's generator per shot, the shot's inaccuracy offset then each
+//! pellet's spread offset), from the command's seed, so a client's
+//! predicted impacts are the server's.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
 use super::{
     lagcomp::Rewound,
-    random::Rng,
+    random::{Ran1, Rng},
     BulletTarget, DamageEffect, Hitscan, PassMaterials, Penetration, SpreadShape, Swing, WeaponEvent,
     WeaponEventKind,
 };
@@ -898,13 +904,19 @@ impl Shot<'_, '_, '_> {
 }
 
 /// Each pellet's direction for a shot along `aim` with random seed `seed`
-/// (spec 4.2: pellet `i` reseeds with `seed + 1 + i`). The inaccuracy
-/// part of a `Disc` is drawn once per shot, shared by its pellets; each
-/// pellet draws its own spread part (a shotgun's pattern keeps its shape
-/// while the whole of it wanders). The same on every machine for the same
-/// inputs: others' shots are drawn from them.
+/// (spec 4.2's shot seed, `command seed & 255`). A `Disc` (CS:S) reseeds
+/// Source's generator once with `seed + 1` and draws the shot's
+/// inaccuracy offset then each pellet's spread offset from it
+/// (`cs_offsets`, spec 4.2.2); the template and generic shapes reseed our
+/// own generator per pellet with `seed + 1 + i`. The same on every machine
+/// for the same inputs: others' shots are drawn from them.
 pub fn pellet_dirs(aim: Quat, seed: u32, spread: SpreadShape, pellets: u32) -> Vec<Dir3> {
-    let mut shared: Option<Vec2> = None;
+    if let SpreadShape::Disc { inaccuracy, spread } = spread {
+        return cs_offsets(seed, inaccuracy, spread, pellets)
+            .into_iter()
+            .map(|o| spread_dir(aim, 1.0, o.x, o.y))
+            .collect();
+    }
     (0..pellets.max(1))
         .map(|pellet| {
             let mut rng = Rng::new(seed.wrapping_add(1 + pellet));
@@ -929,16 +941,29 @@ pub fn pellet_dirs(aim: Quat, seed: u32, spread: SpreadShape, pellets: u32) -> V
                     }
                     cone_dir(aim, s, x, y)
                 }
-                SpreadShape::Disc { inaccuracy, spread } => {
-                    let mut disc = |r: f32| {
-                        let angle = rng.range(0.0, std::f32::consts::TAU);
-                        Vec2::from_angle(angle) * rng.range(0.0, 1.0) * r
-                    };
-                    let base = *shared.get_or_insert_with(|| disc(inaccuracy));
-                    let offset = base + disc(spread);
-                    spread_dir(aim, 1.0, offset.x, offset.y)
-                }
+                SpreadShape::Disc { .. } => unreachable!("drawn above"),
             }
+        })
+        .collect()
+}
+
+/// CS:S's pellet offsets (tangent units along the aim's right and up) for a
+/// shot of shot seed `seed` (spec 4.2.2, measured): reseed `Ran1` with
+/// `seed + 1`; draw θ₁ in [0, 2π) then r₁ in [0, `inaccuracy`); then per
+/// pellet θ₂ then r₂ in [0, `spread`); offset r₁(cos θ₁, sin θ₁) +
+/// r₂(cos θ₂, sin θ₂). `inaccuracy` is the stored value after this tick's
+/// recovery and before the shot's own, plus the movement term.
+pub fn cs_offsets(seed: u32, inaccuracy: f32, spread: f32, pellets: u32) -> Vec<Vec2> {
+    use std::f32::consts::TAU;
+    let mut rng = Ran1::new(seed.wrapping_add(1) as i32);
+    let a1 = rng.range(0.0, TAU);
+    let r1 = rng.range(0.0, inaccuracy);
+    let base = Vec2::new(a1.cos(), a1.sin()) * r1;
+    (0..pellets.max(1))
+        .map(|_| {
+            let a2 = rng.range(0.0, TAU);
+            let r2 = rng.range(0.0, spread);
+            base + Vec2::new(a2.cos(), a2.sin()) * r2
         })
         .collect()
 }
@@ -1073,6 +1098,48 @@ mod tests {
         let d = spread_dir(Quat::IDENTITY, 0.01, 0.5, 0.0);
         let angle = d.x.atan2(-d.z).to_degrees();
         assert!((angle - 0.2865).abs() < 1e-3, "{angle}");
+    }
+
+    #[test]
+    fn cs_pattern_matches_spec_t3b_to_t3d() {
+        // weapons.md T3b-T3d: command seeds 7, 300, 1000 (shot seeds
+        // 7, 44, 232), measured CS:S offsets (x right, y up), +-2e-5.
+        let check = |command_seed: u32, i: f32, s: f32, want: &[(f32, f32)]| {
+            let got = cs_offsets(command_seed & 255, i, s, want.len() as u32);
+            for (p, (g, w)) in got.iter().zip(want).enumerate() {
+                assert!(
+                    (g.x - w.0).abs() < 2e-5 && (g.y - w.1).abs() < 2e-5,
+                    "seed {command_seed} pellet {p}: {g} != {w:?}"
+                );
+            }
+        };
+        check(
+            7,
+            0.01,
+            0.04,
+            &[
+                (0.03562, -0.01679),
+                (-0.02650, 0.01201),
+                (-0.00847, 0.00982),
+                (-0.01003, -0.00842),
+                (0.01526, 0.03253),
+                (0.01450, 0.02095),
+                (-0.02733, -0.00595),
+                (0.02941, 0.01201),
+                (-0.02043, 0.01042),
+            ],
+        );
+        check(300, 0.013, 0.004, &[(-0.00122, -0.00517)]);
+        check(1000, 0.00916, 0.0006, &[(-0.00256, 0.00178)]);
+    }
+
+    #[test]
+    fn cs_pellets_bend_along_the_aims_right_and_up() {
+        // Positive x to the right, y up (spec 4.2.2 step 5).
+        let o = cs_offsets(44, 0.013, 0.004, 1)[0];
+        let d = pellet_dirs(Quat::IDENTITY, 44, SpreadShape::Disc { inaccuracy: 0.013, spread: 0.004 }, 1)[0];
+        let want = Vec3::new(o.x, o.y, -1.0).normalize();
+        assert!(d.angle_between(want) < 1e-6, "{d:?} {want}");
     }
 
     #[test]

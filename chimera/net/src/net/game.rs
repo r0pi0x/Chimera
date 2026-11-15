@@ -8,6 +8,11 @@
 //!   and a defusal kit, for the scoreboard. A client's own money, armour
 //!   and kit come in its `OwnState` parts (`parts::OwnParts`): money is shown only to its owner, as
 //!   in CS:S.
+//! - **Dominations** (`dominations::Relationships`: whom the player
+//!   dominates, who dominates it) go only to the player's own client, as
+//!   in CS:S (specs/cs_source/dominations.md 3), in its `OwnState` part
+//!   `chimera.relationships` (the server's entities, mapped to the
+//!   client's).
 //! - **Buying** (`BuyRequest`) is the server's to check (buy zone, buy
 //!   time, money, team-only items: `weapon::economy::buy`); a refusal
 //!   comes back as `Notice`, the game's hint (`notify`, which a game's
@@ -42,6 +47,7 @@ use crate::{
 };
 
 pub(super) fn plugin(app: &mut App) {
+    super::parts::NetAppExt::own_part(app, "chimera.relationships", encode_relationships, decode_relationships);
     let server = || resource_equals(NetRole::Server);
     let client = || resource_equals(NetRole::Client);
     app.add_systems(FixedLast, write_scores.run_if(server()))
@@ -313,5 +319,59 @@ mod tests {
             fixed: 20.0,
         };
         assert!((t.local(110.0) - 20.075).abs() < 1e-9);
+    }
+}
+
+// --- Dominations
+
+/// A player's `Relationships` as the server's entities: the count and
+/// bits of those it dominates, then of its nemeses (None: none).
+fn encode_relationships(world: &World, e: Entity) -> Option<Vec<u8>> {
+    let r = world.get::<chimera_sim::dominations::Relationships>(e)?;
+    let mut out = Vec::new();
+    for list in [&r.dominating, &r.nemeses] {
+        let list = &list[..list.len().min(255)];
+        out.push(list.len() as u8);
+        for x in list {
+            out.extend_from_slice(&x.to_bits().to_le_bytes());
+        }
+    }
+    Some(out)
+}
+
+/// The server's list over the client's player, its entities as this
+/// client's (those it doesn't know are left out).
+fn decode_relationships(world: &mut World, e: Entity, bytes: Option<&[u8]>) {
+    use bevy_replicon::shared::server_entity_map::ServerEntityMap;
+    use chimera_sim::dominations::Relationships;
+    let read = |bytes: &[u8]| -> Option<Relationships> {
+        let map = world.get_resource::<ServerEntityMap>();
+        let mut rest = bytes;
+        let mut lists = [Vec::new(), Vec::new()];
+        for list in &mut lists {
+            let (&n, r) = rest.split_first()?;
+            rest = r;
+            for _ in 0..n {
+                let (bits, r) = rest.split_first_chunk::<8>()?;
+                rest = r;
+                let server = Entity::try_from_bits(u64::from_le_bytes(*bits))?;
+                if let Some(local) = map.and_then(|m| m.to_client().get(&server).copied()) {
+                    list.push(local);
+                }
+            }
+        }
+        let [dominating, nemeses] = lists;
+        Some(Relationships { dominating, nemeses })
+    };
+    let r = bytes.and_then(read);
+    let Ok(mut ent) = world.get_entity_mut(e) else { return };
+    match r {
+        Some(r) if ent.get::<Relationships>() != Some(&r) => {
+            ent.insert(r);
+        }
+        Some(_) => {}
+        None => {
+            ent.remove::<Relationships>();
+        }
     }
 }
