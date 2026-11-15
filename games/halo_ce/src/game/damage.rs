@@ -447,7 +447,9 @@ pub fn deliver_hits(
             }
             let at = region.unwrap_or(BodyRegion::Generic);
             damage.amount = x;
-            set.p1().apply_region(&mut damage, at, x, Some(1.0), 0.0);
+            // Halo's damage, whatever its weapon: the party's per-game
+            // scale (`weapon::GameDamage`) of Halo's.
+            set.p1().apply_region_of(Some(super::GAME), &mut damage, at, x, Some(1.0), 0.0);
             let (health, transform, intent) = others.get(hit.target).unwrap_or((None, None, None));
             let instant = fx.side_effect == SideEffect::LethalToTheUnsuspecting
                 && transform.is_some_and(|t| vitality::unsuspecting(t.translation, hit.epicenter, look_of(intent)));

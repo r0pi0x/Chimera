@@ -135,6 +135,8 @@ impl World<'_, '_> {
 pub(super) struct Shot<'a, 'w, 's> {
     pub owner: Entity,
     pub weapon: Entity,
+    /// The weapon's id (its game's damage scale, `GameDamage`).
+    pub id: &'static str,
     pub eye: Vec3,
     /// The aim (`aim_of(yaw, pitch)`) and its angles.
     pub aim: Quat,
@@ -748,7 +750,7 @@ impl Shot<'_, '_, '_> {
         };
         let hitgroup = damage.hitgroup;
         // Armour takes its share only if the hit lands (`HitArmor`).
-        let super::ArmorHit { covered, helmet } = self.w.armor.apply_region(&mut damage, region, raw, armor_ratio, quantum);
+        let super::ArmorHit { covered, helmet } = self.w.armor.apply_region_of(Some(self.id), &mut damage, region, raw, armor_ratio, quantum);
         let amount = damage.amount;
         // A gun's bullet (a knife's hit deals bullet damage in CS:S too,
         // but isn't one).

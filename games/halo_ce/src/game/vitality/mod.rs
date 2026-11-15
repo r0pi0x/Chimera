@@ -39,7 +39,10 @@
 //! put back by `keep_shield` if one took them off in the same tick) and
 //! ratio, and an `Armor` if it had none (a full shield; one it had stays:
 //! the armour value is the character's and recharges from there); one
-//! leaving takes them off, keeping `Armor`. Both in one move with the
+//! leaving takes them off and, the party balance on (`cross_game`), gets
+//! back the armour it brought (`cross_game::Brought`: its value and kind,
+//! or none), never the shield's value; off, it keeps `Armor`. Both in one
+//! move with the
 //! movement's marker (`slots::set_movement` calls Halo's `wear_halo` and
 //! `leave_halo`, `slots::MovementImpl::insert` and `remove`): each part
 //! on its own was an archetype for every combination of the character's
@@ -84,7 +87,7 @@ use bevy::prelude::*;
 use chimera_sim::weapon::{Armor, ArmorPieces, ArmorRatio, Coverage, Depletion, PiecesOf, hits::ArmorPiece};
 use serde::{Deserialize, Serialize};
 
-use super::cross_game::{CrossGame, shield_of, shield_unit};
+use super::cross_game::{Brought, CrossGame, shield_of, shield_unit};
 use crate::{
     core::{DamageScale, Health, Predict, PredictedAppExt, SimSet},
     slots::{MovementRegistry, MovementSlot},
@@ -337,7 +340,8 @@ impl Plugin for VitalityPlugin {
 /// the movement's marker and slot, or none.
 fn put_on(e: &mut EntityWorldMut, extra: impl Bundle) {
     let pieces = (shield_armour(), PiecesOf(super::GAME), ArmorRatio(1.0));
-    let fresh = || (Vitality::default(), Stun::default(), super::damage::Attackers::default(), Mirrored::default());
+    let brought = Brought(e.get::<Armor>().copied());
+    let fresh = || (Vitality::default(), Stun::default(), super::damage::Attackers::default(), Mirrored::default(), brought);
     let scale = e.get_resource::<CrossGame>().copied().unwrap_or_default().incoming();
     let scaled = (scale != 1.0).then_some(DamageScale(scale));
     if e.contains::<Vitality>() {
@@ -355,8 +359,9 @@ fn put_on(e: &mut EntityWorldMut, extra: impl Bundle) {
     }
 }
 
-/// Halo's parts taken off a character, all in one move (`Armor` stays).
-type HaloParts = (Vitality, Stun, ArmorPieces, PiecesOf, ArmorRatio, Mirrored, super::damage::Attackers, DamageScale);
+/// Halo's parts taken off a character, all in one move (`Armor` is given
+/// back separately: `armour_back`).
+type HaloParts = (Vitality, Stun, ArmorPieces, PiecesOf, ArmorRatio, Mirrored, super::damage::Attackers, DamageScale, Brought);
 
 /// The incoming scale a Halo character's shield and health are in (1:
 /// none, `cross_game`).
@@ -373,14 +378,45 @@ fn wear_halo(e: &mut EntityWorldMut, slot: MovementSlot) {
 /// `halo_ce:movement`'s remove: the marker with the vitality, if it wears it.
 fn leave_halo(e: &mut EntityWorldMut) {
     if e.contains::<Vitality>() {
+        let back = armour_back(e);
         e.remove::<(super::movement::HaloMovement, HaloParts)>();
+        give_back(e, back);
     } else {
         e.remove::<super::movement::HaloMovement>();
     }
 }
 
+/// What a character leaving Halo gets back as armour (`cross_game::
+/// Brought`), the party balance on: Some(what it brought, or none); None
+/// keeps the shield's value (the balance off).
+fn armour_back(e: &EntityWorldMut) -> Option<Option<Armor>> {
+    let on = e.get_resource::<CrossGame>().copied().unwrap_or_default().restores_armour();
+    e.get::<Brought>().filter(|_| on).map(|b| b.0)
+}
+
+/// Put back the armour `armour_back` gave.
+fn give_back(e: &mut EntityWorldMut, back: Option<Option<Armor>>) {
+    match back {
+        Some(Some(a)) => {
+            e.insert(a);
+        }
+        Some(None) => {
+            e.remove::<Armor>();
+        }
+        None => {}
+    }
+}
+
+/// Halo's parts taken off (the slot changed some other way), the armour
+/// it brought given back.
+fn take_off(mut e: EntityWorldMut) {
+    let back = armour_back(&e);
+    e.remove::<HaloParts>();
+    give_back(&mut e, back);
+}
+
 /// Characters on Halo's movement wear its vitality; leaving it takes it
-/// off (`Armor` stays). The movement's switch does both with the marker
+/// off (`Armor` stays, or what it brought comes back). The movement's switch does both with the marker
 /// (`wear_halo`, `leave_halo`); here the shield's pieces are put back over
 /// any the last game left, and a slot changed some other way is caught up.
 fn wear(mut commands: Commands, on: Query<(Entity, &MovementSlot, Has<Vitality>), Changed<MovementSlot>>) {
@@ -388,7 +424,7 @@ fn wear(mut commands: Commands, on: Query<(Entity, &MovementSlot, Has<Vitality>)
         if slot.0 == super::movement::ID {
             commands.entity(e).queue(|mut e: EntityWorldMut| put_on(&mut e, ()));
         } else if halo {
-            commands.entity(e).remove::<HaloParts>();
+            commands.entity(e).queue(take_off);
         }
     }
 }

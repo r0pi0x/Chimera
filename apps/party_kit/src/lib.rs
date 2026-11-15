@@ -322,6 +322,8 @@ impl Plugin for PartyPartsPlugin {
             (bundle.sim)(app);
         }
         add_view_model_fovs(app);
+        // Each game's weapons' damage here (data/party_damage.toml).
+        party_damage::add(app);
         app.add_plugins((
             MinigamePlugin,
             originals::OriginalsPlugin,
@@ -621,6 +623,7 @@ pub fn ids() -> Vec<String> {
 }
 
 pub mod host;
+pub mod party_damage;
 pub mod spot_checks;
 pub mod surprise;
 pub mod server;

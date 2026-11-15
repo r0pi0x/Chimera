@@ -9,6 +9,14 @@
 //!   own readers) through the engine's armour step (`weapon::HitArmor`,
 //!   as a gun's hit is) and health, hits to kill counted, the switch on
 //!   and off; a CS:S AK-47 by real fire kills one in 4 body hits.
+//! - **Outgoing**: Halo's guns, explosives and melee on a bare character
+//!   and a Combat Arms soldier with its gear, through Halo's damage seam,
+//!   with the party's per-game table (`halo_ce = 0.75`: a Halo point one
+//!   hit point) and without (1.333).
+//! - **The leak**: through real rung changes, a character leaving Halo's
+//!   rung gets back the armour it brought (CS:S none, HL2:DM's suit,
+//!   Combat Arms' gear as it was), never the shield's value; Halo's rung
+//!   to another keeps the shield as it is.
 
 use bevy::{ecs::system::RunSystemOnce, prelude::*};
 use chimera_core::core::{BodyRegion, Damage, DamageKind, Health};
@@ -17,7 +25,12 @@ use chimera_sim::{
     weapon::{HitArmor, data::WeaponCatalog},
 };
 use chimera_world::harness::Sim;
-use halo_ce::game::{cross_game::CrossGame, vitality::Vitality, weapons};
+use halo_ce::game::{
+    cross_game::CrossGame,
+    damage::HaloHit,
+    vitality::{DamageEffects, EffectId, Vitality, ids},
+    weapons,
+};
 
 use crate::{
     gun_game::{alive, line_up, soldier},
@@ -212,4 +225,257 @@ fn a_real_ak47_kills_a_halo_player_in_four_body_hits() {
     }
     assert!(!alive(&sim, b), "the Halo player died");
     assert_eq!(hits, 4, "body hits to kill");
+}
+
+// ---------------------------------------------------------------------------
+// Outgoing: a Halo source on another game's character, through Halo's own
+// conversion (a point 1/75 of its health) and the party's per-game table
+// (data/party_damage.toml: `halo_ce = 0.75`, so a point is a hit point).
+
+/// How a row's hit is dealt.
+#[derive(Clone, Copy, Debug)]
+enum Way {
+    /// A direct hit on the chest or the head, `n` at once (a shell's
+    /// pellets).
+    Direct(EffectId, BodyRegion, u32),
+    /// An explosion `m` metres from the target's centre.
+    Blast(EffectId, f32),
+    /// A melee at speed scale `s`, from behind when `behind`.
+    Melee(EffectId, f32, bool),
+}
+
+/// The rows of the report's table.
+const OUTGOING: [(&str, Way); 19] = [
+    ("assault rifle", Way::Direct(ids::ASSAULT_RIFLE_BULLET, BodyRegion::Chest, 1)),
+    ("pistol, body", Way::Direct(ids::PISTOL_BULLET, BodyRegion::Chest, 1)),
+    ("pistol, head", Way::Direct(ids::PISTOL_BULLET, BodyRegion::Head, 1)),
+    ("sniper rifle, body", Way::Direct(ids::SNIPER_BULLET, BodyRegion::Chest, 1)),
+    ("plasma rifle", Way::Direct(ids::PLASMA_RIFLE_BOLT, BodyRegion::Chest, 1)),
+    ("plasma pistol, tapped", Way::Direct(ids::PLASMA_PISTOL_BOLT, BodyRegion::Chest, 1)),
+    ("shotgun, point blank (15 pellets)", Way::Direct(ids::SHOTGUN_PELLET, BodyRegion::Chest, 15)),
+    ("rocket, direct", Way::Blast(ids::ROCKET_EXPLOSION, 0.0)),
+    ("rocket blast, 2 m", Way::Blast(ids::ROCKET_EXPLOSION, 2.0)),
+    ("rocket blast, 4 m", Way::Blast(ids::ROCKET_EXPLOSION, 4.0)),
+    ("rocket blast, 6 m", Way::Blast(ids::ROCKET_EXPLOSION, 6.0)),
+    ("frag, 2 m", Way::Blast(ids::FRAG_EXPLOSION, 2.0)),
+    ("frag, 4 m", Way::Blast(ids::FRAG_EXPLOSION, 4.0)),
+    ("frag, 6 m", Way::Blast(ids::FRAG_EXPLOSION, 6.0)),
+    ("frag, 7.5 m", Way::Blast(ids::FRAG_EXPLOSION, 7.5)),
+    ("melee, standing", Way::Melee(ids::ASSAULT_RIFLE_MELEE, 0.0, false)),
+    ("melee, running", Way::Melee(ids::ASSAULT_RIFLE_MELEE, 1.0, false)),
+    ("melee, lunging", Way::Melee(ids::ASSAULT_RIFLE_MELEE, 1.5, false)),
+    ("melee, from behind", Way::Melee(ids::ASSAULT_RIFLE_MELEE, 0.0, true)),
+];
+
+/// One of `way`'s hits on `target` (the effect's mean draw), applied.
+fn halo_hit(sim: &mut Sim, target: Entity, way: Way) {
+    const WU: f32 = 3.048;
+    let fx = sim.app.world().resource::<DamageEffects>().clone();
+    let at = sim.position(target);
+    let look = sim
+        .app
+        .world()
+        .get::<chimera_core::core::Intent>(target)
+        .map_or(Vec3::NEG_Z, |i| chimera_sim::weapon::aim_of(i.yaw, 0.0) * Vec3::NEG_Z);
+    let hits: Vec<HaloHit> = match way {
+        Way::Direct(effect, region, n) => {
+            let amount = fx.get(effect).unwrap().amount(1.0, 0.5);
+            (0..n).map(|_| HaloHit::direct(target, effect, amount, 1.0, Some(region), at, Vec3::NEG_Z, None)).collect()
+        }
+        Way::Blast(effect, m) => {
+            let f = fx.get(effect).unwrap();
+            let [r0, r1] = f.radius;
+            let d = m / WU;
+            let s = if r1 <= r0 { 1.0 } else { (1.0 - (d - r0) / (r1 - r0)).clamp(0.0, 1.0) };
+            vec![HaloHit::area(target, effect, f.amount(s, 0.5), s, at - Vec3::X * m, Vec3::X, None)]
+        }
+        Way::Melee(effect, s, behind) => {
+            let amount = fx.get(effect).unwrap().amount(s, 0.5);
+            let from = if behind { at - look } else { at + look };
+            vec![HaloHit::melee(target, effect, amount, s, from, (at - from).normalize(), None)]
+        }
+    };
+    let w = sim.app.world_mut();
+    for h in hits {
+        w.write_message(h.weapon(weapons::ASSAULT_RIFLE));
+    }
+    sim.ticks(1);
+}
+
+/// `way`'s hits to kill a full `target`, put on rung `r` (the ladder's)
+/// first.
+fn halo_hits_to_kill(sim: &mut Sim, a: Entity, target: Entity, r: usize, way: Way) -> u32 {
+    line_up(sim, a, target, 3.0);
+    if crate::gun_game::rung(sim, target) != r {
+        set_rung(sim, target, r);
+        sim.seconds(1.2);
+        line_up(sim, a, target, 3.0);
+    }
+    // Bare: no armour (another rung's would stay as kevlar); Combat Arms':
+    // its full gear.
+    let mut e = sim.app.world_mut().entity_mut(target);
+    if r == 0 {
+        e.remove::<chimera_sim::weapon::Armor>();
+    } else {
+        e.insert(chimera_sim::weapon::Armor { amount: 1.0, helmet: false });
+    }
+    sim.ticks(2);
+    for n in 1..=40 {
+        halo_hit(sim, target, way);
+        if !alive(sim, target) {
+            return n;
+        }
+    }
+    panic!("{way:?}: no kill in 40 hits");
+}
+
+/// The rows' hits to kill on a bare CS:S character (rung 0) and a Combat
+/// Arms soldier with its gear (rung 2), with the party's table or none.
+fn outgoing(table: bool) -> Vec<(u32, u32)> {
+    let mut sim = party();
+    if !table {
+        sim.app.world_mut().remove_resource::<chimera_sim::weapon::GameDamage>();
+    }
+    let a = soldier(&mut sim);
+    let b = soldier(&mut sim);
+    sim.seconds(1.5);
+    OUTGOING
+        .iter()
+        .map(|(_, way)| (halo_hits_to_kill(&mut sim, a, b, 0, *way), halo_hits_to_kill(&mut sim, a, b, 2, *way)))
+        .collect()
+}
+
+/// Halo's guns on other games' characters, before (a point 1.333 hit
+/// points) and after the party's table (one): hits to kill a bare
+/// character and a Combat Arms soldier with its gear; printed
+/// (`-- --nocapture`).
+#[test]
+fn halos_guns_on_other_games_characters_count_a_point_a_hit_point() {
+    let before = outgoing(false);
+    let after = outgoing(true);
+    assert_eq!(party_kit::party_damage::table().of("halo_ce"), 0.75);
+    println!("row: bare before/after, Combat Arms before/after");
+    for (((name, _), b), a) in OUTGOING.iter().zip(&before).zip(&after) {
+        println!("{name}: {} / {}, {} / {}", b.0, a.0, b.1, a.1);
+    }
+    let row = |name: &str| {
+        let k = OUTGOING.iter().position(|(n, _)| *n == name).unwrap();
+        (before[k], after[k])
+    };
+    // The brief's: the assault rifle 8 then 10 bullets; the pistol 2 then
+    // 3 body shots, a headshot a kill either way; the sniper rifle 1 body
+    // shot either way (101 points: 135 then 101 hit points); a melee from
+    // behind kills either way.
+    assert_eq!((row("assault rifle").0.0, row("assault rifle").1.0), (8, 10));
+    assert_eq!((row("pistol, body").0.0, row("pistol, body").1.0), (2, 3));
+    assert_eq!((row("pistol, head").0.0, row("pistol, head").1.0), (1, 1));
+    assert_eq!((row("sniper rifle, body").0.0, row("sniper rifle, body").1.0), (1, 1));
+    assert_eq!((row("melee, from behind").0.0, row("melee, from behind").1.0), (1, 1));
+    // Never stronger than before.
+    for ((name, _), (b, a)) in OUTGOING.iter().zip(before.iter().zip(&after)) {
+        assert!(a.0 >= b.0 && a.1 >= b.1, "{name}: {b:?} -> {a:?}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The armour a character brings to Halo's rung is what it gets back when it
+// leaves (`cross_game::Brought`), never the shield's value.
+
+/// CS:S's, Halo's, HL2:DM's and Combat Arms' rungs, Halo's between each.
+const SWITCHES: [&str; 6] = [
+    "cs_source:weapon_glock",
+    weapons::ASSAULT_RIFLE,
+    "hl2dm:weapon_smg1",
+    weapons::PISTOL,
+    "combat_arms:m4a1",
+    weapons::PLASMA_RIFLE,
+];
+
+/// The party playing `SWITCHES` with the balance `cfg`, and one player.
+fn switching(cfg: CrossGame) -> (Sim, Entity) {
+    let text = crate::hl2dm_parts::ladder_text(&SWITCHES, false).replace(
+        "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
+        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"combat_arms\"]",
+    );
+    let mut sim = crate::halo_ladder::party_with(&text);
+    sim.app.insert_resource(cfg);
+    let a = soldier(&mut sim);
+    let _b = soldier(&mut sim);
+    sim.seconds(1.5);
+    (sim, a)
+}
+
+/// `e` onto rung `r`, its gun in hand.
+fn onto(sim: &mut Sim, e: Entity, r: usize) {
+    set_rung(sim, e, r);
+    sim.seconds(1.2);
+    assert_eq!(crate::gun_game::held(sim, e), Some(SWITCHES[r]), "rung {r}");
+}
+
+/// `e`'s armour: (amount, helmet), None without.
+fn armour(sim: &Sim, e: Entity) -> Option<(f32, bool)> {
+    sim.app.world().get::<chimera_sim::weapon::Armor>(e).map(|a| (a.amount, a.helmet))
+}
+
+/// `e` on Halo's rung `r`, its shield recharged to full (whatever it
+/// brought: the shield's start).
+fn halo_full(sim: &mut Sim, e: Entity, r: usize) {
+    onto(sim, e, r);
+    sim.seconds(10.5);
+    let v = sim.app.world().get::<Vitality>(e).expect("Halo's");
+    assert_eq!(v.shield, 1.0, "recharged");
+}
+
+/// Through real rung changes: a CS:S player (no armour) leaves Halo's rung
+/// with no kevlar; an HL2:DM one with its suit as before (30 points); a
+/// Combat Arms one with its gear as before (half of it, not the shield's
+/// full value);
+/// Halo's rung to another keeps the shield as it is. With the switch off,
+/// today's leak: the shield's value as armour on the next rung.
+#[test]
+fn leaving_halo_gives_back_the_armour_it_brought() {
+    for cfg in [CrossGame::load(), CrossGame::off()] {
+        let on = cfg.enabled;
+        let (mut sim, a) = switching(cfg);
+        // CS:S -> Halo -> CS:S.
+        onto(&mut sim, a, 0);
+        assert_eq!(armour(&sim, a), None, "CS:S: none");
+        halo_full(&mut sim, a, 1);
+        onto(&mut sim, a, 0);
+        let want = if on { None } else { Some((1.0, false)) };
+        assert_eq!(armour(&sim, a), want, "on {on}: CS:S after Halo");
+        // HL2:DM -> Halo -> HL2:DM.
+        // (The suit's armour, 30 points of it used up.)
+        onto(&mut sim, a, 2);
+        assert!(armour(&sim, a).is_some(), "HL2:DM's suit");
+        sim.app.world_mut().get_mut::<chimera_sim::weapon::Armor>(a).unwrap().amount = 0.3;
+        sim.ticks(2);
+        halo_full(&mut sim, a, 3);
+        onto(&mut sim, a, 2);
+        let want = if on { Some((0.3, false)) } else { Some((1.0, false)) };
+        assert_eq!(armour(&sim, a), want, "on {on}: HL2:DM after Halo");
+        // Combat Arms (its gear, half used) -> Halo -> Combat Arms.
+        onto(&mut sim, a, 4);
+        sim.app.world_mut().get_mut::<chimera_sim::weapon::Armor>(a).unwrap().amount = 0.5;
+        sim.ticks(2);
+        halo_full(&mut sim, a, 5);
+        onto(&mut sim, a, 4);
+        let want = if on { 0.5 } else { 1.0 };
+        assert_eq!(armour(&sim, a).map(|a| a.0), Some(want), "on {on}: Combat Arms after Halo");
+        assert!(sim.app.world().get::<chimera_sim::weapon::ArmorPieces>(a).is_some(), "its gear on");
+        // Halo -> Halo: the shield as it is.
+        onto(&mut sim, a, 1);
+        sim.seconds(10.5);
+        let unit = cfg.incoming();
+        sim.app.world_mut().get_mut::<chimera_sim::weapon::Armor>(a).unwrap().amount = 0.4 / unit;
+        sim.ticks(2);
+        let before = sim.app.world().get::<Vitality>(a).unwrap().shield;
+        assert!((before - 0.4).abs() < 1e-5, "{before}");
+        set_rung(&mut sim, a, 3);
+        sim.ticks(3);
+        assert_eq!(crate::gun_game::held(&sim, a), Some(weapons::PISTOL));
+        let v = sim.app.world().get::<Vitality>(a).unwrap();
+        assert_eq!(v.shield, before, "on {on}: the shield kept from one Halo rung to the next");
+        assert!(v.delay > 0, "still waiting to recharge");
+    }
 }
