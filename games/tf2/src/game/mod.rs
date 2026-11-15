@@ -10,10 +10,14 @@
 //!   by file (specs/tf2/install.md 1.5);
 //! - `maps`: Source's BSP conversion with TF2's data (`TF2`: spawns from
 //!   `info_player_teamspawn`, gravity 800; `MAP_LOADER` for `tf2:<map>`);
-//! - `movement`: `tf2:movement`, Chimera's placeholder walking with the
-//!   Soldier's numbers until TF2's movement (M3);
+//! - `classes` (M3): the nine classes as data (data/classes.toml: health,
+//!   speed, eyes, air jumps, models) and which class each gun makes its
+//!   holder;
+//! - `movement` (M3): `tf2:movement`, Source's movement with TF2's config
+//!   and the class of the gun in hand (speed, eyes, the Scout's air jump,
+//!   max health);
 //! - `parts`: what the game lends other games' apps (`PARTS`): its four
-//!   guns, its stand-in movement;
+//!   guns, its movement;
 //! - `ice`: the ICE cipher of the encrypted scripts (specs/tf2/ice.md),
 //!   with the spec's ambiguous readings selectable (M2a);
 //! - `scripts`: the weapon and class scripts (`.ctx`) through the mount,
@@ -38,6 +42,7 @@
 //! - The tick is the measured default (0.015 s, specs/tf2/movement.md,
 //!   "Units and conventions"); no `-tickrate`.
 
+pub mod classes;
 pub mod ice;
 pub mod maps;
 pub mod mount;
@@ -101,7 +106,7 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
 };
 
 /// TF2's parts, after the engine's base (`crate::SimPlugins`): the game
-/// registered (`INFO`), its stand-in movement (`movement`), its guns
+/// registered (`INFO`), its movement (`movement`), its guns
 /// (`weapons`) and their view models' rules (`view`).
 pub struct Tf2Plugins;
 
@@ -155,7 +160,7 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 };
 
 /// What TF2 adds to a game of several games: the game registered, map
-/// logic for its maps, its stand-in movement (not the match's), its guns
+/// logic for its maps, its movement (not the match's), its guns
 /// and their view models' rules.
 pub fn party_sim(app: &mut bevy::app::App) {
     use crate::game_registry::GameAppExt;

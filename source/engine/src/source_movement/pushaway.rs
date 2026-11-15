@@ -33,7 +33,6 @@ const PUSHBACK_MAX: f32 = 10_000.0;
 /// Applied to every client push-back (a quirk the game keeps).
 const PUSHBACK_SCALE: f32 = 0.25;
 const PUSHBACK_GAP: f32 = 5.0;
-const HALF_WIDTH: f32 = 16.0;
 /// The movement's transform sits this far above the feet (units).
 const ORIGIN_ABOVE_FEET: f32 = 36.0;
 
@@ -82,8 +81,8 @@ pub fn player_box(transform: &Transform, me: &SourceMovement, cfg: &SourceMoveme
     let feet = to_source(transform.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
     let height = if me.ducked { cfg.duck_height } else { cfg.stand_height };
     (
-        feet + Vec3::new(-HALF_WIDTH, -HALF_WIDTH, 0.0),
-        feet + Vec3::new(HALF_WIDTH, HALF_WIDTH, height),
+        feet + Vec3::new(-cfg.half_width, -cfg.half_width, 0.0),
+        feet + Vec3::new(cfg.half_width, cfg.half_width, height),
     )
 }
 

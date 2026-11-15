@@ -18,9 +18,14 @@
 //! character's model (`StepSounds`, none while ducked), climbing
 //! `func_useableladder`s instead of ladder brushes (`useable_ladders`:
 //! the map's ladders, mounting, forced moves, climbing and dismounts), and
-//! no CS:S drowning. A game may choose the tick's max speed before the
-//! step (`SourceSpeed`, ordered before `SourceMovementStep`: HL2:DM's
-//! walk, run and sprint).
+//! no CS:S drowning; TF2's box width, 0.2 s duck counted from the press's
+//! tick, bunny-hop cap as a share of the top speed, backwards scale, air
+//! jumps (the Scout's), no jump fully ducked, air-duck limit and fall
+//! damage as a share of max health with its spread. A game may choose the
+//! tick's max speed before the step (`SourceSpeed`, ordered before
+//! `SourceMovementStep`: HL2:DM's walk, run and sprint), and a
+//! character's own kind its speed, eyes and air jumps (`SourceTraits`:
+//! TF2's classes).
 //!
 //! The maths runs in Source units (inches, Z up) like the spec; the
 //! character's `Transform` (engine meters, Y up) is the centre of the
@@ -280,6 +285,68 @@ pub struct SourceMovementConfig {
     /// counter every player shares (HL2's step timing: the step comes a
     /// tick later; specs/hl2dm/movement.md "Step sounds").
     pub waist_step_skip: bool,
+    /// Half the box's width, units (16 in the shared code and CS:S; TF2's
+    /// 24: specs/tf2/movement.md).
+    pub half_width: f32,
+    /// How long a duck on the ground takes, s (the shared code's 0.4; the
+    /// unduck is 0.2 either way; TF2 0.2).
+    pub duck_time: f32,
+    /// A duck's or unduck's timer counts the tick of the press (or
+    /// release) already: tick k of the transition is k ticks in (TF2,
+    /// measured: the eye 64.68 on the press tick of a Scout's duck, the box
+    /// switched on the 14th); the shared code's first tick is 0 in.
+    pub duck_counts_first_tick: bool,
+    /// A jump caps the speed (3D) at this times the tick's max speed (TF2's
+    /// 1.2: the cap follows the class); 0: `bunnyhop_cap` alone.
+    pub bunnyhop_cap_scale: f32,
+    /// The max speed's scale while the forward move is negative (TF2's
+    /// 0.9); 1 in the shared code.
+    pub back_speed: f32,
+    /// Jumps a player may make in the air before landing again (TF2's
+    /// Scout: 1; usually set per character, `SourceTraits`), each setting
+    /// the vertical speed to `air_jump_speed` and the horizontal velocity
+    /// to the keys' wish velocity.
+    pub air_jumps: u8,
+    pub air_jump_speed: f32,
+    /// No ground jump while fully ducked (TF2: a crouch jump is a jump,
+    /// then a duck in the air).
+    pub no_ducked_jump: bool,
+    /// Ducks a player may start in one air time (TF2's `tf_clamp_airducks`:
+    /// 2); 0: no limit.
+    pub air_ducks_max: u8,
+    /// Fall damage as a share of max health per unit/s of landing speed
+    /// above `fall_safe` (TF2: max health x speed / 6000, rounded); 0: by
+    /// `fall_damage_per_speed`. `fall_spread`: the damage x a random factor
+    /// in 1 +- this (TF2's 0.2; `tf_fall_damage_disablespread` 1 sets 0).
+    pub fall_by_max_health: f32,
+    pub fall_spread: f32,
+}
+
+/// What a character's own kind changes in its movement (TF2's classes:
+/// top speed, eye height, air jumps), set by its game before the step
+/// (`SourceMovementStep`); none: the config as registered. `max_speed`
+/// (units/s) is the tick's max speed as `SourceSpeed` is, before it: the
+/// two are different games' (a game's own leaves the other's alone when a
+/// player moves from one game's movement to the other's).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct SourceTraits {
+    pub max_speed: Option<f32>,
+    pub eye_stand: Option<f32>,
+    pub air_jumps: Option<u8>,
+}
+
+impl SourceTraits {
+    /// `cfg` with these traits.
+    pub fn apply(&self, cfg: &SourceMovementConfig) -> SourceMovementConfig {
+        let mut c = cfg.clone();
+        if let Some(e) = self.eye_stand {
+            c.eye_stand = e;
+        }
+        if let Some(n) = self.air_jumps {
+            c.air_jumps = n;
+        }
+        c
+    }
 }
 
 /// Console variables players and server configs know, mapped onto the
@@ -449,6 +516,17 @@ impl SourceMovementConfig {
             model_footsteps: false,
             drowning: true,
             waist_step_skip: false,
+            half_width: 16.0,
+            duck_time: 0.4,
+            duck_counts_first_tick: false,
+            bunnyhop_cap_scale: 0.0,
+            back_speed: 1.0,
+            air_jumps: 0,
+            air_jump_speed: 0.0,
+            no_ducked_jump: false,
+            air_ducks_max: 0,
+            fall_by_max_health: 0.0,
+            fall_spread: 0.0,
         }
     }
 }
@@ -585,7 +663,6 @@ const STEP_EPSILON: f32 = 0.031_25;
 const STAY_ON_GROUND_UP: f32 = 2.0;
 const SNAP_MIN: f32 = 1.0 / 64.0;
 const DUCK_TIMER_START: f32 = 1000.0;
-const TIME_TO_DUCK: f32 = 0.4;
 const TIME_TO_UNDUCK: f32 = 0.2;
 const UPWARD_AIR_FRICTION: f32 = 0.25;
 
@@ -735,6 +812,15 @@ pub struct SourceMovement {
     /// `+use` was held last tick (a fresh press mounts and dismounts).
     #[serde(default)]
     pub use_held: bool,
+    /// Air jumps made and ducks started since leaving the ground
+    /// (`SourceMovementConfig::air_jumps`, `air_ducks_max`); a duck press
+    /// past the limit is ignored until let go (`air_duck_refused`).
+    #[serde(default)]
+    pub air_jumps_used: u8,
+    #[serde(default)]
+    pub air_ducks: u8,
+    #[serde(default)]
+    pub air_duck_refused: bool,
 }
 
 impl Default for SourceMovement {
@@ -774,6 +860,9 @@ impl Default for SourceMovement {
             useable: None,
             forced: None,
             use_held: false,
+            air_jumps_used: 0,
+            air_ducks: 0,
+            air_duck_refused: false,
         }
     }
 }
@@ -995,6 +1084,8 @@ struct Tracer<'a, 'w, 's> {
     sounds: Option<&'a crate::map::MapSounds>,
     /// Standing and ducked box heights.
     heights: (f32, f32),
+    /// Half the box's width (`SourceMovementConfig::half_width`).
+    half_width: f32,
     /// Other characters' boxes (engine space), swept exactly like brushes:
     /// players are axis-aligned boxes to each other, as in Source.
     others: &'a [&'a MapBrush],
@@ -1311,8 +1402,8 @@ impl<'a> Tracer<'a, '_, '_> {
     fn hull(&self, ducked: bool) -> (Vec3, Vec3) {
         let height = if ducked { self.heights.1 } else { self.heights.0 };
         (
-            Vec3::new(-HALF_WIDTH, -HALF_WIDTH, 0.0),
-            Vec3::new(HALF_WIDTH, HALF_WIDTH, height),
+            Vec3::new(-self.half_width, -self.half_width, 0.0),
+            Vec3::new(self.half_width, self.half_width, height),
         )
     }
 
@@ -1427,6 +1518,8 @@ struct Mover<'a, 'b, 'w, 's> {
     foreign_map: bool,
     /// Map outputs fired this tick (entity index, output).
     outputs: Vec<(usize, &'static str)>,
+    /// The character's max health in points (`fall_by_max_health`).
+    max_health: f32,
 }
 
 impl Mover<'_, '_, '_, '_> {
@@ -2307,6 +2400,15 @@ impl Mover<'_, '_, '_, '_> {
         self.categorize();
     }
 
+    /// A duck timer started this tick (`duck_counts_first_tick`).
+    fn duck_timer_start(&self) -> f32 {
+        if self.cfg.duck_counts_first_tick {
+            DUCK_TIMER_START - 1000.0 * self.dt
+        } else {
+            DUCK_TIMER_START
+        }
+    }
+
     /// Ducking transitions; returns the move-input scale, decided from the
     /// state before this tick's changes.
     fn duck(&mut self, held: bool) -> f32 {
@@ -2322,25 +2424,25 @@ impl Mover<'_, '_, '_, '_> {
             // A press while still flagged ducked (mid-unduck) doesn't
             // restart anything: the eye stays where it is while held.
             if pressed && !self.me.ducked {
-                self.me.duck_timer = DUCK_TIMER_START;
+                self.me.duck_timer = self.duck_timer_start();
                 self.me.ducking = true;
             }
             if self.me.ducking && !self.me.ducked {
                 let elapsed = (DUCK_TIMER_START - self.me.duck_timer) / 1000.0;
-                if elapsed > TIME_TO_DUCK || !self.me.on_ground {
+                if elapsed > self.cfg.duck_time || !self.me.on_ground {
                     self.finish_duck();
                 } else {
-                    self.me.eye = self.eye_blend(Self::smooth(elapsed / TIME_TO_DUCK));
+                    self.me.eye = self.eye_blend(Self::smooth(elapsed / self.cfg.duck_time));
                 }
             }
         } else if self.me.ducked || self.me.ducking {
             if released {
                 if !self.me.ducking || self.me.ducked {
-                    self.me.duck_timer = DUCK_TIMER_START;
+                    self.me.duck_timer = self.duck_timer_start();
                 } else if !self.cfg.unduck_keeps_duck_timer {
                     // Released partway down: the unduck starts from the
                     // matching point (shared code).
-                    let fraction = (elapsed / TIME_TO_DUCK).clamp(0.0, 1.0);
+                    let fraction = (elapsed / self.cfg.duck_time).clamp(0.0, 1.0);
                     self.me.duck_timer =
                         DUCK_TIMER_START - TIME_TO_UNDUCK * 1000.0 + fraction * TIME_TO_UNDUCK * 1000.0;
                 }
@@ -2368,12 +2470,18 @@ impl Mover<'_, '_, '_, '_> {
         scale
     }
 
-    fn jump(&mut self) {
-        // Without sv_enablebunnyhopping, jumping caps the speed.
-        if !self.cfg.enable_bunnyhopping && self.cfg.bunnyhop_cap > 0.0 {
+    fn jump(&mut self, max_speed: f32) {
+        // Without sv_enablebunnyhopping, jumping caps the speed: at a fixed
+        // speed (CS:S) or a share of this tick's max speed (TF2).
+        let cap = if self.cfg.bunnyhop_cap_scale > 0.0 {
+            self.cfg.bunnyhop_cap_scale * max_speed
+        } else {
+            self.cfg.bunnyhop_cap
+        };
+        if !self.cfg.enable_bunnyhopping && cap > 0.0 {
             let speed = self.v.length();
-            if speed > self.cfg.bunnyhop_cap {
-                self.v *= self.cfg.bunnyhop_cap / speed;
+            if speed > cap {
+                self.v *= cap / speed;
             }
         }
         let impulse = self.cfg.jump_impulse * self.ground_factors().1;
@@ -2477,6 +2585,9 @@ impl Mover<'_, '_, '_, '_> {
             intent.move_axis.y * self.cfg.key_speed + self.push_input.x,
             intent.move_axis.x * self.cfg.key_speed + self.push_input.y,
         );
+        // Moving backwards (the forward move negative) caps lower (TF2's
+        // 0.9): the keys rescale to it and the wish is clamped to it.
+        let max_speed = if f < 0.0 { max_speed * self.cfg.back_speed } else { max_speed };
         let len = (f * f + s * s).sqrt();
         if len > max_speed {
             f *= max_speed / len;
@@ -2541,7 +2652,8 @@ impl Mover<'_, '_, '_, '_> {
         let water_before = self.me.water_level;
         self.footsteps();
         let was_ducking = self.me.ducked || self.me.ducking;
-        let mut scale = self.duck(intent.crouch);
+        let crouch = self.air_duck_allowed(intent.crouch);
+        let mut scale = self.duck(crouch);
         // CS:S (measured): input is slowed while duck is held, or when the
         // tick started ducked or mid-duck (on the ground or off it).
         if self.cfg.duck_slows_everywhere {
@@ -2644,8 +2756,12 @@ impl Mover<'_, '_, '_, '_> {
 
         if intent.jump {
             let fresh = !self.me.jump_held || self.cfg.auto_bunnyhopping;
-            if self.me.on_ground && fresh && !(self.me.ducked && self.me.ducking) {
-                self.jump();
+            let fully_ducked = self.me.ducked && !self.me.ducking;
+            let air_jump = !self.me.on_ground && !self.me.jump_held && self.me.air_jumps_used < self.cfg.air_jumps;
+            if self.me.on_ground && fresh && !(self.me.ducked && self.me.ducking) && !(self.cfg.no_ducked_jump && fully_ducked) {
+                self.jump(max_speed);
+            } else if air_jump {
+                self.air_jump(f, s, forward, right, max_speed);
             } else {
                 if self.cfg.unduck_jump_ducks && self.me.on_ground && fresh && self.me.ducked && self.me.ducking {
                     // CS:S (measured, movecmp `unduck_jump_*`): a jump
@@ -2689,6 +2805,9 @@ impl Mover<'_, '_, '_, '_> {
                     let by_speed = (fall - self.cfg.fall_safe) * self.cfg.fall_damage_per_speed;
                     self.fall_damage = match self.cfg.fall_fixed {
                         Some(d) => d,
+                        // TF2: a share of max health by the whole fall
+                        // speed (rounded after the spread: `step`).
+                        None if self.cfg.fall_by_max_health > 0.0 => self.max_health * fall * self.cfg.fall_by_max_health,
                         None if self.cfg.fall_fraction => {
                             // HL2: the fall speed itself is lowered, so the
                             // landing rolls the view by what is left.
@@ -2704,8 +2823,47 @@ impl Mover<'_, '_, '_, '_> {
                 self.me.fall_speed = 0.0;
             }
         }
+        if self.me.on_ground {
+            self.me.air_jumps_used = 0;
+            self.me.air_ducks = 0;
+        }
         self.water_sound(water_before);
         self.me.last_feet = Some(self.feet);
+    }
+
+    /// An air jump (`SourceMovementConfig::air_jumps`; TF2's Scout,
+    /// specs/tf2/movement.md "The Scout's air jump"): the vertical speed
+    /// replaced by `air_jump_speed` (after this tick's first gravity
+    /// half-step, with no second), the horizontal velocity by the keys'
+    /// wish velocity (none held: stopped).
+    fn air_jump(&mut self, f: f32, s: f32, forward: Vec3, right: Vec3, max_speed: f32) {
+        let (dir, speed) = self.wish(f, s, forward, right, max_speed);
+        let wish = dir * speed;
+        self.v = Vec3::new(wish.x, wish.y, self.cfg.air_jump_speed);
+        self.me.air_jumps_used += 1;
+        self.me.jump_held = true;
+    }
+
+    /// The duck key as the air duck limit lets it through (`air_ducks_max`;
+    /// TF2's `tf_clamp_airducks`): a press in the air past the limit is
+    /// ignored until the key is let go.
+    fn air_duck_allowed(&mut self, held: bool) -> bool {
+        if !held {
+            self.me.air_duck_refused = false;
+            return false;
+        }
+        if self.me.air_duck_refused {
+            return false;
+        }
+        let pressed = !self.me.duck_held;
+        if pressed && !self.me.on_ground && self.cfg.air_ducks_max > 0 {
+            if self.me.air_ducks >= self.cfg.air_ducks_max {
+                self.me.air_duck_refused = true;
+                return false;
+            }
+            self.me.air_ducks += 1;
+        }
+        true
     }
 
     /// The punch angle's spring (movement spec, "Punch angle decay"), for
@@ -2756,6 +2914,7 @@ fn step(
             Option<&SourceSpeed>,
             Option<&StepSounds>,
             Option<&mut crate::core::IgnoreFallDamage>,
+            Option<&SourceTraits>,
         ),
     )>,
     query: SpatialQuery,
@@ -2839,8 +2998,8 @@ fn step(
     let hull_box = |cfg: &SourceMovementConfig, feet: Vec3, ducked: bool| {
         let height = if ducked { cfg.duck_height } else { cfg.stand_height };
         let (a, b) = (
-            to_engine(feet + Vec3::new(-HALF_WIDTH, -HALF_WIDTH, 0.0)),
-            to_engine(feet + Vec3::new(HALF_WIDTH, HALF_WIDTH, height)),
+            to_engine(feet + Vec3::new(-cfg.half_width, -cfg.half_width, 0.0)),
+            to_engine(feet + Vec3::new(cfg.half_width, cfg.half_width, height)),
         );
         MapBrush::from_box(a.min(b), a.max(b))
     };
@@ -2850,7 +3009,7 @@ fn step(
     let mut boxes: Vec<(Entity, MapBrush)> = q
         .iter()
         .filter(|(e, ..)| alive(*e))
-        .map(|(e, _, me, t, .., (slot, _, _, _))| {
+        .map(|(e, _, me, t, .., (slot, _, _, _, _))| {
             let feet = me.forced.map_or(to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET, |f| f.goal);
             (e, hull_box(configs.of(slot), feet, me.ducked))
         })
@@ -2921,6 +3080,7 @@ fn step(
             prop_surfaces: &|_: Entity| None,
             sounds: None,
             heights: (72.0, 36.0),
+            half_width: HALF_WIDTH,
             others: &[],
             terrain: terrain.as_deref(),
             owners: &[],
@@ -2941,10 +3101,19 @@ fn step(
         touch,
         controls,
         settle,
-        (slot, speed, step_sounds, mut ignore_fall),
+        (slot, speed, step_sounds, mut ignore_fall, traits),
     ) in &mut q
     {
-        let cfg = configs.of(slot);
+        // The character's own traits over its movement's config (TF2's
+        // classes).
+        let patched;
+        let cfg = match traits {
+            Some(t) => {
+                patched = t.apply(configs.of(slot));
+                &patched
+            }
+            None => configs.of(slot),
+        };
         // A character without a movement slot is the app's own game's.
         let foreign = slot.is_some_and(|s| crate::core::foreign_map(map_game.as_deref(), crate::core::movement_game(s.0)));
         // player_speedmod: the movement runs as if this many ticks passed
@@ -3012,6 +3181,7 @@ fn step(
             prop_surfaces: &prop_surface,
             sounds: bank.as_ref().map(|b| &*b.0),
             heights: (cfg.stand_height, cfg.duck_height),
+            half_width: cfg.half_width,
             others: &others,
             terrain: terrain.as_deref(),
             owners: &owners,
@@ -3040,11 +3210,12 @@ fn step(
             ground_collider: None,
             wish: Vec3::ZERO,
             settle,
-            speed: speed.map(|s| s.0),
+            speed: traits.and_then(|t| t.max_speed).or(speed.map(|s| s.0)),
             step_sounds,
             ladders,
             foreign_map: foreign,
             outputs: Vec::new(),
+            max_health: health.get(entity).map_or(100.0, |h| h.max * 100.0),
         };
         if let Some(on_ground) = mover.me.seat.take() {
             mover.reseat(on_ground);
@@ -3092,6 +3263,22 @@ fn step(
                 ignore.until = f64::MIN;
             }
         }
+        // TF2's share of max health: times 1 +- the spread, then rounded
+        // (specs/tf2/movement.md "Falling and landing"); the spread's draw
+        // is the tick's and the character's, the same on every replay.
+        if mover.fall_damage > 0.0 && cfg.fall_by_max_health > 0.0 && cfg.fall_fixed.is_none() {
+            let r = if cfg.fall_spread > 0.0 {
+                let mut x = entity.to_bits() ^ clock.tick.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+                x ^= x >> 33;
+                x = x.wrapping_mul(0xff51_afd7_ed55_8ccd);
+                x ^= x >> 33;
+                let u = (x >> 11) as f64 / (1u64 << 53) as f64;
+                1.0 + cfg.fall_spread * (2.0 * u as f32 - 1.0)
+            } else {
+                1.0
+            };
+            mover.fall_damage = (mover.fall_damage * r).round();
+        }
         if mover.fall_damage > 0.0 && first.0 {
             // Health is normalized: 1.0 = 100 points. No attacker, no
             // armour (measured: armour doesn't absorb it).
@@ -3131,15 +3318,15 @@ fn step(
             eye_offset: Vec3::Y * (me.eye - ORIGIN_ABOVE_FEET) * METERS_PER_UNIT,
             hull_min: {
                 let (a, b) = (
-                    to_engine(Vec3::new(-HALF_WIDTH, -HALF_WIDTH, -ORIGIN_ABOVE_FEET)),
-                    to_engine(Vec3::new(HALF_WIDTH, HALF_WIDTH, hull_height(cfg, me.ducked) - ORIGIN_ABOVE_FEET)),
+                    to_engine(Vec3::new(-cfg.half_width, -cfg.half_width, -ORIGIN_ABOVE_FEET)),
+                    to_engine(Vec3::new(cfg.half_width, cfg.half_width, hull_height(cfg, me.ducked) - ORIGIN_ABOVE_FEET)),
                 );
                 a.min(b)
             },
             hull_max: {
                 let (a, b) = (
-                    to_engine(Vec3::new(-HALF_WIDTH, -HALF_WIDTH, -ORIGIN_ABOVE_FEET)),
-                    to_engine(Vec3::new(HALF_WIDTH, HALF_WIDTH, hull_height(cfg, me.ducked) - ORIGIN_ABOVE_FEET)),
+                    to_engine(Vec3::new(-cfg.half_width, -cfg.half_width, -ORIGIN_ABOVE_FEET)),
+                    to_engine(Vec3::new(cfg.half_width, cfg.half_width, hull_height(cfg, me.ducked) - ORIGIN_ABOVE_FEET)),
                 );
                 a.max(b)
             },
