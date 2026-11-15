@@ -281,12 +281,19 @@ plane's own material type when it starts above. A type outside 0 to 32
 is treated as none.
 
 Surfaces with material −1 are collision that has no render geometry. On
-Blood Gulch they are exactly the 94 surfaces that lie outside the render
-mesh: the surfaces with a material span the render bounds exactly,
-while the material-less ones extend the collision to the outer cliffs
-and a lid at z = 68.037 (the first surface, below). They are the walls
-that keep players inside the level and must be in the physics mesh.
-A hit on one reports material type none (no impact effect).
+Blood Gulch there are 94 (of 4916 surfaces, all triangles). Every
+surface with a material lies inside the render bounding box (they span
+it exactly), while the material-less ones extend the collision to the
+outer cliffs and a lid at z = 68.037 (the first surface, below): 1 of
+them lies wholly outside the box, 81 straddle its faces (one or two of
+three vertices inside), and **12 lie wholly inside it**. Those 12 are
+small interior terrain triangles (three clusters of 5, 5 and 2 near
+(80, −80, 20), (95, −108, 15) and (26, −122, 19), almost all facing
+up, one a steep undercut), not boundary walls. Most of the 94 are the
+walls that keep players inside the level and must be in the physics
+mesh; keep all 94. A hit on one reports material type none (no impact
+effect). (Script over bloodgulch; box x 5.907 to 131.902, y −190.219
+to −45.057, z −0.349 to 26.233, tolerance 0.01.)
 
 ### Surface flags: who collides with what
 
@@ -372,6 +379,13 @@ can refer to them (names as the tag carries them, checked values from
 | 0x28C | block | nodes (0x40 each) |
 
 Gaps between the listed fields are unused or padding.
+
+The vehicles' collision models (warthog, scorpion_mp, ghost_mp on every
+multiplayer map checked) have flags 0x28, maximum body vitality 0 and
+maximum shield vitality 0: see `health_shields.md`. (Of the Blood Gulch
+collision models 31 have flags 0 and no vitality, the three vehicles
+0x28, the Spartan 0x7 with 75 and 75, and one has flags 0x20 with body
+vitality 50.)
 
 Material (0x48): name (32-byte string) at 0x00; flags at 0x20 (bit 0
 "head": set on the cyborg's head material); material type (int16, the
@@ -625,10 +639,16 @@ Counts (level collision BSP, structure BSP 0):
 | bloodgulch | 12071 | 4616 | 5999 | 13182 | 418 | 4916 | 7650 | 2704 |
 | hangemhigh | 1946 | 964 | 1116 | 2659 | 1175 | 1695 | 3132 | 1381 |
 
-| Map | triangles (fan) | surfaces with 3/4/5/6/7/8 vertices | flipped planes | leaves with bit 0 | max 3D / 2D depth |
+| Map | triangles (fan) | surfaces with 3/4/5/6/7/8 vertices | surfaces with a flipped plane | leaves with bit 0 | max 3D / 2D depth |
 |---|---|---|---|---|---|
 | bloodgulch | 5468 | 4447 / 420 / 19 / 28 / 0 / 2 | 16 | 0 | 39 / 4 |
 | hangemhigh | 2874 | 739 / 829 / 66 / 38 / 11 / 12 | 21 | 0 | 22 / 5 |
+
+"Surfaces with a flipped plane" counts surfaces (of 4916 and 1695) whose
+signed plane index has the flip bit set (16 distinct planes on Blood
+Gulch, 15 on Hang 'Em High); no 3D node's plane is flipped, and 33 of
+Blood Gulch's 13182 and 31 of Hang 'Em High's 2659 leaf references are
+(script over the level collision BSPs).
 
 Surface flags: none set on either map (4916 and 1695 surfaces with
 flags 0; breakable index 0 everywhere).
@@ -659,7 +679,8 @@ Bounds (x, y, z):
 | hangemhigh | 5.900 … 35.878, −22.823 … 15.823, −9.253 … 8.183 | identical |
 
 On Blood Gulch the surfaces that have a material span exactly the render
-bounds; the excess is the 94 material-less surfaces.
+bounds; the excess is made of material-less surfaces (82 of the 94
+reach outside the box; 12 sit wholly inside it).
 
 Verification done with throwaway scripts on the disc's files:
 
@@ -775,7 +796,7 @@ Edges (start, end, forward, reverse, left, right):
 | bloodgulch, player starting location 6 at (43.91446, −80.67870, 1.70433) | same | trace | hit, z = 1.703486, surface 2306, material 2 |
 | bloodgulch | P (65, −120, 30), V (0, 0, −40), front only | trace | hit, t = 0.7465926, z = 0.136297, surface 1495, normal (−0.009558, 0.045286, 0.998928), material 6 (sand) |
 | bloodgulch | point (65, −120, 30) | point test | leaf 5960 |
-| bloodgulch | material-less surfaces | count | 94, all outside the render bounds |
+| bloodgulch | material-less surfaces | count | 94: 1 wholly outside the render bounds, 81 straddling them, 12 wholly inside |
 | boardingaction | two-sided surfaces | count, twins | 80, each with a twin of opposite flip |
 | `characters\cyborg\cyborg` (coll) | nodes | read | 19 nodes; 3 with region −1 and no BSP; materials head, body, legs, shield generator, all type 21 |
 
@@ -792,7 +813,7 @@ Player starting locations are the scenario's block at offset 0x354
 | Two-sided twins, leaf bit 0 | checked against the disc (boardingaction, prisoner) |
 | Level collision materials, precomputed type | checked against the disc |
 | Material type names and codes | reference (tag enumeration); codes seen on the disc (1, 2, 7, 8, 9, 21, 22) fit |
-| Material-less surfaces are the level boundary | inferred from the disc (bounds) |
+| Material-less surfaces are mostly the level boundary (12 of 94 on Blood Gulch are interior triangles) | inferred from the disc (bounds; script count) |
 | Flag statistics | checked against the disc (all maps) |
 | Which query ignores which flag | reference only |
 | `coll` layout | offsets of materials, regions, pathfinding, nodes and the values quoted checked on Blood Gulch; other health field offsets from the reference |
@@ -805,7 +826,9 @@ Player starting locations are the scenario's block at offset 0x354
 
 - Material-less surfaces: confirm in the game that they are the sky or
   boundary faces (and what their render shader was in the source
-  level); a hit on one should show no impact effect.
+  level), and what the 12 interior ones are (invisible patches in the
+  terrain, or collision-only helpers); a hit on one should show no
+  impact effect.
 - The flag sets per query (projectiles ignore invisible but not
   two-sided, line of sight ignores both) come from one build of the
   reference; they cannot be read from the disc. Check by shooting

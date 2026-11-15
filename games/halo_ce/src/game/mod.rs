@@ -1,24 +1,32 @@
 //! Halo's parts, one module per subsystem, and what the game tells the
 //! shell about itself (`INFO`). M1 of docs/plans/active/halo-ce.md: the
-//! game registers, its install mounts and its maps load; movement,
-//! weapons and the rest come with their specs (specs/halo_ce/<name>.md):
+//! game registers, its install mounts and its maps load; M2 begins with
+//! its movement; weapons and the rest come with their specs
+//! (specs/halo_ce/<name>.md):
 //!
 //! - `mount`: the install, a disc image or a folder of the disc's files, as
 //!   a mount (`INFO.open`; specs/halo_ce/disc_image.md);
 //! - `maps`: the install's map cache files as Chimera's `MapData`
 //!   (`MAP_LOADER`; cache_file.md, structure_bsp.md, collision.md,
 //!   shaders.md, scenario.md);
-//! - `movement`: `halo_ce:movement`, Chimera's placeholder walking under
-//!   Halo's id until specs/halo_ce/movement.md is implemented;
-//! - `parts`: what the game lends other games' apps (`PARTS`): nothing yet.
+//! - `movement`: `halo_ce:movement`, Halo's player movement
+//!   (specs/halo_ce/movement.md; its numbers in data/movement.toml);
+//! - `vitality`: a Halo player's body and shield, recharge, overshield,
+//!   camouflage and stun (health_shields.md; its numbers in
+//!   data/vitality.toml and data/damage.toml), and `damage`: the seam every
+//!   Halo damage source delivers through (`damage::HaloHit`);
+//! - `parts`: what the game lends other games' apps (`PARTS`): its maps,
+//!   by its pool rules and measurements (data/map_pool.toml,
+//!   data/map_fitness.toml), played with other games' players and guns.
 //!
-//! `HaloPlugins` adds the game's parts after `crate::SimPlugins`; none yet
-//! but the game's registration.
+//! `HaloPlugins` adds the game's parts after `crate::SimPlugins`.
 
+pub mod damage;
 pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod vitality;
 
 pub use maps::MAP_LOADER;
 
@@ -106,20 +114,28 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
     ("tab", "+showscores"),
 ];
 
-/// Halo's parts, after `crate::SimPlugins`: the game registered (`INFO`) and
-/// its stand-in movement (`movement`).
+/// Halo's parts, after `crate::SimPlugins`: the game registered (`INFO`),
+/// its movement (`movement`), its players' vitality (`vitality`) and its
+/// damage seam (`damage`).
 pub struct HaloPlugins;
 
 impl PluginGroup for HaloPlugins {
     fn build(self) -> PluginGroupBuilder {
-        PluginGroupBuilder::start::<Self>().add(RegisterGame(&INFO)).add(movement::HaloMovementPlugin)
+        PluginGroupBuilder::start::<Self>()
+            .add(RegisterGame(&INFO))
+            .add(movement::HaloMovementPlugin)
+            .add(vitality::VitalityPlugin)
+            .add(damage::DamagePlugin)
     }
 }
 
 /// Halo as one bundle for an app made of several games
 /// (`chimera_world::game_bundle`): its info, parts and maps; it brings no
 /// players or guns to other games' maps yet (`guest: None`) and adds
-/// nothing but its registration to a composed simulation.
+/// its registration, its surface names' classes (`maps::surfaces::
+/// SURFACES`) and its map pool's rules and measurements
+/// (`parts::add_map_pool`) to a composed simulation: its maps are played
+/// there with the other games' movement and guns.
 pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_bundle::GameBundle {
     info: &INFO,
     parts: &parts::PARTS,
@@ -131,6 +147,10 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     sim: |app| {
         use crate::game_registry::GameAppExt;
         app.register_game(&INFO);
+        // Its maps' surface names as classes, for the guns of the games
+        // played on them.
+        crate::map::impact::SurfaceClassesAppExt::register_surface_classes(app, maps::surfaces::SURFACES);
+        parts::add_map_pool(app);
     },
     display_names: None,
 };

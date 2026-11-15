@@ -2,10 +2,18 @@
 //! Components & Views" page's component table, its sizes in cq and its
 //! tokens): what menus are built from.
 //!
-//! - `button` (`Kind`: primary white with a slanted right edge, secondary
-//!   outlined, ghost, danger with the threat mark), an optional key cap;
-//!   `tabs` (the settings' sub-tabs: the selected one white with a
-//!   slanted underline); `row` (a label and a value, `min_h` 2.9 cq, a
+//! - `button` (`Kind`: primary the hero, a `hero` cobalt slab with a
+//!   slanted right edge and white text, `HERO_H` the big one with a bold
+//!   label; secondary outlined, ghost, danger with the threat mark), labels
+//!   in Display, an optional key cap (`kbd`: the lockup, equal padding,
+//!   .82 of the label, full strength); `tabs` (sub-tabs: the active one's
+//!   cobalt 12° strip; `tabs_ex` with the Q and E caps at the strip's
+//!   ends); `progress` (the progress component, variant B: a sheared bar,
+//!   hollow and filling while running, filled when ready, striped while
+//!   connecting, a dim outline pending, the word and the share inside);
+//!   `status_block` (a slanted light and STATUS on a hairline, its words
+//!   the tooltip); `dialog_field` (a field that opens a dialog: the
+//!   list-with-chevron icon); `row` (a label and a value, `min_h` 2.9 cq, a
 //!   hairline under it) and `section` (a small header with the accent
 //!   mark); `toggle` (a slab on a slanted track, white when on, each
 //!   label centred on its slab's place; `toggle_ex` slides the slab over,
@@ -18,8 +26,8 @@
 //!   inside the setting's hard limits); `dropdown` (a field with the
 //!   upright `chevron` icon, flipped up while open, and, open, its list);
 //!   `key_field` (key caps, "press a key" while listening); `text_field`
-//!   (typed text or stars, a placeholder, the caret in accent while it
-//!   has the keys, the selection on an accent tint; its keys, copy, cut
+//!   (typed text or stars, a placeholder, a thin white caret just after
+//!   the text while it has the keys, the selection on an accent tint; its keys, copy, cut
 //!   and paste are the screen's: `chimera_client::client::widgets::
 //!   text_key`, `clipboard`); `kv` (key/value lines); `modal` (a plate
 //!   with a top bar, white or threat).
@@ -108,6 +116,49 @@ pub enum Kind {
     Danger,
 }
 
+/// The hero's slab (`Ui::button`): its fill lifts and its edge leans out
+/// on hover (`show_hover`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct HeroSlab;
+
+/// What the progress component shows (`Ui::progress`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Progress {
+    /// Not started (or not ready): a dim outline.
+    Pending,
+    /// No share known yet: stripes through the outline.
+    Connecting,
+    /// Under way, 0-1: hollow, filling from the left.
+    Running(f32),
+    /// Done: filled.
+    Ready,
+}
+
+/// A progress bar (its state, for tests).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct ProgressBar(pub Progress);
+
+/// A progress bar's fill (its width the share done).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ProgressFill;
+
+/// A status block's light (`Ui::status_block`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StatusLight {
+    Off,
+    Busy,
+    Ok,
+    Failed,
+}
+
+/// A status block (its light, for tests).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StatusBlock(pub StatusLight);
+
+/// A tab strip's Q or E cap (`Ui::tabs_ex`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct TabKey;
+
 /// A hoverable node's tint: its background `base`, `over` while hovered
 /// (and pressed).
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
@@ -131,6 +182,8 @@ pub fn clickable() -> (Interaction, FocusPolicy) {
 
 /// Height of the default button, cq.
 pub const BUTTON_H: f32 = 2.4;
+/// Height of the big hero (Start, Connect, Done; a dialog's), cq.
+pub const HERO_H: f32 = 2.8;
 /// A row's least height, cq.
 pub const ROW_H: f32 = 2.9;
 /// Typed text's size in a field, cq (`Role::Text`).
@@ -290,16 +343,18 @@ impl<'a> Ui<'a> {
     /// A key cap (outlined, Mono), `size` cq text: muted at .75, but a
     /// dark one (on a primary button's white) at full strength.
     pub fn kbd(&self, c: &mut Commands, parent: Entity, key: &str, size: f32, tone: Tone) -> Entity {
-        let a = if tone.is_dark() { 1.0 } else { 0.75 };
+        // The lockup (design rules 6): the cap's text .82 of the label's,
+        // padded equally above and below so its box centres on the label's
+        // capitals, a 1 px outline, full strength.
         let e = c
             .spawn((
-                UiStyle { pad: Some([0.24, 0.36, 0.18, 0.36].into()), ..UiStyle::row() }.outline(tone, a),
+                UiStyle { pad: Some([0.2, 0.3, 0.2, 0.3].into()), shrink: Some(0.0), ..UiStyle::row() }.outline(tone, 1.0),
                 Node::default(),
                 Pickable::IGNORE,
                 ChildOf(parent),
             ))
             .id();
-        self.text_a(c, e, Role::Mono, size * 0.88, tone, a, key);
+        self.text_a(c, e, Role::Mono, size * 0.82, tone, 1.0, key);
         e
     }
 
@@ -341,39 +396,59 @@ impl<'a> Ui<'a> {
     // -----------------------------------------------------------------
     // Buttons and tabs.
 
-    /// A button, `h` cq tall (`BUTTON_H`; small 1.9, large 3.2), its label
-    /// and an optional key cap. Returns the button (give it its action).
+    /// A button, `h` cq tall (`BUTTON_H`; small 1.9; `HERO_H` the big
+    /// hero: Start, Connect, a dialog's own), its label (Display Regular
+    /// caps; the big hero Display Bold .9 cq) and an optional key cap (the
+    /// lockup: `kbd`, .5 cq after the label). Returns the button (give it
+    /// its action).
+    ///
+    /// The primary is the hero: a `hero` slab with its right edge on the
+    /// slant and white text (`on_hero`); hover lifts it to `acc` and leans
+    /// its edge out .4 cq (`HeroSlab`); disabled it stays a slab at `fg`
+    /// .07 with `fg_3` text.
     #[allow(clippy::too_many_arguments)]
     pub fn button(&self, c: &mut Commands, parent: Entity, kind: Kind, label: &str, key: Option<&str>, h: f32, st: State) -> Entity {
-        let size = if h < 2.2 { 0.58 } else if h > 3.0 { 0.8 } else { 0.66 };
+        let big = kind == Kind::Primary && h >= HERO_H - 0.01;
+        let size = if big { 0.9 } else if h < 2.2 { 0.58 } else if h > 3.0 { 0.8 } else { 0.66 };
         let lean = h * self.theme.tan();
         let right = match kind {
             Kind::Primary => 1.5 + lean,
             Kind::Ghost => 0.9,
-            _ => 1.5,
+            _ => 1.2,
         };
-        let left = if kind == Kind::Ghost { 0.6 } else { 1.05 };
+        let left = match kind {
+            Kind::Ghost => 0.6,
+            Kind::Primary => 1.4,
+            _ => 1.05,
+        };
         let (base, over, text_tone) = match kind {
+            Kind::Primary if st.disabled => (Color::NONE, Color::NONE, Tone::Fg3),
             _ if st.disabled => (self.color(Tone::Fg, 0.05), self.color(Tone::Fg, 0.05), Tone::Fg3),
-            Kind::Primary => (Color::NONE, Color::NONE, Tone::Ink),
+            Kind::Primary => (Color::NONE, Color::NONE, Tone::OnHero),
             Kind::Secondary | Kind::Danger => (self.color(Tone::Ink, 0.85), self.color(Tone::Fg, 0.06), Tone::Fg),
             Kind::Ghost => (Color::NONE, self.color(Tone::Fg, 0.06), Tone::Fg2),
         };
-        let mut s = UiStyle { h: Some(h), pad: Some([0.0, right, 0.0, left].into()), gap: Some(0.8), shrink: Some(0.0), ..UiStyle::row() };
+        let mut s = UiStyle { h: Some(h), pad: Some([0.0, right, 0.0, left].into()), gap: Some(0.5), shrink: Some(0.0), ..UiStyle::row() };
         s = match kind {
+            Kind::Primary => s,
             _ if st.disabled => s.outline(Tone::Fg5, 1.0),
             Kind::Secondary => s.outline(Tone::Fg3, 1.0),
             Kind::Danger => s.outline(Tone::Threat, 0.55),
             _ => s,
         };
-        let b = c
-            .spawn((s, Node::default(), BackgroundColor(base), Hover { base, over }, clickable(), ChildOf(parent)))
-            .id();
-        if kind == Kind::Primary && !st.disabled {
-            // The white slab behind, its right edge on the slant.
+        let b = c.spawn((s, Node::default(), BackgroundColor(base), ChildOf(parent))).id();
+        if !st.disabled {
+            c.entity(b).insert((Hover { base, over }, clickable()));
+        } else {
+            c.entity(b).insert(clickable());
+        }
+        if kind == Kind::Primary {
+            // The slab behind, its right edge on the slant.
+            let (fill, a) = if st.disabled { (Tone::Fg, 0.07) } else { (Tone::Hero, 1.0) };
             c.spawn((
+                HeroSlab,
                 Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, right: Val::ZERO, ..default() },
-                UiSlant::new(Tone::Fg, 1.0).edges(false, true),
+                UiSlant::new(fill, a).edges(false, true),
                 Pickable::IGNORE,
                 ChildOf(b),
             ));
@@ -381,12 +456,24 @@ impl<'a> Ui<'a> {
         if kind == Kind::Danger {
             self.mark(c, b, Tone::Threat, 0.5, 0.7);
         }
-        self.text(c, b, Role::Mono, size, text_tone, label);
+        let role = if big { Role::DisplayBold } else { Role::DisplayRegular };
+        self.text(c, b, role, size, text_tone, label);
         if let Some(k) = key {
-            self.kbd(c, b, k, size, text_tone);
+            let cap_tone = match kind {
+                _ if st.disabled => Tone::Fg4,
+                Kind::Primary => Tone::OnHero,
+                _ => Tone::Fg2,
+            };
+            self.kbd(c, b, k, size, cap_tone);
         }
         if st.focus && !st.disabled {
-            self.focus_bar(c, b, 0.24);
+            // On the hero's own cobalt the bar is white.
+            if kind == Kind::Primary {
+                let e = self.focus_bar(c, b, 0.24);
+                c.entity(e).insert(BackgroundColor(self.color(Tone::Fg, 1.0)));
+            } else {
+                self.focus_bar(c, b, 0.24);
+            }
         }
         if st.error {
             self.underline(c, b, Tone::Threat, 0.18);
@@ -398,11 +485,26 @@ impl<'a> Ui<'a> {
     /// white with a slanted white underline, a focused one's underline in
     /// accent, others `fg_3`; a hairline under all. Returns each tab.
     pub fn tabs(&self, c: &mut Commands, parent: Entity, names: &[&str], selected: usize, focus: bool) -> Vec<Entity> {
+        self.tabs_ex(c, parent, names, selected, focus, None)
+    }
+
+    /// `tabs` with the keys that step them as caps at the strip's ends (Q
+    /// before the first, E after the last; design rules 11.5); the
+    /// hairline runs on to the parent's edge.
+    pub fn tabs_ex(&self, c: &mut Commands, parent: Entity, names: &[&str], selected: usize, focus: bool, keys: Option<(&str, &str)>) -> Vec<Entity> {
         let bar = c
             .spawn((UiStyle { gap: Some(1.6), align: Some(AlignItems::FlexEnd), ..UiStyle::row() }, Node::default(), ChildOf(parent)))
             .id();
         self.hairline(c, bar, Tone::Fg4, 1.0);
-        names
+        let cap = |c: &mut Commands, k: &str| {
+            let w = self.boxed(c, bar, UiStyle { pad: Some([0.0, 0.0, 0.9, 0.0].into()), ..UiStyle::row() });
+            let e = self.kbd(c, w, k, 0.6, Tone::Fg3);
+            c.entity(e).insert(TabKey);
+        };
+        if let Some((q, _)) = keys {
+            cap(c, q);
+        }
+        let tabs: Vec<Entity> = names
             .iter()
             .enumerate()
             .map(|(i, n)| {
@@ -418,7 +520,7 @@ impl<'a> Ui<'a> {
                         ChildOf(bar),
                     ))
                     .id();
-                self.text(c, t, Role::DisplayRegular, 0.78, tone, n);
+                self.text(c, t, Role::DisplayRegular, 0.86, tone, n);
                 if sel {
                     c.spawn((
                         Node {
@@ -426,10 +528,10 @@ impl<'a> Ui<'a> {
                             left: Val::ZERO,
                             right: Val::ZERO,
                             bottom: Val::ZERO,
-                            height: self.units.val(0.24),
+                            height: self.units.val(0.3),
                             ..default()
                         },
-                        UiSlant::new(if focus { Tone::Acc } else { Tone::Fg }, 1.0),
+                        UiSlant::new(Tone::Acc, if focus { 1.0 } else { 0.92 }),
                         Pickable::IGNORE,
                         ChildOf(t),
                     ));
@@ -453,7 +555,11 @@ impl<'a> Ui<'a> {
                 }
                 t
             })
-            .collect()
+            .collect();
+        if let Some((_, e)) = keys {
+            cap(c, e);
+        }
+        tabs
     }
 
     // -----------------------------------------------------------------
@@ -808,8 +914,9 @@ impl<'a> Ui<'a> {
                 Some(cell) => (*cell, Val::ZERO),
                 None => (out.last().copied().unwrap_or(wrap), if n == 0 { Val::ZERO } else { percent(100.0) }),
             };
-            // Thin: one physical pixel, two on a window over 1440 lines;
-            // just after the character before it (at the boundary's left).
+            // Thin (1-2 px): one physical pixel, two on a window over 1440
+            // lines; just after the character before it (at the boundary's
+            // left), in the text's white.
             let w = self.units.hairline() * if self.units.phys(self.units.height) > 1440.0 { 2.0 } else { 1.0 };
             c.spawn((
                 Node {
@@ -821,7 +928,7 @@ impl<'a> Ui<'a> {
                     height: self.units.val(1.0),
                     ..default()
                 },
-                BackgroundColor(self.color(Tone::Acc, 1.0)),
+                BackgroundColor(self.color(Tone::Fg, 1.0)),
                 TextCaret,
                 ZIndex(1),
                 Pickable::IGNORE,
@@ -1094,6 +1201,164 @@ impl<'a> Ui<'a> {
             self.underline(c, f, Tone::Acc, 0.2);
         } else {
             self.hairline(c, f, Tone::Fg3, 1.0);
+        }
+        f
+    }
+
+    /// The progress component (design rules 11.6, variant B): a sheared
+    /// bar `w` x `h` cq with its words (`label`, Display caps) and the
+    /// percentage (Mono) inside, centred, `size` cq. In fg only:
+    /// running a hollow `fg_2` outline filling from the left in `fg_2`
+    /// (the words in ink over the fill); ready a solid `fg` slab with ink
+    /// words, no percentage; pending a dim `fg_4` outline with `fg_3`
+    /// words; connecting (no percentage known) the hollow outline with
+    /// 12° stripes through it. `inside: false` leaves the words out (the
+    /// loading screen's big bar has them above).
+    #[allow(clippy::too_many_arguments)]
+    pub fn progress(&self, c: &mut Commands, parent: Entity, p: Progress, label: &str, w: f32, h: f32, size: f32, inside: bool) -> Entity {
+        let u = self.units;
+        let outline_px = (1.5 * u.phys(u.height) / 1080.0).round().max(1.0);
+        let bar = c
+            .spawn((
+                UiStyle { w: Some(w), h: Some(h), shrink: Some(0.0), justify: Some(JustifyContent::Center), ..UiStyle::row() },
+                Node::default(),
+                ProgressBar(p),
+                ChildOf(parent),
+            ))
+            .id();
+        let full = || Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, right: Val::ZERO, ..default() };
+        let (text_tone, pct) = match p {
+            Progress::Ready => {
+                c.spawn((full(), UiSlant::new(Tone::Fg, 1.0), Pickable::IGNORE, ChildOf(bar)));
+                (Tone::Ink, None)
+            }
+            Progress::Pending => {
+                c.spawn((full(), UiSlant::new(Tone::Fg4, 1.0).outline(outline_px), Pickable::IGNORE, ChildOf(bar)));
+                (Tone::Fg3, None)
+            }
+            Progress::Connecting => {
+                // Stripes on the slant, every .8 cq, then the outline.
+                let n = (w / 0.8).ceil() as i32 + 2;
+                let clip = c
+                    .spawn((Node { overflow: Overflow::clip(), ..full() }, Pickable::IGNORE, ChildOf(bar)))
+                    .id();
+                for k in -1..n {
+                    c.spawn((
+                        Node { position_type: PositionType::Absolute, left: u.val(k as f32 * 0.8), top: Val::ZERO, bottom: Val::ZERO, width: u.val(0.35 + h * self.theme.tan()), ..default() },
+                        UiSlant::new(Tone::Fg, 0.14),
+                        Pickable::IGNORE,
+                        ChildOf(clip),
+                    ));
+                }
+                c.spawn((full(), UiSlant::new(Tone::Fg3, 1.0).outline(outline_px), Pickable::IGNORE, ChildOf(bar)));
+                (Tone::Fg, None)
+            }
+            Progress::Running(f) => {
+                let f = f.clamp(0.0, 1.0);
+                c.spawn((full(), UiSlant::new(Tone::Fg2, 1.0).outline(outline_px), Pickable::IGNORE, ChildOf(bar)));
+                (Tone::Fg, Some(f))
+            }
+        };
+        let words = match (p, pct) {
+            (Progress::Running(_), Some(f)) if label.is_empty() => format!("{:.0}%", f * 100.0),
+            (Progress::Running(_), Some(f)) => format!("{label} {:.0}%", f * 100.0),
+            _ => label.to_string(),
+        };
+        let write = |c: &mut Commands, holder: Entity, tone: Tone| {
+            if inside && !words.is_empty() {
+                let t = self.boxed(c, holder, UiStyle { w: Some(w), h: Some(h), shrink: Some(0.0), justify: Some(JustifyContent::Center), ..UiStyle::row() });
+                self.text(c, t, Role::DisplayRegular, size, tone, &words);
+            }
+        };
+        write(c, bar, text_tone);
+        if let Some(f) = pct {
+            // The fill: its own slab and the words again in ink, clipped to
+            // the share done.
+            let fill = c
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::ZERO,
+                        top: Val::ZERO,
+                        bottom: Val::ZERO,
+                        width: Val::Percent(f * 100.0),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    ProgressFill,
+                    Pickable::IGNORE,
+                    ChildOf(bar),
+                ))
+                .id();
+            c.spawn((
+                Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, width: u.val(w), ..default() },
+                UiSlant::new(Tone::Fg2, 1.0),
+                Pickable::IGNORE,
+                ChildOf(fill),
+            ));
+            let inner = c
+                .spawn((Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, width: u.val(w), height: u.val(h), ..default() }, ChildOf(fill)))
+                .id();
+            write(c, inner, Tone::Ink);
+        }
+        bar
+    }
+
+    /// The status block (design rules 16): a small slanted light (white
+    /// when it worked, threat when it failed, an outline otherwise) and
+    /// STATUS beside it on a hairline underline; its words are the
+    /// hover's tooltip (`shell::Tip`).
+    pub fn status_block(&self, c: &mut Commands, parent: Entity, light: StatusLight) -> Entity {
+        let b = c
+            .spawn((
+                UiStyle { gap: Some(0.45), pad: Some([0.25, 0.4, 0.25, 0.4].into()), shrink: Some(0.0), ..UiStyle::row() },
+                Node::default(),
+                Interaction::default(),
+                FocusPolicy::Block,
+                StatusBlock(light),
+                ChildOf(parent),
+            ))
+            .id();
+        self.hairline(c, b, Tone::Fg4, 1.0);
+        let lean = 0.55 * self.theme.tan();
+        let mut l = c.spawn((
+            UiStyle { w: Some(0.9 + lean), h: Some(0.55), shrink: Some(0.0), ..UiStyle::row() },
+            Node::default(),
+            Pickable::IGNORE,
+            ChildOf(b),
+        ));
+        match light {
+            StatusLight::Ok => l.insert(UiSlant::new(Tone::Fg, 1.0)),
+            StatusLight::Failed => l.insert(UiSlant::new(Tone::Threat, 1.0)),
+            StatusLight::Off | StatusLight::Busy => l.insert(UiSlant::new(Tone::Fg3, 1.0).outline(self.units.phys(self.units.hairline()) * 1.5)),
+        };
+        self.text(c, b, Role::Mono, 0.5, Tone::Fg2, "Status");
+        b
+    }
+
+    /// A field that opens a dialog (Host's Maps): the value at the left in
+    /// the text face, the list-with-chevron icon at the right (design rules
+    /// 16: not a dropdown's chevron, not a link's arrow). Clickable;
+    /// returns the field.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dialog_field(&self, c: &mut Commands, parent: Entity, images: &mut Assets<Image>, icons: &mut IconImages, value: &str, w: f32, st: State) -> Entity {
+        let base = self.color(Tone::Fg, 0.04);
+        let over = self.color(Tone::Fg, 0.07);
+        let f = c
+            .spawn((
+                UiStyle { w: Some(w), h: Some(1.9), pad: Some([0.0, 0.8, 0.0, 0.8].into()), justify: Some(JustifyContent::SpaceBetween), shrink: Some(0.0), ..UiStyle::row() },
+                Node::default(),
+                BackgroundColor(base),
+                Hover { base, over },
+                clickable(),
+                ChildOf(parent),
+            ))
+            .id();
+        self.hairline(c, f, Tone::Fg3, 1.0);
+        self.sentence(c, f, TYPED, Tone::Fg, value);
+        self.icon(c, f, images, icons, "listchev", 0.85, Tone::Fg2);
+        if st.focus {
+            self.underline(c, f, Tone::Acc, 0.18);
         }
         f
     }
@@ -1482,8 +1747,10 @@ pub fn apply_wipes(
 
 /// Hover tints and ticks from the pointer (module doc).
 pub fn show_hover(
+    units: Res<UiUnits>,
     mut nodes: Query<(&Interaction, Option<&Hover>, Option<&Children>, Option<&mut BackgroundColor>), Changed<Interaction>>,
     mut ticks: Query<(&Tick, &mut Visibility)>,
+    mut slabs: Query<(&mut UiSlant, &mut Node), With<HeroSlab>>,
 ) {
     for (i, hover, children, bg) in &mut nodes {
         let over = *i != Interaction::None;
@@ -1497,6 +1764,18 @@ pub fn show_hover(
             for ch in children.iter() {
                 if let Ok((t, mut v)) = ticks.get_mut(ch) {
                     v.set_if_neq(if over || t.always { Visibility::Inherited } else { Visibility::Hidden });
+                }
+                if let Ok((mut slant, mut node)) = slabs.get_mut(ch)
+                    && slant.fill != Tone::Fg
+                {
+                    let fill = if over { Tone::Acc } else { Tone::Hero };
+                    if slant.fill != fill {
+                        slant.fill = fill;
+                    }
+                    let right = if over { units.val(-0.4) } else { Val::ZERO };
+                    if node.right != right {
+                        node.right = right;
+                    }
                 }
             }
         }

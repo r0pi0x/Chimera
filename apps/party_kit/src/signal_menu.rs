@@ -1,5 +1,5 @@
 //! The party menu's first page in the Signal look (docs/plans/active/
-//! ugg-ui.md, 3 and M5), for an app whose theme lays the menu out
+//! ugg-ui.md, 3, M5 and "Signal revision 8"), for an app whose theme lays the menu out
 //! (`[layout.menu]`: the Ultimate Gun Game's); without one
 //! `main_menu` draws its VGUI list as before (Lucker Party has no menu).
 //! Presentation only: the entries, their actions and the pages are
@@ -24,11 +24,15 @@
 //!   it while the pointer leads, ↑↓ continue from it and take the lead
 //!   until the pointer moves again (`chimera_ui::PointerLead`). Enter or
 //!   a click acts (`MainMenuAction::Entry`).
-//! - **Account** top right: Friends (an inert placeholder) and the
-//!   player's name (`NetSettings::name`).
-//! - **Keys** along the foot, the backdrop's caption and its tabs (A, B,
-//!   C with a dwell bar) bottom right, `+` marks in the corners, the rule
-//!   of the game up the right edge.
+//! - **The shell's bar** (`chimera_ui::shell::bar`, the lockup's place
+//!   at its left): the party (your avatar with its edge strip, the "+"),
+//!   Friends, Settings (`MainMenuAction::OpenSettings`) and Report a bug.
+//! - **News** (`MenuNews`): the server's news card above the key hints,
+//!   hidden while there is none (`menu_news` sets it by hand; the asset
+//!   service's news line will fill it).
+//! - **Keys** along the foot (Select, Confirm, F10 Report a bug), the
+//!   backdrop's caption and its tabs (A, B, C with a dwell bar) bottom
+//!   right, the rule of the game up the right edge.
 //! - **Backdrops** (`menu_backdrops`): the next when the shown one's
 //!   dwell is up (`rotate`), a tab click shows one from its start.
 //!
@@ -43,13 +47,18 @@
 //! stopped there (`ui_scene off` runs it again).
 //!
 //! Known shortcuts: no text glow (Bevy UI has no blur); the highlight's glow is
-//! left out; Friends does nothing.
+//! left out; Friends and the party's "+" are disabled (no friends or
+//! parties yet); nothing sends news yet.
 
 use bevy::{prelude::*, ui::FocusPolicy};
 use chimera_client::client::{logo_pass::ReduceMotion, widgets};
 use chimera_ui::{
     AmbientMaterial, Ease, IconImages, KitFonts, PointerLead, Prop, Role, SlantMaterial, Theme, Timeline, Tone, Track, UiClock,
-    UiParityId, UiStyle, UiUnits, icons, style,
+    UiParityId, UiStyle, UiUnits,
+    controls::Ui,
+    icons,
+    shell::{self, Party, ShellScreen},
+    style,
 };
 
 use crate::main_menu::{MENU_Z, MainMenuAction, MenuData, MenuPage, MenuUiCamera, PartyMenu, Screen, ShownScreen};
@@ -187,6 +196,7 @@ impl Plugin for SignalMenuPlugin {
         chimera_client::client::signal::setup(app);
         chimera_ui::pointer_lead::add(app);
         app.init_resource::<SignalMenu>()
+            .init_resource::<MenuNews>()
             .add_systems(
                 Update,
                 (build, select, rotate, paint_tabs)
@@ -200,8 +210,41 @@ impl Plugin for SignalMenuPlugin {
             );
         crate::menu_backdrops::add(app);
         chimera_client::client::ui_scene::UiSceneHooks::add(app.world_mut(), "menu", stage);
+        use chimera_core::console::ConsoleAppExt;
+        app.console_command(
+            "chimera:menu_news",
+            "menu_news [<title> | <body> | <source>]: the main menu's news card (none: hidden; the asset service will send it).",
+            |w, a| {
+                let line = a.join(" ");
+                let mut parts = line.split('|').map(str::trim);
+                let news = match parts.next().filter(|t| !t.is_empty()) {
+                    None => None,
+                    Some(title) => Some(News {
+                        title: title.to_string(),
+                        body: parts.next().unwrap_or_default().to_string(),
+                        source: parts.next().unwrap_or_default().to_string(),
+                    }),
+                };
+                w.resource_mut::<MenuNews>().0 = news;
+                Ok(None)
+            },
+        );
     }
 }
+
+/// One line of news (module doc): a title, a sentence or two, who says it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct News {
+    pub title: String,
+    pub body: String,
+    pub source: String,
+}
+
+/// The main menu's news card, from the server (the asset service) when it
+/// sends one; hidden while None. The seam: whatever fetches the server's
+/// news writes it here (`menu_news` sets it by hand).
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct MenuNews(pub Option<News>);
 
 /// What the page needs to draw.
 struct Kit<'a> {
@@ -305,6 +348,8 @@ struct Built {
     still: bool,
     frozen: bool,
     staged: u32,
+    party: Option<Party>,
+    news: Option<News>,
 }
 
 /// Builds the page when it comes up (its entrance from then), again on a
@@ -320,6 +365,7 @@ fn build(
     data: Res<MenuData>,
     net: Option<Res<chimera_net::net::NetSettings>>,
     reduce: Option<Res<ReduceMotion>>,
+    (party, news): (Res<Party>, Res<MenuNews>),
     camera: Query<Entity, With<MenuUiCamera>>,
     roots: Query<(Entity, Option<&UiTargetCamera>), With<SignalMenuRoot>>,
     (mut state, mut images, mut icon_images, mut slants, mut ambients): (
@@ -342,6 +388,8 @@ fn build(
         still,
         frozen: state.freeze.is_some(),
         staged: state.staged,
+        party: Some(party.clone()),
+        news: news.0.clone(),
     };
     // Keep the root on the menu's camera.
     if let Some(cam) = camera.iter().next() {
@@ -394,7 +442,8 @@ fn build(
         &k,
         &data,
         &state,
-        &built.name,
+        &party,
+        news.0.as_ref(),
         start,
         images,
         &mut icon_images,
@@ -411,7 +460,8 @@ fn spawn_page(
     k: &Kit,
     data: &MenuData,
     state: &SignalMenu,
-    name: &str,
+    party: &Party,
+    news: Option<&News>,
     start: f64,
     images: &mut Assets<Image>,
     icon_images: &mut IconImages,
@@ -426,6 +476,7 @@ fn spawn_page(
     let out = t.ease("out");
     let mut root = c.spawn((
         SignalMenuRoot,
+        ShellScreen,
         Name::new("Signal menu"),
         Node {
             position_type: PositionType::Absolute,
@@ -469,46 +520,6 @@ fn spawn_page(
         .spawn((k.node(style!(row, w: 100.0, h: 56.25).shrink(0.0)), ChildOf(root)))
         .id();
 
-    // Corners.
-    let corner = k.lay("corner", 2.4);
-    for (x, y) in [
-        (corner, corner),
-        (100.0 - corner, corner),
-        (corner, 56.25 - corner),
-        (100.0 - corner, 56.25 - corner),
-    ] {
-        let s = 1.1;
-        let plus = c
-            .spawn((
-                k.node(style!(row, w: s, h: s).abs([Some(x - s / 2.0), Some(y - s / 2.0), None, None])),
-                ChildOf(frame),
-            ))
-            .id();
-        let line = t.tone(Tone::Fg3);
-        c.spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: percent(50.0),
-                width: px(hair),
-                height: percent(100.0),
-                ..default()
-            },
-            BackgroundColor(line),
-            ChildOf(plus),
-        ));
-        c.spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                top: percent(50.0),
-                height: px(hair),
-                width: percent(100.0),
-                ..default()
-            },
-            BackgroundColor(line),
-            ChildOf(plus),
-        ));
-    }
-
     // The lockup: wipes in from the left (a clip that slides in while its
     // content holds still), ULTIMATE's letters flickering on.
     let lk = k.lay("lockup", 3.3);
@@ -538,7 +549,7 @@ fn spawn_page(
         .id();
     let mark = c
         .spawn((
-            k.icon(icon_images, images, "mark", 2.05 * lk, t.tone(Tone::Fg)),
+            k.icon(icon_images, images, "mark", k.lay("mark_h", 2.05 * lk), t.tone(Tone::Fg)),
             UiParityId::new("menu.lockup.mark"),
             ChildOf(lockup),
         ))
@@ -572,61 +583,50 @@ fn spawn_page(
         ChildOf(words),
     ));
 
-    // The account chip.
+    // The shell's bar: the lockup's place at the left (drawn above, with
+    // its entrance), the party and the system tiles at the right.
     let fade = k.dur("fade", 0.5);
-    let acct = c
-        .spawn((
-            k.node(style!(row, gap: 0.45).abs([None, Some(k.lay("acct_y", 5.6)), Some(k.lay("acct_x", 4.6)), None])),
+    let ui = Ui::new(t, k.fonts, u);
+    let parts = shell::bar(&ui, c, frame, images, icon_images, &shell::Bar { left: shell::Left::Lockup, party: &party.members, party_max: party.max, open: None });
+    if let Some(e) = parts.tile(shell::ShellTile::Settings) {
+        c.entity(e).insert(MainMenuAction::OpenSettings);
+    }
+    // The news card above the key hints (none: hidden).
+    if let Some(n) = news {
+        let sh = shell::ShellLayout::of(t);
+        let card = c
+            .spawn((
+                UiStyle { w: Some(27.0), gap: Some(0.55), pad: Some([1.0, 1.2, 1.1, 1.4].into()), ..UiStyle::column() }
+                    .abs([Some(sh.margin), None, None, Some(sh.win_bottom)])
+                    .bg_a(Tone::Ink, 0.7)
+                    .outline(Tone::Fg5, 1.0),
+                Node::default(),
+                UiTransform::default(),
+                Timeline::new([fade_in(k.dur("acct_at", 0.7), fade, out)]).started(start),
+                Name::new("menu news"),
+                ChildOf(frame),
+            ))
+            .id();
+        ui.focus_bar(c, card, 0.22);
+        let head = ui.boxed(c, card, UiStyle { gap: Some(0.7), ..UiStyle::row() });
+        let (node, label) = chimera_ui::widgets::tag(t, k.fonts, &u, chimera_ui::widgets::TagKind::Accent, "News", 0.5);
+        let tag = c.spawn((node, ChildOf(head))).id();
+        c.spawn((label, ChildOf(tag)));
+        if !n.source.is_empty() {
+            ui.text(c, head, Role::Mono, 0.5, Tone::Fg3, &n.source);
+        }
+        ui.text(c, card, Role::DisplayBold, 1.0, Tone::Fg, &n.title);
+        if !n.body.is_empty() {
+            let tx = ui.boxed(c, card, UiStyle { w_pct: Some(100.0), ..UiStyle::column() });
+            ui.paragraph(c, tx, Role::Text, 0.8, Tone::Fg2, &n.body);
+        }
+    }
+    if let Some(b) = parts.bar {
+        c.entity(b).insert((
             UiTransform::default(),
             Timeline::new([fade_in(k.dur("acct_at", 0.7), fade, out)]).started(start),
             UiParityId::new("menu.acct"),
-            ChildOf(frame),
-        ))
-        .id();
-    let tab_text = k.lay("tab_text", 0.64);
-    for (label, inert, id) in [
-        ("Friends \u{2022} 3", true, "menu.acct.friends"),
-        (name, false, "menu.acct.name"),
-    ] {
-        let label = if label.is_empty() { "Player" } else { label };
-        let (bg, fg) = if inert {
-            (t.tone_a(Tone::Ink, 0.9), t.tone(Tone::Fg))
-        } else {
-            (t.tone(Tone::Fg), t.tone(Tone::Ink))
-        };
-        let dim = if inert { 0.45 } else { 1.0 };
-        let mut node =
-            k.node(style!(row, gap: 1.6, pad: [0.5, 0.6, 0.45, 0.7], min_w: 7.4).justify(JustifyContent::SpaceBetween));
-        if inert {
-            // The border inside the padding (the look book's inset shadow).
-            node.border = UiRect::all(px(hair));
-            let shrink = |v: Val| match v {
-                Val::Px(x) => Val::Px((x - hair).max(0.0)),
-                v => v,
-            };
-            node.padding = UiRect::new(
-                shrink(node.padding.left),
-                shrink(node.padding.right),
-                shrink(node.padding.top),
-                shrink(node.padding.bottom),
-            );
-        }
-        let mut tab = c.spawn((
-            node,
-            BackgroundColor(bg.with_alpha(bg.alpha() * dim)),
-            UiParityId::new(id),
-            ChildOf(acct),
         ));
-        if inert {
-            // A border, not an outline: the fade dims borders.
-            tab.insert(BorderColor::all(t.tone_a(Tone::Fg, 0.42 * dim)));
-        }
-        let tab = tab.id();
-        c.spawn((
-            k.text(Role::Mono, tab_text, 0.1, fg.with_alpha(dim), label),
-            ChildOf(tab),
-        ));
-        c.spawn((k.tri(images, 0.8 * 0.56, fg.with_alpha(dim)), ChildOf(tab)));
     }
 
     // The menu: the entries, the highlight, the inverted copy in it.
@@ -799,7 +799,7 @@ fn spawn_page(
         ))
         .id();
     let ks = k.lay("keys", 0.62);
-    for (i, (key, what)) in [("\u{2191}\u{2193}", "Select"), ("Enter", "Confirm"), ("Esc", "Back")]
+    for (i, (key, what)) in [("\u{2191}\u{2193}", "Select"), ("Enter", "Confirm"), ("F10", "Report a bug")]
         .into_iter()
         .enumerate()
     {

@@ -2,6 +2,8 @@
 //! footsteps and impacts (`MapMesh::surface`, `MapCollisionSet::surface`):
 //! the table in `data/surfaces.toml` (specs/halo_ce/collision.md,
 //! "Materials", to chimera_world's `map::impact::SurfaceClass` names).
+//! `SURFACES` says so to other games' impacts (`map::impact::
+//! SurfaceClasses`): a name of Halo's map is the class of that name.
 
 use std::collections::BTreeMap;
 
@@ -40,3 +42,39 @@ pub fn surface_name(t: MaterialType) -> Option<String> {
 pub fn surface_of_code(code: i16) -> Option<String> {
     MaterialType::from_code(code).and_then(surface_name)
 }
+
+/// The engine's surface class named `name` (the table's names: lower-case
+/// class names), None for another name.
+pub fn class_of(name: &str) -> Option<crate::map::impact::SurfaceClass> {
+    use crate::map::impact::SurfaceClass;
+    SurfaceClass::ALL.into_iter().find(|c| class_name(*c).eq_ignore_ascii_case(name))
+}
+
+/// The name a Halo map gives surface class `class` (the table's).
+pub fn class_name(class: crate::map::impact::SurfaceClass) -> &'static str {
+    use crate::map::impact::SurfaceClass::*;
+    match class {
+        Concrete => "concrete",
+        Metal => "metal",
+        Wood => "wood",
+        Dirt => "dirt",
+        Sand => "sand",
+        Grass => "grass",
+        Snow => "snow",
+        Glass => "glass",
+        Tile => "tile",
+        Plastic => "plastic",
+        Cloth => "cloth",
+        Flesh => "flesh",
+        Water => "water",
+        Default => "default",
+    }
+}
+
+/// Halo's maps' surface names as classes, for other games' impacts on
+/// them (`map::impact::SurfaceClassesAppExt`, from the bundle's `sim`).
+pub const SURFACES: crate::map::impact::GameSurfaces = crate::map::impact::GameSurfaces {
+    game: super::super::GAME,
+    classify: class_of,
+    name: |c| Some(class_name(c)),
+};

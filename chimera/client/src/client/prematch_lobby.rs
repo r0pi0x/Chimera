@@ -274,6 +274,8 @@ pub struct LobbyViewRow {
     pub local: bool,
     /// Matches won this server run (`LobbyRow::wins`).
     pub wins: u32,
+    /// The avatar's byte (`LobbyRow::avatar`; `prematch::NO_AVATAR`: none).
+    pub avatar: u8,
 }
 
 /// What the screen shows (headless too).
@@ -301,6 +303,8 @@ pub struct LobbyView {
     /// The games the ladder's guns come from, short, in rung order
     /// (empty off a ladder or before the client has it).
     pub guns_from: Vec<String>,
+    /// It waits for the host's Start (`NetLobby::host_start`).
+    pub host_start: bool,
 }
 
 /// The lobby's key while it shows (a Source key name), in place of its bind.
@@ -351,6 +355,9 @@ pub fn waiting_line(l: &NetLobby) -> String {
             n => format!("Starting without {n} players still loading (they join when ready)"),
         };
     }
+    if l.host_start {
+        return "Waiting for the host to start".into();
+    }
     let who = match l.waiting {
         0 => "Waiting for the round...".to_string(),
         1 => "Waiting for 1 player...".to_string(),
@@ -394,6 +401,7 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
         },
         local,
         wins: r.wins,
+        avatar: r.avatar,
     }
 }
 
@@ -457,6 +465,7 @@ fn follow(
         game: String::new(),
         slots: None,
         guns_from: Vec::new(),
+        host_start: l.host_start,
     };
     v.hint = hint(&v);
     let short = |id: &str| games.as_ref().and_then(|g| g.get(id)).map(|g| g.short_name.to_string());
@@ -799,6 +808,7 @@ mod tests {
             total,
             ping_ms: id.map(|_| 48),
             wins: 0,
+            avatar: 0,
         };
         let mut l = NetLobby {
             map: "cs_source:de_dust2".into(),
@@ -812,6 +822,7 @@ mod tests {
             waiting: 2,
             wait_left: Some(72),
             countdown: None,
+            host_start: false,
         };
         assert_eq!(waiting_line(&l), "Waiting for 2 players...   starts anyway in 1:12");
         let ben = view_row(&l.rows[1], true);

@@ -820,6 +820,8 @@ pub enum MainMenuAction {
     /// Close the failure box.
     CloseFailure,
     Quit,
+    /// The shell bar's Settings tile: Settings from wherever the menu is.
+    OpenSettings,
 }
 
 // ---------------------------------------------------------------------------
@@ -1226,6 +1228,10 @@ fn typing(
             continue;
         }
         if e.key_code == KeyCode::Enter || e.key_code == KeyCode::NumpadEnter {
+            // The lobby's (the host's Start).
+            if lobby.as_ref().is_some_and(|l| l.shown) {
+                continue;
+            }
             if signal_page && menu.failure.is_none() {
                 continue;
             }
@@ -1365,6 +1371,15 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                     }
                 }
                 EntryDoes::Command(c) => submit(world, c),
+            }
+        }
+        A::OpenSettings => {
+            leave_page(world);
+            let mut m = world.resource_mut::<PartyMenu>();
+            m.page = MenuPage::Options;
+            m.focus = None;
+            if let Some(mut w) = world.get_resource_mut::<widgets::Windows>() {
+                w.raise(MenuPage::Options.window());
             }
         }
         A::Back => {

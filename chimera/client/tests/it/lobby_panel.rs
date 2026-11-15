@@ -1,15 +1,15 @@
 //! The pre-match lobby drawn on the UI kit (`client::lobby_panel`) under a
-//! theme that lays it out: the rows carry their marks (YOU and HOST fused
-//! on the host's own row, HOST alone on the host's row seen by another
-//! player, the robot on a bot's, YOU's row outlined), a block turning
-//! ready pops back to its size on the kit's clock, free slots read
-//! "Open", the countdown's ticks light as it runs, the session wins
+//! theme that lays it out: one list with you first, the rows carry their
+//! marks (HOST on the host's row, the robot on a bot's avatar, YOU as the
+//! avatar's white frame), each status a progress bar (loaded is ready:
+//! filled), free slots read "Open", the host's Start, the countdown's
+//! ticks light as it runs, the session wins
 //! (`LobbyRow::wins`) show as a trophy and count, the leader's marked; the shell's theme keeps
 //! the old panel. The clock is stepped by hand (`UiClock::manual`).
 
 use bevy::prelude::*;
 use chimera_client::client::{
-    lobby_panel::{CountdownBar, LobbyMark, LobbyPlayerRow, LobbyWins, OpenSlot, ReadyBlock},
+    lobby_panel::{CountdownBar, LobbyMark, LobbyPlayerRow, LobbyWins, OpenSlot},
     prematch_lobby::{LobbyView, PreMatchLobbyPlugin},
 };
 use chimera_core::core::{LocalPlayer, NetRole};
@@ -24,45 +24,27 @@ use chimera_world::harness::Sim;
 /// A theme with the lobby's layout (the Ultimate Gun Game's numbers).
 const THEME: &str = r#"
 name = "test"
-[motion.dur.lobby]
-ready_pop = 0.32
 [layout.lobby]
-margin = 4.6
-header_y = 3.8
-lockup = 1.05
-title = 1.2
-rule_y = 7.6
-col_y = 10.6
-left_w = 50.0
-right_x = 60.4
+mode_w = 18.0
+map_w = 27.4
+card_h = 13.0
 big = 3.0
-map_big = 2.4
-row_h = 3.2
-open_h = 2.9
-col_pos = 2.6
-col_tag = 7.4
-col_status = 12.6
-name = 0.92
-label = 0.66
-head = 0.56
+map_big = 2.0
+row_h = 2.9
+avatar = 2.3
+status_w = 11.2
+ping_w = 4.6
+name = 0.9
 tag = 0.62
-kv = 0.64
-key = 0.62
-bot = 0.94
-block_w = 1.25
-block_h = 0.85
-map_h = 11.4
 ticks_h = 1.4
 countdown_ticks = 48.0
 countdown_hot = 3.0
-foot_y = 3.4
-corner = 2.4
 "#;
 
 const JOINER: u64 = 5;
 
 fn row(id: Option<u64>, name: &str, status: u8) -> LobbyRow {
-    LobbyRow { id, name: name.into(), status, done: 0, total: 0, ping_ms: id.filter(|&i| i != HOST_ID).map(|_| 31), wins: 0 }
+    LobbyRow { id, name: name.into(), status, done: 0, total: 0, ping_ms: id.filter(|&i| i != HOST_ID).map(|_| 31), wins: 0, avatar: 0 }
 }
 
 /// A listen host's lobby: the host, a joiner not ready, a bot; 6 slots.
@@ -90,6 +72,7 @@ fn sim(theme: Option<&str>) -> Sim {
         waiting: 1,
         wait_left: Some(60),
         countdown: None,
+            host_start: false,
     });
     sim.ticks(2);
     sim
@@ -107,23 +90,23 @@ fn you_rows(sim: &mut Sim) -> Vec<usize> {
     w.query::<&LobbyPlayerRow>().iter(w).filter(|r| r.you).map(|r| r.index).collect()
 }
 
-/// The status block of row `index`: its state and drawn height scale.
-fn block(sim: &mut Sim, index: usize) -> (bool, f32) {
+/// The status bar of row `index` (the progress component).
+fn progress(sim: &mut Sim, index: usize) -> chimera_ui::controls::Progress {
+    use chimera_ui::controls::ProgressBar;
     let w = sim.app.world_mut();
-    let blocks: Vec<(Entity, ReadyBlock, f32)> =
-        w.query::<(Entity, &ReadyBlock, &UiTransform)>().iter(w).map(|(e, b, t)| (e, *b, t.scale.y)).collect();
-    for (e, b, s) in blocks {
+    let bars: Vec<(Entity, ProgressBar)> = w.query::<(Entity, &ProgressBar)>().iter(w).map(|(e, b)| (e, *b)).collect();
+    for (e, b) in bars {
         let mut at = e;
         while let Some(parent) = w.get::<ChildOf>(at).map(|c| c.parent()) {
             if let Some(r) = w.get::<LobbyPlayerRow>(parent)
                 && r.index == index
             {
-                return (b.ready, s);
+                return b.0;
             }
             at = parent;
         }
     }
-    panic!("no block on row {index}");
+    panic!("no status on row {index}");
 }
 
 fn step(sim: &mut Sim, secs: f32) {
@@ -140,9 +123,12 @@ fn set_status(sim: &mut Sim, index: usize, s: u8) {
 #[test]
 fn lobby_rows_carry_host_bot_you() {
     let mut s = sim(Some(THEME));
-    // The host's own row: one fused chip; the bot's robot; the host's row is YOU.
-    assert_eq!(marks(&mut s), vec![LobbyMark::YouHost, LobbyMark::Bot]);
+    // The host's own row: HOST; the bot's robot; the host's row is YOU
+    // (its avatar's white frame), first in the list.
+    assert_eq!(marks(&mut s), vec![LobbyMark::Host, LobbyMark::Bot]);
     assert_eq!(you_rows(&mut s), vec![0]);
+    let w = s.app.world_mut();
+    assert_eq!(w.query::<&chimera_ui::avatar::YouFrame>().iter(w).count(), 2, "your row's avatar and the bar's");
     let v = s.app.world().resource::<LobbyView>().clone();
     assert_eq!((v.game.as_str(), v.slots), ("", Some(6)), "no games registered here; the host's maxplayers");
     // Three slots free: three rows reading "Open".
@@ -154,24 +140,37 @@ fn lobby_rows_carry_host_bot_you() {
     s.ticks(2);
     assert_eq!(marks(&mut s), vec![LobbyMark::Host, LobbyMark::Bot]);
     assert_eq!(you_rows(&mut s), vec![1]);
+    // Your row comes first.
+    let w = s.app.world_mut();
+    let first = w.query::<(&LobbyPlayerRow, &ChildOf)>().iter(w).map(|(r, _)| r.index).next();
+    assert_eq!(first, Some(1), "you lead the list");
 }
 
+/// Loaded is ready: a filled bar; a player still downloading a hollow
+/// bar filling with its share; the host's hero is Start and nothing asks
+/// to ready up.
 #[test]
-fn lobby_ready_block_flips() {
+fn lobby_status_is_the_progress_bar() {
+    use chimera_ui::controls::Progress;
     let mut s = sim(Some(THEME));
-    assert_eq!(block(&mut s, 1), (false, 1.0), "not ready: an outline at its size");
-    assert_eq!(block(&mut s, 0), (true, 1.0));
-    set_status(&mut s, 1, status::READY);
-    step(&mut s, 0.0);
-    let (ready, scale) = block(&mut s, 1);
-    assert!(ready);
-    assert!(scale > 1.5, "it pops (scale y {scale})");
-    step(&mut s, 0.1);
-    let (_, mid) = block(&mut s, 1);
-    assert!(mid < scale && mid > 1.0, "settling ({mid})");
-    step(&mut s, 0.3);
-    assert_eq!(block(&mut s, 1), (true, 1.0), "back to its size after ready_pop");
-    assert_eq!(block(&mut s, 0), (true, 1.0), "the others never popped");
+    assert_eq!(progress(&mut s, 0), Progress::Ready);
+    assert_eq!(progress(&mut s, 1), Progress::Ready, "on the map: loaded (no ready-up)");
+    {
+        let w = s.app.world_mut();
+        let mut l = w.query::<&mut NetLobby>().single_mut(w).unwrap();
+        l.rows[1].status = status::DOWNLOADING;
+        l.rows[1].done = 42;
+        l.rows[1].total = 100;
+    }
+    s.ticks(2);
+    assert_eq!(progress(&mut s, 1), Progress::Running(0.42));
+    set_status(&mut s, 1, status::CONNECTING);
+    s.ticks(2);
+    assert_eq!(progress(&mut s, 1), Progress::Connecting);
+    let w = s.app.world_mut();
+    use chimera_client::client::prematch_lobby::LobbyAction;
+    let start = w.query::<&LobbyAction>().iter(w).filter(|a| **a == LobbyAction::Ready).count();
+    assert_eq!(start, 1, "the host's Start");
 }
 
 #[test]
@@ -182,7 +181,8 @@ fn the_countdown_lights_its_ticks() {
         let w = s.app.world_mut();
         w.query::<&CountdownBar>().single(w).unwrap().lit(now)
     };
-    assert_eq!(lit(&mut s).0, 0, "nothing lit before the countdown");
+    let w = s.app.world_mut();
+    assert_eq!(w.query::<&CountdownBar>().iter(w).count(), 0, "no standby before the countdown");
     let set = |s: &mut Sim, c| {
         let w = s.app.world_mut();
         w.query::<&mut NetLobby>().single_mut(w).unwrap().countdown = Some(c);

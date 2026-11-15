@@ -20,7 +20,7 @@ plays as the real game, from specs and the disc's own data.
 |---|---|---|
 | M0 specs (formats and core rules) | in progress (2026-11-15) | waves 0 and 1 landed but sounds and animations (disc image, cache file, structure BSP, collision, models, bitmaps, scenario, shaders), and of wave 2 movement and objects; weapons, projectiles, health and shields, multiplayer rules, sounds and animations being written |
 | M1 a map you can walk on | in progress (2026-11-15) | `blam_formats` reads the disc image and the map cache file (tag index, address spaces, typed tag reads); `games/halo_ce` is a skeleton that mounts the disc; the class readers (bitmaps, structure BSP and collision, scenario and shaders) are being written; the map converter is next |
-| M2 Halo guns as UGG rungs | not started | |
+| M2 Halo guns as UGG rungs | in progress (2026-11-15) | Halo's movement (`halo_ce:movement`, movement.md) landed: every spec test case a scenario test; the steps' hops by the engine's capsule cast (its Known shortcuts); a Halo player's vitality (shields over health, health_shields.md: `game::vitality`) and the damage seam every Halo weapon delivers through (`game::damage::HaloHit`) landed; Halo's movement and the guns are next |
 | M3 the full multiplayer arsenal | not started | |
 | M4 every multiplayer map | not started | |
 | M5 feel and parity pass | not started | |
@@ -229,6 +229,36 @@ backlog.
 - Halo's own app and server (`apps/halo_ce`, `apps/halo_ce_server`):
   after the party apps play it.
 
+## Backlog
+
+- **Bot navigation on Halo's maps** (M4): Combat Arms' bots generate
+  their mesh from a map's collision when it has no AI volumes
+  (`nav_gen`, seeded at the spawn points), so they walk Halo's maps
+  today, but unbounded: Halo's visibility (clusters, portals, the PVS)
+  is not handed to the engine, so the flood is not held to the played
+  space (Blood Gulch's reaches the flood's cell limit, with 967 of its
+  spawn spots off the main region). Missing: the
+  level's clusters as `map::vis` data (or a nav mesh of Halo's own),
+  jump links for its lifts, and teleporters as nav links.
+- **The maps kept out of the pool** (games/halo_ce/data/map_pool.toml):
+  putput (30 teleporter pairs), boardingaction (8), carousel, ratrace,
+  wizard (4 each), chillout (3), sidewinder (vehicles, 4 pairs): in with
+  teleporters (M4) and, for Sidewinder, vehicles (M6). Ratrace has no
+  capture the flag starts: its team spawns would be none.
+- **Blood Gulch in a draw**: it is in the pool (allowed), but the pool's
+  count rule keeps it out of every draw by players present (its wander
+  time, 21 s at 8 players, over the 10 s target: a vehicle map walked).
+  It plays when named (`map halo_ce:bloodgulch`, the host's vote list);
+  a draw needs either a smaller measured area (the flood bounded, above)
+  or a per-map exception in the pool's rules (the user's call).
+- **Scale for other games' players**: the levels are built for a 2.1 m
+  Spartan running 6.9 m/s (movement.md); not rescaled. A Counter-Strike
+  player (1.83 m, 6.35 m/s) or a Combat Arms soldier (about 1.8 m, a
+  similar run) is a little smaller and slower than the maps expect:
+  doors and corridors are roomy, the open maps (Blood Gulch) feel long
+  on foot, and Halo's jumps (its higher, floatier jump) are not all
+  made by the other games' jump; steps and ramps are fine.
+
 ## Log
 
 - 2026-11-15: plan written; the reference cloned and the disc image
@@ -243,3 +273,15 @@ backlog.
   minutes at six jobs, a plain-data crate seconds, so format readers
   run in parallel worktrees and game-crate work reuses one warm
   worktree.
+- 2026-11-15: Halo's maps in the party apps (M1's last step): its
+  bundle among `party_kit::GUESTS` (loader, client, its map pool), its
+  spawns the slayer starts plus capture the flag's red and blue bases as
+  Combat Arms' Alpha and Bravo, its surface names (the engine's classes)
+  through the Source-to-Combat Arms table and registered as classes for
+  other games' impacts, its pool the disc's maps its
+  data/map_pool.toml allows (beavercreek, bloodgulch, damnation,
+  hangemhigh, longest, prisoner), measured by `map_fitness`
+  (data/map_fitness.toml). No map is claimed: without the disc image
+  nothing changes. Bots use the generated mesh (backlog). A Combat Arms
+  soldier walks and shoots on Hang 'Em High (party_kit's
+  `heavy::halo_maps`).

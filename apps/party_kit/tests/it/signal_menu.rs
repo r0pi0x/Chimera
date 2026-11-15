@@ -349,9 +349,9 @@ fn hover_selects_and_the_slab_shows_the_inverted_entry() {
     assert_eq!(inverted.len(), 1, "one inverted JOIN");
     assert!(inverted[0].alpha() > 0.99, "the inverted JOIN is drawn: {:?}", inverted[0]);
     assert_eq!(inverted[0].with_alpha(1.0), ink.with_alpha(1.0), "in ink on the slab");
-    let play = colors_under::<SignalItem>(&mut sim, "Play");
+    let play = colors_under::<SignalItem>(&mut sim, "Host");
     assert_eq!(play.len(), 1);
-    assert!(play[0].alpha() > 0.99 && play[0].with_alpha(1.0) == fg.with_alpha(1.0), "PLAY in its normal white: {:?}", play[0]);
+    assert!(play[0].alpha() > 0.99 && play[0].with_alpha(1.0) == fg.with_alpha(1.0), "HOST in its normal white: {:?}", play[0]);
 }
 
 #[test]
