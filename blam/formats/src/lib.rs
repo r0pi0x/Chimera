@@ -14,6 +14,9 @@
 //!   decoded vertices and triangles).
 //! - `sound`: the sound and looping sound tags, the Xbox ADPCM decoder and
 //!   the distance attenuation rules.
+//! - `animation`: the animation graph tag (index tables as typed slots, unit
+//!   selection, uncompressed and compressed node animations sampled to
+//!   poses, overlay, replacement and aim blending).
 //! - `bitmap`: the bitmap tag reader and pixel decoder (every format on the
 //!   disc to RGBA8; block compressed levels also as stored, for a GPU).
 //! - `structure_bsp`: a level's render geometry, clusters, portals, fog and
@@ -26,12 +29,13 @@
 //! - `shader`: the eight shader tag classes and the periodic animation
 //!   functions.
 
+pub mod animation;
 pub mod bitmap;
 pub mod cache;
 pub mod collision;
 pub mod disc;
-pub mod structure_bsp;
+pub mod model;
 pub mod scenario;
 pub mod shader;
-pub mod model;
 pub mod sound;
+pub mod structure_bsp;
