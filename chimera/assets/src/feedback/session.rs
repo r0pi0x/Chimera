@@ -52,7 +52,7 @@
 use std::{
     collections::VecDeque,
     fs::{self, File, OpenOptions},
-    io::{Seek, SeekFrom, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, OnceLock,
@@ -357,12 +357,15 @@ fn dead_sessions(logs: &Path, feedback: &Path, prefix: &str) -> Vec<Previous> {
             continue;
         }
         let path = e.path();
-        let Ok(file) = OpenOptions::new().read(true).write(true).open(&path) else { continue };
+        let Ok(mut file) = OpenOptions::new().read(true).write(true).open(&path) else { continue };
         if file.try_lock().is_err() {
             // A live process holds it (another instance).
             continue;
         }
-        let text = fs::read_to_string(&path).unwrap_or_default();
+        // Through the handle that holds the lock: on Windows the lock is
+        // mandatory, so another handle's read of the file is refused.
+        let mut text = String::new();
+        let _ = file.read_to_string(&mut text);
         let _ = file.unlock();
         drop(file);
         out.push(Previous { marker: path, info: MarkerInfo::parse(&text), logs: logs.to_path_buf(), feedback: feedback.to_path_buf() });
@@ -414,7 +417,10 @@ impl Session {
         let log_path = logs.join(format!("{stem}.log"));
         let marker_path = logs.join(format!("{stem}.running"));
         let dump_path = logs.join(format!("{stem}.dmp"));
-        let file = OpenOptions::new().create(true).append(true).open(&log_path)?;
+        // Not `append`: on Windows an append-only handle can't be truncated
+        // (`set_len`) when the file starts over. The file is new, so the
+        // position is its end; the cap's start-over seeks back itself.
+        let file = OpenOptions::new().create(true).truncate(false).write(true).open(&log_path)?;
         let info = MarkerInfo {
             app: options.app.clone(),
             build: options.build.clone(),
@@ -721,7 +727,9 @@ pub fn panic_text(info: &std::panic::PanicHookInfo<'_>) -> (String, String) {
         .unwrap_or_else(|| "(not a string)".into());
     let place = info.location().map_or(String::new(), |l| format!(" at {}:{}", l.file(), l.line()));
     let thread = std::thread::current().name().unwrap_or("unnamed").to_string();
-    let what = format!("panic in thread '{thread}': {}{place}", cut(&message, 500));
+    // The place before the message: a message naming a secret has the
+    // rest of its line hidden (`redact::line`), the place would go with it.
+    let what = format!("panic in thread '{thread}'{place}: {}", cut(&message, 500));
     let backtrace = format!("{what}\n\n{}", std::backtrace::Backtrace::force_capture());
     (what, backtrace)
 }
@@ -834,7 +842,16 @@ pub fn signature(backtrace: Option<&str>, log: Option<&str>, text: &str) -> Stri
             .take(3)
             .collect();
         let head = bt.lines().next().unwrap_or("");
-        let place = head.rsplit_once(" at ").map(|(_, p)| p.to_string()).unwrap_or_default();
+        // `panic in thread 'main' at chimera/x.rs:3: boom` (older reports:
+        // `panic in thread 'main': boom at chimera/x.rs:3`).
+        let place = head
+            .strip_prefix("panic in thread '")
+            .and_then(|r| r.split_once("' at "))
+            .and_then(|(_, r)| r.split_once(": "))
+            .map(|(p, _)| p)
+            .or_else(|| head.rsplit_once(" at ").map(|(_, p)| p))
+            .unwrap_or_default()
+            .to_string();
         if !frames.is_empty() {
             return format!("panic {}{}", frames.join(" < "), if place.is_empty() { String::new() } else { format!(" ({place})") });
         }
@@ -992,6 +1009,12 @@ mod tests {
             signature(Some(bt), None, ""),
             "panic chimera_client::client::foo::bar < chimera_client::client::foo::baz < game::main (chimera/x.rs:3)"
         );
+        let now = bt.replace("'main': boom at chimera/x.rs:3", "'main' at chimera/x.rs:3: boom, token (hidden)");
+        assert_eq!(
+            signature(Some(&now), None, ""),
+            "panic chimera_client::client::foo::bar < chimera_client::client::foo::baz < game::main (chimera/x.rs:3)"
+        );
+        assert_eq!(signature(Some("panic in thread 'main' at chimera/x.rs:3: boom\n"), None, ""), "panic at chimera/x.rs:3");
         assert_eq!(signature(None, Some("a\n12:00 native crash: exception 0xc0000005 at 0x1, minidump written\n"), "x"), "native 0xc0000005");
         assert_eq!(signature(None, None, "The session ended unexpectedly (no clean exit)\n..."), "unclean exit");
         assert_eq!(signature(None, None, "render error: DeviceLost: gone"), "render DeviceLost");

@@ -1847,6 +1847,7 @@ cargo run --bin dump -- combat_arms --list --filter worlds2
 cargo run --bin dump -- combat_arms --filter worlds2/warehouse.dat --extract
 cargo run --bin dump -- hl2dm                          # gameinfo.txt's search path, then the summary
 cargo run --bin dump -- hl2dm --sequences models/combine_camera/combine_camera.mdl  # also its pose parameters
+cargo run --bin dump -- tf2                            # tf/gameinfo.txt's search path, then the summary
 ```
 
 Combat Arms' maps: `cargo run --features dev -p combat_arms_app --bin
@@ -2391,6 +2392,13 @@ what follows it a few px along; a width that differs only by that ratio
 tolerance) is expected: marked `~`, counted apart and not past tolerance;
 the rest are listed with their font sizes (`font 11.5/12`). Only the screen's ids count (`screens.json`'s
 `include`), so a game playing behind the staged screen adds nothing.
+The shell (`chimera_ui::shell`, every out-of-match screen's bar) has
+console helpers for screenshots: `presence away|idle|back` (your avatar's
+not-looking eye, the idle grey), `cl_avatar <0-31>` (your avatar: glyph x
+8 + colour), `menu_news <title> | <body> | <source>` (the main menu's
+news card; none hides it). The party pages need `+mainmenu` on a tool
+run: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
+<out>.png +ui_scene play server +mainmenu`.
 `ui_scene lobby` stages the lobby with made-up players (for
 screenshots; no parity ids or fixture yet), so `lobby`'s report lists
 the mockup's ids only.

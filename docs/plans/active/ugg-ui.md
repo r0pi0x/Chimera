@@ -1188,6 +1188,55 @@ buttons (F3 and Esc only); M8's loading screens (the "Next map" screen
 lobby; offscreen screenshots of a real level change (not just
 `ui_scene lobby`).
 
+### Signal revision 8 (2026-11-15)
+
+The user approved the kit's design rules' revision 8 (the design
+session's `spec.md`, sections 9-17; its mocks `r8-lobby`, `r8-menu`,
+`r8-host`, `r8-dialog-icons`, `r7-load`, `r7-load-confirm`,
+`r7-host-maps`, `r7-lobby-bar`, `r6-avatars`, `r6-join`). Implemented in
+four stages, each merged on its own:
+
+1. **The shell** (in): `chimera_ui::shell`: the persistent bar (the
+   lockup on the root; elsewhere the stacked breadcrumb "‹ MAIN MENU"
+   over the title, its Esc cap and the right mouse button, the back
+   target); at the right one rack of square tiles (T1): "PARTY n/8",
+   your avatar with its edge strip, the "+" invite slot, then Friends,
+   Settings, Report a bug (F10); the Settings tile white while Settings
+   is open; no Play/Join tabs. Right-click is Back on every shell screen
+   (`ShellScreen`) except while a bind listens (`BackGuard`): it and a
+   click on the breadcrumb press Esc for a frame, so each screen's Esc
+   path does Back (the lobby's Esc is now Leave, which asks first).
+   Margins per 11.4 (`[layout.shell]`: 2.6 cq, the bar from 1.8, the
+   rule at 7.2, the window 8.4 to 4.6 from the bottom, the side panel
+   31 cq). Play is shown as HOST, Options as SETTINGS. Unbuilt features
+   are disabled (`shell::Disabled`: `fg_4`, no hover, no sound, a "Coming
+   soon" tooltip): Friends, the "+" (and your avatar opens nothing yet:
+   no Profile screen). The main menu's news card (`signal_menu::
+   MenuNews`, hidden while None; `menu_news` sets it) waits for the asset
+   service to send one. The hero (`Tone::Hero` #2D6BEB, white text) and
+   the key-cap lockup came in with it (stage 3 finishes the controls).
+2. **Avatars and status** (in, with stage 1): `chimera_ui::avatar` (4
+   glyphs x 8 colours, icons.toml's `avatar_*` from the design's SVGs),
+   `cl_avatar` (saved, userinfo, random on the first run: `chimera_client::
+   client::profile`; the lobby's rows carry it, `LobbyRow::avatar`,
+   NET_VERSION net55), the YOU frame, the edge strip (ready in the lobby,
+   cobalt in a match, filling while loading, the leader's cap in a party
+   of two or more), away (unfocused: the crossed eye; idle 5 min: grey;
+   `presence` fakes them). The lobby already is revision 8's list (one
+   list, you first, avatars, the progress bars, ping bars and ms, no
+   ready-up: `mp_lobby_host_start`, the host's Start as the hero).
+3. **Controls**: the hero (white on #2D6BEB; the dialog's hero bigger
+   than its secondary), the thin caret, the progress component (variant
+   B), ping bars and ms with the loss mark, the list-with-chevron field,
+   STATUS beside status blocks, Q/E caps at the tab strips' ends,
+   slanted segmented groups, Mono only for data, instant apply (display
+   mode and resolution wait for Apply and the 15 s keep).
+4. **Screens**: the main menu, Settings, Host (name, password, port
+   first; the Maps field opening the picker dialog; "Start when: host
+   presses Start"; the UPnP status block), Join (section 13's fixes), the
+   lobby (one list, your party first, no ready-up, Start the host's
+   hero), Loading (MB of MB, files, speed, time left; the leave dialog).
+
 ### M10: Chat
 
 Status (2026-11-15): in on `ugg-chat`. The user: "add a chat to

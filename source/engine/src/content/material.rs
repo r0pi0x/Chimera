@@ -93,6 +93,9 @@ pub struct Resolved {
     pub decal_scale: Option<f32>,
     /// `$bumpmap`: tangent-space normal map (linear texture).
     pub normal_map: Option<usize>,
+    /// `$ssbump 1`: `normal_map` is a self-shadowed bump map, its rgb the
+    /// three bumped lightmaps' weights (specs/cs_source/shaders.md 2).
+    pub ssbump: bool,
     /// WorldVertexTransition: `$basetexture2`, `$bumpmap2`,
     /// `$blendmodulatetexture`.
     pub blend: Option<crate::map::MapBlend>,
@@ -314,6 +317,7 @@ impl<'a> MaterialLoader<'a> {
                     double_sided: false,
                     decal_scale: None,
                     normal_map: None,
+                    ssbump: false,
                     blend: None,
                     detail: None,
                     unlit: false,
@@ -339,6 +343,7 @@ impl<'a> MaterialLoader<'a> {
             double_sided: false,
             decal_scale: None,
             normal_map: None,
+            ssbump: false,
             blend: None,
             detail: None,
             unlit: false,
@@ -352,7 +357,9 @@ impl<'a> MaterialLoader<'a> {
             modulate: false,
             phong: None,
         };
-        let vmt_path = format!("materials/{}.vmt", normalize(name));
+        // A name may carry its extension (2fort's `$bottommaterial`
+        // "water/water_2fort_beneath.vmt").
+        let vmt_path = format!("materials/{}.vmt", normalize(name).trim_end_matches(".vmt"));
         let Some(text) = self.read_text(&vmt_path) else {
             self.missing.push(format!("{vmt_path}: not found"));
             return fallback;
@@ -517,6 +524,9 @@ impl<'a> MaterialLoader<'a> {
             double_sided: material.no_cull(),
             decal_scale,
             normal_map,
+            // TF2's world materials use it widely (concrete, rock): read as
+            // a normal map its occlusion speckles them dark.
+            ssbump: normal_map.is_some() && ssbump(keys.get("$ssbump").map(String::as_str)),
             blend,
             detail,
             unlit: matches!(material, vmt_parser::material::Material::UnlitGeneric(_)),
@@ -1937,6 +1947,13 @@ fn animated_rates(proxies: &[(String, super::water::Keys)]) -> [Option<f32>; 2] 
     rates
 }
 
+/// Whether a material's `$ssbump` (its value) is on: any non-zero number;
+/// its `$bumpmap` is then a self-shadowed bump map
+/// (specs/cs_source/shaders.md 2).
+fn ssbump(value: Option<&str>) -> bool {
+    value.is_some_and(|v| v.trim().parse::<f32>().is_ok_and(|f| f != 0.0))
+}
+
 /// The world shader's modulation (specs/cs_source/shaders.md 2): `$color`
 /// as written (`[r g b]`, or `{r g b}` bytes / 255), not gamma-converted,
 /// the `srgb?` form first; `$color2` is a model shader's. None when white.
@@ -2321,6 +2338,13 @@ mod tests {
         assert_eq!(world_tint(&keys(&[("$color2", "[0.5 0.5 0.5]")])), None);
         // Models' tint converts the same braces from gamma.
         assert_ne!(tint(&keys(&[("$color", "{128 128 128}")])), world_tint(&keys(&[("$color", "{128 128 128}")])));
+    }
+
+    /// `$ssbump` (shaders.md 2): any non-zero number turns it on.
+    #[test]
+    fn ssbump_is_a_non_zero_number() {
+        assert!(ssbump(Some("1")) && ssbump(Some(" 1.0 ")));
+        assert!(!ssbump(Some("0")) && !ssbump(Some("")) && !ssbump(None));
     }
 
     #[test]

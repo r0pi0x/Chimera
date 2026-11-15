@@ -60,7 +60,8 @@ fn dynamic_light(p: vec3<f32>, n: vec3<f32>, frag_coord: vec2<f32>) -> vec3<f32>
 struct WorldParams {
     base_color: vec4<f32>,
     light_scale: f32,
-    // 0 = flat lightmap only, 1 = radiosity normal mapping.
+    // 0 = flat lightmap only, 1 = radiosity normal mapping, 2 = a
+    // self-shadowed bump map ($ssbump: its rgb weigh the three pages).
     bumped: f32,
     // Sign applied to the normal map's green channel.
     normal_g_sign: f32,
@@ -442,7 +443,15 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var n_ts = normal_texel.xyz * 2.0 - 1.0;
     n_ts.x = n_ts.x * params.normal_x_sign;
     n_ts.y = n_ts.y * params.normal_g_sign;
-    if params.bumped > 0.5 {
+    if params.bumped > 1.5 {
+        // $ssbump (shaders.md 2): the texel's raw rgb weigh the three
+        // pages, unnormalised; reflections take the normal they make.
+        let w = normal_texel.rgb;
+        light = w.x * sample_lightmap(lightmap_b0, in.uv_b)
+            + w.y * sample_lightmap(lightmap_b1, in.uv_b)
+            + w.z * sample_lightmap(lightmap_b2, in.uv_b);
+        n_ts = normalize(w.x * BASIS_0 + w.y * BASIS_1 + w.z * BASIS_2 + vec3<f32>(0.0, 0.0, 1e-4));
+    } else if params.bumped > 0.5 {
         var n = normal_texel.xyz * 2.0 - 1.0;
         if params.blend > 0.5 && params.blend_normal > 0.5 {
             let n2 = textureSample(normal2_texture, normal_sampler, bump_uv).xyz * 2.0 - 1.0;

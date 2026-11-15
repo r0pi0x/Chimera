@@ -67,9 +67,8 @@ pub fn add_map_pool(app: &mut bevy::app::App) {
 /// registered (not made the match's), its vitality and damage seam, and
 /// its weapons, each once.
 pub fn add_guns(app: &mut bevy::app::App) {
-    use chimera_sim::movement::placeholder::PlaceholderAppExt;
     if !app.is_plugin_added::<super::weapons::HaloWeaponsPlugin>() {
-        app.placeholder_movement(super::movement::ID, super::movement::TUNING);
+        super::movement::register(app);
         app.add_plugins((super::vitality::VitalityPlugin, super::damage::DamagePlugin, super::weapons::HaloWeaponsPlugin));
     }
 }

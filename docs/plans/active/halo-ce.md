@@ -18,9 +18,9 @@ plays as the real game, from specs and the disc's own data.
 
 | Milestone | State | Summary |
 |---|---|---|
-| M0 specs (formats and core rules) | in progress (2026-11-15) | waves 0 and 1 landed but sounds and animations (disc image, cache file, structure BSP, collision, models, bitmaps, scenario, shaders), and of wave 2 movement and objects; weapons, projectiles, health and shields, multiplayer rules, sounds and animations being written |
-| M1 a map you can walk on | in progress (2026-11-15) | `blam_formats` reads the disc image and the map cache file (tag index, address spaces, typed tag reads); `games/halo_ce` is a skeleton that mounts the disc; the class readers (bitmaps, structure BSP and collision, scenario and shaders) are being written; the map converter is next |
-| M2 Halo guns as UGG rungs | in progress (2026-11-15) | a Halo player's vitality (shields over health, health_shields.md: `game::vitality`) and the damage seam every Halo weapon delivers through (`game::damage::HaloHit`) landed; the four guns' simulation (`game::weapons`: data/weapons/*.toml, per-tick rules, projectiles, melee, rungs in the party) landed; Halo's movement and the guns' models, animations, sounds and effects are next |
+| M0 specs (formats and core rules) | done (2026-11-15) | eighteen specs in `specs/halo_ce/` (its README is the index): the disc image, the cache file and tag conventions, bitmaps, structure BSP, collision, models, shaders, scenario, sounds, animations, objects, globals, movement, health and shields, weapons, projectiles, multiplayer rules, effects; each checked against the disc by its writer, corrected once from the readers' tests; still to write, as their milestones near: the HUD and vehicles |
+| M1 a map you can walk on | done (2026-11-15) | every multiplayer map loads from the disc image with textures, one lightmap atlas, the sky model, scenery and collision; Halo's own app and server (`halo_ce`, `halo_ce_server`); six maps in the party apps' pool, played by the other games' characters; summary below |
+| M2 Halo guns as UGG rungs | in progress (2026-11-15) | Halo's movement (`halo_ce:movement`, movement.md) landed: every spec test case a scenario test; the steps' hops by the engine's capsule cast (its Known shortcuts); a Halo player's vitality (shields over health, health_shields.md: `game::vitality`) and the damage seam every Halo weapon delivers through (`game::damage::HaloHit`) landed; Halo's movement and the guns are next |
 | M3 the full multiplayer arsenal | not started | |
 | M4 every multiplayer map | not started | |
 | M5 feel and parity pass | not started | |
@@ -162,6 +162,43 @@ comes as its milestone nears.
   sky and collision, walked as an existing UGG character. Offscreen
   screenshots in the milestone's summary.
 
+### M1's summary (2026-11-15)
+
+- **What landed.** `blam_formats` (`blam/formats`, plain data, 333 tests,
+  120 of them on the disc): the Xbox disc image as a mount layer, the
+  map cache file (inflated whole; tag index, address spaces, typed tag
+  reads), and readers for bitmaps, the structure BSP, collision BSPs,
+  the scenario and sky, shaders, models, sounds, animations, objects,
+  weapons, projectiles, damage effects, a collision model's vitality,
+  the globals and the saved game type. `games/halo_ce`: the map loader
+  (`game::maps`: meshes per shader with their textures, block-compressed
+  data handed over untouched, the lightmap pages packed into one atlas,
+  collision with surface names, slayer and team spawns, fog, the sky
+  model as a 3D skybox, scenery as props with collision), through the
+  converted-map cache. `apps/halo_ce` and `apps/halo_ce_server`. In the
+  party apps (`party_kit`): Halo's bundle, its surfaces as impact
+  classes, team and free-for-all spawns, six maps in the pool
+  (data/map_pool.toml says why the other seven wait: teleporters, and
+  Sidewinder's vehicles), bots on the navigation generated from
+  collision.
+- **Measured.** A map converts in 0.12-0.16 s and loads from the cache
+  in 0.02 s. Blood Gulch: 5,503 triangles, 22 textures, 46 scenery
+  props; Hang 'Em High: 3,218 triangles, 12 textures.
+- **Screenshots** (taken with `halo_ce --map halo_ce:<map> --screenshot`
+  and the Ultimate Gun Game on a Halo map; kept outside the repository
+  and posted to the playtest channel): Blood Gulch's red base under the
+  sky with trees and boulders; Hang 'Em High; a Counter-Strike rung
+  standing on Blood Gulch in the Ultimate Gun Game.
+- **Open after M1** (each in the loader's "Known shortcuts" or the
+  backlog): no bump shading, self-illumination, specular or reflections;
+  one detail map, in linear light; animated textures frozen; one fog for
+  a map; no visibility culling; breakable surfaces solid; ladders plain
+  triangles; scenery lit by one probe; the sky's ring and sun glow to be
+  checked against the real game (M5); teleporters and lifts (M4);
+  Blood Gulch is in the pool but its measured walk-to-meet time keeps
+  it out of the automatic draw by player count (the pool's rule, the
+  other session's).
+
 ### M2: Halo guns as UGG rungs (the vertical slice)
 
 - Assault rifle, pistol, plasma rifle, shotgun as data-driven weapons
@@ -285,3 +322,11 @@ backlog.
   nothing changes. Bots use the generated mesh (backlog). A Combat Arms
   soldier walks and shoots on Hang 'Em High (party_kit's
   `heavy::halo_maps`).
+- 2026-11-15: M0 and M1 done (their summaries above). M2 under way:
+  Halo's movement and vitality with the damage seam landed and are wired
+  to each other (falls through the shield, stun into movement); the
+  first four weapons' simulation, the Spartan's body and Halo in the
+  asset store are being written. A Windows-only failure of the session
+  log's tests on `main` (an append-only handle cannot be truncated; a
+  locked marker read through a second handle) was fixed in passing, as
+  it blocked the commit hook.

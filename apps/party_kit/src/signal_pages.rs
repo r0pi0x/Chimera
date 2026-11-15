@@ -1,9 +1,11 @@
 //! The main menu's Play and Join pages in the Signal look (feature
 //! `present`; a theme with `[layout.pages]`, the Ultimate Gun Game's;
-//! docs/plans/active/ugg-ui.md M5, main-menu.md M2): Settings' frame
-//! (the lockup, the title and where it is, a window over the menu's
-//! ambient, a bar with Back and the page's button, the keys at the foot)
-//! with the kit's controls (`chimera_ui::controls`). Presentation and keys
+//! docs/plans/active/ugg-ui.md M5 and "Signal revision 8", main-menu.md
+//! M2), Play shown as **Host**: the shell (`chimera_ui::shell`: the bar
+//! with the breadcrumb "‹ Main menu" over the title, the window, its
+//! action bar with the status sentence and the hero, the keys at the
+//! foot; Back is the breadcrumb, Esc or a right click) with the kit's
+//! controls (`chimera_ui::controls`). Presentation and keys
 //! only: the values, the console lines and the joins stay `main_menu`'s
 //! (`PartyMenu`, `MainMenuAction`), so Start, Connect, the loading panel,
 //! the failure and reconnect boxes and Disconnect are as before. Without
@@ -39,6 +41,7 @@
 //!   (PageUp/PageDown) the Play tabs (not while typing; on a server row
 //!   PageUp/PageDown move a window), F2 F3 F4 the browser's tabs, F
 //!   (not typing) favourites or drops the focused server, F5 refreshes,
+//!   Q/E (not typing) the browser's tabs (their caps at the strip's ends),
 //!   Enter the page's button, Esc back or closes the modal
 //!   (`main_menu::typing`, which also types into the focused text field,
 //!   its case kept). The pointer: a click focuses a row; the kit's hover
@@ -827,7 +830,13 @@ fn keys(
             out.write(MainMenuAction::Favourite(i));
             return;
         }
-        let dir = if k(KeyCode::ArrowLeft) { -1 } else if k(KeyCode::ArrowRight) { 1 } else { 0 };
+        let dir = if k(KeyCode::ArrowLeft) || k(KeyCode::KeyQ) {
+            -1
+        } else if k(KeyCode::ArrowRight) || k(KeyCode::KeyE) {
+            1
+        } else {
+            0
+        };
         if dir != 0 {
             let next = lan.tab.step(dir);
             if next != lan.tab {
@@ -904,6 +913,7 @@ struct DrawKey {
     theme: String,
     camera: Option<Entity>,
     pool: Vec<String>,
+    party: Option<chimera_ui::shell::Party>,
 }
 
 /// What the drawing reads besides the state.
@@ -915,6 +925,7 @@ struct Ctx<'a> {
     now: f64,
     /// Unix seconds (History's "5 min ago"), at the draw.
     unix: u64,
+    party: &'a chimera_ui::shell::Party,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -925,6 +936,7 @@ fn draw(
     (mut images, mut icons, mut ambients): (Option<ResMut<Assets<Image>>>, Option<ResMut<IconImages>>, Option<ResMut<Assets<AmbientMaterial>>>),
     camera: Query<Entity, With<MenuUiCamera>>,
     roots: Query<Entity, With<SignalPagesRoot>>,
+    party: Res<chimera_ui::shell::Party>,
     mut drawn: Local<DrawKey>,
     mut commands: Commands,
 ) {
@@ -940,6 +952,7 @@ fn draw(
         theme: theme.name.clone(),
         camera: cam,
         pool: pool.clone(),
+        party: Some(party.clone()),
     };
     if *drawn == key {
         return;
@@ -957,6 +970,7 @@ fn draw(
         minigame: def.map_or_else(|| game_id.0.clone(), |d| d.name.clone()),
         now: now(&clock),
         unix: sl::unix_now(),
+        party: &party,
     };
     let root = spawn(&mut commands, &ui, page, &menu, &p, &cx, images.as_deref_mut(), icons.as_deref_mut(), ambients.as_deref_mut());
     if let Some(c) = cam {
@@ -985,10 +999,11 @@ fn spawn(
     ambients: Option<&mut Assets<AmbientMaterial>>,
 ) -> Entity {
     let t = ui.theme;
-    let m = lay(t, "margin", 4.6);
+    let sh = chimera_ui::shell::ShellLayout::of(t);
     let root = c
         .spawn((
             SignalPagesRoot,
+            chimera_ui::shell::ShellScreen,
             Name::new("signal pages"),
             GlobalZIndex(crate::settings::SETTINGS_Z),
             Node {
@@ -1013,44 +1028,37 @@ fn spawn(
         ));
     }
     let frame = ui.boxed(c, root, UiStyle { w: Some(100.0), h: Some(56.25), shrink: Some(0.0), ..UiStyle::row() });
-    // Header: the lockup, the title, where it is.
-    let head = ui.boxed(c, frame, UiStyle { gap: Some(2.4), ..UiStyle::row() }.abs([Some(m), Some(2.8), Some(m), None]));
+    // The shell's bar: the breadcrumb back to the main menu over the
+    // title, the party and the system tiles.
+    let title = if page == MenuPage::Play { "Host" } else { "Join" };
     if let (Some(images), Some(icons)) = (images, icons) {
-        ui.lockup(c, head, images, icons, 1.05);
+        let bar = chimera_ui::shell::Bar {
+            left: chimera_ui::shell::Left::Crumb { parent: "Main menu", title },
+            party: &cx.party.members,
+            party_max: cx.party.max,
+            open: None,
+        };
+        let parts = chimera_ui::shell::bar(ui, c, frame, images, icons, &bar);
+        if let Some(e) = parts.tile(chimera_ui::shell::ShellTile::Settings) {
+            c.entity(e).insert(MainMenuAction::OpenSettings);
+        }
     }
-    let (title, crumb) = match page {
-        MenuPage::Play => ("Play", "Main menu ▸ Play • host a game others can join"),
-        _ => ("Join", "Main menu ▸ Join • a server by address or on your network"),
-    };
-    ui.text(c, head, Role::DisplayBold, 1.2, Tone::Fg, title);
-    ui.text(c, head, Role::Mono, 0.5, Tone::Fg3, crumb);
-    let rule = ui.boxed(c, frame, UiStyle::row().abs([Some(m), Some(7.4), Some(m), None]));
-    c.spawn((Node { width: percent(100.0), height: Val::Px(ui.units.hairline()), ..default() }, BackgroundColor(ui.color(Tone::Fg4, 1.0)), ChildOf(rule)));
 
     // The window.
-    let win = c
-        .spawn((
-            UiStyle::column()
-                .abs([Some(m), Some(lay(t, "win_top", 9.4)), Some(m), Some(lay(t, "win_bottom", 7.6))])
-                .bg_a(Tone::Ink, 0.78)
-                .outline(Tone::Fg5, 1.0),
-            Node::default(),
-            ChildOf(frame),
-        ))
-        .id();
+    let win = chimera_ui::shell::window(ui, c, frame);
     let top = if page == MenuPage::Play {
-        let tabbar = ui.boxed(c, win, UiStyle::column().abs([Some(2.0), Some(1.6), Some(2.0), None]));
-        for (i, e) in ui.tabs(c, tabbar, &["Server", "Game"], menu.play_tab, false).into_iter().enumerate() {
+        let tabbar = ui.boxed(c, win, UiStyle::column().abs([Some(sh.rows_in), Some(1.6), Some(sh.side_w + 2.0 * sh.rows_in), None]));
+        for (i, e) in ui.tabs_ex(c, tabbar, &["Server", "Game"], menu.play_tab, false, Some(("Q", "E"))).into_iter().enumerate() {
             c.entity(e).insert(MainMenuAction::PlayTab(i));
         }
         4.6
     } else {
-        1.0
+        1.6
     };
     let cols = ui.boxed(
         c,
         win,
-        UiStyle { gap: Some(2.4), align: Some(AlignItems::Stretch), ..UiStyle::row() }.abs([Some(2.0), Some(top), Some(2.0), Some(4.4)]),
+        UiStyle { gap: Some(2.4), align: Some(AlignItems::Stretch), ..UiStyle::row() }.abs([Some(sh.rows_in), Some(top), Some(sh.rows_in), Some(sh.act_h + 1.4)]),
     );
     let ls = lines(menu, cx.data, cx.lan);
     let row_h = lay(t, "row_h", 2.9);
@@ -1091,54 +1099,37 @@ fn spawn(
         }
     }
 
-    // The bar.
-    let bar = c
-        .spawn((
-            UiStyle { h: Some(lay(t, "bar_h", 3.4)), gap: Some(1.2), pad: Some([0.0, 1.2, 0.0, 2.0].into()), ..UiStyle::row() }
-                .abs([Some(0.0), None, Some(0.0), Some(0.0)])
-                .bg_a(Tone::Ink, 0.6),
-            Node::default(),
-            ChildOf(win),
-        ))
-        .id();
-    c.spawn((
-        Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, top: Val::ZERO, height: Val::Px(ui.units.hairline()), ..default() },
-        BackgroundColor(ui.color(Tone::Fg4, 1.0)),
-        ChildOf(bar),
-    ));
+    // The action bar: the status sentence at the left, the hero last.
+    let bar = chimera_ui::shell::action_bar(ui, c, win);
     let st = ui.boxed(c, bar, UiStyle { gap: Some(0.6), grow: Some(1.0), ..UiStyle::row() });
-    let (mark, line) = match (&p.notice, page) {
-        (Some(n), _) => (Tone::Threat, n.clone()),
+    let (notice, line) = match (&p.notice, page) {
+        (Some(n), _) => (true, n.clone()),
         (None, MenuPage::Play) => {
             let max = value_of(cx.data, menu, "maxplayers");
-            (Tone::Acc, format!("A listen server for {max} • bots fill the empty places"))
+            (false, format!("A listen server for {max}. Bots fill the empty places."))
         }
-        (None, _) => (Tone::Fg4, "Enter joins the focused line • the port is 27015 unless given".to_string()),
+        (None, _) => (false, "Enter joins the focused line. The port is 27015 unless given.".to_string()),
     };
-    ui.mark(c, st, mark, 0.42, 0.42);
-    ui.sentence(c, st, NOTE, if p.notice.is_some() { Tone::Fg } else { Tone::Fg3 }, &line);
-    let back = ui.button(c, bar, Kind::Ghost, "Back", Some("Esc"), 2.0, State::NONE);
-    c.entity(back).insert(MainMenuAction::Back);
+    if notice {
+        ui.mark(c, st, Tone::Threat, 0.42, 0.42);
+    }
+    ui.sentence(c, st, chimera_ui::controls::SENTENCE, if notice { Tone::Fg } else { Tone::Fg2 }, &line);
     let (label, action) = match (page, ls.get(p.focus)) {
         (MenuPage::Play, _) => ("Start", MainMenuAction::Start),
         (_, Some(Line::Server(i))) => ("Join server", MainMenuAction::Server(*i)),
         (_, Some(Line::Recent(i))) => ("Join", MainMenuAction::Recent(*i)),
         _ => ("Connect", MainMenuAction::Connect),
     };
-    let go = ui.button(c, bar, Kind::Primary, label, Some("Enter"), 2.0, State::NONE);
+    let go = ui.button(c, bar, Kind::Primary, label, Some("Enter"), chimera_ui::controls::HERO_H, State::NONE);
     c.entity(go).insert(action);
 
-    // The keys at the foot.
-    let foot = ui.boxed(c, frame, UiStyle { gap: Some(2.0), ..UiStyle::row() }.abs([Some(m), None, None, Some(3.0)]));
+    // The keys at the foot (Back is the breadcrumb; the tabs' Q and E sit
+    // at the strips' ends).
     let keys: &[(&str, &str)] = match page {
-        MenuPage::Play => &[("↑↓", "Row"), ("←→", "Change"), ("Q E", "Tab"), ("Enter", "Start"), ("Esc", "Back")],
-        _ => &[("↑↓", "Row"), ("←→", "Tab"), ("F", "Favourite"), ("Enter", "Join"), ("F5", "Refresh"), ("Esc", "Back")],
+        MenuPage::Play => &[("↑↓", "Row"), ("←→", "Change"), ("Enter", "Start")],
+        _ => &[("↑↓", "Row"), ("F", "Favourite"), ("Enter", "Join"), ("F5", "Refresh")],
     };
-    for (k, what) in keys {
-        let g = ui.boxed(c, foot, UiStyle { gap: Some(0.5), ..UiStyle::row() });
-        ui.kbd(c, g, k, 0.6, Tone::Fg);
-        ui.text(c, g, Role::Mono, 0.6, Tone::Fg2, what);
-    }
+    chimera_ui::shell::keys(ui, c, frame, keys);
     if let Some(ask) = &p.ask {
         password_modal(c, ui, root, menu, p, ask);
     }
@@ -1261,6 +1252,10 @@ enum PickAct {
 #[allow(clippy::too_many_arguments)]
 fn pick_value(c: &mut Commands, ui: &Ui, vl: Entity, pick: &Pick, v: &str, st: State, act: impl Fn(PickAct) -> MainMenuAction) {
     match (pick_widget(pick), pick) {
+        // One choice: its words, nothing to pick.
+        (_, Pick::Choices(ch)) if ch.len() == 1 => {
+            ui.sentence(c, vl, chimera_ui::controls::TYPED, Tone::Fg2, &ch[0].1);
+        }
         (0, Pick::Choices(ch)) => {
             let on = ch.get(1).is_some_and(|(cv, _)| same_value(cv, v));
             let tg = ui.toggle(c, vl, on, st);
@@ -1363,28 +1358,16 @@ fn cells(c: &mut Commands, ui: &Ui, vl: Entity, texts: [&str; 5], tone: Tone, si
 fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPages, cx: &Ctx, row_h: f32) {
     let rows = cx.lan.rows();
     let n = rows.len();
-    let tabs = ui.boxed(c, right, UiStyle::column());
+    // One row: the tabs (Q and E at their ends), then the list's tools.
+    let top = ui.boxed(c, right, UiStyle { gap: Some(1.0), align: Some(AlignItems::FlexEnd), margin: Some([0.0, 0.0, 0.8, 0.0].into()), ..UiStyle::row() });
+    let tabs = ui.boxed(c, top, UiStyle { grow: Some(1.0), ..UiStyle::column() });
     let names: Vec<&str> = BrowserTab::ALL.iter().map(|t| t.name()).collect();
-    for (i, e) in ui.tabs(c, tabs, &names, cx.lan.tab.index(), false).into_iter().enumerate() {
+    for (i, e) in ui.tabs_ex(c, tabs, &names, cx.lan.tab.index(), false, Some(("Q", "E"))).into_iter().enumerate() {
         c.entity(e).insert(MainMenuAction::BrowserTab(i));
     }
     let first = cx.lan.scroll.min(n.saturating_sub(VISIBLE_ROWS));
     let last = (first + VISIBLE_ROWS).min(n);
     let asking = cx.lan.scanning && cx.lan.tab == BrowserTab::Lan;
-    let note = if asking {
-        "Looking...".to_string()
-    } else if n == 0 {
-        "None".to_string()
-    } else if n > VISIBLE_ROWS {
-        format!("{}-{} of {n}", first + 1, last)
-    } else if cx.lan.tab == BrowserTab::Lan {
-        format!("{n} found, by ping")
-    } else {
-        format!("{n}")
-    };
-    let head = ui.boxed(c, right, UiStyle { gap: Some(1.0), ..UiStyle::row() });
-    let sec = ui.boxed(c, head, UiStyle { grow: Some(1.0), ..UiStyle::column() });
-    ui.section(c, sec, cx.lan.tab.name(), Some(&note));
     let focused = match ls.get(p.focus) {
         Some(Line::Server(i)) => rows.get(*i).map(|r| (*i, r.favourite)),
         _ => None,
@@ -1394,10 +1377,23 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
         Some((i, false)) => ("Favourite", i),
         None => ("Favourite", 0),
     };
-    let fav = ui.button(c, head, Kind::Secondary, label, Some("F"), 1.9, State { disabled: focused.is_none(), ..State::NONE });
+    let tools = ui.boxed(c, top, UiStyle { gap: Some(0.6), margin: Some([0.0, 0.0, 0.5, 0.0].into()), ..UiStyle::row() });
+    let fav = ui.button(c, tools, Kind::Secondary, label, Some("F"), 1.9, State { disabled: focused.is_none(), ..State::NONE });
     c.entity(fav).insert(MainMenuAction::Favourite(i));
-    let refresh = ui.button(c, head, Kind::Secondary, "Refresh", Some("F5"), 1.9, State { disabled: cx.lan.scanning, ..State::NONE });
+    let refresh = ui.button(c, tools, Kind::Secondary, "Refresh", Some("F5"), 1.9, State { disabled: cx.lan.scanning, ..State::NONE });
     c.entity(refresh).insert(MainMenuAction::Refresh);
+    // Where the list is (a long one's window, a scan under way).
+    let note = if asking {
+        Some("Looking...".to_string())
+    } else if n > VISIBLE_ROWS {
+        Some(format!("{}-{} of {n}", first + 1, last))
+    } else {
+        None
+    };
+    if let Some(note) = note {
+        let e = ui.boxed(c, right, UiStyle { pad: Some([0.0, 0.0, 0.4, 0.0].into()), ..UiStyle::row() });
+        ui.text(c, e, Role::Mono, 0.5, Tone::Fg3, &note);
+    }
     // The columns' heads.
     let heads = ui.boxed(
         c,

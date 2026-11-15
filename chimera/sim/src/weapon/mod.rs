@@ -103,7 +103,7 @@ use serde::{Deserialize, Serialize};
 pub use params::ParamsAppExt;
 pub use sync::{CarriedAppExt, NetPart};
 
-pub use deliver::{aim_of, armor_split, cone_dir, cs_offsets, falloff, hitgroup_at, pellet_dirs, quantize, spread_dir};
+pub use deliver::{aim_of, armor_split, centred_command, cone_dir, cs_offsets, falloff, hitgroup_at, pellet_dirs, quantize, spread_dir};
 pub use hits::{Absorbed, Coverage, DamageClass, Depletion, RegionScale, absorb};
 
 use crate::{

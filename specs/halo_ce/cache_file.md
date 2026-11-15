@@ -559,6 +559,8 @@ Classes marked * appear only as parents, never as a tag's own class.
 | `flag` | flag | | |
 | `fog ` | fog | | |
 | `wind` | wind | | |
+| `elec` | lightning | | |
+| `rain` | weather_particle_system | | |
 | `foot` | material_effects | | |
 | `dobc` | detail_object_collection | | |
 | `itmc` | item_collection | | |
@@ -589,11 +591,16 @@ shader > the eight shader classes. A class with no parent stores NONE in
 both parent slots; a class with one parent stores NONE in the second.
 Two levels are all the index can hold, and all the game uses.
 
+`elec` (lightning) and `rain` (weather_particle_system) are tags on
+some campaign maps (checked by script over all 24 maps): `elec` on b40
+(2 tags), c10 (3), c20 (5), c40 (3) and d40 (1); `rain` on b30, b40,
+c10 and c40 (1 each); neither has parent classes, and no multiplayer
+map or the ui map has one. Their layouts are not specified here.
+
 Classes the game knows that no disc map contains (for completeness;
-inferred, not checked): `cdmg` continuous_damage_effect, `elec`
-lightning, `rain` weather_particle_system, `plac` placeholder, `boom`
-spheroid, `devc` input_device_defaults, `ngpr`
-preferences_network_game, `tagc` tag_collection. The PC releases add
+inferred, checked by the same scan): `cdmg` continuous_damage_effect,
+`plac` placeholder, `boom` spheroid, `devc` input_device_defaults,
+`ngpr` preferences_network_game, `tagc` tag_collection. The PC releases add
 classes the Xbox does not have (for example `mod2`, the PC model format,
 which replaces `mode`; and `scex`); a reader for this port refuses them.
 

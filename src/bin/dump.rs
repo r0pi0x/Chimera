@@ -2,7 +2,7 @@
 //! See docs/OBSERVABILITY.md ("Exploring game files").
 //!
 //! Dev tool: summarize, list and extract a game install's files; `--sequences`
-//! lists a model's bones and sequences (CS:S's and HL2:DM's).
+//! lists a model's bones and sequences (CS:S's, HL2:DM's and TF2's).
 
 use std::{
     collections::BTreeMap,
@@ -13,6 +13,7 @@ use std::{
 
 use bevy::math::{Quat, Vec3};
 use hl2dm::game as hl2dm;
+use tf2::game as tf2;
 use lithtech_formats::rez;
 use mashup::{
     games::cs_source,
@@ -24,12 +25,12 @@ use mashup::{
 
 const USAGE: &str = "\
 usage: dump <game> [options]
-  games: cs_source, combat_arms, hl2dm
-  (no option)          summary: file counts and sizes by extension (hl2dm: its
+  games: cs_source, combat_arms, hl2dm, tf2
+  (no option)          summary: file counts and sizes by extension (hl2dm, tf2: the
                        search path from gameinfo.txt first, each entry and whether it's there)
   --list               list every file with its size
   --archives           combat_arms: per-archive title, entropy and file count
-  --sequences <model>  cs_source, hl2dm: a model's bones, sequences (activity, frames, fps,
+  --sequences <model>  cs_source, hl2dm, tf2: a model's bones, sequences (activity, frames, fps,
                        duration, looping, ground speed) and pose parameters, includes merged
   --lods <model|text>  cs_source: each model's LODs (switch point, triangles) from its .dx90.vtx;
                        with text, every .mdl whose path contains it
@@ -117,6 +118,7 @@ fn install_path(args: &Args) -> Result<PathBuf, String> {
     let steam = match args.game.as_str() {
         cs_source::GAME => cs_source::INFO.steam,
         hl2dm::GAME => hl2dm::INFO.steam,
+        tf2::GAME => tf2::INFO.steam,
         _ => None,
     };
     LocalConfig::load()?.game_path_in(&args.game, steam.as_ref()).ok_or_else(|| {
@@ -134,7 +136,8 @@ fn run(args: &Args) -> Result<(), String> {
         cs_source::GAME => dump_cs_source(args, &install),
         COMBAT_ARMS => dump_combat_arms(args, &install),
         hl2dm::GAME => dump_hl2dm(args, &install),
-        other => Err(format!("unknown game `{other}`; expected cs_source, combat_arms or hl2dm")),
+        tf2::GAME => dump_tf2(args, &install),
+        other => Err(format!("unknown game `{other}`; expected cs_source, combat_arms, hl2dm or tf2")),
     }
 }
 
@@ -148,6 +151,24 @@ fn dump_hl2dm(args: &Args, install: &Path) -> Result<(), String> {
         }
     }
     let mount = hl2dm::mount::open(install).map_err(|e| e.to_string())?;
+    if let Some(path) = &args.sequences {
+        return sequences(&mount, path);
+    }
+    report(args, &mount, &[])
+}
+
+/// TF2: the search path its `tf/gameinfo.txt` gives (when the install's
+/// own folders are there), then the mount's summary. An archive a `_dir`
+/// file lists but that is missing (a dedicated server's textures and
+/// sounds) leaves its files out of the mount.
+fn dump_tf2(args: &Args, install: &Path) -> Result<(), String> {
+    if let Ok(path) = tf2::mount::search_path(install) {
+        println!("gameinfo.txt search path (first wins):");
+        for layer in &path.layers {
+            println!("  {layer}");
+        }
+    }
+    let mount = tf2::mount::open(install).map_err(|e| e.to_string())?;
     if let Some(path) = &args.sequences {
         return sequences(&mount, path);
     }

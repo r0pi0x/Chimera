@@ -1,0 +1,121 @@
+//! Team Fortress 2's parts, one module per subsystem, and what the game
+//! tells the shell about itself (`INFO`: its id, folder, Steam app, tick,
+//! map names and cycle, console namespaces). M1 of
+//! docs/plans/active/tf2.md:
+//!
+//! - `mount`: the install's search path from its own `tf/gameinfo.txt`
+//!   (`source_engine::search_path`), the asset store under or instead of
+//!   it (`mount::served`); an archive the `_dir` files list but that is
+//!   missing (the dedicated server's textures and sounds) is skipped file
+//!   by file (specs/tf2/install.md 1.5);
+//! - `maps`: Source's BSP conversion with TF2's data (`TF2`: spawns from
+//!   `info_player_teamspawn`, gravity 800; `MAP_LOADER` for `tf2:<map>`);
+//! - `movement`: `tf2:movement`, Chimera's placeholder walking with the
+//!   Soldier's numbers until TF2's movement (M3);
+//! - `parts`: what the game lends other games' apps (`PARTS`): nothing yet.
+//!
+//! `Tf2Plugins` adds the game's parts after `crate::SimPlugins`; `BUNDLE`
+//! is the game for a party app (its maps).
+//!
+//! Known shortcuts:
+//! - `INFO`'s default binds are empty: the shell reads the install's
+//!   `cfg/config_default.cfg`.
+//! - The tick is the measured default (0.015 s, specs/tf2/movement.md,
+//!   "Units and conventions"); no `-tickrate`.
+
+pub mod maps;
+pub mod mount;
+pub mod movement;
+pub mod parts;
+
+pub use maps::MAP_LOADER;
+
+use bevy::app::{PluginGroup, PluginGroupBuilder};
+
+/// The game's id (`tf2`): its maps' ids (`tf2:ctf_2fort`), its key in
+/// chimera.local.toml (`[games.tf2] path`), `CHIMERA_TF2_ROOT` and its
+/// content cache.
+pub const GAME: &str = "tf2";
+
+/// The game's folder inside its install, holding `gameinfo.txt`.
+pub const CONTENT_DIR: &str = "tf";
+
+/// TF2's server tick: 0.015 s (66.67 Hz; specs/tf2/movement.md, measured
+/// on the dedicated server).
+pub const TICK_INTERVAL: f64 = 0.015;
+
+/// Source's unit, the inch, in metres.
+pub const METERS_PER_UNIT: f32 = 0.0254;
+
+/// The maps M1 plays and tests (specs/tf2/install.md 2.2).
+pub const M1_MAPS: &[&str] = &["ctf_2fort", "cp_badlands"];
+
+/// What the client shell knows of TF2 (`game_registry`): its install
+/// (Steam app 440, the retail client, or `[games.tf2] path`, or
+/// `$CHIMERA_TF2_ROOT`; the folder holding `tf/`, `hl2/` and
+/// `platform/`), folder, map names and cycle, tick and console
+/// namespaces (`tf2`, with the game folder's name `tf` as an alias). The
+/// required files are in both the client's and the dedicated server's
+/// layouts (install.md 1.3).
+pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo {
+    id: GAME,
+    short_name: "TF2",
+    content_dir: CONTENT_DIR,
+    tick_interval: TICK_INTERVAL,
+    open: mount::open,
+    map_cycle: source_engine::maps::map_cycle,
+    map_names: source_engine::maps::map_names,
+    steam: Some(crate::mount::install::SteamGame {
+        app_id: 440,
+        name: "Team Fortress 2",
+        required: &["tf/tf2_misc_dir.vpk", "hl2/hl2_misc_dir.vpk"],
+    }),
+    map_file: |name| Some(format!("maps/{name}.bsp")),
+    import_map: mount::import_map,
+    default_binds_cfg: "cfg/config_default.cfg",
+    default_binds: &[],
+    old_default_binds: &[],
+    movement_cvars: source_engine::source_movement::CVARS,
+    meters_per_unit: METERS_PER_UNIT,
+    console_namespaces: &["tf2", "tf"],
+};
+
+/// TF2's parts, after the engine's base (`crate::SimPlugins`): the game
+/// registered (`INFO`) and its stand-in movement (`movement`).
+pub struct Tf2Plugins;
+
+impl PluginGroup for Tf2Plugins {
+    fn build(self) -> PluginGroupBuilder {
+        PluginGroupBuilder::start::<Self>()
+            .add(crate::game_registry::RegisterGame(&INFO))
+            .add(movement::Tf2MovementPlugin)
+    }
+}
+
+/// TF2 as one bundle for an app made of several games
+/// (`chimera_world::game_bundle`): its info, parts and maps. It brings no
+/// players or guns to other games' maps yet (`guest: None`, nothing
+/// `kept`), and adds its registration, map logic and stand-in movement to
+/// a composed simulation (`party_sim`).
+pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_bundle::GameBundle {
+    info: &INFO,
+    parts: &parts::PARTS,
+    loader: &MAP_LOADER,
+    guest: None,
+    kept: &[],
+    binds: &[],
+    view_model_fov: None,
+    sim: party_sim,
+    display_names: None,
+};
+
+/// What TF2 adds to a game of several games: the game registered, map
+/// logic for its maps, its stand-in movement (not the match's).
+pub fn party_sim(app: &mut bevy::app::App) {
+    use crate::game_registry::GameAppExt;
+    app.register_game(&INFO);
+    if !app.is_plugin_added::<source_logic::logic::LogicPlugin>() {
+        app.add_plugins(source_logic::logic::LogicPlugin);
+    }
+    movement::add_movement(app);
+}

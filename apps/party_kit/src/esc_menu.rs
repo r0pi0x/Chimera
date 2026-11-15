@@ -422,6 +422,7 @@ impl Plugin for EscMenuPlugin {
         chimera_client::client::hud::hud_cover(app);
         chimera_client::client::ui_scene::UiSceneHooks::add(app.world_mut(), "esc", scene_esc);
         app.insert_resource(chimera_client::client::prematch_lobby::LobbyAnswered)
+            .add_message::<chimera_client::client::prematch_lobby::LobbyAction>()
             .add_observer(lobby_asked)
             .init_resource::<EscMenu>()
             .init_resource::<OptionTabs>()
@@ -573,6 +574,10 @@ fn toggle(
     mut cues: MessageWriter<chimera_client::client::ui_sound::UiCue>,
     settings: Option<Res<crate::settings::Settings>>,
     (lobby, theme): (Option<Res<chimera_client::client::prematch_lobby::LobbyView>>, Option<Res<chimera_ui::Theme>>),
+    (feedback, mut lobby_out): (
+        Option<Res<chimera_client::client::feedback::Feedback>>,
+        MessageWriter<chimera_client::client::prematch_lobby::LobbyAction>,
+    ),
 ) {
     use chimera_client::client::ui_sound::UiCue;
     if !keys.just_pressed(KeyCode::Escape) {
@@ -595,10 +600,14 @@ fn toggle(
         return;
     }
     // The themed lobby has no Escape menu: Esc closes what is open over
-    // it, else nothing.
+    // it, else it is the breadcrumb's Back: Leave, which asks first.
     let lobby_screen = lobby_screen(lobby.as_deref(), theme.as_deref());
     if !menu.open {
         if lobby_screen {
+            let dialog = feedback.is_some_and(|f| f.phase != chimera_client::client::feedback::Phase::Closed);
+            if !dialog {
+                lobby_out.write(chimera_client::client::prematch_lobby::LobbyAction::Leave);
+            }
             return;
         }
         menu.set_open(true);
