@@ -53,7 +53,7 @@ port adds the ones below.
 | [weapons.md](weapons.md) | 2 | draft | weapons, with every multiplayer weapon's numbers |
 | [projectiles.md](projectiles.md) | 2 | draft | projectiles, damage effects, grenades |
 | [multiplayer_rules.md](multiplayer_rules.md) | 2 | draft | spawning, pickups, powerups, game type rules |
-| effects.md | 3 | planned | effects, particles, lights, decals |
+| [effects.md](effects.md) | 3 | draft | effects, particles, lights, decals |
 | hud.md | 3 | planned | the HUD's pieces |
 | vehicles.md | 3 | planned | vehicles |
 
