@@ -5,7 +5,9 @@
 //! `numbers_plate` and its compass on the 8-image `compass_plate` (limit
 //! 8), and a shot of the rifle's own tick changes the units image from 0
 //! to 9 through the weapon tag's own exports and functions; the plasma
-//! rifle's and plasma pistol's gauges are meters with their baked cuts.
+//! rifle's and plasma pistol's gauges are meters with their baked cuts;
+//! the memo made after the map cache (`load::displays_of`) is the same,
+//! with bloodgulch's local north (pi).
 //! Passes with a note without an install.
 
 use blam_formats::cache::MapFile;
@@ -92,4 +94,13 @@ fn the_plasma_gauges_are_meters() {
         assert_eq!(meters.len(), 1, "{id}: {:?}", program.parts);
         assert_eq!(model.model.meshes[meters[0].0].frames.len(), METER_LEVELS + 1, "{id}");
     }
+}
+
+#[test]
+fn the_memo_after_the_cache_matches_the_looks() {
+    let Some(file) = bloodgulch() else { return };
+    let looks = load::looks(&file, false);
+    let memo = load::displays_of(&file);
+    assert_eq!(memo.guns, looks.displays.guns);
+    assert!((memo.local_north - std::f32::consts::PI).abs() < 1e-3, "{}", memo.local_north);
 }

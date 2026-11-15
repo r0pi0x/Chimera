@@ -139,6 +139,12 @@ pub fn load_in(
     let (mut map, outcome) = crate::map::cache::cached(cache, mount, key, || {
         convert(&bytes, name, file_hash, options).map_err(|e| format!("{path}: {e}"))
     })?;
+    // The guns' displays (a memo: not cached).
+    if options.kit.any_models()
+        && let Ok(file) = MapFile::load(&bytes)
+    {
+        map.memos.insert(super::view::load::displays_of(&file));
+    }
     let took = start.elapsed().as_secs_f32();
     if outcome == Outcome::Hit {
         bevy::log::info!("{name}: read from the map cache in {took:.2} s");

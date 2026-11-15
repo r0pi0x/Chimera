@@ -53,7 +53,9 @@
 //! **Displays** (`displays`): the view model's parts whose shaders show
 //! a value (the assault rifle's counter and compass, the plasma gauges)
 //! get their frames there, and each gun's program is the map's memo
-//! (`displays::GunDisplays`, by key; added with the looks, `add`).
+//! (`displays::GunDisplays`, by key; added with the looks, `add`, and on
+//! Halo's own maps again after the converted-map cache, `displays_of`,
+//! with the scenario's local north).
 //!
 //! Known shortcuts:
 //! - The held models' displays show their first image (`displays`).
@@ -683,11 +685,32 @@ pub fn add(map: &mut MapData, looks: &Looks, options: &MapLoadOptions) {
 pub fn add_own(file: &MapFile, map: &mut MapData, options: &MapLoadOptions) {
     if options.kit.any_models() {
         add(map, &looks(file, options.textures), options);
-        // The compass's north is the scenario's (0 on another game's map).
-        if let Ok(s) = blam_formats::scenario::Scenario::read(file) {
-            map.memos.entry::<displays::GunDisplays>().local_north = s.local_north;
+    }
+}
+
+/// The guns' displays of map `file` (`displays`) with its scenario's
+/// local north, without building the models' looks: a Halo map's memo,
+/// made after the converted-map cache (memos are not cached; `maps::load_in`).
+pub fn displays_of(file: &MapFile) -> displays::GunDisplays {
+    let mut out = displays::GunDisplays {
+        local_north: blam_formats::scenario::Scenario::read(file).map_or(0.0, |s| s.local_north),
+        ..Default::default()
+    };
+    let Ok(arms) = arms(file) else { return out };
+    for gun in &gun_models() {
+        let (Some(wt), Ok(model)) = (file.find(class::WEAPON, &gun.tag), model_at(file, &gun.view)) else { continue };
+        let Ok(weapon) = Weapon::read(file, wt) else { continue };
+        // The view model's mesh order (`view_model`): the arms', then the gun's.
+        let mut meshes = objects::skinned_meshes_permuted(file, &arms, &|p| space::point(p));
+        let first = meshes.len();
+        meshes.extend(objects::skinned_meshes_permuted(file, &model, &|p| space::point(p)));
+        let parts: Vec<displays::Part> = meshes.iter().enumerate().skip(first).map(|(i, (_, s, p))| (i, *s, *p)).collect();
+        let mut meshes: Vec<MapMesh> = meshes.into_iter().map(|(m, ..)| m).collect();
+        if let Some(p) = displays::dress(file, &weapon, &parts, &mut meshes, &mut Vec::new(), &mut Vec::new(), false) {
+            out.guns.insert(gun.id.to_string(), p);
         }
     }
+    out
 }
 
 /// The donor's looks an app's loads share (`LoadContext`): with and
