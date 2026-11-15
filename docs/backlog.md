@@ -44,6 +44,12 @@ the user's go-ahead: no Actions runs unless asked.
   backups; stats at match end. Phases S1-S5:
   [plans/active/hub.md](plans/active/hub.md) section 10.
 
+- **Player stats over time (user, 2026-11-15):**
+  - Keep each player's stats across matches, not only running totals: a per-match history (kills, deaths, rung reached, place, guns used, game) kept per account and per game.
+  - Trends over time: the last N matches, best runs, per-gun and per-game breakdowns.
+  - A Profile screen showing them, tied to the avatar.
+  - Needs the hub's accounts and database (S1a and S1b, deployed) and S4's profiles, results outbox and schema ([plans/active/hub.md](plans/active/hub.md) sections 9 and 10). S4 stores totals; extend it with the match-history table and queries for trends.
+
 - **Player requests (playtest 7, 2026-11-14):** games and guns wanted by
   players: Halo guns (Halo CE is already on this roadmap), Fortnite guns,
   Natural Selection 2 (one tester said no), Left 4 Dead infected, and
