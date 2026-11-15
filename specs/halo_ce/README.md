@@ -25,7 +25,7 @@ port adds the ones below.
   the disc differ, the disc wins and the spec says so.
 - Each spec states its confidence per section (checked against the disc,
   read from the reference only, inferred) and ends with open questions.
-- One conventions source: `cache_file.md` defines the
+- One conventions source: [cache_file.md](cache_file.md) defines the
   units, axes, the tick, and how tag data, blocks, data references and
   tag references are stored. Other specs refer to it and don't define
   them again.
@@ -38,7 +38,7 @@ port adds the ones below.
 | File | Wave | Status | Covers |
 |---|---|---|---|
 | [disc_image.md](disc_image.md) | 0 | draft | the Xbox disc image's file system |
-| cache_file.md | 0 | being written | the map cache file, the tag index, tag data conventions, tag classes, units and tick |
+| [cache_file.md](cache_file.md) | 0 | draft | the map cache file, the tag index, tag data conventions, tag classes, units and tick |
 | bitmaps.md | 1 | planned | bitmap tags and pixel formats |
 | [structure_bsp.md](structure_bsp.md) | 1 | draft | the level's render geometry, lightmaps, clusters and visibility |
 | collision.md | 1 | planned | collision BSPs and how a trace walks them |
