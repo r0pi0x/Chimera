@@ -212,6 +212,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         // Its players' body, worn by its guns' holders (`body`).
         app.add_plugins(body::HaloBodyPlugin);
         app.add_plugins(view::HaloViewPlugin);
+        app.add_plugins(vehicles::HaloVehiclesPlugin);
     },
     display_names: None,
 };

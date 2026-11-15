@@ -2757,7 +2757,7 @@ fn step(
             Option<&StepSounds>,
             Option<&mut crate::core::IgnoreFallDamage>,
         ),
-    )>,
+    ), Without<crate::core::Carried>>,
     query: SpatialQuery,
     brushes: Option<Res<MapBrushes>>,
     water: Option<Res<MapWater>>,

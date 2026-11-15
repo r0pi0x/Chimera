@@ -2,8 +2,10 @@
 //! props and entities): the scenario's two Warthogs are placed, settle on
 //! the ground at their placements (not sunk, not thrown), and a driver
 //! holding the forward key toward the other base for ten seconds stays
-//! inside the level's bounds and above its terrain. Passes with a note
-//! without an install.
+//! inside the level's bounds and above its terrain. Sidewinder's: its two
+//! Warthogs placed (its Ghosts and Scorpions wait for their documents)
+//! and resting at their placements. Passes with a note without an
+//! install.
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::RunSystemOnce, prelude::*};
@@ -135,4 +137,50 @@ fn blood_gulchs_warthogs_rest_and_drive() {
     );
     assert!(gone > 20.0, "drove {gone} WU in 10 s");
     assert!(lowest > -0.5, "never through the terrain: {lowest}");
+}
+
+/// The spec's Sidewinder Warthog placements (vehicles.md "Multiplayer").
+const SIDEWINDER: [[f32; 3]; 2] = [[-31.89, -26.67, -3.84], [30.10, -30.77, -3.69]];
+
+/// Sidewinder's placed vehicles: by kind as the scenario places them (2
+/// Warthogs, 4 Ghosts, 2 Scorpions: the two Warthogs placed, the others
+/// waiting for their documents), each Warthog at its placement resting
+/// on the ground (upright, at rest, on its wheels) after five seconds.
+#[test]
+fn sidewinders_warthogs_rest_at_their_placements() {
+    let Some(mount) = mount() else { return };
+    let map = load(&mount, "sidewinder", false);
+    let placed: Vec<_> = map
+        .entities
+        .iter()
+        .filter_map(halo_ce::game::vehicles::place::Placed::from_entity)
+        .collect();
+    let kinds: std::collections::BTreeMap<&str, usize> = placed.iter().fold(Default::default(), |mut m, p| {
+        *m.entry(p.vehicle.as_str()).or_default() += 1;
+        m
+    });
+    eprintln!("Sidewinder's placed vehicles by kind: {kinds:?}");
+    assert_eq!(kinds.get("warthog"), Some(&2), "two Warthogs");
+    assert_eq!(kinds.len(), 1, "only the Warthog has a document: {kinds:?}");
+    let mut sim = Sim::new(HaloSim, MapSimPlugin::new(map));
+    sim.seconds(5.0);
+    let found = vehicles(&mut sim);
+    assert_eq!(found.len(), 2);
+    let phys = halo_ce::game::vehicles::data::VehicleDef::warthog().physics_def();
+    for ((e, v), place) in found.iter().zip(SIDEWINDER) {
+        let b = &v.drive.body;
+        let origin = b.origin(phys.center_of_mass);
+        let ground = ground_under(&mut sim, origin, *e).expect("ground under");
+        eprintln!(
+            "Warthog at {origin} (placed {place:?}), ground {ground}, up {:?}, speed {}, touching {}",
+            b.up,
+            b.velocity.length(),
+            v.drive.last.touching
+        );
+        assert!((origin.truncate() - Vec3::from(place).truncate()).length() < 0.5, "near its placement");
+        assert!(b.up.z > 0.9, "upright: {:?}", b.up);
+        assert!(b.velocity.length() < 0.01, "at rest");
+        assert!(origin.z - ground > -0.25 && origin.z - ground < 0.3, "origin {} over ground {ground}", origin.z);
+        assert!(v.drive.last.touching >= 3, "on its wheels");
+    }
 }

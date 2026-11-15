@@ -23,9 +23,12 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net58` since Halo's shots carry their trigger
+   The network version is `net59` since who sits in which seat of Halo's
+   vehicles goes to every client (net part `halo_ce_vehicles`: a rider's
+   seat by the vehicle's map prop) and the party apps add Halo's vehicles
+   on its maps; `net58` (Halo's shots carry their trigger
    and target and its explosions, stuck projectiles and pickups are sent
-   to every client (net part `halo_ce_objects`); `net57` (TF2's guns
+   to every client: net part `halo_ce_objects`), `net57` (TF2's guns
    joined the party's ladders: their predicted state, the Minigun's spin
    and the guns' last shot; the flyers' launch offset), `net56` (Halo's
    players travel: its movement's and weapons' predicted state, its

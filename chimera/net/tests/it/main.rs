@@ -9,6 +9,7 @@
 mod asset_offer;
 mod clock_hitches;
 mod assets;
+mod carried;
 mod console_names;
 mod data_formats;
 mod dedicated;

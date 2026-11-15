@@ -34,6 +34,11 @@
 //!   after S run again (`core::predict`, `FirstTimePredicted` false: no
 //!   sounds). The drawn eye eases the jump out over `cl_smoothtime`
 //!   (`smooth_view`) unless it's a teleport.
+//!   A player carried by something of the server's (`core::Carried`: a
+//!   vehicle's seat; its movement suspended) isn't predicted: a differing
+//!   state is put back and replayed the same way (its weapons still are
+//!   predicted) but not counted an error (`NetGraph::taken_carried`) and not
+//!   eased; the game that carries it draws it where it rides.
 //!   When the server let in, spawned or killed the player since its last
 //!   state (`OwnState::alive` changed: a spawn point, the loadout, a
 //!   death drop) or our clock jumped since, its state is taken the same
@@ -379,6 +384,10 @@ pub struct NetGraph {
     pub checked: u64,
     pub errors: u64,
     pub resyncs: u64,
+    /// Server states taken as they came for a player carried by
+    /// something of the server's (`core::Carried`: not predicted, so not
+    /// compared).
+    pub taken_carried: u64,
     /// Position error of the last and the worst prediction error, m.
     pub last_error: f32,
     pub worst_error: f32,
@@ -932,6 +941,7 @@ fn reconcile(world: &mut World, player: Entity, server: OwnState, restart: Optio
     // What we predicted for S, when it differs: its position and the
     // components that differ.
     let mut error: Option<(Vec3, Vec<&'static str>)> = None;
+    let carried = world.get::<crate::core::Carried>(player).is_some();
     if let Some(i) = index {
         let ours = &world.resource::<PredictionHistory>().0[i];
         if ours.state == server.state {
@@ -939,7 +949,9 @@ fn reconcile(world: &mut World, player: Entity, server: OwnState, restart: Optio
             world.resource_mut::<PredictionHistory>().0.drain(..=i);
             return;
         }
-        if restart.is_none() {
+        // A carried player (`core::Carried`: a vehicle's seat) isn't
+        // predicted: the server's state is taken as it comes.
+        if restart.is_none() && !carried {
             let names = world
                 .resource::<PredictedComponents>()
                 .differing(&ours.state, &server.state);
@@ -1053,7 +1065,7 @@ fn reconcile(world: &mut World, player: Entity, server: OwnState, restart: Optio
     let smoothtime = world.resource::<PredictSettings>().smoothtime;
     let mut smoothing = *world.resource::<Smoothing>();
     let left = smoothing.offset(now, smoothtime) - jump;
-    smoothing = if left.length() > SNAP_SPEED * step {
+    smoothing = if carried || left.length() > SNAP_SPEED * step {
         Smoothing::default()
     } else {
         Smoothing { from: left, since: now }
@@ -1086,6 +1098,7 @@ fn reconcile(world: &mut World, player: Entity, server: OwnState, restart: Optio
                 );
             }
         }
+        None if carried && restart.is_none() => graph.taken_carried += 1,
         None => {
             graph.resyncs += 1;
             if world.resource::<PredictSettings>().showerror > 0 {

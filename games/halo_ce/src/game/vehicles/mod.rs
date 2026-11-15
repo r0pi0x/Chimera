@@ -11,7 +11,9 @@
 //!   bump into it, shots stop on it and do nothing to it: no vitality on the
 //!   disc), at its placement raised by half its bounding radius.
 //! - `seat_input` (authoritative): the use key (pressed) on foot near a
-//!   seat marker enters by the spec's seat search (`seats::best_seat`:
+//!   seat marker, by any game's character (anything with a movement slot:
+//!   a party app's CS:S or Combat Arms player too), enters by the spec's
+//!   seat search (`seats::best_seat`:
 //!   within 1 WU, slower than 0.1 WU/t, the vehicle turning slower than
 //!   0.1 rad/t and upright; an empty seat; a driver seat preferred by the
 //!   1.5 factor; seat flag 9 needs a driver); pressed again seated, the
@@ -25,9 +27,40 @@
 //!   to the prop's `Transform` (replicated to clients as the engine's other
 //!   moving props: `chimera_net`'s `NetProp`, the vehicle carrying
 //!   `PhysicsProp`; no new message).
-//! - `carry`: riders sit at their seat's marker (their movement skips them:
-//!   `Seated`), moving with the vehicle; the driver's camera is the seat's
-//!   camera track (`seats::track_offset`) as the character's `MapView`.
+//! - `sit` and `stand`: a rider takes `Seated`, the engine's `Carried`
+//!   (every game's movement skips it: its own movement suspended whatever
+//!   game's it is) and the replicated `NetSeat` in one move, and leaves
+//!   them in one (entering is rare: a component move, not a flag kept from
+//!   spawn); each counts a change of the server's (`core::rebase`).
+//! - `carry` (authoritative): riders sit at their seat's marker, upright,
+//!   their centre over it by their body's (Halo's biped's, or another
+//!   game's collider's half height), moving with the vehicle; the seat's
+//!   camera track (`seats::track_offset`) is the character's `MapView`.
+//! - `tidy` (every tick, every role): no stale seat: a rider that is gone
+//!   (a disconnect, a death that took the character away) or sits
+//!   elsewhere leaves its seat empty; a rider of a vehicle that is gone (a
+//!   map change) stands. `round_restart` (the engine's `RoundRestart`):
+//!   every rider stands and every placed vehicle is back at its placement,
+//!   at rest. Dying in a seat puts the rider out beside it (`seat_input`);
+//!   a driver gone leaves the vehicle coasting.
+//!
+//! **Network.** The vehicle is the server's: simulated there and sent as a
+//! moving prop; who sits where goes to every client as `NetSeat` (the
+//! vehicle by its map prop index, the seat) on the character (the
+//! `halo_ce_vehicles` network part). A client seats its copies by it
+//! (`seat_from_server`: `Seated` and `Carried`, its own player's movement
+//! suspended), poses its copy of each vehicle where it draws it
+//! (`follow_drawn`, `pose_from`), and each frame puts its own seated
+//! player in its seat of that drawn vehicle with the seat's camera at its
+//! own mouse look (`ride_drawn`, before the eye is placed); others are
+//! drawn as the server sends them (in their seats in its snapshots). The
+//! seated player isn't predicted: its client takes the server's state as
+//! it comes (`chimera_net`'s prediction skips the comparison for a
+//! `Carried` player; its weapons are still replayed), and its controls
+//! reach the vehicle on the server. So driving shows the input after the
+//! round trip, the command buffer (about two ticks) and the interpolation
+//! delay (`cl_interp`): about 100 ms plus the ping at the defaults; the
+//! look is at once.
 //! - `splatter`: a character touching a moving vehicle is pushed and takes
 //!   the globals' vehicle collision damage by the spec's rule (`HaloHit`,
 //!   area, owned by the driver), with the 90-tick grace after leaving it.
@@ -44,8 +77,11 @@
 //!   camera's focus is the seat marker raised 0.5 WU).
 //! - Wheels, steering and suspension are not shown on the model's nodes
 //!   (the model is drawn rigid, as the scenery is).
-//! - The seated state is not replicated: a networked client's own player
-//!   is not shown seated (the party apps come with stage 2).
+//! - The vehicle is not predicted on the driver's client (module doc,
+//!   "Network": its input shows after the round trip and the
+//!   interpolation delay).
+//! - Another game's rider sits upright with its standing hull, its feet at
+//!   the seat marker; its weapon stays in hand and works.
 //! - Other vehicles' contacts (mass point against mass point) and
 //!   vehicle-vehicle collision accumulators are not gathered; vehicles meet
 //!   each other's hulls through the ground query.
@@ -70,7 +106,8 @@ use self::place::Placed;
 use super::damage::HaloHit;
 use super::movement::{HaloMovement, MovementData};
 use super::vitality::{DamageEffects, ids};
-use crate::core::{Dead, Intent, MapView, SimClock, SimSet, Velocity, authoritative};
+use crate::core::{Carried, Dead, Intent, LocalPlayer, MapView, NetRole, SimClock, SimSet, Velocity, authoritative};
+use crate::slots::MovementSlot;
 use crate::map::{MapEntities, PhysicsProp, PropIndex, PushAway, contact_filter};
 
 /// Every vehicle document with its physics as the step reads it.
@@ -146,6 +183,17 @@ pub struct Seated {
     pub seat: usize,
 }
 
+/// Who sits where, as every machine hears it (replicated by the
+/// `halo_ce_vehicles` network part): the vehicle by its map prop index
+/// (`map::PropIndex`: the same node on every machine) and the seat. On
+/// the server it goes on and off with `Seated`; a client seats its own
+/// copies of the characters by it (`seat_from_server`).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct NetSeat {
+    pub prop: u32,
+    pub seat: u8,
+}
+
 /// The vehicle a character last left and when (engine seconds), for the
 /// splatter grace.
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
@@ -153,10 +201,6 @@ pub struct LastVehicle {
     pub vehicle: Entity,
     pub at: f64,
 }
-
-/// The use key's state last tick, per character (edge detection).
-#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
-pub struct UseHeld(pub bool);
 
 /// Halo's vehicles.
 pub struct HaloVehiclesPlugin;
@@ -191,21 +235,40 @@ impl Plugin for HaloVehiclesPlugin {
                 Ok(None)
             },
         );
-        app.init_resource::<VehicleDefs>().add_systems(
-            FixedUpdate,
-            (
-                attach,
-                (seat_input, simulate, splatter, rider_damage)
+        use chimera_net::net::parts::NetAppExt;
+        app.init_resource::<VehicleDefs>()
+            .net_part("halo_ce_vehicles", |app| {
+                use bevy_replicon::prelude::AppRuleExt;
+                app.replicate::<NetSeat>();
+            })
+            .add_observer(round_restart)
+            .add_systems(
+                FixedUpdate,
+                (
+                    attach,
+                    tidy,
+                    seat_from_server.run_if(on_client),
+                    (seat_input, simulate, splatter, rider_damage, carry)
+                        .chain()
+                        .run_if(authoritative),
+                    enter_when_ready.run_if(resource_exists::<EnterWhenReady>),
+                )
                     .chain()
-                    .run_if(authoritative),
-                carry,
-                enter_when_ready.run_if(resource_exists::<EnterWhenReady>),
+                    .after(SimSet::Movement)
+                    .before(SimSet::Weapons),
             )
-                .chain()
-                .after(SimSet::Movement)
-                .before(SimSet::Weapons),
-        );
+            .add_systems(
+                Update,
+                (follow_drawn, ride_drawn)
+                    .chain()
+                    .run_if(on_client)
+                    .before(crate::map::attached::EyePlaced),
+            );
     }
+}
+
+fn on_client(role: Option<Res<NetRole>>) -> bool {
+    role.is_some_and(|r| *r == NetRole::Client)
 }
 
 /// `halo_vehicle_throttle`: every driver's forward throttle held.
@@ -218,22 +281,22 @@ pub struct EnterWhenReady;
 
 fn enter_when_ready(
     players: Query<(Entity, &Transform), (With<crate::core::LocalPlayer>, Without<Seated>)>,
-    mut vehicles: Query<(Entity, &mut HaloVehicle)>,
+    mut vehicles: Query<(Entity, &mut HaloVehicle, Option<&PropIndex>)>,
     defs: Res<VehicleDefs>,
     mut commands: Commands,
 ) {
     let Some((p, at)) = players.iter().next() else { return };
     let best = vehicles
         .iter()
-        .filter_map(|(e, v)| {
+        .filter_map(|(e, v, _)| {
             let seat = defs.0[v.def].0.driver_seat().filter(|&s| v.riders[s].is_none())?;
             Some(((to_engine(v.drive.body.position) - at.translation).length(), e, seat))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0));
     let Some((_, ve, seat)) = best else { return };
-    if let Ok((_, mut v)) = vehicles.get_mut(ve) {
+    if let Ok((_, mut v, prop)) = vehicles.get_mut(ve) {
         v.riders[seat] = Some(p);
-        commands.entity(p).insert(Seated { vehicle: ve, seat });
+        sit(&mut commands, p, ve, seat, prop);
         commands.remove_resource::<EnterWhenReady>();
     }
 }
@@ -259,7 +322,10 @@ fn enter_nearest(w: &mut World) -> Result<String, String> {
         .map(|(_, e, s)| (e, s))
         .ok_or("no vehicle with an empty driver seat")?;
     w.get_mut::<HaloVehicle>(ve).ok_or("gone")?.riders[seat] = Some(p);
-    w.entity_mut(p).insert(Seated { vehicle: ve, seat });
+    let prop = w.get::<PropIndex>(ve).copied();
+    let mut commands = w.commands();
+    sit(&mut commands, p, ve, seat, prop.as_ref());
+    w.flush();
     Ok(format!("seated in {ve}"))
 }
 
@@ -383,33 +449,35 @@ fn seat_input(
             &Transform,
             &Velocity,
             Option<&Seated>,
-            Option<&mut UseHeld>,
-            Has<Dead>,
+            (Has<Dead>, Option<&crate::core::Health>),
         ),
-        With<HaloMovement>,
+        With<MovementSlot>,
     >,
+    props: Query<&PropIndex>,
     defs: Res<VehicleDefs>,
     clock: Res<SimClock>,
     mut commands: Commands,
+    // The use key's state last tick, per character (edge detection): kept
+    // here, not on the characters (no part put on every character of
+    // every game: a party's archetypes stay as they are).
+    mut held: Local<BTreeMap<Entity, bool>>,
 ) {
     let s = crate::game::METERS_PER_UNIT;
     let now = clock.now;
-    for (e, intent, t, vel, seated, held, dead) in &mut people {
-        let was = held.as_ref().is_some_and(|h| h.0);
-        match held {
-            Some(mut h) => {
-                if h.0 != intent.use_key {
-                    h.0 = intent.use_key;
-                }
-            }
-            None => {
-                commands.entity(e).insert(UseHeld(intent.use_key));
-            }
-        }
+    if vehicles.is_empty() {
+        held.clear();
+        return;
+    }
+    held.retain(|e, _| people.contains(*e));
+    for (e, intent, t, vel, seated, (dead, health)) in &mut people {
+        // Dead by the rules' mark or by its health (a game whose rules
+        // mark it later).
+        let dead = dead || health.is_some_and(|h| h.current <= 0.0);
+        let was = held.insert(e, intent.use_key).unwrap_or(false);
         let pressed = intent.use_key && !was;
         if let Some(seat) = seated.copied() {
             let Ok((ve, mut v)) = vehicles.get_mut(seat.vehicle) else {
-                commands.entity(e).remove::<Seated>();
+                stand(&mut commands, e);
                 continue;
             };
             let (d, phys) = &defs.0[v.def];
@@ -438,7 +506,7 @@ fn seat_input(
         match offer {
             seats::Offer::Enter(seat) => {
                 v.riders[seat] = Some(e);
-                commands.entity(e).insert(Seated { vehicle: ve, seat });
+                sit(&mut commands, e, ve, seat, props.get(ve).ok());
             }
             seats::Offer::Flip => {
                 v.drive.start_flip(centre);
@@ -470,10 +538,8 @@ fn exit(
     let out = v.world(phys, marker + Vec3::new(0.0, side * 1.0, 0.3));
     let at = to_engine(out);
     let velocity = to_engine(v.drive.body.velocity) * 30.0;
-    commands
-        .entity(e)
-        .remove::<Seated>()
-        .insert(LastVehicle { vehicle: ve, at: now });
+    stand(commands, e);
+    commands.entity(e).insert(LastVehicle { vehicle: ve, at: now });
     commands.queue(move |w: &mut World| {
         let Ok(mut ent) = w.get_entity_mut(e) else { return };
         if let Some(mut t) = ent.get_mut::<Transform>() {
@@ -496,7 +562,7 @@ fn exit(
 fn simulate(
     mut vehicles: Query<(Entity, &mut HaloVehicle, &mut Transform)>,
     drivers: Query<&Intent>,
-    characters: Query<(), With<HaloMovement>>,
+    characters: Query<(), With<Intent>>,
     defs: Res<VehicleDefs>,
     clock: Res<SimClock>,
     query: SpatialQuery,
@@ -551,7 +617,85 @@ fn simulate(
     }
 }
 
-/// Riders follow their seats; the driver's camera.
+/// A character into a seat: `Seated` with the engine's `Carried` (its
+/// movement suspended, whatever game's it is) and, for a map's vehicle, the
+/// replicated `NetSeat`, in one move; counted a change of the server's
+/// (`core::rebase`), so the client predicting it takes the new state as a
+/// restart, not an error.
+pub fn sit(commands: &mut Commands, e: Entity, vehicle: Entity, seat: usize, prop: Option<&PropIndex>) {
+    let seated = (Seated { vehicle, seat }, Carried(vehicle));
+    match prop {
+        Some(p) => commands.entity(e).insert((
+            seated,
+            NetSeat {
+                prop: p.0 as u32,
+                seat: seat as u8,
+            },
+        )),
+        None => commands.entity(e).insert(seated),
+    };
+    commands.queue(move |w: &mut World| crate::core::rebase(w, e));
+}
+
+/// A character out of its seat (`sit` undone, in one move).
+pub fn stand(commands: &mut Commands, e: Entity) {
+    if let Ok(mut ec) = commands.get_entity(e) {
+        ec.try_remove::<(Seated, Carried, NetSeat)>();
+    }
+    commands.queue(move |w: &mut World| crate::core::rebase(w, e));
+}
+
+/// Where a rider sits and the camera it views through: its centre (engine
+/// metres) for a body whose centre is `above` metres over its feet, and the
+/// seat's camera if the seat has one (module doc).
+fn ride(v: &HaloVehicle, d: &VehicleDef, phys: &PhysicsDef, seat: usize, intent: &Intent, above: f32) -> (Vec3, Option<MapView>) {
+    let marker = v.world(phys, v.seat_marker(d, seat));
+    let centre = to_engine(marker) + Vec3::Y * above;
+    let seat_def = &d.seats[seat];
+    let track = d.tracks.get(&seat_def.track);
+    let focus = match seat_def.camera_marker.to_lowercase() {
+        n if !n.is_empty() && v.markers.contains_key(&n) => v.world(phys, v.markers[&n]),
+        _ => marker + Vec3::Z * 0.5,
+    };
+    let third = seat_def.flags & (seat_flags::DRIVER | seat_flags::THIRD_PERSON_CAMERA | seat_flags::INVISIBLE) != 0;
+    let view = track.filter(|_| third).map(|track| {
+        let o = seats::track_offset(&track.points, intent.pitch);
+        let look = Quat::from_rotation_y(intent.yaw) * Vec3::NEG_Z;
+        let at = focus + to_halo_dir(look) * o.x + Vec3::Z * o.y;
+        MapView {
+            origin: to_engine(at),
+            rotation: Quat::from_rotation_y(intent.yaw) * Quat::from_rotation_x(intent.pitch),
+        }
+    });
+    (centre, view)
+}
+
+/// How far a rider's centre is over its feet (m): Halo's biped standing,
+/// or another game's character by its collider's height.
+fn centre_above(halo: bool, collider: Option<&Collider>, data: &MovementData) -> f32 {
+    match collider {
+        Some(c) if !halo => c.aabb(Vec3::ZERO, Quat::IDENTITY, 0.0).size().y / 2.0,
+        _ => data.centre_above_origin(0.0) * crate::game::METERS_PER_UNIT,
+    }
+}
+
+/// A rider's `MapView` made `want` (None: none).
+fn set_view(commands: &mut Commands, e: Entity, want: Option<MapView>, have: Option<&MapView>) {
+    match (want, have) {
+        (Some(w), Some(h)) if *h == w => {}
+        (Some(w), _) => {
+            commands.entity(e).insert(w);
+        }
+        (None, Some(_)) => {
+            commands.entity(e).remove::<MapView>();
+        }
+        (None, None) => {}
+    }
+}
+
+/// Riders follow their seats; the driver's camera (authoritative: a
+/// network client draws its own player with `ride_drawn`, the others as the
+/// server sends them).
 #[allow(clippy::type_complexity)]
 fn carry(
     vehicles: Query<&HaloVehicle>,
@@ -564,6 +708,7 @@ fn carry(
             &mut Velocity,
             Option<&mut Position>,
             Option<&MapView>,
+            (Has<HaloMovement>, Option<&Collider>),
         ),
         Without<HaloVehicle>,
     >,
@@ -572,51 +717,175 @@ fn carry(
     mut commands: Commands,
     mut gone: RemovedComponents<Seated>,
 ) {
-    let s = crate::game::METERS_PER_UNIT;
     for e in gone.read() {
         if let Ok(mut ec) = commands.get_entity(e) {
             ec.try_remove::<MapView>();
         }
     }
-    for (e, seat, intent, mut t, mut vel, pos, view) in &mut riders {
+    for (e, seat, intent, mut t, mut vel, pos, view, (halo, collider)) in &mut riders {
         let Ok(v) = vehicles.get(seat.vehicle) else { continue };
         let (d, phys) = &defs.0[v.def];
-        let marker = v.world(phys, v.seat_marker(d, seat.seat));
-        let centre = to_engine(marker + Vec3::Z * data.centre_above_origin(0.0));
+        let (centre, want) = ride(v, d, phys, seat.seat, intent, centre_above(halo, collider, &data));
         t.translation = centre;
         if let Some(mut p) = pos {
             p.0 = centre;
         }
-        vel.0 = to_engine(v.drive.body.velocity) * 30.0 / 1.0;
-        let _ = s;
-        let seat_def = &d.seats[seat.seat];
-        let track = d.tracks.get(&seat_def.track);
-        let focus = match d.seats[seat.seat].camera_marker.to_lowercase() {
-            n if !n.is_empty() && v.markers.contains_key(&n) => v.world(phys, v.markers[&n]),
-            _ => marker + Vec3::Z * 0.5,
-        };
-        let third =
-            seat_def.flags & (seat_flags::DRIVER | seat_flags::THIRD_PERSON_CAMERA | seat_flags::INVISIBLE) != 0;
-        let want = (third && track.is_some()).then(|| {
-            let o = seats::track_offset(&track.unwrap().points, intent.pitch);
-            let look = Quat::from_rotation_y(intent.yaw) * Vec3::NEG_Z;
-            let horizontal = to_halo_dir(look);
-            let at = focus + horizontal * o.x + Vec3::Z * o.y;
-            MapView {
-                origin: to_engine(at),
-                rotation: Quat::from_rotation_y(intent.yaw) * Quat::from_rotation_x(intent.pitch),
-            }
-        });
-        match (want, view) {
-            (Some(w), Some(have)) if *have == w => {}
-            (Some(w), _) => {
-                commands.entity(e).insert(w);
-            }
-            (None, Some(_)) => {
-                commands.entity(e).remove::<MapView>();
-            }
-            (None, None) => {}
+        vel.0 = to_engine(v.drive.body.velocity) * 30.0;
+        set_view(&mut commands, e, want, view);
+    }
+}
+
+/// No stale seat (every role): a vehicle's rider that is gone or no longer
+/// sits there (a disconnect, a death that took the character away, a map
+/// change) leaves its seat empty, and a character seated in a vehicle that
+/// is gone (a map change) stands.
+fn tidy(
+    mut vehicles: Query<(Entity, &mut HaloVehicle)>,
+    seated: Query<(Entity, &Seated)>,
+    role: Option<Res<NetRole>>,
+    mut commands: Commands,
+) {
+    for (ve, mut v) in &mut vehicles {
+        let stale: Vec<usize> = v
+            .riders
+            .iter()
+            .enumerate()
+            .filter(|(i, r)| r.is_some_and(|e| !seated.get(e).is_ok_and(|(_, s)| s.vehicle == ve && s.seat == *i)))
+            .map(|(i, _)| i)
+            .collect();
+        for i in stale {
+            v.riders[i] = None;
         }
+    }
+    let client = role.is_some_and(|r| *r == NetRole::Client);
+    for (e, s) in &seated {
+        if vehicles.get(s.vehicle).is_err() {
+            if client {
+                commands.entity(e).try_remove::<(Seated, Carried)>();
+            } else {
+                stand(&mut commands, e);
+            }
+        }
+    }
+}
+
+/// A network client seats its copies of the characters as the server's
+/// `NetSeat` says (its own player too: its movement suspended).
+#[allow(clippy::type_complexity)]
+fn seat_from_server(
+    people: Query<(Entity, Option<&NetSeat>, Option<&Seated>), Or<(With<NetSeat>, With<Seated>)>>,
+    mut vehicles: Query<(Entity, &PropIndex, &mut HaloVehicle)>,
+    mut commands: Commands,
+) {
+    for (e, net, seated) in &people {
+        let want = net.and_then(|n| {
+            vehicles
+                .iter()
+                .find(|(_, p, _)| p.0 == n.prop as usize)
+                .map(|(ve, ..)| Seated {
+                    vehicle: ve,
+                    seat: n.seat as usize,
+                })
+        });
+        if want.as_ref() == seated {
+            continue;
+        }
+        if let Some(old) = seated
+            && let Ok((_, _, mut v)) = vehicles.get_mut(old.vehicle)
+            && v.riders.get(old.seat).copied().flatten() == Some(e)
+        {
+            v.riders[old.seat] = None;
+        }
+        match want {
+            Some(s) => {
+                if let Ok((_, _, mut v)) = vehicles.get_mut(s.vehicle)
+                    && s.seat < v.riders.len()
+                {
+                    v.riders[s.seat] = Some(e);
+                }
+                commands.entity(e).insert((s, Carried(s.vehicle)));
+            }
+            None => {
+                commands.entity(e).try_remove::<(Seated, Carried, MapView)>();
+            }
+        }
+    }
+}
+
+/// A network client's vehicles: their state is where they are drawn (the
+/// server's snapshots, `chimera_net`'s props), so seats and cameras are
+/// worked out from what the player sees.
+fn follow_drawn(mut vehicles: Query<(&mut HaloVehicle, &Transform)>, defs: Res<VehicleDefs>) {
+    for (mut v, t) in &mut vehicles {
+        let phys = &defs.0[v.def].1;
+        let mut b = v.drive.body;
+        pose_from(&mut b, t, phys.center_of_mass);
+        if b.position != v.drive.body.position || b.forward != v.drive.body.forward || b.up != v.drive.body.up {
+            v.drive.body = b;
+        }
+    }
+}
+
+/// A body posed where its prop's `Transform` (the model origin, engine
+/// space) puts it: `engine_rotation` and the origin undone.
+pub fn pose_from(b: &mut Body, t: &Transform, center_of_mass: Vec3) {
+    let axis = |v: Vec3| to_halo_dir(t.rotation * crate::game::maps::space::direction(v.to_array()));
+    b.forward = axis(Vec3::X).normalize_or(Vec3::X);
+    b.up = axis(Vec3::Z).normalize_or(Vec3::Z);
+    b.position = to_halo(t.translation) + b.frame() * center_of_mass;
+}
+
+/// A network client's own seated player, each frame: in its seat of the
+/// vehicle as drawn, viewing through the seat's camera at its own look (not
+/// predicted: the vehicle is the server's; module doc "Network").
+#[allow(clippy::type_complexity)]
+fn ride_drawn(
+    vehicles: Query<&HaloVehicle>,
+    mut me: Query<
+        (Entity, &Seated, &Intent, &mut Transform, Option<&MapView>, Has<HaloMovement>, Option<&Collider>),
+        (With<LocalPlayer>, Without<HaloVehicle>),
+    >,
+    defs: Res<VehicleDefs>,
+    data: Res<MovementData>,
+    mut commands: Commands,
+) {
+    for (e, seat, intent, mut t, view, halo, collider) in &mut me {
+        let Ok(v) = vehicles.get(seat.vehicle) else { continue };
+        let (d, phys) = &defs.0[v.def];
+        let (centre, want) = ride(v, d, phys, seat.seat, intent, centre_above(halo, collider, &data));
+        t.translation = centre;
+        set_view(&mut commands, e, want, view);
+    }
+}
+
+/// A round restart (`core::RoundRestart`) on the authority: every rider
+/// stands and every map vehicle is back at its placement, at rest.
+#[allow(clippy::type_complexity)]
+fn round_restart(
+    _restart: On<crate::core::RoundRestart>,
+    mut vehicles: Query<(&mut HaloVehicle, &PropIndex, &mut Transform)>,
+    seated: Query<Entity, With<Seated>>,
+    entities: Option<Res<MapEntities>>,
+    defs: Res<VehicleDefs>,
+    role: Option<Res<NetRole>>,
+    mut commands: Commands,
+) {
+    if role.is_some_and(|r| *r == NetRole::Client) {
+        return;
+    }
+    for e in &seated {
+        stand(&mut commands, e);
+    }
+    let placed: Vec<Placed> = entities
+        .map(|m| m.entities.iter().filter_map(Placed::from_entity).collect())
+        .unwrap_or_default();
+    for (mut v, index, mut t) in &mut vehicles {
+        let Some(p) = placed.iter().find(|p| p.prop == index.0) else { continue };
+        let def = v.def;
+        let (d, phys) = &defs.0[def];
+        *v = spawn_state(d, phys, def, p);
+        t.translation = to_engine(v.drive.body.origin(phys.center_of_mass));
+        t.rotation = engine_rotation(&v.drive.body);
     }
 }
 
@@ -645,10 +914,10 @@ fn splatter(
             Entity,
             &Transform,
             &mut Velocity,
-            &mut HaloMovement,
+            Option<&mut HaloMovement>,
             Option<&LastVehicle>,
         ),
-        (Without<Seated>, Without<Dead>, Without<HaloVehicle>),
+        (With<Intent>, Without<Seated>, Without<Dead>, Without<HaloVehicle>),
     >,
     defs: Res<VehicleDefs>,
     data: Res<MovementData>,
@@ -673,7 +942,7 @@ fn splatter(
             let n = ((centre - v.drive.body.position).normalize_or_zero() + Vec3::Z * PUSH_LIFT).normalize_or(Vec3::Z);
             let dv = (n * vv.length().max(PUSH_MIN_SPEED) + vv) / 2.0;
             // A biped takes half a push (movement.md).
-            super::movement::push(Some(&mut me), &mut pvel, to_engine(dv / 2.0) * 30.0);
+            super::movement::push(me.as_deref_mut(), &mut pvel, to_engine(dv / 2.0) * 30.0);
             let biped_v = to_halo_dir(pvel.0) / (s * 30.0);
             let grace = last.is_some_and(|l| l.vehicle == ve && now - l.at < SPLAT_EXIT_GRACE);
             if splatters(vv, biped_v, grace)
