@@ -15,6 +15,16 @@
 //! plus the remaining part), only its part into the plane is decided by the
 //! plane, and the plane comes from the contact point and normal.
 //!
+//! The clip follows the spec's detailed rule: per contact the remaining
+//! motion is the tick's displacement scaled by the product of the
+//! (1 - t) so far (never the already clipped motion), clipped to the new
+//! plane as the candidate; a candidate going into the first stored plane
+//! makes the line of the new and that plane (and a line going into the
+//! second stored plane stops at the three planes' point), else one going
+//! into the second stored plane makes their line, else the clip set is
+//! the new plane alone. The clip set is kept newest first. The virtual
+//! contact of two planes lies in the steepest one, with the spec's signs.
+//!
 //! A shape the spec's mover does not count as hit (the remaining motion
 //! does not go into it by more than epsilon: sliding along a floor it
 //! touches) still stops an engine sweep that starts touching it; the sweep
@@ -68,7 +78,7 @@ pub struct Moved {
     pub p: Vec3,
     /// The contacts' normals in order (real ones, then the virtual one).
     pub contacts: Vec<Vec3>,
-    /// The final clip set.
+    /// The final clip set, the newest plane first.
     pub clip: Vec<Plane>,
 }
 
@@ -129,6 +139,8 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
     // Surfaces the sweep was restarted off (module doc).
     let mut lifted: Vec<Plane> = Vec::new();
     let mut rem = motion;
+    // The product of the (1 - t) so far.
+    let mut scale = 1.0;
     let mut restarts = 0;
     let settle = |p: &mut Vec3, lifted: &mut Vec<Plane>| {
         for l in lifted.drain(..) {
@@ -173,6 +185,7 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
             lifted.push(plane);
             p += rem * t + n * LIFT;
             rem *= 1.0 - t;
+            scale *= 1.0 - t;
             continue;
         }
         restarts = 0;
@@ -180,36 +193,40 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
         p += n * (plane.offset - p.dot(n));
         settle(&mut p, &mut lifted);
         contacts.push(n);
-        rem *= 1.0 - t;
-        rem -= n * rem.dot(n);
-        let into: Vec<Plane> = clip.iter().copied().filter(|q| rem.dot(q.normal) < -eps).collect();
-        match into.as_slice() {
-            [] => clip = vec![plane],
-            [a] => {
-                let e = a.normal.cross(n).normalize_or_zero();
-                if e == Vec3::ZERO {
-                    clip = vec![plane];
-                    continue;
-                }
-                rem = e * rem.dot(e);
-                let third = clip
-                    .iter()
-                    .copied()
-                    .find(|q| q.normal != a.normal && rem.dot(q.normal) < -eps);
-                if let Some(c) = third {
-                    p = onto_three(p, c, *a, plane);
-                    rem = Vec3::ZERO;
-                    clip = vec![c, *a, plane];
-                } else {
-                    p = onto_two(p, *a, plane);
-                    clip = vec![*a, plane];
-                }
-            }
-            [a, b, ..] => {
-                p = onto_three(p, *a, *b, plane);
+        // The clip (module doc): the tick's motion scaled by every (1 - t) so far, never the
+        // clipped one, clipped to the new plane is the candidate; it is checked against the
+        // stored planes, newest first.
+        scale *= 1.0 - t;
+        let v = motion * scale;
+        let candidate = v - n * v.dot(n);
+        let line = |other: Plane| {
+            let e = n.cross(other.normal).normalize_or_zero();
+            (e != Vec3::ZERO).then(|| e * v.dot(e))
+        };
+        let first = clip.first().copied();
+        let second = clip.get(1).copied();
+        let into = |q: Option<Plane>, m: Vec3| q.filter(|q| m.dot(q.normal) < -eps);
+        if let Some(f) = into(first, candidate)
+            && let Some(m) = line(f)
+        {
+            if let Some(s) = into(second, m) {
+                p = onto_three(p, plane, f, s);
                 rem = Vec3::ZERO;
-                clip = vec![*a, *b, plane];
+                clip = vec![plane, f, s];
+            } else {
+                p = onto_two(p, plane, f);
+                rem = m;
+                clip = vec![plane, f];
             }
+        } else if let Some(s) = into(second, candidate)
+            && let Some(m) = line(s)
+        {
+            p = onto_two(p, plane, s);
+            rem = m;
+            clip = vec![plane, s];
+        } else {
+            rem = candidate;
+            clip = vec![plane];
         }
     }
     settle(&mut p, &mut lifted);
@@ -232,17 +249,16 @@ pub fn virtual_contact(clip: &[Plane]) -> Option<Vec3> {
             .min_by(|a, b| a.y.total_cmp(&b.y))
     };
     let n = match clip {
-        [a, b] => {
-            let e = a.normal.cross(b.normal);
+        // Newest first (`Moved::clip`).
+        [new, old] => {
+            let c = new.normal.dot(old.normal);
             match steepest(clip) {
-                Some(s) => {
-                    // Of e x N_s and N_s x e, the one pointing out of the
-                    // crease (the spec's "keeping the steepest plane's
-                    // orientation" is unclear: our choice).
-                    let c = e.cross(s);
-                    if c.dot(a.normal + b.normal) < 0.0 { -c } else { c }
-                }
+                // In the steepest plane, perpendicular to the crease (spec section 5: these
+                // two signs, its worked example in the tests).
+                Some(s) if s == new.normal => old.normal - new.normal * c,
+                Some(_) => new.normal - old.normal * c,
                 None => {
+                    let e = new.normal.cross(old.normal);
                     let len2 = e.length_squared();
                     if len2 < 1e-12 {
                         return None;
