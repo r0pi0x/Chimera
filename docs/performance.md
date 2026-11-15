@@ -4509,6 +4509,263 @@ is fewer systems iterating characters to find nothing changed
 (`follow_lead` each tick, the physics shadow's `attach`, HL2:DM's
 `wear`), not tried here.
 
+## First join download, 2026-11-14
+
+The playtest's first join downloaded "300+ MB". Measured from the asset
+service's access log (seven testers, A to G; the log names batches, not
+records, so files come from the manifests), the published manifests
+(CS:S 25338318, Combat Arms 26236938, HL2:DM 24600434) and an
+offscreen Ultimate Gun Game client with no installs reading a scratch copy
+of the store with `CHIMERA_VFS_LOG` on.
+
+**Headline.** A tester with no installs fetched **476 MB** before the
+first match (stored, i.e. transferred; 1.0 GB plain): **376 MB at
+startup** (`base` of all three games, before the join can start) and 100
+MB at the join (`map/de_dust2`, the ladder's sets). It is what the code
+asks for: the startup sum matches the three `base` sets to the MB (and
+testers A and G, who had CS:S and HL2:DM already, fetched exactly Combat
+Arms' `base`: 3,324 records, 268.2 MB). Of the 376 MB, about **12 MB is
+needed before the join** (UI, fonts, data), about **146 MB in a match**,
+**38 MB depends on the ladder** and **181 MB was never read** in two
+seeded matches (music, other ladders' guns and bodies, files only
+checked for). Better zstd saves 11% more.
+
+What made it slow was the link: the service sent about 6 MB/s in all
+(5-7 MB/s over every 100 s window of the joins), so six testers starting
+at once got 1.2-1.5 MB/s each and took **4-6 minutes** for the startup
+sets (B 248 s, E 310 s, F 327 s, D 376 s), joining the first
+match after it had started. After the join each client prefetched the
+pool's other 137 maps (`offer.later`) at 2 MB/s for the whole session:
+**1.5-2.8 GB per tester, 16.2 GB served in all**, and on the same link
+as later joiners' foreground fetches (4.5 MB/s still going out an hour
+in).
+
+| Tester | first request (s after 21:00 UTC) | manifests fetched | MB before the join | on-demand MB (session) | whole session |
+|---|---|---|---|---|---|
+| A | 2232 | CA only | 269 (CA `base`, 13 s) | 38 | 1.6 GB |
+| B | 2260 | all three | 376 at 248 s, 476 at 312 s | 56 | 2.7 GB |
+| C | 2264 | HL2:DM, CA | 29, then 359 at 520 s | 52 | 2.0 GB |
+| D | 2271 | all three | 377 at 376 s | 60 | 2.8 GB |
+| E | 2273 | all three | 376 at 310 s, 476 at 362 s | 54 | 2.8 GB |
+| F | 2306 | all three | 376 at 327 s, 476 at 384 s | 56 | 2.8 GB |
+| G | 6034 (late) | CA only | 269 (CA `base`, 64 s) | 8 | 1.5 GB |
+
+### What the first join fetches, by set
+
+The order a fresh client fetches in (new records only: the store
+deduplicates by id, so HL2:DM's `hl2/` files CS:S already brought, and
+`players` mostly in `base`, cost nothing again):
+
+| Set | files | new records | stored MB (new) | plain MB (new) | the set alone, stored |
+|---|---|---|---|---|---|
+| cs_source `base` | 1,766 | 1,747 | 63.4 | 110.5 | 63.4 |
+| combat_arms `base` | 3,423 | 3,324 | 268.2 | 699.0 | 268.2 |
+| hl2dm `base` | 1,560 | 892 | 44.8 | 69.4 | 62.0 |
+| **startup** | | 5,963 | **376.4** | 879.0 | |
+| `players` (CS:S, CA, HL2:DM) | 68 / 257 / 169 | 0 / 38 / 0 | 0.9 | 1.2 | 12.9 / 65.9 / 19.0 |
+| cs_source `map/de_dust2` | 2,490 | 757 | 79.5 | 117.4 | 142.0 |
+| the ladder's `weapon/`, `character/`, `parts/` (13 rungs) | | | about 20 (the log's 476 less the above) | | CA medians beyond `base`: weapon 0.85, character 0.62, parts 1.17 MB |
+| **first join** | | | **about 476** | about 1,020 | |
+
+By file type (startup + `players` + `map/de_dust2`, 456.8 MB; the
+ladder's 20 MB are mostly `.ltb` and `.dtx`):
+
+| Type | files | plain MB | stored MB | stored / plain |
+|---|---|---|---|---|
+| textures, VTF (CS:S, HL2:DM) | 756 | 181.3 | 116.2 | 0.64 |
+| - of them DXT1 / DXT5 / BGR888 (uncompressed) | 368 / 309 / 72 | 68.8 / 53.5 / 56.1 | 46.3 / 26.0 / 42.1 | 0.67 / 0.49 / 0.75 |
+| textures, DTX (CA) | 1,511 | 173.4 | 85.4 | 0.49 |
+| - of them DXT1 / DXT5 / DXT3 / 32-bit | 468 / 169 / 31 / 843 | 96.4 / 25.8 / 9.8 / 41.5 | 63.6 / 9.2 / 3.4 / 9.2 | 0.66 / 0.36 / 0.35 / 0.22 |
+| models and animations, LTB (CA) | 528 | 371.3 | 84.6 | 0.23 |
+| sounds, MP3 (CA music) | 57 | 74.0 | 71.7 | 0.97 |
+| sounds, WAV | 1,315 | 82.1 | 65.8 | 0.80 |
+| models, MDL/VVD/VTX/PHY (Source) | 726 | 38.0 | 17.9 | 0.47 |
+| maps (`de_dust2.bsp`, its nav) | 2 | 16.9 | 7.1 | 0.42 |
+| fonts (TTF) | 22 | 20.4 | 5.0 | 0.25 |
+| data (txt, res, vmt, gms, xml, fxf, ...) | 1,837 | 40.1 | 3.0 | 0.08 |
+
+The BGR888 VTFs are `de_dust2`'s brush normal maps (`*_normal.vtf`,
+0.8-0.9 MB each, stored): uncompressed RGB, which zstd barely shrinks.
+
+### What each `base` holds and what a match reads
+
+Read logs: an offscreen `ultimate_gun_game` (playtest profile), no
+installs, no service, `CHIMERA_ASSET_USE_INSTALL=0` on a hard-linked copy
+of the service's store, `--map cs_source:de_dust2` and `--map
+combat_arms:snowvalley`, 6,000 frames each with bots (each run its own
+ladder). The recorder logs a file the load only checks for
+(`FileSource::contains`) as if it read it; for these runs it was patched
+locally (not committed) to log those apart. Four earlier runs without the
+patch read the same files of CS:S and HL2:DM. A client loads the whole
+match before its first frame (a 2-frame run reads what a 9,000-frame run
+reads), so (a) and (b) are told apart by what the files are, not by when.
+
+Classes: (a) before the join (UI, fonts, data, material scripts); (b)
+read in a match; (b/c) read in one run only (the map's or the ladder's);
+(c) never read in either run.
+
+| Game | (a) | (b) | (b/c) | (c) | `base` |
+|---|---|---|---|---|---|
+| CS:S | 1.9 | 39.9 | 21.0 | 0.6 | 63.4 |
+| Combat Arms | 7.9 | 74.3 | 7.5 | 178.5 | 268.2 |
+| HL2:DM (its own records) | 2.5 | 48.5 | 9.4 | 1.6 | 62.0 |
+| **all three, deduplicated** | **12.2** | **145.6** | **37.8** | **180.8** | **376.4** |
+
+**CS:S `base`** (63.4 MB) was made from a run on `de_dust2`, so a
+`de_dust2` match reads nearly all of it:
+- (a) 1.9 MB: `materials/vgui` (97 files), `materials/console` (the menu
+  background, 1.0 MB), scripts, `.res`, `.vmt`.
+- (b) 39.9 MB: player models (`models/player`, `materials/models/player`:
+  the `players` set, 12.9 MB), the physics and impact sounds a map
+  precaches (`sound/physics`, 342 files, 15.1 MB: source/engine's
+  `content::sound` decodes every entry the map uses at load), particles,
+  decals, footsteps, shells (10.5 MB), hostage and radio sounds (1.4 MB).
+- (b/c) 21.0 MB: every one of the 29 guns' view and world models,
+  materials and sounds (`models/weapons`, `materials/models/weapons`,
+  `sound/weapons`), all also in their `weapon/<id>` sets: a ladder holds a
+  few.
+
+**Combat Arms `base`** (268.2 MB):
+- (a) 7.9 MB stored (71 MB plain): `fonts/` (3 TTFs, 2.5 MB),
+  `attributes/` (1.0), `language_pack/language_eng.txt` (0.6),
+  `ui_hud_*`, `ui_scr_result`, `gms/` (763 small files), `clientfx.fxf`.
+- (b) 74.3 MB: the two shared body skeletons and animations
+  (`chars_m_body/st_w_child.ltb` 27.0 MB and `st_m_child.ltb` 11.9 MB
+  stored: the shared skeletons and animations the bodies are children
+  of, as `heavy::npc_bodies` checks), the stock bodies'
+  textures, heads and faces (`chars_t_body` 19.3, `chars_t_head`,
+  `chars_t_face`), the default hands, the loading screen, the effects the
+  match plays, the music's start track (5.4).
+- (b/c) 7.5 MB: what one ladder or map read and the other didn't.
+- (c) 178.5 MB:
+  - the music beyond the start track, `loose/bgm/` (61 MP3s, 66.9 MB):
+    the party playlist plays one track at a time (`music::director`);
+  - other ladders' guns, 371 files, 53.0 MB (`guns_t_pv_*`, `guns_t_hh`,
+    `guns_m_pv_*`): view and held textures and models of guns earlier
+    sessions' ladders fetched, all also in their `weapon/<id>` or
+    `parts/<id>` sets, which the offer names when a ladder has the gun;
+  - other ladders' bodies, 78 files, 13.8 MB (also in `character/<id>`);
+  - 172 body models only checked for, 25.4 MB stored (102 MB plain):
+    `rungs::missing_bodies` asks `install_has` of each of the 217 body
+    records' model files; the recorder logged those checks as reads, so
+    the logs `base` was made from put them in it (of the 197 body files
+    in `base`, 17 are read);
+  - sounds of events neither match had: `guns_snd_impacts/explosions`
+    (5.8), `fist`, `melee`, `bowgun_impacts`, `projectile`, `ui_snd`
+    (win and lose, 1.7), `chars_snd`, `fx/debris` (16.5 MB in all,
+    read as they play);
+  - other maps' loading images (1.4), UI files never read (1.7).
+
+**HL2:DM `base`** (62.0 MB; 44.8 MB beyond CS:S's records):
+- (a) 2.5 MB: `resource/linux_fonts` (7 TTFs, 2.0 MB), scripts.
+- (b) 48.5 MB: the 19 player models (`models/humans`,
+  `materials/models/humans`, `combine_soldier`, `police`: the `players`
+  set, 19.0 MB, read at load in both runs),
+  physics sounds (15.4, mostly CS:S's records), effects, the
+  headcrab-canister and weapon sounds every match plays (11.5), NPC and
+  vehicle sounds (2.6).
+- (b/c) 9.4 MB: all 12 guns (also in `weapon/<id>`).
+- (c) 1.6 MB never read.
+
+### Compression
+
+Records are zstd level 3, one frame per file, no dictionary
+(`chimera_assets::store::LEVEL`). Each file of the 456.8 MB sample
+compressed alone as a record is (zstd 1.5.7, one thread; decode is one
+process per batch of files, plain MB per second over all types):
+
+| Type | plain | level 3 (now) | 9 | 19 | 22 + `--long=27` | dict + 3 | dict + 19 |
+|---|---|---|---|---|---|---|---|
+| VTF | 181.3 | 116.2 | 111.3 | 102.7 | 102.7 | 117.5 | 102.4 |
+| DTX | 173.4 | 85.4 | 81.3 | 73.8 | 73.7 | 82.9 | 75.5 |
+| LTB | 371.3 | 85.2 | 79.5 | 71.3 | 67.9 | 82.1 | 68.6 |
+| MP3 | 74.0 | 71.7 | 71.5 | 70.8 | 70.8 | 71.5 | 70.7 |
+| WAV | 82.1 | 65.9 | 65.3 | 62.0 | 62.0 | 65.0 | 61.5 |
+| Source models | 38.0 | 17.9 | 17.5 | 16.4 | 16.4 | 16.8 | 15.1 |
+| map | 16.9 | 7.2 | 4.9 | 4.1 | 4.1 | - | - |
+| fonts | 20.4 | 5.0 | 4.5 | 4.1 | 4.1 | 4.7 | 3.9 |
+| data | 40.1 | 3.0 | 2.5 | 2.2 | 2.2 | 2.4 | 1.6 |
+| **all** | 997 | **457.5** | 438.3 (-4%) | **407.5 (-11%)** | 404.1 (-12%) | 447.0 (-2%) | 403.6 (-12%) |
+| encode, s a GB plain (one thread) | | 12 | 25 | 410 | 575 | 11 | 320 |
+| decode, ms a MB plain | | 1.7 | 1.8 | 2.0 | 2.2 | 1.8 | 2.0 |
+
+- **Level 19 saves 11%** (50 MB of this join) for the same decode cost
+  (2 ms a MB plain, about 2 s for the whole join on one core, against
+  minutes of download). Packing costs 0.4 s a MB on one thread: a whole
+  publish (about 20 GB plain) is about 2.3 CPU hours, minutes over the
+  host's threads, once per publish; only new records are packed.
+- `--long` helps only the big LTBs (another 3.4 MB) and needs a 128 MB
+  window to decode: not worth it.
+- Trained dictionaries (256 KB a type) gain little here because the
+  bytes are in big files: trained on half the files and tried on the
+  other half, data shrinks 21% at level 3 (28% at 19), Source models 4%,
+  VTFs 3% (0% at 19), WAVs 1%. On the whole join, 1-2 MB. The
+  dictionaries would also have to be published and pinned with the
+  manifest.
+- Textures: the DXT data is already compressed (DXT1 at 0.66, zstd
+  keeps it as is, level 19 gets 10% more); nothing lossless does much
+  better. The 56 MB of uncompressed normal maps would be 9 MB as BC5/BC1,
+  but the record is then not the file (its SHA-256 and the loaders'
+  input change): a different design, not a codec setting.
+- WAV as FLAC (`-8`, lossless): 81.0 MB of WAVs to 53.5 MB (zstd 3: 65.0),
+  12 MB less on this join; 20 files failed to encode and about 100 more
+  did not come back bit-exact, so it needs a fallback and a decoder in the client.
+  Not worth it before the cuts below.
+
+### Recommendations, by MB saved for a first join
+
+The first join today: 476 MB (376 at startup). Estimates for the same
+join (`de_dust2`, three games), each beside the ones above it:
+
+1. **Music out of `base`** (Combat Arms' `loose/bgm/`, keep the start
+   track): **-67 MB**. The `music` set exists already; prefetch it after
+   the join or fetch each track as the playlist reaches it.
+2. **Other ladders' guns and bodies out of Combat Arms' `base`**: **-67
+   MB** (53.0 guns, 13.8 bodies). They are in `weapon/`, `parts/`,
+   `character/` sets the offer names for the ladder that needs them;
+   `base` got them from earlier sessions' on-demand logs.
+3. **zstd level 19** for records (republish; old clients read new records
+   as before): **-11% of what is left**, -50 MB today, about -25 MB after
+   1-2, 4-6. A one-line change (`store::LEVEL`) plus a repack.
+4. **Leave out files only checked for**: **-25 MB** (172 body models).
+   Make the recorder log `contains` apart from reads (a fifth column or
+   its own lines) and `chimera_pack` leave them out of sets; publish
+   Combat Arms' `base` again. With `CHIMERA_VFS_LOG` on, a served
+   mount's `contains` now downloads the file to hash it, too.
+5. **Every gun's files out of CS:S's and HL2:DM's `base`**: **-30 MB**,
+   less the ladder's few CS:S and HL2:DM guns (their `weapon/<id>` sets,
+   1-2 MB each): about **-25 MB** net.
+6. **Event sounds and images not every match needs to the background**
+   (Combat Arms' impact, fist, melee and explosion sounds, win and lose,
+   debris, other maps' loading images; CS:S and HL2:DM files never
+   read): **-22 MB**, prefetched after the join; a miss in a match is
+   one small on-demand fetch.
+7. **HL2:DM's 19 player models** (19 MB) and **CS:S's** (12.9 MB) are
+   read at load in both runs: up to **-32 MB** if the party's loaders
+   asked for them only when a player wears one (a code change; whether a
+   rung can wear them was not checked here).
+8. Dictionaries, `--long`, FLAC: 1-12 MB each, each a format change: not
+   now.
+
+1, 2, 4, 5 and 6 are set changes only (`chimera_pack` and a republish,
+no client change): **476 MB to about 270 MB**, with level 19 **about
+245 MB**, with 7 about 215 MB; the startup part from 376 MB to about 165
+MB. The other 200+ MB still arrive, in the background after the join or
+when a ladder or a map needs them.
+
+Not bytes but time: the link was the limit. The six first joiners'
+startup fetches alone filled it (6.7 MB/s in all over their first 100 s,
+before any prefetch): 6 x 376 MB at 6 MB/s is about 6 minutes, as
+measured. With the startup at 165 MB it would have been about 2.7
+minutes, at level 19 about 2.4. After that, the prefetch of the whole
+pool (`offer.later`: 137 maps at 2 MB/s for every client from its join
+on) kept the link busy for the session (4.5 MB/s an hour in), so a late
+joiner (G) or a level change's sets shared it with everyone's
+prefetches. Holding prefetches while anyone has a foreground fetch (the
+service sees both: the ` on-demand` mark, the batches of a join), or
+prefetching only the next vote's maps, gives those the whole link and
+saves most of the 16 GB.
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,
