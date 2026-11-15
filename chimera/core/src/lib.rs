@@ -11,7 +11,8 @@
 //! packs and kill facts (`announcer`), minigame cue packs (`cues`), queries
 //! kept between calls of exclusive code (`query_cache`), values worked out
 //! once and kept by their owner (`memo`), values made on first use
-//! (`later`). Code
+//! (`later`), a session's diagnostics (`diagnostics`: the rolling log,
+//! health lines, crash capture). Code
 //! everything else uses and that changes rarely, in its own crate so an
 //! edit higher up doesn't recompile it.
 //!
@@ -25,6 +26,7 @@ pub mod console_names;
 pub mod console_scope;
 pub mod core;
 pub mod cues;
+pub mod diagnostics;
 pub mod env;
 pub mod game_log;
 pub mod game_parts;

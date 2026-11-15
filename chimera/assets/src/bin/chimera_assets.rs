@@ -33,8 +33,10 @@ usage: chimera_assets [--store <dir>] <command>
   login [<url> <token>]     check a token with the asset service; print the [assets] lines
   fetch <game> [<set>...]   fetch a build's manifest and its sets' records (every file without a set)
   lock [<game>...]          pin the service's newest builds in assets.lock
-  feedback list [--status <s>] [--kind bug|feedback] [--json]
+  feedback list [--status <s>] [--kind bug|feedback|crash] [--json]
                             the feedback reports this machine's asset service received
+  feedback crashes [--json] crash reports grouped by signature (a panic's top frames,
+                            a native crash's exception, an unclean exit), biggest first
   feedback show <id>        one report: meta, text, entries, history
   feedback set <id> <status> [--group <id>] [--reason <text>] [--fixed-in <commit>]
                             statuses: new triaged accepted rejected needs-info duplicate fixed
@@ -281,14 +283,15 @@ fn feedback(store: &Store, mut args: Vec<String>) -> Result<(), String> {
                 println!("{} reports in {}", list.len(), inbox.root().display());
                 for m in list {
                     println!(
-                        "{}  {}  {:<10} {:<8} {:<28} {:<14} {}",
+                        "{}  {}  {:<10} {:<8} {:<28} {:<14} {}{}",
                         m.id,
                         m.received_utc,
                         m.status.as_str(),
                         m.kind,
                         m.account.split('#').next().unwrap_or(""),
                         m.map,
-                        m.summary
+                        m.summary,
+                        if m.signature_key.is_empty() { String::new() } else { format!("  [sig {}]", m.signature_key) }
                     );
                 }
             }
@@ -319,6 +322,27 @@ fn feedback(store: &Store, mut args: Vec<String>) -> Result<(), String> {
             let status = Status::parse(status).ok_or(format!("unknown status {status:?}"))?;
             let meta = inbox.set_status(id, "cli", &Change { status: Some(status), group, reason, fixed_in })?;
             println!("{} is {}", meta.id, meta.status.as_str());
+            Ok(())
+        }
+        ["crashes"] => {
+            let groups = inbox.crash_groups();
+            if json {
+                let v: Vec<_> = groups
+                    .iter()
+                    .map(|(key, sig, reports)| {
+                        serde_json::json!({"key": key, "signature": sig, "count": reports.len(), "ids": reports.iter().map(|m| &m.id).collect::<Vec<_>>()})
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?);
+            } else {
+                println!("{} crash signatures", groups.len());
+                for (key, sig, reports) in &groups {
+                    println!("{key}  {:>3}x  last {}  {sig}", reports.len(), reports[0].received_utc);
+                    for m in reports.iter().take(5) {
+                        println!("    {}  {}  {}  {}", m.id, m.status.as_str(), m.build, m.account.split('#').next().unwrap_or(""));
+                    }
+                }
+            }
             Ok(())
         }
         ["mute", account] => inbox.set_muted(account, true).map(|()| println!("muted {account}")),

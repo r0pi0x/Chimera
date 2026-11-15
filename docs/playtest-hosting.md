@@ -618,6 +618,22 @@ which clears the binding.
   takes it back); revoking its token stops them too. `--on-report
   <command>` (or `on_report` under `[feedback]` in the local config)
   runs a command with the new report's folder, e.g. a ping.
+- **Crash reports** (kind `crash`, in builds that have them): a tester's
+  game that panicked, crashed (Windows: with a `minidump.dmp`), lost its
+  GPU, or died without a clean exit (a freeze, a power loss) sends one
+  at its next start (`cl_crash_reports`, ask by default). Besides the
+  usual entries: `backtrace.txt`, `health.txt` (the session's memory,
+  frame and tick times every 10 s), `log.txt` (the session's last 3000
+  log and console lines). `feedback list --kind crash`, `feedback
+  crashes` (grouped by signature: a panic's top frames, a native
+  exception's code, `unclean exit`; the biggest group first); the page's
+  Crash filter does the same.
+- **The server's own log**: every 20 s a `health ...` line (memory,
+  players, worst ping and loss, map, tick times) and a `tick_stats ...`
+  line on its console, and both in
+  `<data_local>/chimera/logs/server-<time>.log` with everything else it
+  logged (the last five servers' runs; a run that died is named on stderr
+  at the next start).
   A tester whose report can't go (no token) has it in
   `%LOCALAPPDATA%\chimera\feedback\outbox\` and can zip that folder.
 - Older builds' bug reports arrive as zipped `bugreports` folders and

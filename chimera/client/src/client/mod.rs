@@ -21,6 +21,7 @@ pub mod audio;
 pub mod binds;
 pub mod capture;
 pub mod feedback;
+pub mod crash;
 pub mod chat;
 pub mod console;
 pub mod debug;
@@ -533,6 +534,8 @@ impl PluginGroup for ClientPlugins {
             .add(debug_views::DebugViewsPlugin)
             .add(capture::CapturePlugin)
             .add(feedback::FeedbackPlugin)
+            .add(chimera_core::diagnostics::DiagnosticsPlugin::default())
+            .add(crash::CrashPlugin)
             .add(offscreen::OffscreenPlugin)
             .add(exit_drain::ExitDrainPlugin)
             .add(perf::PerfPlugin)

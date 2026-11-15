@@ -13,7 +13,9 @@
 //! - **Storage:** `<server store>/server/feedback/<yyyy-mm-dd>/<id>/`: the
 //!   zip's entries unpacked, `report.zip`, `meta.toml` (`Meta`: account,
 //!   address, time, size, build, app, kind, map, a summary line, status,
-//!   group, reason, fixed_in) and `history.log` (one line per change:
+//!   group, reason, fixed_in; a crash's `signature` and `signature_key`,
+//!   `session::signature`, for grouping: `crash_groups`) and
+//!   `history.log` (one line per change:
 //!   time, who, from, to, why). A report is moved into place whole (a
 //!   rename), so a half-written one is never listed.
 //! - **Statuses** (`Status`): `new`, `triaged`, `accepted`, `rejected`,
@@ -143,6 +145,13 @@ pub struct Meta {
     /// The day folder (`yyyy-mm-dd`).
     #[serde(default)]
     pub day: String,
+    /// A crash's signature (`session::signature`: a panic's top frames, a
+    /// native crash's exception, "unclean exit") and its short key: crash
+    /// reports with one key are one problem.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub signature: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub signature_key: String,
 }
 
 /// An answer to an upload.
@@ -252,6 +261,20 @@ impl Inbox {
         out
     }
 
+    /// Crash reports by signature: (key, signature, reports newest
+    /// first), the group with the most reports first.
+    pub fn crash_groups(&self) -> Vec<(String, String, Vec<Meta>)> {
+        let mut groups: Vec<(String, String, Vec<Meta>)> = Vec::new();
+        for m in self.list().into_iter().filter(|m| m.kind == "crash") {
+            match groups.iter_mut().find(|g| g.0 == m.signature_key) {
+                Some(g) => g.2.push(m),
+                None => groups.push((m.signature_key.clone(), m.signature.clone(), vec![m])),
+            }
+        }
+        groups.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then(b.2[0].received.cmp(&a.2[0].received)));
+        groups
+    }
+
     pub fn meta(&self, id: &str) -> Option<Meta> {
         toml::from_str(&fs::read_to_string(self.find(id)?.join("meta.toml")).ok()?).ok()
     }
@@ -354,6 +377,12 @@ impl Inbox {
             .unwrap_or_default();
         let info = &opened.info;
         let day = utc_day(now);
+        let signature = if info.kind == bundle::Kind::Crash {
+            clean(&super::session::signature(text("backtrace.txt").as_deref(), text("log.txt").as_deref(), &info.text), 300)
+        } else {
+            String::new()
+        };
+        let signature_key = if signature.is_empty() { String::new() } else { super::session::signature_key(&signature) };
         let meta = Meta {
             id: id.to_string(),
             account: clean(account, 100),
@@ -369,6 +398,8 @@ impl Inbox {
             install_id: clean(&info.install_id, 64),
             status: Status::New,
             day: day.clone(),
+            signature,
+            signature_key,
             ..Meta::default()
         };
         match self.store(&day, &meta, &opened, body) {

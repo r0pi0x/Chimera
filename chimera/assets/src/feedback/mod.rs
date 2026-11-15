@@ -14,6 +14,10 @@
 //!   (`server`): validation, limits, mute, one folder per report with
 //!   `meta.toml` and `history.log`, statuses; `page`: the triage page and
 //!   its JSON on the plain listener only (this machine).
+//! - `session`: a running game's or server's diagnostics: the rolling log
+//!   (`<data_local>/chimera/logs/`), the unclean-exit marker, the panic
+//!   hook and (Windows) the minidump filter, crash bundles (`Kind::Crash`)
+//!   and their signatures for grouping.
 //!
 //! `[feedback]` in the local config (`LocalFeedback`): `url`, `token`,
 //! `fingerprint` name a service by hand (developers); `on_report` is the
@@ -25,6 +29,7 @@ pub mod inbox;
 pub mod outbox;
 pub mod page;
 pub mod redact;
+pub mod session;
 pub mod zip;
 
 use serde::Deserialize;

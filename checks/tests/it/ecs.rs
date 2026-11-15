@@ -57,6 +57,21 @@ const ONE_OFF_SCHEDULES: &[&str] = &[
 /// events, observers or systems (the step named).
 const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
+        "chimera/core/src/diagnostics.rs",
+        "HealthParts",
+        "a tool: each layer adds what it knows to the health line (memory, frames, net, map), read every few seconds",
+    ),
+    (
+        "chimera/core/src/diagnostics.rs",
+        "HealthExtras",
+        "a tool: lines after the health line (the server's tick_stats, a console readout)",
+    ),
+    (
+        "chimera/core/src/diagnostics.rs",
+        "ContextParts",
+        "a tool: what the game is doing (map, rung, position), read each second for a crash report",
+    ),
+    (
         "chimera/client/src/client/feedback.rs",
         "FeedbackCapture",
         "the report's screenshot is a capture of the window (the renderer's `Screenshot` entity); tests swap in a fake frame",
@@ -282,6 +297,7 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("apps/party_kit/src/settings.rs", "a menu: its clicks as console lines and cvars, its drawing from the console's binds"),
     ("apps/party_kit/src/main_menu.rs", "a menu: its clicks as console lines and cvars, the map loads it follows"),
     ("chimera/client/src/client/console.rs", "the console and map loading"),
+    ("chimera/core/src/diagnostics.rs", "a tool: the health line and the context read the whole world (as the console's commands do), at most every second, into the session's log"),
     ("chimera/client/src/client/debug_ui.rs", "a tool"),
     ("chimera/client/src/client/net.rs", "the connection's state"),
     ("chimera/core/src/console.rs", "the console"),

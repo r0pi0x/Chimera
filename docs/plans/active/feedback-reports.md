@@ -333,7 +333,7 @@ each small but together a day or two, and typed reports already work.
 | P1 release | A new playtest build for testers and server (all on one `NET_VERSION`); docs/playtest.md and playtest-hosting.md updated | user's go | `tools/post-push-tests.sh`; a pre-flight report from a clean Windows PC |
 | **P2** voice | 4: recording, `voice.ogg`, consent, the transcription hook, the page's player | 1-2 days | Ogg pages read back by a decoder; size and time caps; consent off hides the button |
 | **P3** depth | a panic hook writing a crash bundle sent on the next start; a rolling buffer of the last 30 s of received snapshots and own input (a mini demo `demosim` can replay); a report id sent to the game server so its log marks the moment; duplicate signatures; mirroring accepted groups to Forgejo; retention | days, separable | each with its own test |
-| P3b | crash reporting (playtest 7 request): a panic or native crash writes a bundle (backtrace, log tail, versions, GPU and OS, map and rung; Windows minidumps) sent or queued on the next start | with P3 | a forced panic leaves a bundle that the outbox sends |
+| P3b | crash reporting (playtest 7 request): a panic or native crash writes a bundle (backtrace, log tail, versions, GPU and OS, map and rung; Windows minidumps) sent or queued on the next start; the rolling session log, health lines, unclean-exit detection (section 13) | built 2026-11-14 (branch `crash-diag`) | a forced panic leaves a bundle that the outbox sends; section 13's |
 | P4 | the autonomous loop of 5.6 | later | |
 
 Docs to change with P1: docs/playtest.md ("Reporting a bug": F10),
@@ -561,3 +561,103 @@ with the next release (all on one `NET_VERSION`; the user's go).
    minutes during the playtest; the report text is data, never
    instructions.
 
+
+## 13. P3b: crash and session diagnostics (2026-11-14)
+
+Why: in the playtest of 2026-11-14 a tester's PC went down mid-game and
+nothing was left to say why. Plan, then as built.
+
+**Plan.**
+
+1. **The rolling log** (P1's missing `log.txt`): every `tracing` line at
+   INFO and above and every console line, through the secret filter
+   first, into a ring of the last 5000 lines and appended, one write
+   each, to `<data_local>/chimera/logs/<prefix>-<utc time>.log` (prefix
+   `session` for a game, `server`, `offscreen` for a capture run), synced
+   to disk every 2 s while lines come; at 4 MB the file starts over from
+   the ring; the last 5 sessions of a prefix kept. Bundles get `log.txt`
+   from the ring.
+2. **Health lines** every 10 s in a game (20 s on a server): `health
+   up= rss= peak= avail=<free>/<total> commit=<used>/<limit>
+   tick=<p50>/<p99>ms tick_instr= frame=<p50>/<p99>ms frame_max=
+   gpu=<allocated>/<reserved> ping= loss= resyncs= errors= jumps= map=
+   rung= entities=` (key=value, no spaces), so the last lines before a
+   death show memory pressure or a stall. The GPU number is wgpu's
+   allocator report (this process's VRAM); the driver's total isn't
+   asked (DXGI's budget is a later step).
+3. **Crash capture:** a panic hook (the first panic: `backtrace.txt` with
+   the message, place, thread and stack, the log's tail, the health
+   lines, `game.txt` from the context the game keeps current each second:
+   map, minigame, rung, server, position; `system.txt`: OS, CPUs, GPU,
+   driver, backend, window); on Windows an unhandled-exception filter
+   writing a minidump (`MiniDumpWriteDump` through windows-sys, already
+   in the tree: stacks, thread info, modules; no heap), compiled for
+   `x86_64-pc-windows-gnu` and msvc alike; Bevy's `RenderErrorHandler`
+   replaced: a device lost or out of memory is logged, bundled and quits
+   as before. New bundle entries `backtrace.txt`, `health.txt`,
+   `minidump.dmp` (its home folders' names scrubbed in UTF-8 and UTF-16,
+   lengths kept); kind `crash`.
+4. **Unclean exits:** a marker `<prefix>-<time>.running` (app, build,
+   net version, the log's and the dump's names) written at the start and
+   held locked by the process (`File::try_lock`: the OS lets go however
+   the process dies), removed at a clean exit (`AppExit`). At the next
+   start a marker nobody holds is a session that died (crash, freeze,
+   power loss, blue screen). `cl_crash_reports` (ask, always, never;
+   ask): ask shows a Signal notice on the main menu, "The last session
+   ended unexpectedly. Send a report?" (Send, Always send, Not now);
+   always queues it; never settles it. The report is the held crash
+   bundle when the session made one (`feedback/held/<id>.zip`, moved to
+   the outbox on Send), else one built from that session's log (tail,
+   health lines, last context and system lines, the minidump).
+5. **Server:** the dedicated server starts its own session (`server-`),
+   and every 20 s prints and logs a `health ...` line (players, worst
+   ping and loss, map, memory, ticks) and a `tick_stats ...` line, so a
+   playtest's server log has tick costs and memory over time.
+6. **Triage:** the receiver computes a crash's signature (a panic's top
+   three frames of our code and its place; `native <exception code>`; a
+   render error's type; `unclean exit`) and a 12-hex key into
+   `meta.toml`; `chimera_assets feedback crashes` groups by it, `list
+   --kind crash` filters; the page filters by kind and signature, opens
+   `backtrace.txt` and offers `minidump.dmp` as a download;
+   `/feedback/admin/crashes` is the groups as JSON.
+
+Privacy: every log line passes `redact::line` before the ring and the
+disk (no tokens, keys, addresses, home folders in the file either); the
+bundle writer filters again. A minidump is binary: only its home-folder
+names are scrubbed; its stacks may hold a secret that was on them
+(stated in `session`'s shortcuts).
+
+**As built.**
+
+- `chimera_assets::feedback::session` (no Bevy): `Session` (ring, file,
+  sync thread, marker, `crash`, `end`), `Previous` (`report`, `send`,
+  `settle`), `install_panic_hook`, `native` (Windows' filter),
+  `scrub_dump`, `signature`/`signature_key`, `CrashPolicy` and
+  `set_policy`. `bundle`: `Kind::Crash`, the three entries,
+  `CRASH_LOG_LINES` (3000). `inbox::Meta::signature`/`signature_key`,
+  `Inbox::crash_groups`; the page and the CLI's `feedback crashes`.
+- `chimera_core::diagnostics`: `start` (the session, the hooks; binaries
+  only), `data_root` (`CHIMERA_DATA_DIR` names another data folder),
+  `SessionLayer`/`log_layer`, `DiagnosticsPlugin` (health lines on
+  `chimera:health_interval`, `HealthParts`, `HealthExtras`,
+  `ContextParts`, the console's lines, the clean exit), `HealthLine`
+  (`parse`); `metrics::memory::usage` (process RSS and peak, system
+  available and commit: /proc on Linux, `K32GetProcessMemoryInfo` and
+  `GlobalMemoryStatusEx` on Windows).
+- `chimera_client::client::crash`: `CrashReports`, `CrashSetting`
+  (`chimera:cl_crash_reports`, archived), `CrashAction`, the client's
+  health and context parts, the system line, the render error handler;
+  `crash_report [send|always|dismiss]`, `crash_test
+  <panic|native|render>`. `app::run` starts the session
+  (`start_session`; an `--offscreen` run logs as `offscreen-*` and offers
+  nothing unless `CHIMERA_CRASH_NOTICE=1`). The feedback report's
+  `log.txt` and `health.txt` are the session's.
+- `chimera_net::dedicated`: `ServerHealthPlugin` (in `ServerPlugin`),
+  the session in `run` (a dead last session's log named on stderr).
+- `party_kit::crash_signal`: the notice; `ui_scene crash
+  [ended|crashed|sent|off]`.
+- Left: Linux native crashes (a signal handler: the marker and log tell,
+  no stack); DXGI's VRAM budget on Windows; symbolizing minidumps on the
+  host (a `minidump-stackwalk` run, with the release's PDBs or DWARF);
+  sending a dedicated server's own crash reports; a Settings row for
+  `cl_crash_reports` (the console and the notice's Always set it).

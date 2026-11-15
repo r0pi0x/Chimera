@@ -219,6 +219,118 @@ pub fn big_blocks_mapped() {
 /// `big_blocks_mapped`'s threshold: glibc's starting one is 128 KB.
 pub const MMAP_THRESHOLD: usize = 4 << 20;
 
+/// The process's and the system's memory as a health line says it
+/// (`diagnostics`): cheap enough for every few seconds (Linux: two small
+/// files of /proc; Windows: two calls).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Usage {
+    /// Resident (working set) bytes, and the most they have been.
+    pub rss: u64,
+    pub peak: u64,
+    /// The system's physical memory and what is available of it.
+    pub total: u64,
+    pub available: u64,
+    /// Memory committed system-wide, and the limit (RAM plus page file
+    /// or swap): near the limit, allocations fail.
+    pub commit: u64,
+    pub commit_limit: u64,
+}
+
+/// `Usage` now (zeros where the OS can't tell).
+pub fn usage() -> Usage {
+    os_usage().unwrap_or_default()
+}
+
+#[cfg(target_os = "linux")]
+fn os_usage() -> Option<Usage> {
+    let kb = |text: &str, key: &str| -> u64 {
+        text.lines()
+            .find_map(|l| l.strip_prefix(key))
+            .and_then(|v| v.trim().trim_end_matches("kB").trim().parse::<u64>().ok())
+            .map_or(0, |v| v * 1024)
+    };
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    Some(Usage {
+        rss: kb(&status, "VmRSS:"),
+        peak: kb(&status, "VmHWM:"),
+        total: kb(&meminfo, "MemTotal:"),
+        available: kb(&meminfo, "MemAvailable:"),
+        commit: kb(&meminfo, "Committed_AS:"),
+        commit_limit: kb(&meminfo, "CommitLimit:"),
+    })
+}
+
+#[cfg(windows)]
+fn os_usage() -> Option<Usage> {
+    #[repr(C)]
+    #[derive(Default)]
+    struct ProcessMemoryCounters {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+    }
+    #[repr(C)]
+    #[derive(Default)]
+    struct MemoryStatusEx {
+        length: u32,
+        memory_load: u32,
+        total_phys: u64,
+        avail_phys: u64,
+        total_page_file: u64,
+        avail_page_file: u64,
+        total_virtual: u64,
+        avail_virtual: u64,
+        avail_extended_virtual: u64,
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentProcess() -> isize;
+        fn K32GetProcessMemoryInfo(process: isize, counters: *mut ProcessMemoryCounters, cb: u32) -> i32;
+        fn GlobalMemoryStatusEx(status: *mut MemoryStatusEx) -> i32;
+    }
+    let mut p = ProcessMemoryCounters { cb: std::mem::size_of::<ProcessMemoryCounters>() as u32, ..Default::default() };
+    let mut m = MemoryStatusEx { length: std::mem::size_of::<MemoryStatusEx>() as u32, ..Default::default() };
+    // SAFETY: the current process's pseudo-handle and live structs with
+    // their sizes set.
+    let (ok_p, ok_m) = unsafe { (K32GetProcessMemoryInfo(GetCurrentProcess(), &mut p, p.cb), GlobalMemoryStatusEx(&mut m)) };
+    let mut u = Usage::default();
+    if ok_p != 0 {
+        u.rss = p.working_set_size as u64;
+        u.peak = p.peak_working_set_size as u64;
+    }
+    if ok_m != 0 {
+        u.total = m.total_phys;
+        u.available = m.avail_phys;
+        u.commit_limit = m.total_page_file;
+        u.commit = m.total_page_file.saturating_sub(m.avail_page_file);
+    }
+    Some(u)
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
+fn os_usage() -> Option<Usage> {
+    None
+}
+
+/// Bytes short: `812M`, `1.1G` (a health line's).
+pub fn short_size(b: u64) -> String {
+    if b >= 10 << 30 {
+        format!("{:.0}G", b as f64 / (1u64 << 30) as f64)
+    } else if b >= 1 << 30 {
+        format!("{:.1}G", b as f64 / (1u64 << 30) as f64)
+    } else {
+        format!("{}M", b >> 20)
+    }
+}
+
 /// Bytes as gigabytes or megabytes.
 pub fn size(b: u64) -> String {
     if b >= 1 << 30 {
