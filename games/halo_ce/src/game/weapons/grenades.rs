@@ -27,8 +27,18 @@
 //! goes down: the most characters seen); a grenade item adds one up to
 //! the globals' maximum (4).
 //!
-//! Known shortcuts: no button to change the grenade kind (the current kind
-//! is the frag while any are left, else the plasma grenade); the starting
+//! The selected kind (`Throw::selected`: projectiles.md 15, hud.md 10):
+//! the frag at a new life (the plasma grenade when only that is carried),
+//! changed by the rotate-grenades button (the named action
+//! `SWITCH_ACTION`, one change per press, riding the command's action
+//! bits) to the other kind when it has any, else not at all; a throw takes
+//! the selected kind (none when its count is 0), the last one thrown moves
+//! the choice to the other kind when that has any, and a grenade picked
+//! up while the selected kind is out becomes the selected kind
+//! (`Throw::pick_up`). The specs name the control and the HUD's "current
+//! type" but not these three rules: they are the port's.
+//!
+//! Known shortcuts: the starting
 //! equipment's grenade flags and the game types' grenade options are not
 //! read (the port's games are generic slayer); the thrown grenade's spin
 //! (presentation) is not kept.
@@ -40,6 +50,9 @@ use super::{explode::Explosions, params::Projectile};
 
 /// The grenade button's named action.
 pub const GRENADE_ACTION: &str = "grenade";
+
+/// The rotate-grenades button's named action.
+pub const SWITCH_ACTION: &str = "grenade_switch";
 
 /// data/grenades.toml.
 pub const DATA: &str = include_str!("../../../data/grenades.toml");
@@ -128,6 +141,9 @@ pub struct Throw {
     pub kind: u8,
     /// The counts carried (frag, plasma).
     pub counts: [u8; 2],
+    /// The selected kind (0 frag, 1 plasma): what a press throws and the
+    /// HUD shows.
+    pub selected: u8,
 }
 
 impl Throw {
@@ -136,14 +152,36 @@ impl Throw {
         self.frame.is_some()
     }
 
-    /// The kind a press throws: frags while any are left.
+    /// A throw state for a new life with these counts: the frag selected,
+    /// or the plasma grenade when only that is carried.
+    pub fn new(counts: [u8; 2]) -> Self {
+        Self { counts, selected: if counts[FRAG] == 0 && counts[PLASMA] > 0 { PLASMA as u8 } else { FRAG as u8 }, ..default() }
+    }
+
+    /// The selected kind (the HUD's, even at a count of 0).
+    pub fn selected(&self) -> usize {
+        usize::from(self.selected).min(PLASMA)
+    }
+
+    /// The kind a press throws: the selected one, while any are left.
     pub fn current(&self) -> Option<usize> {
-        if self.counts[FRAG] > 0 {
-            Some(FRAG)
-        } else if self.counts[PLASMA] > 0 {
-            Some(PLASMA)
-        } else {
-            None
+        let k = self.selected();
+        (self.counts[k] > 0).then_some(k)
+    }
+
+    /// The rotate-grenades press: the other kind when it has any.
+    pub fn switch(&mut self) {
+        let other = PLASMA - self.selected();
+        if self.counts[other] > 0 {
+            self.selected = other as u8;
+        }
+    }
+
+    /// A grenade of `kind` picked up (the count already raised): it
+    /// becomes the selected kind when the selected one has none.
+    pub fn pick_up(&mut self, kind: usize) {
+        if self.counts[self.selected()] == 0 {
+            self.selected = kind.min(PLASMA) as u8;
         }
     }
 
@@ -158,6 +196,9 @@ impl Throw {
                 let kind = self.kind as usize;
                 if f == d.created_frame {
                     self.counts[kind] = self.counts[kind].saturating_sub(1);
+                    if self.counts[kind] == 0 && self.counts[PLASMA - kind.min(PLASMA)] > 0 {
+                        self.selected = (PLASMA - kind.min(PLASMA)) as u8;
+                    }
                     out.push(ThrowEvent::Created(kind));
                 }
                 if f == d.key_frame {

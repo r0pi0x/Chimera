@@ -145,6 +145,7 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
     ("r", "+reload"),
     ("f", "+melee"),
     ("g", "+grenade"),
+    ("q", "+grenade_switch"),
     ("e", "+use"),
     ("tab", "+showscores"),
 ];
@@ -154,7 +155,7 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
 /// (`weapons::systems::MELEE_ACTION`, `weapons::grenades::GRENADE_ACTION`),
 /// as in `DEFAULT_BINDS`. No party game has a throw button of its own (the
 /// other games' grenades are weapons in a slot), so Halo's is its own.
-pub const BUNDLE_BINDS: &[(&str, &str)] = &[("f", "+melee"), ("g", "+grenade")];
+pub const BUNDLE_BINDS: &[(&str, &str)] = &[("f", "+melee"), ("g", "+grenade"), ("q", "+grenade_switch")];
 
 /// Halo's parts, after `crate::SimPlugins`: the game registered (`INFO`),
 /// its movement (`movement`), its players' vitality (`vitality`), its

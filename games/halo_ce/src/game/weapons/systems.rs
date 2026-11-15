@@ -132,6 +132,10 @@ pub struct HaloHands {
     /// The grenade button was down on the last Halo tick (a throw starts on
     /// a press).
     pub grenade_held: bool,
+    /// The rotate-grenades button was down since the last Halo tick, and
+    /// on it (a change per press).
+    pub switch_button: bool,
+    pub switch_held: bool,
     /// The grenades and the throw.
     pub throw: Throw,
     /// The counts were given for this life.
@@ -793,6 +797,7 @@ pub fn run(
     let server = role.as_deref().is_none_or(|r| *r != NetRole::Client);
     let bit = |name: &str| actions.as_deref().map_or(0, |a| a.bit(name));
     let (melee_bit, zoom_bit, grenade_bit) = (bit(MELEE_ACTION), bit(ZOOM_ACTION), bit(grenades::GRENADE_ACTION));
+    let switch_bit = bit(grenades::SWITCH_ACTION);
     *most = (*most).max(holders.iter().count() as u32);
     let players = *most;
     for (owner, intent, inv, at, state, vel, health, mut hands) in &mut holders {
@@ -805,7 +810,7 @@ pub fn run(
             hands.armed = false;
         } else if !hands.armed {
             hands.armed = true;
-            hands.throw = Throw { counts: grenades.start(grenades.cap(players)), ..default() };
+            hands.throw = Throw::new(grenades.start(grenades.cap(players)));
         }
         // The inputs seen since the last Halo tick.
         hands.fire |= intent.fire;
@@ -813,6 +818,7 @@ pub fn run(
         hands.melee_button |= intent.actions & melee_bit != 0;
         hands.reload |= intent.reload;
         hands.grenade_button |= grenade_bit != 0 && intent.actions & grenade_bit != 0;
+        hands.switch_button |= switch_bit != 0 && intent.actions & switch_bit != 0;
         if n == 0 {
             continue;
         }
@@ -834,6 +840,10 @@ pub fn run(
             // The grenade throw's state.
             let busy = hands.melee > 0 || hands.throw.busy();
             let press = hands.grenade_button && !hands.grenade_held;
+            if hands.switch_button && !hands.switch_held && alive && !hands.throw.busy() {
+                hands.throw.switch();
+            }
+            hands.switch_held = hands.switch_button;
             hands.grenade_held = hands.grenade_button;
             let allowed = alive
                 && inv
@@ -1044,6 +1054,7 @@ pub fn run(
         hands.melee_button = false;
         hands.reload = false;
         hands.grenade_button = false;
+        hands.switch_button = false;
         // The zoom as the camera's field of view (weapons.md 12): the nominal angle over the
         // magnification, as the renderer turns it (`view::camera_fov`).
         let zoomed = inv

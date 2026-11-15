@@ -291,7 +291,8 @@ impl Plugin for HaloWeaponsPlugin {
         chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(app, "halo_ce data/display_names.toml", DISPLAY_NAMES);
         app.intent_action(systems::MELEE_ACTION)
             .intent_action(systems::ZOOM_ACTION)
-            .intent_action(grenades::GRENADE_ACTION);
+            .intent_action(grenades::GRENADE_ACTION)
+            .intent_action(grenades::SWITCH_ACTION);
         app.insert_resource(grenades::GrenadeData::load()).init_resource::<pickups::ItemClock>();
         app.on_every_character::<HaloHands>();
         app.add_message::<HaloFired>()
