@@ -23,10 +23,12 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net59` since Halo's players carry the grenade
-   kind they have selected (the rotate-grenades button, `+grenade_switch`,
-   rides the command's action bits; the kind is in the predicted state);
-   `net58` (Halo's shots carry their trigger
+   The network version is `net60` since a dead Halo player's body is an
+   object of its own sent to every client (its death animation, colour and
+   fall: net part `halo_ce_corpses`); `net59` (Halo's players carry the
+   grenade kind they have selected (the rotate-grenades button,
+   `+grenade_switch`, rides the command's action bits; the kind is in the
+   predicted state)), `net58` (Halo's shots carry their trigger
    and target and its explosions, stuck projectiles and pickups are sent
    to every client: net part `halo_ce_objects`), `net57` (TF2's guns
    joined the party's ladders: their predicted state, the Minigun's spin
