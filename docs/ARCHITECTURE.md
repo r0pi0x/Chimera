@@ -278,7 +278,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   "")`), the 13 multiplayer maps' names and their conversion
   (`game::maps`, `game::MAP_LOADER`: a map cache file's structure BSP,
   shaders, bitmaps, lightmap pages packed into one atlas, collision BSP,
-  player starts and sky fog as `MapData` in metres, through the
+  player starts, sky fog, the sky model as a 3D skybox and the scenery
+  as props with their collision, as `MapData` in metres, through the
   converted-map cache), `SimPlugins`, `game::HaloPlugins` (the
   registration, Halo's movement `halo_ce:movement`,
   specs/halo_ce/movement.md: `game::movement`, a pill moved once a tick

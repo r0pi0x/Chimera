@@ -21,8 +21,10 @@
 //! - `surfaces`: material types as the engine's surface names
 //!   (data/surfaces.toml);
 //! - `spawns`: the player starts as spawns and yaws;
-//! - `sky`: fog, a flat background, and the seams for the sky model and
-//!   scenery.
+//! - `objects`: render models as meshes, the scenery placements as props
+//!   with their collision;
+//! - `sky`: fog, a flat background, the sky model as a 3D skybox, and the
+//!   scenery's light.
 //!
 //! `MapLoadOptions::textures` off (the lean load) keeps every texture a
 //! placeholder of its size, everything else identical. Halo brings no kit
@@ -36,6 +38,7 @@ pub mod collision;
 pub mod geometry;
 pub mod lightmap;
 pub mod materials;
+pub mod objects;
 pub mod sky;
 pub mod space;
 pub mod spawns;
@@ -57,6 +60,7 @@ use crate::{
     mount::Mount,
 };
 
+use self::objects::{Dest, Pending};
 use super::{GAME, INFO, MULTIPLAYER_MAPS};
 
 /// Halo's maps from the install (`map::MapLoader`), for an app's
@@ -143,7 +147,8 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
         ..Default::default()
     };
     if bsps > 1 {
-        map.warnings.push(format!("{bsps} structure BSPs: only the first is converted"));
+        map.warnings
+            .push(format!("{bsps} structure BSPs: only the first is converted"));
     }
     // The game's output is clamped, not tonemapped (`lightmap`).
     map.look.tonemapping = false;
@@ -155,16 +160,35 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
     let level = geometry::meshes(&bsp, &pages, packed.as_ref()).map_err(|e| format!("render geometry: {e}"))?;
     map.lightmap = packed.map(|p| p.map);
 
-    report(0.45, "Textures");
+    report(0.4, "Collision");
+    let level_collision = blam_formats::collision::read_level(&file, 0).map_err(|e| format!("collision BSP: {e}"))?;
+    collision::add(&level_collision, &mut map).map_err(|e| format!("collision BSP: {e}"))?;
+
+    report(0.45, "Scenery");
+    let level_sky = sky::level_sky(&file, &scenario, &mut map.warnings);
+    let mut pending: Vec<Pending> = level
+        .into_iter()
+        .map(|m| Pending {
+            mesh: m.mesh,
+            shader: m.shader,
+            lit: m.lit,
+            dest: Dest::Level,
+        })
+        .collect();
+    pending.extend(sky::sky_model(&file, level_sky.as_ref(), &mut map));
+    let light = sky::prop_light(level_sky.as_ref());
+    pending.extend(objects::scenery(&file, &scenario, &light, &mut map));
+
+    report(0.55, "Textures");
     let mut looks: BTreeMap<u32, materials::Look> = BTreeMap::new();
-    for m in &level {
+    for m in &pending {
         looks
             .entry(m.shader.id.0)
             .or_insert_with(|| materials::look(&file, &m.shader));
     }
     let mut requests = materials::Requests::default();
-    let mut wanted: Vec<(Option<usize>, Option<usize>)> = Vec::with_capacity(level.len());
-    for m in &level {
+    let mut wanted: Vec<(Option<usize>, Option<usize>)> = Vec::with_capacity(pending.len());
+    for m in &pending {
         let look = &looks[&m.shader.id.0];
         let base = look.base.map(|r| requests.want(r));
         let detail = look.detail.map(|d| requests.want(d.texture));
@@ -179,13 +203,14 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
                 slots.push(Some(map.textures.len() - 1));
             }
             Err(e) => {
-                map.warnings.push(format!("texture unreadable, flat colour instead: {e}"));
+                map.warnings
+                    .push(format!("texture unreadable, flat colour instead: {e}"));
                 slots.push(None);
             }
         }
     }
     let mut reported = std::collections::BTreeSet::new();
-    for (m, (base, detail)) in level.into_iter().zip(wanted) {
+    for (m, (base, detail)) in pending.into_iter().zip(wanted) {
         let look = &looks[&m.shader.id.0];
         let mut mesh = m.mesh;
         if let Some(problem) = &look.problem
@@ -200,11 +225,14 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
             materials::FLAT
         };
         if look.base.is_none() && look.problem.is_none() && reported.insert(m.shader.id.0) {
-            map.warnings.push(format!("shader `{}`: no base map, drawn white", mesh.material));
+            map.warnings
+                .push(format!("shader `{}`: no base map, drawn white", mesh.material));
         }
         if look.base.is_some() && mesh.texture.is_none() && reported.insert(m.shader.id.0) {
-            map.warnings
-                .push(format!("shader `{}`: its base map did not read, flat colour", mesh.material));
+            map.warnings.push(format!(
+                "shader `{}`: its base map did not read, flat colour",
+                mesh.material
+            ));
         }
         mesh.detail = look
             .detail
@@ -219,20 +247,15 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
         mesh.tint = look.tint;
         mesh.base_transform = look.transform;
         mesh.surface = look.surface.clone();
-        map.meshes.push(mesh);
+        match m.dest {
+            Dest::Level | Dest::Sky => map.meshes.push(mesh),
+            Dest::Model(i) => map.models[i].meshes.push(mesh),
+        }
     }
-
-    report(0.8, "Collision");
-    let level_collision =
-        blam_formats::collision::read_level(&file, 0).map_err(|e| format!("collision BSP: {e}"))?;
-    collision::add(&level_collision, &mut map).map_err(|e| format!("collision BSP: {e}"))?;
 
     report(0.9, "Spawns");
     spawns::add(&scenario, &mut map);
-    let level_sky = sky::level_sky(&file, &scenario, &mut map.warnings);
     sky::add(level_sky.as_ref(), &bsp, &mut map, decode);
-    sky::sky_model(&file, level_sky.as_ref(), &mut map);
-    sky::scenery(&scenario, &mut map);
     Ok(map)
 }
 
@@ -262,8 +285,10 @@ fn lightmap_atlas(
         .enumerate()
         .filter_map(|(g, group)| group.bitmap_index.map(|i| (g, i)))
         .collect();
-    let images: Vec<Option<blam_formats::bitmap::Image>> =
-        wanted.iter().map(|&(_, i)| bitmap.images.get(i as usize).cloned()).collect();
+    let images: Vec<Option<blam_formats::bitmap::Image>> = wanted
+        .iter()
+        .map(|&(_, i)| bitmap.images.get(i as usize).cloned())
+        .collect();
     let decoded = crate::map::parallel::par_map(images, |image| {
         let image = image.ok_or_else(|| "no such image".to_string())?;
         image.decode_level(file, 0, 0).map_err(|e| e.to_string())
