@@ -76,6 +76,7 @@ mod heavy {
     mod guest_shells;
     mod halo_bots;
     mod halo_maps;
+    mod halo_vehicles;
     mod cross_hits;
     mod head_matrix;
     mod css_map_moves;

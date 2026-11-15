@@ -23,11 +23,14 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net61` since a dead Halo player's body is an
-   object of its own sent to every client (its death animation, colour and
-   fall: net part `halo_ce_corpses`); `net60` (Halo's match (its game
-   type, team scores, clock and game over) is sent to every client: net
-   part `halo_ce_match`), `net59` (Halo's players carry the grenade
+   The network version is `net62` since who sits in which seat of Halo's
+   vehicles goes to every client (net part `halo_ce_vehicles`: a rider's
+   seat by the vehicle's map prop; the party apps place Halo's vehicles
+   only with `halo_ce:party_vehicles 1`); `net61` (a dead Halo player's
+   body is an object of its own sent to every client: its death animation,
+   colour and fall, net part `halo_ce_corpses`), `net60` (Halo's match: its
+   game type, team scores, clock and game over, sent to every client as
+   net part `halo_ce_match`), `net59` (Halo's players carry the grenade
    kind they have selected: the rotate-grenades button, `+grenade_switch`,
    rides the command's action bits; the kind is in the predicted state),
    `net58` (Halo's shots carry their trigger
@@ -660,6 +663,14 @@ chimera_pack user revoke <tester>               # all of a tester's tokens
 chimera_pack user revoke <tester> --token <n>   # one
 ```
 
+With the accounts service running and the file imported, run
+`chimera_accounts import-legacy` again after a `user revoke`: the
+accounts service gives tickets to imported tokens from its own database,
+and a re-import carries the file's revocations over (it only ever
+revokes). The other way round is automatic: `chimera_accounts account
+revoke | delete` and `device revoke` mark the account's tokens revoked in
+`accounts.toml` too.
+
 Testers who play from their own install get a token too: the game sends
 their F10 reports with it to the service the server offers (until it is
 bound to one, the first server that offers its files; see below).
@@ -697,7 +708,7 @@ forward and one firewall rule (TCP `<hub port>`).
 
 ```
 cargo build --release -p chimera_services -p chimera_assets --bin chimera_front --bin chimera_accounts --bin chimera_asset_server
-target/release/chimera_accounts import-legacy   # once: an account per accounts.toml account; tokens keep working
+target/release/chimera_accounts import-legacy   # an account per accounts.toml account; tokens keep working; again after a `user revoke` (carries revocations over)
 target/release/chimera_accounts invite <name> --hub <public address>:<hub port>   # the link, printed once
 target/release/chimera_accounts invites | account list | account show <username>
 target/release/chimera_accounts account set <username> --content cs_source,combat_arms --role host ...

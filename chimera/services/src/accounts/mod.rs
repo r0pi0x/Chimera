@@ -28,6 +28,15 @@
 //!   `ban`, `import_legacy`, `backup`): through the admin API on loopback
 //!   (`http`) and its page (`page`), every change an `audit` row.
 //!
+//! - **Legacy revocations** (`import_legacy`, `mirror_legacy_revocations`):
+//!   the asset service takes a `chimera1_` token from `accounts.toml`
+//!   directly, and this service gives it tickets from its `legacy` device,
+//!   so both must agree. An import carries the file's revocations over
+//!   (again on every re-import, to accounts imported before; an account
+//!   whose tokens are all revoked is revoked) and never re-enables what
+//!   the database revoked; revoking, deleting or recovering here marks the
+//!   account's legacy tokens revoked in the file.
+//!
 //! Nothing secret is logged: codes, recovery keys, tickets and device
 //! keys never reach the access log, the audit rows or stderr.
 //!
@@ -306,6 +315,13 @@ pub struct Imported {
     pub accounts: usize,
     pub devices: usize,
     pub skipped: usize,
+    /// Devices of accounts imported before, revoked now because the file
+    /// revoked their tokens since.
+    #[serde(default)]
+    pub revoked: usize,
+    /// Accounts imported revoked, or revoked now (every token revoked).
+    #[serde(default)]
+    pub revoked_accounts: usize,
 }
 
 #[derive(Default)]
@@ -726,6 +742,8 @@ impl Accounts {
         let ticket = self.issue(&tx, &account, &device, ip)?;
         let (username, display_name) = Self::account_names(&tx, &account)?;
         tx.commit().map_err(internal)?;
+        drop(conn);
+        self.mirror_quietly();
         Ok(SignedIn {
             account: id_hex(&account),
             device: id_hex(&device),
@@ -910,6 +928,8 @@ impl Accounts {
         let ticket = self.issue(&tx, &account, &device, ip)?;
         let (username, display_name) = Self::account_names(&tx, &account)?;
         tx.commit().map_err(internal)?;
+        drop(conn);
+        self.mirror_quietly();
         Ok(SignedIn {
             account: id_hex(&account),
             device: id_hex(&device),
@@ -1123,7 +1143,9 @@ impl Accounts {
             .map_err(internal)?;
         Self::revoke_row(&tx, "account", &account, now)?;
         Self::audit(&tx, now, "cli", "account.revoke", username, "")?;
-        tx.commit().map_err(internal)
+        tx.commit().map_err(internal)?;
+        drop(conn);
+        self.mirror_legacy_revocations(&[]).map(drop)
     }
 
     /// `account set`: change an account's username, display name, role,
@@ -1252,6 +1274,7 @@ impl Accounts {
         let mut conn = self.db();
         let account = Self::account_by_username(&conn, username)?;
         let tx = conn.transaction().map_err(internal)?;
+        let legacy = Self::legacy_hashes(&tx, &account)?;
         Self::revoke_row(&tx, "account", &account, now)?;
         // Rows that point at its devices without cascading.
         tx.execute(
@@ -1266,7 +1289,9 @@ impl Accounts {
         .map_err(internal)?;
         tx.execute("DELETE FROM accounts WHERE id = ?1", params![blob(&account)]).map_err(internal)?;
         Self::audit(&tx, now, "cli", "account.delete", &id_hex(&account), &username.trim().to_ascii_lowercase())?;
-        tx.commit().map_err(internal)
+        tx.commit().map_err(internal)?;
+        drop(conn);
+        self.mirror_legacy_revocations(&legacy).map(drop)
     }
 
     /// Revoke one device (by its id).
@@ -1283,7 +1308,9 @@ impl Accounts {
         }
         Self::revoke_row(&tx, "device", &id, now)?;
         Self::audit(&tx, now, "cli", "device.revoke", device, "")?;
-        tx.commit().map_err(internal)
+        tx.commit().map_err(internal)?;
+        drop(conn);
+        self.mirror_legacy_revocations(&[]).map(drop)
     }
 
     /// Ban a username or an address, for `days` (none: for good).
@@ -1315,8 +1342,13 @@ impl Accounts {
     }
 
     /// One account per legacy account of `accounts.toml` (role tester, its
-    /// games as content), one `legacy` device per token hash; accounts
-    /// already imported (same token hashes) are skipped.
+    /// games as content), one `legacy` device per token hash; a revoked
+    /// token is a revoked device, and an account whose tokens are all
+    /// revoked is imported revoked. Accounts already imported (same token
+    /// hashes) are skipped, but the file's revocations still reach them:
+    /// a token revoked there since revokes its device, and an account left
+    /// with no live device is revoked. An import only ever revokes: it
+    /// never brings back a device or an account the database revoked.
     pub fn import_legacy(&self, text: &str) -> R<Imported> {
         let legacy: chimera_assets::accounts::Accounts = toml::from_str(text).map_err(|e| refuse(400, e.to_string()))?;
         let now = self.now();
@@ -1324,19 +1356,62 @@ impl Accounts {
         let tx = conn.transaction().map_err(internal)?;
         let mut out = Imported::default();
         for a in &legacy.accounts {
-            let known: i64 = {
-                let mut n = 0;
-                for t in &a.tokens {
-                    n += tx
-                        .query_row("SELECT COUNT(*) FROM devices WHERE token_hash = ?1", params![t.hash], |r| r.get::<_, i64>(0))
-                        .map_err(internal)?;
+            let mut known: Vec<(Vec<u8>, Vec<u8>, bool, bool)> = Vec::new();
+            for t in &a.tokens {
+                let row: Option<(Vec<u8>, Vec<u8>, Option<i64>)> = tx
+                    .query_row("SELECT id, account_id, revoked_at FROM devices WHERE token_hash = ?1", params![t.hash], |r| {
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    })
+                    .optional()
+                    .map_err(internal)?;
+                if let Some((device, account, revoked_at)) = row {
+                    known.push((device, account, revoked_at.is_some(), t.revoked));
                 }
-                n
-            };
-            if known > 0 || a.tokens.is_empty() {
+            }
+            if !known.is_empty() {
+                out.skipped += 1;
+                let mut touched = Vec::new();
+                for (device, account, revoked_here, revoked_there) in &known {
+                    if *revoked_there && !revoked_here {
+                        tx.execute("UPDATE devices SET revoked_at = ?1 WHERE id = ?2 AND revoked_at IS NULL", params![now as i64, device])
+                            .map_err(internal)?;
+                        Self::revoke_row(&tx, "device", &id_of(device.clone()), now)?;
+                        out.revoked += 1;
+                    }
+                    if !touched.contains(account) {
+                        touched.push(account.clone());
+                    }
+                }
+                if a.tokens.iter().all(|t| t.revoked) {
+                    for account in touched {
+                        let live: i64 = tx
+                            .query_row(
+                                "SELECT COUNT(*) FROM devices WHERE account_id = ?1 AND revoked_at IS NULL",
+                                params![account],
+                                |r| r.get(0),
+                            )
+                            .map_err(internal)?;
+                        if live == 0 {
+                            let n = tx
+                                .execute(
+                                    "UPDATE accounts SET state = 'revoked', revoked_at = ?1 WHERE id = ?2 AND state = 'active'",
+                                    params![now as i64, account],
+                                )
+                                .map_err(internal)?;
+                            if n > 0 {
+                                Self::revoke_row(&tx, "account", &id_of(account), now)?;
+                                out.revoked_accounts += 1;
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+            if a.tokens.is_empty() {
                 out.skipped += 1;
                 continue;
             }
+            let all_revoked = a.tokens.iter().all(|t| t.revoked);
             let base = codes::username_from(&a.name);
             let mut username = base.clone();
             let mut k = 2;
@@ -1354,11 +1429,23 @@ impl Accounts {
             let content = if a.games.is_empty() { "*".to_string() } else { clean_list(&a.games.join(","))? };
             let account = ticket::new_id();
             tx.execute(
-                "INSERT INTO accounts (id, username, display_name, created, role, content, games, list_slots, note)
-                 VALUES (?1, ?2, ?3, ?4, 'tester', ?5, '*', 1, ?6)",
-                params![blob(&account), username, display, now as i64, content, format!("imported from accounts.toml ({})", a.name)],
+                "INSERT INTO accounts (id, username, display_name, created, role, content, games, list_slots, note, state, revoked_at)
+                 VALUES (?1, ?2, ?3, ?4, 'tester', ?5, '*', 1, ?6, ?7, ?8)",
+                params![
+                    blob(&account),
+                    username,
+                    display,
+                    now as i64,
+                    content,
+                    format!("imported from accounts.toml ({})", a.name),
+                    if all_revoked { "revoked" } else { "active" },
+                    all_revoked.then_some(now as i64)
+                ],
             )
             .map_err(internal)?;
+            if all_revoked {
+                out.revoked_accounts += 1;
+            }
             for t in &a.tokens {
                 let device = ticket::new_id();
                 tx.execute(
@@ -1374,6 +1461,59 @@ impl Accounts {
         Self::audit(&tx, now, "cli", "import-legacy", "", &format!("{out:?}"))?;
         tx.commit().map_err(internal)?;
         Ok(out)
+    }
+
+    /// The legacy token hashes of `account`'s devices (before a delete).
+    fn legacy_hashes(conn: &Connection, account: &Id) -> R<Vec<String>> {
+        let mut stmt = conn
+            .prepare("SELECT token_hash FROM devices WHERE account_id = ?1 AND kind = 'legacy' AND token_hash IS NOT NULL")
+            .map_err(internal)?;
+        let rows = stmt.query_map(params![blob(account)], |r| r.get::<_, String>(0)).map_err(internal)?;
+        rows.collect::<Result<_, _>>().map_err(internal)
+    }
+
+    /// Mark revoked in `accounts.toml` every legacy token whose device or
+    /// account is revoked here (and `extra`, a deleted account's): the
+    /// asset service takes a `chimera1_` token from that file directly, so
+    /// a revocation kept in the database alone would leave the token
+    /// working there. Only ever revokes. How many tokens it revoked now.
+    pub fn mirror_legacy_revocations(&self, extra: &[String]) -> R<usize> {
+        let mut hashes: Vec<String> = {
+            let conn = self.db();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT d.token_hash FROM devices d JOIN accounts a ON a.id = d.account_id
+                     WHERE d.kind = 'legacy' AND d.token_hash IS NOT NULL AND (d.revoked_at IS NOT NULL OR a.state != 'active')",
+                )
+                .map_err(internal)?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(internal)?;
+            rows.collect::<Result<_, _>>().map_err(internal)?
+        };
+        hashes.extend(extra.iter().cloned());
+        let path = chimera_assets::accounts::Accounts::path(&self.paths.store);
+        if !path.exists() {
+            return Ok(0);
+        }
+        let mut legacy = chimera_assets::accounts::Accounts::load(&path).map_err(internal)?;
+        let mut n = 0;
+        for t in legacy.accounts.iter_mut().flat_map(|a| a.tokens.iter_mut()) {
+            if !t.revoked && hashes.contains(&t.hash) {
+                t.revoked = true;
+                n += 1;
+            }
+        }
+        if n > 0 {
+            legacy.save(&path).map_err(internal)?;
+        }
+        Ok(n)
+    }
+
+    /// After a user's own sign-in revoked devices: mirror, logging a
+    /// failure instead of failing the sign-in.
+    fn mirror_quietly(&self) {
+        if let Err(e) = self.mirror_legacy_revocations(&[]) {
+            eprintln!("accounts: legacy revocations not mirrored to accounts.toml ({})", e.message);
+        }
     }
 
     /// An online backup to `<store>/server/backups/accounts-<YYYYMMDD>.db`

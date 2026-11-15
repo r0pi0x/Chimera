@@ -46,6 +46,8 @@ vbsp.workspace = true
 avian3d.workspace = true
 # The weapon hooks' parameters.
 serde.workspace = true
+# The class table (data/classes.toml).
+toml.workspace = true
 # The front end (`ui`, the `ui` feature): the client shell and the
 # presentation it draws with.
 chimera_client = { workspace = true, optional = true }

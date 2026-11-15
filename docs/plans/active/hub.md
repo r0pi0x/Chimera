@@ -607,7 +607,11 @@ keep the name as played, without the id) and frees the username after
   <server store>/server/accounts.toml` makes one account per internal
   account (role `tester`, its games as `content`, every game to play,
   limits and note; its old name, case-folded, as the username) and one
-  `legacy` device per token hash. Nothing changes for testers.
+  `legacy` device per token hash. Nothing changes for testers. A revoked
+  token comes in as a revoked device (an account with every token
+  revoked, revoked); running it again carries later revocations in the
+  file over and never re-enables anything; revoking or deleting in the
+  database marks the tokens revoked in the file.
 - **Legacy tokens keep working everywhere**: the asset service keeps
   `Internal` (reading accounts.toml) until S3 has shipped one playtest
   build; accounts also accepts `Authorization: Bearer chimera1_...` at

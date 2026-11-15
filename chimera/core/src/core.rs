@@ -69,7 +69,8 @@
 //! invulnerable; applied to its `Intent` by `apply_map_controls` after the
 //! rules, on the server and on the client predicting it: a predicted part; a
 //! respawn resets the clock and the camera), `MapView` (the map camera a
-//! character views through), `buttons` (Source's command button bits),
+//! character views through), `Carried` (a character carried by another
+//! entity, a vehicle's seat: every movement skips it), `buttons` (Source's command button bits),
 //! `ScoreChange` (game_score, applied by the rules); the players' standing
 //! every game has: `Score`, `Dead`, `MapLoads`, `Bot` (a computer player),
 //! `Npc` (a character that isn't a player: hostages), `ScoreMark` (what a
@@ -898,6 +899,16 @@ pub struct MapView {
     pub origin: Vec3,
     pub rotation: Quat,
 }
+
+/// A character carried by another entity, the one named (a vehicle's
+/// seat): its movement is suspended whatever game's it is (every movement
+/// implementation skips it: Source's, Combat Arms', Halo's, noclip and the
+/// stand-in) and its carrier puts it where it rides. A network client
+/// predicting it takes the server's state of it as it comes (no prediction
+/// error, no eased view: `net::predict`), since the carrier is the
+/// server's. The game that seats it puts it on and takes it off.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Carried(pub Entity);
 
 /// A map entity changed a character's score (game_score): kills, or with
 /// `team` its team's score; `allow_negative` as the entity's flag 1

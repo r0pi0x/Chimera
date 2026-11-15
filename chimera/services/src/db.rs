@@ -9,7 +9,8 @@
 //! weeks) and a restore (the copy checked, then put in place of the
 //! database while its service is stopped).
 //!
-//! One database per service, owned by that process alone.
+//! One database per service, owned by that process alone; it and its WAL
+//! files are owner-only (0600).
 
 use std::{
     fs,
@@ -44,6 +45,9 @@ pub fn open(path: &Path, migrations: &[&str], backups: &Path) -> Result<Connecti
         fs::create_dir_all(dir).map_err(|e| err(dir.display(), e))?;
     }
     let existed = path.exists();
+    if existed {
+        crate::restrict(path);
+    }
     let mut conn = Connection::open(path).map_err(|e| err(path.display(), e))?;
     let mode: String =
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |r| r.get(0)).map_err(|e| err("journal_mode", e))?;
@@ -67,6 +71,16 @@ pub fn open(path: &Path, migrations: &[&str], backups: &Path) -> Result<Connecti
     }
     migrate(&mut conn, migrations)?;
     crate::restrict(path);
+    // The WAL holds recent rows (token hashes among them) until a
+    // checkpoint: owner-only like the database.
+    for suffix in ["-wal", "-shm"] {
+        let mut p = path.as_os_str().to_owned();
+        p.push(suffix);
+        let p = PathBuf::from(p);
+        if p.exists() {
+            crate::restrict(&p);
+        }
+    }
     Ok(conn)
 }
 

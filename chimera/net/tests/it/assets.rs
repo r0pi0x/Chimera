@@ -595,6 +595,33 @@ fn a_first_join_goes_on_without_a_wanted_game_the_service_lacks() {
     assert!(progress(&sim, 0).failure.is_none(), "{:?}", progress(&sim, 0).failure);
 }
 
+/// The same with the token bound already (any start after the first: this
+/// process reads from the offered service from its start): the wanted
+/// game the service doesn't serve is left out and the client joins
+/// (2026-11-15: such a start left every UGG match with "the asset service
+/// doesn't serve tf2").
+#[test]
+fn a_bound_client_goes_on_without_a_wanted_game_the_service_lacks() {
+    let svc = Fixture::new("bound_wanted", 4, Duration::ZERO);
+    let token = svc.user("tester");
+    let session = svc.session("bound_wanted", &token, true);
+    let access = session.access.clone().unwrap();
+    chimera_net::net::assets::save_token(&access, &token).unwrap();
+    let mut bound = Access::load_from(&access);
+    bound.bind(&svc.front.url(), &svc.fingerprint).unwrap();
+    bound.save_to(&access).unwrap();
+    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
+    let base = setup(svc.host());
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, move |app: &mut App| {
+        base(app);
+        app.world_mut().resource_mut::<NetHooks>().manifest.push(wants_unpublished);
+    });
+    sim.add_client(client_with(session, true));
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
+    assert!(svc.ids("base").iter().all(|id| store.has(id)), "the served game's base fetched");
+    assert!(progress(&sim, 0).failure.is_none(), "{:?}", progress(&sim, 0).failure);
+}
+
 /// The stand-in game's weapon documents: what a machine has without its
 /// files (`first`), and with them (`first` and `arrived`: a game whose
 /// weapon set is built from its install, Combat Arms').

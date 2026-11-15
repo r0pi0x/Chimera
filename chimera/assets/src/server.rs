@@ -267,6 +267,8 @@ impl Service {
         fs::create_dir_all(server_dir(&store))?;
         let key = sign::load_or_create_key(&key_path(&store))?;
         let log = OpenOptions::new().create(true).append(true).open(server_dir(&store).join("access.log"))?;
+        // Addresses and account names: owner-only.
+        sign::restrict(&server_dir(&store).join("access.log"));
         Ok(Self {
             key,
             auth,

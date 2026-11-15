@@ -207,6 +207,22 @@ fn a_moving_warthog_hurts_a_player_in_its_way() {
     let _: &Intent = t.sim.app.world().get::<Intent>(driver).unwrap();
 }
 
+/// A network client poses its copy of a vehicle from the drawn prop
+/// (`vehicles::pose_from`): the body that `engine_rotation` and the origin
+/// came from, for a turned and tilted Warthog.
+#[test]
+fn a_body_is_posed_back_from_its_props_transform() {
+    let phys = vehicles::data::VehicleDef::warthog().physics_def();
+    let mut b = vehicles::physics::Body::at(Vec3::new(3.0, -2.0, 1.0), 0.7);
+    b.up = Vec3::new(0.2, -0.1, 1.0).normalize();
+    b.forward = (b.forward - b.up * b.forward.dot(b.up)).normalize();
+    let t = Transform::from_translation(eng(b.origin(phys.center_of_mass))).with_rotation(vehicles::engine_rotation(&b));
+    let mut back = vehicles::physics::Body::at(Vec3::ZERO, 0.0);
+    vehicles::pose_from(&mut back, &t, phys.center_of_mass);
+    assert!(back.position.distance(b.position) < 1e-4, "{} against {}", back.position, b.position);
+    assert!(back.forward.distance(b.forward) < 1e-4 && back.up.distance(b.up) < 1e-4, "{back:?} against {b:?}");
+}
+
 #[test]
 fn riders_take_a_share_of_direct_hits_only() {
     use halo_ce::game::vitality::{DamageEffects, ids};
