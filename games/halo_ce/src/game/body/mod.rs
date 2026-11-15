@@ -25,8 +25,8 @@
 //! hitboxes for it (`map::attach_hitboxes`). Here, after each tick
 //! (`FixedLast`, before `map::SimPose`): each body of Halo's is ticked
 //! (`HaloAnim::tick`, one call per 30 Hz tick: under another tick the
-//! ticks are counted out of the engine's, so the animation keeps Halo's
-//! pace) from its movement (`MovementState`, `Velocity`), its look
+//! ticks are counted out of the engine's tick index, `ticks::halo_ticks`,
+//! so the animation keeps Halo's pace exactly) from its movement (`MovementState`, `Velocity`), its look
 //! (`Intent`) and its weapon's label (`WeaponLabel`, which a weapon's step
 //! sets; without one: `unarmed` empty-handed, a rifle's stance holding
 //! anything), and the pose is the game's own (`Animator::fixed`) on both
@@ -41,9 +41,9 @@
 //! Known shortcuts:
 //! - The drawn body takes the tick's pose (no easing between ticks; Halo
 //!   draws at its tick rate, the engine's frames may be faster).
-//! - Death and ping animations (the unit damage table), the third-person
-//!   weapon in the hand (the weapon class's hand marker `right hand`) and
-//!   the left hand's IK onto it are later steps.
+//! - Death and ping animations (the unit damage table) and the left
+//!   hand's IK onto the held weapon are later steps (the weapon in the hand
+//!   is `view`'s held model).
 
 pub mod anims;
 pub mod hits;
@@ -65,12 +65,11 @@ use crate::{
 #[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
 pub struct WeaponLabel(pub String);
 
-/// A Halo body's animation state, and the share of a 30 Hz tick the
-/// engine's ticks have counted towards the next.
+/// A Halo body's animation state, stepped once a 30 Hz tick
+/// (`ticks::halo_ticks`).
 #[derive(Component, Clone, Debug, Default)]
 pub struct HaloBody {
     pub anim: HaloAnim,
-    pub carry: f32,
 }
 
 /// The armour colours (objects.md, "Spartan multiplayer colour"): the
@@ -183,9 +182,7 @@ pub fn animate(
             Some(h) => h.into_inner(),
             None => &mut fresh,
         };
-        halo.carry += clock.dt() * 30.0;
-        let mut ticks = halo.carry.floor().min(4.0) as u32;
-        halo.carry -= halo.carry.floor();
+        let mut ticks = super::ticks::halo_ticks(&clock).min(4);
         if first {
             ticks = ticks.max(1);
         }

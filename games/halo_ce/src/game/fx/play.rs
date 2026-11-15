@@ -13,6 +13,10 @@
 //! collide). What it makes is collected (`Made`) and written as the
 //! engine's requests by the caller.
 //!
+//! An effect on a holder's gun (`Running::on_gun`) has its instances
+//! placed on the gun again each tick, so parts and particles made later
+//! in its life start where the marker is then.
+//!
 //! Known shortcuts: particles attached to a marker are made where the
 //! marker was and then move freely; a particle parallel to its direction
 //! is a strip of its sprite along its velocity (2R long, shortening over
@@ -64,6 +68,10 @@ pub struct Running {
     pub owner: Option<Entity>,
     /// Place its decals (the authority's job: decals are replicated).
     pub decals: bool,
+    /// On a holder's gun: the gun's weapon tag and each location's marker
+    /// name, its instances placed again on the gun each tick
+    /// (`shots::follow_guns`).
+    pub on_gun: Option<(String, Vec<String>)>,
     event: usize,
     in_duration: bool,
     t: f32,
@@ -140,6 +148,7 @@ impl Running {
             first_person: false,
             owner: None,
             decals: true,
+            on_gun: None,
             event: 0,
             in_duration: false,
             t: 0.0,
@@ -234,6 +243,7 @@ impl Running {
                         radius: l.radius * METERS_PER_UNIT,
                         seconds: l.ticks.max(1.0) / 30.0,
                         owner: self.owner,
+                        follow: false,
                     }),
                     FxPartKind::Other => {}
                 }

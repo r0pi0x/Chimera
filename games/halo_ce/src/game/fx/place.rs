@@ -1,20 +1,40 @@
 //! Where a gun's effects go (specs/halo_ce/effects.md "Locations and
 //! instances"): a location is a marker of the gun's model; an instance is
-//! its frame in the world (`Frame`). Until the view model and the held
-//! model expose their attachments, both views place a marker by the
-//! camera: the first-person model's bind-pose marker (its frame is the
-//! camera's: forward, left, up), the third person's the same point (a
-//! seam: `third_person_frame`). The four weapons have no first-person
-//! offset (weapons.md).
+//! its frame in the world (`Frame`).
 //!
-//! **For the view model**: `first_person_frame` is the one place to
-//! repoint; the marked line becomes the view model's attachment of the
-//! marker's name in the world.
+//! - **First person** (`Placer::first`, the shooter's own view): the view
+//!   model's attachment of the marker's name (`view::load`: attachment 0
+//!   `primary trigger`, the muzzle; `primary ejection` where casings leave),
+//!   posed by the view machine's pose of this tick (`ViewAnimator`'s fixed
+//!   pose) and placed by the view model's root at the camera, so effects
+//!   sit on the gun through its recoil, reload and walk. Where the view
+//!   model is drawn with its own camera, the point is moved to where it
+//!   shows in the world's view (`view_model::reproject` by the two cameras'
+//!   fields of view; Halo's follow the player's, so this is the identity in
+//!   the apps). A marker with several instances (the plasma rifle's vents)
+//!   is all of them.
+//! - **Everyone else** (`Placer::third`): the held model's attachment of the
+//!   name on the holder's body (`view_model::HeldAttachment`, the drawn
+//!   held model's: `primary trigger` is the third-person muzzle), last
+//!   frame's.
+//! - **Neither there** (a headless server, a gun whose models did not
+//!   load): the first-person model's bind-pose marker relative to the
+//!   camera (`FxGun::fp_markers`; the model is authored at the camera, node
+//!   0 at its frame), the camera itself without one.
+//!
+//! A marker's frame: its +X forward, +Y left, +Z up (Halo's axes), as the
+//! attachment's axes in the world.
 
-use bevy::prelude::*;
+use bevy::{ecs::system::SystemParam, prelude::*};
 
 use super::load::FxGun;
 use super::super::{METERS_PER_UNIT, maps::space};
+use crate::map::{
+    ViewAnimator, ViewModels,
+    anim::BonePose,
+    attached::AnchorQuery,
+    view_model::{HeldAttachment, MapViewModel, ViewModelCamera, ViewModelOffset, anchor_owner, attachment_transform, reproject},
+};
 
 /// A location instance in the world (engine space, metres).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -46,6 +66,26 @@ impl Frame {
     pub fn vector(&self, v: [f32; 3]) -> Vec3 {
         self.forward * v[0] + self.left() * v[1] + self.up * v[2]
     }
+
+    /// A point of the eye's space (camera space: -Z forward, +Y up, +X
+    /// right, metres) in the world, this frame the eye.
+    pub fn from_eye(&self, p: Vec3) -> Vec3 {
+        self.at + self.eye_vector(p)
+    }
+
+    /// A direction of the eye's space in the world.
+    pub fn eye_vector(&self, v: Vec3) -> Vec3 {
+        -self.left() * v.x + self.up * v.y - self.forward * v.z
+    }
+
+    /// A frame from a transform whose +X is forward and +Z up (a Halo
+    /// marker's axes), its point the transform's origin.
+    pub fn of_marker(m: &Mat4) -> Frame {
+        let forward = m.transform_vector3(Vec3::X).normalize_or(Vec3::NEG_Z);
+        let up = m.transform_vector3(Vec3::Z);
+        let up = (up - forward * up.dot(forward)).normalize_or(Frame::facing(Vec3::ZERO, forward).up);
+        Frame { at: m.transform_point3(Vec3::ZERO), forward, up }
+    }
 }
 
 /// The camera's frame: the eye and the view's rotation (the engine's yaw
@@ -54,24 +94,88 @@ pub fn camera(eye: Vec3, view: Quat) -> Frame {
     Frame { at: eye, forward: view * Vec3::NEG_Z, up: view * Vec3::Y }
 }
 
-/// Where the first-person gun's origin sits from the camera until the
-/// view model places it (WU: forward, left, up): ours, by eye, so the
-/// assault rifle's muzzle is low on the right of the view.
-pub const GUN: [f32; 3] = [0.0, -0.05, -0.07];
-
-/// Marker `name` of the first-person model, as the shooter sees it (the
-/// camera-relative bind-pose marker; the camera itself when the model has
-/// none).
-pub fn first_person_frame(camera: Frame, gun: &FxGun, name: &str) -> Frame {
-    // For the view model: replace with the view model's attachment `name`.
+/// Marker `name` of the first-person model in its bind pose, as the
+/// shooter sees it (the fallback: module doc).
+pub fn bind_pose_frame(camera: Frame, gun: &FxGun, name: &str) -> Frame {
     let p = gun.fp_markers.get(name).copied().unwrap_or([0.0; 3]);
-    Frame { at: camera.point([p[0] + GUN[0], p[1] + GUN[1], p[2] + GUN[2]]), ..camera }
+    Frame { at: camera.point(p), ..camera }
 }
 
-/// Marker `name` as everyone else sees it (the seam for the held model's
-/// marker: today the first person's point).
-pub fn third_person_frame(camera: Frame, gun: &FxGun, name: &str) -> Frame {
-    first_person_frame(camera, gun, name)
+/// The view model's attachments called `name` (any case) posed by `pose`
+/// and placed by `placed` under the eye `camera`, in the world; with
+/// `fovs` (the world camera's and the view model camera's, both vertical,
+/// degrees) moved to where they show in the world's view.
+pub fn view_model_frames(
+    camera: Frame,
+    model: &MapViewModel,
+    pose: &[BonePose],
+    placed: &Transform,
+    fovs: Option<(f32, f32)>,
+    name: &str,
+) -> Vec<Frame> {
+    model
+        .attachments
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.name.eq_ignore_ascii_case(name))
+        .filter_map(|(i, _)| attachment_transform(model, pose, i, placed))
+        .map(|m| {
+            let local = Frame::of_marker(&m);
+            let at = fovs.map_or(local.at, |(w, v)| reproject(local.at, w, v));
+            Frame { at: camera.from_eye(at), forward: camera.eye_vector(local.forward), up: camera.eye_vector(local.up) }
+        })
+        .collect()
+}
+
+/// Where a holder's gun's markers are this tick (module doc).
+#[derive(SystemParam)]
+pub struct Placer<'w, 's> {
+    models: Option<Res<'w, ViewModels>>,
+    views: Query<'w, 's, (&'static ViewAnimator, Option<&'static ViewModelOffset>)>,
+    anchors: AnchorQuery<'w, 's>,
+    vm_cameras: Query<'w, 's, &'static Projection, With<ViewModelCamera>>,
+    held: Query<'w, 's, (&'static HeldAttachment, &'static GlobalTransform)>,
+}
+
+impl Placer<'_, '_> {
+    /// The world camera's and the view model camera's vertical fields of
+    /// view at `owner`'s anchor, where it has both.
+    fn fovs(&self, owner: Entity) -> Option<(f32, f32)> {
+        let (_, _, _, projection, children, _) = self.anchors.iter().find(|(_, p, _, _, _, s)| anchor_owner(p, *s) == owner)?;
+        let vm = children.into_iter().flatten().find_map(|c| self.vm_cameras.get(*c).ok())?;
+        match (projection?, vm) {
+            (Projection::Perspective(w), Projection::Perspective(v)) => Some((w.fov.to_degrees(), v.fov.to_degrees())),
+            _ => None,
+        }
+    }
+
+    /// Marker `name` in first person: on `owner`'s view model, else the
+    /// bind pose's (module doc).
+    pub fn first(&self, owner: Entity, camera: Frame, gun: &FxGun, name: &str) -> Vec<Frame> {
+        let on_model = self.views.get(owner).ok().and_then(|(view, offset)| {
+            let model = self.models.as_deref()?.get(view.key.as_deref()?)?;
+            // The view machine's pose (fixed); without one, the bind pose.
+            let pose = view.animator.as_ref().map(|a| a.pose(0.0)).unwrap_or_default();
+            let placed = crate::map::view_model::placement(&offset.copied().unwrap_or_default(), false);
+            Some(view_model_frames(camera, model, &pose, &placed, self.fovs(owner), name))
+        });
+        match on_model {
+            Some(f) if !f.is_empty() => f,
+            _ => vec![bind_pose_frame(camera, gun, name)],
+        }
+    }
+
+    /// Marker `name` as everyone else sees it: on `owner`'s held model,
+    /// else the first person's bind pose (module doc).
+    pub fn third(&self, owner: Entity, camera: Frame, gun: &FxGun, name: &str) -> Vec<Frame> {
+        let held: Vec<Frame> = self
+            .held
+            .iter()
+            .filter(|(h, _)| h.owner == owner && h.name.eq_ignore_ascii_case(name))
+            .map(|(_, g)| Frame::of_marker(&g.to_matrix()))
+            .collect();
+        if held.is_empty() { vec![bind_pose_frame(camera, gun, name)] } else { held }
+    }
 }
 
 /// Halo's world vector (WU per tick) as the engine's (m/s).
