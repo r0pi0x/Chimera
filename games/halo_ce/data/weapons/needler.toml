@@ -30,8 +30,6 @@ weapon_type = 2
 zoom_levels = 0
 camo = [0.16, 0.015]
 melee_damage = "needler_melee"
-# The port gives its needles section 15's target with aim assist off.
-guidance_targets = true
 
 [hooks."halo_ce:weapon".heat]
 recovery_threshold = 0.0

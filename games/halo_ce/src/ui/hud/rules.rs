@@ -304,7 +304,8 @@ fn mask(flashing: bool, empty: bool, reload: bool) -> i16 {
 
 /// The eight states of the weapon by `cutoffs` (states 4 and 5, the
 /// second magazine, and 6 and 7, the aim assist's target, stay empty: no
-/// Halo weapon here has two magazines or aim assist).
+/// Halo weapon here has two magazines, and the autoaim's target does not
+/// reach the HUD).
 pub fn weapon_states(w: &WeaponNow, cutoffs: &FlashCutoffs) -> [WeaponState; 8] {
     let mut s = [WeaponState::default(); 8];
     let heat_pct = w.heat * 100.0;

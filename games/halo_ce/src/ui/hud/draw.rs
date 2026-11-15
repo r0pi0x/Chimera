@@ -18,8 +18,9 @@
 //! - The sweep's compositing is ours (section 11 is inferred): the sweep
 //!   picture is added in its light blue through the disc's mask, and each
 //!   blip's brightness is scaled by the sweep's alpha where it lies.
-//! - Aim assist is off (`game::weapons`): the aim crosshair never turns
-//!   red and the distance and elevation numbers never draw.
+//! - The autoaim's target (`game::weapons::aim`) does not reach the HUD:
+//!   the aim crosshair never turns red and the distance and elevation
+//!   numbers never draw.
 //! - The flashlight meter, damage arrows, waypoints, teammate markers,
 //!   messages and prompts are not drawn; the warning sounds do not play.
 

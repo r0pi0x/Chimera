@@ -20,6 +20,7 @@ mod arsenal;
 mod arsenal_fx;
 mod arsenal_rules;
 mod assets;
+mod autoaim;
 mod body;
 mod cross_game;
 mod fx;
