@@ -5,7 +5,7 @@
 //! `chimera_pack pack <game> [--set <name> --from <vfs log>]` reads files
 //! through the game's own mount of its install (its search order; Combat
 //! Arms' archives decrypted here with this host's keys, which are never
-//! written anywhere), stores each as a record (SHA-256 id, zstd level 3)
+//! written anywhere), stores each as a record (SHA-256 id, zstd level 19)
 //! and enters it in the manifest of the install's build
 //! (`manifests/<game>/<build>.txt`). With `--from`, only the files of that
 //! game in a `CHIMERA_VFS_LOG` log, entered as set `<name>` too; without,
@@ -54,7 +54,7 @@
 //! `map/<name>` for every map of the install (`GameInfo::map_names`: the
 //! files loading it reads as another game's gameplay loads it, the
 //! world with its players' kit, never from the converted-map cache; less
-//! the game's `base` and `players`; the offer names the loaded map's set,
+//! the game's `base`, `players` and `common`; the offer names the loaded map's set,
 //! in the pool or not). `map/<name>` and Combat Arms' `base` (its effect
 //! tables' sounds: impacts, shells, surfaces, the event sounds and the
 //! heartbeat, the infection and grenade call-outs, the result screen's
@@ -69,11 +69,28 @@
 //! `base` (what its guns draw on any map: `maps::add_guest_looks`, its
 //! effect materials, muzzle flashes, impact decals and spent shells, with
 //! their bounce sounds) are merged into what the manifest has (sets recorded from
-//! logs too); the other sets are replaced. `--only <prefix>` records only
+//! logs too; once `lean` has made a `common`, what a game's `base` piece
+//! adds goes to `common` instead, fetched with each match); the other
+//! sets are replaced. `--only <prefix>` records only
 //! the sets whose names start with it (`--only character/`), leaving the
 //! others as they are. `--sign` signs the manifest again with
 //! the server's key (a server store). `base` (beyond Combat Arms'
 //! sounds) comes from `CHIMERA_VFS_LOG` logs (`--from`).
+//!
+//! `chimera_pack lean <game> --store <dir> --from <log>...` makes the
+//! game's `base` lean from client runs' `CHIMERA_VFS_LOG` logs (one per
+//! run; `chimera_assets::resolve::lean`): `base` keeps what every run
+//! read, the music leaves it for a set per track (`music/<track>`), the
+//! files a ladder's sets hold that not every run read leave it (the files
+//! only checked for among them), the rest becomes `common` (each match's
+//! offer names it). No install needed; `--dry-run` says what it would do.
+//! `chimera_pack repack --store <dir>` packs the store's records again
+//! at the current zstd level (19; level 3 before 2026-11-15), each
+//! written beside its old one and renamed in (a hard-linked copy of a
+//! store keeps the other store's files), and sets the manifests' stored
+//! sizes (`--only <game>:<set prefix>` for some sets' records, `--sign`;
+//! `--restat`: only the manifests' stored sizes, after a manifest from
+//! before the repack was put back or published again).
 //!
 //! Known shortcuts: publishing to a server on another machine (upload over
 //! HTTPS with a publisher token) isn't built: on a VPS, publish there or
@@ -97,6 +114,11 @@ usage: chimera_pack pack <game> [options]       into a store (default the user's
        chimera_pack sets <game> [--store <dir>] [--sign] [--only <prefix>]
                                                 record weapon/<id>, players, map/<name>,
                                                 character/<record> and parts/<id> sets
+       chimera_pack lean <game> --store <dir> --from <log> [--from <log>...] [--sign] [--dry-run]
+                                                base from client runs' reads: common, music/<track>
+       chimera_pack repack --store <dir> [--threads <n>] [--only <game>:<set prefix>,...] [--sign] [--restat]
+                                                records again at the current zstd level
+                                                (--restat: only the manifests' stored sizes)
        chimera_pack user add <name> [--games <a,b>] [--note <text>]
        chimera_pack user revoke <name> [--token <n>]
        chimera_pack user list                   (user: --store <server store>)
@@ -147,6 +169,8 @@ fn run(args: &[String]) -> Result<(), String> {
         Some("publish") => true,
         Some("user") => return user(&args[1..]),
         Some("sets") => return sets(&args[1..]),
+        Some("lean") => return lean(&args[1..]),
+        Some("repack") => return repack(&args[1..]),
         _ => return Err(USAGE.into()),
     };
     let game_id = it.next().ok_or(USAGE)?;
@@ -772,7 +796,7 @@ fn record_maps(
 /// and the maps' sets, also recorded from `CHIMERA_VFS_LOG` logs) rather
 /// than replacing it.
 fn merged_set(name: &str) -> bool {
-    name == "base" || name.starts_with("map/")
+    name == "base" || name == chimera_assets::resolve::COMMON || name.starts_with("map/")
 }
 
 /// `sets <game>`: record the pieces' sets into the install build's
@@ -803,15 +827,25 @@ fn sets(args: &[String]) -> Result<(), String> {
     let mut manifest = Manifest::load(&path)?;
     let mount = std::sync::Arc::new((game.open_install)(&install).map_err(|e| format!("{}: {e}", install.display()))?);
     for (name, paths) in record_pieces(game.info.id, &mount, &only) {
+        // A lean manifest (`lean`): what any match plays beyond `base`
+        // goes to `common`, fetched with each match, not at startup.
+        let name = if name == chimera_assets::resolve::BASE && manifest.sets.contains_key(chimera_assets::resolve::COMMON) {
+            let base = manifest.sets.get(chimera_assets::resolve::BASE).cloned().unwrap_or_default();
+            let paths: Vec<String> = paths.into_iter().filter(|p| !base.contains(p)).collect();
+            (chimera_assets::resolve::COMMON.to_string(), paths)
+        } else {
+            (name, paths)
+        };
+        let (name, paths) = name;
         let (kept, left): (Vec<String>, Vec<String>) = paths.into_iter().partition(|p| manifest.files.contains_key(p));
         if !left.is_empty() {
             println!("set {name}: {} files not in the manifest left out (pack the whole install first)", left.len());
         }
         let mut kept: std::collections::BTreeSet<String> = kept.into_iter().collect();
         if name.starts_with("map/") {
-            // What every match fetches anyway: the game's `base` and
-            // `players`.
-            for shared in ["base", "players"] {
+            // What every match fetches anyway: the game's `base`,
+            // `players` and `common` (`resolve::MATCH_SETS`).
+            for shared in std::iter::once(chimera_assets::resolve::BASE).chain(chimera_assets::resolve::MATCH_SETS.iter().copied()) {
                 if let Some(s) = manifest.sets.get(shared) {
                     kept.retain(|p| !s.contains(p));
                 }
@@ -833,6 +867,174 @@ fn sets(args: &[String]) -> Result<(), String> {
     }
     println!("manifest: {}", path.display());
     Ok(())
+}
+
+/// `lean <game>`: `base` made lean from client runs' `CHIMERA_VFS_LOG`
+/// logs (`chimera_assets::resolve::lean`), with `common` and a set per
+/// music track, in the store's newest manifest of the game.
+fn lean(args: &[String]) -> Result<(), String> {
+    use chimera_assets::resolve;
+    let mut it = args.iter();
+    let game = it.next().ok_or(USAGE)?.clone();
+    let (mut store, mut logs, mut sign_it, mut dry, mut build) = (None, Vec::new(), false, false, None);
+    while let Some(arg) = it.next() {
+        let mut value = || it.next().cloned().ok_or_else(|| format!("{arg} needs a value"));
+        match arg.as_str() {
+            "--store" => store = Some(Store::new(value()?)),
+            "--from" => logs.push(PathBuf::from(value()?)),
+            "--build" => build = Some(value()?),
+            "--sign" => sign_it = true,
+            "--dry-run" => dry = true,
+            _ => return Err(format!("unknown option {arg}\n{USAGE}")),
+        }
+    }
+    let store = store.ok_or("lean: pass --store")?;
+    if logs.is_empty() {
+        return Err("lean: pass --from <log> for each client run (at least one)".into());
+    }
+    let build = build.or_else(|| store.latest_build(&game)).ok_or_else(|| format!("no manifest of {game}"))?;
+    let path = store.manifest_path(&game, &build);
+    let mut manifest = Manifest::load(&path)?;
+    let mut runs = Vec::new();
+    for log in &logs {
+        let (reads, checks) = chimera_assets::read_log_with_checks(log)?;
+        let run = resolve::Run::of(&game, &reads, &checks);
+        println!("{}: {} files read, {} only checked for", log.display(), run.reads.len(), run.checks.len());
+        runs.push(run);
+    }
+    let before = manifest.set_size(resolve::BASE);
+    let lean = resolve::lean(&manifest, &runs);
+    let size = |paths: &std::collections::BTreeSet<String>| {
+        let ids: std::collections::BTreeMap<&str, u64> =
+            paths.iter().filter_map(|p| manifest.files.get(p)).map(|f| (f.id.as_str(), f.stored)).collect();
+        (ids.len(), ids.values().sum::<u64>())
+    };
+    println!("{game} build {build}: base was {} records, {} stored", before.0, mb(before.2));
+    for (what, paths) in [
+        ("base (read by every run)", &lean.base),
+        ("common (each match)", &lean.common),
+        ("music (a set per track)", &lean.music),
+        ("a ladder's pieces' (left out)", &lean.ladder),
+        ("  of them only checked for", &lean.checked),
+    ] {
+        let (n, stored) = size(paths);
+        println!("  {what}: {} files, {n} records, {}", paths.len(), mb(stored));
+    }
+    println!("  {} music track sets", lean.tracks.len());
+    if dry {
+        return Ok(());
+    }
+    lean.apply(&mut manifest);
+    manifest.save(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if sign_it {
+        let key = sign::load_or_create_key(&server::key_path(&store)).map_err(|e| e.to_string())?;
+        sign::sign_manifest_file(&key, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("signed with the server's key {}", sign::public_hex(&key));
+    }
+    println!("manifest: {}", path.display());
+    Ok(())
+}
+
+/// `repack`: the store's records packed again at `store::LEVEL` (those of
+/// `--only`'s sets, else every manifest's), each manifest's stored sizes
+/// set to the new records', signed again with `--sign`.
+fn repack(args: &[String]) -> Result<(), String> {
+    let mut it = args.iter();
+    let (mut store, mut threads, mut only, mut sign_it, mut restat) = (None, 4usize, Vec::new(), false, false);
+    while let Some(arg) = it.next() {
+        let mut value = || it.next().cloned().ok_or_else(|| format!("{arg} needs a value"));
+        match arg.as_str() {
+            "--store" => store = Some(Store::new(value()?)),
+            "--threads" => threads = value()?.parse().map_err(|_| "--threads: a number")?,
+            "--only" => {
+                for g in value()?.split(',') {
+                    let (game, prefix) = g.split_once(':').ok_or("--only <game>:<set prefix>,...")?;
+                    only.push((game.to_string(), prefix.to_string()));
+                }
+            }
+            "--sign" => sign_it = true,
+            "--restat" => restat = true,
+            _ => return Err(format!("unknown option {arg}\n{USAGE}")),
+        }
+    }
+    let store = store.ok_or("repack: pass --store")?;
+    let mut manifests = Vec::new();
+    let mut wanted = std::collections::BTreeMap::new();
+    for game in store.games() {
+        for build in store.builds(&game) {
+            let path = store.manifest_path(&game, &build);
+            let m = Manifest::load(&path)?;
+            let mine: Vec<&(String, String)> = only.iter().filter(|(g, _)| *g == game).collect();
+            if only.is_empty() {
+                wanted.extend(m.files.values().map(|f| (f.id.clone(), f.size)));
+            } else {
+                for (name, paths) in m.sets.iter().filter(|(n, _)| mine.iter().any(|(_, p)| n.starts_with(p.as_str()))) {
+                    let _ = name;
+                    wanted.extend(paths.iter().filter_map(|p| m.files.get(p)).map(|f| (f.id.clone(), f.size)));
+                }
+            }
+            manifests.push((path, m));
+        }
+    }
+    let wanted: Vec<(String, u64)> = if restat {
+        Vec::new()
+    } else {
+        wanted.into_iter().filter(|(id, _)| store.has(id)).collect()
+    };
+    println!("repacking {} records at zstd level {} on {threads} threads", wanted.len(), chimera_assets::store::LEVEL);
+    let started = std::time::Instant::now();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let totals = std::sync::Mutex::new((0u64, 0u64, 0usize, Vec::new()));
+    std::thread::scope(|s| {
+        for _ in 0..threads.max(1) {
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some((id, size)) = wanted.get(i) else { break };
+                    let got = store.repack(id, *size);
+                    let mut t = totals.lock().unwrap_or_else(|e| e.into_inner());
+                    match got {
+                        Ok((before, after)) => {
+                            t.0 += before;
+                            t.1 += after;
+                        }
+                        Err(e) => t.3.push(format!("{id}: {e}")),
+                    }
+                    t.2 += 1;
+                    if t.2 % 2000 == 0 {
+                        println!("  {} of {} records, {} -> {}", t.2, wanted.len(), mb(t.0), mb(t.1));
+                    }
+                }
+            });
+        }
+    });
+    let (before, after, _, failed) = totals.into_inner().unwrap_or_else(|e| e.into_inner());
+    if !restat {
+        println!(
+        "{} -> {} ({:.1}% less), {:.0} s",
+        mb(before),
+        mb(after),
+        100.0 * (1.0 - after as f64 / before.max(1) as f64),
+        started.elapsed().as_secs_f64()
+        );
+    }
+    for f in failed.iter().take(20) {
+        println!("  failed: {f}");
+    }
+    let key = if sign_it {
+        Some(sign::load_or_create_key(&server::key_path(&store)).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    for (path, mut m) in manifests {
+        let n = store.restat(&mut m);
+        m.save(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if let Some(key) = &key {
+            sign::sign_manifest_file(key, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        println!("{}: {n} stored sizes changed{}", path.display(), if key.is_some() { ", signed" } else { "" });
+    }
+    if failed.is_empty() { Ok(()) } else { Err(format!("{} records failed", failed.len())) }
 }
 
 fn main() -> ExitCode {

@@ -81,14 +81,14 @@ Or from the console (`~`): `connect <host address>:<port>`.
 
 The first time, the game downloads the files it needs, in its own window:
 the loading panel says "Downloading game files: X of Y MB" with the speed
-and time left (what the games read at startup, a few hundred MB, then the
-match's files), then the map loads and you spawn. There is no second window
+and time left (what the games read at startup, then the match's files),
+then the map loads and you spawn. There is no second window
 and the game doesn't start again. The first
 start takes the longest (minutes on a slow line; the host may ask you to do
-it the day before), and the next ones read what is already saved; later
-maps download in the background while you play, at most 2 MB/s
-(`chimera:asset_prefetch_rate <KB/s>` in the console changes it, 0 turns it
-off; the host may cap it). If the download fails, the loading panel says
+it the day before), and the next ones read what is already saved. The
+next map downloads once the vote has picked it, during the match-end
+screen and the lobby; the music's next track downloads in the background
+while one plays. If the download fails, the loading panel says
 why; join again once the host has fixed it. If it stalls, wait a minute, then see
 "Reporting a bug". Messages you may see instead:
 

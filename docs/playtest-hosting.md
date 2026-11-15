@@ -43,8 +43,8 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    network (`curl -k https://<host address>:<asset port>/key` prints a hex
    key).
 4. **Let testers fetch ahead on Friday.** A tester's first start downloads
-   about 0.5 GB from your asset service (what the games read at startup,
-   then the first match's files); ten testers doing that at 1pm on Saturday
+   about 0.3 GB from your asset service (what the games read at startup,
+   then the first match's files; 0.5 GB before the 2026-11-15 republish); ten testers doing that at 1pm on Saturday
    share your upload. With the asset service and the game server up the
    day before, ask each tester to run their first start then
    (`Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`),
@@ -113,7 +113,9 @@ server's. With `sets` run as above (2026-11-12) the server has, per game:
 
 | Set | CS:S | Combat Arms | HL2:DM |
 |---|---|---|---|
-| `base` (fetched at the first start) | 62.6 MB: also its guns' muzzle flash and spent shells (`sets`: what its dressing brings to other games' maps) | 268 MB: also the music (`Game/BGM`), the G23's sounds, the pool maps' loading images, the guns' impact and shell sounds and models and every sound the effect tables name (`sets`: surfaces, event sounds, the heartbeat) | 62 MB: also all 12 guns, the 19 player models, the weapon and headcrab-canister sounds every match plays, and its guns' effect materials, flashes, decals and spent shells (`sets`: what its dressing brings to any map) |
+| `base` (fetched at the first start) | lean (2026-11-15): 56.9 MB at level 19, what every run read (all its guns: every match loads them). Before: 62.6 MB | lean: 62.9 MB (2,180 records: the menus, fonts, data, the shared skeletons, the stock bodies, the effects every match plays). Before: 268 MB with the music, other ladders' guns and bodies, the bodies' models only checked for | lean: 55.4 MB, its guns and player models (every run read them). Before: 62 MB |
+| `common` (each join, 2026-11-15) | 0.6 MB: what not every match reads (HUD materials, sounds) | 19.4 MB: the event sounds (impacts, explosions, fist, melee, win and lose), debris, other maps' loading images | 1.5 MB |
+| `music/<track>` (2026-11-15) | - | 64 sets, one per file of `Game/BGM` (0.9 MB at the median, 7.5 MB at most): the party music's first ones with each join, the next one while one plays | - |
 | `players` (each join) | 12.9 MB | 66 MB, nearly all in `base`: the stock characters and footsteps | 18 MB |
 | `map/<name>` | all 109 maps (the 18 stock ones and the publisher's community maps), 0.3-196 MB each, median 18 MB, 4.7 GB together | all 105 maps, 0.9-174 MB each, median 25 MB, 3.2 GB together | its 8 maps, 91-154 MB each |
 | `weapon/<id>` | every gun | every gun: view model with hands and parts, the held model (what other players hold), its own sounds (fire, silenced, dry, reload, select, misc) and what it throws or fires (sounds, model, skins, flare) | every gun |
@@ -124,6 +126,51 @@ The weapon sets are named as the offer asks (`weapon/ak47`, not
 `weapon/weapon_ak47`), and the offer names the ladder's drawn melee
 weapons too. A set the service lacks is skipped: its files arrive on
 demand while the map loads, slower (a request per group of files).
+
+### A lean `base`, `common`, music tracks and level 19 (2026-11-15)
+
+`base` is what a game's client fetches at startup, so it holds only what
+every run reads (docs/performance.md, "First join download"): after a
+`base` is (re)made from logs or `sets`, make it lean from two or more
+client runs' `CHIMERA_VFS_LOG` logs on different games' maps (the
+installs hidden: `CHIMERA_ASSET_USE_INSTALL=0` on a hard-linked copy of
+the server store; the recorder logs files only checked for apart, as
+`<game>\t<path>\tcheck`, and never reads them):
+
+```
+chimera_pack lean <game> --store <server store> --from <run 1 log> --from <run 2 log> --sign   # --dry-run first
+```
+
+`base` keeps what every run read; the music leaves it for a set per track
+(`music/<path less loose/>`, Combat Arms' 64, 0.9 MB at the median: the
+client fetches the party music's first tracks with the match and each
+next one while the one before plays); files a ladder's sets hold
+(`weapon/`, `parts/`, `character/`) that not every run read, and files
+only checked for, leave it; the rest goes to `common`, which the offer
+names for every game in play at each join (a client of this version
+adds it even when an older server doesn't). After that, `sets <game>
+--only base` adds what it records to `common` (not to `base`), and
+`map/<name>` sets leave out `common` too.
+
+Records are zstd level 19 since 2026-11-15 (11% smaller than level 3,
+the same to decode). `chimera_pack repack --store <server store>
+--threads <n> --sign` packs every record again (about 8 GB stored took
+26 minutes on 6 threads: 8.3 GB to 7.4 GB) and sets the manifests'
+stored sizes; old and new clients read either level (a record's id is
+its plain bytes' hash), and a client that has a record keeps it.
+
+The publish steps used on 2026-11-15 (back up the manifests first; the
+records are only ever added or replaced whole):
+
+```
+cp -a <server store>/manifests <backup>/manifests-$(date -u +%Y%m%d)
+chimera_pack repack --store <server store> --threads 6 --sign
+chimera_pack lean cs_source   --store <server store> --from <dust2 log> --from <snowvalley log> --sign
+chimera_pack lean combat_arms --store <server store> --from <dust2 log> --from <snowvalley log> --sign
+chimera_pack lean hl2dm       --store <server store> --from <dust2 log> --from <snowvalley log> --sign
+```
+
+The service reads a manifest again within a second; no restart.
 
 `base` and `players` beyond what `sets` records were made from what
 no-install clients fetched outside their sets: run a client like a
@@ -364,7 +411,7 @@ Options (`ultimate_gun_game_server --help`):
 | `+sv_password <pw>` | password (testers type it on the Join screen) |
 | `+chimera:asset_url <url>` | the asset service joining clients fetch from |
 | `+chimera:asset_fingerprint <hex>` | its certificate's fingerprint (default: the one on this machine) |
-| `+chimera:asset_prefetch_max <KB/s>` | the most each client downloads later maps at in the background (default -1: the clients' own 2 MB/s; 0: none). See "Download speed and your upload" |
+| `+chimera:asset_prefetch_max <KB/s>` | clients before 2026-11-15 only: their cap on prefetching the pool's maps (the offer names none now) |
 | `+<command> [args]` | any other console command or cvar |
 
 Maps and matches:
@@ -476,7 +523,8 @@ speed and your upload", below).
 What a tester without the games downloads from the asset service:
 
 - **First join** (or a start with the token bound): what the games read at
-  startup (about 360 MB: each game's `base` set), in the game's own window:
+  startup (about 160 MB: each game's lean `base` set; 376 MB before the
+  2026-11-15 republish), in the game's own window:
   at the first join with the match's files, on the loading panel ("Downloading
   game files: X of Y MB", the speed and time left); on a later start that
   lacks some, in the background from the start, a join waiting for it.
@@ -484,37 +532,39 @@ What a tester without the games downloads from the asset service:
   show on the loading panel with what to do. No second window, no restart.
   Testers with the games installed download nothing of those games.
 - **Each join**: what the match needs that isn't there yet (the first one
-  about 50-100 MB), at full speed, on the loading panel.
-- **In the background, while playing**: the pool's other maps, the
-  likeliest for the players present first, at a capped rate, held while
-  the tester joins or changes map. With the pool by player count that is
-  about 100 maps (several GB over a long session); `+chimera:asset_prefetch_max 0`
-  turns it off, and each map then arrives as one download at its change.
-
-The background rate is each tester's `chimera:asset_prefetch_rate` (KB/s,
-default 2000: 2 MB/s; 0 turns it off; saved in their config). You set the
-most any tester may use with the game server's
-`+chimera:asset_prefetch_max <KB/s>` (default -1: the testers' own rate;
-0: no background download for anyone, maps then come at the join).
-It reaches clients in the match manifest at each join and map change.
+  about 100-125 MB: `players`, `common`, the map, the ladder, the music's
+  first tracks), at full speed, on the loading panel and behind the
+  pre-match lobby.
+- **The next map, ahead**: once the match-end screen's map vote closes
+  (or the rotation picks the map), each tester fetches that map's files at
+  full speed during the match-end screen and the lobby. Nothing else of
+  the pool is fetched (before 2026-11-15 every tester prefetched the whole
+  pool at 2 MB/s for the session: 16 GB served on 2026-11-14).
+- **In the background, while playing**: the music's next track, paced to
+  arrive before the one playing ends (about 1 MB a few minutes), held
+  while a foreground download runs.
 
 Your upload is shared by everyone downloading at once. Rough first-download
-times if all testers start together (0.5 GB each), and a suggested cap
-(about half your upload, split between the testers):
+times if all testers start together (about 0.3 GB each since the
+2026-11-15 republish):
 
-| Your upload | Testers | First downloads, all at once | `chimera:asset_prefetch_max` |
-|---|---|---|---|
-| 10 Mbit/s | 5 | ~35 min | 100 |
-| 10 Mbit/s | 10+ | ~70 min: fetch on Friday | 0 (off) |
-| 20 Mbit/s | 10 | ~35 min | 100 |
-| 50 Mbit/s | 10 | ~15 min | 300 |
-| 50 Mbit/s | 15 | ~20 min | 200 |
-| 100 Mbit/s | 10 | ~7 min | 600 |
-| 100 Mbit/s | 15 | ~10 min | 400 |
-| 500 Mbit/s or more | 15 | ~2 min | -1 (the testers' 2 MB/s) |
+| Your upload | Testers | First downloads, all at once |
+|---|---|---|
+| 10 Mbit/s | 5 | ~20 min |
+| 10 Mbit/s | 10+ | ~40 min: fetch on Friday |
+| 20 Mbit/s | 10 | ~20 min |
+| 50 Mbit/s | 10 | ~8 min |
+| 50 Mbit/s | 15 | ~12 min |
+| 100 Mbit/s | 10 | ~4 min |
+| 100 Mbit/s | 15 | ~6 min |
+| 500 Mbit/s or more | 15 | ~1 min |
 
-In general: cap ≈ (your upload in KB/s ÷ 2) ÷ testers (1 Mbit/s is about
-125 KB/s). Measure your upload (any speed test) the day before. Testers
+After that each tester takes the next map at each vote (25-70 MB) and
+about 1 MB of music every minute or two. Testers on builds before
+2026-11-15 still prefetch the pool's maps at up to 2 MB/s each unless the
+server says `+chimera:asset_prefetch_max 0` (a new server offers them no
+pool maps, so there is nothing for them to prefetch). Measure your upload
+(any speed test) the day before. Testers
 who fetched on Friday ("The day before", 4) take nearly nothing from it on
 the day.
 

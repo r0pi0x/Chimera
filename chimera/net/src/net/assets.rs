@@ -10,12 +10,15 @@
 //!   service on this machine, `chimera_assets::server::tls_dir`). The match
 //!   manifest then carries an `AssetOffer` (`offer`): the URL and
 //!   fingerprint, and the sets the match needs now per game (`base`,
-//!   `players`, the map's `map/<name>`, each ladder and kit weapon's
+//!   `players` and `common`: `chimera_assets::resolve::MATCH_SETS`, the
+//!   map's `map/<name>`, each ladder and kit weapon's
 //!   `weapon/<name>` and the starting weapons a joiner holds until the
-//!   minigame arms it: the weapons and pool come from `AssetHooks`, which
+//!   minigame arms it: the weapons come from `AssetHooks`, which
 //!   `minigame_net` fills; other sets a game names there, Combat Arms'
-//!   rung bodies' `character/<record>`) and later (the pool's other maps,
-//!   prefetched).
+//!   rung bodies' `character/<record>` and guns' `parts/<id>`). Its
+//!   `later` (the pool's other maps, which clients before 2026-11-15
+//!   prefetched at 2 MB/s for the whole session) stays empty: the next
+//!   map comes when the vote locks it in (below).
 //!   A joining client that says it can fetch (`ASSETS_KEY` in its userinfo:
 //!   it has a token) counts as having the offered games (`count_offered`),
 //!   so a client with no install isn't refused before it hears the offer.
@@ -35,13 +38,25 @@
 //!   its records, `pending::starting` holds on-demand misses in its store, so models
 //!   the new match starts loading at once wait for the fetch instead of
 //!   coming a group each), the bytes shown as the join's `Downloading` stage (`DownloadInfo`,
-//!   "game files"); then the join goes on (`client::proceed`). The later
-//!   sets are fetched once in the game (`poll_prefetch`, one set at a time)
-//!   at a capped rate (`pace_prefetch`): the client's
-//!   `chimera:asset_prefetch_rate` (KB/s, `PREFETCH_RATE_DEFAULT`; 0: none),
-//!   at most the server's `chimera:asset_prefetch_max` (in the offer,
-//!   `AssetOffer::prefetch_rate`; 0: no prefetch for anyone), held while the
-//!   client is joining or changing level (a foreground fetch, a map load).
+//!   "game files"); then the join goes on (`client::proceed`). Besides the
+//!   offer's sets the client fetches, for the games it reads from the
+//!   store, each game's `common` (a server before 2026-11-15 doesn't name
+//!   it) and what its parts name for the match (`JoinSets`: Combat Arms'
+//!   first music tracks), so nothing the match plays waits for a fetch.
+//!   With the pre-match lobby the join's download runs behind the lobby,
+//!   before anyone plays.
+//! - **The next map, ahead** (`map_ahead`): once the match-end screen's
+//!   next map is known (`minigame::NextMatch`: the vote's winner when it
+//!   closes, else the rotation's pick), its game's match sets and its
+//!   `map/<name>` are fetched at full speed, during the match-end screen
+//!   (`MapAhead`); the level change's own download then waits for it and
+//!   finds them here.
+//! - **Streams** (`Streams`): sets a part asks for in the background, each
+//!   due in so many seconds (the next music track, before the one playing
+//!   ends): one at a time, paced to finish at about half the time left
+//!   (`stream_rate`; at least `STREAM_MIN_RATE`, at most the link's
+//!   estimate, `StreamLink`), held while a foreground download runs (a
+//!   join, a level change, the next map ahead).
 //!   A game neither installed nor served: with a token
 //!   (`chimera_assets::access`, `chimera:asset_token`), the token is bound
 //!   to the offered service, in the access file and in this process
@@ -64,7 +79,7 @@
 //! and a join that fetches waits for it first, its bytes on the loading
 //! screen.
 //!
-//! Quitting stops the prefetch (`stop_downloads`, a `chimera_core::shutdown`
+//! Quitting stops the streams (`stop_downloads`, a `chimera_core::shutdown`
 //! step); every record is written whole or not at all, so the process may
 //! end in the middle of any fetch.
 //!
@@ -72,8 +87,9 @@
 //! name (data leaked as `&'static`, a game's weapon set, keeps what it was
 //! built from); sets the service doesn't have are skipped (their files come on
 //! demand as the loaders read them); files fetched on demand (a map's
-//! load) don't hold the prefetch, only the join and level change around
-//! them do.
+//! load) don't hold the streams, only the join and level change around
+//! them do; the next map ahead is the vote's winner only (a host's
+//! `changelevel` elsewhere comes with the level change, as before).
 
 use std::{
     collections::BTreeSet,
@@ -90,6 +106,7 @@ use chimera_assets::{
     access::Access,
     pace::Pace,
     progress::Transfer,
+    resolve,
     sets::{self, Wanted},
 };
 use chimera_core::{
@@ -108,13 +125,16 @@ use crate::core::NetRole;
 pub const URL_CVAR: &str = "chimera:asset_url";
 /// Its certificate's fingerprint (cvar).
 pub const FINGERPRINT_CVAR: &str = "chimera:asset_fingerprint";
-/// The server's cap on every client's prefetch, KB/s (cvar; negative:
-/// none, 0: no prefetch).
+/// The server's cap on older clients' prefetch of the offer's `later`
+/// sets, KB/s (cvar; negative: none, 0: no prefetch). The offer's `later`
+/// is empty now, so it matters to no client.
 pub const PREFETCH_MAX_CVAR: &str = "chimera:asset_prefetch_max";
-/// The client's prefetch rate, KB/s (cvar, archived; 0: no prefetch).
-pub const PREFETCH_RATE_CVAR: &str = "chimera:asset_prefetch_rate";
-/// `PREFETCH_RATE_CVAR`'s default: 2 MB/s.
-pub const PREFETCH_RATE_DEFAULT: u32 = 2000;
+/// The least a stream reads at, bytes a second (a track due far off still
+/// arrives in a few minutes).
+pub const STREAM_MIN_RATE: u64 = 64_000;
+/// What a stream is paced to: done when this share of its time left is
+/// spent.
+pub const STREAM_SHARE: f64 = 0.5;
 /// Enter this player's asset token (command).
 pub const TOKEN_COMMAND: &str = "chimera:asset_token";
 /// Sign this PC into a hub with an invite link (command line only, before
@@ -134,27 +154,20 @@ pub struct AssetOffer {
     pub fingerprint: String,
     /// What the match needs before a player spawns, per game.
     pub now: Vec<GameSets>,
-    /// What later matches may need (the pool's other maps): prefetched.
+    /// Sets clients before 2026-11-15 prefetch in the background: empty
+    /// (kept for them: the next map comes at the vote's lock instead).
     pub later: Vec<GameSets>,
-    /// The server's cap on the prefetch, KB/s (`PREFETCH_MAX_CVAR`; 0:
-    /// none); None: the client's own rate.
+    /// Older clients' prefetch cap, KB/s (`PREFETCH_MAX_CVAR`).
     pub prefetch_rate: Option<u32>,
 }
 
-/// The prefetch's rate in KB/s: the client's, at most the server's cap
-/// (0: no prefetch).
-pub fn prefetch_rate(client_kb: u32, server_kb: Option<u32>) -> u32 {
-    server_kb.map_or(client_kb, |s| client_kb.min(s))
-}
-
-/// On a client: the prefetch rate, KB/s (`PREFETCH_RATE_CVAR`).
-#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PrefetchRate(pub u32);
-
-impl Default for PrefetchRate {
-    fn default() -> Self {
-        Self(PREFETCH_RATE_DEFAULT)
-    }
+/// A stream's rate, bytes a second: `remaining` stored bytes done within
+/// `STREAM_SHARE` of `secs_left`, at least `STREAM_MIN_RATE`, at most
+/// `link` (the link's estimate; a stream due sooner than the link allows
+/// reads at the link's rate).
+pub fn stream_rate(remaining: u64, secs_left: f64, link: u64) -> u64 {
+    let want = remaining as f64 / (secs_left * STREAM_SHARE).max(0.5);
+    (want.ceil() as u64).max(STREAM_MIN_RATE).min(link.max(1))
 }
 
 /// Sets of one game (`base`, `map/de_dust2`, `weapon/ak47`).
@@ -306,20 +319,24 @@ pub struct AssetNames {
     /// Weapons the match hands out (`game:weapon`): their `weapon/<id>`
     /// sets, and their games' `base` and `players`.
     pub weapons: Vec<String>,
-    /// The maps a rotation can play next (`game:map`): their `map/<name>`
-    /// sets, prefetched.
-    pub pool: Vec<String>,
     /// Other sets the match needs now (`game:set`, as published: a game's
     /// rung bodies, `combat_arms:character/<record>`).
     pub sets: Vec<String>,
 }
 
 /// Extra things a match's offer names, from the parts that know them
-/// (`minigame_net`: its ladder's and kit's weapons and its map pool; a
+/// (`minigame_net`: its ladder's and kit's weapons; a
 /// game: what its rung extras drew, Combat Arms' bodies): registered per
 /// part, asked in order.
 #[derive(Resource, Clone, Default)]
 pub struct AssetHooks(pub Vec<fn(&World) -> AssetNames>);
+
+/// On a client: sets a part wants with the match's download, beyond the
+/// offer's, as `(game, set)` (Combat Arms' first music tracks: the
+/// client picks them, the server doesn't know them); only the games read
+/// from the store are fetched.
+#[derive(Resource, Clone, Default)]
+pub struct JoinSets(pub Vec<fn(&World) -> Vec<(String, String)>>);
 
 /// What `begin` decided.
 pub(super) enum Next {
@@ -436,39 +453,112 @@ struct AssetFetch {
     from: String,
 }
 
-/// The later sets to prefetch once in the game, the server's cap, and the
-/// prefetch running (its pace: `pace_prefetch` sets its rate and pause).
+/// On a client: the next map's sets being fetched ahead, at full speed,
+/// once the match-end screen knows the map (`map_ahead`).
+#[derive(Resource)]
+pub struct MapAhead {
+    /// The map (`game:name`).
+    pub map: String,
+    job: Option<JoinHandle<Result<String, String>>>,
+    transfer: Arc<Mutex<Option<Arc<Transfer>>>>,
+    /// How it ended (None: running).
+    pub result: Option<Result<String, String>>,
+}
+
+impl MapAhead {
+    /// Running now.
+    pub fn running(&self) -> bool {
+        self.job.as_ref().is_some_and(|j| !j.is_finished())
+    }
+
+    /// Stored bytes fetched and to fetch (0, 0 until known).
+    pub fn bytes(&self) -> (u64, u64) {
+        let t = self.transfer.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        t.map_or((0, 0), |t| {
+            let (_, done, total) = t.done();
+            (done, total)
+        })
+    }
+}
+
+/// On a client: the link's rate as a stream assumes it, bytes a second
+/// (the most a stream reads at; tests set a slow link).
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StreamLink(pub u64);
+
+impl Default for StreamLink {
+    fn default() -> Self {
+        // 4 MB/s: a share of a host's upload, as the 2026-11-14 playtest
+        // had it (6 MB/s for everyone).
+        Self(4_000_000)
+    }
+}
+
+/// One stream asked for.
+#[derive(Clone, Debug, PartialEq)]
+struct StreamWant {
+    game: String,
+    set: String,
+    /// When it is due (`Time`'s elapsed seconds, real time).
+    due: f64,
+}
+
+/// On a client: sets wanted in the background by a time (see the module
+/// doc). Parts ask with `request` and look with `ready`.
 #[derive(Resource, Default)]
-struct Prefetch {
-    waiting: Vec<GameSets>,
-    cap: Option<u32>,
-    running: Option<(JoinHandle<()>, Arc<Pace>)>,
+pub struct Streams {
+    queue: Vec<StreamWant>,
+    running: Option<(StreamWant, JoinHandle<Result<String, String>>, Arc<Pace>, Arc<Mutex<Option<Arc<Transfer>>>>)>,
+    ready: BTreeSet<(String, String)>,
+    failed: BTreeSet<(String, String)>,
+    /// Requests whose readiness wasn't looked at yet (`run_streams`).
+    fresh: Vec<(String, String, f64)>,
 }
 
-/// On a client: the prefetch's state, for tests and the console.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PrefetchState {
-    /// The rate it reads at, KB/s (0: none).
-    pub rate_kb: u32,
-    /// Running now (a set being fetched).
-    pub running: bool,
-    /// Held: the client is joining or changing level.
+/// A stream's state, for tests and the console.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StreamState {
+    /// The set fetched now (`game`, `set`).
+    pub running: Option<(String, String)>,
+    /// Its rate, bytes a second.
+    pub rate: u64,
+    /// Held for a foreground download.
     pub paused: bool,
-    /// Sets still to start.
-    pub waiting: usize,
+    /// Sets waiting.
+    pub queued: usize,
 }
 
-/// The prefetch as it stands (None: nothing offered).
-pub fn prefetch_state(world: &World) -> Option<PrefetchState> {
-    let p = world.get_resource::<Prefetch>()?;
-    let client = world.get_resource::<PrefetchRate>().copied().unwrap_or_default().0;
-    let running = p.running.as_ref().filter(|(j, _)| !j.is_finished());
-    Some(PrefetchState {
-        rate_kb: prefetch_rate(client, p.cap),
-        running: running.is_some(),
-        paused: running.is_some_and(|(_, pace)| pace.paused()),
-        waiting: p.waiting.iter().map(|g| g.sets.len()).sum(),
-    })
+impl Streams {
+    /// Ask for `game`'s `set` within `secs` seconds (again: the sooner of
+    /// the two times). A set already here is ready at the next frame.
+    pub fn request(&mut self, game: &str, set: &str, secs: f64) {
+        let key = (game.to_string(), set.to_string());
+        if self.ready.contains(&key) || self.failed.contains(&key) {
+            return;
+        }
+        self.fresh.push((key.0, key.1, secs.max(0.0)));
+    }
+
+    /// Whether `game`'s `set` is here whole (asked for and arrived, or
+    /// held already).
+    pub fn ready(&self, game: &str, set: &str) -> bool {
+        self.ready.contains(&(game.to_string(), set.to_string()))
+    }
+
+    /// Whether it was asked for and couldn't come (not on the service).
+    pub fn failed(&self, game: &str, set: &str) -> bool {
+        self.failed.contains(&(game.to_string(), set.to_string()))
+    }
+
+    pub fn state(&self) -> StreamState {
+        let running = self.running.as_ref().filter(|r| !r.1.is_finished());
+        StreamState {
+            running: running.map(|r| (r.0.game.clone(), r.0.set.clone())),
+            rate: running.map_or(0, |r| r.2.rate()),
+            paused: running.is_some_and(|r| r.2.paused()),
+            queued: self.queue.len(),
+        }
+    }
 }
 
 pub(super) fn plugin(app: &mut App) {
@@ -476,7 +566,9 @@ pub(super) fn plugin(app: &mut App) {
     app.shutdown_flush(Stage::Persist, "downloads", stop_downloads);
     app.init_resource::<AssetHost>()
         .init_resource::<AssetHooks>()
-        .init_resource::<PrefetchRate>();
+        .init_resource::<JoinSets>()
+        .init_resource::<Streams>()
+        .init_resource::<StreamLink>();
     resource_cvar::<AssetHost, String>(
         app,
         URL_CVAR,
@@ -492,19 +584,9 @@ pub(super) fn plugin(app: &mut App) {
     resource_cvar::<AssetHost, i64>(
         app,
         PREFETCH_MAX_CVAR,
-        "Server: the most KB/s each client prefetches the pool's other maps at, in the background (0: no prefetch; \
-         -1: the clients' own rate).",
+        "Server: older clients' cap on prefetching the offer's later maps, KB/s (none are offered now).",
         |h| &mut h.prefetch_max,
     );
-    resource_cvar::<PrefetchRate, u32>(
-        app,
-        PREFETCH_RATE_CVAR,
-        "KB/s the game fetches later maps' files at in the background, while playing (0: none; a server may cap it).",
-        |r| &mut r.0,
-    );
-    app.world_mut()
-        .resource_mut::<chimera_core::console::Console>()
-        .archive(PREFETCH_RATE_CVAR);
     app.console_command(
         TOKEN_COMMAND,
         "Enter your asset token (from the asset service's admin), kept for this user; the next server offering its service binds it.",
@@ -518,7 +600,7 @@ pub(super) fn plugin(app: &mut App) {
     );
     app.add_systems(
         Update,
-        (poll_fetch, poll_prefetch, pace_prefetch)
+        (poll_fetch, map_ahead, run_streams)
             .chain()
             .run_if(resource_equals(NetRole::Client)),
     );
@@ -579,11 +661,10 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
     };
     let mut in_play: Vec<String> = m.games.iter().map(|g| g.game.clone()).collect();
     in_play.extend(m.weapons.iter().cloned());
-    let (mut weapons, mut pool, mut named) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut weapons, mut named) = (Vec::new(), Vec::new());
     for hook in world.get_resource::<AssetHooks>().cloned().unwrap_or_default().0 {
         let n = hook(world);
         weapons.extend(n.weapons);
-        pool.extend(n.pool);
         named.extend(n.sets);
     }
     in_play.extend(
@@ -593,8 +674,9 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
             .filter_map(|w| w.split_once(':').map(|(g, _)| g.to_string())),
     );
     for g in in_play.iter().filter(|g| known(g)) {
-        add(&mut offer.now, g, "base".into());
-        add(&mut offer.now, g, "players".into());
+        for set in std::iter::once(resolve::BASE).chain(resolve::MATCH_SETS.iter().copied()) {
+            add(&mut offer.now, g, set.into());
+        }
     }
     if let Some((game, name)) = m.map.split_once(':')
         && known(game)
@@ -612,14 +694,6 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
     }
     for (game, set) in named.iter().filter_map(|s| s.split_once(':')).filter(|(g, _)| known(g)) {
         add(&mut offer.now, game, set.to_string());
-    }
-    for map in pool {
-        if let Some((game, name)) = map.split_once(':')
-            && known(game)
-            && map != m.map
-        {
-            add(&mut offer.later, game, format!("map/{name}"));
-        }
     }
     if !offer.now.is_empty() {
         m.assets = Some(offer);
@@ -706,8 +780,7 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
             return bind_here(world, &offer, &session, &unfilled, then);
         }
     }
-    set_prefetch(world, &offer, &|g| served(g));
-    let wants: Vec<GameSets> = offer.now.iter().filter(|g| served(g)).cloned().collect();
+    let wants: Vec<GameSets> = with_client_sets(world, offer.now.iter().filter(|g| served(g)).cloned().collect());
     let need = map_need(world, &offer, &session, &then);
     let settings = session.settings.clone().filter(|s| s.remote.is_some() && s.store.is_some());
     // An installed game's map the install may lack (a community map): its
@@ -740,15 +813,24 @@ fn can_bind(session: &AssetSession) -> bool {
     })
 }
 
-/// The offer's later sets of the games `served` takes, to prefetch once
-/// in the game (a prefetch running goes on).
-fn set_prefetch(world: &mut World, offer: &AssetOffer, served: &dyn Fn(&GameSets) -> bool) {
-    let running = world.remove_resource::<Prefetch>().and_then(|p| p.running);
-    world.insert_resource(Prefetch {
-        waiting: offer.later.iter().filter(|g| served(g)).cloned().collect(),
-        cap: offer.prefetch_rate,
-        running,
-    });
+/// The client's own additions to `wants` (the offer's sets of the games
+/// it fetches): each game's `resolve::MATCH_SETS` (an older server names
+/// no `common`) and what `JoinSets` names of those games.
+fn with_client_sets(world: &World, mut wants: Vec<GameSets>) -> Vec<GameSets> {
+    let games: Vec<String> = wants.iter().map(|g| g.game.clone()).collect();
+    for g in &games {
+        for set in resolve::MATCH_SETS {
+            add(&mut wants, g, set.to_string());
+        }
+    }
+    for hook in world.get_resource::<JoinSets>().cloned().unwrap_or_default().0 {
+        for (game, set) in hook(world) {
+            if games.contains(&game) {
+                add(&mut wants, &game, set);
+            }
+        }
+    }
+    wants
 }
 
 /// Fetch `wants` on a thread (after the startup sets fetching in the
@@ -780,6 +862,9 @@ fn start_fetch(
         Some(StartupFiles(fetch)) => fetch.into_parts(),
         None => (None, Arc::default()),
     };
+    // The next map fetched ahead: waited for, so its records aren't asked
+    // for twice.
+    let ahead = world.get_resource_mut::<MapAhead>().and_then(|mut a| a.job.take());
     let shared = transfer.clone();
     // From now until the fill claims its records, on-demand misses wait
     // for it (`pending::starting`): the new match's ladder, arriving with
@@ -792,6 +877,13 @@ fn start_fetch(
                 Ok(Ok(summary)) => info!("startup {FILES}: {summary}"),
                 Ok(Err(e)) => info!("startup {FILES}: {e}"),
                 Err(_) => info!("startup {FILES}: the fetch panicked"),
+            }
+        }
+        if let Some(job) = ahead {
+            match job.join() {
+                Ok(Ok(summary)) => info!("the next map's {FILES}: {summary}"),
+                Ok(Err(e)) => info!("the next map's {FILES}: {e}"),
+                Err(_) => info!("the next map's {FILES}: the fetch panicked"),
             }
         }
         let starting = starting.unwrap_or_else(|| chimera_assets::pending::starting(&store));
@@ -905,12 +997,12 @@ fn bind_here(world: &mut World, offer: &AssetOffer, session: &AssetSession, game
     // fetched first) and the offer's, of these games and those served.
     let bound: BTreeSet<&str> = games.iter().map(String::as_str).collect();
     let fetched = |g: &str| bound.contains(g) || session.served.contains(g);
-    set_prefetch(world, offer, &|g| fetched(&g.game));
     let mut wants: Vec<Wanted> = games
         .iter()
         .map(|g| Wanted { game: g.clone(), sets: sets::STARTUP_SETS.iter().map(|s| s.to_string()).collect() })
         .collect();
-    for g in offer.now.iter().filter(|g| fetched(&g.game)) {
+    let now = with_client_sets(world, offer.now.iter().filter(|g| fetched(&g.game)).cloned().collect());
+    for g in &now {
         match wants.iter_mut().find(|w| w.game == g.game) {
             Some(w) => w.sets.extend(g.sets.iter().filter(|s| !w.sets.contains(s)).cloned().collect::<Vec<_>>()),
             None => wants.push(Wanted { game: g.game.clone(), sets: g.sets.clone() }),
@@ -1059,84 +1151,156 @@ fn poll_fetch(world: &mut World) {
     }
 }
 
-/// In the game: the later sets, one at a time, in the background, at the
-/// prefetch's rate (`pace_prefetch`).
-fn poll_prefetch(world: &mut World) {
-    if !world.contains_resource::<client::Joined>() {
-        return;
-    }
-    let client = world.get_resource::<PrefetchRate>().copied().unwrap_or_default().0;
-    let Some(mut p) = world.get_resource_mut::<Prefetch>() else {
+/// The match-end screen knows the next map (`minigame::NextMatch`: the
+/// vote's winner, or the rotation's pick): its game's match sets and its
+/// `map/<name>` fetched now at full speed, when the game is read from the
+/// store (`MapAhead`; once per map).
+fn map_ahead(world: &mut World) {
+    let Some(map) = world.get_resource::<chimera_sim::minigame::NextMatch>().and_then(|n| n.map.clone()) else {
         return;
     };
-    let rate = prefetch_rate(client, p.cap);
-    if rate == 0 || p.running.as_ref().is_some_and(|(j, _)| !j.is_finished()) || p.waiting.is_empty() {
+    if world.get_resource::<MapAhead>().is_some_and(|a| a.map == map) || !world.contains_resource::<client::Joined>() {
         return;
     }
-    let waiting = std::mem::take(&mut p.waiting);
-    let settings = world.get_resource::<AssetSession>().and_then(|s| s.settings.clone());
-    let Some(settings) = settings.filter(|s| s.remote.is_some()) else {
+    let Some((game, name)) = map.split_once(':') else { return };
+    let Some(session) = world.get_resource::<AssetSession>().cloned() else { return };
+    let Some(settings) = session.settings.clone().filter(|s| s.remote.is_some() && s.store.is_some()) else {
         return;
     };
-    let pace = Arc::new(Pace::kb_per_sec(rate.into()));
-    let shared = pace.clone();
+    if !session.served.contains(game) {
+        return;
+    }
+    let base_held = sets::held(&settings, game, &[resolve::BASE]);
+    let mut names = resolve::match_sets(&[format!("map/{name}")]);
+    names.retain(|s| s != resolve::BASE || !base_held);
+    let wants = vec![Wanted { game: game.to_string(), sets: names }];
+    let transfer: Arc<Mutex<Option<Arc<Transfer>>>> = Arc::default();
+    let shared = transfer.clone();
+    info!("fetching the next map's {FILES} ahead: {map}");
     let job = std::thread::spawn(move || {
-        for g in waiting {
-            for set in &g.sets {
-                if shared.stopped() {
-                    return;
+        sets::fetch(&settings, &wants, "the next map's files", &shared, sets::Options::default())
+    });
+    world.insert_resource(MapAhead { map, job: Some(job), transfer, result: None });
+}
+
+/// The streams: new requests looked at (a set held already is ready at
+/// once), the one running finished or paced (`stream_rate` against its
+/// time left; held while a foreground download runs), the next started.
+fn run_streams(world: &mut World) {
+    let now = world.get_resource::<Time<Real>>().map_or(0.0, |t| t.elapsed_secs_f64());
+    let busy = world.contains_resource::<AssetFetch>()
+        || world.get_resource::<MapAhead>().is_some_and(MapAhead::running)
+        || !world.contains_resource::<client::Joined>()
+        || world.get_resource::<JoinProgress>().is_some_and(|p| !matches!(p.stage, JoinStage::Idle | JoinStage::Joined));
+    let link = world.get_resource::<StreamLink>().copied().unwrap_or_default().0;
+    let settings = world.get_resource::<AssetSession>().and_then(|s| s.settings.clone()).filter(|s| s.store.is_some());
+    // Ahead's end noted.
+    if let Some(mut a) = world.get_resource_mut::<MapAhead>()
+        && a.job.as_ref().is_some_and(|j| j.is_finished())
+    {
+        let result = a.job.take().map(|j| j.join().unwrap_or(Err("the fetch panicked".into())));
+        match &result {
+            Some(Ok(summary)) => info!("the next map's {FILES} ({}): {summary}", a.map),
+            Some(Err(e)) => info!("the next map's {FILES} ({}): {e}", a.map),
+            None => {}
+        }
+        a.result = result;
+    }
+    let Some(mut streams) = world.get_resource_mut::<Streams>() else { return };
+    for (game, set, secs) in std::mem::take(&mut streams.fresh) {
+        let key = (game.clone(), set.clone());
+        if streams.ready.contains(&key) {
+            continue;
+        }
+        if settings.as_ref().is_some_and(|s| sets::held(s, &game, &[set.as_str()])) {
+            streams.ready.insert(key);
+            continue;
+        }
+        let due = now + secs;
+        let running = streams.running.as_ref().is_some_and(|r| r.0.game == game && r.0.set == set);
+        match streams.queue.iter_mut().find(|w| w.game == game && w.set == set) {
+            Some(w) => w.due = w.due.min(due),
+            None if running => {}
+            None => streams.queue.push(StreamWant { game, set, due }),
+        }
+    }
+    // The one running: finished, or paced to its time left.
+    if let Some((want, job, pace, transfer)) = streams.running.as_ref() {
+        if job.is_finished() {
+            let (want, job, _, _) = streams.running.take().expect("checked");
+            let key = (want.game.clone(), want.set.clone());
+            match job.join().unwrap_or(Err("the fetch panicked".into())) {
+                Ok(summary) => {
+                    info!("streamed {}:{}: {summary}", want.game, want.set);
+                    if settings.as_ref().is_some_and(|s| sets::held(s, &want.game, &[want.set.as_str()])) {
+                        streams.ready.insert(key);
+                    } else {
+                        streams.failed.insert(key);
+                    }
                 }
-                let one = [Wanted { game: g.game.clone(), sets: vec![set.clone()] }];
-                let options = sets::Options { pace: Some(&shared), ..default() };
-                match sets::fetch(&settings, &one, "prefetched files", &Mutex::new(None), options) {
-                    Ok(summary) => info!("prefetched {}:{set}: {summary}", g.game),
-                    Err(e) => info!("prefetching {}:{set}: {e}", g.game),
+                Err(e) => {
+                    info!("streaming {}:{}: {e}", want.game, want.set);
+                    streams.failed.insert(key);
                 }
             }
+        } else {
+            let (done, total) = transfer
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .map_or((0, 0), |t| {
+                    let (_, d, t) = t.done();
+                    (d, t)
+                });
+            pace.set_rate(stream_rate(total.saturating_sub(done), want.due - now, link));
+            if pace.paused() != busy {
+                pace.pause(busy);
+            }
         }
-    });
-    world.resource_mut::<Prefetch>().running = Some((job, pace));
-}
-
-/// The running prefetch's rate (the client's, at most the server's cap)
-/// and its pause: held while the client isn't in the game (joining,
-/// changing level, fetching the match's files in the foreground).
-fn pace_prefetch(
-    prefetch: Option<Res<Prefetch>>,
-    rate: Option<Res<PrefetchRate>>,
-    joined: Option<Res<client::Joined>>,
-    fetch: Option<Res<AssetFetch>>,
-    progress: Option<Res<JoinProgress>>,
-) {
-    let Some((_, pace)) = prefetch.as_ref().and_then(|p| p.running.as_ref()) else {
-        return;
-    };
-    let cap = prefetch.as_ref().and_then(|p| p.cap);
-    let kb = prefetch_rate(rate.map_or(PREFETCH_RATE_DEFAULT, |r| r.0), cap);
-    pace.set_rate(u64::from(kb) * 1000);
-    let busy = fetch.is_some() || joined.is_none() || progress.is_some_and(|p| !matches!(p.stage, JoinStage::Idle | JoinStage::Joined));
-    if pace.paused() != busy {
-        pace.pause(busy);
     }
+    if streams.running.is_some() || streams.queue.is_empty() || busy {
+        return;
+    }
+    let Some(settings) = settings.filter(|s| s.remote.is_some()) else { return };
+    // The soonest due first.
+    streams.queue.sort_by(|a, b| a.due.total_cmp(&b.due));
+    let want = streams.queue.remove(0);
+    let pace = Arc::new(Pace::new(stream_rate(0, want.due - now, link)));
+    let transfer: Arc<Mutex<Option<Arc<Transfer>>>> = Arc::default();
+    let (p, t) = (pace.clone(), transfer.clone());
+    let one = vec![Wanted { game: want.game.clone(), sets: vec![want.set.clone()] }];
+    let job = std::thread::spawn(move || {
+        let options = sets::Options { pace: Some(&p), ..default() };
+        sets::fetch(&settings, &one, "streamed files", &t, options)
+    });
+    streams.running = Some((want, job, pace, transfer));
 }
 
-/// The game quits: the prefetch stops at its next chunk. Nothing is cut
+/// On a client: the streams' state (None: no streams resource).
+pub fn stream_state(world: &World) -> Option<StreamState> {
+    world.get_resource::<Streams>().map(Streams::state)
+}
+
+/// The game quits: a stream stops at its next chunk. Nothing is cut
 /// mid-file: the store writes each record whole beside its place and
 /// renames it in (`store::write_atomic`), so a fetch ended anywhere leaves
 /// whole records, and the next fetch asks for the rest.
 fn stop_downloads(world: &mut World) {
-    if let Some((_, pace)) = world.get_resource::<Prefetch>().and_then(|p| p.running.as_ref()) {
+    if let Some((_, _, pace, _)) = world.get_resource::<Streams>().and_then(|s| s.running.as_ref()) {
         pace.stop();
     }
 }
 
-/// The client left: no fetch goes on for it; a prefetch stops (its
-/// batch cut short).
+/// The client left: no fetch goes on for it; a stream stops (its batch
+/// cut short); the next map ahead is forgotten.
 pub(super) fn reset(world: &mut World) {
     world.remove_resource::<AssetFetch>();
-    if let Some(p) = world.remove_resource::<Prefetch>()
-        && let Some((_, pace)) = p.running
-    {
-        pace.stop();
+    world.remove_resource::<MapAhead>();
+    if let Some(mut s) = world.get_resource_mut::<Streams>() {
+        if let Some((_, _, pace, _)) = s.running.take() {
+            pace.stop();
+        }
+        s.queue.clear();
+        s.fresh.clear();
     }
 }

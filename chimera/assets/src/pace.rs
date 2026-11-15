@@ -1,7 +1,8 @@
 //! A cap on how fast a background fetch reads from the asset service
 //! (docs/plans/active/asset-service.md, "Playtest delivery"): the game's
-//! prefetch of later maps shares the host's upload with every other
-//! tester, so it reads at most `rate` bytes a second, holds while the
+//! background streams (the next music track, `chimera_net::net::assets::
+//! Streams`) share the host's upload with every other tester, so each
+//! reads at most `rate` bytes a second, holds while the
 //! game fetches in the foreground (`pause`) and ends at `stop`.
 //! `Remote::fill_paced` reads each batch answer through it in small
 //! chunks (`Paced`), so the bytes leave the host's socket at that rate

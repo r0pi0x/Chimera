@@ -141,6 +141,7 @@ fn covered(manifest: &Manifest, path: &str, own: Option<&str>) -> bool {
     manifest.sets.iter().any(|(set, files)| {
         let wanted = set == "base"
             || set == "players"
+            || set == "common"
             || own.is_some_and(|n| set.eq_ignore_ascii_case(&format!("map/{n}")))
             || ["weapon/", "character/", "parts/"].iter().any(|p| set.starts_with(p));
         wanted && (files.contains(path) || files.iter().any(|f| f.to_ascii_lowercase() == lower))

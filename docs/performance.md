@@ -4766,6 +4766,74 @@ service sees both: the ` on-demand` mark, the batches of a join), or
 prefetching only the next vote's maps, gives those the whole link and
 saves most of the 16 GB.
 
+### After the cuts (2026-11-15)
+
+Done: a lean `base` (`chimera_pack lean`), `common`, a set per music
+track, zstd level 19 (`chimera_pack repack`), no pool prefetch, the next
+map fetched at the vote's lock, the music streamed. Measured the same
+way: two offscreen Ultimate Gun Game runs with no installs on a
+hard-linked copy of the store (`cs_source:de_dust2`, `combat_arms:
+snowvalley`, 6,000 frames each, `CHIMERA_VFS_LOG` with checks logged
+apart), then `lean` and `repack` on a scratch copy of the published
+store (8.3 GB to 7.4 GB stored over all three games), sums from its
+manifests (new records in the order a client fetches them):
+
+| Set | before (level 3) | after (level 19) |
+|---|---|---|
+| CS:S `base` | 63.4 | 56.9 (1,735 records: every run read all of it, its 29 guns too) |
+| Combat Arms `base` | 268.2 | 62.9 (2,180 records; 77.0 at level 3) |
+| HL2:DM `base` (beyond CS:S's) | 44.8 | 39.3 |
+| **startup** | **376.4** | **159.2** (467 MB plain) |
+| `players` and `common` of the three | 0.9 | 23.1 (Combat Arms' `common`: 404 records, the event sounds, debris, other maps' loading images: 20.8 MB at level 3) |
+| `map/de_dust2` | 79.5 | 68.5 |
+| the party music's first files (start track, last stage, loading, the playlist's first) | in `base` | 3.8 |
+| **startup and join, the ladder aside** | **456.8** | **254.7** |
+| the ladder's `weapon/`, `parts/`, `character/` | about 20 | more than before: Combat Arms' other guns and bodies no longer in `base` (the session below: 13-17 MB a level change) |
+
+What left Combat Arms' `base`: the music, 64 files, 72.3 MB (now a set
+per track: 0.9 MB at the median, 7.5 MB at most, 71.3 MB in all at level
+19); the files of a ladder's sets not every run read, 688 files, 98.4 MB
+(other ladders' guns and bodies, the 172 body models only checked for:
+`rungs::missing_bodies` asks `install_has`, which the recorder now logs
+as a check and never reads); `common`, 447 files, 20.8 MB. CS:S and
+HL2:DM: every run read nearly all of their `base` (the client loads every
+gun of each game it plays), 0.6 and 1.6 MB to `common` (CS:S's with 4
+files the offscreen runs only checked for: a file no ladder set holds
+goes to `common` whether read or checked). 174 of the 688 files (25.6 MB) were only checked for.
+
+The heavy guard (`heavy::no_fetch_in_match`, its scratch service on this
+store, `CHIMERA_GUARD_BOUND=1`: the token bound at start, as a second
+start or any player who started the game once with the token): passes,
+**no fetch during any of the four matches**, 210 s. A client with an
+empty store, as it happened:
+
+| When | What | MB |
+|---|---|---|
+| start, behind the menu | the three `base` | 159.2 (4,723 records) |
+| first join (`combat_arms:warehouse`) | `players`, `common`, `map/warehouse`, the ladder, the music's first files | 107.9 (1,407 records) |
+| loading it, on demand | 15 fetches outside every set: 2 attribute files, the menu's first music track (3.4), turret and arrow models of perk weapons, 6 CS:S HUD materials and 2 HL2:DM crossbow sounds in no set offered (to cover next: `common` or the perk weapons' sets) | 17.1 |
+| **before the first match** | | **about 284** (476 for `de_dust2` before) |
+| each next map, at the vote's lock (`de_aztec`, `de_dust2`, `dm_overwatch`) | its game's sets and `map/<name>` | 26.8, 66.5, 44.9 (0-1 s each here) |
+| each level change after it | the new ladder's sets | 13.4, 17.0, 14.3 |
+| while playing | music tracks, one at a time (8 in the session, 1.3-3.4 MB each, paced to be ready before the one playing ends) | 9.3 |
+
+The same client with its token not yet bound (a tester's very first
+start: the join binds it and fetches in the same game) doesn't reach the
+first match, before and after these cuts alike: after the bind, the
+client's minigame check says "weapon combat_arms:makarov_ca: not in the
+weapon catalogue" (the catalogue built at startup without Combat Arms'
+files isn't built again; the 2026-11-15 post-push run of `main` failed
+the same way). Backlog: "UGG playtest 7".
+
+Time, not bytes: six testers starting at once on the 2026-11-14 link (6
+MB/s in all) would take about 159 x 6 / 6 = 2.7 minutes for the startup
+sets (6 minutes before) and about 2 more for their first joins, and the
+link is then free: no pool prefetch (16 GB served on 2026-11-14), only
+the next map at each vote (26-67 MB each) and about 1 MB of music a
+minute and a half each.
+
+
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,

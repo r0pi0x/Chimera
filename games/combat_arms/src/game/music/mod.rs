@@ -36,6 +36,15 @@
 //! the client's state here is plain data, and only `ui::music` decodes
 //! and plays.
 //!
+//! Served music (no install: the asset store's `music/<track>` sets,
+//! not in `base`): `stream_tracks` fetches the party music's first files
+//! with the match's download (`MusicAhead`, the `JoinSets` hook: the start
+//! track, the last-stage music, the loading track, the playlist's first)
+//! and each next playlist track in the background while the one before
+//! plays (`net::assets::Streams`, due when its cross-fade begins); the
+//! director's `MusicFiles::pending` keeps the playlist to tracks that are
+//! here.
+//!
 //! An app's own menu (`AppMenuShown`: the party apps' main menu) is a
 //! menu screen: the playlist plays behind it; while an app plays its own
 //! music (`AppMusicPlays`) none of Combat Arms' plays.
@@ -129,6 +138,7 @@ impl Plugin for CaMusicPlugin {
                     drive,
                     trigger::hear,
                     ambient_sync,
+                    stream_tracks,
                 )
                     .chain()
                     .in_set(CaMusicSet),
@@ -160,11 +170,84 @@ impl Plugin for CaMusicPlugin {
                 |w, _| Ok(Some(describe_ambient(w))),
             );
         app.world_mut().resource_mut::<crate::console::Console>().archive("party_music");
+        app.init_resource::<MusicAhead>();
+        app.world_mut()
+            .get_resource_or_init::<chimera_net::net::assets::JoinSets>()
+            .0
+            .push(first_tracks);
         app.net_part("combat_arms_music", |app| {
             use bevy_replicon::prelude::{Channel, ServerMessageAppExt};
             app.add_server_message::<CaMusicOn>(Channel::Ordered)
                 .add_server_message::<CaMusicOff>(Channel::Ordered);
         });
+    }
+}
+
+/// The party music's files to have here before a match starts
+/// (`CaMusic::party_first_files`, kept by `stream_tracks` for the join's
+/// `JoinSets` hook, which reads the world only).
+#[derive(Resource, Default, Clone, Debug, PartialEq)]
+pub struct MusicAhead {
+    pub first: Vec<String>,
+}
+
+/// How often `stream_tracks` looks, ms.
+const STREAM_LOOK_MS: f64 = 250.0;
+
+/// The `JoinSets` hook: the party music's first tracks' sets (Combat
+/// Arms', `music/<track>`), fetched with the match's files.
+fn first_tracks(world: &World) -> Vec<(String, String)> {
+    let Some(ahead) = world.get_resource::<MusicAhead>() else { return Vec::new() };
+    ahead
+        .first
+        .iter()
+        .map(|f| (super::INFO.id.to_string(), chimera_core::mount::assets::resolve::track_set_of_key(f)))
+        .collect()
+}
+
+/// The party music's tracks the asset store serves and the client lacks
+/// (`MusicFiles::pending`, marked by `ui::music`'s scan) come as sets of
+/// their own (`music/<track>`, `net::assets::Streams`): the first ones with
+/// the match's files (`MusicAhead`, `first_tracks`), each next playlist
+/// track while the one before plays, due when its cross-fade starts (its
+/// time left less the menu fade); a track that arrived is no longer
+/// pending, and the playlist moves on only to tracks that are here.
+fn stream_tracks(
+    mut music: ResMut<CaMusic>,
+    clock: Res<MusicClock>,
+    streams: Option<ResMut<chimera_net::net::assets::Streams>>,
+    mut ahead: ResMut<MusicAhead>,
+    mut last: Local<Option<f64>>,
+) {
+    if music.files.pending().next().is_none() {
+        return;
+    }
+    if last.is_some_and(|l| clock.now - l < STREAM_LOOK_MS) {
+        return;
+    }
+    *last = Some(clock.now);
+    let first = music.party_first_files();
+    if ahead.first != first {
+        ahead.first = first.clone();
+    }
+    let Some(mut streams) = streams else { return };
+    let game = super::INFO.id;
+    let mut wanted: Vec<(String, f64)> = first.into_iter().map(|f| (f, 0.0)).collect();
+    if let (Some((_, left_ms)), Some(next)) = (music.party_left(clock.now), music.party_upcoming()) {
+        let due = (left_ms / 1000.0 - music.data.menu_fade).max(0.0);
+        wanted.push((next, due));
+    }
+    for (file, due) in wanted {
+        if !music.files.pending().any(|p| *p == data::normalize(&file)) {
+            continue;
+        }
+        let set = chimera_core::mount::assets::resolve::track_set_of_key(&file);
+        if streams.ready(game, &set) || streams.failed(game, &set) {
+            // Here, or not served as a set (read on demand when played).
+            music.files.set_pending(&file, false);
+        } else {
+            streams.request(game, &set, due);
+        }
     }
 }
 

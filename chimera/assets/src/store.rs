@@ -1,5 +1,6 @@
 //! The record store on disk: `records/<ab>/<id>.zst` (a file's plain bytes,
-//! zstd level 3; `id` = lowercase hex SHA-256 of the plain bytes) and
+//! zstd level 19, `LEVEL`; records packed before 2026-11-15 are level 3
+//! until `repack`ed, and read the same; `id` = lowercase hex SHA-256 of the plain bytes) and
 //! `manifests/<game>/<build>.txt`. Writes are atomic (a temporary file,
 //! then a rename), so packers running at once never leave half a record;
 //! a record already there is never written again (dedup by id). A fetched
@@ -15,9 +16,12 @@ use sha2::{Digest, Sha256};
 
 use crate::disk;
 
-/// zstd level for records (the plan's section 2: level 3 packs at
-/// 120-220 MB/s a thread and unpacks at 530-640 MB/s).
-pub const LEVEL: i32 = 3;
+/// zstd level for records: 19 (docs/performance.md, "First join
+/// download, 2026-11-14": 11% smaller than level 3 for the same decode
+/// cost, about 2 ms a plain MB; packing costs about 0.4 s a plain MB on
+/// one thread, once per publish). A record's id is its plain bytes'
+/// hash, so a record of any level reads the same (`unpack`).
+pub const LEVEL: i32 = 19;
 
 /// The lowercase hex SHA-256 of `bytes`: a record's id.
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -121,6 +125,38 @@ impl Store {
         let path = self.record_path(id);
         let packed = fs::read(&path).map_err(|e| io::Error::new(e.kind(), format!("record {id}: {e}")))?;
         unpack(id, size, &packed)
+    }
+
+    /// Record `id` packed again at `LEVEL` (checked as `size` plain bytes)
+    /// when that is smaller, written beside it and renamed in (a hard
+    /// link to another store's record is replaced, never written
+    /// through). Its stored size before and after.
+    pub fn repack(&self, id: &str, size: u64) -> io::Result<(u64, u64)> {
+        let path = self.record_path(id);
+        let packed = fs::read(&path).map_err(|e| io::Error::new(e.kind(), format!("record {id}: {e}")))?;
+        let plain = unpack(id, size, &packed)?;
+        let again = zstd::bulk::compress(&plain, LEVEL)?;
+        if again.len() >= packed.len() {
+            return Ok((packed.len() as u64, packed.len() as u64));
+        }
+        write_atomic(&path, &again)?;
+        Ok((packed.len() as u64, again.len() as u64))
+    }
+
+    /// `manifest`'s stored sizes set to its records' sizes in this store
+    /// (after a `repack`); how many changed. Records the store lacks keep
+    /// theirs.
+    pub fn restat(&self, manifest: &mut crate::Manifest) -> usize {
+        let mut changed = 0;
+        for f in manifest.files.values_mut() {
+            if let Ok(meta) = fs::metadata(self.record_path(&f.id))
+                && meta.len() != f.stored
+            {
+                f.stored = meta.len();
+                changed += 1;
+            }
+        }
+        changed
     }
 
     /// Every record id in the store, sorted.
@@ -260,6 +296,45 @@ mod tests {
         assert!(store.has(&id));
         // A record that isn't what it claims is refused whatever the space.
         assert!(store.put_stored_with(&id, 3, &packed, &disk_with(500 * gb)).is_err());
+        fs::remove_dir_all(&root).ok();
+    }
+
+    /// A record packed at level 3 (before `LEVEL` was 19) and repacked
+    /// reads back the same bytes; the repack is smaller, replaces a hard
+    /// link without touching the other store's file, and the manifest's
+    /// stored size follows it (`restat`).
+    #[test]
+    fn a_level_3_record_repacked_at_level_19_reads_the_same() {
+        assert_eq!(LEVEL, 19);
+        let root = std::env::temp_dir().join(format!("chimera_store_repack_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let (old, new) = (Store::new(root.join("old")), Store::new(root.join("new")));
+        // Text-like bytes zstd shrinks more at 19 than at 3.
+        let plain: Vec<u8> = (0..200_000u32)
+            .flat_map(|i| format!("entry {} value {}\n", i % 977, (i * 7919) % 104_729).into_bytes())
+            .collect();
+        let id = sha256_hex(&plain);
+        let level3 = zstd::bulk::compress(&plain, 3).unwrap();
+        write_atomic(&old.record_path(&id), &level3).unwrap();
+        fs::create_dir_all(new.record_path(&id).parent().unwrap()).unwrap();
+        fs::hard_link(old.record_path(&id), new.record_path(&id)).unwrap();
+        let mut m = crate::Manifest::new("g", "1", None);
+        m.files.insert(
+            "data/a.txt".into(),
+            crate::FileRecord { id: id.clone(), size: plain.len() as u64, stored: level3.len() as u64 },
+        );
+        let (before, after) = new.repack(&id, plain.len() as u64).unwrap();
+        assert_eq!(before, level3.len() as u64);
+        assert!(after < before, "{after} < {before}");
+        assert_eq!(new.get(&id, plain.len() as u64).unwrap(), plain, "the same bytes back");
+        assert_eq!(fs::read(old.record_path(&id)).unwrap(), level3, "the linked store's record untouched");
+        assert_eq!(new.restat(&mut m), 1);
+        assert_eq!(m.files["data/a.txt"].stored, after);
+        // Packed again: no smaller, left as it is.
+        assert_eq!(new.repack(&id, plain.len() as u64).unwrap(), (after, after));
+        // A record put now is level 19 already.
+        let put = Store::new(root.join("put")).put(&plain).unwrap();
+        assert_eq!(put.stored, after);
         fs::remove_dir_all(&root).ok();
     }
 }

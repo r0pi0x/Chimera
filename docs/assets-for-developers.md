@@ -46,12 +46,13 @@ CS:S, 26236938 of Combat Arms, 24600434 of HL2:DM; measured 2026-10-31, HL2:DM
 | | CS:S | Combat Arms | HL2:DM |
 |---|---|---|---|
 | every file the game mounts (`fetch <game>`; CS:S: with the publisher's content cache, 89 community maps) | 47,692 records, 4.4 GB (7.5 GB plain) | 29,431 records, 3.8 GB (9.8 GB plain; music included) | 30,792 files, 30,390 records, 1.9 GB (3.2 GB plain; its `hl2/` records are CS:S's, shared) |
-| `base` (what every start and match reads: menus, fonts, UI sounds; 2026-11-11) | 1,725 files, 63 MB | 2,965 files, 250 MB (the music included) | 1,509 files, 62 MB (scripts, decals, impact and footstep sounds, every gun and player model) |
+| `base` (what every start and match reads: menus, fonts, data, what every match loads; lean since 2026-11-15, `chimera_pack lean`) | 1,753 files, 57 MB | 2,224 files, 63 MB | 1,475 files, 55 MB (scripts, decals, impact and footstep sounds, every gun and player model) |
+| `common` (what a match may play beyond `base`: event sounds, debris, loading images; each join) | 13 files, 0.6 MB | 447 files, 19 MB | 85 files, 1.5 MB |
 | `map/<name>` for every installed map (2026-11-12, `chimera_pack sets`; the pool's also from a client's load) | 109 maps, 0.3-196 MB each (`map/de_dust2` 143 MB) | 105 maps, 0.9-174 MB each (`map/warehouse` 93 MB) | `map/<dm_lockdown, dm_overwatch, dm_powerhouse, dm_resistance, dm_runoff, dm_steamlab, dm_underpass, halls3>`: 2,014-3,318 records, 90-153 MB each (the app on the map) |
 | `weapon/<id>` (view and world models, materials, sounds; CA: view models with hands and parts, the held model and the gun's own sounds) | 29 sets, 0.7-1.9 MB each, 21 MB together | 2,363 sets, 0.4-20 MB each, 1.0 GB together (2026-11-11, with the held models) | 12 sets, 0.7-1.8 MB each, 13 MB together (view and world models, projectile models, materials, sounds) |
 | `character/<record>` (a rung's body: model, faces, head pieces, textures, and its rung look's first-person hand model and sleeves when they aren't the default character's; 2026-11-12) | - | 691 sets, 1,729 records, 378 MB together (the hands 322 records, 73 MB); beyond `base` and `players` 0.3 MB at the median, the hands 0.3 MB more | - |
 | `players` (the eight class models) | 12.9 MB | 257 files, 66 MB (the stock characters, footsteps) | 166 records, 18 MB (the 19 player models) |
-| `music` (`Game/BGM`, loose files) | - | 72 MB | - |
+| `music` (`Game/BGM`, loose files), and `music/<track>` per file | - | 71 MB; 64 track sets, 0.9 MB at the median | - |
 | `heavy-tests` (what the whole suite reads) | 15,703 records, 922 MB | 13,322 records, 2.6 GB | 6,598 records, 366 MB |
 
 `chimera_assets status` lists the sets and sizes of what you have.
@@ -95,7 +96,7 @@ ends; the service marks those requests ` on-demand` in its access log.
 - Linux `~/.cache/chimera/assets`, Windows `%LOCALAPPDATA%\chimera\assets`;
   one per user, shared by every checkout, worktree and agent slot.
   `CHIMERA_ASSET_STORE` or `[assets] store` moves it.
-- `records/<ab>/<id>.zst` (each file's bytes, zstd), `manifests/<game>/
+- `records/<ab>/<id>.zst` (each file's bytes, zstd level 19; level 3 before 2026-11-15), `manifests/<game>/
   <build>.txt` (+ `.sig`). Nothing in it belongs in the repository.
 - `chimera_assets status | verify | gc [--dry-run]`. It has no size cap
   yet: delete the folder (or `records/`) to start over; files come back on
