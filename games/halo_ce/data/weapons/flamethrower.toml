@@ -10,7 +10,6 @@
 id = "halo_ce:flamethrower"
 base = "halo_ce:gun"
 slot = 3
-class = "flamethrower"
 
 [hud]
 name = "Flamethrower"

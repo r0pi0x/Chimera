@@ -21,7 +21,7 @@ fn halo_lends_its_guns_and_no_map_without_the_disc() {
     assert!(w.resource::<SurfaceClasses>().of(halo_ce::game::GAME).is_some(), "its surfaces' classes");
     let report = auto::report(w);
     let halo = report.iter().find(|c| c.game == halo_ce::game::GAME).expect("Halo reports its parts");
-    assert_eq!(halo.guns.len(), 4, "{}", halo.line());
+    assert_eq!(halo.guns.len(), halo_ce::game::parts::PARTS.guns.len(), "{}", halo.line());
     assert!(halo.missing.is_empty() && halo.movement.is_some() && halo.playable(), "{}", halo.line());
     assert!(halo.maps.is_empty(), "no map claimed without the disc: {}", halo.line());
     // The other games still lend what they did.

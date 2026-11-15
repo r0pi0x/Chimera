@@ -238,7 +238,15 @@ fn power(p: &chimera_sim::minigame::power::HookParams, at: &chimera_sim::minigam
     let t = &g.trigger;
     let pr = &g.projectile;
     let effects = super::vitality::DamageEffects::load();
-    let Some(fx) = params::effect_id(&pr.impact_damage).and_then(|e| effects.get(e).cloned()) else { return };
+    // The hit's damage: the impact's, else what a stuck projectile deals
+    // (a needle), else its detonation's at the centre (a rocket, a flame).
+    let named = |n: &str| params::effect_id(n).and_then(|e| effects.get(e).cloned()).filter(|f| f.lower + f.upper[1] > 0.0);
+    let Some(fx) = named(&pr.impact_damage)
+        .or_else(|| pr.attached_damage.as_deref().and_then(named))
+        .or_else(|| pr.detonation.iter().find_map(|n| named(n)))
+    else {
+        return;
+    };
     // The speed left at the distance (WU): full before the deceleration
     // starts, then at a constant rate down to the final speed.
     let d = at.distance;

@@ -332,7 +332,10 @@ impl HaloTrace<'_, '_> {
             Some(m) => m.at(self.shapes.get(h.entity).ok(), from, dir, h.distance),
             None => Some(super::materials::NO_TABLE),
         };
-        Some((h.distance, from + dir * h.distance, h.normal, None, material))
+        // The point a hair before the surface (1e-5 m back along the ray),
+        // so the next segment starts outside it.
+        let d = (h.distance - 1e-5).max(0.0);
+        Some((d, from + dir * d, h.normal, None, material))
     }
 
     /// Whether the line `from` to `to` (metres) is clear of the level.

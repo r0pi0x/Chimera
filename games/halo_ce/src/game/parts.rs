@@ -1,7 +1,12 @@
 //! What Halo lends other games' apps (`chimera_core::game_parts`): its
-//! maps and its first four guns (M2 of docs/plans/active/halo-ce.md:
+//! maps and its nine held guns (M2 and M3 of docs/plans/active/halo-ce.md:
 //! the assault rifle a rifle, the pistol a heavy pistol, the plasma rifle
-//! an SMG, the shotgun a shotgun, by their weight in a ladder's variety)
+//! and the needler SMGs, the shotgun a shotgun, the sniper rifle a sniper,
+//! the plasma pistol a pistol, the rocket launcher a launcher, by their
+//! weight in a ladder's variety; not the flamethrower: its flame ends
+//! 2.5 WU out, so it cannot hurt at the 10 to 20 m a ladder's power curve
+//! scores at, and no stock map places it: multiplayer_rules.md 5.3 makes
+//! it a rocket launcher)
 //! with its movement (`movement::ID`), so a gun game's automatic ladder
 //! deals them as rungs. Holding one makes the character Halo's where the
 //! identity follows the weapon (`chimera_sim::identity`): Halo's movement,
@@ -9,6 +14,12 @@
 //! characters or HUD of its own yet (a capsule body, the fallback HUD),
 //! and no view or world models: a rung draws no weapon model until those
 //! come (hud.md, models).
+//!
+//! No grenade rung: Halo's grenades are not a held weapon but a count
+//! thrown on the grenade button beside the gun in hand (`weapons::grenades`),
+//! so a Halo player on any rung carries and throws them as the game does;
+//! the ladder's grenade band (class `grenade`, a thrown weapon of the
+//! engine's `Throwable`) holds the games whose grenades are weapons.
 //!
 //! No map is claimed (`PARTS.maps` is empty): a map enters an app's pool
 //! only from the disc image the machine holds (`auto::InstalledMaps`),
@@ -20,7 +31,9 @@
 
 use chimera_core::game_parts::{GameParts, GunClass, GunPart};
 
-use super::weapons::{ASSAULT_RIFLE, PISTOL, PLASMA_RIFLE, SHOTGUN};
+use super::weapons::{
+    ASSAULT_RIFLE, NEEDLER, PISTOL, PLASMA_PISTOL, PLASMA_RIFLE, ROCKET_LAUNCHER, SHOTGUN, SNIPER_RIFLE,
+};
 
 const fn gun(id: &'static str, class: GunClass) -> GunPart {
     GunPart { id, class }
@@ -34,6 +47,10 @@ pub static PARTS: GameParts = GameParts {
         gun(PISTOL, GunClass::HeavyPistol),
         gun(PLASMA_RIFLE, GunClass::Smg),
         gun(SHOTGUN, GunClass::Shotgun),
+        gun(SNIPER_RIFLE, GunClass::Sniper),
+        gun(ROCKET_LAUNCHER, GunClass::Launcher),
+        gun(NEEDLER, GunClass::Smg),
+        gun(PLASMA_PISTOL, GunClass::Pistol),
     ],
     knife: None,
     movement: Some(super::movement::ID),

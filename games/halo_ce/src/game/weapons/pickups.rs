@@ -233,10 +233,10 @@ pub struct ItemClock {
     seen: usize,
 }
 
-/// A character's action-button hold (ticks) for the swap.
-#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
-#[component(storage = "SparseSet")]
-pub struct UseHold(pub u32);
+/// The characters' action-button holds (ticks) for the swap (a resource:
+/// no part comes and goes on the characters).
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct UseHolds(pub std::collections::BTreeMap<Entity, u32>);
 
 /// What a tag names as an item, at its creation: a weapon (the
 /// flamethrower and gravity rifle as rocket launchers) new from its data,
@@ -351,8 +351,13 @@ pub fn take(world: &mut World) {
     let lying: Vec<(Entity, Vec3, HaloItem)> = items.iter(world).map(|(e, t, i)| (e, t.translation, i.clone())).collect();
     let mut gone: Vec<Entity> = Vec::new();
     for (unit, centre, alive, use_key) in units {
-        let hold = if use_key { world.get::<UseHold>(unit).map_or(0, |h| h.0) + 1 } else { 0 };
-        world.entity_mut(unit).insert(UseHold(hold));
+        let mut holds = world.get_resource_or_insert_with(UseHolds::default);
+        let hold = if use_key { holds.0.get(&unit).copied().unwrap_or(0) + 1 } else { 0 };
+        if hold == 0 {
+            holds.0.remove(&unit);
+        } else {
+            holds.0.insert(unit, hold);
+        }
         if !alive {
             continue;
         }
