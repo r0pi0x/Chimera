@@ -5,7 +5,8 @@
 //! arrives at its pair's target, standing on the ground inside the level
 //! (the engine's `map::teleport` on `harness::HaloSim`); the maps with
 //! climbable surfaces publish them as ladders (collision.md, "Surface
-//! flags": boardingaction's 80). Passes with a note without an install.
+//! flags": boardingaction's 80); and every map loads with spawns for
+//! free-for-all and both teams. Passes with a note without an install.
 
 use bevy::math::Vec3;
 use chimera_world::{
@@ -126,4 +127,19 @@ fn the_climbable_surfaces_are_ladders() {
     }
     // collision.md: 120 two-sided climbable surfaces on the multiplayer maps.
     assert_eq!(total, 60);
+}
+
+/// All 13 maps load with spawns for free-for-all (every start) and for
+/// both capture the flag teams (red `Team(1)`, blue `Team(2)`).
+#[test]
+fn every_map_has_spawns_for_free_for_all_and_both_teams() {
+    let Some(mount) = mount() else { return };
+    for name in MULTIPLAYER_MAPS {
+        let map = load(&mount, name, false);
+        let of = |t: Option<u8>| map.spawns.iter().filter(|(_, team)| team.map(|t| t.0) == t).count();
+        let (free, red, blue) = (of(None), of(Some(1)), of(Some(2)));
+        eprintln!("{name}: {} spawns: {free} slayer, {red} red, {blue} blue", map.spawns.len());
+        assert_eq!(free + red + blue, map.spawns.len(), "{name}");
+        assert!(free >= 8 && red > 0 && blue > 0, "{name}");
+    }
 }

@@ -36,9 +36,14 @@
 //! guns' view and held models (`view::load::add_own`) and the
 //! body's meshes use too). Progress goes to the options' reporter.
 //!
+//! Machines: only Wizard places any (4 alert lights, scenario.md), and no
+//! multiplayer map has a lift or door play depends on; none is converted.
+//!
 //! Known shortcuts: only the first structure BSP is converted (every
 //! multiplayer map has one); the level's visibility (clusters, portals,
-//! the potentially visible set) is not handed over, everything is drawn.
+//! the potentially visible set) is not handed over, everything is drawn,
+//! and the bots' generated mesh is not bounded by it (docs/plans/active/
+//! halo-ce.md, backlog).
 
 pub mod collision;
 pub mod geometry;

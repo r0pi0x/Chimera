@@ -6,33 +6,19 @@
 # `[[allow]]` entries win over `[[deny]]` and over the measurements'
 # flags.
 #
-# M1 (docs/plans/active/halo-ce.md): the maps are played with other
-# games' movement, and Halo's teleporters, vehicles and lifts are not
-# implemented yet. The `map_fitness` sweep (2026-11-15) found every spawn
-# point of all 13 maps on one region the bots' walk (0.8 m jump-ups)
-# reaches, so no map is cut in parts without its teleporters; those kept
-# out below have three or more teleporter pairs (scenario.md, "Measured
-# facts"), which carry much of their play. The teleporter-free maps
-# (hangemhigh, longest, prisoner) and those with two pairs, shortcuts on
-# a map walked end to end (beavercreek, bloodgulch, damnation), are in.
-# Blood Gulch and Sidewinder are vehicle maps measured over the pool's
-# size limit: Blood Gulch is allowed (the milestone's map), its count rule
-# still keeps it out of a draw by players present (its wander time).
+# M4 (docs/plans/active/halo-ce.md, 2026-11-15): teleporters work for
+# every game's characters (chimera_world's map::teleport, from the
+# scenario's pairs) and the climbable surfaces are ladders, so the maps
+# whose play goes through teleporters (putput's 30 pairs, boardingaction's
+# 8, carousel, chillout, ratrace, wizard) joined the pool; the map_fitness
+# sweep counts a teleporter as a link of no length, and found every spawn
+# point of every map on one region. Blood Gulch and Sidewinder are vehicle maps measured over
+# the pool's size limit: Blood Gulch is allowed (the milestone's map), its
+# count rule still keeps it out of a draw by players present (its wander
+# time); Sidewinder stays out (below).
 
 [[deny]]
-reason = "its rooms are joined by 30 teleporter pairs (not implemented yet)"
-maps = ["putput"]
-
-[[deny]]
-reason = "8 teleporter pairs carry its play between the ships (not implemented yet)"
-maps = ["boardingaction"]
-
-[[deny]]
-reason = "3 or 4 teleporter pairs carry its play (not implemented yet)"
-maps = ["carousel", "chillout", "ratrace", "wizard"]
-
-[[deny]]
-reason = "a vehicle map with 4 teleporter pairs (neither implemented yet)"
+reason = "a vehicle map: its two bases sit at the ends of a canyon about 69000 m2 across, a long walk on foot (wander 18.1 s at 8 players, the rule's limit 10 s), with nothing but its 4 teleporter pairs to shorten it; it waits for vehicles (M6)"
 maps = ["sidewinder"]
 
 [[allow]]

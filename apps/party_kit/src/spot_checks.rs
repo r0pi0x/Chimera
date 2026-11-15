@@ -55,6 +55,12 @@ pub fn spawn_feet(world: &mut World) -> Vec<Vec3> {
 /// The areas of `nav` walked to from the `feet` and back, and the area each
 /// foot stands in (or is nearest).
 pub fn region(nav: &NavMesh, feet: &[Vec3]) -> (Vec<bool>, Vec<Option<usize>>) {
+    region_linked(nav, feet, &[])
+}
+
+/// `region` with more one-way links between areas (from, to) than the
+/// mesh's own: a map's teleporters (`teleport_links`).
+pub fn region_linked(nav: &NavMesh, feet: &[Vec3], links: &[(usize, usize)]) -> (Vec<bool>, Vec<Option<usize>>) {
     let n = nav.areas.len();
     let mut forward = vec![Vec::new(); n];
     let mut back = vec![Vec::new(); n];
@@ -63,6 +69,10 @@ pub fn region(nav: &NavMesh, feet: &[Vec3]) -> (Vec<bool>, Vec<Option<usize>>) {
             forward[i].push(*j);
             back[*j].push(i);
         }
+    }
+    for &(i, j) in links.iter().filter(|(i, j)| *i < n && *j < n) {
+        forward[i].push(j);
+        back[j].push(i);
     }
     let starts: Vec<Option<usize>> = feet
         .iter()
@@ -87,6 +97,20 @@ pub fn region(nav: &NavMesh, feet: &[Vec3]) -> (Vec<bool>, Vec<Option<usize>>) {
     };
     let (f, b) = (reach(&forward), reach(&back));
     (f.iter().zip(&b).map(|(a, b)| *a && *b).collect(), starts)
+}
+
+/// The loaded map's teleporters (`map::teleport::MapTeleporters`) as
+/// one-way links of `nav`: each pad's source area to its destination's
+/// (the area over the point, else the nearest).
+pub fn teleport_links(world: &World, nav: &NavMesh) -> Vec<(usize, usize)> {
+    let Some(t) = world.get_resource::<chimera_world::map::teleport::MapTeleporters>() else {
+        return Vec::new();
+    };
+    let area = |p: Vec3| nav.area_at(p + Vec3::Y * 0.1).or_else(|| nav.nearest_area(p));
+    t.pads
+        .iter()
+        .filter_map(|p| Some((area(p.source)?, area(p.dest)?)))
+        .collect()
 }
 
 /// The bots' generated mesh of the loaded map (Combat Arms' walker, its
