@@ -537,6 +537,18 @@ whole-pixel font size are reported as expected (`~`) since M4.
   extended: the first Tab and first kill make no atlas.
 - No network change (rungs, wins, K/D are replicated already).
 
+Dominations (decided 2026-11-14, for later): they apply to the gun
+game. specs/cs_source/dominations.md has no free-for-all notes; its rule
+flags only kills between enemies, and in a free-for-all everyone is an
+enemy, so the 4th unanswered kill dominates and a kill back is a revenge
+as in CS:S. The counting is the engine's (`chimera_sim::dominations`:
+`count_kills`, enemies when teams differ or a player has none); the
+gun game's rules would add it as CS:S's do (`DominationSet`), and the
+server already sends a kill's flags (`net::Killed::marks`, written again
+as `KillMark` on clients) and each player's relationships to its own
+client. A natural fit for the Signal kill feed (a dominating or revenge
+row) and the board (the YOU row's nemesis); not wired yet.
+
 ### M3: rank-up toast and the air strike
 
 Status (2026-11-14): done. The toast: `client::rank_toast` (the pose a

@@ -17,6 +17,7 @@ mod cs_parts;
 mod death_view;
 mod drawn_ladder;
 mod esc_menu;
+mod feedback;
 mod footstep_levels;
 mod game_hooks;
 mod grenade_looks;

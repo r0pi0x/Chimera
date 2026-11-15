@@ -8,7 +8,7 @@
 # leaves half a row before it.
 #
 # [[escape]]: the Escape menu's entries, in order. `action` is one of
-# resume, options, host, vote, disconnect, quit; `when` gates it: always,
+# resume, options, host, vote, disconnect, feedback (the report dialog), quit; `when` gates it: always,
 # host (not a network client), main_menu (the app has this main menu).
 #
 # [[play]]: the Play page's Server tab, each row a cvar set when the game
@@ -70,6 +70,10 @@ action = "vote"
 label = "Disconnect"
 action = "disconnect"
 when = "main_menu"
+
+[[escape]]
+label = "Report a bug"
+action = "feedback"
 
 [[escape]]
 label = "Quit"

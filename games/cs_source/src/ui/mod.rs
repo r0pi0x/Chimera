@@ -286,7 +286,7 @@ bind "PAUSE" "pause"
             "+forward", "+back", "+moveleft", "+moveright", "+jump", "+duck", "+speed", "+walk", "+sprint", "+use",
             "+reload", "+attack", "+attack2", "+freelook", "+showscores", "slot1", "slot2", "slot3", "slot4", "slot5",
             "lastinv", "drop", "buymenu", "chooseteam", "radio1", "radio2", "radio3", "messagemode", "messagemode2",
-            "bug", "bugreport",
+            "bug", "bugreport", "feedback",
         ];
         let mut app = App::new();
         app.add_plugins((

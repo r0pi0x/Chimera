@@ -108,6 +108,9 @@ pub fn front_end(app: &mut App, _: &Args) {
         // Settings in the Signal look (the menus' Options and Host
         // settings under Ultimate Gun Game's theme).
         .add_plugins(crate::settings::SettingsPlugin)
+        // The report dialog (F10 in Ultimate Gun Game, the Escape menu's
+        // "Report a bug") in the Signal look.
+        .add_plugins(crate::feedback_signal::FeedbackSignalPlugin)
         .add_plugins(PartyMousePlugin)
         .add_plugins(PartyHudPlugin)
         .add_plugins(chimera_client::client::minigame_scoreboard::MinigameScoreboardPlugin)

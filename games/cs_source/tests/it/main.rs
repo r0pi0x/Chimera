@@ -36,6 +36,7 @@ mod cs_grenades;
 mod cs_guns;
 mod demo_playback;
 mod demo_resim;
+mod dominations;
 mod drawn_parts;
 mod economy_data;
 mod footstep_control;

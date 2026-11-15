@@ -25,6 +25,8 @@
 //! - **Vote to skip the map** (`party_skipmap`, `host::SKIP_ISSUE`): on
 //!   everyone's menu; while a vote runs the menu shows it with Yes and No.
 //!   A refused call says why (a vote running, the caller's wait).
+//! - **Report a bug**: the menu closes, then the screenshot and the
+//!   report dialog (`client::feedback::request`; `feedback_signal`).
 //! - **Disconnect** (only in an app with the main menu, `main_menu`):
 //!   `disconnect`, back to the menu; a host with people connected is
 //!   asked first ("End the game for 2 players?", `Page::
@@ -215,6 +217,7 @@ pub fn shown_entries(host: bool, main_menu: bool, voting: bool) -> Vec<ShownEntr
                 EscDoes::Host => Some(Action::Host),
                 EscDoes::Disconnect => Some(Action::Disconnect),
                 EscDoes::Quit => Some(Action::Quit),
+                EscDoes::Feedback => Some(Action::Feedback),
                 EscDoes::Vote => (!voting).then_some(Action::SkipMap),
             };
             ShownEntry {
@@ -336,6 +339,9 @@ pub enum Action {
     Disconnect,
     /// The confirm's Yes.
     DisconnectYes,
+    /// Report a bug: the menu closes, then the screenshot, then the
+    /// report dialog (`client::feedback`, `feedback menu`).
+    Feedback,
     Quit,
 }
 
@@ -392,7 +398,7 @@ impl Plugin for EscMenuPlugin {
             })
             .console_command(
                 "chimera:escmenu_press",
-                "escmenu_press <resume|options|host|disconnect|confirm|back|quit>: press that entry of the open \
+                "escmenu_press <resume|options|host|disconnect|confirm|back|feedback|quit>: press that entry of the open \
                  Escape menu (screenshots and tests).",
                 |w, a| {
                     let action = match a.first().map(String::as_str) {
@@ -403,6 +409,7 @@ impl Plugin for EscMenuPlugin {
                         Some("confirm") => Action::DisconnectYes,
                         Some("back") => Action::Back,
                         Some("quit") => Action::Quit,
+                        Some("feedback") => Action::Feedback,
                         other => return Err(format!("no entry {other:?}")),
                     };
                     w.write_message(action);
@@ -622,6 +629,13 @@ fn act_one(world: &mut World, action: Action) {
         Action::SkipMap => submit(world, "party_skipmap"),
         Action::VoteYes => submit(world, "vote option1"),
         Action::VoteNo => submit(world, "vote option2"),
+        Action::Feedback => {
+            leave(world);
+            world.resource_mut::<EscMenu>().set_open(false);
+            if world.contains_resource::<chimera_client::client::feedback::Feedback>() {
+                chimera_client::client::feedback::request(world, true);
+            }
+        }
         Action::Quit => submit(world, "quit"),
     }
 }
@@ -676,12 +690,13 @@ fn sync(
     main_menu: Option<Res<crate::main_menu::PartyMenu>>,
     controls: Option<Res<crate::controls::ControlsPage>>,
     console: Option<Res<chimera_client::client::console::ConsoleUi>>,
+    report: Option<Res<chimera_client::client::feedback::Feedback>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut app_menu: ResMut<AppMenu>,
     mut captured: ResMut<CapturedKeys>,
     mut cursor: Query<&mut CursorOptions>,
 ) {
-    let open = menu.open || main_menu.is_some_and(|m| m.shown());
+    let open = menu.open || main_menu.is_some_and(|m| m.shown()) || report.is_some_and(|r| r.shown());
     if app_menu.open != open {
         app_menu.open = open;
         for mut c in &mut cursor {
@@ -906,6 +921,7 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             EscDoes::Host => Action::Host,
             EscDoes::Disconnect => Action::Disconnect,
             EscDoes::Quit => Action::Quit,
+            EscDoes::Feedback => Action::Feedback,
             EscDoes::Vote => {
                 vote_rows(panel, vote, &e.label, WIDE);
                 continue;

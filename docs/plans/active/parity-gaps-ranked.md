@@ -113,13 +113,14 @@ settle first (a capture, a probe run or a spec session).
 | CS:S scope overlay and zoomed sensitivity | blocked | none (no spec covers the overlay or `zoom_sensitivity_ratio`) | a spec session (overlay material and layout, the zoomed sensitivity rule) |
 | CS:S view-model lighting and bob | blocked | cs_source/view_models.md 3, 9, Q1, Q2, Q7 | captures: the bob model (cycle, shape, lateral gain), the lighting point |
 | CS:S room reverb presets | blocked | cs_source/sounds.md "dsp" (presets not specified) | a spec session: the DSP preset table |
-| CS:S spread generator | blocked | cs_source/weapons.md Q1, Q12 | the RNG body (seed-to-impact capture) and the pellet pattern |
+| CS:S spread generator | done 2026-11-14 (`weapon::random::Ran1`, `deliver::cs_offsets`: bit-exact, T3b-T3d) | cs_source/weapons.md 4.2.1, 4.2.2 | none; the movement term at shot time is still unchecked (4.2.2) |
+| CS:S dominations and revenge | done 2026-11-14 (`chimera_sim::dominations`; events, own-client relationships, freeze panel, scoreboard icons) | cs_source/dominations.md | kill feed icon (Q4) and the scoreboard's layout (Q6): client captures |
 | HL2:DM combine camera's lock-on (amber eye, `Active`/`Angry`, flashes, clicks); the sweep, pings and glow are in (`combine_camera`) | blocked | hl2dm/maps_entities.md 14, Q2 | probe P8 for whether it locks on to players |
 
 ## Counts
 
 Do next 0, later 2, needs a spec or capture 8; lower: 0 spec-clear,
-7 blocked (the camera's lock-on joined them once its sweep landed).
+6 blocked (the camera's lock-on joined them once its sweep landed).
 
 Landed from the lower list (2026-11-13): the M92FS's post-fire, the
 HL2:DM bolt's sounds, bolts through grates and breakable glass, the
@@ -128,7 +129,7 @@ crossbow's alternate fire, HL2:DM's blood per viewer (net48), the HL2:DM combine
 pings and eye glow.
 
 Landed 2026-11-14 from the Combat Arms spec follow-ups: the scopes' zoom
-sounds and the focus blur (`Shader` on; rows 31), burn and poison screen
+sounds and the focus blur (`Shader` on; row 31), burn and poison screen
 effects from `damagefx.txt` (row 32), the kill call-outs' records and
 files read from the install, the stock hit-sphere priorities per
 skeleton, and the multi-kill count kept through death (reset at join and

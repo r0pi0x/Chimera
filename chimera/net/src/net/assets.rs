@@ -217,6 +217,13 @@ impl AssetHost {
     }
 }
 
+/// On a client: the asset service the server joined last offered (URL
+/// and certificate fingerprint; None: it offered none). Feedback reports
+/// go there (`client::feedback`, docs/plans/active/feedback-reports.md
+/// 2.6).
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct JoinedService(pub Option<(String, String)>);
+
 /// On a client: the asset settings this process opened its mounts with,
 /// and which games it reads from the store alone (made at the first join:
 /// `session`; tests insert their own).
@@ -642,6 +649,9 @@ pub fn refusal_hint(manifest: &MatchManifest) -> Option<String> {
 /// the token to the offered service first when this process has none
 /// for them (`bind_here`), or say why not.
 pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> Next {
+    world.insert_resource(JoinedService(
+        manifest.assets.as_ref().map(|o| (o.url.clone(), o.fingerprint.clone())),
+    ));
     let Some(offer) = manifest.assets.clone() else {
         return Next::Go;
     };

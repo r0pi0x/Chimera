@@ -185,6 +185,8 @@ pub enum EscDoes {
     Host,
     Vote,
     Disconnect,
+    /// The report dialog (`client::feedback`).
+    Feedback,
     Quit,
 }
 
@@ -294,6 +296,7 @@ impl MenuData {
                 Some("vote") => EscDoes::Vote,
                 Some("disconnect") => EscDoes::Disconnect,
                 Some("quit") => EscDoes::Quit,
+                Some("feedback") => EscDoes::Feedback,
                 other => return Err(format!("{label}: no action {other:?}")),
             };
             let when = match s(&t, "when").as_deref() {

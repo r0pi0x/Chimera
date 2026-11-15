@@ -12,7 +12,11 @@
 //! `net::NetScore`, which also brings scores and the bomb and kit
 //! markers; 0 in single player), the local
 //! player's row lit with `scoreboard-select`. Without the layout: two
-//! plain team columns with the status in words.
+//! plain team columns with the status in words. The local player's
+//! dominations (its `dominations::Relationships`; dominations.md 5) show
+//! in the status cell over the status icon: `hud/scoreboard_dominated`
+//! by a player it dominates, `hud/scoreboard_nemesis` by its nemesis, the
+//! `-dead` pictures while that player is dead.
 //!
 //! The scoreboard (Tab or `+showscores`): with the game's layout
 //! (`GameMenus::scoreboard`, CS:S's `scoreboard.res`) in its look: the
@@ -29,6 +33,12 @@
 //! menu, the Esc menu, the loading dialog; `scoreboard::shown`), and its rows
 //! go when it hides (the last game's players never show while the next map
 //! loads).
+//!
+//! Known shortcuts (docs/tech-debt.md): where the domination icons sit is
+//! ours (the status cell, over the dead icon whose `-dead` pictures they
+//! replace): CS:S's "Dominate" and "Nemesis" headings and their places are
+//! not captured (dominations.md Q6); the plain board shows none. Why it's
+//! OK for now: the materials and who sees them are the spec's.
 
 use bevy::prelude::*;
 
@@ -193,6 +203,20 @@ pub fn status(dead: bool, carrier: bool, kit: bool, teammate: bool) -> Status {
     }
 }
 
+/// The local player's relationship with a row's player (dominations.md
+/// 5): the status cell shows `scoreboard_dominated` for a player it
+/// dominates, `scoreboard_nemesis` for its nemesis, each with its `-dead`
+/// picture while that player is dead, in place of the status icon.
+pub fn relation_icon(dominated: bool, nemesis: bool, dead: bool) -> Option<&'static str> {
+    match (dominated, nemesis, dead) {
+        (true, _, false) => Some("scoreboard_dominated"),
+        (true, _, true) => Some("scoreboard_domination-dead"),
+        (_, true, false) => Some("scoreboard_nemesis"),
+        (_, true, true) => Some("scoreboard_nemesis-dead"),
+        _ => None,
+    }
+}
+
 /// The latency column: "BOT" for bots (as CS:S shows them), else the
 /// player's ping, ms (0 in single player and for a listen server's host).
 pub fn latency(bot: bool, ping: u16) -> String {
@@ -219,6 +243,9 @@ struct Row {
     bot: bool,
     ping: u16,
     status: Status,
+    /// The local player's domination icon for this player
+    /// (`relation_icon`), over the status icon.
+    relation: Option<&'static str>,
 }
 
 /// What the board shows; redrawn when it changes.
@@ -275,8 +302,10 @@ fn update(
     ),
     mut last: Local<Option<Shot>>,
     minigame: Option<Res<chimera_sim::minigame::hud::MinigameHud>>,
+    mine: Query<&chimera_sim::dominations::Relationships, With<LocalPlayer>>,
     mut commands: Commands,
 ) {
+    let mine = mine.iter().next();
     let typing = console.is_some_and(|c| c.open);
     let tab = match (&binds, &mouse) {
         (Some(b), Some(m)) => crate::client::binds::pressed(&b.binds, &keys, m, "+showscores"),
@@ -345,6 +374,11 @@ fn update(
                     carrier,
                     kit,
                     team.is_some() && team.copied() == my_team,
+                ),
+                relation: relation_icon(
+                    mine.is_some_and(|r| r.dominating.contains(&e)),
+                    mine.is_some_and(|r| r.nemeses.contains(&e)),
+                    dead,
                 ),
             }
         })
@@ -494,7 +528,7 @@ fn draw_game(
                     .spawn((node, ZIndex(10), ChildOf(root)))
                     .with_child((Text::new(text), font.clone(), TextColor(color)));
             }
-            if let Some(icon) = row.status.icon()
+            if let Some(icon) = row.relation.or(row.status.icon())
                 && let Some((_, r)) = cell(&format!("{prefix}PlayerStatus0"))
                 && let Some(mut image) = sprite(painter, icon)
             {
@@ -603,6 +637,15 @@ fn draw_plain(commands: &mut Commands, columns: &Query<(Entity, &Column)>, fonts
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn domination_icons_have_dead_pictures() {
+        assert_eq!(relation_icon(true, false, false), Some("scoreboard_dominated"));
+        assert_eq!(relation_icon(true, false, true), Some("scoreboard_domination-dead"));
+        assert_eq!(relation_icon(false, true, false), Some("scoreboard_nemesis"));
+        assert_eq!(relation_icon(false, true, true), Some("scoreboard_nemesis-dead"));
+        assert_eq!(relation_icon(false, false, true), None);
+    }
 
     #[test]
     fn status_icons_only_for_teammates() {

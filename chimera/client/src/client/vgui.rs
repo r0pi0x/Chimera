@@ -113,6 +113,9 @@ pub struct Shown {
     pub text: Option<String>,
     pub enabled: bool,
     pub visible: bool,
+    /// An image control's picture instead of its own (a
+    /// `GameHud::sprites` key).
+    pub image: Option<String>,
 }
 
 impl Shown {
@@ -121,6 +124,7 @@ impl Shown {
             text: None,
             enabled: c.enabled,
             visible: c.visible,
+            image: None,
         }
     }
 }
@@ -322,7 +326,7 @@ impl<'a> Painter<'a> {
                         BackgroundColor(c.fill.or(c.bg).map_or(Color::NONE, rgba)),
                         ChildOf(parent),
                     ));
-                    if let Some(sprite) = c.image.as_ref().and_then(|i| self.hud.sprites.get(i))
+                    if let Some(sprite) = s.image.as_ref().or(c.image.as_ref()).and_then(|i| self.hud.sprites.get(i))
                         && let Some(handle) = self.images.get(&sprite.texture)
                     {
                         let [x, y, w, h] = sprite.rect;

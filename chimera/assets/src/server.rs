@@ -20,6 +20,13 @@
 //! - `POST /batch`: ids, one per line (at most `BATCH_MAX`); the answer is
 //!   one frame per id in order, `<id> <status> <length>\n` then `length`
 //!   bytes of the stored record (status 200; 403 and 404 with length 0).
+//! - `POST /feedback`: a feedback report (a zip, `X-Chimera-Report-Id`),
+//!   stored by `feedback::inbox` under `<store>/server/feedback/` (201,
+//!   200 already stored, 202, 400, 413, 429 with `Retry-After`).
+//! - `/feedback/admin/...`: the triage page and its JSON
+//!   (`feedback::page`), only to this machine's own connections on the
+//!   plain listener (not through the TLS front; a local `Host`), no token;
+//!   404 to everyone else.
 //!
 //! Manifests are read again when the manifest folder changes (checked at
 //! most once a second), so a publish needs no restart; one without a
@@ -86,6 +93,11 @@ pub fn server_dir(store: &Store) -> PathBuf {
 /// The server's TLS certificate's folder (`tls::Identity`).
 pub fn tls_dir(store: &Store) -> PathBuf {
     server_dir(store).join("tls")
+}
+
+/// The feedback reports' folder (`feedback::inbox`).
+pub fn feedback_dir(store: &Store) -> PathBuf {
+    server_dir(store).join("feedback")
 }
 
 /// The server's signing key file.
@@ -180,6 +192,8 @@ pub struct Service {
     guard: Mutex<Guard>,
     /// Behind the TLS front: whose each relayed connection is.
     peers: Option<crate::tls::Peers>,
+    /// Feedback reports (`POST /feedback`, the page).
+    feedback: crate::feedback::inbox::Inbox,
 }
 
 fn now_secs() -> u64 {
@@ -229,7 +243,6 @@ impl Service {
         let key = sign::load_or_create_key(&key_path(&store))?;
         let log = OpenOptions::new().create(true).append(true).open(server_dir(&store).join("access.log"))?;
         Ok(Self {
-            store,
             key,
             auth,
             catalog: Mutex::new(Catalog::default()),
@@ -238,6 +251,8 @@ impl Service {
             limits: Limits::default(),
             guard: Mutex::default(),
             peers: None,
+            feedback: crate::feedback::inbox::Inbox::open(feedback_dir(&store)),
+            store,
         })
     }
 
@@ -250,6 +265,14 @@ impl Service {
     /// With these limits.
     pub fn with_limits(mut self, limits: Limits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    /// Feedback reports with these limits and this command per report
+    /// (`feedback::inbox`).
+    pub fn with_feedback(mut self, limits: crate::feedback::inbox::FeedbackLimits, on_report: Option<String>) -> Self {
+        let inbox = crate::feedback::inbox::Inbox::open(feedback_dir(&self.store));
+        self.feedback = inbox.with_limits(limits).with_on_report(on_report);
         self
     }
 
@@ -267,6 +290,82 @@ impl Service {
             .as_ref()
             .and_then(|p| p.lock().unwrap_or_else(|e| e.into_inner()).get(&at).copied());
         Some(relayed.unwrap_or(at.ip()))
+    }
+
+    /// Whether `request` may see the feedback page: from this machine, not
+    /// relayed by the TLS front, to a local `Host` (no DNS rebinding).
+    fn local_admin(&self, request: &Request) -> bool {
+        let Some(at) = request.remote_addr() else { return false };
+        let relayed = self
+            .peers
+            .as_ref()
+            .is_some_and(|p| p.lock().unwrap_or_else(|e| e.into_inner()).contains_key(at));
+        let host = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("Host"))
+            .map(|h| h.value.as_str().to_ascii_lowercase())
+            .unwrap_or_default();
+        let host = match host.strip_prefix('[') {
+            Some(v6) => v6.split(']').next().unwrap_or("").to_string(),
+            None => host.split(':').next().unwrap_or("").to_string(),
+        };
+        at.ip().is_loopback() && !relayed && matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1")
+    }
+
+    /// `/feedback/admin...` (`feedback::page`).
+    fn admin(&self, request: &mut Request, method: &Method, parts: &[&str]) -> Outcome {
+        if parts.is_empty() {
+            return Outcome::new(
+                301,
+                Response::empty(301).with_header(header("Location", "/feedback/admin/")).boxed(),
+            );
+        }
+        let mut body = Vec::new();
+        if *method == Method::Post {
+            let _ = request.as_reader().take(64 * 1024).read_to_end(&mut body);
+        }
+        let admin_header = request
+            .headers()
+            .iter()
+            .any(|h| h.field.equiv("X-Chimera-Admin") && h.value.as_str().trim() == "1");
+        let r = crate::feedback::page::handle(&self.feedback, *method == Method::Post, parts, &body, admin_header);
+        Outcome::new(
+            r.status,
+            Response::from_data(r.body)
+                .with_status_code(r.status)
+                .with_header(header("Content-Type", r.content_type))
+                .with_header(header("X-Content-Type-Options", "nosniff"))
+                .with_header(header("Cache-Control", "no-store"))
+                .with_header(header(
+                    "Content-Security-Policy",
+                    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+                ))
+                .boxed(),
+        )
+    }
+
+    /// `POST /feedback`: a report from `who`.
+    fn feedback(&self, request: &mut Request, who: &Principal, ip: Option<IpAddr>) -> Outcome {
+        let max = self.feedback.limits().max_body;
+        if request.body_length().is_some_and(|n| n > max) {
+            return Outcome::text(413, format!("a report is at most {max} bytes\n"));
+        }
+        let mut body = Vec::new();
+        if request.as_reader().take(max as u64 + 1).read_to_end(&mut body).is_err() {
+            return Outcome::text(400, "the report didn't arrive whole\n");
+        }
+        let id = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("X-Chimera-Report-Id"))
+            .map(|h| h.value.as_str().to_string());
+        let answer = self.feedback.receive(&who.label(), ip, id.as_deref(), &body);
+        let mut response = text(answer.status, answer.body);
+        if let Some(wait) = answer.retry_after {
+            response = response.with_header(header("Retry-After", &wait.to_string()));
+        }
+        Outcome::new(answer.status, response)
     }
 
     /// Whether `ip` is refused for bad tokens now.
@@ -478,12 +577,18 @@ impl Service {
             return Err(Outcome::text(200, format!("{}\n", self.public_key())));
         }
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        if let ["feedback", "admin", rest @ ..] = parts.as_slice() {
+            if !self.local_admin(request) {
+                return Err(Outcome::text(404, "no such endpoint\n"));
+            }
+            return Err(self.admin(request, method, rest));
+        }
         let known = matches!(
             (method, parts.as_slice()),
             (Method::Get, ["whoami" | "games"])
                 | (Method::Get, ["m", _, _])
                 | (Method::Get, ["r", _])
-                | (Method::Post, ["batch"])
+                | (Method::Post, ["batch" | "feedback"])
         );
         if !known {
             return Err(Outcome::text(404, "no such endpoint\n"));
@@ -602,6 +707,7 @@ impl Service {
                 .boxed();
                 Outcome { response, status: 200, records, bytes }
             }
+            ["feedback"] => self.feedback(request, &who, ip),
             _ => Outcome::text(404, "no such endpoint\n"),
         };
         Ok((who, outcome))

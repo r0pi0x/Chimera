@@ -141,6 +141,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // The announcer's counting of kills (chimera/sim): from deaths and the
     // guns' hit regions, the server's `sv_announcer`.
     ("announce", &["core", "console", "map", "weapon"]),
+    ("dominations", &["core", "weapon"]),
     // Server data documents (chimera/sim): a game's derived data as named
     // documents a network client takes from the server (weapon sets
     // rebuilt in place).
