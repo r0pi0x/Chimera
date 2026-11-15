@@ -864,6 +864,16 @@ Change a file's `//!` doc with the code, then run
 - `games/cs_source/tools/src/hudcmp.rs`: `refcmp hudcmp`: the HUD compared panel by panel between CS:S captures and ours (docs/OBSERVABILITY.md, "Comparing the HUD")
 - `games/cs_source/tools/src/lib.rs`: Counter-Strike: Source's tools (docs/OBSERVABILITY.md):
 
+## games/halo_ce
+
+- `games/halo_ce/src/game/maps.rs`: Halo's maps: the install's `maps/<name>.map` files as Chimera's `MapData` (specs/halo_ce/cache_file.md, structure_bsp.md)
+- `games/halo_ce/src/game/mod.rs`: Halo's parts, one module per subsystem, and what the game tells the shell about itself (`INFO`)
+- `games/halo_ce/src/game/mount.rs`: Halo's install as a mount: a disc image file or a folder of the disc's files (`blam_formats::disc::open_install`, per specs/halo_ce/...
+- `games/halo_ce/src/game/parts.rs`: What Halo lends other games' apps (`chimera_core::game_parts`): nothing yet
+- `games/halo_ce/src/harness.rs`: Halo on the engine's headless harness (`chimera_world::harness::Sim`), for its scenario tests, the apps' and the tools': `HaloSim`, the base they...
+- `games/halo_ce/src/lib.rs`: Halo: Combat Evolved (the original Xbox's) as a game crate on Chimera (docs/plans/active/halo-ce.md): the fourth game library, on the `blam`...
+- `games/halo_ce/src/ui/mod.rs`: Halo's front end on the client shell (the `ui` feature): nothing of its own yet, so a Halo app shows the shell's fallback HUD (crosshair, health...
+
 ## games/hl2dm
 
 - `games/hl2dm/build.rs`: The map converter's version for the converted-map cache (`game::maps::CONVERTER`, chimera_world's `map::cache`): the hash of HL2:DM's sources and...

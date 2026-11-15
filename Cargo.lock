@@ -4434,6 +4434,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo_ce"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "blam_formats",
+ "chimera_client",
+ "chimera_core",
+ "chimera_present",
+ "chimera_sim",
+ "chimera_world",
+ "halo_ce",
+ "workspace-hack",
+]
+
+[[package]]
 name = "harfrust"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

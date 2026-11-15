@@ -66,10 +66,21 @@ pub fn partial(game: &str, install: &Path) -> bool {
 /// or the asset service serves the game). Tests and tools that need an
 /// install ask this, so they run from the service as they do from an
 /// install; one that reads the install's own files outside the mount (an
-/// archive by its file name) asks for the marker alone.
+/// archive by its file name) asks for the marker alone. An empty `marker`
+/// means the install path itself: a game whose install is one file (a disc
+/// image) or whose folder has no marker.
 pub fn usable(game: &str, install: impl AsRef<Path>, marker: &str) -> bool {
     let install = install.as_ref();
-    install.join(marker).exists() || alone(game, install)
+    holds(install, marker) || alone(game, install)
+}
+
+/// Whether `install` holds `marker` (an empty one: `install` itself exists).
+fn holds(install: &Path, marker: &str) -> bool {
+    if marker.is_empty() {
+        install.exists()
+    } else {
+        install.join(marker).exists()
+    }
 }
 
 /// Whether the asset store alone, with no network, holds every record of
@@ -268,6 +279,24 @@ mod tests {
     fn sorted(mut v: Vec<String>) -> Vec<String> {
         v.sort();
         v
+    }
+
+    #[test]
+    fn an_empty_marker_is_the_install_path_itself_file_or_folder() {
+        let s = Scratch::new("marker");
+        let file = s.0.join("disc.iso");
+        write(&file, b"image");
+        let dir = s.0.join("folder");
+        write(&dir.join("default.xbe"), b"x");
+        // A single-file install has no folder to join a marker to.
+        assert!(holds(&file, ""));
+        assert!(holds(&dir, ""));
+        assert!(!holds(&s.0.join("absent.iso"), ""));
+        assert!(usable(GAME, &file, ""));
+        // A marker still names something inside a folder, as before.
+        assert!(holds(&dir, "default.xbe"));
+        assert!(!holds(&dir, "other.xbe"));
+        assert!(!holds(&file, "default.xbe"));
     }
 
     #[test]
