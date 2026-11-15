@@ -272,6 +272,14 @@ pub const MAX_LINES: usize = 5;
 /// The widest a gun's name (no icon) is drawn, on a 720-line screen.
 pub const NAME_MAX: f32 = 160.0;
 
+/// The Signal feed's widest name, cq (a longer one ends in `…`:
+/// `chimera_ui::Ellipsize`): 8 cq with the look book's .78 cq icons, less
+/// half the width the bigger icons (`FEED_ICON_H`, up to
+/// `signal::ICON_WIDE` times as wide) take more, so a row of two
+/// 20-character names, a gun and the headshot mark stays within the
+/// feed's 26 cq (ultimate_gun_game `names_fit`).
+pub const FEED_NAME_CQ: f32 = 8.0 - (FEED_ICON_H - 0.78) * super::signal::ICON_WIDE / 2.0;
+
 #[allow(clippy::type_complexity)]
 fn record(
     mut died: MessageReader<Died>,
@@ -736,7 +744,8 @@ pub mod signal_feed {
                 if side.bot {
                     signal::mark(n, look, signal::Mark::Bot, look.px(0.68), c);
                 }
-                n.spawn((look.text(Role::Mono, size, c, &side.name.to_uppercase()), id(part), Pickable::IGNORE));
+                let shown = side.name.to_uppercase();
+                n.spawn((look.text(Role::Mono, size, c, &shown), chimera_ui::Ellipsize::max(shown, FEED_NAME_CQ), id(part), Pickable::IGNORE));
             });
         };
         commands

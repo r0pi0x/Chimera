@@ -238,7 +238,8 @@ pub fn bit(t: i32) -> u64 {
 
 /// A character's progressive damage types (the server's, replicated):
 /// active (an entry with time left) and dealing (its damage non-zero) as
-/// bits by damage type.
+/// bits by damage type. On every character from its spawn
+/// (`on_every_character`).
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CaProgress {
     pub active: u64,
@@ -858,7 +859,12 @@ pub struct CaDamageFxPlugin;
 impl Plugin for CaDamageFxPlugin {
     fn build(&self, app: &mut App) {
         use crate::net::NetAppExt;
+        use chimera_core::character::CharacterPartsExt;
         let table = CaDamageFxTable::load(&crate::game::data::CaData::of(app));
+        // On every character from its spawn (empty sets), so a first hurt
+        // or death doesn't move it to a new archetype (a match after
+        // match would keep making them: ultimate_gun_game `session`).
+        app.on_every_character::<CaProgress>();
         app.insert_resource(table)
             .init_resource::<ProgressPass>()
             .init_resource::<CaDamageFxView>()

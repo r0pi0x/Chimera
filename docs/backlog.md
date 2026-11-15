@@ -262,6 +262,14 @@ started; the user asked to avoid server lag while testers play.
   `BoltParams::shown_model`), and a stuck bolt dragged behind the body
   (it followed the body's box centre on the 20 Hz frames, drawn a frame
   behind; now the struck sphere's node every tick, `bolts::follow_stuck`).
+- **Rank-up sounds not heard by players** (remote clients; looked at on
+  branch `ui-sounds-names`, confirm in a playtest). Every UI cue reads
+  replicated state and plays once on a remote client of a dedicated
+  server (ultimate_gun_game `net_ui_sounds`); not reproduced. The bus is
+  under the master volume, which Combat Arms' unloaded profile set to 0
+  at each start (fixed on branch `pt7-ui`, `ShellOptions`). Next time: a
+  tester's `UiVoices` (`played`) over the remote protocol, and the
+  `volume` and `snd_uivolume` values.
 - **Text fields don't accept paste** (done after 7.1, confirm in a
   playtest): the Signal fields (Join address and password, the Play
   page's text rows, Settings' value boxes) and the console take Ctrl+V

@@ -25,7 +25,10 @@
 //! for replication, leaving players' characters and weapons removed; `players`
 //! for `status`; a player who rejoins from the same address under the same name
 //! while its old connection is silent drops that connection at once
-//! (`PeerTable`, `drop_stale_twins`: the wire carries no account); players in the server log (`game_log::LogSubjects`: name,
+//! (`PeerTable`, `drop_stale_twins`: the wire carries no account); a
+//! player's name at join, rename and in its userinfo at most `NAME_MAX`
+//! (20) characters, control characters out (`clean_name`), and none two
+//! players share, case aside (`unique_name`: " 2", " 3" within the 20); players in the server log (`game_log::LogSubjects`: name,
 //! client id, `STEAM_ID_LAN` or `BOT`).
 //!
 //! Known shortcuts (docs/tech-debt.md): Every character's body goes to
@@ -410,9 +413,10 @@ fn track_peers(udp: Option<Res<super::udp::UdpServer>>, mut table: ResMut<PeerTa
 /// until the dead connection times out. A player named `name` from the
 /// same address as new client `client` (id `id`), silent for
 /// `STALE_AFTER`, is that connection: dropped at once. Two live clients
-/// of one name on one machine stay (neither is silent).
-fn drop_stale_twins(world: &mut World, client: Entity, id: u64, name: &str) {
-    let Some(&(ip, _)) = world.resource::<PeerTable>().0.get(&id) else { return };
+/// of one name on one machine stay (neither is silent; the second's name
+/// gets a number, `unique_name`). Returns the dropped ones' characters.
+fn drop_stale_twins(world: &mut World, client: Entity, id: u64, name: &str) -> Vec<Entity> {
+    let Some(&(ip, _)) = world.resource::<PeerTable>().0.get(&id) else { return Vec::new() };
     let stale: Vec<(Entity, u64)> = world
         .query::<(Entity, &Player, &NetworkId)>()
         .iter(world)
@@ -426,11 +430,14 @@ fn drop_stale_twins(world: &mut World, client: Entity, id: u64, name: &str) {
                 .is_some_and(|(addr, silent)| *addr == ip && *silent >= STALE_AFTER)
         })
         .collect();
+    let mut characters = Vec::new();
     for (old, other) in stale {
         info!("{name}: dropping client {other}, silent, for the rejoin (client {id})");
+        characters.extend(world.get::<Player>(old).map(|p| p.character));
         world.entity_mut(old).insert(LeaveReason("Reconnected.".to_string()));
         world.write_message(DisconnectRequest { client: old });
     }
+    characters
 }
 
 /// Drop refused clients that didn't hang up.
@@ -661,7 +668,9 @@ fn admit(world: &mut World, client: Entity, msg: Join) {
         return;
     }
     let name = clean_name(&msg.name, id);
-    drop_stale_twins(world, client, id, &name);
+    // A rejoin's dead connection keeps its name only until it goes.
+    let stale = drop_stale_twins(world, client, id, &name);
+    let name = unique_name(world, &name, &stale);
     // How it comes in (`JoinRules`; CS:S's `rules::JoinChoice`, in its
     // userinfo): on a team at once unless it asked for the join menus.
     let choice = msg
@@ -718,7 +727,12 @@ pub(super) fn set_userinfo(world: &mut World, character: Entity, values: &[(Stri
             .iter()
             .filter(|(k, v)| k.len() <= 64 && v.len() <= 256)
             .take(64)
-            .map(|(k, v)| (k.to_lowercase(), v.clone()))
+            .map(|(k, v)| {
+                let k = k.to_lowercase();
+                // A name, as the player's name is kept (`NAME_MAX`).
+                let v = if k == "name" { cap_name(v.chars().filter(|c| !c.is_control()).collect::<String>().trim()) } else { v.clone() };
+                (k, v)
+            })
             .collect(),
     );
     if let Ok(mut e) = world.get_entity_mut(character) {
@@ -726,15 +740,47 @@ pub(super) fn set_userinfo(world: &mut World, character: Entity, values: &[(Stri
     }
 }
 
-/// A printable name of at most 32 characters, or "Player <id>".
+/// The longest player name, in characters (the user's decision,
+/// 2026-11-14): the screens fit a name this long, cut with an ellipsis
+/// where a plate is narrower (`chimera_ui::text_fit`).
+pub const NAME_MAX: usize = 20;
+
+/// `name` cut to `NAME_MAX` characters, trailing spaces dropped.
+fn cap_name(name: &str) -> String {
+    name.chars().take(NAME_MAX).collect::<String>().trim_end().to_string()
+}
+
+/// A printable name of at most `NAME_MAX` characters (control characters
+/// out, spaces trimmed), or "Player <id>" cut to fit.
 pub(super) fn clean_name(name: &str, id: u64) -> String {
-    let n: String = name.chars().filter(|c| !c.is_control()).take(32).collect();
-    let n = n.trim();
-    if n.is_empty() {
-        format!("Player {id}")
-    } else {
-        n.to_string()
+    let n: String = name.chars().filter(|c| !c.is_control()).collect();
+    let n = cap_name(n.trim());
+    if n.is_empty() { cap_name(&format!("Player {id}")) } else { n }
+}
+
+/// `name` as no other character (but `except`) has it, case aside:
+/// itself, else with " 2", " 3", ... after it, its start cut so the whole
+/// stays within `NAME_MAX` (two players never show as one, nor share
+/// session wins, which go by name).
+pub(super) fn unique_name(world: &mut World, name: &str, except: &[Entity]) -> String {
+    let taken: Vec<String> = world
+        .query::<(Entity, &NetCharacter)>()
+        .iter(world)
+        .filter(|(e, _)| !except.contains(e))
+        .map(|(_, c)| c.name.to_lowercase())
+        .collect();
+    let free = |n: &str| !taken.contains(&n.to_lowercase());
+    if free(name) {
+        return name.to_string();
     }
+    (2..)
+        .map(|k| {
+            let tail = format!(" {k}");
+            let head: String = name.chars().take(NAME_MAX.saturating_sub(tail.chars().count())).collect();
+            format!("{}{tail}", head.trim_end())
+        })
+        .find(|n| free(n))
+        .expect("some number is free")
 }
 
 /// A remote player's character: on the team with fewer players, out of
@@ -1161,7 +1207,7 @@ fn replicate_characters(
 ) {
     for (e, name, local) in &q {
         let name = if local {
-            settings.name.clone()
+            clean_name(&settings.name, HOST_ID)
         } else {
             name.map_or_else(|| "Character".into(), |n| n.as_str().to_string())
         };

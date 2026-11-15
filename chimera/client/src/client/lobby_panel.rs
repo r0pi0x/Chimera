@@ -460,7 +460,8 @@ fn draw(
         if row.bot {
             c.entity(slot).insert(LobbyMark::Bot);
         }
-        p.text(c, who, Role::DisplayBold, p.lay("name"), Tone::Fg, &row.name);
+        let name = p.text(c, who, Role::DisplayBold, p.lay("name"), Tone::Fg, &row.name);
+        c.entity(name).insert(chimera_ui::Ellipsize::in_parent(row.name.to_uppercase()));
         if row.wins > 0 {
             // The session wins: the leader's in the accent.
             let leader = row.wins == top_wins;

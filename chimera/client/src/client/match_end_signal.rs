@@ -581,6 +581,7 @@ fn build_static(
             w.spawn((Node { margin: UiRect::top(look.val(0.7)), align_self: AlignSelf::FlexStart, ..default() }, Pickable::IGNORE)).with_children(|n| {
                 n.spawn((
                     look.tracked(Role::DisplayBold, 3.6, 0.072, look.tone(Tone::Fg), &name.to_uppercase()),
+                    chimera_ui::Ellipsize::max(name.to_uppercase(), 44.0),
                     WinnerName,
                     Timeline::new([Track::new(Prop::Opacity, 0.0, 1.0).at(look.dur("matchend", "name_at", 0.9))]).started(came_up),
                     UiParityId::new("end.win.name"),
@@ -711,6 +712,7 @@ fn row_cells(
             c.spawn((
                 Node { flex_shrink: 1.0, min_width: px(0.0), overflow: Overflow::clip(), ..default() },
                 look.tracked(Role::DisplayBold, 0.78, 0.78 * 0.03, look.tone(Tone::Fg), &row.name.to_uppercase()),
+                chimera_ui::Ellipsize::in_parent(row.name.to_uppercase()),
                 UiParityId(format!("{p}.name")),
                 Pickable::IGNORE,
             ));
@@ -976,7 +978,11 @@ fn build_climb(
                 c.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.8), ..default() }, Pickable::IGNORE)).with_children(|h| {
                     let e = signal::tag(h, &look, TagKind::Accent, "The climb", 0.62);
                     parity::name(h, e, "end.climb.tag");
-                    h.spawn((look.tracked(Role::Mono, 0.56, 0.056, look.tone(Tone::Fg), &row.name.to_uppercase()), UiParityId::new("end.climb.name")));
+                    h.spawn((
+                        look.tracked(Role::Mono, 0.56, 0.056, look.tone(Tone::Fg), &row.name.to_uppercase()),
+                        chimera_ui::Ellipsize::max(row.name.to_uppercase(), 12.0),
+                        UiParityId::new("end.climb.name"),
+                    ));
                     let reach = match (winner, row.rung) {
                         (true, _) if view.rungs > 0 => format!("All {} rungs in {}", view.rungs, mmss(end)),
                         (_, Some(r)) => format!("Reached rung {r:02}"),
@@ -1655,7 +1661,11 @@ fn build_vote(
                                 });
                             }
                             c.spawn((Node { flex_direction: FlexDirection::Column, align_items: AlignItems::FlexStart, row_gap: look.val(0.4), padding: UiRect::new(look.val(0.8), look.val(0.8), look.val(0.7), look.val(0.6)), ..default() }, Pickable::IGNORE)).with_children(|m| {
-                                m.spawn((look.tracked(Role::DisplayBold, 0.78, 0.78 * 0.03, tone(Tone::Fg), &map.to_uppercase()), UiParityId(format!("{p}.name"))));
+                                m.spawn((
+                                    look.tracked(Role::DisplayBold, 0.78, 0.78 * 0.03, tone(Tone::Fg), &map.to_uppercase()),
+                                    chimera_ui::Ellipsize::in_parent(map.to_uppercase()),
+                                    UiParityId(format!("{p}.name")),
+                                ));
                                 let game = v.games.get(i).cloned().unwrap_or_default();
                                 m.spawn((look.tracked(Role::Mono, 0.48, 0.048, look.theme.tone_a(Tone::Fg, 0.42 * dim), &game.to_uppercase()), UiParityId(format!("{p}.game"))));
                                 m.spawn((Node { align_items: AlignItems::Center, align_self: AlignSelf::Stretch, column_gap: look.val(0.5), margin: UiRect::top(look.val(0.15)), ..default() }, Pickable::IGNORE)).with_children(|r| {

@@ -677,8 +677,10 @@ fn fill_gun(c: &mut ChildSpawnerCommands, look: &Look, g: &ToastGun, fonts: Opti
             .with_children(|n| {
                 let font = look.font(Role::DisplayBold, 0.94);
                 let name = super::overlay::fit(fonts, rules, &font, &g.name.to_uppercase(), look.px(NAME_W));
-                n.spawn((look.text(Role::DisplayBold, 0.94, look.tone(Tone::Fg), &name), Pickable::IGNORE));
-                n.spawn((look.text(Role::Mono, 0.48, look.tone(Tone::Fg3), &g.line2.to_uppercase()), Pickable::IGNORE));
+                // Fitted by the guns' words, then cut in the kit's face.
+                n.spawn((look.text(Role::DisplayBold, 0.94, look.tone(Tone::Fg), &name), chimera_ui::Ellipsize::max(name.clone(), NAME_W), Pickable::IGNORE));
+                let line2 = g.line2.to_uppercase();
+                n.spawn((look.text(Role::Mono, 0.48, look.tone(Tone::Fg3), &line2), chimera_ui::Ellipsize::max(line2, NAME_W), Pickable::IGNORE));
             });
         });
 }

@@ -3,7 +3,11 @@
 //! bus (`ui_sound`), read off their state as it changes, so no screen's
 //! drawing code changes. Runs only while an app's sounds are in
 //! (`ui_sound::UiSounds`); `ui_sound` plays them only under a theme with
-//! UI sound on, so other apps hear nothing.
+//! UI sound on, so other apps hear nothing. Every cue reads state a
+//! remote client of a dedicated server has too (the replicated rung and
+//! ladder, `NetLobby`, the match's effects and results, the vote), never
+//! a server-only event, so each client hears its own cues once
+//! (ultimate_gun_game `net_ui_sounds`).
 //!
 //! - **Lobby** (`prematch_lobby::LobbyView`): your row turning ready
 //!   (`lobby_ready`) or back (`lobby_unready`), another player readying
@@ -23,12 +27,17 @@
 //!   `air_alert` as it starts, `air_pulse` on each second of its
 //!   countdown (the edge's pulses), `hud_chip` as its banner folds into
 //!   its chip and `air_impact` at its impact; any other effect (moon
-//!   gravity) `hud_chip` as its chip comes in (`effect_cues`).
+//!   gravity) `hud_chip` as its chip comes in (`effect_cues`). A client
+//!   that first sees an effect within `LATE_HEARD` of its start hears it
+//!   from the start (a slow link too: the start is on the server's clock);
+//!   one later (a late join) only what is still to come.
 //! - **Tab** (`race_chip::BoardOpen`): `tab_open`, `tab_close`.
 //! - **Kill feed**: your own kill entering it (`feed_self`).
 //! - **Match end** (`match_end::MatchEndView`): the screen coming up with
 //!   a winner (`end_reveal`); the map vote: your vote (`vote_cast_1` to
-//!   `_4` by card), someone else's (`vote_other`), its last 10 seconds
+//!   `_4` by card), someone else's (`vote_other`: the counts growing by
+//!   more than your own vote, which a remote client sees before its count
+//!   comes back), its last 10 seconds
 //!   (`count_tick`) and its close (`vote_lock`).
 //!
 //! The menus' cues come from the app's menus (`party_kit::ui_cues`).
@@ -239,6 +248,7 @@ fn feed(feed: Option<Res<KillFeed>>, mut last: Local<Option<u64>>, mut out: Mess
 struct EndSeen {
     view: MatchEndView,
     vote_left: Option<i64>,
+    owed: u32,
 }
 
 fn pass(lp: Option<Res<LogoPass>>, mut seen: Local<u32>, mut out: MessageWriter<UiCue>) {
@@ -251,9 +261,14 @@ fn pass(lp: Option<Res<LogoPass>>, mut seen: Local<u32>, mut out: MessageWriter<
     }
 }
 
+/// How late (s into an effect) a client may first see it and still hear
+/// it from its start. The start is the server's, put on this client's
+/// clock (`game::ServerTime`), so a slow link's delay doesn't count.
+pub const LATE_HEARD: f32 = 0.3;
+
 /// Each effect's cues as the UI clock passes them (by effect id: the
-/// seconds already heard). An effect first seen well after its start (a
-/// late join) sounds only what is still to come.
+/// seconds already heard). An effect first seen more than `LATE_HEARD`
+/// after its start (a late join) sounds only what is still to come.
 fn effects(
     view: Option<Res<EffectsView>>,
     clock: Option<Res<UiClock>>,
@@ -267,7 +282,7 @@ fn effects(
     let mut next = BTreeMap::new();
     for s in &view.shown {
         let t = s.t(now);
-        let from = heard.get(&s.e.id).copied().unwrap_or(if t < 0.3 { -1.0 } else { t });
+        let from = heard.get(&s.e.id).copied().unwrap_or(if t < LATE_HEARD { -1.0 } else { t });
         for (at, cue) in effect_cues(&s.e, chip) {
             if at > from && at <= t {
                 out.write(UiCue::new(cue));
@@ -278,34 +293,49 @@ fn effects(
     *heard = next;
 }
 
-/// The cues between two states of the match-end screen.
-pub fn match_end_cues(prev: &MatchEndView, next: &MatchEndView) -> Vec<UiCue> {
+/// The cues between two states of the match-end screen. `owed`: your
+/// votes cast whose count hasn't come yet (a remote client's own vote
+/// shows at once, its count only once the server has it), so the count
+/// growing for your own vote isn't taken for someone else's.
+pub fn match_end_cues(prev: &MatchEndView, next: &MatchEndView, owed: &mut u32) -> Vec<UiCue> {
     const CAST: [&str; 4] = ["vote_cast_1", "vote_cast_2", "vote_cast_3", "vote_cast_4"];
     let mut out = Vec::new();
     if next.shown && !prev.shown && next.winner.is_some() {
         out.push(UiCue::new("end_reveal"));
     }
-    if let Some(v) = next.vote.as_ref().filter(|_| next.shown) {
-        let before = prev.vote.as_ref().filter(|_| prev.shown);
-        let mine_before = before.and_then(|b| b.mine);
-        if let Some(m) = v.mine
-            && mine_before != Some(m)
-        {
-            out.push(UiCue::new(CAST[m.min(3)]));
+    let Some(v) = next.vote.as_ref().filter(|_| next.shown) else {
+        *owed = 0;
+        return out;
+    };
+    let before = prev.vote.as_ref().filter(|_| prev.shown);
+    let mine_before = before.and_then(|b| b.mine);
+    if let Some(m) = v.mine
+        && mine_before != Some(m)
+    {
+        out.push(UiCue::new(CAST[m.min(3)]));
+        if mine_before.is_none() {
+            *owed += 1;
         }
-        if let Some(b) = before {
+    }
+    match before {
+        Some(b) => {
+            // Someone else's vote: the count grew more than your own
+            // votes still owed.
             let total = |c: &[u32]| c.iter().sum::<u32>();
-            let mine_moved = v.mine != b.mine;
-            // Someone else's vote: the count grew more than your own did.
-            let grew = total(&v.counts) as i64 - total(&b.counts) as i64;
-            let own = i64::from(mine_moved && b.mine.is_none());
+            let grew = total(&v.counts).saturating_sub(total(&b.counts));
+            let own = grew.min(*owed);
+            *owed -= own;
             if grew > own {
                 out.push(UiCue::new("vote_other"));
             }
             if b.winner.is_none() && v.winner.is_some() {
                 out.push(UiCue::new("vote_lock"));
+                *owed = 0;
             }
         }
+        // The vote first shown: the counts so far are no news, and your
+        // vote is counted already if it shows.
+        None => *owed = 0,
     }
     out
 }
@@ -319,7 +349,9 @@ fn match_end(
 ) {
     let Some(view) = view else { return };
     if *view != seen.view {
-        out.write_batch(match_end_cues(&seen.view, &view));
+        let seen = &mut *seen;
+        let cues = match_end_cues(&seen.view, &view, &mut seen.owed);
+        out.write_batch(cues);
         seen.view = view.clone();
     }
     // The vote's last 10 seconds tick.
@@ -379,5 +411,25 @@ mod tests {
         let moon = Effect { starts: 0.0, ends: 30.0, ..default() };
         assert_eq!(effect_cues(&moon, 2.12), [(2.12, "hud_chip")]);
         assert!((chain_secs(None) - 1.16).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_remote_clients_own_vote_counted_late_is_not_someone_elses() {
+        use super::super::match_end::MatchEndVote;
+        let view = |mine: Option<usize>, counts: Vec<u32>| MatchEndView {
+            shown: true,
+            winner: Some("Ann".into()),
+            vote: Some(MatchEndVote { maps: vec!["a".into(), "b".into()], counts, mine, winner: None, games: Vec::new() }),
+            ..default()
+        };
+        let names = |c: Vec<UiCue>| c.into_iter().map(|c| c.event.to_string()).collect::<Vec<_>>();
+        let mut owed = 0;
+        let (a, b, c, d) = (view(None, vec![0, 0]), view(Some(1), vec![0, 0]), view(Some(1), vec![0, 1]), view(Some(1), vec![1, 1]));
+        assert_eq!(names(match_end_cues(&a, &b, &mut owed)), ["vote_cast_2"], "your vote, shown at once");
+        assert!(match_end_cues(&b, &c, &mut owed).is_empty(), "its count from the server: no one else's");
+        assert_eq!(names(match_end_cues(&c, &d, &mut owed)), ["vote_other"], "then someone else's");
+        // A host: the vote and its count in one change.
+        let mut owed = 0;
+        assert_eq!(names(match_end_cues(&a, &c, &mut owed)), ["vote_cast_2"]);
     }
 }

@@ -61,7 +61,7 @@ use chimera_sim::{
     },
     weapon::data::WeaponCatalog,
 };
-use chimera_ui::{Prop, Role, SlantMaterial, TickBarMaterial, TickLayout, Timeline, Tone, Track, UiClock, UiParityId, parity};
+use chimera_ui::{Ellipsize, Prop, Role, SlantMaterial, TickBarMaterial, TickLayout, Timeline, Tone, Track, UiClock, UiParityId, parity};
 
 use super::{
     console::HeldActions,
@@ -73,9 +73,11 @@ use crate::{
     net::{HOST_ID, NetCharacter, NetScore, NetSettings, score_flags},
 };
 
-/// The chip's gun icon's height in cq (in a 4 cq wide box), fitted by its
-/// ink (`ink_icon`).
+/// The chip's gun icon's height in cq (in a `CHIP_ICON_W` wide box),
+/// fitted by its ink (`ink_icon`).
 pub const CHIP_ICON_H: f32 = 1.3;
+/// The chip's gun icon's box width in cq.
+pub const CHIP_ICON_W: f32 = 4.0;
 
 /// The chip and its board (module doc).
 pub struct RaceChipPlugin;
@@ -360,6 +362,14 @@ fn closed_w(view: &RaceView, fit: ChipFit) -> f32 {
     chip_w(view).max(fit.0).min(BOARD_W - 1.0)
 }
 const CHIP_H: f32 = 3.05;
+/// The chip's names at most this wide, cq (`chimera_ui::Ellipsize`): the
+/// leader's, and the one you lead. 7 and 6 cq with the look book's 2.8 cq
+/// gun box, less what the bigger box (`CHIP_ICON_W`) takes more on the
+/// same line, so the plate measured to fit it (`ChipFit`) stays within
+/// the leading plate's 23 cq with two 20-character names
+/// (ultimate_gun_game `names_fit`).
+const CHIP_NAME_LEAD: f32 = 7.0 - (CHIP_ICON_W - 2.8);
+const CHIP_NAME_GAP: f32 = 6.0 - (CHIP_ICON_W - 2.8);
 const BOARD_W: f32 = 64.0;
 const ROW_H: f32 = 2.55;
 /// The board's height besides its rows: padding, head, column titles.
@@ -596,7 +606,7 @@ fn build_chip(
                     if let Some(id) = row.gun {
                         // 1.3 x 4 cq, the icon fitted by its ink (playtest 7:
                         // the look book's .9 x 2.8 read too small).
-                        r1.spawn((Node { height: look.val(CHIP_ICON_H), width: look.val(4.0), align_items: AlignItems::Center, ..default() }, Pickable::IGNORE))
+                        r1.spawn((Node { height: look.val(CHIP_ICON_H), width: look.val(CHIP_ICON_W), align_items: AlignItems::Center, ..default() }, Pickable::IGNORE))
                             .with_children(|g| {
                                 let e = signal::gun_icon(g, &look, id, row.class, look.px(CHIP_ICON_H), look.tone(Tone::Fg));
                                 parity::name(g, e, format!("{cid}.you.icon"));
@@ -626,6 +636,7 @@ fn build_chip(
                                 g.spawn((look.tracked(Role::Mono, 0.5, 0.56 * 0.1, look.tone(Tone::Fg3), "OVER"), UiParityId(format!("{cid}.gap.over")), Pickable::IGNORE));
                                 g.spawn((
                                     look.tracked(Role::DisplayBold, 0.62, 0.62 * 0.03, look.tone(Tone::Fg2), &s.name.to_uppercase()),
+                                    Ellipsize::max(s.name.to_uppercase(), CHIP_NAME_GAP),
                                     UiParityId(format!("{cid}.gap.name")),
                                     Pickable::IGNORE,
                                 ));
@@ -639,6 +650,7 @@ fn build_chip(
                             parity::name(g, e, format!("{cid}.lead.tag"));
                             g.spawn((
                                 look.tracked(Role::DisplayBold, 0.72, 0.72 * 0.03, look.tone(Tone::Fg), &l.name.to_uppercase()),
+                                Ellipsize::max(l.name.to_uppercase(), CHIP_NAME_LEAD),
                                 UiParityId(format!("{cid}.lead.name")),
                                 Pickable::IGNORE,
                             ));
@@ -892,6 +904,7 @@ fn build_board(
                     c.spawn((
                         Node { flex_shrink: 1.0, min_width: px(0.0), overflow: Overflow::clip(), ..default() },
                         look.tracked(Role::DisplayBold, 0.66, 0.66 * 0.03, look.tone(Tone::Fg), &row.name.to_uppercase()),
+                        Ellipsize::in_parent(row.name.to_uppercase()),
                         UiParityId(format!("{p}.name")),
                         Pickable::IGNORE,
                     ));

@@ -8,5 +8,6 @@ mod icons;
 mod motion;
 mod scroll;
 mod style;
+mod text_fit;
 mod theme;
 mod units;

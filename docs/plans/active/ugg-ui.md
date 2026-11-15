@@ -931,6 +931,19 @@ licence, 5 MB a file, 20 MB in all.
   place of Combat Arms' playlist (Combat Arms' music silent meanwhile:
   `combat_arms::game::music::AppMusicPlays`). The backdrop swap stays
   off.
+- **Remote clients** (audit 2026-11-14, after playtest 7's report of no
+  rank-up sound for players): every cue reads state a remote client of a
+  dedicated server has (the replicated `Rung` and ladder, `NetLobby`, the
+  match's effects, results and vote), none a server-only event; on
+  `NetSim` with a dedicated server and two clients each hears its own
+  cues once (ultimate_gun_game `net_ui_sounds`: rank-up, knife, no cue on
+  a rung down, lobby, countdown, air strike over a slow link and a late
+  join, match end, vote, `snd_uivolume`). One fix: a remote voter's own
+  vote, shown at once but counted when the server's count comes back,
+  also played `vote_other` (`match_end_cues`' owed votes). The playtest's
+  silence did not reproduce there; the bus is under the master
+  `GlobalVolume`, which Combat Arms' unloaded profile set to 0 at every
+  start of the party apps (`ShellOptions`, branch `pt7-ui`, fixes it).
 - **The loop's level**: the music bus, `snd_musicvolume`, which the party
   apps take from Combat Arms' music option; a first play's profile (the
   template) has music 50 and effects 70, so a fresh player hears it
@@ -942,6 +955,26 @@ licence, 5 MB a file, 20 MB in all.
   ours if they clash). Follow-up: a Rust port of `rank_up(p, seed)`
   rendering each match's ladder on a task at its start (no rank files),
   and a compressed format with gapless loops (Vorbis) for the loop.
+
+### Names (2026-11-14)
+
+A player's name is at most 20 characters (the user's decision): the
+server cuts it at a join, a rename and in the userinfo, takes control
+characters out, trims it, and numbers a name another player has ("Ann
+2", within the 20; `chimera_net::net::server::NAME_MAX`, `clean_name`,
+`unique_name`). Every Signal widget that shows a name fits it to its
+place with `…` (`...` in the UGG faces v0.4, which have no `…` glyph;
+`chimera_ui::text_fit`: `Ellipsize`, measured in the kit's faces by
+`KitFonts::width` and corrected from Bevy's layout where kerning widens
+it): the kill feed (7.25 cq a name: 8 less half of what the bigger
+gun icons take more, so a row stays within the feed's 26 cq), the race
+chip (the leader's 5.8 cq, the one you lead 4.8 cq: 7 and 6 less what
+the 4 cq gun box takes more, so the plate stays within 23 cq), the Tab board's name
+cell, the lobby's rows, the match end's winner (44 cq), standings, the
+climb's head (12 cq) and the vote cards' maps, the rank-up toast's gun.
+The feedback dialog shows no name. `ui_scene_name <name>` calls every
+staged player `name` (screenshots); ultimate_gun_game `names_fit` lays
+twenty W's out in each at 1280x720 and 1920x1080.
 
 ### M7: Settings and Esc menu (first drafts)
 
