@@ -606,7 +606,10 @@ Only `Reflect`-registered types are visible; register new core components in
 - `chimera_drawnav 1` outlines the nav areas near you (2: all), coloured by
   place, with half-links toward their neighbours, and the mesh's ladders
   (yellow line, green cross where bots get on at the foot, orange where
-  they start down from behind the top); `chimera_drawbots 1`
+  they start down from behind the top; a generated mesh's teleporter
+  links in magenta, pad to exit; drawn where the client's world holds
+  the mesh: not a listen server's front end, whose bots' mesh is the
+  server world's); `chimera_drawbots 1`
   shows the map's sites (yellow rings) with where routes from the
   attackers' (orange balls) and defenders' (blue balls) spawns come onto
   them, and per bot: its role (ring at its feet: orange attacker, blue

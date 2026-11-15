@@ -10,6 +10,15 @@
 //! crossing points (optionally leaning along the edge), `route`/`points_along`,
 //! `within` (areas by path distance), `sees`. `area_at` looks in a grid over
 //! the areas (`AreaGrid`), not at every area.
+//!
+//! Teleporters (`NavTeleport`, `Via::Teleport`, `add_teleport`): a one-way
+//! link from the area of a pad's source to the area of its destination,
+//! whatever lies between (a map's teleporters, `map::teleport`, added to a
+//! generated mesh by `nav_gen::link_map`). Its length is the walk from the
+//! source area's centre to the pad plus the walk from the destination to
+//! the destination area's centre; a route walks to the pad's source and
+//! goes on from its destination. A mesh with teleporters searches without
+//! the straight-distance heuristic (a teleporter beats any straight line).
 
 use bevy::prelude::*;
 
@@ -98,6 +107,9 @@ pub enum Via {
     /// Climb ladder (index into `ladders`) up or down.
     LadderUp(usize),
     LadderDown(usize),
+    /// Step onto teleporter (index into `teleports`) and go on from its
+    /// destination.
+    Teleport(usize),
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -136,10 +148,21 @@ pub struct NavLadder {
     pub normal: Vec3,
 }
 
+/// A one-way teleporter between two areas (`Via::Teleport`).
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NavTeleport {
+    /// Where a walker steps on (the pad's centre, on its floor).
+    pub source: Vec3,
+    /// Where it arrives.
+    pub dest: Vec3,
+}
+
 #[derive(Resource, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct NavMesh {
     pub areas: Vec<NavArea>,
     pub ladders: Vec<NavLadder>,
+    /// One-way teleporters (`Via::Teleport`); empty for a map's own file.
+    pub teleports: Vec<NavTeleport>,
     pub places: Vec<String>,
     /// Made for its maker's walker, not a map's own navigation file: from
     /// the collision (`nav_gen`, bots' jump-ups), or from a map's AI volumes
@@ -158,6 +181,7 @@ impl Clone for NavMesh {
         Self {
             areas: self.areas.clone(),
             ladders: self.ladders.clone(),
+            teleports: self.teleports.clone(),
             places: self.places.clone(),
             generated: self.generated,
             grid: std::sync::OnceLock::new(),
@@ -395,11 +419,8 @@ impl NavMesh {
 
     /// Stock path cost of entering `to` from `from` (spec "shortest path").
     pub fn step_cost(&self, from: usize, to: usize, via: Via) -> f64 {
-        let (a, b) = (&self.areas[from], &self.areas[to]);
-        let dist = match via {
-            Via::LadderUp(l) | Via::LadderDown(l) => self.ladders[l].length as f64,
-            Via::Walk(_) => (b.center.as_dvec3() - a.center.as_dvec3()).length(),
-        };
+        let b = &self.areas[to];
+        let dist = self.step_length(from, to, via);
         let mut cost = dist;
         if b.has(flags::CROUCH) {
             cost += CROUCH_PENALTY * dist;
@@ -417,17 +438,41 @@ impl NavMesh {
         self.find_path_with(start, goal, |from, to, via| self.step_cost(from, to, via))
     }
 
-    /// The step cost's distance part: ladder length or centre distance.
+    /// The step cost's distance part: ladder length, centre distance, or
+    /// for a teleporter the walks from the centre to its source and from
+    /// its destination to the next centre.
     pub fn step_length(&self, from: usize, to: usize, via: Via) -> f64 {
         match via {
             Via::LadderUp(l) | Via::LadderDown(l) => self.ladders[l].length as f64,
             Via::Walk(_) => (self.areas[to].center.as_dvec3() - self.areas[from].center.as_dvec3()).length(),
+            Via::Teleport(t) => {
+                let NavTeleport { source, dest } = self.teleports[t];
+                (source.as_dvec3() - self.areas[from].center.as_dvec3()).length()
+                    + (self.areas[to].center.as_dvec3() - dest.as_dvec3()).length()
+            }
         }
+    }
+
+    /// Teleporter `source` → `dest` as a link from the area under (or
+    /// nearest) its source to the area under (or nearest) its destination;
+    /// its index in `teleports`, None without areas there (or when both
+    /// are the same area).
+    pub fn add_teleport(&mut self, source: Vec3, dest: Vec3) -> Option<usize> {
+        let area = |p: Vec3| self.area_at(p + Vec3::Y * 0.1).or_else(|| self.nearest_area(p));
+        let (a, b) = (area(source)?, area(dest)?);
+        if a == b {
+            return None;
+        }
+        let t = self.teleports.len();
+        self.teleports.push(NavTeleport { source, dest });
+        self.areas[a].links.push((b, Via::Teleport(t)));
+        Some(t)
     }
 
     /// `find_path` with another step cost (`cost(from, to, via)`, the cost
     /// of entering `to`; infinite: impassable). The heuristic stays the
-    /// straight distance, so costs should not fall below the distance.
+    /// straight distance, so costs should not fall below the distance
+    /// (none on a mesh with teleporters: their links do).
     pub fn find_path_with(
         &self,
         start: usize,
@@ -436,7 +481,8 @@ impl NavMesh {
     ) -> Option<(Vec<(usize, Option<Via>)>, f64)> {
         let n = self.areas.len();
         let goal_pos = self.areas[goal].center.as_dvec3();
-        let h = |i: usize| (self.areas[i].center.as_dvec3() - goal_pos).length();
+        let straight = self.teleports.is_empty();
+        let h = |i: usize| if straight { (self.areas[i].center.as_dvec3() - goal_pos).length() } else { 0.0 };
         let mut g = vec![f64::INFINITY; n];
         let mut parent: Vec<Option<(usize, Via)>> = vec![None; n];
         // Open list sorted by f; equal f keeps insertion order (FIFO).
@@ -531,7 +577,8 @@ impl NavMesh {
     }
 
     /// World points to walk through from `from` to `to` (engine space):
-    /// crossing points between consecutive areas, ladder ends, then `to`.
+    /// crossing points between consecutive areas, ladder ends, teleporters'
+    /// sources and destinations, then `to`.
     pub fn route(&self, from: Vec3, to: Vec3) -> Option<Vec<Vec3>> {
         let start = self.nearest_area(from)?;
         let goal = self.nearest_area(to)?;
@@ -577,6 +624,11 @@ impl NavMesh {
                     let ladder = &self.ladders[l];
                     points.push((ladder.top - ladder.normal * 32.0 * UNIT, prev));
                     ladder.bottom
+                }
+                Some(Via::Teleport(t)) => {
+                    let NavTeleport { source, dest } = self.teleports[t];
+                    points.push((source, prev));
+                    dest
                 }
                 None => continue,
             };

@@ -17,7 +17,15 @@
 //! placed on the gun again each tick, so parts and particles made later
 //! in its life start where the marker is then.
 //!
-//! Known shortcuts: particles attached to a marker are made where the
+//! A particle system part (`system`) is made at once as a free system.
+//!
+//! Known shortcuts: a particle system's particles are made at its
+//! creation only (its creation rate counted over its birth state), ride
+//! one shared drag and rise (`SYSTEM_DAMPING`, `SYSTEM_RISE`) instead of
+//! their states' point physics, keep their first draw of each state's
+//! numbers (no blend between states: each state is its own particle, shown
+//! in its time), and an attached system (the rocket's exhaust, the
+//! flamethrower's stream) is made once where it starts; particles attached to a marker are made where the
 //! marker was and then move freely; a particle parallel to its direction
 //! is a strip of its sprite along its velocity (2R long, shortening over
 //! its life as the pool's trails do), or along its direction at creation
@@ -33,7 +41,7 @@ use bevy::prelude::*;
 
 use super::{
     HaloLight,
-    load::{FxEffect, FxEntry, FxParticle, FxPartKind, HaloFx},
+    load::{FxEffect, FxEntry, FxParticle, FxPartKind, FxSystem, HaloFx},
     place::Frame,
 };
 use super::super::METERS_PER_UNIT;
@@ -198,12 +206,12 @@ impl Running {
                 self.last = -1.0;
                 self.phase = range(rng, ev.duration);
                 self.counts = ev.entries.iter().map(|e| count(rng, e.count)).collect();
-                self.parts(effect, rng, world, out);
+                self.parts(fx, effect, rng, world, out);
             }
         }
     }
 
-    fn parts(&self, effect: &FxEffect, rng: &mut ParticleRng, world: &dyn Fn(Vec3, Vec3) -> Option<(f32, Vec3)>, out: &mut Made) {
+    fn parts(&self, fx: &HaloFx, effect: &FxEffect, rng: &mut ParticleRng, world: &dyn Fn(Vec3, Vec3) -> Option<(f32, Vec3)>, out: &mut Made) {
         for p in &effect.events[self.event].parts {
             if p.mode == 2 || p.environment == 2 || p.environment == 3 {
                 continue;
@@ -245,6 +253,11 @@ impl Running {
                         owner: self.owner,
                         follow: false,
                     }),
+                    FxPartKind::System(i) => {
+                        if let Some(sys) = fx.systems.get(*i) {
+                            system(sys, &f, rng, out);
+                        }
+                    }
                     FxPartKind::Other => {}
                 }
             }
@@ -374,6 +387,85 @@ pub fn particle(def: &FxParticle, entry: &FxEntry, frame: &Frame, rng: &mut Part
         roll_speed: spin,
         ..Particle::new(at, life, material, radius)
     })
+}
+
+/// The particles' drag and rise of a particle system's (`system`): its
+/// states' point physics are not read, so its particles slow by this and
+/// drift up a little (m/s, per second).
+const SYSTEM_DAMPING: f32 = 4.0;
+const SYSTEM_RISE: f32 = 0.6;
+
+/// A free particle system made at `f` (effects.md "Particle systems"):
+/// each type's initial count and its birth state's creation rate over the
+/// birth's length (at most 128), created by its creation physics (default:
+/// at the point; explosion: a random direction scaled by the xy and z
+/// spreads, moving at that times the intensity; jet: along the forward,
+/// spread by the spread fraction, at the constant velocity), each living
+/// through its particle states in order: one engine particle per state, on
+/// the same path, hidden until its state begins (an empty fade-in window)
+/// and fading out at its end (the last over its second half).
+pub fn system(sys: &FxSystem, f: &Frame, rng: &mut ParticleRng, out: &mut Made) {
+    for t in &sys.types {
+        if t.states.is_empty() {
+            continue;
+        }
+        let n = (t.initial.max(0) as f32 + t.rate * range(rng, t.birth)).round().clamp(0.0, 128.0) as usize;
+        let c = |i: usize| t.constants.get(i).copied().unwrap_or(0.0);
+        let mut g = ParticleGroup::new(Motion { gravity: -SYSTEM_RISE, damping: SYSTEM_DAMPING, ..Default::default() });
+        g.capped = false;
+        for _ in 0..n {
+            let (offset, velocity) = match t.creation {
+                1 => {
+                    let d = direction(rng);
+                    // Halo's z spread is the engine's up (y).
+                    let o = Vec3::new(d.x * c(0), d.y * c(1), d.z * c(0));
+                    (o, o * c(2))
+                }
+                2 => {
+                    let spread = c(1).clamp(0.0, 1.0);
+                    (Vec3::ZERO, (f.forward * (1.0 - spread) + direction(rng) * spread) * c(0))
+                }
+                _ => (Vec3::ZERO, Vec3::ZERO),
+            };
+            let at = f.at + offset * METERS_PER_UNIT;
+            let velocity = velocity * METERS_PER_UNIT;
+            let roll = rng.random() * std::f32::consts::TAU;
+            let last = t.states.len() - 1;
+            let mut start = 0.0f32;
+            for (k, st) in t.states.iter().enumerate() {
+                let end = start + range(rng, st.duration).max(1.0 / 30.0);
+                if let Some(material) = st.material {
+                    let q = rng.random();
+                    let (lo, hi) = (st.color_lower, st.color_upper);
+                    let color = Vec3::new(lo[1] + (hi[1] - lo[1]) * q, lo[2] + (hi[2] - lo[2]) * q, lo[3] + (hi[3] - lo[3]) * q);
+                    let alpha = (lo[0] + (hi[0] - lo[0]) * rng.random()).clamp(0.0, 1.0);
+                    let s0 = start / end;
+                    let fade_out = if k == last { s0 + (1.0 - s0) * 0.5 } else { s0 + (1.0 - s0) * 0.8 };
+                    let fade = Fade::Windows {
+                        start_alpha: if k == 0 { 1.0 } else { 0.0 },
+                        fade_in: if k == 0 { (0.0, 0.0) } else { (s0, (s0 + (1.0 - s0) * 0.2).min(1.0)) },
+                        fade_out: (fade_out, 1.0),
+                    };
+                    let radius = range(rng, st.radius) * METERS_PER_UNIT;
+                    g.particles.push(Particle {
+                        velocity,
+                        sequence: st.sequence.max(0) as u16,
+                        fps: range(rng, st.animation_rate),
+                        frame_loop: true,
+                        color,
+                        alpha,
+                        fade,
+                        roll,
+                        ..Particle::new(at, end, material, radius.max(0.01))
+                    });
+                }
+                start = end;
+            }
+        }
+        if !g.particles.is_empty() {
+            out.groups.push(g);
+        }
+    }
 }
 
 /// A particle's age-`a` fade and radius factor as the pool draws them

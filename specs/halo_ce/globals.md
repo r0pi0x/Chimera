@@ -133,7 +133,7 @@ grenade release of `projectiles.md`. Disc values are identical on all
 | 0x90 | 4 | f32 | maximum stun time | s | 1.25 | its ceiling: 37 ticks (1.25 x 30 = 37.5 truncated) |
 | 0x94 | 8 | | unused | | zero | 2 words |
 | 0x9C | 4 | f32 | first person idle time lower bound | s | 10 | `animations.md`: the wait before the first-person weapon may pose, drawn uniformly between the two bounds, times 30 |
-| 0xA0 | 4 | f32 | first person idle time upper bound | s | 15 | (the disc's values are 10 s, 15 s and 0.25 on all 24 maps; 240 and 360 ticks) |
+| 0xA0 | 4 | f32 | first person idle time upper bound | s | 15 | (the disc's values are 10 s, 15 s and 0.25 on all 24 maps; 300 and 450 ticks at 30 per second) |
 | 0xA4 | 4 | f32 | first person idle skip fraction | fraction (0 to 1) | 0.25 | the chance a draw ends the wait without posing |
 | 0xA8 | 16 | | unused | | zero | 4 words |
 | 0xB8 | 16 | tag ref `effe` | coop respawn effect | | `effects\coop teleport` | played at a player who respawns near a partner in co-op; no multiplayer use |
@@ -528,7 +528,7 @@ Expected:
 | tag references | class `bipd` and `effe`, null (tag id 0xFFFFFFFF) |
 | per-tick forms (speed / 30) | run forward 0.0833333, run backward 0.075, run sideways 0.0708333, walking 0.0166667 WU/tick; run acceleration 0.0125 WU/tick per tick |
 | stun time in ticks (seconds x 30, truncated) | minimum 15, maximum 60 |
-| idle wait bounds in ticks | 240 and 360 |
+| idle wait bounds in ticks (the synthetic 8 s and 12 s; the disc's 10 s and 15 s would be 300 and 450) | 240 and 360 |
 | element size | 0xF4; the next field after the element starts there |
 | an element of 0xF3 bytes or fewer | rejected |
 

@@ -1,0 +1,75 @@
+# The Rocket Launcher (specs/tf2/weapons.md 1, 4, 5): the Soldier's
+# primary; a rocket every 0.8 s, 4 in the clip and 20 carried, one at a
+# time (first in at 0.92, then 0.8 each). The rocket (Chimera's flyers,
+# `chimera:projectile`) starts 23.5 forward, 12 right and 3 down from
+# the eye (crouched 8 up), flies at 1100 units/s with no gravity through
+# its owner's teammates, and on touch explodes (`tf2:rocket`): 90 x the
+# distance modifier (near half x0.5) x the splash 1 to 0.5 at 146 units,
+# the touched player full splash, the owner's own blast 90 x splash (x0.6
+# airborne), the push 6 (enemies), 10 (his own, airborne), 5 (his own, on
+# the ground) per point.
+id = "tf2:tf_weapon_rocketlauncher"
+base = "tf2:base"
+class = "launcher"
+slot = 0
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 0.8
+timing = "accumulate"
+
+[magazine]
+clip = 4
+ammo = "tf2:rockets"
+reload = 0.8
+auto_reload = true
+shells = { start = 0.12, insert = 0.8, back_to_back = true }
+
+# Without [damage] the frame traces nothing: the round is a rocket.
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 0.0
+spread = { template = 0.0 }
+
+[sounds]
+fire = "Weapon_RPG.Single"
+reload = [[0.0, "Weapon_RPG.Reload"]]
+draw = [[0.0, "Weapon_RPG.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_rocketlauncher/c_rocketlauncher.mdl"
+view = "models/weapons/c_models/c_rocketlauncher/c_rocketlauncher.mdl"
+view_right_handed = true
+
+[hud]
+name = "Rocket Launcher"
+icon = "tf_projectile_rocket"
+
+[hooks."tf2:gun"]
+ramp = 0.5
+arms = "soldier"
+script = "tf_weapon_rocketlauncher"
+
+[hooks."chimera:projectile"]
+speed = 1100.0
+touch = "report"
+shown = "tf2:rocket"
+# Its model's nose, held in its bone's frame, is its -Z: as flyers face
+# their flight, no turn.
+offset = [23.5, 12.0, -3.0]
+offset_crouched = [23.5, 12.0, 8.0]
+pass_teammates = true
+sky_probe = 16.0
+life = 30.0
+
+[hooks."tf2:rocket"]
+damage = 90.0
+radius = 146.0
+edge = 0.5
+self_air_scale = 0.6
+push_other = 6.0
+push_self_air = 10.0
+push_self_ground = 5.0
+sound = "BaseExplosionEffect.Sound"

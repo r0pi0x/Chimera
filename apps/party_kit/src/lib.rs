@@ -123,25 +123,18 @@ pub const DEFAULT_MINIGAME: &str = originals::GUN_GAME_DUST2;
 
 /// The games the party composes besides its base game (Combat Arms,
 /// whose gameplay, bots and HUD everything plays on), each one bundle
-/// (`chimera_world::game_bundle`, lift C4): CS:S, HL2:DM and Halo (its
-/// maps only, from its disc image: it lends no guns, bodies or movement
-/// yet), in the order an automatic ladder takes them. The kit loops over
-/// these; only the base game and the pairs' data (spawn teams, surface
-/// names) are named.
-pub static GUESTS: [&GameBundle; 3] = [&cs_source::game::BUNDLE, &hl2dm::game::BUNDLE, &halo_ce::game::BUNDLE];
+/// (`chimera_world::game_bundle`, lift C4): CS:S, HL2:DM, Halo (its maps
+/// from its disc image, its guns) and TF2 (its maps by id, its four guns:
+/// docs/plans/active/tf2.md, M2b), in the order an automatic ladder takes
+/// them. The kit loops over these; only the base game and the pairs' data
+/// (spawn teams, surface names) are named.
+pub static GUESTS: [&GameBundle; 4] = [&cs_source::game::BUNDLE, &hl2dm::game::BUNDLE, &halo_ce::game::BUNDLE, &tf2::game::BUNDLE];
 
 /// The base game's bundle.
 pub static BASE: &GameBundle = &combat_arms::game::BUNDLE;
 
-/// Games whose maps alone the party plays, by id (`tf2:ctf_2fort`): they
-/// lend no parts yet, so they aren't `GUESTS` (an automatic ladder, the
-/// binds, the startup fetch of every composed game's files leave them
-/// out). TF2 (docs/plans/active/tf2.md, M1: its maps; its guns come with
-/// M2, when it joins `GUESTS`).
-pub static MAP_GAMES: [&GameBundle; 1] = [&tf2::game::BUNDLE];
-
 /// Every game the party composes: the guests, then the base.
-pub static BUNDLES: [&GameBundle; 4] = [GUESTS[0], GUESTS[1], GUESTS[2], BASE];
+pub static BUNDLES: [&GameBundle; 5] = [GUESTS[0], GUESTS[1], GUESTS[2], GUESTS[3], BASE];
 
 /// CS:S's spawn teams as Combat Arms': terrorists (1) Alpha, counter-
 /// terrorists (2) Bravo; TF2's the same way (RED 1 Alpha, BLU 2 Bravo); Halo's capture the flag starts (`halo_ce::game::
@@ -208,17 +201,18 @@ pub const SURFACES: &[SurfaceTable] = &[
 ];
 
 /// What of the guests' parts stays on their own maps: their guns' held
-/// and view models (Halo's too: its guns in hand on its maps).
-pub static KEPT: [&str; 3] = [GUESTS[0].kept[0], GUESTS[1].kept[0], GUESTS[2].kept[0]];
+/// and view models (Halo's too: its guns in hand on its maps; TF2's).
+pub static KEPT: [&str; 4] = [GUESTS[0].kept[0], GUESTS[1].kept[0], GUESTS[2].kept[0], GUESTS[3].kept[0]];
 
 /// The guests' players, guns and HUD looks on the maps of other games
-/// (Halo's: its Spartan body).
-pub static GUEST_DRESSING: [&MapDressing; 3] = [GUESTS[0].guest.unwrap(), GUESTS[1].guest.unwrap(), GUESTS[2].guest.unwrap()];
+/// (Halo's: its Spartan body; TF2's: its guns, no bodies yet).
+pub static GUEST_DRESSING: [&MapDressing; 4] =
+    [GUESTS[0].guest.unwrap(), GUESTS[1].guest.unwrap(), GUESTS[2].guest.unwrap(), GUESTS[3].guest.unwrap()];
 
 /// Where this app's maps come from (a bare map name is the first guest's,
 /// CS:S's) and whose gameplay dresses them.
 pub static MAP_SOURCES: MapSources = MapSources {
-    loaders: &[GUESTS[0].loader, GUESTS[1].loader, GUESTS[2].loader, MAP_GAMES[0].loader, BASE.loader],
+    loaders: &[GUESTS[0].loader, GUESTS[1].loader, GUESTS[2].loader, GUESTS[3].loader, BASE.loader],
     gameplay: Some(&combat_arms::game::world::DRESSING),
     teams: TEAMS,
     surfaces: SURFACES,
@@ -246,8 +240,8 @@ pub fn load_map_with(id: &str, options: &MapLoadOptions) -> Result<MapData, Stri
 
 /// What each composed game lends (its capability claim, `chimera_core::
 /// game_parts`), in the order an automatic ladder takes them.
-pub static GAME_PARTS: [&chimera_core::game_parts::GameParts; 4] =
-    [BUNDLES[0].parts, BUNDLES[1].parts, BUNDLES[2].parts, BUNDLES[3].parts];
+pub static GAME_PARTS: [&chimera_core::game_parts::GameParts; 5] =
+    [BUNDLES[0].parts, BUNDLES[1].parts, BUNDLES[2].parts, BUNDLES[3].parts, BUNDLES[4].parts];
 
 /// The simulation: Combat Arms' (the engine's base, then its parts, the
 /// default game), then `PartyPartsPlugin`.
@@ -269,11 +263,12 @@ impl PluginGroup for PartyPlugins {
 /// (`+speed`), Ctrl ducks. HL2:DM: Shift sprints (`+speed`), Ctrl ducks,
 /// Alt walks, Z zooms the suit (`+zoom`; CS:S's Z is its radio, a game's own layer). The shared binds are the default ones (the gameplay game's);
 /// the Controls page (`controls`) edits each.
-/// Halo has no binds of its own (no player is Halo's: it lends only maps).
-pub static GAME_BINDS: [(&str, &[(&str, &str)]); 3] = [
+/// Halo: F melees, G throws a grenade (a Halo rung's player is Halo's).
+pub static GAME_BINDS: [(&str, &[(&str, &str)]); 4] = [
     (BASE.info.id, BASE.binds),
     (BUNDLES[0].info.id, BUNDLES[0].binds),
     (BUNDLES[1].info.id, BUNDLES[1].binds),
+    (BUNDLES[2].info.id, BUNDLES[2].binds),
 ];
 
 /// The widest player the party's games make (half, m): Source's, 16 u.
@@ -289,13 +284,14 @@ pub const DEFAULT_BOTS: u32 = 3;
 /// Each game's guns at the game's own view-model field of view, for a
 /// player of that game (each bundle's `view_model_fov`: `viewmodel_fov` is
 /// CS:S's, `ca_viewmodel_fov` Combat Arms', `hl2dm_viewmodel_fov`
-/// HL2:DM's (54 at its 75), all saved in the config). After Combat Arms'
-/// view model settings are in.
+/// HL2:DM's (54 at its 75), `tf2_viewmodel_fov` TF2's (54), all saved in
+/// the config). After Combat Arms' view model settings are in.
 pub fn add_view_model_fovs(app: &mut App) {
     let fovs = [BASE].iter().chain(GUESTS.iter()).filter_map(|b| b.view_model_fov.map(|f| f())).collect();
     app.insert_resource(chimera_world::map::GameViewModelFovs(fovs));
     cs_source::game::view_anim::viewmodel_fov_cvar(app);
     hl2dm::game::view::viewmodel_fov_cvar(app);
+    tf2::game::view::viewmodel_fov_cvar(app);
 }
 
 /// What the party adds to Combat Arms' simulation (the headless tests run
@@ -318,15 +314,11 @@ impl Plugin for PartyPartsPlugin {
         // Each guest's parts in the simulation (its bundle's `sim`: CS:S's
         // guns, impacts, movement, view-model rules and motion; HL2:DM's
         // guns, rung extras, view models; Halo's registration and map
-        // pool). A guest's guns' view models
-        // play on Chimera's generic driver with its game's rules (Combat
-        // Arms' driver lets go of a character holding another game's gun).
+        // pool; TF2's guns, their rules and view models). A guest's guns'
+        // view models play on Chimera's generic driver with its game's
+        // rules (Combat Arms' driver lets go of a character holding
+        // another game's gun).
         for bundle in GUESTS {
-            (bundle.sim)(app);
-        }
-        // The games whose maps alone it plays: registered (their installs,
-        // map files), their maps' logic.
-        for bundle in MAP_GAMES {
             (bundle.sim)(app);
         }
         add_view_model_fovs(app);

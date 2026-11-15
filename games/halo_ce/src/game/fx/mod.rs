@@ -1,6 +1,7 @@
 //! Halo's weapon sounds and effects (specs/halo_ce/effects.md, sounds.md,
-//! projectiles.md; M2 of docs/plans/active/halo-ce.md): the first four
-//! guns heard and seen on every machine, on Halo's maps and any other.
+//! projectiles.md; M2 and M3 of docs/plans/active/halo-ce.md): the nine
+//! guns, the grenades, their explosions and the items heard and seen on
+//! every machine, on Halo's maps and any other.
 //!
 //! - `load`: the library (`HaloFx`) compiled from the donor map's tags
 //!   once per app: the four weapons' firing, empty, misfire and impact
@@ -22,12 +23,17 @@
 //!   surface's material; the authority's decals from the real impacts.
 //! - `place`: where the effects go: the view model's animated markers for
 //!   the shooter, the held model's for everyone else (`Placer`).
+//! - `objects`: the thrown grenades (the server's, replicated), the
+//!   projectiles' lights and attached effects in flight, detonations and a
+//!   plasma grenade's countdown on every machine, items lying on the map
+//!   and their pickup sound.
 //!
 //! Known shortcuts: see `play`, `shots`, `sound` and `load`; the full-body
 //! shield shader (the shield's glow over the body) is later work, only the
 //! impact's shield flare effect is drawn; lens flares are not drawn.
 
 pub mod load;
+pub mod objects;
 pub mod place;
 pub mod play;
 pub mod shots;
@@ -83,6 +89,7 @@ impl Plugin for HaloFxPlugin {
             .add_message::<crate::map::PlaceDecal>()
             .add_systems(PreUpdate, take_library);
         shots::plugin(app);
+        objects::plugin(app);
     }
 }
 

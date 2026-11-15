@@ -16,19 +16,30 @@
 //! is empty is not entered; fire and misfire only from the states the
 //! spec lists; ready is ignored in ready and becomes overheating-again on
 //! an overheated weapon), each showing its frame 0 this tick. The pose:
-//! the base at its frame, the moving overlay, the 9-frame `overlays`
-//! animation's frames scaled by the smoothed inputs (frame 8 by the push
-//! back), then the transition blend (0 ticks into overheated, melee,
-//! ready and after a shotgun exit-empty, 3 into fire and misfire, 6
-//! otherwise; moving stopping in idle blends 6).
+//! the base at its frame, the ammunition overlay at the rounds loaded
+//! (the needler's needles: `Tick::ammunition`), the moving overlay, the
+//! overcharged jitter (the plasma pistol held charged: a scaled overlay of
+//! weight overcharge + 0.5 whose frame runs 2 (overcharge + 1) a tick),
+//! the 9-frame `overlays` animation's frames scaled by the smoothed inputs
+//! (frame 8 by the push back), then the transition blend (0 ticks into
+//! overheated, melee, ready and after a shotgun exit-empty, 3 into fire
+//! and misfire, 6 otherwise; moving stopping in idle blends 6).
+//!
+//! The whole arsenal's states: the secondary fire (fire-2: the plasma
+//! pistol's charged bolt), charged (the `overcharged` slot, held while the
+//! charge is held), the grenade throw (throw-grenade, or throw-overheated
+//! on an overheated weapon, back to overheated after it); fire and misfire
+//! enter from charged too; an overheating that ends on a weapon no longer
+//! overheated goes to idle (the spec's plasma pistol rule; the other guns
+//! clear their overheat with a cue first).
 //!
 //! Known shortcuts:
 //! - The scaled overlays' rotations are applied unnormalised as the spec
 //!   says, then each final rotation is normalised (the engine's joints
 //!   take unit quaternions).
-//! - No light on/off, throw-grenade, charged, overcharged jitter or
-//!   ammunition overlay (none of the four guns uses them, or no grenades
-//!   yet); one permutation per slot (the slot's first).
+//! - No light on/off (no flashlight); the overcharged jitter's fractional
+//!   frame is drawn at its whole frame (no sampling between frames); one
+//!   permutation per slot (the slot's first).
 //! - The posing timer's draws use a per-holder generator of our own, not
 //!   the game's (posing is display only).
 //!
@@ -123,6 +134,12 @@ pub enum ViewState {
     OverheatingAgain,
     Overheated,
     OverheatedExit,
+    /// The secondary trigger's shot (fire-2).
+    Fire2,
+    /// The trigger held charged (the `overcharged` slot).
+    Charged,
+    ThrowGrenade,
+    ThrowOverheated,
 }
 
 impl ViewState {
@@ -146,6 +163,10 @@ impl ViewState {
             ViewState::OverheatingAgain => S::OverheatingAgain,
             ViewState::Overheated => S::Overheated,
             ViewState::OverheatedExit => S::OverheatedExit,
+            ViewState::Fire2 => S::Fire2,
+            ViewState::Charged => S::Overcharged,
+            ViewState::ThrowGrenade => S::ThrowGrenade,
+            ViewState::ThrowOverheated => S::ThrowOverheated,
         }
     }
 
@@ -153,7 +174,7 @@ impl ViewState {
     fn blend_ticks(self) -> u32 {
         match self {
             ViewState::Overheated | ViewState::Melee | ViewState::Ready => 0,
-            ViewState::Fire | ViewState::Misfire => 3,
+            ViewState::Fire | ViewState::Fire2 | ViewState::Misfire => 3,
             _ => 6,
         }
     }
@@ -165,6 +186,8 @@ impl ViewState {
             ViewState::Idle
                 | ViewState::Posing
                 | ViewState::Fire
+                | ViewState::Fire2
+                | ViewState::Charged
                 | ViewState::Enter
                 | ViewState::ExitEmpty
                 | ViewState::ExitFull
@@ -199,6 +222,12 @@ pub enum Cue {
     Overheat,
     /// The overheat is over (`exit`: the weapon showed its exit).
     OverheatCleared,
+    /// The secondary trigger's shot (the plasma pistol's charged bolt).
+    FireSecondary,
+    /// The trigger's charge is full.
+    Charged,
+    /// A grenade throw began.
+    Throw,
 }
 
 /// One tick's inputs.
@@ -215,6 +244,28 @@ pub struct Tick {
     /// The weapon is overheated, and about to leave it (its exit).
     pub overheated: bool,
     pub overheat_exit: bool,
+    /// The weapon's overcharge (0 to 1: the jitter's weight and speed).
+    pub overcharge: f32,
+    /// The ammunition overlay's frame (`ammunition_frame`), where the gun
+    /// has a magazine.
+    pub ammunition: Option<usize>,
+}
+
+/// The ammunition overlay's frame (animations.md "The pose each drawn
+/// frame", 2): the rounds loaded; while reloading, once 44 ticks of the
+/// reload have run, moving toward the count the reload will leave.
+/// `reload`: the reload's length and its ticks left; `total`: the rounds
+/// loaded and spare; `maximum`: the magazine's size.
+pub fn ammunition_frame(loaded: i32, reload: Option<(i32, i32)>, total: i32, maximum: i32) -> usize {
+    let loaded = loaded.max(0);
+    let Some((length, left)) = reload else { return loaded as usize };
+    let e = length - left;
+    if e < 44 {
+        return loaded as usize;
+    }
+    let g = ((e - 44) as f32 * 0.2).min(1.0);
+    let target = total.min(maximum);
+    (loaded + ((target - loaded) as f32 * g) as i32).max(0) as usize
 }
 
 /// A play-once animation's step (animations.md, "Playback").
@@ -300,8 +351,13 @@ pub struct HaloView {
     pub push: (f32, f32),
     /// The shotgun's reload: shells to load, loaded, the tube was empty.
     pub shells: Option<(u32, u32, bool)>,
+    /// The overcharged jitter's frame while charged.
+    pub jitter: Option<f32>,
+    /// The ammunition overlay's frame of the last tick.
+    pub ammunition: Option<usize>,
     /// After a shotgun exit-empty (no blend out of it).
     after_exit_empty: bool,
+    overcharge: f32,
     posing_counter: u32,
     /// Drawn when the timer first needs it (the set carries its numbers).
     posing_wait: Option<u32>,
@@ -360,6 +416,8 @@ impl HaloView {
             self.blend = None;
         }
         self.start_blend(blend);
+        // The overcharged jitter runs while charged.
+        self.jitter = (state == ViewState::Charged).then_some(0.0);
         self.state = state;
         self.sequence = Some(s);
         self.frame = 0;
@@ -371,7 +429,7 @@ impl HaloView {
     fn next(&self) -> Option<ViewState> {
         use ViewState as V;
         Some(match self.state {
-            V::Overheating | V::OverheatingAgain => V::Overheated,
+            V::Overheating | V::OverheatingAgain | V::ThrowOverheated => V::Overheated,
             V::PutAway => return None,
             V::Enter | V::ReloadEmpty | V::ReloadFull => match self.shells {
                 Some((needed, done, empty)) if done >= needed => {
@@ -412,6 +470,19 @@ impl HaloView {
                 self.enter(set, V::Misfire);
             }
             Cue::Misfire => {}
+            Cue::FireSecondary if self.state.fires_from() => {
+                self.enter(set, V::Fire2);
+            }
+            Cue::FireSecondary => {}
+            Cue::Charged => {
+                self.enter(set, V::Charged);
+            }
+            Cue::Throw if overheated => {
+                self.enter(set, V::ThrowOverheated);
+            }
+            Cue::Throw => {
+                self.enter(set, V::ThrowGrenade);
+            }
             Cue::Melee => {
                 self.enter(set, V::Melee);
             }
@@ -457,6 +528,10 @@ impl HaloView {
                 match self.next() {
                     // Idle again: the same animation from its start.
                     Some(n) if n == self.state => self.frame = 0,
+                    // Overheated no longer: idle instead (the plasma pistol).
+                    Some(ViewState::Overheated) if !t.overheated => {
+                        self.enter(set, ViewState::Idle);
+                    }
                     Some(n) => {
                         if !self.enter(set, n) && n != ViewState::Idle {
                             self.enter(set, ViewState::Idle);
@@ -488,6 +563,13 @@ impl HaloView {
         } else if self.moving.take().is_some() && self.state == ViewState::Idle {
             self.start_blend(6);
         }
+        // The overcharged jitter.
+        if let (Some(f), Some(j)) = (self.jitter, sequence(set, FirstPersonSlot::OverchargedJitter)) {
+            let n = numbers(set, j).0 as f32;
+            self.jitter = Some((f + 2.0 * (t.overcharge + 1.0)).rem_euclid(n));
+        }
+        self.overcharge = t.overcharge;
+        self.ammunition = t.ammunition;
         // Smoothed inputs and the push back.
         let target = [t.throttle.x.clamp(-1.0, 1.0), t.throttle.y.clamp(-1.0, 1.0)];
         for (p, x) in self.position.iter_mut().zip(target) {
@@ -547,8 +629,16 @@ impl HaloView {
             Some(q) => base_pose(set, q.anims[0], self.frame),
             None => set.defaults.clone(),
         };
+        if let (Some(f), Some(a)) = (self.ammunition, sequence(set, FirstPersonSlot::Ammunition))
+            && f < numbers(set, a).0
+        {
+            overlay(set, a, f, 1.0, &mut pose);
+        }
         if let (Some(f), Some(m)) = (self.moving, sequence(set, FirstPersonSlot::Moving)) {
             overlay(set, m, f, 1.0, &mut pose);
+        }
+        if let (Some(f), Some(j)) = (self.jitter, sequence(set, FirstPersonSlot::OverchargedJitter)) {
+            overlay(set, j, f as usize, (self.overcharge + 0.5).min(1.0), &mut pose);
         }
         if let Some(o) = sequence(set, FirstPersonSlot::Overlays)
             && numbers(set, o).0 >= 9

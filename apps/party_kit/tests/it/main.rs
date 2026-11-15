@@ -57,6 +57,7 @@ mod signal_menu;
 mod signal_pages;
 mod startup;
 mod swap_effect;
+mod tf2_rungs;
 mod surprise;
 mod switches;
 mod turrets;
@@ -71,6 +72,7 @@ mod heavy {
     mod death_bodies;
     mod guest_effects;
     mod guest_shells;
+    mod halo_bots;
     mod halo_maps;
     mod cross_hits;
     mod head_matrix;

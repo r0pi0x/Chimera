@@ -18,14 +18,14 @@ stuck = 0
 wander_s = { 4 = 9.0, 8 = 3.9, 12 = 2.5 }
 
 [maps.bloodgulch]
-area_m2 = 75000
-sight_m = 30.3
-spot_area_m2 = 74964
+area_m2 = 77996
+sight_m = 30.5
+spot_area_m2 = 77188
 spawns = 54
-spots = 66684
-spots_off = 972
+spots = 69120
+spots_off = 0
 stuck = 0
-wander_s = { 4 = 51.0, 8 = 21.9, 12 = 13.9 }
+wander_s = { 4 = 52.7, 8 = 22.6, 12 = 14.4 }
 
 [maps.boardingaction]
 area_m2 = 7966

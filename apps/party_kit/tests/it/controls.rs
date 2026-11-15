@@ -239,7 +239,7 @@ fn the_controls_page_rebinds_shared_and_per_game_keys() {
     app.update();
     let page = actions(&mut app);
     let tabs: Vec<_> = page.iter().filter(|(_, a)| matches!(a, Action::Tab(_))).collect();
-    assert_eq!(tabs.len(), 4, "Shared, Combat Arms, CS:S, HL2:DM");
+    assert_eq!(tabs.len(), 5, "Shared, Combat Arms, CS:S, HL2:DM, Halo");
     assert!(page.iter().any(|(_, a)| *a == Action::Rebind("+jump")), "Shared first: Jump");
     assert!(!page.iter().any(|(_, a)| *a == Action::Rebind("+speed")), "CS:S's walk isn't on the shared page");
     let grabbed = app.world_mut().query::<&CursorOptions>().iter(app.world()).any(|c| c.grab_mode != CursorGrabMode::None);

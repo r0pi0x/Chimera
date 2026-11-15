@@ -35,6 +35,19 @@
 //! brushes gets a kill height under its lowest brush unless it says where
 //! it is played, `playable` is the level's collision box (`add`).
 //!
+//! Where the level is played, for the bots' navigation (`nav_within`): the
+//! structure BSP's world bounds, the box of every rendered vertex
+//! (structure_bsp.md, "World bounds"), which the surfaces with a material
+//! span exactly while the material-less ones reach past it, to the outer
+//! cliffs and a lid (collision.md, "Materials": Blood Gulch's collision
+//! goes to z 68 WU, its drawn level to 26.2). Handed to the engine as
+//! `nav_gen::NavWithin` (a map extra): a cell of a generated mesh is kept
+//! only when its floor is inside the drawn level's box, so a walker that
+//! climbs past the drawn cliffs stops at the drawn level's edge. (The
+//! level's point test, `CollisionBsp::point_leaf`, would add nothing: every
+//! leaf of the multiplayer maps has a cluster, and the space between the
+//! drawn level and the boundary surfaces is open leaves too.)
+//!
 //! Known shortcuts:
 //! - Breakable surfaces (Prisoner's 8) stay solid: breaking them belongs
 //!   to a later breakables spec (`collision.md`, "Breakable state").
@@ -47,7 +60,7 @@ use bevy::math::Vec3;
 use blam_formats::collision::{LevelCollision, MaterialType};
 
 use super::{space, surfaces};
-use crate::map::{MapBrush, MapCollisionSet, MapData};
+use crate::map::{MapBrush, MapCollisionSet, MapData, nav_gen::NavWithin};
 
 /// How far a ladder brush stands out on each side of its sheet (m).
 pub const LADDER_SKIN: f32 = 0.02;
@@ -107,6 +120,26 @@ pub fn ladder_brush(points: &[Vec3]) -> Option<MapBrush> {
         max: max + skin,
         ladder: true,
         surface: None,
+    })
+}
+
+/// How far (m) the navigation's box reaches past the drawn level's (a
+/// floor point on its edge, rounding).
+pub const NAV_MARGIN: f32 = 0.05;
+
+/// The drawn level's box (`world_bounds`, the structure BSP's, in world
+/// units) as the box the bots' generated navigation is held to (module
+/// doc), engine space.
+pub fn nav_within(world_bounds: &blam_formats::cache::RealRect3d) -> Option<NavWithin> {
+    let b = world_bounds;
+    let corners = [
+        space::point([b.x.lower, b.y.lower, b.z.lower]),
+        space::point([b.x.upper, b.y.upper, b.z.upper]),
+    ];
+    let (min, max) = (corners[0].min(corners[1]), corners[0].max(corners[1]));
+    (min.is_finite() && max.is_finite() && min.cmplt(max).all()).then(|| NavWithin {
+        min: min - Vec3::splat(NAV_MARGIN),
+        max: max + Vec3::splat(NAV_MARGIN),
     })
 }
 

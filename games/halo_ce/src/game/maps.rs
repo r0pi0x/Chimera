@@ -41,9 +41,9 @@
 //!
 //! Known shortcuts: only the first structure BSP is converted (every
 //! multiplayer map has one); the level's visibility (clusters, portals,
-//! the potentially visible set) is not handed over, everything is drawn,
-//! and the bots' generated mesh is not bounded by it (docs/plans/active/
-//! halo-ce.md, backlog).
+//! the potentially visible set) is not handed over, everything is drawn;
+//! the bots' generated mesh is held to the drawn level's box instead
+//! (`collision::nav_within`).
 
 pub mod collision;
 pub mod geometry;
@@ -180,6 +180,9 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
     report(0.4, "Collision");
     let level_collision = blam_formats::collision::read_level(&file, 0).map_err(|e| format!("collision BSP: {e}"))?;
     collision::add(&level_collision, &mut map).map_err(|e| format!("collision BSP: {e}"))?;
+    if let Some(within) = collision::nav_within(&bsp.world_bounds) {
+        map.extras.insert(within);
+    }
 
     report(0.45, "Scenery");
     let level_sky = sky::level_sky(&file, &scenario, &mut map.warnings);

@@ -115,7 +115,8 @@ pub fn teleport_links(world: &World, nav: &NavMesh) -> Vec<(usize, usize)> {
 
 /// The bots' generated mesh of the loaded map (Combat Arms' walker, its
 /// box sliding to fit a doorway, bounded where the map has visibility
-/// data), from the `feet`, meeting the player clips (the played space:
+/// data or says where it is played, `nav_gen::NavWithin`, with its
+/// teleporters as links as the bots' own), from the `feet`, meeting the player clips (the played space:
 /// the bots' own walk passes them).
 pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
     // Fitting doorways as the spots' walker does (`NavGenParams::slide`,
@@ -123,14 +124,20 @@ pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
     // centres miss leaves spots off a region they are on (gg_lego_mafia_arena).
     let mut p = combat_arms::game::bots::brain::nav_params();
     p.slide = p.radius / 2.0;
+    p.within = nav_gen::NavWithin::of(world);
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
-    let mut state = SystemState::<SpatialQuery>::new(world);
-    let q = state.get(world).expect("the spatial query");
-    let bounds = vis.as_deref().map(|vis| nav_gen::Bounds {
-        vis,
-        walker: spawns::walker(),
-    });
-    nav_gen::generate_within(&q, &|_| false, feet, &p, bounds)
+    let mut mesh = {
+        let mut state = SystemState::<SpatialQuery>::new(world);
+        let q = state.get(world).expect("the spatial query");
+        let bounds = vis.as_deref().map(|vis| nav_gen::Bounds {
+            vis,
+            walker: spawns::walker(),
+        });
+        nav_gen::generate_within(&q, &|_| false, feet, &p, bounds)
+    };
+    // The map's teleporters as the bots' links (`nav_gen::link_map`).
+    nav_gen::link_map(&mut mesh, world);
+    mesh
 }
 
 /// Whether `q` is over an area of `nav` that `inside` keeps (0.75 m of

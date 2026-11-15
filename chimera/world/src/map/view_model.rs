@@ -433,3 +433,188 @@ pub struct HeldAttachment {
     pub index: usize,
     pub name: String,
 }
+
+/// Each bone's place in its skeleton's reference pose (the skeleton's
+/// space), from `bones` (parents before children).
+pub fn reference_world(bones: &[MapBone]) -> Vec<Mat4> {
+    let pose: Vec<anim::BonePose> = bones.iter().map(|b| (b.rotation, b.position)).collect();
+    posed_world(bones, &pose)
+}
+
+/// Each bone's place in the skeleton's space with its local `pose`
+/// (`anim::Animator::pose`'s), parents from `bones`.
+pub fn posed_world(bones: &[MapBone], pose: &[anim::BonePose]) -> Vec<Mat4> {
+    let mut out: Vec<Mat4> = Vec::with_capacity(bones.len());
+    for (i, b) in bones.iter().enumerate() {
+        let (r, t) = pose.get(i).copied().unwrap_or((b.rotation, b.position));
+        let local = Mat4::from_rotation_translation(r, t);
+        out.push(match b.parent.and_then(|p| out.get(p)) {
+            Some(parent) => *parent * local,
+            None => local,
+        });
+    }
+    out
+}
+
+/// `arms` with `weapon` bone-merged onto it by bone name (Source's
+/// bone merge, as TF2's `c_` view models are drawn: the class's arms
+/// play, the weapon follows them; docs/plans/active/tf2.md, decision 5):
+/// one view model, the arms' skeleton, animations and placement. Each of
+/// the weapon's bones follows the arms' bone of the same name (case
+/// ignored), or its nearest ancestor's that has one; its meshes are moved
+/// from the weapon's reference pose into the arms' (by the matched
+/// bone's place in each) and skinned to the arms' bones, its attachments
+/// put on them (the muzzle). The weapon's own bones without a match go
+/// rigid with that ancestor (they play nothing of the arms'), where
+/// `own_pose` puts them (the weapon's own pose, its idle: TF2's minigun's
+/// barrel; None: its reference pose). Skins and lower levels of detail are
+/// dropped (the meshes show the skin they were loaded with). Errors when
+/// no bone matches.
+pub fn merge_by_bone_name(
+    mut arms: MapViewModel,
+    weapon: &MapViewModel,
+    own_pose: Option<&[anim::BonePose]>,
+) -> Result<MapViewModel, String> {
+    let index = |name: &str| arms.bones.iter().position(|b| b.name.eq_ignore_ascii_case(name));
+    // Per weapon bone: the arms' bone it follows and the weapon's bone
+    // that matched (itself or an ancestor).
+    let mut follows: Vec<Option<(usize, usize)>> = Vec::with_capacity(weapon.bones.len());
+    for (k, b) in weapon.bones.iter().enumerate() {
+        let own = index(&b.name).map(|j| (j, k));
+        let inherited = b.parent.filter(|p| *p < k).and_then(|p| follows[p]);
+        follows.push(own.or(inherited));
+    }
+    let Some(first) = follows.iter().flatten().next().copied() else {
+        return Err(format!("{}: no bone of it is on {}'s skeleton", weapon.key, arms.key));
+    };
+    let arms_ref = reference_world(&arms.bones);
+    let weapon_ref = reference_world(&weapon.bones);
+    let weapon_posed = own_pose.map_or_else(|| weapon_ref.clone(), |p| posed_world(&weapon.bones, p));
+    // Bone `k`'s place relative to its matched ancestor `a`'s.
+    let relative = |a: usize, k: usize| -> Mat4 {
+        if a == k { Mat4::IDENTITY } else { weapon_posed[a].inverse() * weapon_posed[k] }
+    };
+    let (to_eye, from_eye) = (arms.root.to_matrix(), weapon.root.to_matrix().inverse());
+    // Per weapon bone: from the weapon's eye space to the arms'.
+    let moves: Vec<(usize, Mat4)> = follows
+        .iter()
+        .enumerate()
+        .map(|(k, f)| {
+            let (j, a) = f.unwrap_or(first);
+            (j, to_eye * arms_ref[j] * relative(a, k) * weapon_ref[k].inverse() * from_eye)
+        })
+        .collect();
+    let arms_meshes = arms.model.meshes.len();
+    arms.model.mesh_names.resize(arms_meshes, String::new());
+    for (i, mesh) in weapon.model.meshes.iter().enumerate() {
+        let mut m = mesh.clone();
+        let rigid = |v: usize| -> (Mat4, [u16; 4]) {
+            let (joints, weights) = (m.joints.get(v).copied(), m.joint_weights.get(v).copied());
+            let Some(joints) = joints else {
+                return (moves[first.1].1, [first.0 as u16; 4]);
+            };
+            let weights = weights.unwrap_or([1.0, 0.0, 0.0, 0.0]);
+            let mut blended = Mat4::ZERO;
+            let mut out = [0u16; 4];
+            for n in 0..4 {
+                let (j, mv) = moves.get(joints[n] as usize).copied().unwrap_or((first.0, moves[first.1].1));
+                out[n] = j as u16;
+                blended += mv * weights[n];
+            }
+            (blended, out)
+        };
+        let per_vertex: Vec<(Mat4, [u16; 4])> = (0..m.positions.len()).map(rigid).collect();
+        for (v, (mv, joints)) in per_vertex.into_iter().enumerate() {
+            m.positions[v] = mv.transform_point3(Vec3::from(m.positions[v])).to_array();
+            if let Some(n) = m.normals.get_mut(v) {
+                *n = mv.transform_vector3(Vec3::from(*n)).normalize_or_zero().to_array();
+            }
+            if let Some(j) = m.joints.get_mut(v) {
+                *j = joints;
+            }
+        }
+        // An unskinned weapon mesh: all of it on the first matched bone.
+        if mesh.joints.is_empty() {
+            m.joints = vec![[first.0 as u16; 4]; m.positions.len()];
+            m.joint_weights = vec![[1.0, 0.0, 0.0, 0.0]; m.positions.len()];
+        }
+        arms.model.meshes.push(m);
+        arms.model.mesh_names.push(weapon.model.mesh_names.get(i).cloned().unwrap_or_default());
+    }
+    arms.model.skins.clear();
+    arms.model.lods.clear();
+    for a in &weapon.attachments {
+        let (j, matched) = follows.get(a.bone).copied().flatten().unwrap_or(first);
+        // In the matched bone's frame (the same as the arms' bone's).
+        let local = if a.bone < weapon.bones.len() { relative(matched, a.bone) } else { Mat4::IDENTITY } * a.local.to_matrix();
+        arms.attachments.push(MapAttachment {
+            name: a.name.clone(),
+            bone: j,
+            local: Transform::from_matrix(local),
+        });
+    }
+    Ok(arms)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::{MapMesh, MapModel};
+
+    fn bone(name: &str, parent: Option<usize>, x: f32) -> MapBone {
+        MapBone { name: name.into(), parent, position: Vec3::new(x, 0.0, 0.0), rotation: Quat::IDENTITY }
+    }
+
+    fn model(key: &str, bones: Vec<MapBone>, meshes: Vec<MapMesh>) -> MapViewModel {
+        MapViewModel {
+            key: key.into(),
+            model: MapModel { meshes, ..MapModel::default() },
+            bones,
+            root: Transform::IDENTITY,
+            animations: None,
+            right_handed: true,
+            allow_flipping: false,
+            attachments: Vec::new(),
+            light_origin: Vec3::ZERO,
+        }
+    }
+
+    /// The weapon's meshes go from its reference pose into the arms'
+    /// (the matched bone's place in each), skinned to the arms' bone;
+    /// a bone of its own follows its matched ancestor, an attachment
+    /// on it lands on the arms' bone at the same place.
+    #[test]
+    fn a_weapon_follows_the_arms_bone_of_its_name() {
+        let arms = model("arms", vec![bone("root", None, 0.0), bone("weapon_bone", Some(0), 10.0)], vec![MapMesh::default()]);
+        let mesh = MapMesh {
+            positions: vec![[3.0, 0.0, 0.0], [5.0, 1.0, 0.0]],
+            normals: vec![[0.0, 1.0, 0.0]; 2],
+            joints: vec![[0, 0, 0, 0], [1, 0, 0, 0]],
+            joint_weights: vec![[1.0, 0.0, 0.0, 0.0]; 2],
+            ..MapMesh::default()
+        };
+        let mut weapon = model("gun", vec![bone("WEAPON_BONE", None, 2.0), bone("barrel", Some(0), 3.0)], vec![mesh]);
+        weapon.attachments.push(MapAttachment { name: "muzzle".into(), bone: 1, local: Transform::from_xyz(1.0, 0.0, 0.0) });
+        let merged = merge_by_bone_name(arms.clone(), &weapon, None).unwrap();
+        assert_eq!(merged.model.meshes.len(), 2);
+        let m = &merged.model.meshes[1];
+        // Weapon bone at 2 in its model, at 10 on the arms: +8.
+        assert_eq!(m.positions, vec![[11.0, 0.0, 0.0], [13.0, 1.0, 0.0]]);
+        assert_eq!(m.joints, vec![[1, 1, 1, 1], [1, 1, 1, 1]]);
+        let a = &merged.attachments[0];
+        assert_eq!(a.bone, 1);
+        // The barrel is 3 past the weapon bone, the muzzle 1 past it.
+        assert!((a.local.translation - Vec3::new(4.0, 0.0, 0.0)).length() < 1e-5);
+        let none = model("other", vec![bone("x", None, 0.0)], Vec::new());
+        assert!(merge_by_bone_name(none, &weapon, None).is_err());
+        // Its own pose for its own bone: the barrel turned a quarter about
+        // Z there (its reference pose straight) turns the barrel's
+        // vertex about the weapon bone's place.
+        let turned = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
+        let pose = [(Quat::IDENTITY, Vec3::new(2.0, 0.0, 0.0)), (turned, Vec3::new(3.0, 0.0, 0.0))];
+        let merged = merge_by_bone_name(arms, &weapon, Some(&pose)).unwrap();
+        let p = Vec3::from(merged.model.meshes[1].positions[1]);
+        // (5, 1, 0) is 0 along the barrel and 1 up from it: turned, 1 back.
+        assert!((p - Vec3::new(12.0, 0.0, 0.0)).length() < 1e-4, "{p}");
+    }
+}

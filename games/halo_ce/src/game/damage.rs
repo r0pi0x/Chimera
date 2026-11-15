@@ -342,6 +342,7 @@ pub fn deliver_hits(
         let mut halo = set.p0();
         if let Ok((mut v, health, mut armor, stun, attackers, mirrored, transform, intent)) = halo.get_mut(hit.target) {
             let look = look_of(intent);
+            let mirrored = mirrored.filter(|m| m.primed);
             if let Some(m) = mirrored.as_deref() {
                 vitality::take_foreign(&spartan, &mut v, health, armor.as_deref(), m);
             }

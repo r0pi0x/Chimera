@@ -48,14 +48,29 @@
 //! (`step_effects`), and the muzzle light goes with its shooter
 //! (`HaloLight::follow`).
 //!
+//! The whole arsenal: a shot flies its trigger's projectile (the plasma
+//! pistol's second trigger: the charged bolt) from the eye moved by the
+//! trigger's first-person offset, as the server's; a guided one (the
+//! needles, the charged bolt) is steered toward the shot's target
+//! (`HaloFired::target`, the server's pick on the shooter's machine and in
+//! `HaloShotNet`) by the server's rule (the guided rate, half against a
+//! player, the wander at the shot's tick); its look is its projectile's
+//! (`load::FxProjectile`: tracer, glow, impacts; the gun's for a first
+//! trigger without one), a detonation on a hit plays that material's
+//! potential response's effect (the charged bolt's "charged bolt impact");
+//! a projectile with a model (the rocket, a needle) is drawn as a shown
+//! item facing its flight (`objects::trails` adds its lights and attached
+//! effects); a needle that sticks stays where it stuck (in a character it
+//! moves with it) until its detonation (`objects`) or `STUCK_TICKS`.
+//!
 //! Known shortcuts: the server's response draws depend on the weapon's own
 //! generator, which the shot does not carry, so a shown projectile uses a
 //! fixed seed per projectile of the shot: only a response with a random
 //! skip fraction (and the timer's draw, 0 here) can differ from the real
-//! flight; a guided projectile (the needles, the charged bolt) is shown
-//! unguided (the target is not in the shot); grenades and items are not
-//! shown (server only); a shown projectile meets characters where they are
-//! drawn on that machine; the
+//! flight; the wander's tick is the shot's arrival here (off by the link's
+//! delay on another client); the shooter's inherited velocity is not
+//! added; a shown projectile meets characters where they are drawn on that
+//! machine; the
 //! kick's direction is drawn from the engine's particle generator; others'
 //! empty clicks and overheats are not sent (the shooter's own show).
 
@@ -71,19 +86,28 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     ActiveFx, HaloLight,
-    load::{FxGun, HaloFx},
+    load::{FxGun, FxLight, FxTracer, HaloFx},
     place::{self, Frame, Placer},
     play::{Effects, Instance, Made, Running, start},
 };
 use super::super::{
     GAME, METERS_PER_UNIT,
     vitality::Vitality,
-    weapons::{GUNS, HaloFired, HaloGun, flight::Hit, halo_ticks, params::Gun, random::HaloRng, systems::HaloTrace},
+    view::load::object_key,
+    weapons::{
+        GUNS, HaloFired, HaloGun,
+        flight::{End, Hit, Steer, wandered},
+        halo_ticks,
+        params::{Gun, Projectile},
+        random::HaloRng,
+        systems::{GUIDANCE_VS_PLAYER, HaloTrace},
+    },
 };
 use crate::{
     core::{Intent, LocalPlayer, MovementState, NetRole, SimClock, SimSet},
     map::{
         PlaceDecal, PlaySound,
+        loose::ShownItem,
         impact::{ActiveImpacts, SurfaceClass, SurfaceClasses},
         particles::{Fade, Particle, ParticleGroup, Particles, Ramp, Shape},
         sound::SurfaceGrid,
@@ -127,6 +151,9 @@ impl Default for Guns {
 #[derive(Component, Clone, Debug)]
 pub struct HaloShown {
     pub gun: Arc<Gun>,
+    /// The projectile it is (the trigger's: the plasma pistol's charged
+    /// bolt is its second's).
+    pub proj: Arc<Projectile>,
     pub id: &'static str,
     pub owner: Entity,
     pub flight: super::super::weapons::flight::Flight,
@@ -136,6 +163,45 @@ pub struct HaloShown {
     pub rng: u32,
     /// Its updates so far.
     pub updates: u32,
+    /// A guided one's target (the shot's) and its wander's numbers.
+    pub target: Option<Entity>,
+    pub tick: u64,
+    pub k: u32,
+    /// Stuck (a needle): in a character at an offset from its centre
+    /// (metres), or in the level; with the Halo ticks left to show it.
+    pub stuck: Option<(Option<Entity>, Vec3, u32)>,
+}
+
+/// The longest a stuck needle is shown without its detonation (Halo
+/// ticks): a needle's own timer is under one second.
+pub const STUCK_TICKS: u32 = 150;
+
+/// A shown projectile's look: its projectile's (by tag), else for the
+/// first trigger its gun's (the tracer, the glow, the impacts).
+#[derive(Clone, Copy, Debug)]
+pub struct Look<'a> {
+    pub tracer: Option<&'a FxTracer>,
+    pub light: Option<&'a FxLight>,
+    pub impacts: &'a [Option<usize>],
+    pub potential: &'a [Option<usize>],
+    pub model: bool,
+}
+
+/// `Look` of the projectile `proj` fired by `gun`.
+pub fn look_of<'a>(lib: &'a HaloFx, gun: &Gun, proj: &Projectile) -> Option<Look<'a>> {
+    if let Some(p) = lib.projectile(&proj.tag) {
+        return Some(Look { tracer: p.tracer.as_ref(), light: p.light.as_ref(), impacts: &p.impacts, potential: &p.potential, model: p.model });
+    }
+    let g = lib.gun(&gun.tag).filter(|_| gun.projectile.tag.eq_ignore_ascii_case(&proj.tag))?;
+    Some(Look { tracer: g.tracer.as_ref(), light: g.bolt_light.as_ref(), impacts: &g.impacts, potential: &[], model: false })
+}
+
+/// The projectile a gun's trigger fires.
+pub fn trigger_projectile(gun: &Gun, trigger: u8) -> &Projectile {
+    match (&gun.secondary, trigger) {
+        (Some(s), 1) => &s.projectile,
+        _ => &gun.projectile,
+    }
 }
 
 /// Server -> every client but the shooter's: a Halo shot (`HaloFired`).
@@ -150,6 +216,11 @@ pub struct HaloShotNet {
     pub last_round: bool,
     pub origin: [f32; 3],
     pub projectiles: Vec<([f32; 3], bool)>,
+    /// The trigger (1: the plasma pistol's charged bolt).
+    pub trigger: u8,
+    /// A guided projectile's target (the needles', the charged bolt's).
+    #[entities]
+    pub target: Option<Entity>,
 }
 
 /// The random generator's seed of a shown projectile: one fixed seed per
@@ -159,11 +230,14 @@ pub fn shown_seed(i: usize) -> u32 {
     0x5EED_5409 ^ (i as u32).wrapping_mul(0x9E37_79B9)
 }
 
-/// The kick left on a shooter: its rotation (rad) and ticks.
-#[derive(Component, Clone, Copy, Debug)]
+/// The kick left on a shooter: its rotation (rad) and ticks; on every
+/// character from the spawn, `active` while one is left (a part that came
+/// and went would make archetypes: docs/DESIGN.md, "ECS style").
+#[derive(Component, Clone, Copy, Debug, Default)]
 pub struct HaloKick {
     pub rotation: f32,
     pub ticks: u32,
+    pub active: bool,
 }
 
 /// Animation sounds waiting for their frame: (ticks left, entry, at whom).
@@ -247,25 +321,51 @@ fn on_fired(
     role: Option<Res<NetRole>>,
     mut lights: MessageWriter<HaloLight>,
     placer: Placer,
+    clock: Res<SimClock>,
     mut commands: Commands,
 ) {
     let authority = role.as_deref().is_none_or(|r| *r != NetRole::Client);
     for f in fired.read() {
         let Some(gun) = guns.0.get(f.id) else { continue };
+        let (trigger, proj) = match (&gun.secondary, f.trigger) {
+            (Some(s), 1) => (&s.trigger, Arc::new(s.projectile.clone())),
+            _ => (&gun.trigger, Arc::new(gun.projectile.clone())),
+        };
+        // From the eye moved by the trigger's first-person offset, as the
+        // server's (`weapons::systems`).
+        let aim = f.projectiles.first().map_or(Vec3::NEG_Z, |p| p.0);
+        let mut origin = f.origin / METERS_PER_UNIT;
+        if !trigger.has(super::super::weapons::params::trigger_flags::PROJECTILE_VECTOR_CANNOT_BE_ADJUSTED) {
+            let left = Vec3::Y.cross(aim).try_normalize().unwrap_or(Vec3::Y);
+            let up = aim.cross(left);
+            let [x, y, z] = trigger.first_person_offset;
+            origin += aim * x + left * y + up * z;
+        }
+        let model = fx.0.as_ref().and_then(|l| look_of(l, gun, &proj)).is_some_and(|l| l.model);
         for (i, (dir, tracer)) in f.projectiles.iter().enumerate() {
-            commands.spawn((
+            let flight = super::super::weapons::flight::Flight::new(&proj, origin, *dir, 0.0);
+            let mut e = commands.spawn((
                 HaloShown {
                     gun: gun.clone(),
+                    proj: proj.clone(),
                     id: f.id,
                     owner: f.owner,
-                    flight: super::super::weapons::flight::Flight::new(&gun.projectile, f.origin / METERS_PER_UNIT, *dir, 0.0),
+                    flight,
                     ignored: None,
                     tracer: *tracer,
                     rng: shown_seed(i),
                     updates: 0,
+                    target: f.target,
+                    tick: clock.tick,
+                    k: (clock.tick as u32).wrapping_add(i as u32),
+                    stuck: None,
                 },
                 Name::new("halo_ce shown projectile"),
             ));
+            // Its model (the rocket, a needle), drawn where it flies.
+            if model {
+                e.insert((ShownItem(object_key(&proj.tag)), facing(origin * METERS_PER_UNIT, *dir)));
+            }
         }
         let Some(lib) = fx.0.clone() else { continue };
         let Some(look) = lib.gun(&gun.tag) else { continue };
@@ -273,7 +373,10 @@ fn on_fired(
         let camera = place::camera(f.origin, view);
         let fp = first_person(f.owner, &locals, role.as_deref());
         let list = if f.misfired { &look.misfire } else { &look.firing };
-        if let Some(effect) = list.get(f.effect as usize).copied().flatten() {
+        // The library lists every trigger's entries in order: the second
+        // trigger's (the charged bolt's) after the first's.
+        let entry = f.effect as usize + if f.trigger == 1 { gun.trigger.firing_effects as usize } else { 0 };
+        if let Some(effect) = list.get(entry).copied().flatten() {
             let names = markers_of(&lib, effect);
             let inst = gun_instances(&names, look, camera, &placer, f.owner);
             start(&mut effects, &lib, effect, inst, |r| {
@@ -296,9 +399,16 @@ fn on_fired(
             });
         }
         if fp && let Some((rotation, ticks)) = look.kick {
-            commands.entity(f.owner).insert(HaloKick { rotation, ticks });
+            commands.entity(f.owner).insert(HaloKick { rotation, ticks, active: true });
         }
     }
+}
+
+/// A shown object's transform at `at` (metres) moving along `dir`: its
+/// model's +X (Halo's forward, the engine's -Z in its own frame) along it.
+pub fn facing(at: Vec3, dir: Vec3) -> Transform {
+    let d = dir.normalize_or(Vec3::NEG_Z);
+    Transform::from_translation(at).with_rotation(Quat::from_rotation_arc(Vec3::NEG_Z, d))
 }
 
 /// The muzzle light's ticks: its intensity falls from 1 by the weapon's
@@ -314,8 +424,11 @@ fn kick(mut shooters: Query<(Entity, &mut HaloKick, Option<&mut ViewPunch>, Opti
         return;
     }
     for (e, mut k, punch, game) in &mut shooters {
+        if !k.active {
+            continue;
+        }
         if !RecoilGame::is(game, GAME) {
-            commands.entity(e).remove::<HaloKick>();
+            k.active = false;
             continue;
         }
         let v = if k.ticks > 0 {
@@ -331,7 +444,7 @@ fn kick(mut shooters: Query<(Entity, &mut HaloKick, Option<&mut ViewPunch>, Opti
             }
         }
         if k.ticks == 0 {
-            commands.entity(e).remove::<HaloKick>();
+            k.active = false;
         } else {
             k.ticks -= 1;
         }
@@ -356,7 +469,7 @@ fn class_at(point: Vec3, grid: Option<&SurfaceGrid>, classes: Option<&SurfaceCla
 /// The shown projectiles, one update a Halo tick (module doc).
 #[allow(clippy::too_many_arguments)]
 fn fly(
-    mut shown: Query<(Entity, &mut HaloShown)>,
+    mut shown: Query<(Entity, &mut HaloShown, Option<&mut Transform>), Without<Intent>>,
     trace: HaloTrace,
     vitality: Query<&Vitality>,
     fx: Res<ActiveFx>,
@@ -372,11 +485,31 @@ fn fly(
     let n = halo_ticks(&clock);
     let authority = role.as_deref().is_none_or(|r| *r != NetRole::Client);
     let lib = fx.0.clone();
-    for (e, mut s) in &mut shown {
+    for (e, mut s, mut at) in &mut shown {
         for _ in 0..n {
             let s = &mut *s;
+            // Stuck (a needle): it stays where it stuck, with what holds it.
+            if let Some((target, offset, left)) = s.stuck {
+                let point = match target {
+                    Some(t) => trace.any_centre(t).map(|c| c + offset),
+                    None => Some(offset),
+                };
+                match point.filter(|_| left > 0) {
+                    Some(p) => {
+                        s.stuck = Some((target, offset, left - 1));
+                        if let Some(t) = at.as_deref_mut() {
+                            t.translation = p;
+                        }
+                    }
+                    None => {
+                        commands.entity(e).despawn();
+                        break;
+                    }
+                }
+                continue;
+            }
             let gun = s.gun.clone();
-            let proj = &gun.projectile;
+            let proj = s.proj.clone();
             let owner = s.owner;
             let radius = proj.collision_radius;
             let mut tracer = |a: Vec3, b: Vec3, ignored: Option<Entity>| -> Option<Hit<Entity>> {
@@ -409,18 +542,29 @@ fn fly(
                 let target = h.object?;
                 hurts.then(|| if trace.shielded(target) { CYBORG_SHIELD as u8 } else { CYBORG as u8 })
             };
+            // Guided (the needles, the charged bolt): toward the shot's
+            // target as the server steers it.
+            let steer = s.target.filter(|_| proj.guided_angular_velocity > 0.0).and_then(|t| trace.centre(t)).map(|c| {
+                let to = c / METERS_PER_UNIT;
+                let d = (to - s.flight.position).length();
+                Steer { target: wandered(to, d, s.tick + u64::from(s.updates), s.k), omega: proj.guided_angular_velocity / 30.0 * GUIDANCE_VS_PLAYER }
+            });
             let mut ignored = s.ignored;
             let mut rng = HaloRng(s.rng);
-            let moved = s.flight.update(proj, &mut ignored, &mut rng, None, &mut tracer, &mut struck);
+            let moved = s.flight.update(&proj, &mut ignored, &mut rng, steer, &mut tracer, &mut struck);
             s.rng = rng.0;
             s.ignored = ignored;
             s.updates += 1;
+            if let Some(t) = at.as_deref_mut() {
+                *t = facing(s.flight.position * METERS_PER_UNIT, s.flight.velocity);
+            }
             if let Some(lib) = &lib {
-                let look = lib.gun(&gun.tag);
-                for (from, to, hit) in &moved.segments {
+                let look = look_of(lib, &gun, &proj);
+                let last = moved.segments.iter().rposition(|x| x.2.is_some());
+                for (k, (from, to, hit)) in moved.segments.iter().enumerate() {
                     let (a, b) = (*from * METERS_PER_UNIT, *to * METERS_PER_UNIT);
                     if let Some(look) = look {
-                        draw_segment(&mut particles, look, a, b, s.tracer, s.updates == 1);
+                        draw_segment(&mut particles, look.tracer, look.light, a, b, s.tracer, s.updates == 1);
                     }
                     let Some(h) = hit else { continue };
                     let material = match h.object {
@@ -433,7 +577,14 @@ fn fly(
                         },
                         None => material_of(class_at(b, grid.as_deref(), classes.as_deref(), impacts.as_deref())),
                     };
-                    let Some(effect) = look.and_then(|l| l.impacts.get(material).copied().flatten()) else { continue };
+                    // A detonation on this hit took the potential response
+                    // (the charged bolt's "charged bolt impact").
+                    let potential = moved.end == Some(End::Detonate) && Some(k) == last;
+                    let effect = look.and_then(|l| {
+                        let p = if potential { l.potential.get(material).copied().flatten() } else { None };
+                        p.or_else(|| l.impacts.get(material).copied().flatten())
+                    });
+                    let Some(effect) = effect else { continue };
                     let frames = impact_frames(b, h.normal, b - a);
                     let inst = instances_from(lib, effect, &frames, frames["normal"]);
                     start(&mut effects, lib, effect, inst, |r| {
@@ -442,7 +593,19 @@ fn fly(
                     });
                 }
             }
-            if matches!(moved.end, Some(super::super::weapons::flight::End::Detonate | super::super::weapons::flight::End::Disappear)) {
+            if let Some(h) = moved.stuck {
+                let point = h.point * METERS_PER_UNIT;
+                let held = h.object.and_then(|t| trace.any_centre(t).map(|c| (t, c)));
+                s.stuck = Some(match held {
+                    Some((t, c)) => (Some(t), point - c, STUCK_TICKS),
+                    None => (None, point, STUCK_TICKS),
+                });
+                if let Some(t) = at.as_deref_mut() {
+                    t.translation = point;
+                }
+                continue;
+            }
+            if matches!(moved.end, Some(End::Detonate | End::Disappear)) {
                 commands.entity(e).despawn();
                 break;
             }
@@ -452,39 +615,43 @@ fn fly(
 
 /// A tick's segment of a shown projectile: the tracer's streak (its
 /// contrail's width and colour over the segment, gone by the next tick)
-/// or, for a projectile with a light (the plasma bolt), its glow at the
-/// segment's end and its trail.
-pub fn draw_segment(particles: &mut Particles, look: &FxGun, a: Vec3, b: Vec3, tracer: bool, first: bool) {
-    let Some(t) = &look.tracer else { return };
+/// or, for a projectile with a light (the plasma bolt, a needle), its glow
+/// at the segment's end and its trail.
+pub fn draw_segment(particles: &mut Particles, tracer: Option<&FxTracer>, light: Option<&FxLight>, a: Vec3, b: Vec3, is_tracer: bool, first: bool) {
+    let Some(t) = tracer else { return };
     let Some(material) = t.material else { return };
-    let bolt = look.bolt_light.is_some();
-    if !tracer && !bolt {
+    if !is_tracer && light.is_none() {
         return;
     }
     let _ = first;
     let width = t.width * METERS_PER_UNIT;
     let color = Vec3::new(t.color[0], t.color[1], t.color[2]);
+    // A point lasts its contrail's life (the rocket's smoke trail stays
+    // and widens; a bullet's streak is gone by the next tick), fading.
+    let life = t.life.max(1.0 / 30.0);
+    let long = life > 1.5 / 30.0;
     let mut g = ParticleGroup::new(Default::default());
     g.capped = false;
-    g.kill_after = Some(1.0 / 30.0 + 0.004);
+    g.kill_after = Some(life + 0.004);
+    // Its first state's width (the states' widening is not drawn).
+    let wide = width;
     let mut streak = Particle {
         color,
-        alpha: t.color[3].max(0.5),
-        fade: Fade::Ramp(Ramp::constant(1.0)),
-        shape: Shape::Ribbon { to: b, width: [width * 0.25, width], u: (0.0, 1.0), end_color: None, prev: None, next: None },
-        ..Particle::new(a, 1.0 / 30.0, material, width)
+        alpha: if long { t.color[3].clamp(0.0, 1.0) * 0.5 } else { t.color[3].max(0.5) },
+        fade: if long { Fade::Ramp(Ramp::linear(1.0, 0.0)) } else { Fade::Ramp(Ramp::constant(1.0)) },
+        shape: Shape::Ribbon { to: b, width: if long { [wide, width] } else { [width * 0.25, width] }, u: (0.0, 1.0), end_color: None, prev: None, next: None },
+        ..Particle::new(a, life, material, width)
     };
-    if bolt {
-        let light = look.bolt_light.as_ref().map_or(color, |l| Vec3::from(l.color));
-        streak.color = light;
-        let glow = Particle { color: light, ..Particle::new(b, 1.0 / 30.0, material, (width * 2.0).max(0.12)) };
+    if let Some(l) = light {
+        streak.color = Vec3::from(l.color);
+        let glow = Particle { color: Vec3::from(l.color), ..Particle::new(b, 1.0 / 30.0, material, (width * 2.0).max(0.12)) };
         g.particles.push(glow);
     }
     g.particles.push(streak);
     particles.add(g);
 }
 
-/// Step the running effects a Halo tick and write what they made.
+// Step the running effects a Halo tick and write what they made.
 #[allow(clippy::too_many_arguments)]
 fn step_effects(
     fx: Res<ActiveFx>,
@@ -651,6 +818,8 @@ fn send_shots(
             last_round: f.last_round,
             origin: f.origin.to_array(),
             projectiles: f.projectiles.iter().map(|(d, t)| (d.to_array(), *t)).collect(),
+            trigger: f.trigger,
+            target: f.target,
         };
         for (client, p) in &players {
             if p.character != f.owner {
@@ -668,7 +837,7 @@ fn receive_shots(mut shots: MessageReader<HaloShotNet>, mut fired: MessageWriter
             owner: s.owner,
             weapon: Entity::PLACEHOLDER,
             id,
-            trigger: 0,
+            trigger: s.trigger,
             misfired: s.misfired,
             last_round: s.last_round,
             effect: s.effect,
@@ -676,13 +845,14 @@ fn receive_shots(mut shots: MessageReader<HaloShotNet>, mut fired: MessageWriter
             projectiles: s.projectiles.iter().map(|(d, t)| (Vec3::from(*d), *t)).collect(),
             heat: 0.0,
             age: 0.0,
+            target: s.target,
         });
     }
 }
 
 fn register_net(app: &mut App) {
     use bevy_replicon::prelude::*;
-    app.add_server_message::<HaloShotNet>(Channel::Unreliable)
+    app.add_mapped_server_message::<HaloShotNet>(Channel::Unreliable)
         .add_systems(PostUpdate, send_shots.before(ServerSystems::Send).run_if(resource_equals(NetRole::Server)))
         .add_systems(PreUpdate, receive_shots.after(ClientSystems::Receive).run_if(resource_equals(NetRole::Client)));
 }
@@ -690,6 +860,7 @@ fn register_net(app: &mut App) {
 pub(super) fn plugin(app: &mut App) {
     use chimera_net::net::parts::NetAppExt;
     chimera_sim::weapon::impact::ImpactAppExt::register_impact_provider(app, GAME);
+    chimera_core::character::CharacterPartsExt::on_every_character::<HaloKick>(app);
     app.init_resource::<Guns>()
         .init_resource::<PendingSounds>()
         .add_message::<HaloFired>()

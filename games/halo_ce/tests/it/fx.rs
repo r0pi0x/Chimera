@@ -59,7 +59,7 @@ fn particle() -> FxParticle {
     }
 }
 
-fn entry(location: i16, count: i16, distribution: i16) -> FxEntry {
+pub(crate) fn entry(location: i16, count: i16, distribution: i16) -> FxEntry {
     FxEntry {
         location,
         environment: 0,
@@ -117,7 +117,7 @@ pub(crate) fn library() -> HaloFx {
         firing: vec![Some(0), Some(0)],
         light: Some((FxLight { color: [0.961, 0.910, 0.686], radius: 2.0, ticks: 0.0 }, "primary trigger".into())),
         impacts,
-        tracer: Some(FxTracer { width: 0.05, color: [1.0, 0.89, 0.28, 1.0], material: Some(0), additive: true }),
+        tracer: Some(FxTracer { width: 0.05, color: [1.0, 0.89, 0.28, 1.0], material: Some(0), additive: true, ..Default::default() }),
         fp_markers: BTreeMap::from([("primary trigger".to_string(), [0.2, 0.0, 0.05])]),
         ..Default::default()
     };
@@ -131,6 +131,7 @@ pub(crate) fn library() -> HaloFx {
             ("weapons\\assault rifle\\assault rifle".into(), gun),
             ("weapons\\plasma rifle\\plasma rifle".into(), plasma),
         ]),
+        ..Default::default()
     }
 }
 
