@@ -31,9 +31,16 @@
 //!   modelled: no multiplayer vehicle has a water, lift or thrust channel,
 //!   and the multiplayer maps' water is shallow (vehicles.md, Edge cases).
 //! - The older model (physics radius > 0) is not modelled (campaign only).
-//! - Surfaces of objects (other vehicles) count as level surfaces for the
-//!   ground query; their shield depletion and "volatile" flag are not
-//!   modelled (no vehicle has shields on the disc).
+//! - The ground query's surfaces are the level's solid colliders but
+//!   vehicles and characters (`level::EngineLevel`); a touched object's
+//!   shield depletion and "volatile" flag are not modelled (no machines on
+//!   the multiplayer maps).
+//!
+//! `step` follows the spec's "Order of one step": forces of every point
+//! from the start state, the sum (gravity, points, last tick's collision
+//! accumulators, the type's magic force and torque), one integration, the
+//! penetration freeze (`freeze_response`; a tick whose last pass still
+//! hits does not move the vehicle, `StepOut::frozen`), the sleep test.
 
 use bevy::math::{Mat3, Quat, Vec3};
 
@@ -100,6 +107,9 @@ pub struct PhysicsDef {
     pub ground_k1: f32,
     pub ground_k0: f32,
     pub air_friction: f32,
+    /// The stored tensor's diagonal (the scout's torque scales).
+    pub xx_moment: f32,
+    pub yy_moment: f32,
     pub zz_moment: f32,
     /// Model frame.
     pub inverse_inertia: Mat3,
@@ -224,7 +234,7 @@ impl Body {
     /// The orientation turned by the rotation vector `w` (angle |w| about
     /// w/|w|): forward renormalised, up made perpendicular and
     /// renormalised.
-    fn turned(&self, w: Vec3) -> (Vec3, Vec3) {
+    pub fn turned(&self, w: Vec3) -> (Vec3, Vec3) {
         let angle = w.length();
         let (f, u) = if angle > 0.0 {
             let q = Quat::from_axis_angle(w / angle, angle);
@@ -254,6 +264,8 @@ pub struct StepOut {
     pub angular_acceleration: Vec3,
     /// Points antigraving.
     pub antigraving: usize,
+    /// Every freeze pass hit: the vehicle did not move this tick.
+    pub frozen: bool,
 }
 
 /// 0 at or below `k0`, 1 at or above `k1`, linear between.
@@ -381,20 +393,20 @@ pub fn step(
         torque += r.cross(f_point);
     }
 
-    // Integrate.
+    // Step 4: integrate once (semi-implicit Euler).
     let a = force / m_total;
-    let v1 = body.velocity + a;
     let alpha = frame * def.inverse_inertia * frame.transpose() * torque;
-    let w1 = body.angular_velocity + alpha;
     let start = *body;
-    let mut v = v1;
-    let mut w = w1;
+    let mut v = body.velocity + a;
+    let mut w = body.angular_velocity + alpha;
     let mut pose = {
         let (f, u) = start.turned(w);
         (start.position + v, f, u)
     };
-    // Penetration freeze: sweep the centres, back off from the earliest
-    // front-facing hit.
+    // Step 5: the penetration freeze. Sweep the centres; on a front-facing
+    // hit scale the velocity's normal part and all of the angular velocity
+    // by t' and sweep again; if the last pass still hits, nothing moves.
+    let mut hit_last = false;
     for _ in 0..FREEZE_PASSES {
         let moved = Body {
             position: pose.0,
@@ -411,36 +423,91 @@ pub fn step(
                 first = Some((t, n, to - starts[i], i));
             }
         }
-        let Some((t_h, n_h, delta, i)) = first else { break };
+        let Some((t_h, n_h, delta, i)) = first else {
+            hit_last = false;
+            break;
+        };
+        hit_last = true;
         if !out.stuck.contains(&i) {
             out.stuck.push(i);
         }
-        let dn = delta.dot(n_h).abs();
-        let eps = if dn > 0.0 { FREEZE_EPSILON / dn } else { 0.031_25 };
-        let t = (t_h - eps).max(0.0);
-        if n_h.dot(v) < 0.0 {
-            v += n_h * (t - 1.0) * n_h.dot(v);
-        }
-        w *= t;
+        (v, w) = freeze_response(t_h, n_h, delta, v, w);
         let (f, u) = start.turned(w);
         pose = (start.position + v, f, u);
+    }
+    if hit_last {
+        out.frozen = true;
+        pose = (start.position, start.forward, start.up);
     }
     body.position = pose.0;
     body.forward = pose.1;
     body.up = pose.2;
-    // "Velocity and angular velocity are stored before the penetration
-    // check": the freeze moves the pose only.
-    body.velocity = v1;
-    body.angular_velocity = w1;
+    body.velocity = v;
+    body.angular_velocity = w;
     out.acceleration = a;
     out.angular_acceleration = alpha;
+    // Step 6: the sleep test, with step 4's accelerations and the
+    // velocities the freeze left.
     out.at_rest = all_rest
         && out.touching >= REST_MIN_GROUND_POINTS
-        && v1.length_squared() <= REST_LINEAR_V2
-        && w1.length_squared() <= REST_ANGULAR_V2
+        && v.length_squared() <= REST_LINEAR_V2
+        && w.length_squared() <= REST_ANGULAR_V2
         && a.length_squared() <= REST_LINEAR_A2
         && alpha.length_squared() <= REST_ANGULAR_A2;
     out
+}
+
+/// One freeze pass's response to the earliest hit (fraction `t_h` along
+/// the sweep `delta`, normal `n_h`): t' = max(t_h − ε, 0) with ε =
+/// 0.0078125/|Δ·n| (0.03125 when Δ·n = 0); a velocity moving into the
+/// surface has its normal part scaled by t' (the tangential part kept),
+/// the angular velocity is scaled by t' whole.
+pub fn freeze_response(t_h: f32, n_h: Vec3, delta: Vec3, v: Vec3, w: Vec3) -> (Vec3, Vec3) {
+    let dn = delta.dot(n_h).abs();
+    let eps = if dn > 0.0 { FREEZE_EPSILON / dn } else { 0.031_25 };
+    let t = (t_h - eps).max(0.0);
+    let v = if n_h.dot(v) < 0.0 {
+        v + n_h * (t - 1.0) * n_h.dot(v)
+    } else {
+        v
+    };
+    (v, w * t)
+}
+
+/// Vehicle-vehicle contact spring depth (vehicles.md, Constants).
+pub const COLLISION_DEPTH: f32 = 0.2;
+
+/// The pair rule of two vehicles' mass points (vehicles.md "Other
+/// vehicles"): for every pair of spheres closer than their summed radii,
+/// a spring of 2 √(M_a M_b) g / 0.2 per unit of half the overlap pushes
+/// them apart, applied π_p short of A's sphere surface. Returns the force
+/// and torque (about each centre of mass) on A and on B, or `None` when no
+/// pair touches.
+pub fn pair_contact(a: &Body, pa: &PhysicsDef, b: &Body, pb: &PhysicsDef) -> Option<[(Vec3, Vec3); 2]> {
+    let k = 2.0 * (pa.mass * pb.mass).sqrt() * GRAVITY / COLLISION_DEPTH;
+    let mut out = [(Vec3::ZERO, Vec3::ZERO); 2];
+    let mut any = false;
+    for qa in &pa.points {
+        let xa = a.point(qa.position, pa.center_of_mass);
+        for qb in &pb.points {
+            let xb = b.point(qb.position, pb.center_of_mass);
+            let d = (xb - xa).length();
+            let reach = qa.radius + qb.radius;
+            if d >= reach || d <= 0.0 {
+                continue;
+            }
+            any = true;
+            let dir = (xb - xa) / d;
+            let pen = (reach - d) / 2.0;
+            let at = xa + dir * (qa.radius - pen);
+            let f = dir * (k * pen);
+            out[0].0 -= f;
+            out[0].1 += (at - a.position).cross(-f);
+            out[1].0 += f;
+            out[1].1 += (at - b.position).cross(f);
+        }
+    }
+    any.then_some(out)
 }
 
 fn default_out() -> StepOut {

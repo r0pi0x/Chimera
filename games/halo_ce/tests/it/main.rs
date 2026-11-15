@@ -27,6 +27,7 @@ mod death;
 mod fx;
 mod fx_place;
 mod hud;
+mod hud_score;
 mod info;
 mod ladders;
 mod map_objects;
@@ -37,6 +38,10 @@ mod movement_vitality;
 mod net_vitality;
 mod projectile_rules;
 mod respawn;
+mod rules;
+mod rules_ctf;
+mod rules_king_ball;
+mod rules_party;
 mod skeleton;
 mod ticks;
 mod view;
@@ -44,7 +49,10 @@ mod vitality;
 mod vitality_data;
 mod weapons;
 mod weapons_rules;
+mod vehicle_camera;
+mod vehicle_look;
 mod vehicle_physics;
+mod vehicle_types;
 mod vehicles;
 
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
@@ -56,6 +64,7 @@ mod heavy {
     mod ladder;
     mod map_objects;
     mod nav_within;
+    mod rules;
     mod maps;
     mod mount;
     mod served;

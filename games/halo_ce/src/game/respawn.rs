@@ -57,17 +57,27 @@ pub const MIN_RESPAWN_TICKS: i32 = 90;
 /// The game variant's respawn numbers (ticks): its respawn time, the growth
 /// added to a player's penalty per death and the suicide penalty
 /// (multiplayer_rules.md 4.2). Inserting it puts the rules in force.
-#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+/// Beside them, the game type's settings (`game::rules`, its cvars): the
+/// game type the next game plays, the PC game's time limit and friendly
+/// fire; while a game type plays, its rules respawn the players instead
+/// (`rules::rules_on`), and its variant's numbers are written here.
+#[derive(Resource, Clone, Debug, PartialEq)]
 pub struct HaloRules {
     pub respawn_time: i32,
     pub growth: i32,
     pub suicide: i32,
+    /// The game type the next game plays (`rules::variant::by_name`).
+    pub gametype: String,
+    /// The PC game's time limit, minutes (0: none; 1.6).
+    pub timelimit: f32,
+    /// Teammates' hits hurt (the Xbox's rule, 1; 0 off; 1.6).
+    pub friendlyfire: u8,
 }
 
 impl Default for HaloRules {
     /// Slayer's: instant, no growth, a 10 s suicide penalty.
     fn default() -> Self {
-        Self { respawn_time: 0, growth: 0, suicide: 300 }
+        Self { respawn_time: 0, growth: 0, suicide: 300, gametype: "slayer".into(), timelimit: 0.0, friendlyfire: 1 }
     }
 }
 
@@ -277,6 +287,6 @@ pub struct HaloRespawnPlugin;
 impl Plugin for HaloRespawnPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Respawns>()
-            .add_systems(FixedUpdate, rules.in_set(SimSet::Rules).run_if(crate::core::authoritative).run_if(resource_exists::<HaloRules>));
+            .add_systems(FixedUpdate, rules.in_set(SimSet::Rules).run_if(crate::core::authoritative).run_if(resource_exists::<HaloRules>).run_if(not(super::rules::rules_on)));
     }
 }

@@ -45,7 +45,9 @@ pub static SERVER: GameServer = GameServer {
         app.add_plugins(halo_ce::SimPlugins);
     },
     parts: |app| {
-        app.add_plugins(HaloPlugins);
+        app.add_plugins(HaloPlugins)
+            .insert_resource(halo_ce::game::rules::AutoStart(true))
+            .init_resource::<halo_ce::game::respawn::HaloRules>();
     },
     load_map: MAP_LOADER.load,
     hooks: ServerHooks::NONE,

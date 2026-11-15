@@ -94,8 +94,12 @@ pub struct SimPlugin;
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         use chimera_core::gameplay::{Gameplay, GameplayAppExt};
-        app.add_plugins((halo_ce::SimPlugins, game::HaloPlugins)).set_gameplay(Gameplay::of(&game::INFO));
-        // Its own game's respawn rules (`game::respawn`): Slayer's.
+        app.add_plugins((halo_ce::SimPlugins, game::HaloPlugins))
+            .set_gameplay(Gameplay::of(&game::INFO))
+            // Halo's game type plays from the first map (`game::rules`).
+            .insert_resource(game::rules::AutoStart(true));
+        // Its own game's rules: the respawn (`game::respawn`) and the game
+        // type's settings (`game::rules`), Slayer's until a game begins.
         app.init_resource::<game::respawn::HaloRules>();
     }
 }

@@ -5,13 +5,17 @@
 //! an item does.
 //!
 //! From the map to the simulation: the loader (`add_entities`) writes each
-//! netgame equipment entry eligible for free-for-all slayer as one map
-//! entity (`ENTRY_CLASS`: its position, levitate flag, own and collection
-//! spawn times, and its item collection's weighted items by tag), only
+//! netgame equipment entry as one map entity (`ENTRY_CLASS`: its position,
+//! levitate flag, own and collection spawn times, its game type slots and
+//! its item collection's weighted items by tag), only
 //! when the map's game is the gameplay's (`map::KitLoad::pickups`: a
 //! party's Halo map has none, as HL2:DM's: a ladder decides the guns), and
 //! the level's material types (`materials`). `spawn_entries` makes the
-//! entries from the map's entities.
+//! entries eligible for the game in play from the map's entities (the game
+//! type's base, `rules::items::ItemRules`; free-for-all slayer without
+//! one); the item clock passes each created item through the game type's
+//! substitution (`rules::items::substitute_item`: the weapon set, grenades
+//! and powerups by its options).
 //!
 //! The item clock (`clock`): game time is ticks since the entries were
 //! made; an entry creates its item whenever game time is a multiple of its
@@ -37,10 +41,9 @@
 //! which drops where the unit stands.
 //!
 //! Known shortcuts: items do not fall (a map item stays where the entry
-//! puts it, levitating or not; a dropped weapon where it was dropped); the
-//! weapon set substitution is set 0's (normal) and only the flamethrower
-//! and gravity rifle rule applies; the game type's options (no shields,
-//! invisible players, infinite grenades) are not read; a swap with a weapon
+//! puts it, levitating or not; a dropped weapon where it was dropped);
+//! without a game type's rules (a test's `HaloSim`) the weapon set is set
+//! 0's (only the flamethrower and gravity rifle rule); a swap with a weapon
 //! of the same tag (a fresher plasma weapon) is not offered; a dead
 //! player's weapons and grenades drop where its body stands (no throw), the
 //! held weapon after its delay (not at once for a killing blow's push of 2
@@ -72,9 +75,6 @@ pub fn add_entities(file: &MapFile, scenario: &Scenario, map: &mut MapData, pick
         return;
     }
     for (i, e) in scenario.netgame_equipment.iter().enumerate() {
-        if !e.eligible_for(GameType::Slayer) {
-            continue;
-        }
         let collection = blam_formats::weapon::ref_id(&e.item_collection)
             .and_then(|id| file.tag(id))
             .filter(|t| t.class == class::ITEM_COLLECTION)
@@ -99,6 +99,7 @@ pub fn add_entities(file: &MapFile, scenario: &Scenario, map: &mut MapData, pick
                 ("spawn_time".into(), e.spawn_time.to_string()),
                 ("collection_spawn_time".into(), collection.spawn_time.to_string()),
                 ("items".into(), items.join("|")),
+                ("game_types".into(), e.game_types.0.map(|g| g.to_string()).join(" ")),
             ],
             ..Default::default()
         });
@@ -121,6 +122,7 @@ use super::{
     systems::{HaloHands, HaloWeapon, halo_ticks},
     tick::HaloGun,
 };
+use super::super::rules::items::{ItemRules, substitute_item};
 use crate::{
     core::{Health, Intent, SimClock},
     map::MapEntities,
@@ -277,10 +279,8 @@ pub fn item_of(tag: &str, grenades: &GrenadeData, spartan: &super::super::vitali
     } else {
         tag
     };
-    if let Some((id, g)) = guns().into_iter().find(|(_, g)| g.tag.eq_ignore_ascii_case(tag)) {
-        let id = super::GUNS.into_iter().find(|i| *i == id)?;
-        let (loaded, reserve) = g.magazine.map_or((0, 0), |m| m.new_rounds());
-        return Some(Item::Weapon { id, loaded, reserve, age: 0.0 });
+    if let Some((id, _)) = guns().into_iter().find(|(_, g)| g.tag.eq_ignore_ascii_case(tag)) {
+        return new_weapon(&id);
     }
     if grenades.frag.tag.eq_ignore_ascii_case(tag) {
         return Some(Item::Grenade(FRAG));
@@ -295,17 +295,47 @@ pub fn item_of(tag: &str, grenades: &GrenadeData, spartan: &super::super::vitali
         .map(|(_, k)| Item::Powerup(k))
 }
 
-/// The entries from the map's entities (made again when they change; the
-/// clock starts at 0).
+/// Weapon `id` as a new item, its rounds a new weapon's.
+pub fn new_weapon(id: &str) -> Option<Item> {
+    let (_, g) = guns().into_iter().find(|(i, _)| i == id)?;
+    let id = super::GUNS.into_iter().find(|i| *i == id)?;
+    let (loaded, reserve) = g.magazine.map_or((0, 0), |m| m.new_rounds());
+    Some(Item::Weapon { id, loaded, reserve, age: 0.0 })
+}
+
+/// Whether a map entity's entry is eligible for `game` (its `game_types`;
+/// an entry without them is).
+pub fn eligible(e: &MapEntity, game: GameType) -> bool {
+    let Some(text) = e.get("game_types") else { return true };
+    let mut slots = [0i16; 4];
+    for (i, n) in text.split_whitespace().take(4).enumerate() {
+        slots[i] = n.parse().unwrap_or(0);
+    }
+    blam_formats::scenario::GameTypes(slots).eligible_for(game)
+}
+
+/// Start the item clock again (a fresh game on the same map): the entries
+/// are made again from the map, the items lying are gone, the clock at 0.
+pub fn restart(world: &mut World) {
+    if let Some(mut c) = world.get_resource_mut::<ItemClock>() {
+        c.seen = 0;
+    }
+}
+
+/// The entries from the map's entities eligible for the game in play
+/// (free-for-all slayer without a game type's rules, `rules::items::
+/// ItemRules`), made again when they change (the clock starts at 0).
 #[allow(clippy::type_complexity)]
 fn spawn_entries(
     entities: Option<Res<MapEntities>>,
     old: Query<Entity, Or<(With<NetgameEntry>, With<HaloItem>)>>,
+    item_rules: Option<Res<ItemRules>>,
     mut clock: ResMut<ItemClock>,
     mut commands: Commands,
 ) {
     let Some(map) = entities else { return };
-    let key = Arc::as_ptr(&map.entities) as usize;
+    let game = item_rules.map_or(GameType::Slayer, |r| r.game);
+    let key = Arc::as_ptr(&map.entities) as usize ^ (game.code() as usize) << 1;
     if clock.seen == key {
         return;
     }
@@ -314,7 +344,7 @@ fn spawn_entries(
     for e in &old {
         commands.entity(e).despawn();
     }
-    for e in map.entities.iter().filter_map(NetgameEntry::from_entity) {
+    for e in map.entities.iter().filter(|e| eligible(e, game)).filter_map(NetgameEntry::from_entity) {
         commands.spawn((Name::new(format!("halo_ce netgame equipment {}", e.index)), e));
     }
 }
@@ -329,6 +359,7 @@ pub fn clock(
     sim: Res<SimClock>,
     grenades: Res<GrenadeData>,
     spartan: Res<super::super::vitality::Spartan>,
+    item_rules: Option<Res<ItemRules>>,
     mut commands: Commands,
 ) {
     for _ in 0..halo_ticks(&sim) {
@@ -346,6 +377,14 @@ pub fn clock(
             }
             let r = rng.int_range(0, total as i32) as u32;
             let Some(item) = e.pick(r).and_then(|t| item_of(t, &grenades, &spartan)) else { continue };
+            // The game type's substitution (5.3).
+            let item = match &item_rules {
+                Some(ir) => match substitute_item(&ir.rules, ir.players, item, || rng.real()) {
+                    Some(i) => i,
+                    None => continue,
+                },
+                None => item,
+            };
             debug!("halo_ce: entry {} makes {:?} at {}", e.index, item, now);
             commands.spawn((
                 Name::new("halo_ce item"),

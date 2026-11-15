@@ -44,6 +44,7 @@ pub mod layout;
 pub mod material;
 pub mod nodes;
 pub mod rules;
+pub mod score;
 
 use bevy::prelude::*;
 use chimera_client::client::hud::{GameDraws, HudDraws};

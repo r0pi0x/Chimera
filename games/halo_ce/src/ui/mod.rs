@@ -16,6 +16,7 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
     shell
         .add_after::<chimera_client::client::hud::HudPlugin>(hud::HaloHudPlugin)
         .add_after::<hud::HaloHudPlugin>(hud::material::HudRenderPlugin)
+        .add_after::<hud::HaloHudPlugin>(hud::score::HaloScorePlugin)
 }
 
 /// The weapons' buttons beside fire, attack2 (also the zoom) and reload:

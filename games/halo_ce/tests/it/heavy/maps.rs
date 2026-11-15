@@ -277,7 +277,7 @@ fn same_but_texels(a: &MapData, b: &MapData) {
     let (la, lb) = (a.lightmap.as_ref().unwrap(), b.lightmap.as_ref().unwrap());
     assert_eq!((la.width, la.height), (lb.width, lb.height));
     assert!(la.rgb == lb.rgb);
-    assert_eq!(format!("{:?}", a.models), format!("{:?}", b.models));
+    assert_eq!(sorted_names(&format!("{:?}", a.models)), sorted_names(&format!("{:?}", b.models)));
     assert_eq!(format!("{:?}", a.props), format!("{:?}", b.props));
     assert_eq!(format!("{:?}", a.sky_camera), format!("{:?}", b.sky_camera));
     assert_eq!(a.collision_positions, b.collision_positions);
@@ -425,7 +425,7 @@ fn every_created_scenery_placement_is_a_prop_inside_the_level() {
             "hangemhigh" => assert_eq!(created, 8),
             _ => {}
         }
-        total += map.props.len();
+        total += map.props.len() - vehicles;
         let (lo, hi) = bounds_of(&map);
         // The collision reaches past the render geometry to the boundary
         // walls; scenery stands in the playable level (a small margin).
@@ -612,4 +612,22 @@ fn maps_without_a_sky_model_have_no_sky_camera() {
             "{name}"
         );
     }
+}
+
+/// A debug print with each animation set's `names` map (a hash map, whose
+/// print order differs between two equal maps) in sorted order.
+fn sorted_names(debug: &str) -> String {
+    let mut out = String::new();
+    let mut rest = debug;
+    while let Some(i) = rest.find("names: {") {
+        let (head, tail) = rest.split_at(i + "names: {".len());
+        out.push_str(head);
+        let end = tail.find('}').unwrap_or(tail.len());
+        let mut entries: Vec<&str> = tail[..end].split(", ").collect();
+        entries.sort_unstable();
+        out.push_str(&entries.join(", "));
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
 }
