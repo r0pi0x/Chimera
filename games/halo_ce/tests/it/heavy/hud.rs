@@ -256,7 +256,8 @@ fn s13_the_scopes_masks_grey_levels() {
 }
 /// The party apps' layout (`layout::HudLayout::Party`): the shield and
 /// health block in the motion tracker's place at the bottom left, inside
-/// the safe frame, no tracker drawn; the disc's layout unchanged.
+/// the safe frame and under the party's status band's top (lower at 4:3),
+/// no tracker drawn; the disc's layout unchanged.
 #[test]
 fn the_party_layout_moves_the_shield_block_to_the_trackers_place() {
     use halo_ce::ui::hud::layout::{HudLayout, rect_bounds};
@@ -275,9 +276,13 @@ fn the_party_layout_moves_the_shield_block_to_the_trackers_place() {
         let moved: Vec<[f32; 4]> = party.iter().zip(&disc).filter(|(a, b)| a.rect != b.rect).map(|(a, _)| a.rect).collect();
         let b = rect_bounds(moved).expect("the block moved");
         let f = canvas.frame().map(|v| v as f32);
-        assert!(b[0] >= f[0] && b[3] <= f[3] && b[1] >= f[1], "inside the safe frame: {b:?} {f:?}");
+        // Inside the safe frame, but under the party's status band's top
+        // (`Canvas::party_floor`: lower than the frame's bottom at 4:3).
+        assert!(b[0] >= f[0] && b[1] >= f[1] && b[1] >= canvas.party_floor() - 1e-3, "{b:?} {f:?} {}", canvas.party_floor());
+        assert!(b[3] <= 480.0, "on screen: {b:?}");
         assert!(b[2] < canvas.width as f32 / 2.0 && b[1] > 240.0, "bottom left: {b:?}");
         // Off the kill feed's corner (the top right quarter).
         assert!(b[2] < canvas.width as f32 * 0.75 || b[1] > 120.0);
     }
 }
+

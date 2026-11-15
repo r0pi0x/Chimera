@@ -38,13 +38,13 @@ const SIZES: [(u32, u32); 3] = [(1920, 1080), (1280, 960), (2560, 1080)];
 /// index under the root, its centre and size (px), its text's size and
 /// face, and the text drawn in it and under it.
 #[derive(Clone, Debug, PartialEq)]
-struct Laid {
-    index: usize,
-    centre: Vec2,
-    size: Vec2,
-    font: Option<f32>,
-    face: Option<String>,
-    text: String,
+pub(crate) struct Laid {
+    pub(crate) index: usize,
+    pub(crate) centre: Vec2,
+    pub(crate) size: Vec2,
+    pub(crate) font: Option<f32>,
+    pub(crate) face: Option<String>,
+    pub(crate) text: String,
 }
 
 impl Laid {
@@ -76,7 +76,7 @@ fn text_under(w: &World, e: Entity) -> String {
 
 /// The party's every-HUD setup with Bevy's UI layout, the shell's overlay
 /// pieces, and a primary window with a camera on it.
-fn laid_out() -> (Sim, Entity) {
+pub(crate) fn laid_out() -> (Sim, Entity) {
     let (mut sim, me, _killer) = crate::kill_feed::every_hud_sim_and(true, |app| {
         app.init_resource::<Assets<bevy::image::TextureAtlasLayout>>()
             .init_resource::<ButtonInput<MouseButton>>()
@@ -146,7 +146,7 @@ fn fill(sim: &mut Sim) {
 }
 
 /// `game`'s HUD up at `size`, the layer laid out: its nodes, depth first.
-fn layout(sim: &mut Sim, me: Entity, game: &'static str, size: (u32, u32)) -> Vec<Laid> {
+pub(crate) fn layout(sim: &mut Sim, me: Entity, game: &'static str, size: (u32, u32)) -> Vec<Laid> {
     let l = sim.app.world().resource::<Ladder>().clone();
     let rung = l
         .rungs
@@ -256,4 +256,19 @@ fn the_overlay_is_laid_out_alike_under_every_games_hud() {
             assert!((fa * k - fb).abs() < 0.05, "node {}'s font at 16:9 {fa} and 4:3 {fb}", a.index);
         }
     }
+}
+
+/// Halo's front end in the party (`party_kit::client::CLIENTS`' Halo entry,
+/// its `GameClient::app`, what the party's client runs for every game)
+/// draws Halo's HUD in the party layout (the shield and health block
+/// bottom left, no tracker: the feed is top right); Halo's own app, which
+/// never runs it, keeps the disc's (the resource's default).
+#[test]
+fn halos_front_end_puts_its_hud_in_the_party_layout() {
+    use halo_ce::ui::hud::{HaloHudLayout, layout::HudLayout};
+    let client = party_kit::client::CLIENTS.iter().find(|c| c.game == halo_ce::game::GAME).expect("Halo's front end in the party");
+    let mut app = App::new();
+    (client.app.expect("its app hook"))(&mut app);
+    assert_eq!(app.world().get_resource::<HaloHudLayout>(), Some(&HaloHudLayout(HudLayout::Party)));
+    assert_eq!(HaloHudLayout::default().0, HudLayout::Disc);
 }

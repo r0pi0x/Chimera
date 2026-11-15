@@ -300,8 +300,26 @@ fn scope_mask(p: &mut Painter, chain: &[WeaponHud], zoomed: bool, canvas: &Canva
     }
 }
 
+/// Where this frame's blocks are (canvas units: their pictures' bounding
+/// boxes; None: not drawn): the weapon's (its HUD chain's elements, top
+/// left), the grenade plate's and the unit's shield and health block
+/// (without the tracker).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Blocks {
+    pub weapon: Option<[f32; 4]>,
+    pub grenades: Option<[f32; 4]>,
+    pub unit: Option<[f32; 4]>,
+}
+
 /// This frame's quads.
 pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now: i64) -> Vec<Quad> {
+    draw_blocks(data, unit, state, canvas, now).0
+}
+
+/// This frame's quads and where its blocks are.
+pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now: i64) -> (Vec<Quad>, Blocks) {
+    let mut blocks = Blocks::default();
+    let bounds = |q: &[Quad]| layout::rect_bounds(q.iter().map(|q| q.rect));
     let mut p = Painter { data, frame: canvas.frame(), now, out: Vec::new() };
     let chain = chain_of(data, unit);
     let w = unit.weapon.as_ref().map(|h| h.now).unwrap_or_default();
@@ -326,6 +344,7 @@ pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now:
         }
     }
     // 3. The weapon HUD, deepest parent first.
+    let weapon_from = p.out.len();
     if !chain.is_empty() && unit.weapon.is_some() {
         let cut = cutoffs(chain);
         for (hud, c) in chain.iter().zip(&cut).rev() {
@@ -375,7 +394,9 @@ pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now:
             }
         }
     }
+    blocks.weapon = bounds(&p.out[weapon_from..]);
     // 4. The grenade HUD of the current type.
+    let grenades_from = p.out.len();
     if let Some(g) = data.grenades.get(unit.grenade_kind).or(data.grenades.first()).filter(|_| unit.alive && !unit.no_grenade_type) {
         let anchor = Anchor::of(g.anchor);
         let count = unit.grenades;
@@ -398,6 +419,20 @@ pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now:
             let r = layout::rect(anchor, item.placement.offset, pic.size, scale_of(&item.placement), p.frame);
             p.push(pic, r, Fill::Sprite(colour));
         }
+    }
+    blocks.grenades = bounds(&p.out[grenades_from..]);
+    // The party's layout: a grenade plate reaching into the party's
+    // top-centre column (a narrow window) drops under the weapon's block.
+    if canvas.layout == layout::HudLayout::Party
+        && let Some(g) = blocks.grenades
+        && g[2] > canvas.party_column()[0]
+    {
+        let dy = blocks.weapon.map_or(0.0, |w| (w[3] + 4.0 - g[1]).max(0.0));
+        for q in &mut p.out[grenades_from..] {
+            q.rect[1] += dy;
+            q.rect[3] += dy;
+        }
+        blocks.grenades = bounds(&p.out[grenades_from..]);
     }
     // 7. The unit HUD.
     let block = p.out.len();
@@ -430,18 +465,20 @@ pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now:
         let disc = layout::rect_bounds(p.out[tracker_from..].iter().map(|q| q.rect));
         p.out.truncate(tracker_from);
         if let (Some(tracker), Some(own)) = (disc, layout::rect_bounds(p.out[block..].iter().map(|q| q.rect))) {
-            let [dx, dy] = layout::party_offset(own, tracker, p.frame);
+            let [dx, dy] = layout::party_offset(own, tracker, p.frame, canvas.party_floor());
             for q in &mut p.out[block..] {
                 q.rect = [q.rect[0] + dx, q.rect[1] + dy, q.rect[2] + dx, q.rect[3] + dy];
             }
         }
-        return p.out;
+        blocks.unit = bounds(&p.out[block..]);
+        return (p.out, blocks);
     }
+    blocks.unit = bounds(&p.out[block..tracker_from]);
     if unit.alive {
         let centre = layout::anchor_point(sensor, u.blip_placement.offset, p.frame);
         tracker(&mut p, state, centre, now);
     }
-    p.out
+    (p.out, blocks)
 }
 
 /// The tracker's sweep and blips about `centre`.
