@@ -36,6 +36,10 @@
 //! `pending` is what a foreground fill is fetching into a store now, which an
 //! on-demand miss in that store waits for rather than fetching twice.
 //!
+//! `feedback`: in-game feedback and bug reports: the bundle and its secret
+//! filter, the tester's outbox and sender, the receiver behind the
+//! service's `POST /feedback`, its triage page.
+//!
 //! `map_cache`: converted maps on disk beside the store, keyed by the
 //! converter and checked against every file the conversion read
 //! (`~/.cache/chimera/maps`, `CHIMERA_MAP_CACHE`).
@@ -57,6 +61,7 @@ pub mod accounts;
 pub mod cached;
 pub mod config;
 pub mod disk;
+pub mod feedback;
 pub mod lock;
 pub mod manifest;
 pub mod map_cache;

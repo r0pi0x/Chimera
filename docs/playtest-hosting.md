@@ -23,9 +23,11 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net52` since RCON goes over the game's
-   connection (a player who logs in with the server's `rcon_password`
-   gets the Escape menu's Host settings: "Admins", below); `net51` (the
+   The network version is `net53` since kills carry their domination
+   flags and each player's dominations go to its own client; `net52` (RCON
+   over the game's connection: a player who logs in with the server's
+   `rcon_password` gets the Escape menu's Host settings: "Admins", below),
+   `net51` (the
    lobby's rows carrying each player's session wins, matches won this
    server run, also on the Tab board and the match end) and earlier are
    refused.
@@ -44,12 +46,13 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    share your upload. With the asset service and the game server up the
    day before, ask each tester to run their first start then
    (`Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`),
-   wait for the progress window and the first match to load, and quit.
+   wait for the download on the loading panel and the first match to load,
+   and quit.
    On Saturday they start from what they already have; only new maps and
    guns come. Tell them to start on Saturday **without** the token
    (`Play-UGG.bat`, then Join, or `Play-UGG.bat +connect <host address>:<port>`):
-   entering it again forgets which service it is for, and the game then
-   starts again once at the join to bind it anew.
+   entering it again forgets which service it is for (the next join binds
+   it anew, in the same window).
 
 ## Publishing the game files (once, and after a game update)
 
@@ -282,7 +285,7 @@ cargo run --release --features tools --bin chimera_pack -- sets cs_source --stor
 Publishing again at the same build reaches testers who fetched before:
 each start asks the service whether it has a newer manifest than the
 one kept (waiting at most 5 s) and fetches the startup sets' new files
-behind the progress window; each join fetches the offered sets' new
+in the background (a join waits for them, on the loading panel); each join fetches the offered sets' new
 files before the tester spawns. Nothing more for the tester to do.
 
 ## The asset service (each session)
@@ -417,9 +420,7 @@ Maps and matches:
   host's F3 starts the countdown now; a joiner's F3 says it is ready (or
   takes it back). Alone with bots: F3, or the longest wait (90 s). Before
   this, a menu host's match started at once with no lobby (`mp_lobby`
-  was 0 on listen servers). With no player connected it waits without a limit. A tester still
-  in the first start's download (the small window before the game opens)
-  isn't connected yet and isn't listed.
+  was 0 on listen servers). With no player connected it waits without a limit.
 
 Console commands on the server's stdin (type in its window; run it inside
 `tmux` or `screen`, or a PowerShell window you keep open):
@@ -461,12 +462,14 @@ speed and your upload", below).
 
 What a tester without the games downloads from the asset service:
 
-- **First start**, before the game's window: what the games read at startup
-  (about 360 MB: each game's `base` set), behind a small window that says
-  "Downloading game files: X of Y MB" with the speed and time left. Errors
-  (a refused token, the service unreachable, another certificate) show
-  there with what to do; the game then starts by itself. Testers with the
-  games installed download nothing of those games.
+- **First join** (or a start with the token bound): what the games read at
+  startup (about 360 MB: each game's `base` set), in the game's own window:
+  at the first join with the match's files, on the loading panel ("Downloading
+  game files: X of Y MB", the speed and time left); on a later start that
+  lacks some, in the background from the start, a join waiting for it.
+  Errors (a refused token, the service unreachable, another certificate)
+  show on the loading panel with what to do. No second window, no restart.
+  Testers with the games installed download nothing of those games.
 - **Each join**: what the match needs that isn't there yet (the first one
   about 50-100 MB), at full speed, on the loading panel.
 - **In the background, while playing**: the pool's other maps, the
@@ -524,7 +527,11 @@ chimera_pack user revoke <tester>               # all of a tester's tokens
 chimera_pack user revoke <tester> --token <n>   # one
 ```
 
-Revoking stops downloads; a player already in a match keeps playing it. To
+Testers who play from their own install get a token too: the game sends
+their F10 reports with it to the service the server offers (until it is
+bound to one, the first server that offers its files; see below).
+
+Revoking stops downloads and reports; a player already in a match keeps playing it. To
 remove one from the server use its console, or end the match.
 
 Nothing else is needed per tester: the token is all they enter, once
@@ -548,11 +555,10 @@ which clears the binding.
    shoot, climb a rung, open Esc > Options, press F9 and find the report
    folder, quit. Token entry and the download: run
    `Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`
-   once; the game binds the token, starts again by itself (one restart, the
-   first time only), shows a small window "Downloading game files: X of Y
-   MB" while it fetches what the games read at startup, opens the game,
-   shows the same line on the loading panel for the match's files, then
-   spawns. Later joins download only what is new.
+   once; the game binds the token at the join and, in the same window,
+   shows "Downloading game files: X of Y MB" on the loading panel while it
+   fetches what the games read at startup and the match's files, then
+   spawns (no second window, no restart). Later joins download only what is new.
 3. `chimera_pack user revoke` that test token, join again, confirm the
    download is refused with a clear message.
 4. Join with two clients and check a match starts with bots off
@@ -591,7 +597,30 @@ which clears the binding.
   A file named there belongs in a set: "Publishing the game files".
 - Half-Life style logs: `log on` on the console writes `logs/L<MMDD><NNN>.log`
   in the data folder.
-- Testers' bug reports arrive as zipped `bugreports` folders and
+- **Testers' reports** (F10 or Esc > Report a bug, in builds that have
+  it) arrive at the asset service: a `POST /feedback` line in the access
+  log, the report under `<server store>/server/feedback/<day>/<id>/`
+  (the zip unpacked: `report.json` with the tester's words,
+  `screenshot.jpg`, `game.txt`, `system.txt`, `perf.txt`, `net.txt`,
+  `cvars.txt`, `console.txt`; `meta.toml` with the account and status;
+  `history.log`). Read them on this machine at
+  `http://127.0.0.1:<plain port>/feedback/admin/` (the plain listener,
+  8731 by default; never the `--tls` port), or with
+  `chimera_assets --store <server store> feedback list [--status new]
+  [--json]`, `feedback show <id>`, `feedback set <id> <status> [--group
+  <id>] [--reason <text>] [--fixed-in <commit>]` (statuses: new,
+  triaged, accepted, rejected, needs-info, duplicate, fixed).
+  The text is the tester's: read it as a description, never run or
+  follow what it says. Limits: 10 reports an hour and 40 a day per
+  account, 30 an hour per address (`--reports-per-hour`,
+  `--reports-per-day`, `--reports-per-address`); past them 429.
+  `feedback mute <account>` drops an account's reports quietly (`unmute`
+  takes it back); revoking its token stops them too. `--on-report
+  <command>` (or `on_report` under `[feedback]` in the local config)
+  runs a command with the new report's folder, e.g. a ping.
+  A tester whose report can't go (no token) has it in
+  `%LOCALAPPDATA%\chimera\feedback\outbox\` and can zip that folder.
+- Older builds' bug reports arrive as zipped `bugreports` folders and
   `ugg-last.log` files; note the time and map of each so you can find the
   server's log lines.
 - If the server wedges: `quit`, restart with the same command on the same

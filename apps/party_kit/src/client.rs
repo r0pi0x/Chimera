@@ -11,7 +11,9 @@
 //! Combat Arms' maps load by id) and the command line as the app plays it
 //! (`with_defaults`: the default minigame and its first map). At start it
 //! runs the mount doctor (`mount_report` into `net::manifest::LocalMounts`),
-//! which a server checks its match against when this client joins.
+//! which a server checks its match against when this client joins; again,
+//! with the guests' gun names, once a join that bound the asset service
+//! has the games' files (`read_mounts_again`).
 //!
 //! CS:S's HUD here is its health, armour and ammo panels, death notices,
 //! damage sprites and weapon selection row (`ui::game_hud`,
@@ -106,6 +108,9 @@ pub fn front_end(app: &mut App, _: &Args) {
         // Settings in the Signal look (the menus' Options and Host
         // settings under Ultimate Gun Game's theme).
         .add_plugins(crate::settings::SettingsPlugin)
+        // The report dialog (F10 in Ultimate Gun Game, the Escape menu's
+        // "Report a bug") in the Signal look.
+        .add_plugins(crate::feedback_signal::FeedbackSignalPlugin)
         .add_plugins(PartyMousePlugin)
         .add_plugins(PartyHudPlugin)
         .add_plugins(chimera_client::client::minigame_scoreboard::MinigameScoreboardPlugin)
@@ -119,6 +124,9 @@ pub fn front_end(app: &mut App, _: &Args) {
             Update,
             crate::ui_cues::mute_siren.run_if(resource_exists::<chimera_client::client::ui_sound::UiSounds>),
         );
+    // A join that binds the asset service: the mount doctor and the
+    // guests' gun names again once the games' files arrived.
+    app.add_observer(read_mounts_again);
     // The rest of each guest's front end (CS:S's: the map's HUD look
     // is its, and what its bodies play for a player holding its gun,
     // the gun game's `identity = "weapon"`).
@@ -204,10 +212,29 @@ fn start_mouse(
     }
 }
 
+/// After a join bound the asset service and the games' files arrived
+/// (`net::assets::AssetsArrived`): the mount doctor and the guests' gun
+/// names again, now that the games read from the store.
+fn read_mounts_again(
+    _: On<chimera_net::net::assets::AssetsArrived>,
+    games: Res<Games>,
+    names: Option<ResMut<ItemNames>>,
+    mut commands: Commands,
+) {
+    examine_mounts(&games, &mut commands);
+    if let Some(mut names) = names {
+        read_guest_names(&games, &mut names);
+    }
+}
+
 /// The mount doctor (`net::manifest`): what this machine has of each game,
 /// which a server checks its match against when this client joins.
 fn mount_doctor(games: Res<Games>, mut commands: Commands) {
-    let report = super::mount_report(&games);
+    examine_mounts(&games, &mut commands);
+}
+
+fn examine_mounts(games: &Games, commands: &mut Commands) {
+    let report = super::mount_report(games);
     for g in &report.games {
         let build = g.build.as_deref().map(|b| format!(", build {b}")).unwrap_or_default();
         let state = if g.installed { "installed" } else { "not installed" };
@@ -223,6 +250,10 @@ fn mount_doctor(games: Res<Games>, mut commands: Commands) {
 /// CS:S's `weapons::display_names`, HL2:DM's; none without the install,
 /// the guns then show their ids).
 fn guest_names(games: Res<Games>, mut names: ResMut<ItemNames>) {
+    read_guest_names(&games, &mut names);
+}
+
+fn read_guest_names(games: &Games, names: &mut ItemNames) {
     for bundle in super::GUESTS {
         let Some(read) = bundle.display_names else { continue };
         let Some(mount) = games.get(bundle.info.id).and_then(|g| g.mount()) else {

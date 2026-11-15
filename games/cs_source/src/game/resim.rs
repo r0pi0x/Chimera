@@ -43,9 +43,10 @@
 //! `sv_maxspeed`, `sv_accelerate`, ...) are applied to the movement first
 //! (`Recording::cvars`), and the tick is the recording's.
 //!
-//! Known shortcuts: our spread generator is not CS:S's (weapons.md Q1), so
-//! shots compare by seed and accuracy and by statistics of their offsets,
-//! not pellet by pellet; `upmove` (swimming up, ladders by key) is not an
+//! Known shortcuts: shots compare by seed and accuracy and by statistics of
+//! their offsets, not pellet by pellet (the spread is CS:S's bit for bit
+//! since weapons.md 4.2.2, but a bot's recorded seeds are not its command
+//! numbers' and the recording's impacts are not compared yet); `upmove` (swimming up, ladders by key) is not an
 //! input of ours (`Intent` has none), only jump; the world is the map as
 //! loaded (doors, movers and physics props where the map puts them, other
 //! players not there to collide with); a weapon picked by a command

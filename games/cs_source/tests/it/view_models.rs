@@ -667,3 +667,24 @@ fn a_held_player_holding_fire_shows_nothing() {
     sim.seconds(0.5);
     assert!(sim.app.world().get::<Magazine>(active(&sim, p)).unwrap().clip < clip);
 }
+
+/// A weapon in hand before its view model is there (a ladder's first
+/// rung at a match's start, the new map's view models spawning after the
+/// gun was given; playtest 7: "the first rung's gun is invisible"): once
+/// the model comes in it is drawn, playing its draw, not left with no
+/// animation (which the drawing hides) until the next switch.
+#[test]
+fn a_view_model_that_comes_in_after_the_weapon_is_drawn_then() {
+    let mut sim = sim();
+    let models = sim.app.world_mut().remove_resource::<ViewModels>().unwrap();
+    let p = sim.spawn_character(greybox::SPAWNS[0], placeholder::ID);
+    sim.ticks(5);
+    let (key, act, _) = view(&sim, p);
+    assert_eq!(key.as_deref(), Some(AK47), "the weapon's model is wanted");
+    assert_eq!(act, None, "no model yet: nothing plays");
+    sim.app.world_mut().insert_resource(models);
+    sim.ticks(2);
+    let v = sim.app.world().get::<ViewAnimator>(p).unwrap();
+    assert!(v.animator.is_some(), "the model came in but has no animation (drawn hidden)");
+    assert_eq!(activity(&sim, p), "ACT_VM_DRAW");
+}

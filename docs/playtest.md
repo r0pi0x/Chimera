@@ -57,16 +57,14 @@ Play-UGG.bat +chimera:asset_token <your token> +connect <host address>:<port>
 The game keeps the token for your Windows user
 (`%LOCALAPPDATA%\chimera\asset-access.toml`; the log says `asset token
 saved`). You don't need the server's asset address: joining tells the game
-where it is. The first time, the game starts again by itself once (the
-window closes and reopens, joining the same server) to use the server's
-files; that is normal. The token looks like `chimera1_...`; paste it
+where it is: the first join binds the token to the server's asset service
+and downloads the files in the same window, on the loading panel. The token looks like `chimera1_...`; paste it
 exactly, and keep it private: it is yours alone and the host can revoke it.
 To enter a new one, run the same line with the new token.
 
 After that first time, start the game **without** the token: `Play-UGG.bat`
 (then Join), or `Play-UGG.bat +connect <host address>:<port>`. Entering the
-token again works too, but the game then starts again once more when it
-joins.
+token again works too: the next join binds it again, in the same window.
 
 ## Joining the server
 
@@ -81,17 +79,17 @@ menu (never downloading anything for it).
 
 Or from the console (`~`): `connect <host address>:<port>`.
 
-The first time, the game downloads the files it needs. Right after the
-token's restart a small window says "Downloading game files: X of Y MB"
-with the speed and time left (what the games read at startup, a few hundred
-MB); then the game's window opens, and the loading panel shows the same
-line for the match's files, then the map loads and you spawn. The first
+The first time, the game downloads the files it needs, in its own window:
+the loading panel says "Downloading game files: X of Y MB" with the speed
+and time left (what the games read at startup, a few hundred MB, then the
+match's files), then the map loads and you spawn. There is no second window
+and the game doesn't start again. The first
 start takes the longest (minutes on a slow line; the host may ask you to do
 it the day before), and the next ones read what is already saved; later
 maps download in the background while you play, at most 2 MB/s
 (`chimera:asset_prefetch_rate <KB/s>` in the console changes it, 0 turns it
-off; the host may cap it). If the small window shows an error, it says why:
-"Try again" once the host has fixed it, or "Start anyway". If it stalls, wait a minute, then see
+off; the host may cap it). If the download fails, the loading panel says
+why; join again once the host has fixed it. If it stalls, wait a minute, then see
 "Reporting a bug". Messages you may see instead:
 
 - "the asset service refused your token (revoked or mistyped)": ask the
@@ -201,7 +199,20 @@ Please send the host (a message in the group chat is fine):
 4. **A screenshot**, ideally from the bug report below.
 5. **The log** (see below).
 
-The easiest way: press **F9** (or **F4**) when it happens. It saves a
+The easiest way, in a build that has it: press **F10** (or Esc > **Report a
+bug**) when it happens. The game takes a screenshot of that moment, then
+opens a small report window: pick **Bug** or **Feedback** (Tab), type what
+happened and what you expected, keep or untick **Include screenshot**, and
+press **Send** (Ctrl+Enter). It goes to the host with your asset token (the
+one you entered once); "What's sent" lists what goes with it, and no
+passwords, tokens or game files are in it. Without a token, or while the
+host's service doesn't answer, the report waits on your PC under
+`%LOCALAPPDATA%\chimera\feedback\outbox\` and goes later by itself (the
+console's `feedback_status` says why it waits); if it never goes, zip that
+folder and send it. F10 can be moved in Options > Controls ("Report a
+bug").
+
+Without it, or for a quick save: press **F9** (or **F4**) when it happens. It saves a
 screenshot and a `report.txt` (build, map, weapon, health, position, the last
 console lines) into a new folder under
 

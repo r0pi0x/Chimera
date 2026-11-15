@@ -314,6 +314,15 @@ fn with_installs(world: &mut World) {
     }
 }
 
+/// The app's own default binds, over every game's (`binds::AppBind`):
+/// F10 opens the report dialog (`client::feedback`), in the shared binds
+/// and so under every game's layer; CS:S's `quit prompt` there is
+/// dropped (quitting is the Escape menu's), and a saved config whose F10
+/// still holds it gets the report key once.
+#[cfg(feature = "present")]
+pub const APP_BINDS: &[chimera_client::client::binds::AppBind] =
+    &[chimera_client::client::binds::AppBind { key: "f10", command: "feedback", replaces: &["quit prompt"] }];
+
 /// The game binary's app (`ultimate_gun_game`, main.rs): the party's
 /// client app (`party_kit::client::PARTY`) on Chimera's client app,
 /// playing the automatic gun game (`with_defaults_for` with `MINIGAME`
@@ -360,17 +369,26 @@ pub fn args(args: chimera_client::client::Args) -> chimera_client::client::Args 
 
 /// What the app adds last: the party's main menu (shown at start when the
 /// command line doesn't play; Play starts `MINIGAME`), the Ultimate Gun
-/// Game's parts with a fresh seed, the minimal HUD, and its look (`signal`).
+/// Game's parts with a fresh seed, the minimal HUD, its look (`signal`)
+/// and its own binds (`APP_BINDS`).
 #[cfg(feature = "present")]
 fn launch(app: &mut App, args: &chimera_client::client::Args) {
     let at_menu = party_kit::main_menu::starts_at_menu(args);
+    {
+        let mut d = app.world_mut().get_resource_or_init::<chimera_client::client::binds::BindDefaults>();
+        for b in APP_BINDS {
+            d.add_app(*b);
+        }
+    }
     // The background maps at hand without a download, before the menu.
     app.insert_resource(party_kit::main_menu::BackgroundMaps::app(party_kit::client::background_at_hand))
         .add_plugins(party_kit::main_menu::MainMenuPlugin {
             at_start: at_menu,
             minigame: MINIGAME.into(),
-            // A tool run (`+mainmenu` photographing it) keeps nothing.
-            keep_recent: at_menu && !args.tool_run(),
+            // A tool run (`+mainmenu` photographing it) keeps nothing. A
+            // start that joins (`+connect`: a join link, the first join's
+            // relaunch) keeps them too: it comes back to this menu.
+            keep_recent: !args.tool_run(),
         })
         .add_plugins(party_kit::menu_backdrop::MenuBackdropPlugin)
     .add_plugins((UltimateGunGamePlugin::launch(), chimera_client::client::hud_minimal::MinimalHudPlugin))
@@ -383,6 +401,32 @@ mod tests {
     fn the_first_map_is_the_pools() {
         assert_eq!(super::first_map(super::MINIGAME).unwrap(), "cs_source:de_dust2");
         assert_eq!(super::first_map(party_kit::DEFAULT_MINIGAME).unwrap(), "cs_source:de_dust2");
+    }
+
+    /// F10 reports in the app (over the shared binds, so under every
+    /// game's layer); the CS:S app keeps CS:S's quit prompt.
+    #[cfg(feature = "present")]
+    #[test]
+    fn f10_reports_here_and_quits_in_the_cs_source_app() {
+        use chimera_client::client::binds::BindDefaults;
+        let mut ugg = BindDefaults::default();
+        ugg.use_game(&combat_arms::game::INFO);
+        for b in super::APP_BINDS {
+            ugg.add_app(*b);
+        }
+        let mut console = chimera_core::console::Console::default();
+        chimera_client::client::binds::bind_defaults(&mut console.binds, true, &ugg.default_binds());
+        for (game, binds) in &party_kit::GAME_BINDS {
+            console.ship_layer(game, binds);
+        }
+        assert_eq!(party_kit::GAME_BINDS.len(), 3);
+        for (game, _) in &party_kit::GAME_BINDS {
+            assert_eq!(console.effective_binds(Some(game)).get("f10").map(String::as_str), Some("feedback"), "{game}");
+        }
+        let mut css = BindDefaults::default();
+        let cs = party_kit::BUNDLES.iter().find(|b| b.info.id == "cs_source").expect("CS:S composed").info;
+        css.use_game(cs);
+        assert!(css.default_binds().contains(&("f10".into(), "quit prompt".into())));
     }
 
     #[test]

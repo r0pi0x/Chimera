@@ -1,9 +1,11 @@
 //! The startup fetch (docs/plans/active/asset-service.md, "Playtest
-//! delivery"): what the games read before a client's window shows
-//! (Combat Arms' data, the menus: ~300 MB the first time) comes from the
-//! asset service; rather than on demand with nothing on screen, the client
-//! app (`chimera_client::client::startup`) fetches it first behind a
-//! progress window, then starts the game.
+//! delivery"): what the games read at startup (Combat Arms' data, the
+//! menus: ~300 MB the first time) comes from the asset service; the
+//! client app (`chimera_client::client::app::run`) fetches it in the
+//! background from the start, in batches (on-demand reads of its records
+//! meanwhile wait for them: `pending`), and a join waits for it with its
+//! bytes on the loading screen (`net::assets::StartupFiles`). The game
+//! opens one window, its own: no window before it, no second process.
 //!
 //! - `plan` (from the store alone, no network): with an asset service set
 //!   (a bound token, or `[assets]`), the startup sets
@@ -11,8 +13,7 @@
 //!   that isn't installed, when the store lacks a manifest or one of their
 //!   records. An installed game is never fetched (the hybrid model).
 //!   `plan_here` asks this machine (its config, its installs, Steam's
-//!   library); a process started after a startup fetch (`FETCHED_ENV`)
-//!   plans nothing, so a record that won't come can't loop. Before it
+//!   library). Before it
 //!   plans, `refresh` asks the service (waiting at most `REFRESH_WAIT`)
 //!   whether it now has another manifest for a kept build (the host
 //!   published sets again) and fetches it, so a player who fetched before
@@ -20,14 +21,14 @@
 //!   loaders read them.
 //! - `StartupFetch` runs it on a thread (`chimera_assets::sets::fetch`,
 //!   games the service doesn't list skipped) and says how it goes
-//!   (`Status`); `progress_lines` is what the window shows.
+//!   (`Status`); `progress_lines` says it in two lines.
 //!
 //! Known shortcuts: what the games read at startup beyond the startup sets
 //! still comes on demand (in the console only); each start asks the
 //! service once for its manifests' ids (a service that doesn't answer
-//! delays the start by up to `REFRESH_WAIT`); a game the service doesn't
-//! serve and the store has no manifest of opens the window each start
-//! (briefly: nothing to fetch).
+//! delays the start by up to `REFRESH_WAIT`); the startup's progress
+//! shows on the loading screen only once a join waits for it (before, in
+//! the console).
 
 use std::{
     sync::{Arc, Mutex},
@@ -45,10 +46,7 @@ use chimera_core::{
     mount::{config::LocalConfig, install},
 };
 
-/// Set in the game a startup fetch starts: it doesn't fetch again.
-pub const FETCHED_ENV: &str = "CHIMERA_STARTUP_FETCHED";
-
-/// What the window calls the download.
+/// What the progress lines call the download.
 pub const WHAT: &str = "game files";
 
 /// The longest a start waits for the service to say whether it has newer
@@ -115,11 +113,7 @@ pub fn refresh(settings: &AssetSettings, games: &[AppGame], wait: Duration) -> V
 
 /// `plan` on this machine for `games`: its local config's asset settings,
 /// its installs (the config, `$CHIMERA_<GAME>_ROOT`, Steam's library).
-/// None in a game a startup fetch started (`FETCHED_ENV`).
 pub fn plan_here(games: &[&'static GameInfo]) -> Option<(AssetSettings, Vec<Wanted>)> {
-    if std::env::var_os(FETCHED_ENV).is_some() {
-        return None;
-    }
     let config = LocalConfig::load().ok()?;
     let settings = config.assets.resolve();
     settings.remote.as_ref()?;
@@ -163,10 +157,18 @@ impl StartupFetch {
         let from = settings.remote.as_ref().map(|r| r.url.clone()).unwrap_or_default();
         let transfer: Arc<Mutex<Option<Arc<Transfer>>>> = Arc::default();
         let shared = transfer.clone();
+        // From now until the fill claims its records, the games' on-demand
+        // reads of them wait for it (`pending::starting`), so what the game
+        // reads at startup comes in batches, not one file each.
+        let starting = settings.store.as_ref().map(chimera_assets::pending::starting);
         let job = std::thread::Builder::new()
             .name("startup fetch".into())
             .spawn(move || {
-                let options = sets::Options { skip_unlisted: true, ..Default::default() };
+                let options = sets::Options {
+                    skip_unlisted: true,
+                    starting: starting.as_ref(),
+                    ..Default::default()
+                };
                 sets::fetch(&settings, &wanted, WHAT, &shared, options)
             })
             .ok();
@@ -176,6 +178,13 @@ impl StartupFetch {
             transfer,
             from,
         }
+    }
+
+    /// Its thread (None: done or never started) and where its transfer
+    /// is put once known: a join waits for it (`net::assets::StartupFiles`).
+    #[allow(clippy::type_complexity)]
+    pub fn into_parts(self) -> (Option<JoinHandle<Result<String, String>>>, Arc<Mutex<Option<Arc<Transfer>>>>) {
+        (self.job, self.transfer)
     }
 
     /// How it goes now.
@@ -204,7 +213,7 @@ impl StartupFetch {
     }
 }
 
-/// The window's two lines for `done` of `total` bytes after `elapsed`:
+/// The two lines for `done` of `total` bytes after `elapsed`:
 /// "Downloading game files: X of Y MB", then the speed and time left
 /// (once something has arrived).
 pub fn progress_lines(done: u64, total: u64, elapsed: Duration) -> (String, String) {

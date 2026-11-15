@@ -9,7 +9,7 @@
 //! mode runtime by Chimera's own flow, with the `chimera:ladder` rules) and
 //! what every game's respawn does (`spawning`: the dead
 //! held still, a character revived at a place) and the announcer's
-//! counting of kills (`announce`). A game fills them with its data and hooks; they name
+//! counting of kills (`announce`) and dominations (`dominations`). A game fills them with its data and hooks; they name
 //! no game. It uses the engine's base (`chimera_core`) and the
 //! simulation's map (`chimera_world`) and nothing above them, so an edit in
 //! a game or the client doesn't rebuild it.
@@ -26,6 +26,7 @@
 
 pub mod announce;
 pub mod data_format;
+pub mod dominations;
 pub mod identity;
 pub mod minigame;
 pub mod mode;
@@ -63,7 +64,8 @@ impl Plugin for SimBasePlugins {
             ))
             .add_plugins(game_log::GameLogPlugin)
             .add_plugins(weapon::WeaponPlugin)
-            .add_plugins(announce::AnnouncePlugin);
+            .add_plugins(announce::AnnouncePlugin)
+            .add_plugins(dominations::DominationsPlugin);
         map_cache_cvar(app);
     }
 }

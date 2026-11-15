@@ -1,5 +1,6 @@
 //! Sizes (chimera_ui::units).
 
+use bevy::{prelude::*, window::{PrimaryWindow, WindowResolution}};
 use chimera_ui::{TickLayout, UiUnits, units};
 
 /// 1 cq is 12.8 px at 720 lines and scales with the height only.
@@ -38,4 +39,37 @@ fn tick_bar_layout_snaps_to_physical_pixels() {
     assert_eq!(TickLayout::new(768, 1, 48).h, 3);
     let tiny = TickLayout::new(10, 10, 48);
     assert_eq!((tiny.pitch, tiny.tick), (2, 1));
+}
+
+/// The UI fits the largest 16:9 frame in the window: by height at 16:9
+/// and wider, by width x 9/16 in a 4:3 or tall window (the main menu's
+/// 100 cq frame was cropped at a tall window's sides), with the window's
+/// scale factor; 1080p keeps its 1080 lines (the parity numbers).
+#[test]
+fn units_fit_the_16_9_frame_in_the_window() {
+    let cases = [
+        // (physical w, h, scale factor, layout height in logical px)
+        (1920, 1080, 1.0, 1080.0),
+        (1280, 720, 1.0, 720.0),
+        (3440, 1440, 1.0, 1440.0),
+        (1624, 1558, 1.0, 913.5),
+        (1280, 960, 1.0, 720.0),
+        (1920, 1080, 1.5, 720.0),
+        (1920, 1080, 1.25, 864.0),
+    ];
+    for (w, h, sf, want) in cases {
+        let mut app = App::new();
+        app.init_resource::<UiUnits>().add_systems(Update, units::track_window);
+        app.world_mut().spawn((
+            Window { resolution: WindowResolution::new(w, h).with_scale_factor_override(sf), ..default() },
+            PrimaryWindow,
+        ));
+        app.update();
+        let u = *app.world().resource::<UiUnits>();
+        assert!((u.height - want).abs() < 0.01, "{w}x{h} @{sf}: {}", u.height);
+        assert_eq!(u.scale_factor, sf);
+        // The 100 cq frame fits the window's width.
+        assert!(u.cq(100.0) <= w as f32 / sf + 0.01, "{w}x{h} @{sf}: frame {}", u.cq(100.0));
+    }
+    assert_eq!(units::layout_height(0.0, 900.0), 900.0);
 }

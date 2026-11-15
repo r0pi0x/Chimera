@@ -305,9 +305,11 @@ the A/B screenshots miss it.
 ### 2.6 Sizes
 
 The prototype measures in `cq` (1 % of a 16:9 frame's width). The
-overlay is sized by height, so 1 cq = 12.8 px at 720 lines times
-`overlay::scale`: identical at 16:9, wider margins at 21:9, the same
-layout at 4:3 (left/right anchors). Smallest text: tags .42-.5 cq (5.4-
+UI is sized by the largest 16:9 frame that fits the window
+(`units::layout_height`: the height, or width x 9/16 when narrower), so
+1 cq = 12.8 px at 720 lines times `overlay_scale` of that: identical at
+16:9, wider margins at 21:9; at 4:3 or in a tall window the frame fits
+the width (hotfix 7.1: the menu's frame was cropped at the sides). Smallest text: tags .42-.5 cq (5.4-
 6.4 px at 720 lines, 8-10 px at 1080) gets a floor in physical pixels
 from the theme (`min_text_px = 9`, as the prototype's `max(9px, ...)`)
 (risk 1).
@@ -534,6 +536,18 @@ whole-pixel font size are reported as expected (`~`) since M4.
   `overlay_keeps_clear_of_game_huds` (overlay guard), `text_warm`
   extended: the first Tab and first kill make no atlas.
 - No network change (rungs, wins, K/D are replicated already).
+
+Dominations (decided 2026-11-14, for later): they apply to the gun
+game. specs/cs_source/dominations.md has no free-for-all notes; its rule
+flags only kills between enemies, and in a free-for-all everyone is an
+enemy, so the 4th unanswered kill dominates and a kill back is a revenge
+as in CS:S. The counting is the engine's (`chimera_sim::dominations`:
+`count_kills`, enemies when teams differ or a player has none); the
+gun game's rules would add it as CS:S's do (`DominationSet`), and the
+server already sends a kill's flags (`net::Killed::marks`, written again
+as `KillMark` on clients) and each player's relationships to its own
+client. A natural fit for the Signal kill feed (a dominating or revenge
+row) and the board (the YOU row's nemesis); not wired yet.
 
 ### M3: rank-up toast and the air strike
 

@@ -64,6 +64,8 @@ pub const SHARED: &[Row] = &[
     row("Reload", "+reload"),
     row("Use", "+use"),
     row("Last weapon", "lastinv"),
+    // The report dialog (`client::feedback`; F10 in Ultimate Gun Game).
+    row("Report a bug", "feedback"),
 ];
 
 /// A number the page sets (a saved cvar): `-` and `+` buttons move it by

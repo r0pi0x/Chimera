@@ -20,6 +20,7 @@ pub mod app;
 pub mod audio;
 pub mod binds;
 pub mod capture;
+pub mod feedback;
 pub mod chat;
 pub mod console;
 pub mod debug;
@@ -55,8 +56,6 @@ pub mod prematch_lobby;
 pub mod lobby_panel;
 pub mod logo_pass;
 pub mod net;
-pub mod relaunch;
-pub mod startup;
 pub mod net_graph;
 pub mod night_vision;
 pub mod offscreen;
@@ -534,6 +533,7 @@ impl PluginGroup for ClientPlugins {
             .add(debug::DebugPlugin)
             .add(debug_views::DebugViewsPlugin)
             .add(capture::CapturePlugin)
+            .add(feedback::FeedbackPlugin)
             .add(offscreen::OffscreenPlugin)
             .add(exit_drain::ExitDrainPlugin)
             .add(perf::PerfPlugin)

@@ -63,6 +63,16 @@ pub fn shared_opt<T: Any + Send + Sync>(key: &str, init: impl FnOnce() -> Option
     Some(made)
 }
 
+/// `value` is the value under `key` from now on (the one held before
+/// stays with its holders): data read again once the files it was read
+/// from arrived (a join bound the asset service: `access::bind_live`).
+pub fn replace<T: Any + Send + Sync>(key: &str, value: &Arc<T>) {
+    let mut live = LIVE.lock().unwrap_or_else(|e| e.into_inner());
+    live.retain(|(t, k, w)| w.strong_count() > 0 && !(*t == TypeId::of::<T>() && k == key));
+    let erased: Arc<dyn Any + Send + Sync> = value.clone();
+    live.push((TypeId::of::<T>(), key.to_string(), Arc::downgrade(&erased)));
+}
+
 /// Whether a value of type `T` under `key` is held by anyone (tests).
 pub fn is_live<T: Any + Send + Sync>(key: &str) -> bool {
     find::<T>(key).is_some()

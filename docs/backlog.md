@@ -195,33 +195,62 @@ started; the user asked to avoid server lag while testers play.
 - **Infected ship turrets** (combat_arms:auto-turret_infecteds_01/02/03;
   fixed in 7.1, confirm in a playtest): they kill nobody; now a
   `ladder_exclusions` entry, so drawn ladders skip them.
-- **The first rung's gun is invisible for the user.** The first gun of
-  each ladder start doesn't show. Look at: the view model's first
-  equip at a ladder start.
+- **The first rung's gun is invisible for the user** (fixed on branch
+  `pt7-gameplay`, confirm in a playtest). A weapon shown before its view
+  model was there (the new map's view models in after the first rung's
+  gun was given) kept no animation, which the drawing hides, until the
+  next switch; `map::ViewAnimator::show` now starts it when the model
+  comes in (cs_source `view_models::a_view_model_that_comes_in_after_the_weapon_is_drawn_then`).
 - **Deaths on CS:S and Combat Arms rungs show no ragdoll or death
-  animation**; the body just disappears (seen by other players). Check
-  the perf-spikes change that warms ragdoll shapes inside
-  `spawn_ragdolls` (d149c231-era main against the playtest7 tag) and the
-  net path for ragdolls.
-- **Snow Valley (Combat Arms):** lighting looks wrong (details and a
-  screenshot pending); tree leaves are solid and block bullets, they
-  should be shoot-through.
-- **combat_arms:battleship is very laggy in play.** Profile client
-  frames and server ticks (tick_stats, seeded headless counts,
-  render-thread cost): draw calls, props, water, lights, physics props,
-  nav, bots. Compare with warehouse.
-- **Combat Arms crossbow:** the bolt appears as a whole crossbow model
-  flying at people (wrong projectile model), and a bolt stuck in a
-  player drags behind the body instead of staying at the hit point (the
-  attachment follows the wrong bone or offset, or hangs off the root and
-  lags). Look at: the crossbow's projectile model record and the
-  stick-to-body attachment.
+  animation** (CS:S and HL2:DM rungs fixed on branch `pt7-gameplay`,
+  confirm in a playtest). Not the perf-spikes warm-up: a client hears of
+  a death (`Killed`) ticks before the dead player's health comes
+  (replicated changes are paced), so the ragdoll it made saw its owner
+  still alive and went the next tick (HL2:DM's: kept as outliving a
+  respawn, then removed as its owner "died again"). A ragdoll now waits
+  for its owner to be seen dead (`ragdoll::DEATH_NEWS_WAIT`, 1 s at most)
+  before an owner alive counts as living again (party_kit
+  `heavy::death_bodies`). Combat Arms' corpse (`CaBody`, `map::Corpse`)
+  comes on both clients in that test (the simulation's side); its
+  drawing on a CA rung is still to confirm in a playtest.
+- **CS:S movement felt floaty, "on ice", over the session** (not
+  reproduced; looked at on branch `pt7-gameplay`). A loaded dedicated
+  server's caught-up hitches run each command as its own with no
+  misprediction (chimera_net `clock_hitches::a_loaded_servers_catch_up_ticks_run_the_players_own_commands`);
+  movement's friction and acceleration are per tick (`SimClock::dt`), the
+  same in prediction's replays. The session's server log has no tick
+  times; it shows the world's change tick at Bevy's limit after 55 min
+  (about 1M system runs a second, some 15,000 a tick: worth a profile of
+  a full server). Next time: a tester's `net_graph` (misses, late,
+  errors, resyncs) when it feels wrong, and the server's `tick_stats`.
+- **Snow Valley (Combat Arms)** (fixed on branch `pt7-ca`, confirm in a
+  playtest): the light cones (additive world models) were fogged toward
+  the fog colour, which they then added over their whole shape (pale
+  slabs in every fogged map); additive world and prop surfaces now fog
+  toward black (`fog::fog_surface`). Tree leaves (non-solid faces with a
+  cut-out texture) stopped rounds; now nothing meets them
+  (`world::FOLIAGE`, every Combat Arms map).
+- **combat_arms:battleship is very laggy in play.** Measured on branch
+  `pt7-ca` (docs/performance.md, "Battleship"): its server ticks, client
+  frames and render world cost what warehouse's do in seeded runs; a
+  guard holds its ticks. Not found: what made it lag. Next: on the
+  testers' machines, `chimera_perf_log 1` and the net graph on
+  battleship with eight players (its 9 spawn points), and the server's
+  tick times then.
+- **Combat Arms crossbow** (fixed on branch `pt7-ca`, confirm in a
+  playtest): the bolt flew as the crossbow's own model (bolts were drawn
+  by their weapon's key; now the `CrossBow` record's arrow,
+  `BoltParams::shown_model`), and a stuck bolt dragged behind the body
+  (it followed the body's box centre on the 20 Hz frames, drawn a frame
+  behind; now the struck sphere's node every tick, `bolts::follow_stuck`).
 - **Text fields don't accept paste** (done after 7.1, confirm in a
   playtest): the Signal fields (Join address and password, the Play
   page's text rows, Settings' value boxes) and the console take Ctrl+V
   and Shift+Insert (one line), Ctrl+C/Ctrl+Insert, Ctrl+X/Shift+Delete
   and Ctrl+A, with the selection drawn (`chimera_ui::clipboard`,
-  `widgets::text_key`; a password pastes but never copies). Still open:
+  `widgets::text_key`; a password pastes but never copies); the report
+  dialog's text takes them too (a paste keeps its line breaks, Ctrl+A
+  selects the whole text). Still open:
   right-click paste (no context menu), the token entry when it comes.
 - **Kill feed gun icons too small** (done after 7.1, confirm in a
   playtest): game icons fitted by their ink (`client::ink_icon`): the
@@ -1583,13 +1612,16 @@ sections above already list.
   or where the HUD's game draws its own indicator (Combat Arms'). The
   shell's old always-on "x" is gone (CS:S has no hit feedback). No sound
   yet.
-- **Dominations and revenge (plain CS:S, and CS:S identity)** (spec
-  first). CS:S marks a player who kills the same enemy several times
-  without dying to them as dominating (a kill feed line, the freeze
-  panel's nemesis line, a scoreboard icon, a sound) and calls a kill on
-  one's dominator revenge; nothing of it here (2b notes only the freeze
-  panel's line). Needs the threshold, the sounds, the icons and who
-  sees what.
+- **Dominations and revenge (plain CS:S, and CS:S identity): done
+  2026-11-14** (specs/cs_source/dominations.md; `chimera_sim::dominations`):
+  the exact 4th unanswered kill, revenge, team kills counted but never
+  flagged, kept over rounds and `mp_restartgame`, cleared by a team change
+  and leaving; `player_death`'s `dominated`/`revenge`; relationships to the
+  owner's client only; the freeze panel's nemesis/revenge lines and icon;
+  the scoreboard's icons (in the status cell: placement ours). Left: the
+  kill feed icon (spec Q4) and the scoreboard's "Dominate"/"Nemesis"
+  layout (Q6), both need a client capture; Ultimate Gun Game (FFA) could
+  use it (docs/plans/active/ugg-ui.md).
 - **No music in the party's matches: done (checked against the code
   2026-10-31), confirm in a playtest.** Combat Arms' music director
   takes its facts from Combat Arms' match (`game::music` reads
@@ -2072,8 +2104,8 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
   (`freezepanel_basic.res`: name, "KILLED YOU", "[F5] Save this moment",
   the killer's health gauge; 2026-10-15, timings now CS:S's server cvars
   and the death cam's measured: specs/cs_source/spectating.md) checked
-  against a capture of a human's freeze cam (the avatar and nemesis lines
-  are still out), the buy menu's favourites (autobuy and rebuy are in: `cl_autobuy`,
+  against a capture of a human's freeze cam (the avatar is still out;
+  the nemesis and revenge lines are in, 2026-11-14), the buy menu's favourites (autobuy and rebuy are in: `cl_autobuy`,
   `cl_rebuy`), checking the widescreen placement against
   the game, other game messages in the chat (team joins, bomb pickups
   and drops are in), bots' answers checked against a bot behaviour spec

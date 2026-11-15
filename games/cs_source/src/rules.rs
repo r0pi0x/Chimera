@@ -42,7 +42,9 @@
 //! `NetRound`), then `map`/`changelevel` to the next of `MapCycle` (filled by
 //! the client and `mashup_server` from the install's map cycle,
 //! `games::cs_source::map_cycle`), or a fresh game without one;
-//! `hints.rs`: the automatic hints (`cl_autohelp`: data-named triggers,
+//! dominations and revenge (`chimera_sim::dominations`, counted under these
+//! rules; a team change clears a player's, a new map all, rounds and
+//! `mp_restartgame` keep them); `hints.rs`: the automatic hints (`cl_autohelp`: data-named triggers,
 //! each hint once per player per map); `events.rs`: CS:S's game events and
 //! server log lines (bomb, hostages, rounds, weapons, deaths; `game_log`).
 //!
@@ -91,6 +93,15 @@ impl Plugin for DeathmatchPlugin {
                 // The rules are the server's.
                 .run_if(crate::core::authoritative)
                 // While CS:S is the gameplay.
+                .run_if(crate::objectives::plays),
+        );
+        // Dominations and revenge (specs/cs_source/dominations.md): the
+        // engine's counting, under CS:S's rules.
+        app.add_systems(
+            PostUpdate,
+            chimera_sim::dominations::count_kills
+                .in_set(chimera_sim::dominations::DominationSet)
+                .run_if(crate::core::authoritative)
                 .run_if(crate::objectives::plays),
         );
         rounds::plugin(app);
@@ -324,7 +335,11 @@ pub fn join_team(w: &mut World, player: Entity, team: Team) -> Result<String, St
         }
     }
     // Switching teams: respawn at the new team's spawn now (no death
-    // counted).
+    // counted). The player's dominations and counters go both ways
+    // (dominations.md Behavior 2: the team change that kills them).
+    if let Some(mut d) = w.get_resource_mut::<chimera_sim::dominations::Dominations>() {
+        d.clear(player);
+    }
     let was_spectating = w.entity_mut(player).take::<crate::core::Spectating>().is_some();
     // Just come into the game (the team menu): no body until it picks a
     // class (`join_class`), as CS:S shows the class menu first.
@@ -369,6 +384,10 @@ pub fn join_spectators(w: &mut World, player: Entity) -> Result<String, String> 
     }
     w.entity_mut(player)
         .remove::<(crate::core::Unassigned, crate::core::ChoosingClass)>();
+    // Off a team: as `join_team`, its dominations go.
+    if let Some(mut d) = w.get_resource_mut::<chimera_sim::dominations::Dominations>() {
+        d.clear(player);
+    }
     leave_play(w, player);
     Ok("joined the spectators".into())
 }
@@ -516,6 +535,11 @@ pub fn new_game(world: &mut World) {
         *state = rounds::RoundState::default();
     }
     rounds::reset_match(world);
+    // A new map: everyone reconnects in CS:S, so no domination stays
+    // (dominations.md Behavior 2, the disconnect rule).
+    if let Some(mut d) = world.get_resource_mut::<chimera_sim::dominations::Dominations>() {
+        d.reset();
+    }
     respawn_everyone(world);
     let remote: Vec<Entity> = world
         .query_filtered::<Entity, With<crate::core::RemotePlayer>>()

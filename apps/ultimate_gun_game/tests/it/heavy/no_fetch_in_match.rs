@@ -16,8 +16,11 @@
 //!   the installs, a fixed rung seed, prefetch off, three bots.
 //! - **The client**: this crate's `ultimate_gun_game` binary, offscreen,
 //!   with no install (its own home, an empty config, no Steam), the
-//!   service's token bound in its access file (no restart), its own empty
-//!   store: it downloads at start and at each join as a tester does.
+//!   service's token in its access file bound to no service (a tester's
+//!   first join: the join binds it and the files come in the same game,
+//!   no restart; `CHIMERA_GUARD_BOUND=1`: bound already, the startup files
+//!   in the background from the start), its own empty store: it downloads
+//!   at each join as a tester does.
 //!
 //! The session (`SESSION`, then `HL2DM_MAP` when HL2:DM is installed and
 //! published: its sprays come with its map's `map/<name>` set, its guns'
@@ -160,9 +163,7 @@ impl Lines {
     }
 }
 
-/// The client process, killed with its process group when dropped (after
-/// its startup download the game runs as a child of the first process,
-/// which waits for it: `relaunch::start_game`).
+/// The client process, killed with its process group when dropped.
 struct Client(Child);
 
 impl Drop for Client {
@@ -172,6 +173,21 @@ impl Drop for Client {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+/// How many processes are in process group `group` (Linux's `/proc`).
+#[cfg(target_os = "linux")]
+fn in_group(group: u32) -> usize {
+    let Ok(dir) = std::fs::read_dir("/proc") else { return 0 };
+    dir.flatten()
+        .filter_map(|e| std::fs::read_to_string(e.path().join("stat")).ok())
+        .filter(|stat| {
+            // `pid (comm) state ppid pgrp ...`: after the last ')'.
+            stat.rsplit_once(')')
+                .and_then(|(_, rest)| rest.split_whitespace().nth(2).map(|g| g == group.to_string()))
+                .unwrap_or(false)
+        })
+        .count()
 }
 
 /// The scratch folder, removed when dropped.
@@ -338,9 +354,18 @@ fn run(published: &Store, session: &[(u64, &'static str)]) {
         std::fs::create_dir_all(home.join(d)).unwrap();
     }
     std::fs::write(home.join("empty.toml"), "").unwrap();
-    Access { token: Some(token), url: Some(url.clone()), fingerprint: Some(fingerprint.clone()) }
-        .save_to(&home.join("access.toml"))
-        .unwrap();
+    // A tester's first join: the token bound to no service yet (the join
+    // binds it and the files come in the same game); with
+    // `CHIMERA_GUARD_BOUND=1` bound already (a later start: the startup
+    // files in the background).
+    let bound = std::env::var("CHIMERA_GUARD_BOUND").is_ok_and(|v| v == "1");
+    Access {
+        token: Some(token),
+        url: bound.then(|| url.clone()),
+        fingerprint: bound.then(|| fingerprint.clone()),
+    }
+    .save_to(&home.join("access.toml"))
+    .unwrap();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_ultimate_gun_game"));
     for (k, _) in std::env::vars_os() {
         let k = k.to_string_lossy().to_string();
@@ -414,7 +439,19 @@ fn run(published: &Store, session: &[(u64, &'static str)]) {
         ));
     }
     let all = lines.all();
+    // One game process all along: the join bound the token and fetched in
+    // it, never starting the game again or a download window first.
+    #[cfg(target_os = "linux")]
+    let processes = in_group(client.0.id());
     drop(client);
+    #[cfg(target_os = "linux")]
+    assert_eq!(processes, 1, "the client stayed one process (no game started again)");
+    if !bound {
+        assert!(
+            all.iter().any(|l| l.contains("the asset token is bound to")),
+            "the first join bound the token"
+        );
+    }
     // The guns' effect files (HL2:DM's energy ball, flashes, streaks,
     // sprites; CS:S's and HL2:DM's impact decals and debris) load with a
     // map of any game, the guests' with their dressing (`dress_guest`):

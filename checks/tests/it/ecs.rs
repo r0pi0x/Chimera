@@ -57,6 +57,11 @@ const ONE_OFF_SCHEDULES: &[&str] = &[
 /// events, observers or systems (the step named).
 const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
+        "chimera/client/src/client/feedback.rs",
+        "FeedbackCapture",
+        "the report's screenshot is a capture of the window (the renderer's `Screenshot` entity); tests swap in a fake frame",
+    ),
+    (
         "chimera/client/src/client/ui_scene.rs",
         "SceneHook",
         "an app's `ui_scene` scene is a console command (staging a screen for screenshots): it sets screen state as any console line does",
@@ -272,6 +277,7 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
 /// Their systems don't count in `EXCLUSIVE_BASELINE`.
 const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("apps/party_kit/src/controls.rs", "a menu"),
+    ("chimera/client/src/client/feedback.rs", "a menu (the report dialog): it takes the screenshot, cues sounds and hands the report to the outbox, gated on its phase"),
     ("apps/party_kit/src/esc_menu.rs", "a menu"),
     ("apps/party_kit/src/settings.rs", "a menu: its clicks as console lines and cvars, its drawing from the console's binds"),
     ("apps/party_kit/src/main_menu.rs", "a menu: its clicks as console lines and cvars, the map loads it follows"),

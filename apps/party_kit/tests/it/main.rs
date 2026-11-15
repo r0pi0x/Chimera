@@ -17,6 +17,7 @@ mod cs_parts;
 mod death_view;
 mod drawn_ladder;
 mod esc_menu;
+mod feedback;
 mod footstep_levels;
 mod game_hooks;
 mod grenade_looks;
@@ -63,6 +64,7 @@ mod heavy {
     mod ca_mode_objects;
     mod clips_on_maps;
     mod cs_decals;
+    mod death_bodies;
     mod guest_effects;
     mod guest_shells;
     mod cross_hits;

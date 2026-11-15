@@ -566,3 +566,56 @@ fn typed_text_keeps_its_case_and_labels_stay_capitals() {
     assert!(texts.iter().any(|t| t == "ADDRESS"), "a label in capitals");
     assert!(!texts.iter().any(|t| t == "HOME.EXAMPLE:27015"));
 }
+
+/// A join is kept in Recent and the History: on the next visit to Join it
+/// is listed, Enter on it joins it again, and after a restart (the files
+/// read again) it is still there; a start that joins from the command
+/// line (`+connect`: a join link, the first join's relaunch) is kept too.
+#[test]
+fn recent_joins_are_listed_again_and_join_on_enter() {
+    let mut sim = sim(PAGES_THEME);
+    act(&mut sim, A::Entry(1));
+    submit(&mut sim, "mainmenu_type address 192.0.2.7:27016");
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(1);
+    assert_eq!(asked(&sim), ["connect 192.0.2.7:27016"]);
+    let addr: SocketAddr = "192.0.2.7:27016".parse().unwrap();
+    assert!(sim.app.world().resource::<LanList>().visits.iter().any(|v| v.addr == addr), "in the History");
+
+    // Back at the menu (the join failed or was left): Join lists it.
+    sim.app.world_mut().resource_mut::<PartyMenu>().screen = Screen::MainMenu;
+    sim.ticks(2);
+    act(&mut sim, A::Entry(1));
+    assert_eq!(pages(&sim).up, Some(MenuPage::Join));
+    let lines = lines_of(&sim);
+    let at = lines.iter().position(|l| *l == Line::Recent(0)).expect("the Recent row");
+    assert_eq!(menu(&sim).recent, ["192.0.2.7:27016"]);
+    sim.app.world_mut().resource_mut::<PartyMenu>().focus = None;
+    sim.app.world_mut().resource_mut::<SignalPages>().focus = at;
+    sim.ticks(1);
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(1);
+    assert_eq!(asked(&sim), ["connect 192.0.2.7:27016", "connect 192.0.2.7:27016"], "Enter on Recent joins it");
+
+    // A restart: the files are read again.
+    let dir = std::env::temp_dir();
+    let recent = party_kit::main_menu::RecentFile(Some(dir.join(format!("chimera_test_recent_{}.txt", std::process::id()))));
+    recent.write(&menu(&sim).recent);
+    assert_eq!(recent.read(), ["192.0.2.7:27016"], "Recent after a restart");
+    let files = BrowserFiles { favourites: None, history: Some(dir.join(format!("chimera_test_recent_hist_{}.txt", std::process::id()))) };
+    files.write_history(&sim.app.world().resource::<LanList>().visits);
+    assert!(files.read_history().iter().any(|v| v.addr == addr), "History after a restart");
+    for p in [recent.0.as_ref(), files.history.as_ref()].into_iter().flatten() {
+        let _ = std::fs::remove_file(p);
+    }
+
+    // A start with `+connect` remembers its address.
+    assert_eq!(party_kit::main_menu::command_line_join(&["connect \"192.0.2.9:27015\"".into()]).as_deref(), Some("192.0.2.9:27015"));
+    let mut args = chimera_client::client::Args::default();
+    args.console = vec!["connect 192.0.2.9:27015".into()];
+    sim.app.insert_resource(chimera_client::client::ClientArgs(args));
+    party_kit::main_menu::remember_command_line_join(sim.app.world_mut());
+    assert_eq!(menu(&sim).recent, ["192.0.2.9:27015", "192.0.2.7:27016"]);
+    let nine: SocketAddr = "192.0.2.9:27015".parse().unwrap();
+    assert_eq!(sim.app.world().resource::<LanList>().visits[0].addr, nine, "newest first in the History");
+}

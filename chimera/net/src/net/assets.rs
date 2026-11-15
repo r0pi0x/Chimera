@@ -21,7 +21,13 @@
 //!   so a client with no install isn't refused before it hears the offer.
 //! - **The client** (`begin`, before it accepts a `Welcome` or
 //!   `ChangeLevel`): a game its own install provides is never fetched (the
-//!   hybrid model). One the process reads from the asset store alone
+//!   hybrid model), but for the match's map when the install lacks it (a
+//!   community map): the offer's `map/<name>` set, binding the token for it
+//!   if needed. Whichever game the map is of, once the sets are here its
+//!   file is made sure of (`ensure_map`: kept in the content cache when
+//!   the mounts don't give it as the server has it), so the map's verify
+//!   step never asks the game server (2026-11-14: "The server has no file
+//!   to send for cs_source:gg_mario_vs_wario"). One the process reads from the asset store alone
 //!   (`AssetSession::served`, opened at startup from a bound access or
 //!   `[assets]`) has its offered sets fetched on a thread (`fetch`: the
 //!   service's manifest, the sets' records the store lacks, in batches:
@@ -38,28 +44,35 @@
 //!   client is joining or changing level (a foreground fetch, a map load).
 //!   A game neither installed nor served: with a token
 //!   (`chimera_assets::access`, `chimera:asset_token`), the token is bound
-//!   to the offered service and the game starts again joining the same
-//!   server (`AssetRelaunch`, which the client app acts on: the mounts are opened at startup, so a
-//!   game that had no files then gets them only in a new process); without
-//!   one, the join fails saying how to enter it. A game read from the
+//!   to the offered service, in the access file and in this process
+//!   (`access::bind_live`: mounts opened before read from it too), and the
+//!   join goes on in the same game (`bind_here`): the game's startup sets
+//!   and the offer's sets are fetched with the same progress, then what
+//!   was read at startup without them is read again (`remount`: the game
+//!   counted as served, the mount report, the parts' `AssetsArrived`
+//!   observers: a game's data, the asset sources' failed loads); without a
+//!   token the join fails saying how to enter it. A game read from the
 //!   store with no service and a token bound to none (entered again on
-//!   this start, which forgets the binding) is bound and started again the
-//!   same way, else nothing new would come. A refused token, an
-//!   unreachable service or another certificate than the bound one fails
-//!   the join with the reason on screen (`JoinFailure::Download`).
+//!   this start, which forgets the binding) is bound the same way, else
+//!   nothing new would come. A refused token, an unreachable service or
+//!   another certificate than the bound one fails the join with the reason
+//!   on screen (`JoinFailure::Download`).
 //!
-//! The startup fetch (what the games read before the window, behind the
-//! client's progress window) is `asset_startup`'s.
+//! The startup fetch (what the games read at startup, fetched in the
+//! background from the start when a service is bound and the store lacks
+//! it) is `asset_startup`'s; the client app keeps it as `StartupFiles`,
+//! and a join that fetches waits for it first, its bytes on the loading
+//! screen.
 //!
-//! Known shortcuts: the first join with a new token restarts the game
-//! once; sets the service doesn't have are skipped (their files come on
+//! Known shortcuts: a bind's `remount` reads again only what its hooks
+//! name (data leaked as `&'static`, a game's weapon set, keeps what it was
+//! built from); sets the service doesn't have are skipped (their files come on
 //! demand as the loaders read them); files fetched on demand (a map's
 //! load) don't hold the prefetch, only the join and level change around
 //! them do.
 
 use std::{
     collections::BTreeSet,
-    net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
     thread::JoinHandle,
@@ -204,6 +217,13 @@ impl AssetHost {
     }
 }
 
+/// On a client: the asset service the server joined last offered (URL
+/// and certificate fingerprint; None: it offered none). Feedback reports
+/// go there (`client::feedback`, docs/plans/active/feedback-reports.md
+/// 2.6).
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct JoinedService(pub Option<(String, String)>);
+
 /// On a client: the asset settings this process opened its mounts with,
 /// and which games it reads from the store alone (made at the first join:
 /// `session`; tests insert their own).
@@ -255,12 +275,23 @@ pub fn session(world: &mut World) -> AssetSession {
     s
 }
 
-/// On a client: the game ends to start again with the asset service it
-/// was just given (`begin`); the server it was joining, if known. The
-/// client app starts the new process and quits
-/// (`chimera_client::client::relaunch`).
-#[derive(Resource, Clone, Debug, PartialEq)]
-pub struct AssetRelaunch(pub Option<SocketAddr>);
+/// On a client, triggered once a join bound the token in this process and
+/// the games' files arrived (`remount`): the parts that read something at
+/// startup without those files observe it and read it again (the mount
+/// report, a front end's own; a game's data; the asset sources' failed
+/// loads).
+#[derive(Event, Clone, Debug)]
+pub struct AssetsArrived {
+    /// The games now read from the store.
+    pub games: Vec<String>,
+}
+
+/// On a client: the startup sets being fetched in the background
+/// (`asset_startup::StartupFetch`: the client app starts it when a service
+/// is bound and the store lacks them). A join that fetches waits for it
+/// first, its bytes on the loading screen.
+#[derive(Resource)]
+pub struct StartupFiles(pub super::asset_startup::StartupFetch);
 
 /// What one part names for a match's offer (an `AssetHooks` answer).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -300,10 +331,99 @@ pub(super) enum Then {
     Change(ChangeLevel),
 }
 
+impl Then {
+    /// The match's map and its file's hash.
+    fn map(&self) -> (&str, Option<[u8; 32]>) {
+        match self {
+            Then::Welcome(w) => (&w.map, w.map_hash),
+            Then::Change(c) => (&c.map, c.map_hash),
+        }
+    }
+}
+
+/// The match's map file, which the offer names a set for: made sure of
+/// before the join goes on (`ensure_map`), so the map's verify step finds
+/// it here and never asks the game server for it.
+#[derive(Clone)]
+struct MapNeed {
+    game: String,
+    map: String,
+    /// The map's file as its game names it (`maps::offer_file`).
+    file: String,
+    hash: [u8; 32],
+    files: super::maps::MapFiles,
+    /// Its game is installed here (not read from the store): its set is
+    /// fetched only when the install lacks the file (a community map),
+    /// and a failure leaves the map to the usual download.
+    installed: bool,
+}
+
+/// The `MapNeed` of `then`'s map, when the offer names its `map/<name>` set
+/// and this process can keep a map file (`MapFiles::cache`).
+fn map_need(world: &World, offer: &AssetOffer, session: &AssetSession, then: &Then) -> Option<MapNeed> {
+    let (map, hash) = then.map();
+    let (game, name) = map.split_once(':')?;
+    let set = format!("map/{name}");
+    offer.now.iter().find(|g| g.game == game && g.sets.contains(&set))?;
+    let file = super::maps::offer_file(world.get_resource::<Games>(), map)?;
+    let files = world.get_resource::<super::maps::MapFiles>()?.clone();
+    files.cache.as_ref()?;
+    Some(MapNeed {
+        game: game.to_string(),
+        map: map.to_string(),
+        file,
+        hash: hash?,
+        files,
+        installed: !session.served.contains(game),
+    })
+}
+
+/// Whether the map's file is here as the server has it (the install, the
+/// store standing in for it, or the content cache).
+fn map_found(need: &MapNeed) -> bool {
+    matches!(
+        super::maps::check_local(&need.files, &need.map, Some(&need.file), need.hash),
+        super::maps::LocalCopy::Found(_)
+    )
+}
+
+/// After the map's set arrived: when the map's file still isn't found as
+/// the server has it (an install that lacks it, whose mount the store
+/// isn't layered under at another build), its bytes from the store into
+/// the content cache, where the map's verify step finds and loads it.
+fn ensure_map(settings: &AssetSettings, need: &MapNeed) -> Result<(), String> {
+    if map_found(need) {
+        return Ok(());
+    }
+    let store = settings.store.as_ref().ok_or("no asset store")?;
+    let build = store.latest_build(&need.game).ok_or_else(|| format!("no manifest of {}", need.game))?;
+    let manifest = chimera_assets::Manifest::load(&store.manifest_path(&need.game, &build))?;
+    let path = chimera_core::mount::normalize(&need.file);
+    let record = manifest
+        .files
+        .get(&path)
+        .ok_or_else(|| format!("{} build {build} lists no {path}", need.game))?;
+    let bytes = store.get(&record.id, record.size).map_err(|e| format!("{path}: {e}"))?;
+    if super::maps::sha256(&bytes) != need.hash {
+        return Err(format!("the asset service's {path} isn't the server's map"));
+    }
+    let cache = need.files.cache.as_ref().ok_or("no content cache")?;
+    let out = super::maps::cache_file(cache, &need.file);
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    chimera_assets::store::write_atomic(&out, &bytes).map_err(|e| format!("{}: {e}", out.display()))?;
+    info!("{path} from the asset service kept at {}", out.display());
+    Ok(())
+}
+
 /// A fetch under way.
 #[derive(Resource)]
 struct AssetFetch {
     then: Then,
+    /// Games whose files this join bound the token for (`bind_here`):
+    /// read again once they arrived (`remount`).
+    bound: Vec<String>,
     job: Option<JoinHandle<Result<String, String>>>,
     transfer: Arc<Mutex<Option<Arc<Transfer>>>>,
     from: String,
@@ -525,9 +645,13 @@ pub fn refusal_hint(manifest: &MatchManifest) -> Option<String> {
 // --- The client.
 
 /// Before accepting `manifest` (with `then` to do after): fetch what its
-/// offer needs of the games this process reads from the store, or start
-/// again with a newly bound service, or say why not.
+/// offer needs of the games this process reads from the store, binding
+/// the token to the offered service first when this process has none
+/// for them (`bind_here`), or say why not.
 pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> Next {
+    world.insert_resource(JoinedService(
+        manifest.assets.as_ref().map(|o| (o.url.clone(), o.fingerprint.clone())),
+    ));
     let Some(offer) = manifest.assets.clone() else {
         return Next::Go;
     };
@@ -541,16 +665,16 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
         .map(String::from)
         .collect();
     if !missing.is_empty() {
-        return without_files(world, &offer, &session, &missing);
+        return bind_here(world, &offer, &session, &missing, then);
     }
     let served = |g: &GameSets| session.served.contains(&g.game);
     // Games read from the store alone with no service to fill it, and a
     // token not bound to any: the token was entered again on this start
     // (which forgets its binding), so the store holds what an earlier
-    // session fetched and nothing more would come. Bind it and start
-    // again, as for a game with no files (2026-11-11 rehearsal: a tester
-    // starting with the same `+chimera:asset_token` line twice joined
-    // with no fetching at all, every new file a miss).
+    // session fetched and nothing more would come. Bind it, as for a game
+    // with no files (2026-11-11 rehearsal: a tester starting with the same
+    // `+chimera:asset_token` line twice joined with no fetching at all,
+    // every new file a miss).
     if !session.settings.as_ref().is_some_and(|s| s.remote.is_some()) {
         let unfilled: Vec<String> = offer
             .games()
@@ -562,26 +686,68 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
             a.token.is_some() && a.remote().is_none()
         });
         if !unfilled.is_empty() && unbound {
-            return without_files(world, &offer, &session, &unfilled);
+            return bind_here(world, &offer, &session, &unfilled, then);
         }
     }
+    set_prefetch(world, &offer, &|g| served(g));
+    let wants: Vec<GameSets> = offer.now.iter().filter(|g| served(g)).cloned().collect();
+    let need = map_need(world, &offer, &session, &then);
+    let settings = session.settings.clone().filter(|s| s.remote.is_some() && s.store.is_some());
+    // An installed game's map the install may lack (a community map): its
+    // set from the service, binding the token for it if it is bound to
+    // none (2026-11-14: a player with CS:S installed joining a server on
+    // gg_mario_vs_wario asked the game server, which has no file to send).
+    let settings = match settings {
+        Some(s) => s,
+        None if need.as_ref().is_some_and(|n| n.installed) && can_bind(&session) => match bind(world, &offer, &session) {
+            Ok(s) => s,
+            Err(e) => {
+                info!("the match's map from the asset service: {e}");
+                return Next::Go;
+            }
+        },
+        None => return Next::Go,
+    };
+    if wants.is_empty() && need.is_none() {
+        return Next::Go;
+    }
+    start_fetch(world, settings, wanted(&wants), false, then, Vec::new(), need);
+    Next::Wait
+}
+
+/// Whether this client has a token bound to no service (`bind` can bind it).
+fn can_bind(session: &AssetSession) -> bool {
+    session.access_path().is_some_and(|p| {
+        let a = Access::load_from(&p);
+        a.token.is_some() && a.remote().is_none()
+    })
+}
+
+/// The offer's later sets of the games `served` takes, to prefetch once
+/// in the game (a prefetch running goes on).
+fn set_prefetch(world: &mut World, offer: &AssetOffer, served: &dyn Fn(&GameSets) -> bool) {
     let running = world.remove_resource::<Prefetch>().and_then(|p| p.running);
     world.insert_resource(Prefetch {
         waiting: offer.later.iter().filter(|g| served(g)).cloned().collect(),
         cap: offer.prefetch_rate,
         running,
     });
-    let wants: Vec<GameSets> = offer.now.iter().filter(|g| served(g)).cloned().collect();
-    let Some(settings) = session
-        .settings
-        .clone()
-        .filter(|s| s.remote.is_some() && s.store.is_some())
-    else {
-        return Next::Go;
-    };
-    if wants.is_empty() {
-        return Next::Go;
-    }
+}
+
+/// Fetch `wants` on a thread (after the startup sets fetching in the
+/// background, `StartupFiles`), the bytes shown as the join's
+/// `Downloading` stage; the join goes on once they are here
+/// (`poll_fetch`), `bound`'s games read again first (`remount`).
+#[allow(clippy::too_many_arguments)]
+fn start_fetch(
+    world: &mut World,
+    settings: AssetSettings,
+    wants: Vec<Wanted>,
+    skip_unlisted: bool,
+    then: Then,
+    bound: Vec<String>,
+    need: Option<MapNeed>,
+) {
     let from = settings.remote.as_ref().map(|r| r.url.clone()).unwrap_or_default();
     info!(
         "fetching the match's {FILES} from {from}: {}",
@@ -591,19 +757,53 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
             .collect::<Vec<_>>()
             .join("; ")
     );
-    let transfer: Arc<Mutex<Option<Arc<Transfer>>>> = Arc::default();
+    // The startup sets still coming in the background: waited for first,
+    // their bytes on the loading screen.
+    let (startup, transfer) = match world.remove_resource::<StartupFiles>() {
+        Some(StartupFiles(fetch)) => fetch.into_parts(),
+        None => (None, Arc::default()),
+    };
     let shared = transfer.clone();
     // From now until the fill claims its records, on-demand misses wait
     // for it (`pending::starting`): the new match's ladder, arriving with
     // the level change, starts loading its models at once.
-    let store = settings.store.as_ref().expect("filtered for a store");
-    let starting = chimera_assets::pending::starting(store);
+    let store = settings.store.clone().expect("a store to fetch into");
+    let starting = startup.is_none().then(|| chimera_assets::pending::starting(&store));
     let job = std::thread::spawn(move || {
+        if let Some(job) = startup {
+            match job.join() {
+                Ok(Ok(summary)) => info!("startup {FILES}: {summary}"),
+                Ok(Err(e)) => info!("startup {FILES}: {e}"),
+                Err(_) => info!("startup {FILES}: the fetch panicked"),
+            }
+        }
+        let starting = starting.unwrap_or_else(|| chimera_assets::pending::starting(&store));
         let options = sets::Options {
             starting: Some(&starting),
+            skip_unlisted,
             ..default()
         };
-        sets::fetch(&settings, &wanted(&wants), FILES, &shared, options)
+        let summary = if wants.is_empty() {
+            drop(starting);
+            String::new()
+        } else {
+            sets::fetch(&settings, &wants, FILES, &shared, options)?
+        };
+        // The map's file: an installed game's set only when the install
+        // lacks it (its failure leaves the map to the usual download).
+        if let Some(need) = need {
+            if need.installed && !map_found(&need) {
+                let name = super::maps::map_name(&need.map);
+                let one = [Wanted { game: need.game.clone(), sets: vec![format!("map/{name}")] }];
+                if let Err(e) = sets::fetch(&settings, &one, FILES, &shared, sets::Options::default()) {
+                    info!("{}'s set from the asset service: {e}", need.map);
+                }
+            }
+            if let Err(e) = ensure_map(&settings, &need) {
+                info!("{} from the asset service: {e}", need.map);
+            }
+        }
+        Ok(summary)
     });
     client::set_stage(world, JoinStage::Downloading);
     world.resource_mut::<JoinProgress>().download = Some(DownloadInfo {
@@ -614,16 +814,20 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
     });
     world.insert_resource(AssetFetch {
         then,
+        bound,
         job: Some(job),
         transfer,
         from,
     });
-    Next::Wait
 }
 
-/// The offer names games this process has no files of.
-fn without_files(world: &mut World, offer: &AssetOffer, session: &AssetSession, missing: &[String]) -> Next {
-    let names = missing
+/// The offer names `games`, which this process has no files of, or reads
+/// from the store with no service: bind the token to the offered service
+/// (the access file and this process: `access::bind_live`) and fetch
+/// their startup sets and the offer's in this game, the join going on
+/// once they are here; else say why not.
+fn bind_here(world: &mut World, offer: &AssetOffer, session: &AssetSession, games: &[String], then: Then) -> Next {
+    let names = games
         .iter()
         .map(|g| super::manifest::game_name(world.get_resource::<Games>(), g))
         .collect::<Vec<_>>()
@@ -636,8 +840,7 @@ fn without_files(world: &mut World, offer: &AssetOffer, session: &AssetSession, 
         );
         return Next::Left;
     };
-    let mut access = Access::load_from(&path);
-    if access.token.is_none() {
+    if Access::load_from(&path).token.is_none() {
         let why = format!(
             "{}{names}, which isn't installed here. The server offers its game files: start the game once with \
              +{TOKEN_COMMAND} <your token> (the server's admin gives you one), then join again.",
@@ -659,13 +862,14 @@ fn without_files(world: &mut World, offer: &AssetOffer, session: &AssetSession, 
         );
         Next::Left
     };
+    let mut access = Access::load_from(&path);
     if let Err(e) = access.bind(&offer.url, &offer.fingerprint) {
         return fail(world, e);
     }
     if let Some(remote) = using.filter(|u| Some(u) == access.remote().as_ref()) {
         // This process already reads from that service, which didn't serve
-        // the game when the game started: say why (a refused token, an
-        // unreachable service), else that it lacks the game.
+        // the game: say why (a refused token, an unreachable service),
+        // else that it lacks the game.
         let why = chimera_assets::Remote::shared(&remote)
             .and_then(|r| r.whoami().map_err(|e| e.to_string()))
             .err()
@@ -675,19 +879,97 @@ fn without_files(world: &mut World, offer: &AssetOffer, session: &AssetSession, 
             });
         return fail(world, why);
     }
-    if let Err(e) = access.save_to(&path) {
-        return fail(world, e);
+    let settings = match bind(world, offer, session) {
+        Ok(s) => s,
+        Err(e) => return fail(world, e),
+    };
+    info!("{names} come from the asset service now");
+    // The games' startup sets (what a start with the service would have
+    // fetched first) and the offer's, of these games and those served.
+    let bound: BTreeSet<&str> = games.iter().map(String::as_str).collect();
+    let fetched = |g: &str| bound.contains(g) || session.served.contains(g);
+    set_prefetch(world, offer, &|g| fetched(&g.game));
+    let mut wants: Vec<Wanted> = games
+        .iter()
+        .map(|g| Wanted { game: g.clone(), sets: sets::STARTUP_SETS.iter().map(|s| s.to_string()).collect() })
+        .collect();
+    for g in offer.now.iter().filter(|g| fetched(&g.game)) {
+        match wants.iter_mut().find(|w| w.game == g.game) {
+            Some(w) => w.sets.extend(g.sets.iter().filter(|s| !w.sets.contains(s)).cloned().collect::<Vec<_>>()),
+            None => wants.push(Wanted { game: g.game.clone(), sets: g.sets.clone() }),
+        }
     }
-    let server = world.get_resource::<client::ServerAddress>().map(|a| a.0);
+    let mut need = map_need(world, offer, session, &then);
+    if let Some(n) = need.as_mut() {
+        n.installed = !fetched(&n.game);
+    }
+    // Games the service doesn't list are skipped here and found missing
+    // after (`remount`), with the reason.
+    start_fetch(world, settings, wants, true, then, games.to_vec(), need);
+    Next::Wait
+}
+
+/// Bind the token to the offered service: in the access file and in this
+/// process (`access::bind_live`), the session reading from it from now
+/// on. The session's settings with the service; Err: why not.
+fn bind(world: &mut World, offer: &AssetOffer, session: &AssetSession) -> Result<AssetSettings, String> {
+    let path = session.access_path().ok_or("no per-user data folder")?;
+    let mut access = Access::load_from(&path);
+    access.bind(&offer.url, &offer.fingerprint)?;
+    access.save_to(&path)?;
+    let remote = access.remote().ok_or("the token isn't bound")?;
+    let mut settings = session.settings.clone().unwrap_or_else(|| {
+        chimera_core::mount::config::LocalConfig::load()
+            .map(|c| c.assets.resolve())
+            .unwrap_or_else(|_| chimera_assets::AssetsConfig::default().resolve())
+    });
+    if settings.store.is_none() {
+        return Err("no asset store folder".into());
+    }
+    settings.remote = Some(remote.clone());
+    chimera_assets::access::bind_live(remote);
+    let mut now = session.clone();
+    now.settings = Some(settings.clone());
+    world.insert_resource(now);
+    info!("the asset token is bound to {} now", offer.url);
+    Ok(settings)
+}
+
+/// After a bind's files arrived: `bound`'s games the store now has are
+/// read from it (served, in the mount report), then the parts read again
+/// what they read at startup (`AssetsArrived`). The games that arrived.
+fn remount(world: &mut World, bound: &[String]) -> Vec<String> {
+    let store = world
+        .get_resource::<AssetSession>()
+        .and_then(|s| s.settings.as_ref())
+        .and_then(|s| s.store.clone());
+    let arrived: Vec<String> = bound
+        .iter()
+        .filter(|g| store.as_ref().is_some_and(|s| s.latest_build(g).is_some()))
+        .cloned()
+        .collect();
+    if let Some(mut s) = world.get_resource_mut::<AssetSession>() {
+        s.served.extend(arrived.iter().cloned());
+    }
+    if let Some(mut local) = world.get_resource_mut::<LocalMounts>() {
+        for g in &arrived {
+            match local.0.games.iter_mut().find(|m| m.game == *g) {
+                Some(m) => m.installed = true,
+                None => local.0.games.push(GameMount {
+                    game: g.clone(),
+                    installed: true,
+                    build: None,
+                    notes: Vec::new(),
+                }),
+            }
+        }
+    }
+    world.trigger(AssetsArrived { games: arrived.clone() });
     info!(
-        "the asset token is bound to {} now; the game starts again to read {names} from it{}",
-        offer.url,
-        server.map_or(String::new(), |s| format!(", joining {s}"))
+        "game files read again for {}",
+        if arrived.is_empty() { "no game".to_string() } else { arrived.join(", ") }
     );
-    world.insert_resource(AssetRelaunch(server));
-    // The player's own leaving: no failure to show; the game starts again.
-    super::disconnect(world, client::BY_USER);
-    Next::Left
+    arrived
 }
 
 /// `GameSets` as `sets::fetch` takes them.
@@ -696,7 +978,8 @@ fn wanted(list: &[GameSets]) -> Vec<Wanted> {
 }
 
 /// The fetch's progress into the loading screen; once done, the join goes
-/// on, or fails with the reason.
+/// on (a bind's games read again first: `remount`), or fails with the
+/// reason.
 fn poll_fetch(world: &mut World) {
     let Some(f) = world.get_resource::<AssetFetch>() else {
         return;
@@ -722,23 +1005,40 @@ fn poll_fetch(world: &mut World) {
     let result = f.job.take().map_or(Err("no fetch".to_string()), |j| {
         j.join().unwrap_or(Err("the fetch panicked".into()))
     });
+    let fail = |world: &mut World, error: String, from: &str| {
+        let reason = format!("Couldn't get the match's {FILES} from {from}: {error}");
+        client::fail(
+            world,
+            JoinFailure::Download {
+                file: FILES.into(),
+                error,
+            },
+            &reason,
+        );
+    };
     match result {
         Ok(summary) => {
             info!("{summary}");
+            if !f.bound.is_empty() {
+                let arrived = remount(world, &f.bound);
+                let lacking: Vec<String> = f
+                    .bound
+                    .iter()
+                    .filter(|g| !arrived.contains(g))
+                    .map(|g| super::manifest::game_name(world.get_resource::<Games>(), g))
+                    .collect();
+                if !lacking.is_empty() {
+                    let why = format!(
+                        "the asset service doesn't serve {}; tell the server's admin",
+                        lacking.join(" and ")
+                    );
+                    return fail(world, why, &f.from);
+                }
+            }
             world.resource_mut::<JoinProgress>().download = None;
             client::proceed(world, f.then);
         }
-        Err(error) => {
-            let reason = format!("Couldn't get the match's {FILES} from {}: {error}", f.from);
-            client::fail(
-                world,
-                JoinFailure::Download {
-                    file: FILES.into(),
-                    error,
-                },
-                &reason,
-            );
-        }
+        Err(error) => fail(world, error, &f.from),
     }
 }
 

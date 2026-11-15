@@ -6,14 +6,18 @@
 //! (`minigame_scoreboard`) while a ladder plays. Other minigames and apps
 //! keep those.
 //!
-//! - **The chip** (21 x 3.05 cq, 2.2 cq from the top): the leader (LEAD,
-//!   name, rung), then YOU, your rung and your gun's icon (1.3 cq, by its ink: `ink_icon`), and the ladder's
+//! - **The chip** (21 x 3.05 cq, 2.2 cq from the top; wider when its line
+//!   needs it, a long name or the text floor in a small window: the plate
+//!   is measured to fit, `ChipFit`, never cropping): the leader (LEAD,
+//!   name, rung), then YOU, your rung and your gun's icon (1.3 cq, by its
+//!   ink: `ink_icon`), and the ladder's
 //!   meter (one skewed tick a rung: yours lit, your current one in the
 //!   accent, the leader's tick marked with a dot). **Leading**, it changes
 //!   shape: a crown, YOU and your rung in the accent, the whole meter in
 //!   the accent, then "+N over NAME" (the gap to second place, whose tick
 //!   gets a hollow mark).
-//! - **The board** (`+showscores`, Tab, held): the chip's plate opens
+//! - **The board** (`+showscores`, Tab, held: `HeldActions::scores`, the
+//!   key polled by `console::poll_showscores`): the chip's plate opens
 //!   into it (64 cq wide, as tall as its rows) in `motion.dur.board.open`
 //!   (0.12 s, `expo_out`) and folds back in `close` (0.09 s,
 //!   `cubic_in_out`), from wherever it is, so Tab can be spammed. Its head
@@ -320,6 +324,18 @@ pub struct BoardContent;
 #[derive(Component, Clone, Debug, PartialEq)]
 pub struct BoardRow(pub RaceRow);
 
+/// The chip's first line (measured: the plate grows to fit it).
+#[derive(Component)]
+pub struct ChipLine;
+
+/// The chip's width in cq as measured from its line (0 before the first
+/// layout): the closed plate is at least this wide (`closed_w`).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct ChipFit(pub f32);
+
+/// The chip's line's side room in cq, each side, inside the plate.
+const CHIP_PAD: f32 = 1.0;
+
 /// The chip's leader-variant marker (crown and gap).
 #[derive(Component)]
 pub struct LeaderChip;
@@ -335,6 +351,13 @@ const CHIP_W_LEAD: f32 = 23.0;
 /// The closed plate's width for `view`.
 fn chip_w(view: &RaceView) -> f32 {
     if view.leading() { CHIP_W_LEAD } else { CHIP_W }
+}
+
+/// The closed plate's width: the look book's for `view`, or wider when
+/// its content needs it (a long name, the text floor at small windows),
+/// so the plate never crops the chip.
+fn closed_w(view: &RaceView, fit: ChipFit) -> f32 {
+    chip_w(view).max(fit.0).min(BOARD_W - 1.0)
 }
 const CHIP_H: f32 = 3.05;
 const BOARD_W: f32 = 64.0;
@@ -364,6 +387,7 @@ pub fn board_h(rows: usize) -> f32 {
 
 fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
     commands.init_resource::<BoardOpen>();
+    commands.init_resource::<ChipFit>();
     commands
         .spawn((
             RaceChipRoot,
@@ -522,10 +546,10 @@ fn build_chip(
         ChildOf(*plate),
         Pickable::IGNORE,
         Node {
+            // As wide as the plate, which fits the line (`ChipFit`).
             position_type: PositionType::Absolute,
-            left: percent(50.0),
-            margin: UiRect::left(px(-look.px(chip_w(&view)) / 2.0)),
-            width: look.val(chip_w(&view)),
+            left: px(0.0),
+            right: px(0.0),
             flex_shrink: 0.0,
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
@@ -539,7 +563,7 @@ fn build_chip(
     }
     chip.with_children(|c| {
         // The first line: the leader (or you, leading) and you (or the gap).
-        c.spawn((Node { align_items: AlignItems::Center, column_gap: px(gap), ..default() }, UiParityId(format!("{cid}.line")), Pickable::IGNORE))
+        c.spawn((Node { align_items: AlignItems::Center, column_gap: px(gap), flex_shrink: 0.0, ..default() }, ChipLine, UiParityId(format!("{cid}.line")), Pickable::IGNORE))
             .with_children(|r1| {
                 // A rung: at least 1.5 cq wide (the look book's `.v`), so
                 // the line keeps its width as the digits change.
@@ -988,7 +1012,14 @@ fn open_close(
     mut plate: Single<(&mut Timeline, &mut Node, &mut BackgroundColor), With<RacePlate>>,
     mut chip: Query<&mut Visibility, (With<ChipContent>, Without<BoardContent>, Without<RaceChipRoot>)>,
     mut board: Query<&mut Visibility, (With<BoardContent>, Without<ChipContent>, Without<RaceChipRoot>)>,
+    (line, mut fit): (Query<&ComputedNode, With<ChipLine>>, ResMut<ChipFit>),
 ) {
+    // The line's laid-out width in cq, plus its side room: the plate fits it.
+    let cq = look.units.cq(1.0).max(1e-3);
+    let need = line.iter().map(|c| c.size.x * c.inverse_scale_factor / cq + 2.0 * CHIP_PAD).fold(0.0f32, f32::max);
+    if (need - fit.0).abs() > 0.05 {
+        fit.0 = need;
+    }
     let (vis, root_node) = &mut *root;
     vis.set_if_neq(if view.active { Visibility::Inherited } else { Visibility::Hidden });
     // The chip sits 2.2 cq down; the board grows from it.
@@ -996,7 +1027,7 @@ fn open_close(
     if root_node.top != top {
         root_node.top = top;
     }
-    let want = view.active && (held.showscores || staged.is_some_and(|s| s.open));
+    let want = view.active && (held.scores() || staged.is_some_and(|s| s.open));
     super::hud::HudCover::put(&mut cover, super::hud::BOARD_COVER, want);
     let (tl, node, bg) = &mut *plate;
     let target_h = board_h(view.rows.len());
@@ -1004,7 +1035,7 @@ fn open_close(
     if bg.0 != plate_bg {
         bg.0 = plate_bg;
     }
-    let closed_w = chip_w(&view);
+    let closed_w = closed_w(&view, *fit);
     if want != open.0
         || (want && tl.tracks.iter().any(|t| t.prop == Prop::Height && t.to != target_h))
         || (!want && tl.tracks.iter().any(|t| t.prop == Prop::Width && t.to != closed_w))
@@ -1013,7 +1044,7 @@ fn open_close(
         let (w, h, dur, ease) = if want {
             (BOARD_W, target_h, look.dur("board", "open", 0.12), look.theme.ease("expo_out"))
         } else {
-            (chip_w(&view), CHIP_H, look.dur("board", "close", 0.09), look.theme.ease("cubic_in_out"))
+            (closed_w, CHIP_H, look.dur("board", "close", 0.09), look.theme.ease("cubic_in_out"))
         };
         tl.redirect(clock.now, Prop::Width, w, dur, ease);
         tl.redirect(clock.now, Prop::Height, h, dur, ease);

@@ -50,7 +50,9 @@
 //! `ragdoll_sleepaftertime`; only awake joints in the substeps' passes; none at
 //! all with `RagdollSettings::enabled` 0 (a dedicated server's: no pose record
 //! for bodies it animates either); removed when the owner lives again or is gone (a
-//! living owner whose ragdoll went with the map loses `Ragdolled` as well).
+//! living owner whose ragdoll went with the map loses `Ragdolled` as well; an
+//! owner lives again only once seen dead since, or after `DEATH_NEWS_WAIT`: a
+//! network client hears of a death before the owner's health comes).
 //!
 //! Known shortcuts (docs/tech-debt.md): Ragdolls (specs/cs_source/ragdolls.md):
 //! the killing push is the damage's own force where a game's rules say so
@@ -347,6 +349,15 @@ pub struct Ragdoll {
 /// (`RagdollRules::outlive_respawn`).
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Outlived;
+
+/// On a ragdoll whose owner was seen dead since it was made
+/// (`remove_ragdolls`): a network client hears of a death
+/// (`net::weapons`' `Killed`) ticks before the owner's health comes
+/// (replicated changes are paced, messages aren't), and the owner still
+/// "alive" then isn't living again.
+#[derive(Component, Clone, Copy, Debug)]
+#[component(storage = "SparseSet")]
+pub struct OwnerSeenDead;
 
 impl Ragdoll {
     /// A map-placed ragdoll's simulation (`placed_ragdoll`).
@@ -1198,32 +1209,37 @@ pub fn spawn_body(
 /// loses `Ragdolled` too, or it never got a body again (a bot killed by
 /// the gun game's winning shot stayed invisible on the next map).
 fn remove_ragdolls(
-    ragdolls: Query<(Entity, &Ragdoll, Has<Outlived>)>,
+    ragdolls: Query<(Entity, &Ragdoll, Has<Outlived>, Has<OwnerSeenDead>)>,
     owners: Query<Option<&Health>>,
     marked: Query<Entity, With<Ragdolled>>,
     restarts: Option<Res<crate::core::RoundRestarts>>,
     models: Option<Res<CharacterModels>>,
     rules: Res<RagdollGameRules>,
+    time: Res<Time>,
     mut commands: Commands,
 ) {
     let restart = restarts.is_some_and(|r| r.is_changed() && !r.is_added());
+    let now = time.elapsed_secs_f64();
     let alive = |owner: Entity| match owners.get(owner) {
         Ok(h) => h.is_none_or(|h| h.current > 0.0),
         Err(_) => true,
     };
     let gone = |owner: Entity| owners.get(owner).is_err();
     for owner in &marked {
-        if alive(owner) && !ragdolls.iter().any(|(_, r, outlived)| r.owner == owner && !r.placed && !outlived) {
+        if alive(owner) && !ragdolls.iter().any(|(_, r, outlived, _)| r.owner == owner && !r.placed && !outlived) {
             commands.entity(owner).remove::<Ragdolled>();
         }
     }
-    for (e, r, outlived) in &ragdolls {
+    for (e, r, outlived, seen_dead) in &ragdolls {
         if r.placed {
             continue;
         }
         if restart {
             despawn_ragdoll(&mut commands, e, r);
             continue;
+        }
+        if !seen_dead && !alive(r.owner) {
+            commands.entity(e).insert(OwnerSeenDead);
         }
         if outlived {
             // Kept until its owner dies again (its new ragdoll comes this
@@ -1236,6 +1252,12 @@ fn remove_ragdolls(
         if !alive(r.owner) {
             continue;
         }
+        // A death heard before the owner's health says so (a network
+        // client's): not living again until it was seen dead, or
+        // `DEATH_NEWS_WAIT` went by without that.
+        if !gone(r.owner) && !seen_dead && now - r.born < DEATH_NEWS_WAIT {
+            continue;
+        }
         let game = models.as_ref().and_then(|m| m.0.get(r.model)).and_then(|m| m.game);
         if rules.of(game).outlive_respawn && !gone(r.owner) {
             // The owner gets a body of its own; this one stays.
@@ -1246,6 +1268,12 @@ fn remove_ragdolls(
         despawn_ragdoll(&mut commands, e, r);
     }
 }
+
+/// How long a ragdoll waits for its owner's health to say it died (s;
+/// `OwnerSeenDead`) before an owner still alive counts as
+/// living again: more than a client's replicated changes trail its
+/// messages.
+const DEATH_NEWS_WAIT: f64 = 1.0;
 
 /// Remove a ragdoll with its bodies, joints and drawn body, and its
 /// owner's `Ragdolled`.

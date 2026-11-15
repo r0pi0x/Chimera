@@ -27,7 +27,7 @@ the North Star for accounts (later).
 | A signing key | the server's Ed25519 key that signs manifests (`sign::sign`, `verify`, `GET /key`) | `chimera/assets/src/sign.rs` |
 | A player's token, bound to one service | `asset-access.toml` (token, URL, fingerprint; the first offered service binds it; another certificate is refused) | `chimera/assets/src/access.rs` |
 | A game server naming its asset service | `chimera:asset_url`, `chimera:asset_fingerprint`; the match manifest's `AssetOffer` | `chimera_net::net::assets` |
-| Token entry today | `+chimera:asset_token <token>` on the command line (kept before the app starts), then a join binds it and the game restarts once (`AssetRelaunch`) | `chimera_client::client` (`take_asset_token`, `relaunch.rs`) |
+| Token entry today | `+chimera:asset_token <token>` on the command line (kept before the app starts), then a join binds it and fetches the files in the same game (`net::assets::bind_here`) | `chimera_client::client` (`take_asset_token`), `chimera_net::net::assets` |
 | The startup download | `asset_startup` (the `base` sets behind a progress window, from a bound access) | `chimera_net::net::asset_startup` |
 | Router port | `net_upnp`; NAT options ranked | `chimera_net::net::upnp`; [nat-traversal.md](nat-traversal.md) |
 | A feedback endpoint | planned: `POST /feedback` on the asset service | [feedback-reports.md](feedback-reports.md) |
@@ -330,7 +330,7 @@ Each crate's folder is its layer (checks/tests/it/architecture.rs):
   cached document, refresh thread, the list fetch) feeding
   `ServerQueries`.
 - **`chimera_client::client`**: `+chimera:hub` kept before the app
-  starts, the relaunch after a first-run bind (`relaunch.rs`).
+  starts; a first-run bind goes on in the same game (`net::assets`).
 - **`party_kit`** (app): `server_list::BrowserTab::Internet`, the
   first-run page and Settings > Network in `signal_pages`/`settings`,
   the MOTD and news line on the main page, the Play row "List on the

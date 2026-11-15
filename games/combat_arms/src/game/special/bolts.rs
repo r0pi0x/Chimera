@@ -7,7 +7,8 @@
 //! `InstDamage` 41 (`BoltParams::alt`), known by the weapon's
 //! `CaAltVolley` on the tick it fires. A character
 //! whose hit spheres the step passes, before the first world surface, takes
-//! it: it sticks to him (following him) and deals the direct damage with
+//! it: it sticks to him on the struck sphere's node (`follow_stuck`, every
+//! tick, so it never trails the body) and deals the direct damage with
 //! the roll, the range band, the zone and the armour step; the band
 //! measures the shooter's distance from the map's origin, because a
 //! projectile shot never reports an impact point (Quirk 4, kept as the
@@ -15,11 +16,17 @@
 //! later. The explosive bolt waits stuck for its controller (`super::press`:
 //! the blast follows the delay later), or goes off at once when it flies
 //! beyond the weapon's range, enters the sky, its owner dies, the
-//! character it sticks in dies, or it is shot to 0 HP.
+//! character it sticks in dies, or it is shot to 0 HP. It is drawn as its
+//! projectile record's model (`BoltParams::shown_model`).
+//!
+//! Known shortcuts: the spec sticks a bolt to the character's socket
+//! nearest the hit point; ours sits on the struck hit sphere's node (the
+//! sphere's centre, which follows the pose, plus the hit's offset turned
+//! with the body's look, not with the node's own turn).
 
 use bevy::prelude::*;
 
-use super::{BoltParams, CaBoltData, CaObject, Cx, Kind, age, cone_dir, devices, impact, spawn_object};
+use super::{BoltParams, CaBoltData, CaObject, Cx, Kind, StuckOn, age, cone_dir, devices, facing, impact, spawn_object};
 use super::super::{
     grenades::{DESTROYED_AT, character_touches},
     weapons::{CaDamage, base_damage, box_entry, pick_sphere},
@@ -61,11 +68,9 @@ pub(super) fn update(cx: &mut Cx, e: Entity, o: &mut CaObject, p: &BoltParams) {
     if o.s.landed {
         let bodies = cx.world.bodies();
         let carrier = match o.s.stuck {
-            Some((who, offset)) => match bodies.iter().find(|b| b.entity == who) {
-                Some(b) => {
-                    o.pos = (b.centre + offset) / o.unit;
-                    true
-                }
+            // Where it is on him is `follow_stuck`'s, every tick.
+            Some((who, _)) => match bodies.iter().find(|b| b.entity == who) {
+                Some(_) => true,
                 None => {
                     // The character died (or left): the explosive bolt goes off.
                     if p.explosive.is_some() {
@@ -169,7 +174,11 @@ fn fly(cx: &mut Cx, e: Entity, o: &mut CaObject, p: &BoltParams) {
         let from_origin = o.s.origin * unit;
         let base = base_damage(&dmg, rng.next(), false, from_origin.length());
         devices::shoot(cx, o, b, si, base, p.damage.damage_type, point);
-        o.s.stuck = Some((b.entity, point - b.centre));
+        // Stuck on the struck sphere's node, in the body's turn
+        // (`follow_stuck` keeps it there every tick).
+        let turn = body_turn(b.facing).inverse();
+        o.s.stuck = Some((b.entity, turn * (point - b.spheres[si].0)));
+        o.s.stuck_on = Some(StuckOn { sphere: si, dir: turn * dir });
         o.s.landed = true;
         o.s.stuck_at = cx.f.time;
         o.pos = point / unit;
@@ -195,4 +204,78 @@ fn fly(cx: &mut Cx, e: Entity, o: &mut CaObject, p: &BoltParams) {
     o.s.landed = true;
     o.s.stuck_at = cx.f.time;
     let _ = DESTROYED_AT;
+}
+
+/// The turn of a body facing `facing` (horizontal, unit: `Intent::
+/// yaw_rotation` of its look).
+fn body_turn(facing: Vec3) -> Quat {
+    Quat::from_rotation_y(f32::atan2(-facing.x, -facing.z))
+}
+
+/// Bolts stuck in a character, every tick (not on the 20 Hz frames, and
+/// not drawn a frame behind as flying objects are): on the node of the
+/// sphere they struck as the character is posed now (`characters::
+/// CaPose`, the drawn pose: `weapons::posed_geometry`; else the spec's
+/// skeleton, `weapons::body_geometry`; another game's body, its hitbox),
+/// at the hit's offset and in the direction it went in, both turned with
+/// the body. Its place (the blast's point) and transform are set here
+/// together, before the network's `NetItem` and the tick blend sample
+/// them, so every client draws it on the body at the same server tick
+/// as the body (the 2026-11-14 playtest: a stuck bolt dragged behind a
+/// running player). On a machine that draws, it is eased between ticks
+/// with the characters (`map::interp::Interpolated`).
+#[allow(clippy::type_complexity)]
+pub(super) fn follow_stuck(
+    mut objects: Query<(Entity, &mut CaObject, &mut Transform, Has<crate::map::interp::Interpolated>)>,
+    bodies: Query<
+        (
+            &Transform,
+            &crate::core::Intent,
+            &crate::core::MovementState,
+            Option<&avian3d::prelude::ColliderAabb>,
+            Option<&super::super::weapons::HitSpheres>,
+            Option<&super::super::characters::CaPose>,
+            (Option<&crate::slots::GameIdentity>, Option<&crate::core::Hitboxes>),
+        ),
+        Without<CaObject>,
+    >,
+    mut commands: Commands,
+) {
+    use super::super::weapons::{MALE, body_box, body_geometry, posed_geometry, their_shapes};
+    for (e, mut o, mut t, eased) in &mut objects {
+        let (Some((who, offset)), Some(on)) = (o.s.stuck, o.s.stuck_on) else { continue };
+        let Ok((bt, intent, state, aabb, spheres, pose, (identity, boxes))) = bodies.get(who) else { continue };
+        let data = spheres.map_or(*MALE, |s| s.0);
+        let turn = intent.yaw_rotation();
+        let anchor = if let Some(shapes) = their_shapes(bt, intent, aabb, identity, boxes) {
+            shapes.0.get(on.sphere).map(|h| h.center)
+        } else if let (Some(pose), Some((min, _))) = (pose, body_box(bt, state, aabb)) {
+            posed_geometry(bt.translation, min, pose.legs_yaw(), pose, data)
+                .get(on.sphere)
+                .filter(|s| s.1 > 0.0)
+                .map(|s| s.0)
+        } else {
+            None
+        };
+        let anchor = anchor
+            .or_else(|| {
+                body_geometry(bt, intent, state, aabb, data)
+                    .and_then(|(_, _, s)| s.get(on.sphere).filter(|s| s.1 > 0.0).map(|s| s.0))
+            })
+            .unwrap_or(bt.translation);
+        let at = anchor + turn * offset;
+        let pos = at / o.unit;
+        if o.pos != pos || o.drawn_from != pos {
+            o.pos = pos;
+            o.drawn_from = pos;
+        }
+        let pose_now = Transform::from_translation(at).with_rotation(facing(turn * on.dir));
+        if t.translation != pose_now.translation || t.rotation != pose_now.rotation {
+            t.translation = pose_now.translation;
+            t.rotation = pose_now.rotation;
+        }
+        if !eased {
+            commands.entity(e).insert(crate::map::interp::Interpolated::default());
+        }
+    }
 }
