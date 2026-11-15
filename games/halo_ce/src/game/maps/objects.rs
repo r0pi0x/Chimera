@@ -81,18 +81,28 @@ pub struct Pending {
 /// A model's parts as meshes (module doc), positions through `point`
 /// (model-space world units to the mesh's space).
 pub fn model_meshes(file: &MapFile, model: &Model, point: &dyn Fn([f32; 3]) -> Vec3) -> Vec<(MapMesh, TagRef)> {
-    meshes_of(file, model, point, false)
+    meshes_of(file, model, point, false).into_iter().map(|(m, s, _)| (m, s)).collect()
 }
 
 /// `model_meshes` with each vertex's joints and weights (its two nodes and
 /// weight, models.md "Skinning"): a skinned body's meshes
 /// (`body::skeleton::joints`).
 pub fn skinned_meshes(file: &MapFile, model: &Model, point: &dyn Fn([f32; 3]) -> Vec3) -> Vec<(MapMesh, TagRef)> {
+    meshes_of(file, model, point, true).into_iter().map(|(m, s, _)| (m, s)).collect()
+}
+
+/// `skinned_meshes` with each mesh's shader permutation (models.md
+/// "Shaders": a numeric shader's digit position, `view::displays`).
+pub fn skinned_meshes_permuted(
+    file: &MapFile,
+    model: &Model,
+    point: &dyn Fn([f32; 3]) -> Vec3,
+) -> Vec<(MapMesh, TagRef, i16)> {
     meshes_of(file, model, point, true)
 }
 
-fn meshes_of(file: &MapFile, model: &Model, point: &dyn Fn([f32; 3]) -> Vec3, skin: bool) -> Vec<(MapMesh, TagRef)> {
-    let mut out: Vec<(MapMesh, TagRef)> = Vec::new();
+fn meshes_of(file: &MapFile, model: &Model, point: &dyn Fn([f32; 3]) -> Vec3, skin: bool) -> Vec<(MapMesh, TagRef, i16)> {
+    let mut out: Vec<(MapMesh, TagRef, i16)> = Vec::new();
     let mut index: BTreeMap<(u32, i16), usize> = BTreeMap::new();
     for d in model.highest_detail_parts() {
         let Some(shader) = d.shader else { continue };
@@ -107,6 +117,7 @@ fn meshes_of(file: &MapFile, model: &Model, point: &dyn Fn([f32; 3]) -> Vec3, sk
                     ..Default::default()
                 },
                 shader.shader,
+                shader.permutation,
             ));
             out.len() - 1
         });
@@ -127,7 +138,7 @@ fn meshes_of(file: &MapFile, model: &Model, point: &dyn Fn([f32; 3]) -> Vec3, sk
             mesh.indices.extend(t.map(|i| base + i as u32));
         }
     }
-    out.retain(|(m, _)| !m.indices.is_empty());
+    out.retain(|(m, ..)| !m.indices.is_empty());
     out
 }
 

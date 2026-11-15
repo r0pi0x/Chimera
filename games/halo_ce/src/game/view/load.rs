@@ -50,9 +50,13 @@
 //! class: `right hand`), placed by that marker (the class's grip marker
 //! is empty on the disc: the weapon's origin is the grip).
 //!
+//! **Displays** (`displays`): the view model's parts whose shaders show
+//! a value (the assault rifle's counter and compass, the plasma gauges)
+//! get their frames there, and each gun's program is the map's memo
+//! (`displays::GunDisplays`, by key; added with the looks, `add`).
+//!
 //! Known shortcuts:
-//! - The assault rifle's ammunition counter and compass (shader-driven
-//!   numbers on the gun) show their static textures.
+//! - The held models' displays show their first image (`displays`).
 //! - The held model doesn't animate its own nodes (the pistol's slide, the
 //!   shotgun's pump: the weapon's own graph).
 
@@ -84,6 +88,7 @@ use super::super::{
     },
     weapons::{DATA, GUNS, WEAPON_HOOK},
 };
+use super::displays;
 use super::machine::{BASE, KEY_EVENT, OVERLAY, REPLACEMENT, sequence_name};
 use crate::map::{
     LoadContext, MapAttachment, MapBone, MapData, MapDressing, MapHeldModel, MapLoadOptions, MapMesh, MapModel,
@@ -106,6 +111,8 @@ pub struct Looks {
     pub held: Vec<MapHeldModel>,
     pub textures: Vec<MapTexture>,
     pub warnings: Vec<String>,
+    /// The view models' displays (`displays`; local north 0).
+    pub displays: displays::GunDisplays,
 }
 
 /// What a gun's document names: its weapon tag, first- and third-person
@@ -297,9 +304,9 @@ fn attachments(model: &Model, bone_of: &dyn Fn(usize) -> Option<usize>) -> Vec<M
 
 /// A model's meshes skinned to the graph's nodes (`graph_node`: a model
 /// node's graph index), in the eye's space.
-fn skinned_on_graph(file: &MapFile, model: &Model, graph_node: &[Option<usize>]) -> Vec<(MapMesh, TagRef)> {
-    let mut found = objects::skinned_meshes(file, model, &|p| space::point(p));
-    for (m, _) in &mut found {
+fn skinned_on_graph(file: &MapFile, model: &Model, graph_node: &[Option<usize>]) -> Vec<(MapMesh, TagRef, i16)> {
+    let mut found = objects::skinned_meshes_permuted(file, model, &|p| space::point(p));
+    for (m, ..) in &mut found {
         for j in &mut m.joints {
             for k in j.iter_mut() {
                 *k = graph_node.get(*k as usize).copied().flatten().unwrap_or(0) as u16;
@@ -312,9 +319,13 @@ fn skinned_on_graph(file: &MapFile, model: &Model, graph_node: &[Option<usize>])
 /// A model, its meshes waiting for their looks, and warnings.
 pub type Built<T> = (T, Vec<(MapMesh, TagRef)>, Vec<String>);
 
+/// A gun's view model with its weapon tag and its gun's parts (mesh
+/// index, shader, permutation: `displays::dress`).
+pub type ViewBuilt = (Built<MapViewModel>, Weapon, Vec<displays::Part>);
+
 /// A gun's view model without its meshes' looks: the model and its
 /// pending meshes.
-pub fn view_model(file: &MapFile, gun: &GunModels, arms: &Model) -> Result<Built<MapViewModel>, String> {
+pub fn view_model(file: &MapFile, gun: &GunModels, arms: &Model) -> Result<ViewBuilt, String> {
     let wt = file
         .find(class::WEAPON, &gun.tag)
         .ok_or_else(|| format!("no weapon `{}`", gun.tag))?;
@@ -343,9 +354,17 @@ pub fn view_model(file: &MapFile, gun: &GunModels, arms: &Model) -> Result<Built
     super::machine::set_idle(&mut set, super::idle_of(file));
     warnings.extend(left_out);
     let mut meshes = skinned_on_graph(file, arms, &on_arms.graph_nodes);
+    let arms_meshes = meshes.len();
     meshes.extend(skinned_on_graph(file, &model, &on_gun.graph_nodes));
+    let parts = meshes
+        .iter()
+        .enumerate()
+        .skip(arms_meshes)
+        .map(|(i, (_, s, p))| (i, *s, *p))
+        .collect();
+    let meshes = meshes.into_iter().map(|(m, s, _)| (m, s)).collect();
     let bone_of = |n: usize| on_gun.graph_nodes.get(n).copied().flatten();
-    Ok((
+    Ok(((
         MapViewModel {
             key: gun.id.to_string(),
             model: MapModel::default(),
@@ -359,7 +378,7 @@ pub fn view_model(file: &MapFile, gun: &GunModels, arms: &Model) -> Result<Built
         },
         meshes,
         warnings,
-    ))
+    ), weapon, parts))
 }
 
 /// The Spartan's model and graph (the hand marker's).
@@ -546,14 +565,16 @@ pub fn looks(file: &MapFile, decode: bool) -> Looks {
         .map_err(|e| out.warnings.push(format!("no hand marker: {e}")))
         .ok();
     let mut pending = Vec::new();
+    let mut programs: Vec<(usize, Weapon, Vec<displays::Part>)> = Vec::new();
     let labels = super::labels();
     for gun in &gun_models() {
         if let Some(arms) = &arms {
             match view_model(file, gun, arms) {
-                Ok((v, meshes, w)) => {
+                Ok(((v, meshes, w), weapon, parts)) => {
                     out.warnings.extend(w.into_iter().map(|w| format!("{}: {w}", gun.id)));
                     out.view_models.push(v);
                     let i = out.view_models.len() - 1;
+                    programs.push((i, weapon, parts));
                     pending.extend(meshes.into_iter().map(|(mesh, shader)| Pending {
                         mesh,
                         shader,
@@ -604,6 +625,12 @@ pub fn looks(file: &MapFile, decode: bool) -> Looks {
             _ => {}
         }
     }
+    for (i, weapon, parts) in programs {
+        let v = &mut out.view_models[i];
+        if let Some(p) = displays::dress(file, &weapon, &parts, &mut v.model.meshes, &mut out.textures, &mut out.warnings, decode) {
+            out.displays.guns.insert(v.key.clone(), p);
+        }
+    }
     for v in &mut out.view_models {
         v.model.bounds = bounds(&v.model.meshes);
     }
@@ -623,6 +650,9 @@ fn shift(model: &mut MapModel, offset: usize) {
     for m in &mut model.meshes {
         shift(&mut m.texture);
         shift(&mut m.normal_map);
+        for f in &mut m.frames {
+            *f += offset;
+        }
         if let Some(d) = &mut m.detail {
             d.texture += offset;
         }
@@ -644,6 +674,7 @@ pub fn add(map: &mut MapData, looks: &Looks, options: &MapLoadOptions) {
         map.kit.held.push(h);
     }
     map.textures.extend(looks.textures.iter().cloned());
+    map.memos.insert(looks.displays.clone());
     map.warnings
         .extend(looks.warnings.iter().map(|w| format!("Halo's guns: {w}")));
 }
@@ -652,6 +683,10 @@ pub fn add(map: &mut MapData, looks: &Looks, options: &MapLoadOptions) {
 pub fn add_own(file: &MapFile, map: &mut MapData, options: &MapLoadOptions) {
     if options.kit.any_models() {
         add(map, &looks(file, options.textures), options);
+        // The compass's north is the scenario's (0 on another game's map).
+        if let Ok(s) = blam_formats::scenario::Scenario::read(file) {
+            map.memos.entry::<displays::GunDisplays>().local_north = s.local_north;
+        }
     }
 }
 

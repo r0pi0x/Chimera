@@ -25,7 +25,8 @@
 //! `VIEW_MODEL_LAYER` with its own depth and FOV, so the model never clips into
 //! walls; mirrored when its hand differs from the player's; lit per pixel by
 //! the `LightField` at its lighting origin; the meshes its `ViewAnimator`
-//! hides (`hidden_meshes`) left out; it draws only while something
+//! hides (`hidden_meshes`) left out, and a mesh's texture frame it picks
+//! (`mesh_frames`, `MapMesh::frames`) shown on that mesh's own material; it draws only while something
 //! on its layer is visible, or in HDR: `view_model_cameras_draw`); muzzle flashes from
 //! `ViewModelEvent`s (sprites re-projected into the world view, or at a held
 //! weapon's muzzle, and a pooled `DynamicLight`); `ViewModelScreen`: a picture
@@ -70,6 +71,8 @@ pub struct ViewModelBody {
     /// hidden now (`ViewAnimator::hidden_meshes`).
     meshes: Vec<Entity>,
     hidden_meshes: Vec<usize>,
+    /// The frames shown now (`ViewAnimator::mesh_frames`).
+    mesh_frames: Vec<(usize, usize)>,
     /// Where the probe was last sampled (world), and the cubemap used.
     lit_at: Option<Vec3>,
     cubemap: Option<usize>,
@@ -96,6 +99,9 @@ pub struct ViewModelPart {
     /// Its `$bumpmap` (`MapData::textures`): the reflection mask under
     /// `$normalmapalphaenvmapmask` (the hands').
     normal_map: Option<usize>,
+    /// Its base texture's frames (`MapMesh::frames`) the game picks from
+    /// (`ViewAnimator::mesh_frames`); empty: none.
+    frames: Vec<Handle<Image>>,
 }
 
 pub struct ViewModelAsset {
@@ -169,6 +175,7 @@ impl Build<'_> {
                     materials: [to.add_asset(material), to.add_asset(mirrored)],
                     envmap: m.envmap.filter(|_| view == MapDebugView::Normal),
                     normal_map: m.normal_map,
+                    frames: m.frames.iter().filter_map(|&i| textures.get(i).cloned()).collect(),
                 }
             })
             .collect();
@@ -545,6 +552,25 @@ pub fn draw_view_models(
             }
             body.hidden_meshes = hide.to_vec();
         }
+        // The frames the game picks (a number on the gun): each such part
+        // has its own material (`spawn_body`), its base swapped whole.
+        let picked: &[(usize, usize)] = state.map_or(&[], |(s, _)| &s.mesh_frames);
+        if body.mesh_frames != picked
+            && let Some(materials) = materials.as_mut()
+        {
+            for &(i, frame) in picked {
+                if body.mesh_frames.contains(&(i, frame)) {
+                    continue;
+                }
+                let (Some(part), Some(m)) = (asset.parts.get(i), body.materials.get(i)) else { continue };
+                if let Some(image) = part.frames.get(frame)
+                    && let Some(mut material) = materials.get_mut(m)
+                {
+                    material.base = Some(image.clone());
+                }
+            }
+            body.mesh_frames = picked.to_vec();
+        }
         let unanimated = model.animations.is_some() && state.is_none_or(|(s, _)| s.animator.is_none());
         if unanimated {
             visibility.set_if_neq(Visibility::Hidden);
@@ -695,8 +721,10 @@ fn spawn_body(
         let mut material = part.materials[mirror as usize].clone();
         // A skin that is a sequence runs on this body's own clock
         // (`skin_frames`): its own material.
+        // So does one whose frames the game picks (`ViewAnimator::mesh_frames`).
         if let Some(assets) = assets.as_deref_mut()
-            && super::prop_material::prop(assets, dormant, &material).is_some_and(|m| m.skin_frames.len() > 1)
+            && (part.frames.len() > 1
+                || super::prop_material::prop(assets, dormant, &material).is_some_and(|m| m.skin_frames.len() > 1))
         {
             material = super::probe_lit::instance(assets, dormant, &material);
         }
@@ -724,6 +752,7 @@ fn spawn_body(
         materials,
         meshes,
         hidden_meshes: Vec::new(),
+        mesh_frames: Vec::new(),
         lit_at: None,
         cubemap: None,
         probe_slot: 0,
