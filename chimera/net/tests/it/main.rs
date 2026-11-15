@@ -20,6 +20,7 @@ mod match_effects;
 mod prematch_lobby;
 mod rcon;
 mod prediction;
+mod radio_voices;
 mod reconnect;
 mod rejoin;
 mod session_wins;

@@ -11,7 +11,10 @@
 //!   makes it the sender's `core::Radio` (as its bots' and grenade
 //!   throws' calls are) and sends each call to the players who hear it
 //!   (`map::radio::hears`: living teammates) as `RadioCall`, which their
-//!   client plays as its own `core::Radio`.
+//!   client plays as its own `core::Radio`; also to the others within a
+//!   talking voice's reach who asked for others' voice lines
+//!   (`party_voice_lines_3d` in their userinfo: `map::sound::PartyVoices`),
+//!   whose client plays it in 3D at the caller.
 //! - **Flood protection**: each player may say a few lines (and radio
 //!   calls) in a burst, then one a second (`Flood`; a call every 1.5 s);
 //!   more are dropped, with a word to the sender. Bots aren't limited.
@@ -24,7 +27,8 @@
 //! resend, the host's) delivered as `ChatMessage` to each player who reads it
 //! (`map::radio::sees_say`); `RadioRequest` made the sender's `core::Radio`;
 //! every `Radio` sent as `RadioCall` to the remote players who hear it
-//! (`map::radio::hears`); flood protection (`Flood`: a burst of lines or calls,
+//! (`map::radio::hears`; and, with `party_voice_lines_3d` in their userinfo,
+//! to the others within a talking voice's reach); flood protection (`Flood`: a burst of lines or calls,
 //! then one a second / every 1.5 s; more dropped, the sender told); names: a
 //! client's `name` change as `NameRequest`, the host's own, renamed for
 //! everyone and announced (`NameChanged`, "* X changed name to Y"); userinfo: a
@@ -369,22 +373,41 @@ fn receive_radio(mut requests: MessageReader<FromClient<RadioRequest>>, mut comm
 }
 
 /// Radio calls (players', bots', grenade throws') to the remote players
-/// who hear them; the host hears its own through `core::Radio`.
+/// who hear them; the host hears its own through `core::Radio`. A living
+/// caller's call also goes to the others who asked for others' voice
+/// lines (`map::sound::PartyVoices`, their userinfo) within a talking
+/// voice's reach (`sound::TALKING`'s `send_range`), whose client plays
+/// it in 3D at the caller (the game's radio module).
 #[allow(clippy::type_complexity)]
 fn forward_radio(
     mut calls: MessageReader<Radio>,
     players: Query<(Entity, &Player)>,
-    who: Query<(Option<&Team>, Option<&Health>, Has<Dead>), With<Replicated>>,
+    who: Query<
+        (Option<&Team>, Option<&Health>, Has<Dead>, Option<&Transform>, Option<&crate::core::UserInfo>),
+        With<Replicated>,
+    >,
     mut out: MessageWriter<ToClients<RadioCall>>,
 ) {
+    use crate::map::sound::{PARTY_VOICES, TALKING, send_range};
+    let reach = send_range(TALKING);
     for call in calls.read() {
-        let Ok((team, health, dead)) = who.get(call.sender) else {
+        let Ok((team, health, dead, at, _)) = who.get(call.sender) else {
             continue;
         };
         let alive = !dead && health.is_none_or(|h| h.current > 0.0);
+        let at = at.map(|t| t.translation);
         for (client, p) in &players {
-            let my_team = who.get(p.character).ok().and_then(|(t, ..)| t.map(|t| t.0));
-            if !hears(p.character, my_team, call.sender, team.map(|t| t.0), alive) {
+            let me = who.get(p.character).ok();
+            let my_team = me.and_then(|(t, ..)| t.map(|t| t.0));
+            let stock = hears(p.character, my_team, call.sender, team.map(|t| t.0), alive);
+            let party = || {
+                let Some((_, _, _, Some(mine), Some(info))) = me else { return false };
+                alive
+                    && p.character != call.sender
+                    && info.flag(PARTY_VOICES) == Some(true)
+                    && at.is_some_and(|at| reach.is_none_or(|r| mine.translation.distance(at) <= r))
+            };
+            if !stock && !party() {
                 continue;
             }
             out.write(ToClients {

@@ -234,6 +234,10 @@ fn a_cs_source_gun_hits_a_combat_arms_body_where_it_is_drawn() {
     // Rung 6: CS:S's AK-47; rung 7: Combat Arms' M4A1 (its body, its
     // hit spheres as the target's hitboxes).
     let (mut sim, a, b) = duel(6, 7, None);
+    // 1.5 m off, so the AK-47's first-shot inaccuracy (CS:S's spread, drawn
+    // from the command's seed since net53) stays inside the head's sphere.
+    place(&mut sim, b, Vec3::new(0.0, 1.0, -1.5));
+    sim.seconds(1.0);
     let boxes = chimera_core::core::hitboxes_in(sim.app.world(), b).expect("Combat Arms' body has hitboxes");
     assert!(boxes.0.iter().all(|h| h.radius.is_some()), "spheres");
     // The head is the head; the right hand and shin are the right arm and

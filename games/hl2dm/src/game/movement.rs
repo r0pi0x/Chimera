@@ -277,7 +277,9 @@ pub fn config_mut(world: &mut World) -> Mut<'_, SourceMovementConfig> {
 /// `+walk`, no sprint and no duck. The sprint device drains 25/s while
 /// the tick started moving; switching it off costs 2.5. A dead player's
 /// suit is left as it was (its devices stay on until the respawn: suit.md
-/// Quirks, measured).
+/// Quirks, measured). The sprint's sounds are shared and predicted
+/// (effects_sounds.md 15.4): a client plays its own, the server sends them
+/// to everyone else (`map::PredictedSound`).
 #[allow(clippy::type_complexity)]
 pub fn select_speed(
     mut q: Query<
@@ -299,8 +301,15 @@ pub fn select_speed(
     first: Res<FirstTimePredicted>,
     infinite: Option<Res<super::suit::InfiniteAux>>,
     registry: Option<Res<ActionRegistry>>,
-    mut play: MessageWriter<PlaySound>,
+    (role, mut play, mut predicted): (
+        Option<Res<crate::core::NetRole>>,
+        MessageWriter<PlaySound>,
+        MessageWriter<crate::map::PredictedSound>,
+    ),
 ) {
+    // A network client predicts only its own player's sounds; the server's
+    // go to everyone else too ("shared (predicted)": effects_sounds.md 15.4, 15.5).
+    let client = role.is_some_and(|r| *r == crate::core::NetRole::Client);
     let speeds = speeds.map_or_else(Speeds::default, |s| *s);
     let dt = clock.dt();
     let infinite = infinite.is_some_and(|i| i.0);
@@ -310,14 +319,19 @@ pub fn select_speed(
         }
         let mut sound = |entry: &str| {
             if first.0 {
-                play.write(PlaySound {
+                let sound = PlaySound {
                     entry: entry.into(),
                     at: Some(t.translation),
                     volume: None,
                     pitch: None,
                     source: Some(entity),
                     channel: None,
-                });
+                };
+                if client {
+                    play.write(sound);
+                } else {
+                    predicted.write(crate::map::PredictedSound { by: entity, sound });
+                }
             }
         };
         let changed = intent.sprint != suit.speed_held;

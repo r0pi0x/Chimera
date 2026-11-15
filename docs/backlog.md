@@ -172,6 +172,14 @@ Fixed ones are on branch `release-7.1` (tag v0.1.0-playtest7.1, not yet
 published): confirm each in a playtest, then delete it. The rest is not
 started; the user asked to avoid server lag while testers play.
 
+- **Others' voice lines in 3D** (done on branch `voice-3d`, confirm in a
+  playtest): grenade call-outs and radio calls were heard only by the
+  speaker in the free-for-all. `party_voice_lines_3d` (on in the party
+  apps, Settings, Party) sends them to everyone near, in 3D at the
+  speaker (DESIGN.md, "Others' voice lines in 3D"). Check by ear: the
+  loudness of a CS:S radio call at 80 dB beside the Combat Arms
+  call-outs. Next: Combat Arms' kill call-out (`EnemyDown`) the same way
+  once it is on main, if it isn't already.
 - **Joining opened extra windows** (fixed in 7.1, confirm in a playtest).
   P0. A token-bind relaunch, a separate startup download window and a
   third, auto-joining instance. Fix: bind and download in-process. Look

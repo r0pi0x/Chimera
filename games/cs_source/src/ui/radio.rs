@@ -5,14 +5,20 @@
 //! entry and a "Name (RADIO): text" chat line, for their own calls and
 //! living teammates', and the radio icon over a teammate's head while
 //! they speak (the game's `sprites/radio`, else a text marker), hidden
-//! behind walls as the game's depth-tested material is.
+//! behind walls as the game's depth-tested material is. With
+//! `party_voice_lines_3d 1` (`map::sound::PartyVoices`: the party apps'
+//! default) a living non-teammate's call within a talking voice's reach
+//! (`sound::TALKING`, 76 m by `send_range`) plays in 3D at the caller
+//! (its source, on the voice channel) at that level (`SoundBank::at_level`), with no chat
+//! line or icon.
 //!
 //! The team radio: menus (Z/X/C or `radio1`-`radio3`, from
 //! `map::radio::RadioCommands`) picked with number keys, a console command per
 //! call (`coverme`, `enemyspot`, ...: registered when a map's radio loads)
 //! writing `core::Radio`; calls the local player hears (their own, living
 //! teammates') play their sound entry and print "Name (RADIO): text" (with the
-//! sender's nav place) to the chat, and a teammate's call shows the radio icon
+//! sender's nav place) to the chat (with `party_voice_lines_3d 1` others'
+//! calls within 76 m play in 3D at them, no line or icon), and a teammate's call shows the radio icon
 //! over their head for 1.5 s (`RadioIcons`: the HUD's `radio` sprite,
 //! `sprites/radio`, else a text marker; hidden behind walls and bodies, as its
 //! material is depth-tested); `ignorerad 1` drops teammates' calls (no sound,
@@ -93,8 +99,13 @@ use crate::{
         PlaySound,
         nav::NavMesh,
         radio::{RadioCommands, hears},
+        sound::{PartyVoices, SoundBank, TALKING, send_range},
     },
 };
+
+/// The voice channel (Source's CHAN_VOICE) a caller's call plays on when
+/// heard in 3D under `party_voice_lines_3d`: a new call replaces their last.
+pub const RADIO_CHANNEL: u8 = 2;
 
 pub struct RadioPlugin;
 
@@ -492,6 +503,7 @@ fn hear(
     nav: Option<Res<NavMesh>>,
     settings: Res<RadioSettings>,
     net: Option<Res<crate::net::NetSettings>>,
+    (voices, mut bank): (Option<Res<PartyVoices>>, Option<ResMut<SoundBank>>),
     mut play: MessageWriter<PlaySound>,
     mut chat: MessageWriter<ChatLine>,
     mut icons: ResMut<RadioIcons>,
@@ -511,10 +523,18 @@ fn hear(
             continue;
         };
         let alive = health.is_none_or(|h| h.current > 0.0);
-        if !hears(me, my_team.map(|t| t.0), call.sender, team.map(|t| t.0), alive)
-            || c.variants.is_empty()
-            || (settings.ignore != 0 && !is_local)
-        {
+        let stock = hears(me, my_team.map(|t| t.0), call.sender, team.map(|t| t.0), alive);
+        // Another's call the game gives only to their team: heard in 3D
+        // at them under `party_voice_lines_3d`, within a talking voice's
+        // reach; no chat line or icon.
+        let mine = who.get(me).ok().and_then(|w| w.4).map(|t| t.translation());
+        let speaker = at.map(|t| t.translation());
+        let party = !stock
+            && !is_local
+            && alive
+            && PartyVoices::is_on(voices.as_deref())
+            && mine.zip(speaker).is_some_and(|(m, s)| send_range(TALKING).is_none_or(|r| m.distance(s) <= r));
+        if !(stock || party) || c.variants.is_empty() || (settings.ignore != 0 && !is_local) {
             continue;
         }
         // xorshift: pick a variant.
@@ -524,6 +544,20 @@ fn hear(
         x = x.wrapping_mul(0xBF58_476D_1CE4_E5B9);
         x ^= x >> 27;
         let (sound, text) = &c.variants[(x % c.variants.len() as u64) as usize];
+        if party {
+            let Some(entry) = bank.as_deref_mut().and_then(|b| b.at_level(sound, TALKING, "talking")) else {
+                continue;
+            };
+            play.write(PlaySound {
+                entry,
+                at: speaker,
+                volume: None,
+                pitch: None,
+                source: Some(call.sender),
+                channel: Some(RADIO_CHANNEL),
+            });
+            continue;
+        }
         play.write(PlaySound::ui(sound.clone()));
         if !is_local {
             icons.speak(call.sender);

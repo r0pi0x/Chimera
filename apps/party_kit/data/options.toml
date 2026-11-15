@@ -43,6 +43,7 @@ name = "Party"
 setting = [
   { label = "Hit marker", cvar = "cl_hitmarker", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Swap effect", cvar = "party_swap_effect", choices = [["0", "Off"], ["1", "On"]] },
+  { label = "Others' voice lines", cvar = "party_voice_lines_3d", choices = [["1", "In 3D at them"], ["0", "Each game's own"]] },
   { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "The game's loop"], ["0", "None"]], widget = "dropdown" },
   { label = "Radar", cvar = "hud_radar", choices = [["0", "Off"], ["1", "On"]] },
 ]

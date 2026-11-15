@@ -356,3 +356,35 @@ fn blood_reaches_every_viewer_but_the_shooter() {
     assert!(most[0] >= burst, "the shooter's predicted copy: {}", most[0]);
     assert!(most[1] >= burst, "the victim's copy from the server: {}", most[1]);
 }
+
+/// The sprint's sound is shared and predicted (effects_sounds.md 15.4):
+/// the sprinter's client plays its own once, the server sends it to the
+/// other client (which predicts nobody else's movement), not back.
+#[test]
+fn a_sprint_start_is_heard_by_the_others_once_by_the_sprinter() {
+    #[derive(Resource, Default)]
+    struct Sprints(usize);
+    let link = LinkConditions {
+        latency: Duration::from_millis(40),
+        jitter: Duration::ZERO,
+        loss: 0.0,
+    };
+    let mut sim = NetSim::new(Hl2Sim, link, 53, 2, |app: &mut App| {
+        app.add_plugins(GreyboxMapPlugin).init_resource::<Sprints>().add_systems(
+            Last,
+            |mut r: MessageReader<PlaySound>, mut n: ResMut<Sprints>| {
+                n.0 += r.read().filter(|s| s.entry == "HL2Player.SprintStart").count();
+            },
+        );
+    });
+    sim.until_joined(600);
+    sim.ticks(200);
+    for c in &mut sim.clients {
+        c.app.world_mut().resource_mut::<Sprints>().0 = 0;
+    }
+    intent(&mut sim, 0).sprint = true;
+    intent(&mut sim, 0).move_axis = Vec2::Y;
+    sim.ticks(60);
+    let heard: Vec<usize> = sim.clients.iter().map(|c| c.app.world().resource::<Sprints>().0).collect();
+    assert_eq!(heard, [1, 1], "the sprinter once, the other once");
+}
