@@ -134,6 +134,13 @@
 //! off for the process. A network server offers the merged weapon
 //! documents, attachment records and movement numbers to clients whose
 //! own differ (`served`).
+//! A client that read no install at startup and whose join bound the
+//! asset service reads the arrived files anew (`reread_install`) and
+//! builds again what it built from them (`renew`: the weapon set in the
+//! catalogue and registry, the server documents, the server settings, the
+//! announcer's skins; then `CaDataRenewed` for the HUD's install UI and
+//! names, the kill call-outs, radio, death-cam tips and damage effects),
+//! before the join checks the match.
 //!
 //! The other modules read data only through this one: `weapons` registers
 //! the set, `inventory` names what a player starts with.
@@ -1890,7 +1897,8 @@ impl Plugin for CaDataPlugin {
         let data = CaData::of(app);
         data.weapon_set();
         // A join that binds the asset service reads the install again
-        // once its files arrived (`net::assets::AssetsArrived`).
+        // once its files arrived (`net::assets::AssetsArrived`), and
+        // builds again what was built from it (`renew`).
         app.add_observer(reread_install);
         // The announcer's weapon skins (kill_streaks.md A8), on whichever
         // side reads the install: a killer's own client shows them.
@@ -1902,15 +1910,11 @@ impl Plugin for CaDataPlugin {
 
 /// After a join bound the asset service and Combat Arms' files arrived:
 /// an app whose install data had no files to read (its mount none) reads
-/// them anew (`CaData::install_again`), in its resource and its map
-/// loads' context. Data with a mount already reads the arrived files
-/// through it; data built in or by hand stays.
-pub fn reread_install(
-    arrived: On<chimera_net::net::assets::AssetsArrived>,
-    data: Option<Res<CaData>>,
-    context: Option<Res<crate::map::LoadContext>>,
-    mut commands: Commands,
-) {
+/// them anew (`CaData::install_again`) and builds again what it built at
+/// startup from them (`renew`), before the join checks the match. Data
+/// with a mount already reads the arrived files through it; data built
+/// in or by hand stays.
+pub fn reread_install(arrived: On<chimera_net::net::assets::AssetsArrived>, data: Option<Res<CaData>>, mut commands: Commands) {
     let Some(old) = data else { return };
     if !arrived.games.iter().any(|g| g == super::GAME)
         || old.builtin_only()
@@ -1919,12 +1923,86 @@ pub fn reread_install(
     {
         return;
     }
-    let fresh = CaData::install_again();
-    if let Some(context) = context {
+    let old = old.clone();
+    commands.queue(move |world: &mut World| renew(world, &old, CaData::install_again()));
+}
+
+/// Triggered once `renew` put the data read anew in place: the parts that
+/// built something from the data at startup (the HUD's install UI and
+/// weapon names, the kill call-outs, the damage effects) build it again.
+#[derive(Event, Clone)]
+pub struct CaDataRenewed {
+    pub data: CaData,
+}
+
+/// `fresh` in place of `old` in this app: the resource and its map loads'
+/// context; its weapon set in the catalogue and registry in the old one's
+/// place, with its prices and the server documents (`server_docs::
+/// renew_own`: the indices then are a server's on the same files); the
+/// attachment, movement and gear records the same way; the server
+/// settings it gives; the announcer's weapon skins. Then `CaDataRenewed`.
+pub fn renew(world: &mut World, old: &CaData, fresh: CaData) {
+    use chimera_sim::server_docs::{DocApply, ServerDocs, renew_own};
+    if let Some(context) = world.get_resource::<crate::map::LoadContext>() {
         context.insert(fresh.clone());
     }
-    info!("Combat Arms: its data read again from the arrived files (mount: {})", fresh.mount().is_some());
-    commands.insert_resource(fresh);
+    world.insert_resource(fresh.clone());
+    let registered = |world: &World, name: &str| world.get_resource::<ServerDocs>().is_some_and(|d| d.get(name).is_some());
+    let (was, now) = (old.weapon_set(), fresh.weapon_set());
+    if !std::ptr::eq(was, now) {
+        let done = if registered(world, served::WEAPONS) {
+            renew_own(world, served::WEAPONS, fresh.weapon_docs().to_vec(), DocApply::Weapons(now))
+        } else if world
+            .get_resource::<crate::weapon::data::WeaponCatalog>()
+            .is_some_and(|c| c.sets.iter().any(|s| std::ptr::eq(*s, was)))
+        {
+            crate::weapon::data::swap_weapon_set(world, was, now)
+        } else {
+            Ok(())
+        };
+        if let Err(e) = done {
+            warn!("Combat Arms: the weapons read anew aren't used: {e}");
+        }
+    }
+    let records: [(&str, Vec<(String, String)>, DocApply); 3] = [
+        (
+            served::ATTACHMENTS,
+            served::attachments_doc(fresh.attachments()),
+            DocApply::With(served::apply_attachments, served::attachments_format),
+        ),
+        (
+            served::MOVEMENT,
+            served::movement_doc(fresh.movement()),
+            DocApply::With(served::apply_movement, served::movement_format),
+        ),
+        (served::GEAR, served::gear_doc(fresh.gear()), DocApply::With(served::apply_gear, served::gear_format)),
+    ];
+    for (name, docs, apply) in records {
+        if registered(world, name)
+            && let Err(e) = renew_own(world, name, docs, apply)
+        {
+            warn!("Combat Arms: {name} read anew isn't used: {e}");
+        }
+    }
+    if let Some(mut s) = world.get_resource_mut::<super::weapons::CaServerSettings>()
+        && s.reload_check_time == super::weapons::CaServerSettings::of(old).reload_check_time
+    {
+        *s = super::weapons::CaServerSettings::of(&fresh);
+    }
+    if let Some(a) = fresh.attributes()
+        && !a.announcer_skins.is_empty()
+    {
+        world
+            .get_resource_or_init::<chimera_core::announcer::AnnouncerPacks>()
+            .add_skins(super::GAME, a.announcer_skins.clone());
+    }
+    info!(
+        "Combat Arms: its data read again from the arrived files (mount: {}, {} weapons)",
+        fresh.mount().is_some(),
+        now.weapons.len()
+    );
+    world.trigger(CaDataRenewed { data: fresh });
+    world.flush();
 }
 
 #[cfg(test)]

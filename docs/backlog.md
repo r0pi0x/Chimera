@@ -175,16 +175,13 @@ Fixed ones are on branch `release-7.1` (tag v0.1.0-playtest7.1, not yet
 published): confirm each in a playtest, then delete it. The rest is not
 started; the user asked to avoid server lag while testers play.
 
-- **A first join that binds the token can't play a Combat Arms ladder**
-  (found 2026-11-15, `heavy::no_fetch_in_match` without
-  `CHIMERA_GUARD_BOUND`, with the published manifests and the lean ones
-  alike; the post-push run of `main` failed there too): after the bind
-  and the download, the client refuses the server's match, "weapon
-  combat_arms:makarov_ca: not in the weapon catalogue". The minigame's
-  weapon catalogue, built at startup with no Combat Arms files, isn't
-  built again when the files arrive (`net::assets::AssetsArrived`;
-  `combat_arms::game::data::reread_install` makes the data again, the
-  catalogue keeps the old). A tester's second start (token bound) is fine.
+- **Combat Arms' "enemy down" voice line is in no set** (found
+  2026-11-15, `heavy::no_fetch_in_match` in its default mode, a first
+  join): `chars_snd/female/vm_enemydown_fa.wav` (a kill call-out,
+  `effects::kill_callout`) is fetched on demand during the first match;
+  the published manifests and the lean ones list it in no set. Put the
+  kill call-outs' sounds in `common` (`chimera_pack sets`, `lean`) and
+  publish.
 
 - **Others' voice lines in 3D** (done on branch `voice-3d`, confirm in a
   playtest): grenade call-outs and radio calls were heard only by the

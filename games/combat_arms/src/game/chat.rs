@@ -258,6 +258,10 @@ impl Plugin for CaChatPlugin {
             .init_resource::<ChatRng>()
             .init_resource::<ChatRegion>()
             .insert_resource(CaRadio(radio))
+            // Read again from files a join fetched (`data::renew`).
+            .add_observer(|r: On<super::data::CaDataRenewed>, mut commands: Commands| {
+                commands.insert_resource(CaRadio(RadioData::load(&r.data)));
+            })
             .add_message::<CaSayRequest>()
             .add_message::<CaRadioRequest>()
             .add_message::<CaSayIn>()
