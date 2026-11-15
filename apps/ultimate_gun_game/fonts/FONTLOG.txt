@@ -10,7 +10,8 @@ Faces
 - UGG Display Black (900), Bold (700), Regular (400): wide, square-
   shouldered capitals whose bowls are squircles, open terminals cut 20
   degrees off vertical and diagonals at 70 degrees, both from the game's
-  logo facets. Caps only (lower case maps to capitals). Tabular figures by
+  logo facets. Caps only as shipped (lower case maps to capitals; the
+  lower-case draft builds with UGG_FONTS_LOWER=1). Tabular figures by
   default; `pnum` proportional figures, `zero` a slashed zero. Black
   carries `ss02`, the wordmark set (tighter, arm ends cut at 70 degrees,
   the plain A); `ss03`-`ss06` choose its A.
@@ -20,6 +21,18 @@ Faces
 
 ChangeLog
 ---------
+2026-11-15 v0.5
+- The missing ASCII ($ < > ^ ` { } ~), a few Latin-1 symbols (· ÷ ¡ ¿
+  « » ´ ¨ ¸) and the accented capitals of Latin-1 (À-Ý, Æ, Ð, Ø, Þ, Ÿ)
+  plus ß. As shipped, accented lower case maps to these capitals, so
+  names such as "Zoë" no longer fall back to another face.
+- A draft lower case for all four faces (tools/fonts/lower.py: a-z, the
+  accented Latin-1 lower case, dotless i, ae, eth, thorn, oslash; cv01 a
+  single-storey a, cv02 an l without its tail; kerning for lower-case and
+  mixed-case pairs). Not in the shipped files yet: build it with
+  UGG_FONTS_LOWER=1.
+- Existing glyphs, advances and kerning unchanged.
+
 2026-11-13 v0.4
 - Black added (with the wordmark set ss02 and the A alternates ss03-ss06).
 - The faces committed with the game (apps/ultimate_gun_game/fonts/), TTF
