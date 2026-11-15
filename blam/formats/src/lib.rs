@@ -39,6 +39,8 @@
 //!   regions (health and shields).
 //! - `globals`: the globals tag's player information, falling damage,
 //!   multiplayer information, grenades and weapon list.
+//! - `vehicle`: the vehicle tag's own fields and the physics tag (mass
+//!   points, channels, the inertia tensor and its recomputation).
 //! - `game_type`: the saved game variant record and the 26 stock game types.
 //! - `weapon`: the weapon tag (the item and object layers, magazines,
 //!   triggers) and the pure formulas on its fields.
@@ -66,3 +68,4 @@ pub mod weapon;
 pub mod hud;
 pub mod sound;
 pub mod structure_bsp;
+pub mod vehicle;
