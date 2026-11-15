@@ -624,3 +624,43 @@ fn the_throw_creates_the_grenade_on_frame_2_and_releases_it_on_8() {
     // Counts: 4 frags, capped 2 from 5 players and 1 from 9.
     assert_eq!((g.start(g.cap(4)), g.start(g.cap(6)), g.start(g.cap(12))), ([4, 0], [2, 0], [1, 0]));
 }
+
+#[test]
+fn the_selected_grenade_kind_starts_on_frag_switches_to_the_other_when_it_has_any_and_follows_the_counts() {
+    use halo_ce::game::weapons::grenades::{FRAG, PLASMA};
+    let g = GrenadeData::load();
+    // A new life: the frag; the plasma grenade only when that is all.
+    assert_eq!(Throw::new([4, 0]).selected(), FRAG);
+    assert_eq!(Throw::new([0, 3]).selected(), PLASMA);
+    assert_eq!(Throw::new([2, 2]).selected(), FRAG);
+    // The switch: nothing to change to, nothing happens; else the other.
+    let mut t = Throw::new([4, 0]);
+    t.switch();
+    assert_eq!((t.selected(), t.current()), (FRAG, Some(FRAG)));
+    t.counts[PLASMA] = 1;
+    t.switch();
+    assert_eq!((t.selected(), t.current()), (PLASMA, Some(PLASMA)));
+    t.switch();
+    assert_eq!(t.selected(), FRAG);
+    // A press throws the selected kind, and the last of it passes the
+    // choice to the other kind.
+    t.switch();
+    let mut log = Vec::new();
+    for k in 0..40 {
+        for e in t.step(&g.throw, k == 0, true) {
+            log.push(e);
+        }
+    }
+    assert!(log.contains(&ThrowEvent::Created(PLASMA)) && log.contains(&ThrowEvent::Released(PLASMA)));
+    assert_eq!((t.counts, t.selected()), ([4, 0], FRAG));
+    // An empty selected kind: no throw, the HUD still shows it.
+    let mut t = Throw { counts: [0, 0], ..Throw::default() };
+    assert_eq!((t.current(), t.step(&g.throw, true, true)), (None, vec![]));
+    // A pickup of a kind while the selected one is out selects it; not else.
+    t.counts[PLASMA] = 1;
+    t.pick_up(PLASMA);
+    assert_eq!(t.selected(), PLASMA);
+    t.counts[FRAG] = 1;
+    t.pick_up(FRAG);
+    assert_eq!(t.selected(), PLASMA);
+}

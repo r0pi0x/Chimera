@@ -41,6 +41,8 @@
 //!   placement as moving props, the mass-point physics on the engine's
 //!   collision, driving, seats and the seat camera, splatter and riders'
 //!   damage;
+//! - `respawn`: Halo's players' loadout and respawn by
+//!   multiplayer_rules.md 4 (`HaloRules`, Halo's own app only);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
@@ -61,6 +63,7 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod respawn;
 pub mod sets;
 pub mod ticks;
 pub mod vehicles;
@@ -152,6 +155,7 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
     ("r", "+reload"),
     ("f", "+melee"),
     ("g", "+grenade"),
+    ("q", "+grenade_switch"),
     ("e", "+use"),
     ("tab", "+showscores"),
 ];
@@ -161,7 +165,7 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
 /// (`weapons::systems::MELEE_ACTION`, `weapons::grenades::GRENADE_ACTION`),
 /// as in `DEFAULT_BINDS`. No party game has a throw button of its own (the
 /// other games' grenades are weapons in a slot), so Halo's is its own.
-pub const BUNDLE_BINDS: &[(&str, &str)] = &[("f", "+melee"), ("g", "+grenade")];
+pub const BUNDLE_BINDS: &[(&str, &str)] = &[("f", "+melee"), ("g", "+grenade"), ("q", "+grenade_switch")];
 
 /// Halo's parts, after `crate::SimPlugins`: the game registered (`INFO`),
 /// its movement (`movement`), its players' vitality (`vitality`), its
@@ -179,6 +183,7 @@ impl PluginGroup for HaloPlugins {
             .add(fx::HaloFxPlugin)
             .add(body::HaloBodyPlugin)
             .add(view::HaloViewPlugin)
+            .add(respawn::HaloRespawnPlugin)
             .add(vehicles::HaloVehiclesPlugin)
     }
 }

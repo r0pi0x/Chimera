@@ -1,5 +1,5 @@
 //! Halo's front end on the client shell (the `ui` feature): its weapons'
-//! own buttons (`binds`: `+melee`, `+zoom`, `+grenade`) and its HUD (`hud`:
+//! own buttons (`binds`: `+melee`, `+zoom`, `+grenade`, `+grenade_switch`) and its HUD (`hud`:
 //! specs/halo_ce/hud.md, drawn from the disc's HUD tags in place of the
 //! shell's fallback crosshair and status).
 
@@ -24,10 +24,10 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 pub fn binds(app: &mut bevy::app::App) {
     use chimera_client::client::binds::BindsAppExt;
     use crate::game::weapons::{
-        grenades::GRENADE_ACTION,
+        grenades::{GRENADE_ACTION, SWITCH_ACTION},
         systems::{MELEE_ACTION, ZOOM_ACTION},
     };
-    app.bound_action(MELEE_ACTION).bound_action(ZOOM_ACTION).bound_action(GRENADE_ACTION);
+    app.bound_action(MELEE_ACTION).bound_action(ZOOM_ACTION).bound_action(GRENADE_ACTION).bound_action(SWITCH_ACTION);
     fx_lights::plugin(app);
 }
 

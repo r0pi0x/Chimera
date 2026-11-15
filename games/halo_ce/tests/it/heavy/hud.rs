@@ -192,3 +192,38 @@ fn a_hit_lowers_the_shield_meter_and_the_recharge_restores_it() {
     sim.seconds(11.0);
     assert_eq!(fill(&sim), (253.0 / 255.0, 253.0 / 255.0), "recharged");
 }
+
+#[test]
+fn the_zoom_draws_the_scopes_mask_under_the_hud() {
+    let Some(d) = data() else { return };
+    let sniper = WeaponNow { loaded: 4, reserve: 8, loaded_max: 4, ready: true, magazine: true, zoom: -1, ..Default::default() };
+    let tag = "weapons\\sniper rifle\\sniper rifle";
+    let masks = |q: &[Quad], w: f32, h: f32| q.iter().position(|q| q.picture.size == [w, h] && page(&d, q).contains("mask"));
+    let q = frame(&d, &held(tag, sniper), 3);
+    assert!(masks(&q, 512.0, 256.0).is_none(), "no mask unzoomed");
+    if !draw::SCOPE_MASK {
+        // Switched off (the spec's open question): no zoom draws one.
+        let q = frame(&d, &held(tag, WeaponNow { zoom: 0, ..sniper }), 3);
+        assert!(masks(&q, 512.0, 256.0).is_none(), "the mask is off");
+        return;
+    }
+    for zoom in [0, 1] {
+        let q = frame(&d, &held(tag, WeaponNow { zoom, ..sniper }), 3);
+        // The 512 by 256 mask, one texel a unit, centred; first in the list
+        // (under the HUD); the rim's colour fills the rest of the view.
+        let i = masks(&q, 512.0, 256.0).unwrap_or_else(|| panic!("a mask at zoom {zoom}"));
+        assert_eq!((i, rect(&q[i])), (0, [64, 112, 576, 368]));
+        assert!(q[1..5].iter().all(|b| b.picture.page == q[0].picture.page && b.picture.size == [1.0, 1.0]), "the rim around it");
+    }
+    let pistol = WeaponNow { loaded: 12, reserve: 36, loaded_max: 12, ready: true, magazine: true, zoom: 0, ..Default::default() };
+    let q = frame(&d, &held("weapons\\pistol\\pistol", pistol), 3);
+    let i = masks(&q, 256.0, 256.0).expect("the pistol's mask");
+    assert_eq!(rect(&q[i]), [192, 112, 448, 368]);
+    // Wide: centred in the wider view.
+    let wide = Canvas::of(1920.0, 1080.0);
+    let mut st = HudState::default();
+    let u = held(tag, WeaponNow { zoom: 0, ..sniper });
+    st.tick(&d, &u, &[], 0.0, 100);
+    let q = draw::draw(&d, &u, &st, &wide, 101);
+    assert_eq!(rect(&q[0]), [wide.width / 2 - 256, 112, wide.width / 2 + 256, 368]);
+}

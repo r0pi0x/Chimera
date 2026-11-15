@@ -114,7 +114,7 @@ pub const GAMES: &[GameRows] = &[
         rows: &[row("Sprint", "+speed"), row("Walk", "+walk"), row("Duck", "+duck"), row("Zoom", "+zoom")],
         settings: &[Setting { label: "Gun view FOV", cvar: "hl2dm_viewmodel_fov", min: 54.0, max: 110.0, step: 1.0 }],
     },
-    GameRows { game: halo_ce::game::GAME, label: "Halo", rows: &[row("Melee", "+melee"), row("Grenade", "+grenade")], settings: &[] },
+    GameRows { game: halo_ce::game::GAME, label: "Halo", rows: &[row("Melee", "+melee"), row("Grenade", "+grenade"), row("Switch grenade", "+grenade_switch")], settings: &[] },
 ];
 
 /// Tab 0 is "Shared", tab `n` is `GAMES[n - 1]`.

@@ -349,6 +349,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   floor, so walking at one mounts it); its guns autoaim by default
   (`weapons::aim`), with guided projectiles following the autoaim
   target; its teleporter exits use the engine's `teleport::Exit::Pill`.
+  Halo's own app runs the spec's respawn and starting loadout
+  (`game::respawn`, `HaloRules`, not in the party apps); the grenade
+  kind is switched (`+grenade_switch`, `net59`).
   `game::vehicles` runs Halo's vehicles (the Warthog as data in
   `data/vehicles/`) by the spec's own mass-point step at 30 Hz on avian's
   spatial queries, writing a kinematic body that replicates as a moving
