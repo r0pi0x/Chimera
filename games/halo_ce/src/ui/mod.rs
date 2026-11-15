@@ -1,14 +1,17 @@
 //! Halo's front end on the client shell (the `ui` feature): its weapons'
 //! own buttons (`binds`: `+melee`, `+zoom`, `+grenade`, `+grenade_switch`) and its HUD (`hud`:
 //! specs/halo_ce/hud.md, drawn from the disc's HUD tags in place of the
-//! shell's fallback crosshair and status) and, in the party apps, its
-//! zoom on the player's own field of view (`party_view`).
+//! shell's fallback crosshair and status), its weapons' kill-feed icons
+//! from the disc (`kill_icons`) and, in the party apps, its zoom on the
+//! player's own field of view (`party_view`).
 
 pub mod hud;
 
 pub mod fx_lights;
 
 pub mod party_view;
+
+pub mod kill_icons;
 
 use bevy::app::PluginGroupBuilder;
 use chimera_world::game_bundle::GameClient;
@@ -50,6 +53,8 @@ pub fn party_app(app: &mut bevy::app::App) {
     binds(app);
     app.insert_resource(hud::HaloHudLayout(hud::layout::HudLayout::Party));
     party_view::plugin(app);
+    // The HUD's data read at once: the kill feed's icons (`kill_icons`).
+    app.add_systems(bevy::app::Update, hud::nodes::load);
 }
 
 /// Halo's front end under the name every game's has it (`ui::party::CLIENT`;

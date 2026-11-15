@@ -78,5 +78,6 @@ impl Plugin for HaloHudPlugin {
             .init_resource::<nodes::HaloHud>()
             .add_systems(Startup, nodes::spawn_root)
             .add_systems(Update, (nodes::load, nodes::collect, nodes::sync).chain().run_if(hud_is(GAME)));
+        super::kill_icons::plugin(app);
     }
 }

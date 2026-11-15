@@ -3,7 +3,8 @@
 //! every map): the Spartan's unit HUD (the biped's first HUD interface:
 //! one local player), every weapon's HUD chain by its weapon tag, the
 //! empty hands' HUD, the two grenade HUDs, the HUD globals, the number
-//! tag, and every bitmap they draw, decoded to RGBA8 (`Page`), with the
+//! tag, the messaging icons' page (the weapons' pictures: `ui::kill_icons`),
+//! and every bitmap they draw, decoded to RGBA8 (`Page`), with the
 //! sequence rule that picks a picture (`HudData::picture`).
 //!
 //! Plain data: no Bevy (the nodes make textures of the pages).
@@ -126,6 +127,8 @@ impl HudData {
         }
         want(&number.bitmap, false);
         want(&globals.damage.bitmap, false);
+        // The weapons' pictures in prompts (the kill feed's icons).
+        want(&globals.messaging.icons, false);
         let named = |name: &str| {
             map.of_class(class::BITMAP)
                 .find(|t| t.path.rsplit('\\').next().is_some_and(|n| n.eq_ignore_ascii_case(name)))

@@ -286,3 +286,28 @@ fn the_party_layout_moves_the_shield_block_to_the_trackers_place() {
     }
 }
 
+/// The kill feed's icons (`ui::kill_icons`): each of the party's eight
+/// rung guns (every Halo gun but the flamethrower) and both grenades have
+/// a picture from the disc (a gun's HUD messaging icon, a grenade's plate
+/// icon) with ink in it (opaque texels of some brightness), each picture
+/// its own.
+#[test]
+fn every_rung_gun_and_grenade_has_a_kill_feed_icon_with_ink() {
+    use halo_ce::{
+        game::weapons::{self as w, systems::{FRAG_GRENADE, PLASMA_GRENADE}},
+        ui::kill_icons::{icon_rgba, pictures},
+    };
+    let Some(d) = data() else { return };
+    let pics = pictures(&d);
+    let ids = [w::ASSAULT_RIFLE, w::PISTOL, w::PLASMA_RIFLE, w::SHOTGUN, w::SNIPER_RIFLE, w::ROCKET_LAUNCHER, w::NEEDLER, w::PLASMA_PISTOL, FRAG_GRENADE, PLASMA_GRENADE];
+    let mut seen = Vec::new();
+    for id in ids {
+        let p = pics.get(id).unwrap_or_else(|| panic!("{id}: no icon ({:?})", pics.keys()));
+        let (wd, ht, rgba) = icon_rgba(&d, p).unwrap_or_else(|| panic!("{id}: no texels"));
+        let ink = rgba.chunks(4).filter(|t| t[3] > 128 && t[0].max(t[1]).max(t[2]) > 64).count();
+        eprintln!("{id}: {wd}x{ht}, {ink} inked texels, page {}", d.pages[&p.page].path);
+        assert!(ink * 20 > (wd * ht) as usize, "{id}: {ink} of {} texels inked", wd * ht);
+        assert!(!seen.contains(&rgba), "{id}: the same picture as another");
+        seen.push(rgba);
+    }
+}
