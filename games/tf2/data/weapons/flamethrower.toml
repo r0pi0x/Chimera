@@ -1,0 +1,66 @@
+# The Flame Thrower, the Pyro's primary (specs/tf2/weapons_more.md 1, 7),
+# reduced as 7.1 allows: while attack is held it uses 12.5 ammo a second
+# (one round every 0.08 s of 200, no reload) and every flame tick (0.075
+# s) hurts each enemy in a 350-unit cone ahead (`tf2:flame`): 13 x the
+# age factor (by distance, 1 to 0.5) x the burn ramp (0.5 to 1 over 1.5 s
+# of contact), and sets him burning: 4 every 0.5 s for at least 3 s,
+# longer with contact, at most 10.
+id = "tf2:tf_weapon_flamethrower"
+base = "tf2:base"
+class = "flamethrower"
+slot = 0
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 0.08
+timing = "accumulate"
+
+[magazine]
+clip = 200
+ammo = "tf2:flame"
+reload = 1.0
+
+# Without [damage] the frame traces nothing: `tf2:flame` hurts.
+[hitscan]
+range = 350.0
+pellets = 1
+punch_scale = 0.0
+spread = { template = 0.0 }
+
+[sounds]
+draw = [[0.0, "Weapon_FlameThrower.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_flamethrower/c_flamethrower.mdl"
+view = "models/weapons/c_models/c_flamethrower/c_flamethrower.mdl"
+view_right_handed = true
+
+[hud]
+name = "Flame Thrower"
+icon = "flamethrower"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+arms = "pyro"
+script = "tf_weapon_flamethrower"
+
+[hooks."tf2:flame"]
+damage = 13.0
+tick = 0.075
+range = 350.0
+cone = 2.8
+reach = 24.0
+life = 0.6
+age_floor = 0.5
+age_full = 1.0
+ramp_start = 0.5
+ramp_time = 1.5
+burn_damage = 4.0
+burn_interval = 0.5
+burn_min = 3.0
+burn_max = 10.0
+start_sound = "Weapon_FlameThrower.FireStart"
+loop_sound = "Weapon_FlameThrower.FireLoop"
+end_sound = "Weapon_FlameThrower.FireEnd"
+hit_sound = "Weapon_FlameThrower.FireHit"

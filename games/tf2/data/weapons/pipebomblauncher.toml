@@ -1,0 +1,74 @@
+# The Stickybomb Launcher, the Demoman's secondary (specs/tf2/
+# weapons_more.md 1, 5, 6): attack charges (up to 4 s, then it fires by
+# itself), its release launches a sticky at 900 to 2400 along the aim
+# (by the time held) and 200 up, from the grenade's offset, 0.6 s before
+# the next; 8 in the clip and 24 carried, one at a time (first in at 1.09,
+# then 0.67). `tf2:sticky`: it sticks to the world, bounces off enemies,
+# arms 0.7 s after launch; attack2 detonates every armed one; at most 8
+# out (a ninth blows the oldest); 120 x the splash x the distance
+# modifier (near half x0.4) within 5 s of launch; in the air its radius
+# grows from 85 % at arming to all of 146 over 2 s.
+id = "tf2:tf_weapon_pipebomblauncher"
+base = "tf2:base"
+class = "launcher"
+slot = 1
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 0.6
+timing = "accumulate"
+
+[magazine]
+clip = 8
+ammo = "tf2:stickies"
+reload = 0.67
+auto_reload = true
+shells = { start = 0.42, insert = 0.67, back_to_back = true }
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 0.0
+spread = { template = 0.0 }
+
+[sounds]
+fire = "Weapon_StickyBombLauncher.Single"
+reload = [[0.0, "Weapon_StickyBombLauncher.BoltBack"], [0.3, "Weapon_StickyBombLauncher.BoltForward"]]
+
+[models]
+world = "models/weapons/c_models/c_stickybomb_launcher/c_stickybomb_launcher.mdl"
+view = "models/weapons/c_models/c_stickybomb_launcher/c_stickybomb_launcher.mdl"
+view_right_handed = true
+
+[hud]
+name = "Stickybomb Launcher"
+icon = "tf_projectile_pipe_remote"
+
+[hooks."tf2:gun"]
+ramp = 0.4
+arms = "demo"
+script = "tf_weapon_pipebomblauncher"
+
+[hooks."tf2:sticky"]
+damage = 120.0
+radius = 146.0
+edge = 0.5
+self_air_scale = 0.75
+push_other = 6.0
+push_self_air = 10.0
+push_self_ground = 5.0
+flat_after = 5.0
+arm = 0.7
+air_radius_start = 0.85
+air_radius_time = 2.0
+max = 8
+speed_min = 900.0
+speed_max = 2400.0
+up_speed = 200.0
+charge_time = 4.0
+gravity = 800.0
+offset = [16.0, 8.0, -6.0]
+sound = "Weapon_Grenade_Pipebomb.Explode"
+charge_sound = "Weapon_StickyBombLauncher.ChargeUp"
+detonate_sound = "Weapon_StickyBombLauncher.ModeSwitch"

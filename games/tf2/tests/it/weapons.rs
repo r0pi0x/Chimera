@@ -30,14 +30,14 @@ use tf2::{
 
 const U: f32 = 0.0254;
 
-fn sim() -> Sim {
+pub(crate) fn sim() -> Sim {
     let mut sim = Sim::new(Tf2Sim, GreyboxMapPlugin);
     sim.set_tick_interval(TICK_INTERVAL);
     sim
 }
 
 /// A player at `at` holding `id`, drawn and settled.
-fn holding(sim: &mut Sim, at: Vec3, id: &str) -> (Entity, Entity) {
+pub(crate) fn holding(sim: &mut Sim, at: Vec3, id: &str) -> (Entity, Entity) {
     let p = sim.spawn_character(at, movement::ID);
     sim.seconds(1.0);
     let w = give(sim.app.world_mut(), p, id).unwrap();
@@ -49,24 +49,24 @@ fn holding(sim: &mut Sim, at: Vec3, id: &str) -> (Entity, Entity) {
 
 /// A target `units` ahead of the shooter at `from` (along -Z), its health
 /// 1000 points.
-fn target(sim: &mut Sim, from: Vec3, units: f32) -> Entity {
+pub(crate) fn target(sim: &mut Sim, from: Vec3, units: f32) -> Entity {
     let t = sim.spawn_character(from - Vec3::Z * units * U, movement::ID);
     sim.seconds(1.0);
     sim.app.world_mut().get_mut::<Health>(t).unwrap().current = 10.0;
     t
 }
 
-fn health_points(sim: &Sim, e: Entity) -> f32 {
+pub(crate) fn health_points(sim: &Sim, e: Entity) -> f32 {
     sim.app.world().get::<Health>(e).unwrap().current * 100.0
 }
 
-fn no_spread(sim: &mut Sim, w: Entity) {
+pub(crate) fn no_spread(sim: &mut Sim, w: Entity) {
     sim.app.world_mut().get_mut::<Hitscan>(w).unwrap().spread = SpreadShape::Template(0.0);
 }
 
 /// Run `n` ticks, `input` setting the buttons before each (its index),
 /// and return what the player's weapons did on which tick.
-fn run(sim: &mut Sim, p: Entity, n: u64, mut input: impl FnMut(&mut Sim, u64)) -> Vec<(u64, WeaponEventKind)> {
+pub(crate) fn run(sim: &mut Sim, p: Entity, n: u64, mut input: impl FnMut(&mut Sim, u64)) -> Vec<(u64, WeaponEventKind)> {
     let mut cursor = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();
     let mut out = Vec::new();
     for t in 0..n {
@@ -82,7 +82,7 @@ fn run(sim: &mut Sim, p: Entity, n: u64, mut input: impl FnMut(&mut Sim, u64)) -
     out
 }
 
-fn fired(events: &[(u64, WeaponEventKind)]) -> Vec<u64> {
+pub(crate) fn fired(events: &[(u64, WeaponEventKind)]) -> Vec<u64> {
     events.iter().filter(|(_, k)| matches!(k, WeaponEventKind::Fired { .. })).map(|(t, _)| *t).collect()
 }
 
@@ -258,7 +258,7 @@ fn shells_go_in_one_at_a_time_and_a_shot_stops_them_27_28() {
 }
 
 /// The flyers of `owner`.
-fn rockets(sim: &mut Sim, owner: Entity) -> Vec<(Entity, Vec3, Vec3)> {
+pub(crate) fn rockets(sim: &mut Sim, owner: Entity) -> Vec<(Entity, Vec3, Vec3)> {
     let mut q = sim.app.world_mut().query::<(Entity, &Flyer, &Transform)>();
     q.iter(sim.app.world()).filter(|(_, f, _)| f.owner == Some(owner)).map(|(e, f, t)| (e, t.translation, f.velocity)).collect()
 }

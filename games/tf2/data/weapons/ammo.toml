@@ -1,5 +1,6 @@
-# TF2's ammo (specs/tf2/weapons.md 1): each gun's reserve. The Minigun's
-# 200 are its clip (no reserve, it never reloads).
+# TF2's ammo (specs/tf2/weapons.md 1, weapons_more.md 1): each gun's
+# reserve. The Minigun's 200, the Sniper Rifle's 25 and the Flame
+# Thrower's 200 are their clips (no reserve, they never reload).
 units = { length = 0.0254 }
 
 [ammo."tf2:scattergun"]
@@ -13,3 +14,27 @@ max = 32
 
 [ammo."tf2:minigun"]
 max = 0
+
+[ammo."tf2:pistol_scout"]
+max = 36
+
+[ammo."tf2:smg"]
+max = 75
+
+[ammo."tf2:sniperrifle"]
+max = 0
+
+[ammo."tf2:revolver"]
+max = 24
+
+[ammo."tf2:grenades"]
+max = 16
+
+[ammo."tf2:stickies"]
+max = 24
+
+[ammo."tf2:flame"]
+max = 0
+
+[ammo."tf2:syringes"]
+max = 150

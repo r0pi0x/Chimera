@@ -326,6 +326,10 @@ pub struct LaunchUnderWater;
 #[serde(deny_unknown_fields)]
 pub struct LauncherParams {
     pub speed: f32,
+    /// Speed added along the aim's up (data length/s): TF2's grenades
+    /// leave at 1200 forward and 200 up (specs/tf2/weapons_more.md 4.1).
+    #[serde(default)]
+    pub up_speed: f32,
     /// Its speed when the shooter's eyes are under water.
     #[serde(default)]
     pub water_speed: Option<f32>,
@@ -425,6 +429,8 @@ pub fn damage_kind(name: Option<&str>) -> DamageKind {
 #[derive(Component, Clone, Debug)]
 pub struct Launcher {
     pub speed: f32,
+    /// Added along the aim's up, m/s (`LauncherParams::up_speed`).
+    pub up_speed: f32,
     pub water_speed: Option<f32>,
     pub shown: String,
     pub template: Flyer,
@@ -482,6 +488,7 @@ impl LauncherParams {
         });
         Launcher {
             speed: self.speed * unit,
+            up_speed: self.up_speed * unit,
             water_speed: self.water_speed.map(|s| s * unit),
             shown: self.shown.clone().unwrap_or_else(|| weapon.to_string()),
             template: f,
@@ -649,7 +656,7 @@ fn launch_from_fired(
         let dir = aim * Vec3::NEG_Z;
         let mut f = l.template.clone();
         f.owner = Some(e.owner);
-        f.velocity = dir * speed;
+        f.velocity = dir * speed + aim * Vec3::Y * l.up_speed;
         if let Some(life) = f.expires {
             f.expires = Some(clock.now + life);
         }

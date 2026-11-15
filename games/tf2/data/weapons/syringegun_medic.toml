@@ -1,0 +1,61 @@
+# The Syringe Gun, the Medic's primary (specs/tf2/weapons_more.md 1, 8):
+# a needle every 0.105 s, 40 in the clip and 150 carried, the whole clip
+# in 1.305 s. Each needle (Chimera's flyers) flies at 990 units/s along
+# the aim from under the gun, falling at 0.3 of gravity (open question
+# 16), through teammates; on an enemy (`tf2:needle`) 10 x the distance
+# modifier (near half x0.4) at impact, rounded.
+id = "tf2:tf_weapon_syringegun_medic"
+base = "tf2:base"
+class = "smg"
+slot = 0
+draw = 0.5
+
+[trigger]
+automatic = true
+cycle = 0.105
+timing = "accumulate"
+
+[magazine]
+clip = 40
+ammo = "tf2:syringes"
+reload = 1.305
+auto_reload = true
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 0.0
+spread = { template = 0.0 }
+
+[sounds]
+fire = "Weapon_SyringeGun.Single"
+empty = "Weapon_SyringeGun.ClipEmpty"
+reload = [[0.0, "Weapon_SyringeGun.Reload1"], [0.5, "Weapon_SyringeGun.Reload2"], [1.0, "Weapon_SyringeGun.Reload3"]]
+draw = [[0.0, "Weapon_SyringeGun.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_syringegun/c_syringegun.mdl"
+view = "models/weapons/c_models/c_syringegun/c_syringegun.mdl"
+view_right_handed = true
+
+[hud]
+name = "Syringe Gun"
+icon = "syringegun_medic"
+
+[hooks."tf2:gun"]
+ramp = 0.4
+arms = "medic"
+script = "tf_weapon_syringegun_medic"
+
+[hooks."chimera:projectile"]
+speed = 990.0
+gravity = 240.0
+touch = "report"
+shown = "tf2:syringe"
+offset = [16.0, 6.0, -8.0]
+pass_teammates = true
+life = 10.0
+x_forward = true
+
+[hooks."tf2:needle"]
+damage = 10.0

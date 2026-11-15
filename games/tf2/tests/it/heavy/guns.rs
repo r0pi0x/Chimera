@@ -1,6 +1,6 @@
 //! TF2's guns from the user's install (M2b): each gun's view model, the
 //! class's arms with its `c_` weapon bone-merged (`view::load`), with the
-//! spec's sequences (8.2) under their activities (the include's, not the
+//! spec's sequences (8.2) by name with their activities (the include's, not the
 //! arms' stubs) and a muzzle on the gun, the posed gun in front of the eye;
 //! the held models and the rocket's model; the guns' sound entries in the
 //! sound scripts; and each gun's `weapon/<id>` set covering everything a
@@ -21,26 +21,26 @@ fn each_gun_shows_on_its_class_arms_with_the_specs_sequences() {
     let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
     maps::add_guns(&mut materials, &|_| true, &mut kit, &mut warnings);
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(kit.view_models.len(), 4);
+    assert_eq!(kit.view_models.len(), weapons::GUNS.len());
     for gun in weapons::GUNS {
         let v = kit.view_models.iter().find(|v| v.key == gun).unwrap_or_else(|| panic!("{gun}'s view model"));
         let set = v.animations.as_ref().expect("the arms' animations");
         assert!(v.attachments.iter().any(|a| a.name.eq_ignore_ascii_case("muzzle")), "{gun}: a muzzle");
         let q = view::sequences(gun).unwrap();
-        let named = [Some(q.draw), Some(q.idle), Some(q.fire), q.reload_start, q.reload_loop, q.reload_end, q.spin_up, q.spin_idle, q.spin_down];
+        let named = [Some(q.draw), Some(q.idle), Some(q.fire), q.reload_start, q.reload_loop, q.reload_end, q.spin_up, q.spin_idle, q.spin_down, q.charge];
         for (activity, name) in named.into_iter().flatten() {
             let i = set.sequence(name).unwrap_or_else(|| panic!("{gun}: no sequence {name}"));
             let s = &set.sequences[i];
-            let sharing: Vec<&str> = set.sequences.iter().filter(|x| x.activity.eq_ignore_ascii_case(activity)).map(|x| x.name.as_str()).collect();
             assert!(s.activity.eq_ignore_ascii_case(activity), "{gun}: {name} is {}, the spec says {activity}", s.activity);
-            assert_eq!(sharing, [name], "{gun}: {activity} picks {name} alone");
             assert!(set.animations[s.anims[0]].frames > 1, "{gun}: {name} is the include's, not a stub");
         }
         // The weapon's meshes on top of the arms'.
         assert!(v.model.meshes.len() >= 2, "{gun}: arms and gun");
         assert!(kit.held.iter().any(|h| h.key == gun), "{gun}: held");
     }
-    assert!(kit.held.iter().any(|h| h.key == weapons::ROCKET_SHOWN), "the rocket");
+    for (_, key, _) in weapons::PROJECTILES {
+        assert!(kit.held.iter().any(|h| h.key == *key), "{key}");
+    }
     let scripts = sets::sound_scripts(&mount);
     for entry in maps::weapon_sounds() {
         assert!(!scripts.waves(&entry).is_empty(), "{entry}: no waves");

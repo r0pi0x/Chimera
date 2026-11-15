@@ -4,7 +4,8 @@
 //! rule on made-up entities (`spawns`), TF2's movement and classes
 //! (`movement`: movement.md's test cases), ICE against its spec (`ice`),
 //! the script reader on fixtures encrypted with throwaway keys
-//! (`scripts`), and, in `heavy`, the user's install (its mount, ctf_2fort
+//! (`scripts`), the guns (`weapons`: M2b's four; `weapons_more`: the
+//! next eight), and, in `heavy`, the user's install (its mount, ctf_2fort
 //! and cp_badlands converted with their spawns, the converted-map cache's
 //! key, a player walking on ctf_2fort, M2's weapon sets packed into a
 //! scratch store and read back, the scripts decrypted with the user's key
@@ -21,6 +22,7 @@ mod scripts;
 mod skeleton;
 mod spawns;
 mod weapons;
+mod weapons_more;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {

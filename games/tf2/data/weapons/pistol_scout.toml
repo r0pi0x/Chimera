@@ -1,0 +1,53 @@
+# The Pistol as the Scout's secondary (specs/tf2/weapons_more.md 1, 2):
+# one bullet of 15 every 0.15 s, spread 0.04 (dead centre after 1.25 s
+# without a shot), the distance modifier's near half x1 (150 % at 0
+# units), 12 in the clip and 36 carried, the whole clip in 1.005 s.
+id = "tf2:tf_weapon_pistol_scout"
+base = "tf2:gun"
+class = "pistol"
+slot = 1
+
+[trigger]
+automatic = true
+cycle = 0.15
+timing = "accumulate"
+
+[magazine]
+clip = 12
+ammo = "tf2:pistol_scout"
+reload = 1.005
+auto_reload = true
+
+[hitscan]
+range = 56754.0
+pellets = 1
+punch_scale = 0.0
+spread = { template = 0.04 }
+
+[damage]
+amount = 15.0
+falloff = 1.0
+falloff_step = 1024.0
+hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
+impulse = 0.0
+
+[sounds]
+fire = "Weapon_Pistol.Single"
+empty = "Weapon_Pistol.ClipEmpty"
+reload = [[0.0, "Weapon_Pistol.ReloadScout"]]
+draw = [[0.0, "Weapon_Pistol.Draw"]]
+
+[models]
+world = "models/weapons/c_models/c_pistol/c_pistol.mdl"
+view = "models/weapons/c_models/c_pistol/c_pistol.mdl"
+view_right_handed = true
+
+[hud]
+name = "Pistol"
+icon = "pistol_scout"
+
+[hooks."tf2:gun"]
+ramp = 1.0
+arms = "scout"
+script = "tf_weapon_pistol_scout"
+first_pellet_pause = 1.25
