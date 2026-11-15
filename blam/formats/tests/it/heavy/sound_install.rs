@@ -361,3 +361,46 @@ fn bloodgulch_measured_counts() {
         }
     }
 }
+
+/// The sound environments (sounds.md, "Sound environment"): bloodgulch has
+/// one; a30's three read the spec's values.
+#[test]
+fn sound_environments() {
+    use blam_formats::sound::environment::SoundEnvironment;
+    let Some(map) = bloodgulch() else { return };
+    assert_eq!(map.of_class(class::SOUND_ENVIRONMENT).count(), 1);
+    for t in map.of_class(class::SOUND_ENVIRONMENT) {
+        SoundEnvironment::read(map, t).unwrap();
+    }
+    let a30 = load("a30").unwrap();
+    let env = |name: &str| {
+        let t = a30
+            .of_class(class::SOUND_ENVIRONMENT)
+            .find(|t| t.path.ends_with(name))
+            .unwrap_or_else(|| panic!("no environment `{name}`"));
+        SoundEnvironment::read(&a30, t).unwrap()
+    };
+    let close = |a: f32, b: f32| (a - b).abs() <= 0.0005 * b.abs().max(1.0);
+    let check = |e: SoundEnvironment, want: [f32; 12]| {
+        let got = [
+            e.room_intensity,
+            e.room_intensity_hf,
+            e.decay_time,
+            e.decay_hf_ratio,
+            e.reflections_intensity,
+            e.reflections_delay,
+            e.reverb_intensity,
+            e.reverb_delay,
+            e.diffusion,
+            e.density,
+            e.hf_reference,
+            e.priority as f32,
+        ];
+        for (g, w) in got.iter().zip(want) {
+            assert!(close(*g, w), "{got:?} against {want:?}");
+        }
+    };
+    check(env("mountains"), [0.316, 0.0562, 1.49, 0.21, 0.0128, 0.3, 0.009, 0.1, 0.27, 1.0, 5000.0, 0.0]);
+    check(env("hallway"), [0.316, 0.71, 1.49, 0.59, 0.077, 0.007, 0.166, 0.011, 1.0, 1.0, 5000.0, 0.0]);
+    check(env("concert_hall"), [0.316, 0.5623, 3.92, 0.7, 0.0767, 0.02, 0.0997, 0.029, 1.0, 1.0, 5000.0, 0.0]);
+}

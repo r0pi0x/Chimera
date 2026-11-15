@@ -62,6 +62,7 @@
 //!
 //! `HaloPlugins` adds the game's parts after `crate::SimPlugins`.
 
+pub mod audio;
 pub mod body;
 pub mod damage;
 pub mod fx;
@@ -188,6 +189,7 @@ impl PluginGroup for HaloPlugins {
             .add(damage::DamagePlugin)
             .add(weapons::HaloWeaponsPlugin)
             .add(fx::HaloFxPlugin)
+            .add(audio::HaloAudioPlugin)
             .add(body::HaloBodyPlugin)
             .add(view::HaloViewPlugin)
             .add(respawn::HaloRespawnPlugin)
@@ -208,7 +210,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     info: &INFO,
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
-    guest: Some(&fx::load::GUEST),
+    guest: Some(&audio::GUEST),
     // Its guns' view and held models stay on its maps in an app whose
     // gameplay is another game's (a party's Halo rungs on Hang 'Em High).
     kept: &["halo_ce:"],
@@ -227,6 +229,9 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         // Its players' body, worn by its guns' holders (`body`).
         app.add_plugins(body::HaloBodyPlugin);
         app.add_plugins(view::HaloViewPlugin);
+        if !app.is_plugin_added::<audio::HaloAudioPlugin>() {
+            app.add_plugins(audio::HaloAudioPlugin);
+        }
     },
     display_names: None,
 };
