@@ -8,10 +8,12 @@
 //! stuck), then up to 10 segments: guidance (`Steer`: the target point
 //! and the turn per segment, exactly that angle, never chasing a target
 //! behind), the deceleration window (its timer's step lower / v0, the
-//! disc's quirk), the final-speed floor and the slowed bolt's
-//! disappearance, gravity, the range cut, a trace of the segment through a
-//! callback (the level and characters: `super::systems`), and at a hit
-//! gravity and deceleration taken back for the unused part of the tick,
+//! disc's quirk), the final-speed floor (never for a projectile whose
+//! initial and final velocities are equal: Quirks 11) and the slowed
+//! bolt's disappearance, gravity, the range cut, a trace of the segment
+//! through a callback (the level and characters: `super::systems`), and at
+//! a hit gravity taken back for the unused part of the tick and the speed
+//! clamp (only on a segment the deceleration slowed),
 //! the direct-hit damage (a callback, which says which material took it:
 //! the shield's when the shield took the larger share), and the material
 //! response of behaviours 6 and 7 by the hit's material type
@@ -275,7 +277,10 @@ impl Flight {
                     // Gone where it is (no further move once slowed).
                     self.ask(Request::Disappear);
                     break;
-                } else if s > 0.0 && s < vf {
+                } else if s > 0.0 && s < vf && p.initial_velocity != vf {
+                    // Never for a projectile whose initial and final
+                    // velocities are equal (Quirks 11: its speed lands a
+                    // rounding step under vf by chance).
                     s_end = 0.99 * vf;
                     v2 = vt * (s_end / s);
                 }

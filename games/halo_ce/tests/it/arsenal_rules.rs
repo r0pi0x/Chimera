@@ -311,10 +311,10 @@ fn the_arsenals_level_shots_fly_as_the_table_gives() {
     for (k, x) in [(1, 0.13333), (2, 0.26667), (5, 0.66667), (10, 1.33333)] {
         assert!(near(pos[k - 1].0, xz(x, 0.62), 1e-4), "needle update {k}: {:?}", pos[k - 1]);
     }
-    // Update 150 by the spec; 151 in single precision (149 sums of
-    // 0.13333334 leave 19.866654, short of the last step by 1.3e-5).
+    // Update 151 in single precision (projectiles.md (a): 150 updates end
+    // 1.3e-5 short of the range, the 151st moves that and detonates).
     let (k, e) = end.unwrap();
-    assert!((150..=151).contains(&k) && e == End::Detonate, "{k}");
+    assert!(k == 151 && e == End::Detonate, "{k}");
     assert!((pos[k as usize - 1].0.x - 20.0).abs() < 1e-3);
     // Plasma pistol bolt: gravity 0.1, the floor on update 65 at 39.7756.
     let bolt = gun(PLASMA_PISTOL).projectile;
@@ -477,25 +477,62 @@ fn chase(p: &Projectile, omega: f32, updates: u32) -> Vec<(f32, f32, f32)> {
 #[test]
 fn guidance_turns_by_the_full_rate_each_update() {
     let needle = gun(NEEDLER).projectile;
-    let c = chase(&needle, 0.0261799, 60);
-    assert!(c[0].2.abs() < 1e-3 && (c[1].2 - 1.5).abs() < 1e-3, "{:?}", &c[..3]);
-    for (k, x, y, h) in [(10, 1.3277, 0.0485, 4.5), (20, 2.633, 0.2378, 13.5), (40, 5.0923, 1.167, 31.5), (60, 7.0202, 2.9398, 55.5)] {
-        let (px, py, ph) = c[k - 1];
-        // The headings exactly; the positions within 2 %: the spec's
-        // path is about 1 % shorter (its turned velocity, rounded below the
-        // final speed, meets the 0.99 floor now and then).
-        assert!((px - x).abs() < 0.02 * x && (py - y).abs() < 0.02 * y + 2e-3 && (ph - h).abs() < 0.05, "update {k}: {:?}", c[k - 1]);
-    }
-    // The AI's rate overshoots: 3, 0, 3 degrees after 2, 5, 10.
-    let c = chase(&needle, 0.0523599, 60);
-    for (k, h) in [(2, 3.0), (5, 0.0), (10, 3.0), (20, 15.0), (40, 33.0), (60, 57.0)] {
+    // The multiplayer rate: the guided rate / 30 times the "guidance vs
+    // player" factor of normal, 0.5 (projectiles.md 12): 1.5 degrees.
+    let omega = needle.guided_angular_velocity / 30.0 * halo_ce::game::weapons::systems::GUIDANCE_VS_PLAYER;
+    assert!((omega - 0.0261799).abs() < 1e-6, "{omega}");
+    let c = chase(&needle, omega, 100);
+    assert!(c[0].2.abs() < 1e-3, "{:?}", &c[..3]);
+    // The headings after updates 2 to 12.
+    for (k, h) in (2..=12).zip([1.5, 0.0, 1.5, 3.0, 1.5, 3.0, 4.5, 6.0, 4.5, 6.0, 7.5]) {
         assert!((c[k - 1].2 - h).abs() < 0.05, "update {k}: {:?}", c[k - 1]);
     }
-    // The charged bolt at the player rate.
+    // The corrected table, in 32-bit positions with the Quirks 11 rule
+    // (the needle's speed stays 0.13333334): positions to 0.01 WU,
+    // headings to 0.05 degrees. The table's heading for update 60, 57.0, is
+    // not its path's: the step from update 60 to 61 is at 55.5 degrees
+    // (57.0 comes one update later); its positions agree to 1e-4.
+    for (k, x, y, h) in [(1, 0.1333, 0.0, 0.0), (2, 0.2667, 0.0, 1.5), (10, 1.3317, 0.0488, 4.5), (20, 2.6502, 0.2400, 13.5), (40, 5.1343, 1.1786, 31.5), (60, 7.0611, 2.9878, 55.5)] {
+        let (px, py, ph) = c[k - 1];
+        assert!((px - x).abs() < 0.01 && (py - y).abs() < 0.01 && (ph - h).abs() < 0.05, "update {k}: {:?}", c[k - 1]);
+    }
+    // Never slowed by rounding.
+    let mut f = Flight::new(&needle, MUZZLE, Vec3::X, 0.0);
+    for k in 1..=100u32 {
+        let target = Vec3::new(8.0, 0.62, 0.075 * (k - 1) as f32);
+        f.update(&needle, &mut None::<u8>, &mut HaloRng(1), Some(Steer { target, omega }), &mut |_, _, _| None, &mut |_, _, _| None);
+        assert!((f.speed() - needle.final_velocity).abs() < 1e-6, "update {k}: speed {}", f.speed());
+    }
+    // The AI's rate (factor 1, not in multiplayer) overshoots: 3, 0, 3
+    // degrees after 2, 3, 4.
+    let c = chase(&needle, 0.0523599, 60);
+    for (k, h) in (2..=12).zip([3.0, 0.0, 3.0, 0.0, 3.0, 6.0, 3.0, 6.0, 3.0, 6.0, 9.0]) {
+        assert!((c[k - 1].2 - h).abs() < 0.05, "update {k}: {:?}", c[k - 1]);
+    }
+    for (k, x, y, h) in [(10, 1.3311, 0.0558, 3.0), (20, 2.6497, 0.2435, 15.0), (40, 5.1323, 1.1815, 33.0), (60, 7.0677, 2.9798, 57.0)] {
+        let (px, py, ph) = c[k - 1];
+        assert!((px - x).abs() < 0.01 && (py - y).abs() < 0.01 && (ph - h).abs() < 0.05, "AI update {k}: {:?}", c[k - 1]);
+    }
+    // The charged bolt at the player rate (0.0084357).
     let bolt = gun(PLASMA_PISTOL).secondary.unwrap().projectile;
-    let c = chase(&bolt, 0.0084357, 20);
+    let omega = bolt.guided_angular_velocity / 30.0 * halo_ce::game::weapons::systems::GUIDANCE_VS_PLAYER;
+    assert!((omega - 0.0084357).abs() < 1e-6, "{omega}");
+    let c = chase(&bolt, omega, 20);
     for (k, h) in [(2, 0.483), (10, 4.35), (20, 8.7)] {
         assert!((c[k - 1].2 - h).abs() < 0.02, "update {k}: {:?}", c[k - 1]);
+    }
+}
+
+/// The wander offset's length by the distance between the centres
+/// (projectiles.md 12 step 2): 1 WU at 12, 0.5 at 6, 0 at 1.5.
+#[test]
+fn the_wander_offset_grows_with_the_distance() {
+    use halo_ce::game::weapons::flight::wandered;
+    for (e, len) in [(12.0, 1.0), (6.0, 0.5), (1.5, 0.0), (10.0, 1.0)] {
+        for tick in [0, 17, 4000] {
+            let got = (wandered(Vec3::ZERO, e, tick, 5) - Vec3::ZERO).length();
+            assert!((got - len).abs() < 1e-5, "e = {e}, tick {tick}: {got}");
+        }
     }
 }
 
