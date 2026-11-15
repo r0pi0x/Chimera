@@ -46,6 +46,7 @@ mod heavy {
     mod maps;
     mod mount;
     mod served;
+    mod stand;
     mod view;
     mod vitality_data;
     mod weapon_data;
