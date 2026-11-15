@@ -31,7 +31,7 @@ use chimera_net::{
     net::{
         NetHooks,
         asset_startup::{self, AppGame, StartupFetch, Status},
-        assets::{self, AssetHooks, AssetHost, AssetNames, AssetSession, AssetsArrived, FILES, PrefetchRate},
+        assets::{self, AssetHooks, AssetHost, AssetNames, AssetSession, AssetsArrived, FILES, JoinSets, MapAhead, StreamLink, Streams},
         client::{JoinFailure, JoinProgress, JoinStage},
         manifest::{GameMount, LocalMounts, MatchManifest, MountReport},
         memory::LinkConditions,
@@ -57,21 +57,26 @@ fn setup(host: AssetHost) -> impl Fn(&mut App) + Send + Sync + 'static {
     }
 }
 
-/// The match's pool: a later map of the stand-in game (prefetched).
-fn pool(_: &World) -> AssetNames {
+/// The match hands out the stand-in game's gun (`weapon/gun`).
+fn gun(_: &World) -> AssetNames {
     AssetNames {
-        pool: vec![format!("{GAME}:later")],
+        weapons: vec![format!("{GAME}:weapon_gun")],
         ..default()
     }
 }
 
-/// `setup` with a pool (the offer's `later`).
-fn setup_pool(host: AssetHost) -> impl Fn(&mut App) + Send + Sync + 'static {
+/// `setup` with the gun in the offer.
+fn setup_gun(host: AssetHost) -> impl Fn(&mut App) + Send + Sync + 'static {
     let base = setup(host);
     move |app: &mut App| {
         base(app);
-        app.world_mut().resource_mut::<AssetHooks>().0.push(pool);
+        app.world_mut().resource_mut::<AssetHooks>().0.push(gun);
     }
+}
+
+/// A client part's own sets for the match (music's first track).
+fn first_track(_: &World) -> Vec<(String, String)> {
+    vec![(GAME.into(), "music/bgm/first.mp3".into())]
 }
 
 /// The asset service with the stand-in game: `base` and `players` (what a
@@ -122,8 +127,15 @@ impl Fixture {
         }
         put("models/player.mdl".into(), b"a player".to_vec(), "players");
         put("extra/big.dat".into(), vec![9u8; 50_000], "extra");
-        // A later map (`map/later`, the pool's: prefetched): 60 kB a record.
-        for i in 0..8u32 {
+        // Each match's other sets: `common`, a gun with its sound, the
+        // music's first track.
+        put("sound/explode.wav".into(), b"boom".to_vec(), "common");
+        put("models/gun.mdl".into(), b"a gun".to_vec(), "weapon/gun");
+        put("sound/gun/fire.wav".into(), b"bang".to_vec(), "weapon/gun");
+        put("loose/bgm/first.mp3".into(), b"a first track".to_vec(), "music/bgm/first.mp3");
+        // The next map (`map/later`, the vote's winner) and the next music
+        // track (`music/bgm/next.mp3`): 60 kB a record, 8 and 6 of them.
+        for i in 0..14u32 {
             // xorshift: bytes zstd can't shrink.
             let mut x = 0x9E37_79B9_7F4A_7C15u64 ^ u64::from(i + 1);
             let bytes: Vec<u8> = (0..60_000)
@@ -134,7 +146,11 @@ impl Fixture {
                     (x >> 24) as u8
                 })
                 .collect();
-            put(format!("maps/later{i}.dat"), bytes, "map/later");
+            if i < 8 {
+                put(format!("maps/later{i}.dat"), bytes, "map/later");
+            } else {
+                put(format!("loose/bgm/next{i}.mp3"), bytes, "music/bgm/next.mp3");
+            }
         }
         m.save(&store.manifest_path(GAME, "7")).unwrap();
         let service = if tickets {
@@ -432,7 +448,7 @@ fn the_download_shows_its_progress() {
     let token = svc.user("tester");
     let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
     sim.add_client(client_with(svc.session("client", &token, true), true));
-    let total: u64 = ["base", "players"]
+    let total: u64 = ["base", "players", "common"]
         .iter()
         .flat_map(|s| svc.manifest.sets[*s].iter())
         .map(|p| svc.manifest.files[p].stored)
@@ -792,69 +808,112 @@ fn a_community_map_the_install_lacks_comes_from_the_asset_service() {
     community_map_join(&svc, &token, "fresh_client", false, &bytes);
 }
 
-fn prefetch(sim: &NetSim, i: usize) -> Option<assets::PrefetchState> {
-    assets::prefetch_state(sim.clients[i].app.world())
+/// The match's sets, all of them, are in the store when the player
+/// spawns: the offer's (`base`, `players`, `common`, the ladder's gun
+/// with its sound) and the client's own (`JoinSets`: music's first
+/// track); a set nobody names isn't fetched.
+#[test]
+fn a_client_entering_a_match_has_every_needed_set_before_it_spawns() {
+    let svc = Fixture::new("needed", 5, Duration::from_millis(20));
+    let token = svc.user("tester");
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup_gun(svc.host()));
+    let session = svc.session("client", &token, true);
+    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
+    sim.add_client(move |w: &mut World| {
+        client_with(session, true)(w);
+        w.get_resource_or_init::<JoinSets>().0.push(first_track);
+    });
+    let start = std::time::Instant::now();
+    // Stepped until the player is in play (joined, its character here),
+    // and no further.
+    while !joined(&mut sim, 0) {
+        assert!(start.elapsed().as_secs() < 30, "spawned: {:?}", progress(&sim, 0));
+        sim.step();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    for set in ["base", "players", "common", "weapon/gun", "music/bgm/first.mp3"] {
+        assert!(svc.ids(set).iter().all(|id| store.has(id)), "{set} here before the player spawned");
+    }
+    for set in ["extra", "map/later", "music/bgm/next.mp3"] {
+        assert!(svc.ids(set).iter().all(|id| !store.has(id)), "{set}: nobody needs it now");
+    }
 }
 
-/// The pool's later map comes in the background at the prefetch's rate:
-/// the client's, capped by the server's hint; held while the client is
-/// changing level; none at all when the server says 0.
+/// The vote's winner (`minigame::NextMatch`) is fetched ahead at once, at
+/// full speed, holding a stream meanwhile; a stream due in a few seconds
+/// over a slow link (200 KB/s) is paced to its time and ready before it
+/// is due.
 #[test]
-fn the_prefetch_keeps_to_its_rate_and_holds_for_the_foreground() {
-    let svc = Fixture::new("prefetch", 2, Duration::ZERO);
+fn the_voted_map_comes_ahead_and_a_stream_is_ready_before_it_is_due() {
+    let svc = Fixture::new("ahead", 2, Duration::ZERO);
     let token = svc.user("tester");
-    let later = svc.ids("map/later");
-    let bytes: u64 = svc.manifest.sets["map/later"].iter().map(|p| svc.manifest.files[p].stored).sum();
-    assert!(bytes > 300_000, "{bytes}");
-
-    // The server caps it at 100 KB/s (the client's own is 2 MB/s).
-    let mut host = svc.host();
-    host.prefetch_max = 100;
-    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup_pool(host));
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
     let session = svc.session("client", &token, true);
     let store = session.settings.as_ref().unwrap().store.clone().unwrap();
     sim.add_client(client_with(session, true));
     assert!(until(&mut sim, 30.0, |s| joined(s, 0)));
-    assert!(until(&mut sim, 10.0, |s| prefetch(s, 0).is_some_and(|p| p.running)));
-    let state = prefetch(&sim, 0).unwrap();
-    assert_eq!(state.rate_kb, 100, "{state:?}");
-    assert!(!state.paused);
-    // Changing level: held.
-    sim.clients[0].app.world_mut().resource_mut::<JoinProgress>().stage = JoinStage::ChangingLevel;
-    sim.step();
-    assert!(prefetch(&sim, 0).unwrap().paused, "held while changing level");
-    sim.clients[0].app.world_mut().resource_mut::<JoinProgress>().stage = JoinStage::Joined;
-    sim.step();
-    assert!(!prefetch(&sim, 0).unwrap().paused);
-    // At 100 KB/s the set (> 300 kB) takes more than 2.5 s: after 1 s of
-    // play, never all of it (a lower bound: pacing is never faster).
-    let start = std::time::Instant::now();
-    until(&mut sim, 1.0, |_| false);
-    let elapsed = start.elapsed().as_secs_f64();
-    let have = later.iter().filter(|id| store.has(id)).count();
-    assert!(have < later.len() || elapsed > 2.5, "{have} of {} after {elapsed:.1} s", later.len());
-    // The client may lower it further (the cvar), and it all arrives.
-    sim.clients[0].app.world_mut().insert_resource(PrefetchRate(50));
-    sim.step();
-    assert_eq!(prefetch(&sim, 0).unwrap().rate_kb, 50);
-    sim.clients[0].app.world_mut().insert_resource(PrefetchRate(100_000));
-    assert!(
-        until(&mut sim, 30.0, |_| later.iter().all(|id| store.has(id))),
-        "the later map prefetched"
-    );
+    let next = svc.ids("music/bgm/next.mp3");
+    let bytes: u64 = svc.manifest.sets["music/bgm/next.mp3"].iter().map(|p| svc.manifest.files[p].stored).sum();
+    assert!(bytes > 300_000, "{bytes}");
+    assert!(next.iter().all(|id| !store.has(id)), "not with the join");
 
-    // The server says 0: no prefetch for anyone.
-    let mut host = svc.host();
-    host.prefetch_max = 0;
-    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup_pool(host));
-    let session = svc.session("client0", &token, true);
-    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
-    sim.add_client(client_with(session, true));
-    assert!(until(&mut sim, 30.0, |s| joined(s, 0)));
-    until(&mut sim, 1.0, |_| false);
-    let state = prefetch(&sim, 0).unwrap();
-    assert_eq!((state.rate_kb, state.running), (0, false), "{state:?}");
-    assert!(later.iter().all(|id| !store.has(id)), "nothing prefetched");
+    // The stream: due in 8 s on a 200 KB/s link, paced to about 4 s.
+    let world = sim.clients[0].app.world_mut();
+    world.insert_resource(StreamLink(200_000));
+    world.resource_mut::<Streams>().request(GAME, "music/bgm/next.mp3", 8.0);
+    let asked = std::time::Instant::now();
+    assert!(until(&mut sim, 5.0, |s| assets::stream_state(s.clients[0].app.world()).unwrap().running.is_some()));
+    until(&mut sim, 0.2, |_| false);
+    let rate = assets::stream_state(sim.clients[0].app.world()).unwrap().rate;
+    assert!((assets::STREAM_MIN_RATE..=200_000).contains(&rate), "paced to its time, at most the link: {rate}");
+
+    // The vote locks in the next map: its fetch begins within two
+    // frames, the stream held while it runs.
+    sim.clients[0].app.world_mut().insert_resource(chimera_sim::minigame::NextMatch {
+        map: Some(format!("{GAME}:later")),
+        at: 0.0,
+    });
+    sim.step();
+    sim.step();
+    let ahead = sim.clients[0].app.world().get_resource::<MapAhead>().map(|a| a.map.clone());
+    assert_eq!(ahead, Some(format!("{GAME}:later")), "the next map's fetch began");
+    let later = svc.ids("map/later");
+    let mut held = false;
+    assert!(
+        until(&mut sim, 10.0, |s| {
+            let w = s.clients[0].app.world();
+            if w.get_resource::<MapAhead>().is_some_and(MapAhead::running) {
+                held |= assets::stream_state(w).unwrap().paused;
+            }
+            later.iter().all(|id| store.has(id)) && w.get_resource::<MapAhead>().is_some_and(|a| a.result.is_some())
+        }),
+        "the next map arrived ahead"
+    );
+    let ahead = sim.clients[0].app.world().resource::<MapAhead>();
+    assert!(matches!(ahead.result, Some(Ok(_))), "{:?}", ahead.result);
+    assert!(held, "the stream was held while the next map came");
+
+    // The stream goes on and is ready before it is due.
+    assert!(
+        until(&mut sim, 8.0, |s| s.clients[0].app.world().resource::<Streams>().ready(GAME, "music/bgm/next.mp3")),
+        "ready"
+    );
+    let took = asked.elapsed().as_secs_f64();
+    assert!(took < 8.0, "ready {took:.1} s after it was asked, due at 8 s");
+    // Never faster than the link: the set at 200 KB/s at best.
+    assert!(took >= bytes as f64 / 200_000.0 * 0.9, "{took:.2} s for {bytes} bytes");
+    assert!(next.iter().all(|id| store.has(id)));
+}
+
+/// A stream's rate: its bytes within half its time left, at least the
+/// floor, at most the link.
+#[test]
+fn a_streams_rate_follows_its_time_left() {
+    use assets::{STREAM_MIN_RATE, stream_rate};
+    assert_eq!(stream_rate(1_000_000, 20.0, 4_000_000), 100_000);
+    assert_eq!(stream_rate(1_000, 60.0, 4_000_000), STREAM_MIN_RATE);
+    assert_eq!(stream_rate(10_000_000, 1.0, 2_000_000), 2_000_000, "due sooner than the link allows");
+    assert_eq!(stream_rate(1_000_000, -5.0, 4_000_000), 2_000_000, "overdue: as fast as it may");
 }
 
 /// A player who fetched before the host published again (same build, sets

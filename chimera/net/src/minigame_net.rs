@@ -264,7 +264,6 @@ fn register(app: &mut App) {
         .0
         .push(|w| crate::net::assets::AssetNames {
             weapons: match_weapons(w),
-            pool: match_pool(w),
             ..Default::default()
         });
     use crate::console::ConsoleAppExt;
@@ -810,19 +809,6 @@ pub fn match_ladder(world: &World) -> Option<std::borrow::Cow<'_, Ladder>> {
         Some(c) => minigame::ladder::draw(world, c.def).map(std::borrow::Cow::Owned),
         None => world.get_resource::<Ladder>().map(std::borrow::Cow::Borrowed),
     }
-}
-
-/// The match's map pool (`net::normalize_map`'s form), the first first:
-/// what a rotation can play next (the asset offer's prefetch); drawn by
-/// the count (`map_fit`), the maps let in for the characters present,
-/// likeliest first.
-pub fn match_pool(world: &World) -> Vec<String> {
-    match_def(world)
-        .map(|d| {
-            let pool: Vec<String> = d.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
-            minigame::map_fit::likeliest(world, d, &pool)
-        })
-        .unwrap_or_default()
 }
 
 /// The server's manifest hook: the playing minigame (the coming one

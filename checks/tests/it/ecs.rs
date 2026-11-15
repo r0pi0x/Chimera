@@ -89,7 +89,12 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
         "chimera/net/src/net/assets.rs",
         "AssetHooks",
-        "read-only answers (`&World`): the match's weapons, map pool and a game's sets for the asset offer",
+        "read-only answers (`&World`): the match's weapons and a game's sets for the asset offer",
+    ),
+    (
+        "chimera/net/src/net/assets.rs",
+        "JoinSets",
+        "read-only answers (`&World`): the sets a client part wants with the match's download (a game's first music tracks)",
     ),
     (
         "chimera/client/src/client/kill_feed.rs",

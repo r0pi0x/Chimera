@@ -61,10 +61,13 @@ pub enum Screen {
 }
 
 /// The music files the client can open and their lengths (ms; None until
-/// known).
+/// known). A file may be known but not here yet (`pending`: served by the
+/// asset store, its track's set still to come, `ui::music`'s streaming):
+/// the party playlist moves on only to tracks that are here.
 #[derive(Resource, Clone, Debug, Default)]
 pub struct MusicFiles {
     files: HashMap<String, Option<f64>>,
+    pending: std::collections::BTreeSet<String>,
 }
 
 impl MusicFiles {
@@ -73,6 +76,7 @@ impl MusicFiles {
     pub fn from_data(d: &MusicData) -> Self {
         Self {
             files: d.files.iter().map(|(k, v)| (k.clone(), Some(v * 1000.0))).collect(),
+            pending: Default::default(),
         }
     }
 
@@ -86,6 +90,25 @@ impl MusicFiles {
 
     pub fn exists(&self, file: &str) -> bool {
         self.files.contains_key(&normalize(file))
+    }
+
+    /// Mark `file` as not here yet (true) or here (false).
+    pub fn set_pending(&mut self, file: &str, pending: bool) {
+        if pending {
+            self.pending.insert(normalize(file));
+        } else {
+            self.pending.remove(&normalize(file));
+        }
+    }
+
+    /// Known and here (not pending).
+    pub fn ready(&self, file: &str) -> bool {
+        self.exists(file) && !self.pending.contains(&normalize(file))
+    }
+
+    /// The files known but not here yet.
+    pub fn pending(&self) -> impl Iterator<Item = &String> {
+        self.pending.iter()
     }
 
     pub fn length_ms(&self, file: &str) -> Option<f64> {
@@ -268,6 +291,24 @@ impl CaMusic {
     /// refills (shuffled again, not starting with the track just played)
     /// when it is empty, so every track plays once before any repeats.
     fn party_next(&mut self, now: f64) {
+        self.fill_bag();
+        // The next track that is here (one still coming waits its turn);
+        // none left in this pass: a new pass (those still coming are in it
+        // again).
+        if !self.bag.iter().any(|f| self.files.ready(f)) {
+            self.bag.clear();
+            self.fill_bag();
+        }
+        let Some(i) = self.bag.iter().rposition(|f| self.files.ready(f)) else { return };
+        let file = self.bag.remove(i);
+        // A playlist of one repeats its track.
+        let looping = self.party_playlist_size() == 1;
+        self.party_last = file.clone();
+        self.start(&file, looping, self.data.menu_fade, now);
+    }
+
+    /// The party playlist's bag refilled (shuffled) when empty.
+    fn fill_bag(&mut self) {
         if self.bag.is_empty() {
             let files = &self.files;
             let source: Vec<&String> = if self.data.party.playlist.is_empty() {
@@ -292,11 +333,47 @@ impl CaMusic {
             }
             self.bag = bag;
         }
-        let Some(file) = self.bag.pop() else { return };
-        // A playlist of one repeats its track.
-        let looping = self.party_playlist_size() == 1;
-        self.party_last = file.clone();
-        self.start(&file, looping, self.data.menu_fade, now);
+    }
+
+    /// The party playlist's next track (the bag drawn when empty), what
+    /// `party_next` plays when it is here: what to fetch ahead.
+    pub fn party_upcoming(&mut self) -> Option<String> {
+        if self.party_music != 1 {
+            return None;
+        }
+        self.fill_bag();
+        self.bag.last().cloned()
+    }
+
+    /// The party music's files a match plays from its start on (the mode's
+    /// start track, the last-stage music, the loading track) and the
+    /// playlist's first: what a client fetches with the match's files.
+    pub fn party_first_files(&mut self) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.party_music == 0 {
+            return out;
+        }
+        let mode = self.data.party.mode.clone();
+        if let Some((file, _)) = self.data.mode_track(&mode, None) {
+            out.push(file.to_string());
+        }
+        out.push(self.data.cues.last_stage.clone());
+        out.push(self.data.cues.loading.clone());
+        out.extend(self.party_upcoming());
+        out.retain(|f| !f.is_empty());
+        out
+    }
+
+    /// The party track playing now and the ms left of it (None: none, or
+    /// its length unknown).
+    pub fn party_left(&self, now: f64) -> Option<(String, f64)> {
+        if !self.party || !self.playlist_on {
+            return None;
+        }
+        // The newest stream: the one fading in during a cross-fade.
+        let p = self.player.secondary.as_ref().or(self.player.primary.as_ref())?;
+        let len = self.files.length_ms(&p.file)?;
+        Some((p.file.clone(), (len - p.position(now, Some(len))).max(0.0)))
     }
 
     /// The `party_music` cvar set: None (0) in a party match stops what

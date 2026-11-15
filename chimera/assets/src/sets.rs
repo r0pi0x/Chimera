@@ -1,7 +1,7 @@
 //! Fetching whole sets from the asset service, as the game does it
 //! (docs/plans/active/asset-service.md, "Playtest delivery"): the files a
-//! join's offer names (`chimera_net::net::assets`), the later maps it
-//! prefetches (at a `Pace`), and what the games read at startup
+//! join's offer names (`chimera_net::net::assets`), the next map ahead
+//! and the background streams (at a `Pace`), and what the games read at startup
 //! (`STARTUP_SETS`, fetched behind the client's progress window). `fetch`
 //! reads each game's manifest (fetched when the store lacks it, and again
 //! when the service lists another one for the same build: `refresh`), the

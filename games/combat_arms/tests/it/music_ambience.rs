@@ -1297,6 +1297,96 @@ fn the_party_plays_the_start_track_once_then_a_shuffled_playlist() {
     assert_ne!(order[5], order[6], "not the track just played");
 }
 
+/// Served music (each track its own set, `ui::music` and
+/// `game::music::stream_tracks`): the tracks are pending until fetched.
+/// The match's first files (the start track, the last-stage music, the
+/// loading track and the playlist's first) come with the match's
+/// download; each next track is asked for when the one before starts,
+/// due when its cross-fade begins, over a simulated link of 200 KB/s (a
+/// track of 1.5 MB in 7.5 s, the next asked as soon as the last
+/// arrived): every next track is here before it is due, and the playlist
+/// goes on as with every file here. A track that never comes is skipped,
+/// not waited for in silence.
+#[test]
+fn streamed_tracks_arrive_before_they_are_due_and_the_playlist_never_waits() {
+    const LINK: f64 = 200_000.0;
+    const TRACK_BYTES: f64 = 1_500_000.0;
+    let fade = data().menu_fade;
+    let served = |m: &mut CaMusic| {
+        let files: Vec<String> = data().files.keys().cloned().chain(["bgm/bgm_03.mp3".into(), "bgm/bgm_05.mp3".into(), "bgm/bgm_06.mp3".into()]).collect();
+        for f in files {
+            m.files.set_pending(&f, true);
+        }
+    };
+    // The order with every file here.
+    let mut all = six_tracks();
+    let mut prev = MusicFacts::default();
+    started(&mut all, &mut prev);
+    let live = party(CA, LIVE, true);
+    let want = live_until(&mut all, &mut prev, &live, 1_250.0, 600_000.0);
+
+    let mut m = six_tracks();
+    served(&mut m);
+    // The match's download (before the start of play).
+    for f in m.party_first_files() {
+        m.files.set_pending(&f, false);
+    }
+    let mut prev = MusicFacts::default();
+    started(&mut m, &mut prev);
+    // The streaming, one track at a time over the link.
+    let mut fetching: Option<(String, f64, f64)> = None;
+    let mut got = Vec::new();
+    let mut last = m.current.clone();
+    let mut t = 1_250.0;
+    while t <= 600_000.0 {
+        if let Some((file, done, due)) = fetching.clone()
+            && t >= done
+        {
+            assert!(done <= due, "{file} arrived at {done} ms, due at {due} ms");
+            m.files.set_pending(&file, false);
+            fetching = None;
+        }
+        if fetching.is_none()
+            && let (Some((_, left)), Some(next)) = (m.party_left(t), m.party_upcoming())
+            && !m.files.ready(&next)
+        {
+            let due = t + left - fade * 1000.0;
+            fetching = Some((next, t + TRACK_BYTES / LINK * 1000.0, due));
+        }
+        step(&mut m, &mut prev, live.clone(), t);
+        if last != m.current && !m.current.is_empty() {
+            got.push(m.current.clone());
+        }
+        last = m.current.clone();
+        t += 250.0;
+    }
+    assert_eq!(got, want, "the same playlist, on time");
+    assert!(got.len() >= 8, "{got:?}");
+
+    // A track that never comes: the playlist goes on with one that is
+    // here, no silence.
+    let mut m = six_tracks();
+    served(&mut m);
+    for f in m.party_first_files() {
+        m.files.set_pending(&f, false);
+    }
+    let stuck = m.party_upcoming().unwrap();
+    let others: Vec<String> = ["bgm/bgm_03.mp3", "bgm/bgm_05.mp3", "bgm/bgm_06.mp3"]
+        .iter()
+        .chain(data().playlist.iter().map(|e| e.file.as_str()).collect::<Vec<_>>().iter())
+        .map(|f| f.to_string())
+        .filter(|f| *f != stuck)
+        .collect();
+    let mut prev = MusicFacts::default();
+    started(&mut m, &mut prev);
+    for f in &others {
+        m.files.set_pending(f, false);
+    }
+    m.files.set_pending(&stuck, true);
+    let seen = live_until(&mut m, &mut prev, &live, 1_250.0, 200_000.0);
+    assert!(!seen.is_empty() && !seen.contains(&stuck), "{seen:?}");
+}
+
 /// The last stage takes over, and once nobody is on it the playlist
 /// resumes with a track not yet played this pass (not the start track).
 #[test]

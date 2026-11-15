@@ -13,7 +13,7 @@
 //!   certificate of its own (`tls::front`).
 //! - **The game server**, in this process: Ultimate Gun Game's dedicated
 //!   server (`chimera_net::dedicated::app`, as its binary builds it) on
-//!   the installs, a fixed rung seed, prefetch off, three bots.
+//!   the installs, a fixed rung seed, three bots.
 //! - **The client**: this crate's `ultimate_gun_game` binary, offscreen,
 //!   with no install (its own home, an empty config, no Steam), the
 //!   service's token in its access file bound to no service (a tester's
@@ -21,6 +21,14 @@
 //!   no restart; `CHIMERA_GUARD_BOUND=1`: bound already, the startup files
 //!   in the background from the start), its own empty store: it downloads
 //!   at each join as a tester does.
+//!
+//! Before each map after the first, the server locks it in as the
+//! match-end screen's next map (`minigame::NextMatch`, as the map vote's
+//! close does): the client must fetch it ahead (`net::assets::MapAhead`,
+//! its "the next map's game files" line) within `AHEAD_LIMIT`, before the
+//! level change. The music's tracks stream while playing
+//! (`net::assets::Streams`): a stream that missed would be an on-demand
+//! fetch in the match, which fails the test as any other.
 //!
 //! The session (`SESSION`, then `HL2DM_MAP` when HL2:DM is installed and
 //! published: its sprays come with its map's `map/<name>` set, its guns'
@@ -41,7 +49,9 @@
 //! without the CS:S and Combat Arms installs, without a published store
 //! holding both games' manifests, or off Unix (the records are linked);
 //! `CHIMERA_FETCH_GUARD=0` skips it. A client that fails to start (no GPU)
-//! fails it with its log. About 200 s (2026-11-12, a loaded box: each map
+//! fails it with its log (all of it in
+//! `<target tmp>/no_fetch_in_match-client.log`, its on-demand fetches in
+//! `no_fetch_in_match-fetch.log` beside it). About 200 s (2026-11-12, a loaded box: each map
 //! in its match 30-75 s after the ladder, 27 s of climbing).
 //!
 //! `cargo test -p ultimate_gun_game --features dev --test it heavy::no_fetch_in_match -- --nocapture`
@@ -63,7 +73,10 @@ use chimera_core::{
     },
 };
 use chimera_net::dedicated::{self, GameServer, ServerHooks, ServerMinigame, StartMap};
-use chimera_sim::minigame::ladder::{Ladder, Rung, RungSeed, set_rung};
+use chimera_sim::minigame::{
+    NextMatch,
+    ladder::{Ladder, Rung, RungSeed, set_rung},
+};
 use party_kit::server::PARTY;
 
 /// Each map's ladder: its seed and map (ladder seeds 217377-217379, as the
@@ -86,6 +99,9 @@ const RUNG_SECONDS: f64 = 2.0;
 /// long they are watched.
 const SURPRISES: [&str; 2] = ["surprise airstrike 12 3", "surprise gravity 6"];
 const SURPRISE_SECONDS: f64 = 10.0;
+/// The longest the next map's fetch ahead may take (the match-end screen
+/// and the lobby).
+const AHEAD_LIMIT: Duration = Duration::from_secs(180);
 /// The longest the client may take to reach a match (its first start
 /// downloads every game's `base`).
 const JOIN_LIMIT: Duration = Duration::from_secs(600);
@@ -163,11 +179,15 @@ impl Lines {
     }
 }
 
-/// The client process, killed with its process group when dropped.
-struct Client(Child);
+/// The client process, killed with its process group when dropped; its
+/// lines kept in `<target tmp>/no_fetch_in_match-client.log` then (a
+/// failure's tail shows only the last ones).
+struct Client(Child, Lines);
 
 impl Drop for Client {
     fn drop(&mut self) {
+        let log = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("no_fetch_in_match-client.log");
+        let _ = std::fs::write(&log, self.1.all().join("\n"));
         #[cfg(unix)]
         let _ = Command::new("kill").args(["-KILL", "--", &format!("-{}", self.0.id())]).status();
         let _ = self.0.kill();
@@ -323,8 +343,6 @@ fn run(published: &Store, session: &[(u64, &'static str)]) {
         &url,
         "+chimera:asset_fingerprint",
         &fingerprint,
-        "+chimera:asset_prefetch_max",
-        "0",
         "+mp_lobby_countdown",
         "2",
         "+mp_lobby_max_wait",
@@ -394,12 +412,24 @@ fn run(published: &Store, session: &[(u64, &'static str)]) {
     let lines = Lines::default();
     lines.follow(child.stdout.take().unwrap());
     lines.follow(child.stderr.take().unwrap());
-    let mut client = Client(child);
+    let mut client = Client(child, lines.clone());
 
     let mut rows = Vec::new();
+    let mut ahead_rows = Vec::new();
     for (i, (seed, map)) in session.iter().enumerate() {
         let map_started = Instant::now();
         if i > 0 {
+            // The match-end screen's next map, as the vote's close locks it
+            // in (`minigame::NextMatch`, sent with the match): the client
+            // fetches it ahead, before the level change.
+            let later = app.world().resource::<chimera_core::core::SimClock>().now + 3600.0;
+            app.world_mut().insert_resource(NextMatch { map: Some(map.to_string()), at: later });
+            let ahead = format!("the next map's game files ({map}):");
+            let t = Instant::now();
+            let fetched = until(&mut app, &mut client, AHEAD_LIMIT, |_| lines.count(&ahead) > 0);
+            app.world_mut().remove_resource::<NextMatch>();
+            assert!(fetched, "{map}: the next map wasn't fetched ahead within {AHEAD_LIMIT:?}; the client's last lines:\n{}", lines.tail(30));
+            ahead_rows.push(format!("{map}: fetched ahead in {:.0} s", t.elapsed().as_secs_f64()));
             app.world_mut().resource_mut::<Console>().submit(&format!("ugg_new {seed} 13 {map}"));
         }
         let name = map.split(':').nth(1).unwrap_or(map);
@@ -457,8 +487,10 @@ fn run(published: &Store, session: &[(u64, &'static str)]) {
     // map of any game, the guests' with their dressing (`dress_guest`):
     // each game's `base` holds them, so none is fetched on demand, at a
     // map's load or in a match.
-    let effects: Vec<String> = std::fs::read_to_string(home.join("fetch.log"))
-        .unwrap_or_default()
+    let fetch_log = std::fs::read_to_string(home.join("fetch.log")).unwrap_or_default();
+    // Kept beside the client's lines (the scratch folder goes).
+    let _ = std::fs::write(PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("no_fetch_in_match-fetch.log"), &fetch_log);
+    let effects: Vec<String> = fetch_log
         .lines()
         .filter(|l| effect_file(l.split(' ').nth(5).unwrap_or("")))
         .map(String::from)
@@ -467,9 +499,11 @@ fn run(published: &Store, session: &[(u64, &'static str)]) {
     drop(front);
     drop(running);
     let fetched: Vec<&String> = all.iter().filter(|l| l.contains("assets: fetched on demand during the match")).collect();
-    for r in &rows {
+    for r in rows.iter().chain(&ahead_rows) {
         eprintln!("{r}");
     }
+    let streamed: Vec<&String> = all.iter().filter(|l| l.contains("streamed combat_arms:music/")).collect();
+    eprintln!("music tracks streamed while playing: {}", streamed.len());
     for l in all.iter().filter(|l| l.contains("assets: the match on")) {
         eprintln!("client: {l}");
     }

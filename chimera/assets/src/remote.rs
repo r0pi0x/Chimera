@@ -17,7 +17,7 @@
 //! (`chimera_assets fetch`), claiming them meanwhile (`pending`: an
 //! on-demand miss of one waits for it); `fill_paced` does it at a
 //! `pace::Pace`'s rate on one connection (the game's background
-//! prefetch), unclaimed.
+//! streams), unclaimed.
 //!
 //! A token is a legacy `chimera1_` token or a platform account's ticket
 //! (`account`: the session refreshes it at half-life, `fresh_ticket`).
@@ -496,8 +496,8 @@ impl Remote {
             bytes += stored;
         }
         // A foreground fill's records are waited for by on-demand misses
-        // (`pending`), not fetched twice; the paced prefetch's aren't (it
-        // is held while the player joins: a load would wait on it).
+        // (`pending`), not fetched twice; the paced streams' aren't (they
+        // are held while the player joins: a load would wait on it).
         let claim = pace.is_none().then(|| crate::pending::claim(store, batches.iter().flatten().map(String::as_str)));
         claimed();
         let next = AtomicUsize::new(0);

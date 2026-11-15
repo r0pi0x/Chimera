@@ -9,7 +9,11 @@
 //!   file joins the playlist ticked. The music is read from loose files,
 //!   not from `BGM.rez`; with no install folder (the game served by the
 //!   asset store or service) the same files come through the game's mount
-//!   (`mount::LOOSE_MUSIC`, fetched when first played).
+//!   (`mount::LOOSE_MUSIC`), each track its own set (`music/<track>`):
+//!   marked pending until `game::music`'s streaming has it here (the
+//!   party music's first tracks with the match's files, each next one
+//!   while the one before plays); a track played before then (the menu
+//!   playlist) is fetched when first played.
 //! - **Music** (`play_music`): each stream of the player (`CaMusic::
 //!   mixed`: the music master times its slot's gain) is a live sound
 //!   under a key of its own, decoded on a background task the first time
@@ -163,6 +167,10 @@ fn scan(mut pb: ResMut<Playback>, mut music: ResMut<CaMusic>, data: Res<crate::g
                 let key = format!("bgm/{rest}");
                 let len = music.data.files.get(&key).map(|s| s * 1000.0);
                 music.files.insert(&key, len);
+                // Its set may not be here yet (`music/<track>`, out of
+                // `base`): `game::music`'s streaming fetches what the party
+                // music plays next and clears this.
+                music.files.set_pending(&key, true);
                 pb.mounted.insert(key, e.path);
             }
         }

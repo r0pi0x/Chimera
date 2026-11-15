@@ -421,7 +421,7 @@ impl Default for FrontLimits {
     fn default() -> Self {
         Self {
             // Testers behind one home address share it, and one game
-            // holds several (the join's four, the prefetch, files on
+            // holds several (the join's four, a stream, files on
             // demand, kept open between requests): 16 refused the third of
             // three games joining from one address (2026-11-11 rehearsal).
             per_address: 48,
