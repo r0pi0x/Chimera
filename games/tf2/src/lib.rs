@@ -6,7 +6,8 @@
 //! layout, whose texture and sound archives are missing, mounts too), its
 //! maps (`game::maps`, `game::MAP_LOADER`: Source's conversion with TF2's
 //! data, spawns from `info_player_teamspawn`) and a stand-in movement
-//! (`game::movement`). Its guns, classes and TF2's own movement come with
+//! (`game::movement`); and (M2a) its encrypted scripts (`game::ice`,
+//! `game::scripts`) and asset sets (`game::sets`). Its guns, classes and TF2's own movement come with
 //! the plan's later milestones. Source behaviour it shares with the other
 //! Source games comes from `source_engine`, never from another game.
 //!

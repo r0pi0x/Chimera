@@ -197,6 +197,20 @@ found as the other games' are: `$CHIMERA_TF2_ROOT` for one run, else
 Both are folders holding `tf/`, `hl2/` and `platform/`; a SteamCMD
 install outside Steam's libraries needs the config line or the variable.
 
+**The weapon scripts' key.** TF2's weapon and class scripts
+(`scripts/*.ctx`) are encrypted (specs/tf2/ice.md). Reading them from an
+install needs an 8-character key that **you supply locally**: it is not
+in the repository, the specs, the docs or any log, and never should be.
+Put it in `CHIMERA_TF2_CTX_KEY` for one run, or in `chimera.local.toml`
+(the commented `[games.tf2.keys.ctx]` section of
+`chimera.local.example.toml`). Without it, a test that needs the scripts
+passes with a note. Once TF2's sets are on the asset service, their
+records hold the scripts already decrypted (the host packs them with its
+key), so a developer or player served from it needs no key. `dump tf2
+--script <name>` prints one script to stdout; `dump tf2 --ice-probe` says
+which reading of the cipher decrypts the files (specs/tf2/ice.md, open
+question 1).
+
 ## When something goes wrong
 
 - `asset service <url> (<game>): ... HTTP 401`: the token is missing,

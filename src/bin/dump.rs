@@ -40,6 +40,11 @@ usage: dump <game> [options]
   --objects <map>      combat_arms: a world file's objects (class, every property) and
                        its world models' boxes; --filter keeps objects whose class,
                        name or a property value contains <text>
+  --script <name>      tf2: a script (`tf_weapon_scattergun`, `playerclasses/scout`) as text on
+                       stdout only (decrypted with the local key when encrypted; the source on stderr)
+  --ice-probe          tf2: which ICE level and reading decrypt scripts/tf_weapon_rocketlauncher.ctx
+                       with the local key (CHIMERA_TF2_CTX_KEY or [games.tf2.keys.ctx]): prints the
+                       name to set as CHIMERA_TF2_ICE_READING (specs/tf2/ice.md, open question 1)
   --filter <text>      only paths containing <text> (case-insensitive)
   --extract            write the (filtered) files to --out
   --out <dir>          extraction folder (default: per-user data dir; never inside the repo)
@@ -54,6 +59,8 @@ struct Args {
     sequences: Option<String>,
     lods: Option<String>,
     objects: Option<String>,
+    script: Option<String>,
+    ice_probe: bool,
     out: Option<PathBuf>,
     install: Option<PathBuf>,
 }
@@ -73,6 +80,8 @@ fn parse() -> Result<Args, String> {
         sequences: None,
         lods: None,
         objects: None,
+        script: None,
+        ice_probe: false,
         out: None,
         install: None,
     };
@@ -86,6 +95,8 @@ fn parse() -> Result<Args, String> {
             "--sequences" => a.sequences = Some(value()?.to_lowercase().replace('\\', "/")),
             "--lods" => a.lods = Some(value()?.to_lowercase().replace('\\', "/")),
             "--objects" => a.objects = Some(value()?.to_lowercase()),
+            "--script" => a.script = Some(value()?.to_lowercase().replace('\\', "/")),
+            "--ice-probe" => a.ice_probe = true,
             "--out" => a.out = Some(value()?.into()),
             "--install" => a.install = Some(value()?.into()),
             _ => return Err(format!("unknown option {flag}")),
@@ -175,6 +186,12 @@ fn dump_halo(args: &Args, install: &Path) -> Result<(), String> {
 /// file lists but that is missing (a dedicated server's textures and
 /// sounds) leaves its files out of the mount.
 fn dump_tf2(args: &Args, install: &Path) -> Result<(), String> {
+    if let Some(name) = &args.script {
+        return tf2_script(install, name);
+    }
+    if args.ice_probe {
+        return tf2_ice_probe(install);
+    }
     if let Ok(path) = tf2::mount::search_path(install) {
         println!("gameinfo.txt search path (first wins):");
         for layer in &path.layers {
@@ -186,6 +203,59 @@ fn dump_tf2(args: &Args, install: &Path) -> Result<(), String> {
         return sequences(&mount, path);
     }
     report(args, &mount, &[])
+}
+
+/// `--script`: the script's text on stdout alone (never into a file), its
+/// source on stderr.
+fn tf2_script(install: &Path, name: &str) -> Result<(), String> {
+    let mount = tf2::mount::open(install).map_err(|e| e.to_string())?;
+    let path = tf2::scripts::path_of(name.trim_end_matches(".ctx").trim_start_matches("scripts/"));
+    let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
+    let key = tf2::scripts::key()?;
+    let cipher = tf2::ice::CtxCipher::configured();
+    let text = if tf2::scripts::parses(&bytes) {
+        eprintln!("{path}: plain");
+        bytes
+    } else {
+        let key = key.ok_or_else(|| format!("{path}: encrypted, and no key ({} or [games.tf2.keys.ctx])", tf2::scripts::KEY_ENV))?;
+        let plain = tf2::ice::decrypt_ctx(&cipher.ice(&key.0), &bytes);
+        if !tf2::scripts::parses(&plain) {
+            return Err(format!("{path}: cipher {} doesn't decrypt it with the key; run `dump tf2 --ice-probe`", cipher.name()));
+        }
+        eprintln!("{path}: decrypted with the local key, cipher {}", cipher.name());
+        plain
+    };
+    use std::io::Write;
+    std::io::stdout().write_all(tf2::scripts::text_of(&text).unwrap_or_default().as_bytes()).map_err(|e| e.to_string())
+}
+
+/// `--ice-probe`: every level and reading against the Rocket Launcher's
+/// script with the local key; prints the names of those that decrypt it.
+fn tf2_ice_probe(install: &Path) -> Result<(), String> {
+    let mount = tf2::mount::open(install).map_err(|e| e.to_string())?;
+    let path = "scripts/tf_weapon_rocketlauncher.ctx";
+    let bytes = mount.read(path).map_err(|e| format!("{path}: {e}"))?;
+    if tf2::scripts::parses(&bytes) {
+        return Err(format!("{path} is plain here (the asset store's record): probe an install's encrypted file"));
+    }
+    let key = tf2::scripts::key()?.ok_or_else(|| format!("no key: set {} or [games.tf2.keys.ctx] key", tf2::scripts::KEY_ENV))?;
+    let found = tf2::ice::probe_ctx(&key.0, &bytes);
+    if found.is_empty() {
+        return Err(format!(
+            "no level and reading decrypts {path} with this key ({} tried): the key is wrong, or the cipher differs \
+             from every reading of specs/tf2/ice.md",
+            2 * tf2::ice::Reading::all().len()
+        ));
+    }
+    for c in &found {
+        println!("{}", c.name());
+    }
+    eprintln!(
+        "{} cipher(s) decrypt it; set {}=<name> to use one, and make it CtxCipher::DEFAULT (games/tf2/src/game/ice.rs)",
+        found.len(),
+        tf2::ice::READING_ENV
+    );
+    Ok(())
 }
 
 fn human(bytes: u64) -> String {

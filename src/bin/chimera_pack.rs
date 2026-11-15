@@ -41,7 +41,13 @@
 //! held model with its textures, its own sounds,
 //! `CaWeaponFx::sound_paths`, and what it throws or fires,
 //! `special::object_files`), `players`
-//! (CS:S: the eight class models; HL2:DM: its 19 player models), and
+//! (CS:S: the eight class models; HL2:DM: its 19 player models; TF2: its
+//! nine class models), TF2's `weapon/<id>` for M2's guns
+//! (`tf2::game::sets`: the `c_` model, the class's arms with their
+//! animations, sounds, the rocket, and the script, packed decrypted:
+//! `publish tf2` and `pack tf2` read the install's `.ctx` files through
+//! `tf2::game::scripts::decrypting` with this host's key, and leave them
+//! out, warning loudly, without one), and
 //! Combat Arms' `character/<record>` per body record with a file (its
 //! model, animation library and textures, as a rung's body loads them:
 //! `characters::models::load_body`, and the hand model and skins of the
@@ -148,7 +154,7 @@ usage: chimera_pack pack <game> [options]       into a store (default the user's
        chimera_pack user list                   (user: --store <server store>)
        chimera_pack sign <game> --store <server store> [--build <id>]
                                                 sign a manifest packed elsewhere (no install)
-  games: cs_source, combat_arms, hl2dm, halo_ce
+  games: cs_source, combat_arms, hl2dm, halo_ce, tf2
   --set <name>      enter the packed files as set <name> (needs --from)
   --from <log>      only the game's files in a CHIMERA_VFS_LOG log
   --store <dir>     the store (default: [assets] store, CHIMERA_ASSET_STORE, ~/.cache/chimera/assets)
@@ -191,7 +197,7 @@ impl Game {
     }
 }
 
-fn games() -> [Game; 4] {
+fn games() -> [Game; 5] {
     [
         Game {
             info: &cs_source::game::INFO,
@@ -232,6 +238,18 @@ fn games() -> [Game; 4] {
             extra: None,
             left_out: HALO_LEFT_OUT,
         },
+        // Team Fortress 2: its search path from `tf/gameinfo.txt`, the
+        // encrypted scripts read decrypted with this host's key
+        // (`tf2_open_install`); its sets: `weapon/<id>` for M2's guns,
+        // `players` and `map/<name>` (`record_pieces`).
+        Game {
+            info: &tf2::game::INFO,
+            open_install: tf2_open_install,
+            app: Some(440),
+            build: None,
+            extra: None,
+            left_out: &[],
+        },
     ]
 }
 
@@ -240,6 +258,24 @@ fn games() -> [Game; 4] {
 /// them. The game's own files (`maps/`, `default.xbe`, the `bink/`
 /// videos) are packed.
 const HALO_LEFT_OUT: &[&str] = &["xdemos/"];
+
+/// TF2's install as the packer reads it: its `.ctx` scripts decrypted
+/// with this host's key (`CHIMERA_TF2_CTX_KEY` or `[games.tf2.keys.ctx]`,
+/// never written anywhere), so the store's records are plain KeyValues a
+/// client reads without a key; with no key, the scripts are left out, said
+/// loudly.
+fn tf2_open_install(install: &std::path::Path) -> std::io::Result<Mount> {
+    use tf2::game::scripts;
+    let key = scripts::key().map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    if key.is_none() {
+        eprintln!(
+            "\n*** WARNING: no TF2 .ctx key ({} or [games.tf2.keys.ctx] key): the weapon and class scripts \
+             can't be packed decrypted and are LEFT OUT; everything else is packed. ***\n",
+            scripts::KEY_ENV
+        );
+    }
+    Ok(scripts::decrypting(tf2::game::mount::open_install(install)?, key))
+}
 
 fn mb(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1e6)
@@ -840,6 +876,19 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                     None,
                 )
                 .map(|_| ())
+            });
+        }
+        "tf2" => {
+            // M2's guns (`sets::M2_WEAPONS`: the `c_` model, the class's
+            // arms, sounds, the rocket, the decrypted script) and the
+            // class models, read by TF2's own list (`sets::pieces`).
+            take();
+            out.extend(tf2::game::sets::pieces(mount));
+            let options = map_options(false);
+            record_maps(source_engine::maps::map_names(mount), only, &take, &mut out, |name| {
+                let bytes = tapped.read(&format!("maps/{name}.bsp")).map_err(|e| e.to_string())?;
+                source_engine::content::bsp::load_level_bytes_in(&tf2::game::maps::TF2, &tapped, name, bytes, &options, None)
+                    .map(|_| ())
             });
         }
         "halo_ce" => {

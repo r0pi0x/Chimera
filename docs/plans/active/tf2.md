@@ -18,7 +18,8 @@ from specs, measurements and the game's own data.
 |---|---|---|
 | M0 plan and first specs | done (2026-11-15) | this plan; specs/tf2/: install, movement, classes, weapons, ICE |
 | M1 a map you can walk on | done (2026-11-15) | `games/tf2`; mount (missing archives skipped); ctf_2fort and cp_badlands converted with team spawns; `tf2:<map>` in the party apps; `$ssbump` drawn |
-| M2 TF2 guns as UGG rungs | not started | Scattergun, Rocket Launcher, Shotgun, Minigun; the weapon scripts; `chimera_pack tf2` |
+| M2a the weapon scripts, `chimera_pack tf2` | done (2026-11-15) | our ICE (`game::ice`) with the spec's readings selectable; `game::scripts` (store/plain, install plus key, none); `dump tf2 --script`, `--ice-probe`; `chimera_pack tf2` (`weapon/<id>` for M2's guns with the decrypted script, `players`, `map/<name>`); not published. No reading reproduces the paper's triplets: the user's `--ice-probe` settles the reading |
+| M2b TF2 guns as UGG rungs | not started | Scattergun, Rocket Launcher, Shotgun, Minigun as data; `c_` view models on the arms; sounds; a ladder |
 | M3 classes as bodies, TF2's movement | not started | |
 | M4 more maps and weapons | not started | |
 
@@ -210,6 +211,39 @@ looked into; it collides the same).
 - `chimera_pack tf2` and a scratch-store test; a gun game ladder with
   TF2 rungs among the other games' (no Halo).
 
+#### M2a: what landed, and the publish (for the orchestrator)
+
+- `games/tf2`: `game::ice` (ICE from ice.md; `Reading`, the spec's
+  ambiguous places as switches, 55,296 combinations; `CtxCipher`, a level
+  with a reading, named `thin/cycled-0123-bi-123`; `probe_ctx`),
+  `game::scripts` (the key from `CHIMERA_TF2_CTX_KEY` or
+  `[games.tf2.keys.ctx] key`; `read`, `ScriptSource`, `KvView`;
+  `decrypting`, the packer's view), `game::sets` (`M2_WEAPONS`,
+  `pieces`). The Shotgun's script is `tf_weapon_shotgun_primary`
+  (the Engineer's).
+- **The ICE reading is not settled.** None reproduces the paper's
+  triplets (ice.md, open question 1). The user runs, with the key in the
+  environment only:
+  `CHIMERA_TF2_CTX_KEY=... cargo run --features dev --bin dump -- tf2 --ice-probe`
+  It prints the name of each level and reading that decrypts the Rocket
+  Launcher's script. Then `CtxCipher::DEFAULT` becomes that name (until
+  then `CHIMERA_TF2_ICE_READING=<name>` selects it), and
+  `CHIMERA_TF2_CTX_KEY=... cargo test -p tf2 --features dev --test it heavy::`
+  checks every weapon and class script with it. If it prints nothing,
+  open question 1 needs a spec session.
+- **The publish** (not done; after the probe, with the key from the
+  host's environment only; `chimera_pack` warns loudly and leaves the
+  scripts out without one):
+  ```
+  CHIMERA_TF2_CTX_KEY=... CHIMERA_TF2_ICE_READING=<the probe's name> \
+    cargo run --features dev,tools --bin chimera_pack -- publish tf2
+  CHIMERA_TF2_CTX_KEY=... CHIMERA_TF2_ICE_READING=<the probe's name> \
+    cargo run --features dev,tools --bin chimera_pack -- sets tf2 --store <server store> --sign
+  ```
+  (`CHIMERA_TF2_ICE_READING` only until the probe's name is the default.)
+  `base` and `common` come from client runs' `CHIMERA_VFS_LOG` logs
+  (`pack tf2 --set base --from <log>`, then `lean`), as for HL2:DM.
+
 ### M3: the classes as bodies, TF2's movement
 
 The class player models with animation (activities by weapon, pose
@@ -245,6 +279,13 @@ server probe for parity checks, TF2's own app.
    which teamspawns a gun game uses (both teams' at once, for free for
    all).
 
+## 7. Backlog
+
+- Rendering (from M1's screenshots): fences and grates in 2fort and some
+  ground decals draw as a coarse dither pattern; check how TF2's VMTs'
+  `$alphatest` and `$translucent` are handled. Badlands' track bed and
+  some floor patches show dotted dark speckle, maybe the same cause.
+
 ## Log
 
 - 2026-11-15: plan written; five specs landed (install, movement and
@@ -259,3 +300,11 @@ server probe for parity checks, TF2's own app.
   and stand-in movement; ctf_2fort and cp_badlands walked in the
   Ultimate Gun Game (`--map tf2:ctf_2fort`); generic: missing VPK
   archives skipped, `SourceGame::spawn_rule`, `$ssbump`.
+- 2026-11-15: M2a landed: ICE written from ice.md (it matches the spec's
+  own derived values; none of 55,296 readings of its ambiguous places
+  reproduces the paper's triplets, so `dump tf2 --ice-probe` with the
+  user's key settles the reading), the script reader with its three
+  sources, `chimera_pack tf2` with M2's weapon sets (packed into a
+  scratch store by a heavy test and read back from it alone; not
+  published). Generic: `[games.<id>]` may hold keys without `path`, a key
+  without an IV; `chimera_core::mount::Access` re-exported.
