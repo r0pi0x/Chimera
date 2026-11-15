@@ -323,6 +323,15 @@ per-class shotgun starts wait for classes (M3); a TF2 rung has no knife.
   interval (nominal, not tick-rounded: weapon_scripts.md open question
   3) and the Rocket Launcher's per-rocket reload (open question 6), as
   the spec predicted.
+- Scratch store (2026-11-15): TF2 packed from two client runs' reads
+  (`base` from de_dust2: 758 files, every gun dressed; `map/ctf_2fort`:
+  3,220 files) and `sets tf2 --only weapon/` and `--only players`; a
+  client with no install, no key and the store alone
+  (`CHIMERA_ASSET_USE_INSTALL=0`) loads ctf_2fort and reads all twelve
+  guns' numbers from the stored scripts. Not yet in the live store: the
+  commands are in docs/playtest-hosting.md, "TF2". The fetch guard
+  (`no_fetch_in_match`) plays `tf2:ctf_2fort` last when TF2 is installed
+  and published.
 
 ### M3: the classes as bodies, TF2's movement
 
