@@ -201,6 +201,12 @@ fn the_zoom_draws_the_scopes_mask_under_the_hud() {
     let masks = |q: &[Quad], w: f32, h: f32| q.iter().position(|q| q.picture.size == [w, h] && page(&d, q).contains("mask"));
     let q = frame(&d, &held(tag, sniper), 3);
     assert!(masks(&q, 512.0, 256.0).is_none(), "no mask unzoomed");
+    if !draw::SCOPE_MASK {
+        // Switched off (the spec's open question): no zoom draws one.
+        let q = frame(&d, &held(tag, WeaponNow { zoom: 0, ..sniper }), 3);
+        assert!(masks(&q, 512.0, 256.0).is_none(), "the mask is off");
+        return;
+    }
     for zoom in [0, 1] {
         let q = frame(&d, &held(tag, WeaponNow { zoom, ..sniper }), 3);
         // The 512 by 256 mask, one texel a unit, centred; first in the list

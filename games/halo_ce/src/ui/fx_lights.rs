@@ -15,16 +15,9 @@ use bevy::{camera::visibility::RenderLayers, prelude::*};
 use crate::game::fx::HaloLight;
 use crate::map::view_model::{DynamicLight, VIEW_MODEL_LAYER};
 
-/// A light of ours, its full colour and its fall-off's transition function.
+/// A light of ours and its full colour.
 #[derive(Component)]
-struct Lit(Vec3, i16);
-
-/// The light's intensity at the fraction `x` of its life: 1 minus the
-/// fall-off's transition function of it (effects.md "Effect lights").
-pub fn intensity(falloff: i16, x: f32) -> f32 {
-    use blam_formats::object::function::TransitionFunction;
-    1.0 - TransitionFunction::from_code(falloff).unwrap_or(TransitionFunction::Linear).apply(x.clamp(0.0, 1.0))
-}
+struct Lit(Vec3);
 
 fn spawn(mut requests: MessageReader<HaloLight>, owners: Query<&GlobalTransform>, mut commands: Commands) {
     for l in requests.read() {
@@ -48,7 +41,7 @@ fn spawn(mut requests: MessageReader<HaloLight>, owners: Query<&GlobalTransform>
             DynamicLight { radius: l.radius, life: l.seconds.max(1e-3), age: 0.0 },
             RenderLayers::from_layers(&[0, VIEW_MODEL_LAYER]),
             Transform::from_translation(at),
-            Lit(l.color, l.falloff),
+            Lit(l.color),
         ));
         if let Some((owner, _)) = parent {
             light.insert(ChildOf(owner));
@@ -62,7 +55,7 @@ fn fade(mut lights: Query<(Entity, &DynamicLight, &mut PointLight, &Lit)>, mut c
             commands.entity(e).despawn();
             continue;
         }
-        let k = intensity(lit.1, d.age / d.life);
+        let k = 1.0 - d.age / d.life;
         p.color = Color::LinearRgba(LinearRgba::rgb(lit.0.x * k, lit.0.y * k, lit.0.z * k));
     }
 }

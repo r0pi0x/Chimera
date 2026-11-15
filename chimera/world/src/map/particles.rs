@@ -478,15 +478,6 @@ impl Particle {
         }
     }
 
-    /// How much wider than made a ribbon section is now: its size curve's
-    /// value over the curve's first (1 without a size curve).
-    pub fn size_scale(&self) -> f32 {
-        match self.curves.as_deref().and_then(|c| c.size.first()) {
-            Some((_, first)) if *first > 1e-6 => self.current_size() / first,
-            _ => 1.0,
-        }
-    }
-
     pub fn current_size(&self) -> f32 {
         if let Some(c) = self.curves.as_deref().filter(|c| !c.size.is_empty()) {
             let keys: Vec<(f32, [f32; 1])> = c.size.iter().map(|(t, v)| (*t, [*v])).collect();
@@ -1134,18 +1125,6 @@ mod curve_tests {
 
     /// A flame's look: white hot, orange, then gone; a growing size; an
     /// animated sprite's frames in a loop.
-    #[test]
-    fn a_size_curve_widens_a_ribbon_section() {
-        let mut p = Particle::new(Vec3::ZERO, 2.0, 0, 0.1);
-        assert_eq!(p.size_scale(), 1.0, "no curve: as made");
-        p.curves = Some(std::sync::Arc::new(ParticleCurves { size: vec![(0.0, 0.1), (1.0, 0.3)], ..Default::default() }));
-        assert_eq!(p.size_scale(), 1.0);
-        p.age = 1.0;
-        assert!((p.size_scale() - 2.0).abs() < 1e-6);
-        p.age = 2.0;
-        assert!((p.size_scale() - 3.0).abs() < 1e-6);
-    }
-
     #[test]
     fn curves_follow_every_key() {
         let mut p = Particle::new(Vec3::ZERO, 1.0, 7, 1.0);

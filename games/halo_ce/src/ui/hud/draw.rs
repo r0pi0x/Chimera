@@ -14,7 +14,8 @@
 //!   used).
 //! - Multitexture overlays (the sniper rifle's angle ticks) and the
 //!   screen effects' warp and night vision are not drawn; the zoom's mask
-//!   (`scope_mask`) is, at one texel per canvas unit.
+//!   (`scope_mask`, one texel per canvas unit) is written but switched
+//!   off (`SCOPE_MASK`) until the spec settles what the pass draws.
 //! - The sweep's compositing is ours (section 11 is inferred): the sweep
 //!   picture is added in its light blue through the disc's mask, and each
 //!   blip's brightness is scaled by the sweep's alpha where it lies.
@@ -257,7 +258,14 @@ fn one_window(map_type: i16) -> bool {
     matches!(map_type, 0 | 1)
 }
 
-/// This frame's quads.
+/// Whether the zoom's mask is drawn. Off: as hud.md 9 infers it (the
+/// mask's alpha darkening the view, one texel a pixel) the sniper rifle's
+/// zoom is a window a third of the view wide in black, which the game's
+/// picture is not (the spec's open question 15: the mask is the screen
+/// effect's convolution mask). On again when the spec settles what the
+/// pass draws.
+pub const SCOPE_MASK: bool = false;
+
 /// The zoom's mask (section 9): the first screen effect of the weapon's HUD
 /// chain, its full-screen mask (black, alpha 255 at the rim falling to 0 in
 /// a window) one texel per pixel (a canvas unit each, scaled with the HUD)
@@ -285,13 +293,14 @@ fn scope_mask(p: &mut Painter, chain: &[WeaponHud], zoomed: bool, canvas: &Canva
     }
 }
 
+/// This frame's quads.
 pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now: i64) -> Vec<Quad> {
     let mut p = Painter { data, frame: canvas.frame(), now, out: Vec::new() };
     let chain = chain_of(data, unit);
     let w = unit.weapon.as_ref().map(|h| h.now).unwrap_or_default();
     let disabled_all = !unit.alive;
     // 1. The scope's mask (section 9), under the HUD.
-    if unit.alive && unit.weapon.is_some() {
+    if SCOPE_MASK && unit.alive && unit.weapon.is_some() {
         scope_mask(&mut p, chain, w.zoom >= 0, canvas);
     }
     // 2. Crosshairs: the weapon's own HUD first, then each parent.

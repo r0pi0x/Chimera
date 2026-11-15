@@ -68,9 +68,6 @@ pub struct FxLight {
     pub color: [f32; 3],
     pub radius: f32,
     pub ticks: f32,
-    /// The transition function of its fall-off over the life (objects.md:
-    /// 0 linear, 1 early, 3 late ...).
-    pub falloff: i16,
 }
 
 /// What a part makes.
@@ -102,23 +99,6 @@ pub struct FxSysState {
     pub color_upper: [f32; 4],
     pub additive: bool,
     pub animation_rate: (f32, f32),
-    /// The transition to the next state (s), the spin (rad/s), the state's
-    /// radius multiplier and its point physics.
-    pub transition: (f32, f32),
-    pub rotation_rate: (f32, f32),
-    pub radius_multiplier: f32,
-    pub physics: Option<PointPhysics>,
-}
-
-/// A type state of a particle system (the type's own clock): how long, the
-/// transition to the next, and its colour multiplier (argb) the particles'
-/// colour and alpha are multiplied by.
-#[derive(Clone, Debug, PartialEq)]
-pub struct FxTypeState {
-    pub duration: (f32, f32),
-    pub transition: (f32, f32),
-    pub color: [f32; 4],
-    pub radius_multiplier: f32,
 }
 
 /// A particle system's type: its creation (initial count, the physics and
@@ -133,10 +113,6 @@ pub struct FxSysType {
     pub birth: (f32, f32),
     pub rate: f32,
     pub states: Vec<FxSysState>,
-    /// The type's collision radius (WU), the base of its particles' physics
-    /// radius.
-    pub radius: f32,
-    pub type_states: Vec<FxTypeState>,
 }
 
 /// A particle system (`pctl`) as drawn.
@@ -231,20 +207,6 @@ pub struct FxTracer {
     /// most 4; 0: one tick), and its last state's width (WU).
     pub life: f32,
     pub end_width: f32,
-    /// Its point states in order (effects.md "Contrails"): a point lives
-    /// through them, widening and changing colour.
-    pub states: Vec<FxTracerState>,
-}
-
-/// One point state of a contrail: the time it lasts and the transition to
-/// the next (s, the bounds' means), its full width (WU) and colour (argb,
-/// the bounds' mean).
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct FxTracerState {
-    pub duration: f32,
-    pub transition: f32,
-    pub width: f32,
-    pub color: [f32; 4],
 }
 
 /// One gun's presentation (by its weapon tag's path).
@@ -295,9 +257,6 @@ pub struct FxProjectile {
     /// Its effect attachments by marker (the rocket's exhaust, the frag's
     /// smoke trail, the plasma grenade's glow), made again each Halo tick.
     pub attached: Vec<(usize, String)>,
-    /// Its particle system attachments by marker (the rocket's exhaust),
-    /// made at their creation rate each Halo tick (`HaloFx::systems`).
-    pub attached_systems: Vec<(usize, String)>,
     /// Its object model has meshes: drawn as `object_key(tag)`.
     pub model: bool,
 }
@@ -473,7 +432,7 @@ impl Compiler<'_> {
     fn light(&mut self, r: &TagRef) -> Option<FxLight> {
         let l = Light::read(self.file, self.file.tag(r.id)?).ok()?;
         let (color, radius) = l.at(1.0);
-        Some(FxLight { color, radius, ticks: l.duration, falloff: l.falloff_function })
+        Some(FxLight { color, radius, ticks: l.duration })
     }
 
     fn particle(&mut self, r: &TagRef) -> Option<usize> {
@@ -566,10 +525,6 @@ impl Compiler<'_> {
                     color_upper: argb(&st.color_upper),
                     additive,
                     animation_rate: (st.animation_rate.lower, st.animation_rate.upper),
-                    transition: (st.transition.lower, st.transition.upper),
-                    rotation_rate: (st.rotation_rate.lower, st.rotation_rate.upper),
-                    radius_multiplier: st.radius_multiplier,
-                    physics: self.file.tag(st.physics.id).and_then(|t| PointPhysics::read(self.file, t).ok()),
                 });
             }
             let birth = t.type_states.first();
@@ -581,17 +536,6 @@ impl Compiler<'_> {
                 birth: birth.map_or((0.0, 0.0), |b| (b.duration.lower, b.duration.upper)),
                 rate: birth.map_or(0.0, |b| b.creation_rate),
                 states,
-                radius: t.radius,
-                type_states: t
-                    .type_states
-                    .iter()
-                    .map(|s| FxTypeState {
-                        duration: (s.duration.lower, s.duration.upper),
-                        transition: (s.transition.lower, s.transition.upper),
-                        color: [s.color_multiplier.a, s.color_multiplier.r, s.color_multiplier.g, s.color_multiplier.b],
-                        radius_multiplier: s.radius_multiplier,
-                    })
-                    .collect(),
             });
         }
         let lib = &mut self.set.library;
@@ -757,10 +701,6 @@ impl Compiler<'_> {
                 && let Some(e) = self.effect(&a.attached)
             {
                 out.attached.push((e, a.marker_name.to_ascii_lowercase()));
-            } else if a.attached.class == class::PARTICLE_SYSTEM
-                && let Some(s) = self.system(&a.attached)
-            {
-                out.attached_systems.push((s, a.marker_name.to_ascii_lowercase()));
             }
         }
         Ok(out)
@@ -798,23 +738,7 @@ impl Compiler<'_> {
         // (the rocket's smoke trail stays; a bullet's streak barely).
         let life = c.point_states.iter().map(|p| p.duration.upper + p.transition_duration.upper).sum::<f32>().clamp(1.0 / 30.0, 4.0);
         let end_width = c.point_states.last().map_or(s.width, |p| p.width);
-        let mean = |b: &blam_formats::cache::Bounds<f32>| (b.lower + b.upper) / 2.0;
-        let states = c
-            .point_states
-            .iter()
-            .map(|p| FxTracerState {
-                duration: mean(&p.duration),
-                transition: mean(&p.transition_duration),
-                width: p.width,
-                color: [
-                    (p.color_lower.a + p.color_upper.a) / 2.0,
-                    (p.color_lower.r + p.color_upper.r) / 2.0,
-                    (p.color_lower.g + p.color_upper.g) / 2.0,
-                    (p.color_lower.b + p.color_upper.b) / 2.0,
-                ],
-            })
-            .collect();
-        Some(FxTracer { width: s.width, color: [b.r.max(a.r), b.g.max(a.g), b.b.max(a.b), b.a.max(a.a)], material, additive, life, end_width, states })
+        Some(FxTracer { width: s.width, color: [b.r.max(a.r), b.g.max(a.g), b.b.max(a.b), b.a.max(a.a)], material, additive, life, end_width })
     }
 }
 

@@ -61,7 +61,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     ActiveFx, HaloLight,
     place::Frame,
-    play::{Effects, Instance, Made, start},
+    play::{Effects, Instance, start},
     shots::{HaloShown, facing, instances_from},
 };
 use super::super::{
@@ -77,7 +77,7 @@ use super::super::{
 };
 use crate::{
     core::{Intent, LocalPlayer, NetRole, SOLID_LAYERS, SimClock, SimSet},
-    map::{PlaySound, loose::ShownItem, particles::Particles},
+    map::{PlaySound, loose::ShownItem},
 };
 
 /// A detonation as every machine shows it: the projectile's tag, where
@@ -174,7 +174,6 @@ pub fn trails(
     clock: Res<SimClock>,
     mut effects: ResMut<Effects>,
     mut lights: MessageWriter<HaloLight>,
-    mut particles: ResMut<Particles>,
 ) {
     let Some(lib) = fx.0.clone() else { return };
     if halo_ticks(&clock) == 0 {
@@ -185,22 +184,12 @@ pub fn trails(
         let Some(look) = lib.projectile(tag) else { continue };
         let forward = t.rotation * Vec3::NEG_Z;
         if let Some(l) = &look.light {
-            lights.write(HaloLight { at: t.translation, color: Vec3::from(l.color), radius: l.radius * METERS_PER_UNIT, seconds: 1.5 / 30.0, falloff: 0, owner: None, follow: false });
+            lights.write(HaloLight { at: t.translation, color: Vec3::from(l.color), radius: l.radius * METERS_PER_UNIT, seconds: 1.5 / 30.0, owner: None, follow: false });
         }
         for (effect, _marker) in &look.attached {
             let f = Frame::facing(t.translation, -forward);
             let inst = lib.effects[*effect].locations.iter().map(|_| vec![Instance::both(f)]).collect();
             start(&mut effects, &lib, *effect, inst, |_| {});
-        }
-        // Its attached particle systems: a Halo tick of their rate, at the
-        // projectile (the marker's offset is not kept).
-        for (system, _marker) in &look.attached_systems {
-            let Some(sys) = lib.systems.get(*system) else { continue };
-            let mut made = Made::default();
-            super::play::emit(sys, &Frame::facing(t.translation, -forward), 1.0 / 30.0, &mut effects.rng, &mut made);
-            for g in made.groups {
-                particles.add(g);
-            }
         }
     }
 }
