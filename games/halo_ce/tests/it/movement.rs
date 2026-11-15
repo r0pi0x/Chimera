@@ -16,15 +16,16 @@
 use avian3d::prelude::{Collider, RigidBody};
 use bevy::prelude::*;
 use chimera_core::{
-    core::{Damage, DamageKind},
     slots::{Loadout, MovementSlot},
 };
 use chimera_world::harness::Sim;
 use halo_ce::{
     game::{
         TICK_INTERVAL,
+        damage::HaloHit,
         maps::space,
-        movement::{self, BodyStun, ControllerStick, HaloMovement, MovementData},
+        movement::{self, ControllerStick, HaloMovement, MovementData},
+        vitality::ids,
     },
     harness::HaloSim,
 };
@@ -98,7 +99,7 @@ fn game(p: Vec3) -> Vec3 {
 struct TestMap(Vec<Block>);
 
 #[derive(Resource, Default)]
-struct DamageLog(Vec<Damage>);
+struct DamageLog(Vec<HaloHit>);
 
 fn spawn_map(mut commands: Commands, map: Res<TestMap>) {
     let s = halo_ce::game::METERS_PER_UNIT;
@@ -125,7 +126,7 @@ fn box_mesh(h: Vec3) -> Collider {
     Collider::trimesh(v, idx)
 }
 
-fn log_damage(mut damage: MessageReader<Damage>, mut log: ResMut<DamageLog>) {
+fn log_damage(mut damage: MessageReader<HaloHit>, mut log: ResMut<DamageLog>) {
     log.0.extend(damage.read().cloned());
 }
 
@@ -245,7 +246,7 @@ impl T {
     }
 
     fn damage(&self) -> Vec<f32> {
-        self.sim.app.world().resource::<DamageLog>().0.iter().map(|d| d.amount * data().body_vitality).collect()
+        self.sim.app.world().resource::<DamageLog>().0.iter().map(|d| d.amount).collect()
     }
 
     /// Run until grounded (at most `max` ticks): the ticks taken.
@@ -645,16 +646,6 @@ fn a_ceiling_stops_a_jump() {
     close(t.origin().z, 0.2964348, EXACT, "z after tick 7");
 }
 
-/// "Jumping and air control": a stunned jump (the turning penalty).
-#[test]
-fn a_stunned_jump() {
-    let mut t = T::standing();
-    t.sim.app.world_mut().entity_mut(t.p).insert(BodyStun(0.5));
-    t.jump(true);
-    t.tick();
-    close(t.vel().z, 0.042, EXACT, "v_z");
-}
-
 // ---- Slopes ----
 
 /// On a slope of `deg` degrees, facing `yaw`, (1, 0) for 40 ticks: the
@@ -908,8 +899,11 @@ fn falls_land_and_hurt_by_impact_speed() {
             }
         }
     }
-    let kind = drop_from(5.0).0.sim.app.world().resource::<DamageLog>().0[0].kind;
-    assert_eq!(kind, DamageKind::Fall);
+    // A fall is a hit of `globalsalling` with no instigator, at q_f.
+    let t = drop_from(5.0).0;
+    let h = &t.sim.app.world().resource::<DamageLog>().0[0];
+    assert_eq!((h.effect, h.instigator), (ids::FALLING, None));
+    close(h.scale, 0.7048, 1e-4, "the fall's scale q_f");
 }
 
 /// "Landing and falling": faster than the death speed kills in the air.

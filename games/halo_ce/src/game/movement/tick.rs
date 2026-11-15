@@ -102,6 +102,16 @@ pub struct Controls {
     pub speed_multiplier: f32,
 }
 
+/// The falling damage of a tick (spec section 6): the damage system turns
+/// it into points (`damage::HaloHit::fall`, `lethal_fall`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Fall {
+    /// A hard landing: `globals\falling` at scale q_f.
+    Landing(f32),
+    /// Too fast in the air: `globals\distance`.
+    Lethal,
+}
+
 /// What a tick did.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Outcome {
@@ -110,8 +120,8 @@ pub struct Outcome {
     pub velocity: Vec3,
     /// Grounded after the move.
     pub grounded: bool,
-    /// Falling damage dealt this tick, in points.
-    pub damage: Option<f32>,
+    /// Falling damage dealt this tick.
+    pub damage: Option<Fall>,
     /// The move's contacts' normals.
     pub contacts: Vec<Vec3>,
 }
@@ -262,9 +272,9 @@ pub fn tick(
     }
     // 15. Falling damage.
     let damage = if grounded && lambda > d.fall_v_min {
-        d.fall_damage(lambda)
+        d.fall_scale(lambda).map(Fall::Landing)
     } else if v.y < -d.fall_v_kill {
-        Some(d.fall_kill_damage)
+        Some(Fall::Lethal)
     } else {
         None
     };

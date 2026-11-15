@@ -82,15 +82,8 @@ hard_land_time = 1.0
 fall_v_min = 0.14625688
 fall_v_max = 0.20683846
 fall_v_kill = 0.34300280
-# FALL_DAMAGE (`globals\falling`): damage minimum and upper bound, points.
-fall_damage_min = 10.0
-fall_damage_max = 155.0
-# FALL_KILL_DAMAGE (`globals\distance`): points.
-fall_kill_damage = 105.0
-# Points per 1.0 of the engine's normalised `Damage` (health_shields.md
-# SPARTAN_BODY: 75 body points). Shields do not exist yet: falling damage
-# goes to health (the movement's Known shortcuts).
-body_vitality = 75.0
+# The falling damage's amounts (`globals\falling`, `globals\distance`) are
+# the damage effects' (data/damage.toml): movement gives the scale q_f only.
 
 # The engine's "nearly zero" (epsilon), WU.
 epsilon = 0.0001
