@@ -41,7 +41,7 @@ port adds the ones below.
 | [cache_file.md](cache_file.md) | 0 | draft | the map cache file, the tag index, tag data conventions, tag classes, units and tick |
 | bitmaps.md | 1 | planned | bitmap tags and pixel formats |
 | [structure_bsp.md](structure_bsp.md) | 1 | draft | the level's render geometry, lightmaps, clusters and visibility |
-| collision.md | 1 | planned | collision BSPs and how a trace walks them |
+| [collision.md](collision.md) | 1 | draft | collision BSPs and how a trace walks them |
 | models.md | 1 | planned | render models |
 | shaders.md | 1 | planned | the shader classes and what each draws |
 | scenario.md | 1 | planned | spawns, netgame equipment, object placements, the sky |
