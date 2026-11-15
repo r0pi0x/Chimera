@@ -23,7 +23,8 @@
 //!   `weapon_fire` (weapon), `bullet_impact` (x, y, z: every surface a
 //!   bullet enters), `weapon_reload`, `item_pickup` (item: a loose weapon
 //!   taken), `player_hurt` (attacker, health, dmg_health, hitgroup, weapon),
-//!   `player_death` (attacker, weapon, headshot), `hegrenade_detonate` and
+//!   `player_death` (attacker, weapon, headshot, dominated, revenge: 0/1,
+//!   dominations.md 3), `hegrenade_detonate` and
 //!   `flashbang_detonate` (x, y, z); log `"<A>" killed "<B>" with
 //!   "<weapon>"` and `"<B>" committed suicide with "<weapon>"` ("world"
 //!   with none; measured, objectives.md Q17).
@@ -35,8 +36,7 @@
 //! the map's bomb targets / rescue zones (Source's: the entity index), and
 //! only `bomb_planted` and `hostage_rescued` carry it (CS:S's
 //! beginplant, abortplant, defused and exploded have it too, exploded a
-//! `userid`); `player_hurt` has no `dmg_armor` or `armor`, `player_death`
-//! no `dominated`/`revenge`; `round_end` no `reason` number; a hostage is
+//! `userid`); `player_hurt` has no `dmg_armor` or `armor`; `round_end` no `reason` number; a hostage is
 //! named by its entity index; no `(headshot)` suffix on kill lines
 //! (unmeasured). Not written (measured 2026-10-18, objectives.md Q17):
 //! `attacked` lines (`mp_logdetail`), say, connect, enter, disconnect and
@@ -73,6 +73,7 @@ pub(super) fn plugin(app: &mut App) {
     app.add_systems(
         PostUpdate,
         (objective_events, round_events, weapon_events, player_events)
+            .after(chimera_sim::dominations::DominationSet)
             .run_if(authoritative)
             .run_if(crate::objectives::plays),
     );
@@ -304,6 +305,7 @@ fn credited(
 fn player_events(
     mut hurt: MessageReader<DamageTaken>,
     mut died: MessageReader<Died>,
+    mut marks: MessageReader<chimera_sim::dominations::KillMark>,
     players: Query<&Health, (With<Team>, With<Inventory>, Without<Hostage>)>,
     held: Query<&Inventory>,
     weapons: Query<&Weapon>,
@@ -325,10 +327,13 @@ fn player_events(
                 .with("weapon", EventValue::Str(credited(d.weapon, d.attacker, &held, &weapons))),
         );
     }
+    let marks: Vec<_> = marks.read().copied().collect();
     for d in died.read() {
         if !players.contains(d.entity) {
             continue;
         }
+        // Dominations (dominations.md Behavior 3): 0/1, never both.
+        let mark = marks.iter().find(|m| m.victim == d.entity && Some(m.killer) == d.attacker);
         let mut event = GameEvent::of("player_death", d.entity);
         if let Some(a) = d.attacker {
             event = event.with("attacker", player(a));
@@ -337,7 +342,9 @@ fn player_events(
         out.write(
             event
                 .with("weapon", EventValue::Str(weapon.clone()))
-                .with("headshot", EventValue::Bool(d.damage.hitgroup == crate::core::Hitgroup::Head)),
+                .with("headshot", EventValue::Bool(d.damage.hitgroup == crate::core::Hitgroup::Head))
+                .with("dominated", EventValue::Int(mark.is_some_and(|m| m.dominated) as i64))
+                .with("revenge", EventValue::Int(mark.is_some_and(|m| m.revenge) as i64)),
         );
         // `"A" killed "B" with "usp"`, `"B" committed suicide with "world"`
         // (measured 2026-10-18, objectives.md Q17).

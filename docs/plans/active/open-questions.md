@@ -341,7 +341,7 @@ objectives Q17, game events' fields and the log's other lines (class 1).
 | Base velocity (conveyors, currents) | 1 | movement Q15 |
 | Camera under a low ceiling | 3 | other work (mg_jacks) |
 | Tick rate 66.67 vs community 100 | 3 | a choice (CS:S servers always run 0.015 s) |
-| Spread generator | 3 | weapons Q1 |
+| Spread generator | answered 2026-11-14 | weapons 4.2.1, 4.2.2 (implemented) |
 | Other automatics' recoil, scoped/silenced/burst | 1 | weapons Q3 |
 | Penetration materials | 1 | weapons Q7 |
 | Unmeasured gun values | 1 | M13 for long reaches (buckshot done, sixth pass) |

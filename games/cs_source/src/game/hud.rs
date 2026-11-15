@@ -44,7 +44,8 @@ pub fn load(materials: &mut MaterialLoader, map: &str) -> Option<GameHud> {
     // The sniper scope: a quarter of the ring (transparent inside, black
     // outside; the bottom-right quarter as stored) and the lens tint; the
     // icon over a teammate's head while they speak on the radio; the
-    // scoreboard's status icons and its row highlight; the planted bomb's
+    // scoreboard's status icons (with the domination ones) and its row
+    // highlight; the freeze panel's nemesis and revenge icons; the planted bomb's
     // LED's glow (and `sprites/c4`, which nothing draws: CS:S has no
     // marker over the bomb).
     for (name, material) in [
@@ -55,6 +56,14 @@ pub fn load(materials: &mut MaterialLoader, map: &str) -> Option<GameHud> {
         ("scoreboard_dead", "hud/scoreboard_dead"),
         ("scoreboard_defuser", "hud/scoreboard_defuser"),
         ("scoreboard_select", "vgui/scoreboard/scoreboard-select"),
+        // Dominations (dominations.md Constants): the freeze panel's and
+        // the scoreboard's.
+        ("freeze_nemesis", "hud/freeze_nemesis"),
+        ("freeze_revenge", "hud/freeze_revenge"),
+        ("scoreboard_dominated", "hud/scoreboard_dominated"),
+        ("scoreboard_domination-dead", "hud/scoreboard_domination-dead"),
+        ("scoreboard_nemesis", "hud/scoreboard_nemesis"),
+        ("scoreboard_nemesis-dead", "hud/scoreboard_nemesis-dead"),
         ("c4", "sprites/c4"),
         ("ledglow", "sprites/ledglow"),
     ] {

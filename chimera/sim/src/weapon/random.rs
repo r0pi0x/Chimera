@@ -5,23 +5,25 @@
 //!
 //! - A command's random seed is `MD5(n as 4 LE bytes)`, the 32-bit LE
 //!   integer at digest bytes 6-9, `& 0x7FFFFFFF` (`command_seed`).
-//! - Shots use `seed & 255` (`shot_seed`); pellet `i` reseeds the
-//!   generator with `shot seed + 1 + i` (the template's rule).
+//! - Shots use `seed & 255` (`shot_seed`). CS:S's spread (`SpreadShape::Disc`)
+//!   reseeds Source's generator (`Ran1`, spec 4.2.1) once per shot with
+//!   `shot seed + 1` and draws the shot's and each pellet's offsets from it
+//!   in order (spec 4.2.2, `deliver::cs_offsets`); the template and generic
+//!   shapes reseed per pellet with `shot seed + 1 + i`.
 //! - Other shared rolls seed it with `CRC32(S as i32 LE ‖ extra as i32 LE ‖
 //!   label)` (`shared_random`).
 //!
-//! The generator itself is ours (`Rng`): CS:S's is not in the SDK (spec
-//! Q1), so its exact patterns aren't reproduced.
-//!
 //! Covers: the shared random of spec 4.2 (a command's seed from the MD5 of its
-//! number, shots' `& 255`, other rolls by CRC32 of seed, extra and label; our
-//! own generator, spec Q1); console `give`, `slot1`–`slot5`, `lastinv`, `use
-//! <weapon>` (draw one carried, by name).
+//! number, shots' `& 255`, other rolls by CRC32 of seed, extra and label);
+//! Source's uniform generator (`Ran1`: Park-Miller with the Bays-Durham
+//! shuffle, f32 floats, spec 4.2.1's check values); our own small generator
+//! (`Rng`) for the rolls whose generator no spec gives; console `give`,
+//! `slot1`–`slot5`, `lastinv`, `use <weapon>` (draw one carried, by name).
 //!
-//! Known shortcuts (docs/tech-debt.md): CS:S's spread and recoil are seeded as
-//! spec 4.2 (the command number's MD5 seed, `& 255` for shots; recoil's CRC32
-//! label `"recoil"` and the shot count as `extra` are ours) but roll our own
-//! generator, not Source's (spec Q1); command numbers are the tick plus the
+//! Known shortcuts (docs/tech-debt.md): CS:S's recoil is seeded as spec 4.2
+//! (CRC32 label `"recoil"` and the shot count as `extra` are ours) but rolls
+//! our own generator (`Rng`), as do the template and generic (`Cone`)
+//! spreads (HL2:DM's is not measured); command numbers are the tick plus the
 //! character's `Seed` (`core::number_commands`), not a client's own count;
 //! bullets ignore water (lag compensation is `lagcomp`'s); armour
 //! running out mid-hit is clamped (unmeasured); airborne inaccuracy decays
@@ -68,6 +70,78 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
         z ^= z >> 31;
         (z >> 40) as f32 / (1u64 << 24) as f32
+    }
+
+    /// Uniform in [lo, hi).
+    pub fn range(&mut self, lo: f32, hi: f32) -> f32 {
+        lo + (hi - lo) * self.next()
+    }
+}
+
+/// Source's shared uniform generator (spec 4.2.1, the published `ran1`):
+/// Park and Miller's minimal standard generator with Bays and Durham's
+/// 32-entry shuffle; floats in f32 as the engine's. Seeding marks the table
+/// empty; the first draw fills it.
+#[derive(Clone, Debug)]
+pub struct Ran1 {
+    /// The state; `<= 0` until the table is filled (minus the seed).
+    x: i32,
+    /// The last output.
+    y: i32,
+    table: [i32; RAN1_N],
+}
+
+const RAN1_A: i32 = 16807;
+const RAN1_M: i32 = 2_147_483_647;
+const RAN1_Q: i32 = 127_773;
+const RAN1_R: i32 = 2836;
+const RAN1_N: usize = 32;
+const RAN1_DIV: i32 = 1 + (RAN1_M - 1) / RAN1_N as i32;
+/// The largest float `Ran1` gives (1 - 1.2e-7).
+const RAN1_MAX: f32 = 1.0 - 1.2e-7;
+
+impl Ran1 {
+    /// Seeded with `seed` (the engine's "set seed": the next draw starts
+    /// over from it).
+    pub fn new(seed: i32) -> Self {
+        Self {
+            x: -(seed.unsigned_abs().min(RAN1_M as u32) as i32),
+            y: 0,
+            table: [0; RAN1_N],
+        }
+    }
+
+    /// x <- a x mod m (Schrage's split, no 64-bit products).
+    fn advance(x: i32) -> i32 {
+        let k = x / RAN1_Q;
+        let x = RAN1_A * (x - k * RAN1_Q) - RAN1_R * k;
+        if x < 0 { x + RAN1_M } else { x }
+    }
+
+    /// An integer in [1, m - 1].
+    pub fn draw(&mut self) -> i32 {
+        if self.x <= 0 || self.y == 0 {
+            let mut x = (-self.x).max(1);
+            for j in (0..RAN1_N + 8).rev() {
+                x = Self::advance(x);
+                if j < RAN1_N {
+                    self.table[j] = x;
+                }
+            }
+            self.x = x;
+            self.y = self.table[0];
+        }
+        self.x = Self::advance(self.x);
+        let j = (self.y / RAN1_DIV) as usize;
+        self.y = self.table[j];
+        self.table[j] = self.x;
+        self.y
+    }
+
+    /// Uniform in [0, 1).
+    pub fn next(&mut self) -> f32 {
+        let u = self.draw() as f32 * (1.0 / RAN1_M as f32);
+        u.min(RAN1_MAX)
     }
 
     /// Uniform in [lo, hi).
@@ -177,6 +251,30 @@ mod tests {
         assert_eq!(roll("a", 0), roll("a", 0));
         assert_ne!(roll("a", 0), roll("b", 0));
         assert_ne!(roll("a", 0), roll("a", 1));
+    }
+
+    #[test]
+    fn ran1_advance_matches_the_minimal_standard_check_value() {
+        // Spec 4.2.1: from x = 1, the 10 000th advance is 1043618065.
+        let x = (0..10_000).fold(1, |x, _| Ran1::advance(x));
+        assert_eq!(x, 1_043_618_065);
+    }
+
+    #[test]
+    fn ran1_matches_spec_check_values() {
+        // Spec 4.2.1: floats in [0, 1) after seeding with 1 and with 8.
+        for (seed, want) in [
+            (1, [0.4159994, 0.0919649, 0.7564105, 0.5297002]),
+            (8, [0.0680166, 0.0512839, 0.9282991, 0.9763111]),
+        ] {
+            let mut r = Ran1::new(seed);
+            for (i, w) in want.into_iter().enumerate() {
+                let u = r.next();
+                assert!((u - w).abs() < 2e-7, "seed {seed} draw {i}: {u} != {w}");
+            }
+        }
+        // Reseeding starts the same sequence again; seed 0 is seed 1.
+        assert_eq!(Ran1::new(0).next(), Ran1::new(1).next());
     }
 
     #[test]

@@ -38,7 +38,8 @@
 //! and ringing to the player hit (`Senses`), damage that reached a player's
 //! health to its client (`Hurt`: the damage indicators), things broken
 //! (`ObjectDestroyed`: the kill feed's line, `core::Destroyed`), deaths (`Killed`:
-//! the gun's index, or a kill's class of no game by name) and
+//! the gun's index, or a kill's class of no game by name; the domination
+//! flags, `dominations::KillMark`, which a client writes again) and
 //! hit confirmations (`HitConfirm`), and drops what a client asks to
 //! (`DropRequest`); a client puts others' weapons in their hands
 //! (`weapon::remote::show_held`), traces their rounds again
@@ -563,9 +564,11 @@ fn send_deaths(
     registry: Res<WeaponRegistry>,
     held: Option<Res<crate::weapon::DamageWeapons>>,
     mut announced: MessageReader<chimera_core::announcer::KillAnnounced>,
+    mut marked: MessageReader<chimera_sim::dominations::KillMark>,
     mut out: MessageWriter<ToClients<Killed>>,
 ) {
     let announced: Vec<_> = announced.read().collect();
+    let marked: Vec<_> = marked.read().copied().collect();
     for d in died.read() {
         if !replicated.contains(d.entity) {
             continue;
@@ -579,6 +582,13 @@ fn send_deaths(
         // hold the next rung's already); a class that is no gun by name.
         let id = held.as_deref().map_or(damage.weapon, |h| h.of(damage));
         let index = id.and_then(|w| registry.index(w));
+        let marks = marked
+            .iter()
+            .find(|m| m.victim == d.entity && Some(m.killer) == d.attacker)
+            .map_or(0, |m| {
+                (if m.dominated { super::kill_marks::DOMINATED } else { 0 })
+                    | (if m.revenge { super::kill_marks::REVENGE } else { 0 })
+            });
         out.write(ToClients {
             targets: SendTargets::CLIENTS_ONLY,
             message: Killed {
@@ -592,6 +602,7 @@ fn send_deaths(
                 dir: damage.dir.to_array(),
                 force: damage.force.to_array(),
                 facts,
+                marks,
             },
         });
     }
@@ -694,6 +705,15 @@ fn receive_deaths(mut killed: MessageReader<Killed>, mut commands: Commands) {
                     force: Vec3::from_array(k.force),
                 },
             });
+            // Dominations (`dominations::KillMark`).
+            if let Some(killer) = k.attacker.filter(|_| k.marks != 0) {
+                w.write_message(chimera_sim::dominations::KillMark {
+                    victim: k.victim,
+                    killer,
+                    dominated: k.marks & super::kill_marks::DOMINATED != 0,
+                    revenge: k.marks & super::kill_marks::REVENGE != 0,
+                });
+            }
             // The announcer's facts (`announcer::KillAnnounced`).
             if let (Some(facts), Some(killer)) = (k.facts, k.attacker) {
                 w.write_message(chimera_core::announcer::KillAnnounced {

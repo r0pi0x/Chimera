@@ -1597,13 +1597,16 @@ sections above already list.
   or where the HUD's game draws its own indicator (Combat Arms'). The
   shell's old always-on "x" is gone (CS:S has no hit feedback). No sound
   yet.
-- **Dominations and revenge (plain CS:S, and CS:S identity)** (spec
-  first). CS:S marks a player who kills the same enemy several times
-  without dying to them as dominating (a kill feed line, the freeze
-  panel's nemesis line, a scoreboard icon, a sound) and calls a kill on
-  one's dominator revenge; nothing of it here (2b notes only the freeze
-  panel's line). Needs the threshold, the sounds, the icons and who
-  sees what.
+- **Dominations and revenge (plain CS:S, and CS:S identity): done
+  2026-11-14** (specs/cs_source/dominations.md; `chimera_sim::dominations`):
+  the exact 4th unanswered kill, revenge, team kills counted but never
+  flagged, kept over rounds and `mp_restartgame`, cleared by a team change
+  and leaving; `player_death`'s `dominated`/`revenge`; relationships to the
+  owner's client only; the freeze panel's nemesis/revenge lines and icon;
+  the scoreboard's icons (in the status cell: placement ours). Left: the
+  kill feed icon (spec Q4) and the scoreboard's "Dominate"/"Nemesis"
+  layout (Q6), both need a client capture; Ultimate Gun Game (FFA) could
+  use it (docs/plans/active/ugg-ui.md).
 - **No music in the party's matches: done (checked against the code
   2026-10-31), confirm in a playtest.** Combat Arms' music director
   takes its facts from Combat Arms' match (`game::music` reads
@@ -2086,8 +2089,8 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
   (`freezepanel_basic.res`: name, "KILLED YOU", "[F5] Save this moment",
   the killer's health gauge; 2026-10-15, timings now CS:S's server cvars
   and the death cam's measured: specs/cs_source/spectating.md) checked
-  against a capture of a human's freeze cam (the avatar and nemesis lines
-  are still out), the buy menu's favourites (autobuy and rebuy are in: `cl_autobuy`,
+  against a capture of a human's freeze cam (the avatar is still out;
+  the nemesis and revenge lines are in, 2026-11-14), the buy menu's favourites (autobuy and rebuy are in: `cl_autobuy`,
   `cl_rebuy`), checking the widescreen placement against
   the game, other game messages in the chat (team joins, bomb pickups
   and drops are in), bots' answers checked against a bot behaviour spec

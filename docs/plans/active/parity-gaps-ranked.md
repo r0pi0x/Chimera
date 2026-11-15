@@ -120,7 +120,8 @@ settle first (a capture, a probe run or a spec session).
 | CS:S scope overlay and zoomed sensitivity | blocked | none (no spec covers the overlay or `zoom_sensitivity_ratio`) | a spec session (overlay material and layout, the zoomed sensitivity rule) |
 | CS:S view-model lighting and bob | blocked | cs_source/view_models.md 3, 9, Q1, Q2, Q7 | captures: the bob model (cycle, shape, lateral gain), the lighting point |
 | CS:S room reverb presets | blocked | cs_source/sounds.md "dsp" (presets not specified) | a spec session: the DSP preset table |
-| CS:S spread generator | blocked | cs_source/weapons.md Q1, Q12 | the RNG body (seed-to-impact capture) and the pellet pattern |
+| CS:S spread generator | done 2026-11-14 (`weapon::random::Ran1`, `deliver::cs_offsets`: bit-exact, T3b-T3d) | cs_source/weapons.md 4.2.1, 4.2.2 | none; the movement term at shot time is still unchecked (4.2.2) |
+| CS:S dominations and revenge | done 2026-11-14 (`chimera_sim::dominations`; events, own-client relationships, freeze panel, scoreboard icons) | cs_source/dominations.md | kill feed icon (Q4) and the scoreboard's layout (Q6): client captures |
 | Combat Arms kill call-out voice files (`EnemyDown`, `ManDown`) | blocked | combat_arms/effects_sounds.md 11 (rules only; no record or files named) | a spec session: the auto-cast records and their files per sound template |
 | Combat Arms hit-sphere priorities | rule done (`priority_sphere`); values ours | combat_arms/weapon_firing.md Corrections 5, Q16 | a spec session: `Node#Priority` per skeleton |
 | Combat Arms multi-kill reset on death | blocked | combat_arms/kill_streaks.md Q2 | a live check (kill, die, kill again within 5 s) |

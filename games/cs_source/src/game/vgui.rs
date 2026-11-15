@@ -211,7 +211,9 @@ pub fn load(materials: &mut MaterialLoader, hud: &mut GameHud, map: &str) -> Opt
             .find(|(k, c)| k.eq_ignore_ascii_case("FreezePanelBG") && matches!(c, Kv::Block(_)))
             .map(|(_, c)| c);
         if let Some(frame) = frame {
-            let inner = layout(frame, &strings, &colors, &mut |_| None);
+            // Its pictures by name only (the domination icon's: the panel
+            // shows the loaded `freeze_nemesis` / `freeze_revenge` sprites).
+            let inner = layout(frame, &strings, &colors, &mut |p| Some(p.trim().replace('\\', "/").to_lowercase()));
             menus.layouts.insert(FREEZE_PANEL.into(), outer);
             menus.layouts.insert(FREEZE_PANEL_INNER.into(), inner);
             menus.freeze_panel = Some((FREEZE_PANEL.into(), FREEZE_PANEL_INNER.into()));

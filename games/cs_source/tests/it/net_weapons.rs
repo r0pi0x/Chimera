@@ -7,6 +7,8 @@
 //!   meeting it), Chimera's swing as HL2:DM's crowbar and stunstick share.
 //! - Its predicted ammo, timers, punch, recoil, accuracy, zoom and
 //!   weapon switches are the server's bit for bit with no loss.
+//! - The shooter's predicted impacts are the server's (CS:S's spread
+//!   from the command's seed).
 //! - Another client draws its shots with the same pellets the server
 //!   traced; `sv_maxunlag` bounds the rewind; a dead player can't shoot;
 //!   a client deals no damage of its own; a round fired goes only to
@@ -501,6 +503,64 @@ fn the_weapon_frame_is_predicted_bit_for_bit() {
     // The AK-47 sprayed and reloaded (rounds came out of the reserve).
     let fired = clips(ours, me).iter().any(|(id, m)| *id == AK47 && m.is_some_and(|m| m.1 < 90));
     assert!(fired, "the AK-47 was fired: {:?}", clips(ours, me));
+}
+
+/// CS:S's spread is drawn from the command's seed with the game's own
+/// generator (specs/cs_source/weapons.md 4.2.2), so the shooter's
+/// predicted impacts are the server's: every pellet of two shotgun blasts
+/// and an AK-47 spray (walking, recoil climbing) lands on the same point.
+#[test]
+fn predicted_impacts_are_the_servers() {
+    let mut sim = joined(link(100, 0, 0.0), 46, 1);
+    let theirs = sim.character_of(0).unwrap();
+    give(sim.server.app.world_mut(), theirs, M3).unwrap();
+    place(&mut sim, 0, Vec3::new(0.0, 1.0, 12.0), 0.3);
+    sim.ticks(80);
+    let me = sim.local_player(0).unwrap();
+    let mut server_events = Log::<WeaponEvent>::new(&sim, 0);
+    let mut client_events = Log::<WeaponEvent>::new(&sim, 1);
+    for k in 0..300u32 {
+        let mut i = client_intent(&mut sim, 0);
+        i.fire = matches!(k, 0..=1 | 70..=71) || (220..260).contains(&k);
+        i.select = if (120..=121).contains(&k) { Some(0) } else { None };
+        i.move_axis = if (225..250).contains(&k) { Vec2::Y } else { Vec2::ZERO };
+        i.pitch = -0.1 - 0.01 * (k % 7) as f32;
+        step(&mut sim, &mut [&mut server_events, &mut client_events]);
+    }
+    *client_intent(&mut sim, 0) = Intent::default();
+    steps(&mut sim, 60, &mut [&mut server_events, &mut client_events]);
+    // Each round's seed, then its pellets' impact points, in order.
+    let impacts = |events: Vec<WeaponEvent>, owner: Entity| -> Vec<(u32, Vec<Vec3>)> {
+        let mut out: Vec<(u32, Vec<Vec3>)> = Vec::new();
+        for e in events.into_iter().filter(|e| e.owner == owner && e.shown()) {
+            match e.kind {
+                WeaponEventKind::Fired { seed, .. } => out.push((seed, Vec::new())),
+                WeaponEventKind::Shot { to, .. } => {
+                    if let Some(r) = out.last_mut() {
+                        r.1.push(to);
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    };
+    let server = impacts(server_events.all, theirs);
+    let client = impacts(client_events.all, me);
+    let blasts = server.iter().filter(|r| r.1.len() == 9).count();
+    println!("{} rounds ({blasts} of 9 pellets) on the server, {} predicted", server.len(), client.len());
+    assert!(blasts >= 2 && server.len() >= 8, "fired: {}", server.len());
+    assert_eq!(client.len(), server.len(), "every round predicted once");
+    let mut worst = 0.0f32;
+    for (n, (c, s)) in client.iter().zip(&server).enumerate() {
+        assert_eq!(c.0, s.0, "round {n}: the same seed");
+        assert_eq!(c.1.len(), s.1.len(), "round {n}: the same pellets");
+        for (a, b) in c.1.iter().zip(&s.1) {
+            worst = worst.max(a.distance(*b));
+        }
+    }
+    println!("worst impact difference: {worst:e} m");
+    assert!(worst < 1e-3, "the same impacts ({worst} m)");
 }
 
 #[test]
@@ -1280,4 +1340,72 @@ fn grenades_in_flight_drawn_smoothly() {
         }
     }
     assert!(bad.is_empty(), "choppy:\n{}", bad.join("\n"));
+}
+
+/// Dominations over the network (specs/cs_source/dominations.md 3): a
+/// kill's flags reach every client with the kill (`KillMark`), and each
+/// player's relationships only its own client.
+#[test]
+fn dominations_go_with_the_kill_and_only_to_their_players() {
+    use crate::stack::{
+        core::{Hitgroup, Team},
+        rules::Dead,
+    };
+    use chimera_sim::dominations::{KillMark, Relationships};
+    let mut sim = joined(link(60, 0, 0.0), 52, 3);
+    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    sim.server.app.world_mut().entity_mut(a).insert(Team(1));
+    sim.server.app.world_mut().entity_mut(b).insert(Team(2));
+    sim.ticks(20);
+    let mut marks: Vec<Log<KillMark>> = (1..=3).map(|app| Log::<KillMark>::new(&sim, app)).collect();
+    for _ in 0..4 {
+        let w = sim.server.app.world_mut();
+        let mut e = w.entity_mut(b);
+        e.remove::<Dead>();
+        e.get_mut::<Health>().unwrap().current = 100.0;
+        w.write_message(Damage {
+            force: Vec3::ZERO,
+            target: b,
+            attacker: Some(a),
+            amount: 1000.0,
+            point: Vec3::ZERO,
+            dir: Vec3::X,
+            hitgroup: Hitgroup::Chest,
+            kind: default(),
+            weapon: None,
+        });
+        let mut logs: Vec<&mut dyn Poll> = marks.iter_mut().map(|l| l as &mut dyn Poll).collect();
+        steps(&mut sim, 30, &mut logs);
+    }
+    // The 4th kill's flag, on every client, about its own copies.
+    for (i, log) in marks.iter().enumerate() {
+        let (ia, ib) = (sim.client_id(0), sim.client_id(1));
+        let (ka, kb) = (
+            NetSim::owned_by(&mut sim.clients[i], Some(ia)).unwrap(),
+            NetSim::owned_by(&mut sim.clients[i], Some(ib)).unwrap(),
+        );
+        assert_eq!(
+            log.all,
+            [KillMark { victim: kb, killer: ka, dominated: true, revenge: false }],
+            "client {i}"
+        );
+    }
+    // Relationships: A's client knows whom it dominates, B's its nemesis,
+    // C's nothing of either.
+    let rel = |sim: &mut NetSim, i: usize, of: usize| {
+        let id = sim.client_id(of);
+        let e = NetSim::owned_by(&mut sim.clients[i], Some(id)).unwrap();
+        (e, sim.clients[i].app.world().get::<Relationships>(e).cloned())
+    };
+    let (_, mine) = rel(&mut sim, 0, 0);
+    let (b_at_a, theirs) = rel(&mut sim, 0, 1);
+    assert_eq!(mine.map(|r| r.dominating), Some(vec![b_at_a]));
+    assert_eq!(theirs, None, "B's are B's own");
+    let (_, mine) = rel(&mut sim, 1, 1);
+    let (a_at_b, theirs) = rel(&mut sim, 1, 0);
+    assert_eq!(mine.map(|r| r.nemeses), Some(vec![a_at_b]));
+    assert_eq!(theirs, None);
+    for of in 0..3 {
+        assert_eq!(rel(&mut sim, 2, of).1, None, "C sees no one's");
+    }
 }
