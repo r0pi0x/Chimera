@@ -1,0 +1,43 @@
+# Halo's material types (specs/halo_ce/collision.md, "Materials": the
+# code is the enumeration's position) as the engine's generic surface names
+# (chimera_world's `map::impact::SurfaceClass`, lower case: concrete,
+# metal, wood, dirt, sand, grass, snow, glass, tile, plastic, cloth, flesh,
+# water, default), for footsteps and impacts. Our choice of the nearest
+# generic surface; the game's own effects per material type come with the
+# effects spec. `games/halo_ce/src/game/maps/surfaces.rs` reads it.
+
+types = [
+    { code = 0, name = "dirt", surface = "dirt" },
+    { code = 1, name = "sand", surface = "sand" },
+    { code = 2, name = "stone", surface = "concrete" },
+    { code = 3, name = "snow", surface = "snow" },
+    { code = 4, name = "wood", surface = "wood" },
+    { code = 5, name = "metal (hollow)", surface = "metal" },
+    { code = 6, name = "metal (thin)", surface = "metal" },
+    { code = 7, name = "metal (thick)", surface = "metal" },
+    { code = 8, name = "rubber", surface = "plastic" },
+    { code = 9, name = "glass", surface = "glass" },
+    { code = 10, name = "force field", surface = "default" },
+    { code = 11, name = "grunt", surface = "flesh" },
+    { code = 12, name = "hunter armor", surface = "metal" },
+    { code = 13, name = "hunter skin", surface = "flesh" },
+    { code = 14, name = "elite", surface = "flesh" },
+    { code = 15, name = "jackal", surface = "flesh" },
+    { code = 16, name = "jackal energy shield", surface = "default" },
+    { code = 17, name = "engineer", surface = "flesh" },
+    { code = 18, name = "engineer force field", surface = "default" },
+    { code = 19, name = "flood combat form", surface = "flesh" },
+    { code = 20, name = "flood carrier form", surface = "flesh" },
+    { code = 21, name = "cyborg", surface = "metal" },
+    { code = 22, name = "cyborg energy shield", surface = "default" },
+    { code = 23, name = "armored human", surface = "metal" },
+    { code = 24, name = "human", surface = "flesh" },
+    { code = 25, name = "sentinel", surface = "metal" },
+    { code = 26, name = "monitor", surface = "metal" },
+    { code = 27, name = "plastic", surface = "plastic" },
+    { code = 28, name = "water", surface = "water" },
+    { code = 29, name = "leaves", surface = "grass" },
+    { code = 30, name = "elite energy shield", surface = "default" },
+    { code = 31, name = "ice", surface = "snow" },
+    { code = 32, name = "hunter shield", surface = "metal" },
+]

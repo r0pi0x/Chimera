@@ -1,13 +1,13 @@
 //! Halo's parts, one module per subsystem, and what the game tells the
-//! shell about itself (`INFO`). A skeleton (M0 of docs/plans/active/
-//! halo-ce.md): the game registers, its install mounts, its maps are named,
-//! and nothing else is implemented; each module says which spec
-//! (specs/halo_ce/<name>.md) will define it when it lands:
+//! shell about itself (`INFO`). M1 of docs/plans/active/halo-ce.md: the
+//! game registers, its install mounts and its maps load; movement,
+//! weapons and the rest come with their specs (specs/halo_ce/<name>.md):
 //!
 //! - `mount`: the install, a disc image or a folder of the disc's files, as
 //!   a mount (`INFO.open`; specs/halo_ce/disc_image.md);
 //! - `maps`: the install's map cache files as Chimera's `MapData`
-//!   (`MAP_LOADER`; cache_file.md, structure_bsp.md): not written yet;
+//!   (`MAP_LOADER`; cache_file.md, structure_bsp.md, collision.md,
+//!   shaders.md, scenario.md);
 //! - `parts`: what the game lends other games' apps (`PARTS`): nothing yet.
 //!
 //! `HaloPlugins` adds the game's parts after `crate::SimPlugins`; none yet
