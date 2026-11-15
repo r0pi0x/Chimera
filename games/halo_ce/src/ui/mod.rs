@@ -1,15 +1,19 @@
 //! Halo's front end on the client shell (the `ui` feature): its weapons'
-//! own buttons (`binds`: `+melee`, `+zoom`) and no HUD of its own yet, so
-//! a Halo app shows the shell's fallback HUD (crosshair, health and ammo).
-//! Its HUD comes with specs/halo_ce/hud.md.
+//! own buttons (`binds`: `+melee`, `+zoom`) and its HUD (`hud`:
+//! specs/halo_ce/hud.md, drawn from the disc's HUD tags in place of the
+//! shell's fallback crosshair and status).
+
+pub mod hud;
 
 use bevy::app::PluginGroupBuilder;
 use chimera_world::game_bundle::GameClient;
 
-/// The shell's plugins with Halo's HUD in its place: none drawn yet, the
-/// shell's own stays.
+/// The shell's plugins with Halo's HUD after the shell's own
+/// (`hud::HaloHudPlugin`, its material's renderer).
 pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
     shell
+        .add_after::<chimera_client::client::hud::HudPlugin>(hud::HaloHudPlugin)
+        .add_after::<hud::HaloHudPlugin>(hud::material::HudRenderPlugin)
 }
 
 /// The weapons' buttons beside fire, attack2 (also the zoom) and reload:
@@ -21,10 +25,9 @@ pub fn binds(app: &mut bevy::app::App) {
 }
 
 /// Halo's front end in an app made of several games (beside its
-/// `game::BUNDLE`): its weapons' buttons (`binds`); no HUD there
-/// (`hud: None`) until it draws one of its own: a Halo rung shows the
-/// fallback HUD.
-pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, hud: None, app: Some(binds) };
+/// `game::BUNDLE`): its HUD while a Halo gun is in hand (`with_hud`) and
+/// its weapons' buttons (`binds`).
+pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, hud: Some(with_hud), app: Some(binds) };
 
 /// Halo's front end under the name every game's has it (`ui::party::CLIENT`;
 /// docs/new-game.md).

@@ -19,6 +19,7 @@
 mod assets;
 mod body;
 mod cross_game;
+mod hud;
 mod info;
 mod maps;
 mod movement;
@@ -34,6 +35,7 @@ mod weapons_rules;
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
 mod heavy {
     mod body;
+    mod hud;
     mod maps;
     mod mount;
     mod served;
