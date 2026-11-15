@@ -134,8 +134,9 @@ pub fn cue(kind: &WeaponEventKind, magazine: Option<(u32, u32, u32)>) -> Option<
 }
 
 /// A holder's first-person view of a Halo gun: the machine, the look at
-/// the last tick, and whether it hid the view model.
-#[derive(Component, Clone, Debug)]
+/// the last tick, and whether it hid the view model; on every character
+/// from its spawn, its key empty while it holds no Halo gun.
+#[derive(Component, Clone, Debug, Default)]
 pub struct HaloViewModel {
     pub key: String,
     pub view: HaloView,
@@ -171,11 +172,11 @@ pub fn drive(
         let alive = health.is_none_or(|h| h.current > 0.0);
         let gun = inv.active.filter(|_| alive).and_then(|w| guns.get(w).ok());
         let Some((weapon, halo, magazine)) = gun else {
-            if let Some(own) = own {
+            if let Some(mut own) = own.filter(|o| !o.key.is_empty()) {
                 if own.hid {
                     commands.entity(e).remove::<ViewModelHidden>();
                 }
-                commands.entity(e).remove::<HaloViewModel>();
+                *own = HaloViewModel::default();
             }
             continue;
         };
@@ -189,21 +190,18 @@ pub fn drive(
         else {
             continue;
         };
-        let fresh = !own.as_ref().is_some_and(|o| o.key == weapon.id);
-        let mut made = HaloViewModel {
-            key: weapon.id.to_string(),
-            view: HaloView::new(e.to_bits() as u32 ^ 0x6a09_e667),
-            look: None,
-            hid: false,
-        };
-        let mut kept = own.filter(|_| !fresh);
-        let own: &mut HaloViewModel = match kept.as_mut() {
-            Some(o) => o,
-            None => {
-                made.view.cue(&set, Cue::Ready, halo.overheated);
-                &mut made
-            }
-        };
+        let Some(mut own) = own else { continue };
+        let fresh = own.key != weapon.id;
+        if fresh {
+            let hid = own.hid;
+            *own = HaloViewModel {
+                key: weapon.id.to_string(),
+                view: HaloView::new(e.to_bits() as u32 ^ 0x6a09_e667),
+                look: None,
+                hid,
+            };
+            own.view.cue(&set, Cue::Ready, halo.overheated);
+        }
         let mag = magazine.map(|m| (m.clip, m.size, m.reserve));
         let mut cues: Vec<Cue> = events
             .iter()
@@ -257,9 +255,6 @@ pub fn drive(
                 commands.entity(e).remove::<ViewModelHidden>();
             }
         }
-        if fresh {
-            commands.entity(e).insert(made);
-        }
     }
 }
 
@@ -295,9 +290,15 @@ pub struct HaloViewPlugin;
 
 impl Plugin for HaloViewPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
         if !app.is_plugin_added::<ViewAnimPlugin>() {
             app.add_plugins(ViewAnimPlugin);
         }
+        // What a character holds, its view and its label are on it from the spawn (a part that
+        // came and went would make archetypes: docs/DESIGN.md, "ECS style").
+        app.on_every_character::<Held>()
+            .on_every_character::<HaloViewModel>()
+            .on_every_character::<WeaponLabel>();
         app.add_systems(
             FixedLast,
             (stance.before(super::body::animate), drive.before(crate::map::SimPose)),

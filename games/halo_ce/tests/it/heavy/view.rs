@@ -7,7 +7,8 @@
 //! models and held models built from bloodgulch, each gun's draw, reload,
 //! shell and melee animations as long as its document's timers; and the
 //! assault rifle's idle placing `frame gun` where the spec's sanity check
-//! puts it in front of the camera. Passes with a note without an install.
+//! puts it in front of the camera; another game's map dressed with the
+//! Spartan and the four guns. Passes with a note without an install.
 
 use blam_formats::{
     animation::{AnimationGraph, FirstPersonSlot as S},
@@ -311,5 +312,35 @@ fn the_guns_in_hand_load_from_bloodgulch() {
     assert!(
         eye.z < 0.0 && eye.x > 0.0 && eye.y < 0.0,
         "ahead, right, below in the eye: {eye}"
+    );
+}
+
+#[test]
+fn another_games_map_is_dressed_with_the_guns() {
+    if mount().is_none() {
+        return;
+    }
+    // The bundle's guest dressing (an app of several games, another game's
+    // map): the Spartan and the four guns' view and held models.
+    let mut map = chimera_world::map::MapData::default();
+    let dress = halo_ce::game::BUNDLE.guest.unwrap().dress;
+    dress(&mut map, &chimera_world::map::MapLoadOptions::lean()).unwrap();
+    let mut guns: Vec<String> = halo_ce::game::weapons::GUNS.iter().map(|g| g.to_string()).collect();
+    guns.sort();
+    let mut shown: Vec<String> = map.kit.view_models.iter().map(|v| v.key.clone()).collect();
+    shown.sort();
+    let mut held: Vec<String> = map.kit.held.iter().map(|h| h.key.clone()).collect();
+    held.sort();
+    assert_eq!(shown, guns);
+    assert_eq!(held, guns);
+    assert_eq!(map.kit.characters.len(), 1, "the Spartan");
+    let textures = map.textures.len();
+    assert!(
+        map.kit
+            .view_models
+            .iter()
+            .flat_map(|v| &v.model.meshes)
+            .all(|m| m.texture.is_none_or(|t| t < textures)),
+        "the guns' textures appended to the map's"
     );
 }
