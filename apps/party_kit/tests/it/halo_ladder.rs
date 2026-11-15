@@ -64,7 +64,17 @@ fn game_of(id: &str) -> &str {
 }
 
 /// The party playing `LADDER` with a body of each game.
-fn party() -> Sim {
+pub(crate) fn party() -> Sim {
+    let text = crate::hl2dm_parts::ladder_text(&LADDER, false).replace(
+        "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
+        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"combat_arms\"]",
+    );
+    party_with(&text)
+}
+
+/// The party playing the ladder minigame `text` (`test:gun_game_hl2dm`)
+/// with a body of each game.
+pub(crate) fn party_with(text: &str) -> Sim {
     let mut sim = Sim::with(CaSim, |app| {
         app.add_plugins((GreyboxMapPlugin, MapSimPlugin::empty(), PartyPartsPlugin, KillFeedStatePlugin));
     });
@@ -84,16 +94,12 @@ fn party() -> Sim {
     sim.app.insert_resource(CharacterModels(std::sync::Arc::new(BODIES.iter().map(|g| body(*g)).collect())));
     plain_rungs(sim.app.world_mut());
     no_finale(sim.app.world_mut());
-    let text = crate::hl2dm_parts::ladder_text(&LADDER, false).replace(
-        "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
-        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"combat_arms\"]",
-    );
-    sim.app.add_minigames(&[("halo_ladder.toml", &text)]).unwrap();
+    sim.app.add_minigames(&[("halo_ladder.toml", text)]).unwrap();
     minigame::start(sim.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
     sim
 }
 
-fn set_rung(sim: &mut Sim, e: Entity, r: usize) {
+pub(crate) fn set_rung(sim: &mut Sim, e: Entity, r: usize) {
     let w = sim.app.world_mut();
     let l = w.resource::<Ladder>().clone();
     minigame::ladder::set_rung(w, e, r, &l);
@@ -115,7 +121,9 @@ fn assert_is_its_guns_game(sim: &Sim, e: Entity, r: usize) {
         assert!(w.get::<HaloMovement>(e).is_some(), "{what}: Halo's movement state");
         let v = w.get::<Vitality>(e).unwrap_or_else(|| panic!("{what}: Halo's vitality"));
         assert_eq!(v.shield, 1.0, "{what}: a full shield");
-        assert_eq!(w.get::<Armor>(e).map(|a| a.amount), Some(1.0), "{what}: the shield as its armour");
+        // In the party balance's incoming unit (`cross_game`).
+        let unit = halo_ce::game::cross_game::CrossGame::load().incoming();
+        assert_eq!(w.get::<Armor>(e).map(|a| a.amount), Some(1.0 / unit), "{what}: the shield as its armour");
         assert_eq!(w.get::<ArmorPieces>(e), Some(&shield_armour()), "{what}: covered by the shield's pieces");
         assert_eq!(w.get::<PiecesOf>(e).map(|p| p.0), Some(halo_ce::game::GAME), "{what}: Halo's pieces");
         assert_eq!(w.get::<Held>(e).and_then(|h| h.0.as_deref()), Some(gun), "{what}: the gun held in the hand");

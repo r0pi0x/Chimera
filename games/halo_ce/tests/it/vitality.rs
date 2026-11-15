@@ -136,7 +136,10 @@ fn spawn() {
     assert_eq!((v.body, v.shield), (1.0, 1.0));
     assert_eq!((s.model.maximum_body, s.model.maximum_shield), (75.0, 75.0));
     assert_eq!(health(&sim, e), 1.0);
-    assert_eq!(sim.app.world().get::<Armor>(e).unwrap().amount, 1.0);
+    // The engine's armour is the shield, in the party balance's incoming
+    // unit (`cross_game`: 1 / 1.5 of another game's armour).
+    let unit = halo_ce::game::cross_game::CrossGame::load().incoming();
+    assert_eq!(sim.app.world().get::<Armor>(e).unwrap().amount, 1.0 / unit);
 }
 
 #[test]

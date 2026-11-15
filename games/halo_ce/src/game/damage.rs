@@ -50,7 +50,11 @@
 //!   only-shields, headshots, the overshield's charge-up, instant kills,
 //!   the strict below-zero death), then stun, camouflage loss, the
 //!   attacker list, a `HaloPing` and a `HaloHurt` (unzoom); `Armor` is
-//!   the shield, `Health` the body (`vitality`). A death's credit: the
+//!   the shield, `Health` the body (`vitality`; under the party balance's
+//!   incoming scale, `cross_game`, the shield's unit is scaled and the
+//!   engine's `Damage` is written divided by the character's
+//!   `core::DamageScale`, so Halo's own hits land exactly as the spec
+//!   says). A death's credit: the
 //!   killing hit's instigator, or, when that hit was friendly or had none
 //!   (a fall, a teammate), the enemy who did the most damage within the
 //!   last 6 s.
@@ -289,6 +293,7 @@ type HaloTarget<'a> = (
     Option<&'a mut Mirrored>,
     &'a Transform,
     Option<&'a Intent>,
+    Option<&'a crate::core::DamageScale>,
 );
 
 /// Another game's body hit by `deliver_hits`.
@@ -340,11 +345,14 @@ pub fn deliver_hits(
             .instigator
             .is_some_and(|i| i == hit.target || (team(i) != 0 && team(i) == team(hit.target)));
         let mut halo = set.p0();
-        if let Ok((mut v, health, mut armor, stun, attackers, mirrored, transform, intent)) = halo.get_mut(hit.target) {
+        if let Ok((mut v, health, mut armor, stun, attackers, mirrored, transform, intent, scale)) = halo.get_mut(hit.target) {
             let look = look_of(intent);
+            // Another game's damage counts this on it (the party's
+            // balance, `cross_game`); Halo's own lands as it is.
+            let scale = vitality::scale_of(scale);
             let mirrored = mirrored.filter(|m| m.primed);
             if let Some(m) = mirrored.as_deref() {
-                vitality::take_foreign(&spartan, &mut v, health, armor.as_deref(), m);
+                vitality::take_foreign(&spartan, &mut v, health, armor.as_deref(), m, scale);
             }
             let was_dead = v.dead;
             let before = vitality::health_of(v.body);
@@ -395,12 +403,13 @@ pub fn deliver_hits(
                 before.max(health.current) - v.body.min(0.0) + LETHAL_MARGIN
             } else {
                 (before - after).max(0.0)
-            };
+            } / scale;
+            let shield = super::cross_game::shield_unit(v.shield, scale);
             if let Some(a) = armor.as_deref_mut() {
-                a.amount = v.shield;
+                a.amount = shield;
             }
             if let Some(mut m) = mirrored {
-                m.shield = v.shield;
+                m.shield = shield;
                 m.health = if v.dead { 0.0 } else { after };
             }
             // Pings, for animation.

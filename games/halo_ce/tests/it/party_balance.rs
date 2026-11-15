@@ -25,9 +25,12 @@ enum Hit {
     Melee(f32, bool),
 }
 
+/// Each hit's (shield, body, engine health).
+type Seen = Vec<(f32, f32, f32)>;
+
 /// Hits of `effect` (`rnd`) until the body dies, with the balance `cfg`:
-/// (break, kill) and each hit's (shield, body, health).
-fn run(cfg: CrossGame, effect: EffectId, rnd: f32, how: Hit) -> ((u32, u32), Vec<(f32, f32, f32)>) {
+/// (break, kill) and what each hit left.
+fn run(cfg: CrossGame, effect: EffectId, rnd: f32, how: Hit) -> ((u32, u32), Seen) {
     let mut sim = sim();
     sim.app.insert_resource(cfg);
     let e = spartan_at(&mut sim, chimera_world::greybox::SPAWNS[0]);
