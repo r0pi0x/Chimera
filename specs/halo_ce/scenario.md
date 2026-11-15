@@ -601,10 +601,12 @@ for each living player, find a source flag whose position lies within
 if it is the flag the player last arrived at (a flag stays disarmed for
 a player until the player has moved more than 1 WU away from it). Take
 the first target flag in block order whose team index equals the
-source's. If something solid occupies the destination (a player there
-is "blocking"), the teleport is refused and a message shows. Otherwise
-the player's position becomes exactly the target's position, and the
-player's heading (the angle of the facing vector in the ground plane)
+source's. If a living biped or a vehicle occupies the destination (a
+pill the size of the player's, with its bottom-sphere centre at the
+target flag, overlaps it: `multiplayer_rules.md` 6.8 has the numbers),
+the teleport is refused and a message shows. Otherwise the player's
+position becomes exactly the target's position, and the player's
+heading (the angle of the body's facing vector in the ground plane)
 becomes old heading + target facing - source facing; the new facing
 vector is (cos, sin, 0) of that angle. The player is then treated as
 having arrived at the first source flag within 1 WU of the new position

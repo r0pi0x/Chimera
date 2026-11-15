@@ -1256,9 +1256,10 @@ in it):
 4. Distance curve: the drawn radius is r = 42 x (d / 20)^0.7 pixels from
    the disc's centre for the layout scale 32 (general form: the blip's
    clip position is (scale / 32) x (d / 20)^0.7 of the half field, and the
-   field is 2 x 42 pixels, or 2 x 32 in split screen). So 10 WU is 25.7
-   pixels out and 1 WU is 5.2 pixels out (linear would be 21 and 2.1):
-near units are pushed outward.
+   field is 2 x 42 pixels, or 2 x 32 in split screen). So a unit at 10 WU
+   (byte 63, decoded 9.92 WU) is 25.7 pixels out and one at 1 WU (byte 6,
+   decoded 0.945 WU) is 5.0 pixels out (5.2 if it were not quantised;
+   linear would be 21 and 2.1): near units are pushed outward.
 5. Brightness w x w with w = (10 - h) / 10 (1.0 for the newest entry,
    0.01 for the oldest). Size = base + p x q with q = (1 - w)^3.5 x 7 + 1
    (1.0 for the newest, 5.84 for the oldest: the echo grows as it fades)
@@ -2065,8 +2066,9 @@ component):
 | (-10, 0) | 0 | (-63, 0) | (0, +25.7): down |
 | (0, 10) | pi/2 (looking +y) | (0, 63) | (0, -25.7): up |
 | (19.9, 0) | 0 | (126, 0) = 19.8 WU | (0, -41.8) |
-| (0.1, 0) | 0 | (0, 0) | (0, 0): the centre |
-| (20, 0) | 0 | (127, 0) = 19.99999 | (0, -42.0), drawn only because 19.99999 < 20 |
+| (0.1, 0) | 0 | (0, 0) | the centre (d is raised to 0.015625: 0.28 pixel out) |
+| (20, 0) | 0 | (127, 0) decodes to exactly 20.0 | scanned (squared distance 400 is within the range) but **not drawn**: d >= 20 |
+| (19.99, 0) | 0 | (126, 0) = 19.84 WU (truncation) | (0, -41.8): drawn |
 | (25, 0) | 0 | out of range | not drawn |
 
 (Pixel offset = 42 x (d / 20)^0.7 along the direction; 32 in place of 42
@@ -2082,7 +2084,9 @@ t = 2.1 wraps to t = 0.
 (0.0142^2 = 0.000202 >= 0.0002), at 0.0141 it does not; a stationary unit
 holding the trigger shows; a stationary unit throwing a grenade shows
 (any state but idle and ending); a unit 20.1 WU away does not (horizontal
-distance), whatever its height.
+distance), whatever its height; a unit at exactly 20 WU is scanned
+(squared distance 400) but, along an axis, its blip decodes to exactly
+20 and is not drawn.
 
 **S12. Messages:** "Picked up %d rounds for assault rifle" (string 5)
 for an ammunition pickup of 60 rounds shows "60" (value scale 0 reads as

@@ -1011,13 +1011,38 @@ or more) behind 1.2 x.
 
 ### 6.8 Teleporters
 
-`scenario.md` owns the geometry and the rule (0.5 WU radius, pairs by
-team index, heading change, 1 WU re-arm). Rules of the match: a unit
-within the exit is not moved; a blocked player keeps a counter that
-rises per attempted teleport and falls 1 per tick otherwise; at 90
-the blocker is killed (a "telefrag", a death with no killer: no score,
-suicide penalty applies). The sound "teleporter activate" plays for a
-local teleported player; the blocked message repeats every 120 ticks.
+`scenario.md` owns the flags (type 6 sources, type 7 targets, pairs by
+team index). This is the whole rule, run once per tick for each player
+that has a unit, in step 6 of section 10 (after the units' movement of
+that tick, before the objects' update and the telefrag counters).
+
+| Item | Value | Unit | Meaning (reference) |
+|---|---|---|---|
+| Trigger centre and point | source flag position; the player's origin (between the feet) | | no use of the camera or the pill |
+| Trigger radius | 0.5, inclusive (squared distance ≤ 0.25) | WU | a 3D sphere; no height limit |
+| Source chosen | first source flag in block order within the radius | | skipped if it is the player's "arrived at" flag |
+| Target chosen | first target flag in block order with the source's team index | | none: nothing happens (retried every tick) |
+| Exit test volume | a pill of radius 0.2 and segment length 0.3 − 0.2 c (c = the arriving player's crouch fraction: 0.3 standing, 0.1 crouched), its bottom-sphere centre exactly at the target flag's position | WU | the flag is used as that centre, not as the feet: the volume reaches 0.2 below the flag and 0.5 above it standing |
+| Things that block | living bipeds and vehicles only | | not scenery, machines, equipment, weapons or the level; a dead biped, a biped inside a vehicle's seat, and an object flagged invisible or without collisions never block |
+| A biped blocks when | the flag lies within 0.4 (0.2 + 0.2) of the segment from (its origin z + 0.2 − the arriving segment length) up to (its origin z + 0.2 + its own segment length), measured as a capsule | WU | its own segment length is 0.3 − 0.2 c' with its crouch c'; the segment has rounded ends |
+| A vehicle blocks when | the same pill overlaps its collision model's surfaces | | no simple shape |
+| Blocked: effects | the arriving player is not moved; the blocking player (if the blocker is a player's unit) gets +1 on its telefrag counter and is marked "blocking" this tick; nothing else happens to a non-player blocker; with several overlapping objects only the deepest one is credited | | |
+| Blocked message | shown to the arriving player on the first blocked attempt and then on every 121st (one counter shared by all players, decremented only on blocked attempts) | attempts | not "every 120 ticks" |
+| Telefrag counter | +1 per blocked attempt (one per attempting player per tick); −1 per tick on which the player was not blocking (never below 0) | | the check runs at the end of the tick, after the attempts |
+| Telefrag | the blocker's unit is killed when it is marked "blocking" this tick and its counter is at least 90 | ticks | a death with no killer; the killing tick is the 90th consecutive blocked attempt |
+| Arrival position | exactly the target flag's position, as the origin | | whatever the floor there |
+| Heading | body heading + target facing − source facing, in radians, not wrapped | rad | body heading = the angle of the body's forward vector in the ground plane (the body, not the aim, which can differ by up to 60 degrees at rest); the new forward vector is (cos, sin, 0) and the up vector +Z |
+| View | for a local player: the view's yaw becomes the new heading and its pitch 0 | rad | a looking-up view is levelled |
+| Velocity | unchanged, in world axes | | not zeroed, not rotated with the heading |
+| Ground state | unchanged | | the ground plane, support surface and airborne flag are those of the source until the next movement tick finds the new floor |
+| Re-arm | the player is "armed off" for the first source flag within 1 WU (≤ 1, 3D) of the new position, if any; it is cleared on a later tick when the player's origin is more than 1 WU (squared distance > 1) from that flag | WU | every other source works at once; no timer |
+| Local player effects | the sound "teleporter activate", and a screen flash of colour (0.35, 1.0, 0.35), alpha 0.5, 1 s long | | not for other players |
+
+Because the counter is on the blocker, a blocker who steps out of the
+exit loses 1 per tick; two players waiting at sources of the same pair
+add 2 per tick. A flag carrier keeps the flag. The arrival check
+`scenario.md` describes ("treated as having arrived at the first
+source within 1 WU") is the re-arm row.
 
 ## 7. The radar
 
@@ -1538,6 +1563,7 @@ spare rounds go to 0 (the weapon is deleted).
 | 5.4, 5.5 pickups | reference only; ammunition maxima checked against the disc (`weapons.md`) |
 | 6.1 to 6.3 slayer and kill bookkeeping | reference only |
 | 6.4 to 6.7 other game types | reference only; counts and flags checked against the disc |
+| 6.8 teleporters | reference only (the flags and pairs checked against the disc, `scenario.md`); the exit volume's numbers follow from the biped's pill (`movement.md`) |
 | 7 radar | the three numbers checked against the disc; rule from the reference |
 | 8 vehicles | placements checked against the disc; no respawn from the reference |
 | 9 announcer | list and lengths checked against the disc; queue from the reference |
@@ -1584,3 +1610,9 @@ spare rounds go to 0 (the weapon is deleted).
     another.
 13. **Friendly fire on the Xbox disc** has no option; confirm there is
     no damage reduction between teammates in team slayer.
+14. **Teleporter exit volume.** The exit test puts the arriving pill's
+    bottom-sphere centre on the flag itself, 0.2 WU lower than the
+    feet will be. Check: stand a second player 0.3 WU and then 0.5 WU
+    from the target flag of a pair and walk into the source: expected
+    blocked at 0.3, not at 0.5; and that a corpse at the exit does not
+    block.

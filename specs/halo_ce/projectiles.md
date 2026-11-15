@@ -336,8 +336,9 @@ along-aim speed). Then:
 6. the deceleration state of behaviour 3 is set for air or water;
 7. the tracer flag is set (the weapon removes it from non-tracer
    rounds; behaviour 17);
-8. the target is none (the weapon then sets its aim assist target,
-   which guided projectiles follow);
+8. the target is none (the weapon then sets the shooter's autoaim
+   target, if any, and guided projectiles follow only that: behaviour
+   12);
 9. no hit material yet, no action requested, not stopped, not stuck.
 
 A player's projectile is also pushed back inside the level from the
@@ -418,7 +419,9 @@ instead of after 1.5 WU. Keep this.
      velocity <= vf and (a != 0 or travelled distance >= the water
      damage range upper bound): **request disappear** (this is how a
      plasma rifle bolt or a Warthog bullet ends once slowed);
-   - else, if 0 < s < vf: v' is scaled to 0.99 vf.
+   - else, if 0 < s < vf: v' is scaled to 0.99 vf (Quirks 11: a
+     projectile whose initial and final velocities are equal must not
+     reach this branch through rounding).
    With no deceleration the average velocity is v and the average speed
    s.
 3. Gravity: g = GRAVITY x (water gravity scale if under water, else air
@@ -435,13 +438,30 @@ instead of after 1.5 WU. Keep this.
    hit: r = 0 (the tick is used up); if the 10-surface limit stopped the
    trace, a detonation is requested.
 7. With a hit at fraction t of the segment: r = 1 - t (what remains);
-   v'.z += g r (gravity is taken back for the unused part); if the
-   end-of-segment speed s' != 0, v' is scaled by min(r a + s', s) / s'
-   (the deceleration is taken back for the unused part, never above the
-   starting speed); if the surface's normal z > 0.3 the "bounced" state
-   is set; the ignored object is cleared; the response of behaviours
-   6 and 7 runs with the hit point as the new position and v' as the
-   velocity; the AI is told of an impact; a stick ends the movement.
+   v'.z += g r (gravity is taken back for the unused part); then the
+   **speed clamp**: with s' the number step 2 produced for the end of
+   the segment (s - a r_before, or 0.99 vf; **not** the length of v'
+   after gravity), if s' != 0, v' is multiplied by min(r a + s', s) / s'
+   (the deceleration is taken back for the unused part, never above
+   the starting speed s; a is the stored deceleration, 0 when there is
+   none); if the surface's normal z > 0.3 the "bounced" state is set;
+   the ignored object is cleared; the response of behaviours 6 and 7
+   runs with the hit point as the new position and v' as the velocity;
+   the AI is told of an impact; a stick ends the movement.
+
+   **When the clamp acts.** Only on a segment in which step 2 actually
+   slowed the projectile (s' < s). On any other segment (the
+   deceleration timer below 1, the speed at or below vf, or a = 0:
+   every grenade, whose initial and final velocities are both 0, and
+   every projectile with equal initial and final velocities) s' = s,
+   the factor is exactly 1 and the velocity is left as gravity made it:
+   **gravity's gain in speed is kept**. A frag that left the hand at
+   0.33333 meets the floor at 0.3399 and bounces from that speed
+   (test (c)); a clamp that pinned the post-gravity speed to the start
+   speed would scale the first bounce by 0.98068 and give velocity
+   (0.064076, 0, 0.027607) instead of (0.065338, 0, 0.028151). The
+   grenade test cases of (c) were re-run under exactly this rule and
+   agree.
 8. If the projectile moved: travelled += |P_new - P|; the flyby sound
    may play (behaviour 17); the orientation is updated; the position
    becomes P_new and the velocity v'.
@@ -770,6 +790,34 @@ Guidance continues for the projectile's whole flight; it stops only
 when the target object is deleted (the target becomes none). A dead
 target is still followed.
 
+**Who gets a target.** Only a projectile fired by a player's unit (or a
+gunner's player) that **found an autoaim target when it fired**: it is
+the very target the weapon's shot bending uses (`weapons.md` section 15:
+the best living enemy-team biped in the weapon's autoaim and magnetism
+cone, in line of sight, not camouflaged, picked once at the shot). There
+is no separate test for guided projectiles: no autoaim target, no
+guidance, and the needle or the charged bolt flies straight. The
+autoaim (the target and the bending) runs for every player whatever the
+input device, a mouse as well as a controller (the reference's port
+keeps the bullets' autoaim for the mouse and makes only the look
+stickiness, the magnetism, optional); it is absent only when the weapon
+has no aim assist parameters in force (a weapon flagged "aim assists
+only when zoomed" while not zoomed) and in the reference port's
+Hardcore game types, which are not on the disc. So with the magnetism
+switched off a needle still tracks; with the autoaim absent (the
+cases above) it does not.
+
+**Which difficulty.** The factor is read with the game's difficulty
+setting, which is *not* forced to normal in a match (the damage
+multipliers are: `health_shields.md`). A multiplayer game carries the
+host's current difficulty variable, which is normal (index 1) unless a
+campaign was started at another level in that run of the game. On the
+disc easy and normal both give 0.5 (heroic 0.75, legendary 1.0), so
+multiplayer uses **0.5**: omega = 0.02618 rad per update for the needle
+(1.5 degrees) and 0.0084357 for the charged bolt. The AI rate (factor
+1, any target that is not a player's unit) does not occur in
+multiplayer.
+
 ### 13. Attaching and the needler's supercombine
 
 When a projectile with flag 3 (the needle) sticks into an object, every
@@ -1092,7 +1140,7 @@ Damage parts inside the detonation effects (event 0, zero delay):
 
 Summary by material for the surfaces that matter (default response;
 "/ pot." gives the potential response and its condition; frictions as
-parallel/perpendicular).
+parallel/perpendicular). The complete 33-element tables follow it.
 
 | Projectile | Dirt (0), stone (2) | Cyborg body (21) | Cyborg shield (22) | Metal hollow, thin, thick (5, 6, 7) | Exceptions |
 |---|---|---|---|---|---|
@@ -1117,6 +1165,276 @@ of the hit, the cyborg type (21) once it does not; grenades and needles
 strikes an unshielded Spartan passes through him at 30 % speed and can
 hit someone behind at full damage (v0 = vf, so no loss); a sniper
 bullet passes at full speed.
+
+### Complete material response tables (every element)
+
+These are the whole `material responses` blocks of the disc's projectile
+tags: 33 elements (material type 0 to 32), 31 for the flame (types 31 and
+32 fall back to the built-in response, a disappear with no effects). Each
+projectile's block is identical on every map that carries it (checked on
+all 24 maps). Type indices: 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5
+metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 9 glass, 10 force
+field, 11 grunt, 12 hunter armor, 13 hunter skin, 14 elite, 15 jackal, 16
+jackal energy shield, 17 engineer, 18 engineer force field, 19 flood
+combat, 20 flood carrier, 21 cyborg, 22 cyborg energy shield, 23 armored
+human, 24 human, 25 sentinel, 26 monitor, 27 plastic, 28 water, 29 leaves,
+30 elite energy shield, 31 ice, 32 hunter shield. Frictions are written
+parallel (the share of the component along the surface normal that is
+lost) / perpendicular (the share of the sliding component lost), as
+behaviour 7 reads them. A "potential response" with no conditions is taken
+always (skip fraction 0); angles are in radians and speeds in WU/tick.
+Every potential response's effect is named only where it has one; all the
+"flags", "maximum distance" (not read) and "scale effects by" fields are 0
+except where a column says so. Effect tag prefixes in the grenade and
+needle tables: F = `weapons\frag grenade\effects\`, P = `weapons\plasma
+grenade\effects\`, A = `weapons\assault rifle\effects\`, R =
+`weapons\rocket launcher\effects\`, N = `weapons\needler\effects\`, L =
+`weapons\plasma rifle\effects\`.
+
+**Frag grenade** (`weapons\frag grenade\frag grenade`). All 33 elements
+reflect except water (passes through, with a potential skim) and the
+potential pass on leaves:
+
+| # | Material | Default | Default effect | Potential response | Potential effect | Friction (parallel / perpendicular) | Other fields | Detonation effect |
+|---|---|---|---|---|---|---|---|---|
+| 0 | dirt | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | R: impact dirt |
+| 1 | sand | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | R: impact dirt |
+| 2 | stone | reflect | F: dirt reflection | none | - | 0.7 / 0.8 | - | R: impact stone |
+| 3 | snow | reflect | F: snow reflection | none | - | 0.9 / 0.95 | - | none |
+| 4 | wood | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | R: impact wood |
+| 5 | metal hollow | reflect | F: metal reflection | none | - | 0.7 / 0.8 | - | F: impact metal |
+| 6 | metal thin | reflect | F: metal reflection | none | - | 0.7 / 0.8 | - | F: impact metal |
+| 7 | metal thick | reflect | F: metal reflection | none | - | 0.7 / 0.8 | - | F: impact metal |
+| 8 | rubber | reflect | F: dirt reflection | none | - | 0.7 / 0.8 | - | F: impact rubber |
+| 9 | glass | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | none |
+| 10 | force field | reflect | A: impact engineer force field | none | - | 0.6 / 0.7 | - | none |
+| 11 | grunt | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | none |
+| 12 | hunter armor | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | none |
+| 13 | hunter skin | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | none |
+| 14 | elite | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | none |
+| 15 | jackal | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | none |
+| 16 | jackal energy shield | reflect | F: energy reflection | none | - | 0.8 / 0.8 | - | none |
+| 17 | engineer | reflect | F: dirt reflection | none | - | 0.5 / 0.7 | - | none |
+| 18 | engineer force field | reflect | A: impact engineer force field | none | - | 0.8 / 0.9 | - | none |
+| 19 | flood combat | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | none |
+| 20 | flood carrier | reflect | F: dirt reflection | none | - | 0.6 / 0.7 | - | none |
+| 21 | cyborg | reflect | F: metal reflection | none | - | 0.8 / 0.9 | - | none |
+| 22 | cyborg energy shield | reflect | A: impact cyborg shield | none | - | 0.8 / 0.9 | - | none |
+| 23 | armored human | reflect | F: metal reflection | none | - | 0.8 / 0.9 | - | none |
+| 24 | human | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | none |
+| 25 | sentinel | reflect | F: metal reflection | none | - | 0.8 / 0.9 | - | none |
+| 26 | monitor | reflect | F: metal reflection | none | - | 0.8 / 0.9 | - | none |
+| 27 | plastic | reflect | F: dirt reflection | none | - | 0.8 / 0.9 | - | none |
+| 28 | water | overpenetrate | none | reflect (angle 0 to 0.5236, speed 0.0333 to 33.3333) | F: impact water pen | 0.7 / 0.7 | - | R: impact water |
+| 29 | leaves | reflect | F: dirt reflection | overpenetrate (skip 0.2) | none | 0.8 / 0.9 | - | R: impact leaves |
+| 30 | elite energy shield | reflect | A: impact engineer force field | none | - | 0.8 / 0.9 | - | none |
+| 31 | ice | reflect | F: metal reflection | none | - | 0.55 / 0.65 | - | none |
+| 32 | hunter shield | reflect | F: metal reflection | none | - | 0.8 / 0.9 | - | none |
+
+**Plasma grenade** (`weapons\plasma grenade\plasma grenade`). Every
+element is a default reflect except water (pass through). The potential
+attach is "units only" (a biped or a vehicle) and is on every element but
+glass, force field, engineer force field, monitor, hunter shield and water
+(no potential response); the jackal shield has an unconditional potential
+reflect:
+
+| # | Material | Default | Default effect | Potential response | Potential effect | Friction (parallel / perpendicular) | Other fields | Detonation effect |
+|---|---|---|---|---|---|---|---|---|
+| 0 | dirt | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | R: impact dirt |
+| 1 | sand | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | R: impact dirt |
+| 2 | stone | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 3 | snow | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 4 | wood | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 5 | metal hollow | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 6 | metal thin | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 7 | metal thick | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 8 | rubber | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 9 | glass | reflect | P: bounce | none | - | 0.7 / 0.8 | - | P: material explosion |
+| 10 | force field | reflect | P: bounce | none | - | 0.7 / 0.8 | - | P: material explosion |
+| 11 | grunt | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 12 | hunter armor | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 13 | hunter skin | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 14 | elite | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 15 | jackal | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 16 | jackal energy shield | reflect | P: bounce | reflect (always) | none | 0.8 / 0.8 | - | P: material explosion |
+| 17 | engineer | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 18 | engineer force field | reflect | P: bounce | none | - | 0.9 / 0.95 | - | P: material explosion |
+| 19 | flood combat | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 20 | flood carrier | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 21 | cyborg | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 22 | cyborg energy shield | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 23 | armored human | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 24 | human | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 25 | sentinel | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 26 | monitor | reflect | P: bounce | none | - | 0.9 / 0.95 | - | P: material explosion |
+| 27 | plastic | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 28 | water | overpenetrate | P: bounce water | none | - | 0.5 / 0.5 | - | R: impact water |
+| 29 | leaves | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 30 | elite energy shield | reflect | P: bounce | attach (units only) | none | 0.9 / 0.95 | - | P: material explosion |
+| 31 | ice | reflect | none | attach (units only) | none | 0.65 / 0.75 | - | P: material explosion |
+| 32 | hunter shield | reflect | P: bounce | none | - | 0.9 / 0.95 | - | P: material explosion |
+
+**Needle** (`weapons\needler\needle`). The angular noise turns the
+outgoing needle (behaviour 7); "max distance" is not read:
+
+| # | Material | Default | Default effect | Potential response | Potential effect | Friction (parallel / perpendicular) | Other fields | Detonation effect |
+|---|---|---|---|---|---|---|---|---|
+| 0 | dirt | attach | N: impact dirt | none | - | 0 / 0 | - | none |
+| 1 | sand | attach | N: impact sand | none | - | 0 / 0 | - | none |
+| 2 | stone | attach | N: impact sand | reflect (angle 0 to 0.4363) | N: needle reflect | 0.3 / 0.3 | angular noise 0.2618 | none |
+| 3 | snow | attach | N: impact sand | none | - | 0 / 0 | - | none |
+| 4 | wood | attach | N: impact sand | none | - | 0 / 0 | - | none |
+| 5 | metal hollow | attach | N: impact sand | reflect (angle 0 to 0.6109) | N: needle reflect | 0.3 / 0.3 | angular noise 0.0873 | none |
+| 6 | metal thin | attach | N: impact sand | reflect (angle 0 to 0.6109) | N: needle reflect | 0.3 / 0.3 | angular noise 0.0873 | none |
+| 7 | metal thick | attach | N: impact sand | reflect (angle 0 to 0.6109) | N: needle reflect | 0.3 / 0.3 | angular noise 0.0873 | none |
+| 8 | rubber | attach | N: impact rubber | none | - | 0 / 0 | - | none |
+| 9 | glass | attach | N: impact sand | reflect (angle 0 to 0.2618) | N: needle reflect | 0.3 / 0.3 | angular noise 0.0873 | none |
+| 10 | force field | reflect | N: needle reflect | none | - | 0 / 0 | angular noise 0.2618 | none |
+| 11 | grunt | attach | N: impact grunt | none | - | 0 / 0 | max distance 100 | none |
+| 12 | hunter armor | attach | N: impact sand | none | - | 0.3 / 0.3 | angular noise 0.0873 | none |
+| 13 | hunter skin | attach | N: impact hunter glow | none | - | 0 / 0 | max distance 100 | none |
+| 14 | elite | attach | N: impact elite and jackal | none | - | 0 / 0 | max distance 100 | none |
+| 15 | jackal | attach | N: impact elite and jackal | none | - | 0 / 0 | max distance 100 | none |
+| 16 | jackal energy shield | reflect | N: needle reflect | none | - | 0.15 / 0.15 | angular noise 0.6109 | none |
+| 17 | engineer | attach | N: impact engineer | none | - | 0 / 0 | max distance 100 | none |
+| 18 | engineer force field | reflect | N: needle reflect | none | - | 0 / 0 | - | none |
+| 19 | flood combat | attach | N: impact flood and hunter | none | - | 0 / 0 | max distance 100 | none |
+| 20 | flood carrier | attach | N: impact flood and hunter | none | - | 0 / 0 | max distance 100 | none |
+| 21 | cyborg | attach | N: impact sand | none | - | 0 / 0 | max distance 100 | none |
+| 22 | cyborg energy shield | attach | N: impact sand | none | - | 0 / 0 | max distance 100 | none |
+| 23 | armored human | attach | N: impact h skin | none | - | 0 / 0 | max distance 100 | none |
+| 24 | human | attach | N: impact h skin | none | - | 0 / 0 | - | none |
+| 25 | sentinel | attach | N: impact sand | none | - | 0 / 0 | - | none |
+| 26 | monitor | attach | N: impact sand | none | - | 0 / 0 | - | none |
+| 27 | plastic | attach | N: impact sand | none | - | 0 / 0 | - | none |
+| 28 | water | overpenetrate | L: impact water pen | none | - | 0 / 0 | - | none |
+| 29 | leaves | overpenetrate | A: impact grass | none | - | 0 / 0 | - | none |
+| 30 | elite energy shield | attach | N: needle reflect | none | - | 0.15 / 0.15 | angular noise 0.6109 | none |
+| 31 | ice | attach | N: impact ice | none | - | 0 / 0 | - | none |
+| 32 | hunter shield | reflect | N: impact hunter shield | none | - | 0 / 0 | - | none |
+
+**Every other projectile.** One row per group of elements that have the
+same default response, potential response, frictions and other fields (the
+groups partition all 33 types, or 31 for the flame). The effect tag each
+element names is presentation (`effects.md`) and is not repeated for
+these: it is the weapon's own `impact <material>` effect (a few borrowed
+from the assault rifle's or plasma rifle's folder), played as the default
+effect. Two projectiles name theirs differently: the charged bolt names
+none as a default and names `weapons\plasma rifle\effects\charged bolt
+impact <x>` as the potential effect (x = dirt for 0 and 1, stone, snow,
+wood, metal for 5 to 7 and 32, rubber, sand for 9, 10, 18 and 25 to 27,
+grunt, hunter for 12 and 13, elite for 14 to 16 and 30, engineer, flood
+for 19 and 20, human armor for 21 to 24, leaves, snow for 31; water:
+`weapons\rocket launcher\effects\impact water`); the tank shell names none
+as a default and names, as the *detonation* effect,
+`vehicles\scorpion\shell impact dirt` (dirt),
+`vehicles\wraith\effects\impact stone / snow / wood` (2, 3, 4),
+`vehicles\wraith\effects\impact ice` (glass and ice), `weapons\rocket
+launcher\effects\impact metal` (5 to 8), `weapons\rocket
+launcher\effects\impact water` (water) and `weapons\frag
+grenade\effects\impact water pen` (leaves); every other tank-shell element
+has none.
+
+*AR bullet* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 10 force field, 12 hunter armor, 18 engineer force field, 22 cyborg energy shield, 25 sentinel, 26 monitor, 27 plastic, 30 elite energy shield, 31 ice | disappear | none | 0 / 0 | - |
+| 9 glass, 19 flood combat, 20 flood carrier, 28 water, 29 leaves | overpenetrate | none | 0 / 0 | - |
+| 11 grunt, 13 hunter skin, 14 elite, 15 jackal, 17 engineer, 21 cyborg, 23 armored human, 24 human | overpenetrate | none | 0 / 0 | initial friction 0.7 |
+| 16 jackal energy shield, 32 hunter shield | reflect | none | 0 / 0 | - |
+
+*Scorpion bullet* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 9 glass, 10 force field, 12 hunter armor, 18 engineer force field, 22 cyborg energy shield, 25 sentinel, 26 monitor, 27 plastic, 30 elite energy shield, 31 ice | disappear | none | 0 / 0 | - |
+| 11 grunt, 13 hunter skin, 14 elite, 15 jackal, 17 engineer, 21 cyborg, 23 armored human, 24 human | overpenetrate | none | 0 / 0 | initial friction 0.7 |
+| 16 jackal energy shield, 32 hunter shield | reflect | none | 0 / 0 | - |
+| 19 flood combat, 20 flood carrier, 28 water, 29 leaves | overpenetrate | none | 0 / 0 | - |
+
+*pistol bullet* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 10 force field, 11 grunt, 12 hunter armor, 13 hunter skin, 14 elite, 15 jackal, 16 jackal energy shield, 17 engineer, 18 engineer force field, 19 flood combat, 20 flood carrier, 21 cyborg, 22 cyborg energy shield, 23 armored human, 24 human, 25 sentinel, 26 monitor, 27 plastic, 28 water, 30 elite energy shield, 31 ice | disappear | none | 0 / 0 | - |
+| 9 glass, 29 leaves | overpenetrate | none | 0 / 0 | - |
+| 32 hunter shield | reflect | none | 0 / 0 | - |
+
+*shotgun pellet* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 10 force field, 11 grunt, 12 hunter armor, 13 hunter skin, 14 elite, 15 jackal, 17 engineer, 18 engineer force field, 19 flood combat, 20 flood carrier, 21 cyborg, 22 cyborg energy shield, 23 armored human, 24 human, 25 sentinel, 26 monitor, 27 plastic, 30 elite energy shield, 31 ice | disappear | none | 0 / 0 | - |
+| 9 glass, 28 water, 29 leaves | overpenetrate | none | 0 / 0 | - |
+| 16 jackal energy shield, 32 hunter shield | reflect | none | 0 / 0 | - |
+
+*sniper bullet* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 10 force field, 12 hunter armor, 18 engineer force field, 22 cyborg energy shield, 25 sentinel, 26 monitor, 27 plastic, 31 ice | disappear | none | 0 / 0 | - |
+| 9 glass, 11 grunt, 13 hunter skin, 14 elite, 15 jackal, 17 engineer, 19 flood combat, 20 flood carrier, 21 cyborg, 23 armored human, 24 human, 28 water, 29 leaves, 30 elite energy shield | overpenetrate | none | 0 / 0 | - |
+| 16 jackal energy shield, 32 hunter shield | reflect | none | 0 / 0 | - |
+
+*Warthog bullet* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 7 metal thick, 8 rubber, 10 force field, 12 hunter armor, 18 engineer force field, 22 cyborg energy shield, 25 sentinel, 26 monitor, 27 plastic, 30 elite energy shield, 31 ice, 32 hunter shield | disappear | none | 0 / 0 | - |
+| 4 wood, 5 metal hollow, 6 metal thin | overpenetrate | none | 0 / 0 | initial friction 0.7, max distance 2 |
+| 9 glass, 19 flood combat, 20 flood carrier, 28 water, 29 leaves | overpenetrate | none | 0 / 0 | - |
+| 11 grunt, 13 hunter skin, 14 elite, 15 jackal, 17 engineer, 21 cyborg, 23 armored human, 24 human | overpenetrate | none | 0 / 0 | initial friction 0.7 |
+| 16 jackal energy shield | reflect | none | 0 / 0 | - |
+
+*plasma pistol bolt* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 9 glass, 10 force field, 11 grunt, 12 hunter armor, 13 hunter skin, 14 elite, 15 jackal, 16 jackal energy shield, 17 engineer, 18 engineer force field, 19 flood combat, 20 flood carrier, 21 cyborg, 22 cyborg energy shield, 23 armored human, 24 human, 25 sentinel, 26 monitor, 27 plastic, 28 water, 29 leaves, 30 elite energy shield, 31 ice | disappear | none | 0 / 0 | - |
+| 32 hunter shield | reflect | none | 0 / 0 | - |
+
+*plasma rifle bolt* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 9 glass, 10 force field, 11 grunt, 12 hunter armor, 13 hunter skin, 14 elite, 15 jackal, 16 jackal energy shield, 17 engineer, 18 engineer force field, 19 flood combat, 20 flood carrier, 21 cyborg, 22 cyborg energy shield, 23 armored human, 24 human, 25 sentinel, 26 monitor, 27 plastic, 28 water, 30 elite energy shield, 31 ice | disappear | none | 0 / 0 | - |
+| 29 leaves | overpenetrate | none | 0 / 0 | - |
+| 32 hunter shield | reflect | none | 0 / 0 | - |
+
+*ghost bolt* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 9 glass, 10 force field, 11 grunt, 12 hunter armor, 13 hunter skin, 14 elite, 15 jackal, 16 jackal energy shield, 17 engineer, 18 engineer force field, 19 flood combat, 20 flood carrier, 21 cyborg, 22 cyborg energy shield, 23 armored human, 24 human, 25 sentinel, 26 monitor, 27 plastic, 28 water, 30 elite energy shield, 31 ice | disappear | none | 0 / 0 | - |
+| 29 leaves | overpenetrate | none | 0 / 0 | - |
+| 32 hunter shield | reflect | none | 0 / 0 | - |
+
+*charged bolt* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 9 glass, 10 force field, 11 grunt, 12 hunter armor, 13 hunter skin, 14 elite, 15 jackal, 16 jackal energy shield, 17 engineer, 18 engineer force field, 19 flood combat, 20 flood carrier, 21 cyborg, 22 cyborg energy shield, 23 armored human, 24 human, 25 sentinel, 26 monitor, 27 plastic, 28 water, 30 elite energy shield, 31 ice, 32 hunter shield | disappear | detonate (always) | 0 / 0 | - |
+| 29 leaves | disappear | overpenetrate (always) | 0 / 0 | - |
+
+*rocket* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 9 glass, 10 force field, 11 grunt, 12 hunter armor, 13 hunter skin, 14 elite, 15 jackal, 16 jackal energy shield, 17 engineer, 18 engineer force field, 19 flood combat, 20 flood carrier, 21 cyborg, 22 cyborg energy shield, 23 armored human, 24 human, 25 sentinel, 26 monitor, 27 plastic, 28 water, 30 elite energy shield, 31 ice, 32 hunter shield | detonate | none | 0 / 0 | - |
+| 29 leaves | overpenetrate | detonate (skip 0.9) | 0 / 0 | - |
+
+*tank shell* (33 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 9 glass, 10 force field, 11 grunt, 12 hunter armor, 13 hunter skin, 14 elite, 15 jackal, 16 jackal energy shield, 17 engineer, 18 engineer force field, 19 flood combat, 20 flood carrier, 21 cyborg, 22 cyborg energy shield, 23 armored human, 24 human, 25 sentinel, 26 monitor, 27 plastic, 28 water, 29 leaves, 30 elite energy shield, 31 ice, 32 hunter shield | detonate | none | 0 / 0 | - |
+
+*flame* (31 elements):
+
+| Materials (indices) | Default | Potential response | Friction (parallel / perpendicular) | Other fields |
+|---|---|---|---|---|
+| 0 dirt, 1 sand, 2 stone, 3 snow, 4 wood, 5 metal hollow, 6 metal thin, 7 metal thick, 8 rubber, 9 glass, 10 force field, 11 grunt, 12 hunter armor, 13 hunter skin, 14 elite, 15 jackal, 16 jackal energy shield, 17 engineer, 18 engineer force field, 19 flood combat, 20 flood carrier, 21 cyborg, 22 cyborg energy shield, 23 armored human, 24 human, 25 sentinel, 26 monitor, 27 plastic, 28 water, 29 leaves, 30 elite energy shield | disappear | none | 0 / 0 | - |
 
 ### Damage effects
 
@@ -1357,6 +1675,19 @@ brackets): [amount], damage to shield and body and death
 10. The pistol's three-shot kill rests on 25 / 75 rounding up in 32-bit
     floats (the third shot leaves a positive excess for the headshot).
     Use 32-bit floats for shield and body arithmetic (health_shields.md).
+11. **A projectile whose initial and final velocities are equal is never
+    slowed by rounding.** Step 2's last branch (0 < s < vf: scale to
+    0.99 vf) would fire on a needle or a bullet whenever its speed,
+    recomputed each update from the velocity vector, lands one rounding
+    step under vf, and then pin it to 0.99 vf (1 percent short, for
+    good). In 32-bit arithmetic that is chance: a needle turned by
+    guidance drifts up by 2e-7 over 100 updates at the player rate (no
+    slow-down), and slows at update 8 at the AI rate; the Xbox's wider
+    intermediates cannot be reproduced. **Do not apply the branch when
+    the initial and final velocities are equal** (needle, pistol, AR,
+    Scorpion bullet, sniper, tank shell, flame: all of them stay at vf),
+    which is what the test numbers below do; a path that took the
+    slow-down is at most 1.5 percent shorter.
 
 ## Test cases
 
@@ -1372,7 +1703,7 @@ Values to 1e-4 unless noted.
 | pistol bullet | (10.0, 0, 0.61822), 10.000001 | (20.0, 0, 0.61287) | gone | gone | update 4: cut at x = 40.0 (z 0.59148), range detonation (no effect) |
 | assault rifle bullet | (10.8, 0, 0.61822) | (21.6, 0, 0.61287) | gone | gone | update 4 at x = 40.0 (z 0.59518) |
 | plasma rifle bolt | (1.64931, 0, 0.62), 1.631944 | (3.26389, 0, 0.62), 1.597222 | (7.89931, 0, 0.62), 1.493056 | (14.93056, 0, 0.62), 1.319444 | update 24 ends at x = 30.0 with speed 0.8333336 (single precision: 3e-7 above the final speed 0.8333333, so it is still slowing); update 25 is the last that moves it (the slow-down clamps the speed to 0.99 x final = 0.825, to x = 30.825); update 26 makes it disappear and **does not move it** (the speed 0.825 is below the final speed; the disappear request comes before the move and an object that has requested disappearing is not moved); it is removed at the end of update 26 |
-| needle | (0.13333, 0, 0.62) | (0.26667, 0, 0.62) | (0.66667, 0, 0.62) | (1.33333, 0, 0.62) | update 150: x = 20.0, range detonation (needle detonate effect, no damage) |
+| needle | (0.13333, 0, 0.62) | (0.26667, 0, 0.62) | (0.66667, 0, 0.62) | (1.33333, 0, 0.62) | **update 151** (single precision): update 150 ends at x = 19.99999, 1.3e-5 short of the range (the 150 steps of 0.13333334 add up to 19.99999 in 32-bit positions and odometer, not to 20.000001), and update 151 moves only that 1.3e-5 and detonates at x = 20.0 (needle detonate effect, no damage). In exact arithmetic the 150th update would exceed the range and be the last: accept 150 or 151; the flight is 20 WU either way, from any start position or direction tried |
 | rocket | (0.39988, 0, 0.62), 0.399756 | (0.79951, 0, 0.62), 0.399511 | (1.99694, 0, 0.62), 0.398778 | (3.98778, 0, 0.62), 0.397556 | final speed after update 273 (x 100.089, speed 0.33); update 358: x = 128.0, explodes |
 | plasma pistol bolt | (0.82963, 0, 0.61982), 0.825926 | (1.65185, 0, 0.61929) | (4.07407, 0, 0.61559) | (7.96296, 0, 0.60264), 0.759267 | hits the floor on update 65 at (39.7756, 0, 0): disappear |
 | shotgun pellet | (4.66667, 0, 0.61822) | (9.33333, 0, 0.61287) | (20.85624, 0, 0.58111), 3.300014 | (37.35596, 0, 0.46308) | update 4 ends at x 17.55624 (speed 3.30001); update 11: x 39.99938, range |
@@ -1454,23 +1785,36 @@ minimum) kills.
 
 ### (e) Guidance
 
-Needle fired from (0, 0, 0.62) along +X (0.13333 WU/tick); the target's
-body point during update k is (8, 0.075 (k - 1), 0.62) (crossing at
-2.25 WU/s); wander forced to 0 for the test (it is a separate unit
-test: the length is 1 WU at e = 12, 0.5 at e = 6, 0 at e = 1.5).
-No floor.
+Needle fired from (0, 0, 0.62) along +X (0.13333334 WU/tick); the
+target's body point during update k is (8, 0.075 (k - 1), 0.62)
+(crossing at 2.25 WU/s); wander forced to 0 for the test (it is a
+separate unit test: the length is 1 WU at e = 12, 0.5 at e = 6, 0 at
+e = 1.5). No floor. All in 32-bit arithmetic with the Quirk 11 rule
+(the needle's speed stays 0.13333334 up to rounding). Positions to 0.01
+WU and headings to 0.05 degrees; **a run whose path is up to 1.5 percent
+shorter** (the slow-down of the 0.99 branch fired) is within tolerance.
+The needle moves with the velocity it had at the start of the update (no
+deceleration, so the average velocity is the old one) and the turned
+velocity is used from the next update.
 
 | Rate | Update 1 | Update 2 | Update 10 | Update 20 | Update 40 | Update 60 |
 |---|---|---|---|---|---|---|
-| player target, normal (0.0261799 rad = 1.5 deg per update) | pos (0.1333, 0, 0.62), heading 0 deg | heading 1.5 deg | pos (1.3277, 0.0485), heading 4.5 deg | pos (2.633, 0.2378), 13.5 deg | pos (5.0923, 1.167), 31.5 deg | pos (7.0202, 2.9398), 55.5 deg |
-| AI target (0.0523599 rad = 3 deg) | heading 0 | 3.0 deg | (1.3311, 0.0558), 3.0 deg | (2.6365, 0.2416), 15.0 deg | (5.0943, 1.1703), 33.0 deg | (7.0215, 2.9424), 57.0 deg |
+| player target, normal (0.0261799 rad = 1.5 deg per update) | pos (0.1333, 0, 0.62), heading 0 deg | pos (0.2667, 0), heading 1.5 deg | pos (1.3317, 0.0488), heading 4.5 deg | pos (2.6502, 0.2400), 13.5 deg | pos (5.1343, 1.1786), 31.5 deg | pos (7.0611, 2.9878), 57.0 deg |
+| AI target (0.0523599 rad = 3 deg) | heading 0 | 3.0 deg | (1.3311, 0.0558), 3.0 deg | (2.6497, 0.2435), 15.0 deg | (5.1323, 1.1815), 33.0 deg | (7.0677, 2.9798), 57.0 deg |
 
 (Heading = atan2(vy, vx) after the update; on update 1 the target is
-dead ahead so the rotation axis is zero and nothing turns. At the AI
-rate the heading after updates 2, 5 and 10 is 3, 0 and 3 degrees: it
-overshoots and swings back around the line of sight.) Charged bolt, same target, player rate
-0.0084357 rad: heading 0.483 deg after update 2, 4.35 deg after 10,
-8.7 deg after 20, passing the target at 0.755 WU on update 18.
+dead ahead so the rotation axis is zero and nothing turns. At the player
+rate the heading after updates 2 to 12 is 1.5, 0, 1.5, 3, 1.5, 3, 4.5,
+6, 4.5, 6, 7.5 degrees; at the AI rate 3, 0, 3, 0, 3, 6, 3, 6, 3, 6, 9:
+it overshoots and swings back around the line of sight. The needle
+passes the target at 0.0117 WU (player rate) on update 88, with no
+collision modelled.) An earlier version of this table (path 1 percent
+shorter: update 10 at (1.3277, 0.0485), update 60 at (7.0202, 2.9398))
+came from a double-precision run in which the 0.99 branch fired by
+rounding; the table above is the corrected one. Charged bolt, same
+target, player rate 0.0084357 rad: heading 0.483 deg after update 2,
+4.35 deg after 10, 8.7 deg after 20, passing the target at 0.755 WU on
+update 18 (re-run in 32-bit arithmetic: unchanged).
 
 ### (f) Timers and supercombine
 
@@ -1496,7 +1840,16 @@ overshoots and swings back around the line of sight.) Charged bolt, same target,
   response blocks have 33 elements (31 for the flame); reals plausible.
 - Hang 'Em High, Sidewinder and Chill Out: all 82 tags identical field
   by field (addresses aside); `ui.map`'s two grenade projectiles
-  identical too.
+  identical too. Every projectile tag's response block (all 33 or 31
+  elements, every field) is identical on every one of the 24 maps that
+  carries it.
+- The grenade rows of test (c) were re-run in the scratch simulation
+  with the speed clamp as behaviour 3 states it (a no-op on a segment
+  that did not slow the projectile): every bounce, rest and detonation
+  update agrees, positions and velocities to 1e-5. The needle's path
+  and its range end were re-run in 32-bit arithmetic (every operation
+  rounded, the order of the reference's update): update 151, and the
+  table of test (e).
 - The struct sizes agree with objects.md (0x24C) and with the zero
   pads (0x2A0: the last damage effect field ends at 0x2A0 with 28
   zero bytes before it).
@@ -1512,7 +1865,7 @@ overshoots and swings back around the line of sight.) Charged bolt, same target,
 | Section | Confidence |
 |---|---|
 | Projectile tag layout and values | checked against the disc (4 maps) |
-| Material response layout and values | checked against the disc; meaning of fields from the reference; "cannot be overpenetrated" and "maximum distance" unused per the reference |
+| Material response layout and values | checked against the disc (every element of every projectile, all 24 maps); meaning of fields from the reference; "cannot be overpenetrated" and "maximum distance" unused per the reference |
 | Damage effect layout and values | checked against the disc (pads zero, values plausible, 4 maps); presentation field names partly from general knowledge of the tag |
 | Damage flags, categories, side effects | names from the reference and the tag; values from the disc |
 | 1 Creation | reference only (inherited velocity: weapons.md) |
@@ -1525,7 +1878,7 @@ overshoots and swings back around the line of sight.) Charged bolt, same target,
 | 9 Detonation | reference; effect contents from the disc |
 | 10 Area damage | reference |
 | 11 Push | reference; acceleration scales from the disc |
-| 12 Guidance | reference; difficulty values from the disc's globals |
+| 12 Guidance | reference; difficulty values from the disc's globals; the test numbers re-run in 32-bit arithmetic; which difficulty a Xbox multiplayer game runs at is the open part |
 | 13 Supercombine | reference |
 | 14 Charged bolt | disc values, reference behaviour |
 | 15 Grenades | reference (throw, release, counts); disc values (globals, unit) |
@@ -1541,11 +1894,13 @@ overshoots and swings back around the line of sight.) Charged bolt, same target,
    is possible. Not checked in the executable. Measure: drop a frag
    straight onto stone from a known height in the real game and time
    the second bounce (normal restitution 0.3 versus 0.2).
-2. **Multiplayer difficulty.** Guidance against players uses the
-   session's difficulty (0.5 at easy and normal, 0.75 heroic, 1.0
-   legendary). Which difficulty a multiplayer game on the Xbox runs at
-   is not settled here. Measure: needle a strafing player at 8 WU and
-   compare the curve with test (e).
+2. **Multiplayer difficulty.** Guidance against players reads the
+   game's difficulty (0.5 at easy and normal, 0.75 heroic, 1.0
+   legendary), not forced to normal in a match. The reference gives a
+   multiplayer game the host's current difficulty variable (normal
+   unless a campaign was started at another level); this spec uses 0.5.
+   Measure: needle a strafing player at 8 WU and compare the curve with
+   test (e) (0.5 gives the 1.5 degrees per update row).
 3. **Spawn grenade counts.** The reference gives the maximum (4) frags
    at spawn, 2 with 5 or more players, 1 with 9 or more, and plasma
    grenades only through the game type or starting equipment. Common
@@ -1571,3 +1926,9 @@ overshoots and swings back around the line of sight.) Charged bolt, same target,
 8. **Parent deletion.** What happens to a projectile stuck in an object
    that is deleted (not destroyed), such as a corpse removed by garbage
    collection, is not traced here (probably deleted with it).
+9. **The needle's speed in 32-bit arithmetic.** Quirk 11 says to keep
+   a projectile with equal initial and final velocities at that speed;
+   the real engine may pin a turning needle to 0.99 of it by chance
+   (1 percent shorter reach). Measure: fire needles at a far wall and
+   compare the spread of times to reach 20 WU (150 or 151 updates, or
+   about 1.01 times that).

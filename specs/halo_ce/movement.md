@@ -441,7 +441,8 @@ section leaves out:
 
 **The ground test** (every tick, ground and air alike). Among the
 tick's contacts (real and virtual), pick the one with the largest
-normal z (the first if equal). The biped is grounded if that z is at
+normal z (the first if equal), except that a contact on a climbable
+sheet beats the others (section 8, "Climbable surfaces"). The biped is grounded if that z is at
 least the precomputed cos(MAX_SLOPE) = 0.70710677; otherwise, or with
 no contact at all, it is airborne. When grounded the contact's plane
 becomes the stored ground plane (its normal n is used by the next
@@ -620,26 +621,167 @@ the wanted speed only, not acceleration or jump.
 position is the seat's, its throttle drives the vehicle, and leaving
 is the seat-exit sequence (`vehicles.md`). Out of scope here.
 
-**Climbable surfaces (ladders).** Surfaces flagged climbable (the
-ladder sheets on `boardingaction`, `collision.md`) count as ground at
-any steepness, unless the surface's horizontal normal points along the
-biped's movement facing by more than 0.5 (it is behind the player).
-With such a near-vertical ground plane (n_z ≤ ε), the wish is built
-from the aim: forward = the aim vector minus its component along n,
-left = (Z × aim, normalised) minus its component along n, d =
-normalise(a·forward + b·left) with the z component multiplied by 5
-before normalising; the slope scale then applies (climbing straight up
-is "uphill beyond 45°": 0.65 speed). Looking up while pushing forward
-climbs; looking down descends. When a tick's sweep meets nothing while
-the support surface was a ladder, a climbable neighbour across one of
-its edges can hold the biped: the nearest such neighbour (edge within
-2r of the point projected on the old surface) that the velocity is
-leaving (velocity · its normal between 0 and 1.6/30) and that the point
-is no more than r/2 from (after pushing out by r) snaps the point onto
-it and sets the velocity's component along its normal to −1/30; that
-counts as a contact on it. Reference only; no multiplayer map but
-`boardingaction` has climbable surfaces, and none of Blood Gulch's or
-Hang 'Em High's surfaces are flagged.
+**Climbable surfaces (ladders).** Which maps have them is checked
+against the disc (the level collision BSP of every multiplayer map, a
+script over all 13): the climbable flag is set on 120 surfaces, which
+are 60 rectangular two-sided sheets (each sheet is two surfaces, one
+per face), on **8 maps**: boardingaction 80 surfaces (40 sheets, in
+vertical stacks of 2.5 WU sheets), prisoner 8 (4 sheets), sidewinder 8
+(4), wizard 8 (4), beavercreek 4 (2), damnation 4 (2), longest 4 (2)
+and putput 4 (2). Blood Gulch, Hang 'Em High, Carousel, Chill Out and
+Rat Race have none, and no object collision model on any multiplayer
+map carries the flag. (A count of 9 maps is one too many; the totals
+of 60 sheets and 40 on Boarding Action are right.) All are thin
+vertical sheets 0.44 to 0.8 WU wide and 1.75 to 5 WU tall (a stack is
+several coplanar sheets end to end). Their normals are horizontal to
+within 0.0001, except on two Boarding Action ladders (at x = -2.47 and
+x = 22.48) whose faces tilt by 0.0128 in z (one face up, its twin
+down). The behaviour below is from the reference only; it was
+simulated, not compared with the game.
+
+How a biped uses them, all of it in the ground test and the ground
+wish (sections 2 and 5):
+
+1. **A ladder contact beats a floor contact.** A contact whose surface
+   carries the climbable flag (its face, or an edge or corner of the
+   sheet) is "walkable" while the biped is alive. The ground test of
+   section 5 is then not simply "largest n_z". Go through the
+   contacts in order, keeping one best. A walkable contact is skipped
+   if its normal's horizontal part points along the wish direction by
+   more than 0.5: n_x w_x + n_y w_y > 0.5, with w the unit horizontal
+   direction of the throttle in the world (the (a, b) of section 2
+   turned by the facing); w is the zero vector with no throttle, and
+   also in the air, so in the air nothing is skipped. Otherwise a
+   walkable contact becomes the best if there is no walkable best yet,
+   or if the push into it, −N·(the tick's velocity before the sweep),
+   is larger than the best's. A non-walkable contact becomes the best
+   only while no walkable best exists and its n_z is larger than the
+   best's (the first of equals). A walkable best makes the biped
+   grounded whatever its n_z (the 0.7071 test applies only to a
+   non-walkable best), and its plane becomes the ground plane. The
+   landing velocity is −N·V as always.
+2. **The foot.** Walking at a ladder from the floor, the sweep reports
+   the floor (the ground push keeps it in the set), the sheet and the
+   virtual crease contact on the same tick; the sheet wins, so at the
+   end of the tick that first touches it the ground plane becomes the
+   sheet's plane, a vertical wall. Nothing else happens on that tick:
+   the velocity into the sheet is clipped away, and the landing
+   velocity of a full run (0.075) is above the soft limit of 0.05, so
+   a 3-tick soft landing plays, which does not affect movement. From
+   the next tick the wall wish of item 3 applies. With the aim level
+   that wish is zero, so the biped just stands against the ladder. No
+   press "mounts" a ladder: touching it while the horizontal wish does
+   not point away from it is enough. Leaving at the foot: a throttle
+   pointing away from the sheet (within 60 degrees of its normal)
+   makes the sheet skipped; the biped then has no contact on that
+   tick, so it is airborne for one tick, lands on the floor on the
+   next and walks off normally.
+3. **The wall wish** (the stored ground plane has n_z ≤ ε = 0.0001).
+   forward = the aim vector minus its component along n; left =
+   (up × aim, normalised) minus its component along n; neither is
+   renormalised. The wish is a·forward + b·left (a and b of section 2:
+   at full forward throttle a = 0.075 WU/t, so the throttle scales
+   the length); its z component is multiplied by 5; it is normalised
+   only if its length is at least ε (a shorter one is used as it is,
+   which gives almost no motion). The slope scale of section 2 then
+   applies to the normalised z: at least 0.7071 gives 0.65, at most
+   −0.7071 gives 1.25, with the ramps between. The velocity moves
+   toward the wanted one by at most A/30 per tick in 3D, minus n/128,
+   as on the ground. There is no gravity while a ladder holds the
+   biped, so releasing the throttle brings it to rest in place: it
+   does not slide down. A face whose n_z is above ε (the tilted sheets
+   above, and the slanted contact normal of a sheet's top edge, item
+   7) takes the ordinary ground wish of section 2 instead: the
+   horizontal wish lifted onto the plane, which for so steep a plane
+   is nearly vertical (pressing into it climbs at 0.65 speed whatever
+   the pitch).
+4. **The aim.** The wish uses the aim vector, not the body. Head-on at
+   a ladder, any pitch up whose forward part survives the factors
+   (sin(pitch) × a × 5 ≥ 0.0001: 0.015 degrees at full throttle) gives
+   straight up, any pitch down gives straight down, because the factor
+   5 dominates: looking 0.01 radian up and 0.5 radian up climb at the
+   same speed; at level aim nothing moves. Turning the aim sideways
+   adds a component along the sheet (cos(pitch) sin(yaw offset)
+   against the vertical sin(pitch) × 5), and the climber drifts along
+   the sheet while climbing (at 45 degrees of yaw offset and 0.5 radian
+   of pitch the lateral speed settles at 0.0122 WU/t with 0.0472 up).
+   The throttle's sideways part strafes along the sheet at the
+   sideways speed (0.0667 WU/t at level aim).
+5. **Speeds.** Straight up at full forward throttle: 0.04875 WU/t
+   (0.075 × 0.65: 1.4625 WU/s, 4.46 m/s), reached in 5 ticks from
+   rest (0.0106667, 0.0213333, 0.032, 0.0426667, then 0.04875).
+   Straight down: up to 0.09375 WU/t (0.075 × 1.25), reached in 9
+   ticks from rest. Crouching does not detach: the speeds blend toward
+   the sneak ones as in section 2 (crouched at 0.9 of the stick: 0.0176
+   WU/t up). At the bottom the floor stops a descent and the ladder
+   still holds the biped at floor level; the top is item 7.
+6. **What detaches.** (a) A wish direction within 60 degrees of the
+   sheet's outward normal (n_h·w > 0.5), that is the throttle pushed
+   back with the aim toward the sheet, or forward with the aim turned
+   more than 120 degrees away from it: the sheet is skipped, there is
+   no contact, and the biped is airborne from that tick and falls (also
+   in mid-ladder). Strafing (n_h·w = 0) and releasing the throttle do
+   not. (b) A jump: the jump rule of section 3 runs as on the floor
+   (grounded, timer above 5), so v_z becomes 0.07 and the biped is
+   airborne on the next tick. With no throttle it leaves: the
+   horizontal velocity is 0, the sweep never touches the sheet again
+   and gravity takes over. With the throttle into the sheet, air
+   control presses it back against the sheet within a tick and the
+   sheet takes it again (nothing is skipped in the air), so a jump
+   with forward held only adds two quick ticks of 0.0664 and 0.0558
+   before the climb at 0.04875 resumes. (c) Running out of sheet: item
+   7, or off its side. A biped that is airborne and moves into a sheet
+   (velocity into it above ε after one tick of air control) catches it
+   from any direction; the wall wish then brakes its fall only at the
+   acceleration limit (a catch at 0.268 WU/t down takes about 25
+   ticks to stop, the aim level). Crouching never detaches.
+7. **The top.** The sheet's top edge is a rounded convex edge like any
+   (`collision.md`: a cylinder of radius r for the bottom-sphere
+   centre, that is the origin plus 0.2), so contact lasts until the
+   centre is above the top by about 0.04 to 0.09 WU (the sweep's 1/128
+   push reaches an edge that is up to √(2·r/128) = 0.056 away; which
+   tick is the last depends on the climb's phase, see the table in the
+   tests). The last contact tick is often the edge's, with a slanted
+   normal (n_z from 0.002 up to about 0.3), so the ground plane tilts
+   and the next tick uses the ordinary ground wish; then a tick with no
+   contact at all: the biped is airborne with its climbing speed
+   (0.04875 up) and only air control (0.00117 per tick) on the
+   horizontal velocity, and follows the free-fall arc of section 3
+   (it rises about 0.31 WU more, over about 14 ticks) to land
+   wherever the geometry puts it. A climber who keeps pushing into the
+   wall therefore goes over the top into whatever is beyond: with a
+   platform at the sheet's top height behind it, the simulation lands
+   on the platform on the 25th tick after the last contact tick. Nothing holds it
+   at the top (item 8).
+8. **The edge between two sheets.** Two stacked coplanar sheets (the
+   disc's stacks have 38 shared same-plane edges, and 8 more between
+   sheets whose planes differ by 0.013 in n_z) need nothing special:
+   an edge between two surfaces of one plane is not a feature
+   (`collision.md`), and the sheets' contact regions overlap, so the
+   contact is continuous across the seam. The reference also has a rule
+   for a tick on which the sweep found **no contact at all** while the
+   biped had a support surface (the surface of last tick's best
+   contact): for each edge of that surface's polygon whose other
+   surface is also climbable, take that neighbour's plane (normal N,
+   offset d) if N·V > 0 (V the swept velocity, the push into the old
+   plane included) and N·p − d > −r/2 = −0.1 (p the end point of the
+   sweep); among those pick the one whose shared edge is nearest (the
+   squared distance from p projected on the old surface's plane to the
+   closest point of the edge, ends included). If that squared distance
+   is at most (2r)² = 0.16 and N·V ≤ 1.6/30, and the point's distance
+   from the plane pushed out by r, N·p − (d + r), is at most 0.1 in
+   magnitude, then the point is moved along N to exactly r in front of
+   the neighbour's plane, the velocity's component along N is set to
+   −1/30 if it was above that, and that one contact (flags cleared,
+   surface the neighbour) is the tick's only contact. Because its
+   flags are cleared it is not "walkable": the biped counts as grounded
+   on it only if its n_z is at least 0.7071; the point and velocity
+   changes happen either way. On the disc this never matters: a
+   climber's swept velocity includes the push into its own plane, so a
+   coplanar neighbour has N·V < 0, and the sheet's back face is 0.2
+   (more than 0.1) behind the point. The rule exists for a ladder that
+   bends round a corner or a lip, which no multiplayer map has; an
+   implementation may leave it out.
 
 **Water.** None: bipeds have no swimming or wading. Water in a level is
 a fog plane that affects rendering and projectiles; a biped walks on
@@ -649,8 +791,11 @@ the collision surface under it as anywhere else.
 the destination flag and turns the facing by (destination facing −
 source facing). The velocity is left as it was, in world axes: it is
 neither zeroed nor rotated with the facing (reference only; open
-question). The teleporter's own rules (radius 0.5 WU, re-arm after
-moving 1 WU from the arrival flag, blocking) are `multiplayer_rules.md`.
+question); the ground plane, support surface and airborne flag are not
+touched either, so the first tick after arriving still uses the source's
+ground plane for the ground wish. The teleporter's own rules (radius
+0.5 WU, re-arm after moving 1 WU from the arrival flag, the exit's
+blocking test, the telefrag counter) are `multiplayer_rules.md`, 6.8.
 Spawns and script teleports set the velocity to zero.
 
 **Not in a match.** Flying bipeds, "climbs anything" bipeds, AI leaps,
@@ -696,7 +841,8 @@ player's input has been turned into the unit's controls:
 9. Sweep the pill by the velocity (plus the crouch lift) through the
    level and objects; contacts, the virtual crease contact.
 10. Ground test on the contacts: grounded or airborne, the new ground
-    plane, support surface, landing velocity λ.
+    plane, support surface, landing velocity λ (a climbable sheet's
+    contact wins over a floor's: section 8).
 11. Standing-room test if crouched and crouch not held.
 12. Store: origin = new point − (0, 0, r); velocity = the clipped
     velocity minus the crouch lift; airborne and slipping flags;
@@ -769,6 +915,11 @@ Keep all of these; they are part of how the game plays.
 - **Teleporters keep world velocity** (reference only).
 - **First-tick fall.** The tick that walks off a ledge already moves
   the biped 1/128 WU down.
+- **A ladder is climbed by looking up.** The wish on a vertical sheet
+  comes from the aim, with its z multiplied by 5: any look up at all
+  climbs at full speed, level aim stands still, any look down descends
+  at 1.25 times run speed, and walking backward off a ladder (or
+  forward looking away) lets go.
 
 ## Test cases
 
@@ -897,6 +1048,61 @@ physics engine's capsule cast instead (`collision.md` allows it for a
 first playable) should still pass the 0.10 / 0.13 rows and may differ
 in the hop details.
 
+### Ladders
+
+A free-standing two-sided vertical sheet in the plane x = 0, its
+outward normal +X (the biped's side), 1 WU wide (y from −0.5 to 0.5),
+from z = 0 to its height H, over the flat floor z = 0 (the sheet's
+twin face, normal −X, exists but is never touched). The biped starts
+at origin (0.5, 0, 0), settled on the floor, aim yaw 180 degrees
+(looking along −X, into the sheet), pitch +0.5 radian (up), throttle
+(1, 0) held from tick 1. H = 2.5 unless stated. Edge cylinders on the
+sheet's four edges, as `collision.md` builds them (side edges only
+matter off the centre line).
+
+| Tick (k = ticks after the first sheet contact) | Expected |
+|---|---|
+| 1 to 7 | on the floor, speed 0.0106667 n; x falls to 0.2013333 on tick 7 |
+| 8 (k = 0) | sheet contact at x = 0.2 (the contacts are the floor, the sheet and the virtual contact; the sheet is chosen), velocity 0, ground plane (1, 0, 0), grounded, landing velocity 0.075 |
+| 9 to 13 (k = 1 to 5) | v_z = 0.0106667, 0.0213333, 0.032, 0.0426667, 0.04875; z = 0.0106667, 0.032, 0.064, 0.1066667, 0.1554167 |
+| k > 5 | v_z = 0.04875; z = 0.1554167 + 0.04875 (k − 5) (k = 10: 0.3991667; 20: 0.8866667; 40: 1.8616667); x stays 0.2 |
+| k = 50 (tick 58) | last supported tick: contact is the top edge, normal (1, 0, 0.0021), z = 2.349183 |
+| k = 51 (tick 59) | airborne, z = 2.397916, v = (−0.007915, 0, 0.048734); no contact |
+| k = 52 onward | free arc: z peaks at 2.7070 on tick 72 (x = −0.017: it has passed over the sheet) and falls |
+
+The tick at which the sheet is lost depends on H and the climb's
+phase; the first airborne tick (and k) in the same setup, to within one
+tick for an implementation whose edge shapes differ in the last 1/128:
+
+| H (WU) | 0.4 | 0.6 | 1.0 | 1.75 | 2.0 | 2.5 | 3.0 | 5.0 |
+|---|---|---|---|---|---|---|---|---|
+| first airborne tick (k) | 16 (8) | 20 (12) | 28 (20) | 43 (35) | 49 (41) | 59 (51) | 69 (61) | 110 (102) |
+
+Other rows, same sheet but H = 6 unless a row says otherwise (the
+climbing rows start from the climb above, at the first tick whose z is
+above 1; throttle (1, 0), aim as above unless stated):
+
+| Setup | Expected |
+|---|---|
+| level aim (pitch 0) from the start | stands at x = 0.2, v = 0, grounded on the sheet, indefinitely |
+| pitch 0.01 radian from the start | climbs exactly as at pitch 0.5; pitch 0.0003 climbs; pitch 0.0001 stands |
+| pitch +0.5 then −0.5 after 22 ticks of climbing | v_z falls 0.0106667 per tick from 0.04875 (0.03808, 0.02742, ...), is negative on the 5th tick, reaches −0.09375 on the 14th tick and stays; stops at the floor (z = 0) and stays grounded on the sheet |
+| throttle (−1, 0), aim toward the sheet | airborne on the first tick (no contact), then free fall with horizontal speed 0.00117 per tick away |
+| throttle released | v_z falls by 0.0106667 per tick to 0 in 5 ticks and holds: the biped stays on the ladder |
+| jump pressed on the first tick, throttle (1, 0) held | airborne at the end of that tick with v_z = 0.07; grounded on the sheet again on the next (moves 0.0664, then 0.0558, then 0.04875 per tick) |
+| jump pressed on the first tick, no throttle | airborne and leaves: v_z 0.07, 0.0664, ... a plain ballistic arc, x unchanged |
+| throttle (0.9, 0) with crouch held | speed falls to 0.01755 WU/t by the 8th tick (the crouch transition and the acceleration limit); still on the sheet |
+| standing at the foot (level aim, grounded on the sheet), throttle (−1, 0) | tick 1: no contact, airborne; tick 2: back on the floor, grounded, then walks away |
+| from the foot, throttle (0, 1) (left) at level aim | slides along the sheet toward −y (the biped's left at this yaw), 0.0106667 per tick up to 0.0666667 WU/t |
+| sheet of H = 20 and no floor; the biped airborne at x = 0.4, z = 10, v_z = −0.2, throttle (1, 0), level aim | the sheet catches it on tick 19 (x = 0.2) with v_z −0.268; then v_z rises 0.0106667 per tick toward 0 |
+
+The same sheet in front of a wall (a solid wall in the plane x = 0 up
+to the platform at z = 2.5 and a platform behind it, normal +Z), same
+inputs: the sheet is lost on tick 59 as above, the lip of the wall does
+not touch the biped, and it lands on the platform on tick 83 at
+x = −0.348, z = 2.5, v_z = 0, and walks away over it (supported by the
+platform from then on).
+
 ### Landing and falling
 
 The origin is dropped from rest at height H above flat ground,
@@ -932,7 +1138,9 @@ airborne.
 | Collision response, ground test, virtual contact | reference only; the mover's shapes are `collision.md`'s (reference only there too); steps, crests and creases are emergent results of the simulation |
 | Landing and falling damage | thresholds and effects from the disc; logic reference only |
 | Camera | reference only (fields from the disc) |
-| Climbable surfaces, elevators, teleporters, impulses | reference only, not simulated |
+| Climbable surfaces: which maps and how many | checked against the disc (all 13 multiplayer maps, level and object collision) |
+| Climbable surfaces: how a biped mounts, climbs, tops out and drops | reference only; the numbers from a simulation of the rules here, which is not the full mover on the map's real geometry (sheet width, the wall behind it) |
+| Elevators, teleporters, impulses | reference only, not simulated |
 | Damage-system formula for the falling damage points | reference only; belongs to `health_shields.md` |
 
 The reference build differs from the disc's in places, and its port
@@ -982,5 +1190,11 @@ the gravity constant is the engine's (checked in `globals.md`).
 - **Standing on players.** The mover meets other players through
   their collision models; confirm in the game that one player can
   stand on another's head and how high that is.
+- **Ladders on the real geometry.** The ladder rules are simulated on
+  an ideal sheet, not on the maps' collision. Check on Boarding Action
+  (its stacked ladders, a tilted pair at x = -2.47 and x = 22.48) and a
+  one-sheet ladder (Wizard, Putput): where the top of the climb throws
+  the player, and whether a level look at the ladder really stands
+  still.
 - **Elevator carry.** Which multiplayer maps have elevator machines
   (none expected); not checked on the disc.

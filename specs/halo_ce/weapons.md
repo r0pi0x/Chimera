@@ -1038,10 +1038,16 @@ trigger 1 instead of throwing only with flag 12.
 
 ### 15. Aim assist
 
-Aim assist is a controller feature: the port is played with mouse and
-keyboard and keeps it **off by default**. With it off, only the
-convergence correction below (step 4 with no target) remains, since it
-is part of where a shot goes.
+Aim assist has two parts. The **autoaim** (the target, the bending of
+the shot toward it, and the target that guided projectiles follow:
+`projectiles.md` behaviour 12) runs for every player's shot whatever the
+input device: the reference's port keeps the bullets' autoaim for the
+mouse too. The **magnetism** (look stickiness, at the end of this
+section) is the controller feature that the port makes optional for a
+mouse and leaves off by default for one. Only the port's Hardcore game
+types (not on the disc) remove both. Without a target (nothing in the
+cone, or no parameters in force) the convergence correction below (step
+4 with no target) remains, since it is part of where a shot goes.
 
 **Parameters** of the weapon in hand at zoom level i (none if the
 weapon has "aim assists only when zoomed" and the player is not
