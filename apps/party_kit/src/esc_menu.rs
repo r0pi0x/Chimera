@@ -485,7 +485,7 @@ fn follow_lobby(lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyV
     let up = crate::main_menu::owned_by_lobby(lobby.as_deref());
     if menu.open && menu.lobby != up {
         menu.lobby = up;
-        if menu.page == Page::ConfirmLeave {
+        if !up && menu.page == Page::ConfirmLeave {
             menu.page = Page::Main;
             menu.focus = 0;
         }
