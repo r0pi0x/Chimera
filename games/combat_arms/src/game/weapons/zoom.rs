@@ -36,6 +36,19 @@
 //!   the owner's `ViewPunch`, which the shots and the camera follow and
 //!   nothing takes back (Q9).
 //!
+//! - Sounds (Follow-up (2026-11-14) 1-2): each accepted press, the
+//!   automatic zoom-outs included, writes the scope part's `ZoomInSound`
+//!   (a level up) or `ZoomOutSound` (back to 0) as `CaZoomSound`, and so
+//!   does the instant reset of a weapon that was zoomed (its own part's
+//!   zoom-out sound); a refused press or a reset while not zoomed is
+//!   silent. `effects` plays it as a local sound on the owner's machine
+//!   only.
+//!
+//! - The focus blur (Follow-up (2026-11-14) 3): `CaFocusBlur`, on while
+//!   the local player's weapon is zoomed (a transition included) and the
+//!   `Shader` option is on, through the scope part's `FocusTex`
+//!   (`focus_blur`; drawn by `ui::scope`).
+//!
 //! Per tick: presses, resets and reload requests in `core::Predict::Select`
 //! (after selection, before movement, so the speed limit changes on the
 //! press's tick); sway, the transition step and the reload after a zoom-out
@@ -44,7 +57,8 @@
 //! the owner's `Zoomed` and `ViewPunch` (Chimera's predicted parts).
 //!
 //! Known shortcuts:
-//! - The scope's sounds aren't loaded and no sound plays; its overlay
+//! - A first-person spectator doesn't hear the watched player's zoom
+//!   sounds (no spectator mirroring, below); the scope's overlay
 //!   picture (`Scope::sprite`, `Scope::sprite_scale`) is drawn by
 //!   `ui::scope` (a card scaled with the screen's height, 7.10), and
 //!   Chimera's placeholder is drawn while it loads or when the install has
@@ -72,6 +86,78 @@ use crate::{
 
 /// The hook's name.
 pub const ZOOM: &str = "combat_arms:zoom";
+
+/// A zoom step's sound (Follow-up (2026-11-14) 1-2): the scope part's
+/// `ZoomInSound` or `ZoomOutSound`, for `owner`'s machine alone (a local
+/// sound: `effects` plays it when `owner` is the local player). Written
+/// the first time a tick is predicted only.
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct CaZoomSound {
+    pub owner: Entity,
+    /// The file inside the install's archives (never empty).
+    pub file: String,
+}
+
+/// The sound of a step from level `before` to the weapon's level now (in:
+/// up a level; out: back to 0; none: no change, or the part names none).
+fn step_sound(z: &CaZoom, before: u8) -> Option<String> {
+    let s = z.scope.as_ref()?;
+    let file = if z.level > before {
+        &s.zoom_in_sound
+    } else if z.level < before {
+        &s.zoom_out_sound
+    } else {
+        return None;
+    };
+    (!file.trim().is_empty()).then(|| file.clone())
+}
+
+/// The focus blur's mask before any scope part named one
+/// (Follow-up (2026-11-14) 3).
+pub const DEFAULT_FOCUS_MASK: &str = "shaders/image/ScopeFocus.dtx";
+
+/// The focus blur on the local player's screen (Follow-up (2026-11-14)
+/// 3): on while the local player's weapon is zoomed in the sense of Z
+/// (level above 0 or a transition running, the zoom-out's included) and
+/// the `Shader` option is on; the mask is the `FocusTex` of the local
+/// weapon's scope part, looked up each frame, the last one kept while the
+/// weapon in hand has none (`DEFAULT_FOCUS_MASK` at the start). The
+/// front end draws it (`ui::scope`).
+#[derive(Resource, Clone, Debug, PartialEq)]
+pub struct CaFocusBlur {
+    pub on: bool,
+    /// The mask's install path.
+    pub mask: String,
+}
+
+impl Default for CaFocusBlur {
+    fn default() -> Self {
+        Self {
+            on: false,
+            mask: DEFAULT_FOCUS_MASK.into(),
+        }
+    }
+}
+
+/// `CaFocusBlur` from the local player's weapon and the `Shader` option.
+pub fn focus_blur(
+    settings: Option<Res<crate::game::options::settings::CaSettings>>,
+    me: Query<&crate::weapon::Inventory, With<crate::core::LocalPlayer>>,
+    zooms: Query<&CaZoom>,
+    mut blur: ResMut<CaFocusBlur>,
+) {
+    let shader = settings.is_some_and(|s| s.bool("Shader"));
+    let zoom = me.iter().next().and_then(|inv| inv.active).and_then(|w| zooms.get(w).ok());
+    if let Some(mask) = zoom.and_then(|z| z.scope.as_ref()).map(|s| s.focus_tex.trim()).filter(|m| !m.is_empty())
+        && blur.mask != mask
+    {
+        blur.mask = mask.to_string();
+    }
+    let on = shader && zoom.is_some_and(CaZoom::zoomed);
+    if blur.on != on {
+        blur.on = on;
+    }
+}
 
 // Constants (the spec's "Constants").
 
@@ -137,6 +223,11 @@ pub struct Scope {
     pub sprite: String,
     /// `ZoomSpriteScale` (0: missing, `DEFAULT_SPRITE_SCALE`).
     pub sprite_scale: f32,
+    /// `ZoomInSound`, `ZoomOutSound` (an install path; empty: silent).
+    pub zoom_in_sound: String,
+    pub zoom_out_sound: String,
+    /// `FocusTex`: the focus blur's mask (an install path; empty: none).
+    pub focus_tex: String,
 }
 
 /// `ZoomSpriteScale` when the record has none (weapon_classes.md 7.10).
@@ -382,16 +473,27 @@ pub(super) fn zoom_input(
     owners: Query<(Entity, &Intent, &Inventory, Option<&Health>, Option<&Zoomed>), Without<NetDrawn>>,
     mut weapons: Query<(&mut CaZoom, &mut WeaponState, Option<&Magazine>)>,
     chimera_zoom: Query<(), With<Zoom>>,
-    clock: Res<SimClock>,
+    (clock, first): (Res<SimClock>, Res<FirstTimePredicted>),
+    mut sounds: MessageWriter<CaZoomSound>,
     mut commands: Commands,
 ) {
     let now = clock.now;
     let due = now + SLACK;
+    let mut sound = |owner: Entity, file: Option<String>| {
+        if let Some(file) = file.filter(|_| first.0) {
+            sounds.write(CaZoomSound { owner, file });
+        }
+    };
     for (owner, intent, inv, health, have) in &owners {
         let alive = health.is_none_or(|h| h.current > 0.0);
         for &w in &inv.weapons {
             let Ok((mut z, mut st, _)) = weapons.get_mut(w) else { continue };
             if (Some(w) != inv.active || !alive) && !z.is_reset() {
+                // 7.5 corrected (Follow-up 2): the instant reset while
+                // zoomed plays the zoom-out sound; silent when it was not.
+                if z.zoomed() {
+                    sound(owner, z.scope.as_ref().map(|s| s.zoom_out_sound.clone()).filter(|f| !f.trim().is_empty()));
+                }
                 z.reset();
                 st.reload_held = false;
             }
@@ -411,7 +513,10 @@ pub(super) fn zoom_input(
         // 7.2: attack2's press.
         if intent.secondary && !inv.prev_secondary() {
             let blocked = st.reloading() || (z.params.reload_after_fire && z.bolt_busy && !z.zoomed());
-            z.press(blocked);
+            let before = z.level;
+            if z.press(blocked) {
+                sound(owner, step_sound(&z, before));
+            }
         }
         // 7.5: a reload request while zoomed.
         if z.zoomed() {
@@ -424,7 +529,9 @@ pub(super) fn zoom_input(
                         z.bolt_armed = Some(now);
                     }
                 } else {
+                    // An automatic zoom-out is a press (Follow-up 2).
                     z.zoom_out();
+                    sound(owner, step_sound(&z, 1));
                 }
                 z.reload_after = true;
             }
@@ -511,7 +618,8 @@ pub(super) fn bolt_zoom_out(
     owners: Query<(Entity, &Inventory, Option<&Health>, Option<&Zoomed>), Without<NetDrawn>>,
     mut weapons: Query<(&mut CaZoom, &WeaponState)>,
     mut fired: MessageReader<WeaponEvent>,
-    clock: Res<SimClock>,
+    (clock, first): (Res<SimClock>, Res<FirstTimePredicted>),
+    mut sounds: MessageWriter<CaZoomSound>,
     mut commands: Commands,
 ) {
     let now = clock.now;
@@ -543,7 +651,13 @@ pub(super) fn bolt_zoom_out(
             && z.zoomed()
             && ((now - t) * 1000.0 + 1e-6).floor() > BOLT_ZOOM_OUT_DELAY_MS
         {
-            z.press(st.reloading());
+            let before = z.level;
+            if z.press(st.reloading())
+                && first.0
+                && let Some(file) = step_sound(&z, before)
+            {
+                sounds.write(CaZoomSound { owner, file });
+            }
         }
         sync_view(&mut commands, owner, have, z.view());
     }
@@ -560,6 +674,7 @@ mod tests {
             fov: fov.to_vec(),
             sprite: String::new(),
             sprite_scale: 0.0,
+            ..Default::default()
         });
         z
     }

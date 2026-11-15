@@ -60,6 +60,7 @@
 
 pub mod attached_fx;
 pub mod chat;
+pub mod damage_fx;
 pub mod desk;
 pub mod draw;
 pub mod effects;
@@ -128,6 +129,7 @@ impl Plugin for CaUiPlugin {
             music::CaMusicPlayPlugin,
             textures::CaTexturesPlugin,
             scope::CaScopePlugin,
+            damage_fx::CaDamageFxDrawPlugin,
         ))
         // Key 6, the objective class (inventory.md 2, 3: the mission
         // bomb), through the shell's selection as slot 6.

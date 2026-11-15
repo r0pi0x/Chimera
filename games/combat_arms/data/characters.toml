@@ -342,10 +342,10 @@ ani_type = 11
 # Table 0, the default male body (53 nodes).
 [[skeleton]]
 name = "male"
-# The server's hit priority (`Node#Priority`, weapon_firing.md
-# Corrections 5) by location for spheres that give no `priority`: ours,
-# the stock values being unknown (centre mass first, then the head).
-hit_priority = { head = 2.0, torso = 3.0, arm = 1.0, leg = 1.0, groin = 3.0 }
+# The server's hit priority (`Node#Priority`, weapon_firing.md Follow-up
+# (2026-11-14) 2): 0.25 for every sphere that gives no `priority` of its
+# own; `Head` 1.0, the neck and face 0.75, the two torso spheres 0.5.
+hit_priority = { head = 0.25, torso = 0.25, arm = 0.25, leg = 0.25, groin = 0.25 }
 aim = ["Right_pelvis", "Torso", "Upper_torso", "Neck", "Head", "Left_shoulder", "Right_shoulder"]
 nodes = [
     { name = "Scene Root" },
@@ -378,11 +378,11 @@ nodes = [
 spheres = [
     { index = 3, name = "Left_pelvis", radius = 8.0, location = 4, factor = 0.9, bind = [0.00, -7.70, 0.75], at = [-0.27, -6.89, -0.69] },
     { index = 4, name = "Right_pelvis", radius = 8.5, location = 4, factor = 0.9, bind = [0.00, 1.45, 0.75], at = [-0.27, 2.26, -0.69] },
-    { index = 5, name = "Torso", radius = 9.0, location = 2, factor = 1.0, bind = [0.00, 5.14, 0.74], at = [-0.08, 5.88, -0.02] },
-    { index = 6, name = "Upper_torso", radius = 10.0, location = 2, factor = 1.0, bind = [0.00, 14.27, 0.74], at = [1.15, 14.52, 2.69] },
-    { index = 7, name = "Neck", radius = 3.0, location = 2, factor = 1.0, bind = [0.00, 29.31, -0.10], at = [5.22, 27.27, 9.60] },
-    { index = 8, name = "Head", radius = 1.0, location = 1, factor = 6.0, bind = [0.00, 31.57, 0.99], at = [6.45, 29.03, 10.90] },
-    { index = 9, name = "Face_Jaw", radius = 3.0, location = 1, factor = 6.0, bind = [0.00, 33.49, 3.45], at = [6.89, 30.82, 13.42] },
+    { index = 5, name = "Torso", radius = 9.0, location = 2, factor = 1.0, bind = [0.00, 5.14, 0.74], at = [-0.08, 5.88, -0.02], priority = 0.5 },
+    { index = 6, name = "Upper_torso", radius = 10.0, location = 2, factor = 1.0, bind = [0.00, 14.27, 0.74], at = [1.15, 14.52, 2.69], priority = 0.5 },
+    { index = 7, name = "Neck", radius = 3.0, location = 2, factor = 1.0, bind = [0.00, 29.31, -0.10], at = [5.22, 27.27, 9.60], priority = 0.75 },
+    { index = 8, name = "Head", radius = 1.0, location = 1, factor = 6.0, bind = [0.00, 31.57, 0.99], at = [6.45, 29.03, 10.90], priority = 1.0 },
+    { index = 9, name = "Face_Jaw", radius = 3.0, location = 1, factor = 6.0, bind = [0.00, 33.49, 3.45], at = [6.89, 30.82, 13.42], priority = 0.75 },
     { index = 10, name = "Face_Eyelid", radius = 0.0, location = 1, factor = 6.0 },
     { index = 11, name = "Left_shoulder", radius = 5.5, location = 3, factor = 0.9, bind = [-4.10, 27.95, -0.43], at = [1.94, 25.53, 11.84] },
     { index = 12, name = "Left_armu", radius = 4.5, location = 3, factor = 0.9, bind = [-11.36, 24.91, -1.53], at = [-4.11, 25.07, 16.96] },
@@ -400,7 +400,7 @@ spheres = [
     { index = 44, name = "Right_legl", radius = 6.0, location = 4, factor = 0.75, bind = [7.91, -25.25, 1.87], at = [14.02, -21.52, -4.22] },
     { index = 45, name = "Right_foot", radius = 5.0, location = 4, factor = 0.5, bind = [9.72, -46.74, -2.14], at = [12.62, -41.96, -12.09] },
     { index = 46, name = "Bip01 R Toe0", radius = 3.0, location = 4, factor = 0.5, bind = [11.68, -54.32, 6.67], at = [20.91, -49.78, -9.09] },
-    { index = 53, name = "Face_Eyelid1", radius = 4.6, location = 1, factor = 6.0, socket = { parent = "Face_Eyelid", offset = [0.0, 0.0, 7.0] }, bind = [0.03, 36.67, 1.29], at = [7.48, 34.01, 11.37] },
+    { index = 53, name = "Face_Eyelid1", radius = 4.6, location = 1, factor = 6.0, socket = { parent = "Face_Eyelid", offset = [0.0, 0.0, 7.0] }, bind = [0.03, 36.67, 1.29], at = [7.48, 34.01, 11.37], priority = 0.75 },
     { index = 54, name = "Left_armu1", radius = 4.0, location = 3, factor = 0.9, socket = { parent = "Left_armu", offset = [7.25, 0.0, 0.0] }, bind = [-16.36, 19.66, -1.65], at = [-1.85, 18.95, 20.12] },
     { index = 55, name = "Left_arml1", radius = 4.0, location = 3, factor = 0.9, socket = { parent = "Left_arml", offset = [7.25, 0.0, 0.0] }, bind = [-26.31, 9.33, 0.18], at = [5.39, 17.21, 26.15] },
     { index = 56, name = "Right_armu1", radius = 4.0, location = 3, factor = 0.9, socket = { parent = "Right_armu", offset = [7.25, 0.0, 0.0] }, bind = [16.36, 19.66, -1.65], at = [18.47, 20.04, 2.14] },
@@ -432,8 +432,9 @@ left_foot = [-10.02, -41.49, 13.52]
 # whose bodies reproduce the US numbers).
 [[skeleton]]
 name = "female"
-# As the male's.
-hit_priority = { head = 2.0, torso = 3.0, arm = 1.0, leg = 1.0, groin = 3.0 }
+# Follow-up (2026-11-14) 3: 0.25 but the head (`Bip01 Head` and the two
+# head sockets 1.0) and the two torso spheres (0.5).
+hit_priority = { head = 0.25, torso = 0.25, arm = 0.25, leg = 0.25, groin = 0.25 }
 
 aim = ["Right_pelvis", "Torso", "Upper_torso", "Bip01 Neck", "Bip01 Head", "Left_shoulder", "Bip01 R Clavicle"]
 nodes = [
@@ -470,10 +471,10 @@ nodes = [
 spheres = [
     { index = 3, name = "Left_pelvis", radius = 8.0, location = 4, factor = 0.9, bind = [0.00, 55.24, 3.14], at = [-1.44, 0.48, -1.66] },
     { index = 4, name = "Right_pelvis", radius = 8.5, location = 4, factor = 0.9, bind = [0.00, 60.95, 4.23], at = [-1.21, 6.28, -1.42] },
-    { index = 5, name = "Torso", radius = 9.0, location = 2, factor = 1.0, bind = [0.01, 63.51, 4.22], at = [-1.65, 8.81, -1.55] },
-    { index = 6, name = "Upper_torso", radius = 10.0, location = 2, factor = 1.0, bind = [0.03, 71.80, 3.33], at = [-1.09, 16.67, 1.19] },
+    { index = 5, name = "Torso", radius = 9.0, location = 2, factor = 1.0, bind = [0.01, 63.51, 4.22], at = [-1.65, 8.81, -1.55], priority = 0.5 },
+    { index = 6, name = "Upper_torso", radius = 10.0, location = 2, factor = 1.0, bind = [0.03, 71.80, 3.33], at = [-1.09, 16.67, 1.19], priority = 0.5 },
     { index = 7, name = "Bip01 Neck", radius = 0.0, location = 2, factor = 1.0 },
-    { index = 8, name = "Bip01 Head", radius = 3.0, location = 1, factor = 1.0, bind = [0.08, 89.37, 1.94], at = [2.96, 31.08, 10.21] },
+    { index = 8, name = "Bip01 Head", radius = 3.0, location = 1, factor = 1.0, bind = [0.08, 89.37, 1.94], at = [2.96, 31.08, 10.21], priority = 1.0 },
     { index = 20, name = "Left_shoulder", radius = 5.5, location = 3, factor = 0.9, bind = [-2.51, 82.15, 1.13], at = [-1.27, 24.52, 8.72] },
     { index = 21, name = "Left_armu", radius = 4.5, location = 3, factor = 0.9, bind = [-7.74, 81.26, 1.30], at = [-4.82, 23.56, 12.54] },
     { index = 22, name = "Left_arml", radius = 4.0, location = 3, factor = 0.9, bind = [-17.54, 71.54, -0.89], at = [-7.02, 13.33, 21.82] },
@@ -503,8 +504,8 @@ spheres = [
     { index = 66, name = "Left_legl1", radius = 6.0, location = 4, factor = 0.75, socket = { parent = "Left_legl", offset = [11.0, 0.0, 0.0] }, bind = [-7.63, 22.57, 0.73], at = [-6.41, -27.44, 14.80] },
     { index = 67, name = "Right_Legu1", radius = 7.0, location = 4, factor = 0.9, socket = { parent = "Right_Legu", offset = [8.8, 0.0, 0.0] }, bind = [6.26, 46.52, 2.49], at = [4.66, -7.33, -4.33] },
     { index = 68, name = "Right_legl1", radius = 6.0, location = 4, factor = 0.75, socket = { parent = "Right_legl", offset = [11.0, 0.0, 0.0] }, bind = [7.63, 22.67, 0.72], at = [5.31, -29.10, -8.12] },
-    { index = 69, name = "Headfuck", radius = 4.7, location = 1, factor = 6.0, socket = { parent = "Bip01 Head", offset = [3.219, 0.0, 1.031] }, bind = [0.08, 92.36, 3.53], at = [4.12, 33.37, 12.42] },
-    { index = 70, name = "Headfuck2", radius = 4.7, location = 1, factor = 6.0, socket = { parent = "Bip01 Head", offset = [4.453, 0.0, -0.562] }, bind = [0.08, 93.86, 2.18], at = [4.76, 35.01, 11.44] },
+    { index = 69, name = "Headfuck", radius = 4.7, location = 1, factor = 6.0, socket = { parent = "Bip01 Head", offset = [3.219, 0.0, 1.031] }, bind = [0.08, 92.36, 3.53], at = [4.12, 33.37, 12.42], priority = 1.0 },
+    { index = 70, name = "Headfuck2", radius = 4.7, location = 1, factor = 6.0, socket = { parent = "Bip01 Head", offset = [4.453, 0.0, -0.562] }, bind = [0.08, 93.86, 2.18], at = [4.76, 35.01, 11.44], priority = 1.0 },
 ]
 # The female right-hand socket: case 43's offset and LST t = 0 position
 # (the rotation the male's).

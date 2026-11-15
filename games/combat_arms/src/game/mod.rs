@@ -78,6 +78,7 @@ pub mod bundle;
 pub use bundle::BUNDLE;
 pub mod characters;
 pub mod chat;
+pub mod damage_fx;
 pub mod data;
 pub mod death_cam;
 pub mod effects;
@@ -266,6 +267,7 @@ impl PluginGroup for CombatArmsPlugins {
             .add(rungs::CaRungsPlugin)
             .add(view_model::CaViewModelPlugin)
             .add(effects::CaEffectsPlugin)
+            .add(damage_fx::CaDamageFxPlugin)
             .add(weapons::CaWeaponsPlugin)
             .add(rules::CaRulesPlugin)
             .add(death_cam::CaDeathCamPlugin)
@@ -302,6 +304,7 @@ impl PluginGroup for CombatArmsGunsPlugins {
             .add(rungs::CaRungsPlugin)
             .add(view_model::CaViewModelPlugin)
             .add(effects::CaEffectsPlugin)
+            .add(damage_fx::CaDamageFxPlugin)
             .add(weapons::CaWeaponsPlugin)
     }
 }

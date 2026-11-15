@@ -1022,3 +1022,25 @@ mod world {
         assert_eq!(enemy(&rig("HG", 0)), 0);
     }
 }
+
+/// kill_streaks.md case 57 (A1, answered 2026-11-14) on Combat Arms'
+/// simulation: the killer's death leaves the multi-kill count (a kill
+/// 4.5 s after the first, a death between, is a double kill); the mode's
+/// end of mission (the mode runtime's statistics reset, raised at each
+/// match's start) starts it again.
+#[test]
+fn case_57_multi_kill_survives_death_until_the_mission_ends() {
+    use chimera_sim::announce::KillCounter;
+    use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
+    let mut sim = Sim::new(combat_arms::harness::CaSim, GreyboxMapPlugin);
+    let world = sim.app.world_mut();
+    let (p, v, other) = (world.spawn_empty().id(), world.spawn_empty().id(), world.spawn_empty().id());
+    let mut c = world.resource_mut::<KillCounter<Entity>>();
+    assert_eq!(c.enemy_kill(p, v, 0.0, 5000, 2).multi, 1);
+    // P killed at 1.0 by another, respawned at 3.0.
+    c.enemy_kill(other, p, 1.0, 5000, 2);
+    assert_eq!(c.enemy_kill(p, v, 4.5, 5000, 2).multi, 2, "DOUBLE KILL: the death reset nothing");
+    world.trigger(chimera_sim::mode::ModeStep(chimera_sim::mode::FlowEvent::ResetStats));
+    let mut c = world.resource_mut::<KillCounter<Entity>>();
+    assert_eq!(c.enemy_kill(p, v, 6.0, 5000, 2).multi, 1, "the mission's end reset it");
+}

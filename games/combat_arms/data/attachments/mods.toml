@@ -16,7 +16,9 @@
 # silencer, 1 scope, 2 dot sight, 3 flash hider, 4 muzzle attachment, 5
 # magazine; fractions are fractions (-0.1 is -10 %). A field left out is
 # 0 (none). `socket`: where a part model goes on the gun (muzzle flash,
-# breach, scope); no model names (the install's).
+# breach, scope); no model names (the install's). Zooming parts name the
+# zoom sounds and focus mask weapon_classes.md Follow-up (2026-11-14) 1
+# and 3 give (the M24 click for every stock sight; `FocusTex` by part).
 
 # ---------------------------------------------------------------------------
 # Muzzle (slot 0): [Muzzle]'s table. Type 0, SilencerLevel 1, Integrated 1.
@@ -144,6 +146,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_A.dtx'
 zoom_fov = [50.0]
 sight_style = 1
 target_range = 10000
@@ -156,6 +161,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_D.dtx'
 zoom_fov = [50.0]
 sight_style = 1
 target_range = 10000
@@ -168,6 +176,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_A.dtx'
 zoom_fov = [50.0]
 sight_style = 2
 
@@ -179,6 +190,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_B.dtx'
 zoom_fov = [75.0]
 perturb_dec_speed = 0.1
 zoomed_perturb_dec_speed = 0.03
@@ -191,6 +205,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_C.dtx'
 zoom_fov = [75.0]
 perturb_dec_speed = 0.1
 zoomed_perturb_dec_speed = 0.05
@@ -205,6 +222,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_A.dtx'
 zoom_fov = [50.0]
 sight_style = 1
 target_range = 10000
@@ -219,6 +239,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_D.dtx'
 zoom_fov = [50.0]
 sight_style = 1
 target_range = 10000
@@ -233,6 +256,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_B.dtx'
 zoom_fov = [75.0]
 sight_style = 1
 target_range = 10000
@@ -247,6 +273,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_A.dtx'
 zoom_fov = [50.0]
 sight_style = 2
 perturb_dec_speed = 0.1
@@ -260,6 +289,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_C.dtx'
 zoom_fov = [75.0]
 sight_style = 2
 perturb_dec_speed = 0.1
@@ -275,6 +307,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_A.dtx'
 zoom_fov = [50.0]
 sight_style = 1
 target_range = 10000
@@ -291,6 +326,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_D.dtx'
 zoom_fov = [50.0]
 sight_style = 1
 target_range = 10000
@@ -307,6 +345,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_B.dtx'
 zoom_fov = [75.0]
 sight_style = 1
 target_range = 10000
@@ -323,6 +364,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_A.dtx'
 zoom_fov = [50.0]
 sight_style = 2
 perturb_dec_speed = 0.1
@@ -338,6 +382,9 @@ type = 1
 integrated = 1
 socket = "breach"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\DotSight_Focus_C.dtx'
 zoom_fov = [75.0]
 sight_style = 2
 perturb_dec_speed = 0.1
@@ -354,6 +401,9 @@ type = 1
 integrated = 1
 socket = "scope"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\SR_Scope_Focus_A.dtx'
 zoom_fov = [20.0]
 
 [[mod]]
@@ -363,6 +413,9 @@ type = 1
 integrated = 1
 socket = "scope"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\SR_Focus_Dragunov_01.dtx'
 zoom_fov = [20.0]
 
 [[mod]]
@@ -372,6 +425,9 @@ type = 1
 integrated = 1
 socket = "scope"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\SR_Scope_Focus_A.dtx'
 zoom_fov = [35.0]
 
 [[mod]]
@@ -381,6 +437,9 @@ type = 1
 integrated = 1
 socket = "scope"
 zoom_level = 2
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\SR_Focus_Dragunov_01.dtx'
 zoom_fov = [30.0, 10.0]
 
 [[mod]]
@@ -390,6 +449,9 @@ type = 1
 integrated = 1
 socket = "scope"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\SR_Focus_Dragunov_01.dtx'
 zoom_fov = [15.0]
 
 [[mod]]
@@ -399,6 +461,9 @@ type = 1
 integrated = 1
 socket = "scope"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\SR_Focus_Dragunov_01.dtx'
 zoom_fov = [15.0]
 
 [[mod]]
@@ -408,6 +473,9 @@ type = 1
 integrated = 1
 socket = "scope"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\AR_Focus_G36_01.dtx'
 zoom_fov = [20.0]
 
 [[mod]]
@@ -417,6 +485,9 @@ type = 1
 integrated = 1
 socket = "scope"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\AR_Focus_AUG_01.dtx'
 zoom_fov = [20.0]
 
 [[mod]]
@@ -426,6 +497,9 @@ type = 1
 integrated = 1
 socket = "scope"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\AR_Focus_L85A1MOD.dtx'
 zoom_fov = [20.0]
 
 [[mod]]
@@ -435,6 +509,9 @@ type = 1
 integrated = 1
 socket = "scope"
 zoom_level = 1
+zoom_in_sound = 'GUNS_SND_SR\M24\zoom.wav'
+zoom_out_sound = 'GUNS_SND_SR\M24\zoom.wav'
+focus_tex = 'UI_HUD_Weapon\Scopes\DTX\SMG_Focus_P90_01.dtx'
 zoom_fov = [75.0]
 
 # ---------------------------------------------------------------------------

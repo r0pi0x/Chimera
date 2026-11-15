@@ -14,10 +14,17 @@
 //! screen). Without a picture (a sight with none, not in the install,
 //! still loading) the shell draws its placeholder.
 //!
+//! The focus blur (weapon_classes.md Follow-up (2026-11-14) 3): while
+//! `game::weapons::CaFocusBlur` is on, its mask (`FocusTex`, from the
+//! install like the picture) goes to Chimera's full-screen passes
+//! (`render::screen_post::ScreenPost::focus`), which blur the finished 3D
+//! frame (the scope card with it) through the mask's alpha before the
+//! HUD (`focus_mask`).
+//!
 //! Known shortcuts: a spectated player's scope shows the shell's
-//! placeholder; the focus blur (`FocusTex`) isn't drawn; the stock
-//! scopes' `ZoomSpriteScale` values weren't read (Open question 4), so a
-//! scope without the key uses the default.
+//! placeholder; the stock scopes' `ZoomSpriteScale` values weren't read
+//! (Open question 4), so a scope without the key uses the default; the
+//! blur waits for its mask to load (no blur on the frames before).
 
 use bevy::prelude::*;
 
@@ -34,7 +41,7 @@ pub struct CaScopePlugin;
 impl Plugin for CaScopePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ScopeSprite>()
-            .add_systems(Update, (pick_sprite, load_sprite).chain());
+            .add_systems(Update, ((pick_sprite, load_sprite).chain(), focus_mask));
     }
 }
 
@@ -88,6 +95,23 @@ fn load_sprite(
     texel.set_if_neq(ScopeOverlayTexel(want));
 }
 
+/// The focus blur's mask to the full-screen passes while it is on.
+fn focus_mask(
+    blur: Option<Res<crate::game::weapons::CaFocusBlur>>,
+    fx: Option<ResMut<super::effects::FxImages>>,
+    server: Option<Res<AssetServer>>,
+    post: Option<ResMut<chimera_present::render::screen_post::ScreenPost>>,
+) {
+    let Some(mut post) = post else { return };
+    let handle = match (blur.as_deref(), fx, server) {
+        (Some(b), Some(mut fx), Some(server)) if b.on => fx.get(&b.mask, &server).filter(|h| server.load_state(h).is_loaded()),
+        _ => None,
+    };
+    if post.focus != handle {
+        post.focus = handle;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,6 +126,7 @@ mod tests {
             fov: vec![20.0],
             sprite: sprite.into(),
             sprite_scale: 0.0,
+            ..Default::default()
         });
         let gun = app.world_mut().spawn(z).id();
         let mut inv = Inventory::default();

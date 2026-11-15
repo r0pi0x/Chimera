@@ -23,9 +23,12 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net52` since RCON goes over the game's
-   connection (a player who logs in with the server's `rcon_password`
-   gets the Escape menu's Host settings: "Admins", below); `net51` (the
+   The network version is `net54` since Combat Arms' damage screen
+   effects travel (each character's lasting-damage types, a jump's escape
+   from poison) and its kill call-outs reach the killer's and the victim's
+   teams; `net52` (RCON over the game's
+   connection: a player who logs in with the server's `rcon_password`
+   gets the Escape menu's Host settings, "Admins", below), `net51` (the
    lobby's rows carrying each player's session wins, matches won this
    server run, also on the Tab board and the match end) and earlier are
    refused.

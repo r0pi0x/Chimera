@@ -807,6 +807,7 @@ fn case_29_sprint_blocked() {
             fov: vec![40.0],
             sprite: String::new(),
             sprite_scale: 0.0,
+            ..Default::default()
         });
     t.keys().secondary = true;
     t.tick();

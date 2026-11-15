@@ -64,7 +64,9 @@
 //! intersection of its faces' half-spaces); a moved volume's world model
 //! is drawn where it stood (only its planes move); the
 //! armour, the sound filter, fog and tint aren't read (freezing
-//! damage is generic, its screen effects aren't made); `VELOCITY` reaches
+//! damage is generic; its screen effect comes from the lasting entries,
+//! which `damage_fx` reads by `DamageType`: `damage_type_number`);
+//! `VELOCITY` reaches
 //! clients with the objects' state (`objects::net`);
 //! the class defaults of `Friction` (1, `Ice` 0) and `PlayerSpeedFactor`
 //! (1) are ours (world_dat.md gives Ice's and Wind's only); the box test has no edge
@@ -667,7 +669,7 @@ fn pad_sound(l: &PadLaunch) -> CaSound {
 /// The volumes' damage bookkeeping (world_dat.md Corrections
 /// (2026-10-22) 1 and 5). `BTreeMap`s: ordered by entity, nothing hashed.
 #[derive(Resource, Default)]
-struct VolumeDamage {
+pub struct VolumeDamage {
     /// Each volume with a `PendingSec`: when its next 0.5 s look at the
     /// players inside is due.
     next_check: BTreeMap<Entity, f64>,
@@ -676,6 +678,38 @@ struct VolumeDamage {
     listed: BTreeMap<(Entity, Entity), f64>,
     /// The lasting (progressive) damage in force, per (player, volume).
     lasting: BTreeMap<(Entity, Entity), Lasting>,
+}
+
+impl VolumeDamage {
+    /// The lasting entries in force at `now`: (player, volume, time
+    /// left, s), for the damage effects' progressive pass
+    /// (`damage_fx`).
+    pub fn progressive(&self, now: f64) -> impl Iterator<Item = (Entity, Entity, f64)> + '_ {
+        self.lasting
+            .iter()
+            .filter(move |(_, l)| l.until > now + 1e-9 && l.amount != 0.0)
+            .map(move |((p, v), l)| (*p, *v, l.until - now))
+    }
+
+    /// Drop `player`'s lasting entries of the volumes `which` accepts.
+    pub fn clear(&mut self, player: Entity, which: impl Fn(Entity) -> bool) {
+        self.lasting.retain(|(p, v), _| *p != player || !which(*v));
+    }
+}
+
+/// The damage type number (`gear_perks.md`) of a volume's `DamageType`
+/// name, for the damage effects (`damage_fx`): burn 3, electrocute 6,
+/// freeze 8, poison 9, first-aid heal 37 (heal); others (choke, endless
+/// fall, unspecified) none.
+pub fn damage_type_number(name: &str) -> Option<i32> {
+    match name {
+        "BURN" => Some(3),
+        "ELECTROCUTE" => Some(6),
+        "FREEZE" => Some(8),
+        "POISON" => Some(9),
+        "FAK_HEAL" => Some(37),
+        _ => None,
+    }
 }
 
 /// One hand-over of lasting damage.

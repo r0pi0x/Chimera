@@ -100,8 +100,10 @@
 //! - The special-function probability draw is the round's random stream
 //!   (`CaSpecialRoll` forces it); the stun is applied where the round is
 //!   delivered (the server), not on the victim's client, and sent to it;
-//!   nothing is an AI yet (`CaNpc` marks one for the target groups); "Poison
-//!   or stun forces mu S to 1" (weapon_firing.md) isn't done.
+//!   nothing is an AI yet (`CaNpc` marks one for the target groups); "poison
+//!   or stun forces mu S to 1" (weapon_firing.md) reads the progressive
+//!   sets (`damage_fx::forces_spread`), and the stun here makes no stun
+//!   entries of its own.
 //! - The parts' muzzle effects, tracers and fire sounds are `effects`'
 //!   (effects_sounds.md). Not done: flash hiders (no stock record names
 //!   one), zoom sounds (their files aren't in a spec), the overlay
@@ -292,6 +294,13 @@ pub struct ModRecord {
     pub zoom_sprite: String,
     /// `ZoomSpriteScale` (0: missing, the reader's 0.001).
     pub zoom_sprite_scale: f32,
+    /// `ZoomInSound`, `ZoomOutSound`: played on each zoom step in or out
+    /// (weapon_classes.md Follow-up (2026-11-14) 1; empty: silent).
+    pub zoom_in_sound: String,
+    pub zoom_out_sound: String,
+    /// `FocusTex`: the focus blur's mask (Follow-up (2026-11-14) 3; an
+    /// install path, only its alpha is used; empty: none).
+    pub focus_tex: String,
     /// `SightSystemStyle` (0 normal, 1 range readout, 2 gauge) and
     /// `TargetRange` (units).
     pub sight_style: i32,
@@ -396,6 +405,9 @@ impl ModRecord {
             fov,
             sprite: self.zoom_sprite.clone(),
             sprite_scale: self.zoom_sprite_scale,
+            zoom_in_sound: self.zoom_in_sound.clone(),
+            zoom_out_sound: self.zoom_out_sound.clone(),
+            focus_tex: self.focus_tex.clone(),
         })
     }
 }
