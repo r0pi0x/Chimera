@@ -890,6 +890,7 @@ impl<'a> MaterialLoader<'a> {
                 saturation: 1.0,
                 fresnel: 1.0,
                 imposter: true,
+                light_mask: None,
             }),
             ..fallback
         }
@@ -1149,6 +1150,7 @@ impl<'a> MaterialLoader<'a> {
             saturation,
             fresnel,
             imposter: false,
+            light_mask: None,
         })
     }
 

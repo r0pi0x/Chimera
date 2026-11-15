@@ -622,3 +622,25 @@ backlog.
   left, no tracker: the party's kill feed is top right). The user's
   decisions for the party apps and the balance findings are in the
   backlog above.
+- 2026-11-15: Halo's lasting sounds (`game::audio`: the level's
+  background sound, sound scenery, projectile loops, footsteps by
+  material; reverb not applied, weapon loops not played) and the
+  shaders' looks (`maps::materials`: self-illumination on 16 level
+  shaders, cube reflections on 57, the model's multipurpose masks,
+  scrolling transparents; 334 shaders on the 13 maps). Left of the
+  look: bump shading (needs the lightmap's incident direction per
+  vertex), the indoor/outdoor fog switch, lens flares (a `lens` reader),
+  the transparents' later maps and periodic animations. Blood Gulch's
+  converted load went from 0.48 s to about 0.64 s (the cause not found;
+  from the cache 0.03 to 0.04 s); the frame time did not rise.
+- 2026-11-15: vehicles on every machine (`net62`): the seats
+  replicate, any game's character rides (the engine's `Carried`), a
+  rider's client is not predicted (its input shows after its ping plus
+  about 100 ms), stale seats cleaned on death, disconnect, round
+  restart and map change; a crash in a party round restart from the
+  Ghost's steering animation fixed. By the user's decision vehicles are
+  off in the party apps (`halo_ce:party_vehicles`, default 0: no
+  vehicle is placed there); Sidewinder stays out of the pool (bots do
+  not drive). The game type's vehicle set is not yet applied at a
+  game's start. Testing is kept light today by the user's instruction
+  (targeted tests only).

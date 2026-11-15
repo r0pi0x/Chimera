@@ -31,6 +31,7 @@ mod hud;
 mod hud_score;
 mod info;
 mod ladders;
+mod looks;
 mod map_objects;
 mod maps;
 mod movement;
@@ -64,6 +65,7 @@ mod heavy {
     mod fx;
     mod hud;
     mod ladder;
+    mod looks;
     mod map_objects;
     mod nav_within;
     mod rules;
@@ -77,4 +79,6 @@ mod heavy {
     mod walk;
     mod vehicle_data;
     mod vehicles;
+    mod vehicles_net;
+    mod vehicle_deaths;
 }

@@ -39,7 +39,6 @@ use super::level::{self, to_engine, to_halo_dir};
 use super::physics::PhysicsDef;
 use super::{HaloVehicle, Seated, VehicleDefs};
 use crate::core::{Intent, MapView};
-use crate::game::movement::HaloMovement;
 
 /// The camera's least distance behind the probe point.
 pub const MIN_DEPTH: f32 = 0.6;
@@ -175,13 +174,46 @@ pub fn heading(yaw: f32) -> f32 {
     h.y.atan2(h.x)
 }
 
-/// Each tick: a third-person seat's rider gets the seat's camera as its
-/// `MapView` (module doc); other riders their own eye.
+/// The camera seat `seat` of `v` gives a rider looking by `intent` (module
+/// doc; None: a seat without a third-person camera), the pull-in's rays
+/// cast against the level, past what `skip` names (characters, vehicles).
+pub fn seat_view(
+    v: &HaloVehicle,
+    d: &VehicleDef,
+    phys: &PhysicsDef,
+    seat: usize,
+    intent: &Intent,
+    query: &SpatialQuery,
+    skip: &dyn Fn(Entity) -> bool,
+) -> Option<MapView> {
+    let s = &d.seats[seat];
+    let track = (s.flags & seat_flags::THIRD_PERSON_CAMERA != 0)
+        .then(|| d.tracks.get(&s.track))
+        .flatten()?;
+    let pitch = intent.pitch.clamp(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2);
+    let c = command(focus(v, d, phys, seat), track_point(&track.points, pitch), heading(intent.yaw), pitch);
+    // Structure and scenery, front faces; not characters or vehicles.
+    let filter = SpatialQueryFilter::default().with_mask(level::mask());
+    let cast = |from: Vec3, to: Vec3| -> Option<f32> {
+        let (a, b) = (to_engine(from), to_engine(to));
+        let len = (b - a).length();
+        let dir = Dir3::new(b - a).ok()?;
+        let hit = query.cast_ray_predicate(a, dir, len, false, &filter, &|x| !skip(x))?;
+        (hit.normal.dot(*dir) < 0.0).then_some(hit.distance / len)
+    };
+    Some(MapView {
+        origin: to_engine(pull_in(&c, &cast)),
+        rotation: Quat::from_rotation_y(intent.yaw) * Quat::from_rotation_x(pitch),
+    })
+}
+
+/// Each tick (authoritative): a third-person seat's rider gets the seat's
+/// camera as its `MapView` (`seat_view`); other riders their own eye.
 #[allow(clippy::type_complexity)]
 pub fn view(
     vehicles: Query<&HaloVehicle>,
     riders: Query<(Entity, &Seated, &Intent, Option<&MapView>)>,
-    characters: Query<(), With<HaloMovement>>,
+    characters: Query<(), With<Intent>>,
     defs: Res<VehicleDefs>,
     query: SpatialQuery,
     mut commands: Commands,
@@ -189,34 +221,8 @@ pub fn view(
     for (e, seat, intent, have) in &riders {
         let Ok(v) = vehicles.get(seat.vehicle) else { continue };
         let (d, phys) = &defs.0[v.def];
-        let s = &d.seats[seat.seat];
-        let track = (s.flags & seat_flags::THIRD_PERSON_CAMERA != 0)
-            .then(|| d.tracks.get(&s.track))
-            .flatten();
-        let want = track.map(|track| {
-            let pitch = intent.pitch.clamp(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2);
-            let c = command(
-                focus(v, d, phys, seat.seat),
-                track_point(&track.points, pitch),
-                heading(intent.yaw),
-                pitch,
-            );
-            // Structure and scenery, front faces; not characters or
-            // vehicles.
-            let filter = SpatialQueryFilter::default().with_mask(level::mask());
-            let skip = |x: Entity| characters.contains(x) || vehicles.contains(x);
-            let cast = |from: Vec3, to: Vec3| -> Option<f32> {
-                let (a, b) = (to_engine(from), to_engine(to));
-                let len = (b - a).length();
-                let dir = Dir3::new(b - a).ok()?;
-                let hit = query.cast_ray_predicate(a, dir, len, false, &filter, &|x| !skip(x))?;
-                (hit.normal.dot(*dir) < 0.0).then_some(hit.distance / len)
-            };
-            MapView {
-                origin: to_engine(pull_in(&c, &cast)),
-                rotation: Quat::from_rotation_y(intent.yaw) * Quat::from_rotation_x(pitch),
-            }
-        });
+        let skip = |x: Entity| characters.contains(x) || vehicles.contains(x);
+        let want = seat_view(v, d, phys, seat.seat, intent, &query, &skip);
         match (want, have) {
             (Some(w), Some(h)) if *h == w => {}
             (Some(w), _) => {

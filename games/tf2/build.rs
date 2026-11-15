@@ -16,6 +16,8 @@ mod source_hash;
 fn main() {
     let paths = [
         "src/game",
+        // The guns' data: their view models (`[models]`) are in the kit.
+        "data",
         "../../source/engine/src",
         "../../source/formats/src",
         "../../Cargo.lock",

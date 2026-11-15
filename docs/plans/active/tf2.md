@@ -20,7 +20,7 @@ from specs, measurements and the game's own data.
 | M1 a map you can walk on | done (2026-11-15) | `games/tf2`; mount (missing archives skipped); ctf_2fort and cp_badlands converted with team spawns; `tf2:<map>` in the party apps; `$ssbump` drawn |
 | M2a the weapon scripts, `chimera_pack tf2` | done (2026-11-15) | ICE (`game::ice`, ported from the designer's public-domain reference, 2026-11-15; the published triplets pass); `game::scripts` (store/plain, install plus key, none); `dump tf2 --script`, `--ice-probe`; `chimera_pack tf2` (`weapon/<id>` for M2's guns with the decrypted script, `players`, `map/<name>`); not published. Every `.ctx` script (88) decrypts with Thin-ICE and the user's key |
 | M2b TF2 guns as UGG rungs | done (2026-11-15) | the four guns as data with the spec's numbers (the scripts' field mapping a seam), TF2's gun rules as hooks, `c_` weapons bone-merged on the class arms, sounds, TF2 in the party's `GUESTS`, `originals:gun_game_2fort` |
-| M3 classes as bodies, TF2's movement | not started | |
+| M3 classes as bodies, TF2's movement | in progress (2026-11-15) | the classes as data (`game::classes`, data/classes.toml); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health) |
 | M4 more maps and weapons | not started | |
 
 ## 1. Rules for this port
@@ -297,9 +297,10 @@ looked into; it collides the same).
 Left (M2b): the scripts' field mapping (needs a spec written with the key,
 then the ICE probe and the publish above; the sets are now named
 `weapon/tf_weapon_*`); the knockback per point is ours (open question 9,
-probe P3), bullets push nobody; the Minigun's first-person idle sits low
-and angled up (the Heavy arms' `m_idle` as decoded puts `weapon_bone`
-0.9 m below the eye); no explosion look (particles, scorch), no muzzle
+probe P3), bullets push nobody; the Minigun's first-person idle sat low
+and angled up (the Heavy arms' `m_idle` as decoded holds the gun upright
+below the eye; since tf2-guns2 the first person shows the spun pose
+raised by a `view_offset`: `game::view`); no explosion look (particles, scorch), no muzzle
 flash seen in first person; the rocket's crouched offset and the
 per-class shotgun starts wait for classes (M3); a TF2 rung has no knife.
 

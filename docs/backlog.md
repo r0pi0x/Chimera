@@ -2423,6 +2423,27 @@ see. The last pass's notes and open ideas (de_dust2 balance ~71% T,
 de_nuke vent stuck spots, team eco) are in git history and
 docs/tech-debt.md's bot rows.
 
+- **Bots out of Combat Arms' crate, behind designed interfaces** (the
+  user, 2026-11-15). The party apps' bots are Combat Arms' (`games/
+  combat_arms/src/game/bots`): they play every game's guns on every
+  game's maps, yet live in one game's crate, read that game's types,
+  and their console commands carry its prefix (`ca_bot_add`,
+  `ca_bot_kick`, `ca_bot_stop`, `ca_bot_dont_shoot`, `ca_bots`). Wanted:
+  a bots crate of its own below the games, with game-neutral commands
+  (`bot_add` and the rest; the `ca_` names kept as aliases while
+  anything uses them), and what a bot needs from a game stated as
+  interfaces each game fills: the gun's facts (range, automatic or not,
+  projectile speed, charge and heat, when it is ready, splash and its
+  safe distance: bots fire rockets at their own feet today), the
+  character's movement (jump height, crouch, ladders, a vehicle's
+  seat), the map's links (walks, teleporters, ladders), and the facts
+  of a fight (a shot was made, a hit landed, a death). The first of
+  those facts, a shot made by any weapon frame, is the engine's
+  `ShotMade` weapon event, added because Halo's guns run their own
+  frame and `Fired` is the engine frame's hitscan command, not a fact
+  (docs/DESIGN.md); the remaining listeners that mean "a shot
+  happened" move to it as part of this.
+
 ## 5. Console, remaining
 
 The console and overlays are in (chimera/core/src/console.rs, chimera/client/src/client/console.rs).

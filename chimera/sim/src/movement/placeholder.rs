@@ -101,6 +101,7 @@ impl Plugin for PlaceholderMovementPlugin {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn step(
     mut q: Query<(
         Entity,
@@ -111,7 +112,7 @@ fn step(
         &mut MovementState,
         &Collider,
         Option<&MovementSlot>,
-    )>,
+    ), Without<crate::core::Carried>>,
     move_and_slide: MoveAndSlide,
     clock: Res<SimClock>,
     tunings: Res<Tunings>,
