@@ -154,6 +154,9 @@ fn a_ladder_no_game_can_make_is_told_once_then_built_when_a_capable_client_joins
             .count()
     };
     let before = told(&sim);
+    // The map being played is CS:S's: the CS:S-less player can't play on
+    // it, nor on any map of the pool, so the move to the next match fails.
+    sim.server.app.world_mut().insert_resource(chimera_world::map::LoadedMapName("cs_source:de_dust2".into()));
     // The match is over and the hold has run out: the rotation moves on.
     {
         let w = sim.server.app.world_mut();

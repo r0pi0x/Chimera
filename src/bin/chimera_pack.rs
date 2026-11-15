@@ -77,6 +77,11 @@
 //! the server's key (a server store). `base` (beyond Combat Arms'
 //! sounds) comes from `CHIMERA_VFS_LOG` logs (`--from`).
 //!
+//! `chimera_pack sets` also enters a game's declared files (`declared_files`:
+//! Combat Arms' call-out, radio and announcer voices, read by its own loaders
+//! from the install) as the `declared` set and into `common`, whether or not
+//! a run read them; `lean` keeps them there.
+//!
 //! `chimera_pack lean <game> --store <dir> --from <log>...` makes the
 //! game's `base` lean from client runs' `CHIMERA_VFS_LOG` logs (one per
 //! run; `chimera_assets::resolve::lean`): `base` keeps what every run
@@ -795,6 +800,16 @@ fn record_maps(
 /// Whether `sets` merges set `name` into what the manifest has (`base`
 /// and the maps' sets, also recorded from `CHIMERA_VFS_LOG` logs) rather
 /// than replacing it.
+/// The voice and call-out files `game` declares it plays (its own loaders
+/// read them from the install): `sets` puts them into `common`
+/// (`resolve::declare`). CS:S and HL2:DM declare none yet.
+fn declared_files(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<String> {
+    match game {
+        "combat_arms" => combat_arms::game::declared::voice_files(&|p| mount.read(p).ok()),
+        _ => Vec::new(),
+    }
+}
+
 fn merged_set(name: &str) -> bool {
     name == "base" || name == chimera_assets::resolve::COMMON || name.starts_with("map/")
 }
@@ -859,6 +874,18 @@ fn sets(args: &[String]) -> Result<(), String> {
         manifest.sets.insert(name.clone(), kept);
         let (n, plain, stored) = manifest.set_size(&name);
         println!("set {name}: {n} records, {} plain, {} stored", mb(plain), mb(stored));
+    }
+    // What the game declares it plays (voice lines, call-outs): in
+    // `common` whatever a run read (`resolve::declare`; `lean` keeps it).
+    if chimera_assets::resolve::DECLARED.starts_with(only.as_str()) {
+        let files = declared_files(game.info.id, &mount);
+        if !files.is_empty() {
+            let (named, added) = chimera_assets::resolve::declare(&mut manifest, files);
+            let paths = manifest.sets.get(chimera_assets::resolve::DECLARED).cloned().unwrap_or_default();
+            let records: std::collections::BTreeSet<&str> = paths.iter().filter_map(|p| manifest.files.get(p)).map(|f| f.id.as_str()).collect();
+            let stored: u64 = records.iter().map(|id| paths.iter().filter_map(|p| manifest.files.get(p)).find(|f| f.id == *id).map_or(0, |f| f.stored)).sum();
+            println!("set declared: {named} files in the manifest, {added} new to common; {} records, {} stored", records.len(), mb(stored));
+        }
     }
     manifest.save(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     if sign_it {
