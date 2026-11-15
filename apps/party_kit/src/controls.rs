@@ -248,7 +248,7 @@ pub enum Action {
 }
 
 #[derive(Component)]
-struct PageRoot;
+pub(crate) struct PageRoot;
 
 /// The page's systems (the Escape menu's run before them: Esc is the
 /// page's while it is open).

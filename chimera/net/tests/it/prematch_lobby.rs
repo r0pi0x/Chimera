@@ -3,6 +3,7 @@
 //! match waits on its map while a client still downloads (its join held
 //! after the welcome, its `JoinProgress` showing bytes, as the asset
 //! fetch leaves it), every client hears each player's status and bytes,
+//! nobody in play meanwhile (every character staged: dead, no weapon),
 //! then once everyone is ready a countdown and the round with everyone
 //! spawned together; the longest wait starts it anyway (the straggler
 //! joins late); bots are ready at once; `lobby_start` ends it; the next
@@ -33,10 +34,11 @@ use chimera_net::{
 };
 use chimera_sim::{
     SimBasePlugins,
-    minigame::{self, InMinigame, MinigameAppExt, MinigamePlugin, PreMatch},
+    minigame::{self, InMinigame, MinigameAppExt, MinigamePlugin, PreMatch, Staged},
     mode::{Match, Phase},
     movement::placeholder,
     testkit,
+    weapon::Inventory,
 };
 use chimera_world::{
     greybox::GreyboxMapPlugin,
@@ -169,8 +171,8 @@ fn the_lobby_waits_for_a_downloading_player_then_counts_down_and_starts() {
     let h = hold(&mut sim, 1);
     downloading(&mut sim, 1, 10_000_000, 80_000_000);
     assert!(sim.until(600, |s| joined(s, 0)), "client 0 is in");
-    // Client 0 stands frozen at its spawn; the match doesn't start for
-    // client 1's download, however long.
+    // Client 0 is held out of play (staged: dead, no weapon); the match
+    // doesn't start for client 1's download, however long.
     let a = sim.character_of(0).unwrap();
     sim.ticks(30 * HZ);
     assert!(in_lobby(&sim), "still in the lobby");
@@ -184,7 +186,11 @@ fn the_lobby_waits_for_a_downloading_player_then_counts_down_and_starts() {
     {
         let w = sim.server.app.world();
         assert_eq!(w.resource::<Match>().phase, Phase::Waiting);
-        assert!(w.get::<InMinigame>(a).is_some() && w.get::<Dead>(a).is_none(), "client 0 spawned");
+        assert!(
+            w.get::<Staged>(a).is_some() && w.get::<Dead>(a).is_some() && w.get::<InMinigame>(a).is_none(),
+            "client 0 staged"
+        );
+        assert!(w.get::<Inventory>(a).is_none_or(|i| i.weapons.is_empty()), "no weapon in the lobby");
         assert!(w.resource::<FreezeTime>().0, "frozen");
     }
     // The download ends: client 1 loads the map, then the countdown.

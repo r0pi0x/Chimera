@@ -1004,6 +1004,92 @@ bound twice flagged, the UI parity check for both screens (no look-book
 reference frames in `tools/ui-parity/reference/` yet), 720p/1440p/4K
 screenshots.
 
+### M9: staging between matches
+
+Status (2026-11-14): in on `lobby-staging2`. The user's report from
+playtest 7: another game's HUD showed over the lobby, nothing in the
+lobby could be clicked while the map loaded, and Esc gave the in-game
+menu (Disconnect and the rest); the map was loaded, started, the player
+given a gun and only then the lobby screen taken down.
+
+**Before** (traced on `party_kit`'s `lobby_staging::
+trace_match_end_to_next_match`, a two-rung ladder on two test maps, the
+lobby's countdown 1 s, clients through the shell's own load; times are
+the server's clock, s):
+
+| s | What happened |
+|---|---|
+| 0.07 | first join: the client's character spawned dead (`Connecting`) |
+| 0.10 | the client joined: the lobby shows over the game (screen `InGame`), HUD not covered, world drawn, mouse captured, Esc the match's menu |
+| 0.14-0.17 | the lobby still up: the server took the player in and spawned it **alive with its rung-0 gun**, seen on the client |
+| 1.14-1.19 | countdown over: respawned together, the clock starts |
+| 11.16 | match over (results; with UGG's vote, 20 s of vote and 1.6 s reveal) |
+| 19.17 | the hold, the server's `changelevel` |
+| 19.21 | the client hears `ChangingLevel`: the loading panel (input to the menu); **the old map stays loaded** until the new one replaces it |
+| 19.65 | the server's map in: the lobby begins and at 19.66 every player is **alive with a gun** on the new map |
+| 19.68-19.74 | the client loads the map (the old one goes only now); its player alive with a gun at 19.70 |
+| 19.74 | the client's load done: screen back to `InGame` under the lobby: the HUD over the lobby, mouse captured, Esc the match's menu, until the lobby ends at 20.82 |
+
+**After** (the same trace):
+
+| s | What happens |
+|---|---|
+| 0.07 | the joiner's character is staged (`minigame::Staged`: dead, no weapon, out of the game) |
+| 0.10 | the client joined: the lobby owns the screen: HUDs covered, world's view off, input to the menus (mouse free), Esc the lobby's menu |
+| 1.14 | countdown over: everyone let in (`prematch::let_in`), spawned on rung 1 with its gun at 1.16, the clock live at 1.19; the lobby leaves through the logo pass, the cameras and HUDs back |
+| 19.21 | `ChangingLevel` after the match's end: the loading panel covers the world (`WorldCover` `MENU`) and the map left is unloaded under it (`staging::UnloadAtCover`) |
+| 19.66 | the next lobby: everyone staged again (no gun, dead) while the clients load |
+| 19.68-19.75 | the client loads and joins behind the lobby, which owns the screen throughout (no pass under it) |
+| 20.79-20.84 | countdown over: everyone spawns on rung 1, the clock starts |
+
+**The flow now**:
+
+- **Server** (`minigame::runtime`, `chimera_net::prematch`): while
+  `PreMatch` stands, every character (remote players, a listen host's,
+  bots) is staged as it appears (`runtime::hold_out`, first in the
+  rules' chain: `stage` takes its weapons, makes it dead, not solid and
+  `Connecting`, out of the minigame); `join` takes nobody in; a client's
+  `Loaded` during the lobby records its map but doesn't enter it
+  (`server::EntryHeld`). The lobby's end (`prematch::end`) restarts
+  the match and lets everyone in (`let_in`: the join rules' `enter`; a
+  client still loading stays out until it has the map, as a late
+  joiner), so all spawn together on the first rung and the clock
+  starts; the simulation of the match is paused meanwhile (phases held,
+  the end freeze on).
+- **Client** (`chimera_client`): while the lobby shows
+  (`prematch_lobby::lobby_shown`) the world's 3D cameras are off with a
+  blank camera clearing the window (`staging::WorldCover`), the HUDs
+  covered, our Signal HUD too (`hud::LOBBY_COVER`); its Ready and Leave
+  are buttons (`LobbyAction`; Ready works while downloading or loading,
+  the server keeping it, `LobbyAsked`); Leave goes through the app's
+  `LobbyLeaveAsked` (the party's Escape menu answers it). A change of level once the match is over unloads the map
+  left as soon as a cover is up (`staging::UnloadAtCover`, `MapLeft`).
+- **Party apps** (`party_kit`): the lobby owns the screen whatever the
+  menu's screen (`main_menu::owned_by_lobby`): drawn on the menu's camera
+  with the shell's (HUDs') off, the mouse free (`AppMenu::open`), Esc its
+  menu (`esc_menu`, `[[escape]]` with `lobby = true`: Back to the lobby,
+  Settings, Report a bug, Leave the lobby with a confirm,
+  `Page::ConfirmLeave`), no pass for moves under it; the loading panel
+  covers the world too (`cover_world`). A mid-match join has no lobby:
+  straight in after loading, as before.
+- No network change (NET_VERSION stays).
+
+Tests (`apps/party_kit/tests/it/lobby_staging.rs`):
+`nobody_plays_in_the_lobby_and_everyone_spawns_at_its_end`,
+`escape_in_the_lobby_opens_the_lobby_menu`,
+`ready_and_leave_work_while_a_client_still_loads`,
+`the_map_left_is_unloaded_before_the_next_lobby_shows`, and the trace
+(`--nocapture`). The prematch tests (`chimera/net/tests/it/
+prematch_lobby.rs`) check the staged players.
+
+Left: a replicated weapon's despawn reaches a client a few frames after
+the staging (its player shows the old gun under the lobby for up to
+~0.1 s, drawn nowhere); the plain (unthemed) lobby panel has no
+buttons (F3 and Esc only); M8's loading screens (the "Next map" screen
+06) would replace the VGUI loading panel between the match end and the
+lobby; offscreen screenshots of a real level change (not just
+`ui_scene lobby`).
+
 ## 6. Decisions (user, 2026-11-14)
 
 1. Icons (revised 2026-11-14): each game's own kill icon everywhere it

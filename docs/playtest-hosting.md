@@ -396,8 +396,19 @@ Maps and matches:
   connected player has it, showing everyone each player's status
   (connecting, downloading with MB done of the total, loading the map,
   ready; bots are ready at once) and ping; then a countdown and everyone
-  spawns together. Players who join while the match runs join late, as
-  before. The server's log says when it waits, counts down and starts.
+  spawns together. During the lobby nobody is in play: no player has a
+  body or a gun (the server stages them), and each client shows the
+  lobby full screen in place of the match (no HUD, no world drawn, the
+  mouse free: Ready and Leave are buttons, F3 still readies up, and a
+  player still downloading or loading can ready up for when it has the
+  map; Esc opens the lobby's menu: Back to the lobby, Settings, Report a
+  bug, Leave the lobby, which asks first). The next map downloads and
+  loads behind the lobby (each row's progress), and the map left after
+  a match is unloaded under the logo pass's cover, before the lobby
+  shows. At the countdown's end
+  everyone spawns on the first rung and the match goes live through the
+  logo pass. Players who join while the match runs join late, straight
+  into play, as before. The server's log says when it waits, counts down and starts.
   Cvars (on the command line, `+mp_lobby_max_wait 120`, or the console):
 
   | Cvar | Default | Meaning |

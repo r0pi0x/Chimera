@@ -8,8 +8,11 @@
 # leaves half a row before it.
 #
 # [[escape]]: the Escape menu's entries, in order. `action` is one of
-# resume, options, host, vote, disconnect, feedback (the report dialog), quit; `when` gates it: always,
+# resume, options, host, vote, disconnect, feedback (the report dialog),
+# leave (the pre-match lobby, asked first), quit; `when` gates it: always,
 # host (not a network client), main_menu (the app has this main menu).
+# `lobby = true`: an entry of the pre-match lobby's menu (Esc while the
+# lobby owns the screen) instead of the match's.
 #
 # [[play]]: the Play page's Server tab, each row a cvar set when the game
 # starts (its value shown from the cvar when the page opens, `default` if
@@ -78,6 +81,26 @@ action = "feedback"
 [[escape]]
 label = "Quit"
 action = "quit"
+
+[[escape]]
+label = "Back to the lobby"
+action = "resume"
+lobby = true
+
+[[escape]]
+label = "Settings"
+action = "options"
+lobby = true
+
+[[escape]]
+label = "Report a bug"
+action = "feedback"
+lobby = true
+
+[[escape]]
+label = "Leave the lobby"
+action = "leave"
+lobby = true
 
 [[play]]
 label = "Map"

@@ -50,6 +50,8 @@ pub struct VoteShown {
 
 /// What to draw.
 pub struct Drawn<'a> {
+    /// The pre-match lobby's menu: its lines (the match hasn't started).
+    pub lobby: bool,
     pub page: Page,
     pub focus: usize,
     pub focus_since: f64,
@@ -111,7 +113,8 @@ pub fn spawn(
     ui.lockup(c, panel, images, icons, lay("lockup"));
     let ps = ui.boxed(c, panel, UiStyle { gap: Some(0.7), margin: Some([2.4, 0.0, 1.4, 0.0].into()), ..UiStyle::row() });
     ui.mark(c, ps, Tone::Acc, 0.5, 0.5);
-    ui.text(c, ps, Role::Mono, 0.58, Tone::Fg2, "Paused for you only: the match goes on");
+    let paused = if d.lobby { "The match hasn't started: the lobby waits" } else { "Paused for you only: the match goes on" };
+    ui.text(c, ps, Role::Mono, 0.58, Tone::Fg2, paused);
     let list = ui.boxed(c, panel, UiStyle::column());
     for (i, e) in d.entries.iter().enumerate() {
         entry(c, ui, list, i, e, d);
@@ -126,17 +129,29 @@ pub fn spawn(
     }
     // The keys and the live line at the foot.
     let foot = ui.boxed(c, root, UiStyle { gap: Some(1.6), ..UiStyle::row() }.abs([Some(lay("panel_x")), None, None, Some(lay("foot_y"))]));
-    for (k, what) in [("↑↓", "Select"), ("Enter", "Confirm"), ("Esc", "Resume")] {
+    for (k, what) in [("↑↓", "Select"), ("Enter", "Confirm"), ("Esc", if d.lobby { "Lobby" } else { "Resume" })] {
         let g = ui.boxed(c, foot, UiStyle { gap: Some(0.45), ..UiStyle::row() });
         ui.kbd(c, g, k, 0.56, Tone::Fg);
         ui.text(c, g, Role::Mono, 0.56, Tone::Fg2, what);
     }
     // In the keys' line.
     let live = ui.boxed(c, foot, UiStyle { gap: Some(0.6), margin: Some([0.0, 0.0, 0.0, 1.4].into()), ..UiStyle::row() });
-    ui.mark(c, live, Tone::Threat, 0.6, 0.6);
-    ui.text(c, live, Role::Mono, 0.52, Tone::Fg2, "Match live • you can still be hit");
-    if let Page::ConfirmDisconnect(n) = d.page {
-        confirm(c, ui, root, n, d.focus);
+    if d.lobby {
+        ui.mark(c, live, Tone::Acc, 0.6, 0.6);
+        ui.text(c, live, Role::Mono, 0.52, Tone::Fg2, "Lobby • the match starts when everyone is ready");
+    } else {
+        ui.mark(c, live, Tone::Threat, 0.6, 0.6);
+        ui.text(c, live, Role::Mono, 0.52, Tone::Fg2, "Match live • you can still be hit");
+    }
+    match d.page {
+        Page::ConfirmDisconnect(n) => {
+            let who = if n == 1 { "1 player".to_string() } else { format!("{n} players") };
+            confirm(c, ui, root, &format!("End the game for {who}?"), "You are the host: leaving closes the server.", "End the game", d.focus);
+        }
+        Page::ConfirmLeave => {
+            confirm(c, ui, root, "Leave the lobby?", "You go back to the main menu; the match starts without you.", "Leave", d.focus);
+        }
+        _ => {}
     }
     root
 }
@@ -249,7 +264,8 @@ fn vote_box(c: &mut Commands, ui: &Ui, panel: Entity, v: &VoteShown) {
 }
 
 /// The host's leave: a modal with the threat bar, Stay first.
-fn confirm(c: &mut Commands, ui: &Ui, root: Entity, people: usize, focus: usize) {
+#[allow(clippy::too_many_arguments)]
+fn confirm(c: &mut Commands, ui: &Ui, root: Entity, title: &str, line: &str, go: &str, focus: usize) {
     let shade = c
         .spawn((
             Node {
@@ -268,12 +284,11 @@ fn confirm(c: &mut Commands, ui: &Ui, root: Entity, people: usize, focus: usize)
     let m = ui.modal(c, shade, 32.0, true);
     let ttl = ui.boxed(c, m, UiStyle { gap: Some(0.6), margin: Some([0.7, 0.0, 0.6, 0.0].into()), ..UiStyle::row() });
     ui.mark(c, ttl, Tone::Threat, 0.8, 0.9);
-    let who = if people == 1 { "1 player".to_string() } else { format!("{people} players") };
-    ui.text(c, ttl, Role::DisplayBold, 1.35, Tone::Fg, &format!("End the game for {who}?"));
-    ui.paragraph(c, m, Role::Mono, 0.62, Tone::Fg2, "You are the host: leaving closes the server.");
+    ui.text(c, ttl, Role::DisplayBold, 1.35, Tone::Fg, title);
+    ui.paragraph(c, m, Role::Mono, 0.62, Tone::Fg2, line);
     let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
     let stay = ui.button(c, acts, Kind::Primary, "Stay", Some("Esc"), 2.4, State::focused(focus == 0));
     c.entity(stay).insert(Action::Back);
-    let end = ui.button(c, acts, Kind::Danger, "End the game", None, 2.4, State::focused(focus == 1));
+    let end = ui.button(c, acts, Kind::Danger, go, None, 2.4, State::focused(focus == 1));
     c.entity(end).insert(Action::DisconnectYes);
 }

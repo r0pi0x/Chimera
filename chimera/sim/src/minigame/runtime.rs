@@ -40,8 +40,12 @@
 //!   `core::RespawnDue`).
 //! - Held (`MatchHold`, a server changing map for the next match): no
 //!   one joins or respawns, the phases don't step. In the pre-match lobby
-//!   (`PreMatch`) players join and spawn but are frozen (as at the end)
-//!   and the phases don't step.
+//!   (`PreMatch`) nobody plays: every character (players, a listen
+//!   host's, bots) is staged (`Staged`, `stage`: no weapons, dead, not
+//!   solid, out of the game as `core::Connecting`, not in the minigame),
+//!   new ones as they come (`hold_out`, first in the chain), and the
+//!   phases don't step; the lobby's end (`chimera_net::prematch`) lets
+//!   them in (`unstage`) and everyone spawns together on the first rung.
 //! - The match's end pauses everyone (`hold_the_end`): from the win (the
 //!   round over) through the intermission, the match over and a map
 //!   change's hold, every intent (players' and bots') keeps only its look
@@ -54,7 +58,7 @@
 //!   mode's observer runs at once: the ladder's melee demotion).
 //! - `take_weapon`: a weapon out of a character's hands and inventory, for
 //!   the rules' swaps.
-//! - The per-tick work (`plugin`, in `SimSet::Rules`, chained: `join`, the
+//! - The per-tick work (`plugin`, in `SimSet::Rules`, chained: `hold_out`, `join`, the
 //!   mode's update, `step_phases`, `respawn_dead`, the dead held,
 //!   `end_protection`, `wins::publish`, `hold_the_end`) is normal
 //!   systems with declared queries (the results are an observer of the
@@ -117,6 +121,65 @@ pub struct JoinOrder(pub u64);
 #[derive(Component, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 #[component(storage = "SparseSet")]
 pub struct InMinigame;
+
+/// A character the pre-match lobby holds out of play (`PreMatch`,
+/// `stage`): no weapons, dead and not solid, out of the game
+/// (`core::Connecting`), not in the minigame. `unstage` lets it in.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
+pub struct Staged;
+
+/// `e` held out of play for the lobby (`Staged`): its weapons taken, dead
+/// (since now) at no health, not solid, out of the game
+/// (`core::Connecting`, which keeps the rules from taking it in or
+/// respawning it), out of the minigame, its protection gone.
+pub fn stage(world: &mut World, e: Entity) {
+    if world.get_entity(e).is_err() {
+        return;
+    }
+    unprotect(world, e);
+    crate::weapon::equip::strip(world, e);
+    let now = world.get_resource::<SimClock>().map_or(0.0, |c| c.now);
+    let mut ent = world.entity_mut(e);
+    if let Some(mut h) = ent.get_mut::<Health>() {
+        h.current = 0.0;
+    }
+    if ent.get::<Dead>().is_none() {
+        ent.insert(Dead { since: now });
+    }
+    ent.remove::<InMinigame>().insert((Staged, Connecting, ColliderDisabled));
+}
+
+/// `e` out of the lobby's hold: `Staged` gone, still out of the game
+/// (`core::Connecting`) until its way in (a network game's join rules,
+/// `chimera_net::prematch`) takes it into the game, whereupon the
+/// runtime takes it in and spawns it (`join`).
+pub fn unstage(world: &mut World, e: Entity) {
+    if let Ok(mut ent) = world.get_entity_mut(e) {
+        ent.remove::<Staged>();
+    }
+}
+
+/// The characters the lobby holds out: in a game (players and bots), not
+/// spectating or an NPC, not staged yet.
+type ToStage = (With<Intent>, With<Health>, Without<Staged>, Without<Spectating>, Without<Npc>);
+
+/// While the pre-match lobby is up (`PreMatch`), every character not yet
+/// staged is (`stage`): those there when it began, joiners, bots added.
+fn hold_out(lobby: Option<Res<super::PreMatch>>, fresh: Query<Entity, ToStage>, mut commands: Commands) {
+    if lobby.is_none() {
+        return;
+    }
+    let new: Vec<Entity> = fresh.iter().collect();
+    if new.is_empty() {
+        return;
+    }
+    commands.queue(move |world: &mut World| {
+        for e in new {
+            stage(world, e);
+        }
+    });
+}
 
 /// Spawn protection the runtime gave: its windows are the character's
 /// `core::SpawnProtected`, its `core::God` (while damage is blocked) the
@@ -433,8 +496,13 @@ type Joining = (With<Intent>, With<Health>, Without<InMinigame>, Without<Connect
 /// declared query; taking them in (the mode's team, the rules' `Joined`,
 /// the spawn) is world work, queued and applied at the sync point before
 /// the phases step (`plugin`'s chain), in the query's order.
-fn join(joining: Query<(Entity, &Team), Joining>, hold: Option<Res<super::MatchHold>>, mut commands: Commands) {
-    if hold.is_some() {
+fn join(
+    joining: Query<(Entity, &Team), Joining>,
+    hold: Option<Res<super::MatchHold>>,
+    lobby: Option<Res<super::PreMatch>>,
+    mut commands: Commands,
+) {
+    if hold.is_some() || lobby.is_some() {
         return;
     }
     let new: Vec<(Entity, u8)> = joining.iter().map(|(e, t)| (e, t.0)).filter(|(_, t)| *t != 255).collect();
@@ -776,6 +844,7 @@ pub(super) fn plugin(app: &mut App) {
                 (
                     super::spawns::prepare_spots,
                     super::spawn_score::remember_danger,
+                    hold_out,
                     join,
                     super::ladder::per_tick(),
                     super::climb::track_rungs,

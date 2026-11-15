@@ -67,6 +67,7 @@ pub mod trace_capture;
 pub mod game_text;
 pub mod senses;
 pub mod spectate;
+pub mod staging;
 pub mod swap_effect;
 pub mod text_warm;
 pub mod ui_parity;

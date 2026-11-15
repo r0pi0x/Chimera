@@ -195,6 +195,14 @@ started; the user asked to avoid server lag while testers play.
   confirm in a playtest): fit the frame to the width.
 - **Join page Recent** (fixed in 7.1, confirm in a playtest): it must
   record, show and rejoin.
+- **The lobby between matches** (fixed on `lobby-staging2`, confirm in
+  a playtest; docs/plans/active/ugg-ui.md M9): another game's HUD showed
+  over the lobby, nothing could be clicked while the map loaded, Esc gave
+  the match's menu, and players were spawned with a gun as soon as the
+  map was in. Now the lobby owns the screen and the input (no HUD, no
+  world drawn, Ready and Leave buttons, Esc its own menu), nobody is in
+  play until the countdown's end, and the map left is unloaded first.
+  Left: M9's "Left".
 - **Infected ship turrets** (combat_arms:auto-turret_infecteds_01/02/03;
   fixed in 7.1, confirm in a playtest): they kill nobody; now a
   `ladder_exclusions` entry, so drawn ladders skip them.

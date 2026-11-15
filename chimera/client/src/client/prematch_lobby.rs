@@ -1,8 +1,19 @@
 //! The pre-match lobby's screen (`chimera_net::prematch`: a server holding
-//! a new match until every player has its map), drawn by the shell over
-//! the frozen map and its HUD, and over the loading panel of a player
-//! still downloading (an app whose menu draws on its own camera moves
-//! `LobbyRoot` there, as the party apps' main menu does with the console).
+//! a new match until every player has its map), drawn by the shell in
+//! place of the match: while it shows (`lobby_shown`) it owns the screen
+//! and the input (docs/plans/active/ugg-ui.md M9, "Staging between
+//! matches"): the world's view off (`staging::WorldCover`), the HUDs
+//! covered (`hud::HudCover`'s `LOBBY_COVER`, our Signal HUD too), no
+//! player in play (the server stages everyone: `minigame::Staged`), and
+//! an app's menu owns the mouse and Esc (the party apps': their lobby
+//! menu). It shows over the loading panel of a player still downloading
+//! or loading (an app whose menu draws on its own camera moves
+//! `LobbyRoot` there, as the party apps' main menu does with the
+//! console). Its actions (`LobbyAction`, the themed panel's buttons):
+//! Ready (the key's line; a player still downloading or loading readies
+//! up for when it has the map, `LobbyAsked`) and Leave (the app's way
+//! out, `LobbyLeaveAsked` where it answers it, `LeaveAnswered`, else
+//! `disconnect`).
 //!
 //! - **The head**: the mode (the minigame's name), the map big, and what
 //!   it waits for: "Waiting for 2 players..." with the time left of the
@@ -60,12 +71,115 @@ pub struct PreMatchLobbyPlugin;
 
 impl Plugin for PreMatchLobbyPlugin {
     fn build(&self, app: &mut App) {
+        super::staging::staging(app);
+        super::hud::hud_cover(app);
         app.init_resource::<LobbyView>()
             .init_resource::<LobbyGate>()
+            .init_resource::<LobbyAsked>()
+            .add_message::<LobbyAction>()
             .add_observer(pass_covered)
             .add_systems(Startup, spawn)
-            .add_systems(Update, (follow.in_set(LobbyFollow), draw.after(LobbyFollow).run_if(not(super::lobby_panel::themed))));
+            .add_systems(
+                Update,
+                (
+                    follow.in_set(LobbyFollow),
+                    cover.after(LobbyFollow),
+                    act.after(LobbyFollow),
+                    draw.after(LobbyFollow).run_if(not(super::lobby_panel::themed)),
+                ),
+            );
         super::lobby_panel::add(app);
+    }
+}
+
+/// Whether the lobby's screen is up (`LobbyView::shown`): it owns the
+/// screen and the input (no HUD, no world drawn, the mouse free; an app's
+/// Escape opens its lobby menu).
+pub fn lobby_shown(world: &World) -> bool {
+    world.get_resource::<LobbyView>().is_some_and(|v| v.shown)
+}
+
+/// While the lobby shows, it stands in for the match: the world's view
+/// off (`staging::WorldCover`) and the HUDs covered (`hud::HudCover`,
+/// our Signal HUD too).
+fn cover(
+    view: Res<LobbyView>,
+    mut world: ResMut<super::staging::WorldCover>,
+    mut huds: ResMut<super::hud::HudCover>,
+) {
+    super::staging::WorldCover::put(&mut world, super::staging::LOBBY, view.shown);
+    super::hud::HudCover::put(&mut huds, super::hud::LOBBY_COVER, view.shown);
+}
+
+/// What the lobby's buttons do (also sent by tests): the panel's Ready
+/// (the key's line: the host's start, a player's ready or not) and
+/// Leave.
+#[derive(Message, Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LobbyAction {
+    Ready,
+    Leave,
+}
+
+/// What a player asked of this lobby while not on its map yet (still
+/// downloading or loading): ready (`lobby_ready 1`) or not; reset when
+/// the lobby goes.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LobbyAsked(pub bool);
+
+/// An app that answers the lobby's Leave itself (`LobbyLeaveAsked`: the
+/// party apps ask first, in their Escape menu); without it, Leave is
+/// `disconnect`.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct LeaveAnswered;
+
+/// The lobby's Leave was pressed (`LobbyAction::Leave`) in an app that
+/// answers it (`LeaveAnswered`).
+#[derive(Event, Clone, Copy, Debug)]
+pub struct LobbyLeaveAsked;
+
+/// The lobby's actions: Ready runs what the key would (a player not yet
+/// on the map readies up all the same: the server keeps it for when it
+/// is), Leave the app's way out (`LobbyLeaveAsked`, else `disconnect`).
+fn act(
+    mut actions: MessageReader<LobbyAction>,
+    view: Res<LobbyView>,
+    mut asked: ResMut<LobbyAsked>,
+    answered: Option<Res<LeaveAnswered>>,
+    mut console: Option<ResMut<crate::console::Console>>,
+    mut commands: Commands,
+) {
+    if !view.shown {
+        actions.clear();
+        if asked.0 {
+            asked.0 = false;
+        }
+        return;
+    }
+    for a in actions.read() {
+        let line = match a {
+            LobbyAction::Ready => match view.key_line() {
+                Some("lobby_start") => Some("lobby_start".to_string()),
+                Some(_) => {
+                    let ready = view.rows.iter().any(|r| r.local && r.status == status::READY);
+                    Some(format!("lobby_ready {}", if ready { 0 } else { 1 }))
+                }
+                // Still downloading or loading: kept on the server for
+                // when it has the map.
+                None if !view.hosting && view.rows.iter().any(|r| r.local) => {
+                    asked.0 = !asked.0;
+                    Some(format!("lobby_ready {}", if asked.0 { 1 } else { 0 }))
+                }
+                None => None,
+            },
+            LobbyAction::Leave if answered.is_some() => {
+                commands.trigger(LobbyLeaveAsked);
+                None
+            }
+            LobbyAction::Leave => Some("disconnect".to_string()),
+        };
+        if let (Some(line), Some(c)) = (line, console.as_deref_mut()) {
+            c.submit(line);
+        }
     }
 }
 

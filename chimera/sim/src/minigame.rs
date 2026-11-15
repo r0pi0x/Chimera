@@ -37,8 +37,9 @@
 //!   for the next one; `start` lifts it. `PreMatch` (a server's pre-match
 //!   lobby, `chimera_net::prematch`, which begins at each new
 //!   `Minigames::starts`)
-//!   lets players join and spawn but freezes everyone and holds the
-//!   phases until it ends with `restart`.
+//!   holds every character out of play (`Staged`: no weapons, dead, out
+//!   of the game) and the phases until it ends with `restart`, which
+//!   lets them in to spawn together.
 //! - `MinigameEvent`: named events (`rung_up`, `rung_down`, `match_won`,
 //!   the ladder's `last_rung`, `suicide_down` and `lead_taken`,
 //!   `lead_lost`, `lead_tied`)
@@ -116,7 +117,7 @@ use bevy::prelude::*;
 
 pub use def::MinigameDef;
 pub use results::{MatchResults, NextMatch};
-pub use runtime::{InMinigame, JoinOrder, Protected};
+pub use runtime::{InMinigame, JoinOrder, Protected, Staged};
 
 use crate::{
     console::ConsoleAppExt,
@@ -387,10 +388,11 @@ pub fn start(world: &mut World, id: &str) -> Result<&'static MinigameDef, String
 }
 
 /// The pre-match lobby (a server's: `chimera_net::prematch`): while it is
-/// in, players join and spawn as usual but stand frozen (the match's
-/// end freeze, `runtime::end_holds`) and the phases don't step, so
-/// nothing counts until the lobby ends with `restart` (everyone spawns
-/// again together). `start` lifts it.
+/// in, nobody plays: every character is held out (`runtime::stage`:
+/// `Staged`, no weapons, dead, out of the game), the match's end freeze
+/// holds (`runtime::end_holds`) and the phases don't step, so nothing
+/// counts until the lobby ends with `restart` and lets them in
+/// (`runtime::unstage`; everyone spawns together). `start` lifts it.
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct PreMatch;
 
