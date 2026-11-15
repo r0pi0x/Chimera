@@ -41,7 +41,7 @@ use halo_ce::{
 /// A two-bone set with `slots` (slot, frames, loop frame), each a base
 /// animation turning bone 0 a little per frame; `moving` and `overlays`
 /// as overlays moving bone 1.
-fn set_of(slots: &[(FirstPersonSlot, usize, i32)]) -> AnimSet {
+pub(crate) fn set_of(slots: &[(FirstPersonSlot, usize, i32)]) -> AnimSet {
     let defaults = vec![(Quat::IDENTITY, Vec3::ZERO), (Quat::IDENTITY, Vec3::X)];
     let mut set = AnimSet {
         defaults: defaults.clone(),
@@ -123,7 +123,7 @@ fn rifle() -> AnimSet {
 }
 
 /// Ticks the view stays in its current state, ticking with no input.
-fn lasts(view: &mut HaloView, set: &AnimSet) -> u32 {
+pub(crate) fn lasts(view: &mut HaloView, set: &AnimSet) -> u32 {
     let state = view.state;
     // The tick of the cue showed frame 0.
     let mut n = 1;

@@ -33,7 +33,7 @@ use crate::{
         body::load::DONOR_MAP,
         maps::map_path,
         vitality::Vitality,
-        weapons::{HaloGun, HaloWeapon, tick::MagazineMode},
+        weapons::{HaloGun, HaloHands, HaloWeapon, tick::MagazineMode},
     },
 };
 
@@ -174,6 +174,7 @@ pub fn collect(
     time: Res<Time>,
     me: Query<Me, With<LocalPlayer>>,
     guns: Query<(&HaloGun, &HaloWeapon)>,
+    hands: Query<&HaloHands, With<LocalPlayer>>,
     others: Query<Them, With<Health>>,
     camera: Query<&GlobalTransform, With<FirstPersonCamera>>,
     window: Query<&Window, With<PrimaryWindow>>,
@@ -195,8 +196,10 @@ pub fn collect(
         body: vitality.map_or_else(|| health.map_or(0.0, |h| h.current), |v| v.body),
         depleted: vitality.is_some_and(|v| v.depleted),
         weapon,
-        grenades: 0,
-        throwing: false,
+        // The current type's count (frags first: `grenades::Throw::current`).
+        grenades: hands.get(me_e).map_or(0, |h| i32::from(h.throw.counts[h.throw.current().unwrap_or(0)])),
+        throwing: hands.get(me_e).is_ok_and(|h| h.grenade_held),
+        grenade_kind: hands.get(me_e).map_or(0, |h| h.throw.current().unwrap_or(0)),
     };
     let eye = camera.iter().next().unwrap_or(at);
     let f = eye.forward();

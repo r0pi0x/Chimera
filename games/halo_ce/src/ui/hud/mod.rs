@@ -34,7 +34,9 @@
 //!
 //! Known shortcuts: see `draw`; the motion tracker ignores `hud_radar`
 //! (the party apps' radar setting is about map overviews, and the tracker
-//! reads none); grenade counts are 0 (no grenades yet).
+//! reads none). The grenade HUD is the current type's (frags while any
+//! are left, else plasma: there is no button to change the type), with its
+//! count from the local player's `HaloHands`.
 
 pub mod data;
 pub mod draw;

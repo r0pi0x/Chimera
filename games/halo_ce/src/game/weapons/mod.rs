@@ -75,7 +75,7 @@
 //! - `systems::HaloFired`: each round with its trigger (1: the charged
 //!   bolt), the firing effect entry (the plasma rifle's barrel), last round,
 //!   misfire, origin, every projectile's direction and tracer flag, heat and
-//!   battery after it;
+//!   battery after it, a guided projectile's target;
 //! - `systems::HaloImpact` (server): each projectile segment, what it met
 //!   (a character, the level), the normal, the material type, its tracer;
 //! - `systems::HaloStuck` (server): a needle or plasma grenade stuck in a
@@ -85,10 +85,13 @@
 //!   needle's detonation, where, the supercombine, its damage effects (the
 //!   explosions' effects and shock waves);
 //! - `systems::HaloPush` (server): a push on a character;
-//! - `HaloProjectile` entities (server; not replicated yet): rockets,
-//!   needles, flames, bolts and grenades in flight, held or stuck;
-//! - `pickups::HaloItem` entities (server; not replicated yet): items
-//!   lying on the map, with what they are (weapon, grenade, powerup);
+//! - `HaloProjectile` entities (server): rockets, needles, flames, bolts
+//!   and grenades in flight, held or stuck (the grenades are drawn and
+//!   reach the clients as `fx::objects` shows them; the rest are flown
+//!   again from the shot, `fx::shots`);
+//! - `pickups::HaloItem` entities (server): items lying on the map, with
+//!   what they are (weapon, grenade, powerup), shown by `fx::objects`;
+//!   `pickups::HaloTaken`: one taken, by whom (its pickup sound);
 //! - `tick::HaloGun` on the weapon: `heat`, `age` (the battery is
 //!   `1 - age`), `overheated`, `overheat_exit`, `error`, `rate_of_fire`,
 //!   `zoom`, `overcharged`, `HaloGun::charge` (the charged fraction), the
@@ -110,7 +113,7 @@
 //! implemented beyond the switch; inventory weapons only tick while
 //! carried by a holder (a dropped plasma rifle does not cool on the
 //! ground); the grenade button is the named action `grenade`, which the
-//! front end binds (not bound here).
+//! front end binds (`ui::binds`, G in `DEFAULT_BINDS` and the bundle's).
 
 pub mod explode;
 pub mod flight;
@@ -298,6 +301,7 @@ impl Plugin for HaloWeaponsPlugin {
             .add_message::<systems::HaloDetonation>()
             .add_message::<systems::HaloStuck>()
             .add_message::<systems::HaloPush>()
+            .add_message::<pickups::HaloTaken>()
             .add_systems(Predict::Weapons, systems::run.before(WeaponFrame))
             .add_systems(
                 FixedUpdate,

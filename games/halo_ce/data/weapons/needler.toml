@@ -11,11 +11,19 @@ base = "halo_ce:gun"
 slot = 0
 class = "smg"
 
+# Its models (models.md "Which models the game draws where", "The other
+# first-person weapon models"; weapons.md "References"): seen in first
+# person with the arms (`game::view`), held in the Spartan's hand.
+[models]
+view = 'weapons\needler\fp\fp'
+world = 'weapons\needler\needler'
+
 [hud]
 name = "Needler"
 
 [hooks."halo_ce:weapon"]
 tag = 'weapons\needler\needler'
+label = "ne"
 flags = 0
 # The needler type.
 weapon_type = 2

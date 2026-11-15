@@ -139,7 +139,10 @@ fn a_session_of_matches_stops_making_tables() {
     // 351 of them characters', and 40 more after the fourth match; Halo's
     // four guns as rungs, its stand-in movement and shield parts on and
     // off with them, about 1,220, a few new after the sixth; its eight,
-    // more Halo rungs to arrive on, about 1,300).
+    // more Halo rungs to arrive on, about 1,300; with TF2's guns too, 1,367
+    // and 104 more after the fourth, until Halo's movement and vitality
+    // went on and off in one move and its kick stayed on from the spawn:
+    // 1,237, 70 more, 5 of them with Halo's parts).
     let made = chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20);
     eprintln!("{made}");
     assert!(

@@ -23,7 +23,8 @@
 //! created item's "last owned" time is advanced by its period less 900
 //! ticks, and every item not held for 900 ticks is deleted (so a map item
 //! untaken is replaced, the two overlapping one tick; a dropped weapon
-//! lives 901 ticks).
+//! lives 901 ticks). A dead unit drops its Halo weapons where it died
+//! (`drop_on_death`), on a map whose pickups play.
 //!
 //! Taking (`take`, each tick, an item within a living unit's bounding
 //! sphere): a powerup is used at once unless its effect refuses it
@@ -39,8 +40,9 @@
 //! weapon set substitution is set 0's (normal) and only the flamethrower
 //! and gravity rifle rule applies; the game type's options (no shields,
 //! invisible players, infinite grenades) are not read; a swap with a weapon
-//! of the same tag (a fresher plasma weapon) is not offered; a dead player
-//! drops no weapons (the engine's own death rules).
+//! of the same tag (a fresher plasma weapon) is not offered; a dead
+//! player's weapons drop where its body stands, at once (no throw), and its
+//! grenades are not dropped.
 
 use blam_formats::{
     cache::{MapFile, class},
@@ -221,6 +223,32 @@ pub struct HaloItem {
     pub last_owned: i64,
     /// The netgame entry that made it.
     pub entry: Option<usize>,
+}
+
+/// An item taken (for presentation: its pickup sound for the taker): by
+/// whom, the item's tag, where it lay (metres).
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct HaloTaken {
+    pub unit: Entity,
+    pub tag: String,
+    pub at: Vec3,
+}
+
+/// An item's object tag (what it is drawn as and its pickup sound): a
+/// weapon's tag, a grenade's, a powerup's equipment.
+pub fn item_tag(item: &Item, grenades: &GrenadeData, spartan: &super::super::vitality::Spartan) -> String {
+    match item {
+        Item::Weapon { id, .. } => guns().into_iter().find(|(i, _)| i == id).map(|(_, g)| g.tag).unwrap_or_default(),
+        Item::Grenade(k) => if *k == FRAG { grenades.frag.tag.clone() } else { grenades.plasma.tag.clone() },
+        Item::Powerup(p) => {
+            let p2 = &spartan.powerups;
+            match p {
+                Powerup::Overshield => p2.overshield.tag.clone(),
+                Powerup::Camouflage => p2.active_camouflage.tag.clone(),
+                Powerup::Health => p2.health_pack.tag.clone(),
+            }
+        }
+    }
 }
 
 /// The item clock: game time in Halo ticks since the entries were made,
@@ -425,6 +453,8 @@ pub fn take(world: &mut World) {
                 debug!("halo_ce: {unit:?} took {:?}", item.item);
                 gone.push(*ie);
                 world.despawn(*ie);
+                let tag = item_tag(&item.item, &grenades, &spartan);
+                world.write_message(HaloTaken { unit, tag, at: *at });
             }
         }
     }
@@ -475,6 +505,40 @@ fn swap(world: &mut World, unit: Entity, at: Vec3, id: &'static str, loaded: i16
     }
 }
 
+/// A dead unit's Halo weapons dropped where it died (multiplayer_rules.md
+/// 5.4: unattached from then, so they live 901 ticks; one that cannot be
+/// fired is deleted at once, weapons.md 3), on maps whose pickups play (a
+/// netgame entry exists: a party's gun game drops nothing).
+#[allow(clippy::type_complexity)]
+pub fn drop_on_death(
+    mut died: MessageReader<chimera_core::core::Died>,
+    entries: Query<(), With<NetgameEntry>>,
+    units: Query<(&Transform, &Inventory)>,
+    guns: Query<(&Weapon, &HaloGun, &HaloWeapon)>,
+    clock: Res<ItemClock>,
+    mut commands: Commands,
+) {
+    let deaths: Vec<Entity> = died.read().map(|d| d.entity).collect();
+    if entries.is_empty() {
+        return;
+    }
+    for unit in deaths {
+        let Ok((at, inv)) = units.get(unit) else { continue };
+        for w in &inv.weapons {
+            let Ok((weapon, g, hw)) = guns.get(*w) else { continue };
+            let size = hw.0.magazine.map_or(0, |m| m.rounds_loaded_maximum);
+            if g.age >= 1.0 || (size > 0 && g.loaded <= 0 && g.reserve <= 0) {
+                continue;
+            }
+            commands.spawn((
+                Name::new("halo_ce item"),
+                Transform::from_translation(at.translation),
+                HaloItem { item: Item::Weapon { id: weapon.id, loaded: g.loaded, reserve: g.reserve, age: g.age }, last_owned: clock.time, entry: None },
+            ));
+        }
+    }
+}
+
 /// Spawn an entry (tests and tools): what the map's entity would make.
 pub fn spawn_entry(world: &mut World, entry: NetgameEntry) -> Entity {
     world.spawn((Name::new(format!("halo_ce netgame equipment {}", entry.index)), entry)).id()
@@ -483,5 +547,5 @@ pub fn spawn_entry(world: &mut World, entry: NetgameEntry) -> Entity {
 /// The pickups' systems, in order: the entries from the map, the clock,
 /// the taking.
 pub fn systems() -> bevy::ecs::schedule::ScheduleConfigs<bevy::ecs::system::ScheduleSystem> {
-    (spawn_entries, clock, take).chain()
+    (spawn_entries, clock, take, drop_on_death).chain()
 }

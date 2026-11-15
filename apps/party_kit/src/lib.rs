@@ -263,11 +263,12 @@ impl PluginGroup for PartyPlugins {
 /// (`+speed`), Ctrl ducks. HL2:DM: Shift sprints (`+speed`), Ctrl ducks,
 /// Alt walks, Z zooms the suit (`+zoom`; CS:S's Z is its radio, a game's own layer). The shared binds are the default ones (the gameplay game's);
 /// the Controls page (`controls`) edits each.
-/// Halo has no binds of its own (no player is Halo's: it lends only maps).
-pub static GAME_BINDS: [(&str, &[(&str, &str)]); 3] = [
+/// Halo: F melees, G throws a grenade (a Halo rung's player is Halo's).
+pub static GAME_BINDS: [(&str, &[(&str, &str)]); 4] = [
     (BASE.info.id, BASE.binds),
     (BUNDLES[0].info.id, BUNDLES[0].binds),
     (BUNDLES[1].info.id, BUNDLES[1].binds),
+    (BUNDLES[2].info.id, BUNDLES[2].binds),
 ];
 
 /// The widest player the party's games make (half, m): Source's, 16 u.

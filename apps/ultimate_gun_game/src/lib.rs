@@ -425,7 +425,7 @@ mod tests {
         for (game, binds) in &party_kit::GAME_BINDS {
             console.ship_layer(game, binds);
         }
-        assert_eq!(party_kit::GAME_BINDS.len(), 3);
+        assert_eq!(party_kit::GAME_BINDS.len(), 4);
         for (game, _) in &party_kit::GAME_BINDS {
             assert_eq!(console.effective_binds(Some(game)).get("f10").map(String::as_str), Some("feedback"), "{game}");
         }

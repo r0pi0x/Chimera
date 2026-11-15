@@ -12,16 +12,17 @@
 //!   as damage).
 //! - `Part::base_class` is the build-time class the engine dispatches on.
 //!
-//! Known shortcuts: particle systems (`pctl`), lens flares (`lens`) and
-//! glows (`glw!`) are not read (none of the four weapons' firing or impact
-//! effects makes a particle system; lens flares are named by reference
-//! only); a light's gel maps and periodic animation functions, a decal's
+//! The particle system `pctl` is `system::ParticleSystem`.
+//!
+//! Known shortcuts: lens flares (`lens`) and glows (`glw!`) are not read
+//! (lens flares are named by reference only); a light's gel maps and periodic animation functions, a decal's
 //! animation fields and its shader header, the effect shader's secondary
 //! map and a contrail's point physics flags beyond the reference are left
 //! out; padding is not checked (the disc sweep in the heavy tests is).
 
 pub mod light;
 pub mod particle;
+pub mod system;
 
 use std::io;
 
@@ -30,6 +31,7 @@ use crate::object::check_class;
 
 pub use light::{Contrail, Decal, Light, MaterialEffects, PointState};
 pub use particle::{EffectShader, Particle, PointPhysics};
+pub use system::ParticleSystem;
 
 /// Blocks' maxima (Constants).
 pub const MAX_LOCATIONS: usize = 32;

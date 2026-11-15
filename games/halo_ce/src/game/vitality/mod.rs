@@ -36,7 +36,11 @@
 //! put back by `keep_shield` if one took them off in the same tick) and
 //! ratio, and an `Armor` if it had none (a full shield; one it had stays:
 //! the armour value is the character's and recharges from there); one
-//! leaving takes them off, keeping `Armor`.
+//! leaving takes them off, keeping `Armor`. Both in one move with the
+//! movement's marker (`slots::set_movement` calls Halo's `wear_halo` and
+//! `leave_halo`, `slots::MovementImpl::insert` and `remove`): each part
+//! on its own was an archetype for every combination of the character's
+//! others (docs/DESIGN.md, "ECS style"; `Mirrored` goes on unprimed).
 //! A respawn (health back above 0) starts a fresh `Vitality`, shield full.
 //!
 //! **Replication.** The server owns all of it: `Vitality` replicates to
@@ -78,7 +82,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     core::{Health, Predict, PredictedAppExt, SimSet},
-    slots::MovementSlot,
+    slots::{MovementRegistry, MovementSlot},
 };
 
 pub use apply::{Event, Outcome, melee_scale, unsuspecting};
@@ -273,12 +277,16 @@ pub fn shield_armour() -> ArmorPieces {
 }
 
 /// What the server last wrote to a Halo character's `Health` and
-/// `Armor`, to tell other games' hits apart (server-side).
+/// `Armor`, to tell other games' hits apart (server-side). Put on with the
+/// rest of the vitality (`wear_halo`), unprimed until the first update has
+/// written the two.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
 #[component(storage = "SparseSet")]
 pub struct Mirrored {
     pub health: f32,
     pub shield: f32,
+    /// The first update has written `health` and `shield`.
+    pub primed: bool,
 }
 
 pub struct VitalityPlugin;
@@ -302,25 +310,62 @@ impl Plugin for VitalityPlugin {
                 FixedUpdate,
                 update.after(crate::core::apply_damage).run_if(crate::core::authoritative),
             );
+        // Halo's movement goes on and off with the vitality, in one move each
+        // (docs/DESIGN.md, "ECS style"): the slot's switch is where they meet.
+        if let Some(mut registry) = app.world_mut().get_resource_mut::<MovementRegistry>()
+            && let Some(m) = registry.0.iter_mut().find(|m| m.id == super::movement::ID)
+        {
+            m.insert = wear_halo;
+            m.remove = leave_halo;
+        }
+    }
+}
+
+/// The parts a character becoming Halo's takes on with its movement, all
+/// in one move: the shield's pieces (over any the last game left on) and
+/// ratio, and, where it wasn't Halo's, a fresh `Vitality`, `Stun`,
+/// `Attackers` and `Mirrored`, and a full shield's `Armor` if it had none
+/// (one it had stays). `extra` is the movement's marker and slot, or none.
+fn put_on(e: &mut EntityWorldMut, extra: impl Bundle) {
+    let pieces = (shield_armour(), PiecesOf(super::GAME), ArmorRatio(1.0));
+    let fresh = || (Vitality::default(), Stun::default(), super::damage::Attackers::default(), Mirrored::default());
+    if e.contains::<Vitality>() {
+        e.insert((extra, pieces));
+    } else if e.contains::<Armor>() {
+        e.insert((extra, pieces, fresh()));
+    } else {
+        e.insert((extra, pieces, fresh(), Armor { amount: 1.0, helmet: false }));
+    }
+}
+
+/// Halo's parts taken off a character, all in one move (`Armor` stays).
+type HaloParts = (Vitality, Stun, ArmorPieces, PiecesOf, ArmorRatio, Mirrored, super::damage::Attackers);
+
+/// `halo_ce:movement`'s insert (`slots::MovementImpl::insert`): the marker
+/// and slot with the vitality (`put_on`).
+fn wear_halo(e: &mut EntityWorldMut, slot: MovementSlot) {
+    put_on(e, (super::movement::HaloMovement::default(), slot));
+}
+
+/// `halo_ce:movement`'s remove: the marker with the vitality, if it wears it.
+fn leave_halo(e: &mut EntityWorldMut) {
+    if e.contains::<Vitality>() {
+        e.remove::<(super::movement::HaloMovement, HaloParts)>();
+    } else {
+        e.remove::<super::movement::HaloMovement>();
     }
 }
 
 /// Characters on Halo's movement wear its vitality; leaving it takes it
-/// off (`Armor` stays).
+/// off (`Armor` stays). The movement's switch does both with the marker
+/// (`wear_halo`, `leave_halo`); here the shield's pieces are put back over
+/// any the last game left, and a slot changed some other way is caught up.
 fn wear(mut commands: Commands, on: Query<(Entity, &MovementSlot, Has<Vitality>), Changed<MovementSlot>>) {
     for (e, slot, halo) in &on {
-        let mut ent = commands.entity(e);
         if slot.0 == super::movement::ID {
-            // The shield's pieces over any the last game left on.
-            ent.insert((shield_armour(), PiecesOf(super::GAME), ArmorRatio(1.0)));
-            ent.insert_if_new((
-                Vitality::default(),
-                Stun::default(),
-                Armor { amount: 1.0, helmet: false },
-                super::damage::Attackers::default(),
-            ));
+            commands.entity(e).queue(|mut e: EntityWorldMut| put_on(&mut e, ()));
         } else if halo {
-            ent.remove::<(Vitality, Stun, ArmorPieces, PiecesOf, ArmorRatio, Mirrored, super::damage::Attackers)>();
+            commands.entity(e).remove::<HaloParts>();
         }
     }
 }
@@ -414,7 +459,7 @@ fn update(
 ) {
     let grants: Vec<GrantPowerup> = grants.read().copied().collect();
     for (e, mut v, mut health, mut armor, stun, mirrored) in &mut q {
-        let Some(mut mirrored) = mirrored else {
+        let Some(mut mirrored) = mirrored.filter(|m| m.primed) else {
             // First tick: the engine's values are where Halo starts (an
             // armour value from another game stays, and recharges).
             if let Some(a) = armor.as_deref() {
@@ -423,8 +468,9 @@ fn update(
             if health.current > 0.0 && health.current < 1.0 {
                 v.body = health.current;
             }
-            let mut m = Mirrored::default();
+            let mut m = Mirrored { primed: true, ..default() };
             mirror(&v, &mut health, armor.as_deref_mut(), &mut m);
+            // Over the unprimed one `put_on` gave it: no new archetype.
             commands.entity(e).insert(m);
             continue;
         };

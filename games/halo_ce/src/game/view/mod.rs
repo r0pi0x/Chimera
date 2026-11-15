@@ -41,11 +41,23 @@
 //! exit-empty (42) or exit-full (24); melee (37, 45, 36, 36); the plasma
 //! rifle's misfire (18), overheating (58), overheated (held), its exit
 //! (35); the moving overlay while walking. Put-away is never seen: a
-//! switch readies the new gun in the same tick (weapons.md 2).
+//! switch readies the new gun in the same tick (weapons.md 2). The
+//! arsenal's other five: the sniper rifle's fire-1 (19), reloads (94 / 83);
+//! the rocket launcher's fire-1 (28), reloads (125 / 111); the needler's
+//! fire-1 (8), reload (70) and its needles as the ammunition overlay (the
+//! rounds loaded, refilling late in the reload); the plasma pistol's fire-1
+//! (13) on a bolt, charged (`charged`: its `overcharged` slot, 20, with the
+//! overcharged jitter while held) and fire-2 (24) on the charged bolt
+//! (`fire_charged`), its overheat states (34, 25, 9, exit 24) and misfire
+//! (19); the flamethrower no fire-1 (the push back only), reload (104).
+//! Every gun's throw-grenade (37 to 43 frames) on `throw_grenade`, its
+//! throw-overheated on an overheated plasma weapon.
 //!
 //! **Zoom** (weapons.md 12, animations.md "Root at the camera"): the view
 //! is hidden while zoomed (`ViewModelHidden` while the holder has
-//! `Zoomed` and a Halo gun); the camera's zoom is the weapons'.
+//! `Zoomed` and a Halo gun), at every level (the sniper rifle's 2x and
+//! 8x, the pistol's and rocket launcher's 2x); the camera's zoom is the
+//! weapons'.
 //!
 //! **Placement**: no offset (the models are authored relative to the
 //! camera, node 0 at its frame) and the camera's field of view (`settings`,
@@ -80,7 +92,7 @@ use chimera_sim::weapon::{
 use self::machine::{Cue, HaloView, Tick};
 use super::{
     body::{WeaponLabel, inputs},
-    weapons::{HaloGun, HaloWeapon, halo_ticks},
+    weapons::{HaloGun, HaloWeapon, halo_ticks, tick::MagazineMode},
 };
 use crate::{
     core::{Health, Intent, MovementState, SimClock, Velocity},
@@ -159,6 +171,9 @@ pub fn cue(kind: &WeaponEventKind, magazine: Option<(u32, u32, u32)>) -> Option<
         WeaponEventKind::Action("melee") => Cue::Melee,
         WeaponEventKind::Action("overheated") => Cue::Overheat,
         WeaponEventKind::Action("overheat_cleared") => Cue::OverheatCleared,
+        WeaponEventKind::Action("fire_charged") => Cue::FireSecondary,
+        WeaponEventKind::Action("charged") => Cue::Charged,
+        WeaponEventKind::Action("throw_grenade") => Cue::Throw,
         WeaponEventKind::ReloadStarted => {
             let (loaded, size, reserve) = magazine.unwrap_or_default();
             Cue::Reload {
@@ -200,7 +215,7 @@ pub fn drive(
         Option<&mut ViewAnimator>,
         Option<&mut HaloViewModel>,
     )>,
-    guns: Query<(&Weapon, &HaloGun, Option<&Magazine>), With<HaloWeapon>>,
+    guns: Query<(&Weapon, &HaloGun, Option<&Magazine>, &HaloWeapon)>,
     mut events: MessageReader<WeaponEvent>,
     mut commands: Commands,
 ) {
@@ -209,7 +224,7 @@ pub fn drive(
     for (e, inv, intent, (health, velocity, state, zoomed), view, own) in &mut holders {
         let alive = health.is_none_or(|h| h.current > 0.0);
         let gun = inv.active.filter(|_| alive).and_then(|w| guns.get(w).ok());
-        let Some((weapon, halo, magazine)) = gun else {
+        let Some((weapon, halo, magazine, numbers)) = gun else {
             if let Some(mut own) = own.filter(|o| !o.key.is_empty()) {
                 if own.hid {
                     commands.entity(e).remove::<ViewModelHidden>();
@@ -250,6 +265,17 @@ pub fn drive(
             cues.retain(|c| *c != Cue::Ready);
         }
         let look = Vec2::new(intent.yaw, intent.pitch);
+        // The ammunition overlay's frame (the needler's needles).
+        let ammunition = numbers.0.magazine.filter(|m| m.rounds_loaded_maximum > 0).map(|m| {
+            let reloading = halo.magazine == MagazineMode::Reloading;
+            let length = numbers.0.animations.reload_empty.unwrap_or(0);
+            machine::ammunition_frame(
+                i32::from(halo.loaded),
+                reloading.then_some((length, halo.magazine_timer)),
+                i32::from(halo.loaded) + i32::from(halo.reserve),
+                i32::from(m.rounds_loaded_maximum),
+            )
+        });
         let mut pose = None;
         // A fresh view shows the draw's frame 0 on this tick.
         for k in 0..if fresh { n.saturating_sub(1) } else { n } {
@@ -273,6 +299,8 @@ pub fn drive(
                 zoomed: zoomed.is_some(),
                 overheated: halo.overheated,
                 overheat_exit: halo.overheat_exit,
+                overcharge: halo.overcharged,
+                ammunition,
             };
             pose = Some(own.view.tick(&set, &t));
         }

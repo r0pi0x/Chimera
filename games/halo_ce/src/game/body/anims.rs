@@ -48,9 +48,15 @@
 //!   states, no feet lag), so a remote player's body follows what it does,
 //!   not its stick.
 //! - One permutation per slot (the chain's first); the stunned-move,
-//!   slide, gesture, turn, melee, throw and action layers (reload, fire,
-//!   ready), pings, death animations, acceleration overlays and IK are not
+//!   slide, gesture, turn, melee and action layers (reload, fire, ready),
+//!   pings, death animations, acceleration overlays and IK are not
 //!   played; node scale is ignored (1 on the disc).
+//! - The grenade throw (`throw-grenade` of the seat and label, at the
+//!   throw's own frame, `Inputs::throw`) replaces the base pose whole while
+//!   it runs (aim and look screens over it, 6-tick blends in and out); it
+//!   is played where the holder's `HaloHands` is known (the server, the
+//!   thrower's own machine): another client's copy of a player does not
+//!   throw.
 
 use std::collections::BTreeMap;
 
@@ -75,6 +81,9 @@ pub const LABELS: [&str; 12] = [
 /// The label a holder without a label of its own plays: a rifle stance
 /// with a weapon, none without (`body::WeaponLabel` overrides it).
 pub const ARMED_DEFAULT: &str = "ar";
+
+/// The throw's sequence name (the class's `throw-grenade`).
+pub const THROW: &str = "throw-grenade";
 
 /// The bind pose's sequence (index 0).
 pub const BIND: &str = "bind";
@@ -397,6 +406,9 @@ pub fn build(graph: &AnimationGraph, bones: &[MapBone], checksum: u32) -> (AnimS
                     b.sequence(key(seat, label, state.name()), i, None);
                 }
             }
+            if let Some(i) = class.animations.get(WeaponClassSlot::ThrowGrenade) {
+                b.sequence(key(seat, label, THROW), i, None);
+            }
             for (slot, name) in [
                 (WeaponClassSlot::AimStill, "aim-still"),
                 (WeaponClassSlot::AimMove, "aim-move"),
@@ -511,6 +523,9 @@ pub struct Inputs {
     /// The aim's pitch, radians (up +); the aim's yaw relative to the body
     /// is 0 (the body faces the look).
     pub pitch: f32,
+    /// A grenade throw's frame while one runs (the holder's
+    /// `HaloHands::throw`).
+    pub throw: Option<usize>,
 }
 
 /// The landing thresholds (world units per second) and recovery ticks
@@ -546,6 +561,8 @@ pub struct HaloAnim {
     pub landing: u32,
     pub hard: bool,
     pub blend: Option<Blend>,
+    /// A throw plays over the base.
+    pub throwing: bool,
     /// The last pose made (a new blend's "from").
     pub last: Vec<BonePose>,
 }
@@ -632,6 +649,17 @@ impl HaloAnim {
             Some(s) => base_pose(set, set.sequences[s].anims[0], self.frame),
             None => set.defaults.clone(),
         };
+        // The throw: an action over the base at the throw's own frame,
+        // blended in and back out.
+        let throw = i.throw.and_then(|f| Some((set.names.get(&key(seat, label, THROW)).copied()?, f)));
+        if throw.is_some() != self.throwing {
+            self.throwing = throw.is_some();
+            self.start_blend(TRANSITION_TICKS);
+        }
+        if let Some((s, f)) = throw {
+            let n = frames(set, s);
+            pose = base_pose(set, set.sequences[s].anims[0], f.min(n.saturating_sub(1)));
+        }
         if let Some(a) = self.aim {
             apply_screen(set, a, 0.0, i.pitch, &mut pose);
         }

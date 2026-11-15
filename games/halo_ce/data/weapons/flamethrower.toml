@@ -11,11 +11,19 @@ id = "halo_ce:flamethrower"
 base = "halo_ce:gun"
 slot = 3
 
+# Its models (models.md "Which models the game draws where", "The other
+# first-person weapon models"; weapons.md "References"): seen in first
+# person with the arms (`game::view`), held in the Spartan's hand.
+[models]
+view = 'weapons\flamethrower\fp\fp'
+world = 'weapons\flamethrower\flamethrower'
+
 [hud]
 name = "Flamethrower"
 
 [hooks."halo_ce:weapon"]
 tag = 'weapons\flamethrower\flamethrower'
+label = "ft"
 flags = 0
 weapon_type = 0
 zoom_levels = 0
