@@ -470,11 +470,15 @@ fn in_lobby(sim: &mut NetSim) {
 fn escape_in_the_themed_lobby_only_closes_what_is_open() {
     let mut sim = staged_signal_party();
     in_lobby(&mut sim);
-    // Nothing open: Esc does nothing (no menu, no leave).
+    // Nothing open: Esc is the breadcrumb's Back, Leave, which asks first
+    // (no Escape menu); Esc again stays.
     for _ in 0..2 {
         tap(&mut sim, 0, KeyCode::Escape);
+        sim.ticks(1);
+        let m = esc(&sim, 0);
+        assert!(m.open && m.lobby && m.page == Page::ConfirmLeave, "{m:?}");
+        tap(&mut sim, 0, KeyCode::Escape);
         assert!(!esc(&sim, 0).open, "{:?}", esc(&sim, 0));
-        assert!(!overlay(&sim, 0));
         lobby_owns(&mut sim, 0).unwrap();
     }
     // Settings over the lobby; Esc closes it.
@@ -502,8 +506,6 @@ fn escape_in_the_themed_lobby_only_closes_what_is_open() {
     sim.ticks(2);
     sim.clients[0].app.world_mut().write_message(Action::Back);
     sim.ticks(2);
-    assert!(!esc(&sim, 0).open);
-    tap(&mut sim, 0, KeyCode::Escape);
     assert!(!esc(&sim, 0).open);
     lobby_owns(&mut sim, 0).unwrap();
     assert!(sim.clients[0].app.world().resource::<JoinProgress>().failure.is_none(), "still connected");

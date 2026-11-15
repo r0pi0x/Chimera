@@ -16,6 +16,8 @@ fg = "#E8EDF5"
 acc = "#3B7BFF"
 on_acc = "#04060B"
 acc_text = "#6A98FF"
+hero = "#2D6BEB"     # the forward action's fill: white on it is 4.76:1
+on_hero = "#FFFFFF"
 threat = "#FF3B4E"
 good = "#9BE3B4"      # network good only
 warn = "#FFB547"      # network warnings only
@@ -191,45 +193,30 @@ mark_w = 13.0
 mark_h = 9.33
 mark_x = 81.5          # its centre in the ink band, at mid-height: the frame's centre at the swap
 
-[layout.lobby]       # the pre-match lobby (chimera_client prematch_lobby): a 100 x 56.25 frame
-margin = 4.6         # left and right
-header_y = 3.8
-lockup = 1.05
-title = 1.2
-rule_y = 7.6
-col_y = 10.6
-left_w = 50.0
-right_x = 60.4
-big = 3.0
-map_big = 2.4
-row_h = 3.2
-open_h = 2.9
-col_pos = 2.6
-col_tag = 7.4
-col_status = 12.6
-name = 0.92
-label = 0.66
-head = 0.56
+[layout.lobby]       # the pre-match lobby (chimera_client lobby_panel) in the shell's window
+mode_w = 18.0        # the mode column at the left
+map_w = 27.4         # the map card's column at the right
+card_h = 13.0        # the map card
+big = 3.0            # "3 / 7"
+map_big = 2.0
+row_h = 2.9
+avatar = 2.3         # a row's avatar
+status_w = 11.2      # the status column (the progress bar inside)
+ping_w = 4.6
+name = 0.9
 tag = 0.62
-kv = 0.64
-key = 0.62
-bot = 0.94
-block_w = 1.25
-block_h = 0.85
-map_h = 11.4
 ticks_h = 1.4
 countdown_ticks = 48.0
 countdown_hot = 3.0  # the last seconds lit in the accent
-foot_y = 3.4         # from the bottom
-corner = 2.4         # the + marks, in from each corner
 
 [layout.menu]        # the party menu's first page (party_kit signal_menu): a 100 x 56.25 frame
-lockup_x = 4.6
-lockup_y = 5.6
-lockup = 3.3         # GUN GAME's size; the mark 2.05x, ULTIMATE .62x
+lockup_x = 2.6
+lockup_y = 2.4
+lockup = 2.3         # GUN GAME's size; ULTIMATE .62x
+mark_h = 3.4         # the mark's height
 lockup_w = 34.0      # the wipe's width
-items_x = 4.6
-items_y = 23.4
+items_x = 2.6
+items_y = 19.0
 items_w = 24.0
 item_h = 3.5
 item_label = 1.36
@@ -237,22 +224,37 @@ item_ix = 0.62
 item_ix_w = 1.3
 item_gap = 1.1
 hl_accent = 0.32     # the highlight's accent bar
-acct_x = 4.6         # from the right
-acct_y = 5.6
 tab_text = 0.64
-keys_y = 5.2         # from the bottom
+keys_y = 1.8         # from the bottom
 keys = 0.62
-keys_gap = 2.2
+keys_gap = 1.6
 vt_x = 2.1           # the rule up the right edge, from the right
 vt = 0.56
-tabs_x = 4.6         # the backdrop tabs, from the right
-tabs_y = 4.2         # from the bottom
+tabs_x = 2.6         # the backdrop tabs, from the right
+tabs_y = 1.4         # from the bottom
 tabs_text = 0.62
 tabs_label = 0.56
 cap_y = 7.6          # the backdrop's caption, from the bottom
 cap = 0.56
-corner = 2.4
 calm = 0.30          # the menu column's right edge (0-1 of the width): the ambient is calm left of it
+
+# The shell (chimera_ui::shell): every out-of-match screen's bar, window,
+# action bar and key hints (the design rules' revision 5, 11.4).
+[layout.shell]
+margin = 2.6
+bar_y = 1.8          # the bar band, 4.6 tall
+bar_h = 4.6
+rule_y = 7.2
+win_top = 8.4        # the content window, to win_bottom from the bottom
+win_bottom = 4.6
+keys_y = 1.8         # the key hints, from the bottom
+side_w = 31.0        # the side panel
+rows_in = 1.8        # rows from the window's left
+rows_right = 35.0    # rows end this far from its right
+row_h = 2.8
+value_w = 14.0       # sliders, fields, dropdowns
+act_h = 4.6          # the window's action bar
+tile = 3.0           # the bar's square tiles
 
 [layout.chip]
 top = 2.2

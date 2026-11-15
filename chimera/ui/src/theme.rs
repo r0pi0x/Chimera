@@ -61,6 +61,11 @@ pub enum Tone {
     OnAcc,
     /// Accent-coloured text (lighter than `acc` on ink).
     AccText,
+    /// The hero's fill (the one forward action a screen has): a slightly
+    /// darker cobalt than `acc`, so white text on it reaches 4.5:1.
+    Hero,
+    /// Text on the hero (white).
+    OnHero,
     Threat,
     /// Light green: network good only (a quiet ping).
     Good,
@@ -74,7 +79,7 @@ pub enum Tone {
 
 impl Tone {
     /// Every tone, for tests and tools.
-    pub const ALL: [Tone; 19] = [
+    pub const ALL: [Tone; 21] = [
         Tone::Ink,
         Tone::Ink2,
         Tone::Ink3,
@@ -89,6 +94,8 @@ impl Tone {
         Tone::AccGlow,
         Tone::OnAcc,
         Tone::AccText,
+        Tone::Hero,
+        Tone::OnHero,
         Tone::Threat,
         Tone::Good,
         Tone::Warn,
@@ -119,6 +126,8 @@ impl Tone {
             Tone::AccGlow => "acc_glow",
             Tone::OnAcc => "on_acc",
             Tone::AccText => "acc_text",
+            Tone::Hero => "hero",
+            Tone::OnHero => "on_hero",
             Tone::Threat => "threat",
             Tone::Good => "good",
             Tone::Warn => "warn",

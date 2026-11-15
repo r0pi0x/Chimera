@@ -67,6 +67,7 @@ fn stage_lobby(w: &mut World) {
         total: 0,
         ping_ms: ping,
         wins,
+        avatar: if id.is_some() { (name.len() as u8 * 7) % 32 } else { chimera_net::prematch::NO_AVATAR },
     };
     w.spawn((
         StagedLobby,
@@ -82,6 +83,7 @@ fn stage_lobby(w: &mut World) {
             waiting: 2,
             wait_left: Some(72),
             countdown: None,
+            host_start: false,
         },
     ));
 }
