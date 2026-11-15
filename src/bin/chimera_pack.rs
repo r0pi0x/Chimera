@@ -103,6 +103,25 @@
 //! `--restat`: only the manifests' stored sizes, after a manifest from
 //! before the repack was put back or published again).
 //!
+//! A game's build names its manifest: a Steam game's is its install's
+//! Steam app manifest's build id; a game without a Steam app reads its
+//! own (`Game::build`): Halo's (`halo_ce`, the Xbox disc image or a folder
+//! of its files) is the build string of its maps' headers
+//! (`01.10.12.2276`, `halo_ce::game::mount::build`). Its whole pack is
+//! the disc's own files (`maps/`, `default.xbe`, the `bink/` videos)
+//! without `xdemos/`, the other games' demos on the disc that nothing
+//! reads (`Game::left_out`; `--all-files` packs them too). Its sets
+//! (`halo_ce::game::sets`): `base` and `players` are the donor map
+//! (`maps/bloodgulch.map`: every Halo weapon and body lives in it),
+//! `weapon/<id>` would be the same and isn't recorded while Halo has no
+//! guns, and `map/<name>` per multiplayer map is that map's one file
+//! (Blood Gulch's too: a map's set keeps files `base` holds only when
+//! `base` holds all of them, so it is never empty). `chimera_pack sign <game>
+//! --store <dir> [--build <id>]` signs one manifest of a server's store
+//! with its key (`sign::sign_stored`): a manifest packed on another
+//! machine, copied in with its new records, is signed on the server with
+//! no install there and no other manifest touched.
+//!
 //! Known shortcuts: publishing to a server on another machine (upload over
 //! HTTPS with a publisher token) isn't built: on a VPS, publish there or
 //! copy the store.
@@ -133,46 +152,112 @@ usage: chimera_pack pack <game> [options]       into a store (default the user's
        chimera_pack user add <name> [--games <a,b>] [--note <text>]
        chimera_pack user revoke <name> [--token <n>]
        chimera_pack user list                   (user: --store <server store>)
-  games: cs_source, combat_arms, hl2dm, tf2
+       chimera_pack sign <game> --store <server store> [--build <id>]
+                                                sign a manifest packed elsewhere (no install)
+  games: cs_source, combat_arms, hl2dm, halo_ce, tf2
   --set <name>      enter the packed files as set <name> (needs --from)
   --from <log>      only the game's files in a CHIMERA_VFS_LOG log
   --store <dir>     the store (default: [assets] store, CHIMERA_ASSET_STORE, ~/.cache/chimera/assets)
   --install <dir>   the install (default: as the game finds it)
-  --build <id>      the build id (default: the install's Steam app manifest)
+  --build <id>      the build id (default: the install's Steam app manifest;
+                    halo_ce: its maps' build string)
+  --all-files       a whole pack: also the folders a game leaves out (halo_ce: xdemos/)
   --threads <n>     reading and packing threads (default 4)
   --sets-from <dir> publish: the store whose sets of this build to copy (default the user's)";
 
 /// A game the packer knows: its info, its install's own mount (without the
-/// store or the log) and its Steam app.
+/// store or the log) and where its build comes from: its Steam app, or
+/// the game's own reading of its install.
 struct Game {
     info: &'static GameInfo,
     open_install: fn(&std::path::Path) -> std::io::Result<Mount>,
-    app: u32,
+    /// Its Steam app (None: a game without one).
+    app: Option<u32>,
+    /// The install's build for a game without a Steam app (its own
+    /// reading of the install; None: the Steam app manifest's).
+    build: Option<fn(&std::path::Path) -> std::io::Result<String>>,
     /// Files the game reads from its install outside the mount, as a layer
     /// and the set they make (whole packs only).
     extra: Option<(fn(&std::path::Path) -> Option<Box<dyn chimera_core::mount::FileSource>>, &'static str)>,
+    /// Folders of the mount a whole pack leaves out unless `--all-files`
+    /// (normalized, with the trailing `/`): files nothing in Chimera reads.
+    left_out: &'static [&'static str],
 }
 
-fn games() -> [Game; 4] {
+impl Game {
+    /// The build of the install at `install`: the game's own reading of
+    /// it, else its Steam app manifest's.
+    fn build_of(&self, install: &std::path::Path) -> Result<String, String> {
+        if let Some(build) = self.build {
+            return build(install).map_err(|e| format!("{}: the build: {e}: pass --build", install.display()));
+        }
+        let app = self.app.ok_or_else(|| format!("{}: no build source: pass --build", self.info.id))?;
+        install::install_build_id(install, app)
+            .ok_or_else(|| format!("{}: no Steam app manifest for app {app}: pass --build", install.display()))
+    }
+}
+
+fn games() -> [Game; 5] {
     [
-        Game { info: &cs_source::game::INFO, open_install: cs_source::game::mount::open_install, app: 240, extra: None },
+        Game {
+            info: &cs_source::game::INFO,
+            open_install: cs_source::game::mount::open_install,
+            app: Some(240),
+            build: None,
+            extra: None,
+            left_out: &[],
+        },
         Game {
             info: &combat_arms::game::INFO,
             open_install: combat_arms::game::mount::open_install,
             // Combat Arms: the Classic.
-            app: 1_263_550,
+            app: Some(1_263_550),
+            build: None,
             extra: Some((combat_arms::game::mount::loose_music, "music")),
+            left_out: &[],
         },
         // Half-Life 2: Deathmatch: its search path from `hl2mp/gameinfo.txt`;
         // its pieces' sets: `weapon/<id>`, `players` and `base` (`record_pieces`).
-        Game { info: &hl2dm::game::INFO, open_install: hl2dm::game::mount::open_install, app: 320, extra: None },
+        Game {
+            info: &hl2dm::game::INFO,
+            open_install: hl2dm::game::mount::open_install,
+            app: Some(320),
+            build: None,
+            extra: None,
+            left_out: &[],
+        },
+        // Halo: Combat Evolved: the disc image (or a folder of the disc's
+        // files); no Steam app, its build the maps' build string
+        // (`halo_ce::game::mount::build`); the disc's demos of other games
+        // left out (`HALO_LEFT_OUT`).
+        Game {
+            info: &halo_ce::game::INFO,
+            open_install: halo_ce::game::mount::open_install,
+            app: None,
+            build: Some(halo_ce::game::mount::build),
+            extra: None,
+            left_out: HALO_LEFT_OUT,
+        },
         // Team Fortress 2: its search path from `tf/gameinfo.txt`, the
         // encrypted scripts read decrypted with this host's key
         // (`tf2_open_install`); its sets: `weapon/<id>` for M2's guns,
         // `players` and `map/<name>` (`record_pieces`).
-        Game { info: &tf2::game::INFO, open_install: tf2_open_install, app: 440, extra: None },
+        Game {
+            info: &tf2::game::INFO,
+            open_install: tf2_open_install,
+            app: Some(440),
+            build: None,
+            extra: None,
+            left_out: &[],
+        },
     ]
 }
+
+/// What a whole pack of Halo's disc leaves out: `xdemos/`, the disc's
+/// playable demos of other games (about 1.1 GB): nothing in Chimera reads
+/// them. The game's own files (`maps/`, `default.xbe`, the `bink/`
+/// videos) are packed.
+const HALO_LEFT_OUT: &[&str] = &["xdemos/"];
 
 /// TF2's install as the packer reads it: its `.ctx` scripts decrypted
 /// with this host's key (`CHIMERA_TF2_CTX_KEY` or `[games.tf2.keys.ctx]`,
@@ -205,11 +290,12 @@ fn run(args: &[String]) -> Result<(), String> {
         Some("sets") => return sets(&args[1..]),
         Some("lean") => return lean(&args[1..]),
         Some("repack") => return repack(&args[1..]),
+        Some("sign") => return sign_command(&args[1..]),
         _ => return Err(USAGE.into()),
     };
     let game_id = it.next().ok_or(USAGE)?;
     let (mut set, mut from, mut store, mut install, mut build, mut threads) = (None, None, None, None, None, 4);
-    let mut sets_from = None;
+    let (mut sets_from, mut all_files) = (None, false);
     while let Some(arg) = it.next() {
         let mut value = || it.next().cloned().ok_or_else(|| format!("{arg} needs a value"));
         match arg.as_str() {
@@ -219,6 +305,7 @@ fn run(args: &[String]) -> Result<(), String> {
             "--install" => install = Some(PathBuf::from(value()?)),
             "--build" => build = Some(value()?),
             "--threads" => threads = value()?.parse().map_err(|_| "--threads: a number")?,
+            "--all-files" => all_files = true,
             "--sets-from" if publish => sets_from = Some(Store::new(value()?)),
             _ => return Err(format!("unknown option {arg}\n{USAGE}")),
         }
@@ -242,9 +329,7 @@ fn run(args: &[String]) -> Result<(), String> {
     };
     let build = match build {
         Some(b) => b,
-        None => install::install_build_id(&install, game.app).ok_or_else(|| {
-            format!("{}: no Steam app manifest for app {}: pass --build", install.display(), game.app)
-        })?,
+        None => game.build_of(&install)?,
     };
     let mut mount = (game.open_install)(&install).map_err(|e| format!("{}: {e}", install.display()))?;
     let whole = from.is_none();
@@ -266,13 +351,24 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             paths
         }
-        None => mount.entries().into_iter().map(|(e, _)| e.path).collect(),
+        None => {
+            let left_out = if all_files { &[][..] } else { game.left_out };
+            let (kept, out): (Vec<String>, Vec<String>) = mount
+                .entries()
+                .into_iter()
+                .map(|(e, _)| e.path)
+                .partition(|p| !left_out.iter().any(|l| p.starts_with(l)));
+            if !out.is_empty() {
+                println!("{} files under {} left out (--all-files packs them)", out.len(), left_out.join(", "));
+            }
+            kept
+        }
     };
     let manifest_path = store.manifest_path(game.info.id, &build);
     let mut manifest = if manifest_path.is_file() {
         Manifest::load(&manifest_path)?
     } else {
-        Manifest::new(game.info.id, &build, Some(game.app))
+        Manifest::new(game.info.id, &build, game.app)
     };
     println!(
         "packing {} files of {} build {} from {} into {}",
@@ -795,6 +891,34 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                     .map(|_| ())
             });
         }
+        "halo_ce" => {
+            use halo_ce::game::{parts::PARTS, sets};
+            // `base`, `players` and each gun's `weapon/<id>`: the donor
+            // map, read as Halo's guns and body will read it (every Halo
+            // weapon and body lives in it; `sets` module doc). Halo has
+            // no guns among its parts yet, so no weapon set.
+            if "base".starts_with(only) {
+                take();
+                if let Err(e) = sets::load_base(&tapped) {
+                    println!("base: {e}");
+                }
+                out.push(("base".into(), take()));
+            }
+            take();
+            let _ = sets::load_players(&tapped);
+            out.push(("players".into(), take()));
+            for gun in PARTS.guns {
+                take();
+                let _ = sets::load_weapon(&tapped, gun.id);
+                let id = gun.id.rsplit(':').next().unwrap_or(gun.id);
+                out.push((format!("weapon/{id}"), take()));
+            }
+            // Each multiplayer map, converted as another game's gameplay
+            // loads it: its own file alone.
+            record_maps(halo_ce::game::maps::map_names(mount), only, &take, &mut out, |name| {
+                sets::load_map(&tapped, name)
+            });
+        }
         _ => {}
     }
     out.retain(|(name, paths)| !paths.is_empty() && name.starts_with(only));
@@ -878,8 +1002,7 @@ fn sets(args: &[String]) -> Result<(), String> {
         .install
         .map(|i| i.path)
         .ok_or_else(|| format!("no {} install found", game.info.id))?;
-    let build = install::install_build_id(&install, game.app)
-        .ok_or_else(|| format!("{}: no Steam app manifest for app {}", install.display(), game.app))?;
+    let build = game.build_of(&install)?;
     let path = store.manifest_path(game.info.id, &build);
     let mut manifest = Manifest::load(&path)?;
     let mount = std::sync::Arc::new((game.open_install)(&install).map_err(|e| format!("{}: {e}", install.display()))?);
@@ -901,11 +1024,18 @@ fn sets(args: &[String]) -> Result<(), String> {
         let mut kept: std::collections::BTreeSet<String> = kept.into_iter().collect();
         if name.starts_with("map/") {
             // What every match fetches anyway: the game's `base`,
-            // `players` and `common` (`resolve::MATCH_SETS`).
+            // `players` and `common` (`resolve::MATCH_SETS`). A map all
+            // of whose files those hold (Halo's donor map, its `base`)
+            // keeps them: an empty set isn't written, and a map needs its
+            // set for `sets::map_held` and the offer.
+            let mut own = kept.clone();
             for shared in std::iter::once(chimera_assets::resolve::BASE).chain(chimera_assets::resolve::MATCH_SETS.iter().copied()) {
                 if let Some(s) = manifest.sets.get(shared) {
-                    kept.retain(|p| !s.contains(p));
+                    own.retain(|p| !s.contains(p));
                 }
+            }
+            if !own.is_empty() {
+                kept = own;
             }
         }
         if merged_set(&name)
@@ -1104,6 +1234,29 @@ fn repack(args: &[String]) -> Result<(), String> {
         println!("{}: {n} stored sizes changed{}", path.display(), if key.is_some() { ", signed" } else { "" });
     }
     if failed.is_empty() { Ok(()) } else { Err(format!("{} records failed", failed.len())) }
+}
+
+/// `sign <game> --store <dir> [--build <id>]`: sign one manifest of a
+/// server's store with its key (`sign::sign_stored`): a manifest packed on
+/// another machine and copied in with its new records, signed where it is
+/// served; no install, no other game's manifest touched.
+fn sign_command(args: &[String]) -> Result<(), String> {
+    let mut it = args.iter();
+    let game = it.next().ok_or(USAGE)?.clone();
+    let (mut store, mut build) = (None, None);
+    while let Some(arg) = it.next() {
+        let mut value = || it.next().cloned().ok_or_else(|| format!("{arg} needs a value"));
+        match arg.as_str() {
+            "--store" => store = Some(Store::new(value()?)),
+            "--build" => build = Some(value()?),
+            _ => return Err(format!("unknown option {arg}\n{USAGE}")),
+        }
+    }
+    let store = store.or_else(server::default_store).ok_or("no store folder: pass --store")?;
+    let (build, public) = sign::sign_stored(&store, &game, build.as_deref()).map_err(|e| e.to_string())?;
+    println!("{game} build {build}: signed with the server's key {public}");
+    println!("manifest: {}", store.manifest_path(&game, &build).display());
+    Ok(())
 }
 
 fn main() -> ExitCode {

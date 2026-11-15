@@ -1,0 +1,106 @@
+# The assault rifle (specs/halo_ce/weapons.md "Multiplayer weapon numbers";
+# projectiles.md "Flight numbers", "Material responses"; animations.md
+# "First-person graphs"): 60 + 180 rounds (600 most in reserve), 15 a
+# second (2 ticks), error 2 to 6.5 degrees over 18 held ticks, the bullet
+# at 10.8 WU a tick to 40 WU.
+id = "halo_ce:assault_rifle"
+base = "halo_ce:gun"
+slot = 0
+class = "rifle"
+
+[hud]
+name = "Assault Rifle"
+
+[hooks."halo_ce:weapon"]
+tag = 'weapons\assault rifle\assault rifle'
+# Weapon part ("Weapon part" table): flags, weapon type, zoom levels.
+flags = 0
+weapon_type = 0
+zoom_levels = 0
+# "Other fields": active camo ding, regrowth.
+camo = [0.25, 0.04]
+# "References": the melee damage effect (data/damage.toml).
+melee_damage = "assault_rifle_melee"
+
+# "Heat and battery": all others 0.
+[hooks."halo_ce:weapon".heat]
+recovery_threshold = 0.0
+overheated_threshold = 0.0
+detonation_threshold = 0.0
+detonation_fraction = 0.0
+loss_per_second = 0.0
+illumination = 0.0
+
+[hooks."halo_ce:weapon".age]
+heat_recovery_penalty = 0.0
+rate_of_fire_penalty = 0.0
+misfire_start = 0.0
+misfire_chance = 0.0
+
+# "Aim assist and movement" (radians, WU); off: weapons.md 15.
+[hooks."halo_ce:weapon".aim_assist]
+autoaim_angle = 0.10471976
+autoaim_range = 25.0
+magnetism_angle = 0.20943952
+magnetism_range = 25.0
+deviation_angle = 0.0
+
+# "Magazines".
+[hooks."halo_ce:weapon".magazine]
+flags = 0
+rounds_recharged = 0
+rounds_total_initial = 240
+rounds_total_maximum = 600
+rounds_loaded_maximum = 60
+rounds_reloaded = 60
+chamber_time = 0.0
+
+# "Triggers: rate of fire and ammunition", "error and projectiles",
+# "heat, charge and the rest", "Firing effects" (one entry).
+[hooks."halo_ce:weapon".trigger]
+flags = 0
+rounds_per_second = [15.0, 15.0]
+rate_of_fire_acceleration = 0.033333335
+rate_of_fire_deceleration = 0.33333334
+error_acceleration = 0.055555556
+error_deceleration = 0.033333335
+magazine = 0
+rounds_per_shot = 1
+minimum_rounds_loaded = 0
+rounds_between_tracers = 3
+minimum_error = 0.0
+# 2 and 6.5 degrees.
+error_angle = [0.034906585, 0.11344640]
+projectiles_per_shot = 1
+distribution = 0
+first_person_offset = [0.0, 0.0, 0.0]
+heat_per_round = 0.0
+age_per_round = 0.0
+firing_effects = 1
+projectile = 'weapons\assault rifle\bullet'
+
+# First-person frame counts (ready, reload-empty, melee and its key frame).
+[hooks."halo_ce:weapon".animations]
+ready = 29
+reload_empty = 87
+melee = 37
+melee_key = 3
+
+# projectiles.md "Flight numbers" and "Material responses": an unshielded
+# cyborg body is passed at 30 % of the speed (initial friction 0.7).
+[hooks."halo_ce:weapon".projectile]
+tag = 'weapons\assault rifle\bullet'
+initial_velocity = 10.8
+final_velocity = 10.8
+air_damage_range = [5.0, 15.0]
+water_damage_range = [0.0, 5.0]
+maximum_range = 40.0
+air_gravity_scale = 1.0
+water_gravity_scale = 0.4
+collision_radius = 0.0
+minimum_velocity = 0.0
+timer = [0.0, 0.0]
+impact_damage = "assault_rifle_bullet"
+on_body = { response = "overpenetrate", initial_friction = 0.7 }
+on_shield = { response = "disappear" }
+on_level = { response = "disappear" }

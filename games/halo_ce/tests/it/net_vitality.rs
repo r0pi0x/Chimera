@@ -58,3 +58,45 @@ fn a_client_sees_its_shield_after_a_hit() {
     // The stun of the bolt ran out on both (4 ticks).
     assert_eq!(w.get::<Stun>(mine).copied(), Some(Stun::default()));
 }
+
+/// A Halo gun over the network: the client predicts its own assault
+/// rifle's burst (its magazine and the weapon's state) and agrees with
+/// the server after it.
+#[test]
+fn a_clients_predicted_ammunition_agrees_with_the_server_after_a_burst() {
+    use chimera_core::core::Intent;
+    use chimera_sim::weapon::{Inventory, Magazine, give};
+    use halo_ce::game::weapons::{ASSAULT_RIFLE, HaloGun};
+
+    let link = LinkConditions {
+        latency: Duration::from_millis(30),
+        jitter: Duration::ZERO,
+        loss: 0.0,
+    };
+    let mut sim = NetSim::new(HaloSim, link, 11, 1, |app: &mut App| {
+        app.add_plugins(GreyboxMapPlugin);
+    });
+    sim.set_frame(halo_ce::game::TICK_INTERVAL);
+    sim.until_joined(600);
+    let theirs = sim.character_of(0).expect("the client's player on the server");
+    give(sim.server.app.world_mut(), theirs, ASSAULT_RIFLE).unwrap();
+    sim.ticks(90);
+    let mine = sim.local_player(0).unwrap();
+    let held = |w: &World, e: Entity| w.get::<Inventory>(e).and_then(|i| i.active);
+    let gun = held(sim.clients[0].app.world(), mine).expect("the client holds its rifle");
+    // A burst of 20 ticks: 10 rounds.
+    sim.clients[0].app.world_mut().get_mut::<Intent>(mine).unwrap().fire = true;
+    sim.ticks(20);
+    sim.clients[0].app.world_mut().get_mut::<Intent>(mine).unwrap().fire = false;
+    sim.ticks(30);
+    let server_gun = held(sim.server.app.world(), theirs).unwrap();
+    let server = sim.server.app.world().get::<Magazine>(server_gun).unwrap().clip;
+    let client = sim.clients[0].app.world().get::<Magazine>(gun).unwrap().clip;
+    assert!((49..=51).contains(&server), "about 10 rounds fired: {server} left");
+    assert_eq!(client, server, "the client's prediction agrees");
+    let (s, c) = (
+        sim.server.app.world().get::<HaloGun>(server_gun).unwrap().clone(),
+        sim.clients[0].app.world().get::<HaloGun>(gun).unwrap().clone(),
+    );
+    assert_eq!((c.loaded, c.reserve), (s.loaded, s.reserve));
+}

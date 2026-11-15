@@ -398,3 +398,21 @@ fn a_remote_shot_shows_no_hit_on_a_protected_player() {
     });
     assert_eq!(traced(&mut sim), 0, "protected: nothing shows");
 }
+
+#[test]
+fn a_weapon_its_game_runs_is_left_alone_by_the_frame() {
+    // `OwnFrame`: no shot, no dry fire and no reload from the stock frame;
+    // the magazine is the game's.
+    let (mut sim, p, _) = armed(RIFLE);
+    let g = gun(&sim, p);
+    sim.app.world_mut().entity_mut(g).insert(chimera_sim::weapon::OwnFrame);
+    sim.intent(p).fire = true;
+    assert_eq!(shots_for(&mut sim, p, 1.0), 0);
+    sim.app.world_mut().get_mut::<Magazine>(g).unwrap().clip = 0;
+    let events = events_in(&mut sim, 30);
+    assert!(events.iter().all(|e| e.owner != p), "nothing from the frame: {events:?}");
+    sim.intent(p).fire = false;
+    sim.intent(p).reload = true;
+    sim.seconds(5.0);
+    assert_eq!(clip(&sim, p), 0, "no reload by the frame");
+}

@@ -5467,6 +5467,7 @@ dependencies = [
  "cs_source_app",
  "dirs",
  "half",
+ "halo_ce",
  "hl2dm",
  "image",
  "lithtech_formats",

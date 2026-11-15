@@ -1,8 +1,14 @@
 //! What Halo lends other games' apps (`chimera_core::game_parts`): its
-//! maps only, for now. Its guns, movement, characters and HUD come with
-//! their specs (weapons.md, movement.md, hud.md), so it is not `playable`
-//! in a gun game's ladder; its maps are played with the other games'
-//! players, movement and guns (docs/plans/active/halo-ce.md, M1).
+//! maps and its first four guns (M2 of docs/plans/active/halo-ce.md:
+//! the assault rifle a rifle, the pistol a heavy pistol, the plasma rifle
+//! an SMG, the shotgun a shotgun, by their weight in a ladder's variety)
+//! with its movement (`movement::ID`), so a gun game's automatic ladder
+//! deals them as rungs. Holding one makes the character Halo's where the
+//! identity follows the weapon (`chimera_sim::identity`): Halo's movement,
+//! and with it its vitality and shield (`vitality`'s wear). No
+//! characters or HUD of its own yet (a capsule body, the fallback HUD),
+//! and no view or world models: a rung draws no weapon model until those
+//! come (hud.md, models).
 //!
 //! No map is claimed (`PARTS.maps` is empty): a map enters an app's pool
 //! only from the disc image the machine holds (`auto::InstalledMaps`),
@@ -12,14 +18,25 @@
 //! without the disc image no Halo map is offered anywhere, and with it the
 //! allowed ones are (`add_map_pool`, from the bundle's `sim`).
 
-use chimera_core::game_parts::GameParts;
+use chimera_core::game_parts::{GameParts, GunClass, GunPart};
+
+use super::weapons::{ASSAULT_RIFLE, PISTOL, PLASMA_RIFLE, SHOTGUN};
+
+const fn gun(id: &'static str, class: GunClass) -> GunPart {
+    GunPart { id, class }
+}
 
 /// Halo's parts.
 pub static PARTS: GameParts = GameParts {
     game: super::GAME,
-    guns: &[],
+    guns: &[
+        gun(ASSAULT_RIFLE, GunClass::Rifle),
+        gun(PISTOL, GunClass::HeavyPistol),
+        gun(PLASMA_RIFLE, GunClass::Smg),
+        gun(SHOTGUN, GunClass::Shotgun),
+    ],
     knife: None,
-    movement: None,
+    movement: Some(super::movement::ID),
     characters: None,
     hud: None,
     maps: &[],
@@ -44,4 +61,14 @@ pub fn add_map_pool(app: &mut bevy::app::App) {
     use chimera_sim::minigame::map_fit::MapPoolAppExt;
     app.add_map_pool_rules(super::GAME, "halo_ce data/map_pool.toml", POOL_RULES)
         .add_map_fitness(super::GAME, "halo_ce data/map_fitness.toml", MAP_FITNESS);
+}
+
+/// What an app of several games needs for Halo's guns: its movement
+/// registered (not made the match's), its vitality and damage seam, and
+/// its weapons, each once.
+pub fn add_guns(app: &mut bevy::app::App) {
+    if !app.is_plugin_added::<super::weapons::HaloWeaponsPlugin>() {
+        super::movement::register(app);
+        app.add_plugins((super::vitality::VitalityPlugin, super::damage::DamagePlugin, super::weapons::HaloWeaponsPlugin));
+    }
 }

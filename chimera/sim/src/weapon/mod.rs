@@ -31,7 +31,8 @@
 //! trigger's cycle apart when its interval is 0, the lockout from its last
 //! round with `from_last`) and `AutoMode` (a mode of continuous fire);
 //! `AltModes::key`: modes a named action steps once a press, not attack2);
-//! `Inventory`, `WeaponState` timers,
+//! `Inventory`, `WeaponState` timers, `OwnFrame` (a weapon its game runs
+//! by its own rules: the frame skips it),
 //! `DamageWeapons` (the gun each attacker's damage came from, for kill
 //! notices), `WeaponRegistry`/`StartingWeapons` (per team; a character's own `OwnKit`
 //! instead), `give`; selection (or a
@@ -197,6 +198,13 @@ pub struct HolsterLocked;
 /// (slot keys, `lastinv`, `Inventory::wanted`). Games add and remove it.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Unselectable;
+
+/// On a weapon whose game runs it by its own rules (Halo's per-tick
+/// weapons): the stock frame (`weapon_frame`) leaves it alone (no shot,
+/// swing, reload, dry fire or mode step), while selection and deploy
+/// still apply and its `Magazine`, if any, is the game's to keep.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct OwnFrame;
 
 /// A game that turns slot keys and `lastinv` (`Intent::select`,
 /// `Intent::last_weapon`) into switches by its own rules, with a system
@@ -1953,6 +1961,7 @@ struct WeaponParts {
     shells: Option<&'static ShellReload>,
     alt_shot: Option<&'static AltShot>,
     rewind_choice: Option<&'static lagcomp::RewindChoice>,
+    own_frame: Has<OwnFrame>,
 }
 
 impl WeaponPartsItem<'_, '_> {
@@ -2106,6 +2115,10 @@ fn weapon_frame(
         }
         let Some(active) = inv.active else { continue };
         let Ok(mut w) = weapons.get_mut(active) else { continue };
+        // A game's own weapon (`OwnFrame`).
+        if w.own_frame {
+            continue;
+        }
         if !intent.fire {
             w.state.burst = 0;
         }

@@ -39,7 +39,8 @@ bevy_replicon.workspace = true
 # map cache files' tags (`game::maps`).
 blam_formats.workspace = true
 bevy.workspace = true
-# The movement's collision queries (shape casts on the engine's colliders).
+# The movement's collision queries (shape casts on the engine's colliders)
+# and the weapons' traces of the level (`game::weapons`).
 avian3d.workspace = true
 # The map file's hash (`MapData::file_hash`) and the data tables
 # (data/*.toml).
