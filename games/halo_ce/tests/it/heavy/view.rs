@@ -347,3 +347,19 @@ fn another_games_map_is_dressed_with_the_guns() {
         "the guns' textures appended to the map's"
     );
 }
+
+/// globals.md: the view's posing timer takes the donor map's globals'
+/// first-person idle numbers (10 s, 15 s, 0.25 on the disc; not the
+/// synthetic element's 8, 12, 0.5), carried on each gun's set.
+#[test]
+fn the_posing_timer_takes_the_maps_idle_numbers() {
+    use halo_ce::game::view::machine::{IdleTiming, idle_timing};
+    let Some(file) = bloodgulch() else { return };
+    let disc = IdleTiming { time: (10.0, 15.0), skip: 0.25 };
+    assert_eq!(halo_ce::game::view::idle_of(&file), disc);
+    let looks = load::looks(&file, false);
+    assert_eq!(looks.view_models.len(), 4);
+    for v in &looks.view_models {
+        assert_eq!(idle_timing(v.animations.as_ref().unwrap()), disc, "{}", v.key);
+    }
+}

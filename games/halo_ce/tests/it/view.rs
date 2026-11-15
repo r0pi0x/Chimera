@@ -475,3 +475,32 @@ fn the_field_of_view_is_the_nominal_angle_narrowed() {
     let s = halo_ce::game::view::settings();
     assert_eq!((s.fov, s.default_fov), (FOV, FOV));
 }
+
+/// The posing timer (animations.md "States"; globals.md's idle numbers):
+/// the numbers ride on the set (`set_idle`), the wait is drawn between
+/// the bounds in ticks and a draw at or above the skip fraction poses. A
+/// set without them takes the disc's.
+#[test]
+fn posing_waits_by_the_sets_idle_numbers() {
+    use halo_ce::game::view::machine::{IdleTiming, idle_timing, set_idle};
+    let mut set = rifle();
+    assert_eq!(idle_timing(&set), IdleTiming::FALLBACK);
+    assert_eq!(IdleTiming::FALLBACK, IdleTiming { time: (10.0, 15.0), skip: 0.25 });
+    // A one-second wait that always poses.
+    let idle = IdleTiming { time: (1.0, 1.0), skip: 0.0 };
+    set_idle(&mut set, idle);
+    assert_eq!(idle_timing(&set), idle);
+    let mut v = HaloView::new(3);
+    v.cue(&set, Cue::Ready, false);
+    while v.state != ViewState::Idle {
+        v.tick(&set, &Tick::default());
+    }
+    let mut n = 0;
+    while v.state == ViewState::Idle && n < 100 {
+        v.tick(&set, &Tick::default());
+        n += 1;
+    }
+    // The counter passes the 30-tick wait on its 31st still tick, the first being the one the
+    // view came back to idle on.
+    assert_eq!((v.state, n), (ViewState::Posing, 30), "posing after the 30-tick wait");
+}

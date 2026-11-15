@@ -332,7 +332,8 @@ pub fn view_model(file: &MapFile, gun: &GunModels, arms: &Model) -> Result<Built
         ));
     }
     let bones = graph_bones(&graph, &[arms, &model]);
-    let (set, left_out) = build_set(&graph, &bones);
+    let (mut set, left_out) = build_set(&graph, &bones);
+    super::machine::set_idle(&mut set, super::idle_of(file));
     warnings.extend(left_out);
     let mut meshes = skinned_on_graph(file, arms, &on_arms.graph_nodes);
     meshes.extend(skinned_on_graph(file, &model, &on_gun.graph_nodes));

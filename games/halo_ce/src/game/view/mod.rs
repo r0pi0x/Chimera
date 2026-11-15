@@ -127,6 +127,20 @@ pub fn fov() -> GameFov {
     }
 }
 
+/// The map's globals' first-person idle numbers (globals.md; the view's
+/// posing timer, `machine::set_idle`); the fallback where the map has none.
+pub fn idle_of(file: &blam_formats::cache::MapFile) -> machine::IdleTiming {
+    let read = || {
+        let t = file.find(blam_formats::cache::class::GLOBALS, "globals\\globals")?;
+        let p = blam_formats::globals::Globals::read(file, t).ok()?.player;
+        Some(machine::IdleTiming {
+            time: (p.first_person_idle_time.lower, p.first_person_idle_time.upper),
+            skip: p.first_person_idle_skip,
+        })
+    };
+    read().unwrap_or(machine::IdleTiming::FALLBACK)
+}
+
 /// Each gun's label (its document's), by id.
 pub fn labels() -> Vec<(&'static str, String)> {
     super::weapons::guns()
