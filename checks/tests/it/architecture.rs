@@ -29,6 +29,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // (`WaitForTasks`): Bevy only.
     ("tasks", &[]),
     ("console", &["core", "env", "query_cache", "console_names"]),
+    // Quitting quickly: the steps that must persist, then the process's
+    // end (its `chimera:clean_exit` cvar).
+    ("shutdown", &["console", "env"]),
     ("console_names", &[]),
     // The console's scope (the game played: the local player's identity,
     // else the default game) and the games' console namespaces.
@@ -92,8 +95,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("cues", &[]),
     // A session's diagnostics: the rolling log, health lines, crash
     // capture (over chimera_assets' `feedback::session`); the console's
-    // lines, the memory readers and the tick metrics.
-    ("diagnostics", &["console", "metrics", "env"]),
+    // lines, the memory readers and the tick metrics; the session ends as
+    // a step of the quick exit (`shutdown`, below it).
+    ("diagnostics", &["console", "metrics", "env", "shutdown"]),
     ("slots", &["core"]),
     ("character", &["core", "slots"]),
     ("movement", &["core", "slots", "character"]),

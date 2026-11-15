@@ -72,6 +72,11 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "a tool: what the game is doing (map, rung, position), read each second for a crash report",
     ),
     (
+        "chimera/core/src/shutdown.rs",
+        "StepFn",
+        "the quit's steps run once, in the frame that ends the process, with the whole world going away (the window, files, the render thread taken back)",
+    ),
+    (
         "chimera/client/src/client/feedback.rs",
         "FeedbackCapture",
         "the report's screenshot is a capture of the window (the renderer's `Screenshot` entity); tests swap in a fake frame",
@@ -291,6 +296,7 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
 /// the map-logic interpreter, servers' state changes), with the reason.
 /// Their systems don't count in `EXCLUSIVE_BASELINE`.
 const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
+    ("chimera/core/src/shutdown.rs", "the process's end: the quit's steps over the whole world, then the exit call"),
     ("apps/party_kit/src/controls.rs", "a menu"),
     ("chimera/client/src/client/feedback.rs", "a menu (the report dialog): it takes the screenshot, cues sounds and hands the report to the outbox, gated on its phase"),
     ("apps/party_kit/src/esc_menu.rs", "a menu"),

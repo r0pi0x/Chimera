@@ -404,6 +404,16 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 \
   `exit: waited <ms> ms for <n> pipelines`); ending while they compiled
   crashed 2 exits of 40 (9 of 40 under gdb) in the GPU driver (`free(): invalid
   size`, SIGSEGV) (`chimera_client::client::exit_drain`).
+- Quitting (`quit`, a menu's Quit, the window's close button, Ctrl+C on
+  a server) runs what must persist, then ends the process without
+  dropping the app (`chimera_core::shutdown`; each step's time logged as
+  `exit: <step> <ms> ms`). Tool runs (offscreen included) drop it as
+  before, so dumps and frame times are written; `+chimera:clean_exit 0`
+  gives a tool run the quick exit, `--clean-exit` or
+  `+chimera:clean_exit 1` a play session or server the slow one (leak
+  checks), and `+chimera:clean_exit 2` takes the app apart piece by
+  piece and prints each piece's time (where a clean exit's time goes;
+  docs/performance.md, "Exit").
 - A run that hangs: make it attachable and take every thread's stack.
   `kernel.yama.ptrace_scope` is 1 on the dev box, so `gdb -p` works only
   on a process that allowed it (`prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY)`

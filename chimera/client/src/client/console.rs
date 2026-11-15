@@ -3063,10 +3063,11 @@ mod tests {
     use crate::console::ConsolePlugin;
 
     /// Exit with changed settings: a play session writes `config.cfg`, every
-    /// tool run leaves it alone. (`CHIMERA_CFG_DIR` is only read by this test
+    /// tool run leaves it alone; the quick exit writes it before it ends the
+    /// process. (`CHIMERA_CFG_DIR` is only read by this test
     /// and `cfg_dir`, so the other tests don't care.)
     #[test]
-    fn tool_runs_do_not_write_the_config_on_exit() {
+    fn the_config_is_saved_at_exit_but_by_tool_runs_and_before_the_quick_exit() {
         let dir = std::env::temp_dir().join(format!("chimera_toolrun_cfg_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         // SAFETY: no other test in this binary reads or writes this variable.
@@ -3086,6 +3087,58 @@ mod tests {
             assert!(!exits_with(flags), "{flags} wrote the config");
         }
         assert!(exits_with("+map de_dust2"), "a play session saves the config");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // The quick exit (`chimera_core::shutdown`): the config is written
+        // and the shutdown steps run, in their stages' order, before the
+        // process's exit call (recorded here), which comes once.
+        use chimera_core::shutdown::{ExitCall, ShutdownAppExt, ShutdownPlugin, Stage};
+        let args = crate::client::Args::parse_from(["+map".to_string(), "de_dust2".to_string()]).unwrap();
+        let order = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let at_exit = order.clone();
+        let cfg = dir.join("config.cfg");
+        let exit = ExitCall(std::sync::Arc::new(move |code| {
+            at_exit
+                .lock()
+                .unwrap()
+                .push(format!("exit {code}, config written: {}", cfg.exists()));
+        }));
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, ConsolePlugin, ShutdownPlugin))
+            .insert_resource(crate::client::ClientArgs(args))
+            .insert_resource(exit)
+            .add_systems(Last, save_on_exit);
+        for (stage, name) in [(Stage::Settle, "settle"), (Stage::Persist, "outbox"), (Stage::Hide, "hide")] {
+            let order = order.clone();
+            app.shutdown_flush(stage, name, move |_| order.lock().unwrap().push(name.to_string()));
+        }
+        app.finish();
+        app.update();
+        assert!(order.lock().unwrap().is_empty(), "nothing runs before a quit");
+        app.world_mut().resource_mut::<Console>().dirty = true;
+        app.world_mut().write_message(AppExit::Success);
+        app.update();
+        app.update();
+        assert_eq!(
+            *order.lock().unwrap(),
+            ["hide", "outbox", "settle", "exit 0, config written: true"],
+            "the steps by stage, then the exit, once"
+        );
+        // `--clean-exit` (the cvar): the steps, no exit call.
+        order.lock().unwrap().clear();
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = App::new();
+        let (exit, codes) = ExitCall::record();
+        app.add_plugins((MinimalPlugins, ConsolePlugin, ShutdownPlugin))
+            .insert_resource(exit)
+            .insert_resource(chimera_core::shutdown::ExitMode { clean: 1 });
+        let o = order.clone();
+        app.shutdown_flush(Stage::Persist, "outbox", move |_| o.lock().unwrap().push("outbox".into()));
+        app.finish();
+        app.world_mut().write_message(AppExit::error());
+        app.update();
+        assert_eq!(*order.lock().unwrap(), ["outbox"]);
+        assert!(codes.lock().unwrap().is_empty(), "a clean exit leaves the process to the runner");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

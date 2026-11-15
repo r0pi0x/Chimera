@@ -567,7 +567,8 @@ pub fn window(args: &super::Args, title: &str) -> Window {
 /// Run a game's app as its binary does: the executors
 /// (`single_threaded_schedules`, unless `CHIMERA_EXECUTOR=multi`), then
 /// with `CHIMERA_SYSTEM_DUMP=<file>` the systems' order written there and
-/// the process ended (`dump_systems`), else the app run.
+/// the process ended (`dump_systems`), else the app run, its quit the
+/// quick one (`chimera_core::shutdown::ShutdownPlugin`).
 pub fn run_app(mut app: App) -> AppExit {
     if chimera_core::env::var("CHIMERA_EXECUTOR").as_deref() != Ok("multi") {
         single_threaded_schedules(&mut app);
@@ -577,6 +578,9 @@ pub fn run_app(mut app: App) -> AppExit {
         // Without the event loop having run, dropping the app crashes.
         std::process::exit(0);
     }
+    // Quitting saves what must persist, then ends the process without
+    // dropping the app (`--clean-exit` keeps the drop).
+    app.add_plugins(chimera_core::shutdown::ShutdownPlugin);
     app.run()
 }
 

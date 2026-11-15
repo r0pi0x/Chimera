@@ -25,7 +25,9 @@
 //!   second into the session (`Session::set_context`: a crash's
 //!   `game.txt`, logged when it changes).
 //! - A clean exit (`AppExit`) ends the session (`Session::end`: the
-//!   marker goes); a panic, a native crash or a power loss leaves it for
+//!   marker goes): in `Last`, or with the quick exit
+//!   (`chimera_core::shutdown`) as its `Stage::Persist` step "session
+//!   log", after the exit's own lines; a panic, a native crash or a power loss leaves it for
 //!   the next start (`chimera_client::client::crash`).
 
 use std::sync::Arc;
@@ -37,6 +39,7 @@ pub use chimera_assets::feedback::session::{self, CrashPolicy, Previous, Session
 use crate::{
     console::{Console, ConsoleAppExt, resource_cvar},
     metrics::memory::{short_size, usage},
+    shutdown::{ExitMode, ShutdownAppExt, Stage, asked_to_exit},
 };
 
 /// The process's session, in the world (absent: none runs).
@@ -226,7 +229,10 @@ impl Plugin for DiagnosticsPlugin {
             .init_resource::<HealthExtras>()
             .init_resource::<ContextParts>()
             .add_systems(Update, (console_lines, health, context))
-            .add_systems(Last, clean_exit);
+            .add_systems(Last, clean_exit)
+            // With the quick exit (`ShutdownPlugin`) the session ends as a
+            // `Persist` step, so the exit's own lines reach its log first.
+            .shutdown_flush(Stage::Persist, "session log", end_session);
         if app.world().contains_resource::<Console>() {
             resource_cvar::<HealthSettings, f32>(
                 app,
@@ -328,17 +334,72 @@ fn console_lines(session: Option<Res<SessionLog>>, console: Option<Res<Console>>
     }
 }
 
-fn clean_exit(session: Option<Res<SessionLog>>, mut exits: MessageReader<AppExit>) {
+fn clean_exit(session: Option<Res<SessionLog>>, quick: Option<Res<ExitMode>>, mut exits: MessageReader<AppExit>) {
     let Some(session) = session else { return };
     if let Some(exit) = exits.read().last() {
+        if quick.is_some() {
+            // `ShutdownPlugin`'s steps end it (`end_session`).
+            return;
+        }
         session.0.line(&format!("exit: {exit:?}"));
         session.0.end();
     }
 }
 
+/// The `Persist` step of the quick exit: the exit line, then the session
+/// ended (its log synced, the marker gone).
+fn end_session(world: &mut World) {
+    let Some(session) = world.get_resource::<SessionLog>() else { return };
+    let code = asked_to_exit(world).unwrap_or(0);
+    session.0.line(&format!("exit: code {code}"));
+    session.0.end();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// With the quick exit the session ends as a `Persist` step: the exit
+    /// line, "session ended" last, the marker gone, before the exit call.
+    #[test]
+    fn a_quick_exit_ends_the_session_in_its_persist_step() {
+        use crate::shutdown::{ExitCall, ShutdownPlugin};
+        let root = std::env::temp_dir().join(format!("chimera_core_quick_exit_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (session, _) = Session::start(SessionOptions {
+            root: root.clone(),
+            prefix: "session".into(),
+            app: "test".into(),
+            build: "test".into(),
+            net_version: "net".into(),
+        })
+        .unwrap();
+        let marker = session.marker_path().to_path_buf();
+        let log = session.log_path().to_path_buf();
+        let mut app = App::new();
+        let (exit, codes) = ExitCall::record();
+        app.add_plugins((MinimalPlugins, crate::console::ConsolePlugin, ShutdownPlugin))
+            .add_plugins(DiagnosticsPlugin::default())
+            .insert_resource(exit)
+            .insert_resource(SessionLog(session));
+        app.finish();
+        assert_eq!(
+            app.world().resource::<crate::shutdown::ShutdownFlush>().names(),
+            ["session log", "logs"]
+        );
+        app.update();
+        assert!(marker.exists());
+        app.world_mut().write_message(AppExit::from_code(2));
+        app.update();
+        assert_eq!(*codes.lock().unwrap(), [2]);
+        assert!(!marker.exists(), "the marker goes with the session");
+        let text = std::fs::read_to_string(&log).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines.iter().any(|l| l.ends_with("exit: code 2")), "{text}");
+        assert!(lines.last().unwrap().ends_with("session ended"), "{text}");
+        assert_eq!(lines.iter().filter(|l| l.ends_with("session ended")).count(), 1, "{text}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn health_lines_read_back() {

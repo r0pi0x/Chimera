@@ -5680,3 +5680,54 @@ What a failing test keeps and loses (probe test panicking two calls deep):
    `hotpatching` feature (systems patched into the running app by the
    Dioxus CLI's `dx serve --hot-patch`) for a human at the game; not
    tried here (no display on this box).
+
+## Exit (2026-11-15)
+
+A tester on Windows: "when I exit the game, it kind of just freezes and
+then it lags for a while". Quitting used to drop the whole app (the
+runner returns, `App` and both worlds drop: every asset, map, collider,
+catalogue and thread handle freed one at a time, then the wgpu device
+torn down) with the window still up and no longer drawn.
+
+Now (`chimera_core::shutdown`) the frame that asks to exit runs the
+`Shutdown` schedule after `Last`: the window is hidden first, then what
+must persist (the client's `config.cfg`, written in `Last` as before;
+the feedback reports still being written; the logs; the prefetch
+stopped, every store record being whole or absent), then the render
+thread is taken back idle and its compiling pipelines waited for
+(`exit_drain`), then `std::process::exit`. `--clean-exit` or
+`chimera:clean_exit 1` keeps the old drop (leak checks); tool runs keep
+it by default (dumps and frame times are written as they drop);
+`chimera:clean_exit 2` takes the world apart piece by piece with each
+piece's time. The dedicated server's `quit` and Ctrl+C take the same
+path.
+
+Measured on the dev box (Linux, RTX 3080, `playtest` profile),
+`ultimate_gun_game --offscreen 1280x720 +map de_dust2 --frames 3000`
+(a match with bots playing when `--frames` ends it), from the log's
+`exit: asked` to the process reaped:
+
+| | runs (ms) | median |
+|---|---|---|
+| before: the app dropped (`chimera:clean_exit 1`) | 734, 921, 724 | 734 |
+| after: steps, then `exit` (`chimera:clean_exit 0`) | 550, 566, 546, 401, 563 | 550 |
+| dedicated server `quit`, before / after | 276, 278 / 172, 152 | 277 / 162 |
+
+Where the clean exit's time went (`chimera:clean_exit 2`, one run):
+the render world's drop 22 ms; the main world 451 ms, of which
+`RenderQueue` 150 ms and `RenderAdapter` 98 ms (the last references to
+the wgpu device: its teardown), 4811 entities 37 ms, Combat Arms'
+character models 34 ms and data 24 ms, the weapon registry 13 ms, CA's
+UI 11 ms, the map's memos 10 ms, the schedules 9 ms, the rest under 7 ms
+each (1566 pieces). The thread joins (asset fetcher, prefetch, map
+cache writes) and `config.cfg` cost nothing measurable here (no fetch
+was running; the steps logged 0 ms).
+
+What is left after `exit` (about 0.5 s here) isn't ours: the driver's
+`atexit` teardown (194 and 290 ms between our first and last `atexit`
+handlers in two runs) and the kernel freeing the address space;
+`libc::_exit`, skipping the handlers, was no faster (684, 524, 489 ms:
+the kernel's driver does the same teardown). The window is hidden
+before it (on Windows and X11; Wayland can't hide a window), so the
+player no longer sees it. Not measured on Windows, whose heap frees
+are slower: the share the drop took there should be larger.

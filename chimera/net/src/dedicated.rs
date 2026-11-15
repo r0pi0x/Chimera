@@ -40,9 +40,12 @@
 //! - `run`: at most 300 frames a second (`FPS_MAX`), schedules on one
 //!   thread each (`single_threaded_schedules`; `CHIMERA_EXECUTOR=multi`
 //!   keeps Bevy's), the console on stdin and its output on stdout,
-//!   Ctrl+C as `quit`. `tick_stats` prints the last ticks' wall and CPU
-//!   ms and instructions (`metrics::TickMetrics`, when the game's sim adds
-//!   it) and the process's resident memory, for watching a live server.
+//!   Ctrl+C as `quit`; either ends the process at once after what must be
+//!   done (clients told, the UPnP mapping removed, the session's log
+//!   flushed: `chimera_core::shutdown`). `tick_stats` prints the last
+//!   ticks' wall and CPU ms and instructions (`metrics::TickMetrics`, when
+//!   the game's sim adds it) and the process's resident memory, for
+//!   watching a live server.
 //!   Every `HEALTH_SECS` (20) a `health ...` line (memory, the ticks'
 //!   cost, players, the map) and a `tick_stats ...` line are printed and
 //!   kept in the session's log (`ServerHealthPlugin`; `run` starts the
@@ -959,11 +962,12 @@ pub fn run(server: &'static GameServer) {
         }
         app.insert_resource(chimera_core::diagnostics::SessionLog(session));
     }
-    // Ctrl+C exits as `quit` does (AppExit: `net::udp` hangs up on every
-    // client).
+    // `quit` and Ctrl+C end the process once the steps that persist have
+    // run (`chimera_core::shutdown`; `+chimera:clean_exit 1` drops the app).
     app.add_plugins((
         bevy::log::LogPlugin { custom_layer: chimera_core::diagnostics::log_layer, ..Default::default() },
         bevy::app::TerminalCtrlCHandlerPlugin,
+        chimera_core::shutdown::ShutdownPlugin,
     ))
         .add_systems(Update, (read_stdin, start_serving, print_console).chain());
     let (tx, rx) = mpsc::channel();
