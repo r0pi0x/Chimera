@@ -11,7 +11,7 @@
 
 use bevy::math::Vec3;
 use halo_ce::game::vehicles::data::VehicleDef;
-use halo_ce::game::vehicles::drive::{Controls, Drive, SpeedParams, seek, speed_step};
+use halo_ce::game::vehicles::drive::{self, Controls, Drive, SpeedParams, seek, speed_step};
 use halo_ce::game::vehicles::physics::{self, Body, FlatLevel, GRAVITY, PhysicsDef};
 
 const FLOOR: FlatLevel = FlatLevel {
@@ -218,19 +218,31 @@ fn resting_ride_height() {
     close(origin.z, 0.03182, 1e-3, "model origin height");
 }
 
-#[test]
-fn settling_from_a_one_unit_drop() {
+/// The 1 WU drop: the settled Warthog raised 1 WU, still.
+fn dropped(sleep: bool) -> (VehicleDef, PhysicsDef, Drive, f32) {
     let (d, p, mut v) = settled();
     v.power = 0.0;
+    v.sleep_enabled = sleep;
+    v.body.velocity = Vec3::ZERO;
+    v.body.angular_velocity = Vec3::ZERO;
     let rest = v.body.position.z;
     v.body.position.z += 1.0;
+    (d, p, v, rest)
+}
+
+#[test]
+fn settling_from_a_one_unit_drop() {
+    let (d, p, mut v, rest) = dropped(false);
     let mut lowest = (f32::MAX, 0i32);
     let mut settled_at = None;
     let mut heights = Vec::new();
+    let mut vz = Vec::new();
     for t in 1..=200i32 {
         v.tick(&d, &p, &Controls::default(), &FLOOR, &[]);
+        assert!(v.last.stuck.is_empty(), "the freeze never acts (tick {t})");
         let h = v.body.position.z - rest;
         heights.push(h);
+        vz.push(v.body.velocity.z);
         if h < lowest.0 {
             lowest = (h, t);
         }
@@ -240,14 +252,46 @@ fn settling_from_a_one_unit_drop() {
             settled_at = None;
         }
     }
-    eprintln!("tick 23 {} lowest {:?} settled {:?}", heights[22], lowest, settled_at);
-    // Spec: 0.045 above on tick 23; lowest -0.131 on tick 27; within 0.01 WU
-    // and |v_z| < 0.001 from tick 57 on.
-    close(heights[22], 0.045, 0.01, "tick 23");
-    close(lowest.0, -0.131, 0.01, "lowest");
-    assert!((lowest.1 - 27).abs() <= 1, "lowest on tick {}", lowest.1);
-    let s = settled_at.expect("settles");
-    assert!((s - 57).abs() <= 3, "settled from tick {s}");
+    eprintln!(
+        "ticks 20..30 {:?} lowest {lowest:?} settled {settled_at:?} tick 57 {}",
+        &heights[19..30],
+        heights[56]
+    );
+    // Spec: ticks 20 to 30 relative to equilibrium; v_z at 23 and 27; the
+    // lowest -0.1215 on tick 27; within 0.01 WU and |v_z| < 0.001 from tick
+    // 57 on (+0.0031 there).
+    let want = [
+        0.2705, 0.1986, 0.1234, 0.0451, -0.0287, -0.0844, -0.1139, -0.1215, -0.1087, -0.0871, -0.0622,
+    ];
+    for (k, w) in want.iter().enumerate() {
+        close(heights[19 + k], *w, 0.002, &format!("height on tick {}", 20 + k));
+    }
+    close(vz[22], -0.0784, 0.001, "v_z on tick 23");
+    close(vz[26], -0.0077, 0.001, "v_z on tick 27");
+    close(lowest.0, -0.1215, 0.002, "lowest");
+    assert_eq!(lowest.1, 27, "lowest on tick 27");
+    close(heights[56], 0.0031, 0.002, "tick 57");
+    assert_eq!(settled_at, Some(57), "settled from tick 57");
+}
+
+#[test]
+fn the_drop_with_sleep_on() {
+    // Spec: asleep on tick 42 (0.010 above, moving down 0.0077), frozen
+    // 0.026 below equilibrium.
+    let (d, p, mut v, rest) = dropped(true);
+    let mut asleep = None;
+    for t in 1..=200i32 {
+        v.tick(&d, &p, &Controls::default(), &FLOOR, &[]);
+        if v.asleep && asleep.is_none() {
+            asleep = Some((t, v.body.position.z - rest, v.body.velocity.z));
+        }
+    }
+    eprintln!("asleep {asleep:?}, frozen at {}", v.body.position.z - rest);
+    let (t, h, vz) = asleep.expect("falls asleep");
+    assert_eq!(t, 42, "asleep on tick 42");
+    close(h, 0.010, 0.002, "height when falling asleep");
+    close(vz, -0.0077, 0.001, "v_z when falling asleep");
+    close(v.body.position.z - rest, -0.026, 0.002, "frozen height");
 }
 
 #[test]
@@ -390,28 +434,183 @@ fn full_lock_spins() {
     }
 }
 
-#[test]
-fn spawned_on_the_ground_falls_asleep() {
-    // Spawned with its origin on the plane (0.55 WU above, as created, then
-    // falling onto its springs): asleep on tick 25, frozen 0.062 above
-    // equilibrium.
+/// A Warthog falling onto the plane from its centre of mass at `z`, sleep
+/// on: (tick it falls asleep, v_z then, frozen height above equilibrium,
+/// forward.z frozen).
+fn spawned(z: f32) -> (i32, f32, f32, f32) {
     let (d, p) = warthog();
-    let c = p.center_of_mass;
-    let mut v = Drive::new(Body::at(Vec3::new(0.0, 0.0, 0.55 + c.z), 0.0));
+    let mut v = Drive::new(Body::at(Vec3::new(0.0, 0.0, z), 0.0));
     let mut asleep = None;
     for t in 1..=200i32 {
         v.tick(&d, &p, &Controls::default(), &FLOOR, &[]);
         if v.asleep && asleep.is_none() {
-            asleep = Some(t);
+            asleep = Some((t, v.body.velocity.z));
         }
     }
-    eprintln!("asleep {asleep:?}, frozen at {}", v.body.position.z - 0.35360);
-    let t = asleep.expect("falls asleep");
-    assert!((t - 25).abs() <= 5, "asleep on tick {t}");
-    close(
-        v.body.position.z - 0.35360,
-        0.062,
-        0.03,
-        "frozen height above equilibrium",
+    let (t, vz) = asleep.expect("falls asleep");
+    (t, vz, v.body.position.z - 0.35360, v.body.forward.z)
+}
+
+#[test]
+fn created_from_a_placement_falls_asleep() {
+    // A placement on the plane: centre of mass at the placement raised
+    // 0.55, asleep on tick 19 moving up 0.0093, frozen 0.033 above.
+    let (t, vz, h, _) = spawned(0.55);
+    eprintln!("placement: asleep {t} v_z {vz} frozen {h}");
+    assert_eq!(t, 19, "asleep on tick");
+    close(vz, 0.0093, 0.001, "v_z when falling asleep");
+    close(h, 0.033, 0.002, "frozen height above equilibrium");
+    // The model origin 0.55 above the plane (centre of mass 0.8718): asleep
+    // on tick 25 moving up 0.018, frozen 0.062 above, forward.z -0.043.
+    let (t, vz, h, fz) = spawned(0.8718);
+    eprintln!("origin: asleep {t} v_z {vz} frozen {h} forward.z {fz}");
+    assert_eq!(t, 25, "asleep on tick");
+    close(vz, 0.018, 0.001, "v_z when falling asleep");
+    close(h, 0.062, 0.002, "frozen height above equilibrium");
+    close(fz, -0.043, 0.002, "frozen pitch");
+}
+
+/// A level whose first `hits` sweeps hit at fraction 0.5 against an
+/// up-facing surface, and whose spheres touch nothing.
+struct Sweeps {
+    hits: usize,
+    seen: std::cell::Cell<usize>,
+}
+
+impl physics::Level for Sweeps {
+    fn sphere(&self, _: Vec3, _: f32) -> Option<physics::Contact> {
+        None
+    }
+    fn sweep(&self, _: Vec3, _: Vec3) -> Option<(f32, Vec3)> {
+        let n = self.seen.get();
+        self.seen.set(n + 1);
+        (n < self.hits).then_some((0.5, Vec3::Z))
+    }
+}
+
+#[test]
+fn the_penetration_freeze() {
+    // The spec's synthetic case: t_h 0.5, n (0, 0, 1), sweep (0, 0, -0.1).
+    let (v, w) = physics::freeze_response(
+        0.5,
+        Vec3::Z,
+        Vec3::new(0.0, 0.0, -0.1),
+        Vec3::new(0.2, 0.0, -0.1),
+        Vec3::new(0.0, 0.01, 0.0),
     );
+    close(v.x, 0.2, 1e-7, "tangential part kept");
+    close(v.z, -0.0421875, 1e-6, "normal part scaled by t'");
+    close(w.y, 0.00421875, 1e-7, "angular velocity scaled by t'");
+    // Moving away from the surface: v unchanged, w scaled.
+    let (v, w) = physics::freeze_response(
+        0.5,
+        Vec3::Z,
+        Vec3::new(0.0, 0.0, -0.1),
+        Vec3::new(0.2, 0.0, 0.1),
+        Vec3::new(0.0, 0.01, 0.0),
+    );
+    assert_eq!(v, Vec3::new(0.2, 0.0, 0.1));
+    close(w.y, 0.00421875, 1e-7, "angular velocity scaled");
+    // One point, falling: the first pass hits, the next is clear, and the
+    // body moves by the scaled velocity.
+    let (_, mut p) = warthog();
+    p.points.truncate(1);
+    p.air_friction = 0.0;
+    let mut b = Body::at(Vec3::new(0.0, 0.0, 5.0), 0.0);
+    b.velocity = Vec3::new(0.2, 0.0, -0.1);
+    let level = Sweeps {
+        hits: 1,
+        seen: Default::default(),
+    };
+    let out = physics::step(&p, &mut b, &[Default::default(); 2], &level, &[], Vec3::ZERO, Vec3::ZERO);
+    assert!(!out.frozen);
+    assert_eq!(out.stuck, vec![0]);
+    let vz = -0.1 - GRAVITY;
+    let t = (0.5 - 0.0078125 / vz.abs()).max(0.0);
+    close(b.velocity.z, vz * t, 1e-6, "scaled v_z stored");
+    close(b.velocity.x, 0.2, 1e-6, "v_x kept");
+    close(b.position.z, 5.0 + vz * t, 1e-6, "moved by the new velocity");
+    // Every pass hits: the vehicle stays where it was, the reduced
+    // velocities are kept.
+    let mut b = Body::at(Vec3::new(0.0, 0.0, 5.0), 0.0);
+    b.velocity = Vec3::new(0.2, 0.0, -0.1);
+    b.angular_velocity = Vec3::new(0.0, 0.01, 0.0);
+    let level = Sweeps {
+        hits: usize::MAX,
+        seen: Default::default(),
+    };
+    let out = physics::step(&p, &mut b, &[Default::default(); 2], &level, &[], Vec3::ZERO, Vec3::ZERO);
+    assert!(out.frozen);
+    assert_eq!(b.position, Vec3::new(0.0, 0.0, 5.0));
+    assert_eq!((b.forward, b.up), (Vec3::X, Vec3::Z));
+    assert!(b.velocity.z.abs() < vz.abs(), "reduced: {}", b.velocity.z);
+    close(b.velocity.x, 0.2, 1e-6, "v_x kept");
+}
+
+#[test]
+fn the_flip() {
+    // Strength k = clamp(-2 up.z, 0.2, 0.75): rate 0.3 k.
+    for (up_z, rate) in [(-1.0f32, 0.225), (-0.5, 0.225), (-0.2, 0.12), (0.0, 0.06), (0.5, 0.06)] {
+        let s = (1.0 - up_z * up_z).sqrt();
+        let b = Body {
+            up: Vec3::new(0.0, -s, up_z),
+            ..Body::at(Vec3::ZERO, 0.0)
+        };
+        let w = drive::flip_omega(&b, 2, [0.2, 0.75]);
+        close(w.length(), rate, 1e-5, &format!("flip rate at up.z {up_z}"));
+    }
+    // Counting the set rate alone: on its roof up.z > 0.9 after 28 ticks,
+    // on its side after 19, at 135 degrees after 24 (the player on the side
+    // that turns it back up: the faster of the two side types).
+    for (roll, ticks) in [(180f32, 28), (90.0, 19), (135.0, 24)] {
+        let r = roll.to_radians();
+        let count = |kind: u8| {
+            let mut b = Body {
+                up: Vec3::new(0.0, -r.sin(), r.cos()),
+                ..Body::at(Vec3::ZERO, 0.0)
+            };
+            let mut n = 0;
+            while b.up.z <= drive::FLIP_DONE_UP && n < 60 {
+                let w = drive::flip_omega(&b, kind, [0.2, 0.75]);
+                (b.forward, b.up) = b.turned(w);
+                n += 1;
+            }
+            n
+        };
+        assert_eq!(count(1).min(count(2)), ticks, "flip from {roll} degrees");
+    }
+}
+
+#[test]
+fn which_placements_spawn_and_where() {
+    use blam_formats::game_type::VehicleSet;
+    use halo_ce::game::vehicles::place::{self, Placed};
+    let warthog_tag = Some(r"vehicles\warthog\warthog");
+    assert!(place::spawns(0, warthog_tag, VehicleSet::Default));
+    assert!(!place::spawns(1, warthog_tag, VehicleSet::Default), "not automatic");
+    assert!(place::spawns(0b1110, warthog_tag, VehicleSet::Default), "difficulty bits ignored");
+    assert!(!place::spawns(0, None, VehicleSet::Default), "no palette entry");
+    assert!(
+        !place::spawns(0, Some(r"vehicles\ghost\ghost"), VehicleSet::Default),
+        "the campaign Ghost is not one of the globals' three"
+    );
+    assert!(!place::spawns(0, warthog_tag, VehicleSet::Ghost));
+    assert!(place::spawns(0, Some(r"vehicles\ghost\ghost_mp"), VehicleSet::Ghost));
+    assert!(!place::spawns(0, warthog_tag, VehicleSet::None));
+    // A placement at (x, y, 0.29): the centre of mass at (x, y, 0.84).
+    let (d, p) = warthog();
+    let placed = Placed {
+        prop: 0,
+        vehicle: "warthog".into(),
+        position: [10.0, -20.0, 0.29],
+        forward: [1.0, 0.0, 0.0],
+        up: [0.0, 0.0, 1.0],
+        markers: Default::default(),
+        hull: Vec::new(),
+        suspension: Vec::new(),
+    };
+    let v = halo_ce::game::vehicles::spawn_state(&d, &p, 0, &placed);
+    close(v.drive.body.position.z, 0.84, 1e-6, "centre of mass");
+    assert_eq!(v.drive.body.position.truncate(), bevy::math::Vec2::new(10.0, -20.0));
+    close(v.drive.body.origin(p.center_of_mass).z, 0.84 - 0.321783, 1e-6, "model origin");
 }

@@ -1,0 +1,271 @@
+# The Scorpion (`vehicles\scorpion\scorpion_mp`), from specs/halo_ce/
+# vehicles.md ("Vehicle fields of the four", "Seats", "Physics: the four",
+# "Scorpion mass points", the camera track table). Units as the tag's:
+# world units (WU), WU per tick, degrees where the tag stores degrees (seat
+# yaw and pitch rates), radians elsewhere. Its physics tag is the campaign
+# Scorpion's (`vehicles\scorpion\scorpion`). Checked against the disc by
+# the heavy test `vehicle_data`.
+
+name = "scorpion"
+tag = 'vehicles\scorpion\scorpion_mp'
+kind = "tank"
+flags = 0x8D1
+max_forward_speed = 0.14
+max_reverse_speed = 0.12
+speed_acceleration = 0.002
+speed_deceleration = 0.006
+max_left_turn = 0.0
+max_right_turn = 0.0
+wheel_circumference = 2.0
+turn_rate = 0.0
+blur_speed = 0.05
+flipping_angular_velocity = [0.2, 0.75]
+bounding_radius = 2.2
+acceleration_scale = 0.07
+rider_damage_fraction = 0.18
+power_up_time = 1.0
+power_down_time = 0.1
+
+[physics]
+mass = 20000.0
+center_of_mass = [-0.033818, 0.0, 0.423552]
+density = 8.0
+gravity_scale = 1.0
+ground_friction = 0.2
+ground_depth = 0.25
+ground_damp_fraction = 0.05
+ground_normal_k1 = 0.707107
+ground_normal_k0 = 0.5
+water_friction = 0.05
+water_depth = 0.25
+water_density = 1.0
+air_friction = 0.001
+moments = [8785.955, 16731.90, 21959.68]
+product_xz = 1015.991
+
+[[physics.channels]]
+name = "left"
+flags = 0x1
+
+[[physics.channels]]
+name = "right"
+flags = 0x1
+
+[[physics.points]]
+name = "tread front left front"
+channel = 0
+node = 4
+position = [1.2, 0.78, 0.218]
+mass = 1111.111
+radius = 0.32
+metallic = true
+
+[[physics.points]]
+name = "tread front left back"
+channel = 0
+node = 4
+position = [0.32, 0.78, 0.256]
+mass = 1111.111
+radius = 0.36
+metallic = true
+
+[[physics.points]]
+name = "tread back left front"
+channel = 0
+node = 3
+position = [-0.53, 0.87, 0.256]
+mass = 1111.111
+radius = 0.36
+metallic = true
+
+[[physics.points]]
+name = "tread back left back"
+channel = 0
+node = 3
+position = [-1.15927, 0.87, 0.218]
+mass = 1111.111
+radius = 0.32
+metallic = true
+
+[[physics.points]]
+name = "tread back right back"
+channel = 1
+node = 5
+position = [-1.15927, -0.87, 0.218]
+mass = 1111.111
+radius = 0.32
+metallic = true
+
+[[physics.points]]
+name = "tread back right front"
+channel = 1
+node = 5
+position = [-0.53, -0.87, 0.256]
+mass = 1111.111
+radius = 0.36
+metallic = true
+
+[[physics.points]]
+name = "tread front right back"
+channel = 1
+node = 6
+position = [0.32, -0.78, 0.256]
+mass = 1111.111
+radius = 0.36
+metallic = true
+
+[[physics.points]]
+name = "tread front right front"
+channel = 1
+node = 6
+position = [1.2, -0.78, 0.218]
+mass = 1111.111
+radius = 0.32
+metallic = true
+
+[[physics.points]]
+name = "turret front"
+node = 8
+position = [-0.285636, 0.0, 1.11114]
+mass = 1111.111
+radius = 0.35
+metallic = true
+
+[[physics.points]]
+name = "turret back"
+node = 7
+position = [-0.944265, 0.0, 1.00178]
+mass = 1111.111
+radius = 0.48
+metallic = true
+
+[[physics.points]]
+name = "hull back left"
+position = [-1.05126, 0.2, 0.48964]
+mass = 1111.111
+radius = 0.4
+metallic = true
+
+[[physics.points]]
+name = "hull mid right"
+position = [0.543795, -0.2, 0.413791]
+mass = 1111.111
+radius = 0.38
+metallic = true
+
+[[physics.points]]
+name = "hull front right"
+position = [1.18333, -0.22, 0.40408]
+mass = 1111.111
+radius = 0.3
+metallic = true
+
+[[physics.points]]
+name = "hull front left"
+position = [1.18333, 0.22, 0.40408]
+mass = 1111.111
+radius = 0.3
+metallic = true
+
+[[physics.points]]
+name = "hull mid left"
+position = [0.543795, 0.2, 0.413791]
+mass = 1111.111
+radius = 0.38
+metallic = true
+
+[[physics.points]]
+name = "hull hatch left"
+position = [-0.196007, 0.22, 0.5]
+mass = 1111.111
+radius = 0.44
+metallic = true
+
+[[physics.points]]
+name = "hull hatch right"
+position = [-0.196007, -0.22, 0.5]
+mass = 1111.111
+radius = 0.44
+metallic = true
+
+[[physics.points]]
+name = "hull back right"
+position = [-1.05126, -0.2, 0.48964]
+mass = 1111.111
+radius = 0.4
+metallic = true
+
+# The driver drives and guns; the four riders on the treads need a driver
+# (flag 9), look first person and have no camera track (the globals'
+# default).
+[[seats]]
+label = "scorpion-driver"
+marker = "driver"
+flags = 0x1C
+yaw_rate = 50.0
+pitch_rate = 0.0
+camera_marker = ""
+pitch_auto_level = -0.3141593
+pitch_range = [-0.5235988, 0.6108652]
+yaw_range = [0.0, 0.0]
+track = "scorpion_driver_loose"
+hud_text = 13
+
+[[seats]]
+label = "scorpionLF"
+marker = "passenger lf"
+flags = 0x200
+yaw_rate = 0.0
+pitch_rate = 0.0
+camera_marker = "passenger lf camera"
+pitch_auto_level = -0.3141593
+pitch_range = [-0.5235988, 0.6108652]
+yaw_range = [-1.570796, 1.570796]
+track = ""
+hud_text = 15
+
+[[seats]]
+label = "scorpionRF"
+marker = "passenger rf"
+flags = 0x200
+yaw_rate = 0.0
+pitch_rate = 0.0
+camera_marker = "passenger rf camera"
+pitch_auto_level = -0.3141593
+pitch_range = [-0.5235988, 0.6108652]
+yaw_range = [-1.570796, 1.570796]
+track = ""
+hud_text = 15
+
+[[seats]]
+label = "scorpionLB"
+marker = "passenger lb"
+flags = 0x200
+yaw_rate = 0.0
+pitch_rate = 0.0
+camera_marker = "passenger lb camera"
+pitch_auto_level = -0.3141593
+pitch_range = [-0.5235988, 0.6108652]
+yaw_range = [-1.570796, 1.570796]
+track = ""
+hud_text = 15
+
+[[seats]]
+label = "scorpionRB"
+marker = "passenger rb"
+flags = 0x200
+yaw_rate = 0.0
+pitch_rate = 0.0
+camera_marker = "passenger rb camera"
+pitch_auto_level = -0.3141593
+pitch_range = [-0.5235988, 0.6108652]
+yaw_range = [-1.570796, 1.570796]
+track = ""
+hud_text = 15
+
+[tracks.scorpion_driver_loose]
+points = [
+    [0.3328, 4.6906], [-1.9374, 4.5644], [-3.3776, 4.1085], [-4.2563, 3.2836],
+    [-4.6130, 2.1571], [-4.3739, 1.0201], [-3.7841, 0.2852], [-2.7714, -0.0658],
+    [-1.8471, -0.1524],
+]

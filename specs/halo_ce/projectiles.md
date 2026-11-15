@@ -1799,7 +1799,7 @@ velocity is used from the next update.
 
 | Rate | Update 1 | Update 2 | Update 10 | Update 20 | Update 40 | Update 60 |
 |---|---|---|---|---|---|---|
-| player target, normal (0.0261799 rad = 1.5 deg per update) | pos (0.1333, 0, 0.62), heading 0 deg | pos (0.2667, 0), heading 1.5 deg | pos (1.3317, 0.0488), heading 4.5 deg | pos (2.6502, 0.2400), 13.5 deg | pos (5.1343, 1.1786), 31.5 deg | pos (7.0611, 2.9878), 57.0 deg |
+| player target, normal (0.0261799 rad = 1.5 deg per update) | pos (0.1333, 0, 0.62), heading 0 deg | pos (0.2667, 0), heading 1.5 deg | pos (1.3317, 0.0488), heading 4.5 deg | pos (2.6502, 0.2400), 13.5 deg | pos (5.1343, 1.1786), 31.5 deg | pos (7.0611, 2.9878), 55.5 deg |
 | AI target (0.0523599 rad = 3 deg) | heading 0 | 3.0 deg | (1.3311, 0.0558), 3.0 deg | (2.6497, 0.2435), 15.0 deg | (5.1323, 1.1815), 33.0 deg | (7.0677, 2.9798), 57.0 deg |
 
 (Heading = atan2(vy, vx) after the update; on update 1 the target is
@@ -1811,7 +1811,12 @@ passes the target at 0.0117 WU (player rate) on update 88, with no
 collision modelled.) An earlier version of this table (path 1 percent
 shorter: update 10 at (1.3277, 0.0485), update 60 at (7.0202, 2.9398))
 came from a double-precision run in which the 0.99 branch fired by
-rounding; the table above is the corrected one. Charged bolt, same
+rounding; the table above is the corrected one. (A later revision
+printed the player-rate heading at update 60 as 57.0 degrees, copied
+from the AI row; the positions given, re-run in 32-bit arithmetic, give
+**55.5 degrees** (37 net turns of 1.5), which is the value to test;
+the result is the same whether the line of sight is taken before or
+after the update's move.) Charged bolt, same
 target, player rate 0.0084357 rad: heading 0.483 deg after update 2,
 4.35 deg after 10, 8.7 deg after 20, passing the target at 0.755 WU on
 update 18 (re-run in 32-bit arithmetic: unchanged).

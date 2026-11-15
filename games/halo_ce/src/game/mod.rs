@@ -37,10 +37,14 @@
 //!   decals and lights, shots shown on every machine; `fx::objects`: thrown
 //!   grenades, explosions, plasma countdowns, items on the ground and their
 //!   pickup sounds, on every machine;
-//! - `vehicles`: the scenario's vehicles (the Warthog; vehicles.md):
-//!   placement as moving props, the mass-point physics on the engine's
-//!   collision, driving, seats and the seat camera, splatter and riders'
+//! - `vehicles`: the scenario's vehicles (the Warthog, the Ghost and the
+//!   Scorpion; vehicles.md): placement as moving props, the mass-point
+//!   physics on the engine's collision, driving, seats, the seat camera
+//!   (`camera`) and the model's overlays (`look`), splatter and riders'
 //!   damage;
+//! - `rules`: Halo's game types (multiplayer_rules.md): the variant
+//!   chosen by `halo_ce:gametype`, slayer, capture the flag, king of the
+//!   hill, oddball, spawns, equipment and scoring, the match's view;
 //! - `respawn`: Halo's players' loadout and respawn by
 //!   multiplayer_rules.md 4 (`HaloRules`, Halo's own app only);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,

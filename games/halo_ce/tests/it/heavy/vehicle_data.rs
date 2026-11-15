@@ -1,6 +1,6 @@
-//! Halo's vehicle document (data/vehicles/warthog.toml) against the user's
-//! disc image: every number of the Warthog's vehicle fields, seats, camera
-//! track and physics (mass points, channels, the tensor) equals what
+//! Halo's vehicle documents (data/vehicles/) against the user's disc image:
+//! every number of each vehicle's fields, seats, camera tracks and physics
+//! (mass points, channels with their antigravity, the tensor) equals what
 //! `blam_formats` reads from `bloodgulch.map`, within the spec's digits.
 //! Passes with a note without an install.
 
@@ -28,12 +28,28 @@ fn loose(ours: f32, disc: f32, what: &str) {
 #[test]
 fn the_warthogs_numbers_are_the_disc_s() {
     let Some(map) = bloodgulch() else { return };
-    let d = VehicleDef::warthog();
-    let tag = map.find(class::VEHICLE, &d.tag).expect("the Warthog");
-    let v = Vehicle::read(&map, tag).unwrap();
+    check(&map, &VehicleDef::warthog(), Kind::Jeep, 1);
+}
+
+#[test]
+fn the_ghosts_numbers_are_the_disc_s() {
+    let Some(map) = bloodgulch() else { return };
+    check(&map, &VehicleDef::ghost(), Kind::Scout, 4);
+}
+
+#[test]
+fn the_scorpions_numbers_are_the_disc_s() {
+    let Some(map) = bloodgulch() else { return };
+    check(&map, &VehicleDef::scorpion(), Kind::Tank, 0);
+}
+
+/// Every number of `d` against the disc's tag, of type `code`.
+fn check(map: &MapFile, d: &VehicleDef, kind: Kind, code: i16) {
+    let tag = map.find(class::VEHICLE, &d.tag).expect("the vehicle");
+    let v = Vehicle::read(map, tag).unwrap();
     let o = &v.own;
-    assert_eq!(d.kind, Kind::Jeep);
-    assert_eq!(o.vehicle_type.code(), 1);
+    assert_eq!(d.kind, kind);
+    assert_eq!(o.vehicle_type.code(), code);
     assert_eq!(d.flags, o.flags.bits());
     for (ours, disc, what) in [
         (d.max_forward_speed, o.maximum_forward_speed, "forward"),
@@ -84,14 +100,10 @@ fn the_warthogs_numbers_are_the_disc_s() {
             .first()
             .and_then(|r| map.tag(r.track.id))
             .map(|t| t.path.clone());
-        assert_eq!(
-            track.as_deref(),
-            Some(format!("camera\\{}", s.track).as_str()),
-            "{}",
-            s.label
-        );
+        let want = (!s.track.is_empty()).then(|| format!(r"camera\{}", s.track));
+        assert_eq!(track, want, "{}", s.label);
     }
-    let p = Physics::read(&map, map.tag(v.object.physics.id).unwrap()).unwrap();
+    let p = Physics::read(map, map.tag(v.object.physics.id).unwrap()).unwrap();
     let ours = &d.physics;
     for (a, b, what) in [
         (ours.mass, p.mass, "mass"),
@@ -121,6 +133,11 @@ fn the_warthogs_numbers_are_the_disc_s() {
     assert_eq!(ours.channels.len(), p.powered_mass_points.len());
     for (c, q) in ours.channels.iter().zip(&p.powered_mass_points) {
         assert_eq!((c.name.as_str(), c.flags), (q.name.as_str(), q.flags.bits()));
+        loose(c.antigrav_strength, q.antigrav_strength, &c.name);
+        loose(c.antigrav_height, q.antigrav_height, &c.name);
+        loose(c.antigrav_damp_fraction, q.antigrav_damp_fraction, &c.name);
+        loose(c.antigrav_normal_k1, q.antigrav_normal_k1, &c.name);
+        loose(c.antigrav_normal_k0, q.antigrav_normal_k0, &c.name);
     }
     assert_eq!(ours.points.len(), p.mass_points.len());
     for (a, b) in ours.points.iter().zip(&p.mass_points) {
