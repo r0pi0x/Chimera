@@ -31,9 +31,12 @@
 //!
 //! **Wear.** A character becoming Halo's (its movement `halo_ce:movement`,
 //! a party app's identity following a Halo gun) gets `Vitality`, `Stun`,
-//! the shield's pieces and ratio, and an `Armor` if it had none (a full
-//! shield; one it had stays: the armour value is the character's and
-//! recharges from there); one leaving takes them off, keeping `Armor`.
+//! the shield's pieces (over any the last game left, marked Halo's:
+//! `weapon::PiecesOf`, so another game's armour step leaves them on, and
+//! put back by `keep_shield` if one took them off in the same tick) and
+//! ratio, and an `Armor` if it had none (a full shield; one it had stays:
+//! the armour value is the character's and recharges from there); one
+//! leaving takes them off, keeping `Armor`.
 //! A respawn (health back above 0) starts a fresh `Vitality`, shield full.
 //!
 //! **Replication.** The server owns all of it: `Vitality` replicates to
@@ -70,7 +73,7 @@ pub mod apply;
 pub mod data;
 
 use bevy::prelude::*;
-use chimera_sim::weapon::{Armor, ArmorPieces, ArmorRatio, Coverage, Depletion, hits::ArmorPiece};
+use chimera_sim::weapon::{Armor, ArmorPieces, ArmorRatio, Coverage, Depletion, PiecesOf, hits::ArmorPiece};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -293,7 +296,7 @@ impl Plugin for VitalityPlugin {
                 use bevy_replicon::prelude::AppRuleExt;
                 app.replicate::<Vitality>();
             })
-            .add_systems(FixedUpdate, wear.before(SimSet::Movement))
+            .add_systems(FixedUpdate, (wear, keep_shield).chain().before(SimSet::Movement))
             .add_systems(Predict::Movement, stun_step.in_set(UnitStep))
             .add_systems(
                 FixedUpdate,
@@ -308,16 +311,28 @@ fn wear(mut commands: Commands, on: Query<(Entity, &MovementSlot, Has<Vitality>)
     for (e, slot, halo) in &on {
         let mut ent = commands.entity(e);
         if slot.0 == super::movement::ID {
+            // The shield's pieces over any the last game left on.
+            ent.insert((shield_armour(), PiecesOf(super::GAME), ArmorRatio(1.0)));
             ent.insert_if_new((
                 Vitality::default(),
                 Stun::default(),
-                shield_armour(),
-                ArmorRatio(1.0),
                 Armor { amount: 1.0, helmet: false },
                 super::damage::Attackers::default(),
             ));
         } else if halo {
-            ent.remove::<(Vitality, Stun, ArmorPieces, ArmorRatio, Mirrored, super::damage::Attackers)>();
+            ent.remove::<(Vitality, Stun, ArmorPieces, PiecesOf, ArmorRatio, Mirrored, super::damage::Attackers)>();
+        }
+    }
+}
+
+/// A Halo character's armour is the shield's pieces: put back if another
+/// game's step took them off or put its own on in the same tick as the
+/// wear (each game's armour step runs on its own; only a mismatch writes).
+fn keep_shield(on: Query<(Entity, Option<&ArmorPieces>, Option<&PiecesOf>), With<Vitality>>, mut commands: Commands) {
+    let shield = shield_armour();
+    for (e, pieces, owner) in &on {
+        if pieces != Some(&shield) || owner.is_none_or(|o| o.0 != super::GAME) {
+            commands.entity(e).insert((shield.clone(), PiecesOf(super::GAME), ArmorRatio(1.0)));
         }
     }
 }

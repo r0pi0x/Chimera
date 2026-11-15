@@ -1910,12 +1910,20 @@ impl NetPart for CaSpread {
 /// armour; one that becomes Combat Arms' (another game's armour, or none)
 /// puts on the default gear over the armour it has (its amount kept);
 /// one that becomes another game's takes the gear off (what covers it is
-/// then its armour's default kit: CS:S's kevlar). docs/DESIGN.md "Hits
-/// across games".
+/// then its armour's default kit: CS:S's kevlar), but never pieces another
+/// game marked its own (`weapon::PiecesOf`: Halo's shield). docs/DESIGN.md
+/// "Hits across games".
 #[allow(clippy::type_complexity)]
 fn armour_follows_identity(
     characters: Query<
-        (Entity, Has<Armor>, Has<ArmorPieces>, Option<&crate::slots::GameIdentity>, Has<crate::slots::FollowsWeapon>),
+        (
+            Entity,
+            Has<Armor>,
+            Has<ArmorPieces>,
+            Option<&crate::slots::GameIdentity>,
+            Has<crate::slots::FollowsWeapon>,
+            Option<&chimera_sim::weapon::PiecesOf>,
+        ),
         (With<Health>, With<Intent>),
     >,
     minigame: Option<Res<chimera_sim::minigame::ActiveMinigame>>,
@@ -1925,11 +1933,14 @@ fn armour_follows_identity(
     // without one yet (before it is taken in, or holding nothing) isn't
     // Combat Arms'.
     let following = minigame.is_some_and(|m| m.def.slots.identity == Some(chimera_sim::minigame::def::IdentityDef::Weapon));
-    for (e, armor, pieces, identity, follows) in &characters {
+    for (e, armor, pieces, identity, follows, owner) in &characters {
         if (follows || following) && identity.is_none() {
             continue;
         }
         let ours = crate::slots::GameIdentity::allows(identity, super::GAME);
+        // Another game's pieces (`weapon::PiecesOf`: Halo's shield) are
+        // its own to take off.
+        let pieces = pieces && owner.is_none_or(|o| o.0 == super::GAME);
         match (ours, armor, pieces) {
             (true, false, _) => {
                 commands.entity(e).insert(default_armour());
