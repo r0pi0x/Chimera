@@ -1,0 +1,24 @@
+# Each game's weapons' damage in the party apps (party_kit::party_damage,
+# chimera_sim::weapon::GameDamage): a scale on everything the game's
+# weapons deal here (bullets, alt-fire, explosives, melee), by the dealing
+# weapon's game, applied before the victim's armour; the ladder's power
+# curve counts it. A game not listed deals as it does in its own app;
+# the map's damage (falls, triggers) is never scaled, and each game's own
+# app has no table. One place to tune every game against the others.
+
+# Halo: its own conversion counts a Halo damage point as 1/75 of another
+# character's health (the Spartan's body is 75 points: 1.333 hit points a
+# point); 0.75 makes it one hit point, so its guns are not overpowered on
+# other games' characters (the project owner, 2026-11-15): the assault
+# rifle's 10-point bullet is 10 hit points (10 to kill a bare character),
+# the pistol's 37.5 (3 body shots), the sniper rifle's 101. Flesh
+# modifiers and headshot flags are Halo's, as before.
+halo_ce = 0.75
+
+# HL2:DM: its guns are far slower to kill than the field's here (the SMG1
+# 20 body hits and 1.43 s, the AR2 10 and 0.90 s, the pistol 13, against
+# 0.2 to 0.5 s for CS:S's and Combat Arms' rifles and SMGs): 1.5 makes the
+# SMG1 14 hits, the AR2 7, the pistol 9, the .357 one body shot (112.5)
+# and the shotgun still two shells (94.5 with every pellet); the user,
+# 2026-11-15.
+hl2dm = 1.5

@@ -383,6 +383,15 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   the engine's `Carried` (every movement skips a carried character and
   a carried player is not predicted); in the party apps vehicles are
   off by default (`halo_ce:party_vehicles`: none is placed).
+  `game::cross_game` (data/party_balance.toml) holds Halo's cross-game
+  balance for the party apps: another game's damage counts 1.5 times on
+  a Halo player (`core::DamageScale` and the shield's scaled armour
+  unit; Halo against Halo is unchanged), the armour a character brought
+  in is given back when it stops being Halo's, and what Halo's weapons
+  deal to other games' characters goes through the party's per-game
+  damage table (`chimera_sim`'s `GameDamage`, party_kit's
+  data/party_damage.toml: `halo_ce = 0.75`, `hl2dm = 1.5`), which the
+  ladder's power readers see too.
   Halo's lasting sounds (`game::audio`) play on the engine's
   `SoundControl`/`PlaySound` seams: the level's background sound by the
   listener's cluster, its sound scenery, the shown projectiles' flight

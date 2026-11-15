@@ -602,7 +602,12 @@ numbers (pinned by `parity_pin_*` tests in each game).
   armour is kevlar by CS:S's rules and shows on CS:S's HUD, a Combat
   Arms-gun player's the same points as Combat Arms' gear on its HUD,
   and nobody carries armour their HUD doesn't show. (Combat Arms puts on
-  its default gear at a switch, not a loadout's.)
+  its default gear at a switch, not a loadout's.) Halo's shield is the
+  exception on the way out: a character becoming Halo's brings its armour
+  in as the shield's start, but one that stops being Halo's gets back the
+  armour it brought (its value and kind, or none), never the shield's
+  value (`halo_ce::game::cross_game::Brought`, the party balance's
+  switch on; user, 2026-11-15).
 
 - **Spawn protection: see-through, shot through** (`core::SpawnProtected`,
   a minigame's: `protection = { damage, bullets, fire_ends }`, in shape

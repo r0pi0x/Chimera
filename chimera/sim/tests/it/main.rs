@@ -7,6 +7,7 @@
 
 mod armour_ratio;
 mod equipment;
+mod game_damage;
 mod map_lifetime;
 mod minigame;
 mod mode;

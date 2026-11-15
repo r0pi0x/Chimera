@@ -644,3 +644,21 @@ backlog.
   not drive). The game type's vehicle set is not yet applied at a
   game's start. Testing is kept light today by the user's instruction
   (targeted tests only).
+- 2026-11-15: the cross-game balance (the user's decision after the
+  balance report): a Halo player's effective hit points against other
+  games' guns 200 -> 133 (an AK-47 kills in 4 body hits, 3 on others,
+  6 before; an AWP still needs 2: one at an incoming scale of 1.754),
+  Halo against Halo bit-identical; Halo's damage to other characters
+  one point a hit point (the assault rifle 10 bullets, the pistol 3
+  body shots, melee no longer one hit but from behind, blasts no
+  longer lethal to their edge; the sniper rifle still one body shot);
+  the shield no longer left as armour on the next rung; a per-game
+  damage table for the party apps with HL2:DM at 1.5 (SMG1 20 -> 14
+  hits, AR2 10 -> 7, the .357 one body shot); the ladder's power
+  readers corrected (the plasma pistol from the top of its band to the
+  middle, the needler up, the assault rifle last of the peak band by
+  its burst model: `burst_seconds` to revisit). A player without the
+  disc was verified end to end (Halo's base 22.5 MB in 2 s from the
+  asset service, nothing missing from the published sets). Bots fire
+  the battery guns now; the engine's `ShotMade` fact for bots is being
+  added.

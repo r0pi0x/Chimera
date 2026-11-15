@@ -44,7 +44,7 @@ pub const EJECT_UP: f32 = 0.2;
 /// it neither drives nor steers, the stick and levelling torque scales, and
 /// the jump's pitch torque and lift.
 pub const SCOUT_YAW_ACCEL: f32 = 0.003_490_658_7;
-pub const SCOUT_STEER_SHARP: f32 = 0.785_398_2;
+pub const SCOUT_STEER_SHARP: f32 = std::f32::consts::FRAC_PI_4;
 pub const HOVER_RATE: f32 = 0.1;
 pub const SCOUT_YAW_GAIN: f32 = 0.006_981_317_4;
 pub const SCOUT_UPSIDE_DOWN: f32 = -0.2;

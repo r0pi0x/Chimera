@@ -57,6 +57,8 @@
 //!   `Carried`) and replicates who sits where (`NetSeat`, net part
 //!   `halo_ce_vehicles`); in the party apps vehicles are placed only with
 //!   `halo_ce:party_vehicles` on (off by default);
+//! - `cross_game`: the party balance (the incoming scale, the armour
+//!   brought back, the power reader's hand);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `audio`: looping sounds, the level's background sound, environment
@@ -75,6 +77,7 @@
 
 pub mod audio;
 pub mod body;
+pub mod cross_game;
 pub mod damage;
 pub mod fx;
 pub mod maps;

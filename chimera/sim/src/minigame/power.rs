@@ -49,7 +49,9 @@
 //!   own hooks' parameters (`PowerReaders`, `PowerAppExt::
 //!   add_power_reader`: CS:S's accuracy, Combat Arms' damage bands,
 //!   spread cone, fire rate, projectile and flame), which know what the
-//!   game's numbers mean. A gun without damage data scores 0. A weapon
+//!   game's numbers mean; its damage then scaled by its game's in the
+//!   app (`PowerReaders::game_damage`: the party apps' per-game table,
+//!   `weapon::GameDamage`). A gun without damage data scores 0. A weapon
 //!   that deals its damage through what it places (Combat Arms' auto
 //!   turret) scores by that device's gun, as its game's reader of the
 //!   device hook gives it: the placing and setup as latency, and the
@@ -334,6 +336,10 @@ pub struct PowerReaders {
     pub stats: Vec<(&'static str, PowerReader)>,
     pub harm: crate::weapon::harm::HarmReaders,
     pub exclusions: super::auto::DrawExclusions,
+    /// The app's scale on each game's weapons' damage (`weapon::
+    /// GameDamage`, as its hits take it): a gun's damage is counted
+    /// scaled, so the ladder orders guns by what they do in the app.
+    pub game_damage: crate::weapon::GameDamage,
     /// The powers worked out so far (`Powers::of`), shared by the copies.
     memo: std::sync::Arc<std::sync::Mutex<PowerMemo>>,
 }
@@ -345,10 +351,15 @@ pub struct PowerReaders {
 /// frame"). Emptied when the readers or the curve differ.
 #[derive(Default)]
 struct PowerMemo {
-    /// The readers' hooks and addresses, and the curve, the powers are of.
-    of: Option<(Vec<(&'static str, usize)>, PowerCurve)>,
+    /// The readers' hooks and addresses, the games' damage scales and the
+    /// curve the powers are of.
+    of: Option<MemoKey>,
     powers: BTreeMap<(usize, GunClass), Power>,
 }
+
+/// What a memo's powers are of: the readers' hooks and addresses, the
+/// games' damage scales, the curve.
+type MemoKey = (Vec<(&'static str, usize)>, crate::weapon::GameDamage, PowerCurve);
 
 pub trait PowerAppExt {
     /// `reader` refines a gun's stats when its data names hook `hook`.
@@ -418,6 +429,7 @@ pub fn stats(data: &WeaponData, readers: &PowerReaders, curve: &PowerCurve, metr
             read(p, &at, &mut s);
         }
     }
+    s.damage *= readers.game_damage.of_weapon(&data.id);
     s
 }
 
@@ -515,8 +527,8 @@ impl Powers {
         let mut out = BTreeMap::new();
         let mut memo = readers.memo.lock().unwrap_or_else(|e| e.into_inner());
         let key: Vec<(&'static str, usize)> = readers.stats.iter().map(|(hook, read)| (*hook, *read as usize)).collect();
-        if !memo.of.as_ref().is_some_and(|(k, c)| *k == key && c == curve) {
-            memo.of = Some((key, curve.clone()));
+        if !memo.of.as_ref().is_some_and(|(k, g, c)| *k == key && *g == readers.game_damage && c == curve) {
+            memo.of = Some((key, readers.game_damage.clone(), curve.clone()));
             memo.powers.clear();
         }
         for (id, class) in guns {
