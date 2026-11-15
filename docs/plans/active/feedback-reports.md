@@ -591,8 +591,11 @@ nothing was left to say why. Plan, then as built.
    map, minigame, rung, server, position; `system.txt`: OS, CPUs, GPU,
    driver, backend, window); on Windows an unhandled-exception filter
    writing a minidump (`MiniDumpWriteDump` through windows-sys, already
-   in the tree: stacks, thread info, modules; no heap), compiled for
-   `x86_64-pc-windows-gnu` and msvc alike; Bevy's `RenderErrorHandler`
+   in the tree: stacks, thread info, modules; no heap), the same code
+   for `x86_64-pc-windows-gnu` and msvc (checked with `cargo check
+   --target x86_64-pc-windows-gnu` for chimera_assets, chimera_core,
+   chimera_client and chimera_net; msvc not checked here: its target
+   isn't installed on the Linux box); Bevy's `RenderErrorHandler`
    replaced: a device lost or out of memory is logged, bundled and quits
    as before. New bundle entries `backtrace.txt`, `health.txt`,
    `minidump.dmp` (its home folders' names scrubbed in UTF-8 and UTF-16,
@@ -656,6 +659,18 @@ names are scrubbed; its stacks may hold a secret that was on them
   the session in `run` (a dead last session's log named on stderr).
 - `party_kit::crash_signal`: the notice; `ui_scene crash
   [ended|crashed|sent|off]`.
+- Tests: `chimera_assets` `session::` (the ring, the file's cap and
+  rotation, secrets filtered before the disk; a dead session found at a
+  simulated restart, a live one not; a panic in a child process leaving
+  a held bundle with its backtrace, log tail and health lines and no
+  planted secret, sent at the next start; the policy) and `feedback::`
+  (the route takes kind `crash`, signatures group, the page's groups and
+  minidump); `chimera_core` `diagnostics::` (a health line reads back);
+  `chimera_net` `dedicated::a_server_writes_health_lines_and_tick_stats_to_its_log`;
+  `chimera_client` `crash::` (ask offers then Send queues and wakes the
+  outbox, never and always, the notice's Always sets the archived cvar).
+  Screenshot: the notice on UGG's main menu at 1080p, offscreen with a
+  dead session planted in a scratch `CHIMERA_DATA_DIR`.
 - Left: Linux native crashes (a signal handler: the marker and log tell,
   no stack); DXGI's VRAM budget on Windows; symbolizing minidumps on the
   host (a `minidump-stackwalk` run, with the release's PDBs or DWARF);
