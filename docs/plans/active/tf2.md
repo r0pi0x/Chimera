@@ -17,7 +17,7 @@ from specs, measurements and the game's own data.
 | Milestone | State | Summary |
 |---|---|---|
 | M0 plan and first specs | done (2026-11-15) | this plan; specs/tf2/: install, movement, classes, weapons, ICE |
-| M1 a map you can walk on | not started | mount, ctf_2fort and cp_badlands, walked in UGG |
+| M1 a map you can walk on | done (2026-11-15) | `games/tf2`; mount (missing archives skipped); ctf_2fort and cp_badlands converted with team spawns; `tf2:<map>` in the party apps; `$ssbump` drawn |
 | M2 TF2 guns as UGG rungs | not started | Scattergun, Rocket Launcher, Shotgun, Minigun; the weapon scripts; `chimera_pack tf2` |
 | M3 classes as bodies, TF2's movement | not started | |
 | M4 more maps and weapons | not started | |
@@ -150,6 +150,52 @@ All `draft`.
 - `[games.tf2]` in `chimera.local.example.toml`; the install in
   docs/assets-for-developers.md.
 
+What landed (2026-11-15):
+
+- `games/tf2` (crate `tf2`) of new-game.md's shape: `game::INFO` (app
+  440, folder `tf`, tick 0.015, namespaces `tf2` and `tf`), `game::mount`
+  from `tf/gameinfo.txt` through `mount::served`, `SimPlugins`,
+  `game::Tf2Plugins`, `harness::Tf2Sim`, the stand-in `tf2:movement`
+  (placeholder, the Soldier's 240 / gravity 800 / jump 289), an empty
+  `ui`, and `BUNDLE` (maps only: no guns, no pool maps, no guest dressing).
+- Generic: the VPK reader leaves out the files of a numbered archive that
+  is missing (`source_formats::vpk`, `Vpk::skipped`): the dedicated
+  server's layout mounts, its textures missing (stand-ins).
+  `SourceGame::spawn_rule` (`source_engine::content::bsp`): spawn points
+  by a game's own rule; TF2's (`maps::team_spawn`): `info_player_teamspawn`
+  by `TeamNum` (RED our team 1, BLU 2), not `StartDisabled`, `SpawnMode`
+  1 or team 0, and on control-point maps only those whose point their team
+  owns at round start (`point_default_owner`): 2fort 15 + 15, badlands
+  16 + 16. A material name with its `.vmt` (2fort's water
+  `$bottommaterial`) resolves. `$ssbump` (specs/cs_source/shaders.md 2)
+  drawn by the world shader (`MapMesh::ssbump`): TF2's concrete and rock
+  walls lost the dark speckles a self-shadowed bump map read as a normal
+  map gave them. The shared conversion already read the LZMA lumps, the
+  LZMA static-prop lump (v10) and the LZMA pak entries.
+- The party: `party_kit::MAP_GAMES` (TF2), whose loaders join the
+  party's map sources (`tf2:ctf_2fort` from `--map`, `changelevel`,
+  the server), registered with its map logic; TF2's teams as Combat
+  Arms' (RED Alpha, BLU Bravo) and its surfaces as CS:S's. Not in
+  `GUESTS` until it lends parts (M2): the startup fetch, the binds and
+  an automatic ladder's pool leave it out.
+- `dump tf2`; `[games.tf2]` in chimera.local.example.toml; the two
+  layouts in docs/assets-for-developers.md.
+- Tests: `tf2`'s fast tier (registration, tick, standing, running and
+  jumping on the greybox, the spawn rule); heavy (the mount's order, tf
+  over hl2, the missing-archive skip; both maps converted with faces,
+  collision, displacements, lightmap, sky, props, entities, spawns,
+  `$ssbump`, no missing material; a lean load; the server layout with
+  `CHIMERA_TF2_SERVER_ROOT`; the cache key; players standing and walking
+  on 2fort); `party_kit`'s `heavy::tf2_maps` (the party on 2fort: 202
+  spots, none stuck, a Combat Arms player lands and walks).
+
+Left for later (M3/M4): the navigation files in tf2_misc don't parse
+(TF2's per-area data differs from CS:S's; no spec yet), so TF2 maps have
+no navigation mesh; one particle file's operator ("Remap Noise to
+Scalar") isn't run; spawns don't move with captured points; on the
+server's layout ctf_2fort draws fewer triangles (63,686 of 70,883; not
+looked into; it collides the same).
+
 ### M2: TF2 guns as UGG rungs
 
 - ICE and the `.ctx` reader (section 3, decision 3), with the three
@@ -209,3 +255,7 @@ server probe for parity checks, TF2's own app.
   weapon scripts are decrypted with our own ICE and a locally supplied
   key, and the asset service is the default source of game data
   (section 3).
+- 2026-11-15: M1 landed: `games/tf2` with its mount, maps (team spawns)
+  and stand-in movement; ctf_2fort and cp_badlands walked in the
+  Ultimate Gun Game (`--map tf2:ctf_2fort`); generic: missing VPK
+  archives skipped, `SourceGame::spawn_rule`, `$ssbump`.

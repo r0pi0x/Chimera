@@ -31,6 +31,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
+  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), stand-in movement, harness::Tf2Sim; `ui` its HUD (none yet)
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -278,7 +279,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   "")`), the 13 multiplayer maps' names and their conversion
   (`game::maps`, `game::MAP_LOADER`: a map cache file's structure BSP,
   shaders, bitmaps, lightmap pages packed into one atlas, collision BSP,
-  player starts and sky fog as `MapData` in metres, through the
+  player starts, sky fog, the sky model as a 3D skybox and the scenery
+  as props with their collision, as `MapData` in metres, through the
   converted-map cache), `SimPlugins`, `game::HaloPlugins` (the
   registration, Halo's movement `halo_ce:movement`,
   specs/halo_ce/movement.md: `game::movement`, a pill moved once a tick
@@ -312,6 +314,19 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   from its collision as on any map without its own.
   Layered as `hl2dm`: the engine crates and `blam_formats`, never another
   game, `mashup` or an app (checked); `ui` draws nothing of its own yet.
+- `tf2` (games/tf2/) is Team Fortress 2, M1 of docs/plans/active/tf2.md:
+  its `GameInfo` (`game::INFO`: Steam app 440, folder `tf`, tick 0.015 s,
+  console namespaces `tf2` and `tf`), its install mounted from
+  `tf/gameinfo.txt` (`game::mount`, through `mount::served`; the
+  dedicated server's layout too, whose texture and sound archives are
+  missing: `source_formats::vpk` leaves their files out), its maps
+  (`game::maps`, `game::MAP_LOADER`: `source_engine`'s conversion with
+  TF2's data; spawns from `info_player_teamspawn` by `TeamNum`, through
+  the conversion's `SourceGame::spawn_rule`), the stand-in
+  `tf2:movement` (Chimera's placeholder with the Soldier's numbers),
+  `SimPlugins`, `game::Tf2Plugins`, `harness::Tf2Sim`, and `BUNDLE`,
+  maps only, which the party plays by id (`party_kit::MAP_GAMES`).
+  Layered as `hl2dm`; `ui` draws nothing of its own yet.
 - `chimera_net` is network play (`net`): the transport, the join
   handshake, replication of what every game has, prediction and
   interpolation. A game and Source's logic register what they replicate

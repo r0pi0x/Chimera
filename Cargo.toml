@@ -36,6 +36,7 @@ members = [
     "games/originals",
     "games/hl2dm",
     "games/halo_ce",
+    "games/tf2",
     "apps/cs_source",
     "apps/cs_source_server",
     "apps/combat_arms",
@@ -81,6 +82,7 @@ default-members = [
     "games/originals",
     "games/hl2dm",
     "games/halo_ce",
+    "games/tf2",
     "apps/cs_source",
     "apps/cs_source_server",
     "apps/combat_arms",
@@ -150,6 +152,9 @@ hl2dm = { path = "games/hl2dm" }
 # Halo: Combat Evolved (Xbox) as a game crate (games/halo_ce): its skeleton
 # (docs/plans/active/halo-ce.md).
 halo_ce = { path = "games/halo_ce" }
+# Team Fortress 2 as a game crate (games/tf2): its skeleton and maps
+# (docs/plans/active/tf2.md).
+tf2 = { path = "games/tf2" }
 # Lucker Party's original minigames (games/originals): their definitions
 # (minigames/) and rules hooks, on Chimera only.
 originals = { path = "games/originals" }
@@ -299,6 +304,7 @@ cs_source.workspace = true
 combat_arms.workspace = true
 hl2dm.workspace = true
 halo_ce.workspace = true
+tf2.workspace = true
 source_engine.workspace = true
 chimera_core.workspace = true
 # `chimera_pack sets`: how it loads each map (`MapLoadOptions`).
@@ -360,14 +366,14 @@ default = ["present"]
 # (Its `default`, not `present` alone, and the other games' front ends: the
 # same builds of them as every other selection's; architecture.rs,
 # `selections_share_one_build`.)
-present = ["cs_source_app/default", "combat_arms/ui", "hl2dm/ui", "halo_ce/ui"]
+present = ["cs_source_app/default", "combat_arms/ui", "hl2dm/ui", "tf2/ui", "halo_ce/ui"]
 
 # Host tools (`chimera_pack`), not in releases.
 tools = []
 
 # Faster iteration: link Bevy as a dynamic library (the app's `dev` and
 # every crate's under it). Never enable for release builds.
-dev = ["cs_source_app/dev", "cs_source/dev", "combat_arms/dev", "hl2dm/dev", "halo_ce/dev", "source_engine/dev", "chimera_core/dev", "chimera_world/dev", "chimera_assets/dev", "source_formats/dev", "lithtech_formats/dev"]
+dev = ["cs_source_app/dev", "cs_source/dev", "combat_arms/dev", "hl2dm/dev", "tf2/dev", "halo_ce/dev", "source_engine/dev", "chimera_core/dev", "chimera_world/dev", "chimera_assets/dev", "source_formats/dev", "lithtech_formats/dev"]
 
 # CPU profile: every system and render step as a span in a Chrome trace
 # (docs/performance.md). Slower; only for measuring.

@@ -5477,6 +5477,7 @@ dependencies = [
  "sha2",
  "source_engine",
  "source_formats",
+ "tf2",
  "toml",
  "vbsp",
  "vmdl",
@@ -6531,6 +6532,7 @@ dependencies = [
  "originals",
  "source_engine",
  "source_logic",
+ "tf2",
  "toml",
  "workspace-hack",
 ]
@@ -7938,6 +7940,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8550677e2259d675a7841cb1403db35f330cc9e58674c8c5caa12dd12c51dc71"
 dependencies = [
  "libm",
+]
+
+[[package]]
+name = "tf2"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "chimera_client",
+ "chimera_core",
+ "chimera_present",
+ "chimera_sim",
+ "chimera_world",
+ "postcard",
+ "serde",
+ "sha2",
+ "source_engine",
+ "source_formats",
+ "source_logic",
+ "tf2",
+ "vbsp",
+ "workspace-hack",
 ]
 
 [[package]]

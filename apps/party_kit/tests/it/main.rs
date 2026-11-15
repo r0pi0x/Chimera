@@ -80,4 +80,5 @@ mod heavy {
     mod ladders_across_maps;
     mod nav_bounds;
     mod spawn_spots;
+    mod tf2_maps;
 }
