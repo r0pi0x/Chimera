@@ -620,15 +620,21 @@ pub fn draw_segment(particles: &mut Particles, tracer: Option<&FxTracer>, light:
     let _ = first;
     let width = t.width * METERS_PER_UNIT;
     let color = Vec3::new(t.color[0], t.color[1], t.color[2]);
+    // A point lasts its contrail's life (the rocket's smoke trail stays
+    // and widens; a bullet's streak is gone by the next tick), fading.
+    let life = t.life.max(1.0 / 30.0);
+    let long = life > 1.5 / 30.0;
     let mut g = ParticleGroup::new(Default::default());
     g.capped = false;
-    g.kill_after = Some(1.0 / 30.0 + 0.004);
+    g.kill_after = Some(life + 0.004);
+    // Its first state's width (the states' widening is not drawn).
+    let wide = width;
     let mut streak = Particle {
         color,
-        alpha: t.color[3].max(0.5),
-        fade: Fade::Ramp(Ramp::constant(1.0)),
-        shape: Shape::Ribbon { to: b, width: [width * 0.25, width], u: (0.0, 1.0), end_color: None, prev: None, next: None },
-        ..Particle::new(a, 1.0 / 30.0, material, width)
+        alpha: if long { t.color[3].clamp(0.0, 1.0) * 0.5 } else { t.color[3].max(0.5) },
+        fade: if long { Fade::Ramp(Ramp::linear(1.0, 0.0)) } else { Fade::Ramp(Ramp::constant(1.0)) },
+        shape: Shape::Ribbon { to: b, width: if long { [wide, width] } else { [width * 0.25, width] }, u: (0.0, 1.0), end_color: None, prev: None, next: None },
+        ..Particle::new(a, life, material, width)
     };
     if let Some(l) = light {
         streak.color = Vec3::from(l.color);

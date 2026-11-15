@@ -197,12 +197,16 @@ pub struct FxParticle {
 
 /// A projectile's tracer: its contrail's first state (WU, colour) and
 /// the material its ribbon draws with.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FxTracer {
     pub width: f32,
     pub color: [f32; 4],
     pub material: Option<usize>,
     pub additive: bool,
+    /// Seconds a point lasts (its states' durations and transitions, at
+    /// most 4; 0: one tick), and its last state's width (WU).
+    pub life: f32,
+    pub end_width: f32,
 }
 
 /// One gun's presentation (by its weapon tag's path).
@@ -730,7 +734,11 @@ impl Compiler<'_> {
             self.set.materials.len() - 1
         });
         let (a, b) = (s.color_lower, s.color_upper);
-        Some(FxTracer { width: s.width, color: [b.r.max(a.r), b.g.max(a.g), b.b.max(a.b), b.a.max(a.a)], material, additive })
+        // How long a point lasts: its states' durations and transitions
+        // (the rocket's smoke trail stays; a bullet's streak barely).
+        let life = c.point_states.iter().map(|p| p.duration.upper + p.transition_duration.upper).sum::<f32>().clamp(1.0 / 30.0, 4.0);
+        let end_width = c.point_states.last().map_or(s.width, |p| p.width);
+        Some(FxTracer { width: s.width, color: [b.r.max(a.r), b.g.max(a.g), b.b.max(a.b), b.a.max(a.a)], material, additive, life, end_width })
     }
 }
 
