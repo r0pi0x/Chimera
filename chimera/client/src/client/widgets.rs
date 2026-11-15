@@ -1345,6 +1345,10 @@ pub struct Look<'a> {
     pub s: f32,
     pub height: f32,
     pub accent: Color,
+    /// Our faces at the scheme's sizes (`UiFonts::ours`): a menu of our
+    /// own drawn in a game's GameUI look (the party apps'); `false` for the
+    /// game's own menus, in its scheme's faces.
+    pub own_faces: bool,
 }
 
 impl<'a> Look<'a> {
@@ -1367,7 +1371,13 @@ impl<'a> Look<'a> {
     /// window's size: `fallback` scheme pixels tall and bold when the
     /// scheme lacks it.
     pub fn font(&self, name: &str, fallback: (f32, bool)) -> TextFont {
-        self.fonts.source(name, self.height, self.s, fallback)
+        let f = self.fonts.source(name, self.height, self.s, fallback);
+        if self.own_faces {
+            let bold = self.fonts.sizes(super::fonts::Scheme::Source, name).and_then(|s| s.first()).map_or(fallback.1, |s| s.bold());
+            self.fonts.ours(f, bold)
+        } else {
+            f
+        }
     }
 
     /// The dialogs' text font.
@@ -2573,6 +2583,7 @@ mod tests {
             s: 1.0,
             height: 720.0,
             accent: Color::WHITE,
+            own_faces: false,
         };
         #[derive(Component)]
         struct Outside;
@@ -2602,6 +2613,7 @@ mod tests {
             s: 1.0,
             height: 300.0,
             accent: Color::WHITE,
+            own_faces: false,
         };
         let mut queue = bevy::ecs::world::CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world());

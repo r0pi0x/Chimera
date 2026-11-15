@@ -1,7 +1,7 @@
 //! The kit's look as data: `Theme`, a resource read from TOML
 //! (docs/plans/active/ugg-ui.md, 2.3). Palette tokens and the alphas every
 //! other colour derives from (`Tone`), the type roles (`TypeSpec`: face,
-//! weight, tracking in em, case, OpenType features), named easings and
+//! weight, tracking in em, case, line height, OpenType features), named easings and
 //! durations (`motion`), the icon rule (`icons.prefer_game`), the slant
 //! and the smallest text in physical pixels (`shape`), per-screen layout
 //! numbers in cq (`layout`), the ping meter's thresholds (`network`), and
@@ -10,7 +10,7 @@
 //!
 //! An app inserts its own (the Ultimate Gun Game's is
 //! `apps/ultimate_gun_game/data/theme.toml`); without one, screens read
-//! `Theme::shell_default` (data/shell.toml: Trebuchet MS and the shell's
+//! `Theme::shell_default` (data/shell.toml: our faces and the shell's
 //! present colours), so apps that set no theme look as before. A theme's
 //! TOML is laid over the default's, so a theme names only what differs
 //! and a key a screen asks for is always there.
@@ -137,7 +137,7 @@ impl Tone {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct TypeSpec {
     /// `display` or `mono` (the kit's faces, `fonts::KitFonts`), or a
-    /// family name found among the loaded fonts (`trebuchet ms`).
+    /// family name found among the loaded fonts.
     pub face: String,
     /// 1-1000; with the kit's faces it also picks the face (400, 700, 900).
     #[serde(default = "default_weight")]
@@ -145,10 +145,13 @@ pub struct TypeSpec {
     /// Letter spacing in em (`LetterSpacing::Px(tracking * size)`).
     #[serde(default)]
     pub tracking: f32,
-    /// Upper-case the text (the UGG faces map lower case to capitals
-    /// themselves; a fallback face needs this).
+    /// Upper-case the text (`fonts::Styled::case`): the display roles and
+    /// the small Mono labels; the faces have lower case since v0.5.
     #[serde(default)]
     pub upper: bool,
+    /// Line height in font sizes (1: the look book's `font: <size>/1`).
+    #[serde(default = "default_line")]
+    pub line: f32,
     /// OpenType features turned on, four-letter tags (`ss02`).
     #[serde(default)]
     pub features: Vec<String>,
@@ -159,6 +162,10 @@ pub struct TypeSpec {
 
 fn default_weight() -> u16 {
     400
+}
+
+fn default_line() -> f32 {
+    1.0
 }
 
 /// The slant and the smallest text.
@@ -257,7 +264,7 @@ fn parse_hex(s: &str) -> Result<Color, String> {
 }
 
 impl Theme {
-    /// The shell's own look (data/shell.toml): Trebuchet MS, today's
+    /// The shell's own look (data/shell.toml): our faces, today's
     /// colours. What screens use when the app inserts no theme.
     pub fn shell_default() -> Theme {
         Theme::from_toml(SHELL_TOML).expect("chimera_ui's data/shell.toml is a valid theme")

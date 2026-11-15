@@ -96,7 +96,8 @@ fn bsn_builds_styled_ui_trees() {
     assert_eq!(ids, ["board.row.0", "board.row.0.name", "board.row.1", "board.row.1.name", "board.row.2", "board.row.2.name"]);
     let mut texts = w.query::<(&Text, &TextFont, &ParityId)>();
     for (t, f, p) in texts.iter(w) {
-        assert!(names.contains(&t.0.as_str()), "{p:?}");
+        // Display Bold upper-cases its text (`case_texts`).
+        assert!(names.iter().any(|n| n.to_uppercase() == t.0), "{p:?}: {}", t.0);
         assert_eq!(f.weight.0, 700);
     }
     let mut slants = w.query::<&MaterialNode<chimera_ui::SlantMaterial>>();

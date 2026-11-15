@@ -1,20 +1,20 @@
 """Build UGG Display (Black, Bold, Regular) and UGG Mono (Regular).
 
-    python build.py                    # all four into apps/ultimate_gun_game/fonts/
+    python build.py                    # all four into chimera/ui/fonts/
     python build.py black mono         # some of them
     UGG_FONTS_OUT=<dir> python build.py   # elsewhere
     UGG_FONTS_WOFF2=1 python build.py     # also WOFF2 (needs brotli)
-    UGG_FONTS_LOWER=1 python build.py     # the v0.5 draft with real lower case
+    UGG_FONTS_LOWER=0 python build.py     # the old caps-only build (v0.4's mapping)
 
-Two builds come from one source. The default is what the game ships: the
-capitals, the symbols and the accented capitals, with every lower-case
-code point (a-z and the accented ones) mapped to its capital, as the kit's
-roles expect today. `UGG_FONTS_LOWER=1` adds the lower case (lower.py) and
-maps a-z to it; the kit's roles must upper-case their text themselves
-(`TypeSpec::upper`) before that build replaces the shipped one.
+Two builds come from one source. The default is what the game ships
+(v0.5): the capitals, the lower case (lower.py), the symbols and the
+accented letters, a-z mapped to the drawn lower case; the kit's roles that
+must stay in capitals upper-case their own text (`TypeSpec::upper`).
+`UGG_FONTS_LOWER=0` builds the old caps-only mapping (every lower-case code
+point mapped to its capital), for comparison.
 
 Requirements and licence: README.md beside this file (OFL-1.1; the fonts'
-FONTLOG.txt in apps/ultimate_gun_game/fonts/).
+FONTLOG.txt in chimera/ui/fonts/).
 
 Glyph drawings: glyphs2.py; curve geometry: geom2.py. Outlines are built
 with cubic squircle corners, overlaps removed with skia-pathops, then
@@ -40,9 +40,9 @@ from glyphs2 import GLYPHS, G
 import lower as lw  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.environ.get("UGG_FONTS_OUT") or os.path.join(HERE, "..", "..", "apps", "ultimate_gun_game", "fonts")
+OUT = os.environ.get("UGG_FONTS_OUT") or os.path.join(HERE, "..", "..", "chimera", "ui", "fonts")
 WOFF2 = os.environ.get("UGG_FONTS_WOFF2") == "1"
-LOWER = os.environ.get("UGG_FONTS_LOWER") == "1"
+LOWER = os.environ.get("UGG_FONTS_LOWER", "1") != "0"
 UPM = 1000
 VERSION = 0.5
 

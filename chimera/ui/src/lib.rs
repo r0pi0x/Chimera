@@ -4,9 +4,11 @@
 //!
 //! - `theme`: `Theme` (resource) from TOML: palette tokens (`Tone`), type
 //!   roles, the slant, named easings and durations, layout numbers in cq.
-//! - `fonts`: `KitFonts` (the app's faces from bytes), `Role` and
-//!   `fonts::text` (a role at a size: `TextFont` with weight and OpenType
-//!   features, letter spacing, hinting).
+//! - `fonts`: `KitFonts` (our faces from bytes, `fonts::OWN`; `install`
+//!   also makes them Bevy's default font), `Role` (`Role::Text`: the
+//!   sentence face) and `fonts::text` (a role at a size: `TextFont` with
+//!   weight and OpenType features, letter spacing, hinting, line height,
+//!   case).
 //! - `units`: cq to logical px (`UiUnits`), physical-pixel snapping,
 //!   `TickLayout`.
 //! - `motion`: `Ease`, `UiClock`, `Track`, `Timeline`.
@@ -48,7 +50,8 @@
 //! `ChimeraUiPlugin` keeps `UiUnits` from the window, steps the clock and
 //! every `Timeline` (`UiKitSystems`, in `PostUpdate` before Bevy's UI
 //! layout) and registers the materials. Add it after Bevy's plugins.
-//! Without a `Theme` resource it inserts `Theme::shell_default`.
+//! Without a `Theme` resource it inserts `Theme::shell_default`; it
+//! installs our faces (`KitFonts::install`).
 
 pub mod clipboard;
 pub mod controls;
@@ -82,7 +85,7 @@ pub use pointer_lead::PointerLead;
 pub use scroll::{ReducedMotion, ScrollIntoView, ScrollParts, ScrollViews, scroll_into_view};
 pub use sound::{SoundTable, UiCue, UiMusic};
 pub use theme::{Theme, Tone};
-pub use style::{PlainText, UiSlant, UiStyle, UiText};
+pub use style::{KeepCase, UiSlant, UiStyle, UiText};
 pub use text_fit::{Ellipsize, ellipsize, ellipsize_with};
 pub use units::{TickLayout, UiUnits};
 
@@ -99,6 +102,7 @@ impl Plugin for ChimeraUiPlugin {
         if !app.world().contains_resource::<Theme>() {
             app.insert_resource(Theme::shell_default());
         }
+        KitFonts::install(app.world_mut());
         app.init_resource::<UiUnits>()
             .init_resource::<icons::IconImages>()
             .init_resource::<icon_ink::IconInk>()
@@ -114,6 +118,7 @@ impl Plugin for ChimeraUiPlugin {
                 (
                     units::track_window,
                     // Before the timelines, which write over its sizes.
+                    style::case_texts,
                     style::resolve_styles,
                     // On the styles' fonts and the last layout's widths.
                     text_fit::fit_texts,

@@ -693,6 +693,7 @@ fn draw(
         s,
         height: size.y,
         accent: Color::srgb_u8(255, 176, 0),
+        own_faces: false,
     };
     let rects = layout.rects(Rect::from_corners(Vec2::ZERO, size), hud_s);
     let frame = layout

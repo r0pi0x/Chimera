@@ -5,8 +5,8 @@
 //! engine-owned root (`OverlayRoot`, its entity in `OverlayLayer`), apart
 //! from every game's HUD roots (`hud::HudRoot`), and is laid out by one
 //! rule of its own: real pixels sized for a 720-line screen and scaled by
-//! the window's height (`scale`), in one face (`font`: Trebuchet MS, else
-//! the nearest installed sans), never a game's scheme fonts, colours,
+//! the window's height (`scale`), in one face (`font`: our text face, UGG
+//! Display Regular and Bold), never a game's scheme fonts, colours,
 //! virtual canvas or `GameDraws`. So it looks the same whichever game's
 //! HUD the gun in hand puts up, at any aspect.
 //!
@@ -193,14 +193,12 @@ pub fn scale(height: f32) -> f32 {
     chimera_ui::units::overlay_scale(height)
 }
 
-/// The layer's face, whichever game's HUD is up.
-pub const FAMILY: &str = "trebuchet ms";
-
-/// The layer's font at `em_px` (already scaled): `FAMILY` where the
-/// faces are loaded, else Bevy's default face.
+/// The layer's font at `em_px` (already scaled), whichever game's HUD is
+/// up: our text face (`UiFonts::text`: UGG Display Regular, Bold when
+/// `bold`), else Bevy's default font (ours as well: `KitFonts::install`).
 pub fn font(fonts: Option<&UiFonts>, em_px: f32, bold: bool) -> TextFont {
     match fonts {
-        Some(f) => f.em(FAMILY, bold, em_px),
+        Some(f) => f.text(em_px, bold),
         None => TextFont {
             font_size: bevy::text::FontSize::Px(em_px),
             ..default()

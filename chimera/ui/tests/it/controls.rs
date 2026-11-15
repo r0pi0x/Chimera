@@ -3,7 +3,7 @@
 
 use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_ui::{
-    ChimeraUiPlugin, Theme, Tone, UiClock, UiSlant, UiText, UiUnits,
+    ChimeraUiPlugin, KitFonts, Role, Theme, Tone, UiClock, UiSlant, UiText, UiUnits,
     controls::{self, Hover, Kind, State, Tick, Ui, Wipe},
 };
 
@@ -250,6 +250,52 @@ fn text_field_shows_text_caret_and_placeholder() {
     assert_eq!(caret_count(&mut app, f), 1);
     let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "pässwd", "", None, true, 15.0, State::NONE));
     assert_eq!(texts_under(&mut app, f), ["******"]);
+}
+
+/// Typed text keeps its case in our sentence face (`Role::Text`, Display
+/// Regular): no system face, no fallback list; a sentence and a cvar name
+/// in Mono keep their case too, a label does not.
+#[test]
+fn typed_text_keeps_its_case_in_our_face() {
+    use bevy::text::FontSource;
+    let mut app = app();
+    let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "Zoë's Server", "", None, false, 15.0, State::NONE));
+    app.update();
+    assert_eq!(texts_under(&mut app, f), ["Zoë's Server"]);
+    let kit = app.world().resource::<KitFonts>().clone();
+    let styled = descendants_with::<UiText>(&mut app, f);
+    assert!(styled.iter().all(|t| t.role == Role::Text), "{styled:?}");
+    let fonts: Vec<TextFont> = descendants_with::<TextFont>(&mut app, f);
+    assert!(!fonts.is_empty());
+    for font in fonts {
+        assert_eq!(font.font, FontSource::Handle(kit.display_regular.clone().unwrap()), "typed text in UGG Display Regular");
+    }
+    let s = build(&mut app, |ui, c, root| ui.sentence(c, root, controls::SENTENCE, Tone::Fg2, "Paused for you only"));
+    let v = build(&mut app, |ui, c, root| ui.text_plain(c, root, Role::Mono, 0.6, Tone::Fg, "fov_desired"));
+    let l = build(&mut app, |ui, c, root| ui.text(c, root, Role::Mono, 0.6, Tone::Fg, "Console"));
+    app.update();
+    assert_eq!(texts_under(&mut app, s), ["Paused for you only"]);
+    assert_eq!(texts_under(&mut app, v), ["fov_desired"]);
+    assert_eq!(texts_under(&mut app, l), ["CONSOLE"]);
+}
+
+/// A text in an upper-casing role shows in capitals however a screen sets
+/// it later (`style::case_texts`), unless it keeps its case (`KeepCase`).
+#[test]
+fn upper_roles_stay_in_capitals_when_set_later() {
+    let mut app = app();
+    let label = app.world_mut().spawn((Text::new("x"), UiText::new(Role::DisplayBold, 1.0, Tone::Fg))).id();
+    let kept = app.world_mut().spawn((Text::new("x"), UiText::new(Role::Mono, 0.6, Tone::Fg), chimera_ui::KeepCase)).id();
+    let sentence = app.world_mut().spawn((Text::new("x"), UiText::new(Role::Text, 0.86, Tone::Fg))).id();
+    app.update();
+    for e in [label, kept, sentence] {
+        app.world_mut().get_mut::<Text>(e).unwrap().0 = "Waiting for 2 players".into();
+    }
+    app.update();
+    let text = |app: &App, e| app.world().get::<Text>(e).unwrap().0.clone();
+    assert_eq!(text(&app, label), "WAITING FOR 2 PLAYERS");
+    assert_eq!(text(&app, kept), "Waiting for 2 players");
+    assert_eq!(text(&app, sentence), "Waiting for 2 players");
 }
 
 /// The `TextSelection` nodes under `e`.

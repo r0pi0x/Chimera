@@ -1,5 +1,5 @@
-//! `net_graph`: Source's network readout, bottom right, in GameUI's
-//! `DefaultFixedOutline` face (Lucida Console, tall 10, outlined), as the
+//! `net_graph`: Source's network readout, bottom right, in our Mono at
+//! GameUI's `DefaultFixedOutline` size (tall 10, outlined), as the
 //! Valve Developer Community's pages and the community's guides describe
 //! it. `net_graph 1` is the text:
 //!
@@ -87,6 +87,11 @@ pub const COLUMNS: usize = 256;
 const LATENCY_FULL_MS: f32 = 250.0;
 const BYTES_PER_PIXEL: f32 = 16.0;
 const MAX_HEIGHT: f32 = 512.0;
+/// The text's line, pixels at 480 lines (GameUI's DefaultFixedOutline:
+/// tall 10).
+const NET_GRAPH_LINE: f32 = 10.0;
+/// Our Mono's line in ems (OS/2 Windows ascent 820 + descent 200).
+const MONO_LINE_PER_EM: f32 = 1.02;
 
 /// `net_graph` and its settings, and the graph's frames.
 #[derive(Resource)]
@@ -428,11 +433,11 @@ fn draw(
     };
     root_node.align_items = align;
     root_node.left = px(if view.pos >= 3.0 { view.pos } else { 0.0 });
-    // The font: GameUI's DefaultFixedOutline, scaled by the window's
-    // height over 480 when proportional.
+    // The font: our Mono at DefaultFixedOutline's size (tall 10), scaled
+    // by the window's height over 480 when proportional.
     let height = window.as_ref().map_or(480.0, |w| w.height());
     let scale = if view.proportional != 0 { (height / 480.0).max(1.0) } else { 1.0 };
-    let font = fonts.source("DefaultFixedOutline", height, scale, (10.0, false));
+    let font = fonts.mono(NET_GRAPH_LINE * scale / MONO_LINE_PER_EM);
     if **text_font != font {
         **text_font = font.clone();
     }

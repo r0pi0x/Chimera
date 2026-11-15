@@ -658,6 +658,7 @@ pub(super) fn pointer(
                 s: (height / 720.0).clamp(0.6, 3.0),
                 height,
                 accent: Color::WHITE,
+                own_faces: false,
             };
             let caret = (menu.focus == hit.row).then_some(menu.caret);
             let at = widgets::caret_from_click(&fonts, &look.default_font(), look.s, &hit.shown, hit.width, p.x + 0.5, caret);

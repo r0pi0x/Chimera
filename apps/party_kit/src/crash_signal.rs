@@ -16,7 +16,7 @@ use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_client::client::crash::{CrashAction, CrashReports};
 use chimera_ui::{
     Role, Tone, UiStyle,
-    controls::{Kind, State, Ui},
+    controls::{Kind, NOTE, SENTENCE, State, Ui},
 };
 
 use crate::main_menu::{MENU_Z, MenuPage, MenuUiCamera, PartyMenu, Screen};
@@ -132,9 +132,9 @@ fn spawn(c: &mut Commands, ui: &Ui, what: &Shown, reports: &CrashReports) -> Ent
             ui.mark(c, head, Tone::Threat, 0.5, 0.7);
             ui.text(c, head, Role::DisplayBold, 0.82, Tone::Fg, reports.headline());
             let _ = crashed;
-            ui.text_plain(c, plate, Role::Mono, 0.52, Tone::Fg3, HOLDS);
+            ui.sentence(c, plate, NOTE, Tone::Fg3, HOLDS);
             let foot = ui.boxed(c, plate, UiStyle { gap: Some(0.5), margin: Some([0.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
-            ui.text_plain(c, foot, Role::Mono, 0.5, Tone::Fg3, "Sent to this playtest's host");
+            ui.sentence(c, foot, NOTE, Tone::Fg3, "Sent to this playtest's host");
             ui.boxed(c, foot, UiStyle::row().grow(1.0));
             let not_now = ui.button(c, foot, Kind::Ghost, "Not now", None, 2.2, State::NONE);
             c.entity(not_now).insert(CrashAction::Dismiss);
@@ -146,7 +146,7 @@ fn spawn(c: &mut Commands, ui: &Ui, what: &Shown, reports: &CrashReports) -> Ent
         Shown::Said(text) => {
             let row = ui.boxed(c, plate, UiStyle { gap: Some(0.7), ..UiStyle::row() });
             ui.mark(c, row, Tone::Acc, 0.5, 0.7);
-            ui.text(c, row, Role::Mono, 0.62, Tone::Fg, text);
+            ui.sentence(c, row, SENTENCE, Tone::Fg, text);
         }
     }
     root

@@ -634,7 +634,7 @@ fn a_typed_value_is_kept_past_the_range_and_checked() {
     let e = set(app).edit.expect("still typing");
     assert_eq!(e.error.as_deref(), Some("At least 0"), "why, beside the box");
     let texts: Vec<String> = app.world_mut().query::<&Text>().iter(app.world()).map(|t| t.0.clone()).collect();
-    assert!(texts.iter().any(|t| t == "AT LEAST 0"), "shown: {texts:?}");
+    assert!(texts.iter().any(|t| t == "At least 0"), "why, in the sentence face; shown: {texts:?}");
     app.world_mut().resource_mut::<Console>().submit("settings_type abc");
     app.update();
     tap(app, KeyCode::Enter);

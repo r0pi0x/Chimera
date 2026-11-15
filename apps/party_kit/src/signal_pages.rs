@@ -64,7 +64,7 @@ use chimera_client::client::ui_sound::UiCue;
 use chimera_net::net::query::{LanSettings, QueryResult, QueryState, ServerInfo, ServerQueries};
 use chimera_ui::{
     AmbientMaterial, IconImages, KitFonts, Role, Theme, Tone, UiClock, UiStyle, UiUnits,
-    controls::{Kind, State, Ui},
+    controls::{Kind, SENTENCE, State, Ui},
 };
 
 use crate::{
@@ -1107,7 +1107,7 @@ fn password_modal(c: &mut Commands, ui: &Ui, root: Entity, menu: &PartyMenu, p: 
     let m = ui.modal(c, shade, 30.0, false);
     ui.text(c, m, Role::DisplayBold, 1.35, Tone::Fg, "Password");
     let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 1.0, 0.0].into()), ..UiStyle::column() });
-    ui.paragraph(c, tx, Role::Mono, 0.62, Tone::Fg2, &format!("{} is locked. Type its password to join.", ask.name));
+    ui.paragraph(c, tx, Role::Text, SENTENCE, Tone::Fg2, &format!("{} is locked. Type its password to join.", ask.name));
     let st = State { focus: true, error: p.notice.is_some(), ..State::NONE };
     let f = ui.text_field(c, m, &menu.password, "Password", Some(menu.caret.cursor(&menu.password)), true, 26.0, st);
     c.entity(f).insert(MainMenuAction::Focus(Field::Password));
@@ -1245,13 +1245,14 @@ fn summary(c: &mut Commands, ui: &Ui, cols: Entity, menu: &PartyMenu, cx: &Ctx) 
     };
     let password = if value_of(cx.data, menu, "sv_password").is_empty() { "None".to_string() } else { "Set".to_string() };
     let port = value_of(cx.data, menu, "hostport");
+    // Values in capitals, the server's name as its host typed it.
     let kv: Vec<(&str, String)> = vec![
-        ("Map", map),
-        ("Bots", value_of(cx.data, menu, "MaxPlayer")),
-        ("Players", value_of(cx.data, menu, "maxplayers")),
-        ("Lobby", value_of(cx.data, menu, "mp_lobby")),
+        ("Map", map.to_uppercase()),
+        ("Bots", value_of(cx.data, menu, "MaxPlayer").to_uppercase()),
+        ("Players", value_of(cx.data, menu, "maxplayers").to_uppercase()),
+        ("Lobby", value_of(cx.data, menu, "mp_lobby").to_uppercase()),
         ("Server", value_of(cx.data, menu, "hostname")),
-        ("Password", password),
+        ("Password", password.to_uppercase()),
         ("Port", if port.trim().is_empty() { "27015".into() } else { port }),
     ];
     ui.kv(c, pane, &kv, 6.0);

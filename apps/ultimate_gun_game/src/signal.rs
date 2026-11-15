@@ -1,11 +1,12 @@
 //! The Ultimate Gun Game's look, "Signal" (feature `present`;
-//! docs/plans/active/ugg-ui.md): its theme (`THEME`, data/theme.toml) and
-//! its own faces (`FONTS`, fonts/: UGG Display Black, Bold, Regular and
-//! UGG Mono, OFL-1.1, ours) embedded in the binary, so nothing is read
-//! from disk on Linux or Windows, offscreen or headless. `SignalPlugin`
-//! (added last, over the shell's `chimera_ui::ChimeraUiPlugin`) makes
-//! the faces into fonts (`chimera_ui::KitFonts`) and puts the theme in
-//! place of the shell's default, and puts in its UI sound kit
+//! docs/plans/active/ugg-ui.md): its theme (`THEME`, data/theme.toml)
+//! embedded in the binary, so nothing is read from disk on Linux or
+//! Windows, offscreen or headless; its faces are Chimera's (`FONTS`:
+//! `chimera_ui::fonts::OWN`, UGG Display Black, Bold, Regular and UGG
+//! Mono, OFL-1.1, ours). `SignalPlugin` (added last, over the shell's
+//! `chimera_ui::ChimeraUiPlugin`) makes sure the faces are fonts
+//! (`chimera_ui::KitFonts::install`) and puts the theme in place of the
+//! shell's default, and puts in its UI sound kit
 //! (`chimera_client::client::ui_sound::UiSounds`: the event table
 //! `UI_SOUND_TABLE`, data/ui_sounds.toml, and the files `UI_SOUNDS`,
 //! assets/sounds/ui/: ours, synthesized by tools/sounds/synth.py, CC0 1.0,
@@ -18,13 +19,8 @@ use chimera_ui::{FontFiles, KitFonts, Theme};
 /// The theme's TOML (over the shell's defaults: `Theme::from_toml`).
 pub const THEME: &str = include_str!("../data/theme.toml");
 
-/// The four faces, v0.4 (fonts/FONTLOG.txt).
-pub const FONTS: FontFiles<'static> = FontFiles {
-    display_black: include_bytes!("../fonts/ugg-display-black.ttf"),
-    display_bold: include_bytes!("../fonts/ugg-display-bold.ttf"),
-    display_regular: include_bytes!("../fonts/ugg-display-regular.ttf"),
-    mono: include_bytes!("../fonts/ugg-mono-regular.ttf"),
-};
+/// The four faces, v0.5 (chimera/ui/fonts/FONTLOG.txt).
+pub const FONTS: FontFiles<'static> = chimera_ui::fonts::OWN;
 
 /// The UI sounds' event table.
 pub const UI_SOUND_TABLE: &str = include_str!("../data/ui_sounds.toml");
@@ -105,9 +101,6 @@ impl Plugin for SignalPlugin {
             }
             Err(e) => error!("{e}"),
         }
-        if let Some(mut fonts) = app.world_mut().get_resource_mut::<Assets<Font>>() {
-            let kit = KitFonts::load(&mut fonts, FONTS);
-            app.insert_resource(kit);
-        }
+        KitFonts::install(app.world_mut());
     }
 }

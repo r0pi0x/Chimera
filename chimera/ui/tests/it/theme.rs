@@ -64,7 +64,8 @@ fn shell_default_is_complete() {
     for tone in Tone::ALL {
         let _ = s.tone(tone);
     }
-    assert_eq!(s.type_spec("display_bold").unwrap().face, "trebuchet ms");
+    assert_eq!(s.type_spec("display_bold").unwrap().face, "display");
+    assert_eq!(s.type_spec("text").unwrap().face, "display");
     let t = Theme::from_toml("name = \"x\"\n[palette]\nacc = \"#FF0000\"\n").unwrap();
     assert_eq!(srgba(t.tone(Tone::Acc)), [255, 0, 0, 255]);
     assert_eq!(t.tone(Tone::Fg), s.tone(Tone::Fg));

@@ -142,6 +142,7 @@ pub fn draw(
         s: (size.y / 720.0).clamp(0.6, 3.0),
         height: size.y,
         accent,
+        own_faces: false,
     };
     // In a game the game shows through, darkened (GameUI's backdrop); at
     // the main menu the game's background picture covers the screen (or

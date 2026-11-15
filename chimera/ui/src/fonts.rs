@@ -1,18 +1,27 @@
 //! The kit's faces and text roles (docs/plans/active/ugg-ui.md, 2.4).
 //!
-//! `KitFonts` holds the app's own faces, made from bytes the app embeds
-//! (`include_bytes!`, then `Font::from_bytes`: no file I/O, the same on
-//! Linux and Windows, offscreen and headless): Display Black, Bold and
-//! Regular (one family, `UGG Display`, by weight 900/700/400) and Mono.
-//! Parley also registers each under its embedded family, so
-//! `FontSource::Family("UGG Display")` with `FontWeight(900)` finds the
-//! Black face; the kit hands out the exact face's handle.
+//! `KitFonts` holds our own faces (`OWN`, chimera/ui/fonts/: UGG Display
+//! Black, Bold and Regular, one family by weight 900/700/400, and UGG
+//! Mono; OFL-1.1, ours, with lower case since v0.5), embedded in the
+//! binary (`include_bytes!`, then `Font::from_bytes`: no file I/O, the
+//! same on Linux and Windows, offscreen and headless). `install` loads
+//! them once per app (`ChimeraUiPlugin` and the client's fonts plugin
+//! call it) and puts Display Regular, the text face, in Bevy's default
+//! font, so text that names no font is drawn in ours, never in Bevy's
+//! FiraMono or a system face. Parley also registers each under its
+//! embedded family, so `FontSource::Family("UGG Display")` with
+//! `FontWeight(900)` finds the Black face; the kit hands out the exact
+//! face's handle.
 //!
 //! `Role` names a text role of the theme (`theme::TypeSpec`); `text` turns
 //! a role and a size into the `TextFont` (face, weight, OpenType features:
 //! `ss02` on the wordmark), the `LetterSpacing` (tracking in em times the
-//! size) and `FontHinting`. A role whose face is no kit face (the shell's
-//! default theme: Trebuchet MS) resolves by family name and weight.
+//! size), `FontHinting`, the line height (`TypeSpec::line`) and the case
+//! rule (`TypeSpec::upper`: the display roles and the small Mono labels
+//! upper-case their text, `Role::Text` keeps it). `Role::Text` is the
+//! sentence face (Display Regular in sentence case): descriptions, help,
+//! dialog bodies, notices, typed text, names. A role whose face is no kit
+//! face resolves by family name and weight.
 
 use bevy::{
     prelude::*,
@@ -26,6 +35,14 @@ pub const DISPLAY_FAMILY: &str = "UGG Display";
 /// The Mono face's family.
 pub const MONO_FAMILY: &str = "UGG Mono";
 
+/// Our faces' files, embedded (module doc).
+pub const OWN: FontFiles<'static> = FontFiles {
+    display_black: include_bytes!("../fonts/ugg-display-black.ttf"),
+    display_bold: include_bytes!("../fonts/ugg-display-bold.ttf"),
+    display_regular: include_bytes!("../fonts/ugg-display-regular.ttf"),
+    mono: include_bytes!("../fonts/ugg-mono-regular.ttf"),
+};
+
 /// A text role of the theme (`[type.<name>]`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Role {
@@ -34,12 +51,17 @@ pub enum Role {
     DisplayBlack,
     DisplayBold,
     DisplayRegular,
-    /// Labels, numbers in tables, keys, tags.
+    /// Data: numbers in tables, timers, keys, cvar names; and the small
+    /// tracked labels (section heads, kv keys, tags).
     Mono,
+    /// Sentences and what people typed (module doc): Display Regular in
+    /// its own case, lines 1.3 em tall for the descenders.
+    Text,
 }
 
 impl Role {
-    pub const ALL: [Role; 5] = [Role::Wordmark, Role::DisplayBlack, Role::DisplayBold, Role::DisplayRegular, Role::Mono];
+    pub const ALL: [Role; 6] =
+        [Role::Wordmark, Role::DisplayBlack, Role::DisplayBold, Role::DisplayRegular, Role::Mono, Role::Text];
 
     /// Its table in a theme's TOML.
     pub fn key(self) -> &'static str {
@@ -49,6 +71,7 @@ impl Role {
             Role::DisplayBold => "display_bold",
             Role::DisplayRegular => "display_regular",
             Role::Mono => "mono",
+            Role::Text => "text",
         }
     }
 }
@@ -76,6 +99,22 @@ pub struct KitFonts {
 }
 
 impl KitFonts {
+    /// Our faces (`OWN`) in `world`, once: made into fonts and inserted as
+    /// the `KitFonts` resource, and Display Regular put in Bevy's default
+    /// font (module doc). A `KitFonts` already there is kept. Without
+    /// `Assets<Font>` (no text plugin: headless tests) nothing happens.
+    pub fn install(world: &mut World) -> Option<KitFonts> {
+        if let Some(kit) = world.get_resource::<KitFonts>() {
+            return Some(kit.clone());
+        }
+        let mut fonts = world.get_resource_mut::<Assets<Font>>()?;
+        let kit = KitFonts::load(&mut fonts, OWN);
+        // The default handle's asset: Bevy's text plugin put FiraMono there.
+        let _ = fonts.insert(AssetId::default(), Font::from_bytes(OWN.display_regular.to_vec()));
+        world.insert_resource(kit.clone());
+        Some(kit)
+    }
+
     /// The four faces made into `Font` assets.
     pub fn load(fonts: &mut Assets<Font>, files: FontFiles) -> KitFonts {
         let mut bytes = Vec::new();
@@ -127,14 +166,18 @@ pub struct Styled {
     pub spacing: LetterSpacing,
     pub hinting: FontHinting,
     pub upper: bool,
+    /// The role's line height (`TypeSpec::line`).
+    pub line: LineHeight,
 }
 
 impl Styled {
-    /// The components for a `Text`/`TextSpan` entity. Lines are one font
-    /// size tall (the look book's `font: <size>/1`; Bevy's default is
-    /// 1.2), so a text's box is the look book's.
+    /// The components for a `Text`/`TextSpan` entity. Lines are the role's
+    /// height: one font size for capitals (the look book's
+    /// `font: <size>/1`; Bevy's default is 1.2), so a text's box is the
+    /// look book's; more for `Role::Text`, whose descenders reach below
+    /// the faces' line box.
     pub fn bundle(&self) -> (TextFont, LetterSpacing, FontHinting, LineHeight) {
-        (self.font.clone(), self.spacing, self.hinting, LINE_HEIGHT)
+        (self.font.clone(), self.spacing, self.hinting, self.line)
     }
 
     /// `text` in the role's case.
@@ -143,7 +186,7 @@ impl Styled {
     }
 }
 
-/// Every kit text's line height (`Styled::bundle`): one font size.
+/// A capitals role's line height (`Styled::bundle`): one font size.
 pub const LINE_HEIGHT: LineHeight = LineHeight::RelativeToFont(1.0);
 
 /// The `TextFont` for a type spec at `px` logical pixels.
@@ -178,5 +221,6 @@ pub fn text(theme: &Theme, fonts: Option<&KitFonts>, role: Role, px: f32) -> Sty
         spacing: LetterSpacing::Px(spec.tracking * px),
         hinting: if spec.hinted { FontHinting::Enabled } else { FontHinting::Disabled },
         upper: spec.upper,
+        line: if spec.line == 1.0 { LINE_HEIGHT } else { LineHeight::RelativeToFont(spec.line) },
     }
 }

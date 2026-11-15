@@ -135,9 +135,9 @@ fn warm_fonts(
 const WEAPON_FILL: f32 = 0.9;
 const MARK_FILL: f32 = 0.8;
 
-/// The feed's names' font at `size` pixels.
+/// The feed's names' font at `size` pixels: our text face, bold.
 fn name_font(fonts: Option<&UiFonts>, size: f32) -> TextFont {
-    fonts.map(|f| f.em("Verdana", true, size)).unwrap_or(TextFont {
+    fonts.map(|f| f.text(size, true)).unwrap_or(TextFont {
         font_size: FontSize::Px(size),
         ..default()
     })
