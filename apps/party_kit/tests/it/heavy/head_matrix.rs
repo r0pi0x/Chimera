@@ -249,6 +249,9 @@ fn round_at(sim: &mut Sim, a: Entity, b: Entity, aim: Aim) -> Round {
         first = first_on_line(&shapes, eye, at, 0.0);
         first_grown = first_on_line(&shapes, eye, at, MARGIN);
         testkit::aim_at(sim, a, at);
+        // The round goes along the line the verdict reads (CS:S's spread
+        // drawn from a centred command, not a random one).
+        crate::cross_game::centre_next_shot(sim, a);
         sim.intent(a).fire = true;
         sim.ticks(1);
         if sim.app.world().resource::<Seen>().shots.contains(&a) {
