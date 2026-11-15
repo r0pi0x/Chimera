@@ -744,6 +744,10 @@ placements carry no per-game-type spawn flags and no team** (the PC game
 has them in these bytes; here they are zero): the converter places
 every vehicle placement unconditionally, and it is the game's
 multiplayer rules that decide which vehicles a game variant wants.
+The on-BSP flags are not tested for vehicles (they are 0 on all of
+them); a vehicle placement's position is the vehicle's **centre of
+mass**, not its model origin. The exact creation rule is `vehicles.md`
+(Multiplayer, "Which placements spawn").
 The race game's own vehicle spots are the type 4 netgame flags.
 
 ### Equipment (0x258, 40 bytes) and sound scenery (0x2DC, 40 bytes)
