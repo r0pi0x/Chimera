@@ -226,12 +226,17 @@ started; the user asked to avoid server lag while testers play.
   same for the top HUD (the race chip's gun icon) and the headshot and
   other kill-modifier icons. Re-check against the look book's
   proportions and update the parity references if we deviate.
-- **Settings audit fixes:** fps_max and party_music are not archived;
-  the music volume is not applied to Combat Arms' party music; Combat
-  Arms' options apply may reset volume and gamma at start; no HL2:DM
-  Controls tab; game-specific rows are unlabelled; Host settings are
-  lost on restart; Brightness direction; Combat Arms view-model FOV
-  steps; the "The game's loop" label.
+- **Settings audit fixes** (done after 7.1, confirm in a playtest):
+  `fps_max` and `party_music` archived (a test checks every Options
+  cvar is); Combat Arms' options apply no longer sets the volume (it
+  started at 0, and config.cfg saved it), the music volume or the gamma
+  in the party (`ShellOptions`); a config saved with that bug is
+  repaired once at start (`chimera_repair_options`); volumes 0 to 200 % (`volume` default 50 %), the
+  music volume applies to Combat Arms' party music; an HL2:DM Controls
+  tab with its own gun view FOV (`hl2dm_viewmodel_fov`); game-specific
+  rows labelled; Brightness is "Gamma" (lower is brighter); the CA gun
+  view FOV steps on whole degrees; "Combat Arms' loop"; Music None stops
+  at once; Host settings say they last this session (still not saved).
 - **Crash reporting, automated.** On a panic or native crash, write a
   crash bundle (backtrace, log tail, build and net version, GPU and OS,
   map and rung, Windows minidumps included) and send it to the

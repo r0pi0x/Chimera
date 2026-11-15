@@ -72,6 +72,18 @@ pub fn fov() -> GameFov {
     }
 }
 
+/// `hl2dm_viewmodel_fov`: HL2:DM's view-model field of view in an app of
+/// several games (54 to 110, saved; `viewmodel_fov` there is CS:S's).
+pub fn viewmodel_fov_cvar(app: &mut App) {
+    view_anim::fov_cvar(
+        app,
+        "hl2dm_viewmodel_fov",
+        "HL2:DM's view model field of view (horizontal degrees, 54 to 110; zooms with the view).",
+        super::GAME,
+        (VIEWMODEL_FOV, 110.0),
+    );
+}
+
 fn acts(list: &[&str]) -> Pick {
     Pick::activities(list)
 }

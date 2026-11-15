@@ -64,9 +64,7 @@ impl Pick {
             }
             Pick::Range { min, max, step } => {
                 let v = value.trim().parse::<f32>().unwrap_or(*min);
-                let next = (v + step * dir as f32).clamp(*min, *max);
-                let next = (next * 100.0).round() / 100.0;
-                format!("{next}")
+                format!("{}", step_from(v, *step, dir, *min, *max))
             }
         }
     }
@@ -84,6 +82,21 @@ impl Pick {
             }
         }
     }
+}
+
+/// `v` one step of `step` up (`dir` 1) or down (-1), on the step's grid
+/// (multiples of it: a range from 63.74 by 1 goes 63.74, 64, 65, ...),
+/// within `min..=max`, rounded to hundredths.
+pub fn step_from(v: f32, step: f32, dir: i8, min: f32, max: f32) -> f32 {
+    let next = if step > 0.0 {
+        let k = v / step;
+        let k = if dir >= 0 { (k + 1e-3).floor() + 1.0 } else { (k - 1e-3).ceil() - 1.0 };
+        k * step
+    } else {
+        v
+    };
+    let next = next.clamp(min, max);
+    (next * 100.0).round() / 100.0
 }
 
 /// Two cvar values the same (`1` and `1.0`, any case).
@@ -116,6 +129,19 @@ pub struct Setting {
     /// the slider's.
     pub hard_min: Option<f32>,
     pub hard_max: Option<f32>,
+    /// A range shown as a percentage (`percent = true`: a volume's 1.6
+    /// shows "160%").
+    pub percent: bool,
+}
+
+impl Setting {
+    /// What `value` shows as (`Pick::shown`, a percentage when `percent`).
+    pub fn shown(&self, value: &str) -> String {
+        match (&self.pick, value.trim().parse::<f32>()) {
+            (Pick::Range { .. }, Ok(f)) if self.percent => format!("{}%", (f * 100.0).round()),
+            _ => self.pick.shown(value),
+        }
+    }
 }
 
 /// A `[[setting]]` (or a tab's `setting` entry) read.
@@ -156,6 +182,7 @@ pub fn setting_of(v: &toml::Value) -> Result<Setting, String> {
         widget: s("widget"),
         hard_min: t.get("hard_min").and_then(num),
         hard_max: t.get("hard_max").and_then(num),
+        percent: t.get("percent").and_then(|v| v.as_bool()).unwrap_or(false),
     })
 }
 

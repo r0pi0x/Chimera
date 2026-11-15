@@ -2435,7 +2435,7 @@ fn play_frame(commands: &mut Commands, root: Entity, menu: &PartyMenu, data: &Me
                 y,
                 w,
                 &s.label,
-                &s.pick.shown(&v),
+                &s.shown(&v),
                 MainMenuAction::GameStep { index: i, dir: -1 },
                 MainMenuAction::GameStep { index: i, dir: 1 },
             );
@@ -2638,7 +2638,7 @@ fn options_frame(commands: &mut Commands, root: Entity, menu: &PartyMenu, look: 
                 y,
                 w,
                 &s.label,
-                &s.pick.shown(&v),
+                &s.shown(&v),
                 MainMenuAction::OptionStep { index: i, dir: -1 },
                 MainMenuAction::OptionStep { index: i, dir: 1 },
             );

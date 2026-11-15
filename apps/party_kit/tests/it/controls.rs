@@ -239,7 +239,7 @@ fn the_controls_page_rebinds_shared_and_per_game_keys() {
     app.update();
     let page = actions(&mut app);
     let tabs: Vec<_> = page.iter().filter(|(_, a)| matches!(a, Action::Tab(_))).collect();
-    assert_eq!(tabs.len(), 3, "Shared, Combat Arms, CS:S");
+    assert_eq!(tabs.len(), 4, "Shared, Combat Arms, CS:S, HL2:DM");
     assert!(page.iter().any(|(_, a)| *a == Action::Rebind("+jump")), "Shared first: Jump");
     assert!(!page.iter().any(|(_, a)| *a == Action::Rebind("+speed")), "CS:S's walk isn't on the shared page");
     let grabbed = app.world_mut().query::<&CursorOptions>().iter(app.world()).any(|c| c.grab_mode != CursorGrabMode::None);
@@ -287,4 +287,41 @@ fn the_controls_page_rebinds_shared_and_per_game_keys() {
     app.update();
     let text = chimera_core::console::config_text(app.world_mut());
     assert!(text.contains("unbindgameall") && text.contains("bindgame cs_source x +speed"), "{text}");
+}
+
+/// HL2:DM's tab (playtest 7's settings audit): its sprint, walk, duck and
+/// suit zoom, and its own gun view FOV, saved in the config.
+#[test]
+fn hl2dm_has_its_own_controls_tab() {
+    use party_kit::controls::{GAMES, tab_game, tab_named, tab_rows};
+    let tab = tab_named("hl2dm").expect("an HL2:DM tab");
+    assert_eq!(tab_game(tab), Some(hl2dm::game::GAME));
+    let commands: Vec<_> = tab_rows(tab).iter().map(|r| r.command).collect();
+    assert_eq!(commands, ["+speed", "+walk", "+duck", "+zoom"]);
+    let fov = &GAMES.iter().find(|g| g.game == hl2dm::game::GAME).unwrap().settings[0];
+    assert_eq!(fov.cvar, "hl2dm_viewmodel_fov");
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, chimera_core::console::ConsolePlugin))
+        .insert_resource(combat_arms::game::view_model::settings());
+    party_kit::add_view_model_fovs(&mut app);
+    let console = app.world().resource::<Console>();
+    let cvar = console.cvar("hl2dm_viewmodel_fov").expect("the cvar");
+    assert!(cvar.archive);
+    assert_eq!(cvar.default, "54");
+}
+
+/// A step lands on the step's grid: Combat Arms' gun view FOV starts at
+/// 63.74 and goes 64, 65, ... (it showed 64.74, 65.74), and back down to
+/// its least.
+#[test]
+fn steps_land_on_whole_values() {
+    use party_kit::controls::{GAMES, nudged};
+    let ca = &GAMES.iter().find(|g| g.game == combat_arms::game::GAME).unwrap().settings[0];
+    assert_eq!(nudged(ca, 63.74, 1), 64.0);
+    assert_eq!(nudged(ca, 64.0, 1), 65.0);
+    assert_eq!(nudged(ca, 65.0, -1), 64.0);
+    assert_eq!(nudged(ca, 64.0, -1), 63.74);
+    assert_eq!(nudged(ca, 110.0, 1), 110.0);
+    assert_eq!(party_kit::host::step_from(0.5, 0.05, 1, 0.0, 2.0), 0.55);
+    assert_eq!(party_kit::host::step_from(0.55, 0.05, -1, 0.0, 2.0), 0.5);
 }

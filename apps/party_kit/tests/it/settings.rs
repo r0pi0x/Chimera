@@ -256,7 +256,8 @@ fn discard_sets_a_previewed_volume_back() {
     let fov = row_of_tab(&mut sim.app, 0, "fov_desired");
     let saves0 = saves(&sim.app);
     // A drag along the track: heard at once.
-    send(&mut sim.app, SettingsAction::SetFrac { row, frac: 0.5 });
+    // (0 to 200 %: a quarter of the track is half volume.)
+    send(&mut sim.app, SettingsAction::SetFrac { row, frac: 0.25 });
     assert_eq!(cvar(&mut sim.app, "volume"), "0.5", "a volume previews live");
     assert_eq!(changes(&sim.app), 1, "and is pending");
     // A setting that doesn't preview waits.
@@ -560,7 +561,8 @@ fn mouse(app: &mut App) -> Mut<'_, ButtonInput<MouseButton>> {
 fn a_slider_drags_and_its_release_commits_once() {
     let (mut sim, row) = audio_page();
     let app = &mut sim.app;
-    let track = point_at(app, row, 0.2);
+    // The volume's track is 0 to 2 (200 %): a fraction is twice its value.
+    let track = point_at(app, row, 0.1);
     mouse(app).press(MouseButton::Left);
     app.world_mut().entity_mut(track).insert(bevy::ui::DeprecatedInteraction::Pressed);
     app.update();
@@ -568,7 +570,7 @@ fn a_slider_drags_and_its_release_commits_once() {
     app.update();
     assert_eq!(set(app).values["volume"], "0.2", "jumped to the press");
     assert!(set(app).slide.is_some(), "dragging");
-    for f in [0.3, 0.45, 0.6, 0.7] {
+    for f in [0.15, 0.225, 0.3, 0.35] {
         // A new track each time: the page is drawn again as the value moves.
         point_at(app, row, f);
         app.update();
@@ -595,7 +597,7 @@ fn a_slider_drags_and_its_release_commits_once() {
 fn a_click_cues_once_and_keys_cue_each_step() {
     let (mut sim, row) = audio_page();
     let app = &mut sim.app;
-    send(app, SettingsAction::SlideStart { row, frac: 0.4 });
+    send(app, SettingsAction::SlideStart { row, frac: 0.2 });
     send(app, SettingsAction::SlideEnd(row));
     assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("0.4"));
     assert_eq!(slider_cues(app), 1, "a click-jump: once");
@@ -605,23 +607,27 @@ fn a_click_cues_once_and_keys_cue_each_step() {
     assert_eq!(slider_cues(app), 3, "each key step");
 }
 
-/// Clicking the value box types a number: one past the range is kept
-/// (the thumb stops at the end), a negative volume refused with why,
-/// Esc puts the value back.
+/// Clicking the value box types a number (a volume in percent, 160 for
+/// 1.6); a negative volume or one
+/// past 200 % refused with why, Esc puts the value back.
 #[test]
 fn a_typed_value_is_kept_past_the_range_and_checked() {
     let (mut sim, row) = audio_page();
     let app = &mut sim.app;
     send(app, SettingsAction::EditValue(row));
-    assert_eq!(set(app).edit.as_ref().map(|e| e.text.as_str()), Some("1"), "the value to edit");
-    app.world_mut().resource_mut::<Console>().submit("settings_type 1.6");
+    assert_eq!(set(app).edit.as_ref().map(|e| e.text.as_str()), Some("100"), "the value to edit, in percent");
+    app.world_mut().resource_mut::<Console>().submit("settings_type 160");
     app.update();
     tap(app, KeyCode::Enter);
     assert!(set(app).edit.is_none(), "Enter keeps it");
-    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.6"), "past the slider's 1, kept");
-    // Refused: a negative volume, and not a number.
+    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.6"), "160 % is 1.6");
+    // Refused: past 200 %, a negative volume, and not a number.
     send(app, SettingsAction::EditValue(row));
-    app.world_mut().resource_mut::<Console>().submit("settings_type -0.5");
+    app.world_mut().resource_mut::<Console>().submit("settings_type 250%");
+    app.update();
+    tap(app, KeyCode::Enter);
+    assert_eq!(set(app).edit.and_then(|e| e.error).as_deref(), Some("At most 200"));
+    app.world_mut().resource_mut::<Console>().submit("settings_type -50");
     app.update();
     tap(app, KeyCode::Enter);
     let e = set(app).edit.expect("still typing");

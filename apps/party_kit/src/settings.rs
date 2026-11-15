@@ -281,6 +281,7 @@ pub fn rows(ctx: Context, tabs: &[(String, Vec<Setting>)], tab: usize, bind_game
                     live: true,
                     when: None,
                     widget: None,
+                    percent: false,
                     hard_min: None,
                     hard_max: None,
                 };
@@ -1106,6 +1107,11 @@ fn act_one(world: &mut World, a: SettingsAction) {
                 && world.resource::<Settings>().edit.as_ref().is_none_or(|e| e.row != row)
             {
                 let text = shown_value(world, ctx, &set.cvar).trim().to_string();
+                // A percentage is typed as one (160 for 1.6).
+                let text = match text.parse::<f32>() {
+                    Ok(f) if set.percent => format!("{}", (f * 100.0).round()),
+                    _ => text,
+                };
                 let mut st = world.resource_mut::<Settings>();
                 st.focus = row;
                 st.open_list = None;
@@ -1119,7 +1125,10 @@ fn act_one(world: &mut World, a: SettingsAction) {
                 world.resource_mut::<Settings>().edit = None;
                 return;
             };
-            match controls::typed_number(&e.text, (set.hard_min, set.hard_max)) {
+            // A percentage's box takes percent ("160" or "160%" is 1.6).
+            let k = if set.percent { 100.0 } else { 1.0 };
+            let typed = e.text.trim().trim_end_matches('%');
+            match controls::typed_number(typed, (set.hard_min.map(|m| m * k), set.hard_max.map(|m| m * k))).map(|v| v / k) {
                 Ok(v) => {
                     world.resource_mut::<Settings>().edit = None;
                     let next = format!("{v}");
@@ -1415,7 +1424,7 @@ fn help_of(world: &World, ctx: Context, tabs: &[(String, Vec<Setting>)], s: &Set
             let text = if !set.help.is_empty() { set.help.clone() } else { cvar.map(|c| c.help.clone()).unwrap_or_default() };
             let mut kv = vec![("Console", set.cvar.clone())];
             if let Some(c) = cvar {
-                kv.push(("Default", set.pick.shown(&c.default)));
+                kv.push(("Default", set.shown(&c.default)));
             }
             kv.push(("Range", range_text(&set.pick)));
             if let Some(n) = note {
@@ -1681,7 +1690,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                         caret: e.text.char_indices().nth(e.caret).map_or(e.text.len(), |(b, _)| b),
                         error: e.error.is_some(),
                     });
-                    let p = ui.slider_ex(c, vl, f, None, &set.pick.shown(&v), 15.0, vst, typing);
+                    let p = ui.slider_ex(c, vl, f, None, &set.shown(&v), 15.0, vst, typing);
                     c.entity(p.track).insert(SettingsAction::Slide(i));
                     c.entity(p.value).insert(SettingsAction::EditValue(i));
                     if let Some(why) = edit.and_then(|e| e.error.as_deref()) {
@@ -1714,7 +1723,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                     }
                 }
                 _ => {
-                    let (minus, plus) = ui.stepper(c, vl, &set.pick.shown(&v), 7.0, vst);
+                    let (minus, plus) = ui.stepper(c, vl, &set.shown(&v), 7.0, vst);
                     c.entity(minus).insert(SettingsAction::Step { row: i, dir: -1 });
                     c.entity(plus).insert(SettingsAction::Step { row: i, dir: 1 });
                 }

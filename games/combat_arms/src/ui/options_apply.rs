@@ -14,13 +14,20 @@
 //!   stream's own level is divided by it so music keeps its own level
 //!   (and is silent while the master is 0).
 //!
+//! An app whose shell keeps these settings in its own cvars (Lucker
+//! Party: `sensitivity`, `volume`, `snd_musicvolume`, `mat_monitorgamma`
+//! in config.cfg, shared by every game it plays) says so with
+//! `ShellOptions`: then nothing here touches them. Combat Arms' profile
+//! isn't loaded there, and its levels (`soundvolume` 0 among them) had
+//! set the master volume and the brightness back at every start.
+//!
 //! Known shortcuts: see `game::options::sound` (the sounds' own levels
 //! per class aren't applied: the sounds carry no class, so only the
 //! master reaches the mixer, and a level above 1 is clamped); the shell
 //! clamps the brightness range.
 
 use bevy::prelude::*;
-use chimera_present::audio::live_sound::SoundMix;
+use chimera_present::audio::live_sound::{MAX_GAIN, SoundMix};
 
 use crate::{
     client::{audio::SoundOptions, gamma::MonitorGammaSetting, input::MouseSettings},
@@ -37,16 +44,18 @@ pub fn degrees_per_count(look: &CaMouseLook) -> f32 {
     look.rad_per_count().to_degrees() as f32
 }
 
-/// An app that keeps the mouse look in the shell's `sensitivity`,
-/// `m_yaw` and `m_pitch` (saved in its config.cfg, shared by the games it
-/// plays: Lucker Party) takes the mouse look out of Combat Arms' profile:
-/// `apply` leaves `MouseSettings` to the shell.
+/// An app that keeps the mouse look (`sensitivity`, `m_yaw`,
+/// `m_pitch`), the volumes (`volume`, `snd_musicvolume`) and the
+/// brightness (`mat_monitorgamma`) in the shell's cvars (saved in its
+/// config.cfg, shared by the games it plays: Lucker Party) takes them out
+/// of Combat Arms' profile: `apply` leaves `MouseSettings`,
+/// `SoundOptions`, `SoundMix` and `MonitorGammaSetting` to the shell.
 #[derive(Resource, Clone, Copy, Debug, Default)]
-pub struct ShellMouse;
+pub struct ShellOptions;
 
 #[allow(clippy::too_many_arguments)]
 fn apply(
-    shell_mouse: Option<Res<ShellMouse>>,
+    shell: Option<Res<ShellOptions>>,
     look: Res<CaMouseLook>,
     levels: Res<CaSoundLevels>,
     gamma: Res<CaGamma>,
@@ -55,8 +64,10 @@ fn apply(
     mix: Option<ResMut<SoundMix>>,
     monitor: Option<ResMut<MonitorGammaSetting>>,
 ) {
+    if shell.is_some() {
+        return;
+    }
     if let Some(mut m) = mouse
-        && shell_mouse.is_none()
         && (look.is_changed() || m.is_added())
     {
         let d = degrees_per_count(&look);
@@ -74,7 +85,7 @@ fn apply(
             s.volume = master;
         }
         if let Some(mut m) = mix {
-            m.music = if master > 0.0 { (levels.music / master).clamp(0.0, 1.0) } else { 0.0 };
+            m.music = if master > 0.0 { (levels.music / master).clamp(0.0, MAX_GAIN) } else { 0.0 };
         }
     }
     if let Some(mut m) = monitor

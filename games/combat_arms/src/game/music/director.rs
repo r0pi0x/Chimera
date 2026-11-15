@@ -299,6 +299,17 @@ impl CaMusic {
         self.start(&file, looping, self.data.menu_fade, now);
     }
 
+    /// The `party_music` cvar set: None (0) in a party match stops what
+    /// plays at once (the original's loop too, which the playlist's frame
+    /// never looks at).
+    pub fn set_party_music(&mut self, n: u8) {
+        self.party_music = n;
+        if self.party && n == 0 {
+            self.playlist_on = false;
+            self.stop();
+        }
+    }
+
     fn party_playlist_size(&self) -> usize {
         let src: Vec<&String> = if self.data.party.playlist.is_empty() {
             self.data.playlist.iter().map(|e| &e.file).collect()

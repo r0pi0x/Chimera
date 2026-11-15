@@ -31,6 +31,11 @@
 //! greybox back, `load_greybox`), disconnect (the greybox, then the main menu),
 //! toggleconsole, quit), `developer 1` notify lines, the `chimera/console`
 //! remote method.
+//!
+//! At start: config.cfg, then autoexec.cfg, then the command line; a
+//! config written before the party apps' options fix (no `OPTIONS_MARK`)
+//! gets `chimera_repair_options` once, which puts back the volumes and
+//! brightness that bug saved (`repair_options`).
 
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -1055,6 +1060,10 @@ fn autoexec(
         // written again with the mark.
         console.submit("binddefaults new");
     }
+    if !config.as_ref().is_none_or(|t| t.contains(OPTIONS_MARK)) {
+        // Written before the party's options fix: undo what it saved.
+        console.submit("chimera_repair_options");
+    }
     console.submit("execifexists autoexec.cfg");
     console.log_output = true;
     for line in &args.0.console {
@@ -1071,6 +1080,35 @@ fn autoexec(
             *v = Visibility::Visible;
         }
     }
+}
+
+/// A config.cfg written since the party apps keep their own sound and
+/// brightness says so (`console::config_text`'s fourth line). One without
+/// it may carry what Combat Arms' options, its profile not loaded, set at
+/// each start of the party apps until the fix of 2026-11-14 (`combat_arms::ui::
+/// options_apply::ShellOptions`) and the config then saved: `volume 0`
+/// with `snd_musicvolume 0`, and `mat_monitorgamma` at Combat Arms' default
+/// gamma's (2.2 / 1.22): `chimera_repair_options` puts those back to the
+/// defaults, once (the config is written again with the mark).
+pub const OPTIONS_MARK: &str = "// shell options: 1";
+
+/// The brightness Combat Arms' default gamma (1.22) set in the party apps
+/// (`options_apply::monitor_gamma`), the saved bug's signature.
+pub const CA_GAMMA_SAVED: f32 = 2.2 / 1.22;
+
+/// `chimera_repair_options` (`OPTIONS_MARK`): the lines that put back the
+/// options the party's bug saved, from the values the config gave
+/// (`volume`, `snd_musicvolume`, `mat_monitorgamma`; None: unset).
+pub fn repair_options(volume: Option<f32>, music: Option<f32>, gamma: Option<f32>) -> Vec<String> {
+    let mut out = Vec::new();
+    if volume == Some(0.0) && music == Some(0.0) {
+        out.push(format!("volume {}", super::audio::DEFAULT_VOLUME));
+        out.push("snd_musicvolume 1".to_string());
+    }
+    if gamma.is_some_and(|g| (g - CA_GAMMA_SAVED).abs() < 1e-3) {
+        out.push(format!("mat_monitorgamma {}", super::gamma::DEFAULT_GAMMA));
+    }
+    out
 }
 
 /// Save binds and changed cvars when the game closes.
@@ -2838,6 +2876,27 @@ pub fn client_commands(app: &mut App) {
         },
     )
     .console_command(
+        "chimera:repair_options",
+        "repair_options: put back a volume, music volume and brightness the party apps' options bug saved (run once \
+         at start for a config written before the fix).",
+        |w, _| {
+            let mut value = |name: &str| {
+                let c = w.resource::<Console>().cvar(name).cloned()?;
+                (c.get)(w).and_then(|v| v.trim().parse::<f32>().ok())
+            };
+            let (v, m, g) = (value("volume"), value("snd_musicvolume"), value("mat_monitorgamma"));
+            let lines = repair_options(v, m, g);
+            if lines.is_empty() {
+                return Ok(None);
+            }
+            let mut console = w.resource_mut::<Console>();
+            for l in &lines {
+                console.submit(l.clone());
+            }
+            Ok(Some(format!("options repaired: {}", lines.join("; "))))
+        },
+    )
+    .console_command(
         "chimera:con_copy",
         "con_copy [lines]: copy the console output (or its last lines) to the clipboard.",
         |w, a| {
@@ -2894,6 +2953,19 @@ pub fn remote_exec(
 
 #[cfg(test)]
 mod tests {
+    /// The party's saved bug is put back (both volumes 0 together, the
+    /// brightness at Combat Arms' default gamma's); a player's own 0
+    /// volume with music on, or their own brightness, stays.
+    #[test]
+    fn repair_options_undoes_the_party_bug_only() {
+        use super::{CA_GAMMA_SAVED, repair_options};
+        assert_eq!(repair_options(Some(0.0), Some(0.0), Some(1.8032787)), ["volume 0.5", "snd_musicvolume 1", "mat_monitorgamma 2.2"]);
+        assert!((CA_GAMMA_SAVED - 1.8032787).abs() < 1e-5);
+        assert!(repair_options(Some(0.0), Some(0.6), Some(1.8)).is_empty());
+        assert!(repair_options(Some(0.7), Some(0.0), None).is_empty());
+        assert!(repair_options(None, None, None).is_empty());
+    }
+
 
     #[test]
     fn closing_with_the_console_key_captures_the_mouse() {

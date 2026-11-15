@@ -84,14 +84,8 @@ impl Plugin for PerfPlugin {
                     limit_frames,
                 )
                     .chain(),
-            )
-            .init_resource::<FrameLimit>();
-        resource_cvar::<FrameLimit, f32>(
-            app,
-            "fps_max",
-            "Most frames a second the game draws (0: no cap; vsync may cap lower).",
-            |l| &mut l.fps_max,
-        );
+            );
+        frame_limit_cvar(app);
         // The render world's time per frame (its `Render` schedule, run on
         // the render thread beside the next frame's main world).
         let render_time = RenderTime::default();
@@ -967,6 +961,19 @@ fn hide_overlay(perf: Res<Perf>, mut text: Query<&mut Visibility, With<PerfText>
             v.set_if_neq(Visibility::Hidden);
         }
     }
+}
+
+/// `fps_max` (`FrameLimit`), saved in config.cfg (an options page sets
+/// it).
+pub fn frame_limit_cvar(app: &mut App) {
+    app.init_resource::<FrameLimit>();
+    resource_cvar::<FrameLimit, f32>(
+        app,
+        "fps_max",
+        "Most frames a second the game draws (0: no cap; vsync may cap lower).",
+        |l| &mut l.fps_max,
+    );
+    app.world_mut().resource_mut::<crate::console::Console>().archive("fps_max");
 }
 
 #[cfg(test)]

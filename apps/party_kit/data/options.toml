@@ -4,7 +4,10 @@
 # step] (a `-` and a `+`), or `choices` = [[value, label], ...] (a click
 # takes the next); `when = "ui_sound"`: only in an app with UI sound
 # (Ultimate Gun Game's Signal); `widget = "dropdown"`: the Signal look's
-# Settings shows it as a dropdown (party_kit::settings; else by its pick).
+# Settings shows it as a dropdown (party_kit::settings; else by its pick);
+# `percent = true`: a range shown as a percentage (1.6 shows 160 %);
+# `help`: the help pane's text (else the cvar's). A row that holds for
+# some games only names them in its label.
 # A range's value box takes any typed number; `hard_min` / `hard_max`
 # (inclusive) refuse what is unsafe (a negative volume, no sensitivity).
 # The "Binds" tab is the Controls page (F6); in the Signal look's
@@ -17,15 +20,15 @@ setting = [
   { label = "Display", cvar = "chimera_fullscreen", choices = [["0", "Windowed"], ["1", "Full screen"], ["2", "Borderless"]] },
   { label = "Vertical sync", cvar = "mat_vsync", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Frame limit", cvar = "fps_max", choices = [["0", "None"], ["60", "60"], ["144", "144"], ["240", "240"], ["300", "300"]] },
-  { label = "Brightness (gamma)", cvar = "mat_monitorgamma", range = [1.6, 2.6, 0.1] },
+  { label = "Gamma", cvar = "mat_monitorgamma", range = [1.6, 2.6, 0.1], help = "The screen's gamma: lower is brighter (1.6 to 2.6; 2.2 by default)." },
 ]
 
 [[tab]]
 name = "Audio"
 setting = [
-  { label = "Game volume", cvar = "volume", range = [0, 1, 0.05], hard_min = 0 },
-  { label = "Music volume", cvar = "snd_musicvolume", range = [0, 1, 0.05], hard_min = 0 },
-  { label = "UI volume", cvar = "snd_uivolume", range = [0, 1, 0.05], hard_min = 0, when = "ui_sound" },
+  { label = "Game volume", cvar = "volume", range = [0, 2, 0.05], hard_min = 0, hard_max = 2, percent = true },
+  { label = "Music volume", cvar = "snd_musicvolume", range = [0, 2, 0.05], hard_min = 0, hard_max = 2, percent = true },
+  { label = "UI volume", cvar = "snd_uivolume", range = [0, 2, 0.05], hard_min = 0, hard_max = 2, percent = true, when = "ui_sound" },
   { label = "Mute when unfocused", cvar = "snd_mute_losefocus", choices = [["0", "Off"], ["1", "On"]] },
 ]
 
@@ -33,7 +36,7 @@ setting = [
 name = "Mouse"
 setting = [
   { label = "Sensitivity", cvar = "sensitivity", range = [0.1, 20, 0.1], hard_min = 0.001 },
-  { label = "Zoomed sensitivity", cvar = "zoom_sensitivity_ratio", range = [0.1, 3, 0.1], hard_min = 0.001 },
+  { label = "Zoomed sensitivity (not CA scopes)", cvar = "zoom_sensitivity_ratio", range = [0.1, 3, 0.1], hard_min = 0.001, help = "The mouse while zoomed (CS:S's scopes, HL2:DM's zooms), times the sensitivity and the zoom. Combat Arms' scopes keep their own." },
   { label = "Mouse filter", cvar = "m_filter", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Acceleration", cvar = "m_customaccel", choices = [["0", "Off"], ["3", "On"]] },
 ]
@@ -41,8 +44,8 @@ setting = [
 [[tab]]
 name = "Party"
 setting = [
-  { label = "Hit marker", cvar = "cl_hitmarker", choices = [["0", "Off"], ["1", "On"]] },
+  { label = "Hit marker (CS:S, HL2:DM)", cvar = "cl_hitmarker", choices = [["0", "Off"], ["1", "On"]], help = "A cross where your shot hurt another player, on CS:S and HL2:DM rungs (Combat Arms' guns show their own)." },
   { label = "Swap effect", cvar = "party_swap_effect", choices = [["0", "Off"], ["1", "On"]] },
-  { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "The game's loop"], ["0", "None"]], widget = "dropdown" },
-  { label = "Radar", cvar = "hud_radar", choices = [["0", "Off"], ["1", "On"]] },
+  { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "Combat Arms' loop"], ["0", "None"]], widget = "dropdown" },
+  { label = "Radar (CS:S, Combat Arms)", cvar = "hud_radar", choices = [["0", "Off"], ["1", "On"]], help = "CS:S's radar and Combat Arms' corner map, on their rungs (HL2:DM has none)." },
 ]

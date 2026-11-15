@@ -44,8 +44,9 @@
 //! playlist, the current screen and the last interface sounds;
 //! `ca_ambient` lists the map's sounds and the gain at the player.
 //!
-//! Known shortcuts (docs/tech-debt.md): `party_music` isn't saved between runs
-//! (set it in a config file or the console); the install's keyed attribute
+//! `party_music` is archived (config.cfg keeps it).
+//!
+//! Known shortcuts (docs/tech-debt.md): the install's keyed attribute
 //! files (the playlist's entries and default ticks, the interface sounds'
 //! files, each mode's `StartBGM` and `LoopBGM`, `clientevent.txt`) aren't
 //! read, so data/music.toml's inferred values stand in and no interface
@@ -143,7 +144,7 @@ impl Plugin for CaMusicPlugin {
                     if n > 2 {
                         return Err("party_music is 0, 1 or 2".into());
                     }
-                    w.resource_mut::<CaMusic>().party_music = n;
+                    w.resource_mut::<CaMusic>().set_party_music(n);
                     Ok(())
                 },
             )
@@ -158,6 +159,7 @@ impl Plugin for CaMusicPlugin {
                 "ca_ambient: the map's SoundFX objects (file, radii, volume, on) and their gain at the local player.",
                 |w, _| Ok(Some(describe_ambient(w))),
             );
+        app.world_mut().resource_mut::<crate::console::Console>().archive("party_music");
         app.net_part("combat_arms_music", |app| {
             use bevy_replicon::prelude::{Channel, ServerMessageAppExt};
             app.add_server_message::<CaMusicOn>(Channel::Ordered)

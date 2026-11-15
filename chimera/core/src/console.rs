@@ -1753,7 +1753,9 @@ pub fn config_text(w: &mut World) -> String {
     // (`client::binds::CONFIG_MARK`), the third that the defaults it was
     // written over were the game's current ones (`client::binds::DEFAULTS_MARK`;
     // its text, "cs", from when CS:S's changed, kept for saved configs).
-    let mut out = String::from("// Written by Chimera (host_writeconfig).\n// binds: all\n// bind defaults: cs\n");
+    // The fourth, that its sound and brightness are the player's own
+    // (`client::console::OPTIONS_MARK`: written after the party's fix).
+    let mut out = String::from("// Written by Chimera (host_writeconfig).\n// binds: all\n// bind defaults: cs\n// shell options: 1\n");
     let (binds, layers, aliases, cvars) = {
         let c = w.resource::<Console>();
         (

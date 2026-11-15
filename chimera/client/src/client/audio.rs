@@ -2,7 +2,9 @@
 //! `snd_musicvolume` (music: `audio::live_sound::is_music`) and
 //! `snd_mute_losefocus` (silent while the window is in the background).
 //! Bevy's `GlobalVolume` is what the mixer reads (`audio::live_sound`,
-//! `audio::room`): the volume, or nothing while muted for focus.
+//! `audio::room`): the volume, or nothing while muted for focus. The
+//! volumes go from 0 to 2 (`live_sound::MAX_GAIN`: above 1 amplifies;
+//! CS:S's own menu slider stops at 1).
 //!
 //! The options' sound settings: the master `volume`, `snd_mute_losefocus`
 //! (silent while the window is in the background) through Bevy's
@@ -20,7 +22,7 @@ use bevy::{
 
 use crate::{
     console::{Console, ConsoleAppExt, resource_cvar},
-    audio::live_sound::SoundMix,
+    audio::live_sound::{MAX_GAIN, SoundMix},
 };
 
 /// Sound volume a fresh config starts with (`volume`).
@@ -29,7 +31,7 @@ pub const DEFAULT_VOLUME: f32 = 0.5;
 /// The player's sound settings.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct SoundOptions {
-    /// `volume`, 0 to 1.
+    /// `volume`, 0 to `MAX_GAIN` (2).
     pub volume: f32,
     /// `snd_mute_losefocus`: 1 silences the game while its window is in
     /// the background (CS:S's default).
@@ -84,7 +86,7 @@ impl SoundOptions {
     /// The master volume heard, with the window focused or not.
     pub fn master(&self, focused: bool) -> f32 {
         if focused || self.mute_losefocus == 0 {
-            self.volume.clamp(0.0, 1.0)
+            self.volume.clamp(0.0, MAX_GAIN)
         } else {
             0.0
         }
@@ -107,12 +109,12 @@ impl Plugin for SoundOptionsPlugin {
 fn sound_cvars(app: &mut App) {
     app.console_cvar(
         "volume",
-        "Sound volume, 0 to 1.",
+        "Sound volume, 0 to 2 (above 1 is louder than recorded).",
         &DEFAULT_VOLUME.to_string(),
         |w| w.get_resource::<SoundOptions>().map(|s| s.volume.to_string()),
         |w, v| {
             let v: f32 = v.trim().parse().map_err(|_| format!("bad value \"{v}\""))?;
-            w.get_resource_mut::<SoundOptions>().ok_or("not available")?.volume = v.clamp(0.0, 1.0);
+            w.get_resource_mut::<SoundOptions>().ok_or("not available")?.volume = v.clamp(0.0, MAX_GAIN);
             Ok(())
         },
     );
@@ -125,13 +127,13 @@ fn sound_cvars(app: &mut App) {
     resource_cvar::<SoundMix, f32>(
         app,
         "snd_musicvolume",
-        "Music volume, 0 to 1 (sounds under music/ and MP3s), times the master volume.",
+        "Music volume, 0 to 2 (sounds under music/, MP3s and games' tagged music), times the master volume.",
         |m| &mut m.music,
     );
     resource_cvar::<SoundMix, f32>(
         app,
         "snd_uivolume",
-        "Interface sound volume, 0 to 1 (an app's own menu and HUD sounds: the ui bus), times the master volume.",
+        "Interface sound volume, 0 to 2 (an app's own menu and HUD sounds: the ui bus), times the master volume.",
         |m| &mut m.ui,
     );
     resource_cvar::<SoundOptions, u8>(
@@ -226,8 +228,12 @@ mod tests {
         let mut app = app();
         run(&mut app, "volume 0.25");
         assert!((master(&app) - 0.25).abs() < 1e-6);
+        // Up to twice the recorded level: the master reaches the mixer
+        // above 1, not clamped there.
+        run(&mut app, "volume 1.6");
+        assert!((master(&app) - 1.6).abs() < 1e-6, "1.6 amplifies");
         run(&mut app, "volume 3");
-        assert_eq!(master(&app), 1.0);
+        assert_eq!(master(&app), MAX_GAIN);
         run(&mut app, "volume -1");
         assert_eq!(master(&app), 0.0);
         let console = app.world().resource::<Console>();

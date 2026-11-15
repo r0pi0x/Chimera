@@ -175,12 +175,14 @@ impl Plugin for PartyHudPlugin {
 /// sensitivity was back to the default at each start). The starting
 /// values are Combat Arms' defaults, as before, and they are the cvars'
 /// defaults, so a config that says nothing keeps them and one that says
-/// something wins.
+/// something wins. The same holds for the volumes and the brightness
+/// (`ShellOptions`): Combat Arms' unloaded profile had set `volume` to 0
+/// and `mat_monitorgamma` back at each start.
 pub struct PartyMousePlugin;
 
 impl Plugin for PartyMousePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(combat_arms::ui::options_apply::ShellMouse)
+        app.insert_resource(combat_arms::ui::options_apply::ShellOptions)
             .add_systems(Startup, start_mouse);
     }
 }
