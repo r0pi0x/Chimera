@@ -36,6 +36,7 @@ mod maps;
 mod movement;
 mod movement_net;
 mod movement_vitality;
+mod party_zoom;
 mod net_vitality;
 mod projectile_rules;
 mod respawn;
