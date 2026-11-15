@@ -610,6 +610,16 @@ pub fn looks(file: &MapFile, decode: bool) -> Looks {
     for h in &mut out.held {
         h.model.bounds = bounds(&h.model.meshes);
     }
+    // A rung weapon that looks like a gun (`weapons::rung::LOOKS`: the
+    // grenade rung's pistol): that gun's models under its id.
+    for (id, of) in super::super::weapons::rung::LOOKS {
+        if let Some(v) = out.view_models.iter().find(|v| v.key == of).cloned() {
+            out.view_models.push(MapViewModel { key: id.to_string(), ..v });
+        }
+        if let Some(h) = out.held.iter().find(|h| h.key == of).cloned() {
+            out.held.push(MapHeldModel { key: id.to_string(), ..h });
+        }
+    }
     out
 }
 
