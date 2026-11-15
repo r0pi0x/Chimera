@@ -1,6 +1,7 @@
 # Plan: the hub and its services (accounts, server list, assets, feedback)
 
-Status: planned (2026-11-14; revised the same day), nothing of it built.
+Status: S1a in progress (2026-11-14): the user's decisions are in
+section 11; the plan below follows them.
 The user's direction: a master server players connect to up front, which
 serves the game files by default, lists every lobby (hosting one lists it
 for everyone on the same master) and holds everyone's **accounts**, which
@@ -33,7 +34,7 @@ Placeholders only: `<hub host>`, `<hub port>`, `<fingerprint>`,
 the repository; the host hands the link and codes out privately, as
 playtest-hosting.md says.
 
-Section 11 lists the decisions the user still has to make.
+Section 11 lists the user's decisions (2026-11-14) and what is still open.
 
 ## 1. What exists (build on it)
 
@@ -76,23 +77,25 @@ service's public key; they ask accounts (on loopback) only for the
 revocation list, every 30 s, and keep the last one when it doesn't
 answer.
 
-### 2.2 One binary, roles (recommended)
+### 2.2 A binary per service (decided)
 
-`chimera_services <role> [options]`, one host binary whose roles are
-`front`, `accounts`, `hub`, `assets`, `feedback`, plus `all` (every role
-in one process: development, tests, a quick host on Windows) and
-`admin ...` (the owner's command line, 7.1). Each role runs as its own
-process under its own unit (2.6).
+The user's decision (2026-11-14): **one binary per service**, so each is
+updated and deployed on its own: `chimera_front`, `chimera_accounts`,
+`chimera_hub`, the asset service (`chimera_asset_server`, kept under its
+name so developers' steps and assets-for-developers.md keep working) and
+later `chimera_feedback`. They share code through library crates: the
+`chimera_services` library (`chimera/services/`: the database helpers,
+the accounts service, later the front and the hub; a `[[bin]]` per
+service) and `chimera_assets` (tickets, TLS, the asset service). The
+owner's command line is the accounts binary's own (`chimera_accounts
+invite <name>`, 7.1). A quick host on Windows starts each binary in its
+own console.
 
 | Option | For | Against |
 |---|---|---|
-| **One binary, a role per process** (recommended) | One build and one file to install and update; the shared parts (config, TLS, limits, logging, ticket checks, the DB helpers) linked once; `all` makes a whole hub in one process for tests and Windows; separate processes still give separate restarts and crashes | A changed role ships a new binary for all (each unit restarts only when asked, so a running service keeps its old copy until then) |
-| One binary per service | Each restarts on its own binary's update | Five builds, five release entries, five sets of flags; the shared code is linked five times |
+| **One binary per service** (decided) | Each binary is rebuilt, copied and restarted alone; a service's update never ships the others | A build per service; shared code linked into each (small: no Bevy) |
+| One binary, a role per process (the earlier recommendation) | One file to install | Every update ships every role |
 | One process, many routes (the first version of this plan) | Simplest | A crash or restart takes everything down; the user asked for the opposite |
-
-`chimera_asset_server` stays as today (a thin alias of `chimera_services
-assets` with today's flags) so developers' steps and
-assets-for-developers.md keep working.
 
 ### 2.3 Ports and the TLS front
 
@@ -103,14 +106,15 @@ hub link names the same fingerprint. One router forward, one firewall
 rule.
 
 Internal listeners, plain HTTP on 127.0.0.1 only (`services.toml` in
-`<server store>/server/`, host-written; these defaults):
+`<server store>/server/`, host-written; these defaults; 8732 is not
+used because today's host already runs a second asset listener there):
 
 | Service | Loopback port | Public path prefixes (through the front) |
 |---|---|---|
 | assets | 8731 (today's) | everything not below: `/key`, `/whoami`, `/games`, `/m/`, `/r/`, `/batch` (old clients use root paths) |
-| accounts | 8732 | `/accounts/` |
-| hub | 8733 | `/hub` and `/hub/` |
-| feedback | 8734 (S5; before it, assets) | `/feedback` |
+| accounts | 8741 | `/accounts/` |
+| hub | 8742 | `/hub` and `/hub/` |
+| feedback | 8743 (S5; before it, assets) | `/feedback` |
 | front | none (its public port only) | |
 
 **Routing**: the front reads the first request's line on a connection,
@@ -128,7 +132,7 @@ The front never relays `/admin`, `/internal` or `/feedback/admin`
 (404): those exist on the loopback listeners only, for this machine.
 Services trust `X-Chimera-Peer` only from a loopback connection.
 
-Alternative (decision 2): no front; each service runs its own in-process
+Alternative (not taken, decision 2): no front; each service runs its own in-process
 TLS listener on its own public port with the same certificate, and the
 discovery document names each port. No single point of failure, but a
 router forward per service and old clients keep needing the asset port.
@@ -200,25 +204,25 @@ Today's per-account limits, bans and access log stay as they are.
   `chimera-assets.service`, `chimera-feedback.service`, all
   `PartOf=chimera-services.target`; `loginctl enable-linger` once so they
   run without a login session. Templates in `tools/services/systemd/`
-  using `%h` and `<server store>` placeholders; `chimera_services admin
-  install-units --store <dir>` writes them to `~/.config/systemd/user/`.
+  using `%h` and `<server store>` placeholders; an install script
+  (S1b) writes them to `~/.config/systemd/user/`.
 - **Restart policy**: `Restart=on-failure`, `RestartSec=2`,
   `StartLimitIntervalSec=120`, `StartLimitBurst=5` (a crash loop stops
   and shows in `systemctl --user status`). Hardening that costs nothing:
   `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=strict`,
   `ReadWritePaths=<server store>`.
-- **The binary** is installed to `~/.local/lib/chimera/chimera_services`
-  by `admin install-units` (a copy of a release build), so a `cargo
-  build` never swaps it under a running service; an update is a copy and
-  `systemctl --user restart chimera-<role>` for the roles that changed.
+- **The binaries** are installed to `~/.local/lib/chimera/` (copies of
+  release builds), so a `cargo build` never swaps one under a running
+  service; an update is a copy of that service's binary and `systemctl
+  --user restart chimera-<service>`.
 - **Logs**: stderr to journald (`journalctl --user -u chimera-accounts
   -f`); the access logs stay files under `<server store>/server/`.
-  `chimera_services admin status` asks each loopback `GET /health`
+  `chimera_accounts status` (S1b) asks each loopback `GET /health`
   (version, uptime, DB state, revocation list age) and prints one line
   each.
 - **Graceful stop**: SIGTERM stops accepting, finishes requests in flight
   (at most 10 s), checkpoints the WAL (accounts, hub) and exits 0.
-- **Windows** (a host without systemd): `chimera_services all` in a
+- **Windows** (a host without systemd): each binary in its own
   console, as `chimera_asset_server` runs today.
 
 ### 2.7 Code layout (layering)
@@ -236,10 +240,12 @@ Each crate's folder is its layer (checks/tests/it/architecture.rs):
 - **`chimera_services`** (new, `chimera/services/`, engine layer, no Bevy;
   a `workspace_crates` row: `default-members`, an empty `dev` feature
   turning on its dependencies' `dev`, listed in `NO_HACK` like
-  `chimera/assets`; `cargo hakari generate`): the roles (`front`,
-  `accounts`, `hub`, `feedback` wrapping `chimera_assets::feedback`,
-  `assets` wrapping `chimera_assets::server`), `db` (rusqlite, the
-  migrations, backup), the admin API, page and CLI, the binary. Builds on
+  `chimera/assets`; `cargo hakari generate`): a library with the
+  services (`accounts`; later `front`, `hub`, `feedback` wrapping
+  `chimera_assets::feedback`), `db` (rusqlite, the migrations, backup),
+  the admin API, page and CLI, and a `[[bin]]` per service
+  (`chimera_accounts`; later `chimera_front`, `chimera_hub`,
+  `chimera_feedback`). Builds on
   `chimera_assets` and `chimera_formats` (the A2S codec for the probe).
   **rusqlite lives only here**, so no game or client build compiles
   SQLite. A host tool: not in player releases.
@@ -299,18 +305,21 @@ only if services ever run on several machines writing the same data.
 
 ### 3.3 Backups
 
-- **Nightly** (`chimera-accounts-backup.timer`, 04:00 local, `Persistent=
-  true`): `chimera_services admin backup` asks the running service to
-  write an online backup (SQLite's backup API) to
-  `<server store>/server/backups/accounts-<YYYYMMDD>.db`, then runs
-  `PRAGMA integrity_check` on the copy and logs the result.
+- **Nightly**, by the accounts service itself (a thread: once a UTC day,
+  after 04:00 UTC, and at start when the day's copy is missing; no
+  timer needed), and on demand with `chimera_accounts backup`: an online
+  backup (SQLite's backup API) to
+  `<server store>/server/backups/accounts-<YYYYMMDD>.db`, then `PRAGMA
+  integrity_check` on the copy, logged.
 - **Retention**: 14 daily copies, then one a week for 8 weeks; older ones
   deleted by the same command. Also one before every migration.
-- **Off this box** (decision 7): the backups folder copied elsewhere
-  (another machine on the tailnet, an encrypted cloud folder). A disk
-  failure otherwise loses every account.
-- **Restore**: stop accounts, copy a backup over `accounts.db`, start;
-  a test does exactly this.
+- **Off this box** (decision 7, undecided): local backups only for now.
+  Until the backups folder is copied elsewhere (another machine on the
+  tailnet, an encrypted cloud folder), a disk failure loses every
+  account.
+- **Restore**: stop accounts, `chimera_accounts restore <backup>` (checks
+  the copy and refuses while the service answers), start; a test does
+  exactly this.
 - hub.db has no backup: its listings come back with the next heartbeats.
 
 ### 3.4 Schema (S1, plus S4's tables)
@@ -318,7 +327,7 @@ only if services ever run on several machines writing the same data.
 ```
 -- The platform account (Chimera's)
 accounts   id BLOB(16) PK (random), username TEXT UNIQUE (case-folded; permanent),
-           display_name, created, role ('tester'|'host'|'owner'), note (owner's),
+           display_name (at most 20 characters), created, role ('tester'|'host'|'owner'), note (owner's),
            content ('*' or a list: asset service games), games ('*' or a list: hub games),
            list_slots INT, report INT (may send match results),
            muted INT (feedback), limits (JSON: rate, burst, daily bytes; null = role's),
@@ -465,7 +474,7 @@ when its info changes, from a thread, with its `services` ticket:
 
 ### 5.1 Invite and sign-up
 
-- **The owner** runs `chimera_services admin invite <name>` (or mints on
+- **The owner** runs `chimera_accounts invite <name>` (or mints on
   the admin page), which prints one line to send privately:
   `chimera-hub://<hub host>:<hub port>/<fingerprint>?code=XXX-XXX-XXX`.
   The code is 9 characters of Crockford base32 (45 bits; no 0/O or 1/I
@@ -488,8 +497,11 @@ when its info changes, from a thread, with its `services` ticket:
   device key; no password, nothing to type.
 - **Username and display name**: the username is the permanent handle
   (the owner's lists, the board's tooltip, `admin` commands, re-invites);
-  the **display name** shown in games starts equal to it and changes
-  freely in Settings. A username changes only by the owner (`admin
+  the **display name** is what games show (HUD, board, chat): at most
+  **20 characters**, enforced by the accounts service whenever it is set
+  or changed; it starts as the username and changes freely in
+  Settings. The username is shown only in account and admin places. (A
+  separate UI task truncates per widget.) A username changes only by the owner (`admin
   account set <id> --username`).
 - **Passwords**: none for now; an optional password (argon2, a column
   already reserved) may come later as one more way to add a device.
@@ -564,7 +576,7 @@ keep the name as played, without the id) and frees the username after
 
 ## 6. Migration from today's tokens
 
-- **Import once**: `chimera_services admin import-legacy
+- **Import once**: `chimera_accounts import-legacy
   <server store>/server/accounts.toml` makes one account per internal
   account (role `tester`, its games as `content`, every game to play,
   limits and note; its old name, case-folded, as the username) and one
@@ -594,28 +606,28 @@ Talks to the accounts service's admin API on loopback (with the services
 secret), so the database has one writer:
 
 ```
-chimera_services admin invite <name> [--role tester|host] [--content a,b|*] [--games a,b|*]
+chimera_accounts invite <name> [--role tester|host] [--content a,b|*] [--games a,b|*]
                                      [--list <n>] [--expires <days>]
                                      [--for <username> [--keep]]   # prints the invite link
-chimera_services admin invites [--state unused|redeemed|expired|revoked]
-chimera_services admin invite revoke <code or name>
-chimera_services admin account list [--json]
-chimera_services admin account show <username>    # devices, rights, last seen, profiles, stats
-chimera_services admin account set <username> [--username ..] [--role ..] [--content ..]
+chimera_accounts invites [--state unused|redeemed|expired|revoked]
+chimera_accounts invite revoke <code or name>
+chimera_accounts account list [--json]
+chimera_accounts account show <username>    # devices, rights, last seen, profiles, stats
+chimera_accounts account set <username> [--username ..] [--role ..] [--content ..]
                                    [--games ..] [--list n] [--note ..] [--mute|--unmute]
-chimera_services admin account revoke <username> | device revoke <device>
-chimera_services admin account delete <username>
-chimera_services admin ban <username|address> [--for <days>] --reason <text>
-chimera_services admin import-legacy <accounts.toml>
-chimera_services admin stats rebuild [--game <game>]
-chimera_services admin backup | status | install-units --store <dir>
+chimera_accounts account revoke <username> | device revoke <device>
+chimera_accounts account delete <username>
+chimera_accounts ban <username|address> [--for <days>] --reason <text>
+chimera_accounts import-legacy <accounts.toml>
+chimera_accounts stats rebuild [--game <game>]
+chimera_accounts backup | status | install-units --store <dir>
 ```
 
 Every change is an `audit` row.
 
 ### 7.2 The admin page
 
-`http://127.0.0.1:8732/admin/` (loopback only, never through the front;
+`http://127.0.0.1:8741/admin/` (loopback only, never through the front;
 the same rule as the feedback triage page; from another machine over an
 SSH tunnel): **Invites** (invite with a name, role, content, games and
 expiry, the link shown once with a copy button; the list with state;
@@ -765,45 +777,46 @@ crate), DESIGN.md "The party apps' main menu" and the asset service's
 account kinds, main-menu.md (M3 as built), each new file's `//!` doc
 (`docs_index`).
 
-## 11. Decisions for the user
+## 11. Decisions
 
-Taken (user, 2026-11-14): a Chimera platform account with per-game
-profiles declared by each game as data; every game open to every
-account by default; the account UX of section 5 (`invite <name>`,
+Taken (user, 2026-11-14), first: a Chimera platform account with
+per-game profiles declared by each game as data; every game open to
+every account by default; the account UX of section 5 (`invite <name>`,
 username, device key, link codes, recovery key or re-invite, no
-password for now, legacy tokens kept during migration).
+password for now); legacy `chimera1_` tokens keep working.
 
-Still open:
+Taken (user, 2026-11-14), second round:
 
-1. **One binary with roles** (`chimera_services <role>`, recommended) or
-   one binary per service.
-2. **One public port behind a front** with path routing (recommended:
-   one router forward, old clients unchanged) or a public port per
-   service (no single front, more forwards).
-3. **SQLite** (recommended) now, Postgres only if services spread over
-   machines.
-4. **Ticket lifetime**: 6 hours refreshed at half-life, with a 30 s
-   revocation feed (recommended), or shorter (1 h: accounts' downtime
-   matters sooner).
-5. **Who may list a server**: hosts only, or testers with one listing
-   so their Play games show (recommended: testers get 1).
+1. **A binary per service**, not one binary with roles (each updated and
+   deployed on its own): `chimera_front`, `chimera_accounts`,
+   `chimera_hub`, the asset service (`chimera_asset_server`, kept),
+   `chimera_feedback` later; shared code in library crates (2.2).
+2. **One public port behind the front**: yes (2.3).
+3. **SQLite**: yes (3.1).
+4. (Ticket lifetime: 6 hours refreshed at half-life with a 30 s
+   revocation feed, as planned.)
+5. (Who may list: open, S2.)
 6. **Who may read the document and the list**: account holders only
-   (recommended while accounts are invite-only), or public.
-7. **Backups off this box**: where to (another tailnet machine,
-   recommended; or an encrypted cloud folder).
-8. **Legacy tokens**: upgraded automatically by a hub-aware client
-   (recommended), or kept until the owner re-invites.
-9. **Testers' own servers' results**: stored unranked (recommended) or
-   not stored.
-10. **Reach**: the front public only during playtests, the tailnet
-    otherwise (recommended, as the asset service now), or always public.
-    Invite-only accounts stand in for "internal" accounts; opening the
-    asset service beyond people the owner invites still waits for the
-    asset plan's ownership check.
-11. **Usernames**: 3-20 of `[a-z0-9_]`, case-insensitive (recommended),
-    or any letters; and whether a deleted account's username is ever
-    reused (recommended: after 30 days).
-12. **The recovery key**: required to be saved at sign-up (recommended:
-    a check box) or optional.
-13. **`chimera-hub://` as an OS link handler** (a click opens the game)
-    later, or paste only.
+   (follows from 10).
+7. **Backups off this box**: undecided; local backups only for now
+   (3.3).
+8. (Legacy auto-upgrade: open, S3.)
+9. (Testers' own servers' results: open, S4.)
+10. **Reach: always public, but locked down.** Nothing works without an
+    account the owner explicitly created: no anonymous access to
+    anything, the discovery document and the server list included. The
+    only routes without a ticket or token are redeeming an invite or
+    link code, recovering with a key and asking a ticket with a device's
+    signed request, each rate limited per address; `/key` stays public (a
+    public key).
+11. **Usernames**: 3-20 characters of `[a-z0-9_]`, case-insensitive
+    (stored case-folded); permanent handles shown only in account and
+    admin places. **Display names** (what the HUD shows) are at most 20
+    characters, enforced by the accounts service when set or changed;
+    the default is the username (5.1).
+12. **The recovery key** is saved at sign-up (the check box). A lost key
+    is handled case by case: the owner re-invites into the same account
+    (`chimera_accounts invite <name> --for <username>`, 5.3).
+
+Still open: 5, 8, 9 and 13 (`chimera-hub://` as an OS link handler
+later, or paste only).

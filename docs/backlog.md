@@ -37,8 +37,8 @@ the user's go-ahead: no Actions runs unless asked.
 ## Roadmap after the gun game settles (user, 2026-10-29)
 
 - **Hub services and accounts (user, 2026-11-14):** separate services
-  (front, accounts, hub, assets, feedback) on one `chimera_services`
-  binary; a Chimera platform account (owner's invite, username, device
+  (front, accounts, hub, assets, feedback), a binary each over the
+  shared `chimera_services` library; a Chimera platform account (owner's invite, username, device
   keys, link codes, recovery) replacing asset tokens, with a profile per
   game whose schema the game declares as data; a SQLite database with
   backups; stats at match end. Phases S1-S5:
