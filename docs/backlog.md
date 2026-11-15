@@ -36,9 +36,12 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## Roadmap after the gun game settles (user, 2026-10-29)
 
-- **North Star, not now (user, 2026-11-14):** accounts by redeem code
-  (the host mints single-use codes; a code plus the hub link makes an
-  account that replaces asset tokens; later stats and meta progression):
+- **Hub services and accounts (user, 2026-11-14):** separate services
+  (front, accounts, hub, assets, feedback) on one `chimera_services`
+  binary; a Chimera platform account (owner's invite, username, device
+  keys, link codes, recovery) replacing asset tokens, with a profile per
+  game whose schema the game declares as data; a SQLite database with
+  backups; stats at match end. Phases S1-S5:
   [plans/active/hub.md](plans/active/hub.md) section 10.
 
 - **Player requests (playtest 7, 2026-11-14):** games and guns wanted by
