@@ -101,3 +101,24 @@ fn the_rocket_launchers_rung_kills_with_a_rocket() {
     sim.ticks(2);
     assert_eq!(rung(&sim, a), r + 1);
 }
+
+/// TF2's HUD in the party (`tf2::ui::party::CLIENT`): up while the local
+/// player holds a TF2 gun, its root shown, the other game's HUD up again
+/// on another game's rung; while it is up the shell's crosshair and status
+/// are off (`GameDraws`), and its declared kill feed stays empty (the
+/// app's feed shows its kills).
+#[test]
+fn tf2s_hud_follows_its_gun() {
+    use chimera_client::client::hud::GameDraws;
+    let (mut sim, me, _) = crate::kill_feed::every_hud_sim_and(true, |_| {});
+    crate::hud::swap_to(&mut sim, me, 6);
+    assert_eq!(crate::hud::hud(&sim), tf2::game::GAME, "TF2's gun, TF2's HUD");
+    assert!(crate::hud::shown(&mut sim, tf2::game::GAME));
+    let draws = *sim.app.world().resource::<GameDraws>();
+    assert!(draws.crosshair && draws.status && !draws.killfeed, "{draws:?}");
+    let feeds = chimera_client::client::kill_feed::GameKillFeeds::lines(sim.app.world());
+    assert!(feeds.contains(&(tf2::game::GAME, 0)), "{feeds:?}");
+    crate::hud::swap_to(&mut sim, me, 0);
+    assert_ne!(crate::hud::hud(&sim), tf2::game::GAME);
+    assert!(!crate::hud::shown(&mut sim, tf2::game::GAME));
+}

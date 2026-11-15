@@ -8,13 +8,13 @@
 //! the mount and noting every file read (`Mount::track`), with the waves
 //! of its sound entries (specs/tf2/weapons.md 8) and its script
 //! (`scripts/tf_weapon_<id>.ctx`, packed decrypted: `scripts::decrypting`);
-//! `players` the nine class models (`PLAYER_MODELS`) with what they read.
+//! `players` the class bodies as a match loads them (`bodies::add_bodies`),
+//! the nine class models (`PLAYER_MODELS`) with what they read, and the
+//! HUD's look (`hud::load`).
 //!
 //! Known shortcuts:
 //! - The sound entries are the spec's lists (weapons.md 8.3), not read
 //!   from the scripts.
-//! - The class models are read as view models are (model, materials,
-//!   include models), until TF2's bodies (M3) have their own loader.
 
 use source_engine::content::{material::MaterialLoader, props, sound::SoundScripts};
 
@@ -171,9 +171,15 @@ pub fn pieces(mount: &Mount) -> Vec<(String, Vec<String>)> {
         M2_WEAPONS.iter().map(|w| (format!("weapon/{}", w.id), weapon_files(mount, w, &sounds))).collect();
     let players = read_by(mount, || {
         let mut materials = MaterialLoader::guest(mount, 0, 0);
+        // The bodies as a match loads them (every class's), and the HUD's
+        // look (`hud::load`).
+        let surfaces = source_engine::content::surfaceprops::SurfaceProps::load(&mut materials);
+        let (mut kit, mut warnings) = (crate::map::GameKit::default(), Vec::new());
+        super::bodies::add_bodies(&mut materials, &surfaces, crate::map::KitLoad::Players(&["tf2:"]), &mut kit, &mut warnings);
         for model in PLAYER_MODELS {
             let _ = props::load_view_model(&mut materials, model, model, true);
         }
+        let _ = super::hud::load(&mut materials);
     });
     out.push(("players".into(), players));
     out
