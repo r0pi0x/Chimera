@@ -1,0 +1,183 @@
+//! What TF2's asset sets hold (docs/plans/active/tf2.md, section 3,
+//! decision 4), for `chimera_pack sets tf2` and the pack test: per M2 gun
+//! (`M2_WEAPONS`) its `weapon/<id>` set, read by loading its pieces
+//! through the mount and noting every file read (`Mount::track`): the `c_`
+//! weapon model with its materials and textures, the arms of the class it
+//! goes with (`c_<class>_arms.mdl` and the `c_<class>_animations.mdl` it
+//! includes), the waves of its sound entries (specs/tf2/weapons.md 8), the
+//! rocket model for the Rocket Launcher, and its script
+//! (`scripts/tf_weapon_<id>.ctx`, packed decrypted: `scripts::decrypting`);
+//! `players` the nine class models (`PLAYER_MODELS`) with what they read.
+//!
+//! Known shortcuts:
+//! - The sound entries and models are the spec's lists, not read from the
+//!   scripts (which M2b's weapon data will name).
+//! - The class models are read as view models are (model, materials,
+//!   include models), until TF2's bodies (M3) have their own loader.
+
+use source_engine::content::{material::MaterialLoader, props, sound::SoundScripts};
+
+use super::scripts;
+use crate::mount::{Access, Mount};
+
+/// One gun of M2 and what its set holds.
+#[derive(Clone, Copy, Debug)]
+pub struct WeaponSet {
+    /// The set's id: `weapon/<id>`.
+    pub id: &'static str,
+    /// The script's name (`scripts/<script>.ctx`).
+    pub script: &'static str,
+    /// The `c_` weapon model.
+    pub model: &'static str,
+    /// The classes whose arms hold it (plan, decision 6).
+    pub classes: &'static [&'static str],
+    /// Its sound entries (weapons.md 8).
+    pub sounds: &'static [&'static str],
+    /// Other models it uses (its projectile).
+    pub models: &'static [&'static str],
+}
+
+/// The four guns of M2 (weapons.md 8).
+pub const M2_WEAPONS: &[WeaponSet] = &[
+    WeaponSet {
+        id: "scattergun",
+        script: "tf_weapon_scattergun",
+        model: "models/weapons/c_models/c_scattergun.mdl",
+        classes: &["scout"],
+        sounds: &[
+            "Weapon_Scatter_Gun.Single",
+            "Weapon_Scatter_Gun.SingleCrit",
+            "Weapon_Scatter_Gun.Empty",
+            "Weapon_Scatter_Gun.Reload",
+            "Weapon_Scatter_Gun.WorldReload",
+            "Weapon_Scatter_Gun.Pump",
+            "Weapon_Scatter_Gun.Draw",
+        ],
+        models: &[],
+    },
+    WeaponSet {
+        id: "rocketlauncher",
+        script: "tf_weapon_rocketlauncher",
+        model: "models/weapons/c_models/c_rocketlauncher/c_rocketlauncher.mdl",
+        classes: &["soldier"],
+        sounds: &[
+            "Weapon_RPG.Single",
+            "Weapon_RPG.SingleCrit",
+            "Weapon_RPG.Reload",
+            "Weapon_RPG.WorldReload",
+            "Weapon_RPG.Draw",
+            "BaseExplosionEffect.Sound",
+        ],
+        models: &["models/weapons/w_models/w_rocket.mdl"],
+    },
+    WeaponSet {
+        id: "shotgun",
+        script: "tf_weapon_shotgun_primary",
+        model: "models/weapons/c_models/c_shotgun/c_shotgun.mdl",
+        classes: &["engineer"],
+        sounds: &[
+            "Weapon_Shotgun.Single",
+            "Weapon_Shotgun.SingleCrit",
+            "Weapon_Shotgun.Empty",
+            "Weapon_Shotgun.Reload",
+            "Weapon_Shotgun.WorldReload",
+            "Weapon_Shotgun.Pump",
+            "Weapon_Shotgun.Draw",
+            "Weapon_ShotgunEngineer.Cock_Back",
+            "Weapon_ShotgunEngineer.Cock_Forward",
+        ],
+        models: &[],
+    },
+    WeaponSet {
+        id: "minigun",
+        script: "tf_weapon_minigun",
+        model: "models/weapons/c_models/c_minigun/c_minigun.mdl",
+        classes: &["heavy"],
+        sounds: &[
+            "Weapon_Minigun.Fire",
+            "Weapon_Minigun.FireCrit",
+            "Weapon_Minigun.ClipEmpty",
+            "Weapon_Minigun.Draw",
+            "Weapon_Minigun.WindUp",
+            "Weapon_Minigun.Spin",
+            "Weapon_Minigun.WindDown",
+        ],
+        models: &[],
+    },
+];
+
+/// The nine classes' player models (specs/tf2/classes.md).
+pub const PLAYER_MODELS: &[&str] = &[
+    "models/player/scout.mdl",
+    "models/player/soldier.mdl",
+    "models/player/pyro.mdl",
+    "models/player/demo.mdl",
+    "models/player/heavy.mdl",
+    "models/player/engineer.mdl",
+    "models/player/medic.mdl",
+    "models/player/sniper.mdl",
+    "models/player/spy.mdl",
+];
+
+/// A class's arms model.
+pub fn arms_model(class: &str) -> String {
+    format!("models/weapons/c_models/c_{class}_arms.mdl")
+}
+
+/// The files `load` reads of `mount` that it has, sorted.
+fn read_by(mount: &Mount, load: impl FnOnce()) -> Vec<String> {
+    let tracking = mount.track();
+    load();
+    let seen = tracking.finish();
+    seen.into_iter()
+        .filter_map(|a| match a {
+            Access::File(p) | Access::Every(p) => Some(p),
+            Access::Folder(_) => None,
+        })
+        .filter(|p| mount.contains(p))
+        .collect()
+}
+
+/// The files of gun `w`'s set (module doc). `scripts`: the sound scripts
+/// (`SoundScripts::load_with`).
+pub fn weapon_files(mount: &Mount, w: &WeaponSet, sound_scripts: &SoundScripts) -> Vec<String> {
+    let mut files = read_by(mount, || {
+        let mut materials = MaterialLoader::guest(mount, 0, 0);
+        let _ = props::load_view_model(&mut materials, w.model, w.id, true);
+        for class in w.classes {
+            let _ = props::load_view_model(&mut materials, &arms_model(class), class, true);
+        }
+        for model in w.models {
+            let _ = props::load_shell(&mut materials, model);
+        }
+        for name in w.sounds {
+            for wave in sound_scripts.waves(name) {
+                let _ = mount.read(&wave);
+            }
+        }
+    });
+    files.push(scripts::path_of(w.script));
+    files.sort();
+    files.dedup();
+    files
+}
+
+/// The sound scripts as the sets read them.
+pub fn sound_scripts(mount: &Mount) -> SoundScripts {
+    SoundScripts::load_with(&mut MaterialLoader::guest(mount, 0, 0), "", true)
+}
+
+/// `weapon/<id>` for each M2 gun and `players`: each set's name and files.
+pub fn pieces(mount: &Mount) -> Vec<(String, Vec<String>)> {
+    let sounds = sound_scripts(mount);
+    let mut out: Vec<(String, Vec<String>)> =
+        M2_WEAPONS.iter().map(|w| (format!("weapon/{}", w.id), weapon_files(mount, w, &sounds))).collect();
+    let players = read_by(mount, || {
+        let mut materials = MaterialLoader::guest(mount, 0, 0);
+        for model in PLAYER_MODELS {
+            let _ = props::load_view_model(&mut materials, model, model, true);
+        }
+    });
+    out.push(("players".into(), players));
+    out
+}

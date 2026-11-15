@@ -142,7 +142,8 @@ CHIMERA_ASSET_USE_INSTALL=0 cargo test -p cs_source --features dev --test it hea
 ```
 
 The last line runs with the install hidden, from the store alone (no
-keys needed: Combat Arms' records are stored decrypted). Settings:
+keys needed: Combat Arms' records are stored decrypted, and so are TF2's
+`.ctx` scripts, packed with the host's `CHIMERA_TF2_CTX_KEY`). Settings:
 `[assets]` in `chimera.local.toml` (`store`, `use_install`, `builds`;
 `chimera.local.example.toml`), `CHIMERA_ASSET_STORE` and
 `CHIMERA_ASSET_USE_INSTALL` over it. Never copy a store, a manifest or a
