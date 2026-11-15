@@ -20,9 +20,9 @@ pub const FLASH_TWO_PI: f32 = 6.283;
 pub const SHIELD_FLASH_BELOW: f32 = 0.25;
 /// How long the lost part of a hit shield stays marked (ticks).
 pub const SHIELD_HIT_HOLD: i64 = 15;
-/// The overshield stages' fixed colours (stage 1 up): green, yellow,
-/// purple, black.
-pub const OVERSHIELD: [u32; 4] = [0x00FF00, 0xFFFF00, 0x7F00FF, 0x000000];
+/// The overshield stages' fixed colours (hud.md 6: stage 1 up): red,
+/// green, yellow, violet.
+pub const OVERSHIELD: [u32; 4] = [0xFF0000, 0x00FF00, 0xFFFF00, 0x7F00FF];
 /// The motion sensor's blip history (entries) and scan period (ticks).
 pub const RADAR_HISTORY: usize = 10;
 pub const RADAR_SCAN_PERIOD: u64 = 15;
@@ -449,15 +449,15 @@ pub fn quantise(c: f32, range: f32) -> i8 {
 /// viewer's facing `yaw` (radians, Halo's world frame: x forward at yaw 0,
 /// y left), or None past the range (section 11, "Drawing a blip").
 pub fn blip_offset(dx: i8, dy: i8, yaw: f32, range: f32, scale: f32, half_field: f32) -> Option<[f32; 2]> {
-    let unit = range / 127.0;
-    let (x, y) = (f32::from(dx) * unit, f32::from(dy) * unit);
+    // The byte times the range times the single-precision 1/127: byte 127 is exactly the range.
+    let (x, y) = (f32::from(dx) * range * (1.0 / 127.0), f32::from(dy) * range * (1.0 / 127.0));
     let a = -(yaw + std::f32::consts::FRAC_PI_2);
     let (s, c) = a.sin_cos();
     let (rx, ry) = (x * c - y * s, x * s + y * c);
     let d = (rx * rx + ry * ry).sqrt().max(0.015625);
-    // The spec's d >= range, with its byte 127 decoding to just under the
-    // range (19.99999): ours decodes to exactly 20, which is drawn.
-    if d > range {
+    // Strict in the drawing (hud.md 11): a unit at exactly the range is
+    // scanned (byte 127) but not drawn.
+    if d >= range {
         return None;
     }
     let r = half_field * (scale / 32.0) * (d / range).powf(RADAR_DISTANCE_EXPONENT);
