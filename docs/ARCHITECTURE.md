@@ -332,6 +332,10 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   tick system after movement) and their climbable sheets as ladder
   brushes (`core::MapLadders`), so every game's characters teleport and
   climb on them; Halo's movement climbs by movement.md's aim rule.
+  Halo's maps say where they are played (the structure BSP's world
+  bounds as `nav_gen::NavWithin`), so the bots' generated navigation
+  stays in the drawn level, and their teleporters are navigation links
+  (`Via::Teleport`) the party's bots plan through.
   Halo's camera uses the renderer's real angles (nominal 70 → 48.11
   degrees vertical, `view::camera_fov`), its mover clips by movement.md's
   detailed rule, and its spread uses the spec's direction table. Halo's
