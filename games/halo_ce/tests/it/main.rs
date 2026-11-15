@@ -20,6 +20,7 @@ mod assets;
 mod body;
 mod cross_game;
 mod fx;
+mod fx_place;
 mod info;
 mod maps;
 mod movement;

@@ -35,9 +35,14 @@
 //!   `weapon::impact`), the assault rifle bullet's impact effect for the
 //!   surface hit.
 //!
+//! Where on the gun (`place::Placer`): the shooter sees its effects at its
+//! view model's animated markers, everyone else at its held model's; an
+//! effect on a gun is placed on it again each tick it runs
+//! (`step_effects`), and the muzzle light goes with its shooter
+//! (`HaloLight::follow`).
+//!
 //! Known shortcuts: a shown projectile meets characters where they are
-//! drawn on that machine; the muzzle light does not follow the gun; the
-//! kick's direction is drawn from the engine's particle generator; others'
+//! drawn on that machine; the kick's direction is drawn from the engine's particle generator; others'
 //! empty clicks and overheats are not sent (the shooter's own show).
 
 use std::{collections::BTreeMap, sync::Arc};
@@ -53,7 +58,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     ActiveFx, HaloLight,
     load::{FxGun, HaloFx},
-    place::{self, Frame},
+    place::{self, Frame, Placer},
     play::{Effects, Instance, Made, Running, start},
 };
 use super::super::{
@@ -176,17 +181,29 @@ pub fn instances_from(fx: &HaloFx, effect: usize, frames: &BTreeMap<&'static str
         .collect()
 }
 
-/// A gun's effect at its markers: the first person's for `first`, the
-/// third person's for everyone.
-pub fn gun_instances(fx: &HaloFx, effect: usize, gun: &FxGun, camera: Frame) -> Vec<Vec<Instance>> {
-    fx.effects[effect]
-        .locations
+/// An effect's locations as marker names (lower case).
+pub fn markers_of(fx: &HaloFx, effect: usize) -> Vec<String> {
+    fx.effects[effect].locations.iter().map(|l| l.to_ascii_lowercase()).collect()
+}
+
+/// A gun's effect at `owner`'s gun's markers `names`: each instance as the
+/// shooter sees it (the view model's) and as everyone else does (the held
+/// model's); a marker with several instances is all of them.
+pub fn gun_instances(names: &[String], gun: &FxGun, camera: Frame, placer: &Placer, owner: Entity) -> Vec<Vec<Instance>> {
+    names
         .iter()
-        .map(|l| {
-            let name = l.to_ascii_lowercase();
-            vec![Instance { first: place::first_person_frame(camera, gun, &name), third: place::third_person_frame(camera, gun, &name) }]
+        .map(|name| {
+            let (first, third) = (placer.first(owner, camera, gun, name), placer.third(owner, camera, gun, name));
+            (0..first.len().max(third.len()))
+                .map(|i| Instance { first: first[i % first.len()], third: third[i % third.len()] })
+                .collect()
         })
         .collect()
+}
+
+/// A holder's eye: its transform and the movement's eye offset.
+fn eye_of(at: &Transform, ms: Option<&MovementState>) -> Vec3 {
+    at.translation + ms.map_or(Vec3::ZERO, |m| m.eye_offset)
 }
 
 /// Who sees a shot in first person: the local player (or, with no network
@@ -206,6 +223,7 @@ fn on_fired(
     locals: Query<(), With<LocalPlayer>>,
     role: Option<Res<NetRole>>,
     mut lights: MessageWriter<HaloLight>,
+    placer: Placer,
     mut commands: Commands,
 ) {
     let authority = role.as_deref().is_none_or(|r| *r != NetRole::Client);
@@ -232,21 +250,25 @@ fn on_fired(
         let fp = first_person(f.owner, &locals, role.as_deref());
         let list = if f.misfired { &look.misfire } else { &look.firing };
         if let Some(effect) = list.get(f.effect as usize).copied().flatten() {
-            let inst = gun_instances(&lib, effect, look, camera);
+            let names = markers_of(&lib, effect);
+            let inst = gun_instances(&names, look, camera, &placer, f.owner);
             start(&mut effects, &lib, effect, inst, |r| {
                 r.first_person = fp;
                 r.owner = Some(f.owner);
                 r.decals = authority;
+                r.on_gun = Some((gun.tag.clone(), names));
             });
         }
         if !f.misfired && let Some((light, marker)) = &look.light {
-            let at = place::first_person_frame(camera, look, marker).at;
+            let marker = marker.to_ascii_lowercase();
+            let at = if fp { placer.first(f.owner, camera, look, &marker) } else { placer.third(f.owner, camera, look, &marker) };
             lights.write(HaloLight {
-                at,
+                at: at[0].at,
                 color: Vec3::from(light.color),
                 radius: light.radius * METERS_PER_UNIT,
                 seconds: muzzle_light_ticks(gun) / 30.0,
                 owner: Some(f.owner),
+                follow: true,
             });
         }
         if fp && let Some((rotation, ticks)) = look.kick {
@@ -423,6 +445,8 @@ fn step_effects(
     mut sounds: MessageWriter<PlaySound>,
     mut decals: MessageWriter<PlaceDecal>,
     mut lights: MessageWriter<HaloLight>,
+    holders: Query<(&Intent, &Transform, Option<&MovementState>)>,
+    placer: Placer,
 ) {
     let Some(lib) = fx.0.clone() else { return };
     let world = level_trace(&spatial, &characters);
@@ -430,6 +454,13 @@ fn step_effects(
     let n = halo_ticks(&clock);
     let Effects { running, rng } = &mut *effects;
     for r in running.iter_mut() {
+        // On a holder's gun: its markers where the gun is now.
+        if let (Some(owner), Some((tag, names))) = (r.owner, &r.on_gun)
+            && let (Some(look), Ok((intent, at, ms))) = (lib.gun(tag), holders.get(owner))
+        {
+            let camera = place::camera(eye_of(at, ms), chimera_sim::weapon::aim_of(intent.yaw, intent.pitch));
+            r.instances = gun_instances(names, look, camera, &placer, owner);
+        }
         // Made this tick: its creation update (dt 0), then ticks.
         r.step(&lib, 0.0, rng, &world, &mut made);
         for _ in 0..n {
@@ -458,6 +489,7 @@ fn on_events(
     mut effects: ResMut<Effects>,
     mut pending: ResMut<PendingSounds>,
     mut play: MessageWriter<PlaySound>,
+    placer: Placer,
 ) {
     let Some(lib) = fx.0.clone() else {
         events.clear();
@@ -468,7 +500,7 @@ fn on_events(
         let Some(gun) = guns.0.get(w.id) else { continue };
         let Some(look) = lib.gun(&gun.tag) else { continue };
         let Ok((intent, at, ms)) = holders.get(ev.owner) else { continue };
-        let eye = at.translation + ms.map_or(Vec3::ZERO, |m| m.eye_offset);
+        let eye = eye_of(at, ms);
         let camera = place::camera(eye, chimera_sim::weapon::aim_of(intent.yaw, intent.pitch));
         let fp = first_person(ev.owner, &locals, role.as_deref());
         let effect = match &ev.kind {
@@ -478,10 +510,12 @@ fn on_events(
             _ => None,
         };
         if let Some(effect) = effect {
-            let inst = gun_instances(&lib, effect, look, camera);
+            let names = markers_of(&lib, effect);
+            let inst = gun_instances(&names, look, camera, &placer, ev.owner);
             start(&mut effects, &lib, effect, inst, |r| {
                 r.first_person = fp;
                 r.owner = Some(ev.owner);
+                r.on_gun = Some((gun.tag.clone(), names));
             });
         }
         let zoom = match &ev.kind {
