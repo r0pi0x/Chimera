@@ -17,10 +17,12 @@
 //! `point_default_owner`. So ctf_2fort has 15 and 15, cp_badlands 16 and
 //! 16 (its home spawns).
 //!
-//! Its kit (M2b): its four guns' view models (the class's arms with the
+//! Its kit (M2b): its guns' view models (the class's arms with the
 //! `c_` weapon bone-merged: `view::load`), held models (the same `c_`
-//! models, bone-merged by the arms' `weapon_bone`) and the rocket's
-//! model (`held_kit`); no bodies, HUD or decals yet (M3). Its sounds are
+//! models, bone-merged by the arms' `weapon_bone`) and their projectiles'
+//! models (`held_kit`); no bodies, HUD or decals yet (M3). Its own
+//! particle systems the guns start (`weapons::looks`: the explosion, the
+//! muzzle flashes) load with its maps (`extra_particles`). Its sounds are
 //! Source's sound scripts (the map's own entries, its surfaces' and the
 //! guns', `weapon_sounds`) and the map's soundscapes. On another game's
 //! map its guns come with the same (`dress_guest_with`).
