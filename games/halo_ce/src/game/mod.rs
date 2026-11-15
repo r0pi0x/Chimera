@@ -51,6 +51,9 @@
 //!   multiplayer_rules.md 4 (`HaloRules`, Halo's own app only);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
+//! - `audio`: looping sounds, the level's background sound, environment
+//!   and sound scenery, projectile loops and footsteps (`maps::audio`
+//!   hands the level's sound data over);
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
 //!   the donor map, `map/<name>` per multiplayer map); `mount::build` reads
 //!   the install's build from a map header;

@@ -370,6 +370,11 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   track in the heading frame with its pull-in, through `MapView`; the
   wheels, steering and suspension are posed on the rigged prop
   (`vehicles::look`), on a client from the replicated motion.
+  Halo's lasting sounds (`game::audio`) play on the engine's
+  `SoundControl`/`PlaySound` seams: the level's background sound by the
+  listener's cluster, its sound scenery, the shown projectiles' flight
+  loops and the Spartan's footsteps by the material under its feet, all
+  presentation from the map and replicated state.
   Halo's
   files reach
   players without the disc through the asset store: `chimera_pack
