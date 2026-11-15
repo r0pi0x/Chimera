@@ -1036,6 +1036,56 @@ for every weapon class) makes the holder busy, so the weapon's triggers
 read as released for the throw's duration. The grenade button pulls
 trigger 1 instead of throwing only with flag 12.
 
+**Selecting the grenade type.** Two kinds exist in multiplayer: 0 frag,
+1 plasma. The unit has a *current* type (the one thrown and shown on the
+HUD, `hud.md` section 10) and a *desired* type; the player's input layer
+keeps its own *wanted* type. A new unit (every spawn and respawn) starts
+with current, desired and wanted all "none", whatever its counts.
+
+"Next type from k" (k a type or none, none read as 0), rotating upward
+(0, 1, 0, ...): look at k first and then at the other type; the answer
+is the first type **other than k** that has a count above 0, else k
+itself if its count is above 0, else none. ("Settle from k" is the same
+search but the answer is k whenever k has a count above 0.)
+
+Every tick, for a player's unit, in the input layer:
+
+1. If wanted is none, or wanted's count is 0, wanted becomes the unit's
+   desired type.
+2. If the switch-grenade button went down this tick (the first tick it
+   is held; holding does not repeat), or wanted's count is 0, or wanted
+   is none: wanted becomes "next type from wanted". So one press moves
+   one step; a press when the other kind's count is 0 leaves the
+   selection where it is; with both counts 0 wanted becomes none.
+3. Wanted is sent with the input; when it is not none it becomes the
+   unit's desired type (none leaves the desired type unchanged).
+
+Then in the unit's update, when desired differs from current and the
+unit's animation is not busy (not during a throw, melee, seat entry or
+the like): current becomes "settle from desired" when that is not none
+(otherwise current is left as it was).
+
+Consequences, each a rule a port must reproduce:
+
+| Situation | Counts (frag, plasma) | Selected (current) |
+|---|---|---|
+| spawn with the stock start | (4, 0) | frag from the first tick (none before the first update: no grenade HUD on the spawn tick itself) |
+| spawn with a "plasma grenades" start | (0, 4) | plasma |
+| spawn with infinite grenades (both counts at the cap) | (4, 4) or (2, 2) or (1, 1) | **plasma**: from none the search prefers the type other than 0 |
+| spawn with no grenades | (0, 0) | none: no grenade HUD |
+| press switch | frag selected, (2, 0) | stays frag |
+| press switch | frag selected, (2, 1) | plasma; a second press: frag |
+| pick up a plasma grenade | frag selected, (3, 0) to (3, 1) | stays frag (a pickup never changes the selection while the selected kind has grenades) |
+| throw the last frag | frag selected, (1, 2) to (0, 2) | plasma, on the first tick the throw animation no longer makes the unit busy |
+| throw the last grenade of both | (0, 0) | wanted none; desired and current stay at the last kind thrown, so the HUD keeps showing that kind with count 0 (disabled colours) |
+| then pick up a grenade of the other kind | (0, 0) to (0, 1), frag shown | plasma on the next tick it is not busy (the empty selection moves to the kind that has grenades) |
+| then pick up a grenade of the same kind | frag shown at 0, (0, 0) to (1, 0) | frag |
+| die and respawn | any | the selection is not kept: as "spawn" above |
+
+The unit's own definition (grenade type frag, count 4) gives the counts
+at creation, which the multiplayer start rules then overwrite
+(`multiplayer_rules.md` 4.6); neither touches the selection.
+
 ### 15. Aim assist
 
 Aim assist has two parts. The **autoaim** (the target, the bending of
@@ -1058,10 +1108,27 @@ m, m the magnification (1 unzoomed).
 **Targets:** living bipeds of enemy teams, not fully camouflaged
 (camouflage < 1), not flagged "ignored by autoaim", whose bounding
 sphere meets the cone of max(autoaim, magnetism) angle and range
-around the camera ray. A target's aim point is the point of its
-autoaim pill (objects.md) closest to the aim line, then moved toward
-the line by at most the pill's width. With distance D and angle A
-from the camera ray to that point:
+around the camera ray. A target's aim point is **not** its centre or
+origin. Its autoaim pill is the segment from the pelvis node's world
+position to the head node's world position in the current pose (a
+biped flagged spherical uses the single point midway between them; a
+biped lacking either node uses a vertical segment from its physics
+pill's base raised by half the pill height up to the pill's full
+height), with the radius "autoaim
+width" (objects.md: 0.08 WU on the cyborg). The aim point is:
+
+1. the point of that segment closest to the camera ray (the parameter
+   along the segment clamped to [0, 1], so never past the pelvis or the
+   head), then
+2. moved toward the camera ray, perpendicular to it, by the distance to
+   the ray or the autoaim width, whichever is smaller.
+
+So a Spartan crossing the crosshair is aimed at where the crosshair
+crosses its pelvis-to-head line (between 0.36 and about 0.56 WU above
+its feet when standing), pulled up to 0.08 WU further toward the
+crosshair; a crosshair above the head aims at the head node raised by
+0.08 toward the line. With distance D and angle A from the camera ray
+to that point:
 
 g(x, X) = 1 if x <= X / 2; (X - x) / (X / 2) if X / 2 < x < X; 0 if
 x >= X
@@ -1075,10 +1142,21 @@ line of sight from the camera wins.
 
 **Bending the shot** (every player shot when parameters exist):
 1. Trace from the camera, starting |camera - holder origin| along the
-   camera direction, 128 WU along it against everything a projectile
-   hits, ignoring the shooter; P = the hit point (open question 3 for a
-   miss). Convergence direction c = normalise(P - origin) (the origin
-   of section 6).
+   camera direction, 128 WU along it; P = the hit point. **When the
+   trace hits nothing, P is its end: the start point + 128 WU along the
+   camera direction** (the trace reports the full length as its hit
+   fraction). The trace stops on: the level's front-facing surfaces
+   (invisible surfaces ignored), a water or fog plane's surface, and
+   **every object type**, characters (bipeds, living or dead) and
+   vehicles included, tested against each object's collision model
+   (not its bounding sphere: the sphere only selects candidates), the
+   nearest hit along the ray winning. Ignored: the shooter's own unit,
+   and with it everything attached to it (its held weapon), and objects
+   flagged invisible. When the shooter sits in a vehicle, the vehicle
+   is not ignored, but the start lies the camera-to-unit distance ahead
+   of the camera and only front-facing faces count. Convergence
+   direction c = normalise(P - origin) (the origin of section 6); if P
+   coincides with the origin, c is the shot's current direction.
 2. Target direction t = normalise(target aim point - origin) if there
    is a target, else the current direction.
 3. Desired = normalised interpolation from c toward t by the autoaim
@@ -1557,6 +1635,10 @@ where a row prints the single-precision value on purpose.
 | random generator | seed 0 | first draw | seed 1013904223 (0x3C6EF35F); integer draw 0x3C6E = 15470; real 0.236057 |
 | random generator | seed 0x3C6EF35F | integer range draw (0, 1026) | seed 0x47502932 (1196435762); r = 0x4750 = 18256; 1026 x 18256 >> 16 = 285 |
 | plasma rifle | hold | rate of fire after 54 / 55 held ticks | 0.9999996 / 1.0 |
+| any weapon, camera at (0, 0, 10) looking along +X, holder origin 0.6 WU from the camera, nothing within 128 WU | fire, no target | convergence point | (128.6, 0, 10): the trace starts 0.6 ahead of the camera and runs its full 128 WU |
+| same, an enemy Spartan standing with its feet at (20, 0, 9.4) on the line (no autoaim in force) | fire | convergence point | the first hit on the Spartan's collision model, x between 19.8 and 20.0, y 0, z 10 (not the 128.6 end point): the character stops the trace |
+| autoaim target: Spartan standing with feet at (20, 0, 0), pelvis (20, 0, 0.36), head (20, 0, 0.56) (identity pose), camera at (0, 0, 0.62) looking along +X | target chosen | aim point | (20, 0, 0.56) closest point is the head (the segment's parameter clamps at 1), then raised toward the ray by min(0.06, 0.08) to (20, 0, 0.62) |
+| same, camera at (0, 0, 0.45) | target chosen | aim point | (20, 0, 0.45): the ray crosses the segment, offset 0 |
 
 ## Confidence per section
 
@@ -1583,10 +1665,11 @@ where a row prints the single-precision value on purpose.
    table"): the order is fully determined by the construction. What is
    still unmeasured is that the Xbox build uses the same table as the
    reference's; a recording of a seeded shot pattern would confirm it.
-3. **Convergence trace that hits nothing** within 128 WU: the point used
-   is assumed to be the trace's end point. Check by shooting at the sky
-   from a high place and comparing where bullets land against the
-   crosshair at close range.
+3. **Convergence trace that hits nothing** within 128 WU: settled from
+   the reference: the point is the trace's end, 128 WU from the trace's
+   start along the camera direction (section 15, step 1). Characters
+   stop the trace (it tests every object type). Not measured on
+   hardware.
 4. **Plasma pistol held 45 s.** The disc's first trigger has overcharged
    action none, so the gun should simply stay charged. Confirm in the
    game by holding the charge for a minute and then releasing it (a
