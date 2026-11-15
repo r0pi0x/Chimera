@@ -1288,8 +1288,22 @@ fn patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, mods: Option<&Mo
             }
             // A device's sounds in flight and at rest (a nerve mine's, a
             // caltrop's create sound): its projectile record's.
+            // A bolt's too, and its record's model (special_weapons.md
+            // Follow-up 5: the `CrossBow` record's, not the crossbow's).
             if hook_table(doc, super::special::BOLT).is_some() {
-                apply(doc, &set(&["hooks", super::special::BOLT, "look"], Value::Table(look_table(&p.look, p.lifetime))));
+                const BOLT: &str = super::special::BOLT;
+                apply(doc, &set(&["hooks", BOLT, "look"], Value::Table(look_table(&p.look, p.lifetime))));
+                if let Some(Value::Table(t)) = doc.get_mut("hooks").and_then(|h| h.get_mut(BOLT)) {
+                    for k in ["model", "skins"] {
+                        t.remove(k);
+                    }
+                }
+                apply(doc, &set(&["hooks", BOLT, "model_scale"], floats(p.model_scale)));
+                if !p.model.is_empty() {
+                    let skins = skin_paths(&p.skins).into_iter().map(Value::String).collect::<Vec<_>>();
+                    apply(doc, &set(&["hooks", BOLT, "model"], super::model::normalize(&p.model)));
+                    apply(doc, &set(&["hooks", BOLT, "skins"], Value::Array(skins)));
+                }
             }
             if hook_table(doc, super::special::DEVICE).is_some() {
                 const DEVICE: &str = super::special::DEVICE;

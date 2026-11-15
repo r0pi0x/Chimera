@@ -210,12 +210,12 @@ started; the user asked to avoid server lag while testers play.
   frames and server ticks (tick_stats, seeded headless counts,
   render-thread cost): draw calls, props, water, lights, physics props,
   nav, bots. Compare with warehouse.
-- **Combat Arms crossbow:** the bolt appears as a whole crossbow model
-  flying at people (wrong projectile model), and a bolt stuck in a
-  player drags behind the body instead of staying at the hit point (the
-  attachment follows the wrong bone or offset, or hangs off the root and
-  lags). Look at: the crossbow's projectile model record and the
-  stick-to-body attachment.
+- **Combat Arms crossbow** (fixed on branch `pt7-ca`, confirm in a
+  playtest): the bolt flew as the crossbow's own model (bolts were drawn
+  by their weapon's key; now the `CrossBow` record's arrow,
+  `BoltParams::shown_model`), and a stuck bolt dragged behind the body
+  (it followed the body's box centre on the 20 Hz frames, drawn a frame
+  behind; now the struck sphere's node every tick, `bolts::follow_stuck`).
 - **Text fields don't accept paste** (Ctrl+V, Shift+Insert, right-click)
   anywhere: Join address and password, Play server name, Settings value
   boxes, the console (check), the token entry later. Add clipboard paste

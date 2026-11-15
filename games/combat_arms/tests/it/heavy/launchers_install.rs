@@ -193,7 +193,7 @@ fn the_air_strike_shells_are_their_own_records() {
 fn projectile_models_fly_nose_first() {
     use combat_arms::game::{
         model,
-        special::{DEVICE, DeviceParams, devices::STRIKE_SHELL_TURN, facing},
+        special::{BOLT, BoltParams, DEVICE, DeviceParams, devices::STRIKE_SHELL_TURN, facing},
     };
     if LocalConfig::load().ok().and_then(|c| c.game_path(GAME)).is_none() {
         eprintln!("skipping: no Combat Arms install configured");
@@ -243,6 +243,20 @@ fn projectile_models_fly_nose_first() {
             let drawn = facing(dir) * n;
             assert!(drawn.angle_between(dir).to_degrees() < 3.0, "{id} ({path}): nose {drawn:?} vs flight {dir:?}");
         }
+    }
+    // The crossbows' bolts (the `CrossBow` and `CrossBowFunc` records):
+    // a model of their own, not the crossbow's, flying nose first (the
+    // 2026-11-14 playtest saw whole crossbows fly).
+    for id in ["combat_arms:assassin_bowgun_nor", "combat_arms:assassin_bowgun_expl"] {
+        let w = weapon(id);
+        let bolt = w.hook::<BoltParams>(BOLT).unwrap_or_else(|| panic!("{id}: a bolt"));
+        let path = bolt.model.clone().unwrap_or_else(|| panic!("{id}: the bolt record's model"));
+        eprintln!("{id}: bolt model {path} scale {:?} skins {:?}", bolt.model_scale, bolt.skins);
+        assert!(w.models.world.as_deref() != Some(path.as_str()), "{id}: the bolt is not the crossbow ({path})");
+        let n = nose(&path);
+        let dir = Vec3::new(0.3, 0.0, -1.0).normalize();
+        let drawn = facing(dir) * n;
+        assert!(drawn.angle_between(dir).to_degrees() < 3.0, "{id} ({path}): nose {drawn:?} vs flight {dir:?}");
     }
     // The strike shells: straight down, upright models.
     for id in ["combat_arms:lgb", "combat_arms:airstrike_napalm"] {

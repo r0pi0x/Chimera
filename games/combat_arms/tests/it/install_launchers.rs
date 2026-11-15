@@ -24,7 +24,7 @@ use combat_arms::{
         effects::{self, CaFxRequest, data::{CaWeaponFx, EFFECTS}, sounds::CaSound},
         grenades::OverTimeKind,
         effects::FxKind,
-        special::{CaObject, FlareLook, PROJECTILE, ProjectileLook, ProjectileParams},
+        special::{BOLT, BoltParams, CaObject, FlareLook, PROJECTILE, PROJECTILE_KEY, ProjectileLook, ProjectileParams},
     },
     harness::CaSimWith,
 };
@@ -51,6 +51,10 @@ const WEAPONS_TXT: &str = r#"
     RapidFireCount=0 Range=2000
 [Weapon3] Name="Test_LAW_npc" Guntype=9 AmmoName0="Test_LAW_npc" ShotsPerClip=1 RapidFireCount=0 Range=5000
     FireSnd="TEST_SND\LAW\fire.wav" FireSndRadius=2000 HHMuzzleFXName="WEAPON_HH"
+[Ammo4] Name="Assassin_Bowgun_Nor" Type=1 MaxAmount=25 InstDamage=105 InstDamageType=45 Health=50.0
+    ProjectileFXName="CrossBow"
+[Weapon4] Name="Assassin_Bowgun_Nor" Guntype=21 AmmoName0="Assassin_Bowgun_Nor" ShotsPerClip=5 RapidFireCount=0
+    Range=10000
 "#;
 
 /// The records they fire and show (`FX.TXT`).
@@ -63,6 +67,9 @@ const FX_TXT: &str = r#"
     FXName="Test_Tail" FXLoop=0 FXSmoothShutdown=1 FlySound="TEST_SND\Rocket\fly.wav" SoundRadius=1200
     Light=1 LightRadius=200 Flare=1 FlareSprite="TEST_FX\Flare.spr" FlareScale=0.5 FlareYOffset=2.0
     SmokeTrail=1 SmokeTrailType=2
+[ProjectileFX2] Name="CrossBow" Class="CCrossBow" Velocity=5000 Lifetime=10.0 Gravity=0 CanHitSameKind=0
+    Model="TEST_PT\Models\Bolt.ltb" ModelScale=<1.0, 1.0, 1.0> Skin0="TEST_PT\Skins\Bolt.dtx"
+    Light=0 Flare=0 SmokeTrail=0
 [FireFX0] Name="Test_M136" FXName="Test_Rocket_Fire" EjectShells=0
 [ImpactFX0] Name="Rocket" Sound="TEST_SND\Explosions\boom.wav" SoundRadius=1500 CreateMark=0 Mark=""
     DoSurfaceFX=0 FXName="Test_Boom"
@@ -485,4 +492,49 @@ fn t49_the_rockets_group_rides_it() {
     assert!(!d.is_empty(), "the group emits");
     let far = d.iter().cloned().fold(0.0, f32::max);
     assert!(far > 100.0, "puffs along the flight, up to {far} u from the launcher");
+}
+
+const BOW: &str = "combat_arms:assassin_bowgun_nor";
+
+/// The crossbow's bolt is drawn as its projectile record's model (the
+/// `CrossBow` record's `Model` and skins: special_weapons.md 7, Follow-up
+/// 5), in flight and stuck, never as the crossbow itself (the 2026-11-14
+/// playtest saw whole crossbows fly at people): the merged data carries
+/// the record's model, and a fired bolt's drawn key is that model's.
+#[test]
+fn install_crossbow_bolt_is_drawn_as_its_record() {
+    let bolt: BoltParams = set().get(BOW).expect("the crossbow").hook(BOLT).unwrap();
+    assert_eq!(bolt.model.as_deref(), Some("test_pt/models/bolt.ltb"), "{bolt:?}");
+    assert_eq!(bolt.skins, vec!["test_pt/skins/bolt.dtx".to_string()]);
+    let key = bolt.shown_model().shown_key();
+    assert!(key.starts_with(&format!("{PROJECTILE_KEY}test_pt/models/bolt.ltb|")), "{key}");
+
+    let mut sim = sim();
+    let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
+    let victim = player(&mut sim, 0.0, 400.0, 0.0, 2);
+    set_health(&mut sim, victim, 10000.0);
+    armed(&mut sim, shooter, BOW);
+    aim_at_chest(&mut sim, shooter, victim);
+    sim.intent(shooter).fire = true;
+    let mut shown = None;
+    for _ in 0..40 {
+        sim.ticks(1);
+        let world = sim.app.world_mut();
+        if let Some(k) = world.query_filtered::<&ShownItem, With<CaObject>>().iter(world).next() {
+            shown = Some(k.0.clone());
+            break;
+        }
+    }
+    sim.intent(shooter).fire = false;
+    let shown = shown.expect("a bolt in flight");
+    assert_eq!(shown, key, "drawn as the CrossBow record's model, not {BOW}");
+    // Stuck in him, it is still the bolt.
+    sim.seconds(0.5);
+    let world = sim.app.world_mut();
+    let stuck: Vec<(String, bool)> = world
+        .query::<(&ShownItem, &CaObject)>()
+        .iter(world)
+        .map(|(k, o)| (k.0.clone(), o.s.stuck.is_some()))
+        .collect();
+    assert_eq!(stuck, vec![(key, true)], "stuck in him, drawn as the bolt");
 }
