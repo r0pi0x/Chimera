@@ -247,12 +247,14 @@ impl Flight {
             let mut v2 = vt;
             let mut avg_v = v;
             let mut avg_s = s;
-            let mut decelerated = false;
+            // The speed step 2 makes for the segment's end (s where it
+            // makes none).
+            let mut s_end = s;
             // 2. Deceleration.
             if self.deceleration_timer >= 1.0 {
                 if s > vf && a != 0.0 {
-                    decelerated = true;
                     let s2 = s - a * r;
+                    s_end = s2;
                     if s2 > vf {
                         v2 = vt * (s2 / s);
                         avg_v = (v2 + v) / 2.0;
@@ -260,6 +262,7 @@ impl Flight {
                     } else {
                         let f = (s - vf) / (a * r);
                         let s2 = 0.99 * vf;
+                        s_end = s2;
                         v2 = vt * (s2 / s);
                         avg_s = (s2 + s) * f / 2.0 + (1.0 - f) * vf;
                         avg_v = (v2 + v) * f / 2.0 + v2 * (1.0 - f);
@@ -273,7 +276,8 @@ impl Flight {
                     self.ask(Request::Disappear);
                     break;
                 } else if s > 0.0 && s < vf {
-                    v2 = vt * (0.99 * vf / s);
+                    s_end = 0.99 * vf;
+                    v2 = vt * (s_end / s);
                 }
             }
             // 3. Gravity (engine +Y up).
@@ -308,16 +312,17 @@ impl Flight {
             // back.
             let rest = r * (1.0 - hit.t);
             v2.y += g * rest;
-            // The deceleration taken back, where it was applied (with none,
-            // as for a grenade, the speed is gravity's alone: the spec's
-            // grenade table has it so).
-            let s2 = v2.length();
-            if decelerated && s2 != 0.0 {
-                v2 *= (rest * a + s2).min(s) / s2;
+            // The speed clamp (behaviour 3 step 7): the deceleration taken
+            // back for the unused part, never above the starting speed, on
+            // a segment step 2 slowed (s' < s, s' its number, not the
+            // length after gravity); elsewhere the factor is 1 and
+            // gravity's gain in speed is kept (a grenade's bounce).
+            if s_end < s && s_end != 0.0 {
+                v2 *= (rest * a + s_end).min(s) / s_end;
             }
             r = rest;
             *ignored = None;
-            self.travelled += (avg_v * (q * r * hit.t)).length();
+            self.travelled += (hit.point - from).length();
             self.position = hit.point;
             out.segments.push((from, hit.point, Some(hit)));
             // Behaviour 6: the direct hit, then the material.
