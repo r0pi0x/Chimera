@@ -296,6 +296,7 @@ impl Plugin for VitalityPlugin {
         use chimera_net::net::parts::NetAppExt;
         app.insert_resource(Spartan::load())
             .insert_resource(DamageEffects::load())
+            .init_resource::<super::cross_game::CrossGame>()
             .add_message::<HaloPing>()
             .add_message::<GrantPowerup>()
             .add_message::<PowerupTaken>()

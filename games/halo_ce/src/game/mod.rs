@@ -69,6 +69,7 @@
 
 pub mod audio;
 pub mod body;
+pub mod cross_game;
 pub mod damage;
 pub mod fx;
 pub mod maps;

@@ -24,6 +24,7 @@ mod audio;
 mod autoaim;
 mod body;
 mod cross_game;
+mod party_balance;
 mod death;
 mod fx;
 mod fx_place;
