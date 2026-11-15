@@ -34,6 +34,11 @@
 //!   Combat Arms' maps CS:S is a guest (`CS_SOURCE_PARTS`,
 //!   `MapSources::guests`): its player bodies, guns' held and view models
 //!   and HUD look are read from the CS:S install and added to the map.
+//!   Halo's maps (`halo_ce:<name>`, from its disc image) load here too,
+//!   played with the other games' parts: its capture the flag starts as
+//!   Alpha's and Bravo's, its generic surface names through the same
+//!   table; a machine without the disc image is offered none of them
+//!   (its pool is the installed maps only: `halo_ce::game::parts`).
 //! - `minigame_of`, `first_map`: the minigame a command line asks for
 //!   (`DEFAULT_MINIGAME` without one) and its pool's first map, which the
 //!   app and the server load unless the command line names a map.
@@ -118,19 +123,22 @@ pub const DEFAULT_MINIGAME: &str = originals::GUN_GAME_DUST2;
 
 /// The games the party composes besides its base game (Combat Arms,
 /// whose gameplay, bots and HUD everything plays on), each one bundle
-/// (`chimera_world::game_bundle`, lift C4): CS:S and HL2:DM, in the order
-/// an automatic ladder takes them. The kit loops over these; only the
-/// base game and the pairs' data (spawn teams, surface names) are named.
-pub static GUESTS: [&GameBundle; 2] = [&cs_source::game::BUNDLE, &hl2dm::game::BUNDLE];
+/// (`chimera_world::game_bundle`, lift C4): CS:S, HL2:DM and Halo (its
+/// maps only, from its disc image: it lends no guns, bodies or movement
+/// yet), in the order an automatic ladder takes them. The kit loops over
+/// these; only the base game and the pairs' data (spawn teams, surface
+/// names) are named.
+pub static GUESTS: [&GameBundle; 3] = [&cs_source::game::BUNDLE, &hl2dm::game::BUNDLE, &halo_ce::game::BUNDLE];
 
 /// The base game's bundle.
 pub static BASE: &GameBundle = &combat_arms::game::BUNDLE;
 
 /// Every game the party composes: the guests, then the base.
-pub static BUNDLES: [&GameBundle; 3] = [GUESTS[0], GUESTS[1], BASE];
+pub static BUNDLES: [&GameBundle; 4] = [GUESTS[0], GUESTS[1], GUESTS[2], BASE];
 
 /// CS:S's spawn teams as Combat Arms': terrorists (1) Alpha, counter-
-/// terrorists (2) Bravo.
+/// terrorists (2) Bravo; Halo's capture the flag starts (`halo_ce::game::
+/// maps::spawns`: red 1, blue 2) likewise.
 pub const TEAMS: &[SpawnTeams] = &[
     SpawnTeams {
         game: cs_source::game::GAME,
@@ -142,10 +150,23 @@ pub const TEAMS: &[SpawnTeams] = &[
         from: 2,
         to: combat_arms::game::rules::state::BRAVO,
     },
+    SpawnTeams {
+        game: halo_ce::game::GAME,
+        from: 1,
+        to: combat_arms::game::rules::state::ALPHA,
+    },
+    SpawnTeams {
+        game: halo_ce::game::GAME,
+        from: 2,
+        to: combat_arms::game::rules::state::BRAVO,
+    },
 ];
 
 /// The Source games' surfaces (CS:S's and HL2:DM's: Source's names and
 /// material letters) as Combat Arms' surface types: the mashup's table.
+/// Halo's maps name their surfaces with the engine's generic names
+/// (games/halo_ce/data/surfaces.toml: concrete, metal, dirt, ...), which
+/// are Source's too: the same table.
 pub const SURFACES: &[SurfaceTable] = &[
     SurfaceTable {
         map: cs_source::game::GAME,
@@ -157,19 +178,25 @@ pub const SURFACES: &[SurfaceTable] = &[
         gameplay: combat_arms::game::GAME,
         text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
     },
+    SurfaceTable {
+        map: halo_ce::game::GAME,
+        gameplay: combat_arms::game::GAME,
+        text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
+    },
 ];
 
 /// What of the guests' parts stays on their own maps: their guns' held
-/// and view models.
+/// and view models (Halo lends none).
 pub static KEPT: [&str; 2] = [GUESTS[0].kept[0], GUESTS[1].kept[0]];
 
-/// The guests' players, guns and HUD looks on the maps of other games.
+/// The guests' players, guns and HUD looks on the maps of other games
+/// (Halo has none to bring yet).
 pub static GUEST_DRESSING: [&MapDressing; 2] = [GUESTS[0].guest.unwrap(), GUESTS[1].guest.unwrap()];
 
 /// Where this app's maps come from (a bare map name is the first guest's,
 /// CS:S's) and whose gameplay dresses them.
 pub static MAP_SOURCES: MapSources = MapSources {
-    loaders: &[GUESTS[0].loader, GUESTS[1].loader, BASE.loader],
+    loaders: &[GUESTS[0].loader, GUESTS[1].loader, GUESTS[2].loader, BASE.loader],
     gameplay: Some(&combat_arms::game::world::DRESSING),
     teams: TEAMS,
     surfaces: SURFACES,
@@ -197,7 +224,8 @@ pub fn load_map_with(id: &str, options: &MapLoadOptions) -> Result<MapData, Stri
 
 /// What each composed game lends (its capability claim, `chimera_core::
 /// game_parts`), in the order an automatic ladder takes them.
-pub static GAME_PARTS: [&chimera_core::game_parts::GameParts; 3] = [BUNDLES[0].parts, BUNDLES[1].parts, BUNDLES[2].parts];
+pub static GAME_PARTS: [&chimera_core::game_parts::GameParts; 4] =
+    [BUNDLES[0].parts, BUNDLES[1].parts, BUNDLES[2].parts, BUNDLES[3].parts];
 
 /// The simulation: Combat Arms' (the engine's base, then its parts, the
 /// default game), then `PartyPartsPlugin`.
@@ -219,8 +247,9 @@ impl PluginGroup for PartyPlugins {
 /// (`+speed`), Ctrl ducks. HL2:DM: Shift sprints (`+speed`), Ctrl ducks,
 /// Alt walks, Z zooms the suit (`+zoom`; CS:S's Z is its radio, a game's own layer). The shared binds are the default ones (the gameplay game's);
 /// the Controls page (`controls`) edits each.
+/// Halo has no binds of its own (no player is Halo's: it lends only maps).
 pub static GAME_BINDS: [(&str, &[(&str, &str)]); 3] = [
-    (BUNDLES[2].info.id, BUNDLES[2].binds),
+    (BASE.info.id, BASE.binds),
     (BUNDLES[0].info.id, BUNDLES[0].binds),
     (BUNDLES[1].info.id, BUNDLES[1].binds),
 ];
@@ -266,7 +295,8 @@ impl Plugin for PartyPartsPlugin {
         }
         // Each guest's parts in the simulation (its bundle's `sim`: CS:S's
         // guns, impacts, movement, view-model rules and motion; HL2:DM's
-        // guns, rung extras, view models). A guest's guns' view models
+        // guns, rung extras, view models; Halo's registration and map
+        // pool). A guest's guns' view models
         // play on Chimera's generic driver with its game's rules (Combat
         // Arms' driver lets go of a character holding another game's gun).
         for bundle in GUESTS {
@@ -711,6 +741,21 @@ mod tests {
         let s = &super::MAP_SOURCES;
         assert!(s.loader("cs_source").is_some() && s.loader("combat_arms").is_some());
         assert_eq!(s.gameplay.map(|g| g.game), Some(combat_arms::game::GAME));
+    }
+
+    /// Halo is composed for its maps: its loader, its capture the flag
+    /// teams as Combat Arms' two, its surfaces through the Source table.
+    #[test]
+    fn halo_lends_its_maps() {
+        let s = &super::MAP_SOURCES;
+        assert!(s.loader(halo_ce::game::GAME).is_some());
+        assert!(super::BUNDLES.iter().any(|b| b.info.id == halo_ce::game::GAME));
+        assert!(super::GAME_PARTS.iter().any(|p| p.game == halo_ce::game::GAME));
+        let teams: Vec<(u8, u8)> =
+            s.teams.iter().filter(|t| t.game == halo_ce::game::GAME).map(|t| (t.from, t.to)).collect();
+        use combat_arms::game::rules::state::{ALPHA, BRAVO};
+        assert_eq!(teams, [(1, ALPHA), (2, BRAVO)]);
+        assert!(s.surfaces.iter().any(|t| t.map == halo_ce::game::GAME && t.gameplay == combat_arms::game::GAME));
     }
 }
 

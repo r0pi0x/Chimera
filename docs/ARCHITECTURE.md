@@ -281,7 +281,18 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   player starts and sky fog as `MapData` in metres, through the
   converted-map cache), `SimPlugins`, `game::HaloPlugins` (the
   registration and the stand-in movement `halo_ce:movement`, Chimera's
-  placeholder with its own numbers) and `harness::HaloSim`.
+  placeholder with its own numbers) and `harness::HaloSim`. Its spawns
+  are the slayer starts (no team) and capture the flag's red and blue
+  bases (`Team(1)`, `Team(2)`, after the game's flag check;
+  `game::maps::spawns`). In the party apps (`game::BUNDLE`, one of
+  `party_kit::GUESTS`) it lends only its maps, played with the other
+  games' bodies, movement and guns: its surface names are the engine's
+  classes (`game::maps::surfaces::SURFACES`; Combat Arms' through the
+  Source table), its teams Alpha and Bravo, and its pool is the disc
+  image's maps its data/map_pool.toml allows, drawn by its
+  data/map_fitness.toml (`game::parts`); none is claimed, so a machine
+  without the disc is offered none. The bots' navigation is generated
+  from its collision as on any map without its own.
   Layered as `hl2dm`: the engine crates and `blam_formats`, never another
   game, `mashup` or an app (checked); `ui` draws nothing of its own yet.
 - `chimera_net` is network play (`net`): the transport, the join

@@ -12,8 +12,10 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 }
 
 /// Halo's front end in an app made of several games (beside its
-/// `game::BUNDLE`).
-pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, hud: Some(with_hud), app: None };
+/// `game::BUNDLE`): no HUD there (`hud: None`) until it draws one of its
+/// own; no player holds a Halo gun yet, so the party's HUD checks
+/// (its kill feed, the overlay guard) don't ask for one.
+pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, hud: None, app: None };
 
 /// Halo's front end under the name every game's has it (`ui::party::CLIENT`;
 /// docs/new-game.md).

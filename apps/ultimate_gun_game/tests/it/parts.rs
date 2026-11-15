@@ -48,10 +48,16 @@ pub(crate) fn of(rungs: &[String], game: &str) -> usize {
 #[test]
 fn each_game_reports_what_it_lends() {
     let sim = ugg();
-    let report = auto::report(sim.app.world());
+    let mut report = auto::report(sim.app.world());
     let games: Vec<&str> = report.iter().map(|c| c.game).collect();
-    let claimed_guns = |i: usize| party_kit::GAME_PARTS[i].guns.iter().filter(|g| g.class != GunClass::Grenade).count();
-    assert_eq!(games, ["cs_source", "hl2dm", "combat_arms"]);
+    assert_eq!(games, ["cs_source", "hl2dm", "halo_ce", "combat_arms"]);
+    // Halo lends its maps only (from its disc image: none claimed), no
+    // guns or movement: not in a ladder (tests/it/halo_maps.rs in
+    // party_kit). The others as before.
+    let halo = report.remove(2);
+    assert!(!halo.playable() && halo.maps.is_empty(), "{}", halo.line());
+    let parts: Vec<_> = party_kit::GAME_PARTS.iter().filter(|p| p.game != "halo_ce").collect();
+    let claimed_guns = |i: usize| parts[i].guns.iter().filter(|g| g.class != GunClass::Grenade).count();
     for c in &report {
         assert!(c.missing.is_empty(), "every claimed part is in the app: {}", c.line());
         assert!(c.playable(), "{}", c.line());
