@@ -235,7 +235,16 @@ pub fn tick(
     let swept = v + Vec3::Y * lift_v;
     let r = d.radius;
     let p = origin + Vec3::Y * r;
-    let mut moved = mover::sweep(space, d, p, h, swept * k + Vec3::Y * gravity_fix);
+    let motion = swept * k + Vec3::Y * gravity_fix;
+    let mut moved = mover::sweep(space, d, p, h, motion);
+    // The step-up a map's envelope asks for (ours: `mover::step_up`; none
+    // on Halo's own maps).
+    if d.step_up > 0.0
+        && !me.airborne
+        && let Some(stepped) = mover::step_up(space, d, p, h, motion, &moved)
+    {
+        moved = stepped;
+    }
     // The landing velocity's V (before the edge neighbour's hold).
     let landing_v = swept;
     let mut swept = swept;

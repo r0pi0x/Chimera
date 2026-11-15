@@ -618,6 +618,19 @@ impl Plugin for CaMovementPlugin {
                 Ok(())
             },
         );
+        // The character's body, the envelope Combat Arms' maps carry
+        // (`chimera_core::envelope`): the hull's radius, heights and stair step.
+        {
+            use chimera_core::envelope::{MovementEnvelope, MovementEnvelopeAppExt};
+            let u = movement.meters_per_unit;
+            let [x, y, z] = movement.stand_half_extents;
+            app.add_movement_envelope(super::GAME, MovementEnvelope {
+                radius: x.max(z) * u,
+                height: 2.0 * y * u,
+                crouch_height: 2.0 * movement.crouch_half_extents[1] * u,
+                step: movement.stair_step * u,
+            });
+        }
         app.insert_resource(movement)
             .insert_resource(Loadout { movement: ID })
             .register_movement::<CaMovement>(ID)

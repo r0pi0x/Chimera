@@ -41,6 +41,12 @@ pub struct MovementData {
     pub height_stand: f32,
     pub height_crouch: f32,
     pub radius: f32,
+    pub ride_step: f32,
+    /// Ours, not in the table: the step-up (WU) the pill climbs on a map
+    /// whose envelope steps higher than Halo's `ride_step`
+    /// (`movement::body`, `mover::step_up`). 0: none (the spec's mover).
+    #[serde(default)]
+    pub step_up: f32,
     pub camera_stand: f32,
     pub camera_crouch: f32,
     pub crouch_rate: f32,

@@ -37,6 +37,7 @@ mod looks;
 mod map_objects;
 mod maps;
 mod movement;
+mod movement_envelope;
 mod movement_net;
 mod movement_vitality;
 mod party_zoom;
