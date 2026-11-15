@@ -301,18 +301,24 @@ to −45.057, z −0.349 to 26.233, tolerance 0.01.)
 |---|---|---|
 | 0 | two sided | hit from both sides; lies between leaves flagged bit 0; the twin is the other side |
 | 1 | invisible | traces can be told to ignore it (projectiles and line of sight do); bipeds and vehicles always collide |
-| 2 | climbable | read by the biped mover (ladders: `movement.md`); no effect on collision itself |
+| 2 | climbable | read by the biped mover (ladders: `movement.md`, section 8): every contact the mover records carries its surface's flags, edge and corner contacts included; no effect on collision itself |
 | 3 | breakable | ignored once the breakable surface it names is broken |
 
 On the disc every flagged surface is also two-sided. Flag combinations
 over all maps: none 1081309 surfaces; two-sided 9750; two-sided +
 invisible 4248; two-sided + climbable 168; two-sided + invisible +
 climbable 1358; two-sided + breakable 1488. On the multiplayer maps
-alone: two-sided 66, two-sided + climbable 120 (ladders, e.g.
-boardingaction 80, longest, putput, wizard), two-sided + breakable 8
+alone: two-sided 66, two-sided + climbable 120, two-sided + breakable 8
 (prisoner); no multiplayer map has an invisible surface (their
-boundaries are the material-less surfaces above). Blood Gulch and
-Hang 'Em High have no flagged surface at all.
+boundaries are the material-less surfaces above). The 120 climbable
+surfaces are ladders: 60 rectangular sheets of two surfaces each (a
+face and its twin), on 8 of the 13 maps (checked by a script over all
+13, level collision and every object collision model): boardingaction
+80 surfaces (40 sheets), prisoner 8, sidewinder 8, wizard 8,
+beavercreek 4, damnation 4, longest 4, putput 4. Blood Gulch, Hang 'Em
+High, Carousel, Chill Out and Rat Race have none (the last three
+have only two-sided surfaces: 40, 2 and 10; Blood Gulch and Hang 'Em
+High have no flagged surface at all).
 
 Breakable state: one bit per breakable surface of the current structure
 BSP (256), all set (intact) when the BSP loads, cleared when the
