@@ -12,6 +12,9 @@
 //!   powered mass points (channels) and the mass points (the contact
 //!   spheres). `Physics::recomputed_inertia`, `recomputed_masses` and
 //!   `recomputed_densities` give what the spec says the stored values equal.
+//! - `material_ground_scales` reads the globals' 32 materials' vehicle
+//!   terrain scales (globals.md "Materials": ground friction, normal k1 and
+//!   k0, depth and damp fraction scales).
 //!
 //! Known shortcuts:
 //! - The four vehicle function sources (0x31C to 0x322) are read as raw
@@ -379,4 +382,35 @@ impl Physics {
         }
         t.map(|row| row.map(|e| (e * self.moment_scale as f64) as f32))
     }
+}
+
+crate::tag_struct! {
+    /// A globals material's vehicle terrain scales (globals.md "Materials",
+    /// element 0x374 of the block at 0x194; 0 = no scaling).
+    pub struct MaterialGroundScales: 0x374 {
+        /// Applies only to physics of at most 7500 mass.
+        0x094 ground_friction_scale: f32,
+        0x098 ground_normal_k1_scale: f32,
+        0x09C ground_normal_k0_scale: f32,
+        0x0A0 ground_depth_scale: f32,
+        0x0A4 ground_damp_fraction_scale: f32,
+    }
+}
+
+/// The 32 materials' vehicle terrain scales of a globals tag (`matg`),
+/// indexed by material type.
+pub fn material_ground_scales(map: &MapFile, tag: &TagEntry) -> io::Result<Vec<MaterialGroundScales>> {
+    if tag.class != class::GLOBALS {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{}: {} `{}` is not a globals tag",
+                map.header().name,
+                tag.class,
+                tag.path
+            ),
+        ));
+    }
+    let v = map.tag_view(tag, crate::globals::GLOBALS_SIZE)?;
+    v.block_max(0x194, MaterialGroundScales::SIZE, 64)?.read_all()
 }

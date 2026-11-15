@@ -313,3 +313,25 @@ fn the_three_are_identical_on_every_multiplayer_map() {
         }
     }
 }
+
+#[test]
+fn the_materials_ground_scales() {
+    let Some(map) = load("bloodgulch") else { return };
+    let g = map.find(class::GLOBALS, r"globals\globals").unwrap();
+    let m = blam_formats::vehicle::material_ground_scales(&map, g).unwrap();
+    assert_eq!(m.len(), 32);
+    for (i, s) in m.iter().enumerate() {
+        let want = if i == 31 { 0.125 } else { 0.0 };
+        assert_eq!(s.ground_friction_scale, want, "material {i}");
+        assert_eq!(
+            (
+                s.ground_normal_k1_scale,
+                s.ground_normal_k0_scale,
+                s.ground_depth_scale,
+                s.ground_damp_fraction_scale
+            ),
+            (0.0, 0.0, 0.0, 0.0),
+            "material {i}"
+        );
+    }
+}
