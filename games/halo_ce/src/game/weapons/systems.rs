@@ -73,9 +73,7 @@ pub struct HaloWeapon(pub Arc<Gun>);
 /// The 30 Hz ticks whose boundary this engine tick crossed (module doc):
 /// 1 at Halo's own tick.
 pub fn halo_ticks(clock: &SimClock) -> u32 {
-    let n = |t: f64| (t * 30.0 + 1e-6).floor() as i64;
-    let dt = clock.delta.as_secs_f64();
-    (n(clock.now) - n(clock.now - dt)).max(0) as u32
+    super::super::ticks::halo_ticks(clock)
 }
 
 /// A holder's own part of Halo's weapon rules: the player melee's

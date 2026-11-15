@@ -22,7 +22,10 @@
 //! spec's exact values; each tick (`update`, after `core::apply_damage`)
 //! takes in what other games' hits did to `Armor` and `Health` (a drop
 //! restarts the shield delay, as any hit does), runs the shield and
-//! camouflage step, and writes the two back. Kills, `Died` and the kill's
+//! camouflage step once per 30 Hz tick the engine tick advances
+//! (`ticks::halo_ticks`: at Halo's tick every tick, under a party's 66.7 Hz
+//! on 30 of every 66.7, so the delay is 6 s and the recharge 4 s at any
+//! tick rate; the stun's counter likewise), and writes the two back. Kills, `Died` and the kill's
 //! credit go through the engine's `Damage` (`super::damage`), so a gun
 //! game's ladder sees Halo's kills as any other.
 //!
@@ -320,10 +323,13 @@ fn wear(mut commands: Commands, on: Query<(Entity, &MovementSlot, Has<Vitality>)
 }
 
 /// The predicted unit update: the stun counter.
-fn stun_step(mut q: Query<&mut Stun>) {
+fn stun_step(mut q: Query<&mut Stun>, clock: Res<crate::core::SimClock>) {
+    let n = super::ticks::halo_ticks(&clock);
     for mut stun in &mut q {
-        if stun.ticks > 0 {
-            stun.step();
+        for _ in 0..n {
+            if stun.ticks > 0 {
+                stun.step();
+            }
         }
     }
 }
@@ -386,6 +392,7 @@ pub fn mirror(v: &Vitality, health: &mut Health, armor: Option<&mut Armor>, mirr
 fn update(
     mut q: Query<(Entity, &mut Vitality, &mut Health, Option<&mut Armor>, Option<&mut Stun>, Option<&mut Mirrored>)>,
     spartan: Res<Spartan>,
+    clock: Res<crate::core::SimClock>,
     mut grants: MessageReader<GrantPowerup>,
     mut taken: MessageWriter<PowerupTaken>,
     mut commands: Commands,
@@ -421,7 +428,9 @@ fn update(
                 v.die();
             }
         }
-        v.tick(&spartan);
+        for _ in 0..super::ticks::halo_ticks(&clock) {
+            v.tick(&spartan);
+        }
         for g in grants.iter().filter(|g| g.target == e) {
             let ok = match g.powerup {
                 Powerup::HealthPack => v.heal(),

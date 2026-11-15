@@ -27,6 +27,7 @@ mod movement_net;
 mod movement_vitality;
 mod net_vitality;
 mod skeleton;
+mod ticks;
 mod view;
 mod vitality;
 mod vitality_data;

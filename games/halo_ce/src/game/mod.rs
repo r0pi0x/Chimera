@@ -46,6 +46,7 @@ pub mod mount;
 pub mod movement;
 pub mod parts;
 pub mod sets;
+pub mod ticks;
 pub mod view;
 pub mod vitality;
 pub mod weapons;
