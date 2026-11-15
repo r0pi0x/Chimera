@@ -87,12 +87,11 @@ pub struct Blast<'a> {
     pub ramp: Option<f32>,
 }
 
-/// An explosion for the clients to draw (its centre), with the weapon it
-/// came from.
+/// An explosion to draw (its centre): the server's, sent to every client
+/// (`looks`).
 #[derive(Message, Clone, Copy, Debug)]
 pub struct Tf2Explosion {
     pub at: Vec3,
-    pub weapon: &'static str,
 }
 
 /// The splash factor at `r` units of a blast of `radius` with `edge` at
@@ -248,7 +247,7 @@ impl BlastWorld<'_, '_> {
         if let Some(s) = &p.sound {
             self.sounds.write(GameSound(PlaySound::at(s.clone(), centre)));
         }
-        self.looks.write(Tf2Explosion { at: centre, weapon });
+        self.looks.write(Tf2Explosion { at: centre });
     }
 
     /// A direct hit's damage (a needle's), from `from`.

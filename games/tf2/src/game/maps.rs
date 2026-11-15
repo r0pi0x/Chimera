@@ -65,7 +65,7 @@ pub static TF2: SourceGame = SourceGame {
     spawn_rule: team_spawn,
     gravity: GRAVITY,
     kit: no_kit,
-    extra_particles: no_extra_particles,
+    extra_particles,
     held: held_kit,
     sounds,
     fixed_models: props::no_fixed_models,
@@ -240,8 +240,10 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     Ok(())
 }
 
-fn no_extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static str]) {
-    (&[], &[])
+/// TF2's own effects its guns start (`weapons::looks`): the explosion and
+/// the muzzle flashes.
+fn extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static str]) {
+    (super::weapons::looks::PARTICLE_SYSTEMS, super::weapons::looks::PARTICLE_FILES)
 }
 
 /// TF2's sounds: Source's sound scripts (the map's own entries and its
