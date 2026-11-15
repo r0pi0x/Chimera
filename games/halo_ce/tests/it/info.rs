@@ -65,11 +65,11 @@ fn the_map_loader_names_a_missing_maps_file() {
 }
 
 /// Halo's pool data (data/map_pool.toml, data/map_fitness.toml): every
-/// multiplayer map measured, and the maps its rules let in are those M1
-/// plays without teleporters and vehicles (Hang 'Em High and Blood Gulch
-/// among them; the reasons are in the file).
+/// multiplayer map measured, and with teleporters working (M4) the rules
+/// let in every map but Sidewinder, a vehicle map (the reasons are in the
+/// file).
 #[test]
-fn its_pool_lets_in_the_maps_played_without_teleporters() {
+fn its_pool_lets_in_every_map_but_the_vehicle_one() {
     use chimera_sim::minigame::map_fit::{MapPool, PoolRules, parse_fitness};
     use halo_ce::game::parts::{MAP_FITNESS, POOL_RULES};
     let measured = parse_fitness(MAP_FITNESS).unwrap();
@@ -79,6 +79,7 @@ fn its_pool_lets_in_the_maps_played_without_teleporters() {
     let mut pool = MapPool::default();
     pool.add_rules(GAME, PoolRules::parse(POOL_RULES).unwrap());
     let listed: Vec<&str> = MULTIPLAYER_MAPS.iter().copied().filter(|m| pool.listed(GAME, m).is_ok()).collect();
-    assert_eq!(listed, ["beavercreek", "bloodgulch", "damnation", "hangemhigh", "longest", "prisoner"]);
-    assert!(pool.listed(GAME, "putput").unwrap_err().contains("teleporter"));
+    let all_but: Vec<&str> = MULTIPLAYER_MAPS.iter().copied().filter(|m| *m != "sidewinder").collect();
+    assert_eq!(listed, all_but);
+    assert!(pool.listed(GAME, "sidewinder").unwrap_err().contains("vehicle"));
 }

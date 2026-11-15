@@ -8,131 +8,131 @@
 speed_mps = 6.35
 
 [maps.beavercreek]
-area_m2 = 4563
-sight_m = 10.2
-spot_area_m2 = 4546
+area_m2 = 4538
+sight_m = 10.4
+spot_area_m2 = 4521
 spawns = 69
-spots = 3675
+spots = 3672
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 9.2, 8 = 3.9, 12 = 2.5 }
+wander_s = { 4 = 9.0, 8 = 3.9, 12 = 2.5 }
 
 [maps.bloodgulch]
 area_m2 = 75000
-sight_m = 31.4
-spot_area_m2 = 74970
+sight_m = 30.3
+spot_area_m2 = 74964
 spawns = 54
-spots = 66655
-spots_off = 967
+spots = 66684
+spots_off = 972
 stuck = 0
-wander_s = { 4 = 49.2, 8 = 21.1, 12 = 13.4 }
+wander_s = { 4 = 51.0, 8 = 21.9, 12 = 13.9 }
 
 [maps.boardingaction]
-area_m2 = 8066
-sight_m = 20.9
-spot_area_m2 = 8148
+area_m2 = 7966
+sight_m = 19.9
+spot_area_m2 = 8038
 spawns = 68
-spots = 4634
+spots = 4693
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 8.0, 8 = 3.4, 12 = 2.2 }
+wander_s = { 4 = 8.3, 8 = 3.5, 12 = 2.3 }
 
 [maps.carousel]
-area_m2 = 8136
-sight_m = 19.5
-spot_area_m2 = 8184
+area_m2 = 8016
+sight_m = 18.5
+spot_area_m2 = 8070
 spawns = 63
-spots = 8031
+spots = 7608
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 8.6, 8 = 3.7, 12 = 2.3 }
+wander_s = { 4 = 8.9, 8 = 3.8, 12 = 2.4 }
 
 [maps.chillout]
 area_m2 = 2668
-sight_m = 9.6
+sight_m = 9.5
 spot_area_m2 = 2700
 spawns = 58
-spots = 1929
+spots = 1954
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 5.8, 8 = 2.5, 12 = 1.6 }
 
 [maps.damnation]
-area_m2 = 4530
+area_m2 = 4500
 sight_m = 13.4
-spot_area_m2 = 4591
+spot_area_m2 = 4563
 spawns = 67
-spots = 2852
+spots = 2836
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 7.0, 8 = 3.0, 12 = 1.9 }
+wander_s = { 4 = 6.9, 8 = 3.0, 12 = 1.9 }
 
 [maps.hangemhigh]
-area_m2 = 11445
-sight_m = 20.1
-spot_area_m2 = 11345
+area_m2 = 11443
+sight_m = 20.0
+spot_area_m2 = 11343
 spawns = 67
-spots = 7435
+spots = 7463
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 11.7, 8 = 5.0, 12 = 3.2 }
+wander_s = { 4 = 11.8, 8 = 5.0, 12 = 3.2 }
 
 [maps.longest]
-area_m2 = 2015
+area_m2 = 2000
 sight_m = 7.8
-spot_area_m2 = 2061
+spot_area_m2 = 2042
 spawns = 71
-spots = 1347
+spots = 1346
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 5.4, 8 = 2.3, 12 = 1.5 }
+wander_s = { 4 = 5.3, 8 = 2.3, 12 = 1.4 }
 
 [maps.prisoner]
 area_m2 = 4064
 sight_m = 12.9
-spot_area_m2 = 4064
+spot_area_m2 = 4063
 spawns = 58
-spots = 2297
+spots = 2312
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 6.5, 8 = 2.8, 12 = 1.8 }
 
 [maps.putput]
-area_m2 = 1695
+area_m2 = 1694
 sight_m = 4.9
-spot_area_m2 = 1790
+spot_area_m2 = 1789
 spawns = 59
-spots = 1204
+spots = 1228
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 7.1, 8 = 3.1, 12 = 1.9 }
 
 [maps.ratrace]
-area_m2 = 5295
-sight_m = 13.0
-spot_area_m2 = 5309
+area_m2 = 5289
+sight_m = 12.9
+spot_area_m2 = 5303
 spawns = 48
-spots = 3495
+spots = 3596
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 8.4, 8 = 3.6, 12 = 2.3 }
 
 [maps.sidewinder]
-area_m2 = 69858
-sight_m = 35.1
-spot_area_m2 = 68775
+area_m2 = 69476
+sight_m = 33.9
+spot_area_m2 = 68394
 spawns = 60
-spots = 52860
+spots = 53061
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 41.0, 8 = 17.6, 12 = 11.2 }
+wander_s = { 4 = 42.2, 8 = 18.1, 12 = 11.5 }
 
 [maps.wizard]
 area_m2 = 4254
 sight_m = 15.5
 spot_area_m2 = 4294
 spawns = 48
-spots = 3942
+spots = 3938
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 5.7, 8 = 2.4, 12 = 1.5 }

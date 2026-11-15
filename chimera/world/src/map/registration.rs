@@ -363,6 +363,7 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<crate::core::MapGame>()
         .map_scoped::<MapBrushTree>()
         .map_scoped::<KillHeight>()
+        .map_scoped::<super::teleport::MapTeleporters>()
         .map_scoped::<MapWater>()
         .map_scoped::<water::WaterMovers>()
         .map_scoped::<RoundSounds>()

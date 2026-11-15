@@ -12,8 +12,9 @@
 //! measures it:
 //!
 //! - `area_m2`: the walkable area of the mesh's main region (areas walked
-//!   to from a spawn point and back, as the spawn spots take them):
-//!   disconnected scenery left out. `mesh_m2`: the whole flood;
+//!   to from a spawn point and back, as the spawn spots take them; a
+//!   map's teleporters, `map::teleport`, count as links of no length:
+//!   `spot_checks::teleport_links`): disconnected scenery left out. `mesh_m2`: the whole flood;
 //!   `spot_area_m2`: the main region of a walking player's mesh, the one
 //!   the spawn spots are drawn on (`spawns::walker`).
 //! - `pair_p50_s`, `pair_p90_s`: shortest walking paths between two
@@ -696,6 +697,11 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
         (nav, spots)
     };
     row.nav_s = t.elapsed().as_secs_f32();
+    // The map's teleporters as links of each mesh (`spot_checks::
+    // teleport_links`): what they join counts as one region, and a walk
+    // through one costs nothing.
+    let nav_links = party_kit::spot_checks::teleport_links(w, &nav);
+    let spot_links = party_kit::spot_checks::teleport_links(w, &spots);
     let size = |i: usize| {
         let s = nav.areas[i].max - nav.areas[i].min;
         s.x * s.y
@@ -703,7 +709,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     row.mesh_m2 = (0..nav.areas.len()).map(size).sum();
     row.capped = row.mesh_m2 >= 0.95 * p.max_cells as f32 * p.cell * p.cell;
     {
-        let (inside, _) = region(&spots, &feet);
+        let (inside, _) = region(&spots, &feet, &spot_links);
         row.spot_area_m2 = (0..spots.areas.len())
             .filter(|i| inside[*i])
             .map(|i| {
@@ -712,7 +718,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
             })
             .sum();
     }
-    let (inside, starts) = region(&nav, &feet);
+    let (inside, starts) = region(&nav, &feet, &nav_links);
     let ids: Vec<usize> = (0..nav.areas.len()).filter(|i| inside[*i]).collect();
     row.areas = ids.len();
     row.area_m2 = ids.iter().map(|i| size(*i)).sum();
@@ -735,7 +741,8 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     // the spots' walker does).
     let guard_mesh = if file_nav.is_none() { party_kit::spot_checks::bots_mesh(w, &feet) } else { NavMesh::default() };
     let spot_mesh = party_kit::spot_checks::region_mesh(file_nav.as_deref(), &guard_mesh);
-    let (spot_inside, _) = region(spot_mesh, &feet);
+    let spot_mesh_links = party_kit::spot_checks::teleport_links(w, spot_mesh);
+    let (spot_inside, _) = region(spot_mesh, &feet, &spot_mesh_links);
     let on_spot_region = |q: Vec3| party_kit::spot_checks::on_region(spot_mesh, &spot_inside, q);
     // Where each lands (CS:S's float over their floors).
     let landed = party_kit::spot_checks::dropped(w, &feet);
@@ -747,7 +754,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
             let c = (a.min + a.max) / 2.0;
             Vec3::new(c.x, a.height_at(c.x, c.y), c.y)
         };
-        let (inside, _) = region(&spots, &feet);
+        let (inside, _) = region(&spots, &feet, &spot_links);
         let mut seen = BTreeSet::new();
         for (i, a) in spots.areas.iter().enumerate() {
             if !inside[i] || off_file(centre(a)) {
@@ -767,7 +774,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
         // Where the navigation file goes on and the spots' walk doesn't:
         // a file link from an area the walk covers to one it doesn't (the
         // middle of the shared edge, as best the areas' boxes say).
-        let (inside, _) = region(&spots, &feet);
+        let (inside, _) = region(&spots, &feet, &spot_links);
         let walked: Vec<&chimera_world::map::nav::NavArea> =
             spots.areas.iter().enumerate().filter(|(i, _)| inside[*i]).map(|(_, a)| a).collect();
         let covered: Vec<bool> = n
@@ -805,7 +812,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
         // Where the bots' walk goes on and the spots' doesn't (a confined
         // map): a bots' link from an area the spots' main region covers
         // to one it doesn't.
-        let (inside, _) = region(&spots, &feet);
+        let (inside, _) = region(&spots, &feet, &spot_links);
         let walked: Vec<&chimera_world::map::nav::NavArea> =
             spots.areas.iter().enumerate().filter(|(i, _)| inside[*i]).map(|(_, a)| a).collect();
         let covered: Vec<bool> = nav
@@ -993,7 +1000,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
         }
         row.sight_m = sum / count.max(1) as f32;
     }
-    let from_samples: Vec<Vec<f32>> = samples.iter().map(|s| dijkstra(&nav, *s)).collect();
+    let from_samples: Vec<Vec<f32>> = samples.iter().map(|s| dijkstra(&nav, *s, &nav_links)).collect();
 
     // Random pairs: each sample to the whole region, weighted by area.
     let mut pairs: Vec<(f32, f32)> = Vec::new();
@@ -1015,14 +1022,14 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
             mean(*a).total_cmp(&mean(*b))
         })
         .unwrap();
-    let to_hub = dijkstra(&nav, hub);
+    let to_hub = dijkstra(&nav, hub, &nav_links);
 
     // Spawn points to each other and to the hub.
     let spawn_areas: Vec<usize> = starts.iter().flatten().copied().filter(|s| inside[*s]).collect();
     let mut sp = Vec::new();
     let mut sh = Vec::new();
     for (k, a) in spawn_areas.iter().enumerate() {
-        let d = dijkstra(&nav, *a);
+        let d = dijkstra(&nav, *a, &nav_links);
         for b in &spawn_areas[k + 1..] {
             if d[*b].is_finite() {
                 sp.push(d[*b] / v);
@@ -1074,8 +1081,8 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
 
 /// The areas walked to from a spawn point and back (the spawn spots'
 /// region, `chimera_sim::minigame::spawns`), and each spawn point's area.
-fn region(nav: &NavMesh, feet: &[Vec3]) -> (Vec<bool>, Vec<Option<usize>>) {
-    party_kit::spot_checks::region(nav, feet)
+fn region(nav: &NavMesh, feet: &[Vec3], links: &[(usize, usize)]) -> (Vec<bool>, Vec<Option<usize>>) {
+    party_kit::spot_checks::region_linked(nav, feet, links)
 }
 
 #[derive(PartialEq)]
@@ -1093,7 +1100,7 @@ impl Ord for Item {
 }
 
 /// Walking distance (m, centre to centre) from area `from` to every area.
-fn dijkstra(nav: &NavMesh, from: usize) -> Vec<f32> {
+fn dijkstra(nav: &NavMesh, from: usize, teleports: &[(usize, usize)]) -> Vec<f32> {
     let mut d = vec![f32::INFINITY; nav.areas.len()];
     let mut heap = BinaryHeap::new();
     d[from] = 0.0;
@@ -1111,6 +1118,13 @@ fn dijkstra(nav: &NavMesh, from: usize) -> Vec<f32> {
             if next < d[*j] {
                 d[*j] = next;
                 heap.push(Item(next, *j));
+            }
+        }
+        // A teleporter takes no walk.
+        for &(_, j) in teleports.iter().filter(|(f, _)| *f == i) {
+            if at < d[j] {
+                d[j] = at;
+                heap.push(Item(at, j));
             }
         }
     }

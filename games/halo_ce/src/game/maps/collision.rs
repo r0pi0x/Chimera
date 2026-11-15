@@ -24,18 +24,33 @@
 //! `surfaces`), as the other games' do; the collision mesh is one
 //! collider.
 //!
+//! Ladders (docs/DESIGN.md, "Ladders across games"): each climbable
+//! surface (one of each two-sided twin pair) is also a ladder brush in
+//! `collision_brushes` (`ladder`, `MapBrush::ladder`; in `trace_skip`, so
+//! shots pass it): a slab `LADDER_SKIN` thick on each side of the sheet,
+//! bounded by the polygon's edges (`ladder_brush`). Chimera publishes
+//! these as `core::MapLadders::volumes`, which every game's movement
+//! climbs by its own rule (Halo's: `movement`'s climbable ground). The
+//! sheet itself stays a solid triangle as before. Because a map with
+//! brushes gets a kill height under its lowest brush unless it says where
+//! it is played, `playable` is the level's collision box (`add`).
+//!
 //! Known shortcuts:
 //! - Breakable surfaces (Prisoner's 8) stay solid: breaking them belongs
 //!   to a later breakables spec (`collision.md`, "Breakable state").
-//! - Climbable surfaces (ladders) are plain solid triangles: climbing is
-//!   the movement's (`movement.md`).
 
 use std::io;
 
+use std::collections::BTreeSet;
+
+use bevy::math::Vec3;
 use blam_formats::collision::{LevelCollision, MaterialType};
 
 use super::{space, surfaces};
-use crate::map::{MapCollisionSet, MapData};
+use crate::map::{MapBrush, MapCollisionSet, MapData};
+
+/// How far a ladder brush stands out on each side of its sheet (m).
+pub const LADDER_SKIN: f32 = 0.02;
 
 /// The glass set's name.
 pub const GLASS: &str = "glass";
@@ -52,6 +67,47 @@ pub struct Counts {
     pub invisible: usize,
     pub glass: usize,
     pub materialless: usize,
+    /// Ladder brushes (climbable surfaces, one per twin pair).
+    pub ladders: usize,
+}
+
+/// A climbable sheet (a convex polygon, engine space, in order) as a ladder
+/// brush: the slab `LADDER_SKIN` either side of its plane, cut by a plane
+/// through each edge. None for a degenerate polygon.
+pub fn ladder_brush(points: &[Vec3]) -> Option<MapBrush> {
+    if points.len() < 3 {
+        return None;
+    }
+    // Newell's normal (either sense: the slab is symmetric).
+    let mut n = Vec3::ZERO;
+    for (i, a) in points.iter().enumerate() {
+        let b = points[(i + 1) % points.len()];
+        n += Vec3::new((a.y - b.y) * (a.z + b.z), (a.z - b.z) * (a.x + b.x), (a.x - b.x) * (a.y + b.y));
+    }
+    let n = n.try_normalize()?;
+    let d = n.dot(points[0]);
+    let mut planes = vec![(n, d + LADDER_SKIN), (-n, -d + LADDER_SKIN)];
+    for (i, a) in points.iter().enumerate() {
+        let b = points[(i + 1) % points.len()];
+        // Outward from the polygon in its plane: away from its centre.
+        let mut out = (b - *a).cross(n).try_normalize()?;
+        let centre = points.iter().copied().sum::<Vec3>() / points.len() as f32;
+        if out.dot(centre - *a) > 0.0 {
+            out = -out;
+        }
+        planes.push((out, out.dot(*a)));
+    }
+    let skin = n.abs() * LADDER_SKIN;
+    let (min, max) = points
+        .iter()
+        .fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+    Some(MapBrush {
+        planes,
+        min: min - skin,
+        max: max + skin,
+        ladder: true,
+        surface: None,
+    })
 }
 
 /// Fill `map`'s collision from the level's collision BSP.
@@ -91,6 +147,35 @@ pub fn add(level: &LevelCollision, map: &mut MapData) -> io::Result<Counts> {
             let code = level.surface_material_type(s).map_or(-1, |t| t.code() as i8);
             map.extras.entry::<crate::game::weapons::materials::LevelCodes>().0.push(code);
         }
+    }
+    // Ladders: one brush per climbable sheet, twins once.
+    let mut seen = BTreeSet::new();
+    for s in 0..bsp.surfaces.len() {
+        if !bsp.surfaces[s].flags.climbable() {
+            continue;
+        }
+        let mut key = bsp.polygon(s)?;
+        key.sort_unstable();
+        if !seen.insert(key) {
+            continue;
+        }
+        let points: Vec<Vec3> = bsp.polygon_points(s)?.into_iter().map(space::point).collect();
+        if let Some(brush) = ladder_brush(&points) {
+            map.trace_skip.push(map.collision_brushes.len());
+            map.collision_brushes.push(brush);
+            counts.ladders += 1;
+        }
+    }
+    // Where the level is played (its collision's box): a map with ladder
+    // brushes is killed under it, not under its lowest ladder.
+    let (lo, hi) = map
+        .collision_positions
+        .iter()
+        .fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), p| {
+            (lo.min(Vec3::from(*p)), hi.max(Vec3::from(*p)))
+        });
+    if lo.cmple(hi).all() {
+        map.playable = Some((lo, hi));
     }
     if !glass.is_empty() {
         map.collision_sets.push(MapCollisionSet {

@@ -567,6 +567,10 @@ pub fn death_pose_bones(m: &MapCharacterModel, side: DeathSide, frame: u8, crouc
 }
 
 pub fn plugin(app: &mut App) {
+    // A sleep between steps applies the joints' pending removals first
+    // (`prop_physics::FlushJointRemovals`): a ragdoll settling in a pile
+    // with one despawned that tick.
+    super::prop_physics::track_joint_changes(app);
     app.init_resource::<RagdollSettings>()
         .init_resource::<RagdollGameRules>()
         .init_resource::<AwakeRagdollJoints>()

@@ -60,15 +60,33 @@
 //! (`sleeping_a_body_whose_island_waits_to_drop_a_contact`). Why it's OK
 //! for now: applying the queue first (`FlushContactStatusChangeQueue`) is
 //! Avian's own API; inserting `Sleeping` directly still takes the bare path.
+//! Joints have the same bug (a despawned joint left linked by the split:
+//! `remove_joint`'s `prev_joint_island.next == Some(joint_id)`; ragdolls
+//! settling in a pile with one that went that tick) and no flush in Avian:
+//! `FlushJointRemovals` applies the pending removals itself, past a cursor
+//! kept in step with Avian's reader (`track_joint_changes`); Avian's step
+//! then skips them (`sleeping_a_body_whose_island_waits_to_drop_a_joint`).
+//! Why it's OK for now: it only unlinks joints Avian would unlink at the
+//! step, through Avian's own `PhysicsIslands::remove_joint`.
 
 use avian3d::{
-    dynamics::solver::{
-        FlushContactStatusChangeQueue,
-        islands::{BodyIslandNode, SleepBody},
+    dynamics::{
+        joints::joint_graph::{JointGraphChange, JointId},
+        solver::{
+            FlushContactStatusChangeQueue, apply_joint_graph_changes,
+            islands::{BodyIslandNode, PhysicsIslands, SleepBody, WakeIslands},
+        },
     },
     prelude::*,
 };
-use bevy::{ecs::system::SystemParam, prelude::*};
+use bevy::{
+    ecs::{
+        entity_disabling::Disabled,
+        message::MessageCursor,
+        system::{SystemParam, SystemState},
+    },
+    prelude::*,
+};
 
 use super::{MapBrushCollider, MapPhysics, MapPropCollider, PhysicsProp};
 use crate::core::MovingSolid;
@@ -314,14 +332,110 @@ pub fn wake(world: &mut World, node: Entity) {
 /// island is missed and keeps its old links, and unlinking it at the next
 /// step corrupts the new island's contact list (avian 0.8 panics on it with
 /// debug assertions: `islands/mod.rs`, `next_contact_island.prev ==
-/// Some(contact_id)`). Every sleep this crate asks for goes through this.
+/// Some(contact_id)`). The same for joints: a joint despawned since the
+/// last step is gone from the joint graph at once but stays in its
+/// island's list until the step reads its `JointGraphChange`, so its
+/// removals are applied first too (`FlushJointRemovals`). Every sleep this
+/// crate asks for goes through this.
 pub struct SleepBodyNow(pub Entity);
 
 impl Command for SleepBodyNow {
     type Out = Result;
     fn apply(self, world: &mut World) -> Result {
         FlushContactStatusChangeQueue.apply(world);
+        FlushJointRemovals.apply(world);
         SleepBody(self.0).apply(world)
+    }
+}
+
+/// How far avian's step has read the joint graph's changes
+/// (`JointGraphChange`): moved on right after its
+/// `apply_joint_graph_changes` each step (`track_joint_changes`), so what
+/// is past it is what the next step will apply.
+#[derive(Resource, Default)]
+pub struct JointChangesApplied(MessageCursor<JointGraphChange>);
+
+/// The joint graph's changes tracked (`JointChangesApplied`), for
+/// `FlushJointRemovals`; after avian's `PhysicsPlugins`. Once per app.
+pub fn track_joint_changes(app: &mut App) {
+    if app.world().contains_resource::<JointChangesApplied>() {
+        return;
+    }
+    app.init_resource::<JointChangesApplied>().add_systems(
+        PhysicsSchedule,
+        joint_changes_applied
+            .in_set(PhysicsStepSystems::Solver)
+            .after(apply_joint_graph_changes)
+            .before(SolverSystems::PrepareSolverBodies),
+    );
+}
+
+fn joint_changes_applied(mut seen: ResMut<JointChangesApplied>, changes: Res<Messages<JointGraphChange>>) {
+    seen.0.clear(&changes);
+}
+
+/// The joint removals avian's next step would apply to its islands
+/// (`JointGraphChange::Removed` past `JointChangesApplied`), applied now,
+/// waking an island asleep as the step would; the step then finds them
+/// unlinked and skips them. Additions wait for the step: until then the
+/// joint has no island node, which a split skips. A work-around for an
+/// avian 0.8 bug: an island split between steps (`SleepBody`) finds its
+/// joints through the joint graph, which lost a despawned joint at once,
+/// while the island's list still links it; the split misses it, leaving it
+/// linked to joints of the new islands, and unlinking it at the step
+/// corrupts their lists (a debug assertion in `islands/mod.rs`
+/// `remove_joint`: `prev_joint_island.next == Some(joint_id)`). Repro: a
+/// chain of five bodies, one joint removed in a step, a middle one
+/// despawned, then `SleepBody` on a body and a step
+/// (`sleeping_a_body_whose_island_waits_to_drop_a_joint`). Nothing
+/// without `track_joint_changes`.
+pub struct FlushJointRemovals;
+
+impl Command for FlushJointRemovals {
+    type Out = ();
+    fn apply(self, world: &mut World) {
+        if !world.contains_resource::<PhysicsIslands>()
+            || !world.contains_resource::<Messages<JointGraphChange>>()
+            || !world.contains_resource::<JointChangesApplied>()
+        {
+            return;
+        }
+        let removed: Vec<JointId> = world.resource_scope(|world, mut seen: Mut<JointChangesApplied>| {
+            let changes = world.resource::<Messages<JointGraphChange>>();
+            seen.0
+                .read(changes)
+                .filter_map(|c| match c {
+                    JointGraphChange::Removed(id) => Some(*id),
+                    JointGraphChange::Added(_) => None,
+                })
+                .collect()
+        });
+        if removed.is_empty() {
+            return;
+        }
+        let mut state = SystemState::<(
+            ResMut<PhysicsIslands>,
+            Query<&mut BodyIslandNode, Or<(With<Disabled>, Without<Disabled>)>>,
+        )>::new(world);
+        let Ok((mut islands, mut bodies)) = state.get_mut(world) else {
+            return;
+        };
+        let mut wake = Vec::new();
+        for id in removed {
+            if islands.joint_node(id).is_none() {
+                continue;
+            }
+            if let Some(island) = islands.remove_joint(id, &mut bodies)
+                && island.is_sleeping()
+            {
+                wake.push(island.id());
+            }
+        }
+        if !wake.is_empty() {
+            wake.sort_unstable();
+            wake.dedup();
+            WakeIslands(wake).apply(world);
+        }
     }
 }
 
@@ -735,6 +849,7 @@ mod tests {
         )))
         // Avian's own sleeping (and its own island splits) stay out of it.
         .insert_resource(TimeToSleep(1000.0));
+        track_joint_changes(&mut app);
         app.finish();
         app.cleanup();
         app.update();
@@ -793,6 +908,52 @@ mod tests {
         }
         SleepBodyNow(bottom).apply(app.world_mut()).unwrap();
         avian3d::prelude::WakeBody(bottom).apply(app.world_mut()).unwrap();
+        for _ in 0..5 {
+            app.update();
+        }
+    }
+
+    /// A body put to sleep while its island holds a joint despawned since
+    /// the last step (Avian unlinks it at its next step): the island's
+    /// split before the sleep must not miss it. A bare split did (it finds
+    /// joints through the joint graph, which lost the joint at once), and
+    /// the next step panicked unlinking it (`prev_joint_island.next ==
+    /// Some(joint_id)`, avian 0.8's `islands/mod.rs` `remove_joint`):
+    /// Ultimate Gun Game on Combat Arms' warehouse with 8 players, a
+    /// ragdoll settling in a pile with one that went that tick.
+    #[test]
+    fn sleeping_a_body_whose_island_waits_to_drop_a_joint() {
+        let mut app = physics_app();
+        let w = app.world_mut();
+        w.insert_resource(Gravity(Vec3::ZERO));
+        // A chain of five: one island, a joint between each pair.
+        let bodies: Vec<Entity> = (0..5).map(|i| crate_at(&mut app, 3.0 * i as f32)).collect();
+        let joints: Vec<Entity> = bodies
+            .windows(2)
+            .map(|p| {
+                app.world_mut()
+                    .spawn(SphericalJoint::new(p[0], p[1]).with_anchor(Vec3::new(0.0, 1.5, 0.0)))
+                    .id()
+            })
+            .collect();
+        for _ in 0..5 {
+            app.update();
+        }
+        // A joint gone in a step: the island has lost a constraint, so a
+        // sleep splits it first.
+        app.world_mut().despawn(joints[0]);
+        app.update();
+        // A joint in the middle of the island's list gone between steps.
+        app.world_mut().despawn(joints[2]);
+        SleepBodyNow(bodies[1]).apply(app.world_mut()).unwrap();
+        assert!(app.world().get::<Sleeping>(bodies[1]).is_some(), "its part of the chain sleeps");
+        // The step unlinks the despawned joint.
+        for _ in 0..5 {
+            app.update();
+        }
+        // The two parts left, each whole.
+        app.world_mut().despawn(joints[1]);
+        app.world_mut().despawn(joints[3]);
         for _ in 0..5 {
             app.update();
         }

@@ -8,7 +8,9 @@
 //! the floor, walks a few metres without falling through or sticking, and
 //! a hitscan round at a wall hits the map with a surface Combat Arms'
 //! impact table knows (Halo's `metal`, its Metal), its impact drawn there.
-//! Each test passes with a note without the disc image.
+//! Every pool map's spawn points reach each other on the bots' mesh with
+//! its teleporters as links. Each test passes with a note without the
+//! disc image.
 
 use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
 use bevy::{ecs::system::SystemState, prelude::*};
@@ -65,6 +67,34 @@ fn every_halo_pool_map_loads_with_spawns_for_both_teams_and_free_for_all() {
         assert_eq!(map.impacts.game.as_deref(), Some(halo_ce::game::GAME));
         assert!(!map.surface_names.is_empty(), "{id}: its surfaces as Combat Arms'");
     }
+}
+
+/// Every Halo pool map's spawn points are mutually reachable on the bots'
+/// generated mesh (`spot_checks::bots_mesh`, Combat Arms' walker), its
+/// teleporters counting as links (`spot_checks::teleport_links`, as the
+/// `map_fitness` tool measures the pool): a map cut in parts only its
+/// teleporters join measures as one.
+#[test]
+fn every_halo_pool_maps_spawns_reach_each_other_through_its_teleporters() {
+    use party_kit::spot_checks::{bots_mesh, region_linked, spawn_feet, teleport_links};
+    if !disc() {
+        return;
+    }
+    let mut failures = Vec::new();
+    for id in halo_pool() {
+        let mut sim = party_on(&id);
+        let w = sim.app.world_mut();
+        let feet = spawn_feet(w);
+        let nav = bots_mesh(w, &feet);
+        let links = teleport_links(w, &nav);
+        let (inside, starts) = region_linked(&nav, &feet, &links);
+        let off = starts.iter().filter(|s| !s.is_some_and(|a| inside[a])).count();
+        eprintln!("{id}: {} spawns, {} areas, {} teleporter links, {off} spawns off the main region", feet.len(), nav.areas.len(), links.len());
+        if off > 0 {
+            failures.push(format!("{id}: {off} of {} spawns off the main region", feet.len()));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 /// The party on Halo map `id` (as `impacts.rs` sets it up).
@@ -154,4 +184,49 @@ fn a_combat_arms_soldier_walks_and_shoots_on_hang_em_high() {
         "Combat Arms' impact at the wall {wall}: {:?}",
         heard.iter().map(|s| (&s.file, s.at)).collect::<Vec<_>>()
     );
+}
+
+/// Halo's teleporters move another game's characters: a Combat Arms
+/// soldier and a CS:S player, each set down on every source pad of Chill
+/// Out (3 pairs) and Wizard (4), arrive at the pair's target, standing on
+/// the ground there, their velocity kept and their look turned by the
+/// target's facing minus the source's.
+#[test]
+fn other_games_characters_use_halos_teleporters() {
+    use chimera_world::map::teleport::MapTeleporters;
+    if !disc() {
+        return;
+    }
+    let mut failures = Vec::new();
+    for id in ["halo_ce:chillout", "halo_ce:wizard"] {
+        let mut sim = party_on(id);
+        let t = sim.app.world().resource::<MapTeleporters>().clone();
+        for movement in [movement::ID, "cs_source:movement"] {
+            for (i, pad) in t.pads.iter().enumerate() {
+                let p = sim.spawn_character(pad.source + Vec3::Y * 1.2, movement);
+                let yaw = sim.intent(p).yaw;
+                let mut arrived = false;
+                for _ in 0..40 {
+                    sim.ticks(1);
+                    if (sim.position(p) - pad.dest).xz().length() < 0.5 {
+                        arrived = true;
+                        break;
+                    }
+                }
+                let turned = sim.intent(p).yaw;
+                sim.seconds(1.0);
+                let at = sim.position(p);
+                let ground = sim.state(p).on_ground;
+                let want = (yaw + pad.dest_yaw - pad.source_yaw).rem_euclid(std::f32::consts::TAU);
+                let turn_ok = (turned - want).abs() < 1e-3 || (turned - want).abs() > std::f32::consts::TAU - 1e-3;
+                eprintln!("{id} {movement} pad {i}: arrived {arrived}, at {at} (target {}), on the ground {ground}, turned {turn_ok}", pad.dest);
+                if !(arrived && ground && turn_ok && (at - pad.dest).xz().length() < 1.0 && (at.y - pad.dest.y).abs() < 2.0) {
+                    failures.push(format!("{id} {movement} pad {i}: arrived {arrived}, at {at}, target {}, ground {ground}, turned {turn_ok}", pad.dest));
+                }
+                sim.app.world_mut().despawn(p);
+                sim.ticks(1);
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }

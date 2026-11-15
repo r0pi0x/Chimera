@@ -26,6 +26,59 @@ fn color(text: &str) -> Option<[u8; 4]> {
 /// `source_engine::hud::look` (lift S7).
 pub use source_engine::hud::look::family_name;
 
+/// The HUD's own pictures `load` adds, by sprite name and material: the
+/// sniper scope's quarter of the ring (transparent inside, black
+/// outside; the bottom-right quarter as stored) and the lens tint; the
+/// icon over a teammate's head while they speak on the radio; the
+/// scoreboard's status icons (with the domination ones) and its row
+/// highlight; the freeze panel's nemesis and revenge icons; the planted bomb's
+/// LED's glow (and `sprites/c4`, which nothing draws: CS:S has no
+/// marker over the bomb). The asset pack puts their files in `common`
+/// (`declared_files`).
+pub const SPRITES: &[(&str, &str)] = &[
+    ("scope_arc", "sprites/scope_arc"),
+    ("scope_lens", "overlays/scope_lens"),
+    ("radio", "sprites/radio"),
+    ("scoreboard_bomb", "hud/scoreboard_bomb"),
+    ("scoreboard_dead", "hud/scoreboard_dead"),
+    ("scoreboard_defuser", "hud/scoreboard_defuser"),
+    ("scoreboard_select", "vgui/scoreboard/scoreboard-select"),
+    // Dominations (dominations.md Constants): the freeze panel's and
+    // the scoreboard's.
+    ("freeze_nemesis", "hud/freeze_nemesis"),
+    ("freeze_revenge", "hud/freeze_revenge"),
+    ("scoreboard_dominated", "hud/scoreboard_dominated"),
+    ("scoreboard_domination-dead", "hud/scoreboard_domination-dead"),
+    ("scoreboard_nemesis", "hud/scoreboard_nemesis"),
+    ("scoreboard_nemesis-dead", "hud/scoreboard_nemesis-dead"),
+    ("c4", "sprites/c4"),
+    ("ledglow", "sprites/ledglow"),
+];
+
+/// The files of the `SPRITES` materials, for the asset pack (`chimera_pack
+/// sets`: `chimera_assets::resolve::declare` puts them in `common`): what
+/// a match can draw whether or not a recorded run did (the domination
+/// icons show only after a domination). Each material's `.vmt` and its
+/// `$basetexture`'s `.vtf` (the material's own name when the `.vmt` has
+/// none), as the install names them (`/`, lower case), sorted, once each.
+/// `read` gives an install file's bytes (None: not there).
+pub fn declared_files(read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Vec<String> {
+    let mut out = Vec::new();
+    for &(_, material) in SPRITES {
+        let vmt = format!("materials/{material}.vmt");
+        let Some(bytes) = read(&vmt) else { continue };
+        let kv = source_formats::keyvalues::parse(&String::from_utf8_lossy(&bytes), source_formats::keyvalues::Escapes::Off);
+        let shader = kv.items().first().map(|(_, v)| v);
+        let texture = shader.and_then(|v| v.str("$basetexture")).unwrap_or(material);
+        out.push(vmt);
+        out.push(format!("materials/{}.vtf", texture.trim().trim_end_matches(".vtf")));
+    }
+    let mut out: Vec<String> = out.into_iter().map(|f| f.replace('\\', "/").to_ascii_lowercase()).collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// The HUD look from the install, or None when its files are missing; with
 /// the menus (`super::vgui`, `map`: the loaded map, for its description).
 /// The shared reading is `source_engine::hud::look::load`; CS:S adds its
@@ -41,32 +94,7 @@ pub fn load(materials: &mut MaterialLoader, map: &str) -> Option<GameHud> {
         },
     )?;
 
-    // The sniper scope: a quarter of the ring (transparent inside, black
-    // outside; the bottom-right quarter as stored) and the lens tint; the
-    // icon over a teammate's head while they speak on the radio; the
-    // scoreboard's status icons (with the domination ones) and its row
-    // highlight; the freeze panel's nemesis and revenge icons; the planted bomb's
-    // LED's glow (and `sprites/c4`, which nothing draws: CS:S has no
-    // marker over the bomb).
-    for (name, material) in [
-        ("scope_arc", "sprites/scope_arc"),
-        ("scope_lens", "overlays/scope_lens"),
-        ("radio", "sprites/radio"),
-        ("scoreboard_bomb", "hud/scoreboard_bomb"),
-        ("scoreboard_dead", "hud/scoreboard_dead"),
-        ("scoreboard_defuser", "hud/scoreboard_defuser"),
-        ("scoreboard_select", "vgui/scoreboard/scoreboard-select"),
-        // Dominations (dominations.md Constants): the freeze panel's and
-        // the scoreboard's.
-        ("freeze_nemesis", "hud/freeze_nemesis"),
-        ("freeze_revenge", "hud/freeze_revenge"),
-        ("scoreboard_dominated", "hud/scoreboard_dominated"),
-        ("scoreboard_domination-dead", "hud/scoreboard_domination-dead"),
-        ("scoreboard_nemesis", "hud/scoreboard_nemesis"),
-        ("scoreboard_nemesis-dead", "hud/scoreboard_nemesis-dead"),
-        ("c4", "sprites/c4"),
-        ("ledglow", "sprites/ledglow"),
-    ] {
+    for &(name, material) in SPRITES {
         if materials.read(&format!("materials/{material}.vmt")).is_none() {
             continue;
         }
@@ -154,6 +182,31 @@ pub fn overview(materials: &mut MaterialLoader, map: &str) -> Option<crate::map:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each sprite material there: its `.vmt` and its base texture's
+    /// `.vtf` (another name when the material says so), lower case; one
+    /// missing from the install left out.
+    #[test]
+    fn the_declared_files_are_the_sprites_materials_and_textures() {
+        let read = |p: &str| -> Option<Vec<u8>> {
+            match p {
+                "materials/hud/freeze_nemesis.vmt" => {
+                    Some(b"\"UnlitGeneric\"\n{\n\t\"$basetexture\" \"HUD\\Freeze_Nemesis\"\n}\n".to_vec())
+                }
+                "materials/hud/scoreboard_dominated.vmt" => Some(b"\"UnlitGeneric\" { \"$translucent\" 1 }".to_vec()),
+                _ => None,
+            }
+        };
+        assert_eq!(
+            declared_files(&read),
+            [
+                "materials/hud/freeze_nemesis.vmt",
+                "materials/hud/freeze_nemesis.vtf",
+                "materials/hud/scoreboard_dominated.vmt",
+                "materials/hud/scoreboard_dominated.vtf",
+            ]
+        );
+    }
 
     #[test]
     fn keyvalues_with_conditionals() {

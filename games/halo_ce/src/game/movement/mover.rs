@@ -50,6 +50,8 @@ pub struct Hit {
     pub point: Vec3,
     /// The contact normal, out of the surface toward the pill.
     pub normal: Vec3,
+    /// On a climbable surface (a ladder: movement.md, "Climbable surfaces").
+    pub climbable: bool,
 }
 
 /// The level as the mover sees it.
@@ -78,6 +80,8 @@ pub struct Moved {
     pub p: Vec3,
     /// The contacts' normals in order (real ones, then the virtual one).
     pub contacts: Vec<Vec3>,
+    /// The normals of those on climbable surfaces.
+    pub climbable: Vec<Vec3>,
     /// The final clip set, the newest plane first.
     pub clip: Vec<Plane>,
 }
@@ -136,6 +140,7 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
     let max = d.max_contacts as usize;
     let mut clip: Vec<Plane> = Vec::new();
     let mut contacts: Vec<Vec3> = Vec::new();
+    let mut climbable: Vec<Vec3> = Vec::new();
     // Surfaces the sweep was restarted off (module doc).
     let mut lifted: Vec<Plane> = Vec::new();
     let mut rem = motion;
@@ -192,6 +197,9 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
         p += rem * t;
         p += n * (plane.offset - p.dot(n));
         settle(&mut p, &mut lifted);
+        if hit.climbable {
+            climbable.push(n);
+        }
         contacts.push(n);
         // The clip (module doc): the tick's motion scaled by every (1 - t) so far, never the
         // clipped one, clipped to the new plane is the candidate; it is checked against the
@@ -235,7 +243,7 @@ pub fn sweep(space: &dyn Space, d: &MovementData, mut p: Vec3, h: f32, motion: V
     {
         contacts.push(n);
     }
-    Moved { p, contacts, clip }
+    Moved { p, contacts, climbable, clip }
 }
 
 /// The extra contact of a two- or three-plane clip set (spec section 5),
