@@ -54,7 +54,9 @@ fn map_of(sounds: usize, empty_player: bool, grenades: usize) -> MapFile {
         .f32(0x30, 1.25)
         .f32s(0x34, &[2.25, 2.0, 2.0, 0.32, 0.9, 0.65, 0.6, 0.16, 0.035])
         .f32s(0x68, &[0.0, 0.05, 0.0])
-        .f32s(0x80, &[0.8, 0.8, 1.0, 0.0, 1.25]);
+        .f32s(0x80, &[0.8, 0.8, 1.0, 0.0, 1.25])
+        // globals.md's synthetic element's idle words (made-up: 8 s, 12 s, 0.5).
+        .f32s(0x9C, &[8.0, 12.0, 0.5]);
     let player_block = if empty_player {
         td.block(&[])
     } else {
@@ -122,6 +124,9 @@ fn reads_the_blocks_the_specs_use() {
     );
     assert_eq!((p.minimum_stun_time, p.maximum_stun_time), (0.0, 1.25));
     assert_eq!(p.maximum_stun_ticks(), 37);
+    let idle = (p.first_person_idle_time.lower, p.first_person_idle_time.upper, p.first_person_idle_skip);
+    assert_eq!(idle, (8.0, 12.0, 0.5));
+    assert_eq!(p.first_person_idle_ticks(), (240, 360));
 
     let f = &g.falling;
     assert_eq!(

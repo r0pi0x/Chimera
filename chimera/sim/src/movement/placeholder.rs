@@ -6,6 +6,8 @@
 //! id with its spec's plain numbers (speeds, gravity, jump: `Tuning`,
 //! `PlaceholderAppExt::placeholder_movement`); the way it moves stays
 //! the placeholder's (eased velocity, no friction or air control rules).
+//! A push that clears its `MovementState::on_ground` (a blast's knockback:
+//! TF2's rocket jump) sends it flying with the velocity it was given.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -141,8 +143,11 @@ fn step(
         me.jump_held = intent.jump;
 
         // On the ground, run along it and ignore gravity; slopes keep the
-        // horizontal speed. In the air, fall.
-        let desired = match (me.ground_normal, jumped) {
+        // horizontal speed. In the air, fall. A push that took it off the
+        // ground (another system clearing `MovementState::on_ground`: a
+        // blast's knockback) lets it fly with its velocity.
+        let ground_normal = me.ground_normal.filter(|_| state.on_ground);
+        let desired = match (ground_normal, jumped) {
             (Some(n), false) if n.y > 0.0 => {
                 // Lift the horizontal velocity onto the ground plane.
                 horizontal - Vec3::Y * (horizontal.dot(n) / n.y)

@@ -1032,13 +1032,14 @@ pub fn run(
         hands.melee_button = false;
         hands.reload = false;
         hands.grenade_button = false;
-        // The zoom as the camera's field of view (weapons.md 12).
+        // The zoom as the camera's field of view (weapons.md 12): the nominal angle over the
+        // magnification, as the renderer turns it (`view::camera_fov`).
         let zoomed = inv
             .active
             .and_then(|a| guns.get(a).ok())
             .filter(|(.., g, _)| g.zoom >= 0)
             .map(|(_, hw, g, _)| Zoomed {
-                fov: (hw.0.camera_field_of_view / hw.0.magnification(g.zoom)).to_degrees(),
+                fov: crate::game::view::camera_fov((hw.0.camera_field_of_view / hw.0.magnification(g.zoom)).to_degrees()),
                 scope: false,
                 sensitivity: Some(1.0 / hw.0.magnification(g.zoom)),
             });

@@ -165,8 +165,11 @@ fn a_fall_after_enemy_damage_is_credited() {
 }
 
 /// movement.md "Damage stun": a real stun (a plasma bolt) scales the
-/// wanted speed by 1 - 0.8 s_b while it lasts, then it drops to 0 at once.
-/// A bolt a tick for 12 ticks stacks the counter to its cap of 37.
+/// wanted speed by 1 - 0.8 s_b while it lasts, then it drops to 0 at once;
+/// nothing else of the movement changes (the first tick's acceleration is
+/// the unstunned 0.0106667; the turn rate is the player's look, which the
+/// movement does not scale). A bolt a tick for 12 ticks stacks the counter
+/// to its cap of 37.
 #[test]
 fn a_stunned_player_walks_slower_while_it_lasts() {
     let mut t = T::standing();
@@ -177,7 +180,9 @@ fn a_stunned_player_walks_slower_while_it_lasts() {
     let s = *t.sim.app.world().get::<Stun>(t.p).unwrap();
     assert_eq!((s.value, s.ticks), (1.0, 37));
     t.throttle(1.0, 0.0);
-    t.ticks(20);
+    t.tick();
+    close(t.speed(), 0.0106667, 2e-6, "the acceleration limit, not scaled");
+    t.ticks(19);
     // Fully stunned: 0.2 of the run speed 0.075 WU/t, held.
     close(t.speed(), 0.015, 2e-6, "stunned run speed");
     t.ticks(20);

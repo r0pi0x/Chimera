@@ -17,9 +17,13 @@
 //! `point_default_owner`. So ctf_2fort has 15 and 15, cp_badlands 16 and
 //! 16 (its home spawns).
 //!
-//! Its kit is empty for now: no bodies, held or view models, HUD or
-//! decals (M2, M3); its sounds are Source's sound scripts and the map's
-//! soundscapes.
+//! Its kit (M2b): its four guns' view models (the class's arms with the
+//! `c_` weapon bone-merged: `view::load`), held models (the same `c_`
+//! models, bone-merged by the arms' `weapon_bone`) and the rocket's
+//! model (`held_kit`); no bodies, HUD or decals yet (M3). Its sounds are
+//! Source's sound scripts (the map's own entries, its surfaces' and the
+//! guns', `weapon_sounds`) and the map's soundscapes. On another game's
+//! map its guns come with the same (`dress_guest_with`).
 //!
 //! Known shortcuts:
 //! - Spawns are the round start's: a point captured later doesn't move a
@@ -62,7 +66,7 @@ pub static TF2: SourceGame = SourceGame {
     gravity: GRAVITY,
     kit: no_kit,
     extra_particles: no_extra_particles,
-    held: no_kit,
+    held: held_kit,
     sounds,
     fixed_models: props::no_fixed_models,
 };
@@ -143,8 +147,97 @@ pub fn load_level_bytes_with(
     bsp::load_level_bytes_with(&TF2, mount, name, bytes, options)
 }
 
-/// No kit of its own yet (bodies, HUD, held and view models: M2, M3).
+/// No body kit of its own yet (bodies, HUD: M3).
 fn no_kit(_: &mut Kit) {}
+
+/// The guns' sound entries (weapons.md 8.3; `sets::M2_WEAPONS`).
+pub fn weapon_sounds() -> impl Iterator<Item = String> {
+    super::sets::M2_WEAPONS.iter().flat_map(|w| w.sounds.iter().map(|s| s.to_string()))
+}
+
+/// What players hold on TF2's maps: its guns' view and held models
+/// (`add_guns`).
+fn held_kit(kit: &mut Kit) {
+    let mut guest = crate::map::GameKit::default();
+    let wants = |g: &str| kit.kit.wants(g);
+    if super::weapons::GUNS.iter().any(|g| wants(g)) {
+        super::weapons::script_numbers::note_sources(kit.materials.mount());
+    }
+    add_guns(kit.materials, &wants, &mut guest, &mut kit.data.warnings);
+    kit.data.kit.held.extend(guest.held);
+    kit.data.kit.view_models.extend(guest.view_models);
+}
+
+/// TF2's guns that `wants`, into `into`: their view models
+/// (`view::load`), their `c_` models held (bone-merged by the first bone
+/// they share with their class's arms, `weapon_bone`) and, with the Rocket
+/// Launcher, the rocket's model (`weapons::ROCKET_SHOWN`). What a gun's
+/// `weapon/<id>` set holds is what this reads for it (`sets`).
+pub fn add_guns(materials: &mut MaterialLoader, wants: &dyn Fn(&str) -> bool, into: &mut crate::map::GameKit, warnings: &mut Vec<String>) {
+    use super::weapons::{self as w, ROCKET_LAUNCHER, ROCKET_MODEL, ROCKET_SHOWN};
+    super::view::load(materials, wants, &mut into.view_models, warnings);
+    let set = w::tf2_weapons();
+    for (gun, arms) in w::arms_by_gun() {
+        if !wants(gun) {
+            continue;
+        }
+        let Some(path) = set.weapons.iter().find(|d| d.id == gun).and_then(|d| d.models.world.clone()) else { continue };
+        let skeleton = match props::load_view_model(materials, &super::sets::arms_model(&arms), gun, true) {
+            Ok(v) => v.bones,
+            Err(e) => {
+                warnings.push(e);
+                continue;
+            }
+        };
+        match props::load_held(materials, &path, gun, &skeleton) {
+            Ok(h) => into.held.push(h),
+            Err(e) => warnings.push(e),
+        }
+        if gun == ROCKET_LAUNCHER {
+            // In its bone's frame, as a held model (its nose then along +X:
+            // `chimera:projectile`'s `x_forward`).
+            match props::load_held(materials, ROCKET_MODEL, ROCKET_SHOWN, &skeleton) {
+                Ok(h) => into.held.push(h),
+                Err(e) => warnings.push(e),
+            }
+        }
+    }
+}
+
+/// TF2's guns on another game's map (the party apps', where a player
+/// holding a TF2 gun is TF2's): the guns `kept` names (view and held
+/// models: `add_guns`) read from the TF2 install, their textures
+/// appended to the map's, and their sounds where the map hasn't an entry
+/// of that name. `lean` (a load without textures, the dedicated
+/// server's): the textures' sizes only.
+pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
+    let install = super::INFO
+        .install()
+        .ok_or_else(|| format!("no `{}` install found (Steam, [games.tf2] path, or $CHIMERA_TF2_ROOT)", super::GAME))?;
+    let mount = super::mount::open(&install).map_err(|e| e.to_string())?;
+    let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
+    let mut materials = MaterialLoader::guest(&mount, textures, cubemaps).lean(lean);
+    let surfaces = SurfaceProps::load(&mut materials);
+    let kit = crate::map::KitLoad::Players(kept);
+    let wants = |g: &str| kit.wants(g);
+    let mut guest = crate::map::GameKit::default();
+    let mut warnings = Vec::new();
+    if super::weapons::GUNS.iter().any(|g| wants(g)) {
+        super::weapons::script_numbers::note_sources(&mount);
+    }
+    add_guns(&mut materials, &wants, &mut guest, &mut warnings);
+    let sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], weapon_sounds(), true);
+    bsp::add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);
+    materials.finish_textures();
+    warnings.extend(materials.missing);
+    map.textures.extend(materials.textures.split_off(textures));
+    map.cubemaps.extend(materials.cubemaps.split_off(cubemaps));
+    map.texture_anims.extend(materials.texture_anims);
+    map.warnings.extend(warnings);
+    map.kit.held.extend(guest.held);
+    map.kit.view_models.extend(guest.view_models);
+    Ok(())
+}
 
 fn no_extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static str]) {
     (&[], &[])
@@ -153,7 +246,7 @@ fn no_extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'stat
 /// TF2's sounds: Source's sound scripts (the map's own entries and its
 /// surfaces'), then the map's soundscapes.
 fn sounds(materials: &mut MaterialLoader, bsp: &vbsp::Bsp, name: &str, surfaces: &SurfaceProps, entities: &[MapEntity]) -> MapSounds {
-    let mut out = source_engine::content::sound::load_with(materials, name, surfaces, entities, std::iter::empty(), true);
+    let mut out = source_engine::content::sound::load_with(materials, name, surfaces, entities, weapon_sounds(), true);
     source_engine::content::soundscape::load(materials, bsp, name, &mut out);
     out
 }

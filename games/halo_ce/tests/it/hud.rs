@@ -118,14 +118,18 @@ fn s4_meter_fills() {
     let m = shield_meter();
     let fill = |s: f32| rules::meter_alpha(&m, (198.0 * s) as i32);
     assert_eq!([fill(0.0), fill(0.1), fill(0.5), fill(1.0)], [55, 74, 154, 253]);
-    // An overshield of 2.5: the blue stage full, the green full, the
-    // yellow half.
+    // An overshield of 2.5 (hud.md 6, the stages in the corrected order):
+    // the tag's stage full, stage 1 red full, stage 2 green half; stages 3
+    // and 4 yellow and violet.
     let stages = rules::shield_stages(2.5, &ShieldMark { last: 2.5, fade: -1.0, tick: 0 }, 198);
     assert_eq!(stages.len(), 3);
     assert_eq!(stages.iter().map(|s| rules::meter_alpha(&m, s.min_value)).collect::<Vec<_>>(), [253, 253, 154]);
     assert_eq!(stages[0].colour, None);
-    assert_eq!(stages[1].colour, Some([0.0, 1.0, 0.0]));
-    assert_eq!(stages[2].colour, Some([1.0, 1.0, 0.0]));
+    assert_eq!(stages[1].colour, Some([1.0, 0.0, 0.0]));
+    assert_eq!(stages[2].colour, Some([0.0, 1.0, 0.0]));
+    let stages = rules::shield_stages(4.5, &ShieldMark { last: 4.5, fade: -1.0, tick: 0 }, 198);
+    assert_eq!(stages[3].colour, Some([1.0, 1.0, 0.0]));
+    assert_eq!(stages[4].colour, Some([127.0 / 255.0, 0.0, 1.0]));
     let h = health_panel();
     let blue = [40.0 / 255.0, 150.0 / 255.0, 1.0];
     let yellow = [1.0, 223.0 / 255.0, 0.0];
@@ -288,7 +292,9 @@ fn s10_blips_their_fades_and_the_sweep() {
     assert!(near(at(0.0, 10.0, std::f32::consts::FRAC_PI_2), [0.0, -25.7]), "facing it: up");
     assert!(near(at(19.9, 0.0, 0.0), [0.0, -41.8]));
     assert!(near(at(0.1, 0.0, 0.0), [0.0, 0.0]), "the centre");
-    assert!(near(at(20.0, 0.0, 0.0), [0.0, -42.0]), "just inside");
+    // hud.md 11: byte 127 decodes to exactly 20, and the drawing is strict: scanned, not drawn.
+    assert!(at(20.0, 0.0, 0.0).is_none(), "at the range: not drawn");
+    assert!(near(at(19.95, 0.0, 0.0), [0.0, -41.8]), "just inside: byte 126");
     assert!(rules::blip_offset(127, 127, 0.0, 20.0, 32.0, 42.0).is_none(), "past the range");
     let fade = |h| rules::blip_fade(h);
     let close = |a: f32, b: f32| (a - b).abs() < 1e-3;
