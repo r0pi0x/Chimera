@@ -33,6 +33,7 @@
 
 pub mod body;
 pub mod damage;
+pub mod fx;
 pub mod maps;
 pub mod mount;
 pub mod movement;
@@ -141,6 +142,7 @@ impl PluginGroup for HaloPlugins {
             .add(vitality::VitalityPlugin)
             .add(damage::DamagePlugin)
             .add(weapons::HaloWeaponsPlugin)
+            .add(fx::HaloFxPlugin)
             .add(body::HaloBodyPlugin)
     }
 }
@@ -157,7 +159,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     info: &INFO,
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
-    guest: Some(&body::load::GUEST),
+    guest: Some(&fx::load::GUEST),
     kept: &[],
     binds: &[],
     view_model_fov: None,

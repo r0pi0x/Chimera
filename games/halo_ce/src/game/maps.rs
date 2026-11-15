@@ -78,7 +78,12 @@ pub const CONVERTER: &str = env!("CHIMERA_CONVERTER_SOURCES");
 fn load(name: &str, options: &MapLoadOptions) -> Result<MapData, String> {
     let mount = mount_for(&options.context)?;
     let cache = MapCache::from_env();
-    load_in(&mount, name, options, cache.as_ref()).map(|(map, _)| map)
+    let (mut map, _) = load_in(&mount, name, options, cache.as_ref())?;
+    // Its weapons' effects, after the cache (memos are not cached).
+    if let Err(e) = super::fx::load::dress(&mut map, options) {
+        map.warnings.push(format!("no weapon effects: {e}"));
+    }
+    Ok(map)
 }
 
 /// The mounted installs an app's loads share (`LoadContext`): the disc
