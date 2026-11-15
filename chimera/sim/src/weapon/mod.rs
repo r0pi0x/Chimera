@@ -1463,6 +1463,14 @@ pub struct ArmorPieces {
 #[component(storage = "SparseSet")]
 pub struct ArmorRatio(pub f32);
 
+/// The game whose `ArmorPieces` a character wears, when a game says so
+/// (Halo's shield): another game that takes its own pieces off a
+/// character that isn't its own (Combat Arms' gear) leaves these on; only
+/// their game takes them off.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
+pub struct PiecesOf(pub &'static str);
+
 /// What `armor` covers (a game's `pieces` when worn, else its default
 /// kit) and how it runs out.
 pub fn coverage<'a>(armor: &Armor, pieces: Option<&'a ArmorPieces>) -> (impl Iterator<Item = &'a hits::Coverage>, hits::Depletion) {

@@ -105,6 +105,13 @@ collision_radius = 0.0
 minimum_velocity = 0.0
 timer = [0.0, 0.0]
 impact_damage = "plasma_rifle_bolt"
-on_body = { response = "disappear" }
-on_shield = { response = "disappear" }
-on_level = { response = "disappear" }
+
+# Material responses: disappear but leaves (through) and the hunter shield
+# (reflect).
+[hooks."halo_ce:weapon".projectile.responses]
+count = 33
+elements = [
+    { types = [29], default = "overpenetrate" },
+    { types = [32], default = "reflect" },
+    { types = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31], default = "disappear" },
+]

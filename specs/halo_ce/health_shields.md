@@ -86,7 +86,7 @@ questions.
 | NEGLIGIBLE | 0.0001 | points | shield damage below this does not count as "recently damaged" |
 | DAMAGE_FADE | 0.016666668 | fraction/tick | fade of the current and recent damage values (1/60) |
 | RECENT_HOLD | 60 | ticks | the recent damage values start fading this long after a hit |
-| CAMO_STEP | 0.008333334 | per tick | camouflage fade in and out (1/120) |
+| CAMO_STEP | 0.008333334 (f32 of 1/120) | per tick | camouflage fade in and out; 120 steps leave 0.9999994, so a full fade takes 121 updates (Active camouflage) |
 | CAMO_FIRE_DEFAULT | 0.1 | | camouflage lost per shot when the weapon has no "active camo ding" |
 | CAMO_FIRE_FLOOR | 0.05 | | firing never takes camouflage below this |
 | MELEE_LUNGE_SCALE | 1.5 | | melee scale after more than 15 airborne ticks |
@@ -268,7 +268,7 @@ Parts 5 and 9 (legs) are unused. A hit without a node uses part 0.
 | Where | Field | Value | Use |
 |---|---|---|---|
 | difficulty block (0x11C), element 0 (`globals.md` owns the layout) | 4 values per row (easy, normal, heroic, legendary) | normal = 1.0 in rows 0 to 7 (the damage, vitality, shield and recharge rows) | multiplayer uses normal for: body maximum ("enemy vitality"), shield maximum ("enemy shield"), recharge rate ("enemy recharge"); so they are unscaled |
-| player information (0x170; `globals.md` owns the layout) | stun movement penalty 0x80, stun turning penalty 0x84, stun jumping penalty 0x88 | 0.8, 0.8, 1.0 | used by `movement.md` |
+| player information (0x170; `globals.md` owns the layout) | stun movement penalty 0x80, stun turning penalty 0x84, stun jumping penalty 0x88 | 0.8, 0.8, 1.0 | `movement.md` says which one scales what (the movement penalty the speed, the turning penalty the jump; the jumping penalty is never read) |
 | player information | minimum stun time 0x8C, maximum stun time 0x90 | 0 s, 1.25 s (37 ticks) | body stun duration limits |
 | player information | run forward speed 0x34 | 2.25 WU/s | the melee's speed scale |
 | multiplayer information (0x164) | unit | `characters\cyborg_mp\cyborg_mp` | the player's biped; nothing else in the block concerns vitality |
@@ -386,11 +386,16 @@ Note that E is in the shield's points, already multiplied by k_s and
 μ_s; it then becomes body damage and is multiplied again by k_b and
 μ_b (Quirks).
 
-**7. Shield delay.** If D_s ≥ minimum stun damage (0 on the Spartan:
-always) or σ = 0 after step 6, the shield delay counter d =
-trunc(stun time × 30) = 180. So every hit that reaches the shield, and
-every hit at all while the shield is empty, restarts the 6-second wait.
-A hit that skips shields while σ > 0 does not reset it.
+**7. Shield delay.** This is the last part of step 6 and runs only
+when step 6 ran (the effect does not skip shields, the event does not
+bypass them, S_max > 0, and for the object in the chain of step 2 that
+takes shield damage). Then, if D_s ≥ minimum stun damage (0 on the
+Spartan: always; D_s is 0 when σ was 0) or σ = 0 after step 6, the
+shield delay counter d = trunc(stun time × 30) = 180. So every hit
+that goes through step 6 restarts the 6-second wait, including hits
+the shield fully absorbs and hits on an empty shield. A hit whose
+effect skips shields (or an event that bypasses them) never reaches
+step 6 and does **not** reset d, whether σ is above 0 or 0.
 
 **8. Body** (skipped when the damage effect "only hurts shields"; for
 a parent object as in step 2). The body's amount a = k_b·T (zero if
@@ -452,7 +457,11 @@ same event with multiplier (1 − the effect's vehicle passthrough
 penalty) × the vehicle's rider damage fraction (0.18 on the disc's
 vehicles), no material, no area flag; AI riders take it bypassing
 their shields, players through them. The vehicle then takes the hit
-itself. An area hit reaches riders only through "passes area damage to
+itself. The penalty is a field of every damage effect: on the disc it
+is **0 for every damage effect except the sniper bullet's 0.5**
+(every damage effect tag on three maps; `projectiles.md`, "Vehicle
+passthrough"). So riders take 0.18 of any direct hit on the vehicle
+(bullets, bolts, needles) and 0.09 of a sniper bullet. An area hit reaches riders only through "passes area damage to
 children" or by touching them. A hit on a rider in an open seat goes
 through the chain of step 2 (the vehicle's own flags decide whether it
 soaks the hit).
@@ -483,9 +492,9 @@ Consequences, with a hit on tick 0 before the victim's update:
   after until full. The recharge is linear.
 - From 0, full takes 121 increments: ticks 180 to 300 (σ = 0.9999994
   after the 120th, the 121st clamps to 1.0).
-- Any hit during the wait or the recharge sets d back to 180 (step 7
-  of Applying); the recharge simply stops and the shield keeps what it
-  had.
+- Any hit that goes through the shield step during the wait or the
+  recharge sets d back to 180 (step 7 of Applying); the recharge simply
+  stops and the shield keeps what it had.
 - d does not count down while σ ≥ 1 (it is simply left as it is) and
   is irrelevant there.
 - The engine never reads the recharge time; it reads the precomputed
@@ -537,9 +546,14 @@ camouflaged) and a camouflaged state.
 - **Each unit update**: while camouflaged, κ = min(1, κ + rate), where
   the rate is the held weapon's "active camo regrowth rate" (per tick,
   `weapons.md`) while the regrowth after a shot is in progress and
-  that rate is not zero, else 1/120; when κ reaches 1 the shot regrowth
-  ends. While not camouflaged, κ = max(0, κ − 1/120). So it fades in
-  over 120 ticks (4 s) and out over 120 ticks.
+  that rate is not zero, else CAMO_STEP (the f32 1/120); when κ reaches 1
+  the shot regrowth ends. While not camouflaged, κ = max(0, κ −
+  CAMO_STEP). In f32 120 steps of CAMO_STEP from 0 give 0.9999994, not
+  1.0, so the fade in takes **121 updates** (about 4 s): κ is
+  0.9999994 after the 120th update and exactly 1.0 after the 121st
+  (the clamp). The fade out from 1.0 likewise takes 121 updates (the
+  121st clamps to 0). The first update of a pickup is on the tick after
+  it (pickups happen after the objects' update, Per-tick order).
 - **Firing** (multiplayer): if κ ≥ 0.05, κ = max(0.05, κ − ding), ding
   being the weapon's "active camo ding" (0.1 if the weapon has 0, none
   if the weapon "does not depower active camo"), and the shot regrowth
@@ -568,11 +582,13 @@ unit in a multiplayer game, if the damage effect's stun is above 0:
 
 Each unit update: if t_b > 0, t_b = t_b − 1, and when it reaches 0,
 s_b = 0. There is no gradual decay: the stun holds its value and
-drops to 0 at once. Movement scales the wanted speed and the jump by
-(1 − 0.8·s_b) and plays stunned animations above 0.2. Of the
+drops to 0 at once. What s_b does to the player's speed and jump
+(which penalty scales which) is stated once, in `movement.md` ("Damage
+stun"); this spec only produces s_b. Of the
 multiplayer weapons only the plasma rifle and plasma pistol bolts stun
 (stun 1.0, maximum stun 1.0, stun time 0.15 s = 4 ticks): a bolt at
-full speed (s = 1) sets s_b = 1 (wanted speed × 0.2) for 4 ticks, and
+full speed (s = 1) sets s_b = 1 (wanted speed × 0.2, jump × 0.2, as
+`movement.md` says) for 4 ticks, and
 rapid fire stacks the ticks up to 37. Bolts slowed by distance
 (`projectiles.md`) stun less.
 
@@ -685,7 +701,8 @@ Spartan has no "never unsuspecting" flag; a unit sitting in an
 `globals\distance` (105) every tick of a too-fast fall. The event has
 no instigator, no material (indirect: body), direction none. It goes
 to the shield first like any hit: 155 points kill a full Spartan (75
-shield, 80 to the body), 105 does not (body 0.6), a second 105 does.
+shield points, then the other 80 hit a body of 75: β = −0.0667), 105
+does not (body 0.6), a second 105 does.
 In a multiplayer game no difficulty applies to falls.
 
 ## What Chimera's hit model needs from this game
@@ -761,9 +778,10 @@ No death check exists in the update: death happens inside the hit.
 - A hit with T = 0 (an effect with zero damage, e.g. the needle's
   impact or the explosions' shock waves) does nothing at all: no delay
   reset, no flinch, no unzoom.
-- The shield delay is reset even by hits the shield fully absorbs and
-  by body-only hits while the shield is empty; not by a hit that skips
-  shields while the shield is up.
+- The shield delay is reset by every hit that goes through the shield
+  step (step 6), even one the shield fully absorbs or one that lands on
+  an empty shield; not by a hit that skips shields, with the shield up
+  or empty (that hit never enters the shield step).
 - A shield partially recharged (σ = 0.1) takes the next hit normally:
   the delay restarts and recharge resumes 180 ticks later from what is
   left.
@@ -848,7 +866,13 @@ questions).
 ## Test cases
 
 All on a fresh multiplayer Spartan (β = 1, σ = 1, d = 0) unless said;
-"rnd" fixes the uniform draw. Direct hits at scale 1.
+"rnd" fixes the uniform draw. Direct hits at scale 1. Two instants are
+named wherever a tick is involved: **at the hit** (right after the
+damage event, before the victim's own update of that tick; d = 180
+there) and **after the update of tick t** (after the victim's damage
+update of tick t, which is where d has counted down once and σ has
+stepped once). The timelines assume the hit lands before the victim's
+update in the same tick (Per-tick order).
 
 | Setup | Input | After | Expected |
 |---|---|---|---|
@@ -858,7 +882,7 @@ All on a fresh multiplayer Spartan (β = 1, σ = 1, d = 0) unless said;
 | full | pistol on "head" | hit 3 | σ = 0, excess 0.0000038 points, β = −7.63e−8: dead, hard flinch forced |
 | full | pistol on "body" | hits 3, 4, 5 | β = 0.99999994, 0.49999994, −0.00000006 (dead on 5) |
 | full | pistol on "legs" | hits 4, 5, 6 | β = 0.5999999, 0.1999999, dead on 6 |
-| full | assault rifle on "body" | hit 1 | σ = 0.8666667 (0x3F5DDDDE), d = 180 |
+| full | assault rifle on "body" | hit 1, at the hit | σ = 0.8666667 (0x3F5DDDDE), d = 180 |
 | full | assault rifle on "body" | hits 7, 8 | σ = 0.06666669, then σ = 0 with excess 4.9999981 points: β = 0.93333334 |
 | full | assault rifle on "body" ×16 | hit 16 | dead (hit 15 leaves β > 0) |
 | full | sniper on "body" | hit 1 | σ = 0, β = 0.6533333 (26 points carried) |
@@ -878,7 +902,7 @@ All on a fresh multiplayer Spartan (β = 1, σ = 1, d = 0) unless said;
 | full | supercombine (60, emp) then 7 needles (10 each) | | σ = 0, β 1.0 then 0.8666667 … 0.0666667: alive |
 | σ = 3.0 | rocket explosion rnd 300 | hit | σ = 0, β = 0.0, alive |
 | σ = 3.0 | rocket explosion rnd 301 | hit | β = −0.0133333, dead |
-| σ = 3.0 | sniper on "head" | hit | σ = 1.6533333, β = 1 |
+| σ = 3.0 | sniper on "head" | at the hit; after the update of that tick | σ = 1.6533333, β = 1; then σ = 1.6525925 (one drain step of 1/1350 has run) |
 | σ = 3.0 | assault rifle on "body" | | dead on hit 30 |
 | full | melee, standing (s = 0) | hits 1, 2, 3 | σ = 0.25333333; σ = 0, β = 0.30933332 (37 excess × 1.4); dead |
 | full | melee, running (s = 1), rnd 60 | hit 1 | σ = 0, β = 0.832 (9 excess × 1.4 = 12.6) |
@@ -889,23 +913,23 @@ All on a fresh multiplayer Spartan (β = 1, σ = 1, d = 0) unless said;
 | full | falling, q_f = 0.0574539 | hit | T = 18.33, σ = 0.7555891 |
 | full | falling, q_f = 1 | hit | dead (β = −0.0666667) |
 | full | `globals\distance` | hits 1, 2 | β = 0.6, then dead |
-| full | one assault rifle hit on tick 0 | ticks 0 to 179 | σ = 0.8666667, d 179 → 0 |
-| same | | ticks 180, 181, 195, 196 | σ = 0.875, 0.8833333, 0.9999999, 1.0 (17 increments) |
-| sniper body hit on tick 0 (σ = 0) | none | tick 180 | σ = 0.008333334, depleted mark cleared, recharging effect (none) |
-| same | none | ticks 299, 300 | σ = 0.9999994, then 1.0 |
-| same, second hit on tick 250 | any | | σ keeps its value; next increment on tick 430 |
-| overshield picked up at σ = 1 at the end of tick N | none | ticks N+1 … N+61 | σ = 1.0333333, 1.0666666, …, 2.9999981 on N+60, 3.0 on N+61 |
-| σ = 3.0 | none | 1, 2700 ticks | σ = 2.9992592, then 1.0 |
-| overshield picked up at σ = 0 | | | σ starts at 0.01; 3.0 on the 90th update |
+| full | one assault rifle hit on tick 0 | after the update of ticks 0, 1, 178, 179 | σ = 0.8666667 throughout; d = 179, 178, 1, 0 |
+| same | | after the update of ticks 180, 181, 195, 196 | σ = 0.875, 0.8833333, 0.9999999, 1.0 (17 increments) |
+| sniper body hit on tick 0 (σ = 0) | none | after the update of tick 179 / 180 | σ = 0, d = 0 / σ = 0.008333334, depleted mark cleared, recharging effect (none) |
+| same | none | after the update of ticks 299, 300 | σ = 0.9999994, then 1.0 |
+| same, second hit on tick 250 (at the hit: d = 180) | any | | σ keeps its value; d = 0 after the update of tick 429; next increment in the update of tick 430 |
+| overshield picked up at σ = 1 at the end of tick N | none | after the update of ticks N+1 … N+61 | σ = 1.0333333, 1.0666666, …, 2.9999981 on N+60, 3.0 on N+61 (61 updates; the first drain step is the update of N+62: 2.9992592) |
+| σ = 3.0 (from the end of the charge-up) | none | after the 1st and the 2700th update | σ = 2.9992592, then 1.0 |
+| overshield picked up at σ = 0 | | | σ = 0.01 at the pickup; 3.0 after the 90th update |
 | β = 0.4 | health pack | pickup | β = 1.0, σ unchanged |
 | β = 1 | health pack | touch | not picked up |
 | σ = 1.5 | overshield | touch | not picked up |
-| plasma rifle bolt, s = 1, on a still player | | hit | s_b = 1.0, t_b = 4; s_b = 0 after 4 unit updates |
-| eight bolts one tick apart | | | t_b = 4, 7, 10, … capped at 37 |
-| camouflage picked up, κ = 0 | none | 120 ticks | κ = 1.0; timer 1350 |
+| plasma rifle bolt, s = 1, on a still player | | at the hit | s_b = 1.0, t_b = 4; t_b = 3 after the first unit update, s_b = 0 after the 4th |
+| eight bolts one tick apart | | at each hit | t_b = 4, 7, 10, … capped at 37 (each tick's update takes 1 off between hits) |
+| camouflage picked up at the end of tick N, κ = 0 | none | after the update of tick N + 120 / N + 121 | κ = 0.9999994 / 1.0 (121 updates); timer 1350 at the pickup |
 | κ = 1, pistol in hand | fire | | κ = 0.35; regrows 0.01 per tick |
 | κ = 1 | hit by an assault rifle bullet | | κ = 0.75 |
-| hit by AR, AR, AR on ticks 0, 1, 2 | | tick 2 | d = 180 (restarted), recent shield damage r_s = 0.4 |
+| hit by AR, AR, AR on ticks 0, 1, 2 | | at the third hit; after the update of tick 2 | d = 180 (restarted), r_s = 0.4 (recent damage does not fade before 60 ticks); then d = 179 |
 
 ## Confidence per section
 

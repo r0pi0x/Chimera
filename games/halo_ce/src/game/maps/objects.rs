@@ -372,6 +372,8 @@ fn add_collision(map: &mut MapData, c: &Collision, bind: &[Transform], o: &Orien
                 glass.push(tri);
             } else {
                 map.collision_indices.push(tri);
+                let code = usize::try_from(surface.material).ok().and_then(|m| c.model.materials.get(m)).and_then(|m| m.material_type());
+                map.extras.entry::<crate::game::weapons::materials::LevelCodes>().0.push(code.map_or(-1, |t| t.code() as i8));
             }
         }
     }

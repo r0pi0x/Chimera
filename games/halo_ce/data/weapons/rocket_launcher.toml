@@ -1,0 +1,104 @@
+# The rocket launcher (specs/halo_ce/weapons.md "Multiplayer weapon
+# numbers"; projectiles.md "Flight numbers", 9 to 11, 16; animations.md
+# "First-person graphs"): 2 + 2 rounds (8 most in reserve), semi-automatic,
+# one rocket every 60 ticks, no error, one 2x zoom, the rocket 0.1 WU to the
+# right of the camera line (the first-person offset), at 0.4 WU a tick
+# slowing to 0.333 over 100 WU, 0.1 WU wide against objects, detonating on
+# any surface (leaves: through, 10 % detonate) and at 128 WU: 300 to 330
+# points within 0.5 WU falling to 80 at 2 WU, and a push of 6 WU/s.
+id = "halo_ce:rocket_launcher"
+base = "halo_ce:gun"
+slot = 3
+class = "launcher"
+
+[hud]
+name = "Rocket Launcher"
+
+[hooks."halo_ce:weapon"]
+tag = 'weapons\rocket launcher\rocket launcher'
+flags = 0
+weapon_type = 0
+zoom_levels = 1
+magnification = [2.0, 2.0]
+camo = [1.0, 0.0]
+melee_damage = "rocket_launcher_melee"
+
+[hooks."halo_ce:weapon".heat]
+recovery_threshold = 0.0
+overheated_threshold = 0.0
+detonation_threshold = 0.0
+detonation_fraction = 0.0
+loss_per_second = 0.0
+illumination = 0.0
+
+[hooks."halo_ce:weapon".age]
+heat_recovery_penalty = 0.0
+rate_of_fire_penalty = 0.0
+misfire_start = 0.0
+misfire_chance = 0.0
+
+[hooks."halo_ce:weapon".aim_assist]
+autoaim_angle = 0.0
+autoaim_range = 35.0
+magnetism_angle = 0.20944
+magnetism_range = 35.0
+deviation_angle = 0.0
+
+[hooks."halo_ce:weapon".magazine]
+flags = 0
+rounds_recharged = 0
+rounds_total_initial = 4
+rounds_total_maximum = 8
+rounds_loaded_maximum = 2
+rounds_reloaded = 2
+chamber_time = 0.0
+
+[hooks."halo_ce:weapon".trigger]
+flags = 0x8
+rounds_per_second = [0.5, 0.5]
+rate_of_fire_acceleration = 1.0
+rate_of_fire_deceleration = 1.0
+error_acceleration = 1.0
+error_deceleration = 1.0
+magazine = 0
+rounds_per_shot = 1
+minimum_rounds_loaded = 0
+rounds_between_tracers = 0
+minimum_error = 0.0
+error_angle = [0.0, 0.0]
+projectiles_per_shot = 1
+distribution = 0
+first_person_offset = [0.0, -0.1, 0.0]
+heat_per_round = 0.0
+age_per_round = 0.0
+firing_effects = 1
+projectile = 'weapons\rocket launcher\rocket'
+
+[hooks."halo_ce:weapon".animations]
+ready = 22
+reload_empty = 125
+melee = 52
+melee_key = 4
+
+[hooks."halo_ce:weapon".projectile]
+tag = 'weapons\rocket launcher\rocket'
+timer_starts = 1
+initial_velocity = 0.40000004
+final_velocity = 0.33333334
+air_damage_range = [0.0, 100.0]
+water_damage_range = [0.0, 10.0]
+maximum_range = 128.0
+air_gravity_scale = 0.0
+water_gravity_scale = 0.4
+collision_radius = 0.1
+minimum_velocity = 0.0
+timer = [0.0, 0.0]
+impact_damage = ""
+detonation = ["rocket_explosion", "frag_shock_wave"]
+
+[hooks."halo_ce:weapon".projectile.responses]
+count = 33
+elements = [
+    { types = [29], default = "overpenetrate", potential = "detonate", skip = 0.9 },
+    { types = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31, 32], default = "detonate" },
+]

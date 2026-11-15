@@ -12,16 +12,23 @@
 //!   its rotation in a random direction for its ticks, on the local
 //!   shooter, while Halo's recoil owns the punch), and each projectile's
 //!   visible flight.
-//! - **The flight** (`HaloShown`, `fly`): each projectile flown again from
-//!   the shot by `weapons::flight` one update a Halo tick against the level
-//!   and the characters, with no damage (the server's own are the real
-//!   ones): the plasma bolt is a glow at its point each tick (its
+//! - **The flight** (`HaloShown`, `fly`): each projectile of all nine guns
+//!   flown again from the shot by `weapons::flight` (the generalised rules:
+//!   the response per hit by the hit's material type) one update a Halo
+//!   tick against the level and the characters, with no damage (the
+//!   server's own are the real ones): the trace is the server's (the
+//!   level's material type from the arsenal's table, the collision
+//!   radius's sideways probes; a character is the cyborg's, its shield's
+//!   while up), the response decision is the flight's own, and its
+//!   random draws come from the shown projectile's own generator
+//!   (`shown_seed`), never the simulation's: the plasma bolt is a glow at its point each tick (its
 //!   contrail's look, its light's colour) and its trail; a tracer round
 //!   (the weapon's rounds-between-tracers rule, the shot's flag) draws its
 //!   contrail's streak over the tick's segment; pistol bullets and pellets
 //!   have no contrail and show only where they hit. Where it hits, the
 //!   impact effect of the projectile's response for the surface's material
-//!   (`material_of`: Halo's surface classes to its material types; a
+//!   (the hit's own material type where the map has the arsenal's table;
+//!   else `material_of`: Halo's surface classes to its material types; a
 //!   character: its shield's flare while its shield is up, else the
 //!   cyborg body's), with the impact markers ("normal", "incident",
 //!   "negative incident", "reflection", "gravity"). The authority places
@@ -35,8 +42,20 @@
 //!   `weapon::impact`), the assault rifle bullet's impact effect for the
 //!   surface hit.
 //!
-//! Known shortcuts: a shown projectile meets characters where they are
-//! drawn on that machine; the muzzle light does not follow the gun; the
+//! Where on the gun (`place::Placer`): the shooter sees its effects at its
+//! view model's animated markers, everyone else at its held model's; an
+//! effect on a gun is placed on it again each tick it runs
+//! (`step_effects`), and the muzzle light goes with its shooter
+//! (`HaloLight::follow`).
+//!
+//! Known shortcuts: the server's response draws depend on the weapon's own
+//! generator, which the shot does not carry, so a shown projectile uses a
+//! fixed seed per projectile of the shot: only a response with a random
+//! skip fraction (and the timer's draw, 0 here) can differ from the real
+//! flight; a guided projectile (the needles, the charged bolt) is shown
+//! unguided (the target is not in the shot); grenades and items are not
+//! shown (server only); a shown projectile meets characters where they are
+//! drawn on that machine; the
 //! kick's direction is drawn from the engine's particle generator; others'
 //! empty clicks and overheats are not sent (the shooter's own show).
 
@@ -53,13 +72,13 @@ use serde::{Deserialize, Serialize};
 use super::{
     ActiveFx, HaloLight,
     load::{FxGun, HaloFx},
-    place::{self, Frame},
+    place::{self, Frame, Placer},
     play::{Effects, Instance, Made, Running, start},
 };
 use super::super::{
     GAME, METERS_PER_UNIT,
     vitality::Vitality,
-    weapons::{GUNS, HaloFired, HaloGun, halo_ticks, params::Gun, systems::HaloTrace},
+    weapons::{GUNS, HaloFired, HaloGun, flight::Hit, halo_ticks, params::Gun, random::HaloRng, systems::HaloTrace},
 };
 use crate::{
     core::{Intent, LocalPlayer, MovementState, NetRole, SimClock, SimSet},
@@ -113,6 +132,8 @@ pub struct HaloShown {
     pub flight: super::super::weapons::flight::Flight,
     pub ignored: Option<Entity>,
     pub tracer: bool,
+    /// Its own random generator's state (module doc: never the server's).
+    pub rng: u32,
     /// Its updates so far.
     pub updates: u32,
 }
@@ -129,6 +150,13 @@ pub struct HaloShotNet {
     pub last_round: bool,
     pub origin: [f32; 3],
     pub projectiles: Vec<([f32; 3], bool)>,
+}
+
+/// The random generator's seed of a shown projectile: one fixed seed per
+/// projectile of the shot (the server's depends on the weapon's own
+/// generator, which the shot message does not carry).
+pub fn shown_seed(i: usize) -> u32 {
+    0x5EED_5409 ^ (i as u32).wrapping_mul(0x9E37_79B9)
 }
 
 /// The kick left on a shooter: its rotation (rad) and ticks.
@@ -176,17 +204,29 @@ pub fn instances_from(fx: &HaloFx, effect: usize, frames: &BTreeMap<&'static str
         .collect()
 }
 
-/// A gun's effect at its markers: the first person's for `first`, the
-/// third person's for everyone.
-pub fn gun_instances(fx: &HaloFx, effect: usize, gun: &FxGun, camera: Frame) -> Vec<Vec<Instance>> {
-    fx.effects[effect]
-        .locations
+/// An effect's locations as marker names (lower case).
+pub fn markers_of(fx: &HaloFx, effect: usize) -> Vec<String> {
+    fx.effects[effect].locations.iter().map(|l| l.to_ascii_lowercase()).collect()
+}
+
+/// A gun's effect at `owner`'s gun's markers `names`: each instance as the
+/// shooter sees it (the view model's) and as everyone else does (the held
+/// model's); a marker with several instances is all of them.
+pub fn gun_instances(names: &[String], gun: &FxGun, camera: Frame, placer: &Placer, owner: Entity) -> Vec<Vec<Instance>> {
+    names
         .iter()
-        .map(|l| {
-            let name = l.to_ascii_lowercase();
-            vec![Instance { first: place::first_person_frame(camera, gun, &name), third: place::third_person_frame(camera, gun, &name) }]
+        .map(|name| {
+            let (first, third) = (placer.first(owner, camera, gun, name), placer.third(owner, camera, gun, name));
+            (0..first.len().max(third.len()))
+                .map(|i| Instance { first: first[i % first.len()], third: third[i % third.len()] })
+                .collect()
         })
         .collect()
+}
+
+/// A holder's eye: its transform and the movement's eye offset.
+fn eye_of(at: &Transform, ms: Option<&MovementState>) -> Vec3 {
+    at.translation + ms.map_or(Vec3::ZERO, |m| m.eye_offset)
 }
 
 /// Who sees a shot in first person: the local player (or, with no network
@@ -206,12 +246,13 @@ fn on_fired(
     locals: Query<(), With<LocalPlayer>>,
     role: Option<Res<NetRole>>,
     mut lights: MessageWriter<HaloLight>,
+    placer: Placer,
     mut commands: Commands,
 ) {
     let authority = role.as_deref().is_none_or(|r| *r != NetRole::Client);
     for f in fired.read() {
         let Some(gun) = guns.0.get(f.id) else { continue };
-        for (dir, tracer) in &f.projectiles {
+        for (i, (dir, tracer)) in f.projectiles.iter().enumerate() {
             commands.spawn((
                 HaloShown {
                     gun: gun.clone(),
@@ -220,6 +261,7 @@ fn on_fired(
                     flight: super::super::weapons::flight::Flight::new(&gun.projectile, f.origin / METERS_PER_UNIT, *dir, 0.0),
                     ignored: None,
                     tracer: *tracer,
+                    rng: shown_seed(i),
                     updates: 0,
                 },
                 Name::new("halo_ce shown projectile"),
@@ -232,21 +274,25 @@ fn on_fired(
         let fp = first_person(f.owner, &locals, role.as_deref());
         let list = if f.misfired { &look.misfire } else { &look.firing };
         if let Some(effect) = list.get(f.effect as usize).copied().flatten() {
-            let inst = gun_instances(&lib, effect, look, camera);
+            let names = markers_of(&lib, effect);
+            let inst = gun_instances(&names, look, camera, &placer, f.owner);
             start(&mut effects, &lib, effect, inst, |r| {
                 r.first_person = fp;
                 r.owner = Some(f.owner);
                 r.decals = authority;
+                r.on_gun = Some((gun.tag.clone(), names));
             });
         }
         if !f.misfired && let Some((light, marker)) = &look.light {
-            let at = place::first_person_frame(camera, look, marker).at;
+            let marker = marker.to_ascii_lowercase();
+            let at = if fp { placer.first(f.owner, camera, look, &marker) } else { placer.third(f.owner, camera, look, &marker) };
             lights.write(HaloLight {
-                at,
+                at: at[0].at,
                 color: Vec3::from(light.color),
                 radius: light.radius * METERS_PER_UNIT,
                 seconds: muzzle_light_ticks(gun) / 30.0,
                 owner: Some(f.owner),
+                follow: true,
             });
         }
         if fp && let Some((rotation, ticks)) = look.kick {
@@ -332,20 +378,41 @@ fn fly(
             let gun = s.gun.clone();
             let proj = &gun.projectile;
             let owner = s.owner;
-            let mut tracer = |a: Vec3, b: Vec3, ignored: Option<Entity>| -> Option<super::super::weapons::flight::Hit<Entity>> {
+            let radius = proj.collision_radius;
+            let mut tracer = |a: Vec3, b: Vec3, ignored: Option<Entity>| -> Option<Hit<Entity>> {
                 let skip: Vec<Entity> = std::iter::once(owner).chain(ignored).collect();
-                let (_, point, normal, what) = trace.trace(a * METERS_PER_UNIT, b * METERS_PER_UNIT, &skip, &[])?;
-                let len = (b - a).length() * METERS_PER_UNIT;
-                let t = if len > 0.0 { ((point - a * METERS_PER_UNIT).length() / len).clamp(0.0, 1.0) } else { 0.0 };
-                Some(super::super::weapons::flight::Hit { t, point: point / METERS_PER_UNIT, normal, object: what.map(|w| w.0) })
+                let (am, bm) = (a * METERS_PER_UNIT, b * METERS_PER_UNIT);
+                let mut met = trace.trace(am, bm, &skip, &[]);
+                // As the server's: a collision radius widens against
+                // characters only, sideways, when the line met nothing.
+                if met.is_none() && radius >= 0.0001 {
+                    let l = Vec3::Y.cross(b - a).try_normalize().unwrap_or(Vec3::NEG_X) * radius * METERS_PER_UNIT;
+                    met = [l, -l].into_iter().find_map(|o| trace.trace_with(am + o, bm + o, &skip, &[], false));
+                }
+                let (_, point, normal, what, material) = met?;
+                let len = (bm - am).length();
+                let t = if len > 0.0 { ((point - am).length() / len).clamp(0.0, 1.0) } else { 0.0 };
+                let point = a + (b - a) * t;
+                Some(Hit {
+                    t,
+                    point,
+                    normal,
+                    object: what.map(|w| w.0),
+                    material: if what.is_some() { Some(CYBORG as u8) } else { material },
+                    unit: what.is_some(),
+                })
             };
-            let mut struck = |h: &super::super::weapons::flight::Hit<Entity>, _: Vec3, _: f32| match h.object {
-                None => proj.on_level,
-                Some(t) if trace.shielded(t) => proj.on_shield,
-                Some(_) => proj.on_body,
+            // The server's rule without its damage roll: a projectile that
+            // can hurt meets the shield or the body by the shield's state.
+            let hurts = proj.impact_effect().is_some();
+            let mut struck = |h: &Hit<Entity>, _: Vec3, _: f32| -> Option<u8> {
+                let target = h.object?;
+                hurts.then(|| if trace.shielded(target) { CYBORG_SHIELD as u8 } else { CYBORG as u8 })
             };
             let mut ignored = s.ignored;
-            let moved = s.flight.update(proj, &mut ignored, &mut tracer, &mut struck);
+            let mut rng = HaloRng(s.rng);
+            let moved = s.flight.update(proj, &mut ignored, &mut rng, None, &mut tracer, &mut struck);
+            s.rng = rng.0;
             s.ignored = ignored;
             s.updates += 1;
             if let Some(lib) = &lib {
@@ -358,6 +425,12 @@ fn fly(
                     let Some(h) = hit else { continue };
                     let material = match h.object {
                         Some(t) => character_material(t, &vitality),
+                        // The level's own material type, where the map has
+                        // the table; else the surface's class.
+                        None if trace.has_materials() => match h.material {
+                            Some(m) => m as usize,
+                            None => continue,
+                        },
                         None => material_of(class_at(b, grid.as_deref(), classes.as_deref(), impacts.as_deref())),
                     };
                     let Some(effect) = look.and_then(|l| l.impacts.get(material).copied().flatten()) else { continue };
@@ -423,6 +496,8 @@ fn step_effects(
     mut sounds: MessageWriter<PlaySound>,
     mut decals: MessageWriter<PlaceDecal>,
     mut lights: MessageWriter<HaloLight>,
+    holders: Query<(&Intent, &Transform, Option<&MovementState>)>,
+    placer: Placer,
 ) {
     let Some(lib) = fx.0.clone() else { return };
     let world = level_trace(&spatial, &characters);
@@ -430,6 +505,13 @@ fn step_effects(
     let n = halo_ticks(&clock);
     let Effects { running, rng } = &mut *effects;
     for r in running.iter_mut() {
+        // On a holder's gun: its markers where the gun is now.
+        if let (Some(owner), Some((tag, names))) = (r.owner, &r.on_gun)
+            && let (Some(look), Ok((intent, at, ms))) = (lib.gun(tag), holders.get(owner))
+        {
+            let camera = place::camera(eye_of(at, ms), chimera_sim::weapon::aim_of(intent.yaw, intent.pitch));
+            r.instances = gun_instances(names, look, camera, &placer, owner);
+        }
         // Made this tick: its creation update (dt 0), then ticks.
         r.step(&lib, 0.0, rng, &world, &mut made);
         for _ in 0..n {
@@ -458,6 +540,7 @@ fn on_events(
     mut effects: ResMut<Effects>,
     mut pending: ResMut<PendingSounds>,
     mut play: MessageWriter<PlaySound>,
+    placer: Placer,
 ) {
     let Some(lib) = fx.0.clone() else {
         events.clear();
@@ -468,7 +551,7 @@ fn on_events(
         let Some(gun) = guns.0.get(w.id) else { continue };
         let Some(look) = lib.gun(&gun.tag) else { continue };
         let Ok((intent, at, ms)) = holders.get(ev.owner) else { continue };
-        let eye = at.translation + ms.map_or(Vec3::ZERO, |m| m.eye_offset);
+        let eye = eye_of(at, ms);
         let camera = place::camera(eye, chimera_sim::weapon::aim_of(intent.yaw, intent.pitch));
         let fp = first_person(ev.owner, &locals, role.as_deref());
         let effect = match &ev.kind {
@@ -478,10 +561,12 @@ fn on_events(
             _ => None,
         };
         if let Some(effect) = effect {
-            let inst = gun_instances(&lib, effect, look, camera);
+            let names = markers_of(&lib, effect);
+            let inst = gun_instances(&names, look, camera, &placer, ev.owner);
             start(&mut effects, &lib, effect, inst, |r| {
                 r.first_person = fp;
                 r.owner = Some(ev.owner);
+                r.on_gun = Some((gun.tag.clone(), names));
             });
         }
         let zoom = match &ev.kind {

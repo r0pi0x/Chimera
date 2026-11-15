@@ -318,7 +318,15 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   effects from the donor map's effect tags: firing effects, muzzle
   lights and kicks, visible projectiles flown again on every machine
   from the shots the server sends (net part `halo_ce_shots`), and
-  impacts by surface material through the engine's impact route. Halo's
+  impacts by surface material through the engine's impact route. Halo counts its 30 Hz ticks exactly from the engine's tick
+  index (`game::ticks`), so its weapons, view, effects, body and vitality
+  keep Halo's pace under any app's tick; its gun effects sit on the
+  animated view model or the held model (`fx::place`). Its weapons
+  simulate the whole multiplayer arsenal (nine held weapons, frag and
+  plasma grenades, the scenario's item clock pickups); the level's
+  material types reach the traces as a map entity, and every shot, on
+  every machine, is flown again by the server's flight rules with the
+  level's material at each hit. Halo's
   files reach
   players without the disc through the asset store: `chimera_pack
   pack|sets halo_ce` packs the disc's own files under the build its

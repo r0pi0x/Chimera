@@ -4,6 +4,9 @@
 //! layers), its colour falling linearly to black over its life (the
 //! muzzle light's 1, 2/3, 1/3, 0 over three ticks), then gone.
 //!
+//! A light that follows (`HaloLight::follow`: the muzzle light) is a
+//! child of its owner, so it moves with the shooter for its three ticks.
+//!
 //! Known shortcuts: the engine's ageing of dynamic lights also shrinks the
 //! radius over the life (Halo's keeps its radius).
 
@@ -16,9 +19,16 @@ use crate::map::view_model::{DynamicLight, VIEW_MODEL_LAYER};
 #[derive(Component)]
 struct Lit(Vec3);
 
-fn spawn(mut requests: MessageReader<HaloLight>, mut commands: Commands) {
+fn spawn(mut requests: MessageReader<HaloLight>, owners: Query<&GlobalTransform>, mut commands: Commands) {
     for l in requests.read() {
-        commands.spawn((
+        // A muzzle light goes with its shooter: a child of it, where it
+        // was asked for relative to the shooter now.
+        let parent = l.follow.then_some(l.owner).flatten().and_then(|o| Some((o, owners.get(o).ok()?)));
+        let at = match parent {
+            Some((_, g)) => g.affine().inverse().transform_point3(l.at),
+            None => l.at,
+        };
+        let mut light = commands.spawn((
             Name::new("halo_ce effect light"),
             PointLight {
                 color: Color::LinearRgba(LinearRgba::rgb(l.color.x, l.color.y, l.color.z)),
@@ -30,9 +40,12 @@ fn spawn(mut requests: MessageReader<HaloLight>, mut commands: Commands) {
             },
             DynamicLight { radius: l.radius, life: l.seconds.max(1e-3), age: 0.0 },
             RenderLayers::from_layers(&[0, VIEW_MODEL_LAYER]),
-            Transform::from_translation(l.at),
+            Transform::from_translation(at),
             Lit(l.color),
         ));
+        if let Some((owner, _)) = parent {
+            light.insert(ChildOf(owner));
+        }
     }
 }
 

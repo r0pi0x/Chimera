@@ -56,12 +56,12 @@ fn each_game_reports_what_it_lends() {
     let tf2 = report.remove(3);
     assert!(tf2.playable() && tf2.missing.is_empty() && tf2.maps.is_empty(), "{}", tf2.line());
     assert_eq!(tf2.guns.len(), 4, "{}", tf2.line());
-    // Halo lends its four guns with its movement, and claims no map (they
-    // come from its disc image: tests/it/halo_maps.rs in party_kit). The
-    // others as before.
+    // Halo lends eight held guns (not the flamethrower) with its
+    // movement, and claims no map (they come from its disc image:
+    // tests/it/halo_maps.rs in party_kit). The others as before.
     let halo = report.remove(2);
     assert!(halo.playable() && halo.missing.is_empty() && halo.maps.is_empty(), "{}", halo.line());
-    assert_eq!(halo.guns.len(), 4, "{}", halo.line());
+    assert_eq!(halo.guns.len(), 8, "{}", halo.line());
     let parts: Vec<_> = party_kit::GAME_PARTS.iter().filter(|p| p.game != "halo_ce" && p.game != "tf2").collect();
     let claimed_guns = |i: usize| parts[i].guns.iter().filter(|g| g.class != GunClass::Grenade).count();
     for c in &report {
