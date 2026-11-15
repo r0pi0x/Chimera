@@ -44,6 +44,7 @@ impl HudParams {
                 flash: v3(m.flash, 0.0),
                 empty: v3(m.empty, 0.0),
             },
+            Fill::Darken => HudParams { mode: Vec4::new(3.0, 0.0, 0.0, 0.0), color: Vec4::ONE, uv, ..default() },
             Fill::Sweep { colour, half, .. } => HudParams {
                 mode: Vec4::new(2.0, 0.0, 0.0, 1.0),
                 color: v3(*colour, 1.0),

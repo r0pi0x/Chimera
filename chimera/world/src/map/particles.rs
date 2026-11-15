@@ -13,7 +13,8 @@
 //!
 //! Particles for any game: `Particles` (a CPU pool of groups that share a
 //! motion rule: gravity, decay, damping, drag, bounce planes probed once per
-//! group; a cap, a frame-step clamp, near fade, merging), `WorldTracer` (traces
+//! group, a particle's own gravity and damping keys over its life
+//! replacing its group's, `ParticleCurves::motion`; a cap, a frame-step clamp, near fade, merging), `WorldTracer` (traces
 //! against the world only), `MapParticles` materials (texture, blend, vertex
 //! colour/alpha, sprite sheet, a sprite card's screen-size limits
 //! `ScreenSize`), rolls that stop at an age and mirrored sprites, `Shape::Tumble` (3D shards: three spinning
@@ -332,6 +333,12 @@ pub struct ParticleCurves {
     /// looping, each `frame_time` seconds.
     pub frames: Vec<usize>,
     pub frame_time: f32,
+    /// The particle's own motion over its life, in place of its group's
+    /// gravity and damping when not empty: (life fraction, [gravity m/s^2,
+    /// damping 1/s]), in order, linear between keys (a key repeated at one
+    /// fraction is a jump). Halo's particle systems: each state of a
+    /// particle has its own physics.
+    pub motion: Vec<(f32, [f32; 2])>,
 }
 
 /// A looping sprite set's frame at `t` ms on its clock, each frame `d` ms
@@ -475,6 +482,15 @@ impl Particle {
                 self.color.lerp(to, x)
             }
             None => self.color,
+        }
+    }
+
+    /// How much wider than made a ribbon section is now: its size curve's
+    /// value over the curve's first (1 without a size curve).
+    pub fn size_scale(&self) -> f32 {
+        match self.curves.as_deref().and_then(|c| c.size.first()) {
+            Some((_, first)) if *first > 1e-6 => self.current_size() / first,
+            _ => 1.0,
         }
     }
 
@@ -667,6 +683,11 @@ pub struct Particles {
     /// Largest time step, seconds (longer frames advance only this much).
     pub max_dt: f32,
     pub rng: ParticleRng,
+    /// At most this many sprites covering more than half the view are drawn
+    /// in a frame (the later ones in drawing order are dropped; smaller
+    /// sprites never are). None (the default): no limit. Halo's rule
+    /// (specs/halo_ce/effects.md "View-filling sprites are capped": 11).
+    pub view_filling_cap: Option<usize>,
 }
 
 impl Default for Particles {
@@ -676,6 +697,7 @@ impl Default for Particles {
             cap: 2048,
             max_dt: 0.1,
             rng: ParticleRng::new(0x5EED),
+            view_filling_cap: None,
         }
     }
 }
@@ -758,7 +780,15 @@ pub fn step_particle(p: &mut Particle, m: &Motion, dt: f32, world: &impl WorldTr
                 p.velocity = before.normalize_or_zero() * floor;
             }
         }
-        p.velocity.y -= m.gravity * dt;
+        // The particle's own motion keys, else the group's.
+        let (gravity, damping) = match p.curves.as_deref().filter(|c| !c.motion.is_empty()) {
+            Some(c) => {
+                let [g, d] = sample_curve(&c.motion, p.life_fraction()).unwrap_or([m.gravity, m.damping]);
+                (g, d)
+            }
+            None => (m.gravity, m.damping),
+        };
+        p.velocity.y -= gravity * dt;
         if m.drag > 0.0 {
             p.velocity *= (1.0 - m.drag).max(0.0);
         }
@@ -766,8 +796,8 @@ pub fn step_particle(p: &mut Particle, m: &Motion, dt: f32, world: &impl WorldTr
             Some(b) => struck = bounce_move(p, b, dt, world, rng),
             None => p.position += p.velocity * dt,
         }
-        if m.damping > 0.0 {
-            p.velocity *= (1.0 - m.damping * dt).max(0.0);
+        if damping > 0.0 {
+            p.velocity *= (1.0 - damping * dt).max(0.0);
         }
     }
     // The roll turns only until its stop time.
@@ -1123,6 +1153,46 @@ mod curve_tests {
         assert_eq!(young.current_material(), 12);
     }
 
+    /// A particle's own motion keys replace its group's gravity and
+    /// damping: rising under one rule, then falling under the next.
+    #[test]
+    fn a_particles_motion_keys_replace_its_groups() {
+        struct Nothing;
+        impl WorldTrace for Nothing {
+            fn trace(&self, _: Vec3, _: Vec3) -> Option<(f32, Vec3)> {
+                None
+            }
+        }
+        let m = Motion { gravity: 9.8, ..Default::default() };
+        let mut rng = ParticleRng::new(1);
+        let mut plain = Particle::new(Vec3::ZERO, 2.0, 0, 0.1);
+        step_particle(&mut plain, &m, 0.1, &Nothing, &mut rng);
+        assert!(plain.velocity.y < 0.0, "the group's gravity");
+        let mut p = Particle::new(Vec3::ZERO, 2.0, 0, 0.1);
+        // Up at 1 m/s^2 for the first half, then down at 2 with a damping of 1.
+        p.curves = Some(std::sync::Arc::new(ParticleCurves { motion: vec![(0.0, [-1.0, 0.0]), (0.5, [-1.0, 0.0]), (0.5, [2.0, 1.0]), (1.0, [2.0, 1.0])], ..Default::default() }));
+        step_particle(&mut p, &m, 0.1, &Nothing, &mut rng);
+        assert!((p.velocity.y - 0.1).abs() < 1e-6, "{}", p.velocity.y);
+        p.age = 1.5;
+        p.velocity = Vec3::ZERO;
+        step_particle(&mut p, &m, 0.1, &Nothing, &mut rng);
+        assert!((p.velocity.y + 0.2 * 0.9).abs() < 1e-6, "{}", p.velocity.y);
+        assert_eq!(Particles::default().view_filling_cap, None, "no cap unless a game sets one");
+    }
+
+    /// A ribbon section's width follows its size curve over the first key.
+    #[test]
+    fn a_size_curve_widens_a_ribbon_section() {
+        let mut p = Particle::new(Vec3::ZERO, 2.0, 0, 0.1);
+        assert_eq!(p.size_scale(), 1.0, "no curve: as made");
+        p.curves = Some(std::sync::Arc::new(ParticleCurves { size: vec![(0.0, 0.1), (1.0, 0.3)], ..Default::default() }));
+        assert_eq!(p.size_scale(), 1.0);
+        p.age = 1.0;
+        assert!((p.size_scale() - 2.0).abs() < 1e-6);
+        p.age = 2.0;
+        assert!((p.size_scale() - 3.0).abs() < 1e-6);
+    }
+
     /// A flame's look: white hot, orange, then gone; a growing size; an
     /// animated sprite's frames in a loop.
     #[test]
@@ -1134,6 +1204,7 @@ mod curve_tests {
             size: vec![(0.0, 1.0), (0.25, 3.0), (1.0, 4.0)],
             frames: vec![10, 11, 12],
             frame_time: 0.1,
+            motion: Vec::new(),
         }));
         p.age = 0.25;
         assert_eq!(p.current_color(), Vec3::new(1.0, 0.75, 0.5));

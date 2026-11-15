@@ -60,6 +60,11 @@ pub fn feed_lines(_: &World) -> usize {
     0
 }
 
+/// The layout the HUD draws in (`layout::HudLayout`): the disc's unless
+/// the party's front end (`ui::party_app`) sets the party's.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HaloHudLayout(pub layout::HudLayout);
+
 /// Halo's HUD: its root, the data's load, the state and the nodes (no
 /// renderer needed: the material's assets are used when there).
 pub struct HaloHudPlugin;

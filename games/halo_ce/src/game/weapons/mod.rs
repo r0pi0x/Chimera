@@ -100,10 +100,11 @@
 //!   `view::camera_fov`); `systems::HaloHands::melee`,
 //!   `HaloHands::throw` (the grenade counts, the throw's frame).
 //!
-//! The autoaim (weapons.md 15, `aim`) runs for every player whatever the
-//! input device: the target, the shot bent toward it within the
-//! deviation cone (with the convergence correction), and the target a
-//! guided projectile (the needle, the charged bolt) follows;
+//! The autoaim (weapons.md 15, `aim`): the target a guided projectile
+//! (the needle, the charged bolt) follows is picked for every player; the
+//! shot bent toward it within the deviation cone (with the convergence
+//! correction) only with `aim::Bend` on (`halo_autoaim 1`: a controller's
+//! behaviour; off by default in every app);
 //! `params::AimAssist::enabled` is the data's switch, on for all nine.
 //! The magnetism (look stickiness) is left off.
 //!
@@ -293,7 +294,20 @@ impl Plugin for HaloWeaponsPlugin {
             .intent_action(systems::ZOOM_ACTION)
             .intent_action(grenades::GRENADE_ACTION)
             .intent_action(grenades::SWITCH_ACTION);
-        app.insert_resource(grenades::GrenadeData::load()).init_resource::<pickups::ItemClock>();
+        app.insert_resource(grenades::GrenadeData::load()).init_resource::<pickups::ItemClock>().init_resource::<aim::Bend>();
+        chimera_core::console::ConsoleAppExt::console_command(
+            app,
+            "halo_autoaim",
+            "halo_autoaim <0|1>: bend Halo's shots toward the autoaim target and the look point (the original's behaviour, for a controller; off by default: mouse and keyboard). The guided projectiles' target is picked either way.",
+            |w, args| {
+                match args.first().map(String::as_str) {
+                    Some("1") => w.insert_resource(aim::Bend(true)),
+                    Some("0") => w.insert_resource(aim::Bend(false)),
+                    _ => return Ok(Some(format!("halo_autoaim {}", u8::from(w.get_resource::<aim::Bend>().is_some_and(|b| b.0))))),
+                }
+                Ok(None)
+            },
+        );
         app.on_every_character::<HaloHands>();
         app.add_message::<HaloFired>()
             .add_message::<HaloImpact>()
