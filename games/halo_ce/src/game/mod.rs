@@ -9,6 +9,8 @@
 //! - `maps`: the install's map cache files as Chimera's `MapData`
 //!   (`MAP_LOADER`; cache_file.md, structure_bsp.md, collision.md,
 //!   shaders.md, scenario.md);
+//! - `maps::materials`: the shader classes as looks (reflections,
+//!   self-illumination, masks, scrolls);
 //! - `maps::teleporters`: the scenario's teleporter pairs as the engine's
 //!   teleporters; `maps::collision` also publishes climbable sheets as
 //!   ladders;
