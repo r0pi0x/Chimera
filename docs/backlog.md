@@ -71,11 +71,24 @@ the user's go-ahead: no Actions runs unless asked.
     - the party follows its leader into a server, and stays together across map changes and matches;
     - the server keeps a party on one team where the mode has teams and sends real party ids, so the lobby's edges and grouping show;
     - party chat, and the party's avatars in the rack.
-  - **Design questions:**
-    - Session-only parties first, which work now with codes and no accounts, or account-backed only?
-    - Where presence and party state live: a hub service, or the game server only.
-    - Privacy: who can see you're online, and invite permissions.
-    - Moderation: blocking hides chat, voice and invites.
+  - **Decisions (user, 2026-11-15):**
+    - **Order:** session-only parties come first, joined by invite code, then they're tied into accounts. Invite codes stay available afterwards, to invite people who aren't friends.
+    - **State lives on the hub,** for party membership and online status, so a party outlasts any one game server session.
+    - **Leaving a match:**
+      - A member who goes back to the menu stays in the party and can rejoin at will.
+      - Closing and reopening the game keeps you in the party too, so rejoining is easy.
+      - Leaving a party is an explicit, easy action.
+    - **When the party leader leaves a match,** the dialog offers "Leave with my party" (the default) and "Leave alone".
+    - **Chat:**
+      - Enter opens chat; Enter was chosen over T.
+      - While typing, Tab cycles the channel: all, team, party. The default is all.
+    - **Privacy:** online status and invites are visible to everyone for now. Opt-out settings come later if it becomes a problem.
+    - **Blocking:** left out for now. When it's added, it blocks chat, voice and invites by default and marks the blocked player near their avatar.
+  - **Still to design:**
+    - the party panel, with its invite, leave and promote controls;
+    - what happens when the leader goes offline, and how leadership passes;
+    - how a party follows its leader when the server is full;
+    - the hub's party protocol and how often it heartbeats.
   - Builds on hub phases S2–S4 and the Signal r8 shell's tiles. Related: sprays, profiles and stats, ranks per game.
 
 - **Sprays (user, 2026-11-15; needs a design first):** players put a picture on a wall with a key, as in TF2, CS:S, HL2:DM and the other Source games: one spray per life or on a cooldown, decaling the surface looked at, visible to everyone and fading out when replaced.
