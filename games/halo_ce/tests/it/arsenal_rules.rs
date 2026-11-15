@@ -625,42 +625,109 @@ fn the_throw_creates_the_grenade_on_frame_2_and_releases_it_on_8() {
     assert_eq!((g.start(g.cap(4)), g.start(g.cap(6)), g.start(g.cap(12))), ([4, 0], [2, 0], [1, 0]));
 }
 
-#[test]
-fn the_selected_grenade_kind_starts_on_frag_switches_to_the_other_when_it_has_any_and_follows_the_counts() {
-    use halo_ce::game::weapons::grenades::{FRAG, PLASMA};
-    let g = GrenadeData::load();
-    // A new life: the frag; the plasma grenade only when that is all.
-    assert_eq!(Throw::new([4, 0]).selected(), FRAG);
-    assert_eq!(Throw::new([0, 3]).selected(), PLASMA);
-    assert_eq!(Throw::new([2, 2]).selected(), FRAG);
-    // The switch: nothing to change to, nothing happens; else the other.
-    let mut t = Throw::new([4, 0]);
-    t.switch();
-    assert_eq!((t.selected(), t.current()), (FRAG, Some(FRAG)));
-    t.counts[PLASMA] = 1;
-    t.switch();
-    assert_eq!((t.selected(), t.current()), (PLASMA, Some(PLASMA)));
-    t.switch();
-    assert_eq!(t.selected(), FRAG);
-    // A press throws the selected kind, and the last of it passes the
-    // choice to the other kind.
-    t.switch();
-    let mut log = Vec::new();
-    for k in 0..40 {
-        for e in t.step(&g.throw, k == 0, true) {
-            log.push(e);
-        }
+/// One Halo tick of the grenade types as `systems::run` runs them: the
+/// input layer (with or without the rotate-grenades press), the throw's
+/// step, the unit's update when not busy.
+fn tick(t: &mut Throw, g: &GrenadeData, switch: bool, throw: bool) -> Vec<ThrowEvent> {
+    t.input(switch);
+    let out = t.step(&g.throw, throw, true);
+    let busy = t.busy();
+    t.update(busy);
+    out
+}
+
+/// A throw from its press to the end of its animation.
+fn throw_one(t: &mut Throw, g: &GrenadeData) {
+    tick(t, g, false, true);
+    while t.busy() {
+        tick(t, g, false, false);
     }
-    assert!(log.contains(&ThrowEvent::Created(PLASMA)) && log.contains(&ThrowEvent::Released(PLASMA)));
-    assert_eq!((t.counts, t.selected()), ([4, 0], FRAG));
-    // An empty selected kind: no throw, the HUD still shows it.
-    let mut t = Throw { counts: [0, 0], ..Throw::default() };
-    assert_eq!((t.current(), t.step(&g.throw, true, true)), (None, vec![]));
-    // A pickup of a kind while the selected one is out selects it; not else.
-    t.counts[PLASMA] = 1;
-    t.pick_up(PLASMA);
-    assert_eq!(t.selected(), PLASMA);
-    t.counts[FRAG] = 1;
-    t.pick_up(FRAG);
-    assert_eq!(t.selected(), PLASMA);
+}
+
+/// weapons.md 14 "Selecting the grenade type": every row of the situation
+/// table.
+#[test]
+fn grenade_selection_follows_the_situation_table() {
+    use halo_ce::game::weapons::grenades::{FRAG, PLASMA, next_from, settle_from};
+    let g = GrenadeData::load();
+    // "Next type from k" and "settle from k".
+    assert_eq!(next_from([4, 4], None), Some(PLASMA), "from none (read as 0) the other type first");
+    assert_eq!(next_from([2, 0], Some(FRAG)), Some(FRAG));
+    assert_eq!(next_from([0, 0], Some(FRAG)), None);
+    assert_eq!(settle_from([4, 4], Some(FRAG)), Some(FRAG));
+    // Spawn with the stock start (4, 0): none before the first update, frag
+    // from the first tick.
+    let mut t = Throw::new([4, 0]);
+    assert_eq!((t.selected(), t.desired(), t.wanted()), (None, None, None));
+    tick(&mut t, &g, false, false);
+    assert_eq!(t.selected(), Some(FRAG));
+    // A "plasma grenades" start (0, 4): plasma.
+    let mut t = Throw::new([0, 4]);
+    tick(&mut t, &g, false, false);
+    assert_eq!(t.selected(), Some(PLASMA));
+    // Infinite grenades: plasma, whatever the cap.
+    for n in [4, 2, 1] {
+        let mut t = Throw::new([n, n]);
+        tick(&mut t, &g, false, false);
+        assert_eq!(t.selected(), Some(PLASMA), "({n}, {n})");
+    }
+    // No grenades: none (no grenade HUD).
+    let mut t = Throw::new([0, 0]);
+    tick(&mut t, &g, false, false);
+    assert_eq!(t.selected(), None);
+    // Press switch with frag selected and (2, 0): stays frag.
+    let mut t = Throw::new([2, 0]);
+    tick(&mut t, &g, false, false);
+    tick(&mut t, &g, true, false);
+    assert_eq!(t.selected(), Some(FRAG));
+    // (2, 1): plasma; a second press: frag.
+    t.counts = [2, 1];
+    tick(&mut t, &g, true, false);
+    assert_eq!(t.selected(), Some(PLASMA));
+    tick(&mut t, &g, true, false);
+    assert_eq!(t.selected(), Some(FRAG));
+    // Pick up a plasma grenade, frag selected, (3, 0) to (3, 1): stays frag.
+    let mut t = Throw::new([3, 0]);
+    tick(&mut t, &g, false, false);
+    t.counts = [3, 1];
+    tick(&mut t, &g, false, false);
+    assert_eq!(t.selected(), Some(FRAG));
+    // Throw the last frag, (1, 2) to (0, 2): plasma on the first tick the
+    // throw no longer makes the unit busy.
+    let mut t = Throw::new([1, 0]);
+    tick(&mut t, &g, false, false);
+    t.counts = [1, 2];
+    tick(&mut t, &g, false, false);
+    assert_eq!(t.selected(), Some(FRAG));
+    tick(&mut t, &g, false, true);
+    let mut ticks = 0;
+    while t.busy() {
+        assert_eq!(t.selected(), Some(FRAG), "the throw still running");
+        tick(&mut t, &g, false, false);
+        ticks += 1;
+    }
+    assert!(ticks > 30);
+    assert_eq!((t.counts, t.selected()), ([0, 2], Some(PLASMA)));
+    // Throw the last grenade of both: wanted none, desired and current the
+    // last kind thrown (shown at 0).
+    let mut t = Throw::new([1, 0]);
+    tick(&mut t, &g, false, false);
+    throw_one(&mut t, &g);
+    tick(&mut t, &g, false, false);
+    assert_eq!((t.counts, t.wanted(), t.desired(), t.selected()), ([0, 0], None, Some(FRAG), Some(FRAG)));
+    // Then a grenade of the other kind: plasma on the next tick.
+    let mut other = t;
+    other.counts = [0, 1];
+    tick(&mut other, &g, false, false);
+    assert_eq!(other.selected(), Some(PLASMA));
+    // Or one of the same kind: frag.
+    let mut same = t;
+    same.counts = [1, 0];
+    tick(&mut same, &g, false, false);
+    assert_eq!(same.selected(), Some(FRAG));
+    // Die and respawn: the selection is not kept (a new life's state).
+    let respawned = Throw::new([4, 0]);
+    assert_eq!(respawned.selected(), None);
+    // An empty current kind: no throw.
+    assert_eq!((t.current(), tick(&mut t, &g, false, true)), (None, vec![]));
 }

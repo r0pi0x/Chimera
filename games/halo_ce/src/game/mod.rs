@@ -28,6 +28,8 @@
 //! - `body`: the players' Spartan body (model, animations from the graph's
 //!   unit tables, hit boxes from the collision model, armour colours), on
 //!   Halo's maps and, from the donor map, on any other;
+//! - `body::death`: a dead player's body, its death animation, sound
+//!   and removal;
 //! - `view`: the guns in hand: each gun's first-person view model with the
 //!   arms, played from the weapons' events one frame a tick, hidden while
 //!   zoomed, and its held model and stance; on Halo's maps and, from the
@@ -47,8 +49,13 @@
 //!   hill, oddball, spawns, equipment and scoring, the match's view;
 //! - `respawn`: Halo's players' loadout and respawn by
 //!   multiplayer_rules.md 4 (`HaloRules`, Halo's own app only);
+//! - `weapons::aim`'s `Bend` is off by default (`halo_autoaim`); `fx`
+//!   has the dev command `halo_ce_blast` (a detonation at a point);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
+//! - `audio`: looping sounds, the level's background sound, environment
+//!   and sound scenery, projectile loops and footsteps (`maps::audio`
+//!   hands the level's sound data over);
 //! - `sets`: Halo's asset sets for `chimera_pack sets` (`base` and `players`
 //!   the donor map, `map/<name>` per multiplayer map); `mount::build` reads
 //!   the install's build from a map header;
@@ -60,6 +67,7 @@
 //!
 //! `HaloPlugins` adds the game's parts after `crate::SimPlugins`.
 
+pub mod audio;
 pub mod body;
 pub mod damage;
 pub mod fx;
@@ -186,6 +194,7 @@ impl PluginGroup for HaloPlugins {
             .add(damage::DamagePlugin)
             .add(weapons::HaloWeaponsPlugin)
             .add(fx::HaloFxPlugin)
+            .add(audio::HaloAudioPlugin)
             .add(body::HaloBodyPlugin)
             .add(view::HaloViewPlugin)
             .add(respawn::HaloRespawnPlugin)
@@ -206,7 +215,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     info: &INFO,
     parts: &parts::PARTS,
     loader: &MAP_LOADER,
-    guest: Some(&fx::load::GUEST),
+    guest: Some(&audio::GUEST),
     // Its guns' view and held models stay on its maps in an app whose
     // gameplay is another game's (a party's Halo rungs on Hang 'Em High).
     kept: &["halo_ce:"],
@@ -225,6 +234,9 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         // Its players' body, worn by its guns' holders (`body`).
         app.add_plugins(body::HaloBodyPlugin);
         app.add_plugins(view::HaloViewPlugin);
+        if !app.is_plugin_added::<audio::HaloAudioPlugin>() {
+            app.add_plugins(audio::HaloAudioPlugin);
+        }
     },
     display_names: None,
 };

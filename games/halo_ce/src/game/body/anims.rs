@@ -24,6 +24,11 @@
 //! node, an overlay only the parts whose bit is set (so "parts without a
 //! bit are untouched" holds). A base animation that does not fit the model
 //! (node count, checksum) is left out (the spec's bind pose for it).
+//! The deaths and flinches are sequences too: the seat's airborne and
+//! landing deaths (`seat_death_key`, from `stand`) and every filled slot of
+//! the unit damage table (`damage_key`: `damage s-kill front gut`); an
+//! animation's sound rides in an event (`SOUND_EVENT`: its frame and the
+//! sound, named by the loader, `name_sounds`).
 //! Sequence 0 is the bind pose (`BIND`), what the engine's `Animator`
 //! names as playing while the game lays the pose out itself.
 //!
@@ -49,8 +54,8 @@
 //!   not its stick.
 //! - One permutation per slot (the chain's first); the stunned-move,
 //!   slide, gesture, turn, melee and action layers (reload, fire, ready),
-//!   pings, death animations, acceleration overlays and IK are not
-//!   played; node scale is ignored (1 on the disc).
+//!   pings, acceleration overlays and IK are not played (the deaths are
+//!   `death`'s); node scale is ignored (1 on the disc).
 //! - The grenade throw (`throw-grenade` of the seat and label, at the
 //!   throw's own frame, `Inputs::throw`) replaces the base pose whole while
 //!   it runs (aim and look screens over it, 6-tick blends in and out); it
@@ -61,7 +66,9 @@
 use std::collections::BTreeMap;
 
 use bevy::math::{Quat, Vec2, Vec3};
-use blam_formats::animation::{AnimationGraph, AnimationType, ScreenBounds, UnitSlot, WeaponClassSlot};
+use blam_formats::animation::{
+    AnimationGraph, AnimationType, ScreenBounds, UNIT_DAMAGE_SLOTS, UnitDamageSlot, UnitSlot, WeaponClassSlot,
+};
 
 use super::skeleton::{bind_locals, usual};
 use crate::map::{
@@ -350,6 +357,19 @@ impl Builder<'_> {
             }],
             ..Default::default()
         };
+        if let Some(sound) = stored.sound {
+            s.events.push(AnimEvent {
+                cycle: 0.0,
+                event: i32::from(stored.sound_frame),
+                name: SOUND_EVENT.into(),
+                options: sound.to_string(),
+            });
+        }
+        for (foot, f) in [("left", stored.left_foot_frame), ("right", stored.right_foot_frame)] {
+            if f != 0 {
+                s.events.push(AnimEvent { cycle: 0.0, event: i32::from(f), name: FOOT_EVENT.into(), options: foot.into() });
+            }
+        }
         if let Some(b) = screen {
             s.grid = (b.columns(), b.rows());
             s.axes = screen_axes(b);
@@ -420,9 +440,83 @@ pub fn build(graph: &AnimationGraph, bones: &[MapBone], checksum: u32) -> (AnimS
             if let Some(i) = unit.animations.get(UnitSlot::Look) {
                 b.sequence(look_key(seat), i, Some(&unit.looking_bounds));
             }
+            // The deaths of the seat (`stand` at death: animations.md,
+            // "Damage and death").
+            for (slot, name) in [(UnitSlot::AirborneDead, AIRBORNE_DEAD), (UnitSlot::LandingDead, LANDING_DEAD)] {
+                if let Some(i) = unit.animations.get(slot) {
+                    b.sequence(seat_death_key(seat, name), i, None);
+                }
+            }
+        }
+    }
+    // The unit damage table: every slot filled (pings and kills).
+    for index in 0..UNIT_DAMAGE_SLOTS {
+        let Some(slot) = UnitDamageSlot::from_index(index) else { continue };
+        if let Some(i) = graph.unit_damage.get(slot) {
+            b.sequence(damage_key(slot), i, None);
         }
     }
     (b.set, b.warnings)
+}
+
+/// The seat's airborne death's and landing death's slot names.
+pub const AIRBORNE_DEAD: &str = "airborne-dead";
+pub const LANDING_DEAD: &str = "landing-dead";
+
+/// The event that carries a sequence's sound (its number is the sound
+/// frame, its options the sound: the graph's sound index at build, the
+/// engine's sound entry once the loader names it, `name_sounds`).
+pub const SOUND_EVENT: &str = "halo:sound";
+
+/// A seat's death sequence's name (`stand airborne-dead`).
+pub fn seat_death_key(seat: &str, slot: &str) -> String {
+    format!("{seat} {slot}").to_ascii_lowercase()
+}
+
+/// A damage table slot's sequence name (`damage s-kill front gut`).
+pub fn damage_key(slot: UnitDamageSlot) -> String {
+    format!("damage {} {} {}", slot.kind.label(), slot.direction.label(), slot.part.label())
+}
+
+/// The events that carry a sequence's foot frames (options `left` or
+/// `right`; animations.md "Footsteps": the footstep seam, `audio::steps`).
+pub const FOOT_EVENT: &str = "halo:foot";
+
+/// The feet (bit 0 left, bit 1 right) whose foot frame is frame `f` of
+/// sequence `s`.
+pub fn feet_at(set: &AnimSet, s: usize, f: usize) -> u8 {
+    let events = set.sequences.get(s).map_or(&[][..], |q| &q.events[..]);
+    events.iter().filter(|e| e.name == FOOT_EVENT && e.event as usize == f).fold(0, |b, e| b | if e.options == "left" { 1 } else { 2 })
+}
+
+/// A sequence's sound: its frame and the event's options (module doc of
+/// `SOUND_EVENT`).
+pub fn sound_of(set: &AnimSet, s: usize) -> Option<(usize, &str)> {
+    set.sequences
+        .get(s)?
+        .events
+        .iter()
+        .find(|e| e.name == SOUND_EVENT)
+        .map(|e| (e.event.max(0) as usize, e.options.as_str()))
+}
+
+/// Each sequence's sound event named by `name` (the graph's sound index to
+/// the engine's sound entry); one `name` gives none for is dropped.
+pub fn name_sounds(set: &mut AnimSet, name: impl Fn(usize) -> Option<String>) {
+    for s in &mut set.sequences {
+        s.events.retain_mut(|e| {
+            if e.name != SOUND_EVENT {
+                return true;
+            }
+            match e.options.parse::<usize>().ok().and_then(&name) {
+                Some(n) => {
+                    e.options = n;
+                    true
+                }
+                None => false,
+            }
+        });
+    }
 }
 
 /// A track's value at frame `f` (the last one past its end).
@@ -565,6 +659,9 @@ pub struct HaloAnim {
     pub throwing: bool,
     /// The last pose made (a new blend's "from").
     pub last: Vec<BonePose>,
+    /// The feet that stepped this tick (`feet_at`): a move state, the
+    /// throttle above 0.5, the frame a foot frame.
+    pub feet: u8,
 }
 
 impl HaloAnim {
@@ -638,6 +735,11 @@ impl HaloAnim {
                 }
             }
         }
+        let moving = matches!(want, State::MoveFront | State::MoveBack | State::MoveLeft | State::MoveRight);
+        self.feet = match self.sequence {
+            Some(s) if moving && i.throttle.length_squared() > 0.25 => feet_at(set, s, self.frame),
+            _ => 0,
+        };
         let aim = set.names.get(&key(seat, label, want.aim())).copied();
         if aim != self.aim {
             if self.aim.is_some() {

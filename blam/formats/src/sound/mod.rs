@@ -15,6 +15,8 @@
 //!   its audibility cutoff, stereo linear fade), the impulse gain product
 //!   and the console's hundredths-of-a-decibel volume, as pure functions.
 //! - `looping::LoopingSound`: the looping sound tag (tracks, details).
+//! - `environment::SoundEnvironment`: the sound environment tag (a room's
+//!   reverb parameters).
 //!
 //! The decoded `Pcm` is plain `Vec<i16>` rather than `chimera_formats`'
 //! `SoundClip`: the game crate wraps it (rate, channels, `Arc<[i16]>`).
@@ -32,6 +34,7 @@
 
 pub mod adpcm;
 mod class;
+pub mod environment;
 pub mod gain;
 pub mod looping;
 

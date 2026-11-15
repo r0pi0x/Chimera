@@ -59,6 +59,20 @@ the user's go-ahead: no Actions runs unless asked.
   - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
   - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
 
+- **An Engineer rung (user, 2026-11-15, after TF2's guns and classes):** a special gun-game rung where you play TF2's Engineer with only a melee weapon (the Wrench), but can build a sentry gun, a dispenser and teleporters.
+  - To advance, you need a kill made by your sentry, which is credited to you as the rung's kill; a Wrench kill might count too (to decide).
+  - Needs TF2's buildables: placing them with the PDA, metal, building up and upgrading with the Wrench, the sentry's targeting and fire, the dispenser's healing and ammo, and teleporter pairs.
+  - Spec those first (specs/tf2), as data where possible.
+  - Ladder data must be able to describe a rung's kit (melee plus buildables) and what counts as its kill.
+  - Not a new minigame: one rung, placed where the ladder data says.
+
+- **One after-death experience of our own (user, 2026-11-15, undecided):**
+  - Today party modes borrow a game's after-death flow: CS:S's death cam, freeze cam and freeze panel (`cs_source::ui::freeze_cam`, `client::spectate`), with that game's dominations, sounds and art. Each new game brings its own version, and in mixed matches they can clash with the Signal HUD.
+  - The idea: centralise the death camera, the killer view, the panel, the respawn timer and the spectate hand-off in Chimera / party_kit. Draw it in the Signal kit, and drive it with data (timings, what the panel shows, which game's sounds if any).
+  - The games' own after-death flows stay for their own apps, for parity.
+  - The user isn't sure yet whether party modes should drop the games' versions. Decide before building: mock it first, then compare in a playtest.
+  - Related: dominations switched off in party_kit's freeze cam (2026-11-15), Spectators (section 0).
+
 - **Player requests (playtest 7, 2026-11-14):** games and guns wanted by
   players: Halo guns (Halo CE is already on this roadmap), Fortnite guns,
   Natural Selection 2 (one tester said no), Left 4 Dead infected, and

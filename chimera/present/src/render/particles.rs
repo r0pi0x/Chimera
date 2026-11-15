@@ -15,7 +15,10 @@
 //! as they near the world behind them instead of being cut there, on views
 //! with a depth prepass (`soft_particle_prepass` gives main views one); the
 //! rest are cut at the world, explosions' `effects/fire_cloud2` and CS:S's
-//! own `particle/particle_noisesphere` too, whose files don't ask.
+//! own `particle/particle_noisesphere` too, whose files don't ask. A game
+//! may cap the sprites covering more than half the view drawn per frame
+//! (`Particles::view_filling_cap`, `keep_sprite`, `view_fraction`; off by
+//! default: Halo's app sets 11).
 //!
 //! Known shortcuts (docs/tech-debt.md): Particles blend in linear space (Source
 //! blends in gamma), and each material is one mesh sorted against other
@@ -238,10 +241,13 @@ pub fn draw_particles(
         return;
     };
     // Sprite cards' screen sizes are taken against the view's height.
-    let tan_half_fov = match projection {
-        Some(Projection::Perspective(p)) => (p.fov / 2.0).tan(),
-        _ => 1.0,
+    let (tan_half_fov, aspect) = match projection {
+        Some(Projection::Perspective(p)) => ((p.fov / 2.0).tan(), p.aspect_ratio),
+        _ => (1.0, 1.0),
     };
+    // Sprites covering more than half the view drawn so far this frame
+    // (`Particles::view_filling_cap`).
+    let mut filling = 0usize;
     let (from, forward, right, up) = (
         eye.translation(),
         eye.forward().as_vec3(),
@@ -367,6 +373,11 @@ pub fn draw_particles(
                         continue;
                     }
                     let rgba = [rgba[0], rgba[1], rgba[2], rgba[3] * fade];
+                    if !keep_sprite(particles.view_filling_cap, &mut filling, || {
+                        view_fraction(size, depth, tan_half_fov, aspect)
+                    }) {
+                        continue;
+                    }
                     let (s, c) = p.roll.sin_cos();
                     let (r, u) = ((right * c + up * s) * size, (up * c - right * s) * size);
                     b.quad([at - r - u, at - r + u, at + r + u, at + r - u], rect, rgba);
@@ -421,7 +432,8 @@ pub fn draw_particles(
                     let here = side_of(p.position, to);
                     let start_side = prev.map_or(here, |q| (side_of(q, p.position) + here).normalize_or(here));
                     let end_side = next.map_or(here, |q| (here + side_of(to, q)).normalize_or(here));
-                    let (w0, w1) = (start_side * width[0] / 2.0, end_side * width[1] / 2.0);
+                    let grow = p.size_scale();
+                    let (w0, w1) = (start_side * width[0] * grow / 2.0, end_side * width[1] * grow / 2.0);
                     // U along the strip, V across.
                     let r = [rect[0] + (rect[2] - rect[0]) * u.0, rect[1], rect[0] + (rect[2] - rect[0]) * u.1, rect[3]];
                     let end_rgba = end_color.map_or(rgba, |c| {
@@ -460,6 +472,33 @@ pub fn draw_particles(
             b.write(&mut mesh, -forward);
         }
     }
+}
+
+/// The fraction of a view a camera-facing sprite of half-width `half` at
+/// view depth `depth` covers (both metres): its square's share of the
+/// view's width times its share of the height at that depth, each at most
+/// 1; 1 when the square reaches the eye's plane. `tan_half_fov` is the
+/// vertical half-angle's tangent, `aspect` width over height.
+pub fn view_fraction(half: f32, depth: f32, tan_half_fov: f32, aspect: f32) -> f32 {
+    if depth - half <= 0.0 {
+        return 1.0;
+    }
+    let height = 2.0 * depth * tan_half_fov.max(1e-4);
+    let width = height * aspect.max(1e-4);
+    (2.0 * half / width).min(1.0) * (2.0 * half / height).min(1.0)
+}
+
+/// Whether a sprite is drawn under a view-filling cap: one covering more
+/// than half the view (`fraction`) counts in `filling`, and those past
+/// `cap` are dropped. Without a cap every sprite is kept (and nothing is
+/// measured).
+pub fn keep_sprite(cap: Option<usize>, filling: &mut usize, fraction: impl FnOnce() -> f32) -> bool {
+    let Some(cap) = cap else { return true };
+    if fraction() <= 0.5 {
+        return true;
+    }
+    *filling += 1;
+    *filling <= cap
 }
 
 /// The texture rectangle a particle shows now.
@@ -504,5 +543,29 @@ impl QuadBuilder {
 
     fn write(self, mesh: &mut Mesh, normal: Vec3) {
         dust::write_dynamic_mesh(mesh, normal, self.positions, self.uvs, self.colors, self.indices);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// specs/halo_ce/effects.md "View-filling sprites are capped": of 12
+    /// sprites each covering the whole view, the first 11 are drawn; small
+    /// ones never count; no cap keeps everything.
+    #[test]
+    fn view_filling_sprites_are_capped() {
+        let mut filling = 0;
+        let kept: Vec<bool> = (0..12).map(|_| keep_sprite(Some(11), &mut filling, || 1.0)).collect();
+        assert_eq!(kept.iter().filter(|k| **k).count(), 11);
+        assert!(!kept[11]);
+        assert!(keep_sprite(Some(11), &mut filling, || 0.3), "a small sprite is never dropped");
+        let mut none = 0;
+        assert!((0..20).all(|_| keep_sprite(None, &mut none, || 1.0)));
+        // A 1 m sprite (half 0.5) 0.4 m away reaches the eye's plane; at 10 m
+        // under a 90 degree vertical view (16:9) it covers a sliver.
+        assert_eq!(view_fraction(0.5, 0.4, 1.0, 16.0 / 9.0), 1.0);
+        let f = view_fraction(0.5, 10.0, 1.0, 16.0 / 9.0);
+        assert!((f - (1.0 / (20.0 * 16.0 / 9.0)) * (1.0 / 20.0)).abs() < 1e-6, "{f}");
     }
 }

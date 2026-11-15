@@ -73,7 +73,13 @@ fn the_level_and_the_bend() {
 /// shot: the shooter's aim, the shot's (first projectile's) direction and
 /// target, and the target.
 fn shoot_beside(id: &str, on: bool, zoom: bool, offset: f32) -> (Vec3, Vec3, Option<Entity>, Entity) {
+    shoot_beside_bent(id, on, zoom, offset, true)
+}
+
+/// `shoot_beside` with the bend's switch (`aim::Bend`) set to `bend`.
+fn shoot_beside_bent(id: &str, on: bool, zoom: bool, offset: f32, bend: bool) -> (Vec3, Vec3, Option<Entity>, Entity) {
     let (mut sim, p, g) = armed(id);
+    sim.app.insert_resource(halo_ce::game::weapons::aim::Bend(bend));
     if !on {
         let mut w = sim.app.world_mut().get_mut::<HaloWeapon>(g).unwrap();
         let mut data = (*w.0).clone();
@@ -112,14 +118,14 @@ fn shoot_beside(id: &str, on: bool, zoom: bool, offset: f32) -> (Vec3, Vec3, Opt
 
 #[test]
 fn a_zoomed_sniper_shot_is_bent_toward_a_target_beside_its_aim() {
-    // 0.3 degrees to the right at 2x (autoaim angle 0.5 degrees): level
-    // g(0.3, 0.5) = 0.8, so the shot turns about 0.24 degrees toward it.
+    // 0.3 degrees to the right at 2x (autoaim angle 0.5 degrees), the
+    // switch on: the target is taken, but its aim point is on its pill
+    // pulled toward the ray by up to the autoaim width (0.08 WU), and the
+    // ray passes that close to it here, so the aim point is on the ray and
+    // the shot keeps its line (weapons.md 15, the fourth errata).
     let (aim, d, _, _) = shoot_beside(SNIPER_RIFLE, true, true, deg(0.3));
     let turned = aim.angle_between(d);
-    assert!(turned > deg(0.2) && turned < deg(0.28), "turned {} degrees", turned.to_degrees());
-    // Toward the target: to the aim's left.
-    let left = Vec3::Y.cross(aim);
-    assert!(d.dot(left) > 0.0, "toward the target");
+    assert!(turned < deg(0.01), "turned {} degrees", turned.to_degrees());
     // The switch off: exactly as aimed.
     let (aim, d, _, _) = shoot_beside(SNIPER_RIFLE, false, true, deg(0.3));
     assert!(aim.angle_between(d) < 1e-5, "as aimed: {}", aim.angle_between(d).to_degrees());
@@ -131,4 +137,37 @@ fn a_needle_takes_the_autoaims_target() {
     assert_eq!(target, Some(t), "the autoaim's target");
     let (_, _, target, _) = shoot_beside(NEEDLER, false, false, deg(3.0));
     assert_eq!(target, None, "the switch off: no target, no guidance");
+}
+
+/// weapons.md 15's test rows (fourth errata): the aim point on the
+/// pelvis-to-head pill (Halo's axes, z up): a camera above the head aims
+/// at the head raised toward the ray by the 0.06 it is off (under the
+/// width 0.08); a camera crossing the pill aims where it crosses.
+#[test]
+fn the_aim_point_is_on_the_pelvis_to_head_pill() {
+    use halo_ce::game::weapons::aim::{AUTOAIM_WIDTH, HEAD_HEIGHT, PELVIS_HEIGHT, aim_point};
+    let (pelvis, head) = (Vec3::new(20.0, 0.0, PELVIS_HEIGHT), Vec3::new(20.0, 0.0, HEAD_HEIGHT));
+    let p = aim_point(pelvis, head, AUTOAIM_WIDTH, Vec3::new(0.0, 0.0, 0.62), Vec3::X);
+    assert!(p.abs_diff_eq(Vec3::new(20.0, 0.0, 0.62), 1e-5), "{p}");
+    let p = aim_point(pelvis, head, AUTOAIM_WIDTH, Vec3::new(0.0, 0.0, 0.45), Vec3::X);
+    assert!(p.abs_diff_eq(Vec3::new(20.0, 0.0, 0.45), 1e-5), "{p}");
+    // Far above: the head, raised by the width alone.
+    let p = aim_point(pelvis, head, AUTOAIM_WIDTH, Vec3::new(0.0, 0.0, 2.0), Vec3::X);
+    assert!(p.abs_diff_eq(Vec3::new(20.0, 0.0, 0.64), 1e-5), "{p}");
+}
+
+
+/// The bend is off by default (mouse and keyboard: `aim::Bend`): a shot
+/// with a target just inside the autoaim cone flies along the aim, while
+/// the needles still take the target (guidance is not the bend); with the
+/// switch on, both.
+#[test]
+fn by_default_shots_fly_straight_and_needles_still_home() {
+    let (aim, d, _, _) = shoot_beside_bent(SNIPER_RIFLE, true, true, deg(0.3), false);
+    assert!(aim.angle_between(d) < 1e-5, "straight: {}", aim.angle_between(d).to_degrees());
+    let (_, _, target, t) = shoot_beside_bent(NEEDLER, true, false, deg(3.0), false);
+    assert_eq!(target, Some(t), "the needle's guidance keeps its target");
+    let (aim, d, target, t) = shoot_beside_bent(NEEDLER, true, false, deg(3.0), true);
+    assert_eq!(target, Some(t));
+    assert!(aim.angle_between(d) > 1e-4, "bent with the switch on");
 }

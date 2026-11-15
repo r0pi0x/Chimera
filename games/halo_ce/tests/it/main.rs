@@ -20,9 +20,11 @@ mod arsenal;
 mod arsenal_fx;
 mod arsenal_rules;
 mod assets;
+mod audio;
 mod autoaim;
 mod body;
 mod cross_game;
+mod death;
 mod fx;
 mod fx_place;
 mod hud;
@@ -57,7 +59,9 @@ mod vehicles;
 
 // Slow ones (the user's disc image): the fast tier skips `heavy::`.
 mod heavy {
+    mod audio;
     mod body;
+    mod death;
     mod fx;
     mod hud;
     mod ladder;

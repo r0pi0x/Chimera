@@ -201,12 +201,7 @@ fn the_zoom_draws_the_scopes_mask_under_the_hud() {
     let masks = |q: &[Quad], w: f32, h: f32| q.iter().position(|q| q.picture.size == [w, h] && page(&d, q).contains("mask"));
     let q = frame(&d, &held(tag, sniper), 3);
     assert!(masks(&q, 512.0, 256.0).is_none(), "no mask unzoomed");
-    if !draw::SCOPE_MASK {
-        // Switched off (the spec's open question): no zoom draws one.
-        let q = frame(&d, &held(tag, WeaponNow { zoom: 0, ..sniper }), 3);
-        assert!(masks(&q, 512.0, 256.0).is_none(), "the mask is off");
-        return;
-    }
+    assert!(draw::SCOPE_MASK, "the mask is on (hud.md 9, S13)");
     for zoom in [0, 1] {
         let q = frame(&d, &held(tag, WeaponNow { zoom, ..sniper }), 3);
         // The 512 by 256 mask, one texel a unit, centred; first in the list
@@ -226,4 +221,63 @@ fn the_zoom_draws_the_scopes_mask_under_the_hud() {
     st.tick(&d, &u, &[], 0.0, 100);
     let q = draw::draw(&d, &u, &st, &wide, 101);
     assert_eq!(rect(&q[0]), [wide.width / 2 - 256, 112, wide.width / 2 + 256, 368]);
+}
+
+/// hud.md S13 on the disc's masks, at 640 by 480 (the mask's texel at a
+/// view pixel is the pixel minus (640 - 512) / 2 = 64 across and (480 -
+/// 256) / 2 = 112 down): the sniper's grey level Y is 0 at the centre (and
+/// its alpha 0: sharp), 1 on the frame line at view columns 125 and 126
+/// (mask 61, 62), 0 just inside (127), and the border texel (what every
+/// pixel beyond the mask takes) 128 or 132 with alpha 255; the darkening
+/// keeps 1 - Y of the scene (0.6 x (1 - 128/255) = 0.2988 beyond the
+/// mask); every quad of the mask darkens (no colour added).
+#[test]
+fn s13_the_scopes_masks_grey_levels() {
+    let Some(d) = data() else { return };
+    let sniper = WeaponNow { loaded: 4, reserve: 8, loaded_max: 4, ready: true, magazine: true, zoom: 0, ..Default::default() };
+    let q = frame(&d, &held("weapons\\sniper rifle\\sniper rifle", sniper), 3);
+    assert!(matches!(q[0].fill, draw::Fill::Darken), "{:?}", q[0].fill);
+    assert!(q[1..5].iter().all(|b| matches!(b.fill, draw::Fill::Darken)));
+    let (w, h, px) = &d.pages[&q[0].picture.page].images[q[0].picture.image];
+    assert_eq!((*w, *h), (512, 256));
+    // (Y, A) at a view pixel (column, row): Y is the texel's blue.
+    let at = |x: u32, y: u32| {
+        let i = (((y - 112) * w + (x - 64)) * 4) as usize;
+        (px[i + 2], px[i + 3])
+    };
+    assert_eq!(at(320, 240), (0, 0), "the centre: undimmed and sharp");
+    assert_eq!((at(125, 240).0, at(126, 240).0), (255, 255), "the frame line");
+    assert_eq!(at(127, 240).0, 0, "just inside the window");
+    assert_eq!(at(130, 240), (0, 255), "inside, fully blurred");
+    let border = (px[2], px[3]);
+    assert!(matches!(border.0, 128 | 132) && border.1 == 255, "{border:?}");
+    let kept = 0.6 * (1.0 - 128.0 / 255.0);
+    assert!((kept - 0.2988_f32).abs() < 1e-4);
+}
+/// The party apps' layout (`layout::HudLayout::Party`): the shield and
+/// health block in the motion tracker's place at the bottom left, inside
+/// the safe frame, no tracker drawn; the disc's layout unchanged.
+#[test]
+fn the_party_layout_moves_the_shield_block_to_the_trackers_place() {
+    use halo_ce::ui::hud::layout::{HudLayout, rect_bounds};
+    let Some(d) = data() else { return };
+    let unit = Unit { alive: true, shield: 1.0, body: 1.0, ..Default::default() };
+    for (w, h) in [(1280.0, 720.0), (1920.0, 1080.0), (640.0, 480.0)] {
+        let canvas = Canvas::of(w, h);
+        let mut st = HudState::default();
+        st.tick(&d, &unit, &[], 0.0, 100);
+        let disc = draw::draw(&d, &unit, &st, &canvas, 101);
+        let party = draw::draw(&d, &unit, &st, &canvas.with_layout(HudLayout::Party), 101);
+        assert!(disc.iter().any(|q| matches!(q.fill, draw::Fill::Sweep { .. })), "the disc's tracker");
+        assert!(!party.iter().any(|q| matches!(q.fill, draw::Fill::Sweep { .. })), "no tracker");
+        assert!(party.len() < disc.len());
+        // The block: what differs from the disc's quads.
+        let moved: Vec<[f32; 4]> = party.iter().zip(&disc).filter(|(a, b)| a.rect != b.rect).map(|(a, _)| a.rect).collect();
+        let b = rect_bounds(moved).expect("the block moved");
+        let f = canvas.frame().map(|v| v as f32);
+        assert!(b[0] >= f[0] && b[3] <= f[3] && b[1] >= f[1], "inside the safe frame: {b:?} {f:?}");
+        assert!(b[2] < canvas.width as f32 / 2.0 && b[1] > 240.0, "bottom left: {b:?}");
+        // Off the kill feed's corner (the top right quarter).
+        assert!(b[2] < canvas.width as f32 * 0.75 || b[1] > 120.0);
+    }
 }

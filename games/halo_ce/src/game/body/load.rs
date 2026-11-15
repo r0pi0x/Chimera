@@ -53,6 +53,17 @@ pub const BIPED: &str = "characters\\cyborg_mp\\cyborg_mp";
 /// map holds the same biped; the plan's choice).
 pub const DONOR_MAP: &str = "bloodgulch";
 
+/// The sounds of the Spartan's animation graph (its deaths' and others'),
+/// for the effects library to decode (`fx::load::compile`); none when the
+/// map has no Spartan.
+pub fn sound_tags(file: &MapFile) -> Vec<TagRef> {
+    let graph = file
+        .find(class::BIPED, BIPED)
+        .and_then(|t| Biped::read(file, t).ok())
+        .and_then(|b| file.tag(b.object.animation_graph.id).and_then(|t| AnimationGraph::read(file, t).ok()));
+    graph.map_or_else(Vec::new, |g| g.sounds.iter().map(|s| s.sound).collect())
+}
+
 /// The body and its textures (its meshes' texture indices point into
 /// `textures`).
 #[derive(Clone, Debug)]
@@ -137,8 +148,14 @@ pub fn spartan(file: &MapFile, decode: bool) -> Result<Spartan, String> {
         (bevy::math::Vec3::splat(f32::MAX), bevy::math::Vec3::splat(f32::MIN)),
         |(lo, hi), p| (lo.min((*p).into()), hi.max((*p).into())),
     );
-    let (set, left_out) = anims::build(&graph, &bones, model.node_list_checksum);
+    let (mut set, left_out) = anims::build(&graph, &bones, model.node_list_checksum);
     warnings.extend(left_out);
+    // The animations' sounds as the effects library names them
+    // (`sound_tags`: the library decodes them).
+    anims::name_sounds(&mut set, |i| {
+        let r = graph.sounds.get(i)?.sound;
+        Some(super::super::fx::name_of(&file.tag(r.id)?.path))
+    });
     let root = skeleton::root();
     let boxes = hits::boxes(&coll, &bones);
     let regions = hits::regions(&bones, &boxes);

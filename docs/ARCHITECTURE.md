@@ -357,6 +357,19 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   runtime, chosen by `halo_ce:gametype`, in Halo's own app and server
   only; the match's state replicates as the net part `halo_ce_match`
   (`net60`), flags and balls through `NetItem`.
+  A dead Halo player leaves a body of its own (`body::death::HaloCorpse`,
+  net part `halo_ce_corpses`, `net61`) playing the death its killing hit
+  picked from the unit's damage table, falling and lying where it fell,
+  removed after 900 idle ticks; in Halo's own app its weapon and
+  grenades drop as items.
+  Halo's effects play particle systems by state (sprite sizes in world
+  units per sprite pixel, at most 11 view-filling sprites a frame); a
+  zoomed gun's scope mask dims the view outside its window; grenade
+  kinds follow weapons.md 14; the autoaim's bend is off by default
+  (`halo_autoaim`: every player is on mouse and keyboard) while guided
+  projectiles still take their target; in the party apps Halo's HUD
+  uses its party layout (`ui::party_app`: the shield and health at the
+  bottom left, no motion tracker).
   `game::vehicles` runs Halo's vehicles (the Warthog, the Ghost and the
   Scorpion as data in `data/vehicles/`) by the spec's own mass-point
   step at 30 Hz on avian's spatial queries, writing a kinematic body
@@ -365,6 +378,11 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   track in the heading frame with its pull-in, through `MapView`; the
   wheels, steering and suspension are posed on the rigged prop
   (`vehicles::look`), on a client from the replicated motion.
+  Halo's lasting sounds (`game::audio`) play on the engine's
+  `SoundControl`/`PlaySound` seams: the level's background sound by the
+  listener's cluster, its sound scenery, the shown projectiles' flight
+  loops and the Spartan's footsteps by the material under its feet, all
+  presentation from the map and replicated state.
   Halo's
   files reach
   players without the disc through the asset store: `chimera_pack

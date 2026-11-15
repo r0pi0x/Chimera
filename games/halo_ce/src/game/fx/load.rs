@@ -68,6 +68,9 @@ pub struct FxLight {
     pub color: [f32; 3],
     pub radius: f32,
     pub ticks: f32,
+    /// The transition function of its fall-off over the life (objects.md:
+    /// 0 linear, 1 early, 3 late ...).
+    pub falloff: i16,
 }
 
 /// What a part makes.
@@ -99,6 +102,30 @@ pub struct FxSysState {
     pub color_upper: [f32; 4],
     pub additive: bool,
     pub animation_rate: (f32, f32),
+    /// The transition to the next state (s), the spin (rad/s), the state's
+    /// radius multiplier and its point physics.
+    pub transition: (f32, f32),
+    pub rotation_rate: (f32, f32),
+    pub radius_multiplier: f32,
+    pub physics: Option<PointPhysics>,
+    /// The state's texture (its bitmap's first page) and the count of its
+    /// sequence's sprites on it: two states drawn alike (same texture,
+    /// blend and sequence) are not cross-faded.
+    pub texture: Option<usize>,
+    pub sprites: usize,
+}
+
+/// A type state of a particle system (the type's own clock): how long, the
+/// transition to the next, and its colour multiplier (argb) the particles'
+/// colour and alpha are multiplied by.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FxTypeState {
+    pub duration: (f32, f32),
+    pub transition: (f32, f32),
+    pub color: [f32; 4],
+    pub radius_multiplier: f32,
+    /// Its scale multiplier (the particles' drawn size).
+    pub scale_multiplier: f32,
 }
 
 /// A particle system's type: its creation (initial count, the physics and
@@ -113,6 +140,13 @@ pub struct FxSysType {
     pub birth: (f32, f32),
     pub rate: f32,
     pub states: Vec<FxSysState>,
+    /// The type's collision radius (WU), the base of its particles' physics
+    /// radius.
+    pub radius: f32,
+    pub type_states: Vec<FxTypeState>,
+    /// Its complex sprite render mode (1 rotational: the face-on sprite
+    /// picked by the particle's rotation).
+    pub render_mode: i16,
 }
 
 /// A particle system (`pctl`) as drawn.
@@ -193,6 +227,10 @@ pub struct FxParticle {
     pub orientation: i16,
     /// The first sprite's width over its height.
     pub aspect: f32,
+    /// The first sprite's larger side in pixels times the tag's sprite size
+    /// field (1 / pixels): its drawn width is 2R times this (the bitmap's
+    /// largest sprite spans 2R).
+    pub sprite_scale: f32,
 }
 
 /// A projectile's tracer: its contrail's first state (WU, colour) and
@@ -207,6 +245,27 @@ pub struct FxTracer {
     /// most 4; 0: one tick), and its last state's width (WU).
     pub life: f32,
     pub end_width: f32,
+    /// Its point states in order (effects.md "Contrails"): a point lives
+    /// through them, widening and changing colour.
+    pub states: Vec<FxTracerState>,
+}
+
+/// One point state of a contrail: the time it lasts and the transition to
+/// the next (s, the bounds' means), its full width (WU) and colour (argb,
+/// the bounds' mean).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FxTracerState {
+    pub duration: f32,
+    pub transition: f32,
+    pub width: f32,
+    pub color: [f32; 4],
+    /// The bounds each point draws its own lengths from (s; effects.md
+    /// "Contrails", point life), and the state's scale flags (bits 0 to 3:
+    /// duration, its delta, transition, its delta scaled by the point's
+    /// density).
+    pub duration_bounds: (f32, f32),
+    pub transition_bounds: (f32, f32),
+    pub scale_flags: u32,
 }
 
 /// One gun's presentation (by its weapon tag's path).
@@ -257,6 +316,9 @@ pub struct FxProjectile {
     /// Its effect attachments by marker (the rocket's exhaust, the frag's
     /// smoke trail, the plasma grenade's glow), made again each Halo tick.
     pub attached: Vec<(usize, String)>,
+    /// Its particle system attachments by marker (the rocket's exhaust),
+    /// made at their creation rate each Halo tick (`HaloFx::systems`).
+    pub attached_systems: Vec<(usize, String)>,
     /// Its object model has meshes: drawn as `object_key(tag)`.
     pub model: bool,
 }
@@ -432,7 +494,7 @@ impl Compiler<'_> {
     fn light(&mut self, r: &TagRef) -> Option<FxLight> {
         let l = Light::read(self.file, self.file.tag(r.id)?).ok()?;
         let (color, radius) = l.at(1.0);
-        Some(FxLight { color, radius, ticks: l.duration })
+        Some(FxLight { color, radius, ticks: l.duration, falloff: l.falloff_function })
     }
 
     fn particle(&mut self, r: &TagRef) -> Option<usize> {
@@ -443,11 +505,16 @@ impl Compiler<'_> {
         let p = Particle::read(self.file, tag).map_err(|e| self.warn(format!("{}: {e}", tag.path))).ok()?;
         let physics = self.file.tag(p.physics.id).and_then(|t| PointPhysics::read(self.file, t).ok());
         let additive = p.shader.blend != blam_formats::effect::EffectShader::ALPHA_BLEND;
-        let mut aspect = 1.0;
+        let (mut aspect, mut sprite_scale) = (1.0, 1.0);
         let material = self.bitmap(&p.bitmap).map(|(texture, sequences)| {
-            if let Some(r) = sequences.first().and_then(|s| s.first()) {
+            let first = usize::try_from(p.first_sequence).ok().and_then(|i| sequences.get(i)).or(sequences.first());
+            if let Some(r) = first.and_then(|s| s.first()) {
                 let (w, h) = self.set.textures.get(texture).map_or((1.0, 1.0), |t| (t.width as f32, t.height as f32));
-                aspect = ((r[2] - r[0]) * w / ((r[3] - r[1]) * h).max(1e-6)).max(1e-3);
+                let (pw, ph) = ((r[2] - r[0]).abs() * w, (r[3] - r[1]).abs() * h);
+                aspect = (pw / ph.max(1e-6)).max(1e-3);
+                if p.sprite_size_inverse > 0.0 {
+                    sprite_scale = pw.max(ph) * p.sprite_size_inverse;
+                }
             }
             self.set.materials.push(ParticleMaterial {
                 name: name_of(&tag.path),
@@ -476,6 +543,7 @@ impl Compiler<'_> {
             physics,
             orientation: p.orientation,
             aspect,
+            sprite_scale,
         });
         let i = self.set.library.particles.len() - 1;
         self.particles.insert(r.id.0, i);
@@ -498,15 +566,17 @@ impl Compiler<'_> {
             let mut states = Vec::new();
             for st in &t.particle_states {
                 let additive = st.shader.blend != blam_formats::effect::EffectShader::ALPHA_BLEND;
-                let (mut pixels, mut material) = (1.0, None);
-                if let Some((texture, sequences)) = self.bitmap(&st.bitmap) {
-                    let (w, h) = self.set.textures.get(texture).map_or((1.0, 1.0), |t| (t.width as f32, t.height as f32));
+                let (mut pixels, mut material, mut texture, mut sprites) = (1.0, None, None, 0);
+                if let Some((texture_index, sequences)) = self.bitmap(&st.bitmap) {
+                    sprites = sequences.get(st.sequence.max(0) as usize).map_or(0, Vec::len);
+                    texture = Some(texture_index);
+                    let (w, h) = self.set.textures.get(texture_index).map_or((1.0, 1.0), |t| (t.width as f32, t.height as f32));
                     if let Some(r) = sequences.get(st.sequence.max(0) as usize).and_then(|s| s.first()) {
                         pixels = ((r[2] - r[0]) * w).max((r[3] - r[1]) * h).abs();
                     }
                     self.set.materials.push(ParticleMaterial {
                         name: format!("{}#{}", name_of(&tag.path), self.set.materials.len()),
-                        texture: Some(texture),
+                        texture: Some(texture_index),
                         blend: if additive { ParticleBlend::Additive } else { ParticleBlend::Alpha },
                         vertex_color: true,
                         vertex_alpha: true,
@@ -525,6 +595,12 @@ impl Compiler<'_> {
                     color_upper: argb(&st.color_upper),
                     additive,
                     animation_rate: (st.animation_rate.lower, st.animation_rate.upper),
+                    transition: (st.transition.lower, st.transition.upper),
+                    rotation_rate: (st.rotation_rate.lower, st.rotation_rate.upper),
+                    radius_multiplier: st.radius_multiplier,
+                    physics: self.file.tag(st.physics.id).and_then(|t| PointPhysics::read(self.file, t).ok()),
+                    texture,
+                    sprites,
                 });
             }
             let birth = t.type_states.first();
@@ -536,6 +612,19 @@ impl Compiler<'_> {
                 birth: birth.map_or((0.0, 0.0), |b| (b.duration.lower, b.duration.upper)),
                 rate: birth.map_or(0.0, |b| b.creation_rate),
                 states,
+                radius: t.radius,
+                type_states: t
+                    .type_states
+                    .iter()
+                    .map(|s| FxTypeState {
+                        duration: (s.duration.lower, s.duration.upper),
+                        transition: (s.transition.lower, s.transition.upper),
+                        color: [s.color_multiplier.a, s.color_multiplier.r, s.color_multiplier.g, s.color_multiplier.b],
+                        radius_multiplier: s.radius_multiplier,
+                        scale_multiplier: s.scale_multiplier,
+                    })
+                    .collect(),
+                render_mode: t.render_mode,
             });
         }
         let lib = &mut self.set.library;
@@ -701,6 +790,10 @@ impl Compiler<'_> {
                 && let Some(e) = self.effect(&a.attached)
             {
                 out.attached.push((e, a.marker_name.to_ascii_lowercase()));
+            } else if a.attached.class == class::PARTICLE_SYSTEM
+                && let Some(s) = self.system(&a.attached)
+            {
+                out.attached_systems.push((s, a.marker_name.to_ascii_lowercase()));
             }
         }
         Ok(out)
@@ -738,7 +831,26 @@ impl Compiler<'_> {
         // (the rocket's smoke trail stays; a bullet's streak barely).
         let life = c.point_states.iter().map(|p| p.duration.upper + p.transition_duration.upper).sum::<f32>().clamp(1.0 / 30.0, 4.0);
         let end_width = c.point_states.last().map_or(s.width, |p| p.width);
-        Some(FxTracer { width: s.width, color: [b.r.max(a.r), b.g.max(a.g), b.b.max(a.b), b.a.max(a.a)], material, additive, life, end_width })
+        let mean = |b: &blam_formats::cache::Bounds<f32>| (b.lower + b.upper) / 2.0;
+        let states = c
+            .point_states
+            .iter()
+            .map(|p| FxTracerState {
+                duration: mean(&p.duration),
+                transition: mean(&p.transition_duration),
+                width: p.width,
+                duration_bounds: (p.duration.lower, p.duration.upper),
+                transition_bounds: (p.transition_duration.lower, p.transition_duration.upper),
+                scale_flags: p.scale_flags,
+                color: [
+                    (p.color_lower.a + p.color_upper.a) / 2.0,
+                    (p.color_lower.r + p.color_upper.r) / 2.0,
+                    (p.color_lower.g + p.color_upper.g) / 2.0,
+                    (p.color_lower.b + p.color_upper.b) / 2.0,
+                ],
+            })
+            .collect();
+        Some(FxTracer { width: s.width, color: [b.r.max(a.r), b.g.max(a.g), b.b.max(a.b), b.a.max(a.a)], material, additive, life, end_width, states })
     }
 }
 
@@ -791,6 +903,10 @@ pub fn compile(file: &MapFile, guns: &[&str], decode: bool) -> FxSet {
         if let Some(sound) = c.pickup(&i) {
             c.set.library.pickups.insert(i, sound);
         }
+    }
+    // The Spartan's animation sounds (its deaths': `body::death`).
+    for r in super::super::body::load::sound_tags(file) {
+        c.sound(&r);
     }
     c.set
 }

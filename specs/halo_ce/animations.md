@@ -802,19 +802,43 @@ state:
 ### Damage and death
 
 - A soft ping (a flinch that is not a kill) plays the s-ping slot for
-  the hit's direction and body part as an extra overlay layer (after
-  the overlay action), unless one started within the unit's minimum
-  interrupt ticks.
-- A kill: if the unit is a biped in the air (and its biped tag allows
-  it) the state becomes dying airborne with the seat's airborne-dead
-  animation; otherwise state dying with the h-kill (hard) or s-kill
+  the hit's direction and body part (a random permutation) as an extra
+  overlay layer at full weight (after the overlay action), unless one
+  is playing and its frame is at most the unit's soft ping interrupt
+  ticks. It starts at frame 0, advances one frame per unit update and
+  is removed by the update in which it reaches its last frame; it is
+  not a state, so it plays over any state (moving, airborne, seated,
+  reloading) and starts no transition blend. Hand IK of the weapon is
+  off while it plays. The Spartan's 44 s-ping slots all hold `s-ping
+  front gut` (9 frames, three permutations), so direction and part do
+  not show (`health_shields.md`, Pings).
+- A hard ping (not a kill) sets the hard ping state with the h-ping
+  slot's animation (3-tick blend), only when not seated and the slot
+  holds one; the Spartan has none, so it never happens to players.
+- A kill: if the unit is a biped whose airborne flag is set (and its
+  biped tag allows a dying-airborne state) the state becomes dying
+  airborne with the seat's airborne-dead animation (the usual 6-tick
+  state blend); otherwise state dying with the h-kill (hard) or s-kill
   slot for the direction and part, blended in over 3 ticks. The seat is
-  first re-resolved as `stand` with the current weapon.
-- A dying animation reaching its end holds its last frame (the frame
-  steps back by one each tick); a biped then starts its limp body.
-- The weapon is dropped after a random delay between N/4 and
-  N/2 + N/4 ticks of the death animation (N its frame count), at least
-  1 (reference only; `health_shields.md` owns death).
+  first re-resolved as `stand` with the current weapon. A grenade
+  being thrown is released early.
+- Each tick a dead biped wants dying airborne after 3 or more airborne
+  updates and dying otherwise; the change dying airborne to dying plays
+  the seat's landing-dead animation (6-tick blend), the change dying to
+  dying airborne the airborne-dead animation (6-tick blend). Dying
+  states yield only to each other. `health_shields.md`, The body, has
+  the timing (landing-dead starts the tick after touchdown).
+- A dying (ground) animation reaching its end holds its last frame (the
+  frame steps back by one each tick), its root translation is ignored
+  from then on, and a biped with the limp body flag then starts its
+  limp body on the first such tick on which it is at rest; from then
+  the node matrices are no longer rebuilt from the animation (the limp
+  body moves them for 20 updates, then the pose stays frozen). The
+  airborne-dead animation has loop frame 0 and simply repeats.
+- The weapon is dropped after a random delay drawn from the integers
+  floor(N/4) .. floor(N/4) + floor(N/2) − 1 (N the death animation's
+  frame count), at least 1; at once for an airborne death or a killing
+  push of 2 WU/s or more (`health_shields.md` owns death).
 
 ### Other layers
 
@@ -1197,13 +1221,26 @@ land-hard 59 (no loop) / 40 (loop 30); throw-grenade and type
 animations as standing (the crouching `sg` and `pr` melee slots use
 `stand rifle sr melee`, 35).
 
-Deaths (every seat): airborne-dead `stand airborne-dead` 37 frames;
-landing-dead `stand landing-dead` 42 (sound at frame 2). Damage table:
-s-ping (9-frame overlays, three permutations) for all 44 front/left/
-right/back parts; s-kill front gut 69, front chest 44, left 30, right
-30, back 43; h-kill front gut 46, front head 60, left gut 41, left head
-44, right gut 41, right head 44, back 40; no h-ping. None has a key
-frame. No Spartan animation is compressed.
+Deaths (every seat): airborne-dead `stand airborne-dead` 37 frames,
+loop frame 0, no sound; landing-dead `stand landing-dead` 42 (sound at
+frame 2). Damage table: every one of the 44 s-ping slots (all
+directions and parts) holds the same `s-ping front gut`, a 9-frame
+overlay with three permutations (`%0`, `%1`, `%2`); s-kill front gut
+69, front chest 44, left 30, right 30, back 43; h-kill front gut 46,
+front head 60, left gut 41, left head 44, right gut 41, right head 44,
+back 40; no h-ping. Which part resolves to which kill animation is
+`health_shields.md`'s table (arms and hands share chest's, legs and
+feet gut's). All kill animations have loop frame 0 and one
+permutation. Their sounds (graph sounds: 0 `...\bodyfalls\marines\
+skillfrontgut`, 1 `...\hkillfronthead`, 2 `...\general`): s-kill front
+gut sound 2 at frame 15, front chest 2 at 23, left none, right 2 at 15,
+back 2 at 16; h-kill front gut 2 at 16, front head 1 at 0, left gut 2
+at 17, left head 2 at 17, right gut 2 at 17, right head 2 at 29, back 2
+at 17; landing-dead 2 at 2. None has a key frame. No Spartan animation
+is compressed. Graph nodes and their limp body joints: spine, spine1
+and neck fixed (flag 0x4); both calves and both forearms hinges (0x2);
+the others ball and socket (0x1); limp body node radius 0 (0.03 WU is
+used).
 
 ### First-person graphs
 
@@ -1457,6 +1494,11 @@ an empty label is selected by `unarmed`.
 | `stand rifle turn-left` frame info | 7 records of (0, 0, 0.2244) |
 | unit selection with seat `stand`, labels `ar`, `hp`, `ne`, `unarmed` | classes rifle, pistol, pistol, unarmed |
 | a10 `crew_panic1` | compressed; 17 rotation and 2 translation nodes; 1421 rotation keys; node 0 header 0x00000033 (first 0, count 51); default rotation of node 0 as in the worked example |
+| `characters\cyborg\cyborg` damage table, slots 0 to 43 | each resolves to `s-ping front gut%0` with permutations `%1`, `%2` (overlay, 9 frames) |
+| same, s-kill front: left hand, left arm, chest, head, left leg, left foot | `s-kill front chest` ×4, `s-kill front gut` ×2; h-kill front head `h-kill front head`, h-kill front hand `h-kill front gut` |
+| same, h-kill back head; s-kill left foot | `h-kill back gut` (40); `s-kill left gut` (30) |
+| `stand airborne-dead`, `stand landing-dead` | loop frame 0 on both; landing-dead sound index 2 (`sound\sfx\impulse\bodyfalls\marines\general`) at frame 2 |
+| graph nodes | flags: spine, spine1, neck 0x4; calves, forearms 0x2; others 0x1; limp body node radius 0 |
 
 ## Confidence per section
 
@@ -1470,7 +1512,7 @@ an empty label is selected by `unarmed`.
 | Quaternion convention, overlay product order, aim grid layout | checked against the disc (poses) |
 | Playback results, loops, key frames, sound timing | reference only |
 | Blends, transitions, tick counts | reference only |
-| Unit selection, states, actions, interruptions, death | reference only (labels and slot contents checked on the disc) |
+| Unit selection, states, actions, interruptions, death | reference only (labels and slot contents checked on the disc; the whole Spartan damage table, loop frames and death sounds read from the disc) |
 | IK | reference only |
 | Bipeds: movement choice, root motion use, footsteps | reference only (frame info values checked) |
 | First person: remapping, root at camera | reference; node presence and pose checked on the disc |

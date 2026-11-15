@@ -410,6 +410,72 @@ backlog.
   Arms' movement climbs the made ladder (docs/DESIGN.md, "Ladders across
   games"). No pool map's spawns need one (every map's spawns reach each
   other on walks and teleporters: `heavy::halo_maps`).
+- **An arena cut from a big map** (the user's idea, 2026-11-15; a
+  party-app feature for any game's big map, not only Halo's): Blood
+  Gulch (78,000 m2) and Sidewinder (69,500 m2) are six to forty times
+  the other eleven maps (1,700 to 11,400 m2), so a gun game never draws
+  them. Instead of leaving them out, play a slice of one, sized to the
+  players present (the pool's own target: the wander time under 10 s).
+  Parts: (1) candidates: closed boundaries in plan view over the bots'
+  generated mesh, cut where the mesh is narrow (a boundary across a
+  pass needs less wall than one across a field), each scored by the
+  `map_fitness` measures recomputed inside it (area, mean sight, wander
+  time) plus a new one, the share of spawn-spot pairs that see each
+  other, so a flat open slice where players spawn in each other's view
+  is refused; (2) a curated list per map chosen from the scored
+  candidates (the algorithm proposes, a person picks), kept as data
+  beside the pool rules; (3) play: the boundary solid to players, the
+  bots' mesh and the spawn spots held inside it (`nav_gen::NavWithin`
+  is the box-shaped start of this), items and objectives outside it
+  left out; (4) the look, in the party apps' own style (the party UI's
+  owner draws it): a line along the ground and a faint curtain that
+  read from afar, the wall glowing near a player who approaches it,
+  the world beyond it dimmed. Until then the simple rule holds: the
+  pool leaves the big maps out of every draw.
+- **Vehicles in the party apps are off** (the user, 2026-11-15): not
+  wanted in the gun game for now; a switch in Halo's party bundle,
+  default off, places no vehicle on a Halo map there. Halo's own app
+  and server have them.
+- **The user's decisions for the party apps** (2026-11-15):
+  - Order of work: first what Halo needs to play well in Ultimate Gun
+    Game (the HUD layout, scopes, audio, kill feed icons, the balance
+    follow-ups), then the arena cut from a big map as its own piece;
+    until then the two big maps stay out of draws and the eleven others
+    play.
+  - Field of view (a lean, not final): the user's setting for every
+    game's gun; Halo changes it only while zoomed, by the spec's
+    magnification. Unzoomed is already so; zoomed still uses Halo's own
+    angle (to do).
+  - Autoaim's bend off for mouse and keyboard (done: `halo_autoaim`);
+    guided projectiles keep their target.
+  - No Halo grenades in the party apps by default (to do: a switch in
+    Halo's party bundle, no grenade pickups placed, the counter hidden).
+  - A grenade rung later: the pistol with an empty magazine and no
+    reserve, grenades and melee only, left click throws, shown and named
+    as the frag grenade; after the health rule below is decided.
+  - Gravity: the user asked for the map to own gravity with no change to
+    any character's jump. NOT built: the numbers given then were wrong
+    (Source units are inches here). By the code: gravity 9.78 m/s2
+    (Halo), 20.3 (CS:S, TF2), 19.8 (Combat Arms), 15.2 (HL2:DM); standing
+    jumps 1.99 m, 1.45, 1.33, 0.89 and 0.54 m. Under Halo's gravity a
+    CS:S character would jump 3.0 m and TF2's 2.75 m, over the Spartan's
+    1.99 m; put back to the user.
+  - Kill feed icons: Halo registers none (the feed shows the gun's
+    name); to add from the disc's pictures.
+- **Balance in the party apps** (measured from code and data,
+  2026-11-15; nothing changed yet, the user decides): a Halo-rung holder
+  has 200 effective hit points against other games' guns (the shield is
+  100 armour that absorbs all of a hit, then 100 of body) and the shield
+  refills in 10 s; Halo's guns do about twice to other games' characters
+  what they do to a Spartan (one Halo point is 1.33 hit points, times
+  the Spartan's flesh modifier: the pistol kills in 2 body shots or any
+  headshot, the sniper rifle in one body shot); explosions and melee
+  kill other characters in one hit (a frag within 7.6 m); the shield is
+  kept as armour on the next rung (a bug: to fix); the ladder's power
+  reader scores against a plain 100-point target and misreads the plasma
+  pistol, the needler and the assault rifle (to fix). Proposed: one rule
+  (a character's full vitality in its own game is 100 in the party
+  apps), behind a switch.
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the
@@ -535,3 +601,24 @@ backlog.
   redone by the corrected specs: the scope's mask (drawn as first
   inferred it blacked out the zoomed view) and the particle systems'
   states (the frag's smoke drew as one grey sheet).
+- 2026-11-15: the Spartan's death (`body::death`, `net61`): a body of
+  its own on every machine playing the death the killing hit picks
+  (direction and body part; the airborne death, landing), lying where it
+  fell for 900 idle ticks, its sound at the animation's sound frame; in
+  Halo's own app the grenades and the weapon in hand drop as items (a
+  dropped item stays in the air where it was dropped: items do not fall
+  yet). Not done: flinches on a hit (non-lethal hits do not reach
+  clients), limp bodies, the unit's dialogue. Asked for by the user:
+  Halo's HUD in the party apps with the shield and health at the bottom
+  left and no motion tracker (the shared kill feed is top right): being
+  done.
+- 2026-11-15: explosions and trails by the corrected effects spec (the
+  earlier grey sheet was the spec's sizes read wrongly, not a sprite
+  bug: a frag is now a fireball and drifting smoke), the scopes' masks
+  dimming the view outside the window (the blur and night vision not
+  drawn: the engine's screen pass would need a two-pass blur), grenade
+  selection by weapons.md 14, the autoaim's aim point and its bend off
+  by default, Halo's party HUD layout (the shield and health bottom
+  left, no tracker: the party's kill feed is top right). The user's
+  decisions for the party apps and the balance findings are in the
+  backlog above.

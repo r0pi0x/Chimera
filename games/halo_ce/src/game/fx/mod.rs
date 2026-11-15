@@ -54,6 +54,9 @@ pub struct HaloLight {
     pub color: Vec3,
     pub radius: f32,
     pub seconds: f32,
+    /// Its fall-off's transition function (`load::FxLight::falloff`): the
+    /// intensity is 1 minus the function of the elapsed fraction.
+    pub falloff: i16,
     /// Whose effect made it (the shooter, an impact's shooter).
     pub owner: Option<Entity>,
     /// It goes with its owner (the muzzle light: a child of the shooter).
@@ -90,6 +93,21 @@ impl Plugin for HaloFxPlugin {
             .add_systems(PreUpdate, take_library);
         shots::plugin(app);
         objects::plugin(app);
+    }
+}
+
+/// How many sprites covering more than half the view Halo draws in a frame
+/// (effects.md "View-filling sprites are capped").
+pub const VIEW_FILLING_SPRITES: usize = 11;
+
+/// Halo's cap on view-filling sprites, for Halo's own app (the party's
+/// apps keep the engine's default, no cap): a system that sets it on the
+/// particle pool.
+pub fn cap_view_filling(particles: Option<ResMut<crate::map::particles::Particles>>) {
+    if let Some(mut p) = particles
+        && p.view_filling_cap != Some(VIEW_FILLING_SPRITES)
+    {
+        p.view_filling_cap = Some(VIEW_FILLING_SPRITES);
     }
 }
 
