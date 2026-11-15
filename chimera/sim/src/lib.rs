@@ -21,7 +21,7 @@
 //! `SimBasePlugins`: the engine's simulation without a game (the fixed
 //! tick, `core`, the console, game events and the server log, the movement
 //! slot's implementations, the weapon framework, the announcer's
-//! counting, the converted-map cache's `chimera:map_cache`): the start of a game's set (`cs_source::SimPlugins`)
+//! counting, the converted-map cache's `chimera:map_cache`, the player's `chimera:party_voice_lines_3d`): the start of a game's set (`cs_source::SimPlugins`)
 //! and the base of the engine's own scenario tests (tests/it/).
 
 pub mod announce;
@@ -77,7 +77,27 @@ impl Plugin for SimBasePlugins {
                 }
             });
         map_cache_cvar(app);
+        party_voices_cvar(app);
     }
+}
+
+/// `chimera:party_voice_lines_3d` (`map::sound::PartyVoices`): the
+/// player's own, archived and in their userinfo, so a server knows whom
+/// to send others' voice lines; 0 here (the standalone games keep their
+/// own audiences), the party apps make it 1.
+fn party_voices_cvar(app: &mut App) {
+    use map::sound::{PARTY_VOICES, PartyVoices};
+    app.init_resource::<PartyVoices>();
+    console::resource_cvar::<PartyVoices, u8>(
+        app,
+        "chimera:party_voice_lines_3d",
+        "1: hear other players' voice lines their game gives only to them or their team (radio, grenade and kill \
+         call-outs) in 3D at the speaker; 0: each game's own audience.",
+        |s| &mut s.on,
+    );
+    let mut console = app.world_mut().resource_mut::<console::Console>();
+    console.archive(PARTY_VOICES);
+    console.userinfo(PARTY_VOICES);
 }
 
 /// `chimera:map_cache 0/1`: the converted-map cache off or on for the

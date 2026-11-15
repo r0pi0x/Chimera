@@ -391,6 +391,27 @@ full name always works (user decision, 2026-10-31;
   volume for the pace (`map::sound::EvenFootsteps`), so neither identity
   is heard more: CS:S's rather than a mean, because it is a specified,
   tuned curve and leaves the CS:S identity exactly as in CS:S.
+- **Others' voice lines in 3D** (user, playtest 2026-11-14: "really cool
+  to hear those things spatialized ... more awareness of what's going
+  on"): lines a game gives only to the speaker or the speaker's team (in
+  a free-for-all, the speaker alone) are heard by everyone near, at the
+  speaker. `party_voice_lines_3d` (`map::sound::PartyVoices`): the
+  player's own setting, in Settings, Party, saved and sent in their
+  userinfo, so the server sends those lines to whoever asked, within the
+  line's own reach (a CS:S radio call at Source's talking level, 80 dB,
+  sent within 76 m by Source's attenuation filter; a Combat Arms
+  call-out at its record's radius, sent within 2R as its server sounds
+  are); each client plays them in 3D with its game's falloff, the speaker
+  as the source. On by default in the party apps, 0 in the standalone
+  games (parity first: they keep each game's audience). Voices and
+  actions of a player: CS:S's radio calls and "Fire in the hole"
+  (voice only, no chat line or radio icon for a non-teammate), Combat
+  Arms' grenade throw call-out and its kill call-out `EnemyDown` (the
+  victim's team's `ManDown` stays theirs). Kept
+  local as personal cues: Combat Arms' own auto-cast voices in your
+  head (the kill voice, sprint breath, idle, jump voice) and the
+  heartbeat, interface sounds, the announcer and the gun game's lines.
+  Hurt and death sounds were everyone's already.
 - Cross-game kits (a CS:S character's moveset in another game) are generated
   ahead of time as data, reviewed and playtested, never generated during a
   match. A runtime "chaos kit" could exist later as a server-generated mode.

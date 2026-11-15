@@ -281,12 +281,24 @@ fn combat_arms_bots_play_the_gun_game() {
         s.quota = 4;
         s.quota_set = true;
     }
-    sim.seconds(2.0);
-    let bots: Vec<Entity> = {
+    // Until all four are in and armed (before their first kills: with
+    // Combat Arms' stock hit priorities, head first, a kill can come
+    // within 2 s and move its killer a rung up).
+    let all_bots = |sim: &mut Sim| -> Vec<Entity> {
         let w = sim.app.world_mut();
         w.query_filtered::<Entity, With<combat_arms::game::bots::CaBot>>().iter(w).collect()
     };
+    let mut bots = Vec::new();
+    for _ in 0..40 {
+        sim.seconds(0.05);
+        bots = all_bots(&mut sim);
+        if bots.len() == 4 && bots.iter().all(|b| held(&sim, *b).is_some()) {
+            break;
+        }
+    }
     assert_eq!(bots.len(), 4);
+    let kills_yet = bots.iter().map(|b| sim.app.world().get::<Score>(*b).map_or(0, |s| s.kills)).sum::<i32>();
+    assert_eq!(kills_yet, 0, "no kills before all are armed");
     assert_eq!(phase(&sim), Phase::Live);
     let mut teams: Vec<u8> = bots.iter().map(|b| sim.app.world().get::<Team>(*b).unwrap().0).collect();
     teams.sort();

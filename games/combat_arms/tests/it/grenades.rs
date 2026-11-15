@@ -1959,6 +1959,113 @@ fn t67_net_call_out_reaches_the_thrower_s_team() {
     assert!(blended <= 1);
 }
 
+/// Others' voice lines in 3D (`party_voice_lines_3d`, the party apps'
+/// default; `map::sound::PartyVoices`): three players each a team of their
+/// own, as in a free-for-all. Client 0 throws; client 1 has the setting
+/// off, client 2 on. The thrower hears its call-out once (its team's, as
+/// before: no second copy), client 1 nothing (the game's own audience),
+/// client 2 the same call-out in 3D at the thrower, its copy of the
+/// thrower the source.
+#[test]
+fn net_party_voice_lines_reach_others_who_asked() {
+    use chimera_core::console::Console;
+    let link = LinkConditions {
+        latency: Duration::from_millis(30),
+        jitter: Duration::ZERO,
+        loss: 0.0,
+    };
+    let mut sim = NetSim::new(CaSim, link, 7, 3, |app| {
+        app.add_plugins(GreyboxMapPlugin);
+        app.init_resource::<Heard>().add_systems(
+            Update,
+            (|mut r: MessageReader<CaSound>, mut h: ResMut<Heard>| h.0.extend(r.read().cloned()))
+                .after(effects::CaEffectsSet),
+        );
+    });
+    sim.set_frame(TICK_INTERVAL);
+    sim.until_joined(900);
+    for (i, on) in [(0, true), (1, false), (2, true)] {
+        let line = format!("party_voice_lines_3d {}", u8::from(on));
+        sim.clients[i].app.world_mut().resource_mut::<Console>().submit(&line);
+    }
+    sim.ticks(240);
+    let me = sim.local_player(0).unwrap();
+    let characters: Vec<Entity> = (0..3).map(|i| sim.character_of(i).unwrap()).collect();
+    for (i, c) in characters.iter().enumerate() {
+        sim.server.app.world_mut().entity_mut(*c).insert(Team(10 + i as u8));
+    }
+    // The server knows who asked (their userinfo).
+    let asked: Vec<bool> = characters
+        .iter()
+        .map(|c| chimera_world::map::sound::PartyVoices::wants(sim.server.app.world(), *c))
+        .collect();
+    assert_eq!(asked, [true, false, true]);
+    // Both listeners stand within the call-out's reach (2R, 500 u): moved
+    // beside the thrower on the server (the greybox's spawns are 40 m
+    // apart).
+    let base = sim.server.position(characters[0]);
+    for (k, c) in characters[1..].iter().enumerate() {
+        let at = base + Vec3::new(3.0 * (k as f32 + 1.0), 0.0, 0.0);
+        let w = sim.server.app.world_mut();
+        w.get_mut::<Transform>(*c).unwrap().translation = at;
+        if let Some(mut p) = w.get_mut::<Position>(*c) {
+            p.0 = at;
+        }
+    }
+    sim.ticks(10);
+    for c in &characters[1..] {
+        let d = sim.server.position(*c).distance(sim.server.position(characters[0])) / U;
+        assert!(d < 1000.0, "within reach: {d} u");
+    }
+    sim.ticks(30);
+    sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().select = Some(3);
+    sim.ticks(1);
+    sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().select = None;
+    sim.ticks(40);
+    for c in &mut sim.clients {
+        c.app.world_mut().resource_mut::<Heard>().0.clear();
+    }
+    sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = true;
+    sim.ticks(1);
+    sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = false;
+    sim.ticks(120);
+    let heard: Vec<Vec<CaSound>> = (0..3).map(|i| call_outs(heard_all_of(&mut sim.clients[i].app))).collect();
+    let counts: Vec<usize> = heard.iter().map(Vec::len).collect();
+    assert_eq!(counts, [1, 0, 1], "the thrower once, the one who asked once, the other none");
+    let c = &heard[2][0];
+    let id = sim.client_id(0);
+    let thrower_there = NetSim::owned_by(&mut sim.clients[2], Some(id)).unwrap();
+    assert_eq!(c.source, Some(thrower_there), "follows the thrower");
+    let at = c.at.expect("3D");
+    let thrower_at = sim.clients[2].position(thrower_there);
+    assert!(at.distance(thrower_at) < 1.0, "at the thrower: {at} vs {thrower_at}");
+    assert_eq!(c.radii, (35.0, 500.0), "the call-out's own falloff");
+}
+
+/// Others' voice lines' reach: a listener who asked gets a call-out of
+/// outer radius R within the server's send reach (2R) of the speaker, not
+/// beyond; one who didn't (or a bot: no userinfo) never; nor the speaker.
+#[test]
+fn party_voice_lines_reach_two_radii() {
+    let mut sim = sim();
+    let speaker = player(&mut sim, 0.0, 0.0, 0.0, 1);
+    let near = player(&mut sim, 990.0, 0.0, 0.0, 2);
+    let far = player(&mut sim, 1010.0, 0.0, 0.0, 3);
+    let bot = player(&mut sim, 100.0, 0.0, 0.0, 4);
+    let mut info = chimera_core::core::UserInfo::default();
+    info.0.insert("party_voice_lines_3d".into(), "1".into());
+    for e in [speaker, near, far] {
+        sim.app.world_mut().entity_mut(e).insert(info.clone());
+    }
+    let at = sim.position(speaker);
+    let w = sim.app.world();
+    let got: Vec<bool> = [near, far, bot, speaker]
+        .iter()
+        .map(|r| callout::party_hears(w, *r, speaker, at, 500.0))
+        .collect();
+    assert_eq!(got, [true, false, false, false]);
+}
+
 fn heard_all_of(app: &mut App) -> Vec<CaSound> {
     std::mem::take(&mut app.world_mut().resource_mut::<Heard>().0)
 }

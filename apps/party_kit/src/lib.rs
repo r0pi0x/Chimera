@@ -72,7 +72,11 @@
 //!   (one footstep profile for both games' identities, CS:S's; the
 //!   server's, replicated) and, on the client, `party_swap_effect` (a
 //!   short flash on a rung's swap and a puff at others' bodies:
-//!   `chimera_client::client::swap_effect`).
+//!   `chimera_client::client::swap_effect`). On by default (the user's
+//!   playtest ask, 2026-11-14): `party_voice_lines_3d` (the player's,
+//!   in their userinfo: others' grenade and kill call-outs and radio
+//!   calls their game gives only to them or their team, heard in 3D at
+//!   them; `chimera_world::map::sound::PartyVoices`, `voice_lines`).
 //!
 //! - The host's settings and the vote to skip the map (`host`): the
 //!   Escape menu's server side (`esc_menu`, with `present`).
@@ -296,6 +300,7 @@ impl Plugin for PartyPartsPlugin {
             bots.walker_radius = Some(WIDEST_HULL);
         }
         even_footsteps(app);
+        voice_lines(app);
         // The host's settings and the skip-map vote (the Escape menu's).
         host::build(app);
     }
@@ -334,6 +339,17 @@ fn even_footsteps(app: &mut App) {
             "1: every game's footsteps carry as far and as loud as CS:S's (one profile for both identities); 0: each game's own.",
             |s| &mut s.on,
         );
+    }
+}
+
+/// `party_voice_lines_3d` on by default here (Chimera registers it at 0,
+/// the standalone games' parity): a player hears others' voice lines in
+/// 3D at them (`chimera_world::map::sound::PartyVoices`).
+fn voice_lines(app: &mut App) {
+    use chimera_world::map::sound::{PARTY_VOICES, PartyVoices};
+    app.insert_resource(PartyVoices { on: 1 });
+    if let Some(mut console) = app.world_mut().get_resource_mut::<chimera_core::console::Console>() {
+        console.set_default(PARTY_VOICES, "1");
     }
 }
 

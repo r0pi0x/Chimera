@@ -33,6 +33,7 @@ mod net_query;
 mod net_rules;
 mod night_vision;
 mod objectives;
+mod radio_voices;
 mod spectate;
 mod target_id;
 mod voice;

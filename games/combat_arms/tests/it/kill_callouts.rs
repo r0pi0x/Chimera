@@ -166,6 +166,60 @@ fn c106_who_hears() {
     assert!(heard(&mut sim, b, v, Some(a)).is_empty(), "another player");
 }
 
+/// Others' voice lines in 3D (`party_voice_lines_3d`, docs/DESIGN.md):
+/// in a free-for-all a player who asked hears the killer's `EnemyDown`
+/// within 2R (the record's radius 1000 u: 2000 u) of the killer, not
+/// beyond; one who didn't ask, nothing (the game's own audience); a world
+/// kill's (no speaker) nobody; the victim's team's `ManDown` stays theirs.
+#[test]
+fn party_voice_lines_carry_enemy_down_to_those_who_asked() {
+    let mut sim = sim_ffa();
+    let a = player(&mut sim, 3, 0.0);
+    let v = player(&mut sim, 4, 100.0);
+    let near = player(&mut sim, 5, 1900.0);
+    let far = player(&mut sim, 6, 2100.0);
+    let plain = player(&mut sim, 7, 150.0);
+    // The reader is this machine's player: its setting is the console's
+    // (its userinfo).
+    let ask = |sim: &mut Sim, on: bool| {
+        let line = format!("party_voice_lines_3d {}", u8::from(on));
+        sim.app.world_mut().resource_mut::<chimera_core::console::Console>().submit(&line);
+    };
+    sim.ticks(1);
+    ask(&mut sim, true);
+    assert_eq!(heard(&mut sim, near, v, Some(a)), vec!["test\\enemydown_male.wav"], "asked, within 2R");
+    sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
+    assert!(heard(&mut sim, far, v, Some(a)).is_empty(), "asked, beyond 2R");
+    sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
+    assert_eq!(heard(&mut sim, a, v, Some(a)), vec!["test\\enemydown_male.wav"], "the killer once, as before");
+    ask(&mut sim, false);
+    sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
+    assert!(heard(&mut sim, plain, v, Some(a)).is_empty(), "didn't ask");
+    ask(&mut sim, true);
+    sim.app.world_mut().get_mut::<Health>(v).unwrap().current = 1.0;
+    assert!(heard(&mut sim, near, v, None).is_empty(), "a world kill: no speaker");
+    // ManDown: a teammate of the victim speaks it to the victim's team
+    // only, whoever asked.
+    let mate = player(&mut sim, 4, 300.0);
+    sim.ticks(1);
+    let calls: Vec<u8> = {
+        let w = sim.app.world_mut();
+        w.get_mut::<Health>(v).unwrap().current = 0.0;
+        kill_callout::of_death(w, &died(v, Some(a), Vec3::ZERO)).iter().map(|(_, c)| c.record).collect()
+    };
+    assert!(calls.contains(&MAN_DOWN), "{calls:?}");
+    let call = CaTeamCallout {
+        speaker: Some(mate),
+        record: MAN_DOWN,
+        template: MALE,
+        at: (Vec3::X * 300.0 * UNIT).to_array(),
+    };
+    assert!(!kill_callout::party_hears(sim.app.world(), near, &call, 1000.0), "ManDown stays the team's");
+    let enemy_down = CaTeamCallout { record: ENEMY_DOWN, speaker: Some(a), at: [0.0; 3], ..call };
+    assert!(kill_callout::party_hears(sim.app.world(), near, &enemy_down, 1000.0));
+    assert!(!kill_callout::party_hears(sim.app.world(), a, &enemy_down, 1000.0), "not the speaker");
+}
+
 fn sim_ffa() -> Sim {
     sim(FIXTURE)
 }

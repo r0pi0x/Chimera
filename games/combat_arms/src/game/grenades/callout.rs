@@ -10,7 +10,10 @@
 //! the thrower's voice, one of two at random). `send` gives it to the
 //! readers on the thrower's team, the thrower included (`chat::readers`,
 //! as the music triggers do: this machine's player directly, a remote
-//! player as a server message); other teams never get it. `hear` plays it
+//! player as a server message); other teams get it only as others' voice
+//! lines (`party_hears`: a reader who asked for them with
+//! `party_voice_lines_3d`, `map::sound::PartyVoices`, within 2R of the
+//! thrower; the party apps' default). `hear` plays it
 //! on a client: 3D at the thrower (with the thrower as its source), volume
 //! 100, the default volume class, and dropped while the client's previous
 //! call-out still plays (`CalloutLimiter`).
@@ -94,10 +97,25 @@ pub fn send(world: &mut World, thrower: Entity, command: u32) {
         radius: tables.sounds.grenade_throw_radius,
     };
     for (target, reader) in chat::readers(world) {
-        if world.get::<Team>(reader).is_some_and(|t| *t == team) {
+        if world.get::<Team>(reader).is_some_and(|t| *t == team) || party_hears(world, reader, thrower, at, message.radius)
+        {
             chat::send(world, target, message.clone());
         }
     }
+}
+
+/// Whether `reader`, beyond the speaker's team, gets `speaker`'s voice
+/// line of outer radius `radius` (u) spoken at `at`: it asked for others'
+/// voice lines (`map::sound::PartyVoices`, its userinfo) and is within the
+/// server's send reach of a sound that big (`effects::rules::server_sends`,
+/// 2R).
+pub fn party_hears(world: &World, reader: Entity, speaker: Entity, at: Vec3, radius: f32) -> bool {
+    use super::super::{effects::rules::server_sends, inventory::UNIT};
+    reader != speaker
+        && crate::map::sound::PartyVoices::wants(world, reader)
+        && world
+            .get::<Transform>(reader)
+            .is_some_and(|t| server_sends(t.translation.distance(at) / UNIT, radius))
 }
 
 /// A client's grenade call-out while it plays (until when): one at a time.

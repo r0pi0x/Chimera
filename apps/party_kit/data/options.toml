@@ -46,6 +46,7 @@ name = "Party"
 setting = [
   { label = "Hit marker (CS:S, HL2:DM)", cvar = "cl_hitmarker", choices = [["0", "Off"], ["1", "On"]], help = "A cross where your shot hurt another player, on CS:S and HL2:DM rungs (Combat Arms' guns show their own)." },
   { label = "Swap effect", cvar = "party_swap_effect", choices = [["0", "Off"], ["1", "On"]] },
+  { label = "Others' voice lines", cvar = "party_voice_lines_3d", choices = [["1", "In 3D at them"], ["0", "Each game's own"]], help = "Other players' radio calls and call-outs, heard in 3D where they stand (Each game's own: only the speaker's team, as each game has it)." },
   { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "Combat Arms' loop"], ["0", "None"]], widget = "dropdown" },
   { label = "Radar (CS:S, Combat Arms)", cvar = "hud_radar", choices = [["0", "Off"], ["1", "On"]], help = "CS:S's radar and Combat Arms' corner map, on their rungs (HL2:DM has none)." },
 ]

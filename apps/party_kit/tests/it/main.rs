@@ -57,6 +57,7 @@ mod swap_effect;
 mod surprise;
 mod switches;
 mod turrets;
+mod voice_lines;
 
 mod heavy {
     mod bot_cost;

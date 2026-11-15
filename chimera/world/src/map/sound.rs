@@ -8,8 +8,10 @@
 //! surface under a point (`SurfaceGrid`, footsteps) and volumes that
 //! swap one surface's footsteps for another's (`StepRemap`), and the
 //! party's one footstep profile for every game's characters
-//! (`EvenFootsteps`, `party_even_footsteps`: CS:S's level and volumes).
-//! Playback is `audio`.
+//! (`EvenFootsteps`, `party_even_footsteps`: CS:S's level and volumes);
+//! the player's choice to hear others' voice lines in 3D (`PartyVoices`,
+//! `party_voice_lines_3d`) and a sound's server send range
+//! (`send_range`). Playback is `audio`.
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -321,6 +323,24 @@ pub fn relay_game_sounds(
 #[derive(Resource, Clone)]
 pub struct SoundBank(pub Arc<MapSounds>);
 
+impl SoundBank {
+    /// The name `entry` plays under at `level` instead of its own (`tag`
+    /// names the level in it): a copy of the entry put in the bank the
+    /// first time; None when the bank has no `entry`.
+    pub fn at_level(&mut self, entry: &str, level: SoundLevel, tag: &str) -> Option<String> {
+        let name = format!("{}@{tag}", entry.to_lowercase());
+        if self.0.entry(&name).is_some() {
+            return Some(name);
+        }
+        let copy = MapSoundEntry {
+            level,
+            ..self.0.entry(entry)?.clone()
+        };
+        Arc::make_mut(&mut self.0).entries.insert(name.clone(), copy);
+        Some(name)
+    }
+}
+
 /// Meters per Source unit: Source's own levels (`SoundLevel::Db`,
 /// `Attenuation`) are defined over inches, whatever game plays them.
 pub const SOURCE_UNIT: f32 = 0.0254;
@@ -399,6 +419,73 @@ pub fn silent_from(level: SoundLevel) -> Option<f32> {
         SoundLevel::Attenuation(a) if a > 0.0 => Some(1000.0 / a * SOURCE_UNIT),
         SoundLevel::Radius { inner, outer, .. } => Some(outer.min((inner * inner + (outer - inner).powi(2)).sqrt())),
         _ => None,
+    }
+}
+
+/// The distance (metres) beyond which a server doesn't send a sound of
+/// `level` (None: to everyone): Source's attenuation filter
+/// (specs/cs_source/sounds.md 2, "Who receives a sound": 2000 / attenuation
+/// units, so 100 (L - 50) units for a level L above 50, 500 units at or
+/// below; level 0 and attenuation 0 have none), a `Radius` sound's
+/// silent point.
+pub fn send_range(level: SoundLevel) -> Option<f32> {
+    match level {
+        SoundLevel::Db(l) if l <= 0.0 => None,
+        SoundLevel::Db(l) if l <= 50.0 => Some(500.0 * SOURCE_UNIT),
+        SoundLevel::Db(l) => Some(100.0 * (l - 50.0) * SOURCE_UNIT),
+        SoundLevel::Attenuation(a) if a <= 0.0 => None,
+        SoundLevel::Attenuation(a) => Some(2000.0 / a * SOURCE_UNIT),
+        SoundLevel::Radius { .. } => silent_from(level),
+    }
+}
+
+/// Source's named level for talking (`SNDLVL_TALKING`, 80 "dB",
+/// specs/cs_source/sounds.md): a Source game's voice line that plays in
+/// 3D for others under `party_voice_lines_3d`, whatever level its entry
+/// has for the 2D play (a radio call's).
+pub const TALKING: SoundLevel = SoundLevel::Db(80.0);
+
+/// The userinfo key (and short cvar name) of `PartyVoices`.
+pub const PARTY_VOICES: &str = "party_voice_lines_3d";
+
+/// `party_voice_lines_3d` (the player's own setting, archived and in their
+/// userinfo; 1 in the party apps, 0 in the standalone games): 1 hears
+/// other players' voice lines that their game gives only to the speaker
+/// or the speaker's team (CS:S's radio and its "Fire in the hole",
+/// Combat Arms' grenade and kill call-outs), in 3D at the speaker, within
+/// the line's own hearing range. Parity first: 0 keeps each game's own
+/// audience. The server reads it from each listener's userinfo
+/// (`PartyVoices::wants`) and sends those lines to them as it sends the
+/// game's own audience; the client plays a line it would not hear by the
+/// game's rules in 3D only while its own setting is on (`is_on`).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PartyVoices {
+    pub on: u8,
+}
+
+impl PartyVoices {
+    /// Whether this machine's setting is on (`None`: an app without it).
+    pub fn is_on(s: Option<&Self>) -> bool {
+        s.is_some_and(|s| s.on != 0)
+    }
+
+    /// Whether the character `listener` asked for others' voice lines (its
+    /// userinfo; a bot has none and never does).
+    pub fn wants(world: &World, listener: Entity) -> bool {
+        world
+            .get::<chimera_core::core::UserInfo>(listener)
+            .and_then(|u| u.flag(PARTY_VOICES))
+            .unwrap_or(false)
+    }
+
+    /// Whether a server sends a voice line spoken at `at` to `listener`
+    /// beyond the game's own audience: the listener asked for them and
+    /// stands within `range` metres (None: any distance).
+    pub fn sends(world: &World, listener: Entity, at: Vec3, range: Option<f32>) -> bool {
+        Self::wants(world, listener)
+            && world
+                .get::<Transform>(listener)
+                .is_some_and(|t| range.is_none_or(|r| t.translation.distance(at) <= r))
     }
 }
 

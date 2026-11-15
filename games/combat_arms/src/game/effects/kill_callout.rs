@@ -25,7 +25,11 @@
 //! victim's team, spoken by the victim's living teammate nearest the
 //! victim, strictly closer than 1000 u (none when nobody is). Each is
 //! sent to the readers on that team (`chat::readers`: this machine's
-//! player directly, a remote one as a server message).
+//! player directly, a remote one as a server message). `EnemyDown` also
+//! goes to other readers who asked for others' voice lines
+//! (`party_hears`: `party_voice_lines_3d`, the party apps' default),
+//! within 2R of where it is spoken, so in a free-for-all those near the
+//! killer hear it too.
 //!
 //! The client (`hear`): the speaker's template's files in that record,
 //! one at random; nothing when the list is empty (the infected `Q_`
@@ -261,14 +265,33 @@ pub fn send(mut died: MessageReader<Died>, mut commands: Commands) {
             return;
         }
         let readers = chat::readers(world);
+        // `EnemyDown`'s outer radius (u), for others' voice lines.
+        let radius = world
+            .get_resource::<CaTeamCallouts>()
+            .and_then(|r| r.0.get(ENEMY_DOWN as usize))
+            .map_or(0.0, |r| r.radius);
         for (team, call) in calls {
             for (target, reader) in &readers {
-                if world.get::<Team>(*reader).is_some_and(|t| t.0 == team) {
+                if world.get::<Team>(*reader).is_some_and(|t| t.0 == team) || party_hears(world, *reader, &call, radius) {
                     chat::send(world, *target, call.clone());
                 }
             }
         }
     });
+}
+
+/// Whether `reader`, beyond the call-out's team, gets `call` as one of
+/// others' voice lines (`map::sound::PartyVoices`, docs/DESIGN.md "Others'
+/// voice lines in 3D"): `EnemyDown` only, spoken by a player (a world
+/// kill's has no speaker), to a reader who asked within the server's send
+/// reach of the record's radius `radius` (u), as the grenade call-out
+/// (`grenades::callout::party_hears`). `ManDown` stays the victim's team's.
+pub fn party_hears(world: &World, reader: Entity, call: &CaTeamCallout, radius: f32) -> bool {
+    call.record == ENEMY_DOWN
+        && radius > 0.0
+        && call
+            .speaker
+            .is_some_and(|s| crate::game::grenades::callout::party_hears(world, reader, s, Vec3::from(call.at), radius))
 }
 
 /// The client: play the call-outs that arrived.

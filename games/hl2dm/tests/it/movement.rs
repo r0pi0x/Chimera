@@ -136,7 +136,8 @@ impl Player {
         sim.app
             .init_resource::<Heard>()
             .add_systems(FixedFirst, count)
-            .add_systems(FixedLast, listen);
+            // After the predicted sounds (the sprint's) are played here.
+            .add_systems(FixedLast, listen.after(chimera_world::map::sound::relay_game_sounds));
         let p = sim.spawn_character(to_engine(feet + Vec3::Z * 36.0), ID);
         let mut me = Self { sim, p };
         me.look(0.0, 0.0);
