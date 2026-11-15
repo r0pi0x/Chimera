@@ -863,6 +863,14 @@ pub struct Weapon {
     pub max_speed: Option<f32>,
 }
 
+/// A fact about a weapon's primary trigger: it fires when RELEASED (a
+/// press only starts a charge; held, it charges). What pulls a trigger
+/// only to fire (a bot) taps it: a press, then a release. Absent: the
+/// trigger fires on the press (every engine-frame gun). Set by the game
+/// from its data (Halo's plasma pistol).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FiresOnRelease;
+
 /// A weapon's auto-switch priority (Source weapon scripts' `weight`): a
 /// player with `cl_autowepswitch` on draws a weapon it walks over when it
 /// weighs more than the one in hand (`drop::auto_switch`). None counts
@@ -1863,6 +1871,16 @@ pub enum WeaponEventKind {
         spread: SpreadShape,
         mode: u8,
     },
+    /// The fact that a weapon discharged one shot (a round, a shell, a
+    /// bolt, a rocket): from `origin` (the shooter's eye) along `dir`.
+    /// Sent by every weapon frame: the engine's once per `Fired`, a game
+    /// that runs its own (`OwnFrame`: Halo's) once per shot it fires.
+    /// Never replicated and never traced: it is what reacts to a shot
+    /// (a bot letting go of the trigger, pacing and re-aiming, its
+    /// hearing) that reads it. `Fired` stays the engine frame's command,
+    /// a hitscan round to trace and replicate (docs/DESIGN.md, "A shot
+    /// and the command to trace it").
+    ShotMade { id: &'static str, origin: Vec3, dir: Vec3 },
     /// One trace: from the eye to where it stopped.
     Shot {
         from: Vec3,
@@ -2122,6 +2140,8 @@ impl WeaponPartsItem<'_, '_> {
             mode: self.mode().max(1),
         };
         ctx.w.event(ctx.owner, self.entity, fired);
+        let made = shot_made(self.weapon.id, ctx);
+        ctx.w.event(ctx.owner, self.entity, made);
         if let Some(effect) = self.effect {
             let scan = Hitscan { pellets, ..scan.clone() };
             ctx.fire(&scan, effect, self.penetration);
@@ -2157,6 +2177,8 @@ impl WeaponPartsItem<'_, '_> {
                     mode: self.mode(),
                 };
                 ctx.w.event(ctx.owner, self.entity, fired);
+                let made = shot_made(self.weapon.id, ctx);
+                ctx.w.event(ctx.owner, self.entity, made);
                 // Without an effect the game delivers it (`Hitscan`).
                 if let Some(effect) = self.effect {
                     ctx.fire(scan, effect, self.penetration);
@@ -2872,5 +2894,15 @@ fn timed_sounds(
                 true
             }
         });
+    }
+}
+
+/// The shot fact (`WeaponEventKind::ShotMade`) of a `Fired` round of
+/// weapon `id` from `ctx`'s eye and angles.
+fn shot_made(id: &'static str, ctx: &deliver::Shot) -> WeaponEventKind {
+    WeaponEventKind::ShotMade {
+        id,
+        origin: ctx.eye,
+        dir: deliver::aim_of(ctx.yaw, ctx.pitch) * Vec3::NEG_Z,
     }
 }

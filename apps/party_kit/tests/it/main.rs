@@ -76,6 +76,8 @@ mod heavy {
     mod guest_effects;
     mod guest_shells;
     mod halo_bots;
+    mod halo_gun_bots;
+    mod halo_net_rung;
     mod halo_maps;
     mod halo_vehicles;
     mod halo_party_hud;

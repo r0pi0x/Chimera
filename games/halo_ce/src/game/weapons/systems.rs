@@ -785,6 +785,109 @@ pub fn apply_pushes(
     }
 }
 
+/// The fire button on an engine tick, kept for the next Halo tick
+/// (between two under another game's tick; at Halo's own the tick sees
+/// it at once): a press latches (a press between two Halo ticks is not
+/// lost). Up, the weapon in hand saw its trigger released (a
+/// semi-automatic's next pull fires though a press latched since is down
+/// at the next Halo tick), and a trigger waiting for a release (locked,
+/// charging, charged) gets it: the latched press is dropped, and a press
+/// after that release, before the Halo tick, does not latch again (the
+/// weapon's `released_since_shot` marks it while the trigger waits; the
+/// Halo tick clears it, `awaits_release`). Without it a press every other
+/// engine tick (Combat Arms' bots' trigger) reached every Halo tick as
+/// held: the sniper rifle fired once, the plasma pistol held its charge.
+fn latch_fire(inv: &Inventory, guns: &mut Query<(&Weapon, &HaloWeapon, &mut HaloGun, Option<&mut Magazine>)>, hands: &mut HaloHands, fire: bool) {
+    let Some(Ok((_, _, mut gun, _))) = inv.active.map(|w| guns.get_mut(w)) else {
+        hands.fire |= fire;
+        return;
+    };
+    if fire {
+        if !(awaits_release(&gun) && gun.released_since_shot) {
+            hands.fire = true;
+        }
+        return;
+    }
+    if !gun.released_since_shot {
+        gun.released_since_shot = true;
+    }
+    if gun.trigger != TriggerMode::Idle {
+        hands.fire = false;
+    }
+}
+
+/// The trigger waits for a release (`latch_fire`).
+fn awaits_release(gun: &HaloGun) -> bool {
+    matches!(gun.trigger, TriggerMode::Locked | TriggerMode::Charging | TriggerMode::Charged)
+}
+
+/// A battery weapon's battery used per round of its first trigger (the
+/// plasma rifle's and pistol's; at least a tiny amount), None for a
+/// weapon with a magazine of rounds.
+pub fn battery(gun: &Gun) -> Option<f32> {
+    gun.magazine.is_none_or(|m| m.rounds_loaded_maximum <= 0).then_some(gun.trigger.age_per_round.max(1e-3))
+}
+
+/// A battery weapon's rounds as the engine's `Magazine` counts them (what
+/// a gun's rounds are to what reads them there: Combat Arms' bots, which
+/// fire a gun with rounds loaded and take one without for empty): the
+/// first trigger's rounds the battery has left, none while overheated or
+/// dead at its maximum age; at least one while it may fire.
+pub fn battery_rounds(gun: &Gun, state: &HaloGun, per_round: f32) -> u32 {
+    if state.overheated || (gun.has(weapon_flags::CANNOT_FIRE_AT_MAXIMUM_AGE) && state.age >= 1.0) {
+        return 0;
+    }
+    (((1.0 - state.age) / per_round).ceil().max(1.0)) as u32
+}
+
+/// Each battery weapon its `Magazine` (`battery_rounds`; no reserve, a
+/// magazine as large as a full battery's rounds), kept by `run`; the
+/// magazine weapons have theirs from their data (`weapons::build`).
+pub fn give_battery_magazines(guns: Query<(Entity, &HaloWeapon, &HaloGun), Without<Magazine>>, mut commands: Commands) {
+    for (e, hw, gun) in &guns {
+        let Some(per_round) = battery(&hw.0) else { continue };
+        commands.entity(e).insert(Magazine {
+            clip: battery_rounds(&hw.0, gun, per_round),
+            size: (1.0 / per_round).ceil() as u32,
+            reserve: 0,
+            reserve_max: 0,
+            reload_time: 0.0,
+            reload_while_held: false,
+            auto_reload: false,
+        });
+    }
+}
+
+/// Whether `gun`'s primary trigger fires when released: it charges while
+/// held and its press fires nothing (a second trigger takes the charge,
+/// or it has no rate of its own: weapons.md 4; the plasma pistol).
+pub fn fires_on_release(gun: &Gun) -> bool {
+    let t = &gun.trigger;
+    t.charging_ticks() > 0 && (gun.secondary.is_some() || t.rounds_per_second == [0.0, 0.0])
+}
+
+/// Each weapon whose trigger fires when released stated so to the
+/// engine (`weapon::FiresOnRelease`, `fires_on_release`).
+pub fn state_release_triggers(guns: Query<(Entity, &HaloWeapon), Without<chimera_sim::weapon::FiresOnRelease>>, mut commands: Commands) {
+    for (e, hw) in &guns {
+        if fires_on_release(&hw.0) {
+            commands.entity(e).insert(chimera_sim::weapon::FiresOnRelease);
+        }
+    }
+}
+
+/// What Halo's weapons state to the engine beyond their own frame, before
+/// the holders' tick (beside `weapons::HaloWeaponsPlugin`): the battery
+/// weapons' rounds (`give_battery_magazines`) and the triggers that fire
+/// when released (`state_release_triggers`).
+pub struct BatteryRoundsPlugin;
+
+impl Plugin for BatteryRoundsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(crate::core::Predict::Weapons, (give_battery_magazines, state_release_triggers).before(run));
+    }
+}
+
 /// Every Halo holder's tick (module doc): in the predicted weapons stage.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn run(
@@ -833,7 +936,7 @@ pub fn run(
             hands.throw = Throw::new([0, 0]);
         }
         // The inputs seen since the last Halo tick.
-        hands.fire |= intent.fire;
+        latch_fire(inv, &mut guns, &mut hands, intent.fire);
         hands.zoom |= intent.secondary || intent.actions & zoom_bit != 0;
         hands.melee_button |= intent.actions & melee_bit != 0;
         hands.reload |= intent.reload;
@@ -958,7 +1061,9 @@ pub fn run(
             for &w in &inv.weapons {
                 let Ok((weapon, hw, mut gun, mag)) = guns.get_mut(w) else { continue };
                 let held = inv.active == Some(w) && alive;
-                if let Some(m) = mag.as_deref() {
+                if let Some(m) = mag.as_deref()
+                    && battery(&hw.0).is_none()
+                {
                     gun.loaded = m.clip as i16;
                     gun.reserve = m.reserve as i16;
                 }
@@ -996,9 +1101,24 @@ pub fn run(
                     aim: shot_aim,
                 };
                 let evs = gun.tick(&hw.0, &inputs);
+                // A trigger left waiting for a release: none seen yet
+                // (`latch_fire`).
+                if awaits_release(&gun) && gun.released_since_shot {
+                    gun.released_since_shot = false;
+                }
                 if let Some(mut m) = mag {
-                    m.clip = gun.loaded.max(0) as u32;
-                    m.reserve = gun.reserve.max(0) as u32;
+                    match battery(&hw.0) {
+                        Some(per_round) => {
+                            let rounds = battery_rounds(&hw.0, &gun, per_round);
+                            if m.clip != rounds {
+                                m.clip = rounds;
+                            }
+                        }
+                        None => {
+                            m.clip = gun.loaded.max(0) as u32;
+                            m.reserve = gun.reserve.max(0) as u32;
+                        }
+                    }
                 }
                 for ev in evs {
                     match ev {
@@ -1008,6 +1128,11 @@ pub fn run(
                                 debug!("{} fired trigger {trigger} on tick {}: {} loaded, {} reserve, heat {}", weapon.id, clock.tick, gun.loaded, gun.reserve, gun.heat);
                             }
                             event(&mut events, &first, owner, w, WeaponEventKind::Action(if trigger == 1 { "fire_charged" } else { kind }));
+                            // The shot fact (the engine's own frame sends
+                            // it with each `Fired`): a round that went.
+                            if !misfired {
+                                event(&mut events, &first, owner, w, WeaponEventKind::ShotMade { id: weapon.id, origin: eye, dir: aim });
+                            }
                             // A guided projectile's target, the same on
                             // both sides of the prediction.
                             let guided = match (&hw.0.secondary, trigger) {

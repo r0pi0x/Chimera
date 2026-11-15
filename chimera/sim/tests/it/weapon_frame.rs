@@ -416,3 +416,31 @@ fn a_weapon_its_game_runs_is_left_alone_by_the_frame() {
     sim.seconds(5.0);
     assert_eq!(clip(&sim, p), 0, "no reload by the frame");
 }
+
+/// The engine frame states each round it fires as the shot fact too: one
+/// `ShotMade` (the weapon, the eye, the aim) with each `Fired` round, a
+/// shotgun's shell one, not one per pellet.
+#[test]
+fn each_fired_round_is_one_shot_fact() {
+    for id in [PISTOL, RIFLE, SHOTGUN] {
+        let (mut sim, p, _) = armed(id);
+        let mut cursor = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();
+        let (mut fired, mut made) = (Vec::new(), Vec::new());
+        for t in 0..64 {
+            sim.intent(p).fire = t % 8 < 4;
+            sim.ticks(1);
+            for e in cursor.read(sim.app.world().resource::<Messages<WeaponEvent>>()).filter(|e| e.owner == p) {
+                match e.kind {
+                    WeaponEventKind::Fired { id, origin, .. } => fired.push((id, origin)),
+                    WeaponEventKind::ShotMade { id, origin, dir } => {
+                        assert!((dir.length() - 1.0).abs() < 1e-4, "{id}: a direction");
+                        made.push((id, origin));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert!(!fired.is_empty(), "{id} fired");
+        assert_eq!(made, fired, "{id}: one fact per round, the round's weapon and eye");
+    }
+}
