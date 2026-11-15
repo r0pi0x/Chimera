@@ -109,6 +109,8 @@ pub fn front_end(app: &mut App, _: &Args) {
     app.insert_resource(chimera_client::client::video::PlayerFov(game::view::FOV))
         .insert_resource(game::view::settings())
         .insert_resource(chimera_world::map::SettingsFollowPlayerFov);
+    // At most 11 view-filling sprites a frame (Halo's own rule).
+    app.add_systems(Update, halo_ce::game::fx::cap_view_filling);
 }
 
 #[cfg(test)]
