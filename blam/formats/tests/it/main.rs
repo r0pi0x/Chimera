@@ -17,6 +17,13 @@ mod scenario;
 mod shaders;
 mod sound;
 mod structure_bsp;
+mod object;
+mod weapon;
+mod projectile;
+mod damage_effect;
+mod vitality;
+mod globals;
+mod game_type;
 
 mod heavy {
     mod animation_install;
@@ -29,4 +36,8 @@ mod heavy {
     mod scenario_install;
     mod shader_install;
     mod sound_install;
+    mod object_install;
+    mod projectile_install;
+    mod vitality_install;
+    mod weapon_install;
 }

@@ -1,7 +1,9 @@
 //! The map converter's pure pieces on synthetic inputs (`game::maps`): the
 //! coordinate, winding and yaw conversion (specs/halo_ce/cache_file.md,
 //! "The world"), the lightmap atlas packer, the material-type table, the
-//! fog conversion (shaders.md, "Atmospheric fog") and the cut-out bake.
+//! fog conversion (shaders.md, "Atmospheric fog"), the cut-out bake, the
+//! spawns with their teams (scenario.md, multiplayer_rules.md 4.3) and the
+//! surface names as other games' impact classes.
 
 use bevy::math::{Quat, Vec3};
 use blam_formats::{cache::RealRgb, collision::MaterialType, scenario::Fog};
@@ -339,4 +341,74 @@ fn sky_scale_arithmetic() {
     // One world unit of the level is 1/1024 of one of the miniature's.
     let a = sky::sky_point([1.0, 0.0, 0.0]).length();
     assert!((a * sky::SCALE - 3.048).abs() < 1e-4);
+}
+
+fn start(position: [f32; 3], team_index: i16, slot: i16) -> blam_formats::scenario::PlayerStart {
+    blam_formats::scenario::PlayerStart {
+        position,
+        facing: 0.0,
+        team_index,
+        bsp_index: 0,
+        game_types: blam_formats::scenario::GameTypes([slot, 0, 0, 0]),
+    }
+}
+
+fn ctf_flag(position: [f32; 3], team_index: i16) -> blam_formats::scenario::NetgameFlag {
+    use blam_formats::cache::{ClassCode, TagId, TagRef};
+    blam_formats::scenario::NetgameFlag {
+        position,
+        facing: 0.0,
+        flag_type: blam_formats::scenario::NetgameFlagType::CaptureTheFlag,
+        team_index,
+        reference: TagRef { class: ClassCode::new(b"itmc"), path_address: 0, id: TagId::NONE },
+    }
+}
+
+/// The map's spawns: each slayer start (no team) and each capture the
+/// flag start of team 0 or 1 (red `Team(1)`, blue `Team(2)`) once, in
+/// block order; a CTF start nearer its enemy's flag than its own is
+/// dropped (multiplayer_rules.md 4.3), as are race starts and team 2/3's.
+#[test]
+fn spawns_are_slayers_starts_and_the_teams_bases() {
+    use chimera_core::core::Team;
+    use halo_ce::game::maps::spawns;
+    let starts = [
+        start([0.0, 0.0, 0.0], 0, 1),  // red base, by the red flag
+        start([10.0, 0.0, 0.0], 1, 1), // blue base
+        start([5.0, 0.0, 0.0], 0, 14), // slayer (team ignored)
+        start([1.0, 1.0, 0.0], 1, 12), // all games, blue, but by red's flag
+        start([9.0, 0.0, 0.0], 0, 1),  // red but by the blue flag: dropped
+        start([2.0, 0.0, 0.0], 2, 1),  // team 2: never a CTF start
+        start([3.0, 0.0, 0.0], 1, 5),  // race only
+    ];
+    let flags = [ctf_flag([0.0, 0.0, 0.0], 0), ctf_flag([10.0, 0.0, 0.0], 1)];
+    let got: Vec<(Vec3, Option<u8>)> =
+        spawns::spawns(&starts, &flags).into_iter().map(|(p, t, _)| (p, t.map(|t| t.0))).collect();
+    let at = |x: f32, y: f32| space::point([x, y, 0.0]);
+    // Start 3 (all games, team 1) is nearer red's flag: not blue's base,
+    // but its slot 12 keeps it a slayer start.
+    assert_eq!(
+        got,
+        [(at(0.0, 0.0), Some(1)), (at(10.0, 0.0), Some(2)), (at(5.0, 0.0), None), (at(1.0, 1.0), None)]
+    );
+    assert!(spawns::ctf_team(&flags, &starts[3]).is_none());
+    // Without flags no start is dropped.
+    assert_eq!(spawns::ctf_team(&[], &starts[4]), Some(Team(1)));
+    assert_eq!(spawns::spawns(&starts, &[]).len(), 5);
+}
+
+/// Halo's surface names are the engine's classes by name, for other
+/// games' impacts on its maps (`surfaces::SURFACES`).
+#[test]
+fn surface_names_are_impact_classes() {
+    use chimera_world::map::impact::SurfaceClass;
+    for c in SurfaceClass::ALL {
+        assert_eq!(surfaces::class_of(surfaces::class_name(c)), Some(c));
+    }
+    for row in surfaces::table().values() {
+        assert!(surfaces::class_of(&row.surface).is_some(), "{row:?}");
+    }
+    assert_eq!(surfaces::class_of("Metal"), Some(SurfaceClass::Metal));
+    assert_eq!(surfaces::class_of("hunter shield"), None);
+    assert_eq!(surfaces::SURFACES.game, halo_ce::game::GAME);
 }

@@ -28,6 +28,20 @@
 //!   rotation convention.
 //! - `shader`: the eight shader tag classes and the periodic animation
 //!   functions.
+//! - `object`: the object tag family (biped, vehicle, equipment, scenery,
+//!   devices ...: the shared object base, the unit, item and device layers,
+//!   the object functions and their evaluation).
+//! - `projectile`: the projectile tag (the object base, flight numbers and the
+//!   material responses).
+//! - `damage_effect`: the damage effect tag and the damage formulas on its
+//!   fields.
+//! - `vitality`: a collision model's body and shield vitality, materials and
+//!   regions (health and shields).
+//! - `globals`: the globals tag's player information, falling damage,
+//!   multiplayer information, grenades and weapon list.
+//! - `game_type`: the saved game variant record and the 26 stock game types.
+//! - `weapon`: the weapon tag (the item and object layers, magazines,
+//!   triggers) and the pure formulas on its fields.
 
 pub mod animation;
 pub mod bitmap;
@@ -37,5 +51,12 @@ pub mod disc;
 pub mod model;
 pub mod scenario;
 pub mod shader;
+pub mod object;
+pub mod projectile;
+pub mod damage_effect;
+pub mod vitality;
+pub mod globals;
+pub mod game_type;
+pub mod weapon;
 pub mod sound;
 pub mod structure_bsp;

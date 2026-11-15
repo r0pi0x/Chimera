@@ -23,10 +23,11 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net54` since Combat Arms' damage screen
-   effects travel (each character's lasting-damage types, a jump's escape
-   from poison) and its kill call-outs reach the killer's and the victim's
-   teams; `net53` (kills carry their domination flags and each player's
+   The network version is `net55` since the lobby's rows carry each
+   player's avatar (its `cl_avatar` userinfo); `net54` (Combat Arms'
+   damage screen effects travel, each character's lasting-damage types, a
+   jump's escape from poison, and its kill call-outs reach the killer's
+   and the victim's teams), `net53` (kills carry their domination flags and each player's
    dominations go to its own client), `net52` (RCON over the game's
    connection: a player who logs in with the server's `rcon_password`
    gets the Escape menu's Host settings: "Admins", below), `net51` (the
@@ -55,6 +56,17 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    (`Play-UGG.bat`, then Join, or `Play-UGG.bat +connect <host address>:<port>`):
    entering it again forgets which service it is for (the next join binds
    it anew, in the same window).
+
+## Halo's maps (optional)
+
+Halo: Combat Evolved's multiplayer maps join the Ultimate Gun Game's pool
+only where the Xbox disc image is: set `CHIMERA_HALO_CE_ROOT` to the image
+(or `[games.halo_ce] path` in chimera.local.toml) on the server, and every
+player who should get them needs it too. Its files are not published to
+the asset store, so each match's pool (made for the players then
+connected) leaves Halo's maps out when one of them lacks the image (their
+mount report says so); without the image nothing changes. Halo lends only maps for now (no guns, bodies or movement), and
+its pool is `games/halo_ce/data/map_pool.toml`'s.
 
 ## Publishing the game files (once, and after a game update)
 
@@ -468,20 +480,21 @@ Maps and matches:
   | `mp_lobby_max_wait` | 90 | the longest wait, s, from the lobby's start or the first player's arrival (whichever is later), before the countdown starts anyway; the stragglers join late |
   | `mp_lobby_min_players` | 1 | players (not bots) connected before being ready counts; set it to the testers you expect for the first match, so it doesn't start for the first one in (the max wait still applies) |
   | `mp_lobby_ready_up` | 0 | 1: a player on the map is "Not ready" until it presses F3 (`lobby_ready`; again takes it back); 0: having the map is ready |
+  | `mp_lobby_host_start` | 0 | 1: the server run's first lobby waits for the host's start (`lobby_start`, the lobby's Start); nothing counts it down by itself (the app's Host page sets it) |
 
   `lobby` on the console lists the players and what it waits for;
   `lobby_start` starts the countdown now (`lobby_start 0`: the match at
   once).
 
-  **Hosting from the app's menu** (Play, Start: a listen server) has the
+  **Hosting from the app's menu** (Host, Start: a listen server) has the
   same lobby: the Server tab's rows turn it on (`mp_lobby 1`), wait for 2
-  players (`mp_lobby_min_players`) and have players ready up
-  (`mp_lobby_ready_up 1`). The host and joiners see the panel (each
-  player's status, HOST, BOT and YOU tags, the map, the countdown). The
-  host's F3 starts the countdown now; a joiner's F3 says it is ready (or
-  takes it back). Alone with bots: F3, or the longest wait (90 s). Before
-  this, a menu host's match started at once with no lobby (`mp_lobby`
-  was 0 on listen servers). With no player connected it waits without a limit.
+  players (`mp_lobby_min_players`) and have the first match wait for the
+  host (`mp_lobby_host_start 1`). Nobody readies up: a player who has the
+  map is ready. The host and joiners see the panel (one list, you first:
+  each player's avatar, status bar and ping, HOST, the map, the
+  countdown). The host's Start (Enter, or F3) starts the countdown;
+  nothing else starts the first match. Later matches (map changes) start
+  once everyone has the map, or after the longest wait (90 s).
 
 Console commands on the server's stdin (type in its window; run it inside
 `tmux` or `screen`, or a PowerShell window you keep open):

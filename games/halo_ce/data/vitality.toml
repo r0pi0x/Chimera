@@ -1,0 +1,158 @@
+# A multiplayer Spartan's vitality (specs/halo_ce/health_shields.md), in
+# the game's own units: points of vitality, fractions, seconds, ticks of
+# 1/30 s. `games/halo_ce/src/game/vitality/data.rs` reads it at startup;
+# the heavy test `tests/it/heavy/vitality_data.rs` checks every number the
+# disc holds against `bloodgulch.map`.
+
+# The Spartan's collision model, `characters\cyborg\cyborg` ("The collision
+# model's vitality fields").
+[model]
+tag = 'characters\cyborg\cyborg'
+# SPARTAN_BODY: maximum body vitality (0x008), points.
+maximum_body = 75.0
+# SPARTAN_SHIELD: maximum shield vitality (0x0CC), points.
+maximum_shield = 75.0
+# Collision model flags (0x000): takes shield and body damage for children,
+# always shields friendly damage.
+flags = 7
+# Indirect damage material (0x004): "body", for hits with no material.
+indirect_material = 1
+# Friendly damage resistance (0x044), fraction.
+friendly_damage_resistance = 0.0
+# Area damage effect threshold (0x080), points.
+area_damage_effect_threshold = 0.0
+# Body damaged threshold (0x094) and body destroyed threshold (0x0B8), points.
+body_damaged_threshold = 0.0
+body_destroyed_threshold = 0.0
+# Shield material type (0x0D2): 22, cyborg energy shield.
+shield_material_type = 22
+# Shield failure threshold (0x0F0) and failing shield leak fraction (0x0F4).
+shield_failure_threshold = 0.0
+failing_shield_leak = 0.0
+# Minimum stun damage (0x108), points: shield damage at or above it
+# restarts the shield delay.
+minimum_stun_damage = 0.0
+# Stun time (0x10C), s: the shield delay (SHIELD_DELAY = trunc(6.0 x 30)).
+stun_time = 6.0
+# Recharge time (0x110), s: not read by the engine.
+recharge_time = 4.0
+# RECHARGE_STEP: runtime shield recharge velocity (0x1C0), fraction per
+# tick (0x3C088889).
+recharge_velocity = 0.008333334
+# Shield damaged threshold (0x184), fraction.
+shield_damaged_threshold = 0.0
+
+# Materials (block at 0x234): name, head flag, material type, shield leak
+# (a fraction), shield and body damage multipliers ("Materials").
+[[model.materials]]
+name = "head"
+head = true
+type = 21
+leak = 0.0
+shield = 1.0
+body = 1.0
+
+[[model.materials]]
+name = "body"
+head = false
+type = 21
+leak = 0.0
+shield = 1.0
+body = 1.0
+
+[[model.materials]]
+name = "legs"
+head = false
+type = 21
+leak = 0.0
+shield = 1.0
+body = 0.8
+
+[[model.materials]]
+name = "shield generator"
+head = false
+type = 21
+leak = 0.0
+shield = 1.0
+body = 1.0
+
+# Regions (block at 0x240): one, `cyborg`, never destroyed ("Regions").
+[[model.regions]]
+name = "cyborg"
+flags = 0
+threshold = 0.0
+
+# Chimera's body regions as the Spartan's materials ("What Chimera's hit
+# model needs from this game"): the head is material "head", the calves
+# and feet "legs", every other region "body" (the shield generator's one
+# surface on the spine is "body" here: its multipliers are the same).
+[regions]
+head = 0
+legs = 2
+other = 1
+
+# The globals' values ("The globals"): player information.
+[globals]
+# Minimum and maximum stun time (0x8C, 0x90), s: body stun duration limits.
+minimum_stun_time = 0.0
+maximum_stun_time = 1.25
+# Stun movement, turning and jumping penalties (0x80, 0x84, 0x88), read by
+# movement.md: speed and jump times (1 - penalty x stun).
+stun_movement_penalty = 0.8
+stun_turning_penalty = 0.8
+stun_jumping_penalty = 1.0
+# Run forward speed (0x34), WU/s: the melee's speed scale.
+run_forward_speed = 2.25
+
+# The unit's (objects.md, the Spartan's unit layer; "The unit and equipment
+# tags").
+[unit]
+# Soft ping threshold, fraction of current damage.
+soft_ping_threshold = 0.0
+# Soft ping interrupt time, s (trunc(0.3 x 30) = 9 ticks).
+soft_ping_interrupt_time = 0.3
+# Hard ping threshold.
+hard_ping_threshold = 1.0
+
+# The equipment's powerups (objects.md, "Equipment"): powerup type and time.
+[powerups]
+overshield = { tag = 'powerups\over shield', type = 2, time = 60.0 }
+active_camouflage = { tag = 'powerups\active camouflage', type = 3, time = 45.0 }
+health_pack = { tag = 'powerups\health pack', type = 5, time = 1.0 }
+
+# The engine's constants ("Constants"; not on the disc).
+[constants]
+# OVERCHARGE_STEP, fraction per tick.
+overcharge_step = 0.033333335
+# OVERSHIELD_MAX, fraction.
+overshield_max = 3.0
+# OVERSHIELD_DRAIN, fraction per tick (1/1350).
+overshield_drain = 0.00074074074
+# OVERSHIELD_FLOOR, fraction.
+overshield_floor = 0.01
+# NEGLIGIBLE, points.
+negligible = 0.0001
+# DAMAGE_FADE, fraction per tick (1/60).
+damage_fade = 0.016666668
+# RECENT_HOLD, ticks.
+recent_hold = 60
+# CAMO_STEP, per tick (1/120).
+camo_step = 0.008333334
+# CAMO_FIRE_DEFAULT and CAMO_FIRE_FLOOR.
+camo_fire_default = 0.1
+camo_fire_floor = 0.05
+# MELEE_LUNGE_SCALE and MELEE_AIRBORNE_TICKS.
+melee_lunge_scale = 1.5
+melee_airborne_ticks = 15
+# IMPULSE_LIFT.
+impulse_lift = 0.45
+# PING_REAR_CONE and PING_FRONT_CONE, rad.
+ping_rear_cone = 0.78539819
+ping_front_cone = 2.159845
+# ATTACKERS, CREDIT_WINDOW (ticks), ASSIST_WINDOW (ticks).
+attackers = 4
+credit_window = 180
+assist_window = 120
+# HEALTH_OPTION's clamp.
+health_option_min = 0.25
+health_option_max = 4.0

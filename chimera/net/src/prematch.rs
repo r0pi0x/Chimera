@@ -44,6 +44,13 @@
 //!   countdown. A client reads it while it is still downloading too
 //!   (replication starts at the join's admission). The client shell
 //!   draws it (`chimera_client::client::prematch_lobby`).
+//! - **The host's start** (`mp_lobby_host_start 1`, default 0; the party
+//!   apps' Host page sets it): the server run's first lobby waits for the
+//!   host's `lobby_start` (`Lobby::host_start`, `NetLobby::host_start`):
+//!   neither everyone being ready nor the longest wait counts it down.
+//!   Later lobbies (map changes) start as below.
+//! - **Avatars**: each row carries its player's `cl_avatar` userinfo
+//!   (`LobbyRow::avatar`, `NO_AVATAR` for a bot or none).
 //! - **The countdown** (`mp_lobby_countdown` s, default 5): once every
 //!   connected player is ready and at least `mp_lobby_min_players` humans
 //!   (default 1) are connected; or once `mp_lobby_max_wait` s (default
@@ -132,6 +139,10 @@ pub struct LobbySettings {
     /// 1: a remote player on the map is ready once it says so
     /// (`lobby_ready`); 0: once it is on the map.
     pub ready_up: u8,
+    /// 1: the server run's first lobby waits for the host's start
+    /// (`lobby_start`): nothing counts down by itself (the party apps'
+    /// Host page sets it; later lobbies start once everyone has loaded).
+    pub host_start: u8,
 }
 
 impl Default for LobbySettings {
@@ -142,6 +153,7 @@ impl Default for LobbySettings {
             max_wait: 90.0,
             min_players: 1,
             ready_up: 0,
+            host_start: 0,
         }
     }
 }
@@ -188,6 +200,21 @@ pub struct LobbyRow {
     pub ping_ms: Option<u16>,
     /// Matches won this server run (`minigame::wins::MatchWins`, by name).
     pub wins: u32,
+    /// The player's avatar (its `cl_avatar` userinfo: glyph x 8 +
+    /// colour, `chimera_ui::avatar::AvatarLook`'s byte); `NO_AVATAR` for a
+    /// bot or a player who sent none.
+    pub avatar: u8,
+}
+
+/// `LobbyRow::avatar` for none.
+pub const NO_AVATAR: u8 = 255;
+
+/// A character's avatar byte from its userinfo (`cl_avatar`, 0-31).
+pub fn avatar_of(info: Option<&crate::core::UserInfo>) -> u8 {
+    info.and_then(|i| i.0.get("cl_avatar"))
+        .and_then(|v| v.trim().parse::<i32>().ok())
+        .filter(|v| (0..32).contains(v))
+        .map_or(NO_AVATAR, |v| v as u8)
 }
 
 impl LobbyRow {
@@ -218,6 +245,9 @@ pub struct NetLobby {
     pub wait_left: Option<u32>,
     /// Seconds (rounded up) left of the countdown, once it began.
     pub countdown: Option<u32>,
+    /// It waits for the host's start (`LobbySettings::host_start`, the
+    /// first lobby): nothing starts it by itself.
+    pub host_start: bool,
 }
 
 /// The server's lobby while it is on.
@@ -231,7 +261,14 @@ pub struct Lobby {
     pub countdown_ends: Option<f64>,
     /// When `NetLobby` was last written.
     written: f64,
+    /// Waits for the host's start (the server run's first lobby with
+    /// `mp_lobby_host_start 1`).
+    pub host_start: bool,
 }
+
+/// Lobbies begun this server run (the first may wait for the host).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LobbiesBegun(pub u32);
 
 /// The lobby shows: on a client, the match on screen hasn't started (what
 /// it fetches on demand counts as loading: `net::on_demand`).
@@ -289,6 +326,13 @@ pub(crate) fn register(app: &mut App) {
         "Server: players (not bots) connected before the pre-match lobby counts down for being ready (the most \
          it waits is still mp_lobby_max_wait).",
         |s| &mut s.min_players,
+    );
+    resource_cvar::<LobbySettings, u8>(
+        app,
+        "mp_lobby_host_start",
+        "Server: 1: the first pre-match lobby of the server's run waits for the host's start (lobby_start); \
+         nothing counts down by itself. Later lobbies start once everyone has the map.",
+        |s| &mut s.host_start,
     );
     resource_cvar::<LobbySettings, u8>(
         app,
@@ -430,13 +474,16 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
     }
     world.insert_resource(PreMatch);
     world.insert_resource(EntryHeld);
+    let s = *world.resource::<LobbySettings>();
+    let begun = world.get_resource::<LobbiesBegun>().copied().unwrap_or_default().0;
+    world.insert_resource(LobbiesBegun(begun + 1));
     world.insert_resource(Lobby {
         began: now,
         humans_since: None,
         countdown_ends: None,
         written: f64::MIN,
+        host_start: s.host_start != 0 && begun == 0,
     });
-    let s = *world.resource::<LobbySettings>();
     info!(
         "pre-match lobby on {}: waiting for the players (at most {} s once one is here)",
         crate::net::current_map(world),
@@ -504,21 +551,26 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
     // settled behind its loading screen).
     let host = if crate::net::maps::local_load_under_way(world) { status::LOADING } else { status::READY };
     let ready_up = world.get_resource::<LobbySettings>().is_some_and(|s| s.ready_up != 0);
-    for c in world.query::<&NetCharacter>().iter(world) {
+    let mut avatars = std::collections::BTreeMap::new();
+    for (c, info) in world.query::<(&NetCharacter, Option<&crate::core::UserInfo>)>().iter(world) {
         match c.owner {
             Some(HOST_ID) => out.push(LobbyRow {
                 id: Some(HOST_ID),
                 name: c.name.clone(),
                 status: host,
+                avatar: avatar_of(info),
                 ..default()
             }),
             None => others.push(LobbyRow {
                 id: None,
                 name: c.name.clone(),
                 status: status::READY,
+                avatar: NO_AVATAR,
                 ..default()
             }),
-            Some(_) => {}
+            Some(id) => {
+                avatars.insert(id, avatar_of(info));
+            }
         }
     }
     let mut remote: Vec<(u64, LobbyRow)> = world
@@ -550,6 +602,7 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
                     total,
                     ping_ms: stats.map(|s| (s.rtt * 1000.0).round().clamp(0.0, 9999.0) as u16),
                     wins: 0,
+                    avatar: avatars.get(&id.get()).copied().unwrap_or(NO_AVATAR),
                 },
             )
         })
@@ -586,7 +639,7 @@ pub(crate) fn serve(world: &mut World) {
     let not_ready = rows.iter().filter(|r| !r.ready()).count() as u32;
     let to_come = s.min_players.saturating_sub(humans);
     let wait_ends = lobby.humans_since.map(|h| h.max(lobby.began) + s.max_wait as f64);
-    if lobby.countdown_ends.is_none() {
+    if lobby.countdown_ends.is_none() && !lobby.host_start {
         if humans > 0 && not_ready == 0 && to_come == 0 {
             info!("pre-match lobby: everyone is ready; the match starts in {} s", s.countdown);
             lobby.countdown_ends = Some(now + s.countdown.max(0.0) as f64);
@@ -612,8 +665,9 @@ pub(crate) fn serve(world: &mut World) {
         mode: def.name.clone(),
         rows,
         waiting: not_ready + to_come,
-        wait_left: wait_ends.filter(|_| lobby.countdown_ends.is_none()).map(secs),
+        wait_left: wait_ends.filter(|_| lobby.countdown_ends.is_none() && !lobby.host_start).map(secs),
         countdown: lobby.countdown_ends.map(secs),
+        host_start: lobby.host_start && lobby.countdown_ends.is_none(),
     };
     let have = world.query::<(Entity, &NetLobby)>().iter(world).next().map(|(e, n)| (e, n.clone()));
     match have {

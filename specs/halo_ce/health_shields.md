@@ -191,6 +191,24 @@ The Spartan has 0x7 (bits 0, 1, 2). Bits 0 and 1 matter only for
 objects attached to a Spartan (nothing in a multiplayer match); bit 2
 makes friendly fire bypass the leak, which is zero anyway.
 
+**Vehicle collision models.** The three multiplayer vehicles'
+collision models (`vehicles\warthog\warthog`,
+`vehicles\scorpion\scorpion_mp\scorpion_mp`, `vehicles\ghost\ghost_mp`;
+the same values on every multiplayer map checked: Blood Gulch, Hang
+'Em High, Sidewinder, Damnation, Boarding Action) have flags 0x28
+(bit 3 passes area damage to children, bit 5 only damaged by
+explosives), **maximum body vitality 0 and maximum shield vitality 0**,
+indirect damage material -1, shield material type 7 (thick metal) on
+the warthog and scorpion and 0 on the ghost, and stun damage and stun
+time 0. A vehicle therefore starts with body vitality 0 and no shield.
+Reading the reference's damage rule (inverse of the maximum taken as 0
+when the maximum is 0), every hit scales to 0 body points, the vitality
+never goes below 0 (death needs a value below 0) and the vehicle cannot
+be destroyed by damage; only the riders' share of a hit
+(above) matters. This follows from the numbers on the disc plus the
+reference; no vehicle was destroyed in a running game to confirm it
+(open questions). `vehicles.md` owns the rest.
+
 ### Materials (block at 0x234, 0x48 bytes each; `collision.md`)
 
 A material: name, flags (bit 0 "head"), material type, shield leak
@@ -249,12 +267,12 @@ Parts 5 and 9 (legs) are unused. A hit without a node uses part 0.
 
 | Where | Field | Value | Use |
 |---|---|---|---|
-| difficulty block (0x11C), element 0 | 4 values per row (easy, normal, heroic, legendary) | normal = 1.0 in every row | multiplayer uses normal for: body maximum ("enemy vitality"), shield maximum ("enemy shield"), recharge rate ("enemy recharge"); so they are unscaled |
-| player information (0x170) | stun movement penalty 0x80, stun turning penalty 0x84, stun jumping penalty 0x88 | 0.8, 0.8, 1.0 | used by `movement.md` |
+| difficulty block (0x11C), element 0 (`globals.md` owns the layout) | 4 values per row (easy, normal, heroic, legendary) | normal = 1.0 in rows 0 to 7 (the damage, vitality, shield and recharge rows) | multiplayer uses normal for: body maximum ("enemy vitality"), shield maximum ("enemy shield"), recharge rate ("enemy recharge"); so they are unscaled |
+| player information (0x170; `globals.md` owns the layout) | stun movement penalty 0x80, stun turning penalty 0x84, stun jumping penalty 0x88 | 0.8, 0.8, 1.0 | used by `movement.md` |
 | player information | minimum stun time 0x8C, maximum stun time 0x90 | 0 s, 1.25 s (37 ticks) | body stun duration limits |
 | player information | run forward speed 0x34 | 2.25 WU/s | the melee's speed scale |
 | multiplayer information (0x164) | unit | `characters\cyborg_mp\cyborg_mp` | the player's biped; nothing else in the block concerns vitality |
-| falling damage (0x188) | `globals\falling`, `globals\distance` | | `movement.md` |
+| falling damage (0x188) | `globals\falling`, `globals\distance` | | `movement.md`; the layout is `globals.md`'s |
 
 Other difficulty rows read on normal: friend rows 1.0; enemy damage
 1.0 (not used in multiplayer).
@@ -894,6 +912,7 @@ All on a fresh multiplayer Spartan (β = 1, σ = 1, d = 0) unless said;
 | Section | Confidence |
 |---|---|
 | Collision model fields, flags, materials, regions, nodes, Spartan values | checked against the disc (bloodgulch; identical on hangemhigh and damnation); field meanings from the reference |
+| Vehicle collision models (vitality 0, flags 0x28) | checked against the disc (five multiplayer maps); the consequence is the reference's rule applied to the disc's numbers |
 | Damage effect values used in examples | read from the disc; their layout is `projectiles.md`'s |
 | Globals (difficulty, stun, run speed, falling) | checked against the disc; that multiplayer reads "normal" is reference only |
 | Applying a damage event (order, maths, headshots, emp, overcharge) | reference only; consistent with the disc's numbers and with the well-known pistol, sniper and charged plasma results |
@@ -953,3 +972,7 @@ All on a fresh multiplayer Spartan (β = 1, σ = 1, d = 0) unless said;
    velocity along the facing (negative gives 0, the minimum damage).
    Measure: a backpedalling melee should do the standing 56 shield
    points.
+10. **Indestructible vehicles?** The vehicle collision models carry 0
+    body and 0 shield vitality, so by the reference's rules damage
+    cannot destroy a vehicle. Measure: empty a rocket launcher into a
+    parked warthog and a scorpion and check that they never blow up.

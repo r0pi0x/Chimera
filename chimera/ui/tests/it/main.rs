@@ -7,6 +7,7 @@ mod fonts;
 mod icons;
 mod motion;
 mod scroll;
+mod shell;
 mod style;
 mod text_fit;
 mod theme;

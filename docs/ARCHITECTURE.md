@@ -30,7 +30,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    halo_ce_server (apps/halo_ce_server/)   Halo's dedicated server: no presentation
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
-  |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, stand-in movement, harness::HaloSim; `ui` its HUD (none yet)
+  |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -281,8 +281,36 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   player starts, sky fog, the sky model as a 3D skybox and the scenery
   as props with their collision, as `MapData` in metres, through the
   converted-map cache), `SimPlugins`, `game::HaloPlugins` (the
-  registration and the stand-in movement `halo_ce:movement`, Chimera's
-  placeholder with its own numbers) and `harness::HaloSim`.
+  registration, Halo's movement `halo_ce:movement`,
+  specs/halo_ce/movement.md: `game::movement`, a pill moved once a tick
+  in world units on the engine's shape casts, its numbers in
+  data/movement.toml, its state `HaloMovement` predicted; exact at its
+  30 Hz tick, scaled by the tick's length under another),
+  its players' vitality and its damage seam) and `harness::HaloSim`. A character on Halo's movement wears
+  `game::vitality` (health_shields.md: `Vitality`, the spec's body and
+  shield fractions of the Spartan's 75 points, the 6 s delay and 4 s
+  recharge, overshield, camouflage, `Stun` for movement; numbers in
+  data/vitality.toml and data/damage.toml, checked against the disc by a
+  heavy test): its shield is the engine's one `weapon::Armor` (covering
+  everything, with its own ratio, `weapon::ArmorRatio`), so another
+  game's hit takes the shield first, and `Health` is the body. Halo's
+  damage sources write `game::damage::HaloHit` (an effect id, the amount,
+  the region, instigator), which the server applies by the spec's rule
+  before `core::apply_damage` and turns into the engine's `Damage`, so
+  deaths, credit and a gun game's ladder are the engine's; on another
+  game's character it is an unshielded Spartan's body hit through that
+  character's own armour. Its spawns
+  are the slayer starts (no team) and capture the flag's red and blue
+  bases (`Team(1)`, `Team(2)`, after the game's flag check;
+  `game::maps::spawns`). In the party apps (`game::BUNDLE`, one of
+  `party_kit::GUESTS`) it lends only its maps, played with the other
+  games' bodies, movement and guns: its surface names are the engine's
+  classes (`game::maps::surfaces::SURFACES`; Combat Arms' through the
+  Source table), its teams Alpha and Bravo, and its pool is the disc
+  image's maps its data/map_pool.toml allows, drawn by its
+  data/map_fitness.toml (`game::parts`); none is claimed, so a machine
+  without the disc is offered none. The bots' navigation is generated
+  from its collision as on any map without its own.
   Layered as `hl2dm`: the engine crates and `blam_formats`, never another
   game, `mashup` or an app (checked); `ui` draws nothing of its own yet.
 - `chimera_net` is network play (`net`): the transport, the join
@@ -426,8 +454,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `-p` for release.
 - `halo_ce_app` (apps/halo_ce/) is the Halo app (binary `halo_ce`): Chimera
   and `halo_ce` composed (`APP`, a `GameApp`), maps `halo_ce:<name>` from
-  the disc once its loader is written, the greybox otherwise, with the
-  game's stand-in movement; `halo_ce_server` (apps/halo_ce_server/) its
+  the disc, the greybox otherwise, with the game's movement;
+  `halo_ce_server` (apps/halo_ce_server/) its
   dedicated server on `chimera_net::dedicated` (its `SERVER`), no
   presentation, client shell or app (`server_builds_without_presentation`);
   built alone with `-p` for release.

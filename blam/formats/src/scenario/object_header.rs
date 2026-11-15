@@ -2,8 +2,9 @@
 //! scenario.md, "Scenery as a renderer needs it"): the object type, flags,
 //! bounding sphere, and the model, animation graph and collision model
 //! references, as the scenery placement needs them. The full object reader
-//! (units, items, devices) is a later step from the objects spec; this one
-//! is small and named so it can be replaced by it.
+//! is `crate::object` (`ObjectBase`, `ObjectTag`); this one stays for the
+//! callers that need only these fields, from a small tag view, and its
+//! `ObjectType` is that module's.
 
 use std::io;
 
@@ -13,22 +14,7 @@ use crate::cache::{MapFile, TagEntry, TagRef, TagStruct};
 /// render bounding radius at 0x104).
 pub const OBJECT_HEADER_SIZE: usize = 0x108;
 
-coded_enum! {
-    /// The object type (header 0x00).
-    pub enum ObjectType {
-        Biped = 0,
-        Vehicle = 1,
-        Weapon = 2,
-        Equipment = 3,
-        Garbage = 4,
-        Projectile = 5,
-        Scenery = 6,
-        Machine = 7,
-        Control = 8,
-        LightFixture = 9,
-        SoundScenery = 11,
-    }
-}
+pub use crate::object::ObjectType;
 
 crate::tag_struct! {
     /// The shared object header's essentials, at the start of every object

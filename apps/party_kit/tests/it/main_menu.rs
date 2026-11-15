@@ -187,7 +187,7 @@ fn logo_pass_covers_both_ui_cameras() {
 fn every_entry_and_row_of_the_data_works() {
     let data = MenuData::shipped();
     let labels: Vec<&str> = data.entries.iter().map(|e| e.label.as_str()).collect();
-    assert_eq!(labels, ["Play", "Join", "Options", "Quit"]);
+    assert_eq!(labels, ["Host", "Join", "Settings", "Quit"]);
     assert!(
         data.escape
             .iter()

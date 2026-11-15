@@ -764,9 +764,13 @@ shots; plasma pistol 0.002 a bolt, 0.11 a charged bolt). Age:
 The plasma pistol has two triggers sharing nothing but the weapon:
 trigger 0 (normal bolt, rate limits 0, so no rate limit, charging time
 0.6 s = 18 ticks, charged time 45 s = 1350 ticks, overcharged action
-"explodes") and trigger 1 (the charged bolt, `weapons\plasma
+**none**) and trigger 1 (the charged bolt, `weapons\plasma
 rifle\charged bolt`, heat 1.0 and age 0.11 per round, "can fire with
-partial ammo"). Only trigger 0 is wired to the fire button.
+partial ammo"; charging and charged times 0, overcharged action
+"explodes", which can never run because this trigger never enters
+charging). Only trigger 0 is wired to the fire button. (Disc, checked
+by script on bloodgulch, hangemhigh, damnation and sidewinder: the
+overcharged action is 0 on trigger 0 and 1 on trigger 1.)
 
 - **Press** (tick P): trigger 0 begins firing, but because the weapon
   has two triggers nothing fires; it enters charging with 18 ticks.
@@ -779,15 +783,21 @@ partial ammo"). Only trigger 0 is wired to the fire button.
   and the first-person weapon shows the charge. While charged and held,
   the weapon's overcharged amount = 1 - (timer / 30) / 45, which stops
   cooling on the following ticks; melee is impossible while charging or
-  charged.
+  charged. The amount reaches exactly 1.0 on tick P + 18 + 1350 (0.9992592
+  one tick before) and stays 1.0 while the button is held.
 - **Release while charged** (tick R): trigger 1 fires the charged bolt
   on tick R, trigger 0 recovers and its rate of fire becomes 0. Heat
   becomes 1, so the weapon overheats on tick R + 1 (with the super
   recoil animation) and can fire again on tick R + 35.
-- **Held for the whole charged time:** the overcharged action runs:
-  "explodes" plays the weapon's detonation effect (none on the disc)
-  and **deletes the weapon** (open question 4); "discharges" would
-  release the charge as above.
+- **Held for the whole charged time:** when the timer reaches 0 the
+  trigger's overcharged action runs, every tick, while the button stays
+  down. The plasma pistol's trigger 0 has action "none", so **nothing
+  happens**: the weapon stays charged for as long as the button is held
+  (overcharged amount 1.0, no cooling, heat unchanged), and releasing it
+  at any later tick fires the charged bolt as above. ("Explodes" would
+  play the weapon's detonation effect, none on the disc, and delete the
+  weapon; "discharges" would release the charge as above; no
+  multiplayer weapon has either on a trigger that charges.)
 - A weapon with one trigger and a charging time fires on the press if
   its rate of fire is above 0 and charges in the background; releasing
   early then just returns to idle (no such multiplayer weapon).
@@ -1214,8 +1224,8 @@ rifle 4 + 8, needler 20 + 60, rocket launcher 2 + 2, flamethrower 100 +
 | shotgun | 0 | 0 | 0, 0 | 0 | 0 | 0, 0 | 0, 0, 0 | 0.15, 0.1 | 0.222222, 0.333333 |
 | plasma rifle | 0.08 | 0.005 | 0, 0 | 0 | 0 | 0, 0 | 0, 0, 0 | 0, 0.15 | 1, 0.222222 |
 | sniper rifle | 0 | 0 | 0, 0 | 0 | 0 | 0, 0 | 0, 0, 0 | 0.15, 0.1 | 0.222222, 0.333333 |
-| plasma pistol (0) | 0.16 | 0.002 | 0.6, 45 | 1 explodes | 1 | 0, 0 | 0, 0, 0 | 0, 0.15 | 1, 0.222222 |
-| plasma pistol (1) | 1 | 0.11 | 0, 0 | 1 explodes | 0 | 0, 0 | 0, 0, 0 | 0, 1 | 1, 0.0333333 |
+| plasma pistol (0) | 0.16 | 0.002 | 0.6, 45 | 0 none | 1 | 0, 0 | 0, 0, 0 | 0, 0.15 | 1, 0.222222 |
+| plasma pistol (1) | 1 | 0.11 | 0, 0 | 1 explodes (never reached: this trigger never charges) | 0 | 0, 0 | 0, 0, 0 | 0, 1 | 1, 0.0333333 |
 | needler | 0 | 0 | 0, 0 | 0 | 0 | 0, 0 | 0, 0, 0 | 0, 0.2 | 1, 0.166667 |
 | rocket launcher | 0 | 0 | 0, 0 | 0 | 0 | 0, 0 | 0, -0.1, 0 | 0, 0.3 | 1, 0.111111 |
 | flamethrower | 0.04125 | 0 | 0, 0 | 0 | 0 | 0, 0 | 0, 0, 0 | 0, 1 | 1, 0.0333333 |
@@ -1411,9 +1421,10 @@ Keep all of these unless noted.
 10. **The rocket launcher is never bent toward the crosshair's
     target** (autoaim angle 0 means deviation 0): its rocket leaves
     0.1 WU right of the camera line and stays parallel to it.
-11. **The plasma pistol's charge, held 45 seconds, deletes the gun**
-    ("explodes" with no detonation effect), if the Xbox build matches
-    the reference (open question 4).
+11. **The plasma pistol's charge can be held indefinitely.** Its first
+    trigger's overcharged action is none on the disc, so after 45
+    seconds nothing happens: the gun stays charged, does not cool, and
+    fires the charged bolt on release (open question 4).
 12. **Error rises while the trigger is held even when nothing fires**
     (empty, reloading, overheated, pistol between shots).
 13. The fan distribution places three projectiles on the centre line
@@ -1458,7 +1469,8 @@ its new-weapon ammunition unless stated.
 | plasma pistol | hold ticks 0-16, release tick 17 | | normal bolt on tick 17, no charge |
 | plasma pistol | hold ticks 0-17, release tick 18 | | charged on tick 18; charged bolt (trigger 1) on tick 19; overheated tick 20; clears tick 54 |
 | plasma pistol | hold ticks 0-39, release tick 40 | overcharge timeline | charging tick 0 (18 ticks); charged tick 18 (1350 ticks); charged bolt tick 40, heat 1.0, age 0.11; overheated tick 41; clears tick 75 (heat 0.2417) |
-| plasma pistol | hold ticks 0..1367 | | the overcharged action runs on tick 1368 (charged 18 + 1350): weapon deleted |
+| plasma pistol | hold from tick 0 through tick 1499 | long hold | nothing happens on tick 1368 (charged 18 + 1350, overcharged action none): still charged, no shot, no deletion; overcharged amount 0.9992592 on tick 1367 and 1.0 on tick 1368 and every tick after |
+| plasma pistol | hold ticks 0..1499, release tick 1500 | long hold | charged bolt (trigger 1) on tick 1500, heat 1.0; overheated tick 1501; clears tick 1535 (heat 0.2417) |
 | assault rifle | last round fired tick 0, release | reload | start tick 1, rounds in tick 87 (60 loaded, reserve 120), can fire tick 89 |
 | pistol | last round fired tick 0, release | reload | start tick 4, rounds in tick 70, can fire tick 72 |
 | sniper rifle | last round fired tick 0, release | reload | start tick 4, rounds in tick 97, can fire tick 99 |
@@ -1504,9 +1516,10 @@ its new-weapon ammunition unless stated.
    is assumed to be the trace's end point. Check by shooting at the sky
    from a high place and comparing where bullets land against the
    crosshair at close range.
-4. **Plasma pistol held 45 s.** Does the weapon really vanish
-   ("explodes" with no effect), or does the Xbox build release or
-   drain it? Hold an overcharge for a minute and watch.
+4. **Plasma pistol held 45 s.** The disc's first trigger has overcharged
+   action none, so the gun should simply stay charged. Confirm in the
+   game by holding the charge for a minute and then releasing it (a
+   charged bolt, no vanishing gun, no early release).
 5. **Melee damage scale.** The melee sets a damage scale from forward
    speed (0 standing still, 1 at run speed, 1.5 airborne); whether that
    scale interpolates the damage effect's minimum and its random

@@ -1,5 +1,5 @@
 //! The app's simulation on the greybox (no install): a player on Halo's
-//! stand-in movement stands and walks; the app's static is well formed; a
+//! movement stands and walks; the app's static is well formed; a
 //! named map fails with the loader's message instead of crashing.
 
 use bevy::prelude::*;

@@ -820,7 +820,9 @@ assist target the weapon gives it; a 0.1 WU collision radius against
 objects; speed 0.5 falling to 0.3 WU/tick over its first 15 WU (the
 deceleration starts at once: 5 / 0.5 >= 1); range 40 WU; flag 0
 (oriented along velocity). Its responses detonate on every material
-(potential detonate with no conditions; leaves: pass through), and its
+(on all 33 elements the default response is disappear and the
+potential response is an unconditional detonate, so the potential one
+always wins; leaves: potential pass through), and its
 detonation effect has no damage. Its impact damage
 `weapons\plasma rifle\charged bolt` is 70 points (no falloff: lower =
 upper = 70) with side effect **emp**: on a shielded target the shield
@@ -1016,21 +1018,30 @@ except the frag.
 | Projectile | Initial (m/s) | Final (m/s) | Air range | a | Decel. from | Max range | Gravity air / water | Coll. radius | Timer (s), starts | Guided (rad/s) | Min. vel. |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | AR bullet | 10.8 (987.6) | 10.8 | 5 - 15 | 0 | | 40 | 1 / 0.4 | 0 | none | 0 | 0 |
-| pistol bullet | 10.0 (914.4) | 10.0 | 0 - 100 | 0 | | 40 | 1 / 0.4 | 0 | none | 0 | 0 |
-| shotgun pellet | 4.6667 (426.7) | 3.3333 (304.8) | 1.5 - 3 | 3.5555552 | 4 | 40 | 1 / 0.4 | 0 | none | 0 | 0 |
-| sniper bullet | 33.3333 (3048) | 33.3333 | 1000 - 1000 | 0 | | 1000 | 0 / 0 | 0 | none | 0 | 0 |
-| rocket | 0.4 (36.6) | 0.3333 (30.5) | 0 - 100 | 0.0002444 | 1 | 128 | 0 / 0.4 | 0.1 | none | 0 | 0 |
-| plasma pistol bolt | 0.8333 (76.2) | 0.5 (45.7) | 20 - 50 | 0.0074074 | 1 | 50 | 0.1 / 0 | 0 | none | 0 | 0 |
-| charged bolt | 0.5 (45.7) | 0.3 (27.4) | 5 - 20 | 0.0053333 | 1 | 40 | 0 / 0 | 0.1 | none | 0.506145 | 0 |
-| plasma rifle bolt | 1.6667 (152.4) | 0.8333 (76.2) | 20 - 50 | 0.0347222 | 1 | 0 | 0 / 0 | 0 | none | 0 | 0 |
-| needle | 0.1333 (12.2) | 0.1333 | 0 - 100 | 0 | | 20 | 0 / 0 | 0 | 0.75, at rest/stuck | 1.5708 | 0.0667 |
-| flame | 0.3333 (30.5) | 0.3333 | 0 - 0 | 0 | | 2.5 | 0 / 0 | 0.1 | none | 0 | 0 |
+| pistol bullet | 10.000001 (914.4) | 10.000001 | 0 - 100 | 0 | | 40 | 1 / 0.4 | 0 | none | 0 | 0 |
+| shotgun pellet | 4.666667 (426.7) | 3.3333335 (304.8) | 1.5 - 3 | 3.555556 | 4 | 40 | 1 / 0.4 | 0 | none | 0 | 0 |
+| sniper bullet | 33.333336 (3048) | 33.333336 | 1000 - 1000 | 0 | | 1000 | 0 / 0 | 0 | none | 0 | 0 |
+| rocket | 0.40000004 (36.6) | 0.33333334 (30.5) | 0 - 100 | 0.0002444446 | 1 | 128 | 0 / 0.4 | 0.1 | none | 0 | 0 |
+| plasma pistol bolt | 0.8333334 (76.2) | 0.5 (45.7) | 20 - 50 | 0.007407409 | 1 | 50 | 0.1 / 0 | 0 | none | 0 | 0 |
+| charged bolt | 0.5 (45.7) | 0.3 (27.4) | 5 - 20 | 0.005333333 | 1 | 40 | 0 / 0 | 0.1 | none | 0.5061455 | 0 |
+| plasma rifle bolt | 1.6666667 (152.4) | 0.8333334 (76.2) | 20 - 50 | 0.03472222 | 1 | 0 | 0 / 0 | 0 | none | 0 | 0 |
+| needle | 0.13333334 (12.2) | 0.13333334 | 0 - 100 | 0 | | 20 | 0 / 0 | 0 | 0.75, at rest/stuck | 1.5707964 | 0.06666667 |
+| flame | 0.33333334 (30.5) | 0.33333334 | 0 - 0 | 0 | | 2.5 | 0 / 0 | 0.1 | none | 0 | 0 |
 | frag grenade | 0 | 0 | 0 - 10 | 0 | | 0 | 1 / 1 | 0 | 0.5, at rest | 0 | 0 |
 | plasma grenade | 0 | 0 | 0 - 10 | 0 | | 0 | 1 / 1 | 0 | 2.0, at rest/stuck | 0 | 0 |
-| Warthog bullet | 9.7667 (893.1) | 0.3333 (30.5) | 0 - 100 | 0.4763834 | 1 | 0 | 1 / 0.4 | 0 | none | 0 | 0 |
-| tank shell | 3.3333 (304.8) | 3.3333 | 1000 - 1000 | 0 | | 1000 | 0 / 0 | 0 | none | 0 | 0 |
+| Warthog bullet | 9.766667 (893.1) | 0.33333334 (30.5) | 0 - 100 | 0.4763834 | 1 | 0 | 1 / 0.4 | 0 | none | 0 | 0 |
+| tank shell | 3.3333335 (304.8) | 3.3333335 | 1000 - 1000 | 0 | | 1000 | 0 / 0 | 0 | none | 0 | 0 |
 | Scorpion bullet | 10.8 (987.6) | 10.8 | 5 - 15 | 0 | | 40 | 1 / 0.4 | 0 | none | 0 | 0 |
-| ghost bolt | 1.6667 (152.4) | 0.8333 (76.2) | 20 - 50 | 0.0347222 | 1 | 50 | 0 / 0 | 0 | none | 0 | 0 |
+| ghost bolt | 1.6666667 (152.4) | 0.8333334 (76.2) | 20 - 50 | 0.03472222 | 1 | 50 | 0 / 0 | 0 | none | 0 | 0 |
+
+The speeds, ranges and the other columns are the stored single-precision
+values, written as the shortest decimal that reads back as the same
+value (so the sniper bullet's 33.333336 is the word 0x42055556, one
+step above 1000/30 in single precision, and the needle's 0.13333334 is
+0x3E088889); brackets give metres per second at 3.048 m per WU and 30
+ticks per second. The deceleration a is not stored: it is the formula
+of behaviour 3 evaluated on those values, shown to 7 digits (the last
+digit depends on the order of the single-precision operations).
 
 Water ranges: AR and Scorpion bullet 0 - 5; pistol, rocket, needle,
 Warthog bullet, sniper, tank shell 0 - 10; pellet 0 - 1; plasma rifle and
@@ -1091,7 +1102,7 @@ parallel/perpendicular).
 | sniper bullet | disappear | pass through, full speed | disappear | disappear | every organic body (hunter armor excepted), the elite shield, glass, water and leaves pass at full speed; jackal and hunter shields reflect |
 | rocket | detonate | detonate | detonate | detonate | leaves: pass, 10 % detonate (skip 0.9) |
 | plasma pistol bolt, plasma rifle bolt, ghost bolt | disappear | disappear | disappear | disappear | hunter shield reflects; leaves pass (rifle and ghost bolt) |
-| charged bolt | detonate (pot., no condition) | detonate | detonate | detonate | leaves pass |
+| charged bolt | disappear / pot. detonate (no condition, skip 0) | same | same | same | every element (all 33) is default disappear with an unconditional potential detonate, so it detonates on any material; leaves: potential overpenetrate (pass) |
 | needle | attach; stone: reflect if impact angle <= 0.4363 (25 deg, angle noise 0.2618) with 0.3/0.3 | attach | attach | attach / pot. reflect if angle <= 0.6109 (35 deg, noise 0.0873), 0.3/0.3 | glass reflect <= 15 deg; force field, jackal shield, engineer force field, hunter shield reflect; water, leaves pass |
 | frag grenade | reflect: dirt 0.8/0.9, stone 0.7/0.8 | reflect 0.8/0.9 | reflect 0.8/0.9 | reflect 0.7/0.8 | snow 0.9/0.95; force field and carrier 0.6/0.7; jackal shield 0.8/0.8; engineer 0.5/0.7; ice 0.55/0.65; water: pass, pot. reflect 0.7/0.7 (skimming) if impact angle <= 0.5236 (30 deg) and 0.0333 <= u <= 33.3; leaves: reflect, pot. pass (skip 0.2) |
 | plasma grenade | reflect 0.9/0.95 (pot. attach to units only) | reflect / **attach** (units) | reflect / **attach** | reflect / **attach** (vehicles) | glass, force field 0.7/0.8 no stick; jackal shield 0.8/0.8; engineer FF, monitor, hunter shield no stick; ice 0.65/0.75 sticks to units; water pass 0.5/0.5 |

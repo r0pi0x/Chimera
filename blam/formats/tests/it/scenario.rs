@@ -530,7 +530,8 @@ fn object_header_essentials() {
     // A tag of another family is refused.
     let err = ObjectHeader::read(&map, map.tag(s.skies[0].sky.id).unwrap()).unwrap_err();
     assert!(err.to_string().contains("not an object"), "{err}");
-    assert_eq!(ObjectType::from_code(10), None);
+    assert_eq!(ObjectType::from_code(10), Some(ObjectType::Placeholder));
+    assert_eq!(ObjectType::from_code(12), None);
     assert_eq!(ObjectType::from_code(11), Some(ObjectType::SoundScenery));
 }
 

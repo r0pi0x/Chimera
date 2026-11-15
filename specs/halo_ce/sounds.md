@@ -180,8 +180,8 @@ minimum, a zero maximum takes the class maximum.
 
 ### Sound class (the number at 0x04)
 
-The class names are the 33 the game defines; 51 slots exist and the
-unnamed ones carry no defaults (all zero; a sound with such a class is
+The game names 31 classes (the table below); 51 slots exist and the
+20 unnamed ones carry no defaults (all zero; a sound with such a class is
 damage). Classes seen on the disc, over all 24 maps: 0, 1, 4 to 10, 13,
 14, 15, 18, 19, 22, 23, 26, 27, 28, 30, 32, 33, 34, 39, 44, 45, 47, 50.
 

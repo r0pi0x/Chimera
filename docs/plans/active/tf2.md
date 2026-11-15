@@ -1,0 +1,211 @@
+# Plan: Team Fortress 2 on Chimera
+
+Started 2026-11-15. One long orchestration session on the Linux box
+runs it overnight. It plans, has sub-agents write the specs and the
+code, verifies, merges each finished step to main and pushes. This file
+is the status page: read "Status" and "Log" to catch up.
+
+Goal: Team Fortress 2 is a fifth game library (`games/tf2`, crate and
+id `tf2`). It lends its guns, movement, classes' bodies and maps to the
+Ultimate Gun Game, as CS:S, Combat Arms and HL2:DM do
+([new-game.md](../../new-game.md); HL2:DM is the model port,
+[hl2dm.md](hl2dm.md)). Parity first: a TF2 rung plays as the real game,
+from specs, measurements and the game's own data.
+
+## Status
+
+| Milestone | State | Summary |
+|---|---|---|
+| M0 plan and first specs | done (2026-11-15) | this plan; specs/tf2/: install, movement, classes, weapons, ICE |
+| M1 a map you can walk on | not started | mount, ctf_2fort and cp_badlands, walked in UGG |
+| M2 TF2 guns as UGG rungs | not started | Scattergun, Rocket Launcher, Shotgun, Minigun; the weapon scripts; `chimera_pack tf2` |
+| M3 classes as bodies, TF2's movement | not started | |
+| M4 more maps and weapons | not started | |
+
+## 1. Rules for this port
+
+- **Clean room.** TF2's and the Source engine's code leaked, and the
+  Source SDK is public. Neither is ever read, copied or translated.
+  Spec sub-agents read the game's data files in place, public
+  documentation (the community TF2 wiki, Valve Developer Community)
+  and measurements of the dedicated server, and write only
+  `specs/tf2/`. The orchestrator and implementation agents read only
+  `specs/` and the repository.
+- **No game files, extracted data or keys in the repository.** Assets
+  load at run time from the user's install or the asset service. No
+  install path, home path or key goes into a commit.
+- **The ICE key is the user's.** The `.ctx` scripts are encrypted with
+  ICE (specs/tf2/ice.md). The key is never committed, and never
+  written into code, tests, docs, specs or commit messages. It is read
+  at run time from the local config or the environment (section 3),
+  as Combat Arms' keys are.
+
+## 2. The install
+
+| Layout | Steam app | What it has | Use |
+|---|---|---|---|
+| The retail client (`Team Fortress 2`) | 440 (free to play; needs a Steam login, also in SteamCMD) | everything: maps, models, textures, sounds, HUD resources | the install for play and tests, and the packing source for `chimera_pack tf2` |
+| The dedicated server | 232250 (SteamCMD, anonymous) | maps, models, material text, scripts and `items_game.txt`; the texture and sound VPKs' `_dir` files only, without their data archives (install.md 1) | geometry, collision and spawns without textures; measurements with puppet bots (movement.md, classes.md) |
+
+- **Found** as the other games are (`chimera_core::mount::install`):
+  `$CHIMERA_TF2_ROOT` for one run, then `[games.tf2] path` in
+  `chimera.local.toml`, then the path saved by the first-run dialog,
+  then Steam's libraries (app 440). A SteamCMD install outside Steam's
+  libraries needs the config line or the variable.
+- **Required files**, present in both layouts: `tf/gameinfo.txt`,
+  `tf/tf2_misc_dir.vpk`, `hl2/hl2_misc_dir.vpk`.
+- **The mount**: the search path from `tf/gameinfo.txt`
+  (`source_engine::search_path`, as HL2:DM). An archive listed in a
+  `_dir` file but missing on disk is skipped file by file, so the
+  dedicated server's layout mounts (install.md, open question 3).
+- **The server layout** from SteamCMD, anonymous:
+  `steamcmd +force_install_dir <folder> +login anonymous +app_update
+  232250 validate +quit` (docs/assets-for-developers.md).
+
+## 3. Decisions
+
+1. **The id is `tf2`**: crate `tf2` (`games/tf2`), maps `tf2:<map>`,
+   console namespaces `tf2` and `tf`, the key `[games.tf2]`, the asset
+   sets `tf2`. Content folder `tf`. Tick 0.015 s (movement.md, measured).
+   0.0254 m per unit.
+2. **Maps** go through Source's BSP conversion (`source_engine`), with
+   TF2's data: spawns from `info_player_teamspawn` (`TeamNum` 2 RED,
+   3 BLU; `StartDisabled`; on control-point maps the round's owner of
+   the named point; install.md 2). TF2's maps need LZMA-compressed
+   lumps, the LZMA game lump and static props version 10, and LZMA
+   entries in the pak (install.md 2). Where the shared conversion lacks
+   these, they are small generic extensions in `source_engine` or
+   `source_formats`, not TF2 code.
+3. **Weapon numbers come from the game's own scripts.** The per-weapon
+   scripts `scripts/tf_weapon_*.ctx` are ICE-encrypted KeyValues.
+   - `games/tf2` holds our own ICE implementation, written from
+     specs/tf2/ice.md (never from another implementation; the Rust
+     `ice-crypt` is GPL-3.0 and no port is in THIRD_PARTY.md). Its
+     tests: the paper's known-answer vectors where they reproduce, and a
+     fixture encrypted at run time with a throwaway key the test makes.
+   - The key: `CHIMERA_TF2_CTX_KEY`, else the TF2 entry of the local
+     config's game keys (`[games.tf2.keys]`, as Combat Arms' `V1` and
+     `V2`). Never logged.
+   - Where the numbers come from, in order:
+     1. **the asset service** (the default, how UGG players get every
+        game): the host packs the scripts decrypted into each weapon's
+        set (`weapon/<id>`), so a client without a key reads them as
+        plain KeyValues;
+     2. **a local install plus a key**: decrypted in memory at load;
+     3. **the specs' numbers** (specs/tf2/weapons.md), the last resort
+        for offline development runs, logged loudly.
+   - Decrypted text lives only in the host's store, the per-user cache
+     or under `target/`: never the repository or a shared scratch folder.
+4. **The asset service.** `chimera_pack` learns `tf2` (as `cs_source`,
+   `combat_arms` and `hl2dm`): the sets `base`, `common`, `players`,
+   `weapon/<id>` (with the decrypted script) and `map/<name>`. Packing
+   and tests use a scratch store under `target/`. Nothing goes into the
+   live server store until the orchestrator publishes, when M2 is
+   ready:
+   `CHIMERA_TF2_CTX_KEY=... cargo run --features dev,tools --bin
+   chimera_pack -- publish tf2` then `chimera_pack sets tf2 --store
+   <server store> --sign` (the key from the host's environment only).
+   TF2's first join passes the same no-fetch-in-match guard as the other
+   games (`apps/ultimate_gun_game/tests/it/heavy/no_fetch_in_match.rs`).
+5. **View models are two models**: the class's arms
+   (`c_<class>_arms.mdl`, animations in `c_<class>_animations.mdl`) and
+   the weapon (`c_<weapon>.mdl`) bone-merged onto them by bone name
+   (install.md 4). The same weapon model is what the third-person
+   player holds. If the view-model driver lacks an arms-plus-weapon
+   pair, that is a generic extension in Chimera (Combat Arms already
+   draws hands and gun parts), not TF2 code.
+6. **The rungs' class.** A TF2 gun makes its holder that gun's class:
+   Scout for the Scattergun, Soldier for the Rocket Launcher, Heavy for
+   the Minigun, and the Engineer's arms for the Shotgun
+   (weapons.md 2). Health and speed per class follow classes.md once
+   the bodies land (M3); until then the rung uses the party's character.
+7. **Not in scope for now**: TF2's own app and server (beside the party
+   apps; M5 at the earliest), objectives (flags, control points,
+   payloads), buildings, Medic healing, Spy disguise and cloak, Pyro's
+   airblast, cosmetics, MvM, bots, random crits beyond the default
+   rule, the HUD.
+
+## 4. Milestones
+
+### M0: the plan and the first specs (done)
+
+specs/tf2/ ([README](../../../specs/tf2/README.md)): install.md (T0),
+movement.md (T1), classes.md (T2), weapons.md (T3), ice.md (T4).
+All `draft`.
+
+### M1: a map you can walk on
+
+- The `games/tf2` skeleton per new-game.md: `INFO` (Steam app 440,
+  `required` above), `game::mount` from `tf/gameinfo.txt` through
+  `mount::served` (the store works), `SimPlugins`, `Tf2Sim`, a test
+  that the game registers and (heavy) that the install mounts.
+- `MAP_LOADER` for `tf2:<map>`, lean option honoured; spawns from
+  `info_player_teamspawn`; a guest `MapDressing`.
+- `BUNDLE` in the party kit's list, maps only (no rungs yet).
+- ctf_2fort and cp_badlands with textures (from the client),
+  lightmaps, displacements, the 3D sky and collision, walked as an
+  existing UGG character. Offscreen screenshots.
+- Heavy tests: each loads with its spawns (both teams), faces,
+  collision, no missing material (client) or stand-ins (server layout).
+- `[games.tf2]` in `chimera.local.example.toml`; the install in
+  docs/assets-for-developers.md.
+
+### M2: TF2 guns as UGG rungs
+
+- ICE and the `.ctx` reader (section 3, decision 3), with the three
+  sources and the log line saying which one served.
+- The Scattergun (pellets), Rocket Launcher (projectile with splash,
+  self-damage, knockback), Shotgun and Minigun (spin-up, slowed holder)
+  as TOML weapons (docs/weapon-data.md, the add-weapon-from-data skill),
+  the numbers from the scripts, TF2's shared rules (distance ramp,
+  spread, pellets) as registered hooks.
+- `c_` weapons on the class's arms, sounds from the plain sound
+  scripts.
+- `chimera_pack tf2` and a scratch-store test; a gun game ladder with
+  TF2 rungs among the other games' (no Halo).
+
+### M3: the classes as bodies, TF2's movement
+
+The class player models with animation (activities by weapon, pose
+parameters), health per class, TF2's movement numbers (movement.md:
+the jump, the air duck, the Scout's air jump, the bunny-hop cap, fall
+damage), the rocket jump tuned on the probe server.
+
+### M4 and on
+
+More maps in the pool (koth_, cp_, ctf_ with the map pool's fitness
+data), more weapons (each class's stock set), effects, the dedicated
+server probe for parity checks, TF2's own app.
+
+## 5. How the session works
+
+- Specs first, by sub-agents that don't build; one building sub-agent at
+  a time (the box runs other agents' builds), in an agent slot
+  (`tools/agent-slot.sh acquire tf2-<step>`) with
+  `source tools/agent-env.sh && agent_run cargo ...`.
+- Each step merges to main when its tests pass, then
+  `tools/post-push-tests.sh`; a FAIL is fixed at once.
+- Ports: never UDP 27015 or 27030 (the probe servers use 272xx).
+
+## 6. Open questions
+
+1. ICE: the paper's test vectors don't reproduce from its prose alone
+   (ice.md, open question 1). The readings the spec lists are tried
+   against a real `.ctx` with the user's key: KeyValues text settles it.
+2. Does the engine fall through to later search paths for a file whose
+   archive is missing (install.md)? Our mount does; it matters only for
+   the server layout.
+3. Spawn choice on control-point maps at round start (install.md 2):
+   which teamspawns a gun game uses (both teams' at once, for free for
+   all).
+
+## Log
+
+- 2026-11-15: plan written; five specs landed (install, movement and
+  classes measured on the dedicated server with puppet bots, weapons
+  from public documentation and the item schema, ICE from the paper).
+  The dedicated server lacks textures and sounds, so the retail client
+  (app 440) was installed for them. Two decisions from the user: the
+  weapon scripts are decrypted with our own ICE and a locally supplied
+  key, and the asset service is the default source of game data
+  (section 3).
