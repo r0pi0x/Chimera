@@ -368,3 +368,28 @@ fn a_pick_the_mechanics_hold_shows_as_next_until_it_ends() {
     assert!(u.said.as_deref().is_some_and(|s| s.contains("dropped")), "{:?}", u.said);
     assert!(drawn(&mut sim, "sb.said"), "the word on the chip's foot");
 }
+
+/// Nobody races in a sandbox: switching rung there raises no lead event
+/// (so no "You took the lead" banner, cue or announcer call), up or down
+/// the ladder.
+#[test]
+fn switching_rung_in_the_sandbox_takes_no_lead() {
+    use chimera_core::console::Console;
+    use chimera_sim::minigame::{MinigameEvent, ladder::{Leaders, Rung}};
+
+    #[derive(Resource, Default)]
+    struct Events(Vec<&'static str>);
+    fn keep(mut seen: ResMut<Events>, mut r: MessageReader<MinigameEvent>) {
+        seen.0.extend(r.read().map(|e| e.name));
+    }
+    let (mut sim, me) = play();
+    sim.app.init_resource::<Events>().add_systems(Last, keep).add_systems(FixedPostUpdate, keep);
+    for rung in ["5", "2", "9", "3"] {
+        sim.app.world_mut().resource_mut::<Console>().submit(format!("rung {rung}"));
+        sim.seconds(1.0);
+    }
+    assert_eq!(sim.app.world().get::<Rung>(me).map(|r| r.0), Some(2), "on the rung asked");
+    let seen = sim.app.world().resource::<Events>().0.clone();
+    assert!(!seen.iter().any(|n| n.starts_with("lead_")), "no lead in a sandbox: {seen:?}");
+    assert!(sim.app.world().get_resource::<Leaders>().is_none_or(|l| l.0.is_empty()));
+}

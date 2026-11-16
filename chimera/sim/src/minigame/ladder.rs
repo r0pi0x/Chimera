@@ -129,7 +129,8 @@
 //! Events (`MinigameEvent`): `rung_up`, `rung_down` (knifed) and
 //! `suicide_down` (one's own death) with the new rung,
 //! `last_rung` (a player reached the last rung), and the lead (the
-//! highest rung, then the most kills; nobody leads before a kill):
+//! highest rung, then the most kills; nobody leads before a kill, nor
+//! in a sandbox, where nobody races: `rung_command::sandbox_plays`):
 //! `lead_taken` (alone in it), `lead_lost` (no longer in it),
 //! `lead_tied` (newly sharing it, or a sole leader caught up), each with
 //! the player's rung. The viewer's callouts (`callout`):
@@ -1143,11 +1144,14 @@ fn loadout(world: &World, e: Entity) -> Vec<&'static str> {
 /// before the phases step). Normal systems: what they insert goes through
 /// `Commands`, applied at the sync point before the step (O1).
 pub(super) fn per_tick() -> ScheduleConfigs<ScheduleSystem> {
-    (refill, follow_lead).chain().distributive_run_if(mode_is(LADDER))
+    // (Nobody races in a sandbox: no lead, so no lead banner or cue when
+    // its player switches rung.)
+    (refill, follow_lead.run_if(not(super::rung_command::sandbox_plays))).chain().distributive_run_if(mode_is(LADDER))
 }
 
 /// Who leads (the players at the highest rung, then most kills), as last
-/// told: `lead_taken`, `lead_lost`, `lead_tied` when it changes.
+/// told: `lead_taken`, `lead_lost`, `lead_tied` when it changes. Not
+/// followed while a sandbox plays (`rung_command::sandbox_plays`).
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct Leaders(pub Vec<Entity>);
 
