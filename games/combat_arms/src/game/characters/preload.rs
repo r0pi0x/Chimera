@@ -234,6 +234,7 @@ pub fn plan_ladder(
 /// Forget the models loaded on demand that the ladder just played
 /// (`LadderModels`) doesn't give and no character wears or holds: a map's
 /// unload (module doc). Only where the front end loads them.
+/// Only Combat Arms' own: another game's late bodies and held models stay.
 pub fn forget_old(world: &mut World) {
     if !world.contains_resource::<LoadOnDemand>() {
         return;
@@ -265,7 +266,9 @@ pub fn forget_old(world: &mut World) {
     }
     if let Some(mut late) = world.get_resource_mut::<LateHeldModels>() {
         late.0.retain(|(m, _)| {
-            let keep = keys.contains(&m.key);
+            // Another game's late held model is not ours to forget (its
+            // own loader would not bring it back).
+            let keep = !ours(&m.key) || keys.contains(&m.key);
             if !keep {
                 forgotten.keys.push(m.key.clone());
             }
