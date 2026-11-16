@@ -229,7 +229,7 @@ pub struct MapLoader {
 /// The kit of a map built in code (`code_maps::CODE_MAPS`: the greybox, the
 /// range), as a map of game `chimera`: `chimera:range` loads an empty
 /// map (no world, spawns or sun: the code-built map is spawned beside it,
-/// `greybox::respawn`) that `MapSources::dress` dresses like any other
+/// `greybox::respawn`; its entity space is metres, `entity_scale` 1) that `MapSources::dress` dresses like any other
 /// game's map, so the party's bodies, held and view models and HUD looks
 /// are on the code-built maps too. An app whose `MapSources` lists it gets
 /// that (the client's `load_code_map`, the dedicated server's
@@ -250,6 +250,10 @@ fn code_map_kit(name: &str, _: &MapLoadOptions) -> Result<MapData, String> {
         .ok_or_else(|| format!("{CODE_MAP_GAME}:{name}: no map built in code by that name"))?;
     Ok(MapData {
         name: format!("{CODE_MAP_GAME}:{id}"),
+        // Code-built maps are in metres: entities a dressing adds to the
+        // kit are in that space (a scale of 0 made every conversion into
+        // entity space divide by zero: `entities::engine_to_entity`).
+        entity_scale: 1.0,
         ..Default::default()
     })
 }
@@ -489,6 +493,21 @@ mod tests {
     use bevy::prelude::default;
 
     use super::*;
+
+    /// Every code-built map's kit has a real entity scale (metres): with
+    /// 0, a position converted into its entity space was not a number
+    /// (the sandbox's crash on the range).
+    #[test]
+    fn the_code_built_maps_kit_has_a_positive_entity_scale() {
+        for id in crate::map::code_maps::CODE_MAPS {
+            let kit = (CODE_MAP_KIT.load)(id, &MapLoadOptions::default()).unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert!(is_code_map_kit(&kit), "{}", kit.name);
+            assert_eq!(kit.entity_scale, 1.0, "{id}: metres");
+            let p = crate::map::entities::engine_to_entity(bevy::math::Vec3::new(1.0, 2.0, 3.0), kit.entity_scale);
+            assert!(p.is_finite(), "{id}: {p}");
+        }
+        assert!((CODE_MAP_KIT.load)("no_such_map", &MapLoadOptions::default()).is_err());
+    }
 
     fn a_map(name: &str, _: &MapLoadOptions) -> Result<MapData, String> {
         let mut sounds = crate::map::sound::MapSounds::default();

@@ -103,13 +103,7 @@ the user's go-ahead: no Actions runs unless asked.
   - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
   - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
 
-- **Sandbox UI follow-ups (2026-11-16, after the weekly usage reset):**
-  - **Wire the platform placement into the bench:** "Place: Line / Platform"; use `targets::spawn_placed` or `PlaceTarget`, and `SetTarget.place`.
-  - **Show a waiting pick from `rung_command::GunPending`** in the gun chip's Next strip; `GunPickEnded` reports Applied, Replaced or Dropped.
-  - **Bug:** switching rung in the sandbox shows the "You took the lead" banner. Leader banners and the announcer should stand down in the sandbox, as the race chip does.
-
 - **Range and code-built map follow-ups (2026-11-16):**
-  - **The kit's scale:** the code-built maps' kit (`map::sources::CODE_MAP_KIT`) has an entity scale of 0. Dividing by it made the NaN crash fixed in d37d2e6b, where only the logic bridge got a guard. Give the kit a real scale (1.0, since code-built maps are in metres) and check the other readers of `MapEntities::scale`.
   - **More in RangeLayout:** cover-crate boxes (or the clear lane's width), the shelf's size, the board's size and facing (the board is 1.2 m but the target scoring face 1.0 m, so the outer 0.1 m counts as misses), the platform and ramp, and the stripes' half width.
   - **A floor label:** "20 M" looks mirrored from the board's side.
   - **Change gun:** group Combat Arms' about 2,000 variants by base gun, so the sandbox lists tens per game, not thousands.

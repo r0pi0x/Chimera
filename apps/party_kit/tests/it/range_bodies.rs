@@ -48,6 +48,7 @@ fn a_player_on_the_range_has_a_drawn_body() {
     sim.ticks(1);
     let kit = SOURCES.load_with("chimera:range", &MapLoadOptions::default()).expect("the range's kit");
     assert_eq!(kit.kit.characters.len(), 2, "dressed with the bodies");
+    assert!(kit.entity_scale > 0.0, "the kit's entity space is real (metres)");
     change_map(sim.app.world_mut(), kit, MapDebugView::Normal);
     minigame::start(sim.app.world_mut(), DEFAULT_MINIGAME).expect("the gun game starts");
     let p = soldier(&mut sim);

@@ -323,8 +323,9 @@ fn time_seed() -> u64 {
 /// Build (or drop) the logic world when the map's entities change, and
 /// re-create it at a round restart (`core::RoundRestarts`).
 fn load(world: &mut World) {
-    // A map with no entity space of its own (scale 0: a code-built map's
-    // kit, `map::sources::CODE_MAP_KIT`, is an empty `MapData`) has no
+    // A map with no entity space of its own (scale 0: entities added to
+    // a `MapData` whose scale nobody set, as a code-built map's kit,
+    // `map::sources::CODE_MAP_KIT`, was before it got its metres) has no
     // logic: with one, every conversion into its space divided by zero,
     // and a player's velocity came back NaN (the sandbox crashed a few
     // frames in, in the view bob's clamp).
