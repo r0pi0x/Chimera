@@ -37,5 +37,7 @@ mod pickups;
 mod power_curve;
 mod sandbox;
 mod session;
+mod sandbox_screens;
+mod targets;
 mod ui_sounds;
 mod variety;

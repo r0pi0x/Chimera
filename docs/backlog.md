@@ -74,6 +74,11 @@ the user's go-ahead: no Actions runs unless asked.
     - later, an original "Lucker Party" look for the party apps' own characters.
   - **Design first:** the style, polygon budget and colours (the avatar palette), with mockups or a turnaround sheet for the user to approve before modelling.
 
+- **Generated per-asset icons (user, 2026-11-15):** the sandbox's tiles, the target picker, the props and the pinned bar need proper icons per asset (each gun, character and prop), not only the kit's class icons and the games' kill-icon sheets.
+  - Render a thumbnail of each model with a fixed camera, lighting and style (a consistent Signal-style silhouette and a colour shot), as a generated asset made by the ingest pipeline's converters (docs/plans/active/ingest.md), versioned and deterministic.
+  - Served as an `optional` edge, so the kit's icon shows until it arrives.
+  - UGG-specific for now, possibly general later.
+
 - **Generated asset sets on the asset service (user, 2026-11-15):** "we should have all these assets be split so you can download them atomically, like units, as they're needed."
   - **The driver:** Halo's campaign characters (docs/plans/active/halo-ce.md) live inside large campaign map files, so a per-character unit has to be cut out by a converter. Per-gun units, per-class TF2 bodies and per-map sets already exist as plain file sets.
   - **The guardrails** (proposed by the Halo session, to confirm with the user when designed):
@@ -94,17 +99,22 @@ the user's go-ahead: no Actions runs unless asked.
     - **Self-hosting:** a host or modder can run `generate` against their own install to produce a pack an asset service can serve.
   - **Plan:** [plans/active/ingest.md](plans/active/ingest.md) (the ingestion pipeline: recipes, converters, declared sets, official updates, custom packs).
 
-- **A recycling `VirtualList` in the UI kit, for smooth scrolling (user, 2026-11-15):** the user expects to scroll the maps and gun lists smoothly, by pixels, with the mouse wheel and a scrollbar.
-  - **Today:** the Maps dialog and the Join server list draw only a window of rows around the cursor, which is cheap. But they rebuild every row on each change, jump a row at a time, and the Maps dialog has no wheel scrolling.
-  - **Build one shared list in `chimera_ui`:**
-    - a pool of the rows in view plus two spare, created once;
-    - a scroll or data change rebinds the pooled rows' text, icon and state in place, with no despawn or respawn;
-    - the pool is offset inside a clipped box, with the total height from the item count;
-    - wheel, a draggable scrollbar, and keys that keep the cursor in view;
-    - folded sections drop out of the flat list it draws from.
-  - **Measure** per-frame instruction counts while scrolling a 2,000-row list, against today's rebuild.
-  - **Users:** the Maps dialog, the sandbox's gun picker (Combat Arms alone has hundreds of variants), the Internet server list, and later friends and the asset catalogue.
-  - **First check:** whether the stopgap rung picker (`apps/party_kit/src/rung_picker.rs`) windows its rows at all.
+- **Move the lists onto the recycling `VirtualList` (user, 2026-11-15):** the user expects to scroll the maps and gun lists smoothly, by pixels, with the mouse wheel and a scrollbar.
+  - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
+  - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
+
+- **A purpose-built sandbox map, "the range" (user, 2026-11-15):** the sandbox gets its own map, made so things are easy to see, like the design mocks (gen/sandbox2: a light grid floor, distance lines, cover crates).
+  - Built in code like `chimera_world::greybox`, with its layout as data:
+    - a long, flat firing range with labelled distance lines at 5, 10, 20, 40, 100 and 200 m from a firing line where the player spawns;
+    - an even, bright, readable light, with no game's art;
+    - a few cover crates and walls at the sides;
+    - a props shelf for bottles and cans, and a target board stand;
+    - a raised platform for long-range shots;
+    - room for targets to strafe and walk, with a navigation mesh for the bots;
+    - a backstop wall.
+  - It's the default map of `+sandbox` and the main menu's Sandbox entry. Other maps stay selectable.
+  - Game-neutral: every game's movement works on it, and it's our own content, so it lives in the repo.
+  - Screenshots compared with the mocks.
 
 - **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
   - **Progressive disclosure (user):**
@@ -289,11 +299,20 @@ the user's go-ahead: no Actions runs unless asked.
     `ultimate_gun_game +sandbox [map]` / `sandbox [map]` plays alone on
     every game's guns with nothing advancing or ending, `rung <n | gun id |
     part | next | prev | list>` picks the gun, `ca_bot_*`, `god` and `noclip`
-    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Next: a gun and
-    rung picker menu; a time scale; target dummies that report damage and
-    time to kill at set distances (a gun's real strength measured, not
-    modelled); a firing range layout; saving a loadout of guns to cycle;
-    picking a rung character (Combat Arms' turret) instead of the draw's.
+    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Target dummies
+    exist (2026-11-15, mechanics only; chimera_sim's `minigame::targets`):
+    `target add|set|remove|list|characters` and the requests the screens
+    send (`SpawnTarget`, `SetTarget`, `RemoveTarget`, `ClearTargets`), any
+    game's body at a distance on the floor, still, strafing or walking,
+    firing back or not, protected or not, respawning at home; the facts
+    `HitMeasured` and `KillMeasured` (damage, hit group, distance, shots,
+    hits, time to kill). Next: their screens (the party UI); a gun and
+    rung picker menu; a time scale; props (bottle, can, a board with the
+    shot group), blast measurement, a half-speed condition; a firing range
+    layout with 100 and 200 m of floor; saving a loadout of guns to cycle;
+    picking a rung character (Combat Arms' turret) instead of the draw's;
+    bots out of Combat Arms' crate behind game-neutral interfaces (targets
+    use only the add/remove seam, `targets::TargetBots`).
   - *Ties:* M5b's 3D Showcase backdrop
     ([plans/active/ugg-ui.md](plans/active/ugg-ui.md)) is the first
     viewer (gun under an inspect camera, character in idle) and should
@@ -363,19 +382,36 @@ results are from after that.
   history kept the old skeleton's poses when a rung gave it another
   model, and a death then read the new model's bones from them. The
   history is now cleared when the bone count changes and a death whose
-  newest pose is of another skeleton spawns no ragdoll. Seen once; not
-  re-run in a match after the fix (the engine's ragdoll tests pass).
-  Because of it no match was played through two TF2 rungs: do that.
+  newest pose is of another skeleton spawns no ragdoll. Replayed after
+  the fix (the same match, five minutes): no crash, the bots played
+  through the three TF2 rungs to the ladder's end and into the next
+  map, 41 ragdolls made (about 29 of TF2 bodies), a median of 4.9 ms a
+  frame. No screenshot caught a TF2 ragdoll: look at one.
 - **The Flame Thrower shows no flames** and **no TF2 gun shows a muzzle
-  flash**, on de_dust2 and on ctf_2fort.
+  flash**, on de_dust2 and on ctf_2fort. Fixed (branch `tf2-polish`):
+  TF2's particle systems loaded only with its own maps; they now load
+  onto any map from TF2's own files (`tf2::game::maps::add_guest_looks`),
+  the flashes start at the gun's `muzzle` attachment and the Flame
+  Thrower starts TF2's `flamethrower` system a piece per round. Confirm
+  in a playtest at a real frame rate (the Linux check ran at 60 ms a
+  frame, where the fast flame particles first show a few metres out).
 - **TF2 bullet hits play Combat Arms' impact sounds** (read from the
-  log, not heard: the runs were muted).
+  log, not heard: the runs were muted). Fixed (`tf2-polish`): TF2 is
+  now an impact provider (Source's impact effects and sounds,
+  `weapons::looks::STYLE`) with its looks on every map, so a TF2 gun's
+  hits are TF2's (by the map's sound entries of the same names on
+  de_dust2). TF2's own impact rules have no spec yet.
 - **The rocket's explosion** is TF2's fireball on ctf_2fort but a small
-  grey puff on de_dust2.
+  grey puff on de_dust2. Fixed (`tf2-polish`): TF2's explosion system on
+  every map, Source's never.
 - **HUD**: the health cross shows each class's maximum health and the
-  ammo counts move when firing. Missing: the class portrait. The
-  crosshair is faint against de_dust2. The sniper's scope did not show
-  in one of two identical runs (not explained).
+  ammo counts move when firing. The class portrait (2D) and the
+  crosshair at 32 screen pixels (was scaled down to 21 at 720 lines)
+  are fixed on `tf2-polish`. The sniper's scope did not show in one of
+  two identical runs: attack2 *held* toggles the scope every 0.3 s
+  (weapons_more.md 3.1), so a run holding it shows it or not by when the
+  frame is taken (`weapons_more::one_press_raises_the_scope_and_a_held_
+  key_toggles_it_3_1`); with a tap it stays up. No HUD race found.
 - **Classes measure right**: health 125, 200, 300 (Scout, Soldier,
   Heavy), speeds 400, 240, 230 units/s; the Scout's jump rises 49.9
   units and its double jump 95.2; a rocket jump rose 170.8 units and
@@ -383,7 +419,14 @@ results are from after that.
   pass on Windows.
 - **Eye height**: the differences between classes are exact, but every
   class sits 2.07 units above the spec's height measured against
-  CS:S's 64. Which side is off is not known.
+  CS:S's 64. Which side is off is not known. (`tf2-polish`) On a flat
+  floor each class's camera is exactly its eye height above the feet
+  and, once it has moved, above the floor
+  (`movement::each_class_eye_stands_its_height_above_the_floor_classes_1`):
+  no shared offset in the eye. Standing still a Source player may hover
+  up to 2 units (CS:S movement.md "Hovering"), and TF2's box is 48 wide
+  against CS:S's 32, so on de_dust2's sloped ground it rests higher:
+  measure again after walking, on flat ground.
 - **Bodies**: bots show the class bodies with their guns; a scene with
   CS:S, Halo and TF2 players renders; the kill feed shows TF2's rocket
   icon.

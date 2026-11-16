@@ -187,10 +187,11 @@ fn a_direct_grenade_hit_takes_100_22() {
     assert!((took - 100.0).abs() < 0.01, "took {took}");
 }
 
-/// Test 23: a grenade at the floor bounces and explodes 2.3 s after
-/// launch, where it is.
+/// Test 23 and the corrections from the SDK: a grenade at the floor
+/// bounces and explodes on its 2.0 s fuse, at the tenth 0.2 s check (2.1 s
+/// after launch), where it is.
 #[test]
-fn a_rolling_grenade_explodes_at_2_3_s_23() {
+fn a_rolling_grenade_explodes_at_2_1_s_23() {
     let mut sim = sim();
     let (p, _) = holding(&mut sim, greybox::SPAWNS[0], GRENADE_LAUNCHER);
     let mut gone = sim.app.world().resource::<Messages<FlyerGone>>().get_cursor_current();
@@ -204,7 +205,38 @@ fn a_rolling_grenade_explodes_at_2_3_s_23() {
         }
     });
     let ticks = when.expect("exploded") as f64;
-    assert!((ticks * TICK_INTERVAL - 2.3).abs() < 0.05, "after {} s", ticks * TICK_INTERVAL);
+    assert!((ticks * TICK_INTERVAL - 2.1).abs() < 0.05, "after {} s", ticks * TICK_INTERVAL);
+}
+
+/// weapons_more.md 6 and its corrections from the SDK: a Demoman on the
+/// ground detonating his sticky at his feet takes the base 120 x the
+/// splash x0.75 (grounded too), and is pushed up at scale 9 into a sticky
+/// jump.
+#[test]
+fn a_sticky_at_his_feet_hurts_the_demoman_three_quarters_and_lifts_him() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], STICKY_LAUNCHER);
+    sim.app.world_mut().get_mut::<Health>(p).unwrap().current = 10.0;
+    run(&mut sim, p, 2, |s, k| {
+        s.intent(p).fire = k == 0;
+        s.intent(p).pitch = -89f32.to_radians();
+    });
+    run(&mut sim, p, 80, |s, _| s.intent(p).fire = false);
+    assert_eq!(stickies(&mut sim, p).len(), 1, "stuck at his feet");
+    let before = health_points(&sim, p);
+    let mut up = 0f32;
+    let mut jumping = false;
+    run(&mut sim, p, 10, |s, k| {
+        s.intent(p).secondary = k < 2;
+        up = up.max(s.velocity(p).y / U);
+        jumping |= s.app.world().get::<tf2::game::weapons::blast::BlastJumping>(p).is_some();
+    });
+    let took = before - health_points(&sim, p);
+    // 120 x f(r) x 0.75 with r a few units: 85 to 90 (on the ground the
+    // old rule gave over 110).
+    assert!((80.0..=90.0).contains(&took), "self damage {took}");
+    assert!(up > 500.0, "pushed up at {up} (scale 9 x {took})");
+    assert!(jumping, "sticky jumping");
 }
 
 /// The stickies of `owner` with their speed.
@@ -246,8 +278,9 @@ fn the_sticky_charge_sets_its_speed_28_29() {
     }
 }
 
-/// Tests 30, 31, 38: attack2 at 0.5 s does nothing, at 0.8 s the sticky
-/// goes off; a ninth blows the oldest; a dead Demoman's vanish.
+/// Tests 30, 31, 38 and the corrections from the SDK: attack2 at 0.5 s
+/// does nothing, armed at 0.8 s the sticky goes off; a ninth blows the
+/// oldest; a dead Demoman's vanish.
 #[test]
 fn stickies_arm_limit_and_vanish_30_31_38() {
     let mut sim = sim();
@@ -351,4 +384,34 @@ fn needles_fall_and_hurt_by_distance_48_50() {
     run(&mut sim, p, 60, |s, k| s.intent(p).fire = k == 0);
     let took = before - health_points(&sim, t);
     assert!((took - 10.0).abs() < 0.01, "took {took}");
+}
+
+/// Zoom (3.1), the scope a screen shows: one press of attack2 puts the
+/// holder behind the Sniper Rifle's scope (`Zoomed`: a scope, field of
+/// view 20) and it stays up while nothing else happens; attack2 *held*
+/// toggles it at most once per 0.3 s, so a held key's scope is up or
+/// down by when the frame is taken (the Windows check's run with no
+/// scope in one of two identical runs held it).
+#[test]
+fn one_press_raises_the_scope_and_a_held_key_toggles_it_3_1() {
+    use chimera_sim::weapon::Zoomed;
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], SNIPER_RIFLE);
+    let zoomed = |sim: &Sim| sim.app.world().get::<Zoomed>(p).copied();
+    assert_eq!(zoomed(&sim), None);
+    run(&mut sim, p, 1, |s, _| s.intent(p).secondary = true);
+    run(&mut sim, p, 1, |s, _| s.intent(p).secondary = false);
+    for _ in 0..20 {
+        run(&mut sim, p, 10, |_, _| {});
+        let z = zoomed(&sim).expect("the scope stays up");
+        assert!(z.scope && (z.fov - 20.0).abs() < 0.01, "{z:?}");
+    }
+    // Held from scoped: down at once, up again 0.3 s (20 ticks) later.
+    let mut seen = Vec::new();
+    for _ in 0..60 {
+        run(&mut sim, p, 1, |s, _| s.intent(p).secondary = true);
+        seen.push(zoomed(&sim).is_some());
+    }
+    let flips = seen.windows(2).filter(|w| w[0] != w[1]).count();
+    assert!(flips >= 2, "a held attack2 toggles the scope: {seen:?}");
 }

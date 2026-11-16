@@ -1339,9 +1339,8 @@ pub struct Swing {
     /// swing starts (`WeaponEventKind::SwingStarted`, `sound_swing`, both
     /// timers as after a miss) and is traced this much later along the
     /// view then (`WeaponState::pending_swing`), from the swing's start
-    /// the hit refire when it hits; held, a swing's timers count from when
-    /// it was due, not the tick it came on (TF2's interval, not rounded up
-    /// to ticks); a draw or the owner's death cancels it. 0: at once.
+    /// the hit refire when it hits; a draw or the owner's death cancels
+    /// it. 0: at once.
     pub delay: f32,
     /// Hits scale by hitgroup (the SDK); CS:S's knife reports generic.
     pub hitgroups: bool,
@@ -1403,7 +1402,6 @@ impl Backstab {
 /// hits, which button's and the damage it was started with.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PendingSwing {
-    /// When its timers count from (its start, or held, when it was due).
     pub start: f64,
     pub at: f64,
     pub secondary: bool,
@@ -2597,7 +2595,7 @@ fn weapon_frame(
         {
             let swing = follow_up(&swing, w.state.last_swing[1], now);
             if swing.delay > 0.0 {
-                let (own, other) = start_swing(&mut w.state, &swing, true, now, now, &mut ctx);
+                let (own, other) = start_swing(&mut w.state, &swing, true, now, &mut ctx);
                 w.state.next_secondary = own;
                 w.state.next_primary = other;
             } else {
@@ -2743,10 +2741,7 @@ fn weapon_frame(
                 if let Some(swing) = w.melee.map(|m| m.primary.clone()) {
                     let swing = follow_up(&swing, w.state.last_swing[0], now);
                     let (own, other) = if swing.delay > 0.0 {
-                        // Held, the next swing counts from when this one
-                        // was due (TF2's: weapons_stock.md cases 4, 5).
-                        let from = if w.state.burst > 0 { w.state.next_primary.min(now) } else { now };
-                        start_swing(&mut w.state, &swing, false, now, from, &mut ctx)
+                        start_swing(&mut w.state, &swing, false, now, &mut ctx)
                     } else {
                         let hit = ctx.swing(&swing, false);
                         swing_refire(&swing, hit, now, &mut w.state.last_swing[0])
@@ -2863,11 +2858,11 @@ fn follow_up(swing: &Swing, last_swing: Option<f64>, now: f64) -> Swing {
 
 /// A delayed swing's start (`Swing::delay`): told, its swing sound,
 /// its hit due `delay` on; the timers (this swing, the other) as after a
-/// miss from `from` until it hits.
-fn start_swing(state: &mut WeaponState, swing: &Swing, secondary: bool, now: f64, from: f64, ctx: &mut deliver::Shot) -> (f64, f64) {
+/// miss until it hits.
+fn start_swing(state: &mut WeaponState, swing: &Swing, secondary: bool, now: f64, ctx: &mut deliver::Shot) -> (f64, f64) {
     state.last_swing[usize::from(secondary)] = Some(now);
     state.pending_swing = Some(PendingSwing {
-        start: from,
+        start: now,
         at: now + swing.delay as f64,
         secondary,
         damage: swing.damage,
@@ -2876,7 +2871,7 @@ fn start_swing(state: &mut WeaponState, swing: &Swing, secondary: bool, now: f64
     if let Some(s) = &swing.sound_swing {
         ctx.w.sound(owner_sound(s.clone(), ctx.owner, ctx.eye, CHAN_WEAPON));
     }
-    (from + swing.miss_refire as f64, from + swing.miss_refire_other as f64)
+    (now + swing.miss_refire as f64, now + swing.miss_refire_other as f64)
 }
 
 /// Next times for (this swing, the other) after a swing, recording it.

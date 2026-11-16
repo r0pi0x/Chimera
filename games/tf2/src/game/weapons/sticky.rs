@@ -16,18 +16,21 @@
 //!   dead and it stays (`Flyer::stuck_until` far away); anything else
 //!   bounces it off at half speed; it never explodes on contact.
 //! - **Detonation** (5.3, 5.4, `detonate`): attack2 with the launcher out
-//!   detonates every sticky of its owner armed (`arm`, 0.7 s after launch;
+//!   detonates every sticky of its owner armed (`arm`, 0.8 s after launch;
 //!   the detonate sound); over `max` (8) the oldest goes off; a dead owner's
 //!   vanish. Each explodes with the shared blast (`blast`): 120 x the
-//!   splash x the distance modifier (ramp 0.4, the owner's place then) if
-//!   at most `flat_after` (5 s) old, else flat; one not stuck reaches
-//!   `air_radius_start` (85 %) of the radius at arming, all of it
-//!   `air_radius_time` (2 s) later.
+//!   splash x the short-range-reduced modifier M_s (121.8 % at 0, the
+//!   owner's place then: `damage::COMPRESSED`) if at most `flat_after`
+//!   (5 s) old, else flat; one not stuck reaches `air_radius_start` (85 %)
+//!   of the radius at arming, all of it `air_radius_time` (2 s) later
+//!   (0.8 s to 2.8 s); the Demoman's own the base 120 x the splash to 146
+//!   units x0.75 grounded or airborne, pushed at scale 9.
 //!
-//! Known shortcuts: a ninth sticky blows the oldest at once (the delay is
-//! open question 12); bullets don't destroy stickies; no launch jitter or
-//! drag; the stickies' 2-unit box is ours (open question 8); attack2
-//! detonates only with the launcher out.
+//! Known shortcuts: a ninth sticky blows the oldest at once (the game: at
+//! its next 0.2 s fuse check); bullets don't destroy stickies; no launch
+//! jitter or spin; the stickies' 2-unit box is ours (the game's 4-unit
+//! cube); attack2 detonates only with the launcher out (the game: any of
+//! the Demoman's weapons), and unarmed ones play no deny sound.
 
 use std::sync::Arc;
 
@@ -63,7 +66,13 @@ pub struct StickyParams {
     pub damage: f32,
     pub radius: f32,
     pub edge: f32,
+    #[serde(default)]
+    pub self_radius: Option<f32>,
+    #[serde(default)]
+    pub self_damage: Option<f32>,
     pub self_air_scale: f32,
+    #[serde(default = "one")]
+    pub self_ground_scale: f32,
     pub push_other: f32,
     pub push_self_air: f32,
     pub push_self_ground: f32,
@@ -86,6 +95,10 @@ pub struct StickyParams {
     pub detonate_sound: Option<String>,
 }
 
+fn one() -> f32 {
+    1.0
+}
+
 impl StickyParams {
     /// Its explosion's numbers.
     pub fn blast(&self) -> BlastParams {
@@ -93,7 +106,11 @@ impl StickyParams {
             damage: self.damage,
             radius: self.radius,
             edge: self.edge,
+            self_radius: self.self_radius,
+            self_damage: self.self_damage,
             self_air_scale: self.self_air_scale,
+            self_ground_scale: self.self_ground_scale,
+            fuse_scale: None,
             push_other: self.push_other,
             push_self_air: self.push_self_air,
             push_self_ground: self.push_self_ground,
@@ -162,11 +179,7 @@ impl StickyRules {
         for w in &set.weapons {
             let Some(p) = w.hooks.get(super::STICKY_HOOK) else { continue };
             let Ok(p) = p.clone().try_into::<StickyParams>() else { continue };
-            let ramp = w
-                .hooks
-                .get(super::GUN_HOOK)
-                .and_then(|g| chimera_sim::weapon::harm::num(g, "ramp"))
-                .unwrap_or(1.0);
+            let ramp = super::damage::ramp_of(w.hooks.get(super::GUN_HOOK));
             let blast = Arc::new(p.blast());
             out.push((w.id.clone(), Arc::new(p), blast, ramp));
         }
@@ -371,6 +384,7 @@ pub fn detonate(
             params: b,
             radius: p.radius_at(age, stuck),
             ramp: (age <= p.flat_after).then_some(ramp),
+            scale: 1.0,
         };
         world.detonate(&blast, at, Some(owner), weapon, None);
         commands.entity(e).despawn();
@@ -395,13 +409,13 @@ mod tests {
         assert_eq!(p.speed(9.0), 2400.0);
     }
 
-    /// 5.4, tests 35, 36: in the air 85 % at arming, all of it at 2.7 s;
-    /// stuck always 146.
+    /// 5.4, tests 35, 36: in the air 85 % at arming (0.8 s), all of it at
+    /// 2.8 s; stuck always 146.
     #[test]
     fn the_air_radius_grows_35_36() {
         let p = params();
-        assert!((p.radius_at(0.7, false) - 124.1).abs() < 0.01);
-        assert!((p.radius_at(2.7, false) - 146.0).abs() < 1e-4);
-        assert_eq!(p.radius_at(0.7, true), 146.0);
+        assert!((p.radius_at(0.8, false) - 124.1).abs() < 0.01);
+        assert!((p.radius_at(2.8, false) - 146.0).abs() < 1e-3);
+        assert_eq!(p.radius_at(0.8, true), 146.0);
     }
 }

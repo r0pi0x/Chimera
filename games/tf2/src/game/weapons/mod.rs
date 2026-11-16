@@ -23,7 +23,7 @@
 //!   near-range scale (`DamageEffect::by_distance`, `damage::rule`), the
 //!   first pellet dead centre after 0.25 s without a shot
 //!   (`Hitscan::centre_first`), the reload's start by the class whose
-//!   arms hold it, the script it reads;
+//!   arms hold it, the view kick (`punch`, `recoil`), the script it reads;
 //! - `tf2:rocket` (`rocket`): the rocket's explosion on Chimera's flyers
 //!   (`chimera:projectile` flies it): splash, self-damage, knockback;
 //! - `tf2:minigun` (`minigun`): the spin, its slowed and grounded holder,
@@ -40,7 +40,8 @@
 //!   swing and backstab rule): their crits, the swing's view-model
 //!   actions, the raised knife.
 //!
-//! The rocket, grenade and sticky explode alike (`blast`).
+//! The rocket, grenade and sticky explode alike (`blast`), and every hit
+//! pushes (`blast::push`: the blasts and the bullets, weapons.md 5.4).
 //!
 //! Random critical hits stay off (the party's choice: a gun game has no
 //! damage history to roll on, and `tf_weapon_criticals` is the server's;
@@ -54,8 +55,6 @@
 //! - Crits and the damage spread's random jitter aren't modelled (both
 //!   off by default, above); the fixed spread grid
 //!   (`tf_use_fixed_weaponspreads`) neither.
-//! - Bullets push nobody (only the rocket's blast does): the knockback
-//!   per point is open (weapons.md, open question 9).
 //! - A network client redraws another's shot without its centred first
 //!   pellet (its own and the server's have it).
 
@@ -67,6 +66,7 @@ pub mod looks;
 pub mod melee;
 pub mod minigun;
 pub mod needle;
+pub mod recoil;
 pub mod rocket;
 pub mod script_numbers;
 pub mod sniper;
@@ -264,12 +264,12 @@ use chimera_sim::{
 
 /// A gun's ramp k (`tf2:gun`), 1 without.
 fn ramp_of(at: &ReadAt) -> f32 {
-    at.data.hooks.get(GUN_HOOK).and_then(|g| num(g, "ramp")).unwrap_or(1.0)
+    damage::ramp_of(at.data.hooks.get(GUN_HOOK))
 }
 
 /// A pellet's damage at the distance: the distance modifier on it.
 fn power_gun(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
-    s.damage *= damage::modifier(at.distance, num(p, "ramp").unwrap_or(1.0));
+    s.damage *= damage::modifier(at.distance, damage::ramp_of(Some(p)));
 }
 
 /// The rocket's blast on the one it meets, at the distance.
@@ -299,9 +299,10 @@ fn power_flame(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
     s.interval = num(p, "tick").unwrap_or(s.interval);
 }
 
-/// The spin-up before the first shot.
+/// The spin-up before the first shot (the wind-up and its step to the
+/// shot).
 fn power_minigun(p: &HookParams, _: &ReadAt, s: &mut GunStats) {
-    s.latency += num(p, "wind_up").unwrap_or(0.0);
+    s.latency += num(p, "wind_up").unwrap_or(0.0) + num(p, "fire_step").unwrap_or(0.0);
 }
 
 /// The server documents' name of TF2's weapon set (`server_docs`).
@@ -363,8 +364,8 @@ impl Plugin for Tf2GunsPlugin {
             .add_systems(
                 Predict::Weapons,
                 (
-                    (damage::centre_first, sniper::charge, melee::prepare).before(WeaponFrame),
-                    (damage::note_shots, flame::sounds, melee::after).chain().after(WeaponFrame),
+                    (damage::centre_first, sniper::charge, recoil::decay, melee::prepare).before(WeaponFrame),
+                    (damage::note_shots, flame::sounds, recoil::kick, melee::after).chain().after(WeaponFrame),
                 ),
             )
             .add_systems(Predict::Select, (minigun::spin, sticky::charge).before(SelectWeapons))
@@ -372,7 +373,18 @@ impl Plugin for Tf2GunsPlugin {
                 FixedUpdate,
                 (
                     sticky::launch.in_set(FlyerSet::Launch),
-                    (rocket::explode, grenade::touch, grenade::fuse, sticky::touch, needle::touch, sticky::detonate, flame::burn_cone, flame::afterburn)
+                    (
+                        blast::blast_jump_lands,
+                        rocket::explode,
+                        grenade::touch,
+                        grenade::fuse,
+                        sticky::touch,
+                        needle::touch,
+                        sticky::detonate,
+                        flame::burn_cone,
+                        flame::afterburn,
+                        blast::bullet_push,
+                    )
                         .chain()
                         .in_set(FlyerSet::Touch),
                 )

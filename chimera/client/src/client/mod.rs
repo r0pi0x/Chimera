@@ -20,6 +20,7 @@ pub mod app;
 pub mod audio;
 pub mod binds;
 pub mod capture;
+pub mod scene;
 pub mod feedback;
 pub mod crash;
 pub mod chat;
@@ -44,6 +45,7 @@ pub mod minigame_scoreboard;
 pub mod race_chip;
 pub mod rank_toast;
 pub mod rung_hint;
+pub mod sandbox;
 pub mod signal;
 pub mod signal_chat;
 pub mod hud_text;
@@ -106,6 +108,10 @@ use crate::{
 pub struct Args {
     /// Save a screenshot here after `frames` frames, then exit.
     pub screenshot: Option<PathBuf>,
+    /// Play this scene script (`scene`), its pictures and log into
+    /// `scene_out`, then exit.
+    pub scene: Option<PathBuf>,
+    pub scene_out: Option<PathBuf>,
     pub frames: Option<u32>,
     /// Movement implementation ID for the local player (overrides the loadout).
     pub movement: Option<String>,
@@ -184,6 +190,8 @@ usage: {bin} [options]
   --screenshot <file.png>   save a screenshot after --frames frames (later while shaders
                             still compile), then exit
   --frames <n>              frames to run before the screenshot or exit (default 60)
+  --scene <file> --out <dir>  play a scene script (console lines; wait, wait_for <fact>, shot,
+                            shot_after <fact> <frames>), pictures and scene.log into <dir>, then exit
   --movement <id>           movement implementation for the local player
   --spawn <x,y,z>           spawn position in meters
   --look <yaw,pitch>        initial look angles in degrees (yaw 0 = -Z)
@@ -425,6 +433,8 @@ impl Args {
             let value = it.next().ok_or_else(|| format!("{flag}: missing value"))?;
             match flag.as_str() {
                 "--screenshot" => out.screenshot = Some(value.into()),
+                "--scene" => out.scene = Some(value.into()),
+                "--out" => out.scene_out = Some(value.into()),
                 "--frames" => out.frames = Some(value.parse().map_err(|_| format!("--frames: not a number: {value}"))?),
                 "--movement" => out.movement = Some(value),
                 "--map" => out.map = Some(value),
@@ -502,7 +512,7 @@ impl Args {
     /// protocol on one too unless `CHIMERA_REMOTE_PORT` says, and leaves
     /// the user's config alone.
     pub fn tool_run(&self) -> bool {
-        self.screenshot.is_some() || self.views.is_some() || self.frames.is_some() || self.bench || self.offscreen.is_some()
+        self.screenshot.is_some() || self.scene.is_some() || self.views.is_some() || self.frames.is_some() || self.bench || self.offscreen.is_some()
     }
 }
 
@@ -575,6 +585,7 @@ impl PluginGroup for ClientPlugins {
             .add(debug::DebugPlugin)
             .add(debug_views::DebugViewsPlugin)
             .add(capture::CapturePlugin)
+            .add(scene::ScenePlugin)
             .add(feedback::FeedbackPlugin)
             .add(chimera_core::diagnostics::DiagnosticsPlugin::default())
             .add(crash::CrashPlugin)
@@ -681,8 +692,9 @@ impl Plugin for ShellCameraPlugin {
         // Bevy Remote Protocol: query and edit the live ECS over HTTP
         // (JSON-RPC on localhost:15702, or CHIMERA_REMOTE_PORT: two games at
         // once, e.g. a host and a client). See docs/OBSERVABILITY.md.
+        // A scene run (`--scene`) serves none: nothing outside drives it.
         #[cfg(feature = "dev")]
-        {
+        if app.world().get_resource::<ClientArgs>().is_none_or(|a| a.0.scene.is_none()) {
             use bevy::remote::http::{DEFAULT_PORT, DEFAULT_RENDER_PORT, HostPort};
             let tool_run = app.world().get_resource::<ClientArgs>().is_some_and(|a| a.0.tool_run());
             let port = chimera_core::env::var("CHIMERA_REMOTE_PORT")

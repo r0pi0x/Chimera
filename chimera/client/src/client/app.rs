@@ -455,8 +455,12 @@ pub fn add_engine(app: &mut App, part: Engine<'_>) {
 pub fn compose(app: &mut App, game: &'static GameApp, args: Args, start: StartMap, engine: &dyn Fn(&mut App, Engine<'_>)) {
     app.insert_resource(RunningApp(game));
     // The start map's context is the app's (`StartMap::Loaded`).
-    if let StartMap::Loaded { context, .. } = &start {
+    // Its id is the loaded map's name (also when it is the app's
+    // `default_map`, not `--map`): without it the map in play read as the
+    // greybox, and `sandbox greybox` started on it, saying "on greybox".
+    if let StartMap::Loaded { context, id, .. } = &start {
         app.insert_resource(context.clone());
+        app.insert_resource(crate::map::LoadedMapName(id.clone()));
     }
     let view = match &start {
         StartMap::Loaded { .. } if game.hooks.debug_views => debug_view(&args).unwrap_or_else(|e| {

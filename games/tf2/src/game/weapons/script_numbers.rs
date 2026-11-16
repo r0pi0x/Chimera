@@ -5,17 +5,23 @@
 //! the spec's public numbers that data/weapons/*.toml commit (the
 //! fallback).
 //!
-//! - `apply_script` is the spec's mapping (weapon_scripts.md, "Mapping";
-//!   for the melee weapons weapons_stock.md 6, `apply_melee`: `Damage`,
+//! - `apply_script` is the spec's mapping (weapon_scripts.md, "Mapping",
+//!   and its corrections from the SDK): a script's first top-level block
+//!   onto one gun's TOML document. The gun's kind decides what `Damage` is
+//!   (an integer, a fraction cut toward zero: per pellet, per blast, per
+//!   needle; the Sniper Rifle's and the Flame Thrower's are ignored, as
+//!   the game does: the flame's 13 is fixed); `TimeFireDelay` the
+//!   interval under the TOMLs' `set` timing (the flame's ignored);
+//!   `TimeReload` the round's insert of the Grenade Launcher only (the
+//!   other shell guns time it by their animation); `Range` the bullets'
+//!   trace (`[hitscan] range`); `PunchAngle` the view kick (`tf2:gun`
+//!   `punch`, `recoil`); the kind check (`ProjectileType`, `WeaponType`)
+//!   refuses a script that doesn't fit the gun; each field is applied on
+//!   its own, a missing or malformed one leaving the TOML's number. The
+//!   melee weapons' (weapons_stock.md 6, `apply_melee`): `Damage`,
 //!   `TimeFireDelay` as the hit and miss refires, `SmackDelay` as the
 //!   swing's `delay`, 0.2 s without one; a melee script on a gun or a
-//!   gun's on a melee weapon refused):
-//!   a script's first top-level block onto one gun's TOML document. The
-//!   gun's kind decides what `Damage` is (per pellet, per blast, per
-//!   needle, per second of flame; the Sniper Rifle's isn't mapped); the
-//!   kind check (`ProjectileType`, `WeaponType`) refuses a script that
-//!   doesn't fit the gun; each field is applied on its own, a missing or
-//!   malformed one leaving the TOML's number.
+//!   gun's on a melee weapon refused.
 //! - `GunNumbers` is the documents TF2's guns are registered from: the
 //!   built-in ones (`builtin`: tests, the harness) or the scripts'
 //!   (`from_scripts`: the apps, through `INFO.mount()`, the store or the
@@ -29,12 +35,6 @@
 //!   through that load's mount would give.
 //!
 //! Known shortcuts:
-//! - Script intervals are applied as they are under the TOMLs'
-//!   `accumulate` timing (weapon_scripts.md, open question 3): the SMG,
-//!   Minigun and Syringe Gun fire at the nominal rate, slightly above the
-//!   tick-rounded one weapons.md gives.
-//! - The flame's per-tick damage is the script's rate times the tick,
-//!   rounded to whole points (open question 4).
 //! - A client with no scripts at its start reads them again only by
 //!   taking a server's documents at the join (no `AssetsArrived`
 //!   re-read: the crate doesn't use the network layer).
@@ -153,14 +153,6 @@ fn number(old: Option<&Value>, x: f64) -> Value {
     }
 }
 
-fn get_num(t: &Table, key: &str) -> Option<f64> {
-    match t.get(key)? {
-        Value::Float(f) => Some(*f),
-        Value::Integer(i) => Some(*i as f64),
-        _ => None,
-    }
-}
-
 /// A positive real field: Some(Ok) present and well-formed, Some(Err)
 /// present but malformed (noted), None absent.
 fn positive(data: &KvView, key: &str, notes: &mut Vec<String>) -> Option<f64> {
@@ -228,20 +220,11 @@ pub fn apply_script(data: KvView, doc: &mut Table) -> Applied {
     let notes = &mut out.notes;
     let mut set = Vec::new();
 
-    // Damage, by kind.
-    if let Some(d) = positive(&data, "Damage", notes) {
+    // Damage, by kind: an integer, a fraction cut toward zero.
+    if let Some(d) = positive(&data, "Damage", notes).map(f64::trunc).filter(|d| *d > 0.0) {
         match kind.damage_hook() {
-            Some(h) if kind == Kind::Flame => {
-                let hk = hook(doc, h);
-                if let Some(tick) = get_num(hk, "tick") {
-                    let per_tick = (d * tick).round();
-                    let old = hk.get("damage").cloned();
-                    hk.insert("damage".into(), number(old.as_ref(), per_tick));
-                    set.push("tf2:flame damage");
-                } else {
-                    notes.push("the flame has no tick: its damage kept".into());
-                }
-            }
+            // The game ignores the flame's: each flame carries 13.
+            Some(_) if kind == Kind::Flame => {}
             Some(h) => {
                 let hk = hook(doc, h);
                 let old = hk.get("damage").cloned();
@@ -259,7 +242,7 @@ pub fn apply_script(data: KvView, doc: &mut Table) -> Applied {
                 t.insert("amount".into(), number(old.as_ref(), d));
                 set.push("[damage] amount");
             }
-            None => {} // the Sniper Rifle's isn't its damage (open question 2)
+            None => {} // the Sniper Rifle's isn't its damage (the game ignores it)
         }
     }
     // Pellets and spread: the bullet guns and the rifle.
@@ -283,6 +266,13 @@ pub fn apply_script(data: KvView, doc: &mut Table) -> Applied {
                 _ => notes.push(format!("Spread {text:?} is malformed: kept the data's")),
             }
         }
+        // The bullets' trace.
+        if let Some(r) = positive(&data, "Range", notes) {
+            let t = table(doc, "hitscan");
+            let old = t.get("range").cloned();
+            t.insert("range".into(), number(old.as_ref(), r));
+            set.push("[hitscan] range");
+        }
     }
     // The interval (not the flame's: its TimeFireDelay is another rate).
     if kind != Kind::Flame
@@ -305,7 +295,8 @@ pub fn apply_script(data: KvView, doc: &mut Table) -> Applied {
             notes.push(format!("clip_size {c} is malformed: kept the data's"));
         }
     }
-    // A round's insert: only the guns that reload one at a time.
+    // A round's insert: only the Grenade Launcher's (the other shell guns
+    // time it by their animation; a whole clip's never by this).
     let shells = doc
         .get("magazine")
         .and_then(Value::as_table)
@@ -313,6 +304,7 @@ pub fn apply_script(data: KvView, doc: &mut Table) -> Applied {
         .is_some_and(Value::is_table);
     if let Some(r) = positive(&data, "TimeReload", notes)
         && shells
+        && kind == Kind::Grenade
     {
         let m = table(doc, "magazine");
         m.insert("reload".into(), Value::Float(r));
@@ -328,6 +320,17 @@ pub fn apply_script(data: KvView, doc: &mut Table) -> Applied {
         let old = hk.get("radius").cloned();
         hk.insert("radius".into(), number(old.as_ref(), r));
         set.push(if kind == Kind::Grenade { "tf2:grenade radius" } else { "tf2:sticky radius" });
+    }
+    // The view kick: whole degrees up from P - 1 to P + 1 after each shot.
+    if let Some(text) = data.string("PunchAngle") {
+        match text.parse::<f64>() {
+            Ok(p) if p >= 0.0 && p.is_finite() => {
+                let hk = hook(doc, super::GUN_HOOK);
+                hk.insert("punch".into(), Value::Float(p));
+                set.push("tf2:gun punch");
+            }
+            _ => notes.push(format!("PunchAngle {text:?} is malformed: kept the data's")),
+        }
     }
     // Checked, never applied.
     if let Some(n) = data.string("AmmoPerShot").and_then(|t| t.parse::<i64>().ok())
@@ -513,7 +516,7 @@ impl GunNumbers {
     }
 
     /// Which of each gun's mapped numbers differ from the committed data's
-    /// (`<gun> damage`, `pellets/spread`, `clip/insert`, `cycle`,
+    /// (`<gun> damage`, `pellets/spread`, `clip/insert`, `cycle`, `punch`,
     /// `hooks`): names only, never the numbers.
     pub fn differences(&self) -> Result<Vec<String>, String> {
         use chimera_sim::weapon::data::WeaponData;
@@ -525,6 +528,15 @@ impl GunNumbers {
         let melee = |d: &WeaponData| {
             d.melee.as_ref().map(|m| format!("{} {} {} {}", m.primary.damage, m.primary.hit_refire, m.primary.miss_refire, m.primary.delay))
         };
+        let punch = |d: &WeaponData| d.hooks.get(super::GUN_HOOK).and_then(|g| chimera_sim::weapon::harm::num(g, "punch"));
+        // The hooks but the view kick (its own row).
+        let hooks = |d: &WeaponData| {
+            let mut h = d.hooks.clone();
+            if let Some(toml::Value::Table(g)) = h.get_mut(super::GUN_HOOK) {
+                g.remove("punch");
+            }
+            h
+        };
         let mut out = Vec::new();
         for gun in super::all_weapons() {
             let (Some(a), Some(b)) = (data.get(gun), mapped.get(gun)) else { continue };
@@ -534,8 +546,9 @@ impl GunNumbers {
                 ("pellets/spread", pellets(a) == pellets(b)),
                 ("clip/insert", clip(a) == clip(b)),
                 ("cycle", close),
-                ("hooks", a.hooks == b.hooks),
                 ("melee", melee(a) == melee(b)),
+                ("punch", punch(a).unwrap_or(0.0) == punch(b).unwrap_or(0.0)),
+                ("hooks", hooks(a) == hooks(b)),
             ] {
                 if !same {
                     out.push(format!("{gun} {what}"));
@@ -593,7 +606,7 @@ mod tests {
         let s = script("\"Odd\" { \"clip_size\" \"8.5\" \"BulletsPerShot\" \"two\" \"TimeFireDelay\" \"0\" \"damage\" \"7.5\" }");
         let a = apply_script(s.data().unwrap(), &mut doc);
         assert_eq!(a.set, ["[damage] amount"]);
-        assert_eq!(doc["damage"]["amount"].as_float(), Some(7.5));
+        assert_eq!(doc["damage"]["amount"].as_float(), Some(7.0), "cut toward zero");
         assert_eq!(doc["magazine"]["clip"].as_integer(), Some(9));
         assert_eq!(doc["trigger"]["cycle"].as_float(), Some(0.3));
         assert_eq!(a.notes.len(), 3, "{:?}", a.notes);

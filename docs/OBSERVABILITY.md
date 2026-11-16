@@ -332,6 +332,40 @@ fixed and `Predict` schedule, its dedicated server's and its game's
 ambiguous pairs, and the conflicting pairs the two run in opposite orders
 (prediction's at zero); a count that rises fails with the pairs to order.
 
+### Scenes (staging and photographing in one run)
+
+`--scene <file> --out <dir>` plays a scene script in the client itself
+(`chimera_client::client::scene`): console lines and four directives, a
+line each, `#` for comments. No driver script and no remote port (a
+scene run serves none); with `--offscreen` it needs no display.
+
+```
+cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0     +sandbox --scene apps/ultimate_gun_game/scenes/kill_moment.scene --out <dir>
+```
+
+- `wait <frames>`; `wait_for <fact> [timeout frames]` (default 1800; past
+  it the run exits 3, naming the line); `shot <name>` (`<dir>/<name>.png`
+  now); `shot_after <fact> <frames> <name>` (armed: a picture that many
+  frames after the fact's next frame; the script goes on, the run waits
+  for armed pictures at its end). Anything else is a console line
+  (`setpos`/`setang`, `thirdperson`, `cam_idealdist`, `cam_idealyaw`,
+  `rung`, `target add`, `target look <n>`, `+attack`, ...).
+- Facts, from what the engine already tells: `map_loaded` (`MapLoads`
+  moved), `match` (a minigame's match live), `spawned` (the local player
+  alive), `shot` (`ShotMade`), `hit` (`DamageTaken`), `kill`, `death`
+  (`Died`), `ragdoll` (`Ragdolled` added), `blast` (`core::Explosion`:
+  map logic's, not grenades').
+- `<dir>/scene.log`: every line, fact and picture with its frame, and
+  every `HitMeasured`/`KillMeasured`: a scene is also a measurement.
+- Repeatable as far as the engine is: the same scene on the same build
+  places, aims and fires the same, but frames are wall-clock frames
+  (a fact's frame moves with the machine's speed where a frame runs
+  several ticks or none), bots' names and looks come from the roster's
+  dice and the rung seed (`CHIMERA_RUNG_SEED` fixes the extras),
+  particles and spread from their own seeds.
+- Examples: `apps/ultimate_gun_game/scenes/` (three targets at 5, 10,
+  20 m; a kill and its death at 0, 15, 45 frames).
+
 ### Offscreen (no display, no compositor)
 
 `--offscreen <WxH>` runs any game client (cs_source, hl2dm,
@@ -490,6 +524,11 @@ part of it | next | prev> [player | all]` puts a player on that rung as a
 kill would (`+rung halo_ce:frag_grenade` at launch waits for the match).
 Beside it: `ca_bot_add`, `ca_bot_kick`, `ca_bot_stop 1`, `ca_bot_dont_shoot 1`,
 `god`, `noclip` (`sv_cheats` is 1 there), guns refill; `sandbox help` says it.
+Practice targets: `target add <rung n | gun id | body id> [distance]
+[still|strafe|walk] [shoots] [protect]`, `target set`, `target remove`,
+`target list`, `target characters` (`chimera_sim::minigame::targets`);
+every hit on a target or by one logs a `HitMeasured` line, every kill a
+`KillMeasured` line (shots, hits, headshots, time to kill, distance).
 `rung` is also a plain developer command in any ladder match: the host, a
 single player and a dedicated server's console may always run it, a remote
 client only with the server's `sv_cheats 1` (and only on itself).
@@ -2426,6 +2465,12 @@ run: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
 Signal loading screen, the Leave? dialog with `ask`; `+mainmenu` too) and
 `ui_scene lobby host` (the host's view of a first lobby waiting for its
 Start, two parties with their edges).
+`ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range>`
+stages the sandbox's screens (`chimera_client::client::sandbox`) with
+made-up guns, kills, downloads and targets; over a real sandbox it reads
+best: `ultimate_gun_game --offscreen 1920x1080 --frames 900 --screenshot
+<out>.png +sandbox +ui_scene sandbox gun` (the scene's words as separate
+arguments).
 `ui_scene lobby` stages the lobby with made-up players (for
 screenshots; no parity ids or fixture yet), so `lobby`'s report lists
 the mockup's ids only.

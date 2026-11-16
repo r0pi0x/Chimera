@@ -1,8 +1,11 @@
 # Every TF2 bullet gun (weapons.md 2, 6): pellets traced from the eye up
-# to ~56754 units, no recoil, no headshots, no penetration; the distance
+# to ~56754 units (the script's `Range` where served), the view kick its
+# script's `PunchAngle` gives (`tf2:gun` `punch`; none without a script)
+# moving the next shot, no headshots, no penetration; the distance
 # modifier (`tf2:gun`, the falloff below unused) on each target's summed
 # pellets; deploys in 0.5 s (3); held attack fires again at the interval
-# (the next shot timed from the last, per-tick order 3).
+# from the firing tick (`set`: the interval rounded up to whole ticks,
+# weapons.md's corrections from the SDK).
 id = "tf2:gun"
 base = "tf2:base"
 abstract = true
@@ -11,12 +14,12 @@ draw = 0.5
 [trigger]
 automatic = true
 cycle = 0.625
-timing = "accumulate"
+timing = "set"
 
 [hitscan]
 range = 56754.0
 pellets = 1
-punch_scale = 0.0
+punch_scale = 1.0
 
 [damage]
 amount = 1.0
@@ -25,8 +28,7 @@ falloff = 1.0
 falloff_step = 1024.0
 # No headshots on these guns (weapons.md 2.7).
 hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
-# Bullets push nobody (the knockback per point is open: weapons.md,
-# open question 9).
+# The push is TF2's own (`blast::bullet_push`, weapons.md 5.4), not this.
 impulse = 0.0
 # The rule rounds each target's damage to whole points.
 quantum = 0.0

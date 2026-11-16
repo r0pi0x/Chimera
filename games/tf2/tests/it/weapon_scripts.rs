@@ -2,9 +2,12 @@
 //! "Test cases"): synthetic scripts made up here (invented numbers, never
 //! the game's) mapped onto the guns' documents (`script_numbers`), and a
 //! headless match (`Tf2Sim`) whose guns registered from them: the given
-//! guns carry the script's clip, pellets and interval, a Scattergun's shot
-//! does the script's damage, the rocket's blast is the script's, and each
-//! gun says where its numbers came from.
+//! guns carry the script's clip, pellets, interval, range and view kick
+//! (the corrections from the SDK), the rocket's blast is the script's, the
+//! flame's damage and a shell gun's insert are not (the game ignores the
+//! one and times the other by its animation; only the Grenade Launcher's
+//! insert is the script's), and each gun says where its numbers came
+//! from.
 
 use chimera_sim::weapon::{Hitscan, Magazine, Trigger, data::WeaponCatalog, give};
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
@@ -83,19 +86,21 @@ fn a_match_plays_with_the_scripts_numbers() {
     let scatter = catalog.get(SCATTERGUN).unwrap();
     assert_eq!(scatter.damage.as_ref().unwrap().amount, 7.0);
     assert_eq!(scatter.hitscan.as_ref().unwrap().pellets, 3);
-    assert_eq!(scatter.hitscan.as_ref().unwrap().range, 56754.0, "Range isn't mapped");
-    assert_eq!(scatter.hitscan.as_ref().unwrap().punch_scale, 0.0, "PunchAngle isn't mapped");
+    assert_eq!(scatter.hitscan.as_ref().unwrap().range, 1000.0, "Range is the bullets' trace");
+    assert_eq!(scatter.hooks["tf2:gun"]["punch"].as_float(), Some(2.0), "PunchAngle is the view kick");
     let mag = scatter.magazine.as_ref().unwrap();
-    assert_eq!((mag.clip, mag.reload), (5, 0.4));
+    assert_eq!((mag.clip, mag.reload), (5, 0.5), "TimeReload isn't a Scattergun's insert");
     let shells = mag.shells.as_ref().unwrap();
-    assert_eq!((shells.start, shells.insert), (0.2, 0.4), "the start stays the data's");
+    assert_eq!((shells.start, shells.insert), (0.2, 0.5), "the start and insert stay the data's");
     // The rest of the base's tables stay (inherited, merged).
     assert_eq!(scatter.damage.as_ref().unwrap().falloff_step, 1024.0);
     let sniper = catalog.get(SNIPER_RIFLE).unwrap();
     assert_eq!(sniper.trigger.as_ref().unwrap().cycle, 1.1);
     assert_ne!(sniper.damage.as_ref().unwrap().amount, 3.0, "the rifle's Damage isn't its damage");
     let flame = catalog.get(FLAMETHROWER).unwrap();
-    assert_eq!(flame.hooks["tf2:flame"]["damage"].as_float(), Some(15.0), "200 per second x 0.075, rounded");
+    let data_flame = tf2::game::weapons::tf2_weapons();
+    let data_flame = data_flame.get(FLAMETHROWER).unwrap();
+    assert_eq!(flame.hooks["tf2:flame"]["damage"], data_flame.hooks["tf2:flame"]["damage"], "the flame's Damage is ignored");
     assert_eq!(flame.trigger.as_ref().unwrap().cycle, 0.08, "its TimeFireDelay isn't the cycle");
     let grenade = catalog.get(GRENADE_LAUNCHER).unwrap();
     assert_eq!(grenade.hooks["tf2:grenade"]["radius"].as_float(), Some(120.0));
@@ -150,6 +155,14 @@ fn the_spec_rows_on_a_bullet_gun() {
     let mut d = doc(BULLET);
     apply_script(plain("x", r#""W" { "TimeReload" "0.3" }"#).data().unwrap(), &mut d);
     assert_eq!(d["magazine"]["reload"].as_float(), Some(1.2));
+    // A fractional Damage is cut toward zero, as the game reads it.
+    let mut d = doc(BULLET);
+    apply_script(plain("x", r#""W" { "Damage" "7.5" }"#).data().unwrap(), &mut d);
+    assert_eq!(d["damage"]["amount"].as_float(), Some(7.0));
+    // Range: the bullets' trace.
+    let mut d = doc(BULLET);
+    apply_script(plain("x", r#""W" { "Range" "1000" }"#).data().unwrap(), &mut d);
+    assert_eq!(d["hitscan"]["range"].as_float(), Some(1000.0));
     // A secondary's script on a primary: nothing.
     let mut d = doc(BULLET);
     let a = apply_script(plain("x", r#""W" { "Damage" "7" "WeaponType" "secondary" }"#).data().unwrap(), &mut d);
@@ -286,4 +299,32 @@ fn melee_scripts_map_33_34_35() {
     let a = apply_script(s.data().unwrap(), &mut gun);
     assert!(a.refused.is_some() && a.set.is_empty(), "{a:?}");
     assert_eq!(gun["damage"]["amount"].as_float(), Some(6.0));
+}
+
+/// weapon_scripts.md's corrections from the SDK: `TimeReload` is the
+/// insert of the Grenade Launcher only; a shotgun keeps its animation's.
+#[test]
+fn only_the_grenade_launcher_takes_time_reload() {
+    const SHELLS: &str = "slot = 0\n[magazine]\nclip = 4\nreload = 0.4\nshells = { start = 0.25, insert = 0.4 }\n";
+    let grenade = format!("{SHELLS}[hooks.\"tf2:grenade\"]\ndamage = 50.0\n");
+    let mut d = doc(&grenade);
+    apply_script(plain("x", r#""W" { "TimeReload" "0.3" "TimeReloadStart" "0.05" "ProjectileType" "projectile_pipe" }"#).data().unwrap(), &mut d);
+    assert_eq!(d["magazine"]["reload"].as_float(), Some(0.3));
+    assert_eq!(d["magazine"]["shells"]["insert"].as_float(), Some(0.3));
+    assert_eq!(d["magazine"]["shells"]["start"].as_float(), Some(0.25), "the start stays");
+    let shotgun = format!("{SHELLS}[damage]\namount = 6.0\n");
+    let mut d = doc(&shotgun);
+    apply_script(plain("x", r#""W" { "TimeReload" "0.3" }"#).data().unwrap(), &mut d);
+    assert_eq!(d["magazine"]["shells"]["insert"].as_float(), Some(0.4), "a shotgun's insert is its animation's");
+}
+
+/// The flame's `Damage` and `TimeFireDelay` are ignored (13 a flame,
+/// every 0.02 s, whatever the script says).
+#[test]
+fn the_flames_damage_and_interval_are_ignored() {
+    let mut d = doc("slot = 0\n[trigger]\ncycle = 0.08\n[hooks.\"tf2:flame\"]\ndamage = 13.0\n");
+    let a = apply_script(plain("x", r#""W" { "Damage" "150" "TimeFireDelay" "0.03" }"#).data().unwrap(), &mut d);
+    assert!(a.set.is_empty(), "{:?}", a.set);
+    assert_eq!(d["hooks"]["tf2:flame"]["damage"].as_float(), Some(13.0));
+    assert_eq!(d["trigger"]["cycle"].as_float(), Some(0.08));
 }

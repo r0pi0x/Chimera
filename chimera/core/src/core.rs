@@ -2429,7 +2429,7 @@ impl DamageRules<'_, '_> {
 #[allow(clippy::type_complexity)]
 pub fn apply_damage(
     mut damage: MessageReader<Damage>,
-    mut health: Query<(&mut Health, Option<&mut DamageRemainder>, Option<&DamageScale>), Without<God>>,
+    mut health: Query<(&mut Health, Option<&mut DamageRemainder>, Option<&DamageScale>, Has<HealthHeld>), Without<God>>,
     rules: DamageRules,
     mut died: MessageWriter<Died>,
     mut taken: MessageWriter<DamageTaken>,
@@ -2438,7 +2438,7 @@ pub fn apply_damage(
         if rules.refuse(d) {
             continue;
         }
-        let Ok((mut h, remainder, scale)) = health.get_mut(d.target) else { continue };
+        let Ok((mut h, remainder, scale, held)) = health.get_mut(d.target) else { continue };
         if h.current <= 0.0 {
             continue;
         }
@@ -2453,11 +2453,14 @@ pub fn apply_damage(
             d.to_mut().amount = points / 100.0;
         }
         let d = d.as_ref();
-        h.current -= d.amount;
         taken.write(DamageTaken {
             damage: d.clone(),
             directed: d.attacker.is_some_and(|a| a != d.target),
         });
+        if held {
+            continue;
+        }
+        h.current -= d.amount;
         if h.current <= 0.0 {
             h.current = 0.0;
             died.write(Died {
@@ -2468,6 +2471,23 @@ pub fn apply_damage(
         }
     }
 }
+
+/// A sandbox's practice target (`chimera_sim::minigame::targets`): what
+/// counts, races or tells kills leaves it out (the scores and the ladder's
+/// lead, the announcer; the HUD's race chip and kill feed, which read it
+/// or `targets::is_target`). Its kills and deaths are measured instead.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PracticeTarget;
+
+/// Takes hits but keeps its health (a sandbox's protected practice target,
+/// `chimera_sim::minigame::targets`): `apply_damage` writes its
+/// `DamageTaken` as for anyone (after `DamageScale` and
+/// `DamageRemainder`), but takes nothing from `Health` and writes no
+/// `Died`. Unlike `God`, every hit lands (armour and a shield take theirs:
+/// whoever put it on puts those back).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+#[component(storage = "SparseSet")]
+pub struct HealthHeld;
 
 /// What every hit on this character's health counts (a game's rule for
 /// its characters: Halo's player in a party app, where another game's

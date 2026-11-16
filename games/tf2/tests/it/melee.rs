@@ -120,9 +120,15 @@ fn knife_40_after_7_ticks_3() {
     assert_eq!(hits(&ev), [(7, 40.0)], "{ev:?}");
 }
 
+/// Held, a swing every interval from the tick of the last (weapons_stock.md
+/// 2: next attack = now + interval; the guns' timing as the SDK checked it,
+/// weapons.md's corrections: from the firing tick): 0, 34, 68, 102 and 0,
+/// 54, 108. The spec's cases 4 and 5 give 0, 34, 67, 100 and 0, 54, 107,
+/// as if the interval counted from when the swing was due; its own rule
+/// doesn't make those (a draft's arithmetic; for its probe check).
 #[test]
 fn held_attack_swings_every_interval_4_5() {
-    for (id, want) in [(BAT, vec![0, 34, 67, 100]), (SHOVEL, vec![0, 54, 107])] {
+    for (id, want) in [(BAT, vec![0, 34, 68, 102]), (SHOVEL, vec![0, 54, 108])] {
         let mut sim = sim();
         let (p, _) = holding(&mut sim, greybox::SPAWNS[0], id);
         let ev = run(&mut sim, p, 134, |s, _| s.intent(p).fire = true);
