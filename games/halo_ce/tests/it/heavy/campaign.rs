@@ -4,8 +4,10 @@
 //! bytes); the body's file loads as a map whose Elite becomes a character
 //! model (its height, a head hit box among its boxes, its graph's plasma
 //! rifle and needler stances, its deaths) with no voice in it; its tables
-//! are the spec's numbers. Prints the measured numbers. Passes with a
-//! note without an install.
+//! are the spec's numbers; its guns are held on its own hand's bone; its
+//! ankles stand where the bind pose has them (feet on the origin) and a
+//! walking foot plants there, as the Spartan's do. Prints the measured
+//! numbers. Passes with a note without an install.
 
 use blam_formats::cache::MapFile;
 use halo_ce::game::{
@@ -81,4 +83,54 @@ fn the_elite_is_cut_from_d20_and_loads() {
         c.voice.len(),
     );
     assert!((top - 0.786 * METERS_PER_UNIT).abs() < 0.02, "model top {top}");
+
+}
+
+/// The lowest foot bone over a sequence's frames, metres above the body's
+/// origin (the root applied).
+fn lowest_foot(c: &chimera_world::map::MapCharacterModel, name: &str) -> Option<(f32, f32)> {
+    use halo_ce::game::body::{anims, skeleton::globals};
+    let set = c.animations.as_ref()?;
+    let s = *set.names.get(name)?;
+    let a = set.sequences[s].anims[0];
+    let n = set.animations[a].frames;
+    let feet: Vec<usize> = c.bones.iter().enumerate().filter(|(_, b)| b.name.contains("foot") || b.name.contains("toe")).map(|(i, _)| i).collect();
+    let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+    for f in 0..n {
+        let g = globals(&c.bones, &anims::base_pose(set, a, f));
+        let low = feet.iter().map(|&i| c.root.transform_point(g[i].1).y).fold(f32::MAX, f32::min);
+        lo = lo.min(low);
+        hi = hi.max(low);
+    }
+    Some((lo, hi))
+}
+
+/// Where the feet are, standing and moving (stage 2's "feet off the
+/// ground"): the Elite's against the Spartan's.
+#[test]
+fn the_feet_meet_the_ground() {
+    let Some(mount) = mount() else { return };
+    let data = CampaignData::builtin();
+    let def = data.body(BodyKind::Elite).unwrap();
+    let c = unit::convert("elite", def, &mount.read(&maps::map_path(&def.donor_map)).unwrap()).unwrap();
+    let elite = load::biped_body(&MapFile::load(&c.body).unwrap(), &def.biped, false, def.tint()).unwrap();
+    let spartan = load::spartan(&MapFile::load(&mount.read(&maps::map_path(load::DONOR_MAP)).unwrap()).unwrap(), false).unwrap();
+    for (who, m, label) in [("elite", &elite.character, "pr"), ("spartan", &spartan.character, "pr")] {
+        {
+            use halo_ce::game::body::skeleton::globals;
+            let set = m.animations.as_ref().unwrap();
+            let g = globals(&m.bones, &set.defaults);
+            let bind = m.bones.iter().enumerate().filter(|(_, b)| b.name.contains("foot")).map(|(i, _)| m.root.transform_point(g[i].1).y).fold(f32::MAX, f32::min);
+            eprintln!("{who} bind pose: lowest foot {bind:.3} m");
+            // Standing, the ankles are where the bind pose (feet on the
+            // origin) has them; walking, a planted foot comes down to them.
+            let (lo, _) = lowest_foot(m, &key("stand", label, "idle")).unwrap();
+            assert!((lo - bind).abs() < 0.02, "{who} idle ankle {lo} against {bind}");
+            for state in ["move-front", "move-left"] {
+                let (lo, hi) = lowest_foot(m, &key("stand", label, state)).unwrap();
+                eprintln!("{who} {state}: lowest foot {lo:.3} to {hi:.3} m");
+                assert!(lo > bind - 0.05 && lo < bind + 0.02, "{who} {state} planted ankle {lo} against {bind}");
+            }
+        }
+    }
 }

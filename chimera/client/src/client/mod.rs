@@ -903,7 +903,7 @@ fn follow_eye(
     watch: Res<view::Watch>,
     spectating: Res<spectate::SpecView>,
     others: Query<
-        (&Name, &Transform, &Intent, &MovementState, Option<&crate::map::interp::RenderedView>),
+        (Entity, &Name, &Transform, &Intent, &MovementState, Option<&crate::map::interp::RenderedView>, Has<crate::core::Bot>),
         (Without<LocalPlayer>, Without<FirstPersonCamera>),
     >,
 ) {
@@ -911,10 +911,17 @@ fn follow_eye(
     // ones drawn this frame, eased between ticks (`map::interp`); the
     // local player's look is this frame's mouse.
     // The watched character, if any: a chase camera behind it (world space).
+    // Bot n by its name (`Bot <n>`), else the n-th bot (an app's bots
+    // have names of their own: the party apps' `AI_Alpha_3`).
+    let nth_bot = || {
+        let mut bots: Vec<_> = others.iter().filter(|o| o.6).collect();
+        bots.sort_by_key(|o| o.0);
+        bots.get(watch.0 as usize - 1).copied()
+    };
     let watched = (watch.0 > 0)
         .then(|| format!("Bot {}", watch.0))
-        .and_then(|name| others.iter().find(|(n, ..)| n.as_str() == name))
-        .map(|(_, t, i, s, v)| {
+        .and_then(|name| others.iter().find(|o| o.1.as_str() == name).or_else(nth_bot))
+        .map(|(_, _, t, i, s, v, _)| {
             let chase = view::CameraMode {
                 third_person: true,
                 ..*mode
