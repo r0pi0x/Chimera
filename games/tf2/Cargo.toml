@@ -76,6 +76,9 @@ bevy_winit.workspace = true
 # Digests of converted maps (tests/it/heavy/map_cache.rs).
 postcard.workspace = true
 sha2.workspace = true
+# A kill-icon sheet made in the test (tests/it/kill_icons.rs).
+vtf.workspace = true
+image.workspace = true
 
 # The integration tests (tests/it/; the install's in tests/it/heavy/).
 [[test]]

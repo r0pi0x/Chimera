@@ -34,10 +34,13 @@ impl Plugin for Tf2HudPlugin {
         chimera_client::client::kill_feed::GameKillFeedAppExt::register_game_kill_feed(app, GAME, |_| 0);
         app.init_resource::<systems::Tf2HudState>()
             .init_resource::<chimera_client::client::weapon_icons::WeaponIcons>()
-            .add_systems(Startup, (systems::spawn_root, systems::register_kill_icons))
+            .add_systems(Startup, systems::spawn_root)
             .add_systems(
                 Update,
-                (systems::collect, systems::sync).chain().run_if(chimera_core::gameplay::hud_is(GAME)),
+                (
+                    (systems::collect, systems::sync).chain().run_if(chimera_core::gameplay::hud_is(GAME)),
+                    systems::register_kill_icons,
+                ),
             );
     }
 }

@@ -7956,6 +7956,7 @@ dependencies = [
  "chimera_present",
  "chimera_sim",
  "chimera_world",
+ "image",
  "postcard",
  "serde",
  "sha2",
@@ -7965,6 +7966,7 @@ dependencies = [
  "tf2",
  "toml",
  "vbsp",
+ "vtf",
  "workspace-hack",
 ]
 

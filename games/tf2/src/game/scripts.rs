@@ -312,6 +312,10 @@ impl FileSource for Decrypting {
         (self.ice.is_some() || !is_ctx(path)) && self.inner.contains(path)
     }
 
+    fn held(&self, path: &str) -> bool {
+        self.contains(path) && self.inner.held(path)
+    }
+
     fn files_in(&self, dir: &str) -> Vec<String> {
         let mut f = self.inner.files_in(dir);
         if self.ice.is_none() {

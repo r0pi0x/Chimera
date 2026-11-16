@@ -5,7 +5,11 @@
 # health: max health (points); speed: top speed (units/s, `SourceSpeed`);
 # eye: standing eye height (units; ducked 45 for all); air_jumps: jumps in
 # the air (the Scout's one); model: the player model; arms: the first-
-# person arms' class (`c_<arms>_arms.mdl`).
+# person arms' class (`c_<arms>_arms.mdl`); needs: the classes whose bodies
+# a player of this class may also show, so a match whose ladder can make
+# this class downloads their asset sets (`players/<class>`) too
+# (`Classes::sets_for`, the match's offer: `bodies::asset_names`). None by
+# default; the Spy's disguise, once built, makes the Spy need every class.
 
 [classes.scout]
 index = 1
@@ -71,6 +75,9 @@ speed = 320
 eye = 75
 model = "models/player/spy.mdl"
 arms = "spy"
+# With the disguise (not built yet): every other class's body, as
+# needs = ["scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper"]
+needs = []
 
 [classes.engineer]
 index = 9

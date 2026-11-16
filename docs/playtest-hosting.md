@@ -225,6 +225,29 @@ chimera-tf2-keyed chimera_pack sets tf2 --store $S --sign --only players
 chimera-tf2-keyed dump tf2 --gun-numbers   # each gun: "script ... from ...", names only
 ```
 
+TF2's bodies come per class (2026-11-16): `players` holds what every
+class reads, the HUD's look and the kill feed's icons
+(`scripts/mod_textures.txt` and `hud/d_images`), offered with every TF2
+match; `players/<class>` (`players/heavy`, ...) a class's player model,
+animations, materials and first-person arms, offered only when the
+match's ladder (or kit, or drawn weapons) holds a gun of that class, with
+the classes it needs (`needs` in games/tf2/data/classes.toml: the Spy's
+disguise will need every class). A machine reading TF2 from the store
+loads only the bodies whose files are here, so it never downloads a body
+mid-match. The bodies' files weren't in the first publish (the recording
+runs never loaded them): `sets ... --pack` packs what a set reads that the
+store lacks, from the install, then records the sets:
+
+```
+S=<server store>; B=<backup>/manifests-$(date -u +%Y%m%d-%H%M)
+cp -a $S/manifests $B
+chimera-tf2-keyed chimera_pack sets tf2 --store $S --only players --pack --sign
+grep -c "^set players" $S/manifests/tf2/*.txt   # players and nine players/<class>
+```
+
+Sizes (stored, beyond `base`): `players` 6.5 MB, each class 4.6 (Pyro)
+to 7.9 MB (Scout).
+
 Undo: `rm -r $S/manifests/tf2` (TF2 was never published before), or
 `rm -r $S/manifests && cp -a $B $S/manifests` for the whole snapshot;
 records are only added, so nothing else changes. The service reads a

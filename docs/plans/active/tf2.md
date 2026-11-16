@@ -560,3 +560,16 @@ server probe for parity checks, TF2's own app.
   damage x0.75 always; the flame every 0.02 s; Medic regen 6 to 12/s.
   The SDK holds no class or weapon scripts: per-class health and speed
   and per-gun numbers stay measured or from the scripts.
+- 2026-11-16: the bodies per class on the asset service (the user's design):
+  `players/<class>` (a class's player model, animations, materials and
+  first-person arms; 4.6 to 7.9 MB stored beyond `base`) and `players`
+  (what every class reads, the HUD's look, the kill icons). A match's
+  offer names the class sets its TF2 guns make (`bodies::asset_names`, an
+  `AssetHooks` entry), with the classes they need (`needs` in
+  data/classes.toml: data only, so the Spy's disguise will add every
+  class there); a machine reading TF2 from the store loads only the bodies
+  whose files are here (generic `Mount::held`, tracked for the map cache),
+  so a body is never fetched mid-match. `chimera_pack sets --pack` packs
+  what a set reads that the store lacks. The kill icons register from the
+  store once their files are here (`hud::kill_icon_pictures`), not only
+  from an install at startup.

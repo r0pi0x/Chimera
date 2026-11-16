@@ -5,7 +5,8 @@
 //! (`movement`: movement.md's test cases), ICE against its spec (`ice`),
 //! the script reader on fixtures encrypted with throwaway keys
 //! (`scripts`), the guns (`weapons`: M2b's four; `weapons_more`: the
-//! next eight), and, in `heavy`, the user's install (its mount, ctf_2fort
+//! next eight), the class sets a match offers (`player_sets`), the kill icons from
+//! the asset store once their files are here (`kill_icons`), and, in `heavy`, the user's install (its mount, ctf_2fort
 //! and cp_badlands converted with their spawns, the converted-map cache's
 //! key, a player walking on ctf_2fort, M2's weapon sets packed into a
 //! scratch store and read back, the scripts decrypted with the user's key
@@ -17,7 +18,9 @@
 
 mod ice;
 mod info;
+mod kill_icons;
 mod movement;
+mod player_sets;
 mod scripts;
 mod skeleton;
 mod spawns;

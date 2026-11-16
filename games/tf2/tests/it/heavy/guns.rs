@@ -71,7 +71,7 @@ fn each_guns_set_covers_what_a_match_loads_for_it() {
             .into_iter()
             .filter_map(|a| match a {
                 Access::File(p) | Access::Every(p) => Some(p),
-                Access::Folder(_) => None,
+                Access::Folder(_) | Access::Held(_) => None,
             })
             .filter(|p| mount.contains(p))
             .collect();

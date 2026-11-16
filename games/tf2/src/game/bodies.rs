@@ -6,21 +6,32 @@
 //! include's real sequences over the model's same-named 1-frame stubs,
 //! install.md 4.3), with its hitbox set (the head group 1 on `bip_head`)
 //! and its ragdoll. The bodies read are those of the classes whose guns
-//! the kit wants (`add_bodies`), so a map carries a body for each class a
-//! TF2 rung can make.
+//! the kit wants and the classes those need (`Class::needs`;
+//! `wanted_models`), so a map carries a
+//! body for each class a TF2 rung can make; of them, those whose model is
+//! here (`Mount::held`: an install, or the asset store with the class's
+//! set fetched; `add_bodies`), so a machine reading TF2 from the asset
+//! store loads the bodies its match offered and never downloads another
+//! one mid-match. The offer (`asset_names`, an `AssetHooks` entry) names
+//! the class sets (`players/<class>`, `classes::set_of`) of the match's
+//! TF2 guns (`minigame_net::match_weapons`: its ladder, kit and drawn
+//! weapons, which its bots hold too) with the classes they need.
 //!
 //! Which body a player wears follows the class of the TF2 gun in hand
 //! (`wear_bodies`, on every machine from the inventory it sees): the
 //! class's model by name (`map::BodyName`, kept on while the class
 //! changes; the default class's, the Soldier's, is the one model without a
-//! name, so its name falls back to it and a TF2 player whose gun names no
-//! class still has a body); and the team's skin (`map::BodySkin`:
+//! name when it is loaded, and a name the map lacks falls back to another
+//! of TF2's bodies there: `map::CharacterModels::for_identity`); and the
+//! team's skin (`map::BodySkin`:
 //! 0 RED, 1 BLU; a free-for-all player by its team id, odd RED, even BLU).
 //! The weapon's `c_` model is held bone-merged on `weapon_bone` (the held
 //! models of `maps::add_guns`, keyed by the gun: `player_anim::
 //! hold_weapons`).
 //!
-//! Known shortcuts: body groups stay at their first choice (the Soldier's
+//! Known shortcuts: a class whose set the match didn't offer (a gun
+//! handed out later, the sandbox's `rung`) wears another TF2 body until
+//! the next map load; body groups stay at their first choice (the Soldier's
 //! `rocket` group is never shown in his hand during a reload, 5's
 //! event); no death animations or gibs (9).
 
@@ -48,26 +59,25 @@ pub fn load(materials: &mut MaterialLoader, surfaces: &SurfaceProps, path: &str,
     Ok(m)
 }
 
-/// The player models of the classes whose guns `wants` (each once, the
-/// default class's always), in class order.
+/// The player models of the classes whose guns `wants` and of the
+/// classes those need (`Classes::for_guns`), each once, in class order.
+/// (Every TF2 gun names its class, so a TF2 player always wears one of
+/// them; the default class's body is no longer loaded for its own sake.)
 pub fn wanted_models(table: &Classes, wants: &dyn Fn(&str) -> bool) -> Vec<String> {
     let guns = super::weapons::tf2_weapons();
+    let wanted: Vec<&str> = guns.weapons.iter().map(|w| w.id.as_str()).filter(|g| wants(g)).collect();
+    let classes = table.for_guns(wanted);
     let mut out: Vec<String> = Vec::new();
     for c in &table.classes {
-        let used = c.name == DEFAULT
-            || guns
-                .weapons
-                .iter()
-                .any(|w| wants(&w.id) && table.of_gun(&w.id).is_some_and(|g| g.name == c.name));
-        if used && !out.contains(&c.model) {
+        if classes.iter().any(|x| x.name == c.name) && !out.contains(&c.model) {
             out.push(c.model.clone());
         }
     }
     out
 }
 
-/// The bodies `kit` asks for (the classes of the guns it wants) into
-/// `into`.
+/// The bodies `kit` asks for (`wanted_models`) whose model is here
+/// (`Mount::held`; the others noted) into `into`.
 pub fn add_bodies(
     materials: &mut MaterialLoader,
     surfaces: &SurfaceProps,
@@ -80,14 +90,36 @@ pub fn add_bodies(
     }
     let table = Classes::default();
     let default = table.get(DEFAULT).map(|c| c.model.clone()).unwrap_or_default();
-    let paths = wanted_models(&table, &|g| kit.wants(g));
+    let (paths, away): (Vec<String>, Vec<String>) =
+        wanted_models(&table, &|g| kit.wants(g)).into_iter().partition(|p| materials.mount().held(p));
     debug!("TF2 bodies: {} ({kit:?})", paths.join(", "));
+    if !away.is_empty() {
+        info!("TF2 bodies not here (their class sets weren't offered): {}", away.join(", "));
+    }
     for path in paths {
         match load(materials, surfaces, &path, &default) {
             Ok(m) => into.characters.push(m),
             Err(e) => warnings.push(e),
         }
     }
+}
+
+/// What a match's asset offer names of TF2's bodies (an `AssetHooks`
+/// entry, `chimera_net::net::assets`): the class sets of the match's TF2
+/// guns with the classes they need (`class_sets`).
+pub fn asset_names(world: &World) -> chimera_net::net::assets::AssetNames {
+    let weapons = chimera_net::minigame_net::match_weapons(world);
+    let table = world.get_resource::<Classes>().cloned().unwrap_or_default();
+    chimera_net::net::assets::AssetNames { sets: class_sets(&table, &weapons), ..default() }
+}
+
+/// The offer's names (`tf2:players/<class>`) of the class sets of
+/// `weapons`' TF2 guns and the classes they need (`Classes::sets_for`):
+/// the bodies `wanted_models` loads for them.
+pub fn class_sets(table: &Classes, weapons: &[String]) -> Vec<String> {
+    table
+        .sets_for(weapons.iter().map(String::as_str))
+        .into_iter().map(|s| format!("{GAME}:{s}")).collect()
 }
 
 /// The skin of a body on `team` (0 RED, 1 BLU; classes.md, install.md
@@ -178,6 +210,11 @@ pub struct Tf2BodiesPlugin;
 impl Plugin for Tf2BodiesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Classes>().add_systems(Update, wear_bodies);
+        // The match's class sets in its asset offer (once per app).
+        let mut hooks = app.world_mut().get_resource_or_init::<chimera_net::net::assets::AssetHooks>();
+        if !hooks.0.contains(&(asset_names as fn(&World) -> _)) {
+            hooks.0.push(asset_names);
+        }
     }
 }
 
@@ -185,8 +222,8 @@ impl Plugin for Tf2BodiesPlugin {
 mod tests {
     use super::*;
 
-    /// Each M2 gun's class's model, and the Soldier's always (the
-    /// default); a kit wanting no TF2 gun carries the Soldier alone.
+    /// Each wanted gun's class's model, once; a kit wanting no TF2 gun
+    /// carries none.
     #[test]
     fn the_bodies_are_the_wanted_guns_classes() {
         let t = Classes::default();
@@ -194,9 +231,9 @@ mod tests {
         for m in ["models/player/scout.mdl", "models/player/soldier.mdl", "models/player/heavy.mdl", "models/player/engineer.mdl"] {
             assert!(all.iter().any(|x| x == m), "{m} in {all:?}");
         }
-        assert_eq!(wanted_models(&t, &|_| false), ["models/player/soldier.mdl"]);
+        assert!(wanted_models(&t, &|_| false).is_empty());
         let scout = wanted_models(&t, &|g| g == super::super::weapons::SCATTERGUN);
-        assert_eq!(scout, ["models/player/scout.mdl", "models/player/soldier.mdl"]);
+        assert_eq!(scout, ["models/player/scout.mdl"]);
     }
 
     #[test]

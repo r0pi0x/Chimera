@@ -31,18 +31,22 @@
 //! once; `user revoke <name> [--token <n>]` takes one or all of its tokens
 //! back (at the server's next request); `user list` shows the accounts.
 //!
-//! `chimera_pack sets <game> [--store <dir>] [--sign]` records the sets a
-//! game's pieces read, by loading each through the game's own loaders on
-//! the install (a tap on the mount notes every path read) and enters them
-//! in the manifest of the install's build (which must list those files: a
-//! whole pack or publish): `weapon/<id>` per weapon (CS:S: its view and
+//! `chimera_pack sets <game> [--store <dir>] [--sign] [--pack]` records the
+//! sets a game's pieces read, by loading each through the game's own
+//! loaders on the install (a tap on the mount notes every path read) and
+//! enters them in the manifest of the install's build (which must list
+//! those files: a whole pack or publish; with `--pack`, the files it
+//! lacks are packed from the install first, records already stored
+//! skipped: a store packed from runs' reads, TF2's): `weapon/<id>` per weapon (CS:S: its view and
 //! world models with their materials and the waves of its sound entries;
 //! Combat Arms: its view model with hands and parts' textures, its
 //! held model with its textures, its own sounds,
 //! `CaWeaponFx::sound_paths`, and what it throws or fires,
 //! `special::object_files`), `players`
-//! (CS:S: the eight class models; HL2:DM: its 19 player models; TF2: its
-//! nine class models), TF2's `weapon/<id>` for M2's guns
+//! (CS:S: the eight class models; HL2:DM: its 19 player models; TF2: what
+//! every class's body reads and its HUD's look, with a set per class,
+//! `players/<class>`: its body, animations, textures and first-person
+//! arms, `tf2::game::sets::player_pieces`), TF2's `weapon/<id>` for M2's guns
 //! (`tf2::game::sets`: the `c_` model, the class's arms with their
 //! animations, sounds, the rocket, and the script, packed decrypted:
 //! `publish tf2` and `pack tf2` read the install's `.ctx` files through
@@ -141,9 +145,11 @@ use chimera_core::{
 const USAGE: &str = "\
 usage: chimera_pack pack <game> [options]       into a store (default the user's)
        chimera_pack publish <game> [options]    into the asset server's store, signed
-       chimera_pack sets <game> [--store <dir>] [--sign] [--only <prefix>]
+       chimera_pack sets <game> [--store <dir>] [--sign] [--only <prefix>] [--pack]
                                                 record weapon/<id>, players, map/<name>,
                                                 character/<record> and parts/<id> sets
+                                                (--pack: pack the files they read that
+                                                the store lacks, from the install)
        chimera_pack lean <game> --store <dir> --from <log> [--from <log>...] [--sign] [--dry-run]
                                                 base from client runs' reads: common, music/<track>
        chimera_pack repack --store <dir> [--threads <n>] [--only <game>:<set prefix>,...] [--sign] [--restat]
@@ -510,6 +516,10 @@ impl chimera_core::mount::FileSource for Tap {
 
     fn contains(&self, path: &str) -> bool {
         self.inner.contains(path)
+    }
+
+    fn held(&self, path: &str) -> bool {
+        self.inner.held(path)
     }
 
     fn files_in(&self, dir: &str) -> Vec<String> {
@@ -987,11 +997,12 @@ fn merged_set(name: &str) -> bool {
 fn sets(args: &[String]) -> Result<(), String> {
     let mut it = args.iter();
     let game_id = it.next().ok_or(USAGE)?;
-    let (mut store, mut sign_it, mut only) = (None, false, String::new());
+    let (mut store, mut sign_it, mut only, mut pack_missing) = (None, false, String::new(), false);
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--store" => store = Some(Store::new(it.next().ok_or("--store needs a value")?)),
             "--sign" => sign_it = true,
+            "--pack" => pack_missing = true,
             "--only" => only = it.next().ok_or("--only needs a value")?.clone(),
             _ => return Err(format!("unknown option {arg}\n{USAGE}")),
         }
@@ -1019,9 +1030,24 @@ fn sets(args: &[String]) -> Result<(), String> {
             (name, paths)
         };
         let (name, paths) = name;
-        let (kept, left): (Vec<String>, Vec<String>) = paths.into_iter().partition(|p| manifest.files.contains_key(p));
-        if !left.is_empty() {
-            println!("set {name}: {} files not in the manifest left out (pack the whole install first)", left.len());
+        let (mut kept, left): (Vec<String>, Vec<String>) = paths.into_iter().partition(|p| manifest.files.contains_key(p));
+        if !left.is_empty() && pack_missing {
+            // Packed now from the install (records already stored are
+            // skipped), as a whole pack would have.
+            let report = pack(&mount, &left, &store, &mut manifest, None, 4).map_err(|e| e.to_string())?;
+            println!(
+                "set {name}: {} files packed now ({} new records, {} stored), {} not in the install",
+                report.files,
+                report.new_records,
+                mb(report.stored),
+                report.missing.len()
+            );
+            kept.extend(left.into_iter().filter(|p| manifest.files.contains_key(p)));
+        } else if !left.is_empty() {
+            println!(
+                "set {name}: {} files not in the manifest left out (pack the whole install first, or pass --pack)",
+                left.len()
+            );
         }
         let mut kept: std::collections::BTreeSet<String> = kept.into_iter().collect();
         if name.starts_with("map/") {

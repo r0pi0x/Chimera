@@ -4,7 +4,8 @@
 //! while TF2's HUD is the gameplay's (`gameplay::hud_is`) and its look is
 //! the active one (`map::hud::ActiveHud`, TF2's: `game::hud`); and TF2's
 //! guns' kill icons for every app's kill feed (`register_kill_icons`: the
-//! cells of `mod_textures.txt` cut from the install's `hud/d_images`).
+//! cells of `mod_textures.txt` cut from `hud/d_images`, from the install
+//! or the asset store once they are here).
 //!
 //! Known shortcuts: the node pool and its sync repeat HL2:DM's HUD's own
 //! (a shared one in `source_engine::hud` would serve both); the kill
@@ -20,10 +21,10 @@ use chimera_client::client::{
 };
 use chimera_core::core::{Dead, Health, LocalPlayer, Team};
 use chimera_sim::weapon::{Inventory, Magazine, Weapon};
-use chimera_world::map::hud::{ActiveHud, GameHud, UiImage, font_for_height};
+use chimera_world::map::hud::{ActiveHud, GameHud, font_for_height};
 
 use super::hud::{Ammo, Draw, Inputs, Rgba, Scheme, Screen, Tf2Hud};
-use crate::game::{GAME, INFO, mount};
+use crate::game::{GAME, INFO};
 
 /// What this HUD draws instead of the shell's: the crosshair, health and
 /// ammo (the kill feed stays the app's).
@@ -262,88 +263,72 @@ pub fn sync(
     }
 }
 
-/// The kill-icon cells of a `mod_textures.txt` (hud.md 3.6): name ->
-/// (file, x, y, w, h).
-pub fn icon_cells(text: &str) -> BTreeMap<String, (String, [u32; 4])> {
-    use source_formats::keyvalues::{self, Kv};
-    fn find(kv: &Kv) -> Option<&Kv> {
-        kv.get("TextureData").or_else(|| kv.items().iter().find_map(|(_, v)| find(v)))
-    }
-    let parsed = keyvalues::parse_res(text);
-    let Some(data) = find(&parsed) else { return BTreeMap::new() };
-    data.items()
-        .iter()
-        .filter_map(|(name, v)| {
-            let n = |k: &str| v.str(k)?.trim().parse::<u32>().ok();
-            let file = v.str("dfile").or_else(|| v.str("file"))?;
-            Some((name.to_lowercase(), (file.to_string(), [n("x")?, n("y")?, n("width")?, n("height")?])))
-        })
-        .collect()
+pub use crate::game::hud::{crop, icon_cells};
+
+/// When `register_kill_icons` looks again (`Local`): registered, or the
+/// next try and the wait after it.
+#[derive(Default)]
+pub struct KillIconTries {
+    done: bool,
+    next: f32,
+    wait: f32,
 }
 
-/// The RGBA8 pixels of `w` x `h` at (`x`, `y`) of `image` (None past its
-/// edge).
-pub fn crop(image: &UiImage, x: u32, y: u32, w: u32, h: u32) -> Option<Vec<u8>> {
-    if x + w > image.width || y + h > image.height {
-        return None;
-    }
-    let mut out = Vec::with_capacity((w * h * 4) as usize);
-    for row in y..y + h {
-        let start = ((row * image.width + x) * 4) as usize;
-        out.extend_from_slice(&image.rgba8[start..start + (w * 4) as usize]);
-    }
-    Some(out)
-}
+/// The longest wait between two tries (s).
+const MOST_WAIT: f32 = 30.0;
 
 /// TF2's guns' kill icons (each gun's `hud.icon`, the kill-icon name: the
-/// Rocket Launcher's the rocket's) cut from the install's sheet into
-/// pictures, registered for every app's kill feed; none without an
-/// install (the feed writes the gun's name).
-pub fn register_kill_icons(mut icons: ResMut<WeaponIcons>, images: Option<ResMut<Assets<Image>>>) {
+/// Rocket Launcher's the rocket's), cut from TF2's sheet
+/// (`game::hud::kill_icon_pictures`) through TF2's mount (the install, or
+/// the asset store: `players`, which every TF2 match offers, carries
+/// `scripts/mod_textures.txt` and the sheets), registered for every
+/// app's kill feed once their files are here: tried at startup and again,
+/// further apart each time (2 s doubling up to 30 s), until they are (a
+/// tester reading TF2 from the asset service gets them with the first
+/// match that offers TF2); never fetching. Until then the feed writes the
+/// gun's name.
+pub fn register_kill_icons(
+    mut icons: ResMut<WeaponIcons>,
+    images: Option<ResMut<Assets<Image>>>,
+    time: Res<Time<Real>>,
+    mut tries: Local<KillIconTries>,
+) {
+    let now = time.elapsed_secs();
+    if tries.done || now < tries.next {
+        return;
+    }
     let Some(mut images) = images else { return };
-    let Some(mount) = INFO.install().and_then(|i| mount::open(&i).ok()) else { return };
-    let Ok(text) = mount.read("scripts/mod_textures.txt") else {
-        warn!("TF2: no kill icons (scripts/mod_textures.txt doesn't read)");
-        return;
-    };
-    let cells = icon_cells(&String::from_utf8_lossy(&text));
-    let mut sheets: BTreeMap<String, Option<UiImage>> = BTreeMap::new();
-    let mut by_gun: BTreeMap<String, (Handle<Image>, Vec2)> = BTreeMap::new();
-    for w in crate::game::weapons::tf2_weapons().weapons {
-        let Some(icon) = w.hud.icon.as_deref() else { continue };
-        let Some((file, [x, y, cw, ch])) = cells.get(&icon.to_lowercase()) else { continue };
-        let sheet = sheets.entry(file.clone()).or_insert_with(|| {
-            let read = |p: &str| mount.read(p).ok();
-            let file = file.to_lowercase();
-            let vtf = read(&format!("materials/{file}.vtf")).or_else(|| {
-                let vmt = read(&format!("materials/{file}.vmt"))?;
-                let base = source_formats::keyvalues::parse_res(&String::from_utf8_lossy(&vmt))
-                    .items()
-                    .first()
-                    .and_then(|(_, b)| b.str("$basetexture").map(str::to_string))?;
-                read(&format!("materials/{}.vtf", base.trim_end_matches(".vtf")))
-            })?;
-            source_engine::hud::gameui::decode_vtf(&vtf)
-        });
-        let Some(sheet) = sheet else { continue };
-        let Some(rgba) = crop(sheet, *x, *y, *cw, *ch) else { continue };
-        let image = Image::new(
-            bevy::render::render_resource::Extent3d { width: *cw, height: *ch, depth_or_array_layers: 1 },
-            bevy::render::render_resource::TextureDimension::D2,
-            rgba,
-            bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
-            RenderAssetUsages::default(),
-        );
-        by_gun.insert(w.id, (images.add(image), Vec2::new(*cw as f32, *ch as f32)));
-    }
-    if by_gun.is_empty() {
+    tries.wait = (tries.wait * 2.0).clamp(2.0, MOST_WAIT);
+    tries.next = now + tries.wait;
+    let Some(mount) = INFO.mount() else { return };
+    let Some(pictures) = crate::game::hud::kill_icon_pictures(&mount) else { return };
+    tries.done = true;
+    if pictures.is_empty() {
+        warn!("TF2: no kill icons (scripts/mod_textures.txt or its sheets don't read)");
         return;
     }
+    let by_gun: BTreeMap<String, (Handle<Image>, Vec2)> = pictures
+        .into_iter()
+        .map(|(gun, p)| {
+            let size = Vec2::new(p.width as f32, p.height as f32);
+            let image = Image::new(
+                bevy::render::render_resource::Extent3d { width: p.width, height: p.height, depth_or_array_layers: 1 },
+                bevy::render::render_resource::TextureDimension::D2,
+                p.rgba8,
+                bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+                RenderAssetUsages::default(),
+            );
+            (gun, (images.add(image), size))
+        })
+        .collect();
+    info!("TF2: {} kill icons", by_gun.len());
     icons.register(GAME, move |id| by_gun.get(id).map(|(image, size)| WeaponIcon::Image { image: image.clone(), size: *size }));
 }
 
 #[cfg(test)]
 mod tests {
+    use chimera_world::map::hud::UiImage;
+
     use super::*;
 
     /// hud.md 3.6's cells by name, in the file's shape (ours).

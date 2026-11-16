@@ -212,10 +212,13 @@ archive listings, the `heavy::served` tests (they pack from an install),
 `dump`. Local demo and probe files (`target/demos`, probe logs) aren't
 served either: those tests skip as they do for us without them.
 
-## Team Fortress 2: an install of your own (not served yet)
+## Team Fortress 2: an install of your own, or the service
 
-TF2 (docs/plans/active/tf2.md) isn't on the asset service yet (its sets
-come with M2). Its tests and the party's `tf2:` maps read an install,
+TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
+`weapon/<id>`, `map/ctf_2fort`, `base`, and since 2026-11-16 its bodies per
+class: `players/<class>`, offered only for the classes a match's TF2 guns
+make, with `players` holding what every class shares, the HUD's look and
+the kill icons). Its tests and the party's `tf2:` maps read an install,
 found as the other games' are: `$CHIMERA_TF2_ROOT` for one run, else
 `[games.tf2] path` in `chimera.local.toml`, else Steam's libraries
 (app 440). Two layouts work:
