@@ -153,6 +153,21 @@ while a match runs (`assets: fetched on demand during the match on
 ...`, with the match's running total) and each match's total when it
 ends; the service marks those requests ` on-demand` in its access log.
 
+### The sandbox's guns: units on demand
+
+In the sandbox (Ultimate Gun Game's `sandbox`), a gun's files come when
+it's picked, not with the join: the Change gun view shows each gun's
+size before anything downloads ("not here: 4.8 MB"), and a pick fetches
+its unit (`weapon/<id>`; a Halo gun's is Halo's `base`) with what it needs
+(its game's `base`, `players` and `common`, TF2's class body) in the
+background at `chimera:unit_rate` KB/s (4000; 0: no cap), while you keep
+the gun in hand. `unit_fetch <game> <set>` on the console asks for one,
+`unit_fetch` alone lists them. During a normal match nothing new is
+fetched this way (the no-fetch-in-match rule; voices, `voice/<id>`, are
+the exception); the match's files come with the join as before. A server
+fetches a picked gun into its own store the same way
+(`chimera_net::net::units`).
+
 ## The cache
 
 - Linux `~/.cache/chimera/assets`, Windows `%LOCALAPPDATA%\chimera\assets`;

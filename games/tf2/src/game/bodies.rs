@@ -12,7 +12,9 @@
 //! here (`Mount::held`: an install, or the asset store with the class's
 //! set fetched; `add_bodies`), so a machine reading TF2 from the asset
 //! store loads the bodies its match offered and never downloads another
-//! one mid-match. The offer (`asset_names`, an `AssetHooks` entry) names
+//! one mid-match. A gun's unit fetched on demand (the sandbox's,
+//! `chimera_net::net::units`) brings its class's body (`unit_needs`, a
+//! `UnitNeeds` entry). The offer (`asset_names`, an `AssetHooks` entry) names
 //! the class sets (`players/<class>`, `classes::set_of`) of the classes
 //! the match makes: its ladder's TF2 rungs' drawn classes (the coming
 //! ladder's during a rotation: `minigame_net::match_ladder`;
@@ -119,6 +121,15 @@ pub fn asset_names(world: &World) -> chimera_net::net::assets::AssetNames {
     let ladder = chimera_net::minigame_net::match_ladder(world);
     let table = world.get_resource::<Classes>().cloned().unwrap_or_default();
     chimera_net::net::assets::AssetNames { sets: class_sets(&table, ladder.as_deref(), &weapons), ..default() }
+}
+
+/// What a TF2 unit fetched on demand needs (a `UnitNeeds` entry,
+/// `chimera_net::net::units`): a gun's (`weapon/<id>`) own class's body
+/// set, `players/<class>`, with those its class needs (`Classes::sets_for`).
+pub fn unit_needs(world: &World, game: &str, set: &str) -> Vec<(String, String)> {
+    let Some(id) = set.strip_prefix("weapon/").filter(|_| game == GAME) else { return Vec::new() };
+    let table = world.get_resource::<Classes>().cloned().unwrap_or_default();
+    table.sets_for([format!("{GAME}:{id}").as_str()]).into_iter().map(|s| (GAME.to_string(), s)).collect()
 }
 
 /// The offer's names (`tf2:players/<class>`) of the classes a match
@@ -229,6 +240,11 @@ impl Plugin for Tf2BodiesPlugin {
         let mut hooks = app.world_mut().get_resource_or_init::<chimera_net::net::assets::AssetHooks>();
         if !hooks.0.contains(&(asset_names as fn(&World) -> _)) {
             hooks.0.push(asset_names);
+        }
+        // A gun's unit fetched on demand (the sandbox) brings its class's body.
+        let mut needs = app.world_mut().get_resource_or_init::<chimera_net::net::units::UnitNeeds>();
+        if !needs.0.contains(&(unit_needs as fn(&World, &str, &str) -> _)) {
+            needs.0.push(unit_needs);
         }
     }
 }
