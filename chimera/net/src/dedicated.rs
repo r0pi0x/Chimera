@@ -304,7 +304,7 @@ impl GameServer {
     /// (a bare name is the game's, or `ServerMaps::bare`'s).
     pub fn map_id(&self, name: &str) -> String {
         let id = net::normalize_map(name);
-        if id == net::GREYBOX || id.contains(':') {
+        if net::is_code_map(&id) || id.contains(':') {
             id
         } else {
             let bare = self.hooks.maps.map_or(self.info.id, |m| m.bare);
@@ -338,7 +338,7 @@ impl GameServer {
     /// nothing) and whether it stops the server.
     pub fn requirements(&self, id: &str) -> (String, bool) {
         match self.hooks.requirements {
-            Some(check) if self.map_id(id) != net::GREYBOX => check(),
+            Some(check) if !net::is_code_map(&self.map_id(id)) => check(),
             _ => (String::new(), false),
         }
     }
@@ -358,9 +358,15 @@ impl GameServer {
             None => {
                 map::unload_map(world);
                 greybox::unload(world);
+                let id = greybox::select(world, id);
+                // Its kit first, when this server's maps dress code-built
+                // maps (`map::sources::CODE_MAP_KIT`), then the map.
+                if let Ok(kit) = self.load_map_in(&greybox::kit_id(id), &map::LoadContext::of(world)) {
+                    map::change_map(world, kit, map::MapDebugView::Normal);
+                }
                 greybox::respawn(world);
                 world.remove_resource::<map::ActiveMapLook>();
-                world.insert_resource(LoadedMapName(net::GREYBOX.into()));
+                world.insert_resource(LoadedMapName(id.into()));
                 self.hooks.greybox_tick
             }
         };
@@ -403,8 +409,15 @@ impl StartMap {
     /// `options.map`, loaded as `server`'s game loads it.
     pub fn load(server: &GameServer, options: &Options) -> Result<Self, String> {
         let id = server.map_id(&options.map);
-        if id == net::GREYBOX {
-            return Ok(Self::Greybox);
+        if net::is_code_map(&id) {
+            // Its kit, when this server's maps dress code-built maps
+            // (`map::sources::CODE_MAP_KIT`): loaded as the start map,
+            // the code-built map spawned beside it (`ServerPlugin`).
+            let context = map::LoadContext::default();
+            return Ok(match server.load_map_in(&greybox::kit_id(&id), &context) {
+                Ok(data) => Self::Loaded { id, data, context },
+                Err(_) => Self::Greybox,
+            });
         }
         let context = map::LoadContext::default();
         let data = server
@@ -426,6 +439,9 @@ pub struct ServerPlugin {
     pub server: &'static GameServer,
     pub map: std::sync::Mutex<Option<StartMap>>,
     pub console: Vec<String>,
+    /// The code-built map a `StartMap::Greybox` start spawns (`+map range`:
+    /// the range; `greybox::CodeMap`).
+    pub code_map: &'static str,
 }
 
 impl ServerPlugin {
@@ -434,6 +450,7 @@ impl ServerPlugin {
             server,
             map: std::sync::Mutex::new(Some(map)),
             console: options.console.clone(),
+            code_map: greybox::code_map(&options.map).unwrap_or(greybox::GREYBOX),
         }
     }
 }
@@ -458,15 +475,28 @@ impl Plugin for ServerPlugin {
             ..default()
         });
         (server.sim)(app);
-        let on_greybox = !matches!(start, Some(StartMap::Loaded { .. }));
+        let on_greybox = match &start {
+            Some(StartMap::Loaded { id, .. }) => net::is_code_map(id),
+            _ => true,
+        };
         match start {
+            // A code-built map's kit: the map spawned beside it.
+            Some(StartMap::Loaded { id, data, .. }) if net::is_code_map(&id) => {
+                app.insert_resource(greybox::CodeMap(greybox::code_map(&id).unwrap_or(greybox::GREYBOX)))
+                    .add_plugins((GreyboxMapPlugin, MapSimPlugin::new(data)))
+                    .insert_resource(LoadedMapName(id));
+            }
             Some(StartMap::Loaded { id, data, .. }) => {
                 app.add_plugins(MapSimPlugin::new(data))
                     .insert_resource(LoadedMapName(id));
             }
             // The map systems too: `changelevel` loads one later.
             _ => {
-                app.add_plugins((GreyboxMapPlugin, MapSimPlugin::empty()));
+                app.insert_resource(greybox::CodeMap(self.code_map))
+                    .add_plugins((GreyboxMapPlugin, MapSimPlugin::empty()));
+                if self.code_map != greybox::GREYBOX {
+                    app.insert_resource(LoadedMapName(self.code_map.into()));
+                }
             }
         }
         // The game is the gameplay: its rules and tick.
@@ -505,7 +535,7 @@ impl Plugin for ServerPlugin {
         }
         let maps = match &hooks.maps {
             Some(m) => m.help.to_string(),
-            None => format!("greybox or {}:<name>", server.info.id),
+            None => format!("greybox, range or {}:<name>", server.info.id),
         };
         app.insert_resource(NetSettings {
             maxplayers: hooks.maxplayers,
@@ -757,9 +787,9 @@ pub fn change_level(world: &mut World, name: &str) -> Result<Option<String>, Str
     if let Some(r) = net::host_changelevel(world, &id) {
         return r;
     }
-    if id == net::GREYBOX {
-        swap_map(world, net::GREYBOX, None);
-        return Ok(Some("changed level to the greybox".into()));
+    if net::is_code_map(&id) {
+        swap_map(world, &id, None);
+        return Ok(Some(format!("changed level to the {id}")));
     }
     if world.contains_resource::<LevelLoad>() || world.contains_resource::<LevelSpawn>() {
         return Err("a map is loading already".into());

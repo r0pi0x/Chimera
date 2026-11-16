@@ -1,0 +1,126 @@
+# The range: Chimera's firing range, a map built in code from this layout
+# (chimera_world::range; map id `range`, `chimera:range`). Our own
+# content: plain shapes and colours, no game's art.
+#
+# Places are [side, along] in metres: `along` down range from the firing
+# line (negative: behind it), `side` to the right of the range's axis as
+# seen from the firing line. Heights are above the floor (0). Sizes are
+# [across, up, along]. Colours are sRGB hex.
+
+[floor]
+# Between the side walls' inner faces.
+width = 40.0
+# Floor behind the firing line (the spawn area, the platform's ramp).
+behind = 20.0
+# Firing line to the backstop's face.
+length = 215.0
+# The grid painted on the floor: spacing and line width.
+grid = 2.0
+grid_line = 0.05
+color = "#5f656c"
+grid_color = "#757c84"
+
+[walls]
+height = 6.0
+thickness = 1.0
+backstop_height = 16.0
+# Seams on the walls' faces, every `panel` m.
+panel = 4.0
+color = "#8b9198"
+seam_color = "#6f757d"
+# The cover crates'.
+cover_color = "#7c838b"
+
+[firing_line]
+width = 0.2
+color = "#e8edf5"
+# Where players spawn: just behind the line, facing down range.
+spawns = [[-6.0, -1.5], [-2.0, -1.5], [2.0, -1.5], [6.0, -1.5]]
+# A thin line down the range's axis, out to the last distance.
+axis_width = 0.05
+
+[distances]
+at = [5.0, 10.0, 20.0, 40.0, 100.0, 200.0]
+# A distance line: a stripe across the lane, `half` m each side of the
+# axis, wider the farther it is (`width` + `width_per_m` x distance).
+half = 6.0
+width = 0.12
+width_per_m = 0.003
+color = "#3b7bff"
+# Its label on the floor at the stripe's right end ("40 M"), its height
+# `floor_label` + `floor_label_per_m` x distance (readable from the line).
+floor_label = 0.35
+floor_label_per_m = 0.03
+# Stretched down range this many times (as road markings), so the slant
+# from the firing line doesn't flatten it.
+floor_label_stretch = 3.0
+label_color = "#e8edf5"
+# Boards on both side walls with the number, facing the firing line,
+# digits `sign` + `sign_per_m` x distance tall (at most `sign_max`).
+sign = 0.3
+sign_per_m = 0.014
+sign_max = 3.1
+sign_color = "#161b22"
+sign_digits = "#e8edf5"
+
+# Cover: crates by the side walls, the middle lane kept clear for targets
+# to strafe and walk.
+[[cover]]
+at = [-15.0, 14.0]
+size = [3.0, 1.2, 2.0]
+[[cover]]
+at = [15.5, 15.0]
+size = [2.5, 2.4, 2.5]
+[[cover]]
+at = [-14.5, 30.0]
+size = [4.0, 2.4, 2.0]
+[[cover]]
+at = [15.0, 52.0]
+size = [3.0, 1.2, 3.0]
+[[cover]]
+at = [-15.0, 70.0]
+size = [3.0, 3.0, 3.0]
+[[cover]]
+at = [15.0, 85.0]
+size = [4.0, 2.0, 2.0]
+[[cover]]
+at = [-15.5, 130.0]
+size = [3.0, 2.4, 3.0]
+[[cover]]
+at = [15.0, 160.0]
+size = [3.0, 3.0, 3.0]
+
+# A shelf for bottles and cans: its top `height` m up, the props' spots
+# spread along it (`RangeLayout::prop_spots`).
+[shelf]
+at = [-11.0, 12.0]
+size = [4.0, 1.0, 0.8]
+spots = 6
+color = "#8a6d48"
+
+# A target board on a stand: the board's middle `height` m up, facing the
+# firing line, rings on its face.
+[board]
+at = [11.0, 16.0]
+size = [1.2, 1.2, 0.05]
+height = 1.6
+rings = [0.55, 0.42, 0.29, 0.16, 0.06]
+ring_colors = ["#f2f2ee", "#1b1d22", "#f2f2ee", "#c8352f", "#f2f2ee"]
+stand_color = "#6b5234"
+
+# A raised platform for long shots, beside the spawn, with a walkable ramp
+# (20 degrees) up its back.
+[platform]
+at = [14.0, -4.0]
+size = [6.0, 3.0, 6.0]
+ramp_width = 4.0
+ramp_degrees = 20.0
+color = "#80878f"
+
+[light]
+# Even and bright: a high sun behind the firing line and a strong ambient.
+sun = 6000.0
+ambient = 500.0
+# The sky: a plain gradient dome, zenith to horizon.
+sky_top = "#7d8894"
+sky_horizon = "#a6aeb6"

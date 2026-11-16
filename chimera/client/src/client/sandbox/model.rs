@@ -337,6 +337,9 @@ pub struct GunView {
     pub tags_open: bool,
     /// The large model view (I).
     pub detail: bool,
+    /// The body to play a gun as (`tf2:soldier`), chosen in the detail
+    /// pane for a gun several of its game's classes carry.
+    pub body: Option<String>,
     /// The tile `\\` folded its class from (section, item): opening the
     /// class again goes back to it.
     pub fold_return: Option<(usize, usize)>,

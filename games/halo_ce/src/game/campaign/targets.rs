@@ -82,8 +82,7 @@ pub fn wear_spartan(world: &mut World, e: Entity, _: &str) {
 
 /// A fresh body of target id `id`: health and shield (module doc).
 pub fn vitals(world: &World, id: &str) -> (f32, f32) {
-    let balance = world.get_resource::<crate::game::cross_game::CrossGame>();
-    let scale = balance.filter(|b| b.enabled).map_or(1.0, |b| b.incoming_scale);
+    let scale = crate::game::cross_game::incoming_in(world, id);
     let full = crate::game::cross_game::shield_unit(1.0, scale);
     let fresh;
     let spartan = match world.get_resource::<crate::game::vitality::Spartan>() {
@@ -118,8 +117,7 @@ pub fn second_bar(world: &World, e: Entity) -> Option<f32> {
         return None;
     }
     let v = world.get::<crate::game::vitality::Vitality>(e)?;
-    let balance = world.get_resource::<crate::game::cross_game::CrossGame>();
-    let scale = balance.filter(|b| b.enabled).map_or(1.0, |b| b.incoming_scale);
+    let scale = crate::game::cross_game::incoming_in(world, target_id(kind).0);
     Some(crate::game::cross_game::shield_unit(v.shield.max(0.0), scale))
 }
 

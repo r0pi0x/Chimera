@@ -202,12 +202,21 @@ pub enum StartMap {
 
 impl StartMap {
     /// The map `args` start `game` on: its own (`GameAppHooks::start`),
-    /// else `--map` (or `default_map`) loaded, else the greybox.
+    /// else `--map` (or `default_map`) loaded, else the greybox (or the
+    /// code-built map `--map` names: the range).
     pub fn of(game: &'static GameApp, args: &Args) -> Result<Self, String> {
         if let Some(start) = game.hooks.start.and_then(|start| start(game, args)) {
             return Ok(start);
         }
-        let Some(id) = args.game_map().or(game.hooks.default_map) else {
+        // The range asked for (`--map range`): it, not the default map
+        // (`--map greybox` gives the default map: the greybox is there
+        // anyway, behind the main menu).
+        let code = args
+            .map
+            .as_deref()
+            .and_then(chimera_world::greybox::code_map)
+            .is_some_and(|m| m != chimera_world::greybox::GREYBOX);
+        let Some(id) = args.game_map().or(game.hooks.default_map).filter(|_| !code) else {
             return Ok(Self::Greybox);
         };
         // At the HDR level the console will start with (mat_hdr_level).

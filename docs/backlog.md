@@ -103,19 +103,6 @@ the user's go-ahead: no Actions runs unless asked.
   - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
   - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
 
-- **A purpose-built sandbox map, "the range" (user, 2026-11-15):** the sandbox gets its own map, made so things are easy to see, like the design mocks (gen/sandbox2: a light grid floor, distance lines, cover crates).
-  - Built in code like `chimera_world::greybox`, with its layout as data:
-    - a long, flat firing range with labelled distance lines at 5, 10, 20, 40, 100 and 200 m from a firing line where the player spawns;
-    - an even, bright, readable light, with no game's art;
-    - a few cover crates and walls at the sides;
-    - a props shelf for bottles and cans, and a target board stand;
-    - a raised platform for long-range shots;
-    - room for targets to strafe and walk, with a navigation mesh for the bots;
-    - a backstop wall.
-  - It's the default map of `+sandbox` and the main menu's Sandbox entry. Other maps stay selectable.
-  - Game-neutral: every game's movement works on it, and it's our own content, so it lives in the repo.
-  - Screenshots compared with the mocks.
-
 - **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
   - **Progressive disclosure (user):**
     - Names, classes, stats and the kit's class icons need no download: they come from the compiled weapon catalogue and game_parts.
@@ -139,16 +126,14 @@ the user's go-ahead: no Actions runs unless asked.
   - Fix: when gravity differs from CA's own, scale the measured drop by gravity / CA's gravity. That's the drop that would give the same landing speed at normal gravity.
   - At normal gravity it stays exactly as the original game.
   - Add a scenario test: the same drop at half gravity does less damage, and at normal gravity nothing changes.
-- **Cross-game balance as a host option (user, 2026-11-15):**
-  - Two coefficients per game: damage dealt and damage received.
-  - One host setting (`mp_balance`) in the Host screen's Game tab.
-  - Self-damage and fall damage are never scaled.
-  - **Builds on the Halo session's work:**
-    - party_kit `data/party_damage.toml` already has the dealt coefficients: halo_ce 0.75, hl2dm 1.5.
-    - halo_ce `data/party_balance.toml` has a received coefficient, `incoming_scale` 1.5, with its own `enabled` switch, currently on.
-    - Move received into the shared table for every game, and replace Halo's switch with the host setting.
-  - First values for TF2 (its 125–300 class health) and the others are for the user to adjust after a playtest.
-  - Open question: default on or off. It's on today for Halo and HL2:DM.
+- **Cross-game balance as a host option (user, 2026-11-15):** built
+  (2026-11-16): one table, `apps/party_kit/data/party_balance.toml`
+  (outgoing and incoming per game, a body's own incoming, pair
+  exceptions), and the host setting `mp_balance` (on by default, from the
+  next match); docs/plans/active/party-balance.md, "The table and the
+  switch". Left: first values for TF2 (its 125-300 class health) and the
+  campaign bodies, from playtests; self-damage still takes its game's
+  pair (HL2:DM's own grenade 1.5, as before).
 
 - **Parties and friends: the social layer (user, 2026-11-15; needs a design first):** today only the front end exists. The lobby can group a party's rows with a coloured edge, but the server always sends party 0 (`chimera/net/src/prematch.rs`), so nobody is grouped. The "+" invite and Friends tiles in the shell's rack are disabled ("Coming soon"), and your party is you alone (`chimera_ui::shell`, `client::profile`, `client::lobby_panel`).
   - **Friends** (needs accounts, hub.md S3/S4):

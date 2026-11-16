@@ -49,7 +49,7 @@ chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs 
   |    chimera_ui (chimera/ui/)   the UI kit: Theme (tokens as data), KitFonts and roles, cq units, motion (Ease, Timeline), UI materials; Bevy and chimera_core only, under the shell and the apps
   |    chimera_sim (chimera/sim/)   weapon, movement, rule_module, mode, minigame, identity, spawning, announce, dominations, server_docs, data_format; SimBasePlugins; testkit (feature)
   |    |
-chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, harness::Sim
+chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, range, harness::Sim
   |                \
 chimera_core          source_formats (source/formats/)   formats as plain data: no Bevy
  (chimera/core/)       core, console, console_names, console_scope, slots, envelope, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
@@ -145,8 +145,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   (`map::build`): alone as `map::MapSimPlugin` (the dedicated server's,
   nothing drawn or played), or with what draws and plays the map at
   fixed places among them (`map::MapLayers`, filled by `chimera_present`'s
-  `MapPlugin`; the client's order). It also holds the greybox (`greybox`:
-  the map built in code) and the headless harness (`harness::Sim`, on
+  `MapPlugin`; the client's order). It also holds the maps built in code:
+  the greybox (`greybox`) and the range (`range`, the sandbox's firing
+  range, its layout in `chimera/world/data/range.toml`; `RangeLayout` says
+  where its firing line, distances and props' spots are), sharing one
+  slot (`map::code_maps::CodeMap`; their bodies and guns come from a kit map an
+  app's `MapSources` dresses, `map::sources::CODE_MAP_KIT`), and the headless harness (`harness::Sim`, on
   the simulation plugins its caller passes as the base), so every crate
   from here up tests on it at its own layer. `mashup::map` re-exports it, with
   `MapPlugin` in builds with the presentation.
@@ -383,15 +387,14 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   the engine's `Carried` (every movement skips a carried character and
   a carried player is not predicted); in the party apps vehicles are
   off by default (`halo_ce:party_vehicles`: none is placed).
-  `game::cross_game` (data/party_balance.toml) holds Halo's cross-game
-  balance for the party apps: another game's damage counts 1.5 times on
-  a Halo player (`core::DamageScale` and the shield's scaled armour
-  unit; Halo against Halo is unchanged), the armour a character brought
-  in is given back when it stops being Halo's, and what Halo's weapons
-  deal to other games' characters goes through the party's per-game
-  damage table (`chimera_sim`'s `GameDamage`, party_kit's
-  data/party_damage.toml: `halo_ce = 0.75`, `hl2dm = 1.5`), which the
-  ladder's power readers see too.
+  `game::cross_game` holds Halo's cross-game mechanisms for the party
+  apps: a Halo body holds the party table's incoming (`core::DamageScale`
+  and the shield's armour unit, `keep_incoming`; Halo against Halo is
+  unchanged), the armour a character brought in is given back when it
+  stops being Halo's, and the power reader's hand
+  (data/power_hand.toml). The numbers are the party kit's
+  data/party_balance.toml (`chimera_sim::weapon::balance::Balance`,
+  the host's `mp_balance`), which the ladder's power readers see too.
   In the party apps Halo's HUD avoids the party's chat and top-centre
   column, its zooms narrow the player's own field of view
   (`ui::party_view`), its grenades are off by default
