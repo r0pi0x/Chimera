@@ -12,9 +12,22 @@
 //! optional `map_name` (the map's display name, "Blood Gulch"; else
 //! `hud::map_display_name`'s), `points` (the polygon in plan view, engine x
 //! and z in metres), `seed` (engine x, y, z on a floor inside), optional
-//! `players = [lo, hi]` and `note`, and the measurements a tool writes
-//! (`area_m2`, `sight_m`, ...: kept, not read). The shown name is made:
+//! `players = [lo, hi]` (the band it was made for) and `note`, and the
+//! measurements a tool writes: `area_m2`, `sight_m`, `spots`, `see_pairs`,
+//! `seen_at_spawn` (`{ 2 = .., 4 = .., ... }` by player count), `cover`,
+//! `long_sight_p95_m`, optional `point_floor_seen` and `point_seen_by`
+//! (`slice_safety::Report`'s numbers). The shown name is made:
 //! "<map's display name>: <name>" (the owner's decision 6).
+//!
+//! A slice is a pool entry of its own (docs/plans/active/arena-slices.md,
+//! A2): `add` registers each one with the map pool too
+//! (`map_fit::MapPool::add_slice`: its band and measures; with all seven
+//! measurements it is measured, else never drawn), which judges it
+//! (`map_fit::MapPool::judge` on `game:map@id`: only where its whole map
+//! is out, within the players its measures suit and its band, and only
+//! when the measures pass `[slice]`'s limits). `with_slices` puts each
+//! map's slices after it in a rotation's pool, in the party apps only
+//! (`SlicesInPool`, the party kit's).
 //!
 //! Also here, what a match on a slice does beyond the wall
 //! (`chimera_world::map::play_area`): map pickups outside the play area
@@ -48,13 +61,62 @@ struct Entry {
     players: Option<[u32; 2]>,
     #[serde(default)]
     note: Option<String>,
-    // The tool's measurements (read by people and the pool later).
+    // The tool's measurements: with all of `area_m2`, `sight_m`, `spots`,
+    // `see_pairs`, `seen_at_spawn`, `cover` and `long_sight_p95_m` the
+    // slice is measured (`map_fit::SliceMeasures`, judged by the pool).
     #[serde(default)]
     area_m2: Option<f64>,
     #[serde(default)]
     sight_m: Option<f64>,
     #[serde(default)]
     spots: Option<u32>,
+    #[serde(default)]
+    see_pairs: Option<f32>,
+    /// By player count: `{ 2 = 0.0, 4 = 0.01, ... }`.
+    #[serde(default)]
+    seen_at_spawn: Option<std::collections::BTreeMap<String, f32>>,
+    #[serde(default)]
+    cover: Option<f32>,
+    #[serde(default)]
+    long_sight_p95_m: Option<f32>,
+    #[serde(default)]
+    point_floor_seen: Option<f32>,
+    #[serde(default)]
+    point_seen_by: Option<f32>,
+}
+
+impl Entry {
+    /// The measures, when the data has them all (module doc).
+    fn measures(&self) -> Result<Option<super::map_fit::SliceMeasures>, String> {
+        let (Some(area), Some(sight), Some(spots), Some(see_pairs), Some(seen), Some(cover), Some(long)) = (
+            self.area_m2,
+            self.sight_m,
+            self.spots,
+            self.see_pairs,
+            self.seen_at_spawn.as_ref(),
+            self.cover,
+            self.long_sight_p95_m,
+        ) else {
+            return Ok(None);
+        };
+        let mut seen_at_spawn = Vec::new();
+        for (n, s) in seen {
+            let n: usize = n.parse().map_err(|_| format!("seen_at_spawn: `{n}` is not a player count"))?;
+            seen_at_spawn.push((n, *s));
+        }
+        seen_at_spawn.sort_by_key(|(n, _)| *n);
+        Ok(Some(super::map_fit::SliceMeasures {
+            area_m2: area as f32,
+            sight_m: sight as f32,
+            spots: spots as usize,
+            see_pairs,
+            seen_at_spawn,
+            cover,
+            long_sight_p95_m: long,
+            point_floor_seen: self.point_floor_seen,
+            point_seen_by: self.point_seen_by,
+        }))
+    }
 }
 
 #[derive(Deserialize)]
@@ -64,16 +126,47 @@ struct File {
     slice: Vec<Entry>,
 }
 
-/// A registered slice: the shape and how many players it is drawn for.
+/// A registered slice: the shape, how many players it is drawn for, and
+/// its measures if its data has them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SliceDef {
     pub slice: ArenaSlice,
     pub players: Option<[u32; 2]>,
+    pub measures: Option<super::map_fit::SliceMeasures>,
 }
 
 /// Every game's slices (module doc), in registration order.
 #[derive(Resource, Clone, Debug, Default)]
 pub struct ArenaSlices(pub Vec<SliceDef>);
+
+/// Slices join the rotation's pool (`with_slices`): the party apps' (the
+/// party kit inserts it), never a game's own app.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct SlicesInPool;
+
+/// `maps` (a minigame's pool) with each map's slices (`game:map@id`) after
+/// it, when slices join the pool here (`SlicesInPool`); else as it is.
+pub fn with_slices(world: &World, maps: &[String]) -> Vec<String> {
+    let (Some(_), Some(all)) = (world.get_resource::<SlicesInPool>(), world.get_resource::<ArenaSlices>()) else {
+        return maps.to_vec();
+    };
+    let mut out: Vec<String> = Vec::with_capacity(maps.len());
+    for m in maps {
+        if !out.contains(m) {
+            out.push(m.clone());
+        }
+        if m.contains('@') {
+            continue;
+        }
+        for d in all.0.iter().filter(|d| d.slice.map.eq_ignore_ascii_case(m)) {
+            let key = d.slice.key();
+            if !out.contains(&key) {
+                out.push(key);
+            }
+        }
+    }
+    out
+}
 
 impl ArenaSlices {
     /// The slice named `name`: `game:map@id`, `map@id`, or `id` alone when
@@ -108,7 +201,8 @@ pub fn parse(game: &str, text: &str) -> Result<Vec<SliceDef>, String> {
     let file: File = toml::from_str(text).map_err(|e| e.to_string())?;
     let mut out: Vec<SliceDef> = Vec::new();
     for e in file.slice {
-        let _ = (&e.note, e.area_m2, e.sight_m, e.spots);
+        let _ = &e.note;
+        let measures = e.measures().map_err(|m| format!("{}@{}: {m}", e.map, e.id))?;
         let map = if e.map.contains(':') { e.map.clone() } else { format!("{game}:{}", e.map) };
         let title = e.map_name.clone().unwrap_or_else(|| super::hud::map_display_name(&map));
         let slice = ArenaSlice {
@@ -127,19 +221,27 @@ pub fn parse(game: &str, text: &str) -> Result<Vec<SliceDef>, String> {
         {
             return Err(format!("{}: players [{lo}, {hi}]", slice.key()));
         }
-        out.push(SliceDef { slice, players: e.players });
+        out.push(SliceDef { slice, players: e.players, measures });
     }
     Ok(out)
 }
 
-/// Registers `game`'s slices (panics on a bad file: shipped data).
+/// Registers `game`'s slices (panics on a bad file: shipped data), each
+/// also with the map pool (`map_fit::MapPool::add_slice`: its band and
+/// measures, which judge it as a pool entry).
 pub fn add(world: &mut World, game: &str, name: &str, text: &str) {
     let defs = parse(game, text).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let mut fits = Vec::new();
     let mut all = world.get_resource_or_init::<ArenaSlices>();
     for d in defs {
         if !all.0.iter().any(|x| x.slice.key() == d.slice.key()) {
+            fits.push((d.slice.key(), super::map_fit::SliceFit { band: d.players, measures: d.measures.clone() }));
             all.0.push(d);
         }
+    }
+    let mut pool = world.get_resource_or_init::<super::map_fit::MapPool>();
+    for (key, fit) in fits {
+        pool.add_slice(&key, fit);
     }
 }
 
@@ -327,6 +429,30 @@ players = [2, 6]
             assert_eq!(all.find(n).unwrap().slice.id, "west_base", "{n}");
         }
         assert!(all.find("sidewinder@west_base").is_err());
+    }
+
+    #[test]
+    fn a_slices_stored_measures_join_the_pool() {
+        let measured = format!(
+            "{TEXT}area_m2 = 7000\nsight_m = 15.0\nspots = 2000\nsee_pairs = 0.15\n\
+             seen_at_spawn = {{ 2 = 0.0, 16 = 0.3, 4 = 0.0, 12 = 0.1 }}\ncover = 0.4\nlong_sight_p95_m = 40\n"
+        );
+        let defs = parse("halo_ce", &measured).unwrap();
+        let m = defs[0].measures.clone().expect("measured");
+        assert_eq!(m.seen_at_spawn.iter().map(|(n, _)| *n).collect::<Vec<_>>(), [2, 4, 12, 16], "by count");
+        assert_eq!((m.point_floor_seen, m.spots), (None, 2000));
+        assert!(parse("halo_ce", TEXT).unwrap()[0].measures.is_none(), "unmeasured");
+        assert!(parse("g", &measured.replace("16 = 0.3", "x = 0.3")).is_err(), "a count that isn't one");
+        let mut app = App::new();
+        add(app.world_mut(), "halo_ce", "test", &measured);
+        let pool = app.world().resource::<super::super::map_fit::MapPool>();
+        let fit = pool.slice("halo_ce:bloodgulch@west_base").expect("registered with the pool");
+        assert_eq!(fit.band, Some([2, 6]));
+        // The pool's entries: only where slices join it.
+        let maps = vec!["halo_ce:bloodgulch".to_string(), "halo_ce:chillout".to_string()];
+        assert_eq!(with_slices(app.world(), &maps), maps);
+        app.insert_resource(SlicesInPool);
+        assert_eq!(with_slices(app.world(), &maps), ["halo_ce:bloodgulch", "halo_ce:bloodgulch@west_base", "halo_ce:chillout"]);
     }
 
     #[test]
