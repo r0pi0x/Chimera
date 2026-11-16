@@ -397,8 +397,14 @@ pub struct SwingData {
     /// (window s, damage).
     #[serde(default)]
     pub follow_up: Option<(f32, f32)>,
+    /// A hit from behind: this damage (CS:S's rule), or TF2's rule as a
+    /// table (`BehindData`).
     #[serde(default)]
-    pub backstab: Option<f32>,
+    pub backstab: Option<BackstabData>,
+    /// `Swing::delay`: seconds from the swing's start to its hit (TF2's
+    /// smack delay); 0, the default, hits at once.
+    #[serde(default)]
+    pub delay: f32,
     #[serde(default)]
     pub hitgroups: bool,
     pub hit_refire: f32,
@@ -418,6 +424,32 @@ pub struct SwingData {
     pub sound_hit_world: Option<String>,
     #[serde(default)]
     pub sound_miss: Option<String>,
+    /// `Swing::sound_swing`.
+    #[serde(default)]
+    pub sound_swing: Option<String>,
+}
+
+/// A swing's backstab (`Swing::backstab`): a number (CS:S's damage from
+/// behind) or a table (`BehindData`, TF2's).
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum BackstabData {
+    Damage(f32),
+    Behind(BehindData),
+}
+
+/// `Backstab::Behind`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BehindData {
+    pub behind: f32,
+    pub facing: f32,
+    pub same_way: f32,
+    /// Damage as this many times the target's current health.
+    pub health: f32,
+    /// The kill's weapon id for the notices (its kill icon).
+    #[serde(default)]
+    pub credit: Option<String>,
 }
 
 /// What attack2 does (`AltModes` and its parts).
@@ -1219,7 +1251,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
         });
     }
     if let Some(m) = &d.melee {
-        let swing = |s: &SwingData| Swing {
+        let swing = |s: &'static SwingData| Swing {
             range: s.range * len,
             hull: s.hull.map(|h| h * len),
             hull_reach: s.hull_reach.unwrap_or(s.range) * len,
@@ -1227,7 +1259,17 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             refine: s.refine,
             damage: s.damage * dmg,
             follow_up: s.follow_up.map(|(t, x)| (t, x * dmg)),
-            backstab: s.backstab.map(|x| x * dmg),
+            backstab: s.backstab.as_ref().map(|b| match b {
+                BackstabData::Damage(x) => super::Backstab::Facing(x * dmg),
+                BackstabData::Behind(b) => super::Backstab::Behind {
+                    behind: b.behind,
+                    facing: b.facing,
+                    same_way: b.same_way,
+                    health: b.health,
+                    credit: b.credit.as_deref(),
+                },
+            }),
+            delay: s.delay,
             hitgroups: s.hitgroups,
             hit_refire: s.hit_refire,
             miss_refire: s.miss_refire,
@@ -1239,6 +1281,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             sound_hit: s.sound_hit.clone(),
             sound_hit_world: s.sound_hit_world.clone(),
             sound_miss: s.sound_miss.clone(),
+            sound_swing: s.sound_swing.clone(),
         };
         e.insert(Melee {
             primary: swing(&m.primary),

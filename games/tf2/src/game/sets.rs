@@ -22,16 +22,20 @@
 //! its TF2 guns can make (`bodies::asset_names`, with the classes they
 //! need: data/classes.toml's `needs`).
 //!
+//! The melee weapons' sets (`weapon/tf_weapon_bat` ...) are the same:
+//! the class's arms with the `c_` model (the Fists' arms alone), the
+//! sounds of weapons_stock.md 8.3 and the script.
+//!
 //! Known shortcuts:
-//! - The sound entries are the spec's lists (weapons.md 8.3), not read
-//!   from the scripts.
+//! - The sound entries are the spec's lists (weapons.md 8.3,
+//!   weapons_stock.md 8.3), not read from the scripts.
 
 use source_engine::content::{material::MaterialLoader, props, sound::SoundScripts};
 
 use super::scripts;
 use crate::mount::{Access, Mount};
 
-/// One gun of M2 and what its set holds.
+/// One weapon (a gun or a melee weapon) and what its set holds.
 #[derive(Clone, Copy, Debug)]
 pub struct WeaponSet {
     /// The set's id, `weapon/<id>`: the gun's id past `tf2:`.
@@ -49,7 +53,8 @@ pub struct WeaponSet {
     pub models: &'static [&'static str],
 }
 
-/// The guns: M2's four (weapons.md 8) and weapons_more.md's eight (9).
+/// The guns: M2's four (weapons.md 8) and weapons_more.md's eight (9),
+/// then the nine melee weapons (weapons_stock.md 8).
 pub const M2_WEAPONS: &[WeaponSet] = &[
     WeaponSet {
         id: "tf_weapon_scattergun",
@@ -247,6 +252,80 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
             "Weapon_SyringeGun.Draw",
         ],
         models: &["models/weapons/w_models/w_syringe_proj.mdl"],
+    },    // The nine stock melee weapons (specs/tf2/weapons_stock.md 8): their `c_`
+    // models (the Fists: the Heavy's arms alone) and sounds (swing, crit
+    // swing, hit flesh, hit world, draw, the crit hit).
+    WeaponSet {
+        id: "tf_weapon_bat",
+        script: "tf_weapon_bat",
+        model: "models/weapons/c_models/c_bat.mdl",
+        classes: &["scout"],
+        sounds: &["Weapon_Bat.Miss", "Weapon_Bat.MissCrit", "Weapon_Bat.HitFlesh", "Weapon_Bat.HitWorld", "Weapon_Bat.Draw", "Weapon_Bat.DrawSwoosh1", "Weapon_Bat.DrawSwoosh2", "Weapon_Bat.DrawCatch", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_shovel",
+        script: "tf_weapon_shovel",
+        model: "models/weapons/c_models/c_shovel/c_shovel.mdl",
+        classes: &["soldier"],
+        sounds: &["Weapon_Shovel.Miss", "Weapon_Shovel.MissCrit", "Weapon_Shovel.HitFlesh", "Weapon_Shovel.HitWorld", "Weapon_Shovel.Draw", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_fireaxe",
+        script: "tf_weapon_fireaxe",
+        model: "models/weapons/c_models/c_fireaxe_pyro/c_fireaxe_pyro.mdl",
+        classes: &["pyro"],
+        sounds: &["Weapon_FireAxe.Miss", "Weapon_FireAxe.MissCrit", "Weapon_FireAxe.HitFlesh", "Weapon_FireAxe.HitWorld", "Weapon_FireAxe.Draw", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_bottle",
+        script: "tf_weapon_bottle",
+        model: "models/weapons/c_models/c_bottle/c_bottle.mdl",
+        classes: &["demo"],
+        sounds: &["Weapon_Bottle.Miss", "Weapon_Bottle.MissCrit", "Weapon_Bottle.HitFlesh", "Weapon_Bottle.HitWorld", "Weapon_Bottle.Draw", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_fists",
+        script: "tf_weapon_fists",
+        model: "models/weapons/c_models/c_heavy_arms.mdl",
+        classes: &["heavy"],
+        sounds: &["Weapon_Fist.Miss", "Weapon_Fist.MissCrit", "Weapon_Fist.HitFlesh", "Weapon_Fist.HitWorld", "Weapon_Fist.Draw", "Weapon_Fist.HitHand", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_wrench",
+        script: "tf_weapon_wrench",
+        model: "models/weapons/c_models/c_wrench/c_wrench.mdl",
+        classes: &["engineer"],
+        sounds: &["Weapon_Wrench.Miss", "Weapon_Wrench.MissCrit", "Weapon_Wrench.HitFlesh", "Weapon_Wrench.HitWorld", "Weapon_Wrench.Draw", "Weapon_Wrench.Draw2", "Weapon_Wrench.HitHand", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_bonesaw",
+        script: "tf_weapon_bonesaw",
+        model: "models/weapons/c_models/c_bonesaw/c_bonesaw.mdl",
+        classes: &["medic"],
+        sounds: &["Weapon_BoneSaw.Miss", "Weapon_BoneSaw.MissCrit", "Weapon_BoneSaw.HitFlesh", "Weapon_BoneSaw.HitWorld", "Weapon_Machete.Draw", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_club",
+        script: "tf_weapon_club",
+        model: "models/weapons/c_models/c_machete/c_machete.mdl",
+        classes: &["sniper"],
+        sounds: &["Weapon_Machete.Miss", "Weapon_Machete.MissCrit", "Weapon_Machete.HitFlesh", "Weapon_Machete.HitWorld", "Weapon_Machete.Draw", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_knife",
+        script: "tf_weapon_knife",
+        model: "models/weapons/c_models/c_knife/c_knife.mdl",
+        classes: &["spy"],
+        sounds: &["Weapon_Knife.Miss", "Weapon_Knife.MissCrit", "Weapon_Knife.HitFlesh", "Weapon_Knife.HitWorld", "Weapon_Knife.Draw", "Weapon_Knife.Open1", "Weapon_Knife.Open5", "Weapon_Knife.Open8", "TFPlayer.CritHit"],
+        models: &[],
     },
 ];
 

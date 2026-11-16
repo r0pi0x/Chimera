@@ -48,7 +48,7 @@ pub static PARTS: GameParts = GameParts {
         gun(FLAMETHROWER, GunClass::Flamethrower),
         gun(SYRINGE_GUN, GunClass::Smg),
     ],
-    knife: None,
+    knife: Some(super::weapons::KNIFE),
     movement: Some(super::movement::ID),
     characters: None,
     hud: Some(super::GAME),
