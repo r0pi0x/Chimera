@@ -350,6 +350,10 @@ fn follow_arena(world: &mut World) {
     let want = world.query::<&NetMinigame>().iter(world).next().and_then(|n| n.arena.clone());
     if world.get_resource::<ArenaPlan>().is_none_or(|p| p.0 != want) {
         world.insert_resource(ArenaPlan(want));
+        // The wall now, in the same frame as the match that brought it (a
+        // client that joins mid-match moves its player from the next
+        // tick; the plan's own follower may already have run this frame).
+        chimera_world::map::play_area::follow_plan(world);
     }
 }
 
