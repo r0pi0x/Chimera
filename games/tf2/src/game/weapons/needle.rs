@@ -43,11 +43,7 @@ impl NeedleRules {
         for w in &set.weapons {
             let Some(p) = w.hooks.get(super::NEEDLE_HOOK) else { continue };
             let Ok(p) = p.clone().try_into::<NeedleParams>() else { continue };
-            let ramp = w
-                .hooks
-                .get(super::GUN_HOOK)
-                .and_then(|g| chimera_sim::weapon::harm::num(g, "ramp"))
-                .unwrap_or(1.0);
+            let ramp = super::damage::ramp_of(w.hooks.get(super::GUN_HOOK));
             out.push((w.id.clone(), Arc::new(p), ramp));
         }
         Self(out)
@@ -105,12 +101,13 @@ pub fn touch(
 mod tests {
     use super::*;
 
-    /// Test case 48: 12 / 10 / 5 at 0 / 512 / 1024.
+    /// Test case 48: 12.18 / 10 / 5.28 at 0 / 512 / 1024 (M_s), rounded.
     #[test]
     fn a_needle_by_distance_48() {
+        use super::super::damage::COMPRESSED;
         let p = NeedleParams { damage: 10.0 };
-        assert_eq!(needle_damage(&p, 0.4, 0.0), 12.0);
-        assert_eq!(needle_damage(&p, 0.4, 512.0), 10.0);
-        assert_eq!(needle_damage(&p, 0.4, 1024.0), 5.0);
+        assert_eq!(needle_damage(&p, COMPRESSED, 0.0), 12.0);
+        assert_eq!(needle_damage(&p, COMPRESSED, 512.0), 10.0);
+        assert_eq!(needle_damage(&p, COMPRESSED, 1024.0), 5.0);
     }
 }

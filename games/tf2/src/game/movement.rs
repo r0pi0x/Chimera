@@ -1,16 +1,28 @@
 //! TF2's movement (`tf2:movement`, specs/tf2/movement.md): Source's player
 //! movement (`source_engine::source_movement`) with TF2's config
 //! (`config`: gravity 800, accelerate and airaccelerate 10, friction 4,
-//! stopspeed 100, keys 450, the jump 289 added to the vertical speed, the
-//! 48 x 48 x 82 box (62 ducked, eyes 45), the 0.2 s duck, the whole 20-unit
-//! lift in the air and at most two air ducks, no ground jump while fully
-//! ducked, backwards at 0.9 of the speed, ducked a third, the jump's cap at
-//! 1.2 x the tick's top speed, the 520 ceiling in place of `sv_maxspeed`,
-//! fall damage as max health x speed / 6000 above 650 with a +-20 % spread)
+//! stopspeed 100, keys 450, the jump 289 added to the vertical speed (set
+//! during the duck-down), the 48 x 48 x 82 box (62 ducked, eyes 45), the
+//! 0.2 s duck, the whole 20-unit lift in the air, two duck releases per
+//! air time (the Scout's air jump counts again), the 0.3 s re-duck delay
+//! on the ground and no re-duck during an unduck, no duck in water, no
+//! ground jump while fully ducked, ducked a third, the ground speed
+//! clamped to the max speed, the backpedal clamp (on the ground, the
+//! velocity's backward part at most 0.9 of it above 100 units/s; the input
+//! untouched, so the Scout's air jump is 400 every way), a raised
+//! acceleration for wishes under 40, the ground left above 250 units/s
+//! up, the jump's cap at 1.2 x the player's top speed P, the 520 ceiling
+//! in place of `sv_maxspeed`, fall damage as max health x speed / 6000
+//! above 650 with a +-20 % spread: movement.md and its corrections from
+//! the SDK)
 //! and a class layer: each player is the class of the TF2 gun in hand
-//! (`super::classes`, `select_class`, predicted), whose top speed is the
+//! (`super::classes`, `select_class`, predicted: its rung's drawn class
+//! when the gun can be it, `classes::RungClass`, else the gun's own),
+//! whose reload times follow it (the Shotgun's start, the Pistol's
+//! clip: `weapons::damage::Tf2Gun::for_class`), whose top speed is the
 //! tick's speed (`SourceTraits::max_speed`; the Heavy's spun Minigun lowers it to 110,
-//! its weapon's `max_speed`), whose eyes stand at 65, 68 or 75 and whose
+//! its weapon's `max_speed`, the zoomed rifle to 80, the weapon layer's
+//! `MaxSpeed`), whose eyes stand at 65, 68 or 75 and whose
 //! air jumps (the Scout's one: the vertical speed set to 268.33, the
 //! horizontal velocity to the keys' wish) are the class's
 //! (`SourceTraits`). On the server a class's max health is the player's
@@ -20,10 +32,9 @@
 //! (`tf2:sv_gravity` ..., `tf2:tf_fall_damage_disablespread`).
 //!
 //! Known shortcuts:
-//! - What counts as backwards is the forward move being negative (open
-//!   question 2), the bunny-hop cap uses the current top speed (4), the
-//!   third air duck is ignored until the key is let go (9); the
-//!   teammates' push-away is Source's shared one.
+//! - The teammates' push-away is Source's shared one; the Spy's disguise
+//!   and the Medic's patient speed aren't modelled (no such classes' kits
+//!   yet).
 //! - The landing sound and view punch thresholds are the shared code's
 //!   (10); a player holding another game's gun on TF2's movement (none
 //!   in the party: its movement follows the gun) keeps its last class.
@@ -33,11 +44,14 @@ use source_engine::source_movement::{
     SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceTraits,
 };
 
-use super::classes::{Classes, Tf2Class};
+use super::{
+    classes::{Classes, RungClass, Tf2Class},
+    weapons::damage::Tf2Gun,
+};
 use crate::{
-    core::Health,
+    core::{Health, MaxSpeed},
     slots::{Loadout, MovementSlot},
-    weapon::{Inventory, Weapon},
+    weapon::{Inventory, Magazine, ShellReload, Weapon},
 };
 
 /// The movement's id.
@@ -78,6 +92,12 @@ pub fn config() -> SourceMovementConfig {
         bunnyhop_cap: 0.0,
         bunnyhop_cap_scale: 1.2,
         back_speed: 0.9,
+        back_min_speed: 100.0,
+        ground_clamp: true,
+        low_wish_accel: true,
+        leave_ground_vz: 250.0,
+        reduck_delay: 0.3,
+        no_water_duck: true,
         air_jumps: 0,
         air_jump_speed: AIR_JUMP_SPEED,
         no_ducked_jump: true,
@@ -115,6 +135,7 @@ pub fn add_movement(app: &mut App) {
     if registered {
         return;
     }
+    super::classes::add_rung_classes(app);
     app.init_resource::<Classes>()
         .source_movement(ID, Some(config()), Some(super::GAME))
         .add_systems(FixedUpdate, wear.before(crate::core::SimSet::Movement))
@@ -187,29 +208,39 @@ fn set_max(h: &mut Health, max: f32) {
     }
 }
 
-/// Each TF2 player's class from the gun in hand (kept when it holds none
-/// of TF2's), its speed (the class's top speed, or the weapon's own
-/// `max_speed` when lower: the spun Minigun's 110) and its traits (eyes,
-/// air jumps), first in each movement tick, predicted.
+/// Each TF2 player's class from the gun in hand (its rung's drawn class
+/// when the gun can be it, else the gun's own: `Classes::held`; kept when
+/// it holds none of TF2's), the gun's reload times for it, its speed (the
+/// class's top speed, or the weapon's own `max_speed` when lower: the
+/// spun Minigun's 110) and its traits (eyes, air jumps), first in each
+/// movement tick, predicted.
 #[allow(clippy::type_complexity)]
 pub fn select_class(
-    mut q: Query<(&MovementSlot, &Inventory, &mut Tf2Class, &mut SourceTraits)>,
-    weapons: Query<&Weapon>,
+    mut q: Query<(&MovementSlot, &Inventory, &mut Tf2Class, &mut SourceTraits, Option<&RungClass>, Option<&MaxSpeed>)>,
+    mut weapons: Query<(&Weapon, Option<&Tf2Gun>, Option<&mut ShellReload>, Option<&mut Magazine>)>,
     table: Res<Classes>,
 ) {
-    for (slot, inv, mut class, mut traits) in &mut q {
+    for (slot, inv, mut class, mut traits, drawn, zoomed) in &mut q {
         if slot.0 != ID {
             continue;
         }
-        let held = inv.active.and_then(|w| weapons.get(w).ok());
-        if let Some(c) = held.and_then(|w| table.of_gun(&w.id))
-            && class.0 != c.index
+        let mut held = inv.active.and_then(|w| weapons.get_mut(w).ok());
+        if let Some((w, gun, shells, magazine)) = held.as_mut()
+            && let Some(c) = table.held(&w.id, drawn.map(|d| d.0.as_str()))
         {
-            class.0 = c.index;
+            if class.0 != c.index {
+                class.0 = c.index;
+            }
+            if let Some(gun) = gun {
+                gun.for_class(&c.name, shells.as_deref_mut(), magazine.as_deref_mut());
+            }
         }
         let c = class.class(&table);
-        let weapon_speed = held.and_then(|w| w.max_speed).map(|s| s / super::METERS_PER_UNIT);
-        let p = weapon_speed.map_or(c.speed, |w| w.min(c.speed));
+        // The weapon's own (the spun Minigun's 110) and the scope's (the
+        // weapon layer's `MaxSpeed`: the zoomed rifle's 80).
+        let weapon_speed = held.as_ref().and_then(|(w, ..)| w.max_speed).map(|s| s / super::METERS_PER_UNIT);
+        let scope_speed = zoomed.and_then(|m| m.0).map(|s| s / super::METERS_PER_UNIT);
+        let p = [weapon_speed, scope_speed].into_iter().flatten().fold(c.speed, f32::min);
         let want = SourceTraits { max_speed: Some(p), eye_stand: Some(c.eye), air_jumps: Some(c.air_jumps) };
         if *traits != want {
             *traits = want;

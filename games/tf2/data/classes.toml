@@ -6,9 +6,9 @@
 # eye: standing eye height (units; ducked 45 for all); air_jumps: jumps in
 # the air (the Scout's one); model: the player model; arms: the first-
 # person arms' class (`c_<arms>_arms.mdl`); needs: the classes whose bodies
-# a player of this class may also show, so a match whose ladder can make
+# a player of this class may also show, so a match whose ladder drew
 # this class downloads their asset sets (`players/<class>`) too
-# (`Classes::sets_for`, the match's offer: `bodies::asset_names`). None by
+# (`Classes::sets_of`, the match's offer: `bodies::asset_names`). None by
 # default; the Spy's disguise, once built, makes the Spy need every class.
 
 [classes.scout]
@@ -87,15 +87,29 @@ eye = 68
 model = "models/player/engineer.mdl"
 arms = "engineer"
 
-# The class a gun makes its holder (weapons.md 2; the plan's decision 6),
-# by the gun's id: a new gun joins with a line here. A gun not listed is
-# the class of its `tf2:gun` hook's `arms`.
+# The classes a gun can make its holder (weapons.md 1, weapons_more.md 1,
+# classes.md "Stock loadout": every class that carries it in stock TF2;
+# the plan's decision 6), by the gun's id: one class, or a list. A gun
+# of several classes is one rung gun whose class is drawn with the ladder
+# (`game::classes::HOOK`: at random from the list, seeded with the
+# ladder's draw, the same for every player and bot on the rung, in the
+# match's shared rung extras); the first is the gun's own (its `tf2:gun`
+# `arms`), taken where nothing was drawn (a kit gun, the sandbox). A new
+# gun joins with a line here. A gun not listed is the class of its
+# `tf2:gun` hook's `arms`.
 [guns]
 "tf2:tf_weapon_scattergun" = "scout"
-"tf2:tf_weapon_pistol_scout" = "scout"
+# The Scout's and the Engineer's Pistols (items 23 and 22) share the
+# gun and its script's numbers (weapon_scripts.md 3); the Engineer's
+# reload (1.035 s) follows his class (`tf2:gun`'s `reload`).
+"tf2:tf_weapon_pistol_scout" = ["scout", "engineer"]
 "tf2:tf_weapon_rocketlauncher" = "soldier"
 "tf2:tf_weapon_minigun" = "heavy"
-"tf2:tf_weapon_shotgun_primary" = "engineer"
+# The Engineer's primary and the Soldier's, Pyro's and Heavy's
+# secondaries (items 9, 10, 12, 11): one gun, the scripts agreeing on
+# every mapped number (weapon_scripts.md 3); arms, animations and the
+# reload's start follow the class (weapons.md 4, 8.2).
+"tf2:tf_weapon_shotgun_primary" = ["engineer", "soldier", "pyro", "heavy"]
 "tf2:tf_weapon_smg" = "sniper"
 "tf2:tf_weapon_sniperrifle" = "sniper"
 "tf2:tf_weapon_revolver" = "spy"

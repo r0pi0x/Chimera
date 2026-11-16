@@ -1,9 +1,11 @@
-# The Shotgun as the Engineer's primary (specs/tf2/weapons.md 1, 4, 6;
-# docs/plans/active/tf2.md decision 6: the Engineer's arms hold it): 10
+# The Shotgun, the Engineer's primary and the Soldier's, Pyro's and
+# Heavy's secondary (specs/tf2/weapons.md 1, 4, 6; docs/plans/active/
+# tf2.md decision 6: its rung's class is drawn from the four,
+# data/classes.toml; `arms` is its own, the Engineer's): 10
 # pellets of 6, spread 0.0675 (the first pellet dead centre after a
 # pause), 0.625 s between shots, 6 in the clip and 32 carried, shells
-# one at a time: the start by class (the Engineer's 0.3333; Soldier,
-# Pyro, Heavy below for their arms), then 0.5 each.
+# one at a time: the start by the holder's class (`reload_start`), then
+# 0.5 each.
 id = "tf2:tf_weapon_shotgun_primary"
 base = "tf2:gun"
 class = "shotgun"
@@ -12,7 +14,7 @@ slot = 0
 [trigger]
 automatic = true
 cycle = 0.625
-timing = "accumulate"
+timing = "set"
 
 [magazine]
 clip = 6
@@ -24,7 +26,7 @@ shells = { start = 0.3333, insert = 0.5, back_to_back = true }
 [hitscan]
 range = 56754.0
 pellets = 10
-punch_scale = 0.0
+punch_scale = 1.0
 spread = { template = 0.0675 }
 
 [damage]

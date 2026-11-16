@@ -37,6 +37,13 @@
 //! character's view model itself (its `ViewAnimator`, e.g. Combat Arms'
 //! own state machine) puts `OwnViewAnim` on it and the driver leaves it
 //! alone.
+//!
+//! **A view model's variant** (`ViewVariant`, on the character): a game
+//! whose weapon looks different in some holders' hands (TF2's Shotgun on
+//! each class's arms) loads those view models keyed `<weapon>#<variant>`
+//! (`variant_key`) and puts the holder's variant on; the driver shows that
+//! key when the map has it, else the weapon's own, and the rules see it
+//! (`ViewState::variant`).
 
 use bevy::prelude::*;
 
@@ -224,9 +231,23 @@ pub fn play_pick(view: &mut ViewAnimator, dice: &mut ViewModelPlay, pick: &Pick,
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ViewPose(pub u8);
 
+/// A character's view-model variant (module doc): the view model keyed
+/// `variant_key(weapon, variant)` is shown in place of the weapon's own
+/// when the map has it.
+#[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
+pub struct ViewVariant(pub String);
+
+/// The key of `weapon`'s view model in `variant`'s hands
+/// (`<weapon>#<variant>`).
+pub fn variant_key(weapon: &str, variant: &str) -> String {
+    format!("{weapon}#{variant}")
+}
+
 /// What the rules see of a character's weapon in hand.
 pub struct ViewState<'a> {
     pub weapon: &'static str,
+    /// The holder's `ViewVariant` (None without).
+    pub variant: Option<&'a str>,
     /// Its data (None: the app's catalog lacks it).
     pub data: Option<&'static WeaponData>,
     /// Its `AltModes` mode (0 without).
@@ -395,6 +416,7 @@ pub fn drive(
             Option<&mut ViewModelPlay>,
             Option<&Zoomed>,
             Has<ViewModelHidden>,
+            Option<&ViewVariant>,
         ),
         Without<OwnViewAnim>,
     >,
@@ -413,7 +435,7 @@ pub fn drive(
     let (dt, now) = (time.delta_secs(), time.elapsed_secs_f64());
     let rules = rules.as_deref();
     let events: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
-    for (e, inventory, health, view, dice, zoomed, holstered) in &mut characters {
+    for (e, inventory, health, view, dice, zoomed, holstered, variant) in &mut characters {
         let (Some(mut view), Some(mut dice)) = (view, dice) else {
             commands
                 .entity(e)
@@ -423,12 +445,21 @@ pub fn drive(
         let alive = health.is_none_or(|h| h.current > 0.0);
         let parts = inventory.active.filter(|_| alive).and_then(|w| weapons.get(w).ok());
         let weapon = parts.map(|(w, ..)| w.id);
+        let variant = variant.map(|v| v.0.as_str());
+        // The holder's variant of it, when the map has one.
+        let shown = weapon.map(|w| {
+            variant
+                .map(|v| variant_key(w, v))
+                .filter(|k| models.as_ref().is_some_and(|m| m.get(k).is_some()))
+                .unwrap_or_else(|| w.to_string())
+        });
         // Snipers hide the view model behind the scope.
         view.hidden = holstered || zoomed.is_some_and(|z| z.scope);
         let state = parts.map(|(w, alt, burst, magazine, throwable, (ws, shells, pose))| {
             let mode = alt.map_or(0, |m| m.current);
             ViewState {
                 weapon: w.id,
+                variant,
                 data: catalog.as_ref().and_then(|c| c.get(w.id)),
                 mode,
                 burst: burst.filter(|b| b.mode == mode),
@@ -461,7 +492,7 @@ pub fn drive(
         };
         // A new weapon in hand draws it.
         let mut drawn = false;
-        if view.show(weapon, models.as_deref()) {
+        if view.show(shown.as_deref(), models.as_deref()) {
             if let Some(p) = state.as_ref().and_then(draw) {
                 drawn = play_pick(&mut view, &mut dice, &p, now);
             }

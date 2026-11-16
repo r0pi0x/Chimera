@@ -2,12 +2,18 @@
 //! docs/plans/active/tf2.md decision 5): the class's arms
 //! (`c_<class>_arms.mdl`, its sequences from the `c_<class>_animations.mdl`
 //! it includes) with the `c_` weapon bone-merged onto them by bone name
-//! (`map::merge_by_bone_name`), one view model per gun keyed by its id
-//! (`load`); their rules on Chimera's view-model driver (`rules`): the
+//! (`map::merge_by_bone_name`), one view model per gun keyed by its id on
+//! its own class's arms, and one per other class that can hold it
+//! (data/classes.toml) keyed `<gun>#<class>` (Chimera's
+//! `view_anim::variant_key`) when that class's arms are here (`load`);
+//! the holder's class picks it (`ViewVariant`, `view_variants`: the
+//! rung's drawn class, `classes::Classes::held`); their rules on
+//! Chimera's view-model driver (`rules`): the
 //! draw, idle, fire and the reload (a whole clip, or its start, rounds
 //! and end), the Minigun's spin up, spun idle and spin down, the
 //! Stickybomb Launcher's charge, from the specs' sequence tables
-//! (`SEQUENCES`: weapons.md 8.2, weapons_more.md 9.2); drawn at
+//! (`SEQUENCES`, and for a gun in another class's hands
+//! `CLASS_SEQUENCES`: weapons.md 8.2, weapons_more.md 9.2); drawn at
 //! `VIEWMODEL_FOV` (`tf2_viewmodel_fov` in an app of several games),
 //! never mirrored.
 //!
@@ -32,8 +38,8 @@
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{
-    WeaponEventKind,
-    view_anim::{self, Pick, ViewAnimAppExt, ViewAnimRules, ViewFrame, ViewState},
+    Inventory, Weapon, WeaponEventKind,
+    view_anim::{self, Pick, ViewAnimAppExt, ViewAnimRules, ViewFrame, ViewState, ViewVariant},
 };
 
 use super::weapons::{
@@ -201,9 +207,46 @@ pub const SEQUENCES: &[(&str, Sequences)] = &[
     (SYRINGE_GUN, clip((P_DRAW, "sg_draw"), (P_IDLE, "sg_idle"), (P_FIRE, "sg_fire"), (P_RELOAD, "sg_reload"))),
 ];
 
-/// `weapon`'s sequences.
-pub fn sequences(weapon: &str) -> Option<&'static Sequences> {
-    SEQUENCES.iter().find(|(w, _)| *w == weapon).map(|(_, s)| s)
+/// The guns' sequences in another class's hands than their own
+/// (weapons.md 8.2: the Soldier's, Pyro's and Heavy's secondary Shotgun;
+/// weapons_more.md 9.2: the Engineer's Pistol): (gun, class, sequences).
+pub const CLASS_SEQUENCES: &[(&str, &str, Sequences)] = &[
+    (SHOTGUN, "soldier", SECONDARY_SHOTGUN),
+    (SHOTGUN, "pyro", SECONDARY_SHOTGUN),
+    (SHOTGUN, "heavy", SECONDARY_SHOTGUN),
+    (PISTOL_SCOUT, "engineer", clip((S_DRAW, "pstl_draw"), (S_IDLE, "pstl_idle"), (S_FIRE, "pstl_fire"), (S_RELOAD, "pstl_reload"))),
+];
+
+/// The secondary Shotgun's sequences (the same names on the Soldier's,
+/// Pyro's and Heavy's arms, `SECONDARY` activities).
+const SECONDARY_SHOTGUN: Sequences = shells(
+    (S_DRAW, "draw"),
+    (S_IDLE, "idle"),
+    (S_FIRE, "fire"),
+    [("ACT_SECONDARY_RELOAD_START", "reload_start"), (S_RELOAD, "reload_loop"), ("ACT_SECONDARY_RELOAD_FINISH", "reload_end")],
+);
+
+/// The sequences of view model `key`: a gun's id (on its own class's
+/// arms) or `<gun>#<class>` (`for_class`).
+pub fn sequences(key: &str) -> Option<&'static Sequences> {
+    match key.split_once('#') {
+        Some((gun, class)) => for_class(gun, Some(class)),
+        None => for_class(key, None),
+    }
+}
+
+/// `weapon`'s sequences in `class`'s hands (its own class's without one,
+/// or for a class with none of its own here).
+pub fn for_class(weapon: &str, class: Option<&str>) -> Option<&'static Sequences> {
+    class
+        .and_then(|c| CLASS_SEQUENCES.iter().find(|(w, k, _)| *w == weapon && *k == c).map(|(.., s)| s))
+        .or_else(|| SEQUENCES.iter().find(|(w, _)| *w == weapon).map(|(_, s)| s))
+}
+
+/// The sequences the driver's state picks (`ViewState::variant`: the
+/// holder's class).
+fn of_state(s: &ViewState) -> Option<&'static Sequences> {
+    for_class(s.weapon, s.variant)
 }
 
 /// The pick of a table entry: its sequence by name (none: nothing).
@@ -234,16 +277,16 @@ pub fn viewmodel_fov_cvar(app: &mut App) {
 }
 
 fn draw(s: &ViewState) -> Pick {
-    named(sequences(s.weapon).map(|q| q.draw))
+    named(of_state(s).map(|q| q.draw))
 }
 
 fn idle(s: &ViewState) -> Pick {
     // A spun Minigun (`ViewPose` 1) idles in its spun sequence.
-    named(sequences(s.weapon).map(|q| if s.pose == 1 { q.spin_idle.unwrap_or(q.idle) } else { q.idle }))
+    named(of_state(s).map(|q| if s.pose == 1 { q.spin_idle.unwrap_or(q.idle) } else { q.idle }))
 }
 
 fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
-    let Some(q) = sequences(f.state.weapon) else { return };
+    let Some(q) = of_state(&f.state) else { return };
     match kind {
         WeaponEventKind::Fired { .. } if !f.fired => {
             // A looping fire sequence goes on while it fires.
@@ -285,12 +328,33 @@ pub fn rules() -> ViewAnimRules {
     }
 }
 
-/// TF2's view-model rules on the driver.
+/// TF2's view-model rules on the driver, and its players' view-model
+/// variants (`view_variants`).
 pub fn add_rules(app: &mut App) {
     if !app.is_plugin_added::<view_anim::ViewAnimPlugin>() {
         app.add_plugins(view_anim::ViewAnimPlugin);
     }
     app.view_anim_rules(super::GAME, rules());
+    app.init_resource::<super::classes::Classes>()
+        .add_systems(Update, view_variants.before(crate::map::DriveAnimation));
+}
+
+/// Each player holding a TF2 gun shows it on its class's arms
+/// (`ViewVariant`: the class `Classes::held` makes it, its rung's drawn
+/// one when the gun can be it), on every machine.
+pub fn view_variants(
+    players: Query<(Entity, &Inventory, Option<&super::classes::RungClass>, Option<&ViewVariant>)>,
+    weapons: Query<&Weapon>,
+    table: Res<super::classes::Classes>,
+    mut commands: Commands,
+) {
+    for (e, inv, drawn, have) in &players {
+        let held = inv.active.and_then(|w| weapons.get(w).ok());
+        let Some(class) = held.and_then(|w| table.held(&w.id, drawn.map(|d| d.0.as_str()))) else { continue };
+        if have.is_none_or(|v| v.0 != class.name) {
+            commands.entity(e).insert(ViewVariant(class.name.clone()));
+        }
+    }
 }
 
 /// A `c_` weapon's own idle pose (its `idle` sequence's first frame):
@@ -305,30 +369,47 @@ fn own_idle(weapon: &crate::map::MapViewModel) -> Option<Vec<crate::map::anim::B
 }
 
 /// The view models of TF2's guns that `wants`, through `materials`: each
-/// the arms of its class with its `c_` model bone-merged, keyed by the
-/// gun's id, never mirrored.
+/// the arms of its own class with its `c_` model bone-merged, keyed by the
+/// gun's id, and with `every_class` one on each other class's arms that
+/// can hold it whose arms are here (`Mount::held`: the install, or the
+/// class's set fetched), keyed `<gun>#<class>`; never mirrored.
 pub fn load(
     materials: &mut source_engine::content::material::MaterialLoader,
     wants: &dyn Fn(&str) -> bool,
+    every_class: bool,
     into: &mut Vec<crate::map::MapViewModel>,
     warnings: &mut Vec<String>,
 ) {
     use source_engine::content::props;
     let set = super::weapons::tf2_weapons();
-    for (gun, arms) in super::weapons::arms_by_gun() {
+    let table = super::classes::classes();
+    for (gun, own) in super::weapons::arms_by_gun() {
         if !wants(gun) {
             continue;
         }
         let Some(data) = set.weapons.iter().find(|w| w.id == gun) else { continue };
         let Some(path) = data.models.view.clone() else { continue };
         let offset = data.models.view_offset;
+        // Its own class's arms (keyed by the gun), then the others'.
+        let mut hands: Vec<(String, String)> = vec![(gun.to_string(), own.clone())];
+        if every_class {
+            for c in table.of_gun_all(gun).into_iter().filter(|c| c.arms != own) {
+                let arms = super::sets::arms_model(&c.arms);
+                if materials.mount().held(&arms) {
+                    hands.push((view_anim::variant_key(gun, &c.name), c.arms.clone()));
+                } else {
+                    debug!("TF2 view model {gun} on the {} arms: not here (its class set wasn't offered)", c.name);
+                }
+            }
+        }
+        for (key, arms) in hands {
         let merged = props::load_view_model(materials, &super::sets::arms_model(&arms), gun, true).and_then(|arms| {
             let weapon = props::load_view_model(materials, &path, gun, true)?;
             crate::map::merge_by_bone_name(arms, &weapon, own_idle(&weapon).as_deref())
         });
         match merged {
             Ok(mut v) => {
-                v.key = gun.to_string();
+                v.key = key;
                 if let Some(o) = offset {
                     // The meshes are in the eye's space of the bind pose:
                     // they move with the root.
@@ -344,6 +425,7 @@ pub fn load(
                 into.push(v);
             }
             Err(e) => warnings.push(e),
+        }
         }
     }
 }

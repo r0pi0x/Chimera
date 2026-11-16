@@ -40,7 +40,8 @@ pub struct WeaponSet {
     pub script: &'static str,
     /// The `c_` weapon model.
     pub model: &'static str,
-    /// The classes whose arms hold it (plan, decision 6).
+    /// The classes whose arms can hold it, its own first (data/classes.toml;
+    /// plan, decision 6); its set holds its own class's.
     pub classes: &'static [&'static str],
     /// Its sound entries (weapons.md 8).
     pub sounds: &'static [&'static str],
@@ -85,7 +86,7 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
         id: "tf_weapon_shotgun_primary",
         script: "tf_weapon_shotgun_primary",
         model: "models/weapons/c_models/c_shotgun/c_shotgun.mdl",
-        classes: &["engineer"],
+        classes: &["engineer", "soldier", "pyro", "heavy"],
         sounds: &[
             "Weapon_Shotgun.Single",
             "Weapon_Shotgun.SingleCrit",
@@ -119,7 +120,7 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
         id: "tf_weapon_pistol_scout",
         script: "tf_weapon_pistol_scout",
         model: "models/weapons/c_models/c_pistol/c_pistol.mdl",
-        classes: &["scout"],
+        classes: &["scout", "engineer"],
         sounds: &[
             "Weapon_Pistol.Single",
             "Weapon_Pistol.SingleCrit",
@@ -280,7 +281,9 @@ pub fn weapon_files(mount: &Mount, w: &WeaponSet, sound_scripts: &SoundScripts) 
     let mut files = read_by(mount, || {
         let mut materials = MaterialLoader::guest(mount, 0, 0);
         let (mut kit, mut warnings) = (crate::map::GameKit::default(), Vec::new());
-        super::maps::add_guns(&mut materials, &|g| g == gun, &mut kit, &mut warnings);
+        // On its own class's arms only: the other classes' arms are in
+        // their `players/<class>` sets.
+        super::maps::add_guns(&mut materials, &|g| g == gun, false, &mut kit, &mut warnings);
         for name in w.sounds {
             for wave in sound_scripts.waves(name) {
                 let _ = mount.read(&wave);

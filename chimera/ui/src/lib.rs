@@ -36,6 +36,11 @@
 //!   and a Signal scroll bar), eased wheel steps, the right-button pan
 //!   with a fling, `ScrollIntoView`; state by key in `ScrollViews`,
 //!   tuned by `[layout.scroll]`, cut down by `ReducedMotion`.
+//! - `vlist`: the recycling list (`Ui::virtual_list`: a pool of the
+//!   lines in view plus two spare, rebound in place on `Changed<VSlot>`;
+//!   a list or a tile grid virtualised by row, folded sections, keys,
+//!   select on a press and the primary action on a double press:
+//!   `VListEvent`), its state by key in `VirtualLists`.
 //! - `chat`: the one chat feed's look (`FeedLine`, `LineKind`: player,
 //!   team, radio lines, notices and the server's word; `line_alpha`, the
 //!   fade after `HOLD` s; `stamp`; `name_color`; `Ui::chat_line`,
@@ -76,6 +81,7 @@ pub mod theme;
 pub mod style;
 pub mod text_fit;
 pub mod units;
+pub mod vlist;
 pub mod widgets;
 
 use bevy::{prelude::*, ui::UiSystems};
@@ -96,6 +102,7 @@ pub use theme::{Theme, Tone};
 pub use style::{KeepCase, UiSlant, UiStyle, UiText};
 pub use text_fit::{Ellipsize, ellipsize, ellipsize_with};
 pub use units::{TickLayout, UiUnits};
+pub use vlist::{VCursor, VHit, VListEvent, VListState, VNav, VSection, VShape, VSlot, VirtualList, VirtualLists};
 
 /// The kit's per-frame work: units from the window, the clock, the
 /// timelines, their writes to transforms and sizes.
@@ -117,7 +124,7 @@ impl Plugin for ChimeraUiPlugin {
             .init_resource::<UiMusic>()
             .add_message::<UiCue>()
             .init_resource::<UiClock>()
-            .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, scroll::ScrollPlugin, shell::ShellPlugin))
+            .add_plugins((KitMaterialsPlugin, controls::ControlsPlugin, scroll::ScrollPlugin, vlist::VListPlugin, shell::ShellPlugin))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare));
         pointer_lead::add(app);
         app

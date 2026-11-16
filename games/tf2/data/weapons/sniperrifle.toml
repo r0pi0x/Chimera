@@ -13,7 +13,7 @@ slot = 0
 [trigger]
 automatic = true
 cycle = 1.5
-timing = "accumulate"
+timing = "set"
 
 [magazine]
 clip = 25
@@ -23,7 +23,7 @@ reload = 1.0
 [hitscan]
 range = 56754.0
 pellets = 1
-punch_scale = 0.0
+punch_scale = 1.0
 spread = { template = 0.0 }
 
 [damage]

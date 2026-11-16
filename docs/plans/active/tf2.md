@@ -23,6 +23,7 @@ from specs, measurements and the game's own data.
 | More guns (track 1, tf2-guns2) | done (2026-11-15) | the next eight guns (specs/tf2/weapons_more.md) as data and hooks, lent as rungs; the Minigun held up in first person; muzzle flashes and explosions |
 | M3 classes as bodies, TF2's movement | done (2026-11-15) | the classes as data (`game::classes`); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health); the class bodies with team skins and animation; TF2's HUD (health, ammo, crosshair) and kill icons |
 | M4a more maps in the party pool | done (2026-11-15) | 14 koth_, cp_ and ctf_ maps in an automatic pool by data/map_pool.toml and data/map_fitness.toml (a sweep of 130 maps); played free for all: touch-opened doors start open, spawn rooms' door brushes block nobody; `map/<name>` sets checked in a scratch store, not published |
+| SDK parity (tf2-parity) | in progress (2026-11-15) | the specs' "Corrections from the SDK" in the code: the Minigun, the blasts and knockback, movement, the scripts' mapping, grenades and stickies landed; the flame, the scope and the syringe next |
 | M4 more weapons, effects, the probe | not started | |
 
 ## 1. Rules for this port
@@ -120,11 +121,41 @@ from specs, measurements and the game's own data.
    player holds. If the view-model driver lacks an arms-plus-weapon
    pair, that is a generic extension in Chimera (Combat Arms already
    draws hands and gun parts), not TF2 code.
-6. **The rungs' class.** A TF2 gun makes its holder that gun's class:
-   Scout for the Scattergun, Soldier for the Rocket Launcher, Heavy for
-   the Minigun, and the Engineer's arms for the Shotgun
-   (weapons.md 2). Health and speed per class follow classes.md once
-   the bodies land (M3); until then the rung uses the party's character.
+6. **The rungs' class.** A TF2 gun makes its holder one of the classes
+   that carry it in stock TF2 (games/tf2/data/classes.toml `[guns]`, one
+   class or a list; weapons.md 1, weapons_more.md 1, classes.md "Stock
+   loadout"): Scout for the Scattergun, Soldier for the Rocket Launcher,
+   Heavy for the Minigun. A gun of several classes gets its class **at
+   random, before the match** (the user's rule, 2026-11-15): when the
+   ladder is drawn, TF2's rung extras (`classes::HOOK`, Chimera's
+   `ladder::RungExtrasHook`, as Combat Arms' rung characters and CS:S's
+   rung models) draw one of the gun's classes for each TF2 rung from the
+   ladder's seeded generator, kept in the ladder's extras the server
+   shares with its clients (`NetMinigame::rung_extras`); every player
+   and bot on the rung is that class on every machine (`RungClass`
+   from `ladder::OnRung`), and the class shows after the gun in the
+   HUD's rung line. Never rolled per respawn. The offer names only the
+   drawn classes' body sets (`bodies::asset_names`). Where nothing is
+   drawn (a kit gun, the sandbox, `rung_extras = false`) a gun is its
+   first class, its own.
+   - **The Shotgun** (items 9, 10, 12, 11: Engineer, Soldier, Pyro,
+     Heavy) stays one rung gun, `tf2:tf_weapon_shotgun_primary`: the
+     class scripts agree on every mapped number (weapon_scripts.md 3),
+     so its numbers are the Engineer's script's; arms and first-person
+     sequences (weapons.md 8.2: the `SECONDARY` ones and their names for
+     the three secondaries, `view::CLASS_SEQUENCES`), the reload's start
+     (4: 0.4667 / 0.5 / 0.3333 / 0.3333) and the third-person stance
+     (secondary but for the Engineer) follow the drawn class.
+   - **The Pistol** (items 23 and 22: Scout, Engineer) likewise one gun,
+     `tf2:tf_weapon_pistol_scout` (the scripts agree too): the
+     Engineer's arms and `pstl_` sequences and his clip reload of
+     1.035 s (weapons_more.md 1) follow his class; he carries the
+     Scout's 36 rounds, not his 200 (a shortcut).
+   - The view models of a gun's other classes are keyed `<gun>#<class>`
+     (Chimera's `view_anim::ViewVariant`, a generic extension) and load
+     where that class's arms are here (its `players/<class>` set, which
+     the offer names when drawn); a gun's `weapon/<id>` set keeps its own
+     class's arms only.
 7. **Not in scope for now**: TF2's own app and server (beside the party
    apps; M5 at the earliest), objectives (flags, control points,
    payloads), buildings, Medic healing, Spy disguise and cloak, Pyro's
@@ -553,6 +584,58 @@ the probe server.
   points; the navigation files still don't parse (the party generates
   one).
 
+### SDK parity (tf2-parity, 2026-11-15)
+
+The code made to follow each spec's "Corrections from the SDK
+(2026-11-15)" list (movement, weapons, weapons_more, weapon_scripts),
+each with a scenario test from the spec's own cases. The view model and
+the Minigun's pose stay the view-model track's.
+
+- **Minigun** (weapons.md 7, `weapons::minigun`): no gameplay wind-down
+  (idle at once on release, 0.2 s after the last shot when firing; only
+  the switch waits for the 1.33 s spool-down); a release during the
+  wind-up lets it complete; the first shot 0.1 s after the 0.75 s
+  wind-up (57 ticks, test 33); the rev-up penalty g(tau) 0.5 until
+  0.2 s then linear to 1 at 1 s, the spread x1.5 to x1, tau the larger of
+  the wind less 0.75 and the firing run (tests 13, 14, 49); crouched, the
+  movement's crouch scaling on 110 (not 0).
+- **Blasts and knockback** (weapons.md 5.2-5.4, `weapons::blast`): r to
+  the nearer of the centre and the feet, reached by the box's nearest
+  point (f clamped at the edge); the owner after everyone, his own
+  radius and base (the rocket's 121 and 90); the push min(1000, D x s x
+  the standing hull / the hull), from 10 below the blast, D unrounded, a
+  crouched owner counting 55 tall, the Heavy half (test 43); bullets
+  push at scale 6 from the shooter (test 47); the blast-jumping state
+  and the air-duck count reset; off the ground above 250 units/s up.
+- **Fire timing**: every TF2 gun `set` (the next shot from the firing
+  tick, the interval rounded up to whole ticks).
+- **Movement** (movement.md, `source_movement` config, generic): the
+  backpedal clamp on the ground after acceleration (the input untouched,
+  so the Scout's air jump is 400 every way; tests 25, 26, 28), the
+  ground speed clamp (27), the raised acceleration of wishes under 40
+  (32), the ground left above 250 (the 0.25 band), the bunny-hop cap on
+  P (a spun Heavy 132, 31), two air duck releases per air time reset by
+  the air jump (34, 35), the 0.3 s re-duck delay and no re-duck during
+  an unduck (36), no duck in water; the zoomed rifle's 80 now reaches the
+  movement (`MaxSpeed` in `select_class`; it moved at 300 before).
+- **Scripts' mapping** (weapon_scripts.md, `script_numbers`): `Damage` an
+  integer (cut toward zero); the flame's `Damage` ignored (13 a flame);
+  `TimeReload` the Grenade Launcher's insert only; `Range` the bullets'
+  trace; `PunchAngle` the view kick (`tf2:gun` `punch`, `weapons::recoil`:
+  P - 1 to P + 1 whole degrees up after each shot, on Source's punch
+  spring, `source_movement::punch_spring`; the shots follow it).
+- **Grenades and stickies** (weapons_more.md 4-6): the grenade's fuse
+  2.1 s (2.0 at its tenth 0.2 s check) at 60 % to others; stickies arm
+  at 0.8 s (the air radius 0.8 to 2.8 s); the sticky's and the needle's
+  short-range-reduced modifier M_s (121.8 % at 0, `damage::COMPRESSED`);
+  the Demoman's own blast the base 100 / 120 x f to 146 x0.75 grounded
+  or airborne, pushed at scale 9.
+- Not yet: the flame's points, heat and afterburn, the scope's timing,
+  the syringe's speed and spread (next landing); the grenades' launch
+  jitter and spin, the 0.25 s teammate pass, player bounces, the ninth
+  sticky's fuse check, attack2 detonating with any Demoman weapon, the
+  deny sound; crits stay off.
+
 ### M4 and on
 
 More maps in the pool (koth_, cp_, ctf_ with the map pool's fitness
@@ -595,6 +678,22 @@ server probe for parity checks, TF2's own app.
   ground decals draw as a coarse dither pattern; check how TF2's VMTs'
   `$alphatest` and `$translucent` are handled. Badlands' track bed and
   some floor patches show dotted dark speckle, maybe the same cause.
+- Map pool by players (M4a): each pool map enters a draw only at the
+  counts its measured wander time allows (map_fit's rule, 10 s; measured
+  by `map_fitness` as the other games' maps): koth_harvest_final from 4
+  players; ctf_2fort, ctf_turbine, ctf_doublecross and the KOTH maps
+  (viaduct, nucleus, lakeside_final, king, highpass, sharkbay, suijin)
+  from 8; the 5CP maps (cp_badlands, cp_granary, cp_process_final) from
+  12. None is drawn for a lobby of fewer than 8 but koth_harvest_final.
+- Candidates for arena slices (docs/plans/active/arena-slices.md) rather
+  than whole-map play at small counts: the 5CP maps (cp_badlands,
+  cp_granary, cp_process_final: the middle point and its two second
+  points), cp_well (its whole map splits in two on our mesh; a slice of
+  one half and the middle would play), ctf_2fort (the bridge and the two
+  courtyard fronts), ctf_doublecross, and the attack/defend maps' first
+  stages (cp_dustbowl, cp_gorge, cp_steel) once a slice can stand in for
+  their setup gates; the left-out large ones (cp_snowplow, cp_sulfur,
+  koth_megaton, ctf_gorge) only as slices.
 
 ## Log
 
@@ -660,6 +759,18 @@ server probe for parity checks, TF2's own app.
   damage x0.75 always; the flame every 0.02 s; Medic regen 6 to 12/s.
   The SDK holds no class or weapon scripts: per-class health and speed
   and per-gun numbers stay measured or from the scripts.
+- 2026-11-15: SDK parity, first landing (tf2-parity): the Minigun's
+  stop at once and rev-up curve, the blasts' feet distance, owner radius
+  and capped push (the Heavy's half, bullets pushing), `set` fire timing,
+  TF2's movement corrections (backpedal, ground clamp, re-duck delay,
+  air ducks by release, the 250 ground leave, the slow-wish boost), the
+  scripts' Range / PunchAngle / TimeReload / Damage rules with a view
+  kick, the grenade fuse and sticky arming, the Demoman's self-damage.
+  Tests whose numbers changed: the Minigun's first shot (50 -> 57 ticks),
+  its wind-down (gone), the grenade's fuse (2.3 -> 2.1 s), the sticky's
+  arming (0.7 -> 0.8 s), the self-damage worked case (76.75 -> 74.01 by
+  the feet), the mapped Scattergun script (Range and PunchAngle mapped,
+  TimeReload not).
 - 2026-11-16: the bodies per class on the asset service (the user's design):
   `players/<class>` (a class's player model, animations, materials and
   first-person arms; 4.6 to 7.9 MB stored beyond `base`) and `players`

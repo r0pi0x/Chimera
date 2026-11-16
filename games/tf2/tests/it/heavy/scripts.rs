@@ -76,8 +76,11 @@ fn the_probe_names_the_cipher_of_the_rocket_launchers_script() {
 /// the documents they make load as weapon data, and the mapped numbers
 /// agree with the committed data's (the specs' public numbers) except
 /// where the spec names a difference: the SMG's, Minigun's and Syringe
-/// Gun's interval (not tick-rounded), the Rocket Launcher's insert, the
-/// flame's damage (open questions 3, 4, 6). No number is printed.
+/// Gun's interval (not tick-rounded; equal under `set` timing), the view
+/// kick (`PunchAngle`, non-zero on the Scattergun, the Shotgun and the
+/// three launchers; the data's 0 is the wiki's "no recoil"). The
+/// bullets' `Range` isn't compared (the data's is the wiki's reach). No
+/// number is printed.
 #[test]
 fn every_guns_numbers_come_from_its_script_and_agree_with_the_data() {
     use tf2::game::weapons::{self as w, script_numbers::GunNumbers};
@@ -90,7 +93,11 @@ fn every_guns_numbers_come_from_its_script_and_agree_with_the_data() {
         format!("{} cycle", w::SMG),
         format!("{} cycle", w::MINIGUN),
         format!("{} cycle", w::SYRINGE_GUN),
-        format!("{} clip/insert", w::ROCKET_LAUNCHER),
+        format!("{} punch", w::SCATTERGUN),
+        format!("{} punch", w::SHOTGUN),
+        format!("{} punch", w::ROCKET_LAUNCHER),
+        format!("{} punch", w::GRENADE_LAUNCHER),
+        format!("{} punch", w::STICKY_LAUNCHER),
     ];
     let new: Vec<&String> = differ.iter().filter(|d| !known.contains(d)).collect();
     assert!(new.is_empty(), "the scripts differ from the data beyond the spec's known cases: {new:?} (all: {differ:?})");

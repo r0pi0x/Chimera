@@ -6,8 +6,8 @@
 //! server's, in `FlyerSet::Touch`) with the shared explosion
 //! (`blast::BlastWorld::detonate`: 90 x the splash to 50 % at 146 units
 //! x the distance modifier with the gun's ramp 0.5, the touched player
-//! full splash, the owner's own x0.6 airborne, the push 6 / 10 / 5 per
-//! point).
+//! full splash, the owner's own 90 x the splash to 121 units x0.6
+//! airborne, the push 6 / 10 / 5 per point capped at 1000 units/s).
 //!
 //! Known shortcuts: the blast's (`blast`).
 
@@ -20,7 +20,7 @@ use chimera_sim::weapon::{
     projectile::{Flyer, FlyerGone, FlyerHit},
 };
 
-pub use super::blast::{BlastParams as RocketParams, LIFT, PUSH_PER_POINT, STANDING, push, splash};
+pub use super::blast::{BlastParams as RocketParams, LIFT, STANDING, push, splash};
 use super::{blast::{Blast, BlastWorld}, damage::U};
 
 /// The weapon part (the rocket's rules are read from `RocketRules`, as
@@ -45,11 +45,7 @@ impl RocketRules {
         for w in &set.weapons {
             let Some(p) = w.hooks.get(hook) else { continue };
             let Ok(p) = p.clone().try_into::<RocketParams>() else { continue };
-            let ramp = w
-                .hooks
-                .get(super::GUN_HOOK)
-                .and_then(|g| chimera_sim::weapon::harm::num(g, "ramp"))
-                .unwrap_or(1.0);
+            let ramp = super::damage::ramp_of(w.hooks.get(super::GUN_HOOK));
             out.push((w.id.clone(), Arc::new(p), ramp));
         }
         Self(out)
@@ -75,7 +71,7 @@ pub fn explode(
         }
         // Just off the surface it touched.
         let centre = hit.point + hit.normal * U;
-        let blast = Blast { params: p, radius: p.radius, ramp: p.by_distance.then_some(ramp) };
+        let blast = Blast { params: p, radius: p.radius, ramp: p.by_distance.then_some(ramp), scale: 1.0 };
         world.detonate(&blast, centre, hit.owner, hit.weapon, hit.other);
         gone.write(FlyerGone {
             flyer: hit.flyer,
