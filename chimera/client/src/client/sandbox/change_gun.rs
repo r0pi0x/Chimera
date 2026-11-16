@@ -17,7 +17,9 @@
 //!   fire mode, or its download state (`tile_foot`). A press selects, a
 //!   second press switches (the kit's double-click rule); a header folds.
 //!   Over the grid: TAGS (the global tag popover, eight groups as tick
-//!   tags, and More filters greyed: Later), the ticked tags with their
+//!   tags, and More filters greyed: Later; while it is open typing goes
+//!   to its own "Find a tag", which keeps the tags holding the words,
+//!   Enter ticks the first, Esc clears it, then closes the popover), the ticked tags with their
 //!   crosses, and the count.
 //! - **Detail** (right, 25 cq): the game, the name with the kit's icon,
 //!   the 3D model's area (here: a stub picture of the gun, drag to turn;
@@ -54,11 +56,13 @@
 //! shows a ghost of the gun in the slot (`model::drop_hint`); the keys
 //! below.
 //!
+//! A tile's name is cut to the tile with the kit's ellipsis
+//! (`chimera_ui::Ellipsize`); the detail pane has it whole.
+//!
 //! Known shortcuts: a slot's tiles are spawned again when it shows
 //! another row (the slots themselves stay; the kit's binding in place is
 //! for text); the model area shows the kit's icon large, not a render;
-//! the tag popover's own "Find a tag" field doesn't type yet; the
-//! drag shows the slot under the pointer but no ghost tile.
+//! the drag shows the slot under the pointer but no ghost tile.
 
 use bevy::{
     input::{
@@ -224,12 +228,40 @@ fn keys(
     if k(KeyCode::Escape) {
         typed.clear();
         ui.took_esc = true;
-        if ui.view.tags_open {
+        if ui.view.tags_open && !ui.view.tag_search.is_empty() {
+            ui.view.tag_search.clear();
+        } else if ui.view.tags_open {
             ui.view.tags_open = false;
         } else if !ui.view.search.is_empty() {
             ui.view.search.clear();
         } else {
             out.write(GunAction::Close);
+        }
+        return;
+    }
+    // The tag popover open: typing finds a tag ("Find a tag"), Enter
+    // ticks the first one found.
+    if ui.view.tags_open {
+        let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+        for e in typed.read() {
+            if e.state != ButtonState::Pressed || ctrl || alt || matches!(e.key_code, KeyCode::Backslash | KeyCode::IntlBackslash) {
+                continue;
+            }
+            match &e.logical_key {
+                Key::Backspace => {
+                    ui.view.tag_search.pop();
+                }
+                Key::Space if !ui.view.tag_search.is_empty() => ui.view.tag_search.push(' '),
+                Key::Character(c) if ui.view.tag_search.len() < 32 => ui.view.tag_search.push_str(c),
+                _ => {}
+            }
+        }
+        if (k(KeyCode::Enter) || k(KeyCode::NumpadEnter))
+            && !ui.view.tag_search.is_empty()
+            && let Some((g, t)) = ui.view.tags_found().first().map(|(g, t)| (*g, t[0]))
+        {
+            ui.view.tick_tag((g, t));
+            ui.view.tag_search.clear();
         }
         return;
     }
@@ -415,6 +447,7 @@ fn act(world: &mut World) {
             GunAction::TagsButton => {
                 let mut ui = world.resource_mut::<SandboxUi>();
                 ui.view.tags_open = !ui.view.tags_open;
+                ui.view.tag_search.clear();
             }
             GunAction::Download(id) => {
                 let req = world.resource::<SandboxCatalogue>().get(&id).and_then(|g| {
@@ -753,17 +786,33 @@ fn tag_popover(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, s: &Sandb
         ))
         .id();
     let find = ui.boxed(c, p, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), h: Some(1.7), pad: Some([0.0, 0.6, 0.0, 0.6].into()), ..UiStyle::row() }.bg_a(Tone::Fg, 0.05));
-    kit_icon(c, look, find, "search", 0.7, Tone::Fg3, 1.0);
-    ui.sentence(c, find, 0.7, Tone::Fg3, "Find a tag");
+    c.entity(find).insert(UiParityId::new("gun.popover.find"));
+    let typed = &s.view.tag_search;
+    kit_icon(c, look, find, "search", 0.7, if typed.is_empty() { Tone::Fg3 } else { Tone::Fg }, 1.0);
+    if typed.is_empty() {
+        ui.sentence(c, find, 0.7, Tone::Fg3, "Find a tag");
+    } else {
+        ui.text_plain(c, find, Role::Text, 0.74, Tone::Fg, typed);
+        c.spawn((Node { width: Val::Px(look.hair().max(1.5)), height: look.val(0.9), ..default() }, BackgroundColor(look.tone(Tone::Fg)), ChildOf(find)));
+    }
     ui.boxed(c, find, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-    ui.text(c, find, Role::Mono, 0.42, Tone::Fg3, "Every game's guns carry these");
-    for g in TagGroup::ALL {
+    ui.text(c, find, Role::Mono, 0.42, Tone::Fg3, if typed.is_empty() { "Type to find \u{00b7} every game's guns carry these" } else { "Enter ticks the first \u{00b7} Esc clears" });
+    c.spawn((
+        Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, height: Val::Px(look.hair()), ..default() },
+        BackgroundColor(look.tone(if typed.is_empty() { Tone::Fg4 } else { Tone::Acc })),
+        ChildOf(find),
+    ));
+    let found = s.view.tags_found();
+    if found.is_empty() {
+        ui.sentence(c, p, 0.66, Tone::Fg3, "No tag holds that.");
+    }
+    for (g, tags) in found {
         let row = ui.boxed(c, p, UiStyle { gap: Some(0.6), align: Some(AlignItems::FlexStart), ..UiStyle::row() });
         let l = ui.boxed(c, row, UiStyle { w: Some(5.4), pad: Some([0.25, 0.0, 0.0, 0.0].into()), shrink: Some(0.0), ..UiStyle::row() });
         ui.text(c, l, Role::Mono, 0.42, Tone::Fg3, g.label());
         let chips = c.spawn((UiStyle { gap: Some(0.25), grow: Some(1.0), ..UiStyle::row() }, Node { flex_wrap: FlexWrap::Wrap, row_gap: ui.units.val(0.25), ..default() }, ChildOf(row))).id();
-        for t in g.tags() {
-            let on = s.view.tags.contains(&(g, *t));
+        for t in tags {
+            let on = s.view.tags.contains(&(g, t));
             let e = tick_tag(c, ui, chips, t, on);
             c.entity(e).insert((GunAction::Tag(g, t), clickable()));
         }
@@ -892,7 +941,9 @@ fn bind(
             }
             VLine::Row { section, first, count } => {
                 for col in 0..COLS {
-                    let cell = c.spawn((Node { flex_grow: 1.0, flex_basis: Val::Px(0.0), height: Val::Percent(100.0), ..default() }, ChildOf(slot))).id();
+                    // Never wider than its share (a long name is cut, not
+                    // pushing its neighbours: `min_width` 0 under flex).
+                    let cell = c.spawn((Node { flex_grow: 1.0, flex_basis: Val::Px(0.0), min_width: Val::Px(0.0), height: Val::Percent(100.0), ..default() }, ChildOf(slot))).id();
                     if col >= count {
                         continue;
                     }
@@ -905,7 +956,7 @@ fn bind(
                             UiStyle { gap: Some(0.45), align: Some(AlignItems::Center), justify: Some(JustifyContent::Center), grow: Some(1.0), pad: Some([0.0, 0.4, 0.0, 0.4].into()), ..UiStyle::column() }
                                 .bg_a(Tone::Fg, if on { 0.1 } else { 0.035 })
                                 .outline(if on { Tone::Acc } else { Tone::Fg5 }, 1.0),
-                            Node::default(),
+                            Node { min_width: Val::Px(0.0), overflow: Overflow::clip_x(), ..default() },
                             VHit { slot, col: Some(col) },
                             clickable(),
                             UiParityId::new(format!("gun.tile.{}", g.id)),
@@ -939,7 +990,10 @@ fn bind(
                     let tone = if here { Tone::Fg } else { Tone::Fg2 };
                     let ic = ui.boxed(&mut c, tile, UiStyle { margin: Some([0.5, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
                     gun_icon(&mut c, &look, ic, &g.id, g.icon_class, 1.55, tone, 1.0);
-                    ui.text(&mut c, tile, Role::DisplayRegular, 0.66, tone, &g.name);
+                    // The name cut to the tile with the kit's ellipsis
+                    // (`chimera_ui::Ellipsize`): long ones never overlap.
+                    let name = ui.text(&mut c, tile, Role::DisplayRegular, 0.66, tone, &g.name);
+                    c.entity(name).insert(chimera_ui::Ellipsize::in_parent(g.name.to_uppercase()));
                     tile_foot(&mut c, &ui, &look, tile, g, &unit, on);
                 }
             }
@@ -1009,8 +1063,13 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
     // Stats.
     let s = &g.stats;
     let grid = ui.boxed(c, parent, UiStyle { gap: Some(0.05), margin: Some([0.2, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.bg(Tone::Fg5));
+    // An explosive's base damage is its blast's centre: the radius under it.
+    let base = match s.blast_radius {
+        Some(r) => format!("Base \u{00b7} {r:.1} m blast"),
+        None => "Base".to_string(),
+    };
     for (label, value, unit) in [
-        ("Damage a hit", s.damage.map(|d| format!("{d:.1}")), "Base"),
+        ("Damage a hit", s.damage.map(|d| format!("{d:.1}")), base.as_str()),
         ("Fire rate", s.fire_rate.map(|r| format!("{r:.0}")), "A minute"),
         ("Magazine", s.magazine.filter(|m| *m > 0).map(|m| m.to_string()), ""),
         ("Range feel", s.range_feel.map(|r| r[..1].to_uppercase() + &r[1..]), ""),

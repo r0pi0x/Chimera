@@ -12,13 +12,17 @@
 //!   class, `hitscan`, `trigger`, `magazine`, `melee`, `damage` and the
 //!   hooks: a `*:projectile`, a `*:device`, a `*:zoom`, Halo's heat, TF2's
 //!   `arms`); `HAND_TAGS` lists the few that need hand data. TF2's
+//!   A gun with no `[damage]` (its round the hook's: Team Fortress 2's
+//!   rocket, grenades, flame) shows its hook's base `damage` and, for an
+//!   explosive, its `radius` (`hook_damage`). TF2's
 //!   classes that carry a gun are its loadouts' (the tf2 game's
 //!   `classes.toml`, which this layer can't read): only `arms` comes
 //!   through, so a gun several classes carry needs that list handed over.
 //! - **The view's state** (`GunView`): the games ticked in the left column
 //!   (none: all), each game's facets ticked under it, the global tags
 //!   ticked in the popover, the search words, the cursor's gun (`selected`)
-//!   and whether the tag popover is open. `shown` is what the tile grid
+//!   and whether the tag popover is open, with its own search
+//!   (`tag_search`, `tags_found`). `shown` is what the tile grid
 //!   lists, by class section in the classes' order, each section's guns in
 //!   the ladder's order: a gun shows when its game is ticked (or none
 //!   is), it has every facet ticked for its game, every global tag ticked
@@ -125,6 +129,27 @@ pub struct GunStats {
     pub range_feel: Option<&'static str>,
     pub head_mult: Option<f32>,
     pub price: Option<u32>,
+    /// An explosive's blast radius, metres (its hook's `radius`).
+    pub blast_radius: Option<f32>,
+}
+
+/// Metres in a Source unit (an inch): the hooks' `radius` is in them.
+pub const SOURCE_UNIT_M: f32 = 0.0254;
+
+fn num(v: &toml::Value) -> Option<f32> {
+    v.as_float().map(|f| f as f32).or_else(|| v.as_integer().map(|i| i as f32))
+}
+
+/// The damage a hook says (module doc): a gun whose round is the hook's
+/// own (Team Fortress 2's rocket, grenade, sticky, flame, needle: no
+/// `[damage]` in its data) carries its base `damage` there, and an
+/// explosive its `radius` (Source units) too. The first hook, in the
+/// data's order, that says `damage`.
+pub fn hook_damage(d: &WeaponData) -> Option<(f32, Option<f32>)> {
+    d.hooks.values().filter_map(|v| v.as_table()).find_map(|h| {
+        let dmg = h.get("damage").and_then(num).filter(|v| *v > 0.0)?;
+        Some((dmg, h.get("radius").and_then(num).filter(|r| *r > 0.0).map(|r| r * SOURCE_UNIT_M)))
+    })
 }
 
 /// One gun of the catalogue (module doc).
@@ -161,13 +186,19 @@ pub fn section_name(class: Option<GunClass>) -> &'static str {
         Some(GunClass::Marksman | GunClass::Sniper) => "Sniper rifles",
         Some(GunClass::Launcher | GunClass::Flamethrower) => "Launchers and heavy",
         Some(GunClass::Grenade) => "Grenades",
-        None => "Melee and other",
+        None => "Other",
     }
 }
 
+/// A gun's section: its class's, or Melee for a melee weapon (no class,
+/// a swing: TF2's bat, a knife).
+pub fn section_of(g: &SandboxGun) -> &'static str {
+    if g.class.is_none() && g.tags.contains(&(TagGroup::Type, "melee")) { "Melee" } else { section_name(g.class) }
+}
+
 /// The sections' order.
-pub const SECTIONS: [&str; 8] =
-    ["Pistols", "SMGs", "Rifles and MGs", "Shotguns", "Sniper rifles", "Launchers and heavy", "Grenades", "Melee and other"];
+pub const SECTIONS: [&str; 9] =
+    ["Pistols", "SMGs", "Rifles and MGs", "Shotguns", "Sniper rifles", "Launchers and heavy", "Grenades", "Melee", "Other"];
 
 fn type_tag(class: Option<GunClass>) -> Option<&'static str> {
     Some(match class? {
@@ -263,8 +294,12 @@ pub fn derive_tags(id: &str, d: Option<&WeaponData>, class: Option<GunClass>) ->
             }
         } else if let Some(m) = &d.melee {
             stats.damage = Some(m.primary.damage);
+        } else if let Some((dmg, radius)) = hook_damage(d) {
+            stats.damage = Some(dmg);
+            stats.blast_radius = radius;
         }
         let explosive = matches!(class, Some(GunClass::Launcher | GunClass::Grenade))
+            || stats.blast_radius.is_some()
             || d.hooks.values().filter_map(|v| v.as_table()).any(|h| any_key(h, &|k| k.contains("explo") || k == "blast_radius" || k == "splash_radius"));
         if explosive {
             t.insert((TagGroup::Behaviour, "explosive"));
@@ -335,6 +370,9 @@ pub struct GunView {
     pub selected: Option<String>,
     /// The tag popover is open.
     pub tags_open: bool,
+    /// The popover's own search ("Find a tag": typing goes there while
+    /// it is open).
+    pub tag_search: String,
     /// The large model view (I).
     pub detail: bool,
     /// The body to play a gun as (`tf2:soldier`), chosen in the detail
@@ -374,7 +412,7 @@ impl GunView {
             g.id,
             g.game_name,
             g.game_short,
-            section_name(g.class),
+            section_of(g),
             g.tags.iter().map(|t| t.1).collect::<Vec<_>>().join(" "),
             g.game_tags.join(" ")
         )
@@ -392,7 +430,7 @@ impl GunView {
         let mut out: Vec<(&'static str, Vec<usize>)> = SECTIONS.iter().map(|s| (*s, Vec::new())).collect();
         for (i, g) in guns.iter().enumerate() {
             if self.fits(g, files(g)) {
-                let s = section_name(g.class);
+                let s = section_of(g);
                 if let Some(sec) = out.iter_mut().find(|(n, _)| *n == s) {
                     sec.1.push(i);
                 }
@@ -423,6 +461,22 @@ impl GunView {
         if f.is_empty() {
             self.facets.remove(game);
         }
+    }
+
+    /// The popover's tags by group that hold every word of
+    /// `tag_search` (in a tag or its group's label), groups with none
+    /// left out.
+    pub fn tags_found(&self) -> Vec<(TagGroup, Vec<&'static str>)> {
+        let words: Vec<String> = self.tag_search.split_whitespace().map(str::to_lowercase).collect();
+        TagGroup::ALL
+            .iter()
+            .filter_map(|g| {
+                let label = g.label().to_lowercase();
+                let tags: Vec<&'static str> =
+                    g.tags().iter().copied().filter(|t| words.iter().all(|w| t.contains(w.as_str()) || label.contains(w.as_str()))).collect();
+                (!tags.is_empty()).then_some((*g, tags))
+            })
+            .collect()
     }
 
     pub fn tick_tag(&mut self, tag: Tag) {

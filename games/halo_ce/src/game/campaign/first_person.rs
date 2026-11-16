@@ -32,16 +32,19 @@
 //! camera, so the arm keeps its aim in the view), and over it the body's
 //! own fire (`fire-1`, an overlay: composed on the idle) on a shot and its
 //! melee (`melee`, a base animation: in place of the idle) on a melee,
-//! each played once from its first frame (a new one restarts it). The
-//! Hunter's melee is a bash of its shield arm, so its view keeps that
-//! forearm too (seen as it swings in).
+//! each played once from its first frame (a new one restarts it,
+//! `anims::apply_action`). The Hunter's view keeps its cannon from the
+//! elbow down (tuned from pictures; data/campaign.toml keeps two
+//! alternates, one with the shield forearm, whose bash is its melee).
 //!
-//! Known shortcuts: the triangles that cross from a kept bone to a left
+//! Known shortcuts: its fire-1 overlay swings the cannon up and to the
+//! right, out of the view's lower right for some frames; the triangles that cross from a kept bone to a left
 //! one (the shoulder's) are cut at the weight rule, so the arm's edge is
 //! open; the view keeps the body's own textures and their tint (the
 //! player's colour) as the third-person body has them for a player given
-//! none (`skins`' last); the muzzle effects are placed on no marker of
-//! this model (it has no attachments).
+//! none (`skins`' last); the muzzle is a fixed point in the eye's space
+//! (`BodyView::muzzle`, data), not a marker of this model (it has no
+//! attachments): it does not follow the arm's fire or melee.
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -72,6 +75,13 @@ pub struct BodyView {
     /// roll, about the eye.
     #[serde(default)]
     pub turn: [f32; 3],
+    /// Where its gun's muzzle shows, world units from the eye in Halo's
+    /// axes (forward, left, up): its firing effects and muzzle light are
+    /// placed there (the gun's first-person marker, `fx::load::own_weapons`)
+    /// and its shots are drawn leaving from there (the trace stays the
+    /// eye's). None: the eye.
+    #[serde(default)]
+    pub muzzle: Option<[f32; 3]>,
 }
 
 /// The bones `keep` names and every bone below them.
@@ -224,19 +234,8 @@ pub fn pose(set: &crate::map::anim::AnimSet, idle: Option<usize>, frame: usize, 
         Some(s) => base_pose(set, set.sequences[s].anims[0], frame),
         None => set.defaults.clone(),
     };
-    if let Some((s, f)) = action
-        && let Some(anim) = set.sequences.get(s).and_then(|q| q.anims.first()).and_then(|a| set.animations.get(*a))
-    {
-        for t in &anim.tracks {
-            let Some(bone) = pose.get_mut(t.bone) else { continue };
-            let at = |n: usize| f.min(n.saturating_sub(1));
-            if let Some(q) = t.rotation.as_deref().and_then(|r| r.get(at(r.len())).copied()) {
-                bone.0 = if anim.delta { (bone.0 * q).normalize() } else { q };
-            }
-            if let Some(p) = t.position.as_deref().and_then(|r| r.get(at(r.len())).copied()) {
-                bone.1 = if anim.delta { bone.1 + p } else { p };
-            }
-        }
+    if let Some(a) = action {
+        anims::apply_action(set, a, &mut pose);
     }
     if let Some(a) = aim {
         anims::apply_screen(set, a, 0.0, 0.0, &mut pose);

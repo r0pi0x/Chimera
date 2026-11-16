@@ -299,7 +299,7 @@ fn register(app: &mut App) {
         .get_resource_or_init::<crate::net::assets::AssetHooks>()
         .0
         .push(|w| crate::net::assets::AssetNames {
-            weapons: match_weapons(w),
+            weapons: offered_weapons(w),
             ..Default::default()
         });
     use crate::console::ConsoleAppExt;
@@ -529,7 +529,7 @@ pub fn playable_on(world: &mut World, def: &MinigameDef, map: Option<&str>) -> P
         .or_else(|| def.maps.first().map(|m| crate::net::normalize_map(m)))
         .unwrap_or_else(|| GREYBOX.into());
     let mut needs = MatchManifest::default();
-    if map != GREYBOX
+    if !crate::net::is_code_map(&map)
         && let Some((game, _)) = map.split_once(':')
     {
         needs.need(game, true);
@@ -847,7 +847,7 @@ fn follow_map_change(world: &mut World) {
 pub fn needs(def: &MinigameDef, games: Option<&Games>) -> Vec<GameNeed> {
     let mut m = MatchManifest::default();
     let first = def.maps.first().map(|m| crate::net::normalize_map(m)).unwrap_or_default();
-    if first != GREYBOX
+    if !crate::net::is_code_map(&first)
         && let Some((game, _)) = first.split_once(':')
     {
         m.need(game, true);
@@ -910,6 +910,28 @@ pub fn match_weapons(world: &World) -> Vec<String> {
     out.retain(|w| w.contains(':'));
     let mut seen = std::collections::BTreeSet::new();
     out.retain(|w| seen.insert(w.clone()));
+    out
+}
+
+/// The weapons a match's offer names (`match_weapons`), but in a sandbox
+/// (`rung_command::HoldRungs` names the match's minigame): its ladder is
+/// every gun of every game, so only the first rung's gun (where a player
+/// starts) and the kit's come with the join; the others are fetched when
+/// picked (`net::units`).
+pub fn offered_weapons(world: &World) -> Vec<String> {
+    let mut out = match_weapons(world);
+    let sandbox = match (world.get_resource::<chimera_sim::minigame::rung_command::HoldRungs>(), match_def(world)) {
+        (Some(h), Some(d)) => d.id == h.0,
+        _ => false,
+    };
+    let Some(def) = match_def(world).filter(|_| sandbox) else { return out };
+    let mut rungs: Vec<String> = match_ladder(world).map(|l| l.rungs.iter().map(|r| r.to_string()).collect()).unwrap_or_default();
+    rungs.extend(
+        def.rules.params.get("ladder").and_then(|l| l.as_array()).into_iter().flatten().filter_map(|w| w.as_str().map(String::from)),
+    );
+    let first = rungs.first().cloned();
+    let kit: Vec<String> = def.spawn.kit.all().into_iter().map(String::from).collect();
+    out.retain(|w| Some(w) == first.as_ref() || kit.contains(w) || !rungs.contains(w));
     out
 }
 

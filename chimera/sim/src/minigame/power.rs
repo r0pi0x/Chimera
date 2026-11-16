@@ -50,8 +50,8 @@
 //!   add_power_reader`: CS:S's accuracy, Combat Arms' damage bands,
 //!   spread cone, fire rate, projectile and flame), which know what the
 //!   game's numbers mean; its damage then scaled by its game's in the
-//!   app (`PowerReaders::game_damage`: the party apps' per-game table,
-//!   `weapon::GameDamage`). A gun without damage data scores 0. A weapon
+//!   app (`PowerReaders::game_damage`: the outgoing column of the party
+//!   apps' cross-game table, `weapon::balance::Balance::power_table`). A gun without damage data scores 0. A weapon
 //!   that deals its damage through what it places (Combat Arms' auto
 //!   turret) scores by that device's gun, as its game's reader of the
 //!   device hook gives it: the placing and setup as latency, and the
@@ -337,8 +337,9 @@ pub struct PowerReaders {
     pub harm: crate::weapon::harm::HarmReaders,
     pub exclusions: super::auto::DrawExclusions,
     /// The app's scale on each game's weapons' damage (`weapon::
-    /// GameDamage`, as its hits take it): a gun's damage is counted
-    /// scaled, so the ladder orders guns by what they do in the app.
+    /// GameDamage`: the cross-game table's outgoing column, as its hits
+    /// on another game's body take it): a gun's damage is counted scaled,
+    /// so the ladder orders guns by what they do in the app.
     pub game_damage: crate::weapon::GameDamage,
     /// The powers worked out so far (`Powers::of`), shared by the copies.
     memo: std::sync::Arc<std::sync::Mutex<PowerMemo>>,

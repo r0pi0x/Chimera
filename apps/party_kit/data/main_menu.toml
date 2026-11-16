@@ -8,8 +8,8 @@
 # leaves half a row before it; `tag` a chip after the label (the Signal
 # menu's NEW); `play = true` puts the menu on its loading screen as its
 # command runs (one start a press; the map's load enters the game). Sandbox runs `sandbox <map>`, Ultimate Gun Game's command (as
-# `+sandbox` starts it: alone, cheats on), on de_dust2 for now: the
-# greybox draws no bodies yet (change the map here).
+# `+sandbox` starts it: alone, cheats on), on the range (`chimera:range`,
+# code-built, its bodies drawn; change the map here).
 #
 # [[escape]]: the Escape menu's entries, in order. `action` is one of
 # resume, options, host, vote, disconnect, feedback (the report dialog),
@@ -50,7 +50,7 @@ page = "join"
 
 [[entry]]
 label = "Sandbox"
-command = "sandbox cs_source:de_dust2"
+command = "sandbox range"
 tag = "New"
 play = true
 

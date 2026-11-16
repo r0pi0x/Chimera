@@ -256,10 +256,12 @@ run; a session's combinations made tens of thousands (docs/performance.md,
 aren't freed either, and each costs every tick: a part a character gains
 once and keeps, or whose absence means its default, is on it from the spawn
 (`CharacterPartsExt::on_every_character`, a value meaning "none" in place of
-removing it); parts that go together go on and off in one move (one bundle,
+removing it, as `BodyName::none`); parts that go together go on and off in one move (one bundle,
 `insert_if_new` to keep what's there): each step alone is an archetype for
 every combination of the rest (two movements on one marker switch by a
-new value in place, `slots::MovementImpl::marker`). `chimera_census made`
+new value in place, `slots::MovementImpl::marker`; a game's parts that
+follow its movement go in the movement's `insert`, `remove` and `leave`,
+not in a system watching the slot). `chimera_census made`
 says which moves made them; `ultimate_gun_game`'s lap test caps what a lap
 adds. A per-tick system walks a characters' query once: a loop, not
 `collect`, whose `size_hint` walks every matched archetype first.

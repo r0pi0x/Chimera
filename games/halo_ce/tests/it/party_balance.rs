@@ -1,5 +1,5 @@
-//! Halo's balance across games (`game::cross_game`, data/
-//! party_balance.toml) leaves Halo against Halo alone: every row of
+//! The cross-game table (`chimera_sim::weapon::balance`, Halo's
+//! mechanisms in `game::cross_game`) leaves Halo against Halo alone: every row of
 //! specs/halo_ce/health_shields.md "Shots to kill" gives the same break
 //! and kill, hit for hit the same shield, body and engine health, with
 //! the switch on and off. (The cross-game numbers themselves are in
@@ -8,13 +8,17 @@
 use bevy::prelude::*;
 use chimera_core::core::{BodyRegion, Health};
 use chimera_world::harness::Sim;
+use chimera_sim::weapon::balance::Balance;
 use halo_ce::game::{
-    cross_game::CrossGame,
+    cross_game::PowerHand,
     damage::HaloHit,
     vitality::{DamageEffects, EffectId, Vitality, ids},
 };
 
-use super::vitality::{sim, spartan_at, vit};
+use super::{
+    cross_game::party,
+    vitality::{sim, spartan_at, vit},
+};
 
 /// One hit of the table: a direct hit on a region (None: no material),
 /// an area hit, or a melee (scale, from behind).
@@ -30,7 +34,7 @@ type Seen = Vec<(f32, f32, f32)>;
 
 /// Hits of `effect` (`rnd`) until the body dies, with the balance `cfg`:
 /// (break, kill) and what each hit left.
-fn run(cfg: CrossGame, effect: EffectId, rnd: f32, how: Hit) -> ((u32, u32), Seen) {
+fn run(cfg: Balance, effect: EffectId, rnd: f32, how: Hit) -> ((u32, u32), Seen) {
     let mut sim = sim();
     sim.app.insert_resource(cfg);
     let e = spartan_at(&mut sim, chimera_world::greybox::SPAWNS[0]);
@@ -92,15 +96,15 @@ const TABLE: &[(EffectId, f32, Hit, u32, u32)] = &[
 #[test]
 fn halo_against_halo_is_the_spec_s_table_with_the_switch_on_and_off() {
     for &(effect, rnd, how, broke, kill) in TABLE {
-        let (on, on_seen) = run(CrossGame::load(), effect, rnd, how);
-        let (off, off_seen) = run(CrossGame::off(), effect, rnd, how);
+        let (on, on_seen) = run(party(true), effect, rnd, how);
+        let (off, off_seen) = run(party(false), effect, rnd, how);
         let want = |got: (u32, u32)| (if broke == 0 { 0 } else { got.0 }, got.1) == (broke, kill);
         assert!(want(on), "{effect:?} {rnd} {how:?}: on {on:?}");
         assert!(want(off), "{effect:?} {rnd} {how:?}: off {off:?}");
         assert_eq!(on_seen, off_seen, "{effect:?} {rnd} {how:?}: hit for hit");
     }
     // A frag at the centre leaves the body at 0.4, both ways.
-    for cfg in [CrossGame::load(), CrossGame::off()] {
+    for cfg in [party(true), party(false)] {
         let mut sim = sim();
         sim.app.insert_resource(cfg);
         let e = spartan_at(&mut sim, chimera_world::greybox::SPAWNS[0]);
@@ -110,7 +114,7 @@ fn halo_against_halo_is_the_spec_s_table_with_the_switch_on_and_off() {
     }
 }
 
-/// The ladder's power reader with the party balance's hand (`[power]`):
+/// The ladder's power reader with its hand (data/power_hand.toml):
 /// the plasma pistol tapped at 7 a second, overheating after its shots and
 /// pausing 1.15 s (to 0.25 heat at 0.65 a second); the needler's needles
 /// flying 12.2 m/s and detonating 0.75 s after they stick, their homing
@@ -127,7 +131,7 @@ fn the_power_reader_counts_a_hand() {
     let readers = w.get_resource::<PowerReaders>().cloned().unwrap_or_default();
     let curve = PowerCurve::shipped();
     let at = |id: &str| stats(catalog.get(id).unwrap(), &readers, &curve, 10.0);
-    let hand = CrossGame::load().power;
+    let hand = PowerHand::load();
     let pp = at(halo_ce::game::weapons::PLASMA_PISTOL);
     assert!((pp.interval - 1.0 / hand.hand_taps_per_second).abs() < 1e-6, "{pp:?}");
     // 0.16 a bolt, 0.65 / 7 lost between: the 14th overheats.

@@ -401,7 +401,7 @@ The user asked that assets form a dependency graph with a hierarchy, so that pac
 - **Packs** are named, versioned roots: a list of unit ids plus a namespace's trust and signature. Examples: "Ultimate Gun Game's official content", "TF2 base", a custom weapon pack. A pack never copies a unit; it refers to it. The same goes for a ladder, a map pool or a match offer: each is a set of roots, and the client and server fetch the graph's closure. `requires` comes now, `deferred` later, and `optional` never.
 - **Validation at ingest:** no cycles; every edge resolves within trusted namespaces; a custom unit may point into official units but never the reverse; the report prints each unit's own and closure sizes.
 - **On the wire:** the graph is written in the signed side file beside the manifest (3.8). Old clients keep reading the flat sets, which ingest still emits as the closure of each root. New clients resolve the graph themselves. TF2's `classes.toml` `needs`, Halo's characters and voices, and Combat Arms' parts become graph edges declared by the recipes.
-- **Fetching:** `request_set` from the sandbox becomes `request_unit`. `SetProgress` reports per unit and for the closure. The no-fetch-in-match guard allows only `deferred` edges in a match, within a bandwidth budget.
+- **Fetching:** `request_set` from the sandbox becomes `request_unit`. `SetProgress` reports per unit and for the closure. The no-fetch-in-match guard allows only `deferred` edges in a match, within a bandwidth budget. Built 2026-11-16 on today's sets (`chimera_net::net::units`: `request_unit`, `UnitProgress`, the guard; `deferred` is a kind prefix, `voice/`, until the graph's edges exist, and `requires` is the game's shared sets plus `UnitNeeds` hooks).
 
 ### 3.6 Converters
 

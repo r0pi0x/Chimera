@@ -183,8 +183,9 @@ fn css_class(sim: &Sim, rung: usize) -> u8 {
     ladder_of(sim).extras(rung).and_then(|x| x.value(css::CLASS)?.parse().ok()).expect("a CS:S rung draws a class")
 }
 
+/// `p`'s class (None: none, or 0, left on by a rung that had one).
 fn class_of(sim: &Sim, p: Entity) -> Option<u8> {
-    sim.app.world().get::<PlayerClass>(p).map(|c| c.0)
+    sim.app.world().get::<PlayerClass>(p).map(|c| c.0).filter(|c| *c != 0)
 }
 
 #[test]

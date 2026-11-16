@@ -2132,10 +2132,10 @@ fn dress(
             let look = dressed.remove(&e) && (number.is_some() || skin.is_some());
             match (ours, look) {
                 (true, true) => {
-                    commands.entity(e).remove::<(BodyName, BodyNumber, BodySkin)>();
+                    commands.entity(e).insert(BodyName::none()).remove::<(BodyNumber, BodySkin)>();
                 }
                 (true, false) => {
-                    commands.entity(e).remove::<BodyName>();
+                    commands.entity(e).insert(BodyName::none());
                 }
                 (false, true) => {
                     commands.entity(e).remove::<(BodyNumber, BodySkin)>();

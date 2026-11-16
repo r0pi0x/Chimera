@@ -226,6 +226,42 @@ pub struct MapLoader {
     pub load: fn(&str, &MapLoadOptions) -> Result<MapData, String>,
 }
 
+/// The kit of a map built in code (`code_maps::CODE_MAPS`: the greybox, the
+/// range), as a map of game `chimera`: `chimera:range` loads an empty
+/// map (no world, spawns or sun: the code-built map is spawned beside it,
+/// `greybox::respawn`) that `MapSources::dress` dresses like any other
+/// game's map, so the party's bodies, held and view models and HUD looks
+/// are on the code-built maps too. An app whose `MapSources` lists it gets
+/// that (the client's `load_code_map`, the dedicated server's
+/// `swap_map` and start load `chimera:<id>` after spawning the code map);
+/// without it a code-built map has no kit.
+pub static CODE_MAP_KIT: MapLoader = MapLoader {
+    game: CODE_MAP_GAME,
+    load: code_map_kit,
+};
+
+/// The game id of the code-built maps' kit (`CODE_MAP_KIT`).
+pub const CODE_MAP_GAME: &str = "chimera";
+
+fn code_map_kit(name: &str, _: &MapLoadOptions) -> Result<MapData, String> {
+    let id = Some(name)
+        .filter(|n| !n.is_empty())
+        .and_then(super::code_maps::code_map)
+        .ok_or_else(|| format!("{CODE_MAP_GAME}:{name}: no map built in code by that name"))?;
+    Ok(MapData {
+        name: format!("{CODE_MAP_GAME}:{id}"),
+        ..Default::default()
+    })
+}
+
+/// Whether `map` is a code-built map's kit (`CODE_MAP_KIT`'s): no world of
+/// its own, so no sun either.
+pub fn is_code_map_kit(map: &MapData) -> bool {
+    map.name
+        .strip_prefix("chimera:")
+        .is_some_and(|n| !n.is_empty() && super::code_maps::code_map(n).is_some())
+}
+
 /// What one game's gameplay brings to any map: its view models,
 /// character bodies and held models, effect looks (added to a map of
 /// another game after its own game's kit is replaced, `GameKit::stay`).

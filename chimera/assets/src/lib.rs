@@ -46,6 +46,8 @@
 //! the streams'); `pace` caps a background fetch's rate, with a pause;
 //! `pending` is what a foreground fill is fetching into a store now, which an
 //! on-demand miss in that store waits for rather than fetching twice.
+//! `units`: a game's set and what it needs, downloaded on demand in the
+//! background with its state and progress (the sandbox's guns).
 //!
 //! `feedback`: in-game feedback and bug reports: the bundle and its secret
 //! filter, the tester's outbox and sender, the receiver behind the
@@ -91,6 +93,7 @@ pub mod sign;
 pub mod store;
 pub mod ticket;
 pub mod tls;
+pub mod units;
 
 pub use cached::CachedFiles;
 pub use config::{AssetSettings, AssetsConfig};

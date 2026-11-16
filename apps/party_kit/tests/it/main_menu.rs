@@ -268,7 +268,7 @@ fn every_entry_and_row_of_the_data_works() {
     // Sandbox: a NEW tag, and the sandbox's own command.
     let sb = &data.entries[2];
     assert_eq!(sb.tag.as_deref(), Some("New"));
-    assert_eq!(sb.does, main_menu::EntryDoes::Command("sandbox cs_source:de_dust2".into()));
+    assert_eq!(sb.does, main_menu::EntryDoes::Command("sandbox range".into()));
     assert!(sb.play, "it starts play: the menu shuts as it runs");
     assert!(
         data.escape
@@ -1151,7 +1151,7 @@ fn the_sandbox_entry_starts_it_once_however_often_it_is_pressed() {
     }
     assert_eq!(sim.app.world().resource::<Starts>().0, 1, "one start");
     assert_eq!(menu(&sim).screen, Screen::Loading, "the loading screen, no second start");
-    assert_eq!(menu(&sim).loading.as_deref(), Some("cs_source:de_dust2"));
+    assert_eq!(menu(&sim).loading.as_deref(), Some("range"), "the range");
     // The map's load takes it into the game.
     front_end::entered_game(sim.app.world_mut());
     sim.ticks(2);

@@ -302,11 +302,12 @@ impl Args {
     }
 
     /// The game map to load at startup: `--map` unless it names the
-    /// greybox (`greybox`, `chimera:greybox` or the old `mashup:greybox`), which is there anyway.
+    /// greybox (`greybox`, `chimera:greybox` or the old `mashup:greybox`), which is there anyway,
+    /// or the range (`range`: spawned in the greybox's place, `chimera_world::greybox::CodeMap`).
     pub fn game_map(&self) -> Option<&str> {
         self.map
             .as_deref()
-            .filter(|m| !matches!(m.to_lowercase().as_str(), "greybox" | "chimera:greybox" | "mashup:greybox"))
+            .filter(|m| chimera_world::greybox::code_map(m).is_none())
     }
 
     /// `+chimera:asset_token <token>` is kept at once, before the app (and
@@ -652,7 +653,17 @@ struct ShellSetupPlugin {
 impl Plugin for ShellSetupPlugin {
     fn build(&self, app: &mut App) {
         if let Some(map) = &self.args.map {
-            app.insert_resource(crate::map::LoadedMapName(map.clone()));
+            // A code-built map by any of its names: its id, and the one
+            // the greybox's slot spawns.
+            match chimera_world::greybox::code_map(map) {
+                Some(id) => {
+                    app.insert_resource(chimera_world::greybox::CodeMap(id));
+                    app.insert_resource(crate::map::LoadedMapName(id.into()));
+                }
+                None => {
+                    app.insert_resource(crate::map::LoadedMapName(map.clone()));
+                }
+            }
         }
         if let Some(path) = &self.args.frame_log {
             frame_metrics::set_frame_log(path.clone());

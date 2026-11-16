@@ -130,7 +130,7 @@ fn worn(w: &World, p: Entity) -> (Option<String>, Option<String>, Option<f32>, O
     let table = w.resource::<Classes>();
     (
         w.get::<Tf2Class>(p).map(|c| c.class(table).name.clone()),
-        w.get::<BodyName>(p).map(|b| b.0.clone()),
+        BodyName::named(w.get::<BodyName>(p)).map(|b| b.0.clone()),
         w.get::<SourceTraits>(p).and_then(|t| t.max_speed),
         w.get::<Health>(p).map(|h| (h.max * 100.0).round()),
     )

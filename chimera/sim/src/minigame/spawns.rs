@@ -51,7 +51,9 @@
 //!   leaf of a cluster: not solid, not the void outside the world), and
 //!   outside water and every zone a game registers as hurting or
 //!   killing (`SpawnHazards`). Without a mesh, or spots, the map's spawn
-//!   points are the spots. `candidates` lists every spot without the
+//!   points are the spots; so they are, at once, on a map that asks for
+//!   it (`map::code_maps::SpawnOnPoints`: the range's firing line), facing
+//!   its way when it says one (`fixed_yaw`). `candidates` lists every spot without the
 //!   `MAX_SPOTS` cap (the sweep of the stock maps).
 //! - Picking: from a random place in the spots, the first that is at
 //!   least `min_distance` m from every living enemy (a character of
@@ -96,6 +98,7 @@ use crate::{
     },
     map::{
         MapFloors, SPAWN_LIFT,
+        code_maps::SpawnOnPoints,
         nav::{NavMesh, flags},
         nav_gen::{self, NavGenParams},
         play_area::{self, PlanPolygon},
@@ -243,6 +246,7 @@ pub fn pick(world: &mut World, e: Entity, min_distance: f32, facing: Facing) -> 
     let centres: Vec<Vec3> = enemies.iter().map(|(_, c)| *c).collect();
 
     ensure_spots(world, &points);
+    let fixed = fixed_yaw(world);
     let mut draws = world.remove_resource::<SpawnDraws>().unwrap_or_else(|| SpawnDraws::new(world));
     let characters: Vec<Entity> = world.iter_entities().filter(|r| r.contains::<Intent>()).map(|r| r.id()).collect();
     let mut state = SystemState::<SpatialQuery>::new(world);
@@ -290,7 +294,10 @@ pub fn pick(world: &mut World, e: Entity, min_distance: f32, facing: Facing) -> 
     let spot = chosen.or(far_enough).or(farthest.map(|(_, s)| s));
     let centroid = (!spots.spots.is_empty()).then(|| spots.spots.iter().sum::<Vec3>() / spots.spots.len() as f32);
     let at = spot.map(|s| {
-        let (yaw, pitch) = face(&q, &sight, s, &facing, centroid, None, &mut draws.rng);
+        let (yaw, pitch) = match fixed {
+            Some(yaw) => (yaw, 0.0),
+            None => face(&q, &sight, s, &facing, centroid, None, &mut draws.rng),
+        };
         Transform::from_translation(s + Vec3::Y * SPAWN_LIFT)
             .with_rotation(Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0))
     });
@@ -460,6 +467,10 @@ pub(super) fn ensure_spots(world: &mut World, points: &[Vec3]) {
     if world.get_resource::<SpawnSpots>().is_some_and(|s| s.ready) {
         return;
     }
+    if world.contains_resource::<SpawnOnPoints>() {
+        world.insert_resource(points_as_spots(points.to_vec()));
+        return;
+    }
     // A front end makes them a slice a tick (`prepare_spots`): the map's
     // spawn points until they are ready.
     if world.contains_resource::<nav_gen::SliceFloods>() {
@@ -482,6 +493,24 @@ pub(super) fn ensure_spots(world: &mut World, points: &[Vec3]) {
         spots.ready = true;
     }
     world.insert_resource(spots);
+}
+
+/// The yaw every spawn faces on a map that spawns at its points and says
+/// which way (`SpawnOnPoints::facing`: the range's down range); None:
+/// `face`'s rule.
+pub(super) fn fixed_yaw(world: &World) -> Option<f32> {
+    let dir = world.get_resource::<SpawnOnPoints>()?.facing?;
+    (dir.xz().length_squared() > 1e-6).then(|| (-dir.x).atan2(-dir.z))
+}
+
+/// The map's spawn points as the spots, kept (`SpawnOnPoints`).
+fn points_as_spots(points: Vec<Vec3>) -> SpawnSpots {
+    SpawnSpots {
+        spots: points,
+        from_nav: false,
+        ready: true,
+        tries: 0,
+    }
 }
 
 /// The spots on their way in a front end (`prepare_spots`, `settle_spots`):
@@ -520,6 +549,11 @@ impl SpotsJob {
             return None;
         }
         points.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)).then(a.z.total_cmp(&b.z)));
+        // A map that spawns at its points only: they are the spots, at once.
+        if world.contains_resource::<SpawnOnPoints>() {
+            world.insert_resource(points_as_spots(points));
+            return None;
+        }
         let mut hazards: Vec<MapBrush> = Vec::new();
         let sources: Vec<_> = world.get_resource::<SpawnHazards>().map(|h| h.0.clone()).unwrap_or_default();
         for source in sources {

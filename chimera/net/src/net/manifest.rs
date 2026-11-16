@@ -289,7 +289,7 @@ pub fn current(world: &mut World) -> MatchManifest {
         map: map.clone(),
         ..default()
     };
-    if map != super::GREYBOX
+    if !super::is_code_map(&map)
         && let Some((game, _)) = map.split_once(':')
     {
         m.need(game, true);

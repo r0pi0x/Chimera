@@ -51,6 +51,7 @@ pub mod beams;
 pub mod breakables;
 pub mod buoyancy;
 pub mod cache;
+pub mod code_maps;
 pub mod color_correction;
 pub mod contact_filter;
 pub mod controllers;

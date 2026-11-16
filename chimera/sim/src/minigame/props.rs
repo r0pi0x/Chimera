@@ -13,6 +13,19 @@
 //! Placed as a target is: `distance_m` along the spawner's flat view on the
 //! floor found there (`targets::find_spot`: refused with no floor, too
 //! steep a floor or a spot inside a wall), turned to face the spawner.
+//! **On the range** (`chimera_world::range`'s `RangeLayout` in): bottles
+//! and cans stand on the range's own shelf (`RangeLayout::prop_spots`: a
+//! row takes as many neighbouring spots as it spans, bottles 3 of 6, cans
+//! 2; the next set the next free run) with no shelf of their own, and a
+//! board is the range's own board (`RangeLayout::board`: our face's
+//! collider just in front of its face, undrawn, the range's rings showing,
+//! the marks ours; no posts); they carry `OnRangeFurniture`, their
+//! `spec.distance_m` is how far down range that furniture stands (not the
+//! distance asked) and a board's `home` is its frame (`BOARD_CENTRE_Y`
+//! below the face's middle, not on the floor). When the furniture is
+//! taken (a second board, a third row), the prop gets its own shelf or
+//! board on the asked distance line at the spawner's side, as a target
+//! does there (`range_place`).
 //!
 //! **What the screens read**: `Prop` (its spec, home, the console's
 //! number, its pieces and how many stand) on the prop's entity, a board's
@@ -123,6 +136,8 @@ pub const BOARD_AIM_M: f32 = 1.0;
 pub const PROJECTILE_MISS_SECS: f64 = 4.0;
 /// The shelf's top (m).
 const SHELF_TOP: f32 = 1.0;
+/// Bottles and cans stand this far apart on a shelf (m).
+const PIECE_STEP: f32 = 0.25;
 /// The face's front, in front of the board's centre plane (m).
 const FACE_FRONT: f32 = 0.015;
 /// The face collider's front (m): the painted rings' front.
@@ -225,7 +240,23 @@ struct PropPiece {
     stand: Transform,
     half: Vec3,
     board: bool,
+    /// Where a knocked piece lies (the prop's frame): the floor's height
+    /// and how far behind the shelf's middle.
+    floor_y: f32,
+    behind: f32,
 }
+
+/// A prop on the range's own furniture (`range_place`): the shelf's spots
+/// it takes (`RangeLayout::prop_spots`' indices), or the board.
+#[derive(Component, Clone, Debug, PartialEq)]
+pub struct OnRangeFurniture {
+    pub spots: Vec<usize>,
+    pub board: bool,
+}
+
+/// Half the depth of the range's shelf assumed (m): `RangeLayout` gives its
+/// spots, not its size; knocked pieces lie past it.
+const RANGE_SHELF_HALF_DEPTH: f32 = 0.4;
 
 /// A mark where a bullet landed on a board.
 #[derive(Component, Clone, Copy, Debug)]
@@ -299,7 +330,33 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
         .iter()
         .find(|k| k.eq_ignore_ascii_case(&spec.kind))
         .ok_or_else(|| format!("no prop {:?} (one of {})", spec.kind, KINDS.join(", ")))?;
-    let home = find_spot(world, origin, dir, spec.distance_m)?;
+    let pieces = match *kind {
+        "bottles" => 6,
+        "tin_cans" => 5,
+        _ => 1,
+    };
+    // On the range: its own shelf or board first, else a spot on the asked
+    // distance line at the spawner's side (`range_place`); elsewhere along
+    // the spawner's view.
+    let range = super::range_place::layout(world);
+    let furniture = match &range {
+        Some(l) => range_furniture(world, l, kind, pieces),
+        None => None,
+    };
+    let (frame, origin, dir, distance_m) = match (&range, &furniture) {
+        (Some(l), Some((frame, _))) => {
+            let a = super::range_place::along_side(l, *frame);
+            (*frame, super::range_place::origin_at(l, a.y), l.dir, a.x)
+        }
+        (Some(l), None) => {
+            let side = super::range_place::along_side(l, origin).y;
+            let reach = super::range_place::Footprint::of_prop(kind);
+            let s = super::range_place::line_spot(world, l, spec.distance_m, side, reach, None)?;
+            (s.home, s.origin, l.dir, spec.distance_m)
+        }
+        (None, _) => (find_spot(world, origin, dir, spec.distance_m)?, origin, dir, spec.distance_m),
+    };
+    let home = frame;
     let to = origin - home;
     let facing = Quat::from_rotation_y(to.x.atan2(to.z));
     let number = {
@@ -307,13 +364,8 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
         c.0 += 1;
         c.0
     };
-    let pieces = match *kind {
-        "bottles" => 6,
-        "tin_cans" => 5,
-        _ => 1,
-    };
     let map_loads = world.get_resource::<MapLoads>().map_or(0, |m| m.0);
-    let spec = PropSpec { kind: kind.to_string(), distance_m: spec.distance_m };
+    let spec = PropSpec { kind: kind.to_string(), distance_m };
     let prop = world
         .spawn((
             Name::new(format!("Prop {number} ({kind})")),
@@ -323,6 +375,10 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
             PropState { map_loads, ..default() },
         ))
         .id();
+    let on_furniture = furniture.is_some();
+    if let Some((_, f)) = furniture {
+        world.entity_mut(prop).insert(f);
+    }
     let wood = Color::srgb(0.45, 0.30, 0.18);
     // Every part is solid: a static collider of its shape on the map's
     // default layer (shots stop on it, characters can't walk through a
@@ -340,33 +396,56 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
     };
     if *kind == "target_board" {
         world.entity_mut(prop).insert(ShotGroup::default());
-        for x in [-0.4, 0.4] {
-            part(world, shape(ShapeKind::Box(Vec3::new(0.03, 0.9, 0.03)), wood, Transform::from_xyz(x, 0.9, -0.05)), Some("wood"));
-        }
         let stand = Transform::from_xyz(0.0, BOARD_CENTRE_Y, 0.0);
-        let face = part(world, shape(ShapeKind::Box(Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT)), Color::srgb(0.92, 0.9, 0.82), stand), Some("wood"));
+        let face = if on_furniture {
+            // The range's own board: its face and rings are the range's;
+            // ours is only the collider in front of them, undrawn (the
+            // marks still are).
+            world
+                .spawn((stand, Visibility::default(), ChildOf(prop), RigidBody::Static, PropPart, PropSurface("wood".into())))
+                .id()
+        } else {
+            for x in [-0.4, 0.4] {
+                part(world, shape(ShapeKind::Box(Vec3::new(0.03, 0.9, 0.03)), wood, Transform::from_xyz(x, 0.9, -0.05)), Some("wood"));
+            }
+            part(world, shape(ShapeKind::Box(Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT)), Color::srgb(0.92, 0.9, 0.82), stand), Some("wood"))
+        };
         // Its collider's front is the painted rings' (`FACE_HIT`), so a
         // bullet's mark lands on them, not hidden behind them.
         world.entity_mut(face).insert((
             Collider::cuboid(BOARD_HALF * 2.0, BOARD_HALF * 2.0, FACE_HIT * 2.0),
-            PropPiece { prop, index: 0, standing: true, stand, half: Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT), board: true },
+            PropPiece {
+                prop,
+                index: 0,
+                standing: true,
+                stand,
+                half: Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT),
+                board: true,
+                floor_y: 0.0,
+                behind: 0.0,
+            },
             Damageable,
             Hittable,
         ));
         let black = Color::srgb(0.05, 0.05, 0.05);
         let cream = Color::srgb(0.92, 0.9, 0.82);
-        for (i, (r, c)) in [(0.4, black), (0.3, cream), (0.2, black), (0.1, cream), (0.04, Color::srgb(0.8, 0.1, 0.1))].into_iter().enumerate() {
+        let rings = if on_furniture { &[][..] } else { &[(0.4, black), (0.3, cream), (0.2, black), (0.1, cream), (0.04, Color::srgb(0.8, 0.1, 0.1))][..] };
+        for (i, (r, c)) in rings.iter().copied().enumerate() {
             let (s, t) = disc(r, FACE_FRONT + 0.002 * (i as f32 + 1.0), Vec2::ZERO, c);
             world.spawn((s, t, ChildOf(face)));
         }
     } else {
-        // The shelf.
-        part(world, shape(ShapeKind::Box(Vec3::new(0.8, 0.02, 0.15)), wood, Transform::from_xyz(0.0, SHELF_TOP - 0.02, 0.0)), Some("wood"));
-        for x in [-0.72, 0.72] {
-            part(world, shape(ShapeKind::Box(Vec3::new(0.03, 0.48, 0.12)), wood, Transform::from_xyz(x, 0.48, 0.0)), Some("wood"));
+        // The shelf (the range's own when it stands on that: its frame then
+        // puts `SHELF_TOP` on the range shelf's top).
+        let (floor_y, behind) = if on_furniture { (-world.get::<Transform>(prop).map_or(0.0, |t| t.translation.y), RANGE_SHELF_HALF_DEPTH + 0.05) } else { (0.0, 0.45) };
+        if !on_furniture {
+            part(world, shape(ShapeKind::Box(Vec3::new(0.8, 0.02, 0.15)), wood, Transform::from_xyz(0.0, SHELF_TOP - 0.02, 0.0)), Some("wood"));
+            for x in [-0.72, 0.72] {
+                part(world, shape(ShapeKind::Box(Vec3::new(0.03, 0.48, 0.12)), wood, Transform::from_xyz(x, 0.48, 0.0)), Some("wood"));
+            }
         }
         let bottles = *kind == "bottles";
-        let (r, hh, step) = if bottles { (0.04, 0.12, 0.25) } else { (0.033, 0.06, 0.25) };
+        let (r, hh, step) = if bottles { (0.04, 0.12, PIECE_STEP) } else { (0.033, 0.06, PIECE_STEP) };
         let colour = if bottles { Color::srgb(0.12, 0.45, 0.18) } else { Color::srgb(0.75, 0.75, 0.78) };
         for i in 0..pieces {
             let x = (i as f32 - (pieces - 1) as f32 / 2.0) * step;
@@ -379,7 +458,7 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
             // Shots strike it (traces only: characters pass it, it can't
             // hold them up).
             world.entity_mut(piece).insert((
-                PropPiece { prop, index: i, standing: true, stand, half, board: false },
+                PropPiece { prop, index: i, standing: true, stand, half, board: false, floor_y, behind },
                 CollisionLayers::new(TRACE_ONLY_LAYER, LayerMask::NONE),
                 Damageable,
                 Hittable,
@@ -393,6 +472,33 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
         }
     }
     Ok(prop)
+}
+
+/// A spot on the range's own furniture for a prop of `kind` with
+/// `pieces`, if one is free: its frame's place (pieces then stand on the
+/// shelf's top, a board's face on the range board's) and what it takes.
+/// Bottles and cans take as many neighbouring shelf spots as their row
+/// spans (the first free run); a board the range's board.
+fn range_furniture(world: &mut World, l: &chimera_world::range::RangeLayout, kind: &str, pieces: u32) -> Option<(Vec3, OnRangeFurniture)> {
+    let used: Vec<OnRangeFurniture> = world.query::<&OnRangeFurniture>().iter(world).cloned().collect();
+    if kind == "target_board" {
+        if used.iter().any(|u| u.board) {
+            return None;
+        }
+        return Some((l.board - Vec3::Y * BOARD_CENTRE_Y, OnRangeFurniture { spots: Vec::new(), board: true }));
+    }
+    let spots = &l.prop_spots;
+    if spots.is_empty() {
+        return None;
+    }
+    let spacing = if spots.len() >= 2 { spots[0].distance(spots[1]) } else { f32::INFINITY };
+    // The row's span: the pieces' step and a piece's width, a little room.
+    let span = (pieces.saturating_sub(1)) as f32 * PIECE_STEP + 0.1 + 0.1;
+    let need = ((span / spacing).ceil() as usize).clamp(1, spots.len());
+    let taken: Vec<usize> = used.iter().flat_map(|u| u.spots.iter().copied()).collect();
+    let first = (0..=spots.len() - need).find(|&i| (i..i + need).all(|k| !taken.contains(&k)))?;
+    let centre = spots[first..first + need].iter().copied().sum::<Vec3>() / need as f32;
+    Some((centre - Vec3::Y * SHELF_TOP, OnRangeFurniture { spots: (first..first + need).collect(), board: false }))
 }
 
 /// Remove prop `e` (a player's change: `layout` remembers what is left).
@@ -684,7 +790,8 @@ fn prop_hits(
                 // Off the shelf: lying on the floor behind it.
                 piece.standing = false;
                 let lie = Quat::from_rotation_y(0.7 * index as f32) * Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
-                *tf = Transform::from_xyz(piece.stand.translation.x, piece.half.x, -0.45 - 0.08 * (index % 3) as f32).with_rotation(lie);
+                *tf = Transform::from_xyz(piece.stand.translation.x, piece.floor_y + piece.half.x, -piece.behind - 0.08 * (index % 3) as f32)
+                    .with_rotation(lie);
                 if let Ok((_, _, mut p, mut s, _)) = props.get_mut(prop) {
                     p.standing = p.standing.saturating_sub(1);
                     if p.standing == 0 {

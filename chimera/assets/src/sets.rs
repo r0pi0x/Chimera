@@ -9,7 +9,8 @@
 //! caller can watch (what didn't arrive is asked again after
 //! `RETRY_DELAYS`, unless the token was refused); `missing` says, from the store alone (no network),
 //! whether a fetch would have anything to do, `held` and `map_held`
-//! whether the store already holds whole sets (a map's); `explain` turns a service's
+//! whether the store already holds whole sets (a map's), `lacking` what
+//! a fetch of sets would download (from the kept manifest); `explain` turns a service's
 //! error into what a player can act on.
 
 use std::{
@@ -272,9 +273,49 @@ fn whole(store: &crate::Store, manifest: &Manifest, set: &str) -> bool {
         .is_some_and(|paths| paths.iter().all(|p| manifest.files.get(p).is_some_and(|r| store.has(&r.id))))
 }
 
+/// What a fetch of `game`'s `sets` would download, from the store alone
+/// (no network): the records it lacks, counted once, as (files, stored
+/// bytes), and the sets the kept manifest names. None without a kept
+/// manifest (the sizes aren't known before the service is asked).
+pub fn lacking(settings: &AssetSettings, game: &str, sets: &[&str]) -> Option<Lacking> {
+    let (store, manifest) = kept_manifest(settings, game)?;
+    Some(lacking_in(&store, &manifest, sets))
+}
+
+/// `lacking` with the store and manifest at hand.
+pub fn lacking_in(store: &crate::Store, manifest: &Manifest, sets: &[&str]) -> Lacking {
+    let mut out = Lacking::default();
+    let mut seen = HashSet::new();
+    for set in sets {
+        let Some(paths) = manifest.sets.get(*set) else { continue };
+        out.named.push((*set).to_string());
+        for p in paths {
+            if let Some(r) = manifest.files.get(p)
+                && seen.insert(r.id.as_str())
+                && !store.has(&r.id)
+            {
+                out.files += 1;
+                out.bytes += r.stored;
+            }
+        }
+    }
+    out
+}
+
+/// What `lacking` found.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Lacking {
+    /// Records the store lacks.
+    pub files: u64,
+    /// Their stored (transferred) bytes.
+    pub bytes: u64,
+    /// The sets asked for that the manifest names.
+    pub named: Vec<String>,
+}
+
 /// `game`'s manifest the store keeps (at the pinned build, else its
 /// newest), with no network.
-fn kept_manifest(settings: &AssetSettings, game: &str) -> Option<(crate::Store, Manifest)> {
+pub fn kept_manifest(settings: &AssetSettings, game: &str) -> Option<(crate::Store, Manifest)> {
     let store = settings.store.as_ref()?;
     let pinned = settings
         .builds

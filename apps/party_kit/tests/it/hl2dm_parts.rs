@@ -123,10 +123,11 @@ fn each_hl2dm_rung_draws_a_model_whose_kind_gives_its_melee() {
         assert!(label.is_some(), "the rung's line names the model");
         kinds.push(kind);
     }
-    // A rung of another game's gun takes the model off.
+    // A rung of another game's gun takes the model off (the default's
+    // left on: `rungs::apply`).
     set_rung(&mut sim, a, 1);
     sim.seconds(1.2);
-    assert!(sim.app.world().get::<Hl2Model>(a).is_none());
+    assert!(sim.app.world().get::<Hl2Model>(a).is_none_or(|m| m.0 == hl2::inventory::DEFAULT_MODEL));
     assert_eq!(kinds.len(), 3);
 }
 

@@ -58,7 +58,7 @@ fn cube(lo: Vec3, hi: Vec3) -> Vec<Vec3> {
 
 /// A small drawn character of `game`: pelvis and spine (inches, Source
 /// axes), one triangle, a two-body ragdoll.
-fn character(game: &'static str) -> MapCharacterModel {
+pub(crate) fn character(game: &'static str) -> MapCharacterModel {
     let bone = |name: &str, parent, at| MapBone { name: name.into(), parent, position: at, rotation: Quat::IDENTITY };
     let body = |bone, lo, hi, mass| MapRagdollBody {
         bone,

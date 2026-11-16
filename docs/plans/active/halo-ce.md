@@ -590,11 +590,20 @@ backlog.
   `halo_ce:campaign_bodies` 1; its first-person view is its own arm cut
   from its third-person model (`campaign::first_person`: kept bones and
   the view's offset in data), posed by its own idle, aim, fire and
-  melee: the seam later characters' own hands can use. Open: the
-  cannon's rod and effects are not drawn on another game's map (its
-  effects would need a late join of a weapon's effects, `fx::load`); its
-  shot leaves from the eye's line, not its arm (the spec's open
-  question).
+  melee: the seam later characters' own hands can use. Second pass
+  (branch `halo-hunter-2`): the cannon's effects (firing, the rod's
+  contrail, light and model, its detonation) on every map, compiled from
+  its unit and merged into the donor's library at a map's load
+  (`fx::load::own_weapons`; the rod a late held model); its shots shown
+  and sent (`fx::shots::SHOWN`); its muzzle data, the rod drawn leaving
+  from there (the trace stays the eye's); a campaign body's third-person
+  fire-1 and melee; the first-person view tuned from pictures (the cannon
+  from the elbow down, two alternates in data); the default aim
+  crosshair for a gun without a HUD of its own; the charge paces the
+  trigger (`charge_paces`, our rule: the tag lets tapping fire 10 a
+  second). Open: no kill icon (its HUD interface is not in any unit);
+  effects fetched mid-map show from the next map; its fire-1 overlay
+  swings the first-person cannon out of view for some frames.
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the
