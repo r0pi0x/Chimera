@@ -1,26 +1,33 @@
 //! Downloads on demand, as the client's screens see them (the sandbox's
 //! design, section 20: "a clickable size, picking auto-downloads"): the
-//! seam between the screens and the asset side, which is built
-//! separately.
+//! seam between the screens and the asset side
+//! (`chimera_net::net::units`).
 //!
-//! - **The interface** (`UnitFetcher`, in `UnitFetch`): `request_unit(game,
-//!   unit)` asks for a unit of a game's files (a gun's model, sounds and
-//!   data: what the asset service packs as one download); `retry` asks
-//!   again after a failure; `poll` writes each unit's state into
-//!   `UnitProgress` once a frame (`poll_units`, in `Update`).
+//! - **The interface**: a screen writes `UnitRequest` (`Fetch`, `Retry`)
+//!   and reads `UnitProgress`, its states by `(game, unit)`; a unit is a
+//!   set of the game's files as the asset service packs it (a gun's is
+//!   `weapon/<id>`, Halo's the game's `base`:
+//!   `chimera_net::net::units::gun_unit`).
 //! - **The state** (`UnitProgress`, by `(game, unit)`): `UnitState::Here`,
 //!   `NotHere` (its size, for the clickable size), `Queued`,
 //!   `Downloading` (bytes done of total: the progress component, variant
 //!   B) and `Failed` (a reason; R retries). A unit not listed is here (the
 //!   base install's files need no download).
-//! - **The fake** (`FakeFetcher`, `ui_scene` stagings and tests): units
-//!   start not here at their listed sizes; a request queues one, one
-//!   downloads at a time at `rate` bytes a second of the UI clock, then
-//!   it's here; units in `fail` fail at half way. The real fetcher (the
-//!   asset service's client) replaces it with `UnitFetch(Box::new(..))`.
+//! - **The real side** (`bridge_units`, when no `UnitFetch` is inserted):
+//!   requests go to `chimera_net::net::units` (`request_unit`,
+//!   `retry_unit`), and its `UnitProgress` (Absent, Queued, Fetching,
+//!   Ready, Failed, with bytes) becomes this one (NotHere, Queued,
+//!   Downloading, Here, Failed) each frame it changes. A request the
+//!   no-fetch-in-match guard refuses shows as Failed with its reason.
+//! - **A fetcher of its own** (`UnitFetcher`, in `UnitFetch`): when one is
+//!   inserted it answers instead (`poll_units`): `request_unit(game,
+//!   unit)`, `retry`, and `poll` writing `UnitProgress` once a frame.
+//!   `FakeFetcher` (`ui_scene` stagings and tests): units start not here
+//!   at their listed sizes; a request queues one, one downloads at a time
+//!   at `rate` bytes a second of the UI clock, then it's here; units in
+//!   `fail` fail at half way. `AllHere`: no asset side.
 //!
-//! Known shortcuts: no cancel, no priority (a pick could jump the queue);
-//! no app inserts a real fetcher yet, so outside the stagings every unit is here.
+//! Known shortcuts: no cancel.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -181,6 +188,74 @@ impl UnitFetcher for FakeFetcher {
         if out.0 != self.units {
             out.0 = self.units.clone();
         }
+    }
+}
+
+/// The asset side's state as the screens show it (module doc).
+pub fn shown(s: &chimera_net::net::units::UnitStatus) -> UnitState {
+    use chimera_net::net::units::UnitState as Net;
+    match &s.state {
+        Net::Absent { size } => UnitState::NotHere { bytes: *size },
+        Net::Queued { .. } => UnitState::Queued { bytes: s.bytes_total },
+        Net::Fetching => UnitState::Downloading { done: s.bytes_done, total: s.bytes_total },
+        Net::Ready => UnitState::Here,
+        Net::Failed { reason } => UnitState::Failed { reason: reason.clone() },
+    }
+}
+
+/// Units the asset side refused to fetch (the no-fetch-in-match guard,
+/// no service), with why: shown as failed.
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct RefusedUnits(pub BTreeMap<(String, String), String>);
+
+/// Without a `UnitFetch`: requests to the asset side, its states into
+/// `UnitProgress` (module doc, "The real side").
+pub fn bridge_units(
+    fetch: Option<Res<UnitFetch>>,
+    mut requests: MessageReader<UnitRequest>,
+    net: Option<Res<chimera_net::net::units::UnitProgress>>,
+    refused: Res<RefusedUnits>,
+    mut progress: ResMut<UnitProgress>,
+    mut commands: Commands,
+) {
+    use chimera_net::net::units;
+    if fetch.is_some() {
+        requests.clear();
+        return;
+    }
+    for r in requests.read().cloned() {
+        commands.queue(move |w: &mut World| {
+            let (game, unit, result) = match &r {
+                UnitRequest::Fetch { game, unit } => (game, unit, units::request_unit(w, game, unit)),
+                UnitRequest::Retry { game, unit } => (game, unit, units::retry_unit(w, game, unit)),
+            };
+            let key = (game.clone(), unit.clone());
+            let mut refused = w.get_resource_or_init::<RefusedUnits>();
+            match result {
+                Ok(()) => {
+                    if refused.0.contains_key(&key) {
+                        refused.0.remove(&key);
+                    }
+                }
+                Err(e) => {
+                    info!("sandbox: {game} {unit} not fetched: {e}");
+                    refused.0.insert(key, e);
+                }
+            }
+        });
+    }
+    let Some(net) = net else { return };
+    if !net.is_changed() && !refused.is_changed() {
+        return;
+    }
+    let mut next = UnitProgress(net.0.iter().map(|(k, s)| (k.clone(), shown(s))).collect());
+    for (k, why) in &refused.0 {
+        if !next.0.get(k).is_some_and(|s| matches!(s, UnitState::Here | UnitState::Queued { .. } | UnitState::Downloading { .. })) {
+            next.0.insert(k.clone(), UnitState::Failed { reason: why.clone() });
+        }
+    }
+    if *progress != next {
+        *progress = next;
     }
 }
 

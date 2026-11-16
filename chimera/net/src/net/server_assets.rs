@@ -51,6 +51,12 @@
 //!   same sets isn't tried again until they change (a set the service
 //!   lacks stays missing).
 //!
+//! - **A sandbox's picks** (`net::units`): a gun a player picks that the
+//!   server's store lacks is fetched with the same credential
+//!   (`ServerFiles`) in the background before the rung switch applies it
+//!   (`chimera_sim::minigame::gun_files::gun_ready`); held while a match's
+//!   fetch here runs.
+//!
 //! Known shortcuts: a listen host's own map load doesn't wait for the
 //! fetch (its loader's misses wait for the records the fetch claimed,
 //! `pending`, or come on demand); the sets a ladder draws when its match
