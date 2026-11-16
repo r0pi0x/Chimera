@@ -2,23 +2,25 @@
 //! `+sandbox [map]` (command line) play a local match on every game's guns
 //! and grenades (the whole ladder, in the games' order, no draw) where
 //! nothing advances and nothing ends, to try a gun with `rung` (chimera_sim's
-//! `minigame::rung_command`). A person alone on the greybox (or the map
-//! named, `sandbox <map>`; `--map` too), cheats on (`sv_cheats 1`: `god`,
-//! `noclip`), no bots until `ca_bot_add`; practice targets of any game with
-//! `target` (chimera_sim's `minigame::targets`: placed in front of the
-//! player, still, strafing or walking, firing back or not, protected or
-//! not, measured), every blast measured, and props with `prop` (bottles and
-//! tin cans to knock off a shelf, a target board keeping the shot group:
-//! `minigame::props`). `sandbox repeat` puts the last layout of targets
-//! and props back in front of the player (`minigame::layout`); `sandbox
-//! <god|ammo|timescale|thirdperson|camdist|freeze> <value>` and `sandbox
-//! conditions` are the conditions (`minigame::conditions`; the camera's
-//! two are the client's, kept from its camera by `camera_state`).
+//! `minigame::rung_command`). A person alone on the range (`chimera_world::
+//! range`: distance lines, cover, a shelf, a target board, a platform), or
+//! the map named (`sandbox <map>`, `sandbox greybox`; `--map` too), cheats
+//! on (`sv_cheats 1`: `god`, `noclip`), no bots until `ca_bot_add`;
+//! practice targets of any game with `target` (chimera_sim's
+//! `minigame::targets`: placed in front of the player, still, strafing or
+//! walking, firing back or not, protected or not, measured), every blast
+//! measured, and props with `prop` (bottles and tin cans to knock off a
+//! shelf, a target board keeping the shot group: `minigame::props`).
+//! `sandbox repeat` puts the last layout of targets and props back in
+//! front of the player (`minigame::layout`); `sandbox <god|ammo|timescale|
+//! thirdperson|camdist|freeze> <value>` and `sandbox conditions` are the
+//! conditions (`minigame::conditions`; the camera's two are the client's,
+//! kept from its camera by `camera_state`).
 //!
 //! The definition (`SANDBOX`, `definition`) is the automatic gun game's
 //! without its draw: every gun and grenade of the playable games as the
 //! ladder, `refill_ammo`, no knife finale, no time to speak of
-//! (`TIME_LIMIT`), no rotation or vote, one player enough, a quick respawn.
+//! (`TIME_LIMIT`), no rotation or vote, one player enough, a quick respawn at the map's spawn points (the range's firing line).
 //! No option of the ladder module stops a kill from advancing or the last
 //! rung's from winning, so the rule is `rung_command::HoldRungs` (inserted
 //! by the plugin): a player stays on the rung they were put on, and the
@@ -37,11 +39,14 @@ use chimera_sim::minigame::{self, MinigameDef, auto::Capabilities};
 /// The sandbox minigame's id.
 pub const SANDBOX: &str = "ultimate_gun_game:sandbox";
 
+/// The map without one named: the range (`chimera_world::range::RANGE`).
+pub const DEFAULT_MAP: &str = "range";
+
 /// The match's length, seconds (more than a day: it doesn't end).
 pub const TIME_LIMIT: f32 = 1.0e7;
 
 /// The sandbox's help (`sandbox help`).
-pub const HELP: &str = "sandbox [map]: a match alone on the greybox (or `map`), nothing advances or ends.\n\
+pub const HELP: &str = "sandbox [map]: a match alone on the range (or `map`: greybox, a game's map), nothing advances or ends.\n\
     rung <n | gun id or part | next | prev | list> [player | all]: put yourself on a rung (numbered from 1).\n\
     ca_bot_add [alpha|bravo]: add a bot; ca_bot_kick: remove them; ca_bot_stop 1: they stand still;\n\
     ca_bot_dont_shoot 1: they never fire.\n\
@@ -112,7 +117,7 @@ pub fn definition(caps: &[Capabilities], base: &str, installed: &dyn Fn(&str) ->
             }
         }
     }
-    let mut pool = vec!["chimera:greybox".to_string()];
+    let mut pool = vec!["chimera:range".to_string(), "chimera:greybox".to_string()];
     for m in minigame::auto::map_pool(caps, installed) {
         if !pool.contains(&m) {
             pool.push(m);
@@ -172,7 +177,7 @@ pub fn command(w: &mut World, a: &[String], base: &str) -> Result<Option<String>
     if w.get_resource::<minigame::Minigames>().and_then(|m| m.get(SANDBOX)).is_none() {
         generate(w, base)?;
     }
-    let map = a.first().map_or("greybox", String::as_str);
+    let map = a.first().map_or(DEFAULT_MAP, String::as_str);
     let said = chimera_net::minigame_net::change_match(w, SANDBOX, Some(map))?;
     let mut console = w.resource_mut::<Console>();
     console.submit("sv_cheats 1");
@@ -196,7 +201,7 @@ pub fn camera_state(
 }
 
 /// A command line's `+sandbox [map]` made into what the app starts with:
-/// the sandbox minigame on that map (the greybox without one), with no bots, with
+/// the sandbox minigame on that map (the range without one), with no bots, with
 /// cheats; other lines (`+rung`) stay. Without `+sandbox` the args are as
 /// given.
 #[cfg(feature = "present")]
@@ -215,6 +220,6 @@ pub fn args(mut args: chimera_client::client::Args) -> chimera_client::client::A
     args.console.insert(0, "MaxPlayer 0".into());
     args.console.insert(1, "sv_cheats 1".into());
     args.console.insert(2, format!("minigame {SANDBOX}"));
-    args.console.insert(3, format!("sandbox {}", map.or_else(|| args.map.clone()).unwrap_or_else(|| "greybox".into())));
+    args.console.insert(3, format!("sandbox {}", map.or_else(|| args.map.clone()).unwrap_or_else(|| DEFAULT_MAP.into())));
     args
 }

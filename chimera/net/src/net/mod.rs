@@ -1526,22 +1526,26 @@ pub fn current_map(world: &World) -> String {
     normalize_map(&name)
 }
 
-/// `greybox` for the greybox's names (none, `greybox`, `chimera:greybox`, the old `mashup:greybox`);
-/// other ids as they are.
+/// A code-built map's id for its names (`chimera_world::greybox::code_map`:
+/// `greybox` for none, `greybox`, `chimera:greybox`, the old
+/// `mashup:greybox`; `range` for `range`, `chimera:range`); other ids as
+/// they are.
 pub fn normalize_map(name: &str) -> String {
-    if ["", GREYBOX, "chimera:greybox", "mashup:greybox"].iter().any(|g| name.eq_ignore_ascii_case(g)) {
-        GREYBOX.into()
-    } else {
-        name.into()
-    }
+    chimera_world::greybox::code_map(name).map_or_else(|| name.into(), str::to_string)
+}
+
+/// Whether map id `id` is one built in code (the greybox, the range): no
+/// file, nothing to download, no game's install needed.
+pub fn is_code_map(id: &str) -> bool {
+    chimera_world::greybox::CODE_MAPS.contains(&id)
 }
 
 /// Whether the loaded map is `map` and its file hash is `hash`: Some(true)
 /// or Some(false) once a map by that name is loaded, None while it isn't
 /// (still loading, or another one).
 pub fn map_matches(world: &World, map: &str, hash: Option<[u8; 32]>) -> Option<bool> {
-    if map == GREYBOX {
-        return (current_map(world) == GREYBOX).then_some(true);
+    if is_code_map(map) {
+        return (current_map(world) == map).then_some(true);
     }
     let file = world.get_resource::<crate::map::MapFile>()?;
     let want_name = map.rsplit(':').next().unwrap_or(map);

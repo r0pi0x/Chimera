@@ -52,6 +52,7 @@ mod persist;
 mod protection_look;
 mod net_party;
 mod results_hud;
+mod range_bodies;
 mod rotation;
 mod rung_characters;
 mod rung_extras;
@@ -94,6 +95,7 @@ mod heavy {
     mod impacts;
     mod ladders_across_maps;
     mod nav_bounds;
+    mod range_kit;
     mod spawn_spots;
     mod tf2_maps;
 }

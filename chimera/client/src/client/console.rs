@@ -2361,8 +2361,8 @@ pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>)
 /// when there is one; a bare name is the default game's). The handshake
 /// checks the result.
 pub fn load_server_map(w: &mut World, map: &str, file: Option<std::path::PathBuf>) {
-    if map == crate::net::GREYBOX {
-        load_greybox(w);
+    if crate::net::is_code_map(map) {
+        load_code_map(w, map);
         return;
     }
     let id = match crate::game_registry::default_game(w) {
@@ -2545,6 +2545,14 @@ struct FreshGame;
 /// `disconnect`, which leaves it behind the main menu), everyone respawned
 /// on it at the default tick.
 pub fn load_greybox(w: &mut World) {
+    load_code_map(w, GREYBOX);
+}
+
+/// `load_greybox` for any code-built map (`net::is_code_map`: the greybox,
+/// the range; `chimera_world::greybox::CodeMap` picks it for the app's
+/// `respawn_greybox`).
+pub fn load_code_map(w: &mut World, map: &str) {
+    let id = chimera_world::greybox::select(w, map);
     w.remove_resource::<MapLoad>();
     w.remove_resource::<crate::map::LocalMapLoad>();
     // A spawn under way is called off (`unload_map` drops it).
@@ -2558,10 +2566,28 @@ pub fn load_greybox(w: &mut World) {
     crate::map::unload_map(w);
     unload_greybox(w);
     if let Some(hooks) = w.get_resource::<super::AppHooks>().copied() {
+        // Its kit (the party's bodies, guns, HUD looks), when the app's
+        // maps dress code-built maps (`map::sources::CODE_MAP_KIT`), spawned
+        // first (a map's spawn clears what the map before left), then the
+        // code-built map.
+        let hdr_level = w.get_resource::<super::hdr::HdrSettings>().map_or(0, |s| s.level);
+        let options = crate::map::MapLoadOptions {
+            hdr_level,
+            context: crate::map::LoadContext::of(w),
+            ..default()
+        };
+        let began = std::time::Instant::now();
+        match (hooks.load_map)(&chimera_world::greybox::kit_id(id), &options) {
+            Ok(kit) => {
+                info!("{id}'s kit: {} bodies, loaded in {:.0} ms", kit.kit.characters.len(), began.elapsed().as_secs_f64() * 1000.0);
+                crate::map::change_map(w, kit, crate::map::MapDebugView::Normal);
+            }
+            Err(e) => debug!("{id} has no kit: {e}"),
+        }
         (hooks.respawn_greybox)(w);
     }
     w.remove_resource::<crate::map::ActiveMapLook>();
-    w.insert_resource(crate::map::LoadedMapName(GREYBOX.into()));
+    w.insert_resource(crate::map::LoadedMapName(id.into()));
     crate::core::set_tick_length(w, std::time::Duration::from_secs_f64(1.0 / crate::core::DEFAULT_TICK_HZ));
     let cams: Vec<Entity> = w
         .query_filtered::<Entity, With<super::FirstPersonCamera>>()
@@ -2585,14 +2611,14 @@ pub fn load_greybox(w: &mut World) {
 /// The greybox map's name for `map` and `--map`.
 pub const GREYBOX: &str = "greybox";
 
-/// What `map <name>` and `changelevel <name>` load: None for the greybox
-/// (`greybox`, `chimera:greybox`), else the map's id and whether to check
+/// What `map <name>` and `changelevel <name>` load: None for a code-built
+/// map (`greybox`, `chimera:greybox`, `range`; `load_code_map`), else the map's id and whether to check
 /// it against the install's list. A map of the default game (`game`) by
 /// its name (`de_dust2`) or its id (`cs_source:de_dust2`, as the command
 /// line and `--map` take it); another game's id as given (a bare name
 /// too, without a default game).
 pub fn map_target(game: Option<&GameInfo>, name: &str) -> Option<(String, bool)> {
-    if crate::net::normalize_map(name) == crate::net::GREYBOX {
+    if crate::net::is_code_map(&crate::net::normalize_map(name)) {
         return None;
     }
     match (name.split_once(':'), game) {
@@ -2794,7 +2820,7 @@ pub fn client_commands(app: &mut App) {
     )
     .console_command(
         "map",
-        "map <name>: load a map of the game (Tab lists the install's maps); map greybox: Chimera's test map. \
+        "map <name>: load a map of the game (Tab lists the install's maps); map greybox: Chimera's test map; map range: its firing range. \
          Hosting, it takes the players along (as changelevel); on a client, it leaves the server first.",
         |w, a| {
             let name = a.first().ok_or("map <name>")?.clone();
@@ -2804,11 +2830,12 @@ pub fn client_commands(app: &mut App) {
             let game = crate::game_registry::default_game(w);
             let Some((id, check)) = map_target(game, &name) else {
                 w.resource_mut::<Console>().submit("bot_kick");
-                load_greybox(w);
+                let id = crate::net::normalize_map(&name);
+                load_code_map(w, &id);
                 super::front_end::entered_game(w);
                 super::net::listen_if_hosting(w);
                 super::front_end::start_game(w);
-                return Ok(Some("loaded the greybox".into()));
+                return Ok(Some(format!("loaded the {id}")));
             };
             let short = crate::net::maps::map_name(&id).to_string();
             let names = map_names(w, game);
@@ -2839,14 +2866,14 @@ pub fn client_commands(app: &mut App) {
             let target = map_target(game, &name);
             // A party app's minigame: a new match there (its lobby), not
             // only the map.
-            let id = target.as_ref().map_or(crate::net::GREYBOX, |(id, _)| id.as_str()).to_string();
+            let id = target.as_ref().map_or_else(|| crate::net::normalize_map(&name), |(id, _)| id.clone());
             if let Some(r) = crate::net::host_changelevel(w, &id) {
                 return r;
             }
             let Some((id, check)) = target else {
-                load_greybox(w);
+                load_code_map(w, &id);
                 super::front_end::entered_game(w);
-                return Ok(Some("changed level to the greybox".into()));
+                return Ok(Some(format!("changed level to the {id}")));
             };
             let short = crate::net::maps::map_name(&id).to_string();
             let names = map_names(w, game);

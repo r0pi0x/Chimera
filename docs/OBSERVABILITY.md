@@ -25,6 +25,11 @@ sim.seconds(1.0);
 assert!(sim.velocity(p).xz().length() > 4.9);
 ```
 
+The range (`chimera_world::range::RangeMapPlugin` in place of
+`GreyboxMapPlugin`) is the long, flat firing range with distance lines out
+to 200 m; its `RangeLayout` resource gives the firing line, the direction
+down range and the distances (chimera_sim's `tests/it/range_map.rs`).
+
 `NetSim` (chimera_net's `harness`) is a server and clients, each a `Sim`
 on the same base, over an in-memory link: `NetSim::new(CsSim,
 conditions, seed, clients, setup)`; `cs_source::harness`'s `TestMaps`
