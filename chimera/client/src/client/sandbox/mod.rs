@@ -464,6 +464,7 @@ impl Plugin for SandboxUiPlugin {
                     link::bridge_characters,
                     link::bridge_facts,
                     link::bridge_look,
+                    link::bridge_blasts,
                     land_pending,
                 )
                     .chain()
@@ -716,12 +717,15 @@ pub fn stage(w: &mut World, args: &[String]) -> Result<(), String> {
     w.insert_resource(units::UnitFetch(Box::new(fake)));
     w.insert_resource(staged_kills());
     w.insert_resource(ui);
-    if fold {
+    {
         let mut lists = w.get_resource_or_init::<chimera_ui::VirtualLists>();
         let st = lists.state(change_gun::LIST);
-        st.folded.insert("Pistols".into());
-        st.folded.insert("SMGs".into());
-        st.folded.insert("Shotguns".into());
+        st.folded.clear();
+        if fold {
+            st.folded.insert("Pistols".into());
+            st.folded.insert("SMGs".into());
+            st.folded.insert("Shotguns".into());
+        }
     }
     Ok(())
 }
@@ -740,9 +744,9 @@ fn stage_bench(w: &mut World, what: &str) {
             t(3, "cs_source:phoenix_connexion", 100.0, TargetMotion::Walks, None),
         ],
         props: vec![
-            PropRow { id: 11, spec: PropSpec { kind: "bottles".into(), distance_m: 20.0 } },
-            PropRow { id: 12, spec: PropSpec { kind: "tin_cans".into(), distance_m: 10.0 } },
-            PropRow { id: 13, spec: PropSpec { kind: "target_board".into(), distance_m: 25.0 } },
+            PropRow { id: 11, spec: PropSpec { kind: "bottles".into(), distance_m: 20.0 }, standing: (4, 6), group: None },
+            PropRow { id: 12, spec: PropSpec { kind: "tin_cans".into(), distance_m: 10.0 }, standing: (5, 5), group: None },
+            PropRow { id: 13, spec: PropSpec { kind: "target_board".into(), distance_m: 25.0 }, standing: (1, 1), group: Some((7, 0.21, 0.08)) },
         ],
         refused: None,
     };
@@ -766,7 +770,7 @@ fn stage_bench(w: &mut World, what: &str) {
             recharging: true,
         });
         let now = w.get_resource::<chimera_ui::UiClock>().map_or(0.0, |c| c.now);
-        blasts.0.push((now, BlastMeasured { at: Vec3::ZERO, inner: 1.2, outer: 3.6, hits: vec![(Vec3::ZERO, 72.0)] }));
+        blasts.0.push((now, BlastMeasured { at: Vec3::ZERO, inner: 0.0, outer: 3.7, max_damage: 90.0, edge_damage: 45.0, hits: vec![(Vec3::ZERO, 72.0)] }));
     }
     w.insert_resource(view);
     w.insert_resource(bench);

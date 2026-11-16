@@ -10,10 +10,10 @@
 //!   (`link::TargetRow::respawn`, `home`), the kit's countdown ring
 //!   (`RingMaterial`) emptying and the seconds left in it.
 //! - **Blast rings** (on by default, `SandboxOptions::blast_rings`): after
-//!   an explosion (`link::BlastMeasured`) two rings round its centre, full
-//!   damage inside the inner one and none past the outer, their radii in
-//!   metres, and each body's damage where it stood; they fade after
-//!   `BLAST_SECS`.
+//!   an explosion (`link::BlastMeasured`) rings round its centre: full
+//!   damage inside the inner one (none when the falloff starts at the
+//!   centre), the edge's damage at the outer, their radii in metres, and
+//!   each body's damage where it stood; they fade after `BLAST_SECS`.
 //!
 //! Places come from the player's eye (`FirstPersonCamera`): a point
 //! behind it or off screen hides its piece. A staging without a camera
@@ -143,7 +143,11 @@ fn draw(
                 None => r * 40.0,
             }
         };
-        for (r, tone, words) in [(b.outer, Tone::Fg2, format!("{:.1} m \u{00b7} none past", b.outer)), (b.inner, Tone::Fg, format!("{:.1} m \u{00b7} full", b.inner))] {
+        let circles = [
+            (b.outer, Tone::Fg2, format!("{:.1} m \u{00b7} {:.0} at the edge", b.outer, b.edge_damage)),
+            (b.inner, Tone::Fg, format!("{:.1} m \u{00b7} {:.0} full", b.inner, b.max_damage)),
+        ];
+        for (r, tone, words) in circles.into_iter().filter(|(r, ..)| *r > 0.05) {
             let px = radius(r).max(4.0);
             let m = RingMaterial::new(Color::srgba(1.0, 0.55, 0.24, 0.16 * a), Color::srgba(1.0, 0.67, 0.35, 0.9 * a), (2.0 * look.units.scale_factor).round());
             c.spawn((

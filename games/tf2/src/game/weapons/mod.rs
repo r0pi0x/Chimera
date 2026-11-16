@@ -323,6 +323,7 @@ impl Plugin for Tf2GunsPlugin {
         .add_message::<crate::map::GameSound>()
             .add_message::<crate::map::PredictedSound>()
             .add_message::<blast::Tf2Explosion>()
+            .add_message::<chimera_sim::weapon::grenade::BlastDealt>()
             .add_systems(
                 Predict::Weapons,
                 (

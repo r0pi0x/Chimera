@@ -13,7 +13,9 @@
 //!   unless you want it). Every change is a `link::BenchRequest` at once.
 //!   A refused spawn's reason shows under the list.
 //! - **Props** (for accuracy; ADD PROP cycles the kinds): bottles, tin
-//!   cans, a target board, each at its distance, with a trash can.
+//!   cans, a target board, each at its distance, how many pieces still
+//!   stand or the board's group (hits, spread, mean radius), Reset (or
+//!   Clear: the group) and a trash can.
 //! - **Options**: the sandbox's toggles (`link::SandboxOptions`); Take no
 //!   damage and Third person send their console commands (`god`,
 //!   `thirdperson`), the others are the mechanics' to read.
@@ -98,6 +100,7 @@ pub enum BenchAction {
     PickerCancel,
     AddProp,
     RemoveProp(u64),
+    ResetProp(u64),
     Option(SandboxOption, bool),
     Reset,
     Close,
@@ -222,6 +225,7 @@ fn act(world: &mut World) {
                 req(world, BenchRequest::AddProp(PropSpec { kind: kind.into(), distance_m: d }));
             }
             BenchAction::RemoveProp(id) => req(world, BenchRequest::RemoveProp(id)),
+            BenchAction::ResetProp(id) => req(world, BenchRequest::ResetProp(id)),
             BenchAction::Option(o, on) => {
                 let staged = world.resource::<SandboxUi>().staged;
                 let was = world.resource::<SandboxOptions>().get(o);
@@ -460,7 +464,15 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         ui.text(c, tx, Role::DisplayRegular, 0.64, Tone::Fg, name);
         ui.text(c, tx, Role::Mono, 0.4, Tone::Fg3, says);
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
+        let state = match p.group {
+            Some((n, spread, mean)) => format!("{n} hits \u{00b7} {:.0} cm spread \u{00b7} {:.0} cm mean", spread * 100.0, mean * 100.0),
+            None if p.standing.1 > 1 => format!("{} of {} up", p.standing.0, p.standing.1),
+            None => String::new(),
+        };
+        ui.text(c, r, Role::Mono, 0.42, Tone::Fg3, &state);
         ui.text(c, r, Role::Mono, 0.44, Tone::Fg2, &format!("{} m", p.spec.distance_m));
+        let reset = ui.button(c, r, Kind::Ghost, if p.group.is_some() { "Clear" } else { "Reset" }, None, 1.5, State::NONE);
+        c.entity(reset).insert(BenchAction::ResetProp(p.id));
         trash(c, ui, look, r, BenchAction::RemoveProp(p.id));
     }
     // Options.
