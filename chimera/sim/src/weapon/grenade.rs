@@ -45,7 +45,9 @@
 //! Source's generic radius damage (HL2:DM's: characters' distance to
 //! where the line to their eye enters their box, a body between shielding
 //! mass/350, the force by each victim's own damage); every blast's
-//! damage is told with where it came from (`weapon::Inflicted`).
+//! damage is told with where it came from (`weapon::Inflicted`), and each
+//! blast once with its centre, falloff and victims (`BlastDealt`, which a
+//! game's own blast writes too).
 //!
 //! Known shortcuts (docs/tech-debt.md): Grenades (specs/cs_source/grenades.md)
 //! follow the SDK template where CS:S is unmeasured: release + 0.1 s to the
@@ -121,6 +123,7 @@ pub(super) fn plugin(app: &mut App) {
     app.predicted_part::<Throwable>()
         .add_message::<Detonated>()
         .add_message::<BlastAt>()
+        .add_message::<BlastDealt>()
         .add_message::<super::Inflicted>()
         .add_message::<PlaceDecal>()
         .add_message::<Radio>()
@@ -391,6 +394,45 @@ pub struct BlastAt {
     pub thrower: Option<Entity>,
     pub weapon: &'static str,
     pub inflictor: Option<Entity>,
+}
+
+/// What one blast did, told by the code that dealt it (this module's
+/// `blast`, and a game's own blast: Combat Arms', Halo's), once per blast
+/// and whoever it reached: the centre, the falloff's `inner` (full damage
+/// inside, m) and `outer` (none past, m), the damage at the centre, and
+/// each victim's point, distance (m, from the point the falloff is
+/// measured from) and damage as the blast dealt it (before the victim's
+/// armour and `DamageScale`). Normalized like `Health`. What a sandbox
+/// measures a blast from (`minigame::targets::BlastMeasured`), so there is
+/// no second damage path. For a bell (`Blast::bell_sigma`) `inner` is where
+/// it gives 99 % of the centre's and `outer` where it gives 1 %, no farther
+/// than the radius (`bell_reach`).
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct BlastDealt {
+    pub attacker: Option<Entity>,
+    pub weapon: Option<&'static str>,
+    pub at: Vec3,
+    pub inner: f32,
+    pub outer: f32,
+    pub max_damage: f32,
+    pub victims: Vec<BlastVictim>,
+}
+
+/// One victim of a `BlastDealt`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlastVictim {
+    pub victim: Entity,
+    pub at: Vec3,
+    pub distance_m: f32,
+    pub damage: f32,
+}
+
+/// A bell falloff's inner and outer radii (`BlastDealt`): where
+/// `blast_damage_bell` of σ `sigma` gives 99 % and 1 % of its peak, the
+/// outer no farther than `radius`.
+pub fn bell_reach(sigma: f32, radius: f32) -> (f32, f32) {
+    let at = |fraction: f32| sigma * (2.0 * (1.0 / fraction).ln()).sqrt();
+    (at(0.99).min(radius), at(0.01).min(radius))
 }
 
 /// Props and characters between a blast and a character shield part of the
@@ -1160,6 +1202,7 @@ struct GrenadeWorld<'w, 's> {
     detonated: MessageWriter<'w, Detonated>,
     deafened: MessageWriter<'w, Deafened>,
     inflicted: MessageWriter<'w, super::Inflicted>,
+    dealt: MessageWriter<'w, BlastDealt>,
     push_scale: Option<Res<'w, super::PushScale>>,
     /// Spawn-protected characters (`core::SpawnProtected`): projectiles
     /// fly through them, blasts leave them out.
@@ -1839,6 +1882,13 @@ fn blast(
                 _ => blast_damage(b.damage, b.radius, d),
             };
     }
+    // What it did, told once (`BlastDealt`): its falloff's reach.
+    let legacy = b.legacy && world.legacy.as_ref().is_some_and(|l| l.0 != 0);
+    let (inner, outer) = match b.bell_sigma {
+        Some(sigma) if !legacy => bell_reach(sigma, b.radius),
+        _ => (0.0, b.radius),
+    };
+    let mut victims: Vec<BlastVictim> = Vec::new();
     for (target, end, mut raw) in hits {
         if raw <= 0.0 {
             continue;
@@ -1892,8 +1942,23 @@ fn blast(
             amount: damage.amount,
             from: origin,
         });
+        victims.push(BlastVictim {
+            victim: target,
+            at: end,
+            distance_m: end.distance(src),
+            damage: if character { super::quantize(raw, b.quantum) } else { raw },
+        });
         world.damage.write(damage);
     }
+    world.dealt.write(BlastDealt {
+        attacker: thrower,
+        weapon: Some(weapon),
+        at: origin,
+        inner,
+        outer,
+        max_damage: b.damage,
+        victims,
+    });
     // Loose bodies in reach and in the open get the push (physics_props.md
     // 5.3: the undecayed force), capped to a sane speed.
     let pushes: Vec<(Entity, Vec3, f32)> = world

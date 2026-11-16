@@ -22,7 +22,9 @@
 //! feet with the super detonation), deals the detonation effect's area
 //! damage and pushes (`explode`; a character's push as `HaloPush`, applied
 //! by `apply_pushes` through `movement::push`; a grenade's to its flight),
-//! a stuck one's attached damage on what holds it, then deletes it.
+//! a stuck one's attached damage on what holds it, then deletes it; the
+//! area damage is told once as `weapon::grenade::BlastDealt` (inner the
+//! damaging effects' r0, outer their r1, points / 75).
 //!
 //! The tick rate: everything here steps in Halo ticks (`halo_ticks`: the
 //! 30 Hz boundaries the engine tick crossed, from `SimClock`), so at 30 Hz
@@ -671,6 +673,7 @@ pub struct Blasts<'w> {
     grenades: Res<'w, GrenadeData>,
     detonations: MessageWriter<'w, HaloDetonation>,
     pushes: MessageWriter<'w, HaloPush>,
+    dealt: MessageWriter<'w, chimera_sim::weapon::grenade::BlastDealt>,
 }
 
 /// A projectile's detonation (behaviour 9): the supercombine check, the
@@ -747,12 +750,43 @@ fn detonate(e: Entity, projectiles: &mut Query<(Entity, &mut HaloProjectile)>, t
         .filter(|(q, h)| *q != e && matches!(h.holder, Holder::None) && (h.id == FRAG_GRENADE || h.id == PLASMA_GRENADE))
         .map(|(q, h)| (q, h.flight.position))
         .collect();
+    // What the blast did, told once (`BlastDealt`, normalized: a Halo point
+    // is 1/75 of a standard player's health): the effects' linear falloff,
+    // full within the radius r0, none past r1.
+    let mut told = chimera_sim::weapon::grenade::BlastDealt {
+        attacker: Some(p.owner),
+        weapon: Some(p.id),
+        at: em,
+        inner: 0.0,
+        outer: 0.0,
+        max_damage: 0.0,
+        victims: Vec::new(),
+    };
     for id in &ids {
         let Some(fx) = out.effects.get(*id) else { continue };
+        // The effects that deal damage (a detonation's others push or
+        // shake only).
+        if !fx.no_distance_scaling && fx.amount(1.0, 1.0) > 0.0 {
+            told.inner = told.inner.max(fx.radius[0] * METERS_PER_WU);
+            told.outer = told.outer.max(fx.radius[1] * METERS_PER_WU);
+            told.max_damage += fx.amount(1.0, 1.0) / 75.0;
+        }
         let mut clear = |a: Vec3, b: Vec3| trace.clear(a * METERS_PER_WU, b * METERS_PER_WU);
         let mut draw = || rng.real();
         for h in explode::area(fx, at, &candidates, &mut clear, &mut draw) {
             debug!("{} {}: {:?} at scale {} takes {} points", p.id, id.0, h.object, h.scale, h.amount);
+            if !fx.no_distance_scaling && h.amount > 0.0 {
+                let centre = candidates.iter().find(|c| c.object == h.object).map_or(at, |c| c.centre);
+                match told.victims.iter_mut().find(|v| v.victim == h.object) {
+                    Some(v) => v.damage += h.amount / 75.0,
+                    None => told.victims.push(chimera_sim::weapon::grenade::BlastVictim {
+                        victim: h.object,
+                        at: centre * METERS_PER_WU,
+                        distance_m: (centre - at).length() * METERS_PER_WU,
+                        damage: h.amount / 75.0,
+                    }),
+                }
+            }
             out.hits.write(HaloHit::area(h.object, *id, h.amount, h.scale, em, h.dir, Some(p.owner)).weapon(p.id));
             if h.amount > 0.0
                 && let Some(dv) = explode::push(&x, fx, h.dir, x.biped_acceleration_scale, true)
@@ -774,6 +808,9 @@ fn detonate(e: Entity, projectiles: &mut Query<(Entity, &mut HaloProjectile)>, t
                 g.flight.push(dv);
             }
         }
+    }
+    if told.outer > 0.0 {
+        blasts.dealt.write(told);
     }
     debug!("{} detonated at {em}{}", p.id, if supercombine { " (supercombine)" } else { "" });
     let forward = if supercombine { Vec3::NEG_Y } else { p.flight.velocity.normalize_or(Vec3::NEG_Y) };

@@ -7,7 +7,9 @@
 //! `noclip`), no bots until `ca_bot_add`; practice targets of any game with
 //! `target` (chimera_sim's `minigame::targets`: placed in front of the
 //! player, still, strafing or walking, firing back or not, protected or
-//! not, measured).
+//! not, measured), every blast measured, and props with `prop` (bottles and
+//! tin cans to knock off a shelf, a target board keeping the shot group:
+//! `minigame::props`).
 //!
 //! The definition (`SANDBOX`, `definition`) is the automatic gun game's
 //! without its draw: every gun and grenade of the playable games as the
@@ -42,7 +44,11 @@ pub const HELP: &str = "sandbox [map]: a match alone on the greybox (or `map`), 
     target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect]: a practice target\n\
     in front of you (any game's body; it never fires unless `shoots`; `target characters` lists the bodies);\n\
     target set <n|all> <shoots|noshoot|protect|noprotect|still|strafe|walk|gun <id>|character <id>|respawn <s>|distance <m>>;\n\
-    target remove <n|all>; target list. Hits on targets and their kills are logged (HitMeasured, KillMeasured).\n\
+    target remove <n|all>; target list. Hits on targets and their kills are logged (HitMeasured, KillMeasured),\n\
+    and every blast (BlastMeasured: centre, inner and outer radius, each victim's damage).\n\
+    prop add <bottles|tin_cans|target_board> [distance m]: bottles or cans on a shelf to knock off, or a board\n\
+    that keeps your shot group; prop remove <n|all>; prop list; prop group <n>; prop reset <n|all>.\n\
+    host_timescale 0.5: half speed (measured times stay in game seconds).\n\
     god, noclip: no damage, fly through walls (sv_cheats is 1 here).\n\
     guns never run dry (the ladder refills them); kills and deaths never move your rung.\n\
     `+sandbox [map]` on the command line starts it at launch; `+rung <id>` there waits for the match.\n\
