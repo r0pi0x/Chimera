@@ -85,8 +85,9 @@
 //!
 //! Known shortcuts:
 //! - **Its sounds** (`voice`): its own footsteps, jump and landing
-//!   sounds from its unit, and its pain and death lines from its voice
-//!   set (none without it), heard by every player at the body.
+//!   sounds from its unit, and its pain, death, scream and maimed lines
+//!   from its voice set (none without it), heard by every player at the
+//!   body.
 //! - The move animations' speeds are the graph's means (characters.md
 //!   section 4), not each frame's root motion.
 
@@ -664,6 +665,7 @@ impl Plugin for CampaignPlugin {
             .init_resource::<UnitsOnDemand>()
             .add_observer(arrive)
             .init_resource::<voice::CampaignSounds>()
+            .add_message::<voice::RegionLost>()
             .add_systems(Update, (unit::load_on_demand, name_bodies, voice::join_banks, shield_disc))
             .add_systems(Update, targets::sandbox_wants.before(unit::load_on_demand))
             .add_systems(FixedUpdate, shield_boxes.after(crate::map::pose_hitboxes).before(crate::core::SimSet::Movement))

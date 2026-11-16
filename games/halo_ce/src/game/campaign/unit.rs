@@ -38,8 +38,6 @@
 //! time.
 //!
 //! Known shortcuts:
-//! - The voice set is cut and stored but nothing plays it yet (the body
-//!   speaks no pain or death line: the next stage).
 //! - On-demand fetching of a set the store lacks is the asset service's
 //!   (`request_set`): a client without the files has no Elite.
 //! - The unit keeps the donor's file offsets, so its image inflates to

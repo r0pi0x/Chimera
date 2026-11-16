@@ -27,13 +27,30 @@
 //! taken) or pain shield (sounds.md "Pain line choice"). An empty slot
 //! falls back by sounds.md's table. A line plays at the head (the body's
 //! camera height) as a `GameSound`, which a network server sends to every
-//! client; a 7-tick pause follows it and nothing but a death line starts
-//! while a line lasts. The timers step once per Halo tick.
+//! client; a 7-tick pause follows it. A line starts while another lasts
+//! only when its priority is higher (pain 2, involuntary 7: the scream
+//! and the maimed lines, death 10), and nothing but a death line once
+//! dead. The timers step once per Halo tick.
+//!
+//! **The involuntary lines** (characters.md section 6, "What a
+//! player-worn character says", items 2 and 3):
+//! - *Scream fear*, a dangerous fall (`scream`): airborne and falling
+//!   faster than a landing would start to hurt (the body's movement
+//!   table's `fall_v_min`, the landing speed past which `globals\falling`
+//!   is dealt: "falls fast enough to be hurt"), once per fall (on the
+//!   ground again, the next fall may scream). An empty slot gives none
+//!   (the Elite fills no scream fear: it falls silently; scream pain
+//!   falls back to scream fear, not the other way).
+//! - *Maimed limb*, or *maimed head* for a region flagged "causes
+//!   head-maimed scream" (`maimed`), when a region is destroyed: said on
+//!   a `RegionLost` message. Nothing writes one yet: Chimera's Halo
+//!   vitality destroys no region, and none of the worn kinds has a
+//!   destroyable region (characters.md section 3: the Elite's, the
+//!   Grunt's and the Jackal's are not destroyable; the Jackal's shield
+//!   region only disappears with the shield), so faithfully they never
+//!   say it. The Flood's limbs will.
 //!
 //! Known shortcuts:
-//! - The scream fear of a dangerous fall and the maimed lines (region
-//!   loss) are not said: no campaign body yet loses a region, and the
-//!   fall's scream needs the fall's danger test before the landing.
 //! - The minor-pain draw is a hash of the tick and the body (no game
 //!   state random generator).
 //! - A line plays at a fixed height on the body, not its moving `head`
@@ -61,12 +78,28 @@ pub const PAIN_BODY_MAJOR: usize = 7;
 pub const PAIN_SHIELD: usize = 8;
 pub const PAIN_FALLING: usize = 9;
 pub const SCREAM_FEAR: usize = 10;
+pub const SCREAM_PAIN: usize = 11;
+pub const MAIMED_LIMB: usize = 12;
+pub const MAIMED_HEAD: usize = 13;
 pub const DEATH_QUIET: usize = 14;
 pub const DEATH_FALLING: usize = 16;
 pub const DEATH_AGONIZING: usize = 17;
 pub const DEATH_FLYING: usize = 19;
 /// Slots read: 0 to `SLOTS - 1`.
 pub const SLOTS: usize = 20;
+
+/// A line's priority (sounds.md "Playing a line").
+pub const PAIN: u8 = 2;
+pub const INVOLUNTARY: u8 = 7;
+pub const DEATH: u8 = 10;
+
+/// A region destroyed on a campaign body (module doc, the maimed lines):
+/// `head` when the region causes the head-maimed scream.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RegionLost {
+    pub target: Entity,
+    pub head: bool,
+}
 
 /// The slot an empty one falls back to (sounds.md), or none.
 pub fn fallback(slot: usize) -> Option<usize> {
@@ -224,8 +257,37 @@ pub struct Voice {
     pub decay: u32,
     /// Ticks until the line playing (and its pause) ends.
     pub speaking: u32,
+    /// The priority of the line playing.
+    pub priority: u8,
+    /// This fall's scream said (cleared on the ground).
+    pub screamed: bool,
     /// The body it was alive as (a respawn resets the timers).
     pub dead: bool,
+}
+
+/// A dangerous fall's scream (module doc): `airborne`, falling at `down`
+/// WU/t where a landing past `harmful` WU/t hurts.
+pub fn scream(v: &mut Voice, airborne: bool, down: f32, harmful: f32) -> Option<usize> {
+    if !airborne {
+        v.screamed = false;
+        return None;
+    }
+    if v.screamed || v.dead || down <= harmful {
+        return None;
+    }
+    v.screamed = true;
+    Some(SCREAM_FEAR)
+}
+
+/// A destroyed region's line (module doc).
+pub fn maimed(head: bool) -> usize {
+    if head { MAIMED_HEAD } else { MAIMED_LIMB }
+}
+
+/// Whether a line of `priority` may start now: silent, or above the line
+/// playing; once dead, only a death line.
+pub fn may_start(v: &Voice, priority: u8) -> bool {
+    (!v.dead || priority >= DEATH) && (v.speaking == 0 || priority > v.priority)
 }
 
 /// What a hit makes a body say (module doc), or none: the slot.
@@ -263,6 +325,9 @@ pub fn choose(v: &mut Voice, died: bool, category: Category, push: f32, recent_b
 pub fn step(v: &mut Voice) {
     v.minor = v.minor.saturating_sub(2);
     v.speaking = v.speaking.saturating_sub(1);
+    if v.speaking == 0 {
+        v.priority = 0;
+    }
     if v.minor_count > 0 {
         v.decay = v.decay.saturating_sub(1);
         if v.decay == 0 {
@@ -276,17 +341,28 @@ pub fn step(v: &mut Voice) {
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn speak(
     mut hurts: MessageReader<HaloHurt>,
+    mut lost: MessageReader<RegionLost>,
     effects: Res<DamageEffects>,
     sounds: Option<Res<CampaignSounds>>,
     tables: Option<Res<super::BodyTables>>,
     clock: Res<crate::core::SimClock>,
-    mut bodies: Query<(Entity, &BodyKind, &Transform, Option<&Vitality>, Option<&mut Voice>)>,
+    mut bodies: Query<(
+        Entity,
+        &BodyKind,
+        &Transform,
+        Option<&Vitality>,
+        Option<&mut Voice>,
+        Option<&crate::core::Velocity>,
+        Option<&crate::core::MovementState>,
+    )>,
     mut lines: Option<ResMut<Messages<GameSound>>>,
     mut commands: Commands,
 ) {
     let ticks = crate::game::ticks::halo_ticks(&clock);
     let hurts: Vec<HaloHurt> = hurts.read().copied().collect();
-    for (e, kind, t, vitality, voice) in &mut bodies {
+    let lost: Vec<RegionLost> = lost.read().copied().collect();
+    let per_tick = crate::game::METERS_PER_UNIT * crate::game::movement::data::TICKS_PER_SECOND;
+    for (e, kind, t, vitality, voice, velocity, state) in &mut bodies {
         let Some(mut voice) = voice else {
             commands.entity(e).insert(Voice::default());
             continue;
@@ -299,34 +375,46 @@ pub fn speak(
             *voice = Voice::default();
         }
         let Some(s) = sounds.as_deref().and_then(|s| s.0.get(kind)) else { continue };
+        let table = tables.as_deref().and_then(|t| t.movement.get(kind));
+        // This tick's lines, in the order they came: (slot, priority).
+        let mut said: Vec<(usize, u8)> = Vec::new();
+        let mut died_now = false;
         for h in hurts.iter().filter(|h| h.target == e && h.outcome.landed) {
-            if voice.dead {
+            if voice.dead || died_now {
                 break;
             }
             let Some(fx) = effects.get(h.effect) else { continue };
             let recent = vitality.map_or(0.0, |v| v.recent_body_damage);
             let draw = (crate::game::campaign::roll(&[clock.tick, e.to_bits()]) >> 40) as f32 / (1u64 << 24) as f32;
             let died = h.outcome.died;
-            let Some(slot) = choose(&mut voice, died, fx.category, fx.accel, recent, h.outcome.body_amount > 0.0, draw) else {
-                continue;
-            };
-            // Nothing but a death line starts while a line lasts.
-            if !died && voice.speaking > 0 {
+            if let Some(slot) = choose(&mut voice, died, fx.category, fx.accel, recent, h.outcome.body_amount > 0.0, draw) {
+                said.push((slot, if died { DEATH } else { PAIN }));
+            }
+            died_now |= died;
+        }
+        for l in lost.iter().filter(|l| l.target == e) {
+            said.push((maimed(l.head), INVOLUNTARY));
+        }
+        if let (Some(m), Some(state), Some(vel)) = (table, state, velocity)
+            && let Some(slot) = scream(&mut voice, !state.on_ground, -vel.0.y / per_tick, m.fall_v_min)
+        {
+            said.push((slot, INVOLUNTARY));
+        }
+        for (slot, priority) in said {
+            if !may_start(&voice, priority) {
                 continue;
             }
-            voice.dead |= died;
             let Some(path) = s.line(slot) else { continue };
             let Some(info) = s.set.library.sounds.get(path) else { continue };
             voice.speaking = (info.longest_ms.max(0) as u32 * 30 / 1000) + 7;
+            voice.priority = priority;
             // At its eye: the body's origin is its pill's centre.
-            let above = tables
-                .as_deref()
-                .and_then(|t| t.movement.get(kind))
-                .map_or(0.2, |m| m.eye(0.0) - m.centre_above_origin(0.0));
+            let above = table.map_or(0.2, |m| m.eye(0.0) - m.centre_above_origin(0.0));
             let at = t.translation + Vec3::Y * above * crate::game::METERS_PER_UNIT;
             if let Some(m) = lines.as_deref_mut() {
                 m.write(GameSound(PlaySound::at(info.entry.clone(), at)));
             }
         }
+        voice.dead |= died_now;
     }
 }

@@ -260,3 +260,35 @@ fn a_kind_worn_before_its_unit_wears_it_soon_after_the_load() {
     });
     assert!(frames.is_some_and(|n| n <= 2), "worn {frames:?} frames after the load");
 }
+
+/// The involuntary lines (characters.md section 6, items 2 and 3;
+/// `campaign::voice`): a dangerous fall screams once per fall, only past
+/// the speed a landing starts to hurt; a lost region is maimed limb or
+/// head; a line outranks one playing only by priority, and once dead only
+/// a death line starts.
+#[test]
+fn a_worn_body_screams_on_a_dangerous_fall_and_when_maimed() {
+    use halo_ce::game::campaign::voice::{self, Voice};
+    let mut v = Voice::default();
+    assert_eq!(voice::scream(&mut v, true, 0.5, 0.6), None, "not yet fast enough to hurt");
+    assert_eq!(voice::scream(&mut v, true, 0.7, 0.6), Some(voice::SCREAM_FEAR));
+    assert_eq!(voice::scream(&mut v, true, 0.9, 0.6), None, "once a fall");
+    assert_eq!(voice::scream(&mut v, false, 0.0, 0.6), None);
+    assert_eq!(voice::scream(&mut v, true, 0.7, 0.6), Some(voice::SCREAM_FEAR), "the next fall");
+    assert_eq!((voice::maimed(false), voice::maimed(true)), (voice::MAIMED_LIMB, voice::MAIMED_HEAD));
+    let s = voice::BodySounds {
+        lines: (0..voice::SLOTS).map(|i| (i == 10 || i == 12).then(|| format!("s{i}"))).collect(),
+        ..Default::default()
+    };
+    assert_eq!(s.line(voice::SCREAM_PAIN), Some("s10"));
+    assert_eq!(s.line(voice::MAIMED_HEAD), Some("s12"));
+    let speaking = |priority| Voice { speaking: 20, priority, ..Default::default() };
+    assert!(voice::may_start(&speaking(voice::PAIN), voice::INVOLUNTARY), "a scream over a pain line");
+    assert!(!voice::may_start(&speaking(voice::INVOLUNTARY), voice::PAIN));
+    assert!(!voice::may_start(&speaking(voice::INVOLUNTARY), voice::INVOLUNTARY));
+    assert!(voice::may_start(&speaking(voice::INVOLUNTARY), voice::DEATH));
+    let dead = Voice { dead: true, ..Default::default() };
+    assert!(!voice::may_start(&dead, voice::INVOLUNTARY) && voice::may_start(&dead, voice::DEATH));
+    let mut fallen = Voice { dead: true, ..Default::default() };
+    assert_eq!(voice::scream(&mut fallen, true, 2.0, 0.6), None, "the dead don't scream");
+}
