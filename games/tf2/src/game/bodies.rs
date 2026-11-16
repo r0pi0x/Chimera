@@ -30,7 +30,9 @@
 //! name when it is loaded, and a name the map lacks falls back to another
 //! of TF2's bodies there: `map::CharacterModels::for_identity`); and the
 //! team's skin (`map::BodySkin`:
-//! 0 RED, 1 BLU; a free-for-all player by its team id, odd RED, even BLU).
+//! 0 RED, 1 BLU; a free-for-all player by its team id, odd RED, even BLU),
+//! put on with the name in one move when the name changes (`Tf2Skin`
+//! marks it TF2's, taken off with it).
 //! The weapon's `c_` model is held bone-merged on `weapon_bone` (the held
 //! models of `maps::add_guns`, keyed by the gun: `player_anim::
 //! hold_weapons`).
@@ -206,26 +208,36 @@ pub fn wear_bodies(
             continue;
         }
         let held = inv.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
-        if let Some(class) = held.and_then(|w| table.held(&w.id, drawn.map(|d| d.0.as_str()))) {
-            // The class's model by name, the default class's too (the
-            // map's TF2 bodies name it none, so the name falls back to
-            // the unnamed default body): a TF2 player keeps `BodyName`
-            // while switching classes, which would otherwise come and go
-            // and make archetypes of its own.
-            let want = class.model.as_str();
-            if name.is_none_or(|n| n.0 != want) {
+        // The class's model by name, the default class's too (the map's
+        // TF2 bodies name it none, so the name falls back to the unnamed
+        // default body): a TF2 player keeps `BodyName` while switching
+        // classes, which would otherwise come and go and make archetypes
+        // of its own.
+        let want_name = held
+            .and_then(|w| table.held(&w.id, drawn.map(|d| d.0.as_str())))
+            .map(|class| class.model.as_str())
+            .filter(|want| name.is_none_or(|n| n.0 != *want));
+        // The team's skin on a TF2 body (one with several skins), put on
+        // with the name when the name changes and the map has such bodies
+        // (the body the name picks is one: becoming TF2 puts both on in
+        // one move, each alone an archetype for every combination of the
+        // player's other parts).
+        let want_skin = BodySkin(skin_of(team.copied()));
+        let skin_wrong = skin != Some(&want_skin) || !skinned;
+        let skinned_body = |m: &MapCharacterModel| m.game == Some(GAME) && !m.model.skins.is_empty();
+        let on_tf2_body = body.and_then(|b| models.as_ref()?.0.get(b.0)).is_some_and(skinned_body);
+        let tf2_bodies = models.as_ref().is_some_and(|m| m.0.iter().any(skinned_body));
+        match want_name {
+            Some(want) if skin_wrong && tf2_bodies => {
+                commands.entity(e).insert((BodyName(want.to_string()), want_skin, Tf2Skin));
+            }
+            Some(want) => {
                 commands.entity(e).insert(BodyName(want.to_string()));
             }
-        }
-        // The team's skin on a TF2 body (one with several skins).
-        let on_tf2_body = body
-            .and_then(|b| models.as_ref()?.0.get(b.0))
-            .is_some_and(|m| m.game == Some(GAME) && !m.model.skins.is_empty());
-        if on_tf2_body {
-            let want = BodySkin(skin_of(team.copied()));
-            if skin != Some(&want) || !skinned {
-                commands.entity(e).insert((want, Tf2Skin));
+            None if skin_wrong && on_tf2_body => {
+                commands.entity(e).insert((want_skin, Tf2Skin));
             }
+            None => {}
         }
     }
 }

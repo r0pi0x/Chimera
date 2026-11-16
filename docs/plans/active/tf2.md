@@ -25,6 +25,7 @@ from specs, measurements and the game's own data.
 | M4a more maps in the party pool | done (2026-11-15) | 14 koth_, cp_ and ctf_ maps in an automatic pool by data/map_pool.toml and data/map_fitness.toml (a sweep of 130 maps); played free for all: touch-opened doors start open, spawn rooms' door brushes block nobody; `map/<name>` sets checked in a scratch store, not published |
 | SDK parity (tf2-parity) | in progress (2026-11-15) | the specs' "Corrections from the SDK" in the code: the Minigun, the blasts and knockback, movement, the scripts' mapping, grenades and stickies landed; the flame, the scope and the syringe next |
 | M4b the nine stock melee weapons | done (2026-11-16) | specs/tf2/weapons_stock.md (T10): the Bat, Shovel, Fire Axe, Bottle, Fists, Wrench, Bonesaw, Kukri and Knife as data on Chimera's delayed swing (the smack), the Knife's backstab, the class's arms and sequences, sounds, kill icons with `backstab`; each TF2 rung carries its class's melee, TF2's kit knife the Knife |
+| Follow-ups (tf2-followups) | done (2026-11-16) | the drawn class's melee tested; spawn spots in open space (no vent-duct spawns); TF2's class parts on and off in one move; the duct's material checked |
 | M4 more weapons, effects, the probe | not started | |
 
 ## 1. Rules for this port
@@ -696,6 +697,23 @@ specs/tf2/weapons_stock.md (T10, draft).
   that); Halo not measured (no install here). Test: `chimera_sim`
   `spawns::spots_stand_in_open_space_not_in_ducts_or_crawlspaces` (a
   duct, a crawlspace, a low hallway and a low room on the greybox).
+- **TF2's class parts in one move**: on top of the archetype work's
+  movement bundle (`slots::MovementImpl::leave`, the class layer with
+  `HealthBefore`), the view kick's spring (`recoil::Tf2Punch`, put on at
+  the first kick and kept) and the view model's class (`ViewVariant`, put
+  on at the first TF2 gun and kept) go on and off with the class layer
+  too (`movement::ClassParts`, `put_on`, `leave`, `take_off`); a body's
+  team skin goes on with its class's name in one move where the map has
+  TF2 bodies (`bodies::wear_bodies`; it went on a frame later, a move of
+  its own). `ultimate_gun_game`'s session test (the census, its bounds
+  untouched): 1,074 archetypes after four matches and 1,104 after eight,
+  318 of them characters', before; 1,045 and 1,083, 293 characters',
+  after (the growth over the last four matches 30 and 38: which ladders
+  the matches draw moves it). Its headless world has no TF2 bodies, so
+  the skin's move shows only in the real app (put on with the name
+  whatever the bodies, it read 1,088 and 1,129: the skin then came and
+  went where it never had). Test: `tf2` `movement::the_class_parts_go_
+  on_and_off_with_the_movement_in_one_move`.
 - **The duct's look** (white-grey faces with flat triangles): drawn as
   the map says. Its faces' material is a cubemap patch in the map's pak
   (`maps/ctf_turbine/props/metalduct001a_<x>_<y>_<z>`, its `$envmap` the
@@ -926,4 +944,6 @@ server probe for parity checks, TF2's own app.
   space (`spawns::open_at`: headroom, and room around under a low
   ceiling), so none is left in ctf_turbine's vent ducts (3671 spots to
   3500); the ducts' look is their own material (light grey cross-broken
-  sheet metal), nothing missing.
+  sheet metal), nothing missing; TF2's class parts (the class layer, the
+  view kick's spring, the view model's class) on and off with the
+  movement in one move, a body's skin with its name.
