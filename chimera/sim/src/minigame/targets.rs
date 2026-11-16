@@ -1163,7 +1163,10 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
             let which = a.get(1).ok_or("target look <n>")?;
             let e = *pick(world, which)?.first().ok_or("no target")?;
             let me = command_player(world)?;
-            let eye = world.get::<Transform>(me).ok_or("the player has no place")?.translation + Vec3::Y * 0.6;
+            // From its eye (its movement's eye offset; 0.6 m above its
+            // centre without one), as `prop look`.
+            let lift = world.get::<crate::core::MovementState>(me).map_or(Vec3::Y * 0.6, |s| s.eye_offset);
+            let eye = world.get::<Transform>(me).ok_or("the player has no place")?.translation + lift;
             let at = world.get::<Transform>(e).ok_or("the target has no place")?.translation + Vec3::Y * 0.3;
             let d = at - eye;
             let (yaw, pitch) = ((-d.x).atan2(-d.z), d.y.atan2(d.xz().length()));

@@ -7,7 +7,9 @@
 # projectile): `HitMeasured` lines in scene.log (`target list` says the
 # lines). A scene script: chimera_client's `scene`.
 #   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
-#       --scene apps/ultimate_gun_game/scenes/range_targets.scene --out <dir>
+#       +rung tf2:tf_weapon_sniperrifle --scene apps/ultimate_gun_game/scenes/range_targets.scene --out <dir>
+# (`+rung` first: on this build the sandbox's first rung can start the player
+# with a NaN speed; and no Halo body here: Halo's movement put one at NaN.)
 # setpos takes Source units (0.0254 m) and feet: x is the range's side,
 # -y down range; the firing line is y 0, the spawns 1.5 m behind (y -59).
 wait_for map_loaded 6000     # the range in
@@ -15,7 +17,7 @@ wait_for spawned 3000
 wait 120
 setang 0 80                  # looking off the axis: the lines still hold
 setpos -236 -59 0
-target add halo_ce:spartan 5 protect
+target add combat_arms:m4a1 5 protect
 setpos 236 -59 0
 target add tf2:heavy 10 protect
 setpos -118 -59 0
@@ -23,7 +25,7 @@ target add cs_source:weapon_ak47 20 protect
 setpos 118 -59 0
 target add combat_arms:m4a1 40 protect
 setpos -39 -59 0
-target add halo_ce:spartan 100 protect
+target add cs_source:weapon_ak47 100 protect
 setpos 39 -59 0
 target add tf2:heavy 200 protect
 target list
@@ -47,56 +49,57 @@ wait 60
 shot range_200_scoped
 -attack2
 wait 30
-# The sniper rifle at each, from its own side (one shot each, 1.5 s apart).
+# The sniper rifle at each, from its own side (one shot each, 1.5 s apart:
+# an offscreen frame is a few ms of game time, so the waits are long).
 setpos -236 -59 0
 target look 1
 +attack
-wait 2
+wait 20                      # held over a tick or two (a frame is a few ms)
 -attack
-wait 110
+wait 500
 setpos 236 -59 0
 target look 2
 +attack
-wait 2
+wait 20                      # held over a tick or two (a frame is a few ms)
 -attack
-wait 110
+wait 500
 setpos -118 -59 0
 target look 3
 +attack
-wait 2
+wait 20                      # held over a tick or two (a frame is a few ms)
 -attack
-wait 110
+wait 500
 setpos 118 -59 0
 target look 4
 +attack
-wait 2
+wait 20                      # held over a tick or two (a frame is a few ms)
 -attack
-wait 110
+wait 500
 setpos -39 -59 0
 target look 5
 +attack
-wait 2
+wait 20                      # held over a tick or two (a frame is a few ms)
 -attack
-wait 110
+wait 500
 setpos 39 -59 0
 target look 6
 +attack
-wait 2
+wait 20                      # held over a tick or two (a frame is a few ms)
 -attack
-wait 110
+wait 500
 # The rocket launcher at 100 and 200 m (about 5 and 10 s of flight).
 rung tf2:tf_weapon_rocketlauncher
 wait 120
 setpos -39 -59 0
 target look 5
 +attack
-wait 2
+wait 20                      # held over a tick or two (a frame is a few ms)
 -attack
-wait 420
+wait 1200
 setpos 39 -59 0
 target look 6
 +attack
-wait 2
+wait 20                      # held over a tick or two (a frame is a few ms)
 -attack
-wait 800
+wait 2400
 target list
