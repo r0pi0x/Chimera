@@ -183,9 +183,9 @@ fn drawn(prepared: bool) -> Vec<(usize, usize, Vec<String>)> {
         })
         .collect();
     found.sort_by_key(|f| (f.0, f.1));
-    let bodies = &world.resource::<PlayModels>().bodies;
-    assert_eq!(bodies.len(), 1, "the kit's body is built");
-    found.extend(bodies[0].levels.iter().enumerate().map(|(part, levels)| (usize::MAX, part, levels.clone())));
+    let bodies = world.resource::<PlayModels>();
+    assert_eq!(bodies.built().count(), 1, "the kit's body is built");
+    found.extend(bodies.body(0).expect("the kit's body").levels.iter().enumerate().map(|(part, levels)| (usize::MAX, part, levels.clone())));
     let meshes = world.resource::<Assets<Mesh>>();
     found
         .into_iter()
