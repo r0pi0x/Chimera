@@ -5,7 +5,9 @@
 //! points when the mesh has no areas; inside the map only: never on a
 //! mesh generated for another walker (bots' climbs: de_aztec's spawn over
 //! its wall), never in a solid or void leaf; off the areas' centred grid
-//! (de_dust2's "seam": a row of eyes in the plane where two faces meet).
+//! (de_dust2's "seam": a row of eyes in the plane where two faces meet);
+//! in open space only, never in a duct or a crawlspace (ctf_turbine's
+//! vents).
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
@@ -451,4 +453,70 @@ fn spots_made_a_slice_a_tick_are_the_same_spots() {
     let sliced = spots(&sliced).unwrap();
     assert_eq!(whole.spots, sliced.spots);
     assert!(sliced.from_nav);
+}
+
+/// Static boxes on the greybox: (size, centre).
+fn boxes(sim: &mut Sim, list: &[(Vec3, Vec3)]) {
+    let w = sim.app.world_mut();
+    for (size, at) in list {
+        w.spawn((RigidBody::Static, Collider::cuboid(size.x, size.y, size.z), Transform::from_translation(*at)));
+    }
+    sim.ticks(2);
+}
+
+/// The open-space filter (`spawns::open_at`): no spot in a duct (2.4 m
+/// square inside, ctf_turbine's 96-unit vents, where a player once
+/// spawned) or a crawlspace (a 2.0 m ceiling a 72-unit box still fits
+/// under), though both are walked into and a standing box fits in each;
+/// spots under a low ceiling over a wide floor stay.
+#[test]
+fn spots_stand_in_open_space_not_in_ducts_or_crawlspaces() {
+    let mut sim = started(DEF, |_| {});
+    boxes(
+        &mut sim,
+        &[
+            // The duct: along z from 26 to the south wall, x 28.8 to 31.2,
+            // 2.4 m tall inside.
+            (Vec3::new(0.5, 2.9, 14.0), Vec3::new(28.55, 1.45, 33.0)),
+            (Vec3::new(0.5, 2.9, 14.0), Vec3::new(31.45, 1.45, 33.0)),
+            (Vec3::new(3.4, 0.5, 14.0), Vec3::new(30.0, 2.65, 33.0)),
+            // The crawlspace: a slab 2.0 m up over x 26 to 38, z 0 to 8.
+            (Vec3::new(12.0, 0.3, 8.0), Vec3::new(32.0, 2.15, 4.0)),
+            // The low room: a slab 2.45 m up over x 24 to 38, z -38 to -26,
+            // open all round.
+            (Vec3::new(14.0, 0.3, 12.0), Vec3::new(31.0, 2.6, -32.0)),
+            // The low hallway: 3.2 m wide (x 24 to 27.2), 2.45 m tall,
+            // along z from -20 to -8.
+            (Vec3::new(0.5, 2.9, 12.0), Vec3::new(23.75, 1.45, -14.0)),
+            (Vec3::new(0.5, 2.9, 12.0), Vec3::new(27.45, 1.45, -14.0)),
+            (Vec3::new(4.2, 0.3, 12.0), Vec3::new(25.6, 2.6, -14.0)),
+        ],
+    );
+    let duct = |p: &Vec3| (28.8..31.2).contains(&p.x) && (26.4..40.0).contains(&p.z);
+    let crawl = |p: &Vec3| (26.5..37.5).contains(&p.x) && (0.5..7.5).contains(&p.z);
+    let low_room = |p: &Vec3| (25.0..37.0).contains(&p.x) && (-37.0..-27.0).contains(&p.z);
+    let hallway = |p: &Vec3| (24.0..27.2).contains(&p.x) && (-19.0..-9.0).contains(&p.z);
+    // A standing box fits in each, so the boxes alone kept them.
+    {
+        let w = sim.app.world_mut();
+        let mut state = SystemState::<SpatialQuery>::new(w);
+        let q = state.get(w).unwrap();
+        let filter = SpatialQueryFilter::from_mask(chimera_core::core::CHARACTER_FILTER);
+        for feet in [Vec3::new(30.0, 0.0, 33.0), Vec3::new(32.0, 0.0, 4.0), Vec3::new(31.0, 0.0, -32.0)] {
+            assert!(!spawns::stuck_at(&q, &filter, feet), "a standing box fits at {feet}");
+        }
+        assert!(!spawns::open_at(&q, &filter, Vec3::new(30.0, 0.0, 33.0)), "the duct is closed");
+        assert!(!spawns::open_at(&q, &filter, Vec3::new(32.0, 0.0, 4.0)), "the crawlspace is too low");
+        assert!(spawns::open_at(&q, &filter, Vec3::new(31.0, 0.0, -32.0)), "the low room is open");
+        assert!(!spawns::open_at(&q, &filter, Vec3::new(25.6, 0.0, -14.0)), "the low hallway is a passage");
+        assert!(spawns::open_at(&q, &filter, Vec3::new(0.0, 0.0, 30.0)), "the open floor is open");
+        assert!(!spawns::open_at(&q, &filter, Vec3::new(30.0, 0.0, 27.0)), "a metre inside the duct's mouth");
+        assert!(!spawns::open_at(&q, &filter, Vec3::new(30.0, 0.0, 39.2)), "the duct's closed end");
+    }
+    let spots = spawns::candidates(sim.app.world_mut());
+    assert!(spots.len() > 500, "{} spots", spots.len());
+    assert!(!spots.iter().any(duct), "a spot in the duct: {:?}", spots.iter().filter(|p| duct(p)).collect::<Vec<_>>());
+    assert!(!spots.iter().any(crawl), "a spot in the crawlspace: {:?}", spots.iter().filter(|p| crawl(p)).collect::<Vec<_>>());
+    assert!(spots.iter().filter(|p| low_room(p)).count() > 20, "spots under the low room's ceiling");
+    assert!(!spots.iter().any(hallway), "a spot in the low hallway");
 }

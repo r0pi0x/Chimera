@@ -43,7 +43,11 @@
 //!   it, a standing player's box (Source's 32 by 72 units, from a stair
 //!   step over the feet to the head, `standing_box`; a capsule missed the
 //!   corners) meets neither the world nor a player clip (`stuck_at`), it
-//!   is inside the map (on a map with visibility data, its chest in a
+//!   stands in open space (`open_at`: at least `MIN_HEADROOM` above the
+//!   feet, the tallest player's height and some, and under a ceiling
+//!   lower than `LOW_CEILING` most level directions open for
+//!   `OPEN_REACH`: never in a duct, a crawlspace or a low narrow
+//!   passage, as ctf_turbine's vents once gave), it is inside the map (on a map with visibility data, its chest in a
 //!   leaf of a cluster: not solid, not the void outside the world), and
 //!   outside water and every zone a game registers as hurting or
 //!   killing (`SpawnHazards`). Without a mesh, or spots, the map's spawn
@@ -885,8 +889,9 @@ fn raw_spots(nav: &NavMesh, points: &[Vec3], seed: u32) -> Vec<(f32, f32, f32)> 
 /// The feet of a valid standing spot near the mesh point `p`, if there is
 /// one: a walkable floor within 0.5 m of the mesh's height (the world's
 /// or a player clip's top), a standing player's box clear of what
-/// characters meet (`stuck_at`), inside the map (`vis`: the chest in a
-/// cluster's leaf), and no hazard at the feet, chest or head.
+/// characters meet (`stuck_at`), in open space (`open_at`: headroom, and
+/// room around under a low ceiling), inside the map (`vis`: the chest in
+/// a cluster's leaf), and no hazard at the feet, chest or head.
 fn spot_ok(q: &SpatialQuery, filter: &SpatialQueryFilter, hazards: &[MapBrush], vis: Option<&MapVisibility>, p: Vec3) -> Option<Vec3> {
     let from = p + Vec3::Y * 0.6;
     let hit = q.cast_ray(from, Dir3::NEG_Y, 1.2, true, filter)?;
@@ -894,7 +899,7 @@ fn spot_ok(q: &SpatialQuery, filter: &SpatialQueryFilter, hazards: &[MapBrush], 
         return None;
     }
     let feet = Vec3::new(p.x, from.y - hit.distance, p.z);
-    if !inside_map(vis, feet) || stuck_at(q, filter, feet) {
+    if !inside_map(vis, feet) || stuck_at(q, filter, feet) || !open_at(q, filter, feet) {
         return None;
     }
     let bad = [0.1, 1.0, 1.7].iter().any(|h| {
@@ -902,6 +907,52 @@ fn spot_ok(q: &SpatialQuery, filter: &SpatialQueryFilter, hazards: &[MapBrush], 
         hazards.iter().any(|b| b.contains(at))
     });
     (!bad).then_some(feet)
+}
+
+/// The least headroom a spot has (m, from the feet to what is above):
+/// the tallest standing player the hosted games make and some (TF2's 82
+/// units, 2.08 m), so nobody spawns under a ceiling it can't stand under
+/// (a crawlspace a 72-unit box still fits).
+pub const MIN_HEADROOM: f32 = 2.2;
+/// Headroom (m) under which a spot also needs room around it
+/// (`OPEN_REACH`, `OPEN_DIRECTIONS`): a ceiling this low over a floor
+/// walled in on most sides is a duct or a crawlspace, not a place to
+/// spawn (ctf_turbine's 96-unit vent ducts, 2.44 m inside, where a player
+/// once spawned).
+pub const LOW_CEILING: f32 = 2.6;
+/// How far (m) a level ray from the chest must run free for its
+/// direction to count as open.
+pub const OPEN_REACH: f32 = 3.0;
+/// Of the eight level directions, how many a spot under a low ceiling
+/// (`LOW_CEILING`) needs open (`OPEN_REACH`): a duct's middle has two
+/// (along it), its corners two, its crossings four at most, a step inside
+/// its mouth four; a low room's floor all eight, along a wall five, in a
+/// corner three; a low hallway narrower than about 4 m two.
+pub const OPEN_DIRECTIONS: usize = 5;
+
+/// Whether `feet` stands in open space (the module doc's open-space
+/// filter): at least `MIN_HEADROOM` of headroom, and, under a ceiling
+/// lower than `LOW_CEILING`, at least `OPEN_DIRECTIONS` of eight level
+/// rays from the chest running `OPEN_REACH` free (a duct's or a
+/// crawlspace's walls close in on most sides, a low room's don't). What
+/// characters meet counts (`filter`: the player clips too).
+pub fn open_at(q: &SpatialQuery, filter: &SpatialQueryFilter, feet: Vec3) -> bool {
+    let from = feet + Vec3::Y * 0.1;
+    let headroom = q.cast_ray(from, Dir3::Y, LOW_CEILING, true, filter).map_or(f32::INFINITY, |h| h.distance + 0.1);
+    if headroom < MIN_HEADROOM {
+        return false;
+    }
+    if headroom >= LOW_CEILING {
+        return true;
+    }
+    let chest = feet + Vec3::Y * 1.0;
+    let open = (0..8)
+        .filter(|k| {
+            let dir = Quat::from_rotation_y(*k as f32 * std::f32::consts::FRAC_PI_4) * Vec3::NEG_Z;
+            Dir3::new(dir).ok().is_some_and(|d| q.cast_ray(chest, d, OPEN_REACH, true, filter).is_none())
+        })
+        .count();
+    open >= OPEN_DIRECTIONS
 }
 
 /// Whether a character standing at `feet` is inside the map: with
