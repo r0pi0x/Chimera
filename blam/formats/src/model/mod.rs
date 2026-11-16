@@ -232,6 +232,11 @@ pub struct Part {
     /// The strip's non-degenerate triangles in the game's winding
     /// (clockwise seen from the front; see `strip_triangles`).
     pub triangles: Vec<[u16; 3]>,
+    /// Where the vertices and the strip are in the tag data (the buffer
+    /// records' addresses): what a unit cut from the map keeps
+    /// (`unit::raw_ranges`).
+    pub vertex_address: u32,
+    pub index_address: u32,
 }
 
 impl Part {
@@ -718,6 +723,8 @@ fn read_part(ctx: &PartContext<'_>, p: &View<'_>) -> io::Result<Part> {
         vertices,
         strip,
         triangles,
+        vertex_address: vdata,
+        index_address: idata,
     })
 }
 

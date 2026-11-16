@@ -69,3 +69,4 @@ pub mod hud;
 pub mod sound;
 pub mod structure_bsp;
 pub mod vehicle;
+pub mod unit;
