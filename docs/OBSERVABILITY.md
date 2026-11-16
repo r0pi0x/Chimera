@@ -573,7 +573,9 @@ timescale 1|0.5|0.25`, `sandbox camdist <units>`, `sandbox conditions`
 each change). Scenes: `apps/ultimate_gun_game/scenes/layout_repeat.scene`,
 `impact_marks.scene`, `conditions.scene`; on the range,
 `range_targets.scene` (targets on the six lines, hit at each) and
-`range_props.scene` (the range's shelf and board).
+`range_props.scene` (the range's shelf and board) and
+`pending_pick.scene` (a pick waiting for its gun's files in the chip's
+Next strip: `gun_files_hold <gun id | off>` holds a gun's files back).
 `rung` is also a plain developer command in any ladder match: the host, a
 single player and a dedicated server's console may always run it, a remote
 client only with the server's `sv_cheats 1` (and only on itself).

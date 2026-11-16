@@ -43,7 +43,14 @@
 //! mechanics' conditions (`conditions::SandboxConditions`) are mirrored
 //! into the options shown. One not here is asked for
 //! (`UnitRequest`) and waits as `pending`, shown on the chip's Next
-//! strip, switched to when it lands.
+//! strip, switched to when it lands. A pick the mechanics hold
+//! themselves (`rung_command::GunPending` on the local player: a console
+//! `rung`, a `+rung`, or files the mechanics still wait for) shows there
+//! too (`mechanics_pick`: `pending` is its gun while it waits,
+//! `pick_held` says so and `land_pending` leaves it to them); its end
+//! (`GunPickEnded`) clears the strip: `Applied` the gun is in hand,
+//! `Replaced` the newer pick takes the strip, `Dropped` (the sandbox's
+//! guns changed) says so on the chip's foot.
 //!
 //! `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range|off>`
 //! stages the screens with made-up guns, kills and downloads (`stage`).
@@ -112,8 +119,12 @@ pub struct SandboxUi {
     pub current: Option<String>,
     /// Picked, downloading before it's in hand.
     pub pending: Option<String>,
+    /// `pending` is the mechanics' own waiting pick (`GunPending`): they
+    /// apply it when its files are in.
+    pub pick_held: bool,
     pub drag: Option<Drag>,
-    /// A word for the chip's foot (a switch refused).
+    /// A word for the chip's foot (a switch refused, a waiting pick
+    /// dropped), until the gun in hand changes.
     pub said: Option<String>,
     /// A sandbox screen took Esc this frame (the Escape menu leaves it).
     pub took_esc: bool,
@@ -286,6 +297,10 @@ fn track(world: &mut World) {
     }
     if ui.current != current {
         ui.current = current;
+        // A gun in hand: the last refusal's word no longer holds.
+        if ui.said.is_some() {
+            ui.said = None;
+        }
     }
 }
 
@@ -305,16 +320,21 @@ pub fn switch_to(world: &mut World, gun: &str) -> Result<(), String> {
                     UnitRequest::Fetch { game: g.game.clone(), unit: u.clone() }
                 });
             }
-            world.resource_mut::<SandboxUi>().pending = Some(g.id.clone());
+            let mut ui = world.resource_mut::<SandboxUi>();
+            ui.pending = Some(g.id.clone());
+            ui.pick_held = false;
             return Ok(());
         }
         _ => {
-            world.resource_mut::<SandboxUi>().pending = Some(g.id.clone());
+            let mut ui = world.resource_mut::<SandboxUi>();
+            ui.pending = Some(g.id.clone());
+            ui.pick_held = false;
             return Ok(());
         }
     }
     let mut ui = world.resource_mut::<SandboxUi>();
     ui.pending = None;
+    ui.pick_held = false;
     if ui.staged {
         ui.current = Some(g.id.clone());
         return Ok(());
@@ -383,8 +403,64 @@ fn mirror_conditions(
     }
 }
 
+/// The mechanics' own waiting pick (`rung_command::GunPending` on the
+/// local player) as the chip's Next strip, and how it ended (module doc,
+/// "Switching").
+fn mechanics_pick(
+    me: Query<(Entity, Option<&rung_command::GunPending>), With<LocalPlayer>>,
+    mut ended: Option<MessageReader<rung_command::GunPickEnded>>,
+    cat: Res<SandboxCatalogue>,
+    mut ui: ResMut<SandboxUi>,
+) {
+    if !ui.on || ui.staged {
+        if let Some(e) = ended.as_mut() {
+            e.clear();
+        }
+        return;
+    }
+    let Some((me, waiting)) = me.iter().next() else { return };
+    for e in ended.as_mut().into_iter().flat_map(|e| e.read()) {
+        if e.who != me {
+            continue;
+        }
+        if ui.pending.as_deref() == Some(e.gun) {
+            ui.pending = None;
+            ui.pick_held = false;
+        }
+        match e.outcome {
+            // In hand now: an older refusal's word no longer holds.
+            rung_command::GunPickOutcome::Applied => {
+                if ui.said.is_some() {
+                    ui.said = None;
+                }
+            }
+            // The newer pick takes the strip (below, if it waits too).
+            rung_command::GunPickOutcome::Replaced => {}
+            rung_command::GunPickOutcome::Dropped => {
+                let name = cat.get(e.gun).map_or(e.gun, |g| g.name.as_str());
+                ui.said = Some(format!("{name} was dropped: the sandbox's guns changed."));
+            }
+        }
+    }
+    match waiting {
+        Some(p) if ui.pending.as_deref() != Some(p.gun) || !ui.pick_held => {
+            ui.pending = Some(p.gun.to_string());
+            ui.pick_held = true;
+        }
+        None if ui.pick_held => {
+            ui.pick_held = false;
+            ui.pending = None;
+        }
+        _ => {}
+    }
+}
+
 /// A gun picked while its files downloaded: switched to when they land.
 fn land_pending(world: &mut World) {
+    // (The mechanics' own pick lands by itself.)
+    if world.get_resource::<SandboxUi>().is_some_and(|s| s.pick_held) {
+        return;
+    }
     let Some(gun) = world.get_resource::<SandboxUi>().and_then(|s| s.pending.clone()) else { return };
     let here = world.get_resource::<SandboxCatalogue>().and_then(|c| c.get(&gun)).is_some_and(|g| {
         SandboxCatalogue::unit_state(g, world.get_resource::<UnitProgress>().unwrap_or(&UnitProgress::default())).is_here()
@@ -552,6 +628,7 @@ impl Plugin for SandboxUiPlugin {
                     link::bridge_blasts,
                     refusals,
                     mirror_conditions,
+                    mechanics_pick,
                     land_pending,
                 )
                     .chain()

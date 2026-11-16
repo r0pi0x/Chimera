@@ -289,3 +289,82 @@ fn change_gun_lists_every_rung_with_melee_as_its_own_class() {
         assert_eq!(section_of(g), "Melee", "{m}: {:?}", g.tags);
     }
 }
+
+/// The mechanics' own waiting pick (`rung_command::GunPending`: a console
+/// `rung` whose gun's files aren't in) shows in the chip's Next strip, and
+/// its end (`GunPickEnded`) clears it: replaced by a newer pick, applied
+/// when the files come, dropped when the ladder changes under it.
+#[test]
+fn a_pick_the_mechanics_hold_shows_as_next_until_it_ends() {
+    use std::collections::BTreeSet;
+
+    use chimera_client::client::sandbox::{hud, link::SandboxOptions, units::UnitProgress};
+    use chimera_core::console::Console;
+    use chimera_sim::minigame::{gun_files::GunFiles, ladder::Ladder, rung_command::GunPending};
+    use chimera_ui::UiParityId;
+
+    const SNIPER: &str = "tf2:tf_weapon_sniperrifle";
+    const ROCKETS: &str = "tf2:tf_weapon_rocketlauncher";
+    #[derive(Resource, Default)]
+    struct Missing(BTreeSet<String>);
+    fn fake(w: &mut World, id: &str) -> bool {
+        !w.resource::<Missing>().0.contains(id)
+    }
+    let (mut sim, me) = play();
+    let run = |sim: &mut Sim, line: &str| {
+        sim.app.world_mut().resource_mut::<Console>().submit(line.to_string());
+        sim.app.update();
+        sim.app.update();
+    };
+    let missing = |sim: &mut Sim, guns: &[&str]| {
+        sim.app.world_mut().insert_resource(Missing(guns.iter().map(|g| g.to_string()).collect()));
+    };
+    let ui = |sim: &Sim| sim.app.world().resource::<SandboxUi>().clone();
+    let shown = |sim: &Sim| {
+        let w = sim.app.world();
+        hud::shown(&ui(sim), w.resource::<SandboxCatalogue>(), w.resource::<UnitProgress>(), &KillLog::default(), &SandboxOptions::default(), 0.0)
+    };
+    let drawn = |sim: &mut Sim, id: &str| {
+        let w = sim.app.world_mut();
+        w.query::<&UiParityId>().iter(w).any(|p| p.0 == id)
+    };
+    run(&mut sim, &format!("rung {GUN}"));
+    sim.seconds(0.5);
+    assert_eq!(ui(&sim).current.as_deref(), Some(GUN));
+    missing(&mut sim, &[SNIPER, ROCKETS]);
+    sim.app.world_mut().insert_resource(GunFiles(vec![fake]));
+    // Picked at the console: it waits, shown as Next with its name.
+    run(&mut sim, &format!("rung {SNIPER}"));
+    assert_eq!(sim.app.world().get::<GunPending>(me).map(|p| p.gun), Some(SNIPER));
+    let u = ui(&sim);
+    assert_eq!((u.pending.as_deref(), u.pick_held, u.current.as_deref()), (Some(SNIPER), true, Some(GUN)));
+    let s = shown(&sim);
+    let (face, _) = s.next.clone().expect("the Next strip");
+    assert_eq!(face.id, SNIPER);
+    assert!(!face.name.is_empty() && face.name != SNIPER, "its name: {face:?}");
+    assert!(s.next_held);
+    assert!(drawn(&mut sim, "sb.next"), "the strip drawn");
+    // A newer pick replaces it.
+    run(&mut sim, &format!("rung {ROCKETS}"));
+    assert_eq!(ui(&sim).pending.as_deref(), Some(ROCKETS));
+    // Its files come: applied, in hand, the strip gone.
+    missing(&mut sim, &[]);
+    sim.app.update();
+    sim.app.update();
+    let u = ui(&sim);
+    assert_eq!((u.pending.as_deref(), u.pick_held, u.current.as_deref()), (None, false, Some(ROCKETS)));
+    assert!(shown(&sim).next.is_none());
+    assert!(!drawn(&mut sim, "sb.next"));
+    // A pick waiting when the ladder changes under it: dropped, said so.
+    missing(&mut sim, &[SNIPER]);
+    run(&mut sim, &format!("rung {SNIPER}"));
+    assert_eq!(ui(&sim).pending.as_deref(), Some(SNIPER));
+    let at = sim.app.world().get::<GunPending>(me).map(|p| p.rung).unwrap();
+    sim.app.world_mut().resource_mut::<Ladder>().rungs[at] = GUN;
+    sim.app.update();
+    sim.app.update();
+    let u = ui(&sim);
+    assert_eq!((u.pending.as_deref(), u.pick_held), (None, false));
+    assert!(u.said.as_deref().is_some_and(|s| s.contains("dropped")), "{:?}", u.said);
+    assert!(drawn(&mut sim, "sb.said"), "the word on the chip's foot");
+}

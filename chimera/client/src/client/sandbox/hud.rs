@@ -14,6 +14,11 @@
 //!   before it's in hand (`SandboxUi::pending`), the Next strip in their
 //!   place: NEXT, its icon and name and the progress component (variant
 //!   B, "64% · 3.1 of 4.8 MB"; queued a dim outline; failed: R retries).
+//!   The mechanics' own waiting pick (`rung_command::GunPending`,
+//!   `SandboxUi::pick_held`) shows there the same; with nothing to
+//!   download in the units' list it reads "Loading". Under those, the
+//!   mechanics' last word (`SandboxUi::said`: a switch refused, a
+//!   waiting pick dropped), a threat mark before it.
 //! - **Tab held** (option A, one column at the left from 5.6 cq down, 21
 //!   cq wide): the last-kill card (LAST KILL, how long ago; the gun and
 //!   the target, protection, distance and motion; hits, first hit to kill,
@@ -98,6 +103,10 @@ pub struct HudShown {
     pub gun: Option<GunFace>,
     pub tags: Vec<&'static str>,
     pub next: Option<(GunFace, UnitState)>,
+    /// The Next strip's gun is the mechanics' waiting pick.
+    pub next_held: bool,
+    /// The mechanics' last word (`SandboxUi::said`).
+    pub said: Option<String>,
     pub pins: Vec<Option<GunFace>>,
     pub current_slot: Option<usize>,
     /// The bar's alpha, in steps (0: hidden).
@@ -128,6 +137,8 @@ pub fn shown(ui: &SandboxUi, cat: &SandboxCatalogue, progress: &UnitProgress, ki
         tab: ui.tab,
         gun: ui.current.as_deref().map(face),
         tags: options.tags(ui.tab),
+        next_held: next.is_some() && ui.pick_held,
+        said: ui.said.clone(),
         next,
         pins: ui.pins.0.iter().map(|p| p.as_deref().map(face)).collect(),
         current_slot: ui.current.as_deref().and_then(|c| ui.pins.slot_of(c)),
@@ -284,12 +295,24 @@ fn chip(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, s: &HudShown) {
         .spawn((UiStyle { gap: Some(0.3), margin: Some([0.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }, Node::default(), UiParityId::new("sb.conds"), ChildOf(col)))
         .id();
     match &s.next {
-        Some((g, st)) => next_strip(c, ui, look, under, g, st),
+        Some((g, st)) => next_strip(c, ui, look, under, g, st, s.next_held),
         None => {
             for t in &s.tags {
                 tag(c, ui, under, t, 0.46, None, Tone::Fg4);
             }
         }
+    }
+    if let Some(said) = &s.said {
+        let r = c
+            .spawn((
+                UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), margin: Some([0.4, 0.0, 0.0, 0.0].into()), pad: Some([0.35, 0.7, 0.35, 0.7].into()), ..UiStyle::row() }.bg_a(Tone::Ink, 0.86),
+                Node::default(),
+                UiParityId::new("sb.said"),
+                ChildOf(col),
+            ))
+            .id();
+        ui.mark(c, r, Tone::Threat, 0.3, 0.6);
+        ui.sentence(c, r, 0.6, Tone::Fg, said);
     }
 }
 
@@ -331,7 +354,7 @@ pub fn progress_of(st: &UnitState) -> (chimera_ui::controls::Progress, String) {
     }
 }
 
-fn next_strip(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &GunFace, st: &UnitState) {
+fn next_strip(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &GunFace, st: &UnitState, held: bool) {
     let strip = c
         .spawn((
             UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), pad: Some([0.4, 0.7, 0.4, 0.7].into()), ..UiStyle::row() }.bg_a(Tone::Ink, 0.86).outline(Tone::Fg5, 1.0),
@@ -343,7 +366,8 @@ fn next_strip(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &GunFac
     ui.text(c, strip, Role::Mono, 0.46, Tone::Fg3, "Next");
     gun_icon(c, look, strip, &g.id, g.icon_class, 0.62, Tone::Fg, 1.0);
     ui.text(c, strip, Role::DisplayBold, 0.66, Tone::Fg, &g.name);
-    let (p, words) = progress_of(st);
+    // The mechanics wait for files the units' list calls here: loading.
+    let (p, words) = if held && st.is_here() { (chimera_ui::controls::Progress::Pending, "Loading".into()) } else { progress_of(st) };
     ui.progress(c, strip, p, &words, 10.4, 1.1, 0.44, true);
     if matches!(st, UnitState::Failed { .. }) {
         key_hint(c, ui, strip, "R", "Retry", 0.46, Tone::Fg);
