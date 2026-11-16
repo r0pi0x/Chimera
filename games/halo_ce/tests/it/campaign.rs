@@ -6,7 +6,11 @@
 //! Spartan when the Elite's unit is not loaded and splits the plasma
 //! rifle's rolls by its weights; `movement_of` and `vitality_of` pick the
 //! kind's table; a kind names its model on the character and takes the
-//! name off again (`name_bodies`).
+//! name off again (`name_bodies`). The kinds as sandbox targets
+//! (`targets`); a kind worn before its unit loaded is worn within two
+//! frames of the load; the pain, death, scream and maimed lines' rules
+//! (`voice`); a campaign body is never the table's black; its held guns
+//! survive another game's map-unload housekeeping (`unit::keep_held`).
 
 use bevy::prelude::*;
 use chimera_core::core::BodyRegion;

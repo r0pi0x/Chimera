@@ -364,7 +364,8 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume
   dice and the rung seed (`CHIMERA_RUNG_SEED` fixes the extras),
   particles and spread from their own seeds.
 - Examples: `apps/ultimate_gun_game/scenes/` (three targets at 5, 10,
-  20 m; a kill and its death at 0, 15, 45 frames).
+  20 m; a kill and its death at 0, 15, 45 frames; Halo's campaign bodies
+  as targets on Hang 'Em High and de_dust2, and worn by the player).
 
 ### Offscreen (no display, no compositor)
 

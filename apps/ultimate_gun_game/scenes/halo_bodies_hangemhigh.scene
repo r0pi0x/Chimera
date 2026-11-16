@@ -1,0 +1,40 @@
+# Halo's campaign bodies as practice targets on Hang 'Em High: the Elite,
+# the Grunt and the Jackal each still at 5 m holding its gun (and at 2.5 m
+# for the grip), the Jackal's arm shield up and then down (a scene script:
+# chimera_client's `scene`; the bodies need their generated sets,
+# `character/<id>`, game::campaign::unit).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox halo_ce:hangemhigh \
+#       --scene apps/ultimate_gun_game/scenes/halo_bodies_hangemhigh.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 300                     # the units in, pipelines settled
+halo_ce:body status
+setpos -1150 3000 -770       # the first spawn's hall, down off its ledge
+setang 2 342
+wait 30
+getpos
+target add halo_ce:elite 5
+wait 150
+shot elite_5m
+target set all distance 2.5
+wait 90
+shot elite_2m5
+target remove all
+target add halo_ce:grunt 5
+wait 150
+shot grunt_5m
+target set all distance 2.5
+wait 90
+shot grunt_2m5
+target remove all
+target add halo_ce:jackal 5
+wait 150
+shot jackal_5m_shield_up
+target set all distance 2.5
+wait 90
+shot jackal_2m5_shield_up
+halo_ce:body shield 0
+wait 10
+shot jackal_2m5_shield_down
+halo_ce:body status
+target list
