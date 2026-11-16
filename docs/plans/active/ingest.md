@@ -760,6 +760,28 @@ the tests from synthetic bytes.
 - **Hub accounts**: a custom namespace could be bound to an account
   (hub.md, section 5) instead of a bare key (open question 4).
 
+### 6.x Halo's per-character units, measured (2026-11-15)
+
+The measurements are in specs/halo_ce/characters.md section 8. A unit is every tag reachable from the biped, minus actor, weapon and HUD tags, and is keyed by the biped's path; its size is the same on every map. Sizes:
+
+| Unit | Tags | Size | Of which voice |
+|---|---|---|---|
+| Elite | 161 | 6.68 MB | 4.50 MB |
+| Grunt | 169 | 12.15 MB | 10.66 MB |
+| Jackal | 173 | 8.55 MB | 6.96 MB |
+| Hunter | 128 | 4.59 MB | 3.35 MB (plus its cannon, 1.02 MB) |
+| Marine | 885 | 59.6 MB | 57.0 MB (six voices) |
+| Flood combat form | | about 3 MB | |
+| Flood infection form | | 0.94 MB | |
+
+Extra weapons: fuel rod gun 1.22 MB, energy sword 0.21 MB, flamethrower 1.76 MB.
+
+The units are cut from three campaign maps. The set design needs two additions:
+- **Set dependencies:** a set may depend on another set. This is already needed for TF2's `needs`.
+- **Deferred sets:** a set can be marked "not needed to start". Voices become their own units, one per voice, fetched after the body, so a character is playable before its lines arrive.
+
+The no-fetch-in-match guard allows deferred sets to arrive in the background during a match, within a bandwidth budget.
+
 ## 7. Migration from today's recorded sets
 
 Today's server store mixes four sources: whole publishes (CS:S, Combat
