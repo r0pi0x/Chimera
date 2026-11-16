@@ -848,7 +848,8 @@ pub(super) fn plugin(app: &mut App) {
     app.init_resource::<SpawnCursor>()
         .map_scoped::<super::spawns::SpawnSpots>()
         .map_scoped::<super::spawns::SpotsJob>()
-        .add_systems(PreUpdate, super::arena::drop_pickups_outside)
+        .map_scoped::<super::arena::ArenaSpawnsMade>()
+        .add_systems(PreUpdate, (super::arena::drop_pickups_outside, super::arena::put_loose_back_inside, super::arena::arena_spawn_points))
         .add_observer(number_players)
         .add_observer(super::results::on_step)
         .add_systems(

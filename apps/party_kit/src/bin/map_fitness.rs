@@ -59,6 +59,17 @@
 //!   top-down height map and the map's entities as files. `--bare`:
 //!   without the map logic; `--client`: loaded as a client loads it.
 //!
+//! - `--slice <game:map@id>` (an arena slice, docs/plans/active/
+//!   arena-slices.md, A3): the map played inside the slice's wall
+//!   (`play_area`, as the party kit's `arena` makes it), so every measure
+//!   above is the slice's, and the spawn-safety measures (`safety`, its
+//!   own file: the visibility table between the spawn spots, `see_pairs`,
+//!   `seen_at_spawn`, the spawn points' exposure, cover, long sight,
+//!   vertical range, chokes, spacing) before and after the slice makes its
+//!   own spawn points, judged by map_fit.toml's `[slice]` with the player
+//!   counts it suits, and a top-down picture. `--safety`: those measures
+//!   for whole maps too (the calibration sweep), a row each in
+//!   `safety.csv`.
 //! - `--walker r,h,s`: the same flood with another body (half width,
 //!   height, highest step, m), printed against the bots' walker: both main
 //!   regions' areas, the spawn points off each, and the places the bots'
@@ -112,6 +123,10 @@ use chimera_world::{
 };
 use combat_arms::harness::CaSim;
 
+#[path = "map_fitness/safety.rs"]
+mod safety;
+use safety::{SafetyInput, safety};
+
 const USAGE: &str = "\
 usage: map_fitness [options]
   --game <ids>       comma-separated: cs_source, combat_arms, hl2dm, halo_ce, tf2 (default: all five)
@@ -136,7 +151,13 @@ usage: map_fitness [options]
   --csv <file>       with --write: write from this sweep's CSV, measuring nothing
   --walker <r,h,s>   also flood with another walker (half width, height, highest step, m) and
                      print what it reaches against the bots' walker: area, spawn points off its
-                     main region, and the places the bots' walker reaches and it does not";
+                     main region, and the places the bots' walker reaches and it does not
+  --slice <map@id>   measure an arena slice (halo_ce:bloodgulch@west_base): the map played inside
+                     its wall, its spots, spawn points and bots' mesh held inside; the spawn-safety
+                     measures before and after the slice makes its own spawn points, judged by
+                     map_fit.toml's [slice]; a top-down picture <out>/<game>_<map>@<id>.png
+  --safety           the spawn-safety measures for whole maps too (a row each in <out>/safety.csv)
+  --table <n>        spawn spots in the visibility table at most (default 1500)";
 
 const N_PLAYERS: [usize; 5] = [2, 4, 8, 12, 16];
 const HEADER: &str = "game,map,loads,error,load_s,nav_s,spawns,spawns_in_region,own_nav,spots,spots_off,has_nav_file,off_region,off_nav_file,off_box,spots_off_at,stuck,stuck_at,spawn_min_m,spawn_median_m,\
@@ -176,6 +197,9 @@ struct Opts {
     write: Option<PathBuf>,
     csv: Option<PathBuf>,
     walker: Option<[f32; 3]>,
+    slice: Option<String>,
+    safety: bool,
+    table: usize,
 }
 
 fn parse() -> Result<Opts, String> {
@@ -196,6 +220,9 @@ fn parse() -> Result<Opts, String> {
         write: None,
         csv: None,
         walker: None,
+        slice: None,
+        safety: false,
+        table: 1500,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -230,6 +257,17 @@ fn parse() -> Result<Opts, String> {
                 };
                 o.walker = Some([r, h, step]);
             }
+            "--slice" => {
+                let key = val()?;
+                let (map, _) = key.split_once('@').ok_or("--slice <game:map@id>")?;
+                let (game, name) = map.split_once(':').ok_or("--slice <game:map@id>")?;
+                o.games = vec![game.to_string()];
+                o.filter = vec![name.to_ascii_lowercase()];
+                o.slice = Some(key);
+                o.safety = true;
+            }
+            "--safety" => o.safety = true,
+            "--table" => o.table = val()?.parse().map_err(|e| format!("--table: {e}"))?,
             "-h" | "--help" => return Err(String::new()),
             _ => return Err(format!("unknown option {a}")),
         }
@@ -579,6 +617,40 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     };
     let _ = chimera_sim::minigame::start(sim.app.world_mut(), party_kit::DEFAULT_MINIGAME);
     sim.ticks(3);
+    if let Some(key) = &o.slice {
+        // As the party kit's `arena` does on a map just in: the plan, the
+        // map in the world, the play area at once (spawn points held).
+        let w = sim.app.world_mut();
+        let slice = match chimera_sim::minigame::arena::plan(w, Some(key)) {
+            Ok(Some(s)) => s,
+            Ok(None) => return Row::failed("no slice".into(), t.elapsed().as_secs_f32()),
+            Err(e) => return Row::failed(e, t.elapsed().as_secs_f32()),
+        };
+        // The map's teleporters against the slice (the play area keeps a
+        // pad only when both its ends are inside).
+        if let (Ok(poly), Some(tp)) = (slice.polygon(), w.get_resource::<chimera_world::map::teleport::MapTeleporters>()) {
+            for p in &tp.pads {
+                println!(
+                    "teleporter {:.1} {:.1} {:.1} ({}) -> {:.1} {:.1} {:.1} ({}): {}",
+                    p.source.x,
+                    p.source.y,
+                    p.source.z,
+                    if poly.contains3(p.source) { "inside" } else { "outside" },
+                    p.dest.x,
+                    p.dest.y,
+                    p.dest.z,
+                    if poly.contains3(p.dest) { "inside" } else { "outside" },
+                    if poly.contains3(p.source) && poly.contains3(p.dest) { "kept" } else { "off for the match" }
+                );
+            }
+        }
+        w.insert_resource(chimera_world::map::play_area::ArenaMap(id.to_string()));
+        chimera_world::map::play_area::follow_plan(w);
+        if !w.contains_resource::<chimera_world::map::play_area::PlayArea>() {
+            return Row::failed(format!("{key} does not play on {id}"), t.elapsed().as_secs_f32());
+        }
+        sim.ticks(2);
+    }
     let load_s = t.elapsed().as_secs_f32();
     let w = sim.app.world_mut();
     let mut feet: Vec<Vec3> = w
@@ -1102,6 +1174,19 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     // player's next meeting, area / ((N - 1) * 2 * sight * 4/pi * speed).
     for (slot, n) in WANDER_PLAYERS.iter().enumerate() {
         row.wander[slot] = row.area_m2 / ((*n as f32 - 1.0) * 2.0 * row.sight_m * 4.0 / std::f32::consts::PI * v);
+    }
+    if o.safety {
+        let ctx = SafetyInput {
+            id,
+            spots: if candidates.is_empty() { &feet } else { &candidates },
+            feet: &feet,
+            nav: &nav,
+            ids: &ids,
+            area_m2: row.area_m2,
+            sight_m: row.sight_m,
+            game_units: source,
+        };
+        safety(w, o, &ctx);
     }
     if !o.probes.is_empty() {
         sim.seconds(5.0);

@@ -76,6 +76,117 @@ pub struct FitSettings {
     pub small_scale: f32,
     /// A map without measurements: in at this weight.
     pub unknown_weight: f32,
+    /// Where an arena slice passes the spawn-safety measures, and how it
+    /// makes its spawn points (`[slice]`).
+    pub slice: SliceLimits,
+}
+
+/// An arena slice's limits (map_fit.toml's `[slice]`; docs/plans/active/
+/// arena-slices.md, A3): the spawn-safety measures it must keep
+/// (`super::slice_safety`), and its spawn points.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SliceLimits {
+    /// The share of spawn-spot pairs seeing each other, at most (the same
+    /// as the mean share of the other spots that see a spot).
+    pub see_pairs_max: f32,
+    /// The chance a fresh spawn is seen at once, at most: the players a
+    /// slice suits stop at the count where it goes over.
+    pub seen_at_spawn_max: f32,
+    /// The share of the floor seeing a spawn point, on average over the
+    /// points, at most (the share seeing any one of them only grows with
+    /// their number, so it is told, not judged).
+    pub point_floor_seen_max: f32,
+    /// The share of the other spawn points that see the most seen one, at
+    /// most.
+    pub point_seen_by_max: f32,
+    /// The share of spots with cover within reach, at least.
+    pub cover_min: f32,
+    /// The 95th percentile of level sight (m), at most.
+    pub long_sight_p95_max_m: f32,
+    /// Spawn spots, at least.
+    pub spots_min: usize,
+    /// Spawn points a slice wants; the ones it makes stand at least
+    /// `wall_gap_m` from its wall and, where the spots allow,
+    /// `points_apart_m` from each other.
+    pub points_want: usize,
+    pub wall_gap_m: f32,
+    pub points_apart_m: f32,
+}
+
+/// What `SliceLimits::judge` says of a slice (or of a whole map, for
+/// comparison).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SliceVerdict {
+    /// The limits it breaks, said in words.
+    pub failed: Vec<String>,
+    /// The player counts it suits (none: it fails).
+    pub players: Option<[usize; 2]>,
+}
+
+impl SliceLimits {
+    /// `r` against the limits; the players: from the least count whose
+    /// wander time is within `fit.target_s` to the most whose
+    /// `seen_at_spawn` is within the limit (2 to 16).
+    pub fn judge(&self, r: &super::slice_safety::Report, fit: &FitSettings) -> SliceVerdict {
+        let mut failed = Vec::new();
+        let s = &r.safety;
+        if s.spots < self.spots_min {
+            failed.push(format!("spots {} under {}", s.spots, self.spots_min));
+        }
+        if s.see_pairs > self.see_pairs_max {
+            failed.push(format!("see_pairs {:.2} over {:.2}", s.see_pairs, self.see_pairs_max));
+        }
+        if !r.points.is_empty() && r.point_floor_seeing() > self.point_floor_seen_max {
+            failed.push(format!("point_floor_seen {:.2} over {:.2}", r.point_floor_seeing(), self.point_floor_seen_max));
+        }
+        if r.points.len() >= 2 && r.point_seen_by() > self.point_seen_by_max {
+            failed.push(format!("point_seen_by {:.2} over {:.2}", r.point_seen_by(), self.point_seen_by_max));
+        }
+        if r.cover < self.cover_min {
+            failed.push(format!("cover {:.2} under {:.2}", r.cover, self.cover_min));
+        }
+        if r.long_sight_p95_m > self.long_sight_p95_max_m {
+            failed.push(format!("long_sight_p95 {:.0} m over {:.0}", r.long_sight_p95_m, self.long_sight_p95_max_m));
+        }
+        let fitness = Fitness {
+            loads: true,
+            area_m2: r.area_m2,
+            sight_m: r.sight_m,
+            spot_area_m2: 0.0,
+            spawns: r.points.len() as u32,
+            spots: s.spots as u32,
+            spots_off: 0,
+            stuck: 0,
+            wander_s: BTreeMap::new(),
+        };
+        let lo = (2..=16).find(|n| fitness.wander(*n, fit) <= fit.target_s || fitness.small(fit));
+        let hi = (2..=16).rev().find(|n| s.seen_at(*n) <= self.seen_at_spawn_max);
+        match (lo, hi) {
+            (Some(lo), Some(hi)) if lo <= hi => {}
+            _ => failed.push(format!(
+                "no player count: wander within {} s from {}, seen_at_spawn within {:.2} up to {}",
+                fit.target_s,
+                lo.map_or("none".into(), |n| n.to_string()),
+                self.seen_at_spawn_max,
+                hi.map_or("none".into(), |n| n.to_string())
+            )),
+        }
+        let players = match (lo, hi) {
+            (Some(lo), Some(hi)) if lo <= hi && failed.is_empty() => Some([lo, hi]),
+            _ => None,
+        };
+        SliceVerdict { failed, players }
+    }
+
+    /// How a slice makes its spawn points (`slice_safety::choose_points`).
+    pub fn point_rules(&self) -> super::slice_safety::PointRules {
+        super::slice_safety::PointRules {
+            want: self.points_want,
+            wall_gap: self.wall_gap_m,
+            apart: self.points_apart_m,
+        }
+    }
 }
 
 impl FitSettings {

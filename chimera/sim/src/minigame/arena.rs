@@ -16,8 +16,16 @@
 //! (`area_m2`, `sight_m`, ...: kept, not read). The shown name is made:
 //! "<map's display name>: <name>" (the owner's decision 6).
 //!
-//! Also here: map pickups outside the play area are not placed
-//! (`drop_pickups_outside`, `weapon::respawn::MapPickup`).
+//! Also here, what a match on a slice does beyond the wall
+//! (`chimera_world::map::play_area`): map pickups outside the play area
+//! are not placed (`drop_pickups_outside`, `weapon::respawn::MapPickup`); a
+//! loose item (a dropped weapon) found outside is put back at the nearest
+//! point inside (`put_loose_back_inside`); and a slice whose map gives it
+//! fewer spawn points than `[slice] points_want` (chimera/sim/data/
+//! map_fit.toml) makes more once its spots are made (`arena_spawn_points`,
+//! `slice_points`: `slice_safety::choose_points` seeded by the slice's
+//! key, so every machine with the same map, slice and spots makes the
+//! same; nothing more goes over the network).
 
 use bevy::prelude::*;
 use serde::Deserialize;
@@ -146,6 +154,137 @@ pub fn plan(world: &mut World, name: Option<&str>) -> Result<Option<ArenaSlice>,
     };
     world.insert_resource(ArenaPlan(slice.clone()));
     Ok(slice)
+}
+
+/// A spawn point a slice made for itself (`arena_spawn_points`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ArenaMadeSpawn;
+
+/// The slice (its key) whose spawn points are made on the loaded map
+/// (map-scoped).
+#[derive(Resource, Clone, Debug, PartialEq)]
+pub struct ArenaSpawnsMade(pub String);
+
+/// A line-of-sight test against the world's solid layers, characters
+/// left out (`slice_safety::Sees`).
+pub fn sees_in<'a>(q: &'a avian3d::prelude::SpatialQuery, filter: &'a avian3d::prelude::SpatialQueryFilter) -> impl Fn(Vec3, Vec3) -> bool + 'a {
+    move |a: Vec3, b: Vec3| {
+        let d = b - a;
+        let len = d.length();
+        match Dir3::new(d) {
+            Ok(dir) => q.cast_ray(a, dir, (len - 0.05).max(0.0), true, filter).is_none(),
+            Err(_) => true,
+        }
+    }
+}
+
+/// The spawn points a slice adds to `existing` (its map's inside and its
+/// seed's) from the floor `spots`, as `slice_safety::choose_points` makes
+/// them with the shipped `[slice]` rules, seeded by the slice's key: the
+/// same on every machine with the same map, slice and spots.
+pub fn slice_points(
+    area: &PlayArea,
+    spots: &[Vec3],
+    existing: &[Vec3],
+    q: &avian3d::prelude::SpatialQuery,
+    characters: &[Entity],
+) -> Vec<Vec3> {
+    let rules = super::map_fit::FitSettings::shipped().slice.point_rules();
+    let filter = avian3d::prelude::SpatialQueryFilter::from_mask(crate::core::SOLID_LAYERS).with_excluded_entities(characters.iter().copied());
+    let sees = sees_in(q, &filter);
+    let seed = crate::weapon::random::crc32(area.slice.key().as_bytes());
+    super::slice_safety::choose_points(spots, existing, &area.polygon, &sees, rules, seed)
+}
+
+/// Once the slice's spawn spots are made (`spawns::SpawnSpots`), more
+/// spawn points where the map gives it fewer than `[slice] points_want`
+/// (`slice_points`): `SpawnPoint`s inside (`ArenaMadeSpawn`), for the
+/// modes that spawn on points, a character put back inside, and the
+/// spots' and bots' floods of a later match. The server's (a client
+/// spawns nobody); made once per slice on the loaded map.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn arena_spawn_points(
+    area: Option<Res<PlayArea>>,
+    spots: Option<Res<super::spawns::SpawnSpots>>,
+    made: Option<Res<ArenaSpawnsMade>>,
+    points: Query<&Transform, (With<crate::core::SpawnPoint>, Without<crate::core::Intent>, Without<ArenaMadeSpawn>)>,
+    characters: Query<Entity, With<crate::core::Intent>>,
+    q: avian3d::prelude::SpatialQuery,
+    (role, playback): (Option<Res<crate::core::NetRole>>, Option<Res<crate::core::Playback>>),
+    mut commands: Commands,
+) {
+    let (Some(area), Some(spots)) = (area, spots) else { return };
+    if !spots.ready || !spots.from_nav || made.is_some_and(|m| m.0 == area.slice.key()) || !crate::core::authoritative(role, playback) {
+        return;
+    }
+    let existing: Vec<Vec3> = points.iter().map(|t| t.translation - Vec3::Y * crate::map::SPAWN_LIFT).collect();
+    let mut existing = existing;
+    existing.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)).then(a.z.total_cmp(&b.z)));
+    let characters: Vec<Entity> = characters.iter().collect();
+    let new = slice_points(&area, &spots.spots, &existing, &q, &characters);
+    info!(
+        "arena {}: {} spawn points inside, {} made (spots {})",
+        area.slice.key(),
+        existing.len(),
+        new.len(),
+        spots.spots.len()
+    );
+    for p in new {
+        commands.spawn((
+            Name::new("Arena spawn point"),
+            ArenaMadeSpawn,
+            crate::map::play_area::HeldSpawn,
+            crate::map::MapPart,
+            crate::core::SpawnPoint { team: None },
+            Transform::from_translation(p + Vec3::Y * crate::map::SPAWN_LIFT),
+        ));
+    }
+    commands.insert_resource(ArenaSpawnsMade(area.slice.key()));
+}
+
+/// How far inside (m) a loose item outside is put back.
+pub const LOOSE_BACK_MARGIN: f32 = 1.0;
+
+/// A loose item (a dropped weapon or item, `weapon::drop::Loose`) whose
+/// x, z is outside the play area is put back at the nearest point inside
+/// (`PlanPolygon::nearest_inside`, `LOOSE_BACK_MARGIN` from the wall) at
+/// its height, its motion stopped: the wall stops a thrown one, so only
+/// one that came out of a body against the wall or through a gap of the
+/// wall's corners ends here. The server's (a client is shown its place).
+#[allow(clippy::type_complexity)]
+pub fn put_loose_back_inside(
+    area: Option<Res<PlayArea>>,
+    role: Option<Res<crate::core::NetRole>>,
+    playback: Option<Res<crate::core::Playback>>,
+    mut loose: Query<
+        (
+            &mut Transform,
+            Option<&mut avian3d::prelude::Position>,
+            Option<&mut avian3d::prelude::LinearVelocity>,
+        ),
+        With<crate::weapon::drop::Loose>,
+    >,
+) {
+    let Some(area) = area else { return };
+    if !crate::core::authoritative(role, playback) {
+        return;
+    }
+    for (mut t, pos, vel) in &mut loose {
+        let at = t.translation;
+        if area.polygon.contains3(at) {
+            continue;
+        }
+        let back = area.polygon.nearest_inside(Vec2::new(at.x, at.z), LOOSE_BACK_MARGIN);
+        let to = Vec3::new(back.x, at.y, back.y);
+        t.translation = to;
+        if let Some(mut p) = pos {
+            p.0 = to;
+        }
+        if let Some(mut v) = vel {
+            v.0 = Vec3::ZERO;
+        }
+        debug!("arena: a loose item put back inside, from {at} to {to}");
+    }
 }
 
 /// Map pickups outside the play area are not placed: gone as they appear.

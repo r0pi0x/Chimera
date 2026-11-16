@@ -11,7 +11,7 @@ entry "An arena cut from a big map" in [halo-ce.md](halo-ce.md).
 |---|---|---|
 | A1 one hand-drawn slice of Blood Gulch, plain wall | done 2026-11-15 | `halo_ce:bloodgulch@west_base` (9,900 m2): data, solid wall, spots and bots held inside, `NetMinigame::arena` (net64), `arena` command, placeholder look; see "A1 as built" |
 | A2 slices in the draw | not started | a slice is a pool entry with its own measurements; rotation, vote and map change carry it |
-| A3 measuring a slice | not started | `map_fitness --slice`: the pool's measures inside it and the spawn-safety measures; thresholds calibrated |
+| A3 measuring a slice | done 2026-11-16 | `map_fitness --slice` and `--safety`, `slice_safety`, `[slice]` in map_fit.toml calibrated on 13 maps, slices make their own spawn points; A1's leftovers done; see "A3 as built". West Base fails the measures |
 | A4 spawn deaths from play | not started | the share of deaths within 3 s of a spawn, per match, to check A3's thresholds against play |
 | A5 the candidate generator | not started | `map_fitness --slices`: boundaries proposed from the bots' mesh, scored, drawn top-down |
 | A6 curating Blood Gulch and Sidewinder | not started | a person picks two or three slices per player band from A5's sheets |
@@ -493,9 +493,26 @@ session (protocol bump).
   (`chimera_present::render::arena`): a curtain 4 m tall fading upward
   and a foot line, flat accent blue, unlit, from the floor found under
   each 0.5 m of edge.
-- Not done in A1: the client prediction test (the client builds the same
-  wall from `NetMinigame::arena`); a dropped weapon landing outside is
-  left (only map pickups, `MapPickup`, are removed).
+- Not done in A1, done with A3 (2026-11-16): the client prediction test
+  (party_kit `arena_net`: a client running and jumping into the wall as
+  CS:S and as Halo is stopped by its own prediction where the server
+  stops it, no prediction error; a client joining mid-match has the wall
+  from its first tick with a player: `follow_arena` now builds it in the
+  same frame the match arrives, it came one tick late); a dropped weapon
+  or item found outside is put back at the nearest point inside, 1 m
+  from the wall (`arena::put_loose_back_inside`; the wall already stops a
+  thrown one, so only one born past the wall gets there). Shots: every
+  game's bullet, rocket, grenade and projectile stops at the wall
+  (`arena_wall` adds HL2:DM's frag and crossbow, TF2's pipe, Combat Arms'
+  M67, Halo's plasma rifle and needler to A1's ten: none hurts past it,
+  each hurts without it). A player outside (a missed spawn, a push, a
+  fall) is put back at the nearest spawn point, as A1 made it; the spawn
+  points now include the slice's own (A3). Teleporters: a pad with
+  either end outside is off for the match (A1). Blood Gulch has two pads
+  (from the map's data as the tool loads it): (473.8, 5.5, -291.3) to
+  (349.1, 2.1, -252.5), both ends outside west_base, and (252.7, 5.5,
+  -122.1), on the west base's roof inside the slice, to (384.8, 0.7,
+  -133.5) outside: both off for the match; no other Halo map has a slice.
 
 **A2 Slices in the draw** (medium). Slices join `MapPool` as `map@slice`
 entries with their own `Fitness`; the draw, the vote and the map change
@@ -510,6 +527,94 @@ the section 5 measures, the visibility table, the calibration sweep and
 its table here, the thresholds in map_fit.toml. Proof: unit tests on toy
 maps (a walled maze passes, a flat field fails on `see_pairs` and
 `seen_at_spawn`), A1's slice measured.
+
+**A3 as built** (2026-11-16). Where it differs from the above:
+- The measures are plain functions in `chimera_sim::minigame::
+  slice_safety` (the visibility table `SeeTable`, `Safety`, `Report`,
+  `point_safety`, `level_rays`, `choose_points`) over positions and a
+  line-of-sight test, so the tool, the game and the unit tests (toy maps
+  of walls drawn in plan) measure alike. The limits are `[slice]` in
+  chimera/sim/data/map_fit.toml (`map_fit::SliceLimits::judge`: what a
+  slice breaks, and the players it suits: from the least count whose
+  wander is within `target_s` to the most whose `seen_at_spawn` is within
+  its limit).
+- `map_fitness --slice <game:map@id>` plays the slice as the party kit's
+  `arena` does and measures as before inside it, then the spawn-safety
+  part (`map_fitness/safety.rs`): the table (up to `--table`, 1,500 spots;
+  1.9 s on West Base), `see_pairs` (equal to the mean share of the other
+  spots that see a spot: the first of the owner's two numbers, printed
+  with its 90th percentile), `seen_at_spawn` at 2, 4, 8, 12, 16, the spawn
+  points' exposure (each one's share of the floor seeing it and the other
+  points seeing it; the share of floor seeing any point: the second
+  number), cover, long sight, vertical range, a choke share (the most
+  crossed mesh area's share of 48 x 48 walks), spawn spacing; three
+  times on a slice: the map's points inside, with the points the slice
+  makes, and with only its own (as on a map none of whose points is
+  inside). `--safety` gives whole maps the same. Output: text, a row per
+  report in `safety.csv`, a top-down PNG (written by hand, uncompressed:
+  no new dependency). Not built: `seen_after_s` (walking enemies) and the
+  boundary cost (`open_share`), `pocket_share`.
+- Judged and not: `point_floor_seen` is the mean over the points of the
+  floor share seeing one (the share seeing any of them only grows with
+  their number, so that one is told, not judged); `see_pairs` replaces a
+  separate spot-seen-by limit (the same number).
+- Spawn points: a slice whose map gives it fewer than `points_want` (8)
+  inside makes the rest once its spots are made (`arena::
+  arena_spawn_points`, the server's; `ArenaMadeSpawn` `SpawnPoint`s):
+  from the spots at least `wall_gap_m` (4 m) from the wall, each the least
+  seen by the points already there, then the least seen by the floor
+  (96 spots), then the farthest, `points_apart_m` (12 m) apart where it
+  can; seeded by the slice's key, so every machine with the same map,
+  slice and spots makes the same (no network change, net65 kept). They
+  serve the modes that spawn on points, the put-back, and later floods.
+  The spots themselves depend on the match's spawn seed (the minigame's
+  id), so the tool (the gun game's) and another minigame may pick other
+  points.
+- West Base: the map has 29 spawn points inside (with the seed 30), so
+  it makes none; made alone it puts 8 points none of which sees another
+  (four in and about the base, mean floor share 0.29 against the map's
+  points' 0.50).
+
+Calibration sweep (2026-11-16; `--safety`, 1,500 spots in each table;
+liked at small counts: CS:S's cs_italy, cs_office, de_cbble, de_dust2,
+gg_bk_warehouse_v1, Halo's chillout, hangemhigh, prisoner, wizard,
+Combat Arms' warehouse and warehouse_qrt; too open: darkthandark, whole
+Blood Gulch and Sidewinder):
+
+| map | see_pairs | seen_at_spawn 4 / 8 / 12 / 16 | cover | long sight p95 m | point floor seen | point seen by | suits |
+|---|---|---|---|---|---|---|---|
+| cs_italy | 0.09 | 0 / 0 / .002 / .007 | 0.69 | 21 | 0.14 | 0.49 | 4-16 |
+| cs_office | 0.08 | 0 / 0 / .001 / 0 | 0.58 | 22 | 0.11 | 0.49 | 5-16 |
+| de_cbble | 0.10 | 0 / 0 / .001 / .009 | 0.42 | 31 | 0.12 | 0.49 | 5-16 |
+| de_dust2 | 0.10 | 0 / 0 / .005 / .014 | 0.44 | 27 | 0.11 | 0.49 | 4-16 |
+| gg_bk_warehouse_v1 | 0.16 | 0 / .004 / .062 / .166 | 0.56 | 20 | 0.12 | 0.39 | 3-12 |
+| chillout | 0.17 | .001 / .007 / .072 / .169 | 0.49 | 25 | 0.13 | 0.35 | 3-12 |
+| hangemhigh | 0.31 | .002 / .079 / .220 / .359 | 0.25 | 78 | 0.23 | 0.52 | 5-8 |
+| prisoner | 0.21 | .001 / .011 / .068 / .178 | 0.32 | 34 | 0.22 | 0.54 | 3-12 |
+| wizard | 0.28 | .002 / .119 / .386 / .623 | 0.30 | 47 | 0.27 | 0.47 | 3-8 |
+| warehouse (CA) | 0.20 | 0 / .004 / .041 / .101 | 0.53 | 25 | 0.04 | 0.48 | 3-16 |
+| warehouse_qrt (CA) | 0.22 | .001 / .003 / .031 / .067 | 0.52 | 25 | 0.20 | 0.21 | 3-16 |
+| darkthandark (CA) | **0.41** | .062 / **.428** / .650 / .785 | **0.03** | **120** | **0.52** | **1.00** | fails |
+| bloodgulch (whole) | 0.20 | 0 / .032 / .143 / .300 | **0.10** | **120** | 0.22 | 0.36 | fails (and wander) |
+| sidewinder (whole) | 0.22 | .002 / .014 / .058 / .093 | **0.09** | **120** | 0.05 | 0.24 | fails |
+| **bloodgulch@west_base** | **0.59** | .220 / **.549** / .646 / .670 | **0.13** | **81** | **0.50** (own points 0.29) | **0.66** (own 0) | fails |
+
+The thresholds (`[slice]`), each just outside the worst liked map, as
+section 5 says: `see_pairs_max` 0.35 (hangemhigh 0.31; darkthandark 0.41),
+`seen_at_spawn_max` 0.15 (the plan's first number: it keeps wizard and
+hangemhigh to 8 players, the CS:S maps to 16), `cover_min` 0.2
+(hangemhigh 0.25; the open maps 0.03 to 0.10), `long_sight_p95_max_m` 80
+(hangemhigh 78), `point_floor_seen_max` 0.3 (wizard 0.27; darkthandark
+0.52), `point_seen_by_max` 0.6 (prisoner 0.54), `spots_min` 150. These are
+first numbers, to be tuned by playtests (the owner's decision 12; A4's
+spawn deaths). What the table says plainly: A1's West Base fails, worse
+than every whole map measured, darkthandark included (a spot sees 59% of
+the others; a fresh spawn at 8 players is seen at once 55% of the time):
+it is the open field the owner feared, its bunker the only cover; the
+slice wants redrawing (A5/A6), not a looser threshold. Whole Blood Gulch
+and Sidewinder pass the sight-pair measures only because the table stops
+at 120 m and they are huge: on big maps the pairs measure size as much as
+openness, so cover and long sight are what refuse them.
 
 **A4 Spawn deaths from play** (small). The share of deaths within 3 s of
 the victim's spawn, per match, in the match's results and the server's
