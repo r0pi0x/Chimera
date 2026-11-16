@@ -23,10 +23,11 @@
 //!   and its own gun are what "play as it" downloads, characters.md
 //!   section 8; a set of its own would be named as the recorded
 //!   `weapon/<id>` sets of Halo's guns are): the weapon's closure less HUD
-//!   interfaces. Nothing reads it in the game yet: the
-//!   cannon's numbers are its data's (data/weapons/hunter_fuel_rod.toml),
-//!   and its looks (the rod, its effects) would join the effects' library
-//!   once a late join of a weapon's effects exists (`fx::load`).
+//!   interfaces. The cannon's numbers are its data's
+//!   (data/weapons/hunter_fuel_rod.toml); its effects join the effects'
+//!   library at each map's load once the file is on the mount
+//!   (`fx::load::own_weapons`), and its rod's flight model is a late held
+//!   model made with the body (`load_body`, `view::load::projectile_models`).
 //!
 //! Each is written as a small map file (`unit::cut`: the donor's header,
 //! index and paths, the unit's tags and raw data at their own addresses,

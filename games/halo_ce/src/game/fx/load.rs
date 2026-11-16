@@ -24,7 +24,20 @@
 //! chain), light and particle (with its bitmap's sprite sequences and its
 //! point physics).
 //!
-//! Known shortcuts: a particle's sprites come from its bitmap's first
+//! The campaign characters' own weapons (the Hunter's cannon) are not on
+//! the donor map: each is compiled from its unit (`own_weapons`, a file of
+//! the character's set) and merged into the donor's set (`FxSet::merge`,
+//! its indices moved past the donor's), once the unit is on the mount; a
+//! map loaded before that has Halo's guns' effects alone and the next
+//! load tries again. Its muzzle is the character's data
+//! (`campaign::first_person::BodyView::muzzle`): the gun's first-person
+//! markers, and `FxGun::shown_from_muzzle`.
+//!
+//! Known shortcuts: the characters' own weapons' effects join a map at
+//! its load only (a set fetched while a map plays shows from the next
+//! map: the engine has no late join of textures, sound clips or particle
+//! materials); their looping sound attachments (`audio`) are not compiled;
+//! a particle's sprites come from its bitmap's first
 //! page only (all the weapons' particle bitmaps on the disc are one page);
 //! a decal's size is its radius bounds' mean (one variant per sprite
 //! sequence) and additive decals (the plasma burn's glows) are left out:
@@ -169,7 +182,7 @@ pub struct FxPart {
 }
 
 /// A particle entry, the tag's numbers (WU, s, rad).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FxEntry {
     pub location: i16,
     pub environment: i16,
@@ -190,7 +203,7 @@ pub struct FxEntry {
     pub tint_upper: [f32; 4],
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FxEvent {
     pub skip: f32,
     pub delay: (f32, f32),
@@ -199,7 +212,7 @@ pub struct FxEvent {
     pub entries: Vec<FxEntry>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FxEffect {
     pub path: String,
     pub locations: Vec<String>,
@@ -207,7 +220,7 @@ pub struct FxEffect {
 }
 
 /// A particle tag as drawn (`play`).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FxParticle {
     pub path: String,
     /// Index into the map's particle materials (`MapData::particles`).

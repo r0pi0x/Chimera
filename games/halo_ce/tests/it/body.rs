@@ -316,3 +316,36 @@ fn the_aim_screen_turns_by_pitch() {
     assert!((turn(2.0) - 0.5).abs() < 1e-4);
     assert!((turn(-2.0) + 0.5).abs() < 1e-4);
 }
+
+/// A campaign body's shot plays its weapon type's fire-1 once over its
+/// pose (`Inputs::action`, an overlay composed on the idle), from its first
+/// frame, and a new shot restarts it; then the idle alone again.
+#[test]
+fn a_shot_plays_the_fire_overlay_once() {
+    use halo_ce::game::body::anims::Action;
+    let mut s = set();
+    let mut fire = Animation {
+        name: "fire".into(),
+        fps: 30.0,
+        frames: 3,
+        tracks: vec![Track { bone: 0, rotation: Some(vec![Quat::from_rotation_x(0.5); 3]), position: None }],
+        ..Default::default()
+    };
+    fire.delta = true;
+    s.animations.push(fire);
+    s.sequences.push(Sequence { name: key("stand", "ar", "fire-1"), anims: vec![s.animations.len() - 1], grid: (1, 1), ..Default::default() });
+    s.names.insert(key("stand", "ar", "fire-1"), s.sequences.len() - 1);
+    let fire_seq = s.names[&key("stand", "ar", "fire-1")];
+    let mut a = HaloAnim::default();
+    let still = Inputs { grounded: true, ..Default::default() };
+    a.tick(&s, "ar", &still, &LAND);
+    assert_eq!(a.action, None);
+    let pose = a.tick(&s, "ar", &Inputs { action: Some(Action::Fire), ..still }, &LAND);
+    assert_eq!(a.action, Some((fire_seq, 1)), "started, one frame played");
+    assert!(pose[0].0.to_euler(bevy::math::EulerRot::XYZ).0.abs() > 0.4, "the overlay laid over: {:?}", pose[0].0);
+    a.tick(&s, "ar", &still, &LAND);
+    a.tick(&s, "ar", &still, &LAND);
+    assert_eq!(a.action, None, "played once");
+    let pose = a.tick(&s, "ar", &still, &LAND);
+    assert!(pose[0].0.to_euler(bevy::math::EulerRot::XYZ).0.abs() < 1e-4);
+}

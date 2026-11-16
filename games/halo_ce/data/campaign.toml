@@ -437,6 +437,9 @@ keep = ["bip01 r upperarm", "bip01 l forearm"]
 label = "fr"
 offset = [-0.25, 0.25, -0.35]
 turn = [0.0, 0.0, 0.0]
+# Where the cannon's muzzle shows (WU from the eye: forward, left, up):
+# its firing effect and light, and the rod drawn leaving from there.
+muzzle = [0.35, -0.15, -0.12]
 
 # 200 body, no shield (section 5). Its materials (section 3, "Hit boxes"):
 # body (12 hunter armour), shield (32, its shield arm: body x0), skin (13

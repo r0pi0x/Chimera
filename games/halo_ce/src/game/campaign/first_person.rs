@@ -40,8 +40,9 @@
 //! one (the shoulder's) are cut at the weight rule, so the arm's edge is
 //! open; the view keeps the body's own textures and their tint (the
 //! player's colour) as the third-person body has them for a player given
-//! none (`skins`' last); the muzzle effects are placed on no marker of
-//! this model (it has no attachments).
+//! none (`skins`' last); the muzzle is a fixed point in the eye's space
+//! (`BodyView::muzzle`, data), not a marker of this model (it has no
+//! attachments): it does not follow the arm's fire or melee.
 
 use std::{collections::BTreeMap, sync::Arc};
 

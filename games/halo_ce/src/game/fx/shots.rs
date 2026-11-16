@@ -50,7 +50,9 @@
 //!
 //! The whole arsenal: a shot flies its trigger's projectile (the plasma
 //! pistol's second trigger: the charged bolt) from the eye moved by the
-//! trigger's first-person offset, as the server's; a guided one (the
+//! trigger's first-person offset, as the server's (a gun whose muzzle is
+//! data, `load::FxGun::shown_from_muzzle`, the Hunter's cannon: drawn
+//! leaving from its muzzle, parallel to the server's from the eye); a guided one (the
 //! needles, the charged bolt) is steered toward the shot's target
 //! (`HaloFired::target`, the server's pick on the shooter's machine and in
 //! `HaloShotNet`) by the server's rule (the guided rate, half against a
