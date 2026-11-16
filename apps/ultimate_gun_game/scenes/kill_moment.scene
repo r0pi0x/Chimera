@@ -1,0 +1,21 @@
+# Kill a practice target and photograph its death as it starts, then 15
+# and 45 frames later (a scene script: chimera_client's `scene`).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/kill_moment.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+setpos 0 -1181 0             # the greybox at (0, 0, 30) m, facing north
+setang 0 90
+rung combat_arms:m4a1
+wait 60
+target add halo_ce:spartan 8
+wait 200
+target look 1
+shot_after death 0 death_0
+shot_after death 15 death_15
+shot_after death 45 death_45
++attack
+wait_for death 900
+-attack
+wait 60

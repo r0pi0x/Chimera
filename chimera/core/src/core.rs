@@ -2472,6 +2472,13 @@ pub fn apply_damage(
     }
 }
 
+/// A sandbox's practice target (`chimera_sim::minigame::targets`): what
+/// counts, races or tells kills leaves it out (the scores and the ladder's
+/// lead, the announcer; the HUD's race chip and kill feed, which read it
+/// or `targets::is_target`). Its kills and deaths are measured instead.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PracticeTarget;
+
 /// Takes hits but keeps its health (a sandbox's protected practice target,
 /// `chimera_sim::minigame::targets`): `apply_damage` writes its
 /// `DamageTaken` as for anyone (after `DamageScale` and

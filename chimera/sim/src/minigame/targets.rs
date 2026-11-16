@@ -45,6 +45,11 @@
 //! - `protected` (off by default): `core::HealthHeld` (hits land and are
 //!   measured, health never drops, it never dies), and its health and
 //!   shield are put back to full at the start of each tick.
+//! - `armored` (on by default): off, the body has no second bar at all
+//!   (Halo's shield off, no Combat Arms gear, no CS:S kevlar): its
+//!   `weapon::Armor` is held at 0 before each tick's hits, on spawn and
+//!   after each respawn, and `TargetVitals` reads 0. Apart from
+//!   `protected`.
 //! - `respawn_secs` (3 s by default): `runtime::RespawnDelay`; while dead
 //!   it carries `TargetRespawn { at }` (simulation time it returns, for a
 //!   countdown ring at `home`); back, it is placed at home with the same
@@ -72,6 +77,20 @@
 //!   first shot to the kill, the distance, the total damage.
 //!   Both are also logged (`HitMeasured ...`, `KillMeasured ...`).
 //!
+//! A target's second bar is its own game's or none: armour its bot was
+//! given by another game (Combat Arms' gear) goes at each placing
+//! (`strip_foreign_armour`), and the body's game gives its own (Halo a
+//! full shield). For the tick it is placed in it can't be hit (one tick of
+//! spawn protection: a respawn's identity switch holds the last game's
+//! armour until the new game's step), and `TargetVitals` is kept after the
+//! whole tick (`FixedPostUpdate`). Targets race nobody and count for no
+//! one: the ladder's leaders and the match's scores leave them out
+//! (`runtime`, `ladder`); the HUD's race chip and kill feed read
+//! `is_target` (or `Has<Target>`) to leave them out.
+//!
+//! Placement needs no particular map: a ray down at the spot on any map's
+//! collision; the motion moves by keys, with or without a nav mesh.
+//!
 //! Targets exist only while the sandbox plays (`rung_command::holds`): a
 //! spawn is refused otherwise, and every target is removed when it stops
 //! or the map is loaded again (`core::MapLoads`). Nothing here is
@@ -81,7 +100,8 @@
 //! [still|strafe|walk] [shoots] [protect]`, `target set <n|all> <shoots |
 //! noshoot | protect | noprotect | still | strafe | walk | gun <id> |
 //! character <id> | respawn <s> | distance <m>>`, `target remove <n|all>`,
-//! `target list`, `target characters`.
+//! `target list`, `target characters`, `target look <n>` (turns the
+//! player to face target n: staging a picture).
 //!
 //! Known shortcuts:
 //! - The motion overrides the bot's movement keys after its brain
@@ -175,6 +195,8 @@ pub struct SpawnTarget {
     pub motion: TargetMotion,
     pub shoots_back: bool,
     pub protected: bool,
+    /// Its body's second bar (shield, gear, kevlar); false: none at all.
+    pub armored: bool,
     pub respawn_secs: f32,
     /// Whose position and view it is placed from (None: the local player).
     pub by: Option<Entity>,
@@ -190,6 +212,7 @@ impl Default for SpawnTarget {
             motion: TargetMotion::Still,
             shoots_back: false,
             protected: false,
+            armored: true,
             respawn_secs: RESPAWN_SECS,
             by: None,
         }
@@ -208,6 +231,7 @@ pub struct SetTarget {
     pub motion: Option<TargetMotion>,
     pub shoots_back: Option<bool>,
     pub protected: Option<bool>,
+    pub armored: Option<bool>,
     pub respawn_secs: Option<f32>,
 }
 
@@ -224,6 +248,7 @@ impl SetTarget {
             motion: None,
             shoots_back: None,
             protected: None,
+            armored: None,
             respawn_secs: None,
         }
     }
@@ -249,6 +274,8 @@ pub struct Target {
     pub motion: TargetMotion,
     pub shoots_back: bool,
     pub protected: bool,
+    /// Its second bar on (false: none, `TargetVitals` reads 0).
+    pub armored: bool,
     pub respawn_secs: f32,
     /// Its feet's spot (m).
     pub home: Vec3,
@@ -264,10 +291,19 @@ pub struct Target {
     pub character: String,
     pub character_name: String,
     pub game: String,
+    /// The game's full name ("Combat Arms") and short tag ("CA").
     pub game_name: String,
+    pub game_tag: String,
     /// Its display name (`Target 2`) and the console's number for it.
     pub name: String,
     pub number: u32,
+}
+
+/// Whether `e` is a practice target (the HUD's race chip and kill feed
+/// leave them out; a system reads `Has<Target>` or `Without<Target>`, or
+/// below this crate `core::PracticeTarget`, the marker every target wears).
+pub fn is_target(world: &World, e: Entity) -> bool {
+    world.get::<Target>(e).is_some()
 }
 
 /// A dead target comes back at this simulation time (`SimClock` s).
@@ -344,6 +380,9 @@ pub struct TargetCharacter {
     /// Make target `e` this body (the character's id given), after each
     /// arming (a spawn, a rung set).
     pub wear: fn(&mut World, Entity, &str),
+    /// What a fresh body has: health and second bar at their full
+    /// (normalized like `TargetVitals`; the character's id given).
+    pub vitals: fn(&World, &str) -> (f32, f32),
 }
 
 /// The registered bodies.
@@ -353,6 +392,8 @@ pub struct TargetCharacters(pub Vec<TargetCharacter>);
 /// Registering a game's target bodies.
 pub trait TargetsAppExt {
     fn target_character(&mut self, c: TargetCharacter) -> &mut Self;
+    /// A game's full display name ("Combat Arms").
+    fn target_game_name(&mut self, game: &'static str, name: &'static str) -> &mut Self;
 }
 
 impl TargetsAppExt for App {
@@ -360,15 +401,28 @@ impl TargetsAppExt for App {
         self.world_mut().get_resource_or_init::<TargetCharacters>().0.push(c);
         self
     }
+
+    fn target_game_name(&mut self, game: &'static str, name: &'static str) -> &mut Self {
+        self.world_mut().get_resource_or_init::<TargetGameNames>().0.push((game, name));
+        self
+    }
 }
 
 /// A body as the screens list it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CharacterInfo {
     pub id: String,
     pub name: String,
     pub game: String,
+    /// The game's full name ("Combat Arms") and its short tag ("CA").
     pub game_name: String,
+    pub game_tag: String,
+    /// What a fresh body of it has (normalized like `TargetVitals`).
+    pub health_max: f32,
+    pub shield_max: f32,
+    /// The guns it may hold among the sandbox ladder's rungs, in ladder
+    /// order.
+    pub guns: Vec<String>,
 }
 
 /// The bodies a target may wear, per game of the playing ladder (in its
@@ -381,7 +435,17 @@ pub fn characters(world: &World) -> Vec<CharacterInfo> {
             out.push(default_info(world, &game));
         }
         for c in own {
-            out.push(CharacterInfo { id: c.id.into(), name: c.name.into(), game: game.clone(), game_name: game_name(world, &game) });
+            let (health_max, shield_max) = (c.vitals)(world, c.id);
+            out.push(CharacterInfo {
+                id: c.id.into(),
+                name: c.name.into(),
+                game: game.clone(),
+                game_name: game_name(world, &game),
+                game_tag: game_tag(world, &game),
+                health_max,
+                shield_max,
+                guns: guns_of(world, &game, Some(c)),
+            });
         }
     }
     out
@@ -400,17 +464,55 @@ fn game_of(id: &str) -> &str {
     id.split_once(':').map_or(id, |(g, _)| g)
 }
 
+/// A game's full name: registered (`TargetsAppExt::target_game_name`),
+/// else its Steam name, else its short tag.
 fn game_name(world: &World, game: &str) -> String {
+    if let Some(n) = world.get_resource::<TargetGameNames>().and_then(|n| n.0.iter().find(|(g, _)| *g == game)) {
+        return n.1.to_string();
+    }
+    let info = world.get_resource::<chimera_core::game_registry::Games>().and_then(|g| g.get(game));
+    info.and_then(|g| g.steam.as_ref().map(|s| s.name.to_string())).unwrap_or_else(|| game_tag(world, game))
+}
+
+/// A game's short tag (`GameInfo::short_name`: "CA").
+fn game_tag(world: &World, game: &str) -> String {
     world
         .get_resource::<chimera_core::game_registry::Games>()
         .and_then(|g| g.get(game))
         .map_or_else(|| game.to_string(), |g| g.short_name.to_string())
 }
 
-fn default_info(world: &World, game: &str) -> CharacterInfo {
-    let game_name = game_name(world, game);
-    CharacterInfo { id: format!("{game}:default"), name: format!("{game_name} default"), game: game.into(), game_name }
+/// The rung guns of `game` a body (`c`; None: the game's default) may hold.
+fn guns_of(world: &World, game: &str, c: Option<&TargetCharacter>) -> Vec<String> {
+    let Some(l) = world.get_resource::<Ladder>() else { return Vec::new() };
+    let mut out: Vec<String> = Vec::new();
+    for g in &l.rungs[..usable(l)] {
+        if game_of(g) == game && may_hold(world, c, g) && !out.iter().any(|x| x == g) {
+            out.push(g.to_string());
+        }
+    }
+    out
 }
+
+fn default_info(world: &World, game: &str) -> CharacterInfo {
+    let tag = game_tag(world, game);
+    CharacterInfo {
+        id: format!("{game}:default"),
+        name: format!("{tag} default"),
+        game: game.into(),
+        game_name: game_name(world, game),
+        game_tag: tag,
+        // Not registered: a standard player's health and no second bar
+        // (assumed; a game registers its bodies' real numbers).
+        health_max: 1.0,
+        shield_max: 0.0,
+        guns: guns_of(world, game, None),
+    }
+}
+
+/// Games' full names for the screens (`TargetsAppExt::target_game_name`).
+#[derive(Resource, Clone, Default)]
+pub struct TargetGameNames(pub Vec<(&'static str, &'static str)>);
 
 /// The rungs a target may take: all but the sandbox's sentinel.
 fn usable(ladder: &Ladder) -> usize {
@@ -563,6 +665,7 @@ pub fn spawn(world: &mut World, req: &SpawnTarget) -> Result<Entity, String> {
         motion: req.motion,
         shoots_back: req.shoots_back,
         protected: req.protected,
+        armored: req.armored,
         respawn_secs: req.respawn_secs.max(0.0),
         home,
         origin,
@@ -574,6 +677,7 @@ pub fn spawn(world: &mut World, req: &SpawnTarget) -> Result<Entity, String> {
         character_name: arming.info.name.clone(),
         game: arming.info.game.clone(),
         game_name: arming.info.game_name.clone(),
+        game_tag: arming.info.game_tag.clone(),
         name: name.clone(),
         number,
     };
@@ -584,6 +688,7 @@ pub fn spawn(world: &mut World, req: &SpawnTarget) -> Result<Entity, String> {
         TargetDrive { sign: 1.0, map_loads, ..default() },
         TargetVitals::default(),
         TargetPending,
+        crate::core::PracticeTarget,
     ));
     if req.protected {
         world.entity_mut(e).insert(HealthHeld);
@@ -604,10 +709,19 @@ fn place(world: &mut World, e: Entity) -> bool {
     let at = Transform::from_translation(t.home + Vec3::Y * crate::map::SPAWN_LIFT)
         .with_rotation(Quat::from_euler(EulerRot::YXZ, yaw, 0.0, 0.0));
     crate::spawning::revive(world, e, Some(at));
+    // Hittable from the next tick: this one's identity switch may still
+    // hold another game's armour (`Armor`) until its own game's step.
     runtime::unprotect(world, e);
+    let now = world.resource::<SimClock>().now;
+    let tick = world.resource::<SimClock>().delta.as_secs_f64().max(1e-3);
+    world.entity_mut(e).insert((
+        crate::core::SpawnProtected { damage_until: now + tick, bullets_until: now + tick },
+        runtime::Protected { fire_ends: false },
+        crate::core::God,
+    ));
+    strip_foreign_armour(world, e, &t.game);
     rung_command::move_to(world, e, t.rung, &ladder);
     wear(world, e, &t.character);
-    let now = world.resource::<SimClock>().now;
     if let Ok(mut ent) = world.get_entity_mut(e) {
         ent.remove::<(TargetPending, TargetRespawn)>();
         if let Some(mut d) = ent.get_mut::<TargetDrive>() {
@@ -618,6 +732,20 @@ fn place(world: &mut World, e: Entity) -> bool {
         }
     }
     true
+}
+
+/// A target's second bar is its own game's or none: armour another game
+/// gave its bot (Combat Arms' gear on a TF2 body) goes, unless the bot's
+/// own game is the target's or the armour is pieces of the target's game
+/// (`weapon::PiecesOf`: Halo's shield). The body's game then gives what it
+/// gives a character becoming its own (Halo a full shield).
+fn strip_foreign_armour(world: &mut World, e: Entity, game: &str) {
+    let bots = world.get_resource::<chimera_core::gameplay::Gameplay>().map(|g| g.bots);
+    let Ok(mut ent) = world.get_entity_mut(e) else { return };
+    let own = ent.get::<crate::weapon::PiecesOf>().is_some_and(|p| p.0 == game);
+    if ent.contains::<Armor>() && bots != Some(game) && !own {
+        ent.remove::<(Armor, crate::weapon::ArmorPieces, crate::weapon::ArmorRatio, crate::weapon::PiecesOf)>();
+    }
 }
 
 fn wear(world: &mut World, e: Entity, character: &str) {
@@ -650,6 +778,7 @@ pub fn set(world: &mut World, req: &SetTarget) -> Result<String, String> {
         t.character_name = arming.info.name;
         t.game = arming.info.game;
         t.game_name = arming.info.game_name;
+        t.game_tag = arming.info.game_tag;
         let _ = arming.wear;
     }
     if let (Some(h), Some(d)) = (home, req.distance_m) {
@@ -659,6 +788,8 @@ pub fn set(world: &mut World, req: &SetTarget) -> Result<String, String> {
     t.motion = req.motion.unwrap_or(t.motion);
     t.shoots_back = req.shoots_back.unwrap_or(t.shoots_back);
     t.protected = req.protected.unwrap_or(t.protected);
+    let armour_off = req.armored == Some(false) && t.armored;
+    t.armored = req.armored.unwrap_or(t.armored);
     t.respawn_secs = req.respawn_secs.map_or(t.respawn_secs, |s| s.max(0.0));
     let said = describe(&t);
     let alive = world.get::<Dead>(e).is_none();
@@ -671,6 +802,10 @@ pub fn set(world: &mut World, req: &SetTarget) -> Result<String, String> {
             ent.remove::<HealthHeld>();
         }
         ent.insert(t);
+        if armour_off && let Some(mut v) = ent.get_mut::<TargetVitals>() {
+            v.shield = 0.0;
+            v.shield_max = 0.0;
+        }
     }
     if alive && (rearm || home.is_some()) {
         world.entity_mut(e).insert(TargetPending);
@@ -713,6 +848,7 @@ fn describe(t: &Target) -> String {
     let flags = [
         (t.shoots_back, "shoots back"),
         (t.protected, "protected"),
+        (!t.armored, "no armour"),
     ]
     .iter()
     .filter(|(on, _)| *on)
@@ -723,7 +859,7 @@ fn describe(t: &Target) -> String {
         "{}: {} ({}) with {} (rung {}), {:.0} m, {}{}{}, respawn {:.1} s",
         t.name,
         t.character_name,
-        t.game_name,
+        t.game_tag,
         t.gun,
         t.rung + 1,
         t.distance_m,
@@ -763,9 +899,9 @@ fn pick(world: &mut World, which: &str) -> Result<Vec<Entity>, String> {
     all.into_iter().find(|(_, t)| t.number == n).map(|(e, _)| vec![e]).ok_or_else(|| format!("no target {n} (`target list`)"))
 }
 
-const USAGE: &str = "target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect] | \
-    target set <n|all> <shoots|noshoot|protect|noprotect|still|strafe|walk|gun <id>|character <id>|respawn <s>|distance <m>> | \
-    target remove <n|all> | target list | target characters";
+const USAGE: &str = "target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect] [noarmor] | \
+    target set <n|all> <shoots|noshoot|protect|noprotect|armor|noarmor|still|strafe|walk|gun <id>|character <id>|respawn <s>|distance <m>> | \
+    target remove <n|all> | target list | target characters | target look <n>";
 
 /// A gun id, exact or the one gun of the ladder whose id holds the text.
 fn gun_named(world: &World, text: &str) -> Result<String, String> {
@@ -806,6 +942,10 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                     req.shoots_back = true;
                 } else if w.eq_ignore_ascii_case("protect") {
                     req.protected = true;
+                } else if w.eq_ignore_ascii_case("noarmor") {
+                    req.armored = false;
+                } else if w.eq_ignore_ascii_case("armor") {
+                    req.armored = true;
                 } else {
                     return Err(format!("what is {w:?}? {USAGE}"));
                 }
@@ -825,6 +965,8 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                     "noshoot" => req.shoots_back = Some(false),
                     "protect" => req.protected = Some(true),
                     "noprotect" => req.protected = Some(false),
+                    "armor" => req.armored = Some(true),
+                    "noarmor" => req.armored = Some(false),
                     "gun" => req.gun = Some(gun_named(world, arg.ok_or("gun <id>")?)?),
                     "character" | "body" => req.character = Some(arg.ok_or("character <id>")?.clone()),
                     "respawn" => req.respawn_secs = Some(arg.and_then(|s| s.parse().ok()).ok_or("respawn <seconds>")?),
@@ -842,6 +984,18 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                 remove(world, *e);
             }
             Ok(Some(format!("removed {} targets", all.len())))
+        }
+        "look" => {
+            // Turn the player to face target n's chest (staging a scene).
+            let which = a.get(1).ok_or("target look <n>")?;
+            let e = *pick(world, which)?.first().ok_or("no target")?;
+            let me = command_player(world)?;
+            let eye = world.get::<Transform>(me).ok_or("the player has no place")?.translation + Vec3::Y * 0.6;
+            let at = world.get::<Transform>(e).ok_or("the target has no place")?.translation + Vec3::Y * 0.3;
+            let d = at - eye;
+            let (yaw, pitch) = ((-d.x).atan2(-d.z), d.y.atan2(d.xz().length()));
+            crate::core::set_view(world, me, yaw, pitch);
+            Ok(Some(format!("looking at target {which}, {:.1} m away", d.length())))
         }
         "list" => Ok(Some(list(world))),
         "characters" | "bodies" => {
@@ -1029,6 +1183,14 @@ fn before_hits(
     }
     for (e, mut h, armor, t, v) in &mut q {
         let mut armor = armor;
+        // No second bar: whatever a game put back (Halo's recharge) goes
+        // before the hits (Halo's step takes it in after them).
+        if t.is_some_and(|t| !t.armored)
+            && let Some(a) = armor.as_deref_mut()
+            && a.amount != 0.0
+        {
+            a.amount = 0.0;
+        }
         if t.is_some_and(|t| t.protected) && h.current > 0.0 {
             if h.current != h.max {
                 h.current = h.max;
@@ -1072,7 +1234,6 @@ fn measure(
     chars: Query<(Entity, &Transform, &Health, Option<&Armor>, Has<Dead>), With<Intent>>,
     held: Query<&Inventory>,
     guns: Query<&Weapon>,
-    mut vitals: Query<(&mut TargetVitals, &Health, Option<&Armor>)>,
 ) {
     let now = clock.now;
     let pos = |e: Entity| chars.get(e).ok().map(|c| c.1.translation);
@@ -1218,8 +1379,13 @@ fn measure(
     }
     // Gone characters' runs.
     engaged.0.retain(|(v, a), _| chars.contains(*v) && chars.contains(*a));
-    for (mut vt, h, armor) in &mut vitals {
-        let shield = armor.map_or(0.0, |a| a.amount);
+}
+
+/// The vitals after the whole tick (a game's own step, Halo's shield's,
+/// runs after the damage).
+fn keep_vitals(mut vitals: Query<(&mut TargetVitals, &Target, &Health, Option<&Armor>)>) {
+    for (mut vt, t, h, armor) in &mut vitals {
+        let shield = if t.armored { armor.map_or(0.0, |a| a.amount) } else { 0.0 };
         let next = TargetVitals { health: h.current, health_max: h.max, shield, shield_max: vt.shield_max.max(shield) };
         if *vt != next {
             *vt = next;
@@ -1255,5 +1421,6 @@ pub(super) fn plugin(app: &mut App) {
                 .run_if(crate::core::authoritative)
                 .run_if(any_with_component::<Target>),
         )
+        .add_systems(FixedPostUpdate, keep_vitals.run_if(crate::core::authoritative).run_if(any_with_component::<Target>))
         .console_command("chimera:target", &format!("Practice targets in the sandbox: {USAGE}"), command);
 }
