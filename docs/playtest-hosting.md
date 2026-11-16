@@ -9,8 +9,12 @@ tester their address and token privately.
 How testers without the games get them: the game server names the asset
 service when a player joins (its URL and its certificate's fingerprint);
 the client downloads what the match needs over HTTPS, pinning that
-certificate, before it spawns. A tester with the games installed uses the
-installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-service.md),
+certificate, before it spawns. A tester with the games installed downloads
+them too and plays from the store, so everyone plays the published files
+(since 2026-11-15; a tester's Settings ▸ Network ▸ "Use my installed
+games" opts into the installs, at the next start;
+[assets-for-developers.md](assets-for-developers.md), "Installs and the
+service"). Design and limits: [plans/active/asset-service.md](plans/active/asset-service.md),
 "Playtest delivery"; the service in general:
 [assets-for-developers.md](assets-for-developers.md).
 
@@ -505,8 +509,11 @@ lobby doesn't count down meanwhile). So a server with neither TF2's
 install nor its scripts' key still plays TF2's guns with the scripts'
 numbers (they are in the published sets, decrypted), and its
 `tf2:weapons` server documents carry those to every client, instead of
-the specs' fallback. A game it has installed is read from the install, as
-before.
+the specs' fallback. A game it has installed is read from the store too
+once it has a credential (since 2026-11-15, as the testers' clients: everyone
+plays the published files; a game the service doesn't serve from its
+install); `+chimera:asset_use_install 1` (or `[assets] use_install = true`)
+makes it read its installs first, the store only adding what they lack.
 
 **A listen server** (a player hosting from the game) needs nothing: it
 fetches with the host's own credential (the hub account's ticket, or the
@@ -718,7 +725,9 @@ What a tester without the games downloads from the asset service:
   lacks some, in the background from the start, a join waiting for it.
   Errors (a refused token, the service unreachable, another certificate)
   show on the loading panel with what to do. No second window, no restart.
-  Testers with the games installed download nothing of those games.
+  Testers with the games installed download the same (since 2026-11-15:
+  everyone plays the published files), unless they turned on "Use my
+  installed games".
 - **Each join**: what the match needs that isn't there yet (the first one
   about 100-125 MB: `players`, `common`, the map, the ladder, the music's
   first tracks), at full speed, on the loading panel and behind the

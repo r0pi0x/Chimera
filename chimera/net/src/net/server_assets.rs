@@ -27,7 +27,9 @@
 //! - **At start** (`startup`, a dedicated server's `run`, before the app
 //!   is built: what its parts read at build time, TF2's scripts among
 //!   them): each game it reads from the store alone (no install, or
-//!   `use_install = false`) gets its startup sets (`base`), and the start
+//!   `use_install = false`, or, with the service first, the apps'
+//!   default (`chimera_assets::config::InstallDefault`), every game once
+//!   it has a credential) gets its startup sets (`base`), and the start
 //!   map's game its match sets (`base`, `players`, `common`) and
 //!   `map/<name>`, as one blocking download with a progress line every
 //!   `PROGRESS_EVERY`. A token sent to the offered service is bound in the
@@ -354,12 +356,27 @@ pub fn startup(games: &[&'static GameInfo], offered_url: &str, offered_fingerpri
         .iter()
         .map(|g| AppGame { game: g.id.to_string(), installed: install::resolve(&config, g.id, g.steam.as_ref()).install.is_some() })
         .collect();
-    let served: BTreeSet<String> =
-        apps.iter().filter(|g| !(g.installed && settings.use_install)).map(|g| g.game.clone()).collect();
-    let session = AssetSession { settings: Some(settings), served, access: None, account: None };
+    // The games read from the store: those not installed, and with the
+    // service first (the apps' default, nothing chosen) the installed ones
+    // too once there is a credential (the token sent to the offered
+    // service is bound in the process, `access::bind_live`, which
+    // `AssetsConfig::resolve` then names, so the mounts read the store).
+    let first = settings.service_first
+        || (config.assets.install_chosen().is_none()
+            && chimera_assets::config::install_default() != chimera_assets::config::InstallDefault::Install);
+    let served_with = |first: bool| -> BTreeSet<String> {
+        apps.iter().filter(|g| !(g.installed && settings.use_install && !first)).map(|g| g.game.clone()).collect()
+    };
+    let without = served_with(settings.service_first);
+    let session = AssetSession { settings: Some(settings.clone()), served: served_with(first), access: None, account: None };
     let host = AssetHost::new(offered_url, offered_fingerprint);
     let token = configured_token(config.assets.token.as_deref());
-    let Some(files) = from_session(&session, &host, token.as_deref()) else {
+    let files = from_session(&session, &host, token.as_deref()).or_else(|| {
+        let session = AssetSession { served: without.clone(), ..session.clone() };
+        from_session(&session, &host, token.as_deref())
+    });
+    let Some(files) = files else {
+        let session = AssetSession { served: without, ..session };
         if !session.served.is_empty() {
             eprintln!(
                 "assets: no install of {} and no credential for the asset service: the server reads only what its \

@@ -129,7 +129,10 @@ beyond the hooks: say in the PR what you ran.
 
 Every load goes through Chimera's vfs, and a store of packed game files
 (`chimera_assets`, docs/plans/active/asset-service.md) is one more mount
-layer: under the install by default, or instead of it. On a machine with
+layer: under the install in tests and tools, or instead of it (the game
+apps' default whenever an asset service is set, so players play the
+published files; docs/assets-for-developers.md, "Installs and the
+service"). On a machine with
 the installs (and, for Combat Arms, the keys), record what a run reads and
 pack it; the store is per user (`~/.cache/chimera/assets`,
 `%LOCALAPPDATA%\chimera\assets`) and shared by every checkout and slot.

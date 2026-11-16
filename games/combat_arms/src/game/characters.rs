@@ -2110,10 +2110,12 @@ fn dress(
         Option<&Animator>,
     )>,
     loaded: models::LoadedModels,
+    mut dressed: Local<bevy::platform::collections::HashSet<Entity>>,
     mut commands: Commands,
 ) {
     let Some(models) = models else { return };
     let loaded = loaded.get();
+    dressed.retain(|e| characters.contains(*e));
     dress_corpses(&data, loaded, &models, clock.now, &bodies, &mut commands);
     let quarantine = view.is_some_and(|v| v.mode == super::gear::QUARANTINE);
     let mine = local.iter().next().flatten().copied();
@@ -2124,14 +2126,25 @@ fn dress(
             // Only a name of ours: another game names its own bodies
             // (HL2:DM's player models).
             let ours = name.is_some_and(|n| models.0.iter().any(|m| m.game == Some(super::GAME) && m.name.as_deref() == Some(n.0.as_str())));
-            if ours {
-                commands.entity(e).remove::<BodyName>();
-            }
-            if number.is_some() || skin.is_some() {
-                commands.entity(e).remove::<(BodyNumber, BodySkin)>();
+            // Only the skin and body number it set: another game sets its
+            // own (TF2's team skins, Halo's colours). All in one move: each
+            // removal alone makes archetypes of its own.
+            let look = dressed.remove(&e) && (number.is_some() || skin.is_some());
+            match (ours, look) {
+                (true, true) => {
+                    commands.entity(e).remove::<(BodyName, BodyNumber, BodySkin)>();
+                }
+                (true, false) => {
+                    commands.entity(e).remove::<BodyName>();
+                }
+                (false, true) => {
+                    commands.entity(e).remove::<(BodyNumber, BodySkin)>();
+                }
+                (false, false) => {}
             }
             continue;
         }
+        dressed.insert(e);
         // Not loaded yet (`bodies_on_demand`): it wears what it wore, but
         // holds what it holds.
         let worn = models::drawn(&data, loaded, look).filter(|(want, _)| models.0.iter().any(|m| m.name.as_deref() == Some(want.as_str())));

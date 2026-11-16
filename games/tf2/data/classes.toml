@@ -85,7 +85,7 @@ arms = "engineer"
 # the class of its `tf2:gun` hook's `arms`.
 [guns]
 "tf2:tf_weapon_scattergun" = "scout"
-"tf2:tf_weapon_pistol" = "scout"
+"tf2:tf_weapon_pistol_scout" = "scout"
 "tf2:tf_weapon_rocketlauncher" = "soldier"
 "tf2:tf_weapon_minigun" = "heavy"
 "tf2:tf_weapon_shotgun_primary" = "engineer"

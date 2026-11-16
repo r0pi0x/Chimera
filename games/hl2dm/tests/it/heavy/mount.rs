@@ -226,6 +226,7 @@ fn the_store_stands_in_for_the_install() {
     let settings = AssetSettings {
         store: Some(store.clone()),
         use_install: false,
+        service_first: false,
         builds: Default::default(),
         remote: None,
         lock: None,

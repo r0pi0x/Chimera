@@ -13,7 +13,10 @@
 //!   dead until let go. Closing takes the mouse back.
 //! - **Resume.**
 //! - **Options**: a tab per page of data/options.toml (video, audio,
-//!   mouse and the party's own: `party_swap_effect`, `party_music`),
+//!   mouse, the party's own: `party_swap_effect`, `party_music`, and
+//!   network: "Use my installed games", `chimera:asset_use_install`, off
+//!   by default, applied at the next start: `chimera_net::net::assets::
+//!   INSTALL_CVAR`),
 //!   each an existing cvar of the player's
 //!   (archived; leaving the page writes the config), and "Binds", which
 //!   opens the Controls page (`controls`, F6).

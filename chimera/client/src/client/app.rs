@@ -298,6 +298,9 @@ impl GameApp {
 /// a start map that doesn't load (1).
 pub fn run(game: &'static GameApp) -> AppExit {
     let args = game.args(Args::parse_for(&game.usage()));
+    // The service first unless the player chose "Use my installed games"
+    // (`net::assets::INSTALL_CVAR`), before anything mounts a game.
+    crate::net::assets::set_install_default_here(&args.console, true);
     super::offscreen::silence_audio_device(&args);
     let session = start_session(game, &args);
     // The files the games read at startup, when they come from the asset

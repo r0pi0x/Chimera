@@ -1,8 +1,15 @@
 //! A game's mount as the asset settings want it (docs/plans/active/
 //! asset-service.md, M1): each game's `mount::open` goes through `open`
-//! here, so every loader, test and tool reads the same way. With the
-//! install in use (`[assets] use_install`, default true) the install's
-//! layers come first and the store's `CachedFiles` after them, so the
+//! here, so every loader, test and tool reads the same way. Which path a
+//! game opens is `LocalConfig::game_path_in`'s (`AssetSettings::game_path`):
+//! with the service first (the game apps' default whenever an asset
+//! service is set, `chimera_assets::config::InstallDefault`; the player's
+//! "Use my installed games", `[assets] use_install = true` or
+//! `CHIMERA_ASSET_USE_INSTALL=1` turn it off) a game the store and its
+//! service serve is the store's stand-in, so it is read from the store
+//! alone even when installed (`alone`). With the install in use (tests'
+//! and tools' default, an app's with no service or with the install
+//! chosen) the install's layers come first and the store's `CachedFiles` after them, so the
 //! store never changes what the install provides: it only adds files the
 //! install lacks (listings are every layer's, merged). The store is
 //! layered under an install only at the install's own build (its Steam
@@ -274,6 +281,7 @@ mod tests {
         AssetSettings {
             store: Some(store.clone()),
             use_install,
+            service_first: false,
             builds: pinned.map(|b| (GAME.to_string(), b.to_string())).into_iter().collect(),
             remote: None,
             lock: None,
@@ -373,5 +381,64 @@ mod tests {
         assert!(root.join("maps").is_dir());
         assert!(!usable(GAME, &root, "nothing_here"), "an install without the game's folder");
         assert!(alone_with(&on, GAME, &on.stand_in_install(GAME).unwrap()));
+    }
+
+    /// The game apps' default with a service set: a client with an install
+    /// and a store (with a service) reads a game's file from the store, not
+    /// the install; with the install chosen (the setting, `use_install =
+    /// true`) the install's; with no service at all the install as before,
+    /// and a game the service doesn't serve reads its install either way.
+    #[test]
+    fn with_a_service_the_store_comes_first_unless_the_install_is_chosen() {
+        use chimera_assets::{
+            RemoteConfig,
+            config::{InstallDefault, policy},
+        };
+        let s = Scratch::new("service-first");
+        let store = two_builds(&s);
+        let root = install(&s.0, Some("100"));
+        let found = || Some(root.clone());
+        let read = |a: &AssetSettings, game: &str| {
+            let path = a.game_path(game, found).expect("a path");
+            let mount = open_with(a, game, &path, open_loose).unwrap();
+            (path, mount.read("shared.txt").ok())
+        };
+        // Never asked: the records are in the store already.
+        let remote = RemoteConfig { url: "https://127.0.0.1:9".into(), token: "t".into(), key: None, fingerprint: None };
+        let with = |chosen, default, remote: Option<&RemoteConfig>, waiting| {
+            let mut a = settings(&store, true, Some("100"));
+            a.remote = remote.cloned();
+            (a.use_install, a.service_first) = policy(chosen, default, a.remote.is_some(), waiting);
+            a
+        };
+        let client = InstallDefault::ServiceFirstClient;
+        // By default, with a service: the store's file, the install unread.
+        let first = with(None, client, Some(&remote), false);
+        let (path, bytes) = read(&first, GAME);
+        assert_eq!(path, store.manifest_dir(GAME));
+        assert_eq!(bytes.as_deref(), Some(&b"the store's"[..]));
+        assert!(alone_with(&first, GAME, &path));
+        // A dedicated server's default is the same.
+        assert_eq!(read(&with(None, InstallDefault::ServiceFirst, Some(&remote), false), GAME).1.as_deref(), Some(&b"the store's"[..]));
+        // The opt-in (the setting's `Install`, or `use_install = true` /
+        // `CHIMERA_ASSET_USE_INSTALL=1` chosen): the install's.
+        for opted in [with(None, InstallDefault::Install, Some(&remote), false), with(Some(true), client, Some(&remote), false)] {
+            let (path, bytes) = read(&opted, GAME);
+            assert_eq!(path, root);
+            assert_eq!(bytes.as_deref(), Some(&b"the install's"[..]));
+        }
+        // No service at all: the install, as before.
+        let offline = with(None, client, None, false);
+        assert_eq!(read(&offline, GAME), (root.clone(), Some(b"the install's".to_vec())));
+        // A game the service doesn't serve reads its install.
+        assert_eq!(first.game_path("unserved", found), Some(root.clone()));
+        // A client's token waiting for its first join: what the store has
+        // is read from it; a game it lacks waits for the join (hidden).
+        let waiting = with(None, client, None, true);
+        assert_eq!(read(&waiting, GAME).1.as_deref(), Some(&b"the store's"[..]));
+        assert_eq!(waiting.game_path("unserved", found), None);
+        // `use_install = false` chosen: the store alone, an unserved game
+        // hidden too, as before.
+        assert_eq!(with(Some(false), client, Some(&remote), false).game_path("unserved", found), None);
     }
 }

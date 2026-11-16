@@ -20,7 +20,8 @@
 //! Its kit (M2b): its guns' view models (the class's arms with the
 //! `c_` weapon bone-merged: `view::load`), held models (the same `c_`
 //! models, bone-merged by the arms' `weapon_bone`) and their projectiles'
-//! models (`held_kit`); no bodies, HUD or decals yet (M3). Its own
+//! models (`held_kit`); (M3) the classes' bodies and the HUD's look
+//! (`body_kit`: `bodies::add_bodies`, `hud::load`); no decals yet. Its own
 //! particle systems the guns start (`weapons::looks`: the explosion, the
 //! muzzle flashes) load with its maps (`extra_particles`). Its sounds are
 //! Source's sound scripts (the map's own entries, its surfaces' and the
@@ -66,7 +67,7 @@ pub static TF2: SourceGame = SourceGame {
     spawns: &[],
     spawn_rule: team_spawn,
     gravity: GRAVITY,
-    kit: no_kit,
+    kit: body_kit,
     extra_particles,
     held: held_kit,
     sounds,
@@ -149,8 +150,14 @@ pub fn load_level_bytes_with(
     bsp::load_level_bytes_with(&TF2, mount, name, bytes, options)
 }
 
-/// No body kit of its own yet (bodies, HUD: M3).
-fn no_kit(_: &mut Kit) {}
+/// Its players' kit: the bodies of the classes of the guns the kit wants
+/// (`bodies::add_bodies`) and the HUD's look (`hud::load`).
+fn body_kit(k: &mut Kit) {
+    super::bodies::add_bodies(k.materials, k.surfaces, k.kit, &mut k.data.kit, &mut k.data.warnings);
+    if k.kit.hud() {
+        k.data.kit.hud = super::hud::load(k.materials).map(std::sync::Arc::new);
+    }
+}
 
 /// The guns' sound entries (weapons.md 8.3; `sets::M2_WEAPONS`).
 pub fn weapon_sounds() -> impl Iterator<Item = String> {
@@ -229,16 +236,20 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
         super::weapons::script_numbers::note_sources(&mount);
     }
     add_guns(&mut materials, &wants, &mut guest, &mut warnings);
+    super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     let sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], weapon_sounds(), true);
     bsp::add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);
+    let look = kit.hud().then(|| super::hud::load(&mut materials).map(std::sync::Arc::new)).flatten();
     materials.finish_textures();
     warnings.extend(materials.missing);
     map.textures.extend(materials.textures.split_off(textures));
     map.cubemaps.extend(materials.cubemaps.split_off(cubemaps));
     map.texture_anims.extend(materials.texture_anims);
     map.warnings.extend(warnings);
+    map.kit.characters.extend(guest.characters);
     map.kit.held.extend(guest.held);
     map.kit.view_models.extend(guest.view_models);
+    map.kit.add_guest_hud(look);
     Ok(())
 }
 

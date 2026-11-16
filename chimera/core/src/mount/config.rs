@@ -102,18 +102,19 @@ impl LocalConfig {
     }
 
     /// `game_path`, then Steam's for a game with a Steam app
-    /// (`install::resolve`, which also says how it was found).
-    /// With `[assets] use_install = false` (or `CHIMERA_ASSET_USE_INSTALL=0`)
-    /// a game the asset store serves never looks for its install: its path
-    /// is the store's stand-in (`mount::served`), and so it is when no
-    /// install is found but the store serves the game.
+    /// (`install::resolve`, which also says how it was found), as the
+    /// asset settings want it (`AssetSettings::game_path`): with
+    /// `[assets] use_install = false` (or `CHIMERA_ASSET_USE_INSTALL=0`) a
+    /// game the asset store serves never looks for its install: its path
+    /// is the store's stand-in (`mount::served`); so it is with the
+    /// service first (the game apps' default with a service set,
+    /// `chimera_assets::config::InstallDefault`), a game the service
+    /// doesn't serve reading its install; and when no install is found but
+    /// the store serves the game.
     pub fn game_path_in(&self, game: &str, steam: Option<&super::install::SteamGame>) -> Option<PathBuf> {
-        let assets = self.assets.resolve();
-        let served = || assets.serves(game).then(|| assets.stand_in_install(game)).flatten();
-        if !assets.use_install {
-            return served();
-        }
-        super::install::resolve(self, game, steam).install.map(|i| i.path).or_else(served)
+        self.assets
+            .resolve()
+            .game_path(game, || super::install::resolve(self, game, steam).install.map(|i| i.path))
     }
 }
 

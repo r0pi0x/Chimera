@@ -170,7 +170,7 @@ mod tests {
         assert_eq!(of("tf2:tf_weapon_rocketlauncher"), Some("soldier"));
         assert_eq!(of("tf2:tf_weapon_minigun"), Some("heavy"));
         assert_eq!(of("tf2:tf_weapon_shotgun_primary"), Some("engineer"));
-        assert_eq!(of("tf2:tf_weapon_pistol"), Some("scout"));
+        assert_eq!(of("tf2:tf_weapon_pistol_scout"), Some("scout"));
         assert_eq!(of("tf2:tf_weapon_sniperrifle"), Some("sniper"));
         assert_eq!(of("tf2:tf_weapon_flamethrower"), Some("pyro"));
         assert_eq!(of("cs_source:weapon_ak47"), None);

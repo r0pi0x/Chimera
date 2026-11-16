@@ -6,8 +6,9 @@
 //! pistol, the Flame Thrower a flamethrower;
 //! `weapons`), and its movement (`movement::ID`: Source's with TF2's
 //! classes), which makes it `playable` in a gun game's ladder: a rung of a
-//! TF2 gun makes its holder TF2's and the gun's class (`classes`). Its maps aren't
-//! claimed either: an automatic pool doesn't draw them yet; a party plays
+//! TF2 gun makes its holder TF2's and the gun's class (`classes`: its body,
+//! speed and health), and its HUD is this game's id (`ui`). Its maps
+//! aren't claimed: an automatic pool doesn't draw them yet; a party plays
 //! one when asked by id (`tf2:ctf_2fort`).
 
 use chimera_core::game_parts::{GameParts, GunClass, GunPart};
@@ -41,7 +42,7 @@ pub static PARTS: GameParts = GameParts {
     knife: None,
     movement: Some(super::movement::ID),
     characters: None,
-    hud: None,
+    hud: Some(super::GAME),
     maps: &[],
     announcer: None,
     match_won_sound: None,

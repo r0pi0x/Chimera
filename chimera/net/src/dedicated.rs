@@ -932,6 +932,10 @@ pub fn run(server: &'static GameServer) {
     // A hub account for the server's own game files (`+chimera:hub <invite
     // link> [username]`, once): redeemed now, never a console line.
     let options = take_hub_link(options);
+    // The service first whenever one is set (a hub account included), as on a client, unless
+    // `+chimera:asset_use_install 1` (or `[assets] use_install`) chooses
+    // the installs; before anything mounts a game.
+    crate::net::assets::set_install_default_here(&options.console, false);
     // Its game files from the asset service where it has no install
     // (`net::server_assets`), before anything reads them.
     let files = {
