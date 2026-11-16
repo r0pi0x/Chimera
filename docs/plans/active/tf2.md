@@ -24,6 +24,7 @@ from specs, measurements and the game's own data.
 | M3 classes as bodies, TF2's movement | done (2026-11-15) | the classes as data (`game::classes`); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health); the class bodies with team skins and animation; TF2's HUD (health, ammo, crosshair) and kill icons |
 | M4a more maps in the party pool | done (2026-11-15) | 14 koth_, cp_ and ctf_ maps in an automatic pool by data/map_pool.toml and data/map_fitness.toml (a sweep of 130 maps); played free for all: touch-opened doors start open, spawn rooms' door brushes block nobody; `map/<name>` sets checked in a scratch store, not published |
 | SDK parity (tf2-parity) | in progress (2026-11-15) | the specs' "Corrections from the SDK" in the code: the Minigun, the blasts and knockback, movement, the scripts' mapping, grenades and stickies landed; the flame, the scope and the syringe next |
+| M4b the nine stock melee weapons | done (2026-11-16) | specs/tf2/weapons_stock.md (T10): the Bat, Shovel, Fire Axe, Bottle, Fists, Wrench, Bonesaw, Kukri and Knife as data on Chimera's delayed swing (the smack), the Knife's backstab, the class's arms and sequences, sounds, kill icons with `backstab`; each TF2 rung carries its class's melee, TF2's kit knife the Knife |
 | M4 more weapons, effects, the probe | not started | |
 
 ## 1. Rules for this port
@@ -584,6 +585,82 @@ the probe server.
   points; the navigation files still don't parse (the party generates
   one).
 
+### M4b: the nine stock melee weapons (done 2026-11-16)
+
+specs/tf2/weapons_stock.md (T10, draft).
+
+- **As data** (data/weapons, the base `tf2:melee`, `weapons::melee`):
+  `tf2:tf_weapon_bat` (35 every 0.5 s), `_shovel`, `_fireaxe`, `_bottle`,
+  `_fists`, `_wrench`, `_bonesaw`, `_club` (the Kukri) (65 every 0.8 s)
+  and `_knife` (40 every 0.8 s): a 48-unit line then a +-18 box, no
+  facing limit, the collision box, whole points, no knockback; slot 2,
+  never dropped, no gun class (never a ladder gun). The scripts' `Damage`,
+  `TimeFireDelay` (hit and miss refires) and `SmackDelay` (0.2 s without
+  one) apply at run time (`script_numbers::apply_melee`; a melee script on
+  a gun, or a gun's on a melee weapon, is refused).
+- **The hit delay** (open question 8) is a generic melee field,
+  `Swing::delay` (`delay` in the TOML): the swing starts
+  (`WeaponEventKind::SwingStarted`, `sound_swing` on every swing, both
+  timers as after a miss) and is traced `delay` later along the view
+  then (`WeaponState::pending_swing`; 14 ticks, the Knife's 7), the hit
+  refire counted from the start; a draw or the owner's death cancels it.
+- **The backstab** is a generic rule, `Backstab::Behind` (`backstab = {
+  behind, facing, same_way, health, credit }`): d.v > 0, a.d > 0.5, a.v >
+  -0.3 flattened, decided at the smack from the positions then (open
+  question 4), 6 x the victim's current health, the kill credited to
+  `tf2:backstab` (its kill icon); CS:S's knife keeps its number
+  (`Backstab::Facing`). The raised knife (`melee::backstab_ready`):
+  `knife_backstab_up`, `_idle`, `_down` and the stab `knife_backstab` by
+  the weapon's `ViewPose`.
+- **Crits** (`tf2:melee`): rolled per swing before it starts (`prepare`):
+  x3 damage, the crit swing sound and sequence, `TFPlayer.CritHit` on the
+  hit (and on a backstab). Random crits stay **off** (`MeleeCrits`, the
+  party's choice, as for the guns); with them on the chance is the base
+  15 % (`crit_chance`, no damage history yet). The Knife never rolls.
+- **First person** (`game::view`, `MELEE_SEQUENCES`): each class's arms
+  with the `c_` model bone-merged (the Fists the Heavy's arms alone, in
+  skin 2, `props::load_view_model_skinned`); draw, idle, the weighted
+  `HITCENTER` swings, the crit swing, the Fists' `f_swing_left` /
+  `f_swing_right`. Draw sounds by the draw sequences' event times
+  (`[sounds] draw`).
+- **Sets**: `weapon/tf_weapon_bat` ... `weapon/tf_weapon_knife`
+  (`sets::M2_WEAPONS`: the arms, the `c_` model, the sounds, the script).
+  Packing (not done; the script needs the key, so through the keyed
+  helper):
+  ```
+  for w in bat shovel fireaxe bottle fists wrench bonesaw club knife; do
+    chimera-tf2-keyed chimera_pack sets tf2 --store <server store> --only weapon/tf_weapon_$w --pack --sign
+  done
+  ```
+  (the plain form: `cargo run --features dev,tools --bin chimera_pack --
+  sets tf2 --store <server store> --only weapon/tf_weapon_<id> --pack
+  --sign`; `players` again too, for the `backstab` kill icon's cell:
+  `--only players --pack --sign`).
+- **The party**: each TF2 rung's players carry its class's stock melee
+  (data/classes.toml `melee`; `classes::HOOK`'s `RungExtras::melee`, the
+  mechanism Combat Arms' rung melee uses: `runtime::KitMelee` swaps the
+  kit's weapon of its slot): the Scout's Bat with the Scattergun, the
+  drawn class's with the Shotgun; `rung_extras = { melee = false }` keeps
+  the kit's. TF2's `PARTS.knife` is the Knife, so an automatic gun game's
+  kit by game gives TF2 rungs the Knife, which the class's melee replaces.
+  The finale's melee pool is every allowed melee weapon (no per-game
+  slot): the nine join it. `originals:gun_game_2fort` is unchanged (its
+  kit names no TF2 weapon, so its TF2 rungs still carry no melee).
+- **Tests**: `tests/it/melee.rs` (the spec's cases 1-14, 16-20, 22-26,
+  30, 32, a switch cancelling the smack), the script mapping's 33-35
+  (`weapon_scripts.rs`), `party_kit` `tf2_rungs::a_tf2_rung_carries_its_
+  classs_melee`.
+- Left: the Bottle's break (cosmetic), the Wrench's buildings, the Fists
+  alternating with both buttons held (attack2 wins), a damage history for
+  the crit chance, the BLU fists' skin (3) and the arms' team skins, the
+  swing's start not sent to other clients (their third-person gesture and
+  the crit sequence come at the smack), `tf_damage_disablespread` 0's
+  jitter (36), the world hit's decal, probe checks P1-P4. The spec's
+  cases 4 and 5 (held swings at ticks 0, 34, 67, 100) don't follow from
+  its own rule (next attack = now + interval, the guns' firing-tick timing
+  the SDK check confirmed): ours swing at 0, 34, 68, 102; for the spec's
+  next revision or the probe (P2).
+
 ### SDK parity (tf2-parity, 2026-11-15)
 
 The code made to follow each spec's "Corrections from the SDK
@@ -791,3 +868,9 @@ server probe for parity checks, TF2's own app.
   open, `SourceGame::entity_rule`; spawn rooms' door brushes non-solid);
   a spawn-room walk-out heavy test (cp_well out: its halves never join);
   sets checked in a scratch store; screenshots of each pool map in UGG.
+- 2026-11-16: M4b: specs/tf2/weapons_stock.md (T10) and the nine stock
+  melee weapons on Chimera's delayed swing (`Swing::delay`) and backstab
+  rule (`Backstab::Behind`), crits off by default, the raised knife, the
+  class's arms and sequences, the `backstab` kill icon; each TF2 rung
+  carries its class's melee (rung extras), the Knife TF2's kit knife.
+  Screenshots in UGG on ctf_2fort.

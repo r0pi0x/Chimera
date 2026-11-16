@@ -1,0 +1,39 @@
+# The Heavy's Fists (specs/tf2/weapons_stock.md 1, 5.3): attack punches
+# with the left fist, attack2 with the right, 65 each, one 0.8 s interval
+# for both (a punch with either blocks both). No `c_` model: the arms are
+# the weapon (their fists' skin, `game::view`).
+id = "tf2:tf_weapon_fists"
+base = "tf2:melee"
+
+[melee.primary]
+sound_swing = "Weapon_Fist.Miss"
+sound_hit = "Weapon_Fist.HitFlesh"
+sound_hit_world = "Weapon_Fist.HitWorld"
+
+[melee.secondary]
+range = 48.0
+hull = 18.0
+facing_cos = -1.0
+damage = 65.0
+hit_refire = 0.8
+miss_refire = 0.8
+miss_refire_other = 0.8
+delay = 0.2
+force = 0.0
+quantum = 1.0
+sound_swing = "Weapon_Fist.Miss"
+sound_hit = "Weapon_Fist.HitFlesh"
+sound_hit_world = "Weapon_Fist.HitWorld"
+
+# `f_draw`'s sound events (8.1).
+[sounds]
+draw = [[0.0333, "Weapon_Fist.Draw"], [0.1667, "Weapon_Fist.HitHand"]]
+
+[hud]
+name = "Fists"
+icon = "fists"
+
+[hooks."tf2:melee"]
+arms = "heavy"
+script = "tf_weapon_fists"
+crit_swing = "Weapon_Fist.MissCrit"

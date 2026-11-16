@@ -78,7 +78,7 @@ fn a_match_plays_with_the_scripts_numbers() {
     assert!(source(SNIPER_RIFLE).from_script, "its interval");
     assert!(!source(SHOTGUN).from_script && source(SHOTGUN).source.contains("ProjectileType"), "{:?}", source(SHOTGUN));
     assert!(source(tf2::game::weapons::MINIGUN).source.starts_with("spec fallback"));
-    assert_eq!(numbers.sources.len(), 12);
+    assert_eq!(numbers.sources.len(), 21, "twelve guns and nine melee weapons");
 
     let mut sim = Sim::new(WithNumbers(numbers), GreyboxMapPlugin);
     sim.set_tick_interval(TICK_INTERVAL);
@@ -268,6 +268,37 @@ fn a_server_without_install_or_key_takes_its_numbers_from_the_asset_service() {
     drop(files);
     drop(running);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A melee script onto a melee weapon's document (weapons_stock.md 6;
+/// cases 33-35): `Damage`, `TimeFireDelay` as the hit and miss refires,
+/// `SmackDelay` as the delay, 0.2 s without one; a melee script on a gun
+/// applies nothing.
+#[test]
+fn melee_scripts_map_33_34_35() {
+    let melee = "slot = 2\n[melee.primary]\ndamage = 65.0\nhit_refire = 0.8\nmiss_refire = 0.8\nmiss_refire_other = 0.8\ndelay = 0.2\n";
+    let num = |t: &Table, k: &str| t["melee"]["primary"][k].as_float().or(t["melee"]["primary"][k].as_integer().map(|i| i as f64));
+    // 33.
+    let mut doc: Table = melee.parse().unwrap();
+    let s = plain("x", r#""WeaponData" { "Damage" "50" "TimeFireDelay" "0.6" "SmackDelay" "0.15" "MeleeWeapon" "1" "WeaponType" "melee" }"#);
+    let a = apply_script(s.data().unwrap(), &mut doc);
+    assert!(a.refused.is_none(), "{a:?}");
+    assert_eq!(num(&doc, "damage"), Some(50.0));
+    for k in ["hit_refire", "miss_refire", "miss_refire_other"] {
+        assert_eq!(num(&doc, k), Some(0.6), "{k}");
+    }
+    assert_eq!(num(&doc, "delay"), Some(0.15));
+    // 34.
+    let mut doc: Table = melee.replace("delay = 0.2", "delay = 0.1").parse().unwrap();
+    let s = plain("x", r#""WeaponData" { "Damage" "50" "MeleeWeapon" "1" }"#);
+    apply_script(s.data().unwrap(), &mut doc);
+    assert_eq!(num(&doc, "delay"), Some(0.2));
+    // 35.
+    let mut gun: Table = "slot = 0\n[damage]\namount = 6.0\n".parse().unwrap();
+    let s = plain("x", r#""WeaponData" { "Damage" "50" "MeleeWeapon" "1" }"#);
+    let a = apply_script(s.data().unwrap(), &mut gun);
+    assert!(a.refused.is_some() && a.set.is_empty(), "{a:?}");
+    assert_eq!(gun["damage"]["amount"].as_float(), Some(6.0));
 }
 
 /// weapon_scripts.md's corrections from the SDK: `TimeReload` is the

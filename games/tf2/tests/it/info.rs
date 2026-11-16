@@ -52,7 +52,16 @@ fn the_bundle_lends_its_guns() {
             "Grenade Launcher",
             "Stickybomb Launcher",
             "Flame Thrower",
-            "Syringe Gun"
+            "Syringe Gun",
+            "Bat",
+            "Shovel",
+            "Fire Axe",
+            "Bottle",
+            "Fists",
+            "Wrench",
+            "Bonesaw",
+            "Kukri",
+            "Knife"
         ]
     );
 }
