@@ -332,6 +332,40 @@ fixed and `Predict` schedule, its dedicated server's and its game's
 ambiguous pairs, and the conflicting pairs the two run in opposite orders
 (prediction's at zero); a count that rises fails with the pairs to order.
 
+### Scenes (staging and photographing in one run)
+
+`--scene <file> --out <dir>` plays a scene script in the client itself
+(`chimera_client::client::scene`): console lines and four directives, a
+line each, `#` for comments. No driver script and no remote port (a
+scene run serves none); with `--offscreen` it needs no display.
+
+```
+cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0     +sandbox --scene apps/ultimate_gun_game/scenes/kill_moment.scene --out <dir>
+```
+
+- `wait <frames>`; `wait_for <fact> [timeout frames]` (default 1800; past
+  it the run exits 3, naming the line); `shot <name>` (`<dir>/<name>.png`
+  now); `shot_after <fact> <frames> <name>` (armed: a picture that many
+  frames after the fact's next frame; the script goes on, the run waits
+  for armed pictures at its end). Anything else is a console line
+  (`setpos`/`setang`, `thirdperson`, `cam_idealdist`, `cam_idealyaw`,
+  `rung`, `target add`, `target look <n>`, `+attack`, ...).
+- Facts, from what the engine already tells: `map_loaded` (`MapLoads`
+  moved), `match` (a minigame's match live), `spawned` (the local player
+  alive), `shot` (`ShotMade`), `hit` (`DamageTaken`), `kill`, `death`
+  (`Died`), `ragdoll` (`Ragdolled` added), `blast` (`core::Explosion`:
+  map logic's, not grenades').
+- `<dir>/scene.log`: every line, fact and picture with its frame, and
+  every `HitMeasured`/`KillMeasured`: a scene is also a measurement.
+- Repeatable as far as the engine is: the same scene on the same build
+  places, aims and fires the same, but frames are wall-clock frames
+  (a fact's frame moves with the machine's speed where a frame runs
+  several ticks or none), bots' names and looks come from the roster's
+  dice and the rung seed (`CHIMERA_RUNG_SEED` fixes the extras),
+  particles and spread from their own seeds.
+- Examples: `apps/ultimate_gun_game/scenes/` (three targets at 5, 10,
+  20 m; a kill and its death at 0, 15, 45 frames).
+
 ### Offscreen (no display, no compositor)
 
 `--offscreen <WxH>` runs any game client (cs_source, hl2dm,
