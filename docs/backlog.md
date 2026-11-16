@@ -106,7 +106,6 @@ the user's go-ahead: no Actions runs unless asked.
 - **Range and code-built map follow-ups (2026-11-16):**
   - **More in RangeLayout:** cover-crate boxes (or the clear lane's width), the shelf's size, the board's size and facing (the board is 1.2 m but the target scoring face 1.0 m, so the outer 0.1 m counts as misses), the platform and ramp, and the stripes' half width.
   - **A floor label:** "20 M" looks mirrored from the board's side.
-  - **Change gun:** group Combat Arms' about 2,000 variants by base gun, so the sandbox lists tens per game, not thousands.
 
 - **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
   - **Progressive disclosure (user):**

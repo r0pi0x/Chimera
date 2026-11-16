@@ -62,6 +62,109 @@ fn games_facets_tags_and_search_narrow_the_grid() {
     assert_eq!(ids(&v, &g), vec!["halo_ce:sniper_rifle"]);
 }
 
+/// The variants of one gun are one family, shown as one tile: by a shared
+/// first-person model, by the name's model, by a name that holds another's
+/// whole; only in a game whose names split, but for the model file.
+#[test]
+fn variants_of_one_gun_are_one_tile() {
+    use chimera_client::client::sandbox::model::{SandboxGun, Tile, set_families};
+    use chimera_core::game_parts::GunClass;
+    let gun = |id: &str, name: &str, class: GunClass| SandboxGun {
+        id: id.into(),
+        game: id.split_once(':').unwrap().0.into(),
+        name: name.into(),
+        class: Some(class),
+        family: id.into(),
+        ..default()
+    };
+    let list = [
+        ("ca:m4a1_gold", "M4A1 GOLD", GunClass::Rifle, "pv_m4a1.ltb"),
+        ("ca:m4a1", "M4A1", GunClass::Rifle, "pv_m4a1.ltb"),
+        ("ca:midnight_m4a1_lv.4", "MIDNIGHT WARDEN M4A1 LV.4", GunClass::Rifle, "pv_midnight.ltb"),
+        ("ca:ak-47", "AK 47", GunClass::Rifle, "pv_ak47.ltb"),
+        ("ca:fiery_ak-47", "FIERY DRAGON AK 47", GunClass::Rifle, "pv_fiery.ltb"),
+        ("ca:g3", "G3", GunClass::Rifle, "pv_g3.ltb"),
+        ("ca:g36c", "G36C", GunClass::Rifle, "pv_g36c.ltb"),
+        ("ca:m4a1_pistol", "M4A1 SHORTY", GunClass::Pistol, "pv_m4a1_pst.ltb"),
+        ("halo:pistol", "Pistol", GunClass::Pistol, "pistol.gbx"),
+        ("halo:plasma_pistol", "Plasma Pistol", GunClass::Pistol, "plasma.gbx"),
+        ("halo:m4a1", "M4A1", GunClass::Rifle, "pv_m4a1.ltb"),
+    ];
+    let mut g: Vec<SandboxGun> = list.iter().enumerate().map(|(i, (id, n, c, _))| SandboxGun { rung: i, ..gun(id, n, *c) }).collect();
+    let models: Vec<Option<String>> = list.iter().map(|l| Some(l.3.to_string())).collect();
+    set_families(&mut g, &models, &chimera_sim::weapon::names::NameWords::shipped(), &|game| game == "ca");
+    let family = |id: &str| g.iter().find(|x| x.id == id).unwrap().family.clone();
+    assert_eq!(family("ca:m4a1_gold"), "ca:m4a1", "the same model file: the shortest name is the base");
+    assert_eq!(family("ca:midnight_m4a1_lv.4"), "ca:m4a1", "the name's model");
+    assert_eq!(family("ca:fiery_ak-47"), "ca:ak-47", "a name holding the base's whole");
+    assert_eq!(family("ca:g36c"), "ca:g36c", "G36C is no G3");
+    assert_eq!(family("ca:m4a1_pistol"), "ca:m4a1_pistol", "another class is another shelf");
+    assert_eq!(family("halo:plasma_pistol"), "halo:plasma_pistol", "names don't join in a game that doesn't split");
+    assert_eq!(family("halo:m4a1"), "halo:m4a1", "nor across games");
+    // One tile a family, where its first gun stands, its face the base.
+    let v = GunView::default();
+    let tiles = v.tiles(&g, &|_| Files::Here);
+    let rifles = &tiles.iter().find(|(n, _)| *n == "Rifles and MGs").unwrap().1;
+    assert_eq!(rifles[0], Tile { face: 1, variants: vec![0, 1, 2] });
+    assert_eq!(rifles.iter().map(|t| g[t.face].id.as_str()).collect::<Vec<_>>(), ["ca:m4a1", "ca:ak-47", "ca:g3", "ca:g36c", "halo:m4a1"]);
+    assert_eq!(v.shown(&g, &|_| Files::Here).iter().map(|s| s.1.len()).sum::<usize>(), 8, "8 tiles for 11 guns");
+    // A search that leaves one variant: its tile shows that one.
+    let v = GunView { search: "midnight".into(), ..default() };
+    assert_eq!(v.tiles(&g, &|_| Files::Here), vec![("Rifles and MGs", vec![Tile { face: 2, variants: vec![2] }])]);
+}
+
+/// A tile of several variants says so, the detail pane lists them, a press
+/// (or Tab) picks one and Enter switches to it.
+#[test]
+fn a_tiles_variants_are_listed_and_one_is_picked() {
+    use chimera_client::client::sandbox::change_gun::GunAction;
+    let mut sim = sim("gun");
+    // The staged AK-47 and M4A1 (CS:S) as one gun's variants.
+    {
+        let mut cat = sim.app.world_mut().resource_mut::<SandboxCatalogue>();
+        let before = cat.guns.len();
+        for g in cat.guns.iter_mut().filter(|g| g.id == "cs_source:weapon_m4a1") {
+            g.family = "cs_source:weapon_ak47".into();
+        }
+        assert_eq!(cat.guns.len(), before);
+    }
+    frame(&mut sim);
+    frame(&mut sim);
+    let grid = sim.app.world().resource::<Grid>().clone();
+    let cat = sim.app.world().resource::<SandboxCatalogue>().clone();
+    let tiles: usize = grid.0.iter().map(|s| s.1.len()).sum();
+    assert_eq!(tiles, cat.guns.len() - 1, "one tile for the two");
+    let ak = cat.guns.iter().position(|g| g.id == "cs_source:weapon_ak47").unwrap();
+    let m4 = cat.guns.iter().position(|g| g.id == "cs_source:weapon_m4a1").unwrap();
+    assert_eq!(grid.variants_of(ak), [ak, m4]);
+    assert_eq!(grid.cursor_of(m4), grid.cursor_of(ak), "a variant is on its gun's tile");
+    let drawn = |sim: &mut Sim, id: &str| {
+        let w = sim.app.world_mut();
+        w.query::<&UiParityId>().iter(w).any(|p| p.0 == id)
+    };
+    assert!(drawn(&mut sim, "gun.tile.variants.cs_source:weapon_ak47"), "the tile says how many");
+    assert!(!drawn(&mut sim, "gun.tile.cs_source:weapon_m4a1"), "no tile of its own");
+    assert!(drawn(&mut sim, "gun.variants") && drawn(&mut sim, "gun.variant.cs_source:weapon_m4a1"), "the detail pane lists them");
+    // A press on a variant picks it: the cursor stays, the pane is its.
+    let cursor_before = cursor(&sim);
+    sim.app.world_mut().write_message(GunAction::Variant("cs_source:weapon_m4a1".into()));
+    frame(&mut sim);
+    frame(&mut sim);
+    assert_eq!(ui(&sim).view.selected.as_deref(), Some("cs_source:weapon_m4a1"));
+    assert_eq!(cursor(&sim), cursor_before);
+    // Tab goes on to the next (around to the base), Shift+Tab back.
+    press(&mut sim, &[KeyCode::Tab]);
+    frame(&mut sim);
+    assert_eq!(ui(&sim).view.selected.as_deref(), Some("cs_source:weapon_ak47"));
+    press(&mut sim, &[KeyCode::ShiftLeft, KeyCode::Tab]);
+    frame(&mut sim);
+    assert_eq!(ui(&sim).view.selected.as_deref(), Some("cs_source:weapon_m4a1"));
+    // Enter switches to the variant picked.
+    press(&mut sim, &[KeyCode::Enter]);
+    frame(&mut sim);
+    assert_eq!(ui(&sim).current.as_deref(), Some("cs_source:weapon_m4a1"));
+}
+
 #[test]
 fn sections_follow_the_class_order() {
     let g = guns();

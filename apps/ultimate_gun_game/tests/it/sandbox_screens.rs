@@ -263,7 +263,7 @@ fn pinned_guns_switch_on_1_and_2_and_k_repeats_the_set_up() {
 fn change_gun_lists_every_rung_with_melee_as_its_own_class() {
     use chimera_client::client::sandbox::model::{Files, GunView, section_of};
     use chimera_sim::minigame::ladder::Ladder;
-    let (sim, _) = play();
+    let (sim, me) = play();
     let ladder = sim.app.world().resource::<Ladder>().clone();
     let usable = &ladder.rungs[..ladder.rungs.len() - 1];
     let mut unique: Vec<&str> = Vec::new();
@@ -275,8 +275,23 @@ fn change_gun_lists_every_rung_with_melee_as_its_own_class() {
     let cat = sim.app.world().resource::<SandboxCatalogue>().clone();
     let listed: Vec<&str> = cat.guns.iter().map(|g| g.id.as_str()).collect();
     assert_eq!(listed, unique, "every rung but the sentinel, once, in the ladder's order");
-    let shown: usize = GunView::default().shown(&cat.guns, &|_| Files::Here).iter().map(|s| s.1.len()).sum();
-    assert_eq!(shown, cat.guns.len(), "the grid shows all of them");
+    // The grid shows all of them, a gun's variants as one tile.
+    let tiles = GunView::default().tiles(&cat.guns, &|_| Files::Here);
+    let mut in_tiles: Vec<usize> = tiles.iter().flat_map(|s| s.1.iter()).flat_map(|t| t.variants.clone()).collect();
+    in_tiles.sort();
+    assert_eq!(in_tiles, (0..cat.guns.len()).collect::<Vec<_>>(), "every gun on one tile");
+    for t in tiles.iter().flat_map(|s| s.1.iter()) {
+        let family = &cat.guns[t.variants[0]].family;
+        assert!(t.variants.iter().all(|v| &cat.guns[*v].family == family), "a tile is one family");
+        assert_eq!(&cat.guns[t.face].id, family, "its face the base gun");
+    }
+    // Every variant stays a rung: the console's `rung <id>` takes it.
+    let mut sim = sim;
+    for g in cat.guns.iter().filter(|g| g.id != g.family).take(3).chain(cat.guns.iter().take(1)) {
+        sim.app.world_mut().resource_mut::<chimera_core::console::Console>().submit(format!("rung {}", g.id));
+        sim.seconds(0.3);
+        assert_eq!(sim.app.world().get::<chimera_sim::minigame::ladder::Rung>(me).map(|r| r.0), Some(g.rung), "rung {}", g.id);
+    }
     // The melee weapons of the ladder's games are rungs, listed as Melee.
     let games: Vec<&str> = unique.iter().filter_map(|r| r.split_once(':').map(|(g, _)| g)).collect();
     let melee: Vec<&str> = ultimate_gun_game::sandbox::melee_weapons(sim.app.world())

@@ -28,6 +28,24 @@
 //!   is), it has every facet ticked for its game, every global tag ticked
 //!   (AND inside the list) and every search word is in its name, id, game,
 //!   class or tags.
+//! - **Families** (`set_families`, `SandboxGun::family`): the variants of
+//!   one gun (Combat Arms' about 2,000 weapons are skins, editions and
+//!   levels of some tens of guns) share a family, named by its base gun's
+//!   id, and the grid shows a family as one tile (`GunView::tiles`: its
+//!   face the base gun, or the first variant the filters leave, with how
+//!   many they leave; the detail pane lists them to pick one). Two guns
+//!   of one game and one class section are one family when they share
+//!   their first-person model (the weapon data's `models.view`: a skin
+//!   is the same model with other textures) or, in a game whose names
+//!   are a base plus a variant (its display_names.toml says `split`:
+//!   Combat Arms), their name's model (the display names' split,
+//!   `weapon::names::split`: `M4A1` in "Midnight Warden M4A1 Lv.4"; an
+//!   edition with a model file of its own), or when one's base name
+//!   holds the other's whole, as words in a row ("Fiery Dragon AK 47"
+//!   and "AK 47"; never Halo's Pistol and Plasma Pistol: no split). The
+//!   base gun is the family's shortest name (the earliest rung among
+//!   equals). Every variant stays a gun of the catalogue: a pin, the
+//!   search and the console's `rung <id>` take any of them.
 //! - **Pins** (`Pins`): six slots, keys 1 to 6; `pin` puts a gun in a slot
 //!   (moving it if it was pinned elsewhere), `unpin` empties one. The bar's
 //!   fade (`PinBar`): shown on a number key, Tab or a drag, faded after
@@ -174,6 +192,105 @@ pub struct SandboxGun {
     /// The download unit its files are in (the asset side's name; None:
     /// part of the base install).
     pub unit: Option<String>,
+    /// Its family: the id of the base gun its variants share (module doc,
+    /// "Families"; its own id when it has none, or before `set_families`).
+    pub family: String,
+}
+
+/// A name's model as a family key (module doc, "Families"): the split's
+/// model words, letters and digits only, lower case (None: no model).
+pub fn name_model(name: &str, words: &chimera_sim::weapon::names::NameWords) -> Option<String> {
+    let split = chimera_sim::weapon::names::split(name, words);
+    let key: String =
+        split.base.iter().take(split.model_words).flat_map(|w| w.chars()).filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect();
+    (!key.is_empty()).then_some(key)
+}
+
+/// Sets every gun's `family` (module doc, "Families"). `view_models[i]` is
+/// gun `i`'s first-person model file (None: unknown); `splits(game)` says
+/// whether a game's names are a base plus a variant.
+pub fn set_families(
+    guns: &mut [SandboxGun],
+    view_models: &[Option<String>],
+    words: &chimera_sim::weapon::names::NameWords,
+    splits: &dyn Fn(&str) -> bool,
+) {
+    // Union-find over the guns, joined through shared keys.
+    let mut parent: Vec<usize> = (0..guns.len()).collect();
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut by_key: BTreeMap<(String, &'static str, u8, String), usize> = BTreeMap::new();
+    for i in 0..guns.len() {
+        let g = &guns[i];
+        let section = section_of(g);
+        let keys = [
+            view_models.get(i).cloned().flatten().filter(|m| !m.is_empty()).map(|m| (0u8, m.to_lowercase())),
+            name_model(&g.name, words).filter(|_| splits(&g.game)).map(|m| (1u8, m)),
+        ];
+        for (kind, key) in keys.into_iter().flatten() {
+            match by_key.entry((g.game.clone(), section, kind, key)) {
+                std::collections::btree_map::Entry::Vacant(e) => {
+                    e.insert(i);
+                }
+                std::collections::btree_map::Entry::Occupied(e) => {
+                    let (a, b) = (root(&mut parent, *e.get()), root(&mut parent, i));
+                    parent[a.max(b)] = a.min(b);
+                }
+            }
+        }
+    }
+    // Each family's base: its shortest name, the earliest rung among equals.
+    let bases = |parent: &mut Vec<usize>| {
+        let mut base: BTreeMap<usize, usize> = BTreeMap::new();
+        for i in 0..guns.len() {
+            let r = root(parent, i);
+            let b = base.entry(r).or_insert(i);
+            let (now, new) = (&guns[*b], &guns[i]);
+            if (new.name.trim().len(), new.rung) < (now.name.trim().len(), now.rung) {
+                *b = i;
+            }
+        }
+        base
+    };
+    // A family whose base's name holds another's whole (as words in a
+    // row: "Fiery Dragon AK 47" holds "AK 47", "Deserteagle Canada"
+    // holds "Deserteagle"; not "G36C" for "G3") is that gun's too.
+    let base = bases(&mut parent);
+    let named: Vec<(usize, Vec<String>)> =
+        base.values().map(|&b| (b, guns[b].name.split_whitespace().map(str::to_lowercase).collect())).filter(|(_, w): &(usize, Vec<String>)| !w.is_empty()).collect();
+    for (a, short) in &named {
+        for (b, long) in &named {
+            let same_shelf = guns[*a].game == guns[*b].game && splits(&guns[*a].game) && section_of(&guns[*a]) == section_of(&guns[*b]);
+            if !same_shelf || long.len() <= short.len() || !long.windows(short.len()).any(|w| w == short.as_slice()) {
+                continue;
+            }
+            let (ra, rb) = (root(&mut parent, *a), root(&mut parent, *b));
+            if ra != rb {
+                parent[ra.max(rb)] = ra.min(rb);
+            }
+        }
+    }
+    let base = bases(&mut parent);
+    for i in 0..guns.len() {
+        let r = root(&mut parent, i);
+        guns[i].family = guns[base[&r]].id.clone();
+    }
+}
+
+/// A tile of the grid (module doc, "Families"): a gun, or a family of
+/// variants as one.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Tile {
+    /// The gun the tile shows (an index into the catalogue).
+    pub face: usize,
+    /// The family's guns the filters leave, the face among them, in the
+    /// ladder's order (one: a gun alone).
+    pub variants: Vec<usize>,
 }
 
 /// A class section's heading, in the tile grid.
@@ -424,15 +541,39 @@ impl GunView {
         (self.games.is_empty() || self.games.contains(&g.game)) && self.fits_but_games(g, files)
     }
 
-    /// What the grid lists: (section name, the guns' indices into `guns`),
-    /// sections in `SECTIONS` order, empty ones left out.
+    /// What the grid lists: (section name, its tiles' faces as indices
+    /// into `guns`), sections in `SECTIONS` order, empty ones left out
+    /// (`tiles`, without the variants).
     pub fn shown(&self, guns: &[SandboxGun], files: &dyn Fn(&SandboxGun) -> Files) -> Vec<(&'static str, Vec<usize>)> {
-        let mut out: Vec<(&'static str, Vec<usize>)> = SECTIONS.iter().map(|s| (*s, Vec::new())).collect();
+        self.tiles(guns, files).into_iter().map(|(s, t)| (s, t.into_iter().map(|t| t.face).collect())).collect()
+    }
+
+    /// The grid's tiles by section (module doc, "Families"): a family's
+    /// guns that fit are one tile, where its first one stands in the
+    /// ladder's order; its face is the family's base gun when that fits,
+    /// else the first that does.
+    pub fn tiles(&self, guns: &[SandboxGun], files: &dyn Fn(&SandboxGun) -> Files) -> Vec<(&'static str, Vec<Tile>)> {
+        let mut out: Vec<(&'static str, Vec<Tile>)> = SECTIONS.iter().map(|s| (*s, Vec::new())).collect();
+        // (section, family) -> its tile's place in the section.
+        let mut at: BTreeMap<(usize, &str), usize> = BTreeMap::new();
         for (i, g) in guns.iter().enumerate() {
-            if self.fits(g, files(g)) {
-                let s = section_of(g);
-                if let Some(sec) = out.iter_mut().find(|(n, _)| *n == s) {
-                    sec.1.push(i);
+            if !self.fits(g, files(g)) {
+                continue;
+            }
+            let s = section_of(g);
+            let Some(sec) = out.iter().position(|(n, _)| *n == s) else { continue };
+            let family = if g.family.is_empty() { g.id.as_str() } else { g.family.as_str() };
+            match at.get(&(sec, family)) {
+                Some(&t) => {
+                    let tile = &mut out[sec].1[t];
+                    tile.variants.push(i);
+                    if g.id == family {
+                        tile.face = i;
+                    }
+                }
+                None => {
+                    at.insert((sec, family), out[sec].1.len());
+                    out[sec].1.push(Tile { face: i, variants: vec![i] });
                 }
             }
         }

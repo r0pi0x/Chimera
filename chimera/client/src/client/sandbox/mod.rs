@@ -215,6 +215,7 @@ pub fn catalogue_of(world: &World, rungs: &[&str]) -> Vec<SandboxGun> {
     let games = world.get_resource::<chimera_core::game_registry::Games>();
     let mut seen = std::collections::BTreeSet::new();
     let mut out = Vec::new();
+    let mut view_models = Vec::new();
     for (i, id) in rungs.iter().enumerate() {
         if !seen.insert(*id) {
             continue;
@@ -236,8 +237,21 @@ pub fn catalogue_of(world: &World, rungs: &[&str]) -> Vec<SandboxGun> {
             stats,
             unit: chimera_net::net::units::gun_unit(id).map(|(_, set)| set),
             game,
+            family: id.to_string(),
         });
+        view_models.push(data.and_then(|d| d.models.view.clone()));
     }
+    // The variants of one gun as one family (`model`, "Families").
+    let rules = world.get_resource::<chimera_sim::weapon::names::GunNameRules>();
+    let shipped;
+    let words = match rules {
+        Some(r) => r.words(),
+        None => {
+            shipped = chimera_sim::weapon::names::NameWords::shipped();
+            &shipped
+        }
+    };
+    model::set_families(&mut out, &view_models, words, &|game| rules.is_some_and(|r| r.splits(game)));
     out
 }
 
@@ -805,6 +819,7 @@ pub fn staged_catalogue(world: &World) -> Vec<SandboxGun> {
                 game_tags: facets,
                 stats,
                 unit: (*bytes > 0).then(|| if *game == "halo_ce" { "halo_ce".to_string() } else { id.to_string() }),
+                family: id.to_string(),
             }
         })
         .collect()
