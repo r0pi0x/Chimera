@@ -178,3 +178,15 @@ fn a_target_is_placed_at_once_and_takes_its_gun_when_ready_and_nothing_waits_onc
     assert_eq!(left, 0, "nothing pending outside the sandbox");
     assert!(ended(&mut sim).contains(&(ROCKETS, GunPickOutcome::Dropped)));
 }
+
+#[test]
+fn gun_files_hold_makes_a_switch_wait_until_off() {
+    let (mut sim, me) = play();
+    run(&mut sim, &format!("gun_files_hold {SNIPER}"));
+    run(&mut sim, &format!("rung {SNIPER}"));
+    assert_eq!(pending(&sim, me), Some(SNIPER));
+    assert_eq!(testkit::active_id(sim.app.world(), me), Some(GUN));
+    run(&mut sim, "gun_files_hold off");
+    assert_eq!(pending(&sim, me), None);
+    assert_eq!(sim.app.world().get::<Rung>(me).map(|r| r.0), Some(rung_of(&sim, SNIPER)));
+}

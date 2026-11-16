@@ -601,6 +601,7 @@ impl Plugin for MinigamePlugin {
         runtime::plugin(app);
         power::plugin(app);
         rung_command::plugin(app);
+        gun_files::plugin(app);
         targets::plugin(app);
         props::plugin(app);
         layout::plugin(app);

@@ -8,7 +8,8 @@
 //!   target; add or remove a prop) in the shapes of the mechanics'
 //!   `SpawnTarget`, `SetTarget`, `RemoveTarget` and `ClearTargets`
 //!   (`TargetSpec`: the character, its gun, distance, motion, shoots back,
-//!   protected, respawn seconds); `BenchView` the targets and props as the
+//!   protected, respawn seconds, and its place: on a distance line or on
+//!   the range's platform, the mechanics' `TargetPlace`); `BenchView` the targets and props as the
 //!   bench lists them (a row each, alive or the time it comes back:
 //!   `TargetRespawn`), and the last refusal ("no floor there") to show.
 //! - **Measurement**: `KillLog` (the last kills, newest last, from the
@@ -29,8 +30,11 @@
 //!   requests to `BenchView` at once (a spawn past 150 m is refused, as a
 //!   wall would), so the bench works in a staging.
 //!
-//! - **The bridge** (no `FakeBench`): a request calls `targets::spawn`,
-//!   `set`, `remove` or `clear` (an error is the refusal shown); every
+//! - **The bridge** (no `FakeBench`): a request calls
+//!   `targets::spawn_placed`, `set` (its `place` when the place changes),
+//!   `remove` or `clear` (an error is the refusal shown, in the screens'
+//!   words: `refusal_words`, so the platform off the range says "The
+//!   platform is on the range only."); every
 //!   frame the targets (`Target`, `TargetRespawn`, `TargetVitals`) make
 //!   `BenchView::targets`; the local player's `HitMeasured` and
 //!   `KillMeasured` make `KillLog`'s cards; the target nearest the
@@ -67,6 +71,27 @@ impl TargetMotion {
     }
 }
 
+/// Where a target stands: on a distance line or on the range's platform
+/// (the mechanics' own type).
+pub use chimera_sim::minigame::targets::TargetPlace;
+
+/// A place's word on the bench.
+pub fn place_label(p: TargetPlace) -> &'static str {
+    match p {
+        TargetPlace::Line => "Line",
+        TargetPlace::Platform => "Platform",
+    }
+}
+
+/// A refusal as the bench says it (the mechanics' reasons are the
+/// console's words).
+pub fn refusal_words(reason: String) -> String {
+    if reason == tg::PLATFORM_OFF_RANGE {
+        return "The platform is on the range only.".into();
+    }
+    reason
+}
+
 /// The bench's distances, m.
 pub const DISTANCES: [f32; 6] = [5.0, 10.0, 20.0, 40.0, 100.0, 200.0];
 
@@ -87,6 +112,9 @@ pub struct TargetSpec {
     /// mechanics' `armored`).
     pub armored: bool,
     pub respawn_secs: f32,
+    /// On a distance line, or on the range's platform (it stands still
+    /// there; refused off the range).
+    pub place: TargetPlace,
 }
 
 impl Default for TargetSpec {
@@ -100,6 +128,7 @@ impl Default for TargetSpec {
             protected: false,
             armored: true,
             respawn_secs: 3.0,
+            place: TargetPlace::Line,
         }
     }
 }
@@ -431,7 +460,7 @@ pub fn bridge_requests(world: &mut World) {
     let reqs: Vec<BenchRequest> = msgs.drain().collect();
     for r in reqs {
         let said = match r {
-            BenchRequest::Spawn(s) => tg::spawn(
+            BenchRequest::Spawn(s) => tg::spawn_placed(
                 world,
                 &tg::SpawnTarget {
                     character: (!s.character.is_empty()).then(|| s.character.clone()),
@@ -445,6 +474,7 @@ pub fn bridge_requests(world: &mut World) {
                     respawn_secs: s.respawn_secs,
                     by: None,
                 },
+                s.place,
             )
             .map(|_| ()),
             BenchRequest::Set(id, s) => {
@@ -457,7 +487,12 @@ pub fn bridge_requests(world: &mut World) {
                 if s.gun.is_some() && s.gun.as_deref() != Some(old.gun.as_str()) {
                     set.gun = s.gun.clone();
                 }
-                if (s.distance_m - old.distance_m).abs() > 0.01 {
+                if s.place != old.place {
+                    set.place = Some(s.place);
+                }
+                // (The platform has no distance of its own: a new one
+                // there is the mechanics' "back on that line".)
+                if (s.distance_m - old.distance_m).abs() > 0.01 && s.place == tg::TargetPlace::Line {
                     set.distance_m = Some(s.distance_m);
                 }
                 if motion_of(s.motion) != old.motion {
@@ -494,7 +529,7 @@ pub fn bridge_requests(world: &mut World) {
             }
         };
         let mut v = world.resource_mut::<BenchView>();
-        let refused = said.err();
+        let refused = said.err().map(refusal_words);
         if v.refused != refused {
             v.refused = refused;
         }
@@ -530,6 +565,7 @@ pub fn bridge_view(
                         protected: t.protected,
                         armored: t.armored,
                         respawn_secs: t.respawn_secs,
+                        place: t.place,
                     },
                     name: t.character_name.clone(),
                     game: t.game_name.clone(),
@@ -557,7 +593,7 @@ pub fn bridge_view(
         .collect();
     prows.sort_by_key(|r| r.0);
     let prows: Vec<PropRow> = prows.into_iter().map(|r| r.1).collect();
-    let why = refused.as_mut().and_then(|r| r.read().last().map(|r| r.reason.clone()));
+    let why = refused.as_mut().and_then(|r| r.read().last().map(|r| refusal_words(r.reason.clone())));
     if view.targets != rows || view.props != prows || why.is_some() {
         view.targets = rows;
         view.props = prows;

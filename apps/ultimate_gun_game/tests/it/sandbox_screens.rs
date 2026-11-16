@@ -21,18 +21,74 @@ use ultimate_gun_game::sandbox::SANDBOX;
 const GUN: &str = "combat_arms:m4a1";
 
 fn play() -> (Sim, Entity) {
+    play_on(None)
+}
+
+/// `play` on a code-built map (`range`), the player just behind its
+/// firing line.
+fn play_on(map: Option<&str>) -> (Sim, Entity) {
     let mut sim = Sim::new(
         combat_arms::harness::CaSim,
         (chimera_world::greybox::GreyboxMapPlugin, party_kit::PartyPartsPlugin, ultimate_gun_game::UltimateGunGamePlugin::default(), SandboxUiPlugin),
     );
+    let mut at = Vec3::new(0.0, 1.0, 0.0);
+    if let Some(map) = map {
+        let w = sim.app.world_mut();
+        chimera_world::greybox::unload(w);
+        chimera_world::greybox::select(w, map);
+        chimera_world::greybox::respawn(w);
+        sim.ticks(2);
+        if let Some(l) = sim.app.world().get_resource::<chimera_world::range::RangeLayout>() {
+            at = l.point(-0.5, 0.0) + Vec3::Y;
+        }
+    }
     sim.app.insert_resource(Theme::from_toml("name = \"test\"\n[flags.hud]\nsignal = true\n").expect("theme"));
     sim.app.insert_resource(UiClock::manual());
     ultimate_gun_game::sandbox::generate(sim.app.world_mut(), "combat_arms").expect("the definition");
     minigame::start(sim.app.world_mut(), SANDBOX).expect("the sandbox starts");
-    let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
+    let me = sim.spawn_character(at, movement::ID);
     sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
     sim.seconds(1.5);
     (sim, me)
+}
+
+#[test]
+fn the_bench_puts_a_target_on_the_ranges_platform_and_says_why_not_off_it() {
+    use chimera_client::client::sandbox::link::{TargetMotion, TargetPlace};
+    // On the range: spawned on the platform, back on a line, onto it again.
+    let (mut sim, _) = play_on(Some("range"));
+    let top = sim.app.world().resource::<chimera_world::range::RangeLayout>().platform_top;
+    let spec = TargetSpec { character: "combat_arms:default".into(), gun: Some(GUN.into()), ..default() };
+    ask(&mut sim, BenchRequest::Spawn(TargetSpec { place: TargetPlace::Platform, ..spec.clone() }));
+    let view = sim.app.world().resource::<BenchView>().clone();
+    assert_eq!(view.refused, None);
+    let row = view.targets[0].clone();
+    assert_eq!(row.spec.place, TargetPlace::Platform);
+    assert!((row.home.unwrap().xz() - top.xz()).length() < 1.3, "on the platform: {row:?}");
+    ask(&mut sim, BenchRequest::Set(row.id, TargetSpec { place: TargetPlace::Line, distance_m: 20.0, ..row.spec.clone() }));
+    let row = sim.app.world().resource::<BenchView>().targets[0].clone();
+    assert_eq!((row.spec.place, row.spec.distance_m), (TargetPlace::Line, 20.0));
+    ask(&mut sim, BenchRequest::Set(row.id, TargetSpec { place: TargetPlace::Platform, ..row.spec.clone() }));
+    let row = sim.app.world().resource::<BenchView>().targets[0].clone();
+    assert_eq!(row.spec.place, TargetPlace::Platform);
+    assert_eq!(sim.app.world().get::<Target>(Entity::from_bits(row.id)).map(|t| t.place), Some(TargetPlace::Platform));
+    // A strafe there is the mechanics' refusal, shown.
+    ask(&mut sim, BenchRequest::Set(row.id, TargetSpec { motion: TargetMotion::Strafes, ..row.spec.clone() }));
+    let view = sim.app.world().resource::<BenchView>().clone();
+    assert!(view.refused.is_some(), "refused: {view:?}");
+    assert_eq!(view.targets[0].spec.motion, TargetMotion::Still);
+    // Off the range: refused, in the bench's words.
+    let (mut sim, _) = play();
+    ask(&mut sim, BenchRequest::Spawn(spec.clone()));
+    let row = sim.app.world().resource::<BenchView>().targets[0].clone();
+    ask(&mut sim, BenchRequest::Set(row.id, TargetSpec { place: TargetPlace::Platform, ..row.spec.clone() }));
+    let view = sim.app.world().resource::<BenchView>().clone();
+    assert_eq!(view.refused.as_deref(), Some("The platform is on the range only."));
+    assert_eq!(view.targets[0].spec.place, TargetPlace::Line);
+    ask(&mut sim, BenchRequest::Spawn(TargetSpec { place: TargetPlace::Platform, ..spec }));
+    let view = sim.app.world().resource::<BenchView>().clone();
+    assert_eq!(view.refused.as_deref(), Some("The platform is on the range only."));
+    assert_eq!(view.targets.len(), 1);
 }
 
 fn ask(sim: &mut Sim, r: BenchRequest) {
@@ -207,7 +263,7 @@ fn pinned_guns_switch_on_1_and_2_and_k_repeats_the_set_up() {
 fn change_gun_lists_every_rung_with_melee_as_its_own_class() {
     use chimera_client::client::sandbox::model::{Files, GunView, section_of};
     use chimera_sim::minigame::ladder::Ladder;
-    let (sim, _) = play();
+    let (sim, me) = play();
     let ladder = sim.app.world().resource::<Ladder>().clone();
     let usable = &ladder.rungs[..ladder.rungs.len() - 1];
     let mut unique: Vec<&str> = Vec::new();
@@ -219,8 +275,23 @@ fn change_gun_lists_every_rung_with_melee_as_its_own_class() {
     let cat = sim.app.world().resource::<SandboxCatalogue>().clone();
     let listed: Vec<&str> = cat.guns.iter().map(|g| g.id.as_str()).collect();
     assert_eq!(listed, unique, "every rung but the sentinel, once, in the ladder's order");
-    let shown: usize = GunView::default().shown(&cat.guns, &|_| Files::Here).iter().map(|s| s.1.len()).sum();
-    assert_eq!(shown, cat.guns.len(), "the grid shows all of them");
+    // The grid shows all of them, a gun's variants as one tile.
+    let tiles = GunView::default().tiles(&cat.guns, &|_| Files::Here);
+    let mut in_tiles: Vec<usize> = tiles.iter().flat_map(|s| s.1.iter()).flat_map(|t| t.variants.clone()).collect();
+    in_tiles.sort();
+    assert_eq!(in_tiles, (0..cat.guns.len()).collect::<Vec<_>>(), "every gun on one tile");
+    for t in tiles.iter().flat_map(|s| s.1.iter()) {
+        let family = &cat.guns[t.variants[0]].family;
+        assert!(t.variants.iter().all(|v| &cat.guns[*v].family == family), "a tile is one family");
+        assert_eq!(&cat.guns[t.face].id, family, "its face the base gun");
+    }
+    // Every variant stays a rung: the console's `rung <id>` takes it.
+    let mut sim = sim;
+    for g in cat.guns.iter().filter(|g| g.id != g.family).take(3).chain(cat.guns.iter().take(1)) {
+        sim.app.world_mut().resource_mut::<chimera_core::console::Console>().submit(format!("rung {}", g.id));
+        sim.seconds(0.3);
+        assert_eq!(sim.app.world().get::<chimera_sim::minigame::ladder::Rung>(me).map(|r| r.0), Some(g.rung), "rung {}", g.id);
+    }
     // The melee weapons of the ladder's games are rungs, listed as Melee.
     let games: Vec<&str> = unique.iter().filter_map(|r| r.split_once(':').map(|(g, _)| g)).collect();
     let melee: Vec<&str> = ultimate_gun_game::sandbox::melee_weapons(sim.app.world())
@@ -232,4 +303,108 @@ fn change_gun_lists_every_rung_with_melee_as_its_own_class() {
         let g = cat.get(m).unwrap_or_else(|| panic!("{m} listed"));
         assert_eq!(section_of(g), "Melee", "{m}: {:?}", g.tags);
     }
+}
+
+/// The mechanics' own waiting pick (`rung_command::GunPending`: a console
+/// `rung` whose gun's files aren't in) shows in the chip's Next strip, and
+/// its end (`GunPickEnded`) clears it: replaced by a newer pick, applied
+/// when the files come, dropped when the ladder changes under it.
+#[test]
+fn a_pick_the_mechanics_hold_shows_as_next_until_it_ends() {
+    use std::collections::BTreeSet;
+
+    use chimera_client::client::sandbox::{hud, link::SandboxOptions, units::UnitProgress};
+    use chimera_core::console::Console;
+    use chimera_sim::minigame::{gun_files::GunFiles, ladder::Ladder, rung_command::GunPending};
+    use chimera_ui::UiParityId;
+
+    const SNIPER: &str = "tf2:tf_weapon_sniperrifle";
+    const ROCKETS: &str = "tf2:tf_weapon_rocketlauncher";
+    #[derive(Resource, Default)]
+    struct Missing(BTreeSet<String>);
+    fn fake(w: &mut World, id: &str) -> bool {
+        !w.resource::<Missing>().0.contains(id)
+    }
+    let (mut sim, me) = play();
+    let run = |sim: &mut Sim, line: &str| {
+        sim.app.world_mut().resource_mut::<Console>().submit(line.to_string());
+        sim.app.update();
+        sim.app.update();
+    };
+    let missing = |sim: &mut Sim, guns: &[&str]| {
+        sim.app.world_mut().insert_resource(Missing(guns.iter().map(|g| g.to_string()).collect()));
+    };
+    let ui = |sim: &Sim| sim.app.world().resource::<SandboxUi>().clone();
+    let shown = |sim: &Sim| {
+        let w = sim.app.world();
+        hud::shown(&ui(sim), w.resource::<SandboxCatalogue>(), w.resource::<UnitProgress>(), &KillLog::default(), &SandboxOptions::default(), 0.0)
+    };
+    let drawn = |sim: &mut Sim, id: &str| {
+        let w = sim.app.world_mut();
+        w.query::<&UiParityId>().iter(w).any(|p| p.0 == id)
+    };
+    run(&mut sim, &format!("rung {GUN}"));
+    sim.seconds(0.5);
+    assert_eq!(ui(&sim).current.as_deref(), Some(GUN));
+    missing(&mut sim, &[SNIPER, ROCKETS]);
+    sim.app.world_mut().insert_resource(GunFiles(vec![fake]));
+    // Picked at the console: it waits, shown as Next with its name.
+    run(&mut sim, &format!("rung {SNIPER}"));
+    assert_eq!(sim.app.world().get::<GunPending>(me).map(|p| p.gun), Some(SNIPER));
+    let u = ui(&sim);
+    assert_eq!((u.pending.as_deref(), u.pick_held, u.current.as_deref()), (Some(SNIPER), true, Some(GUN)));
+    let s = shown(&sim);
+    let (face, _) = s.next.clone().expect("the Next strip");
+    assert_eq!(face.id, SNIPER);
+    assert!(!face.name.is_empty() && face.name != SNIPER, "its name: {face:?}");
+    assert!(s.next_held);
+    assert!(drawn(&mut sim, "sb.next"), "the strip drawn");
+    // A newer pick replaces it.
+    run(&mut sim, &format!("rung {ROCKETS}"));
+    assert_eq!(ui(&sim).pending.as_deref(), Some(ROCKETS));
+    // Its files come: applied, in hand, the strip gone.
+    missing(&mut sim, &[]);
+    sim.app.update();
+    sim.app.update();
+    let u = ui(&sim);
+    assert_eq!((u.pending.as_deref(), u.pick_held, u.current.as_deref()), (None, false, Some(ROCKETS)));
+    assert!(shown(&sim).next.is_none());
+    assert!(!drawn(&mut sim, "sb.next"));
+    // A pick waiting when the ladder changes under it: dropped, said so.
+    missing(&mut sim, &[SNIPER]);
+    run(&mut sim, &format!("rung {SNIPER}"));
+    assert_eq!(ui(&sim).pending.as_deref(), Some(SNIPER));
+    let at = sim.app.world().get::<GunPending>(me).map(|p| p.rung).unwrap();
+    sim.app.world_mut().resource_mut::<Ladder>().rungs[at] = GUN;
+    sim.app.update();
+    sim.app.update();
+    let u = ui(&sim);
+    assert_eq!((u.pending.as_deref(), u.pick_held), (None, false));
+    assert!(u.said.as_deref().is_some_and(|s| s.contains("dropped")), "{:?}", u.said);
+    assert!(drawn(&mut sim, "sb.said"), "the word on the chip's foot");
+}
+
+/// Nobody races in a sandbox: switching rung there raises no lead event
+/// (so no "You took the lead" banner, cue or announcer call), up or down
+/// the ladder.
+#[test]
+fn switching_rung_in_the_sandbox_takes_no_lead() {
+    use chimera_core::console::Console;
+    use chimera_sim::minigame::{MinigameEvent, ladder::{Leaders, Rung}};
+
+    #[derive(Resource, Default)]
+    struct Events(Vec<&'static str>);
+    fn keep(mut seen: ResMut<Events>, mut r: MessageReader<MinigameEvent>) {
+        seen.0.extend(r.read().map(|e| e.name));
+    }
+    let (mut sim, me) = play();
+    sim.app.init_resource::<Events>().add_systems(Last, keep).add_systems(FixedPostUpdate, keep);
+    for rung in ["5", "2", "9", "3"] {
+        sim.app.world_mut().resource_mut::<Console>().submit(format!("rung {rung}"));
+        sim.seconds(1.0);
+    }
+    assert_eq!(sim.app.world().get::<Rung>(me).map(|r| r.0), Some(2), "on the rung asked");
+    let seen = sim.app.world().resource::<Events>().0.clone();
+    assert!(!seen.iter().any(|n| n.starts_with("lead_")), "no lead in a sandbox: {seen:?}");
+    assert!(sim.app.world().get_resource::<Leaders>().is_none_or(|l| l.0.is_empty()));
 }

@@ -1,0 +1,25 @@
+# A sandbox pick that waits for its gun's files (chimera_sim's
+# `rung_command::GunPending`), shown in the gun chip's Next strip, then
+# applied: `gun_files_hold` holds the gun's files back (a developer
+# command), `off` lets them in. Last, the staged strip with a download
+# under way (`ui_scene sandbox next`). A scene script: chimera_client's `scene`.
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/pending_pick.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+setpos 0 -59 0
+setang 1 90
+target add cs_source:weapon_ak47 10 protect
+rung combat_arms:m4a1
+wait 200
+gun_files_hold cs_source:weapon_awp
+rung cs_source:weapon_awp
+wait 60
+shot next_pending
+gun_files_hold off
+wait 120
+shot next_applied
+ui_scene sandbox next
+wait 240
+shot next_staged

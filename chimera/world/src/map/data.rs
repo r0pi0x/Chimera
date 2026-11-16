@@ -1311,7 +1311,9 @@ pub struct MapData {
     /// in the map's own order.
     pub entities: Vec<MapEntity>,
     /// Meters per entity-space unit (`entities` module docs); 0 when the
-    /// map has no entities.
+    /// map has no entities (then no `MapEntities` either; a loader or a
+    /// dressing that adds entities must set it: positions are divided by
+    /// it, `entities::engine_to_entity`). A code-built map's kit: 1.
     pub entity_scale: f32,
     /// How water surfaces look (`MapMesh::water` indexes these).
     pub water_materials: Vec<water::MapWaterMaterial>,

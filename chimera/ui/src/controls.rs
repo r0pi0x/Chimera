@@ -709,6 +709,12 @@ impl<'a> Ui<'a> {
     /// one white (ink text); focus underlines it in accent. Returns the
     /// options.
     pub fn segmented(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, st: State) -> Vec<Entity> {
+        self.segmented_with(c, parent, options, selected, &[], st)
+    }
+
+    /// `segmented` with the options at `off` greyed out (`fg_4` words, no
+    /// hover, not clickable: a choice that can't be made now).
+    pub fn segmented_with(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], st: State) -> Vec<Entity> {
         // One slanted track (fill .05, a `fg_4` outline), slanted `fg_5`
         // dividers, the pick a white slanted slab; the words stay upright
         // (Display for words, Mono for numbers).
@@ -726,7 +732,8 @@ impl<'a> Ui<'a> {
             .enumerate()
             .map(|(i, o)| {
                 let sel = selected == Some(i);
-                let over = if sel { Color::NONE } else { self.color(Tone::Fg, 0.06) };
+                let greyed = off.contains(&i) && !sel;
+                let over = if sel || greyed { Color::NONE } else { self.color(Tone::Fg, 0.06) };
                 let (lp, rp) = (0.75 + if i == 0 { lean * 0.6 } else { lean * 0.5 }, 0.75 + if i + 1 == options.len() { lean * 0.6 } else { lean * 0.5 });
                 let b = c
                     .spawn((
@@ -734,10 +741,12 @@ impl<'a> Ui<'a> {
                         Node::default(),
                         BackgroundColor(Color::NONE),
                         Hover { base: Color::NONE, over },
-                        clickable(),
                         ChildOf(g),
                     ))
                     .id();
+                if !greyed {
+                    c.entity(b).insert(clickable());
+                }
                 if sel {
                     c.spawn((full(), UiSlant::new(Tone::Fg, 1.0), SegmentedPick, Pickable::IGNORE, ChildOf(b)));
                     if st.focus {
@@ -760,7 +769,7 @@ impl<'a> Ui<'a> {
                 }
                 let number = o.chars().all(|ch| ch.is_ascii_digit() || ch == '.' || ch == ' ');
                 let role = if number { Role::Mono } else { Role::DisplayRegular };
-                self.text(c, b, role, if number { 0.58 } else { 0.62 }, if sel { Tone::Ink } else { Tone::Fg2 }, o);
+                self.text(c, b, role, if number { 0.58 } else { 0.62 }, if sel { Tone::Ink } else if greyed { Tone::Fg4 } else { Tone::Fg2 }, o);
                 b
             })
             .collect()

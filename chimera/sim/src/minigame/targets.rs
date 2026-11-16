@@ -294,7 +294,7 @@ pub struct PlaceTarget {
 }
 
 /// The refusal of the platform off the range.
-const PLATFORM_OFF_RANGE: &str = "the platform is the range's: off the range a target stands on a line (no `platform`)";
+pub const PLATFORM_OFF_RANGE: &str = "the platform is the range's: off the range a target stands on a line (no `platform`)";
 
 /// Spawn a target (module doc, "Requests").
 #[derive(Message, Clone, Debug, PartialEq)]

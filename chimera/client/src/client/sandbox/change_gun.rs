@@ -14,7 +14,10 @@
 //! - **The grid** (`chimera_ui::vlist`, a recycling grid of 5 tiles a row
 //!   under folding class headers): a tile has its game's short name, its
 //!   pinned slot, the gun's icon and name, and its foot: its delivery and
-//!   fire mode, or its download state (`tile_foot`). A press selects, a
+//!   fire mode, or its download state (`tile_foot`). The variants of one
+//!   gun are one tile (`model`, "Families": Combat Arms' skins, editions
+//!   and levels), saying how many beside the game's name; the counts (the
+//!   games', the classes', the bar's) are tiles. A press selects, a
 //!   second press switches (the kit's double-click rule); a header folds.
 //!   Over the grid: TAGS (the global tag popover, eight groups as tick
 //!   tags, and More filters greyed: Later; while it is open typing goes
@@ -28,7 +31,10 @@
 //!   kill (a 100-point body, a Spartan's 115 of shield and health, the
 //!   head), for a gun several classes carry the class to play it as
 //!   (Play as: `GunView::body`, sent with the switch), the tags and the
-//!   files.
+//!   files. For a tile of several variants, the variants the filters
+//!   leave as a list under the model (the base gun first; a press picks
+//!   one: the pane, a pin and the switch are then that variant's; Tab and
+//!   Shift+Tab step through them).
 //! - **Foot**: the keys, and the pinned bar (smaller, at the right): drag
 //!   a tile onto a slot (the slot under the pointer shows a ghost of the
 //!   gun in an accent frame, the gun it replaces struck through under it,
@@ -96,6 +102,12 @@ pub const TILE_H: f32 = 5.6;
 pub const HEAD_H: f32 = 1.6;
 pub const GAP: f32 = 0.45;
 
+/// The detail pane's variants list: its scroll view's key, the rows it
+/// shows at most and a row's height (cq).
+pub const VARIANTS: &str = "sandbox.variants";
+pub const VARIANT_ROWS: usize = 5;
+pub const VARIANT_H: f32 = 1.25;
+
 /// The view's z (over the HUD and the game's).
 pub const Z: i32 = crate::client::minigame_scoreboard::SCOREBOARD_Z + 5;
 
@@ -110,6 +122,8 @@ pub enum GunAction {
     Download(String),
     /// The body to play the selected gun as (None: the rung's own).
     Body(Option<String>),
+    /// Pick a variant of the selected tile's gun (the detail pane's list).
+    Variant(String),
     Switch,
     Close,
 }
@@ -132,11 +146,23 @@ pub struct Parts {
     size: (u32, u32),
 }
 
-/// The grid's sections as shown: (name, guns' indices).
+/// The grid's sections as shown: (name, its tiles' faces as guns'
+/// indices), and each tile's variants by its face (`model::Tile`).
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
-pub struct Grid(pub Vec<(&'static str, Vec<usize>)>);
+pub struct Grid(pub Vec<(&'static str, Vec<usize>)>, pub std::collections::BTreeMap<usize, Vec<usize>>);
 
 impl Grid {
+    /// The variants of the tile whose face is `face` (itself alone when
+    /// it has none).
+    pub fn variants_of(&self, face: usize) -> &[usize] {
+        self.1.get(&face).map_or(&[], Vec::as_slice)
+    }
+
+    /// The face of the tile gun `gun` is on (its own, or its family's).
+    pub fn face_of(&self, gun: usize) -> Option<usize> {
+        self.1.iter().find(|(f, v)| **f == gun || v.contains(&gun)).map(|(f, _)| *f)
+    }
+
     pub fn gun_at(&self, c: VCursor) -> Option<usize> {
         match c {
             VCursor::Item(s, i) => self.0.get(s)?.1.get(i).copied(),
@@ -145,6 +171,7 @@ impl Grid {
     }
 
     pub fn cursor_of(&self, gun: usize) -> Option<VCursor> {
+        let gun = self.face_of(gun)?;
         self.0.iter().enumerate().find_map(|(s, (_, v))| v.iter().position(|g| *g == gun).map(|i| VCursor::Item(s, i)))
     }
 }
@@ -165,9 +192,16 @@ pub fn sync_grid(
         sel.0 = None;
         return;
     }
-    let shown = ui.view.shown(&cat.guns, &|g| SandboxCatalogue::files(g, &progress));
+    let tiles = ui.view.tiles(&cat.guns, &|g| SandboxCatalogue::files(g, &progress));
+    let shown: Vec<(&'static str, Vec<usize>)> = tiles.iter().map(|(n, t)| (*n, t.iter().map(|t| t.face).collect())).collect();
+    let variants: std::collections::BTreeMap<usize, Vec<usize>> = tiles.into_iter().flat_map(|(_, t)| t).map(|t| (t.face, t.variants)).collect();
     let st = lists.state(LIST);
     st.set_shape(VShape::grid(COLS, HEAD_H, TILE_H, GAP));
+    if grid.1 != variants {
+        grid.1 = variants;
+        // (A tile's count is drawn: bound again.)
+        st.bump();
+    }
     if grid.0 != shown {
         grid.0 = shown;
         st.set_sections(grid.0.iter().map(|(n, v)| VSection::new(*n, v.len())).collect());
@@ -197,8 +231,11 @@ fn follow_cursor(lists: Res<VirtualLists>, grid: Res<Grid>, cat: Res<SandboxCata
         return;
     }
     let Some(c) = lists.get(LIST).and_then(|s| s.cursor) else { return };
+    // (A variant picked on the cursor's tile stays picked.)
+    let on_tile = |id: &str| grid.gun_at(c).is_some_and(|f| grid.variants_of(f).iter().any(|v| cat.guns.get(*v).is_some_and(|g| g.id == id)));
     if let Some(g) = grid.gun_at(c).and_then(|i| cat.guns.get(i))
         && ui.view.selected.as_deref() != Some(&g.id)
+        && !ui.view.selected.as_deref().is_some_and(on_tile)
     {
         ui.view.selected = Some(g.id.clone());
         sel.0 = Some(g.id.clone());
@@ -213,6 +250,7 @@ fn keys(
     console: Option<Res<crate::client::console::ConsoleUi>>,
     cat: Res<SandboxCatalogue>,
     progress: Res<UnitProgress>,
+    grid: Res<Grid>,
     mut ui: ResMut<SandboxUi>,
     mut lists: ResMut<VirtualLists>,
     mut out: MessageWriter<GunAction>,
@@ -303,6 +341,24 @@ fn keys(
             out.write(GunAction::Switch);
         }
         _ => {}
+    }
+    // Tab and Shift+Tab: the next and the last variant of the tile's gun.
+    if k(KeyCode::Tab)
+        && let Some(face) = st.cursor.and_then(|c| grid.gun_at(c))
+    {
+        let vs = grid.variants_of(face);
+        let now = ui.view.selected.as_deref().and_then(|id| vs.iter().position(|v| cat.guns.get(*v).is_some_and(|g| g.id == id)));
+        if vs.len() > 1 {
+            let back = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+            let next = match (now, back) {
+                (Some(i), false) => (i + 1) % vs.len(),
+                (Some(i), true) => (i + vs.len() - 1) % vs.len(),
+                (None, _) => 0,
+            };
+            if let Some(g) = cat.guns.get(vs[next]) {
+                out.write(GunAction::Variant(g.id.clone()));
+            }
+        }
     }
     let selected = ui.view.selected.clone();
     if ctrl {
@@ -460,6 +516,12 @@ fn act(world: &mut World) {
                 }
             }
             GunAction::Body(b) => world.resource_mut::<SandboxUi>().view.body = b,
+            GunAction::Variant(id) => {
+                let mut ui = world.resource_mut::<SandboxUi>();
+                if ui.view.selected.as_deref() != Some(id.as_str()) {
+                    ui.view.selected = Some(id);
+                }
+            }
             GunAction::Switch => {
                 let Some(id) = world.resource::<SandboxUi>().view.selected.clone() else { continue };
                 world.write_message(SandboxAction::Switch(id));
@@ -547,6 +609,7 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
         ("\u{2191}\u{2193}\u{2190}\u{2192}", "Tile"),
         ("Enter", "Switch, or fold"),
         ("\\", "Fold this class"),
+        ("Tab", "Variant"),
         ("I", "Model"),
         ("Ctrl 1-6", "Pin"),
         ("R", "Retry"),
@@ -572,6 +635,8 @@ struct Shown {
     progress: UnitProgress,
     catalogue: usize,
     grid_count: usize,
+    /// The selected tile's variants (the detail pane's list).
+    variants: Vec<usize>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -599,6 +664,14 @@ fn draw(
         progress: progress.clone(),
         catalogue: cat.guns.len(),
         grid_count: grid.0.iter().map(|s| s.1.len()).sum(),
+        variants: ui_state
+            .view
+            .selected
+            .as_deref()
+            .and_then(|id| cat.guns.iter().position(|g| g.id == id))
+            .and_then(|i| grid.face_of(i))
+            .map(|f| grid.variants_of(f).to_vec())
+            .unwrap_or_default(),
     };
     let fresh = last.as_ref().is_none_or(|(r, _)| *r != p.root);
     let prev = if fresh { None } else { last.as_ref().map(|l| l.1.clone()) };
@@ -614,7 +687,8 @@ fn draw(
     games_column(&mut c, &ui, p.games, &cat.guns, &ui_state, &progress);
     filter_bar(&mut c, &ui, &look, p.bar, &ui_state, next.grid_count, &cat.guns, &progress);
     if let Some(g) = ui_state.view.selected.as_deref().and_then(|id| cat.get(id)) {
-        detail(&mut c, &ui, &look, p.detail, g, &progress, ui_state.view.detail, ui_state.pins.slot_of(&g.id), ui_state.view.body.as_deref());
+        let variants: Vec<&SandboxGun> = next.variants.iter().filter_map(|i| cat.guns.get(*i)).collect();
+        detail(&mut c, &ui, &look, p.detail, g, &variants, &progress, ui_state.view.detail, ui_state.pins.slot_of(&g.id), ui_state.view.body.as_deref());
     }
     let hint = ui.boxed(&mut c, p.pins, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
     let ghost = ui_state.drag.as_ref().and_then(|d| Some((d.over?, face(&d.gun))));
@@ -660,7 +734,11 @@ fn games_column(c: &mut Commands, ui: &Ui, parent: Entity, guns: &[SandboxGun], 
     let l = ui.boxed(c, parent, UiStyle { margin: Some([0.15, 0.0, 0.45, 0.0].into()), ..UiStyle::row() });
     ui.text(c, l, Role::Mono, 0.46, Tone::Fg3, "Games");
     let fits = |g: &SandboxGun| s.view.fits_but_games(g, SandboxCatalogue::files(g, progress));
-    let all = guns.iter().filter(|g| fits(g)).count();
+    // The counts are tiles: a gun's variants count once (`model`, "Families").
+    let tiles = |of: &dyn Fn(&SandboxGun) -> bool| {
+        guns.iter().filter(|g| of(g) && fits(g)).map(|g| (g.game.as_str(), super::model::section_of(g), g.family.as_str())).collect::<std::collections::BTreeSet<_>>().len()
+    };
+    let all = tiles(&|_| true);
     let row = |c: &mut Commands, name: &str, count: usize, sel: bool, sub: Option<String>, new: bool, action: GunAction| {
         let tone = if sel { Tone::Ink } else if count == 0 { Tone::Fg4 } else { Tone::Fg2 };
         let mut st = UiStyle { gap: Some(0.3), pad: Some([0.45, 0.7, 0.45, 0.7].into()), min_w: None, ..UiStyle::column() };
@@ -690,7 +768,7 @@ fn games_column(c: &mut Commands, ui: &Ui, parent: Entity, guns: &[SandboxGun], 
     }
     for (id, name) in games {
         let mine: Vec<&SandboxGun> = guns.iter().filter(|g| g.game == id).collect();
-        let count = mine.iter().filter(|g| fits(g)).count();
+        let count = tiles(&|g| g.game == id);
         let here = mine.iter().filter(|g| SandboxCatalogue::files(g, progress) == Files::Here).count();
         // One download for the whole game: every gun shares one unit.
         let units: std::collections::BTreeSet<&str> = mine.iter().filter_map(|g| g.unit.as_deref()).collect();
@@ -769,7 +847,14 @@ fn filter_bar(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, s: &Sandbo
     ui.text(c, later, Role::Mono, 0.38, Tone::Fg3, "Later");
     ui.boxed(c, parent, UiStyle { grow: Some(1.0), ..UiStyle::row() });
     let here = guns.iter().filter(|g| SandboxCatalogue::files(g, progress) == Files::Here).count();
-    let words = if shown == guns.len() { format!("{shown} guns \u{00b7} {here} here") } else { format!("{shown} of {} guns", guns.len()) };
+    // Guns are tiles (a gun's variants count once); every variant is in
+    // the catalogue.
+    let every = guns.iter().map(|g| (g.game.as_str(), super::model::section_of(g), g.family.as_str())).collect::<std::collections::BTreeSet<_>>().len();
+    let words = match (shown == every, every == guns.len()) {
+        (true, true) => format!("{shown} guns \u{00b7} {here} here"),
+        (true, false) => format!("{shown} guns \u{00b7} {} with their variants", guns.len()),
+        (false, _) => format!("{shown} of {every} guns"),
+    };
     ui.text(c, parent, Role::Mono, 0.48, Tone::Fg3, &words);
 }
 
@@ -982,7 +1067,12 @@ fn bind(
                         ));
                     }
                     let top = ui.boxed(&mut c, tile, UiStyle { justify: Some(JustifyContent::SpaceBetween), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([Some(0.4), Some(0.38), Some(0.4), None]));
-                    ui.text(&mut c, top, Role::Mono, 0.38, Tone::Fg3, &g.game_short);
+                    let n = grid.gun_at(VCursor::Item(section, first + col)).map_or(1, |f| grid.variants_of(f).len());
+                    let short = if n > 1 { format!("{} \u{00b7} {n} variants", g.game_short) } else { g.game_short.clone() };
+                    let t = ui.text(&mut c, top, Role::Mono, 0.38, Tone::Fg3, &short);
+                    if n > 1 {
+                        c.entity(t).insert(UiParityId::new(format!("gun.tile.variants.{}", g.id)));
+                    }
                     if let Some(p) = ui_state.pins.slot_of(&g.id) {
                         let pm = ui.boxed(&mut c, top, UiStyle { w: Some(0.95), h: Some(0.95), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), ..UiStyle::row() }.bg_a(Tone::Fg, 0.1).outline(Tone::Fg3, 1.0));
                         ui.text(&mut c, pm, Role::Mono, 0.42, Tone::Fg, &(p + 1).to_string());
@@ -1008,7 +1098,7 @@ pub fn hits_to_kill(hp: f32, dmg: Option<f32>) -> Option<u32> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun, progress: &UnitProgress, big: bool, pinned: Option<usize>, body: Option<&str>) {
+fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun, variants: &[&SandboxGun], progress: &UnitProgress, big: bool, pinned: Option<usize>, body: Option<&str>) {
     c.spawn((Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, width: Val::Px(look.hair()), ..default() }, BackgroundColor(look.tone(Tone::Fg5)), ChildOf(parent)));
     ui.text(c, parent, Role::Mono, 0.46, Tone::Fg3, &g.game_name);
     let name = ui.boxed(c, parent, UiStyle { gap: Some(0.9), align: Some(AlignItems::Center), ..UiStyle::row() });
@@ -1021,7 +1111,7 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
     let st = SandboxCatalogue::unit_state(g, progress);
     let viewer = c
         .spawn((
-            UiStyle { h: Some(if big { 20.0 } else { 11.0 }), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::column() }.bg(Tone::Ink).outline(Tone::Fg5, 1.0),
+            UiStyle { h: Some(if big { 20.0 } else if variants.len() > 1 { 7.0 } else { 11.0 }), justify: Some(JustifyContent::Center), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::column() }.bg(Tone::Ink).outline(Tone::Fg5, 1.0),
             Node::default(),
             UiParityId::new("gun.model"),
             ChildOf(parent),
@@ -1058,6 +1148,40 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
             let (p, words) = progress_of(&st);
             let b = ui.boxed(c, viewer, UiStyle::row().abs([None, None, None, Some(1.2)]));
             ui.progress(c, b, p, &words, 12.0, 1.2, 0.44, true);
+        }
+    }
+    // The variants of this gun the filters leave: a press picks one.
+    if variants.len() > 1 {
+        ui.section(c, parent, &format!("Variants \u{00b7} {}", variants.len()), None);
+        let rows = variants.len().min(VARIANT_ROWS) as f32;
+        let list = ui.scroll(c, parent, VARIANTS, UiStyle { h: Some(rows * VARIANT_H), shrink: Some(0.0), ..UiStyle::row() }, UiStyle::column());
+        c.entity(list.frame).insert(UiParityId::new("gun.variants"));
+        for v in variants {
+            let on = v.id == g.id;
+            let row = c
+                .spawn((
+                    UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), h: Some(VARIANT_H), pad: Some([0.0, 0.6, 0.0, 0.7].into()), shrink: Some(0.0), ..UiStyle::row() }.bg_a(Tone::Fg, if on { 0.1 } else { 0.0 }),
+                    Node { min_width: Val::Px(0.0), overflow: Overflow::clip_x(), ..default() },
+                    GunAction::Variant(v.id.clone()),
+                    clickable(),
+                    UiParityId::new(format!("gun.variant.{}", v.id)),
+                    ChildOf(list.content),
+                ))
+                .id();
+            if on {
+                ui.focus_bar(c, row, 0.2);
+                chimera_ui::scroll::scroll_into_view(c, row);
+            }
+            ui.text(c, row, Role::DisplayRegular, 0.56, if on { Tone::Fg } else { Tone::Fg2 }, &v.name);
+            ui.boxed(c, row, UiStyle { grow: Some(1.0), ..UiStyle::row() });
+            let note = match (v.id == v.family, SandboxCatalogue::unit_state(v, progress)) {
+                (_, UnitState::NotHere { bytes }) => size_words(bytes),
+                (_, UnitState::Queued { .. } | UnitState::Downloading { .. }) => "Downloading".into(),
+                (_, UnitState::Failed { .. }) => "Failed".into(),
+                (true, UnitState::Here) => "Base".into(),
+                (false, UnitState::Here) => v.stats.damage.map_or(String::new(), |d| format!("{d:.0} a hit")),
+            };
+            ui.text(c, row, Role::Mono, 0.38, Tone::Fg3, &note);
         }
     }
     // Stats.

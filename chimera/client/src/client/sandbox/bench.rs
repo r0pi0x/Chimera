@@ -8,7 +8,11 @@
 //!   the character picker), Holds (its gun; its default unless chosen),
 //!   Protection (its shield, gear or armour on, or health only: the
 //!   mechanics' `armored`), Never falls (hits measured, it stays up:
-//!   `protected`), Distance (5 to 200 m),
+//!   `protected`), Place (Line, or Platform: the range's raised
+//!   platform, where it stands still, so Strafes and Walks are greyed
+//!   out and no distance is picked; a distance puts it back on that
+//!   line; off the range the mechanics refuse it and the reason shows),
+//!   Distance (5 to 200 m),
 //!   Moves (Still, Strafes, Walks), Shoots back (its own toggle, off
 //!   unless you want it). Every change is a `link::BenchRequest` at once.
 //!   A refused spawn's reason shows under the list.
@@ -55,7 +59,7 @@ use chimera_ui::{
 use super::{
     SandboxScreen, SandboxUi,
     hud::{M, kit_icon, tag},
-    link::{BenchRequest, BenchView, DISTANCES, MAX_TARGETS, PROPS, PropSpec, SandboxOption, SandboxOptions, TargetMotion, TargetSpec},
+    link::{BenchRequest, BenchView, DISTANCES, MAX_TARGETS, PROPS, PropSpec, SandboxOption, SandboxOptions, TargetMotion, TargetPlace, TargetSpec, place_label},
 };
 use crate::client::signal::Look;
 
@@ -125,6 +129,8 @@ pub enum BenchAction {
     Remove(u64),
     Distance(u64, f32),
     Motion(u64, TargetMotion),
+    /// Onto the range's platform (standing still) or back on a line.
+    Place(u64, TargetPlace),
     Protected(u64, bool),
     Armored(u64, bool),
     ShootsBack(u64, bool),
@@ -256,13 +262,28 @@ fn act(world: &mut World) {
             }
             BenchAction::Remove(id) => req(world, BenchRequest::Remove(id)),
             BenchAction::Distance(id, d) => {
+                // A distance is a line's: a platform target goes back on it.
                 if let Some(s) = spec_of(id) {
-                    req(world, BenchRequest::Set(id, TargetSpec { distance_m: d, ..s }));
+                    req(world, BenchRequest::Set(id, TargetSpec { distance_m: d, place: TargetPlace::Line, ..s }));
                 }
             }
             BenchAction::Motion(id, m) => {
-                if let Some(s) = spec_of(id) {
+                // On the platform it stands still.
+                if let Some(s) = spec_of(id)
+                    && (s.place == TargetPlace::Line || m == TargetMotion::Still)
+                {
                     req(world, BenchRequest::Set(id, TargetSpec { motion: m, ..s }));
+                }
+            }
+            BenchAction::Place(id, p) => {
+                if let Some(s) = spec_of(id)
+                    && s.place != p
+                {
+                    let next = match p {
+                        TargetPlace::Platform => TargetSpec { place: p, motion: TargetMotion::Still, ..s },
+                        TargetPlace::Line => TargetSpec { place: p, distance_m: TargetSpec::default().distance_m, ..s },
+                    };
+                    req(world, BenchRequest::Set(id, next));
                 }
             }
             BenchAction::Protected(id, on) => {
@@ -504,6 +525,7 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         ui.boxed(c, head, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         let sum = match t.respawn {
             Some(_) => "Down \u{00b7} back soon".to_string(),
+            None if t.spec.place == TargetPlace::Platform => format!("Platform \u{00b7} {}", t.spec.motion.label()),
             None => format!("{} m \u{00b7} {}", t.spec.distance_m, t.spec.motion.label()),
         };
         ui.text(c, head, Role::Mono, 0.46, Tone::Fg2, &sum);
@@ -587,11 +609,24 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         ui.text(c, r, Role::Mono, 0.44, Tone::Fg3, if t.spec.protected { "Hits measured, it stays up" } else { "Falls, back in 3 s" });
         small_toggle(c, ui, r, t.spec.protected, BenchAction::Protected(t.id, !t.spec.protected));
+        let on_platform = t.spec.place == TargetPlace::Platform;
+        let r = row(c, "Place");
+        c.entity(r).insert(UiParityId::new("bench.place"));
+        ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
+        if on_platform {
+            ui.text(c, r, Role::Mono, 0.44, Tone::Fg3, "Stands still up there");
+        }
+        let places = [TargetPlace::Line, TargetPlace::Platform];
+        let names: Vec<&str> = places.iter().map(|p| place_label(*p)).collect();
+        for (k, e) in ui.segmented(c, r, &names, places.iter().position(|p| *p == t.spec.place), State::NONE).into_iter().enumerate() {
+            c.entity(e).insert((BenchAction::Place(t.id, places[k]), clickable()));
+        }
         let r = row(c, "Distance");
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         let words: Vec<String> = DISTANCES.iter().map(|d| format!("{d} m")).collect();
         let refs: Vec<&str> = words.iter().map(String::as_str).collect();
-        let sel = DISTANCES.iter().position(|d| (*d - t.spec.distance_m).abs() < 0.01);
+        // (A platform target has no line: none picked; a press puts it on one.)
+        let sel = DISTANCES.iter().position(|d| !on_platform && (*d - t.spec.distance_m).abs() < 0.01);
         for (k, e) in ui.segmented(c, r, &refs, sel, State::NONE).into_iter().enumerate() {
             c.entity(e).insert((BenchAction::Distance(t.id, DISTANCES[k]), clickable()));
         }
@@ -599,8 +634,13 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         let names: Vec<&str> = TargetMotion::ALL.iter().map(|m| m.label()).collect();
         let sel = TargetMotion::ALL.iter().position(|m| *m == t.spec.motion);
-        for (k, e) in ui.segmented(c, r, &names, sel, State::NONE).into_iter().enumerate() {
-            c.entity(e).insert((BenchAction::Motion(t.id, TargetMotion::ALL[k]), clickable()));
+        // On the platform it stands still: Strafes and Walks greyed out.
+        let off: &[usize] = if on_platform { &[1, 2] } else { &[] };
+        c.entity(r).insert(UiParityId::new("bench.moves"));
+        for (k, e) in ui.segmented_with(c, r, &names, sel, off, State::NONE).into_iter().enumerate() {
+            if !off.contains(&k) {
+                c.entity(e).insert((BenchAction::Motion(t.id, TargetMotion::ALL[k]), clickable()));
+            }
         }
         let r = row(c, "Shoots back");
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
