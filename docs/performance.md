@@ -4523,6 +4523,35 @@ is fewer systems iterating characters to find nothing changed
 (`follow_lead` each tick, the physics shadow's `attach`, HL2:DM's
 `wear`), not tried here.
 
+## Late bodies worn first (2026-11-16)
+
+Ultimate Gun Game's sandbox reads ahead its whole ladder: 573 Combat Arms
+bodies and 2,788 weapon models (dev profile, offscreen 1280x720, the
+Windows PC under other agents' builds). A player put on rung 2000 about 33 s
+after launch, from "worn, not built yet" to "drawn" (debug lines of
+`render::bodies`; `late_build` logs each model's cook and frames going in):
+
+| | worn to drawn | bodies a second | frame median |
+|---|---|---|---|
+| before | 45.9 s | about 3.6 | 33-48 ms |
+| after | 1.1 s and 8.5 s (two runs) | about 12-13 | 32-43 ms, then 19-22 ms with `has` a set lookup |
+
+Frame medians on a shared, loaded box are rough.
+
+What paced it: every late model was started on a task at once and built in
+start order through one slot: the front task had to finish (its cook queued
+on the async compute pool, at most four threads, behind every earlier cook
+and the game's own loads), then went in over its frames (a Combat Arms body:
+2 frames of `FILL_BYTES`), then a frame settling with nothing going in; and
+`LateQueue::has`, called for each of thousands of models a frame, walked
+thousands of tasks (millions of string compares a frame on the main
+thread). Now a body or held model wanted now starts at once and goes in
+next, the rest start `LATE_AHEAD` (6) at a time, the next model goes in
+during the frame the last one settles (the budget a frame is unchanged),
+and `has` is a set lookup. A cook is 15-60 ms; what is left of the wait is
+the async compute pool being busy with the game's own loads (the 8.5 s run:
+the worn body's 15 ms cook started 7.3 s after it was asked for).
+
 ## The navigation mesh's arrival (2026-11-15)
 
 `ultimate_gun_game`'s `heavy::nav_in_play` failed after the push of
