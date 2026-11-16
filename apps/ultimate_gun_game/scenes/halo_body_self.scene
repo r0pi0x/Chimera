@@ -7,7 +7,7 @@
 #       --scene apps/ultimate_gun_game/scenes/halo_body_self.scene --out <dir>
 wait_for map_loaded 6000
 wait_for spawned 3000
-wait 300
+wait 1500                    # the change of level's kill feed line (6 s) gone
 setpos -1150 3000 -770
 setang 2 342
 rung halo_ce:plasma_rifle
