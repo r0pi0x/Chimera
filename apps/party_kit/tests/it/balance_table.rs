@@ -157,8 +157,10 @@ fn every_pair_takes_today_s_scale_and_raw_its_own_game_s() {
         let (a, vg) = (GAMES[g], GAMES[v]);
         println!("{a} on {vg}: raw {:.2}, table {:.2}", raw * 100.0, on * 100.0);
         assert!(raw > 0.0, "{a} on {vg}: a hit");
-        if a != "halo_ce" {
-            // Raw: the gun's own game's number (HL2:DM's whole points).
+        if a != "halo_ce" && vg == "cs_source" {
+            // Raw on a bare CS:S body: the gun's own game's number. (The
+            // other bodies have their rules: whole points on HL2:DM's and
+            // TF2's, Combat Arms' gear.)
             assert!((raw - own).abs() < 0.011, "{a} on {vg}: raw {raw} own {own}");
         }
         if a == "halo_ce" && vg == "halo_ce" {
@@ -167,7 +169,9 @@ fn every_pair_takes_today_s_scale_and_raw_its_own_game_s() {
         }
         let want = today(a, vg);
         assert_eq!(table.pair(a, Some(vg), None), want, "{a} on {vg}: the table's");
-        assert!((on / raw - want).abs() < 0.03, "{a} on {vg}: {on} / {raw} = {}, today {want}", on / raw);
+        // Within a point and a half: HL2:DM's and TF2's health take whole
+        // points, the fraction carried to the next hit.
+        assert!((on - raw * want).abs() < 0.016, "{a} on {vg}: {on} / {raw} = {}, today {want}", on / raw);
     }
 }
 
