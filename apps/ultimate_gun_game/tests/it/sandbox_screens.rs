@@ -95,3 +95,31 @@ fn the_bench_spawns_lists_moves_and_removes_a_real_target() {
     ask(&mut sim, BenchRequest::Clear);
     assert!(sim.app.world().resource::<BenchView>().props.is_empty());
 }
+
+#[test]
+fn a_switch_a_condition_and_k_go_to_the_mechanics() {
+    use chimera_client::client::sandbox::{SandboxAction, bench::BenchAction, link::SandboxOption};
+    use chimera_sim::minigame::{conditions::SandboxConditions, ladder::{Ladder, Rung}};
+    let (mut sim, me) = play();
+    // A switch: `PutOnGun`, the player on the gun's rung.
+    sim.app.world_mut().write_message(SandboxAction::Switch(GUN.into()));
+    sim.seconds(0.5);
+    let rung = sim.app.world().get::<Rung>(me).map(|r| r.0).expect("a rung");
+    let ladder = sim.app.world().resource::<Ladder>().clone();
+    assert_eq!(ladder.rungs.get(rung).copied(), Some(GUN), "on the gun's rung");
+    assert_eq!(sim.app.world().resource::<SandboxUi>().current.as_deref(), Some(GUN), "the chip follows");
+    // A condition: endless ammo off is the mechanics' (`SetCondition`),
+    // and the bench shows it as they hold it. (Half speed is the shell's
+    // `host_timescale`, not in this headless app.)
+    sim.app.world_mut().write_message(BenchAction::Option(SandboxOption::EndlessAmmo, false));
+    sim.seconds(0.5);
+    assert!(!sim.app.world().resource::<SandboxConditions>().endless_ammo);
+    assert!(!sim.app.world().resource::<chimera_client::client::sandbox::link::SandboxOptions>().endless_ammo, "shown as held");
+    // K: the last set-up again.
+    ask(&mut sim, BenchRequest::Spawn(TargetSpec { character: "combat_arms:default".into(), gun: Some(GUN.into()), ..default() }));
+    ask(&mut sim, BenchRequest::Clear);
+    assert!(sim.app.world().resource::<BenchView>().targets.is_empty());
+    sim.app.world_mut().write_message(SandboxAction::Repeat);
+    sim.seconds(1.5);
+    assert_eq!(sim.app.world().resource::<BenchView>().targets.len(), 1, "K put it back");
+}

@@ -24,7 +24,9 @@
 //!   not here: Download to see the model; downloading: the progress),
 //!   the stats (damage a hit, fire rate, magazine, range feel), hits to
 //!   kill (a 100-point body, a Spartan's 115 of shield and health, the
-//!   head), the tags and the files.
+//!   head), for a gun several classes carry the class to play it as
+//!   (Play as: `GunView::body`, sent with the switch), the tags and the
+//!   files.
 //! - **Foot**: the keys, and the pinned bar (smaller, at the right): drag
 //!   a tile onto a slot (the slot under the pointer shows a ghost of the
 //!   gun in an accent frame, the gun it replaces struck through under it,
@@ -102,6 +104,8 @@ pub enum GunAction {
     Tag(TagGroup, &'static str),
     TagsButton,
     Download(String),
+    /// The body to play the selected gun as (None: the rung's own).
+    Body(Option<String>),
     Switch,
     Close,
 }
@@ -422,6 +426,7 @@ fn act(world: &mut World) {
                     world.write_message(r);
                 }
             }
+            GunAction::Body(b) => world.resource_mut::<SandboxUi>().view.body = b,
             GunAction::Switch => {
                 let Some(id) = world.resource::<SandboxUi>().view.selected.clone() else { continue };
                 world.write_message(SandboxAction::Switch(id));
@@ -576,7 +581,7 @@ fn draw(
     games_column(&mut c, &ui, p.games, &cat.guns, &ui_state, &progress);
     filter_bar(&mut c, &ui, &look, p.bar, &ui_state, next.grid_count, &cat.guns, &progress);
     if let Some(g) = ui_state.view.selected.as_deref().and_then(|id| cat.get(id)) {
-        detail(&mut c, &ui, &look, p.detail, g, &progress, ui_state.view.detail, ui_state.pins.slot_of(&g.id));
+        detail(&mut c, &ui, &look, p.detail, g, &progress, ui_state.view.detail, ui_state.pins.slot_of(&g.id), ui_state.view.body.as_deref());
     }
     let hint = ui.boxed(&mut c, p.pins, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
     let ghost = ui_state.drag.as_ref().and_then(|d| Some((d.over?, face(&d.gun))));
@@ -949,7 +954,7 @@ pub fn hits_to_kill(hp: f32, dmg: Option<f32>) -> Option<u32> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun, progress: &UnitProgress, big: bool, pinned: Option<usize>) {
+fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun, progress: &UnitProgress, big: bool, pinned: Option<usize>, body: Option<&str>) {
     c.spawn((Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, width: Val::Px(look.hair()), ..default() }, BackgroundColor(look.tone(Tone::Fg5)), ChildOf(parent)));
     ui.text(c, parent, Role::Mono, 0.46, Tone::Fg3, &g.game_name);
     let name = ui.boxed(c, parent, UiStyle { gap: Some(0.9), align: Some(AlignItems::Center), ..UiStyle::row() });
@@ -1031,6 +1036,19 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
         ui.text(c, cell, Role::Mono, 1.45, if n.is_some() { Tone::Fg } else { Tone::Fg4 }, &n.map_or("\u{2014}".into(), |n| n.to_string()));
         if n.is_none() {
             ui.text(c, cell, Role::Mono, 0.36, Tone::Fg3, "Not measured");
+        }
+    }
+    // A gun several of its game's classes carry: the class to play it as.
+    if g.game_tags.len() > 1 {
+        ui.section(c, parent, "Play as", None);
+        let chips = c.spawn((UiStyle { gap: Some(0.25), ..UiStyle::row() }, Node { flex_wrap: FlexWrap::Wrap, row_gap: ui.units.val(0.25), ..default() }, ChildOf(parent))).id();
+        let own = body.filter(|b| b.starts_with(&format!("{}:", g.game)));
+        let e = tick_tag(c, ui, chips, "Its own", own.is_none());
+        c.entity(e).insert((GunAction::Body(None), clickable()));
+        for class in &g.game_tags {
+            let id = format!("{}:{}", g.game, class.to_lowercase());
+            let e = tick_tag(c, ui, chips, class, own == Some(id.as_str()));
+            c.entity(e).insert((GunAction::Body(Some(id)), clickable()));
         }
     }
     // Tags.

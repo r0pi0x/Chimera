@@ -268,7 +268,8 @@ fn every_entry_and_row_of_the_data_works() {
     // Sandbox: a NEW tag, and the sandbox's own command.
     let sb = &data.entries[2];
     assert_eq!(sb.tag.as_deref(), Some("New"));
-    assert_eq!(sb.does, main_menu::EntryDoes::Command("sandbox".into()));
+    assert_eq!(sb.does, main_menu::EntryDoes::Command("sandbox cs_source:de_dust2".into()));
+    assert!(sb.play, "it starts play: the menu shuts as it runs");
     assert!(
         data.escape
             .iter()
@@ -1123,4 +1124,41 @@ fn text_fields_paste_copy_and_cut() {
     key(&mut sim, &ctrl, KeyCode::KeyX, Key::Character("x".into()));
     assert_eq!(sim.app.world_mut().resource_mut::<Clipboard>().get().as_deref(), Some("kept"), "a password never copies");
     assert_eq!(menu(&sim).password, "10.0.0.7:27016", "nor cuts");
+}
+
+/// The Sandbox entry starts the sandbox once a press: the menu goes to its
+/// loading screen as its command runs, so a second press, click or Enter
+/// in the frames after (the user's playtest: nine starts in 2.5 minutes)
+/// starts nothing; the load enters the game; back at the menu, Sandbox
+/// starts it again.
+#[test]
+fn the_sandbox_entry_starts_it_once_however_often_it_is_pressed() {
+    #[derive(Resource, Default)]
+    struct Starts(u32);
+    let mut sim = local_plus(true, None, false, |app| {
+        app.init_resource::<Starts>().console_command("sandbox", "a test's", |w, _| {
+            w.resource_mut::<Starts>().0 += 1;
+            Ok(None)
+        });
+    });
+    let sb = MenuData::shipped().entries.iter().position(|e| e.label == "Sandbox").unwrap();
+    // A click and an Enter in the same frame, then three more presses.
+    sim.app.world_mut().write_message(A::Entry(sb));
+    sim.app.world_mut().write_message(A::Entry(sb));
+    sim.ticks(2);
+    for _ in 0..3 {
+        act(&mut sim, A::Entry(sb));
+    }
+    assert_eq!(sim.app.world().resource::<Starts>().0, 1, "one start");
+    assert_eq!(menu(&sim).screen, Screen::Loading, "the loading screen, no second start");
+    assert_eq!(menu(&sim).loading.as_deref(), Some("cs_source:de_dust2"));
+    // The map's load takes it into the game.
+    front_end::entered_game(sim.app.world_mut());
+    sim.ticks(2);
+    assert_eq!(menu(&sim).screen, Screen::InGame);
+    // Left for the menu: Sandbox starts it again.
+    sim.app.world_mut().resource_mut::<PartyMenu>().screen = Screen::MainMenu;
+    sim.ticks(2);
+    act(&mut sim, A::Entry(sb));
+    assert_eq!(sim.app.world().resource::<Starts>().0, 2, "a second start after leaving");
 }
