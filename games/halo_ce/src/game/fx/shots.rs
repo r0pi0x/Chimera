@@ -147,10 +147,26 @@ pub const CYBORG_SHIELD: usize = 22;
 #[derive(Resource, Clone)]
 pub struct Guns(pub BTreeMap<&'static str, Arc<Gun>>);
 
+/// The guns whose shots are shown, by their index on the wire
+/// (`HaloShotNet::gun`): the nine, then the campaign characters' own (the
+/// Hunter's cannon; appended, so the nine keep their indices).
+pub const SHOWN: [&str; 10] = [
+    GUNS[0], GUNS[1], GUNS[2], GUNS[3], GUNS[4], GUNS[5], GUNS[6], GUNS[7], GUNS[8],
+    super::super::weapons::rung::HUNTER_RUNG,
+];
+
 impl Default for Guns {
     fn default() -> Self {
-        let all = super::super::weapons::guns();
-        Self(GUNS.iter().filter_map(|id| all.iter().find(|(i, _)| i == id).map(|(_, g)| (*id, Arc::new(g.clone())))).collect())
+        let set = chimera_sim::weapon::data::WeaponSet::parse(super::super::weapons::DATA, &[]).unwrap_or_else(|e| panic!("Halo weapon data: {e}"));
+        Self(
+            SHOWN
+                .iter()
+                .filter_map(|id| {
+                    let table = set.get(id)?.hooks.get(super::super::weapons::WEAPON_HOOK).cloned()?;
+                    Some((*id, Arc::new(table.try_into().ok()?)))
+                })
+                .collect(),
+        )
     }
 }
 
@@ -216,7 +232,7 @@ pub fn trigger_projectile(gun: &Gun, trigger: u8) -> &Projectile {
 pub struct HaloShotNet {
     #[entities]
     pub owner: Entity,
-    /// Index into `GUNS`.
+    /// Index into `SHOWN`.
     pub gun: u8,
     pub effect: u8,
     pub misfired: bool,
@@ -897,7 +913,7 @@ fn send_shots(
 ) {
     use bevy_replicon::prelude::{ClientId, SendTargets, ToClients};
     for f in fired.read() {
-        let Some(gun) = GUNS.iter().position(|g| *g == f.id) else { continue };
+        let Some(gun) = SHOWN.iter().position(|g| *g == f.id) else { continue };
         let message = HaloShotNet {
             owner: f.owner,
             gun: gun as u8,
@@ -920,7 +936,7 @@ fn send_shots(
 /// A client's copy of another player's shot.
 fn receive_shots(mut shots: MessageReader<HaloShotNet>, mut fired: MessageWriter<HaloFired>) {
     for s in shots.read() {
-        let Some(id) = GUNS.get(s.gun as usize) else { continue };
+        let Some(id) = SHOWN.get(s.gun as usize) else { continue };
         fired.write(HaloFired {
             owner: s.owner,
             weapon: Entity::PLACEHOLDER,
