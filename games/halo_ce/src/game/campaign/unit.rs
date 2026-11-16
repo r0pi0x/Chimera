@@ -185,7 +185,7 @@ pub fn generated(mount: &Mount, only: &str) -> Vec<(String, Vec<(String, Vec<u8>
 
 /// Body `kind`'s character model from its unit on `mount` (named
 /// `BodyKind::model_name`), with its textures.
-pub fn load_body(kind: BodyKind, def: &BodyDef, mount: &Mount, decode: bool) -> Result<(MapCharacterModel, Vec<MapTexture>), String> {
+pub fn load_body(kind: BodyKind, def: &BodyDef, mount: &Mount, decode: bool, guns: &[&str]) -> Result<LoadedBody, String> {
     let path = body_path(kind.id());
     let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
     let file = MapFile::load(&bytes).map_err(|e| format!("{path}: {e}"))?;
@@ -195,10 +195,51 @@ pub fn load_body(kind: BodyKind, def: &BodyDef, mount: &Mount, decode: bool) -> 
     for w in &body.warnings {
         debug!("halo_ce: {}: {w}", kind.id());
     }
-    Ok((character, body.textures))
+    // Its guns by its own hand (none without the donor map: the Spartan's
+    // placement then).
+    let held = held_on(kind, def, &file, mount, guns, decode).unwrap_or_else(|e| {
+        warn!("halo_ce: the {} holds guns by the Spartan's hand: {e}", kind.id());
+        HeldOn::default()
+    });
+    Ok(LoadedBody { model: character, textures: body.textures, held })
 }
 
-type Loaded = Result<(MapCharacterModel, Vec<MapTexture>), String>;
+/// A body loaded: its model and textures, and its held guns (`HeldOn`).
+pub struct LoadedBody {
+    pub model: MapCharacterModel,
+    pub textures: Vec<MapTexture>,
+    pub held: HeldOn,
+}
+
+/// A campaign body's held guns (`view::load::body_held`), with their
+/// textures.
+#[derive(Default)]
+pub struct HeldOn {
+    pub models: Vec<crate::map::MapHeldModel>,
+    pub textures: Vec<MapTexture>,
+}
+
+/// Body `kind`'s held guns `guns`, by its own hand marker: the guns' world
+/// models from the donor multiplayer map on `mount`, the body's model and
+/// graph from its unit `file`.
+pub fn held_on(kind: BodyKind, def: &BodyDef, file: &MapFile, mount: &Mount, guns: &[&str], decode: bool) -> Result<HeldOn, String> {
+    use blam_formats::{animation::AnimationGraph, model::Model, object::Biped};
+    let b = file.find(class::BIPED, &def.biped).ok_or("no biped")?;
+    let biped = Biped::read(file, b).map_err(|e| e.to_string())?;
+    let model = Model::read(file, file.tag(biped.object.model.id).ok_or("no model")?).map_err(|e| e.to_string())?;
+    let graph = AnimationGraph::read(file, file.tag(biped.object.animation_graph.id).ok_or("no graph")?)
+        .map_err(|e| e.to_string())?;
+    let path = super::super::maps::map_path(super::super::sets::DONOR_MAP);
+    let donor = MapFile::load(&mount.read(&path).map_err(|e| format!("{path}: {e}"))?).map_err(|e| format!("{path}: {e}"))?;
+    let (models, textures, warnings) =
+        super::super::view::load::body_held(&donor, &model, &graph, kind.id(), guns, decode);
+    for w in warnings {
+        debug!("halo_ce: {} held guns: {w}", kind.id());
+    }
+    Ok(HeldOn { models, textures })
+}
+
+type Loaded = Result<LoadedBody, String>;
 
 /// The bodies loading, loaded and failed (module doc): what the host's
 /// draw asks (`ready`).
@@ -276,11 +317,22 @@ pub fn load_on_demand(
     });
     for (kind, result) in done {
         match result {
-            Ok((model, textures)) => {
-                info!("halo_ce: the {} body loaded ({} hit boxes)", kind.id(), model.hitboxes.len());
+            Ok(LoadedBody { model, textures, held }) => {
+                info!(
+                    "halo_ce: the {} body loaded ({} hit boxes, {} guns in its hand)",
+                    kind.id(),
+                    model.hitboxes.len(),
+                    held.models.len()
+                );
                 pending.ready.insert(kind);
                 let textures = std::sync::Arc::new(textures);
-                commands.queue(move |world: &mut World| add_character_model(world, model, textures));
+                let held_textures = std::sync::Arc::new(held.textures);
+                commands.queue(move |world: &mut World| {
+                    for h in held.models {
+                        crate::map::add_held_model(world, h, held_textures.clone());
+                    }
+                    add_character_model(world, model, textures);
+                });
             }
             Err(e) => {
                 warn!("halo_ce: the {} body is not offered: {e}", kind.id());
@@ -310,9 +362,11 @@ pub fn load_on_demand(
             continue;
         };
         let context = context.as_deref().cloned().unwrap_or_default();
+        let guns: Vec<String> = data.guns.iter().filter(|(_, w)| w.get(kind.id()).is_some_and(|x| *x > 0.0)).map(|(g, _)| g.clone()).collect();
         let task = AsyncComputeTaskPool::get().spawn(async move {
             let mount = super::super::maps::mount_for(&context)?;
-            load_body(kind, &def, &mount, true)
+            let guns: Vec<&str> = guns.iter().map(String::as_str).collect();
+            load_body(kind, &def, &mount, true, &guns)
         });
         pending.tasks.insert(kind, task);
     }

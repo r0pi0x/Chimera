@@ -48,6 +48,13 @@ fn the_elite_is_cut_from_d20_and_loads() {
     assert!(load::death_lines(&file, &def.biped).iter().all(Option::is_none), "the voice is its own unit");
     let heads = m.hitboxes.iter().filter(|h| h.region == chimera_core::core::BodyRegion::Head).count();
     assert_eq!(heads, 1);
+    // Its guns by its own hand marker (`right hand elite`), on its own bone.
+    let held = unit::held_on(BodyKind::Elite, def, &file, &mount, &["halo_ce:plasma_rifle", "halo_ce:needler"], false).unwrap();
+    assert_eq!(held.models.len(), 2);
+    let pr = &held.models[0];
+    assert!(pr.key.ends_with("#elite") && !pr.model.meshes.is_empty(), "{}", pr.key);
+    assert!(m.bones.iter().any(|b| b.name == pr.bone), "the hand's bone `{}` is the Elite's", pr.bone);
+    eprintln!("elite: plasma rifle held on `{}`", pr.bone);
     let top = m.model.bounds.1.y;
     let tables = BodyTables::build(&data, &MovementData::builtin()).unwrap();
     let mv = &tables.movement[&BodyKind::Elite];

@@ -63,9 +63,15 @@
 //!   on Halo's; `draw` lets the draw choose again) for screenshots and the
 //!   sandbox; a remote client's needs the server's `sv_cheats` 1.
 //!
+//! - **The gun in its hand**: each gun the kind may carry is a held
+//!   model of its own (`view::load::body_held`, key `<gun>#<kind>`), placed
+//!   by the kind's own hand marker for the gun's label (the Elite's `right
+//!   hand elite`), made with the unit (`unit::held_on`); `view::stance`
+//!   holds it once loaded. The off hand is free (characters.md section 2
+//!   rule 4: no Covenant class pins it): the arm moves only as the graph's
+//!   holding and aiming animations move it.
+//!
 //! Known shortcuts:
-//! - The held gun's third-person model is placed by the Spartan's hand
-//!   marker (`view::load::hand`), not the Elite's `right hand elite`.
 //! - No voice yet (the voice unit is cut and stored, nothing plays it).
 //! - The move animations' speeds are the graph's means (characters.md
 //!   section 4), not each frame's root motion.
