@@ -299,8 +299,9 @@ the user's go-ahead: no Actions runs unless asked.
     `ultimate_gun_game +sandbox [map]` / `sandbox [map]` plays alone on
     every game's guns with nothing advancing or ending, `rung <n | gun id |
     part | next | prev | list>` picks the gun, `ca_bot_*`, `god` and `noclip`
-    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Next: a gun and
-    rung picker menu; a time scale; target dummies that report damage and
+    for bots and comforts (OBSERVABILITY.md, "Sandbox"); the rung picker
+    dialog (L, the Escape menu's Change gun: `party_kit::rung_picker`)
+    picks without typing. Next: a time scale; target dummies that report damage and
     time to kill at set distances (a gun's real strength measured, not
     modelled); a firing range layout; saving a loadout of guns to cycle;
     picking a rung character (Combat Arms' turret) instead of the draw's.

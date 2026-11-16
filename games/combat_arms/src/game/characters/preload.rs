@@ -14,6 +14,10 @@
 //! of play, off the main thread, not behind the loading screen, and the swap
 //! holds (`setup`, `pose_bodies`) if a rung is reached sooner.
 //!
+//! A sandbox's ladder (`chimera_sim::minigame::rung_command::HoldRungs`
+//! in force) is every gun of every game: none of it is loaded ahead, each
+//! gun and body loads when first held or worn (`plan_ladder`).
+//!
 //! Only where `view_model::on_demand::LoadOnDemand` is (the front end).
 //! `ladder_bodies_waiting` and `ladder_keys_waiting`: the ladder's bodies,
 //! held and view models not in yet (a stock body is in where the map's
@@ -219,9 +223,19 @@ pub fn plan_ladder(
     data: Res<CaData>,
     catalog: Option<Res<WeaponCatalog>>,
     table: Option<Res<CaModTable>>,
+    hold: Option<Res<chimera_sim::minigame::rung_command::HoldRungs>>,
     mut out: ResMut<LadderModels>,
 ) {
     let Some(catalog) = catalog else { return };
+    // A sandbox's ladder is every gun there is (thousands of models, many
+    // gigabytes): nothing is loaded ahead, each loads when first held.
+    if chimera_sim::minigame::rung_command::holds(hold.as_deref(), active.as_deref()) {
+        if *out != LadderModels::default() {
+            *out = LadderModels::default();
+        }
+        info!("Combat Arms: a sandbox's ladder loads nothing ahead (each gun loads when first held)");
+        return;
+    }
     let kit: Vec<&str> = active.iter().flat_map(|a| a.def.spawn.kit.all()).collect();
     let table = table.as_deref().unwrap_or(CaModTable::built_in());
     let next = plan(data.characters(), &catalog, table, &ladder, &kit);
