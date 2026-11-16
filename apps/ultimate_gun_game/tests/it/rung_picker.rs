@@ -100,19 +100,35 @@ fn the_picker_lists_every_rung_by_game_and_class_with_halos_nine() {
     let p = picker(&sim);
     assert!(p.open, "opens in the sandbox");
     let ladder = sim.app.world().resource::<Ladder>().clone();
-    // Every rung but the sandbox's sentinel, once.
+    // Only what a drawn ladder may deal (`auto::drawable`), one row a gun.
+    let mut caps = chimera_sim::minigame::auto::report(sim.app.world());
+    chimera_sim::minigame::auto::drawable(sim.app.world(), &mut caps);
+    let dealt: std::collections::BTreeSet<&str> =
+        caps.iter().flat_map(|c| c.guns.iter().map(|g| g.id).chain(c.grenades.iter().copied())).collect();
     let mut listed: Vec<usize> = p.games.iter().flat_map(|g| g.classes.iter().flat_map(|k| k.rungs.iter().map(|r| r.index))).collect();
+    let n = listed.len();
     listed.sort();
-    assert_eq!(listed, (0..ladder.rungs.len() - 1).collect::<Vec<_>>());
+    listed.dedup();
+    assert_eq!(listed.len(), n, "a rung once");
+    assert!(listed.iter().all(|i| *i < ladder.rungs.len() - 1), "never the sentinel");
     for g in &p.games {
+        assert!(g.count() < 100, "{}: {} rows, tens at most", g.id, g.count());
+        eprintln!("{}: {} guns", g.id, g.count());
         for k in &g.classes {
+            let mut names: Vec<String> = k.rungs.iter().map(|r| r.name.to_lowercase()).collect();
+            names.sort();
+            let all = names.len();
+            names.dedup();
+            assert_eq!(names.len(), all, "{} {}: no name twice", g.id, k.name);
             for r in &k.rungs {
                 assert_eq!(r.id, ladder.rungs[r.index], "its gun");
                 assert!(r.id.starts_with(&format!("{}:", g.id)), "{} under {}", r.id, g.id);
                 assert!(!r.name.is_empty());
+                assert!(dealt.contains(r.id.as_str()) || r.tag.is_some(), "{} is drawable or a special rung", r.id);
             }
         }
     }
+    assert!(p.counts().0 < ladder.rungs.len() - 1 || ladder.rungs.len() < 100, "the install's variants collapsed");
     assert!(p.games.len() >= 3, "every game: {:?}", p.games.iter().map(|g| &g.id).collect::<Vec<_>>());
     let halo = p.games.iter().find(|g| g.id == "halo_ce").expect("Halo's guns");
     assert_eq!(halo.count(), 9, "Halo's eight guns and the frag grenade");

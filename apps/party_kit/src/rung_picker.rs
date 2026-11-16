@@ -17,7 +17,11 @@
 //!   `*:device` hook, Combat Arms' Turret), Current on the player's rung,
 //!   the rung's number. At opening every game but the current rung's is
 //!   folded and the cursor is on the current rung. The sandbox's sentinel
-//!   rung is never listed (`rung_command::usable`).
+//!   rung is never listed (`rung_command::usable`). Only the guns a drawn
+//!   ladder may deal are listed (`auto::drawable`), one row per gun of a
+//!   game by its model (`shown_rungs`: an install's skins and levels
+//!   of one model are one row), so the header counts guns ("N guns ·
+//!   5 games"); `rung <id>` still reaches every rung of the ladder.
 //! - **The filter** (the kit's text field, which always has the keys):
 //!   typing narrows the rows to the rungs whose name, id, class, game or
 //!   tag hold every word typed, across all games, with their headers open;
@@ -181,13 +185,14 @@ fn class_rank(class: Option<GunClass>, melee: bool) -> u16 {
     }
 }
 
-/// The tree of `rungs` (a ladder's usable ones, in order; from
-/// `melee_from` on the melee band), each gun as `info` says; a gun twice
-/// is listed once (its first rung).
-pub fn listing(rungs: &[&str], melee_from: usize, info: impl Fn(&str) -> GunInfo) -> Vec<PickerGame> {
+/// The tree of `rungs` (each its index in a ladder and its gun, in order;
+/// from `melee_from` on the melee band), each gun as `info` says; a gun
+/// twice is listed once (its first rung).
+pub fn listing(rungs: &[(usize, &str)], melee_from: usize, info: impl Fn(&str) -> GunInfo) -> Vec<PickerGame> {
     let mut games: Vec<(PickerGame, Vec<u16>)> = Vec::new();
     let mut seen = BTreeSet::new();
-    for (i, id) in rungs.iter().enumerate() {
+    for &(i, id) in rungs {
+        let id = &id;
         if !seen.insert(*id) {
             continue;
         }
@@ -233,8 +238,61 @@ fn device_tag(d: &WeaponData) -> Option<String> {
     Some(c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default())
 }
 
+/// The rungs of `rungs` the tree lists (module doc, "The tree"): a gun
+/// the games lend that a drawn ladder may not deal (`auto::drawable`:
+/// harmless, or a game's `DrawExclusions`) left out; one row per gun, a
+/// gun being its game's and its model's (`weapon::names::split`: the skin
+/// words and the variant tail, levels and editions, left out; without a
+/// model, its short name, `GunNameRules::short`), shown
+/// by its rung with the shortest full name (the plain one, before the
+/// first). A rung no game lends (a ladder's melee) stays.
+pub fn shown_rungs<'a>(world: &World, rungs: &[&'a str]) -> Vec<(usize, &'a str)> {
+    use chimera_sim::minigame::auto;
+    let mut caps = auto::report(world);
+    let ids = |caps: &[auto::Capabilities]| -> BTreeSet<&'static str> {
+        caps.iter().flat_map(|c| c.guns.iter().map(|g| g.id).chain(c.grenades.iter().copied())).collect()
+    };
+    let offered = ids(&caps);
+    auto::drawable(world, &mut caps);
+    let dealt = ids(&caps);
+    let catalog = world.get_resource::<WeaponCatalog>();
+    let names = world.get_resource::<GunNames>();
+    let rules = world.get_resource::<chimera_sim::weapon::names::GunNameRules>();
+    let mut kept: Vec<(usize, &'a str, usize)> = Vec::new();
+    let mut by_gun: BTreeMap<(String, String), usize> = BTreeMap::new();
+    for (i, id) in rungs.iter().enumerate() {
+        if offered.contains(id) && !dealt.contains(id) {
+            continue;
+        }
+        let full = gun_name(id, names, catalog);
+        // The gun: its model by the names' split (`names::split`: skin words
+        // and the variant tail off), else its short name.
+        let short = rules.map_or_else(
+            || full.clone(),
+            |r| {
+                let full = r.full(id, &full);
+                let s = chimera_sim::weapon::names::split(&full, r.words());
+                if s.model_words > 0 { s.base[..s.model_words.min(s.base.len())].join(" ") } else { r.short(id, &full).0 }
+            },
+        );
+        let game = id.split_once(':').map_or("", |(g, _)| g).to_string();
+        let len = full.chars().count();
+        match by_gun.get(&(game.clone(), short.to_lowercase())) {
+            Some(&k) if len < kept[k].2 => kept[k] = (i, id, len),
+            Some(_) => {}
+            None => {
+                by_gun.insert((game, short.to_lowercase()), kept.len());
+                kept.push((i, id, len));
+            }
+        }
+    }
+    kept.sort_by_key(|k| k.0);
+    kept.into_iter().map(|(i, id, _)| (i, id)).collect()
+}
+
 /// The tree of `rungs` with what `world` knows of each gun: its class by
-/// its game's parts (else its data), its name, icon class and tag.
+/// its game's parts (else its data), its name, icon class and tag; only
+/// the rungs `shown_rungs` keeps.
 pub fn listing_in(world: &World, rungs: &[&str], melee_from: usize) -> Vec<PickerGame> {
     let mut classes: BTreeMap<&str, GunClass> = BTreeMap::new();
     for c in chimera_sim::minigame::auto::report(world) {
@@ -247,7 +305,7 @@ pub fn listing_in(world: &World, rungs: &[&str], melee_from: usize) -> Vec<Picke
     }
     let catalog = world.get_resource::<WeaponCatalog>();
     let names = world.get_resource::<GunNames>();
-    listing(rungs, melee_from, |id| {
+    listing(&shown_rungs(world, rungs), melee_from, |id| {
         let data = catalog.and_then(|c| c.get(id));
         let class = classes.get(id).copied().or_else(|| data.and_then(|d| d.class));
         let tag = data.and_then(device_tag).or_else(|| (class == Some(GunClass::Grenade)).then(|| "Grenade".to_string()));
@@ -745,11 +803,28 @@ struct Shown {
     current: Option<usize>,
     games: usize,
     units: (u32, u32),
+    side: u32,
 }
+
+/// The plate's inset from each side of the 16:9 frame, cq: two thirds of
+/// the frame wide at 16:9 (16.5 cq in), nearly all of it at 4:3 (the
+/// shell's margin), in between by the window's aspect.
+pub fn side_inset(aspect: f32, margin: f32) -> f32 {
+    let t = ((aspect - 4.0 / 3.0) / (16.0 / 9.0 - 4.0 / 3.0)).clamp(0.0, 1.0);
+    margin + t * (SIDE_16_9 - margin)
+}
+
+/// A rung row's fixed columns at the right, cq: the tag, Current.
+pub const TAG_COL: f32 = 4.4;
+pub const CURRENT_COL: f32 = 3.8;
+
+/// `side_inset` at 16:9.
+pub const SIDE_16_9: f32 = 16.5;
 
 fn draw(
     picker: Res<RungPicker>,
     look: Look,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     roots: Query<Entity, With<RungPickerDialog>>,
     mut shown: Local<Option<Shown>>,
     mut commands: Commands,
@@ -763,7 +838,10 @@ fn draw(
         return;
     }
     let u = *look.units;
+    let aspect = windows.iter().next().map_or(16.0 / 9.0, |w| w.width() / w.height().max(1.0));
+    let side = side_inset(aspect, chimera_ui::shell::ShellLayout::of(&look.theme).margin);
     let now = Shown {
+        side: (side * 100.0) as u32,
         cursor: picker.cursor,
         filter: picker.filter.clone(),
         folded: picker.folded.clone(),
@@ -778,14 +856,15 @@ fn draw(
         commands.entity(e).despawn();
     }
     let ui = Ui::new(&look.theme, look.fonts.as_deref(), u);
-    spawn(&mut commands, &ui, &look, &picker);
+    spawn(&mut commands, &ui, &look, &picker, side);
     *shown = Some(now);
 }
 
-/// Spawns the dialog: the scrim, the plate (the Maps picker's: 26 cq in
-/// from each side, the shell window's top and foot), the title and counts,
-/// the filter, the tree, the keys and the actions with Pick the hero.
-pub fn spawn(c: &mut Commands, ui: &Ui, look: &Look, picker: &RungPicker) -> Entity {
+/// Spawns the dialog: the scrim, the plate (the Maps picker's, `side` cq
+/// in from each side: `side_inset`; the shell window's top and foot), the
+/// title and counts, the filter, the tree, the keys and the actions with
+/// Pick the hero.
+pub fn spawn(c: &mut Commands, ui: &Ui, look: &Look, picker: &RungPicker, side: f32) -> Entity {
     let sh = chimera_ui::shell::ShellLayout::of(ui.theme);
     let scrim = c
         .spawn((
@@ -808,7 +887,7 @@ pub fn spawn(c: &mut Commands, ui: &Ui, look: &Look, picker: &RungPicker) -> Ent
     let plate = c
         .spawn((
             UiStyle { gap: Some(0.8), pad: Some([1.6, 1.8, 1.4, 1.8].into()), ..UiStyle::column() }
-                .abs([Some(26.0), Some(sh.win_top), Some(26.0), Some(sh.win_bottom)])
+                .abs([Some(side), Some(sh.win_top), Some(side), Some(sh.win_bottom)])
                 .bg(Tone::Ink2)
                 .outline(Tone::Fg4, 1.0),
             Node::default(),
@@ -833,7 +912,7 @@ pub fn spawn(c: &mut Commands, ui: &Ui, look: &Look, picker: &RungPicker) -> Ent
         Role::Mono,
         0.56,
         Tone::Fg2,
-        &format!("{all} rungs \u{00b7} {games} {} \u{00b7} you stay on the one you pick", if games == 1 { "game" } else { "games" }),
+        &format!("{all} guns \u{00b7} {games} {} \u{00b7} you stay on the one you pick", if games == 1 { "game" } else { "games" }),
     );
     // The filter, with the keys at once.
     let line = ui.boxed(c, plate, UiStyle { gap: Some(1.0), ..UiStyle::row() });
@@ -845,7 +924,8 @@ pub fn spawn(c: &mut Commands, ui: &Ui, look: &Look, picker: &RungPicker) -> Ent
         // Empty: the placeholder (the field still underlined as focused).
         (!picker.filter.is_empty()).then(|| picker.filter.len().into()),
         false,
-        26.0,
+        // Half the plate's inside, growing with it.
+        (100.0 - 2.0 * side - 3.6) * 0.5,
         State::focused(true),
     );
     c.entity(field).insert(UiParityId::new("rungs.filter"));
@@ -988,15 +1068,21 @@ fn tree_row(c: &mut Commands, ui: &Ui, look: &Look, picker: &RungPicker, tree: E
                 .id();
             let name = ui.text(c, body, Role::DisplayRegular, 0.8, Tone::Fg, &rung.name);
             c.entity(name).insert(id(".name"));
-            ui.text(c, body, Role::Mono, 0.5, Tone::Fg3, &rung.id);
+            // The id in the secondary text's tone (readable at 720p).
+            ui.text(c, body, Role::Mono, 0.5, Tone::Fg2, &rung.id);
+            // The tag, Current and the number in fixed columns at the right,
+            // so rows line up.
+            let col = |c: &mut Commands, w: f32| ui.boxed(c, r, UiStyle { w: Some(w), shrink: Some(0.0), ..UiStyle::row() });
+            let tags = col(c, TAG_COL);
             if let Some(t) = &rung.tag {
                 let (node, label) = widgets::tag(ui.theme, ui.kit, &ui.units, TagKind::Accent, t, 0.46);
-                let tag = c.spawn((node, Pickable::IGNORE, id(".tag"), ChildOf(r))).id();
+                let tag = c.spawn((node, Pickable::IGNORE, id(".tag"), ChildOf(tags))).id();
                 c.spawn((label, ChildOf(tag)));
             }
+            let now = col(c, CURRENT_COL);
             if picker.current == Some(rung.index) {
                 let (node, label) = widgets::tag(ui.theme, ui.kit, &ui.units, TagKind::You, "Current", 0.46);
-                let tag = c.spawn((node, Pickable::IGNORE, id(".current"), ChildOf(r))).id();
+                let tag = c.spawn((node, Pickable::IGNORE, id(".current"), ChildOf(now))).id();
                 c.spawn((label, ChildOf(tag)));
             }
             let num = ui.boxed(c, r, UiStyle { w: Some(2.8), shrink: Some(0.0), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
