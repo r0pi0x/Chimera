@@ -49,7 +49,7 @@ chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs 
   |    chimera_ui (chimera/ui/)   the UI kit: Theme (tokens as data), KitFonts and roles, cq units, motion (Ease, Timeline), UI materials; Bevy and chimera_core only, under the shell and the apps
   |    chimera_sim (chimera/sim/)   weapon, movement, rule_module, mode, minigame, identity, spawning, announce, dominations, server_docs, data_format; SimBasePlugins; testkit (feature)
   |    |
-chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, harness::Sim
+chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, range, harness::Sim
   |                \
 chimera_core          source_formats (source/formats/)   formats as plain data: no Bevy
  (chimera/core/)       core, console, console_names, console_scope, slots, envelope, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
@@ -145,8 +145,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   (`map::build`): alone as `map::MapSimPlugin` (the dedicated server's,
   nothing drawn or played), or with what draws and plays the map at
   fixed places among them (`map::MapLayers`, filled by `chimera_present`'s
-  `MapPlugin`; the client's order). It also holds the greybox (`greybox`:
-  the map built in code) and the headless harness (`harness::Sim`, on
+  `MapPlugin`; the client's order). It also holds the maps built in code:
+  the greybox (`greybox`) and the range (`range`, the sandbox's firing
+  range, its layout in `chimera/world/data/range.toml`; `RangeLayout` says
+  where its firing line, distances and props' spots are), sharing one
+  slot (`map::code_maps::CodeMap`; their bodies and guns come from a kit map an
+  app's `MapSources` dresses, `map::sources::CODE_MAP_KIT`), and the headless harness (`harness::Sim`, on
   the simulation plugins its caller passes as the base), so every crate
   from here up tests on it at its own layer. `mashup::map` re-exports it, with
   `MapPlugin` in builds with the presentation.

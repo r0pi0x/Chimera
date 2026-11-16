@@ -9,6 +9,14 @@
 //! Ladders and water only do something with Source movement
 //! (`--movement cs_source:movement`, or V in game).
 //!
+//! The slot is shared by the code-built maps (`CODE_MAPS`): the greybox
+//! and the range (`range`). `CodeMap` (a resource, the greybox by default)
+//! says which one `GreyboxMapPlugin` and `respawn` spawn (`select`;
+//! `code_map` reads a map name as one of them); `unload` takes either out.
+//! Their kit (bodies, held and view models) is a map of its own, `kit_id`
+//! (`map::sources::CODE_MAP_KIT`), loaded beside them where the app's maps
+//! dress it.
+//!
 //! Map slot built in code (ramps, crates, a ladder, a water tank); collision
 //! always, visuals only when rendering.
 
@@ -28,15 +36,37 @@ impl Plugin for GreyboxMapPlugin {
             brightness: 400.0,
             ..default()
         })
-        .add_systems(Startup, spawn);
+        .init_resource::<CodeMap>()
+        // Each map's own spawn as a system (not `respawn`'s cached one:
+        // a registered system is an entity of its own kind, which the
+        // per-tick queries then step over).
+        .add_systems(
+            Startup,
+            (
+                spawn.run_if(|m: Res<CodeMap>| m.0 != RANGE),
+                crate::range::spawn.run_if(|m: Res<CodeMap>| m.0 == RANGE),
+            ),
+        );
     }
 }
 
-/// Everything the greybox map spawned, so it can be removed.
+// The code-built maps' ids, which one spawns, their names and kits
+// (`map::code_maps`, where the map's loading can read them).
+pub use crate::map::code_maps::{CODE_MAPS, CodeMap, GREYBOX, RANGE, code_map, kit_id};
+
+/// Make the code-built map `name` (`code_map`; the greybox when it names
+/// none) the one `respawn` spawns; its id.
+pub fn select(world: &mut World, name: &str) -> &'static str {
+    let id = code_map(name).unwrap_or(GREYBOX);
+    world.insert_resource(CodeMap(id));
+    id
+}
+
+/// Everything the greybox map (or the range) spawned, so it can be removed.
 #[derive(Component)]
 pub struct GreyboxPart;
 
-/// Remove the greybox map (before loading another map).
+/// Remove the greybox map or the range (before loading another map).
 pub fn unload(world: &mut World) {
     let parts: Vec<Entity> = world
         .query_filtered::<Entity, With<GreyboxPart>>()
@@ -49,10 +79,16 @@ pub fn unload(world: &mut World) {
     }
     world.remove_resource::<MapBrushes>();
     world.remove_resource::<MapWater>();
+    crate::range::unload(world);
 }
 
-/// Spawn the greybox map again (after another map was unloaded).
+/// Spawn the code-built map `CodeMap` names (the greybox without one),
+/// again after another map was unloaded.
 pub fn respawn(world: &mut World) {
+    if world.get_resource::<CodeMap>().is_some_and(|m| m.0 == RANGE) {
+        crate::range::spawn(world);
+        return;
+    }
     world.insert_resource(GlobalAmbientLight {
         brightness: 400.0,
         ..default()

@@ -529,7 +529,7 @@ pub fn playable_on(world: &mut World, def: &MinigameDef, map: Option<&str>) -> P
         .or_else(|| def.maps.first().map(|m| crate::net::normalize_map(m)))
         .unwrap_or_else(|| GREYBOX.into());
     let mut needs = MatchManifest::default();
-    if map != GREYBOX
+    if !crate::net::is_code_map(&map)
         && let Some((game, _)) = map.split_once(':')
     {
         needs.need(game, true);
@@ -847,7 +847,7 @@ fn follow_map_change(world: &mut World) {
 pub fn needs(def: &MinigameDef, games: Option<&Games>) -> Vec<GameNeed> {
     let mut m = MatchManifest::default();
     let first = def.maps.first().map(|m| crate::net::normalize_map(m)).unwrap_or_default();
-    if first != GREYBOX
+    if !crate::net::is_code_map(&first)
         && let Some((game, _)) = first.split_once(':')
     {
         m.need(game, true);

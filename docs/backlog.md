@@ -103,19 +103,6 @@ the user's go-ahead: no Actions runs unless asked.
   - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
   - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
 
-- **A purpose-built sandbox map, "the range" (user, 2026-11-15):** the sandbox gets its own map, made so things are easy to see, like the design mocks (gen/sandbox2: a light grid floor, distance lines, cover crates).
-  - Built in code like `chimera_world::greybox`, with its layout as data:
-    - a long, flat firing range with labelled distance lines at 5, 10, 20, 40, 100 and 200 m from a firing line where the player spawns;
-    - an even, bright, readable light, with no game's art;
-    - a few cover crates and walls at the sides;
-    - a props shelf for bottles and cans, and a target board stand;
-    - a raised platform for long-range shots;
-    - room for targets to strafe and walk, with a navigation mesh for the bots;
-    - a backstop wall.
-  - It's the default map of `+sandbox` and the main menu's Sandbox entry. Other maps stay selectable.
-  - Game-neutral: every game's movement works on it, and it's our own content, so it lives in the repo.
-  - Screenshots compared with the mocks.
-
 - **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
   - **Progressive disclosure (user):**
     - Names, classes, stats and the kit's class icons need no download: they come from the compiled weapon catalogue and game_parts.
