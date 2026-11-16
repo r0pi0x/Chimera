@@ -109,9 +109,12 @@ fn tag<'a>(file: &'a MapFile, r: &TagRef, what: &str) -> Result<&'a blam_formats
 }
 
 /// Whether a shader takes its change colour from slot `source` (the
-/// armour: C on the Spartan, A on the Elite).
+/// armour: C on the Spartan, A on the Elite); no slot (a body that takes
+/// no colour, the Marine's) tints nothing.
 fn armour(file: &MapFile, shader: &TagRef, source: AnimationSource) -> bool {
-    file.tag(shader.id)
+    source != AnimationSource::None
+        && file
+            .tag(shader.id)
         .and_then(|t| Shader::read(file, t).ok())
         .is_some_and(|s| matches!(s, Shader::Model(m) if m.change_color_source == source))
 }
