@@ -39,6 +39,12 @@
 //! info is read) and turn with the look. `wear_colours` shows each player's
 //! armour colour (`BodySkin`: the skin of its colour, `COLOURS`).
 //!
+//! A campaign body (`campaign::BodyKind`: the Elite in a party app) is the
+//! same code on its own model (named `halo_ce:elite`, worn through the
+//! engine's `BodyName`): its graph's tables, its hit boxes, its landing
+//! and run numbers (`campaign::movement_of`), its corpse
+//! (`HaloCorpse::body`).
+//!
 //! Death (`death`): the body has no ragdoll; a dead player is hidden (the
 //! engine's `Dead`) and the server leaves a body of its own in its place
 //! (`death::HaloCorpse`, replicated: net part `halo_ce_corpses`), which
@@ -115,9 +121,9 @@ pub fn skin_of(team: Option<Team>) -> usize {
     }
 }
 
-/// The landing numbers of Halo's biped (movement.md, data/movement.toml).
-fn landing() -> Landing {
-    let m = super::movement::MovementData::builtin();
+/// The landing numbers of a biped (movement.md; data/movement.toml, a
+/// campaign body's own: `campaign::movement_of`).
+fn landing(m: &super::movement::MovementData) -> Landing {
     Landing {
         soft_min: m.soft_land_min,
         hard_min: m.hard_land_min,
@@ -129,7 +135,12 @@ fn landing() -> Landing {
 /// What the body reads from a character (`Inputs`): the horizontal
 /// velocity over the run speed in the frame of its look's yaw.
 pub fn inputs(intent: &Intent, velocity: Vec3, state: &MovementState) -> Inputs {
-    let run = super::movement::MovementData::builtin().run_forward * METERS_PER_UNIT;
+    inputs_for(&super::movement::MovementData::builtin(), intent, velocity, state)
+}
+
+/// `inputs` for a body of movement table `m` (its own run speed).
+pub fn inputs_for(m: &super::movement::MovementData, intent: &Intent, velocity: Vec3, state: &MovementState) -> Inputs {
+    let run = m.run_forward * METERS_PER_UNIT;
     let turn = Quat::from_rotation_y(intent.yaw);
     let (forward, left) = (turn * Vec3::NEG_Z, turn * Vec3::NEG_X);
     Inputs {
@@ -174,11 +185,23 @@ pub fn animate(
         Option<&mut SimAnimator>,
         Option<&super::weapons::HaloHands>,
         Option<&super::vitality::Vitality>,
+        Option<&super::campaign::BodyKind>,
     )>,
+    (tables, data): (Option<Res<super::campaign::BodyTables>>, Option<Res<super::movement::MovementData>>),
     mut commands: Commands,
 ) {
     let Some(models) = models else { return };
-    for (e, body, intent, velocity, state, health, label, inventory, halo, animator, sim, hands, vitality) in &mut bodies {
+    let builtin;
+    let spartan = match data.as_deref() {
+        Some(d) => d,
+        None => {
+            builtin = super::movement::MovementData::builtin();
+            &builtin
+        }
+    };
+    for (e, body, intent, velocity, state, health, label, inventory, halo, animator, sim, hands, vitality, kind) in &mut bodies {
+        // The body's own landing and run numbers (`campaign::movement_of`).
+        let table = super::campaign::movement_of(spartan, tables.as_deref(), kind);
         let Some(m) = models.0.get(body.0).filter(|m| m.game == Some(GAME)) else {
             if halo.is_some() {
                 commands.entity(e).remove::<(HaloBody, SimAnimator)>();
@@ -206,7 +229,7 @@ pub fn animate(
         }
         let armed = inventory.is_some_and(|i| i.active.is_some());
         let label = label_of(&set, label, armed);
-        let mut i = inputs(intent, velocity.0, state);
+        let mut i = inputs_for(table, intent, velocity.0, state);
         i.throw = hands.and_then(|h| h.throw.frame).map(|f| f.max(0) as usize);
         // A hit since the last tick seen here flinches it (`flinch`).
         if let Some(v) = vitality {
@@ -215,7 +238,7 @@ pub fn animate(
             i.hit = hit.then(|| flinch::draw(&now));
             halo.seen = Some(now);
         }
-        let land = landing();
+        let land = landing(table);
         let mut pose = Vec::new();
         for _ in 0..ticks {
             pose = halo.anim.tick(&set, &label, &i, &land);

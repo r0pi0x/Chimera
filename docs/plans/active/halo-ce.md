@@ -525,6 +525,15 @@ backlog.
   the ladder's rung characters are, replicated with the match, off by
   default until played). First step: a spec of the campaign's
   characters (specs/halo_ce/characters.md), being written.
+  Stage one (branch `halo-char-elite`): the Elite. Its body and voice are
+  units of their own (`chimera_pack sets halo_ce --only character/`,
+  converter `halo_ce:character_unit`: small map files cut from d20,
+  `game::campaign::unit`), loaded on demand; a player's `BodyKind`
+  (replicated) gives its model, graph, hit boxes, deaths, vitality (100 /
+  100) and pill and camera on the Spartan's mover; the host setting
+  `halo_ce:campaign_bodies` (off by default) draws it on the plasma
+  rifle and needler rungs by data/campaign.toml; `halo_ce:body` forces
+  one. Next: the animation-driven mover, the voice, the Elite's hand.
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the

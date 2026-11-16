@@ -1,0 +1,101 @@
+# The campaign's characters as bodies a party player can wear on a Halo
+# rung (specs/halo_ce/characters.md; docs/plans/active/halo-ce.md, "Play as
+# the campaign's characters"). `games/halo_ce/src/game/campaign/mod.rs`
+# reads it (`CampaignData`). Party apps only: Halo's own app never offers
+# these bodies. The Spartan is every Halo player's body unless a draw here
+# says otherwise.
+
+# Which bodies may carry each Halo gun, with their weights (characters.md
+# section 2, "Character by multiplayer weapon": a character is offered only
+# for the guns its graph animates and the campaign gives it). A gun not
+# listed is the Spartan's alone. With `halo_ce:campaign_bodies` on, a
+# player given a Halo rung draws its body by these weights (the Spartan's
+# included); a body whose unit is not here is skipped (the Spartan then).
+[guns."halo_ce:plasma_rifle"]
+spartan = 1.0
+elite = 1.0
+
+[guns."halo_ce:needler"]
+spartan = 1.0
+elite = 1.0
+
+# Each character: its biped tag, the campaign map its unit is cut from
+# (section 8: the smallest holding it), and what differs from the
+# Spartan's tables (data/movement.toml and data/vitality.toml, merged key
+# by key: a table not named here is the Spartan's).
+[bodies.elite]
+biped = 'characters\elite\elite'
+donor_map = "d20"
+
+# The Elite's pill, camera, slopes and landing (section 3, "Dimensions and
+# the pill"; section 4 rules 10 to 12 and "The numbers"): the biped's
+# values. The speeds are its graph's mean root motion (stand pistol
+# move-front 0.0865 WU/t, back and sides 0.0731, crouched 0.0333, 0.0217,
+# 0.0200), in WU/s, played through the Spartan's mover for now (the
+# animation-driven mover is the next stage: `campaign` module doc).
+[bodies.elite.movement]
+height_stand = 0.8
+height_crouch = 0.5
+radius = 0.2
+camera_stand = 0.6
+camera_crouch = 0.3
+run_forward = 2.595
+run_backward = 2.193
+run_sideways = 2.193
+sneak_forward = 0.999
+sneak_backward = 0.651
+sneak_sideways = 0.6
+# 60 degrees, uphill 30 to 60 scale 0.5, downhill 15 to 45 scale 2.
+max_slope_cos = 0.5
+uphill_falloff_sin = 0.5
+uphill_cutoff_sin = 0.8660254
+uphill_scale = 0.5
+downhill_falloff_sin = -0.25881904
+downhill_cutoff_sin = -0.70710677
+downhill_scale = 2.0
+# Soft and hard landing minimum, hard maximum (WU/s), hard landing time (s).
+soft_land_min = 1.0
+hard_land_min = 3.0
+hard_land_max = 6.0
+hard_land_time = 2.0
+
+# The Elite's vitality (section 5: the collision model
+# `characters\elite\elite`): 100 body, 100 shield of type 30 (elite energy
+# shield), 12 s before the shield recharges, 10 s from empty to full; its
+# materials (section 3, "Hit boxes") in the collision model's order, the
+# indirect material `body`; its four regions, none destroyable. The model
+# fields the spec does not state are the Spartan's.
+[bodies.elite.vitality.model]
+tag = 'characters\elite\elite'
+maximum_body = 100.0
+maximum_shield = 100.0
+shield_material_type = 30
+stun_time = 12.0
+recharge_time = 10.0
+recharge_velocity = 0.0033333334
+indirect_material = 2
+materials = [
+    { name = "head", head = true, type = 14, leak = 0.0, shield = 1.0, body = 1.0 },
+    { name = "arms", head = false, type = 14, leak = 0.0, shield = 1.0, body = 0.5 },
+    { name = "body", head = false, type = 14, leak = 0.0, shield = 1.0, body = 1.0 },
+    { name = "legs", head = false, type = 14, leak = 0.0, shield = 1.0, body = 0.8 },
+]
+regions = [
+    { name = "arms", flags = 0, threshold = 0.0 },
+    { name = "head", flags = 0, threshold = 0.0 },
+    { name = "legs", flags = 0, threshold = 0.0 },
+    { name = "torso", flags = 0, threshold = 0.0 },
+]
+
+# Chimera's body regions as the Elite's materials: head, arms, legs, the
+# rest its body.
+[bodies.elite.vitality.regions]
+head = 0
+arms = 1
+legs = 3
+other = 2
+
+# Section 5 rule 7: the Elite's hard ping threshold 0.3 (0.5 s).
+[bodies.elite.vitality.unit]
+hard_ping_threshold = 0.3
+soft_ping_interrupt_time = 0.5

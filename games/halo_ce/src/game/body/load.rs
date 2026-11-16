@@ -18,6 +18,8 @@
 //!   look sets): one skin per colour of `body::COLOURS`, the meshes
 //!   themselves showing skin 0 (white).
 //! - Skeleton, animations and hit volumes: `skeleton`, `anims`, `hits`.
+//! - Any biped the same way (`biped_body`): the campaign's characters
+//!   from their units (`campaign::unit`).
 //!
 //! Known shortcuts: the light-shield parts (transparent chicago shaders)
 //! are drawn as the loader draws them, always.
@@ -62,17 +64,18 @@ pub fn sound_tags(file: &MapFile) -> Vec<TagRef> {
         .and_then(|t| Biped::read(file, t).ok())
         .and_then(|b| file.tag(b.object.animation_graph.id).and_then(|t| AnimationGraph::read(file, t).ok()));
     let mut tags: Vec<TagRef> = graph.map_or_else(Vec::new, |g| g.sounds.iter().map(|s| s.sound).collect());
-    tags.extend(death_lines(file).into_iter().flatten());
+    tags.extend(death_lines(file, BIPED).into_iter().flatten());
     tags
 }
 
-/// The Spartan's death lines (sounds.md "Unit dialogue": the unit's
+/// A biped's death lines (sounds.md "Unit dialogue": the unit's
 /// dialogue, variant 0's else the first, its vocalizations 14 death quiet,
 /// falling back to 15, and 15 death violent): quiet and violent, None where
-/// empty.
-pub fn death_lines(file: &MapFile) -> [Option<TagRef>; 2] {
+/// empty (a character's unit without its voice set: its dialogue's bytes
+/// are zero, so none).
+pub fn death_lines(file: &MapFile, biped: &str) -> [Option<TagRef>; 2] {
     let dialogue = file
-        .find(class::BIPED, BIPED)
+        .find(class::BIPED, biped)
         .and_then(|t| Biped::read(file, t).ok())
         .and_then(|b| {
             let v = &b.unit.dialogue_variants;
@@ -130,9 +133,17 @@ fn look(m: &MapMesh, tint: Option<[f32; 3]>) -> MapMeshLook {
 /// The Spartan of map `file` (module doc); `decode` false: textures as
 /// placeholders of their size (a lean load).
 pub fn spartan(file: &MapFile, decode: bool) -> Result<Spartan, String> {
+    biped_body(file, BIPED, decode)
+}
+
+/// The body of biped `biped` of map `file`, as `spartan` makes the
+/// Spartan's (the campaign's characters' from their units:
+/// `campaign::unit`): unnamed (the caller names a body not every Halo
+/// player wears).
+pub fn biped_body(file: &MapFile, biped_path: &str, decode: bool) -> Result<Spartan, String> {
     let biped_tag = file
-        .find(class::BIPED, BIPED)
-        .ok_or_else(|| format!("no biped `{BIPED}`"))?;
+        .find(class::BIPED, biped_path)
+        .ok_or_else(|| format!("no biped `{biped_path}`"))?;
     let biped = Biped::read(file, biped_tag).map_err(|e| e.to_string())?;
     let o = &biped.object;
     let model = Model::read(file, tag(file, &o.model, "model")?).map_err(|e| e.to_string())?;
@@ -180,7 +191,7 @@ pub fn spartan(file: &MapFile, decode: bool) -> Result<Spartan, String> {
         Some(super::super::fx::name_of(&file.tag(r.id)?.path))
     });
     // The death lines ride on the bind sequence (`anims::DEATH_LINE_EVENT`).
-    for (k, r) in death_lines(file).iter().enumerate() {
+    for (k, r) in death_lines(file, biped_path).iter().enumerate() {
         if let Some(t) = r.and_then(|r| file.tag(r.id)) {
             set.sequences[0].events.push(crate::map::anim::AnimEvent {
                 cycle: 0.0,
@@ -243,8 +254,8 @@ pub fn add(map: &mut MapData, body: &Spartan) {
         }
     }
     map.textures.extend(body.textures.iter().cloned());
-    map.warnings
-        .extend(body.warnings.iter().map(|w| format!("the Spartan: {w}")));
+    let who = body.character.name.as_deref().unwrap_or("the Spartan");
+    map.warnings.extend(body.warnings.iter().map(|w| format!("{who}: {w}")));
     map.kit.characters.push(c);
 }
 

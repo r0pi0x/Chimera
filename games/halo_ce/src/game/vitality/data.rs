@@ -91,6 +91,10 @@ pub struct RegionMaterials {
     pub head: usize,
     pub legs: usize,
     pub other: usize,
+    /// The arms' (upper arm, forearm, hand), where the model has its own
+    /// (the Elite's `arms`, body x0.5); None: `other`.
+    #[serde(default)]
+    pub arms: Option<usize>,
 }
 
 /// The globals' player information values.
@@ -183,6 +187,9 @@ impl Spartan {
             None => self.model.indirect_material,
             Some(Head) => self.regions.head,
             Some(LeftShin | LeftFoot | RightShin | RightFoot) => self.regions.legs,
+            Some(LeftUpperArm | LeftForearm | LeftHand | RightUpperArm | RightForearm | RightHand) => {
+                self.regions.arms.unwrap_or(self.regions.other)
+            }
             Some(_) => self.regions.other,
         }
     }
