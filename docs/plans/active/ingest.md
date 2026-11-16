@@ -381,6 +381,28 @@ The run's log gains a header line naming its map and ladder (a
 `chimera_assets::recording` change). Each finding is fixed by adding a
 declaration, never by recording.
 
+### 3.5a The asset graph (user, 2026-11-15)
+
+The user asked that assets form a dependency graph with a hierarchy, so that packs simply refer into it. That replaces the flat sets-plus-`needs` model of 3.5 as the way to think about content. Sets stay as the wire format underneath.
+
+- **Records** are the leaves. Every file is stored once by content hash, as today, so a texture shared by twenty guns costs nothing extra.
+- **Units** are the nodes: the smallest thing anything asks for. Each has a hierarchical id, `<namespace>/<kind>/<id>`:
+  - `tf2/weapon/tf_weapon_minigun`, `tf2/body/heavy`, `halo_ce/character/grunt`, `halo_ce/voice/grunt`;
+  - `cs_source/map/de_dust2`, `combat_arms/hud`;
+  - a custom pack's `<author>.<pack>/weapon/<id>`.
+
+  The kind is typed (base, map, weapon, body, character, voice, hud, music, generated). A unit owns a list of records.
+- **Edges**, typed:
+  - `requires`: must be present before the unit is used; fetched with it.
+  - `deferred`: wanted, but fetched after the unit is usable, in the background (Halo's voices after the body; a map's ambient music).
+  - `optional`: used if present, never fetched for it (a game's own icon over the kit's).
+  - `variant-of`: a reskin or custom gun built on an official unit, reusing its records.
+- **Hierarchy:** a namespace's units nest by kind, and a game's `base`, `common` and `players` become ordinary units that others `require`. The sandbox's games, classes and guns tree, and the ingest report, read straight off it.
+- **Packs** are named, versioned roots: a list of unit ids plus a namespace's trust and signature. Examples: "Ultimate Gun Game's official content", "TF2 base", a custom weapon pack. A pack never copies a unit; it refers to it. The same goes for a ladder, a map pool or a match offer: each is a set of roots, and the client and server fetch the graph's closure. `requires` comes now, `deferred` later, and `optional` never.
+- **Validation at ingest:** no cycles; every edge resolves within trusted namespaces; a custom unit may point into official units but never the reverse; the report prints each unit's own and closure sizes.
+- **On the wire:** the graph is written in the signed side file beside the manifest (3.8). Old clients keep reading the flat sets, which ingest still emits as the closure of each root. New clients resolve the graph themselves. TF2's `classes.toml` `needs`, Halo's characters and voices, and Combat Arms' parts become graph edges declared by the recipes.
+- **Fetching:** `request_set` from the sandbox becomes `request_unit`. `SetProgress` reports per unit and for the closure. The no-fetch-in-match guard allows only `deferred` edges in a match, within a bandwidth budget.
+
 ### 3.6 Converters
 
 A converter has a name (`<namespace>:<name>`: `chimera:catalogue`,
