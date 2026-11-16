@@ -57,5 +57,6 @@ port adds the ones below.
 | [effects.md](effects.md) | 3 | draft | effects, particles, lights, decals |
 | [hud.md](hud.md) | 3 | draft | the HUD's pieces |
 | [vehicles.md](vehicles.md) | 3 | draft | vehicles |
+| [characters.md](characters.md) | 4 | draft | the campaign's characters (Elite, Grunt, Jackal, Hunter, Marine, Flood) as playable bodies: roster, weapons, body, movement, vitality, voice, download units |
 
 A file's link is added here when it lands.
