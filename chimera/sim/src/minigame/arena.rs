@@ -131,6 +131,9 @@ struct File {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SliceDef {
     pub slice: ArenaSlice,
+    /// The slice's own name ("West Base"; `slice.name` is the shown one,
+    /// with its map's: "Blood Gulch: West Base").
+    pub name: String,
     pub players: Option<[u32; 2]>,
     pub measures: Option<super::map_fit::SliceMeasures>,
 }
@@ -228,7 +231,7 @@ pub fn parse(game: &str, text: &str) -> Result<Vec<SliceDef>, String> {
         {
             return Err(format!("{}: players [{lo}, {hi}]", slice.key()));
         }
-        out.push(SliceDef { slice, players: e.players, measures });
+        out.push(SliceDef { slice, name: e.name, players: e.players, measures });
     }
     Ok(out)
 }

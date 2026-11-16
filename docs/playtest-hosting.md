@@ -674,7 +674,10 @@ Maps and matches:
   slice just played holds its map back as the map would. A host plays
   one at once with `changelevel <map@slice>` (the minigame's next match
   there; `arena <map@slice>` does the same); `mp_maps_off` takes
-  `map@slice` names, and a map off takes its slices with it. Nothing new
+  `map@slice` names, a map off takes its slices with it, and
+  `+map@slice` keeps one on under a map that is off
+  (`mp_maps_off "halo_ce:bloodgulch,+halo_ce:bloodgulch@west_base"`: only
+  that slice, never the whole map; the Maps picker writes it). Nothing new
   goes over the network (the slice goes with the match, `net64`). Never in
   a game's own app.
 - **The pre-match lobby.** Each new match (the first after the server

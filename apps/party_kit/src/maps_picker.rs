@@ -10,12 +10,13 @@
 //! Arena slices (docs/plans/active/arena-slices.md, A2): the listing's
 //! pool has each map's slices after it (`game:map@id`,
 //! `chimera_sim::minigame::arena::ArenaSlices::after_maps`), shown as the
-//! map's children (a row one step further in, the slice's id; the same
-//! row and box as a map's). A map's row sets it and its slices (off: all
-//! of them off, named in `mp_maps_off`); a slice toggles alone, and can be
-//! off while its map is on; a slice whose map is off shows off
-//! (`is_off`), and turning it on turns its map on with it (its other
-//! slices stay off). The counts are of whole maps.
+//! map's children (a row one step further in, the slice's own display
+//! name, `name_slices`; the same row and box as a map's). A map's row sets
+//! it and its slices (off: the map named in `mp_maps_off`, its slices off
+//! with it); a slice toggles alone, its map as it was: off while its map
+//! is on (named), or on while its map is off (marked `+game:map@id`,
+//! `ON_MARK`; the map's box then shows some on). The counts are of every
+//! entry, maps and slices alike.
 //!
 //! - **Data** (`MapCatalogue`): where the listing comes from. Today
 //!   `LocalCatalogue`: the minigame's pool (the installed and known maps),
@@ -49,6 +50,9 @@ pub struct CatalogueGame {
     pub id: String,
     pub name: String,
     pub groups: Vec<CatalogueGroup>,
+    /// Shown names by entry where not the id's (an arena slice's own,
+    /// "West Base": `name_slices`).
+    pub names: std::collections::BTreeMap<String, String>,
 }
 
 /// A group of a game's maps (Official maps, Custom maps).
@@ -82,6 +86,7 @@ impl MapCatalogue for LocalCatalogue {
                         id: game.to_string(),
                         name: game_name(game),
                         groups: vec![CatalogueGroup { name: "Official maps".into(), maps: Vec::new() }],
+                        names: Default::default(),
                     });
                     out.len() - 1
                 }
@@ -89,6 +94,20 @@ impl MapCatalogue for LocalCatalogue {
             out[i].groups[0].maps.push(m.clone());
         }
         out
+    }
+}
+
+/// The arena slices of `games` named by their data (`SliceDef::name`,
+/// "West Base"), for their rows.
+pub fn name_slices(games: &mut [CatalogueGame], slices: Option<&chimera_sim::minigame::arena::ArenaSlices>) {
+    let Some(slices) = slices else { return };
+    for g in games {
+        let entries: Vec<String> = g.groups.iter().flat_map(|k| k.maps.iter()).filter(|m| m.contains('@')).cloned().collect();
+        for e in entries {
+            if let Ok(d) = slices.find(&e) {
+                g.names.insert(e, d.name.clone());
+            }
+        }
     }
 }
 
@@ -150,9 +169,57 @@ pub fn slice_parent(entry: &str) -> Option<&str> {
     entry.split_once('@').map(|(m, _)| m)
 }
 
-/// Whether `entry` is off: named, or a slice whose map is.
+/// The mark of an arena slice kept on under a map that is off
+/// (`+game:map@id` in the set and in `mp_maps_off`).
+pub const ON_MARK: char = '+';
+
+/// Whether `entry` is off in `off` (the stored form, `mp_maps_off`'s): a
+/// slice marked on (`+map@id`) is on; else an entry named is off, and a
+/// slice whose map is named is off with it.
 pub fn is_off(off: &BTreeSet<String>, entry: &str) -> bool {
+    if off.contains(&format!("{ON_MARK}{entry}")) {
+        return false;
+    }
     off.contains(entry) || slice_parent(entry).is_some_and(|p| off.contains(p))
+}
+
+/// Sets `entry` on or off in `off`, kept in the stored form: a map off
+/// takes its slices with it (their own entries and marks go); a slice
+/// under a map that is off is on by its mark, else off by its name.
+fn set(off: &mut BTreeSet<String>, games: &[CatalogueGame], entry: &str, on: bool) {
+    let mark = format!("{ON_MARK}{entry}");
+    match slice_parent(entry) {
+        None => {
+            let slices: Vec<String> = games
+                .iter()
+                .flat_map(|g| g.groups.iter().flat_map(|k| k.maps.iter()))
+                .filter(|s| slice_parent(s) == Some(entry))
+                .cloned()
+                .collect();
+            for s in slices {
+                off.remove(&format!("{ON_MARK}{s}"));
+                off.remove(&s);
+            }
+            if on {
+                off.remove(entry);
+            } else {
+                off.insert(entry.to_string());
+            }
+        }
+        Some(map) => {
+            off.remove(&mark);
+            off.remove(entry);
+            match (on, off.contains(map)) {
+                (true, true) => {
+                    off.insert(mark);
+                }
+                (false, false) => {
+                    off.insert(entry.to_string());
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 fn tri(maps: &[&String], off: &BTreeSet<String>) -> Tri {
@@ -213,31 +280,19 @@ impl MapsPicker {
     }
 
     /// Toggles a row: all under it on, unless all are on (then off). A map
-    /// takes its slices with it; a slice turned on turns its map on (a
-    /// slice is never on with its map off; the map's other slices stay as
-    /// they were).
+    /// takes its slices with it (on or off); a slice toggles alone, its map
+    /// as it was (a slice on under a map that is off: the map's box shows
+    /// some on).
     pub fn toggle(&mut self, games: &[CatalogueGame], row: &TreeRow) {
         let maps: Vec<String> = Self::maps_of(games, row).into_iter().cloned().collect();
-        let all_on = self.state(games, row) == Tri::On;
+        let on = self.state(games, row) != Tri::On;
         let off = self.open.get_or_insert_with(|| self.off.clone());
-        for m in maps {
-            if all_on {
-                off.insert(m);
-            } else {
-                if let Some(p) = slice_parent(&m)
-                    && off.remove(p)
-                {
-                    // Its map back on, alone: its other slices stay off.
-                    let siblings: Vec<String> = games
-                        .iter()
-                        .flat_map(|g| g.groups.iter().flat_map(|k| k.maps.iter()))
-                        .filter(|s| slice_parent(s) == Some(p) && **s != m)
-                        .cloned()
-                        .collect();
-                    off.extend(siblings);
-                }
-                off.remove(&m);
+        for m in &maps {
+            // A slice whose map is toggled with it goes with the map.
+            if slice_parent(m).is_some_and(|p| maps.iter().any(|x| x == p)) {
+                continue;
             }
+            set(off, games, m, on);
         }
     }
 
@@ -264,18 +319,23 @@ impl MapsPicker {
         }
     }
 
-    /// How many maps are on, of how many, in how many games (the kept set,
-    /// or the working copy while open); arena slices aren't counted.
+    /// How many entries are on (maps and arena slices alike: what the draw
+    /// can take), of how many, in how many games (the kept set, or the
+    /// working copy while open).
     pub fn counts(&self, games: &[CatalogueGame]) -> (usize, usize, usize) {
         let off = self.open.as_ref().unwrap_or(&self.off);
-        let whole = |m: &&String| slice_parent(m).is_none();
-        let all: Vec<&String> = games.iter().flat_map(|g| g.groups.iter().flat_map(|k| k.maps.iter())).filter(whole).collect();
-        let on = all.iter().filter(|m| !off.contains(**m)).count();
+        let all: Vec<&String> = games.iter().flat_map(|g| g.groups.iter().flat_map(|k| k.maps.iter())).collect();
+        let on = all.iter().filter(|m| !is_off(off, m)).count();
         let games_on = games
             .iter()
-            .filter(|g| g.groups.iter().flat_map(|k| k.maps.iter()).filter(whole).any(|m| !off.contains(m)))
+            .filter(|g| g.groups.iter().flat_map(|k| k.maps.iter()).any(|m| !is_off(off, m)))
             .count();
         (on, all.len(), games_on)
+    }
+
+    /// The picker's set from `mp_maps_off`'s value (`off_line`'s inverse).
+    pub fn off_from_line(line: &str) -> BTreeSet<String> {
+        line.split(',').map(str::trim).filter(|m| !m.is_empty()).map(str::to_string).collect()
     }
 
     /// The Maps field's words: "41 of 138 · 3 games".
@@ -284,7 +344,9 @@ impl MapsPicker {
         format!("{on} of {all} \u{00b7} {g} {}", if g == 1 { "game" } else { "games" })
     }
 
-    /// `mp_maps_off`'s value.
+    /// `mp_maps_off`'s value: the entries off, comma-separated; a map off
+    /// takes its slices (`chimera_net::minigame_net::MapsOff::has`), and a
+    /// slice kept on under it is `+game:map@id`.
     pub fn off_line(&self) -> String {
         self.off.iter().cloned().collect::<Vec<_>>().join(",")
     }
@@ -378,18 +440,19 @@ pub fn spawn(
     let first = picker.cursor.saturating_sub(WINDOW - 1).min(rows.len().saturating_sub(WINDOW));
     for (i, row) in rows.iter().enumerate().skip(first).take(WINDOW) {
         let focus = i == picker.cursor;
-        // A game's or group's count: its whole maps (slices aside).
+        // A game's or group's count: its entries, maps and slices alike.
         let count_of = |row: &TreeRow| {
-            let maps: Vec<&String> = MapsPicker::maps_of(games, row).into_iter().filter(|m| slice_parent(m).is_none()).collect();
+            let maps = MapsPicker::maps_of(games, row);
             let off = picker.open.as_ref().unwrap_or(&picker.off);
-            Some(format!("{} of {}", maps.iter().filter(|m| !off.contains(**m)).count(), maps.len()))
+            Some(format!("{} of {}", maps.iter().filter(|m| !is_off(off, m)).count(), maps.len()))
         };
         let (depth, h, name, count) = match *row {
             TreeRow::Game(g) => (0, 2.05, games[g].name.clone(), count_of(row)),
             TreeRow::Group(g, k) => (1, 2.05, games[g].groups[k].name.clone(), count_of(row)),
-            // An arena slice: a child of its map, one step in, its id.
+            // An arena slice: a child of its map, one step in, by its
+            // display name (`CatalogueGame::names`), else its id.
             TreeRow::Map(g, k, m) => match games[g].groups[k].maps[m].split_once('@') {
-                Some((_, id)) => (3, 1.75, id.to_string(), None),
+                Some((_, id)) => (3, 1.75, games[g].names.get(&games[g].groups[k].maps[m]).cloned().unwrap_or_else(|| id.to_string()), None),
                 None => (2, 1.75, games[g].groups[k].maps[m].rsplit(':').next().unwrap_or("").to_string(), None),
             },
         };
@@ -506,43 +569,67 @@ mod tests {
         let mut p = MapsPicker::default();
         // The slices are rows of their own, after their map.
         assert_eq!(p.rows(&games).len(), 2 + 4, "a game, a group, two maps and two slices");
-        let (big, west) = (row_of(&p, &games, "g:big"), row_of(&p, &games, "g:big@west"));
+        let (big, west, east) = (row_of(&p, &games, "g:big"), row_of(&p, &games, "g:big@west"), row_of(&p, &games, "g:big@east"));
         assert_eq!(MapsPicker::maps_of(&games, &big).len(), 3, "a map's row takes its slices");
-        // A slice off while its map is on: the map shows some on.
+        // Every entry counts: 4 of 4, then a slice off: 3 of 4.
+        assert_eq!(p.counts(&games), (4, 4, 1));
         p.toggle(&games, &west);
         assert_eq!(p.state(&games, &west), Tri::Off);
         assert_eq!(p.state(&games, &big), Tri::Mixed);
-        assert_eq!(p.counts(&games), (2, 2, 1), "whole maps counted");
+        assert_eq!(p.state(&games, &TreeRow::Game(0)), Tri::Mixed, "the game's box agrees with its count");
+        assert_eq!(p.counts(&games), (3, 4, 1));
         // The map on again: all of it on; off: its slices off with it.
         p.toggle(&games, &big);
         assert_eq!(p.state(&games, &big), Tri::On);
         p.toggle(&games, &big);
-        let off = p.open.clone().unwrap();
-        assert!(["g:big", "g:big@west", "g:big@east"].iter().all(|m| off.contains(*m)), "{off:?}");
-        assert_eq!(p.state(&games, &row_of(&p, &games, "g:big@east")), Tri::Off);
-        // A slice turned on brings its map on, its sibling stays off.
+        assert_eq!(p.open.clone().unwrap(), BTreeSet::from(["g:big".to_string()]), "the map named, its slices with it");
+        assert_eq!(p.state(&games, &east), Tri::Off);
+        assert_eq!(p.counts(&games), (1, 4, 1));
+        // A slice on under the map that is off: only the slice, the map's
+        // box some on.
         p.toggle(&games, &west);
-        let off = p.open.clone().unwrap();
-        assert!(!off.contains("g:big") && !off.contains("g:big@west") && off.contains("g:big@east"), "{off:?}");
-        // A slice whose map is off shows off even when not named.
-        p.open = Some(["g:big".to_string()].into_iter().collect());
-        assert_eq!(p.state(&games, &west), Tri::Off);
+        assert_eq!(p.open.clone().unwrap(), BTreeSet::from(["g:big".to_string(), "+g:big@west".to_string()]));
+        assert_eq!((p.state(&games, &west), p.state(&games, &east)), (Tri::On, Tri::Off));
+        assert_eq!(p.state(&games, &big), Tri::Mixed);
+        assert_eq!(p.counts(&games), (2, 4, 1));
+        // Off again: the mark goes.
+        p.toggle(&games, &west);
+        assert_eq!(p.open.clone().unwrap(), BTreeSet::from(["g:big".to_string()]));
     }
 
     #[test]
-    fn mp_maps_off_names_a_slice_and_round_trips() {
+    fn mp_maps_off_round_trips_a_slice_on_under_a_map_off() {
         let games = games();
         let mut p = MapsPicker::default();
+        p.toggle(&games, &row_of(&p, &games, "g:big"));
         p.toggle(&games, &row_of(&p, &games, "g:big@east"));
         p.off = p.open.take().unwrap();
-        assert_eq!(p.off_line(), "g:big@east");
+        // The stored form: the map, and the slice kept on marked.
+        assert_eq!(p.off_line(), "+g:big@east,g:big");
         let off = chimera_net::minigame_net::MapsOff(p.off_line());
+        assert!(off.has("g:big") && off.has("g:big@west") && !off.has("g:big@east") && !off.has("g:small"));
+        assert_eq!(MapsPicker::off_from_line(&p.off_line()), p.off, "back from the line");
+        // A slice off under a map that is on.
+        let off = chimera_net::minigame_net::MapsOff("g:big@east".into());
         assert!(off.has("g:big@east") && !off.has("g:big@west") && !off.has("g:big"));
-        // A map off takes its slices, named or not.
+        // An old line (a map, no marks): its slices off with it, as before.
         let off = chimera_net::minigame_net::MapsOff("g:big".into());
         assert!(off.has("g:big@west") && off.has("g:big@east") && !off.has("g:small"));
-        // Back from the line: the same set.
-        let back: BTreeSet<String> = p.off_line().split(',').map(str::to_string).collect();
-        assert_eq!(back, p.off);
+    }
+
+    #[test]
+    fn a_slice_row_is_named_by_its_data() {
+        let mut games = games();
+        let text = "[[slice]]
+map = \"big\"
+id = \"west\"
+name = \"West Base\"
+                    points = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
+seed = [5.0, 1.0, 5.0]
+";
+        let slices = chimera_sim::minigame::arena::ArenaSlices(chimera_sim::minigame::arena::parse("g", text).unwrap());
+        name_slices(&mut games, Some(&slices));
+        assert_eq!(games[0].names.get("g:big@west").map(String::as_str), Some("West Base"));
+        assert!(!games[0].names.contains_key("g:big@east"), "not in the data: its id");
     }
 }

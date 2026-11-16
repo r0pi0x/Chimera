@@ -1330,15 +1330,16 @@ pub fn cast_vote(world: &mut World, voter: Entity, choice: usize) -> Result<(), 
 /// The vote as it stands, for the console.
 fn vote_text(world: &World) -> String {
     let Some(v) = world.get_resource::<MapVote>() else { return "no map vote now".into() };
+    let slices = world.get_resource::<minigame::arena::ArenaSlices>();
     let mut lines: Vec<String> = v
         .candidates
         .iter()
         .zip(&v.counts)
         .enumerate()
-        .map(|(i, (m, c))| format!("{}. {} ({c})", i + 1, vote::map_name(m)))
+        .map(|(i, (m, c))| format!("{}. {} ({c})", i + 1, vote::map_label(slices, m)))
         .collect();
     if let Some(m) = v.winning_map() {
-        lines.push(format!("won: {}", vote::map_name(m)));
+        lines.push(format!("won: {}", vote::map_label(slices, m)));
     }
     lines.join("\n")
 }
@@ -1433,15 +1434,20 @@ pub struct MapsOff(pub String);
 
 impl MapsOff {
     /// Whether `map` (any form `normalize_map` takes; an arena slice
-    /// `game:map@id`) is out: named, or a slice whose map is named.
+    /// `game:map@id`) is out: named, or a slice whose map is named, unless
+    /// the slice is marked on (`+game:map@id`: kept on under a map that is
+    /// off; a list without marks reads as before).
     pub fn has(&self, map: &str) -> bool {
         let map = crate::net::normalize_map(map);
         let parent = minigame::map_fit::entry_map(&map);
-        self.0
-            .split(',')
-            .map(str::trim)
-            .filter(|m| !m.is_empty())
-            .map(crate::net::normalize_map)
+        let items: Vec<&str> = self.0.split(',').map(str::trim).filter(|m| !m.is_empty()).collect();
+        if items.iter().any(|m| m.strip_prefix('+').is_some_and(|s| s.eq_ignore_ascii_case(&map))) {
+            return false;
+        }
+        items
+            .iter()
+            .filter(|m| !m.starts_with('+'))
+            .map(|m| crate::net::normalize_map(m))
             .any(|m| m.eq_ignore_ascii_case(&map) || m.eq_ignore_ascii_case(parent))
     }
 }
