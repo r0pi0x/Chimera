@@ -98,9 +98,13 @@ fn drawn_ladders_never_deal_a_gun_without_damage() {
     let mut caps = all.clone();
     let skipped = auto::drawable(sim.app.world(), &mut caps);
     let ids: Vec<&str> = skipped.iter().map(|s| s.id).collect();
-    assert_eq!(ids, [RMS12, APOLLO, STUN], "{}", auto::skipped_lines(&skipped));
-    assert_eq!(skipped[0].why, "no damage");
-    assert!(skipped[2].why.contains("stun"), "{}", skipped[2].why);
+    // Halo's Hunter cannon is out for another reason: its rung is dealt
+    // only with campaign bodies on (off here), not for want of damage.
+    const HUNTER: &str = "halo_ce:hunter_fuel_rod";
+    assert_eq!(ids, [HUNTER, RMS12, APOLLO, STUN], "{}", auto::skipped_lines(&skipped));
+    assert_ne!(skipped[0].why, "no damage", "{}", skipped[0].why);
+    assert_eq!(skipped[1].why, "no damage");
+    assert!(skipped[3].why.contains("stun"), "{}", skipped[3].why);
     {
         let w = sim.app.world();
         let catalog = w.resource::<WeaponCatalog>();
