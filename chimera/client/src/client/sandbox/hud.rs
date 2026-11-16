@@ -570,7 +570,7 @@ fn kill_card(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, k: &KillCar
     ui.text(c, what, Role::Mono, 0.46, Tone::Fg3, &k.gun_game_short);
     ui.text(c, what, Role::DisplayBold, 0.85, Tone::Fg3, ">");
     ui.text(c, what, Role::DisplayBold, 0.85, Tone::Fg, &k.victim);
-    ui.text(c, card, Role::Mono, 0.52, Tone::Fg2, &format!("{} \u{00b7} {} m \u{00b7} {}", k.protection, k.distance_m, motion_words(k.motion)));
+    ui.text(c, card, Role::Mono, 0.52, Tone::Fg2, &format!("{} \u{00b7} {:.0} m \u{00b7} {}", k.protection, k.distance_m, motion_words(k.motion)));
     // The three numbers.
     let stats = ui.boxed(c, card, UiStyle { gap: Some(0.6), pad: Some([0.3, 0.0, 0.3, 0.0].into()), ..UiStyle::row() });
     for (label, value, unit, w) in [
@@ -632,7 +632,7 @@ fn kill_card(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, k: &KillCar
             ui.text(c, nm, Role::DisplayBold, 0.58, Tone::Fg, &k.gun_name);
             let pr = ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
             ui.text(c, pr, Role::Mono, 0.48, Tone::Fg2, &k.protection);
-            for (w, t) in [(1.5, format!("{} m", k.distance_m)), (2.3, format!("{} hits", k.hits.len())), (2.0, format!("{:.2} s", k.first_hit_to_kill))] {
+            for (w, t) in [(1.5, format!("{:.0} m", k.distance_m)), (2.3, format!("{} hits", k.hits.len())), (2.0, format!("{:.2} s", k.first_hit_to_kill))] {
                 let b = ui.boxed(c, r, UiStyle { w: Some(w), justify: Some(JustifyContent::FlexEnd), shrink: Some(0.0), ..UiStyle::row() });
                 ui.text(c, b, Role::Mono, 0.48, Tone::Fg2, &t);
             }

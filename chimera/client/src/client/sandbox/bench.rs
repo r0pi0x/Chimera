@@ -30,13 +30,21 @@
 //!   `CharacterCatalogue` (the mechanics' or the asset side's list of
 //!   bodies; staged by hand until one exists).
 //!
+//! - **Holds** opens a list under it: Its default, then every gun the
+//!   target's body may hold (`holds_of`: `CharacterEntry::guns`, the
+//!   mechanics' `CharacterInfo::guns`); a press holds it (a
+//!   `BenchRequest::Set` with the gun), Esc closes the list.
+//! - The picker's "Find a character or a game" takes what is typed
+//!   while the picker is open (`BenchUi::found`: every word in a
+//!   character's name, game or id); Esc clears it, then closes the
+//!   picker.
+//!
 //! Keys: ↑↓ the target, N adds one, Delete removes the selected one,
 //! Esc (or T) closes.
 //!
 //! Known shortcuts: portraits are the kit's profile mark (no generated
-//! per-asset portraits yet, design rules section 21); the picker's search
-//! field and the Holds list don't type or open yet; the drawer is rebuilt
-//! whole on a change.
+//! per-asset portraits yet, design rules section 21); the drawer is
+//! rebuilt whole on a change.
 
 use bevy::{prelude::*, ui::{DeprecatedInteraction as Interaction, FocusPolicy}};
 use chimera_ui::{
@@ -82,6 +90,31 @@ pub struct BenchUi {
     pub picker: Option<(Option<u64>, Option<String>)>,
     /// The next prop ADD PROP adds.
     pub next_prop: usize,
+    /// The open card's Holds list is open.
+    pub holds_open: bool,
+    /// What is typed in the picker's "Find a character or a game".
+    pub picker_search: String,
+}
+
+impl BenchUi {
+    /// The picker's characters that hold every typed word in their name,
+    /// game or id (all of them with nothing typed).
+    pub fn found<'a>(&self, chars: &'a [CharacterEntry]) -> Vec<&'a CharacterEntry> {
+        let words: Vec<String> = self.picker_search.split_whitespace().map(str::to_lowercase).collect();
+        chars
+            .iter()
+            .filter(|c| {
+                let hay = format!("{} {} {}", c.name, c.game, c.id).to_lowercase();
+                words.iter().all(|w| hay.contains(w.as_str()))
+            })
+            .collect()
+    }
+}
+
+/// The guns a target of `character` may hold (`CharacterEntry::guns`,
+/// the mechanics' `CharacterInfo::guns`; none when the body is unknown).
+pub fn holds_of<'a>(chars: &'a [CharacterEntry], character: &str) -> &'a [String] {
+    chars.iter().find(|c| c.id == character).map_or(&[], |c| c.guns.as_slice())
 }
 
 /// A click on the bench.
@@ -96,6 +129,10 @@ pub enum BenchAction {
     Armored(u64, bool),
     ShootsBack(u64, bool),
     Character(Option<u64>),
+    /// Open or close the open card's Holds list.
+    HoldsOpen,
+    /// What the target holds (None: its default).
+    Hold(u64, Option<String>),
     PickerChoose(String),
     PickerUse,
     PickerCancel,
@@ -113,17 +150,43 @@ struct BenchRoot;
 /// The drawer's width, cq.
 pub const W: f32 = 31.0;
 
-fn keys(keys: Res<ButtonInput<KeyCode>>, ui: Res<SandboxUi>, bench: Res<BenchUi>, view: Res<BenchView>, mut out: MessageWriter<BenchAction>) {
-    if ui.screen != SandboxScreen::Bench {
+fn keys(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut typed: MessageReader<bevy::input::keyboard::KeyboardInput>,
+    console: Option<Res<crate::client::console::ConsoleUi>>,
+    ui: Res<SandboxUi>,
+    mut bench: ResMut<BenchUi>,
+    view: Res<BenchView>,
+    mut out: MessageWriter<BenchAction>,
+) {
+    if ui.screen != SandboxScreen::Bench || console.is_some_and(|c| c.open) {
+        typed.clear();
         return;
     }
     let k = |c: KeyCode| keys.just_pressed(c);
     if bench.picker.is_some() {
+        // Typing finds a character ("Find a character or a game").
+        use bevy::input::{ButtonState, keyboard::Key};
+        let held = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) || keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+        for e in typed.read() {
+            if e.state != ButtonState::Pressed || held {
+                continue;
+            }
+            match &e.logical_key {
+                Key::Backspace => {
+                    bench.picker_search.pop();
+                }
+                Key::Space if !bench.picker_search.is_empty() => bench.picker_search.push(' '),
+                Key::Character(c) if bench.picker_search.len() < 32 => bench.picker_search.push_str(c),
+                _ => {}
+            }
+        }
         if k(KeyCode::Enter) {
             out.write(BenchAction::PickerUse);
         }
         return;
     }
+    typed.clear();
     if k(KeyCode::KeyN) {
         out.write(BenchAction::Add);
     }
@@ -169,7 +232,23 @@ fn act(world: &mut World) {
             w.write_message(r);
         };
         match a {
-            BenchAction::Select(i) => world.resource_mut::<BenchUi>().selected = i,
+            BenchAction::Select(i) => {
+                let mut b = world.resource_mut::<BenchUi>();
+                b.selected = i;
+                b.holds_open = false;
+            }
+            BenchAction::HoldsOpen => {
+                let mut b = world.resource_mut::<BenchUi>();
+                b.holds_open = !b.holds_open;
+            }
+            BenchAction::Hold(id, gun) => {
+                world.resource_mut::<BenchUi>().holds_open = false;
+                if let Some(s) = spec_of(id)
+                    && s.gun != gun
+                {
+                    req(world, BenchRequest::Set(id, TargetSpec { gun, ..s }));
+                }
+            }
             BenchAction::Add => {
                 if view.targets.len() < MAX_TARGETS {
                     world.resource_mut::<BenchUi>().picker = Some((None, None));
@@ -212,12 +291,17 @@ fn act(world: &mut World) {
             }
             BenchAction::PickerUse => {
                 let Some((target, Some(ch))) = world.resource_mut::<BenchUi>().picker.take() else { continue };
+                world.resource_mut::<BenchUi>().picker_search.clear();
                 match target.and_then(|id| spec_of(id).map(|s| (id, s))) {
                     Some((id, s)) => req(world, BenchRequest::Set(id, TargetSpec { character: ch, gun: None, ..s })),
                     None => req(world, BenchRequest::Spawn(TargetSpec { character: ch, ..default() })),
                 }
             }
-            BenchAction::PickerCancel => world.resource_mut::<BenchUi>().picker = None,
+            BenchAction::PickerCancel => {
+                let mut b = world.resource_mut::<BenchUi>();
+                b.picker = None;
+                b.picker_search.clear();
+            }
             BenchAction::AddProp => {
                 let mut b = world.resource_mut::<BenchUi>();
                 let (kind, ..) = PROPS[b.next_prop % PROPS.len()];
@@ -256,11 +340,23 @@ fn act(world: &mut World) {
             }
         }
     }
-    // Esc: the picker first.
-    let picker_open = world.resource::<BenchUi>().picker.is_some();
+    // Esc: the picker (its search first), the Holds list first.
+    let (picker_open, holds_open) = {
+        let b = world.resource::<BenchUi>();
+        (b.picker.is_some(), b.holds_open)
+    };
     let esc = world.get_resource::<ButtonInput<KeyCode>>().is_some_and(|k| k.just_pressed(KeyCode::Escape));
-    if picker_open && esc && world.resource::<SandboxUi>().screen == SandboxScreen::Bench {
-        world.resource_mut::<BenchUi>().picker = None;
+    // (The sandbox's keys ran first and closed the bench: a picker or a
+    // list is only ever open on it.)
+    if (picker_open || holds_open) && esc && world.resource::<SandboxUi>().on {
+        let mut b = world.resource_mut::<BenchUi>();
+        if !b.picker_search.is_empty() {
+            b.picker_search.clear();
+        } else if picker_open {
+            b.picker = None;
+        } else {
+            b.holds_open = false;
+        }
         // The screen stays: undo the close the sandbox's keys asked for.
         world.resource_mut::<SandboxUi>().screen = SandboxScreen::Bench;
     }
@@ -273,6 +369,7 @@ struct Shown {
     bench: BenchUi,
     options: SandboxOptions,
     chars: usize,
+    guns: usize,
     size: (u32, u32),
 }
 
@@ -284,6 +381,7 @@ fn draw(
     bench: Res<BenchUi>,
     options: Res<SandboxOptions>,
     chars: Res<CharacterCatalogue>,
+    cat: Res<super::SandboxCatalogue>,
     root: Query<Entity, With<BenchRoot>>,
     mut last: Local<Shown>,
     mut c: Commands,
@@ -294,6 +392,7 @@ fn draw(
         bench: bench.clone(),
         options: *options,
         chars: chars.0.len(),
+        guns: cat.guns.len(),
         size: (look.units.height as u32, (look.units.scale_factor * 100.0) as u32),
     };
     if *last == next {
@@ -315,9 +414,10 @@ fn draw(
             Pickable::IGNORE,
         ))
         .id();
-    drawer(&mut c, &ui, &look, full, &view, &bench, &options);
+    let name = |id: &str| cat.get(id).map_or_else(|| id.to_string(), |g| g.name.clone());
+    drawer(&mut c, &ui, &look, full, &view, &bench, &options, &chars.0, &name);
     if let Some((target, chosen)) = &bench.picker {
-        picker(&mut c, &ui, &look, full, &chars.0, *target, chosen.as_deref(), &view);
+        picker(&mut c, &ui, &look, full, &chars.0, *target, chosen.as_deref(), &view, &bench.picker_search);
     }
 }
 
@@ -360,7 +460,8 @@ fn small_toggle(c: &mut Commands, ui: &Ui, parent: Entity, on: bool, a: BenchAct
     c.entity(t).insert((a, clickable()));
 }
 
-fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView, bench: &BenchUi, options: &SandboxOptions) {
+#[allow(clippy::too_many_arguments)]
+fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView, bench: &BenchUi, options: &SandboxOptions, chars: &[CharacterEntry], name: &dyn Fn(&str) -> String) {
     let d = c
         .spawn((
             UiStyle { w: Some(W), gap: Some(0.35), pad: Some([1.0, 1.4, 0.0, 1.4].into()), ..UiStyle::column() }.abs([None, Some(1.6), Some(M), Some(1.6)]).bg(Tone::Ink2).outline(Tone::Fg5, 1.0),
@@ -426,11 +527,58 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
         ui.boxed(c, f, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         kit_icon(c, look, f, "listchev", 0.6, Tone::Fg2, 1.0);
         let r = row(c, "Holds");
-        let f = ui.boxed(c, r, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), grow: Some(1.0), h: Some(1.45), pad: Some([0.0, 0.5, 0.0, 0.5].into()), ..UiStyle::row() }.bg_a(Tone::Fg, 0.04));
-        ui.underline(c, f, Tone::Fg3, 0.05);
-        ui.text(c, f, Role::DisplayRegular, 0.64, Tone::Fg, t.spec.gun.as_deref().unwrap_or("Its default"));
+        let f = c
+            .spawn((
+                UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), grow: Some(1.0), h: Some(1.45), pad: Some([0.0, 0.5, 0.0, 0.5].into()), ..UiStyle::row() }.bg_a(Tone::Fg, if bench.holds_open { 0.1 } else { 0.04 }),
+                Node::default(),
+                BenchAction::HoldsOpen,
+                clickable(),
+                UiParityId::new("bench.holds"),
+                ChildOf(r),
+            ))
+            .id();
+        ui.underline(c, f, if bench.holds_open { Tone::Acc } else { Tone::Fg3 }, 0.05);
+        let held = t.spec.gun.as_deref().map_or_else(|| "Its default".to_string(), name);
+        ui.text(c, f, Role::DisplayRegular, 0.64, Tone::Fg, &held);
         ui.boxed(c, f, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         kit_icon(c, look, f, "listchev", 0.6, Tone::Fg2, 1.0);
+        if bench.holds_open {
+            // The list: its default, then every gun its body may hold
+            // (`holds_of`), in the ladder's order, the held one marked.
+            let guns = holds_of(chars, &t.spec.character);
+            let list = c
+                .spawn((
+                    UiStyle { gap: Some(0.05), pad: Some([0.2, 0.0, 0.2, 0.0].into()), margin: Some([0.0, 0.0, 0.0, 5.6].into()), ..UiStyle::column() }.bg(Tone::Ink3).outline(Tone::Fg4, 1.0),
+                    Node { max_height: ui.units.val(12.0), overflow: Overflow::clip_y(), ..default() },
+                    UiParityId::new("bench.holds.list"),
+                    ChildOf(card),
+                ))
+                .id();
+            let item = |c: &mut Commands, label: &str, note: &str, on: bool, a: BenchAction| {
+                let it = c
+                    .spawn((
+                        UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), h: Some(1.3), pad: Some([0.0, 0.6, 0.0, 0.6].into()), shrink: Some(0.0), ..UiStyle::row() }.bg_a(Tone::Fg, if on { 0.1 } else { 0.0 }),
+                        Node::default(),
+                        a,
+                        clickable(),
+                        ChildOf(list),
+                    ))
+                    .id();
+                if on {
+                    ui.focus_bar(c, it, 0.2);
+                }
+                ui.text(c, it, Role::DisplayRegular, 0.56, if on { Tone::Fg } else { Tone::Fg2 }, label);
+                ui.boxed(c, it, UiStyle { grow: Some(1.0), ..UiStyle::row() });
+                ui.text(c, it, Role::Mono, 0.38, Tone::Fg3, note);
+            };
+            item(c, "Its default", "", t.spec.gun.is_none(), BenchAction::Hold(t.id, None));
+            for g in guns {
+                item(c, &name(g), g.split_once(':').map_or("", |(_, w)| w), t.spec.gun.as_deref() == Some(g.as_str()), BenchAction::Hold(t.id, Some(g.clone())));
+            }
+            if guns.is_empty() {
+                ui.text(c, list, Role::Mono, 0.4, Tone::Fg3, "No other gun for this body");
+            }
+        }
         let r = row(c, "Protection");
         ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
         ui.text(c, r, Role::Mono, 0.44, Tone::Fg2, if t.spec.armored { "Shield or gear \u{00b7} health" } else { "Health only" });
@@ -517,7 +665,10 @@ fn short_game(name: &str) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, chars: &[CharacterEntry], target: Option<u64>, chosen: Option<&str>, view: &BenchView) {
+fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, every: &[CharacterEntry], target: Option<u64>, chosen: Option<&str>, view: &BenchView, typed: &str) {
+    let found = BenchUi { picker_search: typed.to_string(), ..default() }.found(every);
+    let chars: Vec<CharacterEntry> = found.into_iter().cloned().collect();
+    let chars = chars.as_slice();
     let scrim = c
         .spawn((
             Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
@@ -564,8 +715,19 @@ fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, chars: &[Charact
     // The characters by game.
     let mid = ui.boxed(c, body, UiStyle { grow: Some(1.0), gap: Some(0.4), ..UiStyle::column() });
     let find = ui.boxed(c, mid, UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), h: Some(2.1), pad: Some([0.0, 0.8, 0.0, 0.8].into()), ..UiStyle::row() }.bg_a(Tone::Fg, 0.05));
-    kit_icon(c, look, find, "search", 0.8, Tone::Fg3, 1.0);
-    ui.sentence(c, find, 0.78, Tone::Fg3, "Find a character or a game");
+    c.entity(find).insert(UiParityId::new("bench.picker.find"));
+    kit_icon(c, look, find, "search", 0.8, if typed.is_empty() { Tone::Fg3 } else { Tone::Fg }, 1.0);
+    if typed.is_empty() {
+        ui.sentence(c, find, 0.78, Tone::Fg3, "Find a character or a game");
+    } else {
+        ui.text_plain(c, find, Role::Text, 0.8, Tone::Fg, typed);
+        c.spawn((Node { width: Val::Px(look.hair().max(1.5)), height: look.val(1.0), ..default() }, BackgroundColor(look.tone(Tone::Fg)), ChildOf(find)));
+        ui.boxed(c, find, UiStyle { grow: Some(1.0), ..UiStyle::row() });
+        ui.text(c, find, Role::Mono, 0.42, Tone::Fg3, &format!("{} of {}", chars.len(), every.len()));
+    }
+    if chars.is_empty() {
+        ui.sentence(c, mid, 0.7, Tone::Fg3, "No character or game holds that.");
+    }
     for g in &order {
         let h = ui.boxed(c, mid, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), h: Some(1.5), ..UiStyle::row() });
         kit_icon(c, look, h, "chevron", 0.5, Tone::Fg2, 1.0);
@@ -597,7 +759,7 @@ fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, chars: &[Charact
     }
     // The chosen one.
     let side = ui.boxed(c, body, UiStyle { w: Some(17.0), gap: Some(0.35), pad: Some([0.0, 0.0, 0.0, 1.2].into()), shrink: Some(0.0), ..UiStyle::column() });
-    if let Some(ch) = chosen.and_then(|id| chars.iter().find(|x| x.id == id)) {
+    if let Some(ch) = chosen.and_then(|id| every.iter().find(|x| x.id == id)) {
         portrait(c, ui, look, side, 8.0);
         ui.text(c, side, Role::Mono, 0.44, Tone::Fg3, &ch.game);
         ui.text(c, side, Role::DisplayBold, 1.2, Tone::Fg, &ch.name);
@@ -623,7 +785,7 @@ fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, chars: &[Charact
     ui.boxed(c, foot, UiStyle { grow: Some(1.0), ..UiStyle::row() });
     let cancel = ui.button(c, foot, Kind::Secondary, "Cancel", Some("Esc"), 2.4, State::NONE);
     c.entity(cancel).insert(BenchAction::PickerCancel);
-    let name = chosen.and_then(|id| chars.iter().find(|x| x.id == id)).map_or("Use".to_string(), |ch| format!("Use {}", ch.name));
+    let name = chosen.and_then(|id| every.iter().find(|x| x.id == id)).map_or("Use".to_string(), |ch| format!("Use {}", ch.name));
     let st = if chosen.is_some() { State::NONE } else { State { disabled: true, ..State::NONE } };
     let use_ = ui.button(c, foot, Kind::Primary, &name, Some("Enter"), HERO_H, st);
     c.entity(use_).insert(BenchAction::PickerUse);

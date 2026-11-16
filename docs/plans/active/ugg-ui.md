@@ -1397,10 +1397,17 @@ through small interfaces, with fakes for the stagings.
   download (both before anything is typed), every other letter finds.
 - **Bridged** to the mechanics (`minigame::targets`, `props`): targets,
   props and their groups, kills and hits, the looked-at target, blasts.
+- **Polish (2026-11-16)**: the main menu's Sandbox starts on the range;
+  the tag popover's own search and the picker's search type and find;
+  the bench's Holds list opens on the target body's guns
+  (`CharacterInfo::guns`); a gun whose round is its hook's (TF2's
+  rocket, grenades, flame) shows the hook's base damage and blast
+  radius; long tile names end in the kit's ellipsis; the range's
+  readouts are rebound in place, spawned again only when what they say
+  changes; `sandbox_gun <gun>` and `sandbox_key <1-6|k>` for scenes.
 - **Left**: real portraits and
-  model renders (generated per asset, the ingest plan); the tag
-  popover's own search; the 3D model viewer; K (repeat the last set-up)
-  and Q's quick panel.
+  model renders (generated per asset, the ingest plan); the 3D model
+  viewer; Q's quick panel.
 - Stagings: `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range>`.
 
 ## 6. Decisions (user, 2026-11-14)

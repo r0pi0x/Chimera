@@ -981,10 +981,20 @@ impl Plugin for MainMenuPlugin {
             )
             .console_command(
                 "chimera:mainmenu_press",
-                "mainmenu_press <start|connect|cancel|close|back|refresh|quit>: press that button of the main menu (screenshots \
-                 and tests).",
+                "mainmenu_press <start|connect|cancel|close|back|refresh|quit|entry <label>>: press that button of the main \
+                 menu, or its left-hand entry by label (`entry Sandbox`; screenshots, scenes and tests).",
                 |w, a| {
                     let action = match a.first().map(String::as_str) {
+                        Some("entry") => {
+                            let label = a[1..].join(" ");
+                            let at = w
+                                .resource::<MenuData>()
+                                .entries
+                                .iter()
+                                .position(|e| e.label.eq_ignore_ascii_case(&label))
+                                .ok_or_else(|| format!("no entry {label:?}"))?;
+                            MainMenuAction::Entry(at)
+                        }
                         Some("start") => MainMenuAction::Start,
                         Some("connect") => MainMenuAction::Connect,
                         Some("cancel") => MainMenuAction::Cancel,

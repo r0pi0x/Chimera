@@ -66,7 +66,9 @@ fn games_facets_tags_and_search_narrow_the_grid() {
 fn sections_follow_the_class_order() {
     let g = guns();
     let names: Vec<&str> = GunView::default().shown(&g, &|_| Files::Here).into_iter().map(|(n, _)| n).collect();
-    assert_eq!(names, sandbox::model::SECTIONS.to_vec());
+    let mut want = sandbox::model::SECTIONS.to_vec();
+    want.retain(|s| *s != "Other");
+    assert_eq!(names, want, "melee its own class; nothing staged is other");
 }
 
 #[test]
@@ -393,4 +395,153 @@ fn the_drop_hint_names_the_gun_the_slot_and_what_it_replaces() {
         .map(|(_, t)| t.0.clone())
         .unwrap_or_default();
     assert_eq!(hint.to_lowercase(), "release: rocket launcher to 2, replacing m4a1");
+}
+
+#[test]
+fn the_tag_popovers_own_search_types_finds_and_enter_ticks() {
+    let mut sim = sim("gun");
+    sim.app.world_mut().write_message(sandbox::change_gun::GunAction::TagsButton);
+    frame(&mut sim);
+    assert!(ui(&sim).view.tags_open, "the popover open");
+    type_text(&mut sim, "spl");
+    let u = ui(&sim);
+    assert_eq!(u.view.tag_search, "spl", "typing goes to Find a tag");
+    assert!(u.view.search.is_empty(), "not to the grid's search");
+    assert_eq!(u.view.tags_found(), vec![(TagGroup::Behaviour, vec!["splash"])], "the tags holding it");
+    // A group's label finds its tags too.
+    let v = GunView { tag_search: "optics".into(), ..default() };
+    assert_eq!(v.tags_found(), vec![(TagGroup::Optics, vec!["iron sights", "scope", "zoom"])]);
+    // The field shows what is typed.
+    frame(&mut sim);
+    let w = sim.app.world_mut();
+    assert!(w.query::<&UiParityId>().iter(w).any(|p| p.0 == "gun.popover.find"));
+    let shown: Vec<String> = w.query::<&Text>().iter(w).map(|t| t.0.clone()).collect();
+    assert!(shown.iter().any(|t| t == "spl"), "the typed words in the field");
+    // Enter ticks the first one found and clears the field.
+    press(&mut sim, &[KeyCode::Enter]);
+    let u = ui(&sim);
+    assert!(u.view.tags.contains(&(TagGroup::Behaviour, "splash")), "{:?}", u.view.tags);
+    assert!(u.view.tag_search.is_empty());
+    assert_eq!(u.screen, SandboxScreen::ChangeGun, "Enter switched nothing");
+    // Esc clears what is typed, then closes the popover, then the view.
+    type_text(&mut sim, "x");
+    press(&mut sim, &[KeyCode::Escape]);
+    assert!(ui(&sim).view.tag_search.is_empty() && ui(&sim).view.tags_open);
+    press(&mut sim, &[KeyCode::Escape]);
+    assert!(!ui(&sim).view.tags_open);
+    assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun);
+}
+
+#[test]
+fn the_bench_holds_list_opens_on_the_bodys_guns_and_holds_one() {
+    use chimera_client::client::sandbox::{
+        bench::{BenchAction, BenchUi, CharacterCatalogue, holds_of},
+        link::BenchView,
+    };
+    let mut sim = sim("bench");
+    let t = sim.app.world().resource::<BenchView>().targets[0].clone();
+    assert_eq!(t.spec.character, "halo_ce:spartan");
+    let chars = sim.app.world().resource::<CharacterCatalogue>().clone();
+    let guns = holds_of(&chars.0, &t.spec.character).to_vec();
+    assert!(guns.len() >= 3 && guns.iter().all(|g| g.starts_with("halo_ce:")), "its own game's guns: {guns:?}");
+    assert!(holds_of(&chars.0, "nobody:here").is_empty());
+    sim.app.world_mut().write_message(BenchAction::HoldsOpen);
+    frame(&mut sim);
+    assert!(sim.app.world().resource::<BenchUi>().holds_open);
+    let w = sim.app.world_mut();
+    let list = w.query::<(Entity, &UiParityId)>().iter(w).find(|(_, p)| p.0 == "bench.holds.list").map(|(e, _)| e).expect("the list drawn");
+    let rows = w.get::<Children>(list).map_or(0, |c| c.len());
+    assert_eq!(rows, guns.len() + 1, "its default and each gun");
+    // A press holds it: the target is asked to change.
+    sim.app.world_mut().write_message(BenchAction::Hold(t.id, Some(guns[1].clone())));
+    frame(&mut sim);
+    frame(&mut sim);
+    let now = sim.app.world().resource::<BenchView>().targets[0].clone();
+    assert_eq!(now.spec.gun.as_deref(), Some(guns[1].as_str()), "it holds the gun");
+    assert!(!sim.app.world().resource::<BenchUi>().holds_open, "the list closed");
+    // Esc closes an open list and leaves the bench open.
+    sim.app.world_mut().write_message(BenchAction::HoldsOpen);
+    frame(&mut sim);
+    press(&mut sim, &[KeyCode::Escape]);
+    frame(&mut sim);
+    assert!(!sim.app.world().resource::<BenchUi>().holds_open);
+    assert_eq!(ui(&sim).screen, SandboxScreen::Bench);
+}
+
+#[test]
+fn the_pickers_search_types_and_finds_and_t_does_not_close_the_bench() {
+    use chimera_client::client::sandbox::bench::{BenchAction, BenchUi, CharacterCatalogue};
+    let mut sim = sim("bench");
+    sim.app.world_mut().write_message(BenchAction::Add);
+    frame(&mut sim);
+    assert!(sim.app.world().resource::<BenchUi>().picker.is_some(), "the picker open");
+    type_text(&mut sim, "heavy");
+    let b = sim.app.world().resource::<BenchUi>().clone();
+    assert_eq!(b.picker_search, "heavy");
+    let chars = sim.app.world().resource::<CharacterCatalogue>().clone();
+    let found: Vec<&str> = b.found(&chars.0).iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(found, ["tf2:heavy"]);
+    let all = BenchUi { picker_search: "fortress".into(), ..default() };
+    assert_eq!(all.found(&chars.0).len(), 4, "a game's name finds its bodies");
+    // T and B are letters while the picker is open.
+    press(&mut sim, &[KeyCode::KeyT]);
+    press(&mut sim, &[KeyCode::KeyB]);
+    assert_eq!(ui(&sim).screen, SandboxScreen::Bench, "the bench stays");
+    // Esc clears the search, then closes the picker.
+    press(&mut sim, &[KeyCode::Escape]);
+    frame(&mut sim);
+    let b = sim.app.world().resource::<BenchUi>().clone();
+    assert!(b.picker_search.is_empty() && b.picker.is_some());
+    press(&mut sim, &[KeyCode::Escape]);
+    frame(&mut sim);
+    assert!(sim.app.world().resource::<BenchUi>().picker.is_none());
+    assert_eq!(ui(&sim).screen, SandboxScreen::Bench);
+}
+
+/// 120 frames' instructions on this thread (None: no counter here).
+fn frames_count(sim: &mut Sim, n: usize) -> Option<u64> {
+    let mut counter = chimera_core::metrics::InstructionCounter::current();
+    let a = counter.read()?;
+    for _ in 0..n {
+        frame(sim);
+    }
+    Some(counter.read()? - a)
+}
+
+/// The range's readouts (the look panel, a respawn ring, a blast's rings)
+/// held still are rebound in place, never spawned again each frame: the
+/// instructions they add over the same frames without them.
+#[test]
+fn the_range_readouts_rebind_in_place_instead_of_spawning_each_frame() {
+    let mut range = sim("range");
+    let mut rest = sim("rest");
+    for _ in 0..10 {
+        frame(&mut range);
+        frame(&mut rest);
+    }
+    let entities = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        w.query::<Entity>().iter(w).count()
+    };
+    let before = entities(&mut range);
+    let builds = sim_builds(&range);
+    let counts = (frames_count(&mut range, 120), frames_count(&mut rest, 120));
+    assert_eq!(entities(&mut range), before, "no entity spawned or dropped while nothing moves");
+    assert_eq!(sim_builds(&range), builds, "spawned once, rebound since");
+    if let (Some(r), Some(b)) = counts {
+        eprintln!("120 frames: with the range's readouts {r} instructions, without {b}: the readouts {}", r.saturating_sub(b));
+    } else {
+        eprintln!("no hardware instruction counter here: the count is skipped");
+    }
+    // A move rebinds in place: the ring's number counts down only when
+    // its second changes (a staged ring holds 2).
+    let w = range.app.world_mut();
+    let ids: Vec<String> = w.query::<&UiParityId>().iter(w).map(|p| p.0.clone()).collect();
+    for id in ["range.look", "range.respawn.2", "range.blast"] {
+        assert!(ids.iter().any(|i| i == id), "{id} drawn: {ids:?}");
+    }
+}
+
+fn sim_builds(sim: &Sim) -> u64 {
+    sim.app.world().resource::<sandbox::range::RangeBuilds>().0
 }
