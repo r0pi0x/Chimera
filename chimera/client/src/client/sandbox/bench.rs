@@ -16,9 +16,10 @@
 //!   cans, a target board, each at its distance, how many pieces still
 //!   stand or the board's group (hits, spread, mean radius), Reset (or
 //!   Clear: the group) and a trash can.
-//! - **Options**: the sandbox's toggles (`link::SandboxOptions`); Take no
-//!   damage and Third person send their console commands (`god`,
-//!   `thirdperson`), the others are the mechanics' to read.
+//! - **Options**: the sandbox's toggles (`link::SandboxOptions`), each the
+//!   mechanics' condition (`conditions::SetCondition`: God, EndlessAmmo,
+//!   TimeScale 0.5, ThirdPerson; blast rings are the screens' own), shown
+//!   as the mechanics hold them (`sandbox::mirror_conditions`).
 //! - **Foot**: "Changes apply at once." and RESET BENCH (clears targets
 //!   and props).
 //! - **The character picker** (a dialog over the range): games at the
@@ -231,11 +232,21 @@ fn act(world: &mut World) {
                 let was = world.resource::<SandboxOptions>().get(o);
                 if was != on {
                     world.resource_mut::<SandboxOptions>().set(o, on);
+                    // The mechanics' condition (`conditions::SetCondition`);
+                    // blast rings are the screens' own.
+                    use chimera_sim::minigame::conditions::{Condition, SetCondition};
+                    let cond = match o {
+                        SandboxOption::EndlessAmmo => Some(Condition::EndlessAmmo(on)),
+                        SandboxOption::NoDamage => Some(Condition::God(on)),
+                        SandboxOption::HalfSpeed => Some(Condition::TimeScale(if on { 0.5 } else { 1.0 })),
+                        SandboxOption::ThirdPerson => Some(Condition::ThirdPerson(on)),
+                        SandboxOption::BlastRings => None,
+                    };
                     if !staged
-                        && let Some(cmd) = SandboxOptions::command(o, on)
-                        && let Some(mut c) = world.get_resource_mut::<chimera_core::console::Console>()
+                        && let Some(cond) = cond
+                        && world.contains_resource::<Messages<SetCondition>>()
                     {
-                        c.submit(cmd);
+                        world.write_message(SetCondition(cond));
                     }
                 }
             }

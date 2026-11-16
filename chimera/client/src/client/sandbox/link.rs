@@ -22,9 +22,9 @@
 //! - **Props** (not started): `PropSpec` (bottles, tin cans, a target board
 //!   at a distance), listed in `BenchView::props`.
 //! - **Options** (`SandboxOptions`): endless ammo (the sandbox's refill),
-//!   take no damage (`god`), half speed (`host_timescale 0.5`), third
-//!   person (a command), blast rings (on by default). `SandboxOptions::command` is
-//!   the console line each toggle sends.
+//!   take no damage, half speed, third person (the mechanics'
+//!   conditions: `conditions::SetCondition`), blast rings (on by default,
+//!   the screens' own).
 //! - **The fake** (`fake_bench`, while `FakeBench` is in): applies the
 //!   requests to `BenchView` at once (a spawn past 150 m is refused, as a
 //!   wall would), so the bench works in a staging.
@@ -41,8 +41,7 @@
 //!   back from `Prop` and `ShotGroup`; the local player's
 //!   `targets::BlastMeasured` become the range's `BlastMeasured`.
 //!
-//! Known shortcuts: half speed is `host_timescale 0.5` (sent by the
-//! option); the look panel picks by the crosshair's line, not the game's
+//! Known shortcuts: the look panel picks by the crosshair's line, not the game's
 //! own trace.
 
 use bevy::prelude::*;
@@ -314,18 +313,6 @@ impl SandboxOptions {
             SandboxOption::BlastRings => self.blast_rings = on,
             SandboxOption::HalfSpeed => self.half_speed = on,
             SandboxOption::ThirdPerson => self.third_person = on,
-        }
-    }
-
-    /// The console line that turns `o` to `on` (None: client-side only,
-    /// or not built yet).
-    pub fn command(o: SandboxOption, on: bool) -> Option<String> {
-        match o {
-            // `god` toggles: sent only when it must change.
-            SandboxOption::NoDamage => Some("god".into()),
-            SandboxOption::ThirdPerson => Some(if on { "thirdperson" } else { "firstperson" }.into()),
-            SandboxOption::HalfSpeed => Some(if on { "host_timescale 0.5" } else { "host_timescale 1" }.into()),
-            _ => None,
         }
     }
 

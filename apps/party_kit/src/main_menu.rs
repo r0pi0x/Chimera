@@ -191,6 +191,9 @@ pub struct Entry {
     pub gap: bool,
     /// A tag after the label (`tag = "New"`), drawn by the Signal menu.
     pub tag: Option<String>,
+    /// Its command starts play (`play = true`): the menu shows its loading
+    /// screen as it runs (no second start), the map's load enters the game.
+    pub play: bool,
 }
 
 /// What an Escape menu entry does.
@@ -308,6 +311,7 @@ impl MenuData {
                 does,
                 gap: t.get("gap").and_then(|v| v.as_bool()).unwrap_or(false),
                 tag: s(&t, "tag"),
+                play: t.get("play").and_then(|v| v.as_bool()).unwrap_or(false),
             });
         }
         let mut escape = Vec::new();
@@ -1447,7 +1451,24 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                         w.raise(p.window());
                     }
                 }
-                EntryDoes::Command(c) => submit(world, c),
+                EntryDoes::Command(c) => {
+                    let map = c.split_whitespace().nth(1).map(chimera_net::net::normalize_map);
+                    submit(world, c);
+                    // An entry that starts play (Sandbox): the menu goes to
+                    // its loading screen at once, as Play's Start does, so a
+                    // second press, click or Enter while the match comes up
+                    // is refused (the menu acts on nothing while loading);
+                    // the map's load takes it into the game.
+                    if e.play {
+                        let mut m = world.resource_mut::<PartyMenu>();
+                        m.screen = Screen::Loading;
+                        m.page = MenuPage::Main;
+                        m.focus = None;
+                        m.failure = None;
+                        m.background_load = false;
+                        m.loading = map;
+                    }
+                }
             }
         }
         A::OpenMaps => {

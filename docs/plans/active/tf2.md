@@ -649,7 +649,10 @@ specs/tf2/weapons_stock.md (T10, draft).
 - **Tests**: `tests/it/melee.rs` (the spec's cases 1-14, 16-20, 22-26,
   30, 32, a switch cancelling the smack), the script mapping's 33-35
   (`weapon_scripts.rs`), `party_kit` `tf2_rungs::a_tf2_rung_carries_its_
-  classs_melee`.
+  classs_melee` and `the_shotguns_drawn_class_carries_its_own_melee`
+  (tf2-followups: over rung seeds the Shotgun's drawn class carries its
+  own melee, the Soldier the Shovel and the Heavy the Fists, in the
+  rung's extras and in hand; it already followed, nothing to fix).
 - Left: the Bottle's break (cosmetic), the Wrench's buildings, the Fists
   alternating with both buttons held (attack2 wins), a damage history for
   the crit chance, the BLU fists' skin (3) and the arms' team skins, the
