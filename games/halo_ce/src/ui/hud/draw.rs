@@ -141,7 +141,8 @@ fn latch(slot: &mut Option<i64>, on: bool, now: i64) {
 /// interface the donor map lacks (the Hunter's cannon: its unit leaves
 /// HUD interfaces out, and no multiplayer map holds one for it) shows the
 /// HUD globals' default weapon HUD, the empty hands' (our choice: its
-/// plain crosshair, nothing invented for its charge).
+/// plain crosshair, nothing invented for its charge; its elements are not
+/// drawn for such a weapon).
 pub fn chain_of<'a>(data: &'a HudData, unit: &Unit) -> &'a [WeaponHud] {
     match &unit.weapon {
         Some(h) => data.weapon(&h.tag).unwrap_or(&data.empty),
@@ -385,6 +386,9 @@ pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canva
     if SCOPE_MASK && unit.alive && unit.weapon.is_some() {
         scope_mask(&mut p, chain, w.zoom >= 0, canvas);
     }
+    // A weapon without a HUD of its own (`chain_of`): the default's aim
+    // crosshair alone, none of its elements or warnings (its "no weapon").
+    let own = unit.weapon.as_ref().is_some_and(|h| data.weapon(&h.tag).is_some());
     // 2. Crosshairs: the weapon's own HUD first, then each parent.
     let crosshairs_from = p.out.len();
     if unit.alive {
@@ -392,7 +396,7 @@ pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canva
         for hud in chain {
             for c in &hud.crosshairs {
                 let n = c.kind as usize;
-                if c.kind < 0 || n >= crosshair::COUNT || c.runtime_flags & 1 != 0 || !one_window(c.map_type) || !xs.renders(n) {
+                if c.kind < 0 || n >= crosshair::COUNT || c.runtime_flags & 1 != 0 || !one_window(c.map_type) || !xs.renders(n) || (!own && unit.weapon.is_some() && n != crosshair::AIM) {
                     continue;
                 }
                 for item in &c.items {
@@ -410,7 +414,7 @@ pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canva
     }
     // 3. The weapon HUD, deepest parent first.
     let weapon_from = p.out.len();
-    if !chain.is_empty() && unit.weapon.is_some() {
+    if !chain.is_empty() && own {
         let cut = cutoffs(chain);
         for (hud, c) in chain.iter().zip(&cut).rev() {
             let states = rules::weapon_states(&w, c);

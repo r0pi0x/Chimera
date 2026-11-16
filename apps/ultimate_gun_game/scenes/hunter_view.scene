@@ -1,0 +1,35 @@
+# The Hunter's first-person view (game::campaign::first_person; its
+# offset, turn, kept bones and muzzle are data/campaign.toml's
+# `[bodies.hunter.first_person]`): at rest, firing (the rod leaving the
+# muzzle), in a melee, looking up and down. For tuning that data: one take
+# per variant. The body and its cannon are the `character/hunter` set.
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox cs_source:de_dust2 \
+#       --scene apps/ultimate_gun_game/scenes/hunter_view.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 1500
+god
+setpos -82 -555 208          # the T side, a double door 12 m ahead
+setang 2 4
+rung halo_ce:hunter_fuel_rod # the player becomes the Hunter
+wait 600                     # its unit in
+shot view_rest
+shot_after shot 3 view_fire_a
+shot_after shot 14 view_fire_b
++attack
+wait 30
+-attack
+wait 120
++melee
+wait 12
+shot view_melee_a
+wait 12
+shot view_melee_b
+-melee
+wait 120
+setang -45 4
+wait 20
+shot view_up
+setang 50 4
+wait 20
+shot view_down

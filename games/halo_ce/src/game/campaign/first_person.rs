@@ -32,11 +32,13 @@
 //! camera, so the arm keeps its aim in the view), and over it the body's
 //! own fire (`fire-1`, an overlay: composed on the idle) on a shot and its
 //! melee (`melee`, a base animation: in place of the idle) on a melee,
-//! each played once from its first frame (a new one restarts it). The
-//! Hunter's melee is a bash of its shield arm, so its view keeps that
-//! forearm too (seen as it swings in).
+//! each played once from its first frame (a new one restarts it,
+//! `anims::apply_action`). The Hunter's view keeps its cannon from the
+//! elbow down (tuned from pictures; data/campaign.toml keeps two
+//! alternates, one with the shield forearm, whose bash is its melee).
 //!
-//! Known shortcuts: the triangles that cross from a kept bone to a left
+//! Known shortcuts: its fire-1 overlay swings the cannon up and to the
+//! right, out of the view's lower right for some frames; the triangles that cross from a kept bone to a left
 //! one (the shoulder's) are cut at the weight rule, so the arm's edge is
 //! open; the view keeps the body's own textures and their tint (the
 //! player's colour) as the third-person body has them for a player given
