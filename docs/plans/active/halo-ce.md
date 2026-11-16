@@ -458,15 +458,16 @@ backlog.
     play.
   - Field of view (a lean, not final): the user's setting for every
     game's gun; Halo changes it only while zoomed, by the spec's
-    magnification. Unzoomed is already so; zoomed still uses Halo's own
-    angle (to do).
+    magnification (done: `ui::party_view`; the gun in hand keeps Halo's
+    own view-model angle).
   - Autoaim's bend off for mouse and keyboard (done: `halo_autoaim`);
     guided projectiles keep their target.
-  - No Halo grenades in the party apps by default (to do: a switch in
-    Halo's party bundle, no grenade pickups placed, the counter hidden).
-  - A grenade rung later: the pistol with an empty magazine and no
-    reserve, grenades and melee only, left click throws, shown and named
-    as the frag grenade; after the health rule below is decided.
+  - No Halo grenades in the party apps by default (done:
+    `halo_party_grenades`, the counter hidden).
+  - A grenade rung (done: `halo_ce:frag_grenade`, the pistol with an
+    empty magazine, left click a dry fire, the grenade button throws,
+    frags back one every 5 s up to 4, an opt-in key hint at the bottom
+    centre).
   - Gravity: left alone (the user, after the corrected numbers): every
     character keeps its own gravity and jump on every map. Gravity
     9.78 m/s2 (Halo), 20.3 (CS:S, TF2), 19.8 (Combat Arms), 15.2
@@ -474,8 +475,7 @@ backlog.
     map-owned gravity would have a CS:S character jump 3.0 m on a Halo
     map; to revisit only if play shows people reaching where they
     should not.
-  - Kill feed icons: Halo registers none (the feed shows the gun's
-    name); to add from the disc's pictures.
+  - Kill feed icons from the disc's HUD (done: `ui::kill_icons`).
 - **Balance in the party apps** (measured from code and data,
   2026-11-15; nothing changed yet, the user decides): a Halo-rung holder
   has 200 effective hit points against other games' guns (the shield is
@@ -723,3 +723,28 @@ backlog.
   bars; first person: other players' weapon state does not reach a
   client). Next by the user's order: the backlog's high items (timed
   grenades on the grenade rung), then the arena cut from a big map.
+- 2026-11-16: after the milestone. Landed: the grenade rung's timed
+  supply; a command-only sandbox for the party apps (`+sandbox`,
+  `rung`: `chimera_sim::minigame::rung_command`); hit flinches from the
+  replicated vitality and the body's corrected rules (bodies take
+  shots, 900 ticks at rest, the death lines); the balance check as a
+  reference page (`docs/plans/active/party-balance.md`). Built and held
+  off `main` until a playtest build is cut: the sandbox's rung picker
+  (`sandbox-rung-picker`: a stopgap dialog on the maps picker's
+  pattern; it lists 459 guns, about 408 of them Combat Arms' variants)
+  and the arena's first milestone (`arena-a1`: "Blood Gulch: West
+  Base", about 9,900 m2, a solid wall every game's movement, bullets
+  and projectiles stop at; its plan with the user's decisions is
+  `docs/plans/active/arena-slices.md`). Being built on a branch: the
+  scopes' edge blur. With the other session (the party UI, the ladder,
+  the asset service and TF2 are theirs): the sandbox's design was
+  handed to them at the user's request (the backlog has the options
+  the user liked), on-demand asset sets for a picked gun are theirs to
+  build and the rung switch that waits for one is this side's, after
+  theirs lands; arena A2 touches the draw and is to be sequenced with
+  their ladder-draw work; the damage tables are to become one shared
+  table with a host toggle after the playtest (its default is the
+  user's call). Parked by the user: vehicles' guns, seated poses and
+  Race for Halo's own app; other players' on-gun counters; gravity and
+  jumps (left as each game's own). Tool runs of the games on the PC are
+  muted (the user's instruction).
