@@ -199,7 +199,7 @@ fn the_grunt_and_the_jackal_tables() {
 
 /// The kinds as sandbox targets (`campaign::targets`): offered only for
 /// their guns and once their units loaded; a fresh Elite's shield full, a
-/// Grunt's and a Jackal's bar empty (the Jackal's shield is its arm's);
+/// Grunt's bar empty, a Jackal's full (its arm's shield is its second bar);
 /// wearing one forces the kind, the Spartan takes it off.
 #[test]
 fn the_kinds_are_sandbox_targets_once_loaded() {
@@ -219,7 +219,7 @@ fn the_kinds_are_sandbox_targets_once_loaded() {
     assert!(!targets::holds(&world, "halo_ce:jackal", "halo_ce:plasma_pistol"), "the Jackal's unit is not loaded");
     assert_eq!(targets::vitals(&world, "halo_ce:elite"), (1.0, 1.0));
     assert_eq!(targets::vitals(&world, "halo_ce:grunt"), (1.0, 0.0));
-    assert_eq!(targets::vitals(&world, "halo_ce:jackal"), (1.0, 0.0));
+    assert_eq!(targets::vitals(&world, "halo_ce:jackal"), (1.0, 1.0));
     let e = world.spawn_empty().id();
     targets::wear(&mut world, e, "halo_ce:grunt");
     assert_eq!((world.get::<BodyKind>(e), world.get::<ForcedBody>(e)), (Some(&BodyKind::Grunt), Some(&ForcedBody(BodyKind::Grunt))));
