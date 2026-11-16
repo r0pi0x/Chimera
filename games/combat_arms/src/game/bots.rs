@@ -32,6 +32,11 @@
 //! mercenaries are bots too (`MercMind`: the `Squad` goal set, follow and
 //! attack only; `rules::mercs`), but not players.
 //!
+//! A sandbox's practice targets (`chimera_sim::minigame::targets`) are
+//! these bots, added and removed through the engine's seam
+//! (`targets::TargetBots`, registered here); the target rule (its home,
+//! motion and trigger) overrides the brain's keys after `brain::think`.
+//!
 //! Bots run on the server only, their senses and goals on the server's
 //! 20 Hz frames (`grenades::SERVER_FRAME`, the dedicated server's rate:
 //! Open question 1), their aim, movement keys and trigger every tick.
@@ -497,6 +502,23 @@ impl Plugin for CaBotsPlugin {
                     s.quota = n;
                     s.quota_set = true;
                 }
+            },
+        });
+        // A sandbox's practice targets are these bots (the engine's seam,
+        // `minigame::targets::TargetBots`): one more in the quota each.
+        crate::gameplay::GameplayAppExt::game_hook(app, super::GAME, chimera_sim::minigame::targets::TargetBots {
+            add: |w| {
+                let e = add_bot(w, None)?;
+                let mut s = w.resource_mut::<BotSettings>();
+                s.quota += 1;
+                s.quota_set = true;
+                Some(e)
+            },
+            remove: |w, e| {
+                kick(w, e);
+                let mut s = w.resource_mut::<BotSettings>();
+                s.quota = s.quota.saturating_sub(1);
+                s.quota_set = true;
             },
         });
         resource_cvar::<BotSettings, u32>(app, "combat_arms:MaxPlayer", "Bots the server keeps in the game (Bot Deathmatch's player count).", |s| {

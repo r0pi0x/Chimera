@@ -490,6 +490,11 @@ part of it | next | prev> [player | all]` puts a player on that rung as a
 kill would (`+rung halo_ce:frag_grenade` at launch waits for the match).
 Beside it: `ca_bot_add`, `ca_bot_kick`, `ca_bot_stop 1`, `ca_bot_dont_shoot 1`,
 `god`, `noclip` (`sv_cheats` is 1 there), guns refill; `sandbox help` says it.
+Practice targets: `target add <rung n | gun id | body id> [distance]
+[still|strafe|walk] [shoots] [protect]`, `target set`, `target remove`,
+`target list`, `target characters` (`chimera_sim::minigame::targets`);
+every hit on a target or by one logs a `HitMeasured` line, every kill a
+`KillMeasured` line (shots, hits, headshots, time to kill, distance).
 `rung` is also a plain developer command in any ladder match: the host, a
 single player and a dedicated server's console may always run it, a remote
 client only with the server's `sv_cheats 1` (and only on itself).
