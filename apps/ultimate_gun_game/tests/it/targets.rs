@@ -305,3 +305,35 @@ fn a_tf2_target_wears_a_class_other_than_its_rung_drew() {
     assert!((h.max - health).abs() < 1e-3, "{class} (drawn {drawn:?}): {h:?}");
     assert_eq!(sim.app.world().get::<chimera_sim::weapon::Armor>(e).map(|a| a.amount).unwrap_or(0.0), 0.0, "no other game's armour");
 }
+
+#[test]
+fn an_unarmoured_target_has_no_second_bar() {
+    let (mut sim, me) = play();
+    let e = add(&mut sim, SpawnTarget { character: Some("halo_ce:spartan".into()), armored: false, distance_m: 8.0, ..default() });
+    sim.seconds(1.0);
+    let v = *sim.app.world().get::<targets::TargetVitals>(e).unwrap();
+    assert_eq!((v.shield, v.shield_max), (0.0, 0.0), "{v:?}");
+    hit(&mut sim, me, e, 0.3);
+    sim.ticks(3);
+    let h = sim.app.world().resource::<Seen>().hits.iter().find(|h| h.victim == e).cloned().expect("measured");
+    assert!(h.health_after < h.health_before && h.shield_before == 0.0, "the body takes it: {h:?}");
+    // On again: the body's game gives its own back after the next placing.
+    let t = sim.app.world().get::<Target>(e).cloned().unwrap();
+    assert!(!t.armored && t.game_name == "Halo: Combat Evolved", "{t:?}");
+}
+
+#[test]
+fn the_bodies_list_their_numbers_guns_and_full_game_names() {
+    let (sim, _) = play();
+    let all = targets::characters(sim.app.world());
+    let of = |id: &str| all.iter().find(|c| c.id == id).cloned().unwrap_or_else(|| panic!("{id} in {all:?}"));
+    let spartan = of("halo_ce:spartan");
+    assert_eq!(spartan.game_name, "Halo: Combat Evolved");
+    assert!(spartan.health_max == 1.0 && spartan.shield_max > 0.0, "{spartan:?}");
+    assert!(spartan.guns.iter().any(|g| g == "halo_ce:sniper_rifle") && spartan.guns.iter().all(|g| g.starts_with("halo_ce:")));
+    let heavy = of("tf2:heavy");
+    assert!((heavy.health_max - 3.0).abs() < 1e-3 && heavy.shield_max == 0.0, "{heavy:?}");
+    assert!(heavy.guns.iter().any(|g| g == "tf2:tf_weapon_shotgun_primary"), "{heavy:?}");
+    let ca = of("combat_arms:default");
+    assert_eq!((ca.game_name.as_str(), ca.game_tag.as_str(), ca.shield_max), ("Combat Arms", "CA", 1.0));
+}
