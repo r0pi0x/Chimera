@@ -648,6 +648,8 @@ impl Plugin for CampaignPlugin {
              needs the server's sv_cheats 1).",
             body_command,
         );
-        app.world_mut().resource_mut::<chimera_core::console::Console>().player_command(BODY_COMMAND);
+        if let Some(mut console) = app.world_mut().get_resource_mut::<chimera_core::console::Console>() {
+            console.player_command(BODY_COMMAND);
+        }
     }
 }

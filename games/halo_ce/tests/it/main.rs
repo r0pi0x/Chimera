@@ -24,6 +24,7 @@ mod audio;
 mod autoaim;
 mod body;
 mod campaign;
+mod campaign_net;
 mod bot_triggers;
 mod cross_game;
 mod party_balance;
