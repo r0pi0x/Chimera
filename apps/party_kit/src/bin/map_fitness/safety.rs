@@ -185,7 +185,7 @@ pub(super) fn safety(w: &mut World, o: &Opts, c: &SafetyInput) {
         let file = o.out.join(format!("{stem}.png"));
         let plan = area.as_ref().map(|a| a.polygon);
         let seed_at = area.as_ref().map(|a| a.slice.seed);
-        top_down(&q, &file, c, &table, plan, &made, &alone, seed_at);
+        top_down(&q, &file, c, &table, plan, &made, &alone, seed_at, &[]);
         eprintln!("  picture: {}", file.display());
     }
 }
@@ -269,8 +269,10 @@ fn dijkstra_prev(nav: &NavMesh, from: usize) -> (Vec<f32>, Vec<Option<usize>>) {
 /// polygon in blue, each table spot a dot from green (seen by none of the
 /// others) to red (by a third of them or more), the map's spawn points
 /// white, the slice's made ones yellow, the ones it makes with none of the
-/// map's orange, its seed magenta.
-fn top_down(
+/// map's orange, its seed magenta; `open` (the wall's samples over open
+/// floor, `--candidates`) red.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn top_down(
     q: &SpatialQuery,
     file: &std::path::Path,
     c: &SafetyInput,
@@ -279,6 +281,7 @@ fn top_down(
     made: &[Vec3],
     alone: &[Vec3],
     seed: Option<Vec3>,
+    open: &[Vec2],
 ) {
     let (mut lo, mut hi) = match plan {
         Some(p) => p.bounds(),
@@ -338,6 +341,14 @@ fn top_down(
                 for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1), (-1, 0), (0, -1)] {
                     put(&mut img, x + dx, y + dy, [59, 123, 255]);
                 }
+            }
+        }
+    }
+    for p in open {
+        let (x, y) = to_px(*p);
+        for dy in -2..=2 {
+            for dx in -2..=2 {
+                put(&mut img, x + dx, y + dy, [255, 40, 40]);
             }
         }
     }
