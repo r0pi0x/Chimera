@@ -92,6 +92,7 @@ the user's go-ahead: no Actions runs unless asked.
     - **What we keep:** the asset service holds the generated assets. Because the converter can always regenerate them from the originals, the originals stay the source of truth.
     - **Engine changes:** generated formats will change as the engine evolves. Each converter has a version, and a manifest records the recipe and version of every generated record. A newer engine either regenerates from the originals (the steady state) or migrates old generated records with a documented, versioned migration step. Never a format nobody can rebuild.
     - **Self-hosting:** a host or modder can run `generate` against their own install to produce a pack an asset service can serve.
+  - **Plan:** [plans/active/ingest.md](plans/active/ingest.md) (the ingestion pipeline: recipes, converters, declared sets, official updates, custom packs).
 
 - **A recycling `VirtualList` in the UI kit, for smooth scrolling (user, 2026-11-15):** the user expects to scroll the maps and gun lists smoothly, by pixels, with the mouse wheel and a scrollbar.
   - **Today:** the Maps dialog and the Join server list draw only a window of rows around the cursor, which is cheap. But they rebuild every row on each change, jump a row at a time, and the Maps dialog has no wheel scrolling.
