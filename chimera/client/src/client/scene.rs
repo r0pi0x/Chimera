@@ -25,14 +25,17 @@
 //! (a minigame's match is live), `spawned` (the local player is alive),
 //! `shot` (any `WeaponEventKind::ShotMade`), `hit` (any `DamageTaken`),
 //! `kill` (a `Died` with a killer), `death` (any `Died`), `ragdoll` (a
-//! body became a ragdoll, `map::ragdoll::Ragdolled`), `blast` (a
-//! `core::Explosion`). `shot`, `hit`, `kill`, `death`, `ragdoll` and
+//! body became a ragdoll, `map::ragdoll::Ragdolled`), `blast` (any
+//! game's blast, `weapon::grenade::BlastDealt`, or a `core::Explosion`).
+//! `shot`, `hit`, `kill`, `death`, `ragdoll` and
 //! `blast` hold on the frame they happen; `map_loaded`, `match` and
 //! `spawned` while they are so.
 //!
 //! The log, `<out>/scene.log`: every console line, directive, fact and
-//! picture with its frame number, and every `HitMeasured` and
-//! `KillMeasured` (`chimera_sim::minigame::targets`) as it came, so a scene
+//! picture with its frame number, and every `HitMeasured`,
+//! `KillMeasured`, `BlastMeasured` and `PropHit`
+//! (`chimera_sim::minigame::targets`) as it came, and the console's
+//! output (lines starting `| `: `target list`, `prop group`), so a scene
 //! is also a measurement. The run exits when the script is done and its
 //! pictures are saved (0), or on a timeout (3).
 //!
@@ -43,9 +46,8 @@
 //! fact's frame and a picture's moment depend on the machine's frame rate
 //! where the simulation's tick and the frame differ; the first picture
 //! waits for no pipelines (`capture`'s `--screenshot` does): a scene
-//! should `wait` some frames after `spawned` first. Grenades' own blasts
-//! are no `core::Explosion` (only map logic's are), so `blast` misses
-//! them.
+//! should `wait` some frames after `spawned` first. A game whose blast
+//! writes no `BlastDealt` (TF2's own, for now) is no `blast`.
 
 use std::{
     path::PathBuf,
@@ -60,8 +62,8 @@ use bevy::{
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
 };
-use chimera_sim::minigame::targets::{HitMeasured, KillMeasured};
-use chimera_sim::weapon::{WeaponEvent, WeaponEventKind};
+use chimera_sim::minigame::targets::{BlastMeasured, HitMeasured, KillMeasured, PropHit, blast_line};
+use chimera_sim::weapon::{WeaponEvent, WeaponEventKind, grenade::BlastDealt};
 
 use super::ClientArgs;
 use crate::core::{DamageTaken, Dead, Died, Explosion, LocalPlayer, MapLoads};
@@ -271,7 +273,10 @@ fn facts_now(world: &mut World, cursors: &mut FactCursors) -> u16 {
     if kill {
         bits |= Fact::Kill.bit();
     }
-    if read_count(world, &mut cursors.blast, |_| true) {
+    // Any game's blast (`BlastDealt`: grenades', rockets', map logic's
+    // through the engine's blast) or an explosion with no blast rule.
+    let dealt = read_count(world, &mut cursors.dealt, |_| true);
+    if read_count(world, &mut cursors.blast, |_| true) || dealt {
         bits |= Fact::Blast.bit();
     }
     bits
@@ -283,11 +288,35 @@ struct FactCursors {
     taken: MessageCursor<DamageTaken>,
     died: MessageCursor<Died>,
     blast: MessageCursor<Explosion>,
+    dealt: MessageCursor<BlastDealt>,
     loads: Option<u32>,
 }
 
-fn measured(world: &mut World, mut hits: Local<MessageCursor<HitMeasured>>, mut kills: Local<MessageCursor<KillMeasured>>) {
+fn measured(
+    world: &mut World,
+    mut hits: Local<MessageCursor<HitMeasured>>,
+    mut kills: Local<MessageCursor<KillMeasured>>,
+    mut more: Local<(MessageCursor<BlastMeasured>, MessageCursor<PropHit>, u64)>,
+) {
     let mut lines = Vec::new();
+    // The console's output since the last frame (`target list`, `prop
+    // group`), each line marked.
+    if let Some(c) = world.get_resource::<crate::console::Console>() {
+        let new = (c.printed.saturating_sub(more.2) as usize).min(c.output.len());
+        lines.extend(c.output[c.output.len() - new..].iter().map(|l| format!("| {}", l.text)));
+        more.2 = c.printed;
+    }
+    if let Some(m) = world.get_resource::<Messages<BlastMeasured>>() {
+        lines.extend(more.0.read(m).map(blast_line));
+    }
+    if let Some(m) = world.get_resource::<Messages<PropHit>>() {
+        for p in more.1.read(m) {
+            lines.push(format!(
+                "PropHit attacker={:?} prop={:?} piece={} distance={:.1}m t={:.3}",
+                p.attacker, p.prop, p.piece, p.distance_m, p.time
+            ));
+        }
+    }
     if let Some(m) = world.get_resource::<Messages<HitMeasured>>() {
         for h in hits.read(m) {
             lines.push(format!(

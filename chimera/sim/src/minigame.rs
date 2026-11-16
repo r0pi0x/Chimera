@@ -60,7 +60,8 @@
 //!   local player onto a rung; `rung`, `rung_command`: by number, gun or
 //!   step, any player, `+rung` at launch), `minigame_win` (the local player wins);
 //!   `target` (`targets`: a sandbox's practice targets and their measured
-//!   hits and kills).
+//!   hits, kills and blasts), `prop` (`props`: its bottles, tin cans and
+//!   target board).
 //!
 //! - Results: once the match is decided `results::MatchResults` (winner,
 //!   each player's final rung, kills and deaths) is kept for the HUDs
@@ -115,6 +116,7 @@ pub mod runtime;
 pub mod spawn_score;
 pub mod spawns;
 pub mod targets;
+pub mod props;
 pub mod vote;
 pub mod wins;
 
@@ -592,6 +594,7 @@ impl Plugin for MinigamePlugin {
         power::plugin(app);
         rung_command::plugin(app);
         targets::plugin(app);
+        props::plugin(app);
         app.console_command(
             "chimera:minigames",
             "List the minigames (id: name, players, maps, rules module), the one playing marked *.",

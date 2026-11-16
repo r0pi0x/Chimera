@@ -22,8 +22,8 @@
 //! - **Props** (not started): `PropSpec` (bottles, tin cans, a target board
 //!   at a distance), listed in `BenchView::props`.
 //! - **Options** (`SandboxOptions`): endless ammo (the sandbox's refill),
-//!   take no damage (`god`), half speed (not built), third person (a
-//!   command), blast rings (on by default). `SandboxOptions::command` is
+//!   take no damage (`god`), half speed (`host_timescale 0.5`), third
+//!   person (a command), blast rings (on by default). `SandboxOptions::command` is
 //!   the console line each toggle sends.
 //! - **The fake** (`fake_bench`, while `FakeBench` is in): applies the
 //!   requests to `BenchView` at once (a spawn past 150 m is refused, as a
@@ -37,9 +37,13 @@
 //!   crosshair's line (within `targets::AIM_RADIUS`) makes `LookPanel`;
 //!   `targets::characters` makes the picker's `CharacterCatalogue`.
 //!
-//! Known shortcuts: props and blasts have no mechanics yet (props stay a
-//! client-side list; no blast is measured); half speed isn't built; the
-//! look panel picks by the crosshair's line, not the game's own trace.
+//!   Props go to `targets::props` (spawn, remove, reset, clear) and come
+//!   back from `Prop` and `ShotGroup`; the local player's
+//!   `targets::BlastMeasured` become the range's `BlastMeasured`.
+//!
+//! Known shortcuts: half speed is `host_timescale 0.5` (sent by the
+//! option); the look panel picks by the crosshair's line, not the game's
+//! own trace.
 
 use bevy::prelude::*;
 
@@ -128,6 +132,8 @@ pub enum BenchRequest {
     Clear,
     AddProp(PropSpec),
     RemoveProp(BenchId),
+    /// Stand a prop's pieces up again, clear a board's group.
+    ResetProp(BenchId),
 }
 
 /// A target as the bench lists it.
@@ -150,6 +156,10 @@ pub struct TargetRow {
 pub struct PropRow {
     pub id: BenchId,
     pub spec: PropSpec,
+    /// Pieces standing, of how many (bottles 6, cans 5, the board 1).
+    pub standing: (u32, u32),
+    /// The board's group: hits, spread and mean radius (m).
+    pub group: Option<(usize, f32, f32)>,
 }
 
 /// The targets and props (module doc).
@@ -234,9 +244,13 @@ pub struct LookedAt {
 #[derive(Message, Clone, Debug, PartialEq)]
 pub struct BlastMeasured {
     pub at: Vec3,
-    /// Full damage inside `inner`, none past `outer` (m).
+    /// Full damage inside `inner`, falling to `edge_damage` at `outer`
+    /// (m; none past it).
     pub inner: f32,
     pub outer: f32,
+    /// At the centre and at `outer`, points.
+    pub max_damage: f32,
+    pub edge_damage: f32,
     /// Each body hit: where, and the damage it took.
     pub hits: Vec<(Vec3, f32)>,
 }
@@ -310,6 +324,7 @@ impl SandboxOptions {
             // `god` toggles: sent only when it must change.
             SandboxOption::NoDamage => Some("god".into()),
             SandboxOption::ThirdPerson => Some(if on { "thirdperson" } else { "firstperson" }.into()),
+            SandboxOption::HalfSpeed => Some(if on { "host_timescale 0.5" } else { "host_timescale 1" }.into()),
             _ => None,
         }
     }
@@ -382,9 +397,16 @@ pub fn fake_bench(fake: Option<ResMut<FakeBench>>, mut requests: MessageReader<B
             }
             BenchRequest::AddProp(p) => {
                 fake.next += 1;
-                v.props.push(PropRow { id: fake.next, spec: p.clone() });
+                let n = if p.kind == "bottles" { 6 } else if p.kind == "tin_cans" { 5 } else { 1 };
+                v.props.push(PropRow { id: fake.next, spec: p.clone(), standing: (n, n), group: None });
             }
             BenchRequest::RemoveProp(id) => v.props.retain(|p| p.id != *id),
+            BenchRequest::ResetProp(id) => {
+                if let Some(p) = v.props.iter_mut().find(|p| p.id == *id) {
+                    p.standing.0 = p.standing.1;
+                    p.group = None;
+                }
+            }
         }
         if *view != v {
             *view = v;
@@ -471,18 +493,16 @@ pub fn bridge_requests(world: &mut World) {
             }
             BenchRequest::Clear => {
                 tg::clear(world);
-                world.resource_mut::<BenchView>().props.clear();
+                chimera_sim::minigame::props::clear(world);
                 Ok(())
             }
-            // Props have no mechanics yet: a client-side list.
-            BenchRequest::AddProp(p) => {
-                let mut v = world.resource_mut::<BenchView>();
-                let id = v.props.iter().map(|p| p.id).max().unwrap_or(1 << 40) + 1;
-                v.props.push(PropRow { id, spec: p });
-                Ok(())
-            }
+            BenchRequest::AddProp(p) => chimera_sim::minigame::props::spawn(world, &tg::SpawnProp { spec: tg::PropSpec { kind: p.kind, distance_m: p.distance_m }, by: None }).map(|_| ()),
             BenchRequest::RemoveProp(id) => {
-                world.resource_mut::<BenchView>().props.retain(|p| p.id != id);
+                chimera_sim::minigame::props::remove(world, Entity::from_bits(id));
+                Ok(())
+            }
+            BenchRequest::ResetProp(id) => {
+                chimera_sim::minigame::props::reset(world, Entity::from_bits(id));
                 Ok(())
             }
         };
@@ -500,6 +520,7 @@ pub fn bridge_view(
     ui: Res<super::SandboxUi>,
     fake: Option<Res<FakeBench>>,
     targets: Query<(Entity, &tg::Target, Option<&tg::TargetRespawn>)>,
+    props: Query<(Entity, &tg::Prop, Option<&tg::ShotGroup>)>,
     mut refused: Option<MessageReader<tg::TargetRefused>>,
     mut view: ResMut<BenchView>,
 ) {
@@ -533,9 +554,26 @@ pub fn bridge_view(
         .collect();
     rows.sort_by_key(|r| r.0);
     let rows: Vec<TargetRow> = rows.into_iter().map(|r| r.1).collect();
+    let mut prows: Vec<(u32, PropRow)> = props
+        .iter()
+        .map(|(e, p, g)| {
+            (
+                p.number,
+                PropRow {
+                    id: e.to_bits(),
+                    spec: PropSpec { kind: p.spec.kind.clone(), distance_m: p.spec.distance_m },
+                    standing: (p.standing, p.pieces),
+                    group: g.filter(|g| !g.hits.is_empty()).map(|g| (g.hits.len(), g.spread_m, g.mean_radius_m)),
+                },
+            )
+        })
+        .collect();
+    prows.sort_by_key(|r| r.0);
+    let prows: Vec<PropRow> = prows.into_iter().map(|r| r.1).collect();
     let why = refused.as_mut().and_then(|r| r.read().last().map(|r| r.reason.clone()));
-    if view.targets != rows || why.is_some() {
+    if view.targets != rows || view.props != prows || why.is_some() {
         view.targets = rows;
+        view.props = prows;
         if why.is_some() {
             view.refused = why;
         }
@@ -641,6 +679,34 @@ pub fn bridge_facts(
             });
             last_hit.0.remove(&k.victim.to_bits());
         }
+    }
+}
+
+/// The mechanics' blasts by the local player into the range's rings.
+pub fn bridge_blasts(
+    ui: Res<super::SandboxUi>,
+    me: Query<Entity, With<crate::core::LocalPlayer>>,
+    mut seen: Option<MessageReader<tg::BlastMeasured>>,
+    mut out: MessageWriter<BlastMeasured>,
+) {
+    let Some(seen) = seen.as_mut() else { return };
+    if !ui.on || ui.staged {
+        seen.clear();
+        return;
+    }
+    let me = me.iter().next();
+    for b in seen.read() {
+        if b.attacker.is_some() && b.attacker != me {
+            continue;
+        }
+        out.write(BlastMeasured {
+            at: b.at,
+            inner: b.inner,
+            outer: b.outer,
+            max_damage: b.max_damage * 100.0,
+            edge_damage: b.edge_damage * 100.0,
+            hits: b.hits.iter().map(|h| (h.at, h.damage * 100.0)).collect(),
+        });
     }
 }
 

@@ -1,0 +1,29 @@
+# A rocket among three practice targets at different distances from its
+# blast: one `BlastMeasured` line whose victims' damage matches their
+# `HitMeasured` lines, the blast and a ragdoll photographed (a scene
+# script: chimera_client's `scene`).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox cs_source:de_dust2 \
+#       --scene apps/ultimate_gun_game/scenes/blast_three.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+rung halo_ce:rocket_launcher
+setang 0 0
+target add cs_source:weapon_ak47 9
+setang 0 6
+target add cs_source:weapon_ak47 10.5
+setang 0 -8
+target add cs_source:weapon_ak47 12
+setang 0 0
+wait 240
+target look 1
+shot blast_before
+shot_after blast 2 blast_moment
+shot_after ragdoll 90 blast_ragdoll
++attack
+wait 2
+-attack
+wait_for blast 600
+wait 120
+target list
+wait 30
