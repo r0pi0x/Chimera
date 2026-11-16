@@ -102,6 +102,16 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "read-only answers (`&World`): the match's weapons and a game's sets for the asset offer",
     ),
     (
+        "chimera/net/src/net/units.rs",
+        "UnitNeeds",
+        "read-only answers (`&World`): the sets a unit fetched on demand needs (TF2: a gun's class bodies)",
+    ),
+    (
+        "chimera/sim/src/minigame/gun_files.rs",
+        "GunFiles",
+        "a decision the rung switch asks (are a gun's files here?) whose answer, when not, is a request into the asset side's download queue (`net::units`)",
+    ),
+    (
         "chimera/net/src/net/assets.rs",
         "JoinSets",
         "read-only answers (`&World`): the sets a client part wants with the match's download (a game's first music tracks)",
