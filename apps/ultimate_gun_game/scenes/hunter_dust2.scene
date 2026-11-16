@@ -1,0 +1,34 @@
+# Halo's Hunter as a practice target on de_dust2 (a scene script:
+# chimera_client's `scene`; the body needs its generated sets,
+# `character/hunter` and `voice/hunter`, game::campaign::unit): the Hunter
+# at 5 m beside a Spartan, the T side's double door behind them for scale,
+# then the Hunter alone firing its cannon at the player.
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox cs_source:de_dust2 \
+#       --scene apps/ultimate_gun_game/scenes/hunter_dust2.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 1500                    # the units in, pipelines settled
+halo_ce:body status
+rung halo_ce:plasma_pistol   # a Halo gun in the player's hands
+setpos -82 -555 208          # the T side, a double door 12 m ahead
+setang 2 359
+target add halo_ce:spartan 5
+target set all gun halo_ce:assault_rifle   # before the Hunter: it holds only its cannon
+setang 2 9
+target add halo_ce:hunter 5
+setang 2 4
+wait 400
+shot hunter_spartan_door_5m
+halo_ce:body status
+target list
+target remove all
+target add halo_ce:hunter 7
+target set all gun halo_ce:hunter_fuel_rod
+target set all shoots
+wait 200
+shot hunter_firing_a
+wait 20
+shot hunter_firing_b
+wait 20
+shot hunter_firing_c
+target list

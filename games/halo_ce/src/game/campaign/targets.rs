@@ -39,6 +39,7 @@ pub fn target_id(kind: BodyKind) -> (&'static str, &'static str) {
         BodyKind::Grunt => ("halo_ce:grunt", "Grunt"),
         BodyKind::Jackal => ("halo_ce:jackal", "Jackal"),
         BodyKind::Marine => ("halo_ce:marine", "Marine"),
+        BodyKind::Hunter => ("halo_ce:hunter", "Hunter"),
     }
 }
 

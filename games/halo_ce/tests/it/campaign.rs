@@ -109,7 +109,7 @@ fn guns_name_who_carries_them() {
         assert_eq!(data.weights(gun), vec![(Marine, 1.0), (Spartan, 1.0)], "{gun}");
     }
     assert_eq!(data.weights("halo_ce:pistol"), vec![(Spartan, 1.0)], "the Marine animates it, the campaign never gives it");
-    assert!(CampaignData::parse("[guns.\"halo_ce:needler\"]\nhunter = 1.0\n").is_err(), "an unknown body");
+    assert!(CampaignData::parse("[guns.\"halo_ce:needler\"]\nflood = 1.0\n").is_err(), "an unknown body");
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn the_kinds_are_sandbox_targets_once_loaded() {
     world.insert_resource(t);
     world.init_resource::<UnitsOnDemand>();
     let ids: Vec<&str> = targets::characters().iter().map(|c| c.id).collect();
-    assert_eq!(ids, ["halo_ce:elite", "halo_ce:grunt", "halo_ce:jackal", "halo_ce:marine"]);
+    assert_eq!(ids, ["halo_ce:elite", "halo_ce:grunt", "halo_ce:jackal", "halo_ce:marine", "halo_ce:hunter"]);
     assert!(!targets::holds(&world, "halo_ce:elite", "halo_ce:plasma_rifle"), "not before its unit loaded");
     world.resource_mut::<UnitsOnDemand>().mark_ready(BodyKind::Elite);
     assert!(targets::holds(&world, "halo_ce:elite", "halo_ce:plasma_rifle"));

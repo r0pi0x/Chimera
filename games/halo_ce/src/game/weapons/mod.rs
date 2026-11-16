@@ -25,7 +25,8 @@
 //! - `explode`: a detonation's area damage (falloff, sight by the core
 //!   probes) and push;
 //! - `grenades`: the counts carried and the throw on the grenade button;
-//! - `rung`: the party ladder's grenade rung (the empty pistol, frags);
+//! - `rung`: the party ladder's special rungs: the grenade rung (the
+//!   empty pistol, frags) and the Hunter's cannon (worn by the Hunter);
 //! - `pickups`: the netgame equipment on the item clock, powerups,
 //!   grenades, ammunition from duplicates and the weapon swap;
 //! - `systems`: the engine side: the holders' ticks (switches, the throw,
@@ -180,6 +181,7 @@ pub const DATA: &[(&str, &str)] = &[
     doc!("plasma_pistol.toml"),
     doc!("flamethrower.toml"),
     doc!("frag_grenade.toml"),
+    doc!("hunter_fuel_rod.toml"),
 ];
 
 /// Its guns' names (data/display_names.toml).

@@ -13,8 +13,8 @@ use halo_ce::game::vitality::{
 fn the_tables_parse_and_hold_every_id() {
     let s = Spartan::load();
     let fx = DamageEffects::load();
-    assert_eq!(fx.0.len(), ids::ALL.len());
-    for id in ids::ALL {
+    assert_eq!(fx.0.len(), ids::ALL.len() + ids::CAMPAIGN.len());
+    for id in ids::ALL.into_iter().chain(ids::CAMPAIGN) {
         assert!(fx.get(id).is_some(), "{id:?}");
     }
     assert_eq!(s.model.materials.len(), 4);

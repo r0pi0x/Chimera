@@ -18,6 +18,16 @@
 //!   (`voice_set_of`, file `voice_<name>.map`: the dialogue and what only
 //!   it reaches), and a body loads the one it speaks (`load_voice`).
 //!
+//! - its own weapons (`BodyDef::weapons`: the Hunter's cannon), each a
+//!   file of the body's set (`weapon_path`, `weapon_<name>.map`: a body
+//!   and its own gun are what "play as it" downloads, characters.md
+//!   section 8; a set of its own would be named as the recorded
+//!   `weapon/<id>` sets of Halo's guns are): the weapon's closure less HUD
+//!   interfaces. Nothing reads it in the game yet: the
+//!   cannon's numbers are its data's (data/weapons/hunter_fuel_rod.toml),
+//!   and its looks (the rod, its effects) would join the effects' library
+//!   once a late join of a weapon's effects exists (`fx::load`).
+//!
 //! Each is written as a small map file (`unit::cut`: the donor's header,
 //! index and paths, the unit's tags and raw data at their own addresses,
 //! zeros elsewhere) that `MapFile::load` reads unchanged, so the body is
@@ -110,6 +120,17 @@ pub fn voice_path_of(id: &str, name: &str) -> String {
     format!("{}/voice_{name}.map", dir(id))
 }
 
+/// A character's own weapon's name (`BodyDef::weapons`): the tag's name,
+/// spaces as underscores (`hunter_fuel_rod`).
+pub fn weapon_name(tag: &str) -> String {
+    dialogue_name(tag).replace(' ', "_")
+}
+
+/// That weapon's unit's file (beside its character's).
+pub fn weapon_path(id: &str, tag: &str) -> String {
+    format!("{}/weapon_{}.map", dir(id), weapon_name(tag))
+}
+
 /// A dialogue tag's name: its path's last part (`bisenti` of the
 /// Marines' `...\bisenti`), lower case.
 pub fn dialogue_name(path: &str) -> String {
@@ -133,6 +154,8 @@ pub struct Converted {
     /// A kind with several voices (`BodyDef::voices`): each one's name,
     /// file and measure, in `BodyDef::voices`' order.
     pub voices: Vec<(String, Vec<u8>, unit::Unit)>,
+    /// Its own weapons (`BodyDef::weapons`): each tag, file and measure.
+    pub weapons: Vec<(String, Vec<u8>, unit::Unit)>,
 }
 
 /// The SHA-256 of `bytes`, as hex.
@@ -167,6 +190,15 @@ pub fn convert(id: &str, def: &BodyDef, donor: &[u8]) -> Result<Converted, Strin
         let u = unit::measure(&map, tags).map_err(e)?;
         voices.push((name.clone(), unit::cut(&map, &u).map_err(e)?, u));
     }
+    // Its own weapons: each the weapon's closure (HUD interfaces left out,
+    // characters.md section 8, "The weapons characters need").
+    let mut weapons = Vec::new();
+    for tag in &def.weapons {
+        let w = map.find(class::WEAPON, tag).ok_or_else(|| format!("{}: no weapon `{tag}`", def.donor_map))?.index();
+        let tags = unit::closure(&map, &[w], |t| t.index() == w || !character_excluded(t));
+        let u = unit::measure(&map, tags).map_err(e)?;
+        weapons.push((tag.clone(), unit::cut(&map, &u).map_err(e)?, u));
+    }
     let voice: BTreeSet<u16> = if def.voices.is_empty() {
         unit::closure(&map, &dialogues, enter).difference(&body).copied().collect()
     } else {
@@ -194,6 +226,7 @@ pub fn convert(id: &str, def: &BodyDef, donor: &[u8]) -> Result<Converted, Strin
         body_unit,
         voice_unit,
         voices,
+        weapons,
     })
 }
 
@@ -216,7 +249,11 @@ pub fn generated(mount: &Mount, only: &str) -> Vec<(String, Vec<(String, Vec<u8>
         match converted {
             Ok(c) => {
                 if wanted(&body_set) {
-                    out.push((body_set, vec![(body_path(id), c.body), (recipe_path(id), c.recipe.into_bytes())]));
+                    // Its own weapons go with the body: "play as" it needs
+                    // both (characters.md section 8).
+                    let mut files = vec![(body_path(id), c.body), (recipe_path(id), c.recipe.into_bytes())];
+                    files.extend(c.weapons.into_iter().map(|(tag, bytes, _)| (weapon_path(id, &tag), bytes)));
+                    out.push((body_set, files));
                 }
                 if def.voices.is_empty() && wanted(&voice_set) {
                     out.push((voice_set, vec![(voice_path(id), c.voice)]));
@@ -227,6 +264,7 @@ pub fn generated(mount: &Mount, only: &str) -> Vec<(String, Vec<(String, Vec<u8>
                         out.push((set, vec![(voice_path_of(id, &name), bytes)]));
                     }
                 }
+
             }
             Err(e) => println!("{body_set}: {e}"),
         }
@@ -440,7 +478,25 @@ pub fn load_on_demand(
                 let textures = std::sync::Arc::new(textures);
                 let held_textures = std::sync::Arc::new(held.textures);
                 let sounds = std::sync::Arc::new(sounds);
+                // Its first-person view from its own model (`first_person`),
+                // the eye at its standing camera.
+                let views: Vec<_> = data
+                    .body(kind)
+                    .and_then(|d| d.first_person.clone())
+                    .map(|view| {
+                        let base = crate::game::movement::MovementData::builtin();
+                        let eye = data.movement(kind, &base).map_or(base.camera_stand, |m| m.camera_stand) * crate::game::METERS_PER_UNIT;
+                        view.guns
+                            .iter()
+                            .map(|g| (std::sync::Arc::new(super::first_person::view_model(&model, &view, g, eye)), view.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 commands.queue(move |world: &mut World| {
+                    for (m, view) in views {
+                        info!("halo_ce: the {} body is the first-person view of {} ({} meshes kept)", kind.id(), m.key, m.model.meshes.len());
+                        world.get_resource_or_init::<super::first_person::BodyViews>().0.insert(m.key.clone(), (m, textures.clone(), view));
+                    }
                     world.get_resource_or_init::<super::voice::CampaignSounds>().0.insert(kind, sounds);
                     for h in held.models {
                         crate::map::add_held_model(world, h, held_textures.clone());

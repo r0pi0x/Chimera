@@ -255,6 +255,7 @@ pub fn drive(
     )>,
     guns: Query<(&Weapon, &HaloGun, Option<&Magazine>, &HaloWeapon)>,
     mut events: MessageReader<WeaponEvent>,
+    body_views: Option<Res<super::campaign::first_person::BodyViews>>,
     mut commands: Commands,
 ) {
     let events: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
@@ -273,6 +274,11 @@ pub fn drive(
         };
         let Some(mut view) = view else { continue };
         view.show(Some(weapon.id), models.as_deref());
+        // A gun seen as its body's own arm: the body's view poses it
+        // (`campaign::first_person`), not the first-person machine.
+        if body_views.as_deref().is_some_and(|b| b.has(weapon.id)) {
+            continue;
+        }
         let Some(set) = view
             .animator
             .as_ref()

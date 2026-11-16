@@ -569,6 +569,31 @@ backlog.
   `halo_ce:campaign_bodies` (off by default) draws it on the plasma
   rifle and needler rungs by data/campaign.toml; `halo_ce:body` forces
   one. Next: the voice, the Elite's hand marker for the held gun.
+  Stage two (on main): the Grunt, Jackal and Marine, the voices, each
+  body's own hand. Stage three (branch `halo-hunter`): our own lines and
+  the Hunter. *Lines* (the owner, 2026-11-16: "it should be obvious when
+  you become one of the Halo characters that you start talking like
+  them"): on becoming a character (a rung gives it, or it comes back as
+  it after another kind or another game's character) the body says one
+  line of its own voice, heard by all, once per becoming (the same
+  character again only a minute after its last); after a kill, sometimes
+  (a chance and a cooldown), a kill or celebration line. Which slots each
+  character says is data (data/campaign.toml, `lines`, by the dialogue's
+  slot names, `campaign::voice::SLOT_NAMES`, read from the disc); no
+  voice set needed widening (each holds its whole dialogue). *The
+  Hunter*: its units (`character/hunter`, `voice/hunter`) and its
+  cannon's (cut into the `character/hunter` set, not read in the game yet);
+  200 body, no shield, its skin a head; its cannon a special rung
+  (`weapons::rung::HUNTER_RUNG`, every number the tag's on d20) whose
+  holder is always the Hunter, drawn by a ladder only with
+  `halo_ce:campaign_bodies` 1; its first-person view is its own arm cut
+  from its third-person model (`campaign::first_person`: kept bones and
+  the view's offset in data), posed by its own idle, aim, fire and
+  melee: the seam later characters' own hands can use. Open: the
+  cannon's rod and effects are not drawn on another game's map (its
+  effects would need a late join of a weapon's effects, `fx::load`); its
+  shot leaves from the eye's line, not its arm (the spec's open
+  question).
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the
