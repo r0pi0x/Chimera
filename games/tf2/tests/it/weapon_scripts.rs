@@ -176,3 +176,82 @@ fn a_gun_without_a_script_keeps_its_text() {
     assert_eq!(text, BULLET);
     assert!(s.source.starts_with("spec fallback"));
 }
+
+/// A dedicated server with neither TF2's install nor the scripts' key:
+/// with a credential of its own it fetches TF2's `base` from the asset
+/// service before it starts (`chimera_net::net::server_assets`), the
+/// scripts in it stored decrypted (here: invented plain scripts), and its
+/// guns' numbers and so its `tf2:weapons` server documents come from
+/// them, read from its store with nothing left to fetch, not the specs'
+/// fallback.
+#[test]
+fn a_server_without_install_or_key_takes_its_numbers_from_the_asset_service() {
+    use std::collections::BTreeSet;
+
+    use chimera_core::mount::{
+        FileSource, Mount,
+        assets::{AssetSettings, CachedFiles, FileRecord, Manifest, RemoteConfig, Store, accounts::Accounts, server},
+    };
+    use chimera_net::net::server_assets::{self, ServerFiles, Via};
+    use chimera_sim::server_docs::ServerDocs;
+    use tf2::game::weapons::SERVER_DOCS;
+
+    let dir = std::env::temp_dir().join(format!("tf2_server_files_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    // The host's published store: TF2's `base` with the scattergun's and
+    // the rocket launcher's scripts (plain, as `chimera_pack` packs them).
+    let published = Store::new(dir.join("published"));
+    let mut m = Manifest::new("tf2", "1", None);
+    for name in ["tf_weapon_scattergun", "tf_weapon_rocketlauncher"] {
+        let text = match name {
+            "tf_weapon_scattergun" => r#""WeaponData" { "WeaponType" "primary" "Damage" "7" "BulletsPerShot" "3" "clip_size" "5" }"#,
+            _ => r#""WeaponData" { "damage" "60" "ProjectileType" "projectile_rocket" "clip_size" "3" }"#,
+        };
+        let path = format!("scripts/{name}.ctx");
+        let p = published.put(text.as_bytes()).unwrap();
+        m.files.insert(path.clone(), FileRecord { id: p.id, size: text.len() as u64, stored: p.stored });
+        m.sets.entry("base".into()).or_default().insert(path);
+    }
+    m.save(&published.manifest_path("tf2", "1")).unwrap();
+    let accounts = Accounts::path(&published.root);
+    let mut a = Accounts::load(&accounts).unwrap();
+    let (_, token) = a.add("game-server", None, "test").unwrap();
+    a.save(&accounts).unwrap();
+    let running = server::serve(server::Service::new(published.clone()).unwrap(), "127.0.0.1:0", 2).unwrap();
+    // The server: an empty store of its own, the service on this machine
+    // with its token.
+    let own = Store::new(dir.join("server"));
+    let files = ServerFiles {
+        settings: AssetSettings {
+            store: Some(own.clone()),
+            use_install: false,
+            builds: Default::default(),
+            remote: Some(RemoteConfig { url: format!("http://{}", running.addr), token, key: None, fingerprint: None }),
+            lock: None,
+        },
+        served: BTreeSet::from(["tf2".to_string()]),
+        via: Via::Config,
+    };
+    let files = server_assets::fetch_at_start(files, "greybox");
+    assert!(own.manifest_path("tf2", "1").is_file(), "the manifest fetched");
+    let mut mount = Mount::default();
+    let cached = CachedFiles::open(&own, "tf2", "1").unwrap();
+    assert!(cached.read("scripts/tf_weapon_scattergun.ctx").is_some_and(|r| r.is_ok()), "in the store");
+    mount.push(cached);
+    // No key: the stored scripts are plain.
+    let numbers = GunNumbers::from_mount(Some(&mount), None);
+    let source = |gun: &str| numbers.sources.iter().find(|s| s.gun == gun).unwrap().clone();
+    assert!(source(SCATTERGUN).from_script, "{:?}", source(SCATTERGUN));
+    assert!(source(ROCKET_LAUNCHER).from_script, "{:?}", source(ROCKET_LAUNCHER));
+    assert!(source(SHOTGUN).source.starts_with("spec fallback"), "a gun with no script stays the spec's");
+    let sim = Sim::new(WithNumbers(numbers), GreyboxMapPlugin);
+    let catalog = sim.app.world().resource::<WeaponCatalog>();
+    let scatter = catalog.get(SCATTERGUN).unwrap();
+    assert_eq!((scatter.damage.as_ref().unwrap().amount, scatter.hitscan.as_ref().unwrap().pellets), (7.0, 3));
+    let docs = sim.app.world().resource::<ServerDocs>().get(SERVER_DOCS).unwrap();
+    let scatter_doc = docs.docs.iter().find(|(_, t)| t.contains(&format!("\"{SCATTERGUN}\""))).unwrap();
+    assert!(scatter_doc.1.contains("amount = 7"), "the server documents carry the script's numbers: {}", scatter_doc.1);
+    drop(files);
+    drop(running);
+    let _ = std::fs::remove_dir_all(&dir);
+}

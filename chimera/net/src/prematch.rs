@@ -56,7 +56,8 @@
 //!   (default 1) are connected; or once `mp_lobby_max_wait` s (default
 //!   90) have passed since the lobby began or the first human connected,
 //!   whichever is later, with the stragglers joining as late joiners when
-//!   they are ready. A countdown under way isn't reset by a joiner. With
+//!   they are ready. Neither starts while the server fetches its own
+//!   game files for the match (`net::server_assets`). A countdown under way isn't reset by a joiner. With
 //!   no human connected it waits (nothing to play for).
 //! - **Console**: `lobby` (the rows, the server's or as a client heard
 //!   them), `lobby_start [s]` (the host: the countdown now, of `s`
@@ -646,7 +647,9 @@ pub(crate) fn serve(world: &mut World) {
     let not_ready = rows.iter().filter(|r| !r.ready()).count() as u32;
     let to_come = s.min_players.saturating_sub(humans);
     let wait_ends = lobby.humans_since.map(|h| h.max(lobby.began) + s.max_wait as f64);
-    if lobby.countdown_ends.is_none() && !lobby.host_start {
+    // The server's own game files for the match first (`server_assets`).
+    let files_coming = crate::net::server_assets::fetching(world);
+    if lobby.countdown_ends.is_none() && !lobby.host_start && !files_coming {
         if humans > 0 && not_ready == 0 && to_come == 0 {
             info!("pre-match lobby: everyone is ready; the match starts in {} s", s.countdown);
             lobby.countdown_ends = Some(now + s.countdown.max(0.0) as f64);
@@ -661,7 +664,7 @@ pub(crate) fn serve(world: &mut World) {
             lobby.countdown_ends = Some(now + s.countdown.max(0.0) as f64);
         }
     }
-    if lobby.countdown_ends.is_some_and(|t| now + 1e-9 >= t) {
+    if lobby.countdown_ends.is_some_and(|t| now + 1e-9 >= t) && !files_coming {
         end(world, true);
         return;
     }

@@ -98,7 +98,10 @@ access in `%LOCALAPPDATA%\chimera\asset-access.toml`, used when
 ## Day to day
 
 Work as with an install: `cargo run --features dev`, `cargo test ...`,
-`cargo nextest run --features dev`, `mapsweep`, the dedicated servers. When
+`cargo nextest run --features dev`, `mapsweep`, the dedicated servers. A dedicated
+server fetches its games' `base` and start map before it starts and each
+match's sets before the match (playtest-hosting.md, "The server's own
+game files"). When
 a run opens a file the cache lacks, the mount fetches it together with the
 rest of its group in one request: the missing files of the smallest set
 holding it (a map's set, a weapon's), else the files beside it with the
