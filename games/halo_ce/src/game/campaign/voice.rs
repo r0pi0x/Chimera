@@ -48,14 +48,12 @@ use blam_formats::{
 };
 
 use super::{BodyDef, BodyKind};
-use crate::{
-    game::{
-        audio::library::{AudioLibrary, AudioSet, Compiler},
-        damage::HaloHurt,
-        vitality::{DamageEffects, Vitality, data::Category},
-    },
-    map::{GameSound, PlaySound, sound::SoundBank},
+use super::super::{
+    audio::library::{AudioLibrary, AudioSet, Compiler},
+    damage::HaloHurt,
+    vitality::{DamageEffects, Vitality, data::Category},
 };
+use crate::map::{GameSound, PlaySound, sound::SoundBank};
 
 /// The vocalization indices a worn body says (sounds.md's table).
 pub const PAIN_BODY_MINOR: usize = 6;
