@@ -162,7 +162,7 @@ area_m2 = 13948
 sight_m = 11.1
 spot_area_m2 = 14204
 spawns = 32
-spots = 12213
+spots = 12198
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 26.0, 8 = 11.2, 12 = 7.1 }
@@ -402,7 +402,7 @@ area_m2 = 14918
 sight_m = 12.2
 spot_area_m2 = 15153
 spawns = 30
-spots = 9582
+spots = 9561
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 25.3, 8 = 10.8, 12 = 6.9 }
@@ -573,7 +573,7 @@ area_m2 = 12900
 sight_m = 11.2
 spot_area_m2 = 13210
 spawns = 32
-spots = 10465
+spots = 10461
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 23.8, 8 = 10.2, 12 = 6.5 }
@@ -703,7 +703,7 @@ area_m2 = 7748
 sight_m = 7.6
 spot_area_m2 = 7752
 spawns = 30
-spots = 4054
+spots = 4053
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 21.1, 8 = 9.1, 12 = 5.8 }
@@ -713,7 +713,7 @@ area_m2 = 7704
 sight_m = 7.8
 spot_area_m2 = 7698
 spawns = 30
-spots = 4041
+spots = 4039
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 20.5, 8 = 8.8, 12 = 5.6 }
@@ -743,7 +743,7 @@ area_m2 = 8528
 sight_m = 11.5
 spot_area_m2 = 8618
 spawns = 32
-spots = 6579
+spots = 6572
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 15.3, 8 = 6.6, 12 = 4.2 }
@@ -753,7 +753,7 @@ area_m2 = 9014
 sight_m = 12.1
 spot_area_m2 = 9058
 spawns = 32
-spots = 6957
+spots = 6950
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 15.4, 8 = 6.6, 12 = 4.2 }
@@ -763,7 +763,7 @@ area_m2 = 8426
 sight_m = 11.2
 spot_area_m2 = 8488
 spawns = 32
-spots = 6761
+spots = 6753
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 15.5, 8 = 6.7, 12 = 4.2 }
@@ -913,7 +913,7 @@ area_m2 = 5661
 sight_m = 9.9
 spot_area_m2 = 5843
 spawns = 24
-spots = 3671
+spots = 3500
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 11.8, 8 = 5.1, 12 = 3.2 }
@@ -923,7 +923,7 @@ area_m2 = 6298
 sight_m = 9.4
 spot_area_m2 = 6395
 spawns = 24
-spots = 3913
+spots = 3733
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 13.8, 8 = 5.9, 12 = 3.8 }
@@ -1043,7 +1043,7 @@ area_m2 = 6135
 sight_m = 12.9
 spot_area_m2 = 6020
 spawns = 30
-spots = 3974
+spots = 3971
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 9.8, 8 = 4.2, 12 = 2.7 }
@@ -1053,7 +1053,7 @@ area_m2 = 7360
 sight_m = 10.4
 spot_area_m2 = 7509
 spawns = 32
-spots = 6358
+spots = 6356
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 14.5, 8 = 6.2, 12 = 4.0 }
@@ -1063,7 +1063,7 @@ area_m2 = 8267
 sight_m = 12.2
 spot_area_m2 = 8264
 spawns = 32
-spots = 7417
+spots = 7416
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 14.0, 8 = 6.0, 12 = 3.8 }
@@ -1083,7 +1083,7 @@ area_m2 = 8327
 sight_m = 12.3
 spot_area_m2 = 8426
 spawns = 26
-spots = 6002
+spots = 5996
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 14.0, 8 = 6.0, 12 = 3.8 }
@@ -1143,7 +1143,7 @@ area_m2 = 6278
 sight_m = 11.2
 spot_area_m2 = 6384
 spawns = 36
-spots = 6055
+spots = 6038
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 11.5, 8 = 4.9, 12 = 3.1 }
@@ -1253,7 +1253,7 @@ area_m2 = 8951
 sight_m = 15.1
 spot_area_m2 = 8994
 spawns = 32
-spots = 5735
+spots = 5678
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 12.2, 8 = 5.2, 12 = 3.3 }
