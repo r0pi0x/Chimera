@@ -37,6 +37,7 @@ mod pickups;
 mod power_curve;
 mod props;
 mod sandbox;
+mod sandbox_gun_files;
 mod sandbox_mechanics;
 mod sandbox_range;
 mod session;

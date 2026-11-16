@@ -47,6 +47,22 @@
 //!   later `rung` without `as` takes it off (the game's first registered
 //!   body worn, then the rung set again: its draw's body back).
 //!
+//! - **Waiting for a gun's files** (the sandbox only): a switch by any way
+//!   in (`rung <...>`, `rung next/prev`, `PutOnGun`, `put_on`, `move_to`,
+//!   a target's arming) asks `gun_files::gun_ready` for the gun it would
+//!   put in the hands; not ready, the player keeps the gun they hold and
+//!   carries `GunPending { gun, rung, body, since }` (since: real
+//!   seconds), checked each frame (`apply_gun_pending`, which queues world
+//!   work only while one waits) and applied the frame the files are in.
+//!   A newer pick replaces it (only the latest is applied; the older one's
+//!   files keep downloading); `rung next/prev` step from it. Each end is a
+//!   fact, `GunPickEnded { who, gun, rung, outcome, waited_s }`: `Applied`,
+//!   `Replaced` or `Dropped` (the sandbox stopped or the ladder changed:
+//!   nothing stays pending outside it). No asset side, an installed game
+//!   or a failed download: ready at once, the switch as before. Outside
+//!   the sandbox (a real match's `rung`) a switch is made at once as
+//!   before (the gun's files load on demand).
+//!
 //! Known shortcuts: the sandbox's kill still moves the player for the frame
 //! before `hold` puts them back (the same gun when it is the last rung's, a
 //! swap of the arming otherwise); a `+rung` on a network client is lost (the line is sent
@@ -119,12 +135,110 @@ fn usable(world: &World, ladder: &Ladder) -> usize {
 }
 
 /// `e` on `rung` of `ladder` (`ladder::set_rung`), staying there while the
-/// sandbox's rule holds.
-pub fn move_to(world: &mut World, e: Entity, rung: usize, ladder: &Ladder) {
+/// sandbox's rule holds. In the sandbox it waits for the gun's files
+/// (module doc, "Waiting for a gun's files"): false while it waits
+/// (`GunPending`), true when it was done now.
+pub fn move_to(world: &mut World, e: Entity, rung: usize, ladder: &Ladder) -> bool {
+    if !ready_or_wait(world, e, rung, ladder, None, false) {
+        return false;
+    }
+    move_now(world, e, rung, ladder);
+    true
+}
+
+fn move_now(world: &mut World, e: Entity, rung: usize, ladder: &Ladder) {
     ladder::set_rung(world, e, rung, ladder);
     if holding(world) {
         world.entity_mut(e).insert(Chosen(rung));
     }
+}
+
+/// A gun switch waiting for the gun's files (module doc, "Waiting for a
+/// gun's files"), on the player (or target) it is for. At most one: a
+/// newer pick replaces it.
+#[derive(Component, Clone, Debug, PartialEq)]
+pub struct GunPending {
+    /// The gun it waits for (what the rung puts in the hands: its
+    /// character's weapon on a character rung, else the rung's gun).
+    pub gun: &'static str,
+    /// The rung it puts the player on (0-based).
+    pub rung: usize,
+    /// The body asked for with it (`as <body>`, `PutOnGun::character`).
+    pub body: Option<String>,
+    /// When it was asked for: `Time<Real>` seconds since the app started
+    /// (real time: a download doesn't follow `host_timescale`).
+    pub since: f64,
+    /// A `put` (the body taken off or worn on applying) or a bare `move_to`.
+    put: bool,
+}
+
+/// How a pending gun switch ended (`GunPickEnded`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GunPickOutcome {
+    /// The gun's files came: the switch was made this frame.
+    Applied,
+    /// A newer pick for the same player took its place (its files keep
+    /// downloading).
+    Replaced,
+    /// The sandbox stopped, the ladder changed under it or the player went.
+    Dropped,
+}
+
+/// A fact: a pending gun switch (`GunPending`) ended.
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct GunPickEnded {
+    pub who: Entity,
+    pub gun: &'static str,
+    pub rung: usize,
+    pub outcome: GunPickOutcome,
+    /// Real seconds it waited.
+    pub waited_s: f64,
+}
+
+fn real_now(world: &World) -> f64 {
+    world.get_resource::<Time<Real>>().map_or(0.0, |t| t.elapsed_secs_f64())
+}
+
+/// What rung `rung` puts in the hands (`GunPending::gun`).
+fn gun_of(world: &World, ladder: &Ladder, rung: usize) -> &'static str {
+    ladder.shown_weapon(rung, world.get_resource::<crate::weapon::data::WeaponCatalog>()).unwrap_or("")
+}
+
+fn end(world: &mut World, who: Entity, p: &GunPending, outcome: GunPickOutcome) {
+    let waited_s = (real_now(world) - p.since).max(0.0);
+    info!("rung: {} for {who} {outcome:?} after {waited_s:.1} s", p.gun);
+    world.write_message(GunPickEnded { who, gun: p.gun, rung: p.rung, outcome, waited_s });
+}
+
+/// Whether `e`'s switch to `rung` (a `put` as `body`, or a bare move) may
+/// be made now: outside the sandbox always; in it when the gun's files are
+/// here (`gun_files::gun_ready`, which asks for them when not), else it is
+/// kept as `GunPending` (replacing an older pick) and false.
+fn ready_or_wait(world: &mut World, e: Entity, rung: usize, ladder: &Ladder, body: Option<&str>, put: bool) -> bool {
+    if !holding(world) {
+        return true;
+    }
+    let gun = gun_of(world, ladder, rung);
+    let ready = gun.is_empty() || super::gun_files::gun_ready(world, gun);
+    let old = world.get::<GunPending>(e).cloned();
+    let same = |o: &GunPending| o.rung == rung && o.body.as_deref() == body && o.put == put;
+    if ready {
+        if let Some(old) = old {
+            world.entity_mut(e).remove::<GunPending>();
+            let outcome = if same(&old) { GunPickOutcome::Applied } else { GunPickOutcome::Replaced };
+            end(world, e, &old, outcome);
+        }
+        return true;
+    }
+    if let Some(old) = &old {
+        if same(old) {
+            return false;
+        }
+        end(world, e, old, GunPickOutcome::Replaced);
+    }
+    let since = real_now(world);
+    world.entity_mut(e).insert(GunPending { gun, rung, body: body.map(str::to_string), since, put });
+    false
 }
 
 /// The command's name (full).
@@ -144,10 +258,41 @@ pub(super) fn plugin(app: &mut App) {
         |w, a| run(w, a, true),
     );
     app.world_mut().resource_mut::<Console>().player_command(NAME);
-    app.add_message::<PutOnGun>().add_message::<RungRefused>().add_systems(
+    app.add_message::<PutOnGun>().add_message::<RungRefused>().add_message::<GunPickEnded>().add_systems(
         Update,
-        (apply_pending.run_if(resource_exists::<PendingRung>), hold, apply_requests, rewear),
+        (apply_pending.run_if(resource_exists::<PendingRung>), hold, apply_requests, rewear, apply_gun_pending),
     );
+}
+
+/// The pending gun switches (`GunPending`): a cheap check each frame, the
+/// world's work (asking `gun_files::gun_ready`) only while one waits.
+fn apply_gun_pending(pending: Query<(), With<GunPending>>, mut commands: Commands) {
+    if !pending.is_empty() {
+        commands.queue(apply_gun_pending_now);
+    }
+}
+
+fn apply_gun_pending_now(world: &mut World) {
+    let all: Vec<(Entity, GunPending)> =
+        world.query::<(Entity, &GunPending)>().iter(world).map(|(e, p)| (e, p.clone())).collect();
+    let ladder = world.get_resource::<Ladder>().cloned();
+    for (e, p) in all {
+        let Some(ladder) = ladder.as_ref().filter(|l| holding(world) && gun_of(world, l, p.rung) == p.gun) else {
+            world.entity_mut(e).remove::<GunPending>();
+            end(world, e, &p, GunPickOutcome::Dropped);
+            continue;
+        };
+        if !super::gun_files::gun_ready(world, p.gun) {
+            continue;
+        }
+        world.entity_mut(e).remove::<GunPending>();
+        if p.put {
+            put_now(world, e, p.rung, ladder, p.body.as_deref());
+        } else {
+            move_now(world, e, p.rung, ladder);
+        }
+        end(world, e, &p, GunPickOutcome::Applied);
+    }
 }
 
 /// Put `who` (None: the local player) on the rung of `gun` (an id, or a
@@ -164,17 +309,32 @@ pub fn put_on(world: &mut World, who: Option<Entity>, gun: &str, character: Opti
     if let Some(c) = character {
         super::targets::resolve(world, Some(c), Some(ladder.rungs[to]), None)?;
     }
-    put(world, e, to, &ladder, character);
+    let now = put(world, e, to, &ladder, character);
     let name = world.get::<Name>(e).map_or_else(|| e.to_string(), |n| n.as_str().to_string());
     let body = character.map(|c| format!(" as {c}")).unwrap_or_default();
-    Ok(format!("{name}: rung {} of {n}: {}{body}", to + 1, ladder.rungs[to]))
+    Ok(format!("{name}: rung {} of {n}: {}{body}{}", to + 1, ladder.rungs[to], waiting(now)))
+}
+
+/// What a switch said adds when it waits for the gun's files.
+fn waiting(now: bool) -> &'static str {
+    if now { "" } else { " (waiting for its files)" }
+}
+
+/// `put_now` when the gun's files are here, else kept pending (module
+/// doc, "Waiting for a gun's files"); whether it was done now.
+fn put(world: &mut World, e: Entity, to: usize, ladder: &Ladder, body: Option<&str>) -> bool {
+    if !ready_or_wait(world, e, to, ladder, body, true) {
+        return false;
+    }
+    put_now(world, e, to, ladder, body);
+    true
 }
 
 /// `e` on rung `to`, as `body` (a registered body id the rung's gun may
 /// have) or, without one, as the rung makes it: a body chosen before is
 /// taken off (its game's first registered body worn, then the rung set
 /// again, which puts on what the rung's draw gives).
-fn put(world: &mut World, e: Entity, to: usize, ladder: &Ladder, body: Option<&str>) {
+fn put_now(world: &mut World, e: Entity, to: usize, ladder: &Ladder, body: Option<&str>) {
     let old = world.get::<ChosenBody>(e).map(|c| c.0.clone());
     if body.is_none()
         && let Some(old) = old
@@ -185,7 +345,7 @@ fn put(world: &mut World, e: Entity, to: usize, ladder: &Ladder, body: Option<&s
             super::targets::wear(world, e, first);
         }
     }
-    move_to(world, e, to, ladder);
+    move_now(world, e, to, ladder);
     if let Some(b) = body {
         super::targets::wear(world, e, b);
         world.entity_mut(e).insert(ChosenBody(b.to_string()));
@@ -345,7 +505,9 @@ fn run(world: &mut World, a: &[String], may_wait: bool) -> Result<Option<String>
     // Resolve every target first, so a refusal changes nothing.
     let mut moves = Vec::new();
     for e in who {
-        let now = world.get::<Rung>(e).map_or(0, |r| r.0);
+        // From the pick still waiting for its files, if any (two `next`s
+        // while a download runs go two rungs on).
+        let now = world.get::<GunPending>(e).map(|p| p.rung).or_else(|| world.get::<Rung>(e).map(|r| r.0)).unwrap_or(0);
         let to = match pick {
             Pick::Next => (now + 1).min(last),
             Pick::Prev => now.saturating_sub(1),
@@ -359,10 +521,10 @@ fn run(world: &mut World, a: &[String], may_wait: bool) -> Result<Option<String>
         }
     }
     for (e, to) in moves {
-        put(world, e, to, &ladder, body.as_deref());
+        let now = put(world, e, to, &ladder, body.as_deref());
         let name = world.get::<Name>(e).map_or_else(|| e.to_string(), |n| n.as_str().to_string());
         let as_body = body.as_ref().map(|b| format!(" as {b}")).unwrap_or_default();
-        said.push(format!("{name}: rung {} of {}: {}{as_body}", to + 1, last + 1, ladder.rungs[to]));
+        said.push(format!("{name}: rung {} of {}: {}{as_body}{}", to + 1, last + 1, ladder.rungs[to], waiting(now)));
     }
     Ok(Some(said.join("\n")))
 }

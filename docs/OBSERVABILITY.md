@@ -534,6 +534,10 @@ ultimate_gun_game/src/sandbox.rs`; the rule that holds the rung is
 ladder (number from 1, weapon id, game, band); `rung <n | gun id | unique
 part of it | next | prev> [player | all]` puts a player on that rung as a
 kill would (`+rung halo_ce:frag_grenade` at launch waits for the match).
+In the sandbox a switch to a gun whose files are still downloading waits
+for them (`rung_command::GunPending` on the player, the old gun kept;
+`GunPickEnded` when applied, replaced by a newer pick or dropped; logged
+as `rung: <gun> for <player> Applied after <s> s`).
 Beside it: `ca_bot_add`, `ca_bot_kick`, `ca_bot_stop 1`, `ca_bot_dont_shoot 1`,
 `god`, `noclip` (`sv_cheats` is 1 there), guns refill; `sandbox help` says it.
 Practice targets: `target add <rung n | gun id | body id> [distance]

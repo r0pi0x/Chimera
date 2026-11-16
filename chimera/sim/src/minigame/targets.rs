@@ -26,6 +26,10 @@
 //!   `<game>:default`, the body its guns give. A body of one game with a
 //!   gun of another is refused: the body follows the held gun's game
 //!   (`identity`), and a cross-game pair needs that rule changed.
+//!   A gun whose files aren't in yet (`gun_files`): the target is placed
+//!   at once holding what it holds (a new one: its bot's own gun), and
+//!   takes the gun and its body when they come (`rung_command::
+//!   GunPending` on it, the player's rule).
 //! - Where: `distance_m` along the spawner's flat view direction from its
 //!   position, on the floor found below that point (a ray down from 1.5 m
 //!   above the spawner's height, 8 m long); refused when there is no
@@ -862,8 +866,12 @@ fn place(world: &mut World, e: Entity) -> bool {
         crate::core::God,
     ));
     strip_foreign_armour(world, e, &t.game);
-    rung_command::move_to(world, e, t.rung, &ladder);
-    wear(world, e, &t.character);
+    // Its gun's files not here yet: placed with the gun it holds, the
+    // switch (and its body, `settle`'s re-dressing) when they come
+    // (`rung_command::GunPending`).
+    if rung_command::move_to(world, e, t.rung, &ladder) {
+        wear(world, e, &t.character);
+    }
     if let Ok(mut ent) = world.get_entity_mut(e) {
         ent.remove::<(TargetPending, TargetRespawn)>();
         if let Some(mut d) = ent.get_mut::<TargetDrive>() {
