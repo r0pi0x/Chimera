@@ -1,5 +1,6 @@
 //! TF2's guns from the user's install (M2b): each gun's view model, the
-//! class's arms with its `c_` weapon bone-merged (`view::load`), with the
+//! class's arms with its `c_` weapon bone-merged (`view::load`; and on
+//! each other class's arms that can hold it, `view::CLASS_SEQUENCES`), with the
 //! spec's sequences (8.2) by name with their activities (the include's, not the
 //! arms' stubs) and a muzzle on the gun, the posed gun in front of the eye;
 //! the held models and the rocket's model; the guns' sound entries in the
@@ -19,14 +20,23 @@ fn each_gun_shows_on_its_class_arms_with_the_specs_sequences() {
     let Some(mount) = install_mount() else { return };
     let mut materials = MaterialLoader::guest(&mount, 0, 0);
     let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
-    maps::add_guns(&mut materials, &|_| true, &mut kit, &mut warnings);
+    maps::add_guns(&mut materials, &|_| true, true, &mut kit, &mut warnings);
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(kit.view_models.len(), weapons::GUNS.len());
+    // Each gun on its own class's arms, and on each other class's that
+    // can hold it (the Shotgun's three, the Pistol's Engineer).
+    assert_eq!(kit.view_models.len(), weapons::GUNS.len() + view::CLASS_SEQUENCES.len());
     for gun in weapons::GUNS {
-        let v = kit.view_models.iter().find(|v| v.key == gun).unwrap_or_else(|| panic!("{gun}'s view model"));
+        assert!(kit.view_models.iter().any(|v| v.key == gun), "{gun}'s view model");
+    }
+    for (g, c, _) in view::CLASS_SEQUENCES {
+        let key = chimera_sim::weapon::view_anim::variant_key(g, c);
+        assert!(kit.view_models.iter().any(|v| v.key == key), "{key}'s view model");
+    }
+    for v in &kit.view_models {
+        let gun = v.key.split_once('#').map_or(v.key.as_str(), |(g, _)| g);
         let set = v.animations.as_ref().expect("the arms' animations");
         assert!(v.attachments.iter().any(|a| a.name.eq_ignore_ascii_case("muzzle")), "{gun}: a muzzle");
-        let q = view::sequences(gun).unwrap();
+        let q = view::sequences(&v.key).unwrap();
         let named = [Some(q.draw), Some(q.idle), Some(q.fire), q.reload_start, q.reload_loop, q.reload_end, q.spin_up, q.spin_idle, q.spin_down, q.charge];
         for (activity, name) in named.into_iter().flatten() {
             let i = set.sequence(name).unwrap_or_else(|| panic!("{gun}: no sequence {name}"));
@@ -60,7 +70,7 @@ fn each_guns_set_covers_what_a_match_loads_for_it() {
         let tracking = mount.track();
         let mut materials = MaterialLoader::guest(&mount, 0, 0);
         let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
-        maps::add_guns(&mut materials, &|g| g == gun, &mut kit, &mut warnings);
+        maps::add_guns(&mut materials, &|g| g == gun, false, &mut kit, &mut warnings);
         for name in w.sounds {
             for wave in scripts.waves(name) {
                 let _ = mount.read(&wave);
@@ -90,7 +100,7 @@ fn the_posed_gun_is_in_front_of_the_eye() {
     let Some(mount) = install_mount() else { return };
     let mut materials = MaterialLoader::guest(&mount, 0, 0);
     let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
-    maps::add_guns(&mut materials, &|_| true, &mut kit, &mut warnings);
+    maps::add_guns(&mut materials, &|_| true, true, &mut kit, &mut warnings);
     for v in &kit.view_models {
         let set = v.animations.clone().unwrap();
         let mut a = chimera_world::map::anim::Animator::new(set.clone());
@@ -154,7 +164,7 @@ fn the_muzzles_sit_where_the_spec_puts_them() {
     let Some(mount) = install_mount() else { return };
     let mut materials = MaterialLoader::guest(&mount, 0, 0);
     let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
-    maps::add_guns(&mut materials, &|_| true, &mut kit, &mut warnings);
+    maps::add_guns(&mut materials, &|_| true, true, &mut kit, &mut warnings);
     let cases: &[(&str, &str, [f32; 3])] = &[
         (MINIGUN, "m_idle", [55.32, 16.82, 6.78]),
         (MINIGUN, "m_spool_idle", [66.56, 4.86, -20.54]),

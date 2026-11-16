@@ -119,11 +119,41 @@ from specs, measurements and the game's own data.
    player holds. If the view-model driver lacks an arms-plus-weapon
    pair, that is a generic extension in Chimera (Combat Arms already
    draws hands and gun parts), not TF2 code.
-6. **The rungs' class.** A TF2 gun makes its holder that gun's class:
-   Scout for the Scattergun, Soldier for the Rocket Launcher, Heavy for
-   the Minigun, and the Engineer's arms for the Shotgun
-   (weapons.md 2). Health and speed per class follow classes.md once
-   the bodies land (M3); until then the rung uses the party's character.
+6. **The rungs' class.** A TF2 gun makes its holder one of the classes
+   that carry it in stock TF2 (games/tf2/data/classes.toml `[guns]`, one
+   class or a list; weapons.md 1, weapons_more.md 1, classes.md "Stock
+   loadout"): Scout for the Scattergun, Soldier for the Rocket Launcher,
+   Heavy for the Minigun. A gun of several classes gets its class **at
+   random, before the match** (the user's rule, 2026-11-15): when the
+   ladder is drawn, TF2's rung extras (`classes::HOOK`, Chimera's
+   `ladder::RungExtrasHook`, as Combat Arms' rung characters and CS:S's
+   rung models) draw one of the gun's classes for each TF2 rung from the
+   ladder's seeded generator, kept in the ladder's extras the server
+   shares with its clients (`NetMinigame::rung_extras`); every player
+   and bot on the rung is that class on every machine (`RungClass`
+   from `ladder::OnRung`), and the class shows after the gun in the
+   HUD's rung line. Never rolled per respawn. The offer names only the
+   drawn classes' body sets (`bodies::asset_names`). Where nothing is
+   drawn (a kit gun, the sandbox, `rung_extras = false`) a gun is its
+   first class, its own.
+   - **The Shotgun** (items 9, 10, 12, 11: Engineer, Soldier, Pyro,
+     Heavy) stays one rung gun, `tf2:tf_weapon_shotgun_primary`: the
+     class scripts agree on every mapped number (weapon_scripts.md 3),
+     so its numbers are the Engineer's script's; arms and first-person
+     sequences (weapons.md 8.2: the `SECONDARY` ones and their names for
+     the three secondaries, `view::CLASS_SEQUENCES`), the reload's start
+     (4: 0.4667 / 0.5 / 0.3333 / 0.3333) and the third-person stance
+     (secondary but for the Engineer) follow the drawn class.
+   - **The Pistol** (items 23 and 22: Scout, Engineer) likewise one gun,
+     `tf2:tf_weapon_pistol_scout` (the scripts agree too): the
+     Engineer's arms and `pstl_` sequences and his clip reload of
+     1.035 s (weapons_more.md 1) follow his class; he carries the
+     Scout's 36 rounds, not his 200 (a shortcut).
+   - The view models of a gun's other classes are keyed `<gun>#<class>`
+     (Chimera's `view_anim::ViewVariant`, a generic extension) and load
+     where that class's arms are here (its `players/<class>` set, which
+     the offer names when drawn); a gun's `weapon/<id>` set keeps its own
+     class's arms only.
 7. **Not in scope for now**: TF2's own app and server (beside the party
    apps; M5 at the earliest), objectives (flags, control points,
    payloads), buildings, Medic healing, Spy disguise and cloak, Pyro's

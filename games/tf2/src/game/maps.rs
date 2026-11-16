@@ -172,20 +172,27 @@ fn held_kit(kit: &mut Kit) {
     if super::weapons::GUNS.iter().any(|g| wants(g)) {
         super::weapons::script_numbers::note_sources(kit.materials.mount());
     }
-    add_guns(kit.materials, &wants, &mut guest, &mut kit.data.warnings);
+    add_guns(kit.materials, &wants, true, &mut guest, &mut kit.data.warnings);
     kit.data.kit.held.extend(guest.held);
     kit.data.kit.view_models.extend(guest.view_models);
 }
 
 /// TF2's guns that `wants`, into `into`: their view models
-/// (`view::load`), their `c_` models held (bone-merged by the first bone
+/// (`view::load`; with `every_class` on each class's arms that can hold
+/// them and are here, else on their own class's only), their `c_` models held (bone-merged by the first bone
 /// they share with their class's arms, `weapon_bone`) and their
 /// projectiles' models (`weapons::PROJECTILES`: the rocket, the grenade,
 /// the sticky, the needle). What a gun's
 /// `weapon/<id>` set holds is what this reads for it (`sets`).
-pub fn add_guns(materials: &mut MaterialLoader, wants: &dyn Fn(&str) -> bool, into: &mut crate::map::GameKit, warnings: &mut Vec<String>) {
+pub fn add_guns(
+    materials: &mut MaterialLoader,
+    wants: &dyn Fn(&str) -> bool,
+    every_class: bool,
+    into: &mut crate::map::GameKit,
+    warnings: &mut Vec<String>,
+) {
     use super::weapons::{self as w, PROJECTILES};
-    super::view::load(materials, wants, &mut into.view_models, warnings);
+    super::view::load(materials, wants, every_class, &mut into.view_models, warnings);
     let set = w::tf2_weapons();
     for (gun, arms) in w::arms_by_gun() {
         if !wants(gun) {
@@ -235,7 +242,7 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     if super::weapons::GUNS.iter().any(|g| wants(g)) {
         super::weapons::script_numbers::note_sources(&mount);
     }
-    add_guns(&mut materials, &wants, &mut guest, &mut warnings);
+    add_guns(&mut materials, &wants, true, &mut guest, &mut warnings);
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     let sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], weapon_sounds(), true);
     bsp::add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);

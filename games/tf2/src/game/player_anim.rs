@@ -2,8 +2,11 @@
 //! Source's shared half (`source_engine::player_anim`, as HL2:DM's): one
 //! main sequence from the movement state (stand, crouch, run, crouch-walk,
 //! swim, airwalk, a jump's start played once then its float) translated by
-//! the held gun's kind (`Kind::of`: `PRIMARY`, `SECONDARY` or `MELEE`, the
-//! gun's slot for its class, 2) into `ACT_MP_<STATE>_<KIND>`; the 3 x 3
+//! the held gun's kind (`Kind::of_class`: `PRIMARY`, `SECONDARY` or
+//! `MELEE`, the gun's slot for its holder's class, 2: the Shotgun is the
+//! Engineer's primary and the Soldier's, Pyro's and Heavy's secondary;
+//! the class `Tf2PlayerAnim::class`, kept by `follow_class` from the
+//! rung's drawn class) into `ACT_MP_<STATE>_<KIND>`; the 3 x 3
 //! move grid by `move_x` / `move_y` (the velocity's direction against the
 //! feet pushed out to the unit square, scaled by the speed over the grid's
 //! ground speed there, never above 1; playback rate 1, 3); aim by
@@ -72,6 +75,16 @@ impl Kind {
         }
     }
 
+    /// The kind of gun `id` in `class`'s hands (None: its own class's,
+    /// `of`): the Shotgun is a secondary but for the Engineer.
+    pub fn of_class(id: &str, class: Option<&str>) -> Kind {
+        let name = id.rsplit(':').next().unwrap_or(id).trim_start_matches("tf_weapon_");
+        match (name, class) {
+            ("shotgun_primary", Some(c)) if c != "engineer" => Kind::Secondary,
+            _ => Kind::of(id),
+        }
+    }
+
     pub fn suffix(self) -> &'static str {
         match self {
             Kind::Primary => "PRIMARY",
@@ -133,6 +146,9 @@ pub struct Tf2PlayerAnim {
     jumping: bool,
     airborne: bool,
     weapon: Option<String>,
+    kind: Option<Kind>,
+    /// The holder's class (`follow_class`; None: the gun's own).
+    pub class: Option<String>,
     pub gestures: Vec<Gesture>,
     /// The last `move_x`, `move_y`, `body_yaw`, `body_pitch` set.
     pub pose: [f32; 4],
@@ -149,6 +165,8 @@ impl Default for Tf2PlayerAnim {
             jumping: false,
             airborne: false,
             weapon: None,
+            kind: None,
+            class: None,
             gestures: Vec::new(),
             pose: [0.0; 4],
         }
@@ -236,15 +254,16 @@ impl Tf2PlayerAnim {
     /// One update with the gun in hand `weapon`.
     pub fn step(&mut self, a: &mut Animator, i: &Inputs, weapon: Option<&str>, dt: f32, now: f64) {
         let set = a.set.clone();
-        let kind = weapon.map_or(Kind::Primary, Kind::of);
+        let kind = weapon.map_or(Kind::Primary, |w| Kind::of_class(w, self.class.as_deref()));
         let k = kind.suffix();
-        if self.reset || weapon != self.weapon.as_deref() {
+        if self.reset || weapon != self.weapon.as_deref() || self.kind != Some(kind) {
             if self.reset {
                 self.gestures.clear();
             }
             // Another gun: its reload's gestures stop with it.
             self.gestures.retain(|g| !g.held);
             self.weapon = weapon.map(str::to_string);
+            self.kind = Some(kind);
             self.state = None;
             a.main = None;
         }
@@ -371,6 +390,24 @@ fn hold_weapons(
     }
 }
 
+/// Each TF2 body's class for its stance (`Tf2PlayerAnim::class`): the
+/// one its gun in hand makes it (`classes::Classes::held`, the rung's
+/// drawn class when the gun can be it), on every machine.
+fn follow_class(
+    mut bodies: Query<(&mut Tf2PlayerAnim, Option<&Inventory>, Option<&super::classes::RungClass>)>,
+    weapons: Query<&crate::weapon::Weapon>,
+    table: Option<Res<super::classes::Classes>>,
+) {
+    let Some(table) = table else { return };
+    for (mut anim, inv, drawn) in &mut bodies {
+        let held = inv.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
+        let class = held.and_then(|w| table.held(&w.id, drawn.map(|d| d.0.as_str()))).map(|c| c.name.as_str());
+        if anim.class.as_deref() != class {
+            anim.class = class.map(str::to_string);
+        }
+    }
+}
+
 /// TF2's bodies animated: drawn (`PlayerAnimPlugin`), on a server per tick
 /// (`SimAnimPlugin`), sent to clients (`AnimNetPlugin`), and what they hold.
 pub struct Tf2AnimPlugin;
@@ -382,7 +419,7 @@ impl Plugin for Tf2AnimPlugin {
             source_engine::player_anim::SimAnimPlugin::<Tf2PlayerAnim>::default(),
             source_engine::anim_net::AnimNetPlugin::<Tf2PlayerAnim>::new("tf2_anim"),
         ))
-        .add_systems(Update, hold_weapons);
+        .add_systems(Update, (hold_weapons, follow_class));
     }
 }
 
@@ -408,6 +445,12 @@ mod tests {
         assert_eq!(Kind::of("tf2:tf_weapon_shotgun_primary"), Kind::Primary);
         assert_eq!(Kind::of("tf2:tf_weapon_pistol"), Kind::Secondary);
         assert_eq!(Kind::of("tf2:tf_weapon_revolver"), Kind::Secondary);
+        // The Shotgun in a drawn class's hands: the Engineer's primary,
+        // the others' secondary.
+        assert_eq!(Kind::of_class("tf2:tf_weapon_shotgun_primary", Some("engineer")), Kind::Primary);
+        assert_eq!(Kind::of_class("tf2:tf_weapon_shotgun_primary", Some("pyro")), Kind::Secondary);
+        assert_eq!(Kind::of_class("tf2:tf_weapon_shotgun_primary", None), Kind::Primary);
+        assert_eq!(Kind::of_class("tf2:tf_weapon_pistol_scout", Some("engineer")), Kind::Secondary);
     }
 
     /// 4, tests 13-14: the pitch's sign and clamp; the feet stay until the

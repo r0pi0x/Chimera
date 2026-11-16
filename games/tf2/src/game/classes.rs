@@ -4,15 +4,36 @@
 //! classes whose bodies it may also show (`needs`: their asset sets,
 //! `players/<class>` by `set_of`, come with its own in a match's offer,
 //! `Classes::sets_for`; none yet, the Spy's disguise will need all), and
-//! which class each gun makes its holder (`class_of_gun`: the file's
-//! `[guns]` table, else the gun's `tf2:gun` hook's `arms`). A player
-//! holding a TF2 gun is that gun's class (`Tf2Class`): its speed, eyes
+//! which classes each gun can make its holder (`Classes::of_gun_all`: the
+//! file's `[guns]` table, one class or a list, else the gun's `tf2:gun`
+//! hook's `arms`; the first is the gun's own, `of_gun`).
+//!
+//! A gun of several classes (the Shotgun: Engineer, Soldier, Pyro, Heavy;
+//! the Pistol: Scout, Engineer) gets its class when the ladder is drawn,
+//! before the match: TF2's rung extras (`HOOK`, Chimera's
+//! `ladder::RungExtrasHook`) draw one of the gun's classes at random from
+//! the ladder's seeded generator for each TF2 rung (the value `class`, its
+//! name after the gun in the HUD's rung line), kept in the ladder's
+//! extras that the server shares with its clients, so every player and
+//! bot on the rung, on every machine, is that class. A player arriving
+//! on a rung (`ladder::OnRung`, on every machine) wears its drawn class
+//! (`RungClass`, `follow_rung`); the class a held gun makes its holder is
+//! that one when the gun can be it, else the gun's own (`Classes::held`).
+//! A player holding a TF2 gun is that class (`Tf2Class`): its speed, eyes
 //! and air jumps (`super::movement`), its health (`super::movement::
-//! class_health`), its body (`super::bodies`) and its HUD's numbers.
+//! class_health`), its body (`super::bodies`), its first-person arms
+//! (`super::view`), its third-person stance (`super::player_anim`), its
+//! gun's per-class reload (`super::movement::select_class`) and its HUD's
+//! numbers. The offer names only the drawn classes' sets
+//! (`super::bodies::asset_names`).
 
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
+use chimera_sim::minigame::{
+    auto::Rng,
+    ladder::{Ladder, OnRung, RungDraw, RungExtras, RungExtrasAppExt, RungExtrasHook, RungExtrasHooks},
+};
 use serde::Deserialize;
 
 /// The class table and the guns' classes, as written.
@@ -44,11 +65,19 @@ pub struct Class {
     pub name: String,
 }
 
+/// A `[guns]` entry: one class or a list (the first the gun's own).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OneOrMany {
+    One(String),
+    Many(Vec<String>),
+}
+
 #[derive(Deserialize)]
 struct Doc {
     classes: BTreeMap<String, Class>,
     #[serde(default)]
-    guns: BTreeMap<String, String>,
+    guns: BTreeMap<String, OneOrMany>,
 }
 
 /// The classes and the guns' classes: a resource of TF2's movement
@@ -57,7 +86,7 @@ struct Doc {
 pub struct Classes {
     /// By index order.
     pub classes: Vec<Class>,
-    guns: BTreeMap<String, String>,
+    guns: BTreeMap<String, Vec<String>>,
     arms: BTreeMap<String, String>,
 }
 
@@ -75,9 +104,24 @@ impl Classes {
             })
             .collect();
         classes.sort_by_key(|c| c.index);
-        for (gun, class) in &doc.guns {
-            if !classes.iter().any(|c| &c.name == class) {
-                return Err(format!("classes.toml: {gun} names no class {class}"));
+        let guns: BTreeMap<String, Vec<String>> = doc
+            .guns
+            .into_iter()
+            .map(|(g, c)| {
+                (g, match c {
+                    OneOrMany::One(c) => vec![c],
+                    OneOrMany::Many(c) => c,
+                })
+            })
+            .collect();
+        for (gun, list) in &guns {
+            if list.is_empty() {
+                return Err(format!("classes.toml: {gun} names no class"));
+            }
+            for class in list {
+                if !classes.iter().any(|c| &c.name == class) {
+                    return Err(format!("classes.toml: {gun} names no class {class}"));
+                }
             }
         }
         for c in &classes {
@@ -93,7 +137,7 @@ impl Classes {
                 Some((w.id, arms))
             })
             .collect();
-        Ok(Classes { classes, guns: doc.guns, arms })
+        Ok(Classes { classes, guns, arms })
     }
 
     /// The class named `name` (`scout`).
@@ -123,28 +167,153 @@ impl Classes {
         self.classes.iter().filter(|c| want.contains(&c.name.as_str())).collect()
     }
 
-    /// The classes of the guns among `guns` (`of_gun`) with those they
-    /// need (`with_needs`): the bodies a match handing out `guns` shows.
+    /// Every class the guns among `guns` can make their holder
+    /// (`of_gun_all`) with those they need (`with_needs`): the bodies a
+    /// kit handing out `guns` may show, whatever its ladder draws.
     pub fn for_guns<'a>(&self, guns: impl IntoIterator<Item = &'a str>) -> Vec<&Class> {
-        let own: Vec<&str> = guns.into_iter().filter_map(|g| self.of_gun(g)).map(|c| c.name.as_str()).collect();
-        self.with_needs(own)
+        let all: Vec<&str> = guns.into_iter().flat_map(|g| self.of_gun_all(g)).map(|c| c.name.as_str()).collect();
+        self.with_needs(all)
     }
 
-    /// The asset sets of the bodies a match handing out `guns` shows
-    /// (`for_guns`): `players/<class>` each (`set_of`).
+    /// The asset sets of classes `classes` (names) and those they need
+    /// (`with_needs`): `players/<class>` each (`set_of`), in class order.
+    pub fn sets_of<'a>(&self, classes: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+        self.with_needs(classes).into_iter().map(|c| set_of(&c.name)).collect()
+    }
+
+    /// The asset sets of the guns' own classes (`of_gun`, nothing drawn)
+    /// and those they need: `players/<class>` each (`set_of`).
     pub fn sets_for<'a>(&self, guns: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-        self.for_guns(guns).into_iter().map(|c| set_of(&c.name)).collect()
+        let own: Vec<&str> = guns.into_iter().filter_map(|g| self.of_gun(g)).map(|c| c.name.as_str()).collect();
+        self.sets_of(own)
     }
 
-    /// The class gun `id` makes its holder: the `[guns]` table's, else
-    /// the class whose arms hold it.
+    /// The gun's own class (the first `of_gun_all`): what it makes its
+    /// holder where no class was drawn.
     pub fn of_gun(&self, id: &str) -> Option<&Class> {
-        if let Some(c) = self.guns.get(id) {
-            return self.get(c);
-        }
-        let arms = self.arms.get(id)?;
-        self.classes.iter().find(|c| &c.arms == arms || &c.name == arms)
+        self.of_gun_all(id).into_iter().next()
     }
+
+    /// Every class gun `id` can make its holder, its own first: the
+    /// `[guns]` table's, else the class whose arms hold it; none for
+    /// another game's gun.
+    pub fn of_gun_all(&self, id: &str) -> Vec<&Class> {
+        if let Some(list) = self.guns.get(id) {
+            return list.iter().filter_map(|c| self.get(c)).collect();
+        }
+        let Some(arms) = self.arms.get(id) else { return Vec::new() };
+        self.classes.iter().find(|c| &c.arms == arms || &c.name == arms).into_iter().collect()
+    }
+
+    /// The class gun `id` makes a holder whose rung drew `drawn`
+    /// (`RungClass`): that one when the gun can be it, else the gun's own.
+    pub fn held(&self, id: &str, drawn: Option<&str>) -> Option<&Class> {
+        let all = self.of_gun_all(id);
+        drawn
+            .and_then(|d| all.iter().find(|c| c.name == d).copied())
+            .or_else(|| all.first().copied())
+    }
+
+    /// One of gun `id`'s classes drawn on `rng` (its only one without
+    /// drawing; none for another game's gun).
+    pub fn draw(&self, id: &str, rng: &mut Rng) -> Option<&Class> {
+        let all = self.of_gun_all(id);
+        match all.len() {
+            0 => None,
+            1 => Some(all[0]),
+            n => Some(all[rng.below(n)]),
+        }
+    }
+}
+
+/// The rung extras' value naming a TF2 rung's drawn class.
+pub const CLASS_VALUE: &str = "class";
+
+/// TF2's rung extras (module doc): each TF2 rung's class, drawn with the
+/// ladder.
+pub const HOOK: RungExtrasHook = RungExtrasHook {
+    game: super::GAME,
+    options: &[CLASS_VALUE],
+    melee: |_| Vec::new(),
+    characters: |_| Vec::new(),
+    draw: draw_rung,
+    apply: |_, _, _| {},
+};
+
+/// A TF2 rung's draw: one of its gun's classes (`Classes::draw`), named
+/// after the gun in the HUD when the gun has several; none on the melee
+/// band or with `rung_extras = { class = false }`.
+fn draw_rung(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
+    if d.melee || !d.options.on(CLASS_VALUE) {
+        return None;
+    }
+    let table = world.get_resource::<Classes>().cloned().unwrap_or_default();
+    let several = table.of_gun_all(d.weapon).len() > 1;
+    let class = table.draw(d.weapon, rng)?;
+    Some(RungExtras {
+        game: super::GAME.into(),
+        values: vec![(CLASS_VALUE.into(), class.name.clone())],
+        label: several.then(|| title(&class.name)),
+        ..default()
+    })
+}
+
+/// A class's name as the HUD shows it (`demoman` -> `Demoman`).
+fn title(name: &str) -> String {
+    let mut c = name.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
+}
+
+/// The class `extras` drew (a TF2 rung's), if any.
+pub fn drawn_class(extras: Option<&RungExtras>) -> Option<&str> {
+    extras.filter(|x| x.game == super::GAME)?.value(CLASS_VALUE)
+}
+
+/// The classes `ladder`'s TF2 rungs make their players: each rung's drawn
+/// class, else its gun's own; each once, in rung order.
+pub fn ladder_classes<'a>(table: &'a Classes, ladder: &Ladder) -> Vec<&'a Class> {
+    let mut out: Vec<&Class> = Vec::new();
+    for (i, gun) in ladder.rungs.iter().enumerate() {
+        if let Some(c) = table.held(gun, drawn_class(ladder.extras(i)))
+            && !out.iter().any(|x| x.name == c.name)
+        {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// The class a player's rung drew (`HOOK`), on every machine from its
+/// `ladder::OnRung` (`follow_rung`); none off a TF2 rung.
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct RungClass(pub String);
+
+/// A player arrived on a rung (`ladder::OnRung`, on every machine): its
+/// drawn class on, or off on a rung that drew none.
+pub fn follow_rung(on: On<Insert<OnRung>>, rungs: Query<(&OnRung, Option<&RungClass>)>, mut commands: Commands) {
+    let e = on.event_target();
+    let Ok((rung, have)) = rungs.get(e) else { return };
+    match drawn_class(rung.extras.as_ref()) {
+        Some(c) if have.is_none_or(|h| h.0 != c) => {
+            commands.entity(e).insert(RungClass(c.to_string()));
+        }
+        None if have.is_some() => {
+            commands.entity(e).try_remove::<RungClass>();
+        }
+        _ => {}
+    }
+}
+
+/// TF2's rung classes on an app: the hook and the observer (once).
+pub fn add_rung_classes(app: &mut App) {
+    let has = app
+        .world()
+        .get_resource::<RungExtrasHooks>()
+        .is_some_and(|h| h.0.iter().any(|x| x.game == super::GAME));
+    if has {
+        return;
+    }
+    app.add_rung_extras(HOOK).add_observer(follow_rung);
 }
 
 /// The asset set of class `name`'s body (`chimera_pack sets tf2`,
@@ -246,5 +415,35 @@ mod tests {
         let t = Classes::parse(&text).unwrap();
         assert_eq!(names(t.for_guns(["tf2:tf_weapon_revolver"])), ["medic", "pyro", "spy"]);
         assert!(Classes::parse(&DATA.replace("needs = []", "needs = [\"nobody\"]")).is_err());
+    }
+
+    /// The guns of several classes list every class that carries them in
+    /// stock TF2, their own first; a draw over many seeds gives each, a
+    /// gun of one class always that one; a drawn class the gun can't be
+    /// falls back to its own.
+    #[test]
+    fn several_classes_drawn_at_random() {
+        let c = classes();
+        let names = |v: Vec<&Class>| v.into_iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names(c.of_gun_all("tf2:tf_weapon_shotgun_primary")), ["engineer", "soldier", "pyro", "heavy"]);
+        assert_eq!(names(c.of_gun_all("tf2:tf_weapon_pistol_scout")), ["scout", "engineer"]);
+        assert_eq!(names(c.of_gun_all("tf2:tf_weapon_minigun")), ["heavy"]);
+        assert!(c.of_gun_all("cs_source:weapon_ak47").is_empty());
+        let mut seen = std::collections::BTreeMap::<String, u32>::new();
+        for seed in 0..400 {
+            let class = c.draw("tf2:tf_weapon_shotgun_primary", &mut Rng::new(seed)).unwrap();
+            *seen.entry(class.name.clone()).or_default() += 1;
+            assert_eq!(c.draw("tf2:tf_weapon_minigun", &mut Rng::new(seed)).unwrap().name, "heavy");
+        }
+        assert_eq!(seen.keys().cloned().collect::<Vec<_>>(), ["engineer", "heavy", "pyro", "soldier"], "{seen:?}");
+        assert!(seen.values().all(|n| *n > 50), "roughly even: {seen:?}");
+        assert_eq!(c.held("tf2:tf_weapon_shotgun_primary", Some("pyro")).unwrap().name, "pyro");
+        assert_eq!(c.held("tf2:tf_weapon_shotgun_primary", Some("scout")).unwrap().name, "engineer");
+        assert_eq!(c.held("tf2:tf_weapon_shotgun_primary", None).unwrap().name, "engineer");
+        assert_eq!(c.held("tf2:tf_weapon_minigun", Some("pyro")).unwrap().name, "heavy");
+        assert_eq!(title("demoman"), "Demoman");
+        // A list naming an unknown class is refused.
+        let bad = DATA.replace("\"pyro\", \"heavy\"]", "\"pyro\", \"nobody\"]");
+        assert!(bad != DATA && Classes::parse(&bad).is_err());
     }
 }

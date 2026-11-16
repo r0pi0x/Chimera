@@ -2,6 +2,9 @@
 # one bullet of 15 every 0.15 s, spread 0.04 (dead centre after 1.25 s
 # without a shot), the distance modifier's near half x1 (150 % at 0
 # units), 12 in the clip and 36 carried, the whole clip in 1.005 s.
+# The Engineer holds it too when his class is drawn for its rung
+# (data/classes.toml): his arms and `pstl_` sequences, the clip in
+# 1.035 s (`reload`); he carries the Scout's 36, not his 200.
 id = "tf2:tf_weapon_pistol_scout"
 base = "tf2:gun"
 class = "pistol"
@@ -51,3 +54,4 @@ ramp = 1.0
 arms = "scout"
 script = "tf_weapon_pistol_scout"
 first_pellet_pause = 1.25
+reload = { scout = 1.005, engineer = 1.035 }

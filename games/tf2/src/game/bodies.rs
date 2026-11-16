@@ -13,12 +13,16 @@
 //! set fetched; `add_bodies`), so a machine reading TF2 from the asset
 //! store loads the bodies its match offered and never downloads another
 //! one mid-match. The offer (`asset_names`, an `AssetHooks` entry) names
-//! the class sets (`players/<class>`, `classes::set_of`) of the match's
-//! TF2 guns (`minigame_net::match_weapons`: its ladder, kit and drawn
-//! weapons, which its bots hold too) with the classes they need.
+//! the class sets (`players/<class>`, `classes::set_of`) of the classes
+//! the match makes: its ladder's TF2 rungs' drawn classes (the coming
+//! ladder's during a rotation: `minigame_net::match_ladder`;
+//! `classes::ladder_classes`), only those, and the own classes of its
+//! other TF2 guns (`minigame_net::match_weapons`: its kit and starting
+//! weapons), with the classes they need.
 //!
 //! Which body a player wears follows the class of the TF2 gun in hand
-//! (`wear_bodies`, on every machine from the inventory it sees): the
+//! (`wear_bodies`, on every machine from the inventory it sees and the
+//! rung's drawn class, `classes::RungClass`): the
 //! class's model by name (`map::BodyName`, kept on while the class
 //! changes; the default class's, the Soldier's, is the one model without a
 //! name when it is loaded, and a name the map lacks falls back to another
@@ -40,8 +44,9 @@ use source_engine::content::{material::MaterialLoader, props, surfaceprops::Surf
 
 use super::{
     GAME,
-    classes::{Classes, DEFAULT},
+    classes::{Classes, DEFAULT, RungClass},
 };
+use chimera_sim::minigame::ladder::Ladder;
 use crate::{
     core::Team,
     map::{BodyModel, BodyName, BodySkin, CharacterModels, GameKit, KitLoad, MapCharacterModel},
@@ -59,10 +64,12 @@ pub fn load(materials: &mut MaterialLoader, surfaces: &SurfaceProps, path: &str,
     Ok(m)
 }
 
-/// The player models of the classes whose guns `wants` and of the
-/// classes those need (`Classes::for_guns`), each once, in class order.
-/// (Every TF2 gun names its class, so a TF2 player always wears one of
-/// them; the default class's body is no longer loaded for its own sake.)
+/// The player models of every class the guns `wants` can make (whichever
+/// its ladder drew; `add_bodies` keeps those here, the offered ones) and
+/// of the classes those need (`Classes::for_guns`), each once, in class
+/// order. (Every TF2 gun names its classes, so a TF2 player always wears
+/// one of them; the default class's body is no longer loaded for its own
+/// sake.)
 pub fn wanted_models(table: &Classes, wants: &dyn Fn(&str) -> bool) -> Vec<String> {
     let guns = super::weapons::tf2_weapons();
     let wanted: Vec<&str> = guns.weapons.iter().map(|w| w.id.as_str()).filter(|g| wants(g)).collect();
@@ -105,21 +112,28 @@ pub fn add_bodies(
 }
 
 /// What a match's asset offer names of TF2's bodies (an `AssetHooks`
-/// entry, `chimera_net::net::assets`): the class sets of the match's TF2
-/// guns with the classes they need (`class_sets`).
+/// entry, `chimera_net::net::assets`): the class sets of the classes the
+/// match makes (`class_sets`).
 pub fn asset_names(world: &World) -> chimera_net::net::assets::AssetNames {
     let weapons = chimera_net::minigame_net::match_weapons(world);
+    let ladder = chimera_net::minigame_net::match_ladder(world);
     let table = world.get_resource::<Classes>().cloned().unwrap_or_default();
-    chimera_net::net::assets::AssetNames { sets: class_sets(&table, &weapons), ..default() }
+    chimera_net::net::assets::AssetNames { sets: class_sets(&table, ladder.as_deref(), &weapons), ..default() }
 }
 
-/// The offer's names (`tf2:players/<class>`) of the class sets of
-/// `weapons`' TF2 guns and the classes they need (`Classes::sets_for`):
-/// the bodies `wanted_models` loads for them.
-pub fn class_sets(table: &Classes, weapons: &[String]) -> Vec<String> {
-    table
-        .sets_for(weapons.iter().map(String::as_str))
-        .into_iter().map(|s| format!("{GAME}:{s}")).collect()
+/// The offer's names (`tf2:players/<class>`) of the classes a match
+/// makes and those they need: `ladder`'s rungs' drawn classes
+/// (`classes::ladder_classes`; a rung gun's other classes not), and the
+/// own class of each of `weapons`' TF2 guns that is no rung's.
+pub fn class_sets(table: &Classes, ladder: Option<&Ladder>, weapons: &[String]) -> Vec<String> {
+    let mut names: Vec<&str> = ladder.map(|l| super::classes::ladder_classes(table, l)).unwrap_or_default().into_iter().map(|c| c.name.as_str()).collect();
+    let rungs = |w: &str| ladder.is_some_and(|l| l.rungs.iter().any(|r| *r == w));
+    for w in weapons.iter().filter(|w| !rungs(w)) {
+        if let Some(c) = table.of_gun(w) {
+            names.push(&c.name);
+        }
+    }
+    table.sets_of(names).into_iter().map(|s| format!("{GAME}:{s}")).collect()
 }
 
 /// The skin of a body on `team` (0 RED, 1 BLU; classes.md, install.md
@@ -150,6 +164,7 @@ pub fn wear_bodies(
         Option<&BodySkin>,
         Option<&BodyModel>,
         Has<Tf2Skin>,
+        Option<&RungClass>,
     )>,
     weapons: Query<&Weapon>,
     models: Option<Res<CharacterModels>>,
@@ -158,7 +173,7 @@ pub fn wear_bodies(
 ) {
     let Some(table) = table else { return };
     let ours = |name: &str| table.classes.iter().any(|c| c.model.eq_ignore_ascii_case(name));
-    for (e, identity, inv, team, name, skin, body, skinned) in &players {
+    for (e, identity, inv, team, name, skin, body, skinned, drawn) in &players {
         let tf2 = identity.is_some_and(|i| i.0 == GAME);
         if !tf2 {
             // What TF2 set goes in one move (each removal alone makes
@@ -180,7 +195,7 @@ pub fn wear_bodies(
             continue;
         }
         let held = inv.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
-        if let Some(class) = held.and_then(|w| table.of_gun(&w.id)) {
+        if let Some(class) = held.and_then(|w| table.held(&w.id, drawn.map(|d| d.0.as_str()))) {
             // The class's model by name, the default class's too (the
             // map's TF2 bodies name it none, so the name falls back to
             // the unnamed default body): a TF2 player keeps `BodyName`
