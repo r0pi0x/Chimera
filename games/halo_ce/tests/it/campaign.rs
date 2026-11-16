@@ -9,8 +9,7 @@
 //! name off again (`name_bodies`). The kinds as sandbox targets
 //! (`targets`); a kind worn before its unit loaded is worn within two
 //! frames of the load; the pain, death, scream and maimed lines' rules
-//! (`voice`); a campaign body is never the table's black; its held guns
-//! survive another game's map-unload housekeeping (`unit::keep_held`).
+//! (`voice`); a campaign body is never the table's black.
 
 use bevy::prelude::*;
 use chimera_core::core::BodyRegion;
@@ -338,34 +337,3 @@ fn a_campaign_body_is_never_black() {
     assert_eq!(skin(red), Some(body::RED as i32));
 }
 
-/// A unit's held guns stay drawable by its own hand on every map: one
-/// another game's housekeeping dropped from the engine's late held models
-/// as a map unloaded is put back (`unit::keep_held`).
-#[test]
-fn a_bodys_held_guns_survive_another_games_housekeeping() {
-    use std::sync::Arc;
-    use chimera_world::map::{LateHeldModels, MapHeldModel};
-    use halo_ce::game::campaign::unit::{self, CampaignHeld};
-    let held = |key: &str| MapHeldModel {
-        key: key.into(),
-        model: Default::default(),
-        bone: "right hand".into(),
-        muzzle: None,
-        attachments: Vec::new(),
-        merged: Vec::new(),
-        own: None,
-    };
-    let mut app = App::new();
-    app.add_systems(Update, unit::keep_held);
-    let ours = vec![(Arc::new(held("halo_ce:plasma_rifle#elite")), Arc::new(Vec::new()))];
-    app.insert_resource(CampaignHeld(ours.clone()));
-    app.insert_resource(LateHeldModels(ours));
-    app.update();
-    assert_eq!(app.world().resource::<LateHeldModels>().0.len(), 1);
-    // A map unloads: everything nobody holds is forgotten.
-    app.world_mut().resource_mut::<LateHeldModels>().0.clear();
-    app.update();
-    assert!(app.world().resource::<LateHeldModels>().has("halo_ce:plasma_rifle#elite"));
-    app.update();
-    assert_eq!(app.world().resource::<LateHeldModels>().0.len(), 1, "put back once");
-}

@@ -666,7 +666,7 @@ impl Plugin for CampaignPlugin {
             .add_observer(arrive)
             .init_resource::<voice::CampaignSounds>()
             .add_message::<voice::RegionLost>()
-            .add_systems(Update, (unit::load_on_demand, unit::keep_held, name_bodies, voice::join_banks, shield_disc))
+            .add_systems(Update, (unit::load_on_demand, name_bodies, voice::join_banks, shield_disc))
             .add_systems(Update, targets::sandbox_wants.before(unit::load_on_demand))
             .add_systems(FixedUpdate, shield_boxes.after(crate::map::pose_hitboxes).before(crate::core::SimSet::Movement))
             .add_systems(FixedLast, shield_boxes.after(crate::map::SimPose))
