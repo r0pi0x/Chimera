@@ -5,6 +5,7 @@
 //! where tests go: docs/OBSERVABILITY.md, section 1.
 
 mod announcer;
+mod arena_wall;
 mod archetypes;
 mod bodies_drawn;
 mod clips_across_games;
@@ -68,6 +69,7 @@ mod turrets;
 mod voice_lines;
 
 mod heavy {
+    mod arena_bots;
     mod bot_cost;
     mod bots_on_rungs;
     mod ca_mode_objects;

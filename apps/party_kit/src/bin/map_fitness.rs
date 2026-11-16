@@ -703,7 +703,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     // player clips: the space players play.
     let mut p = combat_arms::game::bots::brain::nav_params();
     // Held to where the map is played where it says (`nav_gen::NavWithin`).
-    p.within = nav_gen::NavWithin::of(w);
+    nav_gen::hold(&mut p, w);
     let vis = w.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let (nav, spots, other) = {
         let mut state = SystemState::<SpatialQuery>::new(w);

@@ -1,0 +1,24 @@
+# Halo's arena slices: parts of its big maps played as whole ones in the
+# party apps (never in Halo's own app; docs/plans/active/arena-slices.md,
+# chimera_sim::minigame::arena reads this file, chimera_world's
+# map::play_area plays a slice). Each slice is a sub-map of its map
+# (`halo_ce:bloodgulch@west_base`), shown as "<map>: <name>". `points` is
+# the boundary in plan view (engine x and z, metres), `seed` a point on a
+# floor inside (engine x, y, z).
+
+# A1 (2026-11-15), drawn by hand on map_fitness --dump's top-down plot:
+# the base at the low-x end of the gulch and the ground about it, from the
+# foot of the canyon's wall (the west edge, along the cliff) out to the
+# rocks on the gulch's floor. The bunker's inside and its roof are spots
+# the field doesn't see; its walls, the rocks and the cliff's slope break
+# the field's sight lines. About 9,900 m2: the pool's 4 to 6 player band
+# at a mean sight near 25 m (the plan's section 4).
+[[slice]]
+map = "bloodgulch"
+id = "west_base"
+name = "West Base"
+map_name = "Blood Gulch"
+points = [[171.0, -168.0], [212.0, -180.0], [262.0, -174.0], [285.0, -148.0], [285.0, -102.0], [258.0, -80.0], [205.0, -78.0], [173.0, -100.0]]
+seed = [225.0, 0.6, -160.0]
+players = [2, 8]
+area_m2 = 9927

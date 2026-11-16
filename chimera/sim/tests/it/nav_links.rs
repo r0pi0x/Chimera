@@ -135,6 +135,53 @@ fn a_mesh_held_to_a_box_has_no_cell_outside_it() {
     assert_eq!(NavWithin::of(sim.app.world()), Some((lo, hi)));
 }
 
+/// Held to a polygon too (a match on a slice of the map,
+/// `play_area::PlayArea`; `nav_gen::hold`): a triangle over the floor
+/// keeps only cells whose floor point is inside it; a seed outside it is
+/// dropped, one inside kept.
+#[test]
+fn a_mesh_held_to_a_polygon_has_no_cell_outside_it() {
+    use chimera_world::map::play_area::{self, ArenaSlice, PlanPolygon};
+    let mut sim = shelf();
+    let corners = [Vec2::new(-9.0, -9.0), Vec2::new(5.0, -9.0), Vec2::new(-9.0, 5.0)];
+    let poly = PlanPolygon::new(&corners).unwrap();
+    let w = sim.app.world_mut();
+    // The loaded map's slice: `hold` takes it.
+    play_area::apply(
+        w,
+        ArenaSlice {
+            map: "test:shelf".into(),
+            id: "corner".into(),
+            name: "Shelf: Corner".into(),
+            points: corners.to_vec(),
+            seed: Vec3::new(-6.0, 0.0, -6.0),
+        },
+    )
+    .unwrap();
+    let mut p = climber();
+    nav_gen::hold(&mut p, w);
+    assert_eq!(p.plan, Some(poly));
+    let walls: Vec<Entity> = w.query_filtered::<Entity, With<play_area::ArenaWall>>().iter(w).collect();
+    let mut state = SystemState::<SpatialQuery>::new(w);
+    let q = state.get(w).unwrap();
+    // The wall is solid: the walker meets it, as it would a level's.
+    let ignore_walls = |e: Entity| walls.contains(&e);
+    let inside_seed = [Vec3::new(-6.0, 0.0, -6.0)];
+    let held = nav_gen::generate(&q, &ignore_walls, &inside_seed, &p);
+    assert!(!held.areas.is_empty());
+    let cell = p.cell;
+    for a in &held.areas {
+        // Each kept cell's centre is inside; an area's corner at most a
+        // cell's half past the edge.
+        let c = Vec2::new(a.center.x, a.center.z);
+        assert!(poly.outside_by(c) <= cell, "{c} outside");
+    }
+    assert!(size(&held) < 0.5 * 14.0 * 14.0 + 10.0, "{}", size(&held));
+    // A seed outside alone: nothing.
+    let outside_seed = [Vec3::new(5.0, 0.0, 5.0)];
+    assert!(nav_gen::generate(&q, &ignore_walls, &outside_seed, &p).areas.is_empty(), "the seed outside dropped");
+}
+
 /// Two rooms 40 m apart (x -20 to -10 and 20 to 30) with nothing between,
 /// a teleporter from the first's (-12, 0) to the second's (22, 0).
 fn rooms() -> (Sim, Teleporter) {

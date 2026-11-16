@@ -77,6 +77,7 @@ pub mod bot_profiles;
 pub mod monitor;
 pub mod nav;
 pub mod nav_gen;
+pub mod play_area;
 pub mod particles;
 pub mod physics_clip;
 pub mod prepare;
@@ -163,15 +164,18 @@ pub struct KillHeight(pub f32);
 /// health) go back to a spawn point instead. A noclipping character
 /// (`core::Noclip`) flies where it likes: below the map too. Then, the
 /// server's, the map's teleporters (`teleport::busy`, `teleport::apply`):
-/// one system after the tick's movement for both.
+/// one system after the tick's movement for both. A match played on a
+/// slice of the map (`play_area::PlayArea`) puts a character outside back
+/// inside, the server's, before the kill height is looked at.
 #[allow(clippy::type_complexity)]
 pub fn fall_out_of_map(
     kill: Option<Res<KillHeight>>,
-    (teleporters, role, playback, mut commands): (
+    (teleporters, role, playback, mut commands, mut area): (
         Option<Res<teleport::MapTeleporters>>,
         Option<Res<crate::core::NetRole>>,
         Option<Res<crate::core::Playback>>,
         Commands,
+        Option<ResMut<play_area::PlayArea>>,
     ),
     mut characters: Query<
         (
@@ -181,18 +185,51 @@ pub fn fall_out_of_map(
             Option<&crate::core::Health>,
             Has<crate::core::God>,
             Option<&Team>,
-            (Option<&teleport::TeleportArrival>, Option<&teleport::TeleportBlocked>),
+            (Option<&teleport::TeleportArrival>, Option<&teleport::TeleportBlocked>, Has<crate::core::Dead>),
         ),
         (With<crate::core::Intent>, Without<crate::core::Noclip>),
     >,
     spawns: Query<(&Transform, &crate::core::SpawnPoint), Without<crate::core::Intent>>,
     mut damage: MessageWriter<crate::core::Damage>,
 ) {
+    let authority = crate::core::authoritative(role, playback);
     if let Some(t) = teleporters
-        && crate::core::authoritative(role, playback)
-        && teleport::busy(&t, characters.iter().map(|(_, at, .., (a, b))| (at.translation, a, b)))
+        && authority
+        && teleport::busy(&t, characters.iter().map(|(_, at, .., (a, b, _))| (at.translation, a, b)))
     {
         commands.queue(teleport::apply);
+    }
+    // A match's slice (`play_area`): a character outside is put back at
+    // the nearest spawn point (all inside), no death counted.
+    if let Some(area) = area.as_mut()
+        && authority
+    {
+        for (e, mut at, velocity, .., (_, _, dead)) in &mut characters {
+            // The dead are placed by their respawn.
+            if dead || !area.outside(at.translation) {
+                continue;
+            }
+            let here = at.translation;
+            let Some((s, _)) = spawns
+                .iter()
+                .min_by(|a, b| a.0.translation.distance_squared(here).total_cmp(&b.0.translation.distance_squared(here)))
+            else {
+                continue;
+            };
+            at.translation = s.translation;
+            if let Some(mut v) = velocity {
+                v.0 = Vec3::ZERO;
+            }
+            area.put_backs += 1;
+            info!("arena: put {e} back inside, from {here} to {}", s.translation);
+            let to = s.translation;
+            commands.queue(move |w: &mut World| {
+                if let Some(mut p) = w.get_mut::<Position>(e) {
+                    p.0 = to;
+                }
+                crate::core::rebase(w, e);
+            });
+        }
     }
     let Some(kill) = kill else { return };
     for (e, mut at, velocity, health, god, team, _) in &mut characters {

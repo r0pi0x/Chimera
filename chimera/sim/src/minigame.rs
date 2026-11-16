@@ -94,6 +94,7 @@
 //! `Minigames::text`; `chimera_net::minigame_net`); a client can't start or
 //! restart one itself.
 
+pub mod arena;
 pub mod auto;
 pub mod climb;
 pub mod def;

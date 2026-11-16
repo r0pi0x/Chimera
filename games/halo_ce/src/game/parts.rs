@@ -75,11 +75,17 @@ pub const POOL_RULES: &str = include_str!("../../data/map_pool.toml");
 /// players present.
 pub const MAP_FITNESS: &str = include_str!("../../data/map_fitness.toml");
 
-/// Its pool rules and measurements registered (`map_fit::MapPoolAppExt`).
+/// Its arena slices (data/arena_slices.toml: parts of its big maps the
+/// party apps may play as whole ones, `chimera_sim::minigame::arena`).
+pub const ARENA_SLICES: &str = include_str!("../../data/arena_slices.toml");
+
+/// Its pool rules, measurements and arena slices registered
+/// (`map_fit::MapPoolAppExt`).
 pub fn add_map_pool(app: &mut bevy::app::App) {
     use chimera_sim::minigame::map_fit::MapPoolAppExt;
     app.add_map_pool_rules(super::GAME, "halo_ce data/map_pool.toml", POOL_RULES)
-        .add_map_fitness(super::GAME, "halo_ce data/map_fitness.toml", MAP_FITNESS);
+        .add_map_fitness(super::GAME, "halo_ce data/map_fitness.toml", MAP_FITNESS)
+        .add_arena_slices(super::GAME, "halo_ce data/arena_slices.toml", ARENA_SLICES);
 }
 
 /// What an app of several games needs for Halo's guns: its movement

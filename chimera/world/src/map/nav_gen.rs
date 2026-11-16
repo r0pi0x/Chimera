@@ -46,6 +46,12 @@
 //! level, 384 by 442 m, has 78,000 m2 of floor the bots walk, past the
 //! 300,000 cells (75,000 m2) that end an unheld flood.
 //!
+//! And to a polygon (`NavGenParams::plan`, a match played on a slice of
+//! the map: `play_area`): a cell is kept when its floor point is inside
+//! the box and the polygon, seeds outside the polygon are dropped (the
+//! play area puts a spawn point at its seed), and the cells are held to
+//! as many as cover the polygon's box. Callers hold a flood with `hold`.
+//!
 //! Links of the map (`link_map`): a generated mesh gets the loaded map's
 //! teleporters (`map::teleport::MapTeleporters`) as `Via::Teleport` links
 //! (`NavMesh::add_teleport`).
@@ -113,6 +119,9 @@ pub struct NavGenParams {
     /// Only cells whose floor point is inside this box (engine space, min
     /// and max; the module doc, `NavWithin`); None: anywhere.
     pub within: Option<(Vec3, Vec3)>,
+    /// And inside this polygon in plan view (a match played on a slice of
+    /// the map: `play_area::PlayArea`; `hold`); None: anywhere.
+    pub plan: Option<super::play_area::PlanPolygon>,
 }
 
 impl Default for NavGenParams {
@@ -129,17 +138,45 @@ impl Default for NavGenParams {
             mask: crate::core::CHARACTER_FILTER,
             slide: 0.0,
             within: None,
+            plan: None,
         }
     }
 }
 
 impl NavGenParams {
     /// The most cells a flood takes: `max_cells`, or held to a box
-    /// (`within`) as many as cover its footprint if that is more.
+    /// (`within`) as many as cover its footprint if that is more (the
+    /// footprint of the box and the polygon's box, `plan`, together).
     pub fn cell_limit(&self) -> usize {
-        let footprint = self.within.map_or(0.0, |(lo, hi)| ((hi.x - lo.x) * (hi.z - lo.z)).max(0.0) / (self.cell * self.cell));
+        let mut lo_hi = self.within.map(|(lo, hi)| (Vec2::new(lo.x, lo.z), Vec2::new(hi.x, hi.z)));
+        if let Some((plo, phi)) = self.plan.map(|p| p.bounds()) {
+            // The polygon's box when smaller.
+            lo_hi = Some(lo_hi.map_or((plo, phi), |(lo, hi)| (lo.max(plo), hi.min(phi))));
+        }
+        // Grown to the footprint only when held to a box (a map's own).
+        let footprint = lo_hi
+            .filter(|_| self.within.is_some())
+            .map_or(0.0, |(lo, hi)| ((hi.x - lo.x) * (hi.y - lo.y)).max(0.0) / (self.cell * self.cell));
         self.max_cells.max(footprint.min(1e8) as usize)
     }
+
+    /// Whether a floor point at `at` may be kept (the box and the polygon).
+    pub fn holds(&self, at: Vec3) -> bool {
+        self.within.is_none_or(|(lo, hi)| NavWithin::contains(lo, hi, at)) && self.plan.is_none_or(|p| p.contains3(at))
+    }
+
+    /// Held where the loaded map is played (`hold`).
+    pub fn held(mut self, world: &World) -> Self {
+        hold(&mut self, world);
+        self
+    }
+}
+
+/// `p` held to where the loaded map is played: the map's box (`NavWithin`)
+/// and the match's slice (`play_area::PlayArea`'s polygon).
+pub fn hold(p: &mut NavGenParams, world: &World) {
+    p.within = NavWithin::of(world);
+    p.plan = super::play_area::held_plan(world);
 }
 
 /// A walking player: the default step and height, about a CS:S player's
@@ -587,7 +624,8 @@ impl<'a> Grid<'a> {
     fn flood_some(&mut self, seeds: &[Vec3], keep: &dyn Fn(Vec3) -> bool, mut budget: usize) -> bool {
         let p = self.p;
         if self.cells.is_empty() {
-            for s in seeds {
+            // Seeds outside the polygon are dropped (the box keeps them).
+            for s in seeds.iter().filter(|s| p.plan.is_none_or(|poly| poly.contains3(**s))) {
                 let (ix, iz) = ((s.x / p.cell).floor() as i32, (s.z / p.cell).floor() as i32);
                 let Some(y) = self.floor(ix, iz, s.y + 0.5, 4.0) else { continue };
                 if self.find(ix, iz, y).is_some() || !self.stands(ix, iz, y) {
@@ -614,7 +652,7 @@ impl<'a> Grid<'a> {
                         let (x, z) = self.centre(jx, jz);
                         let at = Vec3::new(x, y1, z);
                         if self.cells.len() >= p.cell_limit()
-                            || p.within.is_some_and(|(lo, hi)| !NavWithin::contains(lo, hi, at))
+                            || !p.holds(at)
                             || !keep(at)
                             || !self.stands(jx, jz, y1)
                         {

@@ -59,6 +59,8 @@
 //! - Both games' parts registered (`chimera_core::game_parts`, each game's
 //!   `parts::PARTS`): what the Ultimate Gun Game builds its ladder from.
 //!
+//! - `arena`: a slice of a big map (`arena halo_ce:bloodgulch@west_base`):
+//!   the match on a part of the map, behind a wall.
 //! - `surprise`: the host's surprises on the console (`surprise airstrike`,
 //!   `surprise gravity`), from what any client already draws.
 //! - Bots: Combat Arms' (the gun game's `bots` slot), with CS:S's guns'
@@ -332,6 +334,8 @@ impl Plugin for PartyPartsPlugin {
             chimera_net::minigame_net::MinigameNetPlugin,
             // The host's surprises (`surprise airstrike`, `surprise gravity`).
             surprise::SurprisePlugin,
+            // A slice of a big map (`arena <map@slice>`).
+            arena::ArenaPlugin,
         ));
         if let Some(mut s) = app.world_mut().get_resource_mut::<combat_arms::game::rules::CaRuleSettings>() {
             s.mode = "none".into();
@@ -622,6 +626,7 @@ pub fn ids() -> Vec<String> {
         .collect()
 }
 
+pub mod arena;
 pub mod host;
 pub mod party_damage;
 pub mod spot_checks;

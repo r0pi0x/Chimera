@@ -9,7 +9,7 @@ entry "An arena cut from a big map" in [halo-ce.md](halo-ce.md).
 
 | Milestone | State | Summary |
 |---|---|---|
-| A1 one hand-drawn slice of Blood Gulch, plain wall | not started | the slice as data, its wall for every game's movement, spots and bots held inside, sent to clients |
+| A1 one hand-drawn slice of Blood Gulch, plain wall | done 2026-11-15 | `halo_ce:bloodgulch@west_base` (9,900 m2): data, solid wall, spots and bots held inside, `NetMinigame::arena` (net64), `arena` command, placeholder look; see "A1 as built" |
 | A2 slices in the draw | not started | a slice is a pool entry with its own measurements; rotation, vote and map change carry it |
 | A3 measuring a slice | not started | `map_fitness --slice`: the pool's measures inside it and the spawn-safety measures; thresholds calibrated |
 | A4 spawn deaths from play | not started | the share of deaths within 3 s of a spawn, per match, to check A3's thresholds against play |
@@ -462,6 +462,40 @@ the held flood (cells, seeds); the heavy test on Blood Gulch: every spot
 and bot area inside, no teleporter crossing, a bots' match runs; an
 offscreen picture. Coordination: `NetMinigame` is shared with the ladder
 session (protocol bump).
+
+**A1 as built** (2026-11-15). Where it differs from the above:
+- The wall is ordinary static collision (decision 5): one static cuboid
+  per edge, 0.5 m thick, 1000 m above and below the seed, on the default
+  layer (`play_area::ArenaWall`); not `MapBrushCollider`, so Source's
+  movement meets it through its physics casts (its brush sweep does not
+  see it), which the tests show stops CS:S, HL2:DM and TF2.
+- The slice's types and the play area are `chimera_world::map::
+  play_area` (`PlanPolygon`, `ArenaSlice`, `PlayArea`, `ArenaPlan`); the
+  data reader `chimera_sim::minigame::arena` (`ArenaSlices`,
+  `MapPoolAppExt::add_arena_slices`); the file's `name` is the slice's
+  own and the shown name is made with the map's (`map_name` or
+  `hud::map_display_name`): "Blood Gulch: West Base".
+- The bots' and spots' floods: `NavGenParams::plan` beside `within` (not
+  one merged field) and `nav_gen::hold(&mut p, world)` for the four
+  callers (Combat Arms' bots' brain one line). The map's spawn points
+  outside lose `SpawnPoint` and one is added at the seed, so every flood
+  seeded from spawn points starts inside; the spots are also filtered by
+  the polygon (a map with its own mesh).
+- Starting a match on a slice: the party kit's console command `arena
+  <map@slice>` (`+arena` on a server's command line), not `changelevel
+  <map> <slice>`: it sets the plan and loads the map (`changelevel`),
+  or makes the play area at once on a map just in (`+map
+  halo_ce:bloodgulch +arena west_base`). Another map coming in forgets
+  the plan. Nothing in the pool, rotation or vote changed (A2).
+- The play area is made at the map's spawn (`play_area::map_spawned`,
+  queued with the map's resources) or when the plan changes on a client
+  (`follow_plan_system`), never in the converted-map cache. The look
+  (`chimera_present::render::arena`): a curtain 4 m tall fading upward
+  and a foot line, flat accent blue, unlit, from the floor found under
+  each 0.5 m of edge.
+- Not done in A1: the client prediction test (the client builds the same
+  wall from `NetMinigame::arena`); a dropped weapon landing outside is
+  left (only map pickups, `MapPickup`, are removed).
 
 **A2 Slices in the draw** (medium). Slices join `MapPool` as `map@slice`
 entries with their own `Fitness`; the draw, the vote and the map change
