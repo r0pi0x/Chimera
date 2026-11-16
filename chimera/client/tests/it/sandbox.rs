@@ -469,6 +469,53 @@ fn the_bench_holds_list_opens_on_the_bodys_guns_and_holds_one() {
 }
 
 #[test]
+fn the_bench_places_a_target_on_the_platform_where_it_stands_still() {
+    use bevy::ui::DeprecatedInteraction as Interaction;
+    use chimera_client::client::sandbox::{
+        bench::BenchAction,
+        link::{BenchView, TargetMotion, TargetPlace},
+    };
+    let mut sim = sim("bench");
+    let act = |sim: &mut Sim, a: BenchAction| {
+        sim.app.world_mut().write_message(a);
+        frame(sim);
+        frame(sim);
+        sim.app.world().resource::<BenchView>().targets[0].clone()
+    };
+    let t = sim.app.world().resource::<BenchView>().targets[0].clone();
+    assert_eq!(t.spec.place, TargetPlace::Line);
+    // The options of a row that take a press (the greyed ones don't).
+    let pressable = |sim: &mut Sim, row: &str| {
+        let w = sim.app.world_mut();
+        let r = w.query::<(Entity, &UiParityId)>().iter(w).find(|(_, p)| p.0 == row).map(|(e, _)| e).unwrap_or_else(|| panic!("{row} drawn"));
+        let mut n = 0;
+        let mut stack = vec![r];
+        while let Some(e) = stack.pop() {
+            n += usize::from(w.get::<BenchAction>(e).is_some() && w.get::<Interaction>(e).is_some());
+            stack.extend(w.get::<Children>(e).map(|c| c.iter().collect::<Vec<_>>()).unwrap_or_default());
+        }
+        n
+    };
+    assert_eq!(pressable(&mut sim, "bench.place"), 2, "Line and Platform");
+    assert_eq!(pressable(&mut sim, "bench.moves"), 3);
+    // Strafing, then onto the platform: it stands still there.
+    let t = act(&mut sim, BenchAction::Motion(t.id, TargetMotion::Strafes));
+    assert_eq!(t.spec.motion, TargetMotion::Strafes);
+    let t = act(&mut sim, BenchAction::Place(t.id, TargetPlace::Platform));
+    assert_eq!((t.spec.place, t.spec.motion), (TargetPlace::Platform, TargetMotion::Still));
+    assert_eq!(pressable(&mut sim, "bench.moves"), 1, "Strafes and Walks greyed out");
+    let t = act(&mut sim, BenchAction::Motion(t.id, TargetMotion::Walks));
+    assert_eq!(t.spec.motion, TargetMotion::Still, "no walking on the platform");
+    // A distance is a line's: it goes back on one.
+    let t = act(&mut sim, BenchAction::Distance(t.id, 40.0));
+    assert_eq!((t.spec.place, t.spec.distance_m), (TargetPlace::Line, 40.0));
+    assert_eq!(pressable(&mut sim, "bench.moves"), 3);
+    let t = act(&mut sim, BenchAction::Place(t.id, TargetPlace::Platform));
+    let t = act(&mut sim, BenchAction::Place(t.id, TargetPlace::Line));
+    assert_eq!((t.spec.place, t.spec.distance_m), (TargetPlace::Line, 10.0), "back on the 10 m line");
+}
+
+#[test]
 fn the_pickers_search_types_and_finds_and_t_does_not_close_the_bench() {
     use chimera_client::client::sandbox::bench::{BenchAction, BenchUi, CharacterCatalogue};
     let mut sim = sim("bench");

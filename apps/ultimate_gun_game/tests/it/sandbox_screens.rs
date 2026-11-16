@@ -21,18 +21,74 @@ use ultimate_gun_game::sandbox::SANDBOX;
 const GUN: &str = "combat_arms:m4a1";
 
 fn play() -> (Sim, Entity) {
+    play_on(None)
+}
+
+/// `play` on a code-built map (`range`), the player just behind its
+/// firing line.
+fn play_on(map: Option<&str>) -> (Sim, Entity) {
     let mut sim = Sim::new(
         combat_arms::harness::CaSim,
         (chimera_world::greybox::GreyboxMapPlugin, party_kit::PartyPartsPlugin, ultimate_gun_game::UltimateGunGamePlugin::default(), SandboxUiPlugin),
     );
+    let mut at = Vec3::new(0.0, 1.0, 0.0);
+    if let Some(map) = map {
+        let w = sim.app.world_mut();
+        chimera_world::greybox::unload(w);
+        chimera_world::greybox::select(w, map);
+        chimera_world::greybox::respawn(w);
+        sim.ticks(2);
+        if let Some(l) = sim.app.world().get_resource::<chimera_world::range::RangeLayout>() {
+            at = l.point(-0.5, 0.0) + Vec3::Y;
+        }
+    }
     sim.app.insert_resource(Theme::from_toml("name = \"test\"\n[flags.hud]\nsignal = true\n").expect("theme"));
     sim.app.insert_resource(UiClock::manual());
     ultimate_gun_game::sandbox::generate(sim.app.world_mut(), "combat_arms").expect("the definition");
     minigame::start(sim.app.world_mut(), SANDBOX).expect("the sandbox starts");
-    let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
+    let me = sim.spawn_character(at, movement::ID);
     sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
     sim.seconds(1.5);
     (sim, me)
+}
+
+#[test]
+fn the_bench_puts_a_target_on_the_ranges_platform_and_says_why_not_off_it() {
+    use chimera_client::client::sandbox::link::{TargetMotion, TargetPlace};
+    // On the range: spawned on the platform, back on a line, onto it again.
+    let (mut sim, _) = play_on(Some("range"));
+    let top = sim.app.world().resource::<chimera_world::range::RangeLayout>().platform_top;
+    let spec = TargetSpec { character: "combat_arms:default".into(), gun: Some(GUN.into()), ..default() };
+    ask(&mut sim, BenchRequest::Spawn(TargetSpec { place: TargetPlace::Platform, ..spec.clone() }));
+    let view = sim.app.world().resource::<BenchView>().clone();
+    assert_eq!(view.refused, None);
+    let row = view.targets[0].clone();
+    assert_eq!(row.spec.place, TargetPlace::Platform);
+    assert!((row.home.unwrap().xz() - top.xz()).length() < 1.3, "on the platform: {row:?}");
+    ask(&mut sim, BenchRequest::Set(row.id, TargetSpec { place: TargetPlace::Line, distance_m: 20.0, ..row.spec.clone() }));
+    let row = sim.app.world().resource::<BenchView>().targets[0].clone();
+    assert_eq!((row.spec.place, row.spec.distance_m), (TargetPlace::Line, 20.0));
+    ask(&mut sim, BenchRequest::Set(row.id, TargetSpec { place: TargetPlace::Platform, ..row.spec.clone() }));
+    let row = sim.app.world().resource::<BenchView>().targets[0].clone();
+    assert_eq!(row.spec.place, TargetPlace::Platform);
+    assert_eq!(sim.app.world().get::<Target>(Entity::from_bits(row.id)).map(|t| t.place), Some(TargetPlace::Platform));
+    // A strafe there is the mechanics' refusal, shown.
+    ask(&mut sim, BenchRequest::Set(row.id, TargetSpec { motion: TargetMotion::Strafes, ..row.spec.clone() }));
+    let view = sim.app.world().resource::<BenchView>().clone();
+    assert!(view.refused.is_some(), "refused: {view:?}");
+    assert_eq!(view.targets[0].spec.motion, TargetMotion::Still);
+    // Off the range: refused, in the bench's words.
+    let (mut sim, _) = play();
+    ask(&mut sim, BenchRequest::Spawn(spec.clone()));
+    let row = sim.app.world().resource::<BenchView>().targets[0].clone();
+    ask(&mut sim, BenchRequest::Set(row.id, TargetSpec { place: TargetPlace::Platform, ..row.spec.clone() }));
+    let view = sim.app.world().resource::<BenchView>().clone();
+    assert_eq!(view.refused.as_deref(), Some("The platform is on the range only."));
+    assert_eq!(view.targets[0].spec.place, TargetPlace::Line);
+    ask(&mut sim, BenchRequest::Spawn(TargetSpec { place: TargetPlace::Platform, ..spec }));
+    let view = sim.app.world().resource::<BenchView>().clone();
+    assert_eq!(view.refused.as_deref(), Some("The platform is on the range only."));
+    assert_eq!(view.targets.len(), 1);
 }
 
 fn ask(sim: &mut Sim, r: BenchRequest) {
