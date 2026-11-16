@@ -923,3 +923,23 @@ backlog.
   wanted. Also landed: nothing of a game exists behind the party main
   menu (no player, kit or match until Host, Join or Sandbox), from the
   owner's test.
+- 2026-11-16 (late): landed since the last entry. The party's
+  cross-game balance as one table with the host's `mp_balance` (on by
+  default: the owner's decision; apps/party_kit/data/party_balance.toml,
+  docs/plans/active/party-balance.md). The Hunter's second pass (its
+  rod, blast and flash on every map, the fire animation on the body
+  others see, the first-person view tuned, one rod per charge). The
+  sandbox on the range: targets on the distance lines, props on the
+  range's shelf and board, 100 and 200 m hit by real shots, a target on
+  the platform, a gun switch that waits for its files
+  (`rung_command::GunPending`), no level or lead banners there. Fixes
+  from the owner's first test and after: the main menu's Sandbox entry
+  loads its map and leaves the menu; nothing of a game behind the menu;
+  a crash a few frames into the sandbox on the code-built maps (their
+  kit's entity scale is 0, the map logic divided a velocity by it:
+  source_logic's bridge now builds no logic for such a map). Checked on
+  the Windows PC in the playtest profile along the owner's path (menu,
+  Sandbox, the range, targets of three games, props, the Hunter's rung).
+  Open for the owner: the arena's two questions (a wall across a cave
+  mouth; a cave fight as Blood Gulch's slice), HL2:DM's 1.5 on its own
+  bodies, a first hearing of the characters' lines.

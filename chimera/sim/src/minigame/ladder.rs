@@ -1637,6 +1637,12 @@ fn notice(world: &World, viewer: Entity, event: &MinigameEvent) -> Option<HudLin
 /// The viewer's big callouts (`hud::Callout`): its own rung changes, the
 /// last rung (its own and others'), its lead.
 fn callout(world: &World, viewer: Entity, event: &MinigameEvent) -> Option<Callout> {
+    // None in a sandbox (`rung_command::HoldRungs`): nobody climbs or
+    // leads there, and a gun picked by hand is not a level gained ("You
+    // took the lead" came up at every pick).
+    if super::rung_command::holds(world) {
+        return None;
+    }
     let ladder = world.get_resource::<Ladder>()?;
     let total = ladder.rungs.len();
     let rung = usize::try_from(event.value).ok()?;
