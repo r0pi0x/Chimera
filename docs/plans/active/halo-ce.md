@@ -876,3 +876,26 @@ backlog.
   more sandbox mechanics. Decided by the owner: balancing is on by
   default; publish the characters' sets (through the asset service's
   session, once the Hunter's and the widened voice sets are cut).
+- 2026-11-16 (later): the Hunter and the spoken lines landed (net66):
+  `BodyKind::Hunter` with its own gun as a rung of its own
+  (`halo_ce:hunter_fuel_rod`; in drawn ladders only with campaign bodies
+  on), a first-person view cut from its own body model
+  (`campaign::first_person`: clumsy, its offset and kept bones are data),
+  and a line of the character's own voice when a player becomes it and
+  sometimes after a kill (`[chatter]` in data/campaign.toml; our
+  addition, the owner's request). Published to the asset store with the
+  owner's go: character/{elite,grunt,jackal,marine,hunter} and
+  voice/{elite,grunt,jackal,hunter,marine_*} (a client without the disc
+  gets the bodies; checked through the service). Not done for the
+  Hunter: its rod, blast and muzzle flash are not drawn on another
+  game's map (its effects are not merged into `fx::load`), the
+  third-person body plays no fire animation, no kill icon, no ammo
+  panel. Also landed: late-built models shown whole (a mesh held out of
+  the depth prepass until its main-pass pipeline is ready), view models
+  built wanted-first, read-ahead kept to half the task pool; the
+  sandbox's second batch of mechanics (repeat the layout, a gun with a
+  chosen body, conditions); a sandbox start from the main menu loads
+  its map and leaves the menu (the owner's first test found the menu
+  stuck). Under way: no player or match behind the main menu (the
+  owner heard a weapon's draw sound at start), the arena's measuring
+  (A3); next the arena's slices in the map pool (A2).
