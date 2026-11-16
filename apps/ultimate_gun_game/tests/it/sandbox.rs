@@ -82,6 +82,20 @@ fn the_sandbox_runs_with_no_end_and_lists_halos_guns_and_grenade() {
     assert!(list.contains(" halo_ce  gun"), "{list}");
 }
 
+/// `sandbox` while the sandbox plays on that map does nothing (a control
+/// that fires twice must not restart it); `sandbox restart` starts it again.
+#[test]
+fn sandbox_again_on_the_same_map_does_nothing_and_restart_starts_it() {
+    let (mut sim, me, _) = play();
+    run(&mut sim, "rung 3");
+    let before = rung(&sim, me);
+    let out = run(&mut sim, "sandbox");
+    assert!(out.iter().any(|l| l.contains("already playing")), "{out:?}");
+    assert_eq!(rung(&sim, me), before, "nothing restarted: the rung is kept");
+    let out = run(&mut sim, "sandbox restart");
+    assert!(!out.iter().any(|l| l.contains("already playing")), "{out:?}");
+}
+
 #[test]
 fn rung_puts_the_player_on_a_rung_by_number_id_or_fragment() {
     let (mut sim, me, _) = play();

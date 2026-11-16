@@ -534,9 +534,10 @@ impl Gun {
     }
 }
 
-/// Our id of a damage effect named in data (`vitality::ids::ALL`).
+/// Our id of a damage effect named in data (`vitality::ids::ALL` and
+/// `ids::CAMPAIGN`).
 pub fn effect_id(name: &str) -> Option<EffectId> {
-    ids::ALL.into_iter().find(|e| e.0 == name)
+    ids::ALL.into_iter().chain(ids::CAMPAIGN).find(|e| e.0 == name)
 }
 
 /// Seconds to ticks: x 30 in single precision, truncated (weapons.md,

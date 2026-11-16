@@ -40,3 +40,38 @@ small_scale = 0.25
 # A map with no measurements (installed after the data was made): in at
 # this weight, said in the log once.
 unknown_weight = 0.5
+
+# An arena slice (docs/plans/active/arena-slices.md, section 5 and A3; the
+# map_fitness tool's `--slice`, chimera_sim::minigame::slice_safety): where
+# a slice passes the spawn-safety measures and for how many players, and
+# how it makes its own spawn points. FIRST NUMBERS, calibrated on a sweep
+# of whole maps (the plan's A3 table) and to be tuned by playtests (the
+# owner's decision 12; A4 measures spawn deaths in play).
+[slice]
+# The share of spawn-spot pairs that see each other, at most (a flat field
+# is near 1; the same number as the mean share of the other spots that
+# see a spot).
+see_pairs_max = 0.35
+# The chance a fresh spawn is seen at once (it takes the least seen of 16
+# random spots, the others at random spots), at most: the players a slice
+# suits stop at the count where it goes over.
+seen_at_spawn_max = 0.15
+# The share of the floor that sees a spawn point, on average over the
+# points, at most (the share seeing any of them grows with their number:
+# told by the tool, not judged).
+point_floor_seen_max = 0.3
+# The share of the other spawn points that see the most seen one, at most.
+point_seen_by_max = 0.6
+# The share of spots with something solid within 3 m in 4 of 16 level
+# rays, at least.
+cover_min = 0.2
+# The 95th percentile of level sight from the spots (m), at most.
+long_sight_p95_max_m = 80
+# Spawn spots (the 1.5 m grid), at least.
+spots_min = 150
+# Spawn points a slice wants (the map's inside and its seed's counted);
+# the ones it makes stand at least `wall_gap_m` from its wall and, where
+# the floor allows, `points_apart_m` from each other.
+points_want = 8
+wall_gap_m = 4
+points_apart_m = 12

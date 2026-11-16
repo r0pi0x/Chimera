@@ -21,7 +21,14 @@
 //!   or a click on Leave (the dialog's hero) leaves (the menu's Cancel);
 //!   Esc or a right click again, or Stay, stays.
 //!
-//! `ui_scene load [ask]` stages it (with `+mainmenu` on a tool run).
+//! The map's name is the map's id without its game; an arena slice's
+//! (docs/plans/active/arena-slices.md) once the slice is planned for the
+//! map coming in (`ArenaPlan`: the host's at its map change, a client's
+//! with the match) is its label (`vote::map_label`: "Blood Gulch: West
+//! Base").
+//!
+//! `ui_scene load [ask|slice]` stages it (with `+mainmenu` on a tool run;
+//! `slice`: Blood Gulch's first slice loading).
 //!
 //! Known shortcuts: the map's preview is a gradient; a map's load has no
 //! share (striped); the files show only for the asset service's sets.
@@ -73,6 +80,8 @@ pub enum LeaveAsk {
 pub struct StagedLoad {
     pub join: JoinProgress,
     pub speed: f64,
+    /// The arena slice staged as loading (`ui_scene load slice`).
+    pub slice: Option<String>,
 }
 
 fn stage(w: &mut World, args: &[String]) -> Result<(), String> {
@@ -90,9 +99,28 @@ fn stage(w: &mut World, args: &[String]) -> Result<(), String> {
         files_done: 214,
         files_total: 340,
     });
-    w.insert_resource(StagedLoad { join, speed: 6.1e6 });
+    // `slice`: Blood Gulch's first registered slice loading.
+    let slice = args.first().filter(|a| *a == "slice").and_then(|_| {
+        let all = w.get_resource::<chimera_sim::minigame::arena::ArenaSlices>()?;
+        all.0.iter().find(|d| d.slice.map == "halo_ce:bloodgulch").map(|d| d.slice.key())
+    });
+    if slice.is_some() {
+        join.map = Some("halo_ce:bloodgulch".into());
+    }
+    w.insert_resource(StagedLoad { join, speed: 6.1e6, slice });
     w.resource_mut::<LoadingSignal>().ask = args.first().is_some_and(|a| a == "ask");
     Ok(())
+}
+
+/// The label of an arena slice planned for `map` (the staged one when
+/// staged), `vote::map_label`'s; empty for a whole map.
+fn shown_label(world: &World, map: &str, staged: Option<&StagedLoad>) -> String {
+    use chimera_sim::minigame::arena::{ArenaPlan, ArenaSlices};
+    let key = match staged {
+        Some(st) => st.slice.clone(),
+        None => world.get_resource::<ArenaPlan>().and_then(|p| p.0.as_ref()).filter(|s| s.map.eq_ignore_ascii_case(map)).map(|s| s.key()),
+    };
+    key.map(|k| chimera_sim::minigame::vote::map_label(world.get_resource::<ArenaSlices>(), &k)).unwrap_or_default()
 }
 
 /// Whether it shows: themed, loading or joining, the lobby not up.
@@ -164,6 +192,7 @@ struct Key {
     stage: Option<JoinStage>,
     bytes: (u64, u64, u64, u64),
     map: String,
+    label: String,
     units: (u32, u32),
     secs: u64,
     party: Option<shell::Party>,
@@ -192,12 +221,14 @@ fn draw(world: &mut World, mut drawn: Local<Key>) {
     let Some(units) = world.get_resource::<UiUnits>().copied() else { return };
     let menu = world.resource::<PartyMenu>().clone();
     let map = if staged.is_some() { join.map.clone() } else { menu.loading.clone().or(join.map.clone()) }.unwrap_or_default();
+    let label = shown_label(world, &map, staged.as_ref());
     let key = Key {
         up: shown,
         ask: world.resource::<LoadingSignal>().ask,
         stage: shown.then_some(join.stage),
         bytes: dl.as_ref().map_or((0, 0, 0, 0), |d| (d.done / 100_000, d.total, d.files_done, d.files_total)),
         map: map.clone(),
+        label: label.clone(),
         units: ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32),
         secs: now as u64,
         party: world.get_resource::<shell::Party>().cloned(),
@@ -231,7 +262,7 @@ fn draw(world: &mut World, mut drawn: Local<Key>) {
         let root = spawn(
             &mut c,
             &ui,
-            &View { stage: join.stage, dl: dl.as_ref(), map: &map, server: &server, hosting, speed, ask, party: &party, between: menu.screen == Screen::Loading && !hosting && join.stage == JoinStage::Idle },
+            &View { stage: join.stage, dl: dl.as_ref(), map: &map, label: &label, server: &server, hosting, speed, ask, party: &party, between: menu.screen == Screen::Loading && !hosting && join.stage == JoinStage::Idle },
             images.as_mut().zip(icons.as_mut()),
         );
         if let Some(cam) = camera {
@@ -251,6 +282,8 @@ struct View<'a> {
     stage: JoinStage,
     dl: Option<&'a chimera_net::net::client::DownloadInfo>,
     map: &'a str,
+    /// The map's name as shown when not its id's (`shown_label`).
+    label: &'a str,
     server: &'a str,
     hosting: bool,
     speed: Option<f64>,
@@ -338,7 +371,7 @@ fn spawn(c: &mut Commands, ui: &Ui, v: &View, res: Option<(&mut Assets<Image>, &
     let pc = ui.boxed(c, card, UiStyle::row().abs([Some(1.0), Some(1.0), None, None]));
     ui.text(c, pc, Role::Mono, 0.5, Tone::Fg3, "Preview coming");
     let cap = ui.boxed(c, card, UiStyle { gap: Some(1.2), align: Some(AlignItems::Baseline), ..UiStyle::row() }.abs([Some(1.8), None, None, Some(1.4)]));
-    let name = v.map.rsplit(':').next().unwrap_or(v.map);
+    let name = if v.label.is_empty() { v.map.rsplit(':').next().unwrap_or(v.map) } else { v.label };
     ui.text(c, cap, Role::DisplayBlack, 3.4, Tone::Fg, if name.is_empty() { "-" } else { name });
     let game = v.map.split_once(':').map_or("", |(g, _)| g);
     let mut sub = crate::maps_picker::game_name(game);
@@ -418,4 +451,24 @@ fn map_tint(map: &str) -> (Color, Color) {
     let h = map.bytes().fold(2166136261u32, |h, b| (h ^ b as u32).wrapping_mul(16777619));
     let hue = (h % 360) as f32;
     (Color::hsl(hue, 0.25, 0.28), Color::hsl((hue + 40.0) % 360.0, 0.3, 0.12))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chimera_sim::minigame::arena::{self, ArenaPlan, ArenaSlices};
+
+    #[test]
+    fn a_slice_loading_shows_its_label() {
+        let text = "[[slice]]\nmap = \"bloodgulch\"\nid = \"west_base\"\nname = \"West Base\"\nmap_name = \"Blood Gulch\"\n\
+                    points = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]\nseed = [5.0, 1.0, 5.0]\n";
+        let defs = arena::parse("halo_ce", text).unwrap();
+        let mut world = World::new();
+        assert_eq!(shown_label(&world, "halo_ce:bloodgulch", None), "", "no plan: the map's id");
+        world.insert_resource(ArenaPlan(Some(defs[0].slice.clone())));
+        assert_eq!(shown_label(&world, "halo_ce:bloodgulch", None), "Bloodgulch: West Base", "no data: the id's form");
+        world.insert_resource(ArenaSlices(defs));
+        assert_eq!(shown_label(&world, "halo_ce:bloodgulch", None), "Blood Gulch: West Base");
+        assert_eq!(shown_label(&world, "halo_ce:chillout", None), "", "the plan is another map's");
+    }
 }

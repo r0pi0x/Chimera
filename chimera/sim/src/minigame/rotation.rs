@@ -7,7 +7,9 @@
 //! - Random (`Rotation::Random`): a map of the pool at random among those
 //!   every player can play, not one of the last `avoid_recent` played
 //!   (at most the candidates' count less one, so never the same map
-//!   twice in a row while there is another).
+//!   twice in a row while there is another). An arena slice
+//!   (`game:map@id`) counts as its map: a slice played holds back its map
+//!   and the map's other slices, and the whole map holds back its slices.
 //! - Weighted (`next_weighted`): either way, among the maps a weight
 //!   allows (`map_fit`'s, by the players present: 0 is out), a random
 //!   pick drawn by weight; none allowed, the plain rotation's pick.
@@ -107,7 +109,11 @@ impl MapHistory {
                 }
                 let avoid = def.avoid_recent.min(candidates.len() - 1);
                 let recent = self.recent(avoid).to_vec();
-                let fresh: Vec<&String> = candidates.iter().copied().filter(|m| !recent.contains(m)).collect();
+                // A slice counts as its map: playing one holds back the map
+                // and its other slices (`map_fit::entry_map`).
+                use super::map_fit::entry_map;
+                let fresh: Vec<&String> =
+                    candidates.iter().copied().filter(|m| !recent.iter().any(|r| entry_map(r) == entry_map(m))).collect();
                 let from = if fresh.is_empty() { candidates } else { fresh };
                 Some(pick(&from, weight, &mut self.rng).clone())
             }
@@ -243,6 +249,17 @@ mod tests {
         // In turn: the next one with a weight.
         let t = def("in_turn", 0);
         assert_eq!(h.next_weighted(&t, &pool, "g:m4", &|_| true, &weight).as_deref(), Some("g:m1"));
+    }
+
+    #[test]
+    fn a_slice_played_holds_back_its_map_and_its_other_slices() {
+        let d = def("random", 1);
+        let pool: Vec<String> = ["g:big", "g:big@a", "g:big@b", "g:m1"].iter().map(|s| s.to_string()).collect();
+        for seed in 0..30 {
+            let mut h = MapHistory::seeded(seed);
+            let next = h.next(&d, &pool, "g:big@a", &|_| true).unwrap();
+            assert_eq!(next, "g:m1", "seed {seed}");
+        }
     }
 
     #[test]

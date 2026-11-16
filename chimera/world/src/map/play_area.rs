@@ -7,7 +7,8 @@
 //!
 //! - The polygon (`PlanPolygon`): engine x and z (m), 3 to `MAX_POINTS`
 //!   corners, simple (no two edges cross), made counter-clockwise; a
-//!   point is inside when its x, z is (`contains`). Plain data, `Copy`, so
+//!   point is inside when its x, z is (`contains`); the nearest point
+//!   inside a margin from the edges (`nearest_inside`). Plain data, `Copy`, so
 //!   a generated mesh's parameters keep it (`nav_gen::NavGenParams::plan`).
 //! - The plan (`ArenaPlan`, not map-scoped): the slice the world plays on
 //!   the map it names. The server's is set by the app (the party kit's
@@ -172,6 +173,56 @@ impl PlanPolygon {
     pub fn outside_by(&self, p: Vec2) -> f32 {
         if self.contains(p) { 0.0 } else { self.edge_distance(p) }
     }
+
+    /// The nearest point of the edges to `p` (x, z).
+    pub fn nearest_edge_point(&self, p: Vec2) -> Vec2 {
+        let mut best = (f32::MAX, p);
+        for (a, b) in self.edges() {
+            let ab = b - a;
+            let t = ((p - a).dot(ab) / ab.length_squared().max(1e-12)).clamp(0.0, 1.0);
+            let q = a + ab * t;
+            let d = p.distance_squared(q);
+            if d < best.0 {
+                best = (d, q);
+            }
+        }
+        best.1
+    }
+
+    /// `p` (x, z) when inside, else the nearest point inside with `margin`
+    /// m to the edges where the polygon is that wide there (less where it
+    /// is narrower: the margin halves until the point is inside; at worst
+    /// the nearest edge point).
+    pub fn nearest_inside(&self, p: Vec2, margin: f32) -> Vec2 {
+        if self.contains(p) {
+            return p;
+        }
+        let q = self.nearest_edge_point(p);
+        // Inward: from `p` to the edge (p is outside), else the edge's own
+        // inward normal (a counter-clockwise polygon's is the left side).
+        let inward = (q - p).try_normalize().unwrap_or_else(|| {
+            let (a, b) = self.edges().min_by(|x, y| seg_dist(p, *x).total_cmp(&seg_dist(p, *y))).unwrap_or((q, q));
+            (b - a).perp().try_normalize().unwrap_or(Vec2::X)
+        });
+        let mut m = margin.max(0.0);
+        for _ in 0..8 {
+            // Past a corner the margin is reached further along.
+            for k in [1.0, 1.5, 2.0, 3.0] {
+                let r = q + inward * m * k;
+                if self.contains(r) && self.edge_distance(r) >= m * 0.99 {
+                    return r;
+                }
+            }
+            m *= 0.5;
+        }
+        q + inward * 0.01
+    }
+}
+
+fn seg_dist(p: Vec2, (a, b): (Vec2, Vec2)) -> f32 {
+    let ab = b - a;
+    let t = ((p - a).dot(ab) / ab.length_squared().max(1e-12)).clamp(0.0, 1.0);
+    p.distance(a + ab * t)
 }
 
 /// Whether segments a-b and c-d cross or touch (not counting collinear
@@ -415,6 +466,12 @@ mod tests {
         assert_eq!(p.outside_by(Vec2::new(5.0, 5.0)), 0.0);
         assert!((p.outside_by(Vec2::new(12.0, 5.0)) - 2.0).abs() < 1e-5);
         assert!((p.edge_distance(Vec2::new(5.0, 9.0)) - 1.0).abs() < 1e-5);
+        // Back inside, a metre from the edge it was nearest.
+        assert_eq!(p.nearest_inside(Vec2::new(5.0, 5.0), 1.0), Vec2::new(5.0, 5.0));
+        let r = p.nearest_inside(Vec2::new(14.0, 5.0), 1.0);
+        assert!((r - Vec2::new(9.0, 5.0)).length() < 1e-4, "{r}");
+        let r = p.nearest_inside(Vec2::new(-3.0, -3.0), 1.0);
+        assert!(p.contains(r) && p.edge_distance(r) >= 0.99, "past a corner: {r}");
     }
 
     #[test]

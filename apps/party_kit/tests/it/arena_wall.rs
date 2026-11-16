@@ -8,9 +8,14 @@
 //! each game's bullet and projectile (a rocket, a grenade) fired from
 //! inside at a player beyond a slot in the play area (two walls between
 //! them) stops at the wall: the player takes no damage, where without the
-//! wall the same shots hurt them (the control). A character outside is
-//! put back at a spawn point inside, the map's spawn points outside stop
-//! being spawn points, and the map's teleporters with an end outside go.
+//! wall the same shots hurt them (the control); among them every game's
+//! grenade or projectile (CS:S's HE, HL2:DM's rocket, frag and crossbow
+//! bolt, TF2's rocket and pipe, Combat Arms' RPG-7 and M67, Halo's rocket,
+//! plasma bolts and needles). A character outside is put back at a spawn
+//! point inside, the map's spawn points outside stop being spawn points,
+//! and the map's teleporters with an end outside go. A slice with too few
+//! spawn points of the map's makes its own (inside, off its wall, apart),
+//! and a loose item found outside is put back inside (A3).
 
 use bevy::prelude::*;
 use chimera_core::core::{Health, SpawnPoint};
@@ -154,19 +159,76 @@ fn the_play_area_holds_spawns_teleporters_and_characters() {
     assert_eq!(put_backs(&sim), 1);
 }
 
+/// A slice with too few spawn points of the map's makes its own (`arena::
+/// arena_spawn_points`) once its spots are made: inside, off its wall,
+/// apart; and a loose item (a dropped weapon) found outside is put back
+/// inside (`arena::put_loose_back_inside`).
+#[test]
+fn a_slice_makes_its_spawn_points_and_puts_loose_items_back() {
+    use chimera_sim::{minigame::arena::ArenaMadeSpawn, weapon::drop::Loose};
+    let mut sim = crate::halo_ladder::party_with(&ladder());
+    sim.ticks(2);
+    // 30 m square about the middle, the crates in it.
+    let s = slice(&[[-15.0, -15.0], [15.0, -15.0], [15.0, 15.0], [-15.0, 15.0]], Vec3::new(0.0, 0.1, 0.0));
+    let poly = s.polygon().unwrap();
+    play(&mut sim, s);
+    let p = crate::gun_game::soldier(&mut sim);
+    sim.seconds(1.5);
+    assert!(crate::gun_game::alive(&sim, p));
+    let w = sim.app.world_mut();
+    let made: Vec<Vec3> = w
+        .query_filtered::<&Transform, (With<ArenaMadeSpawn>, With<SpawnPoint>)>()
+        .iter(w)
+        .map(|t| t.translation)
+        .collect();
+    let all = w.query_filtered::<&Transform, With<SpawnPoint>>().iter(w).count();
+    let rules = chimera_sim::minigame::map_fit::FitSettings::shipped().slice;
+    assert!(!made.is_empty(), "spawn points made");
+    assert!(all <= rules.points_want, "{all} spawn points");
+    for (i, m) in made.iter().enumerate() {
+        assert!(poly.contains3(*m) && poly.edge_distance(m.xz()) >= rules.wall_gap_m - 1e-3, "{m}: off the wall");
+        for n in &made[i + 1..] {
+            assert!(m.distance(*n) >= 2.0, "{m} and {n} apart");
+        }
+    }
+    // A loose item outside, as if it came out of a body against the wall.
+    let item = sim
+        .app
+        .world_mut()
+        .spawn((
+            Loose {
+                weapon: Entity::PLACEHOLDER,
+                dropper: None,
+                since: 0.0,
+            },
+            Transform::from_xyz(19.0, 0.5, 2.0),
+        ))
+        .id();
+    sim.ticks(2);
+    let at = sim.app.world().get::<Transform>(item).unwrap().translation;
+    assert!(poly.contains3(at) && poly.edge_distance(at.xz()) > 0.5, "put back inside: {at}");
+    assert!((at.z - 2.0).abs() < 1e-3 && at.x < 15.0, "at the nearest point: {at}");
+}
+
 /// Shots of every game at a player beyond a slot of the play area (two
 /// walls between): (gun, seconds of fire).
-const SHOTS: [(&str, f64); 10] = [
+const SHOTS: &[(&str, f64)] = &[
     ("cs_source:weapon_ak47", 2.0),
     (cs_source::game::grenades::HEGRENADE, 4.0),
     (hl2dm::game::weapons::SMG1, 2.0),
     (hl2dm::game::weapons::RPG, 4.0),
+    (hl2dm::game::weapons::FRAG, 5.0),
+    (hl2dm::game::weapons::CROSSBOW, 3.0),
     (tf2::game::weapons::SCATTERGUN, 2.0),
     (tf2::game::weapons::ROCKET_LAUNCHER, 3.0),
+    (tf2::game::weapons::GRENADE_LAUNCHER, 4.0),
     ("combat_arms:m4a1", 2.0),
     ("combat_arms:rpg-7", 4.0),
+    ("combat_arms:m67", 5.0),
     (halo_ce::game::weapons::PISTOL, 2.0),
     (halo_ce::game::weapons::ROCKET_LAUNCHER, 3.0),
+    (halo_ce::game::weapons::PLASMA_RIFLE, 2.0),
+    (halo_ce::game::weapons::NEEDLER, 3.0),
 ];
 
 /// How far south of `OPEN` the target stands.
@@ -205,7 +267,7 @@ fn ladder() -> String {
 fn hurt_by_each(sim: &mut Sim, a: Entity, b: Entity) -> Vec<(&'static str, bool)> {
     let ladder = sim.app.world().resource::<Ladder>().clone();
     let mut out = Vec::new();
-    for (gun, secs) in SHOTS {
+    for &(gun, secs) in SHOTS {
         let r = ladder.rungs.iter().position(|w| *w == gun).unwrap_or_else(|| panic!("{gun} on the ladder"));
         {
             let w = sim.app.world_mut();

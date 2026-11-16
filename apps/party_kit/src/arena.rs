@@ -9,14 +9,19 @@
 //!   or the id alone when one map has it): the slice from now on, on its
 //!   map. Already on that map with nothing made on it yet (a dedicated
 //!   server's first frame: `+map halo_ce:bloodgulch +arena west_base`), the
-//!   play area is made at once; otherwise the map is loaded (again):
-//!   `changelevel <map>`, which in a party app with a minigame playing is
-//!   that minigame's next match there.
+//!   play area is made at once; otherwise the map is loaded (again): with
+//!   a minigame playing, `changelevel <map@id>`, that minigame's next match
+//!   on the slice (`chimera_net::minigame_net`'s map change takes a slice);
+//!   without one, `changelevel <map>`.
 //! - `arena off`: the whole map again (the map loaded again if a slice
 //!   plays); `arena`: what plays; `arena list`: the slices.
 //! - A slice is for its map: another map coming in forgets it
-//!   (`forget_on_other_map`), so a rotation or a vote away from it plays
-//!   whole maps. A2 makes slices pool entries of their own.
+//!   (`forget_on_other_map`).
+//! - Slices are pool entries of their own in the party apps (A2): this
+//!   plugin puts `arena::SlicesInPool` in, so the rotation's pool, the
+//!   vote and the Maps picker have each map's slices
+//!   (`arena::with_slices`). A game's own app has no such plugin: its
+//!   rotation never draws a slice. `arena` stays a developer's command.
 //!
 //! The server's (or a standalone game's): a client is told the server
 //! picks.
@@ -43,6 +48,8 @@ impl Plugin for ArenaPlugin {
              inside), from now on on its map (loaded again unless nothing was made on it yet); off: whole maps.",
             command,
         )
+        // The party apps' pool has each map's slices (A2).
+        .insert_resource(arena::SlicesInPool)
         .add_systems(PreUpdate, forget_on_other_map.run_if(resource_added::<ArenaMap>));
     }
 }
@@ -99,7 +106,10 @@ fn command(world: &mut World, args: &[String]) -> Result<Option<String>, String>
                 chimera_world::map::play_area::follow_plan(world);
                 return Ok(Some(format!("playing {} ({}) here", slice.key(), slice.name)));
             }
-            world.resource_mut::<Console>().submit(format!("changelevel {}", slice.map));
+            // With a minigame playing, its next match on the slice (the
+            // map change takes `map@id`); else the map loads with the plan.
+            let to = if world.contains_resource::<chimera_sim::minigame::ActiveMinigame>() { slice.key() } else { slice.map.clone() };
+            world.resource_mut::<Console>().submit(format!("changelevel {to}"));
             Ok(Some(format!("playing {} ({}): {} loads", slice.key(), slice.name, slice.map)))
         }
     }

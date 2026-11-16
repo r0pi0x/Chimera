@@ -29,13 +29,18 @@
 //!
 //! **Keys** (`keys`, only while a sandbox plays and neither the console
 //! nor chat has the keys): B Change gun, T the bench (each toggles; Esc
-//! closes), 1 to 6 switch to a pinned gun (and show the bar), Tab held
+//! closes), 1 to 6 switch to a pinned gun (and show the bar), K repeats
+//! the last set-up, Tab held
 //! (`+showscores`) the Tab column. The same as console commands:
 //! `sandbox_gun`, `sandbox_bench`, `sandbox_pin <1-6> [gun]`.
 //!
-//! **Switching** (`switch_to`): a gun whose files are here goes the
-//! `rung` command's way on the local player (`rung_command::move_to`; a
-//! network client sends `rung <n>`); one not here is asked for
+//! **Switching** (`switch_to`): a gun whose files are here is asked of
+//! the mechanics (`rung_command::PutOnGun`, as the class the detail pane
+//! chose for a TF2 gun several classes carry; a refusal, `RungRefused`,
+//! shows on the chip; a network client sends `rung <gun> [as <body>]`);
+//! K asks for the last set-up again (`layout::RepeatLayout`); the
+//! mechanics' conditions (`conditions::SandboxConditions`) are mirrored
+//! into the options shown. One not here is asked for
 //! (`UnitRequest`) and waits as `pending`, shown on the chip's Next
 //! strip, switched to when it lands.
 //!
@@ -309,14 +314,68 @@ pub fn switch_to(world: &mut World, gun: &str) -> Result<(), String> {
         ui.current = Some(g.id.clone());
         return Ok(());
     }
+    // As a body of its game (a TF2 gun several classes carry: the class
+    // the detail pane chose).
+    let body = ui.view.body.clone().filter(|b| b.split_once(':').is_some_and(|(game, _)| game == g.game));
     if world.get_resource::<chimera_core::core::NetRole>() == Some(&chimera_core::core::NetRole::Client) {
-        world.resource_mut::<chimera_core::console::Console>().submit(format!("rung {}", g.rung + 1));
+        let line = match &body {
+            Some(b) => format!("rung {} as {b}", g.id),
+            None => format!("rung {}", g.id),
+        };
+        world.resource_mut::<chimera_core::console::Console>().submit(line);
         return Ok(());
     }
-    let ladder = world.get_resource::<Ladder>().cloned().ok_or("no ladder plays")?;
-    let e = chimera_core::console::command_player(world)?;
-    rung_command::move_to(world, e, g.rung, &ladder);
+    // The mechanics' request (`rung_command::PutOnGun`; a refusal comes
+    // back as `RungRefused`, shown on the chip).
+    world.write_message(rung_command::PutOnGun { gun: g.id.clone(), character: body, who: None });
     Ok(())
+}
+
+/// The mechanics' refusals (a switch, a condition) on the chip's foot.
+fn refusals(
+    mut rung: Option<MessageReader<rung_command::RungRefused>>,
+    mut cond: Option<MessageReader<chimera_sim::minigame::conditions::ConditionRefused>>,
+    mut ui: ResMut<SandboxUi>,
+) {
+    let a = rung.as_mut().and_then(|r| r.read().last().map(|r| r.reason.clone()));
+    let b = cond.as_mut().and_then(|r| r.read().last().map(|r| r.reason.clone()));
+    if let Some(why) = a.or(b) {
+        ui.said = Some(why);
+    }
+}
+
+/// The mechanics' conditions into the options the screens show; God's
+/// brief flip at a spawn is ignored (it must hold `GOD_SETTLE` s).
+pub const GOD_SETTLE: f64 = 0.5;
+
+fn mirror_conditions(
+    ui: Res<SandboxUi>,
+    clock: Option<Res<chimera_ui::UiClock>>,
+    conditions: Option<Res<chimera_sim::minigame::conditions::SandboxConditions>>,
+    mut options: ResMut<SandboxOptions>,
+    mut god_since: Local<Option<(bool, f64)>>,
+) {
+    let Some(c) = conditions else { return };
+    if !ui.on || ui.staged {
+        return;
+    }
+    let now = clock.map_or(0.0, |c| c.now);
+    let mut next = *options;
+    next.endless_ammo = c.endless_ammo;
+    next.half_speed = c.time_scale < 0.99;
+    next.third_person = c.third_person;
+    match *god_since {
+        Some((g, _)) if g == c.god => {}
+        _ => *god_since = Some((c.god, now)),
+    }
+    if let Some((g, t)) = *god_since
+        && now - t >= GOD_SETTLE
+    {
+        next.no_damage = g;
+    }
+    if *options != next {
+        *options = next;
+    }
 }
 
 /// A gun picked while its files downloaded: switched to when they land.
@@ -337,6 +396,8 @@ pub enum SandboxAction {
     Switch(String),
     Toggle(SandboxScreen),
     Close,
+    /// K: the last set-up again (`layout::RepeatLayout`).
+    Repeat,
 }
 
 /// The keys (module doc).
@@ -379,6 +440,9 @@ fn keys(
     if ui.screen != SandboxScreen::ChangeGun && k(KeyCode::KeyT) {
         out.write(SandboxAction::Toggle(SandboxScreen::Bench));
     }
+    if ui.screen == SandboxScreen::None && k(KeyCode::KeyK) {
+        out.write(SandboxAction::Repeat);
+    }
     if ui.screen == SandboxScreen::None {
         let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
         for (i, d) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6].into_iter().enumerate() {
@@ -412,6 +476,11 @@ fn act(world: &mut World) {
                 if ui.screen == SandboxScreen::ChangeGun {
                     ui.view.selected = ui.current.clone();
                     ui.view.tags_open = false;
+                }
+            }
+            SandboxAction::Repeat => {
+                if !world.resource::<SandboxUi>().staged && world.contains_resource::<Messages<chimera_sim::minigame::layout::RepeatLayout>>() {
+                    world.write_message(chimera_sim::minigame::layout::RepeatLayout { by: None });
                 }
             }
             SandboxAction::Close => {
@@ -465,6 +534,8 @@ impl Plugin for SandboxUiPlugin {
                     link::bridge_facts,
                     link::bridge_look,
                     link::bridge_blasts,
+                    refusals,
+                    mirror_conditions,
                     land_pending,
                 )
                     .chain()

@@ -685,8 +685,8 @@ struct ShellCameraPlugin;
 
 impl Plugin for ShellCameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PostStartup, (spawn_local_player, join_at_start).chain())
-            .add_systems(Update, camera_for_local_player);
+        local_player_at_start(app);
+        app.add_systems(Update, camera_for_local_player);
         eye_systems(app);
 
         // Bevy Remote Protocol: query and edit the live ECS over HTTP
@@ -737,6 +737,33 @@ fn free_loopback_port() -> Option<u16> {
 
 #[derive(Component)]
 pub struct FirstPersonCamera;
+
+/// An app whose main menu has no game behind it (Ultimate Gun Game's,
+/// `party_kit::main_menu`): no local player is spawned at startup when
+/// the run starts at that menu (`at_start`), nor after leaving a server
+/// (`net`); the app spawns one when a game is entered
+/// (`spawn_local_player_now`). Without it the local player is spawned at
+/// startup and kept behind any menu, as before.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NoPlayerAtMenu {
+    pub at_start: bool,
+}
+
+/// The local player at startup (unless the run starts at a menu with no
+/// game behind it, `NoPlayerAtMenu`), then a run on a map starts its
+/// game (`join_at_start`): the shell's, and a test's of a start.
+pub fn local_player_at_start(app: &mut App) {
+    let menu_first = |no: Option<Res<NoPlayerAtMenu>>| no.is_some_and(|n| n.at_start);
+    app.add_systems(PostStartup, (spawn_local_player.run_if(not(menu_first)), join_at_start).chain());
+}
+
+/// The local player spawned now, as at startup (a game entered from a
+/// menu with no game behind it: `NoPlayerAtMenu`).
+pub fn spawn_local_player_now(world: &mut World) {
+    if let Err(e) = world.run_system_cached(spawn_local_player) {
+        error!("spawning the local player: {e}");
+    }
+}
 
 fn spawn_local_player(
     mut commands: Commands,

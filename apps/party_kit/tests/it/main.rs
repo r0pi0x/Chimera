@@ -5,6 +5,8 @@
 //! where tests go: docs/OBSERVABILITY.md, section 1.
 
 mod announcer;
+mod arena_pool;
+mod arena_net;
 mod arena_wall;
 mod archetypes;
 mod bodies_drawn;
@@ -60,6 +62,7 @@ mod settings;
 mod shipped_map_pool;
 mod signal_menu;
 mod signal_pages;
+mod slice_gen;
 mod startup;
 mod swap_effect;
 mod tf2_rungs;

@@ -41,8 +41,32 @@
 //! own rounds (0 and 0: the empty pistol's ammunition block) and the
 //! grenade counts (the frag plate with its count).
 //!
-//! Known shortcuts: the power curve reads the pistol's numbers for it
-//! (its band is the class's; the score only orders a band's members).
+//! **The Hunter's rung** (`HUNTER_RUNG`, the owner's wish, 2026-11-16):
+//! the Hunter's arm cannon (data/weapons/hunter_fuel_rod.toml, every
+//! number its tag's on d20) as one more gun Halo lends (`parts::PARTS`,
+//! class launcher): its holder always wears the Hunter
+//! (`campaign::CampaignData::own_gun`: data/campaign.toml gives the gun to
+//! the Hunter alone), whatever `halo_ce:campaign_bodies` says; a drawn
+//! ladder deals it only with that setting on (`campaign::own_guns_drawn`:
+//! off, it is a draw exclusion), the sandbox lists it always. The weapon
+//! is Halo's ordinary one, run by the same rules as the others (its
+//! charge, its rod, the rod's detonation: `tick`, `flight`, `explode`), so
+//! a bot fires it as it fires any Halo gun (it fires on the press: a rate
+//! above 0 with one trigger; a shot is a `WeaponEventKind::ShotMade`). The
+//! rod leaves from the eye's line moved by the trigger's first-person
+//! offset, which is 0, as every Halo gun's shot does: not from the
+//! Hunter's `primary trigger` marker on its right forearm (the spec leaves
+//! open which the game uses: characters.md, Open questions 2), so it
+//! comes out of the middle of the view. It has no model: in third person
+//! the Hunter's own arm is the cannon (nothing is held), in first person
+//! the body's own arm is drawn (`campaign::first_person`).
+//!
+//! Known shortcuts: the power curve reads the pistol's numbers for the
+//! grenade rung (its band is the class's; the score only orders a band's
+//! members); the Hunter's rod is drawn in flight only where its
+//! projectile's looks are loaded (the donor map has none: `fx::shots`), so
+//! on another game's map its shot shows its detonation's damage but no
+//! rod, no muzzle flash and no impact effect.
 
 use bevy::prelude::*;
 use serde::Deserialize;
@@ -54,6 +78,9 @@ pub const HOOK: &str = "halo_ce:grenade_rung";
 
 /// The rung's weapon id (the frag grenade's).
 pub const FRAG_RUNG: &str = FRAG_GRENADE;
+
+/// The Hunter's rung: its arm cannon (module doc).
+pub const HUNTER_RUNG: &str = "halo_ce:hunter_fuel_rod";
 
 /// The rung weapons whose looks are another gun's (view and held models):
 /// (rung weapon, gun).

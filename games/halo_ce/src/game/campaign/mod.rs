@@ -9,15 +9,19 @@
 //! pass where it was; the disc's hits go to the shield material through
 //! `body::hits::SHIELD_REGION`) and the Marine (50 body and a 50 failing
 //! shield; the assault rifle, plasma rifle, needler, shotgun and sniper
-//! rifle; one of four voices).
+//! rifle; one of four voices) and the Hunter (200 body, no shield, its
+//! skin a head and its shield arm taking nothing; 2.95 m tall, its pill
+//! 0.8 WU standing and crouched, radius 0.24; it holds only its own arm
+//! cannon, which is a rung of its own: below, "Its own gun").
 //!
 //! - **The body kind** (`BodyKind`: Spartan, Elite, Grunt, Jackal,
-//!   Marine; a component on the player, replicated to every client, net
-//!   part `halo_ce_bodies`). Each kind but the Spartan is a row of
+//!   Marine, Hunter; a component on the player, replicated to every
+//!   client, net part `halo_ce_bodies`). Each kind but the Spartan is a row of
 //!   data/campaign.toml (`CampaignData`: its biped, the campaign map its
 //!   unit is cut from, and what differs from the Spartan's movement and
 //!   vitality tables, merged key by key): adding the Hunter or the Flood
-//!   is a variant here, a row there and its unit (`unit`).
+//!   is a variant here, a row there and its unit (`unit`), as the Hunter
+//!   was.
 //! - **Its voice** (`BodyVoice`, replicated with the kind): a kind with
 //!   several voices (`BodyDef::voices`: the Marine's four, each its own
 //!   set, `voice/marine_<name>`) speaks one, drawn by the host from the
@@ -71,8 +75,23 @@
 //!   on another game's rung, the player has no kind (the Spartan). Turning
 //!   the setting on asks for every kind's unit at once, so the first draws
 //!   find them loaded.
+//! - **Its own gun** (`CampaignData::own_gun`): a gun data/campaign.toml
+//!   gives to one kind alone, not the Spartan (the Hunter's cannon,
+//!   `weapons::rung::HUNTER_RUNG`), makes its holder that kind on any
+//!   rung that deals it, the setting on or off (`choose`; its unit asked
+//!   for then). A drawn ladder deals such a gun only while the setting is
+//!   on (`own_guns_drawn`: off, it is one of the game's draw exclusions);
+//!   the sandbox and a written ladder may always name it.
+//! - **Its first-person view** (`first_person`, a kind's
+//!   `BodyDef::first_person`): the Hunter's cannon has no first-person
+//!   model, so its view is the body's own arm, cut from its third-person
+//!   model and posed by its own animations.
+//! - **Its lines** (`voice`, "Lines that say who it is"): our own addition
+//!   to the game's pain and death lines: a line of its own voice when a
+//!   player becomes the character, and sometimes one after a kill
+//!   (`BodyDef::lines`, `[chatter]`).
 //! - **The developer command** `halo_ce:body <spartan | elite | grunt |
-//!   jackal | draw> [player | all]` forces a body (`ForcedBody`, kept across
+//!   jackal | marine | hunter | draw> [player | all]` forces a body (`ForcedBody`, kept across
 //!   rungs while on Halo's; `draw` lets the draw choose again) for
 //!   screenshots and the sandbox (the player's own body there: worn at
 //!   once on a Halo rung, else on the next); `status` lists the units and
@@ -99,6 +118,7 @@
 //! - The move animations' speeds are the graph's means (characters.md
 //!   section 4), not each frame's root motion.
 
+pub mod first_person;
 pub mod targets;
 pub mod unit;
 pub mod voice;
@@ -131,10 +151,11 @@ pub enum BodyKind {
     Grunt,
     Jackal,
     Marine,
+    Hunter,
 }
 
 impl BodyKind {
-    pub const ALL: [BodyKind; 5] = [BodyKind::Spartan, BodyKind::Elite, BodyKind::Grunt, BodyKind::Jackal, BodyKind::Marine];
+    pub const ALL: [BodyKind; 6] = [BodyKind::Spartan, BodyKind::Elite, BodyKind::Grunt, BodyKind::Jackal, BodyKind::Marine, BodyKind::Hunter];
 
     /// Its id in data/campaign.toml and the commands.
     pub fn id(self) -> &'static str {
@@ -144,6 +165,7 @@ impl BodyKind {
             BodyKind::Grunt => "grunt",
             BodyKind::Jackal => "jackal",
             BodyKind::Marine => "marine",
+            BodyKind::Hunter => "hunter",
         }
     }
 
@@ -229,6 +251,47 @@ pub struct BodyDef {
     /// in `voice/<id>`.
     #[serde(default)]
     pub voices: Vec<String>,
+    /// Our own lines (`voice` "Lines that say who it is"): the slots, by
+    /// name, it says on becoming this character and after a kill.
+    #[serde(default)]
+    pub lines: Option<Lines>,
+    /// Its own weapons' tags (the Hunter's cannon), each cut as a unit,
+    /// a file of its body's set (`unit::weapon_path`).
+    #[serde(default)]
+    pub weapons: Vec<String>,
+    /// Its first-person view made from its own model (`first_person`).
+    #[serde(default)]
+    pub first_person: Option<first_person::BodyView>,
+}
+
+/// A character's own lines (`BodyDef::lines`): ordered lists of dialogue
+/// slots by name (`voice::SLOT_NAMES`); the first its voice fills plays.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Lines {
+    #[serde(default)]
+    pub becoming: Vec<String>,
+    #[serde(default)]
+    pub kill: Vec<String>,
+}
+
+/// When our own lines play (data/campaign.toml `[chatter]`).
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatterRules {
+    /// The same character again (a new life) says its becoming line
+    /// only this many seconds after its last.
+    pub becoming_repeat_seconds: f32,
+    /// The chance a kill makes the killer say a kill line.
+    pub kill_chance: f32,
+    /// Seconds after a kill line before another.
+    pub kill_cooldown_seconds: f32,
+}
+
+impl Default for ChatterRules {
+    fn default() -> Self {
+        Self { becoming_repeat_seconds: 60.0, kill_chance: 0.5, kill_cooldown_seconds: 10.0 }
+    }
 }
 
 impl BodyDef {
@@ -289,6 +352,9 @@ pub struct CampaignData {
     /// Per body id but the Spartan's, its row.
     #[serde(default)]
     pub bodies: BTreeMap<String, BodyDef>,
+    /// When our own lines play.
+    #[serde(default)]
+    pub chatter: ChatterRules,
 }
 
 /// `over` merged into `base` key by key (tables recursively, anything else
@@ -306,7 +372,7 @@ pub fn merge(base: &mut toml::Table, over: &toml::Table) {
 
 impl Default for CampaignData {
     fn default() -> Self {
-        Self { speed_blend: half(), guns: BTreeMap::new(), bodies: BTreeMap::new() }
+        Self { speed_blend: half(), guns: BTreeMap::new(), bodies: BTreeMap::new(), chatter: ChatterRules::default() }
     }
 }
 
@@ -323,6 +389,13 @@ impl CampaignData {
                 return Err(format!("unknown body `{id}`"));
             }
         }
+        for (id, def) in &data.bodies {
+            for name in def.lines.iter().flat_map(|l| l.becoming.iter().chain(&l.kill)) {
+                if voice::slot_of(name).is_none() {
+                    return Err(format!("{id}: unknown dialogue slot `{name}`"));
+                }
+            }
+        }
         Ok(data)
     }
 
@@ -337,6 +410,16 @@ impl CampaignData {
         match self.guns.get(weapon) {
             Some(w) => w.iter().filter_map(|(id, &x)| Some((BodyKind::from_id(id)?, x))).filter(|(_, x)| *x > 0.0).collect(),
             None => vec![(BodyKind::Spartan, 1.0)],
+        }
+    }
+
+    /// The kind whose own gun `weapon` is (a gun only that kind carries,
+    /// the Spartan not among its bodies: the Hunter's cannon): its holder
+    /// always wears that kind, the setting on or off.
+    pub fn own_gun(&self, weapon: &str) -> Option<BodyKind> {
+        match self.weights(weapon).as_slice() {
+            [(k, _)] if *k != BodyKind::Spartan && self.guns.contains_key(weapon) => Some(*k),
+            _ => None,
         }
     }
 
@@ -488,8 +571,12 @@ pub fn choose(world: &mut World, e: Entity) {
     use chimera_sim::minigame::ladder::{Ladder, LaddersMade, OnRung, RungSeed};
     let Some(index) = world.get::<OnRung>(e).map(|o| o.index) else { return };
     let weapon = world.get_resource::<Ladder>().and_then(|l| l.rungs.get(index).copied()).unwrap_or("");
+    let own = world.get_resource::<CampaignData>().and_then(|d| d.own_gun(weapon));
     let kind = if !halo_gun(weapon) {
         None
+    } else if let Some(k) = own {
+        world.get_resource_or_init::<UnitsOnDemand>().wanted.insert(k);
+        Some(k)
     } else if let Some(f) = world.get::<ForcedBody>(e) {
         Some(f.0)
     } else if world.get_resource::<CampaignBodies>().is_some_and(|c| c.0) {
@@ -557,6 +644,7 @@ fn campaign_cvar(app: &mut App) {
                 other => return Err(format!("bad value \"{other}\" (0 or 1)")),
             };
             w.insert_resource(CampaignBodies(on));
+            own_guns_drawn(w, on);
             if on {
                 let kinds: Vec<BodyKind> =
                     BodyKind::ALL.into_iter().filter(|k| w.resource::<CampaignData>().body(*k).is_some()).collect();
@@ -567,10 +655,28 @@ fn campaign_cvar(app: &mut App) {
     );
 }
 
+/// Why a drawn ladder leaves out a character's own gun while the setting
+/// is off (`auto::DrawExclusions`).
+pub const OWN_GUN_EXCLUDED: &str = "a campaign character's own gun: drawn only with halo_ce:campaign_bodies 1";
+
+/// The characters' own guns (`CampaignData::own_gun`: the Hunter's
+/// cannon) in drawn ladders only while campaign bodies are `on`: off, they
+/// are the game's draw exclusions (a sandbox or a written ladder may still
+/// name them).
+pub fn own_guns_drawn(world: &mut World, on: bool) {
+    let guns: Vec<String> = world.get_resource::<CampaignData>().map_or_else(Vec::new, |d| d.guns.keys().filter(|g| d.own_gun(g).is_some()).cloned().collect());
+    let mut readers = world.get_resource_or_init::<chimera_sim::minigame::power::PowerReaders>();
+    let list = &mut readers.exclusions.0;
+    list.retain(|(g, why)| !(why == OWN_GUN_EXCLUDED && guns.contains(g)));
+    if !on {
+        list.extend(guns.into_iter().map(|g| (g, OWN_GUN_EXCLUDED.to_string())));
+    }
+}
+
 /// `halo_ce:body <spartan | elite | draw> [player | all]` (module doc).
 fn body_command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
     use chimera_core::console::{Cheats, CommandPlayer, command_player};
-    let usage = "halo_ce:body <spartan | elite | grunt | jackal | marine | draw | status | shield <fraction>> [player | all]";
+    let usage = "halo_ce:body <spartan | elite | grunt | jackal | marine | hunter | draw | status | shield <fraction>> [player | all]";
     let what = a.first().ok_or(usage)?.to_ascii_lowercase();
     if what == "shield" {
         // Every campaign body's shield to a fraction (screenshots of the
@@ -600,20 +706,24 @@ fn body_command(world: &mut World, a: &[String]) -> Result<Option<String>, Strin
             Option<&crate::map::Held>,
             Option<&crate::core::Intent>,
             Option<&Transform>,
+            Option<&crate::map::ViewAnimator>,
         )>();
+        let views = world.get_resource::<crate::map::ViewModels>().map_or(0, |v| v.0.len());
         let rows: Vec<String> = q
             .iter(world)
             .filter(|r| r.2.is_some() || r.3.is_some())
-            .map(|(e, n, k, b, m, h, i, t)| {
+            .map(|(e, n, k, b, m, h, i, t, v)| {
                 let who = n.map_or_else(|| e.to_string(), |n| n.to_string());
                 format!(
-                    "{who}: {k:?} {:?} model {:?} holds {:?} at {:?} looking yaw {:.0} pitch {:.0}",
+                    "{who}: {k:?} {:?} model {:?} holds {:?} at {:?} looking yaw {:.0} pitch {:.0}; view {:?} posed {} of {views} view models",
                     b.map(|b| &b.0),
                     m.map(|m| m.0),
                     h.and_then(|h| h.0.as_deref()),
                     t.map(|t| t.translation),
                     i.map_or(0.0, |i| i.yaw.to_degrees()),
-                    i.map_or(0.0, |i| i.pitch.to_degrees())
+                    i.map_or(0.0, |i| i.pitch.to_degrees()),
+                    v.and_then(|v| v.key.as_deref()),
+                    v.and_then(|v| v.animator.as_ref()).is_some_and(|a| a.main.is_some()),
                 )
             })
             .collect();
@@ -737,11 +847,20 @@ impl Plugin for CampaignPlugin {
                     .before(crate::core::apply_damage)
                     .run_if(crate::core::authoritative),
             )
+            .init_resource::<voice::Chatter>()
+            .init_resource::<first_person::BodyViewPlay>()
+            .add_systems(Update, first_person::add_to_maps)
+            .add_systems(
+                FixedLast,
+                first_person::drive.after(super::view::drive).before(crate::map::SimPose),
+            )
+            .add_systems(FixedUpdate, voice::chatter.after(crate::core::apply_damage).run_if(crate::core::authoritative))
             .net_part("halo_ce_bodies", register);
         campaign_cvar(app);
+        own_guns_drawn(app.world_mut(), false);
         app.console_command(
             BODY_COMMAND,
-            "halo_ce:body <spartan | elite | grunt | jackal | marine | draw | status | shield <fraction>> [player | all]: the \
+            "halo_ce:body <spartan | elite | grunt | jackal | marine | hunter | draw | status | shield <fraction>> [player | all]: the \
              body a player (default: you) wears on Halo's rungs (a developer command for screenshots and the sandbox; draw: the draw chooses again; a client \
              needs the server's sv_cheats 1).",
             body_command,
