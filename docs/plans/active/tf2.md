@@ -511,20 +511,22 @@ the probe server.
 
   | map | area m2 | sight m | spawn points | spots | off | stuck | wander 4/8/12 s | in from |
   |---|---|---|---|---|---|---|---|---|
-  | ctf_2fort | 7748 | 7.6 | 30 | 4054 | 0 | 0 | 21.1/9.1/5.8 | 8 |
-  | cp_badlands | 13948 | 11.1 | 32 | 12213 | 0 | 0 | 26.0/11.2/7.1 | 12 |
+  | ctf_2fort | 7748 | 7.6 | 30 | 4053 | 0 | 0 | 21.1/9.1/5.8 | 8 |
+  | cp_badlands | 13948 | 11.1 | 32 | 12198 | 0 | 0 | 26.0/11.2/7.1 | 12 |
   | koth_viaduct | 6294 | 10.8 | 32 | 4799 | 0 | 0 | 12.0/5.1/3.3 | 8 |
-  | koth_harvest_final | 6135 | 12.9 | 30 | 3974 | 0 | 0 | 9.8/4.2/2.7 | 4 |
-  | koth_nucleus | 6278 | 11.2 | 36 | 6055 | 0 | 0 | 11.5/4.9/3.1 | 8 |
-  | cp_granary | 14918 | 12.2 | 30 | 9582 | 0 | 0 | 25.3/10.8/6.9 | 12 |
-  | ctf_turbine | 5661 | 9.9 | 24 | 3671 | 0 | 0 | 11.8/5.1/3.2 | 8 |
-  | ctf_doublecross | 8528 | 11.5 | 32 | 6579 | 0 | 0 | 15.3/6.6/4.2 | 8 |
-  | koth_lakeside_final | 8327 | 12.3 | 26 | 6002 | 0 | 0 | 14.0/6.0/3.8 | 8 |
-  | cp_process_final | 12900 | 11.2 | 32 | 10465 | 0 | 0 | 23.8/10.2/6.5 | 12 |
-  | koth_king | 8267 | 12.2 | 32 | 7417 | 0 | 0 | 14.0/6.0/3.8 | 8 |
-  | koth_highpass | 7360 | 10.4 | 32 | 6358 | 0 | 0 | 14.5/6.2/4.0 | 8 |
+  | koth_harvest_final | 6135 | 12.9 | 30 | 3971 | 0 | 0 | 9.8/4.2/2.7 | 4 |
+  | koth_nucleus | 6278 | 11.2 | 36 | 6038 | 0 | 0 | 11.5/4.9/3.1 | 8 |
+  | cp_granary | 14918 | 12.2 | 30 | 9561 | 0 | 0 | 25.3/10.8/6.9 | 12 |
+  | ctf_turbine | 5661 | 9.9 | 24 | 3500 | 0 | 0 | 11.8/5.1/3.2 | 8 |
+  | ctf_doublecross | 8528 | 11.5 | 32 | 6572 | 0 | 0 | 15.3/6.6/4.2 | 8 |
+  | koth_lakeside_final | 8327 | 12.3 | 26 | 5996 | 0 | 0 | 14.0/6.0/3.8 | 8 |
+  | cp_process_final | 12900 | 11.2 | 32 | 10461 | 0 | 0 | 23.8/10.2/6.5 | 12 |
+  | koth_king | 8267 | 12.2 | 32 | 7416 | 0 | 0 | 14.0/6.0/3.8 | 8 |
+  | koth_highpass | 7360 | 10.4 | 32 | 6356 | 0 | 0 | 14.5/6.2/4.0 | 8 |
   | koth_sharkbay | 7176 | 10.8 | 34 | 5046 | 0 | 0 | 13.6/5.8/3.7 | 8 |
-  | koth_suijin | 8951 | 15.1 | 32 | 5735 | 0 | 0 | 12.2/5.2/3.3 | 8 |
+  | koth_suijin | 8951 | 15.1 | 32 | 5678 | 0 | 0 | 12.2/5.2/3.3 | 8 |
+
+  (spots as counted since tf2-followups' open-space filter, below.)
 
   Left out (the file's comment says which and why): attack/defend cp_
   maps and every arena_ map (the round logic opens their gates and arena
@@ -663,6 +665,48 @@ specs/tf2/weapons_stock.md (T10, draft).
   its own rule (next attack = now + interval, the guns' firing-tick timing
   the SDK check confirmed): ours swing at 0, 34, 68, 102; for the spec's
   next revision or the probe (P2).
+
+### Follow-ups (tf2-followups, 2026-11-16)
+
+- **Melee follows the drawn class**: it did already (`classes::HOOK`
+  draws the class, then takes that class's `melee`); a party test now
+  holds it over rung seeds: the Shotgun's rung, each of its four classes
+  drawn, carries that class's melee (Soldier the Shovel, Heavy the Fists,
+  Pyro the Fire Axe, Engineer the Wrench) in its extras and in hand, the
+  kit's knife swapped (`party_kit` `tf2_rungs::the_shotguns_drawn_class_
+  carries_its_own_melee`).
+- **No spawn in a vent duct** (a player spawned in ctf_turbine's): the
+  party's spawn spots keep to open space, a generic filter for every
+  game's maps (`chimera_sim::minigame::spawns::open_at`): at least 2.2 m
+  of headroom (the tallest player, TF2's 82 units, and some), and under
+  a ceiling lower than 2.6 m at least five of eight level rays from the
+  chest running 3 m free. turbine's ducts are 96 units (2.44 m) square
+  inside: the walk went in and the 72-unit standing box fitted; their
+  middles, corners, crossings and mouths now fail it. Spots before and
+  after: ctf_turbine 3671 to 3500 (none left in the ducts; the
+  `--dump`'s spots against the ducts' faces), ctf_turbine_winter 3913 to
+  3733, the other 12 pool maps 0 to 57 fewer (koth_suijin 57, cp_granary
+  21, koth_nucleus 17, cp_badlands 15; the least, ctf_2fort, 4053, over
+  the walk-out test's 2000); data/map_fitness.toml's spots updated for
+  the 19 maps measured. The other games: a sample of 18 CS:S maps 0 to
+  9 fewer each (de_nuke 9, de_port 3; measured with and without the
+  filter, as CS:S's file is older than its spots), HL2:DM's seven maps
+  1 to 20 (dm_steamlab), 17 Combat Arms maps 0 to 68 (oilrig and oilrigq
+  about 3 %, junk_flea 33; against their files' counts, so at most
+  that); Halo not measured (no install here). Test: `chimera_sim`
+  `spawns::spots_stand_in_open_space_not_in_ducts_or_crawlspaces` (a
+  duct, a crawlspace, a low hallway and a low room on the greybox).
+- **The duct's look** (white-grey faces with flat triangles): drawn as
+  the map says. Its faces' material is a cubemap patch in the map's pak
+  (`maps/ctf_turbine/props/metalduct001a_<x>_<y>_<z>`, its `$envmap` the
+  nearest cubemap) of `props/metalduct001a`, a `LightmappedGeneric` with
+  `$basetexture props/metalduct001a` (in tf2_textures, 512 x 512),
+  `$bumpmap`, `env_cubemap` and `$normalmapalphaenvmapmask`, all found
+  and handled; the base texture itself is light grey sheet metal with
+  an X crease on each panel (a duct's cross-break), which is the
+  "faceted" look, and the ducts' lightmaps are brighter than the map's
+  average (0.28 against 0.21). Nothing to fix; not nodraw or a tools
+  texture.
 
 ### SDK parity (tf2-parity, 2026-11-15)
 
@@ -877,3 +921,9 @@ server probe for parity checks, TF2's own app.
   class's arms and sequences, the `backstab` kill icon; each TF2 rung
   carries its class's melee (rung extras), the Knife TF2's kit knife.
   Screenshots in UGG on ctf_2fort.
+- 2026-11-16: tf2-followups: a party test that the Shotgun's drawn class
+  carries its own melee (it did); the party's spawn spots keep to open
+  space (`spawns::open_at`: headroom, and room around under a low
+  ceiling), so none is left in ctf_turbine's vent ducts (3671 spots to
+  3500); the ducts' look is their own material (light grey cross-broken
+  sheet metal), nothing missing.
