@@ -146,12 +146,36 @@ fn shoot(sim: &mut Sim, me: Entity, victim: Entity, at: Vec3, secs: f64) -> Opti
     None
 }
 
-/// Where to aim TF2's rocket launcher, looking down range, for its rocket
-/// to land at target `e`'s feet: the rocket flies along the view from 12
-/// units right of and 3 below the eye (inches here).
-fn rocket_aim(sim: &Sim, e: Entity) -> Vec3 {
+/// Where `me` aims TF2's rocket launcher for its rocket to land at target
+/// `e`'s feet. The rocket flies from its start (23.5 forward, 12 right, 3
+/// down from the eye, inches here) toward what a 2000-unit trace from the
+/// eye meets, else that trace's end (specs/tf2/weapons.md 5.1). Within
+/// 2000 units the trace meets the ground at the feet: aim there. Farther
+/// (the 100 and 200 m lines) the trace meets nothing, the rocket heads for
+/// its end and crosses the crosshair there, so aiming at the feet sends it
+/// over them to land beyond: aim instead where the start-to-feet line is
+/// 2000 units from the eye (the start moves with the view: a few rounds).
+fn rocket_aim(sim: &Sim, me: Entity, e: Entity) -> Vec3 {
     const U: f32 = 0.0254;
-    target(sim, e).home - Vec3::X * 12.0 * U + Vec3::Y * 3.0 * U
+    let feet = target(sim, e).home;
+    let eye = sim.position(me) + sim.state(me).eye_offset;
+    let reach = 2000.0 * U;
+    if eye.distance(feet) <= reach {
+        return feet;
+    }
+    let mut at = feet;
+    for _ in 0..8 {
+        let v = (at - eye).normalize();
+        let right = v.cross(Vec3::Y).normalize();
+        let up = right.cross(v);
+        let start = eye + (v * 23.5 + right * 12.0 - up * 3.0) * U;
+        // `start + t (feet - start)` at `reach` from the eye: the far root.
+        let (d, o) = (feet - start, start - eye);
+        let (a, b, c) = (d.dot(d), 2.0 * o.dot(d), o.dot(o) - reach * reach);
+        let t = (-b + (b * b - 4.0 * a * c).sqrt()) / (2.0 * a);
+        at = start + d * t;
+    }
+    at
 }
 
 fn on_rung(sim: &mut Sim, me: Entity, gun: &str) {
@@ -189,7 +213,7 @@ fn every_distance_stands_on_its_line_and_is_hit_and_measured_by_a_hitscan_and_a_
             stand(&mut sim, me, &l, *side, 0.0);
             // A rocket at its feet (headless, a body has no hitboxes for a
             // flyer to meet: its splash measures it); a bullet at its centre.
-            let centre = if gun == ROCKETS { rocket_aim(&sim, *e) } else { sim.position(*e) };
+            let centre = if gun == ROCKETS { rocket_aim(&sim, me, *e) } else { sim.position(*e) };
             let flight = if gun == ROCKETS { d / 20.0 + 3.0 } else { 3.0 };
             let hit = shoot(&mut sim, me, *e, centre, flight as f64)
                 .unwrap_or_else(|| panic!("{gun} at {d} m: no hit measured; {:?}", sim.app.world().resource::<Seen>().events));
@@ -266,7 +290,7 @@ fn a_rocket_among_three_targets_and_a_shot_from_the_platform_are_measured() {
     assert!((sides[1] - sides[0]).abs() >= 1.2 - 1e-3 && (sides[2] - sides[0]).abs() >= 1.2 - 1e-3, "{sides:?}");
     on_rung(&mut sim, me, ROCKETS);
     sim.app.world_mut().resource_mut::<Seen>().blasts.clear();
-    let middle = rocket_aim(&sim, three[0]);
+    let middle = rocket_aim(&sim, me, three[0]);
     shoot(&mut sim, me, three[0], middle, 4.0).expect("the rocket hit");
     sim.ticks(2);
     let blasts = sim.app.world().resource::<Seen>().blasts.clone();

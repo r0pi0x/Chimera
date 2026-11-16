@@ -101,7 +101,7 @@ fn a_match_plays_with_the_scripts_numbers() {
     let data_flame = tf2::game::weapons::tf2_weapons();
     let data_flame = data_flame.get(FLAMETHROWER).unwrap();
     assert_eq!(flame.hooks["tf2:flame"]["damage"], data_flame.hooks["tf2:flame"]["damage"], "the flame's Damage is ignored");
-    assert_eq!(flame.trigger.as_ref().unwrap().cycle, 0.08, "its TimeFireDelay isn't the cycle");
+    assert_eq!(flame.trigger.as_ref().unwrap().cycle, 0.02, "its TimeFireDelay isn't the cycle (a flame every 0.02 s)");
     let grenade = catalog.get(GRENADE_LAUNCHER).unwrap();
     assert_eq!(grenade.hooks["tf2:grenade"]["radius"].as_float(), Some(120.0));
     assert_eq!(catalog.get(SHOTGUN).unwrap().damage.as_ref().unwrap().amount, 6.0, "refused: the data's");

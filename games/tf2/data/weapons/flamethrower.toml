@@ -1,10 +1,12 @@
-# The Flame Thrower, the Pyro's primary (specs/tf2/weapons_more.md 1, 7),
-# reduced as 7.1 allows: while attack is held it uses 12.5 ammo a second
-# (one round every 0.08 s of 200, no reload) and every flame tick (0.075
-# s) hurts each enemy in a 350-unit cone ahead (`tf2:flame`): 13 x the
-# age factor (by distance, 1 to 0.5) x the burn ramp (0.5 to 1 over 1.5 s
-# of contact), and sets him burning: 4 every 0.5 s for at least 3 s,
-# longer with contact, at most 10.
+# The Flame Thrower, the Pyro's primary (specs/tf2/weapons_more.md 1, 7
+# and its corrections from the SDK): while attack is held a flame point
+# every 0.02 s (every 2 ticks), 0.28 ammo each (about 9.3 a second of
+# 200, no reload). Each point (`tf2:flame`) flies from 40 forward, 5 right
+# of the eye at 2450 slowing by 8.5 a second (about 340 units of reach),
+# lives 0.6 +- 0.1 s, and hits an enemy at most every 0.075 s for
+# max(1, 13 x the age factor (1 to 0.5 at half its life) x the heat factor
+# (0.5 to 1 over heat 10 to 50)), setting him burning: 3 s, + 0.4 s a
+# hit, at most 10, 4 every 0.5 s.
 id = "tf2:tf_weapon_flamethrower"
 base = "tf2:base"
 class = "flamethrower"
@@ -13,7 +15,7 @@ draw = 0.5
 
 [trigger]
 automatic = true
-cycle = 0.08
+cycle = 0.02
 timing = "set"
 
 [magazine]
@@ -47,19 +49,31 @@ script = "tf_weapon_flamethrower"
 
 [hooks."tf2:flame"]
 damage = 13.0
-tick = 0.075
-range = 350.0
-cone = 2.8
-reach = 24.0
+emit = 0.02
+ammo_rate = 14.0
+speed = 2450.0
+drag = 8.5
+drift = 50.0
+origin = [40.0, 5.0]
+spread = 2.8
 life = 0.6
+life_jitter = 0.1
+max_points = 30
+size = 12.0
+hit_interval = 0.075
 age_floor = 0.5
-age_full = 1.0
-ramp_start = 0.5
-ramp_time = 1.5
+heat_floor = 0.5
+heat_low = 10.0
+heat_high = 50.0
+heat_decay = 1.25
+fresh = 0.02
+min_damage = 1.0
 burn_damage = 4.0
 burn_interval = 0.5
-burn_min = 3.0
+burn_start = 3.0
+burn_add = 0.4
 burn_max = 10.0
+pyro_burn = 0.25
 start_sound = "Weapon_FlameThrower.FireStart"
 loop_sound = "Weapon_FlameThrower.FireLoop"
 end_sound = "Weapon_FlameThrower.FireEnd"
