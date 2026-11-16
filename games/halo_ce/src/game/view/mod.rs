@@ -383,6 +383,12 @@ pub fn drive(
     }
 }
 
+/// Whether a campaign body holds its gun by its own hand marker
+/// (`load::body_held`, `campaign::unit::held_on`). Off: in a played run the
+/// late held model did not show in the hand (the key was set, the model
+/// never drawn; not found why), so the Spartan's placement stays.
+pub const OWN_HAND: bool = false;
+
 /// Holders of Halo guns take its stance and hold it (module doc).
 #[allow(clippy::type_complexity)]
 pub fn stance(
@@ -400,7 +406,7 @@ pub fn stance(
                 // A campaign body holds it by its own hand marker, once that
                 // model is loaded (`load::body_held`).
                 let own = kind
-                    .filter(|k| **k != super::campaign::BodyKind::Spartan)
+                    .filter(|k| OWN_HAND && **k != super::campaign::BodyKind::Spartan)
                     .map(|k| load::body_held_key(weapon.id, k.id()))
                     .filter(|key| late.as_deref().is_some_and(|l| l.has(key)));
                 let key = own.unwrap_or_else(|| weapon.id.to_string());

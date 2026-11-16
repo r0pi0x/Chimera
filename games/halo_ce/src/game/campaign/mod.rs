@@ -72,7 +72,8 @@
 //!   model of its own (`view::load::body_held`, key `<gun>#<kind>`), placed
 //!   by the kind's own hand marker for the gun's label (the Elite's `right
 //!   hand elite`), made with the unit (`unit::held_on`); `view::stance`
-//!   holds it once loaded. The off hand is free (characters.md section 2
+//!   holds it once loaded when `view::OWN_HAND` is on (off for now: in a
+//!   played run that model never showed in the hand). The off hand is free (characters.md section 2
 //!   rule 4: no Covenant class pins it): the arm moves only as the graph's
 //!   holding and aiming animations move it.
 //!
@@ -512,15 +513,42 @@ fn campaign_cvar(app: &mut App) {
 /// `halo_ce:body <spartan | elite | draw> [player | all]` (module doc).
 fn body_command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
     use chimera_core::console::{Cheats, CommandPlayer, command_player};
-    let usage = "halo_ce:body <spartan | elite | draw | status> [player | all]";
+    let usage = "halo_ce:body <spartan | elite | grunt | jackal | draw | status | shield <fraction>> [player | all]";
     let what = a.first().ok_or(usage)?.to_ascii_lowercase();
+    if what == "shield" {
+        // Every campaign body's shield to a fraction (screenshots of the
+        // Jackal's disc down and up).
+        let f: f32 = a.get(1).and_then(|v| v.parse().ok()).ok_or("halo_ce:body shield <fraction>")?;
+        let mut q = world.query_filtered::<&mut super::vitality::Vitality, With<BodyKind>>();
+        let mut n = 0;
+        for mut v in q.iter_mut(world) {
+            v.shield = f;
+            // Down: as a hit leaves it, the delay running.
+            if f <= 0.0 {
+                v.depleted = true;
+                v.delay = 450;
+            }
+            n += 1;
+        }
+        return Ok(Some(format!("{n} shields at {f}")));
+    }
     if what == "status" {
         let units = world.get_resource::<UnitsOnDemand>().map_or_else(|| "no units".into(), UnitsOnDemand::status);
-        let mut q = world.query::<(Entity, Option<&Name>, Option<&BodyKind>, Option<&BodyName>, Option<&crate::map::BodyModel>)>();
+        let mut q = world.query::<(
+            Entity,
+            Option<&Name>,
+            Option<&BodyKind>,
+            Option<&BodyName>,
+            Option<&crate::map::BodyModel>,
+            Option<&crate::map::Held>,
+        )>();
         let rows: Vec<String> = q
             .iter(world)
             .filter(|r| r.2.is_some() || r.3.is_some())
-            .map(|(e, n, k, b, m)| format!("{}: {:?} {:?} model {:?}", n.map_or_else(|| e.to_string(), |n| n.to_string()), k, b.map(|b| &b.0), m.map(|m| m.0)))
+            .map(|(e, n, k, b, m, h)| {
+                let who = n.map_or_else(|| e.to_string(), |n| n.to_string());
+                format!("{who}: {k:?} {:?} model {:?} holds {:?}", b.map(|b| &b.0), m.map(|m| m.0), h.and_then(|h| h.0.as_deref()))
+            })
             .collect();
         return Ok(Some(format!("{units}
 {}", rows.join("
