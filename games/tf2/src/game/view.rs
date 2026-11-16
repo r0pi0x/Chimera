@@ -21,14 +21,11 @@
 //! Known shortcuts: no view-model bob or sway of TF2's own yet (Source's
 //! motion rules are its own spec); the minigun's barrel doesn't spin in
 //! first person (its spin is the world model's own sequence). The
-//! Minigun's idle `m_idle` as decoded holds the gun upright, low and off
-//! the left hand's grip (M2b's "low and angled up"); not the bone merge
-//! (its `weapon_bone` itself points up), not the include's root (the same
-//! in the spun sequences, which aim right) and not `min_viewmodel_offset`
-//! (the minimal view models' only). `m_draw` and `m_spool_down` end in the
-//! same pose, so it is in the data as we read it; the Minigun shows its
-//! spun pose instead (`SEQUENCES`), raised by its data's `view_offset`,
-//! until a capture of the real game settles it.
+//! Minigun rests in `m_idle`, upright, barrels up, right of centre, and
+//! draws with `m_draw`, no offset (specs/tf2/viewmodel.md, "Why ours shows
+//! a huge, wrongly angled Minigun", 7; a capture of the real game agrees);
+//! the spun sequences aim it: while it spins (`ViewPose` 1, set by
+//! `weapons::minigun`) it idles in `m_spool_idle`.
 //!
 //! A gun's `[models] view_offset` (Source's forward, left, up) moves its
 //! view model in the eye's space (`source_offset`).
@@ -153,25 +150,18 @@ pub const SEQUENCES: &[(&str, Sequences)] = &[
             [("ACT_PRIMARY_RELOAD_START", "fj_reload_start"), (P_RELOAD, "fj_reload_loop"), ("ACT_PRIMARY_RELOAD_FINISH", "fj_reload_end")],
         ),
     ),
-    // The Minigun's `m_idle` (and the ends of `m_draw` and
-    // `m_spool_down`, which settle into it) holds the gun upright below
-    // the eye, its barrels at the ceiling and the left hand 28 cm off its
-    // grip: decoded per the spec, consistently across those sequences.
-    // Until the cause is known, the first person keeps the spun pose:
-    // drawn by `m_spool_up` (from that low pose up to the aim), idle and
-    // winding down in `m_spool_idle`.
+    // The Minigun rests upright in `m_idle` (as the real game shows it:
+    // small, right of centre, barrels up, only the right hand in view),
+    // and aims while it spins (`m_spool_up`, `m_spool_idle`, `m_fire`,
+    // back by `m_spool_down`).
     (
         MINIGUN,
         Sequences {
             spin_up: Some(("ACT_PRIMARY_ATTACK_STAND_PREFIRE", "m_spool_up")),
             spin_idle: Some(("ACT_PRIMARY_VM_SECONDARYATTACK", "m_spool_idle")),
-            spin_down: Some(("ACT_PRIMARY_VM_SECONDARYATTACK", "m_spool_idle")),
+            spin_down: Some(("ACT_PRIMARY_ATTACK_STAND_POSTFIRE", "m_spool_down")),
             fire_loops: true,
-            ..plain(
-                ("ACT_PRIMARY_ATTACK_STAND_PREFIRE", "m_spool_up"),
-                ("ACT_PRIMARY_VM_SECONDARYATTACK", "m_spool_idle"),
-                (P_FIRE, "m_fire"),
-            )
+            ..plain((P_DRAW, "m_draw"), (P_IDLE, "m_idle"), (P_FIRE, "m_fire"))
         },
     ),
     (PISTOL_SCOUT, clip((S_DRAW, "p_draw"), (S_IDLE, "p_idle"), (S_FIRE, "p_fire"), (S_RELOAD, "p_reload"))),
@@ -248,7 +238,8 @@ fn draw(s: &ViewState) -> Pick {
 }
 
 fn idle(s: &ViewState) -> Pick {
-    named(sequences(s.weapon).map(|q| q.idle))
+    // A spun Minigun (`ViewPose` 1) idles in its spun sequence.
+    named(sequences(s.weapon).map(|q| if s.pose == 1 { q.spin_idle.unwrap_or(q.idle) } else { q.idle }))
 }
 
 fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {

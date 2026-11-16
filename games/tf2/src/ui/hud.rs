@@ -1,0 +1,403 @@
+//! TF2's HUD as a frame of draws (specs/tf2/hud.md): what the local
+//! player's state shows each frame, in window pixels, for `systems` to
+//! turn into UI nodes and for the tests to read without a window.
+//!
+//! - **Units** (hud.md "Units and conventions"): one layout unit is
+//!   H / 480 pixels on both axes, scaled values truncated; `rN` counts from
+//!   the right or bottom edge.
+//! - **Health** (3.2, 3.3): the panel at (0, r120), 250 x 120 (its own
+//!   file places it, so not `hudlayout.res`'s); the dark cross outline
+//!   (`health_bg`, 73, 33, 55 x 55), the off-white cross over it cropped
+//!   from the bottom up to the health's share of max (`health_color`, 75,
+//!   35, 51 x 51; `health_dead` when dead), the number centred in its box
+//!   (76, 52, 50 x 18) in `HudClassHealth`, `TanDark`; behind them the
+//!   bonus cross (`health_over_bg`): white and grown toward 55 + 2 x 35
+//!   units at the overheal cap while overhealed, pulsing every 0.4 s; red
+//!   (`HUDDeathWarning`) at its base size below 49 % of max, pulsing every
+//!   0.25 s.
+//! - **Ammo** (3.5): the panel at `HudWeaponAmmo` (r95, r55, 94 x 45) in
+//!   the team's colour (a rounded box: the material's distance-field panel
+//!   baked to a box), the clip big (`HudFontGiantBold`, its box's bottom
+//!   right) and the reserve small (`HudFontMediumSmall`, its box's bottom
+//!   left), each over its shadow one unit right and down; a gun without a
+//!   reserve (the Minigun) shows its one number in the wider box.
+//! - **Crosshair** (3.4): the sprite sheet's "( · )" cell (the public
+//!   `default`), centred, 32 pixels at 1080 lines scaled by the height,
+//!   in 200 200 200 (the recalled `cl_crosshair_*` defaults).
+//!
+//! Known shortcuts: the max-health label, the low-ammo pulse (no
+//! threshold in the data), damage numbers and the health-gain number,
+//! the class portrait and the hit sound aren't drawn (open questions 6, 9,
+//! 3, 12); each gun's own crosshair is unknown (open question 2: the
+//! scripts name it) so every gun shows the default; the ammo panel's
+//! gradient, soft edge and outline are a flat rounded box.
+
+use bevy::prelude::*;
+use chimera_world::map::hud::HudCoord;
+
+/// RGBA 0..255.
+pub type Rgba = [u8; 4];
+
+/// The window and its unit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Screen {
+    pub w: f32,
+    pub h: f32,
+}
+
+impl Screen {
+    pub fn new(w: f32, h: f32) -> Screen {
+        Screen { w, h }
+    }
+
+    /// Pixels a unit takes.
+    pub fn u(&self) -> f32 {
+        self.h / 480.0
+    }
+
+    /// A length in units as whole pixels (truncated).
+    pub fn scaled(&self, v: f32) -> f32 {
+        (v * self.u()).trunc()
+    }
+
+    pub fn x(&self, c: HudCoord) -> f32 {
+        match c {
+            HudCoord::Start(v) => self.scaled(v),
+            HudCoord::Centre(v) => self.w / 2.0 + self.scaled(v),
+            HudCoord::End(v) => self.w - self.scaled(v),
+        }
+    }
+
+    pub fn y(&self, c: HudCoord) -> f32 {
+        match c {
+            HudCoord::Start(v) => self.scaled(v),
+            HudCoord::Centre(v) => self.h / 2.0 + self.scaled(v),
+            HudCoord::End(v) => self.h - self.scaled(v),
+        }
+    }
+
+    /// A box: left, top, wide, tall in units.
+    pub fn rect(&self, x: HudCoord, y: HudCoord, wide: f32, tall: f32) -> Rect {
+        let min = Vec2::new(self.x(x), self.y(y));
+        Rect::from_corners(min, min + Vec2::new(self.scaled(wide), self.scaled(tall)))
+    }
+
+    /// A child's box at (x, y) units inside `parent`.
+    pub fn child(&self, parent: Rect, x: f32, y: f32, wide: f32, tall: f32) -> Rect {
+        let min = parent.min + Vec2::new(self.scaled(x), self.scaled(y));
+        Rect::from_corners(min, min + Vec2::new(self.scaled(wide), self.scaled(tall)))
+    }
+}
+
+/// Where a text's anchor sits (`hud_text::Align`).
+pub use chimera_client::client::hud_text::Align;
+
+/// One thing to draw.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Draw {
+    /// A filled box with rounded corners of `radius` pixels.
+    Box { rect: Rect, color: Rgba, radius: f32 },
+    /// Text in a scheme font (`font`, `tall` pixels), `at` the anchor.
+    Text { font: &'static str, tall: f32, text: String, color: Rgba, at: Vec2, align: Align },
+    /// The part `uv` (0..1 of the picture's rectangle) of a picture of the
+    /// look (`GameHud::sprites` key) drawn into `rect`.
+    Sprite { sprite: &'static str, rect: Rect, uv: Rect, color: Rgba },
+}
+
+impl Draw {
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            Draw::Text { text, .. } => Some(text),
+            _ => None,
+        }
+    }
+}
+
+/// The weapon in hand as the HUD reads it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Ammo {
+    /// Rounds loaded; with no reserve (the Minigun) the one number.
+    pub clip: i32,
+    /// The reserve; None: a gun without one (one number).
+    pub reserve: Option<i32>,
+}
+
+/// What the HUD reads from the game in one frame.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Inputs {
+    pub alive: bool,
+    /// Health and max health, points.
+    pub health: f32,
+    pub max: f32,
+    /// RED (false) or BLU (true).
+    pub blu: bool,
+    /// The gun's ammo (None: no gun or one that uses none: no panel).
+    pub ammo: Option<Ammo>,
+    /// Seconds, for the pulses.
+    pub time: f64,
+}
+
+/// The scheme's colours and fonts this HUD uses, by name.
+pub trait Scheme {
+    fn colour(&self, name: &str) -> Option<Rgba>;
+    /// A font's cell height in pixels at this window's height (None: the
+    /// install lacks it).
+    fn tall(&self, font: &str) -> Option<f32>;
+    /// Whether the look holds the picture.
+    fn has(&self, sprite: &str) -> bool;
+}
+
+/// Low health below this share of max (hud.md `HealthDeathWarning`).
+pub const DEATH_WARNING: f32 = 0.49;
+/// The bonus cross's growth at the overheal cap, units each side.
+pub const BONUS_GROWTH: f32 = 35.0;
+
+/// The overheal pulse's alpha at `t` seconds into it (3.1: up to 255 over
+/// 0.2 s, down to 127 by 0.4 s, then again from 127).
+pub fn bonus_alpha(t: f64) -> f32 {
+    if t < 0.2 {
+        return (255.0 * t / 0.2) as f32;
+    }
+    let p = ((t - 0.2) % 0.4) as f32;
+    if p < 0.2 { 255.0 - 128.0 * p / 0.2 } else { 127.0 + 128.0 * (p - 0.2) / 0.2 }
+}
+
+/// The low-health pulse's alpha at `t` (3.1: up 0.075 s, held to 0.125,
+/// down by 0.2, off to 0.25, again).
+pub fn dying_alpha(t: f64) -> f32 {
+    let p = (t % 0.25) as f32;
+    if p < 0.075 {
+        255.0 * p / 0.075
+    } else if p < 0.125 {
+        255.0
+    } else if p < 0.2 {
+        255.0 * (1.0 - (p - 0.125) / 0.075)
+    } else {
+        0.0
+    }
+}
+
+/// The health panel's state (3.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HealthState {
+    Normal,
+    Overhealed,
+    Low,
+}
+
+pub fn health_state(health: f32, max: f32) -> HealthState {
+    if health > max {
+        HealthState::Overhealed
+    } else if health < DEATH_WARNING * max {
+        HealthState::Low
+    } else {
+        HealthState::Normal
+    }
+}
+
+/// The HUD's state between frames: when each pulse started.
+#[derive(Clone, Debug, Default)]
+pub struct Tf2Hud {
+    pulse: Option<(HealthState, f64)>,
+}
+
+impl Tf2Hud {
+    /// This frame's draws for `i` on `screen` in `scheme`.
+    pub fn frame(&mut self, i: &Inputs, screen: Screen, scheme: &dyn Scheme) -> Vec<Draw> {
+        let mut out = Vec::new();
+        let white = [255, 255, 255, 255];
+        let tan_dark = scheme.colour("TanDark").unwrap_or([117, 107, 94, 255]);
+        let tan_light = scheme.colour("TanLight").unwrap_or([235, 226, 202, 255]);
+        let shadow = scheme.colour("TanDarker").unwrap_or([46, 43, 42, 255]);
+        let faint = scheme.colour("TransparentBlack").unwrap_or([0, 0, 0, 196]);
+        let full = Rect::new(0.0, 0.0, 1.0, 1.0);
+        // Health.
+        let panel = screen.rect(HudCoord::Start(0.0), HudCoord::End(120.0), 250.0, 120.0);
+        let state = if i.alive { health_state(i.health, i.max) } else { HealthState::Normal };
+        let since = match self.pulse {
+            Some((s, t)) if s == state => t,
+            _ => {
+                self.pulse = Some((state, i.time));
+                i.time
+            }
+        };
+        let t = i.time - since;
+        match state {
+            HealthState::Overhealed => {
+                let cap = (1.5 * i.max / 5.0).floor() * 5.0;
+                let k = ((i.health - i.max) / (cap - i.max).max(1.0)).clamp(0.0, 1.0);
+                let grow = BONUS_GROWTH * k;
+                let r = screen.child(panel, 73.0 - grow, 33.0 - grow, 55.0 + 2.0 * grow, 55.0 + 2.0 * grow);
+                out.push(Draw::Sprite { sprite: "health_over_bg", rect: r, uv: full, color: [255, 255, 255, bonus_alpha(t) as u8] });
+            }
+            HealthState::Low => {
+                let red = scheme.colour("HUDDeathWarning").unwrap_or([255, 0, 0, 255]);
+                let r = screen.child(panel, 73.0, 33.0, 55.0, 55.0);
+                out.push(Draw::Sprite { sprite: "health_over_bg", rect: r, uv: full, color: [red[0], red[1], red[2], dying_alpha(t) as u8] });
+            }
+            HealthState::Normal => {}
+        }
+        out.push(Draw::Sprite { sprite: "health_bg", rect: screen.child(panel, 73.0, 33.0, 55.0, 55.0), uv: full, color: white });
+        let fill = screen.child(panel, 75.0, 35.0, 51.0, 51.0);
+        if !i.alive {
+            if scheme.has("health_dead") {
+                out.push(Draw::Sprite { sprite: "health_dead", rect: fill, uv: full, color: white });
+            }
+        } else {
+            let f = (i.health / i.max.max(1.0)).clamp(0.0, 1.0);
+            let top = fill.max.y - fill.height() * f;
+            let rect = Rect::new(fill.min.x, top, fill.max.x, fill.max.y);
+            out.push(Draw::Sprite { sprite: "health_color", rect, uv: Rect::new(0.0, 1.0 - f, 1.0, 1.0), color: white });
+            if let Some(tall) = scheme.tall("HudClassHealth") {
+                let b = screen.child(panel, 76.0, 52.0, 50.0, 18.0);
+                let text = format!("{}", i.health.max(0.0).round() as i32);
+                let at = Vec2::new(b.center().x, b.center().y - tall / 2.0);
+                out.push(Draw::Text { font: "HudClassHealth", tall, text, color: tan_dark, at, align: Align::Centre });
+            }
+        }
+        // Ammo.
+        if let (true, Some(ammo)) = (i.alive, &i.ammo) {
+            let p = screen.rect(HudCoord::End(95.0), HudCoord::End(55.0), 94.0, 45.0);
+            let team = if i.blu { scheme.colour("HUDBlueTeamSolid").unwrap_or([104, 124, 155, 255]) } else { scheme.colour("HUDRedTeamSolid").unwrap_or([180, 92, 77, 255]) };
+            let bg = screen.child(p, 4.0, 0.0, 90.0, 45.0);
+            let radius = screen.scaled(6.0);
+            out.push(Draw::Box { rect: bg.inflate(screen.scaled(1.0)), color: [0, 0, 0, 115], radius });
+            out.push(Draw::Box { rect: bg, color: team, radius });
+            let big = |out: &mut Vec<Draw>, b: Rect, text: String| {
+                if let Some(tall) = scheme.tall("HudFontGiantBold") {
+                    let one = screen.scaled(1.0);
+                    let at = Vec2::new(b.max.x, b.max.y - tall);
+                    out.push(Draw::Text { font: "HudFontGiantBold", tall, text: text.clone(), color: shadow, at: at + Vec2::splat(one), align: Align::Right });
+                    out.push(Draw::Text { font: "HudFontGiantBold", tall, text, color: tan_light, at, align: Align::Right });
+                }
+            };
+            match ammo.reserve {
+                Some(reserve) => {
+                    big(&mut out, screen.child(p, 4.0, 0.0, 55.0, 40.0), ammo.clip.to_string());
+                    if let Some(tall) = scheme.tall("HudFontMediumSmall") {
+                        let b = screen.child(p, 59.0, 8.0, 40.0, 27.0);
+                        let one = screen.scaled(1.0);
+                        let at = Vec2::new(b.min.x, b.max.y - tall);
+                        out.push(Draw::Text { font: "HudFontMediumSmall", tall, text: reserve.to_string(), color: faint, at: at + Vec2::splat(one), align: Align::Left });
+                        out.push(Draw::Text { font: "HudFontMediumSmall", tall, text: reserve.to_string(), color: tan_light, at, align: Align::Left });
+                    }
+                }
+                None => big(&mut out, screen.child(p, 0.0, 2.0, 84.0, 40.0), ammo.clip.to_string()),
+            }
+        }
+        // Crosshair: the sheet's (0, 0, 32, 32) of 128 x 128.
+        if i.alive && scheme.has("crosshairs") {
+            let size = (32.0 * screen.h / 1080.0).round();
+            let c = Vec2::new(screen.w / 2.0, screen.h / 2.0);
+            let rect = Rect::from_center_size(c, Vec2::splat(size));
+            out.push(Draw::Sprite { sprite: "crosshairs", rect, uv: Rect::new(0.0, 0.0, 0.25, 0.25), color: [200, 200, 200, 255] });
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Plain;
+    impl Scheme for Plain {
+        fn colour(&self, _: &str) -> Option<Rgba> {
+            None
+        }
+        fn tall(&self, font: &str) -> Option<f32> {
+            Some(match font {
+                "HudClassHealth" => 36.0,
+                "HudFontGiantBold" => 99.0,
+                _ => 40.0,
+            })
+        }
+        fn has(&self, _: &str) -> bool {
+            true
+        }
+    }
+
+    fn sprite<'a>(d: &'a [Draw], name: &str) -> Option<(&'a Rect, &'a Rect, &'a Rgba)> {
+        d.iter().find_map(|x| match x {
+            Draw::Sprite { sprite, rect, uv, color } if *sprite == name => Some((rect, uv, color)),
+            _ => None,
+        })
+    }
+
+    /// Tests 1, 2: the panels' places at 1080 and 720 lines.
+    #[test]
+    fn panels_sit_where_the_layout_puts_them_1_2() {
+        let s = Screen::new(1920.0, 1080.0);
+        assert_eq!(s.u(), 2.25);
+        assert_eq!(s.rect(HudCoord::End(95.0), HudCoord::End(55.0), 94.0, 45.0), Rect::new(1707.0, 957.0, 1918.0, 1058.0));
+        assert_eq!(s.rect(HudCoord::Start(0.0), HudCoord::End(120.0), 250.0, 120.0), Rect::new(0.0, 810.0, 562.0, 1080.0));
+        let p = s.rect(HudCoord::Start(0.0), HudCoord::End(120.0), 250.0, 120.0);
+        assert_eq!(s.child(p, 73.0, 33.0, 55.0, 55.0), Rect::new(164.0, 884.0, 287.0, 1007.0));
+        let s = Screen::new(1280.0, 720.0);
+        let r = s.rect(HudCoord::End(95.0), HudCoord::End(55.0), 94.0, 45.0);
+        assert_eq!((r.min, r.size()), (Vec2::new(1138.0, 638.0), Vec2::new(141.0, 67.0)));
+    }
+
+    /// Tests 3-5: a Heavy at 150 fills half, at 146 is low, at 147 not.
+    #[test]
+    fn health_fill_and_the_low_state_3_4_5() {
+        let s = Screen::new(1920.0, 1080.0);
+        let mut hud = Tf2Hud::default();
+        let i = Inputs { alive: true, health: 150.0, max: 300.0, ..default() };
+        let d = hud.frame(&i, s, &Plain);
+        assert_eq!(sprite(&d, "health_color").unwrap().1.min.y, 0.5);
+        assert!(d.iter().any(|x| x.as_text() == Some("150")));
+        assert!(sprite(&d, "health_over_bg").is_none(), "no pulse");
+        assert_eq!(health_state(146.0, 300.0), HealthState::Low);
+        assert_eq!(health_state(147.0, 300.0), HealthState::Normal);
+        let d = hud.frame(&Inputs { health: 146.0, ..i.clone() }, s, &Plain);
+        let (_, _, c) = sprite(&d, "health_over_bg").unwrap();
+        assert_eq!(&c[..3], &[255, 0, 0]);
+    }
+
+    /// Test 6: a Scout at 185 / 125: overhealed, the bonus cross at its
+    /// largest (55 + 70 units), white.
+    #[test]
+    fn overheal_grows_the_white_cross_6() {
+        let s = Screen::new(1920.0, 1080.0);
+        let d = Tf2Hud::default().frame(&Inputs { alive: true, health: 185.0, max: 125.0, ..default() }, s, &Plain);
+        let (r, _, c) = sprite(&d, "health_over_bg").unwrap();
+        assert_eq!(r.width(), s.scaled(125.0));
+        assert_eq!(&c[..3], &[255, 255, 255]);
+    }
+
+    /// Tests 8, 9: the pulses' alphas.
+    #[test]
+    fn pulses_8_9() {
+        assert!((bonus_alpha(0.2) - 255.0).abs() < 1.0);
+        assert!((bonus_alpha(0.4) - 127.0).abs() < 1.0);
+        assert!((bonus_alpha(0.6) - 255.0).abs() < 1.0);
+        assert!((dying_alpha(0.075) - 255.0).abs() < 1.0);
+        assert!((dying_alpha(0.1) - 255.0).abs() < 1.0);
+        assert!(dying_alpha(0.2) < 1.0);
+        assert!(dying_alpha(0.25) < 1.0);
+    }
+
+    /// Tests 10, 11: the Scattergun's clip and reserve, the Minigun's one
+    /// number.
+    #[test]
+    fn ammo_clip_and_reserve_or_one_number_10_11() {
+        let s = Screen::new(1920.0, 1080.0);
+        let d = Tf2Hud::default().frame(
+            &Inputs { alive: true, health: 125.0, max: 125.0, ammo: Some(Ammo { clip: 6, reserve: Some(32) }), ..default() },
+            s,
+            &Plain,
+        );
+        assert!(d.iter().filter(|x| x.as_text() == Some("6")).count() == 2, "the clip and its shadow");
+        assert!(d.iter().any(|x| x.as_text() == Some("32")));
+        let d = Tf2Hud::default().frame(
+            &Inputs { alive: true, health: 300.0, max: 300.0, blu: true, ammo: Some(Ammo { clip: 200, reserve: None }), ..default() },
+            s,
+            &Plain,
+        );
+        let texts: Vec<&str> = d.iter().filter_map(Draw::as_text).collect();
+        assert_eq!(texts, ["300", "200", "200"]);
+        let blue = d.iter().any(|x| matches!(x, Draw::Box { color, .. } if *color == [104, 124, 155, 255]));
+        assert!(blue, "the blue panel");
+    }
+}

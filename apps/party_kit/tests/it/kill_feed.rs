@@ -309,7 +309,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
             // What its drawing writes to (no renderer here).
             .init_asset::<chimera_client::client::hud_text::HudGlyphMaterial>()
             .init_asset::<Image>()
-            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm::ui::Hl2dmHudPlugin, halo_ce::ui::hud::HaloHudPlugin))
+            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm::ui::Hl2dmHudPlugin, halo_ce::ui::hud::HaloHudPlugin, tf2::ui::Tf2HudPlugin))
             .insert_resource(HudLookOwner(cs_source::game::GAME))
             .insert_resource(crate::hud::cs_look())
             .insert_resource(chimera_world::map::hud::GuestLooks(vec![hl2_look()]));
@@ -321,7 +321,7 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
     });
     crate::gun_game::plain_rungs(sim.app.world_mut());
     crate::gun_game::no_finale(sim.app.world_mut());
-    sim.app.add_minigames(&[("hl2dm.toml", &crate::halo_maps::mixed_with_halo())]).unwrap();
+    sim.app.add_minigames(&[("hl2dm.toml", &mixed_with_halo_and_tf2())]).unwrap();
     minigame::start(sim.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
     let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
     sim.app.world_mut().entity_mut(me).insert(chimera_core::core::LocalPlayer);
@@ -346,6 +346,18 @@ pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entit
     );
     sim.seconds(0.2);
     (sim, me, killer)
+}
+
+/// `halo_maps::mixed_with_halo`'s ladder with a TF2 rung after Halo's (the
+/// Scattergun, rung 6), so every game's HUD has a rung of its own.
+fn mixed_with_halo_and_tf2() -> String {
+    let mut ladder = crate::hl2dm_parts::LADDER.to_vec();
+    ladder.push(halo_ce::game::weapons::ASSAULT_RIFLE);
+    ladder.push(tf2::game::weapons::SCATTERGUN);
+    crate::hl2dm_parts::ladder_text(&ladder, false).replace(
+        "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
+        "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"tf2\", \"combat_arms\"]",
+    )
 }
 
 /// HL2:DM's stand-in look (its spec's layout and colours, no install) as

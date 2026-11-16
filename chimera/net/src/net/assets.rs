@@ -25,9 +25,16 @@
 //!   it has a token) counts as having the offered games (`count_offered`),
 //!   so a client with no install isn't refused before it hears the offer.
 //! - **The client** (`begin`, before it accepts a `Welcome` or
-//!   `ChangeLevel`): a game its own install provides is never fetched (the
-//!   hybrid model), but for the match's map when the install lacks it (a
-//!   community map): the offer's `map/<name>` set, binding the token for it
+//!   `ChangeLevel`): with the service first (the apps' default with a
+//!   service set: `chimera_assets::config::InstallDefault`) an installed
+//!   game the service serves is read from the store like any other
+//!   (`AssetSession::served`), and a token that waits for its first join
+//!   keeps the installs hidden until the join binds it (so they come as
+//!   for a player without them; `remount` reads the install of a game the
+//!   service doesn't serve). With the install chosen ("Use my installed
+//!   games", `INSTALL_CVAR`; `[assets] use_install = true`) a game its
+//!   own install provides is never fetched (the hybrid model), but for the
+//!   match's map when the install lacks it (a community map): the offer's `map/<name>` set, binding the token for it
 //!   if needed. Whichever game the map is of, once the sets are here its
 //!   file is made sure of (`ensure_map`: kept in the content cache when
 //!   the mounts don't give it as the server has it), so the map's verify
@@ -142,6 +149,66 @@ use super::{
     manifest::{GameMount, LocalMounts, MatchManifest, MountReport},
 };
 use crate::core::NetRole;
+
+/// "Use my installed games" (cvar, archived; 0 by default): 1 reads the
+/// games installed on this machine from their installs, the asset
+/// service only filling what they lack (the hybrid model); 0 reads every
+/// game the service serves from it, installed or not, whenever a service
+/// is set. Read at the start (`install_default_here`): a change applies
+/// at the next start.
+pub const INSTALL_CVAR: &str = "chimera:asset_use_install";
+
+/// `INSTALL_CVAR`'s value.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct InstallSetting {
+    pub use_install: u8,
+}
+
+/// Whether `texts` (config files' or command lines, in order) set
+/// `INSTALL_CVAR`: the last one that does (None: none does).
+pub fn install_chosen_in<'a>(texts: impl IntoIterator<Item = &'a str>) -> Option<bool> {
+    let bare = INSTALL_CVAR.split_once(':').map_or(INSTALL_CVAR, |(_, n)| n);
+    let mut chosen = None;
+    for text in texts {
+        for line in text.lines() {
+            for words in chimera_core::console::parse(line) {
+                let named = words.first().is_some_and(|w| w.eq_ignore_ascii_case(INSTALL_CVAR) || w.eq_ignore_ascii_case(bare));
+                if let (true, Some(v)) = (named, words.get(1)) {
+                    chosen = v.trim().parse::<f64>().ok().map(|v| v != 0.0).or(chosen);
+                }
+            }
+        }
+    }
+    chosen
+}
+
+/// This process's install default (`chimera_assets::config::InstallDefault`)
+/// from the player's setting, read before anything mounts a game: on a
+/// `client` config.cfg and autoexec.cfg (the player's saved settings),
+/// then the command line's `console` lines (a dedicated server's only:
+/// config.cfg is the players'). The setting on: `Install`; off (the
+/// default): the service first (a client's token waiting for its first
+/// join counting as a service).
+pub fn install_default_here(console: &[String], client: bool) -> chimera_assets::config::InstallDefault {
+    use chimera_assets::config::InstallDefault;
+    let files: Vec<String> = if client {
+        ["config.cfg", "autoexec.cfg"].into_iter().filter_map(chimera_core::console::read_cfg).collect()
+    } else {
+        Vec::new()
+    };
+    let texts = files.iter().map(String::as_str).chain(console.iter().map(String::as_str));
+    match install_chosen_in(texts) {
+        Some(true) => InstallDefault::Install,
+        _ if client => InstallDefault::ServiceFirstClient,
+        _ => InstallDefault::ServiceFirst,
+    }
+}
+
+/// `install_default_here` made this process's default
+/// (`chimera_assets::config::set_install_default`).
+pub fn set_install_default_here(console: &[String], client: bool) {
+    chimera_assets::config::set_install_default(install_default_here(console, client));
+}
 
 /// The server's asset service URL (cvar).
 pub const URL_CVAR: &str = "chimera:asset_url";
@@ -524,6 +591,15 @@ impl MapAhead {
         self.job.as_ref().is_some_and(|j| !j.is_finished())
     }
 
+    /// Under way: started and its end not yet noted (`run_streams` notes
+    /// it; `result` then holds it). Unlike `running`, it doesn't depend on
+    /// the fetch thread's speed: true from the frame it starts until a
+    /// frame after it ends, so a stream is held for at least that frame
+    /// even when the fetch finishes at once.
+    pub fn under_way(&self) -> bool {
+        self.job.is_some()
+    }
+
     /// Stored bytes fetched and to fetch (0, 0 until known).
     pub fn bytes(&self) -> (u64, u64) {
         let t = self.transfer.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -618,7 +694,7 @@ pub(super) fn plugin(app: &mut App) {
     use chimera_core::shutdown::{ShutdownAppExt, Stage};
     app.shutdown_flush(Stage::Persist, "downloads", stop_downloads);
     app.init_resource::<AssetHost>()
-        .init_resource::<AssetHooks>()
+                .init_resource::<AssetHooks>()
         .init_resource::<JoinSets>()
         .init_resource::<Streams>()
         .init_resource::<StreamLink>();
@@ -640,6 +716,7 @@ pub(super) fn plugin(app: &mut App) {
         "Server: older clients' cap on prefetching the offer's later maps, KB/s (none are offered now).",
         |h| &mut h.prefetch_max,
     );
+    install_setting(app);
     app.console_command(
         TOKEN_COMMAND,
         "Enter your asset token (from the asset service's admin), kept for this user; the next server offering its service binds it.",
@@ -657,6 +734,22 @@ pub(super) fn plugin(app: &mut App) {
             .chain()
             .run_if(resource_equals(NetRole::Client)),
     );
+}
+
+/// `INSTALL_CVAR`, archived (config.cfg keeps it; read at the next start
+/// by `install_default_here`).
+pub fn install_setting(app: &mut App) {
+    app.init_resource::<InstallSetting>();
+    resource_cvar::<InstallSetting, u8>(
+        app,
+        INSTALL_CVAR,
+        "Use my installed games: 1 reads the games installed here from their installs; 0 (the default) downloads \
+         every game's files from the asset service, so everyone plays the same files. Applies at the next start.",
+        |s| &mut s.use_install,
+    );
+    if let Some(mut console) = app.world_mut().get_resource_mut::<chimera_core::console::Console>() {
+        console.archive(INSTALL_CVAR);
+    }
 }
 
 /// The user's access file (`chimera_assets::access`).
@@ -1185,7 +1278,9 @@ fn bind(world: &mut World, offer: &AssetOffer, session: &AssetSession) -> Result
 }
 
 /// After a bind's files arrived: `bound`'s games the store now has are
-/// read from it (served, in the mount report), then the parts read again
+/// read from it (served, in the mount report), and those it doesn't serve
+/// that are installed from their installs (a client whose installs were
+/// hidden while its token waited for this join), then the parts read again
 /// what they read at startup (`AssetsArrived`; what its observers queue
 /// is applied before this returns, so the join's checks see it). The
 /// games that arrived.
@@ -1194,14 +1289,25 @@ fn remount(world: &mut World, bound: &[String]) -> Vec<String> {
         .get_resource::<AssetSession>()
         .and_then(|s| s.settings.as_ref())
         .and_then(|s| s.store.clone());
-    let arrived: Vec<String> = bound
+    let served: Vec<String> = bound
         .iter()
         .filter(|g| store.as_ref().is_some_and(|s| s.latest_build(g).is_some()))
         .cloned()
         .collect();
+    // With the service first, a client whose token waited for this join
+    // hid its installs; a game the service doesn't serve is read from its
+    // install now that a service is set (`AssetSettings::game_path`).
+    let games = world.get_resource::<Games>().cloned();
+    let installed: Vec<String> = bound
+        .iter()
+        .filter(|g| !served.contains(g))
+        .filter(|g| games.as_ref().and_then(|r| r.get(g)).is_some_and(|i| i.install().is_some() && !i.served_alone()))
+        .cloned()
+        .collect();
     if let Some(mut s) = world.get_resource_mut::<AssetSession>() {
-        s.served.extend(arrived.iter().cloned());
+        s.served.extend(served.iter().cloned());
     }
+    let arrived: Vec<String> = served.into_iter().chain(installed).collect();
     if let Some(mut local) = world.get_resource_mut::<LocalMounts>() {
         for g in &arrived {
             match local.0.games.iter_mut().find(|m| m.game == *g) {
@@ -1341,7 +1447,7 @@ fn map_ahead(world: &mut World) {
 fn run_streams(world: &mut World) {
     let now = world.get_resource::<Time<Real>>().map_or(0.0, |t| t.elapsed_secs_f64());
     let busy = world.contains_resource::<AssetFetch>()
-        || world.get_resource::<MapAhead>().is_some_and(MapAhead::running)
+        || world.get_resource::<MapAhead>().is_some_and(MapAhead::under_way)
         || !world.contains_resource::<client::Joined>()
         || world.get_resource::<JoinProgress>().is_some_and(|p| !matches!(p.stage, JoinStage::Idle | JoinStage::Joined));
     let link = world.get_resource::<StreamLink>().copied().unwrap_or_default().0;

@@ -27,6 +27,7 @@ mod weapons_more;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
+    mod bodies;
     mod guns;
     mod map_cache;
     mod maps;

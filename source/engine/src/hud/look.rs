@@ -4,7 +4,8 @@
 //! `LookOptions::font_files` by file name, `file:<stem>`, and `family:<name>` too) and each scheme font's
 //! first size, every size entry as `text_fonts`, icons drawn with font
 //! glyphs or cut from sprite sheets (`scripts/hud_textures.txt`,
-//! `scripts/mod_textures.txt`), and each panel of `scripts/hudlayout.res`
+//! `scripts/mod_textures.txt`; a sheet as `file`, or TF2's `dfile` with its
+//! negative `dnegfile` as `<name>/neg`), and each panel of `scripts/hudlayout.res`
 //! (position, size, background and offsets, every key as written).
 //! `glyph_icons` reads only the icon script's glyphs and their fonts (an
 //! app's kill icons at start, with no map or HUD).
@@ -119,8 +120,15 @@ fn root(kv: Kv) -> Kv {
 /// size, into `hud.fonts`; `read` reads a file of the game's search path.
 fn scheme_hud_fonts(hud: &mut GameHud, scheme: &Kv, read: &dyn Fn(&str) -> Option<Vec<u8>>, font_files: bool) {
     let mut files: HashMap<String, Arc<Vec<u8>>> = HashMap::new();
-    for (_, path) in scheme.get("CustomFontFiles").map(Kv::items).unwrap_or_default() {
-        let Kv::Value(path) = path else { continue };
+    for (_, entry) in scheme.get("CustomFontFiles").map(Kv::items).unwrap_or_default() {
+        // A file as a value, or a block naming it (`"font" "resource/tf.ttf"`).
+        let path = match entry {
+            Kv::Value(path) => path.as_str(),
+            Kv::Block(_) => match entry.str("font") {
+                Some(p) => p,
+                None => continue,
+            },
+        };
         let Some(bytes) = read(path) else { continue };
         let bytes = Arc::new(bytes);
         if font_files {
@@ -242,10 +250,18 @@ pub fn load(materials: &mut MaterialLoader, opts: &LookOptions) -> Option<GameHu
             let num = |v: &Kv, k: &str| v.str(k).and_then(|x| x.trim().parse::<f32>().ok());
             if let Some((font, ch)) = glyph_of(v) {
                 hud.icons.insert(name.clone(), (font, ch));
-            } else if let Some(file) = v.str("file") {
+            } else if let Some(file) = v.str("file").or_else(|| v.str("dfile")) {
+                // TF2's kill icons name their sheet `dfile`, and the sheet
+                // for a row with the local player `dnegfile` (kept as
+                // `<name>/neg`).
                 let rect = [num(v, "x"), num(v, "y"), num(v, "width"), num(v, "height")];
-                if let ([Some(x), Some(y), Some(w), Some(h)], Some(texture)) = (rect, materials.resolve(file).texture) {
-                    hud.sprites.insert(name.clone(), HudSprite { texture, rect: [x, y, w, h] });
+                if let [Some(x), Some(y), Some(w), Some(h)] = rect {
+                    if let Some(texture) = materials.resolve(file).texture {
+                        hud.sprites.insert(name.clone(), HudSprite { texture, rect: [x, y, w, h] });
+                    }
+                    if let Some(texture) = v.str("dnegfile").and_then(|f| materials.resolve(f).texture) {
+                        hud.sprites.insert(format!("{name}/neg"), HudSprite { texture, rect: [x, y, w, h] });
+                    }
                 }
             }
         }

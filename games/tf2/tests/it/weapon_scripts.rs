@@ -225,6 +225,7 @@ fn a_server_without_install_or_key_takes_its_numbers_from_the_asset_service() {
         settings: AssetSettings {
             store: Some(own.clone()),
             use_install: false,
+            service_first: false,
             builds: Default::default(),
             remote: Some(RemoteConfig { url: format!("http://{}", running.addr), token, key: None, fingerprint: None }),
             lock: None,

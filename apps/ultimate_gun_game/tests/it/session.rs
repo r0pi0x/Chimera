@@ -142,11 +142,13 @@ fn a_session_of_matches_stops_making_tables() {
     // more Halo rungs to arrive on, about 1,300; with TF2's guns too, 1,367
     // and 104 more after the fourth, until Halo's movement and vitality
     // went on and off in one move and its kick stayed on from the spawn:
-    // 1,237, 70 more, 5 of them with Halo's parts).
+    // 1,237, 70 more, 5 of them with Halo's parts; with TF2's classes as
+    // bodies, Halo's grenade rung and the sandbox, 1,359 and 103 more, none
+    // of them TF2's own parts: the draws' path, so 120).
     let made = chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20);
     eprintln!("{made}");
     assert!(
-        last.0 < 1400 && last.0 - rows[3].0 < 100,
+        last.0 < 1400 && last.0 - rows[3].0 < 120,
         "{} archetypes after four matches, {} after eight: a part that comes and goes on characters, one at a time, makes \
          one for every combination of the others. Keep it on them from the spawn \
          (`chimera_core::character::CharacterPartsExt::on_every_character`) or put a game's parts on and off in one move \

@@ -27,7 +27,9 @@
 //! - **At start** (`startup`, a dedicated server's `run`, before the app
 //!   is built: what its parts read at build time, TF2's scripts among
 //!   them): each game it reads from the store alone (no install, or
-//!   `use_install = false`) gets its startup sets (`base`), and the start
+//!   `use_install = false`, or, with the service first, the apps'
+//!   default (`chimera_assets::config::InstallDefault`), every game once
+//!   it has a credential) gets its startup sets (`base`), and the start
 //!   map's game its match sets (`base`, `players`, `common`) and
 //!   `map/<name>`, as one blocking download with a progress line every
 //!   `PROGRESS_EVERY`. A token sent to the offered service is bound in the
@@ -38,8 +40,10 @@
 //!   (`assets::match_sets`: every game in play's match sets, the map's,
 //!   the ladder's and kit's `weapon/<id>`, a game's rung bodies), of the
 //!   games read from the store, checked at most every `CHECK_EVERY` and
-//!   at once when the map changes; what the store lacks is fetched on a
-//!   thread (`ServerFetching` while it runs). A dedicated server's
+//!   at once when the map changes (the coming map, named before it
+//!   loads); what the store lacks is fetched on a thread
+//!   (`ServerFetching` while it runs; a change while one runs starts
+//!   another, done only after the first: `Job`). A dedicated server's
 //!   `changelevel` loads its map only once the fetch is done
 //!   (`fetch_now`), the first match's sets come before it listens, and
 //!   the pre-match lobby doesn't count down meanwhile
@@ -119,6 +123,9 @@ pub struct ServerFiles {
 /// A fetch of the server's under way, or done (`result`).
 pub struct Job {
     pub wanted: Vec<Wanted>,
+    /// A fetch begun before this one (for an older look at the match):
+    /// this one is done only once that one is too.
+    after: Option<Arc<Job>>,
     result: Mutex<Option<Result<String, String>>>,
     done: Condvar,
     transfer: Arc<Mutex<Option<Arc<Transfer>>>>,
@@ -127,11 +134,17 @@ pub struct Job {
 impl Job {
     /// Its result once done (None: still fetching).
     pub fn result(&self) -> Option<Result<String, String>> {
+        if self.after.as_ref().is_some_and(|a| a.result().is_none()) {
+            return None;
+        }
         self.result.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Waits until it is done.
     pub fn wait(&self) -> Result<String, String> {
+        if let Some(a) = &self.after {
+            let _ = a.wait();
+        }
         let mut r = self.result.lock().unwrap_or_else(|e| e.into_inner());
         while r.is_none() {
             r = self.done.wait(r).unwrap_or_else(|e| e.into_inner());
@@ -141,6 +154,9 @@ impl Job {
 
     /// `wait`, saying how far it is every `every` on stderr.
     pub fn wait_saying(&self, every: Duration) -> Result<String, String> {
+        if let Some(a) = &self.after {
+            let _ = a.wait_saying(every);
+        }
         loop {
             let r = self.result.lock().unwrap_or_else(|e| e.into_inner());
             let (r, _) = self.done.wait_timeout(r, every).unwrap_or_else(|e| e.into_inner());
@@ -170,7 +186,13 @@ struct Fetched {
 
 /// Starts fetching `wanted` with `files` on a thread.
 pub fn start(files: &ServerFiles, wanted: Vec<Wanted>) -> Arc<Job> {
+    start_after(files, wanted, None)
+}
+
+/// `start`, done only once `after` is done too.
+fn start_after(files: &ServerFiles, wanted: Vec<Wanted>, after: Option<Arc<Job>>) -> Arc<Job> {
     let job = Arc::new(Job {
+        after,
         wanted: wanted.clone(),
         result: Mutex::new(None),
         done: Condvar::new(),
@@ -334,12 +356,27 @@ pub fn startup(games: &[&'static GameInfo], offered_url: &str, offered_fingerpri
         .iter()
         .map(|g| AppGame { game: g.id.to_string(), installed: install::resolve(&config, g.id, g.steam.as_ref()).install.is_some() })
         .collect();
-    let served: BTreeSet<String> =
-        apps.iter().filter(|g| !(g.installed && settings.use_install)).map(|g| g.game.clone()).collect();
-    let session = AssetSession { settings: Some(settings), served, access: None, account: None };
+    // The games read from the store: those not installed, and with the
+    // service first (the apps' default, nothing chosen) the installed ones
+    // too once there is a credential (the token sent to the offered
+    // service is bound in the process, `access::bind_live`, which
+    // `AssetsConfig::resolve` then names, so the mounts read the store).
+    let first = settings.service_first
+        || (config.assets.install_chosen().is_none()
+            && chimera_assets::config::install_default() != chimera_assets::config::InstallDefault::Install);
+    let served_with = |first: bool| -> BTreeSet<String> {
+        apps.iter().filter(|g| !(g.installed && settings.use_install && !first)).map(|g| g.game.clone()).collect()
+    };
+    let without = served_with(settings.service_first);
+    let session = AssetSession { settings: Some(settings.clone()), served: served_with(first), access: None, account: None };
     let host = AssetHost::new(offered_url, offered_fingerprint);
     let token = configured_token(config.assets.token.as_deref());
-    let Some(files) = from_session(&session, &host, token.as_deref()) else {
+    let files = from_session(&session, &host, token.as_deref()).or_else(|| {
+        let session = AssetSession { served: without.clone(), ..session.clone() };
+        from_session(&session, &host, token.as_deref())
+    });
+    let Some(files) = files else {
+        let session = AssetSession { served: without, ..session };
         if !session.served.is_empty() {
             eprintln!(
                 "assets: no install of {} and no credential for the asset service: the server reads only what its \
@@ -389,7 +426,13 @@ fn describe(wanted: &[Wanted]) -> String {
 
 /// The match's sets now, of the games read from the store alone.
 pub fn match_wanted(world: &mut World, served: &BTreeSet<String>) -> Vec<Wanted> {
-    let m = manifest::current(world);
+    let mut m = manifest::current(world);
+    // The map coming (a `changelevel`'s, named before it loads), not the
+    // one still served until then.
+    let coming = crate::net::current_map(world);
+    if coming != crate::net::GREYBOX {
+        m.map = coming;
+    }
     assets::match_sets(world, &m)
         .into_iter()
         .filter(|g| served.contains(&g.game))
@@ -400,9 +443,7 @@ pub fn match_wanted(world: &mut World, served: &BTreeSet<String>) -> Vec<Wanted>
 /// Looks at the match's sets now and starts fetching what the store
 /// lacks; the fetch under way (just started, or one before), if any.
 pub fn fetch_now(world: &mut World) -> Option<Arc<Job>> {
-    if let Some(f) = world.get_resource::<ServerFetching>() {
-        return Some(f.0.clone());
-    }
+    let running = world.get_resource::<ServerFetching>().map(|f| f.0.clone());
     let files = world.get_resource::<ServerFiles>()?.clone();
     let wanted = match_wanted(world, &files.served);
     let mut fetched = world.get_resource::<Fetched>().cloned().unwrap_or_default();
@@ -410,13 +451,15 @@ pub fn fetch_now(world: &mut World) -> Option<Arc<Job>> {
     fetched.map = crate::net::current_map(world);
     let again = fetched.wanted == wanted;
     let missing = !wanted.is_empty() && sets::missing(&files.settings, &wanted);
+    // A fetch under way for an older look at the match (the map changes
+    // while it runs): another for the sets now, done after it.
     let job = (missing && !again).then(|| {
         info!("assets: fetching {WHAT} for the match on {}: {}", fetched.map, describe(&wanted));
         fetched.wanted = wanted.clone();
-        start(&files, wanted)
+        start_after(&files, wanted, running.clone())
     });
     world.insert_resource(fetched);
-    let job = job?;
+    let Some(job) = job else { return running };
     world.insert_resource(ServerFetching(job.clone()));
     Some(job)
 }

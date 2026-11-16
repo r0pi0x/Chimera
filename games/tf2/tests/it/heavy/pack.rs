@@ -68,6 +68,7 @@ fn the_weapon_sets_pack_into_a_scratch_store_and_read_back_from_it_alone() {
     let settings = AssetSettings {
         store: Some(store.clone()),
         use_install: false,
+        service_first: false,
         builds: [(GAME.to_string(), build.to_string())].into(),
         remote: None,
         lock: None,

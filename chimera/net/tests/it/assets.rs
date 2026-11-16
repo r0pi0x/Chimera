@@ -212,6 +212,7 @@ impl Fixture {
             settings: Some(AssetSettings {
                 store: Some(Store::new(self.dir.join(client))),
                 use_install: false,
+                service_first: false,
                 builds: Default::default(),
                 remote: Some(RemoteConfig {
                     url: self.front.url(),
@@ -1026,23 +1027,35 @@ fn the_voted_map_comes_ahead_and_a_stream_is_ready_before_it_is_due() {
     assert!((assets::STREAM_MIN_RATE..=200_000).contains(&rate), "paced to its time, at most the link: {rate}");
 
     // The vote locks in the next map: its fetch begins within two
-    // frames, the stream held while it runs.
+    // frames, the stream held while it is under way (`run_streams` holds
+    // it in the frame the fetch starts, whatever the thread's speed).
+    // Looked at after every frame from the first: the local fetch may end
+    // within a few milliseconds, so a look that starts later can miss the
+    // hold (it failed about 1 run in 3 that way). Nothing else holds the
+    // stream here, so a pause seen once the fetch began is its hold.
+    assert!(!assets::stream_state(sim.clients[0].app.world()).unwrap().paused, "not held before");
     sim.clients[0].app.world_mut().insert_resource(chimera_sim::minigame::NextMatch {
         map: Some(format!("{GAME}:later")),
         at: 0.0,
     });
+    let mut held = false;
+    let mut look = |s: &NetSim| {
+        let w = s.clients[0].app.world();
+        if w.contains_resource::<MapAhead>() {
+            held |= assets::stream_state(w).unwrap().paused;
+        }
+    };
     sim.step();
+    look(&sim);
     sim.step();
+    look(&sim);
     let ahead = sim.clients[0].app.world().get_resource::<MapAhead>().map(|a| a.map.clone());
     assert_eq!(ahead, Some(format!("{GAME}:later")), "the next map's fetch began");
     let later = svc.ids("map/later");
-    let mut held = false;
     assert!(
         until(&mut sim, 10.0, |s| {
+            look(s);
             let w = s.clients[0].app.world();
-            if w.get_resource::<MapAhead>().is_some_and(MapAhead::running) {
-                held |= assets::stream_state(w).unwrap().paused;
-            }
             later.iter().all(|id| store.has(id)) && w.get_resource::<MapAhead>().is_some_and(|a| a.result.is_some())
         }),
         "the next map arrived ahead"
@@ -1369,7 +1382,8 @@ fn a_dedicated_server_without_installs_fetches_its_files_with_its_credential_and
 /// A listen server is the host's process: with no service configured and
 /// no token, it fetches the match's sets with the host's own credential
 /// (here its hub account's ticket, as its client joins with it), the
-/// service logging the account.
+/// service logging the account; a change of level fetches the coming
+/// map's set before the map loads.
 #[test]
 fn a_listen_server_fetches_the_match_files_with_the_hosts_credential() {
     use chimera_net::net::server_assets::{self, ServerFiles, Via};
@@ -1396,6 +1410,13 @@ fn a_listen_server_fetches_the_match_files_with_the_hosts_credential() {
         }),
         "the match's sets fetched by the host"
     );
+    assert!(svc.ids("map/later").iter().all(|id| !store.has(id)), "not the next map yet");
+    // A change of level names the coming map before it loads (the served
+    // one is still the old): its set comes with the change's fetch.
+    sim.server.app.insert_resource(chimera_world::map::LoadedMapName(format!("{GAME}:later")));
+    let job = server_assets::fetch_now(sim.server.app.world_mut()).expect("the next map's fetch");
+    job.wait().unwrap();
+    assert!(svc.ids("map/later").iter().all(|id| store.has(id)), "the coming map's set");
     assert!(svc.ids("extra").iter().all(|id| !store.has(id)));
     let log = fs::read_to_string(svc.store.root.join("server").join("access.log")).unwrap();
     assert!(log.lines().any(|l| l.contains("account:hosty") && l.contains(" 200 ")), "{log}");
