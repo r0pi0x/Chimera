@@ -131,3 +131,31 @@ fn a_kind_names_its_model() {
     assert!(app.world().get::<chimera_world::map::BodyName>(e).is_none());
     assert!(app.world().get::<NamedByKind>(e).is_none());
 }
+
+/// sounds.md "Pain line choice" and "Death line choice" for a worn body
+/// (`campaign::voice`): the death lines by cause, one major pain per life,
+/// at most 3 minor lines counted, the fallbacks.
+#[test]
+fn a_worn_body_says_pain_and_death_lines_by_the_rules() {
+    use halo_ce::game::{campaign::voice::{self, Voice}, vitality::data::Category};
+    let mut v = Voice::default();
+    assert_eq!(voice::choose(&mut v, true, Category::Falling, 0.0, 0.0, true, 0.0), Some(voice::DEATH_FALLING));
+    assert_eq!(voice::choose(&mut v, true, Category::Bullet, 2.5, 0.0, true, 0.0), Some(voice::DEATH_FLYING));
+    assert_eq!(voice::choose(&mut v, true, Category::Bullet, 0.0, 0.0, true, 0.0), Some(voice::DEATH_QUIET));
+    let mut v = Voice::default();
+    assert_eq!(voice::choose(&mut v, false, Category::Bullet, 0.0, 0.1, true, 0.9), Some(voice::PAIN_BODY_MINOR));
+    assert_eq!(voice::choose(&mut v, false, Category::Bullet, 0.0, 0.1, true, 0.0), None, "the minor timer");
+    for _ in 0..15 {
+        voice::step(&mut v);
+    }
+    assert_eq!(voice::choose(&mut v, false, Category::Bullet, 0.0, 0.1, false, 0.0), Some(voice::PAIN_SHIELD));
+    assert_eq!(voice::choose(&mut v, false, Category::Bullet, 0.0, 0.7, true, 0.0), Some(voice::PAIN_BODY_MAJOR));
+    assert_eq!(voice::choose(&mut v, false, Category::Bullet, 0.0, 0.7, true, 0.0), None, "one major line a life");
+    let s = voice::BodySounds {
+        lines: (0..voice::SLOTS).map(|i| (i == 6 || i == 15).then(|| format!("s{i}"))).collect(),
+        ..Default::default()
+    };
+    assert_eq!(s.line(voice::PAIN_SHIELD), Some("s6"));
+    assert_eq!(s.line(voice::DEATH_FALLING), Some("s15"), "death falling, then quiet, then violent");
+    assert_eq!(s.line(voice::SCREAM_FEAR), None);
+}

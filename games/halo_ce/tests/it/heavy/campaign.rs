@@ -57,6 +57,16 @@ fn the_elite_is_cut_from_d20_and_loads() {
     assert!(pr.key.ends_with("#elite") && !pr.model.meshes.is_empty(), "{}", pr.key);
     assert!(m.bones.iter().any(|b| b.name == pr.bone), "the hand's bone `{}` is the Elite's", pr.bone);
     eprintln!("elite: plasma rifle held on `{}`", pr.bone);
+    // Its sounds: its own footsteps (six kinds), its ten filled pain and
+    // death slots (characters.md section 6: pain body minor, major,
+    // falling, scream pain, six deaths); none without the voice set.
+    let voice_file = MapFile::load(&c.voice).unwrap();
+    let sounds = halo_ce::game::campaign::voice::compile(def, &file, Some(&voice_file));
+    assert_eq!(sounds.set.library.footsteps.len(), 6);
+    assert!(sounds.set.library.footsteps[1].iter().any(|s| !s.is_empty()), "run steps");
+    assert_eq!(sounds.filled(), 10, "{:?}", sounds.lines);
+    assert_eq!(halo_ce::game::campaign::voice::compile(def, &file, None).filled(), 0);
+    eprintln!("elite: footsteps {:?}", &sounds.set.library.footsteps[1][..4.min(sounds.set.library.footsteps[1].len())]);
     let top = m.model.bounds.1.y;
     let tables = BodyTables::build(&data, &MovementData::builtin()).unwrap();
     let mv = &tables.movement[&BodyKind::Elite];

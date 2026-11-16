@@ -21,7 +21,10 @@
 //! own steps it includes. Only bodies of Halo's (its `HaloBody`: a
 //! character of Halo's identity, `GameIdentity`) step here: another game's
 //! character keeps its own game's footsteps, and a Halo holder's are not
-//! another game's (each game's footsteps skip identities not its own).
+//! another game's (each game's footsteps skip identities not its own). A
+//! campaign body (`campaign::BodyKind`) steps with its own biped's
+//! material effects (`campaign::voice::CampaignSounds::steps`, from its
+//! unit: the Elite's `footsteps\elite\...`), the Spartan's without them.
 //!
 //! Known shortcuts: one probe at the body's centre for both feet (not
 //! each foot's contact marker); the landing plays as the landing state
@@ -89,7 +92,8 @@ pub fn kinds(was: &Seen, now: &Seen, feet: u8, crouching: bool, rising: bool) ->
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn footsteps(
     active: Res<ActiveAudio>,
-    bodies: Query<(Entity, &HaloBody, &Transform, Option<&MovementState>, Option<&Velocity>)>,
+    bodies: Query<(Entity, &HaloBody, &Transform, Option<&MovementState>, Option<&Velocity>, Option<&crate::game::campaign::BodyKind>)>,
+    campaign: Option<Res<crate::game::campaign::voice::CampaignSounds>>,
     locals: Query<&Transform, With<LocalPlayer>>,
     characters: Query<Entity, With<Intent>>,
     spatial: SpatialQuery,
@@ -105,7 +109,9 @@ pub fn footsteps(
     }
     let listeners: Vec<Vec3> = locals.iter().map(|t| t.translation).collect();
     seen.retain(|e, _| bodies.contains(*e));
-    for (e, body, t, state, velocity) in &bodies {
+    for (e, body, t, state, velocity, kind) in &bodies {
+        // A campaign body steps with its own biped's sounds.
+        let lib = campaign.as_deref().and_then(|c| c.steps(kind)).unwrap_or(lib);
         let a = &body.anim;
         let now = Seen { sequence: a.sequence, frame: a.frame, state: a.state, air_ticks: a.air_ticks };
         let was = seen.insert(e, now).unwrap_or(now);

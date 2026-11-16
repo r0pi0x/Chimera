@@ -72,11 +72,14 @@
 //!   holding and aiming animations move it.
 //!
 //! Known shortcuts:
-//! - No voice yet (the voice unit is cut and stored, nothing plays it).
+//! - **Its sounds** (`voice`): its own footsteps, jump and landing
+//!   sounds from its unit, and its pain and death lines from its voice
+//!   set (none without it), heard by every player at the body.
 //! - The move animations' speeds are the graph's means (characters.md
 //!   section 4), not each frame's root motion.
 
 pub mod unit;
+pub mod voice;
 
 use std::collections::BTreeMap;
 
@@ -574,7 +577,15 @@ impl Plugin for CampaignPlugin {
             .init_resource::<CampaignBodies>()
             .init_resource::<UnitsOnDemand>()
             .add_observer(arrive)
-            .add_systems(Update, (unit::load_on_demand, name_bodies))
+            .init_resource::<voice::CampaignSounds>()
+            .add_systems(Update, (unit::load_on_demand, name_bodies, voice::join_banks))
+            .add_systems(
+                FixedUpdate,
+                voice::speak
+                    .after(crate::game::damage::deliver_hits)
+                    .before(crate::core::apply_damage)
+                    .run_if(crate::core::authoritative),
+            )
             .net_part("halo_ce_bodies", register);
         campaign_cvar(app);
         app.console_command(

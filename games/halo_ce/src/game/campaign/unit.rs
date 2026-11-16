@@ -201,7 +201,11 @@ pub fn load_body(kind: BodyKind, def: &BodyDef, mount: &Mount, decode: bool, gun
         warn!("halo_ce: the {} holds guns by the Spartan's hand: {e}", kind.id());
         HeldOn::default()
     });
-    Ok(LoadedBody { model: character, textures: body.textures, held })
+    // Its sounds: its footsteps from the body, its lines from the voice
+    // set when there is one (a silent body without).
+    let voice = mount.read(&voice_path(kind.id())).ok().and_then(|b| MapFile::load(&b).ok());
+    let sounds = super::voice::compile(def, &file, voice.as_ref());
+    Ok(LoadedBody { model: character, textures: body.textures, held, sounds })
 }
 
 /// A body loaded: its model and textures, and its held guns (`HeldOn`).
@@ -209,6 +213,8 @@ pub struct LoadedBody {
     pub model: MapCharacterModel,
     pub textures: Vec<MapTexture>,
     pub held: HeldOn,
+    /// Its footsteps and lines (`voice`).
+    pub sounds: super::voice::BodySounds,
 }
 
 /// A campaign body's held guns (`view::load::body_held`), with their
@@ -317,17 +323,21 @@ pub fn load_on_demand(
     });
     for (kind, result) in done {
         match result {
-            Ok(LoadedBody { model, textures, held }) => {
+            Ok(LoadedBody { model, textures, held, sounds }) => {
                 info!(
-                    "halo_ce: the {} body loaded ({} hit boxes, {} guns in its hand)",
+                    "halo_ce: the {} body loaded ({} hit boxes, {} guns in its hand, {} footstep kinds, {} voice lines)",
                     kind.id(),
                     model.hitboxes.len(),
-                    held.models.len()
+                    held.models.len(),
+                    sounds.set.library.footsteps.len(),
+                    sounds.filled()
                 );
                 pending.ready.insert(kind);
                 let textures = std::sync::Arc::new(textures);
                 let held_textures = std::sync::Arc::new(held.textures);
+                let sounds = std::sync::Arc::new(sounds);
                 commands.queue(move |world: &mut World| {
+                    world.get_resource_or_init::<super::voice::CampaignSounds>().0.insert(kind, sounds);
                     for h in held.models {
                         crate::map::add_held_model(world, h, held_textures.clone());
                     }
