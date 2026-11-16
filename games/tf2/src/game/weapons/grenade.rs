@@ -2,25 +2,30 @@
 //! Chimera's flyers: `chimera:projectile` launches it (1200 units/s along
 //! the aim and 200 up, from 16 forward, 8 right and 6 down of the eye,
 //! gravity 800, through its owner's teammates, its touches reported, gone
-//! after 2.3 s); `tf2:grenade` (`blast::BlastParams`) answers (`touch`,
-//! the server's, in `FlyerSet::Touch`):
+//! after 2.1 s: the 2.0 s fuse at its tenth 0.2 s check, each 14 ticks);
+//! `tf2:grenade` (`blast::BlastParams`) answers (`touch`, the server's,
+//! in `FlyerSet::Touch`):
 //!
 //! - touching an enemy before it has touched anything else (`Rolled`
 //!   marks one that has), it explodes there, the enemy at full splash;
 //! - anything else bounces it (`bounce`: the normal part of its velocity
 //!   reversed at `RESTITUTION`, the rest kept at `FRICTION`; resting on
 //!   the ground it rolls, its normal speed dropped), with its bounce sound;
-//! - at 2.3 s (the flyer's life ends: `FlyerGone::expired`) it explodes
-//!   where it is (`fuse`).
+//! - at 2.1 s (the flyer's life ends: `FlyerGone::expired`) it explodes
+//!   where it is (`fuse`) at `fuse_scale` (60 %) of its damage to others.
 //!
-//! The explosion is the shared one (`blast`): 100 x the splash, no
-//! distance modifier, the Demoman's own x0.75 airborne.
+//! The explosion is the shared one (`blast`): 100 x the splash (60 on the
+//! fuse), no distance modifier; the Demoman's own the base 100 x the
+//! splash to 146 units x0.75 grounded or airborne, pushed at scale 9
+//! (weapons_more.md 6 and its corrections from the SDK).
 //!
-//! Known shortcuts: the restitution and friction are ours (the spec
-//! leaves the bounce open: open question 7), as is the grenade's 2-unit
-//! box (open question 8); no random launch jitter, no drag, no spin
-//! (the model faces its flight); a grenade doesn't explode on buildings
-//! (there are none).
+//! Known shortcuts: the restitution and friction are ours (the physics
+//! engine's in the game: open question 7), as is the grenade's 2-unit box
+//! (the game's 4-unit cube); the fuse is the flyer's life, not a check
+//! every 0.2 s; no random launch jitter (+-10 right and up), no drag, no
+//! spin (the model faces its flight); teammates are passed for its whole
+//! flight (the game: 0.25 s) and enemies after a bounce aren't bounced
+//! off; a grenade doesn't explode on buildings (there are none).
 
 use bevy::prelude::*;
 
@@ -84,7 +89,7 @@ pub fn touch(
         let enemy = hit.character && hit.other.is_some_and(|o| hit.owner.is_none_or(|w| !world.mates(w, o)));
         if enemy && !rolled {
             let centre = hit.point - hit.velocity.normalize_or_zero() * U;
-            let blast = Blast { params: p, radius: p.radius, ramp: None };
+            let blast = Blast { params: p, radius: p.radius, ramp: None, scale: 1.0 };
             world.detonate(&blast, centre, hit.owner, hit.weapon, hit.other);
             gone.write(FlyerGone { flyer: hit.flyer, weapon: hit.weapon, owner: hit.owner, at: centre, expired: false });
             commands.entity(hit.flyer).despawn();
@@ -109,7 +114,7 @@ pub fn fuse(mut ends: MessageReader<FlyerGone>, rules: Res<GrenadeRules>, mut wo
             continue;
         }
         let Some((p, _)) = rules.0.get(end.weapon) else { continue };
-        let blast = Blast { params: p, radius: p.radius, ramp: None };
+        let blast = Blast { params: p, radius: p.radius, ramp: None, scale: p.fuse_scale.unwrap_or(1.0) };
         world.detonate(&blast, end.at, end.owner, end.weapon, None);
     }
 }

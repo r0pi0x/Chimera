@@ -14,7 +14,7 @@ draw = 0.5
 [trigger]
 automatic = true
 cycle = 0.08
-timing = "accumulate"
+timing = "set"
 
 [magazine]
 clip = 200
@@ -25,7 +25,7 @@ reload = 1.0
 [hitscan]
 range = 350.0
 pellets = 1
-punch_scale = 0.0
+punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]

@@ -1,42 +1,54 @@
-//! The Minigun's spin (specs/tf2/weapons.md 7), the hook `tf2:minigun`
-//! (`MinigunParams`, the weapon part `Tf2Minigun`), run each tick in the
-//! predicted `Predict::Select` before selection (`spin`):
+//! The Minigun's spin (specs/tf2/weapons.md 7 and its corrections from
+//! the SDK), the hook `tf2:minigun` (`MinigunParams`, the weapon part
+//! `Tf2Minigun`), run each tick in the predicted `Predict::Select` before
+//! selection (`spin`):
 //!
 //! - **States** (7.1): idle; winding up for `wind_up` (0.75 s) from a
-//!   press of attack or attack2; spun (attack2 held, or attack: firing);
-//!   winding down for `wind_down` (1.15 s; `wind_down_alt` 1.4 after a
-//!   spin on attack2 alone) once both are let go; a press while winding
-//!   down winds up again. The frame fires only when spun: until then the
-//!   weapon's next shot waits (`WeaponState::next_primary`), so a held
-//!   attack fires 0.75 s after the press and then every 0.105 s.
-//! - **The holder** while not idle: at most `spun_speed` (110 units/s;
-//!   0 crouched) by the weapon's `max_speed`, no jump (the command's
-//!   jump dropped), no switch (`HolsterLocked`).
-//! - **The damage ramp** (7.2, the 2017 rule): the shot's damage x
-//!   (`ramp_start` + (1 - `ramp_start`) min(t / `ramp_time`, 1)), t the
-//!   time spun since the wind-up ended.
+//!   press of attack or attack2 in idle (a release doesn't cancel it: it
+//!   completes, then the gun stops); then spun (attack2), firing (attack,
+//!   with ammo) or dry (attack, none), its next shot `fire_step` (0.1 s)
+//!   after the wind-up ends, so a held attack fires about 0.85 s (57
+//!   ticks) after the press and then every 0.105 s; firing to spun waits
+//!   `fire_step` again. With neither button held it stops: at once when
+//!   only spun, `idle_after_fire` (0.2 s) after the last shot when firing.
+//!   There is **no gameplay wind-down**: the stop is idle at once (speed,
+//!   jump and a new wind-up back); only switching weapons waits for the
+//!   spool-down animation, `spool_down` (1.33 s: `Spin::Down`).
+//! - **The holder** while winding up or spun: at most `spun_speed` (110
+//!   units/s, crouching scales it as any speed) by the weapon's
+//!   `max_speed`, no jump (the command's jump dropped); no switch
+//!   (`HolsterLocked`) until the spool-down ends.
+//! - **The rev-up penalty** (7.2, the 2017 rule): with tau the larger of
+//!   the time since the wind-up began less `wind_up` and the time since
+//!   the firing run's first shot (`tau`), each bullet's damage is x
+//!   `damage_floor` (0.5) until `penalty_flat` (0.2 s), then linear to 1
+//!   at `penalty_time` (1 s) (`damage_factor`), and the spread x
+//!   `spread_ceiling` (1.5) falling linearly to 1 at `penalty_time`
+//!   (`spread_factor`). A dry spell counts the wind-up as 0 until the
+//!   next wind-up from idle; going to spun or dry restarts the run.
 //! - **Sounds** (8.3): the wind-up, then a loop by what it does (spun,
-//!   firing, dry), the wind-down, each replacing the last on the weapon
-//!   channel (`map::PredictedSound`: the shooter's client plays its own);
-//!   view-model actions `SPIN_UP` and `SPIN_DOWN` (`WeaponEventKind::
-//!   Action`) for its sequences, and its `view_anim::ViewPose` (1 while
-//!   winding up or spun: the view model idles in its spun sequence).
+//!   firing, dry), the wind-down when it stops, each replacing the last on
+//!   the weapon channel (`map::PredictedSound`: the shooter's client plays
+//!   its own); view-model actions `SPIN_UP` and `SPIN_DOWN`
+//!   (`WeaponEventKind::Action`) for its sequences, and its
+//!   `view_anim::ViewPose` (1 while winding up or spun: the view model
+//!   idles in its spun sequence).
 //!
-//! Known shortcuts: the cone's tightening over the first second isn't
-//! modelled (open question 11); a wind-up begun in the air doesn't keep
+//! Known shortcuts: crits are off (weapons.md 2.6), so the crit loop
+//! (`...FireCrit`) never plays; a wind-up begun in the air doesn't keep
 //! the air speed (the party's movement's own rule).
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use chimera_sim::weapon::{
-    CHAN_WEAPON, DamageEffect, HolsterLocked, Inventory, Magazine, NetPart, Weapon, WeaponEvent, WeaponEventKind, WeaponState,
-    view_anim::ViewPose,
+    CHAN_WEAPON, DamageEffect, Hitscan, HolsterLocked, Inventory, Magazine, NetPart, SpreadShape, Weapon, WeaponEvent,
+    WeaponEventKind, WeaponState, view_anim::ViewPose,
 };
 
-use super::damage::U;
+use super::damage::{Tf2Gun, U};
 use crate::{
-    core::{FirstTimePredicted, Health, Intent, MovementState, SimClock},
+    core::{FirstTimePredicted, Health, Intent, SimClock},
     map::{PlaySound, PredictedSound},
 };
 
@@ -44,15 +56,22 @@ use crate::{
 pub const SPIN_UP: &str = "spin_up";
 pub const SPIN_DOWN: &str = "spin_down";
 
-/// `tf2:minigun`'s parameters (seconds, units/s, sound entries).
+/// `tf2:minigun`'s parameters (seconds, units/s, factors, sound entries).
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct MinigunParams {
     pub wind_up: f32,
-    pub wind_down: f32,
-    pub wind_down_alt: f32,
-    pub ramp_time: f32,
-    pub ramp_start: f32,
+    /// From the wind-up's end to the first shot.
+    pub fire_step: f32,
+    /// After the last shot, released, before it stops.
+    pub idle_after_fire: f32,
+    /// The spool-down animation a switch waits for.
+    pub spool_down: f32,
+    /// The rev-up penalty's end, its flat start, its floors.
+    pub penalty_time: f32,
+    pub penalty_flat: f32,
+    pub damage_floor: f32,
+    pub spread_ceiling: f32,
     pub spun_speed: f32,
     pub wind_up_sound: String,
     pub spin_sound: String,
@@ -61,18 +80,38 @@ pub struct MinigunParams {
     pub wind_down_sound: String,
 }
 
+/// What a spun gun does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Mode {
+    /// Turning, not firing (attack2).
+    #[default]
+    Spinning,
+    /// Firing (attack, ammo).
+    Firing,
+    /// Attack held with no ammo.
+    Dry,
+}
+
 /// Where the spin is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum Spin {
     #[default]
     Idle,
-    /// Winding up since `start`.
+    /// Winding up since `start` (the press).
     Up { start: f64 },
-    /// Spun since `since`; `fired`: attack was pressed while spun (the
-    /// wind-down's length).
-    Spun { since: f64, fired: bool },
-    /// Winding down until `until`.
+    /// Spun: `wound` the wind-up's start (None after a dry spell),
+    /// `run` when the firing run's first shot is due (firing only).
+    Spun { wound: Option<f64>, mode: Mode, run: f64 },
+    /// Idle in play, its spool-down animation running until `until` (no
+    /// switch before).
     Down { until: f64 },
+}
+
+impl Spin {
+    /// Winding up or spun: the holder slowed and grounded.
+    pub fn turning(self) -> bool {
+        matches!(self, Spin::Up { .. } | Spin::Spun { .. })
+    }
 }
 
 /// The loop playing.
@@ -91,8 +130,10 @@ pub struct Tf2Minigun {
     pub params: MinigunParams,
     pub spin: Spin,
     pub playing: Loop,
-    /// Its data's damage per bullet (normalized), before the ramp.
+    /// Its data's damage per bullet (normalized) and spread, before the
+    /// penalty.
     pub base_damage: f32,
+    pub base_spread: f32,
 }
 
 impl NetPart for Tf2Minigun {
@@ -109,40 +150,99 @@ impl NetPart for Tf2Minigun {
 /// `tf2:minigun` on a weapon.
 pub fn attach(e: &mut EntityWorldMut, p: &MinigunParams) {
     let base_damage = e.get::<DamageEffect>().map_or(0.0, |d| d.amount);
+    let base_spread = match e.get::<Hitscan>().map(|h| &h.spread) {
+        Some(SpreadShape::Template(s)) => *s,
+        _ => 0.0,
+    };
     e.insert((
         Tf2Minigun {
             params: p.clone(),
             spin: Spin::Idle,
             playing: Loop::None,
             base_damage,
+            base_spread,
         },
         ViewPose(0),
     ));
 }
 
-/// The damage factor `t` seconds after the spin-up ended.
-pub fn ramp(p: &MinigunParams, t: f64) -> f32 {
-    let x = if p.ramp_time > 0.0 { (t as f32 / p.ramp_time).clamp(0.0, 1.0) } else { 1.0 };
-    p.ramp_start + (1.0 - p.ramp_start) * x
+/// The rev-up's spin time tau at `now` (7.2): the larger of the time
+/// since the wind-up began less the wind-up and the time firing; 0 when
+/// not spun.
+pub fn tau(p: &MinigunParams, spin: Spin, now: f64) -> f32 {
+    match spin {
+        Spin::Spun { wound, mode, run } => {
+            let wind = wound.map_or(0.0, |w| now - w - p.wind_up as f64);
+            let fire = if mode == Mode::Firing { now - run } else { 0.0 };
+            wind.max(fire).max(0.0) as f32
+        }
+        _ => 0.0,
+    }
 }
 
-/// The next state: `held` attack or attack2, `fire` attack, at `now`.
-pub fn step(p: &MinigunParams, spin: Spin, held: bool, fire: bool, now: f64) -> Spin {
+/// The damage factor g(tau): the floor until `penalty_flat`, then linear
+/// to 1 at `penalty_time`.
+pub fn damage_factor(p: &MinigunParams, tau: f32) -> f32 {
+    let span = p.penalty_time - p.penalty_flat;
+    let x = if span > 0.0 { ((tau - p.penalty_flat) / span).clamp(0.0, 1.0) } else { 1.0 };
+    p.damage_floor + (1.0 - p.damage_floor) * x
+}
+
+/// The spread factor h(tau): the ceiling at 0, linear to 1 at
+/// `penalty_time`.
+pub fn spread_factor(p: &MinigunParams, tau: f32) -> f32 {
+    let x = if p.penalty_time > 0.0 { (tau / p.penalty_time).clamp(0.0, 1.0) } else { 1.0 };
+    p.spread_ceiling + (1.0 - p.spread_ceiling) * x
+}
+
+/// What one tick's step asks of the weapon's next shot.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Due {
+    /// Leave it.
+    Keep,
+    /// Not before this.
+    AtLeast(f64),
+}
+
+/// The next state: `held` attack or attack2, `fire` attack, `ammo` a
+/// round to fire, the gun's `last_shot` and its pending `next` shot, at
+/// `now`; and what the next shot's time must become.
+#[allow(clippy::too_many_arguments)]
+pub fn step(p: &MinigunParams, spin: Spin, held: bool, fire: bool, ammo: bool, last_shot: f64, next: f64, now: f64) -> (Spin, Due) {
     const SLACK: f64 = 1e-6;
+    let fire_step = p.fire_step as f64;
+    let stop = || Spin::Down { until: now + p.spool_down as f64 };
     match spin {
-        Spin::Idle if held => Spin::Up { start: now },
-        Spin::Up { .. } if !held => Spin::Down { until: now + p.wind_down as f64 },
-        Spin::Up { start } if now + SLACK >= start + p.wind_up as f64 => Spin::Spun {
-            since: start + p.wind_up as f64,
-            fired: fire,
-        },
-        Spin::Spun { fired, .. } if !held => Spin::Down {
-            until: now + if fired { p.wind_down } else { p.wind_down_alt } as f64,
-        },
-        Spin::Spun { since, fired } => Spin::Spun { since, fired: fired || fire },
-        Spin::Down { .. } if held => Spin::Up { start: now },
-        Spin::Down { until } if now + SLACK >= until => Spin::Idle,
-        s => s,
+        Spin::Idle | Spin::Down { .. } if held => (Spin::Up { start: now }, Due::AtLeast(now + (p.wind_up + p.fire_step) as f64)),
+        Spin::Down { until } if now + SLACK >= until => (Spin::Idle, Due::Keep),
+        Spin::Up { start } if now + SLACK >= start + p.wind_up as f64 => {
+            if !held {
+                return (stop(), Due::Keep);
+            }
+            let mode = match (fire, ammo) {
+                (false, _) => Mode::Spinning,
+                (true, true) => Mode::Firing,
+                (true, false) => Mode::Dry,
+            };
+            let due = now + fire_step;
+            let wound = (mode != Mode::Dry).then_some(start);
+            (Spin::Spun { wound, mode, run: due }, Due::AtLeast(due))
+        }
+        Spin::Up { start } => (spin, Due::AtLeast(start + (p.wind_up + p.fire_step) as f64)),
+        Spin::Spun { wound, mode, run } => {
+            if !held {
+                let waiting = mode == Mode::Firing && now + SLACK < last_shot + p.idle_after_fire as f64 && last_shot >= run - SLACK;
+                return if waiting { (spin, Due::Keep) } else { (stop(), Due::Keep) };
+            }
+            match (fire, ammo, mode) {
+                (true, true, Mode::Firing) => (spin, Due::Keep),
+                (true, true, _) => (Spin::Spun { wound, mode: Mode::Firing, run: next.max(now) }, Due::Keep),
+                (true, false, _) => (Spin::Spun { wound: None, mode: Mode::Dry, run }, Due::Keep),
+                (false, _, Mode::Firing) => (Spin::Spun { wound, mode: Mode::Spinning, run }, Due::AtLeast(now + fire_step)),
+                (false, _, _) => (Spin::Spun { wound, mode: Mode::Spinning, run }, Due::Keep),
+            }
+        }
+        s => (s, Due::Keep),
     }
 }
 
@@ -160,14 +260,16 @@ fn sound(entry: &str, owner: Entity, at: Vec3) -> PlaySound {
 /// Each minigun's spin this tick (module doc).
 #[allow(clippy::type_complexity)]
 pub fn spin(
-    mut owners: Query<(Entity, &mut Intent, &Inventory, &Transform, Option<&Health>, Option<&MovementState>)>,
+    mut owners: Query<(Entity, &mut Intent, &Inventory, &Transform, Option<&Health>)>,
     mut guns: Query<(
         Entity,
         &mut Tf2Minigun,
         &mut Weapon,
         &mut WeaponState,
         &mut DamageEffect,
+        Option<&mut Hitscan>,
         Option<&Magazine>,
+        Option<&Tf2Gun>,
         Has<HolsterLocked>,
         Option<&mut ViewPose>,
     )>,
@@ -178,15 +280,21 @@ pub fn spin(
     mut commands: Commands,
 ) {
     let now = clock.now;
-    for (owner, mut intent, inv, at, health, state) in &mut owners {
+    for (owner, mut intent, inv, at, health) in &mut owners {
         let alive = health.is_none_or(|h| h.current > 0.0);
         for &w in &inv.weapons {
-            let Ok((we, mut gun, mut weapon, mut st, mut dmg, mag, locked, pose)) = guns.get_mut(w) else { continue };
+            let Ok((we, mut gun, mut weapon, mut st, mut dmg, scan, mag, tf2, locked, pose)) = guns.get_mut(w) else { continue };
             let active = inv.active == Some(w) && alive;
             let fire = active && intent.fire;
             let held = active && (intent.fire || intent.secondary);
+            let ammo = mag.is_none_or(|m| m.clip > 0);
+            let last_shot = tf2.map_or(f64::MIN, |g| g.last_shot);
             let was = gun.spin;
-            let next = if active { step(&gun.params, was, held, fire, now) } else { Spin::Idle };
+            let (next, due) = if active {
+                step(&gun.params, was, held, fire, ammo, last_shot, st.next_primary, now)
+            } else {
+                (Spin::Idle, Due::Keep)
+            };
             let p = gun.params.clone();
             let mut play = |entry: &str| {
                 if first.0 {
@@ -207,8 +315,8 @@ pub fn spin(
                 _ => {}
             }
             let want_loop = match next {
-                Spin::Spun { .. } if fire && mag.is_some_and(|m| m.clip == 0) => Loop::Empty,
-                Spin::Spun { .. } if fire => Loop::Fire,
+                Spin::Spun { mode: Mode::Dry, .. } => Loop::Empty,
+                Spin::Spun { mode: Mode::Firing, .. } => Loop::Fire,
                 Spin::Spun { .. } => Loop::Spin,
                 _ => Loop::None,
             };
@@ -226,38 +334,41 @@ pub fn spin(
             }
             // The view model idles lowered and aiming while it spins up or
             // is spun (`game::view`: `m_spool_idle`), upright otherwise.
-            let want_pose = ViewPose(u8::from(matches!(next, Spin::Up { .. } | Spin::Spun { .. })));
+            let want_pose = ViewPose(u8::from(next.turning()));
             if let Some(mut pose) = pose
                 && *pose != want_pose
             {
                 *pose = want_pose;
             }
             // Firing waits for the spin.
-            match next {
-                Spin::Up { start } => st.next_primary = st.next_primary.max(start + p.wind_up as f64),
-                Spin::Down { until } => st.next_primary = st.next_primary.max(until),
-                Spin::Idle if active => st.next_primary = st.next_primary.max(now + p.wind_up as f64),
-                _ => {}
+            if let Due::AtLeast(t) = due
+                && st.next_primary < t
+            {
+                st.next_primary = t;
             }
-            // The damage ramp.
-            let factor = match next {
-                Spin::Spun { since, .. } => ramp(&p, now - since),
-                _ => p.ramp_start,
-            };
-            let amount = gun.base_damage * factor;
+            // The rev-up penalty at this tick's shot.
+            let tau = tau(&p, next, now);
+            let amount = gun.base_damage * damage_factor(&p, tau);
             if dmg.amount != amount {
                 dmg.amount = amount;
             }
-            // The holder: slowed, grounded, holding on to it.
-            let spinning = next != Spin::Idle;
-            let speed = spinning.then(|| if state.is_some_and(|s| s.crouching) { 0.0 } else { p.spun_speed * U });
+            if let Some(mut scan) = scan {
+                let spread = SpreadShape::Template(gun.base_spread * spread_factor(&p, tau));
+                if scan.spread != spread {
+                    scan.spread = spread;
+                }
+            }
+            // The holder: slowed and grounded while it turns, holding on to
+            // it until the spool-down ends.
+            let turning = next.turning();
+            let speed = turning.then_some(p.spun_speed * U);
             if weapon.max_speed != speed {
                 weapon.max_speed = speed;
             }
-            if spinning && active && intent.jump {
+            if turning && active && intent.jump {
                 intent.jump = false;
             }
-            match (spinning, locked) {
+            match (next != Spin::Idle, locked) {
                 (true, false) => {
                     commands.entity(we).insert(HolsterLocked);
                 }
@@ -278,32 +389,53 @@ mod tests {
         super::super::hook_params(super::super::MINIGUN, super::super::MINIGUN_HOOK)
     }
 
-    /// 7.1: up 0.75 s, spun, down 1.15 (1.4 after attack2 alone), idle.
+    /// 7.1: up 0.75 s, spun with the first shot 0.1 s on; released while
+    /// spun: idle at once (the spool-down only holds the switch); a
+    /// release during the wind-up lets it complete.
     #[test]
-    fn it_winds_up_spins_and_winds_down() {
+    fn it_winds_up_spins_and_stops_at_once() {
         let p = params();
-        let s = step(&p, Spin::Idle, true, true, 1.0);
+        let (s, due) = step(&p, Spin::Idle, true, true, true, f64::MIN, 0.0, 1.0);
         assert_eq!(s, Spin::Up { start: 1.0 });
-        assert_eq!(step(&p, s, true, true, 1.5), s);
-        let spun = step(&p, s, true, true, 1.75);
-        assert_eq!(spun, Spin::Spun { since: 1.75, fired: true });
-        let until = |s: Spin| match s {
-            Spin::Down { until } => until,
-            other => panic!("{other:?}"),
-        };
-        assert!((until(step(&p, spun, false, false, 3.0)) - 4.15).abs() < 1e-6);
-        let alt = Spin::Spun { since: 1.75, fired: false };
-        assert!((until(step(&p, alt, false, false, 3.0)) - 4.4).abs() < 1e-6);
-        assert_eq!(step(&p, Spin::Down { until: 4.15 }, false, false, 4.15), Spin::Idle);
+        assert!(matches!(due, Due::AtLeast(t) if (t - 1.85).abs() < 1e-6));
+        // Let go during the wind-up: it goes on.
+        let (s2, _) = step(&p, s, false, false, true, f64::MIN, 1.85, 1.5);
+        assert_eq!(s2, s);
+        let (spun, due) = step(&p, s, true, true, true, f64::MIN, 1.85, 1.75);
+        assert!(matches!(spun, Spin::Spun { wound: Some(1.0), mode: Mode::Firing, run } if (run - 1.85).abs() < 1e-6), "{spun:?}");
+        assert!(matches!(due, Due::AtLeast(t) if (t - 1.85).abs() < 1e-6));
+        // Only spun: let go, down (cosmetic) at once.
+        let only = Spin::Spun { wound: Some(1.0), mode: Mode::Spinning, run: 1.85 };
+        let (down, _) = step(&p, only, false, false, true, f64::MIN, 1.85, 3.0);
+        assert!(matches!(down, Spin::Down { until } if (until - 4.33).abs() < 1e-6));
+        assert!(!down.turning());
+        // Firing: 0.2 s after the last shot.
+        let firing = Spin::Spun { wound: Some(1.0), mode: Mode::Firing, run: 1.85 };
+        assert_eq!(step(&p, firing, false, false, true, 2.9, 3.0, 3.0).0, firing);
+        assert!(matches!(step(&p, firing, false, false, true, 2.9, 3.0, 3.1).0, Spin::Down { .. }));
+        // A press while it spools down winds up again.
+        assert_eq!(step(&p, down, true, false, true, 2.9, 3.0, 3.5).0, Spin::Up { start: 3.5 });
     }
 
-    /// 7.2 and test cases 13, 14: 50 % at the start, 75 % at 0.5 s, full
-    /// after a second.
+    /// 7.2 and test cases 13, 14, 49: 50 % until 0.2 s, 68.75 % at 0.5 s,
+    /// full after a second; the spread 1.5 to 1.
     #[test]
-    fn the_damage_ramps_over_the_first_second() {
+    fn the_rev_up_penalty() {
         let p = params();
-        assert!((ramp(&p, 0.0) - 0.5).abs() < 1e-6);
-        assert!((ramp(&p, 0.5) - 0.75).abs() < 1e-6);
-        assert!((ramp(&p, 2.0) - 1.0).abs() < 1e-6);
+        assert!((damage_factor(&p, 0.1) - 0.5).abs() < 1e-6);
+        assert!((damage_factor(&p, 0.2) - 0.5).abs() < 1e-6);
+        assert!((damage_factor(&p, 0.5) - 0.6875).abs() < 1e-6);
+        assert!((damage_factor(&p, 2.0) - 1.0).abs() < 1e-6);
+        assert!((spread_factor(&p, 0.0) - 1.5).abs() < 1e-6);
+        assert!((spread_factor(&p, 0.1) - 1.45).abs() < 1e-6);
+        assert!((spread_factor(&p, 0.5) - 1.25).abs() < 1e-6);
+        assert!((spread_factor(&p, 1.5) - 1.0).abs() < 1e-6);
+        // Spun on attack2 for 2 s from the press: the first shot's tau is
+        // the wind's, 1.25 s.
+        let s = Spin::Spun { wound: Some(0.0), mode: Mode::Firing, run: 2.0 };
+        assert!((tau(&p, s, 2.0) - 1.25).abs() < 1e-6);
+        // After a dry spell only the run counts.
+        let s = Spin::Spun { wound: None, mode: Mode::Firing, run: 2.0 };
+        assert!((tau(&p, s, 2.3) - 0.3).abs() < 1e-5);
     }
 }

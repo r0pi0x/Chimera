@@ -2,8 +2,8 @@
 # a needle every 0.105 s, 40 in the clip and 150 carried, the whole clip
 # in 1.305 s. Each needle (Chimera's flyers) flies at 990 units/s along
 # the aim from under the gun, falling at 0.3 of gravity (open question
-# 16), through teammates; on an enemy (`tf2:needle`) 10 x the distance
-# modifier (near half x0.4) at impact, rounded.
+# 16), through teammates; on an enemy (`tf2:needle`) 10 x the short-
+# range-reduced modifier (121.8 % at 0) at impact, rounded.
 id = "tf2:tf_weapon_syringegun_medic"
 base = "tf2:base"
 class = "smg"
@@ -13,7 +13,7 @@ draw = 0.5
 [trigger]
 automatic = true
 cycle = 0.105
-timing = "accumulate"
+timing = "set"
 
 [magazine]
 clip = 40
@@ -24,7 +24,7 @@ auto_reload = true
 [hitscan]
 range = 56754.0
 pellets = 1
-punch_scale = 0.0
+punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]
@@ -43,7 +43,8 @@ name = "Syringe Gun"
 icon = "syringegun_medic"
 
 [hooks."tf2:gun"]
-ramp = 0.4
+ramp = 1.0
+near = "compressed"
 arms = "medic"
 script = "tf_weapon_syringegun_medic"
 
