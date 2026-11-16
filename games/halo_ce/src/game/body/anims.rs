@@ -52,10 +52,12 @@
 //!   body's frame (the body always faces the look: no turn-in-place
 //!   states, no feet lag), so a remote player's body follows what it does,
 //!   not its stick.
-//! - One permutation per slot (the chain's first); the stunned-move,
-//!   slide, gesture, turn, melee and action layers (reload, fire, ready),
-//!   pings, acceleration overlays and IK are not played (the deaths are
-//!   `death`'s); node scale is ignored (1 on the disc).
+//! - One permutation per slot (the chain's first; the soft pings keep
+//!   their chains, `flinch`); the stunned-move, slide, gesture, turn, melee
+//!   and action layers (reload, fire, ready), hard pings, acceleration
+//!   overlays and IK are not played (the deaths are `death`'s, the soft
+//!   ping `flinch`'s, over the base or throw); node scale is ignored (1 on
+//!   the disc).
 //! - The grenade throw (`throw-grenade` of the seat and label, at the
 //!   throw's own frame, `Inputs::throw`) replaces the base pose whole while
 //!   it runs (aim and look screens over it, 6-tick blends in and out); it
@@ -378,6 +380,27 @@ impl Builder<'_> {
         self.set.sequences.push(s);
         self.set.names.insert(name, self.set.sequences.len() - 1);
     }
+
+    /// A ping slot's permutation chain from `first` (`flinch::variants`):
+    /// `<name>%<k>` for the later ones, each sequence with its cumulative
+    /// weight (`flinch::WEIGHT_EVENT`).
+    fn permutations(&mut self, name: &str, first: usize) {
+        let mut i = first;
+        for k in 0..16 {
+            let key = super::flinch::permutation_key(name, k);
+            self.sequence(key.clone(), i, None);
+            let Some(&s) = self.set.names.get(&key) else { return };
+            let a = &self.graph.animations[i];
+            let seq = &mut self.set.sequences[s];
+            if !seq.events.iter().any(|e| e.name == super::flinch::WEIGHT_EVENT) {
+                seq.events.push(AnimEvent { cycle: a.cumulative_weight, event: 0, name: super::flinch::WEIGHT_EVENT.into(), options: String::new() });
+            }
+            match a.next_animation {
+                Some(n) if n != first && self.graph.animation(n).is_some() => i = n,
+                _ => return,
+            }
+        }
+    }
 }
 
 /// The body's animation set from its graph (module doc), for a model of
@@ -454,6 +477,9 @@ pub fn build(graph: &AnimationGraph, bones: &[MapBone], checksum: u32) -> (AnimS
         let Some(slot) = UnitDamageSlot::from_index(index) else { continue };
         if let Some(i) = graph.unit_damage.get(slot) {
             b.sequence(damage_key(slot), i, None);
+            if slot.kind == blam_formats::animation::DamageKind::SoftPing {
+                b.permutations(&damage_key(slot), i);
+            }
         }
     }
     (b.set, b.warnings)
@@ -467,6 +493,17 @@ pub const LANDING_DEAD: &str = "landing-dead";
 /// frame, its options the sound: the graph's sound index at build, the
 /// engine's sound entry once the loader names it, `name_sounds`).
 pub const SOUND_EVENT: &str = "halo:sound";
+
+/// The event on the bind sequence (0) naming a death line: its number 0
+/// quiet, 1 violent, its options the sound (sounds.md "Unit dialogue";
+/// `load::death_lines`).
+pub const DEATH_LINE_EVENT: &str = "halo:death-line";
+
+/// The death line of `set`, violent or quiet (None: none).
+pub fn death_line(set: &AnimSet, violent: bool) -> Option<&str> {
+    let k = i32::from(violent);
+    set.sequences.first()?.events.iter().find(|e| e.name == DEATH_LINE_EVENT && e.event == k).map(|e| e.options.as_str())
+}
 
 /// A seat's death sequence's name (`stand airborne-dead`).
 pub fn seat_death_key(seat: &str, slot: &str) -> String {
@@ -620,6 +657,9 @@ pub struct Inputs {
     /// A grenade throw's frame while one runs (the holder's
     /// `HaloHands::throw`).
     pub throw: Option<usize>,
+    /// A hit to flinch from this tick, with its permutation's draw (0 to
+    /// 1; `flinch`).
+    pub hit: Option<f32>,
 }
 
 /// The landing thresholds (world units per second) and recovery ticks
@@ -662,6 +702,8 @@ pub struct HaloAnim {
     /// The feet that stepped this tick (`feet_at`): a move state, the
     /// throttle above 0.5, the frame a foot frame.
     pub feet: u8,
+    /// The flinch playing (`flinch`).
+    pub ping: Option<super::flinch::Ping>,
 }
 
 impl HaloAnim {
@@ -761,6 +803,14 @@ impl HaloAnim {
         if let Some((s, f)) = throw {
             let n = frames(set, s);
             pose = base_pose(set, set.sequences[s].anims[0], f.min(n.saturating_sub(1)));
+        }
+        // The flinch: advanced, a hit's started, then laid over.
+        self.ping = super::flinch::advance(self.ping, self.ping.map_or(1, |p| frames(set, p.sequence)));
+        if let Some(r) = i.hit {
+            self.ping = super::flinch::start(self.ping, set, r);
+        }
+        if let Some(p) = self.ping {
+            super::flinch::apply(set, p, &mut pose);
         }
         if let Some(a) = self.aim {
             apply_screen(set, a, 0.0, i.pitch, &mut pose);

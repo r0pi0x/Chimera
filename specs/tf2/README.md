@@ -9,9 +9,12 @@ for writing specs are in [specs/README.md](../README.md).
 
 Spec sessions for TF2 run on the Linux box as sub-agents of the
 orchestrating session. They read the game's data files in place, public
-documentation, and measurements of the dedicated server. They never read
-TF2's, the Source engine's or the Source SDK's code. Implementation
-sessions read only these files and our code.
+documentation, and measurements of the dedicated server. Since 2026-11-15 they
+may also read the Source SDK 2013 (updated 2025-02-18 with TF2's client
+and server game code, under the SDK's non-commercial licence) in place,
+outside this repository, as reference for specs only; nothing of it is
+copied or translated (specs/README.md). They never read leaked code.
+Implementation sessions read only these files and our code.
 
 ## Read first
 
@@ -35,3 +38,4 @@ from HL2:DM.** Every later TF2 spec continues it.
 | T6 | [hud.md](hud.md) | draft | the scheme's fonts and colours, the layout's scaling, the health, ammo, crosshair and kill feed panels, their animation events, the kill icons, the hit sound |
 | T7 | [player_animation.md](player_animation.md) | draft | the class player models' animations: include models, pose parameters, the move and aim grids, sequences by weapon kind, gestures, the spun minigun set, the held weapon's bone, hitboxes, ragdolls |
 | T8 | [weapon_scripts.md](weapon_scripts.md) | draft | the per-weapon `.ctx` scripts' fields: meaning, unit, type, which guns carry them, and how each maps onto our weapon TOML and hook params (applied, checked or ignored); no values |
+| T9 | [viewmodel.md](viewmodel.md) | checked against the SDK's game code | the first-person view model: the class arms plus the bone-merged `c_` weapon, placement at the eye (no offset), bob, no sway, `viewmodel_fov` 54, draw and idle sequences and their cross-fades, the Minigun's rest pose (`m_idle`, barrels up), its spin sequences and procedural barrel; why ours showed the spun pose too big |

@@ -462,3 +462,10 @@ server probe for parity checks, TF2's own app.
 - 2026-11-15: the weapon scripts' numbers: specs/tf2/weapon_scripts.md,
   `script_numbers` applies them at run time (store or install plus key),
   served to clients as server documents.
+- 2026-11-15: specs/tf2/viewmodel.md (T9), the first spec checked against
+  the Source SDK 2013's TF2 game code (updated 2025-02-18; read in place by
+  a spec session, never copied). The Minigun's real rest pose is `m_idle`
+  as we decode it (raised, barrels up; only the barrels and a glove on
+  screen at `viewmodel_fov` 54): draw `m_draw`, idle `m_idle`, no
+  `view_offset`; TF2 has no sway, its bob is CS:S's, and the view-model
+  FOV is 54 whenever the player is not zoomed, whatever their base FOV.
