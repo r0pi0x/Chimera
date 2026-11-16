@@ -62,6 +62,8 @@
 //!   `target` (`targets`: a sandbox's practice targets and their measured
 //!   hits, kills and blasts), `prop` (`props`: its bottles, tin cans and
 //!   target board).
+//! - `gun_files`: whether a gun's files are here to switch to it (the
+//!   asset side's hooks; a sandbox's rung switch waits for them).
 //!
 //! - Results: once the match is decided `results::MatchResults` (winner,
 //!   each player's final rung, kills and deaths) is kept for the HUDs
@@ -104,6 +106,7 @@ pub mod climb;
 pub mod conditions;
 pub mod def;
 pub mod effects;
+pub mod gun_files;
 pub mod holders;
 pub mod map_fit;
 pub mod hud;
@@ -121,6 +124,7 @@ pub mod spawn_score;
 pub mod spawns;
 pub mod targets;
 pub mod props;
+pub mod range_place;
 pub mod vote;
 pub mod wins;
 

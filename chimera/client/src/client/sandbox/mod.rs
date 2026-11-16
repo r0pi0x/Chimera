@@ -223,7 +223,7 @@ pub fn catalogue_of(world: &World, rungs: &[&str]) -> Vec<SandboxGun> {
             tags,
             game_tags,
             stats,
-            unit: None,
+            unit: chimera_net::net::units::gun_unit(id).map(|(_, set)| set),
             game,
         });
     }
@@ -269,6 +269,10 @@ fn track(world: &mut World) {
         let usable = &ladder.rungs[..ladder.rungs.len().saturating_sub(1)];
         if world.get_resource::<SandboxCatalogue>().is_none_or(|c| c.made_from != usable) {
             let guns = catalogue_of(world, usable);
+            // Each gun's unit: here, or what it would download.
+            let units: Vec<(String, String)> =
+                guns.iter().filter_map(|g| Some((g.game.clone(), g.unit.clone()?))).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+            chimera_net::net::units::describe_units(world, &units);
             world.insert_resource(SandboxCatalogue { guns, made_from: usable.to_vec() });
         }
     }
@@ -519,6 +523,7 @@ impl Plugin for SandboxUiPlugin {
         app.init_resource::<SandboxUi>()
             .init_resource::<SandboxCatalogue>()
             .init_resource::<UnitProgress>()
+            .init_resource::<units::RefusedUnits>()
             .init_resource::<BenchView>()
             .init_resource::<KillLog>()
             .init_resource::<LookPanel>()
@@ -537,6 +542,7 @@ impl Plugin for SandboxUiPlugin {
                     keys,
                     act,
                     units::poll_units,
+                    units::bridge_units,
                     link::fake_bench,
                     link::bridge_requests,
                     link::bridge_view,

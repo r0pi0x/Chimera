@@ -233,6 +233,7 @@ pub mod reconnect;
 pub mod server;
 pub mod stats;
 pub mod udp;
+pub mod units;
 pub mod upnp;
 pub mod voice;
 pub mod vote;
@@ -1461,6 +1462,7 @@ impl Plugin for NetPlugin {
         manifest::plugin(app);
         assets::plugin(app);
         server_assets::plugin(app);
+        units::plugin(app);
         on_demand::plugin(app);
         mapfx::plugin(app);
         breakables::plugin(app);

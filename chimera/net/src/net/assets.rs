@@ -12,7 +12,8 @@
 //!   fingerprint, and the sets the match needs now per game (`base`,
 //!   `players` and `common`: `chimera_assets::resolve::MATCH_SETS`, the
 //!   map's `map/<name>`, each ladder and kit weapon's
-//!   `weapon/<name>` and the starting weapons a joiner holds until the
+//!   `weapon/<name>` (a sandbox's: only its first rung's, the rest come
+//!   when picked: `units`) and the starting weapons a joiner holds until the
 //!   minigame arms it: the weapons come from `AssetHooks`, which
 //!   `minigame_net` fills; other sets a game names there, Combat Arms'
 //!   rung bodies' `character/<record>` and guns' `parts/<id>`;
@@ -563,7 +564,7 @@ fn ensure_map(settings: &AssetSettings, need: &MapNeed) -> Result<(), String> {
 
 /// A fetch under way.
 #[derive(Resource)]
-struct AssetFetch {
+pub(crate) struct AssetFetch {
     then: Then,
     /// Games whose files this join bound the token for (`bind_here`):
     /// read again once they arrived (`remount`).
@@ -859,14 +860,18 @@ pub fn match_sets(world: &World, m: &MatchManifest) -> Vec<GameSets> {
         .filter_map(|w| w.split_once(':'))
         .filter(|(g, _)| known(g))
     {
-        // Weapon sets are named without the `weapon_` Source ids start
-        // with (`chimera_pack sets`).
-        add(&mut now, game, format!("weapon/{}", name.strip_prefix("weapon_").unwrap_or(name)));
+        add(&mut now, game, weapon_set(name));
     }
     for (game, set) in named.iter().filter_map(|s| s.split_once(':')).filter(|(g, _)| known(g)) {
         add(&mut now, game, set.to_string());
     }
     now
+}
+
+/// The set of a weapon named `name` (its id after `game:`): `weapon/<name>`,
+/// without the `weapon_` Source ids start with (`chimera_pack sets`).
+pub fn weapon_set(name: &str) -> String {
+    format!("weapon/{}", name.strip_prefix("weapon_").unwrap_or(name))
 }
 
 /// A joining client that can fetch (`ASSETS_KEY`) counts as having the
@@ -1532,6 +1537,12 @@ fn run_streams(world: &mut World) {
         sets::fetch(&settings, &one, "streamed files", &t, options)
     });
     streams.running = Some((want, job, pace, transfer));
+}
+
+/// On a client: a foreground download runs (a join's or level change's,
+/// the next map ahead): background downloads hold for it.
+pub fn foreground_busy(world: &World) -> bool {
+    world.contains_resource::<AssetFetch>() || world.get_resource::<MapAhead>().is_some_and(MapAhead::running)
 }
 
 /// On a client: the streams' state (None: no streams resource).

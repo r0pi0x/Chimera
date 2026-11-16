@@ -53,17 +53,17 @@ pub const HELP: &str = "sandbox [map]: a match alone on the range (or `map`: gre
     ca_bot_add [alpha|bravo]: add a bot; ca_bot_kick: remove them; ca_bot_stop 1: they stand still;\n\
     ca_bot_dont_shoot 1: they never fire.\n\
     target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect]: a practice target\n\
-    in front of you (any game's body; it never fires unless `shoots`; `target characters` lists the bodies);\n\
+    in front of you, on the range on that distance line at your side (any game's body; it never fires unless `shoots`; `target characters` lists the bodies);\n\
     target set <n|all> <shoots|noshoot|protect|noprotect|still|strafe|walk|gun <id>|character <id>|respawn <s>|distance <m>>;\n\
     target remove <n|all>; target list. Hits on targets and their kills are logged (HitMeasured, KillMeasured),\n\
     and every blast (BlastMeasured: centre, inner and outer radius, each victim's damage).\n\
     prop add <bottles|tin_cans|target_board> [distance m]: bottles or cans on a shelf to knock off, or a board\n\
-    that keeps your shot group; prop remove <n|all>; prop list; prop group <n>; prop reset <n|all>.\n\
+    that keeps your shot group (on the range: its own shelf and board first); prop remove <n|all>; prop list; prop group <n>; prop reset <n|all>.\n\
     host_timescale 0.5: half speed (measured times stay in game seconds).\n\
     god, noclip: no damage, fly through walls (sv_cheats is 1 here).\n\
     guns never run dry (the ladder refills them); kills and deaths never move your rung.\n\
     sandbox repeat (also target repeat): clear, then put back the last layout of targets and props you made,\n\
-    each on its own line and distance from where you stand and look now (kept across maps and restarts).\n\
+    each on its own line and distance from where you stand and look now (kept across maps and restarts; one made on the range comes back there exactly).\n\
     rung <gun id> as <body id>: that gun as that body (TF2's shotgun as tf2:soldier, a Halo gun as halo_ce:elite).\n\
     sandbox god on|off, ammo on|off, timescale 1|0.5|0.25, thirdperson on|off, camdist <units>, freeze on|off:\n\
     the conditions (`sandbox conditions` says them; freeze holds every target still). No spread or recoil switch exists.\n\

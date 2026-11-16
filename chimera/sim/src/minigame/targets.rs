@@ -33,6 +33,19 @@
 //!   player's box there meets the world (`spawns::stuck_at`: inside a
 //!   wall). The spawn's origin and direction stay on `Target`, so a new
 //!   `distance_m` re-places it along the same line.
+//!   **On the range** (`chimera_world::range`'s `RangeLayout` in): on the
+//!   range's `distance_m` line instead, at the spawner's sideways offset
+//!   from the range's axis, clamped inside the range and nudged sideways
+//!   to the nearest free spot (`range_place`), facing straight back up
+//!   range; a new `distance_m` (or a motion needing more room) re-places it
+//!   on that line from its own side. It carries `RangeLine` (line, side).
+//!   What `Target` holds then: `origin` the firing line's point at its
+//!   side, 1 m up (a standing player's centre there), `dir` the range's
+//!   down-range direction, `distance_m` the line's distance (from the
+//!   firing line, not from where the player stands); off the range
+//!   `origin` is the spawner's centre when it was placed, `dir` its flat
+//!   view, `distance_m` the distance asked (along that view, from that
+//!   centre).
 //! - `motion`: `Still` (no movement keys; pushed off its spot, it walks
 //!   back), `Strafes` (side to side across the spawner's line,
 //!   `STRAFE_HALF` m each way, at its body's run speed; a leg blocked by a
@@ -71,14 +84,19 @@
 //!   `damage_unscaled` (the `Damage`s as the weapons wrote them, before the
 //!   victim's `DamageScale`, plus the shield's drop), the hit group of the
 //!   best hit (`Hitgroup`, the head first) and the full region when the gun
-//!   told it (`RegionHit`), the distance, the victim's health and shield
+//!   told it (`RegionHit`), the distance (`distance_m`: the true one, the
+//!   attacker's centre to the victim's at the hit; on the range also
+//!   `line_m`, the target's distance line, which differs from it by the
+//!   shooter's place behind the firing line and to the side, and its
+//!   height), the victim's health and shield
 //!   before (the tick's start) and after, the hits (pellets) folded in, the
 //!   time. Normalized like `Health` (1.0 = a standard player's 100).
 //! - `KillMeasured`, when a target dies or kills: shots fired at the victim
 //!   since its last death (`WeaponEventKind::ShotMade` rays passing within
 //!   `AIM_RADIUS` m of its centre; never fewer than the hits), shots hit
 //!   (ticks with a hit), headshots, the times from the first hit and the
-//!   first shot to the kill, the distance, the total damage.
+//!   first shot to the kill, the distance (true, and `line_m` as a hit's),
+//!   the total damage.
 //!   Both are also logged (`HitMeasured ...`, `KillMeasured ...`).
 //! - `BlastMeasured` ("Blasts"), one per blast while the sandbox plays,
 //!   targets or not: built on what the blast's own code told
@@ -117,7 +135,7 @@
 //! `is_target` (or `Has<Target>`) to leave them out.
 //!
 //! Placement needs no particular map: a ray down at the spot on any map's
-//! collision; the motion moves by keys, with or without a nav mesh.
+//! collision (the range adds its lines, `range_place`); the motion moves by keys, with or without a nav mesh.
 //!
 //! Targets exist only while the sandbox plays (`rung_command::holds`): a
 //! spawn is refused otherwise, and every target is removed when it stops
@@ -176,6 +194,8 @@ use crate::{
 /// The practice props (`props`: bottles, tin cans, a target board), named
 /// here as the screens name them.
 pub use super::props::{ClearProps, Prop, PropHit, PropSpec, RemoveProp, ResetProp, ShotGroup, SpawnProp};
+/// A target's distance line and side on the range (`range_place`).
+pub use super::range_place::RangeLine;
 
 /// Half the strafe's span (m): it goes this far each way of home.
 pub const STRAFE_HALF: f32 = 3.0;
@@ -319,8 +339,11 @@ pub struct Target {
     pub respawn_secs: f32,
     /// Its feet's spot (m).
     pub home: Vec3,
-    /// Where the spawner stood (its centre) and the flat unit direction it
-    /// was placed along, and how far.
+    /// Where it was placed from and along, and how far (module doc,
+    /// "Where"): off the range the spawner's centre, its flat unit view and
+    /// the distance asked; on the range the firing line's point at its
+    /// side (1 m up), the range's down-range direction and its line's
+    /// distance.
     pub origin: Vec3,
     pub dir: Vec3,
     pub distance_m: f32,
@@ -373,7 +396,13 @@ pub struct HitMeasured {
     pub damage_unscaled: f32,
     pub hitgroup: Hitgroup,
     pub region: Option<BodyRegion>,
+    /// The true distance (m): the attacker's centre to the victim's, at
+    /// the hit.
     pub distance_m: f32,
+    /// The distance line the target stands on (m, its `RangeLine`: the
+    /// victim's, or the attacker's when a target hit someone); None off
+    /// the range.
+    pub line_m: Option<f32>,
     pub health_before: f32,
     pub health_after: f32,
     pub shield_before: f32,
@@ -395,7 +424,10 @@ pub struct KillMeasured {
     /// Seconds from the first hit, and from the first shot, to the kill.
     pub from_first_hit: f32,
     pub from_first_shot: f32,
+    /// The true distance at the kill (m, centre to centre).
     pub distance_m: f32,
+    /// The target's distance line (as `HitMeasured::line_m`).
+    pub line_m: Option<f32>,
     pub total_damage: f32,
     pub time: f64,
 }
@@ -747,7 +779,17 @@ pub fn spawn_from(world: &mut World, req: &SpawnTarget, origin: Vec3, dir: Vec3)
         return Err("targets are the sandbox's: start it with `sandbox`".into());
     }
     let arming = resolve(world, req.character.as_deref(), req.gun.as_deref(), req.rung)?;
-    let home = find_spot(world, origin, dir, req.distance_m)?;
+    // On the range: on its distance line at the spawner's side (`range_place`).
+    let range = super::range_place::layout(world);
+    let (home, origin, dir, line) = match &range {
+        Some(l) => {
+            let side = super::range_place::along_side(l, origin).y;
+            let reach = super::range_place::Footprint::of_target(req.motion);
+            let s = super::range_place::line_spot(world, l, req.distance_m, side, reach, None)?;
+            (s.home, s.origin, l.dir, Some(RangeLine { distance_m: req.distance_m, side_m: s.side }))
+        }
+        None => (find_spot(world, origin, dir, req.distance_m)?, origin, dir, None),
+    };
     let hooks = chimera_core::gameplay::active_hook::<TargetBots>(world, |g| g.bots)
         .ok_or("no game's bots play here to be targets")?;
     let e = (hooks.add)(world).ok_or("no bot could be added")?;
@@ -789,6 +831,9 @@ pub fn spawn_from(world: &mut World, req: &SpawnTarget, origin: Vec3, dir: Vec3)
     ));
     if req.protected {
         world.entity_mut(e).insert(HealthHeld);
+    }
+    if let Some(line) = line {
+        world.entity_mut(e).insert(line);
     }
     Ok(e)
 }
@@ -857,9 +902,22 @@ pub fn set(world: &mut World, req: &SetTarget) -> Result<String, String> {
     let e = req.target;
     let mut t = world.get::<Target>(e).cloned().ok_or("no such target")?;
     let rearm = req.character.is_some() || req.gun.is_some() || req.rung.is_some();
-    let home = match req.distance_m {
-        Some(d) => Some(find_spot(world, t.origin, t.dir, d)?),
-        None => None,
+    // On the range a new distance, or a motion that needs more room, finds
+    // its spot on that line from the target's own side (`range_place`).
+    let range = super::range_place::layout(world).zip(world.get::<RangeLine>(e).copied());
+    let mut line = None;
+    let home = match (&range, req.distance_m) {
+        (Some((l, at)), _) if req.distance_m.is_some() || req.motion.is_some_and(|m| m != t.motion) => {
+            let d = req.distance_m.unwrap_or(at.distance_m);
+            let reach = super::range_place::Footprint::of_target(req.motion.unwrap_or(t.motion));
+            let s = super::range_place::line_spot(world, l, d, at.side_m, reach, Some(e))?;
+            line = Some(RangeLine { distance_m: d, side_m: s.side });
+            t.origin = s.origin;
+            t.dir = l.dir;
+            ((s.home - t.home).length() > 0.05 || req.distance_m.is_some()).then_some(s.home)
+        }
+        (_, Some(d)) if range.is_none() => Some(find_spot(world, t.origin, t.dir, d)?),
+        _ => None,
     };
     if rearm {
         // A new gun alone keeps the body when it may hold it.
@@ -878,8 +936,10 @@ pub fn set(world: &mut World, req: &SetTarget) -> Result<String, String> {
         t.game_tag = arming.info.game_tag;
         let _ = arming.wear;
     }
-    if let (Some(h), Some(d)) = (home, req.distance_m) {
+    if let Some(h) = home {
         t.home = h;
+    }
+    if let Some(d) = req.distance_m {
         t.distance_m = d;
     }
     t.motion = req.motion.unwrap_or(t.motion);
@@ -899,6 +959,9 @@ pub fn set(world: &mut World, req: &SetTarget) -> Result<String, String> {
             ent.remove::<HealthHeld>();
         }
         ent.insert(t);
+        if let Some(line) = line {
+            ent.insert(line);
+        }
         if armour_off && let Some(mut v) = ent.get_mut::<TargetVitals>() {
             v.shield = 0.0;
             v.shield_max = 0.0;
@@ -1100,7 +1163,10 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
             let which = a.get(1).ok_or("target look <n>")?;
             let e = *pick(world, which)?.first().ok_or("no target")?;
             let me = command_player(world)?;
-            let eye = world.get::<Transform>(me).ok_or("the player has no place")?.translation + Vec3::Y * 0.6;
+            // From its eye (its movement's eye offset; 0.6 m above its
+            // centre without one), as `prop look`.
+            let lift = world.get::<crate::core::MovementState>(me).map_or(Vec3::Y * 0.6, |s| s.eye_offset);
+            let eye = world.get::<Transform>(me).ok_or("the player has no place")?.translation + lift;
             let at = world.get::<Transform>(e).ok_or("the target has no place")?.translation + Vec3::Y * 0.3;
             let d = at - eye;
             let (yaw, pitch) = ((-d.x).atan2(-d.z), d.y.atan2(d.xz().length()));
@@ -1247,7 +1313,12 @@ fn drive(
                 Some(waypoint(t.home, t.number, d.waypoint))
             }
         };
-        let axis = goal.map_or(Vec2::ZERO, |g| axis_toward(g - feet, intent.yaw));
+        // One that may not fire faces back along its line, level (below):
+        // its keys are for that facing, not the brain's look this tick
+        // (keys made for the brain's yaw walked a strafer off its line).
+        let line_yaw = t.dir.x.atan2(t.dir.z);
+        let facing = if t.shoots_back { intent.yaw } else { line_yaw };
+        let axis = goal.map_or(Vec2::ZERO, |g| axis_toward(g - feet, facing));
         if intent.move_axis != axis {
             intent.move_axis = axis;
         }
@@ -1263,12 +1334,9 @@ fn drive(
         }
         // One that may not fire faces back along its line, level: toward
         // where it was placed from, whatever the brain looks at.
-        if !t.shoots_back {
-            let yaw = t.dir.x.atan2(t.dir.z);
-            if intent.yaw != yaw || intent.pitch != 0.0 {
-                intent.yaw = yaw;
-                intent.pitch = 0.0;
-            }
+        if !t.shoots_back && (intent.yaw != line_yaw || intent.pitch != 0.0) {
+            intent.yaw = line_yaw;
+            intent.pitch = 0.0;
         }
     }
 }
@@ -1362,7 +1430,7 @@ fn measure(
     clock: Res<SimClock>,
     before: Res<Before>,
     mut engaged: ResMut<Engagements>,
-    targets: Query<(), With<Target>>,
+    targets: Query<Option<&RangeLine>, With<Target>>,
     chars: Query<(Entity, &Transform, &Health, Option<&Armor>, Has<Dead>), With<Intent>>,
     held: Query<&Inventory>,
     guns: Query<&Weapon>,
@@ -1373,6 +1441,11 @@ fn measure(
         before.1.get(&e).copied().or_else(|| held.get(e).ok().and_then(|i| i.active).and_then(|w| guns.get(w).ok()).map(|w| w.id))
     };
     let watched = |a: Option<Entity>, v: Entity| targets.contains(v) || a.is_some_and(|a| targets.contains(a));
+    // The target's distance line on the range: the victim's, else the attacker's.
+    let line_of = |a: Option<Entity>, v: Entity| {
+        let of = |e: Entity| targets.get(e).ok().flatten().map(|l| l.distance_m);
+        of(v).or_else(|| a.and_then(of))
+    };
     // Shots at victims.
     for ev in weapon_events.read() {
         let WeaponEventKind::ShotMade { origin, dir, .. } = ev.kind else { continue };
@@ -1455,6 +1528,7 @@ fn measure(
             hitgroup: t.hitgroup.unwrap_or_default(),
             region: region.get(&v).copied(),
             distance_m,
+            line_m: line_of(a, v),
             health_before: hb,
             health_after: h.current,
             shield_before: sb,
@@ -1464,7 +1538,7 @@ fn measure(
         };
         info!(
             "HitMeasured attacker={:?} victim={v:?} gun={} damage={:.1} unscaled={:.1} group={:?} region={:?} distance={:.1}m \
-             health {:.1}->{:.1} shield {:.1}->{:.1} hits={} t={now:.3}",
+             line={} health {:.1}->{:.1} shield {:.1}->{:.1} hits={} t={now:.3}",
             a,
             hit.gun.unwrap_or("?"),
             hit.damage * 100.0,
@@ -1472,6 +1546,7 @@ fn measure(
             hit.hitgroup,
             hit.region,
             distance_m,
+            line_word(hit.line_m),
             hb * 100.0,
             h.current * 100.0,
             sb * 100.0,
@@ -1535,12 +1610,13 @@ fn measure(
             from_first_hit: g.first_hit.map_or(0.0, |t| (now - t) as f32),
             from_first_shot: g.first_shot.map_or(0.0, |t| (now - t) as f32),
             distance_m,
+            line_m: line_of(d.attacker, v),
             total_damage: g.damage,
             time: now,
         };
         info!(
             "KillMeasured attacker={:?} victim={v:?} gun={} shots={} hits={} headshots={} first_hit->kill={:.2}s \
-             first_shot->kill={:.2}s distance={:.1}m damage={:.1} t={now:.3}",
+             first_shot->kill={:.2}s distance={:.1}m line={} damage={:.1} t={now:.3}",
             kill.attacker,
             kill.gun.unwrap_or("?"),
             kill.shots_fired,
@@ -1549,6 +1625,7 @@ fn measure(
             kill.from_first_hit,
             kill.from_first_shot,
             distance_m,
+            line_word(kill.line_m),
             kill.total_damage * 100.0
         );
         kills_out.write(kill);
@@ -1556,6 +1633,11 @@ fn measure(
     }
     // Gone characters' runs.
     engaged.0.retain(|(v, a), _| chars.contains(*v) && chars.contains(*a));
+}
+
+/// A distance line as the log says it (`40m`; `-` off the range).
+fn line_word(line: Option<f32>) -> String {
+    line.map_or_else(|| "-".to_string(), |l| format!("{l}m"))
 }
 
 /// A `BlastMeasured` as the log says it (damage ×100, as `HitMeasured`'s).
