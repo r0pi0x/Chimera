@@ -250,6 +250,7 @@ fn follow(
         Option<Res<crate::map::LoadedMapName>>,
         Option<Res<chimera_core::game_registry::Games>>,
         Query<(Option<&crate::net::NetScore>, Has<crate::core::Bot>)>,
+        Option<Res<chimera_sim::minigame::arena::ArenaSlices>>,
     ),
     mut hud: Option<ResMut<MinigameHud>>,
     next: Option<Res<NextMatch>>,
@@ -264,7 +265,7 @@ fn follow(
     (map_vote, mut choice): (Option<Res<MapVote>>, ResMut<MapVoteChoice>),
     (mut passes, mut gate): (super::logo_pass::Passes, ResMut<MatchEndGate>),
 ) {
-    let (map_name, games, net_scores) = extra;
+    let (map_name, games, net_scores, slices) = extra;
     if let Some(st) = staged {
         // The HUD's panels step aside as for a real match end.
         if let Some(h) = hud.as_mut().filter(|h| !h.results_shown) {
@@ -361,7 +362,7 @@ fn follow(
         passes.ask("next_match");
     }
     let short = |id: &str| games.as_deref().and_then(|g| g.get(id)).map_or(String::new(), |g| g.short_name.to_string());
-    let mut shown_vote = vote_view(map_vote.as_deref(), choice.0);
+    let mut shown_vote = vote_view(map_vote.as_deref(), choice.0, slices.as_deref());
     if let (Some(v), Some(m)) = (shown_vote.as_mut(), map_vote.as_deref()) {
         v.games = m.candidates.iter().map(|c| c.split_once(':').map_or(String::new(), |(g, _)| short(g))).collect();
     }
@@ -402,10 +403,14 @@ fn follow(
 }
 
 /// The vote as shown: its maps by name, the counts, the local choice.
-fn vote_view(v: Option<&MapVote>, mine: Option<usize>) -> Option<MatchEndVote> {
+fn vote_view(
+    v: Option<&MapVote>,
+    mine: Option<usize>,
+    slices: Option<&chimera_sim::minigame::arena::ArenaSlices>,
+) -> Option<MatchEndVote> {
     let v = v?;
     Some(MatchEndVote {
-        maps: v.candidates.iter().map(|m| vote::map_name(m).to_string()).collect(),
+        maps: v.candidates.iter().map(|m| vote::map_label(slices, m)).collect(),
         counts: v.counts.clone(),
         mine: mine.filter(|m| *m < v.candidates.len()),
         winner: v.winner,
