@@ -289,11 +289,20 @@ the user's go-ahead: no Actions runs unless asked.
     `ultimate_gun_game +sandbox [map]` / `sandbox [map]` plays alone on
     every game's guns with nothing advancing or ending, `rung <n | gun id |
     part | next | prev | list>` picks the gun, `ca_bot_*`, `god` and `noclip`
-    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Next: a gun and
-    rung picker menu; a time scale; target dummies that report damage and
-    time to kill at set distances (a gun's real strength measured, not
-    modelled); a firing range layout; saving a loadout of guns to cycle;
-    picking a rung character (Combat Arms' turret) instead of the draw's.
+    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Target dummies
+    exist (2026-11-15, mechanics only; chimera_sim's `minigame::targets`):
+    `target add|set|remove|list|characters` and the requests the screens
+    send (`SpawnTarget`, `SetTarget`, `RemoveTarget`, `ClearTargets`), any
+    game's body at a distance on the floor, still, strafing or walking,
+    firing back or not, protected or not, respawning at home; the facts
+    `HitMeasured` and `KillMeasured` (damage, hit group, distance, shots,
+    hits, time to kill). Next: their screens (the party UI); a gun and
+    rung picker menu; a time scale; props (bottle, can, a board with the
+    shot group), blast measurement, a half-speed condition; a firing range
+    layout with 100 and 200 m of floor; saving a loadout of guns to cycle;
+    picking a rung character (Combat Arms' turret) instead of the draw's;
+    bots out of Combat Arms' crate behind game-neutral interfaces (targets
+    use only the add/remove seam, `targets::TargetBots`).
   - *Ties:* M5b's 3D Showcase backdrop
     ([plans/active/ugg-ui.md](plans/active/ugg-ui.md)) is the first
     viewer (gun under an inspect camera, character in idle) and should

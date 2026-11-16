@@ -56,7 +56,12 @@ pub struct Chosen(pub usize);
 #[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HoldRungs(pub &'static str);
 
-/// Whether the sandbox's rule is in force now.
+/// Whether the sandbox's rule is in force now (the sandbox plays:
+/// `targets` exist only then).
+pub fn holds(world: &World) -> bool {
+    holding(world)
+}
+
 fn holding(world: &World) -> bool {
     let (Some(h), Some(a)) = (world.get_resource::<HoldRungs>(), world.get_resource::<super::ActiveMinigame>()) else {
         return false;
