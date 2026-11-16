@@ -17,7 +17,8 @@
 //! keeps what it shows; the next model starts going in that same frame.
 //! Models go in in the order they were started, except one the caller wants
 //! now (`LateQueue::step_preferring`: a body a character wears, a model it
-//! holds), which goes in next once its task is done. Each model's cook time
+//! holds, a view model a view shows), which goes in next once its task is
+//! done. Each model's cook time
 //! and frames going in are logged (debug).
 //!
 //! A model's materials wait outside the store (`prop_material::DormantProps`,

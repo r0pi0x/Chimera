@@ -5,7 +5,8 @@
 //! Instructions, because the dev box's load makes a limit in time flaky; where
 //! the hardware counters aren't open (Windows) only the behaviour is checked.
 //! A late body some character wears is built before those nobody wears, and
-//! a body not built yet is never drawn.
+//! a body not built yet is never drawn; a late view model a view shows is
+//! built before the others.
 
 use std::sync::Arc;
 
@@ -14,7 +15,7 @@ use chimera_core::{core::Intent, metrics::ThreadCounters};
 use chimera_present::{
     MapPlugin,
     render::{
-        bodies::{CharacterBody, HeldAssets, LATE_AHEAD, PlayModels},
+        bodies::{CharacterBody, HeldAssets, LATE_AHEAD, LateWanted, PlayModels},
         prop_material::{DormantProps, PropMaterial},
         rope_material::RopeMaterial,
         shadows::ShadowMaterial,
@@ -269,4 +270,57 @@ fn a_worn_late_body_is_built_before_the_unworn() {
         std::thread::sleep(std::time::Duration::from_micros(200));
     }
     assert_eq!(drawn(&mut sim), Some(LATE));
+}
+
+fn view_model(key: &str) -> MapViewModel {
+    MapViewModel {
+        key: key.into(),
+        model: small_model(),
+        bones: bones(),
+        root: Transform::IDENTITY,
+        animations: None,
+        right_handed: true,
+        allow_flipping: false,
+        attachments: Vec::new(),
+        light_origin: Vec3::ZERO,
+    }
+}
+
+/// Many late view models queued, and a view showing the last of them (as
+/// `draw_view_models` says, `LateWanted::view`): that one is built before
+/// the others, not after every one added before it.
+#[test]
+fn a_shown_late_view_model_is_built_before_the_rest() {
+    const LATE: usize = 16;
+    let mut sim = sim();
+    let key = |i: usize| format!("test:gun{i}");
+    let last = key(LATE - 1);
+    let wanted = last.clone();
+    // After the frame's drawing, which has no view showing it here.
+    sim.app.add_systems(Last, move |mut w: ResMut<LateWanted>| {
+        w.view.entry(wanted.clone()).or_insert(0.0);
+    });
+    let w = sim.app.world_mut();
+    for i in 0..LATE {
+        add_view_model(w, view_model(&key(i)), small_textures());
+    }
+    let built = |sim: &Sim| {
+        let a = sim.app.world().resource::<ViewModelAssets>();
+        (0..LATE).filter(|i| a.has(&key(*i))).count()
+    };
+    let mut frames = 0;
+    while !sim.app.world().resource::<ViewModelAssets>().has(&last) {
+        sim.app.update();
+        frames += 1;
+        assert!(frames < 20_000, "the shown view model never came");
+        std::thread::sleep(std::time::Duration::from_micros(200));
+    }
+    let before = built(&sim) - 1;
+    assert!(before <= LATE_AHEAD, "the shown view model came after {before} others: it waited behind them");
+    while built(&sim) < LATE {
+        sim.app.update();
+        frames += 1;
+        assert!(frames < 20_000, "the others never came");
+        std::thread::sleep(std::time::Duration::from_micros(200));
+    }
 }
