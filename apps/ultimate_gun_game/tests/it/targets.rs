@@ -240,6 +240,16 @@ fn a_target_that_shoots_back_fights_from_its_spot_and_its_hits_are_measured() {
     let (mut sim, me) = play();
     let e = add(&mut sim, SpawnTarget { shoots_back: true, ..at(8.0) });
     let home = home_of(&sim, e);
+    // It fights as its game's bot does, seeing what its bot looks at (one
+    // left alone looks the way its patrol would go, away from the player
+    // from some spots): the player stands in that look, 8 m off.
+    let yaw = sim.app.world().get::<chimera_core::core::Intent>(e).unwrap().yaw;
+    let to = sim.position(e) + Vec3::new(-yaw.sin(), 0.0, -yaw.cos()) * 8.0;
+    sim.app.world_mut().entity_mut(me).insert((
+        Transform::from_translation(to),
+        avian3d::prelude::Position(to),
+        chimera_core::core::Velocity(Vec3::ZERO),
+    ));
     let mut hit_me = false;
     for _ in 0..40 {
         sim.seconds(0.5);

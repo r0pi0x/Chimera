@@ -6,7 +6,8 @@
 //! P + 1 (`kick`, after the frame; the shared seed, so the shooter's
 //! client and the server agree); the punch then decays on Source's shared
 //! spring (`decay`, before the frame: `source_movement::punch_spring`,
-//! its velocity in `Tf2Punch`) while a TF2 gun is in hand
+//! its velocity in `Tf2Punch`, put on with TF2's class parts:
+//! `movement::ClassParts`) while a TF2 gun is in hand
 //! (`impact::RecoilGame`). The next shot includes it (`Hitscan::
 //! punch_scale` 1 on TF2's guns).
 //!
