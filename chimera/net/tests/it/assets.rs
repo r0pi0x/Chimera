@@ -1026,23 +1026,35 @@ fn the_voted_map_comes_ahead_and_a_stream_is_ready_before_it_is_due() {
     assert!((assets::STREAM_MIN_RATE..=200_000).contains(&rate), "paced to its time, at most the link: {rate}");
 
     // The vote locks in the next map: its fetch begins within two
-    // frames, the stream held while it runs.
+    // frames, the stream held while it is under way (`run_streams` holds
+    // it in the frame the fetch starts, whatever the thread's speed).
+    // Looked at after every frame from the first: the local fetch may end
+    // within a few milliseconds, so a look that starts later can miss the
+    // hold (it failed about 1 run in 3 that way). Nothing else holds the
+    // stream here, so a pause seen once the fetch began is its hold.
+    assert!(!assets::stream_state(sim.clients[0].app.world()).unwrap().paused, "not held before");
     sim.clients[0].app.world_mut().insert_resource(chimera_sim::minigame::NextMatch {
         map: Some(format!("{GAME}:later")),
         at: 0.0,
     });
+    let mut held = false;
+    let mut look = |s: &NetSim| {
+        let w = s.clients[0].app.world();
+        if w.contains_resource::<MapAhead>() {
+            held |= assets::stream_state(w).unwrap().paused;
+        }
+    };
     sim.step();
+    look(&sim);
     sim.step();
+    look(&sim);
     let ahead = sim.clients[0].app.world().get_resource::<MapAhead>().map(|a| a.map.clone());
     assert_eq!(ahead, Some(format!("{GAME}:later")), "the next map's fetch began");
     let later = svc.ids("map/later");
-    let mut held = false;
     assert!(
         until(&mut sim, 10.0, |s| {
+            look(s);
             let w = s.clients[0].app.world();
-            if w.get_resource::<MapAhead>().is_some_and(MapAhead::running) {
-                held |= assets::stream_state(w).unwrap().paused;
-            }
             later.iter().all(|id| store.has(id)) && w.get_resource::<MapAhead>().is_some_and(|a| a.result.is_some())
         }),
         "the next map arrived ahead"
