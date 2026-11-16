@@ -4,9 +4,12 @@
 # starts 16 forward, 8 right and 6 down from the eye at 1200 along the aim
 # and 200 up, falls with gravity 800 and bounces off the world; it passes
 # teammates. `tf2:grenade`: on an enemy before it has touched the world it
-# explodes there (full splash), after that it only bounces; at 2.3 s it
-# explodes wherever it is: 100 x the splash (to 50 % at 146), no
-# distance modifier, the owner's own x0.75 airborne.
+# explodes there (full splash), after that it only bounces; at 2.1 s (the
+# 2.0 s fuse at its tenth 0.2 s check) it explodes wherever it is at 60 %:
+# 100 (60 on the fuse) x the splash (to 50 % at 146), no distance
+# modifier; the owner's own the base 100 x the splash x0.75 grounded or
+# airborne, pushed at scale 9 (weapons_more.md's corrections from the
+# SDK).
 id = "tf2:tf_weapon_grenadelauncher"
 base = "tf2:base"
 class = "launcher"
@@ -16,7 +19,7 @@ draw = 0.5
 [trigger]
 automatic = true
 cycle = 0.6
-timing = "accumulate"
+timing = "set"
 
 [magazine]
 clip = 4
@@ -28,7 +31,7 @@ shells = { start = 0.6, insert = 0.6, back_to_back = true }
 [hitscan]
 range = 56754.0
 pellets = 1
-punch_scale = 0.0
+punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]
@@ -59,17 +62,21 @@ touch = "report"
 shown = "tf2:grenade"
 offset = [16.0, 8.0, -6.0]
 pass_teammates = true
-life = 2.3
+life = 2.1
 x_forward = true
 
 [hooks."tf2:grenade"]
 damage = 100.0
 radius = 146.0
 edge = 0.5
+fuse_scale = 0.6
+self_radius = 146.0
+self_damage = 100.0
 self_air_scale = 0.75
+self_ground_scale = 0.75
 push_other = 6.0
-push_self_air = 10.0
-push_self_ground = 5.0
+push_self_air = 9.0
+push_self_ground = 9.0
 by_distance = false
 sound = "Weapon_Grenade_Pipebomb.Explode"
 bounce_sound = "Weapon_Grenade_Pipebomb.Bounce"

@@ -15,7 +15,7 @@ use tf2::{
         TICK_INTERVAL,
         classes::{Classes, Tf2Class},
         movement::{self, ID},
-        weapons::{MINIGUN, ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN},
+        weapons::{FLAMETHROWER, MINIGUN, ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN, SNIPER_RIFLE},
     },
     harness::Tf2Sim,
 };
@@ -392,8 +392,9 @@ fn fall_damage_is_a_share_of_max_health_18_19_20() {
     assert!((got - soldier(f)).abs() <= 1.0, "Soldier at {f}: {got} (want about {})", soldier(f));
 }
 
-/// 23: the Heavy spinning the Minigun (attack2) moves at 110; wound down,
-/// 230 again.
+/// 23: the Heavy spinning the Minigun (attack2) moves at 110; released
+/// once spun, 230 again at once (no gameplay wind-down: the corrections
+/// from the SDK).
 #[test]
 fn the_spun_heavy_moves_at_110_23() {
     let mut me = Player::holding(MINIGUN);
@@ -405,7 +406,138 @@ fn the_spun_heavy_moves_at_110_23() {
     me.sim.seconds(1.0);
     assert!((me.speed() - 110.0).abs() < TOL, "spun {}", me.speed());
     me.intent().secondary = false;
-    me.sim.seconds(2.0);
-    assert_eq!(me.max(), 230.0);
-    assert!((me.speed() - 230.0).abs() < TOL, "wound down {}", me.speed());
+    me.sim.ticks(2);
+    assert_eq!(me.max(), 230.0, "the speed back on release");
+    me.sim.seconds(1.0);
+    assert!((me.speed() - 230.0).abs() < TOL, "after release {}", me.speed());
+}
+
+/// 25 (corrections from the SDK, "Backwards"): a Pyro holding back from
+/// rest accelerates as forwards until the backward clamp at 0.9 x 300.
+#[test]
+fn backwards_is_clamped_after_acceleration_25() {
+    let mut me = Player::holding(FLAMETHROWER);
+    assert_eq!(me.class(), "pyro");
+    me.keys(-1.0, 0.0);
+    let want = [45.0, 84.0, 123.0, 160.62, 195.9828, 229.2238, 260.4704, 270.0, 270.0];
+    for (k, w) in want.iter().enumerate() {
+        me.tick();
+        assert!((me.speed() - w).abs() < 0.02, "tick {}: {} != {w}", k + 1, me.speed());
+    }
+}
+
+/// 26: back and strafe together: the backward part (212.13) is under
+/// 270, so the full 300.
+#[test]
+fn a_back_diagonal_runs_at_full_speed_26() {
+    let mut me = Player::holding(FLAMETHROWER);
+    me.keys(-1.0, 1.0);
+    me.sim.seconds(1.5);
+    assert!((me.speed() - 300.0).abs() < TOL, "{}", me.speed());
+}
+
+/// 27: a Scout on the ground at 600 with no input is at 400 after one
+/// tick (friction to 564, then the ground clamp).
+#[test]
+fn the_ground_speed_is_clamped_to_the_max_27() {
+    let mut me = Player::holding(SCATTERGUN);
+    me.set_vel(Vec3::new(600.0, 0.0, 0.0));
+    me.tick();
+    assert!((me.speed() - 400.0).abs() < TOL, "{}", me.speed());
+}
+
+/// 28: the Scout's air jump holding back only goes 400 backwards (no
+/// backward cap in the air); forward + right 400 at 45 degrees.
+#[test]
+fn the_air_jump_is_400_every_way_28() {
+    for (keys, dir) in [((-1.0, 0.0), Vec2::new(-1.0, 0.0)), ((1.0, 1.0), Vec2::new(1.0, -1.0).normalize())] {
+        let mut me = Player::holding(SCATTERGUN);
+        me.press_jump();
+        me.sim.ticks(5);
+        me.keys(keys.0, keys.1);
+        me.press_jump();
+        let v = me.vel().truncate();
+        assert!((v - dir * 400.0).length() < 0.05, "{keys:?}: {v}");
+    }
+}
+
+/// 31: a spun Heavy (P 110) jumping at 600 leaves capped at 1.2 x 110.
+#[test]
+fn the_bunny_hop_cap_follows_the_spun_minigun_31() {
+    let mut me = Player::holding(MINIGUN);
+    // The spin itself drops the jump while it turns: hold the weapon's 110
+    // with the spin's own rule taken off, so the jump goes through.
+    let w = me.sim.app.world().get::<Inventory>(me.p).unwrap().active.unwrap();
+    me.sim.app.world_mut().entity_mut(w).remove::<tf2::game::weapons::minigun::Tf2Minigun>();
+    me.sim.app.world_mut().get_mut::<chimera_sim::weapon::Weapon>(w).unwrap().max_speed = Some(110.0 * 0.0254);
+    me.sim.ticks(2);
+    assert!((me.max() - 110.0).abs() < 1e-3, "{}", me.max());
+    me.set_vel(Vec3::new(600.0, 0.0, 0.0));
+    me.press_jump();
+    let v = me.vel();
+    assert!((v.x - 131.9934).abs() < 0.01 && (v.z - 275.68).abs() < 0.01, "{v}");
+}
+
+/// 32: a zoomed Sniper (P 80) fully ducked holding forward: wish 26.67 is
+/// under 40, so the raised acceleration beats friction: 6.4, 6.8, 7.2.
+#[test]
+fn a_slow_wish_beats_friction_32() {
+    let mut me = Player::holding(SNIPER_RIFLE);
+    me.intent().crouch = true;
+    me.intent().secondary = true;
+    me.tick();
+    me.intent().secondary = false;
+    me.sim.seconds(1.0);
+    assert_eq!(me.max(), 80.0, "zoomed");
+    assert!(me.me().ducked);
+    me.keys(1.0, 0.0);
+    for w in [6.4, 6.8, 7.2] {
+        me.tick();
+        assert!((me.speed() - w).abs() < 0.01, "{} != {w}", me.speed());
+    }
+}
+
+/// 34, 35: in the air, duck, release, duck, release: the third press does
+/// nothing; after the Scout's air jump it ducks again.
+#[test]
+fn two_air_duck_releases_then_the_air_jump_resets_them_34_35() {
+    let mut me = Player::holding(SCATTERGUN);
+    me.press_jump();
+    let duck = |me: &mut Player, on: bool| {
+        me.intent().crouch = on;
+        me.tick();
+        me.me().ducked
+    };
+    assert!(duck(&mut me, true), "first air duck");
+    assert!(!duck(&mut me, false));
+    assert!(duck(&mut me, true), "second air duck");
+    assert!(!duck(&mut me, false));
+    assert!(!duck(&mut me, true), "the third press does nothing");
+    assert!(!duck(&mut me, true));
+    me.intent().crouch = false;
+    me.press_jump();
+    assert!(duck(&mut me, true), "ducks again after the air jump");
+}
+
+/// 36: on the ground, duck released and pressed again 0.15 s later: the
+/// duck starts 0.3 s (20 ticks) after the release.
+#[test]
+fn the_reduck_delay_36() {
+    let mut me = Player::holding(SCATTERGUN);
+    me.intent().crouch = true;
+    me.sim.seconds(0.5);
+    assert!(me.me().ducked);
+    me.intent().crouch = false;
+    me.tick();
+    me.sim.ticks(9);
+    me.intent().crouch = true;
+    let mut started = None;
+    for k in 10..40u32 {
+        me.tick();
+        let m = me.me();
+        if started.is_none() && m.ducking && !m.ducked {
+            started = Some(k);
+        }
+    }
+    assert_eq!(started, Some(20), "the duck began {started:?} ticks after the release");
 }
