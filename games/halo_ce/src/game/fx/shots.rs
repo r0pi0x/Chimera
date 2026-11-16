@@ -346,6 +346,17 @@ fn on_fired(
             let [x, y, z] = trigger.first_person_offset;
             origin += aim * x + left * y + up * z;
         }
+        // A gun whose muzzle is data (`load::FxGun::shown_from_muzzle`, a
+        // campaign character's own): its shots drawn leaving from there.
+        let view = holders.get(f.owner).map_or(Quat::IDENTITY, |i| chimera_sim::weapon::aim_of(i.yaw, i.pitch));
+        let camera = place::camera(f.origin, view);
+        let fp = first_person(f.owner, &locals, role.as_deref());
+        if let Some(look) = fx.0.as_ref().and_then(|l| l.gun(&gun.tag)).filter(|g| g.shown_from_muzzle) {
+            let at = if fp { placer.first(f.owner, camera, look, "primary trigger") } else { placer.third(f.owner, camera, look, "primary trigger") };
+            if let Some(m) = at.first() {
+                origin = m.at / METERS_PER_UNIT;
+            }
+        }
         let model = fx.0.as_ref().and_then(|l| look_of(l, gun, &proj)).is_some_and(|l| l.model);
         for (i, (dir, tracer)) in f.projectiles.iter().enumerate() {
             let flight = super::super::weapons::flight::Flight::new(&proj, origin, *dir, 0.0);
@@ -374,9 +385,6 @@ fn on_fired(
         }
         let Some(lib) = fx.0.clone() else { continue };
         let Some(look) = lib.gun(&gun.tag) else { continue };
-        let view = holders.get(f.owner).map_or(Quat::IDENTITY, |i| chimera_sim::weapon::aim_of(i.yaw, i.pitch));
-        let camera = place::camera(f.origin, view);
-        let fp = first_person(f.owner, &locals, role.as_deref());
         let list = if f.misfired { &look.misfire } else { &look.firing };
         // The library lists every trigger's entries in order: the second
         // trigger's (the charged bolt's) after the first's.

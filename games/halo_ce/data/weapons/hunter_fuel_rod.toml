@@ -100,6 +100,13 @@ charging_time = 1.25
 charged_time = 0.0
 # Discharges.
 overcharged_action = 2
+# Our rule, not the tag's (game::weapons::params::Trigger::charge_paces):
+# the tag lets a press fire at once and a release cut the charge short,
+# so tapping fires up to 10 rods a second (its rate) and a bot, which
+# taps, did. Paced, the charge runs out whatever the trigger does: a held
+# trigger fires a rod every charge (38 ticks, 1.27 s), and tapping fires
+# no faster. Set false for the tag's own behaviour.
+charge_paces = true
 
 # No first-person graph: no draw (the tag's ready time is 0, so 0
 # frames), and the melee timed by the Hunter's own `stand unarmed melee`

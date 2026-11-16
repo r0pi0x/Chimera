@@ -47,7 +47,11 @@
 //! same code on its own model (named `halo_ce:elite`, worn through the
 //! engine's `BodyName`): its graph's tables, its hit boxes, its landing
 //! and run numbers (`campaign::movement_of`), its move animations at the
-//! ground speed (`anims::Inputs::rate`), its corpse (`HaloCorpse::body`).
+//! ground speed (`anims::Inputs::rate`), its corpse (`HaloCorpse::body`),
+//! and its own fire-1 on each shot (`HaloFired`, every machine) and melee
+//! when its melee begins (`HaloHands::melee` rising: the holder's machine
+//! and the server, as the throw), played once over its pose
+//! (`anims::Inputs::action`).
 //!
 //! Death (`death`): the body has no ragdoll; a dead player is hidden (the
 //! engine's `Dead`) and the server leaves a body of its own in its place
@@ -95,6 +99,9 @@ pub struct HaloBody {
     /// on, or loaded) starts the animation afresh, its sequences being
     /// another set's.
     pub model: Option<usize>,
+    /// Its melee counter as last seen here (`HaloHands::melee`): a rise
+    /// is a melee begun.
+    pub melee: i32,
 }
 
 /// The armour colours (objects.md, "Spartan multiplayer colour"): the
@@ -165,6 +172,7 @@ pub fn inputs_for(m: &super::movement::MovementData, intent: &Intent, velocity: 
         hit: None,
         own_speeds: None,
         speed: 0.0,
+        action: None,
     }
 }
 
@@ -207,8 +215,12 @@ pub fn animate(
         Option<&super::campaign::BodyKind>,
     )>,
     (tables, data): (Option<Res<super::campaign::BodyTables>>, Option<Res<super::movement::MovementData>>),
+    mut fired: MessageReader<super::weapons::HaloFired>,
     mut commands: Commands,
 ) {
+    // Who fired since the last tick (every machine: the shooter's own
+    // and the shots the server sent).
+    let shooters: Vec<Entity> = fired.read().map(|f| f.owner).collect();
     let Some(models) = models else { return };
     let builtin;
     let spartan = match data.as_deref() {
@@ -264,11 +276,23 @@ pub fn animate(
             i.hit = hit.then(|| flinch::draw(&now));
             halo.seen = Some(now);
         }
+        // A campaign body's shot and melee play its own fire and melee
+        // (the Spartan's third-person body plays neither: module doc).
+        if kind.is_some() {
+            let melee = hands.map_or(0, |h| h.melee);
+            if melee > halo.melee {
+                i.action = Some(anims::Action::Melee);
+            } else if shooters.contains(&e) {
+                i.action = Some(anims::Action::Fire);
+            }
+            halo.melee = melee;
+        }
         let land = landing(table);
         let mut pose = Vec::new();
         for _ in 0..ticks {
             pose = halo.anim.tick(&set, &label, &i, &land);
             i.hit = None;
+            i.action = None;
         }
         let fixed = Some(chimera_core::later::Later::ready(pose));
         animator.fixed = fixed.clone();

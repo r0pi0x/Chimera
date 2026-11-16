@@ -72,6 +72,13 @@ pub struct BodyView {
     /// roll, about the eye.
     #[serde(default)]
     pub turn: [f32; 3],
+    /// Where its gun's muzzle shows, world units from the eye in Halo's
+    /// axes (forward, left, up): its firing effects and muzzle light are
+    /// placed there (the gun's first-person marker, `fx::load::own_weapons`)
+    /// and its shots are drawn leaving from there (the trace stays the
+    /// eye's). None: the eye.
+    #[serde(default)]
+    pub muzzle: Option<[f32; 3]>,
 }
 
 /// The bones `keep` names and every bone below them.
@@ -224,19 +231,8 @@ pub fn pose(set: &crate::map::anim::AnimSet, idle: Option<usize>, frame: usize, 
         Some(s) => base_pose(set, set.sequences[s].anims[0], frame),
         None => set.defaults.clone(),
     };
-    if let Some((s, f)) = action
-        && let Some(anim) = set.sequences.get(s).and_then(|q| q.anims.first()).and_then(|a| set.animations.get(*a))
-    {
-        for t in &anim.tracks {
-            let Some(bone) = pose.get_mut(t.bone) else { continue };
-            let at = |n: usize| f.min(n.saturating_sub(1));
-            if let Some(q) = t.rotation.as_deref().and_then(|r| r.get(at(r.len())).copied()) {
-                bone.0 = if anim.delta { (bone.0 * q).normalize() } else { q };
-            }
-            if let Some(p) = t.position.as_deref().and_then(|r| r.get(at(r.len())).copied()) {
-                bone.1 = if anim.delta { bone.1 + p } else { p };
-            }
-        }
+    if let Some(a) = action {
+        anims::apply_action(set, a, &mut pose);
     }
     if let Some(a) = aim {
         anims::apply_screen(set, a, 0.0, 0.0, &mut pose);

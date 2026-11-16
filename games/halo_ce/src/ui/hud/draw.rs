@@ -137,10 +137,14 @@ fn latch(slot: &mut Option<i64>, on: bool, now: i64) {
     };
 }
 
-/// The chain of the held weapon (or the empty hands').
+/// The chain of the held weapon (or the empty hands'). A weapon whose HUD
+/// interface the donor map lacks (the Hunter's cannon: its unit leaves
+/// HUD interfaces out, and no multiplayer map holds one for it) shows the
+/// HUD globals' default weapon HUD, the empty hands' (our choice: its
+/// plain crosshair, nothing invented for its charge).
 pub fn chain_of<'a>(data: &'a HudData, unit: &Unit) -> &'a [WeaponHud] {
     match &unit.weapon {
-        Some(h) => data.weapon(&h.tag).unwrap_or(&[]),
+        Some(h) => data.weapon(&h.tag).unwrap_or(&data.empty),
         None => &data.empty,
     }
 }

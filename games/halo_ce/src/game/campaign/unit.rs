@@ -317,10 +317,31 @@ pub fn load_body(kind: BodyKind, def: &BodyDef, mount: &Mount, decode: bool, gun
     }
     // Its guns by its own hand (none without the donor map: the Spartan's
     // placement then).
-    let held = held_on(kind, def, &file, mount, guns, decode).unwrap_or_else(|e| {
+    let mut held = held_on(kind, def, &file, mount, guns, decode).unwrap_or_else(|e| {
         warn!("halo_ce: the {} holds guns by the Spartan's hand: {e}", kind.id());
         HeldOn::default()
     });
+    // Its own weapons' projectiles in flight (the fuel rod), drawn as
+    // shown items (`view::load::object_key`) from late held models.
+    for tag in &def.weapons {
+        let path = weapon_path(kind.id(), tag);
+        let Some(w) = mount.read(&path).ok().and_then(|b| MapFile::load(&b).ok()) else {
+            warn!("halo_ce: the {}'s {tag} shows no projectile model: no {path}", kind.id());
+            continue;
+        };
+        let (models, textures, warnings) = super::super::view::load::projectile_models(&w, &[tag.as_str()], decode);
+        for x in warnings {
+            debug!("halo_ce: {} {tag}: {x}", kind.id());
+        }
+        // Their textures after the held guns' (each model's meshes name
+        // indices into its own list: moved past them).
+        let offset = held.textures.len();
+        held.textures.extend(textures);
+        held.models.extend(models.into_iter().map(|mut m| {
+            super::super::view::load::shift_textures(&mut m.model, offset);
+            m
+        }));
+    }
     // Its sounds: its footsteps from the body, its lines from the voice
     // set when there is one (a silent body without).
     let voice = if def.voices.is_empty() {

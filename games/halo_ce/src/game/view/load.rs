@@ -697,6 +697,42 @@ pub fn body_held(
     (held, textures, warnings)
 }
 
+/// The flight models (`object_key`) of the projectiles that weapons `guns`
+/// fire, from `file` (a campaign character's own weapon's unit: the
+/// Hunter's fuel rod), with their textures: shown items drawn from late
+/// held models, on every map.
+pub fn projectile_models(file: &MapFile, guns: &[&str], decode: bool) -> (Vec<MapHeldModel>, Vec<MapTexture>, Vec<String>) {
+    let (mut held, mut pending, mut warnings) = (Vec::new(), Vec::new(), Vec::new());
+    let tags: Vec<String> = guns
+        .iter()
+        .filter_map(|g| file.find(class::WEAPON, g).and_then(|t| Weapon::read(file, t).ok()))
+        .flat_map(|w| w.own.triggers.into_iter().filter_map(|t| file.tag(t.projectile.id).map(|p| p.path.to_ascii_lowercase())))
+        .collect();
+    for tag in tags {
+        if let Some((h, meshes)) = object_model(file, object_key(&tag), &tag) {
+            held.push(h);
+            let i = held.len() - 1;
+            pending.extend(meshes.into_iter().map(|(mesh, shader)| Pending { mesh, shader, lit: true, dest: Dest::Model(i) }));
+        }
+    }
+    let mut textures = Vec::new();
+    for (mesh, dest) in maps::apply_looks(file, pending, &mut textures, &mut warnings, decode) {
+        if let Dest::Model(i) = dest {
+            held[i].model.meshes.push(mesh);
+        }
+    }
+    for h in &mut held {
+        h.model.bounds = bounds(&h.model.meshes);
+    }
+    (held, textures, warnings)
+}
+
+/// Move a model's texture indices past `offset` (`shift`, for a model
+/// whose textures join another list).
+pub fn shift_textures(model: &mut MapModel, offset: usize) {
+    shift(model, offset);
+}
+
 /// Move a model's texture indices past `offset`.
 fn shift(model: &mut MapModel, offset: usize) {
     let shift = |t: &mut Option<usize>| {

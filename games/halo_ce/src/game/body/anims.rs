@@ -13,8 +13,10 @@
 //! last match in block order wins), and each state's slot (`State`) of that
 //! class becomes a sequence named `"<seat> <label> <slot>"` (`key`) whose
 //! one animation is the slot's; so do the class's melee and the type's
-//! fire-1 (`MELEE`, `FIRE_1`: no third-person body plays them; a body's
-//! first-person view does, `campaign::first_person`). The aim screens (`aim-still`, `aim-move`)
+//! fire-1 (`MELEE`, `FIRE_1`: a campaign body plays them on a shot and a
+//! melee, `Inputs::action`, an overlay composed on its pose or a base
+//! animation in its place, `apply_action`; the Spartan does not; a body's
+//! first-person view does too, `campaign::first_person`). The aim screens (`aim-still`, `aim-move`)
 //! and the seat's `look` screen are sequences too: their grid is the
 //! screen's columns and rows, and their two axes' keys carry the spec's
 //! screen bounds (yaw: right and left radians per frame, right and left
@@ -686,6 +688,43 @@ pub struct Inputs {
     pub own_speeds: Option<[f32; 6]>,
     /// The horizontal speed, WU/s.
     pub speed: f32,
+    /// An action started this tick (a campaign body's shot or melee:
+    /// `Action`), played once from its first frame.
+    pub action: Option<Action>,
+}
+
+/// An action a body plays once over its pose (`HaloAnim::action`): its
+/// weapon type's `fire-1` on a shot, its class's `melee` on a melee.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    Fire,
+    Melee,
+}
+
+impl Action {
+    /// Its sequence's slot name (`key`).
+    pub fn slot(self) -> &'static str {
+        match self {
+            Action::Fire => FIRE_1,
+            Action::Melee => MELEE,
+        }
+    }
+}
+
+/// Animation `(sequence, frame)` laid over `pose`: an overlay (a delta)
+/// composed on it, a base animation in place of it on the bones it tracks.
+pub fn apply_action(set: &AnimSet, (s, f): (usize, usize), pose: &mut [BonePose]) {
+    let Some(anim) = set.sequences.get(s).and_then(|q| q.anims.first()).and_then(|a| set.animations.get(*a)) else { return };
+    for t in &anim.tracks {
+        let Some(bone) = pose.get_mut(t.bone) else { continue };
+        let at = |n: usize| f.min(n.saturating_sub(1));
+        if let Some(q) = t.rotation.as_deref().and_then(|r| r.get(at(r.len())).copied()) {
+            bone.0 = if anim.delta { (bone.0 * q).normalize() } else { q };
+        }
+        if let Some(p) = t.position.as_deref().and_then(|r| r.get(at(r.len())).copied()) {
+            bone.1 = if anim.delta { bone.1 + p } else { p };
+        }
+    }
 }
 
 impl Inputs {
@@ -747,6 +786,8 @@ pub struct HaloAnim {
     pub feet: u8,
     /// The flinch playing (`flinch`).
     pub ping: Option<super::flinch::Ping>,
+    /// The action playing (`Inputs::action`): its sequence and frame.
+    pub action: Option<(usize, usize)>,
     /// Frames owed to the playing state (`Inputs::rate`; whole frames
     /// advance, the rest carries).
     pub carry: f32,
@@ -864,6 +905,24 @@ impl HaloAnim {
             let n = frames(set, s);
             pose = base_pose(set, set.sequences[s].anims[0], f.min(n.saturating_sub(1)));
         }
+        // A shot's or a melee's action: started (a new one restarts it),
+        // laid over and advanced; a base one (the melee) blends in and out.
+        if let Some(a) = i.action
+            && let Some(s) = set.names.get(&key(seat, label, a.slot())).copied()
+        {
+            if !is_delta(set, s) {
+                self.start_blend(TRANSITION_TICKS);
+            }
+            self.action = Some((s, 0));
+        }
+        if let Some((s, f)) = self.action {
+            apply_action(set, (s, f), &mut pose);
+            let n = frames(set, s);
+            self.action = (f + 1 < n).then_some((s, f + 1));
+            if self.action.is_none() && !is_delta(set, s) {
+                self.start_blend(TRANSITION_TICKS);
+            }
+        }
         // The flinch: advanced, a hit's started, then laid over.
         self.ping = super::flinch::advance(self.ping, self.ping.map_or(1, |p| frames(set, p.sequence)));
         if let Some(r) = i.hit {
@@ -892,4 +951,9 @@ impl HaloAnim {
         self.last = pose.clone();
         pose
     }
+}
+
+/// Whether sequence `s`'s animation is an overlay (a delta).
+fn is_delta(set: &AnimSet, s: usize) -> bool {
+    set.sequences.get(s).and_then(|q| q.anims.first()).and_then(|a| set.animations.get(*a)).is_some_and(|a| a.delta)
 }
