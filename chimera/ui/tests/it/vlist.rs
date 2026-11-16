@@ -174,6 +174,12 @@ fn bind(mut slots: Query<(&VSlot, &Label), Changed<VSlot>>, mut texts: Query<&mu
 }
 
 fn list(app: &mut App, items: usize) -> VListParts {
+    list_laid_out(app, items, false)
+}
+
+/// `list`; `late`: a frame passes before the layout gives the view and
+/// the content their sizes (a screen just opened).
+fn list_laid_out(app: &mut App, items: usize, late: bool) -> VListParts {
     let theme = app.world().resource::<Theme>().clone();
     let units = *app.world().resource::<UiUnits>();
     app.world_mut().resource_mut::<VirtualLists>().state("guns").set_shape(VShape::list(2.0));
@@ -193,6 +199,10 @@ fn list(app: &mut App, items: usize) -> VListParts {
         c.entity(s).insert(Label(t));
     }
     queue.apply(world);
+    if late {
+        frame(app);
+    }
+    let world = app.world_mut();
     world.entity_mut(p.scroll.view).insert(node(VIEW));
     world.entity_mut(p.scroll.content).insert(node(items as f32 * 2.0));
     world.entity_mut(p.scroll.track).insert(node(VIEW));
@@ -263,6 +273,27 @@ fn keys_reveal_the_cursor_far_down() {
     }
     let off = app.world().resource::<ScrollViews>().get("guns").unwrap().offset;
     assert!(off <= 1000.0 && off + VIEW >= 1002.0, "row 500 in view: offset {off}");
+}
+
+#[test]
+fn a_list_opens_on_its_cursors_line() {
+    // The cursor put far down before the list is built (Change gun opened
+    // on the gun in hand): the reveal waits for the first layout, then
+    // the view is there at once, not at the top and not travelling.
+    let mut app = app();
+    {
+        let mut lists = app.world_mut().resource_mut::<VirtualLists>();
+        let st = lists.state("guns");
+        st.set_shape(VShape::list(2.0));
+        st.set_sections(vec![VSection::plain("all", 2000)]);
+        assert!(st.select(VCursor::Item(0, 500)));
+    }
+    let p = list_laid_out(&mut app, 2000, true);
+    frame(&mut app);
+    let off = app.world().resource::<ScrollViews>().get("guns").unwrap().offset;
+    assert!(off <= 1000.0 && off + VIEW >= 1002.0, "row 500 in view a frame after the layout: offset {off}");
+    let shown: Vec<usize> = p.slots.iter().filter_map(|s| app.world().get::<VSlot>(*s).unwrap().line).collect();
+    assert!(shown.contains(&500), "its slot shows it: {shown:?}");
 }
 
 #[test]

@@ -331,7 +331,7 @@ pub fn drawable_short_names(
                 catalog
                     .get(id)
                     .and_then(|d| d.hud.name.clone())
-                    .filter(|n| !n.starts_with('#'))
+                    .filter(|n| !crate::weapon::names::is_string_token(n))
                     .unwrap_or_else(|| id_name(id))
             });
             let full = rules.full(id, &game);

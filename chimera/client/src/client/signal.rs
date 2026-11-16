@@ -368,7 +368,8 @@ pub mod icons {
         let Some(images) = images.as_deref_mut() else { return };
         for (e, icon) in &new {
             if let Some(handle) = cache.get(images, &icon.name, icon.px) {
-                commands.entity(e).insert(ImageNode::new(handle).with_color(icon.color));
+                // (A screen may redraw, and so despawn the icon, before this lands.)
+                commands.entity(e).try_insert(ImageNode::new(handle).with_color(icon.color));
             }
         }
     }

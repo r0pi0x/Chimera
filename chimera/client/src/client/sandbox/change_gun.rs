@@ -63,7 +63,9 @@
 //! below.
 //!
 //! A tile's name is cut to the tile with the kit's ellipsis
-//! (`chimera_ui::Ellipsize`); the detail pane has it whole.
+//! (`chimera_ui::Ellipsize`), and so is the detail pane's head: the name
+//! has the pane's width less the icon's, which stays in the pane (the
+//! variants list under the model has every variant's name).
 //!
 //! Known shortcuts: a slot's tiles are spawned again when it shows
 //! another row (the slots themselves stay; the kit's binding in place is
@@ -1101,12 +1103,18 @@ pub fn hits_to_kill(hp: f32, dmg: Option<f32>) -> Option<u32> {
 fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun, variants: &[&SandboxGun], progress: &UnitProgress, big: bool, pinned: Option<usize>, body: Option<&str>) {
     c.spawn((Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, width: Val::Px(look.hair()), ..default() }, BackgroundColor(look.tone(Tone::Fg5)), ChildOf(parent)));
     ui.text(c, parent, Role::Mono, 0.46, Tone::Fg3, &g.game_name);
+    // The head: the name in the one growing cell, cut to it with the
+    // kit's ellipsis (a long variant's name never pushes the icon out of
+    // the pane), the kit's icon at the right at its own width.
     let name = ui.boxed(c, parent, UiStyle { gap: Some(0.9), align: Some(AlignItems::Center), ..UiStyle::row() });
-    let n = ui.text(c, name, Role::DisplayBold, 1.35, Tone::Fg, &g.name);
-    c.entity(n).insert(UiParityId::new("gun.detail.name"));
-    ui.boxed(c, name, UiStyle { grow: Some(1.0), ..UiStyle::row() });
+    let cell = ui.boxed(c, name, UiStyle { grow: Some(1.0), min_w: Some(0.0), ..UiStyle::column() });
+    c.entity(cell).insert(UiParityId::new("gun.detail.name.cell"));
+    let n = ui.text(c, cell, Role::DisplayBold, 1.35, Tone::Fg, &g.name);
+    c.entity(n).insert((UiParityId::new("gun.detail.name"), chimera_ui::Ellipsize::in_parent(g.name.to_uppercase())));
+    let icon = ui.boxed(c, name, UiStyle { shrink: Some(0.0), ..UiStyle::row() });
+    c.entity(icon).insert(UiParityId::new("gun.detail.icon"));
     let key = g.icon_class.unwrap_or("rifle");
-    kit_icon(c, look, name, key, 0.95, Tone::Fg2, 1.0);
+    kit_icon(c, look, icon, key, 0.95, Tone::Fg2, 1.0);
     // The model's area (a stub picture until a render can come).
     let st = SandboxCatalogue::unit_state(g, progress);
     let viewer = c

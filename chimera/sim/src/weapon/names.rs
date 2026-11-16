@@ -507,9 +507,27 @@ pub fn id_name(id: &str) -> String {
     last.chars().map(|c| if c == '_' || c == '-' { ' ' } else { c.to_ascii_uppercase() }).collect()
 }
 
+/// Whether a data's `hud.name` is a key into its game's strings and not a
+/// name to show: `#HL2_Pistol`, or one word with an underscore
+/// (`Cstrike_WPNHUD_P90`: CS:S's data names its tokens without the `#`).
+/// A gun whose game's strings aren't here then shows its id's name
+/// (`id_name`), never the token.
+pub fn is_string_token(name: &str) -> bool {
+    name.starts_with('#') || (name.contains('_') && !name.contains(char::is_whitespace))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_string_token_is_never_a_name() {
+        assert!(is_string_token("#HL2_Pistol"));
+        assert!(is_string_token("Cstrike_WPNHUD_P90"));
+        assert!(!is_string_token("M4A1 Gold"));
+        assert!(!is_string_token("P90"));
+        assert_eq!(id_name("cs_source:weapon_p90"), "P90");
+    }
 
     fn short(full: &str) -> Option<String> {
         auto_short(full, &NameWords::shipped())

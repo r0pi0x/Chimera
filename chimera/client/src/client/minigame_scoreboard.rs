@@ -111,7 +111,7 @@ pub fn gun_name(id: &str, names: Option<&GunNames>, catalog: Option<&WeaponCatal
 /// The data's `hud.name` (not a string token), else the id's last part in
 /// capitals.
 fn game_name(id: &str, catalog: Option<&WeaponCatalog>) -> String {
-    if let Some(n) = catalog.and_then(|c| c.get(id)).and_then(|d| d.hud.name.as_deref()).filter(|n| !n.starts_with('#')) {
+    if let Some(n) = catalog.and_then(|c| c.get(id)).and_then(|d| d.hud.name.as_deref()).filter(|n| !chimera_sim::weapon::names::is_string_token(n)) {
         return n.to_string();
     }
     chimera_sim::weapon::names::id_name(id)

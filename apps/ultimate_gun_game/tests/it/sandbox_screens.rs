@@ -408,3 +408,28 @@ fn switching_rung_in_the_sandbox_takes_no_lead() {
     assert!(!seen.iter().any(|n| n.starts_with("lead_")), "no lead in a sandbox: {seen:?}");
     assert!(sim.app.world().get_resource::<Leaders>().is_none_or(|l| l.0.is_empty()));
 }
+
+#[test]
+fn the_catalogue_names_guns_by_their_games_strings_never_by_a_token() {
+    use chimera_client::client::minigame_scoreboard::GunNames;
+    // The sandbox comes up before any game's strings are read (`+sandbox`
+    // on the command line): CS:S's guns, whose data name a string token
+    // (`Cstrike_WPNHUD_*`), show their ids' names, not the token.
+    let (mut sim, _) = play();
+    let cat = sim.app.world().resource::<SandboxCatalogue>().clone();
+    let cs: Vec<_> = cat.guns.iter().filter(|g| g.game == "cs_source").collect();
+    assert!(cs.len() > 10, "CS:S's guns are in the sandbox: {}", cs.len());
+    for g in &cat.guns {
+        assert!(!chimera_sim::weapon::names::is_string_token(&g.name), "{} is named by a token: {}", g.id, g.name);
+        assert!(!g.name.to_lowercase().contains("wpnhud"), "{}: {}", g.id, g.name);
+    }
+    assert_eq!(cat.get("cs_source:weapon_p90").map(|g| g.name.as_str()), Some("P90"));
+    // The strings arrive (the app reads them from the install or the
+    // asset store after the ladder): the catalogue is made again with them.
+    let mut names = sim.app.world_mut().get_resource_or_init::<GunNames>();
+    names.full.insert("cs_source:weapon_p90".into(), "ES C90".into());
+    sim.ticks(2);
+    let cat = sim.app.world().resource::<SandboxCatalogue>();
+    assert_eq!(cat.get("cs_source:weapon_p90").map(|g| g.name.as_str()), Some("ES C90"), "CS:S's own name");
+    assert_eq!(cat.guns.iter().filter(|g| g.game == "cs_source").count(), cs.len());
+}
