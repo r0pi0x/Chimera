@@ -192,12 +192,15 @@ pub fn command(w: &mut World, a: &[String], base: &str) -> Result<Option<String>
     let at_menu = w.get_resource::<party_kit::main_menu::PartyMenu>().is_some_and(|m| m.shown());
     #[cfg(not(feature = "present"))]
     let at_menu = false;
-    // Already playing there: nothing to do (a start costs a hitch, the
+    // Already playing there (or anywhere, with no map named: the range is
+    // only where it starts): nothing to do (a start costs a hitch, the
     // start sound and the layout's bodies; a control that fires twice
     // must not restart it). Never at the menu: a sandbox left there is
     // not playing.
-    if !restart && !at_menu && minigame::rung_command::holds(w) && chimera_net::net::current_map(w) == chimera_net::net::normalize_map(map) {
-        return Ok(Some(format!("sandbox: already playing on {map} (`sandbox restart` starts it again)")));
+    let here = chimera_net::net::current_map(w);
+    let there = a.first().is_none() || here == chimera_net::net::normalize_map(map);
+    if !restart && !at_menu && minigame::rung_command::holds(w) && there {
+        return Ok(Some(format!("sandbox: already playing on {here} (`sandbox restart` starts it again)")));
     }
     let said = if at_menu {
         chimera_net::minigame_net::change_match_loading(w, SANDBOX, Some(map))?
