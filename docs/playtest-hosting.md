@@ -663,6 +663,23 @@ Maps and matches:
   (`mp_avoid_recent`). Every map that can come up needs its `map/<name>`
   set published (below, "Publishing the game files"; `sets` records every
   installed map).
+- **Arena slices in the pool.** A big map's slices (`halo_ce:bloodgulch@
+  west_base`: a part of the map behind a wall) are pool entries of their
+  own, listed under their map in `map_pool` and in the Host page's Maps
+  picker: a slice comes up only at a count where its whole map is too
+  big, within the players it was measured for, and only once its data
+  carries spawn-safety measures that pass (`[slice]` in
+  `chimera/sim/data/map_fit.toml`; Blood Gulch's West Base fails them and
+  never comes up). A ballot never offers two slices of one map, and a
+  slice just played holds its map back as the map would. A host plays
+  one at once with `changelevel <map@slice>` (the minigame's next match
+  there; `arena <map@slice>` does the same); `mp_maps_off` takes
+  `map@slice` names, a map off takes its slices with it, and
+  `+map@slice` keeps one on under a map that is off
+  (`mp_maps_off "halo_ce:bloodgulch,+halo_ce:bloodgulch@west_base"`: only
+  that slice, never the whole map; the Maps picker writes it). Nothing new
+  goes over the network (the slice goes with the match, `net64`). Never in
+  a game's own app.
 - **The pre-match lobby.** Each new match (the first after the server
   starts, each rotation and map change: a host's `changelevel <map>` is the
   running minigame's next match there, a new ladder as a rotation's)

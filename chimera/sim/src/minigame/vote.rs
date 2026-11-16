@@ -167,7 +167,9 @@ pub fn candidates(
 
 /// `candidates`, the others drawn by `weight` (`map_fit::draw_weights`'s,
 /// the rotation's own draw: 0 is out this time) rather than evenly, the
-/// fresh ones first; `here` only with a weight.
+/// fresh ones first; `here` only with a weight. An arena slice
+/// (`game:map@id`) counts as its map: never two entries of one map, and a
+/// map played (whole or a slice) holds back its slices and itself.
 #[allow(clippy::too_many_arguments)]
 pub fn candidates_weighted(
     first: &str,
@@ -179,30 +181,58 @@ pub fn candidates_weighted(
     weight: &dyn Fn(&str) -> f64,
     rng: &mut Rng,
 ) -> Vec<String> {
+    // An arena slice counts as its map (`map_fit::entry_map`): one entry
+    // per map on the ballot, and the map played (or any slice of it) is
+    // here and recent alike.
+    use super::map_fit::entry_map;
     let mut out = vec![first.to_string()];
     let mut others: Vec<&String> = Vec::new();
     for m in pool {
-        if m != first && m != here && playable(m) && weight(m) > 0.0 && !others.contains(&m) {
+        if entry_map(m) != entry_map(first)
+            && entry_map(m) != entry_map(here)
+            && playable(m)
+            && weight(m) > 0.0
+            && !others.contains(&m)
+        {
             others.push(m);
         }
     }
-    let (mut fresh, mut stale): (Vec<&String>, Vec<&String>) = others.into_iter().partition(|m| !recent.contains(m));
+    let was_recent = |m: &String| recent.iter().any(|r| entry_map(r) == entry_map(m));
+    let (mut fresh, mut stale): (Vec<&String>, Vec<&String>) = others.into_iter().partition(|m| !was_recent(m));
     for group in [&mut fresh, &mut stale] {
         while out.len() < n && !group.is_empty() {
             let m = super::rotation::pick(group, weight, rng).clone();
-            group.retain(|g| **g != m);
+            group.retain(|g| entry_map(g) != entry_map(&m));
             out.push(m);
         }
     }
-    if out.len() < n && first != here && playable(here) && weight(here) > 0.0 {
+    if out.len() < n && entry_map(first) != entry_map(here) && playable(here) && weight(here) > 0.0 {
         out.push(here.to_string());
     }
     out
 }
 
-/// The map's name as a player reads it: its id without the game.
-pub fn map_name(map: &str) -> &str {
-    map.rsplit(':').next().unwrap_or(map)
+/// A pool entry's label as the UI shows it (the vote's cards, the HUD's
+/// map, the loading page): an arena slice by its data's display name
+/// (`ArenaSlice::name`, "Blood Gulch: West Base") when `slices` has it,
+/// else `map_name` (the id-derived form, also a whole map's).
+pub fn map_label(slices: Option<&super::arena::ArenaSlices>, entry: &str) -> String {
+    if entry.contains('@')
+        && let Some(d) = slices.and_then(|s| s.find(entry).ok())
+    {
+        return d.slice.name.clone();
+    }
+    map_name(entry).into_owned()
+}
+
+/// The map's name as a player reads it: its id without the game; an arena
+/// slice (`game:map@id`) as "<map's display name>: <slice's name>"
+/// (`hud::map_display_name`: "Bloodgulch: West Base").
+pub fn map_name(map: &str) -> std::borrow::Cow<'_, str> {
+    if map.contains('@') {
+        return super::hud::map_display_name(map).into();
+    }
+    map.rsplit(':').next().unwrap_or(map).into()
 }
 
 #[cfg(test)]
@@ -263,6 +293,35 @@ mod tests {
         // Here only with a weight.
         let c = candidates_weighted("g:m1", &pool(3), "g:m2", &[], 3, &|_| true, &weight, &mut rng);
         assert_eq!(c, ["g:m1", "g:m0"]);
+    }
+
+    #[test]
+    fn a_ballot_has_one_entry_per_map_and_holds_back_a_played_maps_slices() {
+        let p: Vec<String> = ["g:a", "g:a@x", "g:a@y", "g:b@x", "g:b@y", "g:c", "g:d"].iter().map(|s| s.to_string()).collect();
+        let mut rng = Rng::new(5);
+        for _ in 0..50 {
+            let c = candidates("g:c", &p, "g:d", &["g:a@y".into()], 7, &|_| true, &mut rng);
+            let maps: Vec<&str> = c.iter().map(|m| crate::minigame::map_fit::entry_map(m)).collect();
+            let mut unique = maps.clone();
+            unique.dedup();
+            assert_eq!(maps.len(), unique.len(), "one per map: {c:?}");
+            // b's slice comes first, a (played lately, as a@y) after it.
+            assert!(c[1].starts_with("g:b@"), "{c:?}");
+            assert!(c[2].starts_with("g:a"), "{c:?}");
+        }
+        assert_eq!(map_name("halo_ce:bloodgulch@west_base"), "Bloodgulch: West Base");
+        assert_eq!(map_name("cs_source:de_dust2"), "de_dust2");
+    }
+
+    #[test]
+    fn a_slices_label_is_its_datas_display_name_else_the_ids() {
+        let text = "[[slice]]\nmap = \"bloodgulch\"\nid = \"west_base\"\nname = \"West Base\"\nmap_name = \"Blood Gulch\"\n\
+                    points = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]\nseed = [5.0, 1.0, 5.0]\n";
+        let slices = crate::minigame::arena::ArenaSlices(crate::minigame::arena::parse("halo_ce", text).unwrap());
+        assert_eq!(map_label(Some(&slices), "halo_ce:bloodgulch@west_base"), "Blood Gulch: West Base");
+        assert_eq!(map_label(None, "halo_ce:bloodgulch@west_base"), "Bloodgulch: West Base", "no data: the id's");
+        assert_eq!(map_label(Some(&slices), "halo_ce:bloodgulch@east"), "Bloodgulch: East", "not in the data");
+        assert_eq!(map_label(Some(&slices), "cs_source:de_dust2"), "de_dust2", "a whole map as before");
     }
 
     #[test]

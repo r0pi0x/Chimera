@@ -65,7 +65,7 @@ fn the_players_vote_for_the_next_map_and_the_most_votes_win() {
     for i in 0..2 {
         let view = sim.clients[i].app.world().resource::<MatchEndView>().clone();
         let vote = view.vote.clone().unwrap();
-        let names: Vec<&str> = v.candidates.iter().map(|m| chimera_sim::minigame::vote::map_name(m)).collect();
+        let names: Vec<String> = v.candidates.iter().map(|m| chimera_sim::minigame::vote::map_name(m).to_string()).collect();
         assert_eq!(vote.maps, names, "client {i}");
         assert!(vote.open() && vote.mine.is_none(), "client {i}: {vote:?}");
         assert!(view.next.starts_with("Vote for the next map: 1-3"), "client {i}: {}", view.next);
