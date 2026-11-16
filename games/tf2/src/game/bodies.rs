@@ -182,10 +182,10 @@ pub fn wear_bodies(
             let mut c = commands.entity(e);
             match (ours_named, skinned) {
                 (true, true) => {
-                    c.remove::<(BodyName, BodySkin, Tf2Skin)>();
+                    c.insert(BodyName::none()).remove::<(BodySkin, Tf2Skin)>();
                 }
                 (true, false) => {
-                    c.remove::<BodyName>();
+                    c.insert(BodyName::none());
                 }
                 (false, true) => {
                     c.remove::<(BodySkin, Tf2Skin)>();

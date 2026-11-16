@@ -106,7 +106,7 @@ pub const HOOK: RungExtrasHook = RungExtrasHook {
 };
 
 /// Marks a player whose `PlayerClass` is a rung's (so leaving the rung
-/// takes it off).
+/// sets it to none, 0).
 #[derive(Component, Clone, Copy, Debug)]
 #[component(storage = "SparseSet")]
 pub struct RungClass;
@@ -128,7 +128,7 @@ fn draw(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
 }
 
 /// `e` armed for a rung: the rung's class on it, or (another game's rung,
-/// or the option off) taken off.
+/// or the option off) none.
 fn apply(world: &mut World, e: Entity, extras: Option<&RungExtras>) {
     let class = extras.and_then(|x| x.value(CLASS)?.parse::<u8>().ok()).filter(|c| (1..=8).contains(c));
     match class {
@@ -136,10 +136,11 @@ fn apply(world: &mut World, e: Entity, extras: Option<&RungExtras>) {
             world.entity_mut(e).insert((PlayerClass(c), RungClass));
         }
         None => {
-            // Both in one move (each alone is an archetype for every
-            // combination of the rest).
-            if world.get::<RungClass>(e).is_some() {
-                world.entity_mut(e).remove::<(RungClass, PlayerClass)>();
+            // Kept on, no class (0, as an unassigned player's): taken off
+            // and put back, each was an archetype for every combination of
+            // the character's other parts (docs/DESIGN.md, "ECS style").
+            if world.get::<RungClass>(e).is_some() && world.get::<PlayerClass>(e).is_some_and(|c| c.0 != 0) {
+                world.entity_mut(e).insert(PlayerClass(0));
             }
         }
     }

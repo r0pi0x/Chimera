@@ -403,8 +403,10 @@ fn hl2dm_rungs_dress_their_players_on_server_and_clients() {
     minigame::start(sim.server.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
     sim.until_joined(900);
     sim.ticks(300);
-    let model = |w: &World, e: Entity| w.get::<Hl2Model>(e).map(|m| m.0.clone());
-    let name = |w: &World, e: Entity| w.get::<chimera_world::map::BodyName>(e).map(|m| m.0.clone());
+    // A rung's model left for another's: kept on, the default (`rungs::apply`).
+    let left = |m: &&Hl2Model| m.0 != hl2dm::game::weapons::inventory::DEFAULT_MODEL;
+    let model = |w: &World, e: Entity| w.get::<Hl2Model>(e).filter(left).map(|m| m.0.clone());
+    let name = |w: &World, e: Entity| chimera_world::map::BodyName::named(w.get(e)).map(|m| m.0.clone());
     for rung in [0usize, 2, 4] {
         all_on(&mut sim, rung);
         sim.ticks(120);
