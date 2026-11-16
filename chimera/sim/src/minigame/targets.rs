@@ -35,7 +35,8 @@
 //!   `distance_m` re-places it along the same line.
 //! - `motion`: `Still` (no movement keys; pushed off its spot, it walks
 //!   back), `Strafes` (side to side across the spawner's line,
-//!   `STRAFE_HALF` m each way, at its body's run speed), `Walks` (from one
+//!   `STRAFE_HALF` m each way, at its body's run speed; a leg blocked by a
+//!   wall turns after `STRAFE_LEG` s), `Walks` (from one
 //!   point to the next within `WALK_RADIUS` m of home, a fixed sequence).
 //!   It never leaves its home area (`LEASH` m past it: it heads home).
 //! - `shoots_back` (off by default): off, its trigger, secondary and game
@@ -118,6 +119,9 @@ use crate::{
 
 /// Half the strafe's span (m): it goes this far each way of home.
 pub const STRAFE_HALF: f32 = 3.0;
+/// The longest a strafe's leg lasts before it turns (s): a wall in its
+/// way doesn't hold it.
+pub const STRAFE_LEG: f64 = 3.0;
 /// How far a walking target wanders from home (m).
 pub const WALK_RADIUS: f32 = 4.0;
 /// How far past its area a target may be pushed before it heads home (m).
@@ -955,8 +959,10 @@ fn drive(clock: Res<SimClock>, mut q: Query<(&Target, &mut TargetDrive, &Transfo
             TargetMotion::Strafes if off > STRAFE_HALF + LEASH => Some(t.home),
             TargetMotion::Strafes => {
                 let to = t.home + side * STRAFE_HALF * d.sign;
-                if (feet - to).xz().length() < 0.3 || (feet - t.home).dot(side) * d.sign > STRAFE_HALF {
+                // Turned at the end, or after `STRAFE_LEG` s (a wall in the way).
+                if (feet - to).xz().length() < 0.3 || (feet - t.home).dot(side) * d.sign > STRAFE_HALF || now > d.until + STRAFE_LEG {
                     d.sign = -d.sign;
+                    d.until = now;
                 }
                 Some(t.home + side * STRAFE_HALF * d.sign)
             }
@@ -989,7 +995,7 @@ fn drive(clock: Res<SimClock>, mut q: Query<(&Target, &mut TargetDrive, &Transfo
 
 /// Health and second bar at the tick's start, before its hits.
 #[derive(Resource, Default)]
-struct Before(BTreeMap<Entity, (f32, f32)>);
+struct Before(BTreeMap<Entity, (f32, f32)>, BTreeMap<Entity, &'static str>);
 
 /// One attacker's run at one victim since the victim's last death.
 #[derive(Clone, Copy, Debug, Default)]
@@ -1011,8 +1017,16 @@ struct Engagements(BTreeMap<(Entity, Entity), Engagement>);
 fn before_hits(
     mut before: ResMut<Before>,
     mut q: Query<(Entity, &mut Health, Option<&mut Armor>, Option<&Target>, Option<&TargetVitals>), With<Intent>>,
+    (held, guns): (Query<(Entity, &Inventory)>, Query<&Weapon>),
 ) {
     before.0.clear();
+    // The guns in hand before the hits (a ladder's kill swaps the killer's).
+    before.1.clear();
+    for (e, inv) in &held {
+        if let Some(w) = inv.active.and_then(|w| guns.get(w).ok()) {
+            before.1.insert(e, w.id);
+        }
+    }
     for (e, mut h, armor, t, v) in &mut q {
         let mut armor = armor;
         if t.is_some_and(|t| t.protected) && h.current > 0.0 {
@@ -1062,7 +1076,9 @@ fn measure(
 ) {
     let now = clock.now;
     let pos = |e: Entity| chars.get(e).ok().map(|c| c.1.translation);
-    let held_gun = |e: Entity| held.get(e).ok().and_then(|i| i.active).and_then(|w| guns.get(w).ok()).map(|w| w.id);
+    let held_gun = |e: Entity| {
+        before.1.get(&e).copied().or_else(|| held.get(e).ok().and_then(|i| i.active).and_then(|w| guns.get(w).ok()).map(|w| w.id))
+    };
     let watched = |a: Option<Entity>, v: Entity| targets.contains(v) || a.is_some_and(|a| targets.contains(a));
     // Shots at victims.
     for ev in weapon_events.read() {

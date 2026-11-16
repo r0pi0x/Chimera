@@ -57,6 +57,16 @@ const ONE_OFF_SCHEDULES: &[&str] = &[
 /// events, observers or systems (the step named).
 const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
+        "chimera/sim/src/minigame/targets.rs",
+        "TargetBots",
+        "spawning: the bots' game adds a whole bot to the match (its roster, kit and entry) and kicks one, on a request or console line",
+    ),
+    (
+        "chimera/sim/src/minigame/targets.rs",
+        "TargetCharacter",
+        "spawning: dressing a practice target as a game's body once it is armed (a game's own component on it), run with its placing",
+    ),
+    (
         "chimera/core/src/diagnostics.rs",
         "HealthParts",
         "a tool: each layer adds what it knows to the health line (memory, frames, net, map), read every few seconds",
