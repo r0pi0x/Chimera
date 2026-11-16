@@ -23,7 +23,7 @@ from specs, measurements and the game's own data.
 | More guns (track 1, tf2-guns2) | done (2026-11-15) | the next eight guns (specs/tf2/weapons_more.md) as data and hooks, lent as rungs; the Minigun held up in first person; muzzle flashes and explosions |
 | M3 classes as bodies, TF2's movement | done (2026-11-15) | the classes as data (`game::classes`); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health); the class bodies with team skins and animation; TF2's HUD (health, ammo, crosshair) and kill icons |
 | M4a more maps in the party pool | done (2026-11-15) | 14 koth_, cp_ and ctf_ maps in an automatic pool by data/map_pool.toml and data/map_fitness.toml (a sweep of 130 maps); played free for all: touch-opened doors start open, spawn rooms' door brushes block nobody; `map/<name>` sets checked in a scratch store, not published |
-| SDK parity (tf2-parity) | in progress (2026-11-15) | the specs' "Corrections from the SDK" in the code: the Minigun, the blasts and knockback, movement, the scripts' mapping, grenades and stickies landed; the flame, the scope and the syringe next |
+| SDK parity (tf2-parity) | done (2026-11-15) | the specs' "Corrections from the SDK" in the code: the Minigun, the blasts and knockback, movement, the scripts' mapping, grenades and stickies; the flame's points, heat and afterburn, the scope's timing, the needle's and the rocket's aim (what's left: the section) |
 | M4 more weapons, effects, the probe | not started | |
 
 ## 1. Rules for this port
@@ -623,11 +623,36 @@ the Minigun's pose stay the view-model track's.
   short-range-reduced modifier M_s (121.8 % at 0, `damage::COMPRESSED`);
   the Demoman's own blast the base 100 / 120 x f to 146 x0.75 grounded
   or airborne, pushed at scale 9.
-- Not yet: the flame's points, heat and afterburn, the scope's timing,
-  the syringe's speed and spread (next landing); the grenades' launch
-  jitter and spin, the 0.25 s teammate pass, player bounces, the ninth
-  sticky's fuse check, attack2 detonating with any Demoman weapon, the
-  deny sound; crits stay off.
+- **Flame Thrower** (weapons_more.md 7, `weapons::flame`): flame points
+  every 0.02 s (2 ticks) from 40 forward and 5 right at 2450, slowing by
+  8.5 a second (reach about 340), the Pyro's velocity along them, life
+  0.6 +- 0.1, a 12-unit swept box; 0.28 ammo a point (about 9.3 a
+  second); a hit at most every 0.075 s of max(1, 13 x g_age x g_heat)
+  with the per-victim heat (+1 a touching point, up to +2 fresh, -1.25 a
+  tick); the afterburn 3 s + 0.4 a hit up to 10, 4 every 0.5 s taking
+  0.5 off (one hit: 7 ticks, 28), out in waist-deep water; an enemy Pyro
+  only the 0.25 s look; teammates nothing (tests 41-44, 46).
+- **Sniper Rifle** (weapons_more.md 3, `weapons::sniper`): after a scoped
+  shot the scope stays 0.5 s (no jump), drops, re-zooms at +1.4 s with
+  the charge rising at once; the charge stored (0.3 s wait only after a
+  raise by attack2); the headshot's 0.2 s from the last zoom change; no
+  shot within 0.1 s of a zoom change; a jump drops the scope and empties
+  the charge, no scope in a jump; an unscoped shot blocks the scope
+  1.67 s (tests 16, 17b, 17c).
+- **Syringe Gun and rocket aim** (generic `chimera:projectile`
+  `aim_trace`, `aim_min`, `start_trace`, `jitter`): the needle at 1000
+  toward the crosshair's point (a 2000-unit line) +-1.5 degrees in pitch
+  and yaw; the rocket toward the 2000-unit line's point beyond 200
+  units (else its end), its start pulled back by the world.
+- Not done (with why): the grenades' and stickies' launch jitter and
+  spin, the 0.25 s teammate pass and the bounces off players (the
+  flyers have no per-flyer pass time or player bounce yet); the ninth
+  sticky's 0.2 s fuse check and attack2 detonating with any Demoman
+  weapon, the deny sound (not in the corrections' main list; left for
+  the Demoman's next pass); the flame's points sliding on walls (they
+  stop) and the airblast; crits stay off (the party's choice); the
+  Spy's and the Medic's speed rules (no such kits yet); the fixed
+  pellet spread (`tf_use_fixed_weaponspreads`, default off).
 
 ### M4 and on
 
@@ -764,6 +789,16 @@ server probe for parity checks, TF2's own app.
   arming (0.7 -> 0.8 s), the self-damage worked case (76.75 -> 74.01 by
   the feet), the mapped Scattergun script (Range and PunchAngle mapped,
   TimeReload not).
+- 2026-11-15: SDK parity, second landing: the Flame Thrower as flying
+  points (cadence, ammo 0.28 a point, damage by age and heat, the
+  afterburn's 3 s + 0.4 a hit, 7 ticks for one hit, enemy Pyros only
+  lit), the Sniper's scope timing (drop at +0.5 s, re-zoom at +1.4 s,
+  jumps, the 0.1 s fire block, the unscoped shot's 1.67 s), the needle at
+  1000 toward the crosshair +-1.5 degrees, the rocket toward the
+  crosshair's point (generic `chimera:projectile` options). Tests whose
+  numbers changed: the flame (cone ticks -> points, 41/42/44 rewritten),
+  the scope after a shot (16), the needle's speed (990 -> 1000), the
+  rocket's direction (24), the flame's cycle (0.08 -> 0.02).
 - 2026-11-16: the bodies per class on the asset service (the user's design):
   `players/<class>` (a class's player model, animations, materials and
   first-person arms; 4.6 to 7.9 MB stored beyond `base`) and `players`

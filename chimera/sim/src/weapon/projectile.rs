@@ -24,7 +24,10 @@
 //! (`LauncherParams`, in the data's units; `Launcher`) turns each of its
 //! `Fired` rounds into a flyer from the eye along the shot's angles
 //! (`Fired` without a `DamageEffect`: the frame traces nothing), at
-//! `water_speed` when its owner is marked `LaunchUnderWater`.
+//! `water_speed` when its owner is marked `LaunchUnderWater`; optionally
+//! toward the point its aim line meets (`aim_trace`, `aim_min`), from a
+//! start the world pulls back (`start_trace`), turned by a random
+//! `jitter` (TF2's rocket and needle).
 //!
 //! Also here, shared with Combat Arms' special weapons (whose objects run
 //! on their own 20 Hz frames): the ray tests `ray_box` and `ray_sphere`,
@@ -402,6 +405,23 @@ pub struct LauncherParams {
     /// It passes its owner's teammates (`Flyer::pass_teammates`).
     #[serde(default)]
     pub pass_teammates: bool,
+    /// It heads from its start for the point a line this long (data
+    /// length; 0: along the aim) from the eye along the aim meets (the
+    /// world or a character but its owner and his teammates), else for the
+    /// line's end; a meeting nearer than `aim_min` counts as none (TF2's
+    /// rocket: 2000 and 200, specs/tf2/weapons.md 5.1; its needle: 2000).
+    #[serde(default)]
+    pub aim_trace: f32,
+    #[serde(default)]
+    pub aim_min: f32,
+    /// Its start pulled back to where a line from the eye to it meets the
+    /// world (TF2's rocket).
+    #[serde(default)]
+    pub start_trace: bool,
+    /// A random turn of its flight, uniform within +- this many degrees in
+    /// pitch and in yaw, from the shot's seed (TF2's needle: 1.5).
+    #[serde(default)]
+    pub jitter: f32,
 }
 
 fn report() -> String {
@@ -438,6 +458,12 @@ pub struct Launcher {
     /// standing and crouched (`LauncherParams::offset`).
     pub offset: Vec3,
     pub offset_crouched: Vec3,
+    /// `LauncherParams::aim_trace`, `aim_min` (m), `start_trace`,
+    /// `jitter` (radians).
+    pub aim_trace: f32,
+    pub aim_min: f32,
+    pub start_trace: bool,
+    pub jitter: f32,
 }
 
 impl LauncherParams {
@@ -494,6 +520,10 @@ impl LauncherParams {
             template: f,
             offset: self.offset.map_or(Vec3::ZERO, |o| Vec3::from(o) * unit),
             offset_crouched: self.offset_crouched.or(self.offset).map_or(Vec3::ZERO, |o| Vec3::from(o) * unit),
+            aim_trace: self.aim_trace * unit,
+            aim_min: self.aim_min * unit,
+            start_trace: self.start_trace,
+            jitter: self.jitter.to_radians(),
         }
     }
 }
@@ -631,17 +661,24 @@ pub fn spawn_flyer(commands: &mut Commands, mut flyer: Flyer, start: Vec3, shown
 }
 
 /// Each `Fired` round of a `Launcher` weapon (the server's, not a replay):
-/// a flyer from the eye along the round's angles.
+/// a flyer from the eye along the round's angles (turned by its `jitter`),
+/// or toward its aim line's point (`aim_trace`), from its offset (pulled
+/// back by the world: `start_trace`).
+#[allow(clippy::too_many_arguments)]
 fn launch_from_fired(
     mut events: MessageReader<WeaponEvent>,
     launchers: Query<&Launcher>,
     under: Query<(), With<LaunchUnderWater>>,
     stances: Query<&crate::core::MovementState>,
+    spatial: SpatialQuery,
+    colliders: Query<&ColliderOf>,
+    characters: Query<Option<&crate::core::Team>, With<Intent>>,
+    friendly_fire: Option<Res<crate::core::FriendlyFire>>,
     clock: Res<SimClock>,
     mut commands: Commands,
 ) {
     for e in events.read() {
-        let WeaponEventKind::Fired { origin, yaw, pitch, .. } = e.kind else {
+        let WeaponEventKind::Fired { origin, yaw, pitch, seed, .. } = e.kind else {
             continue;
         };
         if e.replay {
@@ -653,17 +690,48 @@ fn launch_from_fired(
             _ => l.speed,
         };
         let aim = super::aim_of(yaw, pitch);
-        let dir = aim * Vec3::NEG_Z;
+        let mut dir = aim * Vec3::NEG_Z;
+        // Its start: the eye, moved along the aim's forward, right and up.
+        let crouched = stances.get(e.owner).is_ok_and(|s| s.crouching);
+        let o = if crouched { l.offset_crouched } else { l.offset };
+        let mut start = origin + dir * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z;
+        let solid = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
+        let body = |c: Entity| colliders.get(c).map_or(c, |o| o.body);
+        if l.start_trace
+            && let Ok(to) = Dir3::new(start - origin)
+            && let Some(hit) = spatial.cast_ray_predicate(origin, to, start.distance(origin), true, &solid, &|c| {
+                !characters.contains(body(c))
+            })
+        {
+            start = origin + to * hit.distance;
+        }
+        if l.aim_trace > 0.0 {
+            let ff = friendly_fire.as_ref().is_some_and(|f| f.0 != 0);
+            let mine = characters.get(e.owner).ok().flatten().copied().filter(|t| t.0 != 0);
+            let passes = |c: Entity| {
+                let b = body(c);
+                b == e.owner || (!ff && mine.is_some() && characters.get(b).ok().flatten().copied() == mine)
+            };
+            let to = match spatial.cast_ray_predicate(origin, Dir3::new(dir).unwrap_or(Dir3::NEG_Z), l.aim_trace, true, &solid, &|c| {
+                !passes(c)
+            }) {
+                Some(hit) if hit.distance > l.aim_min => origin + dir * hit.distance,
+                _ => origin + dir * l.aim_trace,
+            };
+            dir = (to - start).normalize_or(dir);
+        }
+        if l.jitter > 0.0 {
+            let mut rng = super::random::Rng::new(seed ^ 0x6a17);
+            let (dp, dy) = (rng.range(-l.jitter, l.jitter), rng.range(-l.jitter, l.jitter));
+            let (up, right) = (aim * Vec3::Y, aim * Vec3::X);
+            dir = Quat::from_axis_angle(up, -dy) * (Quat::from_axis_angle(right, dp) * dir);
+        }
         let mut f = l.template.clone();
         f.owner = Some(e.owner);
         f.velocity = dir * speed + aim * Vec3::Y * l.up_speed;
         if let Some(life) = f.expires {
             f.expires = Some(clock.now + life);
         }
-        // Its start: the eye, moved along the aim's forward, right and up.
-        let crouched = stances.get(e.owner).is_ok_and(|s| s.crouching);
-        let o = if crouched { l.offset_crouched } else { l.offset };
-        let start = origin + dir * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z;
         spawn_flyer(&mut commands, f, start, l.shown.clone(), &clock);
     }
 }

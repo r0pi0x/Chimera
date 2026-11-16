@@ -1,10 +1,12 @@
 # The Sniper Rifle, the Sniper's primary (specs/tf2/weapons_more.md 1,
 # 3): one bullet every 1.5 s, no spread, 25 rounds and no reload, no
 # distance modifier. attack2 scopes in (field of view 20, the holder at
-# 80 units/s, the view model hidden); a shot leaves the scope and it
-# comes back at the next shot's time (auto re-zoom). Scoped, the damage
-# charges from 50 to 150 (`tf2:sniper`: 50/s after 0.3 s) and a head hit
-# after 0.2 s scoped is a crit, x3; unscoped every hit is 50.
+# 80 units/s, the view model hidden); after a scoped shot the scope stays
+# 0.5 s, drops, and comes back 1.4 s after the shot (auto re-zoom; its
+# timing is `tf2:sniper`'s: weapons_more.md's corrections from the SDK);
+# a jump drops it. Scoped, the damage charges from 50 to 150 (50/s, 0.3 s
+# after a raise, at once after a re-zoom) and a head hit 0.2 s after the
+# last zoom change is a crit, x3; unscoped every hit is 50.
 id = "tf2:tf_weapon_sniperrifle"
 base = "tf2:gun"
 class = "sniper"
@@ -37,7 +39,7 @@ impulse = 0.0
 kind = "scope"
 fov = [20.0]
 max_speed = 80.0
-unzoom_after_shot = true
+unzoom_after_shot = false
 overlay = true
 step = 0.3
 
@@ -68,4 +70,8 @@ charge_rate = 50.0
 charge_delay = 0.3
 headshot_delay = 0.2
 headshot = 3.0
+drop_after = 0.5
+rezoom_after = 1.4
+toggle_block = 0.1
+unscoped_block = 1.6667
 headshot_icon = "headshot"

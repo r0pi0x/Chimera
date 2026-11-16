@@ -1,8 +1,8 @@
 # The Syringe Gun, the Medic's primary (specs/tf2/weapons_more.md 1, 8):
 # a needle every 0.105 s, 40 in the clip and 150 carried, the whole clip
-# in 1.305 s. Each needle (Chimera's flyers) flies at 990 units/s along
-# the aim from under the gun, falling at 0.3 of gravity (open question
-# 16), through teammates; on an enemy (`tf2:needle`) 10 x the short-
+# in 1.305 s. Each needle (Chimera's flyers) flies at 1000 units/s from
+# under the gun toward the crosshair's point, +-1.5 degrees in pitch and
+# yaw, falling at 0.3 of gravity, through teammates; on an enemy (`tf2:needle`) 10 x the short-
 # range-reduced modifier (121.8 % at 0) at impact, rounded.
 id = "tf2:tf_weapon_syringegun_medic"
 base = "tf2:base"
@@ -49,8 +49,12 @@ arms = "medic"
 script = "tf_weapon_syringegun_medic"
 
 [hooks."chimera:projectile"]
-speed = 990.0
+speed = 1000.0
 gravity = 240.0
+# Aimed at what a 2000-unit line from the eye meets, then +-1.5 degrees in
+# pitch and yaw (weapons_more.md 8).
+aim_trace = 2000.0
+jitter = 1.5
 touch = "report"
 shown = "tf2:syringe"
 offset = [16.0, 6.0, -8.0]

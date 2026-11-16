@@ -334,8 +334,8 @@ pub(crate) fn rockets(sim: &mut Sim, owner: Entity) -> Vec<(Entity, Vec3, Vec3)>
 }
 
 /// 5.1, tests 24 and 25: the rocket starts 23.5 ahead, 12 right, 3 down
-/// of the eye, flies at 1100 units/s along the view, and explodes on the
-/// wall it meets.
+/// of the eye, flies at 1100 units/s toward the crosshair's point, and
+/// explodes on the wall it meets.
 #[test]
 fn the_rocket_starts_under_the_gun_and_flies_at_1100_24_25() {
     let mut sim = sim();
@@ -356,7 +356,10 @@ fn the_rocket_starts_under_the_gun_and_flies_at_1100_24_25() {
     let start = at - v * TICK_INTERVAL as f32;
     let want = eye + Vec3::NEG_Z * 23.5 * U + Vec3::X * 12.0 * U - Vec3::Y * 3.0 * U;
     assert!((start - want).length() < 0.02, "started at {start}, want {want}");
-    assert!((v - Vec3::NEG_Z * 1100.0 * U).length() < 1e-3, "{v}");
+    // At 1100 toward the crosshair's point (the 2000-unit line's, or the
+    // wall it meets): from 12 right and 3 down, a little left and up.
+    assert!((v.length() - 1100.0 * U).abs() < 1e-3, "{v}");
+    assert!(v.normalize().dot(Vec3::NEG_Z) > 0.999 && v.x < 0.0 && v.y > 0.0, "{v}");
     // Whatever it meets ahead: gone within a tick or two of its flight
     // time from where it started.
     let mut ticks = 1u64;

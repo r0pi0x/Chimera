@@ -1,14 +1,16 @@
 //! The Syringe Gun's needles (specs/tf2/weapons_more.md 8), on Chimera's
-//! flyers: `chimera:projectile` flies them (990 units/s from under the
-//! gun, falling at 0.3 of gravity, through teammates, their touches
-//! reported); `tf2:needle` (`NeedleParams`) answers (`touch`, the
-//! server's, in `FlyerSet::Touch`): on an enemy `damage` (10) x the
-//! distance modifier between the Medic's and the enemy's centres at
-//! impact (the gun's ramp 0.4), rounded, of kind bullet naming the gun;
-//! any touch ends the needle.
+//! flyers: `chimera:projectile` flies them (1000 units/s from 16 forward,
+//! 6 right, 8 down of the eye toward the point a 2000-unit line from the
+//! eye meets, turned +-1.5 degrees in pitch and yaw at random, falling at
+//! 0.3 of gravity, through teammates, their touches reported:
+//! weapons_more.md's corrections from the SDK); `tf2:needle`
+//! (`NeedleParams`) answers (`touch`, the server's, in `FlyerSet::Touch`):
+//! on an enemy `damage` (10) x the short-range-reduced modifier M_s
+//! between the Medic's and the enemy's centres at impact (121.8 % at 0),
+//! rounded, of kind bullet naming the gun; any touch ends the needle.
 //!
-//! Known shortcuts: no random spread (open question 16); needles don't
-//! destroy stickies; crits are off.
+//! Known shortcuts: the needle is a point, not a 2-unit cube; needles
+//! don't destroy stickies; crits are off.
 
 use std::sync::Arc;
 

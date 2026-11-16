@@ -63,6 +63,11 @@ shown = "tf2:rocket"
 offset = [23.5, 12.0, -3.0]
 offset_crouched = [23.5, 12.0, 8.0]
 pass_teammates = true
+# Toward what a 2000-unit line from the eye meets beyond 200 units, else
+# its end; the start pulled back by the world (weapons.md 5.1).
+aim_trace = 2000.0
+aim_min = 200.0
+start_trace = true
 sky_probe = 16.0
 life = 30.0
 

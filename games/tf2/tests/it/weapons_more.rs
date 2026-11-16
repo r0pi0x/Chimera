@@ -25,7 +25,7 @@ use tf2::game::{
     },
 };
 
-use super::weapons::{fired, health_points, holding, no_spread, rockets as flyers, run, sim, target};
+use super::weapons::{fired, health_points, hold_still, holding, no_spread, rockets as flyers, run, sim, target};
 
 const U: f32 = 0.0254;
 
@@ -137,18 +137,68 @@ fn a_scoped_head_hit_is_a_crit_11_12() {
     assert!((sniper_shot(1000.0, Some(0.25), head).0 - 150.0).abs() < 0.01);
 }
 
-/// After a scoped shot the scope drops and comes back 1.5 s later.
+/// Test 16 (corrections from the SDK): after a scoped shot the scope stays
+/// up until the first tick after +0.5 s (no jump meanwhile), is down until
+/// the first tick after +1.4 s, then up again with the charge rising at
+/// once (no 0.3 s wait): over 50 by +2.5 s.
 #[test]
-fn the_scope_comes_back_after_a_shot_16() {
+fn the_scope_drops_at_half_a_second_and_comes_back_at_1_4_16() {
     let mut sim = sim();
     let (p, w) = holding(&mut sim, greybox::SPAWNS[0], SNIPER_RIFLE);
     run(&mut sim, p, 30, |s, k| s.intent(p).secondary = k == 0);
     let mode = |sim: &Sim| sim.app.world().get::<AltModes>(w).unwrap().current;
     assert_eq!(mode(&sim), 1);
-    run(&mut sim, p, 3, |s, k| s.intent(p).fire = k == 0);
-    assert_eq!(mode(&sim), 0, "unscoped by the shot");
-    run(&mut sim, p, 110, |s, _| s.intent(p).fire = false);
-    assert_eq!(mode(&sim), 1, "back in");
+    let mut modes = Vec::new();
+    let mut rose = false;
+    let ev = run(&mut sim, p, 170, |s, k| {
+        s.intent(p).fire = k == 0;
+        s.intent(p).jump = k == 10;
+        rose |= s.velocity(p).y > 0.5;
+        modes.push(s.app.world().get::<AltModes>(w).unwrap().current);
+    });
+    assert_eq!(fired(&ev), [0]);
+    assert!(!rose, "no jump in the 0.5 s after a scoped shot");
+    // modes[k] is read before tick k runs: the shot on tick 0.
+    let first_down = modes.iter().position(|m| *m == 0).expect("dropped") as f64;
+    let back = modes.iter().skip(first_down as usize).position(|m| *m == 1).expect("back") as f64 + first_down;
+    let t = |k: f64| (k - 1.0) * TICK_INTERVAL;
+    assert!((t(first_down) - 0.5).abs() <= 0.031, "down at {} s", t(first_down));
+    assert!((t(back) - 1.4).abs() <= 0.031, "back at {} s", t(back));
+    let c = sim.app.world().get::<tf2::game::weapons::sniper::Tf2Sniper>(w).unwrap().state.charge;
+    // 170 ticks: 2.55 s after the shot, about 1.15 s charging at once.
+    assert!(c > 50.0, "charge {c}");
+}
+
+/// Tests 17b, 17c: a jump drops the scope and empties the charge, and
+/// attack2 in the jump doesn't raise it; after an unscoped shot the scope
+/// can't be raised for 1.67 s.
+#[test]
+fn a_jump_drops_the_scope_and_an_unscoped_shot_blocks_it_17b_17c() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], SNIPER_RIFLE);
+    let mode = |sim: &Sim| sim.app.world().get::<AltModes>(w).unwrap().current;
+    run(&mut sim, p, 60, |s, k| s.intent(p).secondary = k == 0);
+    assert_eq!(mode(&sim), 1);
+    run(&mut sim, p, 3, |s, k| s.intent(p).jump = k == 0);
+    assert_eq!(mode(&sim), 0, "the jump dropped it");
+    let c = sim.app.world().get::<tf2::game::weapons::sniper::Tf2Sniper>(w).unwrap().state.charge;
+    assert_eq!(c, 0.0);
+    run(&mut sim, p, 4, |s, k| {
+        s.intent(p).jump = false;
+        s.intent(p).secondary = k == 0;
+    });
+    assert_eq!(mode(&sim), 0, "no scope in the jump");
+    // Landed: an unscoped shot, then attack2 at +1.0 s does nothing, at
+    // +1.8 s it scopes.
+    run(&mut sim, p, 120, |s, _| s.intent(p).secondary = false);
+    run(&mut sim, p, 2, |s, k| s.intent(p).fire = k == 0);
+    run(&mut sim, p, 64, |s, k| {
+        s.intent(p).fire = false;
+        s.intent(p).secondary = k == 62;
+    });
+    assert_eq!(mode(&sim), 0, "blocked at +1.0 s");
+    run(&mut sim, p, 60, |s, k| s.intent(p).secondary = k == 50);
+    assert_eq!(mode(&sim), 1, "scoped at +1.8 s");
 }
 
 /// Test 21: a grenade fired level leaves at 1200 forward and 200 up and
@@ -312,51 +362,123 @@ fn stickies_arm_limit_and_vanish_30_31_38() {
     assert_eq!(stickies(&mut sim, p).len(), 0, "a dead Demoman's vanish");
 }
 
-/// Tests 41, 42, 44: an enemy 100 units ahead takes flame ticks, rising
-/// (the burn ramp), and burns; at 450 units nothing; after one tick he
-/// burns at least 3 s, 4 every 0.5 s.
+/// The damage `e` took each tick over `n` ticks of `input`: (tick, points).
+fn hurts(sim: &mut Sim, p: Entity, e: Entity, n: u64, mut input: impl FnMut(&mut Sim, u64)) -> Vec<(u64, f32)> {
+    let mut took = Vec::new();
+    let mut last = health_points(sim, e);
+    run(sim, p, n, |s, k| {
+        input(s, k);
+        let h = health_points(s, e);
+        if h < last {
+            took.push((k, last - h));
+        }
+        last = h;
+    });
+    took
+}
+
+/// Test 41 (corrections from the SDK): an enemy 100 units ahead in the
+/// stream: damaging hits at least 0.075 s (5 ticks) apart, each between
+/// 6.5 x g_age and 13 (whole points, at least 1), and he burns.
 #[test]
-fn the_flame_thrower_hurts_near_and_sets_on_fire_41_42_44() {
+fn the_flame_hits_every_5_ticks_and_ignites_41() {
     let mut sim = sim();
     let from = greybox::SPAWNS[0];
     let (p, _) = holding(&mut sim, from, FLAMETHROWER);
     let near = target(&mut sim, from, 100.0);
     let at = sim.position(near);
     testkit::aim_at(&mut sim, p, at);
-    let mut took = Vec::new();
-    let mut last = health_points(&sim, near);
-    run(&mut sim, p, 100, |s, _| {
+    let took = hurts(&mut sim, p, near, 100, |s, _| {
         s.intent(p).fire = true;
-        let h = health_points(s, near);
-        if h < last {
-            took.push(last - h);
-        }
-        last = h;
+        hold_still(s, near);
     });
+    // The afterburn's 4s come every 0.5 s; the flame's are the rest.
     assert!(took.len() >= 15, "{took:?}");
-    // 13 x the age factor at 100 units (0.83) x the burn ramp: from about 5
-    // up to about 11 (the afterburn's 4s between).
-    assert!(took[0] <= 6.0 && took.iter().any(|t| *t >= 10.0), "rising: {took:?}");
+    let hits: Vec<(u64, f32)> = took.iter().copied().filter(|(_, d)| (d - 4.0).abs() > 0.01).collect();
+    assert!(hits.windows(2).all(|w| w[1].0 - w[0].0 >= 5), "{hits:?}");
+    assert!(hits.iter().all(|(_, d)| (5.0..=13.0).contains(d)), "{hits:?}");
     assert!(sim.app.world().get::<Burning>(near).is_some(), "burning");
-    // Out of the flames: the afterburn alone.
-    run(&mut sim, p, 2, |s, _| s.intent(p).fire = false);
-    let before = health_points(&sim, near);
-    run(&mut sim, p, (3.0 / TICK_INTERVAL) as u64, |s, _| s.intent(p).fire = false);
-    let burnt = before - health_points(&sim, near);
-    assert!((20.0..=32.0).contains(&burnt), "afterburn {burnt}");
-
-    // Far: nothing.
-    let mut sim2 = super::weapons::sim();
-    let (p2, _) = holding(&mut sim2, from, FLAMETHROWER);
-    let far = target(&mut sim2, from, 450.0);
-    let at = sim2.position(far);
-    testkit::aim_at(&mut sim2, p2, at);
-    let before = health_points(&sim2, far);
-    run(&mut sim2, p2, 60, |s, _| s.intent(p2).fire = true);
-    assert_eq!(health_points(&sim2, far), before);
 }
 
-/// Tests 48, 50: a needle flies at 990 and drops; at 512 units it deals 10.
+/// Test 42: an enemy whose near side is 360 units ahead is out of reach
+/// (about 340).
+#[test]
+fn the_flame_reaches_about_340_units_42() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, FLAMETHROWER);
+    let far = target(&mut sim, from, 384.0);
+    let at = sim.position(far);
+    testkit::aim_at(&mut sim, p, at);
+    let took = hurts(&mut sim, p, far, 80, |s, _| s.intent(p).fire = true);
+    assert!(took.is_empty(), "{took:?}");
+}
+
+/// Test 43: 0.28 ammo a point, a point every 2 ticks: 3 s of fire uses
+/// 28 of the 200 (100 points; 1 more for the truncated remainder).
+#[test]
+fn the_flame_uses_0_28_ammo_a_point_43() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], FLAMETHROWER);
+    let before = sim.app.world().get::<Magazine>(w).unwrap().clip;
+    let ev = run(&mut sim, p, 200, |s, _| s.intent(p).fire = true);
+    let shots = fired(&ev);
+    assert!(shots.windows(2).all(|w| w[1] - w[0] == 2), "every 2 ticks: {shots:?}");
+    let used = before - sim.app.world().get::<Magazine>(w).unwrap().clip;
+    let want = (shots.len() as f32 * 0.28).floor() as u32;
+    assert!(used == want || used + 1 == want, "{} points used {used}, want {want}", shots.len());
+}
+
+/// Test 44: lit by one flame hit, then out of the flames: 3.4 s of burn,
+/// 4 at +0.5, +1.0 ... +3.5: 7 ticks, 28.
+#[test]
+fn one_hit_burns_seven_ticks_44() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, FLAMETHROWER);
+    let near = target(&mut sim, from, 100.0);
+    let at = sim.position(near);
+    testkit::aim_at(&mut sim, p, at);
+    let took = hurts(&mut sim, p, near, 300, |s, k| {
+        s.intent(p).fire = k == 0;
+        hold_still(s, near);
+    });
+    assert!(!took.is_empty() && (took[0].1 - 4.0).abs() > 0.01, "the flame's hit first: {took:?}");
+    let burns: Vec<(u64, f32)> = took[1..].to_vec();
+    assert_eq!(burns.len(), 7, "{took:?}");
+    assert!(burns.iter().all(|(_, d)| (d - 4.0).abs() < 0.01), "{took:?}");
+    let first = took[0].0;
+    for (i, (k, _)) in burns.iter().enumerate() {
+        let want = first as f64 + 0.5 * (i + 1) as f64 / TICK_INTERVAL;
+        assert!((*k as f64 - want).abs() <= 1.0, "burn {} at {k}, want {want}: {took:?}", i + 1);
+    }
+    assert!(sim.app.world().get::<Burning>(near).is_none(), "out");
+}
+
+/// Test 46: an enemy Pyro takes the flame's hits but no afterburn.
+#[test]
+fn an_enemy_pyro_takes_no_afterburn_46() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, FLAMETHROWER);
+    let pyro = target(&mut sim, from, 100.0);
+    let w = chimera_sim::weapon::give(sim.app.world_mut(), pyro, FLAMETHROWER).unwrap();
+    sim.app.world_mut().get_mut::<chimera_sim::weapon::Inventory>(pyro).unwrap().wanted = Some(w);
+    sim.seconds(1.0);
+    sim.app.world_mut().get_mut::<Health>(pyro).unwrap().current = 10.0;
+    let at = sim.position(pyro);
+    testkit::aim_at(&mut sim, p, at);
+    let took = hurts(&mut sim, p, pyro, 300, |s, k| {
+        s.intent(p).fire = k < 20;
+        hold_still(s, pyro);
+    });
+    assert!(!took.is_empty(), "hit");
+    assert!(took.iter().all(|(k, _)| *k < 30), "nothing after the flames: {took:?}");
+}
+
+/// Tests 48, 50 (corrections from the SDK): a needle flies at 1000 toward
+/// the crosshair's point, within 1.5 degrees of it in pitch and yaw, and
+/// drops; at 512 units it deals 10.
 #[test]
 fn needles_fall_and_hurt_by_distance_48_50() {
     let mut sim = sim();
@@ -370,7 +492,10 @@ fn needles_fall_and_hurt_by_distance_48_50() {
     let n = flyers(&mut sim, p);
     assert_eq!(n.len(), 1);
     let v = n[0].2 / U;
-    assert!((v.z + 990.0).abs() < 0.5 && v.y < 0.0, "{v}");
+    // One tick of 240 units/s² off its 1000.
+    assert!((v.length() - 1000.0).abs() < 4.0, "{v}");
+    let off = v.normalize().angle_between(Vec3::NEG_Z).to_degrees();
+    assert!(off < 2.2, "{off} degrees off the aim: {v}");
     run(&mut sim, p, 200, |_, _| {});
 
     let mut sim = super::weapons::sim();

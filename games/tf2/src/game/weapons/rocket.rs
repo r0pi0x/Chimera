@@ -9,6 +9,10 @@
 //! full splash, the owner's own 90 x the splash to 121 units x0.6
 //! airborne, the push 6 / 10 / 5 per point capped at 1000 units/s).
 //!
+//! The rocket heads for what a 2000-unit line from the eye meets beyond
+//! 200 units (else the line's end), from its offset pulled back by the
+//! world (`chimera:projectile` `aim_trace`, `start_trace`; weapons.md 5.1).
+//!
 //! Known shortcuts: the blast's (`blast`).
 
 use std::sync::Arc;

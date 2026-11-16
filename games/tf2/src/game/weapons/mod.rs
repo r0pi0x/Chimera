@@ -28,12 +28,14 @@
 //!   (`chimera:projectile` flies it): splash, self-damage, knockback;
 //! - `tf2:minigun` (`minigun`): the spin, its slowed and grounded holder,
 //!   the damage ramp, its sound loops;
-//! - `tf2:sniper` (`sniper`): the scoped charge and the scoped headshot
-//!   (the scope itself is Chimera's `[alt] scope`);
+//! - `tf2:sniper` (`sniper`): the scope's timing after shots and jumps,
+//!   the scoped charge and the scoped headshot (the scope's look is
+//!   Chimera's `[alt] scope`);
 //! - `tf2:grenade` (`grenade`): the grenade's direct hit, bounces and fuse;
 //! - `tf2:sticky` (`sticky`): the charged launch, sticking, arming, the
 //!   limit and attack2's detonation;
-//! - `tf2:flame` (`flame`): the flame cone's ticks and the afterburn;
+//! - `tf2:flame` (`flame`): the flame points, their heat and the
+//!   afterburn;
 //! - `tf2:needle` (`needle`): a needle's hit by distance.
 //!
 //! The rocket, grenade and sticky explode alike (`blast`), and every hit
@@ -252,13 +254,13 @@ fn power_sniper(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
     s.damage = num(p, "base").unwrap_or(0.0) * at.data.units.damage;
 }
 
-/// A flame tick at three quarters of its burn ramp, every tick (the
-/// curve's distances are beyond its reach: it scores as if within it, as
-/// the other games' flamethrowers do).
+/// A flame hit at three quarters of its heat ramp, every hit interval
+/// (the curve's distances are beyond its reach: it scores as if within
+/// it, as the other games' flamethrowers do).
 fn power_flame(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
     s.damage = num(p, "damage").unwrap_or(0.0) * 0.75 * at.data.units.damage;
     s.pellets = 1;
-    s.interval = num(p, "tick").unwrap_or(s.interval);
+    s.interval = num(p, "hit_interval").unwrap_or(s.interval);
 }
 
 /// The spin-up before the first shot (the wind-up and its step to the
@@ -326,11 +328,11 @@ impl Plugin for Tf2GunsPlugin {
             .add_systems(
                 Predict::Weapons,
                 (
-                    (damage::centre_first, sniper::charge, recoil::decay).before(WeaponFrame),
-                    (damage::note_shots, flame::sounds, recoil::kick).chain().after(WeaponFrame),
+                    (damage::centre_first, recoil::decay).before(WeaponFrame),
+                    (damage::note_shots, flame::ammo, flame::sounds, recoil::kick).chain().after(WeaponFrame),
                 ),
             )
-            .add_systems(Predict::Select, (minigun::spin, sticky::charge).before(SelectWeapons))
+            .add_systems(Predict::Select, (minigun::spin, sticky::charge, sniper::scope).before(SelectWeapons))
             .add_systems(
                 FixedUpdate,
                 (
@@ -343,7 +345,7 @@ impl Plugin for Tf2GunsPlugin {
                         sticky::touch,
                         needle::touch,
                         sticky::detonate,
-                        flame::burn_cone,
+                        flame::flames,
                         flame::afterburn,
                         blast::bullet_push,
                     )
