@@ -2487,7 +2487,8 @@ not-looking eye, the idle grey), `cl_avatar <0-31>` (your avatar: glyph x
 news card; none hides it). The party pages need `+mainmenu` on a tool
 run: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
 <out>.png +ui_scene play server +mainmenu`. Revision 8's screens add
-`ui_scene play maps` (Host's Maps picker open), `ui_scene load [ask]` (the
+`ui_scene play maps [slices]` (Host's Maps picker open; `slices`: the games
+without arena slices folded, a map's slices under it, one off), `ui_scene load [ask]` (the
 Signal loading screen, the Leave? dialog with `ask`; `+mainmenu` too) and
 `ui_scene lobby host` (the host's view of a first lobby waiting for its
 Start, two parties with their edges).

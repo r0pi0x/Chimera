@@ -10,7 +10,7 @@ entry "An arena cut from a big map" in [halo-ce.md](halo-ce.md).
 | Milestone | State | Summary |
 |---|---|---|
 | A1 one hand-drawn slice of Blood Gulch, plain wall | done 2026-11-15 | `halo_ce:bloodgulch@west_base` (9,900 m2): data, solid wall, spots and bots held inside, `NetMinigame::arena` (net64), `arena` command, placeholder look; see "A1 as built" |
-| A2 slices in the draw | not started | a slice is a pool entry with its own measurements; rotation, vote and map change carry it |
+| A2 slices in the draw | done 2026-11-16 | `map@id` pool entries judged from measures stored in the slice data, only where the whole map is too big; one per map on a ballot, held back by map; `changelevel map@id`; the Maps picker's children; see "A2 as built". No slice in the data passes yet |
 | A3 measuring a slice | done 2026-11-16 | `map_fitness --slice` and `--safety`, `slice_safety`, `[slice]` in map_fit.toml calibrated on 13 maps, slices make their own spawn points; A1's leftovers done; see "A3 as built". West Base fails the measures |
 | A4 spawn deaths from play | not started | the share of deaths within 3 s of a spawn, per match, to check A3's thresholds against play |
 | A5 the candidate generator | not started | `map_fitness --slices`: boundaries proposed from the bots' mesh, scored, drawn top-down |
@@ -521,6 +521,67 @@ is the party UI owner's (coordinate: the name only). Proof: `map_fit`
 unit tests (a slice in at its range, out outside it); party_kit's
 `map_pool_by_count` with slices; ultimate_gun_game's `heavy::pool_maps`
 loads a drawn slice.
+
+**A2 as built** (2026-11-16). Where it differs from the above:
+- **The entry.** A slice is `game:map@id` in the pool, the rotation, the
+  vote, the history and a match's map change (not inside the pool only,
+  as section 3 had it: the entry in play is `minigame_net::current_entry`,
+  the map or `map@id`). The party apps' pool has each map's slices right
+  after it (`arena::with_slices`, only with `arena::SlicesInPool`, which
+  the party kit's `ArenaPlugin` puts in: a game's own app never has a
+  slice in its rotation); `map_fit::entry_map` gives an entry's map.
+- **Its fitness** (`map_fit::MapPool::judge` on `map@id`, registered by
+  `arena::add` as a `SliceFit`: the data's `players` band and its
+  measures). Out while the whole map is in at the count (or has no
+  measurements, or is broken): the map's own measurements decide "too
+  big"; out unless the slice's data carries the spawn-safety measures
+  (`area_m2`, `sight_m`, `spots`, `see_pairs`, `seen_at_spawn` by count,
+  `cover`, `long_sight_p95_m`; optional `point_floor_seen`,
+  `point_seen_by`) and they pass `[slice]` (`SliceLimits::judge_measures`,
+  which `judge` on a `Report` now calls): the measures need the map loaded
+  (the visibility table), so the tool writes them into the slice's data
+  and the pool reads them, judged against the limits at run time (a
+  changed limit applies without measuring again); in at the counts the
+  measures suit (`SliceVerdict::players`) narrowed by the data's band; its
+  weight by its own wander time, as a map's. Pool rules name a slice
+  `map@id`. West Base has no measures in its data: never drawn.
+- **The draw.** `vote::candidates_weighted`: one entry per map on a
+  ballot (a slice is its map: the pick's siblings and the map played, or
+  any of its slices, are left off); `rotation::MapHistory::next_weighted`
+  and the ballot's fresh-first both compare recent entries by map.
+- **The map change.** `change_match` to `map@id` (a rotation's, a
+  vote's, a host's `changelevel map@id`, the `arena` command with a
+  minigame playing) plans the slice (`arena::plan`) and changes level to
+  the map by its name, so nothing new goes on the wire (net66 kept: the
+  slice reaches clients with the match, `NetMinigame::arena`); to a whole
+  map it clears the plan. The same map again (another slice of it, or it
+  whole after one) is loaded again, and `MapChange::reload` (the map
+  file's change tick when it began) holds the match until the load has
+  replaced it.
+- **Names.** `vote::map_name` (the vote's and the lobby's label; now a
+  `Cow`) and `hud::map_display_name` read a slice as "<map's display
+  name>: <slice id as words>": `halo_ce:bloodgulch@west_base` is
+  "Bloodgulch: West Base". They are pure functions of the id, so the map
+  part is the id's words, not the data's `map_name` ("Blood Gulch"; the
+  data's full name, "Blood Gulch: West Base", is `ArenaSlice::name`, sent
+  with the match). The loading screen shows the map's id (the level
+  change carries the map only): "bloodgulch".
+- **The Maps picker** (`party_kit::maps_picker`): slices are listed after
+  their map, a row one step in (the same row and box), named by id; a
+  map's row sets it and its slices; a slice toggles alone; a slice whose
+  map is off shows off, and turning it on turns the map on (its other
+  slices stay off); the counts are of whole maps. `mp_maps_off` names
+  `map@id`, and `MapsOff::has` takes a map's slices with it.
+  `ui_scene play maps slices` stages it (the games without slices folded).
+- Proof: `map_fit`'s `a_slice_is_in_at_its_range_out_outside_it_and_out_
+  when_unsafe`, `arena`'s `a_slices_stored_measures_join_the_pool`, the
+  ballot's and the rotation's unit tests; party_kit's `arena_pool` (on
+  `NetSim`: the pool at 2 and 12, the ballot, a `changelevel` to a slice
+  building the wall on the server and both clients, the hold-back);
+  `maps_picker`'s unit tests; ultimate_gun_game's heavy
+  `pool_maps::a_drawn_slice_loads_and_plays_inside_its_wall` (a test
+  slice with passing made-up measures, drawn at 4 players on Blood
+  Gulch).
 
 **A3 Measuring a slice** (medium). `map_fitness --slice <map>@<id>` and
 the section 5 measures, the visibility table, the calibration sweep and

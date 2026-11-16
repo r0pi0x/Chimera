@@ -346,3 +346,90 @@ fn every_pool_map_loads_with_spots_and_its_set_covers_it() {
     let _ = std::fs::remove_file(&log);
     assert!(problems.is_empty(), "{} problems:\n{}", problems.len(), problems.join("\n"));
 }
+
+/// A slice of Blood Gulch made for this test: West Base's outline with
+/// made-up measures that pass `[slice]` (West Base's own fail: it is never
+/// drawn), so the draw can pick a slice before a real one is in the data.
+const TEST_SLICE: &str = r#"
+[[slice]]
+map = "bloodgulch"
+id = "test_west"
+name = "Test West"
+points = [[171.0, -168.0], [212.0, -180.0], [262.0, -174.0], [285.0, -148.0], [285.0, -102.0], [258.0, -80.0], [205.0, -78.0], [173.0, -100.0]]
+seed = [225.0, 0.6, -160.0]
+players = [2, 8]
+area_m2 = 9927
+sight_m = 25
+spots = 4000
+see_pairs = 0.2
+seen_at_spawn = { 2 = 0.0, 4 = 0.01, 8 = 0.05, 12 = 0.2, 16 = 0.3 }
+cover = 0.4
+long_sight_p95_m = 50
+"#;
+
+/// A drawn arena slice loads and plays (docs/plans/active/arena-slices.md,
+/// A2): Ultimate Gun Game's server on Halo's maps (the disc image in
+/// `CHIMERA_HALO_CE_ROOT`) with 4 characters, every map but Blood Gulch
+/// off (`mp_maps_off`), and `TEST_SLICE` registered: the whole map is too
+/// big at 4 and West Base fails its measures, so the draw picks the test
+/// slice; the server loads Blood Gulch and plays inside the slice's wall
+/// (its play area, the spawn spots inside it). Skipped without the disc
+/// image or with Halo's maps out of the pool.
+///
+/// `cargo test -p ultimate_gun_game --features dev --test it heavy::pool_maps::a_drawn_slice -- --nocapture`
+#[test]
+fn a_drawn_slice_loads_and_plays_inside_its_wall() {
+    use chimera_sim::minigame::map_fit::MapPoolAppExt;
+    use chimera_world::map::play_area::{ArenaWall, PlayArea};
+    if std::env::var_os("CHIMERA_HALO_CE_ROOT").is_none() {
+        eprintln!("skipping: no Halo disc image (CHIMERA_HALO_CE_ROOT)");
+        return;
+    }
+    let args: Vec<String> = ["-port", "0", "+maxplayers", "16", "+MaxPlayer", "4", "+map", "halo_ce:chillout", "+mp_lobby_countdown", "1", "+mp_lobby_max_wait", "5"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let options = match SERVER.parse(args).unwrap() {
+        dedicated::Parsed::Run(o) => o,
+        dedicated::Parsed::Help => unreachable!(),
+    };
+    let start = StartMap::load(&SERVER, &options).expect("the first map loads");
+    let mut app = dedicated::app(&SERVER, start, &options);
+    app.add_arena_slices("halo_ce", "the test's slice", TEST_SLICE);
+    chimera_world::harness::single_threaded_schedules(&mut app);
+    app.finish();
+    app.cleanup();
+    step(&mut app);
+    dedicated::listen(app.world_mut()).expect("the server listens");
+    step(&mut app);
+    let def = app.world().resource::<ActiveMinigame>().def;
+    let maps: Vec<String> = def.maps.iter().map(|m| chimera_net::net::normalize_map(m)).collect();
+    if !maps.iter().any(|m| m == "halo_ce:bloodgulch") {
+        eprintln!("skipping: Blood Gulch isn't in the pool ({} maps)", maps.len());
+        return;
+    }
+    let off: Vec<&String> = maps.iter().filter(|m| *m != "halo_ce:bloodgulch").collect();
+    let line = off.iter().map(|m| m.as_str()).collect::<Vec<_>>().join(",");
+    app.world_mut().resource_mut::<Console>().submit(&format!("mp_maps_off \"{line}\""));
+    let ok = until(&mut app, Duration::from_secs(60), |app| map_fit::present(app.world_mut()) == 4);
+    assert!(ok, "4 characters present: {}", map_fit::present(app.world_mut()));
+    let pool = minigame_net::rotation_pool(app.world(), def);
+    eprintln!("the pool: {pool:?}");
+    assert!(pool.contains(&"halo_ce:bloodgulch@test_west".to_string()), "{pool:?}");
+    let said = minigame_net::host_next_level(app.world_mut());
+    eprintln!("changelevel: {said:?}");
+    assert!(matches!(said, Some(Ok(Some(ref s))) if s.contains("bloodgulch@test_west")), "{said:?}");
+    let started = Instant::now();
+    assert!(on(&mut app, "halo_ce:bloodgulch"), "Blood Gulch loads and its match runs");
+    eprintln!("loaded and playing in {:.1?}", started.elapsed());
+    let w = app.world_mut();
+    let area = w.get_resource::<PlayArea>().cloned().expect("a play area");
+    assert_eq!(area.slice.key(), "halo_ce:bloodgulch@test_west");
+    assert_eq!(minigame_net::current_entry(w), "halo_ce:bloodgulch@test_west");
+    let walls = w.query::<&ArenaWall>().iter(w).count();
+    assert_eq!(walls, 8, "a wall piece per edge");
+    let spots = spawns::candidates(w);
+    let outside = spots.iter().filter(|p| !area.polygon.contains3(**p)).count();
+    eprintln!("{} spawn spots, {outside} outside", spots.len());
+    assert!(!spots.is_empty() && outside == 0, "{} spots, {outside} outside", spots.len());
+}

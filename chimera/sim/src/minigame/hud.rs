@@ -212,8 +212,22 @@ pub fn shown_name(world: &World, def: &MinigameDef) -> String {
 /// A map id (`cs_source:de_aztec`, `combat_arms:warehouse`) as a name to
 /// read: no game part, no CS-style mode prefix (`de_`, `cs_`, ...),
 /// underscores as spaces, words capitalised, a trailing number apart
-/// (`de_dust2`: "Dust 2").
+/// (`de_dust2`: "Dust 2"). An arena slice (`game:map@id`) reads
+/// "<map's name>: <slice's id as words>" (`halo_ce:bloodgulch@west_base`:
+/// "Bloodgulch: West Base").
 pub fn map_display_name(id: &str) -> String {
+    if let Some((map, slice)) = id.split_once('@') {
+        let words = slice
+            .split('_')
+            .filter(|w| !w.is_empty())
+            .map(|w| {
+                let mut cs = w.chars();
+                cs.next().map(|c| c.to_uppercase().chain(cs).collect::<String>()).unwrap_or_default()
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        return format!("{}: {words}", map_display_name(map));
+    }
     let id = id.rsplit(':').next().unwrap_or(id);
     let id = ["de_", "cs_", "as_", "es_", "aim_", "ar_", "dm_", "gg_", "fy_", "zm_"]
         .iter()
@@ -378,5 +392,6 @@ mod name_tests {
         assert_eq!(map_display_name("combat_arms:warehouse"), "Warehouse");
         assert_eq!(map_display_name("cs_source:cs_office"), "Office");
         assert_eq!(map_display_name("cs_source:de_cbble"), "Cbble");
+        assert_eq!(map_display_name("halo_ce:bloodgulch@west_base"), "Bloodgulch: West Base");
     }
 }
