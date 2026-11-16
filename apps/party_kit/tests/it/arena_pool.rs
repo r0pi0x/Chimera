@@ -91,7 +91,7 @@ fn with_slices(app: &mut App) {
         .add_arena_slices("test", "the test's slices", SLICES)
         // A map's spawn as the game's loader leaves it (the test's loads
         // only name the map): its play area made from the plan.
-        .add_systems(Update, play_area::map_spawned.run_if(resource_changed::<LoadedMapName>));
+        .add_systems(Update, play_area::map_spawned.run_if(resource_exists_and_changed::<LoadedMapName>));
 }
 
 fn console(sim: &mut chimera_net::harness::NetSim, line: &str) -> String {
