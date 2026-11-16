@@ -59,6 +59,7 @@ pub mod blast;
 pub mod damage;
 pub mod flame;
 pub mod grenade;
+pub mod looks;
 pub mod minigun;
 pub mod needle;
 pub mod rocket;
@@ -251,10 +252,11 @@ fn power_sniper(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
     s.damage = num(p, "base").unwrap_or(0.0) * at.data.units.damage;
 }
 
-/// A flame tick at half its burn ramp, every tick, within its range.
+/// A flame tick at three quarters of its burn ramp, every tick (the
+/// curve's distances are beyond its reach: it scores as if within it, as
+/// the other games' flamethrowers do).
 fn power_flame(p: &HookParams, at: &ReadAt, s: &mut GunStats) {
-    let range = num(p, "range").unwrap_or(0.0);
-    s.damage = if at.distance <= range { num(p, "damage").unwrap_or(0.0) * 0.75 * at.data.units.damage } else { 0.0 };
+    s.damage = num(p, "damage").unwrap_or(0.0) * 0.75 * at.data.units.damage;
     s.pellets = 1;
     s.interval = num(p, "tick").unwrap_or(s.interval);
 }
@@ -302,7 +304,10 @@ impl Plugin for Tf2GunsPlugin {
             .get_resource::<script_numbers::GunNumbers>()
             .cloned()
             .unwrap_or_else(script_numbers::GunNumbers::from_scripts);
-        numbers.log();
+        // Said once the app runs: a dedicated server's log is set up after
+        // its plugins are built (`chimera_net::dedicated::run`).
+        let said = numbers.clone();
+        app.add_systems(Startup, move || said.log());
         let docs: Vec<(&str, &str)> = numbers.docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
         let set = app.add_weapon_data(&docs).unwrap_or_else(|e| panic!("TF2 weapon data: {e}"));
         // A client whose own differ (no scripts, the fallback) plays with
@@ -340,6 +345,7 @@ impl Plugin for Tf2GunsPlugin {
             .predicted_part::<sniper::Tf2Sniper>()
             .predicted_part::<sticky::Tf2Sticky>()
             .predicted_part::<flame::Tf2Flame>();
+        looks::add(app);
     }
 }
 
@@ -347,7 +353,7 @@ impl Plugin for Tf2GunsPlugin {
 mod tests {
     use super::*;
 
-    /// Every file in data/weapons is built in, and the four guns load
+    /// Every file in data/weapons is built in, and the twelve guns load
     /// with their classes for the automatic ladder.
     #[test]
     fn the_data_is_built_in_and_loads() {

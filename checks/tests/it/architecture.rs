@@ -82,7 +82,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // Source's player movement (source_engine's `source_movement`, lifted
     // from CS:S's): each Source game's config and cvars, the map's
     // brushes, water and props it moves through.
-    ("source_movement", &["core", "map", "slots", "console"]),
+    ("source_movement", &["core", "map", "slots", "console", "envelope"]),
     // Which game fills each match-wide slot (rules, HUD, binds, tick) and
     // the sets that gate a game's systems by it.
     ("gameplay", &["core", "game_registry"]),
@@ -99,6 +99,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // a step of the quick exit (`shutdown`, below it).
     ("diagnostics", &["console", "metrics", "env", "shutdown"]),
     ("slots", &["core"]),
+    ("envelope", &["core"]),
     ("character", &["core", "slots"]),
     ("movement", &["core", "slots", "character"]),
     ("greybox", &["core"]),

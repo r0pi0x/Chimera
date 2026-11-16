@@ -279,6 +279,9 @@ pub struct HaloTrace<'w, 's> {
         With<Intent>,
     >,
     teams: Query<'w, 's, &'static Team>,
+    /// Halo's bodies (`body::death`): their hit volumes about their feet,
+    /// unturned (health_shields.md: shots hit a dead body).
+    corpses: Query<'w, 's, (Entity, &'static super::super::body::death::CorpseState, &'static crate::core::Hitboxes)>,
 }
 
 /// What a trace met (metres): the distance along it, the point, the
@@ -313,6 +316,11 @@ impl HaloTrace<'_, '_> {
             {
                 let p = from + *dir * enter;
                 best = Some((enter, p, -*dir, Some((e, Some(BodyRegion::from_hitgroup(hitgroup_at(b, p))))), None));
+            }
+        }
+        for (e, t, boxes) in self.corpses.iter().filter(|c| !skip.contains(&c.0)) {
+            if let Some((i, enter, _)) = boxes.nearest(from - t.at, *dir, limit(&best)) {
+                best = Some((enter, from + *dir * enter, -*dir, Some((e, Some(boxes.0[i].region))), None));
             }
         }
         for r in rewound.iter().filter(|r| !skip.contains(&r.entity)) {
@@ -387,9 +395,9 @@ impl HaloTrace<'_, '_> {
         self.characters.get(e).ok().filter(|c| c.5.current > 0.0).map(|c| c.1.translation)
     }
 
-    /// A character's centre, alive or dead.
+    /// A character's centre, alive or dead (a body's: its feet).
     pub fn any_centre(&self, e: Entity) -> Option<Vec3> {
-        self.characters.get(e).ok().map(|c| c.1.translation)
+        self.characters.get(e).ok().map(|c| c.1.translation).or_else(|| self.corpses.get(e).ok().map(|c| c.1.at))
     }
 
     /// The living characters: entity, centre (metres), camouflage.
@@ -907,7 +915,13 @@ pub fn run(
     role: Option<Res<NetRole>>,
     actions: Option<Res<ActionRegistry>>,
     spartan: Option<Res<Spartan>>,
-    (grenades, bend, party): (Res<GrenadeData>, Option<Res<aim::Bend>>, Option<Res<grenades::PartyGrenades>>),
+    (grenades, bend, party, mut rungs, ladder): (
+        Res<GrenadeData>,
+        Option<Res<aim::Bend>>,
+        Option<Res<grenades::PartyGrenades>>,
+        Query<&mut super::rung::GrenadeRung>,
+        Option<Res<chimera_sim::minigame::ladder::Ladder>>,
+    ),
     mut most: Local<u32>,
     mut commands: Commands,
 ) {
@@ -917,7 +931,9 @@ pub fn run(
     let (melee_bit, zoom_bit, grenade_bit) = (bit(MELEE_ACTION), bit(ZOOM_ACTION), bit(grenades::GRENADE_ACTION));
     let switch_bit = bit(grenades::SWITCH_ACTION);
     // A party app's switch off: no grenades, the buttons dead.
-    let no_grenades = grenades::PartyGrenades::none(party.as_deref());
+    let party_off = grenades::PartyGrenades::none(party.as_deref());
+    // The grenade rung's supply (`rung`): the ladder's grenade-band rule.
+    let refill = ladder.as_deref().is_some_and(|l| l.refill_ammo);
     *most = (*most).max(holders.iter().count() as u32);
     let players = *most;
     for (owner, intent, inv, at, state, vel, health, mut hands) in &mut holders {
@@ -925,7 +941,12 @@ pub fn run(
             continue;
         }
         let alive = health.current > 0.0;
+        // A grenade rung's weapon carried (`rung`): its grenades whatever
+        // the party's switch says.
+        let rung = inv.weapons.iter().find(|w| rungs.contains(**w)).copied();
+        let no_grenades = party_off && rung.is_none();
         // A new life's grenades.
+        let new_life = alive && !hands.armed;
         if !alive {
             hands.armed = false;
         } else if !hands.armed {
@@ -935,13 +956,53 @@ pub fn run(
         if no_grenades && hands.throw != Throw::new([0, 0]) && !hands.throw.busy() {
             hands.throw = Throw::new([0, 0]);
         }
+        if let Some(w) = rung
+            && alive
+            && let Ok(mut r) = rungs.get_mut(w)
+        {
+            // Its kind alone; the band's rule: with the ladder's refill a
+            // timed supply (the server's: the count replicates), else the
+            // start count once on arrival.
+            let k = r.kind;
+            let mut counts = hands.throw.counts;
+            counts[grenades::PLASMA - k] = 0;
+            if refill {
+                let max = r.max.min(grenades.throw.maximum[k]);
+                if new_life || !r.given {
+                    counts[k] = max;
+                    r.ticks = 0;
+                } else if server {
+                    if counts[k] >= max {
+                        r.ticks = 0;
+                    } else {
+                        r.ticks += n;
+                        while r.ticks >= r.refill_ticks && counts[k] < max {
+                            r.ticks -= r.refill_ticks;
+                            counts[k] += 1;
+                        }
+                        if counts[k] >= max {
+                            r.ticks = 0;
+                        }
+                    }
+                }
+            } else {
+                let cap = grenades.throw.maximum[k].min(grenades.cap(players));
+                if !r.given && counts[k] < cap {
+                    counts[k] = cap;
+                }
+            }
+            r.given = true;
+            if counts != hands.throw.counts {
+                hands.throw.counts = counts;
+            }
+        }
         // The inputs seen since the last Halo tick.
         latch_fire(inv, &mut guns, &mut hands, intent.fire);
         hands.zoom |= intent.secondary || intent.actions & zoom_bit != 0;
         hands.melee_button |= intent.actions & melee_bit != 0;
         hands.reload |= intent.reload;
         hands.grenade_button |= !no_grenades && grenade_bit != 0 && intent.actions & grenade_bit != 0;
-        hands.switch_button |= !no_grenades && switch_bit != 0 && intent.actions & switch_bit != 0;
+        hands.switch_button |= !no_grenades && rung.is_none() && switch_bit != 0 && intent.actions & switch_bit != 0;
         if n == 0 {
             continue;
         }
@@ -1020,6 +1081,12 @@ pub fn run(
                         }
                     }
                     ThrowEvent::Released(_) => {
+                        // The grenade rung's attack: a shot made (`rung`).
+                        if let Some(w) = rung
+                            && let Ok((weapon, ..)) = guns.get(w)
+                        {
+                            event(&mut events, &first, owner, w, WeaponEventKind::ShotMade { id: weapon.id, origin: eye, dir: aim });
+                        }
                         if server && first.0 {
                             let (pos, v) = grenades::release(&grenades.throw, eye / METERS_PER_WU, aim);
                             for (e, mut p) in &mut held {
@@ -1061,7 +1128,12 @@ pub fn run(
             for &w in &inv.weapons {
                 let Ok((weapon, hw, mut gun, mag)) = guns.get_mut(w) else { continue };
                 let held = inv.active == Some(w) && alive;
-                if let Some(m) = mag.as_deref()
+                // The grenade rung's pistol: empty, whatever wrote its rounds.
+                let rung_gun = rung == Some(w);
+                if rung_gun {
+                    gun.loaded = 0;
+                    gun.reserve = 0;
+                } else if let Some(m) = mag.as_deref()
                     && battery(&hw.0).is_none()
                 {
                     gun.loaded = m.clip as i16;
@@ -1108,6 +1180,16 @@ pub fn run(
                 }
                 if let Some(mut m) = mag {
                     match battery(&hw.0) {
+                        // The grenade rung's rounds: the grenades it can
+                        // throw (`rung`).
+                        _ if rung_gun => {
+                            let k = rungs.get(w).map_or(grenades::FRAG, |r| r.kind);
+                            let count = u32::from(hands.throw.counts[k]);
+                            if m.clip != count || m.reserve != 0 {
+                                m.clip = count;
+                                m.reserve = 0;
+                            }
+                        }
                         Some(per_round) => {
                             let rounds = battery_rounds(&hw.0, &gun, per_round);
                             if m.clip != rounds {

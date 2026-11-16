@@ -26,7 +26,9 @@
 //!   choices, a reaction per event, the effects of animation events): the
 //!   entry in `GameViewAnimRules` of the game its id names (`game:name`);
 //!   CS:S picks Source activities by its weapons' rules. Without rules for
-//!   its game, such a weapon's view model shows its reference pose.
+//!   its game, such a weapon's view model shows its reference pose. A
+//!   weapon's `ViewPose` (a game's own pose number) reaches the rules as
+//!   `ViewState::pose` (TF2's spun Minigun idles in its spun sequence).
 //!
 //! Games add `ViewAnimPlugin`, register their `ViewAnimRules` under their
 //! game id (`app.view_anim_rules(game, rules)`; several games' rules live
@@ -215,6 +217,13 @@ pub fn play_pick(view: &mut ViewAnimator, dice: &mut ViewModelPlay, pick: &Pick,
     true
 }
 
+/// A game's pose for a weapon's view model other than its usual (0): the
+/// rules read it as `ViewState::pose` to idle in another sequence (TF2's
+/// spun Minigun idles lowered, aiming). Kept on the weapon from its
+/// attach, changed in place.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ViewPose(pub u8);
+
 /// What the rules see of a character's weapon in hand.
 pub struct ViewState<'a> {
     pub weapon: &'static str,
@@ -233,6 +242,8 @@ pub struct ViewState<'a> {
     pub zoomed: Option<&'a Zoomed>,
     /// Shots since the trigger was last released (`WeaponState::burst`).
     pub shots: u32,
+    /// Its `ViewPose` (0 without).
+    pub pose: u8,
 }
 
 /// One character's view model this frame, for the rules' reactions.
@@ -393,7 +404,7 @@ pub fn drive(
         Option<&Burst>,
         Option<&Magazine>,
         Option<&Throwable>,
-        (Option<&WeaponState>, Option<&ShellReload>),
+        (Option<&WeaponState>, Option<&ShellReload>, Option<&ViewPose>),
     )>,
     mut events: MessageReader<WeaponEvent>,
     mut effects: MessageWriter<ViewModelEvent>,
@@ -414,7 +425,7 @@ pub fn drive(
         let weapon = parts.map(|(w, ..)| w.id);
         // Snipers hide the view model behind the scope.
         view.hidden = holstered || zoomed.is_some_and(|z| z.scope);
-        let state = parts.map(|(w, alt, burst, magazine, throwable, (ws, shells))| {
+        let state = parts.map(|(w, alt, burst, magazine, throwable, (ws, shells, pose))| {
             let mode = alt.map_or(0, |m| m.current);
             ViewState {
                 weapon: w.id,
@@ -427,6 +438,7 @@ pub fn drive(
                 reloading: ws.is_some_and(|s| s.reloading()),
                 zoomed,
                 shots: ws.map_or(0, |s| s.burst),
+                pose: pose.map_or(0, |p| p.0),
             }
         });
         let by_data = state.as_ref().is_some_and(|s| s.data.is_some_and(|d| !d.anim.sequences.is_empty()));

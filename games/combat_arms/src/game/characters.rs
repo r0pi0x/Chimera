@@ -2126,13 +2126,21 @@ fn dress(
             // Only a name of ours: another game names its own bodies
             // (HL2:DM's player models).
             let ours = name.is_some_and(|n| models.0.iter().any(|m| m.game == Some(super::GAME) && m.name.as_deref() == Some(n.0.as_str())));
-            if ours {
-                commands.entity(e).remove::<BodyName>();
-            }
             // Only the skin and body number it set: another game sets its
-            // own (TF2's team skins, Halo's colours).
-            if dressed.remove(&e) && (number.is_some() || skin.is_some()) {
-                commands.entity(e).remove::<(BodyNumber, BodySkin)>();
+            // own (TF2's team skins, Halo's colours). All in one move: each
+            // removal alone makes archetypes of its own.
+            let look = dressed.remove(&e) && (number.is_some() || skin.is_some());
+            match (ours, look) {
+                (true, true) => {
+                    commands.entity(e).remove::<(BodyName, BodyNumber, BodySkin)>();
+                }
+                (true, false) => {
+                    commands.entity(e).remove::<BodyName>();
+                }
+                (false, true) => {
+                    commands.entity(e).remove::<(BodyNumber, BodySkin)>();
+                }
+                (false, false) => {}
             }
             continue;
         }

@@ -871,6 +871,19 @@ pub struct Weapon {
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FiresOnRelease;
 
+/// A fact about a weapon: its attack is made with a named action
+/// (`core::ActionRegistry`, a bit of `Intent::actions`) instead of the
+/// fire button, which does what it would do with nothing to fire (Halo's
+/// grenade rung: the empty pistol in hand, the frag thrown on the grenade
+/// button). What attacks by itself (a bot) presses `action` where it
+/// would press fire; it shows the player nothing (a rung's hint is its
+/// weapon data's own opt-in `rung_hint`). Absent: the fire button attacks
+/// (every other weapon). Set by the game from its data.
+#[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
+pub struct AttackAction {
+    pub action: String,
+}
+
 /// A weapon's auto-switch priority (Source weapon scripts' `weight`): a
 /// player with `cl_autowepswitch` on draws a weapon it walks over when it
 /// weighs more than the one in hand (`drop::auto_switch`). None counts

@@ -40,3 +40,7 @@ full = "Plasma Pistol"
 [[name]]
 weapons = ["halo_ce:flamethrower"]
 full = "Flamethrower"
+
+[[name]]
+weapons = ["halo_ce:frag_grenade"]
+full = "Frag Grenade"

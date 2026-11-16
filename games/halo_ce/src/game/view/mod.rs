@@ -53,6 +53,11 @@
 //! Every gun's throw-grenade (37 to 43 frames) on `throw_grenade`, its
 //! throw-overheated on an overheated plasma weapon.
 //!
+//! **Displays** (`displays`, weapons.md 18): each Halo tick, after the
+//! machine, the held gun's functions and the frames of its view model's
+//! display parts (`ViewAnimator::mesh_frames`), by the map's memo
+//! (`displays::GunDisplays`).
+//!
 //! **Zoom** (weapons.md 12, animations.md "Root at the camera"): the view
 //! is hidden while zoomed (`ViewModelHidden` while the holder has
 //! `Zoomed` and a Halo gun), at every level (the sniper rifle's 2x and
@@ -91,6 +96,7 @@
 //! Known shortcuts: see `machine` and `load`; the view's sounds (each
 //! state animation's sound frame) are the sound step's.
 
+pub mod displays;
 pub mod load;
 pub mod machine;
 
@@ -224,6 +230,8 @@ pub struct HaloViewModel {
     pub view: HaloView,
     pub look: Option<Vec2>,
     pub hid: bool,
+    /// The held gun's functions (`displays`).
+    pub functions: displays::Functions,
 }
 
 /// Holders of Halo guns, one tick (module doc).
@@ -231,6 +239,7 @@ pub struct HaloViewModel {
 pub fn drive(
     clock: Res<SimClock>,
     models: Option<Res<ViewModels>>,
+    memos: Option<Res<crate::map::MapMemos>>,
     mut holders: Query<(
         Entity,
         &Inventory,
@@ -281,6 +290,7 @@ pub fn drive(
                 view: HaloView::new(e.to_bits() as u32 ^ 0x6a09_e667),
                 look: None,
                 hid,
+                functions: Default::default(),
             };
             own.view.cue(&set, Cue::Ready, halo.overheated);
         }
@@ -335,6 +345,26 @@ pub fn drive(
         }
         if fresh && pose.is_none() {
             pose = Some(own.view.pose(&set));
+        }
+        // The displays on the gun (`displays`): one step per Halo tick.
+        let program = memos.as_deref().and_then(|m| m.get::<displays::GunDisplays>()).and_then(|d| Some((d.guns.get(weapon.id)?, d.local_north, &d.tables)));
+        if let Some((program, north, tables)) = program
+            && (n > 0 || fresh)
+        {
+            let f = displays::aim_forward(intent.yaw, intent.pitch);
+            for _ in 0..n.max(1) {
+                displays::step(
+                    program,
+                    &|code| displays::export(code, &numbers.0, halo),
+                    displays::compass(f, north),
+                    tables,
+                    &mut own.functions,
+                );
+            }
+            let frames = displays::frames(program, &own.functions.outgoing);
+            if view.mesh_frames != frames {
+                view.mesh_frames = frames;
+            }
         }
         if let (Some(pose), Some(a)) = (pose, view.animator.as_mut()) {
             a.fixed = Some(Later::ready(pose));

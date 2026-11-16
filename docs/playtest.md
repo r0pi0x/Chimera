@@ -13,7 +13,11 @@ last rung is melee. The first kill on the last rung wins the match, then the
 players vote on the next map.
 
 You do not need any of those games installed. The game fetches the files it
-needs from our server.
+needs from our server, and it does so even if you have them installed, so
+everyone plays exactly the same files. To use your own installs instead,
+turn on **Settings ▸ Network ▸ Use my installed games** (it applies at the
+next start); the server's files are the ones the host tests with, so leave
+it off unless the host asks.
 
 ## What you need
 

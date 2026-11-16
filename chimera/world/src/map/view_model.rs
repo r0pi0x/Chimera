@@ -225,6 +225,11 @@ pub struct ViewAnimator {
     /// for now, the rest drawn (Combat Arms' fired rocket: a piece by
     /// name, `MapModel::mesh_names`). Cleared when another model shows.
     pub hidden_meshes: Vec<usize>,
+    /// Meshes of the model that show one of their base texture's frames
+    /// (`MapMesh::frames`) picked by the game, as (mesh index, frame): a
+    /// number or a gauge on the gun (Halo's ammunition counter); the rest
+    /// show their own texture. Cleared when another model shows.
+    pub mesh_frames: Vec<(usize, usize)>,
 }
 
 impl ViewAnimator {
@@ -247,6 +252,7 @@ impl ViewAnimator {
         }
         self.key = key.map(str::to_string);
         self.hidden_meshes.clear();
+        self.mesh_frames.clear();
         self.animator = key
             .and_then(|k| models?.get(k)?.animations.clone())
             .map(anim::Animator::new);

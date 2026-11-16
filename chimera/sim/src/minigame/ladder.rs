@@ -90,6 +90,9 @@
 //! server's extras (`follow_rungs`, once they are in), so its observers
 //! fire there too (`OnRung` itself isn't replicated). Combat Arms' are the
 //! infection's moments.
+//! **A rung's hint** (`rung_hint`): a rung whose weapon's data declares one
+//! (opt-in, `rung_hint = { action, verb }`: Halo's grenade rung) shows its
+//! player "Press <key> to <verb>" (`minigame::hud::RungHint`).
 //! The ladder gives the weapons, so nobody drops one at death
 //! (`weapon::drop::NoDeathDrops`). A rung's weapon is a `LoadoutWeapon`
 //! (given at each life and each swap), so a game gives it what its data
@@ -663,6 +666,18 @@ impl Ladder {
 /// A player's rung (0: the first). Replicated to clients (`minigame_net`).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rung(pub usize);
+
+/// The hint `player`'s rung shows (`minigame::hud::RungHint`): its weapon
+/// data's opt-in `rung_hint` (none for a rung whose weapon declares none),
+/// read from the replicated rung and the static data on every machine.
+pub fn rung_hint(world: &World, player: Entity) -> Option<(usize, &'static crate::weapon::data::RungHintData)> {
+    let ladder = world.get_resource::<Ladder>()?;
+    let rung = world.get::<Rung>(player)?.0;
+    let catalog = world.get_resource::<WeaponCatalog>()?;
+    let id = ladder.weapon_at(rung, Some(catalog))?;
+    let data: &'static crate::weapon::data::WeaponData = catalog.get(id)?;
+    Some((rung, data.rung_hint.as_ref()?))
+}
 
 fn params(def: &MinigameDef) -> Result<Params, String> {
     let mut table = def.rules.params.clone();

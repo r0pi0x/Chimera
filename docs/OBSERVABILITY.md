@@ -478,6 +478,22 @@ local player by mutating its `Intent`: local input rewrites it every frame
 Only `Reflect`-registered types are visible; register new core components in
 `CorePlugin`.
 
+### Sandbox (trying guns in Ultimate Gun Game)
+
+`ultimate_gun_game +sandbox [map]` (or `sandbox [map]` in its console) plays
+alone on the greybox (or `map`) on every game's guns and grenades, where
+kills, deaths and the clock never move you or end the match (`apps/
+ultimate_gun_game/src/sandbox.rs`; the rule that holds the rung is
+`chimera_sim::minigame::rung_command::HoldRungs`). `rung list` shows the
+ladder (number from 1, weapon id, game, band); `rung <n | gun id | unique
+part of it | next | prev> [player | all]` puts a player on that rung as a
+kill would (`+rung halo_ce:frag_grenade` at launch waits for the match).
+Beside it: `ca_bot_add`, `ca_bot_kick`, `ca_bot_stop 1`, `ca_bot_dont_shoot 1`,
+`god`, `noclip` (`sv_cheats` is 1 there), guns refill; `sandbox help` says it.
+`rung` is also a plain developer command in any ladder match: the host, a
+single player and a dedicated server's console may always run it, a remote
+client only with the server's `sv_cheats 1` (and only on itself).
+
 ## 3b. The console from outside
 
 - Names have namespaces (docs/plans/active/console-namespaces.md):

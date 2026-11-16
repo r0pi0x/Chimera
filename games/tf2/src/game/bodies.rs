@@ -11,9 +11,10 @@
 //!
 //! Which body a player wears follows the class of the TF2 gun in hand
 //! (`wear_bodies`, on every machine from the inventory it sees): the
-//! class's model by name (`map::BodyName`), the default class's (the
-//! Soldier's) the one model without a name, so a TF2 player whose gun
-//! names no class still has a body; and the team's skin (`map::BodySkin`:
+//! class's model by name (`map::BodyName`, kept on while the class
+//! changes; the default class's, the Soldier's, is the one model without a
+//! name, so its name falls back to it and a TF2 player whose gun names no
+//! class still has a body); and the team's skin (`map::BodySkin`:
 //! 0 RED, 1 BLU; a free-for-all player by its team id, odd RED, even BLU).
 //! The weapon's `c_` model is held bone-merged on `weapon_bone` (the held
 //! models of `maps::add_guns`, keyed by the gun: `player_anim::
@@ -124,32 +125,38 @@ pub fn wear_bodies(
     mut commands: Commands,
 ) {
     let Some(table) = table else { return };
-    let default = table.get(DEFAULT).map(|c| c.model.as_str()).unwrap_or_default();
     let ours = |name: &str| table.classes.iter().any(|c| c.model.eq_ignore_ascii_case(name));
     for (e, identity, inv, team, name, skin, body, skinned) in &players {
         let tf2 = identity.is_some_and(|i| i.0 == GAME);
         if !tf2 {
+            // What TF2 set goes in one move (each removal alone makes
+            // archetypes of its own).
+            let ours_named = name.is_some_and(|n| ours(&n.0));
             let mut c = commands.entity(e);
-            if name.is_some_and(|n| ours(&n.0)) {
-                c.remove::<BodyName>();
-            }
-            if skinned {
-                c.remove::<(BodySkin, Tf2Skin)>();
+            match (ours_named, skinned) {
+                (true, true) => {
+                    c.remove::<(BodyName, BodySkin, Tf2Skin)>();
+                }
+                (true, false) => {
+                    c.remove::<BodyName>();
+                }
+                (false, true) => {
+                    c.remove::<(BodySkin, Tf2Skin)>();
+                }
+                (false, false) => {}
             }
             continue;
         }
         let held = inv.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
         if let Some(class) = held.and_then(|w| table.of_gun(&w.id)) {
-            let want = (!class.model.eq_ignore_ascii_case(default)).then_some(class.model.as_str());
-            match (want, name) {
-                (Some(w), Some(n)) if n.0 == w => {}
-                (Some(w), _) => {
-                    commands.entity(e).insert(BodyName(w.to_string()));
-                }
-                (None, Some(n)) if ours(&n.0) => {
-                    commands.entity(e).remove::<BodyName>();
-                }
-                _ => {}
+            // The class's model by name, the default class's too (the
+            // map's TF2 bodies name it none, so the name falls back to
+            // the unnamed default body): a TF2 player keeps `BodyName`
+            // while switching classes, which would otherwise come and go
+            // and make archetypes of its own.
+            let want = class.model.as_str();
+            if name.is_none_or(|n| n.0 != want) {
+                commands.entity(e).insert(BodyName(want.to_string()));
             }
         }
         // The team's skin on a TF2 body (one with several skins).

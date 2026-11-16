@@ -808,6 +808,25 @@ that):
   `Turret-TopGun`, the infected ship turrets' grenade guns) names no
   class, so no draw deals it as a hand-held gun (the "Infected '02 Top
   Gun" that fired grenades on a rung, 2026-11-13).
+- **A grenade rung: Halo's frags with an empty pistol** (user,
+  2026-11-15): Halo's grenades are a count thrown beside the gun in
+  hand, not a weapon, so Halo lends a part of class `grenade` of its own
+  (`halo_ce:frag_grenade`, `weapons::rung`) that the ladder's grenade
+  band deals as it deals the others' grenades. Its holder has the pistol
+  with no round loaded and none to be had (left click is an empty
+  pistol's click), throws frags with the grenade button with a timed
+  supply (user, 2026-11-15: with `refill_ammo` a throw is not given back
+  at once: the rung starts, and every life starts, with 4 and the server
+  gives one back every `refill_seconds` (5.0, in its weapon data) while
+  below the maximum, counted in Halo's 30 Hz ticks so it is the same at
+  any tick rate; the count replicates, the timer does not; whatever
+  `halo_party_grenades` says for the other Halo rungs), and melees as on
+  any Halo rung; its kills (the frag's, a melee's) climb as any kill.
+  Bots press its attack action (`weapon::AttackAction`). The rung
+  declares a hint (opt-in in its weapon data, `rung_hint`: the action and
+  "throw"), which the party shows at the bottom centre while it is new
+  and after a dry fire: the key bound now to the grenade action and the
+  verb (`chimera_client::client::rung_hint`).
 - **No HL2:DM pickups or chargers** (user, 2026-11-12): a party's
   HL2:DM map has none of its walk-over items (kits, vials, batteries,
   ammo boxes) and wall chargers, not even drawn: only the HL2:DM app,

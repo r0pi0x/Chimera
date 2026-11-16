@@ -528,6 +528,9 @@ pub fn listen(world: &mut World) -> Result<SocketAddr, String> {
     let transport = super::udp::UdpServer::new(config, socket, secret).map_err(|e| e.to_string())?;
     start(world)?;
     world.insert_resource(transport);
+    // A listen host fetches its match's game files with its own
+    // credential (`server_assets`; a dedicated server has its own already).
+    super::server_assets::for_host(world);
     world.write_message(NetEvent::Listening(addr));
     Ok(addr)
 }

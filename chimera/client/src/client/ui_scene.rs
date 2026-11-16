@@ -11,6 +11,7 @@
 //! the HUD's own screens with made-up players (`race_chip::stage`,
 //! `kill_feed::signal_feed::stage`), and `matchend` (the match end with
 //! eight players, the climb and the vote: `match_end_signal::stage`),
+//! `runghint` (the rung hint: G, THROW; `rung_hint`),
 //! `lobby` (the pre-match lobby with made-up players, names as typed:
 //! a `NetLobby` of its own, `StagedLobby`), under the Signal theme; given a
 //! fixture (`ui_scene board <fixture.json>`), its data over a flat ground
@@ -51,7 +52,7 @@ pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
 pub const SCENES: &[&str] =
-    &["proof", "controls", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby"];
+    &["proof", "controls", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint"];
 
 /// `ui_scene lobby`'s made-up lobby (despawned at `off`).
 #[derive(Component)]
@@ -159,6 +160,9 @@ fn clear_staged(w: &mut World) {
     super::rank_toast::stage(w, None);
     super::match_effects::stage(w, None);
     super::match_end_signal::unstage(w);
+    if let Some(mut h) = w.get_resource_mut::<super::rung_hint::RungHintView>() {
+        h.staged = None;
+    }
     if std::mem::take(&mut w.resource_mut::<UiScene>().froze)
         && let Some(mut c) = w.get_resource_mut::<chimera_ui::UiClock>()
     {
@@ -241,7 +245,7 @@ impl Plugin for UiScenePlugin {
             )
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|controls|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|lobby|off> [fixture.json | t]: stage a screen of the UI \
+                "ui_scene <proof|controls|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|lobby|runghint|off> [fixture.json | t]: stage a screen of the UI \
                  kit with made-up data (screenshots), or a fixture's (the UI parity check); an animated scene (rankup, airstrike) \
                  with `t` frozen `t` s into its loop.",
                 |w, a| {
@@ -306,6 +310,12 @@ impl Plugin for UiScenePlugin {
                         }
                         "lobby" => {
                             stage_lobby(w, a.get(1).map(String::as_str));
+                            return Ok(None);
+                        }
+                        "runghint" => {
+                            if let Some(mut h) = w.get_resource_mut::<super::rung_hint::RungHintView>() {
+                                h.staged = Some(("G".into(), "throw".into()));
+                            }
                             return Ok(None);
                         }
                         "feed" => {

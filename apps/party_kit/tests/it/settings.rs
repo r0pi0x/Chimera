@@ -153,7 +153,7 @@ fn esc_menu_keys_open_settings_with_the_options_pages() {
     let mut sim = party(true);
     open_settings(&mut sim.app);
     let tabs = party_kit::esc_menu::shown_tabs(sim.app.world());
-    assert_eq!(settings::pages(Context::Game, &tabs), ["Video", "Audio", "Controls", "Party"]);
+    assert_eq!(settings::pages(Context::Game, &tabs), ["Video", "Audio", "Controls", "Party", "Network"]);
     let roots = sim.app.world_mut().query_filtered::<(), With<settings::SettingsRoot>>().iter(sim.app.world()).count();
     assert_eq!(roots, 1, "drawn");
     // Q/E change the page; Controls has the mouse rows and the binds.

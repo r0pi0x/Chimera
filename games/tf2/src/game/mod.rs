@@ -23,7 +23,7 @@
 //! - `movement` (M3): `tf2:movement`, Source's movement with TF2's config
 //!   and the class of the gun in hand (speed, eyes, the Scout's air jump,
 //!   max health);
-//! - `parts`: what the game lends other games' apps (`PARTS`): its four
+//! - `parts`: what the game lends other games' apps (`PARTS`): its twelve
 //!   guns, its movement;
 //! - `ice`: the ICE cipher of the encrypted scripts, ported from the
 //!   designer's public-domain reference (THIRD_PARTY.md; M2a);
@@ -36,6 +36,10 @@
 //!   Minigun as data (data/weapons) with TF2's gun rules as hooks (the
 //!   distance modifier, the first pellet, the rocket's blast, the
 //!   Minigun's spin), where their numbers came from (`script_numbers`);
+//!   (tf2-guns2) the Pistol, SMG, Sniper Rifle, Revolver, Grenade and
+//!   Stickybomb Launchers, Flame Thrower and Syringe Gun with theirs (the
+//!   scoped charge, the grenade, the sticky, the flame, the needle), and
+//!   their looks (muzzle flashes, explosions: `weapons::looks`);
 //! - `view`: the guns' view models (the class's arms with the `c_` weapon
 //!   bone-merged) and their rules on Chimera's driver.
 //!

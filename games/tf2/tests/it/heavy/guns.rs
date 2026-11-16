@@ -135,9 +135,10 @@ fn the_posed_gun_is_in_front_of_the_eye() {
         // Its front ahead (the Rocket Launcher rests on the shoulder and
         // reaches behind the eye), right of the view's centre, below it.
         assert!(lo.z < -0.3 && centre.x > 0.0 && centre.y < 0.0, "{}: the gun from {lo} to {hi}", v.key);
-        // Its muzzle ahead and below the eye: the Minigun's `m_idle` held
-        // it upright, the muzzle above the eye (view.rs).
+        // Its muzzle ahead and below the eye, but the Minigun's: it rests
+        // upright in `m_idle`, barrels up, as the real game holds it
+        // (view.rs).
         let m = muzzle.expect("a muzzle");
-        assert!(m.y < 0.0 && m.z < -0.5, "{}: the muzzle at {m}", v.key);
+        assert!(v.key == tf2::game::weapons::MINIGUN || (m.y < 0.0 && m.z < -0.5), "{}: the muzzle at {m}", v.key);
     }
 }

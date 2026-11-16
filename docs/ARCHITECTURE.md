@@ -31,7 +31,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
-  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its guns and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim; `ui` its HUD
+  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its twelve guns and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim; `ui` its HUD
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -52,7 +52,7 @@ chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs 
 chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, harness::Sim
   |                \
 chimera_core          source_formats (source/formats/)   formats as plain data: no Bevy
- (chimera/core/)       core, console, console_names, console_scope, slots, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
+ (chimera/core/)       core, console, console_names, console_scope, slots, envelope, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
                       chimera_vfs (chimera/vfs/)   the neutral VFS (`FileSource`, `Mount`) under both format crates and `mount`
                       chimera_assets (chimera/assets/)   the asset store over the VFS: records, manifests and sets, `CachedFiles`, the vfs log, the asset service (server, HTTPS client), account tickets and the player's account file; `mount::served` layers it
                       chimera_services (chimera/services/)   the hub's services, a binary each (`chimera_accounts`, `chimera_front`): accounts on SQLite, the front; on chimera_assets, host tools only
@@ -404,6 +404,18 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   engine frame's hitscan command), and the plasma pistol's trigger as
   one that fires when released (`weapon::FiresOnRelease`), so the
   party's bots fire, pace, hear and tap every Halo rung gun.
+  Halo lends a grenade rung (`weapons::rung`): an empty pistol in hand
+  and frags on the grenade button by the grenade band's rule, shown as
+  the frag grenade; bots attack through `weapon::AttackAction`, and its
+  opt-in rung hint is the party overlay's (`client::rung_hint`).
+  Halo's movement takes the loaded map's movement envelope
+  (`chimera_core::envelope`): on another game's map its pill is no
+  wider or taller than that game's character and steps as high
+  (`movement::body`, `mover::step_up`); its own maps are unchanged.
+  Halo's on-gun displays (the assault rifle's counter and compass, the
+  plasma gauges) drive view-model texture frames
+  (`ViewAnimator::mesh_frames`) from the held weapon's tag functions
+  each Halo tick (`view::displays`), in first person.
   Halo's lasting sounds (`game::audio`) play on the engine's
   `SoundControl`/`PlaySound` seams: the level's background sound by the
   listener's cluster, its sound scenery, the shown projectiles' flight
@@ -451,7 +463,17 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   the first pellet through `Hitscan::centre_first`; `tf2:rocket`: the
   blast of a rocket Chimera's flyers fly; `tf2:minigun`: the spin), its
   view models (`game::view`: the class's arms with the `c_` weapon
-  bone-merged by `map::merge_by_bone_name`), and `BUNDLE`: its maps by
+  bone-merged by `map::merge_by_bone_name`, a gun's `view_offset`); and
+  (tf2-guns2) eight more guns from specs/tf2/weapons_more.md (the
+  Pistol, SMG, Sniper Rifle, Revolver, Grenade and Stickybomb Launchers,
+  Flame Thrower, Syringe Gun) with their hooks (`tf2:sniper`: the scoped
+  charge and headshot on Chimera's scope; `tf2:grenade`, `tf2:sticky`,
+  `tf2:needle` on Chimera's flyers, the grenade's arc by the flyers'
+  `up_speed`; `tf2:flame`: a cone each flame tick and afterburn), one
+  explosion for the rocket, grenade and sticky (`weapons::blast`), and
+  their looks (`weapons::looks`: TF2's own `.pcf` explosion and muzzle
+  flashes on its maps, Source's explosion elsewhere, explosions sent to
+  clients as the `tf2_looks` net part), and `BUNDLE`: its maps by
   id, its guns lent to the party's ladders (`party_kit::GUESTS`, its
   `GUEST` dressing on other games' maps). (M3) Its classes as data
   (`game::classes`, data/classes.toml: health, speed, eyes, air jumps,
@@ -465,7 +487,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   gestures) and the HUD (`ui`: health, ammo and crosshair under its own
   `HudRoot`, in the install's scheme from the map's kit, `game::hud`;
   its guns' kill icons for every feed).
-  Layered as `hl2dm`.
+  Layered as `hl2dm` (it uses `chimera_net` for its looks' message).
 - `chimera_net` is network play (`net`): the transport, the join
   handshake, replication of what every game has, prediction and
   interpolation. A game and Source's logic register what they replicate
@@ -697,6 +719,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
 
 Exact edges: console_scope uses core, console, game_registry and slots
 (the console's scope from the game played, the games' namespaces);
+envelope uses core (the map's movement envelope by the map's game:
+what a map's own character's body is, read by a movement that fits its
+body to the map);
 game_log uses core, console and gameplay (the gameplay's
 game names players in the log); net uses the engine's
 simulation (core, console, game_log, slots, character, movement, map,

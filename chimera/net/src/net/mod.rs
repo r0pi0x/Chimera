@@ -236,6 +236,7 @@ pub mod udp;
 pub mod upnp;
 pub mod voice;
 pub mod vote;
+pub mod server_assets;
 pub mod server_docs;
 pub mod weapon_params;
 pub mod weapons;
@@ -1459,6 +1460,7 @@ impl Plugin for NetPlugin {
         maps::plugin(app);
         manifest::plugin(app);
         assets::plugin(app);
+        server_assets::plugin(app);
         on_demand::plugin(app);
         mapfx::plugin(app);
         breakables::plugin(app);

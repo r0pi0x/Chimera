@@ -14,13 +14,15 @@ reader of the model format as described in
 [specs/cs_source/mdl_v48.md](../cs_source/mdl_v48.md). Public
 documentation: the community TF2 wiki (classes, weapons, death
 animations) and the Valve Developer Community pages on model
-compilation options (sequence and autolayer options). No game, engine or
-SDK code was read. How the game *chooses* among these sequences is not
-in the data; where this spec states it, it is inferred from the data's
-naming and structure and from the multiplayer animation state already
-described in our [cs_source/animation.md §13](../cs_source/animation.md),
-and is marked so.
-Status: draft
+compilation options (sequence and autolayer options). For the
+2026-11-15 check, the SDK's TF2 game code (Valve's Source SDK 2013 with
+TF2's client and server code, read in place on the Linux box, nothing
+copied) was read for how the game chooses the main activity, sets the
+move and aim pose parameters and the feet yaw, and plays gestures
+(fire, reload, jump, flinch, the Minigun's spin), and for the footstep
+rule. What the earlier draft marked inferred is now stated as the
+game's rule where the code settles it.
+Status: checked against the SDK's game code (2026-11-15)
 
 ## Summary
 
@@ -39,6 +41,51 @@ The Heavy's Minigun has its own spun-up ("deployed") main sequences and
 spin-up / spin-down gestures that cross-fade the aim matrix. The held
 weapon is the same `c_` model as in first person, bone-merged by bone
 name onto `weapon_bone` and its siblings under the right hand.
+
+## Corrections from the SDK (2026-11-15)
+
+- Kind "the item's slot for the holding class" -> the **weapon's own**
+  `WeaponType` (its script), unless the item schema gives an animation
+  slot; a mash-up gun keeps its own kind (Open questions 1 settled).
+- Main-activity order "swim first" -> jump/airwalk, then **duck**, then
+  swim (water at waist or deeper), then run/stand; "moving" is
+  horizontal speed > 0.5 u/s.
+- Airwalk "airborne without a jump (walked off a ledge, blast-jumped)"
+  -> only while rising faster than **300 u/s** (or already in it), not
+  ducked; walking off a ledge keeps the ground activity.
+- Jump "start plays once, then float" -> `JUMP_START` for the first
+  **0.5 s** after the jump, then `JUMP_FLOAT`; landing is checked only
+  after 0.2 s; the land gesture plays on landing from a jump or an
+  airwalk.
+- Feet yaw "standing: feet stay until > 45°" -> standing, once the eye
+  is more than 45° from the feet's goal, the goal moves **45° toward**
+  the eye (not onto it); moving (any 3D speed > 1), the goal is the eye
+  yaw; turn rate 720 °/s × clamp(|Δ| / 60, 0.01, 1) (Open questions 2
+  settled).
+- `body_pitch` "inferred" -> = −eye pitch; `body_yaw` = −(eye yaw − feet
+  yaw), normalised.
+- Move parameters "model space" -> the movement direction relative to
+  the **eye** yaw; the ground speed is the current sequence's at the
+  pushed-out pose; main playback rate stays 1 (feet slide; Open
+  questions 8 settled).
+- Fire gesture "airborne: open" -> swim if swimming, else crouch if
+  ducked, else stand (airborne included); `AIRWALK` fire is never used
+  (Open questions 3 settled).
+- Reload "start once, loop per round, end" -> the reload-stand gesture
+  starts with the **first round** (after the view model's start), the
+  loop restarts at cycle 0 for each later round, the end after the
+  last; airwalk variants only while in airwalk (Open questions 5
+  settled: rate 1, restarted, not scaled).
+- Flinch "every damage, inferred" -> on any non-generic damage while
+  alive and not disguised; chosen by the hit group, else chest; not
+  restarted while one plays (Open questions 7 settled).
+- Footsteps "events or distance" -> both: the run's 7001 events force a
+  step sound, and a timed rule plays them too (Open questions 6
+  settled).
+- Minigun deployed set "after the wind-up" -> from the **start** of the
+  wind-up (the spun condition is set with the pre-fire gesture); a spun
+  Heavy shows no jump or airwalk; ducked and moving spun, the plain
+  crouch-walk.
 
 ## Units and conventions
 
@@ -138,8 +185,14 @@ without `ITEM2`; Engineer adds `PDA` and `BUILDING` (and
 `BUILDING_DEPLOYED`, carrying a building). The losing team's
 "humiliation" uses the `LOSERSTATE` activities.
 
-**Which kind each M2 gun uses** (from `items_game.txt`: no stock gun has
-an `anim_slot`, so the kind is the item's slot for that class):
+**Which kind each M2 gun uses**. The game (SDK) picks the activity set
+from the **weapon's script `WeaponType`** (`primary`, `secondary`,
+`melee`, `building`, `pda`, `item1`, …), replaced by the item schema's
+animation slot when the item has one (no stock gun among these does;
+the Grenade Launcher does, see weapons.md). The class shotguns are
+separate weapons whose scripts say primary (Engineer) or secondary
+(Soldier, Pyro, Heavy), which is why the table matches the class
+slots:
 
 | Gun | Holder | Slot | Third-person kind | First-person arms activities (install.md 4.3) |
 |---|---|---|---|---|
@@ -153,8 +206,13 @@ an `anim_slot`, so the kind is the item's slot for that class):
 
 The multi-class Shotgun (199) prefab states the same per class:
 engineer primary, soldier / pyro / heavy secondary. A gun held by a
-class not in this table (a mash-up) has no authored pose; Chimera must
-pick a kind (Open questions 1).
+class not in this table (a mash-up) keeps **its own kind** (a Scout with
+the Minigun uses `PRIMARY`, a Heavy with the Rocket Launcher
+`PRIMARY`), animated with the holder's sequences for that kind. If the
+holder's model has no sequence for the translated activity, the game
+falls back to the model's first sequence (the reference pose); and a
+ducked player whose kind has no crouch-walk sequence is treated as not
+ducked.
 
 ### 3. Main sequences (lower body and stance)
 
@@ -238,33 +296,63 @@ steps per 1.6 s cycle). Soldier run: right 0.0952, left 0.5238. Heavy
 0.9375, `run_MELEE` 0.375 / 0.875); Heavy crouch-walk 0.2333 / ~0.75;
 Heavy `PRIMARY_deployed_movement` right 0.2083, left 0.7083. Engineer
 run: right 0.3889, left 0.8889. Whether TF2 plays footsteps from these
-events or from movement distance is Open questions 6.
+events or from movement distance: both (Quirks, "Footsteps").
 
-**Choosing the main sequence** (inferred; the multiplayer animation
-state of cs_source/animation.md §13 with TF2's activities):
+**Choosing the main sequence** (SDK), each client frame; "moving" means
+horizontal speed > 0.5 u/s; "ducked" means the duck flag is set and the
+kind has a crouch-walk sequence; "in water" means water at waist level
+or deeper:
 
-1. In water deep enough to swim → `ACT_MP_SWIM`.
-2. Else in the air: after a jump → `ACT_MP_JUMP_START` (plays once),
-   then `ACT_MP_JUMP_FLOAT` until landing; airborne without a jump
-   (walked off a ledge, blast-jumped) → `ACT_MP_AIRWALK`.
-3. On landing → back to ground states and the additive
-   `ACT_MP_JUMP_LAND` gesture (§5).
-4. On the ground: ducked → `ACT_MP_CROUCHWALK` if moving, else
-   `ACT_MP_CROUCH`; standing → `ACT_MP_RUN` if moving, else
-   `ACT_MP_STAND`. There is no walk activity.
-5. Then translate the activity by the weapon kind (`ACT_MP_RUN` →
-   `ACT_MP_RUN_PRIMARY`). If several sequences carry the activity, pick
-   one at random weighted by activity weight (Soldier's airwalk:
-   five equal choices).
+1. **Airwalk** (classes whose class data does not set `DontDoAirwalk`):
+   if not ducked and either the vertical velocity is above +300 u/s or
+   the player is already in airwalk: on the ground → leave airwalk,
+   restart the main sequence at cycle 0 and play `ACT_MP_JUMP_LAND` in
+   the jump gesture slot; in water → leave airwalk, restart the main
+   sequence; else in the air → `ACT_MP_AIRWALK` (or a falling-stomp
+   activity for items with that ability, when falling faster than the
+   safe fall speed). A spun Heavy (Minigun spinning) skips this step and
+   step 2 entirely.
+2. **Jump** (else, if a jump started): on the jump event the state
+   starts (time t0, main sequence restarted at cycle 0). In water →
+   end it, restart the main sequence. After 0.2 s, on the ground → end
+   it, restart the main sequence, play `ACT_MP_JUMP_LAND` in the jump
+   slot. While it lasts: `ACT_MP_JUMP_START` while now − t0 ≤ 0.5 s,
+   then `ACT_MP_JUMP_FLOAT`. (A class whose data sets `DontDoNewJump`
+   uses `ACT_MP_JUMP` throughout and gets no land gesture.)
+3. **Ducked**: not moving → `ACT_MP_CROUCH` (the deployed crouch idle
+   while spun or within the deployed hold); moving → `ACT_MP_CROUCHWALK`
+   (the Scout with air dashes used: `ACT_MP_DOUBLEJUMP_CROUCH`). Ducking
+   wins over swimming.
+4. **In water** → `ACT_MP_SWIM` (spun Minigun: `ACT_MP_SWIM_DEPLOYED`);
+   entering water restarts the main sequence.
+5. Else **moving** → `ACT_MP_RUN`, standing → `ACT_MP_STAND` (spun:
+   `ACT_MP_DEPLOYED` / `ACT_MP_DEPLOYED_IDLE`). There is no walk
+   activity.
+6. Translate by the weapon kind (`ACT_MP_RUN` → `ACT_MP_RUN_PRIMARY`;
+   swimming also turns stand fire/reload into the swim ones). The main
+   sequence changes only when the translated activity differs from the
+   current sequence's activity; then one sequence is picked at random
+   weighted by activity weight (Soldier's airwalk: five equal choices).
+   Staying in the same activity never re-rolls.
 
-**Move parameters** (cs_source/animation.md §13): with v the horizontal
-velocity in model space and d its direction, (`move_x`, `move_y`) =
-(cos d, −sin d) pushed out to the unit square (divided by
-max(|x|, |y|)), then scaled by speed / G if the speed is below the
-grid's ground speed G there; never above 1. The playback rate is 1.
-Because G equals the class's top speed, a running player at top speed
-has |move| = 1 and his feet match the ground; a Scout crouch-walking at
-133 (a third of 400) has |move| = 133 / 150 = 0.89.
+Walking off a ledge or falling without a jump is therefore **not**
+airwalk: the ground activity (run or stand) goes on in the air. A normal
+jump (≈ 289 u/s up) is below the airwalk threshold; blast jumps and
+launches above 300 u/s airwalk.
+
+**Move parameters** (SDK): the movement yaw is the horizontal velocity's
+direction when moving (when exactly still it drifts toward the body's
+yaw, which only matters for the next start). With d = movement yaw −
+eye yaw, normalised (relative to the **eye**, not the rendered feet),
+(`move_x`, `move_y`) = (cos d, −sin d) pushed out to the unit square
+(divided by max(|x|, |y|)); G = the current main sequence's ground speed
+at that pushed-out pose; if the horizontal speed is below G both are
+scaled by speed / G; never above 1. Not moving (speed ≤ 0.5): both 0.
+The main sequence's playback rate stays 1 (the game never scales it to
+speed), so above G the feet slide. Because G equals the class's top
+speed, a running player at top speed has |move| = 1 and his feet match
+the ground; a Scout crouch-walking at 133 (a third of 400) has |move| =
+133 / 150 = 0.89.
 
 ### 4. Aim: `body_pitch`, `body_yaw` and the aim matrix
 
@@ -279,17 +367,29 @@ has |move| = 1 and his feet match the ground; a Scout crouch-walking at
   keys 90, 45, 0, −45 (`…_straight_up` (all three columns the same
   animation), `…_up_*`, `…_mid_*`, `…_down_*`). Each cell is a 1-frame
   additive pose (animation flag delta).
-- So `body_pitch` = +90 aims straight up and −45 is the lowest aim:
-  body_pitch = −(eye pitch) with Source's "positive pitch looks down"
-  convention, clamped to −45 … 90 (inferred from the cell names; the
-  clamp means looking more than 45° down shows the 45° pose).
-  `body_yaw` = +45 is the cell named "right".
-- `body_yaw` is the torso's offset from the feet: the feet (model) yaw
-  lags the eye yaw; standing still the feet stay until the difference
-  exceeds 45°, moving they turn to face the eye yaw (cs_source §13: goal
-  rules, 720 °/s, scale clamp(|diff|/60, 0.01, 1)). body_yaw = the
-  remaining difference with the sign that makes "right" match turning
-  right (Open questions 2).
+- So `body_pitch` = +90 aims straight up and −45 is the lowest aim. The
+  game (SDK) sets body_pitch = −(eye pitch, normalised to ±180) with
+  Source's "positive pitch looks down" convention; the pose parameter's
+  own range clamps it to −45 … 90, so looking more than 45° down shows
+  the 45° pose. `body_yaw` = +45 is the cell named "right".
+- **Feet yaw** (the rendered model's yaw, F) and its goal Fg, each
+  frame (SDK):
+  - Moving (3D speed > 1 u/s): Fg = eye yaw E.
+  - Standing: on the first update after spawn (or after a "snap yaw"
+    event) Fg = F = E. Otherwise, if |normalise(Fg − E)| > 45°, Fg moves
+    45° toward E (Fg += 45° × sign(E − Fg)); the feet stay put inside
+    ±45°.
+  - Then, if F ≠ Fg, F turns toward Fg by 720 °/s × dt × k, k =
+    clamp(|Fg − F| / 60, 0.01, 1), taking the shorter way round; if that
+    step is at least the remaining gap, F = Fg. (Quirk: the |Fg − F| in
+    k is taken before wrapping to ±180, so across the ±180 seam the
+    turn runs at full rate.)
+  - While taunting, in a kart or on the match-summary stage the goal is
+    forced and F jumps to it.
+- body_yaw = −normalise(E − F): the torso's twist from the feet, clamped
+  by the pose parameter to ±45. Turning the view right (yaw decreasing)
+  makes E − F negative and body_yaw positive, the "right" cells. On the
+  server the player entity's yaw is F as well.
 - **Running backward**: the Scout's `run_PRIMARY` has two aim
   autolayers ramped by `move_x` (autolayer flags 0x4040, ramp on a pose
   parameter): `PRIMARY_aimmatrix_run` with (start, peak, tail, end) =
@@ -302,13 +402,28 @@ has |move| = 1 and his feet match the ground; a Scout crouch-walking at
 
 Gestures are additive post sequences (flags 0x14; the Scout's primary
 fire also snap, 0x16) played once on an overlay layer over the main
-sequence (cs_source/animation.md §10); they do not loop unless said.
-Each has a stand, crouch, swim and (for reloads) airwalk variant; the
-variant follows the current stance when the gesture starts (inferred).
+sequence (cs_source/animation.md §10). The game (SDK) keeps **one
+gesture per slot**, the slots layered in this order: attack-and-reload
+(fire, reload, Minigun pre/post fire), grenade, jump (land, air jump),
+swim, flinch, scene, custom (stun and the like). Rules:
 
-Fire (`ACT_MP_ATTACK_STAND_K`, `…_CROUCH_K`, `…_SWIM_K`; there are no
-`ACT_MP_ATTACK_AIRWALK_*` sequences, so airborne fire uses the stand
-variant: Open questions 3):
+- Starting a gesture whose activity is already playing in its slot
+  restarts it at cycle 0; starting a different one replaces it (the old
+  one's remaining events are fired first, on the client).
+- Weight 1, no blend in or out; playback rate 1 (× item attributes:
+  a gesture-time attribute for all, the reload-time attributes as
+  1 / value for reloads, clamped to −4 … 12). Never scaled to the
+  weapon's timing.
+- A gesture ends (the slot frees) when its cycle passes 1, except a
+  non-Minigun pre-fire gesture, which holds its last frame.
+- The variant is chosen when the gesture starts.
+
+Fire (`ACT_MP_ATTACK_STAND_K`, `…_CROUCH_K`, `…_SWIM_K`): on each shot,
+the swim variant if the player is in the swim state, else the crouch
+variant if ducked, else the stand variant, **also in the air**
+(`ACT_MP_ATTACK_AIRWALK_*` exists in the activity tables but is never
+asked for). Restarted at cycle 0 on every shot, except the Minigun's
+(§6):
 
 | Class, kind | Stand | Crouch | Swim |
 |---|---|---|---|
@@ -322,9 +437,13 @@ variant: Open questions 3):
 | Engineer `SECONDARY` (Pistol) | `AttackStand_SECONDARY` 8, 0.2333 | 0.2333 | 0.2333 |
 
 Reload. Activities `ACT_MP_RELOAD_STAND_K`, `…_LOOP`, `…_END` (and
-CROUCH, SWIM, AIRWALK). A one-at-a-time reload plays the start once,
-the loop once per round loaded, and the end after the last round
-(inferred from the names and weapons.md §4):
+CROUCH, SWIM, AIRWALK). Variant when it starts: airwalk if the player is
+in airwalk; else crouch if the duck flag is set; else swim if swimming;
+else stand. A one-at-a-time reload (SDK): the weapon's reload start runs
+on the view model only; when the **first round** begins, the reload
+gesture (the "start" sequence) plays; each **later round** restarts the
+loop gesture at cycle 0; after the last round the end gesture plays. A
+whole-clip reload plays only the reload gesture.
 
 | Class, kind | Start | Loop (per round) | End |
 |---|---|---|---|
@@ -337,9 +456,10 @@ the loop once per round loaded, and the end after the last round
 | Heavy `PRIMARY` (Minigun) | none | | |
 
 - The sequence lengths do not match the weapons' reload times
-  (weapons.md §4: Scattergun first shell 0.7 s then 0.5 s): the loop is
-  restarted for each round (or played at a rate that fits; Open
-  questions 5). Crouch / swim / airwalk variants have the same shape
+  (weapons.md §4: Scattergun first shell 0.7 s then 0.5 s): the game
+  restarts the loop for each round at rate 1 and does not fit the rate,
+  so a loop longer than a round is cut and a shorter one holds its end
+  until the next round. Crouch / swim / airwalk variants have the same shape
   (Scout crouch loop 0.5 s; Soldier `ReloadSwim_PRIMARY` is a single
   89-frame 44 fps sequence without loop / end).
 - The Scout's and Soldier's reload sequences carry arm layers
@@ -353,14 +473,28 @@ the loop once per round loaded, and the end after the last round
 - The Engineer's crouch start has two choices: `ReloadCrouch_PRIMARY`
   (76 f, weight 1) and `PRIMARY_reloadcrouch` (21 f, weight 100).
 
-Jump land: `ACT_MP_JUMP_LAND_K` (additive, 0.6667–1.0 s) on landing.
+Jump land: `ACT_MP_JUMP_LAND_K` (additive, 0.6667–1.0 s) in the jump
+slot on landing from a jump (after at least 0.2 s) or from airwalk (§3).
 
-Flinch (`ACT_MP_GESTURE_FLINCH_CHEST`, the only flinch activity):
-Scout and Soldier `a_flinch01` 13 f, 0.4 s; Heavy one per kind
+Air jump (Scout): each air jump starts the jump state if it is not
+already on (t0 = now, main sequence restarted), turns airwalk off and
+plays `ACT_MP_DOUBLEJUMP` (translated by kind) in the jump slot. If the
+model has no sequence for that activity nothing plays (whether
+`jump_double_primary` carries it is not in the dump: Open questions 4).
+
+Flinch (`ACT_MP_GESTURE_FLINCH_CHEST`, the only flinch activity in the
+models): Scout and Soldier `a_flinch01` 13 f, 0.4 s; Heavy one per kind
 (`PRIMARY_flinch`, `SECONDARY_flinch`, `MELEE_flinch`, 0.4 s);
 Engineer `a_flinch01` (weight 2, 0.4 s), `a_flinch02` (weight 10,
-0.3333 s), `a_flinch04` (weight 5, 0.4 s). Played when the player
-takes damage (inferred; Open questions 7).
+0.3333 s), `a_flinch04` (weight 5, 0.4 s). When played (SDK): on each
+damage the player takes whose damage type is not plain generic, while
+alive and not disguised (and not a fully charged scoped Sniper with a
+no-flinch item). The server also sets the victim's view punch pitch to
+−2° (a kick up) at the same moment. The activity is chosen from the hit
+group (head, left/right arm, left/right leg; anything else chest) and
+falls back to chest when the model lacks it, which in TF2's models is
+always. A flinch is not started while another is still playing in the
+flinch slot.
 
 Melee for reference: Scout `MELEE_swing` 34 f @ 60 fps = 0.55 s, **not**
 additive (a full-body overlay with the swing layer ramped by `move_x`
@@ -384,14 +518,28 @@ Data (all `heavy_animations.mdl`):
 | `ACT_MP_SWIM_DEPLOYED_PRIMARY` | `PRIMARY_swim_deployed_movement` | 3 × 3, 31 f, 1.0 s, 80 u/s |
 | `ACT_MP_ATTACK_STAND_PRIMARY` | `attackStand_PRIMARY` | 21 f, 0.6667 s additive: the firing recoil gesture |
 
-Sequence of states (inferred, matched to weapons.md 7.1): wind-up →
-play the PREFIRE gesture for the stance and switch the main sequence
-to the deployed set (idle or movement; 80 u/s grid against the spun
-speed 110, so move parameters are scaled at most to 1 and the feet slide
-a little at full spun speed: Open questions 8); while firing → repeat
-`attackStand_PRIMARY` (or the crouch / swim one) for as long as the
-trigger is held (restart each time it ends, assumed); wind-down → the
-POSTFIRE gesture and the normal main sequences. The weapon model's own
+Sequence of states (SDK, matched to weapons.md 7.1):
+
+- **Wind-up starts**: the spun ("aiming") state begins at once, so the
+  main sequence switches to the deployed set immediately (stand →
+  `ACT_MP_DEPLOYED_IDLE`, moving → `ACT_MP_DEPLOYED`, swimming →
+  `ACT_MP_SWIM_DEPLOYED`, ducked and still → `ACT_MP_CROUCH_DEPLOYED_IDLE`,
+  ducked and moving → the **plain** `ACT_MP_CROUCHWALK`, since the Heavy
+  has no deployed crouch-walk). The PREFIRE gesture for the stance
+  (swim, else crouch, else stand) plays in the attack slot and ends
+  when done. While spun the jump and airwalk activities are skipped.
+- **Firing**: on each shot the fire gesture for the stance (swim, else
+  crouch, else stand) starts **only if it is not already playing**, so
+  it runs to its end and starts again on the next shot after that.
+- **Wind-down**: the POSTFIRE gesture for the stance; the spun state
+  ends and the normal main sequences return.
+- Spun movement: the deployed grid's 80 u/s against the spun speed 110:
+  the move parameters reach 1 and the playback rate stays 1, so the feet
+  slide a little at full spun speed (no rate scaling in the game).
+
+The same deployed set serves a scoped Sniper; after a scoped shot the
+deployed idle is also held for 2 s unless he moves (the "deployed
+hold" of §3). The weapon model's own
 barrel sequences (`spool_up`, `fire_loop`, `spool_down`, weapons.md 8.1)
 play on the bone-merged Minigun at the same time.
 
@@ -463,31 +611,47 @@ Per player, on each client frame (bone setup cs_source/animation.md
 1. Read velocity, eye angles, ground / water / duck state, held weapon
    kind, firing and reload events.
 2. Pick the main activity (§3), translate by kind, start the new
-   sequence on a change (0.2 s cross-fade; carry the cycle between
-   looping sequences).
-3. Set `move_x` / `move_y` (§3), update the feet yaw and set
-   `body_yaw`, `body_pitch` (§4).
-4. Start gestures for this frame's events (fire, reload stages, land,
-   flinch, Minigun pre / post fire); advance their cycles; drop finished
-   ones.
+   sequence only when the activity changes (0.2 s cross-fade); restart
+   it at cycle 0 on the §3 events (jump start, landing, entering water,
+   leaving airwalk).
+3. Advance the gestures' cycles (rate 1 × attributes); free the slots
+   whose cycle passed 1 (§5).
+4. Set `move_x` / `move_y` (§3), then `body_pitch`, then the feet yaw
+   and `body_yaw` (§4). Gestures for events (fire, reload stages, land,
+   air jump, flinch, Minigun pre / post fire) start when the events
+   arrive, between frames.
 5. Advance the main cycle: dt × (frames − 1 per fps rate of the blended
    cells).
 6. Build the pose: default → main sequence (with its aim and noise
-   autolayers) → fading main sequences → gesture layers in start order.
+   autolayers) → fading main sequences → gesture layers in slot order
+   (attack-and-reload, grenade, jump, swim, flinch, scene, custom).
 7. Bone-merge the weapon model; place attachments.
 
 ## Edge cases
 
 - Standing still on a moving platform: the speed used is the player's
   own velocity (assumed as cs_source §13).
+- Walking off a ledge: no airwalk and no jump: the run or stand activity
+  continues through the fall; on landing nothing restarts and no land
+  gesture plays.
+- Ducked in water: the crouch activities win over swim (§3 order).
+- Rocket jump: rising above 300 u/s → airwalk (also if the jump event
+  came first: airwalk is checked before the jump state); landing plays
+  the land gesture.
+- Turning the view while standing: the feet hold until the view is 45°
+  off the goal, then the goal steps 45° toward it and the feet swing
+  there at up to 720 °/s, slowing inside 60°.
 - A Scout moving faster than 400 (air control, knockback) on the ground:
   `move_*` capped at 1, playback rate 1, the feet slide.
 - Spy (300 authored, 320 measured): slight slide at full speed.
 - Heavy firing the Shotgun while spun is impossible (no switching while
   spun).
 - Grid cell exactly at a key: no blend (cs_source §5 epsilons).
-- A gesture started while airborne for reload uses the `AIRWALK`
-  variants; fire has none (Open questions 3).
+- A reload gesture started while in airwalk uses the `AIRWALK`
+  variants; one started in an ordinary jump uses the stand (or crouch)
+  variants. Fire never uses an airwalk variant.
+- A kind without a crouch-walk sequence: ducking is ignored for the
+  main activity and for gesture variants.
 
 ## Quirks
 
@@ -499,6 +663,18 @@ Per player, on each client frame (bone setup cs_source/animation.md
   1.6 s); the Soldier's one stride (two events in 0.7 s).
 - `ReloadStand_PRIMARY` of the Engineer is 2.5 s long, far longer than
   a shell; it reads like a whole-magazine animation reused as the start.
+  Since the second round restarts the loop gesture, only its first round
+  or so is ever seen.
+- The jump start is cut at 0.5 s whatever its length (the Scout's is
+  0.7333 s).
+- The feet-turn rate's slow-down uses the unwrapped angle difference,
+  so a turn across ±180° runs at full rate.
+- Footsteps (SDK): each 7001 event of the run cycle forces a footstep
+  sound at once; independently, the shared timed footstep rule plays
+  steps every T ms while moving fast enough, T = 400 … 200 for a class
+  maximum speed of 200 … 450 u/s (linear, clamped), + 100 when walking
+  (below 0.8 of the maximum speed, above 0.3) and + 100 ducked or on a
+  ladder; on a ladder 350, in water to the knees 600 … 400.
 
 ## Test cases
 
@@ -513,41 +689,45 @@ Per player, on each client frame (bone setup cs_source/animation.md
 | 7 | Heavy holding the Shotgun | stand | – | `stand_SECONDARY`; fire → `AttackStand_SECONDARY` (0.6333 s additive) |
 | 8 | Engineer holding the Shotgun | stand | – | `stand_PRIMARY`; reload → `ReloadStand_PRIMARY`, then a/b loop (2:1), then `PRIMARY_reload_end` |
 | 9 | Soldier reload start | cycle 0.3438 / 0.6562 | – | `rocket` body group 1 then 0 |
-| 10 | Heavy winds up the Minigun standing | – | 0.5 s | `attackStand_PRIMARY_spoolup` done; main sequence `stand_deployed_PRIMARY`; aim layer `PRIMARY_aimmatrix_deployed` |
+| 10 | Heavy winds up the Minigun standing | – | 0 / 0.5 s | main sequence `stand_deployed_PRIMARY` from t = 0; `attackStand_PRIMARY_spoolup` in the attack slot, done (slot free) at 0.5 s; aim layer `PRIMARY_aimmatrix_deployed` |
 | 11 | Heavy spun, moving at 80 forward | – | – | `PRIMARY_deployed_movement`, `move_x` = 1 |
-| 12 | Heavy firing | hold 1 s | – | `attackStand_PRIMARY` (0.6667 s) restarted after it ends |
+| 12 | Heavy firing | hold 1 s | – | `attackStand_PRIMARY` (0.6667 s) not restarted by shots while playing; restarted by the first shot after it ends |
+| 12b | Heavy spun, ducked, moving | – | – | `crouch_walk_PRIMARY` (no deployed crouch-walk) |
+| 12c | Heavy spun | jump | – | no jump activity: the deployed set stays |
 | 13 | any class looking straight up | eye pitch −89 | – | `body_pitch` = 89 → row between `up` (45) and `straight_up` (90) |
 | 14 | looking 60° down | eye pitch 60 | – | `body_pitch` = −45 (clamped) → the `down` row |
-| 15 | Soldier walks off a ledge | – | – | `ACT_MP_AIRWALK_PRIMARY`: one of `airwalk_PRIMARY`, `primary_floatA`…`D` |
-| 16 | Scout jumps | – | – | `Jump_Start_primary` once (0.7333 s), then `Jump_Float_primary`; on landing `jumpland_primary` additive |
+| 15 | Soldier rocket-jumps (rising at 600 u/s) | – | – | `ACT_MP_AIRWALK_PRIMARY`: one of `airwalk_PRIMARY`, `primary_floatA`…`D`; on landing `jumpland_PRIMARY` in the jump slot |
+| 15b | Soldier walks off a ledge | – | – | stays `run_PRIMARY` (or `stand_PRIMARY`) while falling; no land gesture |
+| 16 | Scout jumps (289 u/s up), lands at 0.6 s | – | 0.3 / 0.55 / 0.6 s | `Jump_Start_primary` / `Jump_Float_primary` / landed: main restarted, `jumpland_primary` additive |
+| 16b | jump, still on the ground flag at 0.1 s | – | 0.1 s | still jumping (ground ignored for 0.2 s) |
+| 16c | standing, eye yaw turns from 0 to 50° at once | – | – | goal 45°, feet turn at 720 × 0.75 = 540 °/s at first, slowing; body_yaw = −(50 − F) |
+| 16d | standing, eye yaw 30° from the feet | – | – | feet do not move; body_yaw = −30 |
+| 16e | Engineer reload of 3 shells | – | – | `ReloadStand_PRIMARY` at the 1st shell, the a/b loop restarted at the 2nd and 3rd, `PRIMARY_reload_end` after |
+| 16f | Scout fires the Scattergun in mid-jump | – | – | `AttackStand_PRIMARY` (stand variant) |
 | 17 | Scattergun on the Scout's player model | – | – | `c_scattergun.mdl` bone-merged; its `weapon_bone` world transform = the Scout's `weapon_bone` (child of `bip_hand_R`) |
 | 18 | merged model pose parameters | – | – | names `body_pitch`, `body_yaw`, `r_hand_grip`, `r_arm`, `move_x`, `move_y`; a Soldier grid's X axis is `move_y` by name though its local index is 4 |
 | 19 | head hitbox, Heavy | – | – | bone `bip_head`, group 1, (−6, −9.35, −8.7)–(6, 4.65, 4.3) |
 
 ## Open questions
 
-1. **Mash-up kinds**: which kind to use when a class holds a gun not
-   made for it (Scout with a Minigun, Heavy with a Rocket Launcher).
-   Suggest: the slot the gun has for its own class (Minigun →
-   `PRIMARY`), with the holder's arms; check visually.
-2. The sign convention of `body_yaw` and `body_pitch` relative to the
-   eye angles (cells named "right" at +45, "straight_up" at +90 suggest
-   body_pitch = −eye pitch); and TF2's exact feet-yaw rules (turn
-   threshold, rate). Check in the live client with `cl_showpos` and
-   third person (`thirdperson` needs `sv_cheats`).
-3. Airborne fire and swim / airwalk gesture variants: what the game
-   plays when firing in the air.
-4. The Scout's air jump: `jump_double_primary` has no activity; when is
-   it played (as a gesture or main sequence)?
-5. Gesture playback rate: are reload and fire gestures played at rate
-   1 and cut (restarted) per round / shot, or scaled to the weapon's
-   timing?
-6. Footsteps: from the run events (7001 "left" / "right") or from
-   distance travelled.
-7. Flinch triggers: every damage, a minimum amount, or only some damage
-   types; and whether the flinch is suppressed while firing.
-8. The spun Heavy's speed (110) against the deployed grid's 80 u/s: is
-   the playback rate raised, or do the feet slide?
+1. ~~Mash-up kinds~~ Settled: the weapon's own `WeaponType` kind.
+   Open: what a holder whose model lacks that kind's sequences should
+   show (the game shows the reference pose; Chimera may prefer a
+   fallback kind).
+2. ~~Signs and feet-yaw rules~~ Settled (§4).
+3. ~~Airborne fire~~ Settled: stand (or crouch / swim) variant.
+4. **The Scout's air jump**: the game plays `ACT_MP_DOUBLEJUMP` in the
+   jump slot; which sequence carries that activity (the dump shows
+   `jump_double_primary` with none) is a data question: re-dump the
+   activity list of `scout_animations.mdl`.
+5. ~~Gesture playback rate~~ Settled: rate 1, restarted per round / shot.
+6. ~~Footsteps~~ Settled: both (Quirks).
+7. ~~Flinch triggers~~ Settled (§5): any non-generic damage, not while
+   disguised; not suppressed by firing.
+8. ~~Spun speed against the grid~~ Settled: the feet slide.
+11. The class-data flags `DontDoAirwalk` and `DontDoNewJump` (in the
+    class scripts): which classes set them; read with the class-scripts
+    spec.
 9. Whether the server traces bullets against the full aim-matrix pose
    or a simplified one, and the server's bone-setup rate.
 10. Ragdoll start velocity and the force from the killing hit (the

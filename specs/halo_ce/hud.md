@@ -1637,16 +1637,18 @@ exports "primary ammunition" into incoming B (the weapon's input sources
 ammunition, C = 12 illumination, D = 0): primary ammunition = rounds
 loaded / magazine size. So the display shows the loaded rounds (0 to 60):
 loaded / 60 x 60, rounded. The compass strip is limit 8 and reads function
-D, which scales by input D = 19 (compass: the holder's facing, object
-layer). The plasma rifle's and plasma pistol's on-gun gauges are meter
-shaders (`weapons\plasma rifle\fp\shaders\gauge`, `weapons\plasma
-pistol\shaders\pp gauge`) whose value source is function B (the rifle:
-input B is "illumination", which tracks heat) or D (the pistol: input D
-is "age", the battery); the flamethrower's three digit meters (`ft
-hundreds`, `ft tens`, `ft ones`) take value sources D, A and C of its
-object's functions (the plasma and flamethrower routing is inferred from
-the same pattern; their object functions were not traced). The model
-shows these only in first person and the HUD never draws them.
+D, which scales by input D = 19 (compass: the weapon object's own
+facing, object layer). The plasma rifle's and plasma pistol's on-gun
+gauges are meter shaders (`weapons\plasma rifle\fp\shaders\gauge`,
+`weapons\plasma pistol\shaders\pp gauge`) whose value source is
+function B (the rifle: one times input A, heat, with a lower bound of
+0.1) or D (the pistol: one times input B, the first trigger's charged
+fraction, not the battery); the flamethrower's three bar meters (`ft
+hundreds`, `ft tens`, `ft ones`) take value sources D (heat), A
+(primary firing) and C (fuel). The full rules, the bitmaps and test
+cases are in **`weapons.md` section 18**. The weapon's world model
+carries the same assault rifle display parts at its highest level of
+detail; the HUD never draws any of them.
 
 ## Per-tick order
 

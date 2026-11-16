@@ -59,6 +59,55 @@ the user's go-ahead: no Actions runs unless asked.
   - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
   - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
 
+- **Our own default assets: player models from the logo's three characters (user, 2026-11-15):** create a small set of original, committed assets, made by us (e.g. in Blender), for games or tests that have no player model yet. Today they fall back to the shell's capsule (`map::CharacterModels::for_identity`).
+  - **First goal:** turn the three characters in the logo (the Operator, Trooper and Vanguard avatar glyphs, `shots/avatar-glyphs/*.svg` in the Signal design work, now `chimera_ui::avatar`) into rigged, animated player models in the Signal look.
+  - **Rigging:** one shared humanoid skeleton, so animations retarget across all three.
+  - **Animations:** a base set of idle, run, crouch, jump, death, and holding a pistol, rifle and melee weapon, with weapon attachment bones.
+  - **First-person arms:** for weapons that have no view-model arms.
+  - **Pipeline:**
+    - Source `.blend` files, exported to glTF, which Bevy loads natively. Decide whether to commit the `.blend` sources or only the exports.
+    - A short docs page on how to edit and re-export.
+    - Placement under an assets folder of our own, since these are original assets and the asset rule allows them.
+  - **Uses:**
+    - the fallback body for any game without characters;
+    - the greybox and tests;
+    - later, an original "Lucker Party" look for the party apps' own characters.
+  - **Design first:** the style, polygon budget and colours (the avatar palette), with mockups or a turnaround sheet for the user to approve before modelling.
+
+- **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
+  - **Progressive disclosure (user):**
+    - Names, classes, stats and the kit's class icons need no download: they come from the compiled weapon catalogue and game_parts.
+    - A game's own icon shows only if its files are already held.
+    - A gun's files download only when it's picked, without blocking: you keep the current gun until the new one is ready.
+    - Rows show not downloaded (with size), downloading, ready, or failed (retry).
+  - **Asset side (this box):**
+    - An on-demand `request_set(game, set)` and a `SetProgress` resource keyed by (game, set): bytes and files, done and total, and a state of Absent{size}, Fetching, Ready or Failed.
+    - Set sizes from the manifest before fetching.
+    - Per-gun sets already exist (`weapon/<id>`); Halo's unit is the game.
+  - **Mechanics (Halo session):** the rung switch waits for Ready.
+
+- **Ladder draw: games dealt equally, soft gun recency (user, 2026-11-15):** today `chimera_sim::minigame::auto::ladder` weights a game's guns by 1/√count, so a game's share grows as √(its gun count), and every game gets at least one rung. With today's weapon files that's roughly Combat Arms 32 %, CS:S 23 %, HL2:DM and TF2 16 % each, Halo 13 %.
+  - **Which game:** shuffle the games and deal one per rung until each has had a turn, then reshuffle. Every game gets an equal share however many guns it has. No guaranteed rung per game, since that can't hold once there are more games than rungs; then each match gets a different random subset. No hard rule against runs.
+  - **Which gun within the game:** random, with a soft, server-session recency weight. A gun drawn recently is less likely and recovers over the next matches, but is never excluded. It applies within a game only, never to the game choice, so games with few guns (Halo) keep their full share and only cycle their guns sooner. The memory resets when the server restarts.
+  - **Unchanged:** the power curve still orders the drawn guns weakest first, and the grenade and melee bands keep their rules.
+  - **Data settings:** the game weighting (equal per game, the default, √count, or count) and the recency strength (0 = off).
+  - **Tests:** shares come out equal over many seeded ladders; a 3-gun game keeps its share with recency on; seeded draws stay deterministic.
+
+- **Combat Arms fall damage in low gravity (user, 2026-11-15):** CA's fall damage goes by drop distance (`combat_arms::game::movement::fall_damage`, as the original game does), so in low gravity a long drop at a gentle landing speed still does full damage. The Source games and Halo go by landing speed, which already behaves.
+  - Fix: when gravity differs from CA's own, scale the measured drop by gravity / CA's gravity. That's the drop that would give the same landing speed at normal gravity.
+  - At normal gravity it stays exactly as the original game.
+  - Add a scenario test: the same drop at half gravity does less damage, and at normal gravity nothing changes.
+- **Cross-game balance as a host option (user, 2026-11-15):**
+  - Two coefficients per game: damage dealt and damage received.
+  - One host setting (`mp_balance`) in the Host screen's Game tab.
+  - Self-damage and fall damage are never scaled.
+  - **Builds on the Halo session's work:**
+    - party_kit `data/party_damage.toml` already has the dealt coefficients: halo_ce 0.75, hl2dm 1.5.
+    - halo_ce `data/party_balance.toml` has a received coefficient, `incoming_scale` 1.5, with its own `enabled` switch, currently on.
+    - Move received into the shared table for every game, and replace Halo's switch with the host setting.
+  - First values for TF2 (its 125–300 class health) and the others are for the user to adjust after a playtest.
+  - Open question: default on or off. It's on today for Halo and HL2:DM.
+
 - **Parties and friends: the social layer (user, 2026-11-15; needs a design first):** today only the front end exists. The lobby can group a party's rows with a coloured edge, but the server always sends party 0 (`chimera/net/src/prematch.rs`), so nobody is grouped. The "+" invite and Friends tiles in the shell's rack are disabled ("Coming soon"), and your party is you alone (`chimera_ui::shell`, `client::profile`, `client::lobby_panel`).
   - **Friends** (needs accounts, hub.md S3/S4):
     - add by username or invite link, accept or decline, remove, block;
@@ -71,11 +120,24 @@ the user's go-ahead: no Actions runs unless asked.
     - the party follows its leader into a server, and stays together across map changes and matches;
     - the server keeps a party on one team where the mode has teams and sends real party ids, so the lobby's edges and grouping show;
     - party chat, and the party's avatars in the rack.
-  - **Design questions:**
-    - Session-only parties first, which work now with codes and no accounts, or account-backed only?
-    - Where presence and party state live: a hub service, or the game server only.
-    - Privacy: who can see you're online, and invite permissions.
-    - Moderation: blocking hides chat, voice and invites.
+  - **Decisions (user, 2026-11-15):**
+    - **Order:** session-only parties come first, joined by invite code, then they're tied into accounts. Invite codes stay available afterwards, to invite people who aren't friends.
+    - **State lives on the hub,** for party membership and online status, so a party outlasts any one game server session.
+    - **Leaving a match:**
+      - A member who goes back to the menu stays in the party and can rejoin at will.
+      - Closing and reopening the game keeps you in the party too, so rejoining is easy.
+      - Leaving a party is an explicit, easy action.
+    - **When the party leader leaves a match,** the dialog offers "Leave with my party" (the default) and "Leave alone".
+    - **Chat:**
+      - Enter opens chat; Enter was chosen over T.
+      - While typing, Tab cycles the channel: all, team, party. The default is all.
+    - **Privacy:** online status and invites are visible to everyone for now. Opt-out settings come later if it becomes a problem.
+    - **Blocking:** left out for now. When it's added, it blocks chat, voice and invites by default and marks the blocked player near their avatar.
+  - **Still to design:**
+    - the party panel, with its invite, leave and promote controls;
+    - what happens when the leader goes offline, and how leadership passes;
+    - how a party follows its leader when the server is full;
+    - the hub's party protocol and how often it heartbeats.
   - Builds on hub phases S2–S4 and the Signal r8 shell's tiles. Related: sprays, profiles and stats, ranks per game.
 
 - **Sprays (user, 2026-11-15; needs a design first):** players put a picture on a wall with a key, as in TF2, CS:S, HL2:DM and the other Source games: one spray per life or on a cooldown, decaling the surface looked at, visible to everyone and fading out when replaced.
@@ -191,8 +253,15 @@ the user's go-ahead: no Actions runs unless asked.
   - *Map viewer:* load a map and orbit or fly around it; "drop in" as a
     character on a local listen server (the same server the menu already
     starts).
-  - *Sandbox mode:* a gun picker across every game's guns, plus options:
-    infinite ammo, bots, time scale, noclip.
+  - *Sandbox mode:* the command-only sandbox exists (2026-11-15):
+    `ultimate_gun_game +sandbox [map]` / `sandbox [map]` plays alone on
+    every game's guns with nothing advancing or ending, `rung <n | gun id |
+    part | next | prev | list>` picks the gun, `ca_bot_*`, `god` and `noclip`
+    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Next: a gun and
+    rung picker menu; a time scale; target dummies that report damage and
+    time to kill at set distances (a gun's real strength measured, not
+    modelled); a firing range layout; saving a loadout of guns to cycle;
+    picking a rung character (Combat Arms' turret) instead of the draw's.
   - *Ties:* M5b's 3D Showcase backdrop
     ([plans/active/ugg-ui.md](plans/active/ugg-ui.md)) is the first
     viewer (gun under an inspect camera, character in idle) and should
@@ -203,8 +272,28 @@ the user's go-ahead: no Actions runs unless asked.
     assets by type, with the gun and character viewers on the Showcase
     scene; (2) map viewer with orbit and free-fly cameras, then drop-in
     on a local listen server; (3) sounds and textures viewers; (4)
-    sandbox mode with the gun picker and its options. About one to two
+    the sandbox's menu and options. About one to two
     weeks of agent work per phase; phase 1 gates the rest.
+- **Sandbox: the design (handed to the party UI's owner, user,
+  2026-11-16).** The command-only sandbox exists (`+sandbox`, `rung`;
+  docs/OBSERVABILITY.md); its screens are to be designed in the look
+  book's own language by the session that owns the party UI, from a
+  first pass the user liked for its options, not its look (a published
+  page, "UGG Sandbox Look Book"). The options: (1) try one gun now (a
+  picker: games, classes, one row a rung, typing filters across games,
+  Enter takes the first match); (2) flip between a few (up to six guns
+  pinned to a bar on number keys; previous and next through the
+  ladder); (3) shoot at a body (a target from any game, since gear and
+  shields change the answer, at 5, 10, 20 or 40 m, still, strafing or
+  shooting back); (4) read what happened (after a kill: hits, time from
+  first hit, distance: measured, not modelled); (5) set the conditions
+  (endless ammunition, no damage taken, half speed, third person); (6)
+  later: no HUD, a free camera, saved set-ups. Open with the user:
+  which scenarios they run most (they offered to dictate some), whether
+  the bar is worth building, targets as bots or as dummies that report
+  each hit, where the last-kill readout sits, the keys, and whether the
+  sandbox goes on the main menu. The mechanics (rung switch, targets,
+  measurement) stay with the session that built the sandbox.
 - **Smaller installs: a hybrid (user decision, 2026-10-29).**
   - *Default:* every player has the games installed on disk and loads
     from them, as now.
@@ -388,6 +477,8 @@ Y/U and Combat Arms' keys, docked in the lobby and the match end,
   crate).
 - Lucker Party keeps the games' chat until its theme turns the Signal
   HUD on.
+- The rung hint (key cap + verb, bottom centre, opt-in per rung) is a
+  first cut: review with the rest of the Signal look.
 
 ### Spectators (user, 2026-11-14)
 
@@ -546,6 +637,7 @@ the original's own behaviour isn't a bug (say so instead).
   at most; the last rung is melee either way and its kill wins. The
   draw is the host's and replicated (`NetMinigame::rungs`). Docs/DESIGN.md
   "Gun game rules".
+- Grenade rungs' supply over time for every game (Halo's rung has its own timer: `refill_seconds`); make it the grenade band's rule in the ladder.
 - **The All-Star chainsaw's attached effects (user, 2026-10-29): done
   except what the spec doesn't say.** The attached groups and their
   looping sounds are made with the view model (`view_model::attached`,
@@ -2445,6 +2537,12 @@ a first bot are in.
 - Bots: a charged-shot tactic for a trigger that fires when released
   (`weapon::FiresOnRelease`: today they only tap it; Halo's plasma
   pistol's charged bolt strips a shield).
+- Bots: a weapon whose attack is a named action states it
+  (`weapon::AttackAction`: Halo's grenade rung's grenade button); the
+  brain presses that action where it would press fire.
+- Special rungs (Combat Arms' turret, Halo's grenade rung, a TF2
+  engineer's sentry later): when the third arrives, see what the rung
+  extras lack.
 - Ragdolls, remaining (`map/ragdoll.rs` has the spec's bodies, joints,
   self-collision pairs, death poses, impulse, bone velocities, bullet and
   blast pushes, separation repair, settling and removal): check the

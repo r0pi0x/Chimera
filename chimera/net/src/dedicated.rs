@@ -72,8 +72,15 @@
 //!   `changelevel` while it plays is its next match there, with the
 //!   lobby: `net::host_changelevel`); what the
 //!   machine lacks for a map of the installs, told before it loads
-//!   (`requirements`); and what the binary adds that the tests don't
-//!   (`launch`).
+//!   (`requirements`); what the binary adds that the tests don't
+//!   (`launch`); the games whose files it reads (`games`, else the
+//!   game's alone).
+//! - Game files without an install (`net::server_assets`): `run` fetches,
+//!   before the server is built, each game's startup sets and the start
+//!   map's from the asset service with the server's own credential (a hub
+//!   account redeemed once with `+chimera:hub <invite link> [username]`,
+//!   taken off the console lines, or a token); the first match's sets
+//!   come before it listens, a `changelevel`'s before its map loads.
 //!
 //! Known shortcuts: a server without `map_files` offers no map file (a
 //! client without the map can't download it: maps load from each
@@ -161,6 +168,10 @@ pub struct ServerHooks {
     /// What the binary adds after `ServerPlugin` and the tests don't (a
     /// fresh seed, a launch-only plugin).
     pub launch: Option<fn(&mut App)>,
+    /// The games whose files the server reads (None: `GameServer::info`'s
+    /// alone): those without an install come from the asset service
+    /// (`net::server_assets`).
+    pub games: Option<fn() -> Vec<&'static GameInfo>>,
 }
 
 impl ServerHooks {
@@ -174,6 +185,7 @@ impl ServerHooks {
         minigame: None,
         requirements: None,
         launch: None,
+        games: None,
     };
 }
 
@@ -757,9 +769,15 @@ pub fn change_level(world: &mut World, name: &str) -> Result<Option<String>, Str
     let context = map::LoadContext::of(world);
     // The spawn's own work on the data is done there too (`map::prepare`).
     let prepare = map::prepare::preparation(world);
+    // The match's game files the server reads from the asset store come
+    // first (`net::server_assets`): none fetched while it plays.
+    let files = net::server_assets::fetch_now(world);
     let task = bevy::tasks::AsyncComputeTaskPool::get().spawn({
         let id = id.clone();
         async move {
+            if let Some(job) = files {
+                let _ = job.wait();
+            }
             let data = server.load_map_in(&id, &context)?;
             let prepared = prepare.run(&data);
             Ok((data, prepared))
@@ -911,6 +929,28 @@ pub fn run(server: &'static GameServer) {
             std::process::exit(2);
         }
     };
+    // A hub account for the server's own game files (`+chimera:hub <invite
+    // link> [username]`, once): redeemed now, never a console line.
+    let options = take_hub_link(options);
+    // The service first whenever one is set (a hub account included), as on a client, unless
+    // `+chimera:asset_use_install 1` (or `[assets] use_install`) chooses
+    // the installs; before anything mounts a game.
+    crate::net::assets::set_install_default_here(&options.console, false);
+    // Its game files from the asset service where it has no install
+    // (`net::server_assets`), before anything reads them.
+    let files = {
+        let games = server.hooks.games.map_or_else(|| vec![server.info], |g| g());
+        let cvar = |name: &str| {
+            options.console.iter().rev().find_map(|l| {
+                let words = console::parse(l).into_iter().next().unwrap_or_default();
+                words.first().filter(|w| w.eq_ignore_ascii_case(name))?;
+                words.get(1).cloned()
+            })
+        };
+        let url = cvar(net::assets::URL_CVAR).unwrap_or_default();
+        let fingerprint = cvar(net::assets::FINGERPRINT_CVAR).unwrap_or_default();
+        net::server_assets::startup(&games, &url, &fingerprint, &server.map_id(&options.map))
+    };
     let (lacks, fatal) = server.requirements(&options.map);
     if !lacks.is_empty() {
         eprintln!("{lacks}");
@@ -947,6 +987,9 @@ pub fn run(server: &'static GameServer) {
         })
     });
     let mut app = self::app(server, start, &options);
+    if let Some(files) = files {
+        app.insert_resource(files);
+    }
     if let Some((session, previous)) = session {
         eprintln!("session log: {}", session.log_path().display());
         for p in previous {
@@ -986,6 +1029,29 @@ pub fn run(server: &'static GameServer) {
     app.run();
 }
 
+/// `+chimera:hub <link> [username]` taken off `options`' console lines
+/// and redeemed (`net::assets::join_hub`): the server's hub account, its
+/// file the server user's `account.toml` (`CHIMERA_ACCOUNT` names
+/// another), whose tickets fetch its game files from then on.
+fn take_hub_link(mut options: Options) -> Options {
+    let command = net::assets::HUB_COMMAND;
+    options.console.retain(|line| {
+        let words = console::parse(line).into_iter().next().unwrap_or_default();
+        if !words.first().is_some_and(|w| w.eq_ignore_ascii_case(command)) {
+            return true;
+        }
+        match words.get(1) {
+            Some(link) => match net::assets::join_hub(link, words.get(2).map(String::as_str)) {
+                Ok(said) => eprintln!("{said}"),
+                Err(e) => eprintln!("error: {command}: {e}"),
+            },
+            None => eprintln!("usage: +{command} <hub link with ?code=> [username]"),
+        }
+        false
+    });
+    options
+}
+
 /// The binary's app before its log, stdin and executor: the headless
 /// base on a run loop of at most `FPS_MAX` frames a second,
 /// `ServerPlugin`, then `ServerHooks::launch`.
@@ -1021,6 +1087,11 @@ fn start_serving(world: &mut World, mut started: Local<bool>) {
         return;
     }
     *started = true;
+    // The first match's game files (`net::server_assets`), before anyone
+    // can join.
+    if let Some(job) = net::server_assets::fetch_now(world) {
+        let _ = job.wait_saying(net::server_assets::PROGRESS_EVERY);
+    }
     if let Err(e) = listen(world) {
         eprintln!("error: {e}");
         world.write_message(AppExit::error());

@@ -17,11 +17,13 @@
 //! `point_default_owner`. So ctf_2fort has 15 and 15, cp_badlands 16 and
 //! 16 (its home spawns).
 //!
-//! Its kit (M2b): its four guns' view models (the class's arms with the
+//! Its kit (M2b): its guns' view models (the class's arms with the
 //! `c_` weapon bone-merged: `view::load`), held models (the same `c_`
-//! models, bone-merged by the arms' `weapon_bone`) and the rocket's
-//! model (`held_kit`); (M3) the classes' bodies and the HUD's look
-//! (`body_kit`: `bodies::add_bodies`, `hud::load`); no decals yet. Its sounds are
+//! models, bone-merged by the arms' `weapon_bone`) and their projectiles'
+//! models (`held_kit`); (M3) the classes' bodies and the HUD's look
+//! (`body_kit`: `bodies::add_bodies`, `hud::load`); no decals yet. Its own
+//! particle systems the guns start (`weapons::looks`: the explosion, the
+//! muzzle flashes) load with its maps (`extra_particles`). Its sounds are
 //! Source's sound scripts (the map's own entries, its surfaces' and the
 //! guns', `weapon_sounds`) and the map's soundscapes. On another game's
 //! map its guns come with the same (`dress_guest_with`).
@@ -66,7 +68,7 @@ pub static TF2: SourceGame = SourceGame {
     spawn_rule: team_spawn,
     gravity: GRAVITY,
     kit: body_kit,
-    extra_particles: no_extra_particles,
+    extra_particles,
     held: held_kit,
     sounds,
     fixed_models: props::no_fixed_models,
@@ -251,8 +253,10 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     Ok(())
 }
 
-fn no_extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static str]) {
-    (&[], &[])
+/// TF2's own effects its guns start (`weapons::looks`): the explosion and
+/// the muzzle flashes.
+fn extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static str]) {
+    (super::weapons::looks::PARTICLE_SYSTEMS, super::weapons::looks::PARTICLE_FILES)
 }
 
 /// TF2's sounds: Source's sound scripts (the map's own entries and its

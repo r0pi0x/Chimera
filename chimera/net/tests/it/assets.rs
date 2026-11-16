@@ -212,6 +212,7 @@ impl Fixture {
             settings: Some(AssetSettings {
                 store: Some(Store::new(self.dir.join(client))),
                 use_install: false,
+                service_first: false,
                 builds: Default::default(),
                 remote: Some(RemoteConfig {
                     url: self.front.url(),
@@ -1235,4 +1236,176 @@ fn the_startup_fetch_gets_what_the_games_read_first_or_says_why_not() {
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
     let why = fresh("unreachable", &token, format!("https://{closed}"), &svc.fingerprint);
     assert!(why.contains("can't reach the asset service"), "{why}");
+}
+
+// --- The server's own game files (`net::server_assets`).
+
+/// An account file signed in to `svc`'s hub as `name`, its ticket made
+/// with a test key the service trusts (`ticket.pub`), as the accounts
+/// service would make it.
+fn hub_account(svc: &Fixture, name: &str) -> PathBuf {
+    use chimera_assets::{account::AccountFile, ticket};
+    let key = chimera_assets::sign::load_or_create_key(&svc.dir.join("ticket.key")).unwrap();
+    let keys_path = chimera_assets::accounts::ticket_keys_path(&svc.store.root);
+    fs::create_dir_all(keys_path.parent().unwrap()).unwrap();
+    fs::write(&keys_path, ticket::TicketKeys::single(key.verifying_key()).to_text()).unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let (account, device) = ([4u8; 16], [6u8; 16]);
+    let claims = ticket::Claims {
+        version: ticket::VERSION,
+        key_id: String::new(),
+        account,
+        device,
+        username: name.into(),
+        role: "host".into(),
+        content: vec!["*".into()],
+        games: vec!["*".into()],
+        list: 4,
+        report: true,
+        muted: false,
+        audience: ticket::SERVICES.into(),
+        issued: now,
+        expires: now + ticket::LIFETIME_SECS,
+    };
+    let file = AccountFile {
+        url: svc.front.url(),
+        fingerprint: Some(svc.fingerprint.clone()),
+        assets_url: None,
+        account: ticket::id_hex(&account),
+        device: ticket::id_hex(&device),
+        username: name.into(),
+        display_name: name.into(),
+        device_key: "05".repeat(32),
+        ticket: Some(ticket::issue(&key, &claims)),
+    };
+    let path = svc.dir.join(format!("{name}-account.toml"));
+    file.save_to(&path).unwrap();
+    path
+}
+
+/// The stand-in game's gun as a document whose numbers are `text`'s.
+fn docs_from(text: &str) -> Vec<(String, String)> {
+    vec![("first.toml".to_string(), text.to_string())]
+}
+
+/// A dedicated server with no install of the game, an empty store and
+/// only a token of its own (no service named: it goes to the service the
+/// server offers its players, pinned by its certificate) fetches, before
+/// it starts, the game's `base` and the start map's sets, then builds its
+/// server documents from the fetched files (read with nothing to fetch
+/// from: they are all here). A client whose own numbers differ (a
+/// machine without the files, the specs' fallback) plays with the
+/// server's. Before the match, the server also fetches the sets the
+/// match hands out (the gun's `weapon/gun`), never the others.
+#[test]
+fn a_dedicated_server_without_installs_fetches_its_files_with_its_credential_and_builds_its_documents_from_them() {
+    use chimera_assets::CachedFiles;
+    use chimera_core::mount::FileSource;
+    use chimera_net::net::server_assets::{self, Via};
+    use chimera_sim::{server_docs::{DocsAppExt, ServerDocs}, weapon::data::{WeaponCatalog, WeaponDataAppExt}};
+    let mut svc = Fixture::new("server_files", 3, Duration::ZERO);
+    // The game's data the server builds its documents from (invented
+    // numbers), in its `base`, as TF2's scripts are.
+    let real = format!("id = \"{GAME}:first\"\nslot = 1\ndraw = 0.25\n");
+    svc.republish("base", "scripts/first.toml", real.as_bytes());
+    let token = svc.user("game-server");
+    let mut session = svc.session("dedicated", "", true);
+    session.settings.as_mut().unwrap().remote = None;
+    session.access = Some(svc.dir.join("dedicated-none.toml"));
+    session.account = Some(svc.dir.join("dedicated-no-account.toml"));
+    let files = server_assets::from_session(&session, &svc.host(), Some(&token)).expect("a credential");
+    assert_eq!(files.via, Via::Offered);
+    let remote = files.settings.remote.clone().unwrap();
+    assert_eq!((remote.url.as_str(), remote.fingerprint.as_deref()), (svc.front.url().as_str(), Some(svc.fingerprint.as_str())));
+    let files = server_assets::fetch_at_start(files, &format!("{GAME}:later"));
+    let store = files.settings.store.clone().unwrap();
+    for set in ["base", "players", "common", "map/later"] {
+        assert!(svc.ids(set).iter().all(|id| store.has(id)), "{set} fetched before the start");
+    }
+    assert!(svc.ids("weapon/gun").iter().all(|id| !store.has(id)), "no gun yet");
+    assert!(svc.ids("extra").iter().all(|id| !store.has(id)), "nothing the server doesn't need");
+    // The server's documents from the store alone (no fetcher: no
+    // download while it plays).
+    let cached = CachedFiles::open(&store, GAME, "7").unwrap();
+    let text = String::from_utf8(cached.read("scripts/first.toml").unwrap().unwrap()).unwrap();
+    assert_eq!(text, real);
+    let client_docs = docs_from(&format!("id = \"{GAME}:first\"\nslot = 1\ndraw = 1.0\n"));
+    let base = setup_gun(svc.host());
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, move |app: &mut App| {
+        base(app);
+        let docs = &client_docs;
+        let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
+        let set = app.add_weapon_data(&refs).unwrap();
+        app.server_weapon_docs(WEAPONS_SET, set, docs.clone());
+    });
+    // Every app starts with the numbers it has without the files; the
+    // server's parts build its documents from the fetched file (as TF2's
+    // guns do at the server's build, after the start's download).
+    {
+        use chimera_sim::{server_docs::{self, DocApply}, weapon::data::WeaponSet};
+        let docs = docs_from(&text);
+        let refs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
+        let set: &'static WeaponSet = Box::leak(Box::new(WeaponSet::parse(&refs, &[]).unwrap()));
+        server_docs::renew_own(sim.server.app.world_mut(), WEAPONS_SET, docs, DocApply::Weapons(set)).unwrap();
+    }
+    sim.server.app.insert_resource(files);
+    let draw = |w: &World| w.resource::<WeaponCatalog>().get(&format!("{GAME}:first")).unwrap().draw;
+    assert_eq!(draw(sim.server.app.world()), 0.25, "the server's numbers are the fetched file's");
+    // A client with the install (nothing to fetch) and other numbers.
+    sim.add_client(client_with(svc.session("player", &token, false), true));
+    assert_eq!(draw(sim.clients[0].app.world()), 1.0);
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
+    assert!(sim.clients[0].app.world().resource::<ServerDocs>().get(WEAPONS_SET).unwrap().replaced(), "the server's documents taken");
+    assert_eq!(draw(sim.clients[0].app.world()), 0.25, "the client plays with the server's numbers");
+    // The match hands out the gun: the server fetched its set too.
+    assert!(
+        until(&mut sim, 30.0, |s| !server_assets::fetching(s.server.app.world()) && svc.ids("weapon/gun").iter().all(|id| store.has(id))),
+        "the match's gun fetched by the server"
+    );
+    assert!(svc.ids("extra").iter().all(|id| !store.has(id)));
+    let log = fs::read_to_string(svc.store.root.join("server").join("access.log")).unwrap();
+    assert!(log.lines().any(|l| l.contains("game-server") && l.contains(" 200 ")), "{log}");
+}
+
+/// A listen server is the host's process: with no service configured and
+/// no token, it fetches the match's sets with the host's own credential
+/// (here its hub account's ticket, as its client joins with it), the
+/// service logging the account; a change of level fetches the coming
+/// map's set before the map loads.
+#[test]
+fn a_listen_server_fetches_the_match_files_with_the_hosts_credential() {
+    use chimera_net::net::server_assets::{self, ServerFiles, Via};
+    let svc = Fixture::with_tickets("listen_files", 3);
+    let account = hub_account(&svc, "hosty");
+    // The host's session as its client made it: its store, no service
+    // named, its account.
+    let mut session = svc.session("host", "", true);
+    session.settings.as_mut().unwrap().remote = None;
+    session.access = Some(svc.dir.join("host-access.toml"));
+    session.account = Some(account);
+    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup_gun(svc.host()));
+    sim.server.app.insert_resource(session);
+    server_assets::for_host(sim.server.app.world_mut());
+    let files = sim.server.app.world().resource::<ServerFiles>().clone();
+    assert_eq!(files.via, Via::Account);
+    let token = &files.settings.remote.as_ref().unwrap().token;
+    assert!(token.starts_with(chimera_assets::ticket::PREFIX), "the host's ticket, not a token");
+    assert!(
+        until(&mut sim, 30.0, |s| {
+            !server_assets::fetching(s.server.app.world())
+                && ["base", "players", "common", "weapon/gun"].iter().all(|set| svc.ids(set).iter().all(|id| store.has(id)))
+        }),
+        "the match's sets fetched by the host"
+    );
+    assert!(svc.ids("map/later").iter().all(|id| !store.has(id)), "not the next map yet");
+    // A change of level names the coming map before it loads (the served
+    // one is still the old): its set comes with the change's fetch.
+    sim.server.app.insert_resource(chimera_world::map::LoadedMapName(format!("{GAME}:later")));
+    let job = server_assets::fetch_now(sim.server.app.world_mut()).expect("the next map's fetch");
+    job.wait().unwrap();
+    assert!(svc.ids("map/later").iter().all(|id| store.has(id)), "the coming map's set");
+    assert!(svc.ids("extra").iter().all(|id| !store.has(id)));
+    let log = fs::read_to_string(svc.store.root.join("server").join("access.log")).unwrap();
+    assert!(log.lines().any(|l| l.contains("account:hosty") && l.contains(" 200 ")), "{log}");
 }

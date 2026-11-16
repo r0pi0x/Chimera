@@ -102,6 +102,7 @@ fn hangemhigh_converts_from_the_store_alone() {
     let settings = AssetSettings {
         store: Some(store.clone()),
         use_install: false,
+        service_first: false,
         builds: Default::default(),
         remote: None,
         lock: None,

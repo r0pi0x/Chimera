@@ -57,6 +57,7 @@
 //! installs' maps are the host's (a client lacking one gets it as any
 //! server map: CS:S's by download).
 
+pub mod sandbox;
 #[cfg(feature = "present")]
 pub mod signal;
 
@@ -282,6 +283,12 @@ impl Plugin for UltimateGunGamePlugin {
                 chimera_net::minigame_net::change_match(w, MINIGAME, a.get(2).map(String::as_str)).map(Some)
             },
         )
+        .insert_resource(chimera_sim::minigame::rung_command::HoldRungs(sandbox::SANDBOX))
+        .console_command(
+            "chimera:sandbox",
+            "sandbox [map | help]: play alone with every game's guns, nothing advancing or ending (`rung` picks the gun; `sandbox help`).",
+            |w, a| sandbox::command(w, a, BASE),
+        )
         .console_command("chimera:parts", "parts: what each composed game lends (its capability report).", |w, _| {
             Ok(Some(auto::report(w).iter().map(Capabilities::line).collect::<Vec<_>>().join("\n")))
         })
@@ -298,6 +305,7 @@ impl Plugin for UltimateGunGamePlugin {
         }
         let l = *world.resource::<AutoLadder>();
         let _ = make(world, l, "the ladder");
+        let _ = sandbox::generate(world, BASE);
     }
 }
 
@@ -312,6 +320,7 @@ fn with_installs(world: &mut World) {
     if let Err(e) = generate(world, l.seed, l.rungs) {
         world.resource_mut::<Console>().print(Level::Error, e);
     }
+    let _ = sandbox::generate(world, BASE);
 }
 
 /// The app's own default binds, over every game's (`binds::AppBind`):
@@ -366,6 +375,7 @@ pub static APP: chimera_client::client::app::GameApp = chimera_client::client::a
 /// others (`party_kit::with_defaults_for`).
 #[cfg(feature = "present")]
 pub fn args(args: chimera_client::client::Args) -> chimera_client::client::Args {
+    let args = sandbox::args(args);
     if party_kit::main_menu::starts_at_menu(&args) {
         args
     } else {

@@ -20,18 +20,22 @@ from specs, measurements and the game's own data.
 | M1 a map you can walk on | done (2026-11-15) | `games/tf2`; mount (missing archives skipped); ctf_2fort and cp_badlands converted with team spawns; `tf2:<map>` in the party apps; `$ssbump` drawn |
 | M2a the weapon scripts, `chimera_pack tf2` | done (2026-11-15) | ICE (`game::ice`, ported from the designer's public-domain reference, 2026-11-15; the published triplets pass); `game::scripts` (store/plain, install plus key, none); `dump tf2 --script`, `--ice-probe`; `chimera_pack tf2` (`weapon/<id>` for M2's guns with the decrypted script, `players`, `map/<name>`); not published. Every `.ctx` script (88) decrypts with Thin-ICE and the user's key |
 | M2b TF2 guns as UGG rungs | done (2026-11-15) | the four guns as data with the spec's numbers (the scripts' field mapping a seam), TF2's gun rules as hooks, `c_` weapons bone-merged on the class arms, sounds, TF2 in the party's `GUESTS`, `originals:gun_game_2fort` |
+| More guns (track 1, tf2-guns2) | done (2026-11-15) | the next eight guns (specs/tf2/weapons_more.md) as data and hooks, lent as rungs; the Minigun held up in first person; muzzle flashes and explosions |
 | M3 classes as bodies, TF2's movement | done (2026-11-15) | the classes as data (`game::classes`); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health); the class bodies with team skins and animation; TF2's HUD (health, ammo, crosshair) and kill icons |
 | M4 more maps and weapons | not started | |
 
 ## 1. Rules for this port
 
-- **Clean room.** TF2's and the Source engine's code leaked, and the
-  Source SDK is public. Neither is ever read, copied or translated.
-  Spec sub-agents read the game's data files in place, public
-  documentation (the community TF2 wiki, Valve Developer Community)
-  and measurements of the dedicated server, and write only
-  `specs/tf2/`. The orchestrator and implementation agents read only
-  `specs/` and the repository.
+- **Clean room.** TF2's and the Source engine's code leaked; the leak
+  is never read, copied or translated. Valve's public Source SDK 2013,
+  which has held TF2's client and server game code since 2025-02-18
+  (non-commercial licence), is reference material for spec sessions
+  only (user, 2026-11-15). Spec sub-agents may read it in place, along
+  with the game's data files, public documentation (the community TF2
+  wiki, Valve Developer Community) and measurements of the dedicated
+  server. They write only `specs/tf2/`, in their own words, never
+  copying or translating code. The orchestrator and implementation
+  agents read only `specs/` and the repository.
 - **No game files, extracted data or keys in the repository.** Assets
   load at run time from the user's install or the asset service. No
   install path, home path or key goes into a commit.
@@ -295,12 +299,57 @@ looked into; it collides the same).
   `net57`.
 
 Left (M2b): the knockback per point is ours (open question 9,
-probe P3), bullets push nobody; the Minigun's first-person idle sat low
-and angled up (the Heavy arms' `m_idle` as decoded holds the gun upright
-below the eye; since tf2-guns2 the first person shows the spun pose
-raised by a `view_offset`: `game::view`); no explosion look (particles, scorch), no muzzle
-flash seen in first person; the rocket's crouched offset and the
+probe P3), bullets push nobody; the Minigun's first-person idle is `m_idle` again (upright, barrels up,
+right of centre: a capture of the real game showed the same on
+2026-11-15; tf2-guns2's spun pose and `view_offset` are gone); no explosion look (particles,
+scorch), no muzzle flash seen in first person (both drawn since
+tf2-guns2; no scorch yet); the rocket's crouched offset and the
 per-class shotgun starts wait for classes (M3); a TF2 rung has no knife.
+
+#### More guns: what landed (tf2-guns2, 2026-11-15)
+
+- **The Minigun in first person**: its `m_idle` (and the ends of `m_draw`
+  and `m_spool_down`, which settle into it) holds the gun upright below
+  the eye with the left hand off its grip, consistently across those
+  sequences as we decode them: not the bone merge, not the include's
+  root (the same in the spun sequences, which aim right), not
+  `min_viewmodel_offset` (the minimal view models' only). The first
+  person shows the spun pose (`m_spool_up` to draw, `m_spool_idle` to
+  idle and wind down), raised by the gun's `[models] view_offset`
+  (`game::view`), matched by eye. The converted-map cache key now hashes
+  `data/` (a view model's data change was served stale).
+- **Eight guns** (specs/tf2/weapons_more.md): the Scout's Pistol, the SMG,
+  the Sniper Rifle, the Revolver, the Grenade and Stickybomb Launchers,
+  the Flame Thrower and the Syringe Gun, as data with the spec's numbers
+  (data/weapons), their classes' arms and sequences (picked by name: the
+  Pyro's `ft_idle` shares its activity), sounds, kill icons, gun classes,
+  `weapon/tf_weapon_*` sets; lent through `PARTS` (the automatic ladders
+  draw them) and the classes table. Hooks: `tf2:sniper` (the scoped
+  charge 50 to 150, the headshot crit after 0.2 s scoped; Chimera's scope
+  at 20 degrees and 80 units/s, auto re-zoom), `tf2:grenade` (explodes on
+  an enemy before touching anything, else bounces and rolls to its 2.3 s
+  fuse; flat 100), `tf2:sticky` (charge 900 to 2400 over 4 s, sticks to
+  the world, arms at 0.7 s, attack2 detonates, at most 8, the air radius,
+  the 5 s ramp), `tf2:flame` (a 350-unit cone tested each 0.075 s with
+  the age and burn ramps, afterburn 4 per 0.5 s for 3 to 10 s) and
+  `tf2:needle` (990 units/s falling at 0.3 of gravity, 10 by distance).
+  The rocket, grenade and sticky share one explosion (`weapons::blast`).
+- **Looks** (`weapons::looks`): TF2's `ExplosionCore_MidAir` and each
+  gun's `muzzle_*` from its own `.pcf` files, loaded with its maps;
+  Source's explosion on maps with its sprites; explosions sent to clients
+  (the `tf2_looks` net part).
+- **Generic**: `chimera:projectile`'s `up_speed`. Network version net63.
+- **Tests**: `tests/it/weapons_more.rs` (13 scenario tests from the
+  spec's cases), the heavy `guns` tests over all twelve, `party_kit`'s
+  `tf2_rungs::the_next_eight_tf2_guns_are_rungs_and_kill`.
+
+Left: no flame particles (the Flame Thrower's cone is invisible); muzzle
+flashes in the world, not on the view model's attachment, and not on
+other games' maps; the headshot kill icon isn't told apart; no laser
+dot or charge meter (no TF2 HUD); stickies aren't destroyed by bullets,
+a ninth blows the oldest at once; the grenade's bounce (restitution,
+friction) and the projectiles' boxes are ours; no crits; Pyros aren't
+immune to afterburn, nothing puts a burn out but death.
 
 #### Real stats from the scripts (2026-11-15)
 
@@ -323,6 +372,15 @@ per-class shotgun starts wait for classes (M3); a TF2 rung has no knife.
   interval (nominal, not tick-rounded: weapon_scripts.md open question
   3) and the Rocket Launcher's per-rocket reload (open question 6), as
   the spec predicted.
+- Scratch store (2026-11-15): TF2 packed from two client runs' reads
+  (`base` from de_dust2: 758 files, every gun dressed; `map/ctf_2fort`:
+  3,220 files) and `sets tf2 --only weapon/` and `--only players`; a
+  client with no install, no key and the store alone
+  (`CHIMERA_ASSET_USE_INSTALL=0`) loads ctf_2fort and reads all twelve
+  guns' numbers from the stored scripts. Not yet in the live store: the
+  commands are in docs/playtest-hosting.md, "TF2". The fetch guard
+  (`no_fetch_in_match`) plays `tf2:ctf_2fort` last when TF2 is installed
+  and published.
 
 ### M3: the classes as bodies, TF2's movement
 
@@ -425,6 +483,14 @@ server probe for parity checks, TF2's own app.
 
 ## 7. Backlog
 
+- View models per specs/tf2/viewmodel.md, beyond the Minigun's rest pose
+  (done: `m_draw`, `m_idle`, no `view_offset`, `m_spool_idle` while
+  spun): the draw at x1.34 holding its last frame, the 0.2 s smoothstep
+  cross-fade for sequences not flagged "snap", `m_spool_up` cut at 0.75
+  s, `m_idle` sent 2 s after the wind-down, the procedural barrel spin
+  (up to 20 rad/s, 0.1 rad/s a tick), and its 24 muzzle test cases as a
+  heavy test. The FOV already follows the player's base (`GameFov::
+  follows_player`): 54 unzoomed at any `fov_desired`.
 - Rendering (from M1's screenshots): fences and grates in 2fort and some
   ground decals draw as a coarse dither pattern; check how TF2's VMTs'
   `$alphatest` and `$translucent` are handled. Badlands' track bed and
@@ -462,6 +528,11 @@ server probe for parity checks, TF2's own app.
   arms' stubs), sounds, TF2 in the party's `GUESTS` and
   `originals:gun_game_2fort`; the scripts' numbers a logged seam.
   Screenshots in UGG on ctf_2fort and de_dust2.
+- 2026-11-15: more guns (tf2-guns2): the Minigun held up in first person
+  (the spun pose, a `view_offset`); the Pistol, SMG, Sniper Rifle,
+  Revolver, Grenade and Stickybomb Launchers, Flame Thrower and Syringe
+  Gun from weapons_more.md as rungs with their hooks; TF2's muzzle flashes
+  and explosions. Screenshots on ctf_2fort.
 - 2026-11-15: the weapon scripts' numbers: specs/tf2/weapon_scripts.md,
   `script_numbers` applies them at run time (store or install plus key),
   served to clients as server documents.
@@ -470,3 +541,22 @@ server probe for parity checks, TF2's own app.
   the class bodies with team skins and animation, TF2's HUD and kill
   icons. Screenshots in UGG on ctf_2fort and de_dust2 (each gun's HUD, a
   third-person Heavy, a Scout mid air jump).
+- 2026-11-15: specs/tf2/viewmodel.md (T9), the first spec checked against
+  the Source SDK 2013's TF2 game code (updated 2025-02-18; read in place by
+  a spec session, never copied). The Minigun's real rest pose is `m_idle`
+  as we decode it (raised, barrels up; only the barrels and a glove on
+  screen at `viewmodel_fov` 54): draw `m_draw`, idle `m_idle`, no
+  `view_offset`; TF2 has no sway, its bob is CS:S's, and the view-model
+  FOV is 54 whenever the player is not zoomed, whatever their base FOV.
+- 2026-11-15: the gameplay specs (movement, classes, weapons, weapons_more,
+  weapon_scripts, hud, player_animation) checked against the SDK's TF2
+  game code; each lists its "Corrections from the SDK". The largest for
+  the code: the Minigun has no gameplay wind-down (no slowdown, jump or
+  re-spin lock after release; first shot about 0.85 s), its rev-up curve;
+  the blast (owner radius 121, distance to the nearer of centre and feet,
+  push capped at 1000, Heavy half, bullets push too, leave-ground 250);
+  next-shot timing from the firing tick ("set", not "accumulate"); the
+  grenade fuse 2.0 s at 60 % damage, sticky arming 0.8 s, Demoman self
+  damage x0.75 always; the flame every 0.02 s; Medic regen 6 to 12/s.
+  The SDK holds no class or weapon scripts: per-class health and speed
+  and per-gun numbers stay measured or from the scripts.

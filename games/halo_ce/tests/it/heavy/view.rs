@@ -383,11 +383,12 @@ fn the_guns_in_hand_load_from_bloodgulch() {
         start.elapsed().as_secs_f32(),
         looks.warnings
     );
-    assert_eq!(looks.view_models.len(), 9, "{:?}", looks.warnings);
+    // The nine guns and the grenade rung (the pistol's view under its own id).
+    assert_eq!(looks.view_models.len(), 10, "{:?}", looks.warnings);
     // The guns' held models (and beside them the objects drawn as shown
     // items: `heavy::fx`).
     let guns: Vec<_> = looks.held.iter().filter(|h| !h.key.starts_with(load::OBJECT_PREFIX) && !h.key.starts_with(load::ITEM_PREFIX)).collect();
-    assert_eq!(guns.len(), 9, "{:?}", looks.warnings);
+    assert_eq!(guns.len(), 10, "{:?}", looks.warnings);
     for v in &looks.view_models {
         let id = v.key.as_str();
         let set = v.animations.as_ref().unwrap();
@@ -410,7 +411,8 @@ fn the_guns_in_hand_load_from_bloodgulch() {
             assert_eq!(v.attachments[1].name, EJECTION, "{id}: the ejection port second");
         }
         // The document's timers are the animations' lengths.
-        let a = gun(id).animations;
+        // The grenade rung shows the pistol under its own id: the pistol's numbers.
+        let a = gun(if id == "halo_ce:frag_grenade" { PISTOL } else { id }).animations;
         let frames = |s: S| sequence(set, s).map(|q| numbers(set, q));
         assert_eq!(frames(S::Ready).map(|f| f.0), Some(a.ready as usize), "{id}: the draw");
         assert_eq!(
@@ -467,6 +469,8 @@ fn another_games_map_is_dressed_with_the_guns() {
     // The guns whose documents name their models: all nine.
     let mut guns: Vec<String> = halo_ce::game::view::load::gun_models().iter().map(|g| g.id.to_string()).collect();
     assert_eq!(guns.len(), 9);
+    // And the grenade rung, shown as the pistol under its own id.
+    guns.push("halo_ce:frag_grenade".to_string());
     guns.sort();
     let mut shown: Vec<String> = map.kit.view_models.iter().map(|v| v.key.clone()).collect();
     shown.sort();
@@ -496,8 +500,9 @@ fn the_posing_timer_takes_the_maps_idle_numbers() {
     let disc = IdleTiming { time: (10.0, 15.0), skip: 0.25 };
     assert_eq!(halo_ce::game::view::idle_of(&file), disc);
     let looks = load::looks(&file, false);
-    // Every held gun with a view model (nine since the whole arsenal).
-    assert_eq!(looks.view_models.len(), 9);
+    // Every held gun with a view model (nine since the whole arsenal, and
+    // the grenade rung's pistol).
+    assert_eq!(looks.view_models.len(), 10);
     for v in &looks.view_models {
         assert_eq!(idle_timing(v.animations.as_ref().unwrap()), disc, "{}", v.key);
     }

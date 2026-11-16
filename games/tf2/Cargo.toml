@@ -32,6 +32,8 @@ feature-paths = { ui = ["src/ui/"] }
 chimera_core.workspace = true
 chimera_world.workspace = true
 chimera_sim.workspace = true
+chimera_net.workspace = true
+bevy_replicon.workspace = true
 # Source engine behaviour shared with CS:S and HL2:DM (the search path,
 # map lists, the maps' conversion).
 source_engine.workspace = true
@@ -87,4 +89,4 @@ path = "tests/it/main.rs"
 ui = ["dep:chimera_client", "dep:chimera_present"]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on):
 # `cargo test -p tf2 --features dev` shares the apps' Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "source_engine/dev", "source_logic/dev", "source_formats/dev", "chimera_client?/dev", "chimera_present?/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_engine/dev", "source_logic/dev", "source_formats/dev", "chimera_client?/dev", "chimera_present?/dev"]

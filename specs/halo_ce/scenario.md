@@ -192,9 +192,10 @@ script blocks own sub-blocks, so their sizes could not be checked by
 contiguity and are reference values.
 
 Local north on the disc: pi on beavercreek, bloodgulch, hangemhigh and
-wizard; pi/2 on longest and sidewinder; 0 on the other seven. Nothing
-a multiplayer match needs reads it; it feeds a compass-style object
-function (reference).
+wizard; pi/2 on longest and sidewinder; 0 on the other seven. Its one
+reader is the "compass" object function input (`objects.md`), which
+in multiplayer drives the assault rifle's on-gun compass dial
+(`weapons.md` section 18); nothing in the rules reads it.
 
 ## Rotation and facing
 

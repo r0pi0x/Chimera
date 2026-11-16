@@ -32,6 +32,15 @@
 //! the jump timer full and the pill pushed out of anything it overlaps;
 //! what is under it catches it on the first tick (a settle).
 //!
+//! On another game's map (the party apps) the pill is the map's own
+//! character's size where that is smaller (`body`, the engine's movement
+//! envelope rule, `chimera_core::envelope`; Halo states its own with
+//! `envelope`): narrower, lower standing and crouched, the eye kept
+//! `EYE_MARGIN` under its top, and a step-up (`mover::step_up`) to the
+//! map's character's step where that is higher than the 0.375 m Halo rides
+//! up. The model, hit boxes, jump and gravity stay Halo's. On Halo's maps
+//! and without a map envelope the numbers are the table's, to the bit.
+//!
 //! Keyboard and mouse: `Intent::move_axis` is the throttle (forward, left)
 //! as the spec maps keys, full per axis, normalised on diagonals; crouch is
 //! a level and always counts (the spec's keyboard choice). A
@@ -111,10 +120,14 @@ pub mod mover;
 pub mod space;
 pub mod tick;
 
+use std::borrow::Cow;
+
 use avian3d::{character_controller::move_and_slide::DepenetrationConfig, prelude::*};
 use bevy::prelude::*;
 use chimera_core::{
     character::{CAPSULE_HEIGHT, CAPSULE_RADIUS},
+    core::MapGame,
+    envelope::{MovementEnvelope, MovementEnvelopeAppExt, MovementEnvelopes, map_envelope},
     slots::{Footing, Loadout, RegisterSlots},
 };
 
@@ -161,7 +174,9 @@ pub fn register(app: &mut App) {
     if app.world().contains_resource::<MovementData>() {
         return;
     }
-    app.insert_resource(MovementData::builtin())
+    let d = MovementData::builtin();
+    app.add_movement_envelope(crate::game::GAME, envelope(&d));
+    app.insert_resource(d)
         .register_movement::<HaloMovement>(ID)
         .seat_movement(ID, footing, seat)
         .add_systems(Predict::Movement, (step.after(UnitStep), sync_collider).chain())
@@ -179,6 +194,64 @@ pub fn push(me: Option<&mut HaloMovement>, velocity: &mut Velocity, dv: Vec3) {
     }
 }
 
+/// How far (m) the eye stays under the top of a body the map's envelope
+/// made lower than Halo's own (`body`): under a lower ceiling the eye
+/// stays inside it. Halo's own eye is 0.24 m under its top (0.15 WU
+/// crouched), so on its own maps this changes nothing.
+pub const EYE_MARGIN: f32 = 0.1;
+
+/// Halo's own movement envelope (`chimera_core::envelope`; metres): the
+/// pill's radius and heights, and the edge it rides up at a run as its
+/// step (`MovementData::ride_step`).
+pub fn envelope(d: &MovementData) -> MovementEnvelope {
+    let s = crate::game::METERS_PER_UNIT;
+    MovementEnvelope {
+        radius: d.radius * s,
+        height: d.height_stand * s,
+        crouch_height: d.height_crouch * s,
+        step: d.ride_step * s,
+    }
+}
+
+/// The movement's numbers for a Halo body on a map whose envelope is `map`
+/// (the envelope's rule, `MovementEnvelope::within`): a narrower pill, a
+/// lower one standing and crouched (the eye kept `EYE_MARGIN` under its top,
+/// both ends of the crouch blend, so it moves smoothly), and the step-up
+/// (`MovementData::step_up`) when the map's character steps higher. The
+/// table itself, untouched, where the rule changes nothing (Halo's maps,
+/// no map envelope): the same numbers to the bit.
+pub fn body<'a>(d: &'a MovementData, map: Option<&MovementEnvelope>) -> Cow<'a, MovementData> {
+    let own = envelope(d);
+    let b = own.within(map);
+    if b == own {
+        return Cow::Borrowed(d);
+    }
+    let s = crate::game::METERS_PER_UNIT;
+    let mut out = d.clone();
+    if b.height < own.height {
+        out.height_stand = b.height / s;
+    }
+    if b.crouch_height < own.crouch_height {
+        out.height_crouch = (b.crouch_height / s).min(out.height_stand);
+    }
+    if b.radius < own.radius {
+        out.radius = b.radius / s;
+    }
+    out.radius = out.radius.min(out.height_crouch / 2.0);
+    if b.step > own.step {
+        out.step_up = b.step / s;
+    }
+    let margin = EYE_MARGIN / s;
+    out.camera_stand = out.camera_stand.min(out.height_stand - margin);
+    out.camera_crouch = out.camera_crouch.min(out.height_crouch - margin);
+    Cow::Owned(out)
+}
+
+/// The loaded map's envelope as the movement's systems read it.
+fn map_body_envelope(envelopes: Option<&MovementEnvelopes>, game: Option<&MapGame>) -> Option<MovementEnvelope> {
+    envelopes?.for_map(game)
+}
+
 /// The engine tick's length in Halo ticks: exactly 1 at Halo's own tick.
 pub fn tick_scale(clock: &SimClock) -> f32 {
     let k = clock.delta.as_secs_f64() / crate::game::TICK_INTERVAL;
@@ -190,6 +263,7 @@ fn footing(world: &World, e: Entity) -> Option<Footing> {
     let me = world.get::<HaloMovement>(e)?;
     let t = world.get::<Transform>(e)?;
     let d = world.get_resource::<MovementData>()?;
+    let d = body(d, map_envelope(world).as_ref());
     let s = crate::game::METERS_PER_UNIT;
     Some(Footing {
         feet: t.translation - Vec3::Y * d.centre_above_origin(me.crouch) * s,
@@ -202,7 +276,8 @@ fn footing(world: &World, e: Entity) -> Option<Footing> {
 /// crouched if it crouched; the first tick pushes it out of what it
 /// overlaps.
 fn seat(world: &mut World, e: Entity, f: Footing) {
-    let Some(d) = world.get_resource::<MovementData>().cloned() else { return };
+    let Some(d) = world.get_resource::<MovementData>() else { return };
+    let d = body(d, map_envelope(world).as_ref()).into_owned();
     let s = crate::game::METERS_PER_UNIT;
     let c = if f.crouched { 1.0 } else { 0.0 };
     let at = f.feet + Vec3::Y * d.centre_above_origin(c) * s;
@@ -238,8 +313,10 @@ fn step(
     effects: Res<DamageEffects>,
     mut hits: MessageWriter<HaloHit>,
     (map_ladders, zones): (Option<Res<MapLadders>>, Query<&LadderZone>),
+    (envelopes, map_game): (Option<Res<MovementEnvelopes>>, Option<Res<MapGame>>),
 ) {
-    let d = &*data;
+    // The body the map's envelope allows (`body`): every Halo player's.
+    let d = &*body(&data, map_body_envelope(envelopes.as_deref(), map_game.as_deref()).as_ref());
     // Every ladder volume, climbed by Halo's rule (docs/DESIGN.md,
     // "Ladders across games"): the map's and the games' zones.
     let ladders: Vec<MapBrush> = map_ladders
@@ -316,7 +393,9 @@ fn sync_collider(
     mut removed: RemovedComponents<HaloMovement>,
     mut others: Query<&mut Collider, Without<HaloMovement>>,
     data: Res<MovementData>,
+    (envelopes, map_game): (Option<Res<MovementEnvelopes>>, Option<Res<MapGame>>),
 ) {
+    let data = body(&data, map_body_envelope(envelopes.as_deref(), map_game.as_deref()).as_ref());
     let s = crate::game::METERS_PER_UNIT;
     for e in removed.read() {
         if let Ok(mut c) = others.get_mut(e) {

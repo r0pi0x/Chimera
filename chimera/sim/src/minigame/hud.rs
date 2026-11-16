@@ -23,6 +23,17 @@
 //! `runtime::respawn_due`): the shell's countdown and death view read it,
 //! and then the match's moments for a music director (`moments::update`).
 //!
+//! **The rung hint** (`MinigameHud::rung_hint`, `RungHint`): while the
+//! viewer's rung declares one (`ladder::rung_hint`: its weapon data's
+//! opt-in `rung_hint`, Halo's grenade rung only so far), the action to
+//! name and its verb, shown `RUNG_HINT_ARRIVAL` seconds from the arrival
+//! on the rung (a rung change or a respawn onto it) and again
+//! `RUNG_HINT_DRY_FIRE` seconds from each dry fire of the viewer's own
+//! (its predicted `WeaponEventKind::DryFire`: on a network client too,
+//! from its own input; nothing new crosses the network). The HUD resolves
+//! the action's bound key when it draws (`chimera_client::client::
+//! rung_hint`).
+//!
 //! Known shortcuts: the notices (`RulesModule::notice`) are still made
 //! though no HUD draws them any more (only tests read them); drop them,
 //! or give them a place that is no banner (a log), when one is wanted.
@@ -43,6 +54,29 @@ pub const CALLOUT_SECONDS: f64 = 3.0;
 
 /// How long a callout keeps a lower-level one from replacing it (s).
 pub const CALLOUT_HOLD: f64 = 1.5;
+
+/// How long the rung hint shows on arriving on its rung, and on a dry
+/// fire there (s).
+pub const RUNG_HINT_ARRIVAL: f64 = 5.0;
+pub const RUNG_HINT_DRY_FIRE: f64 = 3.0;
+
+/// The viewer's rung hint (module doc): "Press <the action's key> to
+/// <verb>", shown until `until` (`Time`'s seconds).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RungHint {
+    pub action: String,
+    pub verb: String,
+    pub until: f64,
+    /// The rung and whether alive when last seen (an arrival changes it).
+    pub seen: (usize, bool),
+}
+
+impl RungHint {
+    /// Whether it shows at `now`.
+    pub fn shown(&self, now: f64) -> bool {
+        now < self.until
+    }
+}
 
 /// The most lines a merged callout has.
 pub const CALLOUT_LINES: usize = 3;
@@ -146,6 +180,8 @@ pub struct MinigameHud {
     pub callout: Option<ShownCallout>,
     /// The last callout's number.
     pub callouts: u32,
+    /// The viewer's rung's hint while it has one (module doc).
+    pub rung_hint: Option<RungHint>,
 }
 
 impl MinigameHud {
@@ -228,10 +264,14 @@ fn set_respawn_due(world: &mut World, due: Option<RespawnAt>) {
 
 /// `MinigameHud` for this frame (an exclusive system, `Update`), and the
 /// local player's `core::RespawnDue` (`runtime::respawn_due`).
-pub fn update(world: &mut World, mut cursor: Local<MessageCursor<MinigameEvent>>) {
+pub fn update(world: &mut World, mut cursor: Local<MessageCursor<MinigameEvent>>, mut shots: Local<MessageCursor<crate::weapon::WeaponEvent>>) {
     let events: Vec<MinigameEvent> = world
         .get_resource::<Messages<MinigameEvent>>()
         .map(|m| cursor.read(m).cloned().collect())
+        .unwrap_or_default();
+    let dry: Vec<Entity> = world
+        .get_resource::<Messages<crate::weapon::WeaponEvent>>()
+        .map(|m| shots.read(m).filter(|e| !e.replay && matches!(e.kind, crate::weapon::WeaponEventKind::DryFire)).map(|e| e.owner).collect())
         .unwrap_or_default();
     let Some(active) = world.get_resource::<ActiveMinigame>().copied() else {
         if world.get_resource::<MinigameHud>().is_some_and(MinigameHud::playing) {
@@ -259,6 +299,7 @@ pub fn update(world: &mut World, mut cursor: Local<MessageCursor<MinigameEvent>>
     }
     hud.lines.clear();
     hud.results = world.get_resource::<super::results::MatchResults>().cloned();
+    hud.rung_hint = viewer.and_then(|v| rung_hint(world, v, hud.rung_hint.take(), dry.contains(&v), now));
     if let Some(v) = viewer {
         hud.lines.extend(world.get::<MinigameStatus>(v).map(|s| s.0.clone()).unwrap_or_default());
         hud.lines.extend(phase_line(world));
@@ -302,6 +343,28 @@ pub fn update(world: &mut World, mut cursor: Local<MessageCursor<MinigameEvent>>
     }
     world.insert_resource(hud);
     super::moments::update(world);
+}
+
+/// The viewer's rung hint this frame (module doc): `last` the one before,
+/// `dry` the viewer dry-fired.
+fn rung_hint(world: &World, v: Entity, last: Option<RungHint>, dry: bool, now: f64) -> Option<RungHint> {
+    let (rung, hint) = super::ladder::rung_hint(world, v)?;
+    let alive = world.get::<crate::core::Health>(v).is_some_and(|h| h.current > 0.0);
+    let seen = (rung, alive);
+    let mut out = last.filter(|l| l.action == hint.action && l.verb == hint.verb).unwrap_or(RungHint {
+        action: hint.action.clone(),
+        verb: hint.verb.clone(),
+        until: f64::MIN,
+        seen: (usize::MAX, false),
+    });
+    if alive && out.seen != seen {
+        out.until = out.until.max(now + RUNG_HINT_ARRIVAL);
+    }
+    if alive && dry {
+        out.until = out.until.max(now + RUNG_HINT_DRY_FIRE);
+    }
+    out.seen = seen;
+    Some(out)
 }
 
 #[cfg(test)]

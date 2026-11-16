@@ -25,6 +25,7 @@
 //! - `explode`: a detonation's area damage (falloff, sight by the core
 //!   probes) and push;
 //! - `grenades`: the counts carried and the throw on the grenade button;
+//! - `rung`: the party ladder's grenade rung (the empty pistol, frags);
 //! - `pickups`: the netgame equipment on the item clock, powerups,
 //!   grenades, ammunition from duplicates and the weapon swap;
 //! - `systems`: the engine side: the holders' ticks (switches, the throw,
@@ -123,6 +124,7 @@ pub mod materials;
 pub mod params;
 pub mod pickups;
 pub mod random;
+pub mod rung;
 pub mod systems;
 pub mod tick;
 
@@ -177,6 +179,7 @@ pub const DATA: &[(&str, &str)] = &[
     doc!("needler.toml"),
     doc!("plasma_pistol.toml"),
     doc!("flamethrower.toml"),
+    doc!("frag_grenade.toml"),
 ];
 
 /// Its guns' names (data/display_names.toml).
@@ -372,6 +375,7 @@ impl Plugin for HaloWeaponsPlugin {
         use chimera_core::character::CharacterPartsExt;
         chimera_sim::minigame::power::PowerAppExt::add_power_reader(app, WEAPON_HOOK, power);
         app.register_weapon_hook::<params::Gun>(WEAPON_HOOK, |e, _, p| build(e, p));
+        rung::register(app);
         if let Err(e) = app.add_weapon_data(DATA) {
             panic!("Halo weapon data: {e}");
         }

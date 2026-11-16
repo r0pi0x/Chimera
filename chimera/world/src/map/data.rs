@@ -320,7 +320,8 @@ pub struct MapMesh {
     /// (the loader drops the texture and sets `color` white).
     pub flat_color: bool,
     /// Its base texture's frames (indices into `MapData::textures`), when a
-    /// map entity can pick one (env_texturetoggle; `render::tint::TextureFrames`).
+    /// map entity can pick one (env_texturetoggle; `render::tint::TextureFrames`)
+    /// or, on a view model's mesh, the game (`ViewAnimator::mesh_frames`).
     pub frames: Vec<usize>,
     /// A window's broken looks (`PaneLook::Cracked` and `Edge`): the jagged
     /// edge masks, square tiles side by side in one texture (index into
