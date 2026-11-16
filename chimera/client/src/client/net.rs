@@ -2,7 +2,7 @@
 //! when it asks (by name, or a copy it downloaded), show joining and the
 //! server's map changes in the loading dialog (`game_menu`), leave the
 //! menu once joined, and come back to the main menu (a fresh local player
-//! on the greybox) when dropped, with why in the dialog (a server that went
+//! on the greybox; none under `NoPlayerAtMenu`) when dropped, with why in the dialog (a server that went
 //! away is joined again on its own, `net::reconnect`; giving up on it shows
 //! the dialog).
 //!
@@ -123,8 +123,9 @@ fn back_to_menu(world: &mut World) {
     if failed {
         super::front_end::show_failure(world);
     }
-    if let Err(e) = world.run_system_cached(super::spawn_local_player) {
-        error!("spawning the local player: {e}");
+    // A menu with no game behind it: the player comes with the next game.
+    if !world.contains_resource::<super::NoPlayerAtMenu>() {
+        super::spawn_local_player_now(world);
     }
 }
 

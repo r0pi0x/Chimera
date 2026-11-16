@@ -179,19 +179,21 @@ pub fn command(w: &mut World, a: &[String], base: &str) -> Result<Option<String>
         generate(w, base)?;
     }
     let map = a.first().map_or("greybox", String::as_str);
-    // Already playing there: nothing to do (a start costs a hitch, the
-    // start sound and the layout's bodies; a control that fires twice
-    // must not restart it).
-    if !restart && minigame::rung_command::holds(w) && chimera_net::net::current_map(w) == chimera_net::net::normalize_map(map) {
-        return Ok(Some(format!("sandbox: already playing on {map} (`sandbox restart` starts it again)")));
-    }
-    // From the main menu no world is in (the map "in play" is only a
-    // name, the greybox's): the map is loaded, and its load takes the
-    // front end into the game as any map change does.
+    // From the main menu no game is in (the map "in play" is only a
+    // name, the greybox's, or the greybox left behind a game left, its
+    // match held): the map is loaded, and its load takes the front end
+    // into the game as any map change does.
     #[cfg(feature = "present")]
     let at_menu = w.get_resource::<party_kit::main_menu::PartyMenu>().is_some_and(|m| m.shown());
     #[cfg(not(feature = "present"))]
     let at_menu = false;
+    // Already playing there: nothing to do (a start costs a hitch, the
+    // start sound and the layout's bodies; a control that fires twice
+    // must not restart it). Never at the menu: a sandbox left there is
+    // not playing.
+    if !restart && !at_menu && minigame::rung_command::holds(w) && chimera_net::net::current_map(w) == chimera_net::net::normalize_map(map) {
+        return Ok(Some(format!("sandbox: already playing on {map} (`sandbox restart` starts it again)")));
+    }
     let said = if at_menu {
         chimera_net::minigame_net::change_match_loading(w, SANDBOX, Some(map))?
     } else {

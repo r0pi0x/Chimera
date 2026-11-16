@@ -205,6 +205,9 @@ fn play_sounds(
     // Every sound started this run (source, entry), for the voice limits.
     let mut fresh: Vec<(Entity, Option<Entity>, String)> = Vec::new();
     for m in messages.read() {
+        // Every game sound asked for (`RUST_LOG=chimera_present::audio=debug`):
+        // what plays when (nothing of a game under a main menu).
+        debug!("game sound {}", m.entry);
         if muted.as_ref().is_some_and(|x| x.0.iter().any(|e| *e == m.entry)) {
             continue;
         }

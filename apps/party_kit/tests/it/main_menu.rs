@@ -144,6 +144,83 @@ fn the_command_line_decides_the_menu() {
     assert!(main_menu::starts_at_menu(&args("--offscreen 1280x720 --frames 90 +mainmenu")), "asked for");
 }
 
+/// The app's start at its menu: the shell's startup spawn of the local
+/// player (`client::local_player_at_start`) with the menu's
+/// `NoPlayerAtMenu`, and the menu's Sandbox entry as the Ultimate Gun
+/// Game's `sandbox` does it from the menu (`minigame_net::
+/// change_match_loading`: the map loaded, the match once it is in).
+fn at_menu_as_the_app(at_start: bool) -> Sim {
+    local_plus(at_start, None, true, |app| {
+        chimera_client::client::local_player_at_start(app);
+        app.console_command("sandbox", "a test's: the app's from its menu", |w, _| {
+            chimera_net::minigame_net::change_match_loading(w, DEFAULT_MINIGAME, Some("greybox")).map(Some)
+        });
+    })
+}
+
+/// Nothing of a game: no character (no player marker, kit or movement
+/// slot) and no match running.
+fn assert_no_game(sim: &mut Sim, when: &str) {
+    use chimera_core::{core::{Intent, LocalPlayer}, slots::MovementSlot};
+    let w = sim.app.world_mut();
+    let players = w.query_filtered::<(), With<LocalPlayer>>().iter(w).count();
+    let characters = w.query_filtered::<(), With<Intent>>().iter(w).count();
+    let kits = w.query_filtered::<(), With<chimera_sim::weapon::Inventory>>().iter(w).count();
+    let moving = w.query_filtered::<(), With<MovementSlot>>().iter(w).count();
+    assert_eq!((players, characters, kits, moving), (0, 0, 0, 0), "{when}: players, characters, kits, movement slots");
+    let running = w.contains_resource::<ActiveMinigame>() && !chimera_sim::minigame::held(w);
+    assert!(!running, "{when}: no match running");
+}
+
+#[test]
+fn a_start_at_the_menu_has_no_player_kit_or_match() {
+    let mut sim = at_menu_as_the_app(true);
+    sim.ticks(60);
+    assert_eq!(menu(&sim).screen, Screen::MainMenu);
+    assert_no_game(&mut sim, "at the menu");
+    // A start in the game keeps the shell's player at startup.
+    let mut sim = at_menu_as_the_app(false);
+    assert!(main_menu::local_player(sim.app.world_mut()).is_some(), "a start that plays has its player");
+}
+
+#[test]
+fn the_menus_sandbox_brings_the_player_only_once_the_map_is_in() {
+    let mut sim = at_menu_as_the_app(true);
+    let sandbox = MenuData::shipped().entries.iter().position(|e| e.label == "Sandbox").unwrap();
+    act(&mut sim, A::Entry(sandbox));
+    assert_eq!(sim.app.world().resource::<Maps>().0, ["greybox"], "the map is loaded");
+    sim.ticks(30);
+    assert!(menu(&sim).shown(), "loading");
+    assert!(main_menu::local_player(sim.app.world_mut()).is_none(), "no player while the map loads");
+    // The map is in.
+    sim.app.world_mut().remove_resource::<NeverLoads>();
+    front_end::entered_game(sim.app.world_mut());
+    sim.ticks(30);
+    assert_eq!(menu(&sim).screen, Screen::InGame);
+    let me = main_menu::local_player(sim.app.world_mut()).expect("the player once the map is in");
+    assert!(sim.app.world().get::<chimera_core::slots::MovementSlot>(me).is_some(), "it moves");
+}
+
+#[test]
+fn leaving_a_game_leaves_nothing_behind_the_menu() {
+    let mut sim = at_menu_as_the_app(true);
+    sim.app.world_mut().remove_resource::<NeverLoads>();
+    let sandbox = MenuData::shipped().entries.iter().position(|e| e.label == "Sandbox").unwrap();
+    act(&mut sim, A::Entry(sandbox));
+    sim.ticks(30);
+    assert_eq!(menu(&sim).screen, Screen::InGame);
+    assert!(main_menu::local_player(sim.app.world_mut()).is_some());
+    submit(&mut sim, "disconnect");
+    sim.ticks(30);
+    assert_eq!(menu(&sim).screen, Screen::MainMenu);
+    assert_no_game(&mut sim, "back at the menu");
+    // And the next start brings a player again.
+    act(&mut sim, A::Entry(sandbox));
+    sim.ticks(30);
+    assert_eq!(menu(&sim).screen, Screen::InGame);
+    assert!(main_menu::local_player(sim.app.world_mut()).is_some(), "a player in the next game");
+}
+
 #[test]
 fn startup_without_a_map_opens_the_menu_and_with_one_does_not() {
     let sim = local(true);
@@ -586,9 +663,9 @@ fn disconnect_from_the_escape_menu_goes_back_to_the_menu() {
     assert_eq!(m.screen, Screen::MainMenu);
     assert!(m.failure.is_none(), "leaving by choice: {:?}", m.failure);
     assert!(!sim.clients[c].app.world().resource::<EscMenu>().open);
-    // The local player is fresh, the menu has the mouse.
+    // No game behind the menu (no local player), the menu has the mouse.
     let w = sim.clients[c].app.world_mut();
-    assert!(main_menu::local_player(w).is_some(), "a local player behind the menu");
+    assert!(main_menu::local_player(w).is_none(), "no local player behind the menu");
     assert!(w.resource::<chimera_client::client::front_end::AppMenu>().open);
 }
 
