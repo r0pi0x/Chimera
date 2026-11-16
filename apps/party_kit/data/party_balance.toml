@@ -1,0 +1,58 @@
+# The party's cross-game balance (party_kit::balance,
+# chimera_sim::weapon::balance::Balance): every number that applies only
+# where games meet, in one place. Tuning is by playtests
+# (docs/plans/active/party-balance.md, "The table and the switch").
+#
+# A hit by game A's weapon on game B's body counts:
+#   - A and B the same game: 1 (Halo against Halo is never changed), unless
+#     a [[pair]] names them;
+#   - a [[pair]] for A on B: its scale, whole;
+#   - else A's `outgoing` times B's `incoming` (or the body's own incoming,
+#     [bodies]).
+# A game or a field not listed is 1. The map's damage (falls, triggers)
+# is no game's and is never scaled. The host's `mp_balance 0` turns the
+# whole table off for a raw match (every gun and body with its own game's
+# numbers), from the next match.
+
+# Halo: another game's damage on a Halo body counts 1.5 times, against the
+# shield and the body, the shield still first (a full Halo player has
+# 200 / 1.5 = 133 effective hit points against another game's gun, where
+# any other character has 100; an AWP's 114-point body hit kills a full
+# Halo player with one shot from 200 / 114 = 1.754 on). Its guns: Halo's
+# own conversion counts a Halo damage point as 1/75 of another
+# character's health (the Spartan's body is 75 points: 1.333 hit points a
+# point); 0.75 makes it one hit point, so its guns are not overpowered on
+# other games' characters (the assault rifle's 10-point bullet is 10 hit
+# points, 10 to kill a bare character; the pistol's 37.5, 3 body shots;
+# the sniper rifle's 101). Flesh modifiers and headshot flags are Halo's.
+# The project owner, 2026-11-15: a Halo character a little more tanky than
+# a normal one, its guns not also overpowered.
+[games.halo_ce]
+outgoing = 0.75
+incoming = 1.5
+
+# HL2:DM: its guns are far slower to kill than the field's (the SMG1 20
+# body hits and 1.43 s, the AR2 10 and 0.90 s, the pistol 13, against 0.2
+# to 0.5 s for CS:S's and Combat Arms' rifles and SMGs): 1.5 makes the
+# SMG1 14 hits, the AR2 7, the pistol 9, the .357 one body shot (112.5) and
+# the shotgun still two shells (94.5 with every pellet); the user,
+# 2026-11-15.
+[games.hl2dm]
+outgoing = 1.5
+
+# A body's own incoming, over its game's, by the body id the sandbox uses
+# (`target add <id>`): Halo's campaign characters (`halo_ce:elite`,
+# `halo_ce:grunt`, `halo_ce:jackal`, `halo_ce:marine`, `halo_ce:hunter`)
+# have their own health and shields as the game states them, unfair at
+# first, tuned later here; TF2's classes (`tf2:heavy`) likewise. None set
+# yet. Example:
+#   "halo_ce:elite" = { incoming = 1.0 }
+[bodies]
+
+# Exceptions for one pair (attacker's game, victim's game), the whole
+# scale. HL2:DM's 1.5 has always counted on HL2:DM's own bodies too (its
+# guns against each other in a party match): kept.
+[[pair]]
+attacker = "hl2dm"
+victim = "hl2dm"
+scale = 1.5

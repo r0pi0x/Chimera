@@ -50,8 +50,8 @@
 //!   only-shields, headshots, the overshield's charge-up, instant kills,
 //!   the strict below-zero death), then stun, camouflage loss, the
 //!   attacker list, a `HaloPing` and a `HaloHurt` (unzoom); `Armor` is
-//!   the shield, `Health` the body (`vitality`; under the party balance's
-//!   incoming scale, `cross_game`, the shield's unit is scaled and the
+//!   the shield, `Health` the body (`vitality`; under the party's
+//!   cross-game incoming, `cross_game`, the shield's unit is scaled and the
 //!   engine's `Damage` is written divided by the character's
 //!   `core::DamageScale`, so Halo's own hits land exactly as the spec
 //!   says). A death's credit: the
@@ -450,8 +450,8 @@ pub fn deliver_hits(
             }
             let at = region.unwrap_or(BodyRegion::Generic);
             damage.amount = x;
-            // Halo's damage, whatever its weapon: the party's per-game
-            // scale (`weapon::GameDamage`) of Halo's.
+            // Halo's damage, whatever its weapon: the party's cross-game
+            // table's scale of Halo's on this body (`weapon::balance`).
             set.p1().apply_region_of(Some(super::GAME), &mut damage, at, x, Some(1.0), 0.0);
             let (health, transform, intent) = others.get(hit.target).unwrap_or((None, None, None));
             let instant = fx.side_effect == SideEffect::LethalToTheUnsuspecting

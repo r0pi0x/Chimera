@@ -75,6 +75,7 @@
 //! marks unchecked), but tracers cover only the first segment. Why it's OK for
 //! now: Matches every measured damage and pass/stop case the spec lists.
 
+pub mod balance;
 pub mod data;
 mod deliver;
 pub mod drop;
@@ -1570,18 +1571,12 @@ pub struct ArmorHit {
 }
 
 /// A scale on the damage each game's weapons deal, by the dealing
-/// weapon's game (an app made of several games tunes them against each
-/// other: the party apps' table, party_kit's data/party_damage.toml);
-/// a game it doesn't name deals as it is, and without the resource (each
-/// game's own app) nothing is scaled. `HitArmor` applies it to a weapon's
-/// hit before armour (the weapon's game: the firing gun's id for rounds
-/// and swings, `Damage::weapon` for blasts and projectiles, the game a
-/// game's own seam names: `HitArmor::apply_region_of`), not to the map's
-/// damage (`HitArmor::apply_environment`); the power curve counts it
-/// (`minigame::power::PowerReaders::game_damage`). Combat Arms' guns take armour in their own step
-/// (`combat_arms::game::weapons::armour_and_zone`), which doesn't read
-/// the table (Combat Arms' scale is 1 in the party's table).
-#[derive(Resource, Clone, Debug, Default, PartialEq)]
+/// weapon's game, as the ladder's power curve counts it
+/// (`minigame::power::PowerReaders::game_damage`: the outgoing column of
+/// the cross-game table, `balance::Balance::power_table`); a game it
+/// doesn't name deals as it is. The hits themselves take the table's
+/// scale in `HitArmor` (`balance`).
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct GameDamage(pub std::collections::BTreeMap<String, f32>);
 
 impl GameDamage {
@@ -1606,8 +1601,9 @@ impl GameDamage {
 }
 
 /// The one place hits take armour: bullets, knives (`deliver`) and blasts
-/// (`grenade`); where a weapon's hit takes its game's scale (`GameDamage`)
-/// first. A hit takes armour only when it lands (`core::DamageRules::lands`):
+/// (`grenade`); where a weapon's hit takes the cross-game table's scale
+/// first (`balance`: the one place it is applied). A hit takes armour
+/// only when it lands (`core::DamageRules::lands`):
 /// a teammate's hit with friendly fire off, a noclipping or `God` target,
 /// a map's invulnerability or damage filter leave it whole (CS:S, measured
 /// 2026-10-17 for teammates and noclip: specs/cs_source/weapons.md
@@ -1617,7 +1613,18 @@ pub struct HitArmor<'w, 's> {
     armor: Query<'w, 's, (&'static mut Armor, Option<&'static ArmorPieces>, Option<&'static ArmorRatio>)>,
     rules: crate::core::DamageRules<'w, 's>,
     shares: Option<ResMut<'w, Messages<ArmourShare>>>,
-    game_damage: Option<Res<'w, GameDamage>>,
+    balance: Option<Res<'w, balance::Balance>>,
+    /// The victim's game, the incoming its body holds and, a sandbox
+    /// target's, its body id (`balance::Balance::before_armour`).
+    victims: Query<
+        'w,
+        's,
+        (
+            Option<&'static crate::slots::GameIdentity>,
+            Option<&'static crate::core::DamageScale>,
+            Option<&'static crate::minigame::targets::Target>,
+        ),
+    >,
 }
 
 impl HitArmor<'_, '_> {
@@ -1637,12 +1644,18 @@ impl HitArmor<'_, '_> {
         self.apply_region(damage, region, raw, ratio, quantum)
     }
 
-    /// The scale of the game of `weapon` (an id, `game:name`, or a
-    /// game's name), else of `damage.weapon`, on a hit (`GameDamage`; 1
-    /// without the table or a weapon).
+    /// The cross-game table's scale of a hit by the game of `weapon` (an
+    /// id, `game:name`, or a game's name), else of `damage.weapon`, on
+    /// `damage.target` (`balance::Balance::before_armour`: the pair's
+    /// scale over the incoming the target's body holds; 1 without the
+    /// table, with it off, or without a weapon).
     pub fn game_scale(&self, damage: &crate::core::Damage, weapon: Option<&str>) -> f32 {
-        let Some(table) = self.game_damage.as_deref().filter(|t| !t.0.is_empty()) else { return 1.0 };
-        weapon.or(damage.weapon).map_or(1.0, |id| table.of_weapon(id))
+        let Some(table) = self.balance.as_deref().filter(|t| t.on) else { return 1.0 };
+        let Some(id) = weapon.or(damage.weapon) else { return 1.0 };
+        let (identity, held, target) = self.victims.get(damage.target).unwrap_or((None, None, None));
+        let victim = identity.map(|g| g.0.as_str()).or(target.map(|t| t.game.as_str()));
+        let body = target.map(|t| t.character.as_str());
+        table.before_armour(balance::game_of(id), victim, body, held.map_or(1.0, |s| s.0))
     }
 
     /// `apply` of the map's damage (a trigger's, `core::MapDamage`): no
