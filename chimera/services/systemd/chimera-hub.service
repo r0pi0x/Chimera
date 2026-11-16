@@ -1,0 +1,22 @@
+# The hub service on loopback (docs/plans/active/hub.md 2.6, 4): the
+# discovery document, the server list and its heartbeats; its listings in
+# the store's hub/hub.db, its settings in hub/hub.toml. Written by
+# `chimera_accounts install-units`.
+[Unit]
+Description=Chimera hub service (loopback @HUB_PORT@)
+PartOf=chimera-services.target
+After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+ExecStart=@BIN@/chimera_hub serve --store @STORE@ --listen 127.0.0.1:@HUB_PORT@ --accounts http://127.0.0.1:@ACCOUNTS_PORT@
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@STORE@
+
+[Install]
+WantedBy=chimera-services.target

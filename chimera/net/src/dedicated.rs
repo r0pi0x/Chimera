@@ -947,6 +947,8 @@ pub fn run(server: &'static GameServer) {
         })
     });
     let mut app = self::app(server, start, &options);
+    // `[hub] list`: listed on the account's hub (`+sv_hub 0` overrides).
+    net::hub::apply_config(&mut app);
     if let Some((session, previous)) = session {
         eprintln!("session log: {}", session.log_path().display());
         for p in previous {

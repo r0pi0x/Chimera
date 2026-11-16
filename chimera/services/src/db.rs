@@ -20,6 +20,8 @@ use rusqlite::{Connection, OpenFlags};
 
 /// The accounts database's migrations, in order.
 pub const ACCOUNTS_MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_init.sql")];
+/// The hub's (`hub.db`).
+pub const HUB_MIGRATIONS: &[&str] = &[include_str!("../migrations/hub/0001_init.sql")];
 /// Daily backups kept.
 pub const KEEP_DAILY: u64 = 14;
 /// Weekly backups kept after the daily ones.

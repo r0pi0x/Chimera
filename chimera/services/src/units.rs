@@ -1,7 +1,7 @@
 //! The hub's services under systemd's user manager (docs/plans/active/hub.md,
 //! 2.6): one unit per service (`chimera-front`, `chimera-accounts`,
-//! `chimera-assets`; feedback stays in the asset service until S5, the
-//! hub's comes with S2), all `PartOf=chimera-services.target`. The
+//! `chimera-assets`, `chimera-hub`; feedback stays in the asset service
+//! until S5), all `PartOf=chimera-services.target`. The
 //! templates are `chimera/services/systemd/` (compiled in);
 //! `chimera_accounts install-units` fills in the binaries' folder, the
 //! store, the ports (`services.toml`) and the front's public address, and
@@ -25,6 +25,7 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("chimera-front.service", include_str!("../systemd/chimera-front.service")),
     ("chimera-accounts.service", include_str!("../systemd/chimera-accounts.service")),
     ("chimera-assets.service", include_str!("../systemd/chimera-assets.service")),
+    ("chimera-hub.service", include_str!("../systemd/chimera-hub.service")),
 ];
 
 /// What the units are made for.
@@ -73,12 +74,13 @@ pub fn render(s: &UnitSettings) -> Vec<(String, String)> {
         .iter()
         .map(|(name, text)| {
             let mut text = text.to_string();
-            for bin in ["chimera_asset_server", "chimera_accounts", "chimera_front"] {
+            for bin in ["chimera_asset_server", "chimera_accounts", "chimera_front", "chimera_hub"] {
                 text = text.replace(&format!("@BIN@/{bin}"), &path(&s.bin.join(bin)));
             }
             let mut text = text
                 .replace("@ASSETS_PORT@", &s.config.ports.assets.to_string())
                 .replace("@ACCOUNTS_PORT@", &s.config.ports.accounts.to_string())
+                .replace("@HUB_PORT@", &s.config.ports.hub.to_string())
                 .replace("@FRONT_LISTEN@", &word(&s.front_listen))
                 .replace("@ASSETS_ARGS@", &args(&s.assets_args))
                 .replace("@ACCOUNTS_ARGS@", &args(&s.accounts_args));
@@ -127,7 +129,7 @@ mod tests {
             writable: vec![PathBuf::from("/srv/hooks")],
         };
         let units = render(&s);
-        assert_eq!(units.len(), 4);
+        assert_eq!(units.len(), 5);
         for (name, text) in &units {
             assert!(!text.contains('@'), "{name}: a placeholder left:\n{text}");
         }
@@ -139,5 +141,10 @@ mod tests {
         let accounts = &units.iter().find(|(n, _)| n == "chimera-accounts.service").unwrap().1;
         assert!(accounts.contains("serve --store /srv/store --listen 127.0.0.1:8741 --public hub.example:4443"), "{accounts}");
         assert!(accounts.contains("Restart=on-failure") && accounts.contains("PartOf=chimera-services.target"));
+        let hub = &units.iter().find(|(n, _)| n == "chimera-hub.service").unwrap().1;
+        assert!(
+            hub.contains("ExecStart=\"/opt/chimera bin/chimera_hub\" serve --store /srv/store --listen 127.0.0.1:8742 --accounts http://127.0.0.1:8741"),
+            "{hub}"
+        );
     }
 }

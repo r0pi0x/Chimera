@@ -34,7 +34,9 @@
 //! service with the public key alone; `account` is a player's side (the
 //! hub link, the device key, `account.toml`, tickets refreshed at
 //! half-life), and `accounts::TicketAuth` lets the asset service take
-//! tickets beside legacy tokens.
+//! tickets beside legacy tokens. `hub_doc` is the hub's discovery
+//! document, heartbeats and server list, both sides, and the client's
+//! cache of them.
 //!
 //! `progress` reports fetches in words people read: a live line for
 //! `chimera_assets fetch`, periodic lines while a load fetches on demand.
@@ -70,6 +72,7 @@ pub mod cached;
 pub mod config;
 pub mod disk;
 pub mod feedback;
+pub mod hub_doc;
 pub mod lock;
 pub mod manifest;
 pub mod map_cache;

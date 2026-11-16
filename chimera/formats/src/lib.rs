@@ -1,5 +1,6 @@
 //! File formats no one game engine owns, as plain data (no Bevy, no
-//! loader, no game): `wav` (sound files decoded to 16-bit samples: RIFF
+//! loader, no game): `a2s` (the server query packets: game servers'
+//! answers, the browser's and the hub's questions), `wav` (sound files decoded to 16-bit samples: RIFF
 //! WAVE, MP3; every game's sounds become `map::MapSoundClip` through it)
 //! and `keyvalues` (KeyValues text: Steam's `libraryfolders.vdf` and
 //! `appmanifest_*.acf`, which `mount::install` finds any Steam game's
@@ -11,5 +12,6 @@
 //! (docs/plans/active/architecture-pass.md, step 1). `source_formats`
 //! re-exports both at their old paths.
 
+pub mod a2s;
 pub mod keyvalues;
 pub mod wav;

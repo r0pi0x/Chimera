@@ -2778,6 +2778,7 @@ dependencies = [
  "bzip2",
  "chimera_assets",
  "chimera_core",
+ "chimera_formats",
  "chimera_sim",
  "chimera_world",
  "igd-next",
@@ -2809,6 +2810,7 @@ name = "chimera_services"
 version = "0.1.0"
 dependencies = [
  "chimera_assets",
+ "chimera_formats",
  "dirs",
  "ed25519-dalek",
  "getrandom 0.3.4",
