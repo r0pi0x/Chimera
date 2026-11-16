@@ -570,7 +570,7 @@ fn campaign_cvar(app: &mut App) {
 /// `halo_ce:body <spartan | elite | draw> [player | all]` (module doc).
 fn body_command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
     use chimera_core::console::{Cheats, CommandPlayer, command_player};
-    let usage = "halo_ce:body <spartan | elite | grunt | jackal | draw | status | shield <fraction>> [player | all]";
+    let usage = "halo_ce:body <spartan | elite | grunt | jackal | marine | draw | status | shield <fraction>> [player | all]";
     let what = a.first().ok_or(usage)?.to_ascii_lowercase();
     if what == "shield" {
         // Every campaign body's shield to a fraction (screenshots of the
@@ -731,7 +731,7 @@ impl Plugin for CampaignPlugin {
         campaign_cvar(app);
         app.console_command(
             BODY_COMMAND,
-            "halo_ce:body <spartan | elite | grunt | jackal | draw | status | shield <fraction>> [player | all]: the \
+            "halo_ce:body <spartan | elite | grunt | jackal | marine | draw | status | shield <fraction>> [player | all]: the \
              body a player (default: you) wears on Halo's rungs (a developer command for screenshots and the sandbox; draw: the draw chooses again; a client \
              needs the server's sv_cheats 1).",
             body_command,
