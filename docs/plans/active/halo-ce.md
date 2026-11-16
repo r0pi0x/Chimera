@@ -490,6 +490,44 @@ backlog.
   pistol, the needler and the assault rifle (to fix). Proposed: one rule
   (a character's full vitality in its own game is 100 in the party
   apps), behind a switch.
+- **Play as the campaign's characters** (a proposal; the user's idea,
+  2026-11-16; not scheduled). On a Halo rung in the party apps the body
+  is sometimes not the Spartan but one of the disc's campaign
+  characters (Elite, Grunt, Jackal, Hunter, Marine, perhaps the Flood),
+  by a chance weighted toward who carries that gun in the campaign (the
+  needler: Grunt, Jackal or Elite; the plasma rifle: Elite; the assault
+  rifle: Marine). What is known: the multiplayer maps hold only the
+  Spartan; the campaign's bipeds, their animation graphs and dialogue
+  are in the campaign maps, which are published in the asset store with
+  the rest of the disc but are large, so which map is the donor and what
+  a player downloads for it is the first cost (a generated set of just
+  those bipeds would be the lean way, if the asset service takes
+  generated sets). To settle before building, each with a spec pass
+  where the disc decides it:
+  - *Which guns each can hold*: a biped's animation graph has the
+    weapon labels it was animated for; a character is offered only for
+    guns its graph covers (the weighting above then follows from data),
+    and the Hunter's gun is part of its arm.
+  - *Size and fairness*: a Grunt is small and a Hunter huge. Movement
+    can keep the Spartan's body (the map's envelope already separates
+    the movement body from what is drawn), but what can be SHOT should
+    be what is seen: so either the character's own hit volumes with
+    its health scaled to keep hits-to-kill fair, or only characters
+    near the Spartan's size at first (Elite, Marine).
+  - *Shields*: the Elite has one, the Grunt and the Marine none: keep
+    the Halo player's vitality whatever the body (the party's balance
+    rule is tuned to it), with the shield's flash on bodies that have
+    the shader.
+  - *First person*: the disc has first-person arms for the Spartan
+    only: the view stays the Spartan's hands, or the gun alone.
+  - *Voice*: each character's dialogue (the Grunts' lines on a kill or
+    a death) through the unit dialogue the body rules already play for
+    the Spartan's death lines.
+  - *Deaths, flinches, seats*: each biped has its own death and ping
+    animations; vehicles' seats name the animations a rider needs.
+  - *Where it is chosen*: a rung extra of Halo's (the ladder's "rung
+    characters" already tie a special body to a rung), replicated with
+    the match, off by default until it has been played.
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the
