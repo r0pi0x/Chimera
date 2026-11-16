@@ -130,7 +130,7 @@ pub struct Tint {
 /// The Spartan's: slot C, white without a colour.
 pub const SPARTAN_TINT: Tint = Tint { source: AnimationSource::C, uncoloured: None };
 
-/// A mesh's look with `tint`.
+/// A mesh's look with `tint` (None: the mesh's own).
 fn look(m: &MapMesh, tint: Option<[f32; 3]>) -> MapMeshLook {
     MapMeshLook {
         material: m.material.clone(),
@@ -141,7 +141,9 @@ fn look(m: &MapMesh, tint: Option<[f32; 3]>) -> MapMeshLook {
         normal_map: m.normal_map,
         phong: m.phong.clone(),
         envmap: m.envmap,
-        tint,
+        // The player's colour on the armour; any other mesh keeps its
+        // shader's own tint (an energy shield's colour).
+        tint: tint.or(m.tint),
         detail: m.detail,
         base_transform: m.base_transform,
         selfillum: m.selfillum,

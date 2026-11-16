@@ -432,6 +432,23 @@ pub fn look(map: &MapFile, shader: &TagRef, tables: &PeriodicTables) -> Look {
                     [linear(c.r), linear(c.g), linear(c.b)]
                 })
             });
+            // Else (shaders.md: "constant colour 0 of the first stage that
+            // reads constant colour 0"; an energy shield's many-stage
+            // combine, the Jackal's) the first stage whose colour reads
+            // constant colour 0 (or its alpha), a fixed colour (no
+            // animation source), not black.
+            let tint = tint.or_else(|| {
+                s.stages.iter().find_map(|st| {
+                    let i = &st.color_inputs;
+                    let reads = [i.a.input, i.b.input, i.c.input, i.d.input]
+                        .iter()
+                        .any(|x| matches!(x, GenericInput::Constant0 | GenericInput::Constant0Alt));
+                    let c = st.constant_color0_upper;
+                    (reads && st.constant_color0_source == blam_formats::shader::AnimationSource::None)
+                        .then(|| [linear(c.r), linear(c.g), linear(c.b)])
+                        .filter(|t| t.iter().any(|x| *x > 0.0))
+                })
+            });
             Look {
                 base: colour(map0.and_then(|m| tag_id(&m.map))),
                 alpha,
