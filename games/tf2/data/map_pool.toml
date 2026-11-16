@@ -1,0 +1,58 @@
+# TF2 maps an automatic gun game's pool takes (the Ultimate Gun Game:
+# chimera_sim::minigame::map_fit; docs/plans/active/map-pool-fitness.md,
+# docs/plans/active/tf2.md M4). TF2's install holds 238 maps, most of them
+# made for its modes (payload carts, Mann vs. Machine, holiday variants) or
+# too large for a free-for-all: every map is denied but those allowed
+# below, each chosen by its layout and measured (data/map_fitness.toml: the
+# 2026-11-15 sweep of every koth_, cp_, ctf_ and arena_ map); the players
+# present still decide a draw (the wander time: most of these are in from
+# 8 players, the 5CP maps from 12). Each entry: map names (`*` matches any
+# run of letters) and why; `[[allow]]` entries win over `[[deny]]` and
+# over the measurements' flags.
+#
+# Measured and left out (data/map_fitness.toml has them all):
+# - attack/defend cp_ maps (cp_dustbowl, cp_egypt_final, cp_junction_final,
+#   cp_gorge, cp_5gorge, cp_steel, cp_degrootkeep, ...) and every arena_
+#   map: the round logic opens their gates and arena doors (setup timers),
+#   which a party never runs, so the spawn spots stay in the spawn rooms
+#   or the first stage (arena_well 206 m2, cp_dustbowl 949 m2);
+# - maps whose spots cover a small part of their area (a door the logic
+#   holds shut): koth_badlands (410 spots on 6612 m2), koth_sawmill,
+#   cp_freight_final1, cp_burghausen, cp_premuda, arena_perks;
+# - cp_mojave: no spawn point at round start (its spawns follow points);
+# - cp_well (in the start set): the bots' mesh splits it in two at the
+#   middle, each team's half about 8000 m2, never joined (its 15510 m2 is
+#   their sum), so half the players would never meet the others; not
+#   looked into further (a gate or the train's doors, maybe);
+# - the largest (cp_snowplow, cp_sulfur, koth_megaton, ctf_gorge: wander
+#   over 10 s at 12 players or over 15000 m2);
+# - holiday and event twins of an allowed map (`*_event`, `*_snowy`,
+#   `*_winter`, ctf_2fort_invasion): the same layout.
+
+[[deny]]
+reason = "TF2's maps join the pool only when chosen for a free-for-all (the allow list)"
+maps = ["*"]
+
+[[allow]]
+reason = "chosen for a free-for-all: small to medium, few one-way drops, its spawn rooms open to all (maps::free_for_all_doors); measured fit"
+maps = [
+    "ctf_2fort",
+    "cp_badlands",
+    "koth_viaduct",
+    "koth_harvest_final",
+    "koth_nucleus",
+    "cp_granary",
+    "ctf_turbine",
+    "ctf_doublecross",
+    "koth_lakeside_final",
+    "cp_process_final",
+]
+
+[[allow]]
+reason = "stock King of the Hill maps the sweep rates well (in from 8 players, spots over the whole map), one hill in the middle"
+maps = [
+    "koth_king",
+    "koth_highpass",
+    "koth_sharkbay",
+    "koth_suijin",
+]

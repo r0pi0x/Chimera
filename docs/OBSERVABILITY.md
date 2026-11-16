@@ -2289,7 +2289,7 @@ cargo run --features dev,tools --bin refcmp -- capture-ours --only a_sign
 
 `map_fitness` (apps/party_kit/src/bin/map_fitness.rs, `--features
 tools`) loads every installed map of the party's games (CS:S, Combat
-Arms, HL2:DM) headless, one at a time, floods the bots' generated
+Arms, HL2:DM, Halo, TF2; `--game tf2` for one) headless, one at a time, floods the bots' generated
 navigation mesh from its spawn points and writes per map its walkable
 area, walking times between random points, spawn points and the hub,
 the time N players spread over it take to meet, and its sight lines to

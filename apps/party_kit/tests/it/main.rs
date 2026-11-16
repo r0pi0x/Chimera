@@ -62,6 +62,7 @@ mod signal_pages;
 mod startup;
 mod swap_effect;
 mod tf2_rungs;
+mod tf2_pool;
 mod surprise;
 mod switches;
 mod turrets;

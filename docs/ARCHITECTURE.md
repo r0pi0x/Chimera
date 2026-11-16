@@ -477,7 +477,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   flashes on its maps, Source's explosion elsewhere, explosions sent to
   clients as the `tf2_looks` net part), and `BUNDLE`: its maps by
   id, its guns lent to the party's ladders (`party_kit::GUESTS`, its
-  `GUEST` dressing on other games' maps).
+  `GUEST` dressing on other games' maps); (M4a) its maps in an automatic
+  pool by its data/map_pool.toml (every map denied but those chosen for a
+  free-for-all) and data/map_fitness.toml (`parts::add_map_pool`), played
+  free for all: the doors a trigger opens on touch start open (the
+  conversion's `SourceGame::entity_rule`) and the spawn rooms' door
+  brushes block nobody.
   Layered as `hl2dm` (it uses `chimera_net` for its looks' message);
   `ui` draws nothing of its own yet.
 - `chimera_net` is network play (`net`): the transport, the join

@@ -64,6 +64,7 @@ pub static CS_SOURCE: SourceGame = SourceGame {
     held,
     sounds,
     fixed_models: source_engine::content::props::no_fixed_models,
+    entity_rule: source_engine::content::bsp::no_entity_rule,
 };
 
 pub fn load(mount: &Mount, name: &str) -> Result<MapData, String> {
