@@ -26,9 +26,14 @@
 //! bottles and cans on `core::TRACE_ONLY_LAYER` (shots stop on them,
 //! characters pass). Weapons' own traces and projectiles meet them like any
 //! world surface, so an impact shows on the prop and a projectile that
-//! explodes on contact explodes there. The pieces and the face are
-//! `core::Damageable` and `map::shapes::Hittable` (Halo's projectiles
-//! report them as objects struck).
+//! explodes on contact explodes there. The fixed parts name their surface
+//! (`core::PropSurface`: wood for the shelf, its legs, the board and its
+//! posts), which the games' impact effects read (Combat Arms' drew no
+//! hole and no puff on a surface it couldn't name: none showed on the
+//! props before); the bottles and cans name none (a hole would stay in
+//! the air when the piece is knocked off). The
+//! pieces and the face are `core::Damageable` and `map::shapes::Hittable`
+//! (Halo's projectiles report them as objects struck).
 //!
 //! - Bottles (6) and tin cans (5) stand on a shelf about 1 m high. What
 //!   strikes a standing piece knocks it: a hitscan bullet whose trace
@@ -53,7 +58,12 @@
 //!   drawn there and a `PropHit` (piece 0). A hitscan shot fired at the
 //!   board (its aim line, `ShotMade`, crosses the board's plane within
 //!   `BOARD_AIM_M` of the face's centre, the nearest board so) whose
-//!   bullets all missed the face is a `misses`. `spread_m` (extreme
+//!   bullets all missed the face is a `misses`; a projectile's shot there
+//!   (a `ShotMade` with no trace of its shooter that tick) is one when it
+//!   hasn't landed on the face `PROJECTILE_MISS_SECS` later (each landing
+//!   of that shooter's on the face answers its oldest such shot). The
+//!   face's collider stands out to the painted rings' front (`FACE_HIT`),
+//!   so a bullet's impact mark lies on them. `spread_m` (extreme
 //!   spread: the widest two hits), `mean_radius_m` (the hits' mean
 //!   distance from their centre) and `centre` (their mean) are kept
 //!   current. Cleared by `ResetProp` and `prop reset`; a new board starts
@@ -63,14 +73,22 @@
 //! spawn is refused otherwise, and every prop is removed when it stops or
 //! the map is loaded again (`core::MapLoads`). Nothing here is replicated.
 //!
+//! A spawn and a single removal are the player's changes of the layout
+//! (`layout` remembers what stands after each; `Prop::origin` and `dir`
+//! are its spawner's spot and line); clearing is not.
+//!
 //! Console: `prop add <bottles|tin_cans|target_board> [distance m]`,
 //! `prop remove <n|all>`, `prop list`, `prop group <n>` (a board's shot
-//! group), `prop reset <n|all>`, `prop look <n> [piece]` (turns the player
-//! to face prop n's piece, from 0: staging a picture).
+//! group), `prop reset <n|all>`, `prop look <n> [piece | shelf]` (turns
+//! the player to face prop n's piece, from 0, or its shelf's top between
+//! the middle pieces: staging a picture).
 //!
 //! Known shortcuts:
-//! - A projectile's shot at a board counts as a miss never (its landing
-//!   comes ticks later): misses are hitscan shots'. A grenade that only
+//! - A projectile's miss is told by time (`PROJECTILE_MISS_SECS`), not by
+//!   the projectile's end: a slower one landing later answers the next
+//!   shot; one shot's several projectiles (pellets) answer several. A
+//!   decal projected onto the map (CS:S's) doesn't reach a prop: its
+//!   shapes aren't the map's triangles. A grenade that only
 //!   bounces off a piece (Combat Arms', which writes no hit on objects)
 //!   doesn't knock it; its blast does.
 //! - A knocked piece doesn't tumble: it is placed lying behind the shelf.
@@ -85,7 +103,7 @@ use avian3d::prelude::{Collider, ColliderOf, CollisionLayers, LayerMask, RigidBo
 
 use crate::{
     console::{ConsoleAppExt, command_player},
-    core::{Damage, DamageKind, Damageable, Intent, MapLoads, SOLID_LAYERS, SimClock, SimSet, TRACE_ONLY_LAYER},
+    core::{Damage, DamageKind, Damageable, Intent, MapLoads, PropSurface, SOLID_LAYERS, SimClock, SimSet, TRACE_ONLY_LAYER},
     map::shapes::{CodeShape, Hittable, ShapeKind},
     weapon::{WeaponEvent, WeaponEventKind, grenade::BlastDealt},
 };
@@ -100,10 +118,15 @@ pub const BOARD_CENTRE_Y: f32 = 1.3;
 /// A shot whose aim line crosses the board's plane this close to the
 /// face's centre was fired at it (m).
 pub const BOARD_AIM_M: f32 = 1.0;
+/// A projectile fired at a board that hasn't landed on it this long after
+/// is a miss (s).
+pub const PROJECTILE_MISS_SECS: f64 = 4.0;
 /// The shelf's top (m).
 const SHELF_TOP: f32 = 1.0;
 /// The face's front, in front of the board's centre plane (m).
 const FACE_FRONT: f32 = 0.015;
+/// The face collider's front (m): the painted rings' front.
+const FACE_HIT: f32 = 0.03;
 
 /// What to place.
 #[derive(Clone, Debug, PartialEq)]
@@ -139,6 +162,10 @@ pub struct Prop {
     pub spec: PropSpec,
     /// Its foot on the floor (m).
     pub home: Vec3,
+    /// Where its spawner stood (its centre) and the flat unit direction
+    /// it was placed along (`layout` repeats it from them).
+    pub origin: Vec3,
+    pub dir: Vec3,
     /// The console's number.
     pub number: u32,
     /// Bottles 6, cans 5, board 1.
@@ -204,11 +231,14 @@ struct PropPiece {
 #[derive(Component, Clone, Copy, Debug)]
 struct ShotMark;
 
-/// The map a prop was made on, and since when every piece is down.
-#[derive(Component, Clone, Copy, Debug, Default)]
+/// The map a prop was made on, since when every piece is down, and a
+/// board's projectile shots still in flight (shooter, when they count as
+/// a miss).
+#[derive(Component, Clone, Debug, Default)]
 struct PropState {
     map_loads: u32,
     down_since: Option<f64>,
+    in_flight: Vec<(Entity, f64)>,
 }
 
 /// The console's next number.
@@ -242,15 +272,11 @@ fn disc(radius: f32, z: f32, at: Vec2, colour: Color) -> (CodeShape, Transform) 
     )
 }
 
-/// Place a prop now; its entity.
+/// Place a prop now (a player's change: `layout` remembers it); its entity.
 pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
     if !rung_command::holds(world) {
         return Err("props are the sandbox's: start it with `sandbox`".into());
     }
-    let kind = KINDS
-        .iter()
-        .find(|k| k.eq_ignore_ascii_case(&req.spec.kind))
-        .ok_or_else(|| format!("no prop {:?} (one of {})", req.spec.kind, KINDS.join(", ")))?;
     let by = match req.by {
         Some(e) => e,
         None => command_player(world).map_err(|_| "no player to place it in front of".to_string())?,
@@ -258,7 +284,22 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
     let origin = world.get::<Transform>(by).ok_or("the player has no place")?.translation;
     let yaw = world.get::<Intent>(by).map_or(0.0, |i| i.yaw);
     let dir = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
-    let home = find_spot(world, origin, dir, req.spec.distance_m)?;
+    let e = spawn_from(world, &req.spec, origin, dir)?;
+    super::layout::record(world);
+    Ok(e)
+}
+
+/// Place a prop as if from `origin` looking along flat `dir` (`spawn`;
+/// the layout's repeat), not remembered.
+pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -> Result<Entity, String> {
+    if !rung_command::holds(world) {
+        return Err("props are the sandbox's: start it with `sandbox`".into());
+    }
+    let kind = KINDS
+        .iter()
+        .find(|k| k.eq_ignore_ascii_case(&spec.kind))
+        .ok_or_else(|| format!("no prop {:?} (one of {})", spec.kind, KINDS.join(", ")))?;
+    let home = find_spot(world, origin, dir, spec.distance_m)?;
     let to = origin - home;
     let facing = Quat::from_rotation_y(to.x.atan2(to.z));
     let number = {
@@ -272,13 +313,13 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
         _ => 1,
     };
     let map_loads = world.get_resource::<MapLoads>().map_or(0, |m| m.0);
-    let spec = PropSpec { kind: kind.to_string(), distance_m: req.spec.distance_m };
+    let spec = PropSpec { kind: kind.to_string(), distance_m: spec.distance_m };
     let prop = world
         .spawn((
             Name::new(format!("Prop {number} ({kind})")),
             Transform::from_translation(home).with_rotation(facing),
             Visibility::default(),
-            Prop { spec, home, number, pieces, standing: pieces },
+            Prop { spec, home, origin, dir, number, pieces, standing: pieces },
             PropState { map_loads, ..default() },
         ))
         .id();
@@ -286,18 +327,28 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
     // Every part is solid: a static collider of its shape on the map's
     // default layer (shots stop on it, characters can't walk through a
     // shelf or the board), the pieces moved to traces only below.
-    let part = |world: &mut World, (s, t): (CodeShape, Transform)| {
+    // Each part names its surface (`core::PropSurface`), so every game's
+    // impact effects and marks know what they hit (Combat Arms' draw
+    // none on a surface they can't name).
+    let part = |world: &mut World, (s, t): (CodeShape, Transform), surface: Option<&str>| {
         let c = collider(s.kind);
-        world.spawn((s, t, ChildOf(prop), RigidBody::Static, c, PropPart)).id()
+        let e = world.spawn((s, t, ChildOf(prop), RigidBody::Static, c, PropPart)).id();
+        if let Some(surface) = surface {
+            world.entity_mut(e).insert(PropSurface(surface.into()));
+        }
+        e
     };
     if *kind == "target_board" {
         world.entity_mut(prop).insert(ShotGroup::default());
         for x in [-0.4, 0.4] {
-            part(world, shape(ShapeKind::Box(Vec3::new(0.03, 0.9, 0.03)), wood, Transform::from_xyz(x, 0.9, -0.05)));
+            part(world, shape(ShapeKind::Box(Vec3::new(0.03, 0.9, 0.03)), wood, Transform::from_xyz(x, 0.9, -0.05)), Some("wood"));
         }
         let stand = Transform::from_xyz(0.0, BOARD_CENTRE_Y, 0.0);
-        let face = part(world, shape(ShapeKind::Box(Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT)), Color::srgb(0.92, 0.9, 0.82), stand));
+        let face = part(world, shape(ShapeKind::Box(Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT)), Color::srgb(0.92, 0.9, 0.82), stand), Some("wood"));
+        // Its collider's front is the painted rings' (`FACE_HIT`), so a
+        // bullet's mark lands on them, not hidden behind them.
         world.entity_mut(face).insert((
+            Collider::cuboid(BOARD_HALF * 2.0, BOARD_HALF * 2.0, FACE_HIT * 2.0),
             PropPiece { prop, index: 0, standing: true, stand, half: Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT), board: true },
             Damageable,
             Hittable,
@@ -310,9 +361,9 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
         }
     } else {
         // The shelf.
-        part(world, shape(ShapeKind::Box(Vec3::new(0.8, 0.02, 0.15)), wood, Transform::from_xyz(0.0, SHELF_TOP - 0.02, 0.0)));
+        part(world, shape(ShapeKind::Box(Vec3::new(0.8, 0.02, 0.15)), wood, Transform::from_xyz(0.0, SHELF_TOP - 0.02, 0.0)), Some("wood"));
         for x in [-0.72, 0.72] {
-            part(world, shape(ShapeKind::Box(Vec3::new(0.03, 0.48, 0.12)), wood, Transform::from_xyz(x, 0.48, 0.0)));
+            part(world, shape(ShapeKind::Box(Vec3::new(0.03, 0.48, 0.12)), wood, Transform::from_xyz(x, 0.48, 0.0)), Some("wood"));
         }
         let bottles = *kind == "bottles";
         let (r, hh, step) = if bottles { (0.04, 0.12, 0.25) } else { (0.033, 0.06, 0.25) };
@@ -320,7 +371,10 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
         for i in 0..pieces {
             let x = (i as f32 - (pieces - 1) as f32 / 2.0) * step;
             let stand = Transform::from_xyz(x, SHELF_TOP + hh, 0.0);
-            let piece = part(world, shape(ShapeKind::Cylinder { radius: r, half_height: hh }, colour, stand));
+            // No surface named: a game's hole there would stay in the air
+            // when the piece is knocked off (Combat Arms' marks are the
+            // world's), so a piece shows none.
+            let piece = part(world, shape(ShapeKind::Cylinder { radius: r, half_height: hh }, colour, stand), None);
             let half = if bottles { Vec3::new(r, hh + 0.04, r) } else { Vec3::new(r, hh, r) };
             // Shots strike it (traces only: characters pass it, it can't
             // hold them up).
@@ -341,20 +395,28 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
     Ok(prop)
 }
 
-/// Remove prop `e`.
+/// Remove prop `e` (a player's change: `layout` remembers what is left).
 pub fn remove(world: &mut World, e: Entity) {
+    if remove_quiet(world, e) {
+        super::layout::record(world);
+    }
+}
+
+fn remove_quiet(world: &mut World, e: Entity) -> bool {
     if world.get::<Prop>(e).is_some()
         && let Ok(ent) = world.get_entity_mut(e)
     {
         ent.despawn();
+        return true;
     }
+    false
 }
 
-/// Remove every prop; how many.
+/// Remove every prop; how many (the remembered layout stays).
 pub fn clear(world: &mut World) -> usize {
     let all: Vec<Entity> = all_props(world).into_iter().map(|(e, _)| e).collect();
     for e in &all {
-        remove(world, *e);
+        remove_quiet(world, *e);
     }
     all.len()
 }
@@ -398,6 +460,7 @@ pub fn reset(world: &mut World, e: Entity) {
         }
         if let Some(mut s) = ent.get_mut::<PropState>() {
             s.down_since = None;
+            s.in_flight.clear();
         }
     }
 }
@@ -475,6 +538,16 @@ fn prop_hits(
         .filter(|(.., e)| pieces.contains(*e))
         .collect();
     let blasts: Vec<BlastDealt> = blasts.read().cloned().collect();
+    // Projectiles fired at a board that never landed on it: misses.
+    for (.., mut state, group) in &mut props {
+        if state.in_flight.iter().any(|(_, at)| *at <= now) {
+            let late = state.in_flight.iter().filter(|(_, at)| *at <= now).count() as u32;
+            state.in_flight.retain(|(_, at)| *at > now);
+            if let Some(mut g) = group {
+                g.misses += late;
+            }
+        }
+    }
     if lines.is_empty() && aims.is_empty() && blasts.is_empty() && struck.is_empty() {
         return;
     }
@@ -536,12 +609,11 @@ fn prop_hits(
             }
         }
     }
-    // Shots at a board whose shooter's bullets all missed its face.
+    // Shots at a board whose shooter's bullets all missed its face; a
+    // projectile's (no trace this tick) waits for its landing.
     let mut at_board: Vec<(Entity, Entity)> = Vec::new();
+    let mut flying: Vec<(Entity, Entity)> = Vec::new();
     for (owner, origin, dir) in &aims {
-        if !traced.contains(owner) {
-            continue;
-        }
         let mut nearest: Option<(f32, Entity)> = None;
         for (e, t, p, ..) in &props {
             if p.spec.kind != "target_board" {
@@ -558,7 +630,26 @@ fn prop_hits(
             }
         }
         if let Some((_, board)) = nearest {
-            at_board.push((*owner, board));
+            if traced.contains(owner) {
+                at_board.push((*owner, board));
+            } else {
+                flying.push((*owner, board));
+            }
+        }
+    }
+    for (owner, board) in flying {
+        if let Ok((.., mut state, _)) = props.get_mut(board) {
+            state.in_flight.push((owner, now + PROJECTILE_MISS_SECS));
+        }
+    }
+    // A projectile's landing on a board answers its oldest shot there.
+    for (a, prop, _, on) in &hits {
+        if let (Some(a), Some(_)) = (a, on)
+            && !traced.contains(a)
+            && let Ok((.., mut state, _)) = props.get_mut(*prop)
+            && let Some(i) = state.in_flight.iter().position(|(o, _)| o == a)
+        {
+            state.in_flight.remove(i);
         }
     }
     // One miss per shot at it beyond the bullets that landed on it.
@@ -662,7 +753,7 @@ fn pick(world: &mut World, which: &str) -> Result<Vec<Entity>, String> {
 }
 
 const USAGE: &str = "prop add <bottles|tin_cans|target_board> [distance m] | prop remove <n|all> | prop list | \
-    prop group <n> | prop reset <n|all> | prop look <n> [piece]";
+    prop group <n> | prop reset <n|all> | prop look <n> [piece | shelf]";
 
 fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
     let sub = a.first().map(|s| s.to_ascii_lowercase()).ok_or(USAGE)?;
@@ -678,7 +769,12 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
             Ok(Some(format!("added {}", describe(world, e, &p).trim_start())))
         }
         "remove" => {
-            let all = pick(world, a.get(1).map_or("all", String::as_str))?;
+            let which = a.get(1).map_or("all", String::as_str);
+            // All of them is a clear: the remembered layout stays.
+            if which.eq_ignore_ascii_case("all") {
+                return Ok(Some(format!("removed {} props", clear(world))));
+            }
+            let all = pick(world, which)?;
             for e in &all {
                 remove(world, *e);
             }
@@ -701,14 +797,25 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
             // Turn the player to face prop n (its piece k, from 0; the
             // board's centre): staging a scene.
             let e = *pick(world, a.get(1).ok_or("prop look <n> [piece]")?)?.first().ok_or("no prop")?;
-            let k: u32 = a.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
             let tf = *world.get::<Transform>(e).ok_or("the prop has no place")?;
-            let spot = world
-                .query::<&PropPiece>()
-                .iter(world)
-                .find(|p| p.prop == e && p.index == k)
-                .map(|p| p.stand.translation)
-                .ok_or_else(|| format!("no piece {k}"))?;
+            // `shelf`: the shelf's top between the middle pieces.
+            let shelf = a.get(2).is_some_and(|s| s.eq_ignore_ascii_case("shelf"));
+            let k: u32 = a.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let spot = if shelf {
+                let p = world.get::<Prop>(e).ok_or("no prop")?;
+                if p.spec.kind == "target_board" {
+                    return Err("a board has no shelf".into());
+                }
+                let gap = if p.pieces % 2 == 0 { 0.0 } else { 0.125 };
+                Vec3::new(gap, SHELF_TOP - 0.005, 0.0)
+            } else {
+                world
+                    .query::<&PropPiece>()
+                    .iter(world)
+                    .find(|p| p.prop == e && p.index == k)
+                    .map(|p| p.stand.translation)
+                    .ok_or_else(|| format!("no piece {k}"))?
+            };
             let me = command_player(world)?;
             // From its eye (its movement's eye offset; 0.6 m above its
             // centre without one), so a small piece is in the sights.
@@ -717,7 +824,8 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
             let d = tf.transform_point(spot) - eye;
             let (yaw, pitch) = ((-d.x).atan2(-d.z), d.y.atan2(d.xz().length()));
             crate::core::set_view(world, me, yaw, pitch);
-            Ok(Some(format!("looking at prop {} piece {k}, {:.1} m away", a[1], d.length())))
+            let what = if shelf { "its shelf".to_string() } else { format!("piece {k}") };
+            Ok(Some(format!("looking at prop {} {what}, {:.1} m away", a[1], d.length())))
         }
         "list" => {
             let all = all_props(world);

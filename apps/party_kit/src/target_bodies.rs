@@ -91,6 +91,7 @@ pub fn add(app: &mut App) {
         holds: |_, _, gun| gun.starts_with("halo_ce:"),
         wear: halo_ce::game::campaign::targets::wear_spartan,
         vitals: halo_vitals,
+        second_bar: None,
     });
     // Halo's campaign characters, after the Spartan (a Halo gun alone
     // gives the Spartan).
@@ -98,7 +99,7 @@ pub fn add(app: &mut App) {
         app.target_character(c);
     }
     for (id, name) in TF2_CLASSES {
-        app.target_character(TargetCharacter { id, name, game: "tf2", holds: tf2_holds, wear: tf2_wear, vitals: tf2_vitals });
+        app.target_character(TargetCharacter { id, name, game: "tf2", holds: tf2_holds, wear: tf2_wear, vitals: tf2_vitals, second_bar: None });
     }
     for (game, name, shield) in [("combat_arms", "CA default", 1.0), ("cs_source", "CS:S default", 0.0), ("hl2dm", "HL2:DM default", 0.0)] {
         let id: &'static str = match game {
@@ -114,6 +115,7 @@ pub fn add(app: &mut App) {
             holds: |_, c, gun| gun.split_once(':').is_some_and(|(g, _)| c.starts_with(g) && c[g.len()..].starts_with(':')),
             wear: |_, _, _| {},
             vitals,
+            second_bar: None,
         });
     }
     for (game, name) in [

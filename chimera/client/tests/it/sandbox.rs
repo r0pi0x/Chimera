@@ -302,3 +302,95 @@ fn the_grid_draws_its_tiles() {
     assert!(slots.iter().all(|s| s.2 == PositionType::Absolute), "slots stay absolute: {slots:?}");
     assert!(tiles >= 10, "the rows in view have tiles: {tiles}; slots {slots:?}");
 }
+
+#[test]
+fn every_letter_goes_to_the_search_even_b_i_and_r() {
+    let mut sim = sim("gun");
+    type_text(&mut sim, "bir");
+    let u = ui(&sim);
+    assert_eq!(u.screen, SandboxScreen::ChangeGun, "B doesn't close the view while typing");
+    assert_eq!(u.view.search, "bir");
+    assert!(!u.view.detail, "I typed, not the model view");
+    // Ctrl+I is the model view.
+    press(&mut sim, &[KeyCode::ControlLeft, KeyCode::KeyI]);
+    assert!(ui(&sim).view.detail);
+}
+
+#[test]
+fn backslash_folds_the_class_and_opens_it_back_on_the_same_tile() {
+    let mut sim = sim("gun");
+    press(&mut sim, &[KeyCode::ArrowRight]);
+    let at = cursor(&sim);
+    let Some(VCursor::Item(sec, _)) = at else { panic!("on a tile: {at:?}") };
+    press(&mut sim, &[KeyCode::Backslash]);
+    assert_eq!(cursor(&sim), Some(VCursor::Header(sec)), "parked on its header");
+    assert!(sim.app.world().resource::<VirtualLists>().get(LIST).unwrap().is_folded(sec));
+    // Typed letters never take it: a search runs, and \\ still folds.
+    press(&mut sim, &[KeyCode::Enter]);
+    assert_eq!(cursor(&sim), at, "Enter on the header opens it and goes back to the tile");
+    press(&mut sim, &[KeyCode::IntlBackslash]);
+    assert_eq!(cursor(&sim), Some(VCursor::Header(sec)), "the ISO key folds too");
+    press(&mut sim, &[KeyCode::Backslash]);
+    assert_eq!(cursor(&sim), at, "\\ opens it and goes back to the tile");
+    assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun, "no switch on the way");
+}
+
+#[test]
+fn enter_switches_on_a_tile_and_folds_on_a_header() {
+    let mut sim = sim("gun");
+    press(&mut sim, &[KeyCode::ArrowUp]);
+    let Some(VCursor::Header(sec)) = cursor(&sim) else { panic!("on the header: {:?}", cursor(&sim)) };
+    press(&mut sim, &[KeyCode::Enter]);
+    assert!(sim.app.world().resource::<VirtualLists>().get(LIST).unwrap().is_folded(sec), "Enter folds a header");
+    assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun, "and switches nothing");
+    press(&mut sim, &[KeyCode::Enter]);
+    assert!(!sim.app.world().resource::<VirtualLists>().get(LIST).unwrap().is_folded(sec), "and opens it again");
+    press(&mut sim, &[KeyCode::ArrowDown]);
+    let gun = ui(&sim).view.selected.clone();
+    press(&mut sim, &[KeyCode::Enter]);
+    frame(&mut sim);
+    let u = ui(&sim);
+    assert_eq!(u.screen, SandboxScreen::None, "Enter on a tile switches");
+    assert_eq!(u.current, gun);
+}
+
+#[test]
+fn right_wraps_rows_and_classes_and_stops_on_a_folded_header() {
+    let mut sim = sim("gun");
+    let grid = sim.app.world().resource::<Grid>().clone();
+    // The AK-47 is a rifle; walk right past the class's last tile.
+    let Some(VCursor::Item(sec, _)) = cursor(&sim) else { panic!() };
+    let n = grid.0[sec].1.len();
+    sim.app.world_mut().resource_mut::<VirtualLists>().state(LIST).select(VCursor::Item(sec, n - 1));
+    press(&mut sim, &[KeyCode::ArrowRight]);
+    assert_eq!(cursor(&sim), Some(VCursor::Item(sec + 1, 0)), "into the next class's first tile");
+    press(&mut sim, &[KeyCode::ArrowLeft]);
+    assert_eq!(cursor(&sim), Some(VCursor::Item(sec, n - 1)), "and back");
+    sim.app.world_mut().resource_mut::<VirtualLists>().state(LIST).fold(sec + 1, true);
+    press(&mut sim, &[KeyCode::ArrowRight]);
+    assert_eq!(cursor(&sim), Some(VCursor::Header(sec + 1)), "a folded class's header in its place");
+}
+
+#[test]
+fn the_drop_hint_names_the_gun_the_slot_and_what_it_replaces() {
+    use chimera_client::client::sandbox::model::drop_hint;
+    assert_eq!(drop_hint("Rocket Launcher", 5, None), "Release: Rocket Launcher to 6");
+    assert_eq!(drop_hint("Rocket Launcher", 1, Some("M4A1")), "Release: Rocket Launcher to 2, replacing M4A1");
+    assert_eq!(drop_hint("M4A1", 1, Some("M4A1")), "Release: M4A1 to 2", "onto itself: nothing replaced");
+    // The staged drag over slot 2 shows it beside the bar, the ghost in
+    // the slot and the old name struck through.
+    let mut sim = sim("drag");
+    frame(&mut sim);
+    let w = sim.app.world_mut();
+    let ids: Vec<String> = w.query::<&UiParityId>().iter(w).map(|p| p.0.clone()).collect();
+    assert!(ids.iter().any(|i| i == "gun.drop.hint"), "the hint");
+    assert!(ids.iter().any(|i| i == "sb.pin.drop"), "the ghost's frame");
+    assert!(ids.iter().any(|i| i == "sb.pin.was"), "the old gun struck through");
+    let hint = w
+        .query::<(&UiParityId, &Text)>()
+        .iter(w)
+        .find(|(p, _)| p.0 == "gun.drop.hint")
+        .map(|(_, t)| t.0.clone())
+        .unwrap_or_default();
+    assert_eq!(hint.to_lowercase(), "release: rocket launcher to 2, replacing m4a1");
+}

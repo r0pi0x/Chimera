@@ -1,0 +1,45 @@
+# The sandbox's conditions switched on and off, each change a
+# `SandboxConditions ...` line in the log (a scene script: chimera_client's
+# `scene`): god, endless ammo, time scale, third person and its distance,
+# frozen targets (a strafing one holds still).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/conditions.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+setpos 0 -1181 0
+setang 2 90
+rung combat_arms:m4a1
+target add combat_arms:m4a1 8 strafe
+wait 120
+sandbox conditions
+sandbox god on
+wait 10
+sandbox god off
+wait 10
+sandbox ammo off
+wait 10
+sandbox ammo on
+wait 10
+sandbox timescale 0.5
+wait 10
+sandbox timescale 0.25
+wait 10
+sandbox timescale 1
+wait 10
+sandbox thirdperson on
+sandbox camdist 120
+wait 30
+shot condition_thirdperson
+sandbox thirdperson off
+wait 10
+sandbox freeze on
+wait 60
+shot condition_frozen_a
+wait 90
+shot condition_frozen_b
+sandbox freeze off
+wait 90
+shot condition_unfrozen
+sandbox conditions
+wait 30

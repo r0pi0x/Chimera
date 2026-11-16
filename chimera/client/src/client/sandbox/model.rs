@@ -335,9 +335,11 @@ pub struct GunView {
     pub selected: Option<String>,
     /// The tag popover is open.
     pub tags_open: bool,
-    /// The detail pane is open (I or Enter on nothing pinned; module
-    /// doc of `change_gun`).
+    /// The large model view (I).
     pub detail: bool,
+    /// The tile `\\` folded its class from (section, item): opening the
+    /// class again goes back to it.
+    pub fold_return: Option<(usize, usize)>,
 }
 
 impl GunView {
@@ -497,5 +499,15 @@ impl PinBar {
         } else {
             (1.0 - idle / fade.max(1e-3)).clamp(0.0, 1.0) as f32
         }
+    }
+}
+
+/// The drop hint beside the pinned bar while a gun is dragged over slot
+/// `slot` (0-based), `old` the gun pinned there: "Release: Rocket Launcher
+/// to 2, replacing M4A1".
+pub fn drop_hint(gun: &str, slot: usize, old: Option<&str>) -> String {
+    match old {
+        Some(o) if o != gun => format!("Release: {gun} to {}, replacing {o}", slot + 1),
+        _ => format!("Release: {gun} to {}", slot + 1),
     }
 }

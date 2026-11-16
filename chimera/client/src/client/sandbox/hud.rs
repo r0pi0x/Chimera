@@ -341,9 +341,11 @@ fn next_strip(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &GunFac
 
 /// The pinned bar under `parent` (module doc): slots `w` cq wide (1:
 /// 6.4 x 3.6; smaller in Change gun), `drop` the slot a drag would drop on
-/// (its accent fill and border, DROP HERE).
+/// and the dragged gun: a ghost of it there, faint in an accent frame,
+/// the gun it replaces struck through under the slot (the design rules,
+/// section 22, drop marker C).
 #[allow(clippy::too_many_arguments)]
-pub fn pin_bar(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, pins: &[Option<GunFace>], cur: Option<usize>, drop: Option<usize>, scale: f32, alpha: f32) -> Vec<Entity> {
+pub fn pin_bar(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, pins: &[Option<GunFace>], cur: Option<usize>, drop: Option<(usize, GunFace)>, scale: f32, alpha: f32) -> Vec<Entity> {
     let rack = c
         .spawn((
             UiStyle { ..UiStyle::row() }.bg_a(Tone::Ink, 0.82 * alpha).outline(Tone::Fg4, alpha),
@@ -357,14 +359,15 @@ pub fn pin_bar(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, pins: &[O
     for i in 0..PIN_SLOTS {
         let gun = pins.get(i).cloned().flatten();
         let on = cur == Some(i) && gun.is_some();
-        let dropping = drop == Some(i);
+        let ghost = drop.as_ref().filter(|d| d.0 == i).map(|d| &d.1);
+        let dropping = ghost.is_some();
         let mut s = UiStyle {
             w: Some(w),
             h: Some(h),
             gap: Some(0.35 * scale),
             pad: Some([0.0, 0.0, 0.5 * scale, 0.0].into()),
             align: Some(AlignItems::Center),
-            justify: Some(if gun.is_some() && !dropping { JustifyContent::FlexEnd } else { JustifyContent::Center }),
+            justify: Some(if gun.is_some() || dropping { JustifyContent::FlexEnd } else { JustifyContent::Center }),
             shrink: Some(0.0),
             ..UiStyle::column()
         };
@@ -372,7 +375,7 @@ pub fn pin_bar(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, pins: &[O
             s = s.bg_a(Tone::Fg, alpha);
         }
         if dropping {
-            s = s.bg_a(Tone::Acc, 0.28 * alpha).outline(Tone::Acc, alpha);
+            s = s.bg_a(Tone::Acc, 0.12 * alpha);
         }
         let slot = c.spawn((s, Node::default(), UiParityId::new(format!("sb.pin.{}", i + 1)), ChildOf(rack))).id();
         if i > 0 && !on {
@@ -394,8 +397,31 @@ pub fn pin_bar(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, pins: &[O
             ))
             .id();
         ui.text_a(c, cap, Role::Mono, 0.44 * scale.max(0.8), fg, alpha, &(i + 1).to_string());
-        if dropping {
-            ui.text_a(c, slot, Role::Mono, 0.48 * scale.max(0.8), Tone::Fg, alpha, "Drop here");
+        if let Some(g) = ghost {
+            // The frame: an accent border, broken into dashes along each
+            // side.
+            dashed_frame(c, look, slot, alpha);
+            let gm = ui.boxed(c, slot, UiStyle::row().abs([None, Some(0.38 * scale), Some(0.35 * scale), None]));
+            ui.text_a(c, gm, Role::Mono, 0.4 * scale.max(0.8), Tone::AccText, alpha, &g.game_short);
+            gun_icon(c, look, slot, &g.id, g.icon_class, 1.05 * scale, Tone::Fg, 0.45 * alpha);
+            ui.text_a(c, slot, Role::Mono, 0.46 * scale.max(0.85), Tone::AccText, alpha, &g.name);
+            if let Some(old) = gun.as_ref().filter(|o| o.id != g.id) {
+                let was = c
+                    .spawn((
+                        Node { position_type: PositionType::Absolute, top: Val::Percent(100.0), margin: UiRect::top(look.val(0.3)), ..default() },
+                        Pickable::IGNORE,
+                        ChildOf(slot),
+                    ))
+                    .id();
+                ui.text_a(c, was, Role::Mono, 0.4 * scale.max(0.8), Tone::Fg3, alpha, &format!("Was {}", old.name));
+                c.spawn((
+                    Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, top: Val::Percent(50.0), height: Val::Px(look.hair()), ..default() },
+                    BackgroundColor(look.theme.tone_a(Tone::Fg3, alpha)),
+                    UiParityId::new("sb.pin.was"),
+                    Pickable::IGNORE,
+                    ChildOf(was),
+                ));
+            }
         } else if let Some(g) = &gun {
             let gm = ui.boxed(c, slot, UiStyle::row().abs([None, Some(0.38 * scale), Some(0.35 * scale), None]));
             ui.text_a(c, gm, Role::Mono, 0.4 * scale.max(0.8), if on { Tone::Ink } else { Tone::Fg3 }, if on { 0.6 * alpha } else { alpha }, &g.game_short);
@@ -407,6 +433,50 @@ pub fn pin_bar(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, pins: &[O
         out.push(slot);
     }
     out
+}
+
+/// An accent frame of dashes round `parent` (the drop marker).
+fn dashed_frame(c: &mut Commands, look: &Look, parent: Entity, alpha: f32) {
+    let (dash, gap) = (6.0, 4.0);
+    let hair = (2.0 * look.units.scale_factor).round() / look.units.scale_factor;
+    let color = look.theme.tone_a(Tone::Acc, alpha);
+    let frame = c
+        .spawn((
+            Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, overflow: Overflow::clip(), ..default() },
+            UiParityId::new("sb.pin.drop"),
+            Pickable::IGNORE,
+            ChildOf(parent),
+        ))
+        .id();
+    // Enough dashes for a slot up to 200 px wide and 120 tall.
+    for k in 0..20 {
+        let at = Val::Px(k as f32 * (dash + gap));
+        for (left, top, w, h, bottom, right) in [
+            (Some(at), Some(Val::ZERO), dash, hair, None, None),
+            (Some(at), None, dash, hair, Some(Val::ZERO), None),
+            (Some(Val::ZERO), Some(at), hair, dash, None, None),
+            (None, Some(at), hair, dash, None, Some(Val::ZERO)),
+        ] {
+            if k >= 12 && w < h {
+                continue;
+            }
+            c.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: left.unwrap_or(Val::Auto),
+                    top: top.unwrap_or(Val::Auto),
+                    bottom: bottom.unwrap_or(Val::Auto),
+                    right: right.unwrap_or(Val::Auto),
+                    width: Val::Px(w),
+                    height: Val::Px(h),
+                    ..default()
+                },
+                BackgroundColor(color),
+                Pickable::IGNORE,
+                ChildOf(frame),
+            ));
+        }
+    }
 }
 
 fn card(c: &mut Commands, parent: Entity, id: &'static str, pad: [f32; 4], gap: f32) -> Entity {
@@ -481,7 +551,7 @@ fn kill_card(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, k: &KillCar
     gun_icon(c, look, what, &k.gun, None, 0.8, Tone::Fg, 1.0);
     ui.text(c, what, Role::DisplayBold, 0.85, Tone::Fg, &k.gun_name);
     ui.text(c, what, Role::Mono, 0.46, Tone::Fg3, &k.gun_game_short);
-    ui.text(c, what, Role::Mono, 0.9, Tone::Fg3, "\u{203a}");
+    ui.text(c, what, Role::DisplayBold, 0.85, Tone::Fg3, ">");
     ui.text(c, what, Role::DisplayBold, 0.85, Tone::Fg, &k.victim);
     ui.text(c, card, Role::Mono, 0.52, Tone::Fg2, &format!("{} \u{00b7} {} m \u{00b7} {}", k.protection, k.distance_m, motion_words(k.motion)));
     // The three numbers.

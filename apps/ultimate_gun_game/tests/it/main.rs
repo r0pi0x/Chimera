@@ -37,6 +37,7 @@ mod pickups;
 mod power_curve;
 mod props;
 mod sandbox;
+mod sandbox_mechanics;
 mod session;
 mod sandbox_screens;
 mod targets;

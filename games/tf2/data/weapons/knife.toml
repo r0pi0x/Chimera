@@ -1,0 +1,35 @@
+# The Spy's Knife (specs/tf2/weapons_stock.md 1, 4, 5.6): 40 every 0.8 s,
+# its script's smack delay 0.1 s, never a random crit; a backstab (4.2:
+# behind the victim, d.v > 0; facing him, a.d > 0.5; the views the same
+# way, a.v > -0.3; yaw only) deals 6 times the victim's current health as
+# a crit, the kill credited to `tf2:backstab` (its kill icon). Raised
+# while a backstab would land (`tf2:melee`, `game::view`).
+id = "tf2:tf_weapon_knife"
+base = "tf2:melee"
+
+[melee.primary]
+damage = 40.0
+delay = 0.1
+backstab = { behind = 0.0, facing = 0.5, same_way = -0.3, health = 6.0, credit = "tf2:backstab" }
+sound_swing = "Weapon_Knife.Miss"
+sound_hit = "Weapon_Knife.HitFlesh"
+sound_hit_world = "Weapon_Knife.HitWorld"
+
+# `knife_draw`'s sound events (8.1): it flips open.
+[sounds]
+draw = [[0.0333, "Weapon_Knife.Draw"], [0.3333, "Weapon_Knife.Open1"], [0.5333, "Weapon_Knife.Open5"], [0.7333, "Weapon_Knife.Open8"]]
+
+[models]
+world = "models/weapons/c_models/c_knife/c_knife.mdl"
+view = "models/weapons/c_models/c_knife/c_knife.mdl"
+view_right_handed = true
+
+[hud]
+name = "Knife"
+icon = "knife"
+
+[hooks."tf2:melee"]
+arms = "spy"
+script = "tf_weapon_knife"
+crits = false
+crit_swing = "Weapon_Knife.MissCrit"

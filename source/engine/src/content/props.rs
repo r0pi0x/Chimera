@@ -597,10 +597,22 @@ pub fn load_view_model(
     key: &str,
     right_handed: bool,
 ) -> Result<crate::map::MapViewModel, String> {
+    load_view_model_skinned(materials, path, key, right_handed, 0)
+}
+
+/// `load_view_model` in skin family `skin` (TF2's Fists: the Heavy's arms
+/// in their fists' skin).
+pub fn load_view_model_skinned(
+    materials: &mut MaterialLoader,
+    path: &str,
+    key: &str,
+    right_handed: bool,
+    skin: i32,
+) -> Result<crate::map::MapViewModel, String> {
     let (model, _) = load_model(materials, path)?;
     // Source models face +X; the eye looks along -Z.
     let face = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
-    let mut view = convert_model_in(&model, 0, materials, false, &[]);
+    let mut view = convert_model_in(&model, skin, materials, false, &[]);
     for mesh in &mut view.meshes {
         for p in &mut mesh.positions {
             *p = (face * Vec3::from(*p)).to_array();
