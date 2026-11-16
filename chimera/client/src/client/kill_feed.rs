@@ -10,7 +10,8 @@
 //!   (the killing hit's, else what the killer held when the hit was
 //!   dealt: `weapon::DamageWeapons`), how it was dealt,
 //!   and the flags: headshot, suicide (no killer, or the victim itself),
-//!   team kill (same non-zero `core::Team`). Entries go after `lifetime`
+//!   team kill (same non-zero `core::Team`); none for a sandbox's
+//!   practice target's death or kill (`targets::Target`). Entries go after `lifetime`
 //!   seconds, the oldest first past `max`, and all of them on a map
 //!   change (`core::MapLoads`). A thing broken (`core::Destroyed`: a
 //!   game's placed device, Combat Arms' auto turret; a network client's
@@ -300,6 +301,7 @@ fn record(
     loads: Option<Res<MapLoads>>,
     time: Res<Time>,
     mut feed: ResMut<KillFeed>,
+    targets: Query<(), With<chimera_sim::minigame::targets::Target>>,
 ) {
     let now = time.elapsed_secs();
     // A new map: the last one's kills go.
@@ -327,6 +329,11 @@ fn record(
         },
     };
     for d in died.read() {
+        // A sandbox's practice target's death or kill is measured, not
+        // fed (`targets::is_target`; the last-kill card reads it).
+        if targets.contains(d.entity) || d.attacker.is_some_and(|a| targets.contains(a)) {
+            continue;
+        }
         let killer = d.attacker.filter(|a| *a != d.entity);
         // A thrown grenade names itself; otherwise what the killer held
         // when its hit was dealt (`DamageWeapons`; a network client's

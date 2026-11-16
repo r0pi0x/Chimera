@@ -57,6 +57,16 @@ const ONE_OFF_SCHEDULES: &[&str] = &[
 /// events, observers or systems (the step named).
 const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
+        "chimera/sim/src/minigame/targets.rs",
+        "TargetBots",
+        "spawning: the bots' game adds a whole bot to the match (its roster, kit and entry) and kicks one, on a request or console line",
+    ),
+    (
+        "chimera/sim/src/minigame/targets.rs",
+        "TargetCharacter",
+        "spawning: dressing a practice target as a game's body once it is armed (a game's own component on it), run with its placing",
+    ),
+    (
         "chimera/core/src/diagnostics.rs",
         "HealthParts",
         "a tool: each layer adds what it knows to the health line (memory, frames, net, map), read every few seconds",
@@ -301,6 +311,7 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
 /// the map-logic interpreter, servers' state changes), with the reason.
 /// Their systems don't count in `EXCLUSIVE_BASELINE`.
 const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
+    ("chimera/client/src/client/scene.rs", "a tool run's script (`--scene`, only then): submits its console lines, reads the frame's facts and takes its pictures"),
     ("chimera/core/src/shutdown.rs", "the process's end: the quit's steps over the whole world, then the exit call"),
     ("apps/party_kit/src/controls.rs", "a menu"),
     ("chimera/client/src/client/feedback.rs", "a menu (the report dialog): it takes the screenshot, cues sounds and hands the report to the outbox, gated on its phase"),

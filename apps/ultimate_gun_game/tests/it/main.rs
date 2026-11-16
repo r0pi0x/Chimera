@@ -38,5 +38,6 @@ mod power_curve;
 mod rung_picker;
 mod sandbox;
 mod session;
+mod targets;
 mod ui_sounds;
 mod variety;

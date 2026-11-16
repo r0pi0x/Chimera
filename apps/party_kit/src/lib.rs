@@ -324,6 +324,8 @@ impl Plugin for PartyPartsPlugin {
         add_view_model_fovs(app);
         // Each game's weapons' damage here (data/party_damage.toml).
         party_damage::add(app);
+        // The bodies a sandbox's practice target may wear.
+        target_bodies::add(app);
         app.add_plugins((
             MinigamePlugin,
             originals::OriginalsPlugin,
@@ -626,6 +628,7 @@ pub mod host;
 pub mod party_damage;
 pub mod spot_checks;
 pub mod surprise;
+pub mod target_bodies;
 pub mod server;
 #[cfg(feature = "present")]
 pub mod controls;

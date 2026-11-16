@@ -4,7 +4,10 @@
 //! nothing advances and nothing ends, to try a gun with `rung` (chimera_sim's
 //! `minigame::rung_command`). A person alone on the greybox (or the map
 //! named, `sandbox <map>`; `--map` too), cheats on (`sv_cheats 1`: `god`,
-//! `noclip`), no bots until `ca_bot_add`.
+//! `noclip`), no bots until `ca_bot_add`; practice targets of any game with
+//! `target` (chimera_sim's `minigame::targets`: placed in front of the
+//! player, still, strafing or walking, firing back or not, protected or
+//! not, measured).
 //!
 //! The definition (`SANDBOX`, `definition`) is the automatic gun game's
 //! without its draw: every gun and grenade of the playable games as the
@@ -37,6 +40,10 @@ pub const HELP: &str = "sandbox [map]: a match alone on the greybox (or `map`), 
     rung_picker (L, or the Escape menu's Change gun): pick the rung from a list.\n\
     ca_bot_add [alpha|bravo]: add a bot; ca_bot_kick: remove them; ca_bot_stop 1: they stand still;\n\
     ca_bot_dont_shoot 1: they never fire.\n\
+    target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect]: a practice target\n\
+    in front of you (any game's body; it never fires unless `shoots`; `target characters` lists the bodies);\n\
+    target set <n|all> <shoots|noshoot|protect|noprotect|still|strafe|walk|gun <id>|character <id>|respawn <s>|distance <m>>;\n\
+    target remove <n|all>; target list. Hits on targets and their kills are logged (HitMeasured, KillMeasured).\n\
     god, noclip: no damage, fly through walls (sv_cheats is 1 here).\n\
     guns never run dry (the ladder refills them); kills and deaths never move your rung.\n\
     `+sandbox [map]` on the command line starts it at launch; `+rung <id>` there waits for the match.\n\
