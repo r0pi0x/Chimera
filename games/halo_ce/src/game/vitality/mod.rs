@@ -588,5 +588,16 @@ pub fn update(
             }
         }
         mirror(&v, &mut health, armor.as_deref_mut(), &mut mirrored, scale);
+        // A body its shield does not cover (none, or the Jackal's arm
+        // shield: every other material leaks it all) shows no armour to
+        // other games' hits: they reach its body.
+        if !spartan.shield_covers_body() {
+            if let Some(mut a) = armor
+                && a.amount != 0.0
+            {
+                a.amount = 0.0;
+            }
+            mirrored.shield = 0.0;
+        }
     }
 }

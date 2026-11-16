@@ -95,6 +95,10 @@ pub struct RegionMaterials {
     /// (the Elite's `arms`, body x0.5); None: `other`.
     #[serde(default)]
     pub arms: Option<usize>,
+    /// A shield node's (the Jackal's disc: `body::hits::SHIELD_REGION`);
+    /// None: `other`.
+    #[serde(default)]
+    pub shield: Option<usize>,
 }
 
 /// The globals' player information values.
@@ -174,6 +178,14 @@ impl Spartan {
         toml::from_str(VITALITY).expect("data/vitality.toml parses (a test checks it)")
     }
 
+    /// Whether the shield protects the body at all: a shield, and the
+    /// indirect material (what area and other games' hits land on) not
+    /// leaking every hit through it (the Jackal's arm shield does).
+    pub fn shield_covers_body(&self) -> bool {
+        let leak = self.model.materials.get(self.model.indirect_material).map_or(0.0, |m| m.leak);
+        self.model.maximum_shield > 0.0 && leak < 1.0
+    }
+
     /// The shield delay, ticks: trunc(stun time x 30) = 180.
     pub fn shield_delay(&self) -> u32 {
         ticks(self.model.stun_time)
@@ -190,6 +202,7 @@ impl Spartan {
             Some(LeftUpperArm | LeftForearm | LeftHand | RightUpperArm | RightForearm | RightHand) => {
                 self.regions.arms.unwrap_or(self.regions.other)
             }
+            Some(Groin) => self.regions.shield.unwrap_or(self.regions.other),
             Some(_) => self.regions.other,
         }
     }

@@ -192,6 +192,20 @@ pub fn load_body(kind: BodyKind, def: &BodyDef, mount: &Mount, decode: bool, gun
     let body = super::super::body::load::biped_body(&file, &def.biped, decode, def.tint()).map_err(|e| format!("{path}: {e}"))?;
     let mut character = body.character;
     character.name = kind.model_name();
+    // An arm shield's disc: a body part of two choices, drawn on 0 and
+    // hidden on 1 (`super::shield_disc`).
+    if let Some(disc) = def.shield_disc.as_deref().map(str::to_ascii_lowercase) {
+        let mut any = false;
+        for m in &mut character.model.meshes {
+            if m.material.to_ascii_lowercase().contains(&disc) {
+                m.body = Some((0, 0));
+                any = true;
+            }
+        }
+        if any {
+            character.model.body_parts = vec![2];
+        }
+    }
     for w in &body.warnings {
         debug!("halo_ce: {}: {w}", kind.id());
     }

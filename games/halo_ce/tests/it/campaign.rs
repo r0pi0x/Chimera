@@ -99,9 +99,10 @@ fn the_seam_picks_the_kinds_table() {
 fn guns_name_who_carries_them() {
     let data = CampaignData::builtin();
     assert_eq!(data.weights("halo_ce:plasma_rifle"), vec![(BodyKind::Elite, 1.0), (BodyKind::Spartan, 1.0)]);
-    assert_eq!(data.weights("halo_ce:needler"), vec![(BodyKind::Elite, 1.0), (BodyKind::Spartan, 1.0)]);
+    assert_eq!(data.weights("halo_ce:needler"), vec![(BodyKind::Elite, 1.0), (BodyKind::Grunt, 1.0), (BodyKind::Spartan, 1.0)]);
+    assert_eq!(data.weights("halo_ce:plasma_pistol"), vec![(BodyKind::Grunt, 1.0), (BodyKind::Jackal, 1.0), (BodyKind::Spartan, 1.0)]);
     assert_eq!(data.weights("halo_ce:assault_rifle"), vec![(BodyKind::Spartan, 1.0)]);
-    assert!(CampaignData::parse("[guns.\"halo_ce:needler\"]\ngrunt = 1.0\n").is_err(), "an unknown body");
+    assert!(CampaignData::parse("[guns.\"halo_ce:needler\"]\nhunter = 1.0\n").is_err(), "an unknown body");
 }
 
 #[test]
@@ -158,4 +159,33 @@ fn a_worn_body_says_pain_and_death_lines_by_the_rules() {
     assert_eq!(s.line(voice::PAIN_SHIELD), Some("s6"));
     assert_eq!(s.line(voice::DEATH_FALLING), Some("s15"), "death falling, then quiet, then violent");
     assert_eq!(s.line(voice::SCREAM_FEAR), None);
+}
+
+/// The Grunt's and the Jackal's rows: speeds by the blend (92 %, 80.5 %),
+/// pills and cameras (the Grunt's below its head), vitality (the Grunt no
+/// shield and no armour to other games; the Jackal's shield only on its
+/// disc's material, which never hurts the body).
+#[test]
+fn the_grunt_and_the_jackal_tables() {
+    let (_, t) = tables();
+    let base = MovementData::builtin();
+    let near = |a: f32, b: f32| (a - b).abs() < 1e-5;
+    let g = &t.movement[&BodyKind::Grunt];
+    assert!(near(g.run_forward, base.run_forward * 0.92), "{}", g.run_forward);
+    assert_eq!((g.height_stand, g.camera_stand, g.camera_crouch), (0.55, 0.28, 0.28));
+    let j = &t.movement[&BodyKind::Jackal];
+    assert!(near(j.run_forward, base.run_forward * 0.805), "{}", j.run_forward);
+    assert_eq!((j.radius, j.height_crouch), (0.18, 0.45));
+    let gv = &t.vitality[&BodyKind::Grunt];
+    assert_eq!((gv.model.maximum_body, gv.model.maximum_shield), (40.0, 0.0));
+    assert!(!gv.shield_covers_body());
+    assert_eq!(gv.model.materials[gv.material_of(Some(BodyRegion::Head))].name, "head");
+    assert_eq!(gv.model.materials[gv.material_of(Some(BodyRegion::Chest))].body, 0.8);
+    let jv = &t.vitality[&BodyKind::Jackal];
+    assert_eq!((jv.model.maximum_body, jv.model.maximum_shield, jv.shield_delay()), (60.0, 100.0, 450));
+    assert!(!jv.shield_covers_body(), "its shield is the arm's");
+    let disc = &jv.model.materials[jv.material_of(Some(halo_ce::game::body::hits::SHIELD_REGION))];
+    assert_eq!((disc.name.as_str(), disc.shield, disc.body), ("shield", 1.0, 0.0));
+    assert_eq!(jv.model.materials[jv.material_of(Some(BodyRegion::Chest))].leak, 1.0);
+    assert!(Spartan::load().shield_covers_body());
 }

@@ -20,6 +20,11 @@ speed_blend = 0.5
 # listed is the Spartan's alone. With `halo_ce:campaign_bodies` on, a
 # player given a Halo rung draws its body by these weights (the Spartan's
 # included); a body whose unit is not here is skipped (the Spartan then).
+# Of Ultimate Gun Game's Halo rungs (the assault rifle, pistol, plasma
+# rifle, shotgun, sniper rifle, rocket launcher, needler and plasma
+# pistol), the campaign gives (section 2, "Character by multiplayer
+# weapon", "game") the Elite the plasma rifle and the needler, the Grunt
+# the needler and the plasma pistol, the Jackal the plasma pistol.
 [guns."halo_ce:plasma_rifle"]
 spartan = 1.0
 elite = 1.0
@@ -27,6 +32,12 @@ elite = 1.0
 [guns."halo_ce:needler"]
 spartan = 1.0
 elite = 1.0
+grunt = 1.0
+
+[guns."halo_ce:plasma_pistol"]
+spartan = 1.0
+grunt = 1.0
+jackal = 1.0
 
 # Each character: its biped tag, the campaign map its unit is cut from
 # (section 8: the smallest holding it), and what differs from the
@@ -114,3 +125,136 @@ other = 2
 [bodies.elite.vitality.unit]
 hard_ping_threshold = 0.3
 soft_ping_interrupt_time = 0.5
+
+# The Grunt (`characters\grunt\grunt`, the minor and major body): 84 % of
+# the Spartan's moving speed (0.0628 against 0.075 WU/t), so 92 % with the
+# blend; its pill 0.55 / 0.45 WU, radius 0.2, and its camera at its chest,
+# 0.28 standing and crouched (section 3: below its head, kept); orange
+# armour through change colour A (section 1, "The Elite's colours": the
+# tag's own A, (0.863, 0.502, 0.173) to (0.824, 0.443, 0.157); the
+# lower bound for a player given none).
+[bodies.grunt]
+biped = 'characters\grunt\grunt'
+donor_map = "d20"
+speed_ratio = 0.84
+colour_slot = "A"
+uncoloured = [0.863, 0.502, 0.173]
+
+[bodies.grunt.movement]
+height_stand = 0.55
+height_crouch = 0.45
+radius = 0.2
+camera_stand = 0.28
+camera_crouch = 0.28
+
+# Its pistol class's moves (section 4, "The numbers"): front 0.0628 WU/t,
+# back 0.0325, sides 0.0400; crouched 0.0087, the standing back-step
+# 0.0325, 0.0111.
+[bodies.grunt.animation]
+front = 1.884
+back = 0.975
+side = 1.2
+crouch_front = 0.261
+crouch_back = 0.975
+crouch_side = 0.333
+
+# 40 body, no shield (section 5); materials head (head), body (x0.8),
+# armor, the indirect one armor.
+[bodies.grunt.vitality.model]
+tag = 'characters\grunt\grunt'
+maximum_body = 40.0
+maximum_shield = 0.0
+shield_material_type = 11
+indirect_material = 2
+materials = [
+    { name = "head", head = true, type = 11, leak = 0.0, shield = 0.0, body = 1.0 },
+    { name = "body", head = false, type = 11, leak = 0.0, shield = 0.0, body = 0.8 },
+    { name = "armor", head = false, type = 11, leak = 0.0, shield = 0.0, body = 1.0 },
+]
+regions = [
+    { name = "perm arms and legs", flags = 0, threshold = 0.0 },
+    { name = "perm head and back", flags = 0, threshold = 0.0 },
+]
+
+[bodies.grunt.vitality.regions]
+head = 0
+legs = 1
+other = 1
+
+# Section 5 rule 7: hard ping threshold 0.25 (0.2 s).
+[bodies.grunt.vitality.unit]
+hard_ping_threshold = 0.25
+soft_ping_interrupt_time = 0.2
+
+# The Jackal (`characters\jackal\jackal`, the minor's body): 61 % of the
+# Spartan's moving speed (0.0458 against 0.075), so 80.5 % with the blend;
+# its pill 0.6 / 0.45, radius 0.18, camera 0.6 / 0.3; blue grey armour
+# through A ((0.259, 0.373, 0.490) to (0.267, 0.353, 0.482)). Its arm
+# shield (section 2 rule 7): the meshes of its shield disc, drawn while
+# the shield is up (`shield_disc`: the disc's shader's name holds it).
+[bodies.jackal]
+biped = 'characters\jackal\jackal'
+donor_map = "d20"
+speed_ratio = 0.61
+colour_slot = "A"
+uncoloured = [0.259, 0.373, 0.490]
+shield_disc = "shield"
+
+[bodies.jackal.movement]
+height_stand = 0.6
+height_crouch = 0.45
+radius = 0.18
+camera_stand = 0.6
+camera_crouch = 0.3
+
+# Its pistol class's moves: front 0.0458, back 0.0375, sides 0.0333;
+# crouched 0.0139, 0.0119, 0.0133.
+[bodies.jackal.animation]
+front = 1.374
+back = 1.125
+side = 0.999
+crouch_front = 0.417
+crouch_back = 0.357
+crouch_side = 0.399
+
+# 60 body and a 100-point shield of type 16 that only the `shield`
+# material takes (every other material leaks all of a hit to the body
+# with shield x0; the shield's own takes it all with body x0); 15 s
+# before it returns, at once (recharge time 0: velocity 1).
+[bodies.jackal.vitality.model]
+tag = 'characters\jackal\jackal'
+maximum_body = 60.0
+maximum_shield = 100.0
+shield_material_type = 16
+stun_time = 15.0
+recharge_time = 0.0
+recharge_velocity = 1.0
+indirect_material = 0
+materials = [
+    { name = "unarmored", head = false, type = 15, leak = 1.0, shield = 0.0, body = 1.0 },
+    { name = "head", head = true, type = 15, leak = 1.0, shield = 0.0, body = 1.0 },
+    { name = "armored", head = false, type = 15, leak = 1.0, shield = 0.0, body = 1.0 },
+    { name = "shield", head = false, type = 16, leak = 0.0, shield = 1.0, body = 0.0 },
+]
+regions = [
+    { name = "arms", flags = 0, threshold = 0.0 },
+    { name = "head", flags = 0, threshold = 0.0 },
+    { name = "legs", flags = 0, threshold = 0.0 },
+    { name = "shield", flags = 16, threshold = 0.0 },
+    { name = "torso", flags = 0, threshold = 0.0 },
+]
+
+# Head; the disc's node (`frame shield`, the hit box `body::hits` gives
+# the region `Groin`) the shield; the arms and legs armored; the rest
+# unarmored.
+[bodies.jackal.vitality.regions]
+head = 1
+legs = 2
+arms = 2
+other = 0
+shield = 3
+
+# Section 5 rule 7: hard ping threshold 0.2.
+[bodies.jackal.vitality.unit]
+hard_ping_threshold = 0.2
+

@@ -2,7 +2,12 @@
 //! (specs/halo_ce/characters.md; docs/plans/active/halo-ce.md, "Play as
 //! the campaign's characters"). Party apps only (`game::BUNDLE`'s `sim`
 //! adds `CampaignPlugin`): Halo's own app never offers these bodies. The
-//! first character is the Elite.
+//! characters: the Elite, the Grunt (its camera at its chest, 0.28 WU, as
+//! the game has it; 40 body, no shield) and the Jackal (60 body; its 100
+//! shield is the disc on its arm: `shield_disc` hides the disc while it is
+//! down and `shield_boxes` shrinks its hit box to the emitter, so shots
+//! pass where it was; the disc's hits go to the shield material through
+//! `body::hits::SHIELD_REGION`).
 //!
 //! - **The body kind** (`BodyKind`: Spartan, Elite; a component on the
 //!   player, replicated to every client, net part `halo_ce_bodies`). Each
@@ -106,16 +111,20 @@ pub enum BodyKind {
     #[default]
     Spartan,
     Elite,
+    Grunt,
+    Jackal,
 }
 
 impl BodyKind {
-    pub const ALL: [BodyKind; 2] = [BodyKind::Spartan, BodyKind::Elite];
+    pub const ALL: [BodyKind; 4] = [BodyKind::Spartan, BodyKind::Elite, BodyKind::Grunt, BodyKind::Jackal];
 
     /// Its id in data/campaign.toml and the commands.
     pub fn id(self) -> &'static str {
         match self {
             BodyKind::Spartan => "spartan",
             BodyKind::Elite => "elite",
+            BodyKind::Grunt => "grunt",
+            BodyKind::Jackal => "jackal",
         }
     }
 
@@ -157,6 +166,11 @@ pub struct BodyDef {
     /// Its colour for a player given none (linear RGB 0..1).
     #[serde(default)]
     pub uncoloured: Option<[f32; 3]>,
+    /// An arm shield's disc (the Jackal's): the text its meshes' shader
+    /// names hold; drawn only while the shield is up, and its hit box
+    /// shrinks to the emitter while it is down (`shield_disc`).
+    #[serde(default)]
+    pub shield_disc: Option<String>,
 }
 
 impl BodyDef {
@@ -556,6 +570,43 @@ fn body_command(world: &mut World, a: &[String]) -> Result<Option<String>, Strin
     Ok(Some(format!("{} player(s): {}", who.len(), forced.map_or("drawn", |k| k.id()))))
 }
 
+/// Every machine: an arm shield's disc (`BodyDef::shield_disc`) drawn
+/// while its shield is up, hidden while it is down (characters.md section
+/// 2 rule 7: depleted, the region's permutation 1; back to 0 when the
+/// recharge begins, which for the Jackal fills it at once).
+pub fn shield_disc(
+    q: Query<(Entity, &BodyKind, &super::vitality::Vitality, Option<&crate::map::BodyNumber>)>,
+    data: Res<CampaignData>,
+    mut commands: Commands,
+) {
+    for (e, kind, v, number) in &q {
+        if data.body(*kind).is_none_or(|d| d.shield_disc.is_none()) {
+            continue;
+        }
+        let want = crate::map::BodyNumber(i32::from(v.shield <= 0.0));
+        if number != Some(&want) {
+            commands.entity(e).insert(want);
+        }
+    }
+}
+
+/// Half the size of an arm shield's emitter, metres (characters.md section
+/// 2 rule 7: `~shield_off`'s BSP, 0.04 x 0.06 x 0.09 WU).
+pub const EMITTER_HALF: Vec3 = Vec3::new(0.02 * 3.048, 0.03 * 3.048, 0.045 * 3.048);
+
+/// After the hit boxes are posed: while an arm shield is down its node's
+/// box is the emitter alone (shots pass where the disc was).
+pub fn shield_boxes(mut q: Query<(&BodyKind, &super::vitality::Vitality, &mut crate::core::Hitboxes)>, data: Res<CampaignData>) {
+    for (kind, v, mut boxes) in &mut q {
+        if v.shield > 0.0 || data.body(*kind).is_none_or(|d| d.shield_disc.is_none()) {
+            continue;
+        }
+        for h in boxes.0.iter_mut().filter(|h| h.region == super::body::hits::SHIELD_REGION) {
+            h.half = h.half.min(EMITTER_HALF);
+        }
+    }
+}
+
 /// The kinds' replication (net part `halo_ce_bodies`).
 pub fn register(app: &mut App) {
     use bevy_replicon::prelude::AppRuleExt;
@@ -578,7 +629,9 @@ impl Plugin for CampaignPlugin {
             .init_resource::<UnitsOnDemand>()
             .add_observer(arrive)
             .init_resource::<voice::CampaignSounds>()
-            .add_systems(Update, (unit::load_on_demand, name_bodies, voice::join_banks))
+            .add_systems(Update, (unit::load_on_demand, name_bodies, voice::join_banks, shield_disc))
+            .add_systems(FixedUpdate, shield_boxes.after(crate::map::pose_hitboxes).before(crate::core::SimSet::Movement))
+            .add_systems(FixedLast, shield_boxes.after(crate::map::SimPose))
             .add_systems(
                 FixedUpdate,
                 voice::speak

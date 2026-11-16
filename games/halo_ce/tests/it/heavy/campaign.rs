@@ -144,3 +144,47 @@ fn the_feet_meet_the_ground() {
         }
     }
 }
+
+/// The Grunt and the Jackal cut from d20 (characters.md section 8: 169
+/// tags, 12 153 628 bytes; 173 tags, 8 546 222 bytes), their bodies
+/// loading with a head box and, the Jackal's, its disc as a body part and
+/// a shield box; their own footsteps and lines.
+#[test]
+fn the_grunt_and_the_jackal_are_cut_and_load() {
+    let Some(mount) = mount() else { return };
+    let data = CampaignData::builtin();
+    let d20 = mount.read(&maps::map_path("d20")).unwrap();
+    for (kind, tags, bytes) in [(BodyKind::Grunt, 169, 12_153_628), (BodyKind::Jackal, 173, 8_546_222)] {
+        let def = data.body(kind).unwrap();
+        let c = unit::convert(kind.id(), def, &d20).unwrap();
+        assert_eq!(c.body_unit.tags.len() + c.voice_unit.tags.len(), tags, "{kind:?}");
+        assert_eq!(c.body_unit.total() + c.voice_unit.total(), bytes, "{kind:?}");
+        let file = MapFile::load(&c.body).unwrap();
+        let body = load::biped_body(&file, &def.biped, false, def.tint()).unwrap();
+        let m = &body.character;
+        let heads = m.hitboxes.iter().filter(|h| h.region == chimera_core::core::BodyRegion::Head).count();
+        let shields = m.hitboxes.iter().filter(|h| h.region == halo_ce::game::body::hits::SHIELD_REGION).count();
+        let sounds = halo_ce::game::campaign::voice::compile(def, &file, Some(&MapFile::load(&c.voice).unwrap()));
+        let set = m.animations.as_ref().unwrap();
+        let label = if kind == BodyKind::Grunt { "ne" } else { "pp" };
+        for state in ["idle", "move-front", "move-back", "move-left"] {
+            assert!(set.names.contains_key(&key("stand", label, state)), "{kind:?} {state}");
+        }
+        let discs: Vec<&str> = m.model.meshes.iter().map(|x| x.material.as_str()).filter(|x| x.contains("shield")).collect();
+        eprintln!(
+            "{kind:?}: body {} tags (file {} bytes), voice {} tags (file {} bytes); {} hit boxes, {heads} head, {shields} shield;              footstep kinds {}, lines {}; meshes {:?}",
+            c.body_unit.tags.len(),
+            c.body.len(),
+            c.voice_unit.tags.len(),
+            c.voice.len(),
+            m.hitboxes.len(),
+            sounds.set.library.footsteps.len(),
+            sounds.filled(),
+            discs,
+        );
+        assert_eq!(heads, 1, "{kind:?}");
+        assert_eq!(shields, usize::from(kind == BodyKind::Jackal), "{kind:?}");
+        assert!(kind != BodyKind::Jackal || !discs.is_empty(), "the Jackal's disc meshes");
+        assert!(sounds.filled() >= 6, "{kind:?} lines {:?}", sounds.lines);
+    }
+}
