@@ -1,6 +1,9 @@
 //! Combat Arms' thrown weapons (specs/combat_arms/grenades.md): the frag
 //! (M67), flash (XM84), smoke (M18), incendiary (M-23F) and nerve gas
 //! (G7A) grenades, on Chimera's thrown-weapon framework (`weapon::grenade`).
+//! Each blast on bodies (`blast_bodies`: the frag's, a launcher's, a
+//! device's) is told once as `weapon::grenade::BlastDealt` (inner a quarter
+//! of the radius, `falloff`; outer the radius).
 //!
 //! The weapons are data (data/weapons/m67.toml and the others, the
 //! `combat_arms:grenade` hook: `GrenadeParams`), built as Chimera's
@@ -901,6 +904,7 @@ impl Plugin for CaGrenadesPlugin {
             .insert_resource(CaGrenadeSurfaces::built_in())
             .add_message::<Detonated>()
             .add_message::<CaBlastSurface>()
+            .add_message::<crate::weapon::grenade::BlastDealt>()
             .add_message::<Damage>()
             .add_message::<Died>()
             .add_message::<callout::CaThrowCallout>()
@@ -1407,6 +1411,7 @@ pub(crate) struct Out<'w, 's> {
     /// A broken thing's kill-feed line (special weapons' turrets).
     pub(crate) destroyed: MessageWriter<'w, crate::core::Destroyed>,
     pub(crate) blast_surface: MessageWriter<'w, CaBlastSurface>,
+    pub(crate) dealt: MessageWriter<'w, crate::weapon::grenade::BlastDealt>,
     pub(crate) rules: DamageRules<'w, 's>,
     pub(crate) armour: Query<'w, 's, (&'static mut crate::weapon::Armor, Option<&'static crate::weapon::ArmorPieces>)>,
     pub(crate) effects: ResMut<'w, CaGrenadeEffects>,
@@ -1976,6 +1981,7 @@ pub(crate) fn blast_bodies(
     out: &mut Out,
 ) {
     let (unit, hp) = (a.unit, a.hp);
+    let mut victims: Vec<crate::weapon::grenade::BlastVictim> = Vec::new();
     for b in world.bodies() {
         if box_distance(b.min, b.max, at) > a.radius * unit {
             continue;
@@ -1995,11 +2001,29 @@ pub(crate) fn blast_bodies(
         }
         // Explosion damage through the armour step (no stock gear lists
         // it: whole, armour points untouched).
-        for _ in 0..(if a.twice { 2 } else { 1 }) {
+        let times = if a.twice { 2 } else { 1 };
+        for _ in 0..times {
             let damage = out.armoured(b.entity, a.thrower, n * hp, a.damage_type, hp);
             out.deal(f, b.entity, b.health, damage, DamageKind::Blast, a.thrower, a.weapon, b.centre, hp);
         }
+        victims.push(crate::weapon::grenade::BlastVictim {
+            victim: b.entity,
+            at: b.centre,
+            distance_m: d * unit,
+            damage: n * hp * times as f32,
+        });
     }
+    // Told once (`BlastDealt`): the linear falloff is full within a
+    // quarter of the radius (`falloff`).
+    out.dealt.write(crate::weapon::grenade::BlastDealt {
+        attacker: a.thrower,
+        weapon: Some(a.weapon),
+        at,
+        inner: BLAST_FULL_FRACTION * a.radius * unit,
+        outer: a.radius * unit,
+        max_damage: a.damage * hp,
+        victims,
+    });
 }
 
 /// The blast `a` at `at` (m) on breakables and special weapons' objects:

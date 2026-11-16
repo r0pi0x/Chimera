@@ -1,0 +1,29 @@
+# The sandbox at half speed (`host_timescale 0.5`): two shots at a
+# protected target some wall seconds apart; their `HitMeasured` times
+# (simulation time) are half the wall time between them, which the game
+# log's timestamps show (a scene script: chimera_client's `scene`).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/half_speed.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+setpos 0 -1181 0
+setang 0 90
+rung combat_arms:m4a1
+target add combat_arms:m4a1 8 protect
+wait 200
+target look 1
+host_timescale 0.5
+wait 60
++attack
+wait 6
+-attack
+wait_for hit 300
+wait 300
++attack
+wait 6
+-attack
+wait_for hit 300
+shot half_speed
+host_timescale 1
+wait 30

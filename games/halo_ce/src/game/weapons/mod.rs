@@ -406,6 +406,7 @@ impl Plugin for HaloWeaponsPlugin {
             .add_message::<systems::HaloDetonation>()
             .add_message::<systems::HaloStuck>()
             .add_message::<systems::HaloPush>()
+            .add_message::<chimera_sim::weapon::grenade::BlastDealt>()
             .add_message::<pickups::HaloTaken>()
             .add_systems(Predict::Weapons, systems::run.before(WeaponFrame))
             .add_systems(

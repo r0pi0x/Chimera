@@ -306,9 +306,14 @@ the user's go-ahead: no Actions runs unless asked.
     game's body at a distance on the floor, still, strafing or walking,
     firing back or not, protected or not, respawning at home; the facts
     `HitMeasured` and `KillMeasured` (damage, hit group, distance, shots,
-    hits, time to kill). Next: their screens (the party UI); a gun and
-    rung picker menu; a time scale; props (bottle, can, a board with the
-    shot group), blast measurement, a half-speed condition; a firing range
+    hits, time to kill). Since (2026-11-16): `BlastMeasured` (every blast
+    while the sandbox plays, from each game's own blast code through
+    `weapon::grenade::BlastDealt`; TF2's own blast still to write it),
+    props (`prop add bottles|tin_cans|target_board`: `SpawnProp`,
+    `RemoveProp`, `ClearProps`, `ResetProp`, `Prop`, `PropHit`,
+    `ShotGroup`), targets silent in chat, and half speed is
+    `host_timescale 0.5` (measurements in simulation time). Next: their
+    screens (the party UI); a gun and rung picker menu; a firing range
     layout with 100 and 200 m of floor; saving a loadout of guns to cycle;
     picking a rung character (Combat Arms' turret) instead of the draw's;
     bots out of Combat Arms' crate behind game-neutral interfaces (targets

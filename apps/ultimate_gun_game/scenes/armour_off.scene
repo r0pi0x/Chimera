@@ -1,0 +1,39 @@
+# `armored` off on a Halo, a Combat Arms and a CS:S body: no second bar
+# (`TargetVitals` and `target list` read 0) and health damage from the
+# first hit (its `HitMeasured` line: health falls, shield 0 -> 0), one
+# rifle shot each (a scene script: chimera_client's `scene`).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox cs_source:de_dust2 \
+#       --scene apps/ultimate_gun_game/scenes/armour_off.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+rung combat_arms:m4a1
+setang 0 8
+target add halo_ce:spartan 8 noarmor
+setang 0 0
+target add combat_arms:m4a1 8 noarmor
+setang 0 -8
+target add cs_source:weapon_ak47 8 noarmor
+wait 240
+target list
+target look 2
+shot armour_off_before
+target look 1
++attack
+wait 2
+-attack
+wait 30
+target look 2
++attack
+wait 2
+-attack
+wait 30
+target look 3
++attack
+wait 2
+-attack
+wait 30
+target look 2
+shot armour_off_after
+target list
+wait 30

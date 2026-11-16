@@ -237,6 +237,9 @@ impl MapLayers for Present {
                     render::loose::draw_loose,
                 )
                     .run_if(resource_exists::<render::bodies::PlayModels>),
+                // Code-built shapes (the sandbox's props), on any map.
+                render::shapes::draw_shapes
+                    .run_if(resource_exists::<Assets<Mesh>>.and_then(resource_exists::<Assets<StandardMaterial>>)),
                 // View models added with no map spawned (the greybox) get
                 // drawing assets of their own first.
                 render::view_model::assets_without_map

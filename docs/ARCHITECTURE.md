@@ -778,7 +778,9 @@ builds a mesh or material. A character's team, `BodyName` and class pick
 its body, `Held` names what it holds, a `Ragdoll` takes the dead's body
 over, `LooseItem`/`ShownItem` name a held model to lie or move as;
 a gib carries its `GibLook` (which model of which gib list, skin, glass,
-fade distances) and a window its `BrushPanes`; render's systems react to
+fade distances) and a window its `BrushPanes`, a code-built shape its
+`map::shapes::CodeShape` (a box or a cylinder of a colour: the sandbox's
+props); render's systems react to
 them (added, changed, removed, without their drawn marker). Without `render` (a dedicated server) the requests stay
 unfulfilled and the simulation's parts (bodies, colliders) work alone
 (`games/cs_source/tests/it/drawn_parts.rs`).
