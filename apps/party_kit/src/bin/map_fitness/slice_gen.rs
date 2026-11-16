@@ -28,7 +28,7 @@
 //!   walkable floor is open wall (`open_m`; a player meets an invisible
 //!   wall in the field), one with a roof over it or a floor above another
 //!   cuts a building (`indoor_m`: refused over 1 m: never through a door or
-//!   a stair).
+//!   a stair; a floor over another, `stacked_m`, is told).
 //! - Measuring (`measure`): the A3 measures inside the polygon
 //!   (`slice_safety`), the line of sight stopped by the polygon (the wall is
 //!   solid), on the spawn points the slice would have: the map's inside,
@@ -65,6 +65,9 @@ pub struct Cell {
     pub min: Vec2,
     pub max: Vec2,
     pub y: f32,
+    /// Heights at (min.x, min.z), (max.x, min.z), (max.x, max.z), (min.x,
+    /// max.z), as `NavArea`'s.
+    pub heights: [f32; 4],
 }
 
 impl Cell {
@@ -79,6 +82,20 @@ impl Cell {
         let c = self.centre();
         Vec3::new(c.x, self.y, c.y)
     }
+    /// The floor's height at `p` (bilinear over the corners).
+    pub fn height_at(&self, p: Vec2) -> f32 {
+        let size = self.max - self.min;
+        if size.x <= 0.0 || size.y <= 0.0 {
+            return self.y;
+        }
+        let u = ((p.x - self.min.x) / size.x).clamp(0.0, 1.0);
+        let v = ((p.y - self.min.y) / size.y).clamp(0.0, 1.0);
+        let [a, b, c, d] = self.heights;
+        let near = a + u * (b - a);
+        let far = d + u * (c - d);
+        near + v * (far - near)
+    }
+
     pub fn contains(&self, p: Vec2) -> bool {
         p.x >= self.min.x - 0.01 && p.x <= self.max.x + 0.01 && p.y >= self.min.y - 0.01 && p.y <= self.max.y + 0.01
     }
@@ -89,6 +106,13 @@ impl Cell {
 pub struct Graph {
     pub cells: Vec<Cell>,
     pub links: Vec<Vec<(usize, f32)>>,
+    /// Each cell's walking cost per metre (1 by default; the tool makes
+    /// open ground dearer, so a region fills the sheltered floor first).
+    pub cost: Vec<f32>,
+    /// Each cell's price for a cut through it, times the side's width (1 by
+    /// default; the tool makes a roofed cell, a tunnel or a doorway, dear,
+    /// so a wall stands there only if nothing else will do).
+    pub cut_price: Vec<f32>,
 }
 
 /// The width (m) two touching rectangles share; a corner or an overlap (a
@@ -124,6 +148,7 @@ impl Graph {
                     min: a.min,
                     max: a.max,
                     y: a.height_at(c.x, c.y),
+                    heights: a.heights,
                 }
             })
             .collect();
@@ -139,7 +164,9 @@ impl Graph {
                     .collect()
             })
             .collect();
-        Self { cells, links }
+        let cost = vec![1.0; cells.len()];
+        let cut_price = cost.clone();
+        Self { cells, links, cost, cut_price }
     }
 
     /// A toy map drawn in text: each `.` (or a digit, a room's mark) a
@@ -158,6 +185,7 @@ impl Graph {
                         min,
                         max: min + Vec2::splat(size),
                         y: 0.0,
+                        heights: [0.0; 4],
                     });
                 }
             }
@@ -170,7 +198,9 @@ impl Graph {
                 }
             }
         }
-        Self { cells, links }
+        let cost = vec![1.0; cells.len()];
+        let cut_price = cost.clone();
+        Self { cells, links, cost, cut_price }
     }
 
     pub fn len(&self) -> usize {
@@ -193,7 +223,7 @@ impl Graph {
             }
             let p = self.cells[i].floor();
             for (j, _) in &self.links[i] {
-                let next = at + p.distance(self.cells[*j].floor());
+                let next = at + p.distance(self.cells[*j].floor()) * (self.cost[i] + self.cost[*j]) / 2.0;
                 if next < d[*j] {
                     d[*j] = next;
                     heap.push(Item(next, *j));
@@ -369,7 +399,7 @@ pub fn grow(g: &Graph, seed: usize, target: f32) -> Option<Grown> {
             if from == s && to == t {
                 continue;
             }
-            net.add(from, to, *w as f64);
+            net.add(from, to, (*w * g.cut_price[i].max(g.cut_price[*j])) as f64);
         }
     }
     let cut = net.max_flow(s, t);
@@ -487,6 +517,10 @@ impl Dinic {
 /// Raster step of the outline (m) and the closing radius (cells).
 const RES: f32 = 0.5;
 const CLOSE: i64 = 4;
+/// Then grown by this (cells, 1.5 m) before it is simplified, so the
+/// simplification's inward cuts stay out of the region (the plan's
+/// "only ever outward", roughly).
+const MARGIN: i64 = 3;
 
 /// The region's outline as a simple polygon (module doc), at most
 /// `max_corners` corners; None when no tolerance up to 12 m gives one.
@@ -499,7 +533,7 @@ pub fn outline(g: &Graph, region: &[bool], max_corners: usize) -> Option<Vec<Vec
     if lo.x > hi.x {
         return None;
     }
-    let pad = (CLOSE + 2) as f32 * RES;
+    let pad = (CLOSE + MARGIN + 2) as f32 * RES;
     lo -= Vec2::splat(pad);
     hi += Vec2::splat(pad);
     let w = ((hi.x - lo.x) / RES).ceil() as i64;
@@ -518,12 +552,12 @@ pub fn outline(g: &Graph, region: &[bool], max_corners: usize) -> Option<Vec<Vec
         }
     }
     // Close: dilate then erode (square kernel, separable).
-    let morph = |img: &[bool], grow: bool| -> Vec<bool> {
+    let morph = |img: &[bool], grow: bool, r: i64| -> Vec<bool> {
         let mut a = vec![!grow; img.len()];
         for z in 0..h {
             for x in 0..w {
-                let lo_x = (x - CLOSE).max(0);
-                let hi_x = (x + CLOSE).min(w - 1);
+                let lo_x = (x - r).max(0);
+                let hi_x = (x + r).min(w - 1);
                 let v = (lo_x..=hi_x).map(|k| img[idx(k, z)]);
                 a[idx(x, z)] = if grow { v.into_iter().any(|b| b) } else { v.into_iter().all(|b| b) };
             }
@@ -531,15 +565,15 @@ pub fn outline(g: &Graph, region: &[bool], max_corners: usize) -> Option<Vec<Vec
         let mut b = vec![!grow; img.len()];
         for z in 0..h {
             for x in 0..w {
-                let lo_z = (z - CLOSE).max(0);
-                let hi_z = (z + CLOSE).min(h - 1);
+                let lo_z = (z - r).max(0);
+                let hi_z = (z + r).min(h - 1);
                 let v = (lo_z..=hi_z).map(|k| a[idx(x, k)]);
                 b[idx(x, z)] = if grow { v.into_iter().any(|b| b) } else { v.into_iter().all(|b| b) };
             }
         }
         b
     };
-    let img = morph(&morph(&img, true), false);
+    let img = morph(&morph(&morph(&img, true, CLOSE), false, CLOSE), true, MARGIN);
     // Largest 4-connected piece.
     let mut label = vec![0u32; img.len()];
     let mut best = (0usize, 0u32);
@@ -734,8 +768,13 @@ pub struct Wall {
     pub open_m: f32,
     pub along_m: f32,
     pub indoor_m: f32,
+    /// Where it stands over a floor above another (a ledge over the ground,
+    /// a bridge): told, not refused.
+    pub stacked_m: f32,
     /// Where it is open (sampled every 0.5 m).
     pub open_at: Vec<Vec2>,
+    /// Where it stands under a roof.
+    pub roofed_at: Vec<Vec2>,
 }
 
 impl Wall {
@@ -760,11 +799,17 @@ pub fn wall(g: &Graph, index: &CellIndex, poly: &PlanPolygon, ray: &impl Fn(Vec3
             }
             w.open_m += step;
             w.open_at.push(p);
-            let lo = under.iter().map(|i| g.cells[*i].y).fold(f32::MAX, f32::min);
-            let hi = under.iter().map(|i| g.cells[*i].y).fold(f32::MIN, f32::max);
-            let roofed = under.iter().any(|i| ray(Vec3::new(p.x, g.cells[*i].y + 0.3, p.y), Vec3::Y, 6.0).is_some());
-            if hi - lo > 2.5 || roofed {
+            let lo = under.iter().map(|i| g.cells[*i].height_at(p)).fold(f32::MAX, f32::min);
+            let hi = under.iter().map(|i| g.cells[*i].height_at(p)).fold(f32::MIN, f32::max);
+            // A roof over a floor: from 1 m over it (a slope's own ground
+            // never counts), 5 m up.
+            let roofed = under.iter().any(|i| ray(Vec3::new(p.x, g.cells[*i].height_at(p) + 1.0, p.y), Vec3::Y, 5.0).is_some());
+            if roofed {
                 w.indoor_m += step;
+                w.roofed_at.push(p);
+            }
+            if hi - lo > 2.5 {
+                w.stacked_m += step;
             }
         }
     }
@@ -820,6 +865,9 @@ pub struct Input<'a, S, R> {
 #[derive(Clone, Copy, Debug)]
 pub struct Settings {
     pub seeds: usize,
+    /// The target areas tried, as shares of the band's (a smaller slice
+    /// meets sooner, which the pool still takes).
+    pub scales: &'static [f32],
     pub table: usize,
     pub max_corners: usize,
     /// Least `area / convex hull area` (decision 5: not so concave that its
@@ -830,7 +878,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            seeds: 24,
+            seeds: 40,
+            scales: &[1.0, 0.65, 0.4],
             table: 800,
             max_corners: 16,
             solidity_min: 0.6,
@@ -918,15 +967,23 @@ where
     let g = input.graph;
     let seeds = pick_seeds(g, input.score, input.must, settings.seeds);
     let mut shapes: Vec<(usize, usize, Grown, PlanPolygon, Vec<bool>, f32)> = Vec::new();
-    for (no, seed) in seeds.iter().enumerate() {
-        let Some(mut grown) = grow(g, *seed, band.target(input.sight_m, fit)) else { continue };
+    let tries: Vec<(usize, usize, f32)> = settings
+        .scales
+        .iter()
+        .enumerate()
+        .flat_map(|(k, sc)| seeds.iter().enumerate().map(move |(n, s)| (k, n, *s, *sc)))
+        .map(|(k, n, s, sc)| (k * seeds.len() + n, s, sc))
+        .collect();
+    for (no, seed, scale) in tries {
+        let seed = &seed;
+        let Some(mut grown) = grow(g, *seed, scale * band.target(input.sight_m, fit)) else { continue };
         let Some(mut pts) = outline(g, &grown.region, settings.max_corners) else { continue };
         // Again at the first cut's own sight.
         if let Ok(poly) = PlanPolygon::new(&pts) {
             let inside: Vec<Vec3> = input.spots.iter().copied().filter(|s| poly.contains3(*s)).collect();
             let sight = sight_in(&inside, &poly, &input.ray, fit.sight_cap_m);
             if sight > 1.0 && (sight - input.sight_m).abs() > 0.1 * input.sight_m {
-                if let Some(g2) = grow(g, *seed, band.target(sight, fit))
+                if let Some(g2) = grow(g, *seed, scale * band.target(sight, fit))
                     && let Some(p2) = outline(g, &g2.region, settings.max_corners)
                 {
                     grown = g2;
@@ -1039,11 +1096,12 @@ where
     let vertical_m = q(0.95) - q(0.05);
     let mut fails = verdict.failed.clone();
     match verdict.players {
-        Some([lo, hi]) if lo > band.lo || hi < band.hi => fails.push(format!("suits {lo}-{hi}, not the whole band {}", band.label())),
+        // At least two counts of the band.
+        Some([lo, hi]) if hi.min(band.hi) < lo.max(band.lo) + 1 => fails.push(format!("suits {lo}-{hi}, under two counts of the band {}", band.label())),
         _ => {}
     }
     if wall.indoor_m > 1.0 {
-        fails.push(format!("the wall cuts a building or a floor over another for {:.1} m", wall.indoor_m));
+        fails.push(format!("the wall cuts under a roof for {:.1} m (a building, a doorway)", wall.indoor_m));
     }
     if solidity < settings.solidity_min {
         fails.push(format!("solidity {solidity:.2} under {:.2} (too concave: its wall hides a part)", settings.solidity_min));

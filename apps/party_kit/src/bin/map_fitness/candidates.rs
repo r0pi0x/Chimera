@@ -8,8 +8,8 @@
 //! `--pick <n>` writes candidate n into `games/<game>/data/arena_slices.toml`
 //! under `--repo` (an entry of the same map and id replaced). The name is
 //! made from a compass word (where the slice lies on the map) and what it
-//! holds (a base: four spawn points of the map or more; heights: 8 m of
-//! floors or more; else a hollow).
+//! holds (caves: a roof over 30% of its floor; a base: four spawn points of
+//! the map or more; heights: 8 m of floors or more; else a hollow).
 //!
 //! Known shortcuts: the names don't read the map's named places (no map
 //! the generator serves has any); `--remeasure` is not built (`--slice`
@@ -34,7 +34,7 @@ pub(super) fn run(w: &mut World, o: &Opts, co: &CandOpts, c: &safety::SafetyInpu
     let fit = FitSettings::shipped();
     let (game, map) = c.id.split_once(':').unwrap_or(("", c.id));
     let t0 = Instant::now();
-    let graph = Graph::from_nav(c.nav, c.ids);
+    let mut graph = Graph::from_nav(c.nav, c.ids);
     let index = CellIndex::new(&graph);
     let mut state = SystemState::<SpatialQuery>::new(w);
     let q = state.get(w).expect("the spatial query");
@@ -57,6 +57,26 @@ pub(super) fn run(w: &mut World, o: &Opts, co: &CandOpts, c: &safety::SafetyInpu
                 / 8.0
         })
         .collect();
+    // Growth's cost: open ground (8 level rays' mean length to 40 m, over
+    // 40) up to 5 times a sheltered floor's.
+    graph.cost = graph
+        .cells
+        .iter()
+        .map(|cell| {
+            let eye = cell.floor() + Vec3::Y * 1.6;
+            let open: f32 = (0..8)
+                .map(|k| {
+                    let t = k as f32 * std::f32::consts::TAU / 8.0;
+                    ray(eye, Vec3::new(t.cos(), 0.0, t.sin()), 40.0).unwrap_or(40.0)
+                })
+                .sum::<f32>()
+                / (8.0 * 40.0);
+            1.0 + 4.0 * open
+        })
+        .collect();
+    // A roof over a cell (from 1 m over its floor, 5 m up): a cut there
+    // costs ten times its width.
+    graph.cut_price = graph.cells.iter().map(|cell| if ray(cell.floor() + Vec3::Y, Vec3::Y, 5.0).is_some() { 10.0 } else { 1.0 }).collect();
     // The spawn clusters' middles (points within 25 m of each other).
     let mut clusters: Vec<Vec<Vec3>> = Vec::new();
     for f in c.feet {
@@ -98,7 +118,7 @@ pub(super) fn run(w: &mut World, o: &Opts, co: &CandOpts, c: &safety::SafetyInpu
     let _ = fs::create_dir_all(&dir);
     let mut taken: Vec<String> = existing_names(&existing, map);
     let mut number = 0usize;
-    let mut csv = String::from("n,band,id,name,passes,area_m2,sight_m,spots,spot_seen_by,floor_sees_point,see_pairs,seen_2,seen_4,seen_8,cover,long_sight_p95_m,point_floor_seen,point_seen_by,points,made,wall_m,open_m,indoor_m,corners,solidity,cut_area_m2,cut_m,suits,fails\n");
+    let mut csv = String::from("n,band,id,name,passes,area_m2,sight_m,spots,spot_seen_by,floor_sees_point,see_pairs,seen_2,seen_4,seen_8,cover,long_sight_p95_m,point_floor_seen,point_seen_by,points,made,wall_m,open_m,indoor_m,stacked_m,corners,solidity,cut_area_m2,cut_m,suits,fails\n");
     let mut lines = vec![format!(
         "{}: arena-slice candidates ({} cells, {:.0} m2, {} spawn spots, {} spawn points in {} clusters of 3 or more; seeds' bias {prep_s:.1} s)",
         c.id,
@@ -129,7 +149,10 @@ pub(super) fn run(w: &mut World, o: &Opts, co: &CandOpts, c: &safety::SafetyInpu
             number += 1;
             let centre = cand.poly.points().iter().copied().sum::<Vec2>() / cand.poly.points().len() as f32;
             let base = cand.points.len() >= 5;
-            let what = if base {
+            let roofed: f32 = graph.cells.iter().enumerate().filter(|(i, _)| cand.members[*i] && graph.cut_price[*i] > 1.0).map(|(_, x)| x.area()).sum();
+            let what = if roofed > 0.3 * cand.report.area_m2 {
+                "Caves"
+            } else if base {
                 "Base"
             } else if cand.vertical_m > 8.0 {
                 "Heights"
@@ -174,7 +197,7 @@ pub(super) fn run(w: &mut World, o: &Opts, co: &CandOpts, c: &safety::SafetyInpu
                 if cand.passes() { "PASS".to_string() } else { format!("FAIL: {}", cand.fails.join("; ")) }
             ));
             csv.push_str(&format!(
-                "{number},{},{id},{name},{},{:.0},{:.1},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.1},{:.3},{:.3},{},{},{:.0},{:.0},{:.1},{},{:.2},{:.0},{:.1},{suits},{}\n",
+                "{number},{},{id},{name},{},{:.0},{:.1},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.1},{:.3},{:.3},{},{},{:.0},{:.0},{:.1},{:.1},{},{:.2},{:.0},{:.1},{suits},{}\n",
                 band.label(),
                 cand.passes(),
                 r.area_m2,
@@ -195,6 +218,7 @@ pub(super) fn run(w: &mut World, o: &Opts, co: &CandOpts, c: &safety::SafetyInpu
                 cand.wall.open_m + cand.wall.along_m,
                 cand.wall.open_m,
                 cand.wall.indoor_m,
+                cand.wall.stacked_m,
                 cand.poly.points().len(),
                 cand.solidity,
                 cand.cut_area_m2,
@@ -215,7 +239,7 @@ pub(super) fn run(w: &mut World, o: &Opts, co: &CandOpts, c: &safety::SafetyInpu
                 sight_m: r.sight_m,
                 game_units: c.game_units,
             };
-            safety::top_down(&q, &dir.join(format!("{stem}.png")), &ci, &cand.table, Some(cand.poly), &cand.made, &[], Some(cand.seed), &cand.wall.open_at);
+            safety::top_down(&q, &dir.join(format!("{stem}.png")), &ci, &cand.table, Some(cand.poly), &cand.made, &[], Some(cand.seed), &cand.wall.open_at, &cand.wall.roofed_at);
             if co.pick == Some(number) {
                 picked = Some((cand.clone(), co.id.clone().unwrap_or(id.clone()), co.name.clone().unwrap_or(name.clone())));
             }
