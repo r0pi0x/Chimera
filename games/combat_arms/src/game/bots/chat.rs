@@ -7,7 +7,8 @@
 //! `$Message<set>_<Event>_<0..9>` (the set, 0-2, drawn once per bot), shown
 //! in the chat box for 10 s as "nickname : line" (`CaBotChat`; the front
 //! end resolves the key through the game's string table, `shown_line`:
-//! our own text for a key the table lacks).
+//! our own text for a key the table lacks). A sandbox's practice target
+//! (`core::PracticeTarget`) never shows a line.
 //!
 //! The events: a kill of a **player** by the bot (never of another AI), its
 //! death and its respawn; from the brain (`CaBot::chat`) the start of its
@@ -164,7 +165,7 @@ impl CaChat {
 #[allow(clippy::type_complexity)]
 pub fn chat(
     mut died: MessageReader<Died>,
-    mut bots: Query<(Entity, &mut CaBot, Option<&mut CaChat>, Has<Dead>)>,
+    mut bots: Query<(Entity, &mut CaBot, Option<&mut CaChat>, Has<Dead>, Has<crate::core::PracticeTarget>)>,
     players: Query<(), (With<Intent>, Without<CaBot>, Without<Npc>)>,
     data: Res<BotData>,
     clock: Res<SimClock>,
@@ -184,7 +185,7 @@ pub fn chat(
         }
         events.push((d.entity, Event::Death));
     }
-    for (e, mut bot, chat, dead) in &mut bots {
+    for (e, mut bot, chat, dead, target) in &mut bots {
         let cool = cooldown(&data, &bot);
         let Some(mut chat) = chat else {
             let set = (bot.dice.next_u64() % 3) as u8;
@@ -204,7 +205,11 @@ pub fn chat(
         for ev in own.chain(queued) {
             raised.write(CaBotEvent { bot: e, event: ev });
             let line = bot.dice.int(0, 9);
-            if let Some(key) = chat.event(ev, now, ms, cool, line) {
+            // A sandbox's practice target (`targets::is_target`, the marker
+            // `core::PracticeTarget`) says nothing.
+            if let Some(key) = chat.event(ev, now, ms, cool, line)
+                && !target
+            {
                 out.write(CaBotChat { bot: e, key });
             }
         }
