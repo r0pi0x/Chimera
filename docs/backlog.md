@@ -74,6 +74,11 @@ the user's go-ahead: no Actions runs unless asked.
     - later, an original "Lucker Party" look for the party apps' own characters.
   - **Design first:** the style, polygon budget and colours (the avatar palette), with mockups or a turnaround sheet for the user to approve before modelling.
 
+- **Generated per-asset icons (user, 2026-11-15):** the sandbox's tiles, the target picker, the props and the pinned bar need proper icons per asset (each gun, character and prop), not only the kit's class icons and the games' kill-icon sheets.
+  - Render a thumbnail of each model with a fixed camera, lighting and style (a consistent Signal-style silhouette and a colour shot), as a generated asset made by the ingest pipeline's converters (docs/plans/active/ingest.md), versioned and deterministic.
+  - Served as an `optional` edge, so the kit's icon shows until it arrives.
+  - UGG-specific for now, possibly general later.
+
 - **Generated asset sets on the asset service (user, 2026-11-15):** "we should have all these assets be split so you can download them atomically, like units, as they're needed."
   - **The driver:** Halo's campaign characters (docs/plans/active/halo-ce.md) live inside large campaign map files, so a per-character unit has to be cut out by a converter. Per-gun units, per-class TF2 bodies and per-map sets already exist as plain file sets.
   - **The guardrails** (proposed by the Halo session, to confirm with the user when designed):
