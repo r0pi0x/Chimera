@@ -1,34 +1,54 @@
-//! What TF2's guns look like going off (the brief's "basic visuals"):
+//! What TF2's guns look like going off (the brief's "basic visuals"),
+//! the same on every map, TF2's or another game's (its particle files and
+//! impact looks come with its own sets: `maps::add_guest_looks` loads
+//! them onto another game's map, `maps::extra_particles` with its own):
 //!
 //! - **Explosions** (the rocket's, the grenade's, the sticky's:
 //!   `blast::Tf2Explosion`, sent by the server to every client:
 //!   `register`): TF2's own `ExplosionCore_MidAir` from
-//!   `particles/explosion.pcf` (`StartParticleSystem`; loaded with TF2's
-//!   maps: `PARTICLE_SYSTEMS`, `PARTICLE_FILES`) and, where the map's
-//!   particle materials have Source's explosion sprites (CS:S's and
-//!   HL2:DM's maps), Source's explosion (`source_engine::effects::
-//!   explosions`), as HL2:DM draws its own.
-//! - **Muzzle flashes**: each shot of a bullet gun (`Fired`) starts its
-//!   TF2 muzzle system (`muzzle_pistol`, `muzzle_minigun`, ...:
-//!   `MUZZLE`) a little ahead of the eye, under the gun (`MUZZLE_OFFSET`).
+//!   `particles/explosion.pcf` (`StartParticleSystem`), never the map's
+//!   game's explosion (de_dust2 drew Source's grey puff instead).
+//! - **Muzzle flashes**: each shot of a bullet gun or launcher (`Fired`)
+//!   starts its TF2 muzzle system (`muzzle_pistol`, `muzzle_minigun`, ...:
+//!   `MUZZLE`) at the gun's `muzzle` attachment (install.md 4: on the `c_`
+//!   weapon's bones): the first-person view model's, re-projected into
+//!   the world view (`map::attached::FirstPerson::world_point`), else the
+//!   held model's (`HeldAttachment`), else a little ahead of the eye under
+//!   the gun (`MUZZLE_OFFSET`).
+//! - **Flames**: each round of the Flame Thrower (one every 0.08 s while
+//!   attack is held) starts a piece of TF2's `flamethrower` system
+//!   (`flamethrower_blue` for team 2, BLU's) at the muzzle along the aim,
+//!   emitting for one round's interval (`FLAME_PIECE`), so the stream
+//!   follows the aim and ends when firing does.
+//! - **Impacts**: Source's impact effects, decals and impact sounds with
+//!   TF2's style (`STYLE`): TF2 is an impact provider, so its guns' hits
+//!   are TF2's own on any map that carries its looks (`maps::
+//!   add_impact_looks`), never the map's game's or the app's base game's
+//!   (Combat Arms' in the party apps). Which entry a surface plays is the
+//!   map's sound scripts' (a name the map has, such as CS:S's
+//!   `Concrete.BulletImpact` on de_dust2, plays the map's).
 //!
-//! Known shortcuts: the muzzle flash is drawn in the world, not on the
-//! view model's `muzzle` attachment (the view-model layer has no particle
-//! systems of its own); on another game's map TF2's `.pcf` systems aren't
-//! loaded, so its muzzle flashes don't show there (its explosions draw as
-//! Source's); no flames from the Flame Thrower, no scorch decals.
+//! Known shortcuts: the flash is drawn in the world pass at the
+//! re-projected muzzle (the view-model layer has no particle systems of
+//! its own), so the view model covers its back half; the flame is pieces
+//! of TF2's system per round, not its own continuous emitter; no airblast
+//! look, no scorch decals; TF2's impact style (ricochets, pellet
+//! grouping) has no spec yet: no ricochet, every pellet's sound, as
+//! HL2:DM's (specs/tf2 names no impact rules).
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use chimera_core::core::Team;
 use chimera_sim::weapon::{Weapon, WeaponEvent, WeaponEventKind, aim_of};
-use source_engine::effects::explosions::{self, FxMaterials};
 
 use super::{blast::Tf2Explosion, damage::U};
 use crate::map::{
-    ParticleRng,
-    particles::{ParticleMaterials, ParticleSet, Particles, WorldTracer},
+    ShowLocalBody,
+    attached::{AnchorQuery, AttachPoint, attachment_point, first_person_shown},
+    particles::ParticleSet,
     psys::StartParticleSystem,
+    view_model::{HeldAttachment, ViewAnimator, ViewModelCamera, ViewModelOffset, ViewModelSettings, ViewModels},
 };
 
 /// TF2's explosion system.
@@ -48,12 +68,50 @@ pub const MUZZLE: &[(&str, &str)] = &[
     (super::SYRINGE_GUN, "muzzle_syringe"),
 ];
 
-/// Where a muzzle flash starts from the eye: forward, right, up (units).
+/// Where a muzzle flash starts from the eye when the gun's `muzzle`
+/// attachment isn't drawn: forward, right, up (units).
 pub const MUZZLE_OFFSET: Vec3 = Vec3::new(28.0, 11.0, -11.0);
 
-/// The systems TF2's maps load besides their own.
+/// The Flame Thrower's flames by team: RED's, BLU's (flamethrower.pcf).
+pub const FLAMES: [&str; 2] = ["flamethrower", "flamethrower_blue"];
+
+/// Seconds each round's piece of the flame emits: the round's interval
+/// (0.08 s) and a little, so the pieces join.
+pub const FLAME_PIECE: f32 = 0.09;
+
+/// The gun's attachment the flashes and flames start from.
+pub const MUZZLE_ATTACHMENT: &str = "muzzle";
+
+/// TF2's impacts: Source's shared impact effects and sounds. No spec says
+/// TF2's own rules yet (module doc): no ricochet, splashes of 4 to 8,
+/// every pellet's impact sound, damage in whole points.
+pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::ImpactStyle {
+    game: crate::game::GAME,
+    ricochet: None,
+    splash: (4.0, 8.0),
+    group_radius: None,
+    damage_unit: 1.0,
+    flesh: "flesh",
+    blood: source_engine::effects::BloodView::Damage,
+    melee_decal: None,
+};
+
+/// The system a shot of `gun` starts and for how long it emits (None: as
+/// its definition runs): its muzzle flash, or for the Flame Thrower a
+/// piece of its team's flames (`blu`: team 2's).
+pub fn shot_system(gun: &str, blu: bool) -> Option<(&'static str, Option<f32>)> {
+    if gun == super::FLAMETHROWER {
+        return Some((FLAMES[blu as usize], Some(FLAME_PIECE)));
+    }
+    MUZZLE.iter().find(|(g, _)| *g == gun).map(|(_, n)| (*n, None))
+}
+
+/// The systems TF2's guns start: loaded with its maps besides their own,
+/// and onto other games' maps (`maps::add_guest_looks`).
 pub const PARTICLE_SYSTEMS: &[&str] = &[
     EXPLOSION,
+    FLAMES[0],
+    FLAMES[1],
     "muzzle_scattergun",
     "muzzle_shotgun",
     "muzzle_minigun",
@@ -67,7 +125,7 @@ pub const PARTICLE_SYSTEMS: &[&str] = &[
 ];
 
 /// The files they are in.
-pub const PARTICLE_FILES: &[&str] = &["particles/explosion.pcf", "particles/muzzle_flash.pcf"];
+pub const PARTICLE_FILES: &[&str] = &["particles/explosion.pcf", "particles/muzzle_flash.pcf", "particles/flamethrower.pcf"];
 
 /// An explosion on the wire (the server's `Tf2Explosion`, to clients).
 #[derive(Message, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -75,57 +133,83 @@ pub struct ExplosionMsg {
     pub at: Vec3,
 }
 
-#[derive(Resource)]
-struct FxRng(ParticleRng);
-
-impl Default for FxRng {
-    fn default() -> Self {
-        Self(ParticleRng::new(0x7F2_B1A5))
+/// Each explosion's looks (every machine that draws): TF2's system.
+fn explosions(mut blasts: MessageReader<Tf2Explosion>, mut start: MessageWriter<StartParticleSystem>) {
+    for b in blasts.read() {
+        start.write(StartParticleSystem::new(EXPLOSION, b.at, Vec3::Y));
     }
 }
 
-/// Each explosion's looks (every machine that draws).
-fn explosions(
-    mut blasts: MessageReader<Tf2Explosion>,
-    materials: Option<Res<ParticleMaterials>>,
-    field: Option<Res<crate::map::LightField>>,
-    particles: Option<ResMut<Particles>>,
-    mut rng: ResMut<FxRng>,
-    mut start: MessageWriter<StartParticleSystem>,
-    world: WorldTracer,
-) {
-    let mats = materials.as_ref().map(|m| FxMaterials::new(&m.0));
-    let mut particles = particles;
-    for b in blasts.read() {
-        start.write(StartParticleSystem { name: EXPLOSION.into(), position: b.at, forward: Vec3::Y });
-        // Source's explosion where its sprites are loaded.
-        if let Some(m) = &mats
-            && m.fire.is_some()
-            && let Some(particles) = particles.as_mut()
-        {
-            let a = explosions::blast_direction(b.at, &world);
-            let l = explosions::light_at(field.as_deref(), b.at + a * 32.0 * U);
-            for g in explosions::explosion(&mut rng.0, m, b.at, a, l, &world, Default::default()) {
-                particles.add(g);
-            }
+/// Where a muzzle is drawn for each owner this frame (`MUZZLE_ATTACHMENT`):
+/// the first-person view model's re-projected into the world, else the
+/// held model's.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Muzzles<'w, 's> {
+    time: Res<'w, Time>,
+    owners: Query<
+        'w,
+        's,
+        (
+            Option<&'static ViewAnimator>,
+            Option<&'static ViewModelOffset>,
+            Option<&'static chimera_core::core::MapControls>,
+        ),
+    >,
+    anchors: AnchorQuery<'w, 's>,
+    vm_cameras: Query<'w, 's, &'static Projection, With<ViewModelCamera>>,
+    held: Query<'w, 's, (&'static HeldAttachment, &'static GlobalTransform)>,
+    models: Option<Res<'w, ViewModels>>,
+    settings: Option<Res<'w, ViewModelSettings>>,
+    third_person: Option<Res<'w, ShowLocalBody>>,
+}
+
+impl Muzzles<'_, '_> {
+    /// `owner`'s muzzle (engine space), if its gun's is drawn.
+    pub fn of(&self, owner: Entity) -> Option<Vec3> {
+        let at = AttachPoint::named(MUZZLE_ATTACHMENT);
+        let (view, offset, controls) = self.owners.get(owner).ok()?;
+        let fp = first_person_shown(
+            owner,
+            view,
+            offset,
+            controls,
+            &self.anchors,
+            &self.vm_cameras,
+            self.models.as_deref(),
+            self.settings.as_deref().copied().unwrap_or_default(),
+            self.third_person.as_ref().is_some_and(|t| t.0),
+            self.time.elapsed_secs_f64(),
+        );
+        match fp {
+            Some(f) => f.world_point(&at),
+            None => attachment_point(&self.held, owner, &at),
         }
     }
 }
 
-/// Each shot's muzzle flash.
-fn muzzle_flashes(mut events: MessageReader<WeaponEvent>, weapons: Query<&Weapon>, mut start: MessageWriter<StartParticleSystem>) {
+/// Each shot's muzzle flash, and each Flame Thrower round's flames.
+fn muzzle_flashes(
+    mut events: MessageReader<WeaponEvent>,
+    weapons: Query<&Weapon>,
+    teams: Query<&Team>,
+    muzzles: Muzzles,
+    mut start: MessageWriter<StartParticleSystem>,
+) {
     for e in events.read() {
         let WeaponEventKind::Fired { origin, yaw, pitch, .. } = e.kind else { continue };
         if !e.shown() {
             continue;
         }
         let Ok(weapon) = weapons.get(e.weapon).map(|w| w.id) else { continue };
-        let Some((_, name)) = MUZZLE.iter().find(|(g, _)| *g == weapon) else { continue };
+        let blu = teams.get(e.owner).is_ok_and(|t| t.0 == 2);
+        let Some((name, emit_for)) = shot_system(weapon, blu) else { continue };
         let aim = aim_of(yaw, pitch);
-        let o = MUZZLE_OFFSET * U;
         let forward = aim * Vec3::NEG_Z;
-        let at = origin + forward * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z;
-        start.write(StartParticleSystem { name: (*name).into(), position: at, forward });
+        let at = muzzles.of(e.owner).unwrap_or_else(|| {
+            let o = MUZZLE_OFFSET * U;
+            origin + forward * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z
+        });
+        start.write(StartParticleSystem { emit_for, ..StartParticleSystem::new(name, at, forward) });
     }
 }
 
@@ -157,8 +241,20 @@ fn register(app: &mut App) {
 /// messages the presentation reads, harmless without it).
 pub fn add(app: &mut App) {
     use chimera_net::net::parts::NetAppExt;
-    app.init_resource::<FxRng>()
-        .add_message::<StartParticleSystem>()
-        .add_systems(Update, (explosions, muzzle_flashes).after(ParticleSet::Step).before(ParticleSet::Draw))
+    use crate::map::impact::SurfaceClassesAppExt;
+    app.add_message::<StartParticleSystem>()
+        .add_plugins((
+            source_engine::effects::impact_effects::ImpactEffectsPlugin(STYLE),
+            source_engine::effects::impacts::ImpactSoundsPlugin(STYLE),
+        ))
+        .register_surface_classes(source_engine::effects::impacts::surfaces(crate::game::GAME))
+        .add_systems(
+            Update,
+            (explosions, muzzle_flashes)
+                .after(ParticleSet::Step)
+                .before(ParticleSet::Draw)
+                .after(crate::map::attached::EyePlaced)
+                .after(crate::map::DriveAnimation),
+        )
         .net_part("tf2_looks", register);
 }

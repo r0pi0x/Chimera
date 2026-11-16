@@ -4,10 +4,12 @@
 # `chimera:projectile`) starts 23.5 forward, 12 right and 3 down from
 # the eye (crouched 8 up), flies at 1100 units/s with no gravity through
 # its owner's teammates, and on touch explodes (`tf2:rocket`): 90 x the
-# distance modifier (near half x0.5) x the splash 1 to 0.5 at 146 units,
-# the touched player full splash, the owner's own blast 90 x splash (x0.6
-# airborne), the push 6 (enemies), 10 (his own, airborne), 5 (his own, on
-# the ground) per point.
+# distance modifier (near half x0.5) x the splash 1 to 0.5 at 146 units
+# (to the nearer of centre and feet), the touched player full splash; the
+# owner's own blast 90 x the splash to 0.5 at 121 units (x0.6 airborne);
+# the push (capped at 1000 units/s) 6 (enemies), 10 (his own, airborne),
+# 5 (his own, on the ground) per point (weapons.md 5, corrections from
+# the SDK).
 id = "tf2:tf_weapon_rocketlauncher"
 base = "tf2:base"
 class = "launcher"
@@ -17,7 +19,7 @@ draw = 0.5
 [trigger]
 automatic = true
 cycle = 0.8
-timing = "accumulate"
+timing = "set"
 
 [magazine]
 clip = 4
@@ -30,7 +32,7 @@ shells = { start = 0.12, insert = 0.8, back_to_back = true }
 [hitscan]
 range = 56754.0
 pellets = 1
-punch_scale = 0.0
+punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]
@@ -68,6 +70,8 @@ life = 30.0
 damage = 90.0
 radius = 146.0
 edge = 0.5
+self_radius = 121.0
+self_damage = 90.0
 self_air_scale = 0.6
 push_other = 6.0
 push_self_air = 10.0

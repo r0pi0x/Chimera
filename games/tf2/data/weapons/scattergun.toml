@@ -11,7 +11,7 @@ slot = 0
 [trigger]
 automatic = true
 cycle = 0.625
-timing = "accumulate"
+timing = "set"
 
 [magazine]
 clip = 6
@@ -23,7 +23,7 @@ shells = { start = 0.2, insert = 0.5, back_to_back = true }
 [hitscan]
 range = 56754.0
 pellets = 10
-punch_scale = 0.0
+punch_scale = 1.0
 # a, b each in [-1, 1] (the sum of two halves: open question 1).
 spread = { template = 0.0675 }
 

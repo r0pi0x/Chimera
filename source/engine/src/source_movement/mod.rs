@@ -19,9 +19,12 @@
 //! `func_useableladder`s instead of ladder brushes (`useable_ladders`:
 //! the map's ladders, mounting, forced moves, climbing and dismounts), and
 //! no CS:S drowning; TF2's box width, 0.2 s duck counted from the press's
-//! tick, bunny-hop cap as a share of the top speed, backwards scale, air
-//! jumps (the Scout's), no jump fully ducked, air-duck limit and fall
-//! damage as a share of max health with its spread. A game may choose the
+//! tick, bunny-hop cap as a share of the player's top speed, the ground
+//! speed clamp, the backpedal clamp, the raised acceleration of slow
+//! wishes, the 250 units/s ground leave, air jumps (the Scout's), no jump
+//! fully ducked, the air-duck limit by releases, the re-duck delay, no
+//! duck in water and fall damage as a share of max health with its
+//! spread. A game may choose the
 //! tick's max speed before the step (`SourceSpeed`, ordered before
 //! `SourceMovementStep`: HL2:DM's walk, run and sprint), and a
 //! character's own kind its speed, eyes and air jumps (`SourceTraits`:
@@ -296,12 +299,36 @@ pub struct SourceMovementConfig {
     /// measured: the eye 64.68 on the press tick of a Scout's duck, the box
     /// switched on the 14th); the shared code's first tick is 0 in.
     pub duck_counts_first_tick: bool,
-    /// A jump caps the speed (3D) at this times the tick's max speed (TF2's
-    /// 1.2: the cap follows the class); 0: `bunnyhop_cap` alone.
+    /// A jump caps the speed (3D) at this times the player's max speed P
+    /// (TF2's 1.2: the cap follows the class, a weapon's lower speed too;
+    /// not reduced by the surface or the ceiling); 0: `bunnyhop_cap` alone.
     pub bunnyhop_cap_scale: f32,
-    /// The max speed's scale while the forward move is negative (TF2's
-    /// 0.9); 1 in the shared code.
+    /// TF2's backpedal clamp (specs/tf2/movement.md "Backwards"): on the
+    /// ground after acceleration, a velocity above `back_min_speed` that
+    /// points behind the view has its part along the flat view-forward
+    /// capped at this x the max speed (the sideways part kept), then the
+    /// whole clamped to the max speed; nothing in the air or in water,
+    /// the input untouched. 1 (the shared code): no clamp.
     pub back_speed: f32,
+    pub back_min_speed: f32,
+    /// On every grounded walking tick the horizontal speed is clamped to
+    /// the max speed after acceleration (TF2; the shared code has none).
+    pub ground_clamp: bool,
+    /// A wish speed under 100 x friction x surface friction / accelerate
+    /// gets a raised acceleration that beats friction (TF2: a ducked spun
+    /// Heavy still moves).
+    pub low_wish_accel: bool,
+    /// Rising faster than this (units/s) leaves the ground without the
+    /// ground probe (the shared code's 140; TF2's 250, so its 0.25 surface
+    /// friction applies while rising up to 250).
+    pub leave_ground_vz: f32,
+    /// After duck is released the duck key counts as not held on the
+    /// ground for this long, s (TF2's 0.3), and a duck press during an
+    /// unduck transition is ignored (the unduck goes on); 0: neither.
+    pub reduck_delay: f32,
+    /// No duck while the feet are in water off the ground or the eyes are
+    /// under water (TF2).
+    pub no_water_duck: bool,
     /// Jumps a player may make in the air before landing again (TF2's
     /// Scout: 1; usually set per character, `SourceTraits`), each setting
     /// the vertical speed to `air_jump_speed` and the horizontal velocity
@@ -311,8 +338,10 @@ pub struct SourceMovementConfig {
     /// No ground jump while fully ducked (TF2: a crouch jump is a jump,
     /// then a duck in the air).
     pub no_ducked_jump: bool,
-    /// Ducks a player may start in one air time (TF2's `tf_clamp_airducks`:
-    /// 2); 0: no limit.
+    /// The air duck limit (TF2's `tf_clamp_airducks`: 2): each release of
+    /// duck in the air counts one, and once this many are counted the duck
+    /// key counts as not held in the air (until landing or an air jump);
+    /// 0: no limit.
     pub air_ducks_max: u8,
     /// Fall damage as a share of max health per unit/s of landing speed
     /// above `fall_safe` (TF2: max health x speed / 6000, rounded); 0: by
@@ -521,6 +550,12 @@ impl SourceMovementConfig {
             duck_counts_first_tick: false,
             bunnyhop_cap_scale: 0.0,
             back_speed: 1.0,
+            back_min_speed: 100.0,
+            ground_clamp: false,
+            low_wish_accel: false,
+            leave_ground_vz: LEAVE_GROUND_VZ,
+            reduck_delay: 0.0,
+            no_water_duck: false,
             air_jumps: 0,
             air_jump_speed: 0.0,
             no_ducked_jump: false,
@@ -812,15 +847,18 @@ pub struct SourceMovement {
     /// `+use` was held last tick (a fresh press mounts and dismounts).
     #[serde(default)]
     pub use_held: bool,
-    /// Air jumps made and ducks started since leaving the ground
-    /// (`SourceMovementConfig::air_jumps`, `air_ducks_max`); a duck press
-    /// past the limit is ignored until let go (`air_duck_refused`).
+    /// Air jumps made and duck releases in the air since leaving the
+    /// ground (`SourceMovementConfig::air_jumps`, `air_ducks_max`).
     #[serde(default)]
     pub air_jumps_used: u8,
     #[serde(default)]
     pub air_ducks: u8,
+    /// The duck key as last pressed (before any filter), and the re-duck
+    /// delay left (s, `SourceMovementConfig::reduck_delay`).
     #[serde(default)]
-    pub air_duck_refused: bool,
+    pub duck_key: bool,
+    #[serde(default)]
+    pub reduck_timer: f32,
 }
 
 impl Default for SourceMovement {
@@ -862,7 +900,8 @@ impl Default for SourceMovement {
             use_held: false,
             air_jumps_used: 0,
             air_ducks: 0,
-            air_duck_refused: false,
+            duck_key: false,
+            reduck_timer: 0.0,
         }
     }
 }
@@ -1798,8 +1837,19 @@ impl Mover<'_, '_, '_, '_> {
             self.v.y *= r;
         }
         self.v.z = 0.0;
-        self.accelerate(dir, speed, self.cfg.accelerate);
+        // TF2: a slow wish beats friction (raised acceleration).
+        let f = self.cfg.friction * self.me.surface_friction;
+        let accel = if self.cfg.low_wish_accel && speed > 0.0 && speed < 100.0 * f / self.cfg.accelerate {
+            self.v.length().max(100.0) * f / speed + 1.0
+        } else {
+            self.cfg.accelerate
+        };
+        self.accelerate(dir, speed, accel);
         self.v.z = 0.0;
+        if self.cfg.ground_clamp {
+            self.clamp_flat(max_speed);
+        }
+        self.back_clamp(forward, max_speed);
         // Base velocity moves the player but is not kept (trigger_push).
         let base = Vec3::new(self.base.x, self.base.y, 0.0);
         self.v += base;
@@ -1818,6 +1868,38 @@ impl Mover<'_, '_, '_, '_> {
         self.v -= base;
     }
 
+    /// The horizontal speed down to `max` (TF2's ground clamp).
+    fn clamp_flat(&mut self, max: f32) {
+        let flat = self.v.truncate().length();
+        if flat > max && flat > 0.0 {
+            self.v.x *= max / flat;
+            self.v.y *= max / flat;
+        }
+    }
+
+    /// TF2's backpedal clamp (`SourceMovementConfig::back_speed`): on the
+    /// ground, a velocity faster than `back_min_speed` pointing behind the
+    /// view has its backward part capped at `back_speed` x `max`, then the
+    /// whole clamped to `max`.
+    fn back_clamp(&mut self, forward: Vec3, max: f32) {
+        if self.cfg.back_speed >= 1.0 {
+            return;
+        }
+        let flat = Vec3::new(self.v.x, self.v.y, 0.0);
+        let along = flat.dot(forward);
+        if flat.length() <= self.cfg.back_min_speed || along >= 0.0 {
+            return;
+        }
+        let cap = self.cfg.back_speed * max;
+        if -along > cap {
+            let side = flat - forward * along;
+            let v = side - forward * cap;
+            self.v.x = v.x;
+            self.v.y = v.y;
+            self.clamp_flat(max);
+        }
+    }
+
     fn air(&mut self, f: f32, s: f32, forward: Vec3, right: Vec3, max_speed: f32) {
         let (dir, speed) = self.wish(f, s, forward, right, max_speed);
         self.wish = dir * speed;
@@ -1833,7 +1915,7 @@ impl Mover<'_, '_, '_, '_> {
     fn categorize(&mut self) {
         self.me.surface_friction = 1.0;
         // Moving up on a ladder always counts as airborne.
-        if self.v.z > LEAVE_GROUND_VZ || (self.me.ladder.is_some() && self.v.z > 0.0) {
+        if self.v.z > self.cfg.leave_ground_vz || (self.me.ladder.is_some() && self.v.z > 0.0) {
             self.set_ground(false, None);
         } else {
             let (lo, hi) = self.trace.hull(self.me.ducked);
@@ -2482,11 +2564,13 @@ impl Mover<'_, '_, '_, '_> {
         scale
     }
 
-    fn jump(&mut self, max_speed: f32) {
+    fn jump(&mut self) {
         // Without sv_enablebunnyhopping, jumping caps the speed: at a fixed
-        // speed (CS:S) or a share of this tick's max speed (TF2).
+        // speed (CS:S) or a share of the player's max speed P (TF2).
         let cap = if self.cfg.bunnyhop_cap_scale > 0.0 {
-            self.cfg.bunnyhop_cap_scale * max_speed
+            // P: the player's own max speed (not M: no surface or ceiling).
+            let p = self.speed.unwrap_or(self.player_maxspeed);
+            self.cfg.bunnyhop_cap_scale * p
         } else {
             self.cfg.bunnyhop_cap
         };
@@ -2597,9 +2681,6 @@ impl Mover<'_, '_, '_, '_> {
             intent.move_axis.y * self.cfg.key_speed + self.push_input.x,
             intent.move_axis.x * self.cfg.key_speed + self.push_input.y,
         );
-        // Moving backwards (the forward move negative) caps lower (TF2's
-        // 0.9): the keys rescale to it and the wish is clamped to it.
-        let max_speed = if f < 0.0 { max_speed * self.cfg.back_speed } else { max_speed };
         let len = (f * f + s * s).sqrt();
         if len > max_speed {
             f *= max_speed / len;
@@ -2771,7 +2852,7 @@ impl Mover<'_, '_, '_, '_> {
             let fully_ducked = self.me.ducked && !self.me.ducking;
             let air_jump = !self.me.on_ground && !self.me.jump_held && self.me.air_jumps_used < self.cfg.air_jumps;
             if self.me.on_ground && fresh && !(self.me.ducked && self.me.ducking) && !(self.cfg.no_ducked_jump && fully_ducked) {
-                self.jump(max_speed);
+                self.jump();
             } else if air_jump {
                 self.air_jump(f, s, forward, right, max_speed);
             } else {
@@ -2853,27 +2934,43 @@ impl Mover<'_, '_, '_, '_> {
         let wish = dir * speed;
         self.v = Vec3::new(wish.x, wish.y, self.cfg.air_jump_speed);
         self.me.air_jumps_used += 1;
+        self.me.air_ducks = 0;
         self.me.jump_held = true;
     }
 
-    /// The duck key as the air duck limit lets it through (`air_ducks_max`;
-    /// TF2's `tf_clamp_airducks`): a press in the air past the limit is
-    /// ignored until the key is let go.
+    /// The duck key as TF2's limits let it through: the air duck limit
+    /// (`air_ducks_max`: releases in the air counted, the key not held in
+    /// the air once the limit is reached), the re-duck delay
+    /// (`reduck_delay`: not held on the ground until it runs out after a
+    /// release, nor anywhere during an unduck transition) and no duck in
+    /// water (`no_water_duck`).
     fn air_duck_allowed(&mut self, held: bool) -> bool {
+        let released = !held && self.me.duck_key;
+        self.me.duck_key = held;
+        self.me.reduck_timer = (self.me.reduck_timer - self.dt).max(0.0);
+        if released {
+            if !self.me.on_ground && self.cfg.air_ducks_max > 0 {
+                self.me.air_ducks = self.me.air_ducks.saturating_add(1);
+            }
+            self.me.reduck_timer = self.cfg.reduck_delay;
+        }
         if !held {
-            self.me.air_duck_refused = false;
             return false;
         }
-        if self.me.air_duck_refused {
+        if !self.me.on_ground && self.cfg.air_ducks_max > 0 && self.me.air_ducks >= self.cfg.air_ducks_max {
             return false;
         }
-        let pressed = !self.me.duck_held;
-        if pressed && !self.me.on_ground && self.cfg.air_ducks_max > 0 {
-            if self.me.air_ducks >= self.cfg.air_ducks_max {
-                self.me.air_duck_refused = true;
+        if self.cfg.reduck_delay > 0.0 {
+            if self.me.on_ground && self.me.reduck_timer > 1e-6 {
                 return false;
             }
-            self.me.air_ducks += 1;
+            // Mid-unduck (still flagged ducked): the unduck goes on.
+            if self.me.ducked && self.me.ducking && !self.me.duck_held {
+                return false;
+            }
+        }
+        if self.cfg.no_water_duck && ((self.me.water_level >= 1 && !self.me.on_ground) || self.me.water_level >= 3) {
+            return false;
         }
         true
     }
@@ -2901,6 +2998,21 @@ impl Mover<'_, '_, '_, '_> {
             self.sounds.push(("Player.Swim".into(), self.feet, None));
         }
     }
+}
+
+/// One tick of Source's shared punch-angle spring (the movement's punch
+/// decay: the angle moves by its velocity, the velocity is damped by
+/// `PUNCH_DAMPING` and pulled back by `PUNCH_SPRING`; both zeroed once
+/// small): angle `p` and velocity `v` in degrees (and per second). For
+/// games whose weapons kick the punch (TF2's `PunchAngle`).
+pub fn punch_spring(p: Vec3, v: Vec3, dt: f32) -> (Vec3, Vec3) {
+    if p.length_squared() <= 0.001 && v.length_squared() <= 0.001 {
+        return (Vec3::ZERO, Vec3::ZERO);
+    }
+    let p = (p + v * dt).clamp(Vec3::splat(-89.0), Vec3::splat(89.0));
+    let v = v * (1.0 - PUNCH_DAMPING * dt).max(0.0);
+    let v = v - p * (PUNCH_SPRING * dt).clamp(0.0, 2.0);
+    (p, v)
 }
 
 fn hull_height(cfg: &SourceMovementConfig, ducked: bool) -> f32 {

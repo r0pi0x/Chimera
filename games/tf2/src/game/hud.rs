@@ -35,13 +35,56 @@ pub const PICTURES: &[(&str, &str)] = &[
     ("crosshairs", "sprites/crosshairs"),
 ];
 
+/// The class portrait's pictures (hud.md 3.10, the 2D image): each
+/// class's by team (`hud/class_<short><red|blue>`) and the team's
+/// background, by our name: (sprite, material).
+pub const PORTRAITS: &[(&str, &str)] = &[
+    ("class_scoutred", "hud/class_scoutred"),
+    ("class_scoutblue", "hud/class_scoutblue"),
+    ("class_sniperred", "hud/class_sniperred"),
+    ("class_sniperblue", "hud/class_sniperblue"),
+    ("class_soldierred", "hud/class_soldierred"),
+    ("class_soldierblue", "hud/class_soldierblue"),
+    ("class_demored", "hud/class_demored"),
+    ("class_demoblue", "hud/class_demoblue"),
+    ("class_medicred", "hud/class_medicred"),
+    ("class_medicblue", "hud/class_medicblue"),
+    ("class_heavyred", "hud/class_heavyred"),
+    ("class_heavyblue", "hud/class_heavyblue"),
+    ("class_pyrored", "hud/class_pyrored"),
+    ("class_pyroblue", "hud/class_pyroblue"),
+    ("class_spyred", "hud/class_spyred"),
+    ("class_spyblue", "hud/class_spyblue"),
+    ("class_engired", "hud/class_engired"),
+    ("class_engiblue", "hud/class_engiblue"),
+    ("character_red_bg", "hud/character_red_bg"),
+    ("character_blue_bg", "hud/character_blue_bg"),
+];
+
+/// The portrait's sprite (`PORTRAITS`) of class `class` (data/classes.toml's
+/// name: `demoman`, `engineer`, ...) on RED or BLU (`blu`).
+pub fn portrait(class: &str, blu: bool) -> Option<&'static str> {
+    let short = match class {
+        "demoman" => "demo",
+        "engineer" => "engi",
+        c => c,
+    };
+    let team = if blu { "blue" } else { "red" };
+    PORTRAITS.iter().map(|(n, _)| *n).find(|n| n.strip_prefix("class_").and_then(|r| r.strip_prefix(short)) == Some(team))
+}
+
+/// The portrait's background sprite for RED or BLU.
+pub fn portrait_bg(blu: bool) -> &'static str {
+    if blu { "character_blue_bg" } else { "character_red_bg" }
+}
+
 /// The HUD look from the install (None when its files are missing).
 pub fn load(materials: &mut MaterialLoader) -> Option<GameHud> {
     let mut hud = look::load(
         materials,
         &LookOptions { base_icons: &[], layout: keyvalues::parse_pc, font_files: true, first_wins: true },
     )?;
-    for (name, material) in PICTURES {
+    for (name, material) in PICTURES.iter().chain(PORTRAITS) {
         if let Some(texture) = materials.resolve(material).texture {
             let t = &materials.textures[texture];
             hud.sprites.insert((*name).to_string(), HudSprite { texture, rect: [0.0, 0.0, t.width as f32, t.height as f32] });

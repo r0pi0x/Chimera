@@ -305,6 +305,54 @@ fn build(
     (defs, index)
 }
 
+/// A guest game's own systems (`names`, from its `files`) onto another
+/// game's map (a party app's TF2 guns on de_dust2): read through the
+/// guest's `materials` (its mount; their particle materials join
+/// `data.particles`), added after the map's systems (their children
+/// renumbered); a name the map has already is left as the map's. Returns
+/// how many were added.
+pub fn add_guest_particle_systems(materials: &mut MaterialLoader, data: &mut MapData, names: &[&str], files: &[&str]) -> usize {
+    let mut systems: Systems = Systems::default();
+    let mut warnings = Vec::new();
+    for f in files {
+        if let Some(b) = materials.read(f) {
+            add_file(&mut systems, &b, &mut warnings, f);
+        }
+    }
+    let wanted: Vec<String> = names
+        .iter()
+        .filter(|n| data.particle_systems.find(n).is_none())
+        .map(|n| n.to_string())
+        .collect();
+    if wanted.is_empty() {
+        data.warnings.extend(warnings);
+        return 0;
+    }
+    let mut unknown = std::collections::BTreeSet::new();
+    let (mut defs, index) = build(&systems, &wanted, materials, data, &mut unknown);
+    let missing: Vec<&String> = wanted.iter().filter(|n| !index.contains_key(&n.to_lowercase())).collect();
+    if !missing.is_empty() {
+        warnings.push(format!(
+            "particle systems not found (not drawn): {}",
+            missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    let out = std::sync::Arc::make_mut(&mut data.particle_systems);
+    let base = out.defs.len();
+    for d in &mut defs {
+        for c in &mut d.children {
+            c.0 += base;
+        }
+    }
+    let added = defs.len();
+    out.defs.extend(defs);
+    if base == 0 || out.scale <= 0.0 {
+        out.scale = METERS_PER_UNIT;
+    }
+    data.warnings.extend(warnings);
+    added
+}
+
 /// Load the map's particle systems (the ones its info_particle_systems
 /// name, and `extra`: ones the game starts itself, e.g. slime splashes,
 /// from the install's `extra_files`) into `data.particle_systems`. A map
