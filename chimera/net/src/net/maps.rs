@@ -282,6 +282,12 @@ pub fn local_load_under_way(world: &World) -> bool {
     crate::map::local_load_under_way(world) || super::server_assets::fetching(world)
 }
 
+/// When the loaded map's file (`map::MapFile`) last came in or changed
+/// (None: none loaded): a load of the same map again moves it.
+pub fn map_file_tick(world: &World) -> Option<bevy::ecs::change_detection::Tick> {
+    world.get_resource_change_ticks::<crate::map::MapFile>().map(|t| t.changed)
+}
+
 /// The loaded map (its id and file hash) once it is in; None while a load
 /// is under way (the name set, the file not spawned yet, or spawned short
 /// of its colliders: `map::MapComingIn`).

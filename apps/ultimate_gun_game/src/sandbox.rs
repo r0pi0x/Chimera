@@ -47,6 +47,8 @@ pub const TIME_LIMIT: f32 = 1.0e7;
 
 /// The sandbox's help (`sandbox help`).
 pub const HELP: &str = "sandbox [map]: a match alone on the range (or `map`: greybox, a game's map), nothing advances or ends.\n\
+    sandbox restart [map]: start it again (plain `sandbox` does nothing when it already plays on that map).
+\
     rung <n | gun id or part | next | prev | list> [player | all]: put yourself on a rung (numbered from 1).\n\
     ca_bot_add [alpha|bravo]: add a bot; ca_bot_kick: remove them; ca_bot_stop 1: they stand still;\n\
     ca_bot_dont_shoot 1: they never fire.\n\
@@ -163,8 +165,9 @@ pub fn generate(world: &mut World, base: &str) -> Result<&'static MinigameDef, S
 /// (`minigame::conditions`), not a map.
 const CONDITIONS: [&str; 7] = ["god", "ammo", "timescale", "thirdperson", "camdist", "freeze", "conditions"];
 
-/// `sandbox [map | help | repeat | <condition> <value>]`: start it, or
-/// repeat the last layout, or set a condition.
+/// `sandbox [map | restart [map] | help | repeat | <condition> <value>]`:
+/// start it (nothing when it already plays on that map: `restart` starts
+/// it again), or repeat the last layout, or set a condition.
 pub fn command(w: &mut World, a: &[String], base: &str) -> Result<Option<String>, String> {
     let first = a.first().map(|s| s.to_ascii_lowercase());
     match first.as_deref() {
@@ -174,11 +177,33 @@ pub fn command(w: &mut World, a: &[String], base: &str) -> Result<Option<String>
         Some(c) if CONDITIONS.contains(&c) => return minigame::conditions::command(w, a),
         _ => {}
     }
+    // `sandbox restart [map]` starts it again whatever plays.
+    let restart = first.as_deref() == Some("restart");
+    let a = if restart { &a[1..] } else { a };
     if w.get_resource::<minigame::Minigames>().and_then(|m| m.get(SANDBOX)).is_none() {
         generate(w, base)?;
     }
     let map = a.first().map_or(DEFAULT_MAP, String::as_str);
-    let said = chimera_net::minigame_net::change_match(w, SANDBOX, Some(map))?;
+    // From the main menu no game is in (the map "in play" is only a
+    // name, the greybox's, or the greybox left behind a game left, its
+    // match held): the map is loaded, and its load takes the front end
+    // into the game as any map change does.
+    #[cfg(feature = "present")]
+    let at_menu = w.get_resource::<party_kit::main_menu::PartyMenu>().is_some_and(|m| m.shown());
+    #[cfg(not(feature = "present"))]
+    let at_menu = false;
+    // Already playing there: nothing to do (a start costs a hitch, the
+    // start sound and the layout's bodies; a control that fires twice
+    // must not restart it). Never at the menu: a sandbox left there is
+    // not playing.
+    if !restart && !at_menu && minigame::rung_command::holds(w) && chimera_net::net::current_map(w) == chimera_net::net::normalize_map(map) {
+        return Ok(Some(format!("sandbox: already playing on {map} (`sandbox restart` starts it again)")));
+    }
+    let said = if at_menu {
+        chimera_net::minigame_net::change_match_loading(w, SANDBOX, Some(map))?
+    } else {
+        chimera_net::minigame_net::change_match(w, SANDBOX, Some(map))?
+    };
     let mut console = w.resource_mut::<Console>();
     console.submit("sv_cheats 1");
     console.print(Level::Info, "sandbox: `sandbox help` lists what to try");

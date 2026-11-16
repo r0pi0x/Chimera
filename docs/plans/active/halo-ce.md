@@ -570,6 +570,31 @@ backlog.
   `halo_ce:campaign_bodies` (off by default) draws it on the plasma
   rifle and needler rungs by data/campaign.toml; `halo_ce:body` forces
   one. Next: the voice, the Elite's hand marker for the held gun.
+  Stage two (on main): the Grunt, Jackal and Marine, the voices, each
+  body's own hand. Stage three (branch `halo-hunter`): our own lines and
+  the Hunter. *Lines* (the owner, 2026-11-16: "it should be obvious when
+  you become one of the Halo characters that you start talking like
+  them"): on becoming a character (a rung gives it, or it comes back as
+  it after another kind or another game's character) the body says one
+  line of its own voice, heard by all, once per becoming (the same
+  character again only a minute after its last); after a kill, sometimes
+  (a chance and a cooldown), a kill or celebration line. Which slots each
+  character says is data (data/campaign.toml, `lines`, by the dialogue's
+  slot names, `campaign::voice::SLOT_NAMES`, read from the disc); no
+  voice set needed widening (each holds its whole dialogue). *The
+  Hunter*: its units (`character/hunter`, `voice/hunter`) and its
+  cannon's (cut into the `character/hunter` set, not read in the game yet);
+  200 body, no shield, its skin a head; its cannon a special rung
+  (`weapons::rung::HUNTER_RUNG`, every number the tag's on d20) whose
+  holder is always the Hunter, drawn by a ladder only with
+  `halo_ce:campaign_bodies` 1; its first-person view is its own arm cut
+  from its third-person model (`campaign::first_person`: kept bones and
+  the view's offset in data), posed by its own idle, aim, fire and
+  melee: the seam later characters' own hands can use. Open: the
+  cannon's rod and effects are not drawn on another game's map (its
+  effects would need a late join of a weapon's effects, `fx::load`); its
+  shot leaves from the eye's line, not its arm (the spec's open
+  question).
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the
@@ -851,3 +876,41 @@ backlog.
   more sandbox mechanics. Decided by the owner: balancing is on by
   default; publish the characters' sets (through the asset service's
   session, once the Hunter's and the widened voice sets are cut).
+- 2026-11-16 (later): the Hunter and the spoken lines landed (net66):
+  `BodyKind::Hunter` with its own gun as a rung of its own
+  (`halo_ce:hunter_fuel_rod`; in drawn ladders only with campaign bodies
+  on), a first-person view cut from its own body model
+  (`campaign::first_person`: clumsy, its offset and kept bones are data),
+  and a line of the character's own voice when a player becomes it and
+  sometimes after a kill (`[chatter]` in data/campaign.toml; our
+  addition, the owner's request). Published to the asset store with the
+  owner's go: character/{elite,grunt,jackal,marine,hunter} and
+  voice/{elite,grunt,jackal,hunter,marine_*} (a client without the disc
+  gets the bodies; checked through the service). Not done for the
+  Hunter: its rod, blast and muzzle flash are not drawn on another
+  game's map (its effects are not merged into `fx::load`), the
+  third-person body plays no fire animation, no kill icon, no ammo
+  panel. Also landed: late-built models shown whole (a mesh held out of
+  the depth prepass until its main-pass pipeline is ready), view models
+  built wanted-first, read-ahead kept to half the task pool; the
+  sandbox's second batch of mechanics (repeat the layout, a gun with a
+  chosen body, conditions); a sandbox start from the main menu loads
+  its map and leaves the menu (the owner's first test found the menu
+  stuck). Under way: no player or match behind the main menu (the
+  owner heard a weapon's draw sound at start), the arena's measuring
+  (A3); next the arena's slices in the map pool (A2).
+- 2026-11-16 (night): the arena's A2, A3 and A5 landed
+  (docs/plans/active/arena-slices.md has each "as built"): a slice is a
+  pool entry `map@slice` with its own stored measures, offered only
+  where its map is too big and it passes `[slice]` in map_fit.toml,
+  never two of one map in a vote; the host's Maps picker lists slices
+  under their map; `map_fitness --slice`, `--safety` and `--candidates`
+  measure and propose slices. Result on Halo's maps: Blood Gulch's
+  hand-drawn West Base fails (an open field) and stays out of the pool;
+  the generator found one passing slice, Blood Gulch: North Caves (2 to
+  8 players), and none on Sidewinder. For the owner (A6): whether a
+  wall may close a tunnel or cave mouth (the generator's own rule
+  refuses most sheltered candidates), and whether a dark cave fight is
+  wanted. Also landed: nothing of a game exists behind the party main
+  menu (no player, kit or match until Host, Join or Sandbox), from the
+  owner's test.

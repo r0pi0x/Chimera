@@ -1,7 +1,7 @@
 //! What a campaign body sounds like (specs/halo_ce/characters.md section
 //! 6, sounds.md "Unit dialogue"; effects.md "Material effects"): its own
-//! footsteps, jump and landing sounds, and its pain, death, scream and
-//! maimed lines, nothing else.
+//! footsteps, jump and landing sounds, its pain, death, scream and maimed
+//! lines, and our own lines that say who it is.
 //!
 //! **The sounds** (`BodySounds`, made with the unit, `compile`): the
 //! biped's own material effects (its footsteps tag, in the body unit:
@@ -10,7 +10,9 @@
 //! `globals\cyborg`), and its dialogue's vocalizations 6 to 19 (pain body
 //! minor to death flying) from the voice unit (`voice.map`), each slot's
 //! sound or none. The dialogue is the biped's dialogue variant numbered 0
-//! (else its first variant below 100). Without the voice set the body is
+//! (else its first variant below 100), and the slots its row chooses for
+//! our own lines (`super::Lines`; the voice set holds its whole dialogue,
+//! so only the compiling reads further). Without the voice set the body is
 //! silent. The decoded clips and entries join each map's `SoundBank`
 //! (`join_banks`), on every machine that loaded the unit.
 //!
@@ -50,6 +52,35 @@
 //!   region only disappears with the shield), so faithfully they never
 //!   say it. The Flood's limbs will.
 //!
+//! **The slots' names** (`SLOT_NAMES`, `slot_of`): a dialogue tag is 256
+//! slots (0x1010 bytes on every campaign character's); sounds.md names 6
+//! to 19, characters.md section 6 lists the slots each character fills
+//! by name but not by index. The index of each name is read from the
+//! disc: the slots the characters' dialogues fill, matched in order with
+//! the spec's lists (the line counts agree) and with the sound tags' own
+//! names (`...\killedenemyplayer` in slot 55 of every dialogue that
+//! fills it). Our data names slots by these names.
+//!
+//! **Lines that say who it is** (`chatter`, the host's, after the damage;
+//! the owner's addition, 2026-11-16: the game's player-worn body says only
+//! its pain, death and scream lines): a character's row names, in order,
+//! the slots it says on becoming the character and after a kill
+//! (`super::Lines`); the first its voice fills plays (`first_filled`; no
+//! fallback). *Becoming*: a body that now wears a kind it did not wear at
+//! the last tick (another kind, or none: the Spartan, another game's
+//! character), or comes back to life as the same kind, says its becoming
+//! line, the same kind again only `becoming_repeat_seconds` (data
+//! `[chatter]`, 60) after its last (`becoming_due`); a body whose voice is
+//! not in yet keeps the line waiting, dropped if it dies first. *Kill*: a
+//! `Died` whose attacker is the body (not itself), with the chance
+//! `kill_chance`, never within `kill_cooldown_seconds` of its last
+//! (`kill_due`; the draw a hash of the tick and the body). Both play as
+//! the damage lines do (`say`: at the eye, one line at a time per body)
+//! at priority `CHATTER` (1: below pain, so a pain line cuts it and it
+//! never cuts one), silent without the voice set, the Marine's drawn voice
+//! for a Marine. Each line said is logged (debug: the kind, the slot's
+//! name and the sound).
+//!
 //! Known shortcuts:
 //! - The minor-pain draw is a hash of the tick and the body (no game
 //!   state random generator).
@@ -85,13 +116,171 @@ pub const DEATH_QUIET: usize = 14;
 pub const DEATH_FALLING: usize = 16;
 pub const DEATH_AGONIZING: usize = 17;
 pub const DEATH_FLYING: usize = 19;
-/// Slots read: 0 to `SLOTS - 1`.
+/// The damage lines' slots: 0 to `SLOTS - 1` (each is read).
 pub const SLOTS: usize = 20;
+
+/// The slots of a dialogue tag (after its 0x10-byte header, 0x10 each:
+/// every dialogue of the ten campaign characters' on the disc spans
+/// 0x1010 bytes, 256 slots).
+pub const DIALOGUE_SLOTS: usize = 256;
+
+/// The slots by name (module doc, "The slots' names"): the vocalizations
+/// the campaign characters' dialogues fill, by their index.
+pub const SLOT_NAMES: &[(usize, &str)] = &[
+    (0, "idle noncombat"),
+    (1, "idle combat"),
+    (2, "idle flee"),
+    (6, "pain body minor"),
+    (7, "pain body major"),
+    (8, "pain shield"),
+    (9, "pain falling"),
+    (10, "scream fear"),
+    (11, "scream pain"),
+    (12, "maimed limb"),
+    (13, "maimed head"),
+    (14, "death quiet"),
+    (15, "death violent"),
+    (16, "death falling"),
+    (17, "death agonizing"),
+    (18, "death instant"),
+    (19, "death flying"),
+    (21, "damaged friend"),
+    (22, "damaged friend player"),
+    (23, "damaged enemy"),
+    (24, "damaged enemy cm"),
+    (29, "hurt friend"),
+    (30, "hurt friend re"),
+    (31, "hurt friend player"),
+    (32, "hurt enemy"),
+    (36, "hurt enemy needler"),
+    (37, "hurt enemy plasma"),
+    (39, "hurt enemy grenade"),
+    (41, "hurt enemy melee"),
+    (45, "hurt enemy mounted weapon"),
+    (49, "killed friend"),
+    (50, "killed friend cm"),
+    (51, "killed friend player"),
+    (52, "killed friend player cm"),
+    (53, "killed enemy"),
+    (54, "killed enemy cm"),
+    (55, "killed enemy player"),
+    (56, "killed enemy player cm"),
+    (57, "killed enemy covenant"),
+    (58, "killed enemy covenant cm"),
+    (59, "killed enemy flood combat"),
+    (60, "killed enemy flood combat cm"),
+    (61, "killed enemy flood carrier"),
+    (62, "killed enemy flood carrier cm"),
+    (63, "killed enemy sentinel"),
+    (64, "killed enemy sentinel cm"),
+    (65, "killed enemy bullet"),
+    (66, "killed enemy needler"),
+    (68, "killed enemy sniper"),
+    (69, "killed enemy grenade"),
+    (73, "killed enemy shotgun"),
+    (75, "killed enemy mounted weapon"),
+    (76, "killing spree"),
+    (84, "player kill sniper cm"),
+    (85, "anyone kill grenade cm"),
+    (88, "player kill flame cm"),
+    (90, "player kill vehicle cm"),
+    (92, "player killing spree cm"),
+    (96, "friend died"),
+    (97, "friend player died"),
+    (98, "friend killed by friend"),
+    (99, "friend killed by friendly player"),
+    (100, "friend killed by enemy"),
+    (101, "friend killed by enemy player"),
+    (102, "friend killed by covenant"),
+    (103, "friend killed by flood"),
+    (104, "friend killed by sentinel"),
+    (105, "friend betrayed"),
+    (108, "new combat alone"),
+    (109, "new enemy recent combat"),
+    (110, "old enemy sighted"),
+    (111, "unexpected enemy"),
+    (112, "dead friend found"),
+    (113, "alliance broken"),
+    (114, "alliance reformed"),
+    (115, "grenade throwing"),
+    (116, "grenade sighted"),
+    (117, "grenade startle"),
+    (118, "grenade danger enemy"),
+    (119, "grenade danger self"),
+    (120, "grenade danger friend"),
+    (123, "new combat group re"),
+    (124, "new combat nearby re"),
+    (125, "alert friend"),
+    (126, "alert friend re"),
+    (127, "alert lost contact"),
+    (128, "alert lost contact re"),
+    (129, "blocked"),
+    (130, "blocked re"),
+    (131, "search start"),
+    (132, "search query"),
+    (133, "search query re"),
+    (134, "search report"),
+    (135, "search abandon"),
+    (137, "group uncover"),
+    (138, "group uncover re"),
+    (139, "advance"),
+    (141, "retreat"),
+    (142, "retreat re"),
+    (143, "cover"),
+    (148, "sighted friendly player"),
+    (149, "shooting"),
+    (150, "shooting vehicle"),
+    (151, "shooting berserk"),
+    (152, "shooting group"),
+    (153, "shooting traitor"),
+    (154, "taunt"),
+    (156, "flee"),
+    (157, "flee re"),
+    (158, "flee leader died"),
+    (161, "lost contact"),
+    (162, "hiding finished"),
+    (163, "vehicle entry"),
+    (164, "vehicle exit"),
+    (165, "vehicle woohoo"),
+    (166, "vehicle scared"),
+    (168, "partially sighted"),
+    (169, "nothing there"),
+    (177, "surprise"),
+    (178, "berserk"),
+    (179, "melee attack"),
+    (180, "dive"),
+    (181, "uncover exclamation"),
+    (188, "celebration"),
+    (189, "check body enemy"),
+    (190, "check body friend"),
+    (191, "shooting dead enemy"),
+    (192, "shooting dead enemy player"),
+    (197, "alone"),
+    (198, "unscathed slightly wounded re"),
+    (199, "seriously wounded"),
+    (200, "seriously wounded re"),
+    (201, "near massacre"),
+    (202, "near massacre re"),
+    (203, "rout"),
+    (204, "rout re"),
+];
+
+/// A slot by its name (`SLOT_NAMES`; case and spaces as written there).
+pub fn slot_of(name: &str) -> Option<usize> {
+    SLOT_NAMES.iter().find(|(_, n)| n.eq_ignore_ascii_case(name.trim())).map(|(i, _)| *i)
+}
+
+/// A slot's name (`SLOT_NAMES`), or `slot <n>`.
+pub fn slot_name(slot: usize) -> String {
+    SLOT_NAMES.iter().find(|(i, _)| *i == slot).map_or_else(|| format!("slot {slot}"), |(_, n)| (*n).to_string())
+}
 
 /// A line's priority (sounds.md "Playing a line").
 pub const PAIN: u8 = 2;
 pub const INVOLUNTARY: u8 = 7;
 pub const DEATH: u8 = 10;
+/// Our own lines (module doc, "Lines that say who it is"): below pain.
+pub const CHATTER: u8 = 1;
 
 /// A region destroyed on a campaign body (module doc, the maimed lines):
 /// `head` when the region causes the head-maimed scream.
@@ -164,7 +353,7 @@ fn append(a: &mut AudioSet, b: AudioSet) {
 /// (module doc).
 pub fn compile(def: &BodyDef, body: &MapFile, voice: Option<&MapFile>) -> BodySounds {
     let biped = body.find(class::BIPED, &def.biped).and_then(|t| Biped::read(body, t).ok());
-    let mut out = BodySounds { lines: vec![None; SLOTS], ..Default::default() };
+    let mut out = BodySounds { lines: vec![None; DIALOGUE_SLOTS], ..Default::default() };
     // Its footsteps: the biped's material effects, as the Spartan's.
     let mut c = Compiler::new(body);
     if let Some(foot) = biped
@@ -190,7 +379,7 @@ pub fn compile(def: &BodyDef, body: &MapFile, voice: Option<&MapFile>) -> BodySo
 /// a kind's several voices), else the variant numbered 0 (else its first
 /// below 100).
 pub fn compile_lines(def: &BodyDef, body: &MapFile, voice: &MapFile, name: Option<&str>) -> BodySounds {
-    let mut out = BodySounds { lines: vec![None; SLOTS], ..Default::default() };
+    let mut out = BodySounds { lines: vec![None; DIALOGUE_SLOTS], ..Default::default() };
     let Some(b) = body.find(class::BIPED, &def.biped).and_then(|t| Biped::read(body, t).ok()) else { return out };
     let v = &b.unit.dialogue_variants;
     let named = |d: &&blam_formats::object::DialogueVariant| {
@@ -201,9 +390,14 @@ pub fn compile_lines(def: &BodyDef, body: &MapFile, voice: &MapFile, name: Optio
         None => v.iter().find(|d| d.variant_number == 0).or_else(|| v.iter().find(|d| d.variant_number < 100)),
     };
     let Some(dialogue) = chosen.and_then(|d| voice.tag(d.dialogue.id)) else { return out };
-    let Ok(view) = voice.tag_view(dialogue, 0x10 + SLOTS * 0x10) else { return out };
+    let Ok(view) = voice.tag_view(dialogue, 0x10 + DIALOGUE_SLOTS * 0x10) else { return out };
     let mut c = Compiler::new(voice);
-    for slot in PAIN_BODY_MINOR..SLOTS {
+    // The damage lines, and our own chosen ones (`super::Lines`).
+    let chosen = def.lines.iter().flat_map(|l| l.becoming.iter().chain(&l.kill)).filter_map(|n| slot_of(n));
+    let mut slots: Vec<usize> = (PAIN_BODY_MINOR..SLOTS).chain(chosen).filter(|s| *s < DIALOGUE_SLOTS).collect();
+    slots.sort_unstable();
+    slots.dedup();
+    for slot in slots {
         let r = view.tag_ref(0x10 + slot * 0x10).ok().filter(|r| voice.tag(r.id).is_some());
         out.lines[slot] = r.and_then(|r| c.sound(&r));
     }
@@ -429,20 +623,143 @@ pub fn speak(
             said.push((slot, INVOLUNTARY));
         }
         for (slot, priority) in said {
-            if !may_start(&voice, priority) {
-                continue;
-            }
-            let Some(path) = s.line(slot) else { continue };
-            let Some(info) = s.set.library.sounds.get(path) else { continue };
-            voice.speaking = (info.longest_ms.max(0) as u32 * 30 / 1000) + 7;
-            voice.priority = priority;
-            // At its eye: the body's origin is its pill's centre.
-            let above = table.map_or(0.2, |m| m.eye(0.0) - m.centre_above_origin(0.0));
-            let at = t.translation + Vec3::Y * above * crate::game::METERS_PER_UNIT;
-            if let Some(m) = lines.as_deref_mut() {
-                m.write(GameSound(PlaySound::at(info.entry.clone(), at)));
-            }
+            say(&mut voice, s, slot, priority, head(t, table), lines.as_deref_mut());
         }
         voice.dead |= died_now;
     }
+}
+
+/// Where a body's line plays: at its eye (the body's origin is its pill's
+/// centre; `table`: its movement table).
+pub fn head(t: &Transform, table: Option<&crate::game::movement::MovementData>) -> Vec3 {
+    let above = table.map_or(0.2, |m| m.eye(0.0) - m.centre_above_origin(0.0));
+    t.translation + Vec3::Y * above * crate::game::METERS_PER_UNIT
+}
+
+/// Line `slot` (its fallbacks followed) of `s` at `at`, if a line of
+/// `priority` may start (`may_start`): the body speaks for its longest
+/// permutation and a 7-tick pause. The sound's path, if it played.
+pub fn say<'a>(voice: &mut Voice, s: &'a BodySounds, slot: usize, priority: u8, at: Vec3, out: Option<&mut Messages<GameSound>>) -> Option<&'a str> {
+    if !may_start(voice, priority) {
+        return None;
+    }
+    let path = s.line(slot)?;
+    let info = s.set.library.sounds.get(path)?;
+    voice.speaking = (info.longest_ms.max(0) as u32 * 30 / 1000) + 7;
+    voice.priority = priority;
+    if let Some(m) = out {
+        m.write(GameSound(PlaySound::at(info.entry.clone(), at)));
+    }
+    Some(path)
+}
+
+/// The first of `slots` (names, `slot_of`) that `s` fills itself (no
+/// fallback: our own lines never borrow a pain or death line).
+pub fn first_filled(s: &BodySounds, slots: &[String]) -> Option<usize> {
+    slots.iter().filter_map(|n| slot_of(n)).find(|i| s.lines.get(*i).is_some_and(Option::is_some))
+}
+
+/// Our own lines' state, the host's (module doc, "Lines that say who it
+/// is"): per character, the kind it wore and whether it was alive at the
+/// last tick, a becoming waiting for its line (its voice may still be
+/// loading), and when its last becoming and kill lines were said
+/// (seconds of the simulation clock).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct Chatter(pub BTreeMap<Entity, ChatterState>);
+
+/// One character's (`Chatter`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ChatterState {
+    pub worn: Option<BodyKind>,
+    pub alive: bool,
+    pub pending: bool,
+    pub becoming_at: Option<f64>,
+    pub kill_at: Option<f64>,
+}
+
+/// Whether a body that now wears `kind` (`was`: what it wore before, None:
+/// no campaign kind) says its becoming line, its last said at `last`
+/// (seconds) and now `now`: a new kind always; the same kind again (a new
+/// life) once `repeat` seconds have passed.
+pub fn becoming_due(was: Option<BodyKind>, kind: BodyKind, last: Option<f64>, now: f64, repeat: f32) -> bool {
+    was != Some(kind) || last.is_none_or(|t| now - t >= f64::from(repeat))
+}
+
+/// Whether a kill makes the killer's body say a kill line: `draw` (0..1)
+/// below `chance`, its last kill line `cooldown` seconds or more ago.
+pub fn kill_due(last: Option<f64>, now: f64, chance: f32, cooldown: f32, draw: f32) -> bool {
+    draw < chance && last.is_none_or(|t| now - t >= f64::from(cooldown))
+}
+
+/// The host: each campaign body's becoming and kill lines this tick
+/// (module doc, "Lines that say who it is").
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn chatter(
+    mut died: MessageReader<crate::core::Died>,
+    data: Res<super::CampaignData>,
+    sounds: Option<Res<CampaignSounds>>,
+    voices: Option<Res<CampaignVoices>>,
+    tables: Option<Res<super::BodyTables>>,
+    clock: Res<crate::core::SimClock>,
+    mut state: ResMut<Chatter>,
+    mut bodies: Query<(Entity, &BodyKind, Option<&super::BodyVoice>, &Transform, Option<&Vitality>, Option<&mut Voice>)>,
+    mut lines: Option<ResMut<Messages<GameSound>>>,
+) {
+    let now = clock.now;
+    let rules = data.chatter;
+    let kills: Vec<Entity> = died.read().filter_map(|d| d.attacker.filter(|k| *k != d.entity)).collect();
+    let mut seen = Vec::new();
+    for (e, kind, chosen, t, vitality, voice) in &mut bodies {
+        let kind = *kind;
+        if kind == BodyKind::Spartan {
+            continue;
+        }
+        seen.push(e);
+        let alive = vitality.is_none_or(|v| !v.dead);
+        let st = state.0.entry(e).or_default();
+        // A becoming: another kind (or none) before, or a new life.
+        if alive && (st.worn != Some(kind) || !st.alive) && becoming_due(st.worn, kind, st.becoming_at, now, rules.becoming_repeat_seconds) {
+            st.pending = true;
+        }
+        if !alive {
+            st.pending = false;
+        }
+        st.worn = Some(kind);
+        st.alive = alive;
+        let Some(lists) = data.body(kind).and_then(|d| d.lines.as_ref()) else {
+            st.pending = false;
+            continue;
+        };
+        let s = match chosen {
+            Some(v) => voices.as_deref().and_then(|s| s.0.get(&(kind, v.0))),
+            None => sounds.as_deref().and_then(|s| s.0.get(&kind)),
+        };
+        // Its voice not in yet: the becoming waits (silent without it).
+        let (Some(s), Some(mut voice)) = (s, voice) else { continue };
+        let table = tables.as_deref().and_then(|t| t.movement.get(&kind));
+        let mut what = None;
+        if std::mem::take(&mut st.pending)
+            && let Some(slot) = first_filled(s, &lists.becoming)
+            && let Some(path) = say(&mut voice, s, slot, CHATTER, head(t, table), lines.as_deref_mut())
+        {
+            st.becoming_at = Some(now);
+            what = Some(("becoming", slot, path));
+        }
+        let draw = (crate::game::campaign::roll(&[clock.tick, e.to_bits(), 0x6b69_6c6c]) >> 40) as f32 / (1u64 << 24) as f32;
+        if alive
+            && what.is_none()
+            && kills.contains(&e)
+            && kill_due(st.kill_at, now, rules.kill_chance, rules.kill_cooldown_seconds, draw)
+            && let Some(slot) = first_filled(s, &lists.kill)
+            && let Some(path) = say(&mut voice, s, slot, CHATTER, head(t, table), lines.as_deref_mut())
+        {
+            st.kill_at = Some(now);
+            what = Some(("kill", slot, path));
+        }
+        if let Some((why, slot, path)) = what {
+            debug!("halo_ce: the {} body {e} says its {why} line: {} (slot {slot}) `{path}`", kind.id(), slot_name(slot));
+        }
+    }
+    // A character that wears no campaign kind (or is gone) starts afresh.
+    state.0.retain(|e, _| seen.contains(e));
 }

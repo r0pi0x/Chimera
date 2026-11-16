@@ -2123,6 +2123,7 @@ pub(crate) fn select_weapons(
         if let Some(s) = sounds.and_then(|s| s.deploy.clone())
             && first.0
         {
+            debug!("deploy sound {s} for {owner}");
             play.write(owner_sound(s, owner, at.translation, CHAN_ITEM));
         }
         if let Some(s) = sounds {

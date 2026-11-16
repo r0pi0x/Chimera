@@ -114,6 +114,7 @@ pub mod overrides;
 pub mod results;
 pub mod rotation;
 pub mod rung_command;
+pub mod slice_safety;
 pub mod power;
 pub mod runtime;
 pub mod spawn_score;

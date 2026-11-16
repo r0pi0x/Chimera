@@ -392,7 +392,15 @@ pub mod ids {
     pub const VEHICLE_HIT_ENVIRONMENT: EffectId = EffectId("vehicle_hit_environment");
     pub const VEHICLE_KILLED_UNIT: EffectId = EffectId("vehicle_killed_unit");
 
-    /// Every id, in the table's order.
+    /// The campaign's (d20's, not on `bloodgulch`): the Hunter's cannon's
+    /// explosion and the Hunter's melee (`campaign`, the Hunter's rung).
+    pub const FUEL_ROD_EXPLOSION: EffectId = EffectId("fuel_rod_explosion");
+    pub const HUNTER_MELEE: EffectId = EffectId("hunter_melee");
+    /// The campaign's ids (`FUEL_ROD_EXPLOSION`, `HUNTER_MELEE`).
+    pub const CAMPAIGN: [EffectId; 2] = [FUEL_ROD_EXPLOSION, HUNTER_MELEE];
+
+    /// Every id of the multiplayer maps' (on `bloodgulch`), in the table's
+    /// order.
     pub const ALL: [EffectId; 40] = [
         ASSAULT_RIFLE_BULLET,
         PISTOL_BULLET,

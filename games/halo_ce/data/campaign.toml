@@ -14,6 +14,24 @@
 # here.
 speed_blend = 0.5
 
+# Our own lines (the owner's wish, 2026-11-16: "it should be obvious when
+# you become one of the Halo characters that you start talking like
+# them"; not the game's: in the game a body without an actor says only
+# its pain, death and scream lines). Each character's row names, in
+# `lines`, the dialogue slots it says (`voice::SLOT_NAMES`: the slots by
+# the dialogue's own names), in order of preference: the first its voice
+# fills plays. `becoming`: when a player's body becomes the character (a
+# rung gives it, or it comes back as it after another kind or another
+# game's character), once; the same character again in a new life says
+# it again only `becoming_repeat_seconds` after the last. `kill`: after a
+# kill, with the chance `kill_chance`, never within
+# `kill_cooldown_seconds` of the last. Heard by every player at the body,
+# by the voice's own rules (one line at a time, below a pain line).
+[chatter]
+becoming_repeat_seconds = 60.0
+kill_chance = 0.5
+kill_cooldown_seconds = 10.0
+
 # Which bodies may carry each Halo gun, with their weights (characters.md
 # section 2, "Character by multiplayer weapon": a character is offered only
 # for the guns its graph animates and the campaign gives it). A gun not
@@ -56,6 +74,14 @@ spartan = 1.0
 grunt = 1.0
 jackal = 1.0
 
+# The Hunter's arm cannon (section 2 rule 6: it holds nothing else, and
+# nothing else holds it): a gun of one body, not the Spartan's, is that
+# body's own (`CampaignData::own_gun`): its holder is always the Hunter,
+# the setting on or off, and a drawn ladder deals it only with
+# `halo_ce:campaign_bodies` 1 (a sandbox lists it always).
+[guns."halo_ce:hunter_fuel_rod"]
+hunter = 1.0
+
 # Each character: its biped tag, the campaign map its unit is cut from
 # (section 8: the smallest holding it), and what differs from the
 # Spartan's tables (data/movement.toml and data/vitality.toml, merged key
@@ -80,6 +106,10 @@ speed_ratio = 1.15
 # blue).
 colour_slot = "A"
 uncoloured = [0.314, 0.302, 0.533]
+# Its own lines (`[chatter]`): a challenge on becoming one, a boast after
+# a kill (its dialogue fills taunt 9, berserk 2, killed enemy player 7,
+# killed enemy 8: characters.md section 6).
+lines = { becoming = ["taunt", "berserk"], kill = ["killed enemy player", "killed enemy", "taunt"] }
 
 # The Elite's pill and camera (section 3, "Dimensions and the pill"), its
 # own. With its speed ratio it runs at 107.5 % of the Spartan.
@@ -156,6 +186,9 @@ donor_map = "d20"
 speed_ratio = 0.84
 colour_slot = "A"
 uncoloured = [0.863, 0.502, 0.173]
+# Its panic on becoming one (flee 24), its cheer after a kill
+# (celebration 14, killed enemy player 14).
+lines = { becoming = ["flee", "taunt"], kill = ["celebration", "killed enemy player", "killed enemy"] }
 
 [bodies.grunt.movement]
 height_stand = 0.55
@@ -216,6 +249,8 @@ speed_ratio = 0.61
 colour_slot = "A"
 uncoloured = [0.259, 0.373, 0.490]
 shield_disc = "shield"
+# Its taunt on becoming one (8), its celebration after a kill (9).
+lines = { becoming = ["taunt", "surprise"], kill = ["celebration", "killed enemy player", "killed enemy"] }
 
 [bodies.jackal.movement]
 height_stand = 0.6
@@ -292,6 +327,10 @@ speed_ratio = 0.9333333
 # are only for units placed with those numbers), each its own set
 # (`voice/marine_<name>`): a Marine player speaks one, drawn per player.
 voices = ["bisenti", "fitzgerald", "aussie", "mendoza"]
+# Its own lines (each of the four voices fills these): the Marines'
+# taunt slot is empty, so a call to move up on becoming one (advance),
+# a cheer after a kill (celebration, killed enemy player).
+lines = { becoming = ["advance", "new combat alone"], kill = ["celebration", "killed enemy player", "killed enemy"] }
 
 [bodies.marine.movement]
 height_stand = 0.64
@@ -344,3 +383,95 @@ regions = [
 head = 0
 legs = 2
 other = 1
+
+# The Hunter (`characters\hunter\hunter`; sections 1 to 8), cut from d20,
+# the smallest map holding it, with its own weapon (the arm cannon, cut as
+# a unit of its own: `weapon/hunter_fuel_rod`). It holds only its cannon
+# (section 2 rule 6), which is the body of its own rung (`[guns]` above).
+# Its move-front 0.0773 WU/t against the Spartan's 0.075 (103 %, so 101.5
+# % with the blend; the spec gives it no slower mover: it keeps the
+# Spartan's acceleration, jump and air control, and walks every
+# direction, its graph's forward walk played for the others, section 4);
+# its pill 0.8 WU standing and crouched (crouching does not lower it,
+# section 3 note 2), radius 0.24, camera 0.6 / 0.3 (the biped's: 1.83 m,
+# well below its head marker's 2.755 m). No change colours (section 1:
+# untinted).
+[bodies.hunter]
+biped = 'characters\hunter\hunter'
+donor_map = "d20"
+speed_ratio = 1.0306667
+weapons = ['weapons\fuel rod gun\hunter fuel rod']
+# Its own lines: its roar on becoming one (melee attack 10, dive 11), its
+# kill line after a kill (killed enemy 9: section 6, the eight slots it
+# fills).
+lines = { becoming = ["melee attack", "dive"], kill = ["killed enemy"] }
+
+[bodies.hunter.movement]
+height_stand = 0.8
+height_crouch = 0.8
+radius = 0.24
+camera_stand = 0.6
+camera_crouch = 0.3
+
+# Its unarmed class's moves (section 4, "The numbers"): front 0.0773 WU/t
+# (no back or side walk: those play the forward one at their speed);
+# crouched 0.0189 front and back, 0.0167 sides.
+[bodies.hunter.animation]
+front = 2.319
+back = 2.319
+side = 2.319
+crouch_front = 0.567
+crouch_back = 0.567
+crouch_side = 0.501
+
+# Its first-person view (game::campaign::first_person, the owner's idea:
+# the disc has no first-person model for its cannon): its own right arm,
+# the cannon, from the upper arm down, and its shield arm's forearm (its
+# melee is a bash of that arm), posed by its own idle, aim, fire
+# and melee, the eye at its standing camera; `offset` (metres: +X right,
+# +Y up, -Z forward) and `turn` (degrees: yaw, pitch, roll) place it in
+# the view, the cannon in the lower right as a gun sits. Tune here.
+[bodies.hunter.first_person]
+guns = ["halo_ce:hunter_fuel_rod"]
+keep = ["bip01 r upperarm", "bip01 l forearm"]
+label = "fr"
+offset = [-0.25, 0.25, -0.35]
+turn = [0.0, 0.0, 0.0]
+
+# 200 body, no shield (section 5). Its materials (section 3, "Hit boxes"):
+# body (12 hunter armour), shield (32, its shield arm: body x0), skin (13
+# hunter skin: a head, the exposed orange flesh of its back and belly,
+# full damage), spikes (12, body x0); one region; the indirect material
+# body. Its armour's reduced damage is each damage effect's modifier for
+# type 12 (assault rifle 0.5, pistol 0.2, fuel rod 0: section 5 item 3).
+# The region's name is not given by the spec ("one region").
+[bodies.hunter.vitality.model]
+tag = 'characters\hunter\hunter'
+maximum_body = 200.0
+maximum_shield = 0.0
+shield_material_type = 12
+indirect_material = 0
+materials = [
+    { name = "body", head = false, type = 12, leak = 0.0, shield = 0.0, body = 1.0 },
+    { name = "shield", head = false, type = 32, leak = 0.0, shield = 0.0, body = 0.0 },
+    { name = "skin", head = true, type = 13, leak = 0.0, shield = 0.0, body = 1.0 },
+    { name = "spikes", head = false, type = 12, leak = 0.0, shield = 0.0, body = 0.0 },
+]
+regions = [
+    { name = "body", flags = 0, threshold = 0.0 },
+]
+
+# Chimera's body regions as its materials: a box whose surfaces are
+# mostly skin is a head box (`body::hits`: the head flag), so a hit there
+# takes the skin; a shield node's box the shield arm; the rest armour.
+[bodies.hunter.vitality.regions]
+head = 2
+arms = 0
+legs = 0
+other = 0
+shield = 1
+
+# Section 5 rule 7: hard ping threshold 0.25 (0.25 s).
+[bodies.hunter.vitality.unit]
+hard_ping_threshold = 0.25
+soft_ping_interrupt_time = 0.25

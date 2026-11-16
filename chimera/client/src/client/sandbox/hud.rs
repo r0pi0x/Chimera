@@ -32,9 +32,12 @@
 //! `sb.chip.game`, `sb.conds`, `sb.next`, `sb.tab`, `sb.kill`, `sb.options`,
 //! `sb.keys`, `sb.pins`, `sb.pin.<n>` (from 1).
 //!
+//! The keys card's K names the set-up it repeats ("Repeat: 2 targets, 1
+//! prop", `layout::SandboxLayout`), greyed while there is none.
+//!
 //! Known shortcuts: the kill card's "12 s ago" is rounded to whole
-//! seconds and only rebuilt each second; K (repeat the last set-up) and
-//! Q's quick panel are shown in the keys card but not built.
+//! seconds and only rebuilt each second; Q's quick panel isn't built (not
+//! listed).
 
 use bevy::prelude::*;
 use chimera_ui::{Role, Tone, UiParityId, UiStyle, controls::Ui};
@@ -103,6 +106,8 @@ pub struct HudShown {
     /// Seconds since the last kill (whole).
     pub kill_age: Option<u64>,
     pub options: SandboxOptions,
+    /// K's set-up to repeat ("2 targets, 1 prop"; None: nothing yet).
+    pub repeat: Option<String>,
     pub size: (u32, u32),
 }
 
@@ -130,6 +135,7 @@ pub fn shown(ui: &SandboxUi, cat: &SandboxCatalogue, progress: &UnitProgress, ki
         kills: if ui.tab { kills.0.clone() } else { Vec::new() },
         kill_age: if ui.tab { kills.0.last().map(|k| (now - k.at).max(0.0) as u64) } else { None },
         options: *options,
+        repeat: None,
         size: (0, 0),
     }
 }
@@ -195,6 +201,7 @@ fn draw(
     kills: Res<KillLog>,
     options: Res<SandboxOptions>,
     clock: Option<Res<chimera_ui::UiClock>>,
+    layout: Option<Res<chimera_sim::minigame::layout::SandboxLayout>>,
     mut root: Query<(Entity, &mut Visibility), With<SandboxHudRoot>>,
     mut last: Local<HudShown>,
     mut c: Commands,
@@ -203,6 +210,10 @@ fn draw(
     let now = clock.map_or(0.0, |c| c.now);
     let mut next = if look.on() { shown(&ui_state, &cat, &progress, &kills, &options, now) } else { HudShown::default() };
     next.size = (look.units.height as u32, (look.units.scale_factor * 100.0) as u32);
+    next.repeat = layout.filter(|l| !l.is_empty()).map(|l| l.summary.split(':').next().unwrap_or("").trim().to_string());
+    if ui_state.staged && next.on {
+        next.repeat = Some("2 targets, 1 prop".into());
+    }
     if *last == next {
         return;
     }
@@ -531,11 +542,17 @@ fn tab_column(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, s: &HudShown
     let head = ui.boxed(c, k, UiStyle { gap: Some(0.6), ..UiStyle::row() });
     tag(c, ui, head, "Keys", 0.46, Some((Tone::Fg, Tone::Ink)), Tone::Fg);
     let grid = ui.boxed(c, k, UiStyle { gap: Some(0.45), ..UiStyle::column() });
-    for pair in [[("B", "Change gun"), ("T", "Bench")], [("1-6", "Pinned guns"), ("K", "Repeat last set-up")], [("Q", "Hold: quick panel"), ("Esc", "Menu")]] {
+    let repeat = s.repeat.as_ref().map_or("Repeat: nothing yet".to_string(), |r| format!("Repeat: {r}"));
+    for pair in [[("B", "Change gun".to_string()), ("T", "Bench".to_string())], [("1-6", "Pinned guns".to_string()), ("K", repeat)], [("Esc", "Menu".to_string()), ("", String::new())]] {
         let row = ui.boxed(c, grid, UiStyle::row());
         for (key, words) in pair {
+            if key.is_empty() {
+                continue;
+            }
             let half = ui.boxed(c, row, UiStyle { w_pct: Some(50.0), ..UiStyle::row() });
-            key_hint(c, ui, half, key, words, 0.5, Tone::Fg);
+            // K is greyed until there is a set-up to repeat.
+            let tone = if key == "K" && s.repeat.is_none() { Tone::Fg4 } else { Tone::Fg };
+            key_hint(c, ui, half, key, &words, 0.5, tone);
         }
     }
 }
@@ -546,7 +563,7 @@ fn kill_card(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, k: &KillCar
     tag(c, ui, head, "Last kill", 0.46, Some((Tone::Acc, Tone::OnAcc)), Tone::Acc);
     ui.text(c, head, Role::Mono, 0.46, Tone::Fg3, &format!("{age} s ago"));
     ui.boxed(c, head, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-    ui.text(c, head, Role::Mono, 0.46, Tone::Fg3, "K repeats");
+    ui.text(c, head, Role::Mono, 0.46, Tone::Fg3, "K repeats the set-up");
     let what = ui.boxed(c, card, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
     gun_icon(c, look, what, &k.gun, None, 0.8, Tone::Fg, 1.0);
     ui.text(c, what, Role::DisplayBold, 0.85, Tone::Fg, &k.gun_name);

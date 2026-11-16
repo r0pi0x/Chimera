@@ -64,7 +64,7 @@ fn the_elite_is_cut_from_d20_and_loads() {
     let sounds = halo_ce::game::campaign::voice::compile(def, &file, Some(&voice_file));
     assert_eq!(sounds.set.library.footsteps.len(), 6);
     assert!(sounds.set.library.footsteps[1].iter().any(|s| !s.is_empty()), "run steps");
-    assert_eq!(sounds.filled(), 10, "{:?}", sounds.lines);
+    assert_eq!(sounds.lines[..halo_ce::game::campaign::voice::SLOTS].iter().flatten().count(), 10, "{:?}", sounds.lines);
     assert_eq!(halo_ce::game::campaign::voice::compile(def, &file, None).filled(), 0);
     eprintln!("elite: footsteps {:?}", &sounds.set.library.footsteps[1][..4.min(sounds.set.library.footsteps[1].len())]);
     let top = m.model.bounds.1.y;
@@ -274,3 +274,4 @@ fn every_body_aims_its_gun_along_its_facing() {
         assert!(yaw.abs() < 10.0, "{kind:?} holds its gun {yaw:.0} degrees off its facing");
     }
 }
+
