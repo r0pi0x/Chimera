@@ -711,7 +711,11 @@ fn on_died(world: &mut World, d: &Died) {
     let Some(victim_team) = team_of(world, victim).filter(|t| plays(*t)) else { return };
     let fall = d.damage.kind == crate::core::DamageKind::Fall;
     let kind = classify(victim, d.attacker, d.attacker.and_then(|k| team_of(world, k)), victim_team, fall);
-    if world.resource::<Match>().counting() {
+    // A practice target's death or kill counts for no one (no score, no
+    // rung: `targets`).
+    let target = |w: &World, e: Option<Entity>| e.is_some_and(|e| super::targets::is_target(w, e));
+    let practice = target(world, Some(victim)) || target(world, d.attacker);
+    if world.resource::<Match>().counting() && !practice {
         add_score(world, victim, 0, 1);
         if let Some(k) = d.attacker {
             match kind {
