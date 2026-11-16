@@ -179,6 +179,7 @@ fn a_blast_among_three_targets_is_measured_as_their_hits() {
     let b = &seen.blasts[0];
     assert_eq!((b.attacker, b.gun, b.inner), (Some(me), Some("hl2dm:weapon_rpg"), 0.0));
     assert!(b.outer > 5.0 && b.max_damage > 1.0, "{b:?}");
+    assert_eq!(b.edge_damage, 0.0, "HL2's falloff is linear to nothing at the radius");
     let mut on_targets = 0;
     for t in &ts {
         let Some(h) = b.hits.iter().find(|h| h.victim == *t) else { continue };

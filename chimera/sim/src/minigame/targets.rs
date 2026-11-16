@@ -82,7 +82,8 @@
 //!   HL2:DM's grenades, rockets and map explosions go through, Combat
 //!   Arms' `blast_bodies`, Halo's detonation): the centre, the falloff's
 //!   `inner` (full damage inside) and `outer` (none past), `max_damage`
-//!   at the centre, and per victim (`BlastHit`) its point, distance from
+//!   at the centre, `edge_damage` at `outer` (0 where the falloff reaches
+//!   nothing there), and per victim (`BlastHit`) its point, distance from
 //!   the centre, damage and whether it died that tick. A victim's damage
 //!   is what its `HitMeasured` says for that attacker and tick (the
 //!   blast's own number for a thing with no health). Linear falloffs from
@@ -403,6 +404,9 @@ pub struct BlastMeasured {
     /// At the centre, normalized like `Health` (1.0 = a standard
     /// player's 100).
     pub max_damage: f32,
+    /// At `outer`, normalized (`weapon::grenade::BlastDealt::edge_damage`:
+    /// 0 where the falloff reaches nothing at the radius).
+    pub edge_damage: f32,
     pub hits: Vec<BlastHit>,
     /// `SimClock` s (simulation time).
     pub time: f64,
@@ -1443,6 +1447,7 @@ fn measure(
             inner: b.inner,
             outer: b.outer,
             max_damage: b.max_damage,
+            edge_damage: b.edge_damage,
             hits,
             time: now,
         };
@@ -1498,7 +1503,7 @@ pub fn blast_line(m: &BlastMeasured) -> String {
         .map(|h| format!("{:?} {:.1}m {:.1}{}", h.victim, h.distance_m, h.damage * 100.0, if h.killed { " killed" } else { "" }))
         .collect();
     format!(
-        "BlastMeasured attacker={:?} gun={} at=({:.2},{:.2},{:.2}) inner={:.2}m outer={:.2}m max={:.1} hits=[{}] t={:.3}",
+        "BlastMeasured attacker={:?} gun={} at=({:.2},{:.2},{:.2}) inner={:.2}m outer={:.2}m max={:.1} edge={:.1} hits=[{}] t={:.3}",
         m.attacker,
         m.gun.unwrap_or("?"),
         m.at.x,
@@ -1507,6 +1512,7 @@ pub fn blast_line(m: &BlastMeasured) -> String {
         m.inner,
         m.outer,
         m.max_damage * 100.0,
+        m.edge_damage * 100.0,
         hits.join(", "),
         m.time
     )

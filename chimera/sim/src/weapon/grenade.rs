@@ -415,6 +415,13 @@ pub struct BlastDealt {
     pub inner: f32,
     pub outer: f32,
     pub max_damage: f32,
+    /// The damage at `outer` on `Health`'s scale: what the falloff gives
+    /// a victim at that distance (just inside it, where the damage stops
+    /// there). 0 where the falloff reaches nothing at the radius (a linear
+    /// fall to zero); a falloff that ends at a share of the centre's puts
+    /// that share's damage (TF2's splash: its edge factor times
+    /// `max_damage`); a bell its value at `outer`.
+    pub edge_damage: f32,
     pub victims: Vec<BlastVictim>,
 }
 
@@ -1884,9 +1891,12 @@ fn blast(
     }
     // What it did, told once (`BlastDealt`): its falloff's reach.
     let legacy = b.legacy && world.legacy.as_ref().is_some_and(|l| l.0 != 0);
-    let (inner, outer) = match b.bell_sigma {
-        Some(sigma) if !legacy => bell_reach(sigma, b.radius),
-        _ => (0.0, b.radius),
+    let (inner, outer, edge_damage) = match b.bell_sigma {
+        Some(sigma) if !legacy => {
+            let (inner, outer) = bell_reach(sigma, b.radius);
+            (inner, outer, blast_damage_bell(b.damage, sigma, outer))
+        }
+        _ => (0.0, b.radius, 0.0),
     };
     let mut victims: Vec<BlastVictim> = Vec::new();
     for (target, end, mut raw) in hits {
@@ -1957,6 +1967,7 @@ fn blast(
         inner,
         outer,
         max_damage: b.damage,
+        edge_damage,
         victims,
     });
     // Loose bodies in reach and in the open get the push (physics_props.md

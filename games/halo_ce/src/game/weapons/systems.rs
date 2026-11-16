@@ -760,6 +760,7 @@ fn detonate(e: Entity, projectiles: &mut Query<(Entity, &mut HaloProjectile)>, t
         inner: 0.0,
         outer: 0.0,
         max_damage: 0.0,
+        edge_damage: 0.0,
         victims: Vec::new(),
     };
     for id in &ids {
@@ -770,6 +771,9 @@ fn detonate(e: Entity, projectiles: &mut Query<(Entity, &mut HaloProjectile)>, t
             told.inner = told.inner.max(fx.radius[0] * METERS_PER_WU);
             told.outer = told.outer.max(fx.radius[1] * METERS_PER_WU);
             told.max_damage += fx.amount(1.0, 1.0) / 75.0;
+            // At r1 the scale reaches 0 and the amount its lower bound
+            // ((1 - s) lower + s U); past it, nothing.
+            told.edge_damage += fx.amount(0.0, 0.0) / 75.0;
         }
         let mut clear = |a: Vec3, b: Vec3| trace.clear(a * METERS_PER_WU, b * METERS_PER_WU);
         let mut draw = || rng.real();
