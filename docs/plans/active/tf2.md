@@ -26,13 +26,16 @@ from specs, measurements and the game's own data.
 
 ## 1. Rules for this port
 
-- **Clean room.** TF2's and the Source engine's code leaked, and the
-  Source SDK is public. Neither is ever read, copied or translated.
-  Spec sub-agents read the game's data files in place, public
-  documentation (the community TF2 wiki, Valve Developer Community)
-  and measurements of the dedicated server, and write only
-  `specs/tf2/`. The orchestrator and implementation agents read only
-  `specs/` and the repository.
+- **Clean room.** TF2's and the Source engine's code leaked; the leak
+  is never read, copied or translated. Valve's public Source SDK 2013,
+  which has held TF2's client and server game code since 2025-02-18
+  (non-commercial licence), is reference material for spec sessions
+  only (user, 2026-11-15). Spec sub-agents may read it in place, along
+  with the game's data files, public documentation (the community TF2
+  wiki, Valve Developer Community) and measurements of the dedicated
+  server. They write only `specs/tf2/`, in their own words, never
+  copying or translating code. The orchestrator and implementation
+  agents read only `specs/` and the repository.
 - **No game files, extracted data or keys in the repository.** Assets
   load at run time from the user's install or the asset service. No
   install path, home path or key goes into a commit.
