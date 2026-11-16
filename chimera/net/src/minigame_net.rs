@@ -603,6 +603,18 @@ fn receive_offer(mut offers: MessageReader<PartyOffer>, mut commands: Commands) 
 /// first; another map is the app's `changelevel` (which takes every client
 /// along with the new match's manifest). A client can't change match.
 pub fn change_match(world: &mut World, id: &str, map: Option<&str>) -> Result<String, String> {
+    change_match_on(world, id, map, false)
+}
+
+/// `change_match` that loads the map even when its name is the one in
+/// play: for a start from a front end that shows no world (a main menu,
+/// where the map "in play" is only a name), so the load brings the world
+/// in and takes the player into the game as any map change does.
+pub fn change_match_loading(world: &mut World, id: &str, map: Option<&str>) -> Result<String, String> {
+    change_match_on(world, id, map, true)
+}
+
+fn change_match_on(world: &mut World, id: &str, map: Option<&str>, load: bool) -> Result<String, String> {
     if world.get_resource::<NetRole>() == Some(&NetRole::Client) {
         return Err("the server picks the minigame; you are a client of it".into());
     }
@@ -626,7 +638,7 @@ pub fn change_match(world: &mut World, id: &str, map: Option<&str>) -> Result<St
             lacking_text(games.as_ref(), &p.lacking)
         ));
     }
-    if target != here {
+    if load || target != here {
         minigame::check(world, def)?;
         // The map left was played (a rotation's random pick skips it).
         world.get_resource_or_init::<MapHistory>().record(&here);
