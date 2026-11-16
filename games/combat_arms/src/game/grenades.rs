@@ -2022,6 +2022,8 @@ pub(crate) fn blast_bodies(
         inner: BLAST_FULL_FRACTION * a.radius * unit,
         outer: a.radius * unit,
         max_damage: a.damage * hp,
+        // Linear to nothing at the radius.
+        edge_damage: 0.0,
         victims,
     });
 }

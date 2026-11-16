@@ -7,8 +7,9 @@
 //! among three targets is one `BlastMeasured` whose victims' damage is
 //! their `HitMeasured`'s. On the party's simulation, headless.
 
-use bevy::prelude::*;
-use chimera_core::core::{Intent, LocalPlayer};
+use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
+use bevy::{ecs::system::SystemState, prelude::*};
+use chimera_core::core::{Damage, DamageKind, Hitgroup, Intent, LocalPlayer, SOLID_LAYERS};
 use chimera_sim::{
     minigame::{
         self, props,
@@ -55,17 +56,51 @@ fn prop(sim: &mut Sim, kind: &str, distance_m: f32) -> Entity {
     e
 }
 
-/// A bullet's line from `me`'s eye through `at` (and 5 m past it), with
-/// its `ShotMade`.
-fn bullet(sim: &mut Sim, me: Entity, at: Vec3) {
+/// The line from `me`'s eye toward `at`, traced as the weapons trace
+/// (`SOLID_LAYERS`): where it stopped and what it met (a prop's piece, its
+/// shelf), and its direction.
+fn trace(sim: &mut Sim, me: Entity, at: Vec3) -> (Vec3, Vec3, Vec3, Option<Entity>) {
     let from = sim.position(me) + Vec3::Y * 0.6;
     let dir = (at - from).normalize();
+    let world = sim.app.world_mut();
+    let mut state: SystemState<SpatialQuery> = SystemState::new(world);
+    let filter = SpatialQueryFilter::from_mask(SOLID_LAYERS).with_excluded_entities([me]);
+    let met = state.get(world).unwrap().cast_ray(from, Dir3::new(dir).unwrap(), 100.0, true, &filter);
+    let (to, hit) = met.map_or((from + dir * 100.0, None), |h| (from + dir * h.distance, Some(h.entity)));
+    (from, dir, to, hit)
+}
+
+/// A hitscan bullet toward `at` as `trace` stops it, with its `ShotMade`.
+/// What it struck.
+fn bullet(sim: &mut Sim, me: Entity, at: Vec3) -> Option<Entity> {
+    let (from, dir, to, hit) = trace(sim, me, at);
     for kind in [
         WeaponEventKind::ShotMade { id: GUN, origin: from, dir },
-        WeaponEventKind::Shot { from, to: at + dir * 5.0, hit: None, normal: None },
+        WeaponEventKind::Shot { from, to, hit, normal: None },
     ] {
         sim.app.world_mut().write_message(WeaponEvent { owner: me, weapon: Entity::PLACEHOLDER, kind, replay: false });
     }
+    sim.ticks(1);
+    hit
+}
+
+/// A projectile's direct hit toward `at` where `trace` stops it: a
+/// `Damage` on what it met (as every game's projectile hits a
+/// `Damageable`), no trace.
+fn projectile(sim: &mut Sim, me: Entity, at: Vec3) {
+    let (_, dir, to, hit) = trace(sim, me, at);
+    let target = hit.expect("the projectile meets the prop");
+    sim.app.world_mut().write_message(Damage {
+        target,
+        attacker: Some(me),
+        amount: 0.2,
+        point: to,
+        dir,
+        hitgroup: Hitgroup::Generic,
+        kind: DamageKind::Bullet,
+        weapon: Some("halo_ce:plasma_rifle"),
+        force: Vec3::ZERO,
+    });
     sim.ticks(1);
 }
 
@@ -88,7 +123,8 @@ fn bottles_fall_to_bullets_and_blasts_and_stand_again() {
     assert!(((p.home - sim.position(me)).xz().length() - 8.0).abs() < 0.05, "8 m out: {:?}", p.home);
     // The third bottle (from the left, x = -0.125 m) at its middle.
     let third = world_of(&sim, e, Vec3::new(-0.125, 1.12, 0.0));
-    bullet(&mut sim, me, third);
+    let struck = bullet(&mut sim, me, third).expect("the bullet stops on the bottle");
+    assert!(sim.app.world().get::<ChildOf>(struck).is_some_and(|c| c.parent() == e), "a piece of the prop: {struck:?}");
     assert_eq!(standing(&sim, e), 5);
     let hit = sim.app.world().resource::<Seen>().props.last().cloned().expect("a PropHit");
     assert_eq!((hit.prop, hit.piece, hit.attacker), (e, 2, Some(me)));
@@ -179,6 +215,7 @@ fn a_blast_among_three_targets_is_measured_as_their_hits() {
     let b = &seen.blasts[0];
     assert_eq!((b.attacker, b.gun, b.inner), (Some(me), Some("hl2dm:weapon_rpg"), 0.0));
     assert!(b.outer > 5.0 && b.max_damage > 1.0, "{b:?}");
+    assert_eq!(b.edge_damage, 0.0, "HL2's falloff is linear to nothing at the radius");
     let mut on_targets = 0;
     for t in &ts {
         let Some(h) = b.hits.iter().find(|h| h.victim == *t) else { continue };
@@ -191,4 +228,27 @@ fn a_blast_among_three_targets_is_measured_as_their_hits() {
     let mut d: Vec<f32> = b.hits.iter().filter(|h| ts.contains(&h.victim)).map(|h| h.distance_m).collect();
     d.sort_by(f32::total_cmp);
     assert!(d[0] < d[1] && d[1] < d[2], "three distances: {d:?}");
+}
+
+#[test]
+fn a_projectiles_direct_hit_knocks_a_can_and_lands_on_the_board() {
+    let (mut sim, me) = play();
+    let cans = prop(&mut sim, "tin_cans", 8.0);
+    let middle = world_of(&sim, cans, Vec3::new(0.0, 1.06, 0.0));
+    projectile(&mut sim, me, middle);
+    assert_eq!(standing(&sim, cans), 4);
+    let hit = sim.app.world().resource::<Seen>().props.last().cloned().expect("a PropHit");
+    assert_eq!((hit.prop, hit.piece), (cans, 2));
+    sim.app.world_mut().get_mut::<Intent>(me).unwrap().yaw = -0.25;
+    let board = prop(&mut sim, "target_board", 9.0);
+    let spot = world_of(&sim, board, Vec3::new(0.1, props::BOARD_CENTRE_Y + 0.05, 0.0));
+    projectile(&mut sim, me, spot);
+    let g = sim.app.world().get::<ShotGroup>(board).cloned().unwrap();
+    assert_eq!(g.hits.len(), 1, "{g:?}");
+    assert!((g.hits[0] - Vec2::new(0.1, 0.05)).length() < 0.02, "{g:?}");
+    // The shelf stops a bullet too (no piece, nothing counted).
+    let shelf = world_of(&sim, cans, Vec3::new(0.3, 0.98, 0.0));
+    sim.app.world_mut().get_mut::<Intent>(me).unwrap().yaw = 0.0;
+    assert!(bullet(&mut sim, me, shelf).is_some(), "the shelf is solid to shots");
+    assert_eq!(standing(&sim, cans), 4);
 }

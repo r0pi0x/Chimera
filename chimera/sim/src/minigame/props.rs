@@ -20,28 +20,44 @@
 //! from 0, the attacker's distance to the prop, simulation time), also in
 //! the log.
 //!
-//! - Bottles (6) and tin cans (5) stand on a shelf about 1 m high. A
-//!   bullet (any game's hitscan trace, `WeaponEventKind::Shot` and
-//!   `ShotContinued`) whose line crosses a standing piece's box knocks the
-//!   first it crosses; a blast (`weapon::grenade::BlastDealt`, any game's
-//!   that tells it) knocks every standing piece within its `outer` radius.
-//!   A knocked piece is laid on the floor behind the shelf at once (no
-//!   physics: the cheapest that reads clearly), `standing` falls and a
-//!   `PropHit` is written. When every piece is down they all stand again
-//!   `RESET_SECS` later; `ResetProp`, `prop reset` and a new prop stand
-//!   them at once.
+//! **Solid.** Every part has a static collider of its shape: the shelf,
+//! its legs, the board's face and posts on the map's default layer (shots
+//! stop on them, characters can't walk through them, as a crate), the
+//! bottles and cans on `core::TRACE_ONLY_LAYER` (shots stop on them,
+//! characters pass). Weapons' own traces and projectiles meet them like any
+//! world surface, so an impact shows on the prop and a projectile that
+//! explodes on contact explodes there. The pieces and the face are
+//! `core::Damageable` and `map::shapes::Hittable` (Halo's projectiles
+//! report them as objects struck).
+//!
+//! - Bottles (6) and tin cans (5) stand on a shelf about 1 m high. What
+//!   strikes a standing piece knocks it: a hitscan bullet whose trace
+//!   (`WeaponEventKind::Shot`, `ShotContinued`) stopped on it, or any
+//!   game's hit on it as an object (a non-blast `core::Damage` on it: a
+//!   projectile's direct hit, a grenade breaking through); a blast
+//!   (`weapon::grenade::BlastDealt`, any game's that tells it) knocks every
+//!   standing piece within its `outer` radius that it sees: the line from
+//!   its centre to the piece clear of the map's world (characters and
+//!   props don't block it; the engine's and Halo's sight rule for the
+//!   characters they hurt, Combat Arms' meets props too). A knocked piece
+//!   is laid on the floor behind the shelf at once (no physics: the
+//!   cheapest that reads clearly), `standing` falls and a `PropHit` is
+//!   written. When every piece is down they all stand again `RESET_SECS`
+//!   later; `ResetProp`, `prop reset` and a new prop stand them at once.
 //! - The board: a 1 m square face, its centre `BOARD_CENTRE_Y` m above
-//!   the floor, rings painted on, on two posts. Each bullet line that
-//!   crosses the face lands on it: the point in `ShotGroup::hits` (m from
-//!   the face's centre, +x right and +y up as the shooter sees it), a
-//!   mark drawn there and a `PropHit` (piece 0). A shot fired at the board
-//!   (its aim line, `ShotMade`, crosses the board's plane within
-//!   `BOARD_AIM_M` of the face's centre, the nearest board so) whose bullets
-//!   all missed the face is a `misses`. `spread_m` (extreme spread: the
-//!   widest two hits), `mean_radius_m` (the hits' mean distance from their
-//!   centre) and `centre` (their mean) are kept current. Cleared by
-//!   `ResetProp` and `prop reset`; a new board starts empty. Blasts leave
-//!   the board alone.
+//!   the floor, rings painted on, on two posts. Each bullet whose trace
+//!   stopped on the face (each pellet), each other hit on it as an object
+//!   (a projectile's), and a blast whose centre is on the face (a rocket
+//!   on it) lands on it: the point in `ShotGroup::hits` (m from the
+//!   face's centre, +x right and +y up as the shooter sees it), a mark
+//!   drawn there and a `PropHit` (piece 0). A hitscan shot fired at the
+//!   board (its aim line, `ShotMade`, crosses the board's plane within
+//!   `BOARD_AIM_M` of the face's centre, the nearest board so) whose
+//!   bullets all missed the face is a `misses`. `spread_m` (extreme
+//!   spread: the widest two hits), `mean_radius_m` (the hits' mean
+//!   distance from their centre) and `centre` (their mean) are kept
+//!   current. Cleared by `ResetProp` and `prop reset`; a new board starts
+//!   empty. Other blasts leave the board alone.
 //!
 //! Props exist only while the sandbox plays (`rung_command::holds`): a
 //! spawn is refused otherwise, and every prop is removed when it stops or
@@ -53,15 +69,10 @@
 //! to face prop n's piece, from 0: staging a picture).
 //!
 //! Known shortcuts:
-//! - Props have no collider: bullets pass through them (the line is
-//!   tested against the pieces' boxes and the face's plane, so a hit
-//!   counts; the bullet's own impact is on what is behind), grenades fly
-//!   through, and a prop blocks no blast or sight.
-//! - A game whose bullets are projectiles with no hitscan trace (Halo's
-//!   guns, rockets) hits no prop with them; its shots at a board count
-//!   neither as hits nor misses (a shot counts as a miss only when its
-//!   shooter's bullets drew traces that tick). A blast knocks pieces by
-//!   distance alone (no line of sight).
+//! - A projectile's shot at a board counts as a miss never (its landing
+//!   comes ticks later): misses are hitscan shots'. A grenade that only
+//!   bounces off a piece (Combat Arms', which writes no hit on objects)
+//!   doesn't knock it; its blast does.
 //! - A knocked piece doesn't tumble: it is placed lying behind the shelf.
 
 use bevy::prelude::*;
@@ -70,10 +81,12 @@ use super::{
     rung_command,
     targets::{TargetRefused, find_spot},
 };
+use avian3d::prelude::{Collider, ColliderOf, CollisionLayers, LayerMask, RigidBody, SpatialQuery, SpatialQueryFilter};
+
 use crate::{
     console::{ConsoleAppExt, command_player},
-    core::{Intent, MapLoads, SimClock, SimSet},
-    map::shapes::{CodeShape, ShapeKind},
+    core::{Damage, DamageKind, Damageable, Intent, MapLoads, SOLID_LAYERS, SimClock, SimSet, TRACE_ONLY_LAYER},
+    map::shapes::{CodeShape, Hittable, ShapeKind},
     weapon::{WeaponEvent, WeaponEventKind, grenade::BlastDealt},
 };
 
@@ -202,6 +215,19 @@ struct PropState {
 #[derive(Resource, Default)]
 struct PropCount(u32);
 
+/// Every collider of a prop (its parts and pieces): blasts' sight lines
+/// leave them out.
+#[derive(Component, Clone, Copy, Debug)]
+struct PropPart;
+
+/// The collider of a shape.
+fn collider(kind: ShapeKind) -> Collider {
+    match kind {
+        ShapeKind::Box(half) => Collider::cuboid(half.x * 2.0, half.y * 2.0, half.z * 2.0),
+        ShapeKind::Cylinder { radius, half_height } => Collider::cylinder(radius, half_height * 2.0),
+    }
+}
+
 fn shape(kind: ShapeKind, colour: Color, at: Transform) -> (CodeShape, Transform) {
     (CodeShape { kind, colour }, at)
 }
@@ -257,7 +283,13 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
         ))
         .id();
     let wood = Color::srgb(0.45, 0.30, 0.18);
-    let part = |world: &mut World, (s, t): (CodeShape, Transform)| world.spawn((s, t, ChildOf(prop))).id();
+    // Every part is solid: a static collider of its shape on the map's
+    // default layer (shots stop on it, characters can't walk through a
+    // shelf or the board), the pieces moved to traces only below.
+    let part = |world: &mut World, (s, t): (CodeShape, Transform)| {
+        let c = collider(s.kind);
+        world.spawn((s, t, ChildOf(prop), RigidBody::Static, c, PropPart)).id()
+    };
     if *kind == "target_board" {
         world.entity_mut(prop).insert(ShotGroup::default());
         for x in [-0.4, 0.4] {
@@ -265,14 +297,11 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
         }
         let stand = Transform::from_xyz(0.0, BOARD_CENTRE_Y, 0.0);
         let face = part(world, shape(ShapeKind::Box(Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT)), Color::srgb(0.92, 0.9, 0.82), stand));
-        world.entity_mut(face).insert(PropPiece {
-            prop,
-            index: 0,
-            standing: true,
-            stand,
-            half: Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT),
-            board: true,
-        });
+        world.entity_mut(face).insert((
+            PropPiece { prop, index: 0, standing: true, stand, half: Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT), board: true },
+            Damageable,
+            Hittable,
+        ));
         let black = Color::srgb(0.05, 0.05, 0.05);
         let cream = Color::srgb(0.92, 0.9, 0.82);
         for (i, (r, c)) in [(0.4, black), (0.3, cream), (0.2, black), (0.1, cream), (0.04, Color::srgb(0.8, 0.1, 0.1))].into_iter().enumerate() {
@@ -293,7 +322,14 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
             let stand = Transform::from_xyz(x, SHELF_TOP + hh, 0.0);
             let piece = part(world, shape(ShapeKind::Cylinder { radius: r, half_height: hh }, colour, stand));
             let half = if bottles { Vec3::new(r, hh + 0.04, r) } else { Vec3::new(r, hh, r) };
-            world.entity_mut(piece).insert(PropPiece { prop, index: i, standing: true, stand, half, board: false });
+            // Shots strike it (traces only: characters pass it, it can't
+            // hold them up).
+            world.entity_mut(piece).insert((
+                PropPiece { prop, index: i, standing: true, stand, half, board: false },
+                CollisionLayers::new(TRACE_ONLY_LAYER, LayerMask::NONE),
+                Damageable,
+                Hittable,
+            ));
             let extra = if bottles {
                 shape(ShapeKind::Cylinder { radius: 0.016, half_height: 0.04 }, colour, Transform::from_xyz(0.0, hh + 0.04, 0.0))
             } else {
@@ -366,103 +402,136 @@ pub fn reset(world: &mut World, e: Entity) {
     }
 }
 
-/// Where a segment from `a` to `b` (the prop's frame) enters the box
-/// `half` about `c`: the fraction along it.
-fn segment_box(a: Vec3, b: Vec3, c: Vec3, half: Vec3) -> Option<f32> {
-    let d = b - a;
-    let (mut lo, mut hi) = (0.0f32, 1.0f32);
-    for i in 0..3 {
-        let (o, v, min, max) = (a[i], d[i], c[i] - half[i], c[i] + half[i]);
-        if v.abs() < 1e-9 {
-            if o < min || o > max {
-                return None;
-            }
-        } else {
-            let (t1, t2) = ((min - o) / v, (max - o) / v);
-            lo = lo.max(t1.min(t2));
-            hi = hi.min(t1.max(t2));
-            if lo > hi {
-                return None;
-            }
-        }
-    }
-    Some(lo)
+/// What prop hits read beside the props: the shooters, the colliders'
+/// bodies, the world for a blast's sight line.
+#[derive(bevy::ecs::system::SystemParam)]
+struct PropWorld<'w, 's> {
+    shooters: Query<'w, 's, (Entity, &'static Transform), (With<Intent>, Without<Prop>, Without<PropPiece>)>,
+    colliders: Query<'w, 's, &'static ColliderOf>,
+    parts: Query<'w, 's, Entity, With<PropPart>>,
+    spatial: SpatialQuery<'w, 's>,
 }
 
-/// The shot lines and aims of a tick, and the blasts, on the props.
+impl PropWorld<'_, '_> {
+    /// The body a collider (or a body) `e` belongs to.
+    fn body(&self, e: Entity) -> Entity {
+        self.colliders.get(e).map_or(e, |c| c.body)
+    }
+
+    /// Whether the line from a blast at `from` to `to` is clear of the
+    /// map's world: characters and props never block it (module doc).
+    fn clear(&self, from: Vec3, to: Vec3) -> bool {
+        let Ok((dir, len)) = Dir3::new_and_length(to - from) else { return true };
+        let skip: Vec<Entity> = self.shooters.iter().map(|(e, _)| e).chain(self.parts.iter()).collect();
+        let filter = SpatialQueryFilter::from_mask(SOLID_LAYERS).with_excluded_entities(skip);
+        let colliders = &self.colliders;
+        let shooters = &self.shooters;
+        let parts = &self.parts;
+        self.spatial
+            .cast_ray_predicate(from, dir, len, true, &filter, &|c| {
+                let body = colliders.get(c).map_or(c, |o| o.body);
+                !shooters.contains(body) && !parts.contains(body)
+            })
+            .is_none()
+    }
+}
+
+/// The shots, projectiles and blasts of a tick on the props.
 #[allow(clippy::type_complexity)]
 fn prop_hits(
-    (mut events, mut blasts): (MessageReader<WeaponEvent>, MessageReader<BlastDealt>),
+    (mut events, mut blasts, mut damage): (MessageReader<WeaponEvent>, MessageReader<BlastDealt>, MessageReader<Damage>),
     clock: Res<SimClock>,
     mut props: Query<(Entity, &Transform, &mut Prop, &mut PropState, Option<&mut ShotGroup>)>,
     mut pieces: Query<(Entity, &mut PropPiece, &mut Transform), (Without<Prop>, Without<Intent>)>,
-    shooters: Query<&Transform, (With<Intent>, Without<Prop>)>,
+    world: PropWorld,
     mut out: MessageWriter<PropHit>,
     mut commands: Commands,
 ) {
     let now = clock.now;
-    let mut lines: Vec<(Entity, Vec3, Vec3)> = Vec::new();
+    let mut lines: Vec<(Entity, Vec3, Entity)> = Vec::new();
+    let mut traced: Vec<Entity> = Vec::new();
     let mut aims: Vec<(Entity, Vec3, Vec3)> = Vec::new();
     for ev in events.read() {
         if ev.replay {
             continue;
         }
         match ev.kind {
-            WeaponEventKind::Shot { from, to, .. } | WeaponEventKind::ShotContinued { from, to, .. } => lines.push((ev.owner, from, to)),
+            WeaponEventKind::Shot { to, hit, .. } | WeaponEventKind::ShotContinued { to, hit, .. } => {
+                traced.push(ev.owner);
+                if let Some(h) = hit {
+                    lines.push((ev.owner, to, world.body(h)));
+                }
+            }
             WeaponEventKind::ShotMade { origin, dir, .. } => aims.push((ev.owner, origin, dir)),
             _ => {}
         }
     }
+    // What struck a piece as an object: every game's hit on a `Damageable`
+    // (a bullet, a projectile's direct hit; blasts are below).
+    let struck: Vec<(Option<Entity>, Vec3, Entity)> = damage
+        .read()
+        .filter(|d| d.kind != DamageKind::Blast)
+        .map(|d| (d.attacker, d.point, world.body(d.target)))
+        .filter(|(.., e)| pieces.contains(*e))
+        .collect();
     let blasts: Vec<BlastDealt> = blasts.read().cloned().collect();
-    if lines.is_empty() && aims.is_empty() && blasts.is_empty() {
+    if lines.is_empty() && aims.is_empty() && blasts.is_empty() && struck.is_empty() {
         return;
     }
     let frames: Vec<(Entity, Transform)> = props.iter().map(|(e, t, ..)| (e, *t)).collect();
     let frame = |p: Entity| frames.iter().find(|(e, _)| *e == p).map(|(_, t)| *t);
     let local = |t: &Transform, p: Vec3| t.rotation.inverse() * (p - t.translation);
     let distance = |a: Option<Entity>, p: Entity| {
-        a.and_then(|a| shooters.get(a).ok()).zip(frame(p)).map_or(0.0, |(s, t)| s.translation.distance(t.translation))
+        a.and_then(|a| world.shooters.get(a).ok()).zip(frame(p)).map_or(0.0, |((_, s), t)| s.translation.distance(t.translation))
+    };
+    // Where a point lands on a board's face (m from its centre), if on it.
+    let on_face = |prop: Entity, p: Vec3| {
+        let l = local(&frame(prop)?, p);
+        let on = Vec2::new(l.x, l.y - BOARD_CENTRE_Y);
+        let edge = BOARD_HALF + 0.01;
+        (on.x.abs() <= edge && on.y.abs() <= edge && l.z.abs() <= 0.3).then_some(on.clamp(Vec2::splat(-BOARD_HALF), Vec2::splat(BOARD_HALF)))
     };
     // Knocked pieces and landings: (attacker, prop, piece, landing on the face).
-    let mut hits: Vec<(Option<Entity>, Entity, Entity, Option<Vec2>)> = Vec::new();
+    type Hits = Vec<(Option<Entity>, Entity, Entity, Option<Vec2>)>;
+    let mut hits: Hits = Vec::new();
     let mut landed: Vec<(Entity, Entity)> = Vec::new();
-    for (owner, from, to) in &lines {
-        let mut best: Option<(f32, Entity, Entity, Option<Vec2>)> = None;
-        for (pe, piece, _) in &pieces {
-            if !piece.standing {
-                continue;
-            }
-            let Some(t) = frame(piece.prop) else { continue };
-            let (a, b) = (local(&t, *from), local(&t, *to));
-            let found = if piece.board {
-                // The face's front plane, crossed from the front.
-                let (za, zb) = (a.z - FACE_FRONT, b.z - FACE_FRONT);
-                (za > 0.0 && zb <= 0.0).then(|| za / (za - zb)).and_then(|f| {
-                    let p = a.lerp(b, f);
-                    let on = Vec2::new(p.x, p.y - BOARD_CENTRE_Y);
-                    (on.x.abs() <= BOARD_HALF && on.y.abs() <= BOARD_HALF).then_some((f, Some(on)))
-                })
-            } else {
-                segment_box(a, b, piece.stand.translation, piece.half).map(|f| (f, None))
-            };
-            if let Some((f, on)) = found
-                && best.is_none_or(|(bf, ..)| f < bf)
-            {
-                best = Some((f, piece.prop, pe, on));
-            }
+    let hit = |a: Option<Entity>, pe: Entity, at: Vec3, hits: &mut Hits, landed: &mut Vec<(Entity, Entity)>| {
+        let Ok((_, piece, _)) = pieces.get(pe) else { return };
+        let on = if piece.board { on_face(piece.prop, at) } else { None };
+        if piece.board && on.is_none() {
+            return;
         }
-        if let Some((_, prop, pe, on)) = best {
-            hits.push((Some(*owner), prop, pe, on));
-            if on.is_some() {
-                landed.push((*owner, prop));
-            }
+        hits.push((a, piece.prop, pe, on));
+        if let (Some(a), Some(_)) = (a, on) {
+            landed.push((a, piece.prop));
+        }
+    };
+    // Bullets' traces that stopped on a piece: each pellet where it struck.
+    for (owner, to, body) in &lines {
+        if pieces.contains(*body) {
+            hit(Some(*owner), *body, *to, &mut hits, &mut landed);
         }
     }
+    // Other games' and projectiles' hits (a shooter whose bullets drew a
+    // trace on that piece this tick is counted by the trace).
+    for (a, at, pe) in &struck {
+        let by_trace = a.is_some_and(|a| lines.iter().any(|(o, _, b)| *o == a && b == pe));
+        if !by_trace {
+            hit(*a, *pe, *at, &mut hits, &mut landed);
+        }
+    }
+    // Blasts: every standing piece within the outer radius in the blast's
+    // sight; a blast on a board's face (a rocket's) lands there.
     for b in &blasts {
         for (pe, piece, _) in &pieces {
             let Some(t) = frame(piece.prop) else { continue };
             let at = t.transform_point(piece.stand.translation);
-            if piece.standing && !piece.board && at.distance(b.at) <= b.outer {
+            if piece.board {
+                let already = b.attacker.is_some_and(|a| landed.contains(&(a, piece.prop)));
+                if !already && local(&t, b.at).z.abs() <= 0.3 && on_face(piece.prop, b.at).is_some() {
+                    hits.push((b.attacker, piece.prop, pe, on_face(piece.prop, b.at)));
+                }
+            } else if piece.standing && at.distance(b.at) <= b.outer && world.clear(b.at, at) {
                 hits.push((b.attacker, piece.prop, pe, None));
             }
         }
@@ -470,7 +539,7 @@ fn prop_hits(
     // Shots at a board whose shooter's bullets all missed its face.
     let mut at_board: Vec<(Entity, Entity)> = Vec::new();
     for (owner, origin, dir) in &aims {
-        if !lines.iter().any(|(o, ..)| o == owner) {
+        if !traced.contains(owner) {
             continue;
         }
         let mut nearest: Option<(f32, Entity)> = None;
@@ -641,7 +710,10 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                 .map(|p| p.stand.translation)
                 .ok_or_else(|| format!("no piece {k}"))?;
             let me = command_player(world)?;
-            let eye = world.get::<Transform>(me).ok_or("the player has no place")?.translation + Vec3::Y * 0.6;
+            // From its eye (its movement's eye offset; 0.6 m above its
+            // centre without one), so a small piece is in the sights.
+            let lift = world.get::<crate::core::MovementState>(me).map_or(Vec3::Y * 0.6, |s| s.eye_offset);
+            let eye = world.get::<Transform>(me).ok_or("the player has no place")?.translation + lift;
             let d = tf.transform_point(spot) - eye;
             let (yaw, pitch) = ((-d.x).atan2(-d.z), d.y.atan2(d.xz().length()));
             crate::core::set_view(world, me, yaw, pitch);
@@ -697,6 +769,7 @@ pub(super) fn plugin(app: &mut App) {
         .add_message::<TargetRefused>()
         .add_message::<WeaponEvent>()
         .add_message::<BlastDealt>()
+        .add_message::<Damage>()
         .add_systems(Update, apply_requests)
         .add_systems(
             FixedUpdate,
@@ -720,12 +793,5 @@ mod tests {
         assert!(g.centre.length() < 1e-6);
         assert!((g.mean_radius_m - 0.1).abs() < 1e-6);
         assert!((g.spread_m - 0.2).abs() < 1e-6);
-    }
-
-    #[test]
-    fn a_segment_enters_a_box_where_it_meets_its_face() {
-        let f = segment_box(Vec3::new(0.0, 0.0, 2.0), Vec3::new(0.0, 0.0, -2.0), Vec3::ZERO, Vec3::splat(0.5)).unwrap();
-        assert!((f - 0.375).abs() < 1e-6);
-        assert!(segment_box(Vec3::new(1.0, 0.0, 2.0), Vec3::new(1.0, 0.0, -2.0), Vec3::ZERO, Vec3::splat(0.5)).is_none());
     }
 }
