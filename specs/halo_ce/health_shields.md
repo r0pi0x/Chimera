@@ -288,6 +288,12 @@ Biped flags 0x202: not immune to falling damage. Equipment: overshield
 (powerup type 2, time 60 s), active camouflage (3, 45 s), health pack
 (5, 1 s).
 
+The campaign's characters (Elites, Grunts, Jackals, Hunters, Marines,
+the Flood) have their own collision models, materials and shield
+timings, and an actor variant can replace the maxima per rank:
+`characters.md`, section 5, with hits-to-kill tables computed by these
+rules.
+
 ## How vitality is represented
 
 Per object with a collision model:

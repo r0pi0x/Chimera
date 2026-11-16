@@ -732,6 +732,11 @@ player is silent when hit, and only the death line plays. Multiplayer
 does not switch the dialogue off: the death line plays in every game
 type.
 
+The campaign's characters fill many more slots (the Grunt 65, the
+Elite 53, a Marine up to 128), most of them spoken only by the AI;
+which of them a player-controlled character says is in
+`characters.md`, section 6.
+
 **Death line choice** (at the killing hit, if the hit is not silent and
 did some damage or depleted the body): falling-category damage (falls,
 `globals\distance`) gives death falling; flame-category gives death

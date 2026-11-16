@@ -721,7 +721,9 @@ label is empty. **Every match overwrites the previous one, so the last
 match in block order wins.** (The Spartan's `stand` seat has an `ne`
 type under both `rifle` and `pistol`; the pistol class, later, wins.)
 No match leaves the triple unchanged. The weapon class is thus found
-through its types; class labels are never compared.
+through its types; class labels are never compared. Which labels the
+campaign characters' graphs carry, and so which weapons each can
+hold, is in `characters.md`, section 2.
 
 On a change the unit's animation state is reset so its current state
 re-resolves, and a flag records whether the seat has any of the three

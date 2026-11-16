@@ -584,7 +584,7 @@ where useful). Shared by bipeds and vehicles.
 | 0x25C | 2 | i16 | spawned actor count minimum | | |
 | 0x25E | 2 | i16 | spawned actor count maximum | | |
 | 0x260 | 4 | f32 | spawned velocity | | |
-| 0x264 | 4 | f32 | aiming velocity maximum | rad/s | |
+| 0x264 | 4 | f32 | aiming velocity maximum | rad/s | limits how fast the unit's aim follows the wanted aim, for player-controlled units too; 0 (with 0x268) means instant. The campaign characters' values are in `characters.md` section 4 |
 | 0x268 | 4 | f32 | aiming acceleration maximum | rad/s squared | |
 | 0x26C | 4 | f32 | casual aiming modifier | fraction | scales the two limits above (and the looking ones) when the unit is not in combat |
 | 0x270 | 4 | f32 | looking velocity maximum | rad/s | |
@@ -593,7 +593,7 @@ where useful). Shared by bipeds and vehicles.
 | 0x280 | 4 | f32 | AI vehicle avoidance radius | WU | |
 | 0x284 | 4 | f32 | AI danger radius | WU | |
 | 0x288 | 16 | tag ref `jpt!` | melee damage | | the damage effect of the unit's melee attack |
-| 0x298 | 2 | enum16 | motion sensor blip size | | 0 medium, 1 small, 2 large (disc: warthog 0, scorpion 2, ghost 2) |
+| 0x298 | 2 | enum16 | motion sensor blip size | | 0 medium, 1 small, 2 large (disc: warthog 0, scorpion 2, ghost 2); three campaign bipeds hold 30062 here (`characters.md`): do not refuse the tag for it |
 | 0x29A | 2 | pad | | | |
 | 0x29C | 12 | pad | | | |
 | 0x2A8 | 12 | block | new hud interfaces | | element 0x30: tag ref `unhi` (16) then 32 bytes padding; element 0 is used in single player, element 1 (or the last if there is only one) in multiplayer |
