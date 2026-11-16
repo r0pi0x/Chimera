@@ -74,6 +74,18 @@ the user's go-ahead: no Actions runs unless asked.
     - later, an original "Lucker Party" look for the party apps' own characters.
   - **Design first:** the style, polygon budget and colours (the avatar palette), with mockups or a turnaround sheet for the user to approve before modelling.
 
+- **A recycling `VirtualList` in the UI kit, for smooth scrolling (user, 2026-11-15):** the user expects to scroll the maps and gun lists smoothly, by pixels, with the mouse wheel and a scrollbar.
+  - **Today:** the Maps dialog and the Join server list draw only a window of rows around the cursor, which is cheap. But they rebuild every row on each change, jump a row at a time, and the Maps dialog has no wheel scrolling.
+  - **Build one shared list in `chimera_ui`:**
+    - a pool of the rows in view plus two spare, created once;
+    - a scroll or data change rebinds the pooled rows' text, icon and state in place, with no despawn or respawn;
+    - the pool is offset inside a clipped box, with the total height from the item count;
+    - wheel, a draggable scrollbar, and keys that keep the cursor in view;
+    - folded sections drop out of the flat list it draws from.
+  - **Measure** per-frame instruction counts while scrolling a 2,000-row list, against today's rebuild.
+  - **Users:** the Maps dialog, the sandbox's gun picker (Combat Arms alone has hundreds of variants), the Internet server list, and later friends and the asset catalogue.
+  - **First check:** whether the stopgap rung picker (`apps/party_kit/src/rung_picker.rs`) windows its rows at all.
+
 - **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
   - **Progressive disclosure (user):**
     - Names, classes, stats and the kit's class icons need no download: they come from the compiled weapon catalogue and game_parts.
