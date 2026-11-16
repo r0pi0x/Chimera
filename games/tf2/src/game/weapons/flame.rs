@@ -23,7 +23,11 @@
 //! - **Sounds** (`sounds`, predicted): the start and the loop when it
 //!   starts flaming, the end when it stops (the weapon channel).
 //!
-//! Known shortcuts: no flame particles (no look of the flames yet); the
+//! The flames' look is `looks`' (TF2's `flamethrower` system, a piece per
+//! round).
+//!
+//! Known shortcuts: the flames drawn are a look only (the damage is the
+//! cone's, not the particles'); the
 //! Pyro's velocity isn't added; no airblast (attack2); Pyros aren't immune
 //! to afterburn (no classes on the victims); water and health kits don't
 //! put a burn out; crits are off.

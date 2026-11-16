@@ -56,12 +56,21 @@ pub(crate) fn target(sim: &mut Sim, from: Vec3, units: f32) -> Entity {
     t
 }
 
+/// Hold `e` still (bullets push: weapons.md 5.4), so the distance stays.
+pub(crate) fn hold_still(sim: &mut Sim, e: Entity) {
+    sim.app.world_mut().get_mut::<Velocity>(e).unwrap().0 = Vec3::ZERO;
+}
+
 pub(crate) fn health_points(sim: &Sim, e: Entity) -> f32 {
     sim.app.world().get::<Health>(e).unwrap().current * 100.0
 }
 
 pub(crate) fn no_spread(sim: &mut Sim, w: Entity) {
     sim.app.world_mut().get_mut::<Hitscan>(w).unwrap().spread = SpreadShape::Template(0.0);
+    // The Minigun sets its spread each tick from its own base.
+    if let Some(mut m) = sim.app.world_mut().get_mut::<Tf2Minigun>(w) {
+        m.base_spread = 0.0;
+    }
 }
 
 /// Run `n` ticks, `input` setting the buttons before each (its index),
@@ -99,7 +108,10 @@ fn one_shot(id: &str, units: f32) -> f32 {
     let before = health_points(&sim, t);
     // The Minigun spins up first: a shot after a second and more spun.
     let n = if id == MINIGUN { 50 + 90 } else { 1 };
-    let ev = run(&mut sim, p, n + 3, |s, k| s.intent(p).fire = k < n);
+    let ev = run(&mut sim, p, n + 3, |s, k| {
+        s.intent(p).fire = k < n;
+        hold_still(s, t);
+    });
     let shots = fired(&ev).len();
     if id == MINIGUN {
         // The damage of the last shot alone (every one at 100 % by now).
@@ -138,11 +150,13 @@ fn minigun_spun_a_second_12() {
     assert!((got - 36.0).abs() < 0.01, "{got}");
 }
 
-/// 7.2, tests 13, 14 and 33: held from idle, the first shot 50 ticks after
-/// the press, then every 7; its damage 50 % then rising; the holder at
-/// 110 units/s, no jump, no switch while it spins.
+/// 7.1, 7.2 and the corrections from the SDK, tests 13, 14 and 33: held
+/// from idle, the first shot 57 ticks after the press (spun at 50, the
+/// shot 0.1 s on), then every 7; its damage 50 % until 0.2 s spun, then
+/// rising (round(36 g(tau)) at 512); the holder at 110 units/s, no jump,
+/// no switch while it spins.
 #[test]
-fn minigun_spins_up_fires_every_7_ticks_and_ramps_13_14_33_35_36() {
+fn minigun_spins_up_fires_every_7_ticks_and_ramps_13_14_33() {
     let mut sim = sim();
     let from = greybox::SPAWNS[0];
     let (p, w) = holding(&mut sim, from, MINIGUN);
@@ -151,8 +165,9 @@ fn minigun_spins_up_fires_every_7_ticks_and_ramps_13_14_33_35_36() {
     let at = sim.position(t);
     testkit::aim_at(&mut sim, p, at);
     let mut jumped = false;
-    let ev = run(&mut sim, p, 90, |s, k| {
+    let ev = run(&mut sim, p, 120, |s, k| {
         s.intent(p).fire = true;
+        hold_still(s, t);
         if k == 30 {
             s.intent(p).jump = true;
         }
@@ -163,8 +178,72 @@ fn minigun_spins_up_fires_every_7_ticks_and_ramps_13_14_33_35_36() {
     });
     assert!(!jumped, "jumped while spinning up");
     let shots = fired(&ev);
-    assert_eq!(shots[0], 50, "{shots:?}");
+    assert_eq!(shots[0], 57, "{shots:?}");
     assert!(shots.windows(2).all(|w| w[1] - w[0] == 7), "{shots:?}");
+    let hits: Vec<(u64, f32)> = ev
+        .iter()
+        .filter_map(|(t, k)| match k {
+            WeaponEventKind::Hit { amount, .. } => Some((*t, *amount * 100.0)),
+            _ => None,
+        })
+        .collect();
+    let p_ = weapons::hook_params::<weapons::minigun::MinigunParams>(MINIGUN, weapons::MINIGUN_HOOK);
+    for (tick, got) in &hits {
+        // The press was on run tick 0: tau = its time less the wind-up.
+        let tau = (*tick as f32 * TICK_INTERVAL as f32 - 0.75).max(0.0);
+        let want = (36.0 * weapons::minigun::damage_factor(&p_, tau) + 1e-3).round();
+        assert!((got - want).abs() < 0.01, "tick {tick} (tau {tau}): {got}, want {want}; {hits:?}");
+    }
+    assert!((hits[0].1 - 18.0).abs() < 0.01, "{hits:?}");
+    assert!(hits.iter().any(|(_, h)| (*h - 25.0).abs() < 0.01), "a 25 near tau 0.5: {hits:?}");
+    let world = sim.app.world();
+    assert_eq!(world.get::<Weapon>(w).unwrap().max_speed, Some(110.0 * U));
+    assert!(world.get::<HolsterLocked>(w).is_some());
+}
+
+/// 7.1 and the corrections from the SDK, tests 35 and 36: no gameplay
+/// wind-down. Let go of attack2 while spun: idle in play at once (the
+/// speed back, a jump works the next tick), only the switch waits for the
+/// 1.33 s spool-down.
+#[test]
+fn minigun_stops_at_once_and_only_the_switch_waits_35_36() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, greybox::SPAWNS[0], MINIGUN);
+    run(&mut sim, p, 80, |s, _| s.intent(p).secondary = true);
+    assert!(sim.app.world().get::<Tf2Minigun>(w).unwrap().spin.turning());
+    let mut rose = false;
+    run(&mut sim, p, 2, |s, k| {
+        s.intent(p).secondary = false;
+        s.intent(p).jump = k == 1;
+    });
+    assert_eq!(sim.app.world().get::<Weapon>(w).unwrap().max_speed, None, "the speed back at once");
+    run(&mut sim, p, 10, |s, _| {
+        s.intent(p).jump = false;
+        rose |= s.velocity(p).y > 0.5;
+    });
+    assert!(rose, "a jump right after the release");
+    assert!(sim.app.world().get::<HolsterLocked>(w).is_some(), "the switch waits for the spool-down");
+    run(&mut sim, p, 90, |_, _| {});
+    assert!(sim.app.world().get::<HolsterLocked>(w).is_none());
+    assert_eq!(sim.app.world().get::<Tf2Minigun>(w).unwrap().spin, weapons::minigun::Spin::Idle);
+}
+
+/// 7.2, test 49: spun on attack2 for 2 s from the press, then attack: the
+/// first shot is full damage (36 at 512).
+#[test]
+fn minigun_spun_two_seconds_fires_full_at_once_49() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, w) = holding(&mut sim, from, MINIGUN);
+    no_spread(&mut sim, w);
+    let t = target(&mut sim, from, 512.0);
+    let at = sim.position(t);
+    testkit::aim_at(&mut sim, p, at);
+    let ev = run(&mut sim, p, 140, |s, k| {
+        s.intent(p).secondary = true;
+        hold_still(s, t);
+        s.intent(p).fire = k >= 134;
+    });
     let hits: Vec<f32> = ev
         .iter()
         .filter_map(|(_, k)| match k {
@@ -172,17 +251,8 @@ fn minigun_spins_up_fires_every_7_ticks_and_ramps_13_14_33_35_36() {
             _ => None,
         })
         .collect();
-    assert!((hits[0] - 18.0).abs() < 0.01, "{hits:?}");
-    assert!(hits[1] > hits[0] && hits[2] > hits[1], "{hits:?}");
-    let world = sim.app.world();
-    assert_eq!(world.get::<Weapon>(w).unwrap().max_speed, Some(110.0 * U));
-    assert!(world.get::<HolsterLocked>(w).is_some());
-    // Let go: winds down 1.15 s, then free again.
-    run(&mut sim, p, 80, |s, _| s.intent(p).fire = false);
-    let world = sim.app.world();
-    assert_eq!(world.get::<Weapon>(w).unwrap().max_speed, None);
-    assert!(world.get::<HolsterLocked>(w).is_none());
-    assert_eq!(world.get::<Tf2Minigun>(w).unwrap().spin, weapons::minigun::Spin::Idle);
+    assert_eq!(fired(&ev), [134], "fires on the press: its next shot long due");
+    assert!((hits[0] - 36.0).abs() < 0.01, "{hits:?}");
 }
 
 /// 6.1, test 38: the first pellet after a pause goes along the aim; a
@@ -192,7 +262,7 @@ fn the_first_pellet_after_a_pause_goes_dead_centre_38() {
     let mut sim = sim();
     let from = greybox::SPAWNS[0];
     let (p, _) = holding(&mut sim, from, MINIGUN);
-    let ev = run(&mut sim, p, 60, |s, _| {
+    let ev = run(&mut sim, p, 70, |s, _| {
         s.intent(p).fire = true;
         s.intent(p).yaw = 0.0;
         s.intent(p).pitch = 0.0;
@@ -373,4 +443,89 @@ fn every_gun_can_hurt_a_player() {
         let data = catalog.get(id).unwrap_or_else(|| panic!("{id} in the catalog"));
         assert_eq!(chimera_sim::weapon::harm::can_damage_player(data, &readers.harm), Some(true), "{id}");
     }
+}
+
+/// The largest upward and horizontal speeds (units/s) `e` reaches over
+/// `n` ticks of `input`.
+fn peak_speeds(sim: &mut Sim, p: Entity, e: Entity, n: u64, mut input: impl FnMut(&mut Sim, u64)) -> (f32, f32) {
+    let (mut up, mut flat) = (0f32, 0f32);
+    run(sim, p, n, |s, k| {
+        input(s, k);
+        let v = s.velocity(e) / U;
+        up = up.max(v.y);
+        flat = flat.max(Vec2::new(v.x, v.z).length());
+    });
+    (up, flat)
+}
+
+/// 5.3, 5.4 and the corrections from the SDK, test 46: a Soldier on the
+/// ground, his own rocket at his feet: 90 damage (89.63 by the distance to
+/// his feet), a push of about 448 units/s (scale 5, from 10 below the
+/// blast) that takes him off the ground (above 250), and the
+/// blast-jumping state until he lands.
+#[test]
+fn his_own_rocket_at_his_feet_on_the_ground_46() {
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], ROCKET_LAUNCHER);
+    sim.app.world_mut().get_mut::<Health>(p).unwrap().current = 10.0;
+    let before = health_points(&sim, p);
+    let mut jumping = false;
+    let (up, _) = peak_speeds(&mut sim, p, p, 30, |s, k| {
+        s.intent(p).fire = k == 0;
+        s.intent(p).pitch = -89f32.to_radians();
+        jumping |= s.app.world().get::<weapons::blast::BlastJumping>(p).is_some();
+    });
+    let took = before - health_points(&sim, p);
+    assert!((85.0..=90.0).contains(&took), "self damage {took}");
+    // 5 x 89.6 = 448 along the line from 10 below the blast to his centre
+    // (mostly up).
+    assert!((380.0..=450.0).contains(&up), "pushed up at {up}");
+    assert!(jumping, "blast jumping");
+    sim.seconds(2.0);
+    assert!(sim.app.world().get::<weapons::blast::BlastJumping>(p).is_none(), "landed: no longer blast jumping");
+}
+
+/// 5.4, test 43: a Heavy takes half the push a Soldier takes from the
+/// same rocket.
+#[test]
+fn a_heavy_takes_half_the_knockback_43() {
+    let push_on = |gun: &str| {
+        let mut sim = sim();
+        let from = greybox::SPAWNS[0];
+        let (p, _) = holding(&mut sim, from, ROCKET_LAUNCHER);
+        let t = target(&mut sim, from, 400.0);
+        let w = give(sim.app.world_mut(), t, gun).unwrap();
+        sim.app.world_mut().get_mut::<Inventory>(t).unwrap().wanted = Some(w);
+        sim.seconds(1.0);
+        sim.app.world_mut().get_mut::<Health>(t).unwrap().current = 10.0;
+        let aim = sim.position(t) - Vec3::X * 12.0 * U + Vec3::Y * 3.0 * U;
+        testkit::aim_at(&mut sim, p, aim);
+        let before = health_points(&sim, t);
+        let (_, flat) = peak_speeds(&mut sim, p, t, 60, |s, k| s.intent(p).fire = k == 0);
+        (before - health_points(&sim, t), flat)
+    };
+    let (soldier_took, soldier) = push_on(ROCKET_LAUNCHER);
+    let (heavy_took, heavy) = push_on(MINIGUN);
+    assert!((soldier_took - heavy_took).abs() < 0.01 && soldier_took > 80.0, "{soldier_took} {heavy_took}");
+    assert!(soldier > 300.0, "the Soldier pushed at {soldier}");
+    assert!((heavy / soldier - 0.5).abs() < 0.05, "Heavy {heavy}, Soldier {soldier}");
+}
+
+/// 5.4, test 47: bullets push too: a Scattergun's 10 pellets on an enemy
+/// at 512 (60 damage) push him 360 units/s from the shooter.
+#[test]
+fn a_scattergun_hit_pushes_360_47() {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, w) = holding(&mut sim, from, SCATTERGUN);
+    no_spread(&mut sim, w);
+    let t = target(&mut sim, from, 512.0);
+    let at = sim.position(t);
+    testkit::aim_at(&mut sim, p, at);
+    let before = health_points(&sim, t);
+    let (_, flat) = peak_speeds(&mut sim, p, t, 4, |s, k| s.intent(p).fire = k == 0);
+    assert!((before - health_points(&sim, t) - 60.0).abs() < 0.01);
+    // Friction may take a tick's share (4 x 0.015 x 360) before it's read.
+    assert!((330.0..=361.0).contains(&flat), "pushed at {flat}");
+    assert!(sim.velocity(t).z < 0.0, "away from the shooter (along -Z)");
 }

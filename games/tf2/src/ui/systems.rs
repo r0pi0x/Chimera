@@ -24,7 +24,7 @@ use chimera_sim::weapon::{Inventory, Magazine, Weapon};
 use chimera_world::map::hud::{ActiveHud, GameHud, font_for_height};
 
 use super::hud::{Ammo, Draw, Inputs, Rgba, Scheme, Screen, Tf2Hud};
-use crate::game::{GAME, INFO};
+use crate::game::{GAME, INFO, classes::{Classes, Tf2Class}};
 
 /// What this HUD draws instead of the shell's: the crosshair, health and
 /// ammo (the kill feed stays the app's).
@@ -83,14 +83,15 @@ pub fn collect(
     time: Res<Time>,
     windows: Query<&Window>,
     active: Option<Res<ActiveHud>>,
-    player: Option<Single<(&Health, Option<&Inventory>, Option<&Team>, Has<Dead>), With<LocalPlayer>>>,
+    player: Option<Single<(&Health, Option<&Inventory>, Option<&Team>, Has<Dead>, Option<&Tf2Class>), With<LocalPlayer>>>,
+    mut classes: Local<Option<Classes>>,
     weapons: Query<(&Weapon, Option<&Magazine>)>,
 ) {
     let (Some(active), Some(w)) = (ours(active.as_deref()), windows.iter().next()) else {
         state.frame.clear();
         return;
     };
-    let Some((health, inv, team, dead)) = player.map(|p| *p) else {
+    let Some((health, inv, team, dead, class)) = player.map(|p| *p) else {
         state.frame.clear();
         return;
     };
@@ -99,12 +100,16 @@ pub fn collect(
         clip: m.clip as i32,
         reserve: (m.reserve_max > 0).then_some(m.reserve as i32),
     });
+    let blu = super::super::game::bodies::skin_of(team.copied()) == 1;
+    let table = classes.get_or_insert_with(super::super::game::classes::classes);
+    let portrait = class.and_then(|c| super::super::game::hud::portrait(&c.class(table).name, blu));
     let inputs = Inputs {
         alive: !dead && health.current > 0.0,
         health: (health.current * 100.0).round(),
         max: (health.max * 100.0).round(),
-        blu: super::super::game::bodies::skin_of(team.copied()) == 1,
+        blu,
         ammo,
+        portrait,
         time: time.elapsed_secs_f64(),
     };
     let look = Look { hud: &active.0, screen: Screen::new(w.width(), w.height()) };

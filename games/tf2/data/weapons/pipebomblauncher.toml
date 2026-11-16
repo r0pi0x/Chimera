@@ -4,10 +4,12 @@
 # (by the time held) and 200 up, from the grenade's offset, 0.6 s before
 # the next; 8 in the clip and 24 carried, one at a time (first in at 1.09,
 # then 0.67). `tf2:sticky`: it sticks to the world, bounces off enemies,
-# arms 0.7 s after launch; attack2 detonates every armed one; at most 8
-# out (a ninth blows the oldest); 120 x the splash x the distance
-# modifier (near half x0.4) within 5 s of launch; in the air its radius
-# grows from 85 % at arming to all of 146 over 2 s.
+# arms 0.8 s after launch; attack2 detonates every armed one; at most 8
+# out (a ninth blows the oldest); 120 x the splash x the short-range-
+# reduced modifier (121.8 % at 0) within 5 s of launch; in the air its
+# radius grows from 85 % at arming to all of 146 over 2 s; the owner's
+# own the base 120 x the splash x0.75 grounded or airborne, pushed at
+# scale 9 (weapons_more.md's corrections from the SDK).
 id = "tf2:tf_weapon_pipebomblauncher"
 base = "tf2:base"
 class = "launcher"
@@ -17,7 +19,7 @@ draw = 0.5
 [trigger]
 automatic = true
 cycle = 0.6
-timing = "accumulate"
+timing = "set"
 
 [magazine]
 clip = 8
@@ -29,7 +31,7 @@ shells = { start = 0.42, insert = 0.67, back_to_back = true }
 [hitscan]
 range = 56754.0
 pellets = 1
-punch_scale = 0.0
+punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]
@@ -46,7 +48,8 @@ name = "Stickybomb Launcher"
 icon = "tf_projectile_pipe_remote"
 
 [hooks."tf2:gun"]
-ramp = 0.4
+ramp = 1.0
+near = "compressed"
 arms = "demo"
 script = "tf_weapon_pipebomblauncher"
 
@@ -54,12 +57,15 @@ script = "tf_weapon_pipebomblauncher"
 damage = 120.0
 radius = 146.0
 edge = 0.5
+self_radius = 146.0
+self_damage = 120.0
 self_air_scale = 0.75
+self_ground_scale = 0.75
 push_other = 6.0
-push_self_air = 10.0
-push_self_ground = 5.0
+push_self_air = 9.0
+push_self_ground = 9.0
 flat_after = 5.0
-arm = 0.7
+arm = 0.8
 air_radius_start = 0.85
 air_radius_time = 2.0
 max = 8
