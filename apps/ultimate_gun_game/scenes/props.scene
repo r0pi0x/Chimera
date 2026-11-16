@@ -1,0 +1,79 @@
+# The three practice props on the greybox, before and after shooting:
+# bottles and cans knocked off their shelves, a board with a shot group
+# (`prop group` prints it; a scene script: chimera_client's `scene`).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/props.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+setpos 0 -1181 0             # the greybox at (0, 0, 30) m, facing north
+rung combat_arms:m4a1
+setang 0 103
+prop add bottles 9
+setang 0 90
+prop add target_board 10
+setang 0 77
+prop add tin_cans 9
+setang 4 90
+wait 120
+shot props_before
+prop look 1 0
++attack
+wait 2
+-attack
+wait 30
+prop look 1 2
++attack
+wait 2
+-attack
+wait 30
+prop look 1 4
++attack
+wait 2
+-attack
+wait 30
+prop look 3 1
++attack
+wait 2
+-attack
+wait 30
+prop look 3 3
++attack
+wait 2
+-attack
+wait 30
+prop look 2 0
++attack
+wait 2
+-attack
+wait 30
++attack
+wait 2
+-attack
+wait 30
++attack
+wait 2
+-attack
+wait 30
++attack
+wait 2
+-attack
+wait 30
++attack
+wait 2
+-attack
+wait 30
++attack
+wait 2
+-attack
+wait 30
+setang 4 90
+wait 30
+shot props_after
+setpos 0 -941 0              # 6 m closer: the knocked pieces and the board's group
+setang 6 90
+wait 30
+shot props_after_close
+prop group 2
+prop list
+wait 30
