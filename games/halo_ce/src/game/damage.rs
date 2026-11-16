@@ -294,6 +294,7 @@ type HaloTarget<'a> = (
     &'a Transform,
     Option<&'a Intent>,
     Option<&'a crate::core::DamageScale>,
+    Option<&'a super::campaign::BodyKind>,
 );
 
 /// Another game's body hit by `deliver_hits`.
@@ -303,7 +304,7 @@ type OtherTarget<'a> = (Option<&'a Health>, Option<&'a Transform>, Option<&'a In
 #[allow(clippy::too_many_arguments)]
 pub fn deliver_hits(
     mut hits: MessageReader<HaloHit>,
-    spartan: Res<Spartan>,
+    (spartan, tables): (Res<Spartan>, Option<Res<super::campaign::BodyTables>>),
     effects: Res<DamageEffects>,
     mut set: ParamSet<(Query<HaloTarget>, HitArmor)>,
     others: Query<OtherTarget, Without<Vitality>>,
@@ -345,14 +346,16 @@ pub fn deliver_hits(
             .instigator
             .is_some_and(|i| i == hit.target || (team(i) != 0 && team(i) == team(hit.target)));
         let mut halo = set.p0();
-        if let Ok((mut v, health, mut armor, stun, attackers, mirrored, transform, intent, scale)) = halo.get_mut(hit.target) {
+        if let Ok((mut v, health, mut armor, stun, attackers, mirrored, transform, intent, scale, kind)) = halo.get_mut(hit.target) {
+            // The body's own table (`campaign::vitality_of`).
+            let spartan = super::campaign::vitality_of(&spartan, tables.as_deref(), kind);
             let look = look_of(intent);
             // Another game's damage counts this on it (the party's
             // balance, `cross_game`); Halo's own lands as it is.
             let scale = vitality::scale_of(scale);
             let mirrored = mirrored.filter(|m| m.primed);
             if let Some(m) = mirrored.as_deref() {
-                vitality::take_foreign(&spartan, &mut v, health, armor.as_deref(), m, scale);
+                vitality::take_foreign(spartan, &mut v, health, armor.as_deref(), m, scale);
             }
             let was_dead = v.dead;
             let before = vitality::health_of(v.body);
@@ -370,12 +373,12 @@ pub fn deliver_hits(
                 bypass_shields: hit.is(hit_flags::BYPASS_SHIELDS),
                 game_multiplier: 1.0,
             };
-            let outcome = v.take(&spartan, &event);
+            let outcome = v.take(spartan, &event);
             if !outcome.landed {
                 continue;
             }
             if let Some(mut stun) = stun {
-                stun.hit(&spartan, fx, hit.scale);
+                stun.hit(spartan, fx, hit.scale);
             }
             // The attacker list and the kill's credit.
             let mut attacker = hit.instigator;
@@ -423,7 +426,7 @@ pub fn deliver_hits(
                     soft: soft || hard,
                     hard,
                     kill: outcome.died,
-                    direction: vitality::ping_direction(&spartan, hit.dir, look),
+                    direction: vitality::ping_direction(spartan, hit.dir, look),
                 });
             }
             out.3.write(HaloHurt {

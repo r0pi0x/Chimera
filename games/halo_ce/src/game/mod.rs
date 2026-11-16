@@ -88,6 +88,7 @@
 
 pub mod audio;
 pub mod body;
+pub mod campaign;
 pub mod cross_game;
 pub mod damage;
 pub mod fx;
@@ -255,6 +256,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         weapons::grenades::party(app);
         // Its players' body, worn by its guns' holders (`body`).
         app.add_plugins(body::HaloBodyPlugin);
+        app.add_plugins(campaign::CampaignPlugin);
         app.add_plugins(view::HaloViewPlugin);
         app.add_plugins(vehicles::HaloVehiclesPlugin);
         vehicles::place::party_vehicles(app);

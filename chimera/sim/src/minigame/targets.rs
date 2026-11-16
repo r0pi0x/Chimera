@@ -40,8 +40,10 @@
 //!   point to the next within `WALK_RADIUS` m of home, a fixed sequence).
 //!   It never leaves its home area (`LEASH` m past it: it heads home).
 //! - `shoots_back` (off by default): off, its trigger, secondary and game
-//!   actions are kept released every tick (it still sees and turns); on,
-//!   it fights as its game's bot does from where its motion keeps it.
+//!   actions are kept released every tick and it faces back along its
+//!   line, level, toward where it was placed from (its brain's look is
+//!   overridden: a body faces the spawner, for a fair look at it); on, it
+//!   fights as its game's bot does from where its motion keeps it.
 //! - `protected` (off by default): `core::HealthHeld` (hits land and are
 //!   measured, health never drops, it never dies), and its health and
 //!   shield are put back to full at the start of each tick.
@@ -76,6 +78,30 @@
 //!   (ticks with a hit), headshots, the times from the first hit and the
 //!   first shot to the kill, the distance, the total damage.
 //!   Both are also logged (`HitMeasured ...`, `KillMeasured ...`).
+//! - `BlastMeasured` ("Blasts"), one per blast while the sandbox plays,
+//!   targets or not: built on what the blast's own code told
+//!   (`weapon::grenade::BlastDealt`: the engine's blast, which CS:S's and
+//!   HL2:DM's grenades, rockets and map explosions go through, Combat
+//!   Arms' `blast_bodies`, Halo's detonation): the centre, the falloff's
+//!   `inner` (full damage inside) and `outer` (none past), `max_damage`
+//!   at the centre, `edge_damage` at `outer` (0 where the falloff reaches
+//!   nothing there), and per victim (`BlastHit`) its point, distance from
+//!   the centre, damage and whether it died that tick. A victim's damage
+//!   is what its `HitMeasured` says for that attacker and tick (the
+//!   blast's own number for a thing with no health). Linear falloffs from
+//!   the centre have `inner` 0 (HL2:DM's, CS:S's grenade with
+//!   `sv_legacy_grenade_damage 1`); Combat Arms' is full within a quarter
+//!   of the radius; Halo's is full within its damaging effects' r0, none
+//!   past their r1;
+//!   a bell (CS:S's HE grenade and map explosions) has `inner` where it
+//!   gives 99 % of the centre's and `outer` where it gives 1 %, no farther
+//!   than its radius (`grenade::bell_reach`). Logged (`BlastMeasured ...`,
+//!   `blast_line`).
+//!
+//! Every time here (`time`, `from_first_hit`, `from_first_shot`,
+//! `TargetRespawn::at`) is simulation time (`SimClock`): `host_timescale
+//! 0.5` runs the sandbox at half speed and the measurements stay in game
+//! seconds.
 //!
 //! A target's second bar is its own game's or none: armour its bot was
 //! given by another game (Combat Arms' gear) goes at each placing
@@ -112,7 +138,9 @@
 //!   projectile's is counted by its launch line.
 //! - Several hits on one victim by one attacker in one tick are one
 //!   `HitMeasured` (a shotgun's pellets: `hits`); the shield's drop in a
-//!   tick goes to the first attacker of that victim.
+//!   tick goes to the first attacker of that victim. A blast's victim hit
+//!   by the same attacker in the same tick another way too (a rocket's
+//!   direct hit, a second blast) has all of it in its `BlastHit`.
 //! - A protected target's armour or shield is put back on the next tick:
 //!   for one tick `TargetVitals` shows the drop.
 //! - Bodies: only what a game registered (or its default); TF2's class and
@@ -134,8 +162,12 @@ use crate::{
         BodyRegion, CHARACTER_FILTER, Connecting, Damage, DamageTaken, Dead, Died, HealthHeld, Health, Hitgroup,
         Intent, MapLoads, RegionHit, SimClock, SimSet,
     },
-    weapon::{Armor, Inventory, Weapon, WeaponEvent, WeaponEventKind},
+    weapon::{Armor, Inventory, Weapon, WeaponEvent, WeaponEventKind, grenade::BlastDealt},
 };
+
+/// The practice props (`props`: bottles, tin cans, a target board), named
+/// here as the screens name them.
+pub use super::props::{ClearProps, Prop, PropHit, PropSpec, RemoveProp, ResetProp, ShotGroup, SpawnProp};
 
 /// Half the strafe's span (m): it goes this far each way of home.
 pub const STRAFE_HALF: f32 = 3.0;
@@ -358,6 +390,39 @@ pub struct KillMeasured {
     pub distance_m: f32,
     pub total_damage: f32,
     pub time: f64,
+}
+
+/// One blast while the sandbox plays (module doc, "Blasts").
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct BlastMeasured {
+    pub attacker: Option<Entity>,
+    pub gun: Option<&'static str>,
+    /// The centre, world m.
+    pub at: Vec3,
+    /// Full damage inside, m.
+    pub inner: f32,
+    /// None past, m.
+    pub outer: f32,
+    /// At the centre, normalized like `Health` (1.0 = a standard
+    /// player's 100).
+    pub max_damage: f32,
+    /// At `outer`, normalized (`weapon::grenade::BlastDealt::edge_damage`:
+    /// 0 where the falloff reaches nothing at the radius).
+    pub edge_damage: f32,
+    pub hits: Vec<BlastHit>,
+    /// `SimClock` s (simulation time).
+    pub time: f64,
+}
+
+/// One victim of a `BlastMeasured`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlastHit {
+    pub victim: Entity,
+    pub at: Vec3,
+    pub distance_m: f32,
+    /// As `HitMeasured::damage` (normalized).
+    pub damage: f32,
+    pub killed: bool,
 }
 
 /// The seam a game's bots give targets (`gameplay::GameHooks`, by the
@@ -593,7 +658,7 @@ fn resolve(world: &World, character: Option<&str>, gun: Option<&str>, rung: Opti
 
 /// Where a target stands `distance` m from `origin` along `dir` (flat):
 /// its feet, or why there is no spot.
-fn find_spot(world: &mut World, origin: Vec3, dir: Vec3, distance: f32) -> Result<Vec3, String> {
+pub(super) fn find_spot(world: &mut World, origin: Vec3, dir: Vec3, distance: f32) -> Result<Vec3, String> {
     if !(distance.is_finite() && distance > 0.5) {
         return Err(format!("a distance of {distance} m is too short"));
     }
@@ -1144,6 +1209,15 @@ fn drive(clock: Res<SimClock>, mut q: Query<(&Target, &mut TargetDrive, &Transfo
             intent.secondary = false;
             intent.actions = 0;
         }
+        // One that may not fire faces back along its line, level: toward
+        // where it was placed from, whatever the brain looks at.
+        if !t.shoots_back {
+            let yaw = t.dir.x.atan2(t.dir.z);
+            if intent.yaw != yaw || intent.pitch != 0.0 {
+                intent.yaw = yaw;
+                intent.pitch = 0.0;
+            }
+        }
     }
 }
 
@@ -1219,14 +1293,20 @@ struct Tally {
 /// targets' returns set, the vitals kept.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn measure(
-    (mut damage, mut taken, mut regions, mut died, mut weapon_events): (
+    (mut damage, mut taken, mut regions, mut died, mut weapon_events, mut blasts): (
         MessageReader<Damage>,
         MessageReader<DamageTaken>,
         MessageReader<RegionHit>,
         MessageReader<Died>,
         MessageReader<WeaponEvent>,
+        MessageReader<BlastDealt>,
     ),
-    (mut hits_out, mut kills_out): (MessageWriter<HitMeasured>, MessageWriter<KillMeasured>),
+    (mut hits_out, mut kills_out, mut blasts_out): (
+        MessageWriter<HitMeasured>,
+        MessageWriter<KillMeasured>,
+        MessageWriter<BlastMeasured>,
+    ),
+    sandbox: (Option<Res<rung_command::HoldRungs>>, Option<Res<super::ActiveMinigame>>),
     clock: Res<SimClock>,
     before: Res<Before>,
     mut engaged: ResMut<Engagements>,
@@ -1267,10 +1347,20 @@ fn measure(
             g.first_shot.get_or_insert(now);
         }
     }
+    // The tick's blasts, measured while the sandbox plays.
+    let (hold, active) = sandbox;
+    let blasts: Vec<BlastDealt> = if rung_command::sandbox_plays(hold, active) {
+        blasts.read().cloned().collect()
+    } else {
+        blasts.clear();
+        Vec::new()
+    };
+    let in_blast = |a: Option<Entity>, v: Entity| blasts.iter().any(|b| b.attacker == a && b.victims.iter().any(|x| x.victim == v));
     // The tick's hits, per victim and attacker.
     let mut tally: BTreeMap<(Entity, Option<Entity>), Tally> = BTreeMap::new();
     for d in damage.read() {
-        if !watched(d.attacker, d.target) || d.attacker == Some(d.target) {
+        let blasted = in_blast(d.attacker, d.target);
+        if !blasted && (!watched(d.attacker, d.target) || d.attacker == Some(d.target)) {
             continue;
         }
         let t = tally.entry((d.target, d.attacker)).or_default();
@@ -1291,12 +1381,18 @@ fn measure(
         region.insert(r.target, r.region);
     }
     let mut shield_given: Vec<Entity> = Vec::new();
+    // What each pair's hits came to (`HitMeasured::damage`), for blasts.
+    let mut measured: BTreeMap<(Entity, Option<Entity>), f32> = BTreeMap::new();
     for ((v, a), t) in tally {
         let Ok((_, tf, h, armor, _)) = chars.get(v) else { continue };
         let (hb, sb) = before.0.get(&v).copied().unwrap_or((h.current, armor.map_or(0.0, |a| a.amount)));
         let sa = armor.map_or(0.0, |a| a.amount);
         let shield_lost = if shield_given.contains(&v) { 0.0 } else { (sb - sa).max(0.0) };
         shield_given.push(v);
+        measured.insert((v, a), t.taken + shield_lost);
+        if !watched(a, v) || a == Some(v) {
+            continue;
+        }
         let distance_m = a.and_then(pos).map_or(0.0, |p| p.distance(tf.translation));
         let hit = HitMeasured {
             attacker: a,
@@ -1340,8 +1436,37 @@ fn measure(
         }
         hits_out.write(hit);
     }
+    let deaths: Vec<Died> = died.read().cloned().collect();
+    // Blasts: each victim's damage as its `HitMeasured` (the blast's own
+    // where nothing measured it: a thing with no health).
+    for b in blasts {
+        let hits: Vec<BlastHit> = b
+            .victims
+            .iter()
+            .map(|x| BlastHit {
+                victim: x.victim,
+                at: x.at,
+                distance_m: x.distance_m,
+                damage: measured.get(&(x.victim, b.attacker)).copied().unwrap_or(x.damage),
+                killed: deaths.iter().any(|d| d.entity == x.victim),
+            })
+            .collect();
+        let m = BlastMeasured {
+            attacker: b.attacker,
+            gun: b.weapon,
+            at: b.at,
+            inner: b.inner,
+            outer: b.outer,
+            max_damage: b.max_damage,
+            edge_damage: b.edge_damage,
+            hits,
+            time: now,
+        };
+        info!("{}", blast_line(&m));
+        blasts_out.write(m);
+    }
     // Kills.
-    for d in died.read() {
+    for d in &deaths {
         let v = d.entity;
         if !watched(d.attacker, v) {
             continue;
@@ -1381,6 +1506,29 @@ fn measure(
     engaged.0.retain(|(v, a), _| chars.contains(*v) && chars.contains(*a));
 }
 
+/// A `BlastMeasured` as the log says it (damage ×100, as `HitMeasured`'s).
+pub fn blast_line(m: &BlastMeasured) -> String {
+    let hits: Vec<String> = m
+        .hits
+        .iter()
+        .map(|h| format!("{:?} {:.1}m {:.1}{}", h.victim, h.distance_m, h.damage * 100.0, if h.killed { " killed" } else { "" }))
+        .collect();
+    format!(
+        "BlastMeasured attacker={:?} gun={} at=({:.2},{:.2},{:.2}) inner={:.2}m outer={:.2}m max={:.1} edge={:.1} hits=[{}] t={:.3}",
+        m.attacker,
+        m.gun.unwrap_or("?"),
+        m.at.x,
+        m.at.y,
+        m.at.z,
+        m.inner,
+        m.outer,
+        m.max_damage * 100.0,
+        m.edge_damage * 100.0,
+        hits.join(", "),
+        m.time
+    )
+}
+
 /// The vitals after the whole tick (a game's own step, Halo's shield's,
 /// runs after the damage).
 fn keep_vitals(mut vitals: Query<(&mut TargetVitals, &Target, &Health, Option<&Armor>)>) {
@@ -1401,6 +1549,8 @@ pub(super) fn plugin(app: &mut App) {
         .add_message::<TargetRefused>()
         .add_message::<HitMeasured>()
         .add_message::<KillMeasured>()
+        .add_message::<BlastMeasured>()
+        .add_message::<BlastDealt>()
         .add_message::<Damage>()
         .add_message::<DamageTaken>()
         .add_message::<RegionHit>()
@@ -1415,11 +1565,19 @@ pub(super) fn plugin(app: &mut App) {
             (
                 settle.after(SimSet::Rules).before(SimSet::Commands),
                 drive.after(settle).after(SimSet::Rules).before(SimSet::Commands),
+            )
+                .run_if(crate::core::authoritative)
+                .run_if(any_with_component::<Target>),
+        )
+        // Blasts are measured with no target too, while the sandbox plays.
+        .add_systems(
+            FixedUpdate,
+            (
                 before_hits.after(SimSet::Movement).before(SimSet::Weapons),
                 measure.after(crate::core::apply_damage),
             )
                 .run_if(crate::core::authoritative)
-                .run_if(any_with_component::<Target>),
+                .run_if(any_with_component::<Target>.or_else(rung_command::sandbox_plays)),
         )
         .add_systems(FixedPostUpdate, keep_vitals.run_if(crate::core::authoritative).run_if(any_with_component::<Target>))
         .console_command("chimera:target", &format!("Practice targets in the sandbox: {USAGE}"), command);

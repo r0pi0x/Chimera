@@ -353,10 +353,11 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume
 - Facts, from what the engine already tells: `map_loaded` (`MapLoads`
   moved), `match` (a minigame's match live), `spawned` (the local player
   alive), `shot` (`ShotMade`), `hit` (`DamageTaken`), `kill`, `death`
-  (`Died`), `ragdoll` (`Ragdolled` added), `blast` (`core::Explosion`:
-  map logic's, not grenades').
+  (`Died`), `ragdoll` (`Ragdolled` added), `blast` (any game's blast,
+  `weapon::grenade::BlastDealt`, or a `core::Explosion`).
 - `<dir>/scene.log`: every line, fact and picture with its frame, and
-  every `HitMeasured`/`KillMeasured`: a scene is also a measurement.
+  every `HitMeasured`/`KillMeasured`/`BlastMeasured`/`PropHit`: a scene is
+  also a measurement, and the console's output (lines starting `| `).
 - Repeatable as far as the engine is: the same scene on the same build
   places, aims and fires the same, but frames are wall-clock frames
   (a fact's frame moves with the machine's speed where a frame runs
@@ -364,7 +365,11 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume
   dice and the rung seed (`CHIMERA_RUNG_SEED` fixes the extras),
   particles and spread from their own seeds.
 - Examples: `apps/ultimate_gun_game/scenes/` (three targets at 5, 10,
-  20 m; a kill and its death at 0, 15, 45 frames).
+  20 m; a kill and its death at 0, 15, 45 frames; the three props shot,
+  with the M4A1 and with Halo's plasma rifle;
+  a rocket among three targets; armour off on three games' bodies;
+  Halo's campaign bodies as targets on Hang 'Em High and de_dust2, and
+  worn by the player).
 
 ### Offscreen (no display, no compositor)
 
@@ -528,7 +533,14 @@ Practice targets: `target add <rung n | gun id | body id> [distance]
 [still|strafe|walk] [shoots] [protect]`, `target set`, `target remove`,
 `target list`, `target characters` (`chimera_sim::minigame::targets`);
 every hit on a target or by one logs a `HitMeasured` line, every kill a
-`KillMeasured` line (shots, hits, headshots, time to kill, distance).
+`KillMeasured` line (shots, hits, headshots, time to kill, distance), and
+every blast while the sandbox plays a `BlastMeasured` line (centre, inner
+and outer radius, each victim's distance and damage). Props: `prop add
+<bottles|tin_cans|target_board> [distance]`, `prop remove <n|all>`, `prop
+list`, `prop group <n>` (a board's shot group), `prop reset <n|all>`,
+`prop look <n> [piece]` (`chimera_sim::minigame::props`; `PropHit` lines).
+Half speed: `host_timescale 0.5` (the measurements' times are simulation
+time, so they stay in game seconds).
 `rung` is also a plain developer command in any ladder match: the host, a
 single player and a dedicated server's console may always run it, a remote
 client only with the server's `sv_cheats 1` (and only on itself).

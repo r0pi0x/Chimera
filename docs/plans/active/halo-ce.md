@@ -556,6 +556,19 @@ backlog.
     plasma rifle and needler, which the multiplayer set already has),
     then the Grunt and Jackal, the Hunter last (no first-person view
     at all).
+  Stage one (branch `halo-char-elite`): the Elite. Its body and voice are
+  units of their own (`chimera_pack sets halo_ce --only character/`,
+  converter `halo_ce:character_unit`: small map files cut from d20,
+  `game::campaign::unit`), loaded on demand; a player's `BodyKind`
+  (replicated) gives its model, graph, hit boxes, deaths, vitality (100 /
+  100), pill and camera. Movement (the owner's rule, 2026-11-16: player
+  expression over fidelity): every body moves on the Spartan's mover, only
+  its speed differs, halfway between the Spartan's and its own (a blend
+  in data/campaign.toml: the Elite at 107.5 %), with any movement number
+  overridable there; its legs play at the ground speed. The host setting
+  `halo_ce:campaign_bodies` (off by default) draws it on the plasma
+  rifle and needler rungs by data/campaign.toml; `halo_ce:body` forces
+  one. Next: the voice, the Elite's hand marker for the held gun.
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the

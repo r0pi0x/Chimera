@@ -99,6 +99,7 @@ pub use sound::{
     SoundLevel, StartSound, StepRemap,
 };
 pub mod shells;
+pub mod shapes;
 pub mod parallel;
 pub mod sources;
 pub use sources::{KitLoad, LoadContext, MapDressing, MapLoadOptions, MapLoader, MapSources, SpawnTeams, SurfaceNames, SurfaceTable};

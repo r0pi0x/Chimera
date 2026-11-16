@@ -40,7 +40,10 @@
 //! 0.1), the seat from crouching, the weapon label from the holder; a
 //! changed state starts its animation at frame 0 with a 6-tick blend (2
 //! into a landing), else the animation advances one frame (looping to its
-//! loop frame or restarting); then the pose: the base at its frame, the
+//! loop frame or restarting; a campaign body's move animations advance
+//! the ground speed over their own speed in frames, `Inputs::rate`, a
+//! direction its graph lacks plays the forward move, and the air without
+//! an airborne animation holds the last pose); then the pose: the base at its frame, the
 //! aim screen (`aim-still` standing, airborne and landing; `aim-move`
 //! moving; a change of screen blends over 6 ticks) at the aim's yaw and
 //! pitch, the seat's look screen at the look minus the aim, and the
@@ -660,6 +663,30 @@ pub struct Inputs {
     /// A hit to flinch from this tick, with its permutation's draw (0 to
     /// 1; `flinch`).
     pub hit: Option<f32>,
+    /// A campaign body's own moving speeds (its graph's mean root motion,
+    /// WU/s: front, back, side, then crouched front, back, side): its move
+    /// animations play at the body's ground speed over these (`rate`).
+    /// None: one frame a tick (the Spartan).
+    pub own_speeds: Option<[f32; 6]>,
+    /// The horizontal speed, WU/s.
+    pub speed: f32,
+}
+
+impl Inputs {
+    /// Frames a tick for move state `state` (module doc): the ground speed
+    /// over the animation's own, for a body with `own_speeds` (kept within
+    /// 0.25 to 3); 1 otherwise.
+    pub fn rate(&self, state: State) -> f32 {
+        let Some(s) = self.own_speeds else { return 1.0 };
+        let c = if self.crouching { 3 } else { 0 };
+        let own = match state {
+            State::MoveFront => s[c],
+            State::MoveBack => s[c + 1],
+            State::MoveLeft | State::MoveRight => s[c + 2],
+            _ => return 1.0,
+        };
+        if own <= 0.0 { 1.0 } else { (self.speed / own).clamp(0.25, 3.0) }
+    }
 }
 
 /// The landing thresholds (world units per second) and recovery ticks
@@ -704,6 +731,9 @@ pub struct HaloAnim {
     pub feet: u8,
     /// The flinch playing (`flinch`).
     pub ping: Option<super::flinch::Ping>,
+    /// Frames owed to the playing state (`Inputs::rate`; whole frames
+    /// advance, the rest carries).
+    pub carry: f32,
 }
 
 impl HaloAnim {
@@ -762,7 +792,13 @@ impl HaloAnim {
     pub fn tick(&mut self, set: &AnimSet, label: &str, i: &Inputs, land: &Landing) -> Vec<BonePose> {
         let want = self.desire(i, land);
         let seat = if i.crouching { SEATS[1] } else { SEATS[0] };
-        let found = set.names.get(&key(seat, label, want.name())).copied();
+        let has = |st: State| set.names.get(&key(seat, label, st.name())).copied();
+        // A direction the graph lacks plays its forward move (a campaign
+        // body: the Hunter's back-pedal, a Flood's strafe).
+        let found = has(want).or_else(|| match want {
+            State::MoveBack | State::MoveLeft | State::MoveRight => has(State::MoveFront),
+            _ => None,
+        });
         let changed_state = want != self.state;
         self.state = want;
         match found {
@@ -770,10 +806,18 @@ impl HaloAnim {
                 self.start_blend(want.transition_ticks());
                 self.sequence = Some(s);
                 self.frame = 0;
+                self.carry = 0.0;
             }
+            // In the air without an airborne animation: the last pose holds.
+            None if want == State::Airborne && i.own_speeds.is_some() => {}
             _ => {
                 if let Some(s) = self.sequence {
-                    self.frame = advance(self.frame, frames(set, s), loop_frame(set, s));
+                    self.carry += i.rate(want);
+                    let n = self.carry.floor().min(4.0);
+                    self.carry -= n;
+                    for _ in 0..n as u32 {
+                        self.frame = advance(self.frame, frames(set, s), loop_frame(set, s));
+                    }
                 }
             }
         }

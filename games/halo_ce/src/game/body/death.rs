@@ -77,7 +77,7 @@ use super::{
     HaloBody,
     anims::{self, AIRBORNE_DEAD, Blend, LANDING_DEAD, SEATS, base_pose, damage_key, frames, seat_death_key, sound_of},
 };
-use super::super::{GAME, METERS_PER_UNIT, vitality::{HaloPing, PingDirection, Spartan, ping_direction}};
+use super::super::{GAME, METERS_PER_UNIT, campaign::BodyKind, vitality::{HaloPing, PingDirection, Spartan, ping_direction}};
 use crate::{
     core::{Died, Hitgroup, Intent, MapLoads, MovementState, SimClock, Velocity},
     map::{BodySkin, CharacterModels, Corpse, PlaySound, anim::{AnimSet, Animator, BonePose, nlerp}},
@@ -106,6 +106,9 @@ pub struct HaloCorpse {
     pub velocity: Vec3,
     /// The death's sequence (`choose`); empty: none, the bind pose.
     pub animation: String,
+    /// Its body (`campaign::BodyKind`): whose model and graph it plays.
+    #[serde(default)]
+    pub body: BodyKind,
 }
 
 /// The killing hit's push on a body (the server's; not replicated): its
@@ -220,6 +223,10 @@ pub struct CorpseState {
     pub looping: bool,
     /// The last pose made (a landing's blend starts from it).
     pub last: Vec<BonePose>,
+    /// The body it is drawn as (`shown_kind`: the corpse's, or the
+    /// Spartan's while that kind's model is not loaded here), kept for its
+    /// whole play: its sequences index that body's set.
+    pub shown: BodyKind,
 }
 
 impl CorpseState {
@@ -333,9 +340,26 @@ impl CorpseState {
     }
 }
 
-/// Halo's body set of the map's models.
-fn halo_set(models: &CharacterModels) -> Option<std::sync::Arc<AnimSet>> {
-    models.0.iter().find(|m| m.game == Some(GAME)).and_then(|m| m.animations.clone())
+/// Body `kind`'s model among the map's (`campaign::BodyKind::
+/// model_name`; the Spartan's, Halo's unnamed one, when the kind's is not
+/// loaded here).
+pub fn halo_model(models: &CharacterModels, kind: BodyKind) -> Option<&crate::map::MapCharacterModel> {
+    let halo = || models.0.iter().filter(|m| m.game == Some(GAME));
+    kind.model_name()
+        .and_then(|n| halo().find(|m| m.name.as_deref() == Some(n.as_str())))
+        .or_else(|| halo().find(|m| m.name.is_none()))
+}
+
+/// The body `kind` is drawn as here: itself once its model is loaded,
+/// the Spartan before.
+pub fn shown_kind(models: &CharacterModels, kind: BodyKind) -> BodyKind {
+    let loaded = kind.model_name().is_some_and(|n| models.0.iter().any(|m| m.game == Some(GAME) && m.name.as_deref() == Some(n.as_str())));
+    if loaded { kind } else { BodyKind::Spartan }
+}
+
+/// Body `kind`'s set of the map's models (`halo_model`).
+fn halo_set(models: &CharacterModels, kind: BodyKind) -> Option<std::sync::Arc<AnimSet>> {
+    halo_model(models, kind).and_then(|m| m.animations.clone())
 }
 
 /// A body's hit volumes for `pose` (shots meet them: health_shields.md,
@@ -360,7 +384,10 @@ pub fn leave_corpses(
     models: Option<Res<CharacterModels>>,
     spartan: Res<Spartan>,
     players: Query<
-        (&Transform, &Intent, &MovementState, Option<&Velocity>, Option<&BodySkin>, Option<&avian3d::prelude::ColliderAabb>),
+        (
+            (&Transform, &Intent, &MovementState, Option<&Velocity>, Option<&BodySkin>, Option<&avian3d::prelude::ColliderAabb>),
+            Option<&BodyKind>,
+        ),
         With<HaloBody>,
     >,
     mut commands: Commands,
@@ -368,9 +395,11 @@ pub fn leave_corpses(
     let kills: Vec<HaloPing> = pings.read().filter(|p| p.kill).copied().collect();
     let deaths: Vec<Died> = died.read().cloned().collect();
     let killing: Vec<_> = hurts.read().filter(|h| h.outcome.died).copied().collect();
-    let Some(set) = models.as_deref().and_then(halo_set) else { return };
+    let Some(models) = models.as_deref() else { return };
     for d in deaths {
-        let Ok((at, intent, state, velocity, skin, aabb)) = players.get(d.entity) else { continue };
+        let Ok(((at, intent, state, velocity, skin, aabb), kind)) = players.get(d.entity) else { continue };
+        let body = kind.copied().unwrap_or_default();
+        let Some(set) = halo_set(models, body) else { continue };
         let ping = kills.iter().rev().find(|p| p.target == d.entity);
         let inputs = DeathInputs {
             airborne: !state.on_ground,
@@ -407,6 +436,7 @@ pub fn leave_corpses(
                 yaw: intent.yaw,
                 velocity: velocity.map_or(Vec3::ZERO, |v| v.0),
                 animation: choose(&set, &inputs).unwrap_or_default(),
+                body,
             },
         ));
     }
@@ -432,8 +462,7 @@ pub fn play_corpses(
     mut sounds: MessageWriter<PlaySound>,
     mut commands: Commands,
 ) {
-    let Some(set) = models.as_deref().and_then(halo_set) else { return };
-    let model = models.as_deref().and_then(|m| m.0.iter().find(|m| m.game == Some(GAME))).filter(|m| !m.boxes.is_empty());
+    let Some(models) = models.as_deref() else { return };
     let ticks = super::super::ticks::halo_ticks(&clock).min(4);
     let g = super::super::movement::MovementData::builtin().gravity * METERS_PER_UNIT;
     let filter = avian3d::prelude::SpatialQueryFilter::from_mask(crate::core::SOLID_LAYERS);
@@ -444,11 +473,16 @@ pub fn play_corpses(
             .map(|h| h.distance - lift)
     };
     for (e, corpse, state, animator, transform, hitboxes) in &mut corpses {
+        // The body it began as (`CorpseState::shown`) for its whole play.
+        let shown = state.as_ref().map_or_else(|| shown_kind(models, corpse.body), |s| s.shown);
+        let Some(set) = halo_set(models, shown) else { continue };
+        let model = halo_model(models, shown).filter(|m| !m.boxes.is_empty());
         let Some(mut state) = state else {
             // Its first tick here: drawn as a corpse from now on.
             let from = owners.get(corpse.owner).ok().map(|b| b.anim.last.clone());
             let grounded = corpse.velocity.y <= 0.0 && ground(corpse.at, 0.1).is_some();
             let mut state = CorpseState::new(&set, corpse, grounded, from);
+            state.shown = shown;
             let (pose, _) = state.tick(&set);
             let boxes = model.map(|m| corpse_hitboxes(m, &pose, corpse.yaw)).unwrap_or_default();
             let mut animator = Animator::new(set.clone());
@@ -464,6 +498,10 @@ pub fn play_corpses(
                 Visibility::default(),
                 Transform::from_translation(corpse.at).with_rotation(Quat::from_rotation_y(corpse.yaw)),
             ));
+            // A campaign body's corpse draws its own model.
+            if let Some(name) = shown.model_name() {
+                commands.entity(e).insert(crate::map::BodyName(name));
+            }
             continue;
         };
         let Some(mut animator) = animator else { continue };

@@ -16,8 +16,15 @@
 //!   tinted by the player's colour where its multipurpose map's alpha
 //!   says (the change-colour mask, `MapMesh::tint_mask`, which the loader's
 //!   look sets): one skin per colour of `body::COLOURS`, the meshes
-//!   themselves showing skin 0 (white).
+//!   themselves showing skin 0 (white). A campaign body names its own
+//!   slot and a colour for a player given none (`Tint`: the Elite's armour
+//!   reads slot A, all over, and wears the minor's blue uncoloured, an
+//!   extra skin after `COLOURS`'); the Spartan's slot C left the Elite
+//!   untinted (its grey base map under the blue sheen: the white and teal
+//!   of stage one).
 //! - Skeleton, animations and hit volumes: `skeleton`, `anims`, `hits`.
+//! - Any biped the same way (`biped_body`): the campaign's characters
+//!   from their units (`campaign::unit`).
 //!
 //! Known shortcuts: the light-shield parts (transparent chicago shaders)
 //! are drawn as the loader draws them, always.
@@ -62,17 +69,18 @@ pub fn sound_tags(file: &MapFile) -> Vec<TagRef> {
         .and_then(|t| Biped::read(file, t).ok())
         .and_then(|b| file.tag(b.object.animation_graph.id).and_then(|t| AnimationGraph::read(file, t).ok()));
     let mut tags: Vec<TagRef> = graph.map_or_else(Vec::new, |g| g.sounds.iter().map(|s| s.sound).collect());
-    tags.extend(death_lines(file).into_iter().flatten());
+    tags.extend(death_lines(file, BIPED).into_iter().flatten());
     tags
 }
 
-/// The Spartan's death lines (sounds.md "Unit dialogue": the unit's
+/// A biped's death lines (sounds.md "Unit dialogue": the unit's
 /// dialogue, variant 0's else the first, its vocalizations 14 death quiet,
 /// falling back to 15, and 15 death violent): quiet and violent, None where
-/// empty.
-pub fn death_lines(file: &MapFile) -> [Option<TagRef>; 2] {
+/// empty (a character's unit without its voice set: its dialogue's bytes
+/// are zero, so none).
+pub fn death_lines(file: &MapFile, biped: &str) -> [Option<TagRef>; 2] {
     let dialogue = file
-        .find(class::BIPED, BIPED)
+        .find(class::BIPED, biped)
         .and_then(|t| Biped::read(file, t).ok())
         .and_then(|b| {
             let v = &b.unit.dialogue_variants;
@@ -100,14 +108,32 @@ fn tag<'a>(file: &'a MapFile, r: &TagRef, what: &str) -> Result<&'a blam_formats
     file.tag(r.id).ok_or_else(|| format!("the biped's {what} is missing"))
 }
 
-/// Whether a shader takes its change colour from slot C (the armour).
-fn armour(file: &MapFile, shader: &TagRef) -> bool {
-    file.tag(shader.id)
+/// Whether a shader takes its change colour from slot `source` (the
+/// armour: C on the Spartan, A on the Elite); no slot (a body that takes
+/// no colour, the Marine's) tints nothing.
+fn armour(file: &MapFile, shader: &TagRef, source: AnimationSource) -> bool {
+    source != AnimationSource::None
+        && file
+            .tag(shader.id)
         .and_then(|t| Shader::read(file, t).ok())
-        .is_some_and(|s| matches!(s, Shader::Model(m) if m.change_color_source == AnimationSource::C))
+        .is_some_and(|s| matches!(s, Shader::Model(m) if m.change_color_source == source))
 }
 
-/// A mesh's look with `tint`.
+/// How a body's armour takes the player's colour (`biped_body`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tint {
+    /// The change colour slot its armour shaders read: the Spartan's C,
+    /// the Elite's A (characters.md, "The Elite's colours").
+    pub source: AnimationSource,
+    /// The colour of a player given none (no team): an extra skin after
+    /// `COLOURS`' (the Elite minor's blue); None: `COLOURS`' first.
+    pub uncoloured: Option<[f32; 3]>,
+}
+
+/// The Spartan's: slot C, white without a colour.
+pub const SPARTAN_TINT: Tint = Tint { source: AnimationSource::C, uncoloured: None };
+
+/// A mesh's look with `tint` (None: the mesh's own).
 fn look(m: &MapMesh, tint: Option<[f32; 3]>) -> MapMeshLook {
     MapMeshLook {
         material: m.material.clone(),
@@ -118,7 +144,9 @@ fn look(m: &MapMesh, tint: Option<[f32; 3]>) -> MapMeshLook {
         normal_map: m.normal_map,
         phong: m.phong.clone(),
         envmap: m.envmap,
-        tint,
+        // The player's colour on the armour; any other mesh keeps its
+        // shader's own tint (an energy shield's colour).
+        tint: tint.or(m.tint),
         detail: m.detail,
         base_transform: m.base_transform,
         selfillum: m.selfillum,
@@ -130,9 +158,17 @@ fn look(m: &MapMesh, tint: Option<[f32; 3]>) -> MapMeshLook {
 /// The Spartan of map `file` (module doc); `decode` false: textures as
 /// placeholders of their size (a lean load).
 pub fn spartan(file: &MapFile, decode: bool) -> Result<Spartan, String> {
+    biped_body(file, BIPED, decode, SPARTAN_TINT)
+}
+
+/// The body of biped `biped` of map `file`, as `spartan` makes the
+/// Spartan's (the campaign's characters' from their units:
+/// `campaign::unit`): unnamed (the caller names a body not every Halo
+/// player wears).
+pub fn biped_body(file: &MapFile, biped_path: &str, decode: bool, tint: Tint) -> Result<Spartan, String> {
     let biped_tag = file
-        .find(class::BIPED, BIPED)
-        .ok_or_else(|| format!("no biped `{BIPED}`"))?;
+        .find(class::BIPED, biped_path)
+        .ok_or_else(|| format!("no biped `{biped_path}`"))?;
     let biped = Biped::read(file, biped_tag).map_err(|e| e.to_string())?;
     let o = &biped.object;
     let model = Model::read(file, tag(file, &o.model, "model")?).map_err(|e| e.to_string())?;
@@ -142,7 +178,7 @@ pub fn spartan(file: &MapFile, decode: bool) -> Result<Spartan, String> {
         collision::read_model(file, tag(file, &o.collision_model, "collision model")?).map_err(|e| e.to_string())?;
     let bones = skeleton::bones(&model);
     let found = objects::skinned_meshes(file, &model, &|p| space::point(p));
-    let tinted: Vec<bool> = found.iter().map(|(_, s)| armour(file, s)).collect();
+    let tinted: Vec<bool> = found.iter().map(|(_, s)| armour(file, s, tint.source)).collect();
     let pending = found
         .into_iter()
         .map(|(mesh, shader)| Pending {
@@ -158,14 +194,10 @@ pub fn spartan(file: &MapFile, decode: bool) -> Result<Spartan, String> {
         .into_iter()
         .map(|(m, _)| m)
         .collect();
-    let skins: Vec<Vec<MapMeshLook>> = (0..COLOURS.len())
-        .map(|k| {
-            meshes
-                .iter()
-                .zip(&tinted)
-                .map(|(m, t)| look(m, t.then(|| colour(k))))
-                .collect()
-        })
+    let colours: Vec<[f32; 3]> = (0..COLOURS.len()).map(colour).chain(tint.uncoloured).collect();
+    let skins: Vec<Vec<MapMeshLook>> = colours
+        .iter()
+        .map(|c| meshes.iter().zip(&tinted).map(|(m, t)| look(m, t.then_some(*c))).collect())
         .collect();
     let (lo, hi) = meshes.iter().flat_map(|m| &m.positions).fold(
         (bevy::math::Vec3::splat(f32::MAX), bevy::math::Vec3::splat(f32::MIN)),
@@ -180,7 +212,7 @@ pub fn spartan(file: &MapFile, decode: bool) -> Result<Spartan, String> {
         Some(super::super::fx::name_of(&file.tag(r.id)?.path))
     });
     // The death lines ride on the bind sequence (`anims::DEATH_LINE_EVENT`).
-    for (k, r) in death_lines(file).iter().enumerate() {
+    for (k, r) in death_lines(file, biped_path).iter().enumerate() {
         if let Some(t) = r.and_then(|r| file.tag(r.id)) {
             set.sequences[0].events.push(crate::map::anim::AnimEvent {
                 cycle: 0.0,
@@ -243,8 +275,8 @@ pub fn add(map: &mut MapData, body: &Spartan) {
         }
     }
     map.textures.extend(body.textures.iter().cloned());
-    map.warnings
-        .extend(body.warnings.iter().map(|w| format!("the Spartan: {w}")));
+    let who = body.character.name.as_deref().unwrap_or("the Spartan");
+    map.warnings.extend(body.warnings.iter().map(|w| format!("{who}: {w}")));
     map.kit.characters.push(c);
 }
 

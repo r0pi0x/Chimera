@@ -532,13 +532,16 @@ fn fly(
                 let len = (bm - am).length();
                 let t = if len > 0.0 { ((point - am).length() / len).clamp(0.0, 1.0) } else { 0.0 };
                 let point = a + (b - a) * t;
+                // As the server's: a prop struck (no region) keeps its
+                // material and responds as the level.
+                let character = matches!(what, Some((_, Some(_))));
                 Some(Hit {
                     t,
                     point,
                     normal,
                     object: what.map(|w| w.0),
-                    material: if what.is_some() { Some(CYBORG as u8) } else { material },
-                    unit: what.is_some(),
+                    material: if character { Some(CYBORG as u8) } else { material },
+                    unit: character,
                 })
             };
             // The server's rule without its damage roll: a projectile that
@@ -546,6 +549,9 @@ fn fly(
             let hurts = proj.impact_effect().is_some();
             let mut struck = |h: &Hit<Entity>, _: Vec3, _: f32| -> Option<u8> {
                 let target = h.object?;
+                if !h.unit {
+                    return hurts.then_some(h.material).flatten();
+                }
                 hurts.then(|| if trace.shielded(target) { CYBORG_SHIELD as u8 } else { CYBORG as u8 })
             };
             // Guided (the needles, the charged bolt): toward the shot's

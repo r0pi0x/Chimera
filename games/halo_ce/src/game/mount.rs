@@ -10,10 +10,11 @@
 //! NTSC disc; another region's disc has another build string), read from
 //! the first 2 KB of one map, never the whole disc. It names the asset
 //! store's manifest (`manifests/halo_ce/<build>.txt`, `chimera_pack`'s
-//! per-game build). The store serves Halo instead of an install, never
-//! under one: `mount::served` layers a store under an install only at a
-//! Steam build, and a player either has the whole disc or none of it, so
-//! there is nothing for a store to fill in under a disc.
+//! per-game build). The store serves Halo instead of an install, or under
+//! one at the disc's build (`served::open_built` with `build`): a player
+//! has the whole disc or none of it, so what a store fills in under a
+//! disc is only what no disc holds, the generated sets (the campaign
+//! characters' units, `campaign::unit`).
 
 use std::{
     fs::File,
@@ -32,7 +33,7 @@ use crate::mount::Mount;
 /// Mount Halo: its install (`open_install`) and/or the asset store, as the
 /// local config's `[assets]` says (`mount::served`).
 pub fn open(install: &Path) -> io::Result<Mount> {
-    crate::mount::served::open(GAME, install, open_install)
+    crate::mount::served::open_built(GAME, install, open_install, build)
 }
 
 /// Mount a Halo install: `install` is a disc image file or a folder holding

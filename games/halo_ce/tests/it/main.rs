@@ -23,6 +23,8 @@ mod assets;
 mod audio;
 mod autoaim;
 mod body;
+mod campaign;
+mod campaign_net;
 mod bot_triggers;
 mod cross_game;
 mod party_balance;
@@ -68,6 +70,7 @@ mod vehicles;
 mod heavy {
     mod audio;
     mod body;
+    mod campaign;
     mod death;
     mod fx;
     mod gun_displays;

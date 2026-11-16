@@ -22,7 +22,13 @@
 //! feet with the super detonation), deals the detonation effect's area
 //! damage and pushes (`explode`; a character's push as `HaloPush`, applied
 //! by `apply_pushes` through `movement::push`; a grenade's to its flight),
-//! a stuck one's attached damage on what holds it, then deletes it.
+//! a stuck one's attached damage on what holds it, then deletes it; the
+//! area damage is told once as `weapon::grenade::BlastDealt` (inner the
+//! damaging effects' r0, outer their r1, points / 75). A code-built
+//! thing shots strike (`map::shapes::Hittable`: the sandbox's props) is
+//! met by the level's trace as an object, not a wall: a direct hit on it
+//! (`HaloHit`, so a `Damage` with the point), its own material's response
+//! (no region, not a unit).
 //!
 //! The tick rate: everything here steps in Halo ticks (`halo_ticks`: the
 //! 30 Hz boundaries the engine tick crossed, from `SimClock`), so at 30 Hz
@@ -282,11 +288,14 @@ pub struct HaloTrace<'w, 's> {
     /// Halo's bodies (`body::death`): their hit volumes about their feet,
     /// unturned (health_shields.md: shots hit a dead body).
     corpses: Query<'w, 's, (Entity, &'static super::super::body::death::CorpseState, &'static crate::core::Hitboxes)>,
+    /// Code-built things shots strike as objects (the sandbox's props).
+    hittable: Query<'w, 's, (), With<crate::map::shapes::Hittable>>,
 }
 
 /// What a trace met (metres): the distance along it, the point, the
-/// normal, the character with the region hit (None: the level), the
-/// level's material type (None: material-less, or a character).
+/// normal, the character with the region hit (None: the level; a region of
+/// None: a thing struck that is no character, a `map::shapes::Hittable`
+/// prop), the material type (None: material-less, or a character).
 pub type Met = (f32, Vec3, Vec3, Option<(Entity, Option<BodyRegion>)>, Option<u8>);
 
 impl HaloTrace<'_, '_> {
@@ -362,6 +371,12 @@ impl HaloTrace<'_, '_> {
         // The point a hair before the surface (1e-5 m back along the ray),
         // so the next segment starts outside it.
         let d = (h.distance - 1e-5).max(0.0);
+        // A code-built thing shots strike (a sandbox prop): an object met,
+        // with no region (not a character), of the default material.
+        let body = colliders.get(h.entity).map_or(h.entity, |o| o.body);
+        if self.hittable.contains(body) {
+            return Some((d, from + dir * d, h.normal, Some((body, None)), Some(super::materials::NO_TABLE)));
+        }
         Some((d, from + dir * d, h.normal, None, material))
     }
 
@@ -511,13 +526,16 @@ fn advance(e: Entity, p: &mut HaloProjectile, trace: &HaloTrace, rewound: &[Rewo
             let len = (bm - am).length();
             let t = if len > 0.0 { ((point - am).length() / len).clamp(0.0, 1.0) } else { 0.0 };
             let point = a + (b - a) * t;
+            // A character (a region) is a unit of cyborg; a prop struck
+            // (no region) keeps its material and responds as the level.
+            let character = matches!(what, Some((_, Some(_))));
             Some(Hit {
                 t,
                 point,
                 normal,
                 object: what,
-                material: if what.is_some() { Some(CYBORG) } else { material },
-                unit: what.is_some(),
+                material: if character { Some(CYBORG) } else { material },
+                unit: character,
             })
         };
         let mut struck = |h: &Hit<Struck>, v: Vec3, s: f32| -> Option<u8> {
@@ -531,6 +549,10 @@ fn advance(e: Entity, p: &mut HaloProjectile, trace: &HaloTrace, rewound: &[Rewo
             }
             let shield = trace.shielded(target);
             hits.push((target, region, h.point, v, s, amount));
+            if region.is_none() {
+                // A prop: a `Damage` on it (`HaloHit`), its own material.
+                return h.material;
+            }
             Some(if shield { CYBORG_SHIELD } else { CYBORG })
         };
         let mut ignored = p.ignored.map(|e| (e, None));
@@ -671,6 +693,7 @@ pub struct Blasts<'w> {
     grenades: Res<'w, GrenadeData>,
     detonations: MessageWriter<'w, HaloDetonation>,
     pushes: MessageWriter<'w, HaloPush>,
+    dealt: MessageWriter<'w, chimera_sim::weapon::grenade::BlastDealt>,
 }
 
 /// A projectile's detonation (behaviour 9): the supercombine check, the
@@ -747,12 +770,47 @@ fn detonate(e: Entity, projectiles: &mut Query<(Entity, &mut HaloProjectile)>, t
         .filter(|(q, h)| *q != e && matches!(h.holder, Holder::None) && (h.id == FRAG_GRENADE || h.id == PLASMA_GRENADE))
         .map(|(q, h)| (q, h.flight.position))
         .collect();
+    // What the blast did, told once (`BlastDealt`, normalized: a Halo point
+    // is 1/75 of a standard player's health): the effects' linear falloff,
+    // full within the radius r0, none past r1.
+    let mut told = chimera_sim::weapon::grenade::BlastDealt {
+        attacker: Some(p.owner),
+        weapon: Some(p.id),
+        at: em,
+        inner: 0.0,
+        outer: 0.0,
+        max_damage: 0.0,
+        edge_damage: 0.0,
+        victims: Vec::new(),
+    };
     for id in &ids {
         let Some(fx) = out.effects.get(*id) else { continue };
+        // The effects that deal damage (a detonation's others push or
+        // shake only).
+        if !fx.no_distance_scaling && fx.amount(1.0, 1.0) > 0.0 {
+            told.inner = told.inner.max(fx.radius[0] * METERS_PER_WU);
+            told.outer = told.outer.max(fx.radius[1] * METERS_PER_WU);
+            told.max_damage += fx.amount(1.0, 1.0) / 75.0;
+            // At r1 the scale reaches 0 and the amount its lower bound
+            // ((1 - s) lower + s U); past it, nothing.
+            told.edge_damage += fx.amount(0.0, 0.0) / 75.0;
+        }
         let mut clear = |a: Vec3, b: Vec3| trace.clear(a * METERS_PER_WU, b * METERS_PER_WU);
         let mut draw = || rng.real();
         for h in explode::area(fx, at, &candidates, &mut clear, &mut draw) {
             debug!("{} {}: {:?} at scale {} takes {} points", p.id, id.0, h.object, h.scale, h.amount);
+            if !fx.no_distance_scaling && h.amount > 0.0 {
+                let centre = candidates.iter().find(|c| c.object == h.object).map_or(at, |c| c.centre);
+                match told.victims.iter_mut().find(|v| v.victim == h.object) {
+                    Some(v) => v.damage += h.amount / 75.0,
+                    None => told.victims.push(chimera_sim::weapon::grenade::BlastVictim {
+                        victim: h.object,
+                        at: centre * METERS_PER_WU,
+                        distance_m: (centre - at).length() * METERS_PER_WU,
+                        damage: h.amount / 75.0,
+                    }),
+                }
+            }
             out.hits.write(HaloHit::area(h.object, *id, h.amount, h.scale, em, h.dir, Some(p.owner)).weapon(p.id));
             if h.amount > 0.0
                 && let Some(dv) = explode::push(&x, fx, h.dir, x.biped_acceleration_scale, true)
@@ -774,6 +832,9 @@ fn detonate(e: Entity, projectiles: &mut Query<(Entity, &mut HaloProjectile)>, t
                 g.flight.push(dv);
             }
         }
+    }
+    if told.outer > 0.0 {
+        blasts.dealt.write(told);
     }
     debug!("{} detonated at {em}{}", p.id, if supercombine { " (supercombine)" } else { "" });
     let forward = if supercombine { Vec3::NEG_Y } else { p.flight.velocity.normalize_or(Vec3::NEG_Y) };
