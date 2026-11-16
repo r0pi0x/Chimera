@@ -103,6 +103,12 @@ the user's go-ahead: no Actions runs unless asked.
   - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
   - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
 
+- **Range and code-built map follow-ups (2026-11-16):**
+  - **The kit's scale:** the code-built maps' kit (`map::sources::CODE_MAP_KIT`) has an entity scale of 0. Dividing by it made the NaN crash fixed in d37d2e6b, where only the logic bridge got a guard. Give the kit a real scale (1.0, since code-built maps are in metres) and check the other readers of `MapEntities::scale`.
+  - **More in RangeLayout:** cover-crate boxes (or the clear lane's width), the shelf's size, the board's size and facing (the board is 1.2 m but the target scoring face 1.0 m, so the outer 0.1 m counts as misses), the platform and ramp, and the stripes' half width.
+  - **A floor label:** "20 M" looks mirrored from the board's side.
+  - **Change gun:** group Combat Arms' about 2,000 variants by base gun, so the sandbox lists tens per game, not thousands.
+
 - **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
   - **Progressive disclosure (user):**
     - Names, classes, stats and the kit's class icons need no download: they come from the compiled weapon catalogue and game_parts.
