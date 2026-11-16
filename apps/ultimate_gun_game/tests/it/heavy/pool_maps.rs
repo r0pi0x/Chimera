@@ -22,8 +22,12 @@
 //! seeded rotation's own pick, so the likelier maps come up more;
 //! `CHIMERA_POOL_MAPS=<n>` draws n per count, `=all` loads every map the
 //! pool holds at any of the three counts by name instead (about 120
-//! maps, 5 s to load at the median: about 15-20 minutes); `CHIMERA_POOL_SEED`
-//! another seed. The recorder logs a file once per process, so a file a
+//! maps, 5 s to load at the median: about 15-20 minutes), and with
+//! `CHIMERA_POOL_ONLY=<text>` only those whose id has the text
+//! (`=all` with `CHIMERA_POOL_ONLY=tf2:`: TF2's); `CHIMERA_POOL_SEED`
+//! another seed. TF2's maps join where TF2 is installed (its
+//! data/map_pool.toml); their sets are checked once its manifest is in the
+//! store. The recorder logs a file once per process, so a file a
 //! map shares with one loaded before is checked only for the first.
 //! Skipped with a note without the CS:S and Combat Arms installs or a
 //! published store holding their manifests (`CHIMERA_GUARD_STORE`, else
@@ -94,7 +98,7 @@ fn installed(config: &LocalConfig, game: &str, marker: &str) -> bool {
 /// Each game's published manifest (the newest build the store holds).
 fn manifests(store: &Store) -> BTreeMap<String, Manifest> {
     let mut out = BTreeMap::new();
-    for game in ["cs_source", "combat_arms", "hl2dm"] {
+    for game in ["cs_source", "combat_arms", "hl2dm", "tf2"] {
         let Some(build) = store.builds(game).into_iter().max_by_key(|b| b.parse::<u64>().unwrap_or(0)) else {
             continue;
         };
@@ -297,8 +301,11 @@ fn every_pool_map_loads_with_spots_and_its_set_covers_it() {
     }
     let mut problems: Vec<String> = Vec::new();
     if all {
-        for (i, map) in union.iter().enumerate() {
-            eprintln!("[{}/{}] {map}", i + 1, union.len());
+        let only = std::env::var("CHIMERA_POOL_ONLY").ok();
+        let union: Vec<&String> = union.iter().filter(|m| only.as_ref().is_none_or(|o| m.contains(o.as_str()))).collect();
+        let count = union.len();
+        for (i, map) in union.into_iter().enumerate() {
+            eprintln!("[{}/{count}] {map}", i + 1);
             if app.world().get_resource::<LoadedMapName>().is_some_and(|n| &n.0 == map) {
                 continue;
             }
@@ -307,7 +314,10 @@ fn every_pool_map_loads_with_spots_and_its_set_covers_it() {
                 problems.push(format!("{map}: changelevel: {e}"));
                 continue;
             }
-            let n = map_fit::present(app.world_mut()).max(1);
+            // Judged at the least count it is in at (the union's maps are
+            // in at one of them; the server's present count may be fewer).
+            let present = map_fit::present(app.world_mut()).max(1);
+            let n = COUNTS.into_iter().find(|n| pool.judge(map, *n, &settings).weight() > 0.0).unwrap_or(present);
             problems.extend(load(&mut app, map, n, &manifests, &log));
         }
     } else {

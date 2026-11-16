@@ -123,7 +123,16 @@ pub struct SourceGame {
     /// says (HL2:DM's items and ammo crates; `props::no_fixed_models`
     /// for none).
     pub fixed_models: super::props::FixedModels,
+    /// The game's own changes to its maps' entities (`MapData::entities`,
+    /// one per entity of the lump, in its order: edited, never added or
+    /// removed) before the spawns and the logic read them: TF2's
+    /// touch-opened doors start open for a free-for-all. `no_entity_rule`
+    /// for none.
+    pub entity_rule: fn(&mut [crate::map::MapEntity]),
 }
+
+/// No changes to a map's entities (`SourceGame::entity_rule`).
+pub fn no_entity_rule(_: &mut [crate::map::MapEntity]) {}
 
 /// A game's spawn rule (`SourceGame::spawn_rule`).
 pub type SpawnRule = fn(&crate::map::MapEntity, &[crate::map::MapEntity]) -> Option<Option<Team>>;
@@ -995,6 +1004,7 @@ pub fn convert_level(game: &SourceGame, bsp: &Bsp, bytes: &[u8], name: &str, hdr
     }
     data.entities = map_entities(bsp, &leaves);
     restore_text_case(&mut data.entities, bytes);
+    (game.entity_rule)(&mut data.entities);
     data.entity_scale = METERS_PER_UNIT;
 
     let (mut lightmap, placements, white) = atlas.build();
@@ -1156,6 +1166,19 @@ pub fn brush_entities(bsp: &Bsp) -> Vec<BrushEntity> {
         "func_viscluster",
         "func_ladderendpoint",
         "func_vehicleclip",
+        // TF2's volumes (specs/tf2/install.md 2.4): spawn rooms,
+        // resupply, no-build, flag capture and detection zones. And its
+        // spawn rooms' door brushes, solid to the room's enemies only: in
+        // a free-for-all nobody is shut out (TF2's maps, `entity_rule`).
+        "func_respawnroom",
+        "func_respawnroomvisualizer",
+        "func_regenerate",
+        "func_nobuild",
+        "func_capturezone",
+        "func_flagdetectionzone",
+        "func_respawnflag",
+        "func_upgradestation",
+        "func_powerupvolume",
     ];
     // Never solid to players.
     const NOT_SOLID: &[&str] = &["func_illusionary", "func_lod"];

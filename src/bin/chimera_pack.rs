@@ -891,9 +891,13 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
         "tf2" => {
             // M2's guns (`sets::M2_WEAPONS`: the `c_` model, the class's
             // arms, sounds, the rocket, the decrypted script) and the
-            // class models, read by TF2's own list (`sets::pieces`).
+            // class models, read by TF2's own list (`sets::pieces`), as
+            // far as `--only` asks (`--only map/<name>` records the map's
+            // set alone).
             take();
-            out.extend(tf2::game::sets::pieces(mount));
+            if ["weapon/", "players"].iter().any(|s| s.starts_with(only) || only.starts_with(s)) {
+                out.extend(tf2::game::sets::pieces(mount).into_iter().filter(|(name, _)| name.starts_with(only)));
+            }
             let options = map_options(false);
             record_maps(source_engine::maps::map_names(mount), only, &take, &mut out, |name| {
                 let bytes = tapped.read(&format!("maps/{name}.bsp")).map_err(|e| e.to_string())?;

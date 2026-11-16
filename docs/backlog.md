@@ -348,6 +348,60 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
+### UGG playtest 8 prep, Windows check (2026-11-15)
+
+An agent's check of TF2 in UGG on the Windows PC (the playtest build of
+main at 2db4047c, offscreen, muted, timeboxed; screenshots kept outside
+the repository). TF2's files were republished in the middle of it; the
+results are from after that.
+
+- **Crash on a TF2 rung, fixed** (the same day): in a match with six
+  bots (`ugg_new 13 60 cs_source:de_dust2`, `rung 49 all`) the client
+  stopped about 8 s after players reached the TF2 Rocket Launcher, with
+  an index out of range in `chimera_world::map::ragdoll`
+  (`PoseFrame::world`, 19 bones, bone 19 asked). Cause: a body's pose
+  history kept the old skeleton's poses when a rung gave it another
+  model, and a death then read the new model's bones from them. The
+  history is now cleared when the bone count changes and a death whose
+  newest pose is of another skeleton spawns no ragdoll. Seen once; not
+  re-run in a match after the fix (the engine's ragdoll tests pass).
+  Because of it no match was played through two TF2 rungs: do that.
+- **The Flame Thrower shows no flames** and **no TF2 gun shows a muzzle
+  flash**, on de_dust2 and on ctf_2fort.
+- **TF2 bullet hits play Combat Arms' impact sounds** (read from the
+  log, not heard: the runs were muted).
+- **The rocket's explosion** is TF2's fireball on ctf_2fort but a small
+  grey puff on de_dust2.
+- **HUD**: the health cross shows each class's maximum health and the
+  ammo counts move when firing. Missing: the class portrait. The
+  crosshair is faint against de_dust2. The sniper's scope did not show
+  in one of two identical runs (not explained).
+- **Classes measure right**: health 125, 200, 300 (Scout, Soldier,
+  Heavy), speeds 400, 240, 230 units/s; the Scout's jump rises 49.9
+  units and its double jump 95.2; a rocket jump rose 170.8 units and
+  cost 39 health. The 15 TF2 movement and rocket tests that were run
+  pass on Windows.
+- **Eye height**: the differences between classes are exact, but every
+  class sits 2.07 units above the spec's height measured against
+  CS:S's 64. Which side is off is not known.
+- **Bodies**: bots show the class bodies with their guns; a scene with
+  CS:S, Halo and TF2 players renders; the kill feed shows TF2's rocket
+  icon.
+- **The Minigun's pose is right**: no forearm in view; at a view-model
+  field of view of 70 our glove is within 5 pixels of the real game's
+  (captures of the real game at rest and spun up, side by side with
+  ours); the gun stands raised at rest and drops behind the glove when
+  spun or firing.
+- **Build and start**: the playtest build took 6 min 39 s. A first start
+  with a partly cold cache took about 85 s to the first playable frame
+  (514 MB fetched during the map load, no failed download); warm starts
+  17 to 19 s.
+- **The sandbox is slow**: a median of 25 to 80 ms per frame, apparently
+  because it preloads every game's weapon models (2,821); real matches
+  ran at about 4 ms.
+- **Not checked**: fire sounds (muted), TF2 against CS:S frame times in
+  the same spot, close-ups of bots running and firing.
+
 ### UGG playtest 7, 2026-11-14 (user and testers, Windows, live)
 
 Fixed ones are on branch `release-7.1` (tag v0.1.0-playtest7.1, not yet

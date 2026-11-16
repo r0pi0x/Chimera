@@ -62,6 +62,7 @@ pub static HL2DM: SourceGame = SourceGame {
     held: held_kit,
     sounds,
     fixed_models,
+    entity_rule: source_engine::content::bsp::no_entity_rule,
 };
 
 /// The models HL2:DM gives its items and ammo crates, whatever the map's
