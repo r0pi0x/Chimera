@@ -34,6 +34,7 @@ pub const TIME_LIMIT: f32 = 1.0e7;
 /// The sandbox's help (`sandbox help`).
 pub const HELP: &str = "sandbox [map]: a match alone on the greybox (or `map`), nothing advances or ends.\n\
     rung <n | gun id or part | next | prev | list> [player | all]: put yourself on a rung (numbered from 1).\n\
+    rung_picker (L, or the Escape menu's Change gun): pick the rung from a list.\n\
     ca_bot_add [alpha|bravo]: add a bot; ca_bot_kick: remove them; ca_bot_stop 1: they stand still;\n\
     ca_bot_dont_shoot 1: they never fire.\n\
     god, noclip: no damage, fly through walls (sv_cheats is 1 here).\n\
@@ -146,6 +147,21 @@ pub fn command(w: &mut World, a: &[String], base: &str) -> Result<Option<String>
     console.submit("sv_cheats 1");
     console.print(Level::Info, "sandbox: `sandbox help` lists what to try");
     Ok(Some(said))
+}
+
+/// Whether the command line (as `args` made it) plays the sandbox on the
+/// greybox: the app then starts on the greybox (`start`), not on its
+/// default map, which `sandbox greybox` at startup would not leave (the
+/// map not yet loaded reads as the greybox, so the command changes
+/// nothing).
+#[cfg(feature = "present")]
+pub fn on_greybox(args: &chimera_client::client::Args) -> bool {
+    args.game_map().is_none()
+        && args.console.iter().any(|c| {
+            let mut w = c.split_whitespace();
+            w.next().is_some_and(|s| s.eq_ignore_ascii_case("sandbox"))
+                && w.next().is_some_and(|m| chimera_net::net::normalize_map(m.trim_matches('"')) == chimera_net::net::GREYBOX)
+        })
 }
 
 /// A command line's `+sandbox [map]` made into what the app starts with:

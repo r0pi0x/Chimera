@@ -9,8 +9,9 @@
 #
 # [[escape]]: the Escape menu's entries, in order. `action` is one of
 # resume, options, host, vote, disconnect, feedback (the report dialog),
-# quit; `when` gates it: always, host (not a network client), main_menu
-# (the app has this main menu). The pre-match lobby has no Escape menu
+# change_gun (the sandbox's rung picker), quit; `when` gates it: always,
+# host (not a network client), main_menu (the app has this main menu),
+# sandbox (Ultimate Gun Game's sandbox plays). The pre-match lobby has no Escape menu
 # under a themed lobby: its own header buttons (Settings, Report a bug,
 # Leave) instead.
 #
@@ -54,6 +55,11 @@ command = "quit"
 [[escape]]
 label = "Resume"
 action = "resume"
+
+[[escape]]
+label = "Change gun"
+action = "change_gun"
+when = "sandbox"
 
 [[escape]]
 label = "Settings"

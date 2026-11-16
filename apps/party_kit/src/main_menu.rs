@@ -193,6 +193,8 @@ pub enum EscDoes {
     Disconnect,
     /// The report dialog (`client::feedback`).
     Feedback,
+    /// The sandbox's rung picker (`rung_picker`).
+    ChangeGun,
     Quit,
 }
 
@@ -204,6 +206,8 @@ pub enum When {
     Host,
     /// The app has this main menu (`PartyMenu` is in).
     MainMenu,
+    /// A sandbox plays (`chimera_sim::minigame::rung_command::holds`).
+    Sandbox,
 }
 
 /// An Escape menu entry.
@@ -303,12 +307,14 @@ impl MenuData {
                 Some("disconnect") => EscDoes::Disconnect,
                 Some("quit") => EscDoes::Quit,
                 Some("feedback") => EscDoes::Feedback,
+                Some("change_gun") => EscDoes::ChangeGun,
                 other => return Err(format!("{label}: no action {other:?}")),
             };
             let when = match s(&t, "when").as_deref() {
                 None | Some("always") => When::Always,
                 Some("host") => When::Host,
                 Some("main_menu") => When::MainMenu,
+                Some("sandbox") => When::Sandbox,
                 Some(w) => return Err(format!("{label}: no `when` {w}")),
             };
             escape.push(EscEntry { label, does, when });
