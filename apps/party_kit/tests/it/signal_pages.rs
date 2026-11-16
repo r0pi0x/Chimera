@@ -204,6 +204,20 @@ fn the_maps_picker_sets_the_rotation() {
     assert_eq!(menu(&sim).screen, Screen::MainMenu, "not started");
     let dialogs = sim.app.world_mut().query_filtered::<(), With<MapsDialog>>().iter(sim.app.world()).count();
     assert_eq!(dialogs, 1, "drawn over the page");
+    // The tree and the tri-state boxes clip (`Overflow::clip` set beside
+    // their styles, which merge into the node and keep it).
+    let dialog = sim.app.world_mut().query_filtered::<Entity, With<MapsDialog>>().single(sim.app.world()).unwrap();
+    let clipped = sim
+        .app
+        .world_mut()
+        .query::<(Entity, &Node, &chimera_ui::UiStyle)>()
+        .iter(sim.app.world())
+        .filter(|(e, n, _)| {
+            let up = |p: Entity| sim.app.world().get::<ChildOf>(p).map(ChildOf::parent);
+            n.overflow == Overflow::clip() && std::iter::successors(up(*e), |p| up(*p)).any(|p| p == dialog)
+        })
+        .count();
+    assert!(clipped > 1, "the picker's styled tree and boxes keep their clip ({clipped})");
     use party_kit::maps_picker::MapCatalogue;
     let id = sim.app.world().resource::<party_kit::main_menu::MenuMinigame>().0.clone();
     let pool: Vec<String> = sim

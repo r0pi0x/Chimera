@@ -591,6 +591,15 @@ impl MapAhead {
         self.job.as_ref().is_some_and(|j| !j.is_finished())
     }
 
+    /// Under way: started and its end not yet noted (`run_streams` notes
+    /// it; `result` then holds it). Unlike `running`, it doesn't depend on
+    /// the fetch thread's speed: true from the frame it starts until a
+    /// frame after it ends, so a stream is held for at least that frame
+    /// even when the fetch finishes at once.
+    pub fn under_way(&self) -> bool {
+        self.job.is_some()
+    }
+
     /// Stored bytes fetched and to fetch (0, 0 until known).
     pub fn bytes(&self) -> (u64, u64) {
         let t = self.transfer.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -1438,7 +1447,7 @@ fn map_ahead(world: &mut World) {
 fn run_streams(world: &mut World) {
     let now = world.get_resource::<Time<Real>>().map_or(0.0, |t| t.elapsed_secs_f64());
     let busy = world.contains_resource::<AssetFetch>()
-        || world.get_resource::<MapAhead>().is_some_and(MapAhead::running)
+        || world.get_resource::<MapAhead>().is_some_and(MapAhead::under_way)
         || !world.contains_resource::<client::Joined>()
         || world.get_resource::<JoinProgress>().is_some_and(|p| !matches!(p.stage, JoinStage::Idle | JoinStage::Joined));
     let link = world.get_resource::<StreamLink>().copied().unwrap_or_default().0;

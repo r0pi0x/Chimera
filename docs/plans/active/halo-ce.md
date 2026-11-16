@@ -490,6 +490,41 @@ backlog.
   pistol, the needler and the assault rifle (to fix). Proposed: one rule
   (a character's full vitality in its own game is 100 in the party
   apps), behind a switch.
+- **Play as the campaign's characters** (a proposal; the user's idea,
+  2026-11-16; not scheduled). On a Halo rung in the party apps the body
+  is sometimes not the Spartan but one of the disc's campaign
+  characters (Elite, Grunt, Jackal, Hunter, Marine, perhaps the Flood),
+  by a chance weighted toward who carries that gun in the campaign (the
+  needler: Grunt, Jackal or Elite; the plasma rifle: Elite; the assault
+  rifle: Marine). What is known: the multiplayer maps hold only the
+  Spartan; the campaign's bipeds, their animation graphs and dialogue
+  are in the campaign maps, which are published in the asset store with
+  the rest of the disc but are large, so which map is the donor and what
+  a player downloads for it is the first cost (a generated set of just
+  those bipeds would be the lean way, if the asset service takes
+  generated sets). The user's decisions (2026-11-16):
+  - *Which guns each can hold*: faithful to the game: a character is
+    offered only for the guns it carries there (its animation graph's
+    weapon labels and the campaign's own pairings decide; the Hunter's
+    gun is part of its arm).
+  - *Movement*: as the character moves in the game, as far as the disc
+    states it (a Grunt slow and wobbly): each character's own speeds,
+    turning and body from its biped document, not the Spartan's.
+  - *Hit boxes*: each character's own.
+  - *Shields and health*: whatever the character has in the game (an
+    Elite's shield, a Grunt's none). Unfair at first; tuned later
+    through the party's balance tables.
+  - *First person*: the Spartan's hands for now; later first-person
+    hands made for each character (our own work: the disc has none).
+  - *Voice*: the character's chatter plays and every player hears it.
+  - *Downloads*: split so each character is fetched as its own unit
+    when it is needed, never a whole campaign map (generated sets: the
+    asset service's side).
+  Still to settle: deaths, flinches and seats per character (each has
+  its own animations); where it is chosen (a rung extra of Halo's, as
+  the ladder's rung characters are, replicated with the match, off by
+  default until played). First step: a spec of the campaign's
+  characters (specs/halo_ce/characters.md), being written.
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the

@@ -51,6 +51,39 @@ fn styles_follow_the_units() {
     assert_eq!(app.world().get::<Node>(e).unwrap().height, Val::Px((2.15f32 * 25.6).round()));
 }
 
+/// A style merges into the node: layout set in code beside it (a clip,
+/// as the Maps picker's tree has) survives the style and a resize, and a
+/// changed style forgets only the fields its old value named.
+#[test]
+fn styles_keep_the_nodes_own_fields() {
+    let mut app = app(1080.0);
+    let e = app
+        .world_mut()
+        .spawn((style!(column, pad: 0.8), Node { overflow: Overflow::clip(), display: Display::Grid, ..default() }))
+        .id();
+    app.update();
+    let n = app.world().get::<Node>(e).unwrap();
+    assert_eq!(n.overflow, Overflow::clip(), "the style kept the clip");
+    assert_eq!(n.display, Display::Grid);
+    assert_eq!(n.padding.top, Val::Px((0.8f32 * 19.2).round()), "and set its padding");
+    assert_eq!(n.flex_direction, FlexDirection::Column);
+    // Laid out again at another size: still clipped.
+    app.world_mut().insert_resource(UiUnits::new(1440.0, 1.0));
+    app.update();
+    let n = app.world().get::<Node>(e).unwrap();
+    assert_eq!(n.overflow, Overflow::clip());
+    assert_eq!(n.padding.top, Val::Px((0.8f32 * 25.6).round()));
+    // The style changes: padding it no longer names goes back to Bevy's
+    // default, the new width is written, the clip stays.
+    *app.world_mut().get_mut::<chimera_ui::UiStyle>(e).unwrap() = style!(row, w: 10.0);
+    app.update();
+    let n = app.world().get::<Node>(e).unwrap();
+    assert_eq!(n.overflow, Overflow::clip());
+    assert_eq!(n.padding, Node::default().padding);
+    assert_eq!(n.width, Val::Px((10.0f32 * 25.6).round()));
+    assert_eq!(n.flex_direction, FlexDirection::Row);
+}
+
 /// A board-like tree in BSN: styled rows from data (a dynamic list), text
 /// in the kit's roles, a slanted material node, any marker beside them
 /// (a parity id).
