@@ -114,7 +114,7 @@ pub fn sandbox_wants(
     data: Res<CampaignData>,
     mut units: ResMut<UnitsOnDemand>,
 ) {
-    if !chimera_sim::minigame::rung_command::holds(hold.as_deref(), active.as_deref()) {
+    if !hold.as_deref().zip(active.as_deref()).is_some_and(|(h, a)| a.def.id == h.0) {
         return;
     }
     for k in BodyKind::ALL.into_iter().filter(|k| *k != BodyKind::Spartan && data.body(*k).is_some()) {

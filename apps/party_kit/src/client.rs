@@ -115,8 +115,6 @@ pub fn front_end(app: &mut App, _: &Args) {
     app.add_plugins(crate::controls::ControlsPlugin)
         // The party's own Escape menu (Combat Arms' yields Esc to it).
         .add_plugins(crate::esc_menu::EscMenuPlugin)
-        // The sandbox's rung picker (`rung_picker`: L, Change gun).
-        .add_plugins(crate::rung_picker::RungPickerPlugin)
         // Settings in the Signal look (the menus' Options and Host
         // settings under Ultimate Gun Game's theme).
         .add_plugins(crate::settings::SettingsPlugin)

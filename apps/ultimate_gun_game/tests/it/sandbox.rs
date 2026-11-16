@@ -118,27 +118,6 @@ fn an_ambiguous_or_unknown_name_prints_an_error_and_changes_nothing() {
     }
 }
 
-/// A launch's `+rung` naming several guns (as `+rung minigun` did: Combat
-/// Arms' and TF2's) waits for the match, then says why it did nothing,
-/// naming the candidates, on the console (and in the log).
-#[test]
-fn a_deferred_ambiguous_rung_says_why_when_applied() {
-    let mut sim = ugg();
-    ultimate_gun_game::sandbox::generate(sim.app.world_mut(), "combat_arms").expect("the definition");
-    let said = run(&mut sim, "rung rifle").join("\n");
-    assert!(said.contains("waiting"), "kept for the match: {said}");
-    let before = sim.app.world().resource::<Console>().output.len();
-    minigame::start(sim.app.world_mut(), SANDBOX).expect("the sandbox starts");
-    let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
-    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
-    sim.seconds(1.5);
-    let out: Vec<String> = sim.app.world().resource::<Console>().output[before..].iter().map(|l| l.text.clone()).collect();
-    let line = out.iter().find(|l| l.starts_with("rung rifle:")).unwrap_or_else(|| panic!("the refusal is said: {out:?}"));
-    assert!(line.contains("several") && line.contains(SNIPER), "the candidates named: {line}");
-    assert!(sim.app.world().get_resource::<minigame::rung_command::PendingRung>().is_none(), "applied once");
-    assert_eq!(rung(&sim, me), 0, "nothing changed");
-}
-
 #[test]
 fn a_kill_never_moves_the_player_and_the_last_rung_does_not_win() {
     let (mut sim, me, other) = play();

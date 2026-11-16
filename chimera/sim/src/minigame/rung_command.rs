@@ -21,9 +21,8 @@
 //!   here: this is a cheat for a client, not for the host).
 //! - `+rung <...>` runs at startup, before any match: with no ladder or
 //!   player yet the line is kept (`PendingRung`) and applied by a system
-//!   the first frame the local player has a rung (what it did, or why not:
-//!   an unknown or ambiguous name with the candidates, goes to the console
-//!   and the log); a later `rung` replaces it.
+//!   the first frame the local player has a rung (an error then goes to the
+//!   console); a later `rung` replaces it.
 //!
 //! - **The sandbox's rule** (`HoldRungs`): an app that plays a sandbox
 //!   minigame (Ultimate Gun Game's `sandbox`) names its id, and while it
@@ -33,10 +32,6 @@
 //!   change). The ladder's last rung is then a sentinel (a copy of the one
 //!   before it, so a kill on the last real rung climbs to it instead of
 //!   winning the match): it is never shown, listed or chosen.
-//!
-//! - The party's rung picker (`party_kit::rung_picker`, the sandbox's
-//!   dialog) asks `holds` whether it may open and moves the player with
-//!   `move_to` (`usable` rungs: the sentinel left out), as this command does.
 //!
 //! Known shortcuts: the sandbox's kill still moves the player for the frame
 //! before `hold` puts them back (the same gun when it is the last rung's, a
@@ -61,20 +56,21 @@ pub struct Chosen(pub usize);
 #[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HoldRungs(pub &'static str);
 
-/// Whether the sandbox's rule is in force now (a sandbox plays: `targets` exist
-/// only then).
-pub fn holding(world: &World) -> bool {
-    holds(world.get_resource::<HoldRungs>(), world.get_resource::<super::ActiveMinigame>())
+/// Whether the sandbox's rule is in force now (the sandbox plays:
+/// `targets` exist only then).
+pub fn holds(world: &World) -> bool {
+    holding(world)
 }
 
-/// `holding` from a system's resources (the party's rung picker opens only
-/// then).
-pub fn holds(hold: Option<&HoldRungs>, active: Option<&super::ActiveMinigame>) -> bool {
-    hold.zip(active).is_some_and(|(h, a)| a.def.id == h.0)
+fn holding(world: &World) -> bool {
+    let (Some(h), Some(a)) = (world.get_resource::<HoldRungs>(), world.get_resource::<super::ActiveMinigame>()) else {
+        return false;
+    };
+    a.def.id == h.0
 }
 
 /// The rungs a player may be put on: all, but the sandbox's sentinel.
-pub fn usable(world: &World, ladder: &Ladder) -> usize {
+fn usable(world: &World, ladder: &Ladder) -> usize {
     ladder.rungs.len().saturating_sub(usize::from(holding(world)))
 }
 
@@ -260,14 +256,6 @@ fn apply_pending_now(world: &mut World) {
         Ok(text) => (Level::Info, text.unwrap_or_default()),
         Err(e) => (Level::Error, format!("rung {}: {e}", args.join(" "))),
     };
-    // In the log too: a launch's `+rung` is applied with the console shut,
-    // so a refusal (an unknown or ambiguous name, its candidates) must not
-    // go unseen.
-    if level == Level::Error {
-        error!("{text}");
-    } else {
-        info!("{text}");
-    }
     world.resource_mut::<Console>().print(level, text);
 }
 

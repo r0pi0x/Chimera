@@ -66,9 +66,6 @@ pub const SHARED: &[Row] = &[
     row("Last weapon", "lastinv"),
     // The report dialog (`client::feedback`; F10 in Ultimate Gun Game).
     row("Report a bug", "feedback"),
-    // Ultimate Gun Game's sandbox: the rung picker (`rung_picker`; L in
-    // the app; nothing outside the sandbox).
-    row("Change gun (sandbox)", "rung_picker"),
 ];
 
 /// A number the page sets (a saved cvar): `-` and `+` buttons move it by

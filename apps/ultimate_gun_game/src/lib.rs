@@ -330,16 +330,12 @@ fn with_installs(world: &mut World) {
 /// still holds it gets the report key once. Y and U open the chat to
 /// everyone and to the team (`messagemode`, `messagemode2`: the Signal
 /// chat, `client::signal_chat`), as in CS:S; Combat Arms' Enter, F2 and F3
-/// open it too. L opens the sandbox's rung picker (`rung_picker`).
+/// open it too.
 #[cfg(feature = "present")]
 pub const APP_BINDS: &[chimera_client::client::binds::AppBind] = &[
     chimera_client::client::binds::AppBind { key: "f10", command: "feedback", replaces: &["quit prompt"] },
     chimera_client::client::binds::AppBind { key: "y", command: "messagemode", replaces: &[] },
     chimera_client::client::binds::AppBind { key: "u", command: "messagemode2", replaces: &[] },
-    // The sandbox's rung picker (`party_kit::rung_picker`; nothing outside
-    // the sandbox). B, the obvious key, is Combat Arms' radio and CS:S's
-    // buy menu; L is free in every game's binds.
-    chimera_client::client::binds::AppBind { key: "l", command: "rung_picker", replaces: &[] },
 ];
 
 /// The game binary's app (`ultimate_gun_game`, main.rs): the party's
@@ -365,24 +361,13 @@ pub static APP: chimera_client::client::app::GameApp = chimera_client::client::a
     },
     hooks: chimera_client::client::app::GameAppHooks {
         args: Some(args),
-        start: Some(start),
+        start: Some(party_kit::start_at_menu),
         server: Some("ultimate_gun_game_server"),
         launch: Some(launch),
         ..party_kit::client::PARTY.hooks
     },
     ..party_kit::client::PARTY
 };
-
-/// Where the app starts: on the greybox for `+sandbox` without a map
-/// (`sandbox::on_greybox`; its help's default), else the party's start
-/// (`party_kit::start_at_menu`).
-#[cfg(feature = "present")]
-fn start(game: &'static chimera_client::client::app::GameApp, args: &chimera_client::client::Args) -> Option<chimera_client::client::app::StartMap> {
-    if sandbox::on_greybox(args) {
-        return Some(chimera_client::client::app::StartMap::Greybox);
-    }
-    party_kit::start_at_menu(game, args)
-}
 
 /// The command line as the app plays it: as given at the main menu (no
 /// map, minigame, server or capture on it: `main_menu::starts_at_menu`),

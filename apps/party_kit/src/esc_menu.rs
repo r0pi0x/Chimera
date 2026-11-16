@@ -12,8 +12,6 @@
 //!   (`binds::CapturedKeys`), so a key held across its closing stays
 //!   dead until let go. Closing takes the mouse back.
 //! - **Resume.**
-//! - **Change gun** (only while Ultimate Gun Game's sandbox plays): the
-//!   menu closes and the rung picker opens (`rung_picker`).
 //! - **Options**: a tab per page of data/options.toml (video, audio,
 //!   mouse, the party's own: `party_swap_effect`, `party_music`, and
 //!   network: "Use my installed games", `chimera:asset_use_install`, off
@@ -96,7 +94,6 @@ use chimera_core::console::{Console, ConsoleAppExt};
 use chimera_net::net::vote::{CallRefusal, VoteFailure, VoteNews, VoteSettings, VoteView};
 
 use crate::host::{self, Setting, setting_of};
-use crate::rung_picker::SandboxPlays;
 
 /// The options' data (data/options.toml).
 pub const OPTIONS_TOML: &str = include_str!("../data/options.toml");
@@ -243,12 +240,6 @@ pub struct ShownEntry {
 /// The first page's entries (data/main_menu.toml `[[escape]]`) for a host
 /// or not, in an app with the main menu or not, a vote running or not.
 pub fn shown_entries(host: bool, main_menu: bool, voting: bool) -> Vec<ShownEntry> {
-    shown_entries_in(host, main_menu, voting, false)
-}
-
-/// `shown_entries`, while a sandbox plays or not (`sandbox`: its Change
-/// gun, the rung picker).
-pub fn shown_entries_in(host: bool, main_menu: bool, voting: bool, sandbox: bool) -> Vec<ShownEntry> {
     use crate::main_menu::{EscDoes, When};
     crate::main_menu::MenuData::shipped()
         .escape
@@ -257,7 +248,6 @@ pub fn shown_entries_in(host: bool, main_menu: bool, voting: bool, sandbox: bool
             When::Always => true,
             When::Host => host,
             When::MainMenu => main_menu,
-            When::Sandbox => sandbox,
         })
         .map(|e| {
             let action = match e.does {
@@ -267,7 +257,6 @@ pub fn shown_entries_in(host: bool, main_menu: bool, voting: bool, sandbox: bool
                 EscDoes::Disconnect => Some(Action::Disconnect),
                 EscDoes::Quit => Some(Action::Quit),
                 EscDoes::Feedback => Some(Action::Feedback),
-                EscDoes::ChangeGun => Some(Action::ChangeGun),
                 EscDoes::Vote => (!voting).then_some(Action::SkipMap),
             };
             ShownEntry {
@@ -307,7 +296,6 @@ fn navigate(
     mut menu: ResMut<EscMenu>,
     mut out: MessageWriter<Action>,
     mut cues: MessageWriter<chimera_client::client::ui_sound::UiCue>,
-    sandbox: SandboxPlays,
 ) {
     use chimera_client::client::ui_sound::UiCue;
     if !menu.open || !signal(theme.as_deref()) {
@@ -321,7 +309,7 @@ fn navigate(
         Page::Main => {
             let host = host::may_change(role.0.as_deref(), role.1.as_deref());
             let voting = vote.as_ref().is_some_and(|v| v.active.is_some());
-            let entries = shown_entries_in(host, main_menu.is_some(), voting, sandbox.on());
+            let entries = shown_entries(host, main_menu.is_some(), voting);
             let live: Vec<usize> = (0..entries.len()).filter(|i| entries[*i].action.is_some()).collect();
             if live.is_empty() {
                 return;
@@ -403,9 +391,6 @@ pub enum Action {
     /// Report a bug: the menu closes, then the screenshot, then the
     /// report dialog (`client::feedback`, `feedback menu`).
     Feedback,
-    /// The sandbox's Change gun: the menu closes and the rung picker
-    /// opens (`rung_picker`).
-    ChangeGun,
     Quit,
 }
 
@@ -596,14 +581,9 @@ fn toggle(
         Option<Res<chimera_client::client::feedback::Feedback>>,
         MessageWriter<chimera_client::client::prematch_lobby::LobbyAction>,
     ),
-    picker: Option<Res<crate::rung_picker::RungPicker>>,
 ) {
     use chimera_client::client::ui_sound::UiCue;
     if !keys.just_pressed(KeyCode::Escape) {
-        return;
-    }
-    // The rung picker's Cancel.
-    if picker.is_some_and(|p| p.took_keys) {
         return;
     }
     // Settings spent it (a key capture, an open list, the display's keep).
@@ -796,13 +776,6 @@ fn act_one(world: &mut World, action: Action) {
                 chimera_client::client::feedback::request(world, true);
             }
         }
-        Action::ChangeGun => {
-            leave(world);
-            world.resource_mut::<EscMenu>().set_open(false);
-            if let Err(e) = crate::rung_picker::open(world) {
-                world.resource_mut::<Console>().print(chimera_core::console::Level::Error, format!("rung_picker: {e}"));
-            }
-        }
         Action::Quit => submit(world, "quit"),
     }
 }
@@ -862,12 +835,10 @@ fn sync(
     mut app_menu: ResMut<AppMenu>,
     mut captured: ResMut<CapturedKeys>,
     mut cursor: Query<&mut CursorOptions>,
-    picker: Option<Res<crate::rung_picker::RungPicker>>,
 ) {
     // The pre-match lobby owns the input as a menu does (its buttons take
-    // clicks through a download and a load); the sandbox's rung picker too.
+    // clicks through a download and a load).
     let open = menu.open
-        || picker.is_some_and(|p| p.open)
         || main_menu.is_some_and(|m| m.shown())
         || report.is_some_and(|r| r.shown())
         || crate::main_menu::owned_by_lobby(lobby.as_deref());
@@ -901,8 +872,6 @@ struct Shown {
     title: String,
     /// The app has the main menu (Disconnect shows).
     main_menu: bool,
-    /// A sandbox plays (Change gun shows).
-    sandbox: bool,
     /// The Signal look (`esc_signal`): its selection, the window's units.
     signal: Option<(usize, u64, u32, u32)>,
     /// Over the themed lobby (`EscMenu::lobby`).
@@ -933,7 +902,6 @@ fn show(
     ),
     mut shown: Local<Option<Shown>>,
     mut commands: Commands,
-    sandbox: SandboxPlays,
 ) {
     if !menu.open {
         if shown.take().is_some() {
@@ -952,7 +920,6 @@ fn show(
         host: host::may_change(role.0.as_deref(), role.1.as_deref()),
         title: title.0.clone(),
         main_menu: main_menu.is_some(),
-        sandbox: sandbox.on(),
         lobby: menu.lobby,
         signal: (signal(theme.as_deref()) && units.is_some()).then(|| {
             let u = units.as_deref().copied().unwrap_or_default();
@@ -980,7 +947,7 @@ fn show(
                 mine: v.mine,
                 may_vote: v.may_vote,
             });
-            let entries = shown_entries_in(now.host, now.main_menu, active.is_some(), now.sandbox);
+            let entries = shown_entries(now.host, now.main_menu, active.is_some());
             let at = crate::esc_signal::Drawn {
                 lobby: now.lobby,
                 page: menu.page,
@@ -1094,7 +1061,6 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             crate::main_menu::When::Always => true,
             crate::main_menu::When::Host => shown.host,
             crate::main_menu::When::MainMenu => shown.main_menu,
-            crate::main_menu::When::Sandbox => shown.sandbox,
         };
         if !visible {
             continue;
@@ -1107,7 +1073,6 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             EscDoes::Disconnect => Action::Disconnect,
             EscDoes::Quit => Action::Quit,
             EscDoes::Feedback => Action::Feedback,
-            EscDoes::ChangeGun => Action::ChangeGun,
             EscDoes::Vote => {
                 vote_rows(panel, vote, &e.label, WIDE);
                 continue;

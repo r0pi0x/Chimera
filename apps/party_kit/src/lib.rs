@@ -657,8 +657,6 @@ pub mod signal_pages;
 #[cfg(feature = "present")]
 pub mod maps_picker;
 #[cfg(feature = "present")]
-pub mod rung_picker;
-#[cfg(feature = "present")]
 pub mod loading_signal;
 #[cfg(feature = "present")]
 pub mod client;

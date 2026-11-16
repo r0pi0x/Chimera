@@ -364,8 +364,7 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume
   dice and the rung seed (`CHIMERA_RUNG_SEED` fixes the extras),
   particles and spread from their own seeds.
 - Examples: `apps/ultimate_gun_game/scenes/` (three targets at 5, 10,
-  20 m; a kill and its death at 0, 15, 45 frames; Halo's campaign bodies
-  as targets on Hang 'Em High and de_dust2, and worn by the player).
+  20 m; a kill and its death at 0, 15, 45 frames).
 
 ### Offscreen (no display, no compositor)
 
@@ -525,14 +524,6 @@ part of it | next | prev> [player | all]` puts a player on that rung as a
 kill would (`+rung halo_ce:frag_grenade` at launch waits for the match).
 Beside it: `ca_bot_add`, `ca_bot_kick`, `ca_bot_stop 1`, `ca_bot_dont_shoot 1`,
 `god`, `noclip` (`sv_cheats` is 1 there), guns refill; `sandbox help` says it.
-Without typing: **L** (a Controls page row, "Change gun (sandbox)"), the
-Escape menu's **Change gun** or `rung_picker` open the rung picker
-(`apps/party_kit/src/rung_picker.rs`): games, their gun classes and the
-rungs with icon, name, tags and the current one marked; type to filter
-(name, id, class or game), ↑↓ and Enter or a click to pick, Esc to cancel.
-It opens only in the sandbox; `ui_scene rung_picker [filter | off]`
-stages it for screenshots (made-up rungs without a match). Tests:
-`ultimate_gun_game`'s `tests/it/rung_picker.rs`.
 Practice targets: `target add <rung n | gun id | body id> [distance]
 [still|strafe|walk] [shoots] [protect]`, `target set`, `target remove`,
 `target list`, `target characters` (`chimera_sim::minigame::targets`);

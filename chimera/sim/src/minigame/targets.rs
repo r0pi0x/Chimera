@@ -639,7 +639,7 @@ struct TargetCount(u32);
 
 /// Spawn a target now; the bot it is.
 pub fn spawn(world: &mut World, req: &SpawnTarget) -> Result<Entity, String> {
-    if !rung_command::holding(world) {
+    if !rung_command::holds(world) {
         return Err("targets are the sandbox's: start it with `sandbox`".into());
     }
     let arming = resolve(world, req.character.as_deref(), req.gun.as_deref(), req.rung)?;
@@ -1062,7 +1062,7 @@ fn settle(
     }
     if !drives.is_empty() {
         commands.queue(|world: &mut World| {
-            if !rung_command::holding(world) {
+            if !rung_command::holds(world) {
                 clear(world);
             }
         });
