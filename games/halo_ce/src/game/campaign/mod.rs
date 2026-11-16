@@ -598,13 +598,23 @@ fn body_command(world: &mut World, a: &[String]) -> Result<Option<String>, Strin
             Option<&BodyName>,
             Option<&crate::map::BodyModel>,
             Option<&crate::map::Held>,
+            Option<&crate::core::Intent>,
+            Option<&Transform>,
         )>();
         let rows: Vec<String> = q
             .iter(world)
             .filter(|r| r.2.is_some() || r.3.is_some())
-            .map(|(e, n, k, b, m, h)| {
+            .map(|(e, n, k, b, m, h, i, t)| {
                 let who = n.map_or_else(|| e.to_string(), |n| n.to_string());
-                format!("{who}: {k:?} {:?} model {:?} holds {:?}", b.map(|b| &b.0), m.map(|m| m.0), h.and_then(|h| h.0.as_deref()))
+                format!(
+                    "{who}: {k:?} {:?} model {:?} holds {:?} at {:?} looking yaw {:.0} pitch {:.0}",
+                    b.map(|b| &b.0),
+                    m.map(|m| m.0),
+                    h.and_then(|h| h.0.as_deref()),
+                    t.map(|t| t.translation),
+                    i.map_or(0.0, |i| i.yaw.to_degrees()),
+                    i.map_or(0.0, |i| i.pitch.to_degrees())
+                )
             })
             .collect();
         return Ok(Some(format!("{units}

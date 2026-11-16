@@ -40,8 +40,10 @@
 //!   point to the next within `WALK_RADIUS` m of home, a fixed sequence).
 //!   It never leaves its home area (`LEASH` m past it: it heads home).
 //! - `shoots_back` (off by default): off, its trigger, secondary and game
-//!   actions are kept released every tick (it still sees and turns); on,
-//!   it fights as its game's bot does from where its motion keeps it.
+//!   actions are kept released every tick and it faces back along its
+//!   line, level, toward where it was placed from (its brain's look is
+//!   overridden: a body faces the spawner, for a fair look at it); on, it
+//!   fights as its game's bot does from where its motion keeps it.
 //! - `protected` (off by default): `core::HealthHeld` (hits land and are
 //!   measured, health never drops, it never dies), and its health and
 //!   shield are put back to full at the start of each tick.
@@ -1206,6 +1208,15 @@ fn drive(clock: Res<SimClock>, mut q: Query<(&Target, &mut TargetDrive, &Transfo
             intent.fire = false;
             intent.secondary = false;
             intent.actions = 0;
+        }
+        // One that may not fire faces back along its line, level: toward
+        // where it was placed from, whatever the brain looks at.
+        if !t.shoots_back {
+            let yaw = t.dir.x.atan2(t.dir.z);
+            if intent.yaw != yaw || intent.pitch != 0.0 {
+                intent.yaw = yaw;
+                intent.pitch = 0.0;
+            }
         }
     }
 }

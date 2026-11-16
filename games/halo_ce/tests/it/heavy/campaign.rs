@@ -223,3 +223,54 @@ fn the_marine_is_cut_with_its_voices_apart() {
     eprintln!("marine: body {} tags, {} bytes; collision model {coll:?}", c.body_unit.tags.len(), c.body_unit.total());
     assert_eq!(coll, named, "its vitality row is its own collision model's");
 }
+
+/// Each body standing and aiming level holds its gun along its facing
+/// (animations.md "Aiming and looking screens"): the idle's frame 0 with
+/// the aiming screen at yaw 0 and pitch 0, the gun's forward (the hand
+/// marker's +X on the hand's node) within a few degrees of the body's +X.
+#[test]
+fn every_body_aims_its_gun_along_its_facing() {
+    use bevy::math::{Quat, Vec3};
+    use blam_formats::{animation::AnimationGraph, cache::class, model::Model, object::Biped};
+    use halo_ce::game::body::anims;
+    let Some(mount) = mount() else { return };
+    let data = CampaignData::builtin();
+    let mut worst = Vec::new();
+    for (kind, donor, label) in [(BodyKind::Elite, "d20", "pr"), (BodyKind::Grunt, "d20", "ne"), (BodyKind::Jackal, "d20", "pp"), (BodyKind::Marine, "a30", "ar")] {
+        let def = data.body(kind).unwrap();
+        let bytes = mount.read(&maps::map_path(donor)).unwrap();
+        let c = unit::convert(kind.id(), def, &bytes).unwrap();
+        let file = MapFile::load(&c.body).unwrap();
+        let body = load::biped_body(&file, &def.biped, false, def.tint()).unwrap();
+        let set = body.character.animations.as_ref().unwrap();
+        let bones = &body.character.bones;
+        let biped = Biped::read(&file, file.find(class::BIPED, &def.biped).unwrap()).unwrap();
+        let model = Model::read(&file, file.tag(biped.object.model.id).unwrap()).unwrap();
+        let graph = AnimationGraph::read(&file, file.tag(biped.object.animation_graph.id).unwrap()).unwrap();
+        let (hand_bone, grip) = halo_ce::game::view::load::hand(&model, &graph, label).unwrap();
+        let idle = set.sequences[set.names[&key("stand", label, "idle")]].anims[0];
+        let mut pose = anims::base_pose(set, idle, 0);
+        let aim = set.names[&key("stand", label, "aim-still")];
+        let bounds = anims::screen_bounds(&set.sequences[aim]);
+        anims::apply_screen(set, aim, 0.0, 0.0, &mut pose);
+        let mut global = vec![Quat::IDENTITY; bones.len()];
+        for (i, b) in bones.iter().enumerate() {
+            global[i] = b.parent.map_or(Quat::IDENTITY, |p| global[p]) * pose[i].0;
+        }
+        let h = bones.iter().position(|b| b.name == hand_bone).unwrap();
+        let (_, grip_q, _) = grip.to_scale_rotation_translation();
+        let fwd = global[h] * grip_q * Vec3::X;
+        let yaw = fwd.y.atan2(fwd.x).to_degrees();
+        let head = bones.iter().position(|b| b.name.ends_with("head")).unwrap();
+        let hf = global[head] * Vec3::X;
+        eprintln!(
+            "{kind:?} ({label}): bounds {bounds:?}; gun forward {fwd:?} yaw {yaw:.0} deg, pitch {:.0}; head +X yaw {:.0}",
+            fwd.z.asin().to_degrees(),
+            hf.y.atan2(hf.x).to_degrees()
+        );
+        worst.push((kind, yaw));
+    }
+    for (kind, yaw) in worst {
+        assert!(yaw.abs() < 10.0, "{kind:?} holds its gun {yaw:.0} degrees off its facing");
+    }
+}
