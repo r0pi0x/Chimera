@@ -49,6 +49,11 @@
 //! others (docs/DESIGN.md, "ECS style"; `Mirrored` goes on unprimed).
 //! A respawn (health back above 0) starts a fresh `Vitality`, shield full.
 //!
+//! A campaign body (`campaign::BodyKind`) takes its own table
+//! (`campaign::vitality_of`: the Elite's 100 body and shield, its delay,
+//! recharge and materials) in `update` and the damage seam; `Vitality`'s
+//! fractions are of that table's maxima.
+//!
 //! **Replication.** The server owns all of it: `Vitality` replicates to
 //! every client (`halo_ce_vitality`: the owner's HUD, everyone's shield
 //! glow and camouflage later); `Stun` is predicted (`predicted_net`) and
@@ -520,15 +525,19 @@ pub fn update(
         Option<&mut Stun>,
         Option<&mut Mirrored>,
         Option<&DamageScale>,
+        Option<&super::campaign::BodyKind>,
     )>,
     spartan: Res<Spartan>,
+    tables: Option<Res<super::campaign::BodyTables>>,
     clock: Res<crate::core::SimClock>,
     mut grants: MessageReader<GrantPowerup>,
     mut taken: MessageWriter<PowerupTaken>,
     mut commands: Commands,
 ) {
     let grants: Vec<GrantPowerup> = grants.read().copied().collect();
-    for (e, mut v, mut health, mut armor, stun, mirrored, scale) in &mut q {
+    for (e, mut v, mut health, mut armor, stun, mirrored, scale, kind) in &mut q {
+        // The body's own table (`campaign::vitality_of`).
+        let spartan = super::campaign::vitality_of(&spartan, tables.as_deref(), kind);
         let scale = scale_of(scale);
         let Some(mut mirrored) = mirrored.filter(|m| m.primed) else {
             // First tick: the engine's values are where Halo starts (an
@@ -557,19 +566,19 @@ pub fn update(
                 *s = Stun::default();
             }
         } else {
-            take_foreign(&spartan, &mut v, &health, armor.as_deref(), &mirrored, scale);
+            take_foreign(spartan, &mut v, &health, armor.as_deref(), &mirrored, scale);
             if v.dead {
                 v.die();
             }
         }
         for _ in 0..super::ticks::halo_ticks(&clock) {
-            v.tick(&spartan);
+            v.tick(spartan);
         }
         for g in grants.iter().filter(|g| g.target == e) {
             let ok = match g.powerup {
                 Powerup::HealthPack => v.heal(),
-                Powerup::Overshield => v.overshield(&spartan),
-                Powerup::ActiveCamouflage => v.camouflage(&spartan),
+                Powerup::Overshield => v.overshield(spartan),
+                Powerup::ActiveCamouflage => v.camouflage(spartan),
             };
             if ok {
                 taken.write(PowerupTaken {
@@ -579,5 +588,16 @@ pub fn update(
             }
         }
         mirror(&v, &mut health, armor.as_deref_mut(), &mut mirrored, scale);
+        // A body its shield does not cover (none, or the Jackal's arm
+        // shield: every other material leaks it all) shows no armour to
+        // other games' hits: they reach its body.
+        if !spartan.shield_covers_body() {
+            if let Some(mut a) = armor
+                && a.amount != 0.0
+            {
+                a.amount = 0.0;
+            }
+            mirrored.shield = 0.0;
+        }
     }
 }

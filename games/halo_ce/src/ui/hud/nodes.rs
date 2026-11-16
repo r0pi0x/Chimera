@@ -71,6 +71,8 @@ pub struct HaloHud {
     pub blocks: draw::Blocks,
     /// The canvas they are drawn on.
     pub canvas: Option<Canvas>,
+    /// The scope's blur this frame (`draw::scope_blur`; `scope_post`).
+    pub blur: Option<draw::ScopeBlur>,
 }
 
 /// Halo's HUD root.
@@ -193,10 +195,16 @@ pub fn collect(
     let Some((me_e, at, vitality, health, dead, inventory, intent, team)) = me.iter().next() else {
         hud.unit = None;
         hud.quads.clear();
+        hud.blur = None;
         return;
     };
     let firing = intent.is_some_and(|i| i.fire);
     let weapon = inventory.and_then(|i| i.active).and_then(|e| guns.get(e).ok()).map(|(gun, w)| Held { tag: w.0.tag.clone(), now: weapon_now(gun, w, firing) });
+    // The camera's vertical field of view for the scope's blur (hud.md 9).
+    let v = inventory.and_then(|i| i.active).and_then(|e| guns.get(e).ok()).map_or(0.0, |(gun, w)| {
+        let m = if gun.zoom >= 0 { w.0.magnification(gun.zoom) } else { 1.0 };
+        draw::scope_fov(w.0.camera_field_of_view, m)
+    });
     let alive = !dead && vitality.is_none_or(|v| !v.dead) && health.is_none_or(|h| h.current > 0.0);
     let unit = Unit {
         alive,
@@ -247,6 +255,7 @@ pub fn collect(
     let canvas = window.iter().next().map_or(Canvas::ORIGINAL, |w| Canvas::of(w.width(), w.height())).with_layout(layout);
     (hud.quads, hud.blocks) = draw::draw_blocks(data, &unit, &hud.state, &canvas, now);
     hud.canvas = Some(canvas);
+    hud.blur = draw::scope_blur(data, &unit, v);
     hud.unit = Some(unit);
 }
 
@@ -296,5 +305,41 @@ pub fn sync(
         if let Ok((_, mut v, _)) = nodes.get_mut(*e) {
             v.set_if_neq(Visibility::Hidden);
         }
+    }
+}
+
+/// The scope's blur passes Halo asks of the engine (hud.md 9): two
+/// passes of the radial blur through the mask's alpha, the mask one texel
+/// per 480-line pixel centred on the view and r in 480-line pixels
+/// (`radial_of`).
+pub const SCOPE_PASSES: u32 = 2;
+
+/// The engine's radial blur for a scope's blur and its mask's image.
+pub fn radial_of(blur: &draw::ScopeBlur, mask: Handle<Image>) -> chimera_present::render::screen_post::RadialBlur {
+    let lines = super::layout::CANVAS_HEIGHT as f32;
+    chimera_present::render::screen_post::RadialBlur {
+        mask,
+        mask_texels_per_height: lines,
+        radius: blur.radius / lines,
+        centre: Vec2::splat(0.5),
+        passes: SCOPE_PASSES,
+    }
+}
+
+/// No scope blur while Halo's HUD is not the gameplay's (`collect` does
+/// not run then).
+pub fn clear_blur(mut hud: ResMut<HaloHud>) {
+    if hud.blur.is_some() {
+        hud.blur = None;
+    }
+}
+
+/// The scope's blur to the engine's full-screen passes (Halo owns
+/// `ScreenPost::radial`), or none.
+pub fn scope_post(hud: Res<HaloHud>, images: Res<HudImages>, post: Option<ResMut<chimera_present::render::screen_post::ScreenPost>>) {
+    let Some(mut post) = post else { return };
+    let want = hud.blur.as_ref().and_then(|b| images.0.get(&(b.mask.page, b.mask.image)).map(|m| radial_of(b, m.clone())));
+    if post.radial != want {
+        post.radial = want;
     }
 }

@@ -26,4 +26,5 @@ mod match_effects;
 mod signal_feed;
 mod signal_chat;
 mod respawn_countdown;
+mod sandbox;
 mod ui_sound;

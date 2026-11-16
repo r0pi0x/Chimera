@@ -27,10 +27,17 @@ service"). Design and limits: [plans/active/asset-service.md](plans/active/asset
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net62` since who sits in which seat of Halo's
-   vehicles goes to every client (net part `halo_ce_vehicles`: a rider's
-   seat by the vehicle's map prop; the party apps place Halo's vehicles
-   only with `halo_ce:party_vehicles 1`); `net61` (a dead Halo player's
+   The network version is `net65` since a Halo player's body kind and
+   voice go to every client (net part `halo_ce_bodies`: the campaign's
+   characters as party bodies, `BodyKind` and `BodyVoice`; drawn only
+   with `halo_ce:campaign_bodies 1`); `net64` (a match played on a slice of its
+   map (an arena: `arena halo_ce:bloodgulch@west_base`) sends the slice's
+   shape to every client with the match (`NetMinigame::arena`: its wall,
+   put-back and look are the server's)); `net63` (TF2's eight more guns:
+   `chimera:projectile`'s `up_speed`), `net62` (who sits in which seat of
+   Halo's vehicles goes to every client, net part `halo_ce_vehicles`: a
+   rider's seat by the vehicle's map prop; the party apps place Halo's
+   vehicles only with `halo_ce:party_vehicles 1`), `net61` (a dead Halo player's
    body is an object of its own sent to every client: its death animation,
    colour and fall, net part `halo_ce_corpses`), `net60` (Halo's match: its
    game type, team scores, clock and game over, sent to every client as

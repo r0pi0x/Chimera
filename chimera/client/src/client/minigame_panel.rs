@@ -154,7 +154,7 @@ fn draw(
     (race, mut commands): (Option<Res<crate::client::race_chip::RaceView>>, Commands),
 ) {
     // Under the Signal look a ladder's panel is the race chip.
-    let chip = race.is_some_and(|r| r.active);
+    let chip = race.is_some_and(|r| r.active || r.sandbox);
     let lines_by = |short: bool| {
         minigame.as_deref().filter(|_| !chip).map_or_else(Vec::new, |m| {
             panel_lines_with(

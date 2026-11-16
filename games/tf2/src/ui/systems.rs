@@ -295,10 +295,10 @@ const MOST_WAIT: f32 = 30.0;
 pub fn register_kill_icons(
     mut icons: ResMut<WeaponIcons>,
     images: Option<ResMut<Assets<Image>>>,
-    time: Res<Time<Real>>,
+    time: Option<Res<Time<Real>>>,
     mut tries: Local<KillIconTries>,
 ) {
-    let now = time.elapsed_secs();
+    let now = time.map_or(0.0, |t| t.elapsed_secs());
     if tries.done || now < tries.next {
         return;
     }

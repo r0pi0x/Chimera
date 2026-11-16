@@ -1,0 +1,39 @@
+# The player wearing Halo's Elite on Hang 'Em High: first person, then
+# third person from the front and from behind, then a practice Elite's
+# death at 0, 15, 45, 150 and 400 frames (a scene script:
+# chimera_client's `scene`; the body needs its generated set,
+# `character/elite`, game::campaign::unit).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox halo_ce:hangemhigh \
+#       --scene apps/ultimate_gun_game/scenes/halo_body_self.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 1500                    # the change of level's kill feed line (6 s) gone
+setpos -1150 3000 -770
+setang 2 342
+rung halo_ce:plasma_rifle
+halo_ce:body elite           # the player's own body, on its Halo rung
+wait 600                     # its held gun's textures in (drawn flat until then)
+shot elite_first_person
+thirdperson
+cam_idealdist 120
+cam_idealyaw 160             # from the front, a little to its left
+wait 150                     # the player's own held gun is drawn flat for a moment after the switch
+shot elite_third_person
+cam_idealyaw 0
+wait 30
+shot elite_third_person_back
+firstperson
+halo_ce:body spartan
+rung combat_arms:m4a1
+target add halo_ce:elite 8
+wait 200
+target look 1
+shot_after death 0 elite_death_0
+shot_after death 15 elite_death_15
+shot_after death 45 elite_death_45
+shot_after death 150 elite_death_150
+shot_after death 400 elite_death_400
++attack
+wait_for death 900
+-attack
+wait 450

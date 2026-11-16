@@ -107,9 +107,11 @@ impl FreeCam {
     }
 }
 
-/// Watch another character from behind (`chimera_watch <n>`: bot n, 0
-/// off), at `cam_idealdist` and `cam_idealyaw`, like a spectator's chase
-/// camera; your own player keeps its controls.
+/// Watch another character from behind (`chimera_watch <n>`: bot n, the
+/// one named `Bot <n>` or else the n-th bot, 0 off), at `cam_idealdist` and
+/// `cam_idealyaw` from its own eye (its `MovementState`: a taller or
+/// shorter body's own camera height), like a spectator's chase camera;
+/// your own player keeps its controls.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
 pub struct Watch(pub u32);
 

@@ -4,7 +4,8 @@
 //! (`signal::signal_on`, `flags.hud.signal`); it then stands in for the
 //! minigame panel (`minigame_panel`) and the Tab scoreboard
 //! (`minigame_scoreboard`) while a ladder plays. Other minigames and apps
-//! keep those.
+//! keep those. While a sandbox plays (`sandbox::SandboxUi::on`) the
+//! sandbox's own gun chip and Tab column stand in for it.
 //!
 //! - **The chip** (21 x 3.05 cq, 2.2 cq from the top; wider when its line
 //!   needs it, a long name or the text floor in a small window: the plate
@@ -204,6 +205,9 @@ pub struct SessionWins(pub u32);
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct RaceView {
     pub active: bool,
+    /// A sandbox plays: its own HUD stands in for the chip, the board,
+    /// the minigame panel and the scoreboard (`sandbox::hud`).
+    pub sandbox: bool,
     /// Best first.
     pub rows: Vec<RaceRow>,
     /// Rungs on the ladder.
@@ -288,7 +292,7 @@ pub fn staged_race(lead: bool) -> RaceView {
             row("pixelpirate", 1, 3, 19, false, false, false, 0, 231),
         ]
     };
-    RaceView { active: true, rows, rungs: 14, map: "de_dust2".into(), map_game: "CS:S".into(), size: (0, 0) }
+    RaceView { active: true, sandbox: false, rows, rungs: 14, map: "de_dust2".into(), map_game: "CS:S".into(), size: (0, 0) }
 }
 
 /// Stages scene `name` (`chip`, `lead`, `board`, `board_lead`), or clears
@@ -461,7 +465,7 @@ fn gather(
         With<InMinigame>,
     >,
     mut view: ResMut<RaceView>,
-    staged: Option<Res<RaceStaged>>,
+    (staged, sandbox): (Option<Res<RaceStaged>>, Option<Res<super::sandbox::SandboxUi>>),
 ) {
     if let Some(st) = staged {
         let mut next = st.view.clone();
@@ -472,8 +476,12 @@ fn gather(
         }
         return;
     }
-    let active = look.on() && ladder.is_some() && hud.as_deref().is_some_and(|h| h.playing() && !h.results_shown);
-    let mut next = RaceView { active, size: (look.units.height as u32, (look.units.scale_factor * 100.0) as u32), ..default() };
+    // The sandbox has its own chip (`sandbox::hud`).
+    let active = look.on()
+        && ladder.is_some()
+        && hud.as_deref().is_some_and(|h| h.playing() && !h.results_shown)
+        && !sandbox.as_ref().is_some_and(|s| s.on);
+    let mut next = RaceView { active, sandbox: look.on() && sandbox.as_ref().is_some_and(|s| s.on), size: (look.units.height as u32, (look.units.scale_factor * 100.0) as u32), ..default() };
     if let (true, Some(ladder)) = (active, ladder.as_deref()) {
         let game_of = |id: &str| -> String {
             let g = id.split_once(':').map_or("", |(g, _)| g);

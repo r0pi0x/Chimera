@@ -1163,6 +1163,8 @@ type Climbers<'w, 's> = Query<
         Without<crate::core::Connecting>,
         Without<crate::core::Spectating>,
         Without<crate::core::Npc>,
+        // A sandbox's practice targets race nobody.
+        Without<super::targets::Target>,
     ),
 >;
 

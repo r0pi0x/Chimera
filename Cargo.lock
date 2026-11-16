@@ -2736,6 +2736,7 @@ dependencies = [
  "mousiki",
  "serde",
  "serde_json",
+ "toml",
  "workspace-hack",
 ]
 

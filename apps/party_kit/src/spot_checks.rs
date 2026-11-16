@@ -124,7 +124,7 @@ pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
     // centres miss leaves spots off a region they are on (gg_lego_mafia_arena).
     let mut p = combat_arms::game::bots::brain::nav_params();
     p.slide = p.radius / 2.0;
-    p.within = nav_gen::NavWithin::of(world);
+    nav_gen::hold(&mut p, world);
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let mut mesh = {
         let mut state = SystemState::<SpatialQuery>::new(world);

@@ -6,7 +6,9 @@
 //! its own class's arms, and one per other class that can hold it
 //! (data/classes.toml) keyed `<gun>#<class>` (Chimera's
 //! `view_anim::variant_key`) when that class's arms are here (`load`);
-//! the holder's class picks it (`ViewVariant`, `view_variants`: the
+//! (a bone of the gun that class's idle poses away from the hand stays with the
+//! gun's own: `unmerge_undriven`); the holder's class picks it
+//! (`ViewVariant`, `view_variants`: the
 //! rung's drawn class, `classes::Classes::held`); their rules on
 //! Chimera's view-model driver (`rules`): the
 //! draw, idle, fire and the reload (a whole clip, or its start, rounds
@@ -403,8 +405,13 @@ pub fn load(
             }
         }
         for (key, arms) in hands {
+        let idle = sequences(&key).map(|q| q.idle.1);
+        let variant = key.contains('#');
         let merged = props::load_view_model(materials, &super::sets::arms_model(&arms), gun, true).and_then(|arms| {
-            let weapon = props::load_view_model(materials, &path, gun, true)?;
+            let mut weapon = props::load_view_model(materials, &path, gun, true)?;
+            if variant && let Some(idle) = idle {
+                unmerge_undriven(&arms, &mut weapon, idle);
+            }
             crate::map::merge_by_bone_name(arms, &weapon, own_idle(&weapon).as_deref())
         });
         match merged {
@@ -429,6 +436,43 @@ pub fn load(
         }
     }
 }
+
+/// The weapon's bones (but `weapon_bone`) whose same-named arms bone
+/// `idle` poses away from the hand (more than `NOT_IN_HAND` units from
+/// the arms' `weapon_bone`), renamed so the merge leaves them rigid with
+/// their matched ancestor: another class's sequences for the gun don't
+/// drive the bones only its own class's do (the Engineer's Frontier
+/// Justice set moves the Shotgun's `vm_weapon_bone` with the gun; the
+/// Soldier's leaves it metres off).
+fn unmerge_undriven(arms: &crate::map::MapViewModel, weapon: &mut crate::map::MapViewModel, idle: &str) {
+    let Some(set) = arms.animations.clone() else { return };
+    let Some(s) = set.sequence(idle) else { return };
+    let mut a = crate::map::anim::Animator::new(set);
+    a.play(s, 0.0);
+    let pose = a.pose(0.0);
+    let mut world: Vec<Mat4> = Vec::with_capacity(arms.bones.len());
+    for (i, b) in arms.bones.iter().enumerate() {
+        let (r, t) = pose.get(i).copied().unwrap_or((b.rotation, b.position));
+        let local = Mat4::from_rotation_translation(r, t);
+        let m = b.parent.and_then(|p| world.get(p)).map_or(local, |p| *p * local);
+        world.push(m);
+    }
+    let at = |name: &str| arms.bones.iter().position(|b| b.name.eq_ignore_ascii_case(name)).map(|j| world[j].w_axis.truncate());
+    let Some(hand) = at("weapon_bone") else { return };
+    for b in &mut weapon.bones {
+        if b.name.eq_ignore_ascii_case("weapon_bone") {
+            continue;
+        }
+        if at(&b.name).is_some_and(|p| p.distance(hand) > NOT_IN_HAND) {
+            b.name = format!("{}#own", b.name);
+        }
+    }
+}
+
+/// How far from the arms' `weapon_bone` (units) a bone of theirs may be
+/// posed and still hold a part of the gun (`unmerge_undriven`): about a
+/// long gun's length.
+const NOT_IN_HAND: f32 = 48.0;
 
 /// A `[models] view_offset` (Source's forward, left, up, units) in the
 /// eye's space (metres: right, up, back).

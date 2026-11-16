@@ -507,6 +507,8 @@ pub trait MapPoolAppExt {
     fn add_map_fitness(&mut self, game: &str, name: &str, text: &str) -> &mut Self;
     /// `game`'s pool rules (`PoolRules::parse`; panics likewise).
     fn add_map_pool_rules(&mut self, game: &str, name: &str, text: &str) -> &mut Self;
+    /// `game`'s arena slices (`arena::parse`; panics likewise).
+    fn add_arena_slices(&mut self, game: &str, name: &str, text: &str) -> &mut Self;
 }
 
 impl MapPoolAppExt for App {
@@ -519,6 +521,11 @@ impl MapPoolAppExt for App {
     fn add_map_pool_rules(&mut self, game: &str, name: &str, text: &str) -> &mut Self {
         let rules = PoolRules::parse(text).unwrap_or_else(|e| panic!("{name}: {e}"));
         self.world_mut().get_resource_or_init::<MapPool>().add_rules(game, rules);
+        self
+    }
+
+    fn add_arena_slices(&mut self, game: &str, name: &str, text: &str) -> &mut Self {
+        super::arena::add(self.world_mut(), game, name, text);
         self
     }
 }

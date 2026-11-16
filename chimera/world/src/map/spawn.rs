@@ -1310,6 +1310,8 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
     if let Some(b) = data.extras.get::<super::nav_gen::NavWithin>() {
         commands.insert_resource(*b);
     }
+    // A match's slice of this map, if the plan names it (`play_area`).
+    commands.queue(super::play_area::map_spawned);
     if !brushes.is_empty() {
         let floor = data
             .playable

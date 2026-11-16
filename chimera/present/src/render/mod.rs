@@ -16,6 +16,7 @@
 
 use bevy::prelude::*;
 
+pub mod arena;
 pub mod beams;
 pub mod blend_order;
 pub mod cameras;
@@ -51,6 +52,7 @@ pub mod rope_material;
 pub mod rope_sway;
 pub mod shadows;
 pub mod shells;
+pub mod shapes;
 pub mod skin_frames;
 pub mod sky;
 pub mod sky_occluder;

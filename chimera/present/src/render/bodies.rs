@@ -16,7 +16,9 @@
 //! (`map::add_held_model`) on a task and over the next frames, and again on
 //! each map (`build_late_held`, `render::late_build`), and character models a
 //! game adds later (`map::add_character_model`, appended to each map's
-//! `CharacterModels`) likewise (`build_late_bodies`); face parts (`map::face`: eyeballs with
+//! `CharacterModels`) likewise (`build_late_bodies`; `PlayModels` has a hole
+//! for each not built yet), those a character wears or holds now
+//! (`LateWanted`) first, the rest `LATE_AHEAD` at a time; face parts (`map::face`: eyeballs with
 //! their iris projected toward the character's `EyeTarget`, teeth) set
 //! each frame from where the pose puts the head (`aim_faces`), face meshes
 //! with flexes drawn from the body's own copy, moved by the character's
@@ -60,14 +62,43 @@ use crate::{
 };
 
 /// The models parts made in play are drawn with: each character model's
-/// meshes and materials (index as in `CharacterModels`), and each gib
-/// list's (`render::breakables`). One resource, inserted where the
-/// character bodies' always was (resources are entities: their order
-/// decides ids).
+/// meshes and materials (index as in `CharacterModels`; None: a late one
+/// not built yet, `build_late_bodies`), and each gib list's
+/// (`render::breakables`). One resource, inserted where the character
+/// bodies' always was (resources are entities: their order decides ids).
 #[derive(Resource)]
 pub struct PlayModels {
-    pub bodies: Vec<BodyAssets>,
+    pub bodies: Vec<Option<BodyAssets>>,
     pub gibs: super::breakables::GibDraws,
+}
+
+impl PlayModels {
+    /// Character model `index`'s body, once built.
+    pub fn body(&self, index: usize) -> Option<&BodyAssets> {
+        self.bodies.get(index)?.as_ref()
+    }
+
+    /// The bodies built.
+    pub fn built(&self) -> impl Iterator<Item = &BodyAssets> {
+        self.bodies.iter().flatten()
+    }
+}
+
+/// Late models on their way at once (`build_late_bodies`, `build_late_held`)
+/// besides those a character wears or holds now (`LateWanted`), which start
+/// at once: the async compute pool has a few threads (at most four), and a
+/// long ladder's hundreds started together kept a model wanted now behind
+/// every one of them.
+pub const LATE_AHEAD: usize = 6;
+
+/// Late models (`build_late_bodies`, `build_late_held`) some character
+/// wears or holds now and that are not built yet, with when each was first
+/// wanted (s of wall time, `Time<Real>`): written each frame by `attach_bodies` and
+/// `attach_held`.
+#[derive(Resource, Default, Debug)]
+pub struct LateWanted {
+    pub bodies: std::collections::BTreeMap<usize, f64>,
+    pub held: std::collections::BTreeMap<String, f64>,
 }
 
 /// Meshes and materials of each held model, by key.
@@ -166,6 +197,7 @@ pub fn build_late_held(
     mut dormant: Option<ResMut<DormantProps>>,
     mut bindposes: ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>,
     compressed: Option<Res<bevy::image::CompressedImageFormatSupport>>,
+    wanted: Option<Res<LateWanted>>,
     mut queue: Local<LateQueue<(HeldParts, Option<crate::map::loose::LooseAsset>)>>,
 ) {
     let (Some(late), Some(base), Some(mut held), Some(mut materials)) = (late, base, held, materials) else {
@@ -183,10 +215,19 @@ pub fn build_late_held(
         },
     };
     let bc = super::images::bc_wanted(compressed.as_deref());
-    for (h, own) in late.0.iter().filter(|(h, _)| !held.0.contains_key(&h.key)) {
+    let held_now = |key: &str| wanted.as_ref().is_some_and(|w| w.held.contains_key(key));
+    // Those held now first, at once; then the rest in order, `LATE_AHEAD`
+    // on their way at a time.
+    let mut ahead = queue.len();
+    let missing = late.0.iter().filter(|(h, _)| !held.0.contains_key(&h.key));
+    for (h, own) in missing.clone().filter(|(h, _)| held_now(&h.key)).chain(missing) {
+        if ahead >= LATE_AHEAD && !held_now(&h.key) {
+            break;
+        }
         if queue.has(&h.key) {
             continue;
         }
+        ahead += 1;
         let (h, own, base) = (h.clone(), own.clone(), base.for_task());
         queue.start(h.key.clone(), Providers::of(&to), move |stage| {
             let textures: Vec<Handle<Image>> =
@@ -215,7 +256,7 @@ pub fn build_late_held(
             (parts, base.root.map(|root| crate::map::loose::asset(&h, root)))
         });
     }
-    if let Some((key, (parts, shape))) = queue.step(&mut to) {
+    if let Some((key, (parts, shape))) = queue.step_preferring(&mut to, held_now) {
         if let (Some(loose), Some(shape)) = (loose.as_mut(), shape)
             && !loose.0.contains_key(&key)
         {
@@ -230,7 +271,9 @@ pub fn build_late_held(
 /// map's `PlayModels` lack (by index: they come after the map's own), as
 /// the spawn builds the kit's, with their own textures, on a task and over
 /// the next frames (`late_build`): until then the character wears what it
-/// wore (`attach_bodies`).
+/// wore (`attach_bodies`). One a character wears now (`LateWanted`) starts
+/// at once and goes in before those nobody wears; the rest start in order,
+/// `LATE_AHEAD` on their way at a time.
 #[allow(clippy::too_many_arguments)]
 pub fn build_late_bodies(
     late: Option<Res<crate::map::LateCharacterModels>>,
@@ -243,15 +286,24 @@ pub fn build_late_bodies(
     mut dormant: Option<ResMut<DormantProps>>,
     mut bindposes: ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>,
     compressed: Option<Res<bevy::image::CompressedImageFormatSupport>>,
-    mut queue: Local<LateQueue<BodyAssets>>,
+    wanted: Option<Res<LateWanted>>,
+    mut queue: Local<LateQueue<(usize, BodyAssets)>>,
+    // The spawn it is for, and the first index not started yet in order.
+    mut next: Local<(u64, usize)>,
 ) {
     let (Some(late), Some(models), Some(base), Some(mut play), Some(mut materials)) = (late, models, base, play, materials)
     else {
         return;
     };
     queue.for_generation(base.generation);
-    if play.bodies.len() >= models.0.len() {
+    if next.0 != base.generation {
+        *next = (base.generation, 0);
+    }
+    if queue.is_empty() && next.1 >= models.0.len() && play.bodies.len() >= models.0.len() {
         return;
+    }
+    if play.bodies.len() < models.0.len() {
+        play.bodies.resize_with(models.0.len(), || None);
     }
     let mut to = LateStores {
         images: &mut images,
@@ -263,20 +315,45 @@ pub fn build_late_bodies(
         },
     };
     let bc = super::images::bc_wanted(compressed.as_deref());
-    // The next ones not on their way (they come out in this order).
-    for c in models.0.iter().skip(play.bodies.len() + queue.len()) {
+    let key = |i: usize| format!("body {i}: {}", models.0[i].name.as_deref().unwrap_or_default());
+    let worn: Vec<usize> = wanted
+        .iter()
+        .flat_map(|w| w.bodies.keys().copied())
+        .filter(|&i| i < models.0.len() && play.bodies[i].is_none())
+        .collect();
+    let worn_keys: Vec<String> = worn.iter().map(|&i| key(i)).collect();
+    let providers = Providers::of(&to);
+    let start = |i: usize, queue: &mut LateQueue<(usize, BodyAssets)>| -> bool {
         // An appended model is a late one; anything else (the map's own:
-        // none past the built ones) leaves the rest unbuilt.
-        let Some((c, own)) = c.name.as_deref().and_then(|n| late.get(n)) else { break };
+        // all built at the spawn) is not built here.
+        let Some((c, own)) = models.0[i].name.as_deref().and_then(|n| late.get(n)) else { return false };
         let (c, own, base) = (c.clone(), own.clone(), base.for_task());
-        queue.start(c.name.clone().unwrap_or_default(), Providers::of(&to), move |stage| {
+        queue.start(key(i), providers.clone(), move |stage| {
             let textures: Vec<Handle<Image>> =
                 own.iter().map(|t| stage.add_asset(super::images::to_image(t, &base.data.look, bc))).collect();
-            body_assets_into(&c.model, &c.bones, c.root, stage, &|m| base.material(m, &textures))
+            (i, body_assets_into(&c.model, &c.bones, c.root, stage, &|m| base.material(m, &textures)))
         });
+        true
+    };
+    // Worn now: at once.
+    for (&i, k) in worn.iter().zip(&worn_keys) {
+        if !queue.has(k) {
+            start(i, &mut queue);
+        }
     }
-    if let Some((_, assets)) = queue.step(&mut to) {
-        play.bodies.push(assets);
+    // The rest in order (a model not late leaves the rest unbuilt, as the
+    // map's own past the built ones would).
+    while queue.len() < LATE_AHEAD && next.1 < models.0.len() {
+        let i = next.1;
+        if play.bodies[i].is_none() && !queue.has(&key(i)) && !start(i, &mut queue) {
+            break;
+        }
+        next.1 += 1;
+    }
+    if let Some((_, (i, assets))) = queue.step_preferring(&mut to, |k| worn_keys.iter().any(|w| w == k))
+        && let Some(slot) = play.bodies.get_mut(i)
+    {
+        *slot = Some(assets);
     }
 }
 
@@ -422,17 +499,19 @@ pub fn attach_bodies(
     >,
     existing: Query<&CharacterBody>,
     show_local: Res<ShowLocalBody>,
-    (time, no_stand_ins): (Res<Time>, Option<Res<chimera_core::game_parts::NoStandIns>>),
+    (time, real, no_stand_ins): (Res<Time>, Res<Time<Real>>, Option<Res<chimera_core::game_parts::NoStandIns>>),
     mut materials: Option<ResMut<Assets<PropMaterial>>>,
     dormant: Option<Res<DormantProps>>,
     mut meshes: Option<ResMut<Assets<Mesh>>>,
     mut waiting: Local<HashMap<Entity, f64>>,
+    mut wanted: Option<ResMut<LateWanted>>,
     mut commands: Commands,
 ) {
     let (Some(models), Some(bodies)) = (models, bodies) else {
         return;
     };
     let now = time.elapsed_secs_f64();
+    let mut missing = std::collections::BTreeSet::new();
     waiting.retain(|e, _| characters.contains(*e));
     for (e, (team, name, class, skin, number), aabb, at, children, (local, corpse, identity, animator)) in &characters {
         let current = children
@@ -464,14 +543,17 @@ pub fn attach_bodies(
             waiting.remove(&e);
             continue;
         }
+        // A model appended since (`build_late_bodies`) not built yet: the
+        // one showing stays (and it is built before those nobody wears).
+        let Some(assets) = bodies.body(index) else {
+            missing.insert(index);
+            continue;
+        };
         let feet = match (corpse, aabb) {
             (Some(c), _) => c.feet,
             (None, Some(aabb)) => aabb.min.y - at.translation().y,
             (None, None) => continue,
         };
-        // A model appended since (`build_late_bodies`) not built yet: the
-        // one showing stays.
-        let Some(assets) = bodies.bodies.get(index) else { continue };
         // The same skeleton's pose is on hand; another's isn't until the
         // animator is on it: until then the one showing stays.
         let posed = animator.filter(|a| a.poses(assets.skeleton));
@@ -479,6 +561,9 @@ pub fn attach_bodies(
             continue;
         }
         waiting.remove(&e);
+        if let Some(since) = wanted.as_ref().and_then(|w| w.bodies.get(&index)) {
+            debug!("late body {index}: drawn {:.2} s after it was first worn", real.elapsed_secs_f64() - since);
+        }
         if let Some((old, _)) = current {
             commands.entity(old).despawn();
         }
@@ -589,6 +674,17 @@ pub fn attach_bodies(
             .entity(body)
             .insert(probe_lit::ProbeLit::new(own, Vec3::Y * BODY_LIGHT_HEIGHT));
     }
+    if let Some(w) = wanted.as_mut()
+        && (w.bodies.len() != missing.len() || !missing.iter().all(|i| w.bodies.contains_key(i)))
+    {
+        w.bodies.retain(|i, _| missing.contains(i));
+        for i in missing {
+            w.bodies.entry(i).or_insert_with(|| {
+                debug!("late body {i}: worn, not built yet");
+                real.elapsed_secs_f64()
+            });
+        }
+    }
 }
 
 /// Height of a body's lighting point above its feet, meters (about the
@@ -646,6 +742,7 @@ pub fn turn_bodies(
 }
 
 /// Draw what each character holds in its body's hand.
+#[allow(clippy::too_many_arguments)]
 pub fn attach_held(
     held: Option<Res<HeldAssets>>,
     bodies: Option<Res<PlayModels>>,
@@ -653,11 +750,13 @@ pub fn attach_held(
     mut body_query: Query<&mut CharacterBody>,
     mut materials: Option<ResMut<Assets<PropMaterial>>>,
     dormant: Option<Res<DormantProps>>,
+    (real, mut wanted): (Res<Time<Real>>, Option<ResMut<LateWanted>>),
     mut commands: Commands,
 ) {
     let (Some(held), Some(bodies)) = (held, bodies) else {
         return;
     };
+    let mut missing = std::collections::BTreeSet::new();
     for (character, want, children) in &characters {
         let Some(c) = children.iter().find(|c| body_query.contains(*c)) else {
             continue;
@@ -674,10 +773,14 @@ pub fn attach_held(
         }
         let Some(key) = &want.0 else { continue };
         let Some(parts) = held.0.get(key) else {
+            // Not built yet (`build_late_held`): built before those nobody holds.
+            missing.insert(key.clone());
             continue;
         };
+        // The drawn body's model (built: it is drawn).
+        let Some(drawn) = bodies.body(body.model) else { continue };
         let joint_of = |bone: &str| {
-            bodies.bodies[body.model]
+            drawn
                 .bones
                 .iter()
                 .position(|b| b.name.eq_ignore_ascii_case(bone))
@@ -740,6 +843,15 @@ pub fn attach_held(
         }
         body.held_parts = merged;
         body.held = Some((model, key.clone()));
+    }
+    if let Some(w) = wanted.as_mut()
+        && (w.held.len() != missing.len() || !missing.iter().all(|k| w.held.contains_key(k)))
+    {
+        let now = real.elapsed_secs_f64();
+        w.held.retain(|k, _| missing.contains(k));
+        for k in missing {
+            w.held.entry(k).or_insert(now);
+        }
     }
 }
 
