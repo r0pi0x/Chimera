@@ -391,12 +391,10 @@ fn hold_now(world: &mut World) {
     }
 }
 
-/// The plan followed each frame (a client's arrives after its map).
-pub fn follow_plan_system(world: &mut World) {
-    let changed = world.is_resource_changed::<ArenaPlan>() || world.is_resource_added::<ArenaMap>();
-    if changed {
-        follow_plan(world);
-    }
+/// The plan followed when it changes (a client's arrives after its map;
+/// a map's spawn follows it itself, `map_spawned`).
+pub fn follow_plan_system(mut commands: Commands) {
+    commands.queue(follow_plan);
 }
 
 #[cfg(test)]

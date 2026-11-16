@@ -177,7 +177,7 @@ pub struct NetMinigame {
     /// the server's `PlayArea`), its shape sent whole so a client of
     /// another build plays the server's; a client's `ArenaPlan`
     /// (`follow_arena`). None: the whole map.
-    pub arena: Option<crate::map::play_area::ArenaSlice>,
+    pub arena: Option<minigame::arena::ArenaSlice>,
 }
 
 /// `minigame::vote::MapVote` on the network: the ballot, the counts, when
@@ -346,7 +346,7 @@ fn register(app: &mut App) {
 /// (`NetMinigame::arena` into `map::play_area::ArenaPlan`; none without a
 /// match), which the map's play area follows when that map is in.
 fn follow_arena(world: &mut World) {
-    use crate::map::play_area::ArenaPlan;
+    use minigame::arena::ArenaPlan;
     let want = world.query::<&NetMinigame>().iter(world).next().and_then(|n| n.arena.clone());
     if world.get_resource::<ArenaPlan>().is_none_or(|p| p.0 != want) {
         world.insert_resource(ArenaPlan(want));
@@ -417,7 +417,7 @@ fn write_minigame(world: &mut World) {
                     .collect()
             })
             .unwrap_or_default(),
-        arena: world.get_resource::<crate::map::play_area::PlayArea>().map(|a| a.slice.clone()),
+        arena: world.get_resource::<minigame::arena::PlayArea>().map(|a| a.slice.clone()),
     };
     // Another minigame, or its definition made again (same id, new text).
     let announced = world.get_resource::<Announced>().map(|a| a.0);

@@ -225,7 +225,14 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
     // A match's slice: the plan followed, the map's spawn points held
     // inside (`play_area`).
     .init_resource::<super::play_area::ArenaPlan>()
-    .add_systems(PreUpdate, (super::play_area::follow_plan_system, super::play_area::hold_spawn_points).chain())
+    .add_systems(
+        PreUpdate,
+        (
+            super::play_area::follow_plan_system.run_if(resource_changed::<super::play_area::ArenaPlan>),
+            super::play_area::hold_spawn_points,
+        )
+            .chain(),
+    )
     .add_systems(FixedLast, pose_sim_hitboxes.in_set(SimPose))
     // A round restart: gibs, particles and panes reset at once, inside the
     // rules' step (an observer of `core::RoundRestart`).

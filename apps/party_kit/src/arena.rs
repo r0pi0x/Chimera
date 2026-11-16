@@ -107,17 +107,13 @@ fn command(world: &mut World, args: &[String]) -> Result<Option<String>, String>
 
 /// Another map in the world: the slice planned for a map is forgotten
 /// (the server's).
-fn forget_on_other_map(world: &mut World) {
-    if world.get_resource::<NetRole>() == Some(&NetRole::Client) {
+fn forget_on_other_map(here: Res<ArenaMap>, role: Option<Res<NetRole>>, plan: Option<ResMut<ArenaPlan>>) {
+    if role.is_some_and(|r| *r == NetRole::Client) {
         return;
     }
-    let here = world.resource::<ArenaMap>().0.clone();
-    if world
-        .get_resource::<ArenaPlan>()
-        .and_then(|p| p.0.as_ref())
-        .is_some_and(|s| !s.map.eq_ignore_ascii_case(&here))
-    {
-        info!("arena: {here} is not the slice's map: whole maps again");
-        world.insert_resource(ArenaPlan(None));
+    let Some(mut plan) = plan else { return };
+    if plan.0.as_ref().is_some_and(|s| !s.map.eq_ignore_ascii_case(&here.0)) {
+        info!("arena: {} is not the slice's map: whole maps again", here.0);
+        plan.0 = None;
     }
 }

@@ -20,7 +20,6 @@
 use avian3d::prelude::*;
 use bevy::{
     asset::RenderAssetUsages,
-    ecs::system::SystemState,
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
@@ -42,7 +41,7 @@ const RAY_ABOVE: f32 = 40.0;
 const RAY_LENGTH: f32 = 200.0;
 /// The accent (#3B7BFF); the curtain's alpha at its foot.
 const ACCENT: [f32; 3] = [0.231, 0.482, 1.0];
-const CURTAIN_ALPHA: f32 = 0.22;
+const CURTAIN_ALPHA: f32 = 0.35;
 const LINE_ALPHA: f32 = 0.9;
 
 /// The look's meshes, for the slice `id`.
@@ -56,28 +55,26 @@ pub fn plugin(app: &mut App) {
 }
 
 /// The look follows the play area (module doc).
-pub fn draw_play_area(world: &mut World) {
-    let want = world.get_resource::<PlayArea>().map(|a| a.slice.key());
-    let have: Vec<(Entity, String)> = world
-        .query::<(Entity, &ArenaLook)>()
-        .iter(world)
-        .map(|(e, l)| (e, l.id.clone()))
-        .collect();
-    if have.first().map(|h| &h.1) == want.as_ref() {
+#[allow(clippy::too_many_arguments)]
+pub fn draw_play_area(
+    area: Option<Res<PlayArea>>,
+    looks: Query<(Entity, &ArenaLook)>,
+    walls: Query<Entity, With<ArenaWall>>,
+    q: SpatialQuery,
+    meshes: Option<ResMut<Assets<Mesh>>>,
+    materials: Option<ResMut<Assets<StandardMaterial>>>,
+    mut commands: Commands,
+) {
+    let want = area.as_ref().map(|a| a.slice.key());
+    if looks.iter().next().map(|(_, l)| &l.id) == want.as_ref() {
         return;
     }
-    for (e, _) in have {
-        world.despawn(e);
+    for (e, _) in &looks {
+        commands.entity(e).despawn();
     }
-    let Some(area) = world.get_resource::<PlayArea>().cloned() else { return };
-    // Nothing to draw with (a headless app).
-    if !world.contains_resource::<Assets<Mesh>>() || !world.contains_resource::<Assets<StandardMaterial>>() {
-        return;
-    }
-    let walls: Vec<Entity> = world.query_filtered::<Entity, With<ArenaWall>>().iter(world).collect();
-    let mut state = SystemState::<SpatialQuery>::new(world);
-    let Ok(q) = state.get(world) else { return };
-    let filter = SpatialQueryFilter::from_mask(crate::core::SOLID_LAYERS).with_excluded_entities(walls);
+    // Nothing to draw, or nothing to draw with (a headless app).
+    let (Some(area), Some(mut meshes), Some(mut materials)) = (area, meshes, materials) else { return };
+    let filter = SpatialQueryFilter::from_mask(crate::core::SOLID_LAYERS).with_excluded_entities(walls.iter());
     let top = area.slice.seed.y + RAY_ABOVE;
     let floor = |x: f32, z: f32| {
         q.cast_ray(Vec3::new(x, top, z), Dir3::NEG_Y, RAY_LENGTH, true, &filter)
@@ -113,8 +110,8 @@ pub fn draw_play_area(world: &mut World) {
     });
     let id = area.slice.key();
     for (name, mesh) in [("Arena curtain", curtain), ("Arena foot line", line)] {
-        let mesh = world.resource_mut::<Assets<Mesh>>().add(mesh);
-        let material = world.resource_mut::<Assets<StandardMaterial>>().add(StandardMaterial {
+        let mesh = meshes.add(mesh);
+        let material = materials.add(StandardMaterial {
             base_color: Color::WHITE,
             unlit: true,
             alpha_mode: AlphaMode::Blend,
@@ -123,7 +120,7 @@ pub fn draw_play_area(world: &mut World) {
             fog_enabled: true,
             ..default()
         });
-        world.spawn((
+        commands.spawn((
             Name::new(name),
             ArenaLook { id: id.clone() },
             MapPart,

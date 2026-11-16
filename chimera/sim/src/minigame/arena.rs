@@ -22,7 +22,8 @@
 use bevy::prelude::*;
 use serde::Deserialize;
 
-use crate::map::play_area::{ArenaPlan, ArenaSlice, PlayArea};
+// Re-exported for the layers above `minigame` (`minigame_net`).
+pub use crate::map::play_area::{ArenaPlan, ArenaSlice, PlayArea};
 
 /// One file's entry (module doc).
 #[derive(Deserialize)]
