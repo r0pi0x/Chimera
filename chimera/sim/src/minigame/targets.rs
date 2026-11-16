@@ -72,6 +72,20 @@
 //!   first shot to the kill, the distance, the total damage.
 //!   Both are also logged (`HitMeasured ...`, `KillMeasured ...`).
 //!
+//! A target's second bar is its own game's or none: armour its bot was
+//! given by another game (Combat Arms' gear) goes at each placing
+//! (`strip_foreign_armour`), and the body's game gives its own (Halo a
+//! full shield). For the tick it is placed in it can't be hit (one tick of
+//! spawn protection: a respawn's identity switch holds the last game's
+//! armour until the new game's step), and `TargetVitals` is kept after the
+//! whole tick (`FixedPostUpdate`). Targets race nobody and count for no
+//! one: the ladder's leaders and the match's scores leave them out
+//! (`runtime`, `ladder`); the HUD's race chip and kill feed read
+//! `is_target` (or `Has<Target>`) to leave them out.
+//!
+//! Placement needs no particular map: a ray down at the spot on any map's
+//! collision; the motion moves by keys, with or without a nav mesh.
+//!
 //! Targets exist only while the sandbox plays (`rung_command::holds`): a
 //! spawn is refused otherwise, and every target is removed when it stops
 //! or the map is loaded again (`core::MapLoads`). Nothing here is
@@ -268,6 +282,12 @@ pub struct Target {
     /// Its display name (`Target 2`) and the console's number for it.
     pub name: String,
     pub number: u32,
+}
+
+/// Whether `e` is a practice target (the HUD's race chip and kill feed
+/// leave them out; a system reads `Has<Target>` or `Without<Target>`).
+pub fn is_target(world: &World, e: Entity) -> bool {
+    world.get::<Target>(e).is_some()
 }
 
 /// A dead target comes back at this simulation time (`SimClock` s).
@@ -604,10 +624,19 @@ fn place(world: &mut World, e: Entity) -> bool {
     let at = Transform::from_translation(t.home + Vec3::Y * crate::map::SPAWN_LIFT)
         .with_rotation(Quat::from_euler(EulerRot::YXZ, yaw, 0.0, 0.0));
     crate::spawning::revive(world, e, Some(at));
+    // Hittable from the next tick: this one's identity switch may still
+    // hold another game's armour (`Armor`) until its own game's step.
     runtime::unprotect(world, e);
+    let now = world.resource::<SimClock>().now;
+    let tick = world.resource::<SimClock>().delta.as_secs_f64().max(1e-3);
+    world.entity_mut(e).insert((
+        crate::core::SpawnProtected { damage_until: now + tick, bullets_until: now + tick },
+        runtime::Protected { fire_ends: false },
+        crate::core::God,
+    ));
+    strip_foreign_armour(world, e, &t.game);
     rung_command::move_to(world, e, t.rung, &ladder);
     wear(world, e, &t.character);
-    let now = world.resource::<SimClock>().now;
     if let Ok(mut ent) = world.get_entity_mut(e) {
         ent.remove::<(TargetPending, TargetRespawn)>();
         if let Some(mut d) = ent.get_mut::<TargetDrive>() {
@@ -618,6 +647,20 @@ fn place(world: &mut World, e: Entity) -> bool {
         }
     }
     true
+}
+
+/// A target's second bar is its own game's or none: armour another game
+/// gave its bot (Combat Arms' gear on a TF2 body) goes, unless the bot's
+/// own game is the target's or the armour is pieces of the target's game
+/// (`weapon::PiecesOf`: Halo's shield). The body's game then gives what it
+/// gives a character becoming its own (Halo a full shield).
+fn strip_foreign_armour(world: &mut World, e: Entity, game: &str) {
+    let bots = world.get_resource::<chimera_core::gameplay::Gameplay>().map(|g| g.bots);
+    let Ok(mut ent) = world.get_entity_mut(e) else { return };
+    let own = ent.get::<crate::weapon::PiecesOf>().is_some_and(|p| p.0 == game);
+    if ent.contains::<Armor>() && bots != Some(game) && !own {
+        ent.remove::<(Armor, crate::weapon::ArmorPieces, crate::weapon::ArmorRatio, crate::weapon::PiecesOf)>();
+    }
 }
 
 fn wear(world: &mut World, e: Entity, character: &str) {
@@ -1072,7 +1115,6 @@ fn measure(
     chars: Query<(Entity, &Transform, &Health, Option<&Armor>, Has<Dead>), With<Intent>>,
     held: Query<&Inventory>,
     guns: Query<&Weapon>,
-    mut vitals: Query<(&mut TargetVitals, &Health, Option<&Armor>)>,
 ) {
     let now = clock.now;
     let pos = |e: Entity| chars.get(e).ok().map(|c| c.1.translation);
@@ -1218,6 +1260,11 @@ fn measure(
     }
     // Gone characters' runs.
     engaged.0.retain(|(v, a), _| chars.contains(*v) && chars.contains(*a));
+}
+
+/// The vitals after the whole tick (a game's own step, Halo's shield's,
+/// runs after the damage).
+fn keep_vitals(mut vitals: Query<(&mut TargetVitals, &Health, Option<&Armor>)>) {
     for (mut vt, h, armor) in &mut vitals {
         let shield = armor.map_or(0.0, |a| a.amount);
         let next = TargetVitals { health: h.current, health_max: h.max, shield, shield_max: vt.shield_max.max(shield) };
@@ -1255,5 +1302,6 @@ pub(super) fn plugin(app: &mut App) {
                 .run_if(crate::core::authoritative)
                 .run_if(any_with_component::<Target>),
         )
+        .add_systems(FixedPostUpdate, keep_vitals.run_if(crate::core::authoritative).run_if(any_with_component::<Target>))
         .console_command("chimera:target", &format!("Practice targets in the sandbox: {USAGE}"), command);
 }
