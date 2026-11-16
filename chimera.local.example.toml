@@ -46,14 +46,20 @@ path = "~/games/combat-arms-classic"
 
 # Optional: the asset store (docs/plans/active/asset-service.md; records
 # packed by `chimera_pack`, checked with `chimera_assets`). Default: the
-# user's cache (~/.cache/chimera/assets, %LOCALAPPDATA%\chimera\assets),
-# layered under each install at the install's own build (the install's
-# files first; the store only adds what the install lacks). The environment wins over this section:
+# user's cache (~/.cache/chimera/assets, %LOCALAPPDATA%\chimera\assets).
+# Tests and tools layer it under each install at the install's own build
+# (the install's files first; the store only adds what the install
+# lacks); the game apps and servers read a game the asset service serves
+# from the store alone whenever a service is set, installed or not
+# (docs/assets-for-developers.md, "Installs and the service"). The
+# environment wins over this section:
 # CHIMERA_ASSET_STORE, CHIMERA_ASSET_USE_INSTALL=0/1.
 # [assets]
 # store = "~/.cache/chimera/assets"
-# false: games the store has a manifest for load from it alone (no install
-# looked for, no keys needed).
+# true: the installs first in the apps too (the store only adds what an
+# install lacks; the apps' "Use my installed games"). false: games the
+# store has a manifest for load from it alone everywhere, tests included
+# (no install looked for, no keys needed). Unset: as above.
 # use_install = true
 # The build to mount per game when served alone (default: the newest in
 # the store); under an install only the install's build is mounted.

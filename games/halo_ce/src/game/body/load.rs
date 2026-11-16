@@ -61,7 +61,30 @@ pub fn sound_tags(file: &MapFile) -> Vec<TagRef> {
         .find(class::BIPED, BIPED)
         .and_then(|t| Biped::read(file, t).ok())
         .and_then(|b| file.tag(b.object.animation_graph.id).and_then(|t| AnimationGraph::read(file, t).ok()));
-    graph.map_or_else(Vec::new, |g| g.sounds.iter().map(|s| s.sound).collect())
+    let mut tags: Vec<TagRef> = graph.map_or_else(Vec::new, |g| g.sounds.iter().map(|s| s.sound).collect());
+    tags.extend(death_lines(file).into_iter().flatten());
+    tags
+}
+
+/// The Spartan's death lines (sounds.md "Unit dialogue": the unit's
+/// dialogue, variant 0's else the first, its vocalizations 14 death quiet,
+/// falling back to 15, and 15 death violent): quiet and violent, None where
+/// empty.
+pub fn death_lines(file: &MapFile) -> [Option<TagRef>; 2] {
+    let dialogue = file
+        .find(class::BIPED, BIPED)
+        .and_then(|t| Biped::read(file, t).ok())
+        .and_then(|b| {
+            let v = &b.unit.dialogue_variants;
+            v.iter().find(|d| d.variant_number == 0).or(v.first()).map(|d| d.dialogue)
+        })
+        .and_then(|r| file.tag(r.id));
+    let Some(view) = dialogue.and_then(|t| file.tag_view(t, 0x10 + 20 * 0x10).ok()) else {
+        return [None, None];
+    };
+    let line = |i: usize| view.tag_ref(0x10 + i * 0x10).ok().filter(|r| file.tag(r.id).is_some());
+    let violent = line(15);
+    [line(14).or(violent), violent]
 }
 
 /// The body and its textures (its meshes' texture indices point into
@@ -156,6 +179,17 @@ pub fn spartan(file: &MapFile, decode: bool) -> Result<Spartan, String> {
         let r = graph.sounds.get(i)?.sound;
         Some(super::super::fx::name_of(&file.tag(r.id)?.path))
     });
+    // The death lines ride on the bind sequence (`anims::DEATH_LINE_EVENT`).
+    for (k, r) in death_lines(file).iter().enumerate() {
+        if let Some(t) = r.and_then(|r| file.tag(r.id)) {
+            set.sequences[0].events.push(crate::map::anim::AnimEvent {
+                cycle: 0.0,
+                event: k as i32,
+                name: anims::DEATH_LINE_EVENT.into(),
+                options: super::super::fx::name_of(&t.path),
+            });
+        }
+    }
     let root = skeleton::root();
     let boxes = hits::boxes(&coll, &bones);
     let regions = hits::regions(&bones, &boxes);

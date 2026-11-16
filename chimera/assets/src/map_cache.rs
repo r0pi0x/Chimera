@@ -37,10 +37,11 @@
 //!   number), the map's name, `MapLoadOptions`, the map file's own hash
 //!   and the mount's layers by name (an install, the asset store or
 //!   both). The other files the conversion reads go in the entry: the
-//!   mount tracks every path asked for, found or not, and every folder
-//!   listed (`chimera_vfs::Mount::track`), and the entry keeps each one's
-//!   fingerprint (an archive entry's checksum and place, a store record's
-//!   id, else a BLAKE3 of the bytes: `fingerprint`). A hit checks them all
+//!   mount tracks every path asked for, found or not, every folder
+//!   listed and every file asked whether it is here (`chimera_vfs::Mount::
+//!   track`, `Mount::held`), and the entry keeps each one's fingerprint
+//!   (an archive entry's checksum and place, a store record's id, else a
+//!   BLAKE3 of the bytes; held or away: `fingerprint`). A hit checks them all
 //!   again (on threads); one that differs (a patched install, a new loose
 //!   file in front of an archive's) converts again and replaces the entry.
 //! - **Writing:** a miss takes the key's lock file (`File::lock`, freed
@@ -329,6 +330,9 @@ pub fn fingerprint(mount: &Mount, access: &Access) -> String {
             }
             format!("list {}", h.finalize().to_hex())
         }
+        // A load that left out what wasn't here (TF2's class bodies)
+        // converts again once it is.
+        Access::Held(path) => (if mount.held(path) { "held" } else { "away" }).into(),
     }
 }
 
@@ -338,6 +342,8 @@ enum Input {
     File(String),
     Every(String),
     Folder(String),
+    // Last: entries written before it still read.
+    Held(String),
 }
 
 impl From<Access> for Input {
@@ -346,6 +352,7 @@ impl From<Access> for Input {
             Access::File(p) => Self::File(p),
             Access::Every(p) => Self::Every(p),
             Access::Folder(p) => Self::Folder(p),
+            Access::Held(p) => Self::Held(p),
         }
     }
 }
@@ -356,6 +363,7 @@ impl From<Input> for Access {
             Input::File(p) => Self::File(p),
             Input::Every(p) => Self::Every(p),
             Input::Folder(p) => Self::Folder(p),
+            Input::Held(p) => Self::Held(p),
         }
     }
 }

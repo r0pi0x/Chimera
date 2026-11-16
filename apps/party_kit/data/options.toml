@@ -50,3 +50,9 @@ setting = [
   { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "Combat Arms' loop"], ["0", "None"]], widget = "dropdown" },
   { label = "Chat", cvar = "cl_chat", choices = [["1", "On"], ["2", "Team only"], ["0", "Off"]], help = "Whose chat lines show: everyone's, your team's only, or none. Notices and your own lines always show; hide one player with ignore <name> in the console or a click on their name in the open chat." },
 ]
+
+[[tab]]
+name = "Network"
+setting = [
+  { label = "Use my installed games", cvar = "asset_use_install", choices = [["0", "Off"], ["1", "On"]], help = "Off (the default): every game's files come from the asset service, so everyone plays the same files. On: the games installed on this computer are read from their installs. Applies at the next start." },
+]

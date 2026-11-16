@@ -435,6 +435,11 @@ impl FileSource for CachedFiles {
         self.index.files.contains_key(path)
     }
 
+    /// The manifest names it and its record is in the store (no fetch).
+    fn held(&self, path: &str) -> bool {
+        self.index.files.get(path).is_some_and(|f| self.index.has(&self.store, &f.id))
+    }
+
     /// The record's id: the SHA-256 of the file's bytes.
     fn fingerprint(&self, path: &str) -> Option<String> {
         self.index.files.get(path).map(|f| format!("record {}", f.id))
@@ -489,6 +494,7 @@ mod tests {
         let settings = AssetSettings {
             store: Some(store.clone()),
             use_install: false,
+            service_first: false,
             builds: Default::default(),
             remote: None,
             lock: None,
@@ -496,6 +502,7 @@ mod tests {
         assert!(!crate::sets::held(&settings, "fixture", &["map/a"]), "its record isn't in the store");
         let fetcher = Arc::new(Counting { bytes: bytes.clone(), asked: AtomicUsize::new(0) });
         let files = CachedFiles::new(store.clone(), &m).with_fetcher(Some(fetcher.clone() as Arc<dyn Fetcher>));
+        assert!(files.contains("maps/a.bsp") && !files.held("maps/a.bsp"), "named, not here: reading it would fetch");
         {
             let _other = hold_fetches(Some("other"));
             assert!(!super::fetches_held("fixture"), "another game's hold");
@@ -508,6 +515,7 @@ mod tests {
         assert!(!super::fetches_held("fixture"), "the holds went with their guards");
         assert_eq!(files.read("maps/a.bsp").unwrap().unwrap(), bytes, "fetched once the hold is gone");
         assert_eq!(fetcher.asked.load(Ordering::SeqCst), 1);
+        assert!(files.held("maps/a.bsp") && !files.held("maps/b.bsp"), "here once fetched");
         assert!(crate::sets::held(&settings, "fixture", &["map/a"]));
         assert!(!crate::sets::held(&settings, "fixture", &["map/a", "map/b"]), "a set the manifest lacks");
         assert!(!crate::sets::held(&settings, "other", &["map/a"]), "a game the store lacks");

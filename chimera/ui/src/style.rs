@@ -25,7 +25,11 @@
 //!
 //! `resolve_styles` (in `UiKitSystems`) writes the Bevy components when a
 //! style is added or changed and again for every styled node when
-//! `UiUnits`, the theme or the faces change. Sizes snap to whole physical
+//! `UiUnits`, the theme or the faces change. A style merges into the
+//! node's `Node`: it writes only the fields it names, so layout set in
+//! code beside it (`overflow: clip`, `display`) stays; when a style
+//! changes, fields only its old value named go back to Bevy's defaults
+//! (`AppliedStyle` keeps the value last written). Sizes snap to whole physical
 //! pixels: at 16:9 a value is `round(v * width / 100)` physical pixels,
 //! the look book's `v cqw` rounded (`styled_px_follow_the_css_formula`).
 //!
@@ -243,14 +247,20 @@ impl UiStyle {
         self
     }
 
-    /// The Bevy `Node` at these units.
+    /// The Bevy `Node` at these units (the style's fields over Bevy's
+    /// defaults).
     pub fn node(&self, u: &UiUnits) -> Node {
-        let mut n = Node {
-            flex_direction: match self.flow {
-                Flow::Row => FlexDirection::Row,
-                Flow::Column => FlexDirection::Column,
-            },
-            ..default()
+        let mut n = Node::default();
+        self.apply(&mut n, u);
+        n
+    }
+
+    /// Writes the fields this style names into `n`, leaving every other
+    /// field as it is (an `overflow`, a `display` set in code).
+    pub fn apply(&self, n: &mut Node, u: &UiUnits) {
+        n.flex_direction = match self.flow {
+            Flow::Row => FlexDirection::Row,
+            Flow::Column => FlexDirection::Column,
         };
         if let Some(g) = self.gap {
             n.column_gap = u.val(g);
@@ -297,9 +307,57 @@ impl UiStyle {
         if let Some(s) = self.shrink {
             n.flex_shrink = s;
         }
-        n
+    }
+
+    /// Returns the fields this style names to Bevy's defaults (a changed
+    /// style forgets what its previous value set; `resolve_styles`).
+    fn clear(&self, n: &mut Node) {
+        let d = Node::default();
+        n.flex_direction = d.flex_direction;
+        if self.gap.is_some() {
+            (n.column_gap, n.row_gap) = (d.column_gap, d.row_gap);
+        }
+        if self.pad.is_some() {
+            n.padding = d.padding;
+        }
+        if self.margin.is_some() {
+            n.margin = d.margin;
+        }
+        if self.w.is_some() || self.w_pct.is_some() {
+            n.width = d.width;
+        }
+        if self.h.is_some() || self.h_pct.is_some() {
+            n.height = d.height;
+        }
+        if self.min_w.is_some() {
+            n.min_width = d.min_width;
+        }
+        if self.max_w.is_some() {
+            n.max_width = d.max_width;
+        }
+        if self.abs.is_some() {
+            n.position_type = d.position_type;
+            (n.left, n.top, n.right, n.bottom) = (d.left, d.top, d.right, d.bottom);
+        }
+        if self.align.is_some() {
+            n.align_items = d.align_items;
+        }
+        if self.justify.is_some() {
+            n.justify_content = d.justify_content;
+        }
+        if self.grow.is_some() {
+            n.flex_grow = d.flex_grow;
+        }
+        if self.shrink.is_some() {
+            n.flex_shrink = d.flex_shrink;
+        }
     }
 }
+
+/// The style `resolve_styles` last wrote into a node, so a changed style
+/// returns the fields only its old value named to their defaults.
+#[derive(Component, Clone, Debug, Default)]
+pub struct AppliedStyle(UiStyle);
 
 /// A style declared as CSS-like keys (module doc): `style!(row, gap: 0.6,
 /// pad: [0.7, 0.8], h: 2.15, bg: Tone::Plate)`. The first word is `row`
@@ -408,18 +466,37 @@ pub fn resolve_styles(
     theme: Res<Theme>,
     kit: Option<Res<KitFonts>>,
     mut slants: Option<ResMut<Assets<SlantMaterial>>>,
-    styles: Query<(Entity, Ref<UiStyle>)>,
+    mut styles: Query<(Entity, Ref<UiStyle>, Option<&mut Node>, Option<&mut AppliedStyle>)>,
     texts: Query<(Entity, Ref<UiText>, Has<InkWeight>)>,
     slanted: Query<(Entity, Ref<UiSlant>, Option<&MaterialNode<SlantMaterial>>)>,
     mut commands: Commands,
 ) {
     let all = units.is_changed() || theme.is_changed() || kit.as_ref().is_some_and(|k| k.is_changed());
-    for (e, s) in &styles {
+    for (e, s, node, applied) in &mut styles {
         if !(all || s.is_changed()) {
             continue;
         }
         let mut c = commands.entity(e);
-        c.insert(s.node(&units));
+        // Merge into the node's own fields: a style sets only what it names
+        // (an `overflow: clip` set in code stays).
+        match node {
+            Some(mut n) => {
+                if let Some(old) = applied.as_deref().filter(|a| a.0 != *s) {
+                    old.0.clear(&mut n);
+                }
+                s.apply(&mut n, &units);
+            }
+            None => {
+                c.insert(s.node(&units));
+            }
+        }
+        match applied {
+            Some(mut a) if a.0 != *s => a.0 = UiStyle::clone(&s),
+            Some(_) => {}
+            None => {
+                c.insert(AppliedStyle(UiStyle::clone(&s)));
+            }
+        }
         if let Some((t, a)) = s.bg {
             c.insert(BackgroundColor(theme.tone_a(t, a)));
         }

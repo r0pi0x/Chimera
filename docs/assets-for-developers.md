@@ -95,10 +95,44 @@ such a server once with a token, and later runs read from it (the bound
 access in `%LOCALAPPDATA%\chimera\asset-access.toml`, used when
 `[assets]` names no service).
 
+## Installs and the service
+
+Players play the published build's files and data, installed games or
+not: the same files for everyone (TF2's decrypted scripts and the
+declared sets included), and no keys needed. So the game apps and their
+servers read a game the asset service serves from the store alone
+whenever a service is set (`[assets] url`/`token` or their variables, a
+hub account, a token bound by a join), the install unused
+(`chimera_assets::config::InstallDefault`, set at an app's start).
+Tests and tools keep the install first, so the suite reads the installs
+as before and stays offline-safe.
+
+| | no install | install |
+|---|---|---|
+| **no service**, any process | nothing (a test skips) | the install (as before) |
+| **service**, a test or tool | the store, filled from the service | the install first, the store under it (adds only what the install lacks) |
+| **service**, a game app or server (the default) | the store, filled from the service | **the store**, filled from the service; a game the service doesn't serve (TF2 today) reads its install |
+| **service**, the install chosen (Settings ▸ Network ▸ "Use my installed games", `[assets] use_install = true`, `CHIMERA_ASSET_USE_INSTALL=1`, a server's `+chimera:asset_use_install 1`) | the store, filled from the service | the install first, the store under it |
+| a client whose token or hub account waits for its first join (entered with `+chimera:asset_token`, not bound yet) | nothing until the join binds it | hidden until the join binds the service, then as with a service (a game the service doesn't serve: its install) |
+| `use_install = false` / `CHIMERA_ASSET_USE_INSTALL=0`, anywhere | the store alone | the store alone (a game it doesn't serve: none) |
+
+The setting is `chimera:asset_use_install` (archived in config.cfg, read
+at the start: a change applies at the next start). A developer who runs
+the apps with the installs and a service configured reads the store
+like a player; to work from the installs set `use_install = true` in
+`[assets]` (or the variable), or turn the setting on. Offline with a
+service configured: a game whose manifest the store lacks falls back to
+its install (the service can't serve it); one whose manifest it has
+reads what the store holds and misses the rest, so set
+`CHIMERA_ASSET_USE_INSTALL=1` to work from the installs offline.
+
 ## Day to day
 
 Work as with an install: `cargo run --features dev`, `cargo test ...`,
-`cargo nextest run --features dev`, `mapsweep`, the dedicated servers. When
+`cargo nextest run --features dev`, `mapsweep`, the dedicated servers. A dedicated
+server fetches its games' `base` and start map before it starts and each
+match's sets before the match (playtest-hosting.md, "The server's own
+game files"). When
 a run opens a file the cache lacks, the mount fetches it together with the
 rest of its group in one request: the missing files of the smallest set
 holding it (a map's set, a weapon's), else the files beside it with the
@@ -178,10 +212,13 @@ archive listings, the `heavy::served` tests (they pack from an install),
 `dump`. Local demo and probe files (`target/demos`, probe logs) aren't
 served either: those tests skip as they do for us without them.
 
-## Team Fortress 2: an install of your own (not served yet)
+## Team Fortress 2: an install of your own, or the service
 
-TF2 (docs/plans/active/tf2.md) isn't on the asset service yet (its sets
-come with M2). Its tests and the party's `tf2:` maps read an install,
+TF2 (docs/plans/active/tf2.md) is served from 2026-11-15 (its guns'
+`weapon/<id>`, `map/ctf_2fort`, `base`, and since 2026-11-16 its bodies per
+class: `players/<class>`, offered only for the classes a match's TF2 guns
+make, with `players` holding what every class shares, the HUD's look and
+the kill icons). Its tests and the party's `tf2:` maps read an install,
 found as the other games' are: `$CHIMERA_TF2_ROOT` for one run, else
 `[games.tf2] path` in `chimera.local.toml`, else Steam's libraries
 (app 440). Two layouts work:

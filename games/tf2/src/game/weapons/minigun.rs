@@ -19,7 +19,8 @@
 //!   firing, dry), the wind-down, each replacing the last on the weapon
 //!   channel (`map::PredictedSound`: the shooter's client plays its own);
 //!   view-model actions `SPIN_UP` and `SPIN_DOWN` (`WeaponEventKind::
-//!   Action`) for its sequences.
+//!   Action`) for its sequences, and its `view_anim::ViewPose` (1 while
+//!   winding up or spun: the view model idles in its spun sequence).
 //!
 //! Known shortcuts: the cone's tightening over the first second isn't
 //! modelled (open question 11); a wind-up begun in the air doesn't keep
@@ -30,6 +31,7 @@ use serde::{Deserialize, Serialize};
 
 use chimera_sim::weapon::{
     CHAN_WEAPON, DamageEffect, HolsterLocked, Inventory, Magazine, NetPart, Weapon, WeaponEvent, WeaponEventKind, WeaponState,
+    view_anim::ViewPose,
 };
 
 use super::damage::U;
@@ -107,12 +109,15 @@ impl NetPart for Tf2Minigun {
 /// `tf2:minigun` on a weapon.
 pub fn attach(e: &mut EntityWorldMut, p: &MinigunParams) {
     let base_damage = e.get::<DamageEffect>().map_or(0.0, |d| d.amount);
-    e.insert(Tf2Minigun {
-        params: p.clone(),
-        spin: Spin::Idle,
-        playing: Loop::None,
-        base_damage,
-    });
+    e.insert((
+        Tf2Minigun {
+            params: p.clone(),
+            spin: Spin::Idle,
+            playing: Loop::None,
+            base_damage,
+        },
+        ViewPose(0),
+    ));
 }
 
 /// The damage factor `t` seconds after the spin-up ended.
@@ -156,7 +161,16 @@ fn sound(entry: &str, owner: Entity, at: Vec3) -> PlaySound {
 #[allow(clippy::type_complexity)]
 pub fn spin(
     mut owners: Query<(Entity, &mut Intent, &Inventory, &Transform, Option<&Health>, Option<&MovementState>)>,
-    mut guns: Query<(Entity, &mut Tf2Minigun, &mut Weapon, &mut WeaponState, &mut DamageEffect, Option<&Magazine>, Has<HolsterLocked>)>,
+    mut guns: Query<(
+        Entity,
+        &mut Tf2Minigun,
+        &mut Weapon,
+        &mut WeaponState,
+        &mut DamageEffect,
+        Option<&Magazine>,
+        Has<HolsterLocked>,
+        Option<&mut ViewPose>,
+    )>,
     clock: Res<SimClock>,
     first: Res<FirstTimePredicted>,
     mut sounds: MessageWriter<PredictedSound>,
@@ -167,7 +181,7 @@ pub fn spin(
     for (owner, mut intent, inv, at, health, state) in &mut owners {
         let alive = health.is_none_or(|h| h.current > 0.0);
         for &w in &inv.weapons {
-            let Ok((we, mut gun, mut weapon, mut st, mut dmg, mag, locked)) = guns.get_mut(w) else { continue };
+            let Ok((we, mut gun, mut weapon, mut st, mut dmg, mag, locked, pose)) = guns.get_mut(w) else { continue };
             let active = inv.active == Some(w) && alive;
             let fire = active && intent.fire;
             let held = active && (intent.fire || intent.secondary);
@@ -209,6 +223,14 @@ pub fn spin(
             }
             if gun.spin != next {
                 gun.spin = next;
+            }
+            // The view model idles lowered and aiming while it spins up or
+            // is spun (`game::view`: `m_spool_idle`), upright otherwise.
+            let want_pose = ViewPose(u8::from(matches!(next, Spin::Up { .. } | Spin::Spun { .. })));
+            if let Some(mut pose) = pose
+                && *pose != want_pose
+            {
+                *pose = want_pose;
             }
             // Firing waits for the spin.
             match next {

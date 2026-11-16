@@ -166,6 +166,8 @@ fn every_option_is_archived() {
         mouse_cvars(app);
         perf::frame_limit_cvar(app);
         hud::default_radars(app, false);
+        // "Use my installed games" (the network's).
+        chimera_net::net::assets::install_setting(app);
     });
     let console = sim.app.world().resource::<Console>();
     let tabs = party_kit::esc_menu::option_tabs_for(true);

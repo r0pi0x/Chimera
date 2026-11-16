@@ -11,7 +11,10 @@
 //!   (a bound token, or `[assets]`), the startup sets
 //!   (`chimera_assets::sets::STARTUP_SETS`) of each of the app's games
 //!   that isn't installed, when the store lacks a manifest or one of their
-//!   records. An installed game is never fetched (the hybrid model).
+//!   records. An installed game is fetched only when the service comes
+//!   first (`AssetSettings::service_first`: the apps' default with a
+//!   service, unless the player chose "Use my installed games"); with the
+//!   install chosen it is never fetched (the hybrid model).
 //!   `plan_here` asks this machine (its config, its installs, Steam's
 //!   library). Before it
 //!   plans, `refresh` asks the service (waiting at most `REFRESH_WAIT`)
@@ -60,14 +63,21 @@ pub struct AppGame {
     pub installed: bool,
 }
 
+/// Whether an installed game is read from its install (not fetched): the
+/// install in use and not the service first.
+fn reads_install(settings: &AssetSettings) -> bool {
+    settings.use_install && !settings.service_first
+}
+
 /// The startup sets to fetch of `games` (None: nothing to fetch, or no
 /// service): those of every game not installed (all of them when the
-/// install is off), if the store lacks any of it.
+/// install is off or the service comes first), if the store lacks any of
+/// it.
 pub fn plan(settings: &AssetSettings, games: &[AppGame]) -> Option<Vec<Wanted>> {
     settings.remote.as_ref()?;
     let wanted: Vec<Wanted> = games
         .iter()
-        .filter(|g| !(g.installed && settings.use_install))
+        .filter(|g| !(g.installed && reads_install(settings)))
         .map(|g| Wanted { game: g.game.clone(), sets: sets::startup_sets(&g.game).iter().map(|s| s.to_string()).collect() })
         .filter(|w| !w.sets.is_empty())
         .collect();
@@ -84,7 +94,7 @@ pub fn refresh(settings: &AssetSettings, games: &[AppGame], wait: Duration) -> V
     };
     let names: Vec<String> = games
         .iter()
-        .filter(|g| !(g.installed && settings.use_install))
+        .filter(|g| !(g.installed && reads_install(settings)))
         .filter(|g| settings.store.as_ref().is_some_and(|s| s.latest_build(&g.game).is_some()))
         .map(|g| g.game.clone())
         .collect();

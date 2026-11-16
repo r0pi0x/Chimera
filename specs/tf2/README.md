@@ -9,9 +9,12 @@ for writing specs are in [specs/README.md](../README.md).
 
 Spec sessions for TF2 run on the Linux box as sub-agents of the
 orchestrating session. They read the game's data files in place, public
-documentation, and measurements of the dedicated server. They never read
-TF2's, the Source engine's or the Source SDK's code. Implementation
-sessions read only these files and our code.
+documentation, and measurements of the dedicated server. Since 2026-11-15 they
+may also read the Source SDK 2013 (updated 2025-02-18 with TF2's client
+and server game code, under the SDK's non-commercial licence) in place,
+outside this repository, as reference for specs only; nothing of it is
+copied or translated (specs/README.md). They never read leaked code.
+Implementation sessions read only these files and our code.
 
 ## Read first
 
@@ -27,11 +30,12 @@ from HL2:DM.** Every later TF2 spec continues it.
 | T | File | Status | Covers |
 |---|---|---|---|
 | T0 | [install.md](install.md) | draft | the two install layouts (client and dedicated server), gameinfo's search path, the VPKs, the maps (BSP v20 with LZMA lumps, static props v10), ctf_2fort and cp_badlands in detail, `info_player_teamspawn`, materials and shaders, the `c_` arms-plus-weapon rig versus `v_` models, player models, `items_game.txt`'s layout, which scripts are plain and which encrypted |
-| T1 | [movement.md](movement.md) | draft | movement cvars as measured, per-class speeds, duck (0.2 s, air duck), jump (289), the Scout's air jump, the bunny-hop cap (1.2 x), fall damage |
-| T2 | [classes.md](classes.md) | draft | the nine classes: health, overheal and its decay, speeds, eye heights, models, stock loadouts, Medic regeneration, health and ammo pickups, teams |
-| T3 | [weapons.md](weapons.md) | draft | shared gun rules (distance ramp, damage spread, crits, pellets, self-damage and knockback, switching) and the Scattergun, Rocket Launcher, Shotgun and Minigun with their assets and sounds |
+| T1 | [movement.md](movement.md) | checked against the SDK's game code | movement cvars as measured, per-class speeds, duck (0.2 s, air duck), jump (289), the Scout's air jump, the bunny-hop cap (1.2 x), fall damage |
+| T2 | [classes.md](classes.md) | checked against the SDK's game code | the nine classes: health, overheal and its decay, speeds, eye heights, models, stock loadouts, Medic regeneration, health and ammo pickups, teams |
+| T3 | [weapons.md](weapons.md) | checked against the SDK's game code | shared gun rules (distance ramp, damage spread, crits, pellets, self-damage and knockback, switching) and the Scattergun, Rocket Launcher, Shotgun and Minigun with their assets and sounds |
 | T4 | [ice.md](ice.md) | draft | the ICE block cipher from its published paper, and how the encrypted `.ctx` scripts use it; the paper's test vectors (not yet reproduced from the description alone: see its open questions) |
-| T5 | [weapons_more.md](weapons_more.md) | draft | the Pistol, SMG, Sniper Rifle (charge, headshots), Revolver, Grenade Launcher, Stickybomb Launcher, Flame Thrower and Syringe Gun: numbers, projectiles, assets, sounds, kill icons |
-| T6 | [hud.md](hud.md) | draft | the scheme's fonts and colours, the layout's scaling, the health, ammo, crosshair and kill feed panels, their animation events, the kill icons, the hit sound |
-| T7 | [player_animation.md](player_animation.md) | draft | the class player models' animations: include models, pose parameters, the move and aim grids, sequences by weapon kind, gestures, the spun minigun set, the held weapon's bone, hitboxes, ragdolls |
-| T8 | [weapon_scripts.md](weapon_scripts.md) | draft | the per-weapon `.ctx` scripts' fields: meaning, unit, type, which guns carry them, and how each maps onto our weapon TOML and hook params (applied, checked or ignored); no values |
+| T5 | [weapons_more.md](weapons_more.md) | checked against the SDK's game code | the Pistol, SMG, Sniper Rifle (charge, headshots), Revolver, Grenade Launcher, Stickybomb Launcher, Flame Thrower and Syringe Gun: numbers, projectiles, assets, sounds, kill icons |
+| T6 | [hud.md](hud.md) | checked against the SDK's game code | the scheme's fonts and colours, the layout's scaling, the health, ammo, crosshair and kill feed panels, their animation events, the kill icons, the hit sound |
+| T7 | [player_animation.md](player_animation.md) | checked against the SDK's game code | the class player models' animations: include models, pose parameters, the move and aim grids, sequences by weapon kind, gestures, the spun minigun set, the held weapon's bone, hitboxes, ragdolls |
+| T8 | [weapon_scripts.md](weapon_scripts.md) | checked against the SDK's game code | the per-weapon `.ctx` scripts' fields: meaning, unit, type, which guns carry them, and how each maps onto our weapon TOML and hook params (applied, checked or ignored); no values |
+| T9 | [viewmodel.md](viewmodel.md) | checked against the SDK's game code | the first-person view model: the class arms plus the bone-merged `c_` weapon, placement at the eye (no offset), bob, no sway, `viewmodel_fov` 54, draw and idle sequences and their cross-fades, the Minigun's rest pose (`m_idle`, barrels up), its spin sequences and procedural barrel; why ours showed the spun pose too big |

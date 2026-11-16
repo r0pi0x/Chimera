@@ -1,6 +1,9 @@
 //! TF2's nine classes as data (games/tf2/data/classes.toml, built in;
 //! specs/tf2/classes.md and movement.md): each class's index, max health,
-//! top speed, standing eye height, air jumps, player model and arms, and
+//! top speed, standing eye height, air jumps, player model and arms, the
+//! classes whose bodies it may also show (`needs`: their asset sets,
+//! `players/<class>` by `set_of`, come with its own in a match's offer,
+//! `Classes::sets_for`; none yet, the Spy's disguise will need all), and
 //! which class each gun makes its holder (`class_of_gun`: the file's
 //! `[guns]` table, else the gun's `tf2:gun` hook's `arms`). A player
 //! holding a TF2 gun is that gun's class (`Tf2Class`): its speed, eyes
@@ -31,6 +34,11 @@ pub struct Class {
     pub model: String,
     /// The first-person arms' class (`c_<arms>_arms.mdl`).
     pub arms: String,
+    /// The classes whose bodies a player of this one may also show (the
+    /// Spy's disguise, once built): their sets come with this class's
+    /// (`Classes::sets_for`).
+    #[serde(default)]
+    pub needs: Vec<String>,
     /// Its name (the table's key), filled in after reading.
     #[serde(skip)]
     pub name: String,
@@ -72,6 +80,11 @@ impl Classes {
                 return Err(format!("classes.toml: {gun} names no class {class}"));
             }
         }
+        for c in &classes {
+            if let Some(n) = c.needs.iter().find(|n| !classes.iter().any(|x| &x.name == *n)) {
+                return Err(format!("classes.toml: {} needs no class {n}", c.name));
+            }
+        }
         let arms = super::weapons::tf2_weapons()
             .weapons
             .into_iter()
@@ -93,6 +106,36 @@ impl Classes {
         self.classes.iter().find(|c| c.index == index)
     }
 
+    /// The classes `classes` (names) and those they need (`Class::needs`,
+    /// followed through), each once, in class order: whose bodies a match
+    /// with players of `classes` shows.
+    pub fn with_needs<'a>(&self, classes: impl IntoIterator<Item = &'a str>) -> Vec<&Class> {
+        let mut want: Vec<&str> = classes.into_iter().collect();
+        let mut i = 0;
+        while let Some(name) = want.get(i).copied() {
+            for n in self.get(name).map(|c| c.needs.as_slice()).unwrap_or_default() {
+                if !want.contains(&n.as_str()) {
+                    want.push(n);
+                }
+            }
+            i += 1;
+        }
+        self.classes.iter().filter(|c| want.contains(&c.name.as_str())).collect()
+    }
+
+    /// The classes of the guns among `guns` (`of_gun`) with those they
+    /// need (`with_needs`): the bodies a match handing out `guns` shows.
+    pub fn for_guns<'a>(&self, guns: impl IntoIterator<Item = &'a str>) -> Vec<&Class> {
+        let own: Vec<&str> = guns.into_iter().filter_map(|g| self.of_gun(g)).map(|c| c.name.as_str()).collect();
+        self.with_needs(own)
+    }
+
+    /// The asset sets of the bodies a match handing out `guns` shows
+    /// (`for_guns`): `players/<class>` each (`set_of`).
+    pub fn sets_for<'a>(&self, guns: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+        self.for_guns(guns).into_iter().map(|c| set_of(&c.name)).collect()
+    }
+
     /// The class gun `id` makes its holder: the `[guns]` table's, else
     /// the class whose arms hold it.
     pub fn of_gun(&self, id: &str) -> Option<&Class> {
@@ -102,6 +145,13 @@ impl Classes {
         let arms = self.arms.get(id)?;
         self.classes.iter().find(|c| &c.arms == arms || &c.name == arms)
     }
+}
+
+/// The asset set of class `name`'s body (`chimera_pack sets tf2`,
+/// `super::sets::class_files`): its player model with its animations and
+/// textures and its first-person arms, `players/<name>` (`players/heavy`).
+pub fn set_of(name: &str) -> String {
+    format!("players/{name}")
 }
 
 /// The built-in table, parsed (a fresh copy each call: systems read the
@@ -170,12 +220,31 @@ mod tests {
         assert_eq!(of("tf2:tf_weapon_rocketlauncher"), Some("soldier"));
         assert_eq!(of("tf2:tf_weapon_minigun"), Some("heavy"));
         assert_eq!(of("tf2:tf_weapon_shotgun_primary"), Some("engineer"));
-        assert_eq!(of("tf2:tf_weapon_pistol"), Some("scout"));
+        assert_eq!(of("tf2:tf_weapon_pistol_scout"), Some("scout"));
         assert_eq!(of("tf2:tf_weapon_sniperrifle"), Some("sniper"));
         assert_eq!(of("tf2:tf_weapon_flamethrower"), Some("pyro"));
         assert_eq!(of("cs_source:weapon_ak47"), None);
         assert_eq!(c.get("scout").unwrap().air_jumps, 1);
         assert_eq!(c.get("heavy").unwrap().air_jumps, 0);
         assert_eq!(Tf2Class::default().class(&c).name, DEFAULT);
+    }
+
+    /// A class's sets are its own and those of the classes it needs,
+    /// followed through, each once; an unknown need is refused.
+    #[test]
+    fn needs_pull_in_other_classes_sets() {
+        let c = classes();
+        let names = |v: Vec<&Class>| v.into_iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        assert_eq!(
+            c.sets_for(["tf2:tf_weapon_minigun", "tf2:tf_weapon_scattergun", "tf2:tf_weapon_pistol_scout", "x:y"]),
+            ["players/scout", "players/heavy"]
+        );
+        assert!(names(c.for_guns(["tf2:tf_weapon_revolver"])) == ["spy"], "no disguise yet: the Spy alone");
+        let text = DATA
+            .replace("needs = []", "needs = [\"medic\"]")
+            .replace("arms = \"medic\"", "arms = \"medic\"\nneeds = [\"pyro\"]");
+        let t = Classes::parse(&text).unwrap();
+        assert_eq!(names(t.for_guns(["tf2:tf_weapon_revolver"])), ["medic", "pyro", "spy"]);
+        assert!(Classes::parse(&DATA.replace("needs = []", "needs = [\"nobody\"]")).is_err());
     }
 }

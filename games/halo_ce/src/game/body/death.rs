@@ -27,33 +27,47 @@
 //! way (`play_corpses`, once per Halo tick): the animation starts at frame
 //! 0 blended in over 3 ticks from the player's last pose there
 //! (`UNIT_DAMAGE_TRANSITION_TICKS`), advances one frame a tick and holds its
-//! last frame; its sound (the animation's sound reference, at its sound
-//! frame: "Playback") plays at the body on that machine; a body that died
-//! in the air falls under Halo's gravity until a ray down meets the level
-//! (`CorpseState::fall`), then lies there, playing its landing death. It
-//! is drawn as the engine's
-//! `map::Corpse` (Halo's game identity picks the Spartan, `BodySkin` its
-//! colour, the pose its own `Animator::fixed`); it has no collider and
-//! no hit volumes. The server removes a body lying idle (its animation
-//! ended, on the ground) for more than 900 ticks (`CORPSE_LIFE`), and
-//! every body at a map change.
+//! last frame (the pose then stays as it is: the spec's limp settling is
+//! left out, which it allows); its sound (the animation's sound reference,
+//! at its sound frame: "Playback") plays at the body on that machine. A
+//! body that died in the air plays the airborne death (a 6-tick blend,
+//! repeating from frame 0) and falls under Halo's gravity until a ray down
+//! meets the level (`CorpseState::fall`), then lies there; its landing
+//! death starts on the tick after the one it touched down on (6-tick
+//! blend). It is drawn as the engine's `map::Corpse` (Halo's game identity
+//! picks the Spartan, `BodySkin` its colour, the pose its own
+//! `Animator::fixed`). It has no collider (players and vehicles pass
+//! through it) but hit volumes (`core::Hitboxes`, `corpse_hitboxes`: the
+//! model's boxes on its pose, about its feet, unturned), so shots meet it:
+//! Halo's projectiles (`weapons::HaloTrace`) and every game's hitscan (the
+//! engine's trace tests any `Hitboxes`); a hit damages nothing. The server
+//! removes a body at rest (on the ground, not moving) for more than 900
+//! ticks (`CORPSE_LIFE`), and every body at a map change.
+//!
+//! **At the death, on the server**: the death line (sounds.md "Unit
+//! dialogue": the unit dialogue's violent line for a fall, flame or a push
+//! of 2 or more, else the quiet one, `violent_death`; their sounds ride on
+//! the set, `anims::death_line`) plays at the head as a `GameSound`, which
+//! a network server sends to every client; the push (`DeathPush`, not
+//! replicated) tells the held weapon's drop (`drops_at_once`,
+//! `weapons::pickups::drop_on_death`). No pain lines exist.
 //!
 //! Characters only: a body that is no Halo body (`HaloBody`: another
 //! game's character in a party app) leaves nothing here; a Halo body
 //! killed by any game's hit does (no ping: a soft kill).
 //!
 //! Known shortcuts:
-//! - No limp body physics (animations.md: "a biped then starts its limp
-//!   body" once its animation ends): the last frame holds.
-//! - An airborne death that lands plays the seat's landing death
-//!   (`landing-dead`, blended in over 3 ticks): inferred from the slot and
-//!   its body-fall sound, the spec's states do not say when it plays.
+//! - No limp body physics (health_shields.md "The limp body", which an
+//!   implementation may leave out): the last frame holds.
+//! - The body is no biped: pushes do not move it, and its airborne count
+//!   is not the player's (a body killed in its first 1 or 2 airborne
+//!   updates plays the airborne death at once).
+//! - Another game's killing hit counts a push of 2 for an explosion and
+//!   none else.
 //! - One permutation per slot (the chain's first).
 //! - A machine plays the death from when it hears of the body (a client
 //!   some ticks after the server; one joining later sees it from the
 //!   start).
-//! - The body is no object: shots pass through it (Halo's dead bipeds
-//!   still take hits and show their blood, effects.md "corpse").
 
 use bevy::prelude::*;
 use blam_formats::animation::{BodyPart, DamageDirection, DamageKind, UnitDamageSlot};
@@ -92,6 +106,33 @@ pub struct HaloCorpse {
     pub velocity: Vec3,
     /// The death's sequence (`choose`); empty: none, the bind pose.
     pub animation: String,
+}
+
+/// The killing hit's push on a body (the server's; not replicated): its
+/// damage effect's instantaneous acceleration, WU/s (another game's
+/// explosion counts as `VIOLENT_PUSH`). The held weapon drops at once for
+/// `VIOLENT_PUSH` or more (`drops_at_once`).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct DeathPush(pub f32);
+
+/// The push from which a death is violent and the held weapon drops at
+/// once, WU/s (health_shields.md "Death").
+pub const VIOLENT_PUSH: f32 = 2.0;
+
+/// The held weapon drops in the death itself (health_shields.md "Death"):
+/// a push of `VIOLENT_PUSH` or more, an airborne death, or no death
+/// animation; else after the drawn delay.
+pub fn drops_at_once(corpse: &HaloCorpse, push: Option<&DeathPush>) -> bool {
+    corpse.animation.is_empty()
+        || corpse.animation == seat_death_key(SEATS[0], AIRBORNE_DEAD)
+        || push.is_some_and(|p| p.0 >= VIOLENT_PUSH)
+}
+
+/// The death line is the violent one (sounds.md "Death line choice"): a
+/// fall, flame, or a push of `VIOLENT_PUSH` or more; else the quiet one.
+pub fn violent_death(kind: crate::core::DamageKind, push: f32) -> bool {
+    use crate::core::DamageKind as K;
+    matches!(kind, K::Fall | K::Burn) || push >= VIOLENT_PUSH
 }
 
 /// What picks a death (`choose`).
@@ -165,14 +206,18 @@ pub struct CorpseState {
     pub velocity: Vec3,
     /// On the ground.
     pub resting: bool,
-    /// Halo ticks lying idle (its animation over, on the ground).
+    /// Halo ticks at rest (on the ground, not moving).
     pub idle: u32,
     pub blend: Option<Blend>,
     /// An airborne death's landing death, played when it lands (None:
     /// none, or played).
     pub landing: Option<usize>,
-    /// It landed this tick.
+    /// It landed this tick; the landing death starts on the next
+    /// (`touched`).
     pub landed: bool,
+    pub touched: bool,
+    /// Its animation repeats (the airborne death, loop frame 0).
+    pub looping: bool,
     /// The last pose made (a landing's blend starts from it).
     pub last: Vec<BonePose>,
 }
@@ -189,7 +234,18 @@ impl CorpseState {
             landing: (corpse.animation == seat_death_key(SEATS[0], AIRBORNE_DEAD))
                 .then(|| set.names.get(&seat_death_key(SEATS[0], LANDING_DEAD)).copied())
                 .flatten(),
-            blend: from.filter(|f| !f.is_empty()).map(|from| Blend { from, ticks: UNIT_DAMAGE_TRANSITION_TICKS, index: 0 }),
+            looping: corpse.animation == seat_death_key(SEATS[0], AIRBORNE_DEAD),
+            // A ground death blends in over 3 ticks, the airborne state over
+            // the usual 6.
+            blend: from.filter(|f| !f.is_empty()).map(|from| Blend {
+                from,
+                ticks: if corpse.animation == seat_death_key(SEATS[0], AIRBORNE_DEAD) {
+                    anims::TRANSITION_TICKS
+                } else {
+                    UNIT_DAMAGE_TRANSITION_TICKS
+                },
+                index: 0,
+            }),
             ..default()
         }
     }
@@ -222,17 +278,19 @@ impl CorpseState {
     /// and the sound to play now.
     pub fn tick(&mut self, set: &AnimSet) -> (Vec<BonePose>, Option<String>) {
         let mut sound = None;
-        // An airborne death landing: its landing death, blended in.
-        if std::mem::take(&mut self.landed)
-            && let Some(l) = self.landing.take()
-        {
+        // An airborne death landing: its landing death, blended in over 6
+        // ticks, from the tick after the one it touched down on.
+        let land = std::mem::take(&mut self.touched);
+        self.touched = std::mem::take(&mut self.landed);
+        if land && let Some(l) = self.landing.take() {
             self.sequence = Some(l);
             self.frame = 0;
             self.started = false;
+            self.looping = false;
             self.blend = (!self.last.is_empty())
-                .then(|| Blend { from: self.last.clone(), ticks: UNIT_DAMAGE_TRANSITION_TICKS, index: 0 });
+                .then(|| Blend { from: self.last.clone(), ticks: anims::TRANSITION_TICKS, index: 0 });
         }
-        let ended = if let Some(s) = self.sequence {
+        if let Some(s) = self.sequence {
             let n = frames(set, s);
             if self.started {
                 if let Some((f, name)) = sound_of(set, s)
@@ -240,12 +298,9 @@ impl CorpseState {
                 {
                     sound = Some(name.to_string());
                 }
-                self.frame = (self.frame + 1).min(n - 1);
+                self.frame = if self.looping { anims::advance(self.frame, n, 0) } else { (self.frame + 1).min(n - 1) };
             }
-            self.frame + 1 >= n
-        } else {
-            true
-        };
+        }
         self.started = true;
         let mut pose = match self.sequence {
             Some(s) => base_pose(set, set.sequences[s].anims[0], self.frame),
@@ -262,14 +317,17 @@ impl CorpseState {
                 self.blend = None;
             }
         }
-        if ended && self.resting {
+        // The idle count: ticks at rest, whatever the animation does.
+        if self.resting {
             self.idle += 1;
+        } else {
+            self.idle = 0;
         }
         self.last.clone_from(&pose);
         (pose, sound)
     }
 
-    /// Lying idle for more than `CORPSE_LIFE` ticks.
+    /// At rest for more than `CORPSE_LIFE` ticks.
     pub fn expired(&self) -> bool {
         self.idle > CORPSE_LIFE
     }
@@ -280,12 +338,25 @@ fn halo_set(models: &CharacterModels) -> Option<std::sync::Arc<AnimSet>> {
     models.0.iter().find(|m| m.game == Some(GAME)).and_then(|m| m.animations.clone())
 }
 
+/// A body's hit volumes for `pose` (shots meet them: health_shields.md,
+/// "Collision of a dead body"): the model's boxes on the posed bones, in
+/// the world's orientation about its feet (a corpse has no look to turn
+/// a trace by).
+pub fn corpse_hitboxes(m: &crate::map::MapCharacterModel, pose: &[BonePose], yaw: f32) -> crate::core::Hitboxes {
+    let regions: Vec<_> = m.hitboxes.iter().map(|h| h.region).collect();
+    let root = Transform { rotation: Quat::from_rotation_y(yaw) * m.root.rotation, ..m.root };
+    crate::core::Hitboxes(super::hits::hitboxes(&m.boxes, &regions, &m.bones, pose, &root))
+}
+
 /// The server: each Halo body that died this tick leaves its corpse
 /// (module doc).
 #[allow(clippy::type_complexity)]
 pub fn leave_corpses(
     mut died: MessageReader<Died>,
     mut pings: MessageReader<HaloPing>,
+    mut hurts: MessageReader<super::super::damage::HaloHurt>,
+    effects: Res<super::super::vitality::DamageEffects>,
+    mut lines: Option<ResMut<Messages<crate::map::GameSound>>>,
     models: Option<Res<CharacterModels>>,
     spartan: Res<Spartan>,
     players: Query<
@@ -296,6 +367,7 @@ pub fn leave_corpses(
 ) {
     let kills: Vec<HaloPing> = pings.read().filter(|p| p.kill).copied().collect();
     let deaths: Vec<Died> = died.read().cloned().collect();
+    let killing: Vec<_> = hurts.read().filter(|h| h.outcome.died).copied().collect();
     let Some(set) = models.as_deref().and_then(halo_set) else { return };
     for d in deaths {
         let Ok((at, intent, state, velocity, skin, aabb)) = players.get(d.entity) else { continue };
@@ -308,7 +380,23 @@ pub fn leave_corpses(
         };
         // Its feet: the collider's bottom (as the engine draws bodies).
         let feet = at.translation.with_y(aabb.map_or(at.translation.y + state.hull_min.y, |b| b.min.y));
+        // The push and the death line: the killing Halo hit's effect, else
+        // another game's hit by its kind.
+        let effect = killing.iter().rev().find(|h| h.target == d.entity).and_then(|h| effects.get(h.effect));
+        let push = match effect {
+            Some(fx) => fx.accel,
+            None if d.damage.kind.is_blast() => VIOLENT_PUSH,
+            None => 0.0,
+        };
+        let kind = effect.map_or(d.damage.kind, |fx| fx.category.kind());
+        if let Some(line) = anims::death_line(&set, violent_death(kind, push))
+            && let Some(m) = lines.as_deref_mut()
+        {
+            let head = feet + Vec3::Y * super::super::weapons::aim::HEAD_HEIGHT * METERS_PER_UNIT;
+            m.write(crate::map::GameSound(PlaySound::at(line, head)));
+        }
         commands.spawn((
+            DeathPush(push),
             Name::new("halo_ce corpse"),
             bevy_replicon::prelude::Replicated,
             Transform::from_translation(feet).with_rotation(Quat::from_rotation_y(intent.yaw)),
@@ -333,11 +421,19 @@ pub fn play_corpses(
     spatial: avian3d::prelude::SpatialQuery,
     characters: Query<(), With<Intent>>,
     owners: Query<&HaloBody>,
-    mut corpses: Query<(Entity, &HaloCorpse, Option<&mut CorpseState>, Option<&mut Animator>, Option<&mut Transform>)>,
+    mut corpses: Query<(
+        Entity,
+        &HaloCorpse,
+        Option<&mut CorpseState>,
+        Option<&mut Animator>,
+        Option<&mut Transform>,
+        Option<&mut crate::core::Hitboxes>,
+    )>,
     mut sounds: MessageWriter<PlaySound>,
     mut commands: Commands,
 ) {
     let Some(set) = models.as_deref().and_then(halo_set) else { return };
+    let model = models.as_deref().and_then(|m| m.0.iter().find(|m| m.game == Some(GAME))).filter(|m| !m.boxes.is_empty());
     let ticks = super::super::ticks::halo_ticks(&clock).min(4);
     let g = super::super::movement::MovementData::builtin().gravity * METERS_PER_UNIT;
     let filter = avian3d::prelude::SpatialQueryFilter::from_mask(crate::core::SOLID_LAYERS);
@@ -347,17 +443,19 @@ pub fn play_corpses(
             .cast_ray_predicate(from + Vec3::Y * lift, Dir3::NEG_Y, drop + lift, true, &filter, &|e| !characters.contains(e))
             .map(|h| h.distance - lift)
     };
-    for (e, corpse, state, animator, transform) in &mut corpses {
+    for (e, corpse, state, animator, transform, hitboxes) in &mut corpses {
         let Some(mut state) = state else {
             // Its first tick here: drawn as a corpse from now on.
             let from = owners.get(corpse.owner).ok().map(|b| b.anim.last.clone());
             let grounded = corpse.velocity.y <= 0.0 && ground(corpse.at, 0.1).is_some();
             let mut state = CorpseState::new(&set, corpse, grounded, from);
             let (pose, _) = state.tick(&set);
+            let boxes = model.map(|m| corpse_hitboxes(m, &pose, corpse.yaw)).unwrap_or_default();
             let mut animator = Animator::new(set.clone());
             animator.fixed = Some(chimera_core::later::Later::ready(pose));
             animator.main = Some(0);
             commands.entity(e).insert((
+                boxes,
                 state,
                 animator,
                 Corpse { feet: 0.0 },
@@ -369,9 +467,13 @@ pub fn play_corpses(
             continue;
         };
         let Some(mut animator) = animator else { continue };
+        let mut hitboxes = hitboxes;
         for _ in 0..ticks {
             state.fall(g, ground);
             let (pose, sound) = state.tick(&set);
+            if let (Some(m), Some(h)) = (model, hitboxes.as_deref_mut()) {
+                *h = corpse_hitboxes(m, &pose, corpse.yaw);
+            }
             animator.fixed = Some(chimera_core::later::Later::ready(pose));
             if let Some(entry) = sound {
                 sounds.write(PlaySound::at(entry, state.at + Vec3::Y * 0.5));
@@ -426,7 +528,8 @@ pub fn death_sound<'a>(set: &'a AnimSet, name: &str) -> Option<(usize, &'a str)>
 /// stands a Halo character (the nearest other one, else a new one) in
 /// front of the local player; `halo_ce:kill_dummies <front|back|left|right>
 /// [hitgroup]` kills every other living character with a hit from that
-/// side of it.
+/// side of it; `halo_ce:hit_dummies [fraction]` hits them without killing
+/// (flinches).
 #[cfg(feature = "dev")]
 pub fn dev_commands(app: &mut App) {
     use chimera_core::console::ConsoleAppExt;
@@ -443,14 +546,12 @@ pub fn dev_commands(app: &mut App) {
             let yaw = look + std::f32::consts::PI + turn;
             let mut others = w.query_filtered::<(Entity, &Transform), (With<Intent>, Without<LocalPlayer>)>();
             let near = others.iter(w).min_by(|x, y| x.1.translation.distance(me).total_cmp(&y.1.translation.distance(me))).map(|(e, _)| e);
-            let e = match near {
-                Some(e) => e,
-                None => {
-                    let e = w.spawn(chimera_core::character::character_bundle(Transform::from_translation(at), Team(0))).id();
-                    chimera_core::slots::set_movement(e, super::super::movement::ID).apply(w);
-                    e
-                }
-            };
+            let e = near.unwrap_or_else(|| w.spawn(chimera_core::character::character_bundle(Transform::from_translation(at), Team(0))).id());
+            // A Halo body (another game's bot in a party app becomes one).
+            w.entity_mut(e).insert(chimera_core::slots::GameIdentity(GAME.into()));
+            if !w.entity(e).contains::<super::super::vitality::Vitality>() {
+                chimera_core::slots::set_movement(e, super::super::movement::ID).apply(w);
+            }
             if let Some(mut t) = w.get_mut::<Transform>(e) {
                 t.translation = at;
             }
@@ -504,6 +605,34 @@ pub fn dev_commands(app: &mut App) {
                 w.write_message(d);
             }
             Ok(Some(format!("{n} killed")))
+        },
+    );
+    app.console_command(
+        "halo_ce:hit_dummies",
+        "hit_dummies [health fraction, default 0.02]: hit every other living character without killing it (flinch screenshots)",
+        |w, a| {
+            let amount = a.first().and_then(|s| s.parse::<f32>().ok()).unwrap_or(0.02);
+            let mut q = w.query_filtered::<(Entity, &Transform, &Health), Without<LocalPlayer>>();
+            let hits: Vec<Damage> = q
+                .iter(w)
+                .filter(|(.., h)| h.current > amount)
+                .map(|(e, t, _)| Damage {
+                    target: e,
+                    attacker: None,
+                    amount,
+                    point: t.translation,
+                    dir: Vec3::NEG_Z,
+                    hitgroup: Hitgroup::Chest,
+                    kind: DamageKind::Bullet,
+                    weapon: None,
+                    force: Vec3::ZERO,
+                })
+                .collect();
+            let n = hits.len();
+            for d in hits {
+                w.write_message(d);
+            }
+            Ok(Some(format!("{n} hit")))
         },
     );
 }

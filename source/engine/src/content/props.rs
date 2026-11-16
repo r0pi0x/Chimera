@@ -251,7 +251,8 @@ fn load_model_with_layout(
     let key_values = mdl.key_values.clone();
     let layout = body_layout(&mdl);
     let stem = path.trim_end_matches(".mdl");
-    let vtx = vmdl::vtx::Vtx::read(&read(format!("{stem}.dx90.vtx"))?).map_err(|e| format!("{stem}.dx90.vtx: {e}"))?;
+    let mut vtx = vmdl::vtx::Vtx::read(&read(format!("{stem}.dx90.vtx"))?).map_err(|e| format!("{stem}.dx90.vtx: {e}"))?;
+    align_vtx(&mdl, &mut vtx);
     let vvd = vmdl::vvd::Vvd::read(&read(format!("{stem}.vvd"))?).map_err(|e| format!("{stem}.vvd: {e}"))?;
     let lods = if lods { lod_models(&mdl, &vtx, &vvd) } else { Vec::new() };
     let model = vmdl::Model::from_parts(mdl, vtx, vvd);
@@ -261,6 +262,23 @@ fn load_model_with_layout(
         return Err(format!("{path}: mesh indices outside its vertices (.vtx and .vvd disagree)"));
     }
     Ok((model, key_values, layout, lods))
+}
+
+/// The `.vtx`'s meshes cut to the `.mdl`'s, model by model: a body-group
+/// choice with no meshes (an empty one, TF2's Heavy's second `hands`) can
+/// still list one in the `.vtx`, and the two lists are paired in order, so
+/// every later mesh took the next model's strips (and indices past the
+/// vertices).
+fn align_vtx(mdl: &vmdl::mdl::Mdl, vtx: &mut vmdl::vtx::Vtx) {
+    for (p, part) in vtx.body_parts.iter_mut().enumerate() {
+        let Some(mdl_part) = mdl.body_parts.get(p) else { continue };
+        for (m, model) in part.models.iter_mut().enumerate() {
+            let n = mdl_part.models.get(m).map_or(0, |x| x.meshes.len());
+            for lod in &mut model.lods {
+                lod.meshes.truncate(n);
+            }
+        }
+    }
 }
 
 /// A player model as a character body (specs/cs_source/weapons.md 5): its
@@ -2060,7 +2078,8 @@ fn vertex_key(materials: &MaterialLoader, path: &str) -> Option<VertexKey> {
     let checksum = u32::from_le_bytes(mdl_bytes.get(8..12)?.try_into().ok()?);
     let mdl = read_mdl(&mdl_bytes).ok()?;
     let stem = path.trim_end_matches(".mdl");
-    let vtx = vmdl::vtx::Vtx::read(&materials.read(&format!("{stem}.dx90.vtx"))?).ok()?;
+    let mut vtx = vmdl::vtx::Vtx::read(&materials.read(&format!("{stem}.dx90.vtx"))?).ok()?;
+    align_vtx(&mdl, &mut vtx);
     let order = lod0_vertex_order(&mdl, &vtx);
     // Lower levels' vertices take their nearest LOD 0 vertex's light.
     let positions: Vec<Vec3> = materials

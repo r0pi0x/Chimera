@@ -71,7 +71,7 @@ fn each_guns_set_covers_what_a_match_loads_for_it() {
             .into_iter()
             .filter_map(|a| match a {
                 Access::File(p) | Access::Every(p) => Some(p),
-                Access::Folder(_) => None,
+                Access::Folder(_) | Access::Held(_) => None,
             })
             .filter(|p| mount.contains(p))
             .collect();
@@ -135,9 +135,66 @@ fn the_posed_gun_is_in_front_of_the_eye() {
         // Its front ahead (the Rocket Launcher rests on the shoulder and
         // reaches behind the eye), right of the view's centre, below it.
         assert!(lo.z < -0.3 && centre.x > 0.0 && centre.y < 0.0, "{}: the gun from {lo} to {hi}", v.key);
-        // Its muzzle ahead and below the eye: the Minigun's `m_idle` held
-        // it upright, the muzzle above the eye (view.rs).
+        // Its muzzle ahead and below the eye, but the Minigun's: it rests
+        // upright in `m_idle`, barrels up, as the real game holds it
+        // (view.rs).
         let m = muzzle.expect("a muzzle");
-        assert!(m.y < 0.0 && m.z < -0.5, "{}: the muzzle at {m}", v.key);
+        assert!(v.key == tf2::game::weapons::MINIGUN || (m.y < 0.0 && m.z < -0.5), "{}: the muzzle at {m}", v.key);
     }
+}
+
+/// specs/tf2/viewmodel.md's test cases 1, 2, 6 and 7 to 17: each gun's
+/// muzzle in the eye's space (forward, right, up, units) at frame 0 of its
+/// idle (the spun Minigun's `m_spool_idle` too), the view model at the
+/// eye with no offset, the weapon bone-merged; within 1 unit.
+#[test]
+fn the_muzzles_sit_where_the_spec_puts_them() {
+    use bevy::prelude::*;
+    use tf2::game::weapons::*;
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0);
+    let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
+    maps::add_guns(&mut materials, &|_| true, &mut kit, &mut warnings);
+    let cases: &[(&str, &str, [f32; 3])] = &[
+        (MINIGUN, "m_idle", [55.32, 16.82, 6.78]),
+        (MINIGUN, "m_spool_idle", [66.56, 4.86, -20.54]),
+        (SCATTERGUN, "sg_idle", [44.29, 5.22, -4.28]),
+        (PISTOL_SCOUT, "p_idle", [37.36, 5.06, -2.60]),
+        (ROCKET_LAUNCHER, "dh_idle", [24.23, 10.78, -5.28]),
+        (SHOTGUN, "fj_idle", [52.32, 8.06, -6.38]),
+        (FLAMETHROWER, "ft_idle", [60.57, 10.80, -7.29]),
+        (GRENADE_LAUNCHER, "g_idle", [58.16, 4.78, -5.08]),
+        (STICKY_LAUNCHER, "sb_idle", [52.60, 8.56, -5.67]),
+        (SNIPER_RIFLE, "idle", [69.45, 8.98, -7.44]),
+        (SMG, "smg_idle", [52.93, 9.60, -6.10]),
+        (SYRINGE_GUN, "sg_idle", [55.73, 8.11, -6.50]),
+        (REVOLVER, "idle", [43.57, 6.08, -3.51]),
+    ];
+    let mut wrong = Vec::new();
+    for (gun, sequence, want) in cases {
+        let v = kit.view_models.iter().find(|v| v.key == *gun).unwrap_or_else(|| panic!("{gun}: no view model"));
+        let set = v.animations.clone().unwrap();
+        let mut a = chimera_world::map::anim::Animator::new(set.clone());
+        a.play(set.sequence(sequence).unwrap_or_else(|| panic!("{gun}: no {sequence}")), 0.0);
+        let pose = a.pose(0.0);
+        let mut posed: Vec<Mat4> = Vec::new();
+        for (i, b) in v.bones.iter().enumerate() {
+            let local = Mat4::from_rotation_translation(pose[i].0, pose[i].1);
+            posed.push(match b.parent {
+                Some(p) => posed[p] * local,
+                None => local,
+            });
+        }
+        let root = v.root.to_matrix();
+        let at = v.attachments.iter().find(|a| a.name == "muzzle").expect("a muzzle");
+        let m = (root * posed[at.bone] * at.local.to_matrix()).transform_point3(Vec3::ZERO) / tf2::game::METERS_PER_UNIT;
+        // Camera space (right, up, back) to the spec's (forward, right, up).
+        let got = [-m.z, m.x, m.y];
+        let off = (0..3).map(|i| (got[i] - want[i]).abs()).fold(0.0, f32::max);
+        eprintln!("{gun} {sequence}: muzzle {got:?}, the spec's {want:?}");
+        if off > 1.0 {
+            wrong.push(format!("{gun} {sequence}: {got:?}, not {want:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }

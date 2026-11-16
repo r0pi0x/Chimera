@@ -11,6 +11,8 @@
 //!   and each tick's state, frame and pose (`HaloAnim`).
 //! - `hits`: the collision model's nodes as boxes on the bones, the head
 //!   material's node the head.
+//! - `flinch`: the soft ping over the body, from a hit each machine reads
+//!   off the replicated vitality.
 //! - `death`: a dead player's body (`HaloCorpse`): the death chosen, played
 //!   and removed.
 //! - `load`: the body from a map file (`spartan`; textures through the map
@@ -47,11 +49,12 @@
 //! Known shortcuts:
 //! - The drawn body takes the tick's pose (no easing between ticks; Halo
 //!   draws at its tick rate, the engine's frames may be faster).
-//! - Ping (flinch) animations and the left hand's IK onto the held weapon
-//!   are later steps (the weapon in the hand is `view`'s held model).
+//! - The left hand's IK onto the held weapon is a later step (the weapon
+//!   in the hand is `view`'s held model).
 
 pub mod anims;
 pub mod death;
+pub mod flinch;
 pub mod hits;
 pub mod load;
 pub mod skeleton;
@@ -76,6 +79,8 @@ pub struct WeaponLabel(pub String);
 #[derive(Component, Clone, Debug, Default)]
 pub struct HaloBody {
     pub anim: HaloAnim,
+    /// Its vitality as last seen here (`flinch::hit_between`).
+    pub seen: Option<flinch::Seen>,
 }
 
 /// The armour colours (objects.md, "Spartan multiplayer colour"): the
@@ -134,6 +139,7 @@ pub fn inputs(intent: &Intent, velocity: Vec3, state: &MovementState) -> Inputs 
         vertical: velocity.y / METERS_PER_UNIT,
         pitch: intent.pitch,
         throw: None,
+        hit: None,
     }
 }
 
@@ -167,11 +173,12 @@ pub fn animate(
         Option<&mut Animator>,
         Option<&mut SimAnimator>,
         Option<&super::weapons::HaloHands>,
+        Option<&super::vitality::Vitality>,
     )>,
     mut commands: Commands,
 ) {
     let Some(models) = models else { return };
-    for (e, body, intent, velocity, state, health, label, inventory, halo, animator, sim, hands) in &mut bodies {
+    for (e, body, intent, velocity, state, health, label, inventory, halo, animator, sim, hands, vitality) in &mut bodies {
         let Some(m) = models.0.get(body.0).filter(|m| m.game == Some(GAME)) else {
             if halo.is_some() {
                 commands.entity(e).remove::<(HaloBody, SimAnimator)>();
@@ -201,10 +208,18 @@ pub fn animate(
         let label = label_of(&set, label, armed);
         let mut i = inputs(intent, velocity.0, state);
         i.throw = hands.and_then(|h| h.throw.frame).map(|f| f.max(0) as usize);
+        // A hit since the last tick seen here flinches it (`flinch`).
+        if let Some(v) = vitality {
+            let now = flinch::Seen::of(v);
+            let hit = halo.seen.is_some_and(|old| flinch::hit_between(&old, &now));
+            i.hit = hit.then(|| flinch::draw(&now));
+            halo.seen = Some(now);
+        }
         let land = landing();
         let mut pose = Vec::new();
         for _ in 0..ticks {
             pose = halo.anim.tick(&set, &label, &i, &land);
+            i.hit = None;
         }
         let fixed = Some(chimera_core::later::Later::ready(pose));
         animator.fixed = fixed.clone();

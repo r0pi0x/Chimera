@@ -16,8 +16,8 @@
 //! engine's base, Source's map logic, the tick metrics), what its apps run
 //! with `game::Tf2Plugins` after it; `harness`: TF2 on the engine's
 //! headless harness (`harness::Tf2Sim`, its scenario tests' base). With
-//! the `ui` feature, `ui` is its front end on the client shell (nothing
-//! of its own yet).
+//! the `ui` feature, `ui` is its front end on the client shell (its HUD,
+//! its guns' kill icons).
 
 pub mod game;
 pub mod harness;

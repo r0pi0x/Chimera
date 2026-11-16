@@ -276,9 +276,10 @@ fn safe_name(name: &str) -> bool {
 }
 
 /// This process's own map load (or a client's join) is under way
-/// (`map::local_load_under_way`): the local player's map isn't ready.
+/// (`map::local_load_under_way`), or a server's fetch of its own game
+/// files (`server_assets::fetching`): the local player's map isn't ready.
 pub fn local_load_under_way(world: &World) -> bool {
-    crate::map::local_load_under_way(world)
+    crate::map::local_load_under_way(world) || super::server_assets::fetching(world)
 }
 
 /// The loaded map (its id and file hash) once it is in; None while a load

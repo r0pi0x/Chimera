@@ -61,6 +61,13 @@ pub trait FileSource: Send + Sync {
     fn fingerprint(&self, _path: &str) -> Option<String> {
         None
     }
+    /// Whether `path` (already normalized) is here now: `read` would give
+    /// it without fetching anything (an asset store's record on disk, not
+    /// one the asset service would be asked for). The default: `contains`
+    /// (an install's files are always here). Wrapping layers forward it.
+    fn held(&self, path: &str) -> bool {
+        self.contains(path)
+    }
 }
 
 /// What a load asked of a mount (`Mount::track`), by normalized path.
@@ -72,6 +79,9 @@ pub enum Access {
     Every(String),
     /// A folder listed (`files_in`).
     Folder(String),
+    /// Whether a file is here asked (`held`): a load that leaves out what
+    /// isn't here (the converted-map cache converts again once it is).
+    Held(String),
 }
 
 type Log = Arc<Mutex<BTreeSet<Access>>>;
@@ -207,6 +217,16 @@ impl Mount {
         let path = normalize(path);
         self.note(|| Access::File(path.clone()));
         self.layers.iter().any(|l| l.contains(&path))
+    }
+
+    /// Whether the layer serving `path` holds it here now (`FileSource::
+    /// held`): reading it fetches nothing. A loader that may leave a piece
+    /// out asks it (TF2's class bodies: those of the classes the match
+    /// offered, `tf2::game::bodies`). Tracked as `Access::Held`.
+    pub fn held(&self, path: &str) -> bool {
+        let path = normalize(path);
+        self.note(|| Access::Held(path.clone()));
+        self.layers.iter().find(|l| l.contains(&path)).is_some_and(|l| l.held(&path))
     }
 
     /// The files directly in folder `dir` in any layer, sorted by path
@@ -384,6 +404,7 @@ mod tests {
         assert!(!mount.contains("a/missing"));
         mount.files_in("a");
         assert_eq!(mount.read_every("a/x.txt"), vec![b"x".to_vec()]);
+        assert!(mount.held("a/X.txt") && !mount.held("a/missing"), "a loose file is here");
         let got: Vec<Access> = t.finish().into_iter().collect();
         assert_eq!(
             got,
@@ -392,6 +413,8 @@ mod tests {
                 Access::File("a/x.txt".into()),
                 Access::Every("a/x.txt".into()),
                 Access::Folder("a".into()),
+                Access::Held("a/missing".into()),
+                Access::Held("a/x.txt".into()),
             ]
         );
         assert_eq!(mount.tracking.load(Ordering::Acquire), 0, "dropped with finish");

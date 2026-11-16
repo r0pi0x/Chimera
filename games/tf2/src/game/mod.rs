@@ -10,6 +10,13 @@
 //!   by file (specs/tf2/install.md 1.5);
 //! - `maps`: Source's BSP conversion with TF2's data (`TF2`: spawns from
 //!   `info_player_teamspawn`, gravity 800; `MAP_LOADER` for `tf2:<map>`);
+//! - `bodies` (M3): the classes' player models as bodies (the gun's
+//!   class's, the team's skin), `player_anim` their animation on Source's
+//!   shared half (activities by state and the gun's kind, the move grid,
+//!   aim, gestures);
+//! - `hud` (M3): TF2's HUD look from the install (the scheme's colours
+//!   and fonts, the layout, the kill icons, the health crosses), in the
+//!   map's kit;
 //! - `classes` (M3): the nine classes as data (data/classes.toml: health,
 //!   speed, eyes, air jumps, models) and which class each gun makes its
 //!   holder;
@@ -47,12 +54,15 @@
 //! - The tick is the measured default (0.015 s, specs/tf2/movement.md,
 //!   "Units and conventions"); no `-tickrate`.
 
+pub mod bodies;
 pub mod classes;
+pub mod hud;
 pub mod ice;
 pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod player_anim;
 pub mod scripts;
 pub mod sets;
 pub mod view;
@@ -122,6 +132,8 @@ impl PluginGroup for Tf2Plugins {
             .add(movement::Tf2MovementPlugin)
             .add(weapons::Tf2GunsPlugin)
             .add(Tf2ViewPlugin)
+            .add(bodies::Tf2BodiesPlugin)
+            .add(player_anim::Tf2AnimPlugin)
     }
 }
 
@@ -142,8 +154,8 @@ impl bevy::app::Plugin for Tf2ViewPlugin {
 
 /// TF2 as one bundle for an app made of several games
 /// (`chimera_world::game_bundle`): its info, parts and maps, its guns'
-/// view and held models on other games' maps (`GUEST`; no bodies yet:
-/// M3), its view models' field of view, its guns' names, and its parts
+/// view and held models and its classes' bodies on other games' maps
+/// (`GUEST`), its view models' field of view, its guns' names, and its parts
 /// in a composed simulation (`party_sim`). No binds of its own (TF2's
 /// are the shared ones).
 pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_bundle::GameBundle {
@@ -179,4 +191,7 @@ pub fn party_sim(app: &mut bevy::app::App) {
     movement::add_movement(app);
     app.add_plugins(weapons::Tf2GunsPlugin);
     view::add_rules(app);
+    if !app.is_plugin_added::<bodies::Tf2BodiesPlugin>() {
+        app.add_plugins((bodies::Tf2BodiesPlugin, player_anim::Tf2AnimPlugin));
+    }
 }

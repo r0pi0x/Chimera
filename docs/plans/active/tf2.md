@@ -21,19 +21,22 @@ from specs, measurements and the game's own data.
 | M2a the weapon scripts, `chimera_pack tf2` | done (2026-11-15) | ICE (`game::ice`, ported from the designer's public-domain reference, 2026-11-15; the published triplets pass); `game::scripts` (store/plain, install plus key, none); `dump tf2 --script`, `--ice-probe`; `chimera_pack tf2` (`weapon/<id>` for M2's guns with the decrypted script, `players`, `map/<name>`); not published. Every `.ctx` script (88) decrypts with Thin-ICE and the user's key |
 | M2b TF2 guns as UGG rungs | done (2026-11-15) | the four guns as data with the spec's numbers (the scripts' field mapping a seam), TF2's gun rules as hooks, `c_` weapons bone-merged on the class arms, sounds, TF2 in the party's `GUESTS`, `originals:gun_game_2fort` |
 | More guns (track 1, tf2-guns2) | done (2026-11-15) | the next eight guns (specs/tf2/weapons_more.md) as data and hooks, lent as rungs; the Minigun held up in first person; muzzle flashes and explosions |
-| M3 classes as bodies, TF2's movement | in progress (2026-11-15) | the classes as data (`game::classes`, data/classes.toml); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health) |
+| M3 classes as bodies, TF2's movement | done (2026-11-15) | the classes as data (`game::classes`); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health); the class bodies with team skins and animation; TF2's HUD (health, ammo, crosshair) and kill icons |
 | M4a more maps in the party pool | done (2026-11-15) | 14 koth_, cp_ and ctf_ maps in an automatic pool by data/map_pool.toml and data/map_fitness.toml (a sweep of 130 maps); played free for all: touch-opened doors start open, spawn rooms' door brushes block nobody; `map/<name>` sets checked in a scratch store, not published |
 | M4 more weapons, effects, the probe | not started | |
 
 ## 1. Rules for this port
 
-- **Clean room.** TF2's and the Source engine's code leaked, and the
-  Source SDK is public. Neither is ever read, copied or translated.
-  Spec sub-agents read the game's data files in place, public
-  documentation (the community TF2 wiki, Valve Developer Community)
-  and measurements of the dedicated server, and write only
-  `specs/tf2/`. The orchestrator and implementation agents read only
-  `specs/` and the repository.
+- **Clean room.** TF2's and the Source engine's code leaked; the leak
+  is never read, copied or translated. Valve's public Source SDK 2013,
+  which has held TF2's client and server game code since 2025-02-18
+  (non-commercial licence), is reference material for spec sessions
+  only (user, 2026-11-15). Spec sub-agents may read it in place, along
+  with the game's data files, public documentation (the community TF2
+  wiki, Valve Developer Community) and measurements of the dedicated
+  server. They write only `specs/tf2/`, in their own words, never
+  copying or translating code. The orchestrator and implementation
+  agents read only `specs/` and the repository.
 - **No game files, extracted data or keys in the repository.** Assets
   load at run time from the user's install or the asset service. No
   install path, home path or key goes into a commit.
@@ -297,10 +300,9 @@ looked into; it collides the same).
   `net57`.
 
 Left (M2b): the knockback per point is ours (open question 9,
-probe P3), bullets push nobody; the Minigun's first-person idle sat low
-and angled up (the Heavy arms' `m_idle` as decoded holds the gun upright
-below the eye; since tf2-guns2 the first person shows the spun pose
-raised by a `view_offset`: `game::view`); no explosion look (particles,
+probe P3), bullets push nobody; the Minigun's first-person idle is `m_idle` again (upright, barrels up,
+right of centre: a capture of the real game showed the same on
+2026-11-15; tf2-guns2's spun pose and `view_offset` are gone); no explosion look (particles,
 scorch), no muzzle flash seen in first person (both drawn since
 tf2-guns2; no scorch yet); the rocket's crouched offset and the
 per-class shotgun starts wait for classes (M3); a TF2 rung has no knife.
@@ -388,6 +390,70 @@ parameters), health per class, TF2's movement numbers (movement.md:
 the jump, the air duck, the Scout's air jump, the bunny-hop cap, fall
 damage), the rocket jump tuned on the probe server.
 
+#### M3: what landed (2026-11-15)
+
+- **The classes as data** (data/classes.toml, `game::classes`): the
+  nine classes' index, max health, top speed, eye height, air jumps,
+  player model and arms (classes.md), and each gun's class (`[guns]`: a
+  new gun joins with a line; a gun not listed is its `tf2:gun` hook's
+  `arms`). Already listed for the other track's guns: the Pistol (Scout),
+  SMG and Sniper Rifle (Sniper), Revolver (Spy), Grenade and Stickybomb
+  Launchers (Demoman), Flame Thrower (Pyro), Syringe Gun (Medic).
+- **TF2's movement** (`game::movement`): Source's movement with TF2's
+  config (movement.md): gravity 800, accelerate 10 and 10, the 48 x 48 x
+  82 box (62 ducked, eyes 45), the jump 289, the 0.2 s duck counted from
+  the press's tick, the whole 20-unit lift in the air and two air ducks,
+  no ground jump fully ducked, backwards 0.9 and ducked a third of the
+  class speed, the bunny-hop cap 1.2 x the tick's top speed, the 520
+  ceiling, fall damage max health x speed / 6000 above 650 with its +-20 %
+  spread (`tf2:tf_fall_damage_disablespread`). The class of the gun in
+  hand (`select_class`, predicted) gives the speed (or the weapon's own
+  `max_speed`: the spun Minigun's 110), the eyes and the Scout's air jump
+  (vz 268.33, the horizontal velocity the keys' wish). The server gives
+  each TF2 player its class's max health, the share of health kept; a
+  player leaving TF2's movement gets back the max it had.
+- **Bodies** (`game::bodies`, `game::player_anim`): the classes' player
+  models for the guns a map's kit wants, worn by the gun's class by name
+  (the Soldier the unnamed default), the team's skin (0 RED, 1 BLU); the
+  head hitbox on `bip_head`; animation on Source's shared player
+  animation: `ACT_MP_<state>_<kind>`, the jump's start then float, the move
+  grid by `move_x`/`move_y`, `body_pitch`/`body_yaw` with the aim matrix
+  autolayers, fire, reload and landing gestures; the `c_` gun on
+  `weapon_bone`.
+- **HUD** (`ui`, `game::hud`): health (the cross filled by the share of
+  max, the number, the overheal and low-health pulses), ammo (clip and
+  reserve, or one number) in the team's colour, the crosshair (the
+  sheet's "( · )"), in the install's scheme fonts and colours from the
+  map's kit, under its own `HudRoot` by H/480. Its guns' kill icons cut
+  from `mod_textures.txt`'s cells of `hud/d_images` for every app's feed
+  (the feed's rows are the party's).
+- **Generic**: `SourceMovementConfig` fields (`half_width`, `duck_time`,
+  `duck_counts_first_tick`, `bunnyhop_cap_scale`, `back_speed`,
+  `air_jumps`/`air_jump_speed`, `no_ducked_jump`, `air_ducks_max`,
+  `fall_by_max_health`/`fall_spread`) and the per-character
+  `SourceTraits` (speed, eyes, air jumps); Source's model loader cuts each
+  `.vtx` model's meshes to its `.mdl` model's (an empty body-group choice
+  listing a mesh shifted every later one: the Heavy didn't load); the
+  HUD look reader takes `CustomFontFiles` blocks and `dfile`/`dnegfile`
+  sheets; Combat Arms takes off only the skins it set (it took TF2's team
+  skin off every frame). Network version `net62`.
+- **Tests**: movement.md's cases 1-3, 5-8, 9-16, 18-20, 22, 23 and
+  classes.md's 1 (`tests/it/movement.rs`); the HUD's 1-6, 8-11
+  (`ui::hud`); heavy: the bodies' sequences, poses, head and skins, a
+  running Scout's grid, the HUD look and the kill icons
+  (`heavy/bodies.rs`); party: a TF2 rung's class health and speed, back
+  on the next game's rung, TF2's HUD following its gun, the overlay
+  guard with TF2's HUD.
+
+Left (M3): the Heavy's spun ("deployed") sequences and spin gestures, the
+flinch, the air jump's own sequence, a weighted pick among sequences of
+one activity; body groups (the Soldier's rocket in hand); the
+max-health label, low-ammo pulse, damage numbers, health-gain number,
+class portrait and each gun's own crosshair (hud.md open questions); the
+kill feed's row look is the party's; overheal and the Medic's
+regeneration have no source yet (no Medi Gun); the rocket jump tuned on
+the probe server.
+
 ### M4a: more maps in the party pool (done 2026-11-15)
 
 - **The pool** (games/tf2/data/map_pool.toml): every installed map denied
@@ -462,13 +528,14 @@ damage), the rocket jump tuned on the probe server.
   scratch store (the TF2 files the client runs read, packed, then `sets
   tf2 --only map/<name>`): all load with spots and 0 files read outside
   their sets.
-- **The packing** (for the orchestrator; not done): after `publish tf2`
-  (the whole install, section M2a), each pool map's set:
+- **The packing** (for the orchestrator; not done): each pool map's set,
+  `--pack` packing the files it reads that the store lacks (or after
+  `publish tf2`, the whole install, without it):
   ```
   for m in ctf_2fort cp_badlands koth_viaduct koth_harvest_final koth_nucleus \
            cp_granary ctf_turbine ctf_doublecross koth_lakeside_final \
            cp_process_final koth_king koth_highpass koth_sharkbay koth_suijin; do
-    cargo run --features dev,tools --bin chimera_pack -- sets tf2 --store <server store> --only map/$m --sign
+    cargo run --features dev,tools --bin chimera_pack -- sets tf2 --store <server store> --only map/$m --pack --sign
   done
   ```
   (`--only` is a prefix: `map/koth_viaduct` records `koth_viaduct_event`
@@ -509,6 +576,14 @@ server probe for parity checks, TF2's own app.
 
 ## 7. Backlog
 
+- View models per specs/tf2/viewmodel.md, beyond the Minigun's rest pose
+  (done: `m_draw`, `m_idle`, no `view_offset`, `m_spool_idle` while
+  spun): the draw at x1.34 holding its last frame, the 0.2 s smoothstep
+  cross-fade for sequences not flagged "snap", `m_spool_up` cut at 0.75
+  s, `m_idle` sent 2 s after the wind-down, the procedural barrel spin
+  (up to 20 rad/s, 0.1 rad/s a tick), and its 24 muzzle test cases as a
+  heavy test. The FOV already follows the player's base (`GameFov::
+  follows_player`): 54 unzoomed at any `fov_desired`.
 - Rendering (from M1's screenshots): fences and grates in 2fort and some
   ground decals draw as a coarse dither pattern; check how TF2's VMTs'
   `$alphatest` and `$translucent` are handled. Badlands' track bed and
@@ -554,10 +629,47 @@ server probe for parity checks, TF2's own app.
 - 2026-11-15: the weapon scripts' numbers: specs/tf2/weapon_scripts.md,
   `script_numbers` applies them at run time (store or install plus key),
   served to clients as server documents.
+- 2026-11-15: M3 landed: the classes as data, TF2's movement on Source's
+  with the gun's class (speed, eyes, the Scout's air jump, max health),
+  the class bodies with team skins and animation, TF2's HUD and kill
+  icons. Screenshots in UGG on ctf_2fort and de_dust2 (each gun's HUD, a
+  third-person Heavy, a Scout mid air jump).
+- 2026-11-15: specs/tf2/viewmodel.md (T9), the first spec checked against
+  the Source SDK 2013's TF2 game code (updated 2025-02-18; read in place by
+  a spec session, never copied). The Minigun's real rest pose is `m_idle`
+  as we decode it (raised, barrels up; only the barrels and a glove on
+  screen at `viewmodel_fov` 54): draw `m_draw`, idle `m_idle`, no
+  `view_offset`; TF2 has no sway, its bob is CS:S's, and the view-model
+  FOV is 54 whenever the player is not zoomed, whatever their base FOV.
+- 2026-11-15: the gameplay specs (movement, classes, weapons, weapons_more,
+  weapon_scripts, hud, player_animation) checked against the SDK's TF2
+  game code; each lists its "Corrections from the SDK". The largest for
+  the code: the Minigun has no gameplay wind-down (no slowdown, jump or
+  re-spin lock after release; first shot about 0.85 s), its rev-up curve;
+  the blast (owner radius 121, distance to the nearer of centre and feet,
+  push capped at 1000, Heavy half, bullets push too, leave-ground 250);
+  next-shot timing from the firing tick ("set", not "accumulate"); the
+  grenade fuse 2.0 s at 60 % damage, sticky arming 0.8 s, Demoman self
+  damage x0.75 always; the flame every 0.02 s; Medic regen 6 to 12/s.
+  The SDK holds no class or weapon scripts: per-class health and speed
+  and per-gun numbers stay measured or from the scripts.
+- 2026-11-16: the bodies per class on the asset service (the user's design):
+  `players/<class>` (a class's player model, animations, materials and
+  first-person arms; 4.6 to 7.9 MB stored beyond `base`) and `players`
+  (what every class reads, the HUD's look, the kill icons). A match's
+  offer names the class sets its TF2 guns make (`bodies::asset_names`, an
+  `AssetHooks` entry), with the classes they need (`needs` in
+  data/classes.toml: data only, so the Spy's disguise will add every
+  class there); a machine reading TF2 from the store loads only the bodies
+  whose files are here (generic `Mount::held`, tracked for the map cache),
+  so a body is never fetched mid-match. `chimera_pack sets --pack` packs
+  what a set reads that the store lacks. The kill icons register from the
+  store once their files are here (`hud::kill_icon_pictures`), not only
+  from an install at startup.
+
 - 2026-11-15: M4a: TF2's maps in the party's automatic pool: 14 koth_,
   cp_ and ctf_ maps allowed (data/map_pool.toml) from a `map_fitness` sweep
   of 130 (data/map_fitness.toml); free for all (touch-opened doors start
   open, `SourceGame::entity_rule`; spawn rooms' door brushes non-solid);
   a spawn-room walk-out heavy test (cp_well out: its halves never join);
-  sets checked in a scratch store;
-  screenshots of each pool map in UGG.
+  sets checked in a scratch store; screenshots of each pool map in UGG.

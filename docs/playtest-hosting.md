@@ -9,8 +9,12 @@ tester their address and token privately.
 How testers without the games get them: the game server names the asset
 service when a player joins (its URL and its certificate's fingerprint);
 the client downloads what the match needs over HTTPS, pinning that
-certificate, before it spawns. A tester with the games installed uses the
-installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-service.md),
+certificate, before it spawns. A tester with the games installed downloads
+them too and plays from the store, so everyone plays the published files
+(since 2026-11-15; a tester's Settings ▸ Network ▸ "Use my installed
+games" opts into the installs, at the next start;
+[assets-for-developers.md](assets-for-developers.md), "Installs and the
+service"). Design and limits: [plans/active/asset-service.md](plans/active/asset-service.md),
 "Playtest delivery"; the service in general:
 [assets-for-developers.md](assets-for-developers.md).
 
@@ -221,6 +225,29 @@ chimera-tf2-keyed chimera_pack sets tf2 --store $S --sign --only players
 chimera-tf2-keyed dump tf2 --gun-numbers   # each gun: "script ... from ...", names only
 ```
 
+TF2's bodies come per class (2026-11-16): `players` holds what every
+class reads, the HUD's look and the kill feed's icons
+(`scripts/mod_textures.txt` and `hud/d_images`), offered with every TF2
+match; `players/<class>` (`players/heavy`, ...) a class's player model,
+animations, materials and first-person arms, offered only when the
+match's ladder (or kit, or drawn weapons) holds a gun of that class, with
+the classes it needs (`needs` in games/tf2/data/classes.toml: the Spy's
+disguise will need every class). A machine reading TF2 from the store
+loads only the bodies whose files are here, so it never downloads a body
+mid-match. The bodies' files weren't in the first publish (the recording
+runs never loaded them): `sets ... --pack` packs what a set reads that the
+store lacks, from the install, then records the sets:
+
+```
+S=<server store>; B=<backup>/manifests-$(date -u +%Y%m%d-%H%M)
+cp -a $S/manifests $B
+chimera-tf2-keyed chimera_pack sets tf2 --store $S --only players --pack --sign
+grep -c "^set players" $S/manifests/tf2/*.txt   # players and nine players/<class>
+```
+
+Sizes (stored, beyond `base`): `players` 6.5 MB, each class 4.6 (Pyro)
+to 7.9 MB (Scout).
+
 Undo: `rm -r $S/manifests/tf2` (TF2 was never published before), or
 `rm -r $S/manifests && cp -a $B $S/manifests` for the whole snapshot;
 records are only added, so nothing else changes. The service reads a
@@ -228,12 +255,13 @@ manifest again within a second.
 
 The game server needs the scripts too, or every client plays the
 spec's fallback numbers (the clients take the server's: `server_docs`
-`tf2:weapons`). The server finds TF2 as any game (`[games.tf2] path`,
-or `CHIMERA_TF2_ROOT`) and reads the scripts from the install with the
-key (`CHIMERA_TF2_CTX_KEY` in its environment, or `[games.tf2.keys.ctx]`)
-or, without a key, from a plain copy in its own asset store (the user's
-cache, under the install): pack them there once with
-`chimera-tf2-keyed chimera_pack pack tf2 --from /tmp/dust2.log` (no
+`tf2:weapons`). A server with neither the install nor the key fetches
+them from the asset service with its own credential ("The server's own
+game files", below). With the install, it reads the scripts from it with
+the key (`CHIMERA_TF2_CTX_KEY` in its environment, or
+`[games.tf2.keys.ctx]`) or, without a key, from a plain copy in its own
+asset store (the user's cache, under the install): pack them there once
+with `chimera-tf2-keyed chimera_pack pack tf2 --from /tmp/dust2.log` (no
 `--store`: the user's cache). Its log says, per gun, `tf2: <gun>'s
 numbers: script ...` or `spec fallback (...)`.
 
@@ -486,11 +514,87 @@ cargo build --release -p ultimate_gun_game_server
 ```
 
 It has no window, render or audio. It needs the maps and guns of the games
-to serve a match, from this machine's installs or its asset store
-(`[assets]` in `chimera.local.toml` or `CHIMERA_ASSET_URL`/`CHIMERA_ASSET_TOKEN`;
-see assets-for-developers.md). Missing pieces are told at start (`error:` stops
-the server, `warning:` only spoils something). Do not paste the config file
-anywhere; it holds keys.
+to serve a match, from this machine's installs or from the asset service
+with a credential of its own (next section). Missing pieces are told at
+start (`error:` stops the server, `warning:` only spoils something). Do not
+paste the config file anywhere; it holds keys.
+
+## The server's own game files (no install, no keys)
+
+A game server reads each game it has no install of from the asset store,
+as a player does, and fetches what it needs from the asset service with a
+credential of its own (`chimera_net::net::server_assets`): before it
+starts, every such game's `base` and the start map's sets; before each
+match, the sets the match's offer names (the map's, the ladder's and kit's
+guns' `weapon/<id>`, the rung bodies); never during a match (a
+`changelevel` loads its map once the download is done, the pre-match
+lobby doesn't count down meanwhile). So a server with neither TF2's
+install nor its scripts' key still plays TF2's guns with the scripts'
+numbers (they are in the published sets, decrypted), and its
+`tf2:weapons` server documents carry those to every client, instead of
+the specs' fallback. A game it has installed is read from the store too
+once it has a credential (since 2026-11-15, as the testers' clients: everyone
+plays the published files; a game the service doesn't serve from its
+install); `+chimera:asset_use_install 1` (or `[assets] use_install = true`)
+makes it read its installs first, the store only adding what they lack.
+
+**A listen server** (a player hosting from the game) needs nothing: it
+fetches with the host's own credential (the hub account's ticket, or the
+token entered with `+chimera:asset_token`).
+
+**A dedicated server** needs a credential once. Either:
+
+- **A hub account** (with the hub's services running: "Platform accounts
+  and the front", below). On the hub's machine, an invite of role `host`
+  with the content it may fetch (a host has none unless given):
+  ```
+  target/release/chimera_accounts invite game-server --role host --content '*' --hub <hub address>:<hub port>
+  ```
+  For a server on the hub's own machine, `--hub 127.0.0.1:<hub port>`
+  (the front listens on every interface; the link keeps the certificate's
+  fingerprint). Then once, on the server's machine, as the user that runs
+  it:
+  ```
+  ultimate_gun_game_server +chimera:hub "<the link>" game-server +map greybox
+  ```
+  It redeems the invite (the device key is made on that machine and never
+  leaves it) and keeps the account in that user's `account.toml`
+  (`~/.local/share/chimera/`, `%LOCALAPPDATA%\chimera\`;
+  `CHIMERA_ACCOUNT=<file>` names another, e.g. one per server), its
+  recovery key beside it (`recovery-key.txt`). From then on every start
+  uses it: tickets are asked with the device key and refreshed in the
+  background. Revoke it like a player's (`chimera_accounts account revoke
+  game-server`).
+- **A token** (works with or without the hub's services). On the asset
+  service's machine:
+  ```
+  cargo run --release --features tools --bin chimera_pack -- user add game-server --note <server machine>
+  ```
+  Give it to the server in its environment, never on its command line:
+  `CHIMERA_ASSET_TOKEN=<token>` (or `token` in `[assets]` of the server's
+  `chimera.local.toml`). With only the token, the server sends it to the
+  service it offers players (`+chimera:asset_url`, pinned by its
+  certificate: `+chimera:asset_fingerprint`, or the one on this machine).
+  On the asset service's own machine, prefer the loopback listener, which
+  needs no certificate and no router hairpin:
+  `CHIMERA_ASSET_URL=http://127.0.0.1:8731 CHIMERA_ASSET_TOKEN=<token>`
+  (`[assets] url` and `token` work the same). A token that was already in
+  `[assets]` with its `url` worked before and still does.
+
+**Check it** with the start's log. With a credential:
+```
+assets: the server reads tf2, hl2dm, halo_ce from the asset store, with the hub account's asset service (https://...)
+assets: fetching the server's game files before it starts: tf2 base; ...
+assets: fetched 1520 files, 61.0 MB from https://... in 14.2 s (4.3 MB/s)
+tf2: tf_weapon_scattergun's numbers: script ...
+```
+and before each later match `assets: fetching the server's game files for
+the match on <map>: ...`. Without one: `assets: no install of ... and no
+credential for the asset service`, and TF2's guns log `spec fallback
+(...)`. The service's `access.log` shows the server's account
+(`game-server`, or `account:game-server` for the hub account). A refused
+credential says `HTTP 401` (revoked or mistyped) or `HTTP 403` (the
+account may not fetch that game: `--content`).
 
 ## Starting it
 
@@ -601,7 +705,7 @@ Console commands on the server's stdin (type in its window; run it inside
 `tick_stats` (the last ticks' cost and the server's memory),
 `minigames`, `minigame_status`, `minigame_restart`,
 `change_match <minigame> [map]`, `ugg_new [seed] [rungs]` (a new ladder now;
-a seed replays one), `parts` (what each game lends), `changelevel <map>`
+a seed replays one), `rung <n|gun id|next|prev|list> [player|all]` (put a player on a rung: a developer command; `sandbox` is the solo version), `parts` (what each game lends), `changelevel <map>`
 (the next match there, with its lobby; no map: the next match on a map
 drawn for the players present), `map_pool [players]` (the pool at that
 count), `quit` (Ctrl+C is the same).
@@ -644,7 +748,9 @@ What a tester without the games downloads from the asset service:
   lacks some, in the background from the start, a join waiting for it.
   Errors (a refused token, the service unreachable, another certificate)
   show on the loading panel with what to do. No second window, no restart.
-  Testers with the games installed download nothing of those games.
+  Testers with the games installed download the same (since 2026-11-15:
+  everyone plays the published files), unless they turned on "Use my
+  installed games".
 - **Each join**: what the match needs that isn't there yet (the first one
   about 100-125 MB: `players`, `common`, the map, the ladder, the music's
   first tracks), at full speed, on the loading panel and behind the

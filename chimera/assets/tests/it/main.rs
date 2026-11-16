@@ -276,3 +276,21 @@ fn settings_take_the_environment_over_the_config() {
     assert!(s.use_install, "the install is used by default");
     assert!(s.store.unwrap().root.ends_with("chimera/assets"), "the user-wide cache");
 }
+
+/// Whether an install is read: (use_install, service_first) per choice,
+/// process default, service set and a token waiting for its join.
+#[test]
+fn the_apps_put_the_service_first_and_a_choice_or_no_service_keeps_the_install() {
+    use chimera_assets::config::{InstallDefault::*, policy};
+    // Tests and tools: the install, whatever is set.
+    assert_eq!(policy(None, Install, true, true), (true, false));
+    // The apps: the service first once there is one (a client: or a token
+    // waiting for its first join); none: the install as before.
+    assert_eq!(policy(None, ServiceFirst, true, false), (true, true));
+    assert_eq!(policy(None, ServiceFirst, false, true), (true, false), "a server waits for no join");
+    assert_eq!(policy(None, ServiceFirstClient, false, true), (true, true));
+    assert_eq!(policy(None, ServiceFirstClient, false, false), (true, false));
+    // A choice (the variable, `[assets] use_install`) wins.
+    assert_eq!(policy(Some(true), ServiceFirstClient, true, false), (true, false));
+    assert_eq!(policy(Some(false), Install, false, false), (false, false));
+}

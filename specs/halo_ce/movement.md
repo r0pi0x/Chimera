@@ -225,7 +225,10 @@ in the body's frame is
 and the wanted speed is σ = √(a² + b²). The acceleration limit is
 a_max = A/30 per tick. (The tag's speeds win for a player; the biped's
 own `flying velocity` fields are for flying bipeds and its animation
-root motion is ignored while the player physics flag is set.)
+root motion is ignored while the player physics flag is set.) A biped
+without the player physics flag, which is every campaign character but
+the Spartan, moves by its animations' root motion instead, even when a
+player controls it: `characters.md`, section 4.
 
 **Direction on the ground plane.** H = a·f + b·l (horizontal). If
 n_z > ε the direction is

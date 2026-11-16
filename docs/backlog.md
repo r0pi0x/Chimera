@@ -59,6 +59,65 @@ the user's go-ahead: no Actions runs unless asked.
   - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
   - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
 
+- **Our own default assets: player models from the logo's three characters (user, 2026-11-15):** create a small set of original, committed assets, made by us (e.g. in Blender), for games or tests that have no player model yet. Today they fall back to the shell's capsule (`map::CharacterModels::for_identity`).
+  - **First goal:** turn the three characters in the logo (the Operator, Trooper and Vanguard avatar glyphs, `shots/avatar-glyphs/*.svg` in the Signal design work, now `chimera_ui::avatar`) into rigged, animated player models in the Signal look.
+  - **Rigging:** one shared humanoid skeleton, so animations retarget across all three.
+  - **Animations:** a base set of idle, run, crouch, jump, death, and holding a pistol, rifle and melee weapon, with weapon attachment bones.
+  - **First-person arms:** for weapons that have no view-model arms.
+  - **Pipeline:**
+    - Source `.blend` files, exported to glTF, which Bevy loads natively. Decide whether to commit the `.blend` sources or only the exports.
+    - A short docs page on how to edit and re-export.
+    - Placement under an assets folder of our own, since these are original assets and the asset rule allows them.
+  - **Uses:**
+    - the fallback body for any game without characters;
+    - the greybox and tests;
+    - later, an original "Lucker Party" look for the party apps' own characters.
+  - **Design first:** the style, polygon budget and colours (the avatar palette), with mockups or a turnaround sheet for the user to approve before modelling.
+
+- **Generated asset sets on the asset service (user, 2026-11-15):** "we should have all these assets be split so you can download them atomically, like units, as they're needed."
+  - **The driver:** Halo's campaign characters (docs/plans/active/halo-ce.md) live inside large campaign map files, so a per-character unit has to be cut out by a converter. Per-gun units, per-class TF2 bodies and per-map sets already exist as plain file sets.
+  - **The guardrails** (proposed by the Halo session, to confirm with the user when designed):
+    - A generated record is the saved output of a conversion a client could redo from the original records.
+    - It is keyed by the originals' hashes plus the converter's name and version, so originals stay the source of truth and installs give identical results.
+    - A converter change invalidates old outputs.
+    - Generation runs on the host, never on a player's machine for the service, and the outputs are uploaded and signed like other sets.
+    - Our own authored content (arena slices, default models) is a separate kind, living in the repo or its own set.
+  - **First uses:** Halo per-character units (sizes from specs/halo_ce/characters.md, in progress); icons and per-gun summaries; converted maps.
+  - **Manifest:** a set may list generated records along with their recipe (converter, version, inputs).
+  - **Fits with:** `request_set` and `SetProgress` (the sandbox's progressive downloads), and per-class dependencies (TF2's Spy).
+  - **Reproducible by anyone (user, 2026-11-15):**
+    - Others must be able to rebuild our packs from their own original media. The engine's logic lives in the executable and everything else is data, so the conversion from native formats to our generated assets has to be standardised.
+    - **One documented converter**, a `chimera_pack generate` subcommand or similar that ships with the repo, is the only way generated assets are made. Each conversion is documented unambiguously, in its doc and a page in docs/, with the inputs, outputs, format and version.
+    - **Deterministic:** the same originals and converter version give byte-identical outputs. A test checks this with synthetic inputs.
+    - **What we keep:** the asset service holds the generated assets. Because the converter can always regenerate them from the originals, the originals stay the source of truth.
+    - **Engine changes:** generated formats will change as the engine evolves. Each converter has a version, and a manifest records the recipe and version of every generated record. A newer engine either regenerates from the originals (the steady state) or migrates old generated records with a documented, versioned migration step. Never a format nobody can rebuild.
+    - **Self-hosting:** a host or modder can run `generate` against their own install to produce a pack an asset service can serve.
+  - **Plan:** [plans/active/ingest.md](plans/active/ingest.md) (the ingestion pipeline: recipes, converters, declared sets, official updates, custom packs).
+
+- **A recycling `VirtualList` in the UI kit, for smooth scrolling (user, 2026-11-15):** the user expects to scroll the maps and gun lists smoothly, by pixels, with the mouse wheel and a scrollbar.
+  - **Today:** the Maps dialog and the Join server list draw only a window of rows around the cursor, which is cheap. But they rebuild every row on each change, jump a row at a time, and the Maps dialog has no wheel scrolling.
+  - **Build one shared list in `chimera_ui`:**
+    - a pool of the rows in view plus two spare, created once;
+    - a scroll or data change rebinds the pooled rows' text, icon and state in place, with no despawn or respawn;
+    - the pool is offset inside a clipped box, with the total height from the item count;
+    - wheel, a draggable scrollbar, and keys that keep the cursor in view;
+    - folded sections drop out of the flat list it draws from.
+  - **Measure** per-frame instruction counts while scrolling a 2,000-row list, against today's rebuild.
+  - **Users:** the Maps dialog, the sandbox's gun picker (Combat Arms alone has hundreds of variants), the Internet server list, and later friends and the asset catalogue.
+  - **First check:** whether the stopgap rung picker (`apps/party_kit/src/rung_picker.rs`) windows its rows at all.
+
+- **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
+  - **Progressive disclosure (user):**
+    - Names, classes, stats and the kit's class icons need no download: they come from the compiled weapon catalogue and game_parts.
+    - A game's own icon shows only if its files are already held.
+    - A gun's files download only when it's picked, without blocking: you keep the current gun until the new one is ready.
+    - Rows show not downloaded (with size), downloading, ready, or failed (retry).
+  - **Asset side (this box):**
+    - An on-demand `request_set(game, set)` and a `SetProgress` resource keyed by (game, set): bytes and files, done and total, and a state of Absent{size}, Fetching, Ready or Failed.
+    - Set sizes from the manifest before fetching.
+    - Per-gun sets already exist (`weapon/<id>`); Halo's unit is the game.
+  - **Mechanics (Halo session):** the rung switch waits for Ready.
+
 - **Ladder draw: games dealt equally, soft gun recency (user, 2026-11-15):** today `chimera_sim::minigame::auto::ladder` weights a game's guns by 1/√count, so a game's share grows as √(its gun count), and every game gets at least one rung. With today's weapon files that's roughly Combat Arms 32 %, CS:S 23 %, HL2:DM and TF2 16 % each, Halo 13 %.
   - **Which game:** shuffle the games and deal one per rung until each has had a turn, then reshuffle. Every game gets an equal share however many guns it has. No guaranteed rung per game, since that can't hold once there are more games than rungs; then each match gets a different random subset. No hard rule against runs.
   - **Which gun within the game:** random, with a soft, server-session recency weight. A gun drawn recently is less likely and recovers over the next matches, but is never excluded. It applies within a game only, never to the game choice, so games with few guns (Halo) keep their full share and only cycle their guns sooner. The memory resets when the server restarts.
@@ -226,8 +285,15 @@ the user's go-ahead: no Actions runs unless asked.
   - *Map viewer:* load a map and orbit or fly around it; "drop in" as a
     character on a local listen server (the same server the menu already
     starts).
-  - *Sandbox mode:* a gun picker across every game's guns, plus options:
-    infinite ammo, bots, time scale, noclip.
+  - *Sandbox mode:* the command-only sandbox exists (2026-11-15):
+    `ultimate_gun_game +sandbox [map]` / `sandbox [map]` plays alone on
+    every game's guns with nothing advancing or ending, `rung <n | gun id |
+    part | next | prev | list>` picks the gun, `ca_bot_*`, `god` and `noclip`
+    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Next: a gun and
+    rung picker menu; a time scale; target dummies that report damage and
+    time to kill at set distances (a gun's real strength measured, not
+    modelled); a firing range layout; saving a loadout of guns to cycle;
+    picking a rung character (Combat Arms' turret) instead of the draw's.
   - *Ties:* M5b's 3D Showcase backdrop
     ([plans/active/ugg-ui.md](plans/active/ugg-ui.md)) is the first
     viewer (gun under an inspect camera, character in idle) and should
@@ -238,8 +304,28 @@ the user's go-ahead: no Actions runs unless asked.
     assets by type, with the gun and character viewers on the Showcase
     scene; (2) map viewer with orbit and free-fly cameras, then drop-in
     on a local listen server; (3) sounds and textures viewers; (4)
-    sandbox mode with the gun picker and its options. About one to two
+    the sandbox's menu and options. About one to two
     weeks of agent work per phase; phase 1 gates the rest.
+- **Sandbox: the design (handed to the party UI's owner, user,
+  2026-11-16).** The command-only sandbox exists (`+sandbox`, `rung`;
+  docs/OBSERVABILITY.md); its screens are to be designed in the look
+  book's own language by the session that owns the party UI, from a
+  first pass the user liked for its options, not its look (a published
+  page, "UGG Sandbox Look Book"). The options: (1) try one gun now (a
+  picker: games, classes, one row a rung, typing filters across games,
+  Enter takes the first match); (2) flip between a few (up to six guns
+  pinned to a bar on number keys; previous and next through the
+  ladder); (3) shoot at a body (a target from any game, since gear and
+  shields change the answer, at 5, 10, 20 or 40 m, still, strafing or
+  shooting back); (4) read what happened (after a kill: hits, time from
+  first hit, distance: measured, not modelled); (5) set the conditions
+  (endless ammunition, no damage taken, half speed, third person); (6)
+  later: no HUD, a free camera, saved set-ups. Open with the user:
+  which scenarios they run most (they offered to dictate some), whether
+  the bar is worth building, targets as bots or as dummies that report
+  each hit, where the last-kill readout sits, the keys, and whether the
+  sandbox goes on the main menu. The mechanics (rung switch, targets,
+  measurement) stay with the session that built the sandbox.
 - **Smaller installs: a hybrid (user decision, 2026-10-29).**
   - *Default:* every player has the games installed on disk and loads
     from them, as now.
@@ -583,6 +669,7 @@ the original's own behaviour isn't a bug (say so instead).
   at most; the last rung is melee either way and its kill wins. The
   draw is the host's and replicated (`NetMinigame::rungs`). Docs/DESIGN.md
   "Gun game rules".
+- Grenade rungs' supply over time for every game (Halo's rung has its own timer: `refill_seconds`); make it the grenade band's rule in the ladder.
 - **The All-Star chainsaw's attached effects (user, 2026-10-29): done
   except what the spec doesn't say.** The attached groups and their
   looping sounds are made with the view model (`view_model::attached`,

@@ -814,8 +814,12 @@ that):
   (`halo_ce:frag_grenade`, `weapons::rung`) that the ladder's grenade
   band deals as it deals the others' grenades. Its holder has the pistol
   with no round loaded and none to be had (left click is an empty
-  pistol's click), throws frags with the grenade button by the band's
-  supply rule (with `refill_ammo`: kept full, whatever
+  pistol's click), throws frags with the grenade button with a timed
+  supply (user, 2026-11-15: with `refill_ammo` a throw is not given back
+  at once: the rung starts, and every life starts, with 4 and the server
+  gives one back every `refill_seconds` (5.0, in its weapon data) while
+  below the maximum, counted in Halo's 30 Hz ticks so it is the same at
+  any tick rate; the count replicates, the timer does not; whatever
   `halo_party_grenades` says for the other Halo rungs), and melees as on
   any Halo rung; its kills (the frag's, a melee's) climb as any kill.
   Bots press its attack action (`weapon::AttackAction`). The rung

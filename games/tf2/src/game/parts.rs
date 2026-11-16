@@ -6,7 +6,8 @@
 //! pistol, the Flame Thrower a flamethrower;
 //! `weapons`), and its movement (`movement::ID`: Source's with TF2's
 //! classes), which makes it `playable` in a gun game's ladder: a rung of a
-//! TF2 gun makes its holder TF2's and the gun's class (`classes`).
+//! TF2 gun makes its holder TF2's and the gun's class (`classes`: its body,
+//! speed and health), and its HUD is this game's id (`ui`).
 //!
 //! No map is claimed (`PARTS.maps` is empty): its maps enter an app's
 //! automatic pool from the install or the asset store the machine has
@@ -50,7 +51,7 @@ pub static PARTS: GameParts = GameParts {
     knife: None,
     movement: Some(super::movement::ID),
     characters: None,
-    hud: None,
+    hud: Some(super::GAME),
     maps: &[],
     announcer: None,
     match_won_sound: None,
