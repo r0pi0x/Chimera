@@ -502,32 +502,29 @@ backlog.
   the rest of the disc but are large, so which map is the donor and what
   a player downloads for it is the first cost (a generated set of just
   those bipeds would be the lean way, if the asset service takes
-  generated sets). To settle before building, each with a spec pass
-  where the disc decides it:
-  - *Which guns each can hold*: a biped's animation graph has the
-    weapon labels it was animated for; a character is offered only for
-    guns its graph covers (the weighting above then follows from data),
-    and the Hunter's gun is part of its arm.
-  - *Size and fairness*: a Grunt is small and a Hunter huge. Movement
-    can keep the Spartan's body (the map's envelope already separates
-    the movement body from what is drawn), but what can be SHOT should
-    be what is seen: so either the character's own hit volumes with
-    its health scaled to keep hits-to-kill fair, or only characters
-    near the Spartan's size at first (Elite, Marine).
-  - *Shields*: the Elite has one, the Grunt and the Marine none: keep
-    the Halo player's vitality whatever the body (the party's balance
-    rule is tuned to it), with the shield's flash on bodies that have
-    the shader.
-  - *First person*: the disc has first-person arms for the Spartan
-    only: the view stays the Spartan's hands, or the gun alone.
-  - *Voice*: each character's dialogue (the Grunts' lines on a kill or
-    a death) through the unit dialogue the body rules already play for
-    the Spartan's death lines.
-  - *Deaths, flinches, seats*: each biped has its own death and ping
-    animations; vehicles' seats name the animations a rider needs.
-  - *Where it is chosen*: a rung extra of Halo's (the ladder's "rung
-    characters" already tie a special body to a rung), replicated with
-    the match, off by default until it has been played.
+  generated sets). The user's decisions (2026-11-16):
+  - *Which guns each can hold*: faithful to the game: a character is
+    offered only for the guns it carries there (its animation graph's
+    weapon labels and the campaign's own pairings decide; the Hunter's
+    gun is part of its arm).
+  - *Movement*: as the character moves in the game, as far as the disc
+    states it (a Grunt slow and wobbly): each character's own speeds,
+    turning and body from its biped document, not the Spartan's.
+  - *Hit boxes*: each character's own.
+  - *Shields and health*: whatever the character has in the game (an
+    Elite's shield, a Grunt's none). Unfair at first; tuned later
+    through the party's balance tables.
+  - *First person*: the Spartan's hands for now; later first-person
+    hands made for each character (our own work: the disc has none).
+  - *Voice*: the character's chatter plays and every player hears it.
+  - *Downloads*: split so each character is fetched as its own unit
+    when it is needed, never a whole campaign map (generated sets: the
+    asset service's side).
+  Still to settle: deaths, flinches and seats per character (each has
+  its own animations); where it is chosen (a rung extra of Halo's, as
+  the ladder's rung characters are, replicated with the match, off by
+  default until played). First step: a spec of the campaign's
+  characters (specs/halo_ce/characters.md), being written.
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the
