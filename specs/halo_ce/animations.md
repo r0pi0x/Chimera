@@ -751,10 +751,15 @@ Each unit state reads one slot:
 The dying (on ground) and hard ping states take their animation from
 the unit damage table instead (Units, Damage and death).
 
-If the slot is empty, the state is still entered (with no new
-animation: the old one keeps playing) except for melee, melee-airborne,
-melee-continuous, throw grenade, leap-start and leap-melee, which are
-refused.
+If the slot is empty, the state is still entered except for melee,
+melee-airborne, melee-continuous, throw grenade, leap-start and
+leap-melee, which are refused. Entering it with an empty slot clears
+the unit's base animation (the old one does not keep playing): the
+base pose becomes the model's default node pose, reached through the
+usual transition blend, there is no root motion and nothing advances
+until the next state change; the overlays (aiming screen and the rest)
+still apply on top. What this means for a moving biped is in
+`characters.md`, section 4 ("A missing animation").
 
 **Interruptions.** A new desired state replaces the current one when
 it differs, except: AI impulse, melee, melee-airborne, throw grenade,
