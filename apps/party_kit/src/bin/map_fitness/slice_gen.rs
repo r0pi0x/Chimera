@@ -519,14 +519,14 @@ impl Dinic {
 /// Raster step of the outline (m) and the closing radius (cells).
 const RES: f32 = 0.5;
 const CLOSE: i64 = 4;
-/// Then grown by this (cells, 1 m) before it is simplified, so the
-/// simplification's inward cuts stay out of the region (the plan's
-/// "only ever outward", roughly).
-const MARGIN: i64 = 2;
+/// Then grown by a margin (cells: 1, 1.5 and 2 m tried by `generate`)
+/// before it is simplified, so the simplification's inward cuts stay out of
+/// the region (the plan's "only ever outward", roughly).
+pub const MARGINS: [i64; 3] = [2, 3, 4];
 
 /// The region's outline as a simple polygon (module doc), at most
 /// `max_corners` corners; None when no tolerance up to 12 m gives one.
-pub fn outline(g: &Graph, region: &[bool], max_corners: usize) -> Option<Vec<Vec2>> {
+pub fn outline(g: &Graph, region: &[bool], max_corners: usize, margin: i64) -> Option<Vec<Vec2>> {
     let (mut lo, mut hi) = (Vec2::MAX, Vec2::MIN);
     for (c, _) in g.cells.iter().zip(region).filter(|(_, r)| **r) {
         lo = lo.min(c.min);
@@ -535,7 +535,7 @@ pub fn outline(g: &Graph, region: &[bool], max_corners: usize) -> Option<Vec<Vec
     if lo.x > hi.x {
         return None;
     }
-    let pad = (CLOSE + MARGIN + 2) as f32 * RES;
+    let pad = (CLOSE + margin + 2) as f32 * RES;
     lo -= Vec2::splat(pad);
     hi += Vec2::splat(pad);
     let w = ((hi.x - lo.x) / RES).ceil() as i64;
@@ -575,7 +575,7 @@ pub fn outline(g: &Graph, region: &[bool], max_corners: usize) -> Option<Vec<Vec
         }
         b
     };
-    let img = morph(&morph(&morph(&img, true, CLOSE), false, CLOSE), true, MARGIN);
+    let img = morph(&morph(&morph(&img, true, CLOSE), false, CLOSE), true, margin);
     // Largest 4-connected piece.
     let mut label = vec![0u32; img.len()];
     let mut best = (0usize, 0u32);
@@ -983,26 +983,40 @@ where
     for (no, seed, scale) in tries {
         let seed = &seed;
         let Some(mut grown) = grow(g, *seed, scale * band.target(input.sight_m, fit)) else { continue };
-        let Some(mut pts) = outline(g, &grown.region, settings.max_corners) else { continue };
+        let Some(mut pts) = outline(g, &grown.region, settings.max_corners, MARGINS[0]) else { continue };
         // Again at the first cut's own sight.
         if let Ok(poly) = PlanPolygon::new(&pts) {
             let inside: Vec<Vec3> = input.spots.iter().copied().filter(|s| poly.contains3(*s)).collect();
             let sight = sight_in(&inside, &poly, &input.ray, fit.sight_cap_m);
             if sight > 1.0 && (sight - input.sight_m).abs() > 0.1 * input.sight_m {
                 if let Some(g2) = grow(g, *seed, scale * band.target(sight, fit))
-                    && let Some(p2) = outline(g, &g2.region, settings.max_corners)
+                    && let Some(p2) = outline(g, &g2.region, settings.max_corners, MARGINS[0])
                 {
                     grown = g2;
                     pts = p2;
                 }
             }
         }
-        let Ok(poly) = PlanPolygon::new(&pts) else { continue };
-        let members = members(g, &poly);
-        let area = g.area(&members);
-        if (area - grown.area_m2).abs() > AREA_SLACK * grown.area_m2 {
-            continue;
+        // The margin whose wall stands under no roof (a wider one walks a
+        // wall out of a cave's mouth), else the one under the least.
+        let mut best: Option<(f32, PlanPolygon, Vec<bool>, f32)> = None;
+        for (k, m) in MARGINS.iter().enumerate() {
+            let p = if k == 0 { Some(pts.clone()) } else { outline(g, &grown.region, settings.max_corners, *m) };
+            let Some(poly) = p.and_then(|p| PlanPolygon::new(&p).ok()) else { continue };
+            let members = members(g, &poly);
+            let area = g.area(&members);
+            if (area - grown.area_m2).abs() > AREA_SLACK * grown.area_m2 {
+                continue;
+            }
+            let roofed = wall(g, input.index, &poly, &input.ray).indoor_m;
+            if best.as_ref().is_none_or(|b| roofed < b.0) {
+                best = Some((roofed, poly, members, area));
+            }
+            if roofed <= 1.0 {
+                break;
+            }
         }
+        let Some((_, poly, members, area)) = best else { continue };
         shapes.push((no, *seed, grown, poly, members, area));
     }
     let mut out: Vec<Candidate> = shapes

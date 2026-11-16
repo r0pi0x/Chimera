@@ -46,7 +46,7 @@ fn two_rooms_and_a_corridor_are_cut_at_the_corridor() {
     }
     assert!((grown.cut_m - 2.0).abs() < 1e-3, "the cut is the corridor's width: {}", grown.cut_m);
     // Its outline is a simple polygon round room A (and a stub of corridor).
-    let pts = outline(&g, &grown.region, 16).expect("an outline");
+    let pts = outline(&g, &grown.region, 16, 2).expect("an outline");
     let poly = chimera_world::map::play_area::PlanPolygon::new(&pts).unwrap();
     assert!(poly.contains(Vec2::new(10.0, 10.0)) && !poly.contains(Vec2::new(40.0, 10.0)));
     // Room A and the outline's 1 m margin.
