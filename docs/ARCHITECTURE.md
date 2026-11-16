@@ -31,7 +31,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
-  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its twelve guns and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim; `ui` its HUD
+  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its twelve guns and nine melee weapons and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim; `ui` its HUD
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -49,7 +49,7 @@ chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs 
   |    chimera_ui (chimera/ui/)   the UI kit: Theme (tokens as data), KitFonts and roles, cq units, motion (Ease, Timeline), UI materials; Bevy and chimera_core only, under the shell and the apps
   |    chimera_sim (chimera/sim/)   weapon, movement, rule_module, mode, minigame, identity, spawning, announce, dominations, server_docs, data_format; SimBasePlugins; testkit (feature)
   |    |
-chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, harness::Sim
+chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, range, harness::Sim
   |                \
 chimera_core          source_formats (source/formats/)   formats as plain data: no Bevy
  (chimera/core/)       core, console, console_names, console_scope, slots, envelope, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
@@ -145,8 +145,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   (`map::build`): alone as `map::MapSimPlugin` (the dedicated server's,
   nothing drawn or played), or with what draws and plays the map at
   fixed places among them (`map::MapLayers`, filled by `chimera_present`'s
-  `MapPlugin`; the client's order). It also holds the greybox (`greybox`:
-  the map built in code) and the headless harness (`harness::Sim`, on
+  `MapPlugin`; the client's order). It also holds the maps built in code:
+  the greybox (`greybox`) and the range (`range`, the sandbox's firing
+  range, its layout in `chimera/world/data/range.toml`; `RangeLayout` says
+  where its firing line, distances and props' spots are), sharing one
+  slot (`map::code_maps::CodeMap`; their bodies and guns come from a kit map an
+  app's `MapSources` dresses, `map::sources::CODE_MAP_KIT`), and the headless harness (`harness::Sim`, on
   the simulation plugins its caller passes as the base), so every crate
   from here up tests on it at its own layer. `mashup::map` re-exports it, with
   `MapPlugin` in builds with the presentation.
@@ -383,15 +387,14 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   the engine's `Carried` (every movement skips a carried character and
   a carried player is not predicted); in the party apps vehicles are
   off by default (`halo_ce:party_vehicles`: none is placed).
-  `game::cross_game` (data/party_balance.toml) holds Halo's cross-game
-  balance for the party apps: another game's damage counts 1.5 times on
-  a Halo player (`core::DamageScale` and the shield's scaled armour
-  unit; Halo against Halo is unchanged), the armour a character brought
-  in is given back when it stops being Halo's, and what Halo's weapons
-  deal to other games' characters goes through the party's per-game
-  damage table (`chimera_sim`'s `GameDamage`, party_kit's
-  data/party_damage.toml: `halo_ce = 0.75`, `hl2dm = 1.5`), which the
-  ladder's power readers see too.
+  `game::cross_game` holds Halo's cross-game mechanisms for the party
+  apps: a Halo body holds the party table's incoming (`core::DamageScale`
+  and the shield's armour unit, `keep_incoming`; Halo against Halo is
+  unchanged), the armour a character brought in is given back when it
+  stops being Halo's, and the power reader's hand
+  (data/power_hand.toml). The numbers are the party kit's
+  data/party_balance.toml (`chimera_sim::weapon::balance::Balance`,
+  the host's `mp_balance`), which the ladder's power readers see too.
   In the party apps Halo's HUD avoids the party's chat and top-centre
   column, its zooms narrow the player's own field of view
   (`ui::party_view`), its grenades are off by default
@@ -491,7 +494,13 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   free-for-all) and data/map_fitness.toml (`parts::add_map_pool`), played
   free for all: the doors a trigger opens on touch start open (the
   conversion's `SourceGame::entity_rule`) and the spawn rooms' door
-  brushes block nobody.
+  brushes block nobody. (M4b) The nine stock melee weapons
+  (`weapons::melee`, specs/tf2/weapons_stock.md) on Chimera's swing with
+  its delayed hit (`Swing::delay`, the smack) and TF2's backstab rule
+  (`Backstab::Behind`), the hook `tf2:melee` (crits, the swing's
+  view-model actions, the raised knife); each TF2 rung carries its
+  class's melee as the kit's (`classes::HOOK`'s `RungExtras::melee`),
+  the Knife TF2's kit knife (`PARTS.knife`).
   Layered as `hl2dm` (it uses `chimera_net` for its looks' message).
 - `chimera_net` is network play (`net`): the transport, the join
   handshake, replication of what every game has, prediction and
@@ -778,7 +787,9 @@ builds a mesh or material. A character's team, `BodyName` and class pick
 its body, `Held` names what it holds, a `Ragdoll` takes the dead's body
 over, `LooseItem`/`ShownItem` name a held model to lie or move as;
 a gib carries its `GibLook` (which model of which gib list, skin, glass,
-fade distances) and a window its `BrushPanes`; render's systems react to
+fade distances) and a window its `BrushPanes`, a code-built shape its
+`map::shapes::CodeShape` (a box or a cylinder of a colour: the sandbox's
+props); render's systems react to
 them (added, changed, removed, without their drawn marker). Without `render` (a dedicated server) the requests stay
 unfulfilled and the simulation's parts (bodies, colliders) work alone
 (`games/cs_source/tests/it/drawn_parts.rs`).

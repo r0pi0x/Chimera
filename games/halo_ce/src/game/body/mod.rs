@@ -37,7 +37,21 @@
 //! the drawn animator and the server's (`SimAnimator`, which the engine
 //! poses the hitboxes from); players ignore root translation (no frame
 //! info is read) and turn with the look. `wear_colours` shows each player's
-//! armour colour (`BodySkin`: the skin of its colour, `COLOURS`).
+//! armour colour (`BodySkin`: the skin of its colour, `COLOURS`); a body
+//! with a colour of its own (a campaign body, tinted all over) wears that
+//! for a player given no colour and in place of the table's black, which
+//! would leave it a silhouette (ours, not the game's: no campaign
+//! character is a multiplayer body there).
+//!
+//! A campaign body (`campaign::BodyKind`: the Elite in a party app) is the
+//! same code on its own model (named `halo_ce:elite`, worn through the
+//! engine's `BodyName`): its graph's tables, its hit boxes, its landing
+//! and run numbers (`campaign::movement_of`), its move animations at the
+//! ground speed (`anims::Inputs::rate`), its corpse (`HaloCorpse::body`),
+//! and its own fire-1 on each shot (`HaloFired`, every machine) and melee
+//! when its melee begins (`HaloHands::melee` rising: the holder's machine
+//! and the server, as the throw), played once over its pose
+//! (`anims::Inputs::action`).
 //!
 //! Death (`death`): the body has no ragdoll; a dead player is hidden (the
 //! engine's `Dead`) and the server leaves a body of its own in its place
@@ -81,6 +95,13 @@ pub struct HaloBody {
     pub anim: HaloAnim,
     /// Its vitality as last seen here (`flinch::hit_between`).
     pub seen: Option<flinch::Seen>,
+    /// The model it animates (`BodyModel`): another (a campaign body put
+    /// on, or loaded) starts the animation afresh, its sequences being
+    /// another set's.
+    pub model: Option<usize>,
+    /// Its melee counter as last seen here (`HaloHands::melee`): a rise
+    /// is a melee begun.
+    pub melee: i32,
 }
 
 /// The armour colours (objects.md, "Spartan multiplayer colour"): the
@@ -90,6 +111,10 @@ pub const COLOURS: [u32; 20] = [
     0xFFFFFF, 0x000000, 0xFE0000, 0x0201E3, 0x707E71, 0xFFFF01, 0x00FF01, 0xFF56B9, 0xAB10F4, 0x01FFFF, 0x6493ED,
     0xFF7F00, 0x1ECC91, 0x006401, 0x603814, 0xC69C6C, 0x9D0B0E, 0xF5999E, 0xFF0000, 0x0000FF,
 ];
+
+/// The skin of the table's black (a campaign body wears its own colour
+/// instead: `wear_colours`).
+pub const BLACK: usize = 1;
 
 /// The skin of the red team's colour, and the blue's.
 pub const RED: usize = 18;
@@ -115,9 +140,9 @@ pub fn skin_of(team: Option<Team>) -> usize {
     }
 }
 
-/// The landing numbers of Halo's biped (movement.md, data/movement.toml).
-fn landing() -> Landing {
-    let m = super::movement::MovementData::builtin();
+/// The landing numbers of a biped (movement.md; data/movement.toml, a
+/// campaign body's own: `campaign::movement_of`).
+fn landing(m: &super::movement::MovementData) -> Landing {
     Landing {
         soft_min: m.soft_land_min,
         hard_min: m.hard_land_min,
@@ -129,7 +154,12 @@ fn landing() -> Landing {
 /// What the body reads from a character (`Inputs`): the horizontal
 /// velocity over the run speed in the frame of its look's yaw.
 pub fn inputs(intent: &Intent, velocity: Vec3, state: &MovementState) -> Inputs {
-    let run = super::movement::MovementData::builtin().run_forward * METERS_PER_UNIT;
+    inputs_for(&super::movement::MovementData::builtin(), intent, velocity, state)
+}
+
+/// `inputs` for a body of movement table `m` (its own run speed).
+pub fn inputs_for(m: &super::movement::MovementData, intent: &Intent, velocity: Vec3, state: &MovementState) -> Inputs {
+    let run = m.run_forward * METERS_PER_UNIT;
     let turn = Quat::from_rotation_y(intent.yaw);
     let (forward, left) = (turn * Vec3::NEG_Z, turn * Vec3::NEG_X);
     Inputs {
@@ -140,18 +170,26 @@ pub fn inputs(intent: &Intent, velocity: Vec3, state: &MovementState) -> Inputs 
         pitch: intent.pitch,
         throw: None,
         hit: None,
+        own_speeds: None,
+        speed: 0.0,
+        action: None,
     }
 }
 
 /// The label to play: the holder's, else by what it holds; one the set
-/// has no table for plays `unarmed`.
+/// has no table for plays `unarmed`, or, for a body without an unarmed
+/// table (a campaign character's graph: the Elite's), the first label it
+/// has (animations.md: an unselectable weapon keeps a previous set; a
+/// body never seen with one takes its first).
 fn label_of(set: &crate::map::anim::AnimSet, own: Option<&WeaponLabel>, armed: bool) -> String {
     let want = own.filter(|l| !l.0.is_empty()).map_or(if armed { ARMED_DEFAULT } else { "unarmed" }, |l| l.0.as_str());
-    let known = set.names.contains_key(&key(SEATS[0], want, State::Idle.name()));
-    if known {
+    let has = |label: &str| set.names.contains_key(&key(SEATS[0], label, State::Idle.name()));
+    if has(want) {
         want.to_ascii_lowercase()
-    } else {
+    } else if has("unarmed") {
         "unarmed".into()
+    } else {
+        anims::LABELS.iter().find(|l| has(l)).map_or("unarmed", |l| l).into()
     }
 }
 
@@ -174,11 +212,27 @@ pub fn animate(
         Option<&mut SimAnimator>,
         Option<&super::weapons::HaloHands>,
         Option<&super::vitality::Vitality>,
+        Option<&super::campaign::BodyKind>,
     )>,
+    (tables, data): (Option<Res<super::campaign::BodyTables>>, Option<Res<super::movement::MovementData>>),
+    mut fired: MessageReader<super::weapons::HaloFired>,
     mut commands: Commands,
 ) {
+    // Who fired since the last tick (every machine: the shooter's own
+    // and the shots the server sent).
+    let shooters: Vec<Entity> = fired.read().map(|f| f.owner).collect();
     let Some(models) = models else { return };
-    for (e, body, intent, velocity, state, health, label, inventory, halo, animator, sim, hands, vitality) in &mut bodies {
+    let builtin;
+    let spartan = match data.as_deref() {
+        Some(d) => d,
+        None => {
+            builtin = super::movement::MovementData::builtin();
+            &builtin
+        }
+    };
+    for (e, body, intent, velocity, state, health, label, inventory, halo, animator, sim, hands, vitality, kind) in &mut bodies {
+        // The body's own landing and run numbers (`campaign::movement_of`).
+        let table = super::campaign::movement_of(spartan, tables.as_deref(), kind);
         let Some(m) = models.0.get(body.0).filter(|m| m.game == Some(GAME)) else {
             if halo.is_some() {
                 commands.entity(e).remove::<(HaloBody, SimAnimator)>();
@@ -197,6 +251,10 @@ pub fn animate(
             Some(h) => h.into_inner(),
             None => &mut fresh,
         };
+        if halo.model != Some(body.0) {
+            halo.anim = HaloAnim::default();
+            halo.model = Some(body.0);
+        }
         let mut ticks = super::ticks::halo_ticks(&clock).min(4);
         if first {
             ticks = ticks.max(1);
@@ -206,7 +264,10 @@ pub fn animate(
         }
         let armed = inventory.is_some_and(|i| i.active.is_some());
         let label = label_of(&set, label, armed);
-        let mut i = inputs(intent, velocity.0, state);
+        let mut i = inputs_for(table, intent, velocity.0, state);
+        // A campaign body's legs keep up with its ground speed (`Inputs::rate`).
+        i.own_speeds = kind.and_then(|k| tables.as_deref()?.animation.get(k)).map(|a| a.array());
+        i.speed = Vec2::new(velocity.0.x, velocity.0.z).length() / METERS_PER_UNIT;
         i.throw = hands.and_then(|h| h.throw.frame).map(|f| f.max(0) as usize);
         // A hit since the last tick seen here flinches it (`flinch`).
         if let Some(v) = vitality {
@@ -215,11 +276,23 @@ pub fn animate(
             i.hit = hit.then(|| flinch::draw(&now));
             halo.seen = Some(now);
         }
-        let land = landing();
+        // A campaign body's shot and melee play its own fire and melee
+        // (the Spartan's third-person body plays neither: module doc).
+        if kind.is_some() {
+            let melee = hands.map_or(0, |h| h.melee);
+            if melee > halo.melee {
+                i.action = Some(anims::Action::Melee);
+            } else if shooters.contains(&e) {
+                i.action = Some(anims::Action::Fire);
+            }
+            halo.melee = melee;
+        }
+        let land = landing(table);
         let mut pose = Vec::new();
         for _ in 0..ticks {
             pose = halo.anim.tick(&set, &label, &i, &land);
             i.hit = None;
+            i.action = None;
         }
         let fixed = Some(chimera_core::later::Later::ready(pose));
         animator.fixed = fixed.clone();
@@ -270,7 +343,18 @@ pub fn wear_colours(
         if m.model.skins.is_empty() {
             continue;
         }
-        let want = BodySkin(skin_of(team.copied()) as i32);
+        // A body with a colour of its own for a player given none (the
+        // Elite's minor blue: `load::Tint::uncoloured`) wears it then.
+        // Such a body's colour tints its armour all over (the Elite's):
+        // the table's black would leave it a silhouette, so it wears its
+        // own colour then too.
+        let own = m.model.skins.len() > COLOURS.len();
+        let index = match (team, skin_of(team.copied())) {
+            (None, _) if own => COLOURS.len(),
+            (_, BLACK) if own => COLOURS.len(),
+            (_, i) => i,
+        };
+        let want = BodySkin(index as i32);
         if skin != Some(&want) {
             commands.entity(e).insert(want);
         }

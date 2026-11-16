@@ -1,0 +1,13 @@
+# What the ladder's power reader assumes of a hand on Halo's guns
+# (game::weapons' power reader, game::cross_game::PowerHand). The party's
+# cross-game balance numbers (Halo's outgoing and incoming) are the party
+# kit's: apps/party_kit/data/party_balance.toml.
+
+# A trigger with no rate limit (the plasma pistol's: a bolt on each
+# release) fires as fast as a hand taps: taps a second.
+hand_taps_per_second = 7.0
+# An automatic gun whose error grows as it is held (the assault rifle) is
+# fired in bursts this long (seconds), the trigger let go until the error
+# is back to its least before the next: the cone is the burst's mean, the
+# pause counted in the fire interval.
+burst_seconds = 0.2

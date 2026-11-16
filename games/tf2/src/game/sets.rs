@@ -14,21 +14,28 @@
 //! model reads it, and its first-person arms (`c_<arms>_arms.mdl` with
 //! their animations), less what every class reads; `players` (offered
 //! with every TF2 match, `resolve::MATCH_SETS`) what every class reads,
-//! the HUD's look (`hud::load`) and the kill feed's icons (`hud::
-//! kill_icon_pictures`: `scripts/mod_textures.txt` and its sheets). The match's offer names the class sets
+//! the HUD's look (`hud::load`, the class portraits too), the kill feed's
+//! icons (`hud::kill_icon_pictures`: `scripts/mod_textures.txt` and its
+//! sheets) and the guns' looks on any map (`maps::add_guest_looks`: the
+//! particle files and their materials, the impact decals and effect
+//! materials) with the surfaces' bullet-impact sounds. The match's offer names the class sets
 //! its TF2 guns can make (`bodies::asset_names`, with the classes they
 //! need: data/classes.toml's `needs`).
 //!
+//! The melee weapons' sets (`weapon/tf_weapon_bat` ...) are the same:
+//! the class's arms with the `c_` model (the Fists' arms alone), the
+//! sounds of weapons_stock.md 8.3 and the script.
+//!
 //! Known shortcuts:
-//! - The sound entries are the spec's lists (weapons.md 8.3), not read
-//!   from the scripts.
+//! - The sound entries are the spec's lists (weapons.md 8.3,
+//!   weapons_stock.md 8.3), not read from the scripts.
 
 use source_engine::content::{material::MaterialLoader, props, sound::SoundScripts};
 
 use super::scripts;
 use crate::mount::{Access, Mount};
 
-/// One gun of M2 and what its set holds.
+/// One weapon (a gun or a melee weapon) and what its set holds.
 #[derive(Clone, Copy, Debug)]
 pub struct WeaponSet {
     /// The set's id, `weapon/<id>`: the gun's id past `tf2:`.
@@ -46,7 +53,8 @@ pub struct WeaponSet {
     pub models: &'static [&'static str],
 }
 
-/// The guns: M2's four (weapons.md 8) and weapons_more.md's eight (9).
+/// The guns: M2's four (weapons.md 8) and weapons_more.md's eight (9),
+/// then the nine melee weapons (weapons_stock.md 8).
 pub const M2_WEAPONS: &[WeaponSet] = &[
     WeaponSet {
         id: "tf_weapon_scattergun",
@@ -244,6 +252,80 @@ pub const M2_WEAPONS: &[WeaponSet] = &[
             "Weapon_SyringeGun.Draw",
         ],
         models: &["models/weapons/w_models/w_syringe_proj.mdl"],
+    },    // The nine stock melee weapons (specs/tf2/weapons_stock.md 8): their `c_`
+    // models (the Fists: the Heavy's arms alone) and sounds (swing, crit
+    // swing, hit flesh, hit world, draw, the crit hit).
+    WeaponSet {
+        id: "tf_weapon_bat",
+        script: "tf_weapon_bat",
+        model: "models/weapons/c_models/c_bat.mdl",
+        classes: &["scout"],
+        sounds: &["Weapon_Bat.Miss", "Weapon_Bat.MissCrit", "Weapon_Bat.HitFlesh", "Weapon_Bat.HitWorld", "Weapon_Bat.Draw", "Weapon_Bat.DrawSwoosh1", "Weapon_Bat.DrawSwoosh2", "Weapon_Bat.DrawCatch", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_shovel",
+        script: "tf_weapon_shovel",
+        model: "models/weapons/c_models/c_shovel/c_shovel.mdl",
+        classes: &["soldier"],
+        sounds: &["Weapon_Shovel.Miss", "Weapon_Shovel.MissCrit", "Weapon_Shovel.HitFlesh", "Weapon_Shovel.HitWorld", "Weapon_Shovel.Draw", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_fireaxe",
+        script: "tf_weapon_fireaxe",
+        model: "models/weapons/c_models/c_fireaxe_pyro/c_fireaxe_pyro.mdl",
+        classes: &["pyro"],
+        sounds: &["Weapon_FireAxe.Miss", "Weapon_FireAxe.MissCrit", "Weapon_FireAxe.HitFlesh", "Weapon_FireAxe.HitWorld", "Weapon_FireAxe.Draw", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_bottle",
+        script: "tf_weapon_bottle",
+        model: "models/weapons/c_models/c_bottle/c_bottle.mdl",
+        classes: &["demo"],
+        sounds: &["Weapon_Bottle.Miss", "Weapon_Bottle.MissCrit", "Weapon_Bottle.HitFlesh", "Weapon_Bottle.HitWorld", "Weapon_Bottle.Draw", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_fists",
+        script: "tf_weapon_fists",
+        model: "models/weapons/c_models/c_heavy_arms.mdl",
+        classes: &["heavy"],
+        sounds: &["Weapon_Fist.Miss", "Weapon_Fist.MissCrit", "Weapon_Fist.HitFlesh", "Weapon_Fist.HitWorld", "Weapon_Fist.Draw", "Weapon_Fist.HitHand", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_wrench",
+        script: "tf_weapon_wrench",
+        model: "models/weapons/c_models/c_wrench/c_wrench.mdl",
+        classes: &["engineer"],
+        sounds: &["Weapon_Wrench.Miss", "Weapon_Wrench.MissCrit", "Weapon_Wrench.HitFlesh", "Weapon_Wrench.HitWorld", "Weapon_Wrench.Draw", "Weapon_Wrench.Draw2", "Weapon_Wrench.HitHand", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_bonesaw",
+        script: "tf_weapon_bonesaw",
+        model: "models/weapons/c_models/c_bonesaw/c_bonesaw.mdl",
+        classes: &["medic"],
+        sounds: &["Weapon_BoneSaw.Miss", "Weapon_BoneSaw.MissCrit", "Weapon_BoneSaw.HitFlesh", "Weapon_BoneSaw.HitWorld", "Weapon_Machete.Draw", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_club",
+        script: "tf_weapon_club",
+        model: "models/weapons/c_models/c_machete/c_machete.mdl",
+        classes: &["sniper"],
+        sounds: &["Weapon_Machete.Miss", "Weapon_Machete.MissCrit", "Weapon_Machete.HitFlesh", "Weapon_Machete.HitWorld", "Weapon_Machete.Draw", "TFPlayer.CritHit"],
+        models: &[],
+    },
+    WeaponSet {
+        id: "tf_weapon_knife",
+        script: "tf_weapon_knife",
+        model: "models/weapons/c_models/c_knife/c_knife.mdl",
+        classes: &["spy"],
+        sounds: &["Weapon_Knife.Miss", "Weapon_Knife.MissCrit", "Weapon_Knife.HitFlesh", "Weapon_Knife.HitWorld", "Weapon_Knife.Draw", "Weapon_Knife.Open1", "Weapon_Knife.Open5", "Weapon_Knife.Open8", "TFPlayer.CritHit"],
+        models: &[],
     },
 ];
 
@@ -321,6 +403,19 @@ pub fn player_pieces(mount: &Mount) -> Vec<(String, Vec<String>)> {
         let _ = super::hud::load(&mut materials);
         // The kill feed's icons (`ui::systems::register_kill_icons`).
         let _ = super::hud::kill_icon_pictures(mount);
+        // The guns' looks on any map (`maps::add_guest_looks`: the
+        // particle files of the explosion, muzzle flashes and flames with
+        // their materials, the impact decals and effect materials), and
+        // the surfaces' impact sounds.
+        let mut map = crate::map::MapData::default();
+        super::maps::add_guest_looks(&mut materials, &mut map);
+        let surfaces = source_engine::content::surfaceprops::SurfaceProps::load(&mut materials);
+        let scripts = SoundScripts::load_with(&mut materials, "", true);
+        let impacts: std::collections::BTreeSet<String> =
+            surfaces.names().filter_map(|n| surfaces.text(n, "bulletimpact")).collect();
+        for wave in impacts.iter().flat_map(|e| scripts.waves(e)) {
+            let _ = mount.read(&wave);
+        }
     });
     // What every class reads (the surface properties, shared includes and
     // lightwarps): fetched with every TF2 match.

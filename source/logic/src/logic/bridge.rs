@@ -323,7 +323,12 @@ fn time_seed() -> u64 {
 /// Build (or drop) the logic world when the map's entities change, and
 /// re-create it at a round restart (`core::RoundRestarts`).
 fn load(world: &mut World) {
-    let current = world.get_resource::<MapEntities>().cloned();
+    // A map with no entity space of its own (scale 0: a code-built map's
+    // kit, `map::sources::CODE_MAP_KIT`, is an empty `MapData`) has no
+    // logic: with one, every conversion into its space divided by zero,
+    // and a player's velocity came back NaN (the sandbox crashed a few
+    // frames in, in the view bob's clamp).
+    let current = world.get_resource::<MapEntities>().filter(|m| m.scale > 0.0).cloned();
     let built = world.get_resource::<Logic>().map(|l| l.source.clone());
     let restarts = world.get_resource::<RoundRestarts>().map_or(0, |r| r.0);
     match (current, built) {
@@ -1256,7 +1261,10 @@ fn write_back(world: &mut World, scale: f32, before: &[Player], after: &[Player]
                 t.translation = entity_to_engine(p.origin, scale);
             }
         }
+        // Never a velocity that is not a number (NaN differs from itself,
+        // so it would be written every tick).
         if p.velocity != old.velocity
+            && p.velocity.is_finite()
             && let Some(mut v) = e.get_mut::<Velocity>()
         {
             v.0 = entity_to_engine(p.velocity, scale);

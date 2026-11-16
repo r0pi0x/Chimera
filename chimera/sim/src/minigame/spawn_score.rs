@@ -515,6 +515,8 @@ fn place(
         .map(|v| v.0.clone())
         .filter(|v| !v.nodes.is_empty());
     let characters: Vec<Entity> = cached_query::<Entity, With<Intent>, _>(world, |q, world| q.iter(world).collect());
+    // A map that spawns at its points faces them its way.
+    let fixed = spawns::fixed_yaw(world);
     let mut state = SystemState::<SpatialQuery>::new(world);
     let q = state.get(world).ok()?;
     let sight = SpatialQueryFilter::from_mask(SOLID_LAYERS).with_excluded_entities(characters);
@@ -563,7 +565,10 @@ fn place(
         seen,
         cone: s.fov / 2.0 + 10.0,
     };
-    let (yaw, pitch) = spawns::face(&q, &sight, feet, facing, Some(centroid), Some(&away), &mut draws.rng);
+    let (yaw, pitch) = match fixed {
+        Some(yaw) => (yaw, 0.0),
+        None => spawns::face(&q, &sight, feet, facing, Some(centroid), Some(&away), &mut draws.rng),
+    };
     Some(
         Transform::from_translation(feet + Vec3::Y * SPAWN_LIFT).with_rotation(Quat::from_euler(
             EulerRot::YXZ,

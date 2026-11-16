@@ -102,7 +102,11 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("envelope", &["core"]),
     ("character", &["core", "slots"]),
     ("movement", &["core", "slots", "character"]),
-    ("greybox", &["core"]),
+    // The code-built maps: the greybox (and the range, which it spawns
+    // in its slot), from the map's types and the code-built maps' ids
+    // (`map::code_maps`).
+    ("greybox", &["core", "map", "range"]),
+    ("range", &["core", "map"]),
     ("map", &["core"]),
     // A background-music player (two stream slots, fades): pure state, Bevy
     // only; a game with streamed music uses it.

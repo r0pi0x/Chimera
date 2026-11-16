@@ -121,8 +121,8 @@ fn assert_is_its_guns_game(sim: &Sim, e: Entity, r: usize) {
         assert!(w.get::<HaloMovement>(e).is_some(), "{what}: Halo's movement state");
         let v = w.get::<Vitality>(e).unwrap_or_else(|| panic!("{what}: Halo's vitality"));
         assert_eq!(v.shield, 1.0, "{what}: a full shield");
-        // In the party balance's incoming unit (`cross_game`).
-        let unit = halo_ce::game::cross_game::CrossGame::load().incoming();
+        // In the party table's incoming unit (`cross_game`).
+        let unit = halo_ce::game::cross_game::incoming_in(w, "halo_ce:spartan");
         assert_eq!(w.get::<Armor>(e).map(|a| a.amount), Some(1.0 / unit), "{what}: the shield as its armour");
         assert_eq!(w.get::<ArmorPieces>(e), Some(&shield_armour()), "{what}: covered by the shield's pieces");
         assert_eq!(w.get::<PiecesOf>(e).map(|p| p.0), Some(halo_ce::game::GAME), "{what}: Halo's pieces");

@@ -173,6 +173,7 @@ impl CharacterModels {
         class: Option<&crate::core::PlayerClass>,
     ) -> Option<(usize, &MapCharacterModel)> {
         let game = identity.map(|i| i.0.as_str());
+        let name = BodyName::named(name);
         let named = name.and_then(|n| {
             self.0.iter().enumerate().find(|(_, m)| {
                 Self::wears(game, m) && m.name.as_deref().is_some_and(|x| x.eq_ignore_ascii_case(&n.0))
@@ -236,10 +237,25 @@ impl CharacterModels {
 }
 
 /// A character drawn with a named model (`MapCharacterModel::name`)
-/// instead of its team's: a hostage.
-#[derive(Component, Clone, Debug, PartialEq)]
+/// instead of its team's: a hostage. Empty: none, as without it. A game
+/// whose name goes empties it (`BodyName::none`) rather than taking it
+/// off: put on and off it was an archetype for every combination of the
+/// character's other parts (docs/DESIGN.md, "ECS style").
+#[derive(Component, Clone, Debug, Default, PartialEq)]
 #[component(storage = "SparseSet")]
 pub struct BodyName(pub String);
+
+impl BodyName {
+    /// No name (the team's or class's model): kept on, empty.
+    pub fn none() -> Self {
+        Self(String::new())
+    }
+
+    /// `name` if it names a model (not empty).
+    pub fn named(name: Option<&BodyName>) -> Option<&BodyName> {
+        name.filter(|n| !n.0.is_empty())
+    }
+}
 
 /// Which skin family a character's body shows (Source `skin`: a map's
 /// hostage keeps its own); without it, the model's first.

@@ -34,6 +34,10 @@
 //!   `minigame::effects::MatchEffects` (a host's surprises), their times
 //!   as server ticks, into the client's own (its clock), which the
 //!   shell's effects screen draws (`chimera_client::client::match_effects`).
+//! - **The slice** (`NetMinigame::arena`): the server's play area
+//!   (`map::play_area::PlayArea`: a match on a part of its map, the party
+//!   kit's `arena`), whole, into the client's `ArenaPlan` (`follow_arena`),
+//!   so its wall, put-back and look are the server's.
 //! - **Events** (`MinigameNews`): rung ups and downs, the last rung, the
 //!   lead, a match won, for the HUD's notices and callouts, as the index
 //!   in `minigame::EVENT_NAMES`.
@@ -88,6 +92,20 @@
 //!   `changelevel` without a map is the next match as a rotation's
 //!   (`host_next_level`, `net::HostNextLevel`); console `map_pool
 //!   [players]` lists the pool at a count.
+//! - **Arena slices in the pool** (docs/plans/active/arena-slices.md,
+//!   A2): in a party app (`arena::SlicesInPool`) the rotation's pool has
+//!   each map's slices after it (`rotation_pool`, `arena::with_slices`),
+//!   `game:map@id`, judged by `map_fit` (a slice only where its whole map
+//!   is too big). The entry in play is `current_entry` (the map, or
+//!   `map@id` while a slice plays); the history records entries and the
+//!   hold-back and the ballot count a slice as its map. A match's change
+//!   to `map@id` (a rotation's, a vote's, a host's `changelevel map@id`)
+//!   plans the slice (`arena::plan`) and loads the map by its own name
+//!   (nothing new on the wire: the slice reaches clients with the match);
+//!   to a whole map it clears the plan; the same map again (another slice)
+//!   loads it again and waits for the load (`MapChange::reload`).
+//!   `mp_maps_off` names a slice as `map@id`; a map off takes its slices
+//!   with it.
 //! - **The map vote** (a definition's `map_vote`, `minigame::vote`): with
 //!   one, the hold's next map isn't picked at once: the rotation's pick
 //!   and a few other maps go on a ballot (`minigame::vote::MapVote`,
@@ -169,6 +187,11 @@ pub struct NetMinigame {
     /// The match's effects on now (`minigame::effects::MatchEffects`:
     /// an air strike, moon gravity), their times as server ticks.
     pub effects: Vec<minigame::effects::Effect>,
+    /// The slice of the map the match is played on (`map::play_area`:
+    /// the server's `PlayArea`), its shape sent whole so a client of
+    /// another build plays the server's; a client's `ArenaPlan`
+    /// (`follow_arena`). None: the whole map.
+    pub arena: Option<minigame::arena::ArenaSlice>,
 }
 
 /// `minigame::vote::MapVote` on the network: the ballot, the counts, when
@@ -276,7 +299,7 @@ fn register(app: &mut App) {
         .get_resource_or_init::<crate::net::assets::AssetHooks>()
         .0
         .push(|w| crate::net::assets::AssetNames {
-            weapons: match_weapons(w),
+            weapons: offered_weapons(w),
             ..Default::default()
         });
     use crate::console::ConsoleAppExt;
@@ -326,11 +349,26 @@ fn register(app: &mut App) {
         )
         .add_systems(
             PreUpdate,
-            (apply_minigame, crate::minigame::ladder::follow_rungs, apply_protection, receive_news, receive_offer)
+            (apply_minigame, follow_arena, crate::minigame::ladder::follow_rungs, apply_protection, receive_news, receive_offer)
                 .chain()
                 .after(ClientSystems::Receive)
                 .run_if(client()),
         );
+}
+
+/// A client plays the slice the server's match is played on
+/// (`NetMinigame::arena` into `map::play_area::ArenaPlan`; none without a
+/// match), which the map's play area follows when that map is in.
+fn follow_arena(world: &mut World) {
+    use minigame::arena::ArenaPlan;
+    let want = world.query::<&NetMinigame>().iter(world).next().and_then(|n| n.arena.clone());
+    if world.get_resource::<ArenaPlan>().is_none_or(|p| p.0 != want) {
+        world.insert_resource(ArenaPlan(want));
+        // The wall now, in the same frame as the match that brought it (a
+        // client that joins mid-match moves its player from the next
+        // tick; the plan's own follower may already have run this frame).
+        chimera_world::map::play_area::follow_plan(world);
+    }
 }
 
 /// Serving stopped: the match's entity goes, and the players stop
@@ -397,6 +435,7 @@ fn write_minigame(world: &mut World) {
                     .collect()
             })
             .unwrap_or_default(),
+        arena: world.get_resource::<minigame::arena::PlayArea>().map(|a| a.slice.clone()),
     };
     // Another minigame, or its definition made again (same id, new text).
     let announced = world.get_resource::<Announced>().map(|a| a.0);
@@ -490,7 +529,7 @@ pub fn playable_on(world: &mut World, def: &MinigameDef, map: Option<&str>) -> P
         .or_else(|| def.maps.first().map(|m| crate::net::normalize_map(m)))
         .unwrap_or_else(|| GREYBOX.into());
     let mut needs = MatchManifest::default();
-    if map != GREYBOX
+    if !crate::net::is_code_map(&map)
         && let Some((game, _)) = map.split_once(':')
     {
         needs.need(game, true);
@@ -582,6 +621,46 @@ fn receive_offer(mut offers: MessageReader<PartyOffer>, mut commands: Commands) 
 /// first; another map is the app's `changelevel` (which takes every client
 /// along with the new match's manifest). A client can't change match.
 pub fn change_match(world: &mut World, id: &str, map: Option<&str>) -> Result<String, String> {
+    change_match_on(world, id, map, false)
+}
+
+/// `change_match` that loads the map even when its name is the one in
+/// play: for a start from a front end that shows no world (a main menu,
+/// where the map "in play" is only a name), so the load brings the world
+/// in and takes the player into the game as any map change does.
+pub fn change_match_loading(world: &mut World, id: &str, map: Option<&str>) -> Result<String, String> {
+    change_match_on(world, id, map, true)
+}
+
+/// The pool entry in play: the loaded map (`net::current_map`), as
+/// `game:map@id` while an arena slice of it plays (`PlayArea`).
+pub fn current_entry(world: &World) -> String {
+    let map = crate::net::current_map(world);
+    match world.get_resource::<minigame::arena::PlayArea>() {
+        Some(a) if a.slice.map.eq_ignore_ascii_case(&map) => format!("{map}@{}", a.slice.id),
+        _ => map,
+    }
+}
+
+/// A pool entry (`game:map` or an arena slice's `game:map@id`) split: the
+/// map, and the slice's key with the slice planned (`arena::plan`) or the
+/// plan cleared for a whole map. Err: no such slice.
+fn plan_entry(world: &mut World, entry: &str) -> Result<String, String> {
+    match entry.split_once('@') {
+        Some((map, _)) => {
+            minigame::arena::plan(world, Some(entry))?;
+            Ok(map.to_string())
+        }
+        None => {
+            if world.get_resource::<minigame::arena::ArenaPlan>().is_some_and(|p| p.0.is_some()) {
+                minigame::arena::plan(world, None)?;
+            }
+            Ok(entry.to_string())
+        }
+    }
+}
+
+fn change_match_on(world: &mut World, id: &str, map: Option<&str>, load: bool) -> Result<String, String> {
     if world.get_resource::<NetRole>() == Some(&NetRole::Client) {
         return Err("the server picks the minigame; you are a client of it".into());
     }
@@ -589,12 +668,24 @@ pub fn change_match(world: &mut World, id: &str, map: Option<&str>) -> Result<St
         .get_resource::<Minigames>()
         .and_then(|m| m.get(id))
         .ok_or_else(|| format!("no minigame `{id}` (minigames lists them)"))?;
-    let here = crate::net::current_map(world);
+    // The entry in play: an arena slice is `map@id` (`current_entry`).
+    let here = current_entry(world);
     let pool: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
     let target = match map {
         Some(m) => crate::net::normalize_map(m),
         None if pool.contains(&here) => here.clone(),
         None => pool.first().cloned().unwrap_or_else(|| here.clone()),
+    };
+    // An arena slice by its full key (`game:map@id`).
+    let target = if target.contains('@') {
+        world
+            .get_resource::<minigame::arena::ArenaSlices>()
+            .ok_or("no arena slices registered")?
+            .find(&target)?
+            .slice
+            .key()
+    } else {
+        target
     };
     // Only what every player can play (the playable set, M3).
     let p = playable_on(world, def, Some(&target));
@@ -605,27 +696,38 @@ pub fn change_match(world: &mut World, id: &str, map: Option<&str>) -> Result<St
             lacking_text(games.as_ref(), &p.lacking)
         ));
     }
-    if target != here {
+    if load || target != here {
         minigame::check(world, def)?;
-        // The map left was played (a rotation's random pick skips it).
+        // An arena slice: planned for its map (the map comes in with its
+        // wall; clients get it with the match, `NetMinigame::arena`); a
+        // whole map: no slice.
+        let map = plan_entry(world, &target)?;
+        // The entry left was played (a rotation's random pick skips it,
+        // and a slice's map with it).
         world.get_resource_or_init::<MapHistory>().record(&here);
         // Nothing starts on the map being left: the match is held until
-        // the new one is in everywhere (`follow_map_change`).
+        // the new one is in everywhere (`follow_map_change`). The same map
+        // again (another slice of it, or it whole) loads again: the change
+        // waits for the load to replace the map in.
         let began = world.get_resource::<SimClock>().map_or(0.0, |c| c.now);
+        let reload = (map == crate::net::current_map(world))
+            .then(|| crate::net::maps::map_file_tick(world))
+            .flatten();
         world.insert_resource(minigame::MatchHold);
         world.insert_resource(MapChange {
             def,
-            map: target.clone(),
+            map: map.clone(),
             began,
             loading: false,
             arrived: None,
+            reload,
         });
         // A server moves its players with it; a standalone game (no
         // server) just loads the map.
         let command = if world.get_resource::<NetRole>() == Some(&NetRole::Server) { "changelevel" } else { "map" };
         world
             .resource_mut::<crate::console::Console>()
-            .submit(format!("{command} {target}"));
+            .submit(format!("{command} {map}"));
         return Ok(format!(
             "playing {id}: {}; changing level to {target}, the match starts once everyone has it",
             def.name
@@ -658,6 +760,10 @@ pub struct MapChange {
     pub loading: bool,
     /// When the map was in here.
     pub arrived: Option<f64>,
+    /// The same map loaded again (another arena slice of it, or it whole
+    /// after a slice): its map file's change tick when the change began (`net::maps::map_file_tick`);
+    /// the map is in only once a load replaced it.
+    pub reload: Option<bevy::ecs::change_detection::Tick>,
 }
 
 /// Whether every client reported `map` loaded (`server::ClientMap`);
@@ -684,7 +790,11 @@ fn follow_map_change(world: &mut World) {
             // In here, and a listen host's own load done (spawned and
             // settled behind its loading screen: `map::LocalMapLoad`), so
             // its player isn't started on while it still loads.
+            let reloaded = c.reload.is_none_or(|before| {
+                crate::net::maps::map_file_tick(world).is_some_and(|t| t != before)
+            });
             let arrived = crate::net::maps::loaded_map(world).is_some_and(|(id, _)| id == c.map)
+                && reloaded
                 && !crate::net::maps::local_load_under_way(world);
             if arrived {
                 c.arrived = Some(now);
@@ -696,7 +806,7 @@ fn follow_map_change(world: &mut World) {
                     info!("{} is in: the next match waits for the players to load it", c.map);
                     clients_have(world, &c.map)
                 }
-            } else if here == c.map {
+            } else if here == c.map && !(c.reload.is_some() && now > c.began + MAP_LOAD_TIMEOUT) {
                 c.loading = true;
                 false
             } else if c.loading || now > c.began + MAP_LOAD_TIMEOUT {
@@ -737,7 +847,7 @@ fn follow_map_change(world: &mut World) {
 pub fn needs(def: &MinigameDef, games: Option<&Games>) -> Vec<GameNeed> {
     let mut m = MatchManifest::default();
     let first = def.maps.first().map(|m| crate::net::normalize_map(m)).unwrap_or_default();
-    if first != GREYBOX
+    if !crate::net::is_code_map(&first)
         && let Some((game, _)) = first.split_once(':')
     {
         m.need(game, true);
@@ -800,6 +910,28 @@ pub fn match_weapons(world: &World) -> Vec<String> {
     out.retain(|w| w.contains(':'));
     let mut seen = std::collections::BTreeSet::new();
     out.retain(|w| seen.insert(w.clone()));
+    out
+}
+
+/// The weapons a match's offer names (`match_weapons`), but in a sandbox
+/// (`rung_command::HoldRungs` names the match's minigame): its ladder is
+/// every gun of every game, so only the first rung's gun (where a player
+/// starts) and the kit's come with the join; the others are fetched when
+/// picked (`net::units`).
+pub fn offered_weapons(world: &World) -> Vec<String> {
+    let mut out = match_weapons(world);
+    let sandbox = match (world.get_resource::<chimera_sim::minigame::rung_command::HoldRungs>(), match_def(world)) {
+        (Some(h), Some(d)) => d.id == h.0,
+        _ => false,
+    };
+    let Some(def) = match_def(world).filter(|_| sandbox) else { return out };
+    let mut rungs: Vec<String> = match_ladder(world).map(|l| l.rungs.iter().map(|r| r.to_string()).collect()).unwrap_or_default();
+    rungs.extend(
+        def.rules.params.get("ladder").and_then(|l| l.as_array()).into_iter().flatten().filter_map(|w| w.as_str().map(String::from)),
+    );
+    let first = rungs.first().cloned();
+    let kit: Vec<String> = def.spawn.kit.all().into_iter().map(String::from).collect();
+    out.retain(|w| Some(w) == first.as_ref() || kit.contains(w) || !rungs.contains(w));
     out
 }
 
@@ -1136,7 +1268,7 @@ struct RotateFailed(u64);
 /// only (the rotation's pick stands).
 fn open_vote(world: &mut World, def: &'static MinigameDef, first: &str) -> bool {
     let Ok(Some(settings)) = MapVoteSettings::of(def) else { return false };
-    let here = crate::net::current_map(world);
+    let here = current_entry(world);
     let pool = rotation_pool(world, def);
     let ok: Vec<String> = pool.iter().filter(|m| playable_on(world, def, Some(m)).ok()).cloned().collect();
     let here_ok = playable_on(world, def, Some(&here)).ok();
@@ -1220,15 +1352,16 @@ pub fn cast_vote(world: &mut World, voter: Entity, choice: usize) -> Result<(), 
 /// The vote as it stands, for the console.
 fn vote_text(world: &World) -> String {
     let Some(v) = world.get_resource::<MapVote>() else { return "no map vote now".into() };
+    let slices = world.get_resource::<minigame::arena::ArenaSlices>();
     let mut lines: Vec<String> = v
         .candidates
         .iter()
         .zip(&v.counts)
         .enumerate()
-        .map(|(i, (m, c))| format!("{}. {} ({c})", i + 1, vote::map_name(m)))
+        .map(|(i, (m, c))| format!("{}. {} ({c})", i + 1, vote::map_label(slices, m)))
         .collect();
     if let Some(m) = v.winning_map() {
-        lines.push(format!("won: {}", vote::map_name(m)));
+        lines.push(format!("won: {}", vote::map_label(slices, m)));
     }
     lines.join("\n")
 }
@@ -1293,8 +1426,9 @@ pub fn host_changelevel(world: &mut World, map: &str) -> Option<Result<Option<St
     }
     let def = world.get_resource::<ActiveMinigame>()?.def;
     let target = crate::net::normalize_map(map);
-    // The map being played: loaded again, as before (the match restarts).
-    if target == crate::net::current_map(world) {
+    // The map being played (an arena slice: `map@id`, `current_entry`):
+    // loaded again, as before (the match restarts).
+    if target.eq_ignore_ascii_case(&current_entry(world)) {
         return None;
     }
     let hooks = world.get_resource::<NextMatchHooks>().map(|h| h.0.clone()).unwrap_or_default();
@@ -1321,17 +1455,32 @@ pub fn host_changelevel(world: &mut World, map: &str) -> Option<Result<Option<St
 pub struct MapsOff(pub String);
 
 impl MapsOff {
-    /// Whether `map` (any form `normalize_map` takes) is out.
+    /// Whether `map` (any form `normalize_map` takes; an arena slice
+    /// `game:map@id`) is out: named, or a slice whose map is named, unless
+    /// the slice is marked on (`+game:map@id`: kept on under a map that is
+    /// off; a list without marks reads as before).
     pub fn has(&self, map: &str) -> bool {
         let map = crate::net::normalize_map(map);
-        self.0.split(',').map(str::trim).filter(|m| !m.is_empty()).any(|m| crate::net::normalize_map(m) == map)
+        let parent = minigame::map_fit::entry_map(&map);
+        let items: Vec<&str> = self.0.split(',').map(str::trim).filter(|m| !m.is_empty()).collect();
+        if items.iter().any(|m| m.strip_prefix('+').is_some_and(|s| s.eq_ignore_ascii_case(&map))) {
+            return false;
+        }
+        items
+            .iter()
+            .filter(|m| !m.starts_with('+'))
+            .map(|m| crate::net::normalize_map(m))
+            .any(|m| m.eq_ignore_ascii_case(&map) || m.eq_ignore_ascii_case(parent))
     }
 }
 
 /// `def`'s rotation pool without the maps a host took out
-/// (`mp_maps_off`); all of it when that would leave none.
+/// (`mp_maps_off`); all of it when that would leave none. In a party app
+/// (`arena::SlicesInPool`) each map's arena slices follow it
+/// (`arena::with_slices`).
 pub fn rotation_pool(world: &World, def: &MinigameDef) -> Vec<String> {
-    let pool: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
+    let maps: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
+    let pool = minigame::arena::with_slices(world, &maps);
     let Some(off) = world.get_resource::<MapsOff>().filter(|o| !o.0.trim().is_empty()) else { return pool };
     let kept: Vec<String> = pool.iter().filter(|m| !off.has(m)).cloned().collect();
     if kept.is_empty() { pool } else { kept }
@@ -1350,7 +1499,7 @@ pub struct NextMatchHooks(pub Vec<fn(&mut World, &str, &str)>);
 /// overrides, `minigame::overrides`, over the definition's); with
 /// `rotate = false`, or none playable, this one.
 fn next_map(world: &mut World, def: &'static MinigameDef) -> String {
-    let here = crate::net::current_map(world);
+    let here = current_entry(world);
     if !def.rotate {
         return here;
     }
@@ -1398,7 +1547,8 @@ fn pool_text(world: &mut World, players: Option<usize>) -> Result<String, String
     let settings = minigame::map_fit::FitSettings::of(def)?
         .ok_or_else(|| format!("{} draws its maps without the count (map_fit off)", def.id))?;
     let n = players.unwrap_or_else(|| minigame::map_fit::present(world));
-    let pool: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
+    let maps: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
+    let pool = minigame::arena::with_slices(world, &maps);
     let maps = world.get_resource::<minigame::map_fit::MapPool>().cloned().unwrap_or_default();
     Ok(maps.lines(&pool, n, &settings))
 }

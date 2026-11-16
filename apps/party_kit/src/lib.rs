@@ -59,6 +59,8 @@
 //! - Both games' parts registered (`chimera_core::game_parts`, each game's
 //!   `parts::PARTS`): what the Ultimate Gun Game builds its ladder from.
 //!
+//! - `arena`: a slice of a big map (`arena halo_ce:bloodgulch@west_base`):
+//!   the match on a part of the map, behind a wall.
 //! - `surprise`: the host's surprises on the console (`surprise airstrike`,
 //!   `surprise gravity`), from what any client already draws.
 //! - Bots: Combat Arms' (the gun game's `bots` slot), with CS:S's guns'
@@ -212,7 +214,16 @@ pub static GUEST_DRESSING: [&MapDressing; 4] =
 /// Where this app's maps come from (a bare map name is the first guest's,
 /// CS:S's) and whose gameplay dresses them.
 pub static MAP_SOURCES: MapSources = MapSources {
-    loaders: &[GUESTS[0].loader, GUESTS[1].loader, GUESTS[2].loader, GUESTS[3].loader, BASE.loader],
+    // Last, the code-built maps' kit (the range, the greybox: dressed as
+    // any other game's map).
+    loaders: &[
+        GUESTS[0].loader,
+        GUESTS[1].loader,
+        GUESTS[2].loader,
+        GUESTS[3].loader,
+        BASE.loader,
+        &chimera_world::map::sources::CODE_MAP_KIT,
+    ],
     gameplay: Some(&combat_arms::game::world::DRESSING),
     teams: TEAMS,
     surfaces: SURFACES,
@@ -290,6 +301,14 @@ pub fn add_view_model_fovs(app: &mut App) {
     let fovs = [BASE].iter().chain(GUESTS.iter()).filter_map(|b| b.view_model_fov.map(|f| f())).collect();
     app.insert_resource(chimera_world::map::GameViewModelFovs(fovs));
     cs_source::game::view_anim::viewmodel_fov_cvar(app);
+    // Every game's view model hidden or shown (screenshots of a map
+    // without a gun in hand), as CS:S's own console has it.
+    chimera_core::console::resource_cvar::<chimera_world::map::ViewModelSettings, u8>(
+        app,
+        "r_drawviewmodel",
+        "0: no view model.",
+        |s| &mut s.draw,
+    );
     hl2dm::game::view::viewmodel_fov_cvar(app);
     tf2::game::view::viewmodel_fov_cvar(app);
 }
@@ -322,8 +341,10 @@ impl Plugin for PartyPartsPlugin {
             (bundle.sim)(app);
         }
         add_view_model_fovs(app);
-        // Each game's weapons' damage here (data/party_damage.toml).
-        party_damage::add(app);
+        // The cross-game balance and its switch (data/party_balance.toml).
+        balance::add(app);
+        // The bodies a sandbox's practice target may wear.
+        target_bodies::add(app);
         app.add_plugins((
             MinigamePlugin,
             originals::OriginalsPlugin,
@@ -332,6 +353,8 @@ impl Plugin for PartyPartsPlugin {
             chimera_net::minigame_net::MinigameNetPlugin,
             // The host's surprises (`surprise airstrike`, `surprise gravity`).
             surprise::SurprisePlugin,
+            // A slice of a big map (`arena <map@slice>`).
+            arena::ArenaPlugin,
         ));
         if let Some(mut s) = app.world_mut().get_resource_mut::<combat_arms::game::rules::CaRuleSettings>() {
             s.mode = "none".into();
@@ -622,10 +645,12 @@ pub fn ids() -> Vec<String> {
         .collect()
 }
 
+pub mod arena;
+pub mod balance;
 pub mod host;
-pub mod party_damage;
 pub mod spot_checks;
 pub mod surprise;
+pub mod target_bodies;
 pub mod server;
 #[cfg(feature = "present")]
 pub mod controls;

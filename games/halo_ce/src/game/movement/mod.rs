@@ -18,6 +18,12 @@
 //!   velocity, the virtual crease contact) on a `mover::Space`.
 //! - `space`: that space on the engine's collision (avian shape casts).
 //!
+//! A campaign body (`campaign::BodyKind`, the party apps' Elite) moves by
+//! its own table (`campaign::movement_of`, used by `step`, the collider,
+//! the footing and the seat): its pill, camera and blended speeds, and
+//! whatever else data/campaign.toml sets; the mover is this one for every
+//! body (the owner's rule: `campaign` module doc).
+//!
 //! Teleporters are the engine's (`map::teleport`, from the map's netgame
 //! flags: `maps::teleporters`), which move a Halo player as any other.
 //!
@@ -135,6 +141,7 @@ pub use data::MovementData;
 pub use tick::{Controls, Fall, HaloMovement, Landing};
 
 use super::{
+    campaign::{BodyKind, BodyTables, movement_of},
     damage::HaloHit,
     vitality::{DamageEffects, Stun, UnitStep},
 };
@@ -258,11 +265,18 @@ pub fn tick_scale(clock: &SimClock) -> f32 {
     if (k - 1.0).abs() < 1e-4 { 1.0 } else { k as f32 }
 }
 
+/// The movement table of body `e` (`campaign::movement_of`: its kind's,
+/// else the Spartan's `MovementData`).
+fn table_of(world: &World, e: Entity) -> Option<&MovementData> {
+    let d = world.get_resource::<MovementData>()?;
+    Some(crate::game::campaign::movement_of(d, world.get_resource(), world.get(e)))
+}
+
 /// Where a Halo player stands (`slots::Footing`): its origin.
 fn footing(world: &World, e: Entity) -> Option<Footing> {
     let me = world.get::<HaloMovement>(e)?;
     let t = world.get::<Transform>(e)?;
-    let d = world.get_resource::<MovementData>()?;
+    let d = table_of(world, e)?;
     let d = body(d, map_envelope(world).as_ref());
     let s = crate::game::METERS_PER_UNIT;
     Some(Footing {
@@ -276,7 +290,7 @@ fn footing(world: &World, e: Entity) -> Option<Footing> {
 /// crouched if it crouched; the first tick pushes it out of what it
 /// overlaps.
 fn seat(world: &mut World, e: Entity, f: Footing) {
-    let Some(d) = world.get_resource::<MovementData>() else { return };
+    let Some(d) = table_of(world, e) else { return };
     let d = body(d, map_envelope(world).as_ref()).into_owned();
     let s = crate::game::METERS_PER_UNIT;
     let c = if f.crouched { 1.0 } else { 0.0 };
@@ -304,7 +318,7 @@ fn step(
         &mut Transform,
         &mut Velocity,
         &mut MovementState,
-        (Option<&Stun>, Option<&SpeedMultiplier>, Has<ControllerStick>, Has<Dead>),
+        (Option<&Stun>, Option<&SpeedMultiplier>, Has<ControllerStick>, Has<Dead>, Option<&BodyKind>),
     ), Without<crate::game::vehicles::Seated>>,
     move_and_slide: MoveAndSlide,
     data: Res<MovementData>,
@@ -313,10 +327,9 @@ fn step(
     effects: Res<DamageEffects>,
     mut hits: MessageWriter<HaloHit>,
     (map_ladders, zones): (Option<Res<MapLadders>>, Query<&LadderZone>),
-    (envelopes, map_game): (Option<Res<MovementEnvelopes>>, Option<Res<MapGame>>),
+    (envelopes, map_game, tables): (Option<Res<MovementEnvelopes>>, Option<Res<MapGame>>, Option<Res<BodyTables>>),
 ) {
-    // The body the map's envelope allows (`body`): every Halo player's.
-    let d = &*body(&data, map_body_envelope(envelopes.as_deref(), map_game.as_deref()).as_ref());
+    let map = map_body_envelope(envelopes.as_deref(), map_game.as_deref());
     // Every ladder volume, climbed by Halo's rule (docs/DESIGN.md,
     // "Ladders across games"): the map's and the games' zones.
     let ladders: Vec<MapBrush> = map_ladders
@@ -328,7 +341,10 @@ fn step(
     let per_tick = s * data::TICKS_PER_SECOND;
     let k = tick_scale(&clock);
     let first = first.is_none_or(|f| f.0);
-    for (e, intent, mut me, mut transform, mut vel, mut state, (stun, mult, controller, dead)) in &mut q {
+    for (e, intent, mut me, mut transform, mut vel, mut state, (stun, mult, controller, dead, kind)) in &mut q {
+        // How this body moves (`campaign::movement_of`: its kind's table),
+        // in the map's envelope (`body`).
+        let d = &*body(movement_of(&data, tables.as_deref(), kind), map.as_ref());
         if dead {
             me.was_dead = true;
             continue;
@@ -388,21 +404,23 @@ fn step(
 
 /// The entity's collider follows the pill; a player that leaves this
 /// movement gets the standard capsule back.
+#[allow(clippy::type_complexity)]
 fn sync_collider(
-    mut q: Query<(&HaloMovement, &mut Collider), Changed<HaloMovement>>,
+    mut q: Query<(&HaloMovement, &mut Collider, Option<&BodyKind>), Or<(Changed<HaloMovement>, Changed<BodyKind>)>>,
     mut removed: RemovedComponents<HaloMovement>,
     mut others: Query<&mut Collider, Without<HaloMovement>>,
     data: Res<MovementData>,
-    (envelopes, map_game): (Option<Res<MovementEnvelopes>>, Option<Res<MapGame>>),
+    (envelopes, map_game, tables): (Option<Res<MovementEnvelopes>>, Option<Res<MapGame>>, Option<Res<BodyTables>>),
 ) {
-    let data = body(&data, map_body_envelope(envelopes.as_deref(), map_game.as_deref()).as_ref());
+    let map = map_body_envelope(envelopes.as_deref(), map_game.as_deref());
     let s = crate::game::METERS_PER_UNIT;
     for e in removed.read() {
         if let Ok(mut c) = others.get_mut(e) {
             *c = Collider::capsule(CAPSULE_RADIUS, CAPSULE_HEIGHT - 2.0 * CAPSULE_RADIUS);
         }
     }
-    for (me, mut collider) in &mut q {
+    for (me, mut collider, kind) in &mut q {
+        let data = body(movement_of(&data, tables.as_deref(), kind), map.as_ref());
         let radius = data.radius * s;
         let half = data.segment(me.crouch) * s / 2.0;
         let same = collider

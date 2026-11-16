@@ -70,7 +70,7 @@ fn a_ladders_rungs_stay_under_the_limit() {
     let started = std::time::Instant::now();
     let mut settled = 0;
     while settled < 300 {
-        let drawn = sim.app.world().get_resource::<PlayModels>().map_or(0, |p| p.bodies.len());
+        let drawn = sim.app.world().get_resource::<PlayModels>().map_or(0, |p| p.built().count());
         settled = if drawn > 0 { settled + 1 } else { 0 };
         assert!(started.elapsed().as_secs() < 240, "no body drawn");
         sim.ticks(1);

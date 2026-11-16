@@ -510,3 +510,33 @@ fn needles_fall_and_hurt_by_distance_48_50() {
     let took = before - health_points(&sim, t);
     assert!((took - 10.0).abs() < 0.01, "took {took}");
 }
+
+/// Zoom (3.1), the scope a screen shows: one press of attack2 puts the
+/// holder behind the Sniper Rifle's scope (`Zoomed`: a scope, field of
+/// view 20) and it stays up while nothing else happens; attack2 *held*
+/// toggles it at most once per 0.3 s, so a held key's scope is up or
+/// down by when the frame is taken (the Windows check's run with no
+/// scope in one of two identical runs held it).
+#[test]
+fn one_press_raises_the_scope_and_a_held_key_toggles_it_3_1() {
+    use chimera_sim::weapon::Zoomed;
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], SNIPER_RIFLE);
+    let zoomed = |sim: &Sim| sim.app.world().get::<Zoomed>(p).copied();
+    assert_eq!(zoomed(&sim), None);
+    run(&mut sim, p, 1, |s, _| s.intent(p).secondary = true);
+    run(&mut sim, p, 1, |s, _| s.intent(p).secondary = false);
+    for _ in 0..20 {
+        run(&mut sim, p, 10, |_, _| {});
+        let z = zoomed(&sim).expect("the scope stays up");
+        assert!(z.scope && (z.fov - 20.0).abs() < 0.01, "{z:?}");
+    }
+    // Held from scoped: down at once, up again 0.3 s (20 ticks) later.
+    let mut seen = Vec::new();
+    for _ in 0..60 {
+        run(&mut sim, p, 1, |s, _| s.intent(p).secondary = true);
+        seen.push(zoomed(&sim).is_some());
+    }
+    let flips = seen.windows(2).filter(|w| w[0] != w[1]).count();
+    assert!(flips >= 2, "a held attack2 toggles the scope: {seen:?}");
+}

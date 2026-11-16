@@ -5,11 +5,13 @@
 //! (`movement`: movement.md's test cases), ICE against its spec (`ice`),
 //! the script reader on fixtures encrypted with throwaway keys
 //! (`scripts`), the guns (`weapons`: M2b's four; `weapons_more`: the
-//! next eight), the class sets a match offers (`player_sets`), the class a
+//! next eight; `melee`: the nine stock melee weapons and the backstab),
+//! the class sets a match offers (`player_sets`), the class a
 //! rung of several classes draws with the ladder (`rung_classes`), the kill icons from
 //! the asset store once their files are here (`kill_icons`), and, in `heavy`, the user's install (its mount, ctf_2fort
 //! and cp_badlands converted with their spawns, the converted-map cache's
-//! key, a player walking on ctf_2fort, M2's weapon sets packed into a
+//! key, a player walking on ctf_2fort, the guns' looks on another game's map
+//! (`looks`: particle systems, impacts, the `players` set's files), M2's weapon sets packed into a
 //! scratch store and read back, the scripts decrypted with the user's key
 //! when it is set),
 //! found through Steam, `[games.tf2] path` or `$CHIMERA_TF2_ROOT`, each
@@ -28,12 +30,14 @@ mod skeleton;
 mod spawns;
 mod weapon_scripts;
 mod weapons;
+mod melee;
 mod weapons_more;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
     mod bodies;
     mod guns;
+    mod looks;
     mod map_cache;
     mod maps;
     mod mount;

@@ -165,7 +165,7 @@ fn the_body_follows_the_gun() {
     let b = soldier(&mut sim);
     sim.seconds(1.5);
     assert_eq!(body(sim.app.world(), a), Some(CS_BODY), "the Glock: CS:S's body");
-    assert!(sim.app.world().get::<BodyName>(a).is_none(), "no Combat Arms look");
+    assert!(BodyName::named(sim.app.world().get::<BodyName>(a)).is_none(), "no Combat Arms look");
     line_up(&mut sim, a, b, 4.0);
     assert!(shoot_until_dead(&mut sim, a, b, 8.0));
     sim.ticks(3);

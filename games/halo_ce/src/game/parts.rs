@@ -19,7 +19,9 @@
 //! so Halo lends a part of class `grenade` of its own, the frag grenade's
 //! rung (`weapons::rung`: the empty pistol in hand, frags on the grenade
 //! button), which the ladder's grenade band deals as it deals the other
-//! games' grenades.
+//! games' grenades. And the Hunter's cannon (`weapons::rung::HUNTER_RUNG`),
+//! a launcher whose holder is always the Hunter: dealt by a drawn ladder
+//! only with `halo_ce:campaign_bodies` 1 (`campaign::own_guns_drawn`).
 //!
 //! No map is claimed (`PARTS.maps` is empty): a map enters an app's pool
 //! only from the disc image the machine holds (`auto::InstalledMaps`),
@@ -32,7 +34,7 @@
 use chimera_core::game_parts::{GameParts, GunClass, GunPart};
 
 use super::weapons::{
-    rung::FRAG_RUNG,
+    rung::{FRAG_RUNG, HUNTER_RUNG},
     ASSAULT_RIFLE, NEEDLER, PISTOL, PLASMA_PISTOL, PLASMA_RIFLE, ROCKET_LAUNCHER, SHOTGUN, SNIPER_RIFLE,
 };
 
@@ -53,6 +55,7 @@ pub static PARTS: GameParts = GameParts {
         gun(NEEDLER, GunClass::Smg),
         gun(PLASMA_PISTOL, GunClass::Pistol),
         gun(FRAG_RUNG, GunClass::Grenade),
+        gun(HUNTER_RUNG, GunClass::Launcher),
     ],
     knife: None,
     movement: Some(super::movement::ID),
@@ -75,11 +78,17 @@ pub const POOL_RULES: &str = include_str!("../../data/map_pool.toml");
 /// players present.
 pub const MAP_FITNESS: &str = include_str!("../../data/map_fitness.toml");
 
-/// Its pool rules and measurements registered (`map_fit::MapPoolAppExt`).
+/// Its arena slices (data/arena_slices.toml: parts of its big maps the
+/// party apps may play as whole ones, `chimera_sim::minigame::arena`).
+pub const ARENA_SLICES: &str = include_str!("../../data/arena_slices.toml");
+
+/// Its pool rules, measurements and arena slices registered
+/// (`map_fit::MapPoolAppExt`).
 pub fn add_map_pool(app: &mut bevy::app::App) {
     use chimera_sim::minigame::map_fit::MapPoolAppExt;
     app.add_map_pool_rules(super::GAME, "halo_ce data/map_pool.toml", POOL_RULES)
-        .add_map_fitness(super::GAME, "halo_ce data/map_fitness.toml", MAP_FITNESS);
+        .add_map_fitness(super::GAME, "halo_ce data/map_fitness.toml", MAP_FITNESS)
+        .add_arena_slices(super::GAME, "halo_ce data/arena_slices.toml", ARENA_SLICES);
 }
 
 /// What an app of several games needs for Halo's guns: its movement

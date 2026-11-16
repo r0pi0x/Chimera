@@ -59,6 +59,25 @@
 //!   top-down height map and the map's entities as files. `--bare`:
 //!   without the map logic; `--client`: loaded as a client loads it.
 //!
+//! - `--slice <game:map@id>` (an arena slice, docs/plans/active/
+//!   arena-slices.md, A3): the map played inside the slice's wall
+//!   (`play_area`, as the party kit's `arena` makes it), so every measure
+//!   above is the slice's, and the spawn-safety measures (`safety`, its
+//!   own file: the visibility table between the spawn spots, `see_pairs`,
+//!   `seen_at_spawn`, the spawn points' exposure, cover, long sight,
+//!   vertical range, chokes, spacing) before and after the slice makes its
+//!   own spawn points, judged by map_fit.toml's `[slice]` with the player
+//!   counts it suits, and a top-down picture. `--safety`: those measures
+//!   for whole maps too (the calibration sweep), a row each in
+//!   `safety.csv`.
+//! - `--candidates <game:map>` (A5): arena-slice candidates for the map
+//!   (`slice_gen`, `candidates`: seeds, growth, a minimum cut at the
+//!   narrow places, an outline, the measures above inside each, merged and
+//!   ranked) for the player bands 2-4 and 4-8 (`--band`), a table, a
+//!   top-down picture and a `[[slice]]` entry each; `--pick <n>` writes one
+//!   into the game's `data/arena_slices.toml` (`--id`, `--name` to name it),
+//!   with its measures in the fields the pool reads; `--slice <key>
+//!   --remeasure` rewrites them as the slice is played.
 //! - `--walker r,h,s`: the same flood with another body (half width,
 //!   height, highest step, m), printed against the bots' walker: both main
 //!   regions' areas, the spawn points off each, and the places the bots'
@@ -112,6 +131,14 @@ use chimera_world::{
 };
 use combat_arms::harness::CaSim;
 
+#[path = "map_fitness/candidates.rs"]
+mod candidates;
+#[path = "map_fitness/safety.rs"]
+mod safety;
+#[path = "map_fitness/slice_gen.rs"]
+mod slice_gen;
+use safety::{SafetyInput, safety};
+
 const USAGE: &str = "\
 usage: map_fitness [options]
   --game <ids>       comma-separated: cs_source, combat_arms, hl2dm, halo_ce, tf2 (default: all five)
@@ -136,7 +163,22 @@ usage: map_fitness [options]
   --csv <file>       with --write: write from this sweep's CSV, measuring nothing
   --walker <r,h,s>   also flood with another walker (half width, height, highest step, m) and
                      print what it reaches against the bots' walker: area, spawn points off its
-                     main region, and the places the bots' walker reaches and it does not";
+                     main region, and the places the bots' walker reaches and it does not
+  --slice <map@id>   measure an arena slice (halo_ce:bloodgulch@west_base): the map played inside
+                     its wall, its spots, spawn points and bots' mesh held inside; the spawn-safety
+                     measures before and after the slice makes its own spawn points, judged by
+                     map_fit.toml's [slice]; a top-down picture <out>/<game>_<map>@<id>.png
+  --safety           the spawn-safety measures for whole maps too (a row each in <out>/safety.csv)
+  --table <n>        spawn spots in the visibility table at most (default 1500)
+  --candidates <game:map>  arena-slice candidates for the map: a table of each one's measures, a
+                     picture and a [[slice]] entry each in <out>/candidates/<game>_<map>/
+  --band <lo-hi>     with --candidates: one player band (2-4 or 4-8; default both)
+  --top <n>          with --candidates: the best n per band printed and drawn (default 8)
+  --pick <n>         with --candidates: write candidate n (as printed) into the game's
+                     data/arena_slices.toml under --repo (default .), replacing the entry of
+                     the same map and id; --id <id> and --name <name> name it
+  --remeasure        with --slice: write the slice's measures (as played, with the spawn points
+                     it makes) into its entry in the game's data/arena_slices.toml under --repo";
 
 const N_PLAYERS: [usize; 5] = [2, 4, 8, 12, 16];
 const HEADER: &str = "game,map,loads,error,load_s,nav_s,spawns,spawns_in_region,own_nav,spots,spots_off,has_nav_file,off_region,off_nav_file,off_box,spots_off_at,stuck,stuck_at,spawn_min_m,spawn_median_m,\
@@ -176,6 +218,12 @@ struct Opts {
     write: Option<PathBuf>,
     csv: Option<PathBuf>,
     walker: Option<[f32; 3]>,
+    slice: Option<String>,
+    safety: bool,
+    table: usize,
+    candidates: Option<candidates::CandOpts>,
+    remeasure: bool,
+    repo: PathBuf,
 }
 
 fn parse() -> Result<Opts, String> {
@@ -196,7 +244,19 @@ fn parse() -> Result<Opts, String> {
         write: None,
         csv: None,
         walker: None,
+        slice: None,
+        safety: false,
+        table: 1500,
+        candidates: None,
+        remeasure: false,
+        repo: PathBuf::from("."),
     };
+    let mut cand = candidates::CandOpts {
+        top: 8,
+        repo: PathBuf::from("."),
+        ..Default::default()
+    };
+    let mut want_cand = false;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         let mut val = || args.next().ok_or_else(|| format!("{a} needs a value"));
@@ -230,9 +290,40 @@ fn parse() -> Result<Opts, String> {
                 };
                 o.walker = Some([r, h, step]);
             }
+            "--slice" => {
+                let key = val()?;
+                let (map, _) = key.split_once('@').ok_or("--slice <game:map@id>")?;
+                let (game, name) = map.split_once(':').ok_or("--slice <game:map@id>")?;
+                o.games = vec![game.to_string()];
+                o.filter = vec![name.to_ascii_lowercase()];
+                o.slice = Some(key);
+                o.safety = true;
+            }
+            "--safety" => o.safety = true,
+            "--candidates" => {
+                let key = val()?;
+                let (game, name) = key.split_once(':').ok_or("--candidates <game:map>")?;
+                o.games = vec![game.to_string()];
+                o.filter = vec![name.to_ascii_lowercase()];
+                want_cand = true;
+            }
+            "--band" => cand.band = Some(slice_gen::Band::parse(&val()?).ok_or("--band <lo-hi>, e.g. 4-8")?),
+            "--top" => cand.top = val()?.parse().map_err(|e| format!("--top: {e}"))?,
+            "--pick" => cand.pick = Some(val()?.parse().map_err(|e| format!("--pick: {e}"))?),
+            "--id" => cand.id = Some(val()?),
+            "--name" => cand.name = Some(val()?),
+            "--repo" => {
+                o.repo = PathBuf::from(val()?);
+                cand.repo = o.repo.clone();
+            }
+            "--remeasure" => o.remeasure = true,
+            "--table" => o.table = val()?.parse().map_err(|e| format!("--table: {e}"))?,
             "-h" | "--help" => return Err(String::new()),
             _ => return Err(format!("unknown option {a}")),
         }
+    }
+    if want_cand {
+        o.candidates = Some(cand);
     }
     Ok(o)
 }
@@ -301,7 +392,8 @@ fn main() -> ExitCode {
         eprintln!("{game}: {} maps installed", names.len());
         for name in names {
             let lower = name.to_ascii_lowercase();
-            if o.filter.is_empty() || o.filter.iter().any(|f| lower.contains(f.as_str())) {
+            let exact = o.candidates.is_some() || o.slice.is_some();
+            if o.filter.is_empty() || o.filter.iter().any(|f| if exact { lower == *f } else { lower.contains(f.as_str()) }) {
                 maps.push((game.clone(), lower));
             }
         }
@@ -579,6 +671,40 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     };
     let _ = chimera_sim::minigame::start(sim.app.world_mut(), party_kit::DEFAULT_MINIGAME);
     sim.ticks(3);
+    if let Some(key) = &o.slice {
+        // As the party kit's `arena` does on a map just in: the plan, the
+        // map in the world, the play area at once (spawn points held).
+        let w = sim.app.world_mut();
+        let slice = match chimera_sim::minigame::arena::plan(w, Some(key)) {
+            Ok(Some(s)) => s,
+            Ok(None) => return Row::failed("no slice".into(), t.elapsed().as_secs_f32()),
+            Err(e) => return Row::failed(e, t.elapsed().as_secs_f32()),
+        };
+        // The map's teleporters against the slice (the play area keeps a
+        // pad only when both its ends are inside).
+        if let (Ok(poly), Some(tp)) = (slice.polygon(), w.get_resource::<chimera_world::map::teleport::MapTeleporters>()) {
+            for p in &tp.pads {
+                println!(
+                    "teleporter {:.1} {:.1} {:.1} ({}) -> {:.1} {:.1} {:.1} ({}): {}",
+                    p.source.x,
+                    p.source.y,
+                    p.source.z,
+                    if poly.contains3(p.source) { "inside" } else { "outside" },
+                    p.dest.x,
+                    p.dest.y,
+                    p.dest.z,
+                    if poly.contains3(p.dest) { "inside" } else { "outside" },
+                    if poly.contains3(p.source) && poly.contains3(p.dest) { "kept" } else { "off for the match" }
+                );
+            }
+        }
+        w.insert_resource(chimera_world::map::play_area::ArenaMap(id.to_string()));
+        chimera_world::map::play_area::follow_plan(w);
+        if !w.contains_resource::<chimera_world::map::play_area::PlayArea>() {
+            return Row::failed(format!("{key} does not play on {id}"), t.elapsed().as_secs_f32());
+        }
+        sim.ticks(2);
+    }
     let load_s = t.elapsed().as_secs_f32();
     let w = sim.app.world_mut();
     let mut feet: Vec<Vec3> = w
@@ -704,7 +830,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     // player clips: the space players play.
     let mut p = combat_arms::game::bots::brain::nav_params();
     // Held to where the map is played where it says (`nav_gen::NavWithin`).
-    p.within = nav_gen::NavWithin::of(w);
+    nav_gen::hold(&mut p, w);
     let vis = w.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let (nav, spots, other) = {
         let mut state = SystemState::<SpatialQuery>::new(w);
@@ -1102,6 +1228,22 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     // player's next meeting, area / ((N - 1) * 2 * sight * 4/pi * speed).
     for (slot, n) in WANDER_PLAYERS.iter().enumerate() {
         row.wander[slot] = row.area_m2 / ((*n as f32 - 1.0) * 2.0 * row.sight_m * 4.0 / std::f32::consts::PI * v);
+    }
+    let ctx = SafetyInput {
+        id,
+        spots: if candidates.is_empty() { &feet } else { &candidates },
+        feet: &feet,
+        nav: &nav,
+        ids: &ids,
+        area_m2: row.area_m2,
+        sight_m: row.sight_m,
+        game_units: source,
+    };
+    if o.safety {
+        safety(w, o, &ctx);
+    }
+    if let Some(co) = &o.candidates {
+        candidates::run(w, o, co, &ctx);
     }
     if !o.probes.is_empty() {
         sim.seconds(5.0);

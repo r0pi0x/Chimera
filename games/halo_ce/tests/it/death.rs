@@ -137,6 +137,7 @@ fn corpse(animation: &str, velocity: Vec3) -> HaloCorpse {
         yaw: 0.0,
         velocity,
         animation: animation.into(),
+        body: Default::default(),
     }
 }
 

@@ -156,3 +156,128 @@ fn the_next_eight_tf2_guns_are_rungs_and_kill() {
         assert!(shoot_until_dead(&mut sim, a, b, 12.0), "{gun} kills");
     }
 }
+
+/// The weapon ids `e` carries.
+fn carried(sim: &Sim, e: Entity) -> Vec<&'static str> {
+    let w = sim.app.world();
+    w.get::<chimera_sim::weapon::Inventory>(e)
+        .map(|i| i.weapons.iter().filter_map(|x| w.get::<chimera_sim::weapon::Weapon>(*x).map(|x| x.id)).collect())
+        .unwrap_or_default()
+}
+
+/// A test copy of gun_game_2fort whose kit by game names TF2's knife (as
+/// an automatic gun game's does: TF2's `PARTS.knife`), started with rung
+/// seed `seed`, no finale.
+fn melee_party(seed: u64) -> Sim {
+    use chimera_sim::minigame::{MinigameAppExt, ladder::RungSeed};
+    let text = originals::MINIGAMES
+        .iter()
+        .find(|(f, _)| f.ends_with("gun_game_2fort.toml"))
+        .unwrap()
+        .1
+        .replace("id = \"originals:gun_game_2fort\"", "id = \"tests:tf2_melee\"")
+        .replace("hl2dm = [\"hl2dm:weapon_crowbar\"] }", "hl2dm = [\"hl2dm:weapon_crowbar\"], tf2 = [\"tf2:tf_weapon_knife\"] }");
+    assert!(text.contains("tf2 = [\"tf2:tf_weapon_knife\"]"));
+    let mut sim = Sim::new(CaSim, (GreyboxMapPlugin, PartyPartsPlugin));
+    sim.app.insert_resource(RungSeed(seed));
+    sim.app.add_minigames(&[("tests/tf2_melee.toml", text.as_str())]).unwrap();
+    no_finale(sim.app.world_mut());
+    minigame::start(sim.app.world_mut(), "tests:tf2_melee").expect("the gun game starts");
+    sim
+}
+
+/// A TF2 rung carries its class's stock melee weapon (specs/tf2/
+/// weapons_stock.md 9; `tf2::game::classes::HOOK`'s rung extras, the
+/// mechanism Combat Arms' rung melee uses: `runtime::KitMelee` in place
+/// of the kit's knife): the Scout's Bat with the Scattergun, the Heavy's
+/// Fists with the Minigun, the Soldier's Shovel with the Rocket Launcher,
+/// the drawn class's with the Shotgun; another game's rung after it
+/// carries that game's knife again. On a test copy of gun_game_2fort
+/// whose kit by game names TF2's knife (as an automatic gun game's does:
+/// TF2's `PARTS.knife`); the shipped definition is unchanged.
+#[test]
+fn a_tf2_rung_carries_its_classs_melee() {
+    use tf2::game::{classes, weapons as w};
+    let mut sim = melee_party(0);
+    let a = soldier(&mut sim);
+    let _b = soldier(&mut sim);
+    sim.seconds(1.5);
+    let ladder = sim.app.world().resource::<Ladder>().clone();
+    let table = classes::classes();
+    let mut seen = 0;
+    for (r, gun) in ladder.rungs.iter().enumerate() {
+        set_rung(&mut sim, a, r);
+        let has = carried(&sim, a);
+        if gun.starts_with("tf2:") {
+            let drawn = classes::drawn_class(ladder.extras(r));
+            let class = table.held(gun, drawn).unwrap();
+            let want = class.melee.as_deref().unwrap();
+            assert!(has.contains(&want), "{gun} ({}): {has:?}", class.name);
+            assert!(!has.contains(&w::KNIFE) || want == w::KNIFE, "the kit's knife swapped: {has:?}");
+            match *gun {
+                w::SCATTERGUN => assert_eq!(want, w::BAT),
+                w::MINIGUN => assert_eq!(want, w::FISTS),
+                w::ROCKET_LAUNCHER => assert_eq!(want, w::SHOVEL),
+                _ => {}
+            }
+            seen += 1;
+        } else {
+            assert!(!has.iter().any(|h| w::MELEE.contains(h)), "{gun}: no TF2 melee off TF2's rungs: {has:?}");
+        }
+    }
+    assert_eq!(seen, 4);
+}
+
+/// The melee follows the class drawn for a gun of several classes (the
+/// Shotgun: Engineer, Soldier, Pyro, Heavy): over rung seeds, the
+/// Shotgun's rung's extras carry the drawn class's melee (the Soldier's
+/// Shovel, the Heavy's Fists, the Pyro's Fire Axe, the Engineer's
+/// Wrench), and a player on it carries that melee in place of the kit's
+/// knife and is that class with the Shotgun in hand.
+#[test]
+fn the_shotguns_drawn_class_carries_its_own_melee() {
+    use std::collections::BTreeMap;
+    use tf2::game::{classes, weapons as w};
+    let table = classes::classes();
+    let want = |c: &str| match c {
+        "soldier" => w::SHOVEL,
+        "heavy" => w::FISTS,
+        "pyro" => w::FIREAXE,
+        "engineer" => w::WRENCH,
+        other => panic!("the Shotgun drew {other}"),
+    };
+    // The first seed drawing each class.
+    let mut seeds: BTreeMap<String, u64> = BTreeMap::new();
+    for seed in 0..40 {
+        let sim = melee_party(seed);
+        let l = sim.app.world().resource::<Ladder>().clone();
+        let r = l.rungs.iter().position(|g| *g == w::SHOTGUN).expect("the Shotgun's rung");
+        let x = l.extras(r).expect("the Shotgun's rung drew");
+        let drawn = classes::drawn_class(Some(x)).expect("a drawn class").to_string();
+        assert_eq!(x.melee.as_deref(), Some(want(&drawn)), "seed {seed}: {drawn}");
+        assert_eq!(table.get(&drawn).and_then(|c| c.melee.as_deref()), Some(want(&drawn)));
+        seeds.entry(drawn).or_insert(seed);
+        if seeds.len() == 4 {
+            break;
+        }
+    }
+    assert!(seeds.contains_key("soldier") && seeds.contains_key("heavy"), "the Soldier and the Heavy drawn: {seeds:?}");
+    for (class, seed) in [("soldier", seeds["soldier"]), ("heavy", seeds["heavy"])] {
+        let mut sim = melee_party(seed);
+        let a = soldier(&mut sim);
+        let _b = soldier(&mut sim);
+        sim.seconds(1.5);
+        let l = sim.app.world().resource::<Ladder>().clone();
+        let r = l.rungs.iter().position(|g| *g == w::SHOTGUN).unwrap();
+        set_rung(&mut sim, a, r);
+        let has = carried(&sim, a);
+        assert!(has.contains(&want(class)), "{class} with the Shotgun: {has:?}");
+        assert!(!has.contains(&w::KNIFE), "the kit's knife swapped: {has:?}");
+        for other in w::MELEE.iter().filter(|m| **m != want(class)) {
+            assert!(!has.contains(other), "{class}: another class's melee {other}: {has:?}");
+        }
+        assert_eq!(held(&sim, a), Some(w::SHOTGUN));
+        let index = table.get(class).unwrap().index;
+        assert_eq!(sim.app.world().get::<classes::Tf2Class>(a).map(|c| c.0), Some(index), "{class} with the Shotgun in hand");
+    }
+}

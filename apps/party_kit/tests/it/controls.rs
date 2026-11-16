@@ -170,12 +170,12 @@ fn a_cs_source_guns_view_model_bobs_while_moving_and_stands_still_otherwise() {
     );
     // Combat Arms' driver owns the character: CS:S's motion lets go.
     // (Standing still first: with a CS:S gun in hand Combat Arms' driver
-    // lets go of the character again at once, `OwnViewAnim` removed, so
+    // lets go of the character again at once, `OwnViewAnim` false, so
     // only a player at rest keeps the offset still; running on, as where
     // the spawn point leaves room to run, it bobs on.)
     release(&mut sim, KeyCode::KeyW);
     sim.seconds(1.0);
-    sim.app.world_mut().entity_mut(a).insert(chimera_sim::weapon::view_anim::OwnViewAnim);
+    sim.app.world_mut().entity_mut(a).insert(chimera_sim::weapon::view_anim::OwnViewAnim(true));
     sim.ticks(3);
     let frozen = offset(&sim).unwrap();
     sim.seconds(0.5);

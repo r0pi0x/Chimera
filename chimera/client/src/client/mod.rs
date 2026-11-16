@@ -20,6 +20,7 @@ pub mod app;
 pub mod audio;
 pub mod binds;
 pub mod capture;
+pub mod scene;
 pub mod feedback;
 pub mod crash;
 pub mod chat;
@@ -44,6 +45,7 @@ pub mod minigame_scoreboard;
 pub mod race_chip;
 pub mod rank_toast;
 pub mod rung_hint;
+pub mod sandbox;
 pub mod signal;
 pub mod signal_chat;
 pub mod hud_text;
@@ -106,6 +108,10 @@ use crate::{
 pub struct Args {
     /// Save a screenshot here after `frames` frames, then exit.
     pub screenshot: Option<PathBuf>,
+    /// Play this scene script (`scene`), its pictures and log into
+    /// `scene_out`, then exit.
+    pub scene: Option<PathBuf>,
+    pub scene_out: Option<PathBuf>,
     pub frames: Option<u32>,
     /// Movement implementation ID for the local player (overrides the loadout).
     pub movement: Option<String>,
@@ -184,6 +190,8 @@ usage: {bin} [options]
   --screenshot <file.png>   save a screenshot after --frames frames (later while shaders
                             still compile), then exit
   --frames <n>              frames to run before the screenshot or exit (default 60)
+  --scene <file> --out <dir>  play a scene script (console lines; wait, wait_for <fact>, shot,
+                            shot_after <fact> <frames>), pictures and scene.log into <dir>, then exit
   --movement <id>           movement implementation for the local player
   --spawn <x,y,z>           spawn position in meters
   --look <yaw,pitch>        initial look angles in degrees (yaw 0 = -Z)
@@ -294,11 +302,12 @@ impl Args {
     }
 
     /// The game map to load at startup: `--map` unless it names the
-    /// greybox (`greybox`, `chimera:greybox` or the old `mashup:greybox`), which is there anyway.
+    /// greybox (`greybox`, `chimera:greybox` or the old `mashup:greybox`), which is there anyway,
+    /// or the range (`range`: spawned in the greybox's place, `chimera_world::greybox::CodeMap`).
     pub fn game_map(&self) -> Option<&str> {
         self.map
             .as_deref()
-            .filter(|m| !matches!(m.to_lowercase().as_str(), "greybox" | "chimera:greybox" | "mashup:greybox"))
+            .filter(|m| chimera_world::greybox::code_map(m).is_none())
     }
 
     /// `+chimera:asset_token <token>` is kept at once, before the app (and
@@ -425,6 +434,8 @@ impl Args {
             let value = it.next().ok_or_else(|| format!("{flag}: missing value"))?;
             match flag.as_str() {
                 "--screenshot" => out.screenshot = Some(value.into()),
+                "--scene" => out.scene = Some(value.into()),
+                "--out" => out.scene_out = Some(value.into()),
                 "--frames" => out.frames = Some(value.parse().map_err(|_| format!("--frames: not a number: {value}"))?),
                 "--movement" => out.movement = Some(value),
                 "--map" => out.map = Some(value),
@@ -502,7 +513,7 @@ impl Args {
     /// protocol on one too unless `CHIMERA_REMOTE_PORT` says, and leaves
     /// the user's config alone.
     pub fn tool_run(&self) -> bool {
-        self.screenshot.is_some() || self.views.is_some() || self.frames.is_some() || self.bench || self.offscreen.is_some()
+        self.screenshot.is_some() || self.scene.is_some() || self.views.is_some() || self.frames.is_some() || self.bench || self.offscreen.is_some()
     }
 }
 
@@ -575,6 +586,7 @@ impl PluginGroup for ClientPlugins {
             .add(debug::DebugPlugin)
             .add(debug_views::DebugViewsPlugin)
             .add(capture::CapturePlugin)
+            .add(scene::ScenePlugin)
             .add(feedback::FeedbackPlugin)
             .add(chimera_core::diagnostics::DiagnosticsPlugin::default())
             .add(crash::CrashPlugin)
@@ -641,7 +653,17 @@ struct ShellSetupPlugin {
 impl Plugin for ShellSetupPlugin {
     fn build(&self, app: &mut App) {
         if let Some(map) = &self.args.map {
-            app.insert_resource(crate::map::LoadedMapName(map.clone()));
+            // A code-built map by any of its names: its id, and the one
+            // the greybox's slot spawns.
+            match chimera_world::greybox::code_map(map) {
+                Some(id) => {
+                    app.insert_resource(chimera_world::greybox::CodeMap(id));
+                    app.insert_resource(crate::map::LoadedMapName(id.into()));
+                }
+                None => {
+                    app.insert_resource(crate::map::LoadedMapName(map.clone()));
+                }
+            }
         }
         if let Some(path) = &self.args.frame_log {
             frame_metrics::set_frame_log(path.clone());
@@ -674,15 +696,16 @@ struct ShellCameraPlugin;
 
 impl Plugin for ShellCameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PostStartup, (spawn_local_player, join_at_start).chain())
-            .add_systems(Update, camera_for_local_player);
+        local_player_at_start(app);
+        app.add_systems(Update, camera_for_local_player);
         eye_systems(app);
 
         // Bevy Remote Protocol: query and edit the live ECS over HTTP
         // (JSON-RPC on localhost:15702, or CHIMERA_REMOTE_PORT: two games at
         // once, e.g. a host and a client). See docs/OBSERVABILITY.md.
+        // A scene run (`--scene`) serves none: nothing outside drives it.
         #[cfg(feature = "dev")]
-        {
+        if app.world().get_resource::<ClientArgs>().is_none_or(|a| a.0.scene.is_none()) {
             use bevy::remote::http::{DEFAULT_PORT, DEFAULT_RENDER_PORT, HostPort};
             let tool_run = app.world().get_resource::<ClientArgs>().is_some_and(|a| a.0.tool_run());
             let port = chimera_core::env::var("CHIMERA_REMOTE_PORT")
@@ -725,6 +748,33 @@ fn free_loopback_port() -> Option<u16> {
 
 #[derive(Component)]
 pub struct FirstPersonCamera;
+
+/// An app whose main menu has no game behind it (Ultimate Gun Game's,
+/// `party_kit::main_menu`): no local player is spawned at startup when
+/// the run starts at that menu (`at_start`), nor after leaving a server
+/// (`net`); the app spawns one when a game is entered
+/// (`spawn_local_player_now`). Without it the local player is spawned at
+/// startup and kept behind any menu, as before.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NoPlayerAtMenu {
+    pub at_start: bool,
+}
+
+/// The local player at startup (unless the run starts at a menu with no
+/// game behind it, `NoPlayerAtMenu`), then a run on a map starts its
+/// game (`join_at_start`): the shell's, and a test's of a start.
+pub fn local_player_at_start(app: &mut App) {
+    let menu_first = |no: Option<Res<NoPlayerAtMenu>>| no.is_some_and(|n| n.at_start);
+    app.add_systems(PostStartup, (spawn_local_player.run_if(not(menu_first)), join_at_start).chain());
+}
+
+/// The local player spawned now, as at startup (a game entered from a
+/// menu with no game behind it: `NoPlayerAtMenu`).
+pub fn spawn_local_player_now(world: &mut World) {
+    if let Err(e) = world.run_system_cached(spawn_local_player) {
+        error!("spawning the local player: {e}");
+    }
+}
 
 fn spawn_local_player(
     mut commands: Commands,
@@ -903,7 +953,7 @@ fn follow_eye(
     watch: Res<view::Watch>,
     spectating: Res<spectate::SpecView>,
     others: Query<
-        (&Name, &Transform, &Intent, &MovementState, Option<&crate::map::interp::RenderedView>),
+        (Entity, &Name, &Transform, &Intent, &MovementState, Option<&crate::map::interp::RenderedView>, Has<crate::core::Bot>),
         (Without<LocalPlayer>, Without<FirstPersonCamera>),
     >,
 ) {
@@ -911,10 +961,17 @@ fn follow_eye(
     // ones drawn this frame, eased between ticks (`map::interp`); the
     // local player's look is this frame's mouse.
     // The watched character, if any: a chase camera behind it (world space).
+    // Bot n by its name (`Bot <n>`), else the n-th bot (an app's bots
+    // have names of their own: the party apps' `AI_Alpha_3`).
+    let nth_bot = || {
+        let mut bots: Vec<_> = others.iter().filter(|o| o.6).collect();
+        bots.sort_by_key(|o| o.0);
+        bots.get(watch.0 as usize - 1).copied()
+    };
     let watched = (watch.0 > 0)
         .then(|| format!("Bot {}", watch.0))
-        .and_then(|name| others.iter().find(|(n, ..)| n.as_str() == name))
-        .map(|(_, t, i, s, v)| {
+        .and_then(|name| others.iter().find(|o| o.1.as_str() == name).or_else(nth_bot))
+        .map(|(_, _, t, i, s, v, _)| {
             let chase = view::CameraMode {
                 third_person: true,
                 ..*mode

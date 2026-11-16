@@ -1357,6 +1357,59 @@ case, at `controls::TYPED`) since `fonts-wire` merged. Left: a mute button on th
 cursor captured today); a talking indicator in the feed (voice); wall
 clock stamps; bot chat for network clients (a host's only today).
 
+### M11: the sandbox's screens (2026-11-15)
+
+Revision 2 of the sandbox's design with the user's decisions (Q1 A: one
+Tab column; Q3 B: the full-screen tile view; double-click is the primary
+action in every selector). The mechanics (the rung switch, targets,
+measurement, blasts) are the Halo session's; these screens read and ask
+through small interfaces, with fakes for the stagings.
+
+- **Kit**: `chimera_ui::vlist`, the recycling list and tile grid
+  (scrolling 2,000 rows costs about a quarter of a rebuild of the rows in
+  view, by instruction count). Kit icons `download`, `trash`, `search`,
+  `filter`, `close`.
+- **Screens** (`chimera_client::client::sandbox`): the HUD (`hud`: the
+  mark and B, T hints, the gun chip with condition tags or the Next
+  strip, the Tab column, the pinned bar), Change gun (`change_gun`), the
+  bench and the character picker (`bench`), the range's look panel,
+  respawn rings and blast rings (`range`). The race chip, the minigame
+  panel and the Tab scoreboard stand down while a sandbox plays.
+- **Getting in**: Sandbox on the main menu (NEW, `data/main_menu.toml`:
+  runs `sandbox`); the Escape menu's Change gun and Bench while a sandbox
+  plays, its skip vote hidden.
+- **Interfaces for the other sides**: `sandbox::units` (`UnitFetcher`:
+  `request_unit(game, unit)`, `retry`, `poll` into `UnitProgress`; the
+  asset side's client goes in `UnitFetch`), `sandbox::link`
+  (`BenchRequest` in the shapes of the mechanics' `SpawnTarget`,
+  `SetTarget`, `RemoveTarget`, `ClearTargets`; `BenchView`, `KillLog`
+  from `KillMeasured` and `HitMeasured`, `LookPanel`, `BlastMeasured`,
+  `PropSpec`, `SandboxOptions`), `bench::CharacterCatalogue` (the bodies
+  a target may be).
+- **Decided** (the design rules, section 22): a tile's download state
+  is a bar along its bottom edge, the keyboard cursor the tile's accent
+  outline; a drop shows a ghost of the gun in a dashed accent frame, the
+  gun it replaces struck through and "Release: <gun> to <n>, replacing
+  <old>" beside the bar; the grid keys: arrows wrap in reading order
+  (a folded class's header a stop), Enter switches on a tile and folds
+  or opens on a header, `\\` (the physical key) folds the class and
+  opens it back on the same tile, I the large model, R retries a failed
+  download (both before anything is typed), every other letter finds.
+- **Bridged** to the mechanics (`minigame::targets`, `props`): targets,
+  props and their groups, kills and hits, the looked-at target, blasts.
+- **Polish (2026-11-16)**: the main menu's Sandbox starts on the range;
+  the tag popover's own search and the picker's search type and find;
+  the bench's Holds list opens on the target body's guns
+  (`CharacterInfo::guns`); a gun whose round is its hook's (TF2's
+  rocket, grenades, flame) shows the hook's base damage and blast
+  radius; long tile names end in the kit's ellipsis; the range's
+  readouts are rebound in place, spawned again only when what they say
+  changes; `sandbox_gun <gun>` and `sandbox_key <1-6|k>` for scenes.
+- **Left**: real portraits and
+  model renders (generated per asset, the ingest plan); the 3D model
+  viewer; Q's quick panel.
+- Stagings: `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range>`.
+
 ## 6. Decisions (user, 2026-11-14)
 
 1. Icons (revised 2026-11-14): each game's own kill icon everywhere it

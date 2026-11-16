@@ -411,6 +411,10 @@ impl Plugin for PropMaterialPlugin {
         bevy::asset::load_internal_asset!(app, DITHER_PREPASS_SHADER, "prop_dither_prepass.wesl", Shader::from_wesl);
         app.add_plugins((super::fog::FogShaderPlugin, MaterialPlugin::<PropMaterial>::default()));
         super::probe_lit::ProbeTable::add_to(app);
+        // No depth of a mesh whose colour cannot be drawn yet.
+        if !app.is_plugin_added::<super::prepass_gate::PrepassGatePlugin>() {
+            app.add_plugins(super::prepass_gate::PrepassGatePlugin);
+        }
     }
 }
 

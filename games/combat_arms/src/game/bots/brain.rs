@@ -506,8 +506,8 @@ impl NavStart {
         if let Some(radius) = world.get_resource::<BotSettings>().and_then(|s| s.walker_radius) {
             params.radius = radius;
         }
-        // Where the map says it is played (`nav_gen::NavWithin`: Halo's).
-        params.within = nav_gen::NavWithin::of(world);
+        // Where the map says it is played (`nav_gen::hold`: Halo's box, a match's slice).
+        nav_gen::hold(&mut params, world);
         Self { seeds, ignore, params, vis }
     }
 

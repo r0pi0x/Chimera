@@ -26,7 +26,9 @@
 //! - **Keys** (`VListState::nav`, called by the screen that has the keys):
 //!   ↑↓ the line above or below (a header is a stop; in a row the same
 //!   column, or its last item), ←→ the item before or after in reading
-//!   order, Home/End, PageUp/PageDown by a view. On a header, ← folds, →
+//!   order (wrapping row to row and section to section; a folded
+//!   section's header is a stop in its place), Home/End, PageUp/PageDown
+//!   by a view. On a header, ← folds, →
 //!   opens, and `toggle_fold` (Enter, Space) flips it. A move asks the
 //!   view to reveal the cursor's line (eased, `reveal_margin`).
 //! - **Pointer, the kit-wide selector rule** (the design rules, section 21:
@@ -306,6 +308,20 @@ impl VListState {
         true
     }
 
+    /// ←→'s stops in reading order: the items shown, a folded section's
+    /// header where its items would be.
+    pub fn stops(&self) -> Vec<VCursor> {
+        let mut out = Vec::new();
+        for l in &self.layout.lines {
+            match *l {
+                VLine::Header(s) if self.is_folded(s) => out.push(VCursor::Header(s)),
+                VLine::Header(_) => {}
+                VLine::Row { section, first, count } => out.extend((first..first + count).map(|i| VCursor::Item(section, i))),
+            }
+        }
+        out
+    }
+
     /// A key (module doc). True when it did something.
     pub fn nav(&mut self, k: VNav) -> bool {
         let lines = &self.layout.lines;
@@ -343,10 +359,12 @@ impl VListState {
                     self.layout.line_of(VCursor::Item(s, 0)).map(|_| VCursor::Item(s, 0))
                 }
                 VCursor::Item(..) => {
-                    let items: Vec<(usize, usize)> = self.layout.items().collect();
-                    let at = items.iter().position(|&(s, i)| VCursor::Item(s, i) == cur).unwrap_or(0);
-                    let to = if k == VNav::Left { at.checked_sub(1) } else { (at + 1 < items.len()).then_some(at + 1) };
-                    to.map(|t| VCursor::Item(items[t].0, items[t].1))
+                    // Reading order: every tile, and a folded section's
+                    // header in its place.
+                    let stops = self.stops();
+                    let at = stops.iter().position(|&c| c == cur).unwrap_or(0);
+                    let to = if k == VNav::Left { at.checked_sub(1) } else { (at + 1 < stops.len()).then_some(at + 1) };
+                    to.map(|t| stops[t])
                 }
             },
         };

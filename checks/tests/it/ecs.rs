@@ -57,6 +57,16 @@ const ONE_OFF_SCHEDULES: &[&str] = &[
 /// events, observers or systems (the step named).
 const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
+        "chimera/sim/src/minigame/targets.rs",
+        "TargetBots",
+        "spawning: the bots' game adds a whole bot to the match (its roster, kit and entry) and kicks one, on a request or console line",
+    ),
+    (
+        "chimera/sim/src/minigame/targets.rs",
+        "TargetCharacter",
+        "spawning: dressing a practice target as a game's body once it is armed (a game's own component on it), run with its placing",
+    ),
+    (
         "chimera/core/src/diagnostics.rs",
         "HealthParts",
         "a tool: each layer adds what it knows to the health line (memory, frames, net, map), read every few seconds",
@@ -90,6 +100,16 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "chimera/net/src/net/assets.rs",
         "AssetHooks",
         "read-only answers (`&World`): the match's weapons and a game's sets for the asset offer",
+    ),
+    (
+        "chimera/net/src/net/units.rs",
+        "UnitNeeds",
+        "read-only answers (`&World`): the sets a unit fetched on demand needs (TF2: a gun's class bodies)",
+    ),
+    (
+        "chimera/sim/src/minigame/gun_files.rs",
+        "GunFiles",
+        "a decision the rung switch asks (are a gun's files here?) whose answer, when not, is a request into the asset side's download queue (`net::units`)",
     ),
     (
         "chimera/net/src/net/assets.rs",
@@ -301,10 +321,15 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
 /// the map-logic interpreter, servers' state changes), with the reason.
 /// Their systems don't count in `EXCLUSIVE_BASELINE`.
 const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
+    ("chimera/client/src/client/scene.rs", "a tool run's script (`--scene`, only then): submits its console lines, reads the frame's facts and takes its pictures"),
     ("chimera/core/src/shutdown.rs", "the process's end: the quit's steps over the whole world, then the exit call"),
     ("apps/party_kit/src/controls.rs", "a menu"),
     ("chimera/client/src/client/feedback.rs", "a menu (the report dialog): it takes the screenshot, cues sounds and hands the report to the outbox, gated on its phase"),
     ("apps/party_kit/src/esc_menu.rs", "a menu"),
+    ("chimera/client/src/client/sandbox/bench.rs", "a menu (the sandbox's bench): its clicks as the mechanics' requests and console lines"),
+    ("chimera/client/src/client/sandbox/change_gun.rs", "a menu (the sandbox's Change gun): its clicks as switches, downloads and filters"),
+    ("chimera/client/src/client/sandbox/mod.rs", "a menu's world work: the switch goes through `rung_command::move_to` and the catalogue through `auto::report`, both on the world; `track` returns at once outside a sandbox"),
+    ("chimera/client/src/client/sandbox/link.rs", "the bridge to the targets, whose API is world functions (`targets::spawn`, `set`, `remove`, `clear`, `characters`); each returns at once outside a sandbox"),
     ("apps/party_kit/src/settings.rs", "a menu: its clicks as console lines and cvars, its drawing from the console's binds"),
     ("apps/party_kit/src/loading_signal.rs", "a menu (the loading screen and its Leave?): drawn from the join's progress, the menu's and the shell's state; its keys cue sounds and hand Leave to the menu's Cancel"),
     ("apps/party_kit/src/main_menu.rs", "a menu: its clicks as console lines and cvars, the map loads it follows"),

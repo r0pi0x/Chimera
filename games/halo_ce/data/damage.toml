@@ -621,3 +621,47 @@ modifiers = [{ value = 1.0, types = "0-30" }]
 [effect.vehicle_killed_unit]
 tag = 'globals\vehicle_killed_unit'
 like = "vehicle_hit_environment"
+
+# The campaign's (d20's; not on the multiplayer maps): the Hunter's rung
+# (`campaign`). The numbers are the tags' as `blam_formats` reads them from
+# d20 (characters.md section 8 names the cannon's unit; the spec states
+# none of these numbers: the heavy test `heavy/campaign.rs` checks them
+# against the disc). The cannon's rod detonates with its explosion (and
+# the frag grenade's shock wave, as the rocket's does): 40 points at the
+# edge, 75 within 0.5 WU, nothing past 1.5 WU, a push of 4 WU/s; Hunters
+# (12, 13) and types 18 and 26 take none of it (characters.md section 5:
+# "Hunters are immune to fuel rods").
+[effect.fuel_rod_explosion]
+tag = 'weapons\fuel rod gun\explosion'
+category = "high explosive"
+side_effect = "none"
+flags = 0x21
+lower = 40.0
+upper = [75.0, 75.0]
+radius = [0.5, 1.5]
+core = 0.0
+camo = 1.0
+stun = [0.0, 0.0, 0.0]
+accel = 4.0
+modifiers = [
+    { value = 1.0, types = "0-11, 14-17, 21-25, 27-31" },
+    { value = 2.0, types = "19" },
+    { value = 4.0, types = "20" },
+]
+
+# The Hunter's own melee (its unit's melee damage, `characters\hunter\
+# melee`): 35 to 45 points within 0.3 WU, a push of 9 WU/s; the
+# player-worn Hunter's melee (its cannon has no melee damage of its own).
+[effect.hunter_melee]
+tag = 'characters\hunter\melee'
+category = "melee"
+side_effect = "none"
+flags = 0x1
+lower = 35.0
+upper = [35.0, 45.0]
+radius = [0.3, 0.3]
+core = 0.0
+camo = 0.0
+stun = [0.0, 0.0, 0.0]
+accel = 9.0
+modifiers = [{ value = 1.0, types = "11, 14-25, 30" }]

@@ -91,6 +91,14 @@ pub struct RegionMaterials {
     pub head: usize,
     pub legs: usize,
     pub other: usize,
+    /// The arms' (upper arm, forearm, hand), where the model has its own
+    /// (the Elite's `arms`, body x0.5); None: `other`.
+    #[serde(default)]
+    pub arms: Option<usize>,
+    /// A shield node's (the Jackal's disc: `body::hits::SHIELD_REGION`);
+    /// None: `other`.
+    #[serde(default)]
+    pub shield: Option<usize>,
 }
 
 /// The globals' player information values.
@@ -170,6 +178,14 @@ impl Spartan {
         toml::from_str(VITALITY).expect("data/vitality.toml parses (a test checks it)")
     }
 
+    /// Whether the shield protects the body at all: a shield, and the
+    /// indirect material (what area and other games' hits land on) not
+    /// leaking every hit through it (the Jackal's arm shield does).
+    pub fn shield_covers_body(&self) -> bool {
+        let leak = self.model.materials.get(self.model.indirect_material).map_or(0.0, |m| m.leak);
+        self.model.maximum_shield > 0.0 && leak < 1.0
+    }
+
     /// The shield delay, ticks: trunc(stun time x 30) = 180.
     pub fn shield_delay(&self) -> u32 {
         ticks(self.model.stun_time)
@@ -183,6 +199,10 @@ impl Spartan {
             None => self.model.indirect_material,
             Some(Head) => self.regions.head,
             Some(LeftShin | LeftFoot | RightShin | RightFoot) => self.regions.legs,
+            Some(LeftUpperArm | LeftForearm | LeftHand | RightUpperArm | RightForearm | RightHand) => {
+                self.regions.arms.unwrap_or(self.regions.other)
+            }
+            Some(Groin) => self.regions.shield.unwrap_or(self.regions.other),
             Some(_) => self.regions.other,
         }
     }
@@ -372,7 +392,15 @@ pub mod ids {
     pub const VEHICLE_HIT_ENVIRONMENT: EffectId = EffectId("vehicle_hit_environment");
     pub const VEHICLE_KILLED_UNIT: EffectId = EffectId("vehicle_killed_unit");
 
-    /// Every id, in the table's order.
+    /// The campaign's (d20's, not on `bloodgulch`): the Hunter's cannon's
+    /// explosion and the Hunter's melee (`campaign`, the Hunter's rung).
+    pub const FUEL_ROD_EXPLOSION: EffectId = EffectId("fuel_rod_explosion");
+    pub const HUNTER_MELEE: EffectId = EffectId("hunter_melee");
+    /// The campaign's ids (`FUEL_ROD_EXPLOSION`, `HUNTER_MELEE`).
+    pub const CAMPAIGN: [EffectId; 2] = [FUEL_ROD_EXPLOSION, HUNTER_MELEE];
+
+    /// Every id of the multiplayer maps' (on `bloodgulch`), in the table's
+    /// order.
     pub const ALL: [EffectId; 40] = [
         ASSAULT_RIFLE_BULLET,
         PISTOL_BULLET,

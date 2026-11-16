@@ -14,7 +14,12 @@
 //! textures, which in one piece took the render world's frame to hundreds of
 //! millions of instructions. The model comes out (`LateQueue::step`) a frame after its
 //! last asset, once that has been prepared, and until then whoever wants it
-//! keeps what it shows.
+//! keeps what it shows; the next model starts going in that same frame.
+//! Models go in in the order they were started, except one the caller wants
+//! now (`LateQueue::step_preferring`: a body a character wears, a model it
+//! holds, a view model a view shows), which goes in next once its task is
+//! done. Each model's cook time
+//! and frames going in are logged (debug).
 //!
 //! A model's materials wait outside the store (`prop_material::DormantProps`,
 //! when the app has it) until something draws them: then none of it reaches the
@@ -23,13 +28,17 @@
 //! Known shortcuts (docs/tech-debt.md): one image or mesh is not split, so a
 //! single asset larger than `FILL_BYTES` is that frame's whole budget and more.
 
-use std::{collections::VecDeque, sync::atomic::{AtomicU64, Ordering}};
+use std::{
+    collections::{HashSet, VecDeque},
+    sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, Instant},
+};
 
 use bevy::{
     asset::{Asset, AssetHandleProvider},
     mesh::skinning::SkinnedMeshInverseBindposes,
     prelude::*,
-    tasks::{AsyncComputeTaskPool, Task, block_on, poll_once},
+    tasks::{AsyncComputeTaskPool, Task, block_on},
 };
 
 use super::prop_material::{DormantProps, PropMaterial};
@@ -206,14 +215,35 @@ impl AddAsset<PropMaterial> for Stage {
     }
 }
 
-/// Models being built, in the order they were started: each comes out whole,
-/// in that order (a body's place in `PlayModels` is its index).
+/// Models being built: each comes out whole, in the order they were started,
+/// except that a model the caller prefers (`step_preferring`: one a character
+/// wears or holds now) goes into the stores next once its task is done.
 pub struct LateQueue<T> {
     generation: u64,
-    tasks: VecDeque<(String, Task<(T, Stage)>)>,
-    /// The front model going into the stores, then settling a frame.
-    filling: Option<(String, T, Stage)>,
+    tasks: VecDeque<Cooking<T>>,
+    /// The model going into the stores, then settling a frame.
+    filling: Option<Filling<T>>,
     settled: Option<(String, T)>,
+    /// The keys of all of them (`has`: a ladder starts thousands).
+    keys: HashSet<String>,
+}
+
+/// A model on its task.
+struct Cooking<T> {
+    key: String,
+    since: Instant,
+    task: Task<(T, Stage, Duration)>,
+}
+
+/// A model going into the stores: when its task started, how long it took,
+/// frames so far.
+struct Filling<T> {
+    key: String,
+    out: T,
+    stage: Stage,
+    since: Instant,
+    cooked: Duration,
+    frames: u32,
 }
 
 impl<T> Default for LateQueue<T> {
@@ -223,6 +253,7 @@ impl<T> Default for LateQueue<T> {
             tasks: VecDeque::new(),
             filling: None,
             settled: None,
+            keys: HashSet::new(),
         }
     }
 }
@@ -240,9 +271,7 @@ impl<T: Send + 'static> LateQueue<T> {
 
     /// Whether `key` is on its way.
     pub fn has(&self, key: &str) -> bool {
-        self.tasks.iter().any(|(k, _)| k == key)
-            || self.filling.as_ref().is_some_and(|(k, ..)| k == key)
-            || self.settled.as_ref().is_some_and(|(k, _)| k == key)
+        self.keys.contains(key)
     }
 
     /// Models on their way.
@@ -259,32 +288,65 @@ impl<T: Send + 'static> LateQueue<T> {
     /// added to the `Stage`).
     pub fn start(&mut self, key: String, providers: Providers, cook: impl FnOnce(&mut Stage) -> T + Send + 'static) {
         let task = AsyncComputeTaskPool::get().spawn(async move {
+            let began = Instant::now();
             let mut stage = Stage::new(providers);
             let out = cook(&mut stage);
-            (out, stage)
+            (out, stage, began.elapsed())
         });
-        self.tasks.push_back((key, task));
+        self.keys.insert(key.clone());
+        self.tasks.push_back(Cooking {
+            key,
+            since: Instant::now(),
+            task,
+        });
     }
 
     /// This frame's step: the model that is done, if any.
     pub fn step(&mut self, to: &mut LateStores) -> Option<(String, T)> {
-        if let Some(done) = self.settled.take() {
-            return Some(done);
+        self.step_preferring(to, |_| false)
+    }
+
+    /// This frame's step, a done model `prefer` names going into the stores
+    /// before the one started first: the model that is done, if any. The
+    /// next model starts going in the frame the last one comes out (the
+    /// budget a frame is the same).
+    pub fn step_preferring(&mut self, to: &mut LateStores, prefer: impl Fn(&str) -> bool) -> Option<(String, T)> {
+        let done = self.settled.take();
+        if let Some((key, _)) = &done {
+            self.keys.remove(key);
         }
-        if self.filling.is_none()
-            && let Some((_, task)) = self.tasks.front_mut()
-            && let Some((out, stage)) = block_on(poll_once(task))
-            && let Some((key, _)) = self.tasks.pop_front()
-        {
-            self.filling = Some((key, out, stage));
+        if self.filling.is_none() {
+            let preferred = self.tasks.iter().position(|c| prefer(&c.key) && c.task.is_finished());
+            let at = preferred.or_else(|| self.tasks.front().filter(|c| c.task.is_finished()).map(|_| 0));
+            if let Some(c) = at.and_then(|i| self.tasks.remove(i)) {
+                let (out, stage, cooked) = block_on(c.task);
+                self.filling = Some(Filling {
+                    key: c.key,
+                    out,
+                    stage,
+                    since: c.since,
+                    cooked,
+                    frames: 0,
+                });
+            }
         }
-        if let Some((_, _, stage)) = &mut self.filling
-            && stage.fill(to)
-            && let Some((key, out, _)) = self.filling.take()
-        {
-            self.settled = Some((key, out));
+        if let Some(f) = &mut self.filling {
+            f.frames += 1;
+            if f.stage.fill(to)
+                && let Some(f) = self.filling.take()
+            {
+                debug!(
+                    "late model {}: cooked in {} ms, out {} ms after it started, {} frames going in, {} more on their way",
+                    f.key,
+                    f.cooked.as_millis(),
+                    f.since.elapsed().as_millis(),
+                    f.frames,
+                    self.tasks.len()
+                );
+                self.settled = Some((f.key, f.out));
+            }
         }
-        None
+        done
     }
 }
 

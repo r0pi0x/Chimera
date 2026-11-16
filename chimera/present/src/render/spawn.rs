@@ -659,7 +659,10 @@ fn build_character_assets(
         .unwrap_or_default();
     // Built in that order (asset ids follow it), inserted in this one
     // (resource ids follow it): the gibs' meshes go with the bodies'.
-    commands.insert_resource(PlayModels { bodies, gibs });
+    commands.insert_resource(PlayModels {
+        bodies: bodies.into_iter().map(Some).collect(),
+        gibs,
+    });
     // Loose (dropped) forms (`map::loose`), drawn with the held models'
     // whole meshes (`super::loose`).
     if let Some(loose) = loose::assets(data) {

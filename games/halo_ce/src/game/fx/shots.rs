@@ -50,7 +50,9 @@
 //!
 //! The whole arsenal: a shot flies its trigger's projectile (the plasma
 //! pistol's second trigger: the charged bolt) from the eye moved by the
-//! trigger's first-person offset, as the server's; a guided one (the
+//! trigger's first-person offset, as the server's (a gun whose muzzle is
+//! data, `load::FxGun::shown_from_muzzle`, the Hunter's cannon: drawn
+//! leaving from its muzzle, parallel to the server's from the eye); a guided one (the
 //! needles, the charged bolt) is steered toward the shot's target
 //! (`HaloFired::target`, the server's pick on the shooter's machine and in
 //! `HaloShotNet`) by the server's rule (the guided rate, half against a
@@ -145,10 +147,26 @@ pub const CYBORG_SHIELD: usize = 22;
 #[derive(Resource, Clone)]
 pub struct Guns(pub BTreeMap<&'static str, Arc<Gun>>);
 
+/// The guns whose shots are shown, by their index on the wire
+/// (`HaloShotNet::gun`): the nine, then the campaign characters' own (the
+/// Hunter's cannon; appended, so the nine keep their indices).
+pub const SHOWN: [&str; 10] = [
+    GUNS[0], GUNS[1], GUNS[2], GUNS[3], GUNS[4], GUNS[5], GUNS[6], GUNS[7], GUNS[8],
+    super::super::weapons::rung::HUNTER_RUNG,
+];
+
 impl Default for Guns {
     fn default() -> Self {
-        let all = super::super::weapons::guns();
-        Self(GUNS.iter().filter_map(|id| all.iter().find(|(i, _)| i == id).map(|(_, g)| (*id, Arc::new(g.clone())))).collect())
+        let set = chimera_sim::weapon::data::WeaponSet::parse(super::super::weapons::DATA, &[]).unwrap_or_else(|e| panic!("Halo weapon data: {e}"));
+        Self(
+            SHOWN
+                .iter()
+                .filter_map(|id| {
+                    let table = set.get(id)?.hooks.get(super::super::weapons::WEAPON_HOOK).cloned()?;
+                    Some((*id, Arc::new(table.try_into().ok()?)))
+                })
+                .collect(),
+        )
     }
 }
 
@@ -214,7 +232,7 @@ pub fn trigger_projectile(gun: &Gun, trigger: u8) -> &Projectile {
 pub struct HaloShotNet {
     #[entities]
     pub owner: Entity,
-    /// Index into `GUNS`.
+    /// Index into `SHOWN`.
     pub gun: u8,
     pub effect: u8,
     pub misfired: bool,
@@ -346,6 +364,17 @@ fn on_fired(
             let [x, y, z] = trigger.first_person_offset;
             origin += aim * x + left * y + up * z;
         }
+        // A gun whose muzzle is data (`load::FxGun::shown_from_muzzle`, a
+        // campaign character's own): its shots drawn leaving from there.
+        let view = holders.get(f.owner).map_or(Quat::IDENTITY, |i| chimera_sim::weapon::aim_of(i.yaw, i.pitch));
+        let camera = place::camera(f.origin, view);
+        let fp = first_person(f.owner, &locals, role.as_deref());
+        if let Some(look) = fx.0.as_ref().and_then(|l| l.gun(&gun.tag)).filter(|g| g.shown_from_muzzle) {
+            let at = if fp { placer.first(f.owner, camera, look, "primary trigger") } else { placer.third(f.owner, camera, look, "primary trigger") };
+            if let Some(m) = at.first() {
+                origin = m.at / METERS_PER_UNIT;
+            }
+        }
         let model = fx.0.as_ref().and_then(|l| look_of(l, gun, &proj)).is_some_and(|l| l.model);
         for (i, (dir, tracer)) in f.projectiles.iter().enumerate() {
             let flight = super::super::weapons::flight::Flight::new(&proj, origin, *dir, 0.0);
@@ -374,9 +403,6 @@ fn on_fired(
         }
         let Some(lib) = fx.0.clone() else { continue };
         let Some(look) = lib.gun(&gun.tag) else { continue };
-        let view = holders.get(f.owner).map_or(Quat::IDENTITY, |i| chimera_sim::weapon::aim_of(i.yaw, i.pitch));
-        let camera = place::camera(f.origin, view);
-        let fp = first_person(f.owner, &locals, role.as_deref());
         let list = if f.misfired { &look.misfire } else { &look.firing };
         // The library lists every trigger's entries in order: the second
         // trigger's (the charged bolt's) after the first's.
@@ -532,13 +558,16 @@ fn fly(
                 let len = (bm - am).length();
                 let t = if len > 0.0 { ((point - am).length() / len).clamp(0.0, 1.0) } else { 0.0 };
                 let point = a + (b - a) * t;
+                // As the server's: a prop struck (no region) keeps its
+                // material and responds as the level.
+                let character = matches!(what, Some((_, Some(_))));
                 Some(Hit {
                     t,
                     point,
                     normal,
                     object: what.map(|w| w.0),
-                    material: if what.is_some() { Some(CYBORG as u8) } else { material },
-                    unit: what.is_some(),
+                    material: if character { Some(CYBORG as u8) } else { material },
+                    unit: character,
                 })
             };
             // The server's rule without its damage roll: a projectile that
@@ -546,6 +575,9 @@ fn fly(
             let hurts = proj.impact_effect().is_some();
             let mut struck = |h: &Hit<Entity>, _: Vec3, _: f32| -> Option<u8> {
                 let target = h.object?;
+                if !h.unit {
+                    return hurts.then_some(h.material).flatten();
+                }
                 hurts.then(|| if trace.shielded(target) { CYBORG_SHIELD as u8 } else { CYBORG as u8 })
             };
             // Guided (the needles, the charged bolt): toward the shot's
@@ -881,7 +913,7 @@ fn send_shots(
 ) {
     use bevy_replicon::prelude::{ClientId, SendTargets, ToClients};
     for f in fired.read() {
-        let Some(gun) = GUNS.iter().position(|g| *g == f.id) else { continue };
+        let Some(gun) = SHOWN.iter().position(|g| *g == f.id) else { continue };
         let message = HaloShotNet {
             owner: f.owner,
             gun: gun as u8,
@@ -904,7 +936,7 @@ fn send_shots(
 /// A client's copy of another player's shot.
 fn receive_shots(mut shots: MessageReader<HaloShotNet>, mut fired: MessageWriter<HaloFired>) {
     for s in shots.read() {
-        let Some(id) = GUNS.get(s.gun as usize) else { continue };
+        let Some(id) = SHOWN.get(s.gun as usize) else { continue };
         fired.write(HaloFired {
             owner: s.owner,
             weapon: Entity::PLACEHOLDER,

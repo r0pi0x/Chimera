@@ -1,7 +1,7 @@
 //! `chimera_sim`'s integration tests, as one test binary (each file a
 //! module): scenario tests of the engine's simulation frameworks on the
 //! headless harness (`chimera_world::harness::Sim`) with the engine's
-//! base alone (`SimBasePlugins`) and the greybox; nothing of a game.
+//! base alone (`SimBasePlugins`) and the greybox (or the range); nothing of a game.
 //! `cargo test -p chimera_sim --features dev --test it`; where tests go:
 //! docs/OBSERVABILITY.md, section 1.
 
@@ -15,6 +15,7 @@ mod nav_bounds;
 mod nav_links;
 mod movement;
 mod noclip_damage;
+mod range_map;
 mod rung_extras;
 mod spawn_score;
 mod spawns;

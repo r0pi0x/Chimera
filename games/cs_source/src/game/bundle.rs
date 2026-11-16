@@ -64,7 +64,7 @@ pub fn party_sim(app: &mut App) {
     super::view_anim::add_rules(app);
     super::view_anim::add_motion(
         app,
-        |own: Query<(), (With<crate::core::LocalPlayer>, With<crate::weapon::view_anim::OwnViewAnim>)>| own.is_empty(),
+        |own: Query<&crate::weapon::view_anim::OwnViewAnim, With<crate::core::LocalPlayer>>| !own.iter().any(|o| o.0),
     );
     app.add_plugins((
         super::weapons::CsGunsPlugin,

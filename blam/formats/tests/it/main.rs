@@ -27,6 +27,7 @@ mod globals;
 mod game_type;
 mod hud;
 mod vehicle;
+mod unit;
 
 mod heavy {
     mod animation_install;
@@ -46,4 +47,5 @@ mod heavy {
     mod weapon_install;
     mod hud_install;
     mod vehicle_install;
+    mod unit_install;
 }

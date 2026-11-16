@@ -13,7 +13,8 @@
 //! and on each map (`random` picks by the map's name). Without a pack
 //! nothing is counted or announced.
 //!
-//! - Teammates' kills and suicides neither count nor reset (A1).
+//! - Teammates' kills and suicides neither count nor reset (A1); nor do
+//!   a practice target's deaths and kills (`core::PracticeTarget`).
 //! - The killer's kill total (`KillFacts::total`) runs for the map.
 //! - The first kill starts again with each round (`core::RoundRestarts`)
 //!   and map. The multi-kill counts and last-kill times (A1, answered
@@ -229,6 +230,7 @@ fn count_kills(
     mut counter: ResMut<KillCounter<Entity>>,
     mut last_region: Local<Vec<(Entity, BodyRegion)>>,
     mut out: MessageWriter<KillAnnounced>,
+    practice: Query<(), With<crate::core::PracticeTarget>>,
 ) {
     for r in regions.read() {
         match last_region.iter_mut().find(|(e, _)| *e == r.target) {
@@ -240,6 +242,10 @@ fn count_kills(
         let gun_region = last_region.iter().position(|(e, _)| *e == d.entity).map(|i| last_region.swap_remove(i).1);
         let Some(pack) = active.0.as_ref() else { continue };
         let Some(killer) = d.attacker.filter(|k| *k != d.entity) else { continue };
+        // A sandbox's practice target's death or kill is no one's streak.
+        if practice.contains(d.entity) || practice.contains(killer) {
+            continue;
+        }
         let teammates = matches!((teams.get(killer), teams.get(d.entity)), (Ok(a), Ok(b)) if a == b);
         if teammates {
             continue;

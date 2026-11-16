@@ -1,7 +1,8 @@
 //! Full-screen passes a game asks for over the finished 3D frame, after
 //! the world, the view model and anything drawn in their passes (a scope
-//! card) and before the 2D HUD: a scene light (an additive tint and a
-//! multiplied light scale) and a focus blur through a mask picture. Any
+//! card) and before the 2D HUD: a radial blur through a mask's alpha, a
+//! scene light (an additive tint and a multiplied light scale) and a focus
+//! blur through a mask picture, in that order. Any
 //! game sets `ScreenPost`; the client puts `ScreenPostPass` on the last
 //! camera drawing the view (`client::screen_post`), whose post-process
 //! runs these (`ScreenPostSet`, inside `Core3dSystems::PostProcess`).
@@ -25,6 +26,24 @@
 //!
 //! The CPU twins (`saturate`, `downsample`, `blur_1d`, `merge`) do the
 //! same sums for tests (the shaders are `screen_post.wesl` and `screen_post_merge.wesl`).
+//!
+//! The radial blur (`RadialBlur`; Halo's scopes, specs/halo_ce/hud.md 9;
+//! `W x H` the frame, `c` the centre, `k = (radius x H / W, radius)`, all
+//! sampling bilinear and clamped, on gamma values), `passes` times, each
+//! pass on the previous one's output `I`:
+//! 1. three taps of `I`: at the pixel `p`, at `c + (p - c)(1 - k)` and at
+//!    `c + (p - c)(1 + k)` (a smear toward and away from the centre that
+//!    grows with the distance from it: `radius x H / 2` pixels at the
+//!    frame's edges, 0 at the centre);
+//! 2. `B` = their mean (equal weights);
+//! 3. out `= (1 - A) I(p) + A B`, `A` the mask's alpha at `p`: the mask
+//!    one texel per `H / mask_texels_per_height` frame pixels, centred on
+//!    `c`, not stretched, clamped beyond its edge (its border texel).
+//!
+//! It needs no work image (the passes ping-pong the view's own two main
+//! textures, `ViewTarget::post_process_write`) and nothing runs or is
+//! allocated while no game asks for it. CPU twins: `radial_taps`,
+//! `radial_mask_uv`, `radial_pass` (`screen_post_radial.wesl`).
 //!
 //! Known shortcuts: the passes run on the gamma-encoded values of the
 //! tone-mapped frame (as the games' 8-bit frame buffers hold them); an
@@ -70,6 +89,26 @@ pub struct ScreenPost {
     /// The focus blur's mask (its alpha: 1 sharp, 0 blurred); None: no
     /// blur.
     pub focus: Option<Handle<Image>>,
+    /// The radial blur through a mask's alpha (module doc); None: none.
+    pub radial: Option<RadialBlur>,
+}
+
+/// The most passes a radial blur runs.
+pub const MAX_RADIAL_PASSES: u32 = 4;
+
+/// A radial blur of the frame blended in by a mask's alpha (module doc).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RadialBlur {
+    /// Its alpha: 0 keeps the frame sharp, 1 shows the blur.
+    pub mask: Handle<Image>,
+    /// Mask texels per frame height (one texel is `H /` this pixels).
+    pub mask_texels_per_height: f32,
+    /// The taps' spread as a fraction of the frame's height (module doc).
+    pub radius: f32,
+    /// The blur's and the mask's centre, texture coordinates of the frame.
+    pub centre: Vec2,
+    /// Passes, each on the previous one's output (to `MAX_RADIAL_PASSES`).
+    pub passes: u32,
 }
 
 impl Default for ScreenPost {
@@ -78,6 +117,7 @@ impl Default for ScreenPost {
             light_add: Vec3::ZERO,
             light_scale: Vec3::ONE,
             focus: None,
+            radial: None,
         }
     }
 }
@@ -85,7 +125,7 @@ impl Default for ScreenPost {
 impl ScreenPost {
     /// Whether any pass has work.
     pub fn is_on(&self) -> bool {
-        self.light_on() || self.focus.is_some()
+        self.light_on() || self.focus.is_some() || self.radial.as_ref().is_some_and(|r| r.passes > 0)
     }
 
     pub fn light_on(&self) -> bool {
@@ -100,6 +140,17 @@ pub struct ScreenPostPass {
     pub light_add: Vec3,
     pub light_scale: Vec3,
     pub focus: Option<AssetId<Image>>,
+    pub radial: Option<RadialPass>,
+}
+
+/// `RadialBlur` in the render world.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RadialPass {
+    pub mask: AssetId<Image>,
+    pub mask_texels_per_height: f32,
+    pub radius: f32,
+    pub centre: Vec2,
+    pub passes: u32,
 }
 
 impl ScreenPostPass {
@@ -108,7 +159,25 @@ impl ScreenPostPass {
             light_add: post.light_add,
             light_scale: post.light_scale,
             focus: post.focus.as_ref().map(Handle::id),
+            radial: post.radial.as_ref().filter(|r| r.passes > 0).map(|r| RadialPass {
+                mask: r.mask.id(),
+                mask_texels_per_height: r.mask_texels_per_height,
+                radius: r.radius,
+                centre: r.centre,
+                passes: r.passes.min(MAX_RADIAL_PASSES),
+            }),
         }
+    }
+
+    /// Radial passes this frame (0: none).
+    pub fn radial_passes(&self) -> u32 {
+        self.radial.map_or(0, |r| r.passes)
+    }
+
+    /// Whether the view needs the focus blur's work images (the radial
+    /// blur needs none).
+    pub fn needs_work_images(&self) -> bool {
+        self.focus.is_some()
     }
 }
 
@@ -198,6 +267,41 @@ pub fn focus_blur(frame: &[Vec3], w: usize, h: usize, alpha: impl Fn(Vec2) -> f3
     out
 }
 
+/// The radial blur's taps' scales about the centre per axis (module doc:
+/// `k`) on a `size` frame.
+pub fn radial_k(radius: f32, size: Vec2) -> Vec2 {
+    Vec2::new(radius * size.y / size.x.max(1.0), radius)
+}
+
+/// The radial blur's three taps (texture coordinates) for the pixel at
+/// `uv`: itself, pulled toward the centre, pushed away from it.
+pub fn radial_taps(uv: Vec2, centre: Vec2, k: Vec2) -> [Vec2; 3] {
+    let d = uv - centre;
+    [uv, centre + d * (Vec2::ONE - k), centre + d * (Vec2::ONE + k)]
+}
+
+/// The mask's texture coordinates at frame texture coordinates `uv`
+/// (module doc, step 3; clamping is the sampler's).
+pub fn radial_mask_uv(uv: Vec2, size: Vec2, centre: Vec2, texels_per_height: f32, mask: Vec2) -> Vec2 {
+    let texel = size.y / texels_per_height.max(1e-3);
+    ((uv - centre) * size / texel + mask * 0.5) / mask
+}
+
+/// One radial pass on a frame (`w x h`), the mask's alpha by frame
+/// texture coordinate.
+pub fn radial_pass(frame: &[Vec3], w: usize, h: usize, radius: f32, centre: Vec2, alpha: impl Fn(Vec2) -> f32) -> Vec<Vec3> {
+    let k = radial_k(radius, Vec2::new(w as f32, h as f32));
+    let mut out = Vec::with_capacity(w * h);
+    for y in 0..h {
+        for x in 0..w {
+            let uv = Vec2::new((x as f32 + 0.5) / w as f32, (y as f32 + 0.5) / h as f32);
+            let [a, b, c] = radial_taps(uv, centre, k).map(|t| sample(frame, w, h, t));
+            out.push(a.lerp((a + b + c) / 3.0, alpha(uv)));
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // The GPU passes
 
@@ -211,6 +315,7 @@ impl Plugin for ScreenPostPlugin {
         }
         embedded_asset!(app, "screen_post.wesl");
         embedded_asset!(app, "screen_post_merge.wesl");
+        embedded_asset!(app, "screen_post_radial.wesl");
         app.add_plugins(ExtractComponentPlugin::<ScreenPostPass>::default());
         app.sub_app_mut(RenderApp)
             .add_systems(RenderStartup, init_pipelines)
@@ -240,6 +345,9 @@ struct Pipelines {
     vblur: CachedRenderPipelineId,
     hblur: CachedRenderPipelineId,
     merge: [CachedRenderPipelineId; 2],
+    /// The radial blur's: the frame, the mask, the sampler, its uniform.
+    radial_layout: BindGroupLayoutDescriptor,
+    radial: [CachedRenderPipelineId; 2],
 }
 
 fn init_pipelines(
@@ -282,8 +390,25 @@ fn init_pipelines(
     });
     let shader = asset_server.load("embedded://chimera_present/render/screen_post.wesl");
     let merge_shader: Handle<Shader> = asset_server.load("embedded://chimera_present/render/screen_post_merge.wesl");
+    let radial_shader: Handle<Shader> = asset_server.load("embedded://chimera_present/render/screen_post_radial.wesl");
+    let radial_layout = BindGroupLayoutDescriptor::new(
+        "screen_post_radial",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                texture_2d(TextureSampleType::Float { filterable: true }),
+                texture_2d(TextureSampleType::Float { filterable: true }),
+                binding_types::sampler(SamplerBindingType::Filtering),
+                uniform_buffer_sized(false, None),
+            ),
+        ),
+    );
     let pipeline = |entry: &'static str, layout: &BindGroupLayoutDescriptor, format: TextureFormat| {
-        let shader = if entry == "merge" { merge_shader.clone() } else { shader.clone() };
+        let shader = match entry {
+            "merge" => merge_shader.clone(),
+            "radial" => radial_shader.clone(),
+            _ => shader.clone(),
+        };
         pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
             label: Some(format!("screen_post_{entry}").into()),
             layout: vec![layout.clone()],
@@ -309,6 +434,8 @@ fn init_pipelines(
         vblur: pipeline("vblur", &one, QUARTER),
         hblur: pipeline("hblur", &one, QUARTER),
         merge: [pipeline("merge", &three, hdr), pipeline("merge", &three, ldr)],
+        radial: [pipeline("radial", &radial_layout, hdr), pipeline("radial", &radial_layout, ldr)],
+        radial_layout,
         one,
         three,
         sampler,
@@ -333,7 +460,7 @@ fn prepare_textures(
         let Some(size) = camera.physical_target_size.or(camera.physical_viewport_size) else {
             continue;
         };
-        if pass.focus.is_none() || size.x == 0 || size.y == 0 {
+        if !pass.needs_work_images() || size.x == 0 || size.y == 0 {
             commands.entity(e).remove::<FocusTextures>();
             continue;
         }
@@ -438,6 +565,32 @@ fn screen_post(
             &BindGroupEntries::sequential((from, &p.sampler, uniform.as_entire_binding())),
         )
     };
+    // The radial blur: each pass from the view's current main texture into
+    // its other one (no work image), when its mask is loaded.
+    if let Some(r) = pass.radial
+        && let Some(mask) = images.get(r.mask)
+        && pipeline_cache.get_render_pipeline(p.radial[slot]).is_some()
+    {
+        let (w, h) = (size.x.max(1) as f32, size.y.max(1) as f32);
+        let k = radial_k(r.radius, Vec2::new(w, h));
+        let floats: [f32; 8] = [w, h, r.centre.x, r.centre.y, k.x, k.y, h / r.mask_texels_per_height.max(1e-3), 0.0];
+        let bytes: Vec<u8> = floats.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let radial_uniform = device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("screen_post_radial"),
+            contents: &bytes,
+            usage: BufferUsages::UNIFORM,
+        });
+        let layout = pipeline_cache.get_bind_group_layout(&p.radial_layout);
+        for _ in 0..r.passes {
+            let post = target.post_process_write();
+            let bind = device.create_bind_group(
+                "screen_post_radial",
+                &layout,
+                &BindGroupEntries::sequential((post.source, &mask.texture_view, &p.sampler, radial_uniform.as_entire_binding())),
+            );
+            draw(&mut ctx, p.radial[slot], &bind, post.destination);
+        }
+    }
     // The scene light.
     if (pass.light_add != Vec3::ZERO || pass.light_scale != Vec3::ONE)
         && pipeline_cache.get_render_pipeline(p.light[slot]).is_some()
@@ -536,5 +689,83 @@ mod tests {
     #[test]
     fn screen_post_is_off_by_default() {
         assert!(!ScreenPost::default().is_on());
+        let pass = ScreenPostPass::of(&ScreenPost::default());
+        assert_eq!(pass.radial_passes(), 0);
+        assert!(!pass.needs_work_images());
+    }
+
+    fn radial(passes: u32) -> RadialBlur {
+        RadialBlur { mask: Handle::default(), mask_texels_per_height: 480.0, radius: 7.92 / 480.0, centre: Vec2::splat(0.5), passes }
+    }
+
+    /// The radial blur turns the passes on and allocates no work image;
+    /// zero passes is off; the passes are capped.
+    #[test]
+    fn radial_blur_requests() {
+        let mut post = ScreenPost { radial: Some(radial(2)), ..default() };
+        assert!(post.is_on());
+        let pass = ScreenPostPass::of(&post);
+        assert_eq!(pass.radial_passes(), 2);
+        assert!(!pass.needs_work_images(), "the radial blur ping-pongs the view's own textures");
+        post.radial = Some(radial(0));
+        assert!(!post.is_on());
+        assert_eq!(ScreenPostPass::of(&post).radial, None);
+        post.radial = Some(radial(99));
+        assert_eq!(ScreenPostPass::of(&post).radial_passes(), MAX_RADIAL_PASSES);
+    }
+
+    /// hud.md S13's sample positions on a 640 x 480 frame (in pixels).
+    #[test]
+    fn radial_taps_s13() {
+        let size = Vec2::new(640.0, 480.0);
+        let px = |p: Vec2, r: f32| radial_taps(p / size, Vec2::splat(0.5), radial_k(r / 480.0, size)).map(|t| t * size);
+        let near = |a: Vec2, b: Vec2| (a - b).abs().max_element() < 0.01;
+        let [s0, s1, s2] = px(Vec2::new(130.0, 240.0), 7.92);
+        assert!(near(s0, Vec2::new(130.0, 240.0)));
+        assert!(near(s1, Vec2::new(132.35, 240.0)) && near(s2, Vec2::new(127.65, 240.0)), "{s1} {s2}");
+        let [_, s1, s2] = px(Vec2::new(640.0, 480.0), 7.92);
+        assert!(near(s1, Vec2::new(636.04, 476.04)) && near(s2, Vec2::new(643.96, 483.96)), "{s1} {s2}");
+        let [_, s1, s2] = px(Vec2::new(439.0, 240.0), 10.81);
+        assert!((s1.x - 437.0).abs() < 0.02 && (s2.x - 441.0).abs() < 0.02, "{s1} {s2}");
+        // At 1280 x 720 the radius scales with the height: the same spread
+        // in 480-line pixels.
+        let big = Vec2::new(1280.0, 720.0);
+        let k = radial_k(7.92 / 480.0, big);
+        let [_, s1, _] = radial_taps(Vec2::new(1.0, 0.5), Vec2::splat(0.5), k);
+        assert!(((1.0 - s1.x) * big.x - 7.92 * 1.5 / 2.0).abs() < 1e-3);
+    }
+
+    /// The mask one texel per 480-line pixel, centred, on texel centres.
+    #[test]
+    fn radial_mask_addressing() {
+        let (size, mask) = (Vec2::new(640.0, 480.0), Vec2::new(512.0, 256.0));
+        // Pixel column 64 (centre 64.5) shows mask column 0's centre; row
+        // 112 row 0's.
+        let uv = radial_mask_uv(Vec2::new(64.5, 112.5) / size, size, Vec2::splat(0.5), 480.0, mask);
+        assert!((uv * mask - Vec2::splat(0.5)).abs().max_element() < 1e-3, "{uv}");
+        // At 1440 x 1080 a texel is 2.25 pixels, still centred.
+        let size = Vec2::new(1440.0, 1080.0);
+        let uv = radial_mask_uv(Vec2::splat(0.5), size, Vec2::splat(0.5), 480.0, mask);
+        assert!((uv - Vec2::splat(0.5)).abs().max_element() < 1e-6);
+        let uv = radial_mask_uv(Vec2::new(720.0 + 2.25 * 256.0, 540.0) / size, size, Vec2::splat(0.5), 480.0, mask);
+        assert!((uv.x - 1.0).abs() < 1e-5, "{uv}");
+    }
+
+    /// Alpha 0 keeps the frame exactly; a uniform frame stays itself under
+    /// any alpha; alpha 1 smears an edge away from the centre.
+    #[test]
+    fn radial_pass_blend() {
+        let (w, h) = (64, 48);
+        let frame: Vec<Vec3> = (0..w * h).map(|i| Vec3::splat(((i % w) as f32 / 7.0).fract())).collect();
+        assert_eq!(radial_pass(&frame, w, h, 0.05, Vec2::splat(0.5), |_| 0.0), frame);
+        let flat = vec![Vec3::splat(0.6); w * h];
+        for c in radial_pass(&flat, w, h, 0.05, Vec2::splat(0.5), |_| 1.0) {
+            assert!((c - Vec3::splat(0.6)).abs().max_element() < 1e-6);
+        }
+        let blurred = radial_pass(&frame, w, h, 0.05, Vec2::splat(0.5), |_| 1.0);
+        assert_ne!(blurred, frame);
+        // The centre pixel's taps coincide nearly: almost unchanged there.
+        let c = (h / 2) * w + w / 2;
+        assert!((blurred[c] - frame[c]).abs().max_element() < 0.02);
     }
 }

@@ -1,0 +1,20 @@
+# Three practice targets from three games at 5, 10 and 20 m on the
+# greybox, one picture (a scene script: chimera_client's `scene`).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/three_targets.scene --out <dir>
+wait_for map_loaded 6000     # the sandbox's greybox in
+wait_for spawned 3000
+wait 120                     # pipelines and bodies settle
+setpos 0 -1181 0             # the greybox at (0, 0, 30) m: setpos takes Source units, feet
+setang 0 96
+target add halo_ce:spartan 5
+setang 0 90
+target add tf2:heavy 10 strafe
+setang 0 85
+target add cs_source:weapon_ak47 20
+setang 2 90
+wait 300                     # bodies dressed, the strafe under way
+shot three_targets
+wait 45
+shot three_targets_later     # the strafing Heavy moved
+target list

@@ -541,3 +541,72 @@ fn the_reduck_delay_36() {
     }
     assert_eq!(started, Some(20), "the duck began {started:?} ticks after the release");
 }
+
+/// Classes.md test 1, the eyes: each class's eye stands its height above
+/// its feet (Scout 65, Soldier 68, Heavy 75, Engineer 68), measured as a
+/// camera takes it (the body's place plus `MovementState::eye_offset`),
+/// with the box's bottom at the feet; once it has walked (the stay-on-
+/// ground snap; standing still it may hover up to 2 units, CS:S's
+/// movement.md "Hovering", as the spawn left it) the feet are on the
+/// floor and the eye is its height above the floor. No offset is shared
+/// by every class (the Windows check found each 2.07 over the spec's
+/// height on de_dust2: a box resting on the map, not the eye).
+#[test]
+fn each_class_eye_stands_its_height_above_the_floor_classes_1() {
+    for (gun, eye) in [(SCATTERGUN, 65.0), (ROCKET_LAUNCHER, 68.0), (MINIGUN, 75.0), (SHOTGUN, 68.0)] {
+        let mut me = Player::holding(gun);
+        let camera = |me: &Player| to_source(me.sim.position(me.p) + me.ms().eye_offset);
+        assert!((camera(&me).z - me.feet().z - eye).abs() < TOL, "{gun}: eye {} above the feet", camera(&me).z - me.feet().z);
+        assert!(me.feet().z >= 0.0 && me.feet().z <= 2.0, "{gun}: hovering {}", me.feet().z);
+        let s = me.ms();
+        let at = me.sim.position(me.p);
+        let bottom = to_source(at + s.hull_min).z.min(to_source(at + s.hull_max).z);
+        assert!((bottom - me.feet().z).abs() < TOL, "{gun}: the box's bottom at {bottom}");
+        me.keys(1.0, 0.0);
+        me.sim.seconds(0.3);
+        me.keys(0.0, 0.0);
+        me.sim.seconds(1.0);
+        assert!(me.feet().z.abs() < 0.05, "{gun}: feet at {} after walking", me.feet().z);
+        assert!((camera(&me).z - eye).abs() < 0.05, "{gun}: eye {} above the floor, want {eye}", camera(&me).z);
+    }
+}
+
+/// TF2's class parts (`movement::ClassParts`: the class, its traits, the
+/// max health before, the view kick's spring, the view model's class) go
+/// on with its movement and off with it in the switch's own command, to
+/// another movement on Source's marker or to one on another marker: never
+/// one at a time (each alone an archetype for every combination of the
+/// character's other parts).
+#[test]
+fn the_class_parts_go_on_and_off_with_the_movement_in_one_move() {
+    use chimera_sim::{movement::placeholder, weapon::view_anim::ViewVariant};
+    use source_engine::source_movement::SourceMovementAppExt;
+    use tf2::game::weapons::recoil::Tf2Punch;
+    struct Others;
+    impl Plugin for Others {
+        fn build(&self, app: &mut App) {
+            app.add_plugins(Floor).source_movement("test:source", None, None);
+        }
+    }
+    let mut sim = Sim::new(Tf2Sim, Others);
+    let p = sim.spawn_character(to_engine(Vec3::new(0.0, 0.0, 36.5)), ID);
+    let parts = |sim: &Sim| {
+        let w = sim.app.world();
+        [
+            w.get::<Tf2Class>(p).is_some(),
+            w.get::<SourceTraits>(p).is_some(),
+            w.get::<movement::HealthBefore>(p).is_some(),
+            w.get::<Tf2Punch>(p).is_some(),
+            w.get::<ViewVariant>(p).is_some(),
+        ]
+    };
+    assert_eq!(parts(&sim), [true; 5], "on with the movement");
+    for other in ["test:source", placeholder::ID] {
+        sim.set_movement(p, other);
+        assert_eq!(parts(&sim), [false; 5], "off in the same command, to {other}");
+        sim.set_movement(p, ID);
+        assert_eq!(parts(&sim), [true; 5], "on again from {other}");
+    }
+    sim.ticks(5);
+    assert_eq!(parts(&sim), [true; 5], "kept while on TF2's movement");
+}

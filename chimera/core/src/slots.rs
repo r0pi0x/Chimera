@@ -35,6 +35,15 @@ pub struct MovementImpl {
     /// Puts the marker on with the slot (`MovementSlot`), in one move.
     pub insert: fn(&mut EntityWorldMut, MovementSlot),
     pub remove: fn(&mut EntityWorldMut),
+    /// What a character leaving this movement for another on the same
+    /// marker takes off (its game's own parts: HL2:DM's suit when CS:S's
+    /// movement takes over), in one move, before the new one's `insert`;
+    /// None: nothing. A game whose parts go with its movement overrides
+    /// `insert` and `remove` to carry them in the same moves (Halo's
+    /// vitality, HL2:DM's suit): a separate step is an archetype for every
+    /// combination of the character's other parts (docs/DESIGN.md, "ECS
+    /// style").
+    pub leave: Option<fn(&mut EntityWorldMut)>,
     /// The marker component's type: two movements on the same marker (CS:S's
     /// and HL2:DM's, both `SourceMovement`) switch by a new value in place,
     /// not a removal and an insert (each a new archetype for every
@@ -148,6 +157,7 @@ impl RegisterSlots for App {
                 id,
                 insert: insert::<M>,
                 remove: remove::<M>,
+                leave: None,
                 marker: std::any::TypeId::of::<M>(),
                 footing: None,
                 seat: None,
@@ -182,15 +192,24 @@ pub fn set_movement(entity: Entity, id: &'static str) -> impl Command {
         };
         let (insert, seat, marker) = (new.insert, new.seat, new.marker);
         let old = world.get::<MovementSlot>(entity).and_then(|s| registry.get(s.0));
-        let footing = old.filter(|o| o.id != id).and_then(|o| o.footing);
-        // The other markers go; the new one's own is replaced in place.
-        let removes: Vec<_> = registry.0.iter().filter(|m| m.marker != marker).map(|m| m.remove).collect();
+        let leaving = old.filter(|o| o.id != id);
+        let footing = leaving.and_then(|o| o.footing);
+        // The other markers go, the old movement's first (its `remove`
+        // takes its game's parts off with its marker, in one move: another
+        // on the same marker would take the marker alone first); the new
+        // one's own is replaced in place, after the old one's `leave`.
+        let mut removes: Vec<_> = leaving.filter(|o| o.marker != marker).map(|o| o.remove).into_iter().collect();
+        removes.extend(registry.0.iter().filter(|m| m.marker != marker && leaving.is_none_or(|o| o.id != m.id)).map(|m| m.remove));
+        let leave = leaving.filter(|o| o.marker == marker).and_then(|o| o.leave);
         let footing = footing.and_then(|f| f(world, entity));
         let Ok(mut e) = world.get_entity_mut(entity) else {
             return;
         };
         for remove in removes {
             remove(&mut e);
+        }
+        if let Some(leave) = leave {
+            leave(&mut e);
         }
         insert(&mut e, MovementSlot(id));
         if let (Some(seat), Some(footing)) = (seat, footing) {

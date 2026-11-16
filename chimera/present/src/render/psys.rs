@@ -822,7 +822,7 @@ pub fn update_systems(
 #[derive(Default)]
 pub struct StartedSystems {
     defs: Option<std::sync::Arc<MapParticleSystems>>,
-    running: Vec<(Instance, ControlPoint)>,
+    running: Vec<(Instance, ControlPoint, Option<f32>)>,
     rng: Option<ParticleRng>,
 }
 
@@ -838,6 +838,20 @@ impl StartedSystems {
         forward: Vec3,
         light: Vec3,
     ) -> bool {
+        self.start_for(defs, name, position, forward, light, None)
+    }
+
+    /// `start`, its emitters stopped `emit_for` seconds in (None: as its
+    /// definition runs).
+    pub fn start_for(
+        &mut self,
+        defs: &std::sync::Arc<MapParticleSystems>,
+        name: &str,
+        position: Vec3,
+        forward: Vec3,
+        light: Vec3,
+        emit_for: Option<f32>,
+    ) -> bool {
         if !self.defs.as_ref().is_some_and(|d| std::sync::Arc::ptr_eq(d, defs)) {
             self.defs = Some(defs.clone());
             self.running.clear();
@@ -851,22 +865,26 @@ impl StartedSystems {
                 rotation,
                 light,
             },
+            emit_for,
         ));
         true
     }
 
     pub fn count(&self) -> usize {
-        self.running.iter().map(|(i, _)| i.count()).sum()
+        self.running.iter().map(|(i, ..)| i.count()).sum()
     }
 
     /// Advance every started system by `dt`; finished ones go.
     pub fn step(&mut self, dt: f32, sheets: &impl Sheets) {
         let Some(defs) = self.defs.clone() else { return };
         let rng = self.rng.get_or_insert_with(|| ParticleRng::new(0x5_1A5));
-        for (i, cp) in &mut self.running {
+        for (i, cp, emit_for) in &mut self.running {
+            if emit_for.is_some_and(|t| i.age >= t) && i.emitting {
+                i.stop();
+            }
             i.step(&defs.defs, &[*cp; MAX_CONTROL_POINTS], dt, rng, sheets);
         }
-        self.running.retain(|(i, _)| !i.finished(&defs.defs));
+        self.running.retain(|(i, ..)| !i.finished(&defs.defs));
     }
 }
 
@@ -905,7 +923,7 @@ pub fn run_started_systems(
         let light = light_field
             .as_deref()
             .map_or(Vec3::ONE, |field| point_light(&(field.0.0)(s.position)));
-        started.start(defs, &s.name, to_game(s.position), f, light);
+        started.start_for(defs, &s.name, to_game(s.position), f, light, s.emit_for);
     }
     if started.running.is_empty() {
         return;
@@ -916,7 +934,7 @@ pub fn run_started_systems(
         return;
     };
     let mut out = Vec::new();
-    for (i, _) in &started.running {
+    for (i, ..) in &started.running {
         i.draw(&defs.defs, &to_engine, scale, eye, &sheets, &mut out);
     }
     if !out.is_empty() {
@@ -1147,7 +1165,7 @@ mod tests {
         assert!(!started.start(&defs, "nothing", Vec3::ZERO, Vec3::Z, Vec3::ONE));
         assert!(started.start(&defs, "TEST", Vec3::ZERO, Vec3::Z, Vec3::ONE));
         // Pointing up: the frame's forward axis is +Z.
-        let (_, cp) = &started.running[0];
+        let (_, cp, _) = &started.running[0];
         assert!((cp.rotation * Vec3::X).abs_diff_eq(Vec3::Z, 1e-5));
         started.step(0.1, &none);
         assert!(started.count() > 0);
@@ -1160,6 +1178,31 @@ mod tests {
         let other = std::sync::Arc::new((*defs).clone());
         started.start(&other, "test", Vec3::ZERO, Vec3::Z, Vec3::ONE);
         assert_eq!(started.running.len(), 1);
+    }
+
+    /// A start with `emit_for` stops emitting then (TF2's flames, one
+    /// piece per round): the 0.5 s emitter cut at 0.1 s makes fewer.
+    #[test]
+    fn started_system_emits_for_its_limit() {
+        let defs = std::sync::Arc::new(MapParticleSystems {
+            defs: vec![system()],
+            placed: Vec::new(),
+            scale: 0.0254,
+        });
+        let run = |emit_for| {
+            let mut s = StartedSystems::default();
+            assert!(s.start_for(&defs, "test", Vec3::ZERO, Vec3::Z, Vec3::ONE, emit_for));
+            let mut made = 0;
+            for _ in 0..4 {
+                s.step(0.05, &none);
+                made = made.max(s.count());
+            }
+            (made, s.running[0].0.emitting)
+        };
+        let (cut, emitting) = run(Some(0.1));
+        let (full, _) = run(None);
+        assert!(!emitting, "stopped past its limit");
+        assert!(cut < full, "{cut} < {full}");
     }
 
     #[test]

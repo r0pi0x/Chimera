@@ -33,8 +33,10 @@
 //! - **Bullets** push too (`bullet_push`, after the frame): one push per
 //!   victim per shot from its summed damage at scale 6, from the shooter's
 //!   centre lowered 10.
-//! - its sound there, heard by every client (`map::GameSound`), and an
-//!   explosion's look (`Tf2Explosion`, drawn by the client).
+//! - its sound there, heard by every client (`map::GameSound`), an
+//!   explosion's look (`Tf2Explosion`, drawn by the client) and its
+//!   measure (`weapon::grenade::BlastDealt`: the centre, the radius, the
+//!   damage at the centre and each victim's; the sandbox's blast rings).
 //!
 //! Each damage rounds to whole points, of kind blast, naming the gun.
 //!
@@ -218,6 +220,8 @@ pub struct BlastWorld<'w, 's> {
     inflicted: MessageWriter<'w, Inflicted>,
     sounds: MessageWriter<'w, GameSound>,
     looks: MessageWriter<'w, Tf2Explosion>,
+    /// The blast as measured (`BlastDealt`: the sandbox's blast rings).
+    dealt_out: MessageWriter<'w, chimera_sim::weapon::grenade::BlastDealt>,
     commands: Commands<'w, 's>,
 }
 
@@ -319,11 +323,13 @@ impl BlastWorld<'_, '_> {
         // The owner after everyone else.
         dealt.extend(own);
         let from = centre - Vec3::Y * FORCE_LOWER * U;
+        let mut victims = Vec::new();
         for d in dealt {
             let amount = round_points(d.points * HP);
             if amount <= 0.0 {
                 continue;
             }
+            victims.push(chimera_sim::weapon::grenade::BlastVictim { victim: d.e, at: d.centre, distance_m: d.centre.distance(centre), damage: amount });
             let dir = (d.centre - from).normalize_or(Vec3::Y);
             self.damage.write(Damage {
                 target: d.e,
@@ -341,6 +347,16 @@ impl BlastWorld<'_, '_> {
             let dv = push(d.points, d.scale, d.size, dir) * half * U;
             self.shove(d.e, dv, d.own);
         }
+        self.dealt_out.write(chimera_sim::weapon::grenade::BlastDealt {
+            attacker: owner,
+            weapon: Some(weapon),
+            at: centre,
+            inner: 0.0,
+            outer: blast.radius * U,
+            edge_damage: p.edge * p.damage * HP,
+            max_damage: p.damage * HP,
+            victims,
+        });
         if let Some(s) = &p.sound {
             self.sounds.write(GameSound(PlaySound::at(s.clone(), centre)));
         }

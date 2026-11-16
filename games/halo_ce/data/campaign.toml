@@ -1,0 +1,490 @@
+# The campaign's characters as bodies a party player can wear on a Halo
+# rung (specs/halo_ce/characters.md; docs/plans/active/halo-ce.md, "Play as
+# the campaign's characters"). `games/halo_ce/src/game/campaign/mod.rs`
+# reads it (`CampaignData`). Party apps only: Halo's own app never offers
+# these bodies. The Spartan is every Halo player's body unless a draw here
+# says otherwise.
+
+# How fast a campaign body runs (the owner's rule, 2026-11-16: player
+# expression over fidelity for movement): every body moves on the
+# Spartan's mover (its acceleration, air control, jump and gravity, every
+# direction, no landing freeze, no aim limit), only its speed differs: the
+# Spartan's run and crouch speeds times 1 + speed_blend x (speed_ratio -
+# 1), halfway (0.5) between the Spartan's and the character's own. Tune
+# here.
+speed_blend = 0.5
+
+# Our own lines (the owner's wish, 2026-11-16: "it should be obvious when
+# you become one of the Halo characters that you start talking like
+# them"; not the game's: in the game a body without an actor says only
+# its pain, death and scream lines). Each character's row names, in
+# `lines`, the dialogue slots it says (`voice::SLOT_NAMES`: the slots by
+# the dialogue's own names), in order of preference: the first its voice
+# fills plays. `becoming`: when a player's body becomes the character (a
+# rung gives it, or it comes back as it after another kind or another
+# game's character), once; the same character again in a new life says
+# it again only `becoming_repeat_seconds` after the last. `kill`: after a
+# kill, with the chance `kill_chance`, never within
+# `kill_cooldown_seconds` of the last. Heard by every player at the body,
+# by the voice's own rules (one line at a time, below a pain line).
+[chatter]
+becoming_repeat_seconds = 60.0
+kill_chance = 0.5
+kill_cooldown_seconds = 10.0
+
+# Which bodies may carry each Halo gun, with their weights (characters.md
+# section 2, "Character by multiplayer weapon": a character is offered only
+# for the guns its graph animates and the campaign gives it). A gun not
+# listed is the Spartan's alone. With `halo_ce:campaign_bodies` on, a
+# player given a Halo rung draws its body by these weights (the Spartan's
+# included); a body whose unit is not here is skipped (the Spartan then).
+# Of Ultimate Gun Game's Halo rungs (the assault rifle, pistol, plasma
+# rifle, shotgun, sniper rifle, rocket launcher, needler and plasma
+# pistol), the campaign gives (section 2, "Character by multiplayer
+# weapon", "game") the Elite the plasma rifle and the needler, the Grunt
+# the needler and the plasma pistol, the Jackal the plasma pistol, the
+# Marine the assault rifle, plasma rifle, needler, shotgun and sniper
+# rifle (its rifle class's labels; the pistol it animates but the campaign
+# never gives it).
+[guns."halo_ce:assault_rifle"]
+spartan = 1.0
+marine = 1.0
+
+[guns."halo_ce:plasma_rifle"]
+spartan = 1.0
+elite = 1.0
+marine = 1.0
+
+[guns."halo_ce:needler"]
+spartan = 1.0
+elite = 1.0
+grunt = 1.0
+marine = 1.0
+
+[guns."halo_ce:shotgun"]
+spartan = 1.0
+marine = 1.0
+
+[guns."halo_ce:sniper_rifle"]
+spartan = 1.0
+marine = 1.0
+
+[guns."halo_ce:plasma_pistol"]
+spartan = 1.0
+grunt = 1.0
+jackal = 1.0
+
+# The Hunter's arm cannon (section 2 rule 6: it holds nothing else, and
+# nothing else holds it): a gun of one body, not the Spartan's, is that
+# body's own (`CampaignData::own_gun`): its holder is always the Hunter,
+# the setting on or off, and a drawn ladder deals it only with
+# `halo_ce:campaign_bodies` 1 (a sandbox lists it always).
+[guns."halo_ce:hunter_fuel_rod"]
+hunter = 1.0
+
+# Each character: its biped tag, the campaign map its unit is cut from
+# (section 8: the smallest holding it), and what differs from the
+# Spartan's tables (data/movement.toml and data/vitality.toml, merged key
+# by key: a table not named here is the Spartan's). Its `movement` table
+# may override any key of data/movement.toml, each the Spartan's when
+# absent: the pill and camera, and for a tuning pass the run and crouch
+# speeds (`run_*`, `sneak_*`, before the blend), the acceleration
+# (`run_accel`, `sneak_accel`), the air control (`air_accel`) and the
+# jump (`jump_velocity`, WU/t). The Elite sets its pill, camera and speed
+# ratio only.
+[bodies.elite]
+biped = 'characters\elite\elite'
+donor_map = "d20"
+# The game's own moving speed over the Spartan's (characters.md section 4:
+# it outruns the Spartan by 15 %, 0.0865 against 0.075 WU/t).
+speed_ratio = 1.15
+# Its armour takes the player's colour (the party's team or free-for-all
+# colour, as the Spartan's) through change colour A, which tints it all
+# over; a player given no colour wears the minor's blue violet
+# (characters.md section 1, "The Elite's colours": a player-worn `elite`
+# keeps the colour it is created with; the sheen stays permutation 0's
+# blue).
+colour_slot = "A"
+uncoloured = [0.314, 0.302, 0.533]
+# Its own lines (`[chatter]`): a challenge on becoming one, a boast after
+# a kill (its dialogue fills taunt 9, berserk 2, killed enemy player 7,
+# killed enemy 8: characters.md section 6).
+lines = { becoming = ["taunt", "berserk"], kill = ["killed enemy player", "killed enemy", "taunt"] }
+
+# The Elite's pill and camera (section 3, "Dimensions and the pill"), its
+# own. With its speed ratio it runs at 107.5 % of the Spartan.
+[bodies.elite.movement]
+height_stand = 0.8
+height_crouch = 0.5
+radius = 0.2
+camera_stand = 0.6
+camera_crouch = 0.3
+
+# The speeds its graph's move animations show (section 4 "The numbers":
+# the mean root motion of stand pistol move-front 0.0865 WU/t, back and
+# sides 0.0731, crouched 0.0333, 0.0217, 0.0200), WU/s: its legs play at
+# the body's ground speed over these, so the feet keep up.
+[bodies.elite.animation]
+front = 2.595
+back = 2.193
+side = 2.193
+crouch_front = 0.999
+crouch_back = 0.651
+crouch_side = 0.6
+
+# The Elite's vitality (section 5: the collision model
+# `characters\elite\elite`): 100 body, 100 shield of type 30 (elite energy
+# shield), 12 s before the shield recharges, 10 s from empty to full; its
+# materials (section 3, "Hit boxes") in the collision model's order, the
+# indirect material `body`; its four regions, none destroyable. The model
+# fields the spec does not state are the Spartan's.
+[bodies.elite.vitality.model]
+tag = 'characters\elite\elite'
+maximum_body = 100.0
+maximum_shield = 100.0
+shield_material_type = 30
+stun_time = 12.0
+recharge_time = 10.0
+recharge_velocity = 0.0033333334
+indirect_material = 2
+materials = [
+    { name = "head", head = true, type = 14, leak = 0.0, shield = 1.0, body = 1.0 },
+    { name = "arms", head = false, type = 14, leak = 0.0, shield = 1.0, body = 0.5 },
+    { name = "body", head = false, type = 14, leak = 0.0, shield = 1.0, body = 1.0 },
+    { name = "legs", head = false, type = 14, leak = 0.0, shield = 1.0, body = 0.8 },
+]
+regions = [
+    { name = "arms", flags = 0, threshold = 0.0 },
+    { name = "head", flags = 0, threshold = 0.0 },
+    { name = "legs", flags = 0, threshold = 0.0 },
+    { name = "torso", flags = 0, threshold = 0.0 },
+]
+
+# Chimera's body regions as the Elite's materials: head, arms, legs, the
+# rest its body.
+[bodies.elite.vitality.regions]
+head = 0
+arms = 1
+legs = 3
+other = 2
+
+# Section 5 rule 7: the Elite's hard ping threshold 0.3 (0.5 s).
+[bodies.elite.vitality.unit]
+hard_ping_threshold = 0.3
+soft_ping_interrupt_time = 0.5
+
+# The Grunt (`characters\grunt\grunt`, the minor and major body): 84 % of
+# the Spartan's moving speed (0.0628 against 0.075 WU/t), so 92 % with the
+# blend; its pill 0.55 / 0.45 WU, radius 0.2, and its camera at its chest,
+# 0.28 standing and crouched (section 3: below its head, kept); orange
+# armour through change colour A (section 1, "The Elite's colours": the
+# tag's own A, (0.863, 0.502, 0.173) to (0.824, 0.443, 0.157); the
+# lower bound for a player given none).
+[bodies.grunt]
+biped = 'characters\grunt\grunt'
+donor_map = "d20"
+speed_ratio = 0.84
+colour_slot = "A"
+uncoloured = [0.863, 0.502, 0.173]
+# Its panic on becoming one (flee 24), its cheer after a kill
+# (celebration 14, killed enemy player 14).
+lines = { becoming = ["flee", "taunt"], kill = ["celebration", "killed enemy player", "killed enemy"] }
+
+[bodies.grunt.movement]
+height_stand = 0.55
+height_crouch = 0.45
+radius = 0.2
+camera_stand = 0.28
+camera_crouch = 0.28
+
+# Its pistol class's moves (section 4, "The numbers"): front 0.0628 WU/t,
+# back 0.0325, sides 0.0400; crouched 0.0087, the standing back-step
+# 0.0325, 0.0111.
+[bodies.grunt.animation]
+front = 1.884
+back = 0.975
+side = 1.2
+crouch_front = 0.261
+crouch_back = 0.975
+crouch_side = 0.333
+
+# 40 body, no shield (section 5); materials head (head), body (x0.8),
+# armor, the indirect one armor.
+[bodies.grunt.vitality.model]
+tag = 'characters\grunt\grunt'
+maximum_body = 40.0
+maximum_shield = 0.0
+shield_material_type = 11
+indirect_material = 2
+materials = [
+    { name = "head", head = true, type = 11, leak = 0.0, shield = 0.0, body = 1.0 },
+    { name = "body", head = false, type = 11, leak = 0.0, shield = 0.0, body = 0.8 },
+    { name = "armor", head = false, type = 11, leak = 0.0, shield = 0.0, body = 1.0 },
+]
+regions = [
+    { name = "perm arms and legs", flags = 0, threshold = 0.0 },
+    { name = "perm head and back", flags = 0, threshold = 0.0 },
+]
+
+[bodies.grunt.vitality.regions]
+head = 0
+legs = 1
+other = 1
+
+# Section 5 rule 7: hard ping threshold 0.25 (0.2 s).
+[bodies.grunt.vitality.unit]
+hard_ping_threshold = 0.25
+soft_ping_interrupt_time = 0.2
+
+# The Jackal (`characters\jackal\jackal`, the minor's body): 61 % of the
+# Spartan's moving speed (0.0458 against 0.075), so 80.5 % with the blend;
+# its pill 0.6 / 0.45, radius 0.18, camera 0.6 / 0.3; blue grey armour
+# through A ((0.259, 0.373, 0.490) to (0.267, 0.353, 0.482)). Its arm
+# shield (section 2 rule 7): the meshes of its shield disc, drawn while
+# the shield is up (`shield_disc`: the disc's shader's name holds it).
+[bodies.jackal]
+biped = 'characters\jackal\jackal'
+donor_map = "d20"
+speed_ratio = 0.61
+colour_slot = "A"
+uncoloured = [0.259, 0.373, 0.490]
+shield_disc = "shield"
+# Its taunt on becoming one (8), its celebration after a kill (9).
+lines = { becoming = ["taunt", "surprise"], kill = ["celebration", "killed enemy player", "killed enemy"] }
+
+[bodies.jackal.movement]
+height_stand = 0.6
+height_crouch = 0.45
+radius = 0.18
+camera_stand = 0.6
+camera_crouch = 0.3
+
+# Its pistol class's moves: front 0.0458, back 0.0375, sides 0.0333;
+# crouched 0.0139, 0.0119, 0.0133.
+[bodies.jackal.animation]
+front = 1.374
+back = 1.125
+side = 0.999
+crouch_front = 0.417
+crouch_back = 0.357
+crouch_side = 0.399
+
+# 60 body and a 100-point shield of type 16 that only the `shield`
+# material takes (every other material leaks all of a hit to the body
+# with shield x0; the shield's own takes it all with body x0); 15 s
+# before it returns, at once (recharge time 0: velocity 1).
+[bodies.jackal.vitality.model]
+tag = 'characters\jackal\jackal'
+maximum_body = 60.0
+maximum_shield = 100.0
+shield_material_type = 16
+stun_time = 15.0
+recharge_time = 0.0
+recharge_velocity = 1.0
+indirect_material = 0
+materials = [
+    { name = "unarmored", head = false, type = 15, leak = 1.0, shield = 0.0, body = 1.0 },
+    { name = "head", head = true, type = 15, leak = 1.0, shield = 0.0, body = 1.0 },
+    { name = "armored", head = false, type = 15, leak = 1.0, shield = 0.0, body = 1.0 },
+    { name = "shield", head = false, type = 16, leak = 0.0, shield = 1.0, body = 0.0 },
+]
+regions = [
+    { name = "arms", flags = 0, threshold = 0.0 },
+    { name = "head", flags = 0, threshold = 0.0 },
+    { name = "legs", flags = 0, threshold = 0.0 },
+    { name = "shield", flags = 16, threshold = 0.0 },
+    { name = "torso", flags = 0, threshold = 0.0 },
+]
+
+# Head; the disc's node (`frame shield`, the hit box `body::hits` gives
+# the region `Groin`) the shield; the arms and legs armored; the rest
+# unarmored.
+[bodies.jackal.vitality.regions]
+head = 1
+legs = 2
+arms = 2
+other = 0
+shield = 3
+
+# Section 5 rule 7: hard ping threshold 0.2.
+[bodies.jackal.vitality.unit]
+hard_ping_threshold = 0.2
+
+# The Marine (`characters\marine\marine`, the unarmoured body: section 3's
+# playable candidates name it or the armoured one; the armoured adds its
+# armour plates, 0.013 WU of height and 465 KB, and only the armoured
+# sniper's own variant). Cut from a30, the smallest map holding it. Its
+# rifle class runs 0.0700 WU/t forward against the Spartan's 0.075 (93.3
+# %, so 96.7 % with the blend); its pill 0.64 / 0.5 WU, radius 0.18, camera
+# 0.62 / 0.44 (section 3). Its armour takes no player colour: the spec
+# names no change colour slot for the Marine (untinted).
+[bodies.marine]
+biped = 'characters\marine\marine'
+donor_map = "a30"
+speed_ratio = 0.9333333
+# Its voices (section 6): the four dialogues of variant 0 (a unit created
+# without a variant number takes one of them; the Sergeants' 100 and 101
+# are only for units placed with those numbers), each its own set
+# (`voice/marine_<name>`): a Marine player speaks one, drawn per player.
+voices = ["bisenti", "fitzgerald", "aussie", "mendoza"]
+# Its own lines (each of the four voices fills these): the Marines'
+# taunt slot is empty, so a call to move up on becoming one (advance),
+# a cheer after a kill (celebration, killed enemy player).
+lines = { becoming = ["advance", "new combat alone"], kill = ["celebration", "killed enemy player", "killed enemy"] }
+
+[bodies.marine.movement]
+height_stand = 0.64
+height_crouch = 0.5
+radius = 0.18
+camera_stand = 0.62
+camera_crouch = 0.44
+
+# Its rifle class's moves (section 4, "The numbers"): front 0.0700 WU/t,
+# back 0.0500, sides 0.0583; crouched 0.0326, 0.0326, sides 0.0175 left
+# and 0.0230 right (their mean).
+[bodies.marine.animation]
+front = 2.1
+back = 1.5
+side = 1.749
+crouch_front = 0.978
+crouch_back = 0.978
+crouch_side = 0.6075
+
+# 50 body and a 50-point failing shield of type 24 (armored human):
+# failure threshold 1 (always failing: shield damage x (0.8 sigma + 0.2)),
+# failing leak 0.2; 8 s before it recharges, 1 s from empty to full
+# (section 5). Its materials (section 3, "Hit boxes": both Marines use
+# the armoured Marine's collision model): head (23, a head), body and
+# legs (24), each leaking 20 % through the shield; the indirect one body.
+[bodies.marine.vitality.model]
+tag = 'characters\marine_armored\marine_armored'
+maximum_body = 50.0
+maximum_shield = 50.0
+shield_material_type = 24
+shield_failure_threshold = 1.0
+failing_shield_leak = 0.2
+stun_time = 8.0
+recharge_time = 1.0
+recharge_velocity = 0.033333335
+indirect_material = 1
+materials = [
+    { name = "head", head = true, type = 23, leak = 0.2, shield = 1.0, body = 1.0 },
+    { name = "body", head = false, type = 24, leak = 0.2, shield = 1.0, body = 1.0 },
+    { name = "legs", head = false, type = 24, leak = 0.2, shield = 0.8, body = 0.8 },
+]
+regions = [
+    { name = "arms", flags = 0, threshold = 0.0 },
+    { name = "head", flags = 0, threshold = 0.0 },
+    { name = "legs", flags = 0, threshold = 0.0 },
+    { name = "torso", flags = 0, threshold = 0.0 },
+]
+
+[bodies.marine.vitality.regions]
+head = 0
+legs = 2
+other = 1
+
+# The Hunter (`characters\hunter\hunter`; sections 1 to 8), cut from d20,
+# the smallest map holding it, with its own weapon (the arm cannon, cut as
+# a unit of its own: `weapon/hunter_fuel_rod`). It holds only its cannon
+# (section 2 rule 6), which is the body of its own rung (`[guns]` above).
+# Its move-front 0.0773 WU/t against the Spartan's 0.075 (103 %, so 101.5
+# % with the blend; the spec gives it no slower mover: it keeps the
+# Spartan's acceleration, jump and air control, and walks every
+# direction, its graph's forward walk played for the others, section 4);
+# its pill 0.8 WU standing and crouched (crouching does not lower it,
+# section 3 note 2), radius 0.24, camera 0.6 / 0.3 (the biped's: 1.83 m,
+# well below its head marker's 2.755 m). No change colours (section 1:
+# untinted).
+[bodies.hunter]
+biped = 'characters\hunter\hunter'
+donor_map = "d20"
+speed_ratio = 1.0306667
+weapons = ['weapons\fuel rod gun\hunter fuel rod']
+# Its own lines: its roar on becoming one (melee attack 10, dive 11), its
+# kill line after a kill (killed enemy 9: section 6, the eight slots it
+# fills).
+lines = { becoming = ["melee attack", "dive"], kill = ["killed enemy"] }
+
+[bodies.hunter.movement]
+height_stand = 0.8
+height_crouch = 0.8
+radius = 0.24
+camera_stand = 0.6
+camera_crouch = 0.3
+
+# Its unarmed class's moves (section 4, "The numbers"): front 0.0773 WU/t
+# (no back or side walk: those play the forward one at their speed);
+# crouched 0.0189 front and back, 0.0167 sides.
+[bodies.hunter.animation]
+front = 2.319
+back = 2.319
+side = 2.319
+crouch_front = 0.567
+crouch_back = 0.567
+crouch_side = 0.501
+
+# Its first-person view (game::campaign::first_person, the owner's idea:
+# the disc has no first-person model for its cannon): its own right arm,
+# the cannon (`keep`: the bones kept, each with those below it), posed by
+# its own idle, aim, fire and melee, the eye at its standing camera; `offset` (metres: +X right,
+# +Y up, -Z forward) and `turn` (degrees: yaw, pitch, roll) place it in
+# the view, the cannon in the lower right as a gun sits. Tune here.
+[bodies.hunter.first_person]
+guns = ["halo_ce:hunter_fuel_rod"]
+label = "fr"
+# Tuned 2026-11-16 from scene pictures (apps/ultimate_gun_game/scenes/
+# hunter_view.scene: at rest, firing, melee, looking up and down): the
+# cannon from the elbow down in the lower right, its barrel along the
+# view, the upper arm and the shield arm left out (the upper arm was a
+# dark slab at the right edge, the shield forearm one across the bottom
+# left). Its melee (a bash of the shield arm) shows nothing.
+keep = ["bip01 r forearm"]
+offset = [-0.25, 0.2, -0.5]
+turn = [4.0, 0.0, 0.0]
+# Where the cannon's muzzle shows (WU from the eye: forward, left, up),
+# the end of the barrel as drawn: its firing effect and light, and the
+# rod drawn leaving from there.
+muzzle = [0.51, -0.13, -0.10]
+# Alternate 1, the cannon nearer and larger (bolder, covers more):
+#   keep = ["bip01 r forearm"]
+#   offset = [-0.3, 0.22, -0.3]
+#   turn = [4.0, 0.0, 0.0]
+#   muzzle = [0.45, -0.11, -0.10]
+# Alternate 2, the melee readable (the shield forearm kept: a slab across
+# the bottom left at rest, which swings in on a melee):
+#   keep = ["bip01 r forearm", "bip01 l forearm"]
+#   offset = [-0.25, 0.2, -0.5]
+#   turn = [4.0, 0.0, 0.0]
+#   muzzle = [0.51, -0.13, -0.10]
+
+[bodies.hunter.vitality.model]
+tag = 'characters\hunter\hunter'
+maximum_body = 200.0
+maximum_shield = 0.0
+shield_material_type = 12
+indirect_material = 0
+materials = [
+    { name = "body", head = false, type = 12, leak = 0.0, shield = 0.0, body = 1.0 },
+    { name = "shield", head = false, type = 32, leak = 0.0, shield = 0.0, body = 0.0 },
+    { name = "skin", head = true, type = 13, leak = 0.0, shield = 0.0, body = 1.0 },
+    { name = "spikes", head = false, type = 12, leak = 0.0, shield = 0.0, body = 0.0 },
+]
+regions = [
+    { name = "body", flags = 0, threshold = 0.0 },
+]
+
+# Chimera's body regions as its materials: a box whose surfaces are
+# mostly skin is a head box (`body::hits`: the head flag), so a hit there
+# takes the skin; a shield node's box the shield arm; the rest armour.
+[bodies.hunter.vitality.regions]
+head = 2
+arms = 0
+legs = 0
+other = 0
+shield = 1
+
+# Section 5 rule 7: hard ping threshold 0.25 (0.25 s).
+[bodies.hunter.vitality.unit]
+hard_ping_threshold = 0.25
+soft_ping_interrupt_time = 0.25

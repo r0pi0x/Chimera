@@ -27,7 +27,10 @@
 //! horizontal velocity to the keys' wish) are the class's
 //! (`SourceTraits`). On the server a class's max health is the player's
 //! (`class_health`: the health's share kept across a change of class; a
-//! player that leaves TF2's movement gets back the max it had). The
+//! player that leaves TF2's movement gets back the max it had). TF2's
+//! per-class parts (`ClassParts`: the class, its traits, the max health
+//! before, the view kick's spring and the view model's class) go on and
+//! off with the movement, in one move each way. The
 //! match's movement (`slots::Loadout`); its cvars are `tf2:`'s
 //! (`tf2:sv_gravity` ..., `tf2:tf_fall_damage_disablespread`).
 //!
@@ -41,17 +44,17 @@
 
 use bevy::prelude::*;
 use source_engine::source_movement::{
-    SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceTraits,
+    SourceMovement, SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceTraits,
 };
 
 use super::{
     classes::{Classes, RungClass, Tf2Class},
-    weapons::damage::Tf2Gun,
+    weapons::{damage::Tf2Gun, recoil::Tf2Punch},
 };
 use crate::{
     core::{Health, MaxSpeed},
-    slots::{Loadout, MovementSlot},
-    weapon::{Inventory, Magazine, ShellReload, Weapon},
+    slots::{Loadout, MovementRegistry, MovementSlot},
+    weapon::{Inventory, Magazine, ShellReload, Weapon, view_anim::ViewVariant},
 };
 
 /// The movement's id.
@@ -144,6 +147,16 @@ pub fn add_movement(app: &mut App) {
             FixedUpdate,
             class_health.after(crate::core::SimSet::Movement).run_if(crate::core::authoritative),
         );
+    // The class layer goes on and off with the movement, in one move each
+    // (docs/DESIGN.md, "ECS style"); `wear` is left for a slot changed
+    // some other way.
+    if let Some(mut registry) = app.world_mut().get_resource_mut::<MovementRegistry>()
+        && let Some(m) = registry.0.iter_mut().find(|m| m.id == ID)
+    {
+        m.insert = put_on;
+        m.remove = leave;
+        m.leave = Some(take_off);
+    }
     for (name, help) in CVARS {
         let name = *name;
         crate::console::ConsoleAppExt::console_cvar(
@@ -186,13 +199,75 @@ fn wear(
 ) {
     for (e, slot, worn, before, health) in &mut on {
         if slot.0 == ID {
-            commands.entity(e).insert_if_new((Tf2Class::default(), SourceTraits::default()));
+            commands.entity(e).insert_if_new((Tf2Class::default(), SourceTraits::default(), Tf2Punch::default(), ViewVariant::default()));
         } else if worn {
-            commands.entity(e).remove::<(Tf2Class, SourceTraits, HealthBefore)>();
+            commands.entity(e).remove::<ClassParts>();
             if let (Some(before), Some(mut h)) = (before, health) {
                 set_max(&mut h, before.0);
             }
         }
+    }
+}
+
+/// TF2's per-class parts on a character, besides the marker: the class
+/// layer (`Tf2Class`, `SourceTraits`), the max health it had before
+/// (`HealthBefore`), the view kick's spring (`weapons::recoil::Tf2Punch`)
+/// and the view model's class (`ViewVariant`: none, empty, until
+/// `super::view::view_variants` sets it). They go on and off together, in
+/// one move each way (`put_on`, `leave`, `take_off`; docs/DESIGN.md, "ECS
+/// style"): one at a time, each was an archetype for every combination of
+/// the character's other parts. What sets them later only changes their
+/// values.
+pub type ClassParts = (Tf2Class, SourceTraits, HealthBefore, Tf2Punch, ViewVariant);
+
+/// The class parts (`ClassParts`) a character becoming TF2's takes on:
+/// all but `HealthBefore` without a `Health`.
+fn class_parts(e: &EntityWorldMut) -> (Tf2Class, SourceTraits, Tf2Punch, ViewVariant, Option<HealthBefore>) {
+    (
+        Tf2Class::default(),
+        SourceTraits::default(),
+        Tf2Punch::default(),
+        ViewVariant::default(),
+        e.get::<Health>().map(|h| HealthBefore(h.max)),
+    )
+}
+
+/// `tf2:movement`'s insert (`slots::MovementImpl::insert`): the marker
+/// and slot with TF2's class parts (`ClassParts`), in one move (the parts
+/// kept where they are).
+fn put_on(e: &mut EntityWorldMut, slot: MovementSlot) {
+    let marker = (SourceMovement::default(), slot);
+    if e.contains::<Tf2Class>() {
+        e.insert(marker);
+        return;
+    }
+    match class_parts(e) {
+        (class, traits, punch, variant, Some(before)) => e.insert((marker, class, traits, punch, variant, before)),
+        (class, traits, punch, variant, None) => e.insert((marker, class, traits, punch, variant)),
+    };
+}
+
+/// `tf2:movement`'s remove: the marker with the class parts, in one move.
+fn leave(e: &mut EntityWorldMut) {
+    give_back(e);
+    e.remove::<(SourceMovement, ClassParts)>();
+}
+
+/// `tf2:movement`'s leave for another movement on Source's marker: the
+/// class parts off, in one move.
+fn take_off(e: &mut EntityWorldMut) {
+    if e.contains::<Tf2Class>() {
+        give_back(e);
+        e.remove::<ClassParts>();
+    }
+}
+
+/// The max health `e` had before TF2's class gave it its own, back.
+fn give_back(e: &mut EntityWorldMut) {
+    if let Some(before) = e.get::<HealthBefore>().copied()
+        && let Some(mut h) = e.get_mut::<Health>()
+    {
+        set_max(&mut h, before.0);
     }
 }
 

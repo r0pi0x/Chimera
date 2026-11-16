@@ -25,7 +25,8 @@
 //! - `explode`: a detonation's area damage (falloff, sight by the core
 //!   probes) and push;
 //! - `grenades`: the counts carried and the throw on the grenade button;
-//! - `rung`: the party ladder's grenade rung (the empty pistol, frags);
+//! - `rung`: the party ladder's special rungs: the grenade rung (the
+//!   empty pistol, frags) and the Hunter's cannon (worn by the Hunter);
 //! - `pickups`: the netgame equipment on the item clock, powerups,
 //!   grenades, ammunition from duplicates and the weapon swap;
 //! - `systems`: the engine side: the holders' ticks (switches, the throw,
@@ -180,6 +181,7 @@ pub const DATA: &[(&str, &str)] = &[
     doc!("plasma_pistol.toml"),
     doc!("flamethrower.toml"),
     doc!("frag_grenade.toml"),
+    doc!("hunter_fuel_rod.toml"),
 ];
 
 /// Its guns' names (data/display_names.toml).
@@ -241,8 +243,8 @@ fn build(e: &mut EntityWorldMut, gun: &params::Gun) {
 /// scales it, `power::stats`), the pellets, the ticks between shots held
 /// at full rate (a battery just touched), the cone at error 0 and as held,
 /// the magazine and its reload; nothing beyond the projectile's reach.
-/// With the party balance on (`cross_game::CrossGame`, its `[power]`
-/// hand), what a hand does with it: a trigger with no rate limit fires at
+/// Then what a hand does with it (`cross_game::PowerHand`,
+/// data/power_hand.toml): a trigger with no rate limit fires at
 /// the hand's taps a second; heat that overheats the gun counts as a
 /// magazine of the shots before it and a reload of the pause (cooling to
 /// the recovery threshold); an automatic gun whose error grows as it is
@@ -256,7 +258,7 @@ fn power(p: &chimera_sim::minigame::power::HookParams, at: &chimera_sim::minigam
     let t = &g.trigger;
     let pr = &g.projectile;
     let effects = super::vitality::DamageEffects::load();
-    let hand = super::cross_game::CrossGame::load();
+    let h = super::cross_game::PowerHand::load();
     // The hit's damage: the impact's, else what a stuck projectile deals
     // (a needle), else its detonation's at the centre (a rocket, a flame).
     let named = |n: &str| params::effect_id(n).and_then(|e| effects.get(e).cloned()).filter(|f| f.lower + f.upper[1] > 0.0);
@@ -288,10 +290,6 @@ fn power(p: &chimera_sim::minigame::power::HookParams, at: &chimera_sim::minigam
     let m = g.magazine.filter(|m| m.rounds_loaded_maximum > 0);
     s.clip = m.map_or(0, |m| m.rounds_loaded_maximum as u32);
     s.reload = g.animations.reload_empty.unwrap_or(0) as f32 / 30.0;
-    if !hand.enabled {
-        return;
-    }
-    let h = hand.power;
     // No rate limit: as fast as a hand taps.
     if required <= 0.0 && h.hand_taps_per_second > 0.0 {
         s.interval = 1.0 / h.hand_taps_per_second;
@@ -406,6 +404,7 @@ impl Plugin for HaloWeaponsPlugin {
             .add_message::<systems::HaloDetonation>()
             .add_message::<systems::HaloStuck>()
             .add_message::<systems::HaloPush>()
+            .add_message::<chimera_sim::weapon::grenade::BlastDealt>()
             .add_message::<pickups::HaloTaken>()
             .add_systems(Predict::Weapons, systems::run.before(WeaponFrame))
             .add_systems(

@@ -233,6 +233,7 @@ pub mod reconnect;
 pub mod server;
 pub mod stats;
 pub mod udp;
+pub mod units;
 pub mod upnp;
 pub mod voice;
 pub mod vote;
@@ -267,7 +268,7 @@ pub const PROTOCOL_ID: u64 = 0x4C55_434B_4552_5059;
 /// This build's network version. A server refuses clients of another
 /// version. Bump the suffix when the protocol changes in a way the
 /// replicon protocol hash can't see (a field added to a message).
-pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net63");
+pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net66");
 
 /// What a host's `changelevel` is in this app beyond a new map
 /// (`host_changelevel`): set by an app part (`minigame_net`'s, a party
@@ -1461,6 +1462,7 @@ impl Plugin for NetPlugin {
         manifest::plugin(app);
         assets::plugin(app);
         server_assets::plugin(app);
+        units::plugin(app);
         on_demand::plugin(app);
         mapfx::plugin(app);
         breakables::plugin(app);
@@ -1526,22 +1528,26 @@ pub fn current_map(world: &World) -> String {
     normalize_map(&name)
 }
 
-/// `greybox` for the greybox's names (none, `greybox`, `chimera:greybox`, the old `mashup:greybox`);
-/// other ids as they are.
+/// A code-built map's id for its names (`chimera_world::greybox::code_map`:
+/// `greybox` for none, `greybox`, `chimera:greybox`, the old
+/// `mashup:greybox`; `range` for `range`, `chimera:range`); other ids as
+/// they are.
 pub fn normalize_map(name: &str) -> String {
-    if ["", GREYBOX, "chimera:greybox", "mashup:greybox"].iter().any(|g| name.eq_ignore_ascii_case(g)) {
-        GREYBOX.into()
-    } else {
-        name.into()
-    }
+    chimera_world::greybox::code_map(name).map_or_else(|| name.into(), str::to_string)
+}
+
+/// Whether map id `id` is one built in code (the greybox, the range): no
+/// file, nothing to download, no game's install needed.
+pub fn is_code_map(id: &str) -> bool {
+    chimera_world::greybox::CODE_MAPS.contains(&id)
 }
 
 /// Whether the loaded map is `map` and its file hash is `hash`: Some(true)
 /// or Some(false) once a map by that name is loaded, None while it isn't
 /// (still loading, or another one).
 pub fn map_matches(world: &World, map: &str, hash: Option<[u8; 32]>) -> Option<bool> {
-    if map == GREYBOX {
-        return (current_map(world) == GREYBOX).then_some(true);
+    if is_code_map(map) {
+        return (current_map(world) == map).then_some(true);
     }
     let file = world.get_resource::<crate::map::MapFile>()?;
     let want_name = map.rsplit(':').next().unwrap_or(map);
@@ -1799,6 +1805,12 @@ pub fn status(world: &mut World) -> String {
                 ))
             ));
         }
+    }
+    // An app with the cross-game table (the party apps): its switch.
+    if role != NetRole::Client
+        && let Some(b) = world.get_resource::<chimera_sim::weapon::balance::Balance>()
+    {
+        out.push(format!("balance : {}", b.status_line()));
     }
     out.join("\n")
 }

@@ -240,6 +240,12 @@ pub struct ShownEntry {
 /// The first page's entries (data/main_menu.toml `[[escape]]`) for a host
 /// or not, in an app with the main menu or not, a vote running or not.
 pub fn shown_entries(host: bool, main_menu: bool, voting: bool) -> Vec<ShownEntry> {
+    shown_entries_in(host, main_menu, voting, false)
+}
+
+/// `shown_entries`, while a sandbox plays or not (its Change gun and
+/// bench show, the skip vote doesn't).
+pub fn shown_entries_in(host: bool, main_menu: bool, voting: bool, sandbox: bool) -> Vec<ShownEntry> {
     use crate::main_menu::{EscDoes, When};
     crate::main_menu::MenuData::shipped()
         .escape
@@ -248,6 +254,8 @@ pub fn shown_entries(host: bool, main_menu: bool, voting: bool) -> Vec<ShownEntr
             When::Always => true,
             When::Host => host,
             When::MainMenu => main_menu,
+            When::Sandbox => sandbox,
+            When::NotSandbox => !sandbox,
         })
         .map(|e| {
             let action = match e.does {
@@ -258,9 +266,16 @@ pub fn shown_entries(host: bool, main_menu: bool, voting: bool) -> Vec<ShownEntr
                 EscDoes::Quit => Some(Action::Quit),
                 EscDoes::Feedback => Some(Action::Feedback),
                 EscDoes::Vote => (!voting).then_some(Action::SkipMap),
+                EscDoes::SandboxGun => Some(Action::SandboxGun),
+                EscDoes::SandboxBench => Some(Action::SandboxBench),
             };
             ShownEntry {
-                key: (action == Some(Action::Resume)).then_some("Esc"),
+                key: match action {
+                    Some(Action::Resume) => Some("Esc"),
+                    Some(Action::SandboxGun) => Some("B"),
+                    Some(Action::SandboxBench) => Some("T"),
+                    _ => None,
+                },
                 host: matches!(e.does, EscDoes::Host),
                 label: e.label,
                 action,
@@ -289,7 +304,7 @@ fn navigate(
     keys: Res<ButtonInput<KeyCode>>,
     theme: Option<Res<chimera_ui::Theme>>,
     role: (Option<Res<chimera_core::core::NetRole>>, Option<Res<chimera_net::net::rcon::RconAdmin>>),
-    main_menu: Option<Res<crate::main_menu::PartyMenu>>,
+    (main_menu, sandbox): (Option<Res<crate::main_menu::PartyMenu>>, Option<Res<chimera_client::client::sandbox::SandboxUi>>),
     vote: Option<Res<VoteView>>,
     clock: Option<Res<chimera_ui::UiClock>>,
     pointer: (Query<(Ref<Interaction>, &Action)>, Option<Res<chimera_ui::PointerLead>>),
@@ -309,7 +324,7 @@ fn navigate(
         Page::Main => {
             let host = host::may_change(role.0.as_deref(), role.1.as_deref());
             let voting = vote.as_ref().is_some_and(|v| v.active.is_some());
-            let entries = shown_entries(host, main_menu.is_some(), voting);
+            let entries = shown_entries_in(host, main_menu.is_some(), voting, sandbox.is_some_and(|s| s.on));
             let live: Vec<usize> = (0..entries.len()).filter(|i| entries[*i].action.is_some()).collect();
             if live.is_empty() {
                 return;
@@ -368,6 +383,9 @@ fn navigate(
 #[derive(Component, Message, Clone, Copy, Debug, PartialEq)]
 pub enum Action {
     Resume,
+    /// The sandbox's Change gun and bench (`client::sandbox`).
+    SandboxGun,
+    SandboxBench,
     Options,
     Host,
     Back,
@@ -577,13 +595,18 @@ fn toggle(
     mut cues: MessageWriter<chimera_client::client::ui_sound::UiCue>,
     settings: Option<Res<crate::settings::Settings>>,
     (lobby, theme): (Option<Res<chimera_client::client::prematch_lobby::LobbyView>>, Option<Res<chimera_ui::Theme>>),
-    (feedback, mut lobby_out): (
+    (feedback, mut lobby_out, sandbox): (
         Option<Res<chimera_client::client::feedback::Feedback>>,
         MessageWriter<chimera_client::client::prematch_lobby::LobbyAction>,
+        Option<Res<chimera_client::client::sandbox::SandboxUi>>,
     ),
 ) {
     use chimera_client::client::ui_sound::UiCue;
     if !keys.just_pressed(KeyCode::Escape) {
+        return;
+    }
+    // A sandbox screen (Change gun, the bench) has Esc: it closes that.
+    if sandbox.is_some_and(|s| s.took_esc || s.screen_open()) {
         return;
     }
     // Settings spent it (a key capture, an open list, the display's keep).
@@ -769,6 +792,13 @@ fn act_one(world: &mut World, action: Action) {
         Action::SkipMap => submit(world, "party_skipmap"),
         Action::VoteYes => submit(world, "vote option1"),
         Action::VoteNo => submit(world, "vote option2"),
+        Action::SandboxGun | Action::SandboxBench => {
+            leave(world);
+            world.resource_mut::<EscMenu>().set_open(false);
+            use chimera_client::client::sandbox::{SandboxAction, SandboxScreen};
+            let s = if action == Action::SandboxGun { SandboxScreen::ChangeGun } else { SandboxScreen::Bench };
+            world.write_message(SandboxAction::Toggle(s));
+        }
         Action::Feedback => {
             leave(world);
             world.resource_mut::<EscMenu>().set_open(false);
@@ -827,7 +857,11 @@ pub fn refusal_text(r: &CallRefusal) -> String {
 #[allow(clippy::too_many_arguments)]
 fn sync(
     menu: Res<EscMenu>,
-    (main_menu, lobby): (Option<Res<crate::main_menu::PartyMenu>>, Option<Res<chimera_client::client::prematch_lobby::LobbyView>>),
+    (main_menu, lobby, sandbox): (
+        Option<Res<crate::main_menu::PartyMenu>>,
+        Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
+        Option<Res<chimera_client::client::sandbox::SandboxUi>>,
+    ),
     controls: Option<Res<crate::controls::ControlsPage>>,
     console: Option<Res<chimera_client::client::console::ConsoleUi>>,
     report: Option<Res<chimera_client::client::feedback::Feedback>>,
@@ -841,6 +875,7 @@ fn sync(
     let open = menu.open
         || main_menu.is_some_and(|m| m.shown())
         || report.is_some_and(|r| r.shown())
+        || sandbox.is_some_and(|s| s.screen_open())
         || crate::main_menu::owned_by_lobby(lobby.as_deref());
     if app_menu.open != open {
         app_menu.open = open;
@@ -876,6 +911,8 @@ struct Shown {
     signal: Option<(usize, u64, u32, u32)>,
     /// Over the themed lobby (`EscMenu::lobby`).
     lobby: bool,
+    /// A sandbox plays (its entries).
+    sandbox: bool,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -884,7 +921,7 @@ fn show(
     title: Res<EscMenuTitle>,
     vote: Option<Res<VoteView>>,
     role: (Option<Res<chimera_core::core::NetRole>>, Option<Res<chimera_net::net::rcon::RconAdmin>>),
-    main_menu: Option<Res<crate::main_menu::PartyMenu>>,
+    (main_menu, sandbox): (Option<Res<crate::main_menu::PartyMenu>>, Option<Res<chimera_client::client::sandbox::SandboxUi>>),
     tabs: Res<OptionTabs>,
     root: Query<Entity, With<MenuRoot>>,
     (theme, kit, units, clock, settings, time): (
@@ -921,6 +958,7 @@ fn show(
         title: title.0.clone(),
         main_menu: main_menu.is_some(),
         lobby: menu.lobby,
+        sandbox: sandbox.is_some_and(|s| s.on),
         signal: (signal(theme.as_deref()) && units.is_some()).then(|| {
             let u = units.as_deref().copied().unwrap_or_default();
             // A running vote's seconds left redraw it each second.
@@ -947,7 +985,7 @@ fn show(
                 mine: v.mine,
                 may_vote: v.may_vote,
             });
-            let entries = shown_entries(now.host, now.main_menu, active.is_some());
+            let entries = shown_entries_in(now.host, now.main_menu, active.is_some(), now.sandbox);
             let at = crate::esc_signal::Drawn {
                 lobby: now.lobby,
                 page: menu.page,
@@ -1061,6 +1099,8 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             crate::main_menu::When::Always => true,
             crate::main_menu::When::Host => shown.host,
             crate::main_menu::When::MainMenu => shown.main_menu,
+            crate::main_menu::When::Sandbox => shown.sandbox,
+            crate::main_menu::When::NotSandbox => !shown.sandbox,
         };
         if !visible {
             continue;
@@ -1073,6 +1113,8 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             EscDoes::Disconnect => Action::Disconnect,
             EscDoes::Quit => Action::Quit,
             EscDoes::Feedback => Action::Feedback,
+            EscDoes::SandboxGun => Action::SandboxGun,
+            EscDoes::SandboxBench => Action::SandboxBench,
             EscDoes::Vote => {
                 vote_rows(panel, vote, &e.label, WIDE);
                 continue;

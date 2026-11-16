@@ -170,9 +170,9 @@ fn cached_materials(w: &World) -> String {
     use crate::render::bodies::{HeldAssets, PlayModels};
     let mut out = Vec::new();
     if let Some(p) = w.get_resource::<PlayModels>() {
-        let parts: usize = p.bodies.iter().map(|b| b.parts.len()).sum();
-        let skins: usize = p.bodies.iter().map(|b| b.skins.iter().map(Vec::len).sum::<usize>()).sum();
-        out.push(format!("{} bodies {parts} parts {skins} skin materials", p.bodies.len()));
+        let parts: usize = p.built().map(|b| b.parts.len()).sum();
+        let skins: usize = p.built().map(|b| b.skins.iter().map(Vec::len).sum::<usize>()).sum();
+        out.push(format!("{} bodies {parts} parts {skins} skin materials", p.built().count()));
     }
     if let Some(h) = w.get_resource::<HeldAssets>() {
         let n: usize = h.0.values().map(|p| p.whole.len() + p.own.len() + p.merged.iter().map(|m| m.1.len()).sum::<usize>()).sum();

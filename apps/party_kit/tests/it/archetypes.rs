@@ -212,8 +212,12 @@ const PER_ARCHETYPE: f64 = 200.0;
 /// added, with 2,048 more sparse-set archetypes (620 measured).
 const SPARSE_LIMIT: f64 = 720.0;
 /// The same with 4,094 more archetypes of which half bring a table
-/// (1,361 measured: a table costs every query that matches it a step).
-const TABLE_LIMIT: f64 = 1500.0;
+/// (1,361 measured: a table costs every query that matches it a step;
+/// 1,499 to 1,500 on 2026-11-16 (TF2's melee weapons in or not); 1,519 with
+/// Chimera's view-model driver also matching the characters Combat Arms
+/// drives (`OwnViewAnim` kept on with a value, which halved the archetypes
+/// a session makes: `ultimate_gun_game`'s `session` test).
+const TABLE_LIMIT: f64 = 1550.0;
 
 /// Checks one case: the whole tick grown by no more than `limit`
 /// instructions per added archetype over the base run's, and no system

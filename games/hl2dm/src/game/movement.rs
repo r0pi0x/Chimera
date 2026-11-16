@@ -185,6 +185,16 @@ pub fn add_movement(app: &mut App) {
                     .after(super::suit::breath_devices)
                     .before(SourceMovementStep),
             );
+        // The suit goes on and off with the movement, in one move each
+        // (docs/DESIGN.md, "ECS style"); `suit::wear` is left for a slot
+        // changed some other way.
+        if let Some(mut registry) = app.world_mut().get_resource_mut::<crate::slots::MovementRegistry>()
+            && let Some(m) = registry.0.iter_mut().find(|m| m.id == ID)
+        {
+            m.insert = super::suit::put_on;
+            m.remove = super::suit::leave;
+            m.leave = Some(super::suit::take_off);
+        }
         crate::console::resource_cvar::<UncrouchOnJump, u8>(
             app,
             &format!("{}:xc_uncrouch_on_jump", super::GAME),

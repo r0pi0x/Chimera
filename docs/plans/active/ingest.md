@@ -401,7 +401,7 @@ The user asked that assets form a dependency graph with a hierarchy, so that pac
 - **Packs** are named, versioned roots: a list of unit ids plus a namespace's trust and signature. Examples: "Ultimate Gun Game's official content", "TF2 base", a custom weapon pack. A pack never copies a unit; it refers to it. The same goes for a ladder, a map pool or a match offer: each is a set of roots, and the client and server fetch the graph's closure. `requires` comes now, `deferred` later, and `optional` never.
 - **Validation at ingest:** no cycles; every edge resolves within trusted namespaces; a custom unit may point into official units but never the reverse; the report prints each unit's own and closure sizes.
 - **On the wire:** the graph is written in the signed side file beside the manifest (3.8). Old clients keep reading the flat sets, which ingest still emits as the closure of each root. New clients resolve the graph themselves. TF2's `classes.toml` `needs`, Halo's characters and voices, and Combat Arms' parts become graph edges declared by the recipes.
-- **Fetching:** `request_set` from the sandbox becomes `request_unit`. `SetProgress` reports per unit and for the closure. The no-fetch-in-match guard allows only `deferred` edges in a match, within a bandwidth budget.
+- **Fetching:** `request_set` from the sandbox becomes `request_unit`. `SetProgress` reports per unit and for the closure. The no-fetch-in-match guard allows only `deferred` edges in a match, within a bandwidth budget. Built 2026-11-16 on today's sets (`chimera_net::net::units`: `request_unit`, `UnitProgress`, the guard; `deferred` is a kind prefix, `voice/`, until the graph's edges exist, and `requires` is the game's shared sets plus `UnitNeeds` hooks).
 
 ### 3.6 Converters
 
@@ -856,6 +856,22 @@ game files"), assets-for-developers.md (reproducing a pack), new-game.md
 DESIGN.md ("Assets, code and legal": generated and custom kinds),
 docs/weapon-data.md (derived documents, overlays, tags), the backlog
 entry, and each changed file's `//!` doc (`docs_index`).
+
+## 8a. The user's answers (2026-11-16)
+
+- **1, the command:** a `chimera_pack ingest` subcommand. Whether to ship it in releases is still open.
+- **2, whole or declared packs:** keep the four games whole for now (the recommendation).
+- **3, community maps:** neither a `community` kind nor a separate pack. Community maps are a hierarchy under the game: `cs_source` holds the base game's content, and under it, individual community maps as units of their own, attributed (author, source), e.g. `cs_source/map/community/gg_mario_vs_wario`. They can be added piecemeal over time; there are more gun-game maps to add.
+- **4, namespaces:** user-made content is kept in USER namespaces, separate from the games' namespaces. A user's asset may be based on a game (e.g. a skin for a CS:S gun) or on Chimera itself, which is treated like a game namespace (like a game crate) for our own and users' original content. Some attribution or mapping links a user asset to what it's based on. **On hold:** whether hub accounts can publish their own content; don't design publishing by accounts yet.
+- **5:** ask the first time per server before accepting its custom packs.
+- **6:** custom guns share the turn of the game they extend. A fully separate user creation (based on Chimera) is its own entry.
+- **7, formats:** still open (the recommendation stands: both).
+- **8, reskins:** yes, and the user prefers a **variant system** over copying. A gun can have variants under it in the graph; a variant replaces any subset of the gun's parts (only the texture for a skin, or the texture and sounds, and so on) and depends on the gun's unit for the rest. A skin is just a variant that changes textures. It fits the asset graph's `variant-of` edge (3.5a).
+- **9:** `assets.lock` is the repo file that pins which build of each game's manifest the code expects (docs/assets-for-developers.md). Publishing the content ids there means anyone rebuilding from their own media can check their result matches. The user didn't object; treat it as yes.
+- **10:** yes, Combat Arms' keys may come from environment variables.
+- **11:** Halo character units in our own format.
+- **12:** converted maps on the service only if measurement shows it's worth it. Fine.
+- **Cross-game balance as a host option:** ON by default.
 
 ## 9. Open questions for the user
 

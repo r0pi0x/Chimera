@@ -221,6 +221,14 @@ pub struct Trigger {
     /// After the charged time: 0 none, 1 explodes, 2 discharges.
     #[serde(default)]
     pub overcharged_action: u16,
+    /// Our rule, not the tag's (data/weapons/hunter_fuel_rod.toml): the
+    /// charge paces the trigger. A press fires and charges as the tag
+    /// says, but a release no longer cuts the charge short; held through
+    /// it, the trigger fires again and charges again; released, it is
+    /// ready for the next press when the charge ends. So a held trigger
+    /// and tapping (a bot's) both fire once a charge (`game::weapons::tick`).
+    #[serde(default)]
+    pub charge_paces: bool,
     /// Spew and overload time, seconds (no multiplayer weapon has them).
     #[serde(default)]
     pub spew_time: f32,
@@ -534,9 +542,10 @@ impl Gun {
     }
 }
 
-/// Our id of a damage effect named in data (`vitality::ids::ALL`).
+/// Our id of a damage effect named in data (`vitality::ids::ALL` and
+/// `ids::CAMPAIGN`).
 pub fn effect_id(name: &str) -> Option<EffectId> {
-    ids::ALL.into_iter().find(|e| e.0 == name)
+    ids::ALL.into_iter().chain(ids::CAMPAIGN).find(|e| e.0 == name)
 }
 
 /// Seconds to ticks: x 30 in single precision, truncated (weapons.md,

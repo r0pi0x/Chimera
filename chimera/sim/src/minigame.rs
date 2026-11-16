@@ -58,7 +58,12 @@
 //!   `minigame <id>`, `minigame_load <file>`, `minigame_status`,
 //!   `minigame_restart`; cheats (`sv_cheats`): `ladder_rung <n>` (the
 //!   local player onto a rung; `rung`, `rung_command`: by number, gun or
-//!   step, any player, `+rung` at launch), `minigame_win` (the local player wins).
+//!   step, any player, `+rung` at launch), `minigame_win` (the local player wins);
+//!   `target` (`targets`: a sandbox's practice targets and their measured
+//!   hits, kills and blasts), `prop` (`props`: its bottles, tin cans and
+//!   target board).
+//! - `gun_files`: whether a gun's files are here to switch to it (the
+//!   asset side's hooks; a sandbox's rung switch waits for them).
 //!
 //! - Results: once the match is decided `results::MatchResults` (winner,
 //!   each player's final rung, kills and deaths) is kept for the HUDs
@@ -95,23 +100,31 @@
 //! `Minigames::text`; `chimera_net::minigame_net`); a client can't start or
 //! restart one itself.
 
+pub mod arena;
 pub mod auto;
 pub mod climb;
+pub mod conditions;
 pub mod def;
 pub mod effects;
+pub mod gun_files;
 pub mod holders;
 pub mod map_fit;
 pub mod hud;
 pub mod ladder;
+pub mod layout;
 pub mod moments;
 pub mod overrides;
 pub mod results;
 pub mod rotation;
 pub mod rung_command;
+pub mod slice_safety;
 pub mod power;
 pub mod runtime;
 pub mod spawn_score;
 pub mod spawns;
+pub mod targets;
+pub mod props;
+pub mod range_place;
 pub mod vote;
 pub mod wins;
 
@@ -588,6 +601,10 @@ impl Plugin for MinigamePlugin {
         runtime::plugin(app);
         power::plugin(app);
         rung_command::plugin(app);
+        targets::plugin(app);
+        props::plugin(app);
+        layout::plugin(app);
+        conditions::plugin(app);
         app.console_command(
             "chimera:minigames",
             "List the minigames (id: name, players, maps, rules module), the one playing marked *.",

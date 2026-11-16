@@ -1,0 +1,89 @@
+# The practice props on the range's own furniture (chimera_sim's
+# `minigame::props` with `range_place`): bottles and tin cans on the
+# range's shelf, a board on the range's board, before and after TF2's
+# sniper rifle (bottles and cans knocked off, three marks on the board:
+# `prop group 3`). A scene script: chimera_client's `scene`.
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       +rung tf2:tf_weapon_sniperrifle --scene apps/ultimate_gun_game/scenes/range_props.scene --out <dir>
+# setpos takes Source units (0.0254 m) and feet (range_targets.scene).
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+setpos 0 -59 0
+setang 0 90
+prop add bottles
+prop add tin_cans
+prop add target_board
+prop list
+rung tf2:tf_weapon_sniperrifle
+setpos -315 -59 0            # 8 m left of the axis, facing the shelf
+prop look 1 shelf
+wait 120
+shot range_shelf_before
+setpos 315 -59 0             # 8 m right, facing the board
+prop look 3
+wait 30
+shot range_board_before
+setpos -433 335 0            # close: 3.5 m in front of the shelf
+prop look 1 shelf
+wait 30
+shot range_shelf_before_close
+setpos 433 512 0             # close: 3 m in front of the board
+prop look 3
+wait 30
+shot range_board_before_close
+setpos -315 -59 0
+prop look 1 0
++attack
+wait 20                      # held over a tick or two (a frame is a few ms)
+-attack
+wait 500
+prop look 1 2
++attack
+wait 20                      # held over a tick or two (a frame is a few ms)
+-attack
+wait 500
+prop look 1 4
++attack
+wait 20                      # held over a tick or two (a frame is a few ms)
+-attack
+wait 500
+prop look 2 1
++attack
+wait 20                      # held over a tick or two (a frame is a few ms)
+-attack
+wait 500
+prop look 2 3
++attack
+wait 20                      # held over a tick or two (a frame is a few ms)
+-attack
+wait 500
+prop look 1 shelf
+wait 30
+shot range_shelf_after
+setpos -433 335 0
+prop look 1 shelf
+wait 30
+shot range_shelf_after_close
+setpos 315 -59 0
+prop look 3
++attack
+wait 20                      # held over a tick or two (a frame is a few ms)
+-attack
+wait 500
++attack
+wait 20                      # held over a tick or two (a frame is a few ms)
+-attack
+wait 500
++attack
+wait 20                      # held over a tick or two (a frame is a few ms)
+-attack
+wait 500
+wait 30
+shot range_board_after
+setpos 433 512 0
+prop look 3
+wait 30
+shot range_board_after_close
+prop group 3
+prop list

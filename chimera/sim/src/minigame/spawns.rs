@@ -43,11 +43,17 @@
 //!   it, a standing player's box (Source's 32 by 72 units, from a stair
 //!   step over the feet to the head, `standing_box`; a capsule missed the
 //!   corners) meets neither the world nor a player clip (`stuck_at`), it
-//!   is inside the map (on a map with visibility data, its chest in a
+//!   stands in open space (`open_at`: at least `MIN_HEADROOM` above the
+//!   feet, the tallest player's height and some, and under a ceiling
+//!   lower than `LOW_CEILING` most level directions open for
+//!   `OPEN_REACH`: never in a duct, a crawlspace or a low narrow
+//!   passage, as ctf_turbine's vents once gave), it is inside the map (on a map with visibility data, its chest in a
 //!   leaf of a cluster: not solid, not the void outside the world), and
 //!   outside water and every zone a game registers as hurting or
 //!   killing (`SpawnHazards`). Without a mesh, or spots, the map's spawn
-//!   points are the spots. `candidates` lists every spot without the
+//!   points are the spots; so they are, at once, on a map that asks for
+//!   it (`map::code_maps::SpawnOnPoints`: the range's firing line), facing
+//!   its way when it says one (`fixed_yaw`). `candidates` lists every spot without the
 //!   `MAX_SPOTS` cap (the sweep of the stock maps).
 //! - Picking: from a random place in the spots, the first that is at
 //!   least `min_distance` m from every living enemy (a character of
@@ -92,8 +98,10 @@ use crate::{
     },
     map::{
         MapFloors, SPAWN_LIFT,
+        code_maps::SpawnOnPoints,
         nav::{NavMesh, flags},
         nav_gen::{self, NavGenParams},
+        play_area::{self, PlanPolygon},
         vis::{ActiveVisibility, MapVisibility},
     },
     weapon::random::{Rng, crc32},
@@ -238,6 +246,7 @@ pub fn pick(world: &mut World, e: Entity, min_distance: f32, facing: Facing) -> 
     let centres: Vec<Vec3> = enemies.iter().map(|(_, c)| *c).collect();
 
     ensure_spots(world, &points);
+    let fixed = fixed_yaw(world);
     let mut draws = world.remove_resource::<SpawnDraws>().unwrap_or_else(|| SpawnDraws::new(world));
     let characters: Vec<Entity> = world.iter_entities().filter(|r| r.contains::<Intent>()).map(|r| r.id()).collect();
     let mut state = SystemState::<SpatialQuery>::new(world);
@@ -285,7 +294,10 @@ pub fn pick(world: &mut World, e: Entity, min_distance: f32, facing: Facing) -> 
     let spot = chosen.or(far_enough).or(farthest.map(|(_, s)| s));
     let centroid = (!spots.spots.is_empty()).then(|| spots.spots.iter().sum::<Vec3>() / spots.spots.len() as f32);
     let at = spot.map(|s| {
-        let (yaw, pitch) = face(&q, &sight, s, &facing, centroid, None, &mut draws.rng);
+        let (yaw, pitch) = match fixed {
+            Some(yaw) => (yaw, 0.0),
+            None => face(&q, &sight, s, &facing, centroid, None, &mut draws.rng),
+        };
         Transform::from_translation(s + Vec3::Y * SPAWN_LIFT)
             .with_rotation(Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0))
     });
@@ -455,6 +467,10 @@ pub(super) fn ensure_spots(world: &mut World, points: &[Vec3]) {
     if world.get_resource::<SpawnSpots>().is_some_and(|s| s.ready) {
         return;
     }
+    if world.contains_resource::<SpawnOnPoints>() {
+        world.insert_resource(points_as_spots(points.to_vec()));
+        return;
+    }
     // A front end makes them a slice a tick (`prepare_spots`): the map's
     // spawn points until they are ready.
     if world.contains_resource::<nav_gen::SliceFloods>() {
@@ -479,6 +495,24 @@ pub(super) fn ensure_spots(world: &mut World, points: &[Vec3]) {
     world.insert_resource(spots);
 }
 
+/// The yaw every spawn faces on a map that spawns at its points and says
+/// which way (`SpawnOnPoints::facing`: the range's down range); None:
+/// `face`'s rule.
+pub(super) fn fixed_yaw(world: &World) -> Option<f32> {
+    let dir = world.get_resource::<SpawnOnPoints>()?.facing?;
+    (dir.xz().length_squared() > 1e-6).then(|| (-dir.x).atan2(-dir.z))
+}
+
+/// The map's spawn points as the spots, kept (`SpawnOnPoints`).
+fn points_as_spots(points: Vec<Vec3>) -> SpawnSpots {
+    SpawnSpots {
+        spots: points,
+        from_nav: false,
+        ready: true,
+        tries: 0,
+    }
+}
+
 /// The spots on their way in a front end (`prepare_spots`, `settle_spots`):
 /// the same steps as `build`, so the same spots from the same seed.
 #[derive(Resource)]
@@ -493,6 +527,8 @@ pub struct SpotsJob {
     at: usize,
     ready_to_test: bool,
     found: Vec<Vec3>,
+    /// The match's slice: spots only inside (`map::play_area`).
+    plan: Option<PlanPolygon>,
 }
 
 /// Ticks between tries when the collision wasn't there yet.
@@ -513,6 +549,11 @@ impl SpotsJob {
             return None;
         }
         points.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)).then(a.z.total_cmp(&b.z)));
+        // A map that spawns at its points only: they are the spots, at once.
+        if world.contains_resource::<SpawnOnPoints>() {
+            world.insert_resource(points_as_spots(points));
+            return None;
+        }
         let mut hazards: Vec<MapBrush> = Vec::new();
         let sources: Vec<_> = world.get_resource::<SpawnHazards>().map(|h| h.0.clone()).unwrap_or_default();
         for source in sources {
@@ -534,6 +575,7 @@ impl SpotsJob {
             at: 0,
             ready_to_test: false,
             found: Vec::new(),
+            plan: play_area::held_plan(world),
         })
     }
 
@@ -574,6 +616,9 @@ impl SpotsJob {
                 break;
             }
             let (x, z, y) = self.raw[k];
+            if self.plan.is_some_and(|p| !p.contains(Vec2::new(x, z))) {
+                continue;
+            }
             if let Some(feet) = spot_ok(q, &floor, &self.hazards, vis, Vec3::new(x, y, z)) {
                 self.found.push(feet);
             }
@@ -730,7 +775,7 @@ pub fn walker() -> NavGenParams {
 /// jump over a low wall doesn't leave the map).
 pub fn walker_for(world: &World) -> (NavGenParams, Option<NavGenParams>) {
     let mut p = walker();
-    p.within = nav_gen::NavWithin::of(world);
+    nav_gen::hold(&mut p, world);
     if let (Some(game), Some(climbs)) = (world.get_resource::<MapGame>(), world.get_resource::<SpawnClimbs>())
         && let Some(h) = climbs.of(&game.0)
     {
@@ -776,6 +821,9 @@ fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
     for (x, z, y) in raw {
         if spots.len() >= cap {
             break;
+        }
+        if walker.plan.is_some_and(|p| !p.contains(Vec2::new(x, z))) {
+            continue;
         }
         if let Some(feet) = spot_ok(&q, &floor, &hazards, vis.as_deref(), Vec3::new(x, y, z)) {
             spots.push(feet);
@@ -841,8 +889,9 @@ fn raw_spots(nav: &NavMesh, points: &[Vec3], seed: u32) -> Vec<(f32, f32, f32)> 
 /// The feet of a valid standing spot near the mesh point `p`, if there is
 /// one: a walkable floor within 0.5 m of the mesh's height (the world's
 /// or a player clip's top), a standing player's box clear of what
-/// characters meet (`stuck_at`), inside the map (`vis`: the chest in a
-/// cluster's leaf), and no hazard at the feet, chest or head.
+/// characters meet (`stuck_at`), in open space (`open_at`: headroom, and
+/// room around under a low ceiling), inside the map (`vis`: the chest in
+/// a cluster's leaf), and no hazard at the feet, chest or head.
 fn spot_ok(q: &SpatialQuery, filter: &SpatialQueryFilter, hazards: &[MapBrush], vis: Option<&MapVisibility>, p: Vec3) -> Option<Vec3> {
     let from = p + Vec3::Y * 0.6;
     let hit = q.cast_ray(from, Dir3::NEG_Y, 1.2, true, filter)?;
@@ -850,7 +899,7 @@ fn spot_ok(q: &SpatialQuery, filter: &SpatialQueryFilter, hazards: &[MapBrush], 
         return None;
     }
     let feet = Vec3::new(p.x, from.y - hit.distance, p.z);
-    if !inside_map(vis, feet) || stuck_at(q, filter, feet) {
+    if !inside_map(vis, feet) || stuck_at(q, filter, feet) || !open_at(q, filter, feet) {
         return None;
     }
     let bad = [0.1, 1.0, 1.7].iter().any(|h| {
@@ -858,6 +907,52 @@ fn spot_ok(q: &SpatialQuery, filter: &SpatialQueryFilter, hazards: &[MapBrush], 
         hazards.iter().any(|b| b.contains(at))
     });
     (!bad).then_some(feet)
+}
+
+/// The least headroom a spot has (m, from the feet to what is above):
+/// the tallest standing player the hosted games make and some (TF2's 82
+/// units, 2.08 m), so nobody spawns under a ceiling it can't stand under
+/// (a crawlspace a 72-unit box still fits).
+pub const MIN_HEADROOM: f32 = 2.2;
+/// Headroom (m) under which a spot also needs room around it
+/// (`OPEN_REACH`, `OPEN_DIRECTIONS`): a ceiling this low over a floor
+/// walled in on most sides is a duct or a crawlspace, not a place to
+/// spawn (ctf_turbine's 96-unit vent ducts, 2.44 m inside, where a player
+/// once spawned).
+pub const LOW_CEILING: f32 = 2.6;
+/// How far (m) a level ray from the chest must run free for its
+/// direction to count as open.
+pub const OPEN_REACH: f32 = 3.0;
+/// Of the eight level directions, how many a spot under a low ceiling
+/// (`LOW_CEILING`) needs open (`OPEN_REACH`): a duct's middle has two
+/// (along it), its corners two, its crossings four at most, a step inside
+/// its mouth four; a low room's floor all eight, along a wall five, in a
+/// corner three; a low hallway narrower than about 4 m two.
+pub const OPEN_DIRECTIONS: usize = 5;
+
+/// Whether `feet` stands in open space (the module doc's open-space
+/// filter): at least `MIN_HEADROOM` of headroom, and, under a ceiling
+/// lower than `LOW_CEILING`, at least `OPEN_DIRECTIONS` of eight level
+/// rays from the chest running `OPEN_REACH` free (a duct's or a
+/// crawlspace's walls close in on most sides, a low room's don't). What
+/// characters meet counts (`filter`: the player clips too).
+pub fn open_at(q: &SpatialQuery, filter: &SpatialQueryFilter, feet: Vec3) -> bool {
+    let from = feet + Vec3::Y * 0.1;
+    let headroom = q.cast_ray(from, Dir3::Y, LOW_CEILING, true, filter).map_or(f32::INFINITY, |h| h.distance + 0.1);
+    if headroom < MIN_HEADROOM {
+        return false;
+    }
+    if headroom >= LOW_CEILING {
+        return true;
+    }
+    let chest = feet + Vec3::Y * 1.0;
+    let open = (0..8)
+        .filter(|k| {
+            let dir = Quat::from_rotation_y(*k as f32 * std::f32::consts::FRAC_PI_4) * Vec3::NEG_Z;
+            Dir3::new(dir).ok().is_some_and(|d| q.cast_ray(chest, d, OPEN_REACH, true, filter).is_none())
+        })
+        .count();
+    open >= OPEN_DIRECTIONS
 }
 
 /// Whether a character standing at `feet` is inside the map: with

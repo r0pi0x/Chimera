@@ -36,7 +36,11 @@
 //!   limit and attack2's detonation;
 //! - `tf2:flame` (`flame`): the flame points, their heat and the
 //!   afterburn;
-//! - `tf2:needle` (`needle`): a needle's hit by distance.
+//! - `tf2:needle` (`needle`): a needle's hit by distance;
+//! - `tf2:melee` (`melee`): the nine stock melee weapons
+//!   (specs/tf2/weapons_stock.md; base `tf2:melee`, Chimera's delayed
+//!   swing and backstab rule): their crits, the swing's view-model
+//!   actions, the raised knife.
 //!
 //! The rocket, grenade and sticky explode alike (`blast`), and every hit
 //! pushes (`blast::push`: the blasts and the bullets, weapons.md 5.4).
@@ -61,6 +65,7 @@ pub mod damage;
 pub mod flame;
 pub mod grenade;
 pub mod looks;
+pub mod melee;
 pub mod minigun;
 pub mod needle;
 pub mod recoil;
@@ -102,6 +107,16 @@ pub const DATA: &[(&str, &str)] = &[
     data_file!("pipebomblauncher.toml"),
     data_file!("flamethrower.toml"),
     data_file!("syringegun_medic.toml"),
+    data_file!("_melee.toml"),
+    data_file!("bat.toml"),
+    data_file!("shovel.toml"),
+    data_file!("fireaxe.toml"),
+    data_file!("bottle.toml"),
+    data_file!("fists.toml"),
+    data_file!("wrench.toml"),
+    data_file!("bonesaw.toml"),
+    data_file!("club.toml"),
+    data_file!("knife.toml"),
 ];
 
 pub const SCATTERGUN: &str = "tf2:tf_weapon_scattergun";
@@ -134,6 +149,21 @@ pub const GUNS: [&str; 12] = [
     SYRINGE_GUN,
 ];
 
+pub const BAT: &str = "tf2:tf_weapon_bat";
+pub const SHOVEL: &str = "tf2:tf_weapon_shovel";
+pub const FIREAXE: &str = "tf2:tf_weapon_fireaxe";
+pub const BOTTLE: &str = "tf2:tf_weapon_bottle";
+pub const FISTS: &str = "tf2:tf_weapon_fists";
+pub const WRENCH: &str = "tf2:tf_weapon_wrench";
+pub const BONESAW: &str = "tf2:tf_weapon_bonesaw";
+pub const KUKRI: &str = "tf2:tf_weapon_club";
+pub const KNIFE: &str = "tf2:tf_weapon_knife";
+
+/// The nine stock melee weapons (specs/tf2/weapons_stock.md 1), by class
+/// index order of their classes' table rows: Scout, Soldier, Pyro,
+/// Demoman, Heavy, Engineer, Medic, Sniper, Spy.
+pub const MELEE: [&str; 9] = [BAT, SHOVEL, FIREAXE, BOTTLE, FISTS, WRENCH, BONESAW, KUKRI, KNIFE];
+
 /// The hooks the data names.
 pub const GUN_HOOK: &str = "tf2:gun";
 pub const ROCKET_HOOK: &str = "tf2:rocket";
@@ -143,6 +173,7 @@ pub const GRENADE_HOOK: &str = "tf2:grenade";
 pub const STICKY_HOOK: &str = "tf2:sticky";
 pub const FLAME_HOOK: &str = "tf2:flame";
 pub const NEEDLE_HOOK: &str = "tf2:needle";
+pub const MELEE_HOOK: &str = "tf2:melee";
 
 /// The rocket's model key (`ShownItem`) and model.
 pub const ROCKET_SHOWN: &str = "tf2:rocket";
@@ -174,10 +205,16 @@ pub fn hook_params<T: serde::de::DeserializeOwned>(weapon: &str, hook: &str) -> 
         .unwrap_or_else(|e| panic!("{weapon} {hook}: {e}"))
 }
 
-/// Each gun and the class whose arms hold it (`tf2:gun`'s `arms`; the
-/// plan's decision 6).
+/// Each gun and melee weapon and the class whose arms hold it (`tf2:gun`'s
+/// or `tf2:melee`'s `arms`; the plan's decision 6).
 pub fn arms_by_gun() -> Vec<(&'static str, String)> {
-    GUNS.iter().map(|g| (*g, hook_params::<damage::GunParams>(g, GUN_HOOK).arms)).collect()
+    let guns = GUNS.iter().map(|g| (*g, hook_params::<damage::GunParams>(g, GUN_HOOK).arms));
+    guns.chain(MELEE.iter().map(|m| (*m, hook_params::<melee::MeleeParams>(m, MELEE_HOOK).arms))).collect()
+}
+
+/// The guns and the melee weapons (what loads view and held models).
+pub fn all_weapons() -> impl Iterator<Item = &'static str> {
+    GUNS.into_iter().chain(MELEE)
 }
 
 /// The guns' display names (the HUD's, the ladder's), by id.
@@ -200,7 +237,8 @@ pub fn register_hooks(app: &mut App) {
         .register_weapon_hook::<blast::BlastParams>(GRENADE_HOOK, |_, _, _| {})
         .register_weapon_hook::<sticky::StickyParams>(STICKY_HOOK, |e, _, p| sticky::attach(e, p))
         .register_weapon_hook::<flame::FlameParams>(FLAME_HOOK, |e, _, p| flame::attach(e, p))
-        .register_weapon_hook::<needle::NeedleParams>(NEEDLE_HOOK, |_, _, _| {});
+        .register_weapon_hook::<needle::NeedleParams>(NEEDLE_HOOK, |_, _, _| {})
+        .register_weapon_hook::<melee::MeleeParams>(MELEE_HOOK, |e, _, p| melee::attach(e, p));
     // Whether each hurts a player (an automatic ladder draws only those
     // that do): the blasts, the flames, the needles; the guns' damage is
     // their `[damage]`.
@@ -325,11 +363,12 @@ impl Plugin for Tf2GunsPlugin {
         .add_message::<crate::map::GameSound>()
             .add_message::<crate::map::PredictedSound>()
             .add_message::<blast::Tf2Explosion>()
+            .add_message::<chimera_sim::weapon::grenade::BlastDealt>()
             .add_systems(
                 Predict::Weapons,
                 (
-                    (damage::centre_first, recoil::decay).before(WeaponFrame),
-                    (damage::note_shots, flame::ammo, flame::sounds, recoil::kick).chain().after(WeaponFrame),
+                    (damage::centre_first, recoil::decay, melee::prepare).before(WeaponFrame),
+                    (damage::note_shots, flame::ammo, flame::sounds, recoil::kick, melee::after).chain().after(WeaponFrame),
                 ),
             )
             .add_systems(Predict::Select, (minigun::spin, sticky::charge, sniper::scope).before(SelectWeapons))
@@ -358,7 +397,10 @@ impl Plugin for Tf2GunsPlugin {
             .predicted_part::<minigun::Tf2Minigun>()
             .predicted_part::<sniper::Tf2Sniper>()
             .predicted_part::<sticky::Tf2Sticky>()
-            .predicted_part::<flame::Tf2Flame>();
+            .predicted_part::<flame::Tf2Flame>()
+            .predicted_part::<melee::Tf2Melee>()
+            .init_resource::<melee::MeleeCrits>()
+            .add_systems(Update, melee::backstab_ready);
         looks::add(app);
     }
 }
@@ -380,7 +422,7 @@ mod tests {
         assert_eq!(files.len(), DATA.len());
         let set = tf2_weapons();
         let ids: Vec<&str> = set.weapons.iter().map(|w| w.id.as_str()).collect();
-        assert_eq!(ids, GUNS);
+        assert_eq!(ids, all_weapons().collect::<Vec<_>>());
         use chimera_core::game_parts::GunClass;
         let class = |id: &str| set.weapons.iter().find(|w| w.id == id).and_then(|w| w.class);
         assert_eq!(class(SCATTERGUN), Some(GunClass::Shotgun));
@@ -391,7 +433,14 @@ mod tests {
         assert_eq!(class(REVOLVER), Some(GunClass::HeavyPistol));
         assert_eq!(class(FLAMETHROWER), Some(GunClass::Flamethrower));
         assert_eq!(class(STICKY_LAUNCHER), Some(GunClass::Launcher));
+        assert!(MELEE.iter().all(|m| class(m).is_none()), "melee weapons are no ladder guns");
         let arms: Vec<String> = arms_by_gun().into_iter().map(|(_, a)| a).collect();
-        assert_eq!(arms, ["scout", "soldier", "engineer", "heavy", "scout", "sniper", "sniper", "spy", "demo", "demo", "pyro", "medic"]);
+        assert_eq!(
+            arms,
+            [
+                "scout", "soldier", "engineer", "heavy", "scout", "sniper", "sniper", "spy", "demo", "demo", "pyro", "medic", "scout",
+                "soldier", "pyro", "demo", "heavy", "engineer", "medic", "sniper", "spy"
+            ]
+        );
     }
 }

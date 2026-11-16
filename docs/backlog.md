@@ -103,6 +103,12 @@ the user's go-ahead: no Actions runs unless asked.
   - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
   - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
 
+- **Range and code-built map follow-ups (2026-11-16):**
+  - **The kit's scale:** the code-built maps' kit (`map::sources::CODE_MAP_KIT`) has an entity scale of 0. Dividing by it made the NaN crash fixed in d37d2e6b, where only the logic bridge got a guard. Give the kit a real scale (1.0, since code-built maps are in metres) and check the other readers of `MapEntities::scale`.
+  - **More in RangeLayout:** cover-crate boxes (or the clear lane's width), the shelf's size, the board's size and facing (the board is 1.2 m but the target scoring face 1.0 m, so the outer 0.1 m counts as misses), the platform and ramp, and the stripes' half width.
+  - **A floor label:** "20 M" looks mirrored from the board's side.
+  - **Change gun:** group Combat Arms' about 2,000 variants by base gun, so the sandbox lists tens per game, not thousands.
+
 - **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
   - **Progressive disclosure (user):**
     - Names, classes, stats and the kit's class icons need no download: they come from the compiled weapon catalogue and game_parts.
@@ -113,7 +119,8 @@ the user's go-ahead: no Actions runs unless asked.
     - An on-demand `request_set(game, set)` and a `SetProgress` resource keyed by (game, set): bytes and files, done and total, and a state of Absent{size}, Fetching, Ready or Failed.
     - Set sizes from the manifest before fetching.
     - Per-gun sets already exist (`weapon/<id>`); Halo's unit is the game.
-  - **Mechanics (Halo session):** the rung switch waits for Ready.
+  - **Built (2026-11-16):** `chimera_assets::units` (the downloads: queue, budget, states) and `chimera_net::net::units` (`request_unit`, `retry_unit`, `UnitProgress` keyed by (game, set) with `Absent { size }`, `Queued { position }`, `Fetching`, `Ready`, `Failed { reason }`, `UnitChanged`, `UnitNeeds` hooks (TF2's class bodies), the no-fetch-in-match guard, `chimera:unit_rate`). The Change gun view's tiles read it (`client::sandbox::units::bridge_units`); a sandbox's offer names only its first rung's gun (`minigame_net::offered_weapons`). A server fetches a picked gun into its own store the same way (`ServerFiles`).
+  - **Mechanics (Halo session):** the rung switch waits for Ready: `chimera_sim::minigame::gun_files::gun_ready(world, weapon id)` (asks for the gun's units when missing, true once they are here), or `chimera_net::net::units::{gun_units, want_units, units_ready}`.
 
 - **Ladder draw: games dealt equally, soft gun recency (user, 2026-11-15):** today `chimera_sim::minigame::auto::ladder` weights a game's guns by 1/√count, so a game's share grows as √(its gun count), and every game gets at least one rung. With today's weapon files that's roughly Combat Arms 32 %, CS:S 23 %, HL2:DM and TF2 16 % each, Halo 13 %.
   - **Which game:** shuffle the games and deal one per rung until each has had a turn, then reshuffle. Every game gets an equal share however many guns it has. No guaranteed rung per game, since that can't hold once there are more games than rungs; then each match gets a different random subset. No hard rule against runs.
@@ -126,16 +133,14 @@ the user's go-ahead: no Actions runs unless asked.
   - Fix: when gravity differs from CA's own, scale the measured drop by gravity / CA's gravity. That's the drop that would give the same landing speed at normal gravity.
   - At normal gravity it stays exactly as the original game.
   - Add a scenario test: the same drop at half gravity does less damage, and at normal gravity nothing changes.
-- **Cross-game balance as a host option (user, 2026-11-15):**
-  - Two coefficients per game: damage dealt and damage received.
-  - One host setting (`mp_balance`) in the Host screen's Game tab.
-  - Self-damage and fall damage are never scaled.
-  - **Builds on the Halo session's work:**
-    - party_kit `data/party_damage.toml` already has the dealt coefficients: halo_ce 0.75, hl2dm 1.5.
-    - halo_ce `data/party_balance.toml` has a received coefficient, `incoming_scale` 1.5, with its own `enabled` switch, currently on.
-    - Move received into the shared table for every game, and replace Halo's switch with the host setting.
-  - First values for TF2 (its 125–300 class health) and the others are for the user to adjust after a playtest.
-  - Open question: default on or off. It's on today for Halo and HL2:DM.
+- **Cross-game balance as a host option (user, 2026-11-15):** built
+  (2026-11-16): one table, `apps/party_kit/data/party_balance.toml`
+  (outgoing and incoming per game, a body's own incoming, pair
+  exceptions), and the host setting `mp_balance` (on by default, from the
+  next match); docs/plans/active/party-balance.md, "The table and the
+  switch". Left: first values for TF2 (its 125-300 class health) and the
+  campaign bodies, from playtests; self-damage still takes its game's
+  pair (HL2:DM's own grenade 1.5, as before).
 
 - **Parties and friends: the social layer (user, 2026-11-15; needs a design first):** today only the front end exists. The lobby can group a party's rows with a coloured edge, but the server always sends party 0 (`chimera/net/src/prematch.rs`), so nobody is grouped. The "+" invite and Friends tiles in the shell's rack are disabled ("Coming soon"), and your party is you alone (`chimera_ui::shell`, `client::profile`, `client::lobby_panel`).
   - **Friends** (needs accounts, hub.md S3/S4):
@@ -286,11 +291,32 @@ the user's go-ahead: no Actions runs unless asked.
     `ultimate_gun_game +sandbox [map]` / `sandbox [map]` plays alone on
     every game's guns with nothing advancing or ending, `rung <n | gun id |
     part | next | prev | list>` picks the gun, `ca_bot_*`, `god` and `noclip`
-    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Next: a gun and
-    rung picker menu; a time scale; target dummies that report damage and
-    time to kill at set distances (a gun's real strength measured, not
-    modelled); a firing range layout; saving a loadout of guns to cycle;
-    picking a rung character (Combat Arms' turret) instead of the draw's.
+    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Target dummies
+    exist (2026-11-15, mechanics only; chimera_sim's `minigame::targets`):
+    `target add|set|remove|list|characters` and the requests the screens
+    send (`SpawnTarget`, `SetTarget`, `RemoveTarget`, `ClearTargets`), any
+    game's body at a distance on the floor, still, strafing or walking,
+    firing back or not, protected or not, respawning at home; the facts
+    `HitMeasured` and `KillMeasured` (damage, hit group, distance, shots,
+    hits, time to kill). Since (2026-11-16): `BlastMeasured` (every blast
+    while the sandbox plays, from each game's own blast code through
+    `weapon::grenade::BlastDealt`; TF2's own blast still to write it),
+    props (`prop add bottles|tin_cans|target_board`: `SpawnProp`,
+    `RemoveProp`, `ClearProps`, `ResetProp`, `Prop`, `PropHit`,
+    `ShotGroup`), targets silent in chat, and half speed is
+    `host_timescale 0.5` (measurements in simulation time). Since
+    (2026-11-16, later): the last layout repeated (`sandbox repeat`,
+    `RepeatLayout`, `SandboxLayout`; not saved to disk yet), `rung <gun>
+    as <body>` (`PutOnGun`: TF2's shotgun as the class asked for), the
+    conditions as requests with their state (`SetCondition`,
+    `SandboxConditions`: god, endless ammo, time scale, third person and
+    its distance, bots frozen), a projectile that misses a board counts,
+    impact marks on props, a body's own second bar (Halo's Jackal). Next: their
+    screens (the party UI); a gun and rung picker menu; a firing range
+    layout with 100 and 200 m of floor; saving a loadout of guns to cycle;
+    picking a rung character (Combat Arms' turret) instead of the draw's;
+    bots out of Combat Arms' crate behind game-neutral interfaces (targets
+    use only the add/remove seam, `targets::TargetBots`).
   - *Ties:* M5b's 3D Showcase backdrop
     ([plans/active/ugg-ui.md](plans/active/ugg-ui.md)) is the first
     viewer (gun under an inspect camera, character in idle) and should
@@ -366,15 +392,30 @@ results are from after that.
   map, 41 ragdolls made (about 29 of TF2 bodies), a median of 4.9 ms a
   frame. No screenshot caught a TF2 ragdoll: look at one.
 - **The Flame Thrower shows no flames** and **no TF2 gun shows a muzzle
-  flash**, on de_dust2 and on ctf_2fort.
+  flash**, on de_dust2 and on ctf_2fort. Fixed (branch `tf2-polish`):
+  TF2's particle systems loaded only with its own maps; they now load
+  onto any map from TF2's own files (`tf2::game::maps::add_guest_looks`),
+  the flashes start at the gun's `muzzle` attachment and the Flame
+  Thrower starts TF2's `flamethrower` system a piece per round. Confirm
+  in a playtest at a real frame rate (the Linux check ran at 60 ms a
+  frame, where the fast flame particles first show a few metres out).
 - **TF2 bullet hits play Combat Arms' impact sounds** (read from the
-  log, not heard: the runs were muted).
+  log, not heard: the runs were muted). Fixed (`tf2-polish`): TF2 is
+  now an impact provider (Source's impact effects and sounds,
+  `weapons::looks::STYLE`) with its looks on every map, so a TF2 gun's
+  hits are TF2's (by the map's sound entries of the same names on
+  de_dust2). TF2's own impact rules have no spec yet.
 - **The rocket's explosion** is TF2's fireball on ctf_2fort but a small
-  grey puff on de_dust2.
+  grey puff on de_dust2. Fixed (`tf2-polish`): TF2's explosion system on
+  every map, Source's never.
 - **HUD**: the health cross shows each class's maximum health and the
-  ammo counts move when firing. Missing: the class portrait. The
-  crosshair is faint against de_dust2. The sniper's scope did not show
-  in one of two identical runs (not explained).
+  ammo counts move when firing. The class portrait (2D) and the
+  crosshair at 32 screen pixels (was scaled down to 21 at 720 lines)
+  are fixed on `tf2-polish`. The sniper's scope did not show in one of
+  two identical runs: attack2 *held* toggles the scope every 0.3 s
+  (weapons_more.md 3.1), so a run holding it shows it or not by when the
+  frame is taken (`weapons_more::one_press_raises_the_scope_and_a_held_
+  key_toggles_it_3_1`); with a tap it stays up. No HUD race found.
 - **Classes measure right**: health 125, 200, 300 (Scout, Soldier,
   Heavy), speeds 400, 240, 230 units/s; the Scout's jump rises 49.9
   units and its double jump 95.2; a rocket jump rose 170.8 units and
@@ -382,7 +423,14 @@ results are from after that.
   pass on Windows.
 - **Eye height**: the differences between classes are exact, but every
   class sits 2.07 units above the spec's height measured against
-  CS:S's 64. Which side is off is not known.
+  CS:S's 64. Which side is off is not known. (`tf2-polish`) On a flat
+  floor each class's camera is exactly its eye height above the feet
+  and, once it has moved, above the floor
+  (`movement::each_class_eye_stands_its_height_above_the_floor_classes_1`):
+  no shared offset in the eye. Standing still a Source player may hover
+  up to 2 units (CS:S movement.md "Hovering"), and TF2's box is 48 wide
+  against CS:S's 32, so on de_dust2's sloped ground it rests higher:
+  measure again after walking, on flat ground.
 - **Bodies**: bots show the class bodies with their guns; a scene with
   CS:S, Halo and TF2 players renders; the kill feed shows TF2's rocket
   icon.

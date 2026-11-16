@@ -1310,6 +1310,8 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
     if let Some(b) = data.extras.get::<super::nav_gen::NavWithin>() {
         commands.insert_resource(*b);
     }
+    // A match's slice of this map, if the plan names it (`play_area`).
+    commands.queue(super::play_area::map_spawned);
     if !brushes.is_empty() {
         let floor = data
             .playable
@@ -1349,6 +1351,14 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
 
 /// The sun (lighting the few plain materials) and the spawn points.
 fn spawn_sun_and_spawn_points(commands: &mut Commands, data: &MapData) {
+    // A code-built map's kit: the code-built map has its own sun.
+    if !super::sources::is_code_map_kit(data) {
+        spawn_sun(commands);
+    }
+    spawn_points(commands, data);
+}
+
+fn spawn_sun(commands: &mut Commands) {
     commands.spawn((
         Name::new("Sun"),
         MapPart,
@@ -1362,6 +1372,9 @@ fn spawn_sun_and_spawn_points(commands: &mut Commands, data: &MapData) {
         },
         Transform::default().looking_at(Vec3::new(-0.4, -1.0, -0.3), Vec3::Y),
     ));
+}
+
+fn spawn_points(commands: &mut Commands, data: &MapData) {
     for (i, (feet, team)) in data.spawns.iter().enumerate() {
         commands.spawn((
             Name::new(format!("Spawn {i}")),

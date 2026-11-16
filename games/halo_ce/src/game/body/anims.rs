@@ -7,11 +7,16 @@
 //! (the converted-map cache, a guest's dressing, a dedicated server) and
 //! the simulation needs no graph at run time. For each seat label
 //! (`SEATS`: stand, crouch) and weapon label (`LABELS`: unarmed and the
-//! multiplayer weapons' labels) the spec's selection rule picks the (seat,
+//! multiplayer weapons' labels, and the fuel rods' `fr`, the Hunter's
+//! cannon) the spec's selection rule picks the (seat,
 //! weapon class, weapon type) triple (`AnimationGraph::select_unit`: the
 //! last match in block order wins), and each state's slot (`State`) of that
 //! class becomes a sequence named `"<seat> <label> <slot>"` (`key`) whose
-//! one animation is the slot's. The aim screens (`aim-still`, `aim-move`)
+//! one animation is the slot's; so do the class's melee and the type's
+//! fire-1 (`MELEE`, `FIRE_1`: a campaign body plays them on a shot and a
+//! melee, `Inputs::action`, an overlay composed on its pose or a base
+//! animation in its place, `apply_action`; the Spartan does not; a body's
+//! first-person view does too, `campaign::first_person`). The aim screens (`aim-still`, `aim-move`)
 //! and the seat's `look` screen are sequences too: their grid is the
 //! screen's columns and rows, and their two axes' keys carry the spec's
 //! screen bounds (yaw: right and left radians per frame, right and left
@@ -40,7 +45,10 @@
 //! 0.1), the seat from crouching, the weapon label from the holder; a
 //! changed state starts its animation at frame 0 with a 6-tick blend (2
 //! into a landing), else the animation advances one frame (looping to its
-//! loop frame or restarting); then the pose: the base at its frame, the
+//! loop frame or restarting; a campaign body's move animations advance
+//! the ground speed over their own speed in frames, `Inputs::rate`, a
+//! direction its graph lacks plays the forward move, and the air without
+//! an airborne animation holds the last pose); then the pose: the base at its frame, the
 //! aim screen (`aim-still` standing, airborne and landing; `aim-move`
 //! moving; a change of screen blends over 6 ticks) at the aim's yaw and
 //! pitch, the seat's look screen at the look minus the aim, and the
@@ -83,8 +91,8 @@ pub const SEATS: [&str; 2] = ["stand", "crouch"];
 
 /// The weapon labels tables are built for: unarmed and the multiplayer
 /// weapons' (animations.md, "Seat, weapon class and weapon type").
-pub const LABELS: [&str; 12] = [
-    "unarmed", "ar", "hp", "sg", "pr", "rl", "sr", "pp", "ft", "ne", "b", "f",
+pub const LABELS: [&str; 13] = [
+    "unarmed", "ar", "hp", "sg", "pr", "rl", "sr", "pp", "ft", "ne", "b", "f", "fr",
 ];
 
 /// The label a holder without a label of its own plays: a rifle stance
@@ -452,6 +460,14 @@ pub fn build(graph: &AnimationGraph, bones: &[MapBone], checksum: u32) -> (AnimS
             if let Some(i) = class.animations.get(WeaponClassSlot::ThrowGrenade) {
                 b.sequence(key(seat, label, THROW), i, None);
             }
+            // The class's melee and the type's fire-1: a body's first-person
+            // view plays them (`campaign::first_person`).
+            if let Some(i) = class.animations.get(WeaponClassSlot::Melee) {
+                b.sequence(key(seat, label, MELEE), i, None);
+            }
+            if let Some(i) = graph.weapon_type(sel).and_then(|t| t.animations.get(blam_formats::animation::WeaponTypeSlot::Fire1)) {
+                b.sequence(key(seat, label, FIRE_1), i, None);
+            }
             for (slot, name) in [
                 (WeaponClassSlot::AimStill, "aim-still"),
                 (WeaponClassSlot::AimMove, "aim-move"),
@@ -484,6 +500,11 @@ pub fn build(graph: &AnimationGraph, bones: &[MapBone], checksum: u32) -> (AnimS
     }
     (b.set, b.warnings)
 }
+
+/// The class's melee and the weapon type's fire-1 slot names (built for
+/// every body; only a body's first-person view plays them).
+pub const MELEE: &str = "melee";
+pub const FIRE_1: &str = "fire-1";
 
 /// The seat's airborne death's and landing death's slot names.
 pub const AIRBORNE_DEAD: &str = "airborne-dead";
@@ -660,6 +681,67 @@ pub struct Inputs {
     /// A hit to flinch from this tick, with its permutation's draw (0 to
     /// 1; `flinch`).
     pub hit: Option<f32>,
+    /// A campaign body's own moving speeds (its graph's mean root motion,
+    /// WU/s: front, back, side, then crouched front, back, side): its move
+    /// animations play at the body's ground speed over these (`rate`).
+    /// None: one frame a tick (the Spartan).
+    pub own_speeds: Option<[f32; 6]>,
+    /// The horizontal speed, WU/s.
+    pub speed: f32,
+    /// An action started this tick (a campaign body's shot or melee:
+    /// `Action`), played once from its first frame.
+    pub action: Option<Action>,
+}
+
+/// An action a body plays once over its pose (`HaloAnim::action`): its
+/// weapon type's `fire-1` on a shot, its class's `melee` on a melee.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    Fire,
+    Melee,
+}
+
+impl Action {
+    /// Its sequence's slot name (`key`).
+    pub fn slot(self) -> &'static str {
+        match self {
+            Action::Fire => FIRE_1,
+            Action::Melee => MELEE,
+        }
+    }
+}
+
+/// Animation `(sequence, frame)` laid over `pose`: an overlay (a delta)
+/// composed on it, a base animation in place of it on the bones it tracks.
+pub fn apply_action(set: &AnimSet, (s, f): (usize, usize), pose: &mut [BonePose]) {
+    let Some(anim) = set.sequences.get(s).and_then(|q| q.anims.first()).and_then(|a| set.animations.get(*a)) else { return };
+    for t in &anim.tracks {
+        let Some(bone) = pose.get_mut(t.bone) else { continue };
+        let at = |n: usize| f.min(n.saturating_sub(1));
+        if let Some(q) = t.rotation.as_deref().and_then(|r| r.get(at(r.len())).copied()) {
+            bone.0 = if anim.delta { (bone.0 * q).normalize() } else { q };
+        }
+        if let Some(p) = t.position.as_deref().and_then(|r| r.get(at(r.len())).copied()) {
+            bone.1 = if anim.delta { bone.1 + p } else { p };
+        }
+    }
+}
+
+impl Inputs {
+    /// Frames a tick for move state `state` (module doc): the ground speed
+    /// over the animation's own, for a body with `own_speeds` (kept within
+    /// 0.25 to 3); 1 otherwise.
+    pub fn rate(&self, state: State) -> f32 {
+        let Some(s) = self.own_speeds else { return 1.0 };
+        let c = if self.crouching { 3 } else { 0 };
+        let own = match state {
+            State::MoveFront => s[c],
+            State::MoveBack => s[c + 1],
+            State::MoveLeft | State::MoveRight => s[c + 2],
+            _ => return 1.0,
+        };
+        if own <= 0.0 { 1.0 } else { (self.speed / own).clamp(0.25, 3.0) }
+    }
 }
 
 /// The landing thresholds (world units per second) and recovery ticks
@@ -704,6 +786,11 @@ pub struct HaloAnim {
     pub feet: u8,
     /// The flinch playing (`flinch`).
     pub ping: Option<super::flinch::Ping>,
+    /// The action playing (`Inputs::action`): its sequence and frame.
+    pub action: Option<(usize, usize)>,
+    /// Frames owed to the playing state (`Inputs::rate`; whole frames
+    /// advance, the rest carries).
+    pub carry: f32,
 }
 
 impl HaloAnim {
@@ -762,7 +849,13 @@ impl HaloAnim {
     pub fn tick(&mut self, set: &AnimSet, label: &str, i: &Inputs, land: &Landing) -> Vec<BonePose> {
         let want = self.desire(i, land);
         let seat = if i.crouching { SEATS[1] } else { SEATS[0] };
-        let found = set.names.get(&key(seat, label, want.name())).copied();
+        let has = |st: State| set.names.get(&key(seat, label, st.name())).copied();
+        // A direction the graph lacks plays its forward move (a campaign
+        // body: the Hunter's back-pedal, a Flood's strafe).
+        let found = has(want).or_else(|| match want {
+            State::MoveBack | State::MoveLeft | State::MoveRight => has(State::MoveFront),
+            _ => None,
+        });
         let changed_state = want != self.state;
         self.state = want;
         match found {
@@ -770,10 +863,18 @@ impl HaloAnim {
                 self.start_blend(want.transition_ticks());
                 self.sequence = Some(s);
                 self.frame = 0;
+                self.carry = 0.0;
             }
+            // In the air without an airborne animation: the last pose holds.
+            None if want == State::Airborne && i.own_speeds.is_some() => {}
             _ => {
                 if let Some(s) = self.sequence {
-                    self.frame = advance(self.frame, frames(set, s), loop_frame(set, s));
+                    self.carry += i.rate(want);
+                    let n = self.carry.floor().min(4.0);
+                    self.carry -= n;
+                    for _ in 0..n as u32 {
+                        self.frame = advance(self.frame, frames(set, s), loop_frame(set, s));
+                    }
                 }
             }
         }
@@ -804,6 +905,24 @@ impl HaloAnim {
             let n = frames(set, s);
             pose = base_pose(set, set.sequences[s].anims[0], f.min(n.saturating_sub(1)));
         }
+        // A shot's or a melee's action: started (a new one restarts it),
+        // laid over and advanced; a base one (the melee) blends in and out.
+        if let Some(a) = i.action
+            && let Some(s) = set.names.get(&key(seat, label, a.slot())).copied()
+        {
+            if !is_delta(set, s) {
+                self.start_blend(TRANSITION_TICKS);
+            }
+            self.action = Some((s, 0));
+        }
+        if let Some((s, f)) = self.action {
+            apply_action(set, (s, f), &mut pose);
+            let n = frames(set, s);
+            self.action = (f + 1 < n).then_some((s, f + 1));
+            if self.action.is_none() && !is_delta(set, s) {
+                self.start_blend(TRANSITION_TICKS);
+            }
+        }
         // The flinch: advanced, a hit's started, then laid over.
         self.ping = super::flinch::advance(self.ping, self.ping.map_or(1, |p| frames(set, p.sequence)));
         if let Some(r) = i.hit {
@@ -832,4 +951,9 @@ impl HaloAnim {
         self.last = pose.clone();
         pose
     }
+}
+
+/// Whether sequence `s`'s animation is an overlay (a delta).
+fn is_delta(set: &AnimSet, s: usize) -> bool {
+    set.sequences.get(s).and_then(|q| q.anims.first()).and_then(|a| set.animations.get(*a)).is_some_and(|a| a.delta)
 }

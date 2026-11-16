@@ -1,0 +1,147 @@
+# The Hunter's arm cannon (`weapons\fuel rod gun\hunter fuel rod`, d20;
+# specs/halo_ce/characters.md section 2 rule 6 and section 8, "The weapons
+# characters need"): a special Halo rung (game::weapons::rung,
+# `HUNTER_RUNG`) whose holder is always the Hunter (data/campaign.toml:
+# the cannon is that body's own gun). The spec names the tag and states
+# none of its numbers: every number here is the tag's as `blam_formats`
+# reads it from d20 (the heavy test `heavy/campaign.rs` checks them), and
+# what the tag leaves empty is said where it is chosen.
+#
+# One trigger of 10 rounds a second with a charging time of 1.25 s and
+# "discharges" when overcharged, its trigger flag 3 "does not repeat
+# automatically": with one trigger and a rate above 0 a press fires a rod
+# at once and charges in the background (weapons.md 4), a release while
+# charging goes idle, and the full charge (its charged time 0) discharges
+# at once, which for one trigger fires nothing (weapons.md 10 names
+# what a discharge fires only for two triggers). So by the tag a held
+# trigger fires one rod a press and tapping up to 10 a second: the
+# charge is not mandatory. Our rule `charge_paces` (below) makes it so. No magazine (all zeros: it always
+# fires; no battery use), no heat, no zoom, no aim assist. The rod: 0.467
+# WU a tick slowing to 0.167 over 100 WU, falling under full gravity, no
+# collision radius, no range limit; it detonates on nearly everything
+# (overpenetrates types 28 and 29, reflects off 32): 40 to 75 points
+# within 1.5 WU and the frag grenade's shock wave (data/damage.toml).
+#
+# No model of its own (no world, first-person or HUD model: the cannon
+# seen is the Hunter's own arm): the third-person body holds nothing, the
+# first-person view is the body's own arm (game::campaign::first_person),
+# the HUD is the plain one of a gun without a HUD interface.
+id = "halo_ce:hunter_fuel_rod"
+base = "halo_ce:gun"
+slot = 3
+class = "launcher"
+
+[hud]
+name = "Hunter Fuel Rod"
+
+[hooks."halo_ce:weapon"]
+tag = 'weapons\fuel rod gun\hunter fuel rod'
+label = "fr"
+flags = 0
+weapon_type = 0
+zoom_levels = 0
+camo = [0.0, 0.0]
+# The tag has no melee damage: a player-worn Hunter strikes with its own
+# unit's melee (`characters\hunter\melee`; our choice).
+melee_damage = "hunter_melee"
+
+[hooks."halo_ce:weapon".heat]
+recovery_threshold = 0.0
+overheated_threshold = 0.0
+detonation_threshold = 0.0
+detonation_fraction = 0.0
+loss_per_second = 0.0
+illumination = 0.0
+
+[hooks."halo_ce:weapon".age]
+heat_recovery_penalty = 0.0
+rate_of_fire_penalty = 0.0
+misfire_start = 0.0
+misfire_chance = 0.0
+
+[hooks."halo_ce:weapon".aim_assist]
+autoaim_angle = 0.0
+autoaim_range = 0.0
+magnetism_angle = 0.0
+magnetism_range = 0.0
+deviation_angle = 0.0
+
+[hooks."halo_ce:weapon".magazine]
+flags = 0
+rounds_recharged = 0
+rounds_total_initial = 0
+rounds_total_maximum = 0
+rounds_loaded_maximum = 0
+rounds_reloaded = 0
+chamber_time = 0.0
+
+[hooks."halo_ce:weapon".trigger]
+# Bit 3, as the rocket launcher's.
+flags = 0x8
+rounds_per_second = [10.0, 10.0]
+rate_of_fire_acceleration = 1.0
+rate_of_fire_deceleration = 1.0
+error_acceleration = 1.0
+error_deceleration = 1.0
+magazine = 0
+rounds_per_shot = 0
+minimum_rounds_loaded = 0
+rounds_between_tracers = 0
+minimum_error = 0.0
+error_angle = [0.0, 0.0]
+projectiles_per_shot = 1
+distribution = 0
+# The tag's offset is 0: the rod leaves from the eye's line (where the
+# shot leaves from is an open question of the spec: module doc of
+# game::weapons::rung).
+first_person_offset = [0.0, 0.0, 0.0]
+heat_per_round = 0.0
+age_per_round = 0.0
+firing_effects = 1
+projectile = 'weapons\fuel rod gun\fuel rod'
+charging_time = 1.25
+charged_time = 0.0
+# Discharges.
+overcharged_action = 2
+# Our rule, not the tag's (game::weapons::params::Trigger::charge_paces):
+# the tag lets a press fire at once and a release cut the charge short,
+# so tapping fires up to 10 rods a second (its rate) and a bot, which
+# taps, did. Paced, the charge runs out whatever the trigger does: a held
+# trigger fires a rod every charge (38 ticks, 1.27 s), and tapping fires
+# no faster. Set false for the tag's own behaviour.
+charge_paces = true
+
+# No first-person graph: no draw (the tag's ready time is 0, so 0
+# frames), and the melee timed by the Hunter's own `stand unarmed melee`
+# (61 frames, its key frame 18): our choice.
+[hooks."halo_ce:weapon".animations]
+ready = 0
+melee = 61
+melee_key = 18
+
+[hooks."halo_ce:weapon".projectile]
+tag = 'weapons\fuel rod gun\fuel rod'
+flags = 3
+timer_starts = 1
+initial_velocity = 0.4666667
+final_velocity = 0.16666667
+air_damage_range = [0.0, 100.0]
+water_damage_range = [0.0, 10.0]
+maximum_range = 0.0
+air_gravity_scale = 1.0
+water_gravity_scale = 0.4
+collision_radius = 0.0
+minimum_velocity = 0.0
+timer = [0.0, 0.0]
+impact_damage = ""
+detonation = ["fuel_rod_explosion", "frag_shock_wave"]
+
+[hooks."halo_ce:weapon".projectile.responses]
+count = 33
+elements = [
+    { types = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 31], default = "detonate", potential = "detonate" },
+    { types = [28], default = "overpenetrate", potential = "detonate" },
+    { types = [29], default = "overpenetrate", potential = "detonate", skip = 0.9 },
+    { types = [30], default = "detonate" },
+    { types = [32], default = "reflect", potential = "detonate" },
+]

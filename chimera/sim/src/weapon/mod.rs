@@ -23,7 +23,9 @@
 //! starts, HL2's shotgun), `AltShot` (attack2 fires a bigger shot from the
 //! clip: HL2's double shot), `Hitscan` (pellets
 //! share a shot's inaccuracy offset; without a `DamageEffect` only its `Fired`
-//! event, for a game that delivers rounds itself)/`Melee` (delivery), `Penetration` with
+//! event, for a game that delivers rounds itself)/`Melee` (delivery; a swing may
+//! hit `Swing::delay` after it starts, TF2's smack, and judge a hit from
+//! behind by `Backstab`), `Penetration` with
 //! `PassMaterials` (bullets through walls and characters), `DamageEffect`,
 //! `WeaponSounds`, attack2 modes (`AltModes`, with `Zoom` (owner gets `Zoomed`,
 //! max speed; a game zooming its own way marks the weapon `OwnZoom` and sets
@@ -73,6 +75,7 @@
 //! marks unchecked), but tracers cover only the first segment. Why it's OK for
 //! now: Matches every measured damage and pass/stop case the spec lists.
 
+pub mod balance;
 pub mod data;
 mod deliver;
 pub mod drop;
@@ -1331,9 +1334,15 @@ pub struct Swing {
     /// this kind was less than `window` seconds ago (CS:S slash: 15 within
     /// 0.9 s of the last slash).
     pub follow_up: Option<(f32, f32)>,
-    /// Damage when hitting from behind, if different: the target faces
-    /// within acos(`BACKSTAB_COS`) of the attacker-to-target bearing.
-    pub backstab: Option<f32>,
+    /// What a hit from behind deals, if different (`Backstab`).
+    pub backstab: Option<Backstab>,
+    /// Seconds from the swing's start to its hit (TF2's smack delay): the
+    /// swing starts (`WeaponEventKind::SwingStarted`, `sound_swing`, both
+    /// timers as after a miss) and is traced this much later along the
+    /// view then (`WeaponState::pending_swing`), from the swing's start
+    /// the hit refire when it hits; a draw or the owner's death cancels
+    /// it. 0: at once.
+    pub delay: f32,
     /// Hits scale by hitgroup (the SDK); CS:S's knife reports generic.
     pub hitgroups: bool,
     /// Seconds until either attack after a hit.
@@ -1352,6 +1361,52 @@ pub struct Swing {
     pub sound_hit: Option<String>,
     pub sound_hit_world: Option<String>,
     pub sound_miss: Option<String>,
+    /// Every swing's sound at its start, hit or miss (TF2's), beside the
+    /// hit's own.
+    pub sound_swing: Option<String>,
+}
+
+/// A swing's hit from behind (`Swing::backstab`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Backstab {
+    /// This damage when the target faces within acos(`BACKSTAB_COS`) of
+    /// the attacker-to-target bearing (CS:S's, measured M11).
+    Facing(f32),
+    /// TF2's (specs/tf2/weapons_stock.md 4.2): with the target's view v,
+    /// the attacker's a and the direction d from the attacker's centre to
+    /// the target's, all flattened (yaw only), a backstab when d.v >
+    /// `behind`, a.d > `facing` and a.v > `same_way`; it deals `health`
+    /// times the target's current health, the kill credited to `credit`
+    /// (a kill icon's id) when given.
+    Behind {
+        behind: f32,
+        facing: f32,
+        same_way: f32,
+        health: f32,
+        credit: Option<&'static str>,
+    },
+}
+
+impl Backstab {
+    /// `Behind`'s test: `attacker` and `target` the views (any pitch),
+    /// `to_target` from the attacker's centre to the target's; false for
+    /// `Facing` (the swing's own test).
+    pub fn behind(&self, attacker: Vec3, target: Vec3, to_target: Vec3) -> bool {
+        let Backstab::Behind { behind, facing, same_way, .. } = *self else { return false };
+        let flat = |v: Vec3| v.with_y(0.0).normalize_or_zero();
+        let (a, v, d) = (flat(attacker), flat(target), flat(to_target));
+        d.dot(v) > behind && a.dot(d) > facing && a.dot(v) > same_way
+    }
+}
+
+/// A delayed swing under way (`Swing::delay`): when it started, when it
+/// hits, which button's and the damage it was started with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PendingSwing {
+    pub start: f64,
+    pub at: f64,
+    pub secondary: bool,
+    pub damage: f32,
 }
 
 /// Effect: damage on hit, for hitscan deliveries.
@@ -1516,18 +1571,12 @@ pub struct ArmorHit {
 }
 
 /// A scale on the damage each game's weapons deal, by the dealing
-/// weapon's game (an app made of several games tunes them against each
-/// other: the party apps' table, party_kit's data/party_damage.toml);
-/// a game it doesn't name deals as it is, and without the resource (each
-/// game's own app) nothing is scaled. `HitArmor` applies it to a weapon's
-/// hit before armour (the weapon's game: the firing gun's id for rounds
-/// and swings, `Damage::weapon` for blasts and projectiles, the game a
-/// game's own seam names: `HitArmor::apply_region_of`), not to the map's
-/// damage (`HitArmor::apply_environment`); the power curve counts it
-/// (`minigame::power::PowerReaders::game_damage`). Combat Arms' guns take armour in their own step
-/// (`combat_arms::game::weapons::armour_and_zone`), which doesn't read
-/// the table (Combat Arms' scale is 1 in the party's table).
-#[derive(Resource, Clone, Debug, Default, PartialEq)]
+/// weapon's game, as the ladder's power curve counts it
+/// (`minigame::power::PowerReaders::game_damage`: the outgoing column of
+/// the cross-game table, `balance::Balance::power_table`); a game it
+/// doesn't name deals as it is. The hits themselves take the table's
+/// scale in `HitArmor` (`balance`).
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct GameDamage(pub std::collections::BTreeMap<String, f32>);
 
 impl GameDamage {
@@ -1552,8 +1601,9 @@ impl GameDamage {
 }
 
 /// The one place hits take armour: bullets, knives (`deliver`) and blasts
-/// (`grenade`); where a weapon's hit takes its game's scale (`GameDamage`)
-/// first. A hit takes armour only when it lands (`core::DamageRules::lands`):
+/// (`grenade`); where a weapon's hit takes the cross-game table's scale
+/// first (`balance`: the one place it is applied). A hit takes armour
+/// only when it lands (`core::DamageRules::lands`):
 /// a teammate's hit with friendly fire off, a noclipping or `God` target,
 /// a map's invulnerability or damage filter leave it whole (CS:S, measured
 /// 2026-10-17 for teammates and noclip: specs/cs_source/weapons.md
@@ -1563,7 +1613,10 @@ pub struct HitArmor<'w, 's> {
     armor: Query<'w, 's, (&'static mut Armor, Option<&'static ArmorPieces>, Option<&'static ArmorRatio>)>,
     rules: crate::core::DamageRules<'w, 's>,
     shares: Option<ResMut<'w, Messages<ArmourShare>>>,
-    game_damage: Option<Res<'w, GameDamage>>,
+    balance: Option<Res<'w, balance::Balance>>,
+    /// The victim's game and body id (`balance::Victim`) and the
+    /// incoming its body holds (`balance::Balance::before_armour`).
+    victims: Query<'w, 's, (Option<&'static balance::Victim>, Option<&'static crate::core::DamageScale>)>,
 }
 
 impl HitArmor<'_, '_> {
@@ -1583,12 +1636,18 @@ impl HitArmor<'_, '_> {
         self.apply_region(damage, region, raw, ratio, quantum)
     }
 
-    /// The scale of the game of `weapon` (an id, `game:name`, or a
-    /// game's name), else of `damage.weapon`, on a hit (`GameDamage`; 1
-    /// without the table or a weapon).
+    /// The cross-game table's scale of a hit by the game of `weapon` (an
+    /// id, `game:name`, or a game's name), else of `damage.weapon`, on
+    /// `damage.target` (`balance::Balance::before_armour`: the pair's
+    /// scale over the incoming the target's body holds; 1 without the
+    /// table, with it off, or without a weapon).
     pub fn game_scale(&self, damage: &crate::core::Damage, weapon: Option<&str>) -> f32 {
-        let Some(table) = self.game_damage.as_deref().filter(|t| !t.0.is_empty()) else { return 1.0 };
-        weapon.or(damage.weapon).map_or(1.0, |id| table.of_weapon(id))
+        let Some(table) = self.balance.as_deref().filter(|t| t.on) else { return 1.0 };
+        let Some(id) = weapon.or(damage.weapon) else { return 1.0 };
+        let (victim, held) = self.victims.get(damage.target).unwrap_or((None, None));
+        let game = victim.and_then(|v| v.game.as_deref());
+        let body = victim.and_then(|v| v.body.as_deref());
+        table.before_armour(balance::game_of(id), game, body, held.map_or(1.0, |s| s.0))
     }
 
     /// `apply` of the map's damage (a trigger's, `core::MapDamage`): no
@@ -1836,6 +1895,8 @@ pub struct WeaponState {
     pub armed_round: bool,
     /// The trigger's closing part (`Trigger::postfire`) plays until then.
     pub postfire_end: Option<f64>,
+    /// A delayed swing still to hit (`Swing::delay`).
+    pub pending_swing: Option<PendingSwing>,
 }
 
 impl WeaponState {
@@ -1915,6 +1976,11 @@ pub enum WeaponEventKind {
         target: Entity,
         amount: f32,
         hitgroup: Hitgroup,
+    },
+    /// A delayed melee swing started (`Swing::delay`): its `Swing`
+    /// follows when it hits or misses.
+    SwingStarted {
+        secondary: bool,
     },
     /// A melee swing (hit or not).
     Swing {
@@ -2039,6 +2105,8 @@ pub(crate) fn select_weapons(
             st.burst_left = 0;
             st.rezoom = None;
             st.shells = ShellStage::Idle;
+            // A delayed swing still to hit is cancelled (`Swing::delay`).
+            st.pending_swing = None;
             if let (Some(mut modes), Some(_)) = (modes, zoom) {
                 modes.current = 0;
             }
@@ -2052,6 +2120,7 @@ pub(crate) fn select_weapons(
         st.next_primary = ready;
         st.next_secondary = ready;
         st.fired_on_empty = false;
+        st.pending_swing = None;
         inv.last = inv.active;
         inv.active = Some(want);
         inv.touch_slot(w.slot);
@@ -2059,6 +2128,7 @@ pub(crate) fn select_weapons(
         if let Some(s) = sounds.and_then(|s| s.deploy.clone())
             && first.0
         {
+            debug!("deploy sound {s} for {owner}");
             play.write(owner_sound(s, owner, at.translation, CHAN_ITEM));
         }
         if let Some(s) = sounds {
@@ -2253,6 +2323,12 @@ fn weapon_frame(
     let dt = clock.dt();
     for (owner, intent, mut inv, transform, state, health, punch) in &mut owners {
         if health.is_some_and(|h| h.current <= 0.0) {
+            // A delayed swing dies with its owner (`Swing::delay`).
+            if let Some(mut w) = inv.active.and_then(|a| weapons.get_mut(a).ok())
+                && w.state.pending_swing.is_some()
+            {
+                w.state.pending_swing = None;
+            }
             continue;
         }
         let pressed = intent.fire && !inv.prev_fire;
@@ -2330,6 +2406,7 @@ fn weapon_frame(
         // (lag compensation, server only: `ViewTick` is set per command).
         let may_trace = (intent.fire && w.state.next_primary <= due)
             || (intent.secondary && w.melee.is_some() && w.state.next_secondary <= due)
+            || w.state.pending_swing.is_some_and(|p| due >= p.at)
             || (w.state.burst_left > 0 && due >= w.state.next_burst_round);
         // A weapon's own choice of whom to rewind (HL2:DM's,
         // `lagcomp::RewindChoice`): only for attack held or a shot lately,
@@ -2361,6 +2438,21 @@ fn weapon_frame(
             traced: false,
             w: &mut world,
         };
+
+        // 0. A delayed swing hits (`Swing::delay`): traced along the view
+        // now, with the damage it started with.
+        if let Some(p) = w.state.pending_swing.filter(|p| due >= p.at) {
+            w.state.pending_swing = None;
+            let swing = w.melee.and_then(|m| if p.secondary { m.secondary.clone() } else { Some(m.primary.clone()) });
+            if let Some(swing) = swing {
+                let swing = Swing { damage: p.damage, ..swing };
+                if ctx.swing(&swing, p.secondary) {
+                    let t = p.start + swing.hit_refire as f64;
+                    w.state.next_primary = t;
+                    w.state.next_secondary = t;
+                }
+            }
+        }
 
         // 1. Fire duration.
         w.state.fire_duration = if intent.fire { w.state.fire_duration + dt } else { 0.0 };
@@ -2508,10 +2600,16 @@ fn weapon_frame(
             && w.state.next_secondary <= due
         {
             let swing = follow_up(&swing, w.state.last_swing[1], now);
-            let hit = ctx.swing(&swing, true);
-            let (own, other) = swing_refire(&swing, hit, now, &mut w.state.last_swing[1]);
-            w.state.next_secondary = own;
-            w.state.next_primary = other;
+            if swing.delay > 0.0 {
+                let (own, other) = start_swing(&mut w.state, &swing, true, now, &mut ctx);
+                w.state.next_secondary = own;
+                w.state.next_primary = other;
+            } else {
+                let hit = ctx.swing(&swing, true);
+                let (own, other) = swing_refire(&swing, hit, now, &mut w.state.last_swing[1]);
+                w.state.next_secondary = own;
+                w.state.next_primary = other;
+            }
             blocked = true;
         } else if intent.secondary
             && let Some(alt) = w.alt_shot.copied()
@@ -2648,8 +2746,12 @@ fn weapon_frame(
                 w.state.shells = ShellStage::Idle;
                 if let Some(swing) = w.melee.map(|m| m.primary.clone()) {
                     let swing = follow_up(&swing, w.state.last_swing[0], now);
-                    let hit = ctx.swing(&swing, false);
-                    let (own, other) = swing_refire(&swing, hit, now, &mut w.state.last_swing[0]);
+                    let (own, other) = if swing.delay > 0.0 {
+                        start_swing(&mut w.state, &swing, false, now, &mut ctx)
+                    } else {
+                        let hit = ctx.swing(&swing, false);
+                        swing_refire(&swing, hit, now, &mut w.state.last_swing[0])
+                    };
                     w.state.next_primary = own;
                     w.state.next_secondary = other;
                     w.state.burst += 1;
@@ -2758,6 +2860,24 @@ fn follow_up(swing: &Swing, last_swing: Option<f64>, now: f64) -> Swing {
         },
         _ => swing.clone(),
     }
+}
+
+/// A delayed swing's start (`Swing::delay`): told, its swing sound,
+/// its hit due `delay` on; the timers (this swing, the other) as after a
+/// miss until it hits.
+fn start_swing(state: &mut WeaponState, swing: &Swing, secondary: bool, now: f64, ctx: &mut deliver::Shot) -> (f64, f64) {
+    state.last_swing[usize::from(secondary)] = Some(now);
+    state.pending_swing = Some(PendingSwing {
+        start: now,
+        at: now + swing.delay as f64,
+        secondary,
+        damage: swing.damage,
+    });
+    ctx.w.event(ctx.owner, ctx.weapon, WeaponEventKind::SwingStarted { secondary });
+    if let Some(s) = &swing.sound_swing {
+        ctx.w.sound(owner_sound(s.clone(), ctx.owner, ctx.eye, CHAN_WEAPON));
+    }
+    (now + swing.miss_refire as f64, now + swing.miss_refire_other as f64)
 }
 
 /// Next times for (this swing, the other) after a swing, recording it.

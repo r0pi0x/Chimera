@@ -29,7 +29,7 @@ use super::{
     GAME,
     weapons::{
         STUNSTICK,
-        inventory::{Hl2Model, ModelKind},
+        inventory::{DEFAULT_MODEL, Hl2Model, ModelKind},
     },
 };
 
@@ -86,8 +86,8 @@ pub const HOOK: RungExtrasHook = RungExtrasHook {
     apply,
 };
 
-/// Marks a player whose `Hl2Model` is a rung's (so leaving the rung takes
-/// it off).
+/// Marks a player whose `Hl2Model` is a rung's (so leaving the rung puts
+/// the default back).
 #[derive(Component, Clone, Copy, Debug)]
 #[component(storage = "SparseSet")]
 pub struct RungModel;
@@ -116,17 +116,18 @@ fn draw(_: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
 }
 
 /// `e` armed for a rung: the rung's model on it, or (another game's rung,
-/// or the option off) taken off.
+/// or the option off) the default model.
 fn apply(world: &mut World, e: Entity, extras: Option<&RungExtras>) {
     match extras.and_then(|x| x.value(MODEL)) {
         Some(path) => {
             world.entity_mut(e).insert((Hl2Model(path.to_string()), RungModel));
         }
         None => {
-            // Both in one move (each alone is an archetype for every
-            // combination of the rest).
-            if world.get::<RungModel>(e).is_some() {
-                world.entity_mut(e).remove::<(RungModel, Hl2Model)>();
+            // Kept on, the default model (as without one): taken off and
+            // put back, each was an archetype for every combination of the
+            // character's other parts (docs/DESIGN.md, "ECS style").
+            if world.get::<RungModel>(e).is_some() && world.get::<Hl2Model>(e).is_some_and(|m| m.0 != DEFAULT_MODEL) {
+                world.entity_mut(e).insert(Hl2Model(DEFAULT_MODEL.to_string()));
             }
         }
     }

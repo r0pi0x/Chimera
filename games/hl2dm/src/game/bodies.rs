@@ -169,7 +169,7 @@ impl Plugin for Hl2DeadViewPlugin {
 /// unnamed default body).
 #[allow(clippy::type_complexity)]
 pub fn wear_models(
-    players: Query<(Entity, Option<&Hl2Model>, Option<&BodyName>), Or<(Changed<Hl2Model>, Added<BodyName>)>>,
+    players: Query<(Entity, Option<&Hl2Model>, Option<&BodyName>), Or<(Changed<Hl2Model>, Changed<BodyName>)>>,
     mut gone: RemovedComponents<Hl2Model>,
     names: Query<&BodyName>,
     mut commands: Commands,
@@ -182,7 +182,7 @@ pub fn wear_models(
                 commands.entity(e).insert(BodyName(w.to_string()));
             }
             (None, Some(n)) if is_ours(&n.0) => {
-                commands.entity(e).remove::<BodyName>();
+                commands.entity(e).insert(BodyName::none());
             }
             _ => {}
         }
@@ -191,7 +191,7 @@ pub fn wear_models(
         if names.get(e).is_ok_and(|n| is_ours(&n.0))
             && let Ok(mut c) = commands.get_entity(e)
         {
-            c.remove::<BodyName>();
+            c.insert(BodyName::none());
         }
     }
 }

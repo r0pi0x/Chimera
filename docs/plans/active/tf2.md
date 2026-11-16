@@ -24,6 +24,8 @@ from specs, measurements and the game's own data.
 | M3 classes as bodies, TF2's movement | done (2026-11-15) | the classes as data (`game::classes`); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health); the class bodies with team skins and animation; TF2's HUD (health, ammo, crosshair) and kill icons |
 | M4a more maps in the party pool | done (2026-11-15) | 14 koth_, cp_ and ctf_ maps in an automatic pool by data/map_pool.toml and data/map_fitness.toml (a sweep of 130 maps); played free for all: touch-opened doors start open, spawn rooms' door brushes block nobody; `map/<name>` sets checked in a scratch store, not published |
 | SDK parity (tf2-parity) | done (2026-11-15) | the specs' "Corrections from the SDK" in the code: the Minigun, the blasts and knockback, movement, the scripts' mapping, grenades and stickies; the flame's points, heat and afterburn, the scope's timing, the needle's and the rocket's aim (what's left: the section) |
+| M4b the nine stock melee weapons | done (2026-11-16) | specs/tf2/weapons_stock.md (T10): the Bat, Shovel, Fire Axe, Bottle, Fists, Wrench, Bonesaw, Kukri and Knife as data on Chimera's delayed swing (the smack), the Knife's backstab, the class's arms and sequences, sounds, kill icons with `backstab`; each TF2 rung carries its class's melee, TF2's kit knife the Knife |
+| Follow-ups (tf2-followups) | done (2026-11-16) | the drawn class's melee tested; spawn spots in open space (no vent-duct spawns); TF2's class parts on and off in one move; the duct's material checked |
 | M4 more weapons, effects, the probe | not started | |
 
 ## 1. Rules for this port
@@ -369,15 +371,21 @@ per-class shotgun starts wait for classes (M3); a TF2 rung has no knife.
 - **Looks** (`weapons::looks`): TF2's `ExplosionCore_MidAir` and each
   gun's `muzzle_*` from its own `.pcf` files, loaded with its maps;
   Source's explosion on maps with its sprites; explosions sent to clients
-  (the `tf2_looks` net part).
+  (the `tf2_looks` net part). (tf2-polish, 2026-11-15) The same on every
+  map: TF2's systems (and the Flame Thrower's `flamethrower` /
+  `flamethrower_blue`, a piece per round) load onto other games' maps from
+  TF2's own files (`maps::add_guest_looks`, `pcf::
+  add_guest_particle_systems`), no Source explosion; flashes start at the
+  gun's `muzzle` attachment; TF2 is an impact provider (Source's impact
+  effects and sounds, `looks::STYLE`), so its hits are never Combat
+  Arms' or the map's game's; the `players` set holds the files.
 - **Generic**: `chimera:projectile`'s `up_speed`. Network version net63.
 - **Tests**: `tests/it/weapons_more.rs` (13 scenario tests from the
   spec's cases), the heavy `guns` tests over all twelve, `party_kit`'s
   `tf2_rungs::the_next_eight_tf2_guns_are_rungs_and_kill`.
 
-Left: no flame particles (the Flame Thrower's cone is invisible); muzzle
-flashes in the world, not on the view model's attachment, and not on
-other games' maps; the headshot kill icon isn't told apart; no laser
+Left: the flash is drawn in the world pass at the re-projected muzzle,
+not on the view-model layer; the headshot kill icon isn't told apart; no laser
 dot or charge meter (no TF2 HUD); stickies aren't destroyed by bullets,
 a ninth blows the oldest at once; the grenade's bounce (restitution,
 friction) and the projectiles' boxes are ours; no crits; Pyros aren't
@@ -479,8 +487,9 @@ damage), the rocket jump tuned on the probe server.
 Left (M3): the Heavy's spun ("deployed") sequences and spin gestures, the
 flinch, the air jump's own sequence, a weighted pick among sequences of
 one activity; body groups (the Soldier's rocket in hand); the
-max-health label, low-ammo pulse, damage numbers, health-gain number,
-class portrait and each gun's own crosshair (hud.md open questions); the
+max-health label, low-ammo pulse, damage numbers, health-gain number
+and each gun's own crosshair (the class portrait is drawn as its 2D
+picture since tf2-polish) (hud.md open questions); the
 kill feed's row look is the party's; overheal and the Medic's
 regeneration have no source yet (no Medi Gun); the rocket jump tuned on
 the probe server.
@@ -503,20 +512,22 @@ the probe server.
 
   | map | area m2 | sight m | spawn points | spots | off | stuck | wander 4/8/12 s | in from |
   |---|---|---|---|---|---|---|---|---|
-  | ctf_2fort | 7748 | 7.6 | 30 | 4054 | 0 | 0 | 21.1/9.1/5.8 | 8 |
-  | cp_badlands | 13948 | 11.1 | 32 | 12213 | 0 | 0 | 26.0/11.2/7.1 | 12 |
+  | ctf_2fort | 7748 | 7.6 | 30 | 4053 | 0 | 0 | 21.1/9.1/5.8 | 8 |
+  | cp_badlands | 13948 | 11.1 | 32 | 12198 | 0 | 0 | 26.0/11.2/7.1 | 12 |
   | koth_viaduct | 6294 | 10.8 | 32 | 4799 | 0 | 0 | 12.0/5.1/3.3 | 8 |
-  | koth_harvest_final | 6135 | 12.9 | 30 | 3974 | 0 | 0 | 9.8/4.2/2.7 | 4 |
-  | koth_nucleus | 6278 | 11.2 | 36 | 6055 | 0 | 0 | 11.5/4.9/3.1 | 8 |
-  | cp_granary | 14918 | 12.2 | 30 | 9582 | 0 | 0 | 25.3/10.8/6.9 | 12 |
-  | ctf_turbine | 5661 | 9.9 | 24 | 3671 | 0 | 0 | 11.8/5.1/3.2 | 8 |
-  | ctf_doublecross | 8528 | 11.5 | 32 | 6579 | 0 | 0 | 15.3/6.6/4.2 | 8 |
-  | koth_lakeside_final | 8327 | 12.3 | 26 | 6002 | 0 | 0 | 14.0/6.0/3.8 | 8 |
-  | cp_process_final | 12900 | 11.2 | 32 | 10465 | 0 | 0 | 23.8/10.2/6.5 | 12 |
-  | koth_king | 8267 | 12.2 | 32 | 7417 | 0 | 0 | 14.0/6.0/3.8 | 8 |
-  | koth_highpass | 7360 | 10.4 | 32 | 6358 | 0 | 0 | 14.5/6.2/4.0 | 8 |
+  | koth_harvest_final | 6135 | 12.9 | 30 | 3971 | 0 | 0 | 9.8/4.2/2.7 | 4 |
+  | koth_nucleus | 6278 | 11.2 | 36 | 6038 | 0 | 0 | 11.5/4.9/3.1 | 8 |
+  | cp_granary | 14918 | 12.2 | 30 | 9561 | 0 | 0 | 25.3/10.8/6.9 | 12 |
+  | ctf_turbine | 5661 | 9.9 | 24 | 3500 | 0 | 0 | 11.8/5.1/3.2 | 8 |
+  | ctf_doublecross | 8528 | 11.5 | 32 | 6572 | 0 | 0 | 15.3/6.6/4.2 | 8 |
+  | koth_lakeside_final | 8327 | 12.3 | 26 | 5996 | 0 | 0 | 14.0/6.0/3.8 | 8 |
+  | cp_process_final | 12900 | 11.2 | 32 | 10461 | 0 | 0 | 23.8/10.2/6.5 | 12 |
+  | koth_king | 8267 | 12.2 | 32 | 7416 | 0 | 0 | 14.0/6.0/3.8 | 8 |
+  | koth_highpass | 7360 | 10.4 | 32 | 6356 | 0 | 0 | 14.5/6.2/4.0 | 8 |
   | koth_sharkbay | 7176 | 10.8 | 34 | 5046 | 0 | 0 | 13.6/5.8/3.7 | 8 |
-  | koth_suijin | 8951 | 15.1 | 32 | 5735 | 0 | 0 | 12.2/5.2/3.3 | 8 |
+  | koth_suijin | 8951 | 15.1 | 32 | 5678 | 0 | 0 | 12.2/5.2/3.3 | 8 |
+
+  (spots as counted since tf2-followups' open-space filter, below.)
 
   Left out (the file's comment says which and why): attack/defend cp_
   maps and every arena_ map (the round logic opens their gates and arena
@@ -576,6 +587,144 @@ the probe server.
   attack/defend and arena maps are out); spawns don't follow captured
   points; the navigation files still don't parse (the party generates
   one).
+
+### M4b: the nine stock melee weapons (done 2026-11-16)
+
+specs/tf2/weapons_stock.md (T10, draft).
+
+- **As data** (data/weapons, the base `tf2:melee`, `weapons::melee`):
+  `tf2:tf_weapon_bat` (35 every 0.5 s), `_shovel`, `_fireaxe`, `_bottle`,
+  `_fists`, `_wrench`, `_bonesaw`, `_club` (the Kukri) (65 every 0.8 s)
+  and `_knife` (40 every 0.8 s): a 48-unit line then a +-18 box, no
+  facing limit, the collision box, whole points, no knockback; slot 2,
+  never dropped, no gun class (never a ladder gun). The scripts' `Damage`,
+  `TimeFireDelay` (hit and miss refires) and `SmackDelay` (0.2 s without
+  one) apply at run time (`script_numbers::apply_melee`; a melee script on
+  a gun, or a gun's on a melee weapon, is refused).
+- **The hit delay** (open question 8) is a generic melee field,
+  `Swing::delay` (`delay` in the TOML): the swing starts
+  (`WeaponEventKind::SwingStarted`, `sound_swing` on every swing, both
+  timers as after a miss) and is traced `delay` later along the view
+  then (`WeaponState::pending_swing`; 14 ticks, the Knife's 7), the hit
+  refire counted from the start; a draw or the owner's death cancels it.
+- **The backstab** is a generic rule, `Backstab::Behind` (`backstab = {
+  behind, facing, same_way, health, credit }`): d.v > 0, a.d > 0.5, a.v >
+  -0.3 flattened, decided at the smack from the positions then (open
+  question 4), 6 x the victim's current health, the kill credited to
+  `tf2:backstab` (its kill icon); CS:S's knife keeps its number
+  (`Backstab::Facing`). The raised knife (`melee::backstab_ready`):
+  `knife_backstab_up`, `_idle`, `_down` and the stab `knife_backstab` by
+  the weapon's `ViewPose`.
+- **Crits** (`tf2:melee`): rolled per swing before it starts (`prepare`):
+  x3 damage, the crit swing sound and sequence, `TFPlayer.CritHit` on the
+  hit (and on a backstab). Random crits stay **off** (`MeleeCrits`, the
+  party's choice, as for the guns); with them on the chance is the base
+  15 % (`crit_chance`, no damage history yet). The Knife never rolls.
+- **First person** (`game::view`, `MELEE_SEQUENCES`): each class's arms
+  with the `c_` model bone-merged (the Fists the Heavy's arms alone, in
+  skin 2, `props::load_view_model_skinned`); draw, idle, the weighted
+  `HITCENTER` swings, the crit swing, the Fists' `f_swing_left` /
+  `f_swing_right`. Draw sounds by the draw sequences' event times
+  (`[sounds] draw`).
+- **Sets**: `weapon/tf_weapon_bat` ... `weapon/tf_weapon_knife`
+  (`sets::M2_WEAPONS`: the arms, the `c_` model, the sounds, the script).
+  Packing (not done; the script needs the key, so through the keyed
+  helper):
+  ```
+  for w in bat shovel fireaxe bottle fists wrench bonesaw club knife; do
+    chimera-tf2-keyed chimera_pack sets tf2 --store <server store> --only weapon/tf_weapon_$w --pack --sign
+  done
+  ```
+  (the plain form: `cargo run --features dev,tools --bin chimera_pack --
+  sets tf2 --store <server store> --only weapon/tf_weapon_<id> --pack
+  --sign`; `players` again too, for the `backstab` kill icon's cell:
+  `--only players --pack --sign`).
+- **The party**: each TF2 rung's players carry its class's stock melee
+  (data/classes.toml `melee`; `classes::HOOK`'s `RungExtras::melee`, the
+  mechanism Combat Arms' rung melee uses: `runtime::KitMelee` swaps the
+  kit's weapon of its slot): the Scout's Bat with the Scattergun, the
+  drawn class's with the Shotgun; `rung_extras = { melee = false }` keeps
+  the kit's. TF2's `PARTS.knife` is the Knife, so an automatic gun game's
+  kit by game gives TF2 rungs the Knife, which the class's melee replaces.
+  The finale's melee pool is every allowed melee weapon (no per-game
+  slot): the nine join it. `originals:gun_game_2fort` is unchanged (its
+  kit names no TF2 weapon, so its TF2 rungs still carry no melee).
+- **Tests**: `tests/it/melee.rs` (the spec's cases 1-14, 16-20, 22-26,
+  30, 32, a switch cancelling the smack), the script mapping's 33-35
+  (`weapon_scripts.rs`), `party_kit` `tf2_rungs::a_tf2_rung_carries_its_
+  classs_melee` and `the_shotguns_drawn_class_carries_its_own_melee`
+  (tf2-followups: over rung seeds the Shotgun's drawn class carries its
+  own melee, the Soldier the Shovel and the Heavy the Fists, in the
+  rung's extras and in hand; it already followed, nothing to fix).
+- Left: the Bottle's break (cosmetic), the Wrench's buildings, the Fists
+  alternating with both buttons held (attack2 wins), a damage history for
+  the crit chance, the BLU fists' skin (3) and the arms' team skins, the
+  swing's start not sent to other clients (their third-person gesture and
+  the crit sequence come at the smack), `tf_damage_disablespread` 0's
+  jitter (36), the world hit's decal, probe checks P1-P4. The spec's
+  cases 4 and 5 (held swings at ticks 0, 34, 67, 100) don't follow from
+  its own rule (next attack = now + interval, the guns' firing-tick timing
+  the SDK check confirmed): ours swing at 0, 34, 68, 102; for the spec's
+  next revision or the probe (P2).
+
+### Follow-ups (tf2-followups, 2026-11-16)
+
+- **Melee follows the drawn class**: it did already (`classes::HOOK`
+  draws the class, then takes that class's `melee`); a party test now
+  holds it over rung seeds: the Shotgun's rung, each of its four classes
+  drawn, carries that class's melee (Soldier the Shovel, Heavy the Fists,
+  Pyro the Fire Axe, Engineer the Wrench) in its extras and in hand, the
+  kit's knife swapped (`party_kit` `tf2_rungs::the_shotguns_drawn_class_
+  carries_its_own_melee`).
+- **No spawn in a vent duct** (a player spawned in ctf_turbine's): the
+  party's spawn spots keep to open space, a generic filter for every
+  game's maps (`chimera_sim::minigame::spawns::open_at`): at least 2.2 m
+  of headroom (the tallest player, TF2's 82 units, and some), and under
+  a ceiling lower than 2.6 m at least five of eight level rays from the
+  chest running 3 m free. turbine's ducts are 96 units (2.44 m) square
+  inside: the walk went in and the 72-unit standing box fitted; their
+  middles, corners, crossings and mouths now fail it. Spots before and
+  after: ctf_turbine 3671 to 3500 (none left in the ducts; the
+  `--dump`'s spots against the ducts' faces), ctf_turbine_winter 3913 to
+  3733, the other 12 pool maps 0 to 57 fewer (koth_suijin 57, cp_granary
+  21, koth_nucleus 17, cp_badlands 15; the least, ctf_2fort, 4053, over
+  the walk-out test's 2000); data/map_fitness.toml's spots updated for
+  the 19 maps measured. The other games: a sample of 18 CS:S maps 0 to
+  9 fewer each (de_nuke 9, de_port 3; measured with and without the
+  filter, as CS:S's file is older than its spots), HL2:DM's seven maps
+  1 to 20 (dm_steamlab), 17 Combat Arms maps 0 to 68 (oilrig and oilrigq
+  about 3 %, junk_flea 33; against their files' counts, so at most
+  that); Halo not measured (no install here). Test: `chimera_sim`
+  `spawns::spots_stand_in_open_space_not_in_ducts_or_crawlspaces` (a
+  duct, a crawlspace, a low hallway and a low room on the greybox).
+- **TF2's class parts in one move**: on top of the archetype work's
+  movement bundle (`slots::MovementImpl::leave`, the class layer with
+  `HealthBefore`), the view kick's spring (`recoil::Tf2Punch`, put on at
+  the first kick and kept) and the view model's class (`ViewVariant`, put
+  on at the first TF2 gun and kept) go on and off with the class layer
+  too (`movement::ClassParts`, `put_on`, `leave`, `take_off`); a body's
+  team skin goes on with its class's name in one move where the map has
+  TF2 bodies (`bodies::wear_bodies`; it went on a frame later, a move of
+  its own). `ultimate_gun_game`'s session test (the census, its bounds
+  untouched): 1,074 archetypes after four matches and 1,104 after eight,
+  318 of them characters', before; 1,045 and 1,083, 293 characters',
+  after (the growth over the last four matches 30 and 38: which ladders
+  the matches draw moves it). Its headless world has no TF2 bodies, so
+  the skin's move shows only in the real app (put on with the name
+  whatever the bodies, it read 1,088 and 1,129: the skin then came and
+  went where it never had). Test: `tf2` `movement::the_class_parts_go_
+  on_and_off_with_the_movement_in_one_move`.
+- **The duct's look** (white-grey faces with flat triangles): drawn as
+  the map says. Its faces' material is a cubemap patch in the map's pak
+  (`maps/ctf_turbine/props/metalduct001a_<x>_<y>_<z>`, its `$envmap` the
+  nearest cubemap) of `props/metalduct001a`, a `LightmappedGeneric` with
+  `$basetexture props/metalduct001a` (in tf2_textures, 512 x 512),
+  `$bumpmap`, `env_cubemap` and `$normalmapalphaenvmapmask`, all found
+  and handled; the base texture itself is light grey sheet metal with
+  an X crease on each panel (a duct's cross-break), which is the
+  "faceted" look, and the ducts' lightmaps are brighter than the map's
+  average (0.28 against 0.21). Nothing to fix; not nodraw or a tools
+  texture.
 
 ### SDK parity (tf2-parity, 2026-11-15)
 
@@ -819,3 +968,17 @@ server probe for parity checks, TF2's own app.
   open, `SourceGame::entity_rule`; spawn rooms' door brushes non-solid);
   a spawn-room walk-out heavy test (cp_well out: its halves never join);
   sets checked in a scratch store; screenshots of each pool map in UGG.
+- 2026-11-16: M4b: specs/tf2/weapons_stock.md (T10) and the nine stock
+  melee weapons on Chimera's delayed swing (`Swing::delay`) and backstab
+  rule (`Backstab::Behind`), crits off by default, the raised knife, the
+  class's arms and sequences, the `backstab` kill icon; each TF2 rung
+  carries its class's melee (rung extras), the Knife TF2's kit knife.
+  Screenshots in UGG on ctf_2fort.
+- 2026-11-16: tf2-followups: a party test that the Shotgun's drawn class
+  carries its own melee (it did); the party's spawn spots keep to open
+  space (`spawns::open_at`: headroom, and room around under a low
+  ceiling), so none is left in ctf_turbine's vent ducts (3671 spots to
+  3500); the ducts' look is their own material (light grey cross-broken
+  sheet metal), nothing missing; TF2's class parts (the class layer, the
+  view kick's spring, the view model's class) on and off with the
+  movement in one move, a body's skin with its name.

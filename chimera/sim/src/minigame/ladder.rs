@@ -97,7 +97,8 @@
 //! (`weapon::drop::NoDeathDrops`). A rung's weapon is a `LoadoutWeapon`
 //! (given at each life and each swap), so a game gives it what its data
 //! says a rules weapon comes with (HL2:DM's SMG1 and AR2: 2 alt-fire
-//! rounds); `refill_ammo` tops up its reserve, never those.
+//! rounds); `refill_ammo` tops up its reserve, never those (the sandbox's
+//! endless-ammo condition, `conditions::SandboxConditions`, turns it off).
 //! At the time limit the highest rung wins, then the most kills; a tie is
 //! a draw.
 //!
@@ -1163,6 +1164,8 @@ type Climbers<'w, 's> = Query<
         Without<crate::core::Connecting>,
         Without<crate::core::Spectating>,
         Without<crate::core::Npc>,
+        // A sandbox's practice targets race nobody.
+        Without<super::targets::Target>,
     ),
 >;
 
@@ -1235,12 +1238,14 @@ fn follow_lead(
 /// given back once thrown.
 fn refill(
     ladder: Option<Res<Ladder>>,
+    conditions: Option<Res<super::conditions::SandboxConditions>>,
     mut guns: Query<(&Weapon, &mut Magazine)>,
     mut grenades: Query<(Entity, &Weapon, &mut Throwable, Has<KeepSpent>)>,
     mut commands: Commands,
 ) {
     let Some(ladder) = ladder else { return };
-    if !ladder.refill_ammo {
+    // The sandbox's endless-ammo switch (`conditions`) turns it off.
+    if !ladder.refill_ammo || conditions.is_some_and(|c| !c.endless_ammo) {
         return;
     }
     let rungs = &ladder.rungs;

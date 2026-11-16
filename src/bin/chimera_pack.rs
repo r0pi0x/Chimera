@@ -120,7 +120,14 @@
 //! `weapon/<id>` would be the same and isn't recorded while Halo has no
 //! guns, and `map/<name>` per multiplayer map is that map's one file
 //! (Blood Gulch's too: a map's set keeps files `base` holds only when
-//! `base` holds all of them, so it is never empty). `chimera_pack sign <game>
+//! `base` holds all of them, so it is never empty). Halo's generated sets
+//! (`generated_sets`, made by a converter, not recorded from reads):
+//! `character/<id>` and `voice/<id>` per campaign character
+//! (`halo_ce::game::campaign::unit`, converter `halo_ce:character_unit`:
+//! the body cut from its campaign map as a small map file, and its
+//! lines), stored and entered whole; `--only character/` (or `voice/`)
+//! makes only those and may start a manifest of their own in an empty
+//! store. `chimera_pack sign <game>
 //! --store <dir> [--build <id>]` signs one manifest of a server's store
 //! with its key (`sign::sign_stored`): a manifest packed on another
 //! machine, copied in with its new records, is signed on the server with
@@ -996,6 +1003,24 @@ fn merged_set(name: &str) -> bool {
     name == "base" || name == chimera_assets::resolve::COMMON || name.starts_with("map/")
 }
 
+/// The set name prefixes whose sets are generated (a converter's output,
+/// `generated_sets`), not recorded from reads.
+const GENERATED_PREFIXES: &[&str] = &["character/", "voice/"];
+
+/// A game's generated sets whose names start with `only` (or that `only`
+/// starts with): each set's files, made by the game's converter from the
+/// install's files. Halo's: each campaign character's body and voice
+/// (`halo_ce::game::campaign::unit::generated`, converter
+/// `halo_ce:character_unit`).
+fn generated_sets(game: &str, mount: &Mount, only: &str) -> Vec<(String, Vec<(String, Vec<u8>)>)> {
+    match game {
+        "halo_ce" if only.is_empty() || GENERATED_PREFIXES.iter().any(|p| only.starts_with(p) || p.starts_with(only)) => {
+            halo_ce::game::campaign::unit::generated(mount, only)
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// `sets <game>`: record the pieces' sets into the install build's
 /// manifest.
 fn sets(args: &[String]) -> Result<(), String> {
@@ -1021,8 +1046,38 @@ fn sets(args: &[String]) -> Result<(), String> {
         .ok_or_else(|| format!("no {} install found", game.info.id))?;
     let build = game.build_of(&install)?;
     let path = store.manifest_path(game.info.id, &build);
-    let mut manifest = Manifest::load(&path)?;
+    let generated_only = GENERATED_PREFIXES.iter().any(|p| only.starts_with(p));
+    let mut manifest = match Manifest::load(&path) {
+        // Generated sets alone may start a manifest of their own (a local
+        // folder to try them in).
+        Err(_) if generated_only && !path.exists() => Manifest::new(game.info.id, &build, game.app),
+        m => m?,
+    };
     let mount = std::sync::Arc::new((game.open_install)(&install).map_err(|e| format!("{}: {e}", install.display()))?);
+    // The generated sets (`generated_sets`): their files made, stored and
+    // entered, then the set.
+    for (name, files) in generated_sets(game.info.id, &mount, &only) {
+        let mut paths = std::collections::BTreeSet::new();
+        for (file, bytes) in files {
+            let put = store.put(&bytes).map_err(|e| format!("{file}: {e}"))?;
+            manifest
+                .files
+                .insert(file.clone(), chimera_assets::FileRecord { id: put.id, size: bytes.len() as u64, stored: put.stored });
+            paths.insert(file);
+        }
+        manifest.sets.insert(name.clone(), paths);
+        let (n, plain, stored) = manifest.set_size(&name);
+        println!("set {name} (generated): {n} records, {} plain, {} stored", mb(plain), mb(stored));
+    }
+    if generated_only {
+        manifest.save(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if sign_it {
+            let key = sign::load_or_create_key(&server::key_path(&store)).map_err(|e| e.to_string())?;
+            sign::sign_manifest_file(&key, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        println!("manifest: {}", path.display());
+        return Ok(());
+    }
     for (name, paths) in record_pieces(game.info.id, &mount, &only) {
         // A lean manifest (`lean`): what any match plays beyond `base`
         // goes to `common`, fetched with each match, not at startup.

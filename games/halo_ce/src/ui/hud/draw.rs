@@ -13,13 +13,13 @@
 //!   "split screen only" elements and the 0.5 crosshair scale are never
 //!   used).
 //! - Multitexture overlays (the sniper rifle's angle ticks) are not
-//!   drawn. Of the scopes' screen effect (section 9, `scope_mask`) only
-//!   the darkening by the mask's grey level is drawn (over the finished
-//!   scene, under the HUD, as the pass's last step): the radial blur
-//!   through the mask's alpha and the sniper's night vision (light
-//!   enhancement and desaturation) are not (the spec allows the blur to
-//!   degrade to none; both need the scene as a texture, a full-screen
-//!   pass this HUD does not have).
+//!   drawn. The scopes' screen effect (section 9) is split: the darkening
+//!   by the mask's grey level is drawn here (`scope_mask`, over the
+//!   finished scene, under the HUD, as the pass's last step) and the
+//!   radial blur through the mask's alpha is the engine's full-screen
+//!   pass (`scope_blur`, asked for by `nodes::scope_post`); the sniper's
+//!   night vision (light enhancement and desaturation, flashlight while
+//!   zoomed) is not drawn (Halo has no flashlight in this port).
 //! - The sweep's compositing is ours (section 11 is inferred): the sweep
 //!   picture is added in its light blue through the disc's mask, and each
 //!   blip's brightness is scaled by the sweep's alpha where it lies.
@@ -33,7 +33,7 @@
 //!   messages and prompts are not drawn; the warning sounds do not play.
 
 use blam_formats::{
-    cache::TagRef,
+    cache::{Bounds, TagRef},
     hud::{
         Anchor, ColorBlock, MeterElement, NumberElement, Placement, StaticElement,
         weapon::{CrosshairItem, FlashCutoffs, WeaponHud},
@@ -137,10 +137,15 @@ fn latch(slot: &mut Option<i64>, on: bool, now: i64) {
     };
 }
 
-/// The chain of the held weapon (or the empty hands').
+/// The chain of the held weapon (or the empty hands'). A weapon whose HUD
+/// interface the donor map lacks (the Hunter's cannon: its unit leaves
+/// HUD interfaces out, and no multiplayer map holds one for it) shows the
+/// HUD globals' default weapon HUD, the empty hands' (our choice: its
+/// plain crosshair, nothing invented for its charge; its elements are not
+/// drawn for such a weapon).
 pub fn chain_of<'a>(data: &'a HudData, unit: &Unit) -> &'a [WeaponHud] {
     match &unit.weapon {
-        Some(h) => data.weapon(&h.tag).unwrap_or(&[]),
+        Some(h) => data.weapon(&h.tag).unwrap_or(&data.empty),
         None => &data.empty,
     }
 }
@@ -307,6 +312,52 @@ fn scope_mask(p: &mut Painter, chain: &[WeaponHud], zoomed: bool, canvas: &Canva
     }
 }
 
+/// The scope's blur (section 9, the convolution): the full-screen mask
+/// (its alpha blends the blur in) and the radius r in 480-line pixels;
+/// two passes of the engine's radial blur (`nodes::scope_post`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScopeBlur {
+    pub mask: Picture,
+    pub radius: f32,
+}
+
+/// The render camera's vertical field of view (radians) for a nominal
+/// angle (radians) and a magnification (section 9: the nominal angle
+/// divided by the zoom, then the conversion of weapons.md 12: tan(v / 2) =
+/// 0.75 x 0.85 x tan(a / 2)): 0.39672 at 70 degrees and 2x, 0.09747 at 8x.
+pub fn scope_fov(nominal: f32, magnification: f32) -> f32 {
+    let a = nominal / magnification.max(1e-3);
+    2.0 * (0.75 * crate::game::view::NARROWING * (a / 2.0).tan()).atan()
+}
+
+/// The convolution's radius at vertical field of view `v` (section 9):
+/// the out upper bound when the in bounds are equal, else the out bounds
+/// interpolated by t = clamp((v - in lower) / (in upper - in lower), 0, 1).
+/// (`i`, `o` the effect's convolution in and out bounds.)
+pub fn scope_radius(i: Bounds<f32>, o: Bounds<f32>, v: f32) -> f32 {
+    if i.lower == i.upper {
+        return o.upper;
+    }
+    let t = ((v - i.lower) / (i.upper - i.lower)).clamp(0.0, 1.0);
+    o.lower + (o.upper - o.lower) * t
+}
+
+/// The scope's blur of the held weapon's chain (section 9; one view):
+/// its first screen effect's, when zoomed or its convolution's "only when
+/// zoomed" bit is clear, with a full-screen mask and r > 0 (the warp
+/// convolution). `v` is the camera's vertical field of view (`scope_fov`).
+pub fn scope_blur(data: &HudData, unit: &Unit, v: f32) -> Option<ScopeBlur> {
+    let held = unit.weapon.as_ref().filter(|_| unit.alive)?;
+    let effect = chain_of(data, unit).iter().flat_map(|h| &h.screen_effects).next()?;
+    let zoomed = held.now.zoom >= 0;
+    if !zoomed && (effect.convolution_flags & 1 != 0 || effect.mask_flags & 1 != 0) {
+        return None;
+    }
+    let radius = scope_radius(effect.convolution_in, effect.convolution_out, v);
+    let mask = data.whole_image(&effect.mask_full, 0)?;
+    (radius > 0.0).then_some(ScopeBlur { mask, radius })
+}
+
 /// Where this frame's blocks are (canvas units: their pictures' bounding
 /// boxes; None: not drawn): the weapon's (its HUD chain's elements, top
 /// left), the grenade plate's and the unit's shield and health block
@@ -335,6 +386,9 @@ pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canva
     if SCOPE_MASK && unit.alive && unit.weapon.is_some() {
         scope_mask(&mut p, chain, w.zoom >= 0, canvas);
     }
+    // A weapon without a HUD of its own (`chain_of`): the default's aim
+    // crosshair alone, none of its elements or warnings (its "no weapon").
+    let own = unit.weapon.as_ref().is_some_and(|h| data.weapon(&h.tag).is_some());
     // 2. Crosshairs: the weapon's own HUD first, then each parent.
     let crosshairs_from = p.out.len();
     if unit.alive {
@@ -342,7 +396,7 @@ pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canva
         for hud in chain {
             for c in &hud.crosshairs {
                 let n = c.kind as usize;
-                if c.kind < 0 || n >= crosshair::COUNT || c.runtime_flags & 1 != 0 || !one_window(c.map_type) || !xs.renders(n) {
+                if c.kind < 0 || n >= crosshair::COUNT || c.runtime_flags & 1 != 0 || !one_window(c.map_type) || !xs.renders(n) || (!own && unit.weapon.is_some() && n != crosshair::AIM) {
                     continue;
                 }
                 for item in &c.items {
@@ -360,7 +414,7 @@ pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canva
     }
     // 3. The weapon HUD, deepest parent first.
     let weapon_from = p.out.len();
-    if !chain.is_empty() && unit.weapon.is_some() {
+    if !chain.is_empty() && own {
         let cut = cutoffs(chain);
         for (hud, c) in chain.iter().zip(&cut).rev() {
             let states = rules::weapon_states(&w, c);

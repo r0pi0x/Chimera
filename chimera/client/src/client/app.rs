@@ -202,12 +202,21 @@ pub enum StartMap {
 
 impl StartMap {
     /// The map `args` start `game` on: its own (`GameAppHooks::start`),
-    /// else `--map` (or `default_map`) loaded, else the greybox.
+    /// else `--map` (or `default_map`) loaded, else the greybox (or the
+    /// code-built map `--map` names: the range).
     pub fn of(game: &'static GameApp, args: &Args) -> Result<Self, String> {
         if let Some(start) = game.hooks.start.and_then(|start| start(game, args)) {
             return Ok(start);
         }
-        let Some(id) = args.game_map().or(game.hooks.default_map) else {
+        // The range asked for (`--map range`): it, not the default map
+        // (`--map greybox` gives the default map: the greybox is there
+        // anyway, behind the main menu).
+        let code = args
+            .map
+            .as_deref()
+            .and_then(chimera_world::greybox::code_map)
+            .is_some_and(|m| m != chimera_world::greybox::GREYBOX);
+        let Some(id) = args.game_map().or(game.hooks.default_map).filter(|_| !code) else {
             return Ok(Self::Greybox);
         };
         // At the HDR level the console will start with (mat_hdr_level).
@@ -455,8 +464,12 @@ pub fn add_engine(app: &mut App, part: Engine<'_>) {
 pub fn compose(app: &mut App, game: &'static GameApp, args: Args, start: StartMap, engine: &dyn Fn(&mut App, Engine<'_>)) {
     app.insert_resource(RunningApp(game));
     // The start map's context is the app's (`StartMap::Loaded`).
-    if let StartMap::Loaded { context, .. } = &start {
+    // Its id is the loaded map's name (also when it is the app's
+    // `default_map`, not `--map`): without it the map in play read as the
+    // greybox, and `sandbox greybox` started on it, saying "on greybox".
+    if let StartMap::Loaded { context, id, .. } = &start {
         app.insert_resource(context.clone());
+        app.insert_resource(crate::map::LoadedMapName(id.clone()));
     }
     let view = match &start {
         StartMap::Loaded { .. } if game.hooks.debug_views => debug_view(&args).unwrap_or_else(|e| {

@@ -92,6 +92,14 @@
 //!   follows `ShownScreen`, the menu's screen as it was at the last swap
 //!   (`follow_shown`); input follows `PartyMenu` at once. Lucker Party
 //!   has no pass: `ShownScreen` follows at once.
+//! - **No game behind it** (`client::NoPlayerAtMenu`): a run that starts
+//!   at the menu has no local player (no character, kit or movement slot)
+//!   and no match; leaving a game (`disconnect`, dropped by the server)
+//!   takes the local player and its weapons away and holds the match
+//!   (`minigame::MatchHold`, lifted by the next start); the player is
+//!   spawned once a game started from here is entered with its map in
+//!   (`player_on_entering`; a client's comes from its server). Only the
+//!   menu's own sounds and music play under it.
 //!
 //! - **Signal** (a theme with `[layout.menu]`: the Ultimate Gun Game's):
 //!   the first page is `signal_menu`'s (lockup, the entries with their
@@ -181,6 +189,11 @@ pub struct Entry {
     pub does: EntryDoes,
     /// Half a row before it.
     pub gap: bool,
+    /// A tag after the label (`tag = "New"`), drawn by the Signal menu.
+    pub tag: Option<String>,
+    /// Its command starts play (`play = true`): the menu shows its loading
+    /// screen as it runs (no second start), the map's load enters the game.
+    pub play: bool,
 }
 
 /// What an Escape menu entry does.
@@ -191,6 +204,9 @@ pub enum EscDoes {
     Host,
     Vote,
     Disconnect,
+    /// The sandbox's Change gun and bench (`client::sandbox`).
+    SandboxGun,
+    SandboxBench,
     /// The report dialog (`client::feedback`).
     Feedback,
     Quit,
@@ -204,6 +220,10 @@ pub enum When {
     Host,
     /// The app has this main menu (`PartyMenu` is in).
     MainMenu,
+    /// A sandbox plays (`chimera_client::client::sandbox::SandboxUi::on`).
+    Sandbox,
+    /// No sandbox plays.
+    NotSandbox,
 }
 
 /// An Escape menu entry.
@@ -290,6 +310,8 @@ impl MenuData {
                 label,
                 does,
                 gap: t.get("gap").and_then(|v| v.as_bool()).unwrap_or(false),
+                tag: s(&t, "tag"),
+                play: t.get("play").and_then(|v| v.as_bool()).unwrap_or(false),
             });
         }
         let mut escape = Vec::new();
@@ -303,12 +325,16 @@ impl MenuData {
                 Some("disconnect") => EscDoes::Disconnect,
                 Some("quit") => EscDoes::Quit,
                 Some("feedback") => EscDoes::Feedback,
+                Some("sandbox_gun") => EscDoes::SandboxGun,
+                Some("sandbox_bench") => EscDoes::SandboxBench,
                 other => return Err(format!("{label}: no action {other:?}")),
             };
             let when = match s(&t, "when").as_deref() {
                 None | Some("always") => When::Always,
                 Some("host") => When::Host,
                 Some("main_menu") => When::MainMenu,
+                Some("sandbox") => When::Sandbox,
+                Some("not_sandbox") => When::NotSandbox,
                 Some(w) => return Err(format!("{label}: no `when` {w}")),
             };
             escape.push(EscEntry { label, does, when });
@@ -875,6 +901,11 @@ impl Plugin for MainMenuPlugin {
         }
         crate::ui_cues::ensure_message(app);
         chimera_client::client::staging::staging(app);
+        // No game behind the menu: no local player at a start here, none
+        // kept on leaving a game (`no_game_behind`), one on entering a
+        // game (`player_on_entering`).
+        app.insert_resource(chimera_client::client::NoPlayerAtMenu { at_start: self.at_start });
+        app.insert_resource(OwedPlayer(self.at_start));
         app.insert_resource(data)
             .insert_resource(last)
             .init_resource::<BackgroundState>()
@@ -888,6 +919,7 @@ impl Plugin for MainMenuPlugin {
             .add_message::<MainMenuAction>()
             .add_message::<KeyboardInput>()
             .add_systems(Update, crate::ui_cues::hover::<MainMenuAction>.in_set(MainMenuSystems))
+            .add_systems(Update, player_on_entering.in_set(MainMenuSystems))
             .add_observer(entered_game)
             .add_observer(menu_pass_covered)
             .add_observer(left_game)
@@ -949,10 +981,20 @@ impl Plugin for MainMenuPlugin {
             )
             .console_command(
                 "chimera:mainmenu_press",
-                "mainmenu_press <start|connect|cancel|close|back|refresh|quit>: press that button of the main menu (screenshots \
-                 and tests).",
+                "mainmenu_press <start|connect|cancel|close|back|refresh|quit|entry <label>>: press that button of the main \
+                 menu, or its left-hand entry by label (`entry Sandbox`; screenshots, scenes and tests).",
                 |w, a| {
                     let action = match a.first().map(String::as_str) {
+                        Some("entry") => {
+                            let label = a[1..].join(" ");
+                            let at = w
+                                .resource::<MenuData>()
+                                .entries
+                                .iter()
+                                .position(|e| e.label.eq_ignore_ascii_case(&label))
+                                .ok_or_else(|| format!("no entry {label:?}"))?;
+                            MainMenuAction::Entry(at)
+                        }
                         Some("start") => MainMenuAction::Start,
                         Some("connect") => MainMenuAction::Connect,
                         Some("cancel") => MainMenuAction::Cancel,
@@ -1061,11 +1103,63 @@ fn enter(menu: &mut PartyMenu, console: Option<&mut Console>) {
     }
 }
 
-fn left_game(_: On<fe::LeftGame>, mut menu: ResMut<PartyMenu>, mut panel: ResMut<LoadingPanel>) {
+fn left_game(_: On<fe::LeftGame>, mut menu: ResMut<PartyMenu>, mut panel: ResMut<LoadingPanel>, mut commands: Commands) {
     *panel = LoadingPanel::default();
     menu.to_menu();
     menu.background_load = false;
     menu.reload_background = true;
+    commands.queue(no_game_behind);
+}
+
+/// Back at the menu: nothing of the game left behind it (the local player
+/// and its weapons go; the match is held, `minigame::MatchHold`, until
+/// the next start lifts it), so nothing plays or sounds under the menu.
+fn no_game_behind(world: &mut World) {
+    // The next game entered from the menu makes its player.
+    world.insert_resource(OwedPlayer(true));
+    let players: Vec<Entity> = world.query_filtered::<Entity, With<LocalPlayer>>().iter(world).collect();
+    for e in players {
+        let weapons = world.get::<chimera_sim::weapon::Inventory>(e).map(|i| i.weapons.clone()).unwrap_or_default();
+        for w in weapons.into_iter().chain([e]) {
+            if let Ok(w) = world.get_entity_mut(w) {
+                w.despawn();
+            }
+        }
+    }
+    if world.contains_resource::<chimera_sim::minigame::ActiveMinigame>() {
+        world.insert_resource(chimera_sim::minigame::MatchHold);
+    }
+}
+
+/// Whether the menu took away (or never let be made) the local player the
+/// shell would have had: at a start at the menu, and whenever a game is
+/// left for the menu (`no_game_behind`). Only then does entering a game
+/// make one (`player_on_entering`): an app that never showed the menu (a
+/// start in a game, a server with this plugin and no player of its own)
+/// is owed none.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct OwedPlayer(pub bool);
+
+/// In a game entered from the menu with no local player (none at a start
+/// at the menu, none kept on leaving one: `no_game_behind`): ours, once
+/// the map is in, unless a server sends it (a client).
+fn player_on_entering(
+    menu: Res<PartyMenu>,
+    role: Option<Res<NetRole>>,
+    players: Query<(), With<LocalPlayer>>,
+    loading: Option<Res<chimera_world::map::LocalMapLoad>>,
+    mut owed: ResMut<OwedPlayer>,
+    mut commands: Commands,
+) {
+    if !owed.0 || menu.screen != Screen::InGame || loading.is_some() {
+        return;
+    }
+    // In the game: the debt is settled, by ours or by a server's.
+    owed.0 = false;
+    if role.is_some_and(|r| *r == NetRole::Client) || !players.is_empty() {
+        return;
+    }
+    commands.queue(chimera_client::client::spawn_local_player_now);
 }
 
 fn joining(j: On<fe::Joining>, mut menu: ResMut<PartyMenu>, mut panel: ResMut<LoadingPanel>, time: Res<Time<Real>>) {
@@ -1381,7 +1475,24 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                         w.raise(p.window());
                     }
                 }
-                EntryDoes::Command(c) => submit(world, c),
+                EntryDoes::Command(c) => {
+                    let map = c.split_whitespace().nth(1).map(chimera_net::net::normalize_map);
+                    submit(world, c);
+                    // An entry that starts play (Sandbox): the menu goes to
+                    // its loading screen at once, as Play's Start does, so a
+                    // second press, click or Enter while the match comes up
+                    // is refused (the menu acts on nothing while loading);
+                    // the map's load takes it into the game.
+                    if e.play {
+                        let mut m = world.resource_mut::<PartyMenu>();
+                        m.screen = Screen::Loading;
+                        m.page = MenuPage::Main;
+                        m.focus = None;
+                        m.failure = None;
+                        m.background_load = false;
+                        m.loading = map;
+                    }
+                }
             }
         }
         A::OpenMaps => {

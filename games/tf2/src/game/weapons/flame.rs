@@ -35,11 +35,14 @@
 //! - **Sounds** (`sounds`, predicted): the start and the loop when it
 //!   starts flaming, the end when it stops (the weapon channel).
 //!
+//! The flames' look is `looks`' (TF2's `flamethrower` system, a piece per
+//! round); the flame points themselves aren't drawn.
+//!
 //! Known shortcuts: a point stops on the world (the game slides it along
-//! and drops the Pyro's part); the points aren't drawn yet; the line from
-//! the eye to the muzzle isn't checked and a press under 0.2 s emits only
-//! while held; no airblast (attack2); crits are off; health kits and
-//! Medics don't put a burn out.
+//! and drops the Pyro's part); the line from the eye to the muzzle isn't
+//! checked and a press under 0.2 s emits only while held; no airblast
+//! (attack2); crits are off; Pyros aren't immune to afterburn (no classes
+//! on the victims); health kits and Medics don't put a burn out.
 
 use bevy::prelude::*;
 use serde::Deserialize;

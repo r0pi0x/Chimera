@@ -1753,6 +1753,7 @@ fn splash(
             name: slime_splash_name(s).to_string(),
             position: at,
             forward: Vec3::Y,
+            emit_for: None,
         });
     } else if let Some(mats) = mats {
         let light = colors.map_or(Vec3::ONE, |c| light_below(c, world, at + Vec3::Y * s * UNIT));

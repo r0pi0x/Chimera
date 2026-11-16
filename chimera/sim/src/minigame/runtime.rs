@@ -34,7 +34,8 @@
 //!   player for `protection.bullets` s, a hit showing
 //!   nothing while either runs) until they run out or, with
 //!   `protection.fire_ends`, it attacks (the fire key, or any round,
-//!   swing or throw of its weapons: `end_protection`). The dead respawn after `delay` s (`respawn_dead`) unless the
+//!   swing or throw of its weapons: `end_protection`). The dead respawn after `delay` s (a character's own
+//!   `RespawnDelay` over it; `respawn_dead`) unless the
 //!   match is over or the mode refuses (`respawn_due`: when, which the
 //!   HUD's countdown and the shell's death view read as
 //!   `core::RespawnDue`).
@@ -568,8 +569,15 @@ pub fn respawn_due(world: &World, e: Entity) -> Option<f64> {
     {
         return None;
     }
-    Some(dead.since + def.spawn.respawn.delay as f64)
+    let delay = world.get::<RespawnDelay>(e).map_or(def.spawn.respawn.delay, |d| d.0);
+    Some(dead.since + delay as f64)
 }
+
+/// A character's own respawn delay (s), over the definition's (a
+/// sandbox's practice target, `super::targets`): `respawn_due` and
+/// `respawn_dead` wait this long after its death instead.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct RespawnDelay(pub f32);
 
 /// The players (`players`' filter) that are dead.
 type DeadPlaying = (With<Intent>, With<Health>, With<InMinigame>, Without<Connecting>, Without<Spectating>, Without<Npc>);
@@ -580,7 +588,7 @@ type DeadPlaying = (With<Intent>, With<Health>, With<InMinigame>, Without<Connec
 /// spawn are world work, queued and applied at the sync point after this
 /// system (`plugin`'s chain), in join order as `players` gives them.
 fn respawn_dead(
-    dead: Query<(Entity, &Team, &Dead, Option<&JoinOrder>), DeadPlaying>,
+    dead: Query<(Entity, &Team, &Dead, Option<&JoinOrder>, Option<&RespawnDelay>), DeadPlaying>,
     clock: Res<SimClock>,
     active: Option<Res<ActiveMinigame>>,
     game: Option<Res<Match>>,
@@ -594,8 +602,8 @@ fn respawn_dead(
     let (now, delay) = (clock.now, active.def.spawn.respawn.delay as f64);
     let mut due: Vec<(u64, Entity)> = dead
         .iter()
-        .filter(|(_, t, d, _)| plays(t.0) && now + 1e-9 >= d.since + delay)
-        .map(|(e, _, _, o)| (o.map_or(u64::MAX, |o| o.0), e))
+        .filter(|(_, t, d, _, own)| plays(t.0) && now + 1e-9 >= d.since + own.map_or(delay, |o| o.0 as f64))
+        .map(|(e, _, _, o, _)| (o.map_or(u64::MAX, |o| o.0), e))
         .collect();
     if due.is_empty() {
         return;
@@ -703,7 +711,11 @@ fn on_died(world: &mut World, d: &Died) {
     let Some(victim_team) = team_of(world, victim).filter(|t| plays(*t)) else { return };
     let fall = d.damage.kind == crate::core::DamageKind::Fall;
     let kind = classify(victim, d.attacker, d.attacker.and_then(|k| team_of(world, k)), victim_team, fall);
-    if world.resource::<Match>().counting() {
+    // A practice target's death or kill counts for no one (no score, no
+    // rung: `targets`).
+    let target = |w: &World, e: Option<Entity>| e.is_some_and(|e| super::targets::is_target(w, e));
+    let practice = target(world, Some(victim)) || target(world, d.attacker);
+    if world.resource::<Match>().counting() && !practice {
         add_score(world, victim, 0, 1);
         if let Some(k) = d.attacker {
             match kind {
@@ -836,6 +848,8 @@ pub(super) fn plugin(app: &mut App) {
     app.init_resource::<SpawnCursor>()
         .map_scoped::<super::spawns::SpawnSpots>()
         .map_scoped::<super::spawns::SpotsJob>()
+        .map_scoped::<super::arena::ArenaSpawnsMade>()
+        .add_systems(PreUpdate, (super::arena::drop_pickups_outside, super::arena::put_loose_back_inside, super::arena::arena_spawn_points))
         .add_observer(number_players)
         .add_observer(super::results::on_step)
         .add_systems(

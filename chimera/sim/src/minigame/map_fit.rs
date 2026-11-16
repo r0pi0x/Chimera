@@ -32,6 +32,19 @@
 //! played held back as before; `likeliest` lists the maps let in,
 //! likeliest first.
 //!
+//! **Arena slices** (docs/plans/active/arena-slices.md, A2) are pool
+//! entries of their own, `game:map@id` (`entry_map` gives the map),
+//! registered with their data (`arena::add`: `SliceFit`, the band the
+//! data names and the measures stored with it). `judge` takes one only
+//! where its whole map is out at the count (the map's own measurements
+//! decide "too big"; a map in, or without measurements, is never sliced),
+//! the slice measured and passing `[slice]`'s limits (`SliceLimits::
+//! judge_measures` on the stored `SliceMeasures`: the measures need the
+//! map loaded, so the tool writes them and the pool reads them), and the
+//! count within the players those measures suit narrowed by its band;
+//! then by its own wander time, as a map. Pool rules name a slice as
+//! `map@id`.
+//!
 //! Known shortcuts: the count is the characters present at the change,
 //! not those who will join; a game without measurements has every map at
 //! `unknown_weight`; the wander model's own (players spread evenly,
@@ -76,6 +89,174 @@ pub struct FitSettings {
     pub small_scale: f32,
     /// A map without measurements: in at this weight.
     pub unknown_weight: f32,
+    /// Where an arena slice passes the spawn-safety measures, and how it
+    /// makes its spawn points (`[slice]`).
+    pub slice: SliceLimits,
+}
+
+/// An arena slice's limits (map_fit.toml's `[slice]`; docs/plans/active/
+/// arena-slices.md, A3): the spawn-safety measures it must keep
+/// (`super::slice_safety`), and its spawn points.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SliceLimits {
+    /// The share of spawn-spot pairs seeing each other, at most (the same
+    /// as the mean share of the other spots that see a spot).
+    pub see_pairs_max: f32,
+    /// The chance a fresh spawn is seen at once, at most: the players a
+    /// slice suits stop at the count where it goes over.
+    pub seen_at_spawn_max: f32,
+    /// The share of the floor seeing a spawn point, on average over the
+    /// points, at most (the share seeing any one of them only grows with
+    /// their number, so it is told, not judged).
+    pub point_floor_seen_max: f32,
+    /// The share of the other spawn points that see the most seen one, at
+    /// most.
+    pub point_seen_by_max: f32,
+    /// The share of spots with cover within reach, at least.
+    pub cover_min: f32,
+    /// The 95th percentile of level sight (m), at most.
+    pub long_sight_p95_max_m: f32,
+    /// Spawn spots, at least.
+    pub spots_min: usize,
+    /// Spawn points a slice wants; the ones it makes stand at least
+    /// `wall_gap_m` from its wall and, where the spots allow,
+    /// `points_apart_m` from each other.
+    pub points_want: usize,
+    pub wall_gap_m: f32,
+    pub points_apart_m: f32,
+}
+
+/// What `SliceLimits::judge` says of a slice (or of a whole map, for
+/// comparison).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SliceVerdict {
+    /// The limits it breaks, said in words.
+    pub failed: Vec<String>,
+    /// The player counts it suits (none: it fails).
+    pub players: Option<[usize; 2]>,
+}
+
+/// A slice's measures as `SliceLimits` judges them: a measuring tool's
+/// `slice_safety::Report` (`of_report`), or the numbers stored with the
+/// slice's data (`arena::parse`), so the pool judges a slice without
+/// loading its map.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SliceMeasures {
+    pub area_m2: f32,
+    pub sight_m: f32,
+    pub spots: usize,
+    pub see_pairs: f32,
+    /// (N, chance) by player count, rising.
+    pub seen_at_spawn: Vec<(usize, f32)>,
+    pub cover: f32,
+    pub long_sight_p95_m: f32,
+    /// The mean share of the floor seeing a spawn point (None: no points).
+    pub point_floor_seen: Option<f32>,
+    /// The share of the other points seeing the most seen one (None: fewer
+    /// than two points).
+    pub point_seen_by: Option<f32>,
+}
+
+impl SliceMeasures {
+    /// A report's measures.
+    pub fn of_report(r: &super::slice_safety::Report) -> Self {
+        Self {
+            area_m2: r.area_m2,
+            sight_m: r.sight_m,
+            spots: r.safety.spots,
+            see_pairs: r.safety.see_pairs,
+            seen_at_spawn: r.safety.seen_at_spawn.clone(),
+            cover: r.cover,
+            long_sight_p95_m: r.long_sight_p95_m,
+            point_floor_seen: (!r.points.is_empty()).then(|| r.point_floor_seeing()),
+            point_seen_by: (r.points.len() >= 2).then(|| r.point_seen_by()),
+        }
+    }
+
+    /// `seen_at_spawn` at `n` players (as `slice_safety::Safety::seen_at`:
+    /// the nearest count measured at or above it; the last past the end).
+    pub fn seen_at(&self, n: usize) -> f32 {
+        self.seen_at_spawn.iter().find(|(c, _)| *c >= n).or(self.seen_at_spawn.last()).map_or(0.0, |(_, s)| *s)
+    }
+
+    /// The pool's measurements of the slice (area and sight; the rest 0).
+    pub fn fitness(&self) -> Fitness {
+        Fitness {
+            loads: true,
+            area_m2: self.area_m2,
+            sight_m: self.sight_m,
+            spot_area_m2: 0.0,
+            spawns: 1,
+            spots: self.spots as u32,
+            spots_off: 0,
+            stuck: 0,
+            wander_s: BTreeMap::new(),
+        }
+    }
+}
+
+impl SliceLimits {
+    /// `r` against the limits (`judge_measures`).
+    pub fn judge(&self, r: &super::slice_safety::Report, fit: &FitSettings) -> SliceVerdict {
+        self.judge_measures(&SliceMeasures::of_report(r), fit)
+    }
+
+    /// `m` against the limits; the players: from the least count whose
+    /// wander time is within `fit.target_s` to the most whose
+    /// `seen_at_spawn` is within the limit (2 to 16).
+    pub fn judge_measures(&self, m: &SliceMeasures, fit: &FitSettings) -> SliceVerdict {
+        let mut failed = Vec::new();
+        if m.spots < self.spots_min {
+            failed.push(format!("spots {} under {}", m.spots, self.spots_min));
+        }
+        if m.see_pairs > self.see_pairs_max {
+            failed.push(format!("see_pairs {:.2} over {:.2}", m.see_pairs, self.see_pairs_max));
+        }
+        if let Some(seen) = m.point_floor_seen
+            && seen > self.point_floor_seen_max
+        {
+            failed.push(format!("point_floor_seen {seen:.2} over {:.2}", self.point_floor_seen_max));
+        }
+        if let Some(by) = m.point_seen_by
+            && by > self.point_seen_by_max
+        {
+            failed.push(format!("point_seen_by {by:.2} over {:.2}", self.point_seen_by_max));
+        }
+        if m.cover < self.cover_min {
+            failed.push(format!("cover {:.2} under {:.2}", m.cover, self.cover_min));
+        }
+        if m.long_sight_p95_m > self.long_sight_p95_max_m {
+            failed.push(format!("long_sight_p95 {:.0} m over {:.0}", m.long_sight_p95_m, self.long_sight_p95_max_m));
+        }
+        let fitness = m.fitness();
+        let lo = (2..=16).find(|n| fitness.wander(*n, fit) <= fit.target_s || fitness.small(fit));
+        let hi = (2..=16).rev().find(|n| m.seen_at(*n) <= self.seen_at_spawn_max);
+        match (lo, hi) {
+            (Some(lo), Some(hi)) if lo <= hi => {}
+            _ => failed.push(format!(
+                "no player count: wander within {} s from {}, seen_at_spawn within {:.2} up to {}",
+                fit.target_s,
+                lo.map_or("none".into(), |n| n.to_string()),
+                self.seen_at_spawn_max,
+                hi.map_or("none".into(), |n| n.to_string())
+            )),
+        }
+        let players = match (lo, hi) {
+            (Some(lo), Some(hi)) if lo <= hi && failed.is_empty() => Some([lo, hi]),
+            _ => None,
+        };
+        SliceVerdict { failed, players }
+    }
+
+    /// How a slice makes its spawn points (`slice_safety::choose_points`).
+    pub fn point_rules(&self) -> super::slice_safety::PointRules {
+        super::slice_safety::PointRules {
+            want: self.points_want,
+            wall_gap: self.wall_gap_m,
+            apart: self.points_apart_m,
+        }
+    }
 }
 
 impl FitSettings {
@@ -317,11 +498,28 @@ impl Judged {
     }
 }
 
+/// What the pool keeps of an arena slice (`arena::add` registers it): the
+/// player band its data names (`players`, the band it was made for) and
+/// the measures stored with it (None: not measured, never drawn).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SliceFit {
+    pub band: Option<[u32; 2]>,
+    pub measures: Option<SliceMeasures>,
+}
+
 #[derive(Clone, Debug, Default)]
 struct GamePool {
     game: String,
     fitness: BTreeMap<String, Fitness>,
     rules: Option<PoolRules>,
+    /// Arena slices by `map@id` (lower case).
+    slices: BTreeMap<String, SliceFit>,
+}
+
+/// A pool entry's map: `game:map@slice` without `@slice` (a whole map as
+/// it is).
+pub fn entry_map(entry: &str) -> &str {
+    entry.split_once('@').map_or(entry, |(m, _)| m)
 }
 
 /// Every game's measurements and pool rules (`MapPoolAppExt`), and the
@@ -366,6 +564,18 @@ impl MapPool {
         have.allow.extend(rules.allow);
     }
 
+    /// Arena slice `key` (`game:map@id`) added (again: replaced).
+    pub fn add_slice(&mut self, key: &str, fit: SliceFit) {
+        let (game, name) = split(key);
+        self.game_mut(game).slices.insert(name, fit);
+    }
+
+    /// Arena slice `key`'s (`game:map@id`) entry.
+    pub fn slice(&self, key: &str) -> Option<&SliceFit> {
+        let (game, name) = split(key);
+        self.game(game)?.slices.get(&name)
+    }
+
     /// Whether `game` has pool rules: its installed maps join an
     /// automatic pool (`auto::report`).
     pub fn has_rules(&self, game: &str) -> bool {
@@ -402,6 +612,9 @@ impl MapPool {
         if let Err(why) = self.listed(game, &name) {
             return Judged::Out(why);
         }
+        if name.contains('@') {
+            return self.judge_slice(map, players, s);
+        }
         let Some(f) = self.fitness(map) else {
             return Judged::Unknown { weight: s.unknown_weight as f64 };
         };
@@ -416,6 +629,45 @@ impl MapPool {
         if !small && wander_s > s.target_s {
             return Judged::Out(format!("{wander_s:.1} s to meet at {players} players, over {} s", s.target_s));
         }
+        let scale = if small { s.small_scale } else { 1.0 };
+        Judged::In { weight: (s.curve(wander_s) * scale) as f64, wander_s, small }
+    }
+
+    /// Arena slice `key` (`game:map@id`, its rules passed) with `players`
+    /// present: out while its whole map is in (or has no measurements, or
+    /// is broken), when it isn't measured, when its measures break
+    /// `s.slice`'s limits, or outside the players they suit narrowed by
+    /// its data's band; else in by its own wander time, as a map is.
+    fn judge_slice(&self, key: &str, players: usize, s: &FitSettings) -> Judged {
+        let map = entry_map(key);
+        let Some(fit) = self.slice(key) else {
+            return Judged::Out("no such arena slice".into());
+        };
+        match self.judge(map, players, s) {
+            Judged::In { .. } | Judged::Unknown { .. } => {
+                return Judged::Out(format!("{map} is played whole at {players} players"));
+            }
+            Judged::Out(_) => {}
+        }
+        if let Some(why) = self.fitness(map).and_then(Fitness::broken) {
+            return Judged::Out(format!("{map}: {why}"));
+        }
+        let Some(m) = &fit.measures else {
+            return Judged::Out("not measured (no spawn-safety measures in its data)".into());
+        };
+        let verdict = s.slice.judge_measures(m, s);
+        let Some([mut lo, mut hi]) = verdict.players else {
+            return Judged::Out(format!("fails its limits: {}", verdict.failed.join("; ")));
+        };
+        if let Some([a, b]) = fit.band {
+            lo = lo.max(a as usize);
+            hi = hi.min(b as usize);
+        }
+        if players < lo || players > hi {
+            return Judged::Out(format!("suits {lo} to {hi} players"));
+        }
+        let f = m.fitness();
+        let (wander_s, small) = (f.wander(players, s), f.small(s));
         let scale = if small { s.small_scale } else { 1.0 };
         Judged::In { weight: (s.curve(wander_s) * scale) as f64, wander_s, small }
     }
@@ -490,7 +742,7 @@ pub fn draw_weights(world: &mut World, def: &MinigameDef, pool: &[String]) -> Op
     let mut maps = world.remove_resource::<MapPool>().unwrap_or_default();
     let weights = maps.weights(pool, players, &settings);
     for m in pool {
-        if maps.fitness(m).is_none() && maps.listed(split(m).0, &split(m).1).is_ok() && !maps.told.contains(m) {
+        if !m.contains('@') && maps.fitness(m).is_none() && maps.listed(split(m).0, &split(m).1).is_ok() && !maps.told.contains(m) {
             info!("map pool: no measurements for {m} (newly installed?): in at weight {}", settings.unknown_weight);
             maps.told.push(m.clone());
         }
@@ -507,6 +759,8 @@ pub trait MapPoolAppExt {
     fn add_map_fitness(&mut self, game: &str, name: &str, text: &str) -> &mut Self;
     /// `game`'s pool rules (`PoolRules::parse`; panics likewise).
     fn add_map_pool_rules(&mut self, game: &str, name: &str, text: &str) -> &mut Self;
+    /// `game`'s arena slices (`arena::parse`; panics likewise).
+    fn add_arena_slices(&mut self, game: &str, name: &str, text: &str) -> &mut Self;
 }
 
 impl MapPoolAppExt for App {
@@ -519,6 +773,11 @@ impl MapPoolAppExt for App {
     fn add_map_pool_rules(&mut self, game: &str, name: &str, text: &str) -> &mut Self {
         let rules = PoolRules::parse(text).unwrap_or_else(|e| panic!("{name}: {e}"));
         self.world_mut().get_resource_or_init::<MapPool>().add_rules(game, rules);
+        self
+    }
+
+    fn add_arena_slices(&mut self, game: &str, name: &str, text: &str) -> &mut Self {
+        super::arena::add(self.world_mut(), game, name, text);
         self
     }
 }
@@ -657,6 +916,60 @@ reason = "a chaos map wanted"
         p.add_rules("g", PoolRules::parse("[[allow]]\nmaps = [\"leak\"]\nreason = \"looked at\"").unwrap());
         assert!(p.judge("g:leak", 32, &s).weight() > 0.0, "{:?}", p.judge("g:leak", 32, &s));
         assert!(matches!(p.judge("g:broken", 8, &s), Judged::Out(_)), "a broken map stays out");
+    }
+
+    /// A slice's measures: a walled part of 7,000 m2 at sight 15 m (wander
+    /// 9.6 s at 4 players, 14.4 at 3: in from 4), seen at spawn under the
+    /// limit to 12.
+    fn safe() -> SliceMeasures {
+        SliceMeasures {
+            area_m2: 7000.0,
+            sight_m: 15.0,
+            spots: 2000,
+            see_pairs: 0.15,
+            seen_at_spawn: vec![(2, 0.0), (4, 0.0), (8, 0.02), (12, 0.1), (16, 0.3)],
+            cover: 0.4,
+            long_sight_p95_m: 40.0,
+            point_floor_seen: Some(0.15),
+            point_seen_by: Some(0.3),
+        }
+    }
+
+    #[test]
+    fn a_slice_is_in_at_its_range_out_outside_it_and_out_when_unsafe() {
+        let mut p = pool();
+        let s = FitSettings::shipped();
+        // "big" is too big at 4 players and in at 8 (the_pool_follows_the_count).
+        p.add_slice("g:big@west", SliceFit { band: Some([2, 6]), measures: Some(safe()) });
+        let verdict = s.slice.judge_measures(&safe(), &s);
+        assert_eq!(verdict.players, Some([4, 12]), "{verdict:?}");
+        // In where the map is too big and the slice suits the count.
+        assert!(matches!(p.judge("g:big@west", 4, &s), Judged::In { .. }), "{:?}", p.judge("g:big@west", 4, &s));
+        assert!(p.judge("g:big@west", 6, &s).weight() > 0.0);
+        // Out below what its measures suit, above its band, and where the
+        // whole map is in (8).
+        assert!(matches!(p.judge("g:big@west", 3, &s), Judged::Out(ref w) if w.contains("suits 4 to 6")), "{:?}", p.judge("g:big@west", 3, &s));
+        assert!(matches!(p.judge("g:big@west", 7, &s), Judged::Out(_)));
+        assert!(matches!(p.judge("g:big@west", 8, &s), Judged::Out(ref w) if w.contains("played whole")), "{:?}", p.judge("g:big@west", 8, &s));
+        // A map that fits is never sliced; one without measurements neither.
+        p.add_slice("g:stock@a", SliceFit { band: None, measures: Some(safe()) });
+        p.add_slice("g:new_map@a", SliceFit { band: None, measures: Some(safe()) });
+        for n in [4, 8] {
+            assert_eq!(p.judge("g:stock@a", n, &s).weight(), 0.0, "{n}");
+            assert_eq!(p.judge("g:new_map@a", n, &s).weight(), 0.0, "{n}");
+        }
+        // Out when it fails its safety limits, or isn't measured.
+        let open = SliceMeasures { see_pairs: 0.59, cover: 0.13, ..safe() };
+        p.add_slice("g:big@field", SliceFit { band: None, measures: Some(open) });
+        assert!(matches!(p.judge("g:big@field", 4, &s), Judged::Out(ref w) if w.contains("see_pairs") && w.contains("cover")), "{:?}", p.judge("g:big@field", 4, &s));
+        p.add_slice("g:big@drawn", SliceFit { band: Some([2, 8]), measures: None });
+        assert!(matches!(p.judge("g:big@drawn", 4, &s), Judged::Out(ref w) if w.contains("not measured")));
+        // Unregistered, and denied by name.
+        assert!(matches!(p.judge("g:big@nothing", 4, &s), Judged::Out(_)));
+        p.add_rules("g", PoolRules::parse("[[deny]]\nmaps = [\"big@west\"]\nreason = \"tried\"").unwrap());
+        assert_eq!(p.judge("g:big@west", 4, &s), Judged::Out("tried".into()));
+        assert_eq!(entry_map("g:big@west"), "g:big");
+        assert_eq!(entry_map("g:big"), "g:big");
     }
 
     #[test]
