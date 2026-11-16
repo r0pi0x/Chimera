@@ -92,6 +92,14 @@
 //!   follows `ShownScreen`, the menu's screen as it was at the last swap
 //!   (`follow_shown`); input follows `PartyMenu` at once. Lucker Party
 //!   has no pass: `ShownScreen` follows at once.
+//! - **No game behind it** (`client::NoPlayerAtMenu`): a run that starts
+//!   at the menu has no local player (no character, kit or movement slot)
+//!   and no match; leaving a game (`disconnect`, dropped by the server)
+//!   takes the local player and its weapons away and holds the match
+//!   (`minigame::MatchHold`, lifted by the next start); the player is
+//!   spawned once a game started from here is entered with its map in
+//!   (`player_on_entering`; a client's comes from its server). Only the
+//!   menu's own sounds and music play under it.
 //!
 //! - **Signal** (a theme with `[layout.menu]`: the Ultimate Gun Game's):
 //!   the first page is `signal_menu`'s (lockup, the entries with their
@@ -889,6 +897,10 @@ impl Plugin for MainMenuPlugin {
         }
         crate::ui_cues::ensure_message(app);
         chimera_client::client::staging::staging(app);
+        // No game behind the menu: no local player at a start here, none
+        // kept on leaving a game (`no_game_behind`), one on entering a
+        // game (`player_on_entering`).
+        app.insert_resource(chimera_client::client::NoPlayerAtMenu { at_start: self.at_start });
         app.insert_resource(data)
             .insert_resource(last)
             .init_resource::<BackgroundState>()
@@ -902,6 +914,7 @@ impl Plugin for MainMenuPlugin {
             .add_message::<MainMenuAction>()
             .add_message::<KeyboardInput>()
             .add_systems(Update, crate::ui_cues::hover::<MainMenuAction>.in_set(MainMenuSystems))
+            .add_systems(Update, player_on_entering.in_set(MainMenuSystems))
             .add_observer(entered_game)
             .add_observer(menu_pass_covered)
             .add_observer(left_game)
@@ -1075,11 +1088,50 @@ fn enter(menu: &mut PartyMenu, console: Option<&mut Console>) {
     }
 }
 
-fn left_game(_: On<fe::LeftGame>, mut menu: ResMut<PartyMenu>, mut panel: ResMut<LoadingPanel>) {
+fn left_game(_: On<fe::LeftGame>, mut menu: ResMut<PartyMenu>, mut panel: ResMut<LoadingPanel>, mut commands: Commands) {
     *panel = LoadingPanel::default();
     menu.to_menu();
     menu.background_load = false;
     menu.reload_background = true;
+    commands.queue(no_game_behind);
+}
+
+/// Back at the menu: nothing of the game left behind it (the local player
+/// and its weapons go; the match is held, `minigame::MatchHold`, until
+/// the next start lifts it), so nothing plays or sounds under the menu.
+fn no_game_behind(world: &mut World) {
+    let players: Vec<Entity> = world.query_filtered::<Entity, With<LocalPlayer>>().iter(world).collect();
+    for e in players {
+        let weapons = world.get::<chimera_sim::weapon::Inventory>(e).map(|i| i.weapons.clone()).unwrap_or_default();
+        for w in weapons.into_iter().chain([e]) {
+            if let Ok(w) = world.get_entity_mut(w) {
+                w.despawn();
+            }
+        }
+    }
+    if world.contains_resource::<chimera_sim::minigame::ActiveMinigame>() {
+        world.insert_resource(chimera_sim::minigame::MatchHold);
+    }
+}
+
+/// In a game entered from the menu with no local player (none at a start
+/// at the menu, none kept on leaving one: `no_game_behind`): ours, once
+/// the map is in, unless a server sends it (a client).
+fn player_on_entering(
+    menu: Res<PartyMenu>,
+    role: Option<Res<NetRole>>,
+    players: Query<(), With<LocalPlayer>>,
+    loading: Option<Res<chimera_world::map::LocalMapLoad>>,
+    mut commands: Commands,
+) {
+    if menu.screen != Screen::InGame
+        || role.is_some_and(|r| *r == NetRole::Client)
+        || loading.is_some()
+        || !players.is_empty()
+    {
+        return;
+    }
+    commands.queue(chimera_client::client::spawn_local_player_now);
 }
 
 fn joining(j: On<fe::Joining>, mut menu: ResMut<PartyMenu>, mut panel: ResMut<LoadingPanel>, time: Res<Time<Real>>) {

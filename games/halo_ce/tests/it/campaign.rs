@@ -109,7 +109,7 @@ fn guns_name_who_carries_them() {
         assert_eq!(data.weights(gun), vec![(Marine, 1.0), (Spartan, 1.0)], "{gun}");
     }
     assert_eq!(data.weights("halo_ce:pistol"), vec![(Spartan, 1.0)], "the Marine animates it, the campaign never gives it");
-    assert!(CampaignData::parse("[guns.\"halo_ce:needler\"]\nhunter = 1.0\n").is_err(), "an unknown body");
+    assert!(CampaignData::parse("[guns.\"halo_ce:needler\"]\nflood = 1.0\n").is_err(), "an unknown body");
 }
 
 #[test]
@@ -199,7 +199,7 @@ fn the_grunt_and_the_jackal_tables() {
 
 /// The kinds as sandbox targets (`campaign::targets`): offered only for
 /// their guns and once their units loaded; a fresh Elite's shield full, a
-/// Grunt's and a Jackal's bar empty (the Jackal's shield is its arm's);
+/// Grunt's bar empty, a Jackal's full (its arm's shield is its second bar);
 /// wearing one forces the kind, the Spartan takes it off.
 #[test]
 fn the_kinds_are_sandbox_targets_once_loaded() {
@@ -210,7 +210,7 @@ fn the_kinds_are_sandbox_targets_once_loaded() {
     world.insert_resource(t);
     world.init_resource::<UnitsOnDemand>();
     let ids: Vec<&str> = targets::characters().iter().map(|c| c.id).collect();
-    assert_eq!(ids, ["halo_ce:elite", "halo_ce:grunt", "halo_ce:jackal", "halo_ce:marine"]);
+    assert_eq!(ids, ["halo_ce:elite", "halo_ce:grunt", "halo_ce:jackal", "halo_ce:marine", "halo_ce:hunter"]);
     assert!(!targets::holds(&world, "halo_ce:elite", "halo_ce:plasma_rifle"), "not before its unit loaded");
     world.resource_mut::<UnitsOnDemand>().mark_ready(BodyKind::Elite);
     assert!(targets::holds(&world, "halo_ce:elite", "halo_ce:plasma_rifle"));
@@ -219,7 +219,7 @@ fn the_kinds_are_sandbox_targets_once_loaded() {
     assert!(!targets::holds(&world, "halo_ce:jackal", "halo_ce:plasma_pistol"), "the Jackal's unit is not loaded");
     assert_eq!(targets::vitals(&world, "halo_ce:elite"), (1.0, 1.0));
     assert_eq!(targets::vitals(&world, "halo_ce:grunt"), (1.0, 0.0));
-    assert_eq!(targets::vitals(&world, "halo_ce:jackal"), (1.0, 0.0));
+    assert_eq!(targets::vitals(&world, "halo_ce:jackal"), (1.0, 1.0));
     let e = world.spawn_empty().id();
     targets::wear(&mut world, e, "halo_ce:grunt");
     assert_eq!((world.get::<BodyKind>(e), world.get::<ForcedBody>(e)), (Some(&BodyKind::Grunt), Some(&ForcedBody(BodyKind::Grunt))));

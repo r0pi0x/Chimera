@@ -24,6 +24,7 @@ mod audio;
 mod autoaim;
 mod body;
 mod campaign;
+mod campaign_hunter;
 mod campaign_net;
 mod bot_triggers;
 mod cross_game;
@@ -71,6 +72,7 @@ mod heavy {
     mod audio;
     mod body;
     mod campaign;
+    mod campaign_hunter;
     mod death;
     mod fx;
     mod gun_displays;

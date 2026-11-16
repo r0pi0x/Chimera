@@ -45,6 +45,7 @@ pub mod monitor;
 pub mod particles;
 pub mod parts;
 pub mod probe_lit;
+pub mod prepass_gate;
 pub mod prop_material;
 pub mod props;
 pub mod psys;

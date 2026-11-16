@@ -369,7 +369,9 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume
   with the M4A1 and with Halo's plasma rifle;
   a rocket among three targets; armour off on three games' bodies;
   Halo's campaign bodies as targets on Hang 'Em High and de_dust2, and
-  worn by the player).
+  worn by the player; the Hunter as a target and firing, and worn: its
+  first-person arm and the lines a body says on becoming one and after a
+  kill).
 
 ### Offscreen (no display, no compositor)
 

@@ -27,7 +27,11 @@ service"). Design and limits: [plans/active/asset-service.md](plans/active/asset
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net65` since a Halo player's body kind and
+   The network version is `net66` since a Halo player's body kind may be
+   the Hunter and the Halo guns include the Hunter's cannon (its own rung,
+   `halo_ce:hunter_fuel_rod`: the body kind and the rung's weapon id go to
+   every client; the rung is drawn only with `halo_ce:campaign_bodies 1`);
+   `net65` (a Halo player's body kind and
    voice go to every client (net part `halo_ce_bodies`: the campaign's
    characters as party bodies, `BodyKind` and `BodyVoice`; drawn only
    with `halo_ce:campaign_bodies 1`); `net64` (a match played on a slice of its

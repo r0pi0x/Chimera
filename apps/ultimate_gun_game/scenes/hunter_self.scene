@@ -1,0 +1,165 @@
+# The player as Halo's Hunter and as an Elite on de_dust2 (a scene
+# script: chimera_client's `scene`; the bodies need their generated sets,
+# `character/<id>` and `voice/<id>`, game::campaign::unit): the Hunter's
+# first-person view (its own arm, game::campaign::first_person) at rest,
+# firing and in a melee; then our own lines (game::campaign::voice,
+# `chatter`): the becoming line of each, and kill lines after kills of
+# practice targets (a kill line has a chance and a 10 s cooldown, so
+# several kills some seconds apart; the cannon fires once a press, so the
+# Hunter taps). The lines are logged at debug:
+# run with RUST_LOG=info,halo_ce::game::campaign=debug and read stderr.
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox cs_source:de_dust2 \
+#       --scene apps/ultimate_gun_game/scenes/hunter_self.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 1500
+setpos -82 -555 208
+setang 2 4
+rung halo_ce:hunter_fuel_rod # the Hunter's own rung: the player becomes the Hunter
+wait 600                     # its unit in, its becoming line said
+halo_ce:body status
+shot hunter_fp_rest
++attack
+wait 4
+shot hunter_fp_firing
+-attack
+wait 60
++melee
+wait 20
+shot hunter_fp_melee
+-melee
+wait 120
+target add halo_ce:spartan 8
+target set all respawn 2
+wait 120
+target look 1
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
+wait 700                     # past the kill line's cooldown
+target look 1
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
+wait 700                     # past the kill line's cooldown
+target look 1
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
+wait 700                     # past the kill line's cooldown
+target look 1
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
+wait 700                     # past the kill line's cooldown
+target look 1
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
+wait 700                     # past the kill line's cooldown
+target look 1
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
++attack
+wait 2
+-attack
+wait 45
+wait 700                     # past the kill line's cooldown
+target remove all
+rung halo_ce:plasma_rifle
+halo_ce:body elite           # the Elite, its becoming line
+wait 600
+target add halo_ce:spartan 8
+target set all respawn 2
+wait 120
+target look 1
++attack
+wait_for kill 900
+-attack
+wait 700
+target look 1
++attack
+wait_for kill 900
+-attack
+wait 700
+target look 1
++attack
+wait_for kill 900
+-attack
+wait 120
+halo_ce:body status

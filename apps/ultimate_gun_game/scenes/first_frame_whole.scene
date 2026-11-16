@@ -1,0 +1,146 @@
+# A model shown for the first time comes whole in its first frame, never a
+# flat silhouette (render::prepass_gate): the player's own body and Halo gun
+# after `thirdperson`, then a Combat Arms practice target and its gun, a
+# picture every 2 frames (a scene script: chimera_client's `scene`). In
+# each sequence a part is absent, then drawn textured; no frame shows a
+# hole of the old frame or the sky where it stands.
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox cs_source:de_dust2 \
+#       --scene apps/ultimate_gun_game/scenes/first_frame_whole.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 300
+setpos -82 -555 208
+setang 2 4
+rung halo_ce:plasma_pistol
+wait 300
+thirdperson
+cam_idealdist 80
+cam_idealyaw 150
+shot self_0
+wait 2
+shot self_2
+wait 2
+shot self_4
+wait 2
+shot self_6
+wait 2
+shot self_8
+wait 2
+shot self_10
+wait 2
+shot self_12
+wait 2
+shot self_14
+wait 2
+shot self_16
+wait 2
+shot self_18
+wait 2
+shot self_20
+wait 2
+shot self_22
+wait 2
+shot self_24
+wait 2
+shot self_26
+wait 2
+shot self_28
+wait 2
+shot self_30
+wait 2
+shot self_32
+wait 2
+shot self_34
+wait 2
+shot self_36
+wait 2
+shot self_38
+wait 2
+shot self_40
+wait 2
+shot self_42
+wait 2
+shot self_44
+wait 2
+shot self_46
+wait 2
+shot self_48
+wait 2
+shot self_50
+wait 2
+shot self_52
+wait 2
+shot self_54
+wait 2
+shot self_56
+wait 2
+shot self_58
+wait 2
+shot self_60
+wait 2
+firstperson
+rung combat_arms:m4a1
+wait 60
+target add combat_arms:m4a1 3
+shot target_0
+wait 2
+shot target_2
+wait 2
+shot target_4
+wait 2
+shot target_6
+wait 2
+shot target_8
+wait 2
+shot target_10
+wait 2
+shot target_12
+wait 2
+shot target_14
+wait 2
+shot target_16
+wait 2
+shot target_18
+wait 2
+shot target_20
+wait 2
+shot target_22
+wait 2
+shot target_24
+wait 2
+shot target_26
+wait 2
+shot target_28
+wait 2
+shot target_30
+wait 2
+shot target_32
+wait 2
+shot target_34
+wait 2
+shot target_36
+wait 2
+shot target_38
+wait 2
+shot target_40
+wait 2
+shot target_42
+wait 2
+shot target_44
+wait 2
+shot target_46
+wait 2
+shot target_48
+wait 2
+shot target_50
+wait 2
+shot target_52
+wait 2
+shot target_54
+wait 2
+shot target_56
+wait 2
+shot target_58
+wait 2
+shot target_60
+wait 2

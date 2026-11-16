@@ -52,6 +52,9 @@ type Loaded = Result<models::OnDemand<MapCharacterModel>, String>;
 #[derive(Resource, Default)]
 pub struct BodiesOnDemand {
     tasks: BTreeMap<i32, Task<Loaded>>,
+    /// Those of `tasks` started ahead of need (the ladder's:
+    /// `chimera_core::tasks::ReadAhead`).
+    ahead: BTreeSet<i32>,
     tried: BTreeSet<i32>,
     stock: BTreeSet<i32>,
     failed: BTreeMap<i32, String>,
@@ -82,8 +85,10 @@ pub fn load_on_demand(
     forgotten: Option<Res<super::preload::Forgotten>>,
     mut pending: ResMut<BodiesOnDemand>,
     wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
+    mut read_ahead: Option<ResMut<chimera_core::tasks::ReadAhead>>,
     mut commands: Commands,
 ) {
+    const WHO: &str = "combat_arms bodies";
     if let Some(f) = forgotten.filter(|f| f.is_changed()) {
         pending.tried.retain(|id| !f.bodies.contains(id));
         pending.failed.retain(|id, _| !f.bodies.contains(id));
@@ -107,20 +112,37 @@ pub fn load_on_demand(
         false
     });
     pending.failed.extend(failed);
+    let BodiesOnDemand { tasks, ahead, .. } = &mut *pending;
+    ahead.retain(|id| tasks.contains_key(id));
+    if let Some(r) = read_ahead.as_mut() {
+        r.set(WHO, ahead.len());
+    }
     let chars = data.characters();
     // A map that wears none of ours (no bodies loaded, or another game's
     // kit) loads none for those worn; the ladder's are for the map coming.
     let ours = models.is_some_and(|m| m.0.iter().any(|m| m.game == Some(GAME)));
-    let worn = looks.iter().filter(|_| ours).map(|look| chars.effective(look).0.id);
-    let ladder = ladder.bodies.iter().copied().filter(|id| !models::LOADED.contains(id));
-    let wanted: Vec<i32> = worn.chain(ladder).collect();
-    for id in wanted {
+    // Those worn now, then the ladder's (ahead of need: only while the
+    // read-ahead has room).
+    let worn = looks.iter().filter(|_| ours).map(|look| (chars.effective(look).0.id, false));
+    let ladder = ladder.bodies.iter().copied().filter(|id| !models::LOADED.contains(id)).map(|id| (id, true));
+    let wanted: Vec<(i32, bool)> = worn.chain(ladder).collect();
+    for (id, early) in wanted {
         if pending.tried.contains(&id) || pending.stock.contains(&id) {
             continue;
         }
         if loaded.get().group_has(id) {
             pending.stock.insert(id);
             continue;
+        }
+        if early && !chimera_core::tasks::read_ahead_room(read_ahead.as_deref()) {
+            break;
+        }
+        if early {
+            pending.ahead.insert(id);
+            let n = pending.ahead.len();
+            if let Some(r) = read_ahead.as_mut() {
+                r.set(WHO, n);
+            }
         }
         pending.tried.insert(id);
         let ca = context.as_deref().map_or_else(CaData::install, CaData::install_for);

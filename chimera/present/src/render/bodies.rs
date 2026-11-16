@@ -91,14 +91,17 @@ impl PlayModels {
 /// every one of them.
 pub const LATE_AHEAD: usize = 6;
 
-/// Late models (`build_late_bodies`, `build_late_held`) some character
-/// wears or holds now and that are not built yet, with when each was first
-/// wanted (s of wall time, `Time<Real>`): written each frame by `attach_bodies` and
-/// `attach_held`.
+/// Late models (`build_late_bodies`, `build_late_held`,
+/// `view_model::build_late`) some character wears or holds now, or a
+/// first-person view shows, and that are not built yet, with when each was
+/// first wanted (s of wall time, `Time<Real>`): written each frame by
+/// `attach_bodies`, `attach_held` and `view_model::draw_view_models`.
 #[derive(Resource, Default, Debug)]
 pub struct LateWanted {
     pub bodies: std::collections::BTreeMap<usize, f64>,
     pub held: std::collections::BTreeMap<String, f64>,
+    /// View models by key.
+    pub view: std::collections::BTreeMap<String, f64>,
 }
 
 /// Meshes and materials of each held model, by key.

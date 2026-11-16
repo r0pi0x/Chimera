@@ -4552,6 +4552,70 @@ and `has` is a set lookup. A cook is 15-60 ms; what is left of the wait is
 the async compute pool being busy with the game's own loads (the 8.5 s run:
 the worn body's 15 ms cook started 7.3 s after it was asked for).
 
+## Late models shown whole (2026-11-16)
+
+Three things after "Late bodies worn first", measured on the Windows PC
+(dev profile, offscreen 1600x900, other agents building), with scenes
+(`--scene`) and the debug lines of `render::bodies` and
+`render::view_model` ("worn, not built yet" / "wanted, not built yet" and
+"drawn N s after").
+
+**A model shown for the first time drew as a flat silhouette**
+(`render::prepass_gate`). Seen as the player's own gun a flat light blue
+after `thirdperson`, and a practice target's body and gun the same. Not
+its textures: images go into `Assets` before the materials, and the model
+comes out a frame after its last asset. The cause is Bevy's pipelines,
+made on the async compute pool, one per pass: a mesh not drawn before
+(the local body is hidden in first person, so never specialized) needs a
+prepass pipeline (depth only, no fragment stage) and a main-pass one, and
+each pass draws as soon as its own is ready. Logged from the render
+world's `PipelineCache`: at `thirdperson` 8 pipelines were made, the three
+`prepass_pipeline`s ready 3-37 frames before the `opaque_mesh_pipeline`s
+(the last 45 frames after the switch, the pool's queue then about 0.48 s
+deep); in between the mesh wrote depth that nothing coloured, the world
+behind failed the depth test and its pixels kept the old frame (the sky
+over the head: light blue). Now a mesh queued into the prepass while its
+main-pass pipeline in that view is not ready is taken out of the prepass
+bins and left on Bevy's own retry list until it is: it shows nothing
+until it can show itself, then comes textured in its first frame. A mesh
+whose pipelines exist (the common case) is untouched. Before and after
+(pictures every 2 frames): the player's body a hole for about 45 frames
+after `thirdperson`, now nothing until its first frame drawn (the gun 6
+frames after the switch, the body 20); a Combat Arms target a pale hole
+for about 10 frames, now drawn whole from its first frame. A body and its
+gun have their own pipelines, so one may come a few frames before the
+other. View models: their camera has no prepass, so a view model waits
+undrawn for its pipeline as before (no hole).
+
+**View models built wanted-first.** `view_model::build_late` started
+every late view model at once and built them in order; now the one a view
+shows (`LateWanted::view`, from `draw_view_models`) starts at once and
+goes in first, the rest `LATE_AHEAD` at a time, as bodies and held models.
+
+**A game's read-ahead kept to half the pool** (`chimera_core::tasks::
+ReadAhead`). Bevy's async compute pool has at most four threads, and
+Combat Arms' loaders (bodies, held and view models, their timing reads)
+started every task of a ladder at once, so anything wanted now (a worn
+body's cook, a pipeline for a model shown first) queued behind them. Now
+those loaders start the ladder's tasks only while fewer than half the
+pool's threads (2 of 4) hold read-ahead; what is worn, held or shown now
+starts regardless. No thread count changed.
+
+A long-ladder match (`ugg_new 60 60 cs_source:de_dust2`, then `rung 49`,
+a Combat Arms gun and body, 30 frames after the match starts, and `rung
+44` 15 s later; three runs each):
+
+| | worn to drawn (body) | wanted to drawn (first-person gun, rung 49) | the pool's worst queue (a trivial task's wait) |
+|---|---|---|---|
+| before | 0.43, 0.20, 0.44 s | 0.46, 0.05, 1.06 s | 1.3-1.4 s |
+| view models wanted-first only | 0.62, 0.06 s | 0.59, 0.31 s | |
+| both | 0.07, 0.07, 0.10 s | 0.04, 0.03, 0.06 s | 0.47-0.59 s |
+
+The view model's time counts from the key being wanted, so it includes
+Combat Arms' own load of it. Rung 44, 15 s in, was 0.01-0.03 s in every
+run. The box's load moves these numbers; the 7.3 s wait of "Late bodies
+worn first" was not seen again here.
+
 ## The navigation mesh's arrival (2026-11-15)
 
 `ultimate_gun_game`'s `heavy::nav_in_play` failed after the push of

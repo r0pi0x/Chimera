@@ -196,34 +196,57 @@ pub fn read(path: &str) -> Option<AnimTimes> {
 }
 
 /// A match's ladder's view models' lengths, read on tasks as soon as the
-/// ladder is known (`characters::preload`; a front end's): `apply` runs when
+/// ladder is known (`characters::preload`; a front end's), in the ladder's
+/// order, a few at once where the app keeps its read-ahead to a few
+/// (`chimera_core::tasks::ReadAhead`): `apply` runs when
 /// a rung gives the weapon, in the middle of a tick, and a read there stops the
 /// frame (docs/performance.md, "Nothing blocks the main thread").
+#[allow(clippy::type_complexity)]
 pub fn read_ahead(
     ladder: Res<crate::game::characters::preload::LadderModels>,
     catalog: Option<Res<crate::weapon::data::WeaponCatalog>>,
     mut times: ResMut<ViewTimes>,
     mut pending: Local<BTreeMap<String, bevy::tasks::Task<Option<AnimTimes>>>>,
+    mut queued: Local<std::collections::VecDeque<String>>,
     wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
+    mut room: Option<ResMut<chimera_core::tasks::ReadAhead>>,
 ) {
+    const WHO: &str = "combat_arms timing";
     pending.retain(|path, task| {
         let Some(read) = chimera_core::tasks::poll(task, wait.is_some()) else { return true };
         times.0.insert(path.clone(), read);
         false
     });
-    if !ladder.is_changed() {
-        return;
+    if ladder.is_changed()
+        && let Some(catalog) = catalog
+    {
+        queued.clear();
+        let mut seen = std::collections::BTreeSet::new();
+        for key in &ladder.keys {
+            // A key with parts is the weapon's own model's lengths too.
+            let (id, _) = crate::game::view_model::parts::split_key(key);
+            let Some(path) = catalog.get(id).and_then(|d| d.models.view.as_deref()).map(model::normalize) else {
+                continue;
+            };
+            if seen.insert(path.clone()) {
+                queued.push_back(path);
+            }
+        }
     }
-    let Some(catalog) = catalog else { return };
-    for key in &ladder.keys {
-        // A key with parts is the weapon's own model's lengths too.
-        let (id, _) = crate::game::view_model::parts::split_key(key);
-        let Some(path) = catalog.get(id).and_then(|d| d.models.view.as_deref()).map(model::normalize) else { continue };
+    if let Some(r) = room.as_mut() {
+        r.set(WHO, pending.len());
+    }
+    while chimera_core::tasks::read_ahead_room(room.as_deref())
+        && let Some(path) = queued.pop_front()
+    {
         if times.0.contains_key(&path) || pending.contains_key(&path) {
             continue;
         }
         let at = path.clone();
         pending.insert(path, bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { read(&at) }));
+        if let Some(r) = room.as_mut() {
+            r.set(WHO, pending.len());
+        }
     }
 }
 

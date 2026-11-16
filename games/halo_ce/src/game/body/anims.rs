@@ -7,11 +7,14 @@
 //! (the converted-map cache, a guest's dressing, a dedicated server) and
 //! the simulation needs no graph at run time. For each seat label
 //! (`SEATS`: stand, crouch) and weapon label (`LABELS`: unarmed and the
-//! multiplayer weapons' labels) the spec's selection rule picks the (seat,
+//! multiplayer weapons' labels, and the fuel rods' `fr`, the Hunter's
+//! cannon) the spec's selection rule picks the (seat,
 //! weapon class, weapon type) triple (`AnimationGraph::select_unit`: the
 //! last match in block order wins), and each state's slot (`State`) of that
 //! class becomes a sequence named `"<seat> <label> <slot>"` (`key`) whose
-//! one animation is the slot's. The aim screens (`aim-still`, `aim-move`)
+//! one animation is the slot's; so do the class's melee and the type's
+//! fire-1 (`MELEE`, `FIRE_1`: no third-person body plays them; a body's
+//! first-person view does, `campaign::first_person`). The aim screens (`aim-still`, `aim-move`)
 //! and the seat's `look` screen are sequences too: their grid is the
 //! screen's columns and rows, and their two axes' keys carry the spec's
 //! screen bounds (yaw: right and left radians per frame, right and left
@@ -86,8 +89,8 @@ pub const SEATS: [&str; 2] = ["stand", "crouch"];
 
 /// The weapon labels tables are built for: unarmed and the multiplayer
 /// weapons' (animations.md, "Seat, weapon class and weapon type").
-pub const LABELS: [&str; 12] = [
-    "unarmed", "ar", "hp", "sg", "pr", "rl", "sr", "pp", "ft", "ne", "b", "f",
+pub const LABELS: [&str; 13] = [
+    "unarmed", "ar", "hp", "sg", "pr", "rl", "sr", "pp", "ft", "ne", "b", "f", "fr",
 ];
 
 /// The label a holder without a label of its own plays: a rifle stance
@@ -455,6 +458,14 @@ pub fn build(graph: &AnimationGraph, bones: &[MapBone], checksum: u32) -> (AnimS
             if let Some(i) = class.animations.get(WeaponClassSlot::ThrowGrenade) {
                 b.sequence(key(seat, label, THROW), i, None);
             }
+            // The class's melee and the type's fire-1: a body's first-person
+            // view plays them (`campaign::first_person`).
+            if let Some(i) = class.animations.get(WeaponClassSlot::Melee) {
+                b.sequence(key(seat, label, MELEE), i, None);
+            }
+            if let Some(i) = graph.weapon_type(sel).and_then(|t| t.animations.get(blam_formats::animation::WeaponTypeSlot::Fire1)) {
+                b.sequence(key(seat, label, FIRE_1), i, None);
+            }
             for (slot, name) in [
                 (WeaponClassSlot::AimStill, "aim-still"),
                 (WeaponClassSlot::AimMove, "aim-move"),
@@ -487,6 +498,11 @@ pub fn build(graph: &AnimationGraph, bones: &[MapBone], checksum: u32) -> (AnimS
     }
     (b.set, b.warnings)
 }
+
+/// The class's melee and the weapon type's fire-1 slot names (built for
+/// every body; only a body's first-person view plays them).
+pub const MELEE: &str = "melee";
+pub const FIRE_1: &str = "fire-1";
 
 /// The seat's airborne death's and landing death's slot names.
 pub const AIRBORNE_DEAD: &str = "airborne-dead";
