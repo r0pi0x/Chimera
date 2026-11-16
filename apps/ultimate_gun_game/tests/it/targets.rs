@@ -13,7 +13,7 @@ use chimera_core::{
 use chimera_sim::{
     minigame::{
         self,
-        targets::{self, HitMeasured, KillMeasured, SpawnTarget, Target, TargetMotion, TargetRespawn},
+        targets::{self, HitMeasured, KillMeasured, SetTarget, SpawnTarget, Target, TargetMotion, TargetRefused, TargetRespawn},
     },
     weapon::{WeaponEvent, WeaponEventKind},
 };
@@ -31,6 +31,11 @@ struct Seen {
     hits: Vec<HitMeasured>,
     kills: Vec<KillMeasured>,
     shots: Vec<Entity>,
+    refused: Vec<String>,
+}
+
+fn keep_refused(mut seen: ResMut<Seen>, mut r: MessageReader<TargetRefused>) {
+    seen.refused.extend(r.read().map(|r| r.reason.clone()));
 }
 
 fn keep(mut seen: ResMut<Seen>, mut h: MessageReader<HitMeasured>, mut k: MessageReader<KillMeasured>, mut w: MessageReader<WeaponEvent>) {
@@ -50,7 +55,7 @@ fn play() -> (Sim, Entity) {
     minigame::start(sim.app.world_mut(), SANDBOX).expect("the sandbox starts");
     let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
     sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
-    sim.app.init_resource::<Seen>().add_systems(FixedPostUpdate, keep);
+    sim.app.init_resource::<Seen>().add_systems(FixedPostUpdate, keep).add_systems(PostUpdate, keep_refused);
     sim.seconds(1.5);
     (sim, me)
 }
@@ -199,4 +204,104 @@ fn a_kill_counts_its_shots_and_hits() {
     assert_eq!(k.attacker, Some(me));
     assert!(k.from_first_shot > 0.05 && (k.from_first_shot - k.from_first_hit).abs() < 1e-4, "{k:?}");
     assert!((k.distance_m - 10.0).abs() < 1.0 && k.total_damage > 0.3, "{k:?}");
+    // A target's death counts for no one (no score, no rung).
+    let score = sim.app.world().get::<chimera_core::core::Score>(me).map_or(0, |s| s.kills);
+    assert_eq!(score, 0, "no kill counted for a practice target");
+}
+
+fn home_of(sim: &Sim, e: Entity) -> Vec3 {
+    sim.app.world().get::<Target>(e).unwrap().home
+}
+
+#[test]
+fn a_walking_target_wanders_and_stays_near_home() {
+    let (mut sim, _) = play();
+    let e = add(&mut sim, SpawnTarget { motion: TargetMotion::Walks, ..at(10.0) });
+    let home = home_of(&sim, e);
+    let (mut far, mut path, mut last) = (0.0f32, 0.0f32, sim.position(e));
+    for _ in 0..20 {
+        sim.seconds(0.5);
+        let p = sim.position(e);
+        far = far.max((p - home).xz().length());
+        path += (p - last).xz().length();
+        last = p;
+    }
+    assert!(path > 2.0, "it walked: {path} m");
+    assert!(far <= targets::WALK_RADIUS + targets::LEASH + 0.5, "near home: {far} m");
+}
+
+#[test]
+fn a_target_that_shoots_back_fights_from_its_spot_and_its_hits_are_measured() {
+    let (mut sim, me) = play();
+    let e = add(&mut sim, SpawnTarget { shoots_back: true, ..at(8.0) });
+    let home = home_of(&sim, e);
+    let mut hit_me = false;
+    for _ in 0..40 {
+        sim.seconds(0.5);
+        let seen = sim.app.world().resource::<Seen>();
+        if seen.hits.iter().any(|h| h.attacker == Some(e) && h.victim == me) {
+            hit_me = true;
+            break;
+        }
+    }
+    let seen = sim.app.world().resource::<Seen>();
+    assert!(seen.shots.contains(&e), "it fired");
+    assert!(hit_me, "its hits on the player measured: {:?}", seen.hits);
+    assert!((sim.position(e) - home).xz().length() < 1.5, "from where it stands");
+}
+
+#[test]
+fn a_new_distance_replaces_the_target_along_its_line() {
+    let (mut sim, _) = play();
+    let e = add(&mut sim, at(8.0));
+    let t = sim.app.world().get::<Target>(e).cloned().unwrap();
+    sim.app.world_mut().write_message(SetTarget { distance_m: Some(14.0), ..SetTarget::of(e) });
+    sim.seconds(1.5);
+    let now = sim.app.world().get::<Target>(e).cloned().unwrap();
+    let want = t.origin + t.dir * 14.0;
+    assert!((now.home - want).xz().length() < 0.05 && now.distance_m == 14.0, "{:?} vs {want:?}", now.home);
+    assert!((sim.position(e) - now.home).xz().length() < 0.5, "the body moved there");
+    // A refused request is a message too.
+    sim.app.world_mut().write_message(SpawnTarget { distance_m: 5000.0, gun: Some(GUN.into()), ..default() });
+    sim.seconds(0.2);
+    let seen = sim.app.world().resource::<Seen>();
+    assert!(seen.refused.iter().any(|r| r.contains("no floor")), "{:?}", seen.refused);
+}
+
+#[test]
+fn a_target_stands_and_is_hit_100_m_away_on_the_greybox_diagonal() {
+    let (mut sim, me) = play();
+    // The greybox's longest clear line: corner to corner (its walls are
+    // 80 m apart), about 107 m from one corner's player.
+    let corner = Transform::from_xyz(-38.0, 1.0, -38.0);
+    chimera_sim::spawning::revive(sim.app.world_mut(), me, Some(corner));
+    chimera_core::core::set_view(sim.app.world_mut(), me, -3.0 * std::f32::consts::FRAC_PI_4, 0.0);
+    sim.ticks(2);
+    let e = add(&mut sim, at(100.0));
+    let t = sim.app.world().get::<Target>(e).cloned().unwrap();
+    assert!((t.home.xz() - Vec2::new(-38.0 + 70.71, -38.0 + 70.71)).length() < 0.5, "{:?}", t.home);
+    assert!(targets::spawn(sim.app.world_mut(), &at(115.0)).is_err(), "past the far corner: refused");
+    hit(&mut sim, me, e, 0.2);
+    sim.ticks(3);
+    let seen = sim.app.world().resource::<Seen>();
+    let h = seen.hits.iter().find(|h| h.victim == e).expect("measured");
+    assert!((h.distance_m - 100.0).abs() < 1.5, "{h:?}");
+}
+
+#[test]
+fn a_tf2_target_wears_a_class_other_than_its_rung_drew() {
+    let (mut sim, _) = play();
+    const SHOTGUN: &str = "tf2:tf_weapon_shotgun_primary";
+    let ladder = sim.app.world().resource::<chimera_sim::minigame::ladder::Ladder>().clone();
+    let rung = ladder.rungs.iter().position(|r| *r == SHOTGUN).expect("the shotgun's rung");
+    let drawn = ladder.extras(rung).and_then(|x| x.value("class")).map(str::to_string);
+    let (class, health) = [("soldier", 2.0), ("pyro", 1.75), ("heavy", 3.0), ("engineer", 1.25)]
+        .into_iter()
+        .find(|(c, _)| drawn.as_deref() != Some(*c))
+        .unwrap();
+    let e = add(&mut sim, SpawnTarget { character: Some(format!("tf2:{class}")), gun: Some(SHOTGUN.into()), ..at(10.0) });
+    sim.seconds(1.0);
+    let h = sim.app.world().get::<Health>(e).copied().unwrap();
+    assert!((h.max - health).abs() < 1e-3, "{class} (drawn {drawn:?}): {h:?}");
+    assert_eq!(sim.app.world().get::<chimera_sim::weapon::Armor>(e).map(|a| a.amount).unwrap_or(0.0), 0.0, "no other game's armour");
 }
