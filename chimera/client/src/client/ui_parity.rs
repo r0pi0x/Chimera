@@ -138,6 +138,7 @@ impl Fixture {
         };
         RaceView {
             active: true,
+            sandbox: false,
             rows: rows
                 .iter()
                 .map(|r| RaceRow {

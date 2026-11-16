@@ -5,12 +5,15 @@
 # [[entry]]: the main menu's left-hand entries, in order, in CS:S's main
 # menu's place (the GameUI look of CS:S's install). `page` opens one of the
 # menu's pages (play: shown as Host; join; options: Settings); `command` is a console line. `gap`
-# leaves half a row before it.
+# leaves half a row before it; `tag` a chip after the label (the Signal
+# menu's NEW). Sandbox runs `sandbox`, Ultimate Gun Game's command (the way
+# `+sandbox` starts it: the greybox, alone, cheats on).
 #
 # [[escape]]: the Escape menu's entries, in order. `action` is one of
 # resume, options, host, vote, disconnect, feedback (the report dialog),
-# quit; `when` gates it: always, host (not a network client), main_menu
-# (the app has this main menu). The pre-match lobby has no Escape menu
+# quit, sandbox_gun and sandbox_bench (the sandbox's Change gun and bench);
+# `when` gates it: always, host (not a network client), main_menu (the app
+# has this main menu), sandbox and not_sandbox (a sandbox plays or not). The pre-match lobby has no Escape menu
 # under a themed lobby: its own header buttons (Settings, Report a bug,
 # Leave) instead.
 #
@@ -44,6 +47,11 @@ label = "Join"
 page = "join"
 
 [[entry]]
+label = "Sandbox"
+command = "sandbox"
+tag = "New"
+
+[[entry]]
 label = "Settings"
 page = "options"
 
@@ -54,6 +62,16 @@ command = "quit"
 [[escape]]
 label = "Resume"
 action = "resume"
+
+[[escape]]
+label = "Change gun"
+action = "sandbox_gun"
+when = "sandbox"
+
+[[escape]]
+label = "Bench"
+action = "sandbox_bench"
+when = "sandbox"
 
 [[escape]]
 label = "Settings"
@@ -67,6 +85,7 @@ when = "host"
 [[escape]]
 label = "Vote to skip the map"
 action = "vote"
+when = "not_sandbox"
 
 [[escape]]
 label = "Disconnect"

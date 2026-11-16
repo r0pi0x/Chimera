@@ -385,8 +385,9 @@ pub fn args(args: chimera_client::client::Args) -> chimera_client::client::Args 
 
 /// What the app adds last: the party's main menu (shown at start when the
 /// command line doesn't play; Play starts `MINIGAME`), the Ultimate Gun
-/// Game's parts with a fresh seed, the minimal HUD, its look (`signal`)
-/// and its own binds (`APP_BINDS`).
+/// Game's parts with a fresh seed, the minimal HUD, its look (`signal`),
+/// the sandbox's screens (`chimera_client::client::sandbox`) and its own
+/// binds (`APP_BINDS`).
 #[cfg(feature = "present")]
 fn launch(app: &mut App, args: &chimera_client::client::Args) {
     let at_menu = party_kit::main_menu::starts_at_menu(args);
@@ -408,7 +409,9 @@ fn launch(app: &mut App, args: &chimera_client::client::Args) {
         })
         .add_plugins(party_kit::menu_backdrop::MenuBackdropPlugin)
     .add_plugins((UltimateGunGamePlugin::launch(), chimera_client::client::hud_minimal::MinimalHudPlugin))
-        .add_plugins(signal::SignalPlugin);
+        .add_plugins(signal::SignalPlugin)
+        // The sandbox's screens (its HUD, Change gun, the bench).
+        .add_plugins(chimera_client::client::sandbox::SandboxUiPlugin);
 }
 
 #[cfg(test)]
