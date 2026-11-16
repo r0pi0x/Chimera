@@ -2187,7 +2187,14 @@ fn a_map_unload_forgets_what_older_ladders_loaded() {
         )
     };
     w.insert_resource(map::LateCharacterModels(vec![body(7), body(8)]));
-    w.insert_resource(map::LateHeldModels(vec![held("combat_arms:kept"), held("combat_arms:old"), held("combat_arms:in_hand"), held("halo_ce:plasma_rifle#elite")]));
+    // Another game's late held model, on no ladder of ours and in no hand:
+    // not ours to forget.
+    w.insert_resource(map::LateHeldModels(vec![
+        held("combat_arms:kept"),
+        held("combat_arms:old"),
+        held("combat_arms:in_hand"),
+        held("another_game:gun"),
+    ]));
     w.spawn(map::Held(Some("combat_arms:in_hand".into())));
 
     forget_old(w);
@@ -2195,7 +2202,7 @@ fn a_map_unload_forgets_what_older_ladders_loaded() {
     let bodies: Vec<_> = w.resource::<map::LateCharacterModels>().0.iter().map(|(m, _)| m.name.clone().unwrap()).collect();
     assert_eq!(bodies, [body_name(7)]);
     let keys: Vec<_> = w.resource::<map::LateHeldModels>().0.iter().map(|(m, _)| m.key.clone()).collect();
-    assert_eq!(keys, ["combat_arms:kept", "combat_arms:in_hand", "halo_ce:plasma_rifle#elite"], "another game's are its own");
+    assert_eq!(keys, ["combat_arms:kept", "combat_arms:in_hand", "another_game:gun"]);
     assert_eq!(
         *w.resource::<Forgotten>(),
         Forgotten {

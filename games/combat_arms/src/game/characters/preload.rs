@@ -26,11 +26,9 @@
 //! (`harness::ladder_models_in`).
 //!
 //! What older ladders brought is forgotten as a map unloads (`forget_old`,
-//! a `map::MapHooks::unload` hook): everything of Combat Arms' on demand
-//! (`map::LateCharacterModels`, `LateHeldModels`, the view models' cache;
-//! another game's late models are left alone: `models::body_record`,
-//! `view_model::on_demand::ours`) but the ladder just played and what
-//! characters wear and hold, so a session holds
+//! a `map::MapHooks::unload` hook): everything on demand (`map::
+//! LateCharacterModels`, `LateHeldModels`, the view models' cache) but the
+//! ladder just played and what characters wear and hold, so a session holds
 //! at most the ladder played and the next (each about 1.6 GB of memory, and
 //! each map builds what is kept: docs/performance.md, "A session's frame
 //! rate"); anything forgotten loads again when next wanted (`Forgotten`).
@@ -250,6 +248,7 @@ pub fn plan_ladder(
 /// Forget the models loaded on demand that the ladder just played
 /// (`LadderModels`) doesn't give and no character wears or holds: a map's
 /// unload (module doc). Only where the front end loads them.
+/// Only Combat Arms' own: another game's late bodies and held models stay.
 pub fn forget_old(world: &mut World) {
     if !world.contains_resource::<LoadOnDemand>() {
         return;
@@ -281,8 +280,8 @@ pub fn forget_old(world: &mut World) {
     }
     if let Some(mut late) = world.get_resource_mut::<LateHeldModels>() {
         late.0.retain(|(m, _)| {
-            // Only Combat Arms' own: another game's held models (Halo's
-            // campaign bodies' guns) are that game's to keep.
+            // Another game's late held model is not ours to forget (its
+            // own loader would not bring it back).
             let keep = !ours(&m.key) || keys.contains(&m.key);
             if !keep {
                 forgotten.keys.push(m.key.clone());
