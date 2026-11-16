@@ -45,14 +45,17 @@ use chimera_sim::weapon::{
 };
 
 use super::weapons::{
-    FLAMETHROWER, GRENADE_LAUNCHER, MINIGUN, PISTOL_SCOUT, REVOLVER, ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN, SMG, SNIPER_RIFLE,
-    STICKY_LAUNCHER, SYRINGE_GUN, minigun, sticky,
+    BAT, BONESAW, BOTTLE, FIREAXE, FISTS, FLAMETHROWER, GRENADE_LAUNCHER, KNIFE, KUKRI, MINIGUN, PISTOL_SCOUT, REVOLVER,
+    ROCKET_LAUNCHER, SCATTERGUN, SHOTGUN, SHOVEL, SMG, SNIPER_RIFLE, STICKY_LAUNCHER, SYRINGE_GUN, WRENCH, melee, minigun, sticky,
 };
 use crate::map::GameFov;
 
 /// TF2's view-model field of view (the spec gives none for TF2's
 /// `viewmodel_fov`: 54, as the brief's default and Source's).
 pub const VIEWMODEL_FOV: f32 = 54.0;
+/// The Heavy's arms' skin with the Fists (RED's: `v_skin_red` 2; BLU's
+/// 3 isn't told apart, as the other arms' team skins aren't).
+pub const FISTS_SKIN: i32 = 2;
 /// The player's base field of view the view model zooms against.
 pub const DEFAULT_FOV: f32 = 75.0;
 
@@ -228,6 +231,53 @@ const SECONDARY_SHOTGUN: Sequences = shells(
     [("ACT_SECONDARY_RELOAD_START", "reload_start"), (S_RELOAD, "reload_loop"), ("ACT_SECONDARY_RELOAD_FINISH", "reload_end")],
 );
 
+/// One melee weapon's first-person sequences on its class's arms
+/// (specs/tf2/weapons_stock.md 8.1), by name: a swing is a weighted pick
+/// of `swing` (a name listed twice weighs 2), attack2's (the Fists' right
+/// fist) of `swing_alt`, a crit swing `crit`; the Knife's raised family
+/// in `backstab` (up, idle, down, the stab).
+#[derive(Clone, Copy, Debug)]
+pub struct MeleeSequences {
+    pub draw: &'static str,
+    pub idle: &'static str,
+    pub swing: &'static [&'static str],
+    pub swing_alt: &'static [&'static str],
+    pub crit: &'static str,
+    pub backstab: Option<[&'static str; 4]>,
+}
+
+const fn swings(draw: &'static str, idle: &'static str, swing: &'static [&'static str], crit: &'static str) -> MeleeSequences {
+    MeleeSequences { draw, idle, swing, swing_alt: &[], crit, backstab: None }
+}
+
+/// The nine melee weapons' sequences (8.1; the weights' "w2" listed twice).
+pub const MELEE_SEQUENCES: &[(&str, MeleeSequences)] = &[
+    (BAT, swings("b_draw", "b_idle", &["b_swing_a", "b_swing_a", "b_swing_b"], "b_swing_c")),
+    (SHOVEL, swings("s_draw", "s_idle", &["s_swing_a", "s_swing_b"], "s_swing_c")),
+    (FIREAXE, swings("fa_draw", "fa_idle", &["fa_swing_a", "fa_swing_a", "fa_swing_b"], "fa_swing_c")),
+    (BOTTLE, swings("b_draw", "b_idle", &["b_swing_a", "b_swing_b"], "b_swing_c")),
+    (FISTS, MeleeSequences { swing_alt: &["f_swing_right"], ..swings("f_draw", "f_idle", &["f_swing_left"], "f_swing_crit") }),
+    (WRENCH, swings("pdq_draw", "pdq_idle_tap", &["pdq_swing_a", "pdq_swing_b"], "pdq_swing_c")),
+    (BONESAW, swings("bs_draw", "bs_idle", &["bs_swing_a", "bs_swing_a", "bs_swing_b"], "bs_swing_c")),
+    (KUKRI, swings("m_draw", "m_idle", &["m_swing_a", "m_swing_a", "m_swing_b"], "m_swing_c")),
+    (
+        KNIFE,
+        MeleeSequences {
+            backstab: Some(["knife_backstab_up", "knife_backstab_idle", "knife_backstab_down", "knife_backstab"]),
+            ..swings("knife_draw", "knife_idle", &["knife_stab_a", "knife_stab_a", "knife_stab_b", "knife_stab_c"], "knife_backstab")
+        },
+    ),
+];
+
+/// A melee weapon's sequences.
+pub fn melee_sequences(weapon: &str) -> Option<&'static MeleeSequences> {
+    MELEE_SEQUENCES.iter().find(|(w, _)| *w == weapon).map(|(_, s)| s)
+}
+
+fn names(list: &[&str]) -> Pick {
+    Pick::Names(list.iter().map(|s| s.to_string()).collect())
+}
+
 /// The sequences of view model `key`: a gun's id (on its own class's
 /// arms) or `<gun>#<class>` (`for_class`).
 pub fn sequences(key: &str) -> Option<&'static Sequences> {
@@ -279,15 +329,53 @@ pub fn viewmodel_fov_cvar(app: &mut App) {
 }
 
 fn draw(s: &ViewState) -> Pick {
+    if let Some(m) = melee_sequences(s.weapon) {
+        return names(&[m.draw]);
+    }
     named(of_state(s).map(|q| q.draw))
 }
 
 fn idle(s: &ViewState) -> Pick {
+    // The raised knife idles raised (`ViewPose` 1, `weapons::melee`).
+    if let Some(m) = melee_sequences(s.weapon) {
+        return names(&[match m.backstab {
+            Some([_, raised, ..]) if s.pose == 1 => raised,
+            _ => m.idle,
+        }]);
+    }
     // A spun Minigun (`ViewPose` 1) idles in its spun sequence.
     named(of_state(s).map(|q| if s.pose == 1 { q.spin_idle.unwrap_or(q.idle) } else { q.idle }))
 }
 
+/// A melee weapon's reaction: its swing's start (`weapons::melee`'s
+/// actions) and the knife raised and lowered.
+fn melee_event(f: &mut ViewFrame, m: &MeleeSequences, kind: &WeaponEventKind) {
+    let raised = f.state.pose == 1;
+    let alt = matches!(kind, WeaponEventKind::Action(melee::SWING_ALT));
+    let pick = match kind {
+        WeaponEventKind::Action(melee::SWING_CRIT) => names(&[m.crit]),
+        WeaponEventKind::Action(melee::SWING) | WeaponEventKind::Action(melee::SWING_ALT) => match m.backstab {
+            Some([.., stab]) if raised => names(&[stab]),
+            _ if alt && !m.swing_alt.is_empty() => names(m.swing_alt),
+            _ => names(m.swing),
+        },
+        WeaponEventKind::Action(melee::BACKSTAB_UP) => match m.backstab {
+            Some([up, ..]) => names(&[up]),
+            None => return,
+        },
+        WeaponEventKind::Action(melee::BACKSTAB_DOWN) => match m.backstab {
+            Some([_, _, down, _]) => names(&[down]),
+            None => return,
+        },
+        _ => return,
+    };
+    f.attack(&pick);
+}
+
 fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
+    if let Some(m) = melee_sequences(f.state.weapon) {
+        return melee_event(f, m, kind);
+    }
     let Some(q) = of_state(&f.state) else { return };
     match kind {
         WeaponEventKind::Fired { .. } if !f.fired => {
@@ -390,6 +478,18 @@ pub fn load(
             continue;
         }
         let Some(data) = set.weapons.iter().find(|w| w.id == gun) else { continue };
+        // The Fists: the arms alone, in their fists' skin (weapons_stock.md
+        // 5.3).
+        if gun == FISTS {
+            match props::load_view_model_skinned(materials, &super::sets::arms_model(&own), gun, true, FISTS_SKIN) {
+                Ok(mut v) => {
+                    v.allow_flipping = false;
+                    into.push(v);
+                }
+                Err(e) => warnings.push(e),
+            }
+            continue;
+        }
         let Some(path) = data.models.view.clone() else { continue };
         let offset = data.models.view_offset;
         // Its own class's arms (keyed by the gun), then the others'.

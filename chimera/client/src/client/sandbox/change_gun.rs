@@ -26,21 +26,31 @@
 //!   kill (a 100-point body, a Spartan's 115 of shield and health, the
 //!   head), the tags and the files.
 //! - **Foot**: the keys, and the pinned bar (smaller, at the right): drag
-//!   a tile onto a slot (the slot under the pointer lights: DROP HERE,
-//!   `DROP_LOOK`), or Ctrl+1–6 pins the selected gun.
-//! - **Keys** (`GRID_KEYS`, a placeholder until the user signs it off):
-//!   ←→↑↓ move between tiles (↑ from a section's first row stops on its
-//!   header; on a header ← folds and → opens it, Enter flips it); Enter
-//!   switches to the selected gun (downloading it first if it isn't
-//!   here); I opens the larger model view in the detail pane (and closes
-//!   it); Ctrl+1–6 pins; R retries a failed download; typing finds;
-//!   Backspace deletes a letter; Esc closes the popover, then clears the
-//!   search, then closes the view.
+//!   a tile onto a slot (the slot under the pointer shows a ghost of the
+//!   gun in an accent frame, the gun it replaces struck through under it,
+//!   and the hint beside the bar says "Release: <gun> to <n>[, replacing
+//!   <old>]": `model::drop_hint`), or Ctrl+1–6 pins the selected gun.
+//! - **Keys** (the user's grid keys A): ←→ walk the tiles in reading
+//!   order, wrapping row to row and class to class (a folded class's
+//!   header is a stop); ↑↓ keep the column and stop on headers; on a
+//!   header ← folds and → opens it. Enter switches to the tile's gun
+//!   (downloading it first if it isn't here), or opens or folds a
+//!   header. `\` (the physical key, Backslash or the ISO key beside the
+//!   left Shift, never typed) folds the class the cursor is in and parks
+//!   it on the header; `\` or Enter there opens it and puts the cursor
+//!   back on the same tile. The detail pane follows the cursor. Letters
+//!   and digits go to the search (not with Ctrl or Alt held), but before
+//!   anything is typed I shows the large model and R retries the
+//!   selected gun's failed download (on any other gun R types); B types
+//!   (Esc leaves). Ctrl+I and Ctrl+R do the same at any time; Ctrl+1–6
+//!   pins; Backspace deletes a letter; Esc closes the popover, then
+//!   clears the search, then closes the view.
 //!
-//! Open details (placeholders the user signs off: `TILE_DOWNLOAD`,
-//! `DROP_LOOK`, `GRID_KEYS`): a tile's download state along its bottom
-//! edge (a bar with its words above it), the drop indicator (the accent
-//! fill and border with DROP HERE), the keys above.
+//! The user's decisions (the design rules, section 22): a tile's
+//! download state is a bar along its bottom edge (its words in the
+//! foot), so the keyboard cursor is the tile's accent outline; a drop
+//! shows a ghost of the gun in the slot (`model::drop_hint`); the keys
+//! below.
 //!
 //! Known shortcuts: a slot's tiles are spawned again when it shows
 //! another row (the slots themselves stay; the kit's binding in place is
@@ -73,25 +83,6 @@ use crate::client::signal::Look;
 
 /// The grid's list key (`VirtualLists`).
 pub const LIST: &str = "sandbox.guns";
-
-/// Placeholder (open detail): how a download state sits on a tile.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TileDownload {
-    /// Along the tile's bottom edge: a bar, its words above it (default).
-    BottomEdge,
-}
-pub const TILE_DOWNLOAD: TileDownload = TileDownload::BottomEdge;
-
-/// Placeholder (open detail): the drop indicator's look.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DropLook {
-    /// The slot filled with the accent at .28, a 2 px accent border, DROP HERE.
-    AccentFill,
-}
-pub const DROP_LOOK: DropLook = DropLook::AccentFill;
-
-/// Placeholder (open detail): the grid's key model (module doc, "Keys").
-pub const GRID_KEYS: &str = "arrows: tiles; header: left folds, right opens, Enter flips; Enter: switch; I: model view; Ctrl+1-6: pin";
 
 /// Tiles a row, a tile's height, a header's, the gap (cq).
 pub const COLS: usize = 5;
@@ -159,11 +150,11 @@ pub fn sync_grid(
     progress: Res<UnitProgress>,
     mut grid: ResMut<Grid>,
     mut lists: ResMut<VirtualLists>,
-    mut sel: Local<Option<String>>,
+    mut sel: ResMut<GridSel>,
     mut pins: Local<super::model::Pins>,
 ) {
     if ui.screen != SandboxScreen::ChangeGun {
-        *sel = None;
+        sel.0 = None;
         return;
     }
     let shown = ui.view.shown(&cat.guns, &|g| SandboxCatalogue::files(g, &progress));
@@ -179,16 +170,21 @@ pub fn sync_grid(
         st.bump();
     }
     // The selected gun moves the cursor (opening, a search).
-    if *sel != ui.view.selected {
-        *sel = ui.view.selected.clone();
+    if sel.0 != ui.view.selected {
+        sel.0 = ui.view.selected.clone();
         if let Some(c) = ui.view.selected.as_ref().and_then(|id| cat.guns.iter().position(|g| g.id == *id)).and_then(|i| grid.cursor_of(i)) {
             st.select(c);
         }
     }
 }
 
+/// The gun the cursor was last put on for (`sync_grid` moves the cursor
+/// when the selection changes otherwise: opening, a search).
+#[derive(Resource, Default)]
+pub struct GridSel(pub Option<String>);
+
 /// The cursor moves the selection.
-fn follow_cursor(lists: Res<VirtualLists>, grid: Res<Grid>, cat: Res<SandboxCatalogue>, mut ui: ResMut<SandboxUi>) {
+fn follow_cursor(lists: Res<VirtualLists>, grid: Res<Grid>, cat: Res<SandboxCatalogue>, mut ui: ResMut<SandboxUi>, mut sel: ResMut<GridSel>) {
     if ui.screen != SandboxScreen::ChangeGun {
         return;
     }
@@ -197,6 +193,7 @@ fn follow_cursor(lists: Res<VirtualLists>, grid: Res<Grid>, cat: Res<SandboxCata
         && ui.view.selected.as_deref() != Some(&g.id)
     {
         ui.view.selected = Some(g.id.clone());
+        sel.0 = Some(g.id.clone());
     }
 }
 
@@ -244,13 +241,32 @@ fn keys(
             st.nav(nav);
         }
     }
-    if k(KeyCode::Enter) || k(KeyCode::NumpadEnter) {
-        match st.cursor {
-            Some(VCursor::Header(s)) => st.toggle_fold(s),
-            _ => {
-                out.write(GunAction::Switch);
+    // `\` (by its physical key, so typing never takes it) and Enter on a
+    // header: fold the class, or open it again and go back to the tile the
+    // fold left.
+    let fold_key = k(KeyCode::Backslash) || k(KeyCode::IntlBackslash);
+    let enter = k(KeyCode::Enter) || k(KeyCode::NumpadEnter);
+    match st.cursor {
+        Some(VCursor::Item(sec, i)) if fold_key => {
+            st.fold(sec, true);
+            ui.view.fold_return = Some((sec, i));
+        }
+        Some(VCursor::Header(sec)) if fold_key || enter => {
+            if st.is_folded(sec) {
+                st.fold(sec, false);
+                if let Some((rs, ri)) = ui.view.fold_return.take()
+                    && rs == sec
+                {
+                    st.select(VCursor::Item(rs, ri));
+                }
+            } else {
+                st.fold(sec, true);
             }
         }
+        Some(VCursor::Item(..)) if enter => {
+            out.write(GunAction::Switch);
+        }
+        _ => {}
     }
     let selected = ui.view.selected.clone();
     if ctrl {
@@ -262,33 +278,49 @@ fn keys(
             }
         }
     }
-    // Typing finds (letters and digits; not with Ctrl). I and R act when
-    // nothing has been typed.
+    let failed_now = selected.as_deref().and_then(|id| cat.get(id)).and_then(|g| match (&g.unit, SandboxCatalogue::unit_state(g, &progress)) {
+        (Some(u), UnitState::Failed { .. }) => Some((g.game.clone(), u.clone())),
+        _ => None,
+    });
+    // Ctrl+I and Ctrl+R: the same at any time.
+    if ctrl && k(KeyCode::KeyI) {
+        ui.view.detail = !ui.view.detail;
+    }
+    if ctrl
+        && k(KeyCode::KeyR)
+        && let Some((game, unit)) = failed_now.clone()
+    {
+        requests.write(UnitRequest::Retry { game, unit });
+    }
+    let failed = selected
+        .as_deref()
+        .and_then(|id| cat.get(id))
+        .and_then(|g| match (&g.unit, SandboxCatalogue::unit_state(g, &progress)) {
+            (Some(u), UnitState::Failed { .. }) => Some((g.game.clone(), u.clone())),
+            _ => None,
+        });
+    // Typing: letters and digits go to the search (not with
+    // Ctrl or Alt held, and never `\`); before anything is typed, I is
+    // the model view and R retries the selected gun's failed download
+    // (otherwise R types).
+    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
     for e in typed.read() {
-        if e.state != ButtonState::Pressed || ctrl {
+        if e.state != ButtonState::Pressed || ctrl || alt || matches!(e.key_code, KeyCode::Backslash | KeyCode::IntlBackslash) {
             continue;
         }
+        let empty = ui.view.search.is_empty();
         match &e.logical_key {
             Key::Backspace => {
                 ui.view.search.pop();
             }
-            Key::Space if !ui.view.search.is_empty() => ui.view.search.push(' '),
-            Key::Character(s) => {
-                let empty = ui.view.search.is_empty();
-                if empty && s.eq_ignore_ascii_case("i") {
-                    ui.view.detail = !ui.view.detail;
-                } else if empty && s.eq_ignore_ascii_case("r") {
-                    if let Some(g) = selected.as_deref().and_then(|id| cat.get(id))
-                        && let (Some(u), UnitState::Failed { .. }) = (&g.unit, SandboxCatalogue::unit_state(g, &progress))
-                    {
-                        requests.write(UnitRequest::Retry { game: g.game.clone(), unit: u.clone() });
-                    }
-                } else if empty && s.eq_ignore_ascii_case("b") {
-                    out.write(GunAction::Close);
-                } else if ui.view.search.len() < 48 {
-                    ui.view.search.push_str(s);
+            Key::Space if !empty => ui.view.search.push(' '),
+            Key::Character(c) if empty && c.eq_ignore_ascii_case("i") => ui.view.detail = !ui.view.detail,
+            Key::Character(c) if empty && c.eq_ignore_ascii_case("r") && failed.is_some() => {
+                if let Some((game, unit)) = failed.clone() {
+                    requests.write(UnitRequest::Retry { game, unit });
                 }
             }
+            Key::Character(c) if ui.view.search.len() < 48 => ui.view.search.push_str(c),
             _ => {}
         }
     }
@@ -441,7 +473,6 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
     let back = ui.boxed(&mut c, crumbs, UiStyle { gap: Some(0.45), align: Some(AlignItems::Center), ..UiStyle::row() });
     kit_icon(&mut c, &look, back, "back", 0.5, Tone::Fg2, 1.0);
     ui.text(&mut c, back, Role::Mono, 0.52, Tone::Fg2, "Sandbox");
-    ui.kbd(&mut c, back, "B", 0.5, Tone::Fg3);
     ui.kbd(&mut c, back, "Esc", 0.5, Tone::Fg3);
     let t = ui.text(&mut c, crumbs, Role::DisplayBold, 1.9, Tone::Fg, "Change gun");
     c.entity(t).insert(UiParityId::new("gun.title"));
@@ -474,7 +505,16 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
     // The foot: the keys, the pinned bar at the right.
     let foot = ui.boxed(&mut c, root, UiStyle { align: Some(AlignItems::FlexEnd), shrink: Some(0.0), ..UiStyle::row() });
     let keys = ui.boxed(&mut c, foot, UiStyle { gap: Some(1.1), align: Some(AlignItems::Center), h: Some(2.6), ..UiStyle::row() });
-    for (k, w) in [("Type", "Find"), ("\u{2190}\u{2191}\u{2193}\u{2192}", "Tile"), ("I", "Model"), ("Enter", "Switch"), ("Ctrl 1-6", "Pin"), ("Esc", "Back to the range")] {
+    for (k, w) in [
+        ("\u{2191}\u{2193}\u{2190}\u{2192}", "Tile"),
+        ("Enter", "Switch, or fold"),
+        ("\\", "Fold this class"),
+        ("I", "Model"),
+        ("Ctrl 1-6", "Pin"),
+        ("R", "Retry"),
+        ("Type", "Find"),
+        ("Esc", "Back to the range"),
+    ] {
         key_hint(&mut c, &ui, keys, k, w, 0.5, Tone::Fg2);
     }
     ui.boxed(&mut c, foot, UiStyle { grow: Some(1.0), ..UiStyle::row() });
@@ -538,9 +578,20 @@ fn draw(
     if let Some(g) = ui_state.view.selected.as_deref().and_then(|id| cat.get(id)) {
         detail(&mut c, &ui, &look, p.detail, g, &progress, ui_state.view.detail, ui_state.pins.slot_of(&g.id));
     }
-    let hint = ui.boxed(&mut c, p.pins, UiStyle::row());
-    ui.text(&mut c, hint, Role::Mono, 0.46, Tone::Fg, "Ctrl+1-6 on a tile, or drag a gun here");
-    let slots = pin_bar(&mut c, &ui, &look, p.pins, &next.pins, next.current.as_deref().and_then(|g| ui_state.pins.slot_of(g)), next.drop, 0.72, 1.0);
+    let hint = ui.boxed(&mut c, p.pins, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
+    let ghost = ui_state.drag.as_ref().and_then(|d| Some((d.over?, face(&d.gun))));
+    match &ghost {
+        Some((slot, g)) => {
+            ui.mark(&mut c, hint, Tone::Acc, 0.3, 0.7);
+            let old = next.pins.get(*slot).cloned().flatten().map(|o| o.name);
+            let t = ui.text(&mut c, hint, Role::Mono, 0.46, Tone::Fg, &super::model::drop_hint(&g.name, *slot, old.as_deref()));
+            c.entity(t).insert(UiParityId::new("gun.drop.hint"));
+        }
+        None => {
+            ui.text(&mut c, hint, Role::Mono, 0.46, Tone::Fg, "Ctrl+1-6 on a tile, or drag a gun here");
+        }
+    }
+    let slots = pin_bar(&mut c, &ui, &look, p.pins, &next.pins, next.current.as_deref().and_then(|g| ui_state.pins.slot_of(g)), ghost, 0.72, 1.0);
     for (i, s) in slots.into_iter().enumerate() {
         c.entity(s).insert((PinDrop(i), RelativeCursorPosition::default()));
     }
@@ -731,7 +782,7 @@ fn tag_popover(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, s: &Sandb
 }
 
 /// A tile's foot (module doc): the delivery and fire mode, or the
-/// download state (`TILE_DOWNLOAD`).
+/// download state (along the bottom edge).
 fn tile_foot(c: &mut Commands, ui: &Ui, look: &Look, tile: Entity, g: &SandboxGun, st: &UnitState, on: bool) {
     let foot = ui.boxed(c, tile, UiStyle { gap: Some(0.4), align: Some(AlignItems::Center), h: Some(0.9), ..UiStyle::row() });
     match st {
@@ -764,8 +815,9 @@ fn tile_foot(c: &mut Commands, ui: &Ui, look: &Look, tile: Entity, g: &SandboxGu
             ui.kbd(c, foot, "R", 0.38, Tone::Fg2);
         }
     }
-    // The bottom edge: the download's bar (`TILE_DOWNLOAD`).
-    if TILE_DOWNLOAD == TileDownload::BottomEdge && matches!(st, UnitState::Downloading { .. } | UnitState::Queued { .. }) && !on {
+    // The bottom edge: the download's bar (the cursor is an outline, so
+    // they never stack).
+    if matches!(st, UnitState::Downloading { .. } | UnitState::Queued { .. }) && !on {
         let edge = c
             .spawn((
                 Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, height: look.val(0.24), ..default() },
@@ -847,7 +899,7 @@ fn bind(
                         .spawn((
                             UiStyle { gap: Some(0.45), align: Some(AlignItems::Center), justify: Some(JustifyContent::Center), grow: Some(1.0), pad: Some([0.0, 0.4, 0.0, 0.4].into()), ..UiStyle::column() }
                                 .bg_a(Tone::Fg, if on { 0.1 } else { 0.035 })
-                                .outline(if on { Tone::Fg2 } else { Tone::Fg5 }, 1.0),
+                                .outline(if on { Tone::Acc } else { Tone::Fg5 }, 1.0),
                             Node::default(),
                             VHit { slot, col: Some(col) },
                             clickable(),
@@ -856,7 +908,22 @@ fn bind(
                         ))
                         .id();
                     if on {
-                        ui.underline(&mut c, tile, Tone::Acc, 0.24);
+                        // The cursor: an accent outline two pixels in.
+                        let px = (2.0 * look.units.scale_factor).round() / look.units.scale_factor;
+                        c.spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::ZERO,
+                                right: Val::ZERO,
+                                top: Val::ZERO,
+                                bottom: Val::ZERO,
+                                border: UiRect::all(Val::Px(px)),
+                                ..default()
+                            },
+                            BorderColor::all(look.tone(Tone::Acc)),
+                            Pickable::IGNORE,
+                            ChildOf(tile),
+                        ));
                     }
                     let top = ui.boxed(&mut c, tile, UiStyle { justify: Some(JustifyContent::SpaceBetween), align: Some(AlignItems::Center), ..UiStyle::row() }.abs([Some(0.4), Some(0.38), Some(0.4), None]));
                     ui.text(&mut c, top, Role::Mono, 0.38, Tone::Fg3, &g.game_short);
@@ -1009,7 +1076,7 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
 
 /// The view's systems.
 pub fn add(app: &mut App) {
-    app.init_resource::<Grid>().add_message::<GunAction>().add_message::<KeyboardInput>().add_systems(
+    app.init_resource::<Grid>().init_resource::<GridSel>().add_message::<GunAction>().add_message::<KeyboardInput>().add_systems(
         Update,
         (keys, pointer, act, sync_grid, follow_cursor, open_close, draw)
             .chain()

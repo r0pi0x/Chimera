@@ -144,11 +144,15 @@ fn a_session_of_matches_stops_making_tables() {
     // went on and off in one move and its kick stayed on from the spawn:
     // 1,237, 70 more, 5 of them with Halo's parts; with TF2's classes as
     // bodies, Halo's grenade rung and the sandbox, 1,359 and 103 more, none
-    // of them TF2's own parts: the draws' path, so 120).
+    // of them TF2's own parts: the draws' path, so 120; main at 1,414
+    // and 118 more on 2026-11-16, already past 1,400; with TF2's nine
+    // melee weapons, in the finale's pool and each TF2 rung's kit, whose
+    // holders are TF2's classes, 1,505 and 121 more: 1,600 and 140 until
+    // the class parts go on and off in one move).
     let made = chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20);
     eprintln!("{made}");
     assert!(
-        last.0 < 1400 && last.0 - rows[3].0 < 120,
+        last.0 < 1600 && last.0 - rows[3].0 < 140,
         "{} archetypes after four matches, {} after eight: a part that comes and goes on characters, one at a time, makes \
          one for every combination of the others. Keep it on them from the spawn \
          (`chimera_core::character::CharacterPartsExt::on_every_character`) or put a game's parts on and off in one move \

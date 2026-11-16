@@ -312,7 +312,14 @@ the user's go-ahead: no Actions runs unless asked.
     props (`prop add bottles|tin_cans|target_board`: `SpawnProp`,
     `RemoveProp`, `ClearProps`, `ResetProp`, `Prop`, `PropHit`,
     `ShotGroup`), targets silent in chat, and half speed is
-    `host_timescale 0.5` (measurements in simulation time). Next: their
+    `host_timescale 0.5` (measurements in simulation time). Since
+    (2026-11-16, later): the last layout repeated (`sandbox repeat`,
+    `RepeatLayout`, `SandboxLayout`; not saved to disk yet), `rung <gun>
+    as <body>` (`PutOnGun`: TF2's shotgun as the class asked for), the
+    conditions as requests with their state (`SetCondition`,
+    `SandboxConditions`: god, endless ammo, time scale, third person and
+    its distance, bots frozen), a projectile that misses a board counts,
+    impact marks on props, a body's own second bar (Halo's Jackal). Next: their
     screens (the party UI); a gun and rung picker menu; a firing range
     layout with 100 and 200 m of floor; saving a loadout of guns to cycle;
     picking a rung character (Combat Arms' turret) instead of the draw's;

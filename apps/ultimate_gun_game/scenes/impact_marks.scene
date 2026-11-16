@@ -1,0 +1,50 @@
+# Bullet impacts on the props (their parts name their surfaces): a group
+# on the board's face and a hole on the cans' shelf, Combat Arms' M4A1 on
+# the greybox (a scene script: chimera_client's `scene`).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/impact_marks.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+setpos 0 -1181 0
+rung combat_arms:m4a1
+setang 0 96
+prop add target_board 5
+setang 0 70
+prop add tin_cans 1.6            # close: its top seen from above
+wait 400                     # the gun deployed: the first shots aren't lost
+prop look 1 0
++attack
+wait 5
+-attack
+wait 20
++attack
+wait 5
+-attack
+wait 20
++attack
+wait 5
+-attack
+wait 20
+prop look 2 shelf
+wait 5
++attack
+wait 5
+-attack
+wait 20
++attack
+wait 5
+-attack
+wait 20
++attack
+wait 5
+-attack
+wait 30
+prop look 1 0
+wait 10
+shot impact_board
+prop look 2 shelf
+wait 10
+shot impact_shelf
+prop group 1
+wait 30

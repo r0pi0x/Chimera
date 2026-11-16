@@ -1386,15 +1386,18 @@ through small interfaces, with fakes for the stagings.
   from `KillMeasured` and `HitMeasured`, `LookPanel`, `BlastMeasured`,
   `PropSpec`, `SandboxOptions`), `bench::CharacterCatalogue` (the bodies
   a target may be).
-- **Open details** (placeholders until the user signs them off):
-  `change_gun::GRID_KEYS` (arrows move between tiles, ↑ from a section's
-  first row stops on its header, ← folds and → opens a header, Enter
-  switches, I the larger model view), `change_gun::TILE_DOWNLOAD` (a bar
-  along the tile's bottom edge, its words in the tile's foot),
-  `change_gun::DROP_LOOK` (the slot filled with the accent at .28, a
-  2 px accent border, DROP HERE).
-- **Left**: the bridge from the mechanics' components and facts into
-  `link`'s resources (theirs, when `targets` lands); real portraits and
+- **Decided** (the design rules, section 22): a tile's download state
+  is a bar along its bottom edge, the keyboard cursor the tile's accent
+  outline; a drop shows a ghost of the gun in a dashed accent frame, the
+  gun it replaces struck through and "Release: <gun> to <n>, replacing
+  <old>" beside the bar; the grid keys: arrows wrap in reading order
+  (a folded class's header a stop), Enter switches on a tile and folds
+  or opens on a header, `\\` (the physical key) folds the class and
+  opens it back on the same tile, I the large model, R retries a failed
+  download (both before anything is typed), every other letter finds.
+- **Bridged** to the mechanics (`minigame::targets`, `props`): targets,
+  props and their groups, kills and hits, the looked-at target, blasts.
+- **Left**: real portraits and
   model renders (generated per asset, the ingest plan); the tag
   popover's own search; the 3D model viewer; K (repeat the last set-up)
   and Q's quick panel.

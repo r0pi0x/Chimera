@@ -696,7 +696,7 @@ pub fn stage(w: &mut World, args: &[String]) -> Result<(), String> {
             }
             if what == "drag" {
                 ui.view.selected = Some("tf2:tf_weapon_rocketlauncher".into());
-                ui.drag = Some(Drag { gun: "tf2:tf_weapon_rocketlauncher".into(), at: Vec2::new(1240.0, 975.0), over: Some(5) });
+                ui.drag = Some(Drag { gun: "tf2:tf_weapon_rocketlauncher".into(), at: Vec2::new(1240.0, 975.0), over: Some(1) });
                 ui.pin_bar.wake(now);
             }
         }

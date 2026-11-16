@@ -9,7 +9,11 @@
 //! player, still, strafing or walking, firing back or not, protected or
 //! not, measured), every blast measured, and props with `prop` (bottles and
 //! tin cans to knock off a shelf, a target board keeping the shot group:
-//! `minigame::props`).
+//! `minigame::props`). `sandbox repeat` puts the last layout of targets
+//! and props back in front of the player (`minigame::layout`); `sandbox
+//! <god|ammo|timescale|thirdperson|camdist|freeze> <value>` and `sandbox
+//! conditions` are the conditions (`minigame::conditions`; the camera's
+//! two are the client's, kept from its camera by `camera_state`).
 //!
 //! The definition (`SANDBOX`, `definition`) is the automatic gun game's
 //! without its draw: every gun and grenade of the playable games as the
@@ -38,6 +42,8 @@ pub const TIME_LIMIT: f32 = 1.0e7;
 
 /// The sandbox's help (`sandbox help`).
 pub const HELP: &str = "sandbox [map]: a match alone on the greybox (or `map`), nothing advances or ends.\n\
+    sandbox restart [map]: start it again (plain `sandbox` does nothing when it already plays on that map).
+\
     rung <n | gun id or part | next | prev | list> [player | all]: put yourself on a rung (numbered from 1).\n\
     ca_bot_add [alpha|bravo]: add a bot; ca_bot_kick: remove them; ca_bot_stop 1: they stand still;\n\
     ca_bot_dont_shoot 1: they never fire.\n\
@@ -51,6 +57,11 @@ pub const HELP: &str = "sandbox [map]: a match alone on the greybox (or `map`), 
     host_timescale 0.5: half speed (measured times stay in game seconds).\n\
     god, noclip: no damage, fly through walls (sv_cheats is 1 here).\n\
     guns never run dry (the ladder refills them); kills and deaths never move your rung.\n\
+    sandbox repeat (also target repeat): clear, then put back the last layout of targets and props you made,\n\
+    each on its own line and distance from where you stand and look now (kept across maps and restarts).\n\
+    rung <gun id> as <body id>: that gun as that body (TF2's shotgun as tf2:soldier, a Halo gun as halo_ce:elite).\n\
+    sandbox god on|off, ammo on|off, timescale 1|0.5|0.25, thirdperson on|off, camdist <units>, freeze on|off:\n\
+    the conditions (`sandbox conditions` says them; freeze holds every target still). No spread or recoil switch exists.\n\
     `+sandbox [map]` on the command line starts it at launch; `+rung <id>` there waits for the match.\n\
     ugg_new or `minigame <id>` leaves the sandbox.";
 
@@ -145,20 +156,66 @@ pub fn generate(world: &mut World, base: &str) -> Result<&'static MinigameDef, S
     minigame::add(world, SANDBOX, &text)
 }
 
-/// `sandbox [map | help]`: start it.
+/// The words `sandbox <word> ...` takes for a condition
+/// (`minigame::conditions`), not a map.
+const CONDITIONS: [&str; 7] = ["god", "ammo", "timescale", "thirdperson", "camdist", "freeze", "conditions"];
+
+/// `sandbox [map | restart [map] | help | repeat | <condition> <value>]`:
+/// start it (nothing when it already plays on that map: `restart` starts
+/// it again), or repeat the last layout, or set a condition.
 pub fn command(w: &mut World, a: &[String], base: &str) -> Result<Option<String>, String> {
-    if a.first().is_some_and(|h| h.eq_ignore_ascii_case("help")) {
-        return Ok(Some(HELP.to_string()));
+    let first = a.first().map(|s| s.to_ascii_lowercase());
+    match first.as_deref() {
+        Some("help") => return Ok(Some(HELP.to_string())),
+        Some("repeat") => return minigame::layout::repeat_command(w),
+        Some("conditions") => return minigame::conditions::command(w, &["list".to_string()]),
+        Some(c) if CONDITIONS.contains(&c) => return minigame::conditions::command(w, a),
+        _ => {}
     }
+    // `sandbox restart [map]` starts it again whatever plays.
+    let restart = first.as_deref() == Some("restart");
+    let a = if restart { &a[1..] } else { a };
     if w.get_resource::<minigame::Minigames>().and_then(|m| m.get(SANDBOX)).is_none() {
         generate(w, base)?;
     }
     let map = a.first().map_or("greybox", String::as_str);
-    let said = chimera_net::minigame_net::change_match(w, SANDBOX, Some(map))?;
+    // Already playing there: nothing to do (a start costs a hitch, the
+    // start sound and the layout's bodies; a control that fires twice
+    // must not restart it).
+    if !restart && minigame::rung_command::holds(w) && chimera_net::net::current_map(w) == chimera_net::net::normalize_map(map) {
+        return Ok(Some(format!("sandbox: already playing on {map} (`sandbox restart` starts it again)")));
+    }
+    // From the main menu no world is in (the map "in play" is only a
+    // name, the greybox's): the map is loaded, and its load takes the
+    // front end into the game as any map change does.
+    #[cfg(feature = "present")]
+    let at_menu = w.get_resource::<party_kit::main_menu::PartyMenu>().is_some_and(|m| m.shown());
+    #[cfg(not(feature = "present"))]
+    let at_menu = false;
+    let said = if at_menu {
+        chimera_net::minigame_net::change_match_loading(w, SANDBOX, Some(map))?
+    } else {
+        chimera_net::minigame_net::change_match(w, SANDBOX, Some(map))?
+    };
     let mut console = w.resource_mut::<Console>();
     console.submit("sv_cheats 1");
     console.print(Level::Info, "sandbox: `sandbox help` lists what to try");
     Ok(Some(said))
+}
+
+/// The camera's conditions from the client's camera (`minigame::
+/// conditions`: third person and its distance are the client's).
+#[cfg(feature = "present")]
+pub fn camera_state(
+    camera: Option<Res<chimera_client::client::view::CameraMode>>,
+    conditions: Option<ResMut<minigame::conditions::SandboxConditions>>,
+) {
+    let (Some(camera), Some(mut c)) = (camera, conditions) else { return };
+    if c.third_person != camera.third_person || c.camera_distance != camera.ideal_dist {
+        c.third_person = camera.third_person;
+        c.camera_distance = camera.ideal_dist;
+        info!("{}", c.line());
+    }
 }
 
 /// A command line's `+sandbox [map]` made into what the app starts with:

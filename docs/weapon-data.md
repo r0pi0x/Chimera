@@ -163,9 +163,15 @@ standing = { up = 1.0, up_step = 0.175, side = 0.375, side_step = 0.0375, up_cap
 
 Melee weapons give `[melee.primary]` and `[melee.secondary]` swings (range,
 hull, hull_reach, facing_cos, refine (a box hit re-traced to twice its
-distance and its corners: HL2:DM's), damage, follow_up = [window, damage], backstab,
-hitgroups, hit/miss refires, force per damage point, armor_ratio, quantum,
-sounds); `undroppable = true` and `pickup_team = 1` are flags; `death_drop
+distance and its corners: HL2:DM's), damage, follow_up = [window, damage], backstab
+(a number: CS:S's damage from behind; or a table `{ behind, facing,
+same_way, health, credit }`: TF2's three flattened dot tests, the damage
+`health` times the target's current health, the kill credited to the id
+`credit`), delay (seconds from the swing's start to its hit, traced along
+the view then: TF2's smack delay; 0 hits at once), hitgroups, hit/miss
+refires, force per damage point, armor_ratio, quantum, sounds:
+sound_hit, sound_hit_world, sound_miss, and sound_swing, every swing's at
+its start); `undroppable = true` and `pickup_team = 1` are flags; `death_drop
 = 3` marks a weapon the dead drop beside their best gun (`DeathDrop`: of
 those carried, the highest goes; CS:S's grenades); `kept_on_drop = true`
 one the drop key leaves in hand (`KeptOnDrop`; CS:S's grenades);

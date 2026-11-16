@@ -22,9 +22,12 @@
 //!   is the body's fraction of its own maximum, whatever that is: the
 //!   Grunt's 40 points are its 1.0), and a full shield (1 over the party
 //!   balance's incoming scale, `cross_game::shield_unit`) when the kind's
-//!   shield covers its body (the Elite's), else 0 (the Grunt has none; the
-//!   Jackal's is the disc on its arm, which other games' hits and the
-//!   armour bar never see: `vitality::update`).
+//!   shield covers its body (the Elite's) or is an arm shield's disc (the
+//!   Jackal's), else 0 (the Grunt has none).
+//! - **Its second bar now** (`second_bar`): the Jackal's disc is not the
+//!   armour value other games' hits and the armour bar see
+//!   (`vitality::update`), so the body reports it itself: its
+//!   `Vitality::shield` in the same unit; the others' is their `Armor`.
 
 use bevy::prelude::*;
 use chimera_sim::minigame::targets::TargetCharacter;
@@ -91,7 +94,33 @@ pub fn vitals(world: &World, id: &str) -> (f32, f32) {
         }
     };
     let table = super::vitality_of(spartan, world.get_resource::<BodyTables>(), kind_of(id).as_ref());
-    (1.0, if table.shield_covers_body() { full } else { 0.0 })
+    let disc = kind_of(id).is_some_and(|k| has_disc(world, k));
+    (1.0, if table.shield_covers_body() || disc { full } else { 0.0 })
+}
+
+fn has_disc(world: &World, kind: BodyKind) -> bool {
+    let fresh;
+    let data = match world.get_resource::<CampaignData>() {
+        Some(d) => d,
+        None => {
+            fresh = CampaignData::builtin();
+            &fresh
+        }
+    };
+    data.body(kind).is_some_and(|d| d.shield_disc.is_some())
+}
+
+/// Target `e`'s second bar now when it is an arm shield's disc (module
+/// doc): its shield fraction in `Armor`'s unit; None for any other body.
+pub fn second_bar(world: &World, e: Entity) -> Option<f32> {
+    let kind = *world.get::<BodyKind>(e)?;
+    if !has_disc(world, kind) {
+        return None;
+    }
+    let v = world.get::<crate::game::vitality::Vitality>(e)?;
+    let balance = world.get_resource::<crate::game::cross_game::CrossGame>();
+    let scale = balance.filter(|b| b.enabled).map_or(1.0, |b| b.incoming_scale);
+    Some(crate::game::cross_game::shield_unit(v.shield.max(0.0), scale))
 }
 
 /// The campaign kinds data/campaign.toml has a row for, as target bodies
@@ -103,7 +132,7 @@ pub fn characters() -> Vec<TargetCharacter> {
         .filter(|k| *k != BodyKind::Spartan && data.body(*k).is_some())
         .map(|k| {
             let (id, name) = target_id(k);
-            TargetCharacter { id, name, game: crate::game::GAME, holds, wear, vitals }
+            TargetCharacter { id, name, game: crate::game::GAME, holds, wear, vitals, second_bar: Some(second_bar) }
         })
         .collect()
 }

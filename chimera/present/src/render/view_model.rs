@@ -2,7 +2,9 @@
 //! own weapon, with hands, drawn at the eye over the world. Games load
 //! `MapViewModel`s with the map (or later: `map::add_view_model`, built
 //! on a task and over the next frames by `build_late` with its own textures,
-//! also with no map spawned: `assets_without_map`), drive each
+//! the one a view shows now first (`bodies::LateWanted::view`, written by
+//! `draw_view_models`), the rest `bodies::LATE_AHEAD` at a time; also with
+//! no map spawned: `assets_without_map`), drive each
 //! character's `ViewAnimator`
 //! (which sequence plays) and `ViewModelOffset` (bob and sway), and send
 //! `ViewModelEvent`s (muzzle flashes; their types are in `map::view_model`);
@@ -264,8 +266,10 @@ type CookedViewModel = (ViewModelAsset, Vec<Handle<Image>>);
 /// Build the render assets of view models added after the map spawned
 /// (`map::add_view_model`): their own textures (`LateViewModelTextures`)
 /// become images after the map's, on a task and over the next frames
-/// (`late_build`): until then the key draws as if it had none. With no map's
-/// assets (`assets_without_map`) only theirs.
+/// (`late_build`): until then the key draws as if it had none. One a view
+/// shows now (`LateWanted::view`) starts at once and goes in before the
+/// rest, which start in order, `LATE_AHEAD` on their way at a time. With no
+/// map's assets (`assets_without_map`) only theirs.
 #[allow(clippy::too_many_arguments)]
 pub fn build_late(
     models: Option<Res<ViewModels>>,
@@ -277,6 +281,7 @@ pub fn build_late(
     mut dormant: Option<ResMut<super::prop_material::DormantProps>>,
     mut bindposes: ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>,
     compressed: Option<Res<bevy::image::CompressedImageFormatSupport>>,
+    wanted: Option<Res<super::bodies::LateWanted>>,
     mut queue: Local<LateQueue<CookedViewModel>>,
 ) {
     let (Some(models), Some(late), Some(mut materials)) = (models, late, materials) else {
@@ -294,10 +299,23 @@ pub fn build_late(
     };
     let bc = super::images::bc_wanted(compressed.as_deref());
     let (lit, view) = (assets.lit, assets.view);
-    for v in models.0.iter() {
-        let Some(own) = late.0.get(&v.key).filter(|_| !assets.models.contains_key(&v.key) && !queue.has(&v.key)) else {
+    let shown_now = |key: &str| wanted.as_ref().is_some_and(|w| w.view.contains_key(key));
+    // Those a view shows now first, at once; then the rest in order,
+    // `LATE_AHEAD` on their way at a time (as `bodies::build_late_held`).
+    let mut ahead = queue.len();
+    let missing = models
+        .0
+        .iter()
+        .filter_map(|v| Some((v, late.0.get(&v.key)?)))
+        .filter(|(v, _)| !assets.models.contains_key(&v.key));
+    for (v, own) in missing.clone().filter(|(v, _)| shown_now(&v.key)).chain(missing) {
+        if ahead >= super::bodies::LATE_AHEAD && !shown_now(&v.key) {
+            break;
+        }
+        if queue.has(&v.key) {
             continue;
-        };
+        }
+        ahead += 1;
         let (v, own) = (v.clone(), own.clone());
         let base = MapData {
             fog: assets.late_base.fog.clone(),
@@ -317,7 +335,7 @@ pub fn build_late(
             (asset, textures)
         });
     }
-    if let Some((key, (mut asset, textures))) = queue.step(&mut to) {
+    if let Some((key, (mut asset, textures))) = queue.step_preferring(&mut to, shown_now) {
         // Its images after the others': what names them moves past those.
         let base = assets.textures.len();
         assets.textures.extend(textures);
@@ -413,15 +431,20 @@ pub fn draw_view_models(
     >,
     mut bodies: Query<(&mut ViewModelBody, &mut Transform, &mut Visibility), Without<BodyJoint>>,
     mut joints: Query<&mut Transform, With<BodyJoint>>,
-    (mut materials, dormant, mut probe_table): (
+    (mut materials, dormant, mut probe_table, real, mut wanted): (
         Option<ResMut<Assets<PropMaterial>>>,
         Option<Res<super::prop_material::DormantProps>>,
         Option<ResMut<super::probe_lit::ProbeTable>>,
+        Res<Time<Real>>,
+        Option<ResMut<super::bodies::LateWanted>>,
     ),
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
     let settings = settings.map(|s| *s).unwrap_or_default();
+    // Keys a view would show that are not built (or not added) yet:
+    // `build_late` builds them first.
+    let mut missing = std::collections::BTreeSet::new();
     for (anchor, parent, anchor_camera, anchor_projection, eye, children, tonemapping, anchor_target, source) in
         &anchors
     {
@@ -433,10 +456,11 @@ pub fn draw_view_models(
             || put_away
                 .get(anchor_owner(parent, source))
                 .is_ok_and(|c| c.weapon_hidden != 0);
-        let shown = state
-            .filter(|_| !hidden)
-            .and_then(|(s, _)| s.key.as_deref())
-            .and_then(|k| Some((k, assets.models.get(k)?, models.as_ref()?.get(k)?)));
+        let want = state.filter(|_| !hidden).and_then(|(s, _)| s.key.as_deref());
+        let shown = want.and_then(|k| Some((k, assets.models.get(k)?, models.as_ref()?.get(k)?)));
+        if let Some(k) = want.filter(|_| shown.is_none()) {
+            missing.insert(k.to_string());
+        }
         let camera = children.into_iter().flatten().find(|c| cameras.contains(**c)).copied();
         let Some((camera, mut cam, mut projection, cam_children, target, cam_tonemapping)) =
             camera.and_then(|c| cameras.get_mut(c).ok())
@@ -512,6 +536,9 @@ pub fn draw_view_models(
                 commands.entity(e).try_despawn();
             }
             if let Some((key, a, _)) = shown {
+                if let Some(since) = wanted.as_ref().and_then(|w| w.view.get(key)) {
+                    debug!("late view model {key}: drawn {:.2} s after it was first wanted", real.elapsed_secs_f64() - since);
+                }
                 spawn_body(&mut commands, camera, key, a, mirror, materials.as_deref_mut(), dormant.as_deref());
             }
             continue;
@@ -639,6 +666,17 @@ pub fn draw_view_models(
                 }
             }
             body.cubemap = nearest;
+        }
+    }
+    if let Some(w) = wanted.as_mut()
+        && (w.view.len() != missing.len() || !missing.iter().all(|k| w.view.contains_key(k)))
+    {
+        w.view.retain(|k, _| missing.contains(k));
+        for k in missing {
+            w.view.entry(k).or_insert_with_key(|k| {
+                debug!("late view model {k}: wanted, not built yet");
+                real.elapsed_secs_f64()
+            });
         }
     }
 }
