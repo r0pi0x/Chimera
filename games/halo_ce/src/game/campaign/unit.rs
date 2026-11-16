@@ -247,9 +247,26 @@ pub fn load_body(kind: BodyKind, def: &BodyDef, mount: &Mount, decode: bool, gun
     // hidden on 1 (`super::shield_disc`).
     if let Some(disc) = def.shield_disc.as_deref().map(str::to_ascii_lowercase) {
         let mut any = false;
-        for m in &mut character.model.meshes {
+        for (i, m) in character.model.meshes.iter_mut().enumerate() {
             if m.material.to_ascii_lowercase().contains(&disc) {
                 m.body = Some((0, 0));
+                // The energy shield's colour (`materials::generic_stage_tint`:
+                // the looser reading, for this disc alone), on the mesh
+                // and every skin's look of it.
+                let path = m.material.replace('/', "\\");
+                let shader = file
+                    .find(class::SHADER_TRANSPARENT_GENERIC, &path)
+                    .and_then(|t| blam_formats::shader::Shader::read(&file, t).ok());
+                if let Some(blam_formats::shader::Shader::TransparentGeneric(s)) = shader
+                    && m.tint.is_none()
+                {
+                    m.tint = super::super::maps::materials::generic_stage_tint(&s);
+                    for skin in &mut character.model.skins {
+                        if let Some(look) = skin.get_mut(i) {
+                            look.tint = m.tint;
+                        }
+                    }
+                }
                 any = true;
             }
         }
