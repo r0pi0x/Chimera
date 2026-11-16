@@ -558,21 +558,24 @@ loads a drawn slice.
   whole after one) is loaded again, and `MapChange::reload` (the map
   file's change tick when it began) holds the match until the load has
   replaced it.
-- **Names.** `vote::map_name` (the vote's and the lobby's label; now a
-  `Cow`) and `hud::map_display_name` read a slice as "<map's display
-  name>: <slice id as words>": `halo_ce:bloodgulch@west_base` is
-  "Bloodgulch: West Base". They are pure functions of the id, so the map
-  part is the id's words, not the data's `map_name` ("Blood Gulch"; the
-  data's full name, "Blood Gulch: West Base", is `ArenaSlice::name`, sent
-  with the match). The loading screen shows the map's id (the level
-  change carries the map only): "bloodgulch".
+- **Names.** `hud::map_display_name` and `vote::map_name` read a slice
+  from its id alone ("Bloodgulch: West Base"); the UI's label is
+  `vote::map_label` (second pass, below).
 - **The Maps picker** (`party_kit::maps_picker`): slices are listed after
-  their map, a row one step in (the same row and box), named by id; a
-  map's row sets it and its slices; a slice toggles alone; a slice whose
-  map is off shows off, and turning it on turns the map on (its other
-  slices stay off); the counts are of whole maps. `mp_maps_off` names
-  `map@id`, and `MapsOff::has` takes a map's slices with it.
-  `ui_scene play maps slices` stages it (the games without slices folded).
+  their map, a row one step in (the same row and box); a map's row sets
+  it and its slices; a slice toggles alone (second pass, below).
+  `ui_scene play maps slices` stages it.
+- **Second pass** (2026-11-16, the UI team's decisions): the labels use
+  the data's names, `vote::map_label(slices, entry)` (the vote's cards,
+  the console's vote, the HUD's `{map}`, the loading page): "Blood Gulch:
+  West Base" (`ArenaSlice::name`), the id-derived "Bloodgulch: West Base"
+  without the data; whole maps as before. The loading page names a slice
+  once it is planned for the map coming in (`ArenaPlan`). The picker
+  counts every entry, maps and slices alike, names a slice's row by its
+  own name (`SliceDef::name`, "West Base"), and a slice toggles alone: on
+  under a map that is off is stored `+game:map@id` in `mp_maps_off`
+  (`maps_picker::ON_MARK`; `MapsOff::has`: a mark wins over its map; a
+  line without marks reads as before), the map's box then some on.
 - Proof: `map_fit`'s `a_slice_is_in_at_its_range_out_outside_it_and_out_
   when_unsafe`, `arena`'s `a_slices_stored_measures_join_the_pool`, the
   ballot's and the rotation's unit tests; party_kit's `arena_pool` (on

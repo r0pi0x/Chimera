@@ -212,6 +212,19 @@ pub fn candidates_weighted(
     out
 }
 
+/// A pool entry's label as the UI shows it (the vote's cards, the HUD's
+/// map, the loading page): an arena slice by its data's display name
+/// (`ArenaSlice::name`, "Blood Gulch: West Base") when `slices` has it,
+/// else `map_name` (the id-derived form, also a whole map's).
+pub fn map_label(slices: Option<&super::arena::ArenaSlices>, entry: &str) -> String {
+    if entry.contains('@')
+        && let Some(d) = slices.and_then(|s| s.find(entry).ok())
+    {
+        return d.slice.name.clone();
+    }
+    map_name(entry).into_owned()
+}
+
 /// The map's name as a player reads it: its id without the game; an arena
 /// slice (`game:map@id`) as "<map's display name>: <slice's name>"
 /// (`hud::map_display_name`: "Bloodgulch: West Base").
@@ -298,6 +311,17 @@ mod tests {
         }
         assert_eq!(map_name("halo_ce:bloodgulch@west_base"), "Bloodgulch: West Base");
         assert_eq!(map_name("cs_source:de_dust2"), "de_dust2");
+    }
+
+    #[test]
+    fn a_slices_label_is_its_datas_display_name_else_the_ids() {
+        let text = "[[slice]]\nmap = \"bloodgulch\"\nid = \"west_base\"\nname = \"West Base\"\nmap_name = \"Blood Gulch\"\n\
+                    points = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]\nseed = [5.0, 1.0, 5.0]\n";
+        let slices = crate::minigame::arena::ArenaSlices(crate::minigame::arena::parse("halo_ce", text).unwrap());
+        assert_eq!(map_label(Some(&slices), "halo_ce:bloodgulch@west_base"), "Blood Gulch: West Base");
+        assert_eq!(map_label(None, "halo_ce:bloodgulch@west_base"), "Bloodgulch: West Base", "no data: the id's");
+        assert_eq!(map_label(Some(&slices), "halo_ce:bloodgulch@east"), "Bloodgulch: East", "not in the data");
+        assert_eq!(map_label(Some(&slices), "cs_source:de_dust2"), "de_dust2", "a whole map as before");
     }
 
     #[test]

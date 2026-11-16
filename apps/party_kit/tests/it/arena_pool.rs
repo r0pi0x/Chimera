@@ -119,6 +119,14 @@ fn a_big_maps_slices_are_drawn_where_it_is_too_big_one_at_a_time() {
     assert!(!vote.candidates.iter().any(|m| m == "test:big"), "{vote:?}");
     let slices = vote.candidates.iter().filter(|m| m.starts_with("test:big@")).count();
     assert_eq!(slices, 1, "one slice of the big map: {vote:?}");
+    // The host's picker: the big map off with its west slice kept on
+    // (`mp_maps_off "test:big,+test:big@west"`): the pool has that slice,
+    // never the whole map nor its other slice.
+    console(&mut sim, "mp_maps_off \"test:big,+test:big@west\"");
+    let def = sim.server.app.world().resource::<chimera_sim::minigame::ActiveMinigame>().def;
+    let pool = minigame_net::rotation_pool(sim.server.app.world(), def);
+    assert!(pool.contains(&"test:big@west".to_string()), "{pool:?}");
+    assert!(!pool.iter().any(|m| m == "test:big" || m == "test:big@east"), "{pool:?}");
 }
 
 #[test]

@@ -2488,8 +2488,8 @@ news card; none hides it). The party pages need `+mainmenu` on a tool
 run: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
 <out>.png +ui_scene play server +mainmenu`. Revision 8's screens add
 `ui_scene play maps [slices]` (Host's Maps picker open; `slices`: the games
-without arena slices folded, a map's slices under it, one off), `ui_scene load [ask]` (the
-Signal loading screen, the Leave? dialog with `ask`; `+mainmenu` too) and
+without arena slices folded, a map off with its first slice on), `ui_scene load [ask|slice]` (the
+Signal loading screen, the Leave? dialog with `ask`, a slice loading with `slice`; `+mainmenu` too) and
 `ui_scene lobby host` (the host's view of a first lobby waiting for its
 Start, two parties with their edges).
 `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range>`

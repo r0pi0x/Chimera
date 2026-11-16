@@ -499,7 +499,8 @@ pub fn stage(w: &mut World, page: MenuPage, args: &[String]) -> Result<(), Strin
         pk.cursor = 6;
     }
     // `ui_scene play maps slices`: the games without arena slices folded,
-    // the cursor on the first map with slices, its first slice off.
+    // the cursor on the first map with slices, that map off and its first
+    // slice on.
     if page == MenuPage::Play && arg.as_deref() == Some("maps") && args.get(1).is_some_and(|a| a == "slices") {
         let pool = picker_pool(
             w.get_resource::<chimera_sim::minigame::Minigames>(),
@@ -517,8 +518,12 @@ pub fn stage(w: &mut World, page: MenuPage, args: &[String]) -> Result<(), Strin
         });
         if let Some(i) = first_slice {
             pk.cursor = i - 1;
-            if let Some(m) = crate::maps_picker::MapsPicker::maps_of(&games, &rows[i]).first() {
-                pk.open = Some([(*m).clone()].into_iter().collect());
+            // The map off, its first slice kept on (the stored form:
+            // `game:map,+game:map@id`).
+            if let Some(m) = crate::maps_picker::MapsPicker::maps_of(&games, &rows[i]).first()
+                && let Some(map) = crate::maps_picker::slice_parent(m)
+            {
+                pk.open = Some([map.to_string(), format!("{}{m}", crate::maps_picker::ON_MARK)].into_iter().collect());
             }
         }
     }
@@ -1163,7 +1168,11 @@ fn draw(
         party: &party,
         upnp: upnp_status(upnp.as_deref(), &menu, &data),
         picker: &picker,
-        games: maps_source.as_ref().map(|m| m.0.listing(&pool)).unwrap_or_default(),
+        games: {
+            let mut games = maps_source.as_ref().map(|m| m.0.listing(&pool)).unwrap_or_default();
+            crate::maps_picker::name_slices(&mut games, slices.as_deref());
+            games
+        },
     };
     let root = spawn(&mut commands, &ui, page, &menu, &p, &cx, images.as_deref_mut(), icons.as_deref_mut(), ambients.as_deref_mut());
     if let Some(c) = cam {

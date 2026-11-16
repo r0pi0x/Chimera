@@ -194,8 +194,9 @@ impl MinigameHud {
 /// The minigame's name as players see it: the definition's `name`, with
 /// `{map}` (if it has one) replaced by the display name of the map
 /// actually played (`map::LoadedMapName`, else the pool's first map), so a
-/// rotating pool's title follows the map. A name without `{map}` is as
-/// written.
+/// rotating pool's title follows the map; an arena slice of it in play
+/// (`arena::PlayArea`), the slice's label (`vote::map_label`: "Blood
+/// Gulch: West Base"). A name without `{map}` is as written.
 pub fn shown_name(world: &World, def: &MinigameDef) -> String {
     if !def.name.contains("{map}") {
         return def.name.clone();
@@ -206,6 +207,10 @@ pub fn shown_name(world: &World, def: &MinigameDef) -> String {
         .filter(|m| !m.is_empty() && *m != "greybox")
         .or(def.maps.first().map(String::as_str))
         .unwrap_or("");
+    // A slice of it in play: the slice's label (`vote::map_label`).
+    if let Some(a) = world.get_resource::<super::arena::PlayArea>().filter(|a| a.slice.map.eq_ignore_ascii_case(map)) {
+        return def.name.replace("{map}", &super::vote::map_label(world.get_resource(), &a.slice.key()));
+    }
     def.name.replace("{map}", &map_display_name(map))
 }
 
@@ -393,5 +398,27 @@ mod name_tests {
         assert_eq!(map_display_name("cs_source:cs_office"), "Office");
         assert_eq!(map_display_name("cs_source:de_cbble"), "Cbble");
         assert_eq!(map_display_name("halo_ce:bloodgulch@west_base"), "Bloodgulch: West Base");
+    }
+
+    #[test]
+    fn a_title_on_a_slice_names_the_slice() {
+        use crate::minigame::{MinigameDef, arena};
+        let text = "[[slice]]\nmap = \"bloodgulch\"\nid = \"west_base\"\nname = \"West Base\"\nmap_name = \"Blood Gulch\"\n\
+                    points = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]\nseed = [5.0, 1.0, 5.0]\n";
+        let def = MinigameDef::parse(
+            "t",
+            "id = \"t:t\"\nname = \"Gun Game: {map}\"\nplayers = { min = 1, max = 4 }\nmaps = [\"halo_ce:bloodgulch\"]\n\
+             teams = \"free_for_all\"\ntime_limit = 60\n[rules]\nmodule = \"chimera:ladder\"\nladder = [\"x:y\"]\n",
+        )
+        .unwrap();
+        let mut world = bevy::prelude::World::new();
+        world.insert_resource(chimera_world::map::LoadedMapName("halo_ce:bloodgulch".into()));
+        assert_eq!(super::shown_name(&world, &def), "Gun Game: Bloodgulch");
+        let defs = arena::parse("halo_ce", text).unwrap();
+        let slice = defs[0].slice.clone();
+        world.insert_resource(arena::PlayArea { polygon: slice.polygon().unwrap(), slice, put_backs: 0 });
+        assert_eq!(super::shown_name(&world, &def), "Gun Game: Bloodgulch: West Base", "no data: the id's");
+        world.insert_resource(arena::ArenaSlices(defs));
+        assert_eq!(super::shown_name(&world, &def), "Gun Game: Blood Gulch: West Base");
     }
 }
