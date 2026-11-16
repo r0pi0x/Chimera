@@ -24,7 +24,11 @@
 //! by `apply_pushes` through `movement::push`; a grenade's to its flight),
 //! a stuck one's attached damage on what holds it, then deletes it; the
 //! area damage is told once as `weapon::grenade::BlastDealt` (inner the
-//! damaging effects' r0, outer their r1, points / 75).
+//! damaging effects' r0, outer their r1, points / 75). A code-built
+//! thing shots strike (`map::shapes::Hittable`: the sandbox's props) is
+//! met by the level's trace as an object, not a wall: a direct hit on it
+//! (`HaloHit`, so a `Damage` with the point), its own material's response
+//! (no region, not a unit).
 //!
 //! The tick rate: everything here steps in Halo ticks (`halo_ticks`: the
 //! 30 Hz boundaries the engine tick crossed, from `SimClock`), so at 30 Hz
@@ -284,11 +288,14 @@ pub struct HaloTrace<'w, 's> {
     /// Halo's bodies (`body::death`): their hit volumes about their feet,
     /// unturned (health_shields.md: shots hit a dead body).
     corpses: Query<'w, 's, (Entity, &'static super::super::body::death::CorpseState, &'static crate::core::Hitboxes)>,
+    /// Code-built things shots strike as objects (the sandbox's props).
+    hittable: Query<'w, 's, (), With<crate::map::shapes::Hittable>>,
 }
 
 /// What a trace met (metres): the distance along it, the point, the
-/// normal, the character with the region hit (None: the level), the
-/// level's material type (None: material-less, or a character).
+/// normal, the character with the region hit (None: the level; a region of
+/// None: a thing struck that is no character, a `map::shapes::Hittable`
+/// prop), the material type (None: material-less, or a character).
 pub type Met = (f32, Vec3, Vec3, Option<(Entity, Option<BodyRegion>)>, Option<u8>);
 
 impl HaloTrace<'_, '_> {
@@ -364,6 +371,12 @@ impl HaloTrace<'_, '_> {
         // The point a hair before the surface (1e-5 m back along the ray),
         // so the next segment starts outside it.
         let d = (h.distance - 1e-5).max(0.0);
+        // A code-built thing shots strike (a sandbox prop): an object met,
+        // with no region (not a character), of the default material.
+        let body = colliders.get(h.entity).map_or(h.entity, |o| o.body);
+        if self.hittable.contains(body) {
+            return Some((d, from + dir * d, h.normal, Some((body, None)), Some(super::materials::NO_TABLE)));
+        }
         Some((d, from + dir * d, h.normal, None, material))
     }
 
@@ -513,13 +526,16 @@ fn advance(e: Entity, p: &mut HaloProjectile, trace: &HaloTrace, rewound: &[Rewo
             let len = (bm - am).length();
             let t = if len > 0.0 { ((point - am).length() / len).clamp(0.0, 1.0) } else { 0.0 };
             let point = a + (b - a) * t;
+            // A character (a region) is a unit of cyborg; a prop struck
+            // (no region) keeps its material and responds as the level.
+            let character = matches!(what, Some((_, Some(_))));
             Some(Hit {
                 t,
                 point,
                 normal,
                 object: what,
-                material: if what.is_some() { Some(CYBORG) } else { material },
-                unit: what.is_some(),
+                material: if character { Some(CYBORG) } else { material },
+                unit: character,
             })
         };
         let mut struck = |h: &Hit<Struck>, v: Vec3, s: f32| -> Option<u8> {
@@ -533,6 +549,10 @@ fn advance(e: Entity, p: &mut HaloProjectile, trace: &HaloTrace, rewound: &[Rewo
             }
             let shield = trace.shielded(target);
             hits.push((target, region, h.point, v, s, amount));
+            if region.is_none() {
+                // A prop: a `Damage` on it (`HaloHit`), its own material.
+                return h.material;
+            }
             Some(if shield { CYBORG_SHIELD } else { CYBORG })
         };
         let mut ignored = p.ignored.map(|e| (e, None));
