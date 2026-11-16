@@ -53,6 +53,9 @@ type Loaded = Result<OnDemand<MapHeldModel>, String>;
 #[derive(Resource, Default)]
 pub struct HeldOnDemand {
     tasks: BTreeMap<String, Task<Loaded>>,
+    /// Those of `tasks` started ahead of need (the ladder's:
+    /// `chimera_core::tasks::ReadAhead`).
+    ahead: BTreeSet<String>,
     tried: BTreeSet<String>,
     failed: BTreeMap<String, String>,
 }
@@ -90,8 +93,10 @@ pub fn load_on_demand(
     forgotten: Option<Res<super::preload::Forgotten>>,
     mut pending: ResMut<HeldOnDemand>,
     wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
+    mut read_ahead: Option<ResMut<chimera_core::tasks::ReadAhead>>,
     mut commands: Commands,
 ) {
+    const WHO: &str = "combat_arms held models";
     if let Some(f) = forgotten.filter(|f| f.is_changed()) {
         pending.tried.retain(|id| !f.keys.contains(id));
         pending.failed.retain(|id, _| !f.keys.contains(id));
@@ -115,21 +120,46 @@ pub fn load_on_demand(
         false
     });
     pending.failed.extend(failed);
+    let HeldOnDemand { tasks, ahead, .. } = &mut *pending;
+    ahead.retain(|k| tasks.contains_key(k));
+    if let Some(r) = read_ahead.as_mut() {
+        r.set(WHO, ahead.len());
+    }
     // The map's kit's held models, ours included where it carries them
     // (none on a map whose kit wasn't loaded), and those added.
     let has = |id: &str| assets.as_ref().is_some_and(|a| a.0.contains_key(id)) || late.as_ref().is_some_and(|l| l.has(id));
     // A ladder's, before the map is in: not those its kit will carry.
     let ca = context.as_deref().map_or_else(CaData::install, CaData::install_for);
     let kit = ca.builtin_weapon_ids();
+    // Those held, wanted or lying loose now, then the ladder's (ahead of
+    // need: only while the read-ahead has room).
     let keys = held
         .iter()
         .filter_map(|h| h.0.as_deref())
         .chain(want.iter().filter_map(|w| w.0.as_deref()))
         .chain(loose.iter().map(|l| l.0.as_str()))
-        .chain(ladder.keys.iter().map(String::as_str).filter(|k| assets.is_some() || !kit.contains(*k)));
-    for id in keys {
+        .map(|k| (k, false))
+        .chain(
+            ladder
+                .keys
+                .iter()
+                .map(String::as_str)
+                .filter(|k| assets.is_some() || !kit.contains(*k))
+                .map(|k| (k, true)),
+        );
+    for (id, early) in keys {
         if pending.tried.contains(id) || !wanted(id, has) {
             continue;
+        }
+        if early && !chimera_core::tasks::read_ahead_room(read_ahead.as_deref()) {
+            break;
+        }
+        if early {
+            pending.ahead.insert(id.to_string());
+            let n = pending.ahead.len();
+            if let Some(r) = read_ahead.as_mut() {
+                r.set(WHO, n);
+            }
         }
         pending.tried.insert(id.to_string());
         let key = id.to_string();

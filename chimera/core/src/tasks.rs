@@ -6,6 +6,10 @@
 //! waits for the result instead, and the stepped map spawn takes no time
 //! budget, so a scenario plays out the same on every run
 //! (docs/performance.md, "Work counts").
+//!
+//! `ReadAhead`: a game's loads started ahead of need kept to a few at once
+//! on the async compute pool, so what is wanted now does not queue behind
+//! them.
 
 use bevy::{
     prelude::*,
@@ -31,4 +35,53 @@ pub fn poll<T>(task: &mut Task<T>, wait: bool) -> Option<T> {
 /// Whether `world` waits for tasks (`WaitForTasks`).
 pub fn waits(world: &World) -> bool {
     world.contains_resource::<WaitForTasks>()
+}
+
+/// Tasks a game starts ahead of need (a match's ladder's models, read before
+/// any rung gives them) kept to `cap` on the async compute pool at once, so
+/// what is wanted now never waits behind them: a worn body's cook, a held
+/// model's, a pipeline Bevy makes for a model shown for the first time
+/// (docs/performance.md, "Late models shown whole"). Each loader says how
+/// many of its own read-ahead tasks are on their way (`set`) and starts
+/// another only while there is `room`; wanted-now loads start regardless.
+/// Without this resource in the world, loaders start everything at once.
+#[derive(Resource, Debug)]
+pub struct ReadAhead {
+    pub cap: usize,
+    in_flight: std::collections::BTreeMap<&'static str, usize>,
+}
+
+impl Default for ReadAhead {
+    /// Half the async compute pool's threads (at least one; Bevy's most,
+    /// four, before the pool is made): the rest are for what is wanted now.
+    fn default() -> Self {
+        let threads = bevy::tasks::AsyncComputeTaskPool::try_get().map_or(4, |p| p.thread_num());
+        Self::with_cap((threads / 2).max(1))
+    }
+}
+
+impl ReadAhead {
+    pub fn with_cap(cap: usize) -> Self {
+        Self { cap, in_flight: Default::default() }
+    }
+
+    /// Loader `who` has `n` read-ahead tasks on their way.
+    pub fn set(&mut self, who: &'static str, n: usize) {
+        self.in_flight.insert(who, n);
+    }
+
+    /// Read-ahead tasks on their way, all loaders'.
+    pub fn in_flight(&self) -> usize {
+        self.in_flight.values().sum()
+    }
+
+    /// Whether another read-ahead task may start.
+    pub fn room(&self) -> bool {
+        self.in_flight() < self.cap
+    }
+}
+
+/// Whether a read-ahead task may start (`ReadAhead::room`; none: always).
+pub fn read_ahead_room(ahead: Option<&ReadAhead>) -> bool {
+    ahead.is_none_or(ReadAhead::room)
 }

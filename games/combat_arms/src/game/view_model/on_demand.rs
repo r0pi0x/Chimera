@@ -78,6 +78,8 @@ pub struct ViewModelsOnDemand;
 /// `LoadOnDemand` for `app`, its map loads told so (`ViewModelsOnDemand`).
 pub fn load_on_demand_in(app: &mut App) {
     app.init_resource::<LoadOnDemand>();
+    // The ladder's loads ahead, a few at once (`chimera_core::tasks::ReadAhead`).
+    app.init_resource::<chimera_core::tasks::ReadAhead>();
     app.world_mut().get_resource_or_init::<LoadContext>().insert(ViewModelsOnDemand);
 }
 
@@ -237,9 +239,10 @@ pub fn ours(id: &str) -> bool {
     id.split_once(':').is_none_or(|(game, _)| game == crate::game::GAME)
 }
 
-/// The view models loading.
+/// The view models loading, and those of them started ahead of need (the
+/// ladder's: `chimera_core::tasks::ReadAhead`).
 #[derive(Default)]
-pub struct Pending(BTreeMap<String, Task<Loaded>>);
+pub struct Pending(BTreeMap<String, Task<Loaded>>, std::collections::BTreeSet<String>);
 
 /// Each wanted weapon's view model (`LoadOnDemand`): from the app's
 /// install data's cache at once, else loaded in the background and added
@@ -253,8 +256,10 @@ pub fn load_on_demand(
     ladder: Res<crate::game::characters::preload::LadderModels>,
     mut pending: Local<Pending>,
     wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
+    mut ahead: Option<ResMut<chimera_core::tasks::ReadAhead>>,
     mut commands: Commands,
 ) {
+    const WHO: &str = "combat_arms view models";
     let ca = context.as_deref().map_or_else(CaData::install, CaData::install_for);
     let has = |k: &str| models.as_ref().is_some_and(|m| m.get(k).is_some());
     // Finished loads first.
@@ -273,6 +278,11 @@ pub fn load_on_demand(
         }
         false
     });
+    let Pending(tasks, started_ahead) = &mut *pending;
+    started_ahead.retain(|k| tasks.contains_key(k));
+    if let Some(a) = ahead.as_mut() {
+        a.set(WHO, started_ahead.len());
+    }
     // The active weapon first, then the rest of the inventory, then what
     // characters show (a spectated player's).
     // A weapon with drawn parts: its bare view model first (the parts'
@@ -313,7 +323,15 @@ pub fn load_on_demand(
             }
             Some(Ok(_)) => {}
             Some(Err(_)) => {}
+            // The ladder's: only while the read-ahead has room.
+            None if at >= wanted_now && !chimera_core::tasks::read_ahead_room(ahead.as_deref()) => {}
             None => {
+                if at >= wanted_now {
+                    pending.1.insert(id.to_string());
+                    if let Some(a) = ahead.as_mut() {
+                        a.set(WHO, pending.1.len());
+                    }
+                }
                 let (key, ca) = (id.to_string(), ca.clone());
                 let task = AsyncComputeTaskPool::get().spawn(async move {
                     let mount = ca.mount().ok_or_else(|| format!("{key}: no Combat Arms install"))?;
