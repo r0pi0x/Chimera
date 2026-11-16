@@ -262,6 +262,26 @@ the user's go-ahead: no Actions runs unless asked.
     on a local listen server; (3) sounds and textures viewers; (4)
     the sandbox's menu and options. About one to two
     weeks of agent work per phase; phase 1 gates the rest.
+- **Sandbox: the design (handed to the party UI's owner, user,
+  2026-11-16).** The command-only sandbox exists (`+sandbox`, `rung`;
+  docs/OBSERVABILITY.md); its screens are to be designed in the look
+  book's own language by the session that owns the party UI, from a
+  first pass the user liked for its options, not its look (a published
+  page, "UGG Sandbox Look Book"). The options: (1) try one gun now (a
+  picker: games, classes, one row a rung, typing filters across games,
+  Enter takes the first match); (2) flip between a few (up to six guns
+  pinned to a bar on number keys; previous and next through the
+  ladder); (3) shoot at a body (a target from any game, since gear and
+  shields change the answer, at 5, 10, 20 or 40 m, still, strafing or
+  shooting back); (4) read what happened (after a kill: hits, time from
+  first hit, distance: measured, not modelled); (5) set the conditions
+  (endless ammunition, no damage taken, half speed, third person); (6)
+  later: no HUD, a free camera, saved set-ups. Open with the user:
+  which scenarios they run most (they offered to dictate some), whether
+  the bar is worth building, targets as bots or as dummies that report
+  each hit, where the last-kill readout sits, the keys, and whether the
+  sandbox goes on the main menu. The mechanics (rung switch, targets,
+  measurement) stay with the session that built the sandbox.
 - **Smaller installs: a hybrid (user decision, 2026-10-29).**
   - *Default:* every player has the games installed on disk and loads
     from them, as now.
