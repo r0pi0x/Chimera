@@ -899,3 +899,18 @@ backlog.
   stuck). Under way: no player or match behind the main menu (the
   owner heard a weapon's draw sound at start), the arena's measuring
   (A3); next the arena's slices in the map pool (A2).
+- 2026-11-16 (night): the arena's A2, A3 and A5 landed
+  (docs/plans/active/arena-slices.md has each "as built"): a slice is a
+  pool entry `map@slice` with its own stored measures, offered only
+  where its map is too big and it passes `[slice]` in map_fit.toml,
+  never two of one map in a vote; the host's Maps picker lists slices
+  under their map; `map_fitness --slice`, `--safety` and `--candidates`
+  measure and propose slices. Result on Halo's maps: Blood Gulch's
+  hand-drawn West Base fails (an open field) and stays out of the pool;
+  the generator found one passing slice, Blood Gulch: North Caves (2 to
+  8 players), and none on Sidewinder. For the owner (A6): whether a
+  wall may close a tunnel or cave mouth (the generator's own rule
+  refuses most sheltered candidates), and whether a dark cave fight is
+  wanted. Also landed: nothing of a game exists behind the party main
+  menu (no player, kit or match until Host, Join or Sandbox), from the
+  owner's test.
