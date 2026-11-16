@@ -11,8 +11,18 @@ sequences, bones and attachments of the class arms' animation models, the
 `c_` weapon models and the projectile models, as printed by our dumper.
 The per-weapon scripts are encrypted and were not read. Timing values on
 the wiki are community measurements; where this spec derives a number it
-says so.
-Status: draft
+says so. For the 2026-11-15 check, Valve's Source SDK 2013 TF2 game code
+(the shared, server and client game code of the 2025 release) was read in
+place in a separate spec session: the sniper rifle's charge, zoom and dot,
+the launchers' charge and detonation, the grenade and sticky projectiles'
+physics and explosions, the flame emitter and its damage, afterburn, the
+needle projectile, the bullet spread's first-shot rule, the shared damage
+and radius-damage rules and the self-knockback. Nothing from it was
+copied; the numbers and rules below are restated in our words. The SDK
+does not contain the per-weapon scripts (damage, interval, clip, spread,
+reload times, blast radius) nor the per-weapon damage-type table, so those
+numbers remain the wiki's (and weapon_scripts.md's run-time values).
+Status: checked against the SDK's game code (2026-11-15)
 
 ## Summary
 
@@ -26,17 +36,122 @@ explosions, self-damage and knockback (§5.2–5.4) and the spread convention
 (§6.1). This file only gives what differs.
 
 The three small hitscan guns (Pistol, SMG, Revolver) are single-bullet
-weapons whose first shot after a 1.25 s pause is dead accurate. The Sniper
-Rifle has no distance modifier; its damage grows with the time spent
-scoped (50 to 150), and a scoped head hit is a ×3 crit, its only crit. The
-Demoman's grenades fly in an arc, explode on a direct hit before they touch
-the world, and otherwise roll and burst on a 2.3 s fuse with no distance
-modifier; his stickybombs are launched faster the longer attack is held,
-stick to the world, arm after 0.7 s and burst together on attack2, up to
-8 at a time. The Flame Thrower is a short cone of drifting flame
-particles whose damage depends on the particles' age and on how long the
-victim has been burning, and sets victims on fire (afterburn). The Syringe
-Gun fires a stream of slow needles that drop with gravity.
+weapons whose first shot after more than 1.25 s without firing is dead
+accurate. The Sniper Rifle has no distance modifier; while scoped its
+charge grows at 50 per second from 0.3 s after zooming (damage 50 to 150,
+full 3.3 s after zooming in), and a scoped head hit at least 0.2 s after
+the zoom is a ×3 crit, its only crit. The Demoman's grenades fly in an
+arc, explode at full damage on a direct hit before they touch anything
+else, and otherwise roll and burst on a 2 s fuse at **60 %** damage, with
+no distance modifier; his stickybombs are launched faster the longer
+attack is held, stick to the world, arm after **0.8 s** and burst on
+attack2 (with any of his weapons out), up to 8 at a time. The Flame
+Thrower emits a stream of flame points every 0.02 s that fly about 290
+units; each point that overlaps an enemy may hurt him at most once per
+0.075 s, by 13 scaled down with the point's age and up with how densely
+the victim has been hit (a "heat" measure), and sets him on fire:
+afterburn 4 every 0.5 s for 3 s plus 0.4 s per flame hit, at most 10 s.
+The Syringe Gun fires slow needles (1000 units/s, 30 % gravity) with a
+small random spread.
+
+## Corrections from the SDK (2026-11-15)
+
+- Sniper: zoom field of view 20 — confirmed (was "from memory").
+- Sniper: after a scoped shot the scope drops at +0.5 s (was: "for the
+  bolt cycle", unspecified) and auto re-zoom brings it back at +1.4 s (was
+  +1.5 s, at the interval's end); charging resumes at once on the re-zoom
+  (was: the 0.3 s delay again), so D = 50 until +2.4 s (was +2.8 s).
+- Sniper: a jump unscopes and empties the charge, and the scope cannot be
+  raised while jumping (was: open).
+- Sniper: no shot within 0.1 s of zooming in or out; after an unscoped
+  shot the scope is blocked for the fire animation (1.67 s) (new).
+- Sniper: the headshot's 0.2 s counts from the last zoom change, so it
+  restarts at every re-zoom (was: from the scope coming up only).
+- Sniper dot: also drawn in the Sniper's own first-person view, clamped
+  384 units ahead (was: "not drawn in his own view").
+- Sniper: `cl_autorezoom` default 1 — confirmed (was open).
+- Sniper, crouched scoped speed: the 80 cap with the normal crouch scaling
+  (was "wiki 1.33 % ≈ 4 units/s").
+- Grenade fuse: 2.0 s, checked every 0.2 s (≈ 2.1–2.2 s in practice) (was
+  2.3 s).
+- Grenade fuse explosion: 60 % damage (60 at the centre, crit 180) (was
+  100); only a direct hit deals 100.
+- Grenade and sticky launch: exactly 200 units/s up plus a random ±10
+  units/s right and ±10 up (was "≈ 200", jitter open).
+- Grenade and sticky spin: angular impulse (600, random ±1200, 0) degrees
+  per second (was "spinning", unspecified).
+- Grenade and sticky: rigid physics bodies with a 4-unit cube collision
+  box; the stickies' and grenades' gravity is the physics world's (full
+  `sv_gravity`) (was open).
+- Grenades and stickies: pass through teammates only for the first 0.25 s
+  of their flight, then bounce off them (was: always pass through).
+- Grenades and stickies bouncing off a player: velocity mirrored about the
+  contact normal × 0.45, × 0.5 more for an enemy, spin × −0.5 (was
+  "bounce", unspecified).
+- Sticky arm time: 0.8 s (was 0.7 s); the air-detonation radius ramp runs
+  0.8 s to 2.8 s (was 0.7 to 2.7).
+- Sticky detonation: attack2 works with any of the Demoman's weapons out
+  (was: launcher out, open); unarmed stickies stay, with a deny sound.
+- Ninth sticky: the oldest explodes at its next fuse check, within 0.2 s
+  (was "shortly", open).
+- Sticky charge: holding attack after a forced full-charge launch starts
+  the next charge as soon as the interval allows (was: must release).
+- Sticky distance class: the short-range-reduced ramp, 121.8 % at 0 units
+  (146 at 0 for 120 base) (was k = 0.4: 120 %, 144); far end unchanged
+  (52.8 %).
+- Syringe distance class: the same short-range-reduced ramp, 121.8 % at 0
+  (12.18 → 12) (was k = 0.4, 120 %).
+- Demoman self-damage: × 0.75 always, grounded or airborne (was × 0.75
+  airborne only, "derived"); it uses the launcher's base damage (100 / 120)
+  and a 146 radius even for a reduced-damage roller.
+- Demoman self-knockback: scale 9, grounded or airborne (was "own scale,
+  unknown"; not the Soldier's 10 / 5).
+- Splash distance to a player: the nearer of his centre and his feet
+  (stated here for the Demoman's own blasts; weapons.md has the shared
+  rule).
+- Flame points: emitted every 0.02 s of fire, i.e. every 2 server ticks
+  (≈ 33 a second) (was "about 33 a second", wiki).
+- Flame lifetime: 0.6 ± 0.1 s, uniform (was 0.6 + 0–0.1).
+- Flame spread: 2.8° scale per axis, a sum of two uniform draws (was "a
+  cone of 2.8° half-angle", open).
+- Flame drag: per tick, speed × (1 − 8.5 · tick) (was exponential
+  e^(−8.5 t)); reach ≈ 40 + 287 + 12 ≈ 340 units ahead of the eye (was
+  "≈ 350").
+- Flame origin: 40 forward and 5 right of the eye (was "≈ 50 ahead").
+- Flame and the Pyro's velocity: only its component along the flame's
+  direction is added, undiminished (was open).
+- Flame hit size: a box of half-size 12 units (was open).
+- Flame age factor: max(0.5, 1 − age / life), 0.5 at half the point's
+  own life (≈ 0.3 s) (was max(0.5, 1 − age / 1.0), 0.5 at 0.5 s).
+- Flame density ramp: a per-victim heat index (+1 per touch, −1.25 per
+  tick, factor 0.5 → 1 over heat 10 → 50) (was "0.5 → 1 over 1.5 s of
+  continuous hits").
+- Flame damage: at least 1 per hit (new).
+- Flame ammo: 14 per second of nominal emission, 0.28 per emission:
+  ≈ 9.3 a second at 66.7 tick, 200 lasts ≈ 21.4 s (was 12.5/s, 16 s).
+- Flame crit: a full crit, ×3 by the shared rule (the wiki's ×1.5 question
+  closed).
+- Flames and teammates: no effect at all; extinguishing is the airblast's
+  (was: flames extinguish burning teammates).
+- Afterburn duration: 3 s on ignition, + 0.4 s per damaging flame hit,
+  capped at 10 s, − 0.5 s per burn tick (was: max(remaining, 3) + tick,
+  growth open).
+- Afterburn after one flame hit: 3.4 s, 7 ticks, 28 damage (was 6 ticks,
+  24).
+- Afterburn on an enemy Pyro: a fixed 0.25 s burn with no damage (was
+  "immune", no burn).
+- Afterburn is put out by water at waist depth (was "up to the eyes").
+- Airblast: also delays the next flame by 1.0 s (new).
+- Syringe speed: 1000 (was 990).
+- Syringe gravity: 0.3 of `sv_gravity` (240 units/s²) — confirmed (was a
+  community figure).
+- Syringe spread: random ±1.5° in pitch and in yaw, uniform (was open).
+- Syringe start: 16 forward, 6 right, 8 down from the eye, aimed at the
+  point under the crosshair (up to 2000 units away) (was open).
+- Syringe size: a 2-unit cube (was open).
+- Pistol, SMG, Revolver: the spread does not grow with consecutive shots;
+  only the first-shot rule exists, and it needs strictly more than 1.25 s
+  (was open).
 
 ## Units and conventions
 
@@ -50,48 +165,86 @@ Distance modifier: M(d, k) is weapons.md §2.1's modifier with near-range
 scale k, R = 0.5, and (spread off, the default) t = min(d, 921.6) / 1024.
 So M(0) = 1 + 0.5 k, M(512) = 1, M(≥ 921.6) = 0.528.
 
+**Short-range-reduced modifier** M_s(d) (the class the game gives the
+Stickybomb Launcher and the Syringe Gun): the far half is M₀ unchanged; in
+the near half the normalised distance is compressed toward 0.5 before the
+curve, instead of the result being scaled:
+
+```math
+M_s(d) = \begin{cases} M_0(0.35 + 0.3\,t) & t < 0.5 \\ M_0(t) & t \ge 0.5 \end{cases},\qquad t = \frac{\min(d,\ 921.6)}{1024}
+```
+
+with M₀ weapons.md §2.1's unscaled curve. M_s(0) = M₀(0.35) = 1.21825,
+M_s(256) = 1.11166, M_s(512) = 1, M_s(768) = 0.65625, M_s(≥ 921.6) =
+0.528. (The wiki's "120 %" is this 121.8 % rounded.) With the random
+damage spread on, the ±0.1 jitter of weapons.md §2.3 is applied to the
+compressed value. The SDK release lacks the per-weapon damage-type table
+that assigns a weapon to a class; the assignment here (stickies and
+syringes reduced, grenades none, Pistol/SMG/Revolver standard) is
+inferred from the code's special cases and the wiki's numbers (Open
+questions 19).
+
 ## Constants
 
 | Name (ours) | Value | Unit | Meaning |
 |---|---|---|---|
 | deploy | 0.5 | s | every weapon here (weapons.md §3) |
-| accurate_pause | 1.25 | s | Pistol, SMG, Revolver: first shot after this long is dead centre (wiki "spread recovery") |
-| ramp_scale_syringe_sticky | 0.4 | – | near bonus ×0.4: 120 % at 0 units (Syringe Gun, Stickybomb Launcher) |
-| pistol_damage / interval / spread | 15 / 0.15 / 0.04 | hp, s, – | |
-| smg_damage / interval / spread | 8 / 0.105 / 0.025 | hp, s, – | |
-| revolver_damage / interval / spread | 40 / 0.5 / 0.025 | hp, s, – | |
-| sniper_base | 50 | hp | any body shot, uncharged or unscoped |
-| sniper_charge_max | 150 | hp | charge damage at full charge |
-| sniper_charge_rate | 50 | hp/s | charge growth while scoped |
-| sniper_charge_delay | 0.3 | s | scoped time before charging starts |
-| sniper_headshot_delay | 0.2 | s | scoped time before a head hit counts |
-| sniper_interval | 1.5 | s | between shots |
-| sniper_zoom_fov | 20 | deg | scoped field of view (Open questions 3) |
-| sniper_zoom_speed | 80 | units/s | movement cap while scoped (movement.md, measured) |
-| grenade_damage | 100 | hp | at the centre; no distance modifier |
-| grenade_speed | 1200 forward + 200 up | units/s | launch velocity (|v| = 1216.6; derived, §6.2) |
-| grenade_fuse | 2.3 | s | from launch |
-| blast_radius | 146 | units | grenade and stickybomb (weapons.md §5.2's falloff, 0.5 at the edge) |
-| demo_self_air_scale | 0.75 | – | Demoman's own blast while airborne (derived, Open questions 9) |
-| sticky_damage | 120 | hp | at the centre, k = 0.4 within 5 s of launch |
-| sticky_flat_after | 5.0 | s | stickies older than this use modifier 1 |
-| sticky_arm | 0.7 | s | from launch until it can be detonated |
-| sticky_charge_time | 4.0 | s | hold time for the fastest launch; fires by itself then |
-| sticky_speed_min / max | 900 / 2400 forward (+ ≈ 200 up) | units/s | launch speed uncharged / fully charged (Open questions 7) |
-| sticky_max | 8 | – | live stickies per Demoman |
-| sticky_air_radius_start | 0.85 | – | radius factor of an un-stuck sticky at arm time, to 1 over 2 s |
-| flame_particle_damage | 13 | hp | one flame tick on one victim, fresh particle, full ramp |
-| flame_tick | 0.075 | s | flame damage at most once per this per victim (5 ticks) |
-| flame_ammo_rate | 12.5 | ammo/s | while firing |
-| flame_speed / drag / up / spread / life | 2450 / 8.5 / 50 / 2.8 / 0.6 (+0–0.1) | units/s, 1/s, units/s, deg, s | flame particle (item schema `static_attrs`) |
-| flame_age_floor | 0.5 at 0.5 s | – | damage factor of a particle by age |
-| flame_ramp | 0.5 → 1 over 1.5 s | – | damage factor by time a victim has been hit continuously |
-| airblast_cost / refire | 20 / 0.75 | ammo, s | (reference) |
-| afterburn_damage / interval | 4 / 0.5 | hp, s | 8 hp/s |
-| afterburn_min / max | 3 / 10 | s | duration from the Flame Thrower |
-| syringe_damage | 10 | hp | per needle, k = 0.4 |
-| syringe_interval | 0.105 | s | |
-| syringe_speed | 990 (wiki also 1000) | units/s | |
+| accurate_pause | 1.25 | s | Pistol, SMG, Revolver: a shot more than this long after the previous one is dead centre (SDK: strictly greater) |
+| near_compress | 0.35 + 0.3 t | – | short-range-reduced modifier's near-half input (Syringe Gun, Stickybomb Launcher): 121.8 % at 0 units |
+| pistol_damage / interval / spread | 15 / 0.15 / 0.04 | hp, s, – | script values (wiki) |
+| smg_damage / interval / spread | 8 / 0.105 / 0.025 | hp, s, – | script values (wiki) |
+| revolver_damage / interval / spread | 40 / 0.5 / 0.025 | hp, s, – | script values (wiki) |
+| sniper_base | 50 | hp | any body shot, uncharged or unscoped (SDK) |
+| sniper_charge_max | 150 | hp | charge damage at full charge (SDK) |
+| sniper_charge_rate | 50 | hp/s | charge growth while scoped, per tick (SDK); clamped to at most 100/s with modifiers |
+| sniper_charge_delay | 0.3 | s | after raising the scope by attack2 (the zoom's attack2 cooldown); none after an auto re-zoom (SDK) |
+| sniper_headshot_delay | 0.2 | s | since the last zoom change before a head hit crits (SDK) |
+| sniper_fire_after_zoom | 0.1 | s | no shot within this of a zoom toggle (SDK) |
+| sniper_unzoom_after_shot | 0.5 | s | scoped shot to scope dropping (SDK) |
+| sniper_rezoom_delay | 0.9 | s | scope dropping to auto re-zoom: 1.4 s after the shot (SDK) |
+| sniper_interval | 1.5 | s | between shots (script value, wiki) |
+| sniper_zoom_fov | 20 | deg | scoped field of view, reached in 0.1 s (SDK) |
+| sniper_zoom_speed | 80 | units/s | movement cap while scoped (SDK) |
+| sniper_dot_size | 6 (others), 2 (own view, ≤ 384 units ahead) | units | dot sprite size (SDK) |
+| grenade_damage | 100 | hp | direct hit, at the centre; no distance modifier (script value, wiki) |
+| grenade_fuse_scale | 0.6 | – | damage of a grenade that explodes on its fuse (SDK) |
+| launch_speed | 1200 forward + 200 up (+ ±10 right, ±10 up random) | units/s | grenade launch velocity (SDK) |
+| launch_offset | 16 forward, 8 right, −6 up | units | from the eye, clipped by an 8-unit box trace from the eye (SDK) |
+| launch_spin | (600, ±1200, 0) | deg/s | angular impulse on launch, middle term random (SDK) |
+| pipe_box | 4 | units | grenade and sticky collision cube (half-size 2) (SDK) |
+| grenade_fuse | 2.0 (checked every 0.2) | s | from launch (SDK) |
+| teammate_pass | 0.25 | s | grenades and stickies pass teammates only this long (SDK) |
+| player_bounce | 0.45 (× 0.5 more on enemies) | – | speed kept bouncing off a player (SDK) |
+| blast_radius | 146 | units | grenade and stickybomb (script value, wiki); the Demoman's own blast always 146 (SDK) |
+| demo_self_scale | 0.75 | – | Demoman's own grenade or sticky, always (SDK) |
+| demo_self_push | 9 | – | knockback scale of the Demoman's own blast, grounded or airborne (SDK) |
+| sticky_damage | 120 | hp | at the centre, M_s within 5 s of launch (script value, wiki; 5 s SDK) |
+| sticky_flat_after | 5.0 | s | stickies older than this use modifier 1 (SDK) |
+| sticky_arm | 0.8 | s | from launch until it can be detonated (SDK) |
+| sticky_charge_time | 4.0 | s | hold time for the fastest launch; fires by itself then (SDK) |
+| sticky_speed_min / max | 900 / 2400 forward (+ 200 up, + jitter) | units/s | launch speed uncharged / fully charged (SDK) |
+| sticky_max | 8 | – | live stickies per Demoman (SDK) |
+| sticky_air_radius | 0.85 → 1 over 2.0 s from arming | – | radius factor of an un-stuck sticky (SDK) |
+| flame_damage | 13 | hp | one flame hit on one victim, before the age and heat factors (SDK; the script's damage is not used) |
+| flame_hit_interval | 0.075 | s | per victim, between flame hits (SDK) |
+| flame_emit | 0.02 | s | nominal interval between flame points (every 2 ticks at 0.015) (SDK) |
+| flame_ammo | 14 per s × 0.02 = 0.28 | ammo per point | fractional, accumulated (SDK) |
+| flame_speed / drag / up / spread / life | 2450 / 8.5 / 50 / 2.8 / 0.6 ± 0.1 | units/s, 1/s, units/s, deg, s | flame point (item schema `static_attrs`; use confirmed by the SDK) |
+| flame_origin | 40 forward, 5 right | units | from the eye (SDK) |
+| flame_box | 12 | units | half-size of a flame point's hit box (SDK) |
+| flame_points_max | 30 | – | live points per Pyro (SDK) |
+| flame_age_floor | 0.5 at half the point's life | – | damage factor of a point by age (SDK) |
+| flame_heat | +1 per touch (+2 for a point under 0.02 s old), −1.25 per tick; factor 0.5 → 1 over 10 → 50 | – | per-victim density ramp (SDK) |
+| airblast_cost / refire / flame_after | 20 / 0.75 / 1.0 | ammo, s, s | (SDK) |
+| afterburn_damage / interval | 4 / 0.5 | hp, s | 8 hp/s (SDK) |
+| afterburn_start / per_hit / max | 3 / 0.4 / 10 | s | duration on ignition, added per flame hit, cap (SDK) |
+| afterburn_pyro | 0.25 | s | an enemy Pyro's fixed burn, no damage (SDK) |
+| syringe_damage | 10 | hp | per needle, M_s (script value, wiki) |
+| syringe_interval | 0.105 | s | (script value, wiki) |
+| syringe_speed | 1000 | units/s | (SDK) |
+| syringe_gravity | 0.3 | × sv_gravity | 240 units/s² at 800 (SDK) |
+| syringe_spread | ±1.5 | deg | uniform, pitch and yaw separately (SDK) |
+| syringe_offset | 16 forward, 6 right, −8 up | units | from the eye (SDK) |
 
 ## Behavior
 
@@ -104,27 +257,32 @@ So M(0) = 1 + 0.5 k, M(512) = 1, M(≥ 921.6) = 0.528.
 | Class, slot | Scout and Engineer, secondary | Sniper, secondary | Sniper, primary | Spy, secondary (his first weapon) |
 | Kind | hitscan, 1 bullet | hitscan, 1 bullet | hitscan, 1 bullet, charge | hitscan, 1 bullet |
 | Base damage | 15 | 8 | 50–150 by charge | 40 |
-| Near ramp at 0 (k) | 150 % (1) | 150 % (1) | none (modifier 1) | 150 % (1) |
-| Far fall-off | 52.8 % | 52.8 % | none | 52.8 % |
+| Near ramp at 0 (k) | 150 % (1) | 150 % (1) | none (modifier 1; SDK) | 150 % (1) |
+| Far fall-off | 52.8 % | 52.8 % | none (SDK) | 52.8 % |
 | Fire interval | 0.15 s | 0.105 s | 1.5 s | 0.5 s |
 | Spread s (wiki N:1) | 0.04 (50:1) | 0.025 (80:1) | 0 (Open questions 4) | 0.025 (80:1) |
 | Clip / reserve | 12 / 36 Scout, 12 / 200 Engineer | 25 / 75 | 25, no clip | 6 / 24 |
 | Reload | whole clip: 1.005 s Scout, 1.035 s Engineer | whole clip 1.1 s | none | whole clip 1.133 s |
-| Crit rolls | rapid-fire (once a second, 2 s bursts) | rapid-fire (Open questions 5) | never random; scoped headshot = crit | every shot |
+| Crit rolls | rapid-fire (once a second, 2 s bursts) | rapid-fire (Open questions 5) | never random; scoped headshot = crit (SDK) | every shot |
 
 | | Grenade Launcher | Stickybomb Launcher | Flame Thrower | Syringe Gun |
 |---|---|---|---|---|
 | Item defindex, `name` | 19 `TF_WEAPON_GRENADELAUNCHER` | 20 `TF_WEAPON_PIPEBOMBLAUNCHER` | 21 `TF_WEAPON_FLAMETHROWER` | 17 `TF_WEAPON_SYRINGEGUN_MEDIC` |
 | `item_class` | `tf_weapon_grenadelauncher` | `tf_weapon_pipebomblauncher` | `tf_weapon_flamethrower` | `tf_weapon_syringegun_medic` |
 | Class, slot | Demoman, primary (`anim_slot` secondary) | Demoman, secondary (`anim_slot` primary) | Pyro, primary | Medic, primary |
-| Kind | arcing grenade, splash | charged sticky, splash on command | flame particles | arcing needle projectile |
-| Base damage | 100 | 120 | 13 per flame tick (6.5–13) | 10 |
-| Near ramp at 0 (k) | none (modifier 1) | 120 % (0.4) within 5 s | none; age and burn ramp instead | 120 % (0.4) |
+| Kind | arcing grenade, splash | charged sticky, splash on command | flame points | arcing needle projectile |
+| Base damage | 100 direct, 60 on the fuse | 120 | 13 per flame hit (≥ 1; ×age ×heat) | 10 |
+| Near ramp at 0 | none (modifier 1) | 121.8 % (M_s) within 5 s | none; age and heat factors instead | 121.8 % (M_s) |
 | Far fall-off | none | 52.8 % within 5 s | none | 52.8 % |
-| Fire interval | 0.6 s | 0.6 s (after release) | damage tick 0.075 s | 0.105 s |
+| Fire interval | 0.6 s | 0.6 s (after launch) | a point every 0.02 s; ≤ 1 hit per victim per 0.075 s | 0.105 s |
 | Clip / reserve | 4 / 16 | 8 / 24 | 200, no clip | 40 / 150 |
 | Reload | one at a time: first 1.24, then 0.6 | one at a time: first 1.09, then 0.67 | none | whole clip 1.305 s |
 | Crit rolls | every shot | every shot | rapid-fire | rapid-fire |
+
+The fire intervals, clips, reloads, spreads and base damages (except the
+Sniper Rifle's charge and the flame's 13) are per-weapon script values
+that the SDK does not contain; they stay the wiki's and are applied from
+the scripts at run time (weapon_scripts.md).
 
 The upgradeable copies (the 190–212 range) and the festive and botkiller
 variants are the same weapons; this spec covers the
@@ -140,12 +298,13 @@ Item schema notes:
   here that has it).
 - The Flame Thrower resolves through prefabs `weapon_flamethrower` →
   `weapon_baseflamethrower` → `weapon_newflame`; the last holds the flame
-  particle's numbers as `static_attrs`: `flame_speed` 2450,
+  point's numbers as `static_attrs`: `flame_speed` 2450,
   `flame_drag` 8.5, `flame_up_speed` 50, `flame_gravity` 0,
   `flame_spread_degree` 2.8, `flame_lifetime` 0.6,
   `flame_random_life_time_offset` 0.1. Item 21 also attaches
   `models/weapons/c_models/c_flamethrower/c_flamethrower_pilotlight.mdl`
-  (`visuals` → `attached_models`).
+  (`visuals` → `attached_models`). The SDK's flame emitter reads exactly
+  these attributes; without them every value would be 0.
 - `anim_slot`: the Grenade Launcher animates as a secondary
   (`ACT_SECONDARY_*`: the Demoman's `g_*` sequences) and the Stickybomb
   Launcher as a primary (`ACT_PRIMARY_*`: `sb_*`), the reverse of their
@@ -156,11 +315,15 @@ Item schema notes:
 All three are weapons.md §6.1's bullet: one trace from the eye, hitboxes,
 no penetration, lag compensation; the damage of the hit is
 base × M(d, 1), rounded (weapons.md §2.4; Open questions on rounding are
-weapons.md's 3).
+weapons.md's 3). Head hits are body hits for all three stock guns (SDK:
+no hit locations for them).
 
-- **First shot**: if the gun has not fired for 1.25 s, the shot goes
-  exactly along the crosshair; otherwise its direction gets the random
-  spread of weapons.md §6.1 with the s above. (This is weapons.md's
+- **First shot**: if more than 1.25 s (strictly) have passed since the
+  gun last fired, the shot goes exactly along the crosshair; otherwise
+  its direction gets the random spread of weapons.md §6.1 with the s
+  above: on each of the two screen axes an offset (u₁ + u₂) × s with u₁,
+  u₂ uniform in [−0.5, 0.5] (a triangular spread reaching ±s). The spread
+  does not grow with consecutive shots (SDK). (This is weapons.md's
   `first_pellet_pause` with 1.25 s instead of 0.25 s.)
 - **Automatic**: holding attack fires every interval (the Pistol fires at
   its fixed 0.15 s whether the button is held or tapped; patch of
@@ -175,7 +338,8 @@ weapons.md's 3).
   it and nothing is moved; Open questions 6).
 - **Crits**: Pistol and SMG are rapid-fire weapons (weapons.md §2.6: roll
   once a second while firing, 2 s of crits on success); the Revolver rolls
-  every shot. Crit = 3 × base, no distance modifier.
+  every shot. Crit = 3 × base, no distance modifier. (Whether a gun is
+  rapid-fire is a flag in its script.)
 - The Spy's Revolver is the only gun he has; while cloaked he can neither
   fire nor reload (cloak is a later spec).
 
@@ -183,95 +347,157 @@ weapons.md's 3).
 
 #### 3.1 Zoom
 
-- attack2 toggles the scope. Scoped: field of view 20 (Open questions 3),
-  the view model hidden, a scope overlay drawn, movement capped at
-  80 units/s (movement.md, measured; the wiki's 27 % of 300), crouched
-  slower (wiki: 1.33 % ≈ 4 units/s; Open questions 3).
-- Unscoping (attack2 again, a weapon switch, death) drops the charge to 0.
-- **After a scoped shot** the Sniper leaves the scope for the bolt cycle and
-  comes back into it when the 1.5 s interval has passed, if the client
-  option `cl_autorezoom` is on (its default: Open questions 3); the charge
-  restarts from 0 either way.
-- Others see a **laser dot** where the Sniper's aim trace (from his eye
-  along his view) meets the world or a player, while he is scoped; it is
-  not drawn in his own first-person view. Its look is a later spec.
+- attack2 toggles the scope, at most once per 0.3 s. Scoped: field of
+  view 20, reached over 0.1 s (and back to the default over 0.1 s on
+  unscoping), the view model hidden, a scope overlay drawn, movement
+  capped at 80 units/s (forward/back speed; crouched, the usual crouch
+  scaling of movement.md applies on top of the cap).
+- The scope can be raised only with ammo left, and not while the Sniper
+  is in a jump (from pressing jump until landing; falling without a jump
+  does not block it). Jumping while scoped drops the scope and empties
+  the charge.
+- A zoom toggle (in or out) blocks firing for 0.1 s (it never shortens a
+  longer wait).
+- Unscoping (attack2 again, a weapon switch, death, being stunned) drops
+  the charge to 0. While scoped and within the shot interval after a
+  shot, the rifle cannot be put away.
+- **After a scoped shot** (with ammo left): the scope stays up for 0.5 s
+  (the first tick after +0.5 s), then drops for the bolt cycle; jumping is
+  disabled during those 0.5 s. If the client option `cl_autorezoom` is on
+  (its default, 1), the scope comes back 0.9 s later (the first tick after
+  +1.4 s from the shot); with it off, attack2 is blocked for 1.0 s after
+  the scope drops. Pressing attack2 while a drop or a re-zoom is pending
+  cancels the re-zoom (and blocks attack2 until 0.3 s after the cancelled
+  re-zoom time). The last round's scoped shot drops the scope after 0.5 s
+  with no re-zoom.
+- **After an unscoped shot** the scope cannot be raised for the length of
+  the fire animation (1.6667 s, §9.2).
+- **The dot**: while scoped, a dot is drawn where the Sniper's aim trace
+  (from his eye along his eye angles, stopped by players, buildings and
+  the world, not by friendly combat items) ends, moved 4 units back toward
+  him. Others see it at size 6 at any distance. In his own first-person
+  view it is drawn too, at size 2, with the trace limited to 384 units
+  (so it floats at most 384 units ahead). It is drawn as two sprites, the
+  team's dot sprite at full size with half alpha and a white core scaled
+  by the charge fraction c / 150 (at least 0.1). It is not drawn in a
+  third-person camera. Its look beyond that is a later spec.
 
 #### 3.2 Charge
 
-Let τ be the time since the scope came up (or since the last shot while
-scoped). The charge:
+The charge c is a stored number, changed once per server tick:
+
+- while scoped, not in the 0.5 s after a scoped shot, and not within the
+  0.3 s attack2 cooldown after raising the scope: c ← min(150, c + 50 ×
+  tick);
+- otherwise c decays by 75 per second (in practice it is already 0:
+  every unscope and every shot set it to 0).
+
+So from raising the scope with attack2, with τ the time since then:
 
 ```math
 c(\tau) = \min\!\big(150,\ \max(0,\ 50\,(\tau - 0.3))\big)
 ```
 
-reaches 50 at τ = 1.3 s and 150 at τ = 3.3 s (the wiki: "charging starts
-0.3 s after zooming; damage starts rising after 1 s of charging (33 %);
-full at 3 s, 3.3 s from zooming in"). The HUD meter shows c / 150. The
+reaching 50 at τ = 1.3 s and 150 at τ = 3.3 s (the wiki agrees: "charging
+starts 0.3 s after zooming; damage starts rising after 1 s of charging;
+full at 3.3 s from zooming in"). After an **auto re-zoom** there is no
+0.3 s wait: the charge rises from the re-zoom tick (1.4 s after the
+shot), so it passes 50 at 2.4 s and is full at 4.4 s after the shot. The
+HUD meter shows c / 150. An optional full-charge bell (client option
+`tf_sniper_fullcharge_bell`, default off) plays `TFPlayer.ReCharged`. The
 shot's base damage:
 
 ```math
-D = \begin{cases} \max(50,\ c(\tau)) & \text{scoped} \\ 50 & \text{unscoped} \end{cases}
+D = \max(50,\ c)
 ```
 
-No distance modifier (factor 1 at every range), no random damage spread
-(Open questions 4).
+(unscoped c is 0, so D = 50). No distance modifier (factor 1 at every
+range: the stock rifle's damage carries no distance flag, SDK), no random
+damage spread (Open questions 4). The script's own damage number is not
+used.
 
 #### 3.3 Headshots
 
-- A hit on the head hitbox (hitgroup 1, classes.md "Hitboxes") is a
-  **headshot** only if the Sniper is scoped and has been for at least
-  0.2 s. A headshot is a crit: damage 3 × D (150 at no charge, 450 at
-  full charge, enough to kill any class at any overheal).
-- Unscoped (or scoped less than 0.2 s) head hits are body hits: D.
-- The Sniper Rifle never rolls random crits (wiki; its prefab has no crit
-  tag). A crit boost from elsewhere makes every hit 3 × D (reference).
-- Shots pass through teammates (wiki) and stop at the first enemy or solid.
+- A hit on the head hitbox (hitgroup 1, classes.md "Hitboxes") counts as a
+  head hit only while the Sniper is scoped (unscoped, hit locations are
+  ignored). It is a **headshot crit** if, at the shot, the Sniper's field
+  of view is below his default and at least 0.2 s have passed since his
+  field of view last changed (the zoom in, or the auto re-zoom). A
+  headshot is a crit: damage 3 × D (150 at no charge, 450 at full charge,
+  enough to kill any class at any overheal). The charge does not gate it.
+- A head hit that is not a crit (too soon after a zoom) deals D.
+- An invulnerable (übercharged) victim takes no headshot.
+- The Sniper Rifle never rolls random crits (SDK: its crit check fails for
+  anything but a qualifying headshot). A crit boost from elsewhere makes
+  every hit 3 × D (reference).
+- Shots pass through teammates and stop at the first enemy or solid
+  (SDK).
 - The kill feed uses the kill icon `headshot` for a headshot kill and
-  `sniperrifle` otherwise (§10).
+  `sniperrifle` otherwise (§9.5).
 
 #### 3.4 Ammo
 
-25 rounds, no clip, no reload: each shot takes one from the 25; the
-bolt cycle is part of the 1.5 s interval (its fire animation, 1.6667 s, is
-longer: Quirks).
+25 rounds, no clip, no reload (the reload key does nothing): each shot
+takes one from the 25; the bolt cycle is part of the 1.5 s interval (its
+fire animation, 1.6667 s, is longer: Quirks).
 
 ### 4. Grenade Launcher
 
 #### 4.1 Firing and flight
 
 - Every 0.6 s while attack is held, one grenade from the clip of 4.
-- The grenade starts from an offset under the gun (community figure
-  forward 16, right 8, up −6 from the eye; Open questions 8) with
-  velocity 1200 along the aim's forward plus 200 along the aim's up (so
-  |v| = √(1200² + 200²) = 1216.6, the wiki's speed; the split is derived
-  from that number and is an assumption: Open questions 7), plus a small
-  random jitter (Open questions 7). It is a physical body: full gravity
-  (sv_gravity 800), drag (Open questions 7), spinning; it bounces off the
-  world.
-- It passes through teammates and its owner (as the rocket, weapons.md
-  §5.1).
+- **Start**: from the eye (the shooting position) offset 16 forward,
+  8 right (mirrored for a left-handed view model) and 6 down; a box of
+  half-size 8 is traced from the eye to that point against brushes and
+  the grenade starts where it stops. If that trace starts inside a solid,
+  nothing is fired.
+- **Velocity**: 1200 along the aim's forward, plus 200 along the aim's
+  up, plus a random r₁ along the aim's right and r₂ along the aim's up,
+  each uniform in [−10, 10] (|v| ≈ 1216.6, the wiki's speed). **Spin**: an
+  angular impulse of (600, random integer in [−1200, 1200], 0) degrees
+  per second about the grenade's own axes.
+- It is a **rigid physics body** (a 4-unit cube for collision, the
+  grenade model for looks): gravity is the physics world's (sv_gravity,
+  800), with the physics engine's air drag and its bounce and friction on
+  surfaces (the game code sets none of these: Open questions 7).
+- **Players**: grenades are not solid to players. Each physics step a ray
+  along the grenade's motion over that step looks for players and
+  buildings: an enemy it meets is touched (§4.2); a teammate it meets is
+  passed through during the first 0.25 s of the grenade's life and
+  bounced off after that. A bounce off a player mirrors the velocity about
+  the contact normal and keeps 0.45 of it (an enemy: a further × 0.5),
+  and the spin becomes −0.5 × itself. The owner is always passed through.
+- Touching the sky removes the grenade silently.
 
 #### 4.2 Direct hit, rollers, fuse
 
 - **Direct hit**: if the grenade touches an enemy player or building
-  **before it has touched the world**, it explodes at once at the contact
-  point; the struck player takes full splash (factor 1).
-- **Roller**: once it has touched the world, it never explodes on contact
-  again; later contacts with enemies only make it bounce (it still
-  collides with them).
-- **Fuse**: a grenade that hasn't exploded explodes 2.3 s after launch,
-  wherever it is.
+  **before it has touched anything physical** (world, props, objects), it
+  explodes at once with its **full damage** (100); the struck enemy takes
+  factor 1 regardless of distance.
+- **Roller**: its first physical contact marks it; after that it never
+  explodes on touching a player again (it bounces off them as above).
+  Hitting an enemy building physically still makes it explode on the next
+  tick, at its reduced damage.
+- **Fuse**: a grenade that hasn't exploded explodes on the first fuse
+  check after 2.0 s from launch. The fuse is checked every 0.2 s (the
+  first check 0.2 s after launch), so with think times on whole ticks the
+  explosion comes about 2.1–2.2 s after launch (Open questions 20). A
+  fuse explosion uses **60 %** of the grenade's damage (60 at the centre).
 
 #### 4.3 Explosion
 
-- weapons.md §5.2's splash: radius 146, factor f(r) = 1 − 0.5 r / 146 to
-  each enemy's centre with a clear line from the centre.
-- Damage to an enemy: 100 × f(r). **No distance modifier**: M = 1 at every
-  range (wiki "Damage": grenade launchers always use 1). Crit: 300 × f(r).
-- The wiki notes a ±2 % damage variance on grenades since 2014-12-22;
-  with `tf_damage_disablespread` 1 (the default), assume none (Open
-  questions 10).
+- weapons.md §5.2's splash: radius 146, factor f(r) = 1 − 0.5 r / 146,
+  with r to the nearer of the enemy's centre and his feet (origin), and a
+  clear line from the centre (other players and projectiles don't block
+  it).
+- Damage to an enemy: G × f(r) with G = 100 for a direct hit, 60 on the
+  fuse. **No distance modifier**: M = 1 at every range. Crit: 3 × that
+  (300 direct, 180 at the centre on the fuse).
+- With the random damage spread on (`tf_damage_disablespread` 0), the
+  grenade's variance is a fifth of the usual: at most about ±3 % (the
+  SDK's grenade-launcher case; the wiki's "±2 %" is this). With the
+  default 1, none.
 - Self-damage, knockback: §6.
 
 ### 5. Stickybomb Launcher
@@ -281,161 +507,212 @@ longer: Quirks).
 - Pressing attack (clip ≥ 1, interval passed) starts a **charge**; the
   charge sound `Weapon_StickyBombLauncher.ChargeUp` plays and the arms play
   `sb_autofire` (4.0 s). Releasing attack launches one sticky; holding for
-  4.0 s launches it by itself at full charge.
-- Launch speed by held time h (linear, wiki "about 2.3 to 2.6 × as fast
-  fully charged"; numbers Open questions 7):
+  4.0 s launches it by itself at full charge. While attack stays held after
+  that forced launch, a new charge begins as soon as the 0.6 s interval
+  has passed.
+- Launch speed by held time h (SDK, linear):
 
 ```math
 v_{fwd}(h) = 900 + 1500\,\min(h / 4,\ 1)
 ```
 
-  along the aim's forward, plus ≈ 200 up (as the grenade), from the same
-  offset as the grenade.
-- The next charge can start 0.6 s after the launch.
-- Gravity and drag as the grenade's; passes through teammates and the owner.
+  along the aim's forward, plus exactly 200 up and the same ±10 random
+  jitter, spin, start point and hull check as the grenade (§4.1). The
+  charge changes nothing but the speed (no damage effect on the stock
+  launcher).
+- The next charge can start 0.6 s after the launch. A weapon switch
+  cancels a charge; reloading cannot start while charging.
+- Physics as the grenade's (rigid body, 4-unit cube, the world's
+  gravity); the owner is always passed, teammates for the first 0.25 s.
 
 #### 5.2 Sticking
 
-- On touching the world (and world brushes or static props), the sticky
-  stops dead and stays there.
-- On touching an enemy player or building it **bounces off** without
-  exploding; it also bounces off some map entities (spawn doors, payload
-  carts: later).
+- On a physical contact with the world (brushes and static props) or a
+  dynamic prop, the sticky's motion is switched off at the contact: it
+  stops dead and stays there, and it remembers the surface normal for its
+  explosion. Moving brush entities (doors, carts, trains) and other
+  physics objects only bounce it.
+- Players never hold it: it bounces off enemies (velocity mirrored, × 0.45
+  × 0.5) and, after 0.25 s, off teammates (× 0.45), with no explosion.
 - It never explodes on contact.
 
 #### 5.3 Arming and detonation
 
-- A sticky is **armed** 0.7 s after its launch (wiki's current value; Open
-  questions 11).
-- **attack2**, with the Stickybomb Launcher out, detonates every armed
-  sticky of this Demoman at once (sound `Weapon_StickyBombLauncher.ModeSwitch`
-  on the launcher; each sticky makes its explosion). Unarmed stickies
-  stay. attack2 with no armed sticky does nothing. (Detonating with
-  another weapon out: Open questions 12.)
-- **Limit 8**: launching a ninth sticky detonates the oldest one shortly
-  afterwards (delay: Open questions 12), armed or not.
+- A sticky is **armed** 0.8 s after its launch (age ≥ 0.8 s).
+- **attack2** with **any** of the Demoman's weapons out (the launcher, the
+  Grenade Launcher, his melee), if he can attack (not stunned, taunting,
+  etc.), detonates every armed sticky of his at once. If at least one is
+  unarmed, those stay and the deny sound plays (at most once a second)
+  instead of the detonate sound `Weapon_StickyBombLauncher.ModeSwitch`;
+  the armed ones still go off. attack2 with no stickies out does nothing.
+  Holding attack2 detonates each sticky as soon as it arms.
+- **Limit 8**: launching a ninth sticky sets the oldest one's fuse to
+  "now", armed or not; it explodes at its next fuse check, within 0.2 s.
 - When the Demoman dies or changes class, all his stickies vanish without
-  exploding.
-- Enemy bullets (hitscan), syringes and melee hits destroy a sticky
-  without an explosion (wiki; optional for a first port). Enemy explosions
-  push stickies but don't destroy them.
+  exploding (they break apart with gibs).
+- **Shot stickies**: a sticky that is **stuck** is destroyed without an
+  explosion by an enemy's bullet, buckshot or melee hit (and an enemy
+  blast that also ignites); syringes count as bullets (Open questions 16).
+  An enemy blast pushes it with 0.15 of its force (bullets 2×, buckshot
+  0.75×): if the pushed force exceeds 1500 it comes unstuck, flies, and can
+  re-stick to the world only after 1 s. A sticky in flight cannot be shot.
 
 #### 5.4 Explosion damage
 
-- Splash as the grenade (radius 146, f(r) to 0.5 at the edge).
+- Splash as the grenade (radius 146, f(r) to 0.5 at the edge, r to the
+  nearer of the victim's centre and feet).
 - Damage to an enemy, with a the sticky's age at detonation and d the
-  Demoman-to-victim distance at detonation:
+  Demoman-to-victim centre distance at detonation:
 
 ```math
-D = 120 \times f(r) \times \begin{cases} M(d,\ 0.4) & a \le 5\ \text{s} \\ 1 & a > 5\ \text{s} \end{cases}
+D = 120 \times f(r) \times \begin{cases} M_s(d) & a < 5\ \text{s} \\ 1 & a \ge 5\ \text{s} \end{cases}
 ```
 
-  (144 at 0 units, 120 at 512, 63.36 at ≥ 921.6, all at f = 1). Crit
+  (146.19 at 0 units, 120 at 512, 63.36 at ≥ 921.6, all at f = 1). Crit
   (decided at launch, carried by the sticky): 360 × f(r), no distance
   modifier.
-- **Air-detonation radius** (since 2014-12-22): a sticky detonated while it
-  is not stuck to anything uses a smaller radius:
+- **Air-detonation radius**: a sticky detonated while it is not stuck to
+  anything uses a smaller radius:
 
 ```math
-r_{max} = 146 \times \left(0.85 + 0.15\,\min\!\left(\frac{a - 0.7}{2},\ 1\right)\right)
+r_{max} = 146 \times \left(0.85 + 0.15\,\min\!\left(\max\!\left(\frac{a - 0.8}{2},\ 0\right),\ 1\right)\right)
 ```
 
-  (124.1 right at arming, 146 from 2.7 s on). Stuck stickies always use 146.
-- There is **no damage ramp-down for fresh stickies** today: a June 2014
-  change that weakened fresh stickies was reverted; only the air radius
-  above remains (Open questions 11).
+  (124.1 at arming, 146 from 2.8 s on). Stuck stickies always use 146.
+- There is **no damage ramp-down for fresh stickies** and no charge
+  effect on damage; only the air radius above (SDK).
 
 ### 6. Demoman self-damage and blast jumping
 
-- The Demoman's own grenade or sticky hurts him with **no distance
-  modifier**: base × f(r) (100 or 120), never crit-boosted (weapons.md
-  §5.3), and × 0.75 if he is airborne. The 0.75 is derived from the wiki's
-  self-damage ranges (stickies 45–114: 45 = 120 × 0.5 × 0.75; grenades
-  38–73: 38 ≈ 100 × 0.5 × 0.75); Open questions 9.
-- Knockback as weapons.md §5.4, with the Demoman's own blasts on himself
-  at their own scale (the Soldier's `_soldier` cvars don't apply; Open
-  questions 9). A **sticky jump**: stickies at the feet, jump (or crouch
-  jump), detonate in the air; with several stickies each explosion adds
-  its own damage and push in the same tick.
+- The Demoman's own grenade or sticky hurts him (never crit-boosted,
+  weapons.md §5.3) with **no distance modifier and no random spread**, as
+  a separate step after the blast has hurt everyone else: the radius is
+  always 146 and the damage is the launcher's **base** damage (100 for
+  the Grenade Launcher, 120 for the Stickybomb Launcher), even for a
+  grenade exploding on its 60 % fuse. With r to the nearer of his centre
+  and his feet: damage = base × f(r) × **0.75**, grounded or airborne
+  (SDK). (The wiki's lower ends, 45 for stickies and ≈ 38 for grenades,
+  are base × 0.5 × 0.75; its upper ends, 114 and 73, are not explained:
+  Open questions 9.)
+- **Knockback** on himself, as weapons.md §5.4's formula with **scale 9**
+  whether grounded or airborne (the Soldier's own-rocket scales 10 / 5 do
+  not apply), from the self-damage amount; a crouched Demoman's hull
+  height counts as 55 in the formula (as the Soldier's). Others are pushed
+  with the shared scale (6). A **sticky jump**: stickies at the feet, jump
+  (or crouch jump), detonate in the air; with several stickies each
+  explosion adds its own damage and push in the same tick.
 
 ### 7. Flame Thrower
 
-This is a reduction of the public description to what a simple
-implementation can do.
-
 #### 7.1 Firing
 
-- While attack is held with ammo: the Pyro emits flame particles from the
-  weapon's muzzle direction (the eye's aim) and uses 12.5 ammo per second
-  (1 every 0.08 s; 200 ammo last 16 s). The wiki gives about 33 particles a
-  second.
-- Each particle: initial speed 2450 along the aim with a random cone of
-  2.8° (half-angle; Open questions 13) plus the Pyro's own velocity
-  (Open questions 13), drifting up at 50 units/s, no gravity, slowed by
-  drag 8.5 per second (taken as exponential: v(t) = v₀ e^(−8.5 t)),
-  living 0.6 s plus a random 0–0.1 s. It passes through players (it does
-  not stop on hitting one) and stops at the world.
-- Range: with that drag a particle travels 2450 / 8.5 × (1 − e^(−8.5 t)):
-  286 units in 0.6 s, 288 in 0.7 s; from the muzzle (≈ 50 units ahead of
-  the eye) this matches the wiki's "≈ 350 units when stationary".
-  A simplest port may instead test a 350-unit cone of 2.8° half-angle
-  every flame tick, with particle age taken as distance / (350 / 0.6).
+- While attack is held with ammo and the Pyro's eyes are not under water:
+  if the line from his eye to the muzzle (the weapon's visual end) is
+  blocked by something that can't be damaged (a wall he is pressed
+  against), nothing is emitted. Otherwise the Pyro emits one **flame
+  point** per attack, every 0.02 s nominally, which on 0.015 s ticks is
+  every 2 ticks (≈ 33 a second). A press shorter than 0.2 s still emits
+  for 0.2 s.
+- **Ammo**: each emission adds 14 × 0.02 = 0.28 to an accumulator; whole
+  units are taken from the 200 (the remainder is kept, truncated to two
+  decimals). At 2 ticks per emission that is ≈ 9.33 ammo a second, ≈ 21.4 s
+  for 200.
+- **A flame point** starts 40 units forward and 5 right of the eye (along
+  the eye's aim); its base velocity is 2450 along the aim deviated by a
+  random spread: on each screen axis an offset (u₁ + u₂) × 0.0489 (2.8°
+  in radians) with u₁, u₂ uniform in [−0.5, 0.5] (a triangular spread up
+  to about 2.8° per axis). Its life is 0.6 s plus a uniform random value in
+  [−0.1, 0.1]. At most 30 points live per Pyro.
+- **Motion, each tick** (dt = 0.015): the step velocity is the base
+  velocity + (0, 0, 50) (the upward drift) + the Pyro's velocity at the
+  point's emission projected onto the point's base direction (this part
+  never decays for the stock weapon); the point moves by dt × that. Then
+  the base velocity's speed is reduced to speed × (1 − 8.5 × dt) (no
+  gravity: `flame_gravity` 0). A swept box of half-size 12 is traced
+  against the world for each step: on hitting it, the point slides on
+  (its velocity loses the component into the surface, it is placed 12
+  units off the surface, and the Pyro's velocity part is dropped); a point
+  that starts inside a solid, or whose centre is in water, is removed;
+  points are removed when their life ends.
+- **Reach**: a stationary Pyro's point travels
+  2450 × 0.015 × (1 − 0.8725ⁿ) / 0.1275 after n ticks: 285 units at 0.5 s,
+  287 at 0.6 s, 288 at 0.7 s, rising ≈ 30 units meanwhile. With the 40-unit
+  start and the 12-unit box, flames reach about 340 units ahead of the
+  eye (the wiki's "≈ 350"). A simplest port may instead test a cone of
+  that length every flame hit interval.
 
 #### 7.2 Damage
 
-- Each enemy is damaged at most once per flame tick (0.075 s, 5 server
-  ticks) while any particle overlaps him; the damage of that tick:
+- **Hit test**: each tick, for each enemy player (or enemy building) the
+  Pyro's flames touch, the points are searched oldest first for one whose
+  swept 12-unit box (from its previous to its current position) meets the
+  victim's hitboxes; the first such point is the one that hits. Teammates
+  are never hurt and nothing happens to them (except that a teammate
+  Sniper's arrow is lit). Flames pass through players.
+- **Heat** (per victim, per Pyro): a victim already being burned gains
+  heat H on every touch: +1, or up to +2 for a point less than 0.02 s old
+  (2 − age / 0.02). Every tick H drops by 1.25 (not below 0). A victim
+  enters with H = 1 at his first damaging hit and is forgotten when more
+  than 0.075 s pass without a damaging hit.
+- A touch deals damage only if at least 0.075 s have passed since this
+  Pyro's last damaging hit on that victim (Open questions 14). Its damage:
 
 ```math
-D = 13 \times g_{age} \times g_{burn},\qquad g_{age} = \max\!\left(0.5,\ 1 - \frac{age}{1.0}\right),\qquad g_{burn} = 0.5 + 0.5\,\min\!\left(\frac{T}{1.5},\ 1\right)
+D = \max\!\big(1,\ 13 \times g_{age} \times g_{heat}\big),\qquad g_{age} = \max\!\left(0.5,\ 1 - \frac{age}{L}\right),\qquad g_{heat} = 0.5 + 0.5\,\mathrm{clamp}\!\left(\frac{H - 10}{40},\ 0,\ 1\right)
 ```
 
-  with age the youngest touching particle's age in seconds (the wiki: 100 %
-  for new particles down to 50 % at 0.5 s; the shape between is assumed
-  linear) and T the time the victim has been hit without a break (reset
-  when no flame touches him for a flame tick). Per-tick range 6.5–13: the
-  wiki's numbers. (Wiki "Damage" says full after 0.9 s and the weapon page
-  1.5 s, 0.75 s very close: Open questions 14.)
-- No distance modifier. Crits: rapid-fire (weapons.md §2.6); a crit tick is
-  3 × the tick's damage — the wiki's 9.75–19.5 per tick suggests a crit
-  flame is only ×1.5 of the normal one: Open questions 14.
-- **Ignition**: a hit enemy (not a Pyro) is set on fire (§7.3).
-- Flames go through teammates, do them nothing, and extinguish burning
-  teammates (reference).
+  with age and L the hitting point's age and own life (so 0.5 at half its
+  life, ≈ 0.3 s). Range 6.5–13 per hit (at least 1). The heat factor is
+  what makes the damage rise while a victim stays in a dense stream
+  (Open questions 14 on its rate).
+- No distance modifier. Crits: rapid-fire (weapons.md §2.6); a crit hit
+  is a full crit, 3 × the hit's damage by the shared rule. Each hit also
+  halves the victim's received healing for 2 s (reference).
+- **Ignition**: every damaging hit on an enemy (a Pyro included) feeds
+  the burn (§7.3).
 
 #### 7.3 Afterburn
 
-- A burning player takes 4 damage every 0.5 s (8 hp/s) until the burn
-  ends. The damage is credited to the Pyro who lit him, with the
-  Flame Thrower's kill icon (`flamethrower`).
-- Duration from the Flame Thrower (since 2017-10-20): at least 3 s, growing
-  with the time in direct contact with flame, at most 10 s. Simple form:
-  each flame tick that hits him sets the remaining burn time to
-  max(remaining, 3) and then adds the tick's length to it, capped at 10
-  (exact growth: Open questions 15).
-- Afterburn never crits (it can mini-crit: 5 per tick, reference). Enemy
-  Pyros are immune.
-- Extinguished by: water up to the eyes, picking up a health kit, being
-  healed for a full second, a friendly Pyro's airblast (reference).
+- **Duration**: the first hit that ignites a victim gives him 3 s of burn;
+  then every damaging flame hit (the first included) adds 0.4 s; the
+  total is capped at 10 s. So one hit gives 3.4 s; at a hit every 0.075 s
+  the burn grows ≈ 4.33 s per second of contact and reaches 10 s after
+  ≈ 1.5 s.
+- **Ticks**: a burning player takes 4 damage every 0.5 s, the first
+  0.5 s after ignition; each tick also removes 0.5 s from the remaining
+  burn. The burn ends as soon as the remaining time is ≤ 0 (checked
+  before the tick's damage), or when the victim is waist-deep in water.
+  The damage is credited to the Pyro who lit him, with the Flame
+  Thrower's kill icon (`flamethrower`).
+- Afterburn never crits (it can mini-crit: 5 per tick, reference).
+- **Enemy Pyros** still take the direct flame damage; they burn for a
+  fixed 0.25 s (the burning look only) and take no afterburn.
+- Extinguished also by picking up a health kit, being healed by a Medic
+  long enough, and a friendly Pyro's airblast (reference).
 
 #### 7.4 Airblast (reference only)
 
-attack2: costs 20 ammo, refires after 0.75 s, a cone ahead of the Pyro
-that pushes enemies and reflects projectiles; sound
-`Weapon_FlameThrower.AirBurstAttack`, arms sequence `ft_alt_fire`
+attack2: costs 20 ammo, refires after 0.75 s and blocks flames for 1.0 s,
+a cone ahead of the Pyro that pushes enemies and reflects projectiles
+(stickies are pushed, not reflected) and puts out burning teammates;
+sound `Weapon_FlameThrower.AirBurstAttack`, arms sequence `ft_alt_fire`
 (1.0 s). Not specified further here.
 
 ### 8. Syringe Gun
 
 - Every 0.105 s while attack is held, one needle from the clip of 40.
-- Needle: a projectile from an offset under the gun (Open questions 8),
-  990 units/s along the aim (wiki infobox; the projectiles page says
-  1000), falling with gravity (fraction of sv_gravity: Open questions 16,
-  a community figure is 0.3), small random spread (Open questions 16).
-  Passes through teammates; stops at the first enemy or the world.
-- Damage on hit: 10 × M(d, 0.4) with d the Medic-to-victim distance at
-  impact (12 at 0, 10 at 512, 5.28 at ≥ 921.6). Crit 30 (rapid-fire
-  crits). Needles can't be reflected by airblast; they destroy stickies.
+- **Needle**: starts 16 forward, 6 right (mirrored for a left-handed view
+  model) and 8 down from the eye; aimed from there at the point where a
+  trace from the eye along the aim (up to 2000 units, stopped by any
+  solid or player) ends, then its pitch and its yaw each get a random
+  offset uniform in [−1.5°, 1.5°]. It flies at 1000 units/s with gravity
+  0.3 × sv_gravity (240 units/s²) as a 2-unit cube, no drag.
+- Passes through teammates; stops at the first enemy or the world (the
+  world removes it at once; the sky removes it silently).
+- Damage on hit: 10 × M_s(d) with d the Medic-to-victim centre distance at
+  impact (12.18 at 0, 10 at 512, 5.28 at ≥ 921.6). Crit 30 (rapid-fire
+  crits). Needles can't be reflected by airblast; they destroy stuck
+  stickies (§5.3).
 - Whole-clip reload 1.305 s; the arms' `sg_reload` is 1.5 s.
 
 ### 9. Assets (from the install)
@@ -461,7 +738,8 @@ looping `idle` of their own (cylinder/drum); the others a 1-frame `idle`.
 The Grenade Launcher's drum turns through `procedural_chamber`, which has
 no arms counterpart.)
 
-Projectiles (one bone each; their collision size: Open questions 8):
+Projectiles (one bone each; collision boxes from the SDK: grenade and
+sticky a 4-unit cube, needle a 2-unit cube):
 
 | Projectile | Model |
 |---|---|
@@ -573,10 +851,11 @@ half up (weapons.md Open questions 3) unless shown:
 | Sniper Rifle, unscoped or uncharged | 50 | 50 | 50 | – (no random crits) |
 | Sniper Rifle, full charge, body / head | 150 / 450 | 150 / 450 | 150 / 450 | – |
 | Grenade, direct (100) | 100 | 100 | 100 | 300 |
-| Sticky, age ≤ 5 s (120, k 0.4) | 144 | 120 | 63.36 → 63 (wiki 64) | 360 |
-| Sticky, age > 5 s | 120 | 120 | 120 | 360 |
-| Syringe (10, k 0.4) | 12 | 10 | 5.28 → 5 | 30 |
-| Flame tick (13 × age × burn) | 6.5–13 | – (range ≈ 350) | – | 3 × (Open questions 14) |
+| Grenade, fuse, at the centre (60) | 60 | 60 | 60 | 180 |
+| Sticky, age < 5 s (120, M_s) | 146.19 → 146 (wiki 144) | 120 | 63.36 → 63 (wiki 64) | 360 |
+| Sticky, age ≥ 5 s | 120 | 120 | 120 | 360 |
+| Syringe (10, M_s) | 12.18 → 12 | 10 | 5.28 → 5 | 30 |
+| Flame hit (13 × g_age × g_heat, ≥ 1) | 6.5–13 | – (reach ≈ 340) | – | 3 × the hit |
 | Afterburn | 4 per 0.5 s | | | never crits |
 
 ## Per-tick order
@@ -584,68 +863,98 @@ half up (weapons.md Open questions 3) unless shown:
 Single-bullet gun (Pistol, SMG, Revolver, Sniper Rifle): weapons.md's
 hitscan order, with these changes:
 
-1. Sniper Rifle: advance the scope state (attack2 toggles; τ, c(τ));
-   during the bolt cycle after a scoped shot, re-scope at the interval's
-   end if auto re-zoom is on.
+1. Sniper Rifle: advance the zoom state: a due scope drop (with or without
+   a pending re-zoom), a due re-zoom, then attack2 (toggle, or cancel a
+   pending re-zoom). Then: in a jump → drop the scope, c = 0; else, past
+   the attack2 cooldown → scoped and not just after a scoped shot: c +=
+   50 × tick (max 150), otherwise c decays.
 2. If attack is held, the interval has passed and ammo ≥ 1: crit decision
    (Revolver: roll now; Pistol, SMG: burst or once-a-second roll; Sniper:
-   none), remove 1 round, next fire time += interval.
-3. Direction: dead centre if ≥ 1.25 s since the last shot (Sniper: always
-   centre), else spread s. Record the shot time.
+   none), remove 1 round, next fire time = now + interval.
+3. Direction: dead centre if more than 1.25 s since the last shot
+   (Sniper: always centre), else spread s. Record the shot time.
 4. Rewind, trace, restore; damage: base × M (Sniper: D, ×3 if a scoped
-   head hit after ≥ 0.2 s scoped); round; apply.
-5. Sniper: if scoped, leave the scope and reset τ.
+   head hit ≥ 0.2 s after the last zoom change); round; apply.
+5. Sniper: if scoped, schedule the scope drop at +0.5 s (and the re-zoom
+   0.9 s after it), block jumping until the drop, c = 0; if unscoped,
+   block attack2 for the fire animation's length.
 
 Grenade and sticky launcher:
 
 1. Grenade: attack held, interval passed, clip ≥ 1 → crit roll, launch
-   (§4.1). Sticky: attack pressed → begin charge; on release or at 4.0 s →
-   crit roll, launch at v(h) (§5.1); if 9 live, schedule the oldest's
-   detonation.
-2. attack2 with the Stickybomb Launcher out: detonate every armed sticky.
-3. Each later tick, per projectile: gravity, drag, move; on contact:
-   grenade → explode if it hasn't touched the world and hit an enemy, else
-   bounce (and mark it as having touched the world); sticky → stick to the
-   world, bounce off enemies. Grenade: explode when its fuse ends.
-4. Explosion: as weapons.md §5.2 with the damage of §4.3 / §5.4 and the
-   self-damage of §6; knockback.
+   (§4.1). Sticky: attack pressed (or still held) with the interval passed
+   → begin charge; on release, or at 4.0 s → crit roll, launch at v(h)
+   (§5.1); if that makes 9 live, set the oldest's fuse to now.
+2. attack2 with any Demoman weapon out: detonate every armed sticky.
+3. Each physics step, per projectile: the physics move (gravity, drag,
+   bounces, spin); the player ray along the step (enemy touch → a
+   grenade not yet marked explodes at full damage; bounce off enemies and
+   off teammates after 0.25 s); a grenade's first physical contact marks
+   it; a sticky's contact with the world or a dynamic prop stops it.
+4. Every 0.2 s per projectile: fuse check (a grenade past 2.0 s, a sticky
+   whose fuse was set to now) → explode.
+5. Explosion: as weapons.md §5.2 with the damage of §4.3 / §5.4; then the
+   owner's own share (§6); knockback.
 
 Flame Thrower:
 
-1. While attack held with ammo: use ammo at 12.5/s; emit particles.
-2. Move particles; drop the expired ones and those hitting the world.
-3. Every 5th tick (0.075 s): per enemy touched by a particle, D of §7.2,
-   ignite (or extend the burn); advance each victim's T, reset T for
-   enemies not touched this flame tick.
-4. Every 0.5 s of each burning player's burn: 4 damage; end the burn when
-   its time runs out.
+1. While attack held with ammo, eyes above water and the muzzle clear:
+   every 0.02 s (2 ticks), crit decision, emit one point, add 0.28 ammo
+   use.
+2. Move points (step velocity, world sweep, drag); drop the expired ones,
+   those in water and those that started in a solid.
+3. For each enemy touched by a point (oldest point first): add heat; if
+   ≥ 0.075 s since the last damaging hit on him, deal D of §7.2 and feed
+   his burn (+3 s on ignition, +0.4 s).
+4. After all entities: forget victims not hit for over 0.075 s; every
+   victim's heat −1.25.
+5. Each burning player: if remaining burn ≤ 0 or waist-deep in water →
+   end; else every 0.5 s: 4 damage, remaining −0.5 s.
 
-Syringe Gun: as the hitscan gun's steps 2–3 but spawn a needle; each later
-tick move it under gravity, on contact with an enemy apply 10 × M(d, 0.4)
-(d at impact).
+Syringe Gun: as the hitscan gun's steps 2–3 but spawn a needle; each
+later tick move it under 0.3 gravity; on contact with an enemy apply
+10 × M_s(d) (d at impact) and remove it; on the world remove it.
 
 ## Edge cases
 
 - **Grenade direct hit after a bounce**: none: a grenade that has touched
-  the world only explodes on its fuse, even if it then rolls into an enemy.
-- **Grenade touching a teammate**: passes through; it is not a bounce.
+  anything physical explodes only on its fuse (at 60 %), even if it then
+  rolls into an enemy; it bounces off him (× 0.225 of its speed).
+- **Grenade hitting an enemy building after a bounce**: explodes on the
+  next tick at its reduced (60 %) damage.
+- **Grenade touching a teammate**: passes through during its first 0.25 s,
+  bounces off after; never explodes.
+- **Grenade or sticky fired from inside a wall**: if the 8-unit box trace
+  from the eye starts in a solid, nothing is launched (the round is still
+  used: Open questions 8).
 - **Sticky on an enemy**: bounces off; if it then lands on the world it
   sticks.
-- **Detonating before arming**: nothing for those stickies; a later
-  attack2 detonates them once armed.
-- **Sticky fired at full charge without releasing**: launched at 4.0 s; the
-  player must release and press again to charge the next one.
+- **Detonating before arming**: deny sound; those stickies stay; a later
+  attack2 (or holding attack2) detonates them once armed.
+- **Sticky fired at full charge without releasing**: launched at 4.0 s;
+  still holding, the next charge starts 0.6 s later (and fires itself 4 s
+  after that).
 - **Sticky crit**: decided at launch; a crit sticky detonated 10 s later is
   still a crit (360 × f).
 - **Sticky distance for the 5 s rule**: the Demoman's position at
-  detonation counts (as the rocket's at impact).
+  detonation counts (as the rocket's at impact); a sticky exactly 5.0 s
+  old is already flat.
 - **Sniper scoped < 0.3 s**: c = 0, D = 50; a head hit before 0.2 s is a
   body hit (50).
 - **Sniper unscoped head hit**: 50, no crit.
+- **Sniper shot right after the auto re-zoom** (at +1.5 s): scoped for
+  0.1 s only, so a head hit is not a crit and the charge is 0.1 × 50 = 5
+  → D = 50.
+- **Sniper in a jump**: cannot scope; jumping while scoped unscopes and
+  empties the charge; after a scoped shot he cannot jump for 0.5 s.
 - **Pistol held**: fires at 0.15 s intervals; tapping faster does not fire
   faster (since 2009-08-13).
-- **Flame Thrower under water**: it does not fire (reference; later).
-- **Afterburn on a Pyro**: none; direct flame damage still applies.
+- **Flame Thrower under water** (eyes under): it emits nothing; points
+  entering water die.
+- **Flame Thrower against a wall**: nothing is emitted while the eye-to-
+  muzzle line is blocked by the world.
+- **Afterburn on a Pyro**: 0.25 s of burning look, no afterburn damage;
+  direct flame damage still applies.
 - **Clip reload interrupted by a weapon switch**: nothing moved (weapons.md
   §3).
 
@@ -654,6 +963,9 @@ tick move it under gravity, on contact with an enemy apply 10 × M(d, 0.4)
 - The Sniper Rifle's fire animation (1.6667 s) is longer than its interval
   (1.5 s): the next shot can come before the bolt animation ends. Keep the
   timing.
+- After an auto re-zoom the charge restarts with no 0.3 s wait, but the
+  headshot's 0.2 s does restart: a shot at the interval's end (+1.5 s)
+  can't headshot-crit. Keep.
 - `Weapon_SniperRifle.BoltForward` plays `sniper_bolt_back.wav` and
   `.BoltBack` plays `sniper_bolt_forward.wav` (swapped in the data). Use
   the entries as they are.
@@ -661,15 +973,20 @@ tick move it under gravity, on contact with an enemy apply 10 × M(d, 0.4)
   as a primary (`anim_slot`), the reverse of their slots.
 - The Stickybomb Launcher's charge animation `sb_autofire` is exactly the
   4.0 s charge.
-- Pistol, SMG and Revolver need 1.25 s for a dead-accurate shot, not the
-  pellet weapons' 0.25 s.
+- Pistol, SMG and Revolver need more than 1.25 s for a dead-accurate
+  shot, not the pellet weapons' 0.25 s.
+- A rolled grenade does 60 % on its fuse, but the Demoman's own share of
+  it is still computed from 100 (§6).
+- The flame emitter's nominal 0.02 s interval is shorter than a tick, so
+  the real rate (and the ammo use) depends on the tick rate: 33.3 points
+  a second at 66.7 tick.
 - `Weapon_FlameThrower.Fire` and `.WindDown` are copies of `.FireStart`
   and `.FireEnd`.
 
 ## Test cases
 
 Spread off, crits off unless said, no random pellet spread unless said,
-f = 1 unless said.
+f = 1 unless said, 66.7 tick (0.015 s).
 
 | # | Setup | Input | Expected |
 |---|---|---|---|
@@ -680,121 +997,140 @@ f = 1 unless said.
 | 5 | Pistol, Scout, hold attack 2 s from full | – | 12 shots in 1.65 s (first at 0, every 0.15 s), then the reload; clip 12 again at last shot + interval + 1.005 s; reserve 36 → 24 |
 | 6 | Pistol, Engineer, clip 0, reserve 200 | – | clip 12 after 1.035 s, reserve 188 |
 | 7 | SMG, clip 3, reserve 1 | reload | after 1.1 s clip 4, reserve 0 |
-| 8 | Revolver, last shot ≥ 1.25 s ago | fire | dead centre; a second shot 0.5 s later has spread ≤ 0.025 |
+| 8 | Revolver, last shot 1.26 s ago | fire | dead centre; a second shot 0.5 s later has spread ≤ 0.025 per axis |
+| 8b | Revolver, last shot exactly 1.25 s ago | fire | spread applies (strictly more than 1.25 s needed) |
 | 9 | Pistol, rapid-fire crit roll succeeds at t | keep firing | every shot from t to t + 2 s deals 45 |
 | 10 | Sniper, unscoped, body or head at 2000 units | fire | 50 |
-| 11 | Sniper, scoped 0.1 s, head | fire | 50 (headshot not yet allowed) |
+| 11 | Sniper, scoped 0.1 s, head | fire | 50 (headshot not yet allowed; also: no shot until 0.1 s after the zoom) |
 | 12 | Sniper, scoped 0.25 s, head | fire | 150 (crit of D = 50) |
-| 13 | Sniper, scoped 1.3 / 2.3 / 3.3 / 5.0 s, body | fire | 50 / 100 / 150 / 150 |
+| 13 | Sniper, scoped 1.3 / 2.3 / 3.3 / 5.0 s, body | fire | 50 / 100 / 150 / 150 (± one tick's 0.75) |
 | 14 | Sniper, scoped 3.3 s, head, 3000 units | fire | 450 |
 | 15 | Sniper, scoped 2.3 s, head | fire | 300 |
-| 16 | Sniper, scoped, fire, attack2 not pressed again, auto re-zoom on | – | out of scope after the shot, back in at +1.5 s, c = 0, D = 50 until +2.8 s |
+| 16 | Sniper, scoped, fire at t = 0, attack2 not pressed again, `cl_autorezoom` 1 | – | still scoped until the first tick after +0.5 s, unscoped until the first tick after +1.4 s, then scoped with c rising at once: D = 50 until +2.4 s, 150 from +4.4 s; jump does nothing until +0.5 s |
+| 16b | Same, `cl_autorezoom` 0 | – | unscoped at +0.5 s; attack2 works again from +1.5 s |
+| 16c | Same as 16, head hit at +1.5 s | fire | 50, not a crit (0.1 s since the re-zoom) |
 | 17 | Sniper scoped | hold forward | speed 80; unscoped 300 |
+| 17b | Sniper scoped | jump | unscoped, c = 0; attack2 during the jump does not scope |
+| 17c | Sniper, unscoped shot | attack2 at +1.0 s / +1.7 s | nothing / scopes |
 | 18 | Sniper, 25 rounds | 25 shots | then empty sound; no reload |
 | 19 | Sniper, teammate between him and the enemy | fire | the enemy is hit, the teammate isn't |
 | 20 | Sniper, many shots with crits on | – | no random crit ever |
-| 21 | Grenade fired level from standing on flat ground, no drag | – | initial velocity (1200, 0, 200) in the aim frame; flight follows gravity 800 |
+| 21 | Grenade fired level from standing on flat ground, jitter off | – | initial velocity (1200, 0, 200) in the aim frame from 16 / 8 / −6 off the eye; flight under gravity 800 (drag: P1) |
 | 22 | Grenade direct hit on an enemy, Demoman at 0 / 512 / 1500 | – | 100 / 100 / 100 |
-| 23 | Grenade lands, rolls into an enemy at 1.0 s | – | no explosion then; explodes at 2.3 s where it is |
-| 24 | Grenade explodes 73 units from an enemy's centre | – | 100 × 0.75 = 75 |
-| 25 | Grenade explodes 146 / 147 units away | – | 50 / 0 |
-| 26 | Crit grenade, direct | – | 300 |
+| 23 | Grenade lands, rolls into an enemy at 1.0 s | – | no explosion then (it bounces off him); explodes at the first fuse check after 2.0 s (≈ 2.1–2.2 s) where it is, 60 at the centre |
+| 24 | Grenade's fuse ends 73 units from an enemy's centre | – | 60 × 0.75 = 45 |
+| 25 | Grenade's fuse ends 146 / 147 units away | – | 30 / 0 |
+| 26 | Crit grenade, direct / on the fuse at the centre | – | 300 / 180 |
 | 27 | Grenade Launcher clip 0, reserve 16 | – | clip 1 at +1.2 s (wiki 1.24), 4 at +3.0 s; reserve 12 |
-| 28 | Sticky, attack pressed and released at once | – | forward speed 900 |
-| 29 | Sticky, held 2 s / 4 s | – | 1650 / 2400; at 4 s it launches without release |
-| 30 | Sticky, launch, attack2 at +0.5 s, again at +0.8 s | – | nothing at 0.5 s; explodes at 0.8 s |
-| 31 | 8 stickies out | launch a 9th | the oldest explodes shortly after; 8 remain |
-| 32 | Sticky stuck, age 2 s, Demoman 0 / 512 / 1024 from the enemy at the centre | detonate | 144 / 120 / 63 |
-| 33 | Same, age 6 s | detonate | 120 / 120 / 120 |
+| 27b | Grenade passes a teammate at 0.1 s / at 0.5 s of flight | – | passes through / bounces off (× 0.45), no explosion |
+| 28 | Sticky, attack pressed and released at once, jitter off | – | forward speed 900, up 200 |
+| 29 | Sticky, held 2 s / 4 s | – | 1650 / 2400; at 4 s it launches without release; still held, the next charge starts at 4.6 s |
+| 30 | Sticky, launch, attack2 at +0.5 s, again at +0.9 s | – | deny sound and nothing at 0.5 s; explodes at 0.9 s |
+| 30b | Sticky armed, Demoman holding the Grenade Launcher | attack2 | it explodes |
+| 31 | 8 stickies out | launch a 9th | the oldest explodes within 0.2 s (its next fuse check), armed or not; 8 remain |
+| 32 | Sticky stuck, age 2 s, Demoman 0 / 256 / 512 / 1024 from the enemy at the centre | detonate | 146 / 133 / 120 / 63 |
+| 33 | Same, age 6 s | detonate | 120 / 120 / 120 / 120 |
 | 34 | Crit sticky, age 1 s, 73 units from the enemy, Demoman 1500 away | detonate | 360 × 0.75 = 270 |
-| 35 | Sticky in the air (not stuck), age 0.7 s, enemy 130 units away | detonate | outside the 124.1 radius: 0 |
-| 36 | Same, age 2.7 s | detonate | inside 146: 120 × (1 − 0.5·130/146) × M |
-| 37 | Sticky hits an enemy in flight | – | bounces off, no explosion |
+| 35 | Sticky in the air (not stuck), age 0.8 s, enemy 130 units away | detonate | outside the 124.1 radius: 0 |
+| 36 | Same, age 2.8 s | detonate | inside 146: 120 × (1 − 0.5·130/146) × M_s |
+| 37 | Sticky hits an enemy in flight | – | bounces off (velocity mirrored, × 0.225), no explosion |
 | 38 | Demoman dies with 5 stickies out | – | all 5 vanish, no explosions |
-| 39 | Demoman airborne, own sticky at 0 from his centre | detonate | 120 × 0.75 = 90 (grounded: 120) |
+| 39 | Demoman airborne / grounded, own sticky at 0 from his centre or feet | detonate | 120 × 0.75 = 90 either way |
+| 39b | Demoman, own grenade explodes on its fuse at his feet | – | 100 × 0.75 = 75 (not 60 × 0.75) |
 | 40 | Stickybomb Launcher clip 0, reserve 24 | – | first at +1.09 s, then every 0.67 s; full at 5.78 s; reserve 16 |
-| 41 | Flame Thrower, enemy at 100 units, continuous | 1.5 s | flame ticks every 0.075 s rising from ≈ 6.5 × g_age to 13 × g_age; ignited |
-| 42 | Flame Thrower, enemy at 450 units | hold | no damage (beyond reach) |
-| 43 | Flame Thrower, 200 ammo | hold | 16 s of fire |
-| 44 | Enemy lit for one flame tick, then out of the flame | – | burns ≥ 3 s: 4 at +0.5, +1.0, … (6 ticks, 24) |
-| 45 | Enemy in flames 10 s, then out | – | burns 10 s more: 20 ticks, 80 |
-| 46 | Enemy Pyro hit by flames | – | direct damage only, no afterburn |
-| 47 | Burning player picks up a health kit | – | burn ends |
+| 40b | Stuck sticky shot by an enemy Pistol / an enemy rocket nearby | – | gone, no explosion / pushed (and unstuck only if the push exceeds 1500) |
+| 41 | Flame Thrower, enemy at 100 units, continuous | 1.5 s | damaging hits every 0.075 s (5 or 6 ticks: Open questions 14), each max(1, 13 × g_age × g_heat), between 6.5 × g_age and 13 × g_age; ignited |
+| 42 | Flame Thrower, stationary, enemy's near side at 360 units | hold | no damage (beyond reach ≈ 340) |
+| 43 | Flame Thrower, 200 ammo | hold | ≈ 21.4 s of fire (714 points at 0.28 each, ±1 for the truncated remainder) |
+| 44 | Enemy lit by one flame hit, then out of the flame | – | burn 3.4 s: 4 at +0.5, +1.0, …, +3.5 (7 ticks, 28) |
+| 45 | Enemy in flames 10 s, then out | – | burn capped at 10 s: 20 more ticks, 80 |
+| 46 | Enemy Pyro hit by flames | – | direct damage only, 0.25 s burn look, no afterburn |
+| 47 | Burning player steps into water to the waist | – | burn ends |
 | 48 | Syringe at 0 / 512 / 1024 (Medic at impact) | hit | 12 / 10 / 5 |
 | 49 | Syringe Gun, hold attack, clip 40 | – | 40 needles in 4.095 s, then reload 1.305 s |
-| 50 | Syringe fired level | – | drops below the aim line over distance (gravity), flies at 990 |
+| 50 | Syringe fired level, spread off | – | flies at 1000; drops 120 t² units below its line after t seconds (240 / 2) |
 | 51 | Any of the eight | switch to it | first attack possible 0.5 s later |
 
 Probe checks (live dedicated server, bots; never ports 27015/27030):
 
 | # | How | Expected |
 |---|---|---|
-| P1 | Log a grenade's and a sticky's position each tick after launch (uncharged and full charge) | the launch velocity split, gravity, drag (Open questions 7) |
-| P2 | Sniper: damage on a bot at scoped times 0.2, 0.3, 1.3, 2.3, 3.3 s; head vs body | §3.2–3.3 |
-| P3 | Flame Thrower: damage log per tick on a bot at 50/150/250/340 units | g_age, g_burn, range (Open questions 14) |
-| P4 | Afterburn duration after 0.1 s, 1 s, 3 s, 10 s of contact | Open questions 15 |
-| P5 | Demoman's own sticky at his feet: grounded vs airborne damage, velocity after | 0.75, knockback scale (Open questions 9) |
-| P6 | Ninth sticky: ticks until the oldest explodes | Open questions 12 |
+| P1 | Log a grenade's and a sticky's position each tick after launch (uncharged and full charge), and a grenade's bounces on flat ground | the physics drag, bounce and friction (Open questions 7) |
+| P2 | Sniper: damage on a bot at scoped times 0.2, 0.3, 1.3, 2.3, 3.3 s; head vs body; a head hit 0.1 s after an auto re-zoom | §3.2–3.3 |
+| P3 | Flame Thrower: damage log per hit on a bot at 50/150/250/330 units, from the first hit for 2 s | g_age, g_heat's rise, the hit interval (Open questions 14) |
+| P4 | Afterburn duration after 1 hit, 0.5 s, 1.5 s, 10 s of contact | §7.3 |
+| P5 | Demoman's own sticky at his feet: grounded vs airborne damage, velocity after | 90 both, scale 9 |
+| P6 | Grenade: time from launch to the fuse explosion | Open questions 20 |
 
 ## Open questions
 
 1. **Rounding** follows weapons.md Open questions 3 (the wiki's 22 for the
-   Pistol's 22.5 and 64 for the sticky's 63.36 disagree with half-up).
+   Pistol's 22.5, 64 for the sticky's 63.36 and 144 for its 146.19
+   disagree with half-up).
 2. **Pistol, SMG, Revolver spread**: s = 2/N from the wiki's "N:1" uses
-   weapons.md's reading of the Scattergun's 30:1; the distribution and
-   whether the spread grows with consecutive shots (the wiki only says
-   accuracy is restored after 1.25 s) are not documented.
-3. **Sniper zoom**: the 20° zoom field of view is from memory of common
-   community configs, not from the install (the weapon scripts are
-   encrypted); the client's `cl_autorezoom` default (believed 1), the
-   crouched-and-scoped speed (wiki 1.33 % seems wrong; check), whether the
-   Sniper can scope in the air, and whether the bolt cycle unscopes at the
-   shot or later. Check on the Windows client.
-4. **Sniper spread**: assumed none, scoped or not; whether the random damage
-   spread (`tf_damage_disablespread` 0) applies to the rifle is not stated.
-5. **SMG crits**: the wiki's crit page lists Pistol, Minigun, Syringe Gun,
-   Flame Thrower as rapid-fire but doesn't name the SMG; assumed
-   rapid-fire (same 0.105 s interval as the Minigun).
-6. **Holding attack on the Revolver** and attack during a clip reload: the
-   wiki doesn't say whether holding refires; assumed it does. Whether
-   attack with rounds left cancels a clip reload (as it does a shell
-   reload) is not documented.
-7. **Grenade and sticky launch**: the 1200 + 200 up split is fitted to the
-   wiki's 1216.6; the sticky's endpoints 900 / 2400 are inferred from the
-   wiki's 925.38 / 2409.2 (which imply ≈ 210 up) and conflict with the
-   Stickybomb page's "805 uncharged". The random jitter, the drag and
-   whether gravity is the full sv_gravity are unknown (P1).
-8. **Projectile offsets and sizes**: grenade/sticky (16, 8, −6) and the
-   needle's offset are community figures not verified; collision sizes of
-   the three projectiles are not documented (the models' visual bounds were
-   not read). P1.
-9. **Demoman self-damage and knockback**: the 0.75 airborne factor is
-   derived from the wiki's ranges (the upper ends 73 and 114 don't fit a
-   simple model); the server cvar behind it, if any, and the knockback
-   scale of his own blasts are unknown (P5).
-10. **Grenade damage variance** of ±2 % (wiki) may be a separate rule from
-    `tf_damage_disablespread`; assumed off with the default.
-11. **Sticky arm time**: 0.7 s (wiki infobox) vs 0.8 s ("base arm time" in
-    the 2014-12-22 notes). The air-radius ramp's start (0.85 at arm time)
-    uses the same number.
-12. **Sticky detonation**: the delay before the oldest sticky blows when a
-    ninth is launched; whether attack2 detonates with another weapon out
-    (believed: launcher must be out). P6.
-13. **Flame particles**: whether 2.8° is a half-angle or full cone, whether
-    the Pyro's velocity is added (`flame_ignore_player_velocity` exists as
-    an attribute, suggesting it is added by default), the particle hit
-    size, and the drag law (exponential assumed).
-14. **Flame damage ramps**: the burn ramp's length (1.5 s weapon page, 0.9 s
-    damage page, 0.75 s very close), the shape of the age factor between
-    0 and 0.5 s, and the crit factor (the wiki's 9.75–19.5 crit per tick is
-    1.5 × the normal, not 3 ×). P3.
-15. **Afterburn duration growth** between 3 and 10 s by contact time: the
-    exact rule is not public. P4.
-16. **Syringe** gravity fraction (community 0.3), random spread, speed (990
-    vs 1000).
+   weapons.md's reading of the Scattergun's 30:1; the script's spread
+   value would settle it (the SDK has the distribution, §2, but not the
+   number).
+3. **Sniper zoom**: settled by the SDK (20°, `cl_autorezoom` 1, jump
+   rules). Left: the crouched scoped speed (the 80 cap with movement.md's
+   crouch scaling) is not measured.
+4. **Sniper spread**: assumed none, scoped or not (the script's value);
+   with `tf_damage_disablespread` 0 the rifle gets the usual random
+   ±damage variance only if its damage carries no other exemption (the
+   SDK applies the random variance to every non-self hit; not checked for
+   the rifle).
+5. **SMG crits**: rapid-fire is a flag in each weapon's script, which the
+   SDK doesn't include; assumed rapid-fire (same 0.105 s interval as the
+   Minigun).
+6. **Holding attack on the Revolver** and attack during a clip reload: not
+   settled here; assumed it refires, and that attack with rounds left
+   cancels a clip reload as it does a shell reload.
+7. **Grenade and sticky physics**: they are rigid bodies in the physics
+   engine; the air drag (linear and angular), the surface bounce and the
+   friction come from the engine and the collision material, not the game
+   code. Fit them from P1.
+8. **Projectile sizes and blocked launches**: the collision boxes are
+   settled (grenade and sticky 4-unit cube, needle 2-unit cube); whether a
+   launch blocked inside a wall still uses up the round is not checked.
+9. **Demoman self-damage**: the SDK gives 0.75 always and base damage × f;
+   the wiki's upper ends (114 stickies, 73 grenades) are unexplained (maybe
+   several explosions or old values). P5.
+10. **Grenade damage variance**: settled: the random-spread variance at a
+    fifth of its size (§4.3), only with `tf_damage_disablespread` 0.
+11. **Sticky arm time**: settled, 0.8 s (the 2014 notes' value); the
+    wiki's 0.7 is out of date.
+12. **Sticky detonation**: settled (any weapon out; the ninth sticky's
+    oldest at its next 0.2 s fuse check).
+13. **Flame points**: settled (spread per axis, the Pyro's velocity along
+    the flame only, hit box 12, linear per-tick drag). Left: the client's
+    particle look.
+14. **Flame damage rate**: the per-victim interval is "at least 0.075 s",
+    which on 0.015 s ticks is 5 ticks if the time difference compares
+    exactly and 6 if it falls just short in floating point; and the heat
+    index gains +1 per touch call, which depends on how many times per
+    tick the engine reports the flame touching a victim (once per tick
+    would never let the heat rise against its 1.25 per tick drain; twice
+    per tick gives +0.75 per tick, full damage after ≈ 1 s of dense
+    contact, close to the wiki's 0.9 s). Port: two touches per tick until
+    P3 says otherwise.
+15. **Afterburn**: settled (3 s + 0.4 s per hit, cap 10). Left: the
+    healing and health-kit extinguish rules (reference only here).
+16. **Syringe** speed, gravity and spread settled (1000, 0.3, ±1.5°).
+    Left: whether a needle counts as a bullet for destroying stickies
+    (depends on the missing damage-type table; the wiki says it does).
 17. **`ft_idle` vs `df_idle`** share `ACT_PRIMARY_VM_IDLE` with equal weight
     in the Pyro's animation file; how the game picks the stock one
     (activity weight lists, a per-item remap) is unknown; choose by name.
 18. **Explosion sound** of grenades and stickies (`Weapon_Grenade_Pipebomb.Explode`
     vs the rocket's `BaseExplosionEffect.Sound`) and the Stickybomb
     Launcher's draw sound: by name only; check on the live game.
+19. **Distance classes**: the SDK release lacks the per-weapon damage-type
+    table. Grenades having no distance modifier and stickies having one
+    only before 5 s are in the code; the reduced near ramp for stickies
+    and syringes and the standard one for the Pistol, SMG and Revolver are
+    inferred from the wiki's 120 % / 150 % figures matching the code's two
+    rules.
+20. **Grenade fuse timing**: the fuse is 2.0 s but is checked only every
+    0.2 s from launch; with think times rounded to ticks the explosion
+    comes at ≈ 2.1–2.2 s (the wiki's 2.3 s may include other delays).
+    P6.
