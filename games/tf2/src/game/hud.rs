@@ -9,7 +9,8 @@
 //! in the repository; a map without the install has no TF2 look, and the
 //! shell's HUD draws. The guns' kill icons as pictures
 //! (`kill_icon_pictures`: each gun's `hud.icon` cell of `mod_textures.txt`
-//! cut from its sheet) for the kill feed (`ui::systems::
+//! cut from its sheet, and the backstab's, `backstab`, under
+//! `weapons::melee::BACKSTAB`) for the kill feed (`ui::systems::
 //! register_kill_icons`), only once their files are here (`Mount::held`).
 
 use std::collections::BTreeMap;
@@ -106,8 +107,12 @@ pub fn kill_icon_pictures(mount: &Mount) -> Option<BTreeMap<String, UiImage>> {
     let cells = icon_cells(&String::from_utf8_lossy(&text));
     let mut sheets: BTreeMap<String, Option<UiImage>> = BTreeMap::new();
     let mut out = BTreeMap::new();
-    for w in super::weapons::tf2_weapons().weapons {
-        let Some(icon) = w.hud.icon.as_deref() else { continue };
+    // Each weapon's icon by its id, and the backstab's (weapons_stock.md
+    // 8.4: a backstab kill's weapon, `weapons::melee::BACKSTAB`).
+    let mut icons: Vec<(String, String)> =
+        super::weapons::tf2_weapons().weapons.into_iter().filter_map(|w| Some((w.id, w.hud.icon?))).collect();
+    icons.push((super::weapons::melee::BACKSTAB.into(), super::weapons::melee::BACKSTAB_ICON.into()));
+    for (id, icon) in icons {
         let Some((file, [x, y, cw, ch])) = cells.get(&icon.to_lowercase()) else { continue };
         let file = file.to_lowercase();
         if !sheets.contains_key(&file) {
@@ -131,7 +136,7 @@ pub fn kill_icon_pictures(mount: &Mount) -> Option<BTreeMap<String, UiImage>> {
         }
         let Some(sheet) = sheets[&file].as_ref() else { continue };
         let Some(rgba8) = crop(sheet, *x, *y, *cw, *ch) else { continue };
-        out.insert(w.id, UiImage { width: *cw, height: *ch, rgba8 });
+        out.insert(id, UiImage { width: *cw, height: *ch, rgba8 });
     }
     Some(out)
 }

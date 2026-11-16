@@ -5,7 +5,11 @@
 //! the spec's public numbers that data/weapons/*.toml commit (the
 //! fallback).
 //!
-//! - `apply_script` is the spec's mapping (weapon_scripts.md, "Mapping"):
+//! - `apply_script` is the spec's mapping (weapon_scripts.md, "Mapping";
+//!   for the melee weapons weapons_stock.md 6, `apply_melee`: `Damage`,
+//!   `TimeFireDelay` as the hit and miss refires, `SmackDelay` as the
+//!   swing's `delay`, 0.2 s without one; a melee script on a gun or a
+//!   gun's on a melee weapon refused):
 //!   a script's first top-level block onto one gun's TOML document. The
 //!   gun's kind decides what `Damage` is (per pellet, per blast, per
 //!   needle, per second of flame; the Sniper Rifle's isn't mapped); the
@@ -62,12 +66,16 @@ enum Kind {
     Sticky,
     Needle,
     Flame,
+    /// A melee weapon (its document has `[melee]`; weapons_stock.md 6).
+    Melee,
 }
 
 impl Kind {
     fn of(doc: &Table) -> Kind {
         let has = |h: &str| doc.get("hooks").and_then(Value::as_table).is_some_and(|t| t.contains_key(h));
-        if has(super::SNIPER_HOOK) {
+        if doc.get("melee").is_some_and(Value::is_table) {
+            Kind::Melee
+        } else if has(super::SNIPER_HOOK) {
             Kind::Sniper
         } else if has(super::ROCKET_HOOK) {
             Kind::Rocket
@@ -118,7 +126,7 @@ impl Kind {
             Kind::Sticky => Some(super::STICKY_HOOK),
             Kind::Needle => Some(super::NEEDLE_HOOK),
             Kind::Flame => Some(super::FLAME_HOOK),
-            Kind::Bullet | Kind::Sniper => None,
+            Kind::Bullet | Kind::Sniper | Kind::Melee => None,
         }
     }
 }
@@ -183,6 +191,21 @@ fn integer(data: &KvView, key: &str, notes: &mut Vec<String>) -> Option<i64> {
 pub fn apply_script(data: KvView, doc: &mut Table) -> Applied {
     let mut out = Applied::default();
     let kind = Kind::of(doc);
+    // A melee script (`MeleeWeapon` 1) fits a melee weapon only, and a
+    // melee weapon only a melee script (weapons_stock.md 6).
+    let melee_script = data.string("MeleeWeapon").is_some_and(|m| m.trim() == "1")
+        || data.string("WeaponType").is_some_and(|t| t.eq_ignore_ascii_case("melee"));
+    if melee_script != (kind == Kind::Melee) {
+        out.refused = Some(if melee_script {
+            "a melee script (MeleeWeapon 1) on a gun: nothing applied".into()
+        } else {
+            "a gun's script on a melee weapon: nothing applied".into()
+        });
+        return out;
+    }
+    if kind == Kind::Melee {
+        return apply_melee(data, doc, out);
+    }
     // The kind check.
     if kind.projectile_matches(data.string("ProjectileType")) == Some(false) {
         out.refused = Some(format!(
@@ -326,6 +349,56 @@ pub fn apply_script(data: KvView, doc: &mut Table) -> Applied {
     out
 }
 
+/// The smack delay of a melee script without `SmackDelay` (weapons_stock.md
+/// 6: every stock melee but the Knife).
+pub const SMACK_DELAY_DEFAULT: f64 = 0.2;
+
+/// A melee script onto a melee weapon's document (weapons_stock.md 6):
+/// `Damage` each swing's damage, `TimeFireDelay` each swing's hit and miss
+/// refires (one interval for both), `SmackDelay` each swing's `delay`
+/// (absent: 0.2 s); `Secondary_SmackDelay` isn't mapped; the swing and hit
+/// sounds checked.
+fn apply_melee(data: KvView, doc: &mut Table, mut out: Applied) -> Applied {
+    let notes = &mut out.notes;
+    let mut set = Vec::new();
+    let damage = positive(&data, "Damage", notes);
+    let interval = positive(&data, "TimeFireDelay", notes);
+    let delay = positive(&data, "SmackDelay", notes).unwrap_or(SMACK_DELAY_DEFAULT);
+    let swings: Vec<String> = table(doc, "melee").keys().filter(|k| *k == "primary" || *k == "secondary").cloned().collect();
+    for name in &swings {
+        let swing = table(table(doc, "melee"), name);
+        if let Some(d) = damage {
+            let old = swing.get("damage").cloned();
+            swing.insert("damage".into(), number(old.as_ref(), d));
+        }
+        if let Some(i) = interval {
+            for key in ["hit_refire", "miss_refire", "miss_refire_other"] {
+                swing.insert(key.into(), Value::Float(i));
+            }
+        }
+        swing.insert("delay".into(), Value::Float(delay));
+    }
+    if damage.is_some() {
+        set.push("[melee] damage");
+    }
+    if interval.is_some() {
+        set.push("[melee] refires");
+    }
+    set.push("[melee] delay");
+    if let Some(sounds) = data.block("SoundData") {
+        let ours = doc.get("melee").and_then(|m| m.get("primary")).and_then(Value::as_table);
+        for (role, field) in [("melee_miss", "sound_swing"), ("melee_hit", "sound_hit"), ("melee_hit_world", "sound_hit_world")] {
+            if let (Some(theirs), Some(mine)) = (sounds.string(role), ours.and_then(|s| s.get(field)).and_then(Value::as_str))
+                && !theirs.eq_ignore_ascii_case(mine)
+            {
+                notes.push(format!("SoundData {role} differs from [melee.primary] {field}"));
+            }
+        }
+    }
+    out.set = set;
+    out
+}
+
 /// One gun's numbers' source, as the log says it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GunSource {
@@ -416,11 +489,13 @@ impl GunNumbers {
         for (name, text) in super::DATA {
             let doc: Option<Table> = text.parse().ok();
             let gun = doc.as_ref().and_then(|d| d.get("id")).and_then(Value::as_str).map(str::to_string);
-            let script_name = doc
-                .as_ref()
-                .and_then(|d| d.get("hooks")?.get(super::GUN_HOOK)?.get("script")?.as_str().map(str::to_string));
+            let script_name = doc.as_ref().and_then(|d| {
+                let hooks = d.get("hooks")?;
+                let hook = hooks.get(super::GUN_HOOK).or_else(|| hooks.get(super::MELEE_HOOK))?;
+                hook.get("script")?.as_str().map(str::to_string)
+            });
             match (gun, script_name) {
-                (Some(gun), Some(s)) if super::GUNS.contains(&gun.as_str()) => {
+                (Some(gun), Some(s)) if super::all_weapons().any(|g| g == gun) => {
                     let (text, source) = gun_doc(&gun, text, &script(&s));
                     docs.push((name.to_string(), text));
                     sources.push(source);
@@ -447,8 +522,11 @@ impl GunNumbers {
         let pellets = |d: &WeaponData| d.hitscan.as_ref().map(|h| (h.pellets, format!("{:?}", h.spread)));
         let clip = |d: &WeaponData| d.magazine.as_ref().map(|m| (m.clip, m.reload, m.shells.as_ref().map(|s| s.insert)));
         let cycle = |d: &WeaponData| d.trigger.as_ref().map(|t| t.cycle);
+        let melee = |d: &WeaponData| {
+            d.melee.as_ref().map(|m| format!("{} {} {} {}", m.primary.damage, m.primary.hit_refire, m.primary.miss_refire, m.primary.delay))
+        };
         let mut out = Vec::new();
-        for gun in super::GUNS {
+        for gun in super::all_weapons() {
             let (Some(a), Some(b)) = (data.get(gun), mapped.get(gun)) else { continue };
             let close = cycle(a).zip(cycle(b)).is_none_or(|(x, y)| (x - y).abs() <= 1e-4);
             for (what, same) in [
@@ -457,6 +535,7 @@ impl GunNumbers {
                 ("clip/insert", clip(a) == clip(b)),
                 ("cycle", close),
                 ("hooks", a.hooks == b.hooks),
+                ("melee", melee(a) == melee(b)),
             ] {
                 if !same {
                     out.push(format!("{gun} {what}"));

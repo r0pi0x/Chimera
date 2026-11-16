@@ -1,0 +1,31 @@
+# TF2's stock melee weapons' shared base (specs/tf2/weapons_stock.md 2,
+# 6): one swing on attack (the Fists also on attack2), automatic while
+# held, 65 a hit every 0.8 s hit or miss (`TimeFireDelay`: one interval
+# for both), traced 0.2 s after the swing starts along the view then (the
+# smack delay, `delay`: `SmackDelay`, absent in every script but the
+# Knife's), a 48-unit line then a +-18 box swept as far (no facing limit
+# beyond the box: open question 1), the collision box (no hitgroups, no
+# distance modifier), whole points, no knockback (open question 12);
+# deploys in 0.5 s; never dropped; slot 2 (the scripts' `bucket` 2). The
+# swing sound plays at the start of every swing (`sound_swing`:
+# `melee_miss`, or `burst` on a crit, `tf2:melee`), the hit's beside it.
+# The scripts' `Damage`, `TimeFireDelay` and `SmackDelay` override these
+# where served (`weapons::script_numbers`).
+id = "tf2:melee"
+base = "tf2:base"
+abstract = true
+slot = 2
+draw = 0.5
+undroppable = true
+
+[melee.primary]
+range = 48.0
+hull = 18.0
+facing_cos = -1.0
+damage = 65.0
+hit_refire = 0.8
+miss_refire = 0.8
+miss_refire_other = 0.8
+delay = 0.2
+force = 0.0
+quantum = 1.0

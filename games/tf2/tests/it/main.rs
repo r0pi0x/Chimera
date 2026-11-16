@@ -5,7 +5,8 @@
 //! (`movement`: movement.md's test cases), ICE against its spec (`ice`),
 //! the script reader on fixtures encrypted with throwaway keys
 //! (`scripts`), the guns (`weapons`: M2b's four; `weapons_more`: the
-//! next eight), the class sets a match offers (`player_sets`), the class a
+//! next eight; `melee`: the nine stock melee weapons and the backstab),
+//! the class sets a match offers (`player_sets`), the class a
 //! rung of several classes draws with the ladder (`rung_classes`), the kill icons from
 //! the asset store once their files are here (`kill_icons`), and, in `heavy`, the user's install (its mount, ctf_2fort
 //! and cp_badlands converted with their spawns, the converted-map cache's
@@ -28,6 +29,7 @@ mod skeleton;
 mod spawns;
 mod weapon_scripts;
 mod weapons;
+mod melee;
 mod weapons_more;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
