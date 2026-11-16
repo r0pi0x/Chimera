@@ -32,7 +32,8 @@
 //! closes), 1 to 6 switch to a pinned gun (and show the bar), K repeats
 //! the last set-up, Tab held
 //! (`+showscores`) the Tab column. The same as console commands:
-//! `sandbox_gun`, `sandbox_bench`, `sandbox_pin <1-6> [gun]`.
+//! `sandbox_gun [gun]` (with a gun: opened on it), `sandbox_bench`,
+//! `sandbox_pin <1-6> [gun]`, `sandbox_key <1-6|k>` (scenes).
 //!
 //! **Switching** (`switch_to`): a gun whose files are here is asked of
 //! the mechanics (`rung_command::PutOnGun`, as the class the detail pane
@@ -398,6 +399,8 @@ pub enum SandboxAction {
     Close,
     /// K: the last set-up again (`layout::RepeatLayout`).
     Repeat,
+    /// Put Change gun's cursor on a gun (`sandbox_gun <id>`).
+    Select(String),
 }
 
 /// The keys (module doc).
@@ -408,12 +411,15 @@ fn keys(
     console: Option<Res<crate::client::console::ConsoleUi>>,
     chat: Option<Res<crate::client::chat::ChatInput>>,
     clock: Option<Res<chimera_ui::UiClock>>,
+    bench: Option<Res<bench::BenchUi>>,
     mut ui: ResMut<SandboxUi>,
     mut out: MessageWriter<SandboxAction>,
 ) {
     if !ui.on {
         return;
     }
+    // The bench's character picker takes letters for its search.
+    let picking = ui.screen == SandboxScreen::Bench && bench.is_some_and(|b| b.picker.is_some());
     if ui.took_esc {
         ui.took_esc = false;
     }
@@ -428,7 +434,7 @@ fn keys(
     let k = |c: KeyCode| keys.just_pressed(c);
     // Change gun's own keys are its own (typing, arrows): only Esc and B
     // reach here while it's open.
-    let typing = ui.screen == SandboxScreen::ChangeGun && !ui.view.search.is_empty();
+    let typing = (ui.screen == SandboxScreen::ChangeGun && !ui.view.search.is_empty()) || picking;
     if k(KeyCode::Escape) && ui.screen == SandboxScreen::Bench {
         ui.took_esc = true;
         out.write(SandboxAction::Close);
@@ -437,7 +443,7 @@ fn keys(
     if !typing && ui.screen != SandboxScreen::ChangeGun && k(KeyCode::KeyB) {
         out.write(SandboxAction::Toggle(SandboxScreen::ChangeGun));
     }
-    if ui.screen != SandboxScreen::ChangeGun && k(KeyCode::KeyT) {
+    if !picking && ui.screen != SandboxScreen::ChangeGun && k(KeyCode::KeyT) {
         out.write(SandboxAction::Toggle(SandboxScreen::Bench));
     }
     if ui.screen == SandboxScreen::None && k(KeyCode::KeyK) {
@@ -477,6 +483,10 @@ fn act(world: &mut World) {
                     ui.view.selected = ui.current.clone();
                     ui.view.tags_open = false;
                 }
+            }
+            SandboxAction::Select(id) => {
+                let mut ui = world.resource_mut::<SandboxUi>();
+                ui.view.selected = Some(id);
             }
             SandboxAction::Repeat => {
                 if !world.resource::<SandboxUi>().staged && world.contains_resource::<Messages<chimera_sim::minigame::layout::RepeatLayout>>() {
@@ -546,8 +556,41 @@ impl Plugin for SandboxUiPlugin {
         change_gun::add(app);
         bench::add(app);
         range::add(app);
-        app.console_command("chimera:sandbox_gun", "sandbox_gun: open or close the sandbox's Change gun (B).", |w, _| {
-            w.write_message(SandboxAction::Toggle(SandboxScreen::ChangeGun));
+        app.console_command(
+            "chimera:sandbox_gun",
+            "sandbox_gun [gun id]: open or close the sandbox's Change gun (B); with a gun, open it on that gun (its detail).",
+            |w, a| {
+                match a.first() {
+                    Some(id) => {
+                        let open = w.resource::<SandboxUi>().screen == SandboxScreen::ChangeGun;
+                        if !open {
+                            w.write_message(SandboxAction::Toggle(SandboxScreen::ChangeGun));
+                        }
+                        w.write_message(SandboxAction::Select(id.clone()));
+                    }
+                    None => {
+                        w.write_message(SandboxAction::Toggle(SandboxScreen::ChangeGun));
+                    }
+                }
+                Ok(None)
+            },
+        )
+        .console_command("chimera:sandbox_key", "sandbox_key <1-6|k>: what that key does while a sandbox plays (a pinned gun, K's set-up again; scenes).", |w, a| {
+            let k = a.first().map(|s| s.to_ascii_lowercase()).ok_or("sandbox_key <1-6|k>")?;
+            let now = w.get_resource::<chimera_ui::UiClock>().map_or(0.0, |c| c.now);
+            if k == "k" {
+                w.write_message(SandboxAction::Repeat);
+                return Ok(None);
+            }
+            let slot = k.parse::<usize>().ok().filter(|s| (1..=model::PIN_SLOTS).contains(s)).ok_or("sandbox_key <1-6|k>")?;
+            let gun = {
+                let mut ui = w.resource_mut::<SandboxUi>();
+                ui.pin_bar.wake(now);
+                ui.pins.0[slot - 1].clone()
+            };
+            if let Some(g) = gun {
+                w.write_message(SandboxAction::Switch(g));
+            }
             Ok(None)
         })
         .console_command("chimera:sandbox_bench", "sandbox_bench: open or close the sandbox's bench (T).", |w, _| {
@@ -616,6 +659,7 @@ const STAGED: &[(&str, &str, &str, Option<GunClass>, &str, u64)] = &[
     ("cs_source:weapon_hegrenade", "HE Grenade", "cs_source", Some(GunClass::Grenade), "grenade", 0),
     ("halo_ce:frag_grenade", "Frag Grenade", "halo_ce", Some(GunClass::Grenade), "grenade", 22_500_000),
     ("combat_arms:knife", "Knife", "combat_arms", None, "knife", 0),
+    ("tf2:tf_weapon_bat", "Bat", "tf2", None, "knife", 0),
 ];
 
 /// The TF2 classes that carry each staged TF2 gun.
@@ -628,6 +672,7 @@ fn staged_facets(id: &str) -> Vec<String> {
         "tf2:tf_weapon_rocketlauncher" => &["Soldier"],
         "tf2:tf_weapon_grenadelauncher" | "tf2:tf_weapon_pipebomblauncher" => &["Demoman"],
         "tf2:tf_weapon_flamethrower" => &["Pyro"],
+        "tf2:tf_weapon_bat" => &["Scout"],
         _ => &[],
     };
     c.iter().map(|s| s.to_string()).collect()
@@ -652,6 +697,9 @@ pub fn staged_catalogue(world: &World) -> Vec<SandboxGun> {
                     _ => "hitscan",
                 };
                 tags.insert((model::TagGroup::Delivery, d));
+                if class.is_none() {
+                    tags.insert((model::TagGroup::Type, "melee"));
+                }
                 if matches!(class, Some(GunClass::Smg | GunClass::Rifle | GunClass::Heavy)) {
                     tags.insert((model::TagGroup::FireMode, "auto"));
                 }
@@ -847,6 +895,11 @@ fn stage_bench(w: &mut World, what: &str) {
     w.insert_resource(bench);
     w.insert_resource(panel);
     w.insert_resource(blasts);
-    w.insert_resource(bench::staged_characters());
+    // Each body may hold its game's staged guns (the Holds list).
+    let mut chars = bench::staged_characters();
+    for ch in &mut chars.0 {
+        ch.guns = STAGED.iter().filter(|g| game_name(g.2) == ch.game).map(|g| g.0.to_string()).collect();
+    }
+    w.insert_resource(chars);
     w.insert_resource(link::FakeBench::default());
 }

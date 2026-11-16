@@ -18,8 +18,8 @@
 //! kept from its camera by `camera_state`).
 //!
 //! The definition (`SANDBOX`, `definition`) is the automatic gun game's
-//! without its draw: every gun and grenade of the playable games as the
-//! ladder, `refill_ammo`, no knife finale, no time to speak of
+//! without its draw: every gun, grenade and melee weapon (`melee_weapons`:
+//! TF2's nine, the knives) of the playable games as the ladder, `refill_ammo`, no knife finale, no time to speak of
 //! (`TIME_LIMIT`), no rotation or vote, one player enough, a quick respawn at the map's spawn points (the range's firing line).
 //! No option of the ladder module stops a kill from advancing or the last
 //! rung's from winning, so the rule is `rung_command::HoldRungs` (inserted
@@ -78,14 +78,17 @@ fn list(v: &[String]) -> String {
     format!("[{}]", v.iter().map(|s| q(s)).collect::<Vec<_>>().join(", "))
 }
 
-/// The sandbox's definition text: every playable game's guns and grenades as
+/// The sandbox's definition text: every playable game's guns, grenades and
+/// melee weapons (`melee`: ids, `melee_weapons`; each game's knife too) as
 /// the ladder (`caps`, `installed`: as `auto::definition`), the base game's
 /// slots, and the sentinel rung last.
-pub fn definition(caps: &[Capabilities], base: &str, installed: &dyn Fn(&str) -> bool) -> Result<String, String> {
+pub fn definition(caps: &[Capabilities], base: &str, installed: &dyn Fn(&str) -> bool, melee: &[&str]) -> Result<String, String> {
     let games: Vec<&Capabilities> = caps.iter().filter(|c| c.playable() && installed(c.game)).collect();
     let mut ladder: Vec<String> = Vec::new();
     for c in &games {
-        for id in c.guns.iter().map(|g| g.id).chain(c.grenades.iter().copied()) {
+        let prefix = format!("{}:", c.game);
+        let own_melee = c.knife.into_iter().chain(melee.iter().copied().filter(|m| m.starts_with(&prefix)));
+        for id in c.guns.iter().map(|g| g.id).chain(c.grenades.iter().copied()).chain(own_melee) {
             if !ladder.iter().any(|l| l == id) {
                 ladder.push(id.to_string());
             }
@@ -157,8 +160,18 @@ pub fn generate(world: &mut World, base: &str) -> Result<&'static MinigameDef, S
     let caps = minigame::auto::report(world);
     let games: Vec<&'static str> = caps.iter().map(|c| c.game).collect();
     let installed = chimera_net::minigame_net::installed_by_all(world, &games);
-    let text = definition(&caps, base, &|g| installed.contains(&g))?;
+    let melee = melee_weapons(world);
+    let text = definition(&caps, base, &|g| installed.contains(&g), &melee)?;
     minigame::add(world, SANDBOX, &text)
+}
+
+/// Every melee weapon of the catalogue (a `[melee]` swing, no class, no
+/// round: TF2's nine, a game's knives and crowbars), in its order: the
+/// games' parts lend guns and grenades only, and the sandbox may hand any
+/// of these too (Change gun lists them as Melee).
+pub fn melee_weapons(world: &World) -> Vec<&'static str> {
+    let Some(catalog) = world.get_resource::<chimera_sim::weapon::data::WeaponCatalog>() else { return Vec::new() };
+    catalog.weapons().iter().filter(|d| d.melee.is_some() && d.class.is_none() && d.hitscan.is_none()).map(|d| d.id.as_str()).collect()
 }
 
 /// The words `sandbox <word> ...` takes for a condition
