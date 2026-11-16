@@ -114,6 +114,11 @@ fy_, awp_ or ka_ maps are installed; the gg_ maps (several of them fy_
 arenas: gg_fy_funtimes, gg_fy_tactic_fight) are the custom arenas there
 are.
 
+TF2's maps (2026-11-15, docs/plans/active/tf2.md M4a): a sweep of its
+130 koth_, cp_, ctf_ and arena_ maps is games/tf2/data/map_fitness.toml;
+its pool rules deny every map but 14 chosen for a free-for-all (in from 8
+players, the 5CP maps from 12; koth_harvest_final from 4).
+
 ## For a human look
 
 - **Area over 15000 m2**: Combat Arms' darkthandark (23651, open: sight
