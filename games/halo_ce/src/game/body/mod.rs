@@ -42,8 +42,8 @@
 //! A campaign body (`campaign::BodyKind`: the Elite in a party app) is the
 //! same code on its own model (named `halo_ce:elite`, worn through the
 //! engine's `BodyName`): its graph's tables, its hit boxes, its landing
-//! and run numbers (`campaign::movement_of`), its corpse
-//! (`HaloCorpse::body`).
+//! and run numbers (`campaign::movement_of`), its move animations at the
+//! ground speed (`anims::Inputs::rate`), its corpse (`HaloCorpse::body`).
 //!
 //! Death (`death`): the body has no ragdoll; a dead player is hidden (the
 //! engine's `Dead`) and the server leaves a body of its own in its place
@@ -151,18 +151,25 @@ pub fn inputs_for(m: &super::movement::MovementData, intent: &Intent, velocity: 
         pitch: intent.pitch,
         throw: None,
         hit: None,
+        own_speeds: None,
+        speed: 0.0,
     }
 }
 
 /// The label to play: the holder's, else by what it holds; one the set
-/// has no table for plays `unarmed`.
+/// has no table for plays `unarmed`, or, for a body without an unarmed
+/// table (a campaign character's graph: the Elite's), the first label it
+/// has (animations.md: an unselectable weapon keeps a previous set; a
+/// body never seen with one takes its first).
 fn label_of(set: &crate::map::anim::AnimSet, own: Option<&WeaponLabel>, armed: bool) -> String {
     let want = own.filter(|l| !l.0.is_empty()).map_or(if armed { ARMED_DEFAULT } else { "unarmed" }, |l| l.0.as_str());
-    let known = set.names.contains_key(&key(SEATS[0], want, State::Idle.name()));
-    if known {
+    let has = |label: &str| set.names.contains_key(&key(SEATS[0], label, State::Idle.name()));
+    if has(want) {
         want.to_ascii_lowercase()
-    } else {
+    } else if has("unarmed") {
         "unarmed".into()
+    } else {
+        anims::LABELS.iter().find(|l| has(l)).map_or("unarmed", |l| l).into()
     }
 }
 
@@ -230,6 +237,9 @@ pub fn animate(
         let armed = inventory.is_some_and(|i| i.active.is_some());
         let label = label_of(&set, label, armed);
         let mut i = inputs_for(table, intent, velocity.0, state);
+        // A campaign body's legs keep up with its ground speed (`Inputs::rate`).
+        i.own_speeds = kind.and_then(|k| tables.as_deref()?.animation.get(k)).map(|a| a.array());
+        i.speed = Vec2::new(velocity.0.x, velocity.0.z).length() / METERS_PER_UNIT;
         i.throw = hands.and_then(|h| h.throw.frame).map(|f| f.max(0) as usize);
         // A hit since the last tick seen here flinches it (`flinch`).
         if let Some(v) = vitality {

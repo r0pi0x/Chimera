@@ -18,15 +18,28 @@
 //!   on demand, in the background); until then, or without the unit, the
 //!   Spartan's. The third-person model, its graph's animations (stand,
 //!   move, crouch, aim and the held gun: `body::animate`, the same code as
-//!   the Spartan's, with the kind's landing and run numbers), its hit
-//!   boxes from its own collision model (`body::hits`), its deaths and
-//!   flinches from its own graph (`body::death`, `body::flinch`: the
-//!   corpse carries the kind) all follow from the model.
+//!   the Spartan's; its move animations at the body's ground speed over
+//!   the speeds they show, `AnimSpeeds`, so the feet keep up; a direction
+//!   it has no animation for plays its forward move, the air without an
+//!   airborne animation holds the last pose; the body faces the aim at
+//!   once), its hit boxes from its own collision model (`body::hits`), its
+//!   deaths and flinches from its own graph (`body::death`,
+//!   `body::flinch`: the corpse carries the kind) all follow from the
+//!   model.
 //! - **How it moves** (`movement_of`, the one place that decides it): the
-//!   kind's `MovementData` (the Spartan's table with the kind's rows: the
-//!   Elite's pill 0.8 / 0.5 WU, radius 0.2, camera 0.6 / 0.3, its 60
-//!   degree slopes, landing limits and its graph's mean speeds), fitted
-//!   to the map's envelope by `movement::body` as the Spartan's is.
+//!   owner's rule (2026-11-16: player expression over fidelity for
+//!   movement) is that a campaign body moves on the Spartan's mover, not
+//!   by its animations as the game does (characters.md section 4): the
+//!   Spartan's acceleration, air control, jump and gravity, every
+//!   direction, no landing freeze, no limit on the aim or where shots go;
+//!   only its speed differs, the Spartan's run and crouch speeds times
+//!   1 + blend x (ratio - 1) (`CampaignData::speed_factor`: the shared
+//!   blend 0.5 and the character's own ratio, the Elite's 1.15, so 107.5
+//!   %). The kind's `MovementData` is the Spartan's table with the
+//!   character's own pill and camera (the Elite's 0.8 / 0.5 WU, radius
+//!   0.2, camera 0.6 / 0.3) and any key of data/movement.toml a later
+//!   tuning pass sets (acceleration, air control, jump: data, not code),
+//!   fitted to the map's envelope by `movement::body` as the Spartan's is.
 //! - **Its vitality** (`vitality_of`): the kind's `Spartan` table (the
 //!   Elite's collision model: 100 body, 100 shield of type 30, a 12 s
 //!   delay, 10 s recharge, its four materials with the arms at x0.5).
@@ -46,23 +59,12 @@
 //!   on Halo's; `draw` lets the draw choose again) for screenshots and the
 //!   sandbox; a remote client's needs the server's `sv_cheats` 1.
 //!
-//! **The next stage** (characters.md section 4): every character but the
-//! Spartan moves by its animations (each tick its velocity is the current
-//! movement animation's root motion, chosen by the stick's dominant axis,
-//! no acceleration limit, no air control; aim and turning rate-limited by
-//! the unit's limits). This stage plays the Elite on the Spartan's mover
-//! with the Elite's own pill, camera, slopes, landings and mean speeds;
-//! the animation-driven mover replaces, for a kind whose biped lacks the
-//! player-physics flag, what `movement_of` decides and the call of
-//! `movement::tick::tick` in `movement::step` (a mover per kind chosen
-//! there), and needs the graph's frame info (root motion) in the body's
-//! `AnimSet`, which `body::anims::build` does not read yet.
-//!
 //! Known shortcuts:
 //! - The held gun's third-person model is placed by the Spartan's hand
 //!   marker (`view::load::hand`), not the Elite's `right hand elite`.
 //! - No voice yet (the voice unit is cut and stored, nothing plays it).
-//! - The aim's rate limits and the Elite's turning are not applied.
+//! - The move animations' speeds are the graph's means (characters.md
+//!   section 4), not each frame's root motion.
 
 pub mod unit;
 
@@ -129,12 +131,51 @@ pub struct BodyDef {
     /// Tables of data/vitality.toml that differ (merged key by key).
     #[serde(default)]
     pub vitality: toml::Table,
+    /// The game's own moving speed over the Spartan's (1: the same).
+    #[serde(default = "one")]
+    pub speed_ratio: f32,
+    /// The speeds its move animations show (`AnimSpeeds`).
+    #[serde(default)]
+    pub animation: Option<AnimSpeeds>,
+}
+
+fn one() -> f32 {
+    1.0
+}
+
+fn half() -> f32 {
+    0.5
+}
+
+/// The speeds a body's move animations show, WU/s (its graph's mean root
+/// motion): its legs play at the ground speed over these
+/// (`body::anims::Inputs::rate`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnimSpeeds {
+    pub front: f32,
+    pub back: f32,
+    pub side: f32,
+    pub crouch_front: f32,
+    pub crouch_back: f32,
+    pub crouch_side: f32,
+}
+
+impl AnimSpeeds {
+    /// As `Inputs::own_speeds` takes them.
+    pub fn array(&self) -> [f32; 6] {
+        [self.front, self.back, self.side, self.crouch_front, self.crouch_back, self.crouch_side]
+    }
 }
 
 /// data/campaign.toml (module doc).
-#[derive(Resource, Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Resource, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CampaignData {
+    /// The share of a character's own speed ratio its body runs at (module
+    /// doc, "How it moves").
+    #[serde(default = "half")]
+    pub speed_blend: f32,
     /// Per weapon id, each body's weight (by `BodyKind::id`).
     #[serde(default)]
     pub guns: BTreeMap<String, BTreeMap<String, f32>>,
@@ -153,6 +194,12 @@ pub fn merge(base: &mut toml::Table, over: &toml::Table) {
                 base.insert(k.clone(), v.clone());
             }
         }
+    }
+}
+
+impl Default for CampaignData {
+    fn default() -> Self {
+        Self { speed_blend: half(), guns: BTreeMap::new(), bodies: BTreeMap::new() }
     }
 }
 
@@ -186,12 +233,31 @@ impl CampaignData {
         }
     }
 
-    /// Body `kind`'s movement: `base` with its row's keys.
+    /// The factor on the Spartan's speeds a body of speed ratio `ratio`
+    /// runs at: 1 + blend x (ratio - 1).
+    pub fn speed_factor(&self, ratio: f32) -> f32 {
+        1.0 + self.speed_blend * (ratio - 1.0)
+    }
+
+    /// Body `kind`'s movement: `base` with its row's keys, its run and
+    /// crouch speeds times `speed_factor` of its ratio.
     pub fn movement(&self, kind: BodyKind, base: &MovementData) -> Result<MovementData, String> {
-        let Some(def) = self.body(kind).filter(|d| !d.movement.is_empty()) else { return Ok(base.clone()) };
+        let Some(def) = self.body(kind) else { return Ok(base.clone()) };
         let mut t = toml::Table::try_from(base).map_err(|e| e.to_string())?;
         merge(&mut t, &def.movement);
-        t.try_into().map_err(|e: toml::de::Error| format!("{} movement: {e}", kind.id()))
+        let mut m: MovementData = t.try_into().map_err(|e: toml::de::Error| format!("{} movement: {e}", kind.id()))?;
+        let f = self.speed_factor(def.speed_ratio);
+        for v in [
+            &mut m.run_forward,
+            &mut m.run_backward,
+            &mut m.run_sideways,
+            &mut m.sneak_forward,
+            &mut m.sneak_backward,
+            &mut m.sneak_sideways,
+        ] {
+            *v *= f;
+        }
+        Ok(m)
     }
 
     /// Body `kind`'s vitality: data/vitality.toml with its row's tables.
@@ -210,6 +276,7 @@ impl CampaignData {
 pub struct BodyTables {
     pub movement: BTreeMap<BodyKind, MovementData>,
     pub vitality: BTreeMap<BodyKind, Spartan>,
+    pub animation: BTreeMap<BodyKind, AnimSpeeds>,
 }
 
 impl BodyTables {
@@ -221,6 +288,9 @@ impl BodyTables {
             }
             t.movement.insert(kind, data.movement(kind, base)?);
             t.vitality.insert(kind, data.vitality(kind)?);
+            if let Some(a) = data.body(kind).and_then(|d| d.animation) {
+                t.animation.insert(kind, a);
+            }
         }
         Ok(t)
     }
@@ -425,7 +495,16 @@ fn body_command(world: &mut World, a: &[String]) -> Result<Option<String>, Strin
             None => world.entity_mut(e).remove::<ForcedBody>(),
         };
         choose(world, e);
-        // Off a Halo rung the forced body waits for the next one.
+        // Off a Halo rung, a character that is Halo's all the same (a
+        // `halo_ce:dummy`) wears it at once; any other waits for the next
+        // Halo rung.
+        let halo = world.get::<chimera_core::slots::GameIdentity>(e).is_some_and(|i| i.0 == GAME);
+        if let Some(k) = forced
+            && halo
+            && world.get::<BodyKind>(e).is_none()
+        {
+            world.entity_mut(e).insert(k);
+        }
     }
     Ok(Some(format!("{} player(s): {}", who.len(), forced.map_or("drawn", |k| k.id()))))
 }

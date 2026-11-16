@@ -5,6 +5,15 @@
 # these bodies. The Spartan is every Halo player's body unless a draw here
 # says otherwise.
 
+# How fast a campaign body runs (the owner's rule, 2026-11-16: player
+# expression over fidelity for movement): every body moves on the
+# Spartan's mover (its acceleration, air control, jump and gravity, every
+# direction, no landing freeze, no aim limit), only its speed differs: the
+# Spartan's run and crouch speeds times 1 + speed_blend x (speed_ratio -
+# 1), halfway (0.5) between the Spartan's and the character's own. Tune
+# here.
+speed_blend = 0.5
+
 # Which bodies may carry each Halo gun, with their weights (characters.md
 # section 2, "Character by multiplayer weapon": a character is offered only
 # for the guns its graph animates and the campaign gives it). A gun not
@@ -22,42 +31,40 @@ elite = 1.0
 # Each character: its biped tag, the campaign map its unit is cut from
 # (section 8: the smallest holding it), and what differs from the
 # Spartan's tables (data/movement.toml and data/vitality.toml, merged key
-# by key: a table not named here is the Spartan's).
+# by key: a table not named here is the Spartan's). Its `movement` table
+# may override any key of data/movement.toml, each the Spartan's when
+# absent: the pill and camera, and for a tuning pass the run and crouch
+# speeds (`run_*`, `sneak_*`, before the blend), the acceleration
+# (`run_accel`, `sneak_accel`), the air control (`air_accel`) and the
+# jump (`jump_velocity`, WU/t). The Elite sets its pill, camera and speed
+# ratio only.
 [bodies.elite]
 biped = 'characters\elite\elite'
 donor_map = "d20"
+# The game's own moving speed over the Spartan's (characters.md section 4:
+# it outruns the Spartan by 15 %, 0.0865 against 0.075 WU/t).
+speed_ratio = 1.15
 
-# The Elite's pill, camera, slopes and landing (section 3, "Dimensions and
-# the pill"; section 4 rules 10 to 12 and "The numbers"): the biped's
-# values. The speeds are its graph's mean root motion (stand pistol
-# move-front 0.0865 WU/t, back and sides 0.0731, crouched 0.0333, 0.0217,
-# 0.0200), in WU/s, played through the Spartan's mover for now (the
-# animation-driven mover is the next stage: `campaign` module doc).
+# The Elite's pill and camera (section 3, "Dimensions and the pill"), its
+# own. With its speed ratio it runs at 107.5 % of the Spartan.
 [bodies.elite.movement]
 height_stand = 0.8
 height_crouch = 0.5
 radius = 0.2
 camera_stand = 0.6
 camera_crouch = 0.3
-run_forward = 2.595
-run_backward = 2.193
-run_sideways = 2.193
-sneak_forward = 0.999
-sneak_backward = 0.651
-sneak_sideways = 0.6
-# 60 degrees, uphill 30 to 60 scale 0.5, downhill 15 to 45 scale 2.
-max_slope_cos = 0.5
-uphill_falloff_sin = 0.5
-uphill_cutoff_sin = 0.8660254
-uphill_scale = 0.5
-downhill_falloff_sin = -0.25881904
-downhill_cutoff_sin = -0.70710677
-downhill_scale = 2.0
-# Soft and hard landing minimum, hard maximum (WU/s), hard landing time (s).
-soft_land_min = 1.0
-hard_land_min = 3.0
-hard_land_max = 6.0
-hard_land_time = 2.0
+
+# The speeds its graph's move animations show (section 4 "The numbers":
+# the mean root motion of stand pistol move-front 0.0865 WU/t, back and
+# sides 0.0731, crouched 0.0333, 0.0217, 0.0200), WU/s: its legs play at
+# the body's ground speed over these, so the feet keep up.
+[bodies.elite.animation]
+front = 2.595
+back = 2.193
+side = 2.193
+crouch_front = 0.999
+crouch_back = 0.651
+crouch_side = 0.6
 
 # The Elite's vitality (section 5: the collision model
 # `characters\elite\elite`): 100 body, 100 shield of type 30 (elite energy

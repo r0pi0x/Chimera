@@ -29,9 +29,14 @@ fn the_elite_tables_merge_over_the_spartans() {
     let m = &t.movement[&BodyKind::Elite];
     assert_eq!((m.height_stand, m.height_crouch, m.radius), (0.8, 0.5, 0.2));
     assert_eq!((m.camera_stand, m.camera_crouch), (0.6, 0.3));
-    assert_eq!((m.run_forward, m.run_backward, m.run_sideways), (2.595, 2.193, 2.193));
-    assert_eq!((m.soft_land_min, m.hard_land_min, m.hard_land_time), (1.0, 3.0, 2.0));
-    assert_eq!((m.gravity, m.jump_velocity, m.run_accel), (base.gravity, base.jump_velocity, base.run_accel));
+    // The owner's rule: halfway to its own speed (115 %), 107.5 % of the
+    // Spartan's, crouched too; everything else the Spartan's.
+    let near = |a: f32, b: f32| (a - b).abs() < 1e-5;
+    assert!(near(m.run_forward, 2.25 * 1.075) && near(m.run_backward, 2.0 * 1.075), "{} {}", m.run_forward, m.run_backward);
+    assert!(near(m.sneak_forward, base.sneak_forward * 1.075));
+    assert_eq!((m.soft_land_min, m.hard_land_min, m.max_slope_cos), (base.soft_land_min, base.hard_land_min, base.max_slope_cos));
+    assert_eq!((m.gravity, m.jump_velocity, m.run_accel, m.air_accel), (base.gravity, base.jump_velocity, base.run_accel, base.air_accel));
+    assert_eq!(t.animation[&BodyKind::Elite].front, 2.595);
     let v = &t.vitality[&BodyKind::Elite];
     assert_eq!((v.model.maximum_body, v.model.maximum_shield), (100.0, 100.0));
     assert_eq!(v.model.shield_material_type, 30);
@@ -43,6 +48,39 @@ fn the_elite_tables_merge_over_the_spartans() {
     let spartan = Spartan::load();
     assert_eq!(spartan.model.maximum_body, 75.0);
     assert_eq!(spartan.material_of(Some(BodyRegion::LeftForearm)), spartan.material_of(Some(BodyRegion::Chest)));
+}
+
+/// A tuning pass is data: a row's movement keys and the blend.
+#[test]
+fn movement_numbers_are_data() {
+    let text = "speed_blend = 1.0
+[bodies.elite]
+biped = 'b'
+donor_map = 'd'
+speed_ratio = 0.5
+                [bodies.elite.movement]
+run_accel = 0.1
+jump_velocity = 0.05
+air_accel = 0.0
+";
+    let data = CampaignData::parse(text).unwrap();
+    let m = data.movement(BodyKind::Elite, &MovementData::builtin()).unwrap();
+    assert_eq!((m.run_accel, m.jump_velocity, m.air_accel), (0.1, 0.05, 0.0));
+    assert!((m.run_forward - 1.125).abs() < 1e-6, "{}", m.run_forward);
+}
+
+/// The legs keep up: a move animation advances the ground speed over its
+/// own speed in frames a tick.
+#[test]
+fn move_animations_play_at_the_ground_speed() {
+    use halo_ce::game::body::anims::{Inputs, State};
+    let mut i = Inputs { own_speeds: Some([2.0, 1.0, 1.0, 0.5, 0.5, 0.5]), speed: 3.0, ..Default::default() };
+    assert_eq!(i.rate(State::MoveFront), 1.5);
+    assert_eq!(i.rate(State::MoveBack), 3.0);
+    assert_eq!(i.rate(State::Idle), 1.0);
+    i.crouching = true;
+    assert_eq!(i.rate(State::MoveFront), 3.0);
+    assert_eq!(Inputs { speed: 3.0, ..Default::default() }.rate(State::MoveFront), 1.0, "the Spartan: a frame a tick");
 }
 
 #[test]

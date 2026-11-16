@@ -20,8 +20,9 @@
 //!
 //! A campaign body (`campaign::BodyKind`, the party apps' Elite) moves by
 //! its own table (`campaign::movement_of`, used by `step`, the collider,
-//! the footing and the seat): its pill, camera, slopes, landings and
-//! speeds; the mover is this one for every body for now.
+//! the footing and the seat): its pill, camera and blended speeds, and
+//! whatever else data/campaign.toml sets; the mover is this one for every
+//! body (the owner's rule: `campaign` module doc).
 //!
 //! Teleporters are the engine's (`map::teleport`, from the map's netgame
 //! flags: `maps::teleporters`), which move a Halo player as any other.

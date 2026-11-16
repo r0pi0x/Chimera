@@ -13,9 +13,10 @@
 //! store never changes what the install provides: it only adds files the
 //! install lacks (listings are every layer's, merged). The store is
 //! layered under an install only at the install's own build (its Steam
-//! app manifest; `[assets] builds` must name that build if it names
-//! one): a store of another build, or an install whose build isn't known,
-//! gets the install alone. With `use_install = false`, or when the path is
+//! app manifest, or for a game without a Steam app its own reading of
+//! the install, `open_built`; `[assets] builds` must name that build if
+//! it names one): a store of another build, or an install whose build
+//! isn't known, gets the install alone. With `use_install = false`, or when the path is
 //! the store's stand-in for a missing install
 //! (`LocalConfig::game_path_in`), the store alone (`alone`), at the
 //! pinned build or the newest: then the mount holds what that build's
@@ -45,6 +46,23 @@ use super::{FileSource, Mount, config::LocalConfig, install::install_build_id};
 /// the local config; recorded when `CHIMERA_VFS_LOG` is set.
 pub fn open(game: &str, install: &Path, open_install: fn(&Path) -> io::Result<Mount>) -> io::Result<Mount> {
     let mut mount = open_with(&settings()?, game, install, open_install)?;
+    if let Some(recorder) = Recorder::from_env() {
+        mount = record(mount, game, &recorder);
+    }
+    Ok(mount)
+}
+
+/// `open` for a game without a Steam app that reads its install's build
+/// itself (`build`: Halo's from its maps' headers): the store's files of
+/// that build are layered under the install as a Steam game's are (its
+/// generated sets, which no install holds).
+pub fn open_built(
+    game: &str,
+    install: &Path,
+    open_install: fn(&Path) -> io::Result<Mount>,
+    build: fn(&Path) -> io::Result<String>,
+) -> io::Result<Mount> {
+    let mut mount = open_in(&settings()?, game, install, open_install, Some(build))?;
     if let Some(recorder) = Recorder::from_env() {
         mount = record(mount, game, &recorder);
     }
@@ -141,6 +159,18 @@ pub fn open_with(
     install: &Path,
     open_install: fn(&Path) -> io::Result<Mount>,
 ) -> io::Result<Mount> {
+    open_in(assets, game, install, open_install, None)
+}
+
+/// `open_with`, the install's build read by `build` when the game has no
+/// Steam app (`open_built`).
+fn open_in(
+    assets: &AssetSettings,
+    game: &str,
+    install: &Path,
+    open_install: fn(&Path) -> io::Result<Mount>,
+    build: Option<fn(&Path) -> io::Result<String>>,
+) -> io::Result<Mount> {
     let cached = |build: &str| -> io::Result<Option<CachedFiles>> {
         let Some(store) = assets.store.as_ref() else {
             return Ok(None);
@@ -172,7 +202,7 @@ pub fn open_with(
         return Ok(mount);
     }
     let mut mount = open_install(install)?;
-    if let Some(cached) = under_install(assets, game, install, &cached)? {
+    if let Some(cached) = under_install(assets, game, install, &cached, build)? {
         mount.push(cached);
     }
     Ok(mount)
@@ -185,10 +215,19 @@ fn under_install(
     game: &str,
     install: &Path,
     cached: &dyn Fn(&str) -> io::Result<Option<CachedFiles>>,
+    own_build: Option<fn(&Path) -> io::Result<String>>,
 ) -> io::Result<Option<CachedFiles>> {
     let Some(store) = assets.store.as_ref() else {
         return Ok(None);
     };
+    // A game that reads its own build (no Steam app).
+    if let Some(read) = own_build {
+        let Ok(build) = read(install) else { return Ok(None) };
+        if assets.builds.get(game).is_some_and(|pinned| *pinned != build) {
+            return Ok(None);
+        }
+        return cached(&build);
+    }
     // The Steam app is in the store's manifests (every build of a game is
     // of the same app).
     let Some(newest) = store.latest_build(game) else {
@@ -345,6 +384,23 @@ mod tests {
             assert_eq!(mount.files_in("maps"), ["maps/install.dat"], "{case}");
             assert_eq!(mount.read("shared.txt").unwrap(), b"the install's", "{case}");
         }
+    }
+
+    /// A game without a Steam app that reads its own build: its store of
+    /// that build under the install, none of another.
+    #[test]
+    fn a_game_reading_its_own_build_gets_the_store_of_that_build_under_its_install() {
+        let s = Scratch::new("own-build");
+        let store = two_builds(&s);
+        let root = install(&s.0, None);
+        let assets = settings(&store, true, None);
+        let mount = open_in(&assets, GAME, &root, open_loose, Some(|_| Ok("100".into()))).unwrap();
+        assert_eq!(mount.read("shared.txt").unwrap(), b"the install's");
+        assert_eq!(mount.read("maps/served.dat").unwrap(), b"served map");
+        let other = open_in(&assets, GAME, &root, open_loose, Some(|_| Ok("300".into()))).unwrap();
+        assert_eq!(other.layers().count(), 1);
+        let unread = open_in(&assets, GAME, &root, open_loose, Some(|_| Err(io::Error::other("no map")))).unwrap();
+        assert_eq!(unread.layers().count(), 1);
     }
 
     #[test]
