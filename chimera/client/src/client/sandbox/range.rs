@@ -21,7 +21,8 @@
 //!
 //! Known shortcuts: the rings are circles on the screen at the radius
 //! seen edge-on (not ellipses on the floor); the panel doesn't avoid the
-//! screen's edges.
+//! screen's edges; the pieces are spawned again each frame while any
+//! shows (their ring materials pooled).
 
 use bevy::prelude::*;
 use chimera_ui::{Role, RingMaterial, Tone, UiParityId, UiStyle, controls::Ui};
@@ -45,8 +46,19 @@ pub struct Blasts(pub Vec<(f64, BlastMeasured)>);
 #[derive(Component)]
 struct RangeRoot;
 
-fn collect(clock: Option<Res<chimera_ui::UiClock>>, options: Res<SandboxOptions>, mut seen: MessageReader<BlastMeasured>, mut blasts: ResMut<Blasts>) {
+fn collect(
+    ui: Res<SandboxUi>,
+    clock: Option<Res<chimera_ui::UiClock>>,
+    options: Res<SandboxOptions>,
+    mut seen: MessageReader<BlastMeasured>,
+    mut blasts: ResMut<Blasts>,
+) {
     let now = clock.map_or(0.0, |c| c.now);
+    // A staging's blast stays.
+    if ui.staged {
+        seen.clear();
+        return;
+    }
     for b in seen.read() {
         if options.blast_rings {
             blasts.0.push((now, b.clone()));
@@ -77,6 +89,7 @@ fn draw(
     camera: Query<(&Camera, &GlobalTransform), With<FirstPersonCamera>>,
     root: Query<Entity, With<RangeRoot>>,
     mut rings: ResMut<Assets<RingMaterial>>,
+    mut pool: Local<Vec<Handle<RingMaterial>>>,
     mut c: Commands,
 ) {
     for r in &root {
@@ -89,6 +102,9 @@ fn draw(
         return;
     }
     let size = Vec2::new(look.units.height * 16.0 / 9.0, look.units.height);
+    // The rings' materials are reused frame to frame (a material made
+    // and dropped each frame is never drawn).
+    let mut used = 0usize;
     let cam = camera.iter().next().filter(|_| !staged);
     let ui = Ui::new(&look.theme, look.fonts.as_deref(), *look.units);
     let root = c
@@ -122,7 +138,7 @@ fn draw(
         let ring = c
             .spawn((
                 Node { position_type: PositionType::Absolute, left: Val::Px(spot.x - d / 2.0), top: Val::Px(spot.y - d / 2.0), width: Val::Px(d), height: Val::Px(d), justify_content: JustifyContent::Center, align_items: AlignItems::Center, ..default() },
-                MaterialNode(rings.add(m)),
+                MaterialNode(pooled(&mut rings, &mut pool, &mut used, m)),
                 UiParityId::new(format!("range.respawn.{}", i + 1)),
                 ChildOf(root),
             ))
@@ -133,7 +149,7 @@ fn draw(
     // Blast rings.
     let t_now = clock.map_or(0.0, |c| c.now);
     for (k, (t0, b)) in blasts.0.iter().enumerate() {
-        let a = (1.0 - ((t_now - t0) / BLAST_SECS) as f32).clamp(0.0, 1.0);
+        let a = if staged { 1.0 } else { (1.0 - ((t_now - t0) / BLAST_SECS) as f32).clamp(0.0, 1.0) };
         let centre = if cam.is_none() { Some(STAGED_AT * size + Vec2::new(0.0, 120.0 + 60.0 * k as f32)) } else { project(cam, b.at, size) };
         let Some(centre) = centre else { continue };
         // A radius on the screen: the edge seen across the view.
@@ -152,7 +168,7 @@ fn draw(
             let m = RingMaterial::new(Color::srgba(1.0, 0.55, 0.24, 0.16 * a), Color::srgba(1.0, 0.67, 0.35, 0.9 * a), (2.0 * look.units.scale_factor).round());
             c.spawn((
                 Node { position_type: PositionType::Absolute, left: Val::Px(centre.x - px), top: Val::Px(centre.y - px), width: Val::Px(px * 2.0), height: Val::Px(px * 2.0), ..default() },
-                MaterialNode(rings.add(m)),
+                MaterialNode(pooled(&mut rings, &mut pool, &mut used, m)),
                 UiParityId::new("range.blast"),
                 ChildOf(root),
             ));
@@ -175,6 +191,19 @@ fn draw(
             }
         }
     }
+}
+
+/// The `used`-th pooled ring material, set to `m`.
+fn pooled(rings: &mut Assets<RingMaterial>, pool: &mut Vec<Handle<RingMaterial>>, used: &mut usize, m: RingMaterial) -> Handle<RingMaterial> {
+    if *used == pool.len() {
+        pool.push(rings.add(m));
+    } else if let Some(mut r) = rings.get_mut(&pool[*used]) {
+        if *r != m {
+            *r = m;
+        }
+    }
+    *used += 1;
+    pool[*used - 1].clone()
 }
 
 fn bar(c: &mut Commands, ui: &Ui, parent: Entity, label: &str, v: (f32, f32), tone: Tone) {
