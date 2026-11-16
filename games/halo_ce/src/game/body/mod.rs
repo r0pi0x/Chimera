@@ -37,7 +37,11 @@
 //! the drawn animator and the server's (`SimAnimator`, which the engine
 //! poses the hitboxes from); players ignore root translation (no frame
 //! info is read) and turn with the look. `wear_colours` shows each player's
-//! armour colour (`BodySkin`: the skin of its colour, `COLOURS`).
+//! armour colour (`BodySkin`: the skin of its colour, `COLOURS`); a body
+//! with a colour of its own (a campaign body, tinted all over) wears that
+//! for a player given no colour and in place of the table's black, which
+//! would leave it a silhouette (ours, not the game's: no campaign
+//! character is a multiplayer body there).
 //!
 //! A campaign body (`campaign::BodyKind`: the Elite in a party app) is the
 //! same code on its own model (named `halo_ce:elite`, worn through the
@@ -100,6 +104,10 @@ pub const COLOURS: [u32; 20] = [
     0xFFFFFF, 0x000000, 0xFE0000, 0x0201E3, 0x707E71, 0xFFFF01, 0x00FF01, 0xFF56B9, 0xAB10F4, 0x01FFFF, 0x6493ED,
     0xFF7F00, 0x1ECC91, 0x006401, 0x603814, 0xC69C6C, 0x9D0B0E, 0xF5999E, 0xFF0000, 0x0000FF,
 ];
+
+/// The skin of the table's black (a campaign body wears its own colour
+/// instead: `wear_colours`).
+pub const BLACK: usize = 1;
 
 /// The skin of the red team's colour, and the blue's.
 pub const RED: usize = 18;
@@ -313,9 +321,14 @@ pub fn wear_colours(
         }
         // A body with a colour of its own for a player given none (the
         // Elite's minor blue: `load::Tint::uncoloured`) wears it then.
-        let index = match team {
-            None if m.model.skins.len() > COLOURS.len() => COLOURS.len(),
-            _ => skin_of(team.copied()),
+        // Such a body's colour tints its armour all over (the Elite's):
+        // the table's black would leave it a silhouette, so it wears its
+        // own colour then too.
+        let own = m.model.skins.len() > COLOURS.len();
+        let index = match (team, skin_of(team.copied())) {
+            (None, _) if own => COLOURS.len(),
+            (_, BLACK) if own => COLOURS.len(),
+            (_, i) => i,
         };
         let want = BodySkin(index as i32);
         if skin != Some(&want) {

@@ -292,3 +292,76 @@ fn a_worn_body_screams_on_a_dangerous_fall_and_when_maimed() {
     let mut fallen = Voice { dead: true, ..Default::default() };
     assert_eq!(voice::scream(&mut fallen, true, 2.0, 0.6), None, "the dead don't scream");
 }
+
+/// A campaign body (a colour of its own after the table's) wears its own
+/// colour where the table gives black (a silhouette otherwise); the
+/// Spartan keeps the table's.
+#[test]
+fn a_campaign_body_is_never_black() {
+    use std::sync::Arc;
+    use chimera_world::map::{BodyModel, BodySkin, CharacterModels, MapCharacterModel};
+    use halo_ce::game::body::{self, COLOURS};
+    let model = |skins: usize| {
+        let mut m = MapCharacterModel {
+            game: Some(halo_ce::game::GAME),
+            team: None,
+            name: None,
+            class: None,
+            model: Default::default(),
+            hitboxes: Vec::new(),
+            bones: Vec::new(),
+            root: Transform::IDENTITY,
+            animations: None,
+            boxes: Vec::new(),
+            ragdoll: None,
+        };
+        m.model.skins = vec![Vec::new(); skins];
+        m
+    };
+    let mut app = App::new();
+    app.add_systems(Update, body::wear_colours);
+    app.insert_resource(CharacterModels(Arc::new(vec![model(COLOURS.len()), model(COLOURS.len() + 1)])));
+    // Team 4: a free-for-all player's second profile colour, the table's black.
+    let black = chimera_core::core::Team(4);
+    assert_eq!(body::skin_of(Some(black)), body::BLACK);
+    let spartan = app.world_mut().spawn((BodyModel(0), black)).id();
+    let elite = app.world_mut().spawn((BodyModel(1), black)).id();
+    let red = app.world_mut().spawn((BodyModel(1), chimera_core::core::Team(1))).id();
+    app.update();
+    let skin = |e| app.world().get::<BodySkin>(e).map(|s| s.0);
+    assert_eq!(skin(spartan), Some(body::BLACK as i32));
+    assert_eq!(skin(elite), Some(COLOURS.len() as i32));
+    assert_eq!(skin(red), Some(body::RED as i32));
+}
+
+/// A unit's held guns stay drawable by its own hand on every map: one
+/// another game's housekeeping dropped from the engine's late held models
+/// as a map unloaded is put back (`unit::keep_held`).
+#[test]
+fn a_bodys_held_guns_survive_another_games_housekeeping() {
+    use std::sync::Arc;
+    use chimera_world::map::{LateHeldModels, MapHeldModel};
+    use halo_ce::game::campaign::unit::{self, CampaignHeld};
+    let held = |key: &str| MapHeldModel {
+        key: key.into(),
+        model: Default::default(),
+        bone: "right hand".into(),
+        muzzle: None,
+        attachments: Vec::new(),
+        merged: Vec::new(),
+        own: None,
+    };
+    let mut app = App::new();
+    app.add_systems(Update, unit::keep_held);
+    let ours = vec![(Arc::new(held("halo_ce:plasma_rifle#elite")), Arc::new(Vec::new()))];
+    app.insert_resource(CampaignHeld(ours.clone()));
+    app.insert_resource(LateHeldModels(ours));
+    app.update();
+    assert_eq!(app.world().resource::<LateHeldModels>().0.len(), 1);
+    // A map unloads: everything nobody holds is forgotten.
+    app.world_mut().resource_mut::<LateHeldModels>().0.clear();
+    app.update();
+    assert!(app.world().resource::<LateHeldModels>().has("halo_ce:plasma_rifle#elite"));
+    app.update();
+    assert_eq!(app.world().resource::<LateHeldModels>().0.len(), 1, "put back once");
+}

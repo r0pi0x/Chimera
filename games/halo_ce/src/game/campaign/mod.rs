@@ -78,10 +78,10 @@
 //!   model of its own (`view::load::body_held`, key `<gun>#<kind>`), placed
 //!   by the kind's own hand marker for the gun's label (the Elite's `right
 //!   hand elite`), made with the unit (`unit::held_on`); `view::stance`
-//!   holds it once loaded when `view::OWN_HAND` is on (off for now: in a
-//!   played run that model never showed in the hand). The off hand is free (characters.md section 2
-//!   rule 4: no Covenant class pins it): the arm moves only as the graph's
-//!   holding and aiming animations move it.
+//!   holds it once loaded (`view::OWN_HAND`; until then the Spartan's
+//!   placement). The off hand is free (characters.md section 2 rule 4: no
+//!   Covenant class pins it): the arm moves only as the graph's holding
+//!   and aiming animations move it.
 //!
 //! Known shortcuts:
 //! - **Its sounds** (`voice`): its own footsteps, jump and landing
@@ -666,7 +666,7 @@ impl Plugin for CampaignPlugin {
             .add_observer(arrive)
             .init_resource::<voice::CampaignSounds>()
             .add_message::<voice::RegionLost>()
-            .add_systems(Update, (unit::load_on_demand, name_bodies, voice::join_banks, shield_disc))
+            .add_systems(Update, (unit::load_on_demand, unit::keep_held, name_bodies, voice::join_banks, shield_disc))
             .add_systems(Update, targets::sandbox_wants.before(unit::load_on_demand))
             .add_systems(FixedUpdate, shield_boxes.after(crate::map::pose_hitboxes).before(crate::core::SimSet::Movement))
             .add_systems(FixedLast, shield_boxes.after(crate::map::SimPose))

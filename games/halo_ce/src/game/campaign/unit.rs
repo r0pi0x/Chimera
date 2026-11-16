@@ -35,7 +35,11 @@
 //! every map of Halo's (`map::add_character_model`). Without the file (no
 //! set fetched, no store) it is never offered: the draw gives the Spartan
 //! (`UnitsOnDemand::ready`). The campaign map itself is never read at run
-//! time.
+//! time. Its held guns (`held_on`) go to the engine's `LateHeldModels` and
+//! are kept in `CampaignHeld` too: `keep_held` puts back any that another
+//! game's housekeeping dropped at a map change (Combat Arms forgets every
+//! late held model its ladder does not use and nobody holds), so a body
+//! holds its gun by its own hand on every map, not only the first.
 //!
 //! Known shortcuts:
 //! - On-demand fetching of a set the store lacks is the asset service's
@@ -57,7 +61,7 @@ use blam_formats::{
 
 use super::{BodyDef, BodyKind, CampaignData};
 use crate::{
-    map::{CharacterModels, LoadContext, MapCharacterModel, MapTexture, add_character_model},
+    map::{CharacterModels, LateHeldModels, LoadContext, MapCharacterModel, MapHeldModel, MapTexture, add_character_model},
     mount::Mount,
 };
 
@@ -259,6 +263,27 @@ pub fn held_on(kind: BodyKind, def: &BodyDef, file: &MapFile, mount: &Mount, gun
 
 type Loaded = Result<LoadedBody, String>;
 
+/// Every held model the loaded units made (`HeldOn`), kept here as well
+/// as in the engine's `LateHeldModels` (module doc, "In the game").
+#[derive(Resource, Clone, Default)]
+pub struct CampaignHeld(pub Vec<(std::sync::Arc<MapHeldModel>, std::sync::Arc<Vec<MapTexture>>)>);
+
+/// Put back in `LateHeldModels` each of the units' held models it lost:
+/// another game's housekeeping may drop late held models nobody holds
+/// yet as a map unloads (Combat Arms' `characters::preload::forget_old`
+/// keeps only its ladder's keys and those held), which left a campaign
+/// body with the Spartan's placement for the rest of the session.
+pub fn keep_held(ours: Option<Res<CampaignHeld>>, late: Option<ResMut<LateHeldModels>>) {
+    let (Some(ours), Some(mut late)) = (ours, late) else { return };
+    if !late.is_changed() && !ours.is_changed() {
+        return;
+    }
+    let missing: Vec<_> = ours.0.iter().filter(|(m, _)| !late.has(&m.key)).cloned().collect();
+    if !missing.is_empty() {
+        late.0.extend(missing);
+    }
+}
+
 /// The bodies loading, loaded and failed (module doc): what the host's
 /// draw asks (`ready`).
 #[derive(Resource, Default)]
@@ -350,9 +375,11 @@ pub fn load_on_demand(
                 let sounds = std::sync::Arc::new(sounds);
                 commands.queue(move |world: &mut World| {
                     world.get_resource_or_init::<super::voice::CampaignSounds>().0.insert(kind, sounds);
-                    for h in held.models {
-                        crate::map::add_held_model(world, h, held_textures.clone());
-                    }
+                    let held: Vec<_> = held.models.into_iter().map(|h| (std::sync::Arc::new(h), held_textures.clone())).collect();
+                    world.get_resource_or_init::<CampaignHeld>().0.extend(held.iter().cloned());
+                    let mut late = world.get_resource_or_init::<LateHeldModels>();
+                    late.0.retain(|(m, _)| !held.iter().any(|(h, _)| h.key == m.key));
+                    late.0.extend(held);
                     add_character_model(world, model, textures);
                 });
             }
