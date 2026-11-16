@@ -409,3 +409,32 @@ fn the_spun_heavy_moves_at_110_23() {
     assert_eq!(me.max(), 230.0);
     assert!((me.speed() - 230.0).abs() < TOL, "wound down {}", me.speed());
 }
+
+/// Classes.md test 1, the eyes: each class's eye stands its height above
+/// its feet (Scout 65, Soldier 68, Heavy 75, Engineer 68), measured as a
+/// camera takes it (the body's place plus `MovementState::eye_offset`),
+/// with the box's bottom at the feet; once it has walked (the stay-on-
+/// ground snap; standing still it may hover up to 2 units, CS:S's
+/// movement.md "Hovering", as the spawn left it) the feet are on the
+/// floor and the eye is its height above the floor. No offset is shared
+/// by every class (the Windows check found each 2.07 over the spec's
+/// height on de_dust2: a box resting on the map, not the eye).
+#[test]
+fn each_class_eye_stands_its_height_above_the_floor_classes_1() {
+    for (gun, eye) in [(SCATTERGUN, 65.0), (ROCKET_LAUNCHER, 68.0), (MINIGUN, 75.0), (SHOTGUN, 68.0)] {
+        let mut me = Player::holding(gun);
+        let camera = |me: &Player| to_source(me.sim.position(me.p) + me.ms().eye_offset);
+        assert!((camera(&me).z - me.feet().z - eye).abs() < TOL, "{gun}: eye {} above the feet", camera(&me).z - me.feet().z);
+        assert!(me.feet().z >= 0.0 && me.feet().z <= 2.0, "{gun}: hovering {}", me.feet().z);
+        let s = me.ms();
+        let at = me.sim.position(me.p);
+        let bottom = to_source(at + s.hull_min).z.min(to_source(at + s.hull_max).z);
+        assert!((bottom - me.feet().z).abs() < TOL, "{gun}: the box's bottom at {bottom}");
+        me.keys(1.0, 0.0);
+        me.sim.seconds(0.3);
+        me.keys(0.0, 0.0);
+        me.sim.seconds(1.0);
+        assert!(me.feet().z.abs() < 0.05, "{gun}: feet at {} after walking", me.feet().z);
+        assert!((camera(&me).z - eye).abs() < 0.05, "{gun}: eye {} above the floor, want {eye}", camera(&me).z);
+    }
+}

@@ -37,7 +37,10 @@
 //! muzzle flashes) load with its maps (`extra_particles`). Its sounds are
 //! Source's sound scripts (the map's own entries, its surfaces' and the
 //! guns', `weapon_sounds`) and the map's soundscapes. On another game's
-//! map its guns come with the same (`dress_guest_with`).
+//! map its guns come with the same (`dress_guest_with`), and with their
+//! looks from TF2's own files (`add_guest_looks`: the particle systems,
+//! the impact decals and effect materials), so they look the same on any
+//! map; its own maps carry its impact looks too (`add_impact_looks`).
 //!
 //! Known shortcuts:
 //! - Spawns are the round start's: a point captured later doesn't move a
@@ -220,6 +223,35 @@ fn body_kit(k: &mut Kit) {
     if k.kit.hud() {
         k.data.kit.hud = super::hud::load(k.materials).map(std::sync::Arc::new);
     }
+    // Its guns' impacts (decals, effect materials) on its own maps too.
+    add_impact_looks(k.materials, k.data);
+}
+
+/// What TF2's guns' impacts draw (Source's impact effects with TF2's
+/// files: `weapons::looks::STYLE`): its impact decals and effect
+/// materials, each the map lacks, and the map marked as carrying TF2's
+/// impacts (`map::impact`), so its guns' hits are TF2's on any map, never
+/// the map's game's or the app's base game's.
+pub fn add_impact_looks(materials: &mut MaterialLoader, map: &mut MapData) {
+    bsp::add_guest_decals(&mut map.kit.decals, source_engine::content::decals::impact_decals(materials));
+    for m in source_engine::effects::impact_effects::load_materials(materials, &[]).materials {
+        if map.particles.find(&m.name).is_none() {
+            map.particles.materials.push(m);
+        }
+    }
+    map.impacts.add(super::GAME);
+}
+
+/// TF2's own looks on another game's map (`dress_guest_with`): its
+/// impacts (`add_impact_looks`) and the particle systems its guns start
+/// (`weapons::looks`: the explosion, the muzzle flashes, the flames) from
+/// TF2's own files, whatever the map's game: before, on de_dust2 its
+/// guns showed no muzzle flash and no flames and its rocket blew up as
+/// Source's grey puff.
+pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
+    add_impact_looks(materials, map);
+    let (names, files) = (super::weapons::looks::PARTICLE_SYSTEMS, super::weapons::looks::PARTICLE_FILES);
+    source_engine::content::pcf::add_guest_particle_systems(materials, map, names, files);
 }
 
 /// The guns' sound entries (weapons.md 8.3; `sets::M2_WEAPONS`).
@@ -303,6 +335,7 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     let sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], weapon_sounds(), true);
     bsp::add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);
     let look = kit.hud().then(|| super::hud::load(&mut materials).map(std::sync::Arc::new)).flatten();
+    add_guest_looks(&mut materials, map);
     materials.finish_textures();
     warnings.extend(materials.missing);
     map.textures.extend(materials.textures.split_off(textures));

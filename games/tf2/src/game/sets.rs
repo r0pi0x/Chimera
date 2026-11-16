@@ -14,8 +14,11 @@
 //! model reads it, and its first-person arms (`c_<arms>_arms.mdl` with
 //! their animations), less what every class reads; `players` (offered
 //! with every TF2 match, `resolve::MATCH_SETS`) what every class reads,
-//! the HUD's look (`hud::load`) and the kill feed's icons (`hud::
-//! kill_icon_pictures`: `scripts/mod_textures.txt` and its sheets). The match's offer names the class sets
+//! the HUD's look (`hud::load`, the class portraits too), the kill feed's
+//! icons (`hud::kill_icon_pictures`: `scripts/mod_textures.txt` and its
+//! sheets) and the guns' looks on any map (`maps::add_guest_looks`: the
+//! particle files and their materials, the impact decals and effect
+//! materials) with the surfaces' bullet-impact sounds. The match's offer names the class sets
 //! its TF2 guns can make (`bodies::asset_names`, with the classes they
 //! need: data/classes.toml's `needs`).
 //!
@@ -318,6 +321,19 @@ pub fn player_pieces(mount: &Mount) -> Vec<(String, Vec<String>)> {
         let _ = super::hud::load(&mut materials);
         // The kill feed's icons (`ui::systems::register_kill_icons`).
         let _ = super::hud::kill_icon_pictures(mount);
+        // The guns' looks on any map (`maps::add_guest_looks`: the
+        // particle files of the explosion, muzzle flashes and flames with
+        // their materials, the impact decals and effect materials), and
+        // the surfaces' impact sounds.
+        let mut map = crate::map::MapData::default();
+        super::maps::add_guest_looks(&mut materials, &mut map);
+        let surfaces = source_engine::content::surfaceprops::SurfaceProps::load(&mut materials);
+        let scripts = SoundScripts::load_with(&mut materials, "", true);
+        let impacts: std::collections::BTreeSet<String> =
+            surfaces.names().filter_map(|n| surfaces.text(n, "bulletimpact")).collect();
+        for wave in impacts.iter().flat_map(|e| scripts.waves(e)) {
+            let _ = mount.read(&wave);
+        }
     });
     // What every class reads (the surface properties, shared includes and
     // lightwarps): fetched with every TF2 match.

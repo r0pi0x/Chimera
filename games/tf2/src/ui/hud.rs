@@ -22,13 +22,19 @@
 //!   left), each over its shadow one unit right and down; a gun without a
 //!   reserve (the Minigun) shows its one number in the wider box.
 //! - **Crosshair** (3.4): the sprite sheet's "( · )" cell (the public
-//!   `default`), centred, 32 pixels at 1080 lines scaled by the height,
-//!   in 200 200 200 (the recalled `cl_crosshair_*` defaults).
+//!   `default`), centred, 32 x 32 screen pixels at any resolution (before:
+//!   scaled by the height, 21 pixels at 720 lines, too faint to see on
+//!   de_dust2's sand), in 200 200 200 (the recalled `cl_crosshair_*` defaults).
+//! - **Class portrait** (3.10): the 2D image the spec allows (not the 3D
+//!   model panel): the team's background (`character_red_bg` /
+//!   `character_blue_bg`, 9, r60, 100 x 50) under the class's picture
+//!   (`class_<class><red|blue>`, 25, r88, 75 x 75), after the health
+//!   panel.
 //!
 //! Known shortcuts: the max-health label, the low-ammo pulse (no
-//! threshold in the data), damage numbers and the health-gain number,
-//! the class portrait and the hit sound aren't drawn (open questions 6, 9,
-//! 3, 12); each gun's own crosshair is unknown (open question 2: the
+//! threshold in the data), damage numbers and the health-gain number
+//! and the hit sound aren't drawn (open questions 6, 9, 3, 12); the
+//! portrait is the 2D picture, not the 3D model; each gun's own crosshair is unknown (open question 2: the
 //! scripts name it) so every gun shows the default; the ammo panel's
 //! gradient, soft edge and outline are a flat rounded box.
 
@@ -133,6 +139,8 @@ pub struct Inputs {
     pub blu: bool,
     /// The gun's ammo (None: no gun or one that uses none: no panel).
     pub ammo: Option<Ammo>,
+    /// The class portrait's picture (`game::hud::portrait`; None: none).
+    pub portrait: Option<&'static str>,
     /// Seconds, for the pulses.
     pub time: f64,
 }
@@ -255,6 +263,19 @@ impl Tf2Hud {
                 out.push(Draw::Text { font: "HudClassHealth", tall, text, color: tan_dark, at, align: Align::Centre });
             }
         }
+        // The class portrait (3.10, the 2D image): the team's background
+        // (9, r60, 100 x 50) under the class's picture (25, r88, 75 x 75).
+        if let (true, Some(p)) = (i.alive, i.portrait) {
+            let bg = super::super::game::hud::portrait_bg(i.blu);
+            if scheme.has(bg) {
+                let rect = screen.rect(HudCoord::Start(9.0), HudCoord::End(60.0), 100.0, 50.0);
+                out.push(Draw::Sprite { sprite: bg, rect, uv: full, color: white });
+            }
+            if scheme.has(p) {
+                let rect = screen.rect(HudCoord::Start(25.0), HudCoord::End(88.0), 75.0, 75.0);
+                out.push(Draw::Sprite { sprite: p, rect, uv: full, color: white });
+            }
+        }
         // Ammo.
         if let (true, Some(ammo)) = (i.alive, &i.ammo) {
             let p = screen.rect(HudCoord::End(95.0), HudCoord::End(55.0), 94.0, 45.0);
@@ -287,7 +308,8 @@ impl Tf2Hud {
         }
         // Crosshair: the sheet's (0, 0, 32, 32) of 128 x 128.
         if i.alive && scheme.has("crosshairs") {
-            let size = (32.0 * screen.h / 1080.0).round();
+            // Screen pixels, not layout units (3.4): 32 at any height.
+            let size = 32.0;
             let c = Vec2::new(screen.w / 2.0, screen.h / 2.0);
             let rect = Rect::from_center_size(c, Vec2::splat(size));
             out.push(Draw::Sprite { sprite: "crosshairs", rect, uv: Rect::new(0.0, 0.0, 0.25, 0.25), color: [200, 200, 200, 255] });
@@ -399,5 +421,30 @@ mod tests {
         assert_eq!(texts, ["300", "200", "200"]);
         let blue = d.iter().any(|x| matches!(x, Draw::Box { color, .. } if *color == [104, 124, 155, 255]));
         assert!(blue, "the blue panel");
+    }
+
+    /// 3.10: the class portrait, the team's background under the class's
+    /// picture at (25, r88) 75 x 75; the Demoman's and Engineer's short
+    /// names; none when dead.
+    #[test]
+    fn class_portrait_3_10() {
+        use crate::game::hud::portrait;
+        assert_eq!(portrait("demoman", false), Some("class_demored"));
+        assert_eq!(portrait("engineer", true), Some("class_engiblue"));
+        assert_eq!(portrait("scout", true), Some("class_scoutblue"));
+        assert_eq!(portrait("nobody", true), None);
+        let s = Screen::new(1920.0, 1080.0);
+        let i = Inputs { alive: true, health: 200.0, max: 200.0, portrait: portrait("soldier", false), ..default() };
+        let d = Tf2Hud::default().frame(&i, s, &Plain);
+        let (r, ..) = sprite(&d, "class_soldierred").expect("the portrait");
+        assert_eq!(*r, Rect::new(56.0, 882.0, 224.0, 1050.0));
+        assert!(sprite(&d, "character_red_bg").is_some());
+        let order: Vec<usize> = ["health_bg", "character_red_bg", "class_soldierred"]
+            .iter()
+            .map(|n| d.iter().position(|x| matches!(x, Draw::Sprite { sprite, .. } if sprite == n)).unwrap())
+            .collect();
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "health, then the portrait over its background");
+        let d = Tf2Hud::default().frame(&Inputs { alive: false, ..i }, s, &Plain);
+        assert!(sprite(&d, "class_soldierred").is_none());
     }
 }

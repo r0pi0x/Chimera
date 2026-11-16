@@ -320,10 +320,22 @@ pub struct PlacedSystem {
 /// `position` (engine space), its forward axis along `forward` (engine
 /// space). The presentation runs it to its end (`render::psys`); a name
 /// the map's definitions lack shows nothing. Games load the systems they
-/// start with the map's.
+/// start with the map's (a guest game's onto another game's map with its
+/// dressing: `source_engine::content::pcf::add_guest_particle_systems`).
 #[derive(Message, Clone, Debug, PartialEq)]
 pub struct StartParticleSystem {
     pub name: String,
     pub position: Vec3,
     pub forward: Vec3,
+    /// Stop its emitters this many seconds after the start (its particles
+    /// live out): a continuous system started in pieces (TF2's flames,
+    /// one piece per round). None: as the definition says.
+    pub emit_for: Option<f32>,
+}
+
+impl StartParticleSystem {
+    /// `name` at `position` facing `forward`, as its definition runs.
+    pub fn new(name: impl Into<String>, position: Vec3, forward: Vec3) -> Self {
+        Self { name: name.into(), position, forward, emit_for: None }
+    }
 }

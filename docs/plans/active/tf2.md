@@ -338,15 +338,21 @@ per-class shotgun starts wait for classes (M3); a TF2 rung has no knife.
 - **Looks** (`weapons::looks`): TF2's `ExplosionCore_MidAir` and each
   gun's `muzzle_*` from its own `.pcf` files, loaded with its maps;
   Source's explosion on maps with its sprites; explosions sent to clients
-  (the `tf2_looks` net part).
+  (the `tf2_looks` net part). (tf2-polish, 2026-11-15) The same on every
+  map: TF2's systems (and the Flame Thrower's `flamethrower` /
+  `flamethrower_blue`, a piece per round) load onto other games' maps from
+  TF2's own files (`maps::add_guest_looks`, `pcf::
+  add_guest_particle_systems`), no Source explosion; flashes start at the
+  gun's `muzzle` attachment; TF2 is an impact provider (Source's impact
+  effects and sounds, `looks::STYLE`), so its hits are never Combat
+  Arms' or the map's game's; the `players` set holds the files.
 - **Generic**: `chimera:projectile`'s `up_speed`. Network version net63.
 - **Tests**: `tests/it/weapons_more.rs` (13 scenario tests from the
   spec's cases), the heavy `guns` tests over all twelve, `party_kit`'s
   `tf2_rungs::the_next_eight_tf2_guns_are_rungs_and_kill`.
 
-Left: no flame particles (the Flame Thrower's cone is invisible); muzzle
-flashes in the world, not on the view model's attachment, and not on
-other games' maps; the headshot kill icon isn't told apart; no laser
+Left: the flash is drawn in the world pass at the re-projected muzzle,
+not on the view-model layer; the headshot kill icon isn't told apart; no laser
 dot or charge meter (no TF2 HUD); stickies aren't destroyed by bullets,
 a ninth blows the oldest at once; the grenade's bounce (restitution,
 friction) and the projectiles' boxes are ours; no crits; Pyros aren't
@@ -448,8 +454,9 @@ damage), the rocket jump tuned on the probe server.
 Left (M3): the Heavy's spun ("deployed") sequences and spin gestures, the
 flinch, the air jump's own sequence, a weighted pick among sequences of
 one activity; body groups (the Soldier's rocket in hand); the
-max-health label, low-ammo pulse, damage numbers, health-gain number,
-class portrait and each gun's own crosshair (hud.md open questions); the
+max-health label, low-ammo pulse, damage numbers, health-gain number
+and each gun's own crosshair (the class portrait is drawn as its 2D
+picture since tf2-polish) (hud.md open questions); the
 kill feed's row look is the party's; overheal and the Medic's
 regeneration have no source yet (no Medi Gun); the rocket jump tuned on
 the probe server.
