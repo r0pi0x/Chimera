@@ -284,7 +284,7 @@ pub fn ladder_classes<'a>(table: &'a Classes, ladder: &Ladder) -> Vec<&'a Class>
 }
 
 /// The class a player's rung drew (`HOOK`), on every machine from its
-/// `ladder::OnRung` (`follow_rung`); none off a TF2 rung.
+/// `ladder::OnRung` (`follow_rung`); empty off a TF2 rung.
 #[derive(Component, Clone, Debug, PartialEq, Eq)]
 pub struct RungClass(pub String);
 
@@ -297,8 +297,11 @@ pub fn follow_rung(on: On<Insert<OnRung>>, rungs: Query<(&OnRung, Option<&RungCl
         Some(c) if have.is_none_or(|h| h.0 != c) => {
             commands.entity(e).insert(RungClass(c.to_string()));
         }
-        None if have.is_some() => {
-            commands.entity(e).try_remove::<RungClass>();
+        // Kept on, empty (no class: `Classes::held` takes the gun's own):
+        // put on and off it was an archetype for every combination of the
+        // player's other parts (docs/DESIGN.md, "ECS style").
+        None if have.is_some_and(|h| !h.0.is_empty()) => {
+            commands.entity(e).try_insert(RungClass(String::new()));
         }
         _ => {}
     }

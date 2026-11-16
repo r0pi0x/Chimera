@@ -143,16 +143,25 @@ fn a_session_of_matches_stops_making_tables() {
     // and 104 more after the fourth, until Halo's movement and vitality
     // went on and off in one move and its kick stayed on from the spawn:
     // 1,237, 70 more, 5 of them with Halo's parts; with TF2's classes as
-    // bodies, Halo's grenade rung and the sandbox, 1,359 and 103 more, none
-    // of them TF2's own parts: the draws' path, so 120).
-    let made = chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20);
-    eprintln!("{made}");
+    // bodies, Halo's grenade rung and the sandbox, 1,296 and 118 more, 92
+    // of them characters': each rung's parts went on and off one at a
+    // time, so every combination of a dozen came, step by step. Now
+    // HL2:DM's suit and TF2's class layer go on and off with their
+    // movement in one move (`slots::MovementImpl::leave`), and a rung's
+    // body name, HL2:DM model, CS:S and TF2 class and Combat Arms' view
+    // driver stay on, set to none (`BodyName::none`, `OwnViewAnim(false)`):
+    // 1,002 and 31 more, 3 of them characters'. The rest are the guns
+    // (and their shots) the later ladders draw for the first time: a gun's
+    // build makes its own few once, bounded by the catalogue, not by the
+    // matches. `made_since` names what the window made.)
+    let since = chimera_core::metrics::census::made_since(sim.app.world(), rows[3].0, 20);
+    eprintln!("{since}");
     assert!(
-        last.0 < 1400 && last.0 - rows[3].0 < 120,
+        last.0 < 1200 && last.0 - rows[3].0 < 60,
         "{} archetypes after four matches, {} after eight: a part that comes and goes on characters, one at a time, makes \
          one for every combination of the others. Keep it on them from the spawn \
-         (`chimera_core::character::CharacterPartsExt::on_every_character`) or put a game's parts on and off in one move \
-         (docs/DESIGN.md, \"ECS style\"). {made}",
+         (`chimera_core::character::CharacterPartsExt::on_every_character`), keep it on with a value meaning none, or put \
+         a game's parts on and off in one move (docs/DESIGN.md, \"ECS style\"). {since}",
         rows[3].0,
         last.0
     );

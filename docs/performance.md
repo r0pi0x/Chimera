@@ -2905,6 +2905,21 @@ DESIGN.md "ECS style" has the rule; the lap test fails when a lap after the
 first adds 150 characters' archetypes or more, and its message lists the
 moves (`census::made_by`).
 
+**Again, with every game's rungs (2026-11-16).** With TF2's and Halo's
+rungs the `session` test's characters made 92 new archetypes between the
+fourth and eighth match (1,296 -> 1,414 in all): the rungs' own parts
+still came one at a time (HL2:DM's suit and TF2's class layer a tick
+after their movement, by a system watching `MovementSlot`; another
+movement on Source's marker took the marker alone first; a rung's
+`BodyName`, `Hl2Model`, CS:S's and TF2's `RungClass`, Combat Arms'
+`OwnViewAnim` taken off and put back), about fourteen independent
+steps. Now a movement's game parts go with its marker in one move
+(`MovementImpl::insert`/`remove`, and `leave` for a switch on the same
+marker), the old movement's removal first, and those rung parts stay on
+with a value meaning none: 1,002 -> 1,033, 3 of the 31 characters'
+(the rest each new gun's own, once). The test fails at 60 new after the
+fourth match and lists the window's moves (`census::made_since`).
+
 Three laps of real maps (`heavy::session_maps`, as in the table above;
 before is that table's run, after is this branch, archetypes at each map's
 end, instructions the median tick):

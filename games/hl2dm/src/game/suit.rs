@@ -387,8 +387,38 @@ fn wear(
                 DamageRemainder::default(),
             ));
         } else if suit {
-            ent.remove::<(Suit, Breath, ArmorPieces, SourceSpeed, StepSounds, ViewZoom, FlashlightOn)>();
+            ent.remove::<SuitParts>();
         }
+    }
+}
+
+/// The suit's parts a character leaving HL2:DM's movement takes off.
+type SuitParts = (Suit, Breath, ArmorPieces, SourceSpeed, StepSounds, ViewZoom, FlashlightOn);
+
+/// `hl2dm:movement`'s insert (`slots::MovementImpl::insert`): the marker
+/// and slot with the suit (as `wear` puts it on), in one move; a suit it
+/// wears already (a network client's, from the server) is kept.
+pub(crate) fn put_on(e: &mut EntityWorldMut, slot: MovementSlot) {
+    let marker = (SourceMovement::default(), slot);
+    if e.contains::<Suit>() {
+        e.insert(marker);
+    } else {
+        e.insert((marker, Suit::default(), Breath::default(), suit_armour(), SourceSpeed(190.0), citizen_steps()));
+        // Every character has these (a no-op then).
+        e.insert_if_new((Armor::default(), DamageRemainder::default()));
+    }
+}
+
+/// `hl2dm:movement`'s remove: the marker with the suit, in one move.
+pub(crate) fn leave(e: &mut EntityWorldMut) {
+    e.remove::<(SourceMovement, SuitParts)>();
+}
+
+/// `hl2dm:movement`'s leave for another movement on Source's marker: the
+/// suit off, in one move.
+pub(crate) fn take_off(e: &mut EntityWorldMut) {
+    if e.contains::<Suit>() {
+        e.remove::<SuitParts>();
     }
 }
 

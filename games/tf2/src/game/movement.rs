@@ -41,7 +41,7 @@
 
 use bevy::prelude::*;
 use source_engine::source_movement::{
-    SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceTraits,
+    SourceMovement, SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceTraits,
 };
 
 use super::{
@@ -50,7 +50,7 @@ use super::{
 };
 use crate::{
     core::{Health, MaxSpeed},
-    slots::{Loadout, MovementSlot},
+    slots::{Loadout, MovementRegistry, MovementSlot},
     weapon::{Inventory, Magazine, ShellReload, Weapon},
 };
 
@@ -144,6 +144,16 @@ pub fn add_movement(app: &mut App) {
             FixedUpdate,
             class_health.after(crate::core::SimSet::Movement).run_if(crate::core::authoritative),
         );
+    // The class layer goes on and off with the movement, in one move each
+    // (docs/DESIGN.md, "ECS style"); `wear` is left for a slot changed
+    // some other way.
+    if let Some(mut registry) = app.world_mut().get_resource_mut::<MovementRegistry>()
+        && let Some(m) = registry.0.iter_mut().find(|m| m.id == ID)
+    {
+        m.insert = put_on;
+        m.remove = leave;
+        m.leave = Some(take_off);
+    }
     for (name, help) in CVARS {
         let name = *name;
         crate::console::ConsoleAppExt::console_cvar(
@@ -193,6 +203,44 @@ fn wear(
                 set_max(&mut h, before.0);
             }
         }
+    }
+}
+
+/// `tf2:movement`'s insert (`slots::MovementImpl::insert`): the marker
+/// and slot with the class layer and the max health it had before, in one
+/// move (the layer kept where it is).
+fn put_on(e: &mut EntityWorldMut, slot: MovementSlot) {
+    let marker = (SourceMovement::default(), slot);
+    if e.contains::<Tf2Class>() {
+        e.insert(marker);
+    } else if let Some(before) = e.get::<Health>().map(|h| HealthBefore(h.max)) {
+        e.insert((marker, Tf2Class::default(), SourceTraits::default(), before));
+    } else {
+        e.insert((marker, Tf2Class::default(), SourceTraits::default()));
+    }
+}
+
+/// `tf2:movement`'s remove: the marker with the class layer, in one move.
+fn leave(e: &mut EntityWorldMut) {
+    give_back(e);
+    e.remove::<(SourceMovement, Tf2Class, SourceTraits, HealthBefore)>();
+}
+
+/// `tf2:movement`'s leave for another movement on Source's marker: the
+/// class layer off, in one move.
+fn take_off(e: &mut EntityWorldMut) {
+    if e.contains::<Tf2Class>() {
+        give_back(e);
+        e.remove::<(Tf2Class, SourceTraits, HealthBefore)>();
+    }
+}
+
+/// The max health `e` had before TF2's class gave it its own, back.
+fn give_back(e: &mut EntityWorldMut) {
+    if let Some(before) = e.get::<HealthBefore>().copied()
+        && let Some(mut h) = e.get_mut::<Health>()
+    {
+        set_max(&mut h, before.0);
     }
 }
 

@@ -212,8 +212,12 @@ const PER_ARCHETYPE: f64 = 200.0;
 /// added, with 2,048 more sparse-set archetypes (620 measured).
 const SPARSE_LIMIT: f64 = 720.0;
 /// The same with 4,094 more archetypes of which half bring a table
-/// (1,361 measured: a table costs every query that matches it a step).
-const TABLE_LIMIT: f64 = 1500.0;
+/// (1,361 measured: a table costs every query that matches it a step;
+/// 1,500 since Chimera's view-model driver matches the characters Combat
+/// Arms drives too, `OwnViewAnim` kept on with a value rather than put on
+/// and off, which halved the archetypes a session makes: `ultimate_gun_game`'s
+/// `session` test).
+const TABLE_LIMIT: f64 = 1600.0;
 
 /// Checks one case: the whole tick grown by no more than `limit`
 /// instructions per added archetype over the base run's, and no system

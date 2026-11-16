@@ -35,7 +35,7 @@
 //! side by side, a game registering again replaces its own) and insert
 //! `map::ViewModelSettings` (field of view, hand). A game that drives a
 //! character's view model itself (its `ViewAnimator`, e.g. Combat Arms'
-//! own state machine) puts `OwnViewAnim` on it and the driver leaves it
+//! own state machine) puts `OwnViewAnim(true)` on it and the driver leaves it
 //! alone.
 //!
 //! **A view model's variant** (`ViewVariant`, on the character): a game
@@ -128,11 +128,13 @@ pub fn fov_cvar(app: &mut App, name: &str, help: &str, game: &'static str, (min,
     console.set_range(name, min, max);
 }
 
-/// On a character whose view model the game drives itself: the driver
-/// skips it.
-#[derive(Component, Clone, Copy, Debug, Default)]
+/// On a character whose view model the game drives itself (true): the
+/// driver skips it. Once on, it stays, false while another game's gun is
+/// in hand: put on and off, it was an archetype for every combination of
+/// the character's other parts (docs/DESIGN.md, "ECS style").
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[component(storage = "SparseSet")]
-pub struct OwnViewAnim;
+pub struct OwnViewAnim(pub bool);
 
 /// Sequences to play: the first activity any sequence has (a weighted
 /// pick among its sequences), or one of the named sequences at random.
@@ -417,8 +419,8 @@ pub fn drive(
             Option<&Zoomed>,
             Has<ViewModelHidden>,
             Option<&ViewVariant>,
+            Option<&OwnViewAnim>,
         ),
-        Without<OwnViewAnim>,
     >,
     weapons: Query<(
         &Weapon,
@@ -435,7 +437,10 @@ pub fn drive(
     let (dt, now) = (time.delta_secs(), time.elapsed_secs_f64());
     let rules = rules.as_deref();
     let events: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
-    for (e, inventory, health, view, dice, zoomed, holstered, variant) in &mut characters {
+    for (e, inventory, health, view, dice, zoomed, holstered, variant, own) in &mut characters {
+        if own.is_some_and(|o| o.0) {
+            continue;
+        }
         let (Some(mut view), Some(mut dice)) = (view, dice) else {
             commands
                 .entity(e)

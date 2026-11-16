@@ -318,8 +318,56 @@ pub fn made_by(world: &World, component: &str, top: usize) -> String {
     let name = |c| components.get_name(c).map(|n| n.shortname().to_string()).unwrap_or_default();
     let holding: BTreeSet<ArchetypeId> =
         world.archetypes().iter().filter(|a| a.iter_components().any(|c| name(c) == component)).map(|a| a.id()).collect();
-    // Each archetype's maker: (source, move).
-    let mut maker: BTreeMap<ArchetypeId, (ArchetypeId, String)> = BTreeMap::new();
+    let maker = makers(world, |a| holding.contains(&a));
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for a in &holding {
+        *counts.entry(maker.get(a).map_or("spawn", |(_, m)| m.as_str())).or_default() += 1;
+    }
+    let mut rows: Vec<(&str, usize)> = counts.into_iter().collect();
+    rows.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    let list: Vec<String> = rows.iter().take(top).map(|(m, n)| format!("{m} {n}")).collect();
+    format!("{} archetypes hold {component}; made by: {}", holding.len(), list.join(", "))
+}
+
+/// The archetypes made since the first `from` (`Census::archetypes_made`
+/// then), by the move that made each (as `made_by`), the most first
+/// (`top` of them), each move with the components that differ among its
+/// archetypes (what they were made with: the other parts that come and
+/// go).
+pub fn made_since(world: &World, from: usize, top: usize) -> String {
+    let components = world.components();
+    let name = |c| components.get_name(c).map(|n| n.shortname().to_string()).unwrap_or_default();
+    let maker = makers(world, |a| a.index() >= from);
+    let mut by_move: BTreeMap<&str, Vec<BTreeSet<String>>> = BTreeMap::new();
+    for a in world.archetypes().iter().filter(|a| a.id().index() >= from) {
+        let set = a.iter_components().map(name).collect();
+        by_move.entry(maker.get(&a.id()).map_or("spawn", |(_, m)| m.as_str())).or_default().push(set);
+    }
+    let made = world.archetypes().len().saturating_sub(from);
+    let mut rows: Vec<(&str, Vec<BTreeSet<String>>)> = by_move.into_iter().collect();
+    rows.sort_by_key(|(_, sets)| std::cmp::Reverse(sets.len()));
+    let list: Vec<String> = rows
+        .iter()
+        .take(top)
+        .map(|(m, sets)| {
+            let all: BTreeSet<&String> = sets.iter().flatten().collect();
+            let varies: Vec<&str> =
+                all.into_iter().filter(|c| !sets.iter().all(|s| s.contains(*c))).map(String::as_str).collect();
+            format!("{m} {} (with or without: {})", sets.len(), varies.join(" "))
+        })
+        .collect();
+    format!("{made} archetypes made since the {from}th; made by: {}", list.join(", "))
+}
+
+/// Each archetype `keep` takes, with the oldest archetype whose cached
+/// move reaches it and that move (`+` or `-` and the bundle's components).
+fn makers(
+    world: &World,
+    keep: impl Fn(bevy::ecs::archetype::ArchetypeId) -> bool,
+) -> BTreeMap<bevy::ecs::archetype::ArchetypeId, (bevy::ecs::archetype::ArchetypeId, String)> {
+    let components = world.components();
+    let name = |c| components.get_name(c).map(|n| n.shortname().to_string()).unwrap_or_default();
+    let mut maker = BTreeMap::new();
     let bundles: Vec<(bevy::ecs::bundle::BundleId, String)> = world
         .bundles()
         .iter()
@@ -338,21 +386,14 @@ pub fn made_by(world: &World, component: &str, top: usize) -> String {
                 (edges.get_archetype_after_bundle_take(*id).flatten(), '-'),
             ];
             for (to, sign) in moves {
-                let Some(to) = to.filter(|t| *t > a.id() && holding.contains(t)) else { continue };
-                if maker.get(&to).is_none_or(|(from, _)| a.id() < *from) {
+                let Some(to) = to.filter(|t| *t > a.id() && keep(*t)) else { continue };
+                if maker.get(&to).is_none_or(|(from, _): &(_, String)| a.id() < *from) {
                     maker.insert(to, (a.id(), format!("{sign}{label}")));
                 }
             }
         }
     }
-    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-    for a in &holding {
-        *counts.entry(maker.get(a).map_or("spawn", |(_, m)| m.as_str())).or_default() += 1;
-    }
-    let mut rows: Vec<(&str, usize)> = counts.into_iter().collect();
-    rows.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-    let list: Vec<String> = rows.iter().take(top).map(|(m, n)| format!("{m} {n}")).collect();
-    format!("{} archetypes hold {component}; made by: {}", holding.len(), list.join(", "))
+    maker
 }
 
 /// `chimera_census [<top>|diff [<name>]|save <name>|varies [<component>]|made [<component>]|age <n> [sparse]]`.

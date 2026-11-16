@@ -31,7 +31,7 @@
 //! its own projection (`settings`: 50 degrees vertical, 5.1).
 //!
 //! Playing (`drive`, each rendered frame in `map::DriveAnimation`; the
-//! character carries `OwnViewAnim`, so Chimera's generic driver leaves it
+//! character carries `OwnViewAnim(true)`, so Chimera's generic driver leaves it
 //! alone; with another game's gun in hand, a mashup's, it lets go of the
 //! character and Chimera's driver plays that gun's view model): per
 //! character, a fresh `machine::ViewMachine` at each draw (7:
@@ -719,7 +719,7 @@ fn drive(
             Option<&mut ViewAnimator>,
             Option<&mut CaViewModel>,
             Option<&mut ViewModelOffset>,
-            Has<OwnViewAnim>,
+            Option<&OwnViewAnim>,
             Has<LocalPlayer>,
             Option<&super::characters::records::Selection>,
             Has<super::characters::CaRungLook>,
@@ -752,15 +752,16 @@ fn drive(
             .and_then(|w| weapons.get(w).ok())
             .is_some_and(|p| is_foreign(p.0.id, games.as_deref()))
         {
-            if owned {
-                commands.entity(e).remove::<OwnViewAnim>();
+            if owned.is_some_and(|o| o.0) {
+                // Kept on, false (DESIGN.md, "ECS style").
+                commands.entity(e).insert(OwnViewAnim(false));
                 if let Some(mut offset) = offset {
                     *offset = ViewModelOffset::default();
                 }
             }
             continue;
         }
-        let (Some(mut view), Some(mut vm), Some(mut offset), true) = (view, vm, offset, owned) else {
+        let (Some(mut view), Some(mut vm), Some(mut offset), Some(OwnViewAnim(true))) = (view, vm, offset, owned.copied()) else {
             commands.entity(e).insert((
                 ViewAnimator::default(),
                 CaViewModel {
@@ -768,7 +769,7 @@ fn drive(
                     ..default()
                 },
                 ViewModelOffset::default(),
-                OwnViewAnim,
+                OwnViewAnim(true),
             ));
             continue;
         };

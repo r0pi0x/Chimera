@@ -363,12 +363,12 @@ fn a_cs_source_guns_view_model_is_driven_by_chimera_and_ours_by_combat_arms() {
     assert_eq!(held(&sim, a), Some(cs_source::game::weapons::GLOCK));
     sim.seconds(0.5);
     let w = sim.app.world();
-    assert!(w.get::<OwnViewAnim>(a).is_none(), "CS:S's gun: not Combat Arms' driver's");
+    assert!(w.get::<OwnViewAnim>(a).is_none_or(|o| !o.0), "CS:S's gun: not Combat Arms' driver's");
     assert!(w.get::<ViewModelPlay>(a).is_some(), "Chimera's driver has it");
     // The ladder's second rung: Combat Arms' Beretta.
     sim.app.world_mut().entity_mut(a).insert(Rung(1));
     chimera_sim::weapon::give(sim.app.world_mut(), a, "combat_arms:beretta_m92fs");
     sim.seconds(1.0);
     assert_eq!(held(&sim, a), Some("combat_arms:beretta_m92fs"));
-    assert!(sim.app.world().get::<OwnViewAnim>(a).is_some(), "ours again");
+    assert_eq!(sim.app.world().get::<OwnViewAnim>(a), Some(&OwnViewAnim(true)), "ours again");
 }
