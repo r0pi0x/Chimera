@@ -50,6 +50,7 @@ mod rules;
 mod rules_ctf;
 mod rules_king_ball;
 mod rules_party;
+mod scope_blur;
 mod skeleton;
 mod ticks;
 mod view;
@@ -76,6 +77,7 @@ mod heavy {
     mod map_objects;
     mod nav_within;
     mod rules;
+    mod scope_blur;
     mod maps;
     mod mount;
     mod served;

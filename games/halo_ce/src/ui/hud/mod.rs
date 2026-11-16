@@ -32,6 +32,17 @@
 //! read on a thread the first time the HUD is up; without the disc it
 //! draws nothing.
 //!
+//! **The scopes' blur** (hud.md 9): while zoomed with the pistol, the
+//! rocket launcher or the sniper rifle, the HUD asks the engine's
+//! full-screen passes for two radial blur passes through the scope mask's
+//! alpha (`nodes::scope_post` sets `ScreenPost::radial`: the mask one
+//! texel per 480-line pixel centred on the view, the radius r of
+//! `draw::scope_blur` from the camera's zoomed field of view: 10.81 for
+//! the pistol, 7.92 for the rocket launcher and the sniper's 2x, 11 at
+//! its 8x); the darkening by the mask's grey level stays the HUD's own
+//! quads over it. Nothing is asked unzoomed or while another game's HUD
+//! is up, in Halo's app and the party apps alike.
+//!
 //! Known shortcuts: see `draw`; the motion tracker ignores `hud_radar`
 //! (the party apps' radar setting is about map overviews, and the tracker
 //! reads none). The grenade HUD is the selected type's (hud.md 10:
@@ -77,7 +88,8 @@ impl Plugin for HaloHudPlugin {
             .init_resource::<nodes::HudImages>()
             .init_resource::<nodes::HaloHud>()
             .add_systems(Startup, nodes::spawn_root)
-            .add_systems(Update, (nodes::load, nodes::collect, nodes::sync).chain().run_if(hud_is(GAME)));
+            .add_systems(Update, (nodes::load, nodes::collect, nodes::sync).chain().run_if(hud_is(GAME)))
+            .add_systems(Update, (nodes::clear_blur.run_if(not(hud_is(GAME))), nodes::scope_post).chain().after(nodes::sync));
         super::kill_icons::plugin(app);
     }
 }
