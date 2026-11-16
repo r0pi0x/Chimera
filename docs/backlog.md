@@ -363,9 +363,11 @@ results are from after that.
   history kept the old skeleton's poses when a rung gave it another
   model, and a death then read the new model's bones from them. The
   history is now cleared when the bone count changes and a death whose
-  newest pose is of another skeleton spawns no ragdoll. Seen once; not
-  re-run in a match after the fix (the engine's ragdoll tests pass).
-  Because of it no match was played through two TF2 rungs: do that.
+  newest pose is of another skeleton spawns no ragdoll. Replayed after
+  the fix (the same match, five minutes): no crash, the bots played
+  through the three TF2 rungs to the ladder's end and into the next
+  map, 41 ragdolls made (about 29 of TF2 bodies), a median of 4.9 ms a
+  frame. No screenshot caught a TF2 ragdoll: look at one.
 - **The Flame Thrower shows no flames** and **no TF2 gun shows a muzzle
   flash**, on de_dust2 and on ctf_2fort.
 - **TF2 bullet hits play Combat Arms' impact sounds** (read from the
