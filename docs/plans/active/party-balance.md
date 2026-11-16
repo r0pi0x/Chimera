@@ -3,10 +3,11 @@
 A balance check made on 2026-11-15 by reading code and data (nothing was
 run), kept here as the reference for the cross-game balance rule and for
 the sandbox's readouts. Sections 1 to 7 are the state BEFORE the rule;
-the appendix at the end gives the numbers after it. Status: the rule is
-on `main` (`games/halo_ce/data/party_balance.toml`,
-`apps/party_kit/data/party_damage.toml`); whether its defaults are right
-is for playtests.
+the appendix gives the numbers after it. Status: the rule is on `main`,
+its numbers now in one table with a host switch
+(`apps/party_kit/data/party_balance.toml`, `mp_balance`: "The table and
+the switch", at the end); whether its defaults are right is for
+playtests.
 
 Analysis only: nothing in the repository was changed, and no build or test was run. Four other builds were running on this machine, and every number below could be worked out by reading the code. All file references are relative to the repository root.
 
@@ -664,3 +665,68 @@ AK-47 13.
 Gravity and jumps were left alone by the owner's decision (section 1's
 table stands): a map-owned gravity would have a CS:S character jump
 about 3.0 m on a Halo map.
+
+## The table and the switch (2026-11-16)
+
+**One table.** Every number that applies only where games meet is in
+`apps/party_kit/data/party_balance.toml` (read by `party_kit::balance`
+into the engine's `chimera_sim::weapon::balance::Balance`):
+
+- `[games.<game>]` `outgoing`: what the game's weapons deal to another
+  game's body, times (`halo_ce` 0.75, `hl2dm` 1.5); `incoming`: what the
+  game's bodies take from another game's weapon, times (`halo_ce` 1.5).
+  A game or field not listed is 1.
+- `[bodies]` `"<game>:<body>" = { incoming = k }`: a body's own incoming
+  over its game's, by the id the sandbox uses (`halo_ce:elite`,
+  `halo_ce:hunter`, `tf2:heavy`). None set yet: the campaign characters'
+  health and shields are as the game states them, to be tuned here.
+- `[[pair]]` `attacker`, `victim`, `scale`: one pair's whole scale. The
+  one today: `hl2dm` on `hl2dm` 1.5 (HL2:DM's boost always counted on its
+  own bodies too).
+
+A hit by game A's weapon on game B's body counts: the switch off, 1; a
+pair, its scale; A and B the same game, 1 (Halo against Halo is never
+changed); else A's outgoing times B's incoming (or the body's own). It is
+applied in one place, the engine's armour step (`weapon::HitArmor::
+game_scale`), before armour: the pair's scale over the incoming the
+victim's body holds. A Halo body holds its incoming as its mechanism (the
+shield's armour unit and `core::DamageScale` on its health), so a hit
+that takes armour in a game's own step (Combat Arms') counts it too; the
+two together are the pair's scale, once. Halo's own hits on a Halo body
+never reach the table. `apps/party_kit/tests/it/balance_table.rs` checks
+every pair with one gun of each game against the appendix's numbers.
+
+**The switch** `mp_balance` (a host setting, "Cross-game balance"; 1 the
+default, 0 a raw match): on the server it is put in force when a match
+starts, so a change during a match applies from the next match; `status`
+shows the value in force and a pending one. It is a replicated cvar, so a
+client has the server's value with no message of its own (no network
+version change); clients apply no damage. The ladder's power curve counts
+the table's outgoing column whatever the switch (a ladder's order stays
+the same in a raw match).
+
+**What "raw" means** where no game has an answer: a gun deals its own
+game's damage and a body takes it by its own game's rule; another game's
+hit on a Halo shield is that game's damage as it deals it, taken by the
+shield as Halo's armour (every part, the whole hit until the shield is
+empty, the overflow to the body; a full shield is 100 of its points, the
+Spartan's 75 shield points), with none of Halo's material multipliers; a
+Halo gun on another game's body counts it as an unshielded Spartan's
+(material type 21, a Halo point 1/75 of its health, 1.333 hit points).
+The shield-leak fix (a character leaving Halo gets back the armour it
+brought, never the shield's value) is behaviour, the same in both modes.
+
+**How to tune.** Change a number in `party_balance.toml` (a rebuild:
+the file is built in), then check it in the sandbox: `target add <body>`
+(`halo_ce:spartan`, `halo_ce:elite`, `cs_source:default`, `tf2:heavy`),
+shoot it with the gun in question, and read the kill card: its damage
+per hit (`damage`, after every scale; `unscaled`, before the body's
+incoming) and the hits to kill. Compare with `mp_balance 0` (from the
+next match: `changelevel`) for each game's own numbers. Then run
+`cargo test -p party_kit --features dev --test it balance_table` and fix
+the expected numbers there (`today`) and in the appendix.
+
+Known shortcuts: Combat Arms' guns take armour in their own step and read
+no table (their outgoing, a pair with them, and a non-Halo body's own
+incoming against them count 1); a player's TF2 class is not looked up as
+a body (its game's entry counts; the sandbox's targets are).

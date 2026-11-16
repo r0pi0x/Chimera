@@ -204,7 +204,12 @@ impl Balance {
     /// What `HitArmor` scales a hit by before armour: `pair` over the
     /// incoming the victim's body holds (`held`, its `core::DamageScale`;
     /// 1 without).
+    /// A victim of no known game counts what its body holds as its
+    /// incoming: the attacker's outgoing alone.
     pub fn before_armour(&self, attacker: &str, victim: Option<&str>, body: Option<&str>, held: f32) -> f32 {
+        if victim.is_none() && body.is_none() {
+            return self.outgoing(attacker);
+        }
         let k = self.pair(attacker, victim, body);
         if held > 0.0 && held != 1.0 { k / held } else { k }
     }

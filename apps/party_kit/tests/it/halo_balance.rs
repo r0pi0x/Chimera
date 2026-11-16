@@ -1,22 +1,24 @@
-//! Halo's balance across games in the party (`halo_ce::game::cross_game`,
-//! its data/party_balance.toml; the user's decision of 2026-11-15), on
-//! the party's composed simulation with the other games' real gun data:
+//! Halo's balance across games in the party (the cross-game table,
+//! party_kit's data/party_balance.toml, `party_kit::balance`; Halo's
+//! mechanisms in `halo_ce::game::cross_game`; the user's decision of
+//! 2026-11-15), on the party's composed simulation with the other games'
+//! real gun data:
 //!
 //! - **Incoming**: another game's gun on a full Halo player counts 1.5
 //!   times against the shield, then the body (133 effective hit points
-//!   where any other character has 100; 200 with the switch off): each
+//!   where any other character has 100; 200 in a raw match): each
 //!   gun's body hit at 10 m from its data (`power::stats`, the games'
 //!   own readers) through the engine's armour step (`weapon::HitArmor`,
 //!   as a gun's hit is) and health, hits to kill counted, the switch on
 //!   and off; a CS:S AK-47 by real fire kills one in 4 body hits.
 //! - **Outgoing**: Halo's guns, explosives and melee on a bare character
 //!   and a Combat Arms soldier with its gear, through Halo's damage seam,
-//!   with the party's per-game table (`halo_ce = 0.75`: a Halo point one
-//!   hit point) and without (1.333).
+//!   with the party's table (Halo's outgoing 0.75: a Halo point one hit
+//!   point) and in a raw match (1.333).
 //! - **The leak**: through real rung changes, a character leaving Halo's
 //!   rung gets back the armour it brought (CS:S none, HL2:DM's suit,
-//!   Combat Arms' gear as it was), never the shield's value; Halo's rung
-//!   to another keeps the shield as it is.
+//!   Combat Arms' gear as it was), never the shield's value, the switch on
+//!   or off; Halo's rung to another keeps the shield as it is.
 
 use bevy::{ecs::system::RunSystemOnce, prelude::*};
 use chimera_core::core::{BodyRegion, Damage, DamageKind, Health};
@@ -25,8 +27,8 @@ use chimera_sim::{
     weapon::{HitArmor, data::WeaponCatalog},
 };
 use chimera_world::harness::Sim;
+use chimera_sim::weapon::balance::{Balance, game_of};
 use halo_ce::game::{
-    cross_game::CrossGame,
     damage::HaloHit,
     vitality::{DamageEffects, EffectId, Vitality, ids},
     weapons,
@@ -89,9 +91,15 @@ pub(crate) fn hits_to_kill(sim: &mut Sim, target: Entity, id: &'static str, raw:
     panic!("{id}: no kill in 60 hits");
 }
 
-/// The party (halo_ladder's), with the balance `cfg`: a player on the
+/// The party's table, the switch on, else a raw match.
+pub(crate) fn party_table(on: bool) -> Balance {
+    let t = party_kit::balance::table();
+    if on { t } else { t.raw() }
+}
+
+/// The party (halo_ladder's), with the table `cfg`: a player on the
 /// first rung and one (the victim) on Halo's.
-pub(crate) fn halo_victim(cfg: CrossGame) -> (Sim, Entity, Entity) {
+pub(crate) fn halo_victim(cfg: Balance) -> (Sim, Entity, Entity) {
     let mut sim = party();
     sim.app.insert_resource(cfg);
     let a = soldier(&mut sim);
@@ -142,9 +150,9 @@ const GUNS: [(&str, BodyRegion); 9] = [
     ("combat_arms:m4a1", BodyRegion::Chest),
 ];
 
-/// Each gun's hits to kill a full Halo player with the balance `cfg`,
+/// Each gun's hits to kill a full Halo player with the table `cfg`,
 /// with its hit's damage: (id, region, per hit, hits).
-fn table(cfg: CrossGame) -> Vec<(&'static str, BodyRegion, f32, u32)> {
+fn table(cfg: Balance) -> Vec<(&'static str, BodyRegion, f32, u32)> {
     let (mut sim, a, b) = halo_victim(cfg);
     let mut out = Vec::new();
     for (id, region) in GUNS {
@@ -159,26 +167,27 @@ fn table(cfg: CrossGame) -> Vec<(&'static str, BodyRegion, f32, u32)> {
 
 /// Another game's gun on a full Halo player: 1.5 times against the shield
 /// and the body with the switch on (133 effective hit points), as it comes
-/// with it off (200); each row printed (`-- --nocapture`).
+/// in a raw match (200, each gun its own game's number); each row printed
+/// (`-- --nocapture`).
 #[test]
 fn other_games_guns_on_a_halo_player_count_the_incoming_scale() {
-    let off = table(CrossGame::off());
-    let on = table(CrossGame::load());
-    let k = CrossGame::load().incoming();
+    let off = table(party_table(false));
+    let on = table(party_table(true));
+    let table = party_kit::balance::table();
+    let k = table.incoming(Some("halo_ce"), None);
     assert_eq!(k, 1.5);
-    println!("gun, region, per hit (HP), bare 100, Halo off (200), Halo on (133)");
-    let table = party_kit::party_damage::table();
+    println!("gun, region, per hit (HP), bare 100, Halo raw (200), Halo on (133)");
+    let out = |id: &str| table.outgoing(game_of(id));
     for ((id, region, raw, today), (_, _, raw_on, now)) in off.iter().zip(&on) {
         assert_eq!(raw, raw_on);
-        // As the party deals it (its per-game table: HL2:DM's 1.5).
-        let raw = &(raw * table.of_weapon(id));
-        println!("{id} {region:?}: {:.1} {} {today} {now}", raw * 100.0, bare(*raw));
-        // The counted pool: 200 points as they come, 200 / 1.5 with it on.
-        assert_eq!(*today, (2.0 / raw - 1e-4).ceil() as u32, "{id} {region:?} off");
-        assert_eq!(*now, (2.0 / (raw * k) - 1e-4).ceil() as u32, "{id} {region:?} on");
+        println!("{id} {region:?}: {:.1} {} {today} {now}", raw * out(id) * 100.0, bare(raw * out(id)));
+        // The counted pool: 200 points as they come in a raw match, 200 /
+        // 1.5 with the table (as the party deals it: HL2:DM's 1.5).
+        assert_eq!(*today, (2.0 / raw - 1e-4).ceil() as u32, "{id} {region:?} raw");
+        assert_eq!(*now, (2.0 / (raw * out(id) * k) - 1e-4).ceil() as u32, "{id} {region:?} on");
     }
     let row = |t: &[(&str, BodyRegion, f32, u32)], id: &str, region: BodyRegion| {
-        t.iter().find(|r| r.0 == id && r.1 == region).map(|r| (bare(r.2 * table.of_weapon(id)), r.3)).unwrap()
+        t.iter().find(|r| r.0 == id && r.1 == region).map(|r| (bare(r.2 * out(id)), r.3)).unwrap()
     };
     // The brief's two: the AK-47 3 on a bare character, 6 today, 4 now; the
     // AWP 1, 2 and still 2 (one shot from a scale of 200 / 114 = 1.754).
@@ -234,8 +243,8 @@ fn a_real_ak47_kills_a_halo_player_in_four_body_hits() {
 
 // ---------------------------------------------------------------------------
 // Outgoing: a Halo source on another game's character, through Halo's own
-// conversion (a point 1/75 of its health) and the party's per-game table
-// (data/party_damage.toml: `halo_ce = 0.75`, so a point is a hit point).
+// conversion (a point 1/75 of its health) and the party's table
+// (data/party_balance.toml: Halo's outgoing 0.75, so a point is a hit point).
 
 /// How a row's hit is dealt.
 #[derive(Clone, Copy, Debug)]
@@ -335,12 +344,11 @@ fn halo_hits_to_kill(sim: &mut Sim, a: Entity, target: Entity, r: usize, way: Wa
 }
 
 /// The rows' hits to kill on a bare CS:S character (rung 0) and a Combat
-/// Arms soldier with its gear (rung 2), with the party's table or none.
+/// Arms soldier with its gear (rung 2), with the party's table or in a
+/// raw match.
 fn outgoing(table: bool) -> Vec<(u32, u32)> {
     let mut sim = party();
-    if !table {
-        sim.app.world_mut().remove_resource::<chimera_sim::weapon::GameDamage>();
-    }
+    sim.app.insert_resource(party_table(table));
     let a = soldier(&mut sim);
     let b = soldier(&mut sim);
     sim.seconds(1.5);
@@ -358,7 +366,7 @@ fn outgoing(table: bool) -> Vec<(u32, u32)> {
 fn halos_guns_on_other_games_characters_count_a_point_a_hit_point() {
     let before = outgoing(false);
     let after = outgoing(true);
-    assert_eq!(party_kit::party_damage::table().of("halo_ce"), 0.75);
+    assert_eq!(party_kit::balance::table().outgoing("halo_ce"), 0.75);
     println!("row: bare before/after, Combat Arms before/after");
     for (((name, _), b), a) in OUTGOING.iter().zip(&before).zip(&after) {
         println!("{name}: {} / {}, {} / {}", b.0, a.0, b.1, a.1);
@@ -396,8 +404,8 @@ const SWITCHES: [&str; 6] = [
     weapons::PLASMA_RIFLE,
 ];
 
-/// The party playing `SWITCHES` with the balance `cfg`, and one player.
-fn switching(cfg: CrossGame) -> (Sim, Entity) {
+/// The party playing `SWITCHES` with the table `cfg`, and one player.
+fn switching(cfg: Balance) -> (Sim, Entity) {
     let text = crate::hl2dm_parts::ladder_text(&SWITCHES, false).replace(
         "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]",
         "weapons = [\"cs_source\", \"hl2dm\", \"halo_ce\", \"combat_arms\"]",
@@ -435,20 +443,19 @@ fn halo_full(sim: &mut Sim, e: Entity, r: usize) {
 /// with no kevlar; an HL2:DM one with its suit as before (30 points); a
 /// Combat Arms one with its gear as before (half of it, not the shield's
 /// full value);
-/// Halo's rung to another keeps the shield as it is. With the switch off,
-/// today's leak: the shield's value as armour on the next rung.
+/// Halo's rung to another keeps the shield as it is. The same in a raw
+/// match: the leak's fix is a behaviour, not a number.
 #[test]
 fn leaving_halo_gives_back_the_armour_it_brought() {
-    for cfg in [CrossGame::load(), CrossGame::off()] {
-        let on = cfg.enabled;
+    for on in [true, false] {
+        let cfg = party_table(on);
         let (mut sim, a) = switching(cfg);
         // CS:S -> Halo -> CS:S.
         onto(&mut sim, a, 0);
         assert_eq!(armour(&sim, a), None, "CS:S: none");
         halo_full(&mut sim, a, 1);
         onto(&mut sim, a, 0);
-        let want = if on { None } else { Some((1.0, false)) };
-        assert_eq!(armour(&sim, a), want, "on {on}: CS:S after Halo");
+        assert_eq!(armour(&sim, a), None, "on {on}: CS:S after Halo");
         // HL2:DM -> Halo -> HL2:DM.
         // (The suit's armour, 30 points of it used up.)
         onto(&mut sim, a, 2);
@@ -457,21 +464,19 @@ fn leaving_halo_gives_back_the_armour_it_brought() {
         sim.ticks(2);
         halo_full(&mut sim, a, 3);
         onto(&mut sim, a, 2);
-        let want = if on { Some((0.3, false)) } else { Some((1.0, false)) };
-        assert_eq!(armour(&sim, a), want, "on {on}: HL2:DM after Halo");
+        assert_eq!(armour(&sim, a), Some((0.3, false)), "on {on}: HL2:DM after Halo");
         // Combat Arms (its gear, half used) -> Halo -> Combat Arms.
         onto(&mut sim, a, 4);
         sim.app.world_mut().get_mut::<chimera_sim::weapon::Armor>(a).unwrap().amount = 0.5;
         sim.ticks(2);
         halo_full(&mut sim, a, 5);
         onto(&mut sim, a, 4);
-        let want = if on { 0.5 } else { 1.0 };
-        assert_eq!(armour(&sim, a).map(|a| a.0), Some(want), "on {on}: Combat Arms after Halo");
+        assert_eq!(armour(&sim, a).map(|a| a.0), Some(0.5), "on {on}: Combat Arms after Halo");
         assert!(sim.app.world().get::<chimera_sim::weapon::ArmorPieces>(a).is_some(), "its gear on");
         // Halo -> Halo: the shield as it is.
         onto(&mut sim, a, 1);
         sim.seconds(10.5);
-        let unit = cfg.incoming();
+        let unit = if on { 1.5 } else { 1.0 };
         sim.app.world_mut().get_mut::<chimera_sim::weapon::Armor>(a).unwrap().amount = 0.4 / unit;
         sim.ticks(2);
         let before = sim.app.world().get::<Vitality>(a).unwrap().shield;
@@ -486,7 +491,7 @@ fn leaving_halo_gives_back_the_armour_it_brought() {
 }
 
 // ---------------------------------------------------------------------------
-// HL2:DM's guns in the party (data/party_damage.toml: `hl2dm = 1.5`), by
+// HL2:DM's guns in the party (data/party_balance.toml: its outgoing 1.5), by
 // their real data, on a bare character, a Combat Arms soldier with its
 // gear and a full Halo player; and the ladder's power of every gun.
 
@@ -527,8 +532,8 @@ fn full_on(sim: &mut Sim, a: Entity, target: Entity, r: usize) {
 /// pellets, before the scale) and cycle.
 fn hl2_rows(scale: f32) -> Vec<(&'static str, f32, f32, [u32; 3])> {
     let mut sim = party();
-    let mut table = party_kit::party_damage::table();
-    table.0.insert("hl2dm".into(), scale);
+    let mut table = party_kit::balance::table();
+    table.games.entry("hl2dm".into()).or_default().outgoing = scale;
     sim.app.insert_resource(table);
     let a = soldier(&mut sim);
     let b = soldier(&mut sim);
@@ -553,7 +558,7 @@ fn hl2_rows(scale: f32) -> Vec<(&'static str, f32, f32, [u32; 3])> {
 /// seconds (hits - 1 cycles) on each victim; printed (`-- --nocapture`).
 #[test]
 fn hl2dms_guns_take_the_party_s_scale() {
-    assert_eq!(party_kit::party_damage::table().of("hl2dm"), 1.5);
+    assert_eq!(party_kit::balance::table().outgoing("hl2dm"), 1.5);
     let mut at = Vec::new();
     for scale in [1.0, 1.5, 2.0] {
         let rows = hl2_rows(scale);
@@ -593,7 +598,7 @@ fn the_ladder_s_power_with_and_without_the_party_s_table() {
     let mut sim = crate::gun_game::party();
     let curve = PowerCurve::shipped();
     for with in [false, true] {
-        let table = if with { party_kit::party_damage::table() } else { Default::default() };
+        let table = if with { party_kit::balance::table().power_table() } else { Default::default() };
         sim.app.world_mut().resource_mut::<PowerReaders>().game_damage = table;
         println!("ladder power, {}:", if with { "the party's table" } else { "no table" });
         for (id, class, p) in power::table(sim.app.world(), &curve) {

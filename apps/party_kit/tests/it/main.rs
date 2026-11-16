@@ -9,6 +9,7 @@ mod arena_pool;
 mod arena_net;
 mod arena_wall;
 mod archetypes;
+mod balance_table;
 mod bodies_drawn;
 mod clips_across_games;
 mod console_scope;
