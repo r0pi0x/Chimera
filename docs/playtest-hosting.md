@@ -649,6 +649,15 @@ Maps and matches:
   `mp_avoid_recent`, `mp_knife_finale`, `mp_melee_rungs`,
   `mp_spawn_protection`, `mp_demote_on_suicide` (the list is
   `apps/party_kit/data/host_settings.toml`).
+- **Cross-game balance** (`mp_balance`, the Host settings' "Cross-game
+  balance"): 1, the default, plays the party's balance table
+  (`apps/party_kit/data/party_balance.toml`: a Halo player takes 1.5
+  times another game's damage, Halo's guns deal 0.75 of their conversion
+  on others, HL2:DM's guns 1.5); 0 is a raw match, every gun and body with
+  its own game's numbers. Halo against Halo is the same either way. A
+  change applies from the next match (`status` shows the value in force
+  and a pending one). It rides the replicated cvars: no new network
+  version.
 - A match needs 2 players; bots count (`+MaxPlayer`). Late joiners are fine.
 - **The map pool goes by the player count.** At each map change (the
   rotation, the end screen's vote, `changelevel` with no map) the server

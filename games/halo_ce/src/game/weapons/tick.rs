@@ -523,6 +523,23 @@ impl HaloGun {
                     self.trigger = TriggerMode::Idle;
                 }
             }
+            TriggerMode::Charging if t.charge_paces => {
+                // Our pacing rule (`params::Trigger::charge_paces`): the
+                // charge runs out whatever the trigger does; held then,
+                // fire and charge again; released, ready at once.
+                if self.trigger_timer == 0 {
+                    self.fired_before_charging = false;
+                    if down {
+                        self.fire(gun, inputs, out);
+                        self.fired_before_charging = true;
+                        self.trigger = TriggerMode::Charging;
+                        self.trigger_timer = t.charging_ticks();
+                    } else {
+                        self.trigger = TriggerMode::Idle;
+                        self.idle_ticks = IDLE_TICKS_CAP;
+                    }
+                }
+            }
             TriggerMode::Charging => {
                 if self.trigger_timer > 0 {
                     if !down {

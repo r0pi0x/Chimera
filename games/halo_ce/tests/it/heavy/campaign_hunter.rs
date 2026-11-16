@@ -158,3 +158,57 @@ fn every_chosen_line_is_in_its_voice_set() {
         }
     }
 }
+
+/// The cannon's effects from its unit, merged into the donor's library as
+/// a map's load does (`fx::load::own_weapons`, `FxSet::merge`): its firing
+/// effect, its rod's detonation and look, every index inside the merged
+/// lists; its rod's flight model (`view::load::projectile_models`). Prints
+/// what the tags hold (the charging effect, the HUD interface, the model).
+#[test]
+fn the_cannons_effects_join_the_donors_library() {
+    use halo_ce::game::{fx::load, view::load::projectile_models};
+    let Some(mount) = mount() else { return };
+    let data = CampaignData::builtin();
+    let def = data.body(BodyKind::Hunter).unwrap();
+    let d20 = mount.read(&maps::map_path("d20")).unwrap();
+    let c = unit::convert("hunter", def, &d20).unwrap();
+    let (tag, bytes, _) = &c.weapons[0];
+    let file = MapFile::load(bytes).unwrap();
+    let w = Weapon::read(&file, file.find(class::WEAPON, tag).unwrap()).unwrap();
+    let t = &w.own.triggers[0];
+    eprintln!(
+        "cannon: charging effect {:?} (in the unit: {}), HUD interface null {}, firing effects {}",
+        t.charging_effect.id,
+        file.tag(t.charging_effect.id).is_some(),
+        w.own.hud_interface.is_null(),
+        t.firing_effects.len()
+    );
+    let own = load::compile(&file, &[tag.as_str()], false);
+    let rod = r"weapons\fuel rod gun\fuel rod";
+    let gun = own.library.gun(tag).expect("the cannon's look");
+    assert!(gun.firing.iter().any(Option::is_some), "a firing effect");
+    let p = own.library.projectile(rod).expect("the rod's look");
+    assert!(p.detonation.is_some(), "a detonation effect");
+    eprintln!("rod: tracer {} light {} attached {} model {}; warnings {:?}", p.tracer.is_some(), p.light.is_some(), p.attached.len(), p.model, own.warnings);
+    let donor = MapFile::load(&mount.read(&maps::map_path(halo_ce::game::body::load::DONOR_MAP)).unwrap()).unwrap();
+    let tags = load::gun_tags();
+    let mut set = load::compile(&donor, &tags.iter().map(String::as_str).collect::<Vec<_>>(), false);
+    let before = set.library.effects.len();
+    set.merge(&own);
+    let lib = &set.library;
+    let merged = lib.gun(tag).unwrap();
+    let firing = merged.firing.iter().flatten().copied().next().unwrap();
+    assert!(firing >= before && firing < lib.effects.len());
+    assert_eq!(lib.effects[firing].path, own.library.effects[gun.firing.iter().flatten().copied().next().unwrap()].path);
+    let det = lib.projectile(rod).unwrap().detonation.unwrap();
+    assert!(det < lib.effects.len());
+    for e in &lib.effects {
+        for ev in &e.events {
+            assert!(ev.entries.iter().all(|en| en.particle.is_none_or(|i| i < lib.particles.len())));
+        }
+    }
+    assert!(lib.gun(r"weapons\assault rifle\assault rifle").is_some(), "the donor's guns stay");
+    let (models, textures, _) = projectile_models(&file, &[tag.as_str()], false);
+    eprintln!("rod model: {} models, {} meshes, {} textures", models.len(), models.iter().map(|m| m.model.meshes.len()).sum::<usize>(), textures.len());
+    assert_eq!(models.len(), usize::from(p.model), "a model where the look says it has one");
+}

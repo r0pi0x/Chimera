@@ -1804,6 +1804,12 @@ pub fn status(world: &mut World) -> String {
             ));
         }
     }
+    // An app with the cross-game table (the party apps): its switch.
+    if role != NetRole::Client
+        && let Some(b) = world.get_resource::<chimera_sim::weapon::balance::Balance>()
+    {
+        out.push(format!("balance : {}", b.status_line()));
+    }
     out.join("\n")
 }
 

@@ -1,9 +1,12 @@
 //! Halo's damage across games (docs/DESIGN.md "Hits across games";
-//! `game::damage`): another game's gun (the engine's test kit) on a Halo
-//! character takes the shield first and only the overflow reaches
-//! health, restarting the shield delay; a Halo damage event on another
-//! game's character is an unshielded Spartan's body hit, normalized (a
-//! Halo point 1/75 of its health), through that character's own armour.
+//! `game::damage`, `game::cross_game`): another game's gun (the engine's
+//! test kit) on a Halo character takes the shield first and only the
+//! overflow reaches health, restarting the shield delay, counted the
+//! cross-game table's incoming (`party`: the party's numbers, the switch
+//! on or off; a campaign body's own entry); a Halo damage event on
+//! another game's character is an unshielded Spartan's body hit,
+//! normalized (a Halo point 1/75 of its health), through that
+//! character's own armour.
 
 use bevy::prelude::*;
 use chimera_core::core::{BodyRegion, Health};
@@ -14,8 +17,8 @@ use chimera_sim::{
 };
 use chimera_world::{greybox, harness::Sim};
 use chimera_core::core::DamageScale;
+use chimera_sim::weapon::balance::Balance;
 use halo_ce::game::{
-    cross_game::CrossGame,
     damage::HaloHit,
     vitality::{DamageEffects, Vitality, ids},
 };
@@ -26,10 +29,20 @@ fn health(sim: &Sim, e: Entity) -> f32 {
     sim.app.world().get::<Health>(e).unwrap().current
 }
 
+/// The cross-game table with the party's Halo numbers (party_kit's
+/// data/party_balance.toml: outgoing 0.75, incoming 1.5), the switch on,
+/// else a raw match.
+pub(crate) fn party(on: bool) -> Balance {
+    let t = Balance::parse("[games.halo_ce]
+outgoing = 0.75
+incoming = 1.5
+").unwrap();
+    if on { t } else { t.raw() }
+}
+
 /// `shots` of the kit's pistol (20 points of 100 a hit, no armour ratio)
-/// at the chest of a Halo character 5 m ahead, with the party balance
-/// `cfg` (`cross_game`).
-fn kit_pistol_on_a_spartan(shots: u32, cfg: CrossGame) -> (Sim, Entity) {
+/// at the chest of a Halo character 5 m ahead, with the table `cfg`.
+fn kit_pistol_on_a_spartan(shots: u32, cfg: Balance) -> (Sim, Entity) {
     let mut sim = sim();
     sim.app.insert_resource(cfg);
     testkit::add_weapons(&mut sim.app);
@@ -48,8 +61,8 @@ fn kit_pistol_on_a_spartan(shots: u32, cfg: CrossGame) -> (Sim, Entity) {
 
 #[test]
 fn another_game_s_bullet_takes_the_shield_first() {
-    // The party balance off: the hit as it comes.
-    let off = CrossGame::off;
+    // A raw match: the hit as it comes.
+    let off = || party(false);
     let (sim, t) = kit_pistol_on_a_spartan(1, off());
     let v = vit(&sim, t);
     assert_eq!(health(&sim, t), 1.0, "the shield took it all");
@@ -65,14 +78,14 @@ fn another_game_s_bullet_takes_the_shield_first() {
     assert!(sim.app.world().get::<DamageScale>(t).is_none(), "off: no scale");
 }
 
-/// The party balance on (data/party_balance.toml: 1.5): each 20-point
+/// The party's table on (incoming 1.5): each 20-point
 /// round counts 30 against the shield, then the body, the shield still
 /// first; the shield's armour is in that unit (its fraction / 1.5), and
 /// it recharges by Halo's rule.
 #[test]
 fn another_game_s_bullet_counts_the_incoming_scale() {
-    let on = CrossGame::load;
-    assert_eq!(on().incoming(), 1.5);
+    let on = || party(true);
+    assert_eq!(halo_ce::game::cross_game::incoming_of(Some(&on()), "halo_ce:spartan"), 1.5);
     let (sim, t) = kit_pistol_on_a_spartan(1, on());
     let v = vit(&sim, t);
     assert_eq!(health(&sim, t), 1.0, "the shield took it all");
@@ -139,4 +152,23 @@ fn a_halo_hit_on_another_game_s_character() {
     pistol(&mut sim, e, BodyRegion::Chest);
     assert!((health(&sim, e) - 0.75).abs() < 1e-6, "{}", health(&sim, e));
     assert!((sim.app.world().get::<Armor>(e).unwrap().amount - 0.875).abs() < 1e-6);
+}
+
+/// A body's own incoming (`[bodies]`, by the sandbox's id) over Halo's:
+/// the Spartan's at 2 makes a 20-point round count 40; the switch put
+/// off at once converts the shield's unit, its value kept.
+#[test]
+fn a_body_s_own_incoming_and_a_change_keep_the_shield() {
+    let mut t = party(true);
+    t.bodies.insert("halo_ce:spartan".into(), 2.0);
+    let (mut sim, e) = kit_pistol_on_a_spartan(1, t);
+    let v = vit(&sim, e);
+    assert!((v.shield - 0.6).abs() < 0.016, "shield {}", v.shield);
+    assert_eq!(sim.app.world().get::<DamageScale>(e), Some(&DamageScale(2.0)));
+    let shield = v.shield;
+    sim.app.world_mut().resource_mut::<Balance>().on = false;
+    sim.ticks(2);
+    assert!(sim.app.world().get::<DamageScale>(e).is_none(), "raw: no scale");
+    assert!((vit(&sim, e).shield - shield).abs() < 1e-5, "the shield's value kept");
+    assert!((sim.app.world().get::<Armor>(e).unwrap().amount - shield).abs() < 1e-5, "in the raw unit");
 }

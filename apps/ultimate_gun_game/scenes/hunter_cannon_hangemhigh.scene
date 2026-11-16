@@ -1,0 +1,27 @@
+# The Hunter's cannon on Halo's own map Hang 'Em High (a scene script: chimera_client's
+# `scene`; the body and its cannon's unit are the `character/hunter` set,
+# game::campaign::unit; its effects join Halo's on the map's load,
+# game::fx::load::own_weapons): a Hunter target fires at the player, who
+# faces it 8 m away (god mode): the rods come at the eye and burst on the
+# player. Pictures: a rod
+# in flight (frames after a shot) and its blast (frames after one).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox halo_ce:hangemhigh \
+#       --scene apps/ultimate_gun_game/scenes/hunter_cannon_hangemhigh.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 1500                    # the units in, pipelines settled
+god
+rung halo_ce:plasma_pistol   # a Halo gun in the player's hands
+setpos -1150 3000 -770       # the first spawn's hall, down off its ledge
+setang 2 342
+target add halo_ce:hunter 8
+target set all gun halo_ce:hunter_fuel_rod
+wait 300                     # its unit loaded and worn
+halo_ce:body status
+target set all shoots
+shot_after shot 12 rod_flight_a
+shot_after shot 24 rod_flight_b
+shot_after blast 1 rod_blast_a
+shot_after blast 20 rod_blast_b
+wait 400
+target list

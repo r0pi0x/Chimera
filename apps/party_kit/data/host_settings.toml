@@ -97,3 +97,10 @@ cvar = "mp_spawn_protection"
 key = "spawn.respawn.protection"
 help = "Seconds a respawned player can't be hurt: shots pass through, drawn see-through (ended by attacking)."
 choices = [["", "Minigame's"], ["0", "Off"], ["1", "1 s"], ["1.5", "1.5 s"], ["2", "2 s"], ["3", "3 s"]]
+
+[[setting]]
+label = "Cross-game balance"
+cvar = "mp_balance"
+live = false
+help = "The party's cross-game balance table (data/party_balance.toml: Halo a little tankier, its guns and HL2:DM's tuned against the field): on, or raw (every gun and body with its own game's numbers). From the next match."
+choices = [["1", "On"], ["0", "Raw"]]

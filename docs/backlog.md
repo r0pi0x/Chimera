@@ -126,16 +126,14 @@ the user's go-ahead: no Actions runs unless asked.
   - Fix: when gravity differs from CA's own, scale the measured drop by gravity / CA's gravity. That's the drop that would give the same landing speed at normal gravity.
   - At normal gravity it stays exactly as the original game.
   - Add a scenario test: the same drop at half gravity does less damage, and at normal gravity nothing changes.
-- **Cross-game balance as a host option (user, 2026-11-15):**
-  - Two coefficients per game: damage dealt and damage received.
-  - One host setting (`mp_balance`) in the Host screen's Game tab.
-  - Self-damage and fall damage are never scaled.
-  - **Builds on the Halo session's work:**
-    - party_kit `data/party_damage.toml` already has the dealt coefficients: halo_ce 0.75, hl2dm 1.5.
-    - halo_ce `data/party_balance.toml` has a received coefficient, `incoming_scale` 1.5, with its own `enabled` switch, currently on.
-    - Move received into the shared table for every game, and replace Halo's switch with the host setting.
-  - First values for TF2 (its 125–300 class health) and the others are for the user to adjust after a playtest.
-  - Open question: default on or off. It's on today for Halo and HL2:DM.
+- **Cross-game balance as a host option (user, 2026-11-15):** built
+  (2026-11-16): one table, `apps/party_kit/data/party_balance.toml`
+  (outgoing and incoming per game, a body's own incoming, pair
+  exceptions), and the host setting `mp_balance` (on by default, from the
+  next match); docs/plans/active/party-balance.md, "The table and the
+  switch". Left: first values for TF2 (its 125-300 class health) and the
+  campaign bodies, from playtests; self-damage still takes its game's
+  pair (HL2:DM's own grenade 1.5, as before).
 
 - **Parties and friends: the social layer (user, 2026-11-15; needs a design first):** today only the front end exists. The lobby can group a party's rows with a coloured edge, but the server always sends party 0 (`chimera/net/src/prematch.rs`), so nobody is grouped. The "+" invite and Friends tiles in the shell's rack are disabled ("Coming soon"), and your party is you alone (`chimera_ui::shell`, `client::profile`, `client::lobby_panel`).
   - **Friends** (needs accounts, hub.md S3/S4):

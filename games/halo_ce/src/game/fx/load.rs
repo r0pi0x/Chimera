@@ -24,7 +24,20 @@
 //! chain), light and particle (with its bitmap's sprite sequences and its
 //! point physics).
 //!
-//! Known shortcuts: a particle's sprites come from its bitmap's first
+//! The campaign characters' own weapons (the Hunter's cannon) are not on
+//! the donor map: each is compiled from its unit (`own_weapons`, a file of
+//! the character's set) and merged into the donor's set (`FxSet::merge`,
+//! its indices moved past the donor's), once the unit is on the mount; a
+//! map loaded before that has Halo's guns' effects alone and the next
+//! load tries again. Its muzzle is the character's data
+//! (`campaign::first_person::BodyView::muzzle`): the gun's first-person
+//! markers, and `FxGun::shown_from_muzzle`.
+//!
+//! Known shortcuts: the characters' own weapons' effects join a map at
+//! its load only (a set fetched while a map plays shows from the next
+//! map: the engine has no late join of textures, sound clips or particle
+//! materials); their looping sound attachments (`audio`) are not compiled;
+//! a particle's sprites come from its bitmap's first
 //! page only (all the weapons' particle bitmaps on the disc are one page);
 //! a decal's size is its radius bounds' mean (one variant per sprite
 //! sequence) and additive decals (the plasma burn's glows) are left out:
@@ -169,7 +182,7 @@ pub struct FxPart {
 }
 
 /// A particle entry, the tag's numbers (WU, s, rad).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FxEntry {
     pub location: i16,
     pub environment: i16,
@@ -190,7 +203,7 @@ pub struct FxEntry {
     pub tint_upper: [f32; 4],
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FxEvent {
     pub skip: f32,
     pub delay: (f32, f32),
@@ -199,7 +212,7 @@ pub struct FxEvent {
     pub entries: Vec<FxEntry>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FxEffect {
     pub path: String,
     pub locations: Vec<String>,
@@ -207,7 +220,7 @@ pub struct FxEffect {
 }
 
 /// A particle tag as drawn (`play`).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FxParticle {
     pub path: String,
     /// Index into the map's particle materials (`MapData::particles`).
@@ -295,6 +308,10 @@ pub struct FxGun {
     pub tracer: Option<FxTracer>,
     /// The projectile's light attachment (the plasma bolt's glow).
     pub bolt_light: Option<FxLight>,
+    /// Its shots are drawn leaving from its `primary trigger` marker, not
+    /// the eye (a campaign character's own weapon whose muzzle is data:
+    /// `own_weapons`); the trace stays the eye's.
+    pub shown_from_muzzle: bool,
 }
 
 /// One projectile's presentation (by its tag's path): what the guns'
@@ -363,6 +380,108 @@ pub struct FxSet {
     pub materials: Vec<ParticleMaterial>,
     pub decals: Vec<(String, Vec<MapDecal>)>,
     pub warnings: Vec<String>,
+}
+
+impl FxSet {
+    /// `other` (compiled from another file: a campaign character's own
+    /// weapon, `own_weapons`) joined to this set, its indices moved past
+    /// this set's lists; what this set already has by name or path (a
+    /// sound entry, a decal group, an effect, a gun, a projectile) stays.
+    pub fn merge(&mut self, other: &FxSet) {
+        let (tex, mat, clip) = (self.textures.len(), self.materials.len(), self.clips.len());
+        let (eff, par, sys) = (self.library.effects.len(), self.library.particles.len(), self.library.systems.len());
+        let o = |i: &mut Option<usize>, by: usize| {
+            if let Some(x) = i {
+                *x += by;
+            }
+        };
+        self.textures.extend(other.textures.iter().cloned());
+        self.materials.extend(other.materials.iter().cloned().map(|mut m| {
+            o(&mut m.texture, tex);
+            m
+        }));
+        self.clips.extend(other.clips.iter().cloned());
+        for (name, e) in &other.entries {
+            if !self.entries.contains_key(name) {
+                let mut e = e.clone();
+                e.waves.iter_mut().for_each(|w| *w += clip);
+                self.entries.insert(name.clone(), e);
+            }
+        }
+        for (name, variants) in &other.decals {
+            if !self.decals.iter().any(|(n, _)| n == name) {
+                let moved = variants.iter().map(|v| MapDecal { texture: v.texture + tex, ..v.clone() }).collect();
+                self.decals.push((name.clone(), moved));
+            }
+        }
+        let lib = &mut self.library;
+        lib.particles.extend(other.library.particles.iter().cloned().map(|mut p| {
+            o(&mut p.material, mat);
+            p
+        }));
+        lib.systems.extend(other.library.systems.iter().cloned().map(|mut s| {
+            for st in s.types.iter_mut().flat_map(|t| t.states.iter_mut()) {
+                o(&mut st.material, mat);
+                o(&mut st.texture, tex);
+            }
+            s
+        }));
+        lib.effects.extend(other.library.effects.iter().cloned().map(|mut e| {
+            for ev in &mut e.events {
+                for p in &mut ev.parts {
+                    if let FxPartKind::System(s) = &mut p.kind {
+                        *s += sys;
+                    }
+                }
+                for en in &mut ev.entries {
+                    o(&mut en.particle, par);
+                }
+            }
+            e
+        }));
+        for (path, i) in &other.library.by_path {
+            lib.by_path.entry(path.clone()).or_insert(i + eff);
+        }
+        let list = |l: &mut Vec<Option<usize>>| l.iter_mut().for_each(|i| o(i, eff));
+        let tracer = |t: &mut Option<FxTracer>| {
+            if let Some(t) = t {
+                o(&mut t.material, mat);
+            }
+        };
+        for (tag, g) in &other.library.guns {
+            if lib.guns.contains_key(tag) {
+                continue;
+            }
+            let mut g = g.clone();
+            list(&mut g.firing);
+            list(&mut g.misfire);
+            list(&mut g.empty);
+            list(&mut g.impacts);
+            o(&mut g.ready, eff);
+            o(&mut g.overheated, eff);
+            tracer(&mut g.tracer);
+            lib.guns.insert(tag.clone(), g);
+        }
+        for (tag, p) in &other.library.projectiles {
+            if lib.projectiles.contains_key(tag) {
+                continue;
+            }
+            let mut p = p.clone();
+            list(&mut p.impacts);
+            list(&mut p.potential);
+            o(&mut p.detonation, eff);
+            o(&mut p.super_detonation, eff);
+            o(&mut p.detonation_started, eff);
+            tracer(&mut p.tracer);
+            p.attached.iter_mut().for_each(|(i, _)| *i += eff);
+            p.attached_systems.iter_mut().for_each(|(i, _)| *i += sys);
+            lib.projectiles.insert(tag.clone(), p);
+        }
+        for (tag, s) in &other.library.pickups {
+            lib.pickups.entry(tag.clone()).or_insert_with(|| s.clone());
+        }
+        self.warnings.extend(other.warnings.iter().cloned());
+    }
 }
 
 struct Compiler<'a> {
@@ -975,25 +1094,90 @@ pub fn add(map: &mut MapData, set: &FxSet) {
     map.warnings.extend(set.warnings.iter().map(|w| format!("Halo's effects: {w}")));
 }
 
-/// The donor's sets an app's loads share (with and without textures).
+/// The donor's sets an app's loads share (with and without textures):
+/// the donor map's alone, and with the characters' own weapons once their
+/// units are on the mount.
 #[derive(Default)]
-struct Donor(Mutex<[Option<Arc<FxSet>>; 2]>);
+struct Donor(Mutex<[Option<Arc<FxSet>>; 2]>, Mutex<[Option<Arc<FxSet>>; 2]>);
 
-/// The donor map's set for an app (made once per app and `decode`).
+/// The campaign characters' own weapons (`campaign::BodyDef::weapons`:
+/// the Hunter's cannon), each compiled from its unit on `mount`
+/// (`campaign::unit::weapon_path`, a file of the character's set) and
+/// merged into one set; None while no unit is there (its set not
+/// fetched). Their projectiles' impacts, detonations, contrails and
+/// lights, their firing effects and sounds: what the guns' are.
+pub fn own_weapons(mount: &crate::mount::Mount, decode: bool) -> Option<FxSet> {
+    let data = super::super::campaign::CampaignData::builtin();
+    let mut out: Option<FxSet> = None;
+    for (id, def) in &data.bodies {
+        for tag in &def.weapons {
+            let path = super::super::campaign::unit::weapon_path(id, tag);
+            let Ok(bytes) = mount.read(&path) else { continue };
+            let Ok(file) = MapFile::load(&bytes) else { continue };
+            let mut set = compile(&file, &[tag.as_str()], decode);
+            // Where its muzzle shows (`first_person::BodyView::muzzle`):
+            // the gun's first-person marker, under every name its firing
+            // effects place on.
+            if let Some(m) = def.first_person.as_ref().and_then(|v| v.muzzle) {
+                let lib = &mut set.library;
+                let names: BTreeSet<String> = lib
+                    .guns
+                    .values()
+                    .flat_map(|g| g.firing.iter().flatten())
+                    .flat_map(|e| lib.effects[*e].locations.iter().map(|l| l.to_ascii_lowercase()))
+                    .chain(lib.guns.values().filter_map(|g| g.light.as_ref().map(|(_, m)| m.to_ascii_lowercase())))
+                    .chain(["primary trigger".to_string()])
+                    .collect();
+                for g in lib.guns.values_mut() {
+                    for n in &names {
+                        g.fp_markers.insert(n.clone(), m);
+                    }
+                    g.shown_from_muzzle = true;
+                }
+            }
+            // The unit holds the weapon's closure alone: the grenades and
+            // the Spartan's sounds the compiler also asks for are not in it.
+            set.warnings.retain(|w| !w.to_ascii_lowercase().contains("grenade"));
+            match &mut out {
+                Some(o) => o.merge(&set),
+                None => out = Some(set),
+            }
+        }
+    }
+    out
+}
+
+/// The donor map's set for an app (made once per app and `decode`), with
+/// the characters' own weapons (`own_weapons`) merged in once their units
+/// are on the mount (tried again at each map's load until then).
 pub fn donor(context: &LoadContext, decode: bool) -> Result<Arc<FxSet>, String> {
     let memo = context.get_or_init(Donor::default);
-    let mut slots = memo.0.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(s) = &slots[usize::from(decode)] {
+    let i = usize::from(decode);
+    if let Some(s) = &memo.1.lock().unwrap_or_else(|e| e.into_inner())[i] {
         return Ok(s.clone());
     }
     let mount = super::super::maps::mount_for(context)?;
-    let path = super::super::maps::map_path(super::super::body::load::DONOR_MAP);
-    let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
-    let file = MapFile::load(&bytes).map_err(|e| format!("{path}: {e}"))?;
-    let tags = gun_tags();
-    let set = Arc::new(compile(&file, &tags.iter().map(String::as_str).collect::<Vec<_>>(), decode));
-    slots[usize::from(decode)] = Some(set.clone());
-    Ok(set)
+    let base = {
+        let mut slots = memo.0.lock().unwrap_or_else(|e| e.into_inner());
+        match &slots[i] {
+            Some(s) => s.clone(),
+            None => {
+                let path = super::super::maps::map_path(super::super::body::load::DONOR_MAP);
+                let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
+                let file = MapFile::load(&bytes).map_err(|e| format!("{path}: {e}"))?;
+                let tags = gun_tags();
+                let set = Arc::new(compile(&file, &tags.iter().map(String::as_str).collect::<Vec<_>>(), decode));
+                slots[i] = Some(set.clone());
+                set
+            }
+        }
+    };
+    let Some(own) = own_weapons(&mount, decode) else { return Ok(base) };
+    let mut whole = (*base).clone();
+    whole.merge(&own);
+    let whole = Arc::new(whole);
+    memo.1.lock().unwrap_or_else(|e| e.into_inner())[i] = Some(whole.clone());
+    Ok(whole)
 }
 
 /// Halo's weapon effects on `map` (any game's), from the donor map.

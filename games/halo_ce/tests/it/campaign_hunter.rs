@@ -239,3 +239,73 @@ fn a_body_view_keeps_the_kept_bones_triangles() {
     let moved = first_person::root(model.root, 1.8, &first_person::BodyView { offset: [0.1, -0.2, 0.3], ..view });
     assert!((moved.transform_point(eye_in_skeleton) - Vec3::new(0.1, -0.2, 0.3)).length() < 1e-4);
 }
+
+/// The cannon's pace (`params::Trigger::charge_paces`, our rule in its
+/// data): a held trigger fires a rod at the press and one each charge
+/// after (37 ticks); tapping, as a bot does, fires no faster. The tag's
+/// own rule (paces off): each tap fires (its 10 rounds a second).
+#[test]
+fn the_cannons_charge_paces_a_held_trigger_and_tapping() {
+    use halo_ce::game::weapons::tick::{GunEvent, HaloGun, Inputs};
+    let shots = |g: &weapons::params::Gun, press: &dyn Fn(u32) -> bool| -> Vec<u32> {
+        let mut w = HaloGun::new(g);
+        w.in_hand = true;
+        w.released_since_shot = true;
+        (0..300u32)
+            .filter(|t| {
+                let i = Inputs { fire: press(*t), held: true, aim: Vec3::NEG_Z, ..Default::default() };
+                w.tick(g, &i).iter().any(|e| matches!(e, GunEvent::Fired { .. }))
+            })
+            .collect()
+    };
+    let gaps = |s: &[u32]| s.windows(2).map(|w| w[1] - w[0]).collect::<Vec<u32>>();
+    let set = chimera_sim::weapon::data::WeaponSet::parse(weapons::DATA, &[]).unwrap();
+    let g: weapons::params::Gun = set.get(HUNTER_RUNG).unwrap().hooks.get(weapons::WEAPON_HOOK).cloned().unwrap().try_into().unwrap();
+    assert!(g.trigger.charge_paces);
+    let charge = g.trigger.charging_ticks() as u32;
+    assert_eq!(charge, 37, "1.25 s, truncated");
+    let held = shots(&g, &|_| true);
+    assert_eq!(held[0], 0, "the press fires at once");
+    assert!(held.len() >= 7 && gaps(&held).iter().all(|d| *d == charge), "held: {held:?}");
+    let tapped = shots(&g, &|t| t % 4 == 0);
+    assert!(tapped.len() >= 6 && gaps(&tapped).iter().all(|d| *d >= charge && *d <= charge + 4), "tapped: {tapped:?}");
+    let mut tag = g.clone();
+    tag.trigger.charge_paces = false;
+    let tapped = shots(&tag, &|t| t % 4 == 0);
+    assert!(tapped.len() > 60, "the tag's own rule: each tap fires ({})", tapped.len());
+}
+
+/// `FxSet::merge` (the characters' own weapons joining the donor's
+/// library): the other set's effects, particles and its gun's and
+/// projectile's indices moved past this set's; what this set has stays.
+#[test]
+fn an_effects_set_merges_with_its_indices_moved() {
+    use halo_ce::game::fx::load::{FxEffect, FxEntry, FxEvent, FxGun, FxParticle, FxProjectile, FxSet};
+    let effect = |path: &str, particle: Option<usize>| FxEffect {
+        path: path.into(),
+        events: vec![FxEvent { entries: vec![FxEntry { particle, ..Default::default() }], ..Default::default() }],
+        ..Default::default()
+    };
+    let mut base = FxSet::default();
+    base.library.effects = vec![effect("a", Some(0)), effect("b", None)];
+    base.library.by_path = [("a".to_string(), 0), ("b".to_string(), 1)].into();
+    base.library.particles = vec![FxParticle::default()];
+    base.library.guns.insert("gun".into(), FxGun { firing: vec![Some(1)], ..Default::default() });
+    let mut other = FxSet::default();
+    other.library.effects = vec![effect("c", Some(0)), effect("b", None)];
+    other.library.by_path = [("c".to_string(), 0), ("b".to_string(), 1)].into();
+    other.library.particles = vec![FxParticle::default()];
+    other.library.guns.insert("gun".into(), FxGun { firing: vec![Some(0)], ..Default::default() });
+    other.library.guns.insert("cannon".into(), FxGun { firing: vec![Some(0)], impacts: vec![None, Some(1)], ..Default::default() });
+    other.library.projectiles.insert("rod".into(), FxProjectile { detonation: Some(0), attached: vec![(1, "x".into())], ..Default::default() });
+    base.merge(&other);
+    let lib = &base.library;
+    assert_eq!(lib.effects.len(), 4);
+    assert_eq!(lib.effects[2].events[0].entries[0].particle, Some(1));
+    assert_eq!((lib.by_path["c"], lib.by_path["b"]), (2, 1), "a path already there stays");
+    assert_eq!(lib.guns["gun"].firing, [Some(1)], "a gun already there stays");
+    assert_eq!(lib.guns["cannon"].firing, [Some(2)]);
+    assert_eq!(lib.guns["cannon"].impacts, [None, Some(3)]);
+    assert_eq!(lib.projectiles["rod"].detonation, Some(2));
+    assert_eq!(lib.projectiles["rod"].attached[0].0, 3);
+}

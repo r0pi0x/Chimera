@@ -11,8 +11,8 @@
 //! offer their `<game>:default`, the body
 //! their guns give, registered here for its numbers. Each body's fresh
 //! health and second bar (`TargetCharacter::vitals`, normalized: 1.0 a
-//! standard player's 100): a Spartan 1.0 and a full shield (1 / the party
-//! balance's incoming scale, `cross_game::shield_unit`), a TF2 class its
+//! standard player's 100): a Spartan 1.0 and a full shield (1 / its
+//! incoming in the party's cross-game table, `cross_game::shield_unit`), a TF2 class its
 //! table's health / 100 and none, Combat Arms 1.0 and its default 100
 //! points of gear (docs/DESIGN.md, "Armour when the identity switches"),
 //! CS:S and HL2:DM 1.0 and none (kevlar is bought; HL2:DM's suit starts
@@ -67,9 +67,8 @@ fn tf2_vitals(world: &World, character: &str) -> (f32, f32) {
     (table.get(class_name(character)).map_or(1.0, |c| c.health / 100.0), 0.0)
 }
 
-fn halo_vitals(world: &World, _: &str) -> (f32, f32) {
-    let balance = world.get_resource::<halo_ce::game::cross_game::CrossGame>();
-    let scale = balance.filter(|b| b.enabled).map_or(1.0, |b| b.incoming_scale);
+fn halo_vitals(world: &World, id: &str) -> (f32, f32) {
+    let scale = halo_ce::game::cross_game::incoming_in(world, id);
     (1.0, halo_ce::game::cross_game::shield_unit(1.0, scale))
 }
 

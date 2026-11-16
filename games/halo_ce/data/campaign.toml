@@ -426,25 +426,38 @@ crouch_side = 0.501
 
 # Its first-person view (game::campaign::first_person, the owner's idea:
 # the disc has no first-person model for its cannon): its own right arm,
-# the cannon, from the upper arm down, and its shield arm's forearm (its
-# melee is a bash of that arm), posed by its own idle, aim, fire
-# and melee, the eye at its standing camera; `offset` (metres: +X right,
+# the cannon (`keep`: the bones kept, each with those below it), posed by
+# its own idle, aim, fire and melee, the eye at its standing camera; `offset` (metres: +X right,
 # +Y up, -Z forward) and `turn` (degrees: yaw, pitch, roll) place it in
 # the view, the cannon in the lower right as a gun sits. Tune here.
 [bodies.hunter.first_person]
 guns = ["halo_ce:hunter_fuel_rod"]
-keep = ["bip01 r upperarm", "bip01 l forearm"]
 label = "fr"
-offset = [-0.25, 0.25, -0.35]
-turn = [0.0, 0.0, 0.0]
+# Tuned 2026-11-16 from scene pictures (apps/ultimate_gun_game/scenes/
+# hunter_view.scene: at rest, firing, melee, looking up and down): the
+# cannon from the elbow down in the lower right, its barrel along the
+# view, the upper arm and the shield arm left out (the upper arm was a
+# dark slab at the right edge, the shield forearm one across the bottom
+# left). Its melee (a bash of the shield arm) shows nothing.
+keep = ["bip01 r forearm"]
+offset = [-0.25, 0.2, -0.5]
+turn = [4.0, 0.0, 0.0]
+# Where the cannon's muzzle shows (WU from the eye: forward, left, up),
+# the end of the barrel as drawn: its firing effect and light, and the
+# rod drawn leaving from there.
+muzzle = [0.51, -0.13, -0.10]
+# Alternate 1, the cannon nearer and larger (bolder, covers more):
+#   keep = ["bip01 r forearm"]
+#   offset = [-0.3, 0.22, -0.3]
+#   turn = [4.0, 0.0, 0.0]
+#   muzzle = [0.45, -0.11, -0.10]
+# Alternate 2, the melee readable (the shield forearm kept: a slab across
+# the bottom left at rest, which swings in on a melee):
+#   keep = ["bip01 r forearm", "bip01 l forearm"]
+#   offset = [-0.25, 0.2, -0.5]
+#   turn = [4.0, 0.0, 0.0]
+#   muzzle = [0.51, -0.13, -0.10]
 
-# 200 body, no shield (section 5). Its materials (section 3, "Hit boxes"):
-# body (12 hunter armour), shield (32, its shield arm: body x0), skin (13
-# hunter skin: a head, the exposed orange flesh of its back and belly,
-# full damage), spikes (12, body x0); one region; the indirect material
-# body. Its armour's reduced damage is each damage effect's modifier for
-# type 12 (assault rifle 0.5, pistol 0.2, fuel rod 0: section 5 item 3).
-# The region's name is not given by the spec ("one region").
 [bodies.hunter.vitality.model]
 tag = 'characters\hunter\hunter'
 maximum_body = 200.0

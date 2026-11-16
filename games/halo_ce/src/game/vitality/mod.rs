@@ -15,7 +15,7 @@
 //! out by what it blocks) with its own ratio (`weapon::ArmorRatio(1)`), so
 //! any other game's hit (a CS:S bullet, a Combat Arms grenade) empties the
 //! shield first through the shared armour step and only the overflow
-//! reaches health. With the party balance's incoming scale k
+//! reaches health. With the party's cross-game table's incoming k
 //! (`cross_game`: 1.5) the shield's `Armor` is the fraction / k and the
 //! character carries `core::DamageScale(k)`: another game's hit counts k
 //! times against both, the shield still first. `core::Health` is the body fraction (1.0 the Spartan's
@@ -39,10 +39,9 @@
 //! put back by `keep_shield` if one took them off in the same tick) and
 //! ratio, and an `Armor` if it had none (a full shield; one it had stays:
 //! the armour value is the character's and recharges from there); one
-//! leaving takes them off and, the party balance on (`cross_game`), gets
-//! back the armour it brought (`cross_game::Brought`: its value and kind,
-//! or none), never the shield's value; off, it keeps `Armor`. Both in one
-//! move with the
+//! leaving takes them off and gets back the armour it brought
+//! (`cross_game::Brought`: its value and kind, or none), never the
+//! shield's value. Both in one move with the
 //! movement's marker (`slots::set_movement` calls Halo's `wear_halo` and
 //! `leave_halo`, `slots::MovementImpl::insert` and `remove`): each part
 //! on its own was an archetype for every combination of the character's
@@ -80,7 +79,7 @@
 //!   neither stun nor ping it, nor count for its kill credit's attacker
 //!   list; their own game decides how much (`hits::absorb` through the
 //!   shield's coverage), with no Halo material multipliers, counted the
-//!   party balance's incoming scale (`cross_game`).
+//!   party's cross-game incoming (`cross_game`).
 //! - The pickups themselves (touching equipment) are a later step:
 //!   `GrantPowerup` is how they will grant.
 //! - Assists are not counted (no engine score for them yet).
@@ -92,7 +91,7 @@ use bevy::prelude::*;
 use chimera_sim::weapon::{Armor, ArmorPieces, ArmorRatio, Coverage, Depletion, PiecesOf, hits::ArmorPiece};
 use serde::{Deserialize, Serialize};
 
-use super::cross_game::{Brought, CrossGame, shield_of, shield_unit};
+use super::cross_game::{Brought, shield_of, shield_unit};
 use crate::{
     core::{DamageScale, Health, Predict, PredictedAppExt, SimSet},
     slots::{MovementRegistry, MovementSlot},
@@ -309,7 +308,6 @@ impl Plugin for VitalityPlugin {
         use chimera_net::net::parts::NetAppExt;
         app.insert_resource(Spartan::load())
             .insert_resource(DamageEffects::load())
-            .init_resource::<super::cross_game::CrossGame>()
             .add_message::<HaloPing>()
             .add_message::<GrantPowerup>()
             .add_message::<PowerupTaken>()
@@ -318,7 +316,7 @@ impl Plugin for VitalityPlugin {
                 use bevy_replicon::prelude::AppRuleExt;
                 app.replicate::<Vitality>();
             })
-            .add_systems(FixedUpdate, (wear, keep_shield).chain().before(SimSet::Movement))
+            .add_systems(FixedUpdate, (wear, keep_shield, super::cross_game::keep_incoming).chain().before(SimSet::Movement))
             .add_systems(Predict::Movement, stun_step.in_set(UnitStep))
             .add_systems(
                 FixedUpdate,
@@ -339,15 +337,16 @@ impl Plugin for VitalityPlugin {
 /// in one move: the shield's pieces (over any the last game left on) and
 /// ratio, and, where it wasn't Halo's, a fresh `Vitality`, `Stun`,
 /// `Attackers` and `Mirrored`, and a full shield's `Armor` if it had none
-/// (one it had stays). With the party's balance on (`cross_game`), another
-/// game's damage on it counts its incoming scale (`DamageScale`, with the
-/// shield's `Armor` in that unit: `cross_game::shield_unit`). `extra` is
-/// the movement's marker and slot, or none.
+/// (one it had stays). Under the party's cross-game table (`cross_game`),
+/// another game's damage on it counts its incoming (`DamageScale`, with
+/// the shield's `Armor` in that unit: `cross_game::shield_unit`). `extra`
+/// is the movement's marker and slot, or none.
 fn put_on(e: &mut EntityWorldMut, extra: impl Bundle) {
     let pieces = (shield_armour(), PiecesOf(super::GAME), ArmorRatio(1.0));
     let brought = Brought(e.get::<Armor>().copied());
     let fresh = || (Vitality::default(), Stun::default(), super::damage::Attackers::default(), Mirrored::default(), brought);
-    let scale = e.get_resource::<CrossGame>().copied().unwrap_or_default().incoming();
+    let body = super::cross_game::body_id(e.get::<super::campaign::BodyKind>());
+    let scale = super::cross_game::incoming_of(e.get_resource::<chimera_sim::weapon::balance::Balance>(), body);
     let scaled = (scale != 1.0).then_some(DamageScale(scale));
     if e.contains::<Vitality>() {
         e.insert((extra, pieces));
@@ -392,11 +391,10 @@ fn leave_halo(e: &mut EntityWorldMut) {
 }
 
 /// What a character leaving Halo gets back as armour (`cross_game::
-/// Brought`), the party balance on: Some(what it brought, or none); None
-/// keeps the shield's value (the balance off).
+/// Brought`): Some(what it brought, or none); None (nothing brought
+/// recorded) keeps `Armor` as it is.
 fn armour_back(e: &EntityWorldMut) -> Option<Option<Armor>> {
-    let on = e.get_resource::<CrossGame>().copied().unwrap_or_default().restores_armour();
-    e.get::<Brought>().filter(|_| on).map(|b| b.0)
+    e.get::<Brought>().map(|b| b.0)
 }
 
 /// Put back the armour `armour_back` gave.

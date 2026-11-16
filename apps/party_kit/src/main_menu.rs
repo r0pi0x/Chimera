@@ -905,6 +905,7 @@ impl Plugin for MainMenuPlugin {
         // kept on leaving a game (`no_game_behind`), one on entering a
         // game (`player_on_entering`).
         app.insert_resource(chimera_client::client::NoPlayerAtMenu { at_start: self.at_start });
+        app.insert_resource(OwedPlayer(self.at_start));
         app.insert_resource(data)
             .insert_resource(last)
             .init_resource::<BackgroundState>()
@@ -1114,6 +1115,8 @@ fn left_game(_: On<fe::LeftGame>, mut menu: ResMut<PartyMenu>, mut panel: ResMut
 /// and its weapons go; the match is held, `minigame::MatchHold`, until
 /// the next start lifts it), so nothing plays or sounds under the menu.
 fn no_game_behind(world: &mut World) {
+    // The next game entered from the menu makes its player.
+    world.insert_resource(OwedPlayer(true));
     let players: Vec<Entity> = world.query_filtered::<Entity, With<LocalPlayer>>().iter(world).collect();
     for e in players {
         let weapons = world.get::<chimera_sim::weapon::Inventory>(e).map(|i| i.weapons.clone()).unwrap_or_default();
@@ -1128,6 +1131,15 @@ fn no_game_behind(world: &mut World) {
     }
 }
 
+/// Whether the menu took away (or never let be made) the local player the
+/// shell would have had: at a start at the menu, and whenever a game is
+/// left for the menu (`no_game_behind`). Only then does entering a game
+/// make one (`player_on_entering`): an app that never showed the menu (a
+/// start in a game, a server with this plugin and no player of its own)
+/// is owed none.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct OwedPlayer(pub bool);
+
 /// In a game entered from the menu with no local player (none at a start
 /// at the menu, none kept on leaving one: `no_game_behind`): ours, once
 /// the map is in, unless a server sends it (a client).
@@ -1136,13 +1148,15 @@ fn player_on_entering(
     role: Option<Res<NetRole>>,
     players: Query<(), With<LocalPlayer>>,
     loading: Option<Res<chimera_world::map::LocalMapLoad>>,
+    mut owed: ResMut<OwedPlayer>,
     mut commands: Commands,
 ) {
-    if menu.screen != Screen::InGame
-        || role.is_some_and(|r| *r == NetRole::Client)
-        || loading.is_some()
-        || !players.is_empty()
-    {
+    if !owed.0 || menu.screen != Screen::InGame || loading.is_some() {
+        return;
+    }
+    // In the game: the debt is settled, by ours or by a server's.
+    owed.0 = false;
+    if role.is_some_and(|r| *r == NetRole::Client) || !players.is_empty() {
         return;
     }
     commands.queue(chimera_client::client::spawn_local_player_now);
