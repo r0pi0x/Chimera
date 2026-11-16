@@ -570,3 +570,43 @@ fn each_class_eye_stands_its_height_above_the_floor_classes_1() {
         assert!((camera(&me).z - eye).abs() < 0.05, "{gun}: eye {} above the floor, want {eye}", camera(&me).z);
     }
 }
+
+/// TF2's class parts (`movement::ClassParts`: the class, its traits, the
+/// max health before, the view kick's spring, the view model's class) go
+/// on with its movement and off with it in the switch's own command, to
+/// another movement on Source's marker or to one on another marker: never
+/// one at a time (each alone an archetype for every combination of the
+/// character's other parts).
+#[test]
+fn the_class_parts_go_on_and_off_with_the_movement_in_one_move() {
+    use chimera_sim::{movement::placeholder, weapon::view_anim::ViewVariant};
+    use source_engine::source_movement::SourceMovementAppExt;
+    use tf2::game::weapons::recoil::Tf2Punch;
+    struct Others;
+    impl Plugin for Others {
+        fn build(&self, app: &mut App) {
+            app.add_plugins(Floor).source_movement("test:source", None, None);
+        }
+    }
+    let mut sim = Sim::new(Tf2Sim, Others);
+    let p = sim.spawn_character(to_engine(Vec3::new(0.0, 0.0, 36.5)), ID);
+    let parts = |sim: &Sim| {
+        let w = sim.app.world();
+        [
+            w.get::<Tf2Class>(p).is_some(),
+            w.get::<SourceTraits>(p).is_some(),
+            w.get::<movement::HealthBefore>(p).is_some(),
+            w.get::<Tf2Punch>(p).is_some(),
+            w.get::<ViewVariant>(p).is_some(),
+        ]
+    };
+    assert_eq!(parts(&sim), [true; 5], "on with the movement");
+    for other in ["test:source", placeholder::ID] {
+        sim.set_movement(p, other);
+        assert_eq!(parts(&sim), [false; 5], "off in the same command, to {other}");
+        sim.set_movement(p, ID);
+        assert_eq!(parts(&sim), [true; 5], "on again from {other}");
+    }
+    sim.ticks(5);
+    assert_eq!(parts(&sim), [true; 5], "kept while on TF2's movement");
+}
