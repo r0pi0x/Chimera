@@ -4,15 +4,17 @@
 //! frames, and the worst frame's main-thread instructions stay under a limit.
 //! Instructions, because the dev box's load makes a limit in time flaky; where
 //! the hardware counters aren't open (Windows) only the behaviour is checked.
+//! A late body some character wears is built before those nobody wears, and
+//! a body not built yet is never drawn.
 
 use std::sync::Arc;
 
 use bevy::{mesh::skinning::SkinnedMeshInverseBindposes, prelude::*};
-use chimera_core::metrics::ThreadCounters;
+use chimera_core::{core::Intent, metrics::ThreadCounters};
 use chimera_present::{
     MapPlugin,
     render::{
-        bodies::{HeldAssets, PlayModels},
+        bodies::{CharacterBody, HeldAssets, LATE_AHEAD, PlayModels},
         prop_material::{DormantProps, PropMaterial},
         rope_material::RopeMaterial,
         shadows::ShadowMaterial,
@@ -24,7 +26,7 @@ use chimera_present::{
 use chimera_world::{
     harness::Sim,
     map::{
-        GameKit, MapBone, MapBrush, MapCharacterModel, MapData, MapHeldModel, MapMesh, MapModel, MapTexture, MapViewModel,
+        BodyName, Corpse, GameKit, MapBone, MapBrush, MapCharacterModel, MapData, MapHeldModel, MapMesh, MapModel, MapTexture, MapViewModel,
         add_character_model, add_held_model, add_view_model,
     },
 };
@@ -126,7 +128,7 @@ const BODY: &str = "test:body";
 
 fn done(sim: &Sim) -> bool {
     let w = sim.app.world();
-    w.resource::<PlayModels>().bodies.len() == 2
+    w.resource::<PlayModels>().built().count() == 2
         && w.resource::<HeldAssets>().0.contains_key(GUN)
         && w.resource::<ViewModelAssets>().has(GUN)
 }
@@ -189,9 +191,82 @@ fn large_models_come_in_without_a_frame_over_the_limit() {
     // Every asset is in by the time the model is out.
     let w = sim.app.world();
     let assets = w.resource::<PlayModels>();
-    let (mesh, material) = &assets.bodies[1].parts[0];
+    let (mesh, material) = &assets.body(1).expect("the late body").parts[0];
     assert!(w.resource::<Assets<Mesh>>().contains(mesh.id()));
     // Its materials wait outside the store until something draws them.
     assert!(w.resource::<DormantProps>().get(material.id()).is_some());
     assert!(!w.resource::<Assets<PropMaterial>>().contains(material.id()));
+}
+
+/// Two meshes of 2,000 vertices, on a texture each.
+fn small_model() -> MapModel {
+    MapModel {
+        meshes: (0..2).map(|i| mesh(2_000, i)).collect(),
+        ..default()
+    }
+}
+
+/// Two 1024 x 1024 textures: a body takes a few frames to go in.
+fn small_textures() -> Arc<Vec<MapTexture>> {
+    Arc::new(textures().iter().take(2).cloned().collect())
+}
+
+/// The model a character's drawn body shows, if any.
+fn drawn(sim: &mut Sim) -> Option<usize> {
+    let w = sim.app.world_mut();
+    w.query::<&CharacterBody>().iter(w).next().map(|b| b.model)
+}
+
+/// Many late bodies queued, and a character changing to the last of them:
+/// that one is built before the bodies nobody wears (it doesn't wait for
+/// every lower index), the character keeps the body it wore meanwhile (a
+/// body not built yet is a hole, never read as built), and wears the new
+/// one the frame after it is built.
+#[test]
+fn a_worn_late_body_is_built_before_the_unworn() {
+    const LATE: usize = 16;
+    let mut sim = sim();
+    let e = sim
+        .app
+        .world_mut()
+        .spawn((Intent::default(), Corpse { feet: 0.0 }, Transform::default()))
+        .id();
+    sim.ticks(2);
+    assert_eq!(drawn(&mut sim), Some(0), "the kit's body first");
+    let w = sim.app.world_mut();
+    for i in 0..LATE {
+        add_character_model(w, character(Some(&format!("test:body{i}")), small_model()), small_textures());
+    }
+    // The last one: index LATE in the map's models (after the kit's own).
+    w.entity_mut(e).insert(BodyName(format!("test:body{}", LATE - 1)));
+    let built = |sim: &Sim| {
+        let p = sim.app.world().resource::<PlayModels>();
+        (1..=LATE).filter(|i| p.body(*i).is_some()).collect::<Vec<_>>()
+    };
+    let mut frames = 0;
+    while !built(&sim).contains(&LATE) {
+        assert_eq!(drawn(&mut sim), Some(0), "the body it wore stays while the new one is a hole");
+        sim.app.update();
+        frames += 1;
+        assert!(frames < 20_000, "the worn body never came");
+        std::thread::sleep(std::time::Duration::from_micros(200));
+    }
+    // At worst behind those already on their way when it was first worn
+    // (their tasks run first), not behind every lower index.
+    let before = built(&sim);
+    assert!(
+        before.len() <= LATE_AHEAD + 1,
+        "the worn body came after {} unworn ones ({before:?}): it waited behind lower indices",
+        before.len() - 1
+    );
+    sim.app.update();
+    assert_eq!(drawn(&mut sim), Some(LATE), "worn once built");
+    // The rest still come, in their own time.
+    while built(&sim).len() < LATE {
+        sim.app.update();
+        frames += 1;
+        assert!(frames < 20_000, "the unworn bodies never came");
+        std::thread::sleep(std::time::Duration::from_micros(200));
+    }
+    assert_eq!(drawn(&mut sim), Some(LATE));
 }
