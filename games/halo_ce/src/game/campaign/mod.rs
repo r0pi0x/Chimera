@@ -7,15 +7,23 @@
 //! shield is the disc on its arm: `shield_disc` hides the disc while it is
 //! down and `shield_boxes` shrinks its hit box to the emitter, so shots
 //! pass where it was; the disc's hits go to the shield material through
-//! `body::hits::SHIELD_REGION`).
+//! `body::hits::SHIELD_REGION`) and the Marine (50 body and a 50 failing
+//! shield; the assault rifle, plasma rifle, needler, shotgun and sniper
+//! rifle; one of four voices).
 //!
-//! - **The body kind** (`BodyKind`: Spartan, Elite; a component on the
-//!   player, replicated to every client, net part `halo_ce_bodies`). Each
-//!   kind but the Spartan is a row of data/campaign.toml (`CampaignData`:
-//!   its biped, the campaign map its unit is cut from, and what differs
-//!   from the Spartan's movement and vitality tables, merged key by key):
-//!   adding the Grunt, the Jackal, the Hunter, the Marine or the Flood is
-//!   a variant here, a row there and its unit (`unit`).
+//! - **The body kind** (`BodyKind`: Spartan, Elite, Grunt, Jackal,
+//!   Marine; a component on the player, replicated to every client, net
+//!   part `halo_ce_bodies`). Each kind but the Spartan is a row of
+//!   data/campaign.toml (`CampaignData`: its biped, the campaign map its
+//!   unit is cut from, and what differs from the Spartan's movement and
+//!   vitality tables, merged key by key): adding the Hunter or the Flood
+//!   is a variant here, a row there and its unit (`unit`).
+//! - **Its voice** (`BodyVoice`, replicated with the kind): a kind with
+//!   several voices (`BodyDef::voices`: the Marine's four, each its own
+//!   set, `voice/marine_<name>`) speaks one, drawn by the host from the
+//!   match's randomness and the player's seed (`draw_voices`); every
+//!   machine loads that voice alone (`unit::load_voice`), and the body
+//!   works without it (silent).
 //! - **Its body**: every machine names the kind's model for the character
 //!   (`name_bodies`: the engine's `map::BodyName`, `halo_ce:elite`; the
 //!   Spartan none), so the engine picks it among Halo's models
@@ -122,10 +130,11 @@ pub enum BodyKind {
     Elite,
     Grunt,
     Jackal,
+    Marine,
 }
 
 impl BodyKind {
-    pub const ALL: [BodyKind; 4] = [BodyKind::Spartan, BodyKind::Elite, BodyKind::Grunt, BodyKind::Jackal];
+    pub const ALL: [BodyKind; 5] = [BodyKind::Spartan, BodyKind::Elite, BodyKind::Grunt, BodyKind::Jackal, BodyKind::Marine];
 
     /// Its id in data/campaign.toml and the commands.
     pub fn id(self) -> &'static str {
@@ -134,6 +143,7 @@ impl BodyKind {
             BodyKind::Elite => "elite",
             BodyKind::Grunt => "grunt",
             BodyKind::Jackal => "jackal",
+            BodyKind::Marine => "marine",
         }
     }
 
@@ -145,6 +155,39 @@ impl BodyKind {
     /// Halo's unnamed model.
     pub fn model_name(self) -> Option<String> {
         (self != BodyKind::Spartan).then(|| format!("{GAME}:{}", self.id()))
+    }
+}
+
+/// Which of its kind's voices a body speaks (`BodyDef::voices`, by
+/// index): drawn by the host from the match's randomness when it first
+/// wears a kind with several (`draw_voices`), replicated so every machine
+/// loads that voice alone (net part `halo_ce_bodies`).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BodyVoice(pub u8);
+
+/// The host: a body of a kind with several voices gets one
+/// (`BodyVoice`), by `roll` of the ladder's seed, the ladders made, the
+/// player's seed and the kind: the same player keeps the same voice
+/// across rungs and kinds of one ladder.
+#[allow(clippy::type_complexity)]
+pub fn draw_voices(
+    q: Query<(Entity, &BodyKind, Option<&BodyVoice>, Option<&crate::core::Seed>)>,
+    data: Res<CampaignData>,
+    role: Option<Res<crate::core::NetRole>>,
+    seed: Option<Res<chimera_sim::minigame::ladder::RungSeed>>,
+    made: Option<Res<chimera_sim::minigame::ladder::LaddersMade>>,
+    mut commands: Commands,
+) {
+    if role.is_some_and(|r| *r == crate::core::NetRole::Client) {
+        return;
+    }
+    for (e, kind, voice, player) in &q {
+        let n = data.body(*kind).map_or(0, |d| d.voices.len());
+        if n == 0 || voice.is_some_and(|v| usize::from(v.0) < n) {
+            continue;
+        }
+        let r = roll(&[seed.as_deref().map_or(0, |s| s.0), made.as_deref().map_or(0, |m| m.0), crate::core::Seed::of(player, e), *kind as u64]);
+        commands.entity(e).insert(BodyVoice((r % n as u64) as u8));
     }
 }
 
@@ -180,6 +223,12 @@ pub struct BodyDef {
     /// shrinks to the emitter while it is down (`shield_disc`).
     #[serde(default)]
     pub shield_disc: Option<String>,
+    /// Its voices, by their dialogue tags' names (the Marine's four), each
+    /// cut as a set of its own (`unit::voice_set_of`): a body of the kind
+    /// speaks one, drawn per player (`BodyVoice`). Empty: its one dialogue,
+    /// in `voice/<id>`.
+    #[serde(default)]
+    pub voices: Vec<String>,
 }
 
 impl BodyDef {
@@ -646,7 +695,7 @@ pub fn shield_boxes(mut q: Query<(&BodyKind, &super::vitality::Vitality, &mut cr
 /// The kinds' replication (net part `halo_ce_bodies`).
 pub fn register(app: &mut App) {
     use bevy_replicon::prelude::AppRuleExt;
-    app.replicate::<BodyKind>();
+    app.replicate::<BodyKind>().replicate::<BodyVoice>();
 }
 
 /// The campaign's bodies in a party app (module doc).
@@ -665,9 +714,10 @@ impl Plugin for CampaignPlugin {
             .init_resource::<UnitsOnDemand>()
             .add_observer(arrive)
             .init_resource::<voice::CampaignSounds>()
+            .init_resource::<voice::CampaignVoices>()
             .add_message::<voice::RegionLost>()
             .add_systems(Update, (unit::load_on_demand, name_bodies, voice::join_banks, shield_disc))
-            .add_systems(Update, targets::sandbox_wants.before(unit::load_on_demand))
+            .add_systems(Update, (targets::sandbox_wants, draw_voices).before(unit::load_on_demand))
             .add_systems(FixedUpdate, shield_boxes.after(crate::map::pose_hitboxes).before(crate::core::SimSet::Movement))
             .add_systems(FixedLast, shield_boxes.after(crate::map::SimPose))
             .add_systems(

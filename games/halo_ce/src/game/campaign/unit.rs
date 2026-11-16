@@ -12,7 +12,11 @@
 //! - the body, `character/<id>`: the closure without the biped's dialogue
 //!   (`udlg`) and what only the dialogue reaches;
 //! - the voice, `voice/<id>`: the dialogue and what only it reaches (its
-//!   lines). A missing voice set is a silent body, never a failure.
+//!   lines). A missing voice set is a silent body, never a failure. A
+//!   kind with several voices (`BodyDef::voices`, the Marine's) has no
+//!   such set: each of its dialogues is one, `voice/<id>_<name>`
+//!   (`voice_set_of`, file `voice_<name>.map`: the dialogue and what only
+//!   it reaches), and a body loads the one it speaks (`load_voice`).
 //!
 //! Each is written as a small map file (`unit::cut`: the donor's header,
 //! index and paths, the unit's tags and raw data at their own addresses,
@@ -95,6 +99,23 @@ pub fn voice_path(id: &str) -> String {
     format!("{}/voice.map", dir(id))
 }
 
+/// A voice of a kind with several (`BodyDef::voices`), as its own set
+/// (`voice/marine_bisenti`).
+pub fn voice_set_of(id: &str, name: &str) -> String {
+    format!("voice/{id}_{name}")
+}
+
+/// That voice's unit's file.
+pub fn voice_path_of(id: &str, name: &str) -> String {
+    format!("{}/voice_{name}.map", dir(id))
+}
+
+/// A dialogue tag's name: its path's last part (`bisenti` of the
+/// Marines' `...\bisenti`), lower case.
+pub fn dialogue_name(path: &str) -> String {
+    path.rsplit(['\\', '/']).next().unwrap_or(path).to_ascii_lowercase()
+}
+
 /// The recipe: what the outputs were made from.
 pub fn recipe_path(id: &str) -> String {
     format!("{}/recipe.txt", dir(id))
@@ -104,10 +125,14 @@ pub fn recipe_path(id: &str) -> String {
 /// recipe.
 pub struct Converted {
     pub body: Vec<u8>,
+    /// Its one voice (empty for a kind with several: `voices`).
     pub voice: Vec<u8>,
     pub recipe: String,
     pub body_unit: unit::Unit,
     pub voice_unit: unit::Unit,
+    /// A kind with several voices (`BodyDef::voices`): each one's name,
+    /// file and measure, in `BodyDef::voices`' order.
+    pub voices: Vec<(String, Vec<u8>, unit::Unit)>,
 }
 
 /// The SHA-256 of `bytes`, as hex.
@@ -129,11 +154,27 @@ pub fn convert(id: &str, def: &BodyDef, donor: &[u8]) -> Result<Converted, Strin
     let body = unit::closure(&map, &[biped], |t| enter(t) && t.class != class::DIALOGUE);
     let dialogues: Vec<u16> =
         whole.iter().copied().filter(|&i| map.tags()[i as usize].class == class::DIALOGUE).collect();
-    let voice: BTreeSet<u16> = unit::closure(&map, &dialogues, enter).difference(&body).copied().collect();
     let e = |e: std::io::Error| format!("{}: {e}", def.donor_map);
+    // Several voices: each dialogue of `def.voices` alone, less the body.
+    let mut voices = Vec::new();
+    for name in &def.voices {
+        let d = dialogues
+            .iter()
+            .copied()
+            .find(|&i| dialogue_name(&map.tags()[i as usize].path) == *name)
+            .ok_or_else(|| format!("{}: no dialogue `{name}` for `{}`", def.donor_map, def.biped))?;
+        let tags: BTreeSet<u16> = unit::closure(&map, &[d], enter).difference(&body).copied().collect();
+        let u = unit::measure(&map, tags).map_err(e)?;
+        voices.push((name.clone(), unit::cut(&map, &u).map_err(e)?, u));
+    }
+    let voice: BTreeSet<u16> = if def.voices.is_empty() {
+        unit::closure(&map, &dialogues, enter).difference(&body).copied().collect()
+    } else {
+        BTreeSet::new()
+    };
     let body_unit = unit::measure(&map, body).map_err(e)?;
     let voice_unit = unit::measure(&map, voice).map_err(e)?;
-    let recipe = format!(
+    let mut recipe = format!(
         "converter {CONVERTER} {VERSION}\ncharacter {id}\ninput maps/{}.map {}\nbiped {}\nbody {} tags {} bytes\nvoice {} tags {} bytes\n",
         def.donor_map,
         sha256_hex(donor),
@@ -143,12 +184,16 @@ pub fn convert(id: &str, def: &BodyDef, donor: &[u8]) -> Result<Converted, Strin
         voice_unit.tags.len(),
         voice_unit.total(),
     );
+    for (name, _, u) in &voices {
+        recipe.push_str(&format!("voice {name} {} tags {} bytes\n", u.tags.len(), u.total()));
+    }
     Ok(Converted {
         body: unit::cut(&map, &body_unit).map_err(e)?,
         voice: unit::cut(&map, &voice_unit).map_err(e)?,
         recipe,
         body_unit,
         voice_unit,
+        voices,
     })
 }
 
@@ -162,7 +207,8 @@ pub fn generated(mount: &Mount, only: &str) -> Vec<(String, Vec<(String, Vec<u8>
     for (id, def) in &data.bodies {
         let (body_set, voice_set) = (body_set(id), voice_set(id));
         let wanted = |set: &str| set.starts_with(only) || only.starts_with(set);
-        if !wanted(&body_set) && !wanted(&voice_set) {
+        let named: Vec<String> = def.voices.iter().map(|n| voice_set_of(id, n)).collect();
+        if !wanted(&body_set) && !wanted(&voice_set) && !named.iter().any(|s| wanted(s)) {
             continue;
         }
         let path = super::super::maps::map_path(&def.donor_map);
@@ -172,8 +218,14 @@ pub fn generated(mount: &Mount, only: &str) -> Vec<(String, Vec<(String, Vec<u8>
                 if wanted(&body_set) {
                     out.push((body_set, vec![(body_path(id), c.body), (recipe_path(id), c.recipe.into_bytes())]));
                 }
-                if wanted(&voice_set) {
+                if def.voices.is_empty() && wanted(&voice_set) {
                     out.push((voice_set, vec![(voice_path(id), c.voice)]));
+                }
+                for (name, bytes, _) in c.voices {
+                    let set = voice_set_of(id, &name);
+                    if wanted(&set) {
+                        out.push((set, vec![(voice_path_of(id, &name), bytes)]));
+                    }
                 }
             }
             Err(e) => println!("{body_set}: {e}"),
@@ -216,7 +268,13 @@ pub fn load_body(kind: BodyKind, def: &BodyDef, mount: &Mount, decode: bool, gun
     });
     // Its sounds: its footsteps from the body, its lines from the voice
     // set when there is one (a silent body without).
-    let voice = mount.read(&voice_path(kind.id())).ok().and_then(|b| MapFile::load(&b).ok());
+    let voice = if def.voices.is_empty() {
+        mount.read(&voice_path(kind.id())).ok().and_then(|b| MapFile::load(&b).ok())
+    } else {
+        // A kind with several voices: its body's footsteps here, the
+        // drawn voice's lines on their own (`load_voice`).
+        None
+    };
     let sounds = super::voice::compile(def, &file, voice.as_ref());
     Ok(LoadedBody { model: character, textures: body.textures, held, sounds })
 }
@@ -260,6 +318,19 @@ pub fn held_on(kind: BodyKind, def: &BodyDef, file: &MapFile, mount: &Mount, gun
 
 type Loaded = Result<LoadedBody, String>;
 
+/// Voice `index` of body `kind` (`BodyDef::voices`): its lines from its
+/// own set's file on `mount`, read with the body's biped.
+pub fn load_voice(kind: BodyKind, index: u8, def: &BodyDef, mount: &Mount) -> Result<super::voice::BodySounds, String> {
+    let name = def.voices.get(usize::from(index)).ok_or_else(|| format!("no voice {index}"))?;
+    let read = |path: String| -> Result<MapFile, String> {
+        let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
+        MapFile::load(&bytes).map_err(|e| format!("{path}: {e}"))
+    };
+    let body = read(body_path(kind.id()))?;
+    let voice = read(voice_path_of(kind.id(), name))?;
+    Ok(super::voice::compile_lines(def, &body, &voice, Some(name)))
+}
+
 /// The bodies loading, loaded and failed (module doc): what the host's
 /// draw asks (`ready`).
 #[derive(Resource, Default)]
@@ -271,6 +342,9 @@ pub struct UnitsOnDemand {
     /// Kinds wanted though nobody wears them yet (the draw's, while
     /// campaign bodies are on).
     pub wanted: BTreeSet<BodyKind>,
+    /// The voices of kinds with several (`load_voice`), each read once.
+    voice_tasks: BTreeMap<(BodyKind, u8), Task<Result<super::voice::BodySounds, String>>>,
+    voices_tried: BTreeSet<(BodyKind, u8)>,
 }
 
 impl UnitsOnDemand {
@@ -320,7 +394,7 @@ impl UnitsOnDemand {
 /// Each body kind worn or wanted whose unit is not loaded: read in the
 /// background once, added as a character model when done (module doc).
 pub fn load_on_demand(
-    worn: Query<&BodyKind>,
+    worn: Query<(&BodyKind, Option<&super::BodyVoice>)>,
     models: Option<Res<CharacterModels>>,
     data: Res<CampaignData>,
     context: Option<Res<LoadContext>>,
@@ -374,7 +448,39 @@ pub fn load_on_demand(
             }
         }
     }
-    let wanted: Vec<BodyKind> = worn.iter().copied().chain(pending.wanted.iter().copied()).collect();
+    // The voices: each one a body wears, once its unit is in.
+    let mut heard = Vec::new();
+    pending.voice_tasks.retain(|key, task| {
+        let Some(result) = chimera_core::tasks::poll(task, wait.is_some()) else { return true };
+        heard.push((*key, result));
+        false
+    });
+    for ((kind, v), result) in heard {
+        match result {
+            Ok(lines) => {
+                info!("halo_ce: the {} body's voice {v} loaded ({} lines)", kind.id(), lines.filled());
+                let lines = std::sync::Arc::new(lines);
+                commands.queue(move |world: &mut World| {
+                    world.get_resource_or_init::<super::voice::CampaignVoices>().0.insert((kind, v), lines);
+                });
+            }
+            Err(e) => warn!("halo_ce: the {} body speaks no voice {v}: {e}", kind.id()),
+        }
+    }
+    let voices: Vec<(BodyKind, u8)> = worn.iter().filter_map(|(k, v)| Some((*k, v?.0))).collect();
+    for (kind, v) in voices {
+        if !pending.ready.contains(&kind) || !pending.voices_tried.insert((kind, v)) {
+            continue;
+        }
+        let Some(def) = data.body(kind).cloned() else { continue };
+        let context = context.as_deref().cloned().unwrap_or_default();
+        let task = AsyncComputeTaskPool::get().spawn(async move {
+            let mount = super::super::maps::mount_for(&context)?;
+            load_voice(kind, v, &def, &mount)
+        });
+        pending.voice_tasks.insert((kind, v), task);
+    }
+    let wanted: Vec<BodyKind> = worn.iter().map(|(k, _)| *k).chain(pending.wanted.iter().copied()).collect();
     for kind in wanted {
         if kind == BodyKind::Spartan || pending.tried.contains(&kind) {
             continue;

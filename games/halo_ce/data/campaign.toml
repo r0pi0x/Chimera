@@ -24,15 +24,32 @@ speed_blend = 0.5
 # rifle, shotgun, sniper rifle, rocket launcher, needler and plasma
 # pistol), the campaign gives (section 2, "Character by multiplayer
 # weapon", "game") the Elite the plasma rifle and the needler, the Grunt
-# the needler and the plasma pistol, the Jackal the plasma pistol.
+# the needler and the plasma pistol, the Jackal the plasma pistol, the
+# Marine the assault rifle, plasma rifle, needler, shotgun and sniper
+# rifle (its rifle class's labels; the pistol it animates but the campaign
+# never gives it).
+[guns."halo_ce:assault_rifle"]
+spartan = 1.0
+marine = 1.0
+
 [guns."halo_ce:plasma_rifle"]
 spartan = 1.0
 elite = 1.0
+marine = 1.0
 
 [guns."halo_ce:needler"]
 spartan = 1.0
 elite = 1.0
 grunt = 1.0
+marine = 1.0
+
+[guns."halo_ce:shotgun"]
+spartan = 1.0
+marine = 1.0
+
+[guns."halo_ce:sniper_rifle"]
+spartan = 1.0
+marine = 1.0
 
 [guns."halo_ce:plasma_pistol"]
 spartan = 1.0
@@ -258,3 +275,72 @@ shield = 3
 [bodies.jackal.vitality.unit]
 hard_ping_threshold = 0.2
 
+# The Marine (`characters\marine\marine`, the unarmoured body: section 3's
+# playable candidates name it or the armoured one; the armoured adds its
+# armour plates, 0.013 WU of height and 465 KB, and only the armoured
+# sniper's own variant). Cut from a30, the smallest map holding it. Its
+# rifle class runs 0.0700 WU/t forward against the Spartan's 0.075 (93.3
+# %, so 96.7 % with the blend); its pill 0.64 / 0.5 WU, radius 0.18, camera
+# 0.62 / 0.44 (section 3). Its armour takes no player colour: the spec
+# names no change colour slot for the Marine (untinted).
+[bodies.marine]
+biped = 'characters\marine\marine'
+donor_map = "a30"
+speed_ratio = 0.9333333
+# Its voices (section 6): the four dialogues of variant 0 (a unit created
+# without a variant number takes one of them; the Sergeants' 100 and 101
+# are only for units placed with those numbers), each its own set
+# (`voice/marine_<name>`): a Marine player speaks one, drawn per player.
+voices = ["bisenti", "fitzgerald", "aussie", "mendoza"]
+
+[bodies.marine.movement]
+height_stand = 0.64
+height_crouch = 0.5
+radius = 0.18
+camera_stand = 0.62
+camera_crouch = 0.44
+
+# Its rifle class's moves (section 4, "The numbers"): front 0.0700 WU/t,
+# back 0.0500, sides 0.0583; crouched 0.0326, 0.0326, sides 0.0175 left
+# and 0.0230 right (their mean).
+[bodies.marine.animation]
+front = 2.1
+back = 1.5
+side = 1.749
+crouch_front = 0.978
+crouch_back = 0.978
+crouch_side = 0.6075
+
+# 50 body and a 50-point failing shield of type 24 (armored human):
+# failure threshold 1 (always failing: shield damage x (0.8 sigma + 0.2)),
+# failing leak 0.2; 8 s before it recharges, 1 s from empty to full
+# (section 5). Its materials (section 3, "Hit boxes": both Marines use
+# the armoured Marine's collision model): head (23, a head), body and
+# legs (24), each leaking 20 % through the shield; the indirect one body.
+[bodies.marine.vitality.model]
+tag = 'characters\marine_armored\marine_armored'
+maximum_body = 50.0
+maximum_shield = 50.0
+shield_material_type = 24
+shield_failure_threshold = 1.0
+failing_shield_leak = 0.2
+stun_time = 8.0
+recharge_time = 1.0
+recharge_velocity = 0.033333335
+indirect_material = 1
+materials = [
+    { name = "head", head = true, type = 23, leak = 0.2, shield = 1.0, body = 1.0 },
+    { name = "body", head = false, type = 24, leak = 0.2, shield = 1.0, body = 1.0 },
+    { name = "legs", head = false, type = 24, leak = 0.2, shield = 0.8, body = 0.8 },
+]
+regions = [
+    { name = "arms", flags = 0, threshold = 0.0 },
+    { name = "head", flags = 0, threshold = 0.0 },
+    { name = "legs", flags = 0, threshold = 0.0 },
+    { name = "torso", flags = 0, threshold = 0.0 },
+]
+
+[bodies.marine.vitality.regions]
+head = 0
+legs = 2
+other = 1

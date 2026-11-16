@@ -178,30 +178,47 @@ pub fn compile(def: &BodyDef, body: &MapFile, voice: Option<&MapFile>) -> BodySo
         }
     }
     out.set = c.set;
-    // Its lines: the dialogue of variant 0 (else the first below 100).
-    let (Some(voice), Some(b)) = (voice, biped) else { return out };
+    let Some(voice) = voice else { return out };
+    let lines = compile_lines(def, body, voice, None);
+    out.lines = lines.lines;
+    append(&mut out.set, lines.set);
+    out
+}
+
+/// The lines alone of voice unit `voice` (no footsteps): the dialogue
+/// named `name` among the biped's variants (`unit::dialogue_name`: one of
+/// a kind's several voices), else the variant numbered 0 (else its first
+/// below 100).
+pub fn compile_lines(def: &BodyDef, body: &MapFile, voice: &MapFile, name: Option<&str>) -> BodySounds {
+    let mut out = BodySounds { lines: vec![None; SLOTS], ..Default::default() };
+    let Some(b) = body.find(class::BIPED, &def.biped).and_then(|t| Biped::read(body, t).ok()) else { return out };
     let v = &b.unit.dialogue_variants;
-    let Some(dialogue) = v
-        .iter()
-        .find(|d| d.variant_number == 0)
-        .or_else(|| v.iter().find(|d| d.variant_number < 100))
-        .and_then(|d| voice.tag(d.dialogue.id))
-    else {
-        return out;
+    let named = |d: &&blam_formats::object::DialogueVariant| {
+        name.is_none_or(|n| voice.tag(d.dialogue.id).is_some_and(|t| super::unit::dialogue_name(&t.path) == n))
     };
+    let chosen = match name {
+        Some(_) => v.iter().find(named),
+        None => v.iter().find(|d| d.variant_number == 0).or_else(|| v.iter().find(|d| d.variant_number < 100)),
+    };
+    let Some(dialogue) = chosen.and_then(|d| voice.tag(d.dialogue.id)) else { return out };
     let Ok(view) = voice.tag_view(dialogue, 0x10 + SLOTS * 0x10) else { return out };
     let mut c = Compiler::new(voice);
     for slot in PAIN_BODY_MINOR..SLOTS {
         let r = view.tag_ref(0x10 + slot * 0x10).ok().filter(|r| voice.tag(r.id).is_some());
         out.lines[slot] = r.and_then(|r| c.sound(&r));
     }
-    append(&mut out.set, c.set);
+    out.set = c.set;
     out
 }
 
 /// Each loaded kind's sounds (`unit::load_on_demand` adds them).
 #[derive(Resource, Clone, Default)]
 pub struct CampaignSounds(pub BTreeMap<BodyKind, std::sync::Arc<BodySounds>>);
+
+/// The lines of each loaded voice of a kind with several
+/// (`BodyDef::voices`), by kind and voice (`super::BodyVoice`).
+#[derive(Resource, Clone, Default)]
+pub struct CampaignVoices(pub BTreeMap<(BodyKind, u8), std::sync::Arc<BodySounds>>);
 
 impl CampaignSounds {
     /// Kind `kind`'s library, when it has footsteps of its own.
@@ -211,26 +228,30 @@ impl CampaignSounds {
     }
 }
 
-/// The name that marks a kind's sounds as in a bank.
-fn marker(kind: BodyKind) -> String {
-    format!("halo_ce:campaign sounds#{}", kind.id())
+/// The name that marks a kind's sounds (or one of its voices) as in a
+/// bank.
+fn marker(kind: BodyKind, voice: Option<u8>) -> String {
+    match voice {
+        Some(v) => format!("halo_ce:campaign sounds#{}#{v}", kind.id()),
+        None => format!("halo_ce:campaign sounds#{}", kind.id()),
+    }
 }
 
-/// Every machine: each loaded kind's clips and entries in the map's
-/// `SoundBank` (a new map's bank has none; added once per bank).
-pub fn join_banks(sounds: Option<Res<CampaignSounds>>, bank: Option<ResMut<SoundBank>>) {
-    let (Some(sounds), Some(mut bank)) = (sounds, bank) else { return };
-    let missing: Vec<(BodyKind, &std::sync::Arc<BodySounds>)> = sounds
-        .0
+/// Every machine: each loaded kind's (and voice's) clips and entries in
+/// the map's `SoundBank` (a new map's bank has none; added once per bank).
+pub fn join_banks(sounds: Option<Res<CampaignSounds>>, voices: Option<Res<CampaignVoices>>, bank: Option<ResMut<SoundBank>>) {
+    let Some(mut bank) = bank else { return };
+    let all = sounds
         .iter()
-        .filter(|(k, s)| !s.set.entries.is_empty() && bank.0.entry(&marker(**k)).is_none())
-        .map(|(k, s)| (*k, s))
-        .collect();
+        .flat_map(|s| s.0.iter().map(|(k, s)| (marker(*k, None), s)))
+        .chain(voices.iter().flat_map(|v| v.0.iter().map(|((k, v), s)| (marker(*k, Some(*v)), s))));
+    let missing: Vec<(String, &std::sync::Arc<BodySounds>)> =
+        all.filter(|(name, s)| !s.set.entries.is_empty() && bank.0.entry(name).is_none()).collect();
     if missing.is_empty() {
         return;
     }
     let m = std::sync::Arc::make_mut(&mut bank.0);
-    for (kind, s) in missing {
+    for (name, s) in missing {
         let offset = m.clips.len();
         m.clips.extend(s.set.clips.iter().cloned());
         for (name, e) in &s.set.entries {
@@ -242,7 +263,7 @@ pub fn join_banks(sounds: Option<Res<CampaignSounds>>, bank: Option<ResMut<Sound
         }
         // The marker: an entry with nothing to play.
         if let Some(e) = s.set.entries.values().next() {
-            m.entries.insert(marker(kind), crate::map::MapSoundEntry { waves: Vec::new(), ..e.clone() });
+            m.entries.insert(name, crate::map::MapSoundEntry { waves: Vec::new(), ..e.clone() });
         }
     }
 }
@@ -344,11 +365,13 @@ pub fn speak(
     mut lost: MessageReader<RegionLost>,
     effects: Res<DamageEffects>,
     sounds: Option<Res<CampaignSounds>>,
+    voices: Option<Res<CampaignVoices>>,
     tables: Option<Res<super::BodyTables>>,
     clock: Res<crate::core::SimClock>,
     mut bodies: Query<(
         Entity,
         &BodyKind,
+        Option<&super::BodyVoice>,
         &Transform,
         Option<&Vitality>,
         Option<&mut Voice>,
@@ -362,7 +385,7 @@ pub fn speak(
     let hurts: Vec<HaloHurt> = hurts.read().copied().collect();
     let lost: Vec<RegionLost> = lost.read().copied().collect();
     let per_tick = crate::game::METERS_PER_UNIT * crate::game::movement::data::TICKS_PER_SECOND;
-    for (e, kind, t, vitality, voice, velocity, state) in &mut bodies {
+    for (e, kind, chosen, t, vitality, voice, velocity, state) in &mut bodies {
         let Some(mut voice) = voice else {
             commands.entity(e).insert(Voice::default());
             continue;
@@ -374,7 +397,12 @@ pub fn speak(
         if alive && voice.dead {
             *voice = Voice::default();
         }
-        let Some(s) = sounds.as_deref().and_then(|s| s.0.get(kind)) else { continue };
+        // A kind with several voices speaks its drawn one's lines.
+        let s = match chosen {
+            Some(v) => voices.as_deref().and_then(|s| s.0.get(&(*kind, v.0))),
+            None => sounds.as_deref().and_then(|s| s.0.get(kind)),
+        };
+        let Some(s) = s else { continue };
         let table = tables.as_deref().and_then(|t| t.movement.get(kind));
         // This tick's lines, in the order they came: (slot, priority).
         let mut said: Vec<(usize, u8)> = Vec::new();

@@ -101,10 +101,14 @@ fn the_seam_picks_the_kinds_table() {
 #[test]
 fn guns_name_who_carries_them() {
     let data = CampaignData::builtin();
-    assert_eq!(data.weights("halo_ce:plasma_rifle"), vec![(BodyKind::Elite, 1.0), (BodyKind::Spartan, 1.0)]);
-    assert_eq!(data.weights("halo_ce:needler"), vec![(BodyKind::Elite, 1.0), (BodyKind::Grunt, 1.0), (BodyKind::Spartan, 1.0)]);
-    assert_eq!(data.weights("halo_ce:plasma_pistol"), vec![(BodyKind::Grunt, 1.0), (BodyKind::Jackal, 1.0), (BodyKind::Spartan, 1.0)]);
-    assert_eq!(data.weights("halo_ce:assault_rifle"), vec![(BodyKind::Spartan, 1.0)]);
+    use BodyKind::{Elite, Grunt, Jackal, Marine, Spartan};
+    assert_eq!(data.weights("halo_ce:plasma_rifle"), vec![(Elite, 1.0), (Marine, 1.0), (Spartan, 1.0)]);
+    assert_eq!(data.weights("halo_ce:needler"), vec![(Elite, 1.0), (Grunt, 1.0), (Marine, 1.0), (Spartan, 1.0)]);
+    assert_eq!(data.weights("halo_ce:plasma_pistol"), vec![(Grunt, 1.0), (Jackal, 1.0), (Spartan, 1.0)]);
+    for gun in ["halo_ce:assault_rifle", "halo_ce:shotgun", "halo_ce:sniper_rifle"] {
+        assert_eq!(data.weights(gun), vec![(Marine, 1.0), (Spartan, 1.0)], "{gun}");
+    }
+    assert_eq!(data.weights("halo_ce:pistol"), vec![(Spartan, 1.0)], "the Marine animates it, the campaign never gives it");
     assert!(CampaignData::parse("[guns.\"halo_ce:needler\"]\nhunter = 1.0\n").is_err(), "an unknown body");
 }
 
@@ -117,7 +121,7 @@ fn the_draw_follows_the_weights_and_the_units_loaded() {
     assert_ne!(r, campaign::roll(&[7, 0, 42, 3, 1]));
     assert_eq!(campaign::draw(&w, all, r), campaign::draw(&w, all, r));
     let elites = (0..1000u64).filter(|i| campaign::draw(&w, all, campaign::roll(&[*i])) == BodyKind::Elite).count();
-    assert!((400..600).contains(&elites), "{elites} of 1000");
+    assert!((250..420).contains(&elites), "{elites} of 1000: a third (Elite, Marine, Spartan)");
     let spartan_only = |k: BodyKind| k == BodyKind::Spartan;
     assert!((0..100u64).all(|i| campaign::draw(&w, spartan_only, campaign::roll(&[i])) == BodyKind::Spartan));
     assert_eq!(campaign::draw(&[], all, r), BodyKind::Spartan);
@@ -206,7 +210,7 @@ fn the_kinds_are_sandbox_targets_once_loaded() {
     world.insert_resource(t);
     world.init_resource::<UnitsOnDemand>();
     let ids: Vec<&str> = targets::characters().iter().map(|c| c.id).collect();
-    assert_eq!(ids, ["halo_ce:elite", "halo_ce:grunt", "halo_ce:jackal"]);
+    assert_eq!(ids, ["halo_ce:elite", "halo_ce:grunt", "halo_ce:jackal", "halo_ce:marine"]);
     assert!(!targets::holds(&world, "halo_ce:elite", "halo_ce:plasma_rifle"), "not before its unit loaded");
     world.resource_mut::<UnitsOnDemand>().mark_ready(BodyKind::Elite);
     assert!(targets::holds(&world, "halo_ce:elite", "halo_ce:plasma_rifle"));
@@ -337,3 +341,41 @@ fn a_campaign_body_is_never_black() {
     assert_eq!(skin(red), Some(body::RED as i32));
 }
 
+
+/// The Marine's row (characters.md sections 3 to 6): 96.7 % of the
+/// Spartan's speed with the blend, its pill and camera, 50 body and a
+/// 50-point failing shield whose materials leak 20 %, its four voices.
+#[test]
+fn the_marines_tables() {
+    let (data, t) = tables();
+    let base = MovementData::builtin();
+    let m = &t.movement[&BodyKind::Marine];
+    assert!((m.run_forward - base.run_forward * (1.0 + 0.5 * (0.9333333 - 1.0))).abs() < 1e-5, "{}", m.run_forward);
+    assert_eq!((m.height_stand, m.height_crouch, m.radius, m.camera_stand, m.camera_crouch), (0.64, 0.5, 0.18, 0.62, 0.44));
+    let v = &t.vitality[&BodyKind::Marine];
+    assert_eq!((v.model.maximum_body, v.model.maximum_shield, v.shield_delay()), (50.0, 50.0, 240));
+    assert_eq!((v.model.shield_failure_threshold, v.model.failing_shield_leak), (1.0, 0.2));
+    assert!(v.shield_covers_body(), "its shield leaks 20 %, it does not leak all");
+    assert!(v.model.materials[v.material_of(Some(BodyRegion::Head))].head);
+    assert_eq!(data.body(BodyKind::Marine).unwrap().voices, ["bisenti", "fitzgerald", "aussie", "mendoza"]);
+}
+
+/// A body of a kind with several voices gets one, the same for the same
+/// player and match, and a kind with one voice none (`draw_voices`).
+#[test]
+fn a_marine_is_given_one_of_its_voices() {
+    use halo_ce::game::campaign::BodyVoice;
+    let draw = |seed: u64| {
+        let mut app = App::new();
+        app.insert_resource(CampaignData::builtin());
+        app.add_systems(Update, campaign::draw_voices);
+        let m = app.world_mut().spawn((BodyKind::Marine, chimera_core::core::Seed(seed))).id();
+        let e = app.world_mut().spawn((BodyKind::Elite, chimera_core::core::Seed(seed))).id();
+        app.update();
+        assert!(app.world().get::<BodyVoice>(e).is_none(), "one voice: none to draw");
+        app.world().get::<BodyVoice>(m).copied().expect("a voice")
+    };
+    assert_eq!(draw(7), draw(7));
+    let drawn: std::collections::BTreeSet<u8> = (0..64).map(|s| draw(s).0).collect();
+    assert_eq!(drawn.len(), 4, "every voice comes up: {drawn:?}");
+}

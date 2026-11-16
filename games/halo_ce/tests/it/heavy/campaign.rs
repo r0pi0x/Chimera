@@ -188,3 +188,38 @@ fn the_grunt_and_the_jackal_are_cut_and_load() {
         assert!(sounds.filled() >= 6, "{kind:?} lines {:?}", sounds.lines);
     }
 }
+
+/// The Marine (characters.md sections 2, 3, 6 and 8): cut from a30, its
+/// body with no voice in it and its four voices each a unit of its own
+/// (each speaks pain and death lines); its rifle class animates the
+/// assault rifle, shotgun and sniper rifle labels; the collision model its
+/// vitality row names is the biped's own.
+#[test]
+fn the_marine_is_cut_with_its_voices_apart() {
+    let Some(mount) = mount() else { return };
+    let data = CampaignData::builtin();
+    let def = data.body(BodyKind::Marine).unwrap();
+    let a30 = mount.read(&maps::map_path("a30")).unwrap();
+    let c = unit::convert("marine", def, &a30).unwrap();
+    assert!(c.voice.is_empty() || c.voice_unit.tags.is_empty(), "no voice in one piece");
+    assert_eq!(c.voices.len(), 4);
+    let file = MapFile::load(&c.body).unwrap();
+    let body = load::biped_body(&file, &def.biped, false, def.tint()).unwrap();
+    let set = body.character.animations.as_ref().unwrap();
+    for label in ["ar", "sg", "sr", "pr", "ne"] {
+        assert!(set.names.contains_key(&key("stand", label, "idle")), "{label}");
+    }
+    let silent = halo_ce::game::campaign::voice::compile(def, &file, None);
+    assert_eq!(silent.filled(), 0, "the body alone is silent");
+    for (name, bytes, u) in &c.voices {
+        let voice = MapFile::load(bytes).unwrap();
+        let lines = halo_ce::game::campaign::voice::compile_lines(def, &file, &voice, Some(name));
+        eprintln!("marine voice {name}: {} tags, {} bytes, {} lines", u.tags.len(), u.total(), lines.filled());
+        assert!(lines.filled() >= 6, "{name}: {:?}", lines.lines);
+    }
+    let biped = blam_formats::object::Biped::read(&file, file.find(blam_formats::cache::class::BIPED, &def.biped).unwrap()).unwrap();
+    let coll = file.tag(biped.object.collision_model.id).map(|t| t.path.clone());
+    let named = def.vitality.get("model").and_then(|m| m.get("tag")).and_then(|t| t.as_str()).map(str::to_string);
+    eprintln!("marine: body {} tags, {} bytes; collision model {coll:?}", c.body_unit.tags.len(), c.body_unit.total());
+    assert_eq!(coll, named, "its vitality row is its own collision model's");
+}
