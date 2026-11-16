@@ -15,7 +15,9 @@
 //!   `weapon/<name>` and the starting weapons a joiner holds until the
 //!   minigame arms it: the weapons come from `AssetHooks`, which
 //!   `minigame_net` fills; other sets a game names there, Combat Arms'
-//!   rung bodies' `character/<record>` and guns' `parts/<id>`). Its
+//!   rung bodies' `character/<record>` and guns' `parts/<id>`;
+//!   `match_sets`, which a server reading games from the store fetches
+//!   for itself too: `server_assets`). Its
 //!   `later` (the pool's other maps, which clients before 2026-11-15
 //!   prefetched at 2 MB/s for the whole session) stays empty: the next
 //!   map comes when the vote locks it in (below).
@@ -357,7 +359,8 @@ pub struct AssetSession {
 }
 
 impl AssetSession {
-    fn access_path(&self) -> Option<PathBuf> {
+    /// The access file (the user's unless a test names another).
+    pub fn access_path(&self) -> Option<PathBuf> {
         self.access.clone().or_else(Access::path)
     }
 
@@ -793,14 +796,28 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
         }
         return;
     };
-    let games = world.get_resource::<Games>();
-    let known = |g: &str| games.is_none_or(|gs| gs.get(g).is_some());
-    let mut offer = AssetOffer {
+    let offer = AssetOffer {
         url,
         fingerprint,
         prefetch_rate: u32::try_from(host.prefetch_max).ok(),
+        now: match_sets(world, m),
         ..default()
     };
+    if !offer.now.is_empty() {
+        m.assets = Some(offer);
+    }
+}
+
+/// The sets the match of manifest `m` needs now, per game (what `offer`
+/// offers, and what a server reading games from the asset store fetches
+/// for itself: `server_assets`): every game in play's `base`, `players`
+/// and `common` (`resolve::MATCH_SETS`), the map's `map/<name>`, each
+/// ladder and kit weapon's `weapon/<id>` (`AssetHooks`) and the other sets
+/// the parts name. Games this app doesn't register are left out.
+pub fn match_sets(world: &World, m: &MatchManifest) -> Vec<GameSets> {
+    let games = world.get_resource::<Games>();
+    let known = |g: &str| games.is_none_or(|gs| gs.get(g).is_some());
+    let mut now = Vec::new();
     let mut in_play: Vec<String> = m.games.iter().map(|g| g.game.clone()).collect();
     in_play.extend(m.weapons.iter().cloned());
     // The map's game too: a game whose `base` isn't a startup set
@@ -820,13 +837,13 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
     );
     for g in in_play.iter().filter(|g| known(g)) {
         for set in std::iter::once(resolve::BASE).chain(resolve::MATCH_SETS.iter().copied()) {
-            add(&mut offer.now, g, set.into());
+            add(&mut now, g, set.into());
         }
     }
     if let Some((game, name)) = m.map.split_once(':')
         && known(game)
     {
-        add(&mut offer.now, game, format!("map/{name}"));
+        add(&mut now, game, format!("map/{name}"));
     }
     for (game, name) in weapons
         .iter()
@@ -835,14 +852,12 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
     {
         // Weapon sets are named without the `weapon_` Source ids start
         // with (`chimera_pack sets`).
-        add(&mut offer.now, game, format!("weapon/{}", name.strip_prefix("weapon_").unwrap_or(name)));
+        add(&mut now, game, format!("weapon/{}", name.strip_prefix("weapon_").unwrap_or(name)));
     }
     for (game, set) in named.iter().filter_map(|s| s.split_once(':')).filter(|(g, _)| known(g)) {
-        add(&mut offer.now, game, set.to_string());
+        add(&mut now, game, set.to_string());
     }
-    if !offer.now.is_empty() {
-        m.assets = Some(offer);
-    }
+    now
 }
 
 /// A joining client that can fetch (`ASSETS_KEY`) counts as having the

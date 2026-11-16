@@ -202,7 +202,12 @@ others (the frequent case) never touch it.
 - **Services among themselves** talk only on loopback, with a shared
   secret (`<server store>/server/services/secret`, 0600, made at first
   start) in `X-Chimera-Service`. Game servers are players of the hub:
-  they hold an account (role `host`) and tickets like anyone.
+  they hold an account (role `host`) and tickets like anyone. Built
+  2026-11-15 for their own game files (`chimera_net::net::server_assets`,
+  playtest-hosting.md "The server's own game files"): a dedicated server
+  redeems a `host` invite once with `+chimera:hub <link>` (its
+  `account.toml`, `CHIMERA_ACCOUNT`) and fetches what it lacks with its
+  tickets; a listen server uses the host's.
 - **Legacy tokens** (`chimera1_...`) keep working as bearer tokens
   (section 6).
 

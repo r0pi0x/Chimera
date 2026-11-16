@@ -57,7 +57,8 @@
 //! - Console: `minigames` (the definitions, the playing one marked),
 //!   `minigame <id>`, `minigame_load <file>`, `minigame_status`,
 //!   `minigame_restart`; cheats (`sv_cheats`): `ladder_rung <n>` (the
-//!   local player onto a rung), `minigame_win` (the local player wins).
+//!   local player onto a rung; `rung`, `rung_command`: by number, gun or
+//!   step, any player, `+rung` at launch), `minigame_win` (the local player wins).
 //!
 //! - Results: once the match is decided `results::MatchResults` (winner,
 //!   each player's final rung, kills and deaths) is kept for the HUDs
@@ -106,6 +107,7 @@ pub mod moments;
 pub mod overrides;
 pub mod results;
 pub mod rotation;
+pub mod rung_command;
 pub mod power;
 pub mod runtime;
 pub mod spawn_score;
@@ -585,6 +587,7 @@ impl Plugin for MinigamePlugin {
         }
         runtime::plugin(app);
         power::plugin(app);
+        rung_command::plugin(app);
         app.console_command(
             "chimera:minigames",
             "List the minigames (id: name, players, maps, rules module), the one playing marked *.",
@@ -656,7 +659,7 @@ impl Plugin for MinigamePlugin {
                 let ladder = w.get_resource::<ladder::Ladder>().cloned().ok_or("no ladder plays")?;
                 let me = local_player(w)?;
                 let rung = (n - 1).min(ladder.rungs.len().saturating_sub(1));
-                ladder::set_rung(w, me, rung, &ladder);
+                rung_command::move_to(w, me, rung, &ladder);
                 Ok(Some(format!("rung {}: {}", rung + 1, ladder.rungs[rung])))
             },
         )

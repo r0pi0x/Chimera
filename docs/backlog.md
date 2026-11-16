@@ -74,6 +74,18 @@ the user's go-ahead: no Actions runs unless asked.
     - later, an original "Lucker Party" look for the party apps' own characters.
   - **Design first:** the style, polygon budget and colours (the avatar palette), with mockups or a turnaround sheet for the user to approve before modelling.
 
+- **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
+  - **Progressive disclosure (user):**
+    - Names, classes, stats and the kit's class icons need no download: they come from the compiled weapon catalogue and game_parts.
+    - A game's own icon shows only if its files are already held.
+    - A gun's files download only when it's picked, without blocking: you keep the current gun until the new one is ready.
+    - Rows show not downloaded (with size), downloading, ready, or failed (retry).
+  - **Asset side (this box):**
+    - An on-demand `request_set(game, set)` and a `SetProgress` resource keyed by (game, set): bytes and files, done and total, and a state of Absent{size}, Fetching, Ready or Failed.
+    - Set sizes from the manifest before fetching.
+    - Per-gun sets already exist (`weapon/<id>`); Halo's unit is the game.
+  - **Mechanics (Halo session):** the rung switch waits for Ready.
+
 - **Ladder draw: games dealt equally, soft gun recency (user, 2026-11-15):** today `chimera_sim::minigame::auto::ladder` weights a game's guns by 1/√count, so a game's share grows as √(its gun count), and every game gets at least one rung. With today's weapon files that's roughly Combat Arms 32 %, CS:S 23 %, HL2:DM and TF2 16 % each, Halo 13 %.
   - **Which game:** shuffle the games and deal one per rung until each has had a turn, then reshuffle. Every game gets an equal share however many guns it has. No guaranteed rung per game, since that can't hold once there are more games than rungs; then each match gets a different random subset. No hard rule against runs.
   - **Which gun within the game:** random, with a soft, server-session recency weight. A gun drawn recently is less likely and recovers over the next matches, but is never excluded. It applies within a game only, never to the game choice, so games with few guns (Halo) keep their full share and only cycle their guns sooner. The memory resets when the server restarts.
@@ -241,8 +253,15 @@ the user's go-ahead: no Actions runs unless asked.
   - *Map viewer:* load a map and orbit or fly around it; "drop in" as a
     character on a local listen server (the same server the menu already
     starts).
-  - *Sandbox mode:* a gun picker across every game's guns, plus options:
-    infinite ammo, bots, time scale, noclip.
+  - *Sandbox mode:* the command-only sandbox exists (2026-11-15):
+    `ultimate_gun_game +sandbox [map]` / `sandbox [map]` plays alone on
+    every game's guns with nothing advancing or ending, `rung <n | gun id |
+    part | next | prev | list>` picks the gun, `ca_bot_*`, `god` and `noclip`
+    for bots and comforts (OBSERVABILITY.md, "Sandbox"). Next: a gun and
+    rung picker menu; a time scale; target dummies that report damage and
+    time to kill at set distances (a gun's real strength measured, not
+    modelled); a firing range layout; saving a loadout of guns to cycle;
+    picking a rung character (Combat Arms' turret) instead of the draw's.
   - *Ties:* M5b's 3D Showcase backdrop
     ([plans/active/ugg-ui.md](plans/active/ugg-ui.md)) is the first
     viewer (gun under an inspect camera, character in idle) and should
@@ -253,8 +272,28 @@ the user's go-ahead: no Actions runs unless asked.
     assets by type, with the gun and character viewers on the Showcase
     scene; (2) map viewer with orbit and free-fly cameras, then drop-in
     on a local listen server; (3) sounds and textures viewers; (4)
-    sandbox mode with the gun picker and its options. About one to two
+    the sandbox's menu and options. About one to two
     weeks of agent work per phase; phase 1 gates the rest.
+- **Sandbox: the design (handed to the party UI's owner, user,
+  2026-11-16).** The command-only sandbox exists (`+sandbox`, `rung`;
+  docs/OBSERVABILITY.md); its screens are to be designed in the look
+  book's own language by the session that owns the party UI, from a
+  first pass the user liked for its options, not its look (a published
+  page, "UGG Sandbox Look Book"). The options: (1) try one gun now (a
+  picker: games, classes, one row a rung, typing filters across games,
+  Enter takes the first match); (2) flip between a few (up to six guns
+  pinned to a bar on number keys; previous and next through the
+  ladder); (3) shoot at a body (a target from any game, since gear and
+  shields change the answer, at 5, 10, 20 or 40 m, still, strafing or
+  shooting back); (4) read what happened (after a kill: hits, time from
+  first hit, distance: measured, not modelled); (5) set the conditions
+  (endless ammunition, no damage taken, half speed, third person); (6)
+  later: no HUD, a free camera, saved set-ups. Open with the user:
+  which scenarios they run most (they offered to dictate some), whether
+  the bar is worth building, targets as bots or as dummies that report
+  each hit, where the last-kill readout sits, the keys, and whether the
+  sandbox goes on the main menu. The mechanics (rung switch, targets,
+  measurement) stay with the session that built the sandbox.
 - **Smaller installs: a hybrid (user decision, 2026-10-29).**
   - *Default:* every player has the games installed on disk and loads
     from them, as now.

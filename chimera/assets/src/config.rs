@@ -183,15 +183,25 @@ impl AssetsConfig {
         // (`access`: a player's, not a developer's).
         s.remote = remote_config(url, token, key)
             .or_else(crate::account::user_remote)
-            .or_else(|| crate::access::Access::load().remote());
+            .or_else(|| crate::access::Access::load().remote())
+            // A service this process bound while running (a dedicated
+            // server's token sent to the service it offers), in the apps
+            // only (a test process's binds stay its fetchers').
+            .or_else(|| (install_default() != InstallDefault::Install).then(crate::access::live_remote).flatten());
         s.lock = AssetsLock::current();
         let default = install_default();
         let waiting = default == InstallDefault::ServiceFirstClient
             && s.remote.is_none()
             && (crate::access::Access::load().token.is_some() || crate::account::has_account());
-        let chosen = parse_use_install(std::env::var(USE_INSTALL_ENV).ok().as_deref()).or(self.use_install);
+        let chosen = self.install_chosen();
         (s.use_install, s.service_first) = policy(chosen, default, s.remote.is_some(), waiting);
         s
+    }
+
+    /// Whether the install is chosen on or off: `CHIMERA_ASSET_USE_INSTALL`,
+    /// else `use_install` (None: neither says; the process's default).
+    pub fn install_chosen(&self) -> Option<bool> {
+        parse_use_install(std::env::var(USE_INSTALL_ENV).ok().as_deref()).or(self.use_install)
     }
 
     pub fn resolve_with(&self, store_env: Option<PathBuf>, use_install_env: Option<String>) -> AssetSettings {

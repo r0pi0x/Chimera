@@ -97,6 +97,9 @@ pub const PARTY: GameServer = GameServer {
         }),
         requirements: Some(requirements),
         launch: Some(launch),
+        // Every game the party lends from: those without an install come
+        // from the asset service (`chimera_net::net::server_assets`).
+        games: Some(|| crate::BUNDLES.iter().map(|b| b.info).collect()),
         ..ServerHooks::NONE
     },
 };
