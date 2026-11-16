@@ -320,7 +320,7 @@ fn measured(
     if let Some(m) = world.get_resource::<Messages<HitMeasured>>() {
         for h in hits.read(m) {
             lines.push(format!(
-                "HitMeasured attacker={:?} victim={:?} gun={} damage={:.1} unscaled={:.1} group={:?} region={:?} distance={:.1}m health {:.1}->{:.1} shield {:.1}->{:.1} hits={} t={:.3}",
+                "HitMeasured attacker={:?} victim={:?} gun={} damage={:.1} unscaled={:.1} group={:?} region={:?} distance={:.1}m line={:?} health {:.1}->{:.1} shield {:.1}->{:.1} hits={} t={:.3}",
                 h.attacker,
                 h.victim,
                 h.gun.unwrap_or("?"),
@@ -329,6 +329,7 @@ fn measured(
                 h.hitgroup,
                 h.region,
                 h.distance_m,
+                h.line_m,
                 h.health_before * 100.0,
                 h.health_after * 100.0,
                 h.shield_before * 100.0,
@@ -341,7 +342,7 @@ fn measured(
     if let Some(m) = world.get_resource::<Messages<KillMeasured>>() {
         for k in kills.read(m) {
             lines.push(format!(
-                "KillMeasured attacker={:?} victim={:?} gun={} shots={} hits={} headshots={} first_hit->kill={:.2}s first_shot->kill={:.2}s distance={:.1}m damage={:.1} t={:.3}",
+                "KillMeasured attacker={:?} victim={:?} gun={} shots={} hits={} headshots={} first_hit->kill={:.2}s first_shot->kill={:.2}s distance={:.1}m line={:?} damage={:.1} t={:.3}",
                 k.attacker,
                 k.victim,
                 k.gun.unwrap_or("?"),
@@ -351,6 +352,7 @@ fn measured(
                 k.from_first_hit,
                 k.from_first_shot,
                 k.distance_m,
+                k.line_m,
                 k.total_damage * 100.0,
                 k.time
             ));

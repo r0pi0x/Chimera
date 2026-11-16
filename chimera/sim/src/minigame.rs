@@ -121,6 +121,7 @@ pub mod spawn_score;
 pub mod spawns;
 pub mod targets;
 pub mod props;
+pub mod range_place;
 pub mod vote;
 pub mod wins;
 

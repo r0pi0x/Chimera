@@ -538,9 +538,15 @@ Beside it: `ca_bot_add`, `ca_bot_kick`, `ca_bot_stop 1`, `ca_bot_dont_shoot 1`,
 `god`, `noclip` (`sv_cheats` is 1 there), guns refill; `sandbox help` says it.
 Practice targets: `target add <rung n | gun id | body id> [distance]
 [still|strafe|walk] [shoots] [protect]`, `target set`, `target remove`,
-`target list`, `target characters` (`chimera_sim::minigame::targets`);
+`target list`, `target characters` (`chimera_sim::minigame::targets`;
+on the range a target asked for at `d` m stands on the range's `d` m
+line at your side of the axis, nudged aside from what stands there, and
+props go on the range's own shelf and board first:
+`minigame::range_place`);
 every hit on a target or by one logs a `HitMeasured` line, every kill a
-`KillMeasured` line (shots, hits, headshots, time to kill, distance), and
+`KillMeasured` line (shots, hits, headshots, time to kill, distance: the
+true one, shooter to target, and on the range `line=` the target's
+distance line), and
 every blast while the sandbox plays a `BlastMeasured` line (centre, inner
 and outer radius, each victim's distance and damage). Props: `prop add
 <bottles|tin_cans|target_board> [distance]`, `prop remove <n|all>`, `prop
@@ -559,7 +565,9 @@ timescale 1|0.5|0.25`, `sandbox camdist <units>`, `sandbox conditions`
 (`chimera_sim::minigame::conditions`: `SetCondition`, the state
 `SandboxConditions`, logged as `SandboxConditions god=... ammo=...` at
 each change). Scenes: `apps/ultimate_gun_game/scenes/layout_repeat.scene`,
-`impact_marks.scene`, `conditions.scene`.
+`impact_marks.scene`, `conditions.scene`; on the range,
+`range_targets.scene` (targets on the six lines, hit at each) and
+`range_props.scene` (the range's shelf and board).
 `rung` is also a plain developer command in any ladder match: the host, a
 single player and a dedicated server's console may always run it, a remote
 client only with the server's `sv_cheats 1` (and only on itself).

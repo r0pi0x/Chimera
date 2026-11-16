@@ -1,0 +1,102 @@
+# Practice targets on the range's 5, 10, 20, 40, 100 and 200 m lines
+# (chimera_sim's `minigame::range_place`): each placed from a different
+# side of the firing line (the side is the player's), the player looking
+# off the axis (a target still goes on its line), pictures from the firing
+# line, from above, scoped at 200 m; then every one hit by TF2's sniper
+# rifle (hitscan) and the 100 and 200 m ones by its rocket launcher (a
+# projectile): `HitMeasured` lines in scene.log (`target list` says the
+# lines). A scene script: chimera_client's `scene`.
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/range_targets.scene --out <dir>
+# setpos takes Source units (0.0254 m) and feet: x is the range's side,
+# -y down range; the firing line is y 0, the spawns 1.5 m behind (y -59).
+wait_for map_loaded 6000     # the range in
+wait_for spawned 3000
+wait 120
+setang 0 80                  # looking off the axis: the lines still hold
+setpos -236 -59 0
+target add halo_ce:spartan 5 protect
+setpos 236 -59 0
+target add tf2:heavy 10 protect
+setpos -118 -59 0
+target add cs_source:weapon_ak47 20 protect
+setpos 118 -59 0
+target add combat_arms:m4a1 40 protect
+setpos -39 -59 0
+target add halo_ce:spartan 100 protect
+setpos 39 -59 0
+target add tf2:heavy 200 protect
+target list
+setpos 0 -59 0
+setang 1 90
+wait 300                     # bodies dressed
+shot range_lines
+noclip
+setpos 0 -400 1400           # 10 m behind the line, 35 m up
+setang 28 90
+wait 60
+shot range_lines_above
+setpos 0 -59 0
+noclip
+wait 30
+rung tf2:tf_weapon_sniperrifle
+wait 90
+target look 6
++attack2
+wait 60
+shot range_200_scoped
+-attack2
+wait 30
+# The sniper rifle at each, from its own side (one shot each, 1.5 s apart).
+setpos -236 -59 0
+target look 1
++attack
+wait 2
+-attack
+wait 110
+setpos 236 -59 0
+target look 2
++attack
+wait 2
+-attack
+wait 110
+setpos -118 -59 0
+target look 3
++attack
+wait 2
+-attack
+wait 110
+setpos 118 -59 0
+target look 4
++attack
+wait 2
+-attack
+wait 110
+setpos -39 -59 0
+target look 5
++attack
+wait 2
+-attack
+wait 110
+setpos 39 -59 0
+target look 6
++attack
+wait 2
+-attack
+wait 110
+# The rocket launcher at 100 and 200 m (about 5 and 10 s of flight).
+rung tf2:tf_weapon_rocketlauncher
+wait 120
+setpos -39 -59 0
+target look 5
++attack
+wait 2
+-attack
+wait 420
+setpos 39 -59 0
+target look 6
++attack
+wait 2
+-attack
+wait 800
+target list
