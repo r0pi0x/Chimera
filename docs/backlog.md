@@ -103,6 +103,19 @@ the user's go-ahead: no Actions runs unless asked.
   - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
   - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
 
+- **A purpose-built sandbox map, "the range" (user, 2026-11-15):** the sandbox gets its own map, made so things are easy to see, like the design mocks (gen/sandbox2: a light grid floor, distance lines, cover crates).
+  - Built in code like `chimera_world::greybox`, with its layout as data:
+    - a long, flat firing range with labelled distance lines at 5, 10, 20, 40, 100 and 200 m from a firing line where the player spawns;
+    - an even, bright, readable light, with no game's art;
+    - a few cover crates and walls at the sides;
+    - a props shelf for bottles and cans, and a target board stand;
+    - a raised platform for long-range shots;
+    - room for targets to strafe and walk, with a navigation mesh for the bots;
+    - a backstop wall.
+  - It's the default map of `+sandbox` and the main menu's Sandbox entry. Other maps stay selectable.
+  - Game-neutral: every game's movement works on it, and it's our own content, so it lives in the repo.
+  - Screenshots compared with the mocks.
+
 - **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
   - **Progressive disclosure (user):**
     - Names, classes, stats and the kit's class icons need no download: they come from the compiled weapon catalogue and game_parts.
@@ -375,15 +388,30 @@ results are from after that.
   map, 41 ragdolls made (about 29 of TF2 bodies), a median of 4.9 ms a
   frame. No screenshot caught a TF2 ragdoll: look at one.
 - **The Flame Thrower shows no flames** and **no TF2 gun shows a muzzle
-  flash**, on de_dust2 and on ctf_2fort.
+  flash**, on de_dust2 and on ctf_2fort. Fixed (branch `tf2-polish`):
+  TF2's particle systems loaded only with its own maps; they now load
+  onto any map from TF2's own files (`tf2::game::maps::add_guest_looks`),
+  the flashes start at the gun's `muzzle` attachment and the Flame
+  Thrower starts TF2's `flamethrower` system a piece per round. Confirm
+  in a playtest at a real frame rate (the Linux check ran at 60 ms a
+  frame, where the fast flame particles first show a few metres out).
 - **TF2 bullet hits play Combat Arms' impact sounds** (read from the
-  log, not heard: the runs were muted).
+  log, not heard: the runs were muted). Fixed (`tf2-polish`): TF2 is
+  now an impact provider (Source's impact effects and sounds,
+  `weapons::looks::STYLE`) with its looks on every map, so a TF2 gun's
+  hits are TF2's (by the map's sound entries of the same names on
+  de_dust2). TF2's own impact rules have no spec yet.
 - **The rocket's explosion** is TF2's fireball on ctf_2fort but a small
-  grey puff on de_dust2.
+  grey puff on de_dust2. Fixed (`tf2-polish`): TF2's explosion system on
+  every map, Source's never.
 - **HUD**: the health cross shows each class's maximum health and the
-  ammo counts move when firing. Missing: the class portrait. The
-  crosshair is faint against de_dust2. The sniper's scope did not show
-  in one of two identical runs (not explained).
+  ammo counts move when firing. The class portrait (2D) and the
+  crosshair at 32 screen pixels (was scaled down to 21 at 720 lines)
+  are fixed on `tf2-polish`. The sniper's scope did not show in one of
+  two identical runs: attack2 *held* toggles the scope every 0.3 s
+  (weapons_more.md 3.1), so a run holding it shows it or not by when the
+  frame is taken (`weapons_more::one_press_raises_the_scope_and_a_held_
+  key_toggles_it_3_1`); with a tap it stays up. No HUD race found.
 - **Classes measure right**: health 125, 200, 300 (Scout, Soldier,
   Heavy), speeds 400, 240, 230 units/s; the Scout's jump rises 49.9
   units and its double jump 95.2; a rocket jump rose 170.8 units and
@@ -391,7 +419,14 @@ results are from after that.
   pass on Windows.
 - **Eye height**: the differences between classes are exact, but every
   class sits 2.07 units above the spec's height measured against
-  CS:S's 64. Which side is off is not known.
+  CS:S's 64. Which side is off is not known. (`tf2-polish`) On a flat
+  floor each class's camera is exactly its eye height above the feet
+  and, once it has moved, above the floor
+  (`movement::each_class_eye_stands_its_height_above_the_floor_classes_1`):
+  no shared offset in the eye. Standing still a Source player may hover
+  up to 2 units (CS:S movement.md "Hovering"), and TF2's box is 48 wide
+  against CS:S's 32, so on de_dust2's sloped ground it rests higher:
+  measure again after walking, on flat ground.
 - **Bodies**: bots show the class bodies with their guns; a scene with
   CS:S, Halo and TF2 players renders; the kill feed shows TF2's rocket
   icon.
