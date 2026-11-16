@@ -16,7 +16,12 @@
 //!   tinted by the player's colour where its multipurpose map's alpha
 //!   says (the change-colour mask, `MapMesh::tint_mask`, which the loader's
 //!   look sets): one skin per colour of `body::COLOURS`, the meshes
-//!   themselves showing skin 0 (white).
+//!   themselves showing skin 0 (white). A campaign body names its own
+//!   slot and a colour for a player given none (`Tint`: the Elite's armour
+//!   reads slot A, all over, and wears the minor's blue uncoloured, an
+//!   extra skin after `COLOURS`'); the Spartan's slot C left the Elite
+//!   untinted (its grey base map under the blue sheen: the white and teal
+//!   of stage one).
 //! - Skeleton, animations and hit volumes: `skeleton`, `anims`, `hits`.
 //! - Any biped the same way (`biped_body`): the campaign's characters
 //!   from their units (`campaign::unit`).
@@ -103,12 +108,27 @@ fn tag<'a>(file: &'a MapFile, r: &TagRef, what: &str) -> Result<&'a blam_formats
     file.tag(r.id).ok_or_else(|| format!("the biped's {what} is missing"))
 }
 
-/// Whether a shader takes its change colour from slot C (the armour).
-fn armour(file: &MapFile, shader: &TagRef) -> bool {
+/// Whether a shader takes its change colour from slot `source` (the
+/// armour: C on the Spartan, A on the Elite).
+fn armour(file: &MapFile, shader: &TagRef, source: AnimationSource) -> bool {
     file.tag(shader.id)
         .and_then(|t| Shader::read(file, t).ok())
-        .is_some_and(|s| matches!(s, Shader::Model(m) if m.change_color_source == AnimationSource::C))
+        .is_some_and(|s| matches!(s, Shader::Model(m) if m.change_color_source == source))
 }
+
+/// How a body's armour takes the player's colour (`biped_body`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tint {
+    /// The change colour slot its armour shaders read: the Spartan's C,
+    /// the Elite's A (characters.md, "The Elite's colours").
+    pub source: AnimationSource,
+    /// The colour of a player given none (no team): an extra skin after
+    /// `COLOURS`' (the Elite minor's blue); None: `COLOURS`' first.
+    pub uncoloured: Option<[f32; 3]>,
+}
+
+/// The Spartan's: slot C, white without a colour.
+pub const SPARTAN_TINT: Tint = Tint { source: AnimationSource::C, uncoloured: None };
 
 /// A mesh's look with `tint`.
 fn look(m: &MapMesh, tint: Option<[f32; 3]>) -> MapMeshLook {
@@ -133,14 +153,14 @@ fn look(m: &MapMesh, tint: Option<[f32; 3]>) -> MapMeshLook {
 /// The Spartan of map `file` (module doc); `decode` false: textures as
 /// placeholders of their size (a lean load).
 pub fn spartan(file: &MapFile, decode: bool) -> Result<Spartan, String> {
-    biped_body(file, BIPED, decode)
+    biped_body(file, BIPED, decode, SPARTAN_TINT)
 }
 
 /// The body of biped `biped` of map `file`, as `spartan` makes the
 /// Spartan's (the campaign's characters' from their units:
 /// `campaign::unit`): unnamed (the caller names a body not every Halo
 /// player wears).
-pub fn biped_body(file: &MapFile, biped_path: &str, decode: bool) -> Result<Spartan, String> {
+pub fn biped_body(file: &MapFile, biped_path: &str, decode: bool, tint: Tint) -> Result<Spartan, String> {
     let biped_tag = file
         .find(class::BIPED, biped_path)
         .ok_or_else(|| format!("no biped `{biped_path}`"))?;
@@ -153,7 +173,7 @@ pub fn biped_body(file: &MapFile, biped_path: &str, decode: bool) -> Result<Spar
         collision::read_model(file, tag(file, &o.collision_model, "collision model")?).map_err(|e| e.to_string())?;
     let bones = skeleton::bones(&model);
     let found = objects::skinned_meshes(file, &model, &|p| space::point(p));
-    let tinted: Vec<bool> = found.iter().map(|(_, s)| armour(file, s)).collect();
+    let tinted: Vec<bool> = found.iter().map(|(_, s)| armour(file, s, tint.source)).collect();
     let pending = found
         .into_iter()
         .map(|(mesh, shader)| Pending {
@@ -169,14 +189,10 @@ pub fn biped_body(file: &MapFile, biped_path: &str, decode: bool) -> Result<Spar
         .into_iter()
         .map(|(m, _)| m)
         .collect();
-    let skins: Vec<Vec<MapMeshLook>> = (0..COLOURS.len())
-        .map(|k| {
-            meshes
-                .iter()
-                .zip(&tinted)
-                .map(|(m, t)| look(m, t.then(|| colour(k))))
-                .collect()
-        })
+    let colours: Vec<[f32; 3]> = (0..COLOURS.len()).map(colour).chain(tint.uncoloured).collect();
+    let skins: Vec<Vec<MapMeshLook>> = colours
+        .iter()
+        .map(|c| meshes.iter().zip(&tinted).map(|(m, t)| look(m, t.then_some(*c))).collect())
         .collect();
     let (lo, hi) = meshes.iter().flat_map(|m| &m.positions).fold(
         (bevy::math::Vec3::splat(f32::MAX), bevy::math::Vec3::splat(f32::MIN)),

@@ -311,7 +311,13 @@ pub fn wear_colours(
         if m.model.skins.is_empty() {
             continue;
         }
-        let want = BodySkin(skin_of(team.copied()) as i32);
+        // A body with a colour of its own for a player given none (the
+        // Elite's minor blue: `load::Tint::uncoloured`) wears it then.
+        let index = match team {
+            None if m.model.skins.len() > COLOURS.len() => COLOURS.len(),
+            _ => skin_of(team.copied()),
+        };
+        let want = BodySkin(index as i32);
         if skin != Some(&want) {
             commands.entity(e).insert(want);
         }

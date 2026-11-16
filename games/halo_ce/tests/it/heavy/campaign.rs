@@ -29,8 +29,15 @@ fn the_elite_is_cut_from_d20_and_loads() {
     assert_eq!(c.body_unit.total() + c.voice_unit.total(), 6_682_822);
     assert_eq!(c.body, unit::convert("elite", def, &bytes).unwrap().body, "deterministic");
     let file = MapFile::load(&c.body).unwrap();
-    let body = load::biped_body(&file, &def.biped, false).unwrap();
+    let body = load::biped_body(&file, &def.biped, false, def.tint()).unwrap();
     let m = &body.character;
+    // Its armour takes the player's colour through slot A (every armour
+    // shader), and a player given none wears the minor's blue.
+    let skins = &m.model.skins;
+    assert_eq!(skins.len(), halo_ce::game::body::COLOURS.len() + 1);
+    let tinted = skins[0].iter().filter(|l| l.tint.is_some()).count();
+    assert!(tinted * 2 > skins[0].len(), "{tinted} of {} meshes tinted", skins[0].len());
+    assert!(skins.last().unwrap().iter().any(|l| l.tint == Some([0.314, 0.302, 0.533])));
     let set = m.animations.as_ref().unwrap();
     for name in ["stand pr idle", "stand pr move-front", "stand ne idle", "crouch pr idle", "stand pr aim-still"] {
         assert!(set.names.contains_key(name), "{name}");

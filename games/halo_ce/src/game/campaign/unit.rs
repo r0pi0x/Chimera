@@ -189,7 +189,7 @@ pub fn load_body(kind: BodyKind, def: &BodyDef, mount: &Mount, decode: bool) -> 
     let path = body_path(kind.id());
     let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
     let file = MapFile::load(&bytes).map_err(|e| format!("{path}: {e}"))?;
-    let body = super::super::body::load::biped_body(&file, &def.biped, decode).map_err(|e| format!("{path}: {e}"))?;
+    let body = super::super::body::load::biped_body(&file, &def.biped, decode, def.tint()).map_err(|e| format!("{path}: {e}"))?;
     let mut character = body.character;
     character.name = kind.model_name();
     for w in &body.warnings {

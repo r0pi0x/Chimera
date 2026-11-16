@@ -40,6 +40,10 @@
 //!   0.2, camera 0.6 / 0.3) and any key of data/movement.toml a later
 //!   tuning pass sets (acceleration, air control, jump: data, not code),
 //!   fitted to the map's envelope by `movement::body` as the Spartan's is.
+//! - **Its colour**: the party's colour for the player (team or
+//!   free-for-all, as the Spartan's) through the kind's own change colour
+//!   slot (`BodyDef::colour_slot`: the Elite's A, all over its armour),
+//!   the minor's blue for a player given none (`BodyDef::uncoloured`).
 //! - **Its vitality** (`vitality_of`): the kind's `Spartan` table (the
 //!   Elite's collision model: 100 body, 100 shield of type 30, a 12 s
 //!   delay, 10 s recharge, its four materials with the arms at x0.5).
@@ -137,6 +141,28 @@ pub struct BodyDef {
     /// The speeds its move animations show (`AnimSpeeds`).
     #[serde(default)]
     pub animation: Option<AnimSpeeds>,
+    /// The change colour slot its armour takes the player's colour from
+    /// (`A` to `D`; characters.md "The Elite's colours"); none: untinted.
+    #[serde(default)]
+    pub colour_slot: Option<char>,
+    /// Its colour for a player given none (linear RGB 0..1).
+    #[serde(default)]
+    pub uncoloured: Option<[f32; 3]>,
+}
+
+impl BodyDef {
+    /// How its armour takes the player's colour (`body::load::Tint`).
+    pub fn tint(&self) -> super::body::load::Tint {
+        use blam_formats::shader::AnimationSource as S;
+        let source = match self.colour_slot.map(|c| c.to_ascii_uppercase()) {
+            Some('A') => S::A,
+            Some('B') => S::B,
+            Some('C') => S::C,
+            Some('D') => S::D,
+            _ => S::None,
+        };
+        super::body::load::Tint { source, uncoloured: self.uncoloured }
+    }
 }
 
 fn one() -> f32 {

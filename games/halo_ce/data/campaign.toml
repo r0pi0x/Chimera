@@ -44,6 +44,14 @@ donor_map = "d20"
 # The game's own moving speed over the Spartan's (characters.md section 4:
 # it outruns the Spartan by 15 %, 0.0865 against 0.075 WU/t).
 speed_ratio = 1.15
+# Its armour takes the player's colour (the party's team or free-for-all
+# colour, as the Spartan's) through change colour A, which tints it all
+# over; a player given no colour wears the minor's blue violet
+# (characters.md section 1, "The Elite's colours": a player-worn `elite`
+# keeps the colour it is created with; the sheen stays permutation 0's
+# blue).
+colour_slot = "A"
+uncoloured = [0.314, 0.302, 0.533]
 
 # The Elite's pill and camera (section 3, "Dimensions and the pill"), its
 # own. With its speed ratio it runs at 107.5 % of the Spartan.
