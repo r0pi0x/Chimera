@@ -11,8 +11,14 @@ items; the model archives for model paths. Public community
 documentation (the community TF2 wiki: the class pages, Health,
 Overheal, Ammo, Metal, Resupply locker, Respawn, Hitbox) for what was not
 measured. The class scripts in the archives are encrypted and were not
-opened. No code of the game or engine was read.
-Status: draft
+opened. For the 2026-11-15 check, Valve's Source SDK 2013 with TF2's
+client and server game code (the shared player code, the game rules,
+the pickups and the Medi Gun) was read in place, on its own machine, by
+a spec session; nothing of it was copied, only the behaviour and numbers
+are restated here. Max health and top speed per class are not in that
+code (they come from the encrypted class scripts), so they stay the
+measured values; eye heights and boxes are in it and agree.
+Status: checked against the SDK's game code (2026-11-15)
 
 ## Summary
 
@@ -25,6 +31,28 @@ regenerates, 3 health a second rising to 6 after he stays undamaged.
 Health kits restore 20 %, 50 % or 100 % of max health and never
 overheal; ammo packs refill 20 %, 50 % or 100 % of every weapon's
 reserve; the resupply cabinet restores everything.
+
+## Corrections from the SDK (2026-11-15)
+
+Each line: what the spec said before -> what the SDK's game code shows.
+
+- Kit amounts: "halves round up" -> the ceiling of max health × 0.2 / 0.5 / 1.0 (the same numbers for base classes). Open question 4 closed for kits.
+- Kit refusal: "a player at or above max cannot take one" -> a kit is taken when it heals anything, or when the player is burning or bleeding (then even at full or overhealed health, curing it).
+- Ammo pack amounts: rounding unknown -> the ceiling of each ammo pool's maximum × 0.2 / 0.5 / 1.0 (a 32-round reserve gets 7 from a small pack). Open question 4 closed for ammo.
+- Ammo packs also give the Spy's cloak +20 / 50 / 100 (of 100); a pack is taken when it gives anything.
+- Dropped pack on death: "50 % reserve and 100 metal" -> 50 % of each reserve maximum (ceiling) and the dead player's own metal clamped to 5–100.
+- Overheal decay while healed: unknown -> paused while any healer is actually healing the player, i.e. while health / max is below that healer's limit (1.5 for the stock Medi Gun, 1.0 for a dispenser); at or above it the decay runs even under the beam. Open question 2 closed.
+- Overheal cap: ⌊1.5 × max / 5⌋ × 5 -> the same, computed from the current max, and never below the larger of max health and current health.
+- Medic regeneration "doubled while healing" (wiki, unmeasured) -> the 3 base becomes 6 (so 6 to 12 a second) while his Medi Gun's patient is below its max health. Open question 3 closed (the 5 s plateau and linear ramp to 10 s are confirmed).
+- Medic regeneration at full health: accumulates nothing -> confirmed; the second's amount is discarded, not banked.
+
+Confirmed unchanged by the SDK: eye heights 65/68/75 and the
+Civilian's 65, duck eye 45, the 48 × 48 × 82 / 62 box, the overheal
+factor 1.5 (development-only `tf_max_health_boost`) and the 15 s drain
+(development-only `tf_boost_drain_time`), the drain as whole points
+with the fraction carried, the Medic's 3 a second every second rising
+linearly from 5 s to 10 s after damage to 6, kits 20 / 50 / 100 % with
+no overheal, pickup respawn 10 s, the dispenser never overhealing.
 
 ## Units and conventions
 
@@ -47,12 +75,13 @@ reserve; the resupply cabinet restores everything.
 | hull_stand | (−24,−24,0)–(24,24,82) | units | every class |
 | hull_duck | (−24,−24,0)–(24,24,62) | units | every class |
 | eye_duck | 45 | units | every class |
-| overheal_frac | 1.5 | – | overheal cap = 1.5 × max, rounded down to a multiple of 5 |
-| overheal_drain_time | 15 | s | time for a full overheal to drain |
+| overheal_frac | 1.5 | – | overheal cap = 1.5 × max, rounded down to a multiple of 5 (`tf_max_health_boost`, development-only) |
+| overheal_drain_time | 15 | s | time for a full overheal to drain (`tf_boost_drain_time`, development-only) |
 | medic_regen_min / max | 3 / 6 | health/s | Medic only |
-| medic_regen_ramp | 5 → 10 | s since last damage | rate 3 until 5 s, rising linearly to 6 at 10 s (measured) |
-| kit_small / medium / full | 0.2 / 0.5 / 1.0 | × max health | |
-| ammo_small / medium / full | 0.2 / 0.5 / 1.0 | × max reserve | public |
+| medic_regen_ramp | 5 → 10 | s since last damage | rate 3 until 5 s, rising linearly to 6 at 10 s (measured; SDK agrees) |
+| medic_regen_patient | 2 | × | the base rate doubles while the Medi Gun's patient is hurt |
+| kit_small / medium / full | 0.2 / 0.5 / 1.0 | × max health | rounded up |
+| ammo_small / medium / full | 0.2 / 0.5 / 1.0 | × max reserve | rounded up, per ammo pool |
 | pickup_respawn | 10 | s | health kits and ammo packs (public) |
 | respawn_wave | 10 | s | `mp_respawnwavetime` |
 
@@ -75,14 +104,18 @@ Measured on fresh puppet bots (stock loadout, full health, standing):
 | Spy | 8 | 125 | 185 | 320 | 75 | 45 | `models/player/spy.mdl` | `models/weapons/c_models/c_spy_arms.mdl` |
 
 - The overheal cap column is the wiki's; it equals ⌊1.5 × max / 5⌋ × 5
-  (Scout 187.5 → 185, Pyro 262.5 → 260).
+  (Scout 187.5 → 185, Pyro 262.5 → 260), SDK-confirmed. It is computed
+  from the current max health, and is never below the larger of max
+  health and current health.
 - Health, speed, eye heights and models are the bots' measured values;
   they agree with the wiki's classes table (speeds as % of 300) and the
   Valve level-design reference's view heights. The Demoman's and Heavy's
   model files are `demo.mdl` and `heavy.mdl`, not the class names.
 - The eye height does not come from the model: the models' own header
-  eye positions are unrelated values (the game sets the view offset per
-  class).
+  eye positions are unrelated values. The game code holds a fixed
+  table of standing eye heights by class index, which matches the
+  measured column (SDK); it is scaled by the player's model scale (1
+  normally). Ducked, every class uses 45.
 - The Engineer's Gunslinger replaces the arms with
   `models/weapons/c_models/c_engineer_gunslinger.mdl` (an unlock; later).
 - Every class uses the same collision box (also used for projectiles,
@@ -124,8 +157,15 @@ same weapons as named items (`baseitem` 0); a fresh player gets the
   at 3.0 s); a Scout set to 185 loses 1 every 0.25 s (4 per second) and
   is back to 125 after 14.985 s.
 - Decay stops at max; it never takes health below max.
-- Whether decay pauses while a Medic keeps healing the player is not
-  measured (Open questions 2).
+- **While being healed** (SDK): decay is skipped on any tick on which
+  some healer is actually healing the player, which a healer does
+  only while health / max is below its limit (1.5 for the stock Medi
+  Gun, 1.0 for a dispenser). So a Heavy, Soldier or Medic at the
+  rounded cap (exactly 1.5 × max) decays even under the beam and is
+  topped up again; a Scout at 185 (1.48 × max) is still "below the
+  limit", so the beam holds him at the cap without decay.
+- The drain accumulates (cap − max) / 15 × dt every tick and removes
+  the whole points of the accumulator (truncated), as measured.
 
 ### Medic regeneration
 
@@ -144,9 +184,14 @@ cycle, so the first gain came 0.57 s after the hit): +3 at 0.57, 1.58,
 +5 (9.61), +6 and +6 every second after. The model above (rate 3 to
 5 s, linear to 6 at 10 s, floor with carry) reproduces all 16 samples;
 the wiki says "3 per second, rising over ten seconds to 6", which
-describes the end points but not the 5 s plateau (Open questions 3). The
-wiki also says healing a patient doubles it; not measured (later, with
-the Medi Gun).
+describes the end points but not the 5 s plateau. The SDK confirms the
+model: base 3, times a factor that is 1 up to 5 s since the last damage
+taken and rises linearly to 2 at 10 s; the carried fraction is
+floored. While the Medic's Medi Gun has a patient whose health is
+below its max, the base is 6 instead of 3 (so 6 to 12 a second). If
+the Medic is at max health on a regeneration tick the whole part is
+discarded (only the fraction carries). The one-second cycle starts 1 s
+after he spawns, independent of damage.
 
 ### Health kits
 
@@ -154,13 +199,14 @@ Entities `item_healthkit_small`, `item_healthkit_medium`,
 `item_healthkit_full` (measured: spawned on a hurt bot), models
 `models/items/medkit_small.mdl`, `medkit_medium.mdl`, `medkit_large.mdl`.
 
-- Gives 20 % / 50 % / 100 % of max health, never above max (no
-  overheal); a player at or above max cannot take one (public).
-- Halves round up: measured at 5 health, a Scout gained 25 / 63 / 120
-  (to 125), a Demoman 35 / 88 / 170 (to 175). Since every base max
-  health is a multiple of 25, only .5 fractions occur with base classes
-  (Open questions 4).
-- A kit also removes burning and bleeding, even from an overhealed player
+- Gives ⌈max health × 0.2 / 0.5 / 1.0⌉ (SDK: the ceiling, of the current
+  max), never above max (no overheal).
+- Measured at 5 health, a Scout gained 25 / 63 / 120 (to 125), a
+  Demoman 35 / 88 / 170 (to 175); the ceiling gives exactly these.
+- **When it is taken** (SDK): if it heals at least 1 point, or if the
+  player is burning or bleeding. A player at or above max who is not
+  burning or bleeding walks over it and leaves it; a burning one at
+  full (or overhealed) health takes it, gains nothing, and is cured
   (public, 2012 change).
 - Respawns 10 s after being taken (public).
 
@@ -179,13 +225,17 @@ Entities `item_ammopack_small`, `item_ammopack_medium`,
 spawned in this session), models `models/items/ammopack_small.mdl`,
 `ammopack_medium.mdl`, `ammopack_large.mdl`.
 
-- Refills 20 % / 50 % / 100 % of each weapon's **reserve** capacity (not
-  the loaded clip), all weapons at once (public). Engineer metal: 20 % /
-  50 % / 100 % of the 200 maximum = 40 / 100 / 200.
-- A dead player drops a medium ammo pack (gives 50 % reserve, and 100
-  metal); weapons cannot be picked up for ammo (public, since 2015).
-- Respawns 10 s after being taken. Rounding of fractional ammo is not
-  documented (Open questions 4).
+- Refills ⌈max × 0.2 / 0.5 / 1.0⌉ of each **reserve ammo pool** (the
+  primary pool and the secondary pool, not the loaded clips), never
+  above its maximum (SDK). Engineer metal: the same fractions of the
+  200 maximum = 40 / 100 / 200. A Spy's cloak meter gains 20 / 50 / 100
+  (of 100). The pack is taken if it gave anything, otherwise left.
+- A dead player drops an ammo box that gives, like a medium pack,
+  ⌈max × 0.5⌉ of each reserve pool of whoever picks it up, plus
+  the dead player's own metal clamped to 5–100 (SDK); weapons cannot be
+  picked up for ammo (public, since 2015).
+- Respawns 10 s after being taken (SDK: the game rules' fixed item
+  respawn time, 10 s).
 
 ### Resupply cabinet
 
@@ -228,8 +278,8 @@ The order within a tick only matters at the cap and is not measured.
 
 ## Edge cases
 
-- A Medic at max health accumulates nothing; regeneration never
-  overheals.
+- A Medic at max health accumulates nothing (the second's whole part
+  is discarded); regeneration never overheals.
 - A kit taken at max − 1 health gives 1 (no overheal) and is used up
   (assumed: the public sources only say kits do not overheal; Open
   questions 6).
@@ -253,9 +303,14 @@ The order within a tick only matters at the cap and is not measured.
 | 5 | Scout at 185 | – | 0.24 s / 15 s | 184 / 125 |
 | 6 | Medic at 150 takes 100 damage | – | 7 s | 40 + 3·6 + 4 = 62 (the 7th regeneration) |
 | 7 | Medic, as case 6 | – | 16 regenerations (15.65 s after the hit) | 113 (gains 3,3,3,3,3,3,4,4,6,5,6,6,6,6,6,6 at one-second intervals) |
-| 8 | Scout at 5 health | touches a small / medium / full kit | – | 30 / 68 / 125 |
+| 8 | Scout at 5 health | touches a small / medium / full kit | – | 30 / 68 / 125 (⌈25⌉, ⌈62.5⌉, 125) |
 | 9 | Demoman at 5 | small / medium / full kit | – | 40 / 93 / 175 |
-| 10 | Heavy at 300 (full) | walks over a kit | – | kit not taken |
+| 10 | Heavy at 300 (full), not burning | walks over a kit | – | kit not taken |
+| 14 | Heavy at 300 (full), burning (s) | walks over a small kit | – | kit taken, health 300, no longer burning |
+| 15 | Scout, Scattergun reserve 0 of 32 (s) | small ammo pack | – | reserve 7 (⌈6.4⌉) |
+| 16 | Heavy at 450, a stock Medi Gun beam on him (s) | – | 1 s | health oscillates at 450 (decays, refilled); a Scout at 185 under the beam stays at 185 with no decay |
+| 17 | Medic at 100 of 150, healing a hurt patient, undamaged 12 s (s) | – | next regeneration tick | +12 |
+| 18 | Medic at 100, healing a patient at full health, undamaged 2 s (s) | – | next regeneration tick | +3 |
 | 11 | Engineer with 0 metal | small / medium / full ammo pack | – | 40 / 100 / 200 metal |
 | 12 | Soldier at 150 with 0 reserve rockets | resupply cabinet | – | 200 health, full reserve and clip |
 | 13 | Medic at 120, undamaged 12 s | – | next regeneration tick | +6 |
@@ -265,19 +320,16 @@ The order within a tick only matters at the cap and is not measured.
 1. **Team colours as RGB** (HUD, names, glow): not in the dedicated
    server install (no client scheme files); read them from the retail
    client's scheme resource files.
-2. Does overheal decay continue while a Medic is healing the player
-   (the beam outpacing it), and is its rate based on the cap of the
-   current max (items that change max health)?
-3. **Medic regeneration curve.** Measured: 3/s for the first 5 s, linear
-   to 6/s at 10 s, floor with carry. Check the plateau with another hit
-   and a finer sampling, and the carry's starting value; check the
-   wiki's "doubled while healing".
-4. **Rounding of kits and ammo for non-base max values** (round half up
-   vs ceiling; only .5 fractions are possible with base classes) and of
-   ammo pack fractions (e.g. Scattergun reserve 32 × 0.2 = 6.4).
-5. **Ammo pack and resupply entity names**: from public documentation;
-   confirm in the stock maps' entity lumps (most are LZMA-compressed,
-   install.md 2.1).
-6. Pickup refusal when a weapon's reserve is already full but health is
-   not (and vice versa): kits and packs are separate entities, so assume
-   each is refused only when its own resource is full.
+2. Closed by the SDK (Overheal, "While being healed"); the cap and rate
+   follow the current max.
+3. Closed by the SDK (Medic regeneration).
+4. Closed by the SDK: kits and packs round up (ceiling).
+5. **Ammo pack and resupply entity names**: the SDK confirms
+   `item_healthkit_small` / `_medium` / `_full` and the ammo packs'
+   sizes; the stock maps' entity lumps (most LZMA-compressed,
+   install.md 2.1) are still the check for which ones maps use.
+6. Pickup refusal: confirmed (SDK) that kits and packs are separate: a
+   kit is refused only when it would heal nothing and the player is not
+   burning or bleeding; a pack only when it would give nothing.
+7. Max health and top speed per class are in the encrypted class
+   scripts, not in the SDK; the measured values stand.

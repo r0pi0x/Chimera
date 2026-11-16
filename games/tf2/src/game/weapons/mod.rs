@@ -304,7 +304,10 @@ impl Plugin for Tf2GunsPlugin {
             .get_resource::<script_numbers::GunNumbers>()
             .cloned()
             .unwrap_or_else(script_numbers::GunNumbers::from_scripts);
-        numbers.log();
+        // Said once the app runs: a dedicated server's log is set up after
+        // its plugins are built (`chimera_net::dedicated::run`).
+        let said = numbers.clone();
+        app.add_systems(Startup, move || said.log());
         let docs: Vec<(&str, &str)> = numbers.docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
         let set = app.add_weapon_data(&docs).unwrap_or_else(|e| panic!("TF2 weapon data: {e}"));
         // A client whose own differ (no scripts, the fallback) plays with

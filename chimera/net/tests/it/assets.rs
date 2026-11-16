@@ -1370,7 +1370,8 @@ fn a_dedicated_server_without_installs_fetches_its_files_with_its_credential_and
 /// A listen server is the host's process: with no service configured and
 /// no token, it fetches the match's sets with the host's own credential
 /// (here its hub account's ticket, as its client joins with it), the
-/// service logging the account.
+/// service logging the account; a change of level fetches the coming
+/// map's set before the map loads.
 #[test]
 fn a_listen_server_fetches_the_match_files_with_the_hosts_credential() {
     use chimera_net::net::server_assets::{self, ServerFiles, Via};
@@ -1397,6 +1398,13 @@ fn a_listen_server_fetches_the_match_files_with_the_hosts_credential() {
         }),
         "the match's sets fetched by the host"
     );
+    assert!(svc.ids("map/later").iter().all(|id| !store.has(id)), "not the next map yet");
+    // A change of level names the coming map before it loads (the served
+    // one is still the old): its set comes with the change's fetch.
+    sim.server.app.insert_resource(chimera_world::map::LoadedMapName(format!("{GAME}:later")));
+    let job = server_assets::fetch_now(sim.server.app.world_mut()).expect("the next map's fetch");
+    job.wait().unwrap();
+    assert!(svc.ids("map/later").iter().all(|id| store.has(id)), "the coming map's set");
     assert!(svc.ids("extra").iter().all(|id| !store.has(id)));
     let log = fs::read_to_string(svc.store.root.join("server").join("access.log")).unwrap();
     assert!(log.lines().any(|l| l.contains("account:hosty") && l.contains(" 200 ")), "{log}");

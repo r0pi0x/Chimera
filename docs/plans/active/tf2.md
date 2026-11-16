@@ -26,13 +26,16 @@ from specs, measurements and the game's own data.
 
 ## 1. Rules for this port
 
-- **Clean room.** TF2's and the Source engine's code leaked, and the
-  Source SDK is public. Neither is ever read, copied or translated.
-  Spec sub-agents read the game's data files in place, public
-  documentation (the community TF2 wiki, Valve Developer Community)
-  and measurements of the dedicated server, and write only
-  `specs/tf2/`. The orchestrator and implementation agents read only
-  `specs/` and the repository.
+- **Clean room.** TF2's and the Source engine's code leaked; the leak
+  is never read, copied or translated. Valve's public Source SDK 2013,
+  which has held TF2's client and server game code since 2025-02-18
+  (non-commercial licence), is reference material for spec sessions
+  only (user, 2026-11-15). Spec sub-agents may read it in place, along
+  with the game's data files, public documentation (the community TF2
+  wiki, Valve Developer Community) and measurements of the dedicated
+  server. They write only `specs/tf2/`, in their own words, never
+  copying or translating code. The orchestrator and implementation
+  agents read only `specs/` and the repository.
 - **No game files, extracted data or keys in the repository.** Assets
   load at run time from the user's install or the asset service. No
   install path, home path or key goes into a commit.
@@ -469,3 +472,15 @@ server probe for parity checks, TF2's own app.
   screen at `viewmodel_fov` 54): draw `m_draw`, idle `m_idle`, no
   `view_offset`; TF2 has no sway, its bob is CS:S's, and the view-model
   FOV is 54 whenever the player is not zoomed, whatever their base FOV.
+- 2026-11-15: the gameplay specs (movement, classes, weapons, weapons_more,
+  weapon_scripts, hud, player_animation) checked against the SDK's TF2
+  game code; each lists its "Corrections from the SDK". The largest for
+  the code: the Minigun has no gameplay wind-down (no slowdown, jump or
+  re-spin lock after release; first shot about 0.85 s), its rev-up curve;
+  the blast (owner radius 121, distance to the nearer of centre and feet,
+  push capped at 1000, Heavy half, bullets push too, leave-ground 250);
+  next-shot timing from the firing tick ("set", not "accumulate"); the
+  grenade fuse 2.0 s at 60 % damage, sticky arming 0.8 s, Demoman self
+  damage x0.75 always; the flame every 0.02 s; Medic regen 6 to 12/s.
+  The SDK holds no class or weapon scripts: per-class health and speed
+  and per-gun numbers stay measured or from the scripts.
