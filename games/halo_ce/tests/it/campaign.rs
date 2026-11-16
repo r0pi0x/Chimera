@@ -189,3 +189,74 @@ fn the_grunt_and_the_jackal_tables() {
     assert_eq!(jv.model.materials[jv.material_of(Some(BodyRegion::Chest))].leak, 1.0);
     assert!(Spartan::load().shield_covers_body());
 }
+
+/// The kinds as sandbox targets (`campaign::targets`): offered only for
+/// their guns and once their units loaded; a fresh Elite's shield full, a
+/// Grunt's and a Jackal's bar empty (the Jackal's shield is its arm's);
+/// wearing one forces the kind, the Spartan takes it off.
+#[test]
+fn the_kinds_are_sandbox_targets_once_loaded() {
+    use halo_ce::game::campaign::{ForcedBody, UnitsOnDemand, targets};
+    let (data, t) = tables();
+    let mut world = World::new();
+    world.insert_resource(data);
+    world.insert_resource(t);
+    world.init_resource::<UnitsOnDemand>();
+    let ids: Vec<&str> = targets::characters().iter().map(|c| c.id).collect();
+    assert_eq!(ids, ["halo_ce:elite", "halo_ce:grunt", "halo_ce:jackal"]);
+    assert!(!targets::holds(&world, "halo_ce:elite", "halo_ce:plasma_rifle"), "not before its unit loaded");
+    world.resource_mut::<UnitsOnDemand>().mark_ready(BodyKind::Elite);
+    assert!(targets::holds(&world, "halo_ce:elite", "halo_ce:plasma_rifle"));
+    assert!(targets::holds(&world, "halo_ce:elite", "halo_ce:needler"));
+    assert!(!targets::holds(&world, "halo_ce:elite", "halo_ce:pistol"), "not a gun the campaign gives it");
+    assert!(!targets::holds(&world, "halo_ce:jackal", "halo_ce:plasma_pistol"), "the Jackal's unit is not loaded");
+    assert_eq!(targets::vitals(&world, "halo_ce:elite"), (1.0, 1.0));
+    assert_eq!(targets::vitals(&world, "halo_ce:grunt"), (1.0, 0.0));
+    assert_eq!(targets::vitals(&world, "halo_ce:jackal"), (1.0, 0.0));
+    let e = world.spawn_empty().id();
+    targets::wear(&mut world, e, "halo_ce:grunt");
+    assert_eq!((world.get::<BodyKind>(e), world.get::<ForcedBody>(e)), (Some(&BodyKind::Grunt), Some(&ForcedBody(BodyKind::Grunt))));
+    assert!(world.resource::<UnitsOnDemand>().wanted.contains(&BodyKind::Grunt), "its unit asked for");
+    targets::wear_spartan(&mut world, e, "halo_ce:spartan");
+    assert!(world.get::<BodyKind>(e).is_none() && world.get::<ForcedBody>(e).is_none());
+}
+
+/// A kind worn before its unit loaded: the Spartan's body meanwhile, and
+/// its own within two frames of the load's completion (the model added as
+/// `unit::load_on_demand` adds it: `map::add_character_model`).
+#[test]
+fn a_kind_worn_before_its_unit_wears_it_soon_after_the_load() {
+    use std::sync::Arc;
+    use chimera_world::map::{BodyModel, CharacterModels, MapCharacterModel, add_character_model, append_late_characters, attach_hitboxes};
+    let model = |name: Option<&str>| MapCharacterModel {
+        game: Some(halo_ce::game::GAME),
+        team: None,
+        name: name.map(str::to_string),
+        class: None,
+        model: Default::default(),
+        hitboxes: Vec::new(),
+        bones: Vec::new(),
+        root: Transform::IDENTITY,
+        animations: None,
+        boxes: Vec::new(),
+        ragdoll: None,
+    };
+    let mut app = App::new();
+    app.add_systems(PreUpdate, append_late_characters);
+    app.add_systems(Update, (campaign::name_bodies, attach_hitboxes).chain());
+    app.insert_resource(CharacterModels(Arc::new(vec![model(None)])));
+    let e = app
+        .world_mut()
+        .spawn((chimera_core::core::Intent::default(), chimera_core::slots::GameIdentity(halo_ce::game::GAME.into()), BodyKind::Elite))
+        .id();
+    for _ in 0..5 {
+        app.update();
+    }
+    assert_eq!(app.world().get::<BodyModel>(e), Some(&BodyModel(0)), "the Spartan's until its unit is in");
+    add_character_model(app.world_mut(), model(Some("halo_ce:elite")), Arc::new(Vec::new()));
+    let frames = (1..=10).find(|_| {
+        app.update();
+        app.world().get::<BodyModel>(e) == Some(&BodyModel(1))
+    });
+    assert!(frames.is_some_and(|n| n <= 2), "worn {frames:?} frames after the load");
+}

@@ -63,10 +63,16 @@
 //!   on another game's rung, the player has no kind (the Spartan). Turning
 //!   the setting on asks for every kind's unit at once, so the first draws
 //!   find them loaded.
-//! - **The developer command** `halo_ce:body <spartan | elite | draw>
-//!   [player | all]` forces a body (`ForcedBody`, kept across rungs while
-//!   on Halo's; `draw` lets the draw choose again) for screenshots and the
-//!   sandbox; a remote client's needs the server's `sv_cheats` 1.
+//! - **The developer command** `halo_ce:body <spartan | elite | grunt |
+//!   jackal | draw> [player | all]` forces a body (`ForcedBody`, kept across
+//!   rungs while on Halo's; `draw` lets the draw choose again) for
+//!   screenshots and the sandbox (the player's own body there: worn at
+//!   once on a Halo rung, else on the next); `status` lists the units and
+//!   who wears what, `shield <fraction>` sets every campaign body's shield;
+//!   a remote client's needs the server's `sv_cheats` 1.
+//! - **In the sandbox** (`targets`): the kinds as practice targets
+//!   (`target add halo_ce:elite 5`), offered once their units loaded,
+//!   which the sandbox asks for as it starts.
 //!
 //! - **The gun in its hand**: each gun the kind may carry is a held
 //!   model of its own (`view::load::body_held`, key `<gun>#<kind>`), placed
@@ -84,6 +90,7 @@
 //! - The move animations' speeds are the graph's means (characters.md
 //!   section 4), not each frame's root motion.
 
+pub mod targets;
 pub mod unit;
 pub mod voice;
 
@@ -658,6 +665,7 @@ impl Plugin for CampaignPlugin {
             .add_observer(arrive)
             .init_resource::<voice::CampaignSounds>()
             .add_systems(Update, (unit::load_on_demand, name_bodies, voice::join_banks, shield_disc))
+            .add_systems(Update, targets::sandbox_wants.before(unit::load_on_demand))
             .add_systems(FixedUpdate, shield_boxes.after(crate::map::pose_hitboxes).before(crate::core::SimSet::Movement))
             .add_systems(FixedLast, shield_boxes.after(crate::map::SimPose))
             .add_systems(
@@ -671,8 +679,8 @@ impl Plugin for CampaignPlugin {
         campaign_cvar(app);
         app.console_command(
             BODY_COMMAND,
-            "halo_ce:body <spartan | elite | draw> [player | all]: the body a player (default: you) wears on Halo's \
-             rungs (a developer command for screenshots and the sandbox; draw: the draw chooses again; a client \
+            "halo_ce:body <spartan | elite | grunt | jackal | draw | status | shield <fraction>> [player | all]: the \
+             body a player (default: you) wears on Halo's rungs (a developer command for screenshots and the sandbox; draw: the draw chooses again; a client \
              needs the server's sv_cheats 1).",
             body_command,
         );
