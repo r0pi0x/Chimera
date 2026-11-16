@@ -588,6 +588,22 @@ server probe for parity checks, TF2's own app.
   ground decals draw as a coarse dither pattern; check how TF2's VMTs'
   `$alphatest` and `$translucent` are handled. Badlands' track bed and
   some floor patches show dotted dark speckle, maybe the same cause.
+- Map pool by players (M4a): each pool map enters a draw only at the
+  counts its measured wander time allows (map_fit's rule, 10 s; measured
+  by `map_fitness` as the other games' maps): koth_harvest_final from 4
+  players; ctf_2fort, ctf_turbine, ctf_doublecross and the KOTH maps
+  (viaduct, nucleus, lakeside_final, king, highpass, sharkbay, suijin)
+  from 8; the 5CP maps (cp_badlands, cp_granary, cp_process_final) from
+  12. None is drawn for a lobby of fewer than 8 but koth_harvest_final.
+- Candidates for arena slices (docs/plans/active/arena-slices.md) rather
+  than whole-map play at small counts: the 5CP maps (cp_badlands,
+  cp_granary, cp_process_final: the middle point and its two second
+  points), cp_well (its whole map splits in two on our mesh; a slice of
+  one half and the middle would play), ctf_2fort (the bridge and the two
+  courtyard fronts), ctf_doublecross, and the attack/defend maps' first
+  stages (cp_dustbowl, cp_gorge, cp_steel) once a slice can stand in for
+  their setup gates; the left-out large ones (cp_snowplow, cp_sulfur,
+  koth_megaton, ctf_gorge) only as slices.
 
 ## Log
 
