@@ -279,7 +279,11 @@ fn picker_keys(
     mut picker: ResMut<crate::maps_picker::MapsPicker>,
     source: Res<crate::maps_picker::MapsSource>,
     pages: Res<SignalPages>,
-    (minigames, game_id): (Option<Res<chimera_sim::minigame::Minigames>>, Res<MenuMinigame>),
+    (minigames, game_id, slices): (
+        Option<Res<chimera_sim::minigame::Minigames>>,
+        Res<MenuMinigame>,
+        Option<Res<chimera_sim::minigame::arena::ArenaSlices>>,
+    ),
     mut out: MessageWriter<crate::maps_picker::PickerAction>,
     mut cues: MessageWriter<UiCue>,
 ) {
@@ -296,7 +300,7 @@ fn picker_keys(
         picker.took_keys = false;
         return;
     }
-    let pool = picker_pool(minigames.as_deref(), &game_id.0);
+    let pool = picker_pool(minigames.as_deref(), &game_id.0, slices.as_deref());
     let games = source.0.listing(&pool);
     let rows = picker.rows(&games);
     let k = |c: KeyCode| keys.just_pressed(c);
@@ -321,12 +325,18 @@ fn picker_keys(
     }
 }
 
-/// The minigame's pool, the picker's listing's source.
-fn picker_pool(minigames: Option<&chimera_sim::minigame::Minigames>, id: &str) -> Vec<String> {
-    minigames
+/// The minigame's pool, the picker's listing's source: each map's arena
+/// slices after it (`ArenaSlices::after_maps`).
+fn picker_pool(
+    minigames: Option<&chimera_sim::minigame::Minigames>,
+    id: &str,
+    slices: Option<&chimera_sim::minigame::arena::ArenaSlices>,
+) -> Vec<String> {
+    let maps: Vec<String> = minigames
         .and_then(|m| m.get(id))
         .map(|d| d.maps.iter().map(|m| chimera_net::net::normalize_map(m)).collect())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    slices.map_or(maps.clone(), |s| s.after_maps(&maps))
 }
 
 /// The picker's clicks and what its actions do.
@@ -336,7 +346,11 @@ fn picker_clicks(
     mut actions: ResMut<Messages<crate::maps_picker::PickerAction>>,
     mut picker: ResMut<crate::maps_picker::MapsPicker>,
     source: Res<crate::maps_picker::MapsSource>,
-    (minigames, game_id): (Option<Res<chimera_sim::minigame::Minigames>>, Res<MenuMinigame>),
+    (minigames, game_id, slices): (
+        Option<Res<chimera_sim::minigame::Minigames>>,
+        Res<MenuMinigame>,
+        Option<Res<chimera_sim::minigame::arena::ArenaSlices>>,
+    ),
     mut cues: MessageWriter<UiCue>,
 ) {
     use crate::maps_picker::PickerAction as P;
@@ -345,7 +359,7 @@ fn picker_clicks(
     if todo.is_empty() || picker.open.is_none() {
         return;
     }
-    let pool = picker_pool(minigames.as_deref(), &game_id.0);
+    let pool = picker_pool(minigames.as_deref(), &game_id.0, slices.as_deref());
     let games = source.0.listing(&pool);
     let rows = picker.rows(&games);
     for a in todo {
@@ -483,6 +497,30 @@ pub fn stage(w: &mut World, page: MenuPage, args: &[String]) -> Result<(), Strin
         let mut pk = w.resource_mut::<crate::maps_picker::MapsPicker>();
         pk.open = Some(Default::default());
         pk.cursor = 6;
+    }
+    // `ui_scene play maps slices`: the games without arena slices folded,
+    // the cursor on the first map with slices, its first slice off.
+    if page == MenuPage::Play && arg.as_deref() == Some("maps") && args.get(1).is_some_and(|a| a == "slices") {
+        let pool = picker_pool(
+            w.get_resource::<chimera_sim::minigame::Minigames>(),
+            &w.resource::<MenuMinigame>().0,
+            w.get_resource::<chimera_sim::minigame::arena::ArenaSlices>(),
+        );
+        let games = w.resource::<crate::maps_picker::MapsSource>().0.listing(&pool);
+        let mut pk = w.resource_mut::<crate::maps_picker::MapsPicker>();
+        let sliced = |g: &crate::maps_picker::CatalogueGame| g.groups.iter().any(|k| k.maps.iter().any(|m| m.contains('@')));
+        pk.folded = games.iter().filter(|g| !sliced(g)).map(|g| g.id.clone()).collect();
+        let rows = pk.rows(&games);
+        let first_slice = rows.iter().position(|r| {
+            matches!(r, crate::maps_picker::TreeRow::Map(..))
+                && crate::maps_picker::MapsPicker::maps_of(&games, r).first().is_some_and(|m| m.contains('@'))
+        });
+        if let Some(i) = first_slice {
+            pk.cursor = i - 1;
+            if let Some(m) = crate::maps_picker::MapsPicker::maps_of(&games, &rows[i]).first() {
+                pk.open = Some([(*m).clone()].into_iter().collect());
+            }
+        }
     }
     if page == MenuPage::Join {
         let mut l = w.resource_mut::<LanList>();
@@ -1080,18 +1118,19 @@ fn draw(
     (mut images, mut icons, mut ambients): (Option<ResMut<Assets<Image>>>, Option<ResMut<IconImages>>, Option<ResMut<Assets<AmbientMaterial>>>),
     camera: Query<Entity, With<MenuUiCamera>>,
     roots: Query<Entity, With<SignalPagesRoot>>,
-    (party, upnp, picker, maps_source): (
+    (party, upnp, picker, maps_source, slices): (
         Res<chimera_ui::shell::Party>,
         Option<Res<chimera_net::net::upnp::Upnp>>,
         Res<crate::maps_picker::MapsPicker>,
         Option<Res<crate::maps_picker::MapsSource>>,
+        Option<Res<chimera_sim::minigame::arena::ArenaSlices>>,
     ),
     mut drawn: Local<DrawKey>,
     mut commands: Commands,
 ) {
     let (Some(theme), Some(units)) = (theme, units) else { return };
     let def = minigames.as_ref().and_then(|m| m.get(&game_id.0));
-    let pool: Vec<String> = def.map(|d| d.maps.iter().map(|m| chimera_net::net::normalize_map(m)).collect()).unwrap_or_default();
+    let pool = picker_pool(minigames.as_deref(), &game_id.0, slices.as_deref());
     let cam = camera.iter().next();
     let key = DrawKey {
         menu: p.up.map(|_| menu.clone()),

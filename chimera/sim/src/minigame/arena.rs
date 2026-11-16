@@ -147,25 +147,32 @@ pub struct SlicesInPool;
 /// `maps` (a minigame's pool) with each map's slices (`game:map@id`) after
 /// it, when slices join the pool here (`SlicesInPool`); else as it is.
 pub fn with_slices(world: &World, maps: &[String]) -> Vec<String> {
-    let (Some(_), Some(all)) = (world.get_resource::<SlicesInPool>(), world.get_resource::<ArenaSlices>()) else {
-        return maps.to_vec();
-    };
-    let mut out: Vec<String> = Vec::with_capacity(maps.len());
-    for m in maps {
-        if !out.contains(m) {
-            out.push(m.clone());
-        }
-        if m.contains('@') {
-            continue;
-        }
-        for d in all.0.iter().filter(|d| d.slice.map.eq_ignore_ascii_case(m)) {
-            let key = d.slice.key();
-            if !out.contains(&key) {
-                out.push(key);
+    match (world.get_resource::<SlicesInPool>(), world.get_resource::<ArenaSlices>()) {
+        (Some(_), Some(all)) => all.after_maps(maps),
+        _ => maps.to_vec(),
+    }
+}
+
+impl ArenaSlices {
+    /// `maps` with each map's slices (`game:map@id`) after it.
+    pub fn after_maps(&self, maps: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::with_capacity(maps.len());
+        for m in maps {
+            if !out.contains(m) {
+                out.push(m.clone());
+            }
+            if m.contains('@') {
+                continue;
+            }
+            for d in self.0.iter().filter(|d| d.slice.map.eq_ignore_ascii_case(m)) {
+                let key = d.slice.key();
+                if !out.contains(&key) {
+                    out.push(key);
+                }
             }
         }
+        out
     }
-    out
 }
 
 impl ArenaSlices {

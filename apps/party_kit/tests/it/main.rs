@@ -5,6 +5,7 @@
 //! where tests go: docs/OBSERVABILITY.md, section 1.
 
 mod announcer;
+mod arena_pool;
 mod arena_net;
 mod arena_wall;
 mod archetypes;
