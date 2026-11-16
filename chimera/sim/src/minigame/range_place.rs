@@ -22,8 +22,18 @@
 //!   measurements (`targets::HitMeasured::line_m`) and the layout's repeat
 //!   (`layout`).
 //!
+//! - **The platform** (`platform_spot`, a target's `TargetPlace::
+//!   Platform`): on the raised platform's top, at its centre or, taken, at
+//!   one of eight spots `PLATFORM_RADIUS` m around it (the layout gives
+//!   the top's centre alone: its size is assumed at least 3.6 m across),
+//!   standable and at the top's height; placed from the firing line's
+//!   middle (1 m up), facing back toward it. A target there stands still
+//!   (the top has no room for a strafe or a walk: refused) and has no
+//!   `RangeLine`.
+//!
 //! Off the range (no `RangeLayout`) none of this applies: `targets` and
-//! `props` place along the spawner's view as before.
+//! `props` place along the spawner's view as before, and the platform is
+//! refused.
 //!
 //! Known shortcuts: the range's cover crates aren't in `RangeLayout`, so
 //! they are found by the floor and standing-box checks, not avoided by
@@ -130,6 +140,77 @@ fn floor_at(world: &mut World, l: &RangeLayout, along: f32, side: f32) -> Result
         return Err(format!("something stands on the {along} m line there"));
     }
     Ok(feet)
+}
+
+/// How far from the platform top's centre a target may stand (m): the
+/// layout gives the top's centre alone, so its size is assumed at least
+/// 2 x (this + `BODY_HALF`) = 3.6 m across (the range's is 6 m).
+pub const PLATFORM_RADIUS: f32 = 1.2;
+
+/// A spot on the range's platform (`platform_spot`): its feet, the firing
+/// line's middle it is placed from (1 m up), the flat direction from
+/// there to the feet and that flat distance.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlatformSpot {
+    pub home: Vec3,
+    pub origin: Vec3,
+    pub dir: Vec3,
+    pub distance_m: f32,
+}
+
+/// A free spot on the platform's top for a target with `motion` (module
+/// doc, "The platform"), `except` left out of what is taken.
+pub fn platform_spot(
+    world: &mut World,
+    l: &RangeLayout,
+    motion: TargetMotion,
+    except: Option<Entity>,
+) -> Result<PlatformSpot, String> {
+    if motion != TargetMotion::Still {
+        return Err(format!(
+            "the platform has room for a target standing still, not one that {}s (`still` first, or a line)",
+            motion.word()
+        ));
+    }
+    let top = l.platform_top;
+    let taken = taken(world, l, except);
+    let reach = Footprint::of_target(TargetMotion::Still);
+    let mut why = None;
+    // The centre, then eight spots around it.
+    let spots = std::iter::once(Vec3::ZERO).chain((0..8).map(|k| {
+        let a = k as f32 * std::f32::consts::FRAC_PI_4;
+        Vec3::new(a.cos(), 0.0, a.sin()) * PLATFORM_RADIUS
+    }));
+    for off in spots {
+        let at = top + off;
+        let here = along_side(l, at);
+        if taken
+            .iter()
+            .any(|(c, f)| (c.x - here.x).abs() < f.along + reach.along && (c.y - here.y).abs() < f.across + reach.across)
+        {
+            why.get_or_insert_with(|| "taken".to_string());
+            continue;
+        }
+        let feet = match find_stand(world, at + Vec3::Y * 1.5) {
+            Ok(f) if (f.y - top.y).abs() <= FLOOR_TOLERANCE => f,
+            Ok(_) => {
+                why.get_or_insert_with(|| "something stands there".to_string());
+                continue;
+            }
+            Err(e) => {
+                why.get_or_insert(e);
+                continue;
+            }
+        };
+        let origin = origin_at(l, 0.0);
+        let flat = Vec3::new(feet.x - origin.x, 0.0, feet.z - origin.z);
+        return Ok(PlatformSpot { home: feet, origin, dir: flat.normalize_or(l.dir), distance_m: flat.length() });
+    }
+    Err(format!("no free spot on the range's platform ({})", why.unwrap_or_else(|| "no room".into())))
+}
+
+fn find_stand(world: &mut World, from: Vec3) -> Result<Vec3, String> {
+    super::targets::stand_below(world, from, "on the platform")
 }
 
 /// The spot on the `distance` m line nearest `side` with room for

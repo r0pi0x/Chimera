@@ -10,7 +10,7 @@
 //!   the bench's Clear), deaths, knocked pieces, a map change and the
 //!   sandbox stopping change nothing: the layout is still there to repeat.
 //!   Each item keeps its settings (a target's body, gun, rung, distance,
-//!   motion, shoots back, protected, armoured, respawn; a prop's kind and
+//!   motion, shoots back, protected, armoured, respawn, place; a prop's kind and
 //!   distance) and its line relative to an anchor: the first target's
 //!   placing (the first prop's when there is no target), its spawner's
 //!   position and flat view. So a layout is relative to the player.
@@ -33,7 +33,9 @@
 //!   above) gives. A layout made on the range and repeated on another map
 //!   comes back relative to the player as any other: the first item's
 //!   firing-line point at the player, each line's distance along the
-//!   player's view, the items side by side as their lanes were.
+//!   player's view, the items side by side as their lanes were. A target
+//!   on the range's platform (`LayoutTarget::place`) comes back on the
+//!   platform; off the range it is refused.
 //! - **Lifetime**: a resource of the app (never removed by a match, a map
 //!   change or a sandbox restart in the same run of the game). Not on disk.
 //!
@@ -48,7 +50,7 @@ use bevy::prelude::*;
 
 use super::{
     props::{self, PropSpec},
-    targets::{self, SpawnTarget, Target, TargetMotion, TargetRefused},
+    targets::{self, SpawnTarget, Target, TargetMotion, TargetPlace, TargetRefused},
 };
 use crate::{console::command_player, core::Intent};
 
@@ -72,6 +74,9 @@ pub struct LayoutTarget {
     /// Made on the range: its side (m right of the range's axis; its
     /// distance line is `distance_m`). None: made elsewhere.
     pub range_side: Option<f32>,
+    /// On a line or on the range's platform (repeated there; refused off
+    /// the range).
+    pub place: TargetPlace,
 }
 
 /// One remembered prop.
@@ -165,6 +170,7 @@ fn target_of(t: &Target, offset: Vec3, yaw: f32, range_side: Option<f32>) -> Lay
         offset,
         yaw,
         range_side,
+        place: t.place,
     }
 }
 
@@ -178,7 +184,10 @@ fn summary(l: &SandboxLayout) -> String {
         .iter()
         .map(|t| {
             let gun = t.gun.split_once(':').map_or(t.gun.as_str(), |(_, g)| g);
-            format!("{} ({gun}) {:.0} m {}", t.character_name, t.distance_m, t.motion.word())
+            match t.place {
+                TargetPlace::Platform => format!("{} ({gun}) on the platform", t.character_name),
+                TargetPlace::Line => format!("{} ({gun}) {:.0} m {}", t.character_name, t.distance_m, t.motion.word()),
+            }
         })
         .chain(l.props.iter().map(|p| format!("{} {:.0} m", p.kind, p.distance_m)))
         .collect();
@@ -229,7 +238,7 @@ pub fn repeat(world: &mut World, by: Option<Entity>) -> Result<(usize, Vec<Strin
             by: Some(by),
         };
         let (origin, dir) = from(t.range_side, t.offset, t.yaw);
-        match targets::spawn_from(world, &req, origin, dir) {
+        match targets::spawn_placed_from(world, &req, t.place, origin, dir) {
             Ok(_) => placed += 1,
             Err(e) => refused.push(format!("{}: {e}", t.character_name)),
         }

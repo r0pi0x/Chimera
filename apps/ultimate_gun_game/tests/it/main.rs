@@ -39,6 +39,7 @@ mod props;
 mod sandbox;
 mod sandbox_gun_files;
 mod sandbox_mechanics;
+mod sandbox_platform;
 mod sandbox_range;
 mod session;
 mod sandbox_screens;

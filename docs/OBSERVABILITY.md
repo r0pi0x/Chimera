@@ -541,10 +541,12 @@ as `rung: <gun> for <player> Applied after <s> s`).
 Beside it: `ca_bot_add`, `ca_bot_kick`, `ca_bot_stop 1`, `ca_bot_dont_shoot 1`,
 `god`, `noclip` (`sv_cheats` is 1 there), guns refill; `sandbox help` says it.
 Practice targets: `target add <rung n | gun id | body id> [distance]
-[still|strafe|walk] [shoots] [protect]`, `target set`, `target remove`,
+[still|strafe|walk] [shoots] [protect] [platform]`, `target set`, `target remove`,
 `target list`, `target characters` (`chimera_sim::minigame::targets`;
 on the range a target asked for at `d` m stands on the range's `d` m
-line at your side of the axis, nudged aside from what stands there, and
+line at your side of the axis, nudged aside from what stands there
+(`target add <gun> platform`, `target set <n> platform|line`: on the
+range's raised platform instead, standing still, no `line=`), and
 props go on the range's own shelf and board first:
 `minigame::range_place`);
 every hit on a target or by one logs a `HitMeasured` line, every kill a

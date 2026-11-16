@@ -43,6 +43,18 @@
 //!   to the nearest free spot (`range_place`), facing straight back up
 //!   range; a new `distance_m` (or a motion needing more room) re-places it
 //!   on that line from its own side. It carries `RangeLine` (line, side).
+//!   **The platform** (`TargetPlace::Platform`: `PlaceTarget { target,
+//!   place }`, `spawn_placed`, `SetTarget::place`, `Target::place`;
+//!   `SpawnTarget` alone is a line): on the range's raised platform's top
+//!   (`range_place::platform_spot`), standing still (a strafe or a walk
+//!   there is refused), facing the firing line's middle; `origin` that
+//!   middle (1 m up), `dir` the flat direction from it to the target's
+//!   feet, `distance_m` that flat distance (about 14.6 m on the range as
+//!   it is); no `RangeLine`, so its hits' `line_m` is None (their
+//!   `distance_m` is the true one as always). Off the range it is refused
+//!   (`TargetRefused`). A new `distance_m` for a platform target puts it
+//!   back on that line (`place: Line` without one: the 10 m line), at the
+//!   side nearest the platform.
 //!   What `Target` holds then: `origin` the firing line's point at its
 //!   side, 1 m up (a standing player's centre there), `dir` the range's
 //!   down-range direction, `distance_m` the line's distance (from the
@@ -147,8 +159,9 @@
 //! replicated (the sandbox is a local match).
 //!
 //! Console: `target add <rung n | gun id | character id> [distance m]
-//! [still|strafe|walk] [shoots] [protect]`, `target set <n|all> <shoots |
-//! noshoot | protect | noprotect | still | strafe | walk | gun <id> |
+//! [still|strafe|walk] [shoots] [protect] [platform]`, `target set <n|all>
+//! <shoots | noshoot | protect | noprotect | still | strafe | walk |
+//! platform | line | gun <id> |
 //! character <id> | respawn <s> | distance <m>>`, `target remove <n|all>`,
 //! `target list`, `target characters`, `target look <n>` (turns the
 //! player to face target n: staging a picture), `target repeat` (the
@@ -245,6 +258,44 @@ impl TargetMotion {
     }
 }
 
+/// Where on the range a target stands (module doc, "The platform").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TargetPlace {
+    /// On a distance line (`distance_m`), or off the range along the view.
+    #[default]
+    Line,
+    /// On the range's raised platform.
+    Platform,
+}
+
+impl TargetPlace {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "line" => Some(Self::Line),
+            "platform" => Some(Self::Platform),
+            _ => None,
+        }
+    }
+
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Line => "line",
+            Self::Platform => "platform",
+        }
+    }
+}
+
+/// Spawn a target at a place (`spawn_placed`): `SpawnTarget` itself is
+/// `TargetPlace::Line`.
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct PlaceTarget {
+    pub target: SpawnTarget,
+    pub place: TargetPlace,
+}
+
+/// The refusal of the platform off the range.
+const PLATFORM_OFF_RANGE: &str = "the platform is the range's: off the range a target stands on a line (no `platform`)";
+
 /// Spawn a target (module doc, "Requests").
 #[derive(Message, Clone, Debug, PartialEq)]
 pub struct SpawnTarget {
@@ -297,6 +348,8 @@ pub struct SetTarget {
     pub protected: Option<bool>,
     pub armored: Option<bool>,
     pub respawn_secs: Option<f32>,
+    /// Onto the platform or back on a line (module doc, "The platform").
+    pub place: Option<TargetPlace>,
 }
 
 impl SetTarget {
@@ -314,6 +367,7 @@ impl SetTarget {
             protected: None,
             armored: None,
             respawn_secs: None,
+            place: None,
         }
     }
 }
@@ -347,10 +401,13 @@ pub struct Target {
     /// "Where"): off the range the spawner's centre, its flat unit view and
     /// the distance asked; on the range the firing line's point at its
     /// side (1 m up), the range's down-range direction and its line's
-    /// distance.
+    /// distance; on the platform the firing line's middle (1 m up), the
+    /// flat direction from there to its feet and that flat distance.
     pub origin: Vec3,
     pub dir: Vec3,
     pub distance_m: f32,
+    /// On a line or on the range's platform.
+    pub place: TargetPlace,
     /// The gun it holds and the rung that holds it (0-based).
     pub gun: String,
     pub rung: usize,
@@ -718,24 +775,29 @@ pub(super) fn find_spot(world: &mut World, origin: Vec3, dir: Vec3, distance: f3
     if !(distance.is_finite() && distance > 0.5) {
         return Err(format!("a distance of {distance} m is too short"));
     }
+    let at = origin + dir * distance;
+    stand_below(world, Vec3::new(at.x, origin.y + 1.5, at.z), &format!("{distance} m ahead"))
+}
+
+/// The feet of a standing player on the floor found straight below `from`
+/// (8 m at most), or why not (`what` names the spot in the reason).
+pub(super) fn stand_below(world: &mut World, from: Vec3, what: &str) -> Result<Vec3, String> {
     let characters: Vec<Entity> = world.query_filtered::<Entity, With<Intent>>().iter(world).collect();
     let mut state: SystemState<SpatialQuery> = SystemState::new(world);
     let q = state.get(world).map_err(|e| e.to_string())?;
     let filter = SpatialQueryFilter::from_mask(CHARACTER_FILTER).with_excluded_entities(characters);
-    let at = origin + dir * distance;
-    let from = Vec3::new(at.x, origin.y + 1.5, at.z);
     let Some(hit) = q.cast_ray(from, Dir3::NEG_Y, 8.0, true, &filter) else {
-        return Err(format!("no floor {distance} m ahead (past the map's edge or over a drop)"));
+        return Err(format!("no floor {what} (past the map's edge or over a drop)"));
     };
     if hit.distance < 0.05 {
-        return Err(format!("the spot {distance} m ahead is inside a wall"));
+        return Err(format!("the spot {what} is inside a wall"));
     }
     if hit.normal.y < 0.7 {
-        return Err(format!("the floor {distance} m ahead is too steep to stand on"));
+        return Err(format!("the floor {what} is too steep to stand on"));
     }
-    let feet = Vec3::new(at.x, from.y - hit.distance, at.z);
+    let feet = Vec3::new(from.x, from.y - hit.distance, from.z);
     if super::spawns::stuck_at(&q, &filter, feet) {
-        return Err(format!("the spot {distance} m ahead is inside a wall"));
+        return Err(format!("the spot {what} is inside a wall"));
     }
     Ok(feet)
 }
@@ -761,6 +823,11 @@ struct TargetCount(u32);
 /// Spawn a target now (a player's change: `layout` remembers it); the bot
 /// it is.
 pub fn spawn(world: &mut World, req: &SpawnTarget) -> Result<Entity, String> {
+    spawn_placed(world, req, TargetPlace::Line)
+}
+
+/// `spawn` at `place` (module doc, "The platform"; `PlaceTarget`).
+pub fn spawn_placed(world: &mut World, req: &SpawnTarget, place: TargetPlace) -> Result<Entity, String> {
     if !rung_command::holds(world) {
         return Err("targets are the sandbox's: start it with `sandbox`".into());
     }
@@ -771,7 +838,7 @@ pub fn spawn(world: &mut World, req: &SpawnTarget) -> Result<Entity, String> {
     let origin = world.get::<Transform>(by).ok_or("the player has no place")?.translation;
     let yaw = world.get::<Intent>(by).map_or(0.0, |i| i.yaw);
     let dir = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
-    let e = spawn_from(world, req, origin, dir)?;
+    let e = spawn_placed_from(world, req, place, origin, dir)?;
     super::layout::record(world);
     Ok(e)
 }
@@ -779,13 +846,34 @@ pub fn spawn(world: &mut World, req: &SpawnTarget) -> Result<Entity, String> {
 /// Spawn a target as if placed from `origin` looking along flat `dir`
 /// (`spawn`; the layout's repeat), not remembered.
 pub fn spawn_from(world: &mut World, req: &SpawnTarget, origin: Vec3, dir: Vec3) -> Result<Entity, String> {
+    spawn_placed_from(world, req, TargetPlace::Line, origin, dir)
+}
+
+/// `spawn_from` at `place`.
+pub fn spawn_placed_from(
+    world: &mut World,
+    req: &SpawnTarget,
+    place: TargetPlace,
+    origin: Vec3,
+    dir: Vec3,
+) -> Result<Entity, String> {
     if !rung_command::holds(world) {
         return Err("targets are the sandbox's: start it with `sandbox`".into());
     }
-    let arming = resolve(world, req.character.as_deref(), req.gun.as_deref(), req.rung)?;
-    // On the range: on its distance line at the spawner's side (`range_place`).
     let range = super::range_place::layout(world);
+    if place == TargetPlace::Platform && range.is_none() {
+        return Err(PLATFORM_OFF_RANGE.into());
+    }
+    let arming = resolve(world, req.character.as_deref(), req.gun.as_deref(), req.rung)?;
+    // On the range: on its distance line at the spawner's side, or on its
+    // platform (`range_place`).
+    let mut distance_m = req.distance_m;
     let (home, origin, dir, line) = match &range {
+        Some(l) if place == TargetPlace::Platform => {
+            let s = super::range_place::platform_spot(world, l, req.motion, None)?;
+            distance_m = s.distance_m;
+            (s.home, s.origin, s.dir, None)
+        }
         Some(l) => {
             let side = super::range_place::along_side(l, origin).y;
             let reach = super::range_place::Footprint::of_target(req.motion);
@@ -813,7 +901,8 @@ pub fn spawn_from(world: &mut World, req: &SpawnTarget, origin: Vec3, dir: Vec3)
         home,
         origin,
         dir,
-        distance_m: req.distance_m,
+        distance_m,
+        place,
         gun: arming.gun.to_string(),
         rung: arming.rung,
         character: arming.info.id.clone(),
@@ -912,21 +1001,40 @@ pub fn set(world: &mut World, req: &SetTarget) -> Result<String, String> {
     let rearm = req.character.is_some() || req.gun.is_some() || req.rung.is_some();
     // On the range a new distance, or a motion that needs more room, finds
     // its spot on that line from the target's own side (`range_place`).
-    let range = super::range_place::layout(world).zip(world.get::<RangeLine>(e).copied());
+    // The platform (module doc, "The platform"): onto it; back on a line
+    // (asked, or a new distance: at that distance, else 10 m) at the side
+    // nearest it.
+    let layout = super::range_place::layout(world);
+    let place = req.place.unwrap_or(if req.distance_m.is_some() { TargetPlace::Line } else { t.place });
     let mut line = None;
-    let home = match (&range, req.distance_m) {
-        (Some((l, at)), _) if req.distance_m.is_some() || req.motion.is_some_and(|m| m != t.motion) => {
-            let d = req.distance_m.unwrap_or(at.distance_m);
-            let reach = super::range_place::Footprint::of_target(req.motion.unwrap_or(t.motion));
-            let s = super::range_place::line_spot(world, l, d, at.side_m, reach, Some(e))?;
-            line = Some(RangeLine { distance_m: d, side_m: s.side });
-            t.origin = s.origin;
-            t.dir = l.dir;
-            ((s.home - t.home).length() > 0.05 || req.distance_m.is_some()).then_some(s.home)
-        }
-        (_, Some(d)) if range.is_none() => Some(find_spot(world, t.origin, t.dir, d)?),
-        _ => None,
+    let mut off_line = false;
+    let home = if place == TargetPlace::Platform {
+        let l = layout.as_ref().ok_or(PLATFORM_OFF_RANGE)?;
+        let motion = req.motion.unwrap_or(t.motion);
+        let s = super::range_place::platform_spot(world, l, motion, Some(e))?;
+        off_line = true;
+        let moved = t.place != TargetPlace::Platform || (s.home - t.home).length() > 0.05;
+        (t.origin, t.dir, t.distance_m) = (s.origin, s.dir, s.distance_m);
+        moved.then_some(s.home)
+    } else if t.place == TargetPlace::Platform {
+        let d = req.distance_m.unwrap_or(SpawnTarget::default().distance_m);
+        let reach = super::range_place::Footprint::of_target(req.motion.unwrap_or(t.motion));
+        let s = match &layout {
+            Some(l) => {
+                let side = super::range_place::along_side(l, t.home).y;
+                let s = super::range_place::line_spot(world, l, d, side, reach, Some(e))?;
+                line = Some(RangeLine { distance_m: d, side_m: s.side });
+                (t.origin, t.dir) = (s.origin, l.dir);
+                s.home
+            }
+            None => find_spot(world, t.origin, t.dir, d)?,
+        };
+        t.distance_m = d;
+        Some(s)
+    } else {
+        set_line_home(world, &mut t, req, &mut line)?
     };
+    t.place = place;
     if rearm {
         // A new gun alone keeps the body when it may hold it.
         let keep = req.character.is_none() && req.rung.is_none();
@@ -944,11 +1052,48 @@ pub fn set(world: &mut World, req: &SetTarget) -> Result<String, String> {
         t.game_tag = arming.info.game_tag;
         let _ = arming.wear;
     }
-    if let Some(h) = home {
-        t.home = h;
-    }
+    finish_set(world, e, t, req, home, line, off_line, rearm)
+}
+
+/// A line target's new home (`set`): a new distance, or a motion needing
+/// more room, re-places it; `t`'s line and distance updated.
+fn set_line_home(world: &mut World, t: &mut Target, req: &SetTarget, line: &mut Option<RangeLine>) -> Result<Option<Vec3>, String> {
+    let e = req.target;
+    let range = super::range_place::layout(world).zip(world.get::<RangeLine>(e).copied());
+    let home = match (&range, req.distance_m) {
+        (Some((l, at)), _) if req.distance_m.is_some() || req.motion.is_some_and(|m| m != t.motion) => {
+            let d = req.distance_m.unwrap_or(at.distance_m);
+            let reach = super::range_place::Footprint::of_target(req.motion.unwrap_or(t.motion));
+            let s = super::range_place::line_spot(world, l, d, at.side_m, reach, Some(e))?;
+            *line = Some(RangeLine { distance_m: d, side_m: s.side });
+            t.origin = s.origin;
+            t.dir = l.dir;
+            ((s.home - t.home).length() > 0.05 || req.distance_m.is_some()).then_some(s.home)
+        }
+        (_, Some(d)) if range.is_none() => Some(find_spot(world, t.origin, t.dir, d)?),
+        _ => None,
+    };
     if let Some(d) = req.distance_m {
         t.distance_m = d;
+    }
+    Ok(home)
+}
+
+/// The rest of `set`: the settings, the new home, the line (or none: off
+/// it), the target re-placed when moved or re-armed.
+#[allow(clippy::too_many_arguments)]
+fn finish_set(
+    world: &mut World,
+    e: Entity,
+    mut t: Target,
+    req: &SetTarget,
+    home: Option<Vec3>,
+    line: Option<RangeLine>,
+    off_line: bool,
+    rearm: bool,
+) -> Result<String, String> {
+    if let Some(h) = home {
+        t.home = h;
     }
     t.motion = req.motion.unwrap_or(t.motion);
     t.shoots_back = req.shoots_back.unwrap_or(t.shoots_back);
@@ -969,6 +1114,9 @@ pub fn set(world: &mut World, req: &SetTarget) -> Result<String, String> {
         ent.insert(t);
         if let Some(line) = line {
             ent.insert(line);
+        }
+        if off_line {
+            ent.remove::<RangeLine>();
         }
         if armour_off && let Some(mut v) = ent.get_mut::<TargetVitals>() {
             v.shield = 0.0;
@@ -1032,13 +1180,14 @@ fn describe(t: &Target) -> String {
     .collect::<Vec<_>>()
     .join(", ");
     format!(
-        "{}: {} ({}) with {} (rung {}), {:.0} m, {}{}{}, respawn {:.1} s",
+        "{}: {} ({}) with {} (rung {}), {:.0} m{}, {}{}{}, respawn {:.1} s",
         t.name,
         t.character_name,
         t.game_tag,
         t.gun,
         t.rung + 1,
         t.distance_m,
+        if t.place == TargetPlace::Platform { " on the platform" } else { "" },
         t.motion.word(),
         if flags.is_empty() { "" } else { ", " },
         flags,
@@ -1075,8 +1224,8 @@ fn pick(world: &mut World, which: &str) -> Result<Vec<Entity>, String> {
     all.into_iter().find(|(_, t)| t.number == n).map(|(e, _)| vec![e]).ok_or_else(|| format!("no target {n} (`target list`)"))
 }
 
-const USAGE: &str = "target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect] [noarmor] | \
-    target set <n|all> <shoots|noshoot|protect|noprotect|armor|noarmor|still|strafe|walk|gun <id>|character <id>|respawn <s>|distance <m>> | \
+const USAGE: &str = "target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect] [noarmor] [platform] | \
+    target set <n|all> <shoots|noshoot|protect|noprotect|armor|noarmor|still|strafe|walk|platform|line|gun <id>|character <id>|respawn <s>|distance <m>> | \
     target remove <n|all> | target list | target characters | target look <n> | target repeat";
 
 /// A gun id, exact or the one gun of the ladder whose id holds the text.
@@ -1102,6 +1251,7 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
         "add" => {
             let what = a.get(1).ok_or(USAGE)?;
             let mut req = SpawnTarget::default();
+            let mut place = TargetPlace::Line;
             if let Ok(n) = what.parse::<usize>() {
                 req.rung = Some(n.checked_sub(1).ok_or("rungs are numbered from 1 (`rung list`)")?);
             } else if character_info(world, what).is_some() {
@@ -1114,6 +1264,8 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                     req.distance_m = d;
                 } else if let Some(m) = TargetMotion::parse(w) {
                     req.motion = m;
+                } else if let Some(p) = TargetPlace::parse(w) {
+                    place = p;
                 } else if w.eq_ignore_ascii_case("shoots") {
                     req.shoots_back = true;
                 } else if w.eq_ignore_ascii_case("protect") {
@@ -1126,7 +1278,7 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                     return Err(format!("what is {w:?}? {USAGE}"));
                 }
             }
-            let e = spawn(world, &req)?;
+            let e = spawn_placed(world, &req, place)?;
             Ok(Some(format!("added {}", world.get::<Target>(e).map(describe).unwrap_or_default())))
         }
         "set" => {
@@ -1146,6 +1298,8 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                     "gun" => req.gun = Some(gun_named(world, arg.ok_or("gun <id>")?)?),
                     "character" | "body" => req.character = Some(arg.ok_or("character <id>")?.clone()),
                     "respawn" => req.respawn_secs = Some(arg.and_then(|s| s.parse().ok()).ok_or("respawn <seconds>")?),
+                    "platform" => req.place = Some(TargetPlace::Platform),
+                    "line" => req.place = Some(TargetPlace::Line),
                     "distance" => req.distance_m = Some(arg.and_then(|s| s.trim_end_matches('m').parse().ok()).ok_or("distance <m>")?),
                     w => req.motion = Some(TargetMotion::parse(w).ok_or_else(|| format!("what is {w:?}? {USAGE}"))?),
                 }
@@ -1193,6 +1347,7 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
 /// The requests (messages), applied as world work.
 fn apply_requests(
     mut spawns: MessageReader<SpawnTarget>,
+    mut placed: MessageReader<PlaceTarget>,
     mut sets: MessageReader<SetTarget>,
     mut removes: MessageReader<RemoveTarget>,
     mut clears: MessageReader<ClearTargets>,
@@ -1205,6 +1360,13 @@ fn apply_requests(
     for r in spawns.read().cloned() {
         commands.queue(move |world: &mut World| {
             if let Err(e) = spawn(world, &r) {
+                refuse(world, e);
+            }
+        });
+    }
+    for r in placed.read().cloned() {
+        commands.queue(move |world: &mut World| {
+            if let Err(e) = spawn_placed(world, &r.target, r.place) {
                 refuse(world, e);
             }
         });
@@ -1711,6 +1873,7 @@ fn keep_vitals(mut vitals: Query<(&mut TargetVitals, &Target, &Health, Option<&A
 
 pub(super) fn plugin(app: &mut App) {
     app.add_message::<SpawnTarget>()
+        .add_message::<PlaceTarget>()
         .add_message::<SetTarget>()
         .add_message::<RemoveTarget>()
         .add_message::<ClearTargets>()

@@ -52,9 +52,9 @@ pub const HELP: &str = "sandbox [map]: a match alone on the range (or `map`: gre
     rung <n | gun id or part | next | prev | list> [player | all]: put yourself on a rung (numbered from 1).\n\
     ca_bot_add [alpha|bravo]: add a bot; ca_bot_kick: remove them; ca_bot_stop 1: they stand still;\n\
     ca_bot_dont_shoot 1: they never fire.\n\
-    target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect]: a practice target\n\
-    in front of you, on the range on that distance line at your side (any game's body; it never fires unless `shoots`; `target characters` lists the bodies);\n\
-    target set <n|all> <shoots|noshoot|protect|noprotect|still|strafe|walk|gun <id>|character <id>|respawn <s>|distance <m>>;\n\
+    target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect] [platform]: a practice target\n\
+    in front of you, on the range on that distance line at your side (`platform`: on the range's platform, standing still; any game's body; it never fires unless `shoots`; `target characters` lists the bodies);\n\
+    target set <n|all> <shoots|noshoot|protect|noprotect|still|strafe|walk|platform|line|gun <id>|character <id>|respawn <s>|distance <m>>;\n\
     target remove <n|all>; target list. Hits on targets and their kills are logged (HitMeasured, KillMeasured),\n\
     and every blast (BlastMeasured: centre, inner and outer radius, each victim's damage).\n\
     prop add <bottles|tin_cans|target_board> [distance m]: bottles or cans on a shelf to knock off, or a board\n\
