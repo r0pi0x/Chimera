@@ -12,8 +12,10 @@
 //! the map or more; heights: 8 m of floors or more; else a hollow).
 //!
 //! Known shortcuts: the names don't read the map's named places (no map
-//! the generator serves has any); `--remeasure` is not built (`--slice`
-//! measures a slice as written).
+//! the generator serves has any); `--remeasure` rewrites one slice at a
+//! time (`--slice <key> --remeasure`), not every slice of a file; a picked
+//! entry's comment keeps the candidate's numbers (its fields are the
+//! measures as played once remeasured).
 
 use super::slice_gen::{Band, Candidate, CellIndex, Graph, Input, Settings, compass, generate};
 use super::*;
