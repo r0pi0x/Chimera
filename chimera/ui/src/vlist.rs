@@ -30,7 +30,10 @@
 //!   section's header is a stop in its place), Home/End, PageUp/PageDown
 //!   by a view. On a header, ← folds, →
 //!   opens, and `toggle_fold` (Enter, Space) flips it. A move asks the
-//!   view to reveal the cursor's line (eased, `reveal_margin`).
+//!   view to reveal the cursor's line (eased, `reveal_margin`). A reveal
+//!   asked before the view has measured the layout (a list just built, a
+//!   filter that changed its height) waits for the measure and then goes
+//!   there at once, so a screen opens on its cursor's line.
 //! - **Pointer, the kit-wide selector rule** (the design rules, section 21:
 //!   double-click): a press on an item (`VHit` on the node the screen
 //!   makes clickable) selects it (`VListEvent::Select`); a second press on
@@ -215,6 +218,8 @@ pub struct VListState {
     pub reveal: bool,
     /// The view's height, cq, as last laid out (PageUp/PageDown).
     pub view_h: f32,
+    /// The reveal waited for the view to be laid out (`place_slots`).
+    pub reveal_waited: bool,
 }
 
 impl VListState {
@@ -394,6 +399,10 @@ impl VirtualLists {
     }
 }
 
+/// How far the view's measured content may be from the layout's height
+/// (cq: pixel snapping) and still be this layout's measure.
+pub const MEASURE_SLACK: f32 = 0.5;
+
 /// A built list (on its scroll view): its key, content and slot pool.
 #[derive(Component, Clone, Debug)]
 pub struct VirtualList {
@@ -486,10 +495,18 @@ pub fn place_slots(
         let Some(st) = lists.0.get_mut(&list.key) else { continue };
         let view = views.state(&list.key);
         st.view_h = view.view;
-        if std::mem::take(&mut st.reveal)
-            && let Some(l) = st.cursor.and_then(|c| st.layout.line_of(c))
-        {
-            view.reveal(st.layout.tops[l], st.layout.tops[l] + st.layout.heights[l], margin, reduced);
+        // A reveal waits for the view's measure of this layout (a list
+        // just built has none: revealing then would clamp to the top and
+        // be lost), and then goes there at once: the screen opens on its
+        // cursor's line, it doesn't travel to it.
+        let measured = view.view > 0.0 && (view.content - st.layout.total).abs() <= MEASURE_SLACK;
+        if st.reveal && !measured {
+            st.reveal_waited = true;
+        } else if std::mem::take(&mut st.reveal) {
+            let at_once = std::mem::take(&mut st.reveal_waited);
+            if let Some(l) = st.cursor.and_then(|c| st.layout.line_of(c)) {
+                view.reveal(st.layout.tops[l], st.layout.tops[l] + st.layout.heights[l], margin, reduced || at_once);
+            }
         }
         // The content as tall as the whole layout.
         let total = Val::Px(units.snap(st.layout.total * px));

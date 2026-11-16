@@ -143,11 +143,16 @@ pub struct SandboxCatalogue {
     pub guns: Vec<SandboxGun>,
     /// The ladder it was made from (its rungs), to make it again on change.
     made_from: Vec<&'static str>,
+    /// The guns' names, their rules and the weapon data it was made from
+    /// (`names_stamp`): made again when a game's strings arrive after the
+    /// ladder (a sandbox started from the command line comes up before
+    /// the names are read), so no gun keeps its data's string token.
+    names_from: [Option<u32>; 3],
 }
 
 impl SandboxCatalogue {
     pub fn new(guns: Vec<SandboxGun>) -> Self {
-        SandboxCatalogue { guns, made_from: Vec::new() }
+        SandboxCatalogue { guns, made_from: Vec::new(), names_from: [None; 3] }
     }
 
     pub fn get(&self, id: &str) -> Option<&SandboxGun> {
@@ -255,6 +260,16 @@ pub fn catalogue_of(world: &World, rungs: &[&str]) -> Vec<SandboxGun> {
     out
 }
 
+/// When what `catalogue_of` names the guns from last changed: the names
+/// (`GunNames`), their rules and the weapon data, as change ticks.
+fn names_stamp(world: &World) -> [Option<u32>; 3] {
+    [
+        world.get_resource_change_ticks::<crate::client::minigame_scoreboard::GunNames>().map(|t| t.changed.get()),
+        world.get_resource_change_ticks::<chimera_sim::weapon::names::GunNameRules>().map(|t| t.changed.get()),
+        world.get_resource_change_ticks::<WeaponCatalog>().map(|t| t.changed.get()),
+    ]
+}
+
 /// Whether a sandbox plays.
 #[derive(SystemParam)]
 pub struct SandboxPlays<'w> {
@@ -292,13 +307,14 @@ fn track(world: &mut World) {
     if on && let Some(ladder) = ladder.as_ref() {
         // The sentinel (the last rung) is never listed.
         let usable = &ladder.rungs[..ladder.rungs.len().saturating_sub(1)];
-        if world.get_resource::<SandboxCatalogue>().is_none_or(|c| c.made_from != usable) {
+        let names = names_stamp(world);
+        if world.get_resource::<SandboxCatalogue>().is_none_or(|c| c.made_from != usable || c.names_from != names) {
             let guns = catalogue_of(world, usable);
             // Each gun's unit: here, or what it would download.
             let units: Vec<(String, String)> =
                 guns.iter().filter_map(|g| Some((g.game.clone(), g.unit.clone()?))).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
             chimera_net::net::units::describe_units(world, &units);
-            world.insert_resource(SandboxCatalogue { guns, made_from: usable.to_vec() });
+            world.insert_resource(SandboxCatalogue { guns, made_from: usable.to_vec(), names_from: names });
         }
     }
     let mut ui = world.resource_mut::<SandboxUi>();
@@ -930,7 +946,7 @@ pub fn stage(w: &mut World, args: &[String]) -> Result<(), String> {
     }
     let fold = what == "gun-fold";
     stage_bench(w, what);
-    w.insert_resource(SandboxCatalogue { guns, made_from: Vec::new() });
+    w.insert_resource(SandboxCatalogue { guns, made_from: Vec::new(), names_from: [None; 3] });
     w.insert_resource(units::UnitFetch(Box::new(fake)));
     w.insert_resource(staged_kills());
     w.insert_resource(ui);

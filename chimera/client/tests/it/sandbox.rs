@@ -695,3 +695,110 @@ fn the_range_readouts_rebind_in_place_instead_of_spawning_each_frame() {
 fn sim_builds(sim: &Sim) -> u64 {
     sim.app.world().resource::<sandbox::range::RangeBuilds>().0
 }
+
+// ---------------------------------------------------------------------
+// Change gun laid out (Bevy's UI layout on a 1920x1080 target).
+
+/// `sim("gun")` with the UI laid out, `edit` applied to the staging before
+/// the first frame.
+fn laid_out(edit: impl FnOnce(&mut World)) -> Sim {
+    use bevy::camera::{ComputedCameraValues, RenderTargetInfo, Viewport};
+    let mut sim = Sim::with(SimBasePlugins, |app| {
+        app.init_resource::<Assets<Image>>()
+            .init_resource::<Assets<bevy::image::TextureAtlasLayout>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<Touches>()
+            .init_resource::<bevy::picking::hover::HoverMap>()
+            .init_resource::<bevy::picking::pointer::PointerMap>()
+            .init_resource::<bevy::picking::events::PointerState>()
+            .add_message::<bevy::picking::pointer::PointerInput>()
+            .add_message::<bevy::picking::backend::PointerHits>()
+            .init_asset::<Font>();
+        app.add_plugins((bevy::text::TextPlugin, bevy::ui::UiPlugin));
+        app.add_plugins((GreyboxMapPlugin, SandboxUiPlugin));
+    });
+    sim.app.insert_resource(Theme::from_toml(SIGNAL).expect("theme"));
+    sim.app.insert_resource(UiClock::manual());
+    let size = UVec2::new(1920, 1080);
+    sim.app.world_mut().spawn((
+        Camera2d,
+        Camera {
+            computed: ComputedCameraValues { target_info: Some(RenderTargetInfo { physical_size: size, scale_factor: 1.0 }), ..default() },
+            viewport: Some(Viewport { physical_size: size, ..default() }),
+            ..default()
+        },
+    ));
+    sim.app.insert_resource(chimera_ui::UiUnits { height: 1080.0, scale_factor: 1.0, ..default() });
+    sandbox::stage(sim.app.world_mut(), &["gun".to_string()]).expect("staged");
+    edit(sim.app.world_mut());
+    for _ in 0..8 {
+        frame(&mut sim);
+    }
+    sim
+}
+
+/// A node's left and right edges and its top and bottom (physical px).
+fn edges(sim: &mut Sim, id: &str) -> (Vec2, Vec2) {
+    use bevy::ui::{ComputedNode, UiGlobalTransform};
+    let w = sim.app.world_mut();
+    let (_, n, t) = w
+        .query::<(&UiParityId, &ComputedNode, &UiGlobalTransform)>()
+        .iter(w)
+        .find(|(p, _, _)| p.0 == id)
+        .unwrap_or_else(|| panic!("no node {id}"));
+    (t.translation - n.size * 0.5, t.translation + n.size * 0.5)
+}
+
+#[test]
+fn change_gun_opens_scrolled_to_the_gun_in_hand() {
+    // A long catalogue, the gun in hand in its last class: the grid opens
+    // with that tile in view, not at the top.
+    const HELD: &str = "tf2:tf_weapon_bat";
+    let mut sim = laid_out(|w| {
+        let mut cat = w.resource_mut::<SandboxCatalogue>();
+        let like = cat.guns.iter().find(|g| g.id == "cs_source:weapon_glock").expect("a pistol").clone();
+        for n in 0..120 {
+            let id = format!("kit:extra_{n}");
+            let rung = cat.guns.len();
+            cat.guns.push(sandbox::model::SandboxGun { id: id.clone(), family: id, rung, name: format!("Extra {n}"), unit: None, ..like.clone() });
+        }
+        let mut ui = w.resource_mut::<SandboxUi>();
+        ui.current = Some(HELD.into());
+        ui.view.selected = Some(HELD.into());
+    });
+    let grid = sim.app.world().resource::<Grid>().clone();
+    let cat = sim.app.world().resource::<SandboxCatalogue>().clone();
+    let held = cat.guns.iter().position(|g| g.id == HELD).unwrap();
+    assert_eq!(cursor(&sim), grid.cursor_of(held), "the cursor on the gun in hand");
+    let st = sim.app.world().resource::<VirtualLists>().get(LIST).unwrap().clone();
+    let line = st.layout.line_of(st.cursor.unwrap()).unwrap();
+    let (top, bottom) = (st.layout.tops[line], st.layout.tops[line] + st.layout.heights[line]);
+    let view = sim.app.world().resource::<chimera_ui::ScrollViews>().get(LIST).expect("the grid's view").clone();
+    assert!(view.view > 0.0 && view.max > 10.0, "laid out and taller than its view: {view:?}");
+    assert!(top > view.view, "the tile starts below the first view: {top}");
+    assert!(view.offset <= top + 0.01 && bottom <= view.offset + view.view + 0.01, "its row {top}..{bottom} in view at {} (+{})", view.offset, view.view);
+    // And its tile is drawn.
+    let (a, b) = edges(&mut sim, &format!("gun.tile.{HELD}"));
+    let (va, vb) = edges(&mut sim, "gun.detail");
+    assert!(a.y >= va.y - 1.0 && b.y <= vb.y + 1.0, "the tile {a}..{b} inside the body {va}..{vb}");
+}
+
+#[test]
+fn a_long_name_keeps_the_details_icon_in_the_pane() {
+    const GUN: &str = "cs_source:weapon_ak47";
+    const LONG: &str = "Bushmaster Carbon 15 Type 97S Anniversary Gold Edition Mk II";
+    let mut sim = laid_out(|w| {
+        let mut cat = w.resource_mut::<SandboxCatalogue>();
+        cat.guns.iter_mut().find(|g| g.id == GUN).unwrap().name = LONG.into();
+    });
+    let (pane_a, pane_b) = edges(&mut sim, "gun.detail");
+    let (icon_a, icon_b) = edges(&mut sim, "gun.detail.icon");
+    let (name_a, name_b) = edges(&mut sim, "gun.detail.name");
+    assert!(icon_b.x - icon_a.x > 4.0, "the icon has its width: {icon_a}..{icon_b}");
+    assert!(icon_b.x <= pane_b.x + 0.5, "the icon ends inside the pane: {} > {}", icon_b.x, pane_b.x);
+    assert!(name_a.x >= pane_a.x - 0.5 && name_b.x <= icon_a.x + 0.5, "the name {name_a}..{name_b} ends before the icon at {}", icon_a.x);
+    let w = sim.app.world_mut();
+    let shown = w.query::<(&UiParityId, &Text)>().iter(w).find(|(p, _)| p.0 == "gun.detail.name").map(|(_, t)| t.0.clone()).unwrap();
+    assert!(shown.ends_with("...") || shown.ends_with('\u{2026}'), "cut with the kit's ellipsis: {shown}");
+    assert!(LONG.to_uppercase().starts_with(shown.trim_end_matches(['.', '\u{2026}']).trim_end()), "its own start: {shown}");
+}
