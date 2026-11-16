@@ -85,6 +85,13 @@ the user's go-ahead: no Actions runs unless asked.
   - **First uses:** Halo per-character units (sizes from specs/halo_ce/characters.md, in progress); icons and per-gun summaries; converted maps.
   - **Manifest:** a set may list generated records along with their recipe (converter, version, inputs).
   - **Fits with:** `request_set` and `SetProgress` (the sandbox's progressive downloads), and per-class dependencies (TF2's Spy).
+  - **Reproducible by anyone (user, 2026-11-15):**
+    - Others must be able to rebuild our packs from their own original media. The engine's logic lives in the executable and everything else is data, so the conversion from native formats to our generated assets has to be standardised.
+    - **One documented converter**, a `chimera_pack generate` subcommand or similar that ships with the repo, is the only way generated assets are made. Each conversion is documented unambiguously, in its doc and a page in docs/, with the inputs, outputs, format and version.
+    - **Deterministic:** the same originals and converter version give byte-identical outputs. A test checks this with synthetic inputs.
+    - **What we keep:** the asset service holds the generated assets. Because the converter can always regenerate them from the originals, the originals stay the source of truth.
+    - **Engine changes:** generated formats will change as the engine evolves. Each converter has a version, and a manifest records the recipe and version of every generated record. A newer engine either regenerates from the originals (the steady state) or migrates old generated records with a documented, versioned migration step. Never a format nobody can rebuild.
+    - **Self-hosting:** a host or modder can run `generate` against their own install to produce a pack an asset service can serve.
 
 - **A recycling `VirtualList` in the UI kit, for smooth scrolling (user, 2026-11-15):** the user expects to scroll the maps and gun lists smoothly, by pixels, with the mouse wheel and a scrollbar.
   - **Today:** the Maps dialog and the Join server list draw only a window of rows around the cursor, which is cheap. But they rebuild every row on each change, jump a row at a time, and the Maps dialog has no wheel scrolling.
