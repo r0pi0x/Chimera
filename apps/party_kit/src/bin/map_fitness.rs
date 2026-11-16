@@ -75,7 +75,9 @@
 //!   narrow places, an outline, the measures above inside each, merged and
 //!   ranked) for the player bands 2-4 and 4-8 (`--band`), a table, a
 //!   top-down picture and a `[[slice]]` entry each; `--pick <n>` writes one
-//!   into the game's `data/arena_slices.toml` (`--id`, `--name` to name it).
+//!   into the game's `data/arena_slices.toml` (`--id`, `--name` to name it),
+//!   with its measures in the fields the pool reads; `--slice <key>
+//!   --remeasure` rewrites them as the slice is played.
 //! - `--walker r,h,s`: the same flood with another body (half width,
 //!   height, highest step, m), printed against the bots' walker: both main
 //!   regions' areas, the spawn points off each, and the places the bots'
@@ -174,7 +176,9 @@ usage: map_fitness [options]
   --top <n>          with --candidates: the best n per band printed and drawn (default 8)
   --pick <n>         with --candidates: write candidate n (as printed) into the game's
                      data/arena_slices.toml under --repo (default .), replacing the entry of
-                     the same map and id; --id <id> and --name <name> name it";
+                     the same map and id; --id <id> and --name <name> name it
+  --remeasure        with --slice: write the slice's measures (as played, with the spawn points
+                     it makes) into its entry in the game's data/arena_slices.toml under --repo";
 
 const N_PLAYERS: [usize; 5] = [2, 4, 8, 12, 16];
 const HEADER: &str = "game,map,loads,error,load_s,nav_s,spawns,spawns_in_region,own_nav,spots,spots_off,has_nav_file,off_region,off_nav_file,off_box,spots_off_at,stuck,stuck_at,spawn_min_m,spawn_median_m,\
@@ -218,6 +222,8 @@ struct Opts {
     safety: bool,
     table: usize,
     candidates: Option<candidates::CandOpts>,
+    remeasure: bool,
+    repo: PathBuf,
 }
 
 fn parse() -> Result<Opts, String> {
@@ -242,6 +248,8 @@ fn parse() -> Result<Opts, String> {
         safety: false,
         table: 1500,
         candidates: None,
+        remeasure: false,
+        repo: PathBuf::from("."),
     };
     let mut cand = candidates::CandOpts {
         top: 8,
@@ -304,7 +312,11 @@ fn parse() -> Result<Opts, String> {
             "--pick" => cand.pick = Some(val()?.parse().map_err(|e| format!("--pick: {e}"))?),
             "--id" => cand.id = Some(val()?),
             "--name" => cand.name = Some(val()?),
-            "--repo" => cand.repo = PathBuf::from(val()?),
+            "--repo" => {
+                o.repo = PathBuf::from(val()?);
+                cand.repo = o.repo.clone();
+            }
+            "--remeasure" => o.remeasure = true,
             "--table" => o.table = val()?.parse().map_err(|e| format!("--table: {e}"))?,
             "-h" | "--help" => return Err(String::new()),
             _ => return Err(format!("unknown option {a}")),

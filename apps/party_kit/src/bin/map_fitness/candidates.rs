@@ -342,11 +342,72 @@ fn entry_text(map: &str, id: &str, name: &str, map_name: &str, c: &Candidate, n:
         c.seed.y,
         c.seed.z
     ));
-    if let Some([a, b]) = c.verdict.players {
+    t.push_str(&measure_lines(r, c.verdict.players));
+    t
+}
+
+/// The keys `measure_lines` writes (an entry's measured fields, which the
+/// pool reads: `arena::Entry`).
+const MEASURED: [&str; 10] = [
+    "players",
+    "area_m2",
+    "sight_m",
+    "spots",
+    "see_pairs",
+    "seen_at_spawn",
+    "cover",
+    "long_sight_p95_m",
+    "point_floor_seen",
+    "point_seen_by",
+];
+
+/// A report's measures as an entry's lines (the players it suits, when
+/// it passes).
+pub(super) fn measure_lines(r: &chimera_sim::minigame::slice_safety::Report, players: Option<[usize; 2]>) -> String {
+    let s = &r.safety;
+    let mut t = String::new();
+    if let Some([a, b]) = players {
         t.push_str(&format!("players = [{a}, {b}]\n"));
     }
-    t.push_str(&format!("area_m2 = {:.0}\nsight_m = {:.1}\nspots = {}\n", r.area_m2, r.sight_m, s.spots));
+    t.push_str(&format!(
+        "area_m2 = {:.0}\nsight_m = {:.1}\nspots = {}\nsee_pairs = {:.3}\nseen_at_spawn = {{ {} }}\ncover = {:.3}\nlong_sight_p95_m = {:.1}\npoint_floor_seen = {:.3}\npoint_seen_by = {:.3}\n",
+        r.area_m2,
+        r.sight_m,
+        s.spots,
+        s.see_pairs,
+        s.seen_at_spawn.iter().map(|(n, v)| format!("{n} = {v:.3}")).collect::<Vec<_>>().join(", "),
+        r.cover,
+        r.long_sight_p95_m,
+        r.point_floor_seeing(),
+        r.point_seen_by()
+    ));
     t
+}
+
+/// `--slice <key> --remeasure`: the measured fields of the slice's entry in
+/// `file` replaced by `measures` (`measure_lines`), checked by the game's
+/// reader first.
+pub(super) fn remeasure(file: &std::path::Path, game: &str, map: &str, id: &str, measures: &str) -> Result<(), String> {
+    let existing = fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let lines: Vec<&str> = existing.lines().collect();
+    let (a, b) = spans(&existing)
+        .into_iter()
+        .find(|(a, b)| {
+            let block = lines[*a..*b].join("\n");
+            field(&block, "map").as_deref() == Some(map) && field(&block, "id").as_deref() == Some(id)
+        })
+        .ok_or_else(|| format!("no entry {map}@{id} in {}", file.display()))?;
+    let mut block: Vec<String> = lines[a..b]
+        .iter()
+        .filter(|l| !l.split_once('=').is_some_and(|(k, _)| MEASURED.contains(&k.trim())))
+        .map(|l| l.to_string())
+        .collect();
+    while block.last().is_some_and(|l| l.trim().is_empty()) {
+        block.pop();
+    }
+    block.extend(measures.trim_end().lines().map(str::to_string));
+    let entry = block.join("\n");
+    write_pick(file, game, map, id, &existing, &entry)
 }
 
 /// `entry` into the game's slices file (`existing` its text): replacing the

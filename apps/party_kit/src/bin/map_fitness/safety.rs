@@ -131,6 +131,16 @@ pub(super) fn safety(w: &mut World, o: &Opts, c: &SafetyInput) {
         let all: Vec<Vec3> = c.feet.iter().chain(&made).copied().collect();
         let after = with_points(&all);
         let v = judge(&after, &mut out, &format!("with the {} spawn points the slice makes", made.len()));
+        if o.remeasure {
+            // The slice as played: the map's points inside and the ones it
+            // makes.
+            let (game, map) = a.slice.map.split_once(':').unwrap_or(("", &a.slice.map));
+            let file = o.repo.join("games").join(game).join("data").join("arena_slices.toml");
+            match super::candidates::remeasure(&file, game, map, &a.slice.id, &super::candidates::measure_lines(&after, v.players)) {
+                Ok(()) => out.push(format!("measures written into {}", file.display())),
+                Err(e) => out.push(format!("--remeasure: {e}")),
+            }
+        }
         rows.push(("after", after, v));
         // As on a map none of whose spawn points is inside: the seed's and
         // the ones the slice makes alone.

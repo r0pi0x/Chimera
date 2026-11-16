@@ -22,7 +22,8 @@
 //!   (Douglas-Peucker, the tolerance grown until it has at most
 //!   `max_corners` corners and is a simple polygon). Membership is then the
 //!   polygon's (the cells whose centre is inside); a candidate whose
-//!   area moves more than 15% from the cut's is dropped (it took floors
+//!   area moves more than 25% from the cut's is dropped (the plan's 15%
+//!   and the outline's 1 m margin) (it took floors
 //!   over or under the region, or cut a building in plan).
 //! - The wall's cost (`wall`): each edge sampled every 0.5 m; a sample over
 //!   walkable floor is open wall (`open_m`; a player meets an invisible
@@ -41,7 +42,8 @@
 //!   smaller's area shared) left to the better ranked, measured, sorted.
 //!
 //! Known shortcuts: the outline is simplified both ways (inward too, not
-//! only outward as the plan asks; the 15% check guards it); the seed bias is
+//! only outward as the plan asks; a 1 m margin and the area check guard
+//! it); the seed bias is
 //! level rays from cell centres, not a clearance map; the candidates'
 //! spawn points are seeded by a provisional key (`cand_<band>_<n>`), so the
 //! slice a person picks makes other points in the game: `--slice` measures
@@ -517,10 +519,10 @@ impl Dinic {
 /// Raster step of the outline (m) and the closing radius (cells).
 const RES: f32 = 0.5;
 const CLOSE: i64 = 4;
-/// Then grown by this (cells, 1.5 m) before it is simplified, so the
+/// Then grown by this (cells, 1 m) before it is simplified, so the
 /// simplification's inward cuts stay out of the region (the plan's
 /// "only ever outward", roughly).
-const MARGIN: i64 = 3;
+const MARGIN: i64 = 2;
 
 /// The region's outline as a simple polygon (module doc), at most
 /// `max_corners` corners; None when no tolerance up to 12 m gives one.
@@ -957,6 +959,10 @@ fn sight_in(spots: &[Vec3], poly: &PlanPolygon, ray: &impl Fn(Vec3, Vec3, f32) -
     sum / (s.len() * 16).max(1) as f32
 }
 
+/// How far the polygon's area may move from the cut's (the plan's 15%, and
+/// 10% more for the outline's 1 m margin, which a small slice feels).
+const AREA_SLACK: f32 = 0.25;
+
 /// Every candidate for `band` (module doc), best first; `key` names the
 /// map (`game:map`) for the spawn points' seeds.
 pub fn generate<S, R>(input: &Input<S, R>, band: Band, settings: &Settings, fit: &FitSettings, key: &str) -> Vec<Candidate>
@@ -994,7 +1000,7 @@ where
         let Ok(poly) = PlanPolygon::new(&pts) else { continue };
         let members = members(g, &poly);
         let area = g.area(&members);
-        if (area - grown.area_m2).abs() > 0.15 * grown.area_m2 {
+        if (area - grown.area_m2).abs() > AREA_SLACK * grown.area_m2 {
             continue;
         }
         shapes.push((no, *seed, grown, poly, members, area));

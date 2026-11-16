@@ -49,7 +49,8 @@ fn two_rooms_and_a_corridor_are_cut_at_the_corridor() {
     let pts = outline(&g, &grown.region, 16).expect("an outline");
     let poly = chimera_world::map::play_area::PlanPolygon::new(&pts).unwrap();
     assert!(poly.contains(Vec2::new(10.0, 10.0)) && !poly.contains(Vec2::new(40.0, 10.0)));
-    assert!((poly.area() - 400.0).abs() < 60.0, "{}", poly.area());
+    // Room A and the outline's 1 m margin.
+    assert!((400.0..560.0).contains(&poly.area()), "{}", poly.area());
 }
 
 #[test]
