@@ -357,8 +357,9 @@ fn pointer(
     } else {
         *press_at = None;
         // Only touched when there is a drag (a mutable touch is a change,
-        // which rebinds the grid).
+        // which rebinds the grid); a staged one stays.
         if ui.drag.is_some()
+            && !ui.staged
             && let Some(d) = ui.drag.take()
             && let Some(slot) = d.over
         {

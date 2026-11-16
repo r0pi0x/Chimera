@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 use chimera_client::client::sandbox::{
     SandboxCatalogue, SandboxUi, SandboxUiPlugin,
-    link::{BenchRequest, BenchView, KillLog, TargetSpec},
+    link::{BenchRequest, BenchView, KillLog, PropSpec, TargetSpec},
 };
 use chimera_core::core::{Damage, DamageKind, Hitgroup, LocalPlayer};
 use chimera_sim::minigame::{self, targets::Target};
@@ -87,4 +87,11 @@ fn the_bench_spawns_lists_moves_and_removes_a_real_target() {
     // Removed.
     ask(&mut sim, BenchRequest::Remove(row.id));
     assert!(sim.app.world().resource::<BenchView>().targets.is_empty());
+    // A prop: listed with its pieces standing, then cleared away.
+    ask(&mut sim, BenchRequest::AddProp(PropSpec { kind: "bottles".into(), distance_m: 10.0 }));
+    let props = sim.app.world().resource::<BenchView>().props.clone();
+    assert_eq!(props.len(), 1, "{props:?}");
+    assert_eq!(props[0].standing, (6, 6));
+    ask(&mut sim, BenchRequest::Clear);
+    assert!(sim.app.world().resource::<BenchView>().props.is_empty());
 }

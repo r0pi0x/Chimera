@@ -391,6 +391,38 @@ fn a_direct_hit_at_512_takes_90_15() {
     assert!((took - 90.0).abs() < 1.5, "took {took}");
 }
 
+/// A rocket among targets is measured (`BlastDealt`, the sandbox's blast
+/// rings): its centre, its radius in metres, the damage at the centre and
+/// each body it hurt with its distance and damage.
+#[test]
+fn a_rocket_among_targets_is_measured() {
+    use chimera_sim::weapon::grenade::BlastDealt;
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, ROCKET_LAUNCHER);
+    let t = target(&mut sim, from, 512.0);
+    let beside = target(&mut sim, from + Vec3::X * 60.0 * U, 512.0);
+    let aim = sim.position(t) - Vec3::X * 12.0 * U + Vec3::Y * 3.0 * U;
+    testkit::aim_at(&mut sim, p, aim);
+    let mut seen = sim.app.world().resource::<Messages<BlastDealt>>().get_cursor_current();
+    let mut blasts: Vec<BlastDealt> = Vec::new();
+    run(&mut sim, p, 60, |s, k| {
+        s.intent(p).fire = k == 0;
+        blasts.extend(seen.read(s.app.world().resource::<Messages<BlastDealt>>()).cloned());
+    });
+    assert_eq!(blasts.len(), 1, "one blast: {blasts:?}");
+    let b = &blasts[0];
+    assert_eq!(b.attacker, Some(p));
+    assert!(b.weapon.is_some_and(|w| w.contains("rocketlauncher")), "{:?}", b.weapon);
+    assert!(b.outer > 1.0 && b.outer < 5.0, "the radius in metres: {}", b.outer);
+    assert!(b.max_damage > 0.5, "90 points at the centre: {}", b.max_damage);
+    let direct = b.victims.iter().find(|v| v.victim == t).unwrap_or_else(|| panic!("the one hit: {b:?}"));
+    assert!(direct.damage > 0.8, "a direct hit's 90 points: {}", direct.damage);
+    if let Some(v) = b.victims.iter().find(|v| v.victim == beside) {
+        assert!(v.distance_m > direct.distance_m && v.damage < direct.damage, "the splash falls off: {v:?} {direct:?}");
+    }
+}
+
 /// 5.3, 5.4, tests 21-22: a rocket at his feet hurts the Soldier with no
 /// distance modifier and throws him up.
 #[test]
