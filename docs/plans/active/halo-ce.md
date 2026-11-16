@@ -530,6 +530,16 @@ backlog.
     other character moves by its animations' own motion (four
     directions, no air control, turn speed limited). Playing as one
     needs that mover built; it is the larger part of the work.
+    **Decided otherwise (the owner, 2026-11-15)**: player expression
+    comes first. A character a player wears keeps the player's mover
+    (the Spartan's acceleration, air control and jump, every direction,
+    no freeze after a landing), and its aim is never speed-limited.
+    Only the speed differs: halfway between the Spartan's and the
+    character's own (one blend factor in data, to tune). The body's
+    animations bridge the gap: the character's own move animations at
+    a rate matched to its ground speed, the nearest one where a
+    direction has none. The animation-driven mover is not built; this
+    replaces the *Movement* decision above.
   - *Voice*: a body a player controls speaks only its pain, death,
     scream and maimed lines; all other chatter is the AI's. Faithful
     means those four kinds only (heard by everyone); anything more is
