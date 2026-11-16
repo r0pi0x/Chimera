@@ -7,7 +7,8 @@
 //! the map in and its slices out (`map_pool`); the ballot never has the big
 //! map nor two of its slices; a host's `changelevel test:big@west` loads
 //! the map and plays the slice, its wall built on the server and on both
-//! clients (the slice goes with the match); the entry in play is the
+//! clients (the slice goes with the match), and another slice of the same
+//! map loads the map again first; the entry in play is the
 //! slice, and the next match's draw holds back the big map with it.
 
 use bevy::prelude::*;
@@ -150,6 +151,21 @@ fn a_map_change_to_a_slice_builds_its_wall_on_the_host_and_the_clients() {
         assert!(!next.starts_with("test:big"), "{next}");
         sim.server.app.world_mut().resource_mut::<chimera_sim::minigame::rotation::MapHistory>().rng.next();
     }
+    // Another slice of the same map: the map loads again, the match waits
+    // for that load, and plays the other slice.
+    let said = minigame_net::host_changelevel(sim.server.app.world_mut(), "test:big@east");
+    assert!(matches!(said, Some(Ok(Some(_)))), "{said:?}");
+    sim.ticks(5);
+    assert!(sim.server.app.world().contains_resource::<minigame_net::MapChange>(), "waits for the map's reload");
+    assert!(sim.until(3000, |s| !s.server.app.world().contains_resource::<minigame_net::MapChange>()));
+    let levels = sim.server.app.world().resource::<Levels>().0.clone();
+    assert_eq!(levels.iter().filter(|l| *l == "test:big").count(), 2, "loaded again: {levels:?}");
+    assert_eq!(minigame_net::current_entry(sim.server.app.world()), "test:big@east");
+    assert_eq!(walls(&mut sim.server.app), 4, "the other slice's wall only");
+    let ok = sim.until(600, |s| {
+        s.clients.iter().all(|c| c.app.world().get_resource::<PlayArea>().is_some_and(|a| a.slice.id == "east"))
+    });
+    assert!(ok, "the clients play the other slice");
     // A whole map again: no slice.
     let said = minigame_net::host_changelevel(sim.server.app.world_mut(), "test:next");
     assert!(matches!(said, Some(Ok(Some(_)))), "{said:?}");

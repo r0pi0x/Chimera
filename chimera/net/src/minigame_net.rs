@@ -711,7 +711,7 @@ fn change_match_on(world: &mut World, id: &str, map: Option<&str>, load: bool) -
         // waits for the load to replace the map in.
         let began = world.get_resource::<SimClock>().map_or(0.0, |c| c.now);
         let reload = (map == crate::net::current_map(world))
-            .then(|| world.get_resource_change_ticks::<crate::map::MapFile>().map(|t| t.changed))
+            .then(|| crate::net::maps::map_file_tick(world))
             .flatten();
         world.insert_resource(minigame::MatchHold);
         world.insert_resource(MapChange {
@@ -761,7 +761,7 @@ pub struct MapChange {
     /// When the map was in here.
     pub arrived: Option<f64>,
     /// The same map loaded again (another arena slice of it, or it whole
-    /// after a slice): its `MapFile`'s change tick when the change began;
+    /// after a slice): its map file's change tick when the change began (`net::maps::map_file_tick`);
     /// the map is in only once a load replaced it.
     pub reload: Option<bevy::ecs::change_detection::Tick>,
 }
@@ -791,7 +791,7 @@ fn follow_map_change(world: &mut World) {
             // settled behind its loading screen: `map::LocalMapLoad`), so
             // its player isn't started on while it still loads.
             let reloaded = c.reload.is_none_or(|before| {
-                world.get_resource_change_ticks::<crate::map::MapFile>().is_some_and(|t| t.changed != before)
+                crate::net::maps::map_file_tick(world).is_some_and(|t| t != before)
             });
             let arrived = crate::net::maps::loaded_map(world).is_some_and(|(id, _)| id == c.map)
                 && reloaded
