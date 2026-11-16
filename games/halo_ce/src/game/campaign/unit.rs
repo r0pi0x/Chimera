@@ -225,6 +225,26 @@ impl UnitsOnDemand {
         self.failed.get(&kind).map(String::as_str)
     }
 
+    /// One line on each kind: ready, loading, failed or not asked for.
+    pub fn status(&self) -> String {
+        BodyKind::ALL
+            .iter()
+            .map(|k| {
+                let s = if self.ready(*k) {
+                    "ready".to_string()
+                } else if self.loading(*k) {
+                    "loading".into()
+                } else if let Some(e) = self.failed(*k) {
+                    format!("failed: {e}")
+                } else {
+                    "not asked for".into()
+                };
+                format!("{}: {s}", k.id())
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+
     /// Whether `kind` is loading.
     pub fn loading(&self, kind: BodyKind) -> bool {
         self.tasks.contains_key(&kind)
@@ -257,6 +277,7 @@ pub fn load_on_demand(
     for (kind, result) in done {
         match result {
             Ok((model, textures)) => {
+                info!("halo_ce: the {} body loaded ({} hit boxes)", kind.id(), model.hitboxes.len());
                 pending.ready.insert(kind);
                 let textures = std::sync::Arc::new(textures);
                 commands.queue(move |world: &mut World| add_character_model(world, model, textures));

@@ -463,8 +463,20 @@ fn campaign_cvar(app: &mut App) {
 /// `halo_ce:body <spartan | elite | draw> [player | all]` (module doc).
 fn body_command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
     use chimera_core::console::{Cheats, CommandPlayer, command_player};
-    let usage = "halo_ce:body <spartan | elite | draw> [player | all]";
+    let usage = "halo_ce:body <spartan | elite | draw | status> [player | all]";
     let what = a.first().ok_or(usage)?.to_ascii_lowercase();
+    if what == "status" {
+        let units = world.get_resource::<UnitsOnDemand>().map_or_else(|| "no units".into(), UnitsOnDemand::status);
+        let mut q = world.query::<(Entity, Option<&Name>, Option<&BodyKind>, Option<&BodyName>, Option<&crate::map::BodyModel>)>();
+        let rows: Vec<String> = q
+            .iter(world)
+            .filter(|r| r.2.is_some() || r.3.is_some())
+            .map(|(e, n, k, b, m)| format!("{}: {:?} {:?} model {:?}", n.map_or_else(|| e.to_string(), |n| n.to_string()), k, b.map(|b| &b.0), m.map(|m| m.0)))
+            .collect();
+        return Ok(Some(format!("{units}
+{}", rows.join("
+"))));
+    }
     let forced = if what == "draw" { None } else { Some(BodyKind::from_id(&what).ok_or(usage)?) };
     let remote = world.contains_resource::<CommandPlayer>();
     if remote && world.get_resource::<Cheats>().is_none_or(|c| c.0 == 0) {

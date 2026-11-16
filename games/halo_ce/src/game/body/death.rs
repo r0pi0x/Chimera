@@ -223,6 +223,10 @@ pub struct CorpseState {
     pub looping: bool,
     /// The last pose made (a landing's blend starts from it).
     pub last: Vec<BonePose>,
+    /// The body it is drawn as (`shown_kind`: the corpse's, or the
+    /// Spartan's while that kind's model is not loaded here), kept for its
+    /// whole play: its sequences index that body's set.
+    pub shown: BodyKind,
 }
 
 impl CorpseState {
@@ -346,6 +350,13 @@ pub fn halo_model(models: &CharacterModels, kind: BodyKind) -> Option<&crate::ma
         .or_else(|| halo().find(|m| m.name.is_none()))
 }
 
+/// The body `kind` is drawn as here: itself once its model is loaded,
+/// the Spartan before.
+pub fn shown_kind(models: &CharacterModels, kind: BodyKind) -> BodyKind {
+    let loaded = kind.model_name().is_some_and(|n| models.0.iter().any(|m| m.game == Some(GAME) && m.name.as_deref() == Some(n.as_str())));
+    if loaded { kind } else { BodyKind::Spartan }
+}
+
 /// Body `kind`'s set of the map's models (`halo_model`).
 fn halo_set(models: &CharacterModels, kind: BodyKind) -> Option<std::sync::Arc<AnimSet>> {
     halo_model(models, kind).and_then(|m| m.animations.clone())
@@ -462,13 +473,16 @@ pub fn play_corpses(
             .map(|h| h.distance - lift)
     };
     for (e, corpse, state, animator, transform, hitboxes) in &mut corpses {
-        let Some(set) = halo_set(models, corpse.body) else { continue };
-        let model = halo_model(models, corpse.body).filter(|m| !m.boxes.is_empty());
+        // The body it began as (`CorpseState::shown`) for its whole play.
+        let shown = state.as_ref().map_or_else(|| shown_kind(models, corpse.body), |s| s.shown);
+        let Some(set) = halo_set(models, shown) else { continue };
+        let model = halo_model(models, shown).filter(|m| !m.boxes.is_empty());
         let Some(mut state) = state else {
             // Its first tick here: drawn as a corpse from now on.
             let from = owners.get(corpse.owner).ok().map(|b| b.anim.last.clone());
             let grounded = corpse.velocity.y <= 0.0 && ground(corpse.at, 0.1).is_some();
             let mut state = CorpseState::new(&set, corpse, grounded, from);
+            state.shown = shown;
             let (pose, _) = state.tick(&set);
             let boxes = model.map(|m| corpse_hitboxes(m, &pose, corpse.yaw)).unwrap_or_default();
             let mut animator = Animator::new(set.clone());
@@ -485,7 +499,7 @@ pub fn play_corpses(
                 Transform::from_translation(corpse.at).with_rotation(Quat::from_rotation_y(corpse.yaw)),
             ));
             // A campaign body's corpse draws its own model.
-            if let Some(name) = corpse.body.model_name() {
+            if let Some(name) = shown.model_name() {
                 commands.entity(e).insert(crate::map::BodyName(name));
             }
             continue;

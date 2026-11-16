@@ -87,6 +87,10 @@ pub struct HaloBody {
     pub anim: HaloAnim,
     /// Its vitality as last seen here (`flinch::hit_between`).
     pub seen: Option<flinch::Seen>,
+    /// The model it animates (`BodyModel`): another (a campaign body put
+    /// on, or loaded) starts the animation afresh, its sequences being
+    /// another set's.
+    pub model: Option<usize>,
 }
 
 /// The armour colours (objects.md, "Spartan multiplayer colour"): the
@@ -227,6 +231,10 @@ pub fn animate(
             Some(h) => h.into_inner(),
             None => &mut fresh,
         };
+        if halo.model != Some(body.0) {
+            halo.anim = HaloAnim::default();
+            halo.model = Some(body.0);
+        }
         let mut ticks = super::ticks::halo_ticks(&clock).min(4);
         if first {
             ticks = ticks.max(1);
