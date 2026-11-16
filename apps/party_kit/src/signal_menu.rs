@@ -644,7 +644,7 @@ fn spawn_page(
         .id();
     let (items_at, item_dur, item_gap) = (k.dur("items_at", 0.24), k.dur("item", 0.52), k.dur("item_gap", 0.055));
     let entry_row =
-        |c: &mut Commands, images: &mut Assets<Image>, parent: Entity, i: usize, label: &str, inverse: bool| {
+        |c: &mut Commands, images: &mut Assets<Image>, parent: Entity, i: usize, label: &str, tag: Option<&str>, inverse: bool| {
             let color = |tone: Tone, a: f32| if inverse { t.tone(Tone::Ink) } else { t.tone_a(tone, a) };
             let at = items_at + i as f32 * item_gap;
             // The step in: the row slides in from the left on the slant while
@@ -723,6 +723,19 @@ fn spawn_page(
                 ))
                 .id();
             let _ = lab;
+            // A tag after the label (NEW): an accent chip, the same in the
+            // highlight's inverted copy.
+            if let Some(tag) = tag {
+                let chip = c
+                    .spawn((
+                        k.node(style!(row, pad: [0.22, 0.6, 0.18, 0.6]).shrink(0.0)),
+                        BackgroundColor(t.tone(Tone::Acc)),
+                        UiParityId::new(format!("menu.item.{}.tag{}", i + 1, if inverse { ".inv" } else { "" })),
+                        ChildOf(li),
+                    ))
+                    .id();
+                c.spawn((k.text(Role::Mono, 0.42, 0.12, t.tone(Tone::OnAcc), tag), ChildOf(chip)));
+            }
             if !inverse {
                 c.entity(ix_text)
                     .insert(UiParityId::new(format!("menu.item.{}.ix", i + 1)));
@@ -731,7 +744,7 @@ fn spawn_page(
             c.spawn((k.tri(images, 0.9 * 0.56, color(Tone::Fg, 0.42)), ChildOf(li)));
         };
     for (i, e) in data.entries.iter().enumerate() {
-        entry_row(c, images, nav, i, &e.label, false);
+        entry_row(c, images, nav, i, &e.label, e.tag.as_deref(), false);
     }
     // The highlight: wipes in from the left, then follows the selection.
     let (bar_at, bar_dur) = (k.dur("bar_at", 0.62), k.dur("bar", 0.45));
@@ -784,7 +797,7 @@ fn spawn_page(
         ))
         .id();
     for (i, e) in data.entries.iter().enumerate() {
-        entry_row(c, images, inv, i, &e.label, true);
+        entry_row(c, images, inv, i, &e.label, e.tag.as_deref(), true);
     }
 
     // The keys along the foot.

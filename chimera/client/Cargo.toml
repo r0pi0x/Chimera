@@ -47,6 +47,8 @@ image.workspace = true
 serde.workspace = true
 # `--views` files and bench results (`capture`).
 serde_json.workspace = true
+# The weapon data's hooks (`sandbox::model`'s tags).
+toml.workspace = true
 workspace-hack.workspace = true
 
 # The integration tests (tests/it/): the shell's parts on the headless

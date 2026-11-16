@@ -187,7 +187,11 @@ fn logo_pass_covers_both_ui_cameras() {
 fn every_entry_and_row_of_the_data_works() {
     let data = MenuData::shipped();
     let labels: Vec<&str> = data.entries.iter().map(|e| e.label.as_str()).collect();
-    assert_eq!(labels, ["Host", "Join", "Settings", "Quit"]);
+    assert_eq!(labels, ["Host", "Join", "Sandbox", "Settings", "Quit"]);
+    // Sandbox: a NEW tag, and the sandbox's own command.
+    let sb = &data.entries[2];
+    assert_eq!(sb.tag.as_deref(), Some("New"));
+    assert_eq!(sb.does, main_menu::EntryDoes::Command("sandbox".into()));
     assert!(
         data.escape
             .iter()
@@ -210,6 +214,11 @@ fn every_entry_and_row_of_the_data_works() {
     for e in &data.entries {
         if let main_menu::EntryDoes::Command(c) = &e.does {
             let name = c.split_whitespace().next().unwrap();
+            // `sandbox` is Ultimate Gun Game's own command (the only app
+            // with this menu; its tests start the sandbox by it).
+            if name == "sandbox" {
+                continue;
+            }
             assert!(
                 console.command(name).is_some() || console.cvar(name).is_some(),
                 "{}: no command {name}",

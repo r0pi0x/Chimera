@@ -77,11 +77,11 @@ fn press(sim: &mut Sim, key: KeyCode) {
 }
 
 #[test]
-fn menu_has_four_entries_from_data() {
+fn menu_has_five_entries_from_data() {
     let mut sim = sim_with(MENU_THEME);
     assert_eq!(count::<SignalMenuRoot>(&mut sim), 1);
     let entries = sim.app.world().resource::<MenuData>().entries.len();
-    assert_eq!(entries, 4, "Play, Join, Options, Quit");
+    assert_eq!(entries, 5, "Play, Join, Sandbox, Options, Quit");
     let mut items: Vec<usize> = sim
         .app
         .world_mut()
@@ -90,7 +90,10 @@ fn menu_has_four_entries_from_data() {
         .map(|i| i.0)
         .collect();
     items.sort();
-    assert_eq!(items, vec![0, 1, 2, 3]);
+    assert_eq!(items, vec![0, 1, 2, 3, 4]);
+    // Sandbox's NEW chip, in the entry and in the highlight's copy.
+    let tags = sim.app.world_mut().query::<&chimera_ui::UiParityId>().iter(sim.app.world()).filter(|p| p.0.starts_with("menu.item.3.tag")).count();
+    assert_eq!(tags, 2, "the NEW chip on Sandbox");
     assert_eq!(count::<SignalTab>(&mut sim), 3, "A, B, C");
 }
 
@@ -108,7 +111,7 @@ fn keys_move_the_highlight_and_enter_acts() {
     assert_eq!(state(&sim).sel, 1);
     press(&mut sim, KeyCode::ArrowUp);
     press(&mut sim, KeyCode::ArrowUp);
-    assert_eq!(state(&sim).sel, 3, "wraps to the last");
+    assert_eq!(state(&sim).sel, 4, "wraps to the last");
     press(&mut sim, KeyCode::ArrowDown);
     press(&mut sim, KeyCode::ArrowDown);
     // The highlight glides there on the clock.

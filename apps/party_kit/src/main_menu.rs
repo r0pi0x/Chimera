@@ -181,6 +181,8 @@ pub struct Entry {
     pub does: EntryDoes,
     /// Half a row before it.
     pub gap: bool,
+    /// A tag after the label (`tag = "New"`), drawn by the Signal menu.
+    pub tag: Option<String>,
 }
 
 /// What an Escape menu entry does.
@@ -191,6 +193,9 @@ pub enum EscDoes {
     Host,
     Vote,
     Disconnect,
+    /// The sandbox's Change gun and bench (`client::sandbox`).
+    SandboxGun,
+    SandboxBench,
     /// The report dialog (`client::feedback`).
     Feedback,
     Quit,
@@ -204,6 +209,10 @@ pub enum When {
     Host,
     /// The app has this main menu (`PartyMenu` is in).
     MainMenu,
+    /// A sandbox plays (`chimera_client::client::sandbox::SandboxUi::on`).
+    Sandbox,
+    /// No sandbox plays.
+    NotSandbox,
 }
 
 /// An Escape menu entry.
@@ -290,6 +299,7 @@ impl MenuData {
                 label,
                 does,
                 gap: t.get("gap").and_then(|v| v.as_bool()).unwrap_or(false),
+                tag: s(&t, "tag"),
             });
         }
         let mut escape = Vec::new();
@@ -303,12 +313,16 @@ impl MenuData {
                 Some("disconnect") => EscDoes::Disconnect,
                 Some("quit") => EscDoes::Quit,
                 Some("feedback") => EscDoes::Feedback,
+                Some("sandbox_gun") => EscDoes::SandboxGun,
+                Some("sandbox_bench") => EscDoes::SandboxBench,
                 other => return Err(format!("{label}: no action {other:?}")),
             };
             let when = match s(&t, "when").as_deref() {
                 None | Some("always") => When::Always,
                 Some("host") => When::Host,
                 Some("main_menu") => When::MainMenu,
+                Some("sandbox") => When::Sandbox,
+                Some("not_sandbox") => When::NotSandbox,
                 Some(w) => return Err(format!("{label}: no `when` {w}")),
             };
             escape.push(EscEntry { label, does, when });

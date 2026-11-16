@@ -2465,6 +2465,12 @@ run: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
 Signal loading screen, the Leave? dialog with `ask`; `+mainmenu` too) and
 `ui_scene lobby host` (the host's view of a first lobby waiting for its
 Start, two parties with their edges).
+`ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range>`
+stages the sandbox's screens (`chimera_client::client::sandbox`) with
+made-up guns, kills, downloads and targets; over a real sandbox it reads
+best: `ultimate_gun_game --offscreen 1920x1080 --frames 900 --screenshot
+<out>.png +sandbox +ui_scene sandbox gun` (the scene's words as separate
+arguments).
 `ui_scene lobby` stages the lobby with made-up players (for
 screenshots; no parity ids or fixture yet), so `lobby`'s report lists
 the mockup's ids only.
