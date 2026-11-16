@@ -523,8 +523,39 @@ backlog.
   Still to settle: deaths, flinches and seats per character (each has
   its own animations); where it is chosen (a rung extra of Halo's, as
   the ladder's rung characters are, replicated with the match, off by
-  default until played). First step: a spec of the campaign's
-  characters (specs/halo_ce/characters.md), being written.
+  default until played). The spec is written
+  (specs/halo_ce/characters.md, 2026-11-15). What it found that bears
+  on the decisions above:
+  - *Movement*: only the Spartan uses the player's physics; every
+    other character moves by its animations' own motion (four
+    directions, no air control, turn speed limited). Playing as one
+    needs that mover built; it is the larger part of the work.
+    **Decided otherwise (the owner, 2026-11-15)**: player expression
+    comes first. A character a player wears keeps the player's mover
+    (the Spartan's acceleration, air control and jump, every direction,
+    no freeze after a landing), and its aim is never speed-limited.
+    Only the speed differs: halfway between the Spartan's and the
+    character's own (one blend factor in data, to tune). The body's
+    animations bridge the gap: the character's own move animations at
+    a rate matched to its ground speed, the nearest one where a
+    direction has none. The animation-driven mover is not built; this
+    replaces the *Movement* decision above.
+  - *Voice*: a body a player controls speaks only its pain, death,
+    scream and maimed lines; all other chatter is the AI's. Faithful
+    means those four kinds only (heard by everyone); anything more is
+    our own addition.
+  - *Weapons with no first-person model*: the Grunt's fuel rod gun,
+    the Hunter's cannon and the energy sword have none, and no
+    first-person animation to time their ready, reload or melee. They
+    need a rule of ours (borrowed timings, no model in the hand).
+  - *Sizes*: Elite 6.7 MB, Grunt 12.2 MB, Jackal 8.5 MB, Hunter 4.6 MB
+    plus its 1.0 MB cannon, Marine 59.6 MB (57 MB of it six voices),
+    Flood combat forms 3.1 and 2.8 MB. Voice is most of every unit:
+    voices become their own units, fetched after the body.
+  - *Order*: the Elite first (shield and health 100/100; holds the
+    plasma rifle and needler, which the multiplayer set already has),
+    then the Grunt and Jackal, the Hunter last (no first-person view
+    at all).
   Stage one (branch `halo-char-elite`): the Elite. Its body and voice are
   units of their own (`chimera_pack sets halo_ce --only character/`,
   converter `halo_ce:character_unit`: small map files cut from d20,

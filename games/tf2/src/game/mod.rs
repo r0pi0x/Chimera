@@ -24,7 +24,8 @@
 //!   and the class of the gun in hand (speed, eyes, the Scout's air jump,
 //!   max health);
 //! - `parts`: what the game lends other games' apps (`PARTS`): its twelve
-//!   guns, its movement;
+//!   guns, its movement, and its maps through its pool rules and
+//!   measurements (data/map_pool.toml, data/map_fitness.toml);
 //! - `ice`: the ICE cipher of the encrypted scripts, ported from the
 //!   designer's public-domain reference (THIRD_PARTY.md; M2a);
 //! - `scripts`: the weapon and class scripts (`.ctx`) through the mount,
@@ -176,14 +177,17 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 };
 
 /// What TF2 adds to a game of several games: the game registered, map
-/// logic for its maps, its movement (not the match's), its guns
-/// and their view models' rules.
+/// logic for its maps, its map pool's rules and measurements, its
+/// movement (not the match's), its guns and their view models' rules.
 pub fn party_sim(app: &mut bevy::app::App) {
     use crate::game_registry::GameAppExt;
     app.register_game(&INFO);
     if !app.is_plugin_added::<source_logic::logic::LogicPlugin>() {
         app.add_plugins(source_logic::logic::LogicPlugin);
     }
+    // Its map pool's rules and measurements (an automatic gun game's
+    // pool by the players present).
+    parts::add_map_pool(app);
     movement::add_movement(app);
     app.add_plugins(weapons::Tf2GunsPlugin);
     view::add_rules(app);

@@ -486,7 +486,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   activities by state and the gun's kind, the move grid, aim and
   gestures) and the HUD (`ui`: health, ammo and crosshair under its own
   `HudRoot`, in the install's scheme from the map's kit, `game::hud`;
-  its guns' kill icons for every feed).
+  its guns' kill icons for every feed). (M4a) Its maps in an automatic
+  pool by its data/map_pool.toml (every map denied but those chosen for a
+  free-for-all) and data/map_fitness.toml (`parts::add_map_pool`), played
+  free for all: the doors a trigger opens on touch start open (the
+  conversion's `SourceGame::entity_rule`) and the spawn rooms' door
+  brushes block nobody.
   Layered as `hl2dm` (it uses `chimera_net` for its looks' message).
 - `chimera_net` is network play (`net`): the transport, the join
   handshake, replication of what every game has, prediction and

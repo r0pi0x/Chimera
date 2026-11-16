@@ -677,6 +677,11 @@ pub fn record_poses(
         };
         match pose {
             Some(mut pose) => {
+                // A body whose model changed (another rung's character):
+                // the old skeleton's poses do not index the new one's bones.
+                if pose.frames.back().is_some_and(|f| f.bones.len() != frame.bones.len()) {
+                    pose.frames.clear();
+                }
                 pose.frames.push_back(frame);
                 while pose.frames.len() > 2 && pose.frames.front().is_some_and(|f| f.time < now - HISTORY) {
                     pose.frames.pop_front();
@@ -757,12 +762,19 @@ pub fn spawn_ragdolls(
         let rule = rules.of(m.game);
         let Some(ragdoll) = &m.ragdoll else { continue };
         let Some(b1) = pose.frames.back() else { continue };
+        // The newest pose is of another skeleton (the model changed on
+        // the tick of the death, before a pose of the new one was kept):
+        // no ragdoll rather than bones read out of range.
+        if b1.bones.len() != m.bones.len() {
+            continue;
+        }
         let b0 = pose
             .frames
             .iter()
             .rev()
+            .filter(|f| f.bones.len() == b1.bones.len())
             .find(|f| f.time <= b1.time - BONE_DT + 1e-6)
-            .or(pose.frames.front())
+            .or(pose.frames.iter().find(|f| f.bones.len() == b1.bones.len()))
             .unwrap_or(b1);
         // The death pose (2.3): only for damage that pushes.
         let pushes = matches!(

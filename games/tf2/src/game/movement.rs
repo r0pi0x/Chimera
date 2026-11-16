@@ -8,7 +8,10 @@
 //! 1.2 x the tick's top speed, the 520 ceiling in place of `sv_maxspeed`,
 //! fall damage as max health x speed / 6000 above 650 with a +-20 % spread)
 //! and a class layer: each player is the class of the TF2 gun in hand
-//! (`super::classes`, `select_class`, predicted), whose top speed is the
+//! (`super::classes`, `select_class`, predicted: its rung's drawn class
+//! when the gun can be it, `classes::RungClass`, else the gun's own),
+//! whose reload times follow it (the Shotgun's start, the Pistol's
+//! clip: `weapons::damage::Tf2Gun::for_class`), whose top speed is the
 //! tick's speed (`SourceTraits::max_speed`; the Heavy's spun Minigun lowers it to 110,
 //! its weapon's `max_speed`), whose eyes stand at 65, 68 or 75 and whose
 //! air jumps (the Scout's one: the vertical speed set to 268.33, the
@@ -33,11 +36,14 @@ use source_engine::source_movement::{
     SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceTraits,
 };
 
-use super::classes::{Classes, Tf2Class};
+use super::{
+    classes::{Classes, RungClass, Tf2Class},
+    weapons::damage::Tf2Gun,
+};
 use crate::{
     core::Health,
     slots::{Loadout, MovementSlot},
-    weapon::{Inventory, Weapon},
+    weapon::{Inventory, Magazine, ShellReload, Weapon},
 };
 
 /// The movement's id.
@@ -115,6 +121,7 @@ pub fn add_movement(app: &mut App) {
     if registered {
         return;
     }
+    super::classes::add_rung_classes(app);
     app.init_resource::<Classes>()
         .source_movement(ID, Some(config()), Some(super::GAME))
         .add_systems(FixedUpdate, wear.before(crate::core::SimSet::Movement))
@@ -187,28 +194,35 @@ fn set_max(h: &mut Health, max: f32) {
     }
 }
 
-/// Each TF2 player's class from the gun in hand (kept when it holds none
-/// of TF2's), its speed (the class's top speed, or the weapon's own
-/// `max_speed` when lower: the spun Minigun's 110) and its traits (eyes,
-/// air jumps), first in each movement tick, predicted.
+/// Each TF2 player's class from the gun in hand (its rung's drawn class
+/// when the gun can be it, else the gun's own: `Classes::held`; kept when
+/// it holds none of TF2's), the gun's reload times for it, its speed (the
+/// class's top speed, or the weapon's own `max_speed` when lower: the
+/// spun Minigun's 110) and its traits (eyes, air jumps), first in each
+/// movement tick, predicted.
 #[allow(clippy::type_complexity)]
 pub fn select_class(
-    mut q: Query<(&MovementSlot, &Inventory, &mut Tf2Class, &mut SourceTraits)>,
-    weapons: Query<&Weapon>,
+    mut q: Query<(&MovementSlot, &Inventory, &mut Tf2Class, &mut SourceTraits, Option<&RungClass>)>,
+    mut weapons: Query<(&Weapon, Option<&Tf2Gun>, Option<&mut ShellReload>, Option<&mut Magazine>)>,
     table: Res<Classes>,
 ) {
-    for (slot, inv, mut class, mut traits) in &mut q {
+    for (slot, inv, mut class, mut traits, drawn) in &mut q {
         if slot.0 != ID {
             continue;
         }
-        let held = inv.active.and_then(|w| weapons.get(w).ok());
-        if let Some(c) = held.and_then(|w| table.of_gun(&w.id))
-            && class.0 != c.index
+        let mut held = inv.active.and_then(|w| weapons.get_mut(w).ok());
+        if let Some((w, gun, shells, magazine)) = held.as_mut()
+            && let Some(c) = table.held(&w.id, drawn.map(|d| d.0.as_str()))
         {
-            class.0 = c.index;
+            if class.0 != c.index {
+                class.0 = c.index;
+            }
+            if let Some(gun) = gun {
+                gun.for_class(&c.name, shells.as_deref_mut(), magazine.as_deref_mut());
+            }
         }
         let c = class.class(&table);
-        let weapon_speed = held.and_then(|w| w.max_speed).map(|s| s / super::METERS_PER_UNIT);
+        let weapon_speed = held.as_ref().and_then(|(w, ..)| w.max_speed).map(|s| s / super::METERS_PER_UNIT);
         let p = weapon_speed.map_or(c.speed, |w| w.min(c.speed));
         let want = SourceTraits { max_speed: Some(p), eye_stand: Some(c.eye), air_jumps: Some(c.air_jumps) };
         if *traits != want {

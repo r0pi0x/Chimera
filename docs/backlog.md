@@ -74,6 +74,11 @@ the user's go-ahead: no Actions runs unless asked.
     - later, an original "Lucker Party" look for the party apps' own characters.
   - **Design first:** the style, polygon budget and colours (the avatar palette), with mockups or a turnaround sheet for the user to approve before modelling.
 
+- **Generated per-asset icons (user, 2026-11-15):** the sandbox's tiles, the target picker, the props and the pinned bar need proper icons per asset (each gun, character and prop), not only the kit's class icons and the games' kill-icon sheets.
+  - Render a thumbnail of each model with a fixed camera, lighting and style (a consistent Signal-style silhouette and a colour shot), as a generated asset made by the ingest pipeline's converters (docs/plans/active/ingest.md), versioned and deterministic.
+  - Served as an `optional` edge, so the kit's icon shows until it arrives.
+  - UGG-specific for now, possibly general later.
+
 - **Generated asset sets on the asset service (user, 2026-11-15):** "we should have all these assets be split so you can download them atomically, like units, as they're needed."
   - **The driver:** Halo's campaign characters (docs/plans/active/halo-ce.md) live inside large campaign map files, so a per-character unit has to be cut out by a converter. Per-gun units, per-class TF2 bodies and per-map sets already exist as plain file sets.
   - **The guardrails** (proposed by the Halo session, to confirm with the user when designed):
@@ -94,17 +99,9 @@ the user's go-ahead: no Actions runs unless asked.
     - **Self-hosting:** a host or modder can run `generate` against their own install to produce a pack an asset service can serve.
   - **Plan:** [plans/active/ingest.md](plans/active/ingest.md) (the ingestion pipeline: recipes, converters, declared sets, official updates, custom packs).
 
-- **A recycling `VirtualList` in the UI kit, for smooth scrolling (user, 2026-11-15):** the user expects to scroll the maps and gun lists smoothly, by pixels, with the mouse wheel and a scrollbar.
-  - **Today:** the Maps dialog and the Join server list draw only a window of rows around the cursor, which is cheap. But they rebuild every row on each change, jump a row at a time, and the Maps dialog has no wheel scrolling.
-  - **Build one shared list in `chimera_ui`:**
-    - a pool of the rows in view plus two spare, created once;
-    - a scroll or data change rebinds the pooled rows' text, icon and state in place, with no despawn or respawn;
-    - the pool is offset inside a clipped box, with the total height from the item count;
-    - wheel, a draggable scrollbar, and keys that keep the cursor in view;
-    - folded sections drop out of the flat list it draws from.
-  - **Measure** per-frame instruction counts while scrolling a 2,000-row list, against today's rebuild.
-  - **Users:** the Maps dialog, the sandbox's gun picker (Combat Arms alone has hundreds of variants), the Internet server list, and later friends and the asset catalogue.
-  - **First check:** whether the stopgap rung picker (`apps/party_kit/src/rung_picker.rs`) windows its rows at all.
+- **Move the lists onto the recycling `VirtualList` (user, 2026-11-15):** the user expects to scroll the maps and gun lists smoothly, by pixels, with the mouse wheel and a scrollbar.
+  - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
+  - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
 
 - **The sandbox, and progressive downloads (user, 2026-11-15):** the sandbox's design moved to this box. Its mechanics stay with the Halo session: the commands, the rung switch, targets and measurement. A Signal-style design is in progress for the user's sign-off.
   - **Progressive disclosure (user):**
@@ -347,6 +344,62 @@ the user's go-ahead: no Actions runs unless asked.
     game server, then a host's download server).
 
 ## 0. Playtest feedback (2026-10-07), top priority
+
+### UGG playtest 8 prep, Windows check (2026-11-15)
+
+An agent's check of TF2 in UGG on the Windows PC (the playtest build of
+main at 2db4047c, offscreen, muted, timeboxed; screenshots kept outside
+the repository). TF2's files were republished in the middle of it; the
+results are from after that.
+
+- **Crash on a TF2 rung, fixed** (the same day): in a match with six
+  bots (`ugg_new 13 60 cs_source:de_dust2`, `rung 49 all`) the client
+  stopped about 8 s after players reached the TF2 Rocket Launcher, with
+  an index out of range in `chimera_world::map::ragdoll`
+  (`PoseFrame::world`, 19 bones, bone 19 asked). Cause: a body's pose
+  history kept the old skeleton's poses when a rung gave it another
+  model, and a death then read the new model's bones from them. The
+  history is now cleared when the bone count changes and a death whose
+  newest pose is of another skeleton spawns no ragdoll. Replayed after
+  the fix (the same match, five minutes): no crash, the bots played
+  through the three TF2 rungs to the ladder's end and into the next
+  map, 41 ragdolls made (about 29 of TF2 bodies), a median of 4.9 ms a
+  frame. No screenshot caught a TF2 ragdoll: look at one.
+- **The Flame Thrower shows no flames** and **no TF2 gun shows a muzzle
+  flash**, on de_dust2 and on ctf_2fort.
+- **TF2 bullet hits play Combat Arms' impact sounds** (read from the
+  log, not heard: the runs were muted).
+- **The rocket's explosion** is TF2's fireball on ctf_2fort but a small
+  grey puff on de_dust2.
+- **HUD**: the health cross shows each class's maximum health and the
+  ammo counts move when firing. Missing: the class portrait. The
+  crosshair is faint against de_dust2. The sniper's scope did not show
+  in one of two identical runs (not explained).
+- **Classes measure right**: health 125, 200, 300 (Scout, Soldier,
+  Heavy), speeds 400, 240, 230 units/s; the Scout's jump rises 49.9
+  units and its double jump 95.2; a rocket jump rose 170.8 units and
+  cost 39 health. The 15 TF2 movement and rocket tests that were run
+  pass on Windows.
+- **Eye height**: the differences between classes are exact, but every
+  class sits 2.07 units above the spec's height measured against
+  CS:S's 64. Which side is off is not known.
+- **Bodies**: bots show the class bodies with their guns; a scene with
+  CS:S, Halo and TF2 players renders; the kill feed shows TF2's rocket
+  icon.
+- **The Minigun's pose is right**: no forearm in view; at a view-model
+  field of view of 70 our glove is within 5 pixels of the real game's
+  (captures of the real game at rest and spun up, side by side with
+  ours); the gun stands raised at rest and drops behind the glove when
+  spun or firing.
+- **Build and start**: the playtest build took 6 min 39 s. A first start
+  with a partly cold cache took about 85 s to the first playable frame
+  (514 MB fetched during the map load, no failed download); warm starts
+  17 to 19 s.
+- **The sandbox is slow**: a median of 25 to 80 ms per frame, apparently
+  because it preloads every game's weapon models (2,821); real matches
+  ran at about 4 ms.
+- **Not checked**: fire sounds (muted), TF2 against CS:S frame times in
+  the same spot, close-ups of bots running and firing.
 
 ### UGG playtest 7, 2026-11-14 (user and testers, Windows, live)
 

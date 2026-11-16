@@ -44,8 +44,12 @@ section; Open questions.
   directions by the dominant stick axis, with no acceleration limit and
   no air control. That is what makes a Grunt lumber and wobble: its
   standing walk cycle moves it between 0.054 and 0.069 WU per tick
-  inside one 16-frame cycle. A Hunter and the Flood combat Elite have
-  no backward or sideways walk at all.
+  inside one 16-frame cycle. Motion starts and stops in one tick, one
+  tick after the stick, at full speed whatever the stick's size. A
+  Hunter and the Flood combat Elite have no backward or sideways walk
+  at all: pushed that way they stop dead in their default pose. Every
+  character can jump (the Flood combat forms 3.5 WU high) and, with
+  most weapons, crouch.
 - **What a character may hold is decided by its animation graph**: a
   weapon whose label (`ar`, `hp`, `pr` ...) is not a weapon type of the
   graph's `stand` seat cannot be selected. No character's graph covers
@@ -63,7 +67,9 @@ section; Open questions.
   outright under multiplayer rules.
 - **Aim is rate-limited for every character but the Spartan**: the
   unit tag's aiming velocity limits (2π rad/s for most, π rad/s for the
-  Hunter) apply to player-controlled units too.
+  Hunter) apply to player-controlled units too, and the aim stays
+  within 90° of the body, whose feet follow the view at their own
+  turning rate.
 - **Voice**: each character has a dialogue tag (Grunt 65 filled
   vocalizations, 459 lines; Elite 53, 271; Jackal 63, 577; Hunter 8,
   90). A player-worn body speaks only what the damage code triggers:
@@ -123,7 +129,7 @@ the stated class and the vitality values are plausible):
 | 0x200 | f32 | maximum body vitality | points; when this or the next is above 0 both replace the collision model's maxima |
 | 0x204 | f32 | maximum shield vitality | points |
 | 0x208 | f32 | shield sapping radius | 0 on every disc variant |
-| 0x20C | i16 | forced shader permutation index | when not 0, every shader of the model draws this permutation (the rank colour of Elites) |
+| 0x20C | i16 | forced shader permutation index | when not 0, every shader of the model draws this permutation (the rank sheen of Elites: section 1, The Elite's colours) |
 | 0x22C | block | change colors | rank colours (count 0 or 1 on the disc) |
 
 The scenario's actor palette is the block at 0x420 of the scenario's
@@ -216,14 +222,80 @@ differ in four ways:
    0x40000); the Marine bipeds (different starting weapon, model or
    armour).
 2. **The actor variant's forced shader permutation** (0x20C): the
-   Elite's rank colour. Minor 0, major 1, commander 2, spec-ops 3,
+   Elite's rank sheen. Minor 0, major 1, commander 2, spec-ops 3,
    stealth 0 (the stealth Elite's look is its active camouflage, not a
-   permutation). The colour each permutation index gives was not
-   checked (Open questions).
-3. **The actor variant's change colour** (0x22C, one entry): Grunt
-   majors and spec-ops, Jackal minors and majors, the Elites, the
-   crewmen (minors of Grunts have none).
+   permutation). See "The Elite's colours" below.
+3. **The actor variant's change colour** (0x22C, elements of 0x20
+   bytes: a lower and an upper RGB bound, then 8 unused bytes; one
+   entry where present): Grunt majors and spec-ops, Jackal minors and
+   majors, the Elites, the crewmen (minors of Grunts have none). When
+   the actor is created, slot i of the unit's change colours (for each
+   entry i, at most 4) becomes the HSV blend of the two bounds at a
+   random factor drawn from the game-state random generator; it
+   replaces whatever the biped tag's own change colour chose.
 4. **The actor variant's vitality** (0x200, 0x204): section 5.
+
+### The Elite's colours
+
+An Elite's rank look is two things layered on the same grey-blue
+armour textures:
+
+1. **Change colour A tints the whole armour.** Every armour shader of
+   both Elite models (`elite torso`, `elite arms`, `elite legs`, `elite
+   head`, `elite heada`, `elite legsa`; `elite special body`) is a model
+   shader with change colour source A, and their multipurpose maps'
+   alpha (the change-colour mask on the Xbox, `shaders.md`) is fully
+   opaque everywhere (measured), so the diffuse colour is the base map
+   times colour A all over. (The teeth and the transparent inset
+   lights are not tinted.)
+2. **The shader permutation picks the reflection's colour.** A
+   permutation index p makes every bitmap the shader reads use its
+   image p modulo that bitmap's image count. The Elite's base, detail
+   and multipurpose bitmaps have one image each, so only the
+   reflection cube map changes: `characters\elite\bitmaps\cubemaps`
+   holds four cube maps whose average colours are, by index, 0 blue
+   (9, 59, 142 of 255), 1 maroon red (84, 16, 36), 2 orange gold (156,
+   99, 22), 3 grey violet (81, 77, 98). The reflection is masked by the
+   multipurpose map's red channel, so it is a sheen over the tinted
+   armour. Index 0 is "not forced": the model's own shader references
+   (all permutation 0) are used.
+
+What each rank wears (forced permutation; colour A from the actor
+variant):
+
+| Rank (actor variants) | Biped | Permutation, sheen | Colour A |
+|---|---|---|---|
+| minor (plasma rifle, needler, ranged) | `elite` | 0, blue | (0.314, 0.302, 0.533), blue violet |
+| major (plasma rifle, needler) | `elite` | 1, red | (0.251, 0.082, 0.086), dark red |
+| commander (plasma rifle, energy sword) | `elite special` | 2, gold | (0.294, 0.239, 0.055), dark gold |
+| spec-ops (plasma rifle, needler) | `elite special` | 3, grey | (0, 0, 0), black |
+| stealth, stealth major | `elite special` | 0, blue | none: the tag's own (below) |
+
+A unit created without an actor gets no forced permutation (0, the
+blue sheen) and the change colours of its placement and its tag
+(`objects.md`, Change colours). The `elite` tag's change colour A has
+no permutations, so it **keeps the colour the unit was created with**:
+a player-worn `elite` created with the player's colour in all four
+slots, as a multiplayer Spartan is, wears the player's colour all over
+(team red or blue, or the free-for-all colour), which is a usable team
+tint with no change. The `elite special` tag's A has one permutation
+(grey, 0.565 to 0.678), so without an actor it is always grey whatever
+it is created with. For a rank look on a player, set the forced
+permutation and colour A from the table (ours: an implementation may
+pair the red team with the major's permutation 1 and the blue team with
+0 while tinting A by the team colour).
+
+The other characters' colours work the same way through colour A
+(no forced permutation): the Grunt tag's A is orange ((0.863, 0.502,
+0.173) to (0.824, 0.443, 0.157)), overridden red for majors ((0.824,
+0.075, 0.075) to (0.643, 0.090, 0.090); needler majors' upper bound
+(0.600, 0.082, 0.082)) and near black for spec-ops ((0.071, 0.071,
+0.071) to black); the Jackal tag's A is blue grey ((0.259, 0.373,
+0.490) to (0.267, 0.353, 0.482)), the minor's actor colour the same,
+the major's pink ((0.675, 0.459, 0.459) to (0.710, 0.435, 0.443)); the
+Hunter has no change colours at all.
+
+### Model permutations
 
 The model's own permutations add variety independent of rank: the
 Elite's `arms`, `head`, `legs` regions (`base00` or an armoured
@@ -287,8 +359,21 @@ variant number of the object picks them as `models.md` describes.
    model, rule 6). An empty hand marker attaches at the unit's origin.
    The weapons carry left-hand markers for the humans (`left hand
    cyborg`, `left hand marine`) and for Covenant hands (`left hand
-   covenant` on the fuel rod gun only); which IK points each character
-   graph's weapon classes hold was not read (Open questions).
+   covenant` on the fuel rod gun only).
+   **The off hand is free on every Covenant and Flood character.** A
+   unit pins a hand only through its weapon class's IK points
+   (`animations.md`, Inverse kinematics), and on the disc the classes a
+   held weapon can select have none for the Elite (pistol, sword), the
+   Grunt (pistol, `missle`), the Jackal (pistol), the Hunter (unarmed)
+   or either Flood combat form, standing or crouched: their off hands
+   move only as the animations move them (the Jackal's off hand is its
+   shield arm). The Elite's `rifle` class does pin its `left hand
+   elite` marker to the weapon's `left hand elite` marker, but that
+   class has no movement animations and selects no weapon a player
+   holds standing. The Marine's `rifle` class pins its `left hand` to
+   the weapon's `left hand marine` (as the Spartan's pins `left hand
+   cyborg`); its `pistol` class has one IK point whose two marker names
+   are empty, which pins nothing.
 5. **Melee and grenades by a player.** The player's melee action uses
    the weapon type's melee slot (`animations.md`, Actions); only the
    Spartan's graph fills it. A character's own melee animation is the
@@ -313,9 +398,22 @@ variant number of the object picks them as `models.md` describes.
    and the material `shield` (type 16, jackal energy shield) of its
    collision model, on the node `frame shield` (damage part 8, right
    hand). The unit's shield vitality *is* this arm shield (section 5).
-   Its region is flagged "disappears when shield is off": while the
-   shield vitality is 0 the region draws its second permutation (the
-   shield gone), and it returns when the shield recharges.
+   Its region is flagged "disappears when shield is off": when the
+   shield is depleted the object's permutation for that region becomes
+   1, and when its recharge begins (for the Jackal, the same tick it is
+   full again) it returns to 0. The one per-region permutation index
+   chooses both the drawn permutation (the render model's region 3,
+   `~shield_off`: the disc not drawn) **and the collision BSP of
+   every collision node of that region** (the collision model's region
+   3 has the same two permutations, `base00` and `~shield_off`; the two
+   models list their regions in the same order, so the index is the
+   same). The node `frame shield` has two BSPs: `base00`, 54 surfaces of
+   materials `armored` and `shield` spanning 0.10 × 0.43 × 0.50 WU (the
+   energy disc), and `~shield_off`, 6 surfaces of material `armored`
+   only, 0.04 × 0.06 × 0.09 WU (the emitter on the forearm). So **while
+   the shield is down the disc stops blocking anything**: shots pass
+   where it was, and only the small emitter remains, whose `armored`
+   material leaks every hit to the body (section 5).
 
 ### What each graph animates (stand seat; crouch where it differs)
 
@@ -526,60 +624,459 @@ the Jackal's `frame shield` is part 8, the Hunter's spikes part 1.
    stunned versions when the body stun is above 0.2 **or** the unit's
    stunned movement threshold is positive and its recent body damage
    exceeds it (Marines 0.1, others 0). Zero throttle: idle. The seat is
-   `stand`, or `crouch` while crouched.
+   `stand`, or `crouch` while crouched. There is no diagonal: a stick
+   at (0.7, 0.7) is "front", and the body moves straight ahead.
 3. **Velocity from root motion.** Each tick, if the unit is not
-   airborne and not slipping, its horizontal velocity is set to the
-   current frame's root motion (the animation's frame info dx forward,
-   dy left, in WU per tick, in the body's facing frame), with no
-   acceleration limit. The throttle's magnitude does not matter: any
-   push past the dead zone gives the animation's full speed. If the
-   frame info carries a yaw (turn animations) the body rotates by it.
-4. **A missing direction does not move.** If the graph has no
-   animation for the wanted state, the unit cannot enter it and stays
-   in its current state (Open questions: the exact fallback); in
-   practice a Hunter standing still and pushed back stays idle, and one
-   walking forward and pushed back keeps walking forward until the
-   stick returns. The Flood combat Elite and the carrier have only
-   move-front in every seat; the Flood human has front and back.
+   airborne and not slipping, its velocity is set from the current
+   frame's root motion with no acceleration limit; the details (which
+   frame, which frame of reference, the loop point, permutations,
+   blends, partial stick) are in "Root motion, tick by tick" below.
+4. **A missing animation stops the body.** If the graph has no
+   animation for the wanted state, the state is entered anyway with no
+   animation at all: no root motion (the body stops on the next tick)
+   and the model's default pose. See "A missing animation" below; this
+   corrects an earlier draft that had the body keep its old state.
 5. **The infection-form speed boost.** Bipeds with the "random speed
    increase" flag (bit 11; none of the candidates) scale root motion by
    1 + d × (k mod 137) × 0.00729927 where k is the object's index and d
    the difficulty's infection-form value; not for player-worn bodies we
    offer.
-6. **Facing.** While moving the body yaw turns toward the aim yaw by at
-   most the biped's moving turning speed / 30 per tick (`movement.md`
-   section 1); motion is along the body's facing, so a slow-turning
-   body walks where it faces, not where the player aims. Idle, the
-   turn-left and turn-right animations (90° over 14 frames on every
-   character) turn the body once the aim is more than the stationary
-   turning threshold away.
+6. **Facing.** While in a move state the body yaw turns toward the aim
+   yaw by at most the biped's moving turning speed / 30 per tick
+   (`movement.md` section 1); motion is along the body's facing, so a
+   slow-turning body walks where it faces, not where the player aims.
+   Idle, the turn-left and turn-right animations (90° over 14 frames on
+   every character) turn the body once the aim is more than the
+   stationary turning threshold away. Details and per-character rates:
+   "Turning and aiming" below.
 7. **Aim lag.** The unit's aiming velocity and acceleration limits
    (`objects.md`, unit layer 0x264 and 0x268) move the unit's aim
    toward the wanted aim by at most those rates **for every unit,
-   player-controlled included**. The Spartan's are 0 (instant). The
-   looking limits (0x270, 0x274) do the same to the head's look.
-8. **Jumping.** Any biped jumps when grounded and not hard-landing:
-   the vertical velocity becomes at least the biped's jump velocity
-   (scaled for a player by 1 − body stun × 0.8). Gravity is
-   `movement.md`'s.
+   player-controlled included**, and the aim is held inside the held
+   weapon class's aiming bounds about the body. The Spartan's limits
+   are 0 (instant). The looking limits (0x270, 0x274) do the same to
+   the head's look. "Turning and aiming" below has the exact motion.
+8. **Jumping.** Any character jumps when its player presses jump,
+   exactly as the Spartan does (`movement.md` section 3: grounded, not
+   hard-landing, the 6-tick jump timer, the velocity's upward part
+   raised to the biped's jump velocity, scaled for a player by 1 − body
+   stun × 0.8). No graph has a jump animation; see "Jumping and
+   crouching" below for heights and landings.
 9. **No air control.** Only the player-physics branch sets an airborne
-   acceleration; a character in the air keeps its velocity until it
-   lands.
+   acceleration; a character in the air keeps its horizontal velocity
+   until it lands. Gravity is `movement.md`'s.
 10. **Landing.** The landing velocities and times of the biped tag
-    (`movement.md` section 6) apply as written; while hard-landing
-    (`landing` state 1) the unit does not move.
+    (`movement.md` section 6) apply as written, but the effect differs
+    from the Spartan's: during a **soft** landing the body moves by the
+    landing animation's root motion, which is nearly zero, so it stands
+    still for the recovery time; during a **hard** landing the wanted
+    motion is zero and the velocity brakes at 0.0053333 WU/t² (it
+    slides to a stop, as the Spartan does). "Meeting the world" below
+    has the numbers.
 11. **Crouching** works as `movement.md` section 4 with the biped's
-    own heights and transition time (0.2 s on all).
+    own heights and transition time (0.2 s on all), provided the
+    `crouch` seat has a weapon type for the held weapon; otherwise the
+    body cannot crouch at all ("Jumping and crouching" below).
 12. **Walking slopes** use the biped's own maximum slope and up- and
-    downhill scales: 60° for Covenant and Flood (uphill 30° to 60°,
-    scale 0.5; downhill 15° to 45°, scale 2), 45° for humans (the
-    Spartan's values).
+    downhill scales: 60° for the Covenant and the Flood combat Elite
+    (uphill 30° to 60°, scale 0.5; downhill 15° to 45°, scale 2), 45°
+    for the Marines, the crewman and the Flood combat human (uphill 20°
+    to 45°, scale 0.65; downhill 20° to 45°, scale 1.25: the Spartan's
+    values). An earlier draft put the Flood human with the Covenant; the
+    disc gives it the human values.
+
+### Root motion, tick by tick
+
+This answers how a moving character's displacement per tick comes from
+its animation. Everything here is the engine's own behaviour for any
+biped without the player physics flag; nothing in it depends on
+whether a player or an actor drives the body.
+
+**Which animation.** The wanted state of rule 2 picks a slot of the
+current weapon class (`animations.md`, State to animation): move-front,
+move-back, move-left or move-right (the stunned-* slots for the stunned
+states). The class is the one the held weapon selected in the current
+seat (`stand` or `crouch`). A player-worn body is never in `alert`,
+`flee` or `flaming` (a player's unit always asks for the combat stance),
+so the AI's slow patrol walk and flee run are never used.
+
+**Permutations.** A slot names the first animation of a chain; the
+chain's animations carry cumulative weights rising to 1. On entering a
+state, and again every time a looping animation runs past its last
+frame, a uniform random number r in [0, 1) is drawn from the game's
+deterministic random generator (the one that affects game state, so
+every machine of a network game draws the same) and the first animation
+of the chain whose cumulative weight is at least r plays. On the disc
+**no movement slot of the Elite, Grunt, Jackal, Hunter or Marine has
+more than one permutation** (the Grunt's move-front is named `%0` but
+is alone in its chain, weight 1). The only movement chain with two is
+the Flood combat Elite's standing move-front (24 frames at 0.0625 WU/t
+and 22 frames at 0.0800 WU/t, cumulative weights 0.5 and 1): its pace
+is re-chosen every loop, giving an average of 3.26 WU per 46 frames,
+0.0709 WU/t (2.126 WU/s) over a long run. Idle, ping and death slots
+have permutations elsewhere; they do not move the body.
+
+**Which frame, and the one-tick lag.** In each tick the body first
+decides its wanted state, then moves using the frame the current
+animation is showing (the frame shown since the previous tick), and
+only then does the animation advance by one frame, after which a new
+state (if wanted) starts at its frame 0. So:
+
+- pushing the stick from idle on tick T: tick T moves by the idle
+  animation's frame (zero) and enters the move state; tick T + 1 moves
+  by the move animation's frame 0, tick T + 2 by frame 1, and so on;
+- releasing on tick R: tick R still moves by the current move frame and
+  enters idle; tick R + 1 moves by the idle frame, which is zero or
+  nearly (the idle animations here move at most 0.0004 WU in a frame
+  and nothing over a loop);
+- changing direction (front to left) on tick C: tick C moves by the
+  front frame, tick C + 1 by frame 0 of the left animation. A new state
+  always starts its animation at frame 0; the phase is not carried over.
+
+There is no acceleration and no braking: speed goes from zero to the
+frame's full step in one tick and back to zero in one tick, one tick
+after the input. (The one exception is slipping, below.)
+
+**The loop point.** Every movement animation here has loop frame 0, so
+after its last frame N − 1 it restarts at frame 0 with a fresh
+permutation draw, without any blend. The displacement over one loop is
+exactly the sum of the N frame steps.
+
+**Frame of reference.** A frame's (dx, dy) is a step in WU in the
+body's own frame at the start of the tick: dx along the body's facing
+f = (f_x, f_y) (horizontal, unit length), dy to its left, l = (−f_y,
+f_x). The horizontal wish is H = dx·f + dy·l. On the ground it is
+lifted onto the ground plane exactly as the Spartan's wish is
+(`movement.md` section 2, "Direction on the ground plane"), its length
+is |(dx, dy)| (dz is 0: every movement animation here has frame info
+type dx dy or dx dy dyaw), then the biped's slope scale applies and the
+velocity is set to that vector at once (acceleration limit infinite),
+minus the 1/128 ground push of `movement.md`. The facing is the body's,
+never the aim's: a strafe animation moves the body sideways relative to
+where its legs point. A frame's dyaw (turn animations only) turns the
+facing about the up axis in the same tick; the step of that tick still
+uses the facing from before the turn.
+
+**Blends do not move anything.** The 6-tick pose blend that starts on
+every state change (and the 1-tick idle/turn and 2-tick landing
+blends, `animations.md`) mixes poses only. Motion always comes from
+the one current animation's frame; the animation being blended out
+contributes nothing.
+
+**Partial stick and walking.** The throttle's size is used only to
+pass the 0.1 dead zone and to choose the direction. Playback is one
+frame per tick whatever the stick, and the step is the frame's full
+step: half a push and a full push move at the same speed. A player has
+no walk: the only walking animations belong to the AI's `alert` seat.
+The one thing a small push changes is sound: footsteps are made only
+while the throttle's magnitude is above 0.5 (`animations.md`, Bipeds,
+Footsteps), so a push between 0.1 and 0.5 moves at full speed in
+silence. (Whether to scale our player-worn bodies' speed by the stick
+is ours to decide; the game does not.)
+
+**What a moving body does in the air.** For the first 3 airborne
+ticks the move state and its animation continue (the legs keep
+walking) but the velocity is not set from them; from the 4th airborne
+tick the state is airborne (`animations.md`, Bipeds). The velocity in
+the air is whatever it was when the body left the ground.
+
+### Per-direction numbers (measured)
+
+Every frame's step of every movement animation of the three main
+characters was summed from the disc (on d20; the tags are the same
+build on every map holding them, section 8). "Loop" is the net displacement over one loop,
+"mean" the loop divided by its frames (the speed a long run averages),
+"step" the smallest and largest per-frame step length |(dx, dy)|. Sway
+is the sideways wobble inside the loop; every loop's sideways sum is
+zero except the Grunt's standing move-front (−0.0018 WU per loop, a
+drift of 0.1° to the right).
+
+| Character, seat, class | Direction | Frames | Loop (WU) | Mean (WU/t; WU/s) | Step min to max (WU/t) | Notes |
+|---|---|---|---|---|---|---|
+| Elite, stand, pistol (plasma rifle, plasma pistol, needler, human pistol) | front | 26 | 2.2500 | 0.086538; 2.596 | 0.08654 to 0.08665 | forward part constant, sway ±0.0044 |
+| | back | 26 | 1.9000 | 0.073077; 2.192 | 0.07308 to 0.07316 | |
+| | left, right | 26 | 1.9000 | 0.073077; 2.192 | 0.07308 constant | |
+| Elite, stand, sword | front | 26 | 2.5951 | 0.099812; 2.994 | 0.09981 to 0.09991 | back, left, right as pistol |
+| Elite, crouch, pistol and sword | front | 30 | 1.0000 | 0.033333; 1.000 | 0.03333 to 0.03354 | |
+| | back | 30 | 0.6500 | 0.021667; 0.650 | 0.02167 to 0.02206 | |
+| | left | 30 | 0.6000 | 0.020000; 0.600 | 0.01843 to 0.02335 | |
+| | right | 30 | 0.6000 | 0.020000; 0.600 | 0.01984 to 0.02041 | |
+| Grunt, stand, pistol | front | 16 | 1.0046 | 0.062790; 1.884 | 0.05416 to 0.06921 | the lumber: two surges per loop, sway ±0.012 |
+| | back | 20 | 0.6500 | 0.032500; 0.975 | 0.02790 to 0.03532 | |
+| | left, right | 20 | 0.8000 | 0.040000; 1.200 | 0.00503 to 0.05483 | a hop: 15 fast frames, then nearly stops for 4 |
+| Grunt, stand, fuel rod (`missle`) | front | 16 | 1.0000 | 0.062500; 1.875 | 0.06241 to 0.06274 | |
+| | back | 20 | 0.6500 | 0.032500; 0.975 | 0.03138 to 0.03444 | |
+| | left | 23 | 0.2676 | 0.011635; 0.349 | 0.00493 to 0.01413 | |
+| | right | 24 | 0.2650 | 0.011040; 0.331 | 0.00339 to 0.01361 | |
+| Grunt, crouch, pistol | front | 46 | 0.4000 | 0.008696; 0.261 | 0.00283 to 0.01180 | |
+| | back | 20 | 0.6500 | 0.032500; 0.975 | 0.02790 to 0.03532 | the standing back-step |
+| | left | 25 | 0.2775 | 0.011099; 0.333 | 0.00422 to 0.01588 | |
+| | right | 26 | 0.2900 | 0.011153; 0.335 | 0.00359 to 0.01478 | |
+| Jackal, stand, pistol | front | 24 | 1.1000 | 0.045833; 1.375 | 0.04584 to 0.04629 | sway ±0.0063 |
+| | back | 24 | 0.9000 | 0.037500; 1.125 | 0.03750 to 0.03778 | |
+| | left, right | 24 | 0.8000 | 0.033333; 1.000 | 0.03333 constant | |
+| Jackal, crouch, pistol | front | 36 | 0.5000 | 0.013889; 0.417 | 0.01388 to 0.01408 | |
+| | back | 42 | 0.5000 | 0.011905; 0.357 | 0.01190 to 0.01210 | |
+| | left | 30 | 0.4000 | 0.013333; 0.400 | 0.01283 to 0.01355 | |
+| | right | 30 | 0.4000 | 0.013333; 0.400 | 0.01302 to 0.01345 | |
+| Hunter, stand, unarmed | front | 26 | 2.0100 | 0.077308; 2.319 | 0.07731 to 0.07770 | no back, left or right |
+| Hunter, crouch, unarmed | front, back | 22 | 0.4150 | 0.018865; 0.566 | 0.0099 to 0.0307 | |
+| | left, right | 23 | 0.3846 | 0.016723; 0.502 | 0.0007 to 0.0236 | |
+
+The idle turn animations of all four move the body slightly while
+turning (Elite 0.0016 WU per tick, Grunt 0.0006, Jackal and Hunter
+below 0.0001) and turn it by 0.1121997 rad (6.43°) per frame, 90° in
+14 frames.
+
+### A missing animation
+
+When the wanted state's slot is empty in the current class (a Hunter
+standing and pushed back, left or right; a Flood combat Elite pushed
+anywhere but forward; a Covenant or Flood character in a stunned
+state, below), the
+state is still entered; only melee, airborne melee, continuous melee,
+throw-grenade, leap-start and leap-melee refuse to start without an
+animation. Entering it:
+
+- clears the body's base animation: from the next tick the root motion
+  is zero, so the body **stops**, whatever it was doing (a Hunter
+  walking forward and then pushed back stops within one tick; it does
+  not keep walking forward);
+- starts the usual 6-tick pose blend toward the model's default node
+  pose (its modelling pose, arms out), which the body then holds; the
+  aim and look overlays (aim-move, since the state is a move state)
+  and any firing overlay still play on top of it;
+- makes no footsteps; the state stays until the wanted state changes,
+  and since it is a move state the body keeps turning toward the aim
+  at its moving rate while standing still.
+
+This is the engine's rule for AI and players alike. The AI never asks a
+Hunter or a Flood Elite to walk backward or sideways, so the campaign
+never shows it; a player can. Which characters lack which (stand / crouch,
+default class):
+
+| Character | Stand | Crouch |
+|---|---|---|
+| Elite, Grunt, Jackal, Marine (rifle), Spartan | all four | all four (the Grunt's crouched back is the standing back animation) |
+| Hunter | front only | all four |
+| Flood combat Elite | front only | front only |
+| Flood combat human | front, back | front only |
+| Flood carrier, infection form | front only | front only |
+| Marine, crewman (pistol, unarmed) | all four | none |
+| every character but the Marine and the Spartan | no stunned moves | no stunned moves |
+
+**The stunned states.** Body stun is given only to a player's unit in a
+multiplayer game (`health_shields.md`, Stun), so the AI never enters
+the stunned moving states. A player-worn Elite, Grunt, Jackal, Hunter
+or Flood hit by a stunning damage effect (the plasma rifle's and
+plasma pistol's bolts: stun 1 for 4 ticks, stacking to 37) while the
+stick is pushed enters a stunned move state with no animation: it
+stops dead in its default pose for the stun's duration, and it does
+not turn either (the moving turn runs only in the plain move states).
+A faithful port reproduces a freeze the original never showed; our
+choice (Open questions) is likely to play the plain move animation
+instead, with the step scaled by (1 − 0.8 s_b) as the Spartan's speed
+is.
+
+### Meeting the world
+
+**Ground and the ground test** are `movement.md` section 5 with the
+character's own pill (`movement.md`, The pill: a player-controlled
+character gets the segment between two spheres of its own radius and
+heights; an AI-driven one is a single sphere) and its own minimum
+ground normal: cos 60° = 0.5 for the Covenant and the Flood Elite, cos
+45° = 0.7071 for the humans and the Flood human. Ground steeper than
+that is not ground: the body is airborne there and slides down it under
+gravity with no control.
+
+**Slopes.** The step's length is scaled by the travel direction's
+climb k (the sine of the path's slope) as `movement.md` section 2
+describes, with the character's own values. For the Covenant and the
+Flood Elite: downhill, ×1 down to 15°, rising linearly to ×2 at 45° and
+steeper; uphill, ×1 up to 30°, falling linearly to ×0.5 at 60°. So an
+Elite running straight down a 45° slope covers 0.1731 WU per tick along
+the slope (0.1224 horizontally). Crossing a slope sideways is level
+travel and keeps the full step.
+
+**Steps.** There is no step-up code (`movement.md` section 5, Steps).
+An edge is ground when the contact normal of the rounded edge has z
+at least the minimum normal, that is for an edge no higher than
+r·(1 − cos θ_max) above the sole: 0.100 WU for the Elite and the Grunt,
+0.090 for the Jackal, 0.120 for the Hunter (Covenant 60°), 0.053 for
+the Marine and the Flood human (45°); such an edge is walked up like a
+ramp at the full step. Higher edges, up to the bottom sphere's centre
+(the radius: 0.2, 0.2, 0.18, 0.24 WU), can be climbed only by the
+clip's upward slide, as for the Spartan; because a character's ground
+velocity is reset to the root motion on every grounded tick, the
+heights it carries over at speed were not simulated (Open questions).
+
+**Walking off a ledge.** The body becomes airborne on the first tick
+whose sweep meets no floor and keeps the velocity of its last ground
+tick (the root-motion step, plus the −1/128 WU ground push on z):
+without air control it continues in a straight line at its walking
+speed and falls on `movement.md`'s gravity, 0.0035651792 WU/t². The
+legs keep walking for 3 ticks, then the airborne animation plays
+(Elite 63 frames looping from frame 30; Grunt 45; Jackal 62; Hunter 70;
+the root motion of these is not used). There is no terminal speed;
+below a vertical speed of −0.3430028 WU/t the falling-damage rule
+deals 105 points every tick in the air, and the impact deals falling
+damage from 0.14625688 WU/t up, both as `movement.md` section 6 says
+and with no exemption for characters (only the infection form's biped
+flags are immune).
+
+**Landing.** The character's own landing thresholds (section "The
+numbers", second table) choose soft or hard by the impact speed λ as in
+`movement.md` section 6. Then:
+
+- soft: the recovery ticks R = trunc(soft time × 30 × q) (q =
+  (λ − v_soft)/(v_hard − v_soft)); the land-soft animation plays and
+  its root motion moves the body, which on the disc is nearly nothing
+  (Elite 0.0009 WU over 37 frames, Hunter −0.011 over 21), so the
+  character stands still for R ticks, then resumes the move animation
+  from frame 0. The Grunt's and the Jackal's land-soft slots hold their
+  land-hard animations (Grunt 0.141 WU over 49 frames, at most 0.020
+  WU in a frame);
+- hard: R = trunc(hard time × 30 × q) with q = clamp(λ/(v_max −
+  v_hard), 0, 1) (the quirk of `movement.md`); the wanted motion is
+  zero, the velocity brakes at 0.0053333 WU/t² (an Elite at full run
+  stops in 17 ticks), and no jump is possible.
+
+The Grunt's thresholds are low (soft from 0.5 WU/s = 0.01667 WU/t, hard
+from 1 WU/s = 0.03333 WU/t): any fall of more than 8 ticks (a drop of
+about 0.16 WU, 0.5 m) is a hard landing for it, and stepping off a
+kerb a soft one. For the Elite, Jackal and Hunter a hard landing needs
+3 WU/s (a drop of about 1.36 WU).
+
+**Pushes.** A damage effect's push reaches a living character halved,
+as for any biped (`movement.md` section 8): its velocity gets half the
+push, it becomes airborne and slipping, and **its body turns to face
+the push direction**. Pushes are scaled by the object's acceleration
+scale first (`health_shields.md`; Elite 0.6, Grunt 0.9, Jackal 1.0,
+Hunter 0.5, Marine 1.0, Flood Elite 0.9). In the air it keeps the
+pushed velocity. On landing it stays slipping: the velocity moves
+toward the root-motion wish by at most 0.0053333 WU/t² per tick, with
+gravity still applied on the ground, until a tick in which the wish is
+within one such step; from then the root motion sets the velocity
+again. Because a character moves along its body and the push turned
+the body, after a push it walks in the push's direction until its
+moving turn brings the body back to the aim (half a second for a
+Grunt turned 90°).
+
+**Other bodies.** The mover meets other units through their collision
+models (`movement.md` section 5, Moving and other objects); a living
+character collides with every living biped except where a biped is
+flagged to pass through bipeds (only the infection form). Bumping into
+another unit has no effect on a player's body in a game (the reactions
+to a bump are the AI's).
+
+### Jumping and crouching
+
+**Jumping.** Every character can jump: the jump control reaches any
+unit, and the jump itself is not tied to the player physics flag. It
+replaces the upward part of the velocity by the biped's jump velocity
+(× (1 − 0.8 s_b) for a player under body stun) and keeps the
+horizontal part, which for a character is the root-motion step of the
+take-off tick; there is no jump animation (the move or idle animation
+continues for 3 ticks, then the airborne one). On flat ground (single
+precision, `movement.md` section 3's flight):
+
+| Character | Jump velocity (WU/t) | Apex above the take-off (WU) | Flight (ticks) | Impact λ (WU/t) | Landing | Recovery |
+|---|---|---|---|---|---|---|
+| Elite, Jackal, Hunter | 0.07 | 0.6526 (1.99 m) | 39 | 0.0690 | soft | 9 ticks standing still |
+| Grunt | 0.07 | 0.6526 | 39 | 0.0690 | **hard** (above 1 WU/s) | 24 ticks, braking |
+| Marine, crewman | 0.07 | 0.6526 | 39 | 0.0690 | soft | 2 ticks |
+| Flood combat Elite and human | 0.16 | 3.5105 (10.70 m) | 89 | 0.1573 | hard | 45 ticks; falling damage at scale 0.182 (36.4 points before material modifiers) |
+| Flood infection form | 0.05 | 0.3257 | 28 | 0.0498 | soft | (immune to falling damage) |
+
+A running Elite therefore jumps about 3.37 WU far (0.0865 × 39), a
+Grunt about 2.45 (its take-off step varies from 0.054 to 0.069 with the
+frame), a Jackal 1.79, a Hunter 3.02. In the campaign only the Flood's leaps
+(aimed by the actor, which may change the jump's direction) and the
+infection forms use the jump; a player-worn Flood's straight-up 3.5 WU
+jump is faithful but surely unwanted (Open questions).
+
+**Crouching.** Every candidate has a `crouch` seat with its own
+movement animations, so every one can crouch, with the speeds of the
+per-direction table, the crouch pill and camera of section 3 and the
+0.2 s (6-tick) transition. Three exceptions:
+
+- the **Hunter**'s and the **Flood combat Elite**'s crouching
+  collision height equals or exceeds the standing one (0.8): crouching
+  only swaps to the slow animations (the Hunter's 4-way crouch walk at
+  a quarter speed);
+- the crouch seat must hold a weapon type for the held weapon, or the
+  seat change fails and the body stays standing (its crouch fraction
+  never moves): the **Elite holding the human pistol** (`hp` is in its
+  `stand` pistol class but not its `crouch` one) and the **Grunt
+  holding a fuel rod** (its `crouch` seat has no `fr` type) cannot
+  crouch;
+- the Marine and the crewman with the pistol or unarmed have no crouch
+  movement animations: crouched, any push is a missing animation (they
+  stop in their default pose).
+
+### Turning and aiming
+
+The player's view direction is the unit's wanted aim, wanted look and
+wanted body facing all at once. Three things then follow it at their
+own pace.
+
+**The aim (where shots go).** Each tick the aim moves toward the
+wanted aim on two axes, yaw and pitch, measured in the body's frame.
+For each axis the game plans the fastest motion that arrives at rest:
+accelerate at the acceleration limit, coast at the velocity limit if
+it is reached, decelerate at the acceleration limit, starting from the
+current angular velocity; the shorter axis is slowed so both finish
+together. The plan is rebuilt every tick and followed for one tick;
+when it would finish within the tick the aim is set to the target and
+its velocity to zero, and an axis within 0.001 rad of the target with
+a velocity below 0.001 counts as there. The wanted aim is first held
+inside the current weapon class's aiming bounds about the body, so the
+aim (and every shot) can never point further from the body's facing
+than those bounds even while the view does.
+
+**The body.** In a move state the body's facing turns toward the
+view's yaw at the biped's moving turning speed (a constant rate,
+snapping when it would overshoot). Idle, it does not turn until the
+view is more than the stationary turning threshold away; then a
+turn-left or turn-right animation plays once (14 frames, 90°), and
+plays again if the view is still beyond the threshold; when the view
+is more than about 154° behind the turn keeps its current side. A
+push of the stick interrupts a turn animation at once. In every other
+state (airborne, soft or hard landing, the stunned moves, throwing a
+grenade) the body does not turn; a plain move state entered without
+an animation still turns. The torso twist between the legs and the aim
+is purely the aim-still or aim-move overlay (`animations.md`, Aiming
+and looking screens): the upper body twists toward the aim within the
+aiming bounds and the feet follow only by the turning just described.
+
+| Character | Aim speed limit | Aim acceleration limit | 90° aim flick, rest to rest | Aim bounds about the body (yaw each side; down; up) | Body turn while moving | Idle turn threshold | Idle turn |
+|---|---|---|---|---|---|---|---|
+| Spartan | none | none | instant | ±90°; 90°; 90° | 337.7°/s | 60° (MP), 80° (campaign) | 7 frames per 90° |
+| Elite | 360°/s (2π rad/s) | 720°/s² | 22 ticks (0.73 s; peak 255°/s) | ±90°; 90°; 90° (all its classes) | 337.7°/s (11.3° per tick) | 60° | 14 frames per 90° (193°/s) |
+| Grunt | 360°/s | 720°/s² | 22 ticks | ±90°; 90°; 90° | 180°/s (6° per tick) | 60° | as the Elite |
+| Jackal | 540°/s (3π) | 2160°/s² (12π) | 13 ticks (0.43 s) | ±90°; 90° (crouched 60°); 90° | 180°/s | 80° | as the Elite |
+| Hunter | 180°/s (π) | 540°/s² (3π) | 25 ticks (0.83 s; reaches 180°/s) | ±90°; **45°**; 90° | 180°/s | 60° | as the Elite |
+| Marine (rifle) | 360°/s | 720°/s² | 22 ticks | ±90°; 60°; 60° | 300°/s | 90° | as the Elite |
+
+(Flick times are those of the plan: a triangle of 2√(θ/a), or θ/v +
+v/a when the velocity limit is reached, rounded up to whole ticks.)
+
+So a player-worn Grunt that swings its view 180° while running fires
+at most 90° off its body until the body has turned (15 ticks for the
+first 90°), and a Hunter cannot aim more than 45° below level: it
+cannot shoot a Grunt at its feet.
+
+The head's look follows the same planner with the looking limits (Elite
+720°/s and 1440°/s², Grunt the same, Jackal 2880°/s and 11520°/s²,
+Hunter 540°/s and 1080°/s²) inside the seat's looking bounds; it moves
+the head overlay only.
 
 ### The numbers
 
 Speeds are the cycle's mean root motion; the per-frame range is given
 where it varies by more than 5 %. Standing class is the one the
-character's default weapon uses.
+character's default weapon uses. The Elite's, Grunt's, Jackal's and
+Hunter's frame-by-frame figures are in "Per-direction numbers" above.
 
 | Character (stand class) | Front | Back | Left / right | Crouch front / back / side | Cycle (frames) |
 |---|---|---|---|---|---|
@@ -592,7 +1089,7 @@ character's default weapon uses.
 | Hunter (unarmed) | 0.0773, 2.319, 7.068 | none | none | 0.0189 (0.010 to 0.031) / 0.0189 / 0.0167 | 26; crouch 22, 23 |
 | Marine (rifle) | 0.0700, 2.1, 6.401 | 0.0500, 1.5, 4.572 | 0.0583 (0.054 to 0.063), 1.749, 5.331 | 0.0326 / 0.0326 / 0.0175 left, 0.0230 right | 20; crouch 24 |
 | Marine, crewman (pistol, unarmed) | 0.0750, 2.25, 6.858 | 0.0500 | 0.0452, 1.356, 4.133 | (no crouch moves in these classes) | 20 |
-| Flood combat Elite | 0.0625, 1.875, 5.715 | none | none | 0.0181 (0.014 to 0.022) front only | 24; crouch 36 |
+| Flood combat Elite | two permutations re-drawn each loop: 0.0625 (24 frames) or 0.0800 (22 frames); long-run mean 0.0709, 2.126 WU/s, 6.480 m/s | none | none | 0.0181 (0.014 to 0.022) front only | 24 or 22; crouch 36 |
 | Flood combat human | 0.0614, 1.842, 5.614 | 0.0614 | none | 0.0083 (0.0003 to 0.015) front only | 30; crouch 65 |
 | Flood carrier | 0.0333, 0.999, 3.045 | none | none | 0.0103 | 24 |
 | Flood infection | 0.0431, 1.293, 3.941 | none | none | 0.0040 | 27 |
@@ -693,7 +1190,11 @@ shield delay and recharge rate always come from the collision model.
    the body with shield multiplier 0, so a hit anywhere on the Jackal
    ignores the shield vitality entirely. A hit on the `shield` material
    goes to the shield (multiplier 1, body multiplier 0): it can deplete
-   the shield but never hurts the body, even after the shield is down.
+   the shield but never hurts the body. Once the shield is down the
+   `shield` material is no longer there to hit: the disc's collision
+   geometry is swapped for the emitter's (section 2, rule 7), so shots
+   aimed at the disc pass through to whatever is behind, the Jackal's
+   body included.
    Area damage uses the indirect material (`unarmored`): explosions
    ignore the shield. The weapons that hurt the arm shield are those
    whose modifier for type 16 is not 0 (plasma rifle 1, plasma pistol
@@ -1043,14 +1544,27 @@ replacements, in place:
 2. The unit's aim moves toward the wanted aim within the unit's
    aiming limits (section 4 rule 7), then its look within the looking
    limits.
-3. The biped picks its wanted movement state from the throttle
-   (section 4 rule 2) and, if not airborne or slipping, sets its
-   horizontal velocity to the current animation frame's root motion
-   (rule 3), applying the frame's yaw to the body.
-4. The physics move (`movement.md` section 5) runs with an unlimited
-   acceleration and no airborne acceleration.
-5. The animation advances one frame (`animations.md`, Playback).
-6. Damage, shield recharge, dialogue (`health_shields.md`,
+3. The body turns: in a plain move state toward the view's yaw at the
+   moving turning speed; idle, it asks for a turn animation when the
+   view is beyond the stationary threshold (section 4, Turning and
+   aiming).
+4. The biped picks its wanted movement state from the throttle
+   (section 4 rule 2; a push overrides a wanted turn) and builds its
+   wish from the frame the current animation is showing (section 4,
+   Root motion, tick by tick): zero during a hard landing; the frame's
+   (dx, dy) in the body's frame otherwise, the frame's yaw applied to
+   the body. If not airborne or slipping the acceleration limit is
+   infinite (the velocity becomes the wish); slipping, 0.0053333 WU/t²;
+   airborne, 0 (no air control). The crouch fraction moves.
+5. The physics move (`movement.md` section 5) runs; then the landing
+   check, the jump (section 4, Jumping and crouching), falling damage.
+6. Airborne (after 3 ticks), landing or dead states override the
+   wanted state.
+7. The animation advances one frame (`animations.md`, Playback); if the
+   wanted state differs (and the current one may be interrupted) the
+   new state starts at frame 0 with a permutation drawn now, or with
+   no animation if its slot is empty (section 4, A missing animation).
+8. Damage, shield recharge, dialogue (`health_shields.md`,
    `sounds.md`) as for any unit.
 
 ## Edge cases
@@ -1063,18 +1577,25 @@ replacements, in place:
   type (with no slots), the `stand` seat has none; selecting while
   crouched succeeds and leaves an empty animation set. We treat
   `stand` as the authority.
-- **The Hunter pushed backward while standing** does not move; crouched
-  it walks in all four directions at a quarter speed.
+- **The Hunter pushed backward while standing** stops (even if it was
+  walking forward) and blends into its default pose; crouched it walks
+  in all four directions at a quarter speed (section 4, A missing
+  animation).
+- **A crouch the seat cannot take** (Elite with the human pistol, Grunt
+  with the fuel rod) leaves the body standing with the standing
+  animations and the standing pill (section 4, Jumping and crouching).
+- **Body stun on a player-worn Covenant or Flood body** in multiplayer
+  freezes it in its default pose while the stick is pushed (section 4,
+  A missing animation).
 - **The Grunt's crouched back-step** is the standing back-step
   animation (0.0325 WU/t): crouched, a Grunt backs away faster than it
   walks forward (0.0087).
 - **A destroyed right arm** on a Flood combat form drops its weapon and
   inhibits firing; a player-worn Flood body loses its gun for the rest
   of its life.
-- **The Jackal's shield at zero** still blocks bodily harm on hits to
-  the `shield` material (its body multiplier is 0), while the region
-  is drawn in its `~shield_off` permutation; see Open questions for
-  whether its collision geometry remains.
+- **The Jackal's shield at zero** has no collision disc: its region's
+  collision BSP is the emitter's (section 2, rule 7), so nothing is
+  blocked until the shield returns 15 s after the last shield damage.
 - **Infection forms** have body 80 in the collision model but every
   actor variant sets 0.01: as placed in the game they die to anything.
 - **The Monitor** has 10¹⁰ shield points and no body: unkillable.
@@ -1086,7 +1607,23 @@ replacements, in place:
   flee 60 % faster; faithful player-worn bodies will feel unfair.
   This is intended by the brief (tune later).
 - **Throttle magnitude is ignored** by animation-driven bodies: a half
-  push walks at full speed.
+  push walks at full speed (silently below half a push), and a
+  diagonal push walks straight along the dominant axis.
+- **Start and stop are instant, one tick late**: no ramp, no slide
+  (section 4, Root motion, tick by tick).
+- **A soft landing stops a character** for up to 18 ticks (the
+  Spartan keeps running through his); **a Grunt hard-lands from its
+  own jump** and stands braking for 24 ticks.
+- **A player-worn Flood combat form jumps 3.5 WU** (0.16 WU/t, the
+  leap's speed) and takes falling damage from its own jump.
+- **A missing animation is a frozen default pose**: a Hunter pushed
+  backward, a Flood Elite pushed sideways, a stunned Covenant body.
+  Faithful, never seen in the campaign; likely to be replaced (Open
+  questions).
+- **A push turns the body** to face away from the blast, and the body
+  then walks that way until it turns back.
+- **The Hunter cannot aim more than 45° below level**, and every
+  character's shots stay within 90° of its body's facing.
 - **Aim lag for player-worn bodies**: a player Grunt's aim turns at
   most 360°/s and accelerates at 720°/s²; a Hunter's at 180°/s. Bullets
   of a unit without "fires from camera" (only the Spartan has it) leave
@@ -1120,19 +1657,30 @@ replacements, in place:
    pistol, pr).
 3. **Movement state and root motion.** A biped without the player
    physics flag, `stand` seat with move-front of 4 frames dx = 0.05,
-   0.06, 0.07, 0.06 and no move-back: throttle (1, 0) → velocities
-   0.05, 0.06, 0.07, 0.06, 0.05 ... WU/t forward; throttle (0.3, 0) →
-   the same; throttle (0.5, 0.6) → left (no animation: no motion);
-   throttle (−1, 0) → back (no animation: no motion).
+   0.06, 0.07, 0.06 and no move-back, an idle with zero frame info,
+   standing still on flat ground facing +X: throttle (1, 0) from tick 1
+   → velocity 0 on tick 1, then 0.05, 0.06, 0.07, 0.06, 0.05 ... WU/t
+   forward from tick 2; throttle (0.3, 0) → the same; throttle (0.7,
+   0.7) → the same (front wins ties); throttle (0.5, 0.6) → left (no
+   animation: no motion, default pose); throttle (−1, 0) → back (the
+   same). Walking forward, then (−1, 0) on tick C: tick C still moves
+   by the current front frame, tick C + 1 and after by 0 (it does not
+   keep walking forward). Releasing on tick R: tick R moves by the
+   current frame, tick R + 1 by 0.
 4. **No air control.** That biped airborne with horizontal velocity
    (0.05, 0) and throttle (0, 1) keeps (0.05, 0) until it lands.
 5. **Aim limit.** A unit with aiming velocity maximum 2π rad/s and
-   acceleration maximum 4π rad/s², aim at rest, wanted aim 90° away:
-   the per-tick limits are 0.20944 rad/t and 0.013963 rad/t²; the aim
-   speeds up by at most the acceleration limit per tick, never exceeds
-   the velocity limit, and arrives after at least 15 ticks (√(2 ×
-   1.5708 / 0.013963) = 15.0, accelerating all the way), never in one
-   tick as the Spartan's does.
+   acceleration maximum 4π rad/s², aim at rest, wanted aim 90° away in
+   yaw (inside ±90° bounds): the per-tick limits are 0.20944 rad/t and
+   0.0139626 rad/t²; the aim accelerates for 10.6 ticks to a peak of
+   0.148 rad/t (below the velocity limit), decelerates as long, and is
+   set exactly on the target on tick 22 with zero velocity, never in
+   one tick as the Spartan's is. (An earlier draft had it accelerate
+   all the way and arrive after 15 ticks; the game plans to arrive at
+   rest.) With limits π and 3π (the Hunter) the aim reaches the
+   velocity limit 0.10472 rad/t after 10 ticks, coasts 5, decelerates
+   10: about 25 ticks. A wanted aim 120° from the body's facing is held
+   at the 90° bound until the body turns.
 6. **Hits-to-kill rows** (single precision, `health_shields.md` rules,
    multiplayer headshots):
    - Grunt (body 40, no shield; materials head ×1 head, body ×0.8,
@@ -1163,6 +1711,35 @@ replacements, in place:
    dialogue fills pain body minor only: three non-lethal body hits 31
    ticks apart → three minor lines; a fourth within the count's decay
    → none (`sounds.md`).
+8. **Permutation draw.** A move slot whose chain is A (cumulative
+   weight 0.5, 24 frames of 0.0625) then B (1.0, 22 frames of 0.08):
+   with random draws 0.3 then 0.7, the first loop is A (24 ticks of
+   0.0625), the second B (22 of 0.08); a draw of exactly 0.5 picks A.
+   Draws happen when the state is entered and each time the animation
+   passes its last frame, never in between.
+9. **Landings.** An Elite (soft 1 WU/s, hard 3 WU/s, soft time 0.6 s)
+   holding forward lands from a flat-ground jump at λ = 0.069042 WU/t:
+   soft, q = 0.5356, 9 recovery ticks in which the body moves only by
+   the land-soft animation's root motion (take it as 0); then the move
+   animation restarts at frame 0. A Grunt (soft 0.5, hard 1, hard time
+   2 s) doing the same lands hard: q = 0.4143, 24 ticks, its velocity
+   braking by 0.0053333 WU/t per tick from the take-off step.
+10. **Crouch refused.** A graph whose `crouch` seat has no type for
+    the held weapon's label: crouch held → the seat stays `stand`, the
+    crouch fraction stays 0, the pill keeps its standing height.
+11. **A push turns the body.** A living character facing +X with an
+    incoming push of (0, 0.1, 0.045) WU/t: its velocity gains (0,
+    0.05, 0.0225), it becomes airborne and slipping, and its facing
+    becomes +Y (the push's direction made horizontal).
+12. **Shield region swap.** A unit whose collision region r is flagged
+    "missing when shield is zero" and has two permutations, with a node
+    of region r holding two BSPs: shield above 0 → rays test BSP 0;
+    shield depleted → BSP 1 (and the drawn permutation 1); recharge
+    begins → BSP 0 again.
+13. **Forced shader permutation.** A shader whose cube map bitmap has 4
+    images and whose other bitmaps have 1: forced permutation 0 → the
+    model's own reference (image 0 everywhere); 2 → cube image 2,
+    other bitmaps image 0; 5 → cube image 1 (5 mod 4).
 
 ### (b) Against the disc
 
@@ -1177,11 +1754,15 @@ replacements, in place:
    head 0.449; `characters\hunter\hunter` 0.8, 0.8, 0.24, top 0.969.
 3. **Speeds**: mean dx per frame of `stand pistol move-front` in
    `characters\elite\elite` 0.0865 over 26 frames; Grunt's `stand
-   pistol move-front` (first permutation) 0.0628 over 16 frames, per
-   frame between 0.054 and 0.069; Jackal 0.0458 over 24; Hunter `stand
-   unarmed move-front` 0.0773 over 26 and no stand move-back; Marine
-   `stand rifle move-front` 0.0700 over 20. Biped flags: Spartans
-   0x202, every character 0x200 or 0.
+   pistol move-front%0` (the only animation of its chain, cumulative
+   weight 1) 0.0628 over 16 frames, per frame between 0.054 and 0.069;
+   Jackal 0.0458 over 24; Hunter `stand unarmed move-front` 0.0773 over
+   26 and no stand move-back; Marine `stand rifle move-front` 0.0700
+   over 20; the Flood combat Elite's `stand pistol move-front%0` and
+   `%1` (24 frames, sum 1.5000; 22 frames, sum 1.7600; cumulative 0.5
+   and 1). Every row of section 4's per-direction table (frames, loop
+   sum, step range). Biped flags: Spartans 0x202, every character 0x200
+   or 0.
 4. **Turning and aim**: moving turning speed Elite 5.893977, Grunt
    3.1415927, Hunter 3.1415927, Marine 5.2359877; aiming velocity
    maximum Grunt 6.2831855, Jackal 9.424778, Hunter 3.1415927, Spartan
@@ -1211,6 +1792,36 @@ replacements, in place:
    modifier 1.0 for type 30, the campaign maps' 0.8; every other
    multiplayer weapon damage effect is identical on Blood Gulch and the
    campaign maps.
+10. **IK points** (stand and crouch seats): none in any weapon class of
+    the Grunt, Jackal, Hunter and both Flood combat graphs, and none in
+    the Elite's pistol and sword classes; the Elite's rifle class has
+    `left hand elite` → `left hand elite`; the Marine's rifle class
+    `left hand` → `left hand marine`, its pistol class one point with
+    two empty names.
+11. **Aiming bounds** (each side, frame count × per-frame): every
+    class named in item 10 that selects a weapon ±90° yaw (1 × 1.5708);
+    pitch ±90° except the Hunter's
+    unarmed class (down 1 × 0.7853982, up 1 × 1.5708), the Jackal's
+    crouch pistol class (down 1 × 1.0471976) and the Marine's stand
+    rifle class (down and up 1 × 1.0471976).
+12. **Jackal shield geometry**: collision model `characters\jackal\
+    jackal` region 3 `shield`, flags 0x10, permutations `base00` and
+    `~shield_off`; node `frame shield` (region 3) BSPs of 54 surfaces
+    (materials 2 and 3) and 6 surfaces (material 2 only); the render
+    model's region 3 is `shield` with the same two permutations.
+13. **Elite colours**: `characters\elite\bitmaps\cubemaps` has 4 cube
+    images, mean colours about (9, 59, 142), (84, 16, 36), (156, 99,
+    22), (81, 77, 98); the armour shaders' change colour source is A;
+    the armour multipurpose maps' alpha is 255 everywhere; actor
+    variant colours and forced permutations as in section 1; the
+    `elite` tag's change colour A has no permutations, the `elite
+    special` tag's one (grey 0.678 to 0.565).
+14. **Landing, jump and slope fields**: jump velocity 0.07 (Elite,
+    Grunt, Jackal, Hunter, Marine), 0.16 (both Flood combat forms);
+    minimum soft / hard and maximum hard landing velocities and the
+    landing times of section 4's second table; maximum slope 60° (cos
+    0.49999997) for the Elite, Grunt, Jackal, Hunter and Flood combat
+    Elite, 45° (0.70710677) for the Marine and the Flood combat human.
 
 ## Confidence per section
 
@@ -1224,6 +1835,12 @@ replacements, in place:
 | Weapon attachment, melee by a player | reference only |
 | Body dimensions, pills, hit materials | checked against the disc (bounds in the bind pose: inferred as "height") |
 | Movement by root motion, aim limits, jumping, no air control | reference only (the numbers checked on the disc) |
+| Root motion tick by tick, permutations, missing animations, stunned states | reference (the engine's unit and biped code traced for these cases); chains and weights checked on the disc; not observed in a running game |
+| Landings, pushes, slopes, steps for characters | reference rules with the disc's per-biped values; jump and landing figures computed in single precision; step heights static bounds only |
+| Turning and aiming | reference (the aim planner and the clip to the aiming bounds); limits and bounds checked on the disc; flick times computed from the plan's continuous profile |
+| Left-hand IK | checked on the disc (IK point blocks read) with the reference's rule |
+| Elite colours | reference (how a permutation picks a bitmap image; how actor colours apply) and disc (bitmap images, shader sources, mean colours of the decoded images); the look itself not compared with the game |
+| Jackal shield when down | reference (one permutation index drives drawing and collision) and disc (the two BSPs measured) |
 | Speeds and cycles | checked on the disc (frame info summed) |
 | Vitality numbers | checked on the disc |
 | Actor variant override rule | reference only |
@@ -1236,9 +1853,13 @@ replacements, in place:
 
 ## Open questions
 
-1. **Missing movement animation.** The exact behaviour when the wanted
-   state has no animation (stay in the current state, or idle?) was not
-   traced through the state machine; test with a Hunter.
+1. **Missing movement animation.** Answered: section 4, "A missing
+   animation" (the state is entered with no animation; the body stops
+   and takes its default pose). What remains is ours: whether a
+   player-worn Hunter or Flood should instead play another direction's
+   animation, or none and keep still in the idle pose. Checkable in
+   the game only by possessing a Hunter (a debug possession of a unit
+   by bumping it exists in the engine).
 2. **Firing origin of the Hunter's cannon** (invisible weapon attached
    at the Hunter's origin): does the projectile leave from the
    weapon's `primary trigger` (the weapon has no model, so no marker)
@@ -1248,13 +1869,13 @@ replacements, in place:
    Xbox campaign never lets the player pick them up) is unknown; ready,
    reload and melee timing come from first-person animations that do
    not exist.
-4. **Elite rank colours**: which colour each forced shader permutation
-   (0 to 3) shows, and the change colours of the actor variants, were
-   not read.
-5. **Jackal shield collision when down**: whether the collision
-   model's `shield` region stops blocking hits while its render
-   permutation is `~shield_off` (does the collision model's region have
-   a matching permutation?) was not checked.
+4. **Elite rank colours.** Answered: section 1, "The Elite's
+   colours" (permutation 0 to 3 = blue, red, gold, grey reflection;
+   colour A tints the armour; the player's colour reaches a plain
+   `elite`).
+5. **Jackal shield collision when down.** Answered: section 2, rule 7
+   (the disc's collision geometry is swapped for the emitter's; nothing
+   is blocked).
 6. **Melee damage of a player-worn body**: the player's melee uses the
    held weapon's melee damage effect; whether a character's own melee
    damage effect (Elite `characters\elite\elite melee`, 30 to 35;
@@ -1263,14 +1884,36 @@ replacements, in place:
 7. **Splitting voices**: the Marine unit is 59.6 MB because it carries
    six voices; whether a "Marine" download should carry one voice is a
    product decision.
-8. **Mean speeds** hide per-frame variation; a faithful port must play
-   the per-frame root motion, not the mean. The Grunt's move-front has
-   permutations (`%0` names a chain); which permutation plays when was
-   not measured here (`animations.md`, permutations).
-9. **Left-hand IK**: the weapon classes' IK point blocks of the
-   character graphs were not read; whether a character's off hand is
-   pinned to the weapon (as the Spartan's is) is unknown.
+8. **Per-frame motion and permutations.** Answered: section 4, "Root
+   motion, tick by tick" and "Per-direction numbers" (the Grunt's
+   move-front has one permutation; only the Flood combat Elite's
+   standing move-front has two).
+9. **Left-hand IK.** Answered: section 2, rule 4 (no Covenant or Flood
+   class a held weapon selects pins the off hand).
 10. **Severe deaths**: for units without an actor the "severe" test
    practically never holds (`sounds.md`), so player-worn bodies almost
    always play death quiet; whether to prefer death violent for
    explosive kills is ours to decide.
+11. **Body stun on player-worn characters** (section 4, A missing
+   animation): the faithful result is a freeze in the default pose
+   while stunned and pushing. Ours to decide: likely play the plain move
+   animation with its step scaled by (1 − 0.8 s_b), and let the body
+   turn.
+12. **Step heights at speed.** The static bound (an edge no higher
+   than r·(1 − cos θ_max) is ground) is exact; how much higher a
+   character climbs at its walking speed, with its velocity reset to
+   the root motion every grounded tick, was not simulated. A
+   simulation with `movement.md`'s mover and the per-direction table's
+   steps would answer it; the live game could check an Elite against
+   a 0.15 WU kerb.
+13. **Flood jumps and Grunt landings for players.** A player-worn
+   Flood jumps 3.5 WU and hurts itself landing; a Grunt is stopped for
+   24 ticks after each of its own jumps. Faithful; whether to keep them
+   (or, for the Flood, aim the jump forward as the leap does) is ours.
+14. **Player-worn walking speed and stick.** The game ignores the
+   stick's magnitude and gives a player no walk; offering a walk (the
+   AI's `alert` animations, Elite 0.0191 WU/t) or scaling by the stick
+   is ours to decide.
+15. **Hunter aim floor.** The Hunter's aim (and so its shots) cannot go
+   below 45° under level; a player will notice. Faithful; ours to keep
+   or widen.

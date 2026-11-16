@@ -17,6 +17,17 @@
 //! `point_default_owner`. So ctf_2fort has 15 and 15, cp_badlands 16 and
 //! 16 (its home spawns).
 //!
+//! Free for all (M4a, `free_for_all_doors`, the conversion's
+//! `entity_rule`): a gun game spawns anyone anywhere, so the spawn rooms
+//! open to all. Every door a trigger opens on touch starts open (the spawn
+//! rooms' and the bases' auto doors; their triggers' team filters let
+//! anyone through), so the spawn spots, drawn by a walk from the spawn
+//! points through the world as it stands, spread over the whole map
+//! (ctf_2fort: 4054 spots, not 202 in its spawn rooms); and the rooms'
+//! door brushes (`func_respawnroomvisualizer`, solid to the room's
+//! enemies in TF2) are no wall (Source's conversion leaves them out, with
+//! TF2's other volumes).
+//!
 //! Its kit (M2b): its guns' view models (the class's arms with the
 //! `c_` weapon bone-merged: `view::load`), held models (the same `c_`
 //! models, bone-merged by the arms' `weapon_bone`) and their projectiles'
@@ -33,6 +44,9 @@
 //!   team's spawns forward, and multi-stage maps' per-round spawns
 //!   (`round_redspawn`, `round_bluespawn`) aren't read.
 //! - The `spawnflags` class mask is ignored (no classes yet).
+//! - Free for all only: the touch-opened doors start open and the spawn
+//!   rooms' door brushes block nobody in a team mode too; doors the round
+//!   logic opens (setup gates) stay as the logic leaves them.
 
 use source_engine::content::{
     bsp::{self, Kit, SourceGame},
@@ -72,6 +86,7 @@ pub static TF2: SourceGame = SourceGame {
     held: held_kit,
     sounds,
     fixed_models: props::no_fixed_models,
+    entity_rule: free_for_all_doors,
 };
 
 /// Our team for TF2's team number: RED (2) is 1, BLU (3) is 2.
@@ -111,6 +126,54 @@ pub fn team_spawn(e: &MapEntity, all: &[MapEntity]) -> Option<Option<Team>> {
         }
     }
     Some(Some(ours))
+}
+
+/// The trigger outputs that open a door when a player walks in.
+const TOUCH_OUTPUTS: &[&str] = &["onstarttouch", "onstarttouchall", "ontrigger"];
+
+/// TF2's maps for a free-for-all (`SourceGame::entity_rule`): every door
+/// a trigger opens on touch (`OnStartTouch`, `OnStartTouchAll`,
+/// `OnTrigger` with `Open`: the spawn rooms' doors, and the auto doors
+/// inside the bases) starts open (`spawnpos` 1). Their triggers' filters
+/// (`filter_activator_tfteam`, a class the logic doesn't know) let every
+/// player through, so they open for anyone (the trigger closes them again
+/// once its last toucher leaves), and the spawn spots, which a walk from
+/// the spawn points through the world as it stands at the start draws
+/// (`chimera_sim::minigame::spawns`), reach past them: with the doors
+/// shut they stayed in the spawn rooms (ctf_2fort: 362 m2). The spawn
+/// rooms' door brushes (`func_respawnroomvisualizer`, solid to the room's
+/// enemies) are no wall at all (Source's conversion leaves them out).
+pub fn free_for_all_doors(entities: &mut [MapEntity]) {
+    let opened: Vec<String> = entities
+        .iter()
+        .filter(|e| e.classname().to_ascii_lowercase().starts_with("trigger_"))
+        .flat_map(|e| {
+            e.keyvalues.iter().filter_map(|(k, v)| {
+                let key = k.split('#').next().unwrap_or("").to_ascii_lowercase();
+                if !TOUCH_OUTPUTS.contains(&key.as_str()) {
+                    return None;
+                }
+                let mut f = v.split([',', '\u{1b}']);
+                let target = f.next()?.trim();
+                let input = f.next()?.trim();
+                (input.eq_ignore_ascii_case("open") && !target.is_empty()).then(|| target.to_string())
+            })
+        })
+        .collect();
+    for e in entities.iter_mut() {
+        let class = e.classname().to_ascii_lowercase();
+        if class != "func_door" && class != "func_door_rotating" {
+            continue;
+        }
+        let Some(name) = e.get("targetname").filter(|n| !n.is_empty()).map(str::to_string) else { continue };
+        if !opened.iter().any(|t| source_logic::logic::world::name_matches(t, &name)) {
+            continue;
+        }
+        match e.keyvalues.iter_mut().find(|(k, _)| k.eq_ignore_ascii_case("spawnpos")) {
+            Some((_, v)) => *v = "1".into(),
+            None => e.keyvalues.push(("spawnpos".into(), "1".into())),
+        }
+    }
 }
 
 /// TF2's maps from the install (`map::MapLoader`): what an app that plays
@@ -172,20 +235,27 @@ fn held_kit(kit: &mut Kit) {
     if super::weapons::GUNS.iter().any(|g| wants(g)) {
         super::weapons::script_numbers::note_sources(kit.materials.mount());
     }
-    add_guns(kit.materials, &wants, &mut guest, &mut kit.data.warnings);
+    add_guns(kit.materials, &wants, true, &mut guest, &mut kit.data.warnings);
     kit.data.kit.held.extend(guest.held);
     kit.data.kit.view_models.extend(guest.view_models);
 }
 
 /// TF2's guns that `wants`, into `into`: their view models
-/// (`view::load`), their `c_` models held (bone-merged by the first bone
+/// (`view::load`; with `every_class` on each class's arms that can hold
+/// them and are here, else on their own class's only), their `c_` models held (bone-merged by the first bone
 /// they share with their class's arms, `weapon_bone`) and their
 /// projectiles' models (`weapons::PROJECTILES`: the rocket, the grenade,
 /// the sticky, the needle). What a gun's
 /// `weapon/<id>` set holds is what this reads for it (`sets`).
-pub fn add_guns(materials: &mut MaterialLoader, wants: &dyn Fn(&str) -> bool, into: &mut crate::map::GameKit, warnings: &mut Vec<String>) {
+pub fn add_guns(
+    materials: &mut MaterialLoader,
+    wants: &dyn Fn(&str) -> bool,
+    every_class: bool,
+    into: &mut crate::map::GameKit,
+    warnings: &mut Vec<String>,
+) {
     use super::weapons::{self as w, PROJECTILES};
-    super::view::load(materials, wants, &mut into.view_models, warnings);
+    super::view::load(materials, wants, every_class, &mut into.view_models, warnings);
     let set = w::tf2_weapons();
     for (gun, arms) in w::arms_by_gun() {
         if !wants(gun) {
@@ -235,7 +305,7 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     if super::weapons::GUNS.iter().any(|g| wants(g)) {
         super::weapons::script_numbers::note_sources(&mount);
     }
-    add_guns(&mut materials, &wants, &mut guest, &mut warnings);
+    add_guns(&mut materials, &wants, true, &mut guest, &mut warnings);
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     let sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], weapon_sounds(), true);
     bsp::add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);

@@ -22,7 +22,8 @@ from specs, measurements and the game's own data.
 | M2b TF2 guns as UGG rungs | done (2026-11-15) | the four guns as data with the spec's numbers (the scripts' field mapping a seam), TF2's gun rules as hooks, `c_` weapons bone-merged on the class arms, sounds, TF2 in the party's `GUESTS`, `originals:gun_game_2fort` |
 | More guns (track 1, tf2-guns2) | done (2026-11-15) | the next eight guns (specs/tf2/weapons_more.md) as data and hooks, lent as rungs; the Minigun held up in first person; muzzle flashes and explosions |
 | M3 classes as bodies, TF2's movement | done (2026-11-15) | the classes as data (`game::classes`); `tf2:movement` on Source's movement with TF2's config and the held gun's class (speed, eyes, the Scout's air jump, max health); the class bodies with team skins and animation; TF2's HUD (health, ammo, crosshair) and kill icons |
-| M4 more maps and weapons | not started | |
+| M4a more maps in the party pool | done (2026-11-15) | 14 koth_, cp_ and ctf_ maps in an automatic pool by data/map_pool.toml and data/map_fitness.toml (a sweep of 130 maps); played free for all: touch-opened doors start open, spawn rooms' door brushes block nobody; `map/<name>` sets checked in a scratch store, not published |
+| M4 more weapons, effects, the probe | not started | |
 
 ## 1. Rules for this port
 
@@ -119,11 +120,41 @@ from specs, measurements and the game's own data.
    player holds. If the view-model driver lacks an arms-plus-weapon
    pair, that is a generic extension in Chimera (Combat Arms already
    draws hands and gun parts), not TF2 code.
-6. **The rungs' class.** A TF2 gun makes its holder that gun's class:
-   Scout for the Scattergun, Soldier for the Rocket Launcher, Heavy for
-   the Minigun, and the Engineer's arms for the Shotgun
-   (weapons.md 2). Health and speed per class follow classes.md once
-   the bodies land (M3); until then the rung uses the party's character.
+6. **The rungs' class.** A TF2 gun makes its holder one of the classes
+   that carry it in stock TF2 (games/tf2/data/classes.toml `[guns]`, one
+   class or a list; weapons.md 1, weapons_more.md 1, classes.md "Stock
+   loadout"): Scout for the Scattergun, Soldier for the Rocket Launcher,
+   Heavy for the Minigun. A gun of several classes gets its class **at
+   random, before the match** (the user's rule, 2026-11-15): when the
+   ladder is drawn, TF2's rung extras (`classes::HOOK`, Chimera's
+   `ladder::RungExtrasHook`, as Combat Arms' rung characters and CS:S's
+   rung models) draw one of the gun's classes for each TF2 rung from the
+   ladder's seeded generator, kept in the ladder's extras the server
+   shares with its clients (`NetMinigame::rung_extras`); every player
+   and bot on the rung is that class on every machine (`RungClass`
+   from `ladder::OnRung`), and the class shows after the gun in the
+   HUD's rung line. Never rolled per respawn. The offer names only the
+   drawn classes' body sets (`bodies::asset_names`). Where nothing is
+   drawn (a kit gun, the sandbox, `rung_extras = false`) a gun is its
+   first class, its own.
+   - **The Shotgun** (items 9, 10, 12, 11: Engineer, Soldier, Pyro,
+     Heavy) stays one rung gun, `tf2:tf_weapon_shotgun_primary`: the
+     class scripts agree on every mapped number (weapon_scripts.md 3),
+     so its numbers are the Engineer's script's; arms and first-person
+     sequences (weapons.md 8.2: the `SECONDARY` ones and their names for
+     the three secondaries, `view::CLASS_SEQUENCES`), the reload's start
+     (4: 0.4667 / 0.5 / 0.3333 / 0.3333) and the third-person stance
+     (secondary but for the Engineer) follow the drawn class.
+   - **The Pistol** (items 23 and 22: Scout, Engineer) likewise one gun,
+     `tf2:tf_weapon_pistol_scout` (the scripts agree too): the
+     Engineer's arms and `pstl_` sequences and his clip reload of
+     1.035 s (weapons_more.md 1) follow his class; he carries the
+     Scout's 36 rounds, not his 200 (a shortcut).
+   - The view models of a gun's other classes are keyed `<gun>#<class>`
+     (Chimera's `view_anim::ViewVariant`, a generic extension) and load
+     where that class's arms are here (its `players/<class>` set, which
+     the offer names when drawn); a gun's `weapon/<id>` set keeps its own
+     class's arms only.
 7. **Not in scope for now**: TF2's own app and server (beside the party
    apps; M5 at the earliest), objectives (flags, control points,
    payloads), buildings, Medic healing, Spy disguise and cloak, Pyro's
@@ -453,6 +484,98 @@ kill feed's row look is the party's; overheal and the Medic's
 regeneration have no source yet (no Medi Gun); the rocket jump tuned on
 the probe server.
 
+### M4a: more maps in the party pool (done 2026-11-15)
+
+- **The pool** (games/tf2/data/map_pool.toml): every installed map denied
+  but 14 allowed: the start set but cp_well (ctf_2fort, cp_badlands,
+  koth_viaduct, koth_harvest_final, koth_nucleus, cp_granary, ctf_turbine,
+  ctf_doublecross, koth_lakeside_final, cp_process_final) and four stock
+  KOTH maps the sweep rates well (koth_king, koth_highpass,
+  koth_sharkbay, koth_suijin). Lent through `parts::add_map_pool` (from
+  `party_sim`, as HL2:DM and Halo): `PARTS.maps` stays empty, so a machine
+  without TF2 (install or store) is offered none, and one with it gets
+  the allowed maps its mount lists (`auto::InstalledMaps`), drawn by the
+  players present.
+- **The measurements** (games/tf2/data/map_fitness.toml, `map_fitness
+  --game tf2`, which learned TF2): every koth_, cp_, ctf_ and arena_ map
+  (130 rows). The pool's:
+
+  | map | area m2 | sight m | spawn points | spots | off | stuck | wander 4/8/12 s | in from |
+  |---|---|---|---|---|---|---|---|---|
+  | ctf_2fort | 7748 | 7.6 | 30 | 4054 | 0 | 0 | 21.1/9.1/5.8 | 8 |
+  | cp_badlands | 13948 | 11.1 | 32 | 12213 | 0 | 0 | 26.0/11.2/7.1 | 12 |
+  | koth_viaduct | 6294 | 10.8 | 32 | 4799 | 0 | 0 | 12.0/5.1/3.3 | 8 |
+  | koth_harvest_final | 6135 | 12.9 | 30 | 3974 | 0 | 0 | 9.8/4.2/2.7 | 4 |
+  | koth_nucleus | 6278 | 11.2 | 36 | 6055 | 0 | 0 | 11.5/4.9/3.1 | 8 |
+  | cp_granary | 14918 | 12.2 | 30 | 9582 | 0 | 0 | 25.3/10.8/6.9 | 12 |
+  | ctf_turbine | 5661 | 9.9 | 24 | 3671 | 0 | 0 | 11.8/5.1/3.2 | 8 |
+  | ctf_doublecross | 8528 | 11.5 | 32 | 6579 | 0 | 0 | 15.3/6.6/4.2 | 8 |
+  | koth_lakeside_final | 8327 | 12.3 | 26 | 6002 | 0 | 0 | 14.0/6.0/3.8 | 8 |
+  | cp_process_final | 12900 | 11.2 | 32 | 10465 | 0 | 0 | 23.8/10.2/6.5 | 12 |
+  | koth_king | 8267 | 12.2 | 32 | 7417 | 0 | 0 | 14.0/6.0/3.8 | 8 |
+  | koth_highpass | 7360 | 10.4 | 32 | 6358 | 0 | 0 | 14.5/6.2/4.0 | 8 |
+  | koth_sharkbay | 7176 | 10.8 | 34 | 5046 | 0 | 0 | 13.6/5.8/3.7 | 8 |
+  | koth_suijin | 8951 | 15.1 | 32 | 5735 | 0 | 0 | 12.2/5.2/3.3 | 8 |
+
+  Left out (the file's comment says which and why): attack/defend cp_
+  maps and every arena_ map (the round logic opens their gates and arena
+  doors, which a party never runs: the spots stay in the spawn rooms or the
+  first stage, arena_well 206 m2, cp_dustbowl 949 m2), maps whose spots
+  cover a small part of their area (koth_badlands 410 spots on 6612 m2,
+  koth_sawmill, cp_freight_final1, cp_burghausen, cp_premuda, arena_perks),
+  cp_mojave (no spawn point at round start), cp_well (of the start set:
+  the bots' mesh splits it in two at the middle, each team's half about
+  8000 m2 and never joined, its 15510 m2 their sum; found by the walk-out
+  test, not looked into further), the largest (cp_snowplow,
+  cp_sulfur, koth_megaton, ctf_gorge) and the holiday twins.
+- **Free for all** (`maps::free_for_all_doors`, through a new generic hook,
+  `SourceGame::entity_rule`: a game's edits to its maps' entities before
+  the spawns and the logic read them): every door a trigger opens on touch
+  starts open (`spawnpos` 1); the triggers' team filters
+  (`filter_activator_tfteam`, unknown to the logic) let anyone through, so
+  the doors open for everyone and close again behind the last toucher.
+  The spawn spots, walked from the spawn points through the world as it
+  stands, had stayed in the spawn rooms (ctf_2fort 202 spots, 362 m2;
+  now 4054, 7748 m2). TF2's volumes (`func_respawnroom`, `_visualizer`,
+  `func_regenerate`, `func_nobuild`, the flag zones) neither draw nor
+  collide (`source_engine::content::bsp::brush_entities`): the spawn rooms'
+  door brushes, solid to the room's enemies in TF2, shut nobody out.
+- **Fixed on the way**: a material path with `..` (koth_viaduct's
+  `models/props_trainyard/../props_forest/train_gate001_forest`) resolves
+  (`chimera_vfs::normalize` steps up a folder); `chimera_pack sets tf2
+  --only map/<name>` records that map's set alone (it rewrote the weapon
+  and players sets too).
+- **Tests**: `party_kit` `heavy::tf2_maps::a_player_walks_out_of_every_
+  spawn_room_of_the_tf2_pool` (every pool map: spots at least 2000, none
+  stuck, every spawn point on the main region; from each spawn room a
+  player walks the bots' generated mesh toward the middle and gets out,
+  20 m or more from every spawn point of its room; and the room's own
+  region holds the middle), `tf2` `spawns::doors_
+  a_trigger_opens_on_touch_start_open`, `chimera_vfs`
+  `normalize_steps_up_for_dot_dot`; UGG's `heavy::pool_maps` checks TF2's
+  manifest too (`CHIMERA_POOL_ONLY=tf2:` with `CHIMERA_POOL_MAPS=all`; in
+  that mode a map is judged at the least count it is in at). Against a
+  scratch store (the TF2 files the client runs read, packed, then `sets
+  tf2 --only map/<name>`): all load with spots and 0 files read outside
+  their sets.
+- **The packing** (for the orchestrator; not done): each pool map's set,
+  `--pack` packing the files it reads that the store lacks (or after
+  `publish tf2`, the whole install, without it):
+  ```
+  for m in ctf_2fort cp_badlands koth_viaduct koth_harvest_final koth_nucleus \
+           cp_granary ctf_turbine ctf_doublecross koth_lakeside_final \
+           cp_process_final koth_king koth_highpass koth_sharkbay koth_suijin; do
+    cargo run --features dev,tools --bin chimera_pack -- sets tf2 --store <server store> --only map/$m --pack --sign
+  done
+  ```
+  (`--only` is a prefix: `map/koth_viaduct` records `koth_viaduct_event`
+  too, harmless.) No key is needed for map sets.
+- Left: the pool's maps play without their objectives (no points, flags or
+  carts) and without the round logic (setup gates stay shut, so
+  attack/defend and arena maps are out); spawns don't follow captured
+  points; the navigation files still don't parse (the party generates
+  one).
+
 ### M4 and on
 
 More maps in the pool (koth_, cp_, ctf_ with the map pool's fitness
@@ -495,6 +618,22 @@ server probe for parity checks, TF2's own app.
   ground decals draw as a coarse dither pattern; check how TF2's VMTs'
   `$alphatest` and `$translucent` are handled. Badlands' track bed and
   some floor patches show dotted dark speckle, maybe the same cause.
+- Map pool by players (M4a): each pool map enters a draw only at the
+  counts its measured wander time allows (map_fit's rule, 10 s; measured
+  by `map_fitness` as the other games' maps): koth_harvest_final from 4
+  players; ctf_2fort, ctf_turbine, ctf_doublecross and the KOTH maps
+  (viaduct, nucleus, lakeside_final, king, highpass, sharkbay, suijin)
+  from 8; the 5CP maps (cp_badlands, cp_granary, cp_process_final) from
+  12. None is drawn for a lobby of fewer than 8 but koth_harvest_final.
+- Candidates for arena slices (docs/plans/active/arena-slices.md) rather
+  than whole-map play at small counts: the 5CP maps (cp_badlands,
+  cp_granary, cp_process_final: the middle point and its two second
+  points), cp_well (its whole map splits in two on our mesh; a slice of
+  one half and the middle would play), ctf_2fort (the bridge and the two
+  courtyard fronts), ctf_doublecross, and the attack/defend maps' first
+  stages (cp_dustbowl, cp_gorge, cp_steel) once a slice can stand in for
+  their setup gates; the left-out large ones (cp_snowplow, cp_sulfur,
+  koth_megaton, ctf_gorge) only as slices.
 
 ## Log
 
@@ -573,3 +712,10 @@ server probe for parity checks, TF2's own app.
   what a set reads that the store lacks. The kill icons register from the
   store once their files are here (`hud::kill_icon_pictures`), not only
   from an install at startup.
+
+- 2026-11-15: M4a: TF2's maps in the party's automatic pool: 14 koth_,
+  cp_ and ctf_ maps allowed (data/map_pool.toml) from a `map_fitness` sweep
+  of 130 (data/map_fitness.toml); free for all (touch-opened doors start
+  open, `SourceGame::entity_rule`; spawn rooms' door brushes non-solid);
+  a spawn-room walk-out heavy test (cp_well out: its halves never join);
+  sets checked in a scratch store; screenshots of each pool map in UGG.

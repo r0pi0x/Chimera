@@ -115,11 +115,19 @@ pub fn normalize(path: &str) -> String {
     // directory `models\props_junk\\`); file systems ignore them, so do we.
     // So are `.` components (static prop names like `./models/...` on
     // de_nuke and de_train).
+    // And `..` steps up a folder (a TF2 model's material
+    // `../props_forest/train_gate001_forest` under its folder
+    // `models/props_trainyard/`, koth_viaduct's gates).
     let path = path.replace('\\', "/").to_lowercase();
-    path.split('/')
-        .filter(|p| !p.is_empty() && *p != ".")
-        .collect::<Vec<_>>()
-        .join("/")
+    let mut out: Vec<&str> = Vec::new();
+    for p in path.split('/').filter(|p| !p.is_empty() && *p != ".") {
+        if p == ".." {
+            out.pop();
+        } else {
+            out.push(p);
+        }
+    }
+    out.join("/")
 }
 
 /// Layers searched in order; the first layer that has a file wins, like a
@@ -417,5 +425,14 @@ mod tests {
     #[test]
     fn normalize_drops_empty_and_dot_components() {
         assert_eq!(super::normalize("./Models\\props//a.MDL"), "models/props/a.mdl");
+    }
+
+    #[test]
+    fn normalize_steps_up_for_dot_dot() {
+        assert_eq!(
+            super::normalize("models/props_trainyard/../props_forest/Train_Gate001_Forest"),
+            "models/props_forest/train_gate001_forest"
+        );
+        assert_eq!(super::normalize("../a/b"), "a/b");
     }
 }

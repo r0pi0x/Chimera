@@ -565,6 +565,7 @@ Change a file's `//!` doc with the code, then run
 - `chimera/ui/src/text_fit.rs`: Text cut to a width with an ellipsis (docs/plans/active/ugg-ui.md, "Names"): a player's name (at most 20 characters, the server's cap) or a map's...
 - `chimera/ui/src/theme.rs`: The kit's look as data: `Theme`, a resource read from TOML (docs/plans/active/ugg-ui.md, 2.3)
 - `chimera/ui/src/units.rs`: Sizes (docs/plans/active/ugg-ui.md, 2.6 and 2.5 "Pixel snapping")
+- `chimera/ui/src/vlist.rs`: The kit's recycling list (docs/backlog.md, "A recycling `VirtualList`"): a list or a grid of any length that scrolls by the pixel and costs only...
 - `chimera/ui/src/widgets.rs`: Small builders on Bevy UI from the theme (docs/plans/active/ugg-ui.md, 2.1; the player marks as Look Book V settled them):
 
 ## chimera/vfs

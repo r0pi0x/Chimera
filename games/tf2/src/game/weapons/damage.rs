@@ -14,8 +14,12 @@
 //!   0.25 s puts its next shot's first pellet exactly along the aim
 //!   (`centre_first`, before the frame; `note_shots` after it).
 //!   `flat` leaves it out (the Sniper Rifle, weapons_more.md 3.2).
-//! - **The reload's start by class** (4): `reload_start` per class, the
-//!   arms' (`arms`) one taken (the Shotgun's 0.3333 for the Engineer).
+//! - **The reload by class** (4; weapons_more.md 1): `reload_start` per
+//!   class (the Shotgun's 0.3333 for the Engineer, 0.4667 the Soldier,
+//!   0.5 the Pyro, 0.3333 the Heavy) and a whole clip's `reload` per class
+//!   (the Pistol's 1.005 for the Scout, 1.035 the Engineer): the gun's own
+//!   class's (`arms`) at attach, its holder's class's while held
+//!   (`for_class`, from `super::super::movement::select_class`).
 //!
 //! Known shortcuts: the distance jitter of `tf_damage_disablespread` 0
 //! isn't modelled (the rule is the default's).
@@ -23,7 +27,7 @@
 use bevy::prelude::*;
 use serde::Deserialize;
 
-use chimera_sim::weapon::{ByDistance, DamageEffect, Hitscan, NetPart, ShellReload, WeaponEvent, WeaponEventKind};
+use chimera_sim::weapon::{ByDistance, DamageEffect, Hitscan, Magazine, NetPart, ShellReload, WeaponEvent, WeaponEventKind};
 
 use crate::core::SimClock;
 
@@ -103,9 +107,12 @@ pub struct GunParams {
     pub arms: String,
     /// Its script's name (`scripts/<script>.ctx`).
     pub script: String,
-    /// The reload's start by class (4); the `arms` class's is taken.
+    /// The reload's start by class (4); the holder's class's is taken.
     #[serde(default)]
     pub reload_start: Option<ClassTimes>,
+    /// A whole clip's reload by class (weapons_more.md 1: the Pistol's).
+    #[serde(default)]
+    pub reload: Option<ClassTimes>,
     /// Seconds without a shot before the first pellet goes dead centre.
     #[serde(default = "pause")]
     pub first_pellet_pause: f32,
@@ -124,6 +131,26 @@ pub struct Tf2Gun {
     pub ramp: f32,
     pub pause: f32,
     pub last_shot: f64,
+    /// The reload's start and a whole clip's reload by class.
+    pub reload_start: Option<ClassTimes>,
+    pub reload: Option<ClassTimes>,
+}
+
+impl Tf2Gun {
+    /// The gun's reload times for a holder of `class`: the shells' start
+    /// and a whole clip's reload where its data gives that class one.
+    pub fn for_class(&self, class: &str, shells: Option<&mut ShellReload>, magazine: Option<&mut Magazine>) {
+        if let (Some(t), Some(s)) = (self.reload_start.and_then(|t| t.of(class)), shells)
+            && s.start != t
+        {
+            s.start = t;
+        }
+        if let (Some(t), Some(m)) = (self.reload.and_then(|t| t.of(class)), magazine)
+            && m.reload_time != t
+        {
+            m.reload_time = t;
+        }
+    }
 }
 
 impl NetPart for Tf2Gun {
@@ -142,6 +169,8 @@ pub fn attach(e: &mut EntityWorldMut, p: &GunParams) {
         ramp: p.ramp,
         pause: p.first_pellet_pause,
         last_shot: f64::MIN,
+        reload_start: p.reload_start,
+        reload: p.reload,
     });
     if let Some(mut d) = e.get_mut::<DamageEffect>()
         && !p.flat
@@ -152,6 +181,11 @@ pub fn attach(e: &mut EntityWorldMut, p: &GunParams) {
         && let Some(mut s) = e.get_mut::<ShellReload>()
     {
         s.start = start;
+    }
+    if let Some(t) = p.reload.and_then(|t| t.of(&p.arms))
+        && let Some(mut m) = e.get_mut::<Magazine>()
+    {
+        m.reload_time = t;
     }
 }
 
