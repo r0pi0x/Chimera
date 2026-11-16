@@ -16,6 +16,7 @@
 
 use bevy::prelude::*;
 
+pub mod arena;
 pub mod beams;
 pub mod blend_order;
 pub mod cameras;

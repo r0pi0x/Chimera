@@ -538,6 +538,26 @@ pub fn look(map: &MapFile, shader: &TagRef, tables: &PeriodicTables) -> Look {
     }
 }
 
+/// A transparent generic shader's colour by shaders.md's looser reading
+/// ("constant colour 0 of the first stage that reads constant colour 0"):
+/// the first stage whose colour reads constant colour 0 (or its alpha),
+/// a fixed colour (no animation source), not black. For the campaign
+/// bodies' energy shields only (the Jackal's: `body::load`): on the
+/// maps' own shaders it painted the needler's needles and its ammo's glow
+/// blue (they are pink in the game), so `look` keeps the strict pairing.
+pub fn generic_stage_tint(s: &blam_formats::shader::GenericShader) -> Option<[f32; 3]> {
+    s.stages.iter().find_map(|st| {
+        let i = &st.color_inputs;
+        let reads = [i.a.input, i.b.input, i.c.input, i.d.input]
+            .iter()
+            .any(|x| matches!(x, GenericInput::Constant0 | GenericInput::Constant0Alt));
+        let c = st.constant_color0_upper;
+        (reads && st.constant_color0_source == blam_formats::shader::AnimationSource::None)
+            .then(|| [linear(c.r), linear(c.g), linear(c.b)])
+            .filter(|t| t.iter().any(|x| *x > 0.0))
+    })
+}
+
 /// The model shader's look (shaders.md, "Minimum faithful approximation
 /// (model)"): the base map at the shader's own map scales (the model's
 /// are in its texture coordinates), the detail map as a second texture

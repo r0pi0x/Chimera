@@ -1,7 +1,10 @@
 //! The bodies a sandbox's practice target may wear, for the guest games
 //! that register none of their own (`chimera_sim::minigame::targets`,
-//! `TargetCharacter`): Halo's Spartan (`halo_ce:spartan`, any Halo gun)
-//! and TF2's nine classes (`tf2:scout` ... `tf2:engineer`, the guns each
+//! `TargetCharacter`): Halo's Spartan (`halo_ce:spartan`, any Halo gun;
+//! worn, it takes off a campaign body), then Halo's campaign characters
+//! (`halo_ce:elite`, `halo_ce:grunt`, `halo_ce:jackal`: Halo's own
+//! registrations, `halo_ce::game::campaign::targets`, once their units
+//! loaded) and TF2's nine classes (`tf2:scout` ... `tf2:engineer`, the guns each
 //! class may hold by TF2's class table, `classes::Classes::of_gun_all`;
 //! worn as TF2's rung class, `classes::RungClass`, which the class a held
 //! gun makes its holder follows when the gun can be it). Combat Arms, CS:S and HL2:DM
@@ -86,11 +89,17 @@ pub fn add(app: &mut App) {
         name: "Spartan",
         game: "halo_ce",
         holds: |_, _, gun| gun.starts_with("halo_ce:"),
-        wear: |_, _, _| {},
+        wear: halo_ce::game::campaign::targets::wear_spartan,
         vitals: halo_vitals,
+        second_bar: None,
     });
+    // Halo's campaign characters, after the Spartan (a Halo gun alone
+    // gives the Spartan).
+    for c in halo_ce::game::campaign::targets::characters() {
+        app.target_character(c);
+    }
     for (id, name) in TF2_CLASSES {
-        app.target_character(TargetCharacter { id, name, game: "tf2", holds: tf2_holds, wear: tf2_wear, vitals: tf2_vitals });
+        app.target_character(TargetCharacter { id, name, game: "tf2", holds: tf2_holds, wear: tf2_wear, vitals: tf2_vitals, second_bar: None });
     }
     for (game, name, shield) in [("combat_arms", "CA default", 1.0), ("cs_source", "CS:S default", 0.0), ("hl2dm", "HL2:DM default", 0.0)] {
         let id: &'static str = match game {
@@ -106,6 +115,7 @@ pub fn add(app: &mut App) {
             holds: |_, c, gun| gun.split_once(':').is_some_and(|(g, _)| c.starts_with(g) && c[g.len()..].starts_with(':')),
             wear: |_, _, _| {},
             vitals,
+            second_bar: None,
         });
     }
     for (game, name) in [

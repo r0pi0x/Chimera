@@ -1,0 +1,31 @@
+# The sandbox's remembered layout (`sandbox repeat`): two targets and a
+# board on the greybox, cleared, then put back from another spot facing
+# another way, each on its own line and distance from the player (a scene
+# script: chimera_client's `scene`; `SandboxLayout` lines in the log).
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/layout_repeat.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+setpos 0 -1181 0             # the greybox at (0, 0, 30) m, facing north
+setang 0 97
+target add halo_ce:spartan 8
+setang 0 83
+target add combat_arms:m4a1 12 protect
+setang 0 90
+prop add target_board 10
+setang 2 90
+wait 240
+shot layout_made
+target remove all
+prop remove all
+wait 60
+shot layout_cleared
+setpos -800 400 0            # elsewhere: (-20.3, 0, -10.2) m
+setang 2 0                   # facing east
+sandbox repeat
+wait 240
+shot layout_repeated
+target list
+prop list
+wait 30

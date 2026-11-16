@@ -31,7 +31,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
   |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |    halo_ce (games/halo_ce/)   Halo: Combat Evolved (Xbox): GameInfo, disc-image mount, its maps converted, its movement, vitality (shields over health) and the damage seam, harness::HaloSim; `ui` its HUD (none yet)
-  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its twelve guns and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim; `ui` its HUD
+  |    tf2 (games/tf2/)   Team Fortress 2: GameInfo, mount from gameinfo.txt, maps (team spawns), its twelve guns and nine melee weapons and their c_ view models, the classes (Source movement, bodies, health) by the gun in hand, harness::Tf2Sim; `ui` its HUD
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -491,7 +491,13 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   free-for-all) and data/map_fitness.toml (`parts::add_map_pool`), played
   free for all: the doors a trigger opens on touch start open (the
   conversion's `SourceGame::entity_rule`) and the spawn rooms' door
-  brushes block nobody.
+  brushes block nobody. (M4b) The nine stock melee weapons
+  (`weapons::melee`, specs/tf2/weapons_stock.md) on Chimera's swing with
+  its delayed hit (`Swing::delay`, the smack) and TF2's backstab rule
+  (`Backstab::Behind`), the hook `tf2:melee` (crits, the swing's
+  view-model actions, the raised knife); each TF2 rung carries its
+  class's melee as the kit's (`classes::HOOK`'s `RungExtras::melee`),
+  the Knife TF2's kit knife (`PARTS.knife`).
   Layered as `hl2dm` (it uses `chimera_net` for its looks' message).
 - `chimera_net` is network play (`net`): the transport, the join
   handshake, replication of what every game has, prediction and

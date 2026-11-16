@@ -383,20 +383,34 @@ pub fn drive(
     }
 }
 
+/// Whether a campaign body holds its gun by its own hand marker
+/// (`load::body_held`, `campaign::unit::held_on`), once that held model
+/// is in (`map::LateHeldModels`); until then the Spartan's placement.
+pub const OWN_HAND: bool = true;
+
 /// Holders of Halo guns take its stance and hold it (module doc).
+#[allow(clippy::type_complexity)]
 pub fn stance(
-    holders: Query<(Entity, &Inventory, Option<&WeaponLabel>, Option<&Held>)>,
+    holders: Query<(Entity, &Inventory, Option<&WeaponLabel>, Option<&Held>, Option<&super::campaign::BodyKind>)>,
     guns: Query<(&Weapon, &HaloWeapon)>,
+    late: Option<Res<crate::map::LateHeldModels>>,
     mut commands: Commands,
 ) {
-    for (e, inv, label, held) in &holders {
+    for (e, inv, label, held, kind) in &holders {
         match inv.active.and_then(|w| guns.get(w).ok()) {
             Some((weapon, halo)) => {
                 if !halo.0.label.is_empty() && label.is_none_or(|l| l.0 != halo.0.label) {
                     commands.entity(e).insert(WeaponLabel(halo.0.label.clone()));
                 }
-                if held.is_none_or(|h| h.0.as_deref() != Some(weapon.id)) {
-                    commands.entity(e).insert(Held(Some(weapon.id.to_string())));
+                // A campaign body holds it by its own hand marker, once that
+                // model is loaded (`load::body_held`).
+                let own = kind
+                    .filter(|k| OWN_HAND && **k != super::campaign::BodyKind::Spartan)
+                    .map(|k| load::body_held_key(weapon.id, k.id()))
+                    .filter(|key| late.as_deref().is_some_and(|l| l.has(key)));
+                let key = own.unwrap_or_else(|| weapon.id.to_string());
+                if held.is_none_or(|h| h.0.as_deref() != Some(key.as_str())) {
+                    commands.entity(e).insert(Held(Some(key)));
                 }
             }
             None if inv.active.is_none()

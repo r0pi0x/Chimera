@@ -43,7 +43,7 @@ use bevy::prelude::*;
 use super::{
     lagcomp::Rewound,
     random::{Ran1, Rng},
-    BulletTarget, DamageEffect, Hitscan, PassMaterials, Penetration, SpreadShape, Swing, WeaponEvent,
+    Backstab, BulletTarget, DamageEffect, Hitscan, PassMaterials, Penetration, SpreadShape, Swing, WeaponEvent,
     WeaponEventKind,
 };
 use crate::{
@@ -683,6 +683,7 @@ impl Shot<'_, '_, '_> {
                 DamageKind::Bullet,
                 true,
                 dir * effect.impulse,
+                None,
             );
         }
     }
@@ -691,18 +692,21 @@ impl Shot<'_, '_, '_> {
     /// one's box centre (a rewound target's where the shooter saw it), its
     /// origin without a box.
     fn centre_distance(&self, target: Entity) -> f32 {
-        let centre = |e: Entity| -> Option<Vec3> {
-            if let Some(r) = self.rewound.iter().find(|r| r.entity == e) {
-                let b = r.aabb();
-                return Some((b.min + b.max) / 2.0);
-            }
-            let t = self.w.targets.get(e).ok()?;
-            Some(t.aabb.map_or(t.transform.translation, |b| (b.min + b.max) / 2.0))
-        };
-        match (centre(self.owner), centre(target)) {
+        match (self.centre(self.owner), self.centre(target)) {
             (Some(a), Some(b)) => a.distance(b),
             _ => 0.0,
         }
+    }
+
+    /// `e`'s box centre (a rewound one's where the shooter saw it), its
+    /// origin without a box.
+    fn centre(&self, e: Entity) -> Option<Vec3> {
+        if let Some(r) = self.rewound.iter().find(|r| r.entity == e) {
+            let b = r.aabb();
+            return Some((b.min + b.max) / 2.0);
+        }
+        let t = self.w.targets.get(e).ok()?;
+        Some(t.aabb.map_or(t.transform.translation, |b| (b.min + b.max) / 2.0))
     }
 
     /// Deal `raw` damage on `region`: armour (if the weapon's ratio
@@ -721,6 +725,7 @@ impl Shot<'_, '_, '_> {
         kind: DamageKind,
         shot: bool,
         force: Vec3,
+        credit: Option<&'static str>,
     ) {
         // Damage is dealt once, not again when a command is re-run, and
         // only by the server (a client's own shots show their effects;
@@ -746,7 +751,8 @@ impl Shot<'_, '_, '_> {
             dir,
             hitgroup: region.hitgroup(),
             kind,
-            weapon: None,
+            // A backstab's kill icon (`Backstab::Behind::credit`).
+            weapon: credit,
         };
         let hitgroup = damage.hitgroup;
         // Armour takes its share only if the hit lands (`HitArmor`).
@@ -873,14 +879,28 @@ impl Shot<'_, '_, '_> {
             Err(_) => (false, false, None, None, None),
         };
         let mut amount = swing.damage;
-        if let (Some(back), Some(yaw), Some(origin)) = (swing.backstab, yaw, origin) {
-            // Backstab: the target faces along the bearing from the
-            // attacker to it (not the attacker's view; measured M11).
-            let facing = (yaw * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
-            let bearing = (origin - self.eye).with_y(0.0).normalize_or_zero();
-            if facing.dot(bearing) >= BACKSTAB_COS {
-                amount = back;
+        let mut credit = None;
+        match (swing.backstab, yaw, origin) {
+            (Some(Backstab::Facing(back)), Some(yaw), Some(origin)) => {
+                // Backstab: the target faces along the bearing from the
+                // attacker to it (not the attacker's view; measured M11).
+                let facing = (yaw * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
+                let bearing = (origin - self.eye).with_y(0.0).normalize_or_zero();
+                if facing.dot(bearing) >= BACKSTAB_COS {
+                    amount = back;
+                }
             }
+            (Some(b @ Backstab::Behind { health, credit: c, .. }), Some(yaw), Some(_)) => {
+                // Centre to centre (the boxes', a rewound target's where
+                // the swinger saw it), yaw only.
+                let to = self.centre(hit.entity).unwrap_or(hit.point) - self.centre(self.owner).unwrap_or(self.eye);
+                if b.behind(forward, yaw * Vec3::NEG_Z, to) {
+                    let current = self.w.targets.get(hit.entity).ok().and_then(|t| t.health).map_or(0.0, |h| h.current);
+                    amount = health * current;
+                    credit = c;
+                }
+            }
+            _ => {}
         }
         self.push(hit.entity, hit.point, hit.dir * swing.force);
         let sound = if alive {
@@ -910,6 +930,7 @@ impl Shot<'_, '_, '_> {
                 // dropped weapon and ragdoll, weapons.md 9, 11); props
                 // take theirs by `push` alone.
                 if alive { hit.dir * swing.force } else { Vec3::ZERO },
+                credit,
             );
         }
         true

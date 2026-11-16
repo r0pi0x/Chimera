@@ -652,6 +652,51 @@ pub fn looks(file: &MapFile, decode: bool) -> Looks {
     out
 }
 
+/// The key of gun `id`'s held model on a campaign body named `body`
+/// (`elite`): placed by that body's own hand marker (`body_held`).
+pub fn body_held_key(id: &str, body: &str) -> String {
+    format!("{id}#{body}")
+}
+
+/// The held models of guns `guns` for a body of model `model` and graph
+/// `graph` (a campaign character's, from its unit): each gun's world model
+/// from `file` (the donor map) on the bone of that body's hand marker for
+/// the gun's label, keyed `body_held_key(id, name)`, with their textures.
+pub fn body_held(
+    file: &MapFile,
+    model: &Model,
+    graph: &AnimationGraph,
+    name: &str,
+    guns: &[&str],
+    decode: bool,
+) -> (Vec<MapHeldModel>, Vec<MapTexture>, Vec<String>) {
+    let body = (model.clone(), graph.clone());
+    let labels = super::labels();
+    let (mut held, mut pending, mut warnings) = (Vec::new(), Vec::new(), Vec::new());
+    for gun in gun_models().iter().filter(|g| guns.contains(&g.id)) {
+        let label = labels.iter().find(|(id, _)| *id == gun.id).map_or("", |(_, l)| l.as_str());
+        match held_model(file, gun, &body, label) {
+            Ok((mut h, meshes)) => {
+                h.key = body_held_key(gun.id, name);
+                held.push(h);
+                let i = held.len() - 1;
+                pending.extend(meshes.into_iter().map(|(mesh, shader)| Pending { mesh, shader, lit: true, dest: Dest::Model(i) }));
+            }
+            Err(e) => warnings.push(e),
+        }
+    }
+    let mut textures = Vec::new();
+    for (mesh, dest) in maps::apply_looks(file, pending, &mut textures, &mut warnings, decode) {
+        if let Dest::Model(i) = dest {
+            held[i].model.meshes.push(mesh);
+        }
+    }
+    for h in &mut held {
+        h.model.bounds = bounds(&h.model.meshes);
+    }
+    (held, textures, warnings)
+}
+
 /// Move a model's texture indices past `offset`.
 fn shift(model: &mut MapModel, offset: usize) {
     let shift = |t: &mut Option<usize>| {

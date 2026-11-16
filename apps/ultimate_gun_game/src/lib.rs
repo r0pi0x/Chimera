@@ -411,7 +411,8 @@ fn launch(app: &mut App, args: &chimera_client::client::Args) {
     .add_plugins((UltimateGunGamePlugin::launch(), chimera_client::client::hud_minimal::MinimalHudPlugin))
         .add_plugins(signal::SignalPlugin)
         // The sandbox's screens (its HUD, Change gun, the bench).
-        .add_plugins(chimera_client::client::sandbox::SandboxUiPlugin);
+        .add_plugins(chimera_client::client::sandbox::SandboxUiPlugin)
+        .add_systems(Update, sandbox::camera_state);
 }
 
 #[cfg(test)]

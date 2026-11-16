@@ -490,8 +490,9 @@ backlog.
   pistol, the needler and the assault rifle (to fix). Proposed: one rule
   (a character's full vitality in its own game is 100 in the party
   apps), behind a switch.
-- **Play as the campaign's characters** (a proposal; the user's idea,
-  2026-11-16; not scheduled). On a Halo rung in the party apps the body
+- **Play as the campaign's characters** (the user's idea; built
+  2026-11-15/16: Elite, Grunt, Jackal and Marine on main, see the log;
+  the Hunter and the spoken lines under way). On a Halo rung in the party apps the body
   is sometimes not the Spartan but one of the disc's campaign
   characters (Elite, Grunt, Jackal, Hunter, Marine, perhaps the Flood),
   by a chance weighted toward who carries that gun in the campaign (the
@@ -556,6 +557,19 @@ backlog.
     plasma rifle and needler, which the multiplayer set already has),
     then the Grunt and Jackal, the Hunter last (no first-person view
     at all).
+  Stage one (branch `halo-char-elite`): the Elite. Its body and voice are
+  units of their own (`chimera_pack sets halo_ce --only character/`,
+  converter `halo_ce:character_unit`: small map files cut from d20,
+  `game::campaign::unit`), loaded on demand; a player's `BodyKind`
+  (replicated) gives its model, graph, hit boxes, deaths, vitality (100 /
+  100), pill and camera. Movement (the owner's rule, 2026-11-16: player
+  expression over fidelity): every body moves on the Spartan's mover, only
+  its speed differs, halfway between the Spartan's and its own (a blend
+  in data/campaign.toml: the Elite at 107.5 %), with any movement number
+  overridable there; its legs play at the ground speed. The host setting
+  `halo_ce:campaign_bodies` (off by default) draws it on the plasma
+  rifle and needler rungs by data/campaign.toml; `halo_ce:body` forces
+  one. Next: the voice, the Elite's hand marker for the held gun.
 - **Sidewinder kept out of the pool** (games/halo_ce/data/map_pool.toml):
   a vehicle map too large on foot; in with vehicles (M6).
 - **Teleporters' extras**: the blocked message is counted by the
@@ -814,3 +828,26 @@ backlog.
   Race for Halo's own app; other players' on-gun counters; gravity and
   jumps (left as each game's own). Tool runs of the games on the PC are
   muted (the user's instruction).
+- 2026-11-16: the campaign's characters landed (net65): Elite, Grunt,
+  Jackal and Marine as party bodies (`game::campaign`, data/campaign.toml),
+  each with its own model, hit boxes, shield and health, footsteps, pain,
+  death and scream lines, its gun in its own hand, its unit and voices as
+  generated asset sets cut from the campaign maps (not published yet),
+  drawn by weights per gun with the host's `halo_ce:campaign_bodies 1`
+  (off by default), and offered as the sandbox's practice targets. The
+  owner's movement decision: the player's mover with per-character
+  numbers in data, aim never limited. With it landed: the arena slice A1
+  (net64), the scopes' edge blur, the engine's worn-first build of late
+  bodies and held models (a worn body drawn in about a second, where
+  the sandbox took 46 s), and the sandbox's mechanics (practice targets,
+  props, blast measurement, the scene-shot tool: `--scene`), whose
+  screens are the party UI's. Fixed on the way: a crash when a body's
+  model changed before its death (stale skeleton poses); Combat Arms'
+  map-unload cleanup dropping other games' held models; the sandbox's
+  ladder read-ahead (25 to 80 ms a frame, now about 4). Under way: the
+  Hunter with a first-person view made from its own body and a rung of
+  its own, lines spoken on becoming a character and on a kill (the
+  owner's request), the late-built models' texture and order fixes,
+  more sandbox mechanics. Decided by the owner: balancing is on by
+  default; publish the characters' sets (through the asset service's
+  session, once the Hunter's and the widened voice sets are cut).

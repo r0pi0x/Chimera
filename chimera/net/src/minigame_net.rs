@@ -34,6 +34,10 @@
 //!   `minigame::effects::MatchEffects` (a host's surprises), their times
 //!   as server ticks, into the client's own (its clock), which the
 //!   shell's effects screen draws (`chimera_client::client::match_effects`).
+//! - **The slice** (`NetMinigame::arena`): the server's play area
+//!   (`map::play_area::PlayArea`: a match on a part of its map, the party
+//!   kit's `arena`), whole, into the client's `ArenaPlan` (`follow_arena`),
+//!   so its wall, put-back and look are the server's.
 //! - **Events** (`MinigameNews`): rung ups and downs, the last rung, the
 //!   lead, a match won, for the HUD's notices and callouts, as the index
 //!   in `minigame::EVENT_NAMES`.
@@ -169,6 +173,11 @@ pub struct NetMinigame {
     /// The match's effects on now (`minigame::effects::MatchEffects`:
     /// an air strike, moon gravity), their times as server ticks.
     pub effects: Vec<minigame::effects::Effect>,
+    /// The slice of the map the match is played on (`map::play_area`:
+    /// the server's `PlayArea`), its shape sent whole so a client of
+    /// another build plays the server's; a client's `ArenaPlan`
+    /// (`follow_arena`). None: the whole map.
+    pub arena: Option<minigame::arena::ArenaSlice>,
 }
 
 /// `minigame::vote::MapVote` on the network: the ballot, the counts, when
@@ -326,11 +335,22 @@ fn register(app: &mut App) {
         )
         .add_systems(
             PreUpdate,
-            (apply_minigame, crate::minigame::ladder::follow_rungs, apply_protection, receive_news, receive_offer)
+            (apply_minigame, follow_arena, crate::minigame::ladder::follow_rungs, apply_protection, receive_news, receive_offer)
                 .chain()
                 .after(ClientSystems::Receive)
                 .run_if(client()),
         );
+}
+
+/// A client plays the slice the server's match is played on
+/// (`NetMinigame::arena` into `map::play_area::ArenaPlan`; none without a
+/// match), which the map's play area follows when that map is in.
+fn follow_arena(world: &mut World) {
+    use minigame::arena::ArenaPlan;
+    let want = world.query::<&NetMinigame>().iter(world).next().and_then(|n| n.arena.clone());
+    if world.get_resource::<ArenaPlan>().is_none_or(|p| p.0 != want) {
+        world.insert_resource(ArenaPlan(want));
+    }
 }
 
 /// Serving stopped: the match's entity goes, and the players stop
@@ -397,6 +417,7 @@ fn write_minigame(world: &mut World) {
                     .collect()
             })
             .unwrap_or_default(),
+        arena: world.get_resource::<minigame::arena::PlayArea>().map(|a| a.slice.clone()),
     };
     // Another minigame, or its definition made again (same id, new text).
     let announced = world.get_resource::<Announced>().map(|a| a.0);

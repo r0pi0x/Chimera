@@ -98,14 +98,17 @@
 //! `Minigames::text`; `chimera_net::minigame_net`); a client can't start or
 //! restart one itself.
 
+pub mod arena;
 pub mod auto;
 pub mod climb;
+pub mod conditions;
 pub mod def;
 pub mod effects;
 pub mod holders;
 pub mod map_fit;
 pub mod hud;
 pub mod ladder;
+pub mod layout;
 pub mod moments;
 pub mod overrides;
 pub mod results;
@@ -595,6 +598,8 @@ impl Plugin for MinigamePlugin {
         rung_command::plugin(app);
         targets::plugin(app);
         props::plugin(app);
+        layout::plugin(app);
+        conditions::plugin(app);
         app.console_command(
             "chimera:minigames",
             "List the minigames (id: name, players, maps, rules module), the one playing marked *.",

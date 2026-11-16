@@ -40,8 +40,10 @@
 //!   point to the next within `WALK_RADIUS` m of home, a fixed sequence).
 //!   It never leaves its home area (`LEASH` m past it: it heads home).
 //! - `shoots_back` (off by default): off, its trigger, secondary and game
-//!   actions are kept released every tick (it still sees and turns); on,
-//!   it fights as its game's bot does from where its motion keeps it.
+//!   actions are kept released every tick and it faces back along its
+//!   line, level, toward where it was placed from (its brain's look is
+//!   overridden: a body faces the spawner, for a fair look at it); on, it
+//!   fights as its game's bot does from where its motion keeps it.
 //! - `protected` (off by default): `core::HealthHeld` (hits land and are
 //!   measured, health never drops, it never dies), and its health and
 //!   shield are put back to full at the start of each tick.
@@ -60,7 +62,9 @@
 //! console's number), `TargetRespawn`, `TargetVitals` (health and shield
 //! with their maxima, kept current each tick: `core::Health` and
 //! `weapon::Armor`, the second bar of every game that has one: Halo's
-//! shield, Combat Arms' gear, CS:S's kevlar), `characters`, and the facts:
+//! shield, Combat Arms' gear, CS:S's kevlar; a body whose second bar is
+//! not `Armor` reports its own, `TargetCharacter::second_bar`: Halo's
+//! Jackal's arm shield), `characters`, and the facts:
 //! - `HitMeasured`, one per attacker, victim and tick when a target is hit
 //!   or a target hits anyone: the gun, `damage` (what health and shield
 //!   lost, after every scale: the `DamageTaken`s plus the shield's drop),
@@ -125,7 +129,13 @@
 //! noshoot | protect | noprotect | still | strafe | walk | gun <id> |
 //! character <id> | respawn <s> | distance <m>>`, `target remove <n|all>`,
 //! `target list`, `target characters`, `target look <n>` (turns the
-//! player to face target n: staging a picture).
+//! player to face target n: staging a picture), `target repeat` (the
+//! last layout again: `layout`).
+//!
+//! A spawn, a set and a single removal are the player's changes of the
+//! layout (`layout` remembers what stands after each); clearing (`clear`,
+//! `target remove all`) is not. Bots frozen (`conditions`): every target
+//! moves as a still one.
 //!
 //! Known shortcuts:
 //! - The motion overrides the bot's movement keys after its brain
@@ -446,6 +456,12 @@ pub struct TargetCharacter {
     /// What a fresh body has: health and second bar at their full
     /// (normalized like `TargetVitals`; the character's id given).
     pub vitals: fn(&World, &str) -> (f32, f32),
+    /// Its own second bar now, for a body whose second bar isn't
+    /// `weapon::Armor` (Halo's Jackal's arm shield): Some(amount,
+    /// normalized like `TargetVitals`) read each tick into `TargetVitals::
+    /// shield` in place of `Armor`; None from it: `Armor` as usual. None
+    /// here: `Armor` always.
+    pub second_bar: Option<fn(&World, Entity) -> Option<f32>>,
 }
 
 /// The registered bodies.
@@ -517,6 +533,12 @@ pub fn characters(world: &World) -> Vec<CharacterInfo> {
 /// One body's listing (`characters`), by id.
 pub fn character_info(world: &World, id: &str) -> Option<CharacterInfo> {
     characters(world).into_iter().find(|c| c.id.eq_ignore_ascii_case(id))
+}
+
+/// The first body `game` registered (the one its guns give: Halo's
+/// Spartan), if any.
+pub(super) fn first_body_of(world: &World, game: &str) -> Option<&'static str> {
+    registered(world).find(|c| c.game == game).map(|c| c.id)
 }
 
 fn registered(world: &World) -> impl Iterator<Item = &TargetCharacter> {
@@ -596,18 +618,18 @@ fn ladder_games(world: &World) -> Vec<String> {
 }
 
 /// What a request's character, gun and rung come to.
-struct Arming {
-    rung: usize,
-    gun: &'static str,
-    info: CharacterInfo,
-    wear: Option<TargetCharacter>,
+pub(super) struct Arming {
+    pub(super) rung: usize,
+    pub(super) gun: &'static str,
+    pub(super) info: CharacterInfo,
+    pub(super) wear: Option<TargetCharacter>,
 }
 
 fn may_hold(world: &World, c: Option<&TargetCharacter>, gun: &str) -> bool {
     c.is_none_or(|c| (c.holds)(world, c.id, gun))
 }
 
-fn resolve(world: &World, character: Option<&str>, gun: Option<&str>, rung: Option<usize>) -> Result<Arming, String> {
+pub(super) fn resolve(world: &World, character: Option<&str>, gun: Option<&str>, rung: Option<usize>) -> Result<Arming, String> {
     let ladder = world.get_resource::<Ladder>().ok_or("no ladder plays")?;
     let n = usable(ladder);
     let rung_of = |gun: &str| ladder.rungs[..n].iter().position(|r| r.eq_ignore_ascii_case(gun));
@@ -700,12 +722,12 @@ struct TargetPending;
 #[derive(Resource, Default)]
 struct TargetCount(u32);
 
-/// Spawn a target now; the bot it is.
+/// Spawn a target now (a player's change: `layout` remembers it); the bot
+/// it is.
 pub fn spawn(world: &mut World, req: &SpawnTarget) -> Result<Entity, String> {
     if !rung_command::holds(world) {
         return Err("targets are the sandbox's: start it with `sandbox`".into());
     }
-    let arming = resolve(world, req.character.as_deref(), req.gun.as_deref(), req.rung)?;
     let by = match req.by {
         Some(e) => e,
         None => command_player(world).map_err(|_| "no player to place it in front of".to_string())?,
@@ -713,6 +735,18 @@ pub fn spawn(world: &mut World, req: &SpawnTarget) -> Result<Entity, String> {
     let origin = world.get::<Transform>(by).ok_or("the player has no place")?.translation;
     let yaw = world.get::<Intent>(by).map_or(0.0, |i| i.yaw);
     let dir = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
+    let e = spawn_from(world, req, origin, dir)?;
+    super::layout::record(world);
+    Ok(e)
+}
+
+/// Spawn a target as if placed from `origin` looking along flat `dir`
+/// (`spawn`; the layout's repeat), not remembered.
+pub fn spawn_from(world: &mut World, req: &SpawnTarget, origin: Vec3, dir: Vec3) -> Result<Entity, String> {
+    if !rung_command::holds(world) {
+        return Err("targets are the sandbox's: start it with `sandbox`".into());
+    }
+    let arming = resolve(world, req.character.as_deref(), req.gun.as_deref(), req.rung)?;
     let home = find_spot(world, origin, dir, req.distance_m)?;
     let hooks = chimera_core::gameplay::active_hook::<TargetBots>(world, |g| g.bots)
         .ok_or("no game's bots play here to be targets")?;
@@ -811,7 +845,7 @@ fn strip_foreign_armour(world: &mut World, e: Entity, game: &str) {
     }
 }
 
-fn wear(world: &mut World, e: Entity, character: &str) {
+pub(super) fn wear(world: &mut World, e: Entity, character: &str) {
     let found = registered(world).find(|c| c.id.eq_ignore_ascii_case(character)).copied();
     if let Some(c) = found {
         (c.wear)(world, e, c.id);
@@ -873,13 +907,20 @@ pub fn set(world: &mut World, req: &SetTarget) -> Result<String, String> {
     if alive && (rearm || home.is_some()) {
         world.entity_mut(e).insert(TargetPending);
     }
+    super::layout::record(world);
     Ok(said)
 }
 
-/// Remove target `e`.
+/// Remove target `e` (a player's change: `layout` remembers what is left).
 pub fn remove(world: &mut World, e: Entity) {
+    if remove_quiet(world, e) {
+        super::layout::record(world);
+    }
+}
+
+fn remove_quiet(world: &mut World, e: Entity) -> bool {
     if world.get::<Target>(e).is_none() {
-        return;
+        return false;
     }
     match chimera_core::gameplay::active_hook::<TargetBots>(world, |g| g.bots) {
         Some(h) => (h.remove)(world, e),
@@ -889,13 +930,14 @@ pub fn remove(world: &mut World, e: Entity) {
             }
         }
     }
+    true
 }
 
-/// Remove every target; how many.
+/// Remove every target; how many (the remembered layout stays).
 pub fn clear(world: &mut World) -> usize {
     let all = all_targets(world);
     for (e, _) in &all {
-        remove(world, *e);
+        remove_quiet(world, *e);
     }
     all.len()
 }
@@ -964,7 +1006,7 @@ fn pick(world: &mut World, which: &str) -> Result<Vec<Entity>, String> {
 
 const USAGE: &str = "target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect] [noarmor] | \
     target set <n|all> <shoots|noshoot|protect|noprotect|armor|noarmor|still|strafe|walk|gun <id>|character <id>|respawn <s>|distance <m>> | \
-    target remove <n|all> | target list | target characters | target look <n>";
+    target remove <n|all> | target list | target characters | target look <n> | target repeat";
 
 /// A gun id, exact or the one gun of the ladder whose id holds the text.
 fn gun_named(world: &World, text: &str) -> Result<String, String> {
@@ -1040,8 +1082,13 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
             }
             Ok(Some(said.join("\n")))
         }
+        "repeat" => super::layout::repeat_command(world),
         "remove" | "kick" => {
             let which = a.get(1).map_or("all", String::as_str);
+            // All of them is a clear: the remembered layout stays.
+            if which.eq_ignore_ascii_case("all") {
+                return Ok(Some(format!("removed {} targets", clear(world))));
+            }
             let all = pick(world, which)?;
             for e in &all {
                 remove(world, *e);
@@ -1164,14 +1211,21 @@ fn waypoint(home: Vec3, number: u32, k: u32) -> Vec3 {
 }
 
 /// Each tick, after the bots' brains: the motion's keys, the trigger held
-/// off when it may not fire.
-fn drive(clock: Res<SimClock>, mut q: Query<(&Target, &mut TargetDrive, &Transform, &mut Intent), (Without<Dead>, Without<TargetPending>)>) {
+/// off when it may not fire; bots frozen (`conditions`): every target
+/// moves as a still one.
+fn drive(
+    clock: Res<SimClock>,
+    conditions: Option<Res<super::conditions::SandboxConditions>>,
+    mut q: Query<(&Target, &mut TargetDrive, &Transform, &mut Intent), (Without<Dead>, Without<TargetPending>)>,
+) {
     let now = clock.now;
+    let frozen = conditions.is_some_and(|c| c.bots_frozen);
     for (t, mut d, tf, mut intent) in &mut q {
         let feet = tf.translation - Vec3::Y * crate::map::SPAWN_LIFT;
         let off = (feet - t.home).xz().length();
         let side = Vec3::new(t.dir.z, 0.0, -t.dir.x);
-        let goal = match t.motion {
+        let motion = if frozen { TargetMotion::Still } else { t.motion };
+        let goal = match motion {
             TargetMotion::Still => (off > 1.0).then_some(t.home),
             TargetMotion::Strafes if off > STRAFE_HALF + LEASH => Some(t.home),
             TargetMotion::Strafes => {
@@ -1206,6 +1260,15 @@ fn drive(clock: Res<SimClock>, mut q: Query<(&Target, &mut TargetDrive, &Transfo
             intent.fire = false;
             intent.secondary = false;
             intent.actions = 0;
+        }
+        // One that may not fire faces back along its line, level: toward
+        // where it was placed from, whatever the brain looks at.
+        if !t.shoots_back {
+            let yaw = t.dir.x.atan2(t.dir.z);
+            if intent.yaw != yaw || intent.pitch != 0.0 {
+                intent.yaw = yaw;
+                intent.pitch = 0.0;
+            }
         }
     }
 }
@@ -1518,11 +1581,37 @@ pub fn blast_line(m: &BlastMeasured) -> String {
     )
 }
 
+/// A body's own second bar (`TargetCharacter::second_bar`), read this tick.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+struct OwnSecondBar(f32);
+
+/// Each tick before the vitals: the second bars of bodies that report
+/// their own (`TargetCharacter::second_bar`). Reads the world; writes only
+/// a changed reading.
+fn own_second_bars(world: &World, targets: Query<(Entity, &Target, Option<&OwnSecondBar>)>, mut commands: Commands) {
+    for (e, t, had) in &targets {
+        let read = registered(world)
+            .find(|c| c.id.eq_ignore_ascii_case(&t.character))
+            .and_then(|c| c.second_bar)
+            .and_then(|f| f(world, e));
+        match read {
+            Some(v) if had.is_none_or(|h| h.0 != v) => {
+                commands.entity(e).try_insert(OwnSecondBar(v));
+            }
+            None if had.is_some() => {
+                commands.entity(e).try_remove::<OwnSecondBar>();
+            }
+            _ => {}
+        }
+    }
+}
+
 /// The vitals after the whole tick (a game's own step, Halo's shield's,
 /// runs after the damage).
-fn keep_vitals(mut vitals: Query<(&mut TargetVitals, &Target, &Health, Option<&Armor>)>) {
-    for (mut vt, t, h, armor) in &mut vitals {
-        let shield = if t.armored { armor.map_or(0.0, |a| a.amount) } else { 0.0 };
+fn keep_vitals(mut vitals: Query<(&mut TargetVitals, &Target, &Health, Option<&Armor>, Option<&OwnSecondBar>)>) {
+    for (mut vt, t, h, armor, own) in &mut vitals {
+        let bar = own.map(|o| o.0).or(armor.map(|a| a.amount)).unwrap_or(0.0);
+        let shield = if t.armored { bar } else { 0.0 };
         let next = TargetVitals { health: h.current, health_max: h.max, shield, shield_max: vt.shield_max.max(shield) };
         if *vt != next {
             *vt = next;
@@ -1568,6 +1657,9 @@ pub(super) fn plugin(app: &mut App) {
                 .run_if(crate::core::authoritative)
                 .run_if(any_with_component::<Target>.or_else(rung_command::sandbox_plays)),
         )
-        .add_systems(FixedPostUpdate, keep_vitals.run_if(crate::core::authoritative).run_if(any_with_component::<Target>))
+        .add_systems(
+            FixedPostUpdate,
+            (own_second_bars, keep_vitals).chain().run_if(crate::core::authoritative).run_if(any_with_component::<Target>),
+        )
         .console_command("chimera:target", &format!("Practice targets in the sandbox: {USAGE}"), command);
 }

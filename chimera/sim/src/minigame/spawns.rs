@@ -94,6 +94,7 @@ use crate::{
         MapFloors, SPAWN_LIFT,
         nav::{NavMesh, flags},
         nav_gen::{self, NavGenParams},
+        play_area::{self, PlanPolygon},
         vis::{ActiveVisibility, MapVisibility},
     },
     weapon::random::{Rng, crc32},
@@ -493,6 +494,8 @@ pub struct SpotsJob {
     at: usize,
     ready_to_test: bool,
     found: Vec<Vec3>,
+    /// The match's slice: spots only inside (`map::play_area`).
+    plan: Option<PlanPolygon>,
 }
 
 /// Ticks between tries when the collision wasn't there yet.
@@ -534,6 +537,7 @@ impl SpotsJob {
             at: 0,
             ready_to_test: false,
             found: Vec::new(),
+            plan: play_area::held_plan(world),
         })
     }
 
@@ -574,6 +578,9 @@ impl SpotsJob {
                 break;
             }
             let (x, z, y) = self.raw[k];
+            if self.plan.is_some_and(|p| !p.contains(Vec2::new(x, z))) {
+                continue;
+            }
             if let Some(feet) = spot_ok(q, &floor, &self.hazards, vis, Vec3::new(x, y, z)) {
                 self.found.push(feet);
             }
@@ -730,7 +737,7 @@ pub fn walker() -> NavGenParams {
 /// jump over a low wall doesn't leave the map).
 pub fn walker_for(world: &World) -> (NavGenParams, Option<NavGenParams>) {
     let mut p = walker();
-    p.within = nav_gen::NavWithin::of(world);
+    nav_gen::hold(&mut p, world);
     if let (Some(game), Some(climbs)) = (world.get_resource::<MapGame>(), world.get_resource::<SpawnClimbs>())
         && let Some(h) = climbs.of(&game.0)
     {
@@ -776,6 +783,9 @@ fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
     for (x, z, y) in raw {
         if spots.len() >= cap {
             break;
+        }
+        if walker.plan.is_some_and(|p| !p.contains(Vec2::new(x, z))) {
+            continue;
         }
         if let Some(feet) = spot_ok(&q, &floor, &hazards, vis.as_deref(), Vec3::new(x, y, z)) {
             spots.push(feet);

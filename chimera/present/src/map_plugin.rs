@@ -66,6 +66,8 @@ impl Plugin for MapPlugin {
         let data = self.data.lock().ok().and_then(|mut d| d.take());
         map::build(app, data.as_ref(), self.view, &Present);
         render::scoped_resources(app);
+        app.init_resource::<render::bodies::LateWanted>();
+        render::arena::plugin(app);
         {
             use chimera_core::metrics::census::CensusAppExt;
             use render::{

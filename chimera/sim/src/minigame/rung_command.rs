@@ -33,6 +33,20 @@
 //!   before it, so a kill on the last real rung climbs to it instead of
 //!   winning the match): it is never shown, listed or chosen.
 //!
+//! - **As a body**: `rung <gun> as <body id> [player | all]` (and the
+//!   request `PutOnGun { gun, character, who }`, refused as
+//!   `RungRefused { reason }`; `put_on` for a caller in the world) puts
+//!   the player on the gun's rung wearing that body: a registered target
+//!   body (`targets::characters`, `TargetCharacter::wear`) of the gun's
+//!   game that may hold it, refused otherwise. One gun id is one rung;
+//!   a gun several bodies hold (TF2's shotgun: Engineer, Soldier, Pyro,
+//!   Heavy) is the class its rung drew (TF2's rung extras) unless `as`
+//!   names one (`tf2:soldier`); Halo's campaign bodies the same
+//!   (`halo_ce:elite`, once its unit is loaded). The body is kept
+//!   (`ChosenBody`) and worn again whenever the rung is set again; a
+//!   later `rung` without `as` takes it off (the game's first registered
+//!   body worn, then the rung set again: its draw's body back).
+//!
 //! Known shortcuts: the sandbox's kill still moves the player for the frame
 //! before `hold` puts them back (the same gun when it is the last rung's, a
 //! swap of the arming otherwise); a `+rung` on a network client is lost (the line is sent
@@ -49,6 +63,31 @@ use crate::console::{Cheats, CommandPlayer, Console, ConsoleAppExt, Level, comma
 /// The rung a player was put on while `HoldRungs` holds them there (0-based).
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Chosen(pub usize);
+
+/// The body a player was put on its rung as (`rung <gun> as <body>`, a
+/// registered `targets::TargetCharacter` id): worn again each time its
+/// rung is set (`ladder::OnRung`), as a target's is.
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct ChosenBody(pub String);
+
+/// Put a player on the rung of a gun (module doc, "As a body"): the
+/// request `rung <gun> [as <body>]` is.
+#[derive(Message, Clone, Debug, PartialEq, Eq)]
+pub struct PutOnGun {
+    /// A gun id (or a part of one only it holds) of the ladder.
+    pub gun: String,
+    /// A body (`targets::characters`: `tf2:soldier`, `halo_ce:elite`) of
+    /// the gun's game that may hold it; None: the rung's own.
+    pub character: Option<String>,
+    /// Who (None: the local player).
+    pub who: Option<Entity>,
+}
+
+/// A `PutOnGun` refused, and why (as the console says it).
+#[derive(Message, Clone, Debug, PartialEq, Eq)]
+pub struct RungRefused {
+    pub reason: String,
+}
 
 /// The sandbox's rule: while the minigame with this id plays, a player stays
 /// on the rung they were put on, and the ladder's last rung is a sentinel
@@ -98,13 +137,84 @@ pub struct PendingRung(pub Vec<String>);
 pub(super) fn plugin(app: &mut App) {
     app.console_command(
         NAME,
-        "rung <n | weapon id or part | next | prev | list> [player | all]: put a player (default: you) on that \
-         rung of the ladder, from 1, as a kill would (a developer command; `+rung <id>` at launch waits for the \
-         match; a client needs the server's sv_cheats 1).",
+        "rung <n | weapon id or part | next | prev | list> [as <body id>] [player | all]: put a player (default: \
+         you) on that rung of the ladder, from 1, as a kill would, as that body when named (`target characters`; \
+         a gun several bodies hold: TF2's shotgun as tf2:soldier); a developer command; `+rung <id>` at launch \
+         waits for the match; a client needs the server's sv_cheats 1.",
         |w, a| run(w, a, true),
     );
     app.world_mut().resource_mut::<Console>().player_command(NAME);
-    app.add_systems(Update, (apply_pending.run_if(resource_exists::<PendingRung>), hold));
+    app.add_message::<PutOnGun>().add_message::<RungRefused>().add_systems(
+        Update,
+        (apply_pending.run_if(resource_exists::<PendingRung>), hold, apply_requests, rewear),
+    );
+}
+
+/// Put `who` (None: the local player) on the rung of `gun` (an id, or a
+/// part only one gun's id holds), as `character` when named (module doc,
+/// "As a body"); what was done.
+pub fn put_on(world: &mut World, who: Option<Entity>, gun: &str, character: Option<&str>) -> Result<String, String> {
+    let ladder = world.get_resource::<Ladder>().cloned().ok_or("no ladder plays")?;
+    let n = usable(world, &ladder);
+    let to = resolve(&ladder, n, &Pick::Weapon(gun.to_lowercase()))?;
+    let e = match who {
+        Some(e) => e,
+        None => command_player(world)?,
+    };
+    if let Some(c) = character {
+        super::targets::resolve(world, Some(c), Some(ladder.rungs[to]), None)?;
+    }
+    put(world, e, to, &ladder, character);
+    let name = world.get::<Name>(e).map_or_else(|| e.to_string(), |n| n.as_str().to_string());
+    let body = character.map(|c| format!(" as {c}")).unwrap_or_default();
+    Ok(format!("{name}: rung {} of {n}: {}{body}", to + 1, ladder.rungs[to]))
+}
+
+/// `e` on rung `to`, as `body` (a registered body id the rung's gun may
+/// have) or, without one, as the rung makes it: a body chosen before is
+/// taken off (its game's first registered body worn, then the rung set
+/// again, which puts on what the rung's draw gives).
+fn put(world: &mut World, e: Entity, to: usize, ladder: &Ladder, body: Option<&str>) {
+    let old = world.get::<ChosenBody>(e).map(|c| c.0.clone());
+    if body.is_none()
+        && let Some(old) = old
+    {
+        world.entity_mut(e).remove::<ChosenBody>();
+        let game = old.split_once(':').map_or(old.as_str(), |(g, _)| g).to_string();
+        if let Some(first) = super::targets::first_body_of(world, &game) {
+            super::targets::wear(world, e, first);
+        }
+    }
+    move_to(world, e, to, ladder);
+    if let Some(b) = body {
+        super::targets::wear(world, e, b);
+        world.entity_mut(e).insert(ChosenBody(b.to_string()));
+    }
+}
+
+fn apply_requests(mut asks: MessageReader<PutOnGun>, mut commands: Commands) {
+    for r in asks.read().cloned() {
+        commands.queue(move |world: &mut World| match put_on(world, r.who, &r.gun, r.character.as_deref()) {
+            Ok(said) => info!("rung: {said}"),
+            Err(reason) => {
+                warn!("rung: {reason}");
+                world.write_message(RungRefused { reason });
+            }
+        });
+    }
+}
+
+/// A chosen body worn again each time its player's rung is set (the
+/// rung's own draw, TF2's class, puts its own on).
+fn rewear(q: Query<(Entity, &ChosenBody), Changed<ladder::OnRung>>, mut commands: Commands) {
+    for (e, b) in &q {
+        let b = b.0.clone();
+        commands.queue(move |world: &mut World| {
+            if world.get_entity(e).is_ok() {
+                super::targets::wear(world, e, &b);
+            }
+        });
+    }
 }
 
 /// What a selector asks for.
@@ -201,13 +311,22 @@ fn targets(world: &mut World, a: &[String], remote: bool) -> Result<Vec<Entity>,
 /// Run `rung a...`; `may_wait`: a command line (not the pending one) may
 /// keep itself for the match.
 fn run(world: &mut World, a: &[String], may_wait: bool) -> Result<Option<String>, String> {
-    let first = a.first().ok_or("rung <n | weapon id | next | prev | list> [player | all]")?;
+    // `as <body>` after the pick: taken out, the rest as before.
+    let (a, body): (Vec<String>, Option<String>) = match a.get(1) {
+        Some(w) if w.eq_ignore_ascii_case("as") => {
+            let body = a.get(2).ok_or("rung <gun> as <body id> (`target characters`)")?.clone();
+            (std::iter::once(a[0].clone()).chain(a[3..].iter().cloned()).collect(), Some(body))
+        }
+        _ => (a.to_vec(), None),
+    };
+    let a = a.as_slice();
+    let first = a.first().ok_or("rung <n | weapon id | next | prev | list> [as <body>] [player | all]")?;
     let pick = if first.eq_ignore_ascii_case("list") { None } else { Some(parse_pick(first)) };
     let remote = world.contains_resource::<CommandPlayer>();
     // Not ready: the match (or the player) isn't there yet.
     let ready = world.contains_resource::<Ladder>()
         && (a.len() > 1 || command_player(world).is_ok_and(|e| world.get::<Rung>(e).is_some()));
-    if !ready && may_wait && !remote && pick.is_some() && a.len() == 1 {
+    if !ready && may_wait && !remote && pick.is_some() && a.len() == 1 && body.is_none() {
         world.insert_resource(PendingRung(a.to_vec()));
         return Ok(Some("rung: waiting for the match and your player".into()));
     }
@@ -234,10 +353,16 @@ fn run(world: &mut World, a: &[String], may_wait: bool) -> Result<Option<String>
         };
         moves.push((e, to));
     }
+    if let Some(b) = &body {
+        for (_, to) in &moves {
+            super::targets::resolve(world, Some(b), Some(ladder.rungs[*to]), None)?;
+        }
+    }
     for (e, to) in moves {
-        move_to(world, e, to, &ladder);
+        put(world, e, to, &ladder, body.as_deref());
         let name = world.get::<Name>(e).map_or_else(|| e.to_string(), |n| n.as_str().to_string());
-        said.push(format!("{name}: rung {} of {}: {}", to + 1, last + 1, ladder.rungs[to]));
+        let as_body = body.as_ref().map(|b| format!(" as {b}")).unwrap_or_default();
+        said.push(format!("{name}: rung {} of {}: {}{as_body}", to + 1, last + 1, ladder.rungs[to]));
     }
     Ok(Some(said.join("\n")))
 }

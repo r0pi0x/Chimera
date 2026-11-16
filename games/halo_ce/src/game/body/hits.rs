@@ -31,6 +31,11 @@ use crate::{
     map::{BoneBox, MapBone, anim::BonePose},
 };
 
+/// The region of a shield node's box (the Jackal's `frame shield`): the
+/// groin, which no Halo humanoid's node is (its pelvis is the stomach), so
+/// the damage seam can tell the disc's hits (`RegionMaterials::shield`).
+pub const SHIELD_REGION: BodyRegion = BodyRegion::Groin;
+
 /// The region a node's name gives (lower case, `bip01 l calf`).
 pub fn region_of_name(name: &str) -> BodyRegion {
     let n = name.to_ascii_lowercase();
@@ -66,6 +71,10 @@ pub fn region_of_name(name: &str) -> BodyRegion {
         side(LeftForearm, RightForearm, Chest)
     } else if n.ends_with("hand") {
         side(LeftHand, RightHand, Chest)
+    } else if n.contains("shield") {
+        // The Jackal's arm shield (`frame shield`): a region of its own,
+        // which no Halo node otherwise takes (`SHIELD_REGION`).
+        SHIELD_REGION
     } else {
         Generic
     }

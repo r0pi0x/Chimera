@@ -182,6 +182,11 @@ fn a_still_target_that_may_not_fire_neither_fires_nor_moves() {
     let seen = sim.app.world().resource::<Seen>();
     assert!(!seen.shots.contains(&e), "it never fired");
     assert!(sim.app.world().get::<Dead>(me).is_none(), "the player is unhurt");
+    // It faces back toward where it was placed from, level.
+    let t = sim.app.world().get::<Target>(e).cloned().unwrap();
+    let i = sim.app.world().get::<chimera_core::core::Intent>(e).cloned().unwrap();
+    let facing = Vec3::new(-i.yaw.sin(), 0.0, -i.yaw.cos());
+    assert!(facing.dot(-t.dir) > 0.999 && i.pitch == 0.0, "facing {facing:?} against its line {:?}", t.dir);
 }
 
 #[test]
