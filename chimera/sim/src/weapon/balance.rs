@@ -34,7 +34,9 @@
 //!   it is held by the body).
 //! - A body id is known for the sandbox's targets (`minigame::targets::
 //!   Target::character`) and Halo's bodies (Halo reads its own); a
-//!   player's TF2 class is not looked up (its game's entry counts).
+//!   player's TF2 class is not looked up (its game's entry counts). The
+//!   victim's game and body (`Victim`) are the app's copy, kept at the
+//!   tick's start: a switch of game in the tick counts from the next.
 //! - The ladder's power curve counts the outgoing column as data
 //!   (`power_table`), whatever the switch.
 
@@ -106,6 +108,17 @@ impl Default for Balance {
     fn default() -> Self {
         Self { on: true, switch: 1, games: BTreeMap::new(), bodies: BTreeMap::new(), pairs: BTreeMap::new() }
     }
+}
+
+/// What the table needs of a victim (the app keeps it: party_kit's
+/// `balance`, from the character's game identity and a sandbox target's
+/// body): its game (None: unknown, its body's incoming is what it holds)
+/// and its body id.
+#[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
+pub struct Victim {
+    pub game: Option<String>,
+    pub body: Option<String>,
 }
 
 /// The game of an id (`cs_source` of `cs_source:weapon_ak47`), or the

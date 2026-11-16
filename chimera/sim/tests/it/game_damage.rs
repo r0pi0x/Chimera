@@ -32,7 +32,7 @@ fn shot_on(table: Option<Balance>, kevlar: bool, game: Option<&str>) -> (f32, f3
     let shooter = testkit::with_player(&mut sim, None, PISTOL);
     let t = sim.spawn_character(greybox::SPAWNS[0] - Vec3::Z * 5.0, chimera_sim::movement::placeholder::ID);
     if let Some(g) = game {
-        sim.app.world_mut().entity_mut(t).insert(chimera_core::slots::GameIdentity(g.into()));
+        sim.app.world_mut().entity_mut(t).insert(chimera_sim::weapon::balance::Victim { game: Some(g.into()), body: None });
     }
     if kevlar {
         sim.app.world_mut().entity_mut(t).insert(Armor { amount: 1.0, helmet: false });

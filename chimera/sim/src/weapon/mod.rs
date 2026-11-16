@@ -1614,17 +1614,9 @@ pub struct HitArmor<'w, 's> {
     rules: crate::core::DamageRules<'w, 's>,
     shares: Option<ResMut<'w, Messages<ArmourShare>>>,
     balance: Option<Res<'w, balance::Balance>>,
-    /// The victim's game, the incoming its body holds and, a sandbox
-    /// target's, its body id (`balance::Balance::before_armour`).
-    victims: Query<
-        'w,
-        's,
-        (
-            Option<&'static crate::slots::GameIdentity>,
-            Option<&'static crate::core::DamageScale>,
-            Option<&'static crate::minigame::targets::Target>,
-        ),
-    >,
+    /// The victim's game and body id (`balance::Victim`) and the
+    /// incoming its body holds (`balance::Balance::before_armour`).
+    victims: Query<'w, 's, (Option<&'static balance::Victim>, Option<&'static crate::core::DamageScale>)>,
 }
 
 impl HitArmor<'_, '_> {
@@ -1652,10 +1644,10 @@ impl HitArmor<'_, '_> {
     pub fn game_scale(&self, damage: &crate::core::Damage, weapon: Option<&str>) -> f32 {
         let Some(table) = self.balance.as_deref().filter(|t| t.on) else { return 1.0 };
         let Some(id) = weapon.or(damage.weapon) else { return 1.0 };
-        let (identity, held, target) = self.victims.get(damage.target).unwrap_or((None, None, None));
-        let victim = identity.map(|g| g.0.as_str()).or(target.map(|t| t.game.as_str()));
-        let body = target.map(|t| t.character.as_str());
-        table.before_armour(balance::game_of(id), victim, body, held.map_or(1.0, |s| s.0))
+        let (victim, held) = self.victims.get(damage.target).unwrap_or((None, None));
+        let game = victim.and_then(|v| v.game.as_deref());
+        let body = victim.and_then(|v| v.body.as_deref());
+        table.before_armour(balance::game_of(id), game, body, held.map_or(1.0, |s| s.0))
     }
 
     /// `apply` of the map's damage (a trigger's, `core::MapDamage`): no

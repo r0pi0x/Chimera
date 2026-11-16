@@ -21,9 +21,10 @@
 
 use bevy::prelude::*;
 use chimera_core::core::NetRole;
+use chimera_core::slots::GameIdentity;
 use chimera_sim::{
-    minigame::{Minigames, power::PowerReaders},
-    weapon::balance::Balance,
+    minigame::{Minigames, power::PowerReaders, targets::Target},
+    weapon::balance::{Balance, Victim},
 };
 
 /// The table, as shipped.
@@ -47,7 +48,25 @@ pub fn add(app: &mut App) {
          match, every gun and body with its own game's numbers. Applies from the next match.",
         |b| &mut b.switch,
     );
-    app.add_systems(FixedFirst, put_in_force);
+    app.add_systems(FixedFirst, (put_in_force, keep_victims));
+}
+
+/// Each character's game and body for the table (`Victim`): its game
+/// identity (else a sandbox target's game) and a sandbox target's body id.
+#[allow(clippy::type_complexity)]
+fn keep_victims(
+    q: Query<(Entity, Option<&GameIdentity>, Option<&Target>, Option<&Victim>), Or<(Changed<GameIdentity>, Changed<Target>)>>,
+    mut commands: Commands,
+) {
+    for (e, identity, target, now) in &q {
+        let want = Victim {
+            game: identity.map(|g| g.0.clone()).or_else(|| target.map(|t| t.game.clone())),
+            body: target.map(|t| t.character.clone()),
+        };
+        if now != Some(&want) {
+            commands.entity(e).insert(want);
+        }
+    }
 }
 
 /// The switch put in force (module doc): on a match's start here, at once
