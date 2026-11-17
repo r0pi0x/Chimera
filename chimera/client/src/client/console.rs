@@ -2642,18 +2642,30 @@ pub fn load_code_map(w: &mut World, map: &str) {
         let kit_id = chimera_world::greybox::kit_id(id);
         // Its spawn's own work (images, colliders) on the task too.
         let prepare = crate::map::prepare::preparation(w);
-        let mut task = bevy::tasks::AsyncComputeTaskPool::get().spawn(async move {
+        let load = async move {
             let kit = (hooks.load_map)(&kit_id, &options)?;
             let prepared = prepare.run(&kit);
             Ok((kit, prepared))
-        });
-        // Tests that wait for tasks (`WaitForTasks`): in this frame, as before.
-        if chimera_core::tasks::waits(w)
-            && let Some(result) = chimera_core::tasks::poll(&mut task, true)
-        {
-            spawn_code_map_kit(w, id, result, began);
-        } else {
-            w.insert_resource(CodeMapKit { id, task, began });
+        };
+        // A world with no async compute pool (a bare app without Bevy's
+        // `TaskPoolPlugin`, as the menu's tests): in this frame, as
+        // `map::drop_later` without one.
+        match bevy::tasks::AsyncComputeTaskPool::try_get() {
+            None => {
+                let result = bevy::tasks::block_on(load);
+                spawn_code_map_kit(w, id, result, began);
+            }
+            Some(pool) => {
+                let mut task = pool.spawn(load);
+                // Tests that wait for tasks (`WaitForTasks`): in this frame, as before.
+                if chimera_core::tasks::waits(w)
+                    && let Some(result) = chimera_core::tasks::poll(&mut task, true)
+                {
+                    spawn_code_map_kit(w, id, result, began);
+                } else {
+                    w.insert_resource(CodeMapKit { id, task, began });
+                }
+            }
         }
         (hooks.respawn_greybox)(w);
     }

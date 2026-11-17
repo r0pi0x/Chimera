@@ -1699,6 +1699,44 @@ fn case_64_chat_cooldown() {
     assert!((c.until - now(&sim) - 25.0).abs() < 0.2, "{}", c.until - now(&sim));
 }
 
+/// 8.1: a thrown weapon's count times its gun type's ammo multiplier,
+/// once a life. A dead bot's brain is fresh every tick it lies dead and it
+/// still holds the last life's weapons: arming it then multiplied the same
+/// count every tick until it overflowed (a drawn ladder's device rung).
+#[test]
+fn thrown_count_scaled_once_a_life() {
+    let kit = [Some(RIFLE), None, None, Some(KNIFE), Some(M67), None];
+    let (mut sim, p, bt) = duel(Level::Normal, 0, 5000.0, kit);
+    // The M67 on a row whose multiplier is 10 (Default, Normal N).
+    sim.app.world_mut().resource_mut::<BotData>().gun_types.insert(M67.into(), "Default".into());
+    set_kit(&mut sim, bt, Level::Normal, 0, kit);
+    sim.ticks(3);
+    let count = |sim: &Sim| sim.app.world().get::<Throwable>(grenade_of(sim, bt)).unwrap().count;
+    assert_eq!(count(&sim), 10);
+    sim.app.world_mut().write_message(Damage {
+        target: bt,
+        attacker: Some(p),
+        amount: 1000.0,
+        point: Vec3::ZERO,
+        dir: Vec3::Z,
+        hitgroup: Hitgroup::Chest,
+        kind: DamageKind::Bullet,
+        weapon: None,
+        force: Vec3::ZERO,
+    });
+    sim.ticks(2);
+    assert!(sim.app.world().get::<Dead>(bt).is_some(), "dead");
+    sim.ticks(20);
+    assert!(sim.app.world().get::<Dead>(bt).is_some(), "still dead");
+    assert_eq!(count(&sim), 10, "the dead bot's grenades aren't scaled again");
+    let respawned = until(&mut sim, 15.0, |s| {
+        let w = s.app.world();
+        w.get::<Dead>(bt).is_none() && w.get::<CaBot>(bt).unwrap().armed
+    });
+    assert!(respawned.is_some(), "respawned and armed");
+    assert_eq!(count(&sim), 10, "the new life's kit scaled once");
+}
+
 /// Case 65: a fresh brain each life: the hit/miss counters, the alarm
 /// total and the attack's last time are gone after a respawn, so the
 /// first attack rolls a reaction delay.

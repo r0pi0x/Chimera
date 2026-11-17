@@ -19,6 +19,11 @@ use crate::parts::ugg;
 /// The automatic gun game with eight bots, on room to spawn.
 fn session() -> (Sim, Vec<Entity>) {
     let mut sim = ugg();
+    // From the start, not only for the measured matches: the first
+    // match's tasks (bodies, held models, the map's kit) landing on the
+    // tick the machine's load allows made the session's later counts
+    // differ from run to run under load.
+    sim.repeatable();
     for x in [-8.0, 8.0] {
         for z in [-25.0, -15.0, -5.0, 5.0] {
             sim.app.world_mut().spawn((SpawnPoint::default(), Transform::from_translation(Vec3::new(x, 1.0, z))));
