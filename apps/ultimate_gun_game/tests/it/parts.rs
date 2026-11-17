@@ -125,7 +125,9 @@ fn the_ladder_spreads_across_the_games_and_keeps_its_seed() {
     assert_eq!(rungs(sim.app.world()), first);
     ultimate_gun_game::generate(sim.app.world_mut(), SEED + 1, RUNGS).unwrap();
     assert_ne!(rungs(sim.app.world()), first);
-    // `ugg_new` makes one and plays it.
+    // `ugg_new` makes one and plays it (its map's load and kit on the
+    // tick they are asked for, whatever the machine's load).
+    sim.repeatable();
     sim.app.world_mut().resource_mut::<chimera_core::console::Console>().submit("ugg_new 7 6 greybox");
     sim.ticks(2);
     assert_eq!(rungs(sim.app.world()).len(), 5, "6 rungs, one of them melee");
