@@ -15,7 +15,10 @@
 //!
 //! Kept textures that are whole DXT blocks keep those alone
 //! (`MapTexture::keep_blocks_only`), as Combat Arms' shared models' do:
-//! what the GPU takes, and less to copy into each map.
+//! what the GPU takes, and less to copy into each map. The dressing runs
+//! on a map marked `map::BlocksOnly`, so its loader never decodes them
+//! (`MaterialLoader::blocks_only`: the same textures, without the 61% of
+//! CS:S's cold dressing that decoding took).
 //!
 //! Files that arrive late: a dressing whose models missed files the game
 //! has but couldn't give then (the asset service's, not fetched yet, or
@@ -121,7 +124,10 @@ fn kept(
         bevy::log::info!("{game}: its guest parts dressed again (of {} files it missed, one is here now)", late.len());
     }
     let mut scratch = MapData::default();
+    // Kept: its whole-DXT textures need no decoding (`map::BlocksOnly`).
+    scratch.memos.insert(crate::map::BlocksOnly);
     convert(&mut scratch)?;
+    scratch.memos.remove::<crate::map::BlocksOnly>();
     entry.conversions.fetch_add(1, Ordering::Relaxed);
     for t in &mut scratch.textures {
         t.keep_blocks_only();

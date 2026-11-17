@@ -6537,6 +6537,8 @@ dependencies = [
  "hl2dm",
  "image",
  "originals",
+ "postcard",
+ "serde",
  "source_engine",
  "source_logic",
  "tf2",

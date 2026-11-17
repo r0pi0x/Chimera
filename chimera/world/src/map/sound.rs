@@ -113,10 +113,12 @@ pub struct MapSurface {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapSounds {
     /// Lower-case entry names.
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub entries: HashMap<String, MapSoundEntry>,
     #[serde(with = "crate::map::pod_serde::par_vec")]
     pub clips: Vec<MapSoundClip>,
     /// Lower-case surface names.
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub surfaces: HashMap<String, MapSurface>,
     /// Ambience: named soundscapes and where each one applies.
     pub soundscapes: Vec<Soundscape>,

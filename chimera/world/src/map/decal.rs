@@ -9,7 +9,7 @@
 //! logos by name), the impacts' lift; `Spray`, a player's spray where the
 //! simulation put it (`weapon::spray`), drawn by `render::spray`.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 
@@ -41,13 +41,13 @@ pub enum DecalBlend {
 pub struct MapDecals {
     pub decals: Vec<MapDecal>,
     /// Group name -> (weight, index into `decals`).
-    pub groups: HashMap<String, Vec<(f32, usize)>>,
+    pub groups: BTreeMap<String, Vec<(f32, usize)>>,
     /// Surface game material letter -> group name.
-    pub by_material: HashMap<char, String>,
+    pub by_material: BTreeMap<char, String>,
     /// Players' spray logos (CS:S's `materials/vgui/logos/*.vtf`) by
     /// lower-case name (`spray_kilroy`) -> index into `decals`, at the size
     /// a spray is drawn.
-    pub logos: HashMap<String, usize>,
+    pub logos: BTreeMap<String, usize>,
 }
 
 /// A player's spray (CS:S's `impulse 201`) on its own entity: whose, the

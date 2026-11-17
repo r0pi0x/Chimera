@@ -363,7 +363,8 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
         .ok_or_else(|| format!("no `{}` install found (Steam, [games.tf2] path, or $CHIMERA_TF2_ROOT)", super::GAME))?;
     let mount = super::mount::open(&install).map_err(|e| e.to_string())?;
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
-    let mut materials = MaterialLoader::guest(&mount, textures, cubemaps).lean(lean);
+    let mut materials = MaterialLoader::guest(&mount, textures, cubemaps).lean(lean)
+        .blocks_only(map.memos.get::<crate::map::BlocksOnly>().is_some());
     let surfaces = SurfaceProps::load(&mut materials);
     let kit = crate::map::KitLoad::Players(kept);
     let wants = |g: &str| kit.wants(g);
