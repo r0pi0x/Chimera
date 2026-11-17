@@ -117,7 +117,10 @@ fn the_ladder_spreads_across_the_games_and_keeps_its_seed() {
     assert_eq!(def.spawn.kit.for_game(Some("cs_source")), ["cs_source:weapon_knife"], "each gun's game's knife");
     assert_eq!(def.spawn.kit.for_game(Some("combat_arms")), ["combat_arms:m9_knife"]);
     assert_eq!(def.spawn.kit.for_game(Some("hl2dm")), ["hl2dm:weapon_crowbar"]);
-    // The same seed: the same ladder; another, another.
+    // The same seed: the same ladder (with the server's memory of dealt
+    // guns as it was: `auto::Recency` lightens guns dealt lately); another,
+    // another.
+    sim.app.world_mut().remove_resource::<chimera_sim::minigame::auto::Recency>();
     ultimate_gun_game::generate(sim.app.world_mut(), SEED, RUNGS).unwrap();
     assert_eq!(rungs(sim.app.world()), first);
     ultimate_gun_game::generate(sim.app.world_mut(), SEED + 1, RUNGS).unwrap();

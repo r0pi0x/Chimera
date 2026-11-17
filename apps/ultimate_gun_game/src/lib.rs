@@ -155,6 +155,18 @@ pub fn first_map(id: &str) -> Result<String, String> {
 /// `rungs` from `seed` over the games every player has, added as
 /// `MINIGAME` (replacing one made before).
 pub fn generate(world: &mut World, seed: u64, rungs: usize) -> Result<&'static MinigameDef, String> {
+    generate_as(world, seed, rungs, false)
+}
+
+/// `generate`; `again`: the ladder of the match already made, drawn again
+/// (the installs became known), not a new one for the recency memory
+/// (`auto::Recency`: guns dealt in the server's recent ladders are less
+/// likely; `ugg_new <seed>` replays a ladder only if that memory is the
+/// same, or `recency = 0` in data/power_curve.toml).
+fn generate_as(world: &mut World, seed: u64, rungs: usize, again: bool) -> Result<&'static MinigameDef, String> {
+    if again {
+        world.get_resource_or_init::<auto::Recency>().rewind();
+    }
     let mut caps = auto::report(world);
     // Only guns that can hurt someone and no game's data leaves out
     // (`auto::drawable`).
@@ -171,8 +183,19 @@ pub fn generate(world: &mut World, seed: u64, rungs: usize) -> Result<&'static M
         let readers = world.get_resource::<PowerReaders>().cloned().unwrap_or_default();
         auto::powers(&caps, catalog, &readers, &opts.curve)
     };
-    let text = auto::definition(&caps, &powers, &opts, &|g| installed.contains(&g))?;
-    minigame::add(world, MINIGAME, &text)
+    let recent = world.get_resource::<auto::Recency>().cloned().unwrap_or_default();
+    let text = auto::definition(&caps, &powers, &opts, &recent, &|g| installed.contains(&g))?;
+    let def = minigame::add(world, MINIGAME, &text)?;
+    // What was dealt is remembered for the next ladders.
+    let dealt: Vec<&str> = def
+        .rules
+        .params
+        .get("ladder")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    world.get_resource_or_init::<auto::Recency>().record(dealt, &opts.curve.draw);
+    Ok(def)
 }
 
 /// The seed and rungs the definition was last made with.
@@ -323,7 +346,7 @@ fn with_installs(world: &mut World) {
         return;
     }
     let l = *world.resource::<AutoLadder>();
-    if let Err(e) = generate(world, l.seed, l.rungs) {
+    if let Err(e) = generate_as(world, l.seed, l.rungs, true) {
         world.resource_mut::<Console>().print(Level::Error, e);
     }
     let _ = sandbox::generate(world, BASE);

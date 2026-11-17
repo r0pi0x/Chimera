@@ -58,6 +58,37 @@ fn ladders_draw_on_every_gun_and_differ_by_seed() {
     }
 }
 
+/// The games are dealt equally (backlog, "Ladder draw"): over many seeded
+/// ladders of the real guns each game's share of the rungs is about the
+/// same, however many guns it has (before: 1/sqrt(count) weighting gave
+/// the biggest game about twice the smallest's share). A game's share is
+/// short only by the bands where it has few guns (grenades, specials).
+#[test]
+fn games_share_the_rungs_about_equally() {
+    let sim = ugg();
+    let caps = auto::report(sim.app.world());
+    let refs: Vec<&auto::Capabilities> = caps.iter().collect();
+    let powers = crate::parts::powers(sim.app.world(), &caps);
+    let share = |curve: &PowerCurve| {
+        let mut got = vec![0usize; caps.len()];
+        for s in 0..600 {
+            for id in auto::ladder(&refs, &powers, curve, RUNGS, s).rungs {
+                let g = caps.iter().position(|c| id.starts_with(&format!("{}:", c.game))).unwrap();
+                got[g] += 1;
+            }
+        }
+        let all: usize = got.iter().sum();
+        caps.iter().zip(&got).map(|(c, n)| (c.game, c.guns.len(), *n as f64 / all as f64)).collect::<Vec<_>>()
+    };
+    let equal = share(&PowerCurve::shipped());
+    let mut sqrt = PowerCurve::shipped();
+    sqrt.draw.games = chimera_sim::minigame::power::GameWeighting::Sqrt;
+    println!("equal: {equal:?}\nsqrt: {:?}", share(&sqrt));
+    let playable: Vec<_> = equal.iter().filter(|g| g.2 > 0.0).collect();
+    let (hi, lo) = playable.iter().fold((0.0f64, 1.0f64), |(h, l), g| (h.max(g.2), l.min(g.2)));
+    assert!(playable.len() >= 2 && hi < lo * 1.35, "shares by game: {equal:?}");
+}
+
 /// The ladder with a CS:S HE and a Combat Arms frag rung after `first`.
 fn grenade_ladder(first: &'static str) -> Ladder {
     Ladder {

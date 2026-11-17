@@ -448,6 +448,70 @@ fn letters_type_only_in_the_focused_search_and_b_toggles() {
     assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun, "Enter in the field switched nothing");
 }
 
+/// One key event with its physical key (`type_text` has none).
+fn key_event(sim: &mut Sim, code: KeyCode, key: Key) {
+    sim.app.world_mut().write_message(KeyboardInput {
+        key_code: code,
+        logical_key: key,
+        state: ButtonState::Pressed,
+        text: None,
+        repeat: false,
+        window: Entity::PLACEHOLDER,
+    });
+    frame(sim);
+}
+
+/// The Change gun search is the kit's text field (a caret, a selection):
+/// `GunSearch` on a text field, the arrows move its caret and not the
+/// grid's cursor, Backspace and Delete edit at the caret, Ctrl+A selects
+/// all (typing then replaces), `/` and a click focus it, Enter and Esc
+/// let go, and B toggles the menu only while it isn't focused.
+#[test]
+fn the_search_is_the_standard_text_field_with_a_caret_and_a_selection() {
+    use chimera_client::client::sandbox::change_gun::GunSearch;
+    let mut sim = sim("gun");
+    let w = sim.app.world_mut();
+    assert_eq!(w.query::<&GunSearch>().iter(w).count(), 1, "the kit's text field");
+    type_text(&mut sim, "/awp");
+    assert!(ui(&sim).view.search_focus);
+    let at = cursor(&sim);
+    key_event(&mut sim, KeyCode::ArrowLeft, Key::ArrowLeft);
+    key_event(&mut sim, KeyCode::ArrowLeft, Key::ArrowLeft);
+    assert_eq!(ui(&sim).view.search_caret, 1, "the caret moved");
+    assert_eq!(cursor(&sim), at, "Left doesn't move the grid's cursor in the field");
+    type_text(&mut sim, "r");
+    assert_eq!(ui(&sim).view.search, "arwp", "typed at the caret");
+    key_event(&mut sim, KeyCode::Delete, Key::Delete);
+    assert_eq!(ui(&sim).view.search, "arp");
+    key_event(&mut sim, KeyCode::Home, Key::Home);
+    key_event(&mut sim, KeyCode::End, Key::End);
+    assert_eq!(ui(&sim).view.search_caret, 3);
+    key_event(&mut sim, KeyCode::Backspace, Key::Backspace);
+    assert_eq!(ui(&sim).view.search, "ar");
+    // Ctrl+A selects all; typing replaces it.
+    sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::ControlLeft);
+    key_event(&mut sim, KeyCode::KeyA, Key::Character("a".into()));
+    sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(KeyCode::ControlLeft);
+    let u = ui(&sim);
+    assert_eq!((u.view.search_caret, u.view.search_anchor), (2, 0), "all selected");
+    type_text(&mut sim, "m4");
+    assert_eq!(ui(&sim).view.search, "m4");
+    // B is a letter while the field has the keys.
+    type_text(&mut sim, "b");
+    assert_eq!(ui(&sim).view.search, "m4b");
+    assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun);
+    // Enter lets go; B then closes; Esc after `/` lets go too.
+    press(&mut sim, &[KeyCode::Enter]);
+    assert!(!ui(&sim).view.search_focus);
+    type_text(&mut sim, "/");
+    assert_eq!(ui(&sim).view.search_caret, 3, "focused again with the caret at the end");
+    press(&mut sim, &[KeyCode::Escape]);
+    assert!(!ui(&sim).view.search_focus && ui(&sim).view.search == "m4b");
+    type_text(&mut sim, "b");
+    frame(&mut sim);
+    assert_eq!(ui(&sim).screen, SandboxScreen::None, "B closes it again once the field let go");
+}
+
 #[test]
 fn backslash_folds_the_class_and_opens_it_back_on_the_same_tile() {
     let mut sim = sim("gun");

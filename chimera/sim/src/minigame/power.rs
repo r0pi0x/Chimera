@@ -186,6 +186,32 @@ pub struct PowerCurve {
     pub jitter: f64,
     pub classes: BTreeMap<GunClass, Band>,
     pub score: ScoreParams,
+    /// How a ladder's rungs are dealt (`[draw]`).
+    pub draw: DrawParams,
+}
+
+/// How the games' shares of a ladder are weighted (`DrawParams::games`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GameWeighting {
+    /// Every game the same share (a shuffled deck dealt one per rung).
+    Equal,
+    /// By the square root of the game's guns in the band.
+    Sqrt,
+    /// By the game's guns in the band.
+    Count,
+}
+
+/// The draw's settings (`[draw]`): which game a rung is dealt to and how
+/// strongly recently dealt guns are held back.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DrawParams {
+    pub games: GameWeighting,
+    /// A gun's weight is 1 / (1 + recency * heat); 0: off.
+    pub recency: f64,
+    /// The share of a gun's heat left after each ladder made (0..1).
+    pub recovery: f64,
 }
 
 impl Default for PowerCurve {
