@@ -29,6 +29,11 @@ fn a_150_mb_map_downloads_over_the_connection_by_default() {
     std::fs::create_dir_all(&empty).unwrap();
     let cache = dir.join("cache");
     let i = add_client(&mut sim, &empty, Some(&cache));
+    // The checking and saving of the 150 MB (a task) lands on the tick it
+    // is asked for, not when the machine's load allows: the frames counted
+    // below are the transfer's, whatever the load.
+    sim.server.repeatable();
+    sim.clients[i].repeatable();
 
     // At the tick rate: the bytes shown grow every second (no stall,
     // nothing near the 30 s timeout without traffic), the server's ticks
@@ -47,7 +52,10 @@ fn a_150_mb_map_downloads_over_the_connection_by_default() {
                 since += 1;
                 most_still = most_still.max(since);
             }
-            frames += 1;
+            // The transfer's frames: not the check and the save after it.
+            if d.done < d.total {
+                frames += 1;
+            }
         }
         w.contains_resource::<Joined>()
     });
