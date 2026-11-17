@@ -49,6 +49,7 @@ name = "Party"
 setting = [
   { label = "Swap effect", cvar = "party_swap_effect", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "Combat Arms' loop"], ["0", "None"]], widget = "dropdown" },
+  { label = "Ask before following the party leader", cvar = "party_ask_follow", choices = [["0", "Off"], ["1", "On"]], help = "Off (the default): when your party's leader joins a server you go there at once, from the menu or from another match. On: you are asked first (Join / Stay)." },
   { label = "Chat", cvar = "cl_chat", choices = [["1", "On"], ["2", "Team only"], ["0", "Off"]], help = "Whose chat lines show: everyone's, your team's only, or none. Notices and your own lines always show; hide one player with ignore <name> in the console or a click on their name in the open chat." },
 ]
 

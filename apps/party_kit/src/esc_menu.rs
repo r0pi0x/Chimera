@@ -13,7 +13,7 @@
 //!   dead until let go. Closing takes the mouse back.
 //! - **Resume.**
 //! - **Options**: a tab per page of data/options.toml (video, audio,
-//!   mouse, the party's own: `party_swap_effect`, `party_music`, and
+//!   mouse, the party's own: `party_swap_effect`, `party_music`, `party_ask_follow`, and
 //!   network: "Use my installed games", `chimera:asset_use_install`, off
 //!   by default, applied at the next start: `chimera_net::net::assets::
 //!   INSTALL_CVAR`),

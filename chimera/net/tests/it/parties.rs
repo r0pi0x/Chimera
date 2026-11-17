@@ -78,3 +78,108 @@ fn a_party_plays_on_one_side_and_is_numbered_in_the_lobby() {
     let n = numbers(&mut sim);
     assert!(n[2] != 0 && n[2] == n[3], "{n:?}");
 }
+
+mod following {
+    use std::sync::{Arc, Mutex};
+
+    use bevy::ecs::message::MessageCursor;
+    use chimera_assets::party_doc::{Create, Failure, Join, Joined, Lead, MemberView, MoveKind, OnMember, PartyView, State, Target};
+    use chimera_core::console::Console;
+    use chimera_net::net::{
+        client::ServerAddress,
+        party::{PartyActs, PartyAsk, PartyClient, PartyGo, PartyHub},
+    };
+
+    use super::*;
+
+    /// A hub that answers every state with the party it holds.
+    struct Fake(Mutex<PartyView>);
+
+    impl PartyHub for Fake {
+        fn origin(&self) -> String {
+            "fake".into()
+        }
+        fn create(&self, _: &Create) -> Result<Joined, Failure> {
+            Err(Failure { status: None, message: "not here".into() })
+        }
+        fn join(&self, _: &Join) -> Result<Joined, Failure> {
+            Err(Failure { status: None, message: "not here".into() })
+        }
+        fn state(&self, _: &State) -> Result<PartyView, Failure> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+        fn leave(&self, _: &str) -> Result<(), Failure> {
+            Ok(())
+        }
+        fn kick(&self, _: &OnMember) -> Result<PartyView, Failure> {
+            Err(Failure { status: None, message: "not here".into() })
+        }
+        fn promote(&self, _: &OnMember) -> Result<PartyView, Failure> {
+            Err(Failure { status: None, message: "not here".into() })
+        }
+        fn lead(&self, _: &Lead) -> Result<PartyView, Failure> {
+            Err(Failure { status: None, message: "not here".into() })
+        }
+    }
+
+    fn moved(to: &str, moves: u32) -> PartyView {
+        PartyView {
+            members: vec![MemberView { id: "l".into(), leader: true, ..default() }, MemberView { id: "m".into(), ..default() }],
+            you: "m".into(),
+            target: Some(Target { addr: to.into(), name: "S".into() }),
+            moves,
+            kind: if moves == 0 { MoveKind::None } else { MoveKind::Join },
+            ..default()
+        }
+    }
+
+    fn asked(sim: &mut NetSim, hub: &Fake, view: PartyView) {
+        *hub.0.lock().unwrap() = view;
+        let before = sim.clients[0].app.world().resource::<PartyClient>().generation;
+        sim.clients[0].app.world_mut().resource_mut::<PartyClient>().poll_now();
+        let ok = sim.until(600, |s| {
+            let p = s.clients[0].app.world().resource::<PartyClient>();
+            p.generation > before && p.busy == 0
+        });
+        assert!(ok, "the poll's answer");
+        sim.step();
+    }
+
+    /// A member in a match follows its leader to another server at once
+    /// by default; with `party_ask_follow 1` it is asked (Join / Stay).
+    #[test]
+    fn a_member_follows_at_once_unless_it_asked_to_be_asked() {
+        let hub = Arc::new(Fake(Mutex::new(moved("192.0.2.20:27031", 0))));
+        let mut sim = sim();
+        let h = hub.clone();
+        sim.add_client(move |w| {
+            let mut pc = PartyClient::new(h, None);
+            pc.token = Some("t".into());
+            w.insert_resource(pc);
+            w.insert_resource(PartyActs(false));
+        });
+        sim.until_joined(600);
+        // Another server than the one it is in: it is "in another match".
+        let here: std::net::SocketAddr = "192.0.2.10:27031".parse().unwrap();
+        sim.clients[0].app.world_mut().insert_resource(ServerAddress(here));
+        let mut cursor = MessageCursor::<PartyGo>::default();
+        asked(&mut sim, &hub, moved("192.0.2.20:27031", 0));
+        let read = |sim: &mut NetSim, cursor: &mut MessageCursor<PartyGo>| -> Vec<PartyGo> {
+            cursor.read(sim.clients[0].app.world().resource::<Messages<PartyGo>>()).cloned().collect()
+        };
+        assert!(read(&mut sim, &mut cursor).is_empty());
+        // The default: no asking.
+        assert_eq!(sim.clients[0].app.world().resource::<PartyAsk>().0, 0);
+        asked(&mut sim, &hub, moved("192.0.2.20:27031", 1));
+        let went = read(&mut sim, &mut cursor);
+        assert!(matches!(&went[..], [PartyGo::Join(t)] if t.addr == "192.0.2.20:27031"), "{went:?}");
+        assert!(sim.clients[0].app.world().resource::<PartyClient>().prompt.is_none());
+        // Asking on: the next move is a prompt, nothing acted on.
+        sim.clients[0].app.world_mut().resource_mut::<Console>().submit("party_ask_follow 1");
+        sim.step();
+        asked(&mut sim, &hub, moved("192.0.2.30:27031", 2));
+        assert!(read(&mut sim, &mut cursor).is_empty());
+        let prompt = sim.clients[0].app.world().resource::<PartyClient>().prompt.clone();
+        assert_eq!(prompt.map(|t| t.addr), Some("192.0.2.30:27031".to_string()));
+    }
+}

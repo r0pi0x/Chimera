@@ -188,6 +188,7 @@ the user's go-ahead: no Actions runs unless asked.
     - the hub's party protocol and how often it heartbeats.
   - **Session-only parties** (the first step, 2026-11-17): [plans/active/parties.md](plans/active/parties.md).
   - Builds on hub phases S2–S4 and the Signal r8 shell's tiles. Related: sprays, profiles and stats, ranks per game.
+  - **Later (user, 2026-11-17): check the claimed party id server-side**, the hub confirming a party pass to game servers if needed (docs/plans/active/parties.md, question 6). Not important now.
 
 - **Sprays (user, 2026-11-15; needs a design first):** players put a picture on a wall with a key, as in TF2, CS:S, HL2:DM and the other Source games: one spray per life or on a cooldown, decaling the surface looked at, visible to everyone and fading out when replaced.
   - **Design first:**
