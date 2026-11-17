@@ -150,6 +150,8 @@ pub enum BenchAction {
     /// What the target holds (None: its default).
     Hold(u64, Option<String>),
     PickerChoose(String),
+    /// The picker search's clear key.
+    PickerClear,
     PickerUse,
     PickerCancel,
     AddProp,
@@ -345,6 +347,7 @@ fn act(world: &mut World) {
                 let cur = id.and_then(spec_of).map(|s| s.character);
                 world.resource_mut::<BenchUi>().picker = Some((id, cur));
             }
+            BenchAction::PickerClear => world.resource_mut::<BenchUi>().clear_search(),
             BenchAction::PickerChoose(c) => {
                 if let Some(p) = world.resource_mut::<BenchUi>().picker.as_mut() {
                     p.1 = Some(c);
@@ -838,8 +841,11 @@ fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, every: &[Charact
     let find_row = ui.boxed(c, mid, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::row() });
     let byte = |i: usize| typed.char_indices().nth(i).map_or(typed.len(), |(b, _)| b);
     let cur = chimera_ui::controls::TextCursor { at: byte(bench.picker_caret), anchor: byte(bench.picker_anchor) };
-    let find = ui.text_field(c, find_row, typed, "Find a character or a game", Some(cur), false, 30.0, State::focused(true));
-    c.entity(find).insert((PickerSearch, UiParityId::new("bench.picker.find")));
+    let found = ui.search_field(c, find_row, typed, "Find a character or a game", Some(cur), 30.0, State::focused(true));
+    c.entity(found.field).insert((PickerSearch, UiParityId::new("bench.picker.find")));
+    if let Some(k) = found.clear {
+        c.entity(k).insert(BenchAction::PickerClear);
+    }
     if !typed.is_empty() {
         ui.text(c, find_row, Role::Mono, 0.42, Tone::Fg3, &format!("{} of {}", chars.len(), every.len()));
     }

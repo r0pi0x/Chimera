@@ -865,3 +865,76 @@ fn a_test_run_snaps_the_motion_scale() {
     chimera_ui::motion::init(&mut own);
     assert_eq!(own.world().resource::<Motion>().scale, 2.0);
 }
+
+/// Where every text under `e` is (physical px, in order).
+fn text_places(app: &mut App, e: Entity) -> Vec<Vec2> {
+    let w = app.world_mut();
+    let mut out = Vec::new();
+    let mut stack = vec![e];
+    while let Some(n) = stack.pop() {
+        if w.get::<Text>(n).is_some()
+            && let Some(t) = w.get::<bevy::ui::UiGlobalTransform>(n)
+        {
+            out.push(t.affine().translation);
+        }
+        if let Some(ch) = w.get::<Children>(n) {
+            stack.extend(ch.iter().rev());
+        }
+    }
+    out
+}
+
+/// Every text input of the kit keeps its text where it is whatever the
+/// caret and the selection do: the one test the screens' moved fields
+/// (Change gun's, the bench's and the tag popover's search, the report
+/// dialog's text, the chat's line, the port and name fields) stand on.
+#[test]
+fn typing_into_any_text_input_moves_no_text() {
+    let mut app = laid_out();
+    let sel = |at: usize, anchor: usize| Some(controls::TextCursor { at, anchor });
+    // Text field and search field: rest (focused, no keys) against the
+    // caret at each place and a selection.
+    let value = "ak47 rifle";
+    for search in [false, true] {
+        let make = |app: &mut App, caret: Option<controls::TextCursor>, st: State| {
+            build_laid(app, |ui, c, root| {
+                if search {
+                    ui.search_field(c, root, value, "Find", caret, 20.0, st).field
+                } else {
+                    ui.text_field(c, root, value, "Find", caret, false, 20.0, st)
+                }
+            })
+        };
+        let rest = make(&mut app, None, State::focused(true));
+        let want = (size_of(&app, rest), char_xs(&app, rest), text_places(&mut app, rest));
+        for caret in [sel(0, 0), sel(4, 4), sel(value.len(), value.len()), sel(7, 2), sel(value.len(), 0)] {
+            let f = make(&mut app, caret, State::focused(true));
+            assert_eq!(size_of(&app, f), want.0, "search={search}: the same box with {caret:?}");
+            assert_eq!(char_xs(&app, f), want.1, "search={search}: each character stays with {caret:?}");
+            assert_eq!(text_places(&mut app, f), want.2, "search={search}: every text stays with {caret:?}");
+        }
+        // A glass and a clear key sit at the ends: the text starts after the glass either way.
+        let empty = make(&mut app, sel(0, 0), State::focused(true));
+        assert_eq!(char_xs(&app, empty)[0], want.1[0]);
+    }
+    // The text area: three lines, the caret anywhere, all selected.
+    let text = "The grenade went through the wall.\n\nIt happened twice in the second round.";
+    let area = |app: &mut App, caret: Option<controls::TextCursor>| build_laid(app, |ui, c, root| ui.text_area(c, root, text, "What happened?", caret, 28.0, 8.0, State::focused(true)));
+    let rest = area(&mut app, None);
+    let want = (size_of(&app, rest), text_places(&mut app, rest));
+    for caret in [sel(0, 0), sel(10, 10), sel(34, 34), sel(text.len(), text.len()), sel(text.len(), 0)] {
+        let a = area(&mut app, caret);
+        assert_eq!(size_of(&app, a), want.0, "text area: the same box with {caret:?}");
+        assert_eq!(text_places(&mut app, a), want.1, "text area: every character stays with {caret:?}");
+    }
+    // The chat's line: typing at the start, middle and end.
+    let line = "gg wp everyone";
+    let chat = |app: &mut App, at: usize| build_laid(app, |ui, c, root| ui.chat_field(c, root, false, line, Some(at.into()), "Say something", 0.74));
+    let first = chat(&mut app, 0);
+    let want = text_places(&mut app, first);
+    assert!(!want.is_empty());
+    for at in [3, 7, line.len()] {
+        let f = chat(&mut app, at);
+        assert_eq!(text_places(&mut app, f), want, "the chat's text stays with the caret at {at}");
+    }
+}

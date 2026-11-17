@@ -189,6 +189,8 @@ invites from Friends, the designed party panel.
 
 ## Questions and the user's answers (2026-11-17)
 
+The user (2026-11-17): the first answer after a start or a party join keeps asking (Join / Stay) when the party is in a match; only moves follow at once. Whether a closed game stays in its party: as built.
+
 1. **Parties need a hub account** (decision 10: no anonymous hub
    access). Decided: yes, joining a party requires a hub account (as
    built); players with no account (LAN only) have no parties; the "+"
