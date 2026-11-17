@@ -31,6 +31,7 @@ pub mod bsp;
 pub mod decals;
 pub mod detail;
 pub mod dust;
+pub mod guest;
 pub mod face;
 pub mod lightmap;
 pub mod material;

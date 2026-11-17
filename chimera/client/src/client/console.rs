@@ -2317,6 +2317,15 @@ impl LoadCaps {
     }
 }
 
+/// The games the coming match deals (`chimera_net::minigame_net::
+/// dealt_games`; None: any), kept as the loaded map's
+/// (`map::sources::MapDealt`) for a match started on it later.
+fn dealt(w: &mut World) -> Option<std::sync::Arc<std::collections::BTreeSet<String>>> {
+    let dealt = chimera_net::minigame_net::dealt_games(w).map(std::sync::Arc::new);
+    w.insert_resource(chimera_world::map::sources::MapDealt(dealt.clone()));
+    dealt
+}
+
 /// A map loading in the background for the `map` command.
 #[derive(Resource)]
 struct MapLoad {
@@ -2329,6 +2338,8 @@ struct MapLoad {
 /// everyone respawns at the new spawn points.
 pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>) {
     w.remove_resource::<FreshGame>();
+    // A code-built map's kit still loading is called off.
+    w.remove_resource::<CodeMapKit>();
     w.insert_resource(crate::map::LoadedMapName(id.to_string()));
     // The local player's map isn't ready until the game is entered
     // (`settle_map`): what starts play waits for it.
@@ -2340,7 +2351,9 @@ pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>)
     w.insert_resource(progress.clone());
     // The app's context: what its games keep for their loads.
     let context = crate::map::LoadContext::of(w);
-    let options = crate::map::MapLoadOptions { hdr_level, progress, context, ..default() };
+    // Only the guests whose games the coming match deals (any when not known).
+    let dealt = dealt(w);
+    let options = crate::map::MapLoadOptions { hdr_level, progress, context, dealt, ..default() };
     // The app loads it (`AppHooks`), then the spawn's own work is done
     // there too (`map::prepare`): the frame that swaps it in only spawns.
     let hooks = w.get_resource::<super::AppHooks>().copied();
@@ -2380,6 +2393,7 @@ pub fn load_server_map(w: &mut World, map: &str, file: Option<std::path::PathBuf
 /// the loading screen (the console's system; public for a headless test
 /// of the whole `map` flow, `heavy::map_swap_frames`).
 pub fn finish_map_load(w: &mut World) {
+    finish_code_map_kit(w);
     if w.contains_resource::<Settling>() {
         settle_map(w);
         return;
@@ -2560,6 +2574,7 @@ pub fn load_greybox(w: &mut World) {
 /// frame, docs/performance.md "Leaving a game for the menu").
 pub fn unload_to_menu(w: &mut World) {
     w.remove_resource::<MapLoad>();
+    w.remove_resource::<CodeMapKit>();
     w.remove_resource::<crate::map::LocalMapLoad>();
     if let Some(spawning) = w.remove_resource::<Spawning>()
         && !spawning.was_paused
@@ -2579,6 +2594,7 @@ pub fn unload_to_menu(w: &mut World) {
 pub fn load_code_map(w: &mut World, map: &str) {
     let id = chimera_world::greybox::select(w, map);
     w.remove_resource::<MapLoad>();
+    w.remove_resource::<CodeMapKit>();
     w.remove_resource::<crate::map::LocalMapLoad>();
     // A spawn under way is called off (`unload_map` drops it).
     if let Some(spawning) = w.remove_resource::<Spawning>()
@@ -2592,28 +2608,88 @@ pub fn load_code_map(w: &mut World, map: &str) {
     unload_greybox(w);
     if let Some(hooks) = w.get_resource::<super::AppHooks>().copied() {
         // Its kit (the party's bodies, guns, HUD looks), when the app's
-        // maps dress code-built maps (`map::sources::CODE_MAP_KIT`), spawned
-        // first (a map's spawn clears what the map before left), then the
-        // code-built map.
+        // maps dress code-built maps (`map::sources::CODE_MAP_KIT`): loaded
+        // on a task (`CodeMapKit`; a cold dressing took seconds on the main
+        // thread: docs/performance.md, "Guest dressings kept for the
+        // session") and spawned when it is in, before the code-built map
+        // is spawned again (a map's spawn clears what the map before
+        // left). The code-built map is in at once, without it meanwhile.
         let hdr_level = w.get_resource::<super::hdr::HdrSettings>().map_or(0, |s| s.level);
         let options = crate::map::MapLoadOptions {
             hdr_level,
             context: crate::map::LoadContext::of(w),
+            dealt: dealt(w),
             ..default()
         };
         let began = std::time::Instant::now();
-        match (hooks.load_map)(&chimera_world::greybox::kit_id(id), &options) {
-            Ok(kit) => {
-                info!("{id}'s kit: {} bodies, loaded in {:.0} ms", kit.kit.characters.len(), began.elapsed().as_secs_f64() * 1000.0);
-                crate::map::change_map(w, kit, crate::map::MapDebugView::Normal);
-            }
-            Err(e) => debug!("{id} has no kit: {e}"),
+        let kit_id = chimera_world::greybox::kit_id(id);
+        let mut task = bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { (hooks.load_map)(&kit_id, &options) });
+        // Tests that wait for tasks (`WaitForTasks`): in this frame, as before.
+        if chimera_core::tasks::waits(w)
+            && let Some(result) = chimera_core::tasks::poll(&mut task, true)
+        {
+            spawn_code_map_kit(w, id, result, began);
+        } else {
+            w.insert_resource(CodeMapKit { id, task, began });
         }
         (hooks.respawn_greybox)(w);
     }
     w.remove_resource::<crate::map::ActiveMapLook>();
     w.insert_resource(crate::map::LoadedMapName(id.into()));
     crate::core::set_tick_length(w, std::time::Duration::from_secs_f64(1.0 / crate::core::DEFAULT_TICK_HZ));
+    code_map_view(w);
+    crate::gameplay::new_game(w);
+}
+
+/// A code-built map's kit loading on a task (`load_code_map`).
+#[derive(Resource)]
+struct CodeMapKit {
+    id: &'static str,
+    task: bevy::tasks::Task<Result<crate::map::MapData, String>>,
+    began: std::time::Instant,
+}
+
+/// The code-built map's kit spawned once its task is done (a frame of the
+/// console's `finish_map_load`), the code-built map spawned again after
+/// it, the view as `load_code_map` left it.
+fn finish_code_map_kit(w: &mut World) {
+    let wait = chimera_core::tasks::waits(w);
+    let Some(mut load) = w.get_resource_mut::<CodeMapKit>() else { return };
+    let Some(result) = chimera_core::tasks::poll(&mut load.task, wait) else { return };
+    let Some(CodeMapKit { id, began, .. }) = w.remove_resource::<CodeMapKit>() else { return };
+    // Another map since (its load removes this): nothing to do.
+    if w.get_resource::<crate::map::LoadedMapName>().is_none_or(|n| n.0 != id) {
+        return;
+    }
+    if spawn_code_map_kit(w, id, result, began) {
+        unload_greybox(w);
+        if let Some(hooks) = w.get_resource::<super::AppHooks>().copied() {
+            (hooks.respawn_greybox)(w);
+        }
+        w.remove_resource::<crate::map::ActiveMapLook>();
+        code_map_view(w);
+    }
+}
+
+/// The kit `result` of code-built map `id` spawned (`change_map`);
+/// whether there was one.
+fn spawn_code_map_kit(w: &mut World, id: &str, result: Result<crate::map::MapData, String>, began: std::time::Instant) -> bool {
+    match result {
+        Ok(kit) => {
+            info!("{id}'s kit: {} bodies, loaded in {:.0} ms", kit.kit.characters.len(), began.elapsed().as_secs_f64() * 1000.0);
+            crate::map::change_map(w, kit, crate::map::MapDebugView::Normal);
+            true
+        }
+        Err(e) => {
+            debug!("{id} has no kit: {e}");
+            false
+        }
+    }
+}
+
+/// A code-built map's view: tonemapped, the camera clearing (no sky), the
+/// skybox cameras off.
+fn code_map_view(w: &mut World) {
     let cams: Vec<Entity> = w
         .query_filtered::<Entity, With<super::FirstPersonCamera>>()
         .iter(w)
@@ -2630,7 +2706,6 @@ pub fn load_code_map(w: &mut World, map: &str) {
     for mut camera in skies.iter_mut(w) {
         camera.is_active = false;
     }
-    crate::gameplay::new_game(w);
 }
 
 /// The greybox map's name for `map` and `--map`.

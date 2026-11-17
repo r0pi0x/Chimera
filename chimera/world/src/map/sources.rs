@@ -93,6 +93,12 @@ pub struct MapLoadOptions {
     /// for their loads. A load with no app (a tool, a test) gets a fresh
     /// one.
     pub context: LoadContext,
+    /// The games whose parts the match on this map can deal (its ladder's
+    /// guns' games and its definition's kit and slots: `chimera_net`'s
+    /// `minigame_net::dealt_games`); a guest of another game isn't
+    /// dressed (`MapSources::dress`). None: any game (no match known, a
+    /// sandbox, a client).
+    pub dealt: Option<Arc<BTreeSet<String>>>,
 }
 
 /// An app's context for its map loads (`MapLoadOptions::context`): one
@@ -195,7 +201,7 @@ impl KitLoad {
 
 impl Default for MapLoadOptions {
     fn default() -> Self {
-        Self { hdr_level: 0, textures: true, kit: KitLoad::All, progress: default(), context: default() }
+        Self { hdr_level: 0, textures: true, kit: KitLoad::All, progress: default(), context: default(), dealt: None }
     }
 }
 
@@ -214,7 +220,18 @@ impl MapLoadOptions {
     pub fn in_context(self, context: &LoadContext) -> Self {
         Self { context: context.clone(), ..self }
     }
+
+    /// Whether the match can deal `game`'s parts (`dealt`; any without).
+    pub fn deals(&self, game: &str) -> bool {
+        self.dealt.as_ref().is_none_or(|d| d.iter().any(|g| g.eq_ignore_ascii_case(game)))
+    }
 }
+
+/// The games the loaded map's guests were dressed for (its load's
+/// `MapLoadOptions::dealt`; None: any): a match that deals another game
+/// loads the map again (`chimera_net`'s `minigame_net`).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct MapDealt(pub Option<Arc<BTreeSet<String>>>);
 
 /// One game's maps (`game:name`) from its install.
 #[derive(Debug)]
@@ -452,7 +469,8 @@ impl MapSources {
             self.dress_with(gameplay, game, map, options);
             dressed(gameplay.game, &map.name, began);
         }
-        for guest in self.guests.iter().filter(|g| !g.game.eq_ignore_ascii_case(game)) {
+        // Only the guests the match can deal (`MapLoadOptions::dealt`).
+        for guest in self.guests.iter().filter(|g| !g.game.eq_ignore_ascii_case(game) && options.deals(g.game)) {
             let began = std::time::Instant::now();
             if let Err(e) = (guest.dress)(map, options) {
                 map.warnings.push(format!("{}'s parts: {e}", guest.game));
@@ -733,6 +751,11 @@ mod tests {
         assert!(other.warnings.iter().any(|w| w.contains("c's parts: no install")), "{:?}", other.warnings);
         let own = S4.load("a:x", 0).unwrap();
         assert!(own.kit.characters.iter().all(|c| c.name.as_deref() != Some("a_guest")), "not on its own game's map");
+        // A match that deals none of a's parts: a isn't dressed.
+        let dealt = MapLoadOptions { dealt: Some(Arc::new(BTreeSet::from(["b".to_string()]))), ..MapLoadOptions::default() };
+        let undealt = S4.load_with("b:y", &dealt).unwrap();
+        assert!(undealt.kit.characters.iter().all(|c| c.name.as_deref() != Some("a_guest")), "a isn't dealt");
+        assert!(!undealt.warnings.iter().any(|w| w.contains("c's parts")), "nor c");
     }
 
     /// The app's context reaches its loader and the gameplay's dressing:

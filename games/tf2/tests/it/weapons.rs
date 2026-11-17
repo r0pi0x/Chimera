@@ -360,10 +360,10 @@ fn the_rocket_starts_under_the_gun_and_flies_at_1100_24_25() {
     // wall it meets): from 12 right and 3 down, a little left and up.
     assert!((v.length() - 1100.0 * U).abs() < 1e-3, "{v}");
     assert!(v.normalize().dot(Vec3::NEG_Z) > 0.999 && v.x < 0.0 && v.y > 0.0, "{v}");
-    // Its model's nose (+X, the held model's frame) along its flight
-    // (playtest 2026-11-17: it flew sideways).
+    // Its model's nose (+Y, the held model's frame) along its flight
+    // (playtest 2026-11-17: it flew standing upright).
     let turned = sim.app.world().get::<Transform>(r[0].0).unwrap().rotation;
-    assert!((turned * Vec3::X).dot(v.normalize()) > 0.999, "nose {} along {v}", turned * Vec3::X);
+    assert!((turned * Vec3::Y).dot(v.normalize()) > 0.999, "nose {} along {v}", turned * Vec3::Y);
     // Whatever it meets ahead: gone within a tick or two of its flight
     // time from where it started.
     let mut ticks = 1u64;
