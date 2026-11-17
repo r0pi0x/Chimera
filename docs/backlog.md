@@ -2965,11 +2965,15 @@ docs/plans/active/sound.md.
   arms, vehicles. **The user (2026-11-17): interpolate everything that
   moves at Halo's tick** (corpses, arms, vehicles, effects, doors and
   devices, the HUD's moving parts). Skip only what's prohibitively hard
-  or costs measurable frame time, and say which in this entry. The
-  one-tick trail (up to 33 ms) stays where the pose comes from the
-  simulation. The local view model may instead be eased from the
-  client's own predicted tick, if that removes the trail without
-  mispredictions.
+  or costs measurable frame time, and say which in this entry. **No
+  trail where the data is known:** an animation's keyframes are data, so
+  sample each playing animation at the frame's own time (the last tick's
+  time plus the frame's share of the next), continuing past the last
+  tick rather than easing between the last two poses. When the next tick
+  changes the animation, cross-fade it in the usual way. Only motion the
+  simulation decides from input (positions, physics) is eased between
+  ticks, and the local player's comes from its own predicted tick.
+  Measure the visible delay before and after.
 
 - **Halo HUD resolution (user, 2026-11-17).** Done (2026-11-17), left below for the generated-asset option: the opt-in scaling setting `halo_ce:hud_filter` (Options > Video "Halo HUD scaling": Original, the default; Sharp, nearest inside each texel with a one-pixel linear seam; Smooth+sharpen, an unsharp mask; `games/halo_ce/src/ui/hud/material.rs`, hud.wesl). Still open: upscaled HUD bitmaps as a generated asset set. Original text: The HUD's bitmaps are the
   original's, authored for 640x480, so they look soft scaled to 1080p and
