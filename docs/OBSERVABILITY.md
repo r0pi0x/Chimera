@@ -592,15 +592,18 @@ on the range a target asked for at `d` m stands on the range's `d` m
 line at your side of the axis, nudged aside from what stands there
 (`target add <gun> platform`, `target set <n> platform|line`: on the
 range's raised platform instead, standing still, no `line=`), and
-props go on the range's own shelf and board first:
-`minigame::range_place`);
+a prop added with a distance goes on the range's own shelf and board
+first: `minigame::range_place`; without one, it stands under the
+crosshair);
 every hit on a target or by one logs a `HitMeasured` line, every kill a
 `KillMeasured` line (shots, hits, headshots, time to kill, distance: the
 true one, shooter to target, and on the range `line=` the target's
 distance line), and
 every blast while the sandbox plays a `BlastMeasured` line (centre, inner
 and outer radius, each victim's distance and damage). Props: `prop add
-<bottles|tin_cans|target_board> [distance]`, `prop remove <n|all>`, `prop
+<bottles|tin_cans|target_board> [distance]` (no distance: where the
+crosshair meets the floor or the floor below the wall it meets, as the
+bench's Add prop does), `prop remove <n|all>`, `prop
 list`, `prop group <n>` (a board's shot group), `prop reset <n|all>`,
 `prop look <n> [piece]` (`chimera_sim::minigame::props`; `PropHit` lines).
 Half speed: `host_timescale 0.5` (the measurements' times are simulation

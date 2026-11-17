@@ -220,6 +220,44 @@ fn a_board_keeps_the_shot_group_and_its_misses() {
     assert_eq!(sim.app.world().get::<ShotGroup>(e).cloned().unwrap(), ShotGroup::default());
 }
 
+/// A prop placed by the player (the bench's Add prop, `prop add <kind>`)
+/// stands where the crosshair meets the floor: looking down at the floor
+/// 4 m and then 9 m ahead puts it there, not on a fixed distance line;
+/// the line along the whole view, pitch too.
+#[test]
+fn a_placed_prop_stands_under_the_crosshair() {
+    let (mut sim, me) = play();
+    let eye = |sim: &Sim| sim.position(me) + sim.app.world().get::<chimera_core::core::MovementState>(me).map_or(Vec3::Y * 0.6, |s| s.eye_offset);
+    for (yaw, ahead) in [(0.0_f32, 4.0_f32), (0.6, 9.0)] {
+        let from = eye(&sim);
+        let floor = {
+            let world = sim.app.world_mut();
+            let mut state: SystemState<SpatialQuery> = SystemState::new(world);
+            let filter = SpatialQueryFilter::from_mask(SOLID_LAYERS).with_excluded_entities([me]);
+            let down = state.get(world).unwrap().cast_ray(from, Dir3::NEG_Y, 10.0, true, &filter).expect("a floor");
+            from.y - down.distance
+        };
+        let pitch = -((from.y - floor) / ahead).atan();
+        chimera_core::core::set_view(sim.app.world_mut(), me, yaw, pitch);
+        let e = props::spawn_at_aim(sim.app.world_mut(), "tin_cans", None).unwrap_or_else(|e| panic!("the prop: {e}"));
+        sim.ticks(2);
+        let p = sim.app.world().get::<Prop>(e).cloned().unwrap();
+        let aimed = from + Vec3::new(-yaw.sin(), 0.0, -yaw.cos()) * ahead;
+        let found = p.home.xz().distance(aimed.xz());
+        assert!(found < 0.5, "under the crosshair {ahead} m ahead: {:?} vs {:?}", p.home, aimed);
+        assert!((p.spec.distance_m - ahead).abs() < 0.5, "its distance: {}", p.spec.distance_m);
+    }
+    // Straight up into the sky or nothing within reach: refused, not
+    // placed on some line.
+    chimera_core::core::set_view(sim.app.world_mut(), me, 0.0, 1.55);
+    let up = props::spawn_at_aim(sim.app.world_mut(), "bottles", None);
+    if let Ok(e) = up {
+        // A ceiling: the floor below it, near the player.
+        let p = sim.app.world().get::<Prop>(e).cloned().unwrap();
+        assert!(p.spec.distance_m < 1.5, "below a ceiling right above: {:?}", p.home);
+    }
+}
+
 #[test]
 fn props_are_the_sandboxs_only() {
     let mut sim = ugg();
