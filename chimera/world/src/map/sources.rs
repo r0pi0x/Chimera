@@ -46,7 +46,7 @@
 //!   (`MapSources::guests`, each a `MapDressing` that appends to the
 //!   map): the party's Combat Arms maps get CS:S's player bodies, held
 //!   and view models and HUD look from the CS:S install, so a player
-//!   holding a CS:S gun there is CS:S's, not the shell's capsule. A guest
+//!   holding a CS:S gun there is CS:S's, not the stand-in body. A guest
 //!   is skipped on a map of its own game.
 //!
 //! The functions are plain `fn`s and the lists `'static` slices, so an

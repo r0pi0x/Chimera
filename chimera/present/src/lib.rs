@@ -50,6 +50,7 @@ impl bevy::app::PluginGroup for PresentationPlugins {
             .add(render::beams::BeamMaterialPlugin)
             .add(render::sky_occluder::SkyOccluderPlugin)
             .add(render::detail::DetailMaterialPlugin)
+            .add(render::stand_in::StandInMaterialPlugin)
             .add(audio::clip_asset::SoundAssetPlugin)
     }
 }

@@ -68,6 +68,8 @@ impl Plugin for MapPlugin {
         render::scoped_resources(app);
         app.init_resource::<render::bodies::LateWanted>();
         render::arena::plugin(app);
+        // Stand-ins where a model isn't in yet, for every game.
+        render::stand_in::plugin(app);
         {
             use chimera_core::metrics::census::CensusAppExt;
             use render::{

@@ -18,6 +18,10 @@
 //! player's, and lit per pixel by the map's light at its lighting origin
 //! (`LightField`) plus the scene's point lights (`DynamicLight`).
 //!
+//! A view whose model is wanted and not built yet marks its camera
+//! `stand_in::ViewModelWaiting` (the stand-in gun shows there); with
+//! `chimera_standins 2` the stand-in shows instead of the real model.
+//!
 //! First-person view models for any game: `MapViewModel` (skinned meshes in eye
 //! space, own skeleton, `AnimSet`, handedness, attachments, lighting origin),
 //! `ViewModels`, the `ViewAnimator` and `ViewModelOffset` (bob/sway) games
@@ -352,16 +356,21 @@ pub fn build_late(
 /// the game's placeholder had stepped aside): the drawing's assets with
 /// nothing of a map (no textures, cubemaps, fog or light field, so the
 /// models show their textures as they are), for `build_late` to fill. A
-/// map spawned later replaces them with its own.
+/// map spawned later replaces them with its own. Also made when no view
+/// model is added yet but a view wants one, so its stand-in gun draws
+/// (`stand_in::view_guns`).
 pub fn assets_without_map(
     models: Option<Res<ViewModels>>,
     assets: Option<Res<ViewModelAssets>>,
+    wanting: Query<&ViewAnimator>,
     meshes: Option<ResMut<Assets<Mesh>>>,
     materials: Option<ResMut<Assets<PropMaterial>>>,
     bindposes: Option<ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>>,
     mut commands: Commands,
 ) {
-    if models.is_none() || assets.is_some() {
+    // Also when none is added yet but a view wants one: its stand-in
+    // shows (`stand_in::view_guns`) while it comes.
+    if assets.is_some() || (models.is_none() && !wanting.iter().any(|v| v.key.is_some())) {
         return;
     }
     let (Some(mut meshes), Some(mut materials), Some(mut bindposes)) = (meshes, materials, bindposes) else {
@@ -426,17 +435,19 @@ pub fn draw_view_models(
             Option<&Children>,
             Option<&bevy::camera::RenderTarget>,
             Option<&bevy::core_pipeline::tonemapping::Tonemapping>,
+            Has<super::stand_in::ViewModelWaiting>,
         ),
         With<ViewModelCamera>,
     >,
     mut bodies: Query<(&mut ViewModelBody, &mut Transform, &mut Visibility), Without<BodyJoint>>,
     mut joints: Query<&mut Transform, With<BodyJoint>>,
-    (mut materials, dormant, mut probe_table, real, mut wanted): (
+    (mut materials, dormant, mut probe_table, real, mut wanted, stand_ins): (
         Option<ResMut<Assets<PropMaterial>>>,
         Option<Res<super::prop_material::DormantProps>>,
         Option<ResMut<super::probe_lit::ProbeTable>>,
         Res<Time<Real>>,
         Option<ResMut<super::bodies::LateWanted>>,
+        Option<Res<super::stand_in::StandInSettings>>,
     ),
     mut commands: Commands,
 ) {
@@ -457,12 +468,16 @@ pub fn draw_view_models(
                 .get(anchor_owner(parent, source))
                 .is_ok_and(|c| c.weapon_hidden != 0);
         let want = state.filter(|_| !hidden).and_then(|(s, _)| s.key.as_deref());
-        let shown = want.and_then(|k| Some((k, assets.models.get(k)?, models.as_ref()?.get(k)?)));
-        if let Some(k) = want.filter(|_| shown.is_none()) {
+        // `chimera_standins 2`: the stand-in instead (`stand_in::view_guns`).
+        let forced = stand_ins.as_ref().is_some_and(|s| s.mode == 2);
+        let shown = want
+            .filter(|_| !forced)
+            .and_then(|k| Some((k, assets.models.get(k)?, models.as_ref()?.get(k)?)));
+        if let Some(k) = want.filter(|_| shown.is_none() && !forced) {
             missing.insert(k.to_string());
         }
         let camera = children.into_iter().flatten().find(|c| cameras.contains(**c)).copied();
-        let Some((camera, mut cam, mut projection, cam_children, target, cam_tonemapping)) =
+        let Some((camera, mut cam, mut projection, cam_children, target, cam_tonemapping, waiting)) =
             camera.and_then(|c| cameras.get_mut(c).ok())
         else {
             let mut e = commands.spawn((
@@ -489,6 +504,15 @@ pub fn draw_view_models(
             }
             continue;
         };
+        // A model wanted and not built: the stand-in gun shows meanwhile.
+        let waits = want.is_some() && shown.is_none();
+        if waits != waiting {
+            if waits {
+                commands.entity(camera).insert(super::stand_in::ViewModelWaiting);
+            } else {
+                commands.entity(camera).remove::<super::stand_in::ViewModelWaiting>();
+            }
+        }
         // Whether it draws at all is `view_model_cameras_draw`'s.
         if cam.order != anchor_camera.order + 1 {
             cam.order = anchor_camera.order + 1;

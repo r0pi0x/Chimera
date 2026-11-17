@@ -39,10 +39,11 @@
 //! game without one); no gun off the ground, any game's, placed or dropped
 //! (`[pickups] weapons = false`: the ladder alone arms a player; a map's
 //! guns aren't placed, since a gun lying there that can't be taken would only
-//! mislead). `parts` (console) prints each game's capability report. It
-//! never draws a stand-in (`game_parts::NoStandIns`: no capsule, no box gun
-//! or knife): what shows stays until the real model is ready, a ladder's
-//! models loading ahead (Combat Arms' `characters::preload`).
+//! mislead). `parts` (console) prints each game's capability report. A body
+//! shown stays until the next is ready and a character whose game has no
+//! body here wears another's (`game_parts::PreferRealModels`); Chimera's
+//! loading stand-ins (`render::stand_in`) show only where nothing real can
+//! yet, a ladder's models loading ahead (Combat Arms' `characters::preload`).
 //!
 //! `APP` (feature `present`): the binary's client app, the party's
 //! (`party_kit::client::PARTY`) with its own command line (`args`), the
@@ -293,9 +294,8 @@ impl Plugin for UltimateGunGamePlugin {
         // the Internet tab lists (docs/plans/active/hub.md 4.3).
         .insert_resource(chimera_net::net::hub::HubGame(HUB_GAME.into()))
         .insert_resource(chimera_sim::minigame::ladder::RungSeed(self.rung_seed.unwrap_or(self.seed)))
-        // Never a capsule or a template gun: what shows stays until the
-        // real model is ready (`game_parts::NoStandIns`).
-        .init_resource::<chimera_core::game_parts::NoStandIns>()
+        // Any real body rather than a stand-in (`game_parts::PreferRealModels`).
+        .init_resource::<chimera_core::game_parts::PreferRealModels>()
         .console_command(
             "chimera:ugg_new",
             "ugg_new [seed] [rungs] [map]: a new Ultimate Gun Game ladder for the players connected, played at once \

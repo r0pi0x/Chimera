@@ -59,7 +59,7 @@ the user's go-ahead: no Actions runs unless asked.
   - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
   - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
 
-- **Our own default assets: player models from the logo's three characters (user, 2026-11-15):** create a small set of original, committed assets, made by us (e.g. in Blender), for games or tests that have no player model yet. Today they fall back to the shell's capsule (`map::CharacterModels::for_identity`).
+- **Our own default assets: player models from the logo's three characters (user, 2026-11-15):** create a small set of original, committed assets, made by us (e.g. in Blender), for games or tests that have no player model yet. Today they fall back to the loading stand-in body (`render::stand_in`, `map::CharacterModels::for_identity`).
   - **First goal:** turn the three characters in the logo (the Operator, Trooper and Vanguard avatar glyphs, `shots/avatar-glyphs/*.svg` in the Signal design work, now `chimera_ui::avatar`) into rigged, animated player models in the Signal look.
   - **Sandbox test dummy (user, 2026-11-17):** the range's dummies should not be a Combat Arms character by default; a dummy mesh in the shape of the logo characters, with hitgroups.
   - **Rigging:** one shared humanoid skeleton, so animations retarget across all three.
@@ -2921,14 +2921,25 @@ docs/plans/active/sound.md.
   for load and unload (one region per map or session, freed at once)
   where measurements show allocation or fragmentation costs.
 
-- **Stand-in assets that say "loading" (user, 2026-11-17).** One
-  consistent look wherever a real asset isn't in yet: our own low-poly
-  stand-ins, readable as what they stand for (a body, a gun, a prop) but
-  cheap to keep loaded, from the default-assets entry (logo characters).
-  They get a loading shader, for example a light dashed or checkered
-  pattern scrolling over them, so players know something will pop in.
-  This replaces today's capsules and odd fallbacks. Keep stand-ins on
-  screen as briefly as possible, and measure how long each shows.
+- **Stand-in assets that say "loading" (user, 2026-11-17).** First cut
+  in: `chimera_present::render::stand_in` (procedural low-poly body, gun
+  and crate, `stand_in_mesh`; the loading material `stand_in.wesl`,
+  light and faceted with cobalt accents and slow scrolling stripes) for
+  every game: bodies (no body drawn yet), guns held on a real body
+  (late held model), first-person guns (view model wanted, not built),
+  dropped guns, and anything a game asks for (`WantsStandIn`). It
+  replaced the shell's capsules (`client::hud`) and Combat Arms' box
+  gun; `chimera_standins 0|1|2`, `stand_ins` and an info line per load
+  measure them (docs/performance.md, "Stand-ins on screen"). Left:
+  - Keep them on screen as briefly as possible: the sandbox's first
+    view gun shows 0.14-0.49 s, late target bodies flash for a frame
+    just past the grace (performance.md has the table and what to cut).
+  - The stand-in body animated (it only stands, turns and crouches) and
+    a knife and grenade shape; a `ShownItem` (a thrown grenade) still
+    draws nothing while its model comes.
+  - Swap the body for the logo characters (default-assets entry) once
+    they exist, and decide whether a character whose game has no body on
+    the map should keep a "loading" look at all.
 
 - **One kept-dressing cache in Chimera for every game (user,
   2026-11-17).** The session cache for guest dressings

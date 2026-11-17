@@ -2,7 +2,7 @@
 //! `testkit::STAND_IN`, game `kit`) takes part in the automatic gun game:
 //! its guns on the ladder, other games' maps in the pool, and for its
 //! holder the fallback HUD (the base game's) and the fallback body (none
-//! of its game among the map's models: the shell's capsule).
+//! of its game among the map's models: the stand-in body).
 
 use bevy::prelude::*;
 use chimera_core::{
@@ -114,7 +114,7 @@ fn its_holder_moves_as_it_with_the_fallback_hud_and_body() {
     assert_eq!(w.get::<GameIdentity>(a).map(|g| g.0.as_str()), Some("kit"));
     assert_eq!(w.get::<MovementSlot>(a).map(|m| m.0), Some(testkit::STAND_IN_MOVEMENT));
     assert_eq!(w.resource::<Gameplay>().hud, BASE, "the fallback HUD");
-    assert_eq!(w.get::<BodyModel>(a), None, "the fallback body: the shell's capsule");
+    assert_eq!(w.get::<BodyModel>(a), None, "the fallback body: the stand-in");
     // It still moves (the stand-in's movement steps it).
     sim.intent(a).move_axis = Vec2::Y;
     let from = sim.position(a);

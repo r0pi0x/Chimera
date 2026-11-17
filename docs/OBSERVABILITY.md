@@ -546,6 +546,18 @@ app). A normal session does. An explicit `host_writeconfig` still writes;
 `CHIMERA_CFG_DIR=<dir>` points the config folder (read and write) at a
 throwaway one.
 
+### Stand-ins (models not in yet)
+
+Where a real model isn't in yet, every game shows Chimera's loading
+stand-ins (`chimera_present::render::stand_in`: body, gun, crate).
+`chimera_standins 2` shows them in place of the real ones (to look at
+them; 0 never, 1 the default), `standin_spawn <body|gun|prop>` puts one
+2.5 m ahead, `stand_ins` prints how long they were on screen, and each
+load that showed some logs one line at info (`stand-ins: 3 bodies
+0.41-0.83 s ...`). The scene behind docs/performance.md's shots:
+`+sandbox --scene <scratch>/standins.scene` with `chimera_standins 2`,
+`target add 1 6`, `standin_spawn prop`, `shot`.
+
 ## 3. Live ECS over HTTP (Bevy Remote Protocol)
 
 With `--features dev`, the game serves JSON-RPC on `localhost:15702`
