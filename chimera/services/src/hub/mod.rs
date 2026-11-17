@@ -47,6 +47,8 @@
 //!   off the list: its heartbeats are refused (403) for `DELIST_SECS`
 //!   (or the time given), so it doesn't come back with the next one. The
 //!   refusals are in memory: a restart of the hub forgets them.
+//! - **Parties** (`party`, `POST /hub/party/...`): session-only parties
+//!   joined by invite code (docs/plans/active/parties.md).
 //! - `hub.db` keeps the listings across a restart (no backup: they come
 //!   back with the next heartbeats).
 //!
@@ -57,6 +59,7 @@
 //! of the hub was tried over IPv6.
 
 pub mod http;
+pub mod party;
 
 use std::{
     collections::HashMap,
@@ -212,6 +215,16 @@ pub struct Options {
     pub probe_wait: Duration,
     /// How often the revocation feed is asked (tests: shorter).
     pub feed_every: Duration,
+    /// A party member unseen this long is dropped, s.
+    pub member_expiry: u64,
+    /// A leader offline this long, another member online: the lead
+    /// passes, s.
+    pub lead_handover: u64,
+    /// Party calls an account may make a minute.
+    pub party_calls: usize,
+    /// Wrong party codes an account or an address may send in
+    /// `party::CODE_WINDOW`.
+    pub code_failures: usize,
 }
 
 impl Default for Options {
@@ -223,6 +236,10 @@ impl Default for Options {
             probe_every: 300,
             probe_wait: Duration::from_millis(1500),
             feed_every: chimera_assets::accounts::FEED_EVERY,
+            member_expiry: 6 * 3600,
+            lead_handover: 120,
+            party_calls: 60,
+            code_failures: 10,
         }
     }
 }
@@ -403,6 +420,7 @@ pub struct Hub {
     options: Options,
     config: Mutex<(Option<(SystemTime, u64)>, HubConfig)>,
     probes: Mutex<Option<mpsc::Sender<(String, SocketAddr)>>>,
+    parties: Mutex<party::Book>,
 }
 
 impl Hub {
@@ -429,8 +447,10 @@ impl Hub {
             options,
             config: Mutex::new((None, HubConfig::default())),
             probes: Mutex::new(None),
+            parties: Mutex::default(),
         });
         hub.load()?;
+        hub.load_parties()?;
         let (tx, rx) = mpsc::channel();
         *hub.probes.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
         let weak = Arc::downgrade(&hub);
@@ -621,6 +641,7 @@ impl Hub {
 
     /// Expired listings and revoked accounts' go.
     pub fn sweep(&self) {
+        self.sweep_parties();
         let now = self.now();
         let expiry = self.options.expiry;
         let gone: Vec<String> = {

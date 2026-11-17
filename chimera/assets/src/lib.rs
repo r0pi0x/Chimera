@@ -36,7 +36,7 @@
 //! half-life), and `accounts::TicketAuth` lets the asset service take
 //! tickets beside legacy tokens. `hub_doc` is the hub's discovery
 //! document, heartbeats and server list, both sides, and the client's
-//! cache of them.
+//! cache of them; `party_doc` the hub's parties, both sides.
 //!
 //! `resolve`: which sets a player fetches when (startup, each match,
 //! ahead of need), the records a list of sets comes to, and the lean
@@ -84,6 +84,7 @@ pub mod manifest;
 pub mod map_cache;
 pub mod pace;
 pub mod pack;
+pub mod party_doc;
 pub mod pending;
 pub mod progress;
 pub mod recording;

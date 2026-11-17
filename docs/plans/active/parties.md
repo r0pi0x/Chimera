@@ -1,6 +1,8 @@
 # Plan: session-only parties, joined by invite code
 
-Status: started 2026-11-17. Backlog: "Parties and friends: the social
+Status: started 2026-11-17. Step 2 (the hub) built: `chimera_assets::
+party_doc`, `chimera_services::hub::party` (table `parties`, hub.db
+version 2), tests `chimera_services` `hub::parties::`. Backlog: "Parties and friends: the social
 layer" ([../../backlog.md](../../backlog.md)); the user's decisions are
 recorded there and followed here. Scope of this plan's first run, in the
 user's order: **parties without friends**, joined by an invite code; no
