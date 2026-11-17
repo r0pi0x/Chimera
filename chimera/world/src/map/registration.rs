@@ -212,10 +212,17 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
     layers.tracer_resources(app);
     app.add_message::<tracer::Tracer>();
     layers.lighting(app);
+    // Posed once the tick's intents are final (`SimSet::Commands`):
+    // hitboxes are kept in the look's frame (the trace turns them by
+    // `Intent::yaw`), so a look changed after posing (a bot's brain before
+    // the rules, a practice target's facing put back after them) turned
+    // them with it (playtest 2026-11-17: a TF2 target's hitboxes faced
+    // away from a player walking round it).
     app.add_systems(
         FixedUpdate,
         (attach_hitboxes, ragdoll::record_poses, pose_hitboxes)
             .chain()
+            .after(crate::core::SimSet::Commands)
             .before(crate::core::SimSet::Movement),
     )
     .add_systems(FixedUpdate, fall_out_of_map.after(crate::core::SimSet::Movement))
