@@ -37,7 +37,7 @@ impulse = 0.0
 
 # Its shots' sound is the spin's loop (`tf2:minigun`).
 [sounds]
-draw = [[0.0, "Weapon_Minigun.Draw"]]
+draw = [[0.0, "tf2:Weapon_Minigun.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_minigun/c_minigun.mdl"
@@ -63,8 +63,8 @@ penalty_flat = 0.2
 damage_floor = 0.5
 spread_ceiling = 1.5
 spun_speed = 110.0
-wind_up_sound = "Weapon_Minigun.WindUp"
-spin_sound = "Weapon_Minigun.Spin"
-fire_sound = "Weapon_Minigun.Fire"
-empty_sound = "Weapon_Minigun.ClipEmpty"
-wind_down_sound = "Weapon_Minigun.WindDown"
+wind_up_sound = "tf2:Weapon_Minigun.WindUp"
+spin_sound = "tf2:Weapon_Minigun.Spin"
+fire_sound = "tf2:Weapon_Minigun.Fire"
+empty_sound = "tf2:Weapon_Minigun.ClipEmpty"
+wind_down_sound = "tf2:Weapon_Minigun.WindDown"

@@ -17,6 +17,10 @@
 //! - `shot_after <fact> <frames> <name>`: arm a picture the given frames
 //!   after the next frame the fact holds (the script goes on at once; the
 //!   run waits for armed pictures at its end, up to 1800 frames).
+//! - `type <text>`: the text typed, a key press a character (into the
+//!   console after `toggleconsole`, or a chat line); `key <name>
+//!   [times]`: a key pressed (`tab`, `enter`, `escape`, `up`, `down`,
+//!   ...: `KEYS`), the script going on the next frame.
 //! - Anything else is a console line, submitted that frame (`setpos`,
 //!   `setang`, `thirdperson`, `cam_idealdist`, `cam_idealyaw`, `rung`,
 //!   `target add`, `target look`, `+attack`, ...).
@@ -141,7 +145,28 @@ pub enum Step {
     WaitForCvar(String, String, u64),
     Shot(String),
     ShotAfter(Fact, u64, String),
+    /// `type <text>`: each character as a key press, as a player types it.
+    Type(String),
+    /// `key <name> [times]`: a key pressed (`KEYS`' names).
+    Key(KeyCode, u64),
 }
+
+/// The keys `key` presses, by name.
+pub const KEYS: [(&str, KeyCode); 13] = [
+    ("tab", KeyCode::Tab),
+    ("enter", KeyCode::Enter),
+    ("escape", KeyCode::Escape),
+    ("up", KeyCode::ArrowUp),
+    ("down", KeyCode::ArrowDown),
+    ("left", KeyCode::ArrowLeft),
+    ("right", KeyCode::ArrowRight),
+    ("backspace", KeyCode::Backspace),
+    ("delete", KeyCode::Delete),
+    ("home", KeyCode::Home),
+    ("end", KeyCode::End),
+    ("space", KeyCode::Space),
+    ("backquote", KeyCode::Backquote),
+];
 
 /// A scene's text as steps (line numbers from 1 with them), or the first
 /// bad line.
@@ -182,6 +207,19 @@ pub fn parse(text: &str) -> Result<Vec<(usize, Step)>, String> {
                 num(words.get(2), "shot_after")?,
                 words.get(3).ok_or_else(|| format!("line {n}: shot_after <fact> <frames> <name>"))?.to_string(),
             ),
+            "type" => Step::Type(
+                line.strip_prefix("type")
+                    .map(|t| t.strip_prefix(' ').unwrap_or(t).to_string())
+                    .filter(|t| !t.is_empty())
+                    .ok_or_else(|| format!("line {n}: type <text>"))?,
+            ),
+            "key" => {
+                let name = words.get(1).ok_or_else(|| format!("line {n}: key <name> [times]"))?;
+                let code = KEYS.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, c)| *c).ok_or_else(|| {
+                    format!("line {n}: no key {name:?} (one of {})", KEYS.map(|(k, _)| k).join(", "))
+                })?;
+                Step::Key(code, words.get(2).map_or(Ok(1), |_| num(words.get(2), "key's times"))?)
+            }
             _ => Step::Console(line.to_string()),
         };
         out.push((n, step));
@@ -558,12 +596,66 @@ fn play(world: &mut World, mut cursors: Local<FactCursors>) {
                 return;
             }
             Step::Shot(name) => shot(world, &name),
+            Step::Type(text) => {
+                world.resource_mut::<Scene>().note(format!("type {text}"));
+                for c in text.chars() {
+                    let (code, key) = match c {
+                        ' ' => (KeyCode::Space, bevy::input::keyboard::Key::Space),
+                        _ => (KeyCode::Unidentified(bevy::input::keyboard::NativeKeyCode::Unidentified), bevy::input::keyboard::Key::Character(c.to_string().into())),
+                    };
+                    press(world, code, key, Some(c));
+                }
+            }
+            Step::Key(code, times) => {
+                world.resource_mut::<Scene>().note(format!("key {code:?} x{times}"));
+                let key = match code {
+                    KeyCode::Tab => bevy::input::keyboard::Key::Tab,
+                    KeyCode::Enter => bevy::input::keyboard::Key::Enter,
+                    KeyCode::Escape => bevy::input::keyboard::Key::Escape,
+                    KeyCode::ArrowUp => bevy::input::keyboard::Key::ArrowUp,
+                    KeyCode::ArrowDown => bevy::input::keyboard::Key::ArrowDown,
+                    KeyCode::ArrowLeft => bevy::input::keyboard::Key::ArrowLeft,
+                    KeyCode::ArrowRight => bevy::input::keyboard::Key::ArrowRight,
+                    KeyCode::Backspace => bevy::input::keyboard::Key::Backspace,
+                    KeyCode::Delete => bevy::input::keyboard::Key::Delete,
+                    KeyCode::Home => bevy::input::keyboard::Key::Home,
+                    KeyCode::End => bevy::input::keyboard::Key::End,
+                    KeyCode::Space => bevy::input::keyboard::Key::Space,
+                    _ => bevy::input::keyboard::Key::Character("`".into()),
+                };
+                for _ in 0..times {
+                    press(world, code, key.clone(), None);
+                }
+                // One key a frame: each press seen as it would be typed.
+                world.resource_mut::<Scene>().resume = frame + 1;
+                return;
+            }
             Step::ShotAfter(f, n, name) => {
                 let mut scene = world.resource_mut::<Scene>();
                 scene.note(format!("line {line}: shot_after {} {n} {name}", f.name()));
                 scene.armed.push((f, n, name));
             }
         }
+    }
+}
+
+/// A key pressed and let go, as the window would send it (`type`, `key`).
+fn press(world: &mut World, key_code: KeyCode, logical_key: bevy::input::keyboard::Key, text: Option<char>) {
+    use bevy::input::{ButtonState, keyboard::KeyboardInput};
+    let window = world
+        .query_filtered::<Entity, With<bevy::window::PrimaryWindow>>()
+        .iter(world)
+        .next()
+        .unwrap_or(Entity::PLACEHOLDER);
+    for state in [ButtonState::Pressed, ButtonState::Released] {
+        world.write_message(KeyboardInput {
+            key_code,
+            logical_key: logical_key.clone(),
+            state,
+            text: text.map(|c| c.to_string().into()),
+            repeat: false,
+            window,
+        });
     }
 }
 
@@ -594,5 +686,8 @@ mod tests {
         assert_eq!(parse("wait_for idle").unwrap()[0].1, Step::WaitFor(Fact::Idle, DEFAULT_TIMEOUT));
         assert!(parse("wait_for cvar sv_x").is_err());
         assert_eq!(parse("wait_for spawned").unwrap()[0].1, Step::WaitFor(Fact::Spawned, DEFAULT_TIMEOUT));
+        assert_eq!(parse("type map de_").unwrap()[0].1, Step::Type("map de_".into()));
+        assert_eq!(parse("key tab 2").unwrap()[0].1, Step::Key(KeyCode::Tab, 2));
+        assert!(parse("key nope").unwrap_err().contains("no key"));
     }
 }

@@ -358,14 +358,18 @@ shapes = [
 [[[11.2,4.2], [12.6,2.8], [16,8], [12.6,13.2], [11.2,11.8], [13.7,8]]]
 ]
 
-# Back's hint beside the Esc cap: a mouse, its right button filled.
+# Back's hint beside the Esc cap: a mouse in outline, the line between
+# its buttons and below them, only its right button filled (the left
+# hollow, so it never reads as both pressed).
 [mouse_right]
 name = "Right mouse button"
 w = 12
 h = 16
 shapes = [
-[[[3,0], [9,0], [12,3], [12,13], [9,16], [3,16], [0,13], [0,3]], [[1.4,3.6], [1.4,12.4], [3.6,14.6], [8.4,14.6], [10.6,12.4], [10.6,7], [1.4,7]]],
-[[[6.6,1.4], [8.4,1.4], [10.6,3.6], [10.6,6], [6.6,6]]]
+[[[3,0], [9,0], [12,3], [12,13], [9,16], [3,16], [0,13], [0,3]], [[3.6,1.4], [1.4,3.6], [1.4,12.4], [3.6,14.6], [8.4,14.6], [10.6,12.4], [10.6,3.6], [8.4,1.4]]],
+[[[1.4,6.2], [10.6,6.2], [10.6,7.4], [1.4,7.4]]],
+[[[5.4,1.4], [6.6,1.4], [6.6,6.2], [5.4,6.2]]],
+[[[6.6,1], [8.6,1], [11,3.4], [11,6.2], [6.6,6.2]]]
 ]
 
 # An avatar whose player isn't looking (the window unfocused): an eye, crossed out.

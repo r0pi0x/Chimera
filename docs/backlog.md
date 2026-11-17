@@ -387,13 +387,31 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
-- **TF2 Scout's pistol sounds and ragdoll lifetime (user, 2026-11-17).**
-  The Scout's pistol fires with another game's sound (CS:S's or
-  HL2:DM's, by ear) and has no reload sound: find which of its sound
-  entries resolve to another game's or to none, fix them, and check
-  TF2's other guns the same way with a test that fails when any gun's
-  sound comes from another game. Ragdolls last too long: match each
-  game's own corpse lifetime (parity), on top of the party's limits.
+- **TF2 Scout's pistol sounds and ragdoll lifetime (user, 2026-11-17),
+  fixed 2026-11-17 (confirm in a playtest).** Sounds: Source games share
+  one namespace of sound script names (`Weapon_Pistol.Single`,
+  `Weapon_RPG.Single`, `Weapon_Shotgun.Single/.Empty/.Reload` are HL2's
+  and TF2's), and a map's sound table keeps the first entry of a name
+  (`add_guest_sounds`), so on a map that already held HL2:DM's the TF2
+  gun played HL2:DM's. TF2's weapon entries are now kept under `tf2:`
+  (`tf2::game::maps::own_sound`; data/weapons name them so; the guest
+  dressing drops the bare names), all 110 of them, so no TF2 gun can play
+  another game's. Tests: repo_checks `gun_sounds` (no name shared by two
+  games' guns' data; TF2's all prefixed) and tf2 heavy
+  `guns::every_guns_sound_is_tf2s_own` (each resolves in the table a
+  match plays from). The missing reload sound could not be told from the
+  data: the entry (`Weapon_Pistol.ReloadScout`) is named and resolves;
+  if it is still silent in the next playtest, it is the timing of
+  `[[0.0, ..]]` (the view model's event), not a lookup. Ragdolls: each
+  game's lifetime is its own already: CS:S none (the party removes it at
+  the owner's respawn; a round restart too), HL2:DM none (kept past the
+  respawn until the owner dies again, restart removes it), Combat Arms
+  the body 5 s after its owner respawns (mode's `body_removal`), Halo 900
+  ticks idle (`CORPSE_LIFE`); TF2's is in no spec (player_animation.md
+  9 says "the shared Source ragdoll rules"; only its gibs fade, 10 s), so
+  it follows the party's (removed at respawn) and nothing new is picked:
+  needs a spec session on TF2's ragdoll fade (`cl_ragdoll_fade_time`
+  and its friends) before parity can be matched.
 
 ### UGG playtest 8 prep, Windows check (2026-11-15)
 

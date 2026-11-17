@@ -10,7 +10,8 @@
 //! background (the menu's own backdrop with nothing at hand and no map
 //! load; a map at hand loaded behind it with downloads held, then the
 //! crossfade; the rotation between starts; the backdrop's cost a frame);
-//! the logo pass on whichever UI camera draws.
+//! the logo pass on whichever UI camera draws; the console at the menu
+//! (its suggestion list on the menu's camera, Tab completing).
 
 use bevy::prelude::*;
 use chimera_client::client::{AppHooks, front_end};
@@ -1193,4 +1194,88 @@ fn leaving_a_hosted_game_takes_its_bots_and_map_and_loads_nothing() {
     // And none come back.
     sim.ticks(120);
     assert_no_game(&mut sim, "2 s after leaving");
+}
+
+/// The UI camera an entity is drawn by: the nearest `UiTargetCamera` on
+/// it or above it (as Bevy's UI resolves it), None: the default one.
+fn drawn_by(w: &World, mut e: Entity) -> Option<Entity> {
+    loop {
+        if let Some(t) = w.get::<UiTargetCamera>(e) {
+            return Some(t.entity());
+        }
+        e = w.get::<ChildOf>(e)?.parent();
+    }
+}
+
+/// Whether nothing on the way up hides it.
+fn shown(w: &World, mut e: Entity) -> bool {
+    loop {
+        if w.get::<Visibility>(e) == Some(&Visibility::Hidden) {
+            return false;
+        }
+        match w.get::<ChildOf>(e) {
+            Some(c) => e = c.parent(),
+            None => return true,
+        }
+    }
+}
+
+/// The console at the party apps' menu: its suggestion list shows as you
+/// type, on the camera the menu draws the console with (the list stayed
+/// on the shell's camera, which is off at the menu, and never showed:
+/// 2026-11-17), and Tab completes, for a plain name and a namespaced one
+/// (`halo_ce:party_vehicles`).
+#[test]
+fn the_consoles_suggestions_show_and_tab_completes_at_the_menu() {
+    use bevy::input::{ButtonState, keyboard::{Key, KeyboardInput}, mouse::MouseWheel};
+    use chimera_client::client::console::{ConsoleRoot, ConsoleSuggest, ConsoleUi, ConsoleUiPlugin};
+    let mut sim = local_plus(true, None, false, |app| {
+        app.add_message::<KeyboardInput>()
+            .add_message::<MouseWheel>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<chimera_client::client::fonts::UiFonts>()
+            .add_plugins(ConsoleUiPlugin);
+    });
+    sim.app.world_mut().spawn((Camera::default(), IsDefaultUiCamera));
+    sim.app.world_mut().spawn(bevy::window::CursorOptions::default());
+    submit(&mut sim, "toggleconsole");
+    assert!(sim.app.world().resource::<ConsoleUi>().open, "the console opened");
+    let w = sim.app.world_mut();
+    let menu_cam = w.query_filtered::<Entity, With<main_menu::MenuUiCamera>>().single(w).expect("the menu's camera");
+    let root = w.query_filtered::<Entity, With<ConsoleRoot>>().single(w).unwrap();
+    let suggest = w.query_filtered::<Entity, With<ConsoleSuggest>>().single(w).unwrap();
+    assert_eq!(drawn_by(w, root), Some(menu_cam), "the menu draws the console");
+    let mut press = |sim: &mut Sim, key_code: KeyCode, logical_key: Key| {
+        sim.app.world_mut().write_message(KeyboardInput {
+            key_code,
+            logical_key,
+            state: ButtonState::Pressed,
+            text: None,
+            repeat: false,
+            window: Entity::PLACEHOLDER,
+        });
+        sim.ticks(1);
+    };
+    let complete = |sim: &mut Sim, press: &mut dyn FnMut(&mut Sim, KeyCode, Key), typed: &str, full: &str| {
+        for c in typed.chars() {
+            press(sim, KeyCode::KeyQ, Key::Character(c.to_string().into()));
+        }
+        sim.ticks(1);
+        let w = sim.app.world();
+        assert!(shown(w, suggest), "{typed}: the list shows");
+        assert_eq!(drawn_by(w, suggest), Some(menu_cam), "{typed}: on the camera that draws the console");
+        let rows = w.get::<Children>(suggest).map_or(0, |c| c.len());
+        assert!(rows > 0, "{typed}: rows in the list");
+        press(sim, KeyCode::Tab, Key::Tab);
+        assert_eq!(sim.app.world().resource::<ConsoleUi>().input(), format!("{full} "), "{typed}: Tab completes");
+        for _ in 0..full.len() + 1 {
+            press(sim, KeyCode::Backspace, Key::Backspace);
+        }
+    };
+    complete(&mut sim, &mut press, "cvarli", "cvarlist");
+    complete(&mut sim, &mut press, "halo_ce:party_veh", "halo_ce:party_vehicles");
+    // In the game the shell's camera draws both again.
+    sim.app.world_mut().resource_mut::<PartyMenu>().screen = Screen::InGame;
+    sim.ticks(2);
+    assert_eq!(drawn_by(sim.app.world(), suggest), None);
 }

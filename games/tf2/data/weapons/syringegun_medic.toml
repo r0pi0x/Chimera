@@ -28,10 +28,10 @@ punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]
-fire = "Weapon_SyringeGun.Single"
-empty = "Weapon_SyringeGun.ClipEmpty"
-reload = [[0.0, "Weapon_SyringeGun.Reload1"], [0.5, "Weapon_SyringeGun.Reload2"], [1.0, "Weapon_SyringeGun.Reload3"]]
-draw = [[0.0, "Weapon_SyringeGun.Draw"]]
+fire = "tf2:Weapon_SyringeGun.Single"
+empty = "tf2:Weapon_SyringeGun.ClipEmpty"
+reload = [[0.0, "tf2:Weapon_SyringeGun.Reload1"], [0.5, "tf2:Weapon_SyringeGun.Reload2"], [1.0, "tf2:Weapon_SyringeGun.Reload3"]]
+draw = [[0.0, "tf2:Weapon_SyringeGun.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_syringegun/c_syringegun.mdl"
