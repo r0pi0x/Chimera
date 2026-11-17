@@ -91,7 +91,8 @@
 //!   hull centre) without one; a dead player's at its latest body's
 //!   resting place (our bodies have no pose, so no name socket), while
 //!   the body exists; no distance limit, hidden only behind the camera
-//!   (Q10). The rank, flag and revenge icons are placeholder marks (no
+//!   (Q10). Projected through the eye as placed this frame (not last
+//!   frame's `GlobalTransform`), so tags keep up with the view. The rank, flag and revenge icons are placeholder marks (no
 //!   rank or revenge data drives them yet: the flag icon only); Spy
 //!   Hunt's marked-players rule for an intel holder isn't done.
 //! - Text (Q2 and Q3, settled by ui_system.md): placed by `ui::layout`
@@ -1306,7 +1307,7 @@ impl Plugin for CaHudPlugin {
                     draw_install_panels,
                     draw_action,
                     draw_feed,
-                    draw_tags,
+                    draw_tags.after(crate::map::attached::EyePlaced),
                     guides::draw_guides,
                     draw_mode_notice,
                     score::draw_score,
@@ -2332,11 +2333,15 @@ fn draw_tags(
     hud: Res<CaHud>,
     fonts: Option<Res<UiFonts>>,
     root: Single<Entity, With<TagRoot>>,
-    camera: Query<(&Camera, &GlobalTransform), With<FirstPersonCamera>>,
+    camera: Query<(Entity, &Camera), With<FirstPersonCamera>>,
+    places_now: TransformHelper,
     mut commands: Commands,
 ) {
     commands.entity(*root).despawn_related::<Children>();
-    let Some((cam, at)) = camera.iter().next() else { return };
+    // The eye as placed this frame (`GlobalTransform`s are last frame's
+    // until `PostUpdate`: tags placed by it trailed the view by a frame).
+    let Some((cam, at)) = camera.iter().next().and_then(|(e, c)| places_now.compute_global_transform(e).ok().map(|g| (c, g))) else { return };
+    let at = &at;
     let pts = 12.0 * hud.screen.yr();
     commands.entity(*root).with_children(|p| {
         for t in &hud.tags {

@@ -6,7 +6,10 @@
 //! the body faces that line. Hitboxes are kept in the look's frame (the
 //! trace turns them by `Intent::yaw`), so they are posed once the intents
 //! are final (`SimSet::Commands`): the head box stands where the drawn
-//! head is, for every look the brain took.
+//! head is, for every look the brain took; and the schedule orders
+//! `pose_hitboxes` after `SimSet::Commands` (the scenario alone passed with
+//! the old, unordered schedule when the executor happened to pose after
+//! the target's rule).
 
 use std::sync::Arc;
 
@@ -112,4 +115,83 @@ fn hitboxes_follow_the_bodys_facing_not_an_earlier_look() {
         let head = Quat::from_rotation_y(yaw) * boxes.0[0].center;
         assert!((head - drawn).length() < 1e-3, "brain looking {look:.2}: the head box at {head}, the drawn head at {drawn}");
     }
+}
+
+/// Whether the schedule `label` runs every system of `later` after `set`:
+/// a path of ordering edges from `set` (or a set holding it) to `later`
+/// (or a set holding it).
+fn ordered_after(app: &App, label: impl bevy::ecs::schedule::ScheduleLabel, set: impl SystemSet, later: impl SystemSet) -> bool {
+    use bevy::ecs::schedule::{NodeId, graph::Direction};
+    let g = app.world().resource::<Schedules>().get(label).expect("the schedule").graph();
+    let key = |s: bevy::ecs::schedule::InternedSystemSet| g.system_sets.get_key(s).map(NodeId::Set);
+    let (Some(from), Some(to)) = (key(set.intern()), key(later.intern())) else { return false };
+    let (hierarchy, dependency) = (g.hierarchy().graph(), g.dependency().graph());
+    // A node and the sets holding it.
+    let up = |n: NodeId| {
+        let mut out = vec![n];
+        let mut i = 0;
+        while i < out.len() {
+            let parents: Vec<NodeId> = hierarchy.neighbors_directed(out[i], Direction::Incoming).collect();
+            for p in parents {
+                if !out.contains(&p) {
+                    out.push(p);
+                }
+            }
+            i += 1;
+        }
+        out
+    };
+    // `later`'s set, its systems (a system's type set holds it) and the
+    // sets holding those (a chain's anonymous set, which takes the order).
+    let mut targets = up(to);
+    for member in hierarchy.neighbors_directed(to, Direction::Outgoing).collect::<Vec<_>>() {
+        for n in up(member) {
+            if !targets.contains(&n) {
+                targets.push(n);
+            }
+        }
+    }
+    // `set` and its systems (each runs before what follows the set).
+    let mut seen = vec![from];
+    seen.extend(hierarchy.neighbors_directed(from, Direction::Outgoing));
+    let mut i = 0;
+    while i < seen.len() {
+        for a in up(seen[i]) {
+            for s in dependency.neighbors_directed(a, Direction::Outgoing) {
+                if targets.contains(&s) {
+                    return true;
+                }
+                if !seen.contains(&s) {
+                    seen.push(s);
+                }
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// The order itself: the hitboxes are posed after the intents are final
+/// (a deterministic check: the scenario above passed by chance on the
+/// unordered schedule).
+#[test]
+fn hitboxes_are_posed_after_the_intents_are_final() {
+    let mut data = MapData { name: "test:hitboxes_order".into(), entity_scale: 0.0254, ..default() };
+    data.kit.characters.push(model());
+    let mut sim = Sim::with((chimera_core::core::CorePlugin, chimera_core::console::ConsolePlugin), move |app| {
+        app.init_asset::<Image>()
+            .init_asset::<StandardMaterial>()
+            .init_asset::<WorldMaterial>()
+            .init_asset::<PropMaterial>()
+            .init_asset::<SpriteMaterial>()
+            .init_asset::<RopeMaterial>()
+            .init_asset::<ShadowMaterial>()
+            .init_asset::<SkinnedMeshInverseBindposes>()
+            .add_plugins(MapPlugin::new(data.clone()));
+    });
+    sim.ticks(1);
+    let pose = chimera_world::map::pose_hitboxes.into_system_set();
+    assert!(ordered_after(&sim.app, FixedUpdate, SimSet::Commands, pose), "pose_hitboxes after SimSet::Commands");
+    assert!(ordered_after(&sim.app, FixedUpdate, pose, SimSet::Movement), "and before SimSet::Movement");
+    assert!(!ordered_after(&sim.app, FixedUpdate, SimSet::Movement, pose), "the check sees no order where there is none");
 }

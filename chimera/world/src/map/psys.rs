@@ -331,11 +331,28 @@ pub struct StartParticleSystem {
     /// live out): a continuous system started in pieces (TF2's flames,
     /// one piece per round). None: as the definition says.
     pub emit_for: Option<f32>,
+    /// Carried along by an entity (a first-person view model's anchor,
+    /// the eye: a gun's muzzle flash stays on the gun drawn in the view
+    /// while the player moves and turns): its control point and its
+    /// particles move with the entity's frame; `position` and `forward`
+    /// are then the start's in the world, as without it.
+    pub follow: Option<Follow>,
+}
+
+/// What a started system follows (`StartParticleSystem::follow`): the
+/// entity, and the system's place and forward in its frame (its
+/// `Transform`s', the parent's times its own: what was placed this
+/// frame, not last frame's `GlobalTransform`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Follow {
+    pub entity: Entity,
+    pub local: Vec3,
+    pub forward: Vec3,
 }
 
 impl StartParticleSystem {
     /// `name` at `position` facing `forward`, as its definition runs.
     pub fn new(name: impl Into<String>, position: Vec3, forward: Vec3) -> Self {
-        Self { name: name.into(), position, forward, emit_for: None }
+        Self { name: name.into(), position, forward, emit_for: None, follow: None }
     }
 }

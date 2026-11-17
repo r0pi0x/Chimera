@@ -58,8 +58,11 @@ script = "tf_weapon_rocketlauncher"
 speed = 1100.0
 touch = "report"
 shown = "tf2:rocket"
-# Its model's nose, held in its bone's frame, is its -Z: as flyers face
-# their flight, no turn.
+# Its model, held in its bone's frame (`maps::add_guns`), has its nose
+# along +X, as the grenade launcher's and the syringe gun's: turned to
+# face its flight (playtest 2026-11-17: without it the rocket flew
+# sideways).
+x_forward = true
 offset = [23.5, 12.0, -3.0]
 offset_crouched = [23.5, 12.0, 8.0]
 pass_teammates = true

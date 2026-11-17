@@ -26,8 +26,9 @@
 //!   messages, what comes from them `CaWhisperIn` and `CaClanIn`.
 //! - Commands for binds (the front end's keys call them): `chat_open`
 //!   (Enter), `chat_all`, `chat_team`, `chat_clan` (F2, F3, F4),
-//!   `radio_report`, `radio_answer`, `radio_request` (B, V, N), `+voicechat`
-//!   (T) and `voice_toggle` (F8). Cvars: `ca_chatfilter` (the filter
+//!   `radio_report`, `radio_answer`, `radio_request` (B, V, N: only for a
+//!   player who is Combat Arms', and not in the sandbox, `radio_allowed`), `+voicechat`
+//!   (T, push to talk: likewise) and `voice_toggle` (F8). Cvars: `ca_chatfilter` (the filter
 //!   option), `ca_chatregion` (1: the BR limiter set).
 //!
 //! Known shortcuts (docs/tech-debt.md; the most literal reading where the
@@ -356,6 +357,15 @@ pub fn peer_of(world: &World, e: Entity) -> Option<Peer> {
     Some(Peer { name, team, alive })
 }
 
+/// Whether the radio's keys open its menus now (`radio_key`).
+pub fn radio_allowed(world: &mut World) -> bool {
+    if chimera_sim::minigame::rung_command::holds(world) {
+        return false;
+    }
+    let me = local_player(world);
+    me.is_none_or(|e| crate::slots::GameIdentity::allows(world.get::<crate::slots::GameIdentity>(e), crate::game::GAME))
+}
+
 fn local_player(world: &mut World) -> Option<Entity> {
     chimera_core::query_cache::first::<With<LocalPlayer>>(world)
 }
@@ -444,8 +454,13 @@ pub fn input_key(world: &mut World, key: InputKey) {
     dispatch(world, outs);
 }
 
-/// A radio key.
+/// A radio key: only for a player who is Combat Arms' (its identity, in
+/// an app mixing games: a CS:S player's B is not the radio), and never in
+/// the sandbox (its B is Change gun: `rung_command::holds`).
 pub fn radio_key(world: &mut World, class: u8) {
+    if !radio_allowed(world) {
+        return;
+    }
     let env = env(world);
     let now = now_ms(world);
     world.resource_mut::<CaChat>().radio_key(class, &env, now);
@@ -552,8 +567,17 @@ pub fn local_voice_channel(world: &mut World) -> Result<voice::Channel, voice::N
 }
 
 /// The push-to-talk key goes down or up.
+///
+/// Like the radio's keys (`radio_allowed`), only a Combat Arms player's
+/// and never in the sandbox, whose T opens the bench (playtest
+/// 2026-11-17: T for the bench left the talk icon, a green square, at the
+/// bottom of the HUD for good).
 pub fn voice_key(world: &mut World, down: bool) {
     let now = now_ms(world);
+    if down && !radio_allowed(world) {
+        world.resource_mut::<CaChat>().voice.release();
+        return;
+    }
     if down {
         let ch = local_voice_channel(world);
         let mut chat = world.resource_mut::<CaChat>();

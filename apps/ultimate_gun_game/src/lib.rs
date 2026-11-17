@@ -455,6 +455,55 @@ mod tests {
         assert!(css.default_binds().contains(&("f10".into(), "quit prompt".into())));
     }
 
+    /// Every action a player on Halo's grenade rung needs (move, fire,
+    /// reload, melee, throw, the grenade kind) has a key under Halo's
+    /// layer of the party's binds; and a config saved before Halo had a
+    /// layer (playtest 2026-11-17: the throw "unbound" on Windows) gets
+    /// the throw back on G at start (`bindgamedefaults missing`), while a
+    /// throw the player moved to another key stays there.
+    #[cfg(feature = "present")]
+    #[test]
+    fn a_halo_grenade_rung_has_every_key_it_needs_even_after_an_old_config() {
+        use chimera_client::client::binds::{BindDefaults, bind_defaults, keys_for};
+        let fresh = || {
+            let mut ugg = BindDefaults::default();
+            ugg.use_game(&combat_arms::game::INFO);
+            for b in super::APP_BINDS {
+                ugg.add_app(*b);
+            }
+            let mut console = chimera_core::console::Console::default();
+            bind_defaults(&mut console.binds, true, &ugg.default_binds());
+            for (game, binds) in &party_kit::GAME_BINDS {
+                console.ship_layer(game, binds);
+            }
+            console
+        };
+        let halo = "halo_ce";
+        let needs = ["+forward", "+back", "+moveleft", "+moveright", "+jump", "+attack", "+reload", "+melee", "+grenade", "+grenade_switch"];
+        let check = |console: &chimera_core::console::Console, why: &str| {
+            let binds = console.effective_binds(Some(halo));
+            for a in needs {
+                assert!(!keys_for(&binds, a).is_empty(), "{a} has no key in Halo's binds ({why})");
+            }
+        };
+        check(&fresh(), "fresh");
+        // A config written before Halo's layer: `unbindgameall`, then
+        // only the other games' layers.
+        let mut old = fresh();
+        old.layers.remove(halo);
+        assert!(keys_for(&old.effective_binds(Some(halo)), "+grenade").is_empty(), "the old config's state");
+        assert!(old.restore_missing_layer_binds());
+        check(&old, "an old config, restored");
+        assert_eq!(keys_for(&old.effective_binds(Some(halo)), "+grenade"), ["g"]);
+        assert!(!old.restore_missing_layer_binds(), "once");
+        // The throw moved to H by the player: G stays as the shared binds have it.
+        let mut moved = fresh();
+        moved.layers.get_mut(halo).unwrap().remove("g");
+        moved.layers.get_mut(halo).unwrap().insert("h".into(), "+grenade".into());
+        moved.restore_missing_layer_binds();
+        assert_eq!(keys_for(&moved.effective_binds(Some(halo)), "+grenade"), ["h"]);
+    }
+
     #[test]
     fn the_rung_seed_is_the_ladders_unless_one_is_fixed() {
         use bevy::prelude::App;

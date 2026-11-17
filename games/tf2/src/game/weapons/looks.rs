@@ -28,6 +28,11 @@
 //!   map's sound scripts' (a name the map has, such as CS:S's
 //!   `Concrete.BulletImpact` on de_dust2, plays the map's).
 //!
+//!   A first-person flash (not the flames) follows the eye it was
+//!   started from (`StartParticleSystem::follow`): it stays on the gun
+//!   drawn in the view while the player moves and turns (playtest
+//!   2026-11-17: the flashes hung in the world behind a strafing player).
+//!
 //! Known shortcuts: the flash is drawn in the world pass at the
 //! re-projected muzzle (the view-model layer has no particle systems of
 //! its own), so the view model covers its back half; the flame is pieces
@@ -47,7 +52,7 @@ use crate::map::{
     ShowLocalBody,
     attached::{AnchorQuery, AttachPoint, attachment_point, first_person_shown},
     particles::ParticleSet,
-    psys::StartParticleSystem,
+    psys::{Follow, StartParticleSystem},
     view_model::{HeldAttachment, ViewAnimator, ViewModelCamera, ViewModelOffset, ViewModelSettings, ViewModels},
 };
 
@@ -166,6 +171,13 @@ pub struct Muzzles<'w, 's> {
 impl Muzzles<'_, '_> {
     /// `owner`'s muzzle (engine space), if its gun's is drawn.
     pub fn of(&self, owner: Entity) -> Option<Vec3> {
+        self.placed(owner).map(|(at, _)| at)
+    }
+
+    /// `owner`'s muzzle (engine space), and on a first-person view model
+    /// the eye it is drawn from with the muzzle in the eye's frame (a
+    /// flash started there follows the gun drawn in the view).
+    pub fn placed(&self, owner: Entity) -> Option<(Vec3, Option<(Entity, Vec3, Quat)>)> {
         let at = AttachPoint::named(MUZZLE_ATTACHMENT);
         let (view, offset, controls) = self.owners.get(owner).ok()?;
         let fp = first_person_shown(
@@ -181,8 +193,12 @@ impl Muzzles<'_, '_> {
             self.time.elapsed_secs_f64(),
         );
         match fp {
-            Some(f) => f.world_point(&at),
-            None => attachment_point(&self.held, owner, &at),
+            Some(f) => {
+                let p = f.camera_point(&at)?;
+                let p = f.fovs.map_or(p, |(w, v)| crate::map::view_model::reproject(p, w, v));
+                Some((f.eye.transform_point(p), Some((f.anchor, p, f.eye.rotation()))))
+            }
+            None => attachment_point(&self.held, owner, &at).map(|p| (p, None)),
         }
     }
 }
@@ -205,11 +221,15 @@ fn muzzle_flashes(
         let Some((name, emit_for)) = shot_system(weapon, blu) else { continue };
         let aim = aim_of(yaw, pitch);
         let forward = aim * Vec3::NEG_Z;
-        let at = muzzles.of(e.owner).unwrap_or_else(|| {
+        let (at, eye) = muzzles.placed(e.owner).unwrap_or_else(|| {
             let o = MUZZLE_OFFSET * U;
-            origin + forward * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z
+            (origin + forward * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z, None)
         });
-        start.write(StartParticleSystem { emit_for, ..StartParticleSystem::new(name, at, forward) });
+        // On a first-person gun the flash goes with the gun drawn in the
+        // view (the eye's frame), not left where it started; the flames
+        // stream into the world.
+        let follow = eye.filter(|_| emit_for.is_none()).map(|(entity, local, turn)| Follow { entity, local, forward: turn.inverse() * forward });
+        start.write(StartParticleSystem { emit_for, follow, ..StartParticleSystem::new(name, at, forward) });
     }
 }
 

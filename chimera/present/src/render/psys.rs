@@ -220,6 +220,23 @@ impl Instance {
         out
     }
 
+    /// Its particles (its children's too) moved by `f` (positions) and
+    /// their velocities turned by `turn`: carried along by what it follows
+    /// (`StartParticleSystem::follow`). A locked-to control point's last
+    /// place goes along, so the lock adds nothing of it again.
+    fn carry(&mut self, f: &dyn Fn(Vec3) -> Vec3, turn: &dyn Fn(Vec3) -> Vec3) {
+        for p in &mut self.particles {
+            p.position = f(p.position);
+            p.velocity = turn(p.velocity);
+        }
+        if let Some(l) = self.lock_from {
+            self.lock_from = Some(f(l));
+        }
+        for c in self.children.iter_mut().filter_map(|c| c.1.as_mut()) {
+            c.carry(f, turn);
+        }
+    }
+
     /// Stop emitting (its children too); live particles finish.
     pub fn stop(&mut self) {
         self.emitting = false;
@@ -822,7 +839,9 @@ pub fn update_systems(
 #[derive(Default)]
 pub struct StartedSystems {
     defs: Option<std::sync::Arc<MapParticleSystems>>,
-    running: Vec<(Instance, ControlPoint, Option<f32>)>,
+    /// Each system, its control point, how long it emits, and what it
+    /// follows with its frame last step (engine space).
+    running: Vec<(Instance, ControlPoint, Option<f32>, Option<(crate::map::psys::Follow, Transform)>)>,
     rng: Option<ParticleRng>,
 }
 
@@ -866,6 +885,7 @@ impl StartedSystems {
                 light,
             },
             emit_for,
+            None,
         ));
         true
     }
@@ -878,7 +898,7 @@ impl StartedSystems {
     pub fn step(&mut self, dt: f32, sheets: &impl Sheets) {
         let Some(defs) = self.defs.clone() else { return };
         let rng = self.rng.get_or_insert_with(|| ParticleRng::new(0x5_1A5));
-        for (i, cp, emit_for) in &mut self.running {
+        for (i, cp, emit_for, _) in &mut self.running {
             if emit_for.is_some_and(|t| i.age >= t) && i.emitting {
                 i.stop();
             }
@@ -909,6 +929,7 @@ pub fn run_started_systems(
     mut started: Local<StartedSystems>,
     light_field: Option<Res<crate::map::LightField>>,
     mut pool: ResMut<Particles>,
+    frames: Query<(&Transform, Option<&ChildOf>)>,
 ) {
     let Some(defs) = defs else {
         starts.clear();
@@ -918,15 +939,60 @@ pub fn run_started_systems(
     let scale = defs.scale.max(1e-6);
     let to_game = |v: Vec3| Vec3::new(v.x, -v.z, v.y) / scale;
     let to_engine = |v: Vec3| Vec3::new(v.x, v.z, -v.y) * scale;
+    // A followed entity's frame this frame: its `Transform` under its
+    // parent's (placed this frame; `GlobalTransform`s are last frame's).
+    let frame = |e: Entity| -> Option<Transform> {
+        let (t, parent) = frames.get(e).ok()?;
+        Some(match parent.and_then(|p| frames.get(p.parent()).ok()) {
+            Some((pt, _)) => pt.mul_transform(*t),
+            None => *t,
+        })
+    };
     for s in starts.read() {
         let f = Vec3::new(s.forward.x, -s.forward.z, s.forward.y);
         let light = light_field
             .as_deref()
             .map_or(Vec3::ONE, |field| point_light(&(field.0.0)(s.position)));
-        started.start_for(defs, &s.name, to_game(s.position), f, light, s.emit_for);
+        if started.start_for(defs, &s.name, to_game(s.position), f, light, s.emit_for)
+            && let Some(follow) = s.follow
+            && let Some(at) = frame(follow.entity)
+            && let Some(last) = started.running.last_mut()
+        {
+            // Placed by the frame now (the start's world place came from
+            // the same eye, maybe a frame older).
+            let p = at.transform_point(follow.local);
+            let fw = at.rotation * follow.forward;
+            last.1.position = to_game(p);
+            last.1.rotation = Quat::from_rotation_arc(Vec3::X, Vec3::new(fw.x, -fw.z, fw.y).try_normalize().unwrap_or(Vec3::X));
+            last.3 = Some((follow, at));
+        }
     }
     if started.running.is_empty() {
         return;
+    }
+    // Followed systems carried with their entity's frame since last step.
+    for (i, cp, _, follow) in &mut started.running {
+        let Some((f, last)) = follow else { continue };
+        let Some(now) = frame(f.entity) else {
+            *follow = None;
+            continue;
+        };
+        if now == *last {
+            continue;
+        }
+        let moved = now.to_matrix() * last.to_matrix().inverse();
+        let turn = now.rotation * last.rotation.inverse();
+        let place = |g: Vec3| to_game(moved.transform_point3(to_engine(g)));
+        let spin = |v: Vec3| {
+            let e = turn * Vec3::new(v.x, v.z, -v.y);
+            Vec3::new(e.x, -e.z, e.y)
+        };
+        i.carry(&place, &spin);
+        let p = now.transform_point(f.local);
+        let fw = now.rotation * f.forward;
+        cp.position = to_game(p);
+        cp.rotation = Quat::from_rotation_arc(Vec3::X, Vec3::new(fw.x, -fw.z, fw.y).try_normalize().unwrap_or(Vec3::X));
+        *last = now;
     }
     let sheets = MaterialSheets(materials.as_ref().map(|m| &m.0));
     started.step(time.delta_secs().min(0.25), &sheets);
@@ -1165,7 +1231,7 @@ mod tests {
         assert!(!started.start(&defs, "nothing", Vec3::ZERO, Vec3::Z, Vec3::ONE));
         assert!(started.start(&defs, "TEST", Vec3::ZERO, Vec3::Z, Vec3::ONE));
         // Pointing up: the frame's forward axis is +Z.
-        let (_, cp, _) = &started.running[0];
+        let (_, cp, _, _) = &started.running[0];
         assert!((cp.rotation * Vec3::X).abs_diff_eq(Vec3::Z, 1e-5));
         started.step(0.1, &none);
         assert!(started.count() > 0);

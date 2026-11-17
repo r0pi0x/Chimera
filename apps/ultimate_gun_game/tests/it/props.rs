@@ -147,6 +147,54 @@ fn bottles_fall_to_bullets_and_blasts_and_stand_again() {
     assert_eq!(standing(&sim, e), 6, "every piece down: they stand again");
 }
 
+/// A shot bottle breaks: the piece leaves the shelf (hidden, struck no
+/// more) and its shards fly off as physics bodies away from the shooter,
+/// fall, and are gone after `DEBRIS_SECS`; a shot can tumbles off whole.
+/// The piece is back, shown and struck, when they stand again (playtest
+/// 2026-11-17: pieces were laid on the floor at once, nothing broke).
+#[test]
+fn a_shot_bottle_breaks_into_falling_shards_and_a_can_tumbles_off() {
+    use avian3d::prelude::{LinearVelocity, RigidBody};
+    let (mut sim, me) = play();
+    let e = prop(&mut sim, "bottles", 8.0);
+    let third = world_of(&sim, e, Vec3::new(-0.125, 1.12, 0.0));
+    let piece = bullet(&mut sim, me, third).expect("the bottle struck");
+    assert_eq!(sim.app.world().get::<Visibility>(piece), Some(&Visibility::Hidden), "off the shelf");
+    let shards = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        w.query::<(&props::PropDebris, &RigidBody, &Transform, &LinearVelocity)>().iter(w).map(|(_, b, t, v)| (*b, t.translation, v.0)).collect::<Vec<_>>()
+    };
+    let flying = shards(&mut sim);
+    assert_eq!(flying.len(), props::SHARDS as usize, "{flying:?}");
+    let me_at = sim.position(me);
+    for (body, at, v) in &flying {
+        assert_eq!(*body, RigidBody::Dynamic);
+        assert!((at - third).length() < 0.3, "from the bottle: {at}");
+        assert!(v.xz().dot((at - me_at).xz()) > 0.0, "away from the shooter: {v}");
+    }
+    let start_y = flying.iter().map(|(_, a, _)| a.y).fold(f32::MIN, f32::max);
+    sim.seconds(1.0);
+    let later = shards(&mut sim);
+    assert!(later.iter().all(|(_, a, _)| a.y < start_y), "they fall: {later:?}");
+    // The same line again: through where the bottle stood.
+    let behind = bullet(&mut sim, me, third);
+    assert_ne!(behind, Some(piece), "a knocked piece is struck no more");
+    sim.seconds(props::DEBRIS_SECS);
+    assert!(shards(&mut sim).is_empty(), "gone after their time");
+    // A can: one body, whole.
+    sim.app.world_mut().get_mut::<Intent>(me).unwrap().yaw = -0.3;
+    let cans = prop(&mut sim, "tin_cans", 8.0);
+    let middle = world_of(&sim, cans, Vec3::new(0.0, 1.06, 0.0));
+    bullet(&mut sim, me, middle).expect("the can struck");
+    assert_eq!(shards(&mut sim).len(), 1, "the can whole");
+    // Reset: the bottle is back on the shelf.
+    props::reset(sim.app.world_mut(), e);
+    sim.ticks(1);
+    assert_eq!(sim.app.world().get::<Visibility>(piece), Some(&Visibility::Inherited));
+    sim.app.world_mut().get_mut::<Intent>(me).unwrap().yaw = 0.0;
+    assert_eq!(bullet(&mut sim, me, third), Some(piece), "struck again");
+}
+
 #[test]
 fn a_board_keeps_the_shot_group_and_its_misses() {
     let (mut sim, me) = play();

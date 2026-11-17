@@ -358,6 +358,36 @@ impl Console {
         self.layer_defaults.insert(game.to_string(), layer);
     }
 
+    /// Each game's shipped own binds (`layer_defaults`) whose command no
+    /// key runs while that game is the identity (`effective_binds`; a
+    /// command compared without its namespace), put back on their key
+    /// when the game's layer leaves it free: a config saved before a
+    /// game's layer had them (its `unbindgameall` and `bindgame` lines
+    /// dropped Halo's throw, F, G and Q) gets them back, a key the player
+    /// moved the command to keeps it. Returns whether anything changed.
+    pub fn restore_missing_layer_binds(&mut self) -> bool {
+        fn bare(c: &str) -> String {
+            let c = c.trim();
+            c.rsplit_once(':').map_or(c, |(_, n)| n).to_ascii_lowercase()
+        }
+        fn runs(line: &str, command: &str) -> bool {
+            line.split(';').any(|p| bare(p) == bare(command))
+        }
+        let mut changed = false;
+        for (game, shipped) in self.layer_defaults.clone() {
+            for (key, command) in shipped {
+                let held = self.effective_binds(Some(&game)).values().any(|l| runs(l, &command));
+                let layer = self.layers.entry(game.clone()).or_default();
+                if held || layer.contains_key(&key) {
+                    continue;
+                }
+                layer.insert(key, command);
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// A game's namespaces (`GameInfo::console_namespaces`): the first is
     /// canonical (what configs save and the network sends), the rest are
     /// aliases accepted wherever a namespace is (`css:sv_gravity`,
@@ -1665,10 +1695,20 @@ fn builtins(app: &mut App) {
             c.dirty = true;
             Ok(None)
         })
-        .console_command("chimera:bindgamedefaults", "bindgamedefaults [game]: every game's (or <game>'s) own binds as shipped.", |w, a| {
+        .console_command(
+            "chimera:bindgamedefaults",
+            "bindgamedefaults [game|missing]: every game's (or <game>'s) own binds as shipped (missing: only those \
+             whose command no key runs in that game, on keys its own binds leave free).",
+            |w, a| {
             let mut c = console(w);
             let defaults = c.layer_defaults.clone();
             match a.first() {
+                Some(m) if m == "missing" => {
+                    if c.restore_missing_layer_binds() {
+                        c.dirty = true;
+                    }
+                    return Ok(None);
+                }
                 Some(game) => {
                     c.layers.insert(game.clone(), defaults.get(game).cloned().unwrap_or_default());
                 }
@@ -1676,7 +1716,8 @@ fn builtins(app: &mut App) {
             }
             c.dirty = true;
             Ok(None)
-        })
+        },
+        )
         .console_command("chimera:unbind", "unbind <key>", |w, a| {
             let key = a.first().ok_or("unbind <key>")?.to_lowercase();
             let mut c = console(w);

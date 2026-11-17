@@ -20,7 +20,8 @@
 //! The definition (`SANDBOX`, `definition`) is the automatic gun game's
 //! without its draw: every gun, grenade and melee weapon (`melee_weapons`:
 //! TF2's nine, the knives) of the playable games as the ladder, `refill_ammo`, no knife finale, no time to speak of
-//! (`TIME_LIMIT`), no rotation or vote, one player enough, a quick respawn at the map's spawn points (the range's firing line).
+//! (`TIME_LIMIT`), no rotation or vote, no music (`music = "none"`: no
+//! game's music director plays its moments), one player enough, a quick respawn at the map's spawn points (the range's firing line).
 //! No option of the ladder module stops a kill from advancing or the last
 //! rung's from winning, so the rule is `rung_command::HoldRungs` (inserted
 //! by the plugin): a player stays on the rung they were put on, and the
@@ -136,7 +137,7 @@ pub fn definition(caps: &[Capabilities], base: &str, installed: &dyn Fn(&str) ->
          id = {id}\nname = \"Sandbox\"\n\
          description = \"Try any game's gun: `rung` picks it; nothing advances or ends.\"\n\
          players = {{ min = 1, max = 16 }}\nmaps = {maps}\nteams = \"free_for_all\"\n\
-         time_limit = {time}\nrotate = false\n\n\
+         time_limit = {time}\nrotate = false\nmusic = \"none\"\n\n\
          [slots]\n{hud}binds = {base}\ntick = {base}\nbots = {base}\n{movement}\
          identity = \"weapon\"\nweapons = {sets}\n\n\
          [spawn]\nrespawn = {{ delay = \"1s\", protection = \"1s\" }}\npoints = \"scored\"\n\

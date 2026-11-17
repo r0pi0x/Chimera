@@ -1000,6 +1000,7 @@ fn stage_bench(w: &mut World, what: &str) {
             health: (41.0, 100.0),
             top: Vec3::ZERO,
             feet: Vec3::ZERO,
+            entity: None,
             recharging: true,
         });
         let now = w.get_resource::<chimera_ui::UiClock>().map_or(0.0, |c| c.now);

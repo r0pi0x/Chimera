@@ -402,6 +402,23 @@ fn case_10_dying_closes_the_menu() {
     assert_eq!(sim.app.world().resource::<CaChat>().radio_open, None);
 }
 
+/// The radio's keys are Combat Arms' own: a player who is another game's
+/// (a CS:S gun in hand in a party app, `GameIdentity`) opens no menu
+/// (playtest 2026-11-17: B opened the radio over a CS:S player's Change
+/// gun); Combat Arms' again, it opens.
+#[test]
+fn the_radio_is_only_a_combat_arms_players() {
+    let mut sim = world();
+    let w = sim.app.world_mut();
+    let me = local(w);
+    w.entity_mut(me).insert(chimera_core::slots::GameIdentity("cs_source".into()));
+    chat::radio_key(w, radio::REPORT);
+    assert_eq!(w.resource::<CaChat>().radio_open, None, "a CS:S player has no radio");
+    w.entity_mut(me).insert(chimera_core::slots::GameIdentity(combat_arms::game::GAME.into()));
+    chat::radio_key(w, radio::REPORT);
+    assert_eq!(w.resource::<CaChat>().radio_open, Some(radio::REPORT));
+}
+
 /// 11. A2 has A1 on the block list: no line, but the sound plays.
 #[test]
 fn case_11_muting_keeps_the_sound() {

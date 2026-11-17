@@ -58,9 +58,12 @@
 //!   its centre to the piece clear of the map's world (characters and
 //!   props don't block it; the engine's and Halo's sight rule for the
 //!   characters they hurt, Combat Arms' meets props too). A knocked piece
-//!   is laid on the floor behind the shelf at once (no physics: the
-//!   cheapest that reads clearly), `standing` falls and a `PropHit` is
-//!   written. When every piece is down they all stand again `RESET_SECS`
+//!   leaves the shelf (hidden, struck no more) and its debris flies off
+//!   away from what struck it as physics bodies (`PropDebris`, `debris`:
+//!   a can whole and tumbling, a bottle broken into `SHARDS` shards of
+//!   glass), falling and rolling on the world, gone after `DEBRIS_SECS`;
+//!   `standing` falls and a `PropHit` is written (playtest 2026-11-17:
+//!   pieces were laid on the floor at once, no physics, nothing broke). When every piece is down they all stand again `RESET_SECS`
 //!   later; `ResetProp`, `prop reset` and a new prop stand them at once.
 //! - The board: a 1 m square face, its centre `BOARD_CENTRE_Y` m above
 //!   the floor, rings painted on, on two posts. Each bullet whose trace
@@ -81,6 +84,9 @@
 //!   distance from their centre) and `centre` (their mean) are kept
 //!   current. Cleared by `ResetProp` and `prop reset`; a new board starts
 //!   empty. Other blasts leave the board alone.
+//!
+//! A new prop shows where it arrives: a disc spreads on the floor under
+//! it over `APPEAR_SECS` (`Appearing`, drawn only), then goes.
 //!
 //! Props exist only while the sandbox plays (`rung_command::holds`): a
 //! spawn is refused otherwise, and every prop is removed when it stops or
@@ -112,7 +118,7 @@ use super::{
     rung_command,
     targets::{TargetRefused, find_spot},
 };
-use avian3d::prelude::{Collider, ColliderOf, CollisionLayers, LayerMask, RigidBody, SpatialQuery, SpatialQueryFilter};
+use avian3d::prelude::{AngularVelocity, Collider, ColliderOf, CollisionLayers, LayerMask, LinearVelocity, RigidBody, SpatialQuery, SpatialQueryFilter};
 
 use crate::{
     console::{ConsoleAppExt, command_player},
@@ -136,6 +142,16 @@ pub const BOARD_AIM_M: f32 = 1.0;
 pub const PROJECTILE_MISS_SECS: f64 = 4.0;
 /// The shelf's top (m).
 const SHELF_TOP: f32 = 1.0;
+/// A knocked piece's debris (a can, a bottle's shards) lies this long (s).
+pub const DEBRIS_SECS: f64 = 4.0;
+/// A bottle breaks into this many shards.
+pub const SHARDS: u32 = 6;
+/// A new prop grows from nothing to its size over this long (s, real
+/// time: it shows where it was placed, not just there).
+pub const APPEAR_SECS: f32 = 0.25;
+/// A knocked can's speed away from the shot (m/s) and up.
+const KNOCK_SPEED: f32 = 3.0;
+const KNOCK_UP: f32 = 1.5;
 /// Bottles and cans stand this far apart on a shelf (m).
 const PIECE_STEP: f32 = 0.25;
 /// The face's front, in front of the board's centre plane (m).
@@ -186,6 +202,18 @@ pub struct Prop {
     /// Bottles 6, cans 5, board 1.
     pub pieces: u32,
     pub standing: u32,
+}
+
+/// A prop's arrival mark: a disc spreading on the floor where it was
+/// placed for `APPEAR_SECS`, then gone (`appear`; seconds so far).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Appearing(pub f32);
+
+/// A knocked piece's debris: a physics body (a can, or a bottle's shard)
+/// thrown off by what struck it, gone at `until` (`SimClock` s).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct PropDebris {
+    pub until: f64,
 }
 
 /// A hit on a prop: a piece knocked, or a bullet on the board's face.
@@ -375,6 +403,15 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
             PropState { map_loads, ..default() },
         ))
         .id();
+    // Where it arrives: a disc on the floor spreading out under it, a
+    // quarter second (drawn only: no collider; `appear`).
+    world.spawn((
+        Name::new(format!("Prop {number} arriving")),
+        CodeShape { kind: ShapeKind::Cylinder { radius: 0.9, half_height: 0.004 }, colour: Color::srgb(1.0, 0.85, 0.35) },
+        Transform::from_translation(home + Vec3::Y * 0.01).with_scale(Vec3::new(0.05, 1.0, 0.05)),
+        Visibility::default(),
+        Appearing(0.0),
+    ));
     let on_furniture = furniture.is_some();
     if let Some((_, f)) = furniture {
         world.entity_mut(prop).insert(f);
@@ -549,6 +586,11 @@ pub fn reset(world: &mut World, e: Entity) {
         if let Some(mut t) = world.get_mut::<Transform>(pe) {
             *t = stand;
         }
+        // Back on the shelf: shown and struck again (`debris` took it off).
+        let board = world.get::<PropPiece>(pe).is_some_and(|p| p.board);
+        if !board && let Ok(mut ent) = world.get_entity_mut(pe) {
+            ent.insert((Visibility::Inherited, CollisionLayers::new(TRACE_ONLY_LAYER, LayerMask::NONE)));
+        }
     }
     let marks: Vec<Entity> = world.query_filtered::<(Entity, &ChildOf), With<ShotMark>>().iter(world).map(|(m, _)| m).collect();
     let face: Vec<Entity> = world.query::<(Entity, &PropPiece)>().iter(world).filter(|(_, p)| p.prop == e && p.board).map(|(f, _)| f).collect();
@@ -614,6 +656,7 @@ fn prop_hits(
     mut pieces: Query<(Entity, &mut PropPiece, &mut Transform), (Without<Prop>, Without<Intent>)>,
     world: PropWorld,
     mut out: MessageWriter<PropHit>,
+    shapes: Query<&CodeShape>,
     mut commands: Commands,
 ) {
     let now = clock.now;
@@ -699,6 +742,7 @@ fn prop_hits(
             hit(*a, *pe, *at, &mut hits, &mut landed);
         }
     }
+    let mut blast_from: Vec<(Entity, Vec3)> = Vec::new();
     // Blasts: every standing piece within the outer radius in the blast's
     // sight; a blast on a board's face (a rocket's) lands there.
     for b in &blasts {
@@ -712,6 +756,7 @@ fn prop_hits(
                 }
             } else if piece.standing && at.distance(b.at) <= b.outer && world.clear(b.at, at) {
                 hits.push((b.attacker, piece.prop, pe, None));
+                blast_from.push((pe, b.at));
             }
         }
     }
@@ -787,11 +832,23 @@ fn prop_hits(
                 commands.spawn((s, t, ShotMark, ChildOf(pe)));
             }
             None => {
-                // Off the shelf: lying on the floor behind it.
+                // Knocked: the piece goes from the shelf (hidden, no longer
+                // struck) and its debris flies off as physics bodies, away
+                // from what struck it: a can whole, a bottle in shards.
                 piece.standing = false;
-                let lie = Quat::from_rotation_y(0.7 * index as f32) * Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
-                *tf = Transform::from_xyz(piece.stand.translation.x, piece.floor_y + piece.half.x, -piece.behind - 0.08 * (index % 3) as f32)
-                    .with_rotation(lie);
+                *tf = piece.stand;
+                commands.entity(pe).insert((Visibility::Hidden, CollisionLayers::NONE));
+                let frame = frames.iter().find(|(e, _)| *e == prop).map_or(Transform::IDENTITY, |(_, t)| *t);
+                let at = frame.mul_transform(piece.stand);
+                let from = blast_from
+                    .iter()
+                    .find(|(p, _)| *p == pe)
+                    .map(|(_, f)| *f)
+                    .or_else(|| attacker.and_then(|a| world.shooters.get(a).ok()).map(|(_, t)| t.translation));
+                let away = from.map_or(frame.rotation * Vec3::NEG_Z, |f| (at.translation - f).with_y(0.0).normalize_or(frame.rotation * Vec3::NEG_Z));
+                if let Some(shape) = shapes.get(pe).ok().cloned() {
+                    debris(&mut commands, shape, at, away, piece.half, now, index);
+                }
                 if let Ok((_, _, mut p, mut s, _)) = props.get_mut(prop) {
                     p.standing = p.standing.saturating_sub(1);
                     if p.standing == 0 {
@@ -803,6 +860,82 @@ fn prop_hits(
         let hit = PropHit { attacker, prop, piece: index, distance_m: distance(attacker, prop), time: now };
         info!("PropHit attacker={:?} prop={prop:?} piece={index} distance={:.1}m t={now:.3}", attacker, hit.distance_m);
         out.write(hit);
+    }
+}
+
+/// A knocked piece's debris at `at` (world), thrown along `away` (flat,
+/// unit): a can whole, tumbling; a bottle (its `half` taller than its
+/// body: the neck) in `SHARDS` shards of its glass. Physics bodies that
+/// fall and roll on the world, gone after `DEBRIS_SECS`; on the debris
+/// layer (`core::RAGDOLL_LAYER`, colliding with the world and props only:
+/// characters and shots pass them).
+fn debris(commands: &mut Commands, shape: CodeShape, at: Transform, away: Vec3, half: Vec3, now: f64, index: u32) {
+    let until = now + DEBRIS_SECS;
+    let layers = CollisionLayers::new(crate::core::RAGDOLL_LAYER, LayerMask::DEFAULT);
+    let side = Vec3::new(-away.z, 0.0, away.x);
+    let bottle = half.y > match shape.kind {
+        ShapeKind::Cylinder { half_height, .. } => half_height + 0.01,
+        ShapeKind::Box(h) => h.y + 0.01,
+    };
+    if !bottle {
+        let v = away * KNOCK_SPEED + Vec3::Y * KNOCK_UP + side * (0.4 * ((index % 3) as f32 - 1.0));
+        commands.spawn((
+            Name::new("Prop debris"),
+            shape,
+            at,
+            Visibility::default(),
+            RigidBody::Dynamic,
+            collider(shape.kind),
+            layers,
+            LinearVelocity(v),
+            AngularVelocity(side * 12.0 + Vec3::Y * 3.0),
+            PropDebris { until },
+        ));
+        return;
+    }
+    // The glass breaks: shards fanned out from where it stood.
+    for k in 0..SHARDS {
+        let a = k as f32 / SHARDS as f32 * std::f32::consts::TAU + index as f32;
+        let out = (side * a.cos() + away * (0.6 + 0.4 * a.sin())).normalize_or(away);
+        let size = Vec3::new(0.012 + 0.004 * (k % 3) as f32, 0.02 + 0.01 * (k % 2) as f32, 0.006);
+        let shard = CodeShape { kind: ShapeKind::Box(size), colour: shape.colour };
+        let place = Transform::from_translation(at.translation + out * 0.03 + Vec3::Y * (0.02 * k as f32 - 0.05)).with_rotation(at.rotation * Quat::from_rotation_y(a));
+        commands.spawn((
+            Name::new("Prop debris"),
+            shard,
+            place,
+            Visibility::default(),
+            RigidBody::Dynamic,
+            collider(shard.kind),
+            layers,
+            LinearVelocity(out * (1.5 + 0.3 * (k % 3) as f32) + Vec3::Y * (1.0 + 0.2 * k as f32)),
+            AngularVelocity(Vec3::new(9.0, 5.0 + k as f32, 7.0)),
+            PropDebris { until },
+        ));
+    }
+}
+
+/// Debris past its time goes (and all of it with the sandbox).
+fn clear_debris(clock: Res<SimClock>, debris: Query<(Entity, &PropDebris)>, sandbox: (Option<Res<rung_command::HoldRungs>>, Option<Res<super::ActiveMinigame>>), mut commands: Commands) {
+    let plays = rung_command::sandbox_plays(sandbox.0, sandbox.1);
+    for (e, d) in &debris {
+        if !plays || clock.now >= d.until {
+            commands.entity(e).try_despawn();
+        }
+    }
+}
+
+/// New props' arrival marks spread out and go (`Appearing`, real time,
+/// eased out).
+fn appear(time: Res<Time<Real>>, mut marks: Query<(Entity, &mut Appearing, &mut Transform)>, mut commands: Commands) {
+    for (e, mut a, mut t) in &mut marks {
+        a.0 += time.delta_secs();
+        let f = (a.0 / APPEAR_SECS).clamp(0.0, 1.0);
+        let eased = 1.0 - (1.0 - f).powi(3);
+        t.scale = Vec3::new(eased.max(0.05), 1.0, eased.max(0.05));
+        if f >= 1.0 {
+            commands.entity(e).try_despawn();
+        }
     }
 }
 
@@ -985,7 +1118,8 @@ pub(super) fn plugin(app: &mut App) {
         .add_message::<WeaponEvent>()
         .add_message::<BlastDealt>()
         .add_message::<Damage>()
-        .add_systems(Update, apply_requests)
+        .add_systems(Update, (apply_requests, appear))
+        .add_systems(FixedUpdate, clear_debris.run_if(any_with_component::<PropDebris>))
         .add_systems(
             FixedUpdate,
             (prop_hits.after(crate::core::apply_damage).after(SimSet::Weapons), settle.after(SimSet::Rules).before(SimSet::Commands))

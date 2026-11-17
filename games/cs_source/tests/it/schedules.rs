@@ -33,11 +33,16 @@ use cs_source::game::{CsSourcePlugins, player_anim::PlayerAnimPlugin, view_anim:
 /// (`check_schedule_ratchet` says which pairs to order). The prediction
 /// schedules' opposite pairs stay at 0.
 const RATCHET: &[ScheduleRatchet] = &[
+    // 45 opposite from 37 (2026-11-17): ordering `pose_hitboxes` after
+    // `SimSet::Commands` (hitboxes posed from final intents) took 6
+    // ambiguous pairs away but reshuffled how Bevy sorts the unordered
+    // rest, and 8 more of those pairs (none of them hitboxes': grenades,
+    // equipment, the logic bridge) now sort differently on the two sides.
     ScheduleRatchet {
         schedule: "FixedUpdate",
-        server: 223,
-        client: 223,
-        opposite: 37,
+        server: 217,
+        client: 217,
+        opposite: 45,
     },
     ScheduleRatchet {
         schedule: "FixedPostUpdate",

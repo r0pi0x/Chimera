@@ -84,6 +84,34 @@ fn the_sandbox_runs_with_no_end_and_lists_halos_guns_and_grenade() {
 
 /// `sandbox` while the sandbox plays on that map does nothing (a control
 /// that fires twice must not restart it); `sandbox restart` starts it again.
+/// No game's music director plays the sandbox (playtest 2026-11-17: the
+/// in-match music played while trying guns).
+#[test]
+fn the_sandbox_plays_no_music() {
+    let (sim, _, _) = play();
+    let def = sim.app.world().resource::<minigame::Minigames>().get(SANDBOX).expect("the sandbox's definition");
+    assert_eq!(def.music.as_deref(), Some("none"));
+    let moments = sim.app.world().resource::<minigame::moments::MinigameMoments>();
+    assert!(moments.playing, "a minigame plays");
+    assert_eq!(moments.music, None, "no music director: {moments:?}");
+}
+
+/// B in the sandbox is Change gun's (the client's sandbox keys), never
+/// Combat Arms' radio, and T the bench's, never its push to talk,
+/// whatever game the player is.
+#[test]
+fn the_radio_keys_do_nothing_in_the_sandbox() {
+    let (mut sim, me, _) = play();
+    let w = sim.app.world_mut();
+    w.entity_mut(me).insert(GameIdentity(combat_arms::game::GAME.into()));
+    combat_arms::game::chat::radio_key(w, combat_arms::game::chat::radio::REPORT);
+    assert_eq!(w.resource::<combat_arms::game::chat::CaChat>().radio_open, None);
+    // T is the bench's: no push to talk (its icon, a green square at the
+    // bottom of the HUD, stayed).
+    combat_arms::game::chat::voice_key(w, true);
+    assert!(!w.resource::<combat_arms::game::chat::CaChat>().voice.talking);
+}
+
 #[test]
 fn sandbox_again_on_the_same_map_does_nothing_and_restart_starts_it() {
     let (mut sim, me, _) = play();

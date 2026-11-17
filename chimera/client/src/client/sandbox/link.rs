@@ -264,6 +264,8 @@ pub struct LookedAt {
     /// Its head's top and its feet, in the world (the panel sits beside).
     pub top: Vec3,
     pub feet: Vec3,
+    /// The target (its body's place is read again when drawn: `range`).
+    pub entity: Option<Entity>,
     /// Recharging its shield.
     pub recharging: bool,
 }
@@ -779,6 +781,7 @@ pub fn bridge_look(
                 health: (v.health * 100.0, v.health_max * 100.0),
                 top: g.translation() + Vec3::Y * 1.9,
                 feet: g.translation(),
+                entity: Some(e),
                 recharging: false,
             },
         ));

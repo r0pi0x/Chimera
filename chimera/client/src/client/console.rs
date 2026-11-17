@@ -1092,6 +1092,10 @@ fn autoexec(
     } else if app_marked {
         console.config_marks.insert(super::binds::APP_BINDS_MARK.into());
     }
+    // Each game's own binds (`Console::layers`) a saved config lacks
+    // whose command no key runs in that game (a config written before
+    // the game had them: Halo's throw), back on their keys if free.
+    console.submit("bindgamedefaults missing");
     console.submit("execifexists autoexec.cfg");
     console.log_output = true;
     for line in &args.0.console {
