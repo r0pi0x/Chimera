@@ -77,7 +77,9 @@ fn textured(name: &str) -> MapData {
 }
 
 fn sim() -> Sim {
-    Sim::with(base(), |app| {
+    // Repeatable from the start: the map's load and spawn finish on the
+    // tick they are asked for, whatever the machine's load.
+    let mut sim = Sim::with(base(), |app| {
         app.init_asset::<Image>()
             .init_asset::<StandardMaterial>()
             .init_asset::<WorldMaterial>()
@@ -90,7 +92,9 @@ fn sim() -> Sim {
             .init_asset::<DetailMaterial>()
             .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
             .add_plugins(MapPlugin::empty());
-    })
+    });
+    sim.repeatable();
+    sim
 }
 
 /// Every asset store's size, by name.
@@ -127,11 +131,8 @@ fn assert_gone(
     loaded: &[Entity],
 ) {
     // What a map's resources hold is freed on a task (`map::drop_later`).
-    let started = std::time::Instant::now();
-    while assets(sim.app.world_mut()) != assets_before && started.elapsed().as_secs() < 5 {
-        sim.ticks(1);
-        chimera_world::harness::let_tasks_run();
-    }
+    sim.run_until_idle(600).expect("the map's frees to finish");
+    sim.run_until(|w| assets(w) == assets_before, 600).ok();
     let world = sim.app.world_mut();
     for e in loaded {
         assert!(world.get_entity(*e).is_err(), "{what}: {e} (a map part) is still there");
@@ -157,7 +158,7 @@ fn unloading_a_map_leaves_nothing_of_it() {
     let assets_before = assets(sim.app.world());
     for (i, name) in ["test:unload_a", "test:unload_b"].into_iter().enumerate() {
         change_map(sim.app.world_mut(), textured(name), MapDebugView::Normal);
-        sim.ticks(5);
+        sim.run_until_idle(600).unwrap();
         let world = sim.app.world_mut();
         let loaded = parts(world);
         assert!(loaded.len() > 3, "map {i}: spawned its parts");
@@ -175,11 +176,11 @@ fn changing_maps_replaces_the_old_one_whole() {
     sim.ticks(3);
     let before = resources(sim.app.world());
     change_map(sim.app.world_mut(), textured("test:change_a"), MapDebugView::Normal);
-    sim.ticks(5);
+    sim.run_until_idle(600).unwrap();
     let a = parts(sim.app.world_mut());
     let a_images = sim.app.world().resource::<Assets<Image>>().len();
     change_map(sim.app.world_mut(), textured("test:change_b"), MapDebugView::Normal);
-    sim.ticks(5);
+    sim.run_until_idle(600).unwrap();
     let world = sim.app.world_mut();
     for e in &a {
         assert!(world.get_entity(*e).is_err(), "{e} of the first map is still there");
@@ -209,12 +210,13 @@ fn spawning_frees_the_pending_data_and_its_textures() {
             .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
             .add_plugins(MapPlugin::new(textured("test:startup")));
     });
-    sim.ticks(3);
+    sim.repeatable();
+    sim.run_until_idle(600).unwrap();
     check_freed(&mut sim);
     // And a map changed to.
     let mut sim = self::sim();
     change_map(sim.app.world_mut(), textured("test:later"), MapDebugView::Normal);
-    sim.ticks(3);
+    sim.run_until_idle(600).unwrap();
     check_freed(&mut sim);
 }
 
