@@ -472,8 +472,9 @@ pub const BODY_POSE_WAIT: f64 = 0.25;
 /// built (`build_late_bodies`) and its animator on its skeleton with
 /// something playing (`Animator::poses`, or `BODY_POSE_WAIT` up); it comes
 /// in that pose, so model and skeleton change together, in one frame.
-/// With `game_parts::NoStandIns` a character whose game has no body here
-/// keeps what it wears, or wears any body.
+/// With `game_parts::PreferRealModels` a character whose game has no body
+/// here keeps what it wears, or wears any body. A character with no body
+/// drawn shows a stand-in meanwhile (`stand_in::bodies`).
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn attach_bodies(
     models: Option<Res<CharacterModels>>,
@@ -502,7 +503,7 @@ pub fn attach_bodies(
     >,
     existing: Query<&CharacterBody>,
     show_local: Res<ShowLocalBody>,
-    (time, real, no_stand_ins): (Res<Time>, Res<Time<Real>>, Option<Res<chimera_core::game_parts::NoStandIns>>),
+    (time, real, no_stand_ins): (Res<Time>, Res<Time<Real>>, Option<Res<chimera_core::game_parts::PreferRealModels>>),
     mut materials: Option<ResMut<Assets<PropMaterial>>>,
     dormant: Option<Res<DormantProps>>,
     mut meshes: Option<ResMut<Assets<Mesh>>>,
@@ -524,8 +525,8 @@ pub fn attach_bodies(
         let index = match models.for_identity(identity, team.copied(), name, class) {
             Some((index, _)) => index,
             None => {
-                // An app without stand-ins: what it wears stays; if nothing,
-                // any body here rather than none (no capsule comes).
+                // An app preferring real models: what it wears stays; if
+                // nothing, any body here rather than a stand-in.
                 let any = no_stand_ins.is_some().then(|| current.map(|(_, m)| m.0)).flatten();
                 let any = any.or_else(|| no_stand_ins.is_some().then(|| models.for_identity(None, team.copied(), None, class)).flatten().map(|m| m.0));
                 match any {

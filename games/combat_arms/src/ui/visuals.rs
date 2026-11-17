@@ -1,16 +1,13 @@
 //! Combat Arms' placeholder looks (wave 0), until its models load: the
-//! local player's weapon in first person as a box (a long dark one for a
-//! gun, a thin light one for a melee weapon) while it has no view model
-//! (`game::view_model`: keyed ones without the V2 key, or one still
-//! loading: `on_demand`, which this plugin turns on);
+//! view models load on demand (`game::view_model::on_demand`, which this
+//! plugin turns on; until one is in, or without the V2 key, Chimera's
+//! stand-in gun shows: `render::stand_in`);
 //! grenades and impact projectiles in flight without their model as small
 //! dark balls (`grenade_balls`; not a flame puff, whose record has no
 //! model: nothing is drawn for it until its trail group is specified) and, without the install's effect file,
 //! smoke clouds as grey balls of the cloud's size (`smoke_balls`; with it
 //! the cloud is the `Smoke_Grenade_01` group's particles, `ui::effects`).
-//! Other characters are the shell's capsules (`client::hud`). An app with
-//! `game_parts::NoStandIns` (Ultimate Gun Game) draws no box: nothing until
-//! the view model is ready.
+//! A character without its body shows Chimera's stand-in body.
 //!
 //! The seam: Combat Arms' models (players, view models, held weapons)
 //! come from its install through its loader (specs/combat_arms/models_ltb.md,
@@ -23,13 +20,8 @@
 use bevy::prelude::*;
 
 use crate::{
-    client::FirstPersonCamera,
-    core::LocalPlayer,
-    map::{
-        ViewModels,
-        loose::{LooseAssets, ShownItem},
-    },
-    weapon::{Hitscan, Inventory, Melee, Weapon, grenade::SmokeCloud},
+    map::loose::{LooseAssets, ShownItem},
+    weapon::grenade::SmokeCloud,
 };
 
 /// The placeholder looks.
@@ -40,80 +32,8 @@ impl Plugin for CaVisualsPlugin {
         // The view models load as weapons want them (`view_model::on_demand`),
         // another game's map's dressing carrying none.
         crate::game::view_model::on_demand::load_on_demand_in(app);
-        app.add_systems(
-            Update,
-            (
-                // Never in an app that draws no stand-ins (`NoStandIns`): its
-                // weapon shows nothing until its view model is ready.
-                box_gun.run_if(not(resource_exists::<chimera_core::game_parts::NoStandIns>)),
-                grenade_balls,
-                smoke_balls,
-            ),
-        );
+        app.add_systems(Update, (grenade_balls, smoke_balls));
     }
-}
-
-/// The box drawn for the local player's weapon, and which weapon it shows.
-#[derive(Component)]
-pub struct BoxGun(pub Entity);
-
-/// Keep a box in front of the first-person camera for the local player's
-/// active weapon: a gun's or a melee weapon's shape, none for anything
-/// else (or no weapon, or one the map has a view model for).
-#[allow(clippy::too_many_arguments)]
-fn box_gun(
-    player: Option<Single<&Inventory, With<LocalPlayer>>>,
-    kinds: Query<(&Weapon, Has<Hitscan>, Has<Melee>)>,
-    view_models: Option<Res<ViewModels>>,
-    camera: Option<Single<Entity, With<FirstPersonCamera>>>,
-    shown: Query<(Entity, &BoxGun)>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut commands: Commands,
-) {
-    let active = player.and_then(|inv| inv.active);
-    // A view model loaded since the box went up (`on_demand`) replaces it.
-    let modelled = active
-        .and_then(|w| kinds.get(w).ok())
-        .is_some_and(|(w, ..)| view_models.as_ref().is_some_and(|v| v.get(w.id).is_some()));
-    if !modelled && shown.iter().any(|(_, b)| Some(b.0) == active) {
-        return;
-    }
-    for (e, _) in &shown {
-        commands.entity(e).despawn();
-    }
-    let (Some(weapon), Some(camera)) = (active, camera) else {
-        return;
-    };
-    let Ok((_, gun, melee)) = kinds.get(weapon) else {
-        return;
-    };
-    if modelled {
-        return;
-    }
-    // Metres, in the camera's space (-Z ahead, +X right, +Y up).
-    let (size, colour, at) = if gun {
-        (Vec3::new(0.04, 0.06, 0.45), Color::srgb(0.15, 0.15, 0.17), Vec3::new(0.16, -0.14, -0.45))
-    } else if melee {
-        (Vec3::new(0.02, 0.04, 0.3), Color::srgb(0.75, 0.75, 0.8), Vec3::new(0.2, -0.15, -0.35))
-    } else {
-        return;
-    };
-    let mesh = meshes.add(Cuboid::from_size(size));
-    let material = materials.add(StandardMaterial {
-        base_color: colour,
-        perceptual_roughness: 0.6,
-        ..default()
-    });
-    let entity = commands
-        .spawn((
-            BoxGun(weapon),
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
-            Transform::from_translation(at),
-        ))
-        .id();
-    commands.entity(*camera).add_child(entity);
 }
 
 /// A Combat Arms grenade in flight (its `ShownItem`, on the server's world

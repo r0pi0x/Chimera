@@ -58,6 +58,8 @@ pub mod skin_frames;
 pub mod sky;
 pub mod sky_occluder;
 pub mod spray;
+pub mod stand_in;
+pub mod stand_in_mesh;
 pub mod sprite_material;
 pub mod steam;
 mod spawn;

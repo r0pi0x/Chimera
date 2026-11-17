@@ -20,7 +20,7 @@
 //!   set in the same system where the world is authoritative. The body
 //!   follows it on every machine: the map's character models are picked
 //!   among the identity's game's (`map::CharacterModels::for_identity`;
-//!   none of its game here: a capsule), and each game dresses and
+//!   none of its game here: the stand-in body), and each game dresses and
 //!   animates only its own (Combat Arms' look by `GameIdentity::allows`,
 //!   CS:S's animation by the body's game, `CharacterModels::is_of`).
 //! - The HUD (`hud_follows_identity`, each frame where a local player

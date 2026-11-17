@@ -1,12 +1,15 @@
 //! The local player's HUD (crosshair, health, ammo, killfeed,
-//! sniper scope) and bodies for other characters until character models
-//! exist.
+//! sniper scope), which characters' bodies show, and the stand-ins'
+//! stripes at the UI's motion scale.
 //!
 //! Covers: crosshair (gap from spread, CS:S's `cl_crosshaircolor` presets,
 //! `cl_crosshairscale`, `cl_crosshairalpha` with `cl_crosshairusealpha`,
 //! `cl_dynamiccrosshair`), sniper scope overlay, smoke grey and flash white
-//! screen tints, health, ammo, killfeed, capsule bodies for other
-//! characters. A game that draws its own crosshair, health and ammo, hit
+//! screen tints, health, ammo, killfeed; the dead and the spectated
+//! character's own body hidden (`show_bodies`); the stand-ins' stripes
+//! (`chimera_present::render::stand_in`, which draws a body for a
+//! character with none yet) moving at `ui_motion_scale` (`stand_in_motion`:
+//! 0 holds them, 2 halves their speed). A game that draws its own crosshair, health and ammo, hit
 //! marker (`hit_marker`: the opt-in generic one, `client::hit_marker`, stays out) or kill feed turns this HUD's off with `GameDraws`;
 //! the shell's overlay layer (`client::overlay`: a minigame's panel and
 //! callouts) is no part of it, so no game's HUD hides or replaces it.
@@ -36,7 +39,7 @@ use super::{
     ui_write::{edit, set_text},
 };
 use crate::{
-    core::{Dead, Died, Health, Intent, LocalPlayer, Score, Team},
+    core::{Dead, Died, Health, Intent, LocalPlayer, Score},
     weapon::{Hitscan, Inventory, Magazine, Weapon, Zoomed},
 };
 
@@ -55,7 +58,7 @@ impl Plugin for HudPlugin {
             .add_systems(
                 Update,
                 (
-                    character_bodies,
+                    stand_in_motion,
                     show_bodies,
                     (killfeed, draw_hud, draw_crosshair, draw_scope).chain(),
                     (scope_aspect, game_scope)
@@ -1322,75 +1325,16 @@ fn killfeed(
     set_text(&mut text, &feed.0.iter().map(|(l, _)| l.as_str()).collect::<Vec<_>>().join("\n"));
 }
 
-/// A character drawn as a capsule (`character_bodies`).
-#[derive(Component)]
-#[component(storage = "SparseSet")]
-pub struct CapsuleBody;
-
-/// A capsule for every character that isn't the local player, on maps
-/// without character models (or none of its identity's game,
-/// `slots::GameIdentity`); on maps with them (map::attach_bodies) the
-/// capsules go. Characters outlive map changes (a network game's above
-/// all: a client gets them before the server's map is in), so this
-/// follows the map, not the character's arrival: a client that joined
-/// de_dust2 from the greybox kept a capsule through every model (seen
-/// in the network soak's screenshots). Never in an app with
-/// `game_parts::NoStandIns`.
-#[allow(clippy::type_complexity)]
-pub fn character_bodies(
-    characters: Query<
-        (
-            Entity,
-            &Team,
-            Has<CapsuleBody>,
-            (
-                Option<&crate::map::BodyName>,
-                Option<&crate::core::PlayerClass>,
-                Option<&crate::slots::GameIdentity>,
-            ),
-        ),
-        (With<Intent>, Without<LocalPlayer>),
-    >,
-    models: Option<Res<crate::map::CharacterModels>>,
-    no_stand_ins: Option<Res<chimera_core::game_parts::NoStandIns>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut commands: Commands,
+/// The stand-ins' stripes move at the UI's motion scale
+/// (`ui_motion_scale`: 0 holds them still, more is slower).
+pub fn stand_in_motion(
+    motion: Option<Res<chimera_ui::motion::Motion>>,
+    scroll: Option<ResMut<chimera_present::render::stand_in::StandInScroll>>,
 ) {
-    for (e, team, capsule, (name, class, identity)) in &characters {
-        // A model for it: the map's, among its identity's game's when it
-        // has one (another game's character on this map is a capsule).
-        // An app without stand-ins (`NoStandIns`) never draws one: not on
-        // a join's first frames, before the map's models are in, nor at a
-        // map change.
-        let modelled = no_stand_ins.is_some()
-            || models
-                .as_ref()
-                .is_some_and(|m| identity.is_none() || m.for_identity(identity, Some(*team), name, class).is_some());
-        match (modelled, capsule) {
-            (true, true) => {
-                commands
-                    .entity(e)
-                    .remove::<(CapsuleBody, Mesh3d, MeshMaterial3d<StandardMaterial>)>();
-            }
-            (false, false) => {
-                let color = match team.0 {
-                    0 => Color::srgb(0.35, 0.5, 0.9),
-                    _ => Color::srgb(0.85, 0.4, 0.3),
-                };
-                let r = crate::character::CAPSULE_RADIUS;
-                commands.entity(e).insert((
-                    CapsuleBody,
-                    Mesh3d(meshes.add(Capsule3d::new(r, crate::character::CAPSULE_HEIGHT - 2.0 * r))),
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color: color,
-                        perceptual_roughness: 0.8,
-                        ..default()
-                    })),
-                ));
-            }
-            _ => {}
-        }
+    let (Some(motion), Some(mut scroll)) = (motion, scroll) else { return };
+    let rate = if motion.snaps() { 0.0 } else { 1.0 / motion.scale };
+    if motion.is_changed() || scroll.rate != rate {
+        scroll.rate = rate;
     }
 }
 
@@ -1426,9 +1370,6 @@ mod tests {
         *app.world().resource::<CrosshairColor>()
     }
 
-    /// Capsules follow the map, not the characters' arrival: a character
-    /// that came in on the greybox (no models) loses its capsule on a
-    /// map with models, and gets one again back on the greybox.
     #[test]
     fn no_weapon_shows_the_default_crosshair() {
         let mut inv = Inventory::default();
@@ -1535,26 +1476,6 @@ mod tests {
         app.insert_resource(ScopeOverlayTexel(None));
         app.update();
         assert_eq!(state(&mut app).0.aspect_ratio, Some(2.0));
-    }
-
-    #[test]
-    fn capsule_bodies_follow_the_map() {
-        use bevy::ecs::system::RunSystemOnce;
-        let mut world = World::new();
-        world.init_resource::<Assets<Mesh>>();
-        world.init_resource::<Assets<StandardMaterial>>();
-        let other = world.spawn((Intent::default(), Team(1))).id();
-        let me = world.spawn((Intent::default(), Team(2), LocalPlayer)).id();
-        let run = |world: &mut World| world.run_system_once(character_bodies).unwrap();
-        run(&mut world);
-        assert!(world.get::<CapsuleBody>(other).is_some() && world.get::<Mesh3d>(other).is_some());
-        assert!(world.get::<CapsuleBody>(me).is_none(), "not the local player");
-        world.insert_resource(crate::map::CharacterModels(Default::default()));
-        run(&mut world);
-        assert!(world.get::<CapsuleBody>(other).is_none() && world.get::<Mesh3d>(other).is_none());
-        world.remove_resource::<crate::map::CharacterModels>();
-        run(&mut world);
-        assert!(world.get::<CapsuleBody>(other).is_some());
     }
 
     #[test]

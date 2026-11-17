@@ -506,14 +506,15 @@ fn posing_waits_by_the_sets_idle_numbers() {
 }
 
 /// Drawn at the frame rate (`game::eased`): a frame between two Halo ticks
-/// draws the view's pose as the blend of the two ticks' poses at the
-/// frame's overstep fraction (Halo's own tick: one tick behind, as the
-/// engine draws its ticks); the simulation's pose is the tick's again at
-/// the next tick's start.
+/// samples the playing animation at its own time (no trail): between the
+/// tick's pose and the next tick's (the draw's next keyframe, predicted,
+/// as the next tick then makes it), never between the last two; the
+/// simulation's pose is the tick's again at the next tick's start;
+/// `cl_interpolate 0` draws the tick's.
 #[test]
-fn the_view_is_drawn_between_its_ticks() {
+fn the_view_is_sampled_at_the_frames_time() {
     use bevy::ecs::system::RunSystemOnce;
-    use chimera_world::map::interp::{InterpPlugin, blend_poses};
+    use chimera_world::map::interp::{InterpPlugin, Interpolation, blend_poses};
     let mut sim = Sim::new(HaloSim, (GreyboxMapPlugin, InterpPlugin));
     stand_in(&mut sim);
     let p = sim.spawn_character(greybox::SPAWNS[0], movement::ID);
@@ -526,42 +527,162 @@ fn the_view_is_drawn_between_its_ticks() {
         let view = sim.app.world().get::<chimera_world::map::ViewAnimator>(p).unwrap();
         view.animator.as_ref().unwrap().fixed.as_ref().unwrap().get().clone()
     };
-    let before = laid(&sim);
-    sim.ticks(1);
-    let after = laid(&sim);
-    assert_ne!(before, after);
-    // A frame with no tick, a quarter of the way into the next.
-    for f in [0.25f32, 0.5, 0.9] {
+    let frame = |sim: &mut Sim, f: f32| {
         let w = sim.app.world_mut();
         let step = w.resource::<Time<Fixed>>().timestep();
         let o = w.resource::<Time<Fixed>>().overstep();
         w.resource_mut::<Time<Fixed>>().discard_overstep(o);
         w.resource_mut::<Time<Fixed>>().accumulate_overstep(step.mul_f32(f));
         w.run_system_once(halo_ce::game::eased::ease).unwrap();
-        let want = blend_poses(&before, &after, f);
-        let got = drawn(&sim);
+    };
+    let now = laid(&sim);
+    let mut got = Vec::new();
+    for f in [0.0f32, 0.25, 0.5, 0.9] {
+        frame(&mut sim, f);
+        got.push((f, drawn(&sim)));
+    }
+    frame(&mut sim, 0.0);
+    let w = sim.app.world_mut();
+    let o = w.resource::<Time<Fixed>>().overstep();
+    w.resource_mut::<Time<Fixed>>().discard_overstep(o);
+    sim.app.world_mut().run_schedule(FixedFirst);
+    assert_eq!(drawn(&sim), now, "the simulation sees the tick's pose");
+    sim.ticks(1);
+    let next = laid(&sim);
+    assert_ne!(now, next);
+    for (f, got) in got {
+        let want = blend_poses(&now, &next, f);
         assert_eq!(got.len(), want.len());
         for ((qg, pg), (qw, pw)) in got.iter().zip(&want) {
             assert!(qg.dot(*qw).abs() > 1.0 - 1e-6 && pg.distance(*pw) < 1e-5, "{f}: {got:?} vs {want:?}");
         }
-        assert!(got != after || before == after, "{f}: between, not the latest");
+        assert!(f == 0.0 || got != now, "{f}: past the tick, not behind it");
     }
-    let w = sim.app.world_mut();
-    let o = w.resource::<Time<Fixed>>().overstep();
-    w.resource_mut::<Time<Fixed>>().discard_overstep(o);
-    // The tick's own pose for the simulation: restored at the start of
-    // the next tick, then that tick's laid.
-    let previous = laid(&sim);
-    sim.ticks(1);
-    let latest = laid(&sim);
-    assert_ne!(previous, latest);
-    // A frame right at the tick's end draws one tick behind (the frame
-    // the harness ran stopped at its own overstep).
-    let w = sim.app.world_mut();
-    let o = w.resource::<Time<Fixed>>().overstep();
-    w.resource_mut::<Time<Fixed>>().discard_overstep(o);
-    w.run_system_once(halo_ce::game::eased::ease).unwrap();
-    assert_eq!(drawn(&sim), previous, "a frame on a tick's end draws one tick behind");
-    sim.app.world_mut().run_schedule(FixedFirst);
-    assert_eq!(drawn(&sim), latest, "the simulation sees the tick's pose");
+    // Off: the tick's own.
+    sim.app.world_mut().resource_mut::<Interpolation>().enabled = 0;
+    frame(&mut sim, 0.5);
+    assert_eq!(drawn(&sim), next);
+}
+
+/// The visible delay of a shot (docs/backlog.md, "Halo: view models and
+/// animations at frame rate"): frames drawn at 144 Hz under Halo's 30 Hz
+/// tick, the trigger pressed on a frame; two runs alike but for the shot.
+/// Counted from the press: the first frame whose drawn view differs from
+/// the run without it, and the first drawn as far from it as the tick that
+/// fired laid (the fire tick's own pose, seen in full). Sampled at the
+/// frame's time it is in full on the first frame after that tick (eased
+/// between the last two ticks it was one tick, about 5 frames, later).
+#[test]
+fn a_shot_shows_on_the_first_frame_after_its_tick() {
+    use bevy::time::TimeUpdateStrategy;
+    use chimera_world::map::{ViewAnimator, anim::BonePose, interp::InterpPlugin};
+    let frame_secs = 1.0 / 144.0;
+    let run = |fire: bool| {
+        let mut sim = Sim::new(HaloSim, (GreyboxMapPlugin, InterpPlugin));
+        stand_in(&mut sim);
+        let p = sim.spawn_character(greybox::SPAWNS[0], movement::ID);
+        sim.ticks(2);
+        give(sim.app.world_mut(), p, ASSAULT_RIFLE).unwrap();
+        sim.ticks(40);
+        assert_eq!(state(&sim, p), ViewState::Idle);
+        sim.app.insert_resource(TimeUpdateStrategy::ManualDuration(std::time::Duration::from_secs_f64(frame_secs)));
+        // A few frames in, so the press lands mid-tick.
+        let mut frames: Vec<(u64, Vec<BonePose>, Vec<BonePose>)> = Vec::new();
+        for k in 0..60 {
+            if fire && k == 3 {
+                sim.intent(p).fire = true;
+            }
+            sim.app.update();
+            if fire && sim.app.world().get::<HaloViewModel>(p).unwrap().view.push != (0.0, 0.0) {
+                sim.intent(p).fire = false;
+            }
+            let w = sim.app.world();
+            let drawn = w.get::<ViewAnimator>(p).unwrap().animator.as_ref().unwrap().fixed.as_ref().unwrap().get().clone();
+            let laid = w.get::<HaloViewModel>(p).unwrap().drawn.latest().unwrap().get().clone();
+            frames.push((sim.tick(), drawn, laid));
+        }
+        frames
+    };
+    let (shot, still) = (run(true), run(false));
+    let apart = |a: &[BonePose], b: &[BonePose]| a.iter().zip(b).map(|((qa, pa), (qb, pb))| qa.angle_between(*qb) + pa.distance(*pb)).sum::<f32>();
+    let changed = (0..60).find(|&k| apart(&shot[k].1, &still[k].1) > 1e-6).expect("the shot shows");
+    let fired = (0..60).find(|&k| apart(&shot[k].2, &still[k].2) > 1e-6).expect("a tick laid the shot");
+    let full = apart(&shot[fired].2, &still[fired].2);
+    let seen = (0..60).find(|&k| apart(&shot[k].1, &still[k].1) >= full - 1e-6).expect("seen in full");
+    let ms = |k: usize| (k as f64 - 2.0) * frame_secs * 1000.0;
+    eprintln!(
+        "shot delay at 144 Hz: press on frame 3; the fire tick laid on frame {} ({:.1} ms); first changed frame {} ({:.1} ms); in full on frame {} ({:.1} ms)",
+        fired + 1,
+        ms(fired),
+        changed + 1,
+        ms(changed),
+        seen + 1,
+        ms(seen)
+    );
+    assert!(changed <= fired, "shown by the frame its tick ran: {changed} vs {fired}");
+    assert!(seen <= fired + 1, "in full on the first frame after its tick: {seen} vs {fired}");
+}
+
+/// What drawing at the frame rate costs (`game::eased`; judged by
+/// instruction counts, docs/performance.md "Work counts"): eight holders
+/// of the assault rifle with Halo bodies, walking, 144 frames a second
+/// under Halo's 30 Hz tick, every drawn pose made each frame (as the
+/// renderer would); the systems' instructions a tick printed. Without
+/// hardware counters it checks nothing.
+#[test]
+fn drawing_at_the_frame_rate_costs() {
+    use bevy::time::TimeUpdateStrategy;
+    use chimera_world::map::{BodyModel, CharacterModels, MapCharacterModel, ViewAnimator, anim::Animator, interp::InterpPlugin};
+    let mut sim = Sim::new(HaloSim, (GreyboxMapPlugin, InterpPlugin));
+    stand_in(&mut sim);
+    let body = {
+        let mut s = rifle();
+        let idle = s.names[sequence_name(FirstPersonSlot::Idle)];
+        s.names.insert("stand ar idle".into(), idle);
+        s.names.insert("stand ar move-front".into(), idle);
+        s.names.insert("stand unarmed idle".into(), idle);
+        Arc::new(s)
+    };
+    sim.app.world_mut().insert_resource(CharacterModels(Arc::new(vec![MapCharacterModel {
+        game: Some(halo_ce::game::GAME),
+        team: None,
+        name: None,
+        class: None,
+        model: Default::default(),
+        hitboxes: Vec::new(),
+        bones: Vec::new(),
+        root: Transform::IDENTITY,
+        animations: Some(body.clone()),
+        boxes: Vec::new(),
+        ragdoll: None,
+    }])));
+    let mut ps = Vec::new();
+    for k in 0..8 {
+        let p = sim.spawn_character(greybox::SPAWNS[k % greybox::SPAWNS.len()] + Vec3::X * k as f32, movement::ID);
+        sim.app.world_mut().entity_mut(p).insert((
+            chimera_core::slots::GameIdentity(halo_ce::game::GAME.into()),
+            BodyModel(0),
+            Animator::new(body.clone()),
+        ));
+        ps.push(p);
+    }
+    sim.ticks(2);
+    for &p in &ps {
+        give(sim.app.world_mut(), p, ASSAULT_RIFLE).unwrap();
+        sim.intent(p).move_axis = Vec2::Y;
+    }
+    // Every drawn pose made each frame, as the renderer's posing would.
+    sim.app.add_systems(Update, |a: Query<&Animator>, v: Query<&ViewAnimator>| {
+        let mut n = 0usize;
+        for a in a.iter().chain(v.iter().filter_map(|v| v.animator.as_ref())) {
+            n += a.fixed.as_ref().map_or(0, |f| f.get().len());
+        }
+        std::hint::black_box(n);
+    });
+    sim.app.insert_resource(TimeUpdateStrategy::ManualDuration(std::time::Duration::from_secs_f64(1.0 / 144.0)));
+    sim.ticks(30);
+    let Some(work) = sim.work(60) else { return };
+    let per = work.systems.per(60);
+    let rows: Vec<_> = per.top(14).into_iter().map(|(name, i, r)| format!("{name}: {i} instr/tick ({r})")).collect();
+    eprintln!("drawing at the frame rate, per tick (8 holders, 144 Hz frames):\n  {}\n  all systems: {} instr/tick", rows.join("\n  "), per.total());
 }

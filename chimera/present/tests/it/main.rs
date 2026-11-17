@@ -5,6 +5,7 @@
 //! engine's `core` and console as the base: prop LODs, prop shadows,
 //! body parts' posed bounds, hitboxes following the drawn body's facing),
 //! the view-model camera's switch, a view model drawn without a map,
+//! stand-ins until a body or view model is built,
 //! the under-water overlay's,
 //! fog-only water's fog and the sky under water; the sound recorded
 //! into a WAV file a frame at a time (`audio_record`). `cargo test -p chimera_present --features dev
@@ -28,6 +29,7 @@ mod prop_meshes_ahead;
 mod prop_shadows;
 mod shader_spec;
 mod shadow_spec;
+mod stand_ins;
 mod underwater_fog_volume;
 mod underwater_overlay;
 mod underwater_sky;

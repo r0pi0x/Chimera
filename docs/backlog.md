@@ -59,7 +59,7 @@ the user's go-ahead: no Actions runs unless asked.
   - The progression numbers (XP per action, curve, weights) are to be worked out later with the user.
   - Builds on S4's profile schema: per-game progression declared as data, per-weapon results in the match report, and the stats-over-time history above.
 
-- **Our own default assets: player models from the logo's three characters (user, 2026-11-15):** create a small set of original, committed assets, made by us (e.g. in Blender), for games or tests that have no player model yet. Today they fall back to the shell's capsule (`map::CharacterModels::for_identity`).
+- **Our own default assets: player models from the logo's three characters (user, 2026-11-15):** create a small set of original, committed assets, made by us (e.g. in Blender), for games or tests that have no player model yet. Today they fall back to the loading stand-in body (`render::stand_in`, `map::CharacterModels::for_identity`).
   - **First goal:** turn the three characters in the logo (the Operator, Trooper and Vanguard avatar glyphs, `shots/avatar-glyphs/*.svg` in the Signal design work, now `chimera_ui::avatar`) into rigged, animated player models in the Signal look.
   - **Sandbox test dummy (user, 2026-11-17):** the range's dummies should not be a Combat Arms character by default; a dummy mesh in the shape of the logo characters, with hitgroups.
   - **Rigging:** one shared humanoid skeleton, so animations retarget across all three.
@@ -114,7 +114,7 @@ the user's go-ahead: no Actions runs unless asked.
   - **Left:** loading the next map's data ahead during the match-end screen (before the change); a listen host's own row on other machines pauses while its simulation waits on its spawn (its own screen shows it live).
   - **Plan:** [plans/active/lobby-between-maps.md](plans/active/lobby-between-maps.md).
 
-- **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.
+- **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** Design: docs/plans/active/onboarding.md (decisions taken 2026-11-17; mockups next). a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.
   - It connects to a master server (the hub) by an identifier or address, since the hub manages the accounts.
   - It covers hub plan S3: invite or link code, choosing a username, the recovery key, and Skip.
   - Design it first as a new UI, with heavy use of motion graphics for a high-quality first experience, using the kit's motion tokens (`chimera_ui::motion`) so it can be slowed for new users or disabled.
@@ -386,6 +386,14 @@ the user's go-ahead: no Actions runs unless asked.
     game server, then a host's download server).
 
 ## 0. Playtest feedback (2026-10-07), top priority
+
+- **TF2 Scout's pistol sounds and ragdoll lifetime (user, 2026-11-17).**
+  The Scout's pistol fires with another game's sound (CS:S's or
+  HL2:DM's, by ear) and has no reload sound: find which of its sound
+  entries resolve to another game's or to none, fix them, and check
+  TF2's other guns the same way with a test that fails when any gun's
+  sound comes from another game. Ragdolls last too long: match each
+  game's own corpse lifetime (parity), on top of the party's limits.
 
 ### UGG playtest 8 prep, Windows check (2026-11-15)
 
@@ -2445,6 +2453,15 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
 
 ## 2b. HUD and debug views
 
+- **A compact stepper (user, 2026-11-17).** The kit's `stepper` (`-`,
+  the value, `+`) reads as three loose parts. Make it one control: one
+  border around minus, value and plus, the buttons close to the number,
+  less padding. Size the value box from the setting's own range (enough
+  room for the longest of its min, max and step's digits, plus its unit),
+  so a 0-10 stepper is narrow and a 1-65535 one wider. Typing into the
+  value (`_ex`, `Typing`) is unchanged. Update every stepper in Options
+  and the Host page, and the gallery (`ui_gallery`), with screenshots.
+
 - **One component library, used everywhere (user, 2026-11-17).** The
   kit (`chimera_ui::controls`: `text_field`, `search_field`, `text_area`,
   `chat_field`, `button`, `toggle`, `dropdown`, `slider`, ...) is the one
@@ -2931,14 +2948,25 @@ docs/plans/active/sound.md.
   for load and unload (one region per map or session, freed at once)
   where measurements show allocation or fragmentation costs.
 
-- **Stand-in assets that say "loading" (user, 2026-11-17).** One
-  consistent look wherever a real asset isn't in yet: our own low-poly
-  stand-ins, readable as what they stand for (a body, a gun, a prop) but
-  cheap to keep loaded, from the default-assets entry (logo characters).
-  They get a loading shader, for example a light dashed or checkered
-  pattern scrolling over them, so players know something will pop in.
-  This replaces today's capsules and odd fallbacks. Keep stand-ins on
-  screen as briefly as possible, and measure how long each shows.
+- **Stand-in assets that say "loading" (user, 2026-11-17).** First cut
+  in: `chimera_present::render::stand_in` (procedural low-poly body, gun
+  and crate, `stand_in_mesh`; the loading material `stand_in.wesl`,
+  light and faceted with cobalt accents and slow scrolling stripes) for
+  every game: bodies (no body drawn yet), guns held on a real body
+  (late held model), first-person guns (view model wanted, not built),
+  dropped guns, and anything a game asks for (`WantsStandIn`). It
+  replaced the shell's capsules (`client::hud`) and Combat Arms' box
+  gun; `chimera_standins 0|1|2`, `stand_ins` and an info line per load
+  measure them (docs/performance.md, "Stand-ins on screen"). Left:
+  - Keep them on screen as briefly as possible: the sandbox's first
+    view gun shows 0.14-0.49 s, late target bodies flash for a frame
+    just past the grace (performance.md has the table and what to cut).
+  - The stand-in body animated (it only stands, turns and crouches) and
+    a knife and grenade shape; a `ShownItem` (a thrown grenade) still
+    draws nothing while its model comes.
+  - Swap the body for the logo characters (default-assets entry) once
+    they exist, and decide whether a character whose game has no body on
+    the map should keep a "loading" look at all.
 
 - **One kept-dressing cache in Chimera for every game (user,
   2026-11-17).** The session cache for guest dressings
@@ -2966,25 +2994,53 @@ docs/plans/active/sound.md.
 
 - **Halo: view models and animations at frame rate (user, 2026-11-17).**
   Halo's gun animations and related motion run at its 30 Hz tick and look
-  stepped on high-refresh screens. Interpolate between the 30 Hz poses
-  (bones, view model, projectiles) for display, simulation unchanged.
+  stepped on high-refresh screens. First pass (2026-11-17, `fae9b2902`):
+  poses and objects eased between the last two Halo ticks (one tick, 33
+  ms, late). **The user (2026-11-17): smooth everything that moves at
+  Halo's tick; no trail where the data is known** (sample each playing
+  animation at the frame's own time, past the last tick; cross-fade when
+  the next tick changes it; ease only what the simulation decides from
+  input; simulation stays at 30 Hz; measure the delay).
   **Done 2026-11-17** (`halo_ce::game::eased` on the engine's
-  `map::interp::GameTicks`): the body's and view model's poses, the shots
-  in flight and the local grenades drawn between Halo ticks; tested on
-  synthetic animation data, not yet looked at on the disc's models
-  (confirm in a playtest). Still at 30 Hz: corpses, a campaign body's own
-  arms, vehicles. **The user (2026-11-17): interpolate everything that
-  moves at Halo's tick** (corpses, arms, vehicles, effects, doors and
-  devices, the HUD's moving parts). Skip only what's prohibitively hard
-  or costs measurable frame time, and say which in this entry. **No
-  trail where the data is known:** an animation's keyframes are data, so
-  sample each playing animation at the frame's own time (the last tick's
-  time plus the frame's share of the next), continuing past the last
-  tick rather than easing between the last two poses. When the next tick
-  changes the animation, cross-fade it in the usual way. Only motion the
-  simulation decides from input (positions, physics) is eased between
-  ticks, and the local player's comes from its own predicted tick.
-  Measure the visible delay before and after.
+  `map::interp::PoseStream`, `GameClock::now` / `ahead`):
+  - Sampled at the frame's own time, on the keyframes the same animation
+    plays on its next ticks (predicted by a clone of its state, made only
+    when first drawn, only on a client): the body's pose, the
+    first-person view model, a campaign body's own first-person arm, a
+    corpse's death. A tick other than predicted (input drift, a state the
+    game blends into) cross-fades from the old prediction over one Halo
+    tick; an event (shot, melee, hit, throw start, a view cue) shows at
+    once.
+  - Eased between the last two Halo ticks (simulation-decided): shots in
+    flight, local grenades, a corpse's fall, a vehicle's wheel spin,
+    steering and suspension (`VehicleLook::drawn`, the wheel the short way
+    round).
+  - The motion tracker's sweep at the frame's own time (`rules::sweep_at`).
+  - Already at the frame rate, nothing to do: particles (the engine's pool
+    steps per frame), effect lights, the camera and look. No doors or
+    devices exist in Halo's port yet (when they come: `HaloEased`).
+  - Delay (a shot's push on the assault rifle's view, 144 Hz frames under
+    Halo's 30 Hz, `view::a_shot_shows_on_the_first_frame_after_its_tick`):
+    the trigger pressed between ticks, the view first moves on the first
+    frame after the next Halo tick (13.9 ms after the press: the push's
+    spring is predicted) and shows the second tick's pose in full 41.7 ms
+    after it; eased between the last two ticks (before) it was in full at
+    76.4 ms, one Halo tick (about 5 frames, 35 ms) later.
+  - Perf: PERF_LINE
+  Left (listed per the user's rule):
+  - A vehicle's own transform and its riders under a party app's 64 Hz
+    engine tick: the engine's `Interpolated` eases engine ticks, and a
+    Halo tick lands on about every other one, so it steps there (smooth
+    at Halo's own 30 Hz app). Moving it to Halo's clock means moving the
+    riders and the seat camera with it (`vehicles::carry`, `ride_drawn`,
+    `camera::view`): a change to the engine's interpolation, not done.
+  - The HUD's meters (shield, health, heat, ammunition) and flashes stay
+    at Halo's tick: flashes are on/off by the tick (the original's look),
+    the meters step a few pixels a tick; easing them would show a hit late.
+  - Tested on synthetic animation data only (no disc on this box): needs a
+    playtest on the Windows PC (`halo_ce` app and a party app at 64 Hz,
+    a 144 Hz screen): the Spartan running and turning, a shot, a reload, a
+    death, the Hunter's arm, a Warthog's wheels.
 
 - **Halo HUD resolution (user, 2026-11-17).** Done (2026-11-17), left below for the generated-asset option: the opt-in scaling setting `halo_ce:hud_filter` (Options > Video "Halo HUD scaling": Original, the default; Sharp, nearest inside each texel with a one-pixel linear seam; Smooth+sharpen, an unsharp mask; `games/halo_ce/src/ui/hud/material.rs`, hud.wesl). Still open: upscaled HUD bitmaps as a generated asset set. Original text: The HUD's bitmaps are the
   original's, authored for 640x480, so they look soft scaled to 1080p and

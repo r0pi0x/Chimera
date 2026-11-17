@@ -52,7 +52,7 @@
 //!
 //! Every character archive (`CHARS_*`) and the third-person guns
 //! (`GUNS_M_HH`) are V2-keyed: without the key nothing here loads (the
-//! map's warnings say so) and characters stay the shell's capsules, posed
+//! map's warnings say so) and characters stay Chimera's stand-in bodies, posed
 //! by the spec's skeleton (`skeleton::fallback`).
 //!
 
@@ -465,7 +465,7 @@ pub fn add_character_models(map: &mut MapData, ca: &CaDataInner, file: &dyn Fn(&
     }
     if !failed.is_empty() {
         map.warnings.push(format!(
-            "character models: {} of {} bodies did not load (capsules instead; CHARS_* need the V2 key): {}",
+            "character models: {} of {} bodies did not load (stand-ins instead; CHARS_* need the V2 key): {}",
             failed.len(),
             skeletons.len(),
             failed[0]

@@ -1,22 +1,25 @@
-//! Ultimate Gun Game never draws a stand-in (`game_parts::NoStandIns`;
-//! backlog "must never show the greybox stand-ins"): through rung changes
-//! with a model that never finishes loading (the test's data has no install
-//! to load from), a map change and a join's first frames, no player is a
-//! capsule (`client::hud::CapsuleBody`) and the local weapon no box
-//! (`ui::visuals::BoxGun`), a body once shown keeps showing. The same world
-//! without the flag draws them (the greybox app and tests keep theirs). And
-//! the ladder's models (`characters::preload`): what a rung gives is what
-//! the plan loads, on a network client and a host alike.
+//! Ultimate Gun Game's bodies and Chimera's stand-ins
+//! (`render::stand_in`, `game_parts::PreferRealModels`): before the map's
+//! models are in a player shows the stand-in body; once a real body shows
+//! it keeps showing, through rung changes with a model that never
+//! finishes loading (the test's data has no install to load from) and a
+//! map change, never a stand-in again nor two bodies. And the ladder's
+//! models (`characters::preload`): what a rung gives is what the plan
+//! loads, on a network client and a host alike.
 
 use std::sync::Arc;
 
 use bevy::{mesh::skinning::SkinnedMeshInverseBindposes, prelude::*};
-use chimera_client::client::{FirstPersonCamera, hud::{CapsuleBody, character_bodies}};
+use chimera_client::client::FirstPersonCamera;
 use chimera_core::{
     core::{Dead, LocalPlayer, Team},
-    game_parts::NoStandIns,
+    game_parts::PreferRealModels,
 };
-use chimera_present::render::{bodies::CharacterBody, prop_material::PropMaterial};
+use chimera_present::render::{
+    bodies::CharacterBody,
+    prop_material::PropMaterial,
+    stand_in::{StandIn, StandInKind, StandInMaterial},
+};
 use chimera_sim::{
     minigame::{self, ladder::Ladder},
     weapon::{Inventory, Weapon},
@@ -35,7 +38,7 @@ use combat_arms::{
         view_model::{on_demand::LoadOnDemand, parts::view_key},
     },
     harness::CaSim,
-    ui::visuals::{BoxGun, CaVisualsPlugin},
+    ui::visuals::CaVisualsPlugin,
 };
 use party_kit::PartyPartsPlugin;
 use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
@@ -84,8 +87,8 @@ fn app_parts(app: &mut App) {
         .init_asset::<StandardMaterial>()
         .init_asset::<PropMaterial>()
         .init_asset::<SkinnedMeshInverseBindposes>()
-        .add_plugins(CaVisualsPlugin)
-        .add_systems(Update, character_bodies);
+        .init_asset::<StandInMaterial>()
+        .add_plugins(CaVisualsPlugin);
     app.world_mut().spawn(FirstPersonCamera);
 }
 
@@ -104,10 +107,10 @@ fn sim() -> Sim {
     sim
 }
 
-/// The stand-ins showing and the living players without a body.
-fn stand_ins(sim: &mut Sim) -> (usize, usize) {
+/// The stand-in bodies showing.
+fn stand_ins(sim: &mut Sim) -> usize {
     let w = sim.app.world_mut();
-    (w.query::<&CapsuleBody>().iter(w).count(), w.query::<&BoxGun>().iter(w).count())
+    w.query::<&StandIn>().iter(w).filter(|s| s.kind == StandInKind::Body).count()
 }
 
 fn bodies(sim: &mut Sim, e: Entity) -> usize {
@@ -120,8 +123,10 @@ fn bodies(sim: &mut Sim, e: Entity) -> usize {
 fn step(sim: &mut Sim, other: Entity, frames: usize, had: &mut bool, what: &str) {
     for _ in 0..frames {
         sim.ticks(1);
-        assert_eq!(stand_ins(sim), (0, 0), "{what}: a stand-in shows");
         let n = bodies(sim, other);
+        if *had {
+            assert_eq!(stand_ins(sim), 0, "{what}: a stand-in after a real body");
+        }
         assert!(n <= 1, "{what}: two bodies");
         if sim.app.world().get::<Dead>(other).is_none() {
             assert!(n == 1 || !*had, "{what}: its body went away with none to replace it");
@@ -131,9 +136,9 @@ fn step(sim: &mut Sim, other: Entity, frames: usize, had: &mut bool, what: &str)
 }
 
 #[test]
-fn a_ugg_player_never_shows_a_stand_in() {
+fn a_ugg_player_keeps_a_real_body_once_shown() {
     let mut sim = sim();
-    assert!(sim.app.world().contains_resource::<NoStandIns>());
+    assert!(sim.app.world().contains_resource::<PreferRealModels>());
     // A join's first frames: characters before the map's models are in.
     let models = sim.app.world_mut().remove_resource::<CharacterModels>().expect("the map's models");
     let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
@@ -143,6 +148,7 @@ fn a_ugg_player_never_shows_a_stand_in() {
     world.entity_mut(other).insert(Team(4));
     let mut had = false;
     step(&mut sim, other, 20, &mut had, "before the map's models");
+    assert!(!had && stand_ins(&mut sim) == 1, "the other stands in before the models (not the local player, unseen)");
     sim.app.world_mut().insert_resource(models);
     step(&mut sim, other, 60, &mut had, "their first frames");
     assert!(had, "the other player has its body");
@@ -160,29 +166,6 @@ fn a_ugg_player_never_shows_a_stand_in() {
     step(&mut sim, other, 5, &mut had, "a map change");
     sim.app.world_mut().insert_resource(models);
     step(&mut sim, other, 5, &mut had, "after a map change");
-}
-
-/// The test above isn't passing for want of stand-ins: the same world
-/// without the flag has both (the greybox app's and tests').
-#[test]
-fn without_the_flag_the_stand_ins_draw() {
-    let mut sim = sim();
-    sim.app.world_mut().remove_resource::<NoStandIns>();
-    let models = sim.app.world_mut().remove_resource::<CharacterModels>().unwrap();
-    let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
-    let other = sim.spawn_character(Vec3::new(3.0, 1.0, 0.0), movement::ID);
-    let world = sim.app.world_mut();
-    world.entity_mut(me).insert((LocalPlayer, Team(3)));
-    world.entity_mut(other).insert(Team(4));
-    sim.ticks(30);
-    let ladder = sim.app.world().resource::<Ladder>().clone();
-    let rung = ladder.rungs.iter().position(|r| r.starts_with("combat_arms:")).unwrap();
-    minigame::ladder::set_rung(sim.app.world_mut(), me, rung, &ladder);
-    sim.ticks(10);
-    let (capsules, boxes) = stand_ins(&mut sim);
-    assert!(capsules > 0, "a capsule with no models here");
-    assert!(boxes > 0, "a box for the weapon with no view model");
-    sim.app.world_mut().insert_resource(models);
 }
 
 /// What a rung's player holds and wears is what the plan loaded.
