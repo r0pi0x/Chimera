@@ -29,7 +29,10 @@
 //!   (typed text or stars, a placeholder, a thin white caret just after
 //!   the text while it has the keys, the selection on an accent tint; its keys, copy, cut
 //!   and paste are the screen's: `chimera_client::client::widgets::
-//!   text_key`, `clipboard`); `kv` (key/value lines); `modal` (a plate
+//!   text_key`, `clipboard`); `search_field` (the same field with the
+//!   search glass in front and a clear key once something is typed: every
+//!   search box); `text_area` (several lines, wrapping, the same
+//!   per-character text, overlay caret and selection); `kv` (key/value lines); `modal` (a plate
 //!   with a top bar, white or threat).
 //! - **Text** in a value box or a text field (`edit_chars`): one node a
 //!   character, at rest and typing alike, so opening one moves nothing
@@ -990,15 +993,36 @@ impl<'a> Ui<'a> {
     /// boundary that takes no room (absolute, centred on it), the
     /// selection an accent tint behind its characters. Returns the
     /// characters' nodes (`EditText`, `TextHits` hit-test them).
-    fn edit_chars(&self, c: &mut Commands, parent: Entity, text: &str, face: Face, caret: Option<(usize, usize)>) -> Vec<Entity> {
-        let wrap = c
-            .spawn((Node { flex_shrink: 0.0, align_items: AlignItems::Center, ..default() }, Pickable::IGNORE, ChildOf(parent)))
-            .id();
+    pub(crate) fn edit_chars(&self, c: &mut Commands, parent: Entity, text: &str, face: Face, caret: Option<(usize, usize)>) -> Vec<Entity> {
         let n = text.chars().count();
-        let (lo, hi) = caret.map_or((0, 0), |(a, b)| (a.min(b).min(n), a.max(b).min(n)));
+        let caret = caret.map(|(a, b)| (a.min(n), b.min(n)));
+        self.edit_run(c, parent, text, face, caret, 0, false)
+    }
+
+    /// One line of an edit text: `text` starts at char `base` of the
+    /// whole (so `caret`'s indices are the whole's); `wrap` lets its
+    /// characters break onto more lines inside `parent` (a text area's).
+    #[allow(clippy::too_many_arguments)]
+    fn edit_run(&self, c: &mut Commands, parent: Entity, text: &str, face: Face, caret: Option<(usize, usize)>, base: usize, wrap: bool) -> Vec<Entity> {
+        let line = self.units.text_px(face.size) / self.units.scale_factor;
+        let wrap_node = if wrap {
+            Node {
+                flex_shrink: 1.0,
+                flex_grow: 1.0,
+                min_height: Val::Px(line),
+                align_items: AlignItems::Center,
+                flex_wrap: FlexWrap::Wrap,
+                ..default()
+            }
+        } else {
+            Node { flex_shrink: 0.0, align_items: AlignItems::Center, ..default() }
+        };
+        let wrap = c.spawn((wrap_node, Pickable::IGNORE, ChildOf(parent))).id();
+        let n = text.chars().count();
+        let (lo, hi) = caret.map_or((0, 0), |(a, b)| (a.min(b), a.max(b)));
         let mut out = Vec::with_capacity(n);
         for (i, ch) in text.chars().enumerate() {
-            let sel = i >= lo && i < hi;
+            let sel = base + i >= lo && base + i < hi;
             let cell = c
                 .spawn((
                     Node { flex_shrink: 0.0, align_items: AlignItems::Center, ..default() },
@@ -1018,8 +1042,8 @@ impl<'a> Ui<'a> {
             }
             out.push(cell);
         }
-        if let Some((at, _)) = caret {
-            let at = at.min(n);
+        if let Some((at, _)) = caret.filter(|(at, _)| (base..=base + n).contains(at)) {
+            let at = at - base;
             let (holder, left) = match out.get(at) {
                 Some(cell) => (*cell, Val::ZERO),
                 None => (out.last().copied().unwrap_or(wrap), if n == 0 { Val::ZERO } else { percent(100.0) }),
@@ -1259,9 +1283,9 @@ impl<'a> Ui<'a> {
     /// the keys; byte offsets into `value`) an accent bar over its place
     /// that takes no room, the selection between it and its anchor on an
     /// accent tint (`TextSelection`), the field tinted and underlined in
-    /// accent. Error: the threat underline. Hover is its own tint (no
-    /// tick). Returns the field (give it its focusing action; `TextHits`
-    /// places a click).
+    /// accent. Error: the threat underline. Disabled: dimmed and not
+    /// clickable. Hover is its own tint (no tick). Returns the field (give
+    /// it its focusing action; `TextHits` places a click).
     #[allow(clippy::too_many_arguments)]
     pub fn text_field(
         &self,
@@ -1274,45 +1298,169 @@ impl<'a> Ui<'a> {
         w: f32,
         st: State,
     ) -> Entity {
-        let typing = caret.is_some();
-        let (base, over) = if typing {
+        self.field(c, parent, value, placeholder, caret, masked, w, st, false).field
+    }
+
+    /// A search field: `text_field` with the search glass before the text
+    /// and, once something is typed, a clear key (`SearchParts::clear`,
+    /// give it its action) at the right. Every search box is this one:
+    /// the same look, the same caret and selection, nothing moving as
+    /// the text grows.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_field(
+        &self,
+        c: &mut Commands,
+        parent: Entity,
+        value: &str,
+        placeholder: &str,
+        caret: Option<TextCursor>,
+        w: f32,
+        st: State,
+    ) -> SearchParts {
+        self.field(c, parent, value, placeholder, caret, false, w, st, true)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn field(
+        &self,
+        c: &mut Commands,
+        parent: Entity,
+        value: &str,
+        placeholder: &str,
+        caret: Option<TextCursor>,
+        masked: bool,
+        w: f32,
+        st: State,
+        search: bool,
+    ) -> SearchParts {
+        let typing = caret.is_some() && !st.disabled;
+        let (base, over) = if st.disabled {
+            (self.color(Tone::Fg, 0.03), self.color(Tone::Fg, 0.03))
+        } else if typing {
             (self.color(Tone::Fg, 0.08), self.color(Tone::Fg, 0.08))
         } else {
             (self.color(Tone::Fg, 0.04), self.color(Tone::Fg, 0.07))
         };
         let f = c
             .spawn((
-                UiStyle { min_w: Some(w), h: Some(1.9), pad: Some([0.0, 0.8].into()), shrink: Some(0.0), ..UiStyle::row() },
+                UiStyle { min_w: Some(w), h: Some(1.9), pad: Some([0.0, 0.8].into()), shrink: Some(0.0), gap: search.then_some(0.6), ..UiStyle::row() },
                 Node::default(),
                 BackgroundColor(base),
                 Hover { base, over },
                 RelativeCursorPosition::default(),
-                clickable(),
                 ChildOf(parent),
             ))
             .id();
+        if !st.disabled {
+            c.entity(f).insert(clickable());
+        }
+        if search {
+            let px = self.units.phys(self.units.cq(SEARCH_H)).round().max(1.0);
+            c.spawn((
+                ImageNode { color: self.theme.tone(if value.is_empty() || st.disabled { Tone::Fg3 } else { Tone::Fg }), ..default() },
+                Node {
+                    width: Val::Px(px / self.units.scale_factor),
+                    height: Val::Px(px / self.units.scale_factor),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                KitIcon { key: "search", px: px as u32 },
+                Pickable::IGNORE,
+                ChildOf(f),
+            ));
+        }
         let shown: String = if masked { "*".repeat(value.chars().count()) } else { value.to_string() };
-        // Typed text in the sentence face, its own case; stars in Mono.
+        // Typed text in the sentence face (`TYPED`), its own case; stars
+        // in Mono.
         let (role, size) = if masked { (Role::Mono, 0.66) } else { (Role::Text, TYPED) };
+        let tone = if st.disabled { Tone::Fg3 } else { Tone::Fg };
         if value.is_empty() && !typing {
             self.text(c, f, Role::Mono, 0.62, Tone::Fg3, placeholder);
             c.entity(f).insert(EditText { chars: Vec::new() });
         } else {
-            // Typed text in the sentence face (`TYPED`), its own case;
-            // stars in Mono.
-            let face = Face { role, size, tone: Tone::Fg, plain: !masked };
-            let k = caret.map(|k| (char_of(value, k.at), char_of(value, k.anchor)));
+            let face = Face { role, size, tone, plain: !masked };
+            let k = caret.filter(|_| typing).map(|k| (char_of(value, k.at), char_of(value, k.anchor)));
             let chars = self.edit_chars(c, f, &shown, face, k);
             c.entity(f).insert(EditText { chars });
         }
+        let mut clear = None;
+        if search && !value.is_empty() && !st.disabled {
+            self.boxed(c, f, UiStyle { grow: Some(1.0), ..UiStyle::row() });
+            let k = c
+                .spawn((
+                    UiStyle { w: Some(1.4), h: Some(1.4), justify: Some(JustifyContent::Center), shrink: Some(0.0), ..UiStyle::row() },
+                    Node::default(),
+                    BackgroundColor(Color::NONE),
+                    Hover { base: Color::NONE, over: self.color(Tone::Fg, 0.1) },
+                    clickable(),
+                    SearchClear,
+                    ChildOf(f),
+                ))
+                .id();
+            self.text(c, k, Role::Mono, 0.6, Tone::Fg3, "x");
+            clear = Some(k);
+        }
         if st.error {
             self.underline(c, f, Tone::Threat, 0.2);
-        } else if typing || st.focus {
+        } else if (typing || st.focus) && !st.disabled {
             self.underline(c, f, Tone::Acc, 0.2);
         } else {
             self.hairline(c, f, Tone::Fg3, 1.0);
         }
-        f
+        SearchParts { field: f, clear }
+    }
+
+    /// A text area (`w` cq wide, `h` tall; `value` may hold newlines): the
+    /// field's text one node a character, the lines wrapping inside the
+    /// box, `placeholder` shown while it is empty, the caret an overlay
+    /// (`caret`: byte offsets, as `text_field`'s; Some while it has the
+    /// keys) and the selection a tint, so typing never moves what is
+    /// already there. Error: the threat underline. A click's place is not
+    /// found (no `EditText`: the caret goes where the screen puts it).
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_area(
+        &self,
+        c: &mut Commands,
+        parent: Entity,
+        value: &str,
+        placeholder: &str,
+        caret: Option<TextCursor>,
+        w: f32,
+        h: f32,
+        st: State,
+    ) -> Entity {
+        let typing = caret.is_some() && !st.disabled;
+        let base = self.color(Tone::Fg, if typing { 0.08 } else { 0.05 });
+        let area = c
+            .spawn((
+                UiStyle { w: Some(w), h: Some(h), pad: Some([0.7, 0.9].into()), ..UiStyle::column() }.align(AlignItems::Stretch),
+                Node { overflow: Overflow::clip(), ..default() },
+                BackgroundColor(base),
+                ChildOf(parent),
+            ))
+            .id();
+        let face = Face { role: Role::Text, size: TYPED, tone: if st.disabled { Tone::Fg3 } else { Tone::Fg }, plain: true };
+        let k = caret.filter(|_| typing).map(|k| (char_of(value, k.at), char_of(value, k.anchor)));
+        if value.is_empty() {
+            let line = self.boxed(c, area, UiStyle::row());
+            self.edit_run(c, line, "", face, k, 0, false);
+            self.text_plain(c, line, Role::Text, TYPED, Tone::Fg3, placeholder);
+        } else {
+            let mut base = 0;
+            for l in value.split('\n') {
+                let line = self.boxed(c, area, UiStyle::row().align(AlignItems::FlexStart));
+                self.edit_run(c, line, l, face, k, base, true);
+                base += l.chars().count() + 1;
+            }
+        }
+        if st.error {
+            self.underline(c, area, Tone::Threat, 0.2);
+        } else if typing || st.focus {
+            self.underline(c, area, Tone::Acc, 0.2);
+        } else {
+            self.hairline(c, area, Tone::Fg3, 1.0);
+        }
+        area
     }
 
     /// The progress component (design rules 11.6, variant B): a sheared
@@ -1523,6 +1671,8 @@ fn style_abs(ltrb: [Option<f32>; 4], w: f32, h: f32) -> UiStyle {
 /// The dropdown chevron's height, cq, and its icon's aspect (18 x 12
 /// units, data/icons.toml).
 pub const CHEVRON_H: f32 = 0.58;
+/// A search field's glass, cq tall.
+pub const SEARCH_H: f32 = 0.8;
 pub const CHEVRON_ASPECT: f32 = 1.5;
 
 /// The dropdown's chevron (`Ui::chevron`): pointing up (the list open).
@@ -1588,12 +1738,12 @@ pub struct ToggleLabel;
 
 /// How `Ui::edit_chars` draws a text.
 #[derive(Clone, Copy, Debug)]
-struct Face {
-    role: Role,
-    size: f32,
-    tone: Tone,
+pub(crate) struct Face {
+    pub(crate) role: Role,
+    pub(crate) size: f32,
+    pub(crate) tone: Tone,
     /// A person's own text, in its own case (`style::KeepCase`).
-    plain: bool,
+    pub(crate) plain: bool,
 }
 
 /// A text field's or a value box's characters, one node each, in order
@@ -1720,6 +1870,18 @@ pub struct SliderParts {
     pub track: Entity,
     pub value: Entity,
 }
+
+/// What `Ui::search_field` built: the field and, once something is typed,
+/// its clear key.
+#[derive(Clone, Copy, Debug)]
+pub struct SearchParts {
+    pub field: Entity,
+    pub clear: Option<Entity>,
+}
+
+/// A search field's clear key (`Ui::search_field`).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SearchClear;
 
 /// What `Ui::stepper_ex` built.
 #[derive(Clone, Copy, Debug)]
