@@ -186,6 +186,7 @@ the user's go-ahead: no Actions runs unless asked.
     - what happens when the leader goes offline, and how leadership passes;
     - how a party follows its leader when the server is full;
     - the hub's party protocol and how often it heartbeats.
+  - **Session-only parties** (the first step, 2026-11-17): [plans/active/parties.md](plans/active/parties.md).
   - Builds on hub phases S2–S4 and the Signal r8 shell's tiles. Related: sprays, profiles and stats, ranks per game.
 
 - **Sprays (user, 2026-11-15; needs a design first):** players put a picture on a wall with a key, as in TF2, CS:S, HL2:DM and the other Source games: one spray per life or on a cooldown, decaling the surface looked at, visible to everyone and fading out when replaced.
