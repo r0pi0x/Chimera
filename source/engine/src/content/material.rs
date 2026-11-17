@@ -12,6 +12,11 @@
 //! parameters, when they take the Phong shader (`MapPhong`, routed by
 //! `map::phong::route`, specs/cs_source/shaders_phong.md).
 //!
+//! Late files: a texture or material the game has (`Mount::contains`) but
+//! that couldn't be read (the asset store without its record yet) is noted
+//! (`late_mark`, `late_since`), so a model built meanwhile keeps the list
+//! (`MapModel::late_files`) and is built again once they arrive.
+//!
 //! Known shortcuts (docs/tech-debt.md): AnimatedTexture and `$frame` follow
 //! the public Valve Developer Wiki and water.md's frame rule (no spec covers
 //! them on other shaders): a `$frame` past the last frame draws frame 0;
@@ -162,6 +167,11 @@ pub struct MaterialLoader<'a> {
     /// Textures read but not decoded yet (their slot in `textures` has the
     /// size only): `finish_textures` decodes them together, on threads.
     pending: Vec<(usize, Vec<u8>)>,
+    /// Late files (`late_since`): each file a lookup wanted that the game
+    /// has (`Mount::contains`) but couldn't give then (the asset store
+    /// without its record yet), once per lookup, a cached one too.
+    late: Vec<String>,
+    late_known: std::collections::BTreeSet<String>,
 }
 
 impl<'a> MaterialLoader<'a> {
@@ -189,6 +199,36 @@ impl<'a> MaterialLoader<'a> {
             camera_texture: None,
             lean: false,
             pending: Vec::new(),
+            late: Vec::new(),
+            late_known: Default::default(),
+        }
+    }
+
+    /// The late files (the game has them, they couldn't be read: the asset
+    /// service hadn't brought them yet) of the lookups since `mark`
+    /// (`late_mark`), each once: what a model built meanwhile is missing
+    /// (`MapModel::late_files`), to build it again when they arrive.
+    pub fn late_since(&self, mark: usize) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for f in self.late.get(mark..).unwrap_or_default() {
+            if !out.contains(f) {
+                out.push(f.clone());
+            }
+        }
+        out
+    }
+
+    /// Where `late_since` starts counting from now.
+    pub fn late_mark(&self) -> usize {
+        self.late.len()
+    }
+
+    /// `path` wanted and not read: a late file if the game has it.
+    fn note_unread(&mut self, path: &str) {
+        let path = normalize(path);
+        if self.late_known.contains(&path) || self.mount.contains(&path) {
+            self.late_known.insert(path.clone());
+            self.late.push(path);
         }
     }
 
@@ -309,6 +349,9 @@ impl<'a> MaterialLoader<'a> {
         match found {
             Some(name) => self.resolve(&name.clone()),
             None => {
+                for c in candidates {
+                    self.note_unread(&format!("materials/{}.vmt", normalize(c)));
+                }
                 self.missing
                     .push(format!("material not found in any of {candidates:?}"));
                 Resolved {
@@ -1275,6 +1318,9 @@ impl<'a> MaterialLoader<'a> {
         let path = format!("materials/{}.vtf", normalize(name).trim_end_matches(".vtf"));
         let key = if srgb { path.clone() } else { format!("{path}#linear") };
         if let Some(cached) = self.by_path.get(&key) {
+            if cached.is_none() && self.late_known.contains(&normalize(&path)) {
+                self.late.push(normalize(&path));
+            }
             return *cached;
         }
         let loaded = self.read_header(&path).map(|(t, bytes)| (MapTexture { srgb, ..t }, bytes));
@@ -1288,6 +1334,9 @@ impl<'a> MaterialLoader<'a> {
                 Some(index)
             }
             Err(e) => {
+                if e == "not found" {
+                    self.note_unread(&path);
+                }
                 self.missing.push(format!("{path}: {e}"));
                 None
             }
@@ -1361,6 +1410,37 @@ impl<'a> MaterialLoader<'a> {
         };
         Ok((texture, bytes))
     }
+}
+
+/// An uncompressed RGBA8888 VTF (version 7.2, one level).
+pub fn encode_vtf(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+    const HEADER: usize = 80;
+    // Clamp S and T, no mip maps, no level of detail, 8-bit alpha.
+    const FLAGS: u32 = 0x4 | 0x8 | 0x100 | 0x200 | 0x2000;
+    let mut v = Vec::with_capacity(HEADER + rgba.len());
+    v.extend_from_slice(b"VTF\0");
+    v.extend_from_slice(&7u32.to_le_bytes());
+    v.extend_from_slice(&2u32.to_le_bytes());
+    v.extend_from_slice(&(HEADER as u32).to_le_bytes());
+    v.extend_from_slice(&(width as u16).to_le_bytes());
+    v.extend_from_slice(&(height as u16).to_le_bytes());
+    v.extend_from_slice(&FLAGS.to_le_bytes());
+    v.extend_from_slice(&1u16.to_le_bytes()); // frames
+    v.extend_from_slice(&0u16.to_le_bytes()); // first frame
+    v.extend_from_slice(&[0; 4]);
+    for r in [0.5f32, 0.5, 0.5] {
+        v.extend_from_slice(&r.to_le_bytes());
+    }
+    v.extend_from_slice(&[0; 4]);
+    v.extend_from_slice(&1.0f32.to_le_bytes()); // bump map scale
+    v.extend_from_slice(&0u32.to_le_bytes()); // RGBA8888
+    v.push(1); // mip count
+    v.extend_from_slice(&u32::MAX.to_le_bytes()); // no low resolution image
+    v.extend_from_slice(&[0, 0]);
+    v.extend_from_slice(&1u16.to_le_bytes()); // depth
+    v.resize(HEADER, 0);
+    v.extend_from_slice(rgba);
+    v
 }
 
 /// A VTF file's full-size image and its own mip levels as RGBA8.

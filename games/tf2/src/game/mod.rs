@@ -58,6 +58,7 @@ pub mod bodies;
 pub mod classes;
 pub mod hud;
 pub mod ice;
+pub mod late_bodies;
 pub mod maps;
 pub mod mount;
 pub mod movement;
@@ -176,7 +177,7 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
     // Converted once per app and load kind, then copied into each map
     // (`source_engine::content::guest`).
     dress: |map, options| {
-        source_engine::content::guest::dress_cached(GAME, map, options, |m| maps::dress_guest_with(m, BUNDLE.kept, !options.textures))
+        source_engine::content::guest::dress_cached(GAME, map, options, |m| maps::dress_guest_with(m, BUNDLE.kept, !options.textures), maps::files_here)
     },
 };
 

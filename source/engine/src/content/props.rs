@@ -899,6 +899,7 @@ fn convert_model_in(
     root: bool,
     layout: &[Vec<usize>],
 ) -> MapModel {
+    let late = materials.late_mark();
     let skins: Vec<_> = model.skin_tables().collect();
     let table = skins.get(skin.max(0) as usize).or(skins.first());
     let several = skins.len() > 1;
@@ -1051,6 +1052,7 @@ fn convert_model_in(
         lods: Vec::new(),
         face: None,
         mesh_names: Vec::new(),
+        late_files: materials.late_since(late),
     }
 }
 

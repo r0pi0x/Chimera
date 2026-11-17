@@ -12,7 +12,11 @@
 //! `ShowLocalBody`; held models a game adds after the map spawned
 //! (`add_held_model`, `LateHeldModels`: one the map's kit lacks), and
 //! character models likewise (`add_character_model`,
-//! `LateCharacterModels`, appended to each map's `CharacterModels`);
+//! `LateCharacterModels`, appended to each map's `CharacterModels`), or
+//! built again in place of one of the same name (`replace_character_model`:
+//! a body built while some of its files hadn't arrived; the old entry is
+//! renamed out of the way, `REPLACED`, so the name finds the new one and
+//! its wearers change bodies once it is built);
 //! hitboxes on the skeleton (also headless), `SimAnimator`/`SimPose`.
 //!
 //! Known shortcuts (docs/tech-debt.md): Maps without character models fall back
@@ -85,11 +89,46 @@ pub fn add_character_model(world: &mut World, model: MapCharacterModel, textures
     late.0.push((Arc::new(model), textures));
 }
 
+/// Names whose current body a late one replaces (`replace_character_model`),
+/// not put in place yet (no map).
+#[derive(Resource, Clone, Default, Debug)]
+pub struct ReplacedCharacterModels(pub Vec<String>);
+
+/// What a replaced body's name becomes (after its old name): no
+/// `BodyName` finds it any more.
+pub const REPLACED: &str = "#replaced";
+
+/// `model` in place of the body of the same name (`MapCharacterModel::
+/// name`, required), the map's own or one added late: a body built again
+/// because files it lacked arrived (`MapModel::late_files`). Its wearers
+/// change to it from the next frame its drawing is ready
+/// (`render::bodies::build_late_bodies`; until then they wear the old
+/// one), their hitboxes at once; the next maps take it as a late one.
+pub fn replace_character_model(world: &mut World, model: MapCharacterModel, textures: Arc<Vec<MapTexture>>) {
+    let Some(name) = model.name.clone() else { return };
+    add_character_model(world, model, textures);
+    world.get_resource_or_init::<ReplacedCharacterModels>().0.push(name);
+}
+
 /// The late character models (`LateCharacterModels`) the map's
 /// `CharacterModels` lack, appended: each on a map with a model of its
-/// game (where that game's bodies are worn).
-pub fn append_late_characters(late: Option<Res<LateCharacterModels>>, models: Option<ResMut<CharacterModels>>) {
+/// game (where that game's bodies are worn). A replaced one's old entry is
+/// renamed first (`replace_character_model`).
+pub fn append_late_characters(
+    late: Option<Res<LateCharacterModels>>,
+    models: Option<ResMut<CharacterModels>>,
+    replaced: Option<ResMut<ReplacedCharacterModels>>,
+) {
     let (Some(late), Some(mut models)) = (late, models) else { return };
+    if let Some(mut replaced) = replaced.filter(|r| !r.0.is_empty()) {
+        let names = std::mem::take(&mut replaced.0);
+        let list = Arc::make_mut(&mut models.0);
+        for m in list.iter_mut() {
+            if m.name.as_ref().is_some_and(|n| names.contains(n)) {
+                m.name = m.name.take().map(|n| format!("{n}{REPLACED}"));
+            }
+        }
+    }
     let missing: Vec<MapCharacterModel> = late
         .0
         .iter()
