@@ -8,13 +8,13 @@ damage = 35.0
 hit_refire = 0.5
 miss_refire = 0.5
 miss_refire_other = 0.5
-sound_swing = "Weapon_Bat.Miss"
-sound_hit = "Weapon_Bat.HitFlesh"
-sound_hit_world = "Weapon_Bat.HitWorld"
+sound_swing = "tf2:Weapon_Bat.Miss"
+sound_hit = "tf2:Weapon_Bat.HitFlesh"
+sound_hit_world = "tf2:Weapon_Bat.HitWorld"
 
 # `b_draw`'s sound events (8.1), at their fraction of its 1.3333 s.
 [sounds]
-draw = [[0.0333, "Weapon_Bat.Draw"], [0.2667, "Weapon_Bat.DrawSwoosh2"], [0.5333, "Weapon_Bat.DrawSwoosh1"], [0.6667, "Weapon_Bat.DrawCatch"]]
+draw = [[0.0333, "tf2:Weapon_Bat.Draw"], [0.2667, "tf2:Weapon_Bat.DrawSwoosh2"], [0.5333, "tf2:Weapon_Bat.DrawSwoosh1"], [0.6667, "tf2:Weapon_Bat.DrawCatch"]]
 
 [models]
 world = "models/weapons/c_models/c_bat.mdl"
@@ -28,4 +28,4 @@ icon = "bat"
 [hooks."tf2:melee"]
 arms = "scout"
 script = "tf_weapon_bat"
-crit_swing = "Weapon_Bat.MissCrit"
+crit_swing = "tf2:Weapon_Bat.MissCrit"

@@ -378,7 +378,7 @@ ambiguous pairs, and the conflicting pairs the two run in opposite orders
 ### Scenes (staging and photographing in one run)
 
 `--scene <file> --out <dir>` plays a scene script in the client itself
-(`chimera_client::client::scene`): console lines and four directives, a
+(`chimera_client::client::scene`): console lines and some directives, a
 line each, `#` for comments. No driver script and no remote port (a
 scene run serves none); with `--offscreen` it needs no display.
 
@@ -390,7 +390,11 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume
   it the run exits 3, naming the line); `shot <name>` (`<dir>/<name>.png`
   now); `shot_after <fact> <frames> <name>` (armed: a picture that many
   frames after the fact's next frame; the script goes on, the run waits
-  for armed pictures at its end). Anything else is a console line
+  for armed pictures at its end); `type <text>` (typed, a key press a
+  character: into the console after `toggleconsole`, or a chat line) and
+  `key <name> [times]` (`tab`, `enter`, `escape`, `up`, `down`,
+  `backspace`, ...: `scene::KEYS`), e.g. the console's suggestions and
+  Tab completion photographed. Anything else is a console line
   (`setpos`/`setang`, `thirdperson`, `cam_idealdist`, `cam_idealyaw`,
   `rung`, `target add`, `target look <n>`, `+attack`, ...).
 - `wait_for cvar <name> <value> [timeout frames]` waits for a console
@@ -2580,7 +2584,8 @@ Signal loading screen, the Leave? dialog with `ask`, a slice loading with `slice
 made-up party as a member or its leader, the follow prompt; docs/plans/active/parties.md; `+mainmenu` too, and
 `+ui_scene party lead +party_panel 0 +ui_scene esc +escmenu_press disconnect` without it for the leader's
 Leave confirm), `ui_scene lobby host` (the host's view of a first lobby waiting for its
-Start, two parties with their edges), `ui_scene lobby between` (the
+Start, two parties with their edges), `ui_scene lobby join` (a joiner's view: its own row downloading, the
+match's settings, Leave), `ui_scene lobby between` (the
 host's lobby after a match, the next map coming in: each row at its own
 load stage, `chimera_net::net::load_stages`).
 `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range>`

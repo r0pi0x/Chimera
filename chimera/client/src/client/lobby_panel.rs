@@ -17,7 +17,9 @@
 //!   apps' Settings over the lobby), Report a bug. Hidden under an app's
 //!   overlay (`prematch_lobby::LobbyOverlay`), which draws its own.
 //! - **Mode**, pinned at the left (`layout.lobby.mode_w`): the minigame,
-//!   Free for all, the games the guns come from, one per line in full.
+//!   Free for all, the match's settings (`LobbyView::settings`: its length,
+//!   the host's that matter to a player), the games the guns come from,
+//!   one per line in full.
 //! - **The list** (Call of Duty's, free for all): everyone in one list,
 //!   you first (then your party: `LobbyRow::party`), then the server's order;
 //!   "Loaded n / m" and the slots above. A row (`LobbyPlayerRow`): the
@@ -43,7 +45,9 @@
 //!   lobby waits for the host, `NetLobby::host_start`) and, for the
 //!   host, **Start** [F3], the big hero (`LobbyAction::Ready`: the host's
 //!   `lobby_start`; F3, not the mock's Enter, which opens the docked
-//!   chat). Nobody readies up: loaded is ready.
+//!   chat). Nobody readies up: loaded is ready. A player who isn't the
+//!   host gets **Leave** (the kit's secondary button, `LobbyAction::Leave`)
+//!   there too, to go before a match it didn't want starts.
 //! - **Keys** at the foot (F3 Start for the host, Tab Players), hidden
 //!   under an app's overlay. The lobby owns the screen and the mouse
 //!   (`prematch_lobby::lobby_shown`), so its buttons take clicks through a
@@ -54,7 +58,7 @@
 //!
 //! Known shortcuts: the map preview is a gradient; no parties yet, so no
 //! party edges (a party's coloured left edge) and nobody but you is
-//! grouped; Match settings and Invite aren't drawn; a loader's share isn't
+//! grouped; Invite isn't drawn; a loader's share isn't
 //! known (striped); the loss mark stands for a bad ping (the lobby has no
 //! loss figure).
 
@@ -369,11 +373,16 @@ fn draw(
                 ChildOf(mode),
             ))
             .id();
-        let dt = p.boxed(c, r, style!(row, w: 6.0).shrink(0.0));
+        let dt = p.boxed(c, r, style!(row, w: 8.2).shrink(0.0));
         p.text(c, dt, Role::Mono, 0.56, Tone::Fg3, k);
         p.text(c, r, Role::Mono, 0.6, Tone::Fg, v);
     };
     kv(c, "Mode", "Free for all");
+    // The match's settings, so a player can leave before being put into
+    // one they don't want (`LobbyView::settings`).
+    for (k, v) in &view.settings {
+        kv(c, k, v);
+    }
     if !view.guns_from.is_empty() {
         let g = p.boxed(c, mode, style!(column, gap: 0.35, margin: [0.6, 0.0, 0.0, 0.0]));
         p.text(c, g, Role::Mono, 0.56, Tone::Fg3, "Guns from");
@@ -585,6 +594,11 @@ fn draw(
     let line = action_line(&view, loaded);
     let st = p.boxed(c, bar, style!(row).grow(1.0));
     ui.sentence(c, st, chimera_ui::controls::SENTENCE, Tone::Fg2, &line);
+    if !view.hosting {
+        // A player may leave before the match it didn't want starts.
+        let leave = ui.button(c, bar, chimera_ui::controls::Kind::Secondary, "Leave", None, chimera_ui::controls::BUTTON_H, chimera_ui::controls::State::NONE);
+        c.entity(leave).insert(LobbyAction::Leave);
+    }
     if view.hosting && view.countdown.is_none() {
         // F3 (the lobby's key; Enter is the docked chat's).
         let key = super::prematch_lobby::LOBBY_KEY.to_uppercase();

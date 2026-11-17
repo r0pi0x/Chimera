@@ -1,0 +1,37 @@
+# The console's suggestion list and Tab completion, typed as a player
+# would (plain, namespaced and argument names). At the menu: add
+# +mainmenu to the run (the menu draws the console on its own camera).
+wait 120
+toggleconsole
+wait 5
+type halo_ce:par
+wait 5
+shot namespaced_list
+wait 1
+key tab
+wait 5
+shot namespaced_tab
+wait 1
+key escape
+key backspace 40
+type bot_
+wait 5
+shot bot_list
+wait 1
+key tab
+wait 5
+shot bot_tab
+wait 1
+key backspace 40
+type map
+key space
+wait 5
+shot map_list
+wait 1
+key backspace 40
+type cvarl
+wait 3
+key tab
+wait 5
+shot cvarlist_tab
+wait 1

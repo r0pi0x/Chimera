@@ -44,9 +44,9 @@ overlay = true
 step = 0.3
 
 [sounds]
-fire = "Weapon_SniperRifle.Single"
-empty = "Weapon_SniperRifle.ClipEmpty"
-draw = [[0.0, "Weapon_SniperRifle.Draw"]]
+fire = "tf2:Weapon_SniperRifle.Single"
+empty = "tf2:Weapon_SniperRifle.ClipEmpty"
+draw = [[0.0, "tf2:Weapon_SniperRifle.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_sniperrifle/c_sniperrifle.mdl"

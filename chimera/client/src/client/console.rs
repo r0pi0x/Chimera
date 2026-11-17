@@ -10,7 +10,9 @@
 //! The in-game console UI (`~`): completion (names, cvar values, each argument
 //! of the command typed: keys, maps, entities, teams, hitgroups, tabs, ...; on
 //! the line's last command after `;`), fuzzy suggestions under it with Up/Down
-//! picking one (Enter or Tab takes it and adds a space, Esc hides the list), a
+//! picking one (Enter or Tab takes it and adds a space, Esc hides the list;
+//! the box is a child of the console's root, so it draws on whichever UI
+//! camera the console does: a party menu's own), a
 //! help line for the command typed (its usage from the help text with the
 //! argument being typed marked, a cvar's value, default, range and values),
 //! history (Up/Down with an empty line, persisted, Ctrl+R), editing keys
@@ -173,6 +175,11 @@ const OUTPUT_FONT: f32 = 14.0;
 const ROW_HEIGHT: f32 = 17.0;
 
 impl ConsoleUi {
+    /// The input line as typed.
+    pub fn input(&self) -> &str {
+        &self.input
+    }
+
     fn page(&self) -> usize {
         (self.visible_lines.max(2)) / 2
     }
@@ -201,8 +208,9 @@ struct ConsoleOutput;
 struct ConsoleRow(usize);
 #[derive(Component)]
 struct ConsoleInput;
+/// The suggestion box (a child of `ConsoleRoot`).
 #[derive(Component)]
-struct ConsoleSuggest;
+pub struct ConsoleSuggest;
 #[derive(Component)]
 struct OverlayText;
 
@@ -266,23 +274,28 @@ fn spawn_ui(mut commands: Commands, fonts: Res<UiFonts>) {
                     ..default()
                 },
             ));
+            // The suggestion box, just under the console: a child, so it
+            // draws wherever the console does (a party app's menu moves
+            // the console onto its own UI camera, `UiTargetCamera` on the
+            // root, while the menu shows; a box of its own stayed on the
+            // camera that is off then, and no list showed).
+            c.spawn((
+                ConsoleSuggest,
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: percent(100.0),
+                    left: px(8.0),
+                    max_width: percent(96.0),
+                    padding: UiRect::all(px(6.0)),
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.1, 0.1, 0.14, 0.95)),
+                bevy::ui::FocusPolicy::Block,
+                GlobalZIndex(101),
+                Visibility::Hidden,
+            ));
         });
-    commands.spawn((
-        ConsoleSuggest,
-        Node {
-            position_type: PositionType::Absolute,
-            top: percent(50.0),
-            left: px(8.0),
-            max_width: percent(96.0),
-            padding: UiRect::all(px(6.0)),
-            flex_direction: FlexDirection::Column,
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.1, 0.1, 0.14, 0.95)),
-        bevy::ui::FocusPolicy::Block,
-        GlobalZIndex(101),
-        Visibility::Hidden,
-    ));
     commands.spawn((
         NotifyText,
         Text::default(),
@@ -1405,7 +1418,8 @@ fn overlay_text(world: &mut World) {
     let rows = suggest_rows(world);
     let shown = !rows.is_empty();
     world.resource_mut::<ConsoleUi>().list_shown = shown && suggestions(world).is_some();
-    let want = if shown { Visibility::Visible } else { Visibility::Hidden };
+    // Shown: as the console (its parent) is.
+    let want = if shown { Visibility::Inherited } else { Visibility::Hidden };
     let suggest = chimera_core::query_cache::cached_query::<(Entity, &mut Visibility), With<ConsoleSuggest>, _>(world, |q, w| {
         q.single_mut(w).ok().map(|(e, mut v)| {
             v.set_if_neq(want);

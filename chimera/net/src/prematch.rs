@@ -48,6 +48,12 @@
 //!   countdown. A client reads it while it is still downloading too
 //!   (replication starts at the join's admission). The client shell
 //!   draws it (`chimera_client::client::prematch_lobby`).
+//! - **Settings** (`NetLobby::settings`, `settings_now`): what a player
+//!   wants to know before the match starts, written with the lobby: the
+//!   minigame's length, then each `LobbyFact` an app registered (`add_fact`:
+//!   a label, a server cvar, its values as words; the party's from its host
+//!   settings' `lobby = true`), as label and value; a value of "" (the
+//!   minigame's own) is left out.
 //! - **The host's start** (`mp_lobby_host_start`, default 1; the party
 //!   apps' Host page shows it): the server run's first lobby waits for the
 //!   host's `lobby_start` (a dedicated server's console or an RCON admin) (`Lobby::host_start`, `NetLobby::host_start`):
@@ -317,6 +323,57 @@ pub struct NetLobby {
     /// It waits for the host's start (`LobbySettings::host_start`, the
     /// first lobby): nothing starts it by itself.
     pub host_start: bool,
+    /// The match's settings a player wants to know before it starts
+    /// (label, value as words): the mode's length and what the host's
+    /// `LobbyFacts` name (docs/plans/active/lobby-between-maps.md, step 5).
+    pub settings: Vec<(String, String)>,
+}
+
+/// A match setting the lobby tells every player (`NetLobby::settings`),
+/// from a server cvar: an app registers the ones its host page sets
+/// (`add_fact`; the party's from data/host_settings.toml).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LobbyFact {
+    /// The setting's name as shown ("Cross-game balance").
+    pub label: String,
+    /// The server cvar holding it.
+    pub cvar: String,
+    /// The cvar's values as words ("1" is "On"); a value not listed shows
+    /// as it is.
+    pub words: Vec<(String, String)>,
+    /// Values that say nothing (the minigame's own: ""), left out.
+    pub hide: Vec<String>,
+}
+
+/// The facts the lobby tells (`LobbyFact`), in order.
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct LobbyFacts(pub Vec<LobbyFact>);
+
+/// Registers a fact the lobby tells.
+pub fn add_fact(app: &mut App, fact: LobbyFact) {
+    app.init_resource::<LobbyFacts>().world_mut().resource_mut::<LobbyFacts>().0.push(fact);
+}
+
+/// The settings to tell now: the mode's length (when `mode` is the active
+/// minigame's), then each registered fact's cvar value in words.
+pub fn settings_now(world: &mut World, mode: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if let Some(def) = world.get_resource::<ActiveMinigame>().map(|m| m.def).filter(|d| d.name == mode) {
+        let t = def.time_limit.round() as u32;
+        out.push(("Length".to_string(), if t >= 60 && t % 60 == 0 { format!("{} min", t / 60) } else { format!("{t} s") }));
+    }
+    let facts = world.get_resource::<LobbyFacts>().map(|f| f.0.clone()).unwrap_or_default();
+    for f in facts {
+        let cvar = world.get_resource::<crate::console::Console>().and_then(|c| c.cvar(&f.cvar).cloned());
+        let Some(value) = cvar.and_then(|c| (c.get)(world)) else { continue };
+        let value = value.trim().to_string();
+        if f.hide.iter().any(|h| h.trim().eq_ignore_ascii_case(&value)) {
+            continue;
+        }
+        let shown = f.words.iter().find(|(v, _)| v.trim().eq_ignore_ascii_case(&value)).map_or(value, |(_, w)| w.clone());
+        out.push((f.label, shown));
+    }
+    out
 }
 
 /// The server's lobby while it is on.
@@ -692,6 +749,7 @@ pub fn show_first(world: &mut World, map: &str, mode: &str, host: &str) {
             wait_left: None,
             countdown: None,
             host_start: true,
+            settings: Vec::new(),
         },
     ));
 }
@@ -928,7 +986,9 @@ pub(crate) fn serve(world: &mut World) {
             wait_left: None,
             countdown: lobby.countdown_ends.map(|t| (t - now).max(0.0).ceil() as u32),
             host_start: lobby.host_start && lobby.countdown_ends.is_none(),
+            settings: Vec::new(),
         };
+        let want = NetLobby { settings: settings_now(world, &want.mode), ..want };
         write_lobby(world, &mut lobby, want, now);
         world.insert_resource(lobby);
         return;
@@ -979,7 +1039,9 @@ pub(crate) fn serve(world: &mut World) {
         wait_left: wait_ends.filter(|_| lobby.countdown_ends.is_none() && !lobby.host_start).map(secs),
         countdown: lobby.countdown_ends.map(secs),
         host_start: lobby.host_start && lobby.countdown_ends.is_none(),
+        settings: Vec::new(),
     };
+    let want = NetLobby { settings: settings_now(world, &want.mode), ..want };
     write_lobby(world, &mut lobby, want, now);
     world.insert_resource(lobby);
 }

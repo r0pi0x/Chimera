@@ -164,6 +164,10 @@ pub struct MaterialLoader<'a> {
     /// Textures stay placeholders of the right size (`MapLoadOptions::
     /// textures` off): `finish_textures` decodes nothing.
     pub lean: bool,
+    /// Textures whose file holds whole DXT blocks keep those alone, never
+    /// decoded (`blocks_only`): what `MapTexture::keep_blocks_only` would
+    /// leave of them after decoding.
+    pub blocks_only: bool,
     /// Textures read but not decoded yet (their slot in `textures` has the
     /// size only): `finish_textures` decodes them together, on threads.
     pending: Vec<(usize, Vec<u8>)>,
@@ -198,6 +202,7 @@ impl<'a> MaterialLoader<'a> {
             frames_by_path: HashMap::new(),
             camera_texture: None,
             lean: false,
+            blocks_only: false,
             pending: Vec::new(),
             late: Vec::new(),
             late_known: Default::default(),
@@ -266,14 +271,32 @@ impl<'a> MaterialLoader<'a> {
         self
     }
 
+    /// Textures of whole DXT blocks kept as those blocks alone, not
+    /// decoded to RGBA8 and mip levels (a dressing kept for the session,
+    /// chimera_world's `map::BlocksOnly`): the same texture
+    /// `MapTexture::keep_blocks_only` leaves after decoding, without the
+    /// decoding (docs/performance.md, "Guest textures kept as blocks
+    /// without decoding"). Other textures decode as before.
+    pub fn blocks_only(mut self, blocks_only: bool) -> Self {
+        self.blocks_only = blocks_only;
+        self
+    }
+
     /// Decode the textures `texture` has read since the last call, on
     /// threads (`map::parallel::par_map`); until then their `rgba8` and
     /// `mips` are empty (their size is right). A texture that doesn't
     /// decode becomes a 1x1 magenta one and a `missing` entry. Call it
     /// before reading texels and before taking `textures`.
     pub fn finish_textures(&mut self) {
-        let pending = std::mem::take(&mut self.pending);
-        let decoded = crate::map::parallel::par_map(pending, |(i, bytes)| (i, decode_bytes(&bytes)));
+        let pending: Vec<_> = std::mem::take(&mut self.pending)
+            .into_iter()
+            .map(|(i, bytes)| (i, bytes, (self.textures[i].width, self.textures[i].height)))
+            .collect();
+        let blocks_only = self.blocks_only;
+        let decoded = crate::map::parallel::par_map(pending, |(i, bytes, (w, h))| {
+            let blocks = blocks_only.then(|| whole_blocks(&bytes, w, h)).flatten();
+            (i, blocks.map_or_else(|| decode_bytes(&bytes), Ok))
+        });
         for (i, result) in decoded {
             let slot = &mut self.textures[i];
             match result {
@@ -1443,6 +1466,24 @@ pub fn encode_vtf(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     v
 }
 
+/// A VTF file as its DXT blocks alone (no texels, no RGBA8 mip levels)
+/// when they are a whole texture of `width` x `height` (`MapBc::fits`):
+/// `decode_bytes` and then `MapTexture::keep_blocks_only`, without the
+/// decoding. `None`: anything else (decode it).
+pub fn whole_blocks(bytes: &[u8], width: u32, height: u32) -> Option<MapTexture> {
+    let vtf = vtf::from_bytes(bytes).ok()?;
+    let bc = bc_levels(bytes, &vtf.header).filter(|b| b.fits(width, height))?;
+    Some(MapTexture {
+        name: String::new(),
+        srgb: true,
+        mips: Vec::new(),
+        width,
+        height,
+        rgba8: Vec::new(),
+        bc: Some(bc),
+    })
+}
+
 /// A VTF file's full-size image and its own mip levels as RGBA8.
 pub fn decode_bytes(bytes: &[u8]) -> Result<MapTexture, String> {
     let vtf = vtf::from_bytes(bytes).map_err(|e| e.to_string())?;
@@ -2200,6 +2241,18 @@ pub fn sheet(bytes: &[u8]) -> Option<Vec<Vec<[f32; 4]>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A texture that isn't whole DXT blocks (here RGBA8888) is decoded
+    /// as before under `blocks_only`: `whole_blocks` leaves it alone.
+    /// (Whole-DXT textures keeping the same blocks as decoding and then
+    /// `keep_blocks_only`: party_kit's heavy `converted` test, on the
+    /// installs' textures.)
+    #[test]
+    fn only_whole_blocks_skip_decoding() {
+        let bytes = encode_vtf(4, 4, &[128; 64]);
+        assert!(whole_blocks(&bytes, 4, 4).is_none());
+        assert_eq!(decode_bytes(&bytes).unwrap().rgba8.len(), 64);
+    }
 
     /// Uncompressed formats the `vtf` crate leaves out (community maps'
     /// textures, found by the map sweep), by the public format's channel

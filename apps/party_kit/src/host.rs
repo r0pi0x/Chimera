@@ -28,6 +28,11 @@
 //!   (alone, with no server: the map is skipped at once, the one player
 //!   being the majority).
 //!
+//! - **Told in the lobby**: a setting with `lobby = true` is also a
+//!   `chimera_net::prematch::LobbyFact`: the pre-match lobby shows its
+//!   value (in the choice's words; "Minigame's" says nothing and is left
+//!   out) to every player, who can leave before the match they don't want.
+//!
 //! Known shortcuts: the settings last for the host's process (not
 //! archived).
 
@@ -132,6 +137,9 @@ pub struct Setting {
     /// A range shown as a percentage (`percent = true`: a volume's 1.6
     /// shows "160%").
     pub percent: bool,
+    /// The pre-match lobby tells it to every player (`lobby = true`:
+    /// `chimera_net::prematch::LobbyFact`).
+    pub lobby: bool,
 }
 
 impl Setting {
@@ -183,6 +191,7 @@ pub fn setting_of(v: &toml::Value) -> Result<Setting, String> {
         hard_min: t.get("hard_min").and_then(num),
         hard_max: t.get("hard_max").and_then(num),
         percent: t.get("percent").and_then(|v| v.as_bool()).unwrap_or(false),
+        lobby: t.get("lobby").and_then(|v| v.as_bool()).unwrap_or(false),
     })
 }
 
@@ -251,6 +260,22 @@ pub fn build(app: &mut App) {
     app.init_resource::<AdminCvars>();
     app.world_mut().resource_mut::<AdminCvars>().0.extend(settings().into_iter().map(|s| s.cvar));
     for s in settings() {
+        // The lobby tells players the settings that matter to them.
+        if s.lobby {
+            chimera_net::prematch::add_fact(
+                app,
+                chimera_net::prematch::LobbyFact {
+                    label: s.label.clone(),
+                    cvar: s.cvar.clone(),
+                    words: match &s.pick {
+                        Pick::Choices(c) => c.clone(),
+                        Pick::Range { .. } => Vec::new(),
+                    },
+                    // "": the minigame's own, nothing to tell.
+                    hide: vec![String::new()],
+                },
+            );
+        }
         if let Some(key) = &s.key {
             let (name, key): (&'static str, &'static str) =
                 (Box::leak(s.cvar.clone().into_boxed_str()), Box::leak(key.clone().into_boxed_str()));

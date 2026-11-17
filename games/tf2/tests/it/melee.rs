@@ -149,12 +149,12 @@ fn forced_crits_6_7() {
 /// `burst`), a plain one the swing sound; a miss plays nothing more (32).
 #[test]
 fn swing_sounds_6_32() {
-    for (crit, want) in [(true, "Weapon_Bat.MissCrit"), (false, "Weapon_Bat.Miss")] {
+    for (crit, want) in [(true, "tf2:Weapon_Bat.MissCrit"), (false, "tf2:Weapon_Bat.Miss")] {
         let mut sim = sim();
         let (p, w) = holding(&mut sim, greybox::SPAWNS[0], BAT);
         force_crit(&mut sim, w, crit);
         let (_, played) = run_with::<PlaySound, _>(&mut sim, p, 30, |s, k| s.intent(p).fire = k == 0, |s| s.entry.clone());
-        let melee: Vec<&String> = played.iter().filter(|s| s.starts_with("Weapon_Bat")).collect();
+        let melee: Vec<&String> = played.iter().filter(|s| s.starts_with("tf2:Weapon_Bat")).collect();
         assert_eq!(melee, [want], "{played:?}");
     }
 }

@@ -7,18 +7,21 @@
 # (chimera_sim::minigame::overrides: that TOML key set when a match
 # starts; "" is the minigame's own value), so it applies from the next
 # match; without `key` the cvar is an existing one that applies at once
-# (`live = true`). They last for the session: the host's next start
+# (`live = true`). `lobby = true` also tells the pre-match lobby's players the
+# value. They last for the session: the host's next start
 # begins from the minigames' own values (the page says "this session").
 
 [[setting]]
 label = "Bots"
 cvar = "MaxPlayer"
+lobby = true
 live = true
 range = [0, 15, 1]
 
 [[setting]]
 label = "Even footsteps"
 cvar = "party_even_footsteps"
+lobby = true
 live = true
 choices = [["0", "Each game's own"], ["1", "One profile (CS:S's)"]]
 
@@ -31,6 +34,7 @@ choices = [["1", "Allowed"], ["0", "Off"]]
 [[setting]]
 label = "Rung extras: attachments (Combat Arms)"
 cvar = "mp_rung_extras_attachments"
+lobby = true
 key = "rules.rung_extras.attachments"
 help = "A gun game's Combat Arms rungs draw fitted parts for their guns (true or false); the other games' guns take no parts."
 choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
@@ -38,6 +42,7 @@ choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
 [[setting]]
 label = "Rung extras: characters"
 cvar = "mp_rung_extras_character"
+lobby = true
 key = "rules.rung_extras.character"
 help = "A gun game's rungs draw a character for everyone on them (true or false)."
 choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
@@ -45,6 +50,7 @@ choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
 [[setting]]
 label = "Rung extras: melee"
 cvar = "mp_rung_extras_melee"
+lobby = true
 key = "rules.rung_extras.melee"
 help = "A gun game's rungs draw a melee weapon of their own (true or false)."
 choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
@@ -52,6 +58,7 @@ choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
 [[setting]]
 label = "Rung extras: infected odds (Combat Arms)"
 cvar = "mp_rung_extras_infected_odds"
+lobby = true
 key = "rules.rung_extras.infected.odds"
 help = "How often a melee rung (the knife finale's; at most one a ladder) makes its players the infected, with their hands alone (0 to 1; Combat Arms' data: 0.25)."
 choices = [["", "Minigame's"], ["0", "Never"], ["0.1", "10%"], ["0.25", "25%"], ["0.5", "50%"], ["1", "Always"]]
@@ -59,6 +66,7 @@ choices = [["", "Minigame's"], ["0", "Never"], ["0.1", "10%"], ["0.25", "25%"], 
 [[setting]]
 label = "Demote on suicide"
 cvar = "mp_demote_on_suicide"
+lobby = true
 key = "rules.demote_on_suicide"
 help = "A suicide, fall or `kill` costs a rung (true or false)."
 choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
@@ -66,6 +74,7 @@ choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
 [[setting]]
 label = "Knife finale"
 cvar = "mp_knife_finale"
+lobby = true
 key = "rules.knife_finale"
 help = "The ladder ends on knife-only melee rungs (true or false)."
 choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
@@ -73,6 +82,7 @@ choices = [["", "Minigame's"], ["true", "On"], ["false", "Off"]]
 [[setting]]
 label = "Melee rungs"
 cvar = "mp_melee_rungs"
+lobby = true
 key = "rules.melee_rungs"
 help = "How many melee rungs end the ladder: auto (7% of the ladder, at least 1) or a number."
 choices = [["", "Minigame's"], ["auto", "Auto"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]]
@@ -80,6 +90,7 @@ choices = [["", "Minigame's"], ["auto", "Auto"], ["1", "1"], ["2", "2"], ["3", "
 [[setting]]
 label = "Map rotation"
 cvar = "mp_map_rotation"
+lobby = true
 key = "rotation"
 help = "How the next map is picked: random or in_turn."
 choices = [["", "Minigame's"], ["random", "Random"], ["in_turn", "In turn"]]
@@ -94,6 +105,7 @@ choices = [["", "Minigame's"], ["0", "0"], ["3", "3"], ["5", "5"], ["10", "10"]]
 [[setting]]
 label = "Spawn protection"
 cvar = "mp_spawn_protection"
+lobby = true
 key = "spawn.respawn.protection"
 help = "Seconds a respawned player can't be hurt: shots pass through, drawn see-through (ended by attacking)."
 choices = [["", "Minigame's"], ["0", "Off"], ["1", "1 s"], ["1.5", "1.5 s"], ["2", "2 s"], ["3", "3 s"]]
@@ -101,6 +113,7 @@ choices = [["", "Minigame's"], ["0", "Off"], ["1", "1 s"], ["1.5", "1.5 s"], ["2
 [[setting]]
 label = "Cross-game balance"
 cvar = "mp_balance"
+lobby = true
 live = false
 help = "The party's cross-game balance table (data/party_balance.toml: Halo a little tankier, its guns and HL2:DM's tuned against the field): on, or raw (every gun and body with its own game's numbers). From the next match."
 choices = [["1", "On"], ["0", "Raw"]]

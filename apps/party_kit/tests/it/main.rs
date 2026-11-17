@@ -46,6 +46,7 @@ mod kill_icons;
 mod ladders_across_games;
 mod last_shot;
 mod listen_server;
+mod join_flow;
 mod lobby_staging;
 mod main_menu;
 mod map_files;
@@ -83,6 +84,7 @@ mod heavy {
     mod bots_on_rungs;
     mod ca_mode_objects;
     mod clips_on_maps;
+    mod converted;
     mod cs_decals;
     mod death_bodies;
     mod guest_cache;
