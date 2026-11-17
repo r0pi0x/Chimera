@@ -103,6 +103,13 @@ the user's go-ahead: no Actions runs unless asked.
   - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
   - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
 
+- **Lobby between maps, with everyone's load progress (user, 2026-11-17):**
+  - Keep returning to the lobby after every match. It gives the host a moment to change settings and lets players leave.
+  - The lobby starts fetching and loading the NEXT map in the background as soon as it opens.
+  - Each player's lobby row shows their progress (downloading %, loading, ready), reported to the server and shared, which needs a network-version bump.
+  - Start waits for everyone ready, or the host's timeout.
+  - The loading screen's bar must reflect the real loading stages (downloads in bytes, map load, model builds, physics and navigation). Today it doesn't move. Show only the main bar when there's a single stage.
+
 - **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.
   - It connects to a master server (the hub) by an identifier or address, since the hub manages the accounts.
   - It covers hub plan S3: invite or link code, choosing a username, the recovery key, and Skip.
