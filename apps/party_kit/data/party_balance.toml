@@ -3,12 +3,10 @@
 # where games meet, in one place. Tuning is by playtests
 # (docs/plans/active/party-balance.md, "The table and the switch").
 #
-# A hit by game A's weapon on game B's body counts:
-#   - A and B the same game: 1 (Halo against Halo is never changed), unless
-#     a [[pair]] names them;
-#   - a [[pair]] for A on B: its scale, whole;
-#   - else A's `outgoing` times B's `incoming` (or the body's own incoming,
-#     [bodies]).
+# A hit by game A's weapon on game B's body counts A's `outgoing` times
+# B's `incoming` (or the body's own incoming, [bodies]), A and B the same
+# game included: one value per game against every game, no exceptions
+# (Halo on Halo 0.75 x 1.5 = 1.125; HL2:DM on HL2:DM 1.5; CS:S on CS:S 1).
 # A game or a field not listed is 1. The map's damage (falls, triggers)
 # is no game's and is never scaled. The host's `mp_balance 0` turns the
 # whole table off for a raw match (every gun and body with its own game's
@@ -36,7 +34,7 @@ incoming = 1.5
 # to 0.5 s for CS:S's and Combat Arms' rifles and SMGs): 1.5 makes the
 # SMG1 14 hits, the AR2 7, the pistol 9, the .357 one body shot (112.5) and
 # the shotgun still two shells (94.5 with every pellet); the user,
-# 2026-11-15.
+# 2026-11-15; on HL2:DM's own bodies too (2026-11-17).
 [games.hl2dm]
 outgoing = 1.5
 
@@ -48,11 +46,3 @@ outgoing = 1.5
 # yet. Example:
 #   "halo_ce:elite" = { incoming = 1.0 }
 [bodies]
-
-# Exceptions for one pair (attacker's game, victim's game), the whole
-# scale. HL2:DM's 1.5 has always counted on HL2:DM's own bodies too (its
-# guns against each other in a party match): kept.
-[[pair]]
-attacker = "hl2dm"
-victim = "hl2dm"
-scale = 1.5

@@ -1,17 +1,17 @@
 //! The cross-game balance table (`Balance`): what each game's weapons deal
 //! to other games' bodies (`outgoing`), what each game's bodies take from
 //! other games' weapons (`incoming`), a body's own incoming (by the body
-//! id the sandbox uses, `halo_ce:elite`, `tf2:heavy`), and the per-pair
-//! exceptions; the host's switch (`on`: off is a "raw" match, every
+//! id the sandbox uses, `halo_ce:elite`, `tf2:heavy`); the host's switch (`on`: off is a "raw" match, every
 //! weapon and body with its own game's numbers). An app made of several
 //! games puts it in (the party apps: party_kit's data/party_balance.toml
 //! and its `mp_balance`); without it nothing is scaled. The engine knows
 //! no game here: games are the table's keys.
 //!
-//! **A hit's scale** (`Balance::pair`): with the switch off, 1; a pair
-//! exception, its value; the same game on both sides, 1; else the
-//! attacker's outgoing times the victim body's incoming (its own entry,
-//! else its game's).
+//! **A hit's scale** (`Balance::pair`): with the switch off, 1; else the
+//! attacker's game's outgoing times the victim body's incoming (its own
+//! entry, else its game's). One value per game against every game, its
+//! own included (HL2:DM's 1.5 on HL2:DM bodies is its outgoing; Halo's
+//! 0.75 times 1.5 on a Halo body is 1.125); no pair exceptions.
 //!
 //! **Where it is applied: one place.** `HitArmor::game_scale` (every
 //! weapon hit through the shared armour step: rounds, swings, blasts,
@@ -21,15 +21,16 @@
 //! incoming a body keeps as its mechanism: Halo's shield counts it in its
 //! armour unit and its health in `core::apply_damage`, so a hit that
 //! takes armour in a game's own step, Combat Arms', counts it too). The
-//! product is the pair's scale, once. Halo against Halo never comes here
-//! (Halo's seam, written divided by the body's scale), so it is never
-//! changed. The map's damage (`HitArmor::apply_environment`) is no
+//! product is the pair's scale, once. Halo's own hits on a Halo body do
+//! not take the engine's armour step: Halo's seam (`halo_ce::damage`)
+//! asks `Balance::pair` itself (Halo's game on a Halo body) and counts
+//! the answer in its own rule. The map's damage (`HitArmor::apply_environment`) is no
 //! game's.
 //!
 //! Known shortcuts:
 //! - Combat Arms' guns take armour in their own step
 //!   (`combat_arms::game::weapons::armour_and_zone`), which reads no table:
-//!   their outgoing, a pair exception with them, and a non-Halo body's own
+//!   their outgoing and a non-Halo body's own
 //!   incoming against them count 1 (a Halo body's incoming still counts:
 //!   it is held by the body).
 //! - A body id is known for the sandbox's targets (`minigame::targets::
@@ -71,21 +72,11 @@ struct BodyRow {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct PairRow {
-    attacker: String,
-    victim: String,
-    scale: f32,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct File {
     #[serde(default)]
     games: BTreeMap<String, Sides>,
     #[serde(default)]
     bodies: BTreeMap<String, BodyRow>,
-    #[serde(default)]
-    pair: Vec<PairRow>,
 }
 
 /// The table and the switch (module doc).
@@ -99,14 +90,12 @@ pub struct Balance {
     pub games: BTreeMap<String, Sides>,
     /// A body's own incoming, over its game's.
     pub bodies: BTreeMap<String, f32>,
-    /// (attacker game, victim game): the whole scale.
-    pub pairs: BTreeMap<(String, String), f32>,
 }
 
 impl Default for Balance {
     /// An empty table, on: everything 1.
     fn default() -> Self {
-        Self { on: true, switch: 1, games: BTreeMap::new(), bodies: BTreeMap::new(), pairs: BTreeMap::new() }
+        Self { on: true, switch: 1, games: BTreeMap::new(), bodies: BTreeMap::new() }
     }
 }
 
@@ -129,8 +118,7 @@ pub fn game_of(id: &str) -> &str {
 
 impl Balance {
     /// The table's TOML (`[games.<game>]` outgoing and incoming,
-    /// `[bodies]` `"<game>:<body>" = { incoming = k }`, `[[pair]]`
-    /// attacker, victim, scale), on. Every number finite; an incoming
+    /// `[bodies]` `"<game>:<body>" = { incoming = k }`) on. Every number finite; an incoming
     /// above 0, the others at least 0.
     pub fn parse(text: &str) -> Result<Self, String> {
         let f: File = toml::from_str(text).map_err(|e| e.to_string())?;
@@ -152,12 +140,7 @@ impl Balance {
                 bodies.insert(id.clone(), ok(k, true, &format!("bodies.\"{id}\".incoming"))?);
             }
         }
-        let mut pairs = BTreeMap::new();
-        for p in f.pair {
-            let k = ok(p.scale, false, &format!("pair {} on {}: scale", p.attacker, p.victim))?;
-            pairs.insert((p.attacker, p.victim), k);
-        }
-        Ok(Self { games: f.games, bodies, pairs, ..Default::default() })
+        Ok(Self { games: f.games, bodies, ..Default::default() })
     }
 
     /// The same table with the switch off (a raw match), now.
@@ -203,14 +186,6 @@ impl Balance {
             return 1.0;
         }
         let victim = victim.or(body.map(game_of));
-        if let Some(v) = victim {
-            if let Some(k) = self.pairs.get(&(attacker.to_string(), v.to_string())) {
-                return *k;
-            }
-            if v == attacker {
-                return 1.0;
-            }
-        }
         self.outgoing(attacker) * self.incoming(victim, body)
     }
 
@@ -260,7 +235,9 @@ mod tests {
         assert_eq!(t.incoming(Some("a"), Some("a:plain")), 2.0, "no number: its game's");
         assert_eq!(t.pair("b", None, Some("a:big")), 12.0);
         assert_eq!(t.pair("b", Some("a"), None), 6.0);
-        assert_eq!(t.pair("a", Some("a"), Some("a:big")), 1.0, "the same game");
+        assert_eq!(t.pair("a", Some("a"), Some("a:big")), 2.0, "the same game counts: 0.5 x 4");
+        assert_eq!(t.pair("a", Some("a"), None), 1.0, "0.5 x 2");
+        assert_eq!(t.pair("b", Some("b"), None), 3.0, "its own outgoing, incoming 1");
         // What the armour step scales by when the body holds its incoming.
         assert_eq!(t.before_armour("b", Some("a"), None, 2.0), 3.0);
         let raw = t.clone().raw();

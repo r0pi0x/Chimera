@@ -590,7 +590,7 @@ Levers:
 ## Appendix: after the balance rule (2026-11-15)
 
 The rule (the owner's decision): a Halo player a little tankier than
-others, its guns not also overpowered, Halo against Halo unchanged.
+others, its guns not also overpowered (Halo against Halo unchanged then; since 2026-11-17 it counts the table: 1.125).
 
 - **Incoming** (another game's damage on a Halo player): counted 1.5
   times (`incoming_scale`), so a full Halo player has about 133
@@ -680,20 +680,20 @@ into the engine's `chimera_sim::weapon::balance::Balance`):
   over its game's, by the id the sandbox uses (`halo_ce:elite`,
   `halo_ce:hunter`, `tf2:heavy`). None set yet: the campaign characters'
   health and shields are as the game states them, to be tuned here.
-- `[[pair]]` `attacker`, `victim`, `scale`: one pair's whole scale. The
-  one today: `hl2dm` on `hl2dm` 1.5 (HL2:DM's boost always counted on its
-  own bodies too).
 
-A hit by game A's weapon on game B's body counts: the switch off, 1; a
-pair, its scale; A and B the same game, 1 (Halo against Halo is never
-changed); else A's outgoing times B's incoming (or the body's own). It is
+A hit by game A's weapon on game B's body counts: the switch off, 1; else
+A's outgoing times B's incoming (or the body's own), A and B the same
+game included (2026-11-17: one value per game against every game, no pair
+exceptions; HL2:DM on HL2:DM 1.5, Halo on Halo 0.75 x 1.5 = 1.125, CS:S on
+CS:S 1). It is
 applied in one place, the engine's armour step (`weapon::HitArmor::
 game_scale`), before armour: the pair's scale over the incoming the
 victim's body holds. A Halo body holds its incoming as its mechanism (the
 shield's armour unit and `core::DamageScale` on its health), so a hit
 that takes armour in a game's own step (Combat Arms') counts it too; the
-two together are the pair's scale, once. Halo's own hits on a Halo body
-never reach the table. `apps/party_kit/tests/it/balance_table.rs` checks
+two together are the pair's scale, once. Halo's own hits on a Halo body do not take the engine's
+armour step: Halo's seam asks the same `Balance::pair` itself
+(`cross_game::own_scale`) and counts it in its own rule. `apps/party_kit/tests/it/balance_table.rs` checks
 every pair with one gun of each game against the appendix's numbers.
 
 **The switch** `mp_balance` (a host setting, "Cross-game balance"; 1 the
@@ -727,11 +727,11 @@ next match: `changelevel`) for each game's own numbers. Then run
 the expected numbers there (`today`) and in the appendix.
 
 Known shortcuts: Combat Arms' guns take armour in their own step and read
-no table (their outgoing, a pair with them, and a non-Halo body's own
+no table (their outgoing and a non-Halo body's own
 incoming against them count 1); a player's TF2 class is not looked up as
 a body (its game's entry counts; the sandbox's targets are).
 
 ## The owner's decisions (2026-11-17)
 
-- **HL2:DM against HL2:DM** keeps its 1.5.
-- **DECIDED (2026-11-17): one value per game against every game, its own included,** with no permutation table and no pair exceptions. A hit's scale is the attacker's game's outgoing value times the victim's game's incoming value, the same game included, and Halo's own hits go through the table too. Superseded lean: Today the same game on both sides counts as 1 (HL2:DM's pair is the exception), and Halo's own hits never reach the table. The owner's worry: two Halo players in a long duel get finished off by a third party. By the table, a Halo gun on a Halo body would be 0.75 × 1.5 = 1.125, a little quicker. Show the owner with the sandbox's kill card before changing anything.
+- **HL2:DM against HL2:DM** keeps its 1.5 (now its outgoing value on every body, its own included).
+- **DECIDED (2026-11-17): one value per game against every game, its own included,** with no permutation table and no pair exceptions. A hit's scale is the attacker's game's outgoing value times the victim's game's incoming value, the same game included, and Halo's own hits go through the table too. Done: `[[pair]]` removed, Halo's own hits go through the table. The owner's worry: two Halo players in a long duel get finished off by a third party. By the table, a Halo gun on a Halo body would be 0.75 × 1.5 = 1.125, a little quicker. 
