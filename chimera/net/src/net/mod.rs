@@ -225,6 +225,7 @@ pub mod on_demand;
 pub mod ordered;
 pub mod own_items;
 pub mod parts;
+pub mod party;
 pub mod predict;
 pub mod props;
 pub mod quant;
@@ -1472,6 +1473,7 @@ impl Plugin for NetPlugin {
         udp::plugin(app);
         upnp::plugin(app);
         hub::plugin(app);
+        party::plugin(app);
         voice::plugin(app);
         query::plugin(app);
         memory::plugin(app);

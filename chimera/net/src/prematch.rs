@@ -245,8 +245,9 @@ pub struct LobbyRow {
     /// colour, `chimera_ui::avatar::AvatarLook`'s byte); `NO_AVATAR` for a
     /// bot or a player who sent none.
     pub avatar: u8,
-    /// The player's party (players who came together share it; 0: alone).
-    /// No parties exist yet: the server sends 0 (the seam for them).
+    /// The player's party (players who came together share it; 0: alone):
+    /// the server's number for its `cl_party` (`PartyNumbers`), given
+    /// to parties with two or more players here.
     pub party: u8,
 }
 
@@ -767,6 +768,35 @@ fn map_in(world: &World) -> bool {
     crate::net::maps::loaded_map(world).is_some_and(|(id, _)| id.eq_ignore_ascii_case(&want))
 }
 
+/// The server's small number for each party with two or more players
+/// here (`LobbyRow::party`, 1-255), kept while any of it stays.
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct PartyNumbers(pub std::collections::BTreeMap<String, u8>);
+
+impl PartyNumbers {
+    /// Numbers for the parties in `seen` (one entry per player) with two
+    /// or more players; the others' freed.
+    pub fn update<'a>(&mut self, seen: impl IntoIterator<Item = &'a str>) {
+        let mut count = std::collections::BTreeMap::<&str, usize>::new();
+        for p in seen {
+            *count.entry(p).or_default() += 1;
+        }
+        self.0.retain(|p, _| count.get(p.as_str()).is_some_and(|n| *n >= 2));
+        for (p, n) in count {
+            if n >= 2 && !self.0.contains_key(p) {
+                let used: Vec<u8> = self.0.values().copied().collect();
+                if let Some(free) = (1..=255u8).find(|k| !used.contains(k)) {
+                    self.0.insert(p.to_string(), free);
+                }
+            }
+        }
+    }
+
+    pub fn of(&self, party: Option<&str>) -> u8 {
+        party.and_then(|p| self.0.get(p).copied()).unwrap_or(0)
+    }
+}
+
 /// Every player now: the host, the remote players (admitted), the bots.
 pub fn rows(world: &mut World) -> Vec<LobbyRow> {
     let map = serving_map(world);
@@ -781,6 +811,19 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
     };
     let ready_up = world.get_resource::<LobbySettings>().is_some_and(|s| s.ready_up != 0);
     let mut avatars = std::collections::BTreeMap::new();
+    // Each player's party (`cl_party`), numbered for the rows.
+    let mut parties = std::collections::BTreeMap::<u64, String>::new();
+    for (c, info) in world.query::<(&NetCharacter, Option<&crate::core::UserInfo>)>().iter(world) {
+        if let (Some(id), Some(p)) = (c.owner, info.and_then(|i| i.party())) {
+            parties.insert(id, p.to_string());
+        }
+    }
+    let mut numbers = world.get_resource::<PartyNumbers>().cloned().unwrap_or_default();
+    numbers.update(parties.values().map(String::as_str));
+    if world.get_resource::<PartyNumbers>() != Some(&numbers) {
+        world.insert_resource(numbers.clone());
+    }
+    let party_of = |id: u64| numbers.of(parties.get(&id).map(String::as_str));
     for (c, info) in world.query::<(&NetCharacter, Option<&crate::core::UserInfo>)>().iter(world) {
         match c.owner {
             Some(HOST_ID) => out.push(LobbyRow {
@@ -790,6 +833,7 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
                 step: host_step,
                 permille: host_permille,
                 avatar: avatar_of(info),
+                party: party_of(HOST_ID),
                 ..default()
             }),
             None => others.push(LobbyRow {
@@ -843,7 +887,7 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
                     ping_ms: stats.map(|s| (s.rtt * 1000.0).round().clamp(0.0, 9999.0) as u16),
                     wins: 0,
                     avatar: avatars.get(&id.get()).copied().unwrap_or(NO_AVATAR),
-                    party: 0,
+                    party: party_of(id.get()),
                 },
             )
         })

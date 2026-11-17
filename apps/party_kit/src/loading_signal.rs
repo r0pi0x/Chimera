@@ -393,7 +393,7 @@ fn spawn(c: &mut Commands, ui: &Ui, v: &View, res: Option<(&mut Assets<Image>, &
     let title = if v.between { "Loading" } else { "Connecting" };
     let parent = if v.hosting { "Host" } else { "Join" };
     if let Some((images, icons)) = res {
-        shell::bar(ui, c, frame, images, icons, &shell::Bar { left: shell::Left::Crumb { parent, title }, party: &v.party.members, party_max: v.party.max, open: None });
+        shell::bar(ui, c, frame, images, icons, &shell::Bar { left: shell::Left::Crumb { parent, title }, party: &v.party.members, party_max: v.party.max, invite: v.party.invite, open: None });
     }
     // The map's card.
     let card_h = 29.2;

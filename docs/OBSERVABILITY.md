@@ -2564,7 +2564,10 @@ the hub not answering, its last list; `update`: the newer-build banner;
 `ui_scene play maps [slices]` (Host's Maps picker open; `slices`: the games
 without arena slices folded, a map off with its first slice on), `ui_scene load [ask|slice]` (the
 Signal loading screen, the Leave? dialog with `ask`, a slice loading with `slice`; `+mainmenu` too) and
-`ui_scene lobby host` (the host's view of a first lobby waiting for its
+`ui_scene party [in|lead|prompt|off]` (the party panel, provisional: no party with a code half typed, a
+made-up party as a member or its leader, the follow prompt; docs/plans/active/parties.md; `+mainmenu` too, and
+`+ui_scene party lead +party_panel 0 +ui_scene esc +escmenu_press disconnect` without it for the leader's
+Leave confirm), `ui_scene lobby host` (the host's view of a first lobby waiting for its
 Start, two parties with their edges), `ui_scene lobby between` (the
 host's lobby after a match, the next map coming in: each row at its own
 load stage, `chimera_net::net::load_stages`).

@@ -434,7 +434,8 @@ impl ModeAppExt for App {
 }
 
 /// `e`'s team as the playing mode makes teams: a side (one without goes to
-/// the smaller side, `ALPHA` on a tie); every player a team of their own
+/// its party's side, `core::party_side`, else the smaller side, `ALPHA`
+/// on a tie); every player a team of their own
 /// in a free-for-all mode (the lowest free id from `FFA_FIRST`); `ALPHA`
 /// for everyone at a round's setup (`reset`) in an all-on-Alpha mode.
 /// Observers and players without a team are left alone.
@@ -452,11 +453,20 @@ pub(crate) fn assign_team_in(world: &mut World, e: Entity, reset: bool, mode: &M
     if !plays(team) {
         return;
     }
-    let others: Vec<u8> = (flow.players)(world)
-        .into_iter()
-        .filter(|(p, _)| *p != e)
-        .map(|(_, t)| t)
-        .collect();
+    let players: Vec<(Entity, u8)> = (flow.players)(world).into_iter().filter(|(p, _)| *p != e).collect();
+    let others: Vec<u8> = players.iter().map(|(_, t)| *t).collect();
+    // Two sides: a player without one goes where its party is.
+    let party = world.get::<crate::core::UserInfo>(e).and_then(|i| i.party()).map(str::to_string);
+    let mates = || {
+        players.iter().map(|(p, t)| (world.get::<crate::core::UserInfo>(*p).and_then(|i| i.party()), *t))
+    };
+    if mode.teams == Teams::Two
+        && side(team).is_none()
+        && let Some(want) = crate::core::party_side(party.as_deref(), mates())
+    {
+        world.entity_mut(e).insert(crate::core::Team(want));
+        return;
+    }
     if let Some(want) = team_for(mode.teams, team, &others, reset)
         && want != team
     {

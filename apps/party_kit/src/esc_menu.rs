@@ -34,6 +34,10 @@
 //!   `disconnect`, back to the menu; a host with people connected is
 //!   asked first ("End the game for 2 players?", `Page::
 //!   ConfirmDisconnect`), and its clients are told the host left.
+//!   A party's leader (in a party of two or more, `chimera_net::net::
+//!   party`) is asked how (`Page::ConfirmPartyLeave`, provisional): Leave
+//!   with my party (first, the default: `party_leave_match with`), Leave
+//!   alone (`party_leave_match alone`), Stay; so is the lobby's Leave.
 //! - **Quit.**
 //!
 //! The entries and their order are data (data/main_menu.toml
@@ -171,12 +175,16 @@ pub enum Page {
     ConfirmDisconnect(usize),
     /// Leaving the pre-match lobby asks first (Stay first).
     ConfirmLeave,
+    /// The party's leader leaving a match or its lobby
+    /// (docs/plans/active/parties.md): Leave with my party (first, the
+    /// default), Leave alone, Stay.
+    ConfirmPartyLeave,
 }
 
 impl Page {
     /// A confirm (Stay or go).
     pub fn confirm(self) -> bool {
-        matches!(self, Page::ConfirmDisconnect(_) | Page::ConfirmLeave)
+        matches!(self, Page::ConfirmDisconnect(_) | Page::ConfirmLeave | Page::ConfirmPartyLeave)
     }
 }
 
@@ -364,6 +372,17 @@ fn navigate(
                 out.write(a);
             }
         }
+        Page::ConfirmPartyLeave => {
+            let back = up || keys.just_pressed(KeyCode::ArrowLeft);
+            let next = down || keys.just_pressed(KeyCode::ArrowRight) || keys.just_pressed(KeyCode::Tab);
+            if back || next {
+                menu.focus = (menu.focus.min(2) + if next { 1 } else { 2 }) % 3;
+                cues.write(UiCue::new("ui_hover"));
+            }
+            if enter {
+                out.write([Action::LeaveWithParty, Action::LeaveAlone, Action::Back][menu.focus.min(2)]);
+            }
+        }
         Page::ConfirmDisconnect(_) | Page::ConfirmLeave => {
             let left = keys.just_pressed(KeyCode::ArrowLeft) || keys.just_pressed(KeyCode::Tab);
             let right = keys.just_pressed(KeyCode::ArrowRight);
@@ -406,6 +425,11 @@ pub enum Action {
     /// Leave the pre-match lobby (asks first: `Page::ConfirmLeave`, whose
     /// Yes is `DisconnectYes`; the lobby's Leave button, `lobby_asked`).
     Leave,
+    /// The party leader's Leave: everyone back to the menu
+    /// (`party_leave_match with`).
+    LeaveWithParty,
+    /// The party leader's Leave alone (`party_leave_match alone`).
+    LeaveAlone,
     /// Report a bug: the menu closes, then the screenshot, then the
     /// report dialog (`client::feedback`, `feedback menu`).
     Feedback,
@@ -418,7 +442,7 @@ pub type EscMenuAction = Action;
 /// The settings a page shows (none on the first).
 pub fn page_settings(world: &World, page: Page) -> Vec<Setting> {
     match page {
-        Page::Main | Page::ConfirmDisconnect(_) | Page::ConfirmLeave => Vec::new(),
+        Page::Main | Page::ConfirmDisconnect(_) | Page::ConfirmLeave | Page::ConfirmPartyLeave => Vec::new(),
         Page::Host => host::settings(),
         Page::Options(t) => shown_tabs(world).into_iter().nth(t).map(|(_, s)| s).unwrap_or_default(),
     }
@@ -469,7 +493,7 @@ impl Plugin for EscMenuPlugin {
             })
             .console_command(
                 "chimera:escmenu_press",
-                "escmenu_press <resume|options|host|disconnect|leave|confirm|back|feedback|quit>: press that entry of the \
+                "escmenu_press <resume|options|host|disconnect|leave|confirm|with_party|alone|back|feedback|quit>: press that entry of the \
                  open Escape menu (screenshots and tests).",
                 |w, a| {
                     let action = match a.first().map(String::as_str) {
@@ -479,6 +503,8 @@ impl Plugin for EscMenuPlugin {
                         Some("disconnect") => Action::Disconnect,
                         Some("leave") => Action::Leave,
                         Some("confirm") => Action::DisconnectYes,
+                        Some("with_party") => Action::LeaveWithParty,
+                        Some("alone") => Action::LeaveAlone,
                         Some("back") => Action::Back,
                         Some("quit") => Action::Quit,
                         Some("feedback") => Action::Feedback,
@@ -501,10 +527,15 @@ impl Plugin for EscMenuPlugin {
 /// The lobby's Settings and Leave (`prematch_lobby::LobbyAppAsked`):
 /// this menu open over the lobby at Settings, or at Leave's confirm
 /// (Stay first).
-fn lobby_asked(asked: On<chimera_client::client::prematch_lobby::LobbyAppAsked>, mut m: ResMut<EscMenu>) {
+fn lobby_asked(
+    asked: On<chimera_client::client::prematch_lobby::LobbyAppAsked>,
+    mut m: ResMut<EscMenu>,
+    party: Option<Res<chimera_net::net::party::PartyClient>>,
+) {
     use chimera_client::client::prematch_lobby::LobbyAction;
     let page = match asked.0 {
         LobbyAction::Settings => Page::Options(0),
+        LobbyAction::Leave if party.is_some_and(|p| p.leads_others()) => Page::ConfirmPartyLeave,
         LobbyAction::Leave => Page::ConfirmLeave,
         _ => return,
     };
@@ -680,6 +711,11 @@ fn act(world: &mut World) {
     }
 }
 
+/// This player leads a party of two or more (its Leave asks how).
+fn leads_party(world: &World) -> bool {
+    world.get_resource::<chimera_net::net::party::PartyClient>().is_some_and(|p| p.leads_others())
+}
+
 fn submit(world: &mut World, line: impl Into<String>) {
     world.resource_mut::<Console>().submit(line.into());
 }
@@ -772,22 +808,34 @@ fn act_one(world: &mut World, action: Action) {
                 m.page = Page::ConfirmDisconnect(people);
                 // The safe choice first: a stray Enter never ends the game.
                 m.focus = 0;
+            } else if leads_party(world) {
+                let mut m = world.resource_mut::<EscMenu>();
+                m.page = Page::ConfirmPartyLeave;
+                // Leave with my party first: the default (the user's decision).
+                m.focus = 0;
             } else {
                 leave(world);
                 world.resource_mut::<EscMenu>().set_open(false);
                 submit(world, "disconnect");
             }
         }
+        Action::LeaveWithParty | Action::LeaveAlone => {
+            leave(world);
+            world.resource_mut::<EscMenu>().set_open(false);
+            submit(world, if action == Action::LeaveAlone { "party_leave_match alone" } else { "party_leave_match with" });
+        }
         Action::Leave => {
+            let party = leads_party(world);
             let mut m = world.resource_mut::<EscMenu>();
-            m.page = Page::ConfirmLeave;
+            m.page = if party { Page::ConfirmPartyLeave } else { Page::ConfirmLeave };
             // The safe choice first: a stray Enter never leaves.
             m.focus = 0;
         }
         Action::DisconnectYes => {
             leave(world);
             world.resource_mut::<EscMenu>().set_open(false);
-            submit(world, "disconnect");
+            // A hosting leader takes the party out with it.
+            submit(world, if leads_party(world) { "party_leave_match with" } else { "disconnect" });
         }
         Action::SkipMap => submit(world, "party_skipmap"),
         Action::VoteYes => submit(world, "vote option1"),
@@ -1082,6 +1130,7 @@ fn spawn_menu(
                     Page::Host => host_page(panel, menu),
                     Page::ConfirmDisconnect(n) => confirm_page(panel, n),
                     Page::ConfirmLeave => confirm_leave_page(panel),
+                    Page::ConfirmPartyLeave => confirm_party_page(panel),
                 }
                 if let Some(n) = &menu.notice {
                     panel.spawn((Node { margin: UiRect::top(px(8.0)), ..default() }, children![text(n.clone(), 15.0, ACCENT)]));
@@ -1179,6 +1228,22 @@ fn confirm_leave_page(panel: &mut ChildSpawnerCommands) {
         .with_children(|row| {
             row.spawn(button("Leave", Action::DisconnectYes, ACTIVE, 154.0));
             row.spawn(button("Stay", Action::Back, BUTTON, 154.0));
+        });
+}
+
+/// The party's leader leaving (provisional: docs/plans/active/parties.md).
+fn confirm_party_page(panel: &mut ChildSpawnerCommands) {
+    panel.spawn((Node { margin: UiRect::vertical(px(8.0)), ..default() }, children![text("Leave the match?", 17.0, TEXT)]));
+    panel.spawn((
+        Node { margin: UiRect::bottom(px(8.0)), ..default() },
+        children![text("You lead your party: it can come back to the menu with you.", 13.0, DIM)],
+    ));
+    panel
+        .spawn(Node { flex_direction: FlexDirection::Row, ..default() })
+        .with_children(|row| {
+            row.spawn(button("Leave with my party", Action::LeaveWithParty, ACTIVE, 200.0));
+            row.spawn(button("Leave alone", Action::LeaveAlone, BUTTON, 154.0));
+            row.spawn(button("Stay", Action::Back, BUTTON, 110.0));
         });
 }
 

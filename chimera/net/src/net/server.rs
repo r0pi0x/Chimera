@@ -681,7 +681,8 @@ fn admit(world: &mut World, client: Entity, msg: Join) {
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case(JOIN_KEY))
         .map(|(_, v)| v.clone());
-    let character = spawn_player(world, id, &name, choice.as_deref());
+    let party = msg.userinfo.iter().find(|(k, _)| k.eq_ignore_ascii_case(crate::core::PARTY_KEY)).map(|(_, v)| v.trim().to_string()).filter(|v| !v.is_empty());
+    let character = spawn_player(world, id, &name, choice.as_deref(), party.as_deref());
     set_userinfo(world, character, &msg.userinfo);
     world.entity_mut(client).insert((
         AuthorizedClient,
@@ -786,19 +787,27 @@ pub(super) fn unique_name(world: &mut World, name: &str, except: &[Entity]) -> S
         .expect("some number is free")
 }
 
-/// A remote player's character: on the team with fewer players, out of
+/// A remote player's character: on the side most of its party there is
+/// on (`core::party_side`), else the team with fewer players, out of
 /// the game (`core::Connecting`) until its client has loaded the map,
 /// then spawned as the rules allow (`JoinRules`; CS:S's
 /// `rules::enter_game`).
-fn spawn_player(world: &mut World, id: u64, name: &str, choice: Option<&str>) -> Entity {
+fn spawn_player(world: &mut World, id: u64, name: &str, choice: Option<&str>, party: Option<&str>) -> Entity {
     let mut counts = [0usize; 2];
-    for (team, npc) in world.query::<(&Team, Has<Npc>)>().iter(world) {
+    let mut mates = Vec::new();
+    for (team, npc, info) in world.query::<(&Team, Has<Npc>, Option<&crate::core::UserInfo>)>().iter(world) {
         if !npc && (1..=2).contains(&team.0) {
             counts[team.0 as usize - 1] += 1;
+            mates.push((info.and_then(|i| i.party()).map(str::to_string), team.0));
         }
     }
-    // Counter-terrorists (2) on a tie, as the local player starts.
-    let team = if counts[0] < counts[1] { Team(1) } else { Team(2) };
+    // The party's side; else counter-terrorists (2) on a tie, as the
+    // local player starts.
+    let team = match crate::core::party_side(party, mates.iter().map(|(p, t)| (p.as_deref(), *t))) {
+        Some(side) => Team(side),
+        None if counts[0] < counts[1] => Team(1),
+        None => Team(2),
+    };
     // The match's movement, never noclip (CS:S spawns every player
     // walking; specs/cs_source/movement.md "Noclip and spawning").
     let movement = world
