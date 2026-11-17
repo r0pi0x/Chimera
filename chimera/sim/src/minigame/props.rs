@@ -96,6 +96,14 @@
 //! (`layout` remembers what stands after each; `Prop::origin` and `dir`
 //! are its spawner's spot and line); clearing is not.
 //!
+//! **Under the crosshair** (`spawn_at_aim`: the sandbox's Add prop button
+//! and `prop add <kind>` without a distance): the line from the player's
+//! eye along its whole view stops on the map (what a character bumps
+//! into); the prop stands there on a floor, or on the floor below half a
+//! metre back toward the player on a wall, facing the player, its
+//! `spec.distance_m` the flat distance to it. No range furniture and no
+//! distance line: where the player points (playtest 2026-11-17).
+//!
 //! Console: `prop add <bottles|tin_cans|target_board> [distance m]`,
 //! `prop remove <n|all>`, `prop list`, `prop group <n>` (a board's shot
 //! group), `prop reset <n|all>`, `prop look <n> [piece | shelf]` (turns
@@ -350,9 +358,73 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
     Ok(e)
 }
 
+/// How far the crosshair reaches for `spawn_at_aim` (m).
+pub const AIM_REACH_M: f32 = 120.0;
+
+/// Place a prop of `kind` where the player's crosshair meets the map (a
+/// player's change: `layout` remembers it); its entity. The line from the
+/// eye along the full view (yaw and pitch) stops on the first surface a
+/// character would stand on or bump into; on a floor the prop stands
+/// there, on a wall it stands on the floor below, half a metre back
+/// toward the player. Neither the range's furniture nor a distance line:
+/// where the player points. Refused when the line meets nothing within
+/// `AIM_REACH_M` (the sky, the void) or the floor found can't hold it.
+pub fn spawn_at_aim(world: &mut World, kind: &str, by: Option<Entity>) -> Result<Entity, String> {
+    if !rung_command::holds(world) {
+        return Err("props are the sandbox's: start it with `sandbox`".into());
+    }
+    let by = match by {
+        Some(e) => e,
+        None => command_player(world).map_err(|_| "no player to place it in front of".to_string())?,
+    };
+    let origin = world.get::<Transform>(by).ok_or("the player has no place")?.translation;
+    let lift = world.get::<crate::core::MovementState>(by).map_or(Vec3::Y * 0.6, |s| s.eye_offset);
+    let (yaw, pitch) = world.get::<Intent>(by).map_or((0.0, 0.0), |i| (i.yaw, i.pitch));
+    let home = aim_spot(world, origin + lift, yaw, pitch)?;
+    let flat = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
+    let spec = PropSpec { kind: kind.to_string(), distance_m: (home - origin).xz().length() };
+    let e = build(world, &spec, origin, flat, Some(home))?;
+    super::layout::record(world);
+    Ok(e)
+}
+
+/// Where a prop stands for a crosshair at `eye` looking along `yaw` and
+/// `pitch` (`spawn_at_aim`).
+pub fn aim_spot(world: &mut World, eye: Vec3, yaw: f32, pitch: f32) -> Result<Vec3, String> {
+    let dir = Vec3::new(-yaw.sin() * pitch.cos(), pitch.sin(), -yaw.cos() * pitch.cos());
+    let Ok(dir3) = Dir3::new(dir) else { return Err("no view to aim along".into()) };
+    let characters: Vec<Entity> = world.query_filtered::<Entity, With<Intent>>().iter(world).collect();
+    let mut state: bevy::ecs::system::SystemState<SpatialQuery> = bevy::ecs::system::SystemState::new(world);
+    let hit = {
+        let q = state.get(world).map_err(|e| e.to_string())?;
+        let filter = SpatialQueryFilter::from_mask(crate::core::CHARACTER_FILTER).with_excluded_entities(characters);
+        q.cast_ray(eye, dir3, AIM_REACH_M, true, &filter)
+    };
+    let Some(hit) = hit else {
+        return Err(format!("nothing under the crosshair within {AIM_REACH_M:.0} m"));
+    };
+    let at = eye + dir * hit.distance;
+    let from = if hit.normal.y >= 0.7 {
+        // A floor: stand right there (cast from just above it).
+        at + Vec3::Y * 0.3
+    } else {
+        // A wall or a ceiling: the floor below, a little back toward the
+        // player so the prop's shelf clears the wall.
+        let back = Vec3::new(dir.x, 0.0, dir.z).normalize_or_zero();
+        at - back * 0.5 + Vec3::Y * 0.1
+    };
+    super::targets::stand_below(world, from, "under the crosshair")
+}
+
 /// Place a prop as if from `origin` looking along flat `dir` (`spawn`;
 /// the layout's repeat), not remembered.
 pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -> Result<Entity, String> {
+    build(world, spec, origin, dir, None)
+}
+
+/// Build a prop: at `aimed` (`spawn_at_aim`'s spot) when given, else as
+/// `spawn_from` places it.
+fn build(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3, aimed: Option<Vec3>) -> Result<Entity, String> {
     if !rung_command::holds(world) {
         return Err("props are the sandbox's: start it with `sandbox`".into());
     }
@@ -368,12 +440,13 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
     // On the range: its own shelf or board first, else a spot on the asked
     // distance line at the spawner's side (`range_place`); elsewhere along
     // the spawner's view.
-    let range = super::range_place::layout(world);
+    let range = super::range_place::layout(world).filter(|_| aimed.is_none());
     let furniture = match &range {
         Some(l) => range_furniture(world, l, kind, pieces),
         None => None,
     };
     let (frame, origin, dir, distance_m) = match (&range, &furniture) {
+        _ if aimed.is_some() => (aimed.unwrap_or_default(), origin, dir, spec.distance_m),
         (Some(l), Some((frame, _))) => {
             let a = super::range_place::along_side(l, *frame);
             (*frame, super::range_place::origin_at(l, a.y), l.dir, a.x)
@@ -1000,7 +1073,7 @@ fn pick(world: &mut World, which: &str) -> Result<Vec<Entity>, String> {
     all.into_iter().find(|(_, p)| p.number == n).map(|(e, _)| vec![e]).ok_or_else(|| format!("no prop {n} (`prop list`)"))
 }
 
-const USAGE: &str = "prop add <bottles|tin_cans|target_board> [distance m] | prop remove <n|all> | prop list | \
+const USAGE: &str = "prop add <bottles|tin_cans|target_board> [distance m] (none: under the crosshair) | prop remove <n|all> | prop list | \
     prop group <n> | prop reset <n|all> | prop look <n> [piece | shelf]";
 
 fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
@@ -1008,11 +1081,14 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
     match sub.as_str() {
         "add" => {
             let kind = a.get(1).ok_or(USAGE)?.clone();
-            let distance_m = match a.get(2) {
-                Some(d) => d.trim_end_matches('m').parse().map_err(|_| format!("not a distance: {d}"))?,
-                None => 10.0,
+            // No distance: under the crosshair; a distance: on that line.
+            let e = match a.get(2) {
+                Some(d) => {
+                    let distance_m = d.trim_end_matches('m').parse().map_err(|_| format!("not a distance: {d}"))?;
+                    spawn(world, &SpawnProp { spec: PropSpec { kind, distance_m }, by: None })?
+                }
+                None => spawn_at_aim(world, &kind, None)?,
             };
-            let e = spawn(world, &SpawnProp { spec: PropSpec { kind, distance_m }, by: None })?;
             let p = world.get::<Prop>(e).cloned().ok_or("gone")?;
             Ok(Some(format!("added {}", describe(world, e, &p).trim_start())))
         }

@@ -711,6 +711,8 @@ fn stage_lobby_scene(w: &mut World, args: &[String]) -> Result<(), String> {
         status: s,
         done: 0,
         total: 0,
+        step: chimera_net::prematch::NO_STEP,
+        permille: 0,
         ping_ms: ping,
         wins: 0,
         avatar: if id.is_some() { (name.len() as u8 * 5) % 32 } else { chimera_net::prematch::NO_AVATAR },

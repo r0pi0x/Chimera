@@ -25,6 +25,11 @@
 //!   (`NetDrawn`: `net::interp` writes their `Transform` and
 //!   `RenderedView` each frame) are left alone.
 //!
+//! - `GameTicks` is for a game whose own tick is slower than the
+//!   engine's (Halo's 30 Hz): values laid at the game's ticks, drawn
+//!   between them on the game's clock (`GameClock`); the game eases and
+//!   puts back its own (`halo_ce::game::eased`).
+//!
 //! Plugged in by the client (headless runs and tests without it see the
 //! simulation's values only); `Interpolation::enabled` is its cvar
 //! (`cl_interpolate`).
@@ -36,6 +41,9 @@ use bevy::{
     transform::systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms},
 };
 
+use chimera_core::later::Later;
+
+use super::anim::BonePose;
 use crate::core::{Intent, LocalPlayer, MovementState};
 
 /// Faster than anything moves in one tick (m/s; CS:S's sv_maxvelocity
@@ -384,6 +392,154 @@ fn ease_views(
     }
 }
 
+/// What a game sets at a tick of its own slower than the engine's (Halo's
+/// 30 Hz under a 64 Hz engine tick: it changes on only some engine ticks),
+/// drawn between the two values around the frame's time on that game's
+/// clock (`GameTicks::at`), as `Interpolated` draws the engine's ticks. A
+/// value is laid (`lay`) at its game tick (the count of the game's ticks
+/// since the run's start, `GameClock::laid`); the frame draws at
+/// `GameClock::drawn`, behind the latest by just enough that the next one
+/// is always in (`GameClock::lag`). The simulation never sees the blend:
+/// the game puts the latest back at the start of each engine tick
+/// (`GameTicks::latest`).
+#[derive(Clone, Debug)]
+pub struct GameTicks<T> {
+    /// The last few values, oldest first, with their game ticks.
+    laid: std::collections::VecDeque<(u64, T)>,
+}
+
+impl<T> Default for GameTicks<T> {
+    fn default() -> Self {
+        Self { laid: Default::default() }
+    }
+}
+
+/// How many values a `GameTicks` keeps: the drawn time is at most a game
+/// tick and an engine tick behind the latest.
+const KEPT: usize = 3;
+
+impl<T: Clone> GameTicks<T> {
+    /// `value` is the game's at its tick `tick`; a tick at or before one
+    /// laid (the run restarted, a prediction redone) replaces those after.
+    pub fn lay(&mut self, tick: u64, value: T) {
+        while self.laid.back().is_some_and(|(t, _)| *t >= tick) {
+            self.laid.pop_back();
+        }
+        self.laid.push_back((tick, value));
+        while self.laid.len() > KEPT {
+            self.laid.pop_front();
+        }
+    }
+
+    /// Forget what was laid: the next value is drawn as it is (a model
+    /// changed, a teleport).
+    pub fn clear(&mut self) {
+        self.laid.clear();
+    }
+
+    /// The latest value laid.
+    pub fn latest(&self) -> Option<&T> {
+        self.laid.back().map(|(_, v)| v)
+    }
+
+    /// The two values around game time `time` (in the game's ticks) and
+    /// how far between them (0: the first, 1: the second); before the
+    /// first laid, the first; after the latest, the latest.
+    pub fn around(&self, time: f64) -> Option<(&T, &T, f32)> {
+        let (first, last) = (self.laid.front()?, self.laid.back()?);
+        if time <= first.0 as f64 {
+            return Some((&first.1, &first.1, 1.0));
+        }
+        if time >= last.0 as f64 {
+            return Some((&last.1, &last.1, 1.0));
+        }
+        let (a, b) = self.laid.iter().zip(self.laid.iter().skip(1)).find(|(_, b)| time < b.0 as f64)?;
+        let f = ((time - a.0 as f64) / (b.0 - a.0) as f64).clamp(0.0, 1.0) as f32;
+        Some((&a.1, &b.1, f))
+    }
+}
+
+impl GameTicks<Transform> {
+    /// The transform drawn at game time `time`.
+    pub fn at(&self, time: f64) -> Option<Transform> {
+        let (a, b, f) = self.around(time)?;
+        Some(Transform {
+            translation: a.translation.lerp(b.translation, f),
+            rotation: a.rotation.slerp(b.rotation, f),
+            scale: a.scale.lerp(b.scale, f),
+        })
+    }
+}
+
+impl GameTicks<Later<Vec<BonePose>>> {
+    /// The pose drawn at game time `time`, each bone's rotation and
+    /// position between the two around it (`blend_poses`); made when first
+    /// drawn (`Later`).
+    pub fn at(&self, time: f64) -> Option<Later<Vec<BonePose>>> {
+        let (a, b, f) = self.around(time)?;
+        if f >= 1.0 || Later::ptr_eq(a, b) {
+            return Some(b.clone());
+        }
+        if f <= 0.0 {
+            return Some(a.clone());
+        }
+        let (a, b) = (a.clone(), b.clone());
+        Some(Later::new(move || blend_poses(&a, &b, f)))
+    }
+}
+
+/// Pose `a` toward `b` by `f`: each bone's rotation by the shorter arc,
+/// its position straight; poses of different skeletons give `b`.
+pub fn blend_poses(a: &[BonePose], b: &[BonePose], f: f32) -> Vec<BonePose> {
+    if a.len() != b.len() {
+        return b.to_vec();
+    }
+    a.iter().zip(b).map(|((qa, pa), (qb, pb))| (qa.slerp(*qb, f), pa.lerp(*pb, f))).collect()
+}
+
+/// A game's tick counted out of the engine's (`GameTicks`): `per_tick`
+/// game ticks an engine tick as a fraction (numerator, denominator; Halo's
+/// 30 Hz under a 64 Hz engine tick: 30 / 64), the engine's tick k ending
+/// at game time k x per_tick.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GameClock {
+    pub per_tick: (u128, u128),
+}
+
+impl GameClock {
+    /// The game ticks crossed by the end of engine tick `tick`: the game
+    /// tick of what the game laid then.
+    pub fn laid(&self, tick: u64) -> u64 {
+        let (n, d) = self.per_tick;
+        (u128::from(tick) * n / d.max(1)) as u64
+    }
+
+    /// How far behind the end of the latest engine tick, in game ticks, a
+    /// frame draws (`drawn`): the least that always has the next value in,
+    /// per_tick + 1 - gcd / d (1 at the game's own tick, which is the
+    /// engine's one tick behind; 1.44 for 30 Hz under 64 Hz).
+    pub fn lag(&self) -> f64 {
+        let (n, d) = self.per_tick;
+        let d = d.max(1);
+        let g = gcd(n, d);
+        (n as f64 + (d - g) as f64) / d as f64
+    }
+
+    /// The game time a frame draws, `overstep` (0 to 1) of an engine tick
+    /// after the end of engine tick `tick`.
+    pub fn drawn(&self, tick: u64, overstep: f32) -> f64 {
+        let (n, d) = self.per_tick;
+        (tick as f64 + f64::from(overstep.clamp(0.0, 1.0))) * n as f64 / d.max(1) as f64 - self.lag()
+    }
+}
+
+fn gcd(mut a: u128, mut b: u128) -> u128 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a.max(1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,5 +557,39 @@ mod tests {
         let m = EyeView::lerp(&a, &b, 0.5);
         // Halfway across 0 (2 pi), not back around through pi.
         assert!(wrap(m.yaw - (6.2 + (std::f32::consts::TAU + 0.1 - 6.2) / 2.0)).abs() < 1e-4, "{}", m.yaw);
+    }
+
+    #[test]
+    fn game_clock_lags_just_enough() {
+        // Halo's own tick: one tick behind, the overstep the blend.
+        let own = GameClock { per_tick: (30, 30) };
+        assert_eq!(own.lag(), 1.0);
+        assert_eq!(own.drawn(10, 0.25), 9.25);
+        // 30 Hz under 64 Hz: the next value is always laid.
+        let party = GameClock { per_tick: (30, 64) };
+        assert!((party.lag() - 1.4375).abs() < 1e-12);
+        for k in 1..2000u64 {
+            for o in [0.0, 0.5, 0.999] {
+                let t = party.drawn(k, o).max(0.0);
+                assert!(t.ceil() as u64 <= party.laid(k), "{k} {o}: {t}");
+            }
+        }
+    }
+
+    #[test]
+    fn game_ticks_blend_the_two_around() {
+        let mut g = GameTicks::default();
+        let p = |x: f32| Later::ready(vec![(Quat::from_rotation_y(x), Vec3::X * x)]);
+        g.lay(4, p(0.0));
+        g.lay(5, p(1.0));
+        let at = g.at(4.25).unwrap();
+        let (q, v) = at.get()[0];
+        assert!(q.dot(Quat::from_rotation_y(0.25)).abs() > 1.0 - 1e-6 && (v - Vec3::X * 0.25).length() < 1e-6);
+        assert!(Later::ptr_eq(&g.at(9.0).unwrap(), g.latest().unwrap()), "after the latest: the latest");
+        // A tick laid again (a run restarted) replaces what came after.
+        g.lay(5, p(2.0));
+        g.lay(3, p(3.0));
+        assert_eq!(g.around(0.0).map(|(_, _, f)| f), Some(1.0));
+        assert_eq!(g.latest().unwrap().get()[0].1, Vec3::X * 3.0);
     }
 }

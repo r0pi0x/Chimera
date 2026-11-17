@@ -661,6 +661,8 @@ pub mod esc_signal;
 #[cfg(feature = "present")]
 pub mod feedback_signal;
 #[cfg(feature = "present")]
+pub mod party_signal;
+#[cfg(feature = "present")]
 pub mod crash_signal;
 #[cfg(feature = "present")]
 pub mod settings;

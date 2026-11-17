@@ -10,7 +10,11 @@
 //! A map's physics prop keeps the light baked into its vertices while it
 //! rests (shared materials, so its draws batch) and becomes one of these
 //! the moment it has moved or turned (`PropLightHome`, `light_moved_props`):
-//! only static props stay as baked.
+//! only static props stay as baked. Both run after transform propagation
+//! (`PostUpdate`), so a model that comes this frame (a body built late, a
+//! held model) is sampled where it stands that frame: in `Update` it was
+//! sampled at the origin of its not yet propagated transform, or not at
+//! all, and drawn black (an unsampled material's own probe) for a frame.
 //!
 //! The probe light itself is not in the materials: each lit entity has a
 //! slot of the probe table (`ProbeTable`, one storage buffer every prop

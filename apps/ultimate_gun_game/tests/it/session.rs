@@ -19,6 +19,11 @@ use crate::parts::ugg;
 /// The automatic gun game with eight bots, on room to spawn.
 fn session() -> (Sim, Vec<Entity>) {
     let mut sim = ugg();
+    // From the start, not only for the measured matches: the first
+    // match's tasks (bodies, held models, the map's kit) landing on the
+    // tick the machine's load allows made the session's later counts
+    // differ from run to run under load.
+    sim.repeatable();
     for x in [-8.0, 8.0] {
         for z in [-25.0, -15.0, -5.0, 5.0] {
             sim.app.world_mut().spawn((SpawnPoint::default(), Transform::from_translation(Vec3::new(x, 1.0, z))));
@@ -124,8 +129,12 @@ fn a_session_of_matches_stops_making_tables() {
     }
     let (first, last) = ((rows[1].0, rows[1].1), (rows[7].0, rows[7].1));
     let what = chimera_core::metrics::census::command(sim.app.world_mut(), &["varies".to_string()]);
+    // The growth bound is 80 since the equal-games draw (backlog, "Ladder
+    // draw"): each ladder now deals every game's guns about equally, so
+    // the first matches meet more kinds of characters; the growth still
+    // levels off (+21, +13, +5, +10, +6, +6, +6 tables a match).
     assert!(
-        last.1 < 500 && last.1 - first.1 < 60,
+        last.1 < 500 && last.1 - first.1 < 80,
         "tables {} after a match, {} after seven more: a component that comes and goes on characters and isn't a sparse \
          set makes one for every combination, and every query matching characters steps over them all, for good. \
          Give it `#[component(storage = \"SparseSet\")]`. {what:?}",
@@ -156,11 +165,13 @@ fn a_session_of_matches_stops_making_tables() {
     // matches. `made_since` names what the window made. The count still moves with
     // which ladders the eight matches draw (the range, the balance table and
     // Halo's ninth gun changed the draws), so the bound keeps some room:
-    // 1,300 and 80.)
+    // 1,300 and 80; with the equal-games draw (backlog, "Ladder draw"),
+    // which reaches more games' guns in the first matches, 1,318 after
+    // eight, 40 since the fourth: 1,400 and 80.)
     let since = chimera_core::metrics::census::made_since(sim.app.world(), rows[3].0, 20);
     eprintln!("{since}");
     assert!(
-        last.0 < 1300 && last.0 - rows[3].0 < 80,
+        last.0 < 1400 && last.0 - rows[3].0 < 80,
         "{} archetypes after four matches, {} after eight: a part that comes and goes on characters, one at a time, makes \
          one for every combination of the others. Keep it on them from the spawn \
          (`chimera_core::character::CharacterPartsExt::on_every_character`), keep it on with a value meaning none, or put \

@@ -33,8 +33,9 @@
 //!   plate with an outline under the node, right-aligned: the name, a
 //!   note in `fg_3`, the key's cap.
 //!
-//! Known shortcuts: the party is you alone until parties exist (the "+"
-//! and Friends disabled); your avatar opens nothing yet (no Profile
+//! Known shortcuts: the "+" opens the party panel only with a hub account
+//! (`Party::invite`; parties: docs/plans/active/parties.md), Friends is
+//! disabled; your avatar opens nothing yet (no Profile
 //! screen), its tooltip names you.
 
 use bevy::{
@@ -172,6 +173,8 @@ pub struct Member {
 pub struct Party {
     pub members: Vec<Member>,
     pub max: u32,
+    /// The "+" is live (parties available: a hub account); else disabled.
+    pub invite: bool,
 }
 
 impl Default for Party {
@@ -185,6 +188,7 @@ impl Default for Party {
                 lead: true,
             }],
             max: 8,
+            invite: false,
         }
     }
 }
@@ -206,6 +210,8 @@ pub struct Bar<'a> {
     /// You first, then by join order.
     pub party: &'a [Member],
     pub party_max: u32,
+    /// The "+" is live (`Party::invite`).
+    pub invite: bool,
     /// The tile whose overlay is open (white).
     pub open: Option<ShellTile>,
 }
@@ -301,8 +307,10 @@ pub fn bar(ui: &Ui, c: &mut Commands, frame: Entity, images: &mut Assets<Image>,
         avatar::spawn(ui, c, cell, images, icons, m.face, m.marks, l.tile);
         avatar::spawn_strip(ui, c, cell, images, icons, m.state, m.lead && b.party.len() > 1, l.tile);
     }
-    // The invite slot (no parties yet: disabled).
-    let plus = tile(ui, c, party, images, icons, "plus", 0.34, ShellTile::Invite, Tip::new("Invite").note(COMING_SOON), true, false, i32::from(!b.party.is_empty()));
+    // The invite slot: the party panel (provisional), disabled without a
+    // hub account.
+    let tip = if b.invite { Tip::new("Party").note("Make a party, invite with its code, or join one") } else { Tip::new("Party").note("Sign in to a hub first") };
+    let plus = tile(ui, c, party, images, icons, "plus", 0.34, ShellTile::Invite, tip, !b.invite, b.open == Some(ShellTile::Invite), i32::from(!b.party.is_empty()));
     parts.tiles.push((ShellTile::Invite, plus));
     let sys = rack(c, right);
     for (k, key, tip, dis) in [

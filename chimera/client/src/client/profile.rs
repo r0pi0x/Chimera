@@ -12,7 +12,11 @@
 //! - **The edge strip**: in the lobby, loaded is Ready (white), still
 //!   downloading or loading a hollow strip filling with the share done; in
 //!   a match, cobalt; else none.
-//! - **The party** is you alone (the leader) until parties exist.
+//! - **The party**: you first, then the hub party's others in join
+//!   order (`chimera_net::net::party::PartyClient`; offline ones away, on a
+//!   server in-match); you alone without one. The "+" is live with a
+//!   hub account (`Party::invite`). Your name and avatar go to the party's
+//!   hub (`PartyMe`).
 //!
 //! `Party` is written only when it changes, so screens rebuild on it.
 
@@ -159,23 +163,44 @@ fn local_status(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_party(
     setting: Res<AvatarSetting>,
     presence: Res<Presence>,
     status: Res<LocalStatus>,
     net: Option<Res<crate::net::NetSettings>>,
+    hub_party: Option<Res<chimera_net::net::party::PartyClient>>,
+    mut party_me: ResMut<chimera_net::net::party::PartyMe>,
     mut party: ResMut<Party>,
 ) {
     let name = net.map_or_else(|| "Player".to_string(), |n| if n.name.is_empty() { "Player".into() } else { n.name.clone() });
     let look = setting.look().unwrap_or_else(|| AvatarLook::for_name(&name));
+    // Who we are to the party's hub.
+    let who = chimera_net::net::party::Me { name: name.clone(), avatar: setting.look().map_or(255, |l| l.byte()) };
+    if party_me.0 != who {
+        party_me.0 = who;
+    }
+    let view = hub_party.as_deref().and_then(|p| p.view.as_ref());
     let me = Member {
         name,
         face: Face::Look(look),
         marks: AvatarMarks { you: true, away: presence.unfocused, idle: presence.idle },
         state: status.0,
-        lead: true,
+        lead: view.is_none_or(|v| v.leading()),
     };
-    let want = Party { members: vec![me], max: party.max };
+    let mut members = vec![me];
+    // The party's others, in join order (the hub's), offline marked away.
+    for m in view.map(|v| v.members.iter().filter(|m| m.id != v.you).collect::<Vec<_>>()).unwrap_or_default() {
+        let look = AvatarLook::from_byte(m.avatar).unwrap_or_else(|| AvatarLook::for_name(&m.name));
+        members.push(Member {
+            name: m.name.clone(),
+            face: Face::Look(look),
+            marks: AvatarMarks { you: false, away: !m.online, idle: false },
+            state: if m.at.is_some() { EdgeState::InMatch } else { EdgeState::Idle },
+            lead: m.leader,
+        });
+    }
+    let want = Party { members, max: party.max, invite: hub_party.is_some_and(|p| p.available()) };
     if *party != want {
         *party = want;
     }

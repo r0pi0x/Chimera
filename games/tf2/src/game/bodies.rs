@@ -37,9 +37,13 @@
 //! models of `maps::add_guns`, keyed by the gun: `player_anim::
 //! hold_weapons`).
 //!
-//! Known shortcuts: a class whose set the match didn't offer (a gun
-//! handed out later, the sandbox's `rung`) wears another TF2 body until
-//! the next map load; body groups stay at their first choice (the Soldier's
+//! A class whose set the match didn't offer (a gun handed out later, the
+//! sandbox's `rung` or target picker) has its body loaded when it is worn,
+//! on a task, wearing another TF2 body until it is in; a body built while
+//! files of its look were late is built again when they arrive
+//! (`late_bodies`).
+//!
+//! Known shortcuts: body groups stay at their first choice (the Soldier's
 //! `rocket` group is never shown in his hand during a reload, 5's
 //! event); no death animations or gibs (9).
 
@@ -248,6 +252,9 @@ pub struct Tf2BodiesPlugin;
 impl Plugin for Tf2BodiesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Classes>().add_systems(Update, wear_bodies);
+        // Bodies that come late: a class picked mid-match, a body built
+        // again when files of its look arrive.
+        super::late_bodies::add(app);
         // The match's class sets in its asset offer (once per app).
         let mut hooks = app.world_mut().get_resource_or_init::<chimera_net::net::assets::AssetHooks>();
         if !hooks.0.contains(&(asset_names as fn(&World) -> _)) {

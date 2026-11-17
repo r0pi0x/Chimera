@@ -2,7 +2,9 @@
 //! "moved props keep their lighting"): at rest it wears the light baked into
 //! its vertices, shared materials and all; moved or turned, its meshes take
 //! own materials with the light field's probe at its centre (shaders.md 4,
-//! `probe_lit`). Static props stay baked.
+//! `probe_lit`). Static props stay baked. A moving model that comes in
+//! play (a body built late, a held model) is lit where it stands in the
+//! frame it comes, not from the origin or the black of no sample.
 
 use std::sync::Arc;
 
@@ -10,7 +12,8 @@ use bevy::prelude::*;
 use chimera_present::{
     MapPlugin,
     render::{
-        probe_lit::ProbeTable, prop_material::PropMaterial, rope_material::RopeMaterial, shadows::ShadowMaterial, sprite_material::SpriteMaterial,
+        probe_lit::{ProbeLit, ProbeTable},
+        prop_material::PropMaterial, rope_material::RopeMaterial, shadows::ShadowMaterial, sprite_material::SpriteMaterial,
         world_material::WorldMaterial,
     },
 };
@@ -174,6 +177,46 @@ fn moving_on_changes_the_probe_table_not_the_material() {
     }
     let changes = sim.app.world().resource::<Modified>().0;
     assert_eq!(changes, 0, "no prop material changed while it moved");
+}
+
+/// A body built late (a class downloaded on demand) or a held model comes
+/// with its own materials under a character that already stands somewhere:
+/// in the frame it comes it is lit by the light where it stands (its
+/// transform propagated first), not by the origin's light from a
+/// transform not yet propagated, nor the black of a material not yet
+/// pointed at its sample.
+#[test]
+fn a_model_that_comes_is_lit_where_it_stands_that_frame() {
+    let mut sim = start(true);
+    sim.ticks(2);
+    step(&mut sim);
+    let world = sim.app.world_mut();
+    let material = world
+        .resource_mut::<Assets<PropMaterial>>()
+        .add(PropMaterial { params: chimera_present::render::prop_material::PropParams { probe: 1.0, ..default() }, ..default() });
+    let character = world.spawn((Transform::from_xyz(3.0, 4.0, 0.0), Visibility::default())).id();
+    step(&mut sim);
+    // The body arrives under the character in a frame's `Update`, by
+    // commands (as `attach_bodies` adds it).
+    #[derive(Resource)]
+    struct Arrives(Option<(Entity, Handle<PropMaterial>)>);
+    sim.app.insert_resource(Arrives(Some((character, material.clone())))).add_systems(
+        Update,
+        |mut arrives: ResMut<Arrives>, mut commands: Commands| {
+            if let Some((character, material)) = arrives.0.take() {
+                commands.spawn((
+                    Transform::default(),
+                    Visibility::Inherited,
+                    ChildOf(character),
+                    ProbeLit::new(vec![material], Vec3::Y * 0.9),
+                ));
+            }
+        },
+    );
+    sim.app.update();
+    let (probe, light) = lit(&sim, &material);
+    assert_eq!(probe, 1.0);
+    assert!((light - 4.9).abs() < 1e-3, "the light at its centre, 4.9 m up, this frame: {light}");
 }
 
 #[test]

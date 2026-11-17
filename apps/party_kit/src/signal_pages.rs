@@ -1238,10 +1238,10 @@ fn keys(
     mut p: ResMut<SignalPages>,
     mut out: MessageWriter<MainMenuAction>,
     mut cues: MessageWriter<UiCue>,
-    picker: Res<crate::maps_picker::MapsPicker>,
+    (picker, party): (Res<crate::maps_picker::MapsPicker>, Option<Res<crate::party_signal::PartyPanel>>),
 ) {
     let (Some(page), Some(keys)) = (p.up, keys) else { return };
-    if console.is_some_and(|c| c.open) || picker.took_keys {
+    if console.is_some_and(|c| c.open) || picker.took_keys || party.is_some_and(|p| p.open) {
         return;
     }
     let k = |c: KeyCode| keys.just_pressed(c);
@@ -1584,7 +1584,7 @@ fn spawn(
         let bar = chimera_ui::shell::Bar {
             left: chimera_ui::shell::Left::Crumb { parent: "Main menu", title },
             party: &cx.party.members,
-            party_max: cx.party.max,
+            party_max: cx.party.max, invite: cx.party.invite,
             open: None,
         };
         let parts = chimera_ui::shell::bar(ui, c, frame, images, icons, &bar);

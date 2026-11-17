@@ -71,6 +71,8 @@
 //!   fits the pill to the map's envelope (`body`, `envelope`);
 //! - `view::displays`: the counter, compass and gauges on the guns
 //!   (weapons.md 18);
+//! - `eased`: the 30 Hz poses and objects drawn between their ticks at
+//!   the frame rate (display only);
 //! - `ticks`: how many 30 Hz Halo ticks an engine tick advances, exactly,
 //!   at any tick rate (`halo_ticks`);
 //! - `audio`: looping sounds, the level's background sound, environment
@@ -92,6 +94,7 @@ pub mod body;
 pub mod campaign;
 pub mod cross_game;
 pub mod damage;
+pub mod eased;
 pub mod fx;
 pub mod maps;
 pub mod mount;

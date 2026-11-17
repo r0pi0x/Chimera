@@ -110,6 +110,9 @@ the user's go-ahead: no Actions runs unless asked.
   - Each player's lobby row shows their progress (downloading %, loading, ready), reported to the server and shared, which needs a network-version bump.
   - Start waits for everyone ready, or the host's timeout.
   - The loading screen's bar must reflect the real loading stages (downloads in bytes, map load, model builds, physics and navigation). Today it doesn't move. Show only the main bar when there's a single stage.
+  - **Built (2026-11-17):** a load's real stages (`chimera_net::net::load_stages`: the download in bytes, the map's load, building models, physics and navigation, from the spawn's and the settling's counts, `map::loading::LoadWork`) on both loading screens; each player's stage and share in their lobby row (net67); the lobby begins at a match's change to the next map (`prematch::begin_between`), with the map loading under it on every machine (its files were already fetched ahead during the match-end screen); the match's lobby then starts when everyone has loaded or after the host's longest wait (`mp_lobby_max_wait`, on the Host page) counted from the match being ready.
+  - **Left:** loading the next map's data ahead during the match-end screen (before the change); a listen host's own row on other machines pauses while its simulation waits on its spawn (its own screen shows it live).
+  - **Plan:** [plans/active/lobby-between-maps.md](plans/active/lobby-between-maps.md).
 
 - **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.
   - It connects to a master server (the hub) by an identifier or address, since the hub manages the accounts.
@@ -133,7 +136,7 @@ the user's go-ahead: no Actions runs unless asked.
   - **Built (2026-11-16):** `chimera_assets::units` (the downloads: queue, budget, states) and `chimera_net::net::units` (`request_unit`, `retry_unit`, `UnitProgress` keyed by (game, set) with `Absent { size }`, `Queued { position }`, `Fetching`, `Ready`, `Failed { reason }`, `UnitChanged`, `UnitNeeds` hooks (TF2's class bodies), the no-fetch-in-match guard, `chimera:unit_rate`). The Change gun view's tiles read it (`client::sandbox::units::bridge_units`); a sandbox's offer names only its first rung's gun (`minigame_net::offered_weapons`). A server fetches a picked gun into its own store the same way (`ServerFiles`).
   - **Mechanics (Halo session):** the rung switch waits for Ready: `chimera_sim::minigame::gun_files::gun_ready(world, weapon id)` (asks for the gun's units when missing, true once they are here), or `chimera_net::net::units::{gun_units, want_units, units_ready}`.
 
-- **Ladder draw: games dealt equally, soft gun recency (user, 2026-11-15):** today `chimera_sim::minigame::auto::ladder` weights a game's guns by 1/√count, so a game's share grows as √(its gun count), and every game gets at least one rung. With today's weapon files that's roughly Combat Arms 32 %, CS:S 23 %, HL2:DM and TF2 16 % each, Halo 13 %.
+- **Ladder draw: games dealt equally, soft gun recency (user, 2026-11-15; built 2026-11-17, settings in `[draw]` of `chimera/sim/data/power_curve.toml`, `auto::ladder_with`, `auto::Recency`):** today `chimera_sim::minigame::auto::ladder` weights a game's guns by 1/√count, so a game's share grows as √(its gun count), and every game gets at least one rung. With today's weapon files that's roughly Combat Arms 32 %, CS:S 23 %, HL2:DM and TF2 16 % each, Halo 13 %.
   - **Which game:** shuffle the games and deal one per rung until each has had a turn, then reshuffle. Every game gets an equal share however many guns it has. No guaranteed rung per game, since that can't hold once there are more games than rungs; then each match gets a different random subset. No hard rule against runs.
   - **Which gun within the game:** random, with a soft, server-session recency weight. A gun drawn recently is less likely and recovers over the next matches, but is never excluded. It applies within a game only, never to the game choice, so games with few guns (Halo) keep their full share and only cycle their guns sooner. The memory resets when the server restarts.
   - **Unchanged:** the power curve still orders the drawn guns weakest first, and the grenade and melee bands keep their rules.
@@ -183,6 +186,7 @@ the user's go-ahead: no Actions runs unless asked.
     - what happens when the leader goes offline, and how leadership passes;
     - how a party follows its leader when the server is full;
     - the hub's party protocol and how often it heartbeats.
+  - **Session-only parties** (the first step, 2026-11-17): [plans/active/parties.md](plans/active/parties.md).
   - Builds on hub phases S2–S4 and the Signal r8 shell's tiles. Related: sprays, profiles and stats, ranks per game.
 
 - **Sprays (user, 2026-11-15; needs a design first):** players put a picture on a wall with a key, as in TF2, CS:S, HL2:DM and the other Source games: one spray per life or on a cooldown, decaling the surface looked at, visible to everyone and fading out when replaced.
@@ -2863,6 +2867,12 @@ docs/plans/active/sound.md.
   Halo's gun animations and related motion run at its 30 Hz tick and look
   stepped on high-refresh screens. Interpolate between the 30 Hz poses
   (bones, view model, projectiles) for display, simulation unchanged.
+  **Done 2026-11-17** (`halo_ce::game::eased` on the engine's
+  `map::interp::GameTicks`): the body's and view model's poses, the shots
+  in flight and the local grenades drawn between Halo ticks; tested on
+  synthetic animation data, not yet looked at on the disc's models
+  (confirm in a playtest). Still at 30 Hz: corpses, a campaign body's own
+  arms, vehicles.
 
 - **Halo HUD resolution (user, 2026-11-17).** Done (2026-11-17), left below for the generated-asset option: the opt-in scaling setting `halo_ce:hud_filter` (Options > Video "Halo HUD scaling": Original, the default; Sharp, nearest inside each texel with a one-pixel linear seam; Smooth+sharpen, an unsharp mask; `games/halo_ce/src/ui/hud/material.rs`, hud.wesl). Still open: upscaled HUD bitmaps as a generated asset set. Original text: The HUD's bitmaps are the
   original's, authored for 640x480, so they look soft scaled to 1080p and
