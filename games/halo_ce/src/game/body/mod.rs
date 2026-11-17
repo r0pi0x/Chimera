@@ -219,6 +219,7 @@ pub fn animate(
         Option<&super::weapons::HaloHands>,
         Option<&super::vitality::Vitality>,
         Option<&super::campaign::BodyKind>,
+        Has<crate::core::Carried>,
     )>,
     (tables, data): (Option<Res<super::campaign::BodyTables>>, Option<Res<super::movement::MovementData>>),
     mut fired: MessageReader<super::weapons::HaloFired>,
@@ -238,7 +239,7 @@ pub fn animate(
             &builtin
         }
     };
-    for (e, body, intent, velocity, state, health, label, inventory, halo, animator, sim, hands, vitality, kind) in &mut bodies {
+    for (e, body, intent, velocity, state, health, label, inventory, halo, animator, sim, hands, vitality, kind, carried) in &mut bodies {
         // The body's own landing and run numbers (`campaign::movement_of`).
         let table = super::campaign::movement_of(spartan, tables.as_deref(), kind);
         let Some(m) = models.0.get(body.0).filter(|m| m.game == Some(GAME)) else {
@@ -273,10 +274,14 @@ pub fn animate(
         }
         let armed = inventory.is_some_and(|i| i.active.is_some());
         let label = label_of(&set, label, armed);
-        let mut i = inputs_for(table, intent, velocity.0, state);
+        // A carried body (a vehicle's rider) is still in its seat: no
+        // move of its own, so no running legs and no steps.
+        let velocity = if carried { Vec3::ZERO } else { velocity.0 };
+        let mut i = inputs_for(table, intent, velocity, state);
+        i.grounded |= carried;
         // A campaign body's legs keep up with its ground speed (`Inputs::rate`).
         i.own_speeds = kind.and_then(|k| tables.as_deref()?.animation.get(k)).map(|a| a.array());
-        i.speed = Vec2::new(velocity.0.x, velocity.0.z).length() / METERS_PER_UNIT;
+        i.speed = Vec2::new(velocity.x, velocity.z).length() / METERS_PER_UNIT;
         i.throw = hands.and_then(|h| h.throw.frame).map(|f| f.max(0) as usize);
         // A hit since the last tick seen here flinches it (`flinch`).
         if let Some(v) = vitality {
