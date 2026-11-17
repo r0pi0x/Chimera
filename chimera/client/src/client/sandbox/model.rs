@@ -483,6 +483,9 @@ pub struct GunView {
     /// Global tags ticked (AND).
     pub tags: BTreeSet<Tag>,
     pub search: String,
+    /// The search field has the keyboard (`/`, a click, or Enter with
+    /// nothing under the cursor); letters type only then.
+    pub search_focus: bool,
     /// The cursor's gun (an id).
     pub selected: Option<String>,
     /// The tag popover is open.

@@ -379,3 +379,8 @@ fn a_marine_is_given_one_of_its_voices() {
     let drawn: std::collections::BTreeSet<u8> = (0..64).map(|s| draw(s).0).collect();
     assert_eq!(drawn.len(), 4, "every voice comes up: {drawn:?}");
 }
+
+#[test]
+fn campaign_bodies_are_on_by_default() {
+    assert!(halo_ce::game::campaign::CampaignBodies::default().0, "the host setting defaults to 1");
+}

@@ -567,7 +567,7 @@ backlog.
   its speed differs, halfway between the Spartan's and its own (a blend
   in data/campaign.toml: the Elite at 107.5 %), with any movement number
   overridable there; its legs play at the ground speed. The host setting
-  `halo_ce:campaign_bodies` (off by default) draws it on the plasma
+  `halo_ce:campaign_bodies` (on by default) draws it on the plasma
   rifle and needler rungs by data/campaign.toml; `halo_ce:body` forces
   one. Next: the voice, the Elite's hand marker for the held gun.
   Stage two (on main): the Grunt, Jackal and Marine, the voices, each
@@ -868,7 +868,7 @@ backlog.
   death and scream lines, its gun in its own hand, its unit and voices as
   generated asset sets cut from the campaign maps (not published yet),
   drawn by weights per gun with the host's `halo_ce:campaign_bodies 1`
-  (off by default), and offered as the sandbox's practice targets. The
+  (on by default), and offered as the sandbox's practice targets. The
   owner's movement decision: the player's mover with per-character
   numbers in data, aim never limited. With it landed: the arena slice A1
   (net64), the scopes' edge blur, the engine's worn-first build of late

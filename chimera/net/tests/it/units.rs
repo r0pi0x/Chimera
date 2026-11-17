@@ -386,7 +386,7 @@ fn in_a_normal_match_the_guard_refuses_an_on_demand_unit() {
     let svc = Fixture::new("guard");
     let mut sim = sim(&svc, Some(false), 0);
     let e = units::request_unit(sim.server.app.world_mut(), GAME, "weapon/a").expect_err("refused in a match");
-    assert!(e.contains("during a match"), "{e}");
+    assert!(e.contains("outside the sandbox"), "{e}");
     sim.ticks(5);
     assert_eq!(state(&sim, "weapon/a"), None, "nothing asked for");
     assert!(!sim.server.app.world().contains_resource::<UnitDownloads>(), "nothing fetching");
@@ -394,7 +394,37 @@ fn in_a_normal_match_the_guard_refuses_an_on_demand_unit() {
     units::request_unit(sim.server.app.world_mut(), GAME, "voice/grunt").expect("deferred");
     assert!(until(&mut sim, 30.0, |s| state(s, "voice/grunt") == Some(UnitState::Ready)));
     // The sandbox allows it.
+    // The menu (no match) is refused too.
+    let svc3 = Fixture::new("guard_menu");
+    let mut menu = self::sim(&svc3, None, 0);
+    units::request_unit(menu.server.app.world_mut(), GAME, "weapon/a").expect_err("refused in the menu");
+    menu.ticks(2);
     let svc2 = Fixture::new("guard_sandbox");
     let mut sandbox = self::sim(&svc2, Some(true), 0);
     units::request_unit(sandbox.server.app.world_mut(), GAME, "weapon/a").expect("allowed in the sandbox");
+}
+
+#[test]
+fn leaving_the_sandbox_empties_the_queue_and_starts_nothing() {
+    let svc = Fixture::new("leave");
+    let mut sim = sim(&svc, Some(true), 1);
+    for set in ["weapon/a", "weapon/b", "weapon/c"] {
+        units::request_unit(sim.server.app.world_mut(), GAME, set).expect("allowed in the sandbox");
+    }
+    sim.ticks(2);
+    let queued = |s: &NetSim| s.server.app.world().resource::<UnitDownloads>().downloads.queued();
+    assert!(!queued(&sim).is_empty(), "units wait in the sandbox");
+    // The sandbox ends (the match goes).
+    sim.server.app.world_mut().remove_resource::<minigame::ActiveMinigame>();
+    sim.ticks(3);
+    assert!(queued(&sim).is_empty(), "the queue is empty after leaving");
+    let waiting = |s: &NetSim| {
+        ["weapon/a", "weapon/b", "weapon/c"].iter().filter(|k| matches!(state(s, k), Some(UnitState::Queued { .. }))).count()
+    };
+    assert_eq!(waiting(&sim), 0, "no unit stays queued");
+    // Nothing new starts: at most the one that was already running moves.
+    sim.ticks(30);
+    let fetching = ["weapon/a", "weapon/b", "weapon/c"].iter().filter(|k| matches!(state(&sim, k), Some(UnitState::Fetching))).count();
+    assert!(fetching <= 1, "only the running fetch goes on");
+    assert!(queued(&sim).is_empty());
 }

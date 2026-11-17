@@ -1395,6 +1395,13 @@ through small interfaces, with fakes for the stagings.
   or opens on a header, `\\` (the physical key) folds the class and
   opens it back on the same tile, I the large model, R retries a failed
   download (both before anything is typed), every other letter finds.
+  **Superseded (2026-11-17):** letters no longer go to the search until
+  it is focused (`/`, a click on the field, or Enter with nothing under
+  the cursor); B opens Change gun and closes it again; I (model) and R
+  (retry) work when the field isn't focused; Enter on a tile switches,
+  Enter in the field lets go of it (the cursor is on the first match);
+  Esc leaves the field, then clears the search, then closes the view.
+  The key strip lists `/` Search, B Close.
 - **Bridged** to the mechanics (`minigame::targets`, `props`): targets,
   props and their groups, kills and hits, the looked-at target, blasts.
 - **Polish (2026-11-16)**: the main menu's Sandbox starts on the range;

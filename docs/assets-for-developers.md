@@ -162,9 +162,10 @@ its unit (`weapon/<id>`; a Halo gun's is Halo's `base`) with what it needs
 (its game's `base`, `players` and `common`, TF2's class body) in the
 background at `chimera:unit_rate` KB/s (4000; 0: no cap), while you keep
 the gun in hand. `unit_fetch <game> <set>` on the console asks for one,
-`unit_fetch` alone lists them. During a normal match nothing new is
-fetched this way (the no-fetch-in-match rule; voices, `voice/<id>`, are
-the exception); the match's files come with the join as before. A server
+`unit_fetch` alone lists them. Only the sandbox fetches this way (the
+no-fetch-in-match rule: not in a match, not in the menu; voices,
+`voice/<id>`, are the exception), and leaving the sandbox unqueues what
+was waiting (the fetch already running ends by itself); the match's files come with the join as before. A server
 fetches a picked gun into its own store the same way
 (`chimera_net::net::units`).
 

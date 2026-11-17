@@ -9,7 +9,7 @@
 //!   match: the ratio is today's for every pair (docs/plans/active/
 //!   party-balance.md's appendix: Halo's guns 0.75 on others, HL2:DM's 1.5
 //!   on every body, every gun 1.5 on a Halo body, 1 otherwise), and Halo
-//!   against Halo is the same in both.
+//!   on Halo is 0.75 x 1.5 with the table, the spec's with it off.
 //! - **The switch**: `mp_balance 0` on a server is put in force at the next
 //!   match's start (the status says so meanwhile), and a client has the
 //!   server's value (the replicated cvars).
@@ -47,8 +47,8 @@ const GUNS: [&str; 5] = [
 const GAMES: [&str; 5] = ["cs_source", "hl2dm", "tf2", "combat_arms", "halo_ce"];
 
 /// Today's scale of a hit by `a`'s gun on `v`'s body with the table on
-/// (the appendix; a raw match is 1). Halo against Halo: unchanged, checked
-/// as the same in both.
+/// (the appendix; a raw match is 1): outgoing times incoming, the same
+/// game included (Halo on Halo 1.125).
 fn today(a: &str, v: &str) -> f32 {
     let out = match a {
         "halo_ce" => 0.75,
@@ -148,7 +148,7 @@ fn pairs() -> Vec<(usize, usize, f32, f32, f32)> {
 }
 
 /// Today's numbers give today's results for every pair; a raw match is
-/// each game's own number; Halo against Halo is the same in both.
+/// each game's own number (Halo on Halo included: 1.125 with the table).
 #[test]
 fn every_pair_takes_today_s_scale_and_raw_its_own_game_s() {
     let rows = pairs();
@@ -162,10 +162,6 @@ fn every_pair_takes_today_s_scale_and_raw_its_own_game_s() {
             // other bodies have their rules: whole points on HL2:DM's and
             // TF2's, Combat Arms' gear.)
             assert!((raw - own).abs() < 0.011, "{a} on {vg}: raw {raw} own {own}");
-        }
-        if a == "halo_ce" && vg == "halo_ce" {
-            assert!((on - raw).abs() < 1e-5, "Halo on Halo: {on} {raw}");
-            continue;
         }
         let want = today(a, vg);
         assert_eq!(table.pair(a, Some(vg), None), want, "{a} on {vg}: the table's");

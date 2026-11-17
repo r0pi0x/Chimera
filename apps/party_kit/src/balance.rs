@@ -1,11 +1,10 @@
 //! The party's cross-game balance (data/party_balance.toml): one table of
 //! every number that applies only where games meet (each game's
-//! `outgoing` and `incoming`, a body's own incoming by its id, the pair
-//! exceptions), read into the engine's `chimera_sim::weapon::balance::
+//! `outgoing` and `incoming`, a body's own incoming by its id), read into the engine's `chimera_sim::weapon::balance::
 //! Balance`, which the armour step applies to every weapon hit, in one
-//! place, and the ladder's power curve counts (its outgoing column). Halo
-//! against Halo is never changed (the same game on both sides is 1, and
-//! Halo's own hits never reach the table). Tuning is by playtests: see
+//! place, and the ladder's power curve counts (its outgoing column). The same
+//! game on both sides counts like any pair (HL2:DM's 1.5 on its own
+//! bodies, Halo on Halo 1.125); no exceptions. Tuning is by playtests: see
 //! docs/plans/active/party-balance.md, "The table and the switch".
 //!
 //! **The host's switch** `mp_balance` (1, the default: the table; 0: a
