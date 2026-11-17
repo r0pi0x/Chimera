@@ -213,6 +213,24 @@ fn one_ragdoll_kept_until_the_next_death() {
     assert_ne!(second[0].0, first[0].0);
 }
 
+/// HL2:DM's ragdoll has no timer either (specs/hl2dm/player_models.md
+/// 10.3): it stays past its owner's respawn for thousands of ticks, and the
+/// map clean-up of `mp_restartgame` (a round restart) removes it (case 43).
+#[test]
+fn a_ragdoll_has_no_timer_and_goes_at_a_round_restart() {
+    let (mut sim, p) = sim();
+    sim.app.world_mut().init_resource::<chimera_core::core::RoundRestarts>();
+    sim.ticks(3);
+    kill(&mut sim, p, 666.57);
+    sim.ticks(5);
+    sim.app.world_mut().get_mut::<Health>(p).unwrap().current = 1.0;
+    sim.ticks(3600);
+    assert_eq!(ragdolls(&mut sim).len(), 1, "no timer");
+    sim.app.world_mut().resource_mut::<chimera_core::core::RoundRestarts>().0 += 1;
+    sim.ticks(2);
+    assert!(ragdolls(&mut sim).is_empty());
+}
+
 /// The energy ball's kill: the same hit as `kill`, by the ball (an AR2's
 /// flyer, crush).
 fn kill_by_ball(sim: &mut Sim, p: Entity) {

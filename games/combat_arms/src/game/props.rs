@@ -39,7 +39,7 @@ use super::{
     model::{self, LoadedModel},
     render_style,
 };
-use crate::map::{LightProbe, MapData, MapEntity, MapProp, PropRig, PropSequence, PropSolid};
+use crate::map::{LightProbe, MapData, MapEntity, MapProp, PosedByGame, PropRig, PropSequence, PropSolid};
 
 /// Animated props start playing their first animation.
 pub struct CaPropsPlugin;
@@ -51,8 +51,12 @@ impl Plugin for CaPropsPlugin {
 }
 
 /// Give each animated prop without one a `PropSequence` playing its first
-/// sequence (LithTech props loop their animation from the start).
-pub fn start_props(props: Query<(Entity, &PropRig), Without<PropSequence>>, mut commands: Commands) {
+/// sequence (LithTech props loop their animation from the start); not a
+/// prop its game poses itself (`PosedByGame`: a party app's Halo vehicle).
+pub fn start_props(
+    props: Query<(Entity, &PropRig), (Without<PropSequence>, Without<PosedByGame>)>,
+    mut commands: Commands,
+) {
     for (e, rig) in &props {
         let Some(first) = rig.animator.set.sequences.first() else { continue };
         commands.entity(e).insert(PropSequence {

@@ -1784,7 +1784,7 @@ fn footsteps(
         Option<&mut OwnSteps>,
         Option<&mut OthersSteps>,
         (Option<&super::perks::CaPerkEffects>, Option<&Team>, Option<&Selection>, Option<&GameIdentity>),
-    )>,
+    ), crate::core::Afoot>,
     listener: Query<(&super::perks::CaPerkEffects, Option<&Team>), With<LocalPlayer>>,
     ca: Option<Res<super::data::CaData>>,
     grid: Ground,

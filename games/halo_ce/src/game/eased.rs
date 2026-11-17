@@ -23,6 +23,7 @@
 //! Halo ticks, `GameClock::lag` behind (one tick at Halo's own 30 Hz, the
 //! engine's own lag; 1.44 Halo ticks under a 64 Hz engine tick, so the
 //! next is always in): the shots shown in flight (`fx::shots::HaloShown`),
+//! the vehicles (`vehicles::drawn_on_halos_clock`),
 //! off a server (whose replication reads the transform) the grenades
 //! (`fx::objects::show_grenades`), and a corpse's fall. A vehicle's wheel
 //! spin, steering and suspension (`vehicles::look::VehicleLook::drawn`)
@@ -41,11 +42,14 @@
 //! (`drawing`), and only when first drawn. `cl_interpolate 0` draws the
 //! latest (stepping at 30 Hz, Halo's own look, for A/B).
 //!
-//! Known shortcuts: a vehicle's own transform (and its riders') is the
-//! engine's `Interpolated`, eased between engine ticks: smooth at Halo's
-//! own 30 Hz, stepping on the engine ticks without a Halo tick under a
-//! party app's 64 Hz (the riders and the seat camera would have to move to
-//! Halo's clock with it).
+//! A vehicle where it is simulated is one of these objects too (its
+//! `HaloEased` with the engine's `DrawnByGame`, so the engine's
+//! `Interpolated` neither eases nor restores it): smooth under a party
+//! app's 64 Hz engine tick, where easing engine ticks stepped on those
+//! without a Halo tick. Its riders are drawn with it by the engine
+//! (`core::Carried`, `map::interp`'s `ease_carried`), and the local
+//! rider's third-person seat camera is made each frame from the vehicle
+//! as drawn (`vehicles::ride_drawn`).
 
 use bevy::prelude::*;
 use chimera_core::later::Later;

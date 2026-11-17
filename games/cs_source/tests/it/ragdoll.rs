@@ -255,6 +255,24 @@ fn the_ragdoll_goes_when_its_owner_lives_again() {
     assert!(sim.app.world().get::<Ragdolled>(p).is_none());
 }
 
+/// CS:S's bodies have no fade timer (specs/cs_source/ragdolls.md 1.4, 6.4):
+/// they stay for as long as they are not removed, and go at once at the
+/// next round restart.
+#[test]
+fn a_ragdoll_has_no_timer_and_goes_at_a_round_restart() {
+    let (mut sim, p) = sim();
+    sim.app.world_mut().init_resource::<crate::stack::core::RoundRestarts>();
+    sim.ticks(3);
+    kill(&mut sim, p, Hitgroup::Chest, Vec3::new(0.0, 1.2, 0.0), Vec3::X);
+    // Thousands of ticks (the party's own limit is the respawn): still there.
+    sim.ticks(3600);
+    assert!(ragdoll(&mut sim).is_some(), "no timer");
+    sim.app.world_mut().resource_mut::<crate::stack::core::RoundRestarts>().0 += 1;
+    sim.ticks(2);
+    assert!(ragdoll(&mut sim).is_none());
+    assert!(bodies(&mut sim).is_empty());
+}
+
 /// A model's ragdoll shapes are made ahead of its first death
 /// (`ragdoll::warm_shapes`: on a task once the models are known), so the
 /// death copies them, and the ragdoll it makes is the one made without.

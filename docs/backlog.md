@@ -387,13 +387,31 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
-- **TF2 Scout's pistol sounds and ragdoll lifetime (user, 2026-11-17).**
-  The Scout's pistol fires with another game's sound (CS:S's or
-  HL2:DM's, by ear) and has no reload sound: find which of its sound
-  entries resolve to another game's or to none, fix them, and check
-  TF2's other guns the same way with a test that fails when any gun's
-  sound comes from another game. Ragdolls last too long: match each
-  game's own corpse lifetime (parity), on top of the party's limits.
+- **TF2 Scout's pistol sounds and ragdoll lifetime (user, 2026-11-17),
+  fixed 2026-11-17 (confirm in a playtest).** Sounds: Source games share
+  one namespace of sound script names (`Weapon_Pistol.Single`,
+  `Weapon_RPG.Single`, `Weapon_Shotgun.Single/.Empty/.Reload` are HL2's
+  and TF2's), and a map's sound table keeps the first entry of a name
+  (`add_guest_sounds`), so on a map that already held HL2:DM's the TF2
+  gun played HL2:DM's. TF2's weapon entries are now kept under `tf2:`
+  (`tf2::game::maps::own_sound`; data/weapons name them so; the guest
+  dressing drops the bare names), all 110 of them, so no TF2 gun can play
+  another game's. Tests: repo_checks `gun_sounds` (no name shared by two
+  games' guns' data; TF2's all prefixed) and tf2 heavy
+  `guns::every_guns_sound_is_tf2s_own` (each resolves in the table a
+  match plays from). The missing reload sound could not be told from the
+  data: the entry (`Weapon_Pistol.ReloadScout`) is named and resolves;
+  if it is still silent in the next playtest, it is the timing of
+  `[[0.0, ..]]` (the view model's event), not a lookup. Ragdolls: each
+  game's lifetime is its own already: CS:S none (the party removes it at
+  the owner's respawn; a round restart too), HL2:DM none (kept past the
+  respawn until the owner dies again, restart removes it), Combat Arms
+  the body 5 s after its owner respawns (mode's `body_removal`), Halo 900
+  ticks idle (`CORPSE_LIFE`); TF2's is in no spec (player_animation.md
+  9 says "the shared Source ragdoll rules"; only its gibs fade, 10 s), so
+  it follows the party's (removed at respawn) and nothing new is picked:
+  needs a spec session on TF2's ragdoll fade (`cl_ragdoll_fade_time`
+  and its friends) before parity can be matched.
 
 ### UGG playtest 8 prep, Windows check (2026-11-15)
 
@@ -2994,6 +3012,15 @@ docs/plans/active/sound.md.
     on this box). If a game gains nothing, say so and leave it as it is.
   - **Later:** an on-disk converted copy, so the first load of a session
     is fast as well (performance.md); the same API, for every game.
+  - **Done 2026-11-17 for the Source guests:** `chimera_world::map::kept`
+    (`Dressing`: id, converter version, mount, dress onto an empty map;
+    `dress_cached`, `append`, late-file refresh from the game's mount,
+    conversion time logged); CS:S, HL2:DM and TF2 dress through it, and
+    docs/new-game.md step 3 says to. Still on their own: Combat Arms
+    (its dressing leaves memos the API doesn't keep: the shared models'
+    `CaModelIndex`, the effect library; its character models are
+    already kept per install data) and Halo (its donors are kept as
+    their own types, not `MapData`; measure on the user's PC first).
 
 - **Halo: view models and animations at frame rate (user, 2026-11-17).**
   Halo's gun animations and related motion run at its 30 Hz tick and look
@@ -3030,13 +3057,29 @@ docs/plans/active/sound.md.
     after it; eased between the last two ticks (before) it was in full at
     76.4 ms, one Halo tick (about 5 frames, 35 ms) later.
   - Perf: PERF_LINE
+  - **Playtest 2026-11-17 (UGG, `halo_ce:party_vehicles 1`, Blood
+    Gulch), fixed 2026-11-17:** (1) the Warthog jittered under the
+    party's 64 Hz engine tick (the engine's `Interpolated` eased engine
+    ticks, a Halo tick on about every other one): a simulated vehicle is
+    now drawn on Halo's clock (`HaloEased` + the engine's `DrawnByGame`),
+    its riders with it by the engine (`Carried`: `map::interp::
+    ease_carried`, any game's carrier), the local rider's seat camera
+    made each frame from the drawn vehicle (`vehicles::ride_drawn`);
+    `halo_ce` `vehicle_drawn` tests 64 Hz ticks at 64 and 144 Hz frames
+    and 30 Hz at 144. (2) Wheels never turned, the Ghost showed nothing:
+    Combat Arms' props starter (in every party app) gave the vehicle a
+    `PropSequence` and the engine's prop animator played its first
+    overlay over Halo's pose; vehicles are now `PosedByGame` (both skip
+    it; party_kit `halo_vehicle_looks`). (3) Steps from a seated rider
+    pressing WASD: the engine's `Carried` now means no movement sounds,
+    every game's footsteps query `core::Afoot` (Source's movement skipped
+    `Carried` already; Combat Arms' and Halo's now; a seated Halo body no
+    longer runs its legs); party_kit `a_carried_character_makes_no_steps`,
+    halo_ce `a_carried_body_does_not_run_in_its_seat`. Needs a Windows
+    playtest with the disc: driving a Warthog and a Ghost in UGG at 144
+    Hz (smooth body, riders, camera; wheels, steering, suspension), and
+    no steps while seated.
   Left (listed per the user's rule):
-  - A vehicle's own transform and its riders under a party app's 64 Hz
-    engine tick: the engine's `Interpolated` eases engine ticks, and a
-    Halo tick lands on about every other one, so it steps there (smooth
-    at Halo's own 30 Hz app). Moving it to Halo's clock means moving the
-    riders and the seat camera with it (`vehicles::carry`, `ride_drawn`,
-    `camera::view`): a change to the engine's interpolation, not done.
   - The HUD's meters (shield, health, heat, ammunition) and flashes stay
     at Halo's tick: flashes are on/off by the tick (the original's look),
     the meters step a few pixels a tick; easing them would show a hit late.

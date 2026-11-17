@@ -5,13 +5,13 @@ id = "tf2:tf_weapon_bottle"
 base = "tf2:melee"
 
 [melee.primary]
-sound_swing = "Weapon_Bottle.Miss"
-sound_hit = "Weapon_Bottle.HitFlesh"
-sound_hit_world = "Weapon_Bottle.HitWorld"
+sound_swing = "tf2:Weapon_Bottle.Miss"
+sound_hit = "tf2:Weapon_Bottle.HitFlesh"
+sound_hit_world = "tf2:Weapon_Bottle.HitWorld"
 
 # `b_draw`'s sound event (8.1).
 [sounds]
-draw = [[0.0333, "Weapon_Bottle.Draw"]]
+draw = [[0.0333, "tf2:Weapon_Bottle.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_bottle/c_bottle.mdl"
@@ -25,4 +25,4 @@ icon = "bottle"
 [hooks."tf2:melee"]
 arms = "demo"
 script = "tf_weapon_bottle"
-crit_swing = "Weapon_Bottle.MissCrit"
+crit_swing = "tf2:Weapon_Bottle.MissCrit"

@@ -32,10 +32,10 @@ hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
 impulse = 0.0
 
 [sounds]
-fire = "Weapon_Revolver.Single"
-empty = "Weapon_Revolver.ClipEmpty"
-reload = [[0.0, "Weapon_Revolver.Reload1"], [0.4, "Weapon_Revolver.Reload2"], [0.8, "Weapon_Revolver.Reload3"]]
-draw = [[0.0, "Weapon_Revolver.Draw"]]
+fire = "tf2:Weapon_Revolver.Single"
+empty = "tf2:Weapon_Revolver.ClipEmpty"
+reload = [[0.0, "tf2:Weapon_Revolver.Reload1"], [0.4, "tf2:Weapon_Revolver.Reload2"], [0.8, "tf2:Weapon_Revolver.Reload3"]]
+draw = [[0.0, "tf2:Weapon_Revolver.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_revolver/c_revolver.mdl"

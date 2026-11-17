@@ -24,6 +24,14 @@
 //! - Characters a network client draws from the server's snapshots
 //!   (`NetDrawn`: `net::interp` writes their `Transform` and
 //!   `RenderedView` each frame) are left alone.
+//! - An entity its game draws on its own clock (`DrawnByGame`: Halo's
+//!   vehicles, eased between Halo's ticks) keeps its ticks sampled here
+//!   but is neither eased nor put back: the game does both.
+//! - A carried character (`core::Carried`: a vehicle's seat) is drawn
+//!   with its carrier (`ease_carried`, `InterpSystems::Carry`, after every
+//!   ease): where it sits in the carrier's latest tick, moved with the
+//!   carrier as drawn this frame, so it rides smoothly however the carrier
+//!   is drawn (the engine's ticks or a game's own clock).
 //!
 //! - `GameTicks` is for a game whose own tick is slower than the
 //!   engine's (Halo's 30 Hz): values laid at the game's ticks, drawn
@@ -51,7 +59,7 @@ use bevy::{
 use chimera_core::later::Later;
 
 use super::anim::BonePose;
-use crate::core::{Intent, LocalPlayer, MovementState};
+use crate::core::{Carried, Intent, LocalPlayer, MovementState};
 
 /// Faster than anything moves in one tick (m/s; CS:S's sv_maxvelocity
 /// is 3500 units/s, 89 m/s): a jump further than this in one tick is a
@@ -98,6 +106,8 @@ pub enum InterpSystems {
     Snap,
     /// In `RunFixedMainLoop` after the fixed loop: the drawn values.
     Ease,
+    /// After `Ease`: carried characters drawn with their carriers.
+    Carry,
 }
 
 /// Drawn by a network client from the server's snapshots at its own
@@ -105,6 +115,13 @@ pub enum InterpSystems {
 /// systems here skip it.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct NetDrawn;
+
+/// Drawn by its game on the game's own clock (Halo's vehicles: between
+/// Halo's ticks, `halo_ce::game::eased`): its `Interpolated` ticks are
+/// still sampled (a carried rider is drawn by them, `ease_carried`), but
+/// the engine neither eases it nor puts it back; the game does both.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct DrawnByGame;
 
 /// Draw this entity's `Transform` between its last two ticks.
 #[derive(Component, Debug, Clone, Default)]
@@ -220,7 +237,9 @@ impl Plugin for InterpPlugin {
             .configure_sets(FixedLast, (InterpSystems::Sample, InterpSystems::Extend, InterpSystems::Snap).chain())
             .configure_sets(
                 RunFixedMainLoop,
-                InterpSystems::Ease.in_set(RunFixedMainLoopSystems::AfterFixedMainLoop),
+                (InterpSystems::Ease, InterpSystems::Carry)
+                    .chain()
+                    .in_set(RunFixedMainLoopSystems::AfterFixedMainLoop),
             )
             .add_systems(
                 FixedFirst,
@@ -238,6 +257,7 @@ impl Plugin for InterpPlugin {
             .add_systems(FixedLast, (sample_transforms, sample_views).in_set(InterpSystems::Sample))
             .add_systems(FixedLast, snap.in_set(InterpSystems::Snap))
             .add_systems(RunFixedMainLoop, (ease_transforms, ease_views).in_set(InterpSystems::Ease))
+            .add_systems(RunFixedMainLoop, ease_carried.in_set(InterpSystems::Carry))
             .add_systems(Update, track_bodies);
     }
 }
@@ -258,7 +278,7 @@ fn track_bodies(
 /// Start of a tick: put back the simulation's transform where the ease
 /// drew another, or take a transform someone else wrote as the truth.
 fn restore(
-    mut q: Query<(&mut Transform, &mut Interpolated), Without<NetDrawn>>,
+    mut q: Query<(&mut Transform, &mut Interpolated), (Without<NetDrawn>, Without<DrawnByGame>)>,
     mut ticks: ResMut<TicksThisFrame>,
 ) {
     ticks.0 += 1;
@@ -341,7 +361,7 @@ fn ease_transforms(
     time: Res<Time<Fixed>>,
     mut settings: ResMut<Interpolation>,
     mut ticks: ResMut<TicksThisFrame>,
-    mut q: Query<(&mut Transform, &mut Interpolated), Without<NetDrawn>>,
+    mut q: Query<(&mut Transform, &mut Interpolated), (Without<NetDrawn>, Without<DrawnByGame>)>,
 ) {
     let f = fraction(&time, &settings);
     settings.fraction = f;
@@ -368,6 +388,36 @@ fn ease_transforms(
                 rotation: i.prev.rotation.slerp(i.cur.rotation, f),
                 scale: i.prev.scale.lerp(i.cur.scale, f),
             }
+        };
+        if *t != want {
+            *t = want;
+        }
+        i.drawn = Some(want);
+    }
+}
+
+/// Carried characters with their carriers (module doc): the rider's
+/// place in its carrier's latest tick, moved with the carrier as drawn;
+/// its rotation as eased. Only where both were sampled, and only
+/// interpolating (`cl_interpolate 0` draws the latest ticks).
+#[allow(clippy::type_complexity)]
+fn ease_carried(
+    settings: Res<Interpolation>,
+    mut riders: Query<(&Carried, &mut Transform, &mut Interpolated), Without<NetDrawn>>,
+    carriers: Query<(&Transform, &Interpolated), Without<Carried>>,
+) {
+    if settings.enabled == 0 {
+        return;
+    }
+    for (carried, mut t, mut i) in &mut riders {
+        let Ok((drawn, carrier)) = carriers.get(carried.0) else { continue };
+        if !i.sampled || !carrier.sampled {
+            continue;
+        }
+        let local = carrier.cur.compute_affine().inverse().transform_point3(i.cur.translation);
+        let want = Transform {
+            translation: drawn.compute_affine().transform_point3(local),
+            ..*t
         };
         if *t != want {
             *t = want;
@@ -447,6 +497,11 @@ impl<T: Clone> GameTicks<T> {
     /// The latest value laid.
     pub fn latest(&self) -> Option<&T> {
         self.laid.back().map(|(_, v)| v)
+    }
+
+    /// The latest value laid with its game tick.
+    pub fn last(&self) -> Option<(u64, &T)> {
+        self.laid.back().map(|(t, v)| (*t, v))
     }
 
     /// The two values around game time `time` (in the game's ticks) and

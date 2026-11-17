@@ -11,13 +11,13 @@ base = "tf2:melee"
 damage = 40.0
 delay = 0.1
 backstab = { behind = 0.0, facing = 0.5, same_way = -0.3, health = 6.0, credit = "tf2:backstab" }
-sound_swing = "Weapon_Knife.Miss"
-sound_hit = "Weapon_Knife.HitFlesh"
-sound_hit_world = "Weapon_Knife.HitWorld"
+sound_swing = "tf2:Weapon_Knife.Miss"
+sound_hit = "tf2:Weapon_Knife.HitFlesh"
+sound_hit_world = "tf2:Weapon_Knife.HitWorld"
 
 # `knife_draw`'s sound events (8.1): it flips open.
 [sounds]
-draw = [[0.0333, "Weapon_Knife.Draw"], [0.3333, "Weapon_Knife.Open1"], [0.5333, "Weapon_Knife.Open5"], [0.7333, "Weapon_Knife.Open8"]]
+draw = [[0.0333, "tf2:Weapon_Knife.Draw"], [0.3333, "tf2:Weapon_Knife.Open1"], [0.5333, "tf2:Weapon_Knife.Open5"], [0.7333, "tf2:Weapon_Knife.Open8"]]
 
 [models]
 world = "models/weapons/c_models/c_knife/c_knife.mdl"
@@ -32,4 +32,4 @@ icon = "knife"
 arms = "spy"
 script = "tf_weapon_knife"
 crits = false
-crit_swing = "Weapon_Knife.MissCrit"
+crit_swing = "tf2:Weapon_Knife.MissCrit"

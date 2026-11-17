@@ -116,7 +116,14 @@ replace one part at a time, each behind its spec and a scenario test.
    and the game's kit apart; engine-specific features in typed
    `extras`, never a new `MapData` field), `MapLoadOptions` honoured
    (lean: no textures, for servers and tests). Then a `MapDressing` so
-   the game's players and guns can stand on other games' maps.
+   the game's players and guns can stand on other games' maps, kept
+   by Chimera (`chimera_world::map::kept`): give `dress_cached` a
+   `Dressing` (the game's id, its converter's version, its mount, its
+   dress function onto an empty map; a texture of whole DXT blocks it
+   keeps as blocks without decoding when the map is `BlocksOnly`), and
+   Chimera converts it once per app, copies it into each map, dresses
+   again when a late file arrives and logs the time (CS:S's
+   `bundle::GUEST`). Never a cache of your own.
 4. **Movement**: a marker component, `register_movement` under
    `<id>:movement`, its state registered with `predicted_net`, its
    numbers as data in the game's own unit.
