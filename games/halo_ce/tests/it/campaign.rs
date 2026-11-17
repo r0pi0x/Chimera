@@ -384,3 +384,31 @@ fn a_marine_is_given_one_of_its_voices() {
 fn campaign_bodies_are_on_by_default() {
     assert!(halo_ce::game::campaign::CampaignBodies::default().0, "the host setting defaults to 1");
 }
+
+/// The campaign's units are not wanted at the app's start (the menu: five
+/// units read at once held the async compute pool, and fetched about 60 MB
+/// through the asset store's mounts before any match): they are the
+/// match's, wanted once its ladder is made and named in its asset offer.
+#[test]
+fn campaign_units_come_with_the_matchs_ladder_not_the_apps_start() {
+    use chimera_sim::minigame::ladder::Ladder;
+    use halo_ce::game::campaign::{CampaignBodies, UnitsOnDemand, asset_names, ladder_kinds};
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins).add_plugins(campaign::CampaignPlugin);
+    app.update();
+    assert!(app.world().resource::<UnitsOnDemand>().wanted.is_empty(), "nothing wanted at the start");
+    assert!(asset_names(app.world()).sets.is_empty(), "no ladder, nothing offered");
+    let ladder = Ladder { rungs: vec!["cs_source:weapon_ak47", "halo_ce:needler", "halo_ce:assault_rifle"], ..default() };
+    let kinds: Vec<BodyKind> = ladder_kinds(app.world(), Some(&ladder)).into_iter().collect();
+    assert_eq!(kinds, [BodyKind::Elite, BodyKind::Grunt, BodyKind::Marine], "the needler's and the rifle's bodies");
+    app.world_mut().insert_resource(ladder);
+    app.update();
+    let wanted: Vec<BodyKind> = app.world().resource::<UnitsOnDemand>().wanted.iter().copied().collect();
+    assert_eq!(wanted, kinds, "the ladder's kinds wanted once it is made");
+    let mut sets = asset_names(app.world()).sets;
+    sets.sort();
+    assert_eq!(sets, ["halo_ce:character/elite", "halo_ce:character/grunt", "halo_ce:character/marine"]);
+    // Off: none drawn, none offered.
+    app.world_mut().insert_resource(CampaignBodies(false));
+    assert!(asset_names(app.world()).sets.is_empty());
+}

@@ -2548,6 +2548,27 @@ pub fn load_greybox(w: &mut World) {
     load_code_map(w, GREYBOX);
 }
 
+/// No map at all, as a run that starts at a menu with no game behind it
+/// (`NoPlayerAtMenu`, `StartMap::Empty`): what a map change takes out (a
+/// load or spawn under way, the map, the greybox) without the greybox
+/// and its kit coming in. Leaving a game for such a menu: the greybox's
+/// kit was dressed on the main thread (6 s, 24 G instructions in one
+/// frame, docs/performance.md "Leaving a game for the menu").
+pub fn unload_to_menu(w: &mut World) {
+    w.remove_resource::<MapLoad>();
+    w.remove_resource::<crate::map::LocalMapLoad>();
+    if let Some(spawning) = w.remove_resource::<Spawning>()
+        && !spawning.was_paused
+        && let Some(mut time) = w.get_resource_mut::<Time<Virtual>>()
+    {
+        time.unpause();
+    }
+    LoadCaps::lift(w);
+    crate::map::unload_map(w);
+    unload_greybox(w);
+    w.remove_resource::<crate::map::LoadedMapName>();
+}
+
 /// `load_greybox` for any code-built map (`net::is_code_map`: the greybox,
 /// the range; `chimera_world::greybox::CodeMap` picks it for the app's
 /// `respawn_greybox`).
@@ -2894,7 +2915,13 @@ pub fn client_commands(app: &mut App) {
             if console.command("bot_kick").is_some() {
                 console.submit("bot_kick");
             }
-            load_greybox(w);
+            // A menu with no game behind it (`NoPlayerAtMenu`): no map at
+            // all, as at its start; else the greybox behind the menu.
+            if w.contains_resource::<super::NoPlayerAtMenu>() {
+                unload_to_menu(w);
+            } else {
+                load_greybox(w);
+            }
             super::front_end::left_game(w);
             Ok(None)
         },

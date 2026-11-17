@@ -411,11 +411,14 @@ pub struct UiSlant {
     pub accent: Option<(Tone, f32)>,
     /// Drawn as an outline this many physical px wide (0: filled).
     pub outline: f32,
+    /// Clipped this share (0-1 of the row) from the left and from the
+    /// right, the cuts leaning with the slant (a progress bar's fill).
+    pub clip: (f32, f32),
 }
 
 impl Default for UiSlant {
     fn default() -> Self {
-        UiSlant { fill: Tone::Fg, alpha: 1.0, edges: (true, true), accent: None, outline: 0.0 }
+        UiSlant { fill: Tone::Fg, alpha: 1.0, edges: (true, true), accent: None, outline: 0.0, clip: (0.0, 0.0) }
     }
 }
 
@@ -434,6 +437,12 @@ impl UiSlant {
     /// Only its outline, `px` physical pixels wide.
     pub fn outline(mut self, px: f32) -> Self {
         self.outline = px;
+        self
+    }
+
+    /// Cut `left` and `right` (0-1 of the row) along the slant.
+    pub fn clipped(mut self, left: f32, right: f32) -> Self {
+        self.clip = (left, right);
         self
     }
 }
@@ -530,6 +539,9 @@ pub fn resolve_styles(
             }
             if s.outline > 0.0 {
                 m = m.outline(s.outline);
+            }
+            if s.clip != (0.0, 0.0) {
+                m = m.clip(s.clip.0, s.clip.1).slanted_cut();
             }
             if let Some(mut existing) = mat.and_then(|h| slants.get_mut(&h.0)) {
                 *existing = m;

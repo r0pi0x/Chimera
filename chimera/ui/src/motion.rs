@@ -5,6 +5,9 @@
 //!   `cubic_in_out`, `quint_in_out`, `back(s)`, `hold`, CSS
 //!   `bezier(x1,y1,x2,y2)`, `steps(n)`, `steps_none(n)`, `pulse`),
 //!   named in the theme (`Ease::parse`).
+//! - Tokens: `Pace` (fast, normal, slow durations and their easings) and
+//!   `Motion` (resource; `scale`, the `ui_motion_scale` cvar: 0 snaps, 1
+//!   normal, more slower). Controls take their lengths from `Motion::secs`.
 //! - `UiClock`: UI time in seconds. Real time in play
 //!   (`UiClock::advance_real`); `manual` in tests, stepped with `step`,
 //!   so frames are reproducible.
@@ -206,6 +209,79 @@ fn bezier([x1, y1, x2, y2]: [f32; 4], p: f32) -> f32 {
         t = (lo + hi) / 2.0;
     }
     curve(y1, y2, t)
+}
+
+/// The kit's standard durations (module doc: "Tokens"). Every animated
+/// control takes its length from here, so one place tunes them all and
+/// `Motion::scale` (`ui_motion_scale`) slows, speeds or disables them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pace {
+    /// A hover, a press, a focus mark.
+    Fast,
+    /// A slide or a swap inside a control (a toggle's slab, a picker's pick).
+    Normal,
+    /// A panel or a page.
+    Slow,
+}
+
+impl Pace {
+    /// The base length in seconds, before `Motion::scale`.
+    pub const fn base(self) -> f32 {
+        match self {
+            Pace::Fast => 0.12,
+            Pace::Normal => 0.18,
+            Pace::Slow => 0.32,
+        }
+    }
+
+    /// The standard curve for this pace: out for the quick ones (they
+    /// start at once), in-out for the slow.
+    pub const fn ease(self) -> Ease {
+        match self {
+            Pace::Fast | Pace::Normal => Ease::OUT,
+            Pace::Slow => Ease::IN_OUT,
+        }
+    }
+}
+
+/// The global motion scale (`ui_motion_scale`): 0 turns every animation
+/// into a snap, 1 is normal, more is slower.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct Motion {
+    pub scale: f32,
+}
+
+impl Default for Motion {
+    fn default() -> Self {
+        Motion { scale: 1.0 }
+    }
+}
+
+impl Motion {
+    pub fn new(scale: f32) -> Motion {
+        Motion { scale: scale.max(0.0) }
+    }
+
+    /// `pace`'s length in seconds with the scale applied (0: snap).
+    pub fn secs(&self, pace: Pace) -> f32 {
+        pace.base() * self.scale.max(0.0)
+    }
+
+    /// Animations are off.
+    pub fn snaps(&self) -> bool {
+        self.scale <= 0.0
+    }
+
+    /// Moves `t` (0-1) toward `target` (0 or 1) by `dt` seconds at
+    /// `pace`'s speed; at once when snapping.
+    pub fn approach(&self, t: f32, target: f32, dt: f32, pace: Pace) -> f32 {
+        let d = self.secs(pace);
+        if d <= 0.0 {
+            return target;
+        }
+        let step = dt / d;
+        if target > t { (t + step).min(target) } else { (t - step).max(target) }
+    }
 }
 
 /// UI time (module doc).

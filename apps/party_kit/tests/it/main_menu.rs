@@ -1162,3 +1162,35 @@ fn the_sandbox_entry_starts_it_once_however_often_it_is_pressed() {
     act(&mut sim, A::Entry(sb));
     assert_eq!(sim.app.world().resource::<Starts>().0, 2, "a second start after leaving");
 }
+
+/// Leaving a hosted game (Start with bots: `MaxPlayer 3`) for the menu
+/// leaves nothing behind it within a few frames: no player, no bot, no
+/// kit, no match running, no map (as at the menu's start: the greybox
+/// and its kit are not loaded again, which took 6 s of one frame and
+/// brought the bots back to draw their guns, the cocking heard after
+/// leaving).
+#[test]
+fn leaving_a_hosted_game_takes_its_bots_and_map_and_loads_nothing() {
+    use chimera_core::core::Intent;
+    let mut sim = at_menu_as_the_app(true);
+    sim.app.world_mut().remove_resource::<NeverLoads>();
+    act(&mut sim, A::Entry(0));
+    act(&mut sim, A::Start);
+    sim.ticks(60);
+    assert_eq!(menu(&sim).screen, Screen::InGame);
+    let w = sim.app.world_mut();
+    let bots = w.query_filtered::<(), With<combat_arms::game::bots::CaBot>>().iter(w).count();
+    assert_eq!(bots, 3, "the Play page's bots joined");
+    sim.app.world_mut().insert_resource(chimera_world::map::LoadedMapName("cs_source:de_dust2".into()));
+    submit(&mut sim, "disconnect");
+    // Within 4 frames (`submit`'s 2 and these): the kick is the next frame's.
+    sim.ticks(2);
+    assert_eq!(menu(&sim).screen, Screen::MainMenu);
+    assert_no_game(&mut sim, "4 frames after leaving");
+    let w = sim.app.world_mut();
+    assert_eq!(w.query_filtered::<(), With<Intent>>().iter(w).count(), 0, "no bot");
+    assert!(!w.contains_resource::<chimera_world::map::LoadedMapName>(), "no map behind the menu");
+    // And none come back.
+    sim.ticks(120);
+    assert_no_game(&mut sim, "2 s after leaving");
+}

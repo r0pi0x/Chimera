@@ -170,8 +170,21 @@ fn play_keys_change_a_row_and_enter_starts_the_game() {
     press(&mut sim, KeyCode::KeyE);
     sim.ticks(1);
     assert_eq!(menu(&sim).play_tab, 0);
-    // A text row takes the keys (the menu's field follows the focus).
-    assert_eq!(menu(&sim).focus, Some(party_kit::main_menu::Field::Play(name)));
+    // Switching tabs never takes the keyboard: the server-name row is the
+    // cursor, no field has the keys, so Q/E still switch tabs.
+    assert_eq!(menu(&sim).focus, None, "a tab switch doesn't focus the text field");
+    press(&mut sim, KeyCode::KeyQ);
+    sim.ticks(1);
+    assert_eq!(menu(&sim).play_tab, 1, "Q switched again: nothing swallowed it");
+    assert_eq!(menu(&sim).focus, None);
+    press(&mut sim, KeyCode::KeyE);
+    sim.ticks(1);
+    assert_eq!(menu(&sim).play_tab, 0);
+    // An explicit Enter on the text row takes the keys.
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(1);
+    assert_eq!(menu(&sim).focus, Some(party_kit::main_menu::Field::Play(name)), "Enter focuses the field");
+    assert!(asked(&sim).is_empty(), "that Enter didn't start the game");
     press(&mut sim, KeyCode::KeyQ);
     assert_eq!(menu(&sim).play_tab, 0, "typing: Q is a letter");
     press(&mut sim, KeyCode::Enter);
@@ -201,6 +214,13 @@ fn the_maps_picker_sets_the_rotation() {
     sim.ticks(2);
     let picker = |s: &Sim| s.app.world().resource::<MapsPicker>().clone();
     assert!(picker(&sim).open.is_some(), "Enter on Maps opens the picker");
+    {
+        // The tree is the kit's recycling list: one line a row, the cursor on the first.
+        let lists = sim.app.world().resource::<chimera_ui::VirtualLists>();
+        let st = lists.get(party_kit::maps_picker::LIST).expect("the picker's list");
+        assert_eq!(st.cursor, Some(chimera_ui::VCursor::Item(0, 0)));
+        assert!(!st.sections.is_empty() && st.sections[0].len > 1);
+    }
     assert_eq!(menu(&sim).screen, Screen::MainMenu, "not started");
     let dialogs = sim.app.world_mut().query_filtered::<(), With<MapsDialog>>().iter(sim.app.world()).count();
     assert_eq!(dialogs, 1, "drawn over the page");
@@ -977,4 +997,32 @@ fn ui_scene_stages_the_internet_tab() {
     signal_pages::stage(sim.app.world_mut(), MenuPage::Join, &["off".into()]).unwrap();
     sim.ticks(2);
     assert!(sim.app.world().resource::<LanList>().internet.is_empty(), "nothing of the staging stays");
+}
+
+/// Left on a map folds its group and puts the cursor on the group's
+/// header; on a folded group it goes up to the game; on an open one it
+/// folds; Right opens a folded row.
+#[test]
+fn left_on_a_map_collapses_its_group_and_moves_to_the_header() {
+    use party_kit::maps_picker::{CatalogueGame, CatalogueGroup, MapsPicker, TreeRow};
+    let games = vec![CatalogueGame {
+        id: "g".into(),
+        name: "G".into(),
+        groups: vec![CatalogueGroup { name: "Official maps".into(), maps: vec!["g:a".into(), "g:b".into(), "g:c".into()] }],
+        names: Default::default(),
+    }];
+    let mut p = MapsPicker::default();
+    assert_eq!(p.rows(&games).len(), 5, "game, group, three maps");
+    p.cursor = 3;
+    assert!(p.left(&games));
+    assert_eq!(p.rows(&games), [TreeRow::Game(0), TreeRow::Group(0, 0)], "the group folded");
+    assert_eq!(p.cursor, 1, "the cursor on the group's header");
+    assert!(p.left(&games));
+    assert_eq!(p.cursor, 0, "a folded group: up to its game");
+    assert!(p.left(&games));
+    assert_eq!(p.rows(&games), [TreeRow::Game(0)], "an open game folds");
+    assert!(!p.left(&games), "nothing further");
+    assert!(p.right(&games));
+    assert_eq!(p.rows(&games).len(), 2, "the game opens (its group still folded)");
+    assert!(!p.right(&games) || p.rows(&games).len() == 5);
 }
