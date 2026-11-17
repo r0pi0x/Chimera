@@ -814,6 +814,12 @@ fn start(world: &mut World, def: &MinigameDef) {
     // client takes the server's draw).
     if world.get_resource::<crate::core::NetRole>() != Some(&crate::core::NetRole::Client) {
         world.get_resource_or_init::<LaddersMade>().0 += 1;
+        // A drawn ladder's guns are remembered, so the next draws deal
+        // them less (`auto::Recency`).
+        if let Some(p) = params(def).ok().filter(|p| matches!(p.ladder, LadderParam::Auto(_))) {
+            let draw = curve(&p).unwrap_or_else(|_| super::power::PowerCurve::shipped()).draw;
+            world.get_resource_or_init::<super::auto::Recency>().record(ladder.rungs.iter().copied(), &draw);
+        }
     }
     world.insert_resource(crate::weapon::drop::NoDeathDrops);
     world.insert_resource(ladder);
@@ -902,7 +908,8 @@ fn drawn_ladder(world: &World, def: &MinigameDef, p: &Params, seed: u64, say: bo
     let readers = world.get_resource::<power::PowerReaders>().cloned().unwrap_or_default();
     let powers = auto::powers(&caps, catalog, &readers, &curve);
     let refs: Vec<&auto::Capabilities> = caps.iter().collect();
-    let drawn = auto::ladder(&refs, &powers, &curve, p.rungs, seed);
+    let recent = world.get_resource::<auto::Recency>().cloned().unwrap_or_default();
+    let drawn = auto::ladder_with(&refs, &powers, &curve, p.rungs, seed, &recent);
     if drawn.rungs.is_empty() && say {
         warn!("{}: [rules] ladder = \"auto\": no game lends guns the definition allows", def.id);
     }

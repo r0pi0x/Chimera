@@ -69,3 +69,17 @@ heavy_pistol_damage = 50.0
 # share of the time: it stands in one place and turns between targets, so
 # its gun's rate counts this much (its game's reader of the device hook).
 device_uptime = 0.5
+
+# How a ladder's rungs are dealt (`auto::ladder_with`).
+[draw]
+# Which game a rung goes to: "equal" (the games shuffled and dealt one per
+# rung, reshuffled once dealt out: every game the same share however many
+# guns it has), "sqrt" (by the square root of its guns' count) or "count".
+games = "equal"
+# A gun the server dealt in recent ladders is less likely: its weight is
+# 1 / (1 + recency * heat), heat 1 per ladder it was in. 0: off. Within a
+# game only, never 0: a gun is never excluded. Reset by a server restart.
+recency = 2.0
+# The share of its heat a gun keeps after each ladder made (0: forgotten at
+# once, 1: never).
+recovery = 0.6

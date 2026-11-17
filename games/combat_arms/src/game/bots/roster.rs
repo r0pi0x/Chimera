@@ -162,7 +162,7 @@ pub(super) fn arm(
                 }
             }
             if let Some(mut t) = throwable {
-                t.count *= gun.ammo.max(1.0) as u32;
+                t.count = t.count.saturating_mul(gun.ammo.max(1.0) as u32);
                 if t.count > 0 {
                     thrown_kinds.push(kind.clone());
                 }

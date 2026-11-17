@@ -22,10 +22,15 @@
 //!   no hash maps), on the power curve (`minigame::power`): the rungs
 //!   split over the bands (warm-up, rising, peak, heavy, specials,
 //!   grenade, melee) by the curve's shares, boundaries jittered; each
-//!   band's guns drawn from every game's guns of its classes (each game at
-//!   least once; a game's guns weighted one over the square root of its
-//!   count), sorted by power score, weakest first; the melee band counted
-//!   for the knife finale, which draws its weapons when the match starts.
+//!   rung dealt a game and a gun of it (`DrawParams`, `[draw]` in
+//!   data/power_curve.toml): the games shuffled and dealt one per rung,
+//!   reshuffled once dealt out (equal shares; no game promised a rung;
+//!   `games = "sqrt"` or `"count"` weight by gun count instead); within
+//!   the game a random gun, the ones dealt in the server's recent ladders
+//!   less likely (`Recency`, `recency`, `recovery`; never excluded, never
+//!   across games), sorted by power score, weakest first; the melee band
+//!   counted for the knife finale, which draws its weapons when the match
+//!   starts.
 //!   Two seeds share few rungs, and every gun comes up over many.
 //! - `drawable`: what a draw may deal (the report's guns and grenades,
 //!   filtered before `ladder`, by `ladder = "auto"` and the Ultimate Gun
@@ -55,7 +60,7 @@ use chimera_core::{
 
 use bevy::prelude::*;
 
-use super::power::{self, Band, PowerCurve, PowerReaders, Powers};
+use super::power::{self, Band, DrawParams, GameWeighting, PowerCurve, PowerReaders, Powers};
 use crate::weapon::data::WeaponCatalog;
 
 /// What a game really lends in this app: its claim (`GameParts`) checked
@@ -412,26 +417,93 @@ impl Drawn {
     }
 }
 
-/// One candidate: (weapon, its game, its weight).
-type Candidate = (&'static str, usize, f64);
+/// One candidate: (weapon, its game's index in the draw).
+type Candidate = (&'static str, usize);
+
+/// The server session's memory of what was dealt (`Recency::record`, one
+/// call per ladder made): each gun's heat, raised when a ladder deals it
+/// and cooled by `DrawParams::recovery` at every ladder after. It makes a
+/// gun less likely to be dealt (`DrawParams::recency`), never excluded,
+/// and only against the guns of its own game. Not saved: a server restart
+/// starts it empty.
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct Recency {
+    heat: std::collections::BTreeMap<String, f64>,
+    /// The heats before the last `record`, for `rewind`.
+    prior: Option<std::collections::BTreeMap<String, f64>>,
+}
+
+impl Recency {
+    /// A gun's heat (0: not dealt lately).
+    pub fn heat(&self, id: &str) -> f64 {
+        self.heat.get(id).copied().unwrap_or(0.0)
+    }
+
+    /// A ladder made: every heat cools, then the dealt guns heat up by 1.
+    pub fn record<'a>(&mut self, dealt: impl IntoIterator<Item = &'a str>, draw: &DrawParams) {
+        self.prior = Some(self.heat.clone());
+        let keep = draw.recovery.clamp(0.0, 1.0);
+        self.heat.retain(|_, h| {
+            *h *= keep;
+            *h > 1e-3
+        });
+        for id in dealt {
+            *self.heat.entry(id.to_string()).or_insert(0.0) += 1.0;
+        }
+    }
+
+    /// Back to before the last `record`: the same match's ladder drawn
+    /// again (once the installs are known) isn't a second ladder.
+    pub fn rewind(&mut self) {
+        if let Some(prior) = self.prior.take() {
+            self.heat = prior;
+        }
+    }
+}
+
+/// A ladder of `rungs` rungs in all (melee included) of `games` (each
+/// playable), seeded, on the power curve (`power`), remembering nothing
+/// (`ladder_with`).
+pub fn ladder(games: &[&Capabilities], powers: &Powers, curve: &PowerCurve, rungs: usize, seed: u64) -> Drawn {
+    ladder_with(games, powers, curve, rungs, seed, &Recency::default())
+}
 
 /// A ladder of `rungs` rungs in all (melee included) of `games` (each
 /// playable), seeded, on the power curve (`power`): the rungs split over
 /// the bands by the curve's shares (`power::band_counts`, boundaries
 /// jittered, the first rung warm-up, the last melee); a band whose pool is
 /// empty or short gives its rungs to the nearest band with guns to spare
-/// (the earlier on a tie; none left: the ladder is shorter); each band's
-/// guns drawn at random from its pool, every game's guns mixed (a game's
-/// weighted one over the square root of its count, so a game with many
-/// guns gives more rungs but doesn't drown the others; each game at least
-/// once when it can be), then sorted by power score, weakest first. The
-/// grenade band holds the games' grenades; the melee band is only counted
+/// (the earlier on a tie; none left: the ladder is shorter). Each rung
+/// (in a shuffled order) is then dealt a game, and a gun of that game in
+/// its band:
+///
+/// - the game: with `DrawParams::games` = equal (the default), from a
+///   shuffled deck of the games dealt one per rung and reshuffled once
+///   dealt out (a game without a gun left in the rung's band is passed
+///   over until a later rung), so every game's share is equal however many
+///   guns it has; no game is promised a rung, and runs are possible;
+///   sqrt or count: at random, weighted by the square root or the count
+///   of the game's guns in the band.
+/// - the gun: at random from the game's guns in the band, a gun's weight
+///   one over one plus `DrawParams::recency` times its heat in `recent`
+///   (never 0, never against another game's gun).
+///
+/// Each band is then sorted by power score, weakest first. The grenade
+/// band holds the games' grenades; the melee band is only counted
 /// (`Drawn::melee`).
-pub fn ladder(games: &[&Capabilities], powers: &Powers, curve: &PowerCurve, rungs: usize, seed: u64) -> Drawn {
+pub fn ladder_with(
+    games: &[&Capabilities],
+    powers: &Powers,
+    curve: &PowerCurve,
+    rungs: usize,
+    seed: u64,
+    recent: &Recency,
+) -> Drawn {
     let games: Vec<&Capabilities> = games.iter().copied().filter(|c| c.playable()).collect();
     if games.is_empty() || rungs == 0 {
         return Drawn::default();
     }
+    let draw = &curve.draw;
     let mut rng = Rng::new(seed);
     let mut counts = power::band_counts(rungs, curve, &mut rng);
     let melee = counts[Band::Melee.index()];
@@ -440,17 +512,15 @@ pub fn ladder(games: &[&Capabilities], powers: &Powers, curve: &PowerCurve, rung
     // Each weapon once, in the first pool that takes it.
     let mut seen: bevy::platform::collections::HashSet<&'static str> = Default::default();
     for (i, c) in games.iter().enumerate() {
-        let weight = 1.0 / (c.guns.len().max(1) as f64).sqrt();
         for gun in &c.guns {
             let band = powers.get(gun.id).map_or_else(|| curve.class_band(gun.class), |p| p.band);
             if band != Band::Melee && seen.insert(gun.id) {
-                pools[band.index()].push((gun.id, i, weight));
+                pools[band.index()].push((gun.id, i));
             }
         }
-        let weight = 1.0 / (c.grenades.len().max(1) as f64).sqrt();
         for g in &c.grenades {
             if seen.insert(g) {
-                pools[Band::Grenade.index()].push((g, i, weight));
+                pools[Band::Grenade.index()].push((g, i));
             }
         }
     }
@@ -466,44 +536,64 @@ pub fn ladder(games: &[&Capabilities], powers: &Powers, curve: &PowerCurve, rung
             }
         }
     }
+    // The rungs to deal, in a shuffled order so the deck's turns don't
+    // follow the bands.
+    let mut slots: Vec<usize> = (0..DRAWN).flat_map(|b| std::iter::repeat_n(b, counts[b])).collect();
+    shuffle(&mut slots, &mut rng);
+    let mut deck: Vec<usize> = Vec::new();
     let mut picked: [Vec<Candidate>; DRAWN] = Default::default();
-    for b in 0..DRAWN {
-        while picked[b].len() < counts[b] && !pools[b].is_empty() {
-            let total: f64 = pools[b].iter().map(|c| c.2).sum();
-            let mut at = rng.unit() * total;
-            let mut chosen = pools[b].len() - 1;
-            for (k, c) in pools[b].iter().enumerate() {
-                if at < c.2 {
-                    chosen = k;
-                    break;
+    for b in slots {
+        let has = |pool: &[Candidate], g: usize| pool.iter().any(|c| c.1 == g);
+        let game = match draw.games {
+            GameWeighting::Equal => {
+                let mut at = deck.iter().position(|&g| has(&pools[b], g));
+                if at.is_none() {
+                    // Dealt out for this band: a new shuffled pass behind
+                    // what is left.
+                    let mut pass: Vec<usize> = (0..games.len()).collect();
+                    shuffle(&mut pass, &mut rng);
+                    deck.extend(pass);
+                    at = deck.iter().position(|&g| has(&pools[b], g));
                 }
-                at -= c.2;
+                at.map(|k| deck.remove(k))
             }
-            picked[b].push(pools[b].remove(chosen));
+            weighting => {
+                let weight = |g: usize| {
+                    let n = pools[b].iter().filter(|c| c.1 == g).count() as f64;
+                    if weighting == GameWeighting::Sqrt { n.sqrt() } else { n }
+                };
+                let total: f64 = (0..games.len()).map(weight).sum();
+                let mut at = rng.unit() * total;
+                let mut chosen = None;
+                for g in 0..games.len() {
+                    let w = weight(g);
+                    if w <= 0.0 {
+                        continue;
+                    }
+                    chosen = Some(g);
+                    if at < w {
+                        break;
+                    }
+                    at -= w;
+                }
+                chosen
+            }
+        };
+        let Some(game) = game else { continue };
+        // A gun of the game, the recently dealt less likely.
+        let mine: Vec<usize> = (0..pools[b].len()).filter(|&k| pools[b][k].1 == game).collect();
+        let weights: Vec<f64> = mine.iter().map(|&k| 1.0 / (1.0 + draw.recency.max(0.0) * recent.heat(pools[b][k].0))).collect();
+        let total: f64 = weights.iter().sum();
+        let mut at = rng.unit() * total;
+        let mut chosen = mine.len() - 1;
+        for (k, w) in weights.iter().enumerate() {
+            if at < *w {
+                chosen = k;
+                break;
+            }
+            at -= w;
         }
-    }
-    // Each game at least once: a missing game's gun in place of a gun of a
-    // game that has more than one, in a band where it has one left.
-    let mut order: Vec<usize> = (0..games.len()).collect();
-    shuffle(&mut order, &mut rng);
-    for g in order {
-        let of = |picked: &[Vec<Candidate>; DRAWN], g: usize| picked.iter().flatten().filter(|c| c.1 == g).count();
-        if of(&picked, g) > 0 {
-            continue;
-        }
-        let bands: Vec<usize> = (0..DRAWN)
-            .filter(|&b| pools[b].iter().any(|c| c.1 == g) && picked[b].iter().any(|c| of(&picked, c.1) > 1))
-            .collect();
-        if bands.is_empty() {
-            continue;
-        }
-        let b = bands[rng.below(bands.len())];
-        let out: Vec<usize> = (0..picked[b].len()).filter(|&k| of(&picked, picked[b][k].1) > 1).collect();
-        let k = out[rng.below(out.len())];
-        let mine: Vec<usize> = (0..pools[b].len()).filter(|&k| pools[b][k].1 == g).collect();
-        let new = pools[b].remove(mine[rng.below(mine.len())]);
-        let old = std::mem::replace(&mut picked[b][k], new);
-        pools[b].push(old);
+        picked[b].push(pools[b].remove(mine[chosen]));
     }
     let score = |id: &str| powers.get(id).map_or(0.0, |p| p.score);
     let mut out = Drawn {
@@ -670,10 +760,11 @@ pub fn definition(
     caps: &[Capabilities],
     powers: &Powers,
     opts: &AutoOptions,
+    recent: &Recency,
     installed: &dyn Fn(&str) -> bool,
 ) -> Result<String, String> {
     let games: Vec<&Capabilities> = caps.iter().filter(|c| c.playable() && installed(c.game)).collect();
-    let drawn = ladder(&games, powers, &opts.curve, opts.rungs, opts.seed);
+    let drawn = ladder_with(&games, powers, &opts.curve, opts.rungs, opts.seed, recent);
     let ladder = drawn.rungs;
     if ladder.is_empty() {
         return Err(format!(
@@ -805,7 +896,7 @@ mod tests {
     }
 
     #[test]
-    fn a_ladder_climbs_the_bands_and_takes_every_game() {
+    fn a_ladder_climbs_the_bands() {
         let (a, b, c) = (with_grenade(guns("a", 60)), guns("b", 33), guns("c", 4));
         let caps = [&a, &b, &c];
         let powers = powers_of(&caps);
@@ -818,9 +909,6 @@ mod tests {
                 assert!(l.bands.windows(2).all(|w| w[0] <= w[1]), "warm-up to grenade in order: {:?}", l.bands);
                 assert_eq!(l.bands[0], Band::WarmUp, "a warm-up rung first");
                 assert_eq!(class_of(&caps, l.rungs[0]), Some(GunClass::Pistol), "a pistol first: {l:?}");
-                for g in ["a", "b", "c"] {
-                    assert!(l.rungs.iter().any(|id| id.starts_with(&format!("{g}:"))), "{g} in {l:?}");
-                }
                 let mut once = l.rungs.clone();
                 once.sort();
                 once.dedup();
@@ -847,6 +935,108 @@ mod tests {
         let few = guns("f", 3);
         let l = draw(&[&few], 10, 1);
         assert_eq!(l.rungs.len(), 3, "{l:?}");
+    }
+
+    /// The share of the dealt rungs each game got, over `n` seeded ladders.
+    fn shares(caps: &[&Capabilities], curve: &PowerCurve, recent: &Recency, n: u64) -> Vec<f64> {
+        let powers = powers_of(caps);
+        let mut got = vec![0usize; caps.len()];
+        for seed in 0..n {
+            for id in ladder_with(caps, &powers, curve, 20, seed, recent).rungs {
+                let g = caps.iter().position(|c| id.starts_with(&format!("{}:", c.game))).unwrap();
+                got[g] += 1;
+            }
+        }
+        let all: usize = got.iter().sum();
+        got.iter().map(|g| *g as f64 / all as f64).collect()
+    }
+
+    fn with_weighting(games: GameWeighting) -> PowerCurve {
+        let mut c = PowerCurve::shipped();
+        c.draw.games = games;
+        c
+    }
+
+    #[test]
+    fn games_get_equal_shares_whatever_their_gun_counts() {
+        let (a, b, c) = (guns("a", 60), guns("b", 24), guns("c", 8));
+        let caps = [&a, &b, &c];
+        let equal = shares(&caps, &PowerCurve::shipped(), &Recency::default(), 400);
+        for (g, s) in equal.iter().enumerate() {
+            assert!((s - 1.0 / 3.0).abs() < 0.04, "game {g} has {s:.3}: {equal:?}");
+        }
+        // sqrt and count follow the guns' numbers instead.
+        let sqrt = shares(&caps, &with_weighting(GameWeighting::Sqrt), &Recency::default(), 400);
+        assert!(sqrt[0] > sqrt[1] && sqrt[1] > sqrt[2], "{sqrt:?}");
+        assert!(sqrt[2] > 0.1, "{sqrt:?}");
+        let count = shares(&caps, &with_weighting(GameWeighting::Count), &Recency::default(), 400);
+        assert!(count[0] > 0.5 && count[2] < sqrt[2], "{count:?} against {sqrt:?}");
+    }
+
+    #[test]
+    fn recency_lowers_repeats_but_never_excludes_and_stays_in_the_game() {
+        let (a, b) = (guns("a", 40), guns("b", 3));
+        let caps = [&a, &b];
+        let powers = powers_of(&caps);
+        let curve = PowerCurve::shipped();
+        let mut off = curve.clone();
+        off.draw.recency = 0.0;
+        // Matches in a row on one server: the share of rungs that were
+        // also in the match before.
+        let repeat = |curve: &PowerCurve| {
+            let mut mem = Recency::default();
+            let mut last: Vec<&str> = Vec::new();
+            let (mut same, mut all) = (0usize, 0usize);
+            let mut b_rungs = 0usize;
+            for seed in 0..300u64 {
+                let d = ladder_with(&caps, &powers, curve, 13, seed, &mem);
+                same += d.rungs.iter().filter(|id| last.contains(id)).count();
+                all += d.rungs.len();
+                b_rungs += d.rungs.iter().filter(|id| id.starts_with("b:")).count();
+                mem.record(d.rungs.iter().copied(), &curve.draw);
+                last = d.rungs;
+            }
+            (same as f64 / all as f64, b_rungs as f64 / all as f64)
+        };
+        let (on_repeat, on_b) = repeat(&curve);
+        let (off_repeat, off_b) = repeat(&off);
+        assert!(on_repeat < off_repeat * 0.9, "{on_repeat:.3} with recency, {off_repeat:.3} without");
+        // The few-gun game keeps its share (recency only cycles its guns).
+        assert!((on_b - off_b).abs() < 0.04, "{on_b:.3} against {off_b:.3}");
+        // Never excluded: a gun at a huge heat still comes up.
+        let mut hot = Recency::default();
+        for g in a.guns.iter().chain(&b.guns) {
+            for _ in 0..5 {
+                hot.record([g.id], &curve.draw);
+            }
+        }
+        let drawn: Vec<Drawn> = (0..200).map(|s| ladder_with(&caps, &powers, &curve, 13, s, &hot)).collect();
+        for g in b.guns.iter() {
+            assert!(drawn.iter().any(|d| d.rungs.contains(&g.id)), "{} excluded", g.id);
+        }
+        // Seeded draws stay deterministic with a memory.
+        assert_eq!(ladder_with(&caps, &powers, &curve, 13, 5, &hot), ladder_with(&caps, &powers, &curve, 13, 5, &hot));
+    }
+
+    #[test]
+    fn recency_cools_over_matches_and_rewinds() {
+        let d = DrawParams { games: GameWeighting::Equal, recency: 2.0, recovery: 0.5 };
+        let mut mem = Recency::default();
+        mem.record(["a:x"], &d);
+        assert_eq!(mem.heat("a:x"), 1.0);
+        mem.record(["a:y"], &d);
+        assert_eq!((mem.heat("a:x"), mem.heat("a:y")), (0.5, 1.0));
+        mem.rewind();
+        assert_eq!((mem.heat("a:x"), mem.heat("a:y")), (1.0, 0.0));
+    }
+
+    #[test]
+    fn draw_settings_are_data_a_definition_tunes() {
+        let c = PowerCurve::shipped();
+        assert_eq!(c.draw.games, GameWeighting::Equal);
+        let t: toml::Table = toml::from_str("draw = { games = \"sqrt\", recency = 0.0 }").unwrap();
+        let tuned = PowerCurve::tuned(&t).unwrap();
+        assert_eq!((tuned.draw.games, tuned.draw.recency, tuned.draw.recovery), (GameWeighting::Sqrt, 0.0, c.draw.recovery));
     }
 
     #[test]
@@ -931,7 +1121,7 @@ mod tests {
         };
         let caps = [a, c, d];
         let refs: Vec<&Capabilities> = caps.iter().collect();
-        let text = definition(&caps, &powers_of(&refs), &opts, &|g| g != "c").unwrap();
+        let text = definition(&caps, &powers_of(&refs), &opts, &Recency::default(), &|g| g != "c").unwrap();
         let def = crate::minigame::MinigameDef::parse("auto", &text).expect(&text);
         assert_eq!(def.maps, ["d:map1"], "c isn't installed: its maps go too");
         assert_eq!(def.rotation, crate::minigame::def::Rotation::Random);
@@ -944,7 +1134,7 @@ mod tests {
         assert_eq!(def.rules.params["knife_finale"].as_bool(), Some(true));
         assert_eq!(map_pool(&caps, &|_| true), ["c:map1", "d:map1", "c:map2"], "in turn");
         assert_eq!(map_pool(&caps[..1], &|_| true), ["greybox"]);
-        assert!(definition(&caps, &powers_of(&refs), &opts, &|_| false).is_err());
+        assert!(definition(&caps, &powers_of(&refs), &opts, &Recency::default(), &|_| false).is_err());
     }
 
     static P: GameParts = GameParts {
