@@ -2858,6 +2858,29 @@ docs/plans/active/sound.md.
 
 ## 9. Performance
 
+- **Tests that control time and await conditions (user, 2026-11-17; after
+  the stutter, host-to-lobby, disconnect and UI fixes).** Real time still
+  leaks into tests and scenes: background work on threads (map loads,
+  model builds, downloads, navigation meshes), things timed on the real
+  clock (UI animations, the kill-icon retry, download pacing, timeouts),
+  fixed waits ("N frames", "N ms") where no event exists, and networked
+  tests that sleep while loopback settles. That makes some runs slow and
+  some flaky (the voted-map race). Wanted:
+  - a manual clock for `harness::Sim` and scenes (Bevy's manual time), so
+    a test jumps "5 s later" at once; `ui_motion_scale` 0 in tests so
+    animations finish at once;
+  - background tasks run deterministically in tests:
+    `sim.run_until_idle()` instead of sleeping;
+  - awaiting conditions, coroutine-style, with a tick limit instead of a
+    timeout: `sim.run_until(|world| ..., max_ticks)`,
+    `sim.await_message::<M>()`; the scene tool's `wait_for <condition>`
+    to match;
+  - an audit moving every sleep, timeout and real-clock read in tests and
+    engine code onto the clock or the await helpers, then a `repo_checks`
+    rule flagging new sleeps in tests.
+  Payoff: faster runs, no timing flakes, simpler agent scenes (fewer wait
+  loops written and debugged). One agent, in stages.
+
 - Done: **Disk guards (2026-10-31: the dev box's disk filled to 100%).**
   `tools/agent-slot.sh trim-incremental` (run by `trim`,
   `tools/clean-worktrees.sh` and `tools/post-push-tests.sh`) trims
