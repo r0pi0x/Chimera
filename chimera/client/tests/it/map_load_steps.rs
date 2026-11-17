@@ -486,3 +486,52 @@ fn the_local_load_lasts_from_the_start_until_the_game_is_entered() {
     assert!(!local_load_under_way(sim.app.world()), "off once in the game");
     assert_eq!(sim.app.world().resource::<Entered>().0, 1, "entered once");
 }
+
+/// The loading screens' stages follow the load's own work
+/// (`chimera_net::net::load_stages`, docs/plans/active/lobby-between-maps.md):
+/// the map's load on its task, then building the models (the spawn's
+/// start, its props a step at a time), then the physics (the colliders,
+/// then the settle hooks), in that order, each share only growing, with
+/// the models' many steps seen as many shares; no download stage for a
+/// load that has none.
+#[test]
+fn a_loads_stages_follow_its_work() {
+    use chimera_net::net::load_stages::{LoadStep, StageState, current, stages};
+    let mut sim = sim();
+    // One step a frame, so each is seen.
+    sim.app.init_resource::<chimera_world::map::prepare::StepAFrame>();
+    console::start_map_load(sim.app.world_mut(), "test:steps", None);
+    let steps: Vec<LoadStep> = stages(sim.app.world()).iter().map(|s| s.step).collect();
+    assert_eq!(steps, [LoadStep::Map, LoadStep::Models, LoadStep::Physics], "no download");
+    let mut seen: Vec<(LoadStep, Option<f32>)> = Vec::new();
+    for _ in 0..2000 {
+        if console::map_load_stage(sim.app.world()) == MapLoadStage::None {
+            break;
+        }
+        if let Some(now) = current(sim.app.world())
+            && seen.last() != Some(&now)
+        {
+            // Everything before the running stage is done.
+            for s in stages(sim.app.world()) {
+                let want = s.step < now.0;
+                assert_eq!(s.state == StageState::Done, want, "{s:?} while {now:?}");
+            }
+            seen.push(now);
+        }
+        sim.app.update();
+        chimera_world::harness::let_tasks_run();
+    }
+    assert_eq!(console::map_load_stage(sim.app.world()), MapLoadStage::None, "it loaded: {seen:?}");
+    let order: Vec<LoadStep> = seen.iter().map(|s| s.0).collect();
+    assert!(order.windows(2).all(|w| w[0] <= w[1]), "in order: {seen:?}");
+    for step in [LoadStep::Map, LoadStep::Models, LoadStep::Physics] {
+        assert!(order.contains(&step), "{step:?} seen: {seen:?}");
+        let shares: Vec<f32> = seen.iter().filter(|s| s.0 == step).filter_map(|s| s.1).collect();
+        assert!(shares.windows(2).all(|w| w[0] <= w[1]), "{step:?} only grows: {shares:?}");
+    }
+    let models = seen.iter().filter(|s| s.0 == LoadStep::Models).count();
+    assert!(models >= PROPS / 16, "a share a props step: {models} in {seen:?}");
+    let physics = seen.iter().filter(|s| s.0 == LoadStep::Physics).filter_map(|s| s.1).fold(0.0f32, f32::max);
+    assert!(physics > 0.5, "the physics' share grew: {seen:?}");
+    assert!(current(sim.app.world()).is_none(), "nothing under way once in the game");
+}

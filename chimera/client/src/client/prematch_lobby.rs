@@ -29,7 +29,10 @@
 //!   YOU, the session wins as "2 WON": `LobbyRow::wins`), the status in
 //!   its colour (connecting, downloading, loading the map, not ready,
 //!   ready), for a downloader a bar with "MB done / total"
-//!   and the percentage, and the ping (or "BOT"); the local player's row
+//!   and the percentage, for a loader its stage and share ("Building
+//!   models 62%": `LobbyRow::stage`, `chimera_net::net::load_stages`; this
+//!   machine's own row from its own stages, live while a host's
+//!   simulation waits on its spawn), and the ping (or "BOT"); the local player's row
 //!   on the gold band the match-end screen gives it (found by its client
 //!   id: `net::client::LocalClientId`, a listen host's `HOST_ID`).
 //! - **The key** (`LOBBY_KEY`, F3, in place of its bind while the lobby
@@ -263,8 +266,10 @@ pub struct LobbyViewRow {
     pub status: u8,
     /// The status's words.
     pub state: String,
-    /// Downloading: the share done (None: no bar).
+    /// Downloading or loading: the share done (None: no bar).
     pub fraction: Option<f32>,
+    /// Loading: the stage under way (`chimera_net::net::load_stages`), when told.
+    pub step: Option<chimera_net::net::load_stages::LoadStep>,
     /// Downloading: "12.3 / 80.0 MB".
     pub bytes: String,
     /// "48 ms", "BOT" or empty.
@@ -383,6 +388,9 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
         ),
         _ => (None, String::new()),
     };
+    // Loading: the stage under way and its share (`LobbyRow::stage`).
+    let stage = r.stage().filter(|_| r.status == status::LOADING);
+    let fraction = fraction.or(stage.map(|(_, f)| f));
     LobbyViewRow {
         name: r.name.clone(),
         bot: r.bot(),
@@ -391,8 +399,12 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
         state: match (r.bot(), downloading, fraction) {
             (true, ..) => "Ready".into(),
             (_, true, Some(f)) if r.total > 0 => format!("Downloading {:.0}%", f * 100.0),
-            _ => status::name(r.status).into(),
+            _ => match stage {
+                Some((step, f)) => format!("{} {:.0}%", step.words(), f * 100.0),
+                None => status::name(r.status).into(),
+            },
         },
+        step: stage.map(|(s, _)| s),
         fraction,
         bytes,
         ping_ms: r.ping_ms,
@@ -406,6 +418,49 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
         avatar: r.avatar,
         party: r.party,
     }
+}
+
+/// This machine's own load, for its own row (`chimera_net::net::load_stages`).
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct OwnLoad<'w> {
+    join: Option<Res<'w, chimera_net::net::client::JoinProgress>>,
+    ahead: Option<Res<'w, chimera_net::net::assets::MapAhead>>,
+    local: Option<Res<'w, chimera_world::map::LocalMapLoad>>,
+    work: Option<Res<'w, chimera_net::net::load_stages::LoadWork>>,
+    reporter: Option<Res<'w, chimera_world::map::loading::LoadReporter>>,
+}
+
+impl OwnLoad<'_> {
+    /// The stage under way here and its share, with the download's bytes.
+    fn current(&self) -> Option<(chimera_net::net::load_stages::LoadStep, Option<f32>, Option<(u64, u64)>)> {
+        use chimera_net::net::load_stages::{Inputs, StageState, stages_of};
+        let local = self.local.is_some();
+        let i = Inputs {
+            join: self.join.as_deref(),
+            ahead: self.ahead.as_deref().filter(|a| a.running()).map(|a| a.bytes()),
+            local,
+            work: self.work.as_deref().copied().filter(|_| local),
+            map_share: self.reporter.as_ref().and_then(|r| r.current()).map(|p| p.fraction),
+        };
+        stages_of(&i).into_iter().find_map(|s| match s.state {
+            StageState::Running(f) => Some((s.step, f, s.bytes)),
+            _ => None,
+        })
+    }
+}
+
+/// Row `r` with this machine's own stage now (`OwnLoad`).
+fn own_row(
+    r: &chimera_net::prematch::LobbyRow,
+    (step, share, bytes): (chimera_net::net::load_stages::LoadStep, Option<f32>, Option<(u64, u64)>),
+) -> chimera_net::prematch::LobbyRow {
+    let mut r = r.clone();
+    let download = step == chimera_net::net::load_stages::LoadStep::Download;
+    r.status = if download { status::DOWNLOADING } else { status::LOADING };
+    r.step = step.index();
+    r.permille = chimera_net::net::load_stages::permille(share);
+    (r.done, r.total) = bytes.filter(|_| download).unwrap_or((0, 0));
+    r
 }
 
 /// `ui_scene lobby host`: the staged lobby seen as its listen host (the
@@ -428,6 +483,7 @@ fn follow(
     ladder: Option<Res<chimera_sim::minigame::ladder::Ladder>>,
     (mut passes, mut gate, first): (super::logo_pass::Passes, ResMut<LobbyGate>, Query<(), With<chimera_net::prematch::HostLobbyFirst>>),
     mut view: ResMut<LobbyView>,
+    own: OwnLoad,
 ) {
     // A listen host's lobby shown from its Start (`prematch::show_first`):
     // seen as its host, as the staged one.
@@ -473,7 +529,17 @@ fn follow(
         mode: l.mode.clone(),
         map: vote::map_name(&l.map).to_string(),
         line: waiting_line(l),
-        rows: l.rows.iter().map(|r| view_row(r, mine.is_some() && r.id == mine)).collect(),
+        rows: l
+            .rows
+            .iter()
+            .map(|r| {
+                let local = mine.is_some() && r.id == mine;
+                match own.current().filter(|_| local && matches!(r.status, status::LOADING | status::DOWNLOADING)) {
+                    Some(o) => view_row(&own_row(r, o), true),
+                    None => view_row(r, local),
+                }
+            })
+            .collect(),
         countdown: l.countdown,
         hosting: staged.is_some() || first || (role.as_deref() == Some(&NetRole::Server) && !host.is_empty()),
         hint: String::new(),
@@ -823,6 +889,8 @@ mod tests {
             status,
             done,
             total,
+            step: chimera_net::prematch::NO_STEP,
+            permille: 0,
             ping_ms: id.map(|_| 48),
             wins: 0,
             avatar: 0,

@@ -48,7 +48,7 @@ countdown_hot = 3.0
 const JOINER: u64 = 5;
 
 fn row(id: Option<u64>, name: &str, status: u8) -> LobbyRow {
-    LobbyRow { id, name: name.into(), status, done: 0, total: 0, ping_ms: id.filter(|&i| i != HOST_ID).map(|_| 31), wins: 0, avatar: 0, party: 0 }
+    LobbyRow { id, name: name.into(), status, done: 0, total: 0, step: chimera_net::prematch::NO_STEP, permille: 0, ping_ms: id.filter(|&i| i != HOST_ID).map(|_| 31), wins: 0, avatar: 0, party: 0 }
 }
 
 /// A listen host's lobby: the host, a joiner not ready, a bot; 6 slots.

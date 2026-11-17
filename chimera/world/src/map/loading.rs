@@ -3,6 +3,14 @@
 //! reporter comes with `MapLoadOptions`), the client reads `current`
 //! while it waits. Each app (and each load) has its own reporter, so
 //! apps in one process don't share progress.
+//!
+//! A load's stages (`LoadStep`, docs/plans/active/lobby-between-maps.md):
+//! the download (bytes; `chimera_net::net::load_stages` reads the join's), the
+//! map (the loader's task: `LoadReporter`), the models (the stepped
+//! spawn's parts and props) and the physics (the spawn's held-back
+//! colliders, then the settle hooks: navigation, spawn spots, shadows).
+//! The spawn and the settling count their work into `LoadWork`, so the
+//! bars follow the work done, not the time.
 
 use std::{
     sync::{Arc, Mutex},
@@ -51,6 +59,77 @@ impl PartialEq for LoadReporter {
 }
 
 impl Eq for LoadReporter {}
+
+/// A stage of getting into a map, in order: what the loading screens'
+/// bars and the lobby's rows show (`LobbyRow::step` sends `index`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LoadStep {
+    /// The match's files (bytes).
+    Download,
+    /// The loader's task (`LoadReporter`'s share).
+    #[default]
+    Map,
+    /// The spawn's parts and props, a step a frame (`LoadWork`).
+    Models,
+    /// The spawn's colliders, then the settle hooks (`LoadWork`).
+    Physics,
+}
+
+impl LoadStep {
+    pub const ALL: [LoadStep; 4] = [LoadStep::Download, LoadStep::Map, LoadStep::Models, LoadStep::Physics];
+
+    /// The stage as a number (0-3), for the network.
+    pub fn index(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_index(i: u8) -> Option<LoadStep> {
+        Self::ALL.get(i as usize).copied()
+    }
+
+    /// The stage's words.
+    pub fn words(self) -> &'static str {
+        match self {
+            LoadStep::Download => "Downloading",
+            LoadStep::Map => "Loading map",
+            LoadStep::Models => "Building models",
+            LoadStep::Physics => "Physics and navigation",
+        }
+    }
+
+    /// The stage's short word (a lobby row's bar).
+    pub fn short(self) -> &'static str {
+        match self {
+            LoadStep::Download => "Downloading",
+            LoadStep::Map => "Loading",
+            LoadStep::Models => "Models",
+            LoadStep::Physics => "Physics",
+        }
+    }
+}
+
+/// This app's own map load past its loader: the stage (`Models` or
+/// `Physics`) and its work done of all (the spawn's steps and props, then
+/// its colliders and the settle hooks). Written by the stepped spawn
+/// (`spawn::begin_spawn`, `spawn_steps`, `insert_colliders`) and a front
+/// end's settling; reset when a load starts. Read only while a local load
+/// is under way (`map::local_load_under_way`).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LoadWork {
+    pub step: LoadStep,
+    pub done: u64,
+    pub total: u64,
+    /// The colliders the physics stage began with (its settle hooks come
+    /// after them).
+    pub colliders: u64,
+}
+
+impl LoadWork {
+    /// The share done (0 while nothing is known).
+    pub fn fraction(&self) -> f32 {
+        if self.total == 0 { 0.0 } else { (self.done as f64 / self.total as f64).clamp(0.0, 1.0) as f32 }
+    }
+}
 
 /// Where a load's time goes: a loader calls `lap` after each stage; the
 /// stages land in `MapData::load_times` (and the log), for finding what

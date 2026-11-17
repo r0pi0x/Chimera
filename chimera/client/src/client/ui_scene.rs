@@ -61,7 +61,10 @@ pub struct StagedLobby;
 /// `ui_scene lobby`: a lobby waiting for players, its names as their
 /// players typed them; `ui_scene lobby host`: the host's view of a first
 /// lobby waiting for its Start, with two parties (you and two friends,
-/// another pair), a stranger and a bot, 8 slots.
+/// another pair), a stranger and a bot, 8 slots; `ui_scene lobby
+/// between`: the host's lobby after a match, the next map coming in on
+/// every machine, each row at its own stage (downloading, loading the
+/// map, building models, physics).
 fn stage_lobby(w: &mut World, how: Option<&str>) {
     use chimera_net::prematch::{LobbyRow, NetLobby, status};
     let row = |id: Option<u64>, name: &str, st: u8, ping: Option<u16>, wins: u32| LobbyRow {
@@ -70,23 +73,34 @@ fn stage_lobby(w: &mut World, how: Option<&str>) {
         status: st,
         done: 0,
         total: 0,
+        step: chimera_net::prematch::NO_STEP,
+        permille: 0,
         ping_ms: ping,
         wins,
         avatar: if id.is_some() { (name.len() as u8 * 7) % 32 } else { chimera_net::prematch::NO_AVATAR },
         party: 0,
     };
-    if how == Some("host") {
+    if matches!(how, Some("host" | "between")) {
         use chimera_net::net::HOST_ID;
+        let between = how == Some("between");
         let mut dl = row(Some(2), "AI_alpha_9", status::DOWNLOADING, Some(31), 0);
         (dl.done, dl.total, dl.party, dl.avatar) = (42, 100, 1, 6 * 1 + 8 * 2);
+        (dl.step, dl.permille) = (0, 420);
         let mut ld = row(Some(3), "AI_alpha_3", status::LOADING, Some(28), 0);
         (ld.party, ld.avatar) = (1, 8 * 3 + 3);
-        let mut me = row(Some(HOST_ID), "Player", status::READY, None, 0);
+        (ld.step, ld.permille) = (2, 620);
+        let mut me = row(Some(HOST_ID), "Player", if between { status::LOADING } else { status::READY }, None, 0);
+        if between {
+            (me.step, me.permille) = (3, 810);
+        }
         (me.party, me.avatar) = (1, 8 * 1);
         let mut nj = row(Some(4), "Nightjar", status::READY, Some(44), 0);
         (nj.party, nj.avatar) = (2, 8 * 3 + 1);
-        let mut wr = row(Some(5), "wren_77", status::CONNECTING, Some(95), 0);
+        let mut wr = row(Some(5), "wren_77", if between { status::LOADING } else { status::CONNECTING }, Some(95), 0);
         (wr.party, wr.avatar) = (2, 8 * 1 + 5);
+        if between {
+            (wr.step, wr.permille) = (1, 300);
+        }
         let mut st = row(Some(6), "Stranger", status::READY, Some(140), 0);
         st.avatar = 8 * 2 + 7;
         w.insert_resource(super::prematch_lobby::StagedLobbyHost { slots: 8 });
@@ -96,10 +110,10 @@ fn stage_lobby(w: &mut World, how: Option<&str>) {
                 map: "cs_source:de_dust2".into(),
                 mode: "Ultimate Gun Game".into(),
                 rows: vec![me, dl, ld, nj, wr, st, row(None, "Bot_Kilo", status::READY, None, 0)],
-                waiting: 3,
-                wait_left: None,
+                waiting: if between { 4 } else { 3 },
+                wait_left: between.then_some(75),
                 countdown: None,
-                host_start: true,
+                host_start: !between,
             },
         ));
         return;

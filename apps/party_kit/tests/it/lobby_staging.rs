@@ -671,7 +671,7 @@ fn the_lobby_buttons_work_while_a_client_still_loads() {
 }
 
 #[test]
-fn the_map_left_is_unloaded_before_the_next_lobby_shows() {
+fn the_map_left_is_unloaded_under_the_next_lobby() {
     let mut sim = staged_party();
     let mut trace = Trace::default();
     check(traced(&mut sim, &mut trace, 3000, |s| live(s)), &trace, "the first match starts");
@@ -702,8 +702,11 @@ fn the_map_left_is_unloaded_before_the_next_lobby_shows() {
             left_at = Some(f);
             assert_eq!(parts(&mut sim), 0, "nothing of the old map stays");
         }
-        if lobby_view(&sim, 0) && sim.clients[0].app.world().resource::<LobbyView>().map == "next" {
+        if lobby_at.is_none() && lobby_view(&sim, 0) && sim.clients[0].app.world().resource::<LobbyView>().map == "next" {
             lobby_at = Some(f);
+            assert!(sim.clients[0].app.world().resource::<WorldCover>().covered(), "the lobby covers the world");
+        }
+        if left_at.is_some() && lobby_at.is_some() {
             break;
         }
     }
@@ -711,7 +714,9 @@ fn the_map_left_is_unloaded_before_the_next_lobby_shows() {
         trace.print();
         panic!("unloaded at {left_at:?}, the next lobby at {lobby_at:?}");
     };
-    assert!(left < lobby, "unloaded (frame {left}) before the lobby shows (frame {lobby})");
+    // The lobby between maps comes up at the change (docs/plans/active/
+    // lobby-between-maps.md), the map left goes under its cover.
+    assert!(left.abs_diff(lobby) < 120, "unloaded (frame {left}) around the lobby's showing (frame {lobby})");
     assert_eq!(sim.clients[0].app.world().resource::<MapLeft>().0, "greybox");
     // The staging's replication follows the lobby's by a few frames.
     assert!(sim.until(10, |s| lobby_owns(s, 0).is_ok()), "{:?}", lobby_owns(&mut sim, 0));
