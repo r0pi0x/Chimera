@@ -26,8 +26,9 @@
 //! `ShellInserting` the next shell, `overheated`, `overheat_cleared`; the
 //! weapon's `overheat_exit` its exit) and the holder's throttle and look.
 //! The pose is laid out by the game (`Animator::fixed`, sequence 0 named
-//! as playing) and held between ticks (animations.md "Per-tick order": no
-//! interpolation). The engine's `ViewAnimator` and its sequence driver
+//! as playing); Halo holds it between ticks (animations.md "Per-tick
+//! order": no interpolation), we draw between the last two at the frame
+//! rate (`eased`, display only). The engine's `ViewAnimator` and its sequence driver
 //! assume Source's (sequences played in seconds, one at a time); Halo's
 //! view stacks overlays and smoothed inputs on a state animation counted
 //! in ticks, so it is Halo's own small driver beside it, not rules for it.
@@ -232,6 +233,8 @@ pub struct HaloViewModel {
     pub hid: bool,
     /// The held gun's functions (`displays`).
     pub functions: displays::Functions,
+    /// Its poses at the last Halo ticks, drawn between them (`eased`).
+    pub drawn: super::eased::PoseTicks,
 }
 
 /// Holders of Halo guns, one tick (module doc).
@@ -297,6 +300,7 @@ pub fn drive(
                 look: None,
                 hid,
                 functions: Default::default(),
+                drawn: Default::default(),
             };
             own.view.cue(&set, Cue::Ready, halo.overheated);
         }
@@ -373,7 +377,9 @@ pub fn drive(
             }
         }
         if let (Some(pose), Some(a)) = (pose, view.animator.as_mut()) {
-            a.fixed = Some(Later::ready(pose));
+            let pose = Later::ready(pose);
+            own.drawn.lay(super::eased::laid(&clock), pose.clone());
+            a.fixed = Some(pose);
             a.main = Some(0);
         }
         // Hidden while zoomed (animations.md "Root at the camera").
@@ -448,5 +454,7 @@ impl Plugin for HaloViewPlugin {
             FixedLast,
             (stance.before(super::body::animate), drive.before(crate::map::SimPose)),
         );
+        // The poses and objects drawn between Halo's ticks (`eased`).
+        super::eased::plugin(app);
     }
 }

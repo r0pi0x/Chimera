@@ -2867,6 +2867,12 @@ docs/plans/active/sound.md.
   Halo's gun animations and related motion run at its 30 Hz tick and look
   stepped on high-refresh screens. Interpolate between the 30 Hz poses
   (bones, view model, projectiles) for display, simulation unchanged.
+  **Done 2026-11-17** (`halo_ce::game::eased` on the engine's
+  `map::interp::GameTicks`): the body's and view model's poses, the shots
+  in flight and the local grenades drawn between Halo ticks; tested on
+  synthetic animation data, not yet looked at on the disc's models
+  (confirm in a playtest). Still at 30 Hz: corpses, a campaign body's own
+  arms, vehicles.
 
 - **Halo HUD resolution (user, 2026-11-17).** The HUD's bitmaps are the
   original's, authored for 640x480, so they look soft scaled to 1080p and
