@@ -513,8 +513,14 @@ pub struct FloorLabel {
 /// the left one is that label turned half a turn about the stripe's
 /// middle, so it reads from the board's side, looking back up range
 /// (each label lies where its reader sees it at the stripe's right end).
-pub fn floor_labels(ds: &DistancesData, dist: f32) -> [FloorLabel; 2] {
-    let h = ds.floor_label + ds.floor_label_per_m * dist;
+///
+/// The height grows with the distance but stops where the text would run
+/// past the side wall (`floor_half`, the floor's half width): at 100 and
+/// 200 m it would otherwise lie under the wall boards and outside the floor.
+pub fn floor_labels(ds: &DistancesData, floor_half: f32, dist: f32) -> [FloorLabel; 2] {
+    let wide = text_width(&format!("{} M", number(dist)));
+    let room = (floor_half - ds.half - 0.5).max(0.1) / (wide + 0.4);
+    let h = (ds.floor_label + ds.floor_label_per_m * dist).min(room);
     let deep = h * ds.floor_label_stretch;
     let up = Vec3::NEG_Z * ds.floor_label_stretch;
     let origin = at(ds.half + 0.4 * h, dist - deep / 2.0, 0.0);
@@ -736,7 +742,7 @@ mod draw {
             // One reads from the firing line (up the text is down range,
             // stretched that way as road markings against the slant), one
             // from the board's side (`floor_labels`).
-            for l in floor_labels(ds, dist) {
+            for l in floor_labels(ds, d.floor.width / 2.0, dist) {
                 m.text(&text, l.origin + Vec3::Y * LABEL_Y, l.right, l.up, l.height, label);
             }
             let h = (ds.sign + ds.sign_per_m * dist).min(ds.sign_max);
@@ -899,7 +905,7 @@ mod tests {
     fn floor_labels_read_from_the_firing_line_and_from_the_boards_side() {
         let d = data();
         for &dist in &d.distances.at {
-            let [near, far] = floor_labels(&d.distances, dist);
+            let [near, far] = floor_labels(&d.distances, d.floor.width / 2.0, dist);
             // From the firing line (looking down range, -Z; its right is
             // +X): the text runs right, its up goes away.
             assert_eq!(near.right, Vec3::X);
@@ -913,6 +919,8 @@ mod tests {
             assert_eq!(far.right.cross(far.up).normalize(), Vec3::Y);
             assert!(near.origin.x > d.distances.half && far.origin.x < -d.distances.half);
             let w = text_width(&format!("{} M", number(dist))) * near.height;
+            // Within the floor (the wall's face at the half width).
+            assert!(near.origin.x + w <= d.floor.width / 2.0 + 1e-3, "{dist}: label past the wall");
             let (a, b) = (near.origin + near.right * w + near.up * near.height, far.origin + far.right * w + far.up * far.height);
             assert!((far.origin.x + near.origin.x).abs() < 1e-4 && (far.origin.z + near.origin.z + 2.0 * dist).abs() < 1e-3, "{dist}");
             assert!((a.x + b.x).abs() < 1e-4 && (a.z + b.z + 2.0 * dist).abs() < 1e-3, "{dist}");
