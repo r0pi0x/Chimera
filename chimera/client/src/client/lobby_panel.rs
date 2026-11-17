@@ -27,7 +27,9 @@
 //!   session wins (trophy and count, the leader's in the accent:
 //!   `LobbyWins`), the status as the progress component (variant B:
 //!   loaded is ready, filled; downloading a hollow bar filling with its
-//!   share; loading and connecting striped) and the ping (the bars and
+//!   share; loading the same with its stage's word (Loading, Models,
+//!   Physics: `chimera_net::net::load_stages`), striped until told; connecting
+//!   striped) and the ping (the bars and
 //!   ms; the loss mark on a bad line; a bot a dim meter and a dash). Free
 //!   slots read "Open" (`OpenSlot`).
 //! - **Up next**, at the right: the map's big card (a gradient tinted by
@@ -643,7 +645,10 @@ fn row_progress(r: &super::prematch_lobby::LobbyViewRow) -> (chimera_ui::control
             Some(f) if f > 0.0 => (Progress::Running(f), "Downloading".into()),
             _ => (Progress::Connecting, "Downloading".into()),
         },
-        status::LOADING => (Progress::Connecting, "Loading".into()),
+        status::LOADING => match (r.step, r.fraction) {
+            (Some(step), Some(f)) => (Progress::Running(f), step.short().into()),
+            _ => (Progress::Connecting, "Loading".into()),
+        },
         _ => (Progress::Connecting, "Connecting".into()),
     }
 }
@@ -655,8 +660,11 @@ pub fn action_line(v: &LobbyView, loaded: usize) -> String {
     if let Some(left) = v.countdown {
         return format!("{loaded} of {n} loaded. The match starts in {left} s.");
     }
-    if v.hosting {
+    if v.hosting && v.host_start {
         format!("{loaded} of {n} loaded. The match starts when you press Start.")
+    } else if v.hosting {
+        // A later lobby (between maps): it starts by itself; Start is early.
+        format!("{loaded} of {n} loaded. It starts once everyone has loaded, or press Start.")
     } else if v.host_start {
         format!("{loaded} of {n} loaded. Waiting for the host to start.")
     } else {

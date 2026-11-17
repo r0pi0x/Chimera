@@ -520,7 +520,9 @@ pub fn bridge_requests(world: &mut World) {
                 chimera_sim::minigame::props::clear(world);
                 Ok(())
             }
-            BenchRequest::AddProp(p) => chimera_sim::minigame::props::spawn(world, &tg::SpawnProp { spec: tg::PropSpec { kind: p.kind, distance_m: p.distance_m }, by: None }).map(|_| ()),
+            // Under the crosshair (the request's distance is the offline
+            // preview's only).
+            BenchRequest::AddProp(p) => chimera_sim::minigame::props::spawn_at_aim(world, &p.kind, None).map(|_| ()),
             BenchRequest::RemoveProp(id) => {
                 chimera_sim::minigame::props::remove(world, Entity::from_bits(id));
                 Ok(())

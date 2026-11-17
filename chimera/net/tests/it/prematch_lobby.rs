@@ -236,6 +236,37 @@ fn each_players_progress_reaches_the_other_clients() {
     assert_eq!(row(&l, id1).status, status::DOWNLOADING);
 }
 
+/// Each player's load is told as its stage and share (docs/plans/active/
+/// lobby-between-maps.md, step 2): a client loading the map reports the
+/// stage under way from its own work (`load_stages`: the map, building
+/// models, physics), and every client's lobby row shows it.
+#[test]
+fn each_players_load_stage_reaches_the_other_clients() {
+    use chimera_net::net::load_stages::{LoadStep, LoadWork};
+    let mut sim = sim(2);
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts");
+    let _h = hold(&mut sim, 1);
+    {
+        let w = sim.clients[1].app.world_mut();
+        w.resource_mut::<JoinProgress>().stage = JoinStage::LoadingMap;
+        w.insert_resource(chimera_world::map::LocalMapLoad { map: "chimera:greybox".into() });
+        w.insert_resource(LoadWork { step: LoadStep::Models, done: 5, total: 10, colliders: 0 });
+    }
+    assert!(sim.until(600, |s| joined(s, 0)), "client 0 is in");
+    let id1 = sim.client_id(1);
+    let seen = |s: &mut NetSim, i: usize, step: LoadStep, share: f32| {
+        client_lobby(s, i).is_some_and(|l| {
+            l.rows.iter().any(|r| r.id == Some(id1) && r.status == status::LOADING && r.stage() == Some((step, share)))
+        })
+    };
+    assert!(sim.until(HZ, |s| seen(s, 0, LoadStep::Models, 0.5) && seen(s, 1, LoadStep::Models, 0.5)), "{:?}", client_lobby(&mut sim, 0));
+    sim.clients[1].app.insert_resource(LoadWork { step: LoadStep::Physics, done: 9, total: 10, colliders: 8 });
+    assert!(sim.until(HZ, |s| seen(s, 0, LoadStep::Physics, 0.9)), "{:?}", client_lobby(&mut sim, 0));
+    // The ready player's row has no stage.
+    let l = client_lobby(&mut sim, 0).unwrap();
+    assert_eq!(row(&l, sim.client_id(0)).stage(), None);
+}
+
 #[test]
 fn the_longest_wait_starts_the_match_and_the_straggler_joins_late() {
     let mut sim = sim(2);
@@ -361,8 +392,15 @@ fn server_loads(world: &mut World) {
     minigame::restart(world);
 }
 
+/// A client whose loads never finish.
+#[derive(Resource)]
+struct StuckLoad;
+
 /// A client loads what its handshake asks for `frames` frames later.
 fn client_loads(world: &mut World, mut cursor: Local<MessageCursor<NetEvent>>) {
+    if world.contains_resource::<StuckLoad>() {
+        return;
+    }
     let asked: Vec<String> = cursor
         .read(world.resource::<Messages<NetEvent>>())
         .filter_map(|e| match e {
@@ -400,7 +438,7 @@ fn a_map_change_runs_the_lobby_again() {
     assert!(sim.until(8 * HZ, |s| playing(s, 2)), "the first match plays");
     // The next match on the pool's other map.
     minigame_net::change_match(sim.server.app.world_mut(), ID, Some("test:next")).expect("the change");
-    assert!(sim.until(600, |s| in_lobby(s)), "a lobby on the new map");
+    assert!(sim.until(600, |s| in_lobby(s) && server_lobby(s).is_some()), "a lobby on the new map");
     let l = server_lobby(&mut sim).unwrap();
     assert_eq!(l.map, "test:next");
     assert!(l.rows.iter().all(|r| r.status != status::READY), "the clients still load it: {l:?}");
@@ -447,7 +485,7 @@ fn a_hosts_changelevel_runs_the_lobby() {
     assert!(sim.until(900, |s| joined(s, 0) && joined(s, 1)), "both in");
     assert!(sim.until(8 * HZ, |s| playing(s, 2)), "the first match plays");
     sim.server.app.world_mut().resource_mut::<Console>().submit("changelevel test:next");
-    assert!(sim.until(600, |s| in_lobby(s)), "a lobby on the new map");
+    assert!(sim.until(600, |s| in_lobby(s) && server_lobby(s).is_some()), "a lobby on the new map");
     assert_eq!(sim.server.app.world().resource::<NextMatches>().0, ["test:next"], "as a rotation");
     let l = server_lobby(&mut sim).unwrap();
     assert_eq!(l.map, "test:next");
@@ -455,4 +493,84 @@ fn a_hosts_changelevel_runs_the_lobby() {
     assert!(sim.until(6 * HZ, |s| !in_lobby(s)));
     assert!(sim.until(HZ, |s| playing(s, 2)), "the next match plays");
     assert_eq!(sim.server.app.world().resource::<LoadedMapName>().0, "test:next");
+}
+
+/// The test map change: the server's `changelevel` loads in `frames`
+/// frames; each client's load takes 90.
+fn changing_sim(clients: usize, frames: u32) -> NetSim {
+    let mut sim = sim(clients);
+    sim.server.app.add_systems(Update, server_loads);
+    sim.server.app.insert_resource(ServerLoadFrames(frames));
+    sim.server.app.console_command("changelevel", "changelevel <map>: a test's.", |w, a| {
+        let map = a.first().cloned().unwrap_or_default();
+        let frames = w.resource::<ServerLoadFrames>().0;
+        w.insert_resource(LoadedMapName(map.clone()));
+        w.insert_resource(FakeLoad(map, frames));
+        Ok(None)
+    });
+    for c in &mut sim.clients {
+        c.app.add_systems(Update, client_loads);
+    }
+    sim
+}
+
+#[derive(Resource)]
+struct ServerLoadFrames(u32);
+
+/// After a match, the lobby is back at once (docs/plans/active/
+/// lobby-between-maps.md, step 3): the change to the next map begins it,
+/// naming the map coming in, before the server has it and while every
+/// machine loads it; it stays up through the load (no gap) and, once the
+/// match is made there, is that match's lobby: everyone loaded, the
+/// countdown, the round.
+#[test]
+fn after_a_match_the_lobby_shows_at_once_while_the_next_map_comes_in() {
+    let mut sim = changing_sim(2, 4 * HZ as u32);
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts");
+    assert!(sim.until(900, |s| joined(s, 0) && joined(s, 1)), "both in");
+    assert!(sim.until(8 * HZ, |s| playing(s, 2)), "the first match plays");
+    minigame_net::change_match(sim.server.app.world_mut(), ID, Some("test:next")).expect("the change");
+    sim.ticks(2);
+    let l = server_lobby(&mut sim).expect("the lobby at once");
+    assert_eq!((l.map.as_str(), l.mode.as_str()), ("test:next", "Kit gun game"));
+    assert!(l.rows.iter().all(|r| r.status == status::LOADING), "everyone loads the next map: {l:?}");
+    assert_eq!((l.countdown, l.wait_left), (None, None), "nothing counts down before the match is made: {l:?}");
+    assert!(sim.server.app.world().contains_resource::<FakeLoad>(), "the server's map still coming in");
+    assert!(sim.until(HZ, |s| client_lobby(s, 0).is_some_and(|l| l.map == "test:next")), "the clients see it");
+    // Up all the way: through the server's load, the clients' loads, the
+    // match made there and the countdown.
+    let mut ticks = 0;
+    while server_lobby(&mut sim).is_some_and(|l| l.countdown.is_none()) {
+        sim.ticks(1);
+        ticks += 1;
+        assert!(ticks < 20 * HZ, "the countdown comes");
+    }
+    assert!(in_lobby(&sim), "the match's own lobby now");
+    assert!(server_lobby(&mut sim).unwrap().rows.iter().all(|r| r.ready()), "everyone loaded");
+    assert!(sim.until(6 * HZ, |s| !in_lobby(s)));
+    assert!(sim.until(HZ, |s| playing(s, 2)), "the next match plays");
+}
+
+/// The lobby after a match starts once everyone is ready or once the
+/// host's longest wait (`mp_lobby_max_wait`) has passed since the match
+/// was made on the new map, not since the change began (step 4): a
+/// client still loading joins as a late joiner.
+#[test]
+fn the_lobby_after_a_match_waits_for_everyone_or_the_hosts_timeout() {
+    let mut sim = changing_sim(2, 6 * HZ as u32);
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_max_wait 10");
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts");
+    assert!(sim.until(900, |s| joined(s, 0) && joined(s, 1)), "both in");
+    assert!(sim.until(8 * HZ, |s| playing(s, 2)), "the first match plays");
+    // Client 1 won't finish loading the next map.
+    sim.clients[1].app.insert_resource(StuckLoad);
+    let clock = |s: &NetSim| s.server.app.world().resource::<chimera_core::core::SimClock>().now;
+    minigame_net::change_match(sim.server.app.world_mut(), ID, Some("test:next")).expect("the change");
+    let made = |s: &NetSim| s.server.app.world().get_resource::<prematch::Lobby>().is_some_and(|l| !l.between);
+    assert!(sim.until(10 * HZ, |s| made(s)), "the match is made on the new map");
+    let ready_at = clock(&sim);
+    assert!(sim.until(14 * HZ, |s| server_lobby(s).is_some_and(|l| l.countdown.is_some())), "the host's timeout");
+    let waited = clock(&sim) - ready_at;
+    assert!((waited - 10.0).abs() < 0.5, "10 s from the match made there: {waited}");
+    assert!(sim.until(6 * HZ, |s| !in_lobby(s)), "it starts without the straggler");
 }

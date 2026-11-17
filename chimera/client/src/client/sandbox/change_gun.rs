@@ -50,9 +50,12 @@
 //!   it on the header; `\` or Enter there opens it and puts the cursor
 //!   back on the same tile. The detail pane follows the cursor. Letters
 //!   do not go to the search until the field has the keyboard (`/`, a
-//!   click on it, or Enter with nothing under the cursor); then letters
-//!   and digits type (not with Ctrl or Alt held), Backspace deletes a
-//!   letter, and Enter or Esc lets go of the field (Enter: the cursor is
+//!   click on it, or Enter with nothing under the cursor); the field is
+//!   the kit's text field (`GunSearch`: a caret, a selection, copy and
+//!   paste, as the target picker's), so letters and digits type at the
+//!   caret, the arrows, Home and End move it (Left and Right don't move
+//!   the grid's cursor then), Backspace and Delete edit, Ctrl+A/C/X/V
+//!   work, and Enter or Esc lets go of the field (Enter: the cursor is
 //!   on the first match; Enter again switches). With the field not
 //!   focused B closes the view (B opens it, B closes it), I shows the
 //!   large model and R retries the selected gun's failed download. Ctrl+I
@@ -263,6 +266,8 @@ fn keys(
     mut lists: ResMut<VirtualLists>,
     mut out: MessageWriter<GunAction>,
     mut requests: MessageWriter<UnitRequest>,
+    mut own: Local<chimera_ui::clipboard::Clipboard>,
+    shared: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
     if ui.screen != SandboxScreen::ChangeGun || console.is_some_and(|c| c.open) {
         typed.clear();
@@ -281,7 +286,7 @@ fn keys(
         } else if ui.view.search_focus {
             ui.view.search_focus = false;
         } else if !ui.view.search.is_empty() {
-            ui.view.search.clear();
+            ui.view.clear_search();
         } else {
             out.write(GunAction::Close);
         }
@@ -321,7 +326,9 @@ fn keys(
         (KeyCode::PageUp, VNav::PageUp),
         (KeyCode::PageDown, VNav::PageDown),
     ] {
-        if k(key) {
+        // Left and Right move the focused field's caret.
+        let in_field = ui.view.search_focus && matches!(nav, VNav::Left | VNav::Right);
+        if k(key) && !in_field {
             st.nav(nav);
         }
     }
@@ -336,7 +343,7 @@ fn keys(
         // (the selection follows the search), Enter again switches.
         ui.view.search_focus = false;
     } else if enter && !focus && st.cursor.is_none() {
-        ui.view.search_focus = true;
+        ui.view.focus_search();
     }
     let enter = enter && !focus;
     match st.cursor {
@@ -415,35 +422,99 @@ fn keys(
     // view, `/` focuses the field, I is the model view and R retries the
     // selected gun's failed download.
     let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let clipboard = match shared {
+        Some(c) => c.into_inner(),
+        None => &mut *own,
+    };
     for e in typed.read() {
-        if e.state != ButtonState::Pressed || ctrl || alt || matches!(e.key_code, KeyCode::Backslash | KeyCode::IntlBackslash) {
+        if e.state != ButtonState::Pressed || alt || matches!(e.key_code, KeyCode::Backslash | KeyCode::IntlBackslash) {
             continue;
         }
-        let empty = ui.view.search.is_empty();
-        if !ui.view.search_focus {
-            match &e.logical_key {
-                Key::Character(c) if c.eq_ignore_ascii_case("b") => {
-                    out.write(GunAction::Close);
-                }
-                Key::Character(c) if c.as_str() == "/" => ui.view.search_focus = true,
-                Key::Character(c) if c.eq_ignore_ascii_case("i") => ui.view.detail = !ui.view.detail,
-                Key::Character(c) if c.eq_ignore_ascii_case("r") => {
-                    if let Some((game, unit)) = failed.clone() {
-                        requests.write(UnitRequest::Retry { game, unit });
-                    }
-                }
-                _ => {}
+        if ui.view.search_focus {
+            // The kit's text field: a caret, a selection, copy and paste.
+            let Some(key) = crate::client::widgets::text_key(&e.logical_key, e.key_code, ctrl, shift) else { continue };
+            let n = ui.view.search.chars().count();
+            let mut caret = crate::client::widgets::Caret { at: ui.view.search_caret.min(n), anchor: ui.view.search_anchor.min(n) };
+            let mut text = ui.view.search.clone();
+            if caret.key(&mut text, key, clipboard, 48, false) {
+                ui.view.search = text;
             }
+            let n = ui.view.search.chars().count();
+            let (at, anchor) = (caret.at.min(n), caret.anchor.min(n));
+            if (ui.view.search_caret, ui.view.search_anchor) != (at, anchor) {
+                ui.view.search_caret = at;
+                ui.view.search_anchor = anchor;
+            }
+            continue;
+        }
+        if ctrl {
             continue;
         }
         match &e.logical_key {
-            Key::Backspace => {
-                ui.view.search.pop();
+            Key::Character(c) if c.eq_ignore_ascii_case("b") => {
+                out.write(GunAction::Close);
             }
-            Key::Space if !empty => ui.view.search.push(' '),
-            Key::Character(c) if ui.view.search.len() < 48 => ui.view.search.push_str(c),
+            Key::Character(c) if c.as_str() == "/" => ui.view.focus_search(),
+            Key::Character(c) if c.eq_ignore_ascii_case("i") => ui.view.detail = !ui.view.detail,
+            Key::Character(c) if c.eq_ignore_ascii_case("r") => {
+                if let Some((game, unit)) = failed.clone() {
+                    requests.write(UnitRequest::Retry { game, unit });
+                }
+            }
             _ => {}
         }
+    }
+}
+
+/// The search field (the kit's text field: `controls::Ui::text_field`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct GunSearch;
+
+/// The pointer in the search field (`controls::TextPress`): a press
+/// focuses it and places the caret, a drag selects, a double press selects
+/// all.
+fn search_pointer(
+    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    fields: Query<(Entity, &Interaction), With<GunSearch>>,
+    hits: chimera_ui::controls::TextHits,
+    clock: Option<Res<chimera_ui::UiClock>>,
+    mut press: Local<chimera_ui::controls::TextPress>,
+    mut ui: ResMut<SandboxUi>,
+) {
+    let Some(mouse) = mouse else { return };
+    if ui.screen != SandboxScreen::ChangeGun {
+        press.release();
+        return;
+    }
+    let now = clock.map_or(0.0, |c| c.now);
+    let set = |ui: &mut SandboxUi, c: usize, a: usize| {
+        let n = ui.view.search.chars().count();
+        let (c, a) = (c.min(n), a.min(n));
+        if (ui.view.search_caret, ui.view.search_anchor) != (c, a) {
+            ui.view.search_caret = c;
+            ui.view.search_anchor = a;
+        }
+    };
+    if mouse.just_pressed(MouseButton::Left) {
+        let Some(e) = fields.iter().find_map(|(e, i)| (*i == Interaction::Pressed).then_some(e)) else {
+            press.release();
+            return;
+        };
+        if !ui.view.search_focus {
+            ui.view.search_focus = true;
+        }
+        let (Some(at), Some(len)) = (hits.char_at(e), hits.len(e)) else { return };
+        let (c, a) = press.press(now, at, len);
+        set(&mut ui, c, a);
+    } else if mouse.pressed(MouseButton::Left) {
+        let Some((e, _)) = fields.iter().next() else { return };
+        let Some(at) = hits.char_at(e) else { return };
+        if let Some((c, a)) = press.drag(at) {
+            set(&mut ui, c, a);
+        }
+    } else {
+        press.release();
     }
 }
 
@@ -610,13 +681,10 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
     let search = c
         .spawn((
             UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), w: Some(26.0), h: Some(2.1), pad: Some([0.0, 0.8, 0.0, 0.8].into()), ..UiStyle::row() }
-                .abs([Some(57.0), Some(0.4), None, None])
-                .bg_a(Tone::Fg, 0.05),
+                .abs([Some(57.0), Some(0.4), None, None]),
             Node::default(),
             UiTransform { translation: Val2::percent(-50.0, 0.0), ..default() },
             UiParityId::new("gun.search"),
-            Interaction::default(),
-            GunAction::FocusSearch,
             ChildOf(head),
         ))
         .id();
@@ -726,7 +794,7 @@ fn draw(
         v
     };
     let (new_all, prev_s) = (prev.is_none(), prev.as_ref());
-    let search_changed = new_all || prev_s.is_some_and(|o| o.view.search != next.view.search || o.view.search_focus != next.view.search_focus);
+    let search_changed = new_all || prev_s.is_some_and(|o| o.view.search != next.view.search || (o.view.search_caret, o.view.search_anchor) != (next.view.search_caret, next.view.search_anchor) || o.view.search_focus != next.view.search_focus);
     let side_changed = new_all
         || prev_s.is_some_and(|o| {
             strip(&o.view) != strip(&next.view) || o.progress != next.progress || o.catalogue != next.catalogue || o.grid_count != next.grid_count
@@ -743,7 +811,7 @@ fn draw(
     let pins_changed = new_all || prev_s.is_some_and(|o| o.pins != next.pins || o.current != next.current || o.drop != next.drop || o.dragging != next.dragging);
     if search_changed {
         c.entity(p.search).despawn_children();
-        search_field(&mut c, &ui, &look, p.search, &next.view.search, next.view.search_focus);
+        search_field(&mut c, &ui, &look, p.search, &next.view.search, next.view.search_focus, (next.view.search_caret, next.view.search_anchor));
     }
     if side_changed {
         for e in [p.games, p.bar, p.pop] {
@@ -785,21 +853,15 @@ fn draw(
     *last = Some((p.root, next));
 }
 
-fn search_field(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, text: &str, focus: bool) {
+fn search_field(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, text: &str, focus: bool, caret: (usize, usize)) {
     kit_icon(c, look, parent, "search", 0.8, Tone::Fg3, 1.0);
-    let w = ui.boxed(c, parent, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-    if text.is_empty() && !focus {
-        ui.sentence(c, w, 0.78, Tone::Fg3, "Find a gun, a game or a tag");
-    } else {
-        ui.text_plain(c, w, Role::Text, 0.84, Tone::Fg, text);
-        c.spawn((Node { width: Val::Px(look.hair().max(1.5)), height: look.val(1.0), ..default() }, BackgroundColor(look.tone(Tone::Fg)), ChildOf(w)));
-    }
+    // The kit's text field (a caret, a selection, copy and paste); a
+    // press focuses it (`GunAction::FocusSearch`, `search_pointer`).
+    let byte = |i: usize| text.char_indices().nth(i).map_or(text.len(), |(b, _)| b);
+    let cur = focus.then(|| chimera_ui::controls::TextCursor { at: byte(caret.0), anchor: byte(caret.1) });
+    let field = ui.text_field(c, parent, text, "Find a gun, a game or a tag", cur, false, 20.0, chimera_ui::controls::State::focused(focus));
+    c.entity(field).insert((GunSearch, GunAction::FocusSearch, UiParityId::new("gun.search.field")));
     ui.kbd(c, parent, if focus { "Enter" } else { "/" }, 0.44, Tone::Fg3);
-    c.spawn((
-        Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, height: Val::Px(look.hair()), ..default() },
-        BackgroundColor(look.tone(if text.is_empty() && !focus { Tone::Fg3 } else { Tone::Acc })),
-        ChildOf(parent),
-    ));
 }
 
 fn games_column(c: &mut Commands, ui: &Ui, parent: Entity, guns: &[SandboxGun], s: &SandboxUi, progress: &UnitProgress) {
@@ -1388,7 +1450,7 @@ fn detail(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, g: &SandboxGun
 pub fn add(app: &mut App) {
     app.init_resource::<Grid>().init_resource::<GridSel>().add_message::<GunAction>().add_message::<KeyboardInput>().add_systems(
         Update,
-        (keys, pointer, act, sync_grid, follow_cursor, open_close, draw)
+        (keys, search_pointer, pointer, act, sync_grid, follow_cursor, open_close, draw)
             .chain()
             .after(super::SandboxSystems)
             .run_if(resource_exists::<chimera_ui::Theme>)
