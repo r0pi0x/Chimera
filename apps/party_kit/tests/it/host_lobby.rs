@@ -52,6 +52,26 @@ fn instant_map(app: &mut App) {
 /// A listen host at its main menu (the menu, the lobby's panel, its own
 /// player), serving on the in-memory link.
 fn host_at_menu() -> NetSim {
+    host_at_menu_with(instant_map)
+}
+
+/// The `map` of the menu's Start loading until `map_in` (the shell's
+/// local load: `LocalMapLoad`).
+fn loading_map(app: &mut App) {
+    app.console_command("map", "a test's", |w, a| {
+        w.insert_resource(chimera_world::map::LocalMapLoad { map: a.join(" ") });
+        Ok(None)
+    });
+}
+
+/// The map of `loading_map` in.
+fn map_in(sim: &mut NetSim) {
+    let w = sim.server.app.world_mut();
+    w.remove_resource::<chimera_world::map::LocalMapLoad>();
+    front_end::entered_game(w);
+}
+
+fn host_at_menu_with(map: fn(&mut App)) -> NetSim {
     let mut sim = NetSim::new(
         CaSim,
         LinkConditions {
@@ -61,10 +81,10 @@ fn host_at_menu() -> NetSim {
         },
         47,
         0,
-        |app: &mut App| {
+        move |app: &mut App| {
             app.add_plugins((GreyboxMapPlugin, PartyPartsPlugin, PreMatchLobbyPlugin));
             menu_bits(app, true);
-            instant_map(app);
+            map(app);
         },
     );
     sim.set_frame(TICK_INTERVAL);
@@ -199,4 +219,48 @@ fn a_dedicated_servers_lobby_keeps_players_ready_once_they_have_the_map() {
     assert_eq!(LobbySettings::default().ready_up, 0, "no ready-up by default");
     assert_eq!(LobbySettings::default().host_start, 1, "the first match waits for the host's start (its console or an RCON admin)");
     assert_eq!(LobbySettings::default().min_players, 1);
+}
+
+/// Host's Start goes to the lobby at once (`prematch::show_first`): the
+/// host's row loading the map while it loads, nothing of a match meanwhile
+/// (no bot joins, no match starts, nobody spawns, so nothing sounds), then
+/// the server's lobby in its place once the map is in, the bots in it.
+#[test]
+fn hosting_shows_the_lobby_first_and_plays_nothing_while_the_map_loads() {
+    use chimera_core::core::Intent;
+    use chimera_net::prematch::{HostLobbyFirst, NetLobby};
+    let mut sim = host_at_menu_with(loading_map);
+    let characters = |s: &mut NetSim| {
+        let w = s.server.app.world_mut();
+        w.query_filtered::<(), (With<Intent>, Without<LocalPlayer>)>().iter(w).count()
+    };
+    server_act(&mut sim, A::Entry(0));
+    server_act(&mut sim, A::Start);
+    // Within Start's 2 frames: the lobby, as its host, its row loading.
+    let v = host_view(&sim);
+    assert!(v.shown && v.hosting, "the lobby first: {v:?}");
+    let me = v.rows.iter().find(|r| r.local).expect("the host's own row");
+    assert_eq!(me.status, status::LOADING);
+    assert_eq!(v.map, "de_dust2", "{v:?}");
+    // A few seconds of loading: no bot, no match, the lobby still up.
+    sim.ticks(3 * HZ);
+    assert_eq!(characters(&mut sim), 0, "no bot joins while the host's map loads");
+    let w = sim.server.app.world();
+    assert!(!w.contains_resource::<ActiveMinigame>() || chimera_sim::minigame::held(w), "no match before the map is in");
+    assert!(!w.contains_resource::<PreMatch>());
+    assert!(host_view(&sim).shown, "the lobby stays up while the map loads");
+    // The host's Start meanwhile: taken once the server's lobby begins.
+    press_lobby_key(&mut sim.server.app);
+    sim.ticks(2);
+    // The map in: the server's lobby in its place, the bots joining it.
+    map_in(&mut sim);
+    assert!(sim.until(2 * HZ, |s| in_lobby(s)), "the match held in the lobby");
+    assert!(sim.until(2 * HZ, |s| characters(s) == 3), "the Play page's bots join once the map is in");
+    let w = sim.server.app.world_mut();
+    assert_eq!(w.query_filtered::<(), With<HostLobbyFirst>>().iter(w).count(), 0, "the first lobby gave way");
+    assert_eq!(w.query_filtered::<(), With<NetLobby>>().iter(w).count(), 1, "one lobby");
+    assert!(host_view(&sim).shown && host_view(&sim).hosting);
+    // The Start pressed while loading counts down now, then the match.
+    assert!(sim.until(HZ, |s| host_view(s).countdown.is_some()), "the start asked while loading: {:?}", host_view(&sim));
+    assert!(sim.until(7 * HZ, |s| !in_lobby(s)), "the countdown starts the match");
 }

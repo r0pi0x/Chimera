@@ -2,7 +2,8 @@
 //! when it asks (by name, or a copy it downloaded), show joining and the
 //! server's map changes in the loading dialog (`game_menu`), leave the
 //! menu once joined, and come back to the main menu (a fresh local player
-//! on the greybox; none under `NoPlayerAtMenu`) when dropped, with why in the dialog (a server that went
+//! on the greybox; under `NoPlayerAtMenu` no player and no map,
+//! `console::unload_to_menu`) when dropped, with why in the dialog (a server that went
 //! away is joined again on its own, `net::reconnect`; giving up on it shows
 //! the dialog).
 //!
@@ -100,7 +101,8 @@ fn react(world: &mut World, mut cursor: Local<bevy::ecs::message::MessageCursor<
 }
 
 /// After leaving a server: our own player back on the greybox behind the
-/// main menu, as `disconnect` leaves single player; the dialog shows why
+/// main menu, as `disconnect` leaves single player (a menu with no game
+/// behind it, `NoPlayerAtMenu`: no map and no player); the dialog shows why
 /// if the game ended on its own (`net::client::JoinProgress::failure`).
 fn back_to_menu(world: &mut World) {
     let failed = world
@@ -118,7 +120,12 @@ fn back_to_menu(world: &mut World) {
         }
         return;
     }
-    super::console::load_greybox(world);
+    // A menu with no game behind it: no map, as at its start.
+    if world.contains_resource::<super::NoPlayerAtMenu>() {
+        super::console::unload_to_menu(world);
+    } else {
+        super::console::load_greybox(world);
+    }
     super::front_end::left_game(world);
     if failed {
         super::front_end::show_failure(world);

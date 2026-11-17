@@ -8,7 +8,8 @@
 //! slides hardest; props share the server's 4 slots, pieces and ragdolls
 //! the client's 8. A scrape is a long-lived sound (`audio::live_sound`) that
 //! follows its body, ramps to each new volume and pitch over 0.1 s and
-//! stops 0.1 s after its last refresh.
+//! stops 0.1 s after its last refresh. None while this machine's map
+//! loads (its props settling behind the loading screen, `map_loading`).
 //!
 //! Known shortcuts (docs/tech-debt.md): Scrapes (specs/cs_source/sounds.md 4,
 //! `games/cs_source/scrapes.rs`): Source's friction energy is engine-side (Q8);
@@ -136,8 +137,15 @@ impl Plugin for ScrapePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Scrapes>()
             .add_message::<SoundControl>()
-            .add_systems(FixedPostUpdate, scrape.after(PhysicsSystems::Writeback));
+            .add_systems(FixedPostUpdate, scrape.after(PhysicsSystems::Writeback).run_if(not(map_loading)));
     }
+}
+
+/// This machine's map loading (`chimera_world::map::local_load_under_way`):
+/// its props settle behind the loading screen or the pre-match lobby
+/// silently (they scraped there, heard over the host's lobby).
+fn map_loading(load: Option<Res<chimera_world::map::LocalMapLoad>>, joining: Option<Res<chimera_world::map::JoiningServer>>) -> bool {
+    load.is_some() || joining.is_some()
 }
 
 /// A body's velocity at a world point.

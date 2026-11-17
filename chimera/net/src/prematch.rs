@@ -49,6 +49,10 @@
 //!   host's `lobby_start` (a dedicated server's console or an RCON admin) (`Lobby::host_start`, `NetLobby::host_start`):
 //!   neither everyone being ready nor the longest wait counts it down.
 //!   Later lobbies (map changes) start as below.
+//! - **Shown first** (`show_first`, `HostLobbyFirst`): a listen host's
+//!   menu shows its lobby from Start, before the map is in (the host's
+//!   row loading, nothing replicated); `begin` replaces it with the
+//!   server's.
 //! - **Avatars**: each row carries its player's `cl_avatar` userinfo
 //!   (`LobbyRow::avatar`, `NO_AVATAR` for a bot or none).
 //! - **The countdown** (`mp_lobby_countdown` s, default 5): once every
@@ -73,6 +77,9 @@
 //! the map before the next match starts when the lobby is on
 //! (`minigame_net`'s `CLIENT_GRACE`): the lobby waits for them, showing
 //! who.
+//!
+//! The host's start (F3, Start) in the lobby shown first waits for the
+//! server's lobby (`StartAsked`), which then counts down at once.
 //!
 //! Known shortcuts: a player still in the first start's download (before
 //! the game's window, `asset_startup`) hasn't connected and isn't listed;
@@ -491,11 +498,68 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
         written: f64::MIN,
         host_start: s.host_start != 0 && begun == 0,
     });
+    // The host's lobby shown first gives way to this one (`serve` writes
+    // it this tick), its host's start, if asked meanwhile, taken now.
+    let asked = world.remove_resource::<StartAsked>();
+    hide_first(world);
     info!(
         "pre-match lobby on {}: waiting for the players (at most {} s once one is here)",
         crate::net::current_map(world),
         s.max_wait
     );
+    if let Some(StartAsked(secs)) = asked {
+        let _ = start_now(world, secs);
+    }
+}
+
+/// The host's start asked in its lobby shown first (`start_now`), for
+/// when the server's lobby begins.
+#[derive(Resource, Clone, Copy, Debug)]
+struct StartAsked(Option<f64>);
+
+/// A listen host's lobby shown from its Start, before its map is in
+/// (`show_first`): its own row loading, nothing replicated. The server's
+/// lobby takes its place when it begins (`begin`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct HostLobbyFirst;
+
+/// A listen host's lobby at once (the party apps' Host's Start with the
+/// lobby on): the map `map` and mode `mode` with the host (`host`, its
+/// name) loading, shown while the map loads and the match is made behind
+/// it, so the host goes from the menu to the lobby and not through the
+/// game. The server's lobby replaces it when it begins (`begin`);
+/// `hide_first` takes it away (a cancelled or failed load).
+pub fn show_first(world: &mut World, map: &str, mode: &str, host: &str) {
+    hide_first(world);
+    world.spawn((
+        Name::new("Pre-match lobby (the host's map loading)"),
+        HostLobbyFirst,
+        NetLobby {
+            map: crate::net::normalize_map(map),
+            mode: mode.to_string(),
+            rows: vec![LobbyRow {
+                id: Some(HOST_ID),
+                name: host.to_string(),
+                status: status::LOADING,
+                avatar: NO_AVATAR,
+                ..default()
+            }],
+            waiting: 1,
+            wait_left: None,
+            countdown: None,
+            host_start: true,
+        },
+    ));
+}
+
+/// The host's lobby shown first (`show_first`) taken away, with a start
+/// asked in it.
+pub fn hide_first(world: &mut World) {
+    world.remove_resource::<StartAsked>();
+    let first: Vec<Entity> = world.query_filtered::<Entity, With<HostLobbyFirst>>().iter(world).collect();
+    for e in first {
+        world.despawn(e);
+    }
 }
 
 /// The lobby gone: `PreMatch` lifted and `NetLobby` despawned; `start`:
@@ -709,6 +773,12 @@ pub fn start_now(world: &mut World, secs: Option<f64>) -> Result<String, String>
         return Err("the server starts the match; you are a client of it".into());
     }
     let Some(mut lobby) = world.get_resource::<Lobby>().copied() else {
+        // The host's lobby shown first (its map still loading): the start
+        // waits for the server's lobby (`begin`).
+        if world.query_filtered::<(), With<HostLobbyFirst>>().iter(world).next().is_some() {
+            world.insert_resource(StartAsked(secs));
+            return Ok("the match starts once the map is in".into());
+        }
         return Err("no pre-match lobby now".into());
     };
     let secs = secs.unwrap_or(world.resource::<LobbySettings>().countdown as f64);

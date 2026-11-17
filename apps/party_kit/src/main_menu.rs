@@ -27,8 +27,12 @@
 //!   UPnP), the Game tab host_settings.toml's next-match
 //!   rows (`host::settings` with a `key`). Start sets the rows' cvars and
 //!   loads the map (`map`, a listen server when `maxplayers` > 1: Play
-//!   is joinable by default, bots fill `MaxPlayer`), then plays the app's
-//!   minigame (`MenuMinigame`) once the map is in.
+//!   is joinable by default, bots fill `MaxPlayer` once the map is in),
+//!   then plays the app's minigame (`MenuMinigame`) once the map is in.
+//!   With the lobby on (`hosts_with_lobby`) the host goes to its lobby at
+//!   once (`prematch::show_first`: its row loading the map, the loading
+//!   panel at the screen's foot), which the server's lobby replaces when
+//!   the match begins; back at the menu it goes (`lobby_first_ends`).
 //! - **Join**: an address (host:port, the port 27015 unless given) and a
 //!   password, Connect (`password ..; connect ..`), the last addresses as
 //!   buttons (`RecentFile`: `party_recent.txt` in the config folder). A
@@ -99,7 +103,10 @@
 //!   (`minigame::MatchHold`, lifted by the next start); the player is
 //!   spawned once a game started from here is entered with its map in
 //!   (`player_on_entering`; a client's comes from its server). Only the
-//!   menu's own sounds and music play under it.
+//!   menu's own sounds and music play under it. Leaving also kicks the
+//!   bots (`ca_bot_kick all`), and the shell leaves no map behind
+//!   (`console::unload_to_menu`: no greybox and no kit dressed, as at the
+//!   start).
 //!
 //! - **Signal** (a theme with `[layout.menu]`: the Ultimate Gun Game's):
 //!   the first page is `signal_menu`'s (lockup, the entries with their
@@ -121,7 +128,9 @@
 //! - **Music**: Combat Arms' menu playlist (the install's BGM) while the
 //!   menu shows (`combat_arms::game::music::AppMenuShown`), silent
 //!   without the install; in an app with UI sound (Ultimate Gun Game's
-//!   Signal) its own loop instead (`UiMusic`'s `menu_loop`).
+//!   Signal) its own loop instead (`UiMusic`'s `menu_loop`), on through
+//!   the loading panel and the pre-match lobby, Combat Arms' music silent
+//!   until the match (`AppMusicPlays`).
 //! - **Sounds** (an app with UI sound only: `ui_cues`): hover, select,
 //!   back, a refused press, a range row's step.
 //!
@@ -928,7 +937,7 @@ impl Plugin for MainMenuPlugin {
             .add_message::<MainMenuAction>()
             .add_message::<KeyboardInput>()
             .add_systems(Update, crate::ui_cues::hover::<MainMenuAction>.in_set(MainMenuSystems))
-            .add_systems(Update, player_on_entering.in_set(MainMenuSystems))
+            .add_systems(Update, (player_on_entering, lobby_first_ends).in_set(MainMenuSystems))
             .add_observer(entered_game)
             .add_observer(menu_pass_covered)
             .add_observer(left_game)
@@ -1137,6 +1146,15 @@ fn no_game_behind(world: &mut World) {
     }
     if world.contains_resource::<chimera_sim::minigame::ActiveMinigame>() {
         world.insert_resource(chimera_sim::minigame::MatchHold);
+    }
+    // The bots go too (`MaxPlayer 0`; the next Start sets it again): the
+    // shell's `disconnect` kicks with `bot_kick`, which the party's
+    // Combat Arms bots don't answer, so they stayed, spawned again on the
+    // map behind the menu and drew their guns there (the cocking heard
+    // after leaving).
+    let mut console = world.resource_mut::<Console>();
+    if console.command("ca_bot_kick").is_some() {
+        console.submit("ca_bot_kick all");
     }
 }
 
@@ -1725,6 +1743,7 @@ fn start(world: &mut World) {
         let data = world.resource::<MenuData>();
         start_lines(data, world.resource::<PartyMenu>(), &pool, &minigame)
     };
+    let lobby_first = hosts_with_lobby(&lines);
     for l in lines {
         submit(world, l);
     }
@@ -1736,11 +1755,48 @@ fn start(world: &mut World) {
     m.background_load = false;
     m.loading = Some(map.clone());
     m.after_load = after;
+    // With the lobby on, a listen host goes to its lobby at once, its row
+    // loading the map (`prematch::show_first`), and the map loads under it.
+    if lobby_first {
+        let mode = world
+            .get_resource::<chimera_sim::minigame::Minigames>()
+            .and_then(|m| m.get(&minigame))
+            .map_or_else(|| minigame.clone(), |d| d.name.clone());
+        let host = crate::controls::cvar_value(world, "name").unwrap_or_default();
+        chimera_net::prematch::show_first(world, &map, &mode, &host);
+    }
     // Combat Arms' maps load behind its own loading screen.
     if map.starts_with("combat_arms:")
         && let Some(mut ca) = world.get_resource_mut::<combat_arms::ui::loading::CaLoading>()
     {
         ca.label = Some(map);
+    }
+}
+
+/// Whether Start's `lines` host a server whose matches wait in the
+/// pre-match lobby (`mp_lobby 1`, `maxplayers` over 1).
+pub fn hosts_with_lobby(lines: &[String]) -> bool {
+    let value = |cvar: &str| {
+        lines.iter().rev().find_map(|l| {
+            let (name, v) = l.split_once(' ')?;
+            name.eq_ignore_ascii_case(cvar).then(|| v.trim().trim_matches('"').to_string())
+        })
+    };
+    value("mp_lobby").is_some_and(|v| v == "1") && value("maxplayers").and_then(|v| v.parse::<u32>().ok()).is_some_and(|n| n > 1)
+}
+
+/// The host's lobby shown first (`start`) goes when the menu is back (the
+/// load cancelled or failed, the game left).
+fn lobby_first_ends(
+    menu: Res<PartyMenu>,
+    first: Query<Entity, With<chimera_net::prematch::HostLobbyFirst>>,
+    mut commands: Commands,
+) {
+    if menu.screen != Screen::MainMenu {
+        return;
+    }
+    for e in &first {
+        commands.entity(e).despawn();
     }
 }
 
@@ -2054,19 +2110,24 @@ fn music(
     sounds: Option<Res<chimera_client::client::ui_sound::UiSounds>>,
     ui_music: Option<ResMut<chimera_client::client::ui_sound::UiMusic>>,
     app_plays: Option<Res<combat_arms::game::music::AppMusicPlays>>,
+    lobby: Option<Res<chimera_client::client::prematch_lobby::LobbyView>>,
     mut commands: Commands,
 ) {
     let on_menu = menu.screen == Screen::MainMenu;
     let ours = chimera_client::client::ui_sound::active(theme.as_deref(), sounds.as_deref());
+    // Ours from the menu through the loading panel and the pre-match lobby
+    // to the match: no game's music before the match (a host's Start
+    // played Combat Arms' in-game loop under the loading panel).
+    let before_match = on_menu || matches!(menu.screen, Screen::Loading | Screen::Joining) || owned_by_lobby(lobby.as_deref());
     if let Some(mut m) = ui_music {
-        let want = (on_menu && ours).then_some(std::borrow::Cow::Borrowed("menu_loop"));
+        let want = (before_match && ours).then_some(std::borrow::Cow::Borrowed("menu_loop"));
         if m.0 != want {
             m.0 = want;
         }
     }
-    // Combat Arms' music (the playlist, a background map's) stays silent
-    // under ours.
-    let app_music = on_menu && ours;
+    // Combat Arms' music (the playlist, a background map's, its loading
+    // and in-game tracks) stays silent under ours.
+    let app_music = before_match && ours;
     if app_music != app_plays.is_some() {
         if app_music {
             commands.insert_resource(combat_arms::game::music::AppMusicPlays);

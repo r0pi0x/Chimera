@@ -196,7 +196,8 @@ pub fn thrown_reach(data: &BotData, template: Template, kinds: &[&str]) -> f32 {
 }
 
 /// The server keeps `MaxPlayer` bots (none by default): adds them one a
-/// tick, kicks the newest when there are too many.
+/// tick (not while its own map loads, `map::local_load_under_way`), kicks
+/// the newest when there are too many.
 pub(super) fn keep_quota(world: &mut World) {
     let settings = world.resource::<BotSettings>();
     if !settings.quota_set && settings.quota == 0 {
@@ -207,7 +208,10 @@ pub(super) fn keep_quota(world: &mut World) {
         chimera_core::query_cache::cached_query::<Entity, (With<CaBot>, Without<crate::core::Npc>), _>(world, |q, world| {
             q.iter(world).map(|e| (e.to_bits(), e)).collect()
         });
-    if bots.len() < want {
+    // None added while this machine's map loads (a host's Start sets
+    // `MaxPlayer` before its map is in: they fought in the old world and
+    // on the new one behind the loading screen, with their sounds).
+    if bots.len() < want && !chimera_world::map::local_load_under_way(world) {
         add_bot(world, None);
     } else if bots.len() > want {
         bots.sort();
