@@ -103,6 +103,13 @@ the user's go-ahead: no Actions runs unless asked.
   - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
   - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
 
+- **Lobby between maps, with everyone's load progress (user, 2026-11-17):**
+  - Keep returning to the lobby after every match. It gives the host a moment to change settings and lets players leave.
+  - The lobby starts fetching and loading the NEXT map in the background as soon as it opens.
+  - Each player's lobby row shows their progress (downloading %, loading, ready), reported to the server and shared, which needs a network-version bump.
+  - Start waits for everyone ready, or the host's timeout.
+  - The loading screen's bar must reflect the real loading stages (downloads in bytes, map load, model builds, physics and navigation). Today it doesn't move. Show only the main bar when there's a single stage.
+
 - **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.
   - It connects to a master server (the hub) by an identifier or address, since the hub manages the accounts.
   - It covers hub plan S3: invite or link code, choosing a username, the recovery key, and Skip.
@@ -2850,6 +2857,29 @@ docs/plans/active/sound.md.
   instead of the MissionTrigger's `ADD`.
 
 ## 9. Performance
+
+- **Tests that control time and await conditions (user, 2026-11-17; after
+  the stutter, host-to-lobby, disconnect and UI fixes).** Real time still
+  leaks into tests and scenes: background work on threads (map loads,
+  model builds, downloads, navigation meshes), things timed on the real
+  clock (UI animations, the kill-icon retry, download pacing, timeouts),
+  fixed waits ("N frames", "N ms") where no event exists, and networked
+  tests that sleep while loopback settles. That makes some runs slow and
+  some flaky (the voted-map race). Wanted:
+  - a manual clock for `harness::Sim` and scenes (Bevy's manual time), so
+    a test jumps "5 s later" at once; `ui_motion_scale` 0 in tests so
+    animations finish at once;
+  - background tasks run deterministically in tests:
+    `sim.run_until_idle()` instead of sleeping;
+  - awaiting conditions, coroutine-style, with a tick limit instead of a
+    timeout: `sim.run_until(|world| ..., max_ticks)`,
+    `sim.await_message::<M>()`; the scene tool's `wait_for <condition>`
+    to match;
+  - an audit moving every sleep, timeout and real-clock read in tests and
+    engine code onto the clock or the await helpers, then a `repo_checks`
+    rule flagging new sleeps in tests.
+  Payoff: faster runs, no timing flakes, simpler agent scenes (fewer wait
+  loops written and debugged). One agent, in stages.
 
 - Done: **Disk guards (2026-10-31: the dev box's disk filled to 100%).**
   `tools/agent-slot.sh trim-incremental` (run by `trim`,
