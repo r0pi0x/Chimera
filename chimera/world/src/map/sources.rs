@@ -448,12 +448,16 @@ impl MapSources {
     /// gameplay's parts added (for the load `options`).
     pub fn dress(&self, game: &str, map: &mut MapData, options: &MapLoadOptions) {
         if let Some(gameplay) = self.gameplay.filter(|g| !g.game.eq_ignore_ascii_case(game)) {
+            let began = std::time::Instant::now();
             self.dress_with(gameplay, game, map, options);
+            dressed(gameplay.game, &map.name, began);
         }
         for guest in self.guests.iter().filter(|g| !g.game.eq_ignore_ascii_case(game)) {
+            let began = std::time::Instant::now();
             if let Err(e) = (guest.dress)(map, options) {
                 map.warnings.push(format!("{}'s parts: {e}", guest.game));
             }
+            dressed(guest.game, &map.name, began);
         }
     }
 
@@ -485,6 +489,16 @@ impl MapSources {
             map.warnings.push(format!("{}'s parts: {e}", gameplay.game));
         }
         map.kit.characters.extend(kept_bodies);
+    }
+}
+
+/// A dressing's time in the log (debug; info when it took a while).
+fn dressed(game: &str, map: &str, began: std::time::Instant) {
+    let ms = began.elapsed().as_secs_f64() * 1000.0;
+    if ms >= 100.0 {
+        bevy::log::info!("map dressing: {game}'s parts on {map} in {ms:.0} ms");
+    } else {
+        bevy::log::debug!("map dressing: {game}'s parts on {map} in {ms:.0} ms");
     }
 }
 
