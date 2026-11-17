@@ -297,7 +297,7 @@ fn until(sim: &mut NetSim, secs: f64, mut done: impl FnMut(&mut NetSim) -> bool)
             return true;
         }
         sim.step();
-        std::thread::sleep(Duration::from_millis(2));
+        chimera_world::harness::let_io_run();
     }
     done(sim)
 }
@@ -988,7 +988,7 @@ fn a_client_entering_a_match_has_every_needed_set_before_it_spawns() {
     while !joined(&mut sim, 0) {
         assert!(start.elapsed().as_secs() < 30, "spawned: {:?}", progress(&sim, 0));
         sim.step();
-        std::thread::sleep(Duration::from_millis(2));
+        chimera_world::harness::let_io_run();
     }
     for set in ["base", "players", "common", "weapon/gun", "music/bgm/first.mp3"] {
         assert!(svc.ids(set).iter().all(|id| store.has(id)), "{set} here before the player spawned");

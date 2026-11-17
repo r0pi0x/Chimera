@@ -4824,10 +4824,17 @@ What the measurement above asked for (`source_engine::content::guest`):
 - **The code-built maps' kit on a task.** `load_code_map` (a sandbox's
   start, `map greybox`, leaving for a menu with the greybox) spawns the
   code-built map at once and loads its kit on the async compute pool
-  (`CodeMapKit`); the kit spawns when it is in, the code-built map again
-  after it. Until then (a cold first dressing: seconds) players show the
-  shell's capsules. Tests that wait for tasks (`WaitForTasks`) get it in
-  the same frame, as before.
+  (`CodeMapKit`), its spawn's own work (`map::prepare`) there too; the
+  kit spawns when it is in, the code-built map again after it. Until then
+  (a cold first dressing: seconds) players show the shell's capsules.
+  Tests that wait for tasks (`WaitForTasks`) get it in the same frame, as
+  before. In the real app (`ultimate_gun_game --offscreen 960x540
+  --frame-log`, dev build, `+map greybox +after 20 map greybox`, the box
+  at load 60): the second load's worst main-thread frame 102 M
+  instructions (the kit's arrival; 1,248 M with the dressing on the task
+  but its spawn unprepared, and every dressing in one main-thread frame
+  before: 2.4-4.9 s), the kit in 692 ms after the command (Combat Arms'
+  share 374 ms of it, the guests' copies under 100 ms each).
 
 Measured with the installs on the code-built maps' kit (Combat Arms' parts
 on it; `party_kit` `heavy::guest_cache::the_guests_cost_cold_and_warm`,

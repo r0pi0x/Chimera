@@ -1084,7 +1084,7 @@ fn start_fetch(
     // the level change, starts loading its models at once.
     let store = settings.store.clone().expect("a store to fetch into");
     let starting = startup.is_none().then(|| chimera_assets::pending::starting(&store));
-    let job = std::thread::spawn(move || {
+    let job = chimera_core::tasks::thread(move || {
         if let Some(job) = startup {
             match job.join() {
                 Ok(Ok(summary)) => info!("startup {FILES}: {summary}"),
@@ -1440,7 +1440,7 @@ fn map_ahead(world: &mut World) {
     let transfer: Arc<Mutex<Option<Arc<Transfer>>>> = Arc::default();
     let shared = transfer.clone();
     info!("fetching the next map's {FILES} ahead: {map}");
-    let job = std::thread::spawn(move || {
+    let job = chimera_core::tasks::thread(move || {
         sets::fetch(&settings, &wants, "the next map's files", &shared, sets::Options::default())
     });
     world.insert_resource(MapAhead { map, job: Some(job), transfer, result: None });
@@ -1532,7 +1532,7 @@ fn run_streams(world: &mut World) {
     let transfer: Arc<Mutex<Option<Arc<Transfer>>>> = Arc::default();
     let (p, t) = (pace.clone(), transfer.clone());
     let one = vec![Wanted { game: want.game.clone(), sets: vec![want.set.clone()] }];
-    let job = std::thread::spawn(move || {
+    let job = chimera_core::tasks::thread(move || {
         let options = sets::Options { pace: Some(&p), ..default() };
         sets::fetch(&settings, &one, "streamed files", &t, options)
     });

@@ -226,7 +226,7 @@ impl Pair {
     fn step(&mut self) {
         self.server.app.update();
         self.client.app.update();
-        std::thread::sleep(Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
     }
 
     /// Whether the client is in the game on `map`, its player there.

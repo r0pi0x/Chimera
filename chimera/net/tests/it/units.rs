@@ -218,7 +218,7 @@ fn until(sim: &mut NetSim, secs: f64, mut done: impl FnMut(&mut NetSim) -> bool)
             return true;
         }
         sim.step();
-        std::thread::sleep(Duration::from_millis(2));
+        chimera_world::harness::let_tasks_run();
     }
     done(sim)
 }

@@ -79,7 +79,7 @@ fn wait_for(sim: &mut Sim, id: &str) -> (bool, usize) {
             return (shown, meshes);
         }
         // The load runs on the task pool's threads.
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        chimera_world::harness::let_tasks_run();
     }
     let world = sim.app.world_mut();
     let models: Option<Vec<String>> =

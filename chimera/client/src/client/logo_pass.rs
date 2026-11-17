@@ -265,7 +265,7 @@ impl Plugin for LogoPassPlugin {
             "1: screen changes fade in 150 ms instead of the logo pass.",
             |r| &mut r.on,
         );
-        app.init_resource::<chimera_ui::motion::Motion>();
+        chimera_ui::motion::init(app);
         resource_cvar::<chimera_ui::motion::Motion, f32>(
             app,
             "ui_motion_scale",

@@ -69,7 +69,7 @@ fn a_client_joins_on_hl2dms_movement_with_its_loadout() {
     for _ in 0..1000 {
         server.app.update();
         c.app.update();
-        std::thread::sleep(Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
         if c.app.world().contains_resource::<Joined>() && local(&mut c).is_some() {
             joined = true;
             break;

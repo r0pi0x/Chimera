@@ -130,7 +130,7 @@ fn assert_gone(
     let started = std::time::Instant::now();
     while assets(sim.app.world_mut()) != assets_before && started.elapsed().as_secs() < 5 {
         sim.ticks(1);
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        chimera_world::harness::let_tasks_run();
     }
     let world = sim.app.world_mut();
     for e in loaded {

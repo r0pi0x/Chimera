@@ -164,7 +164,7 @@ pub fn load_on_demand(
         pending.tried.insert(id.to_string());
         let key = id.to_string();
         let ca = ca.clone();
-        let task = AsyncComputeTaskPool::get().spawn(async move {
+        let task = chimera_core::tasks::spawn(&AsyncComputeTaskPool::get(), async move {
             let mount = ca.mount().ok_or_else(|| format!("{key}: no Combat Arms install"))?;
             load_held_weapon(&ca, &key, &|p: &str| mount.read(p).ok())
         });

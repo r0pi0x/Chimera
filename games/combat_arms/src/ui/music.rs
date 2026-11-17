@@ -282,12 +282,12 @@ fn play_music(
         let state = pb.clips.remove(&file);
         let state = match state {
             None => match pb.paths.get(&file).cloned() {
-                Some(path) => Clip::Loading(AsyncComputeTaskPool::get().spawn(async move {
+                Some(path) => Clip::Loading(chimera_core::tasks::spawn(&AsyncComputeTaskPool::get(), async move {
                     let bytes = std::fs::read(&path).ok()?;
                     chimera_formats::wav::decode_any(&bytes).ok()
                 })),
                 None => match pb.mounted.get(&file).cloned() {
-                    Some(path) => Clip::Loading(AsyncComputeTaskPool::get().spawn(async move {
+                    Some(path) => Clip::Loading(chimera_core::tasks::spawn(&AsyncComputeTaskPool::get(), async move {
                         let bytes = crate::game::world::mount()?.read(&path).ok()?;
                         chimera_formats::wav::decode_any(&bytes).ok()
                     })),

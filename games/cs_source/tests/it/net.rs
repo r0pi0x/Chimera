@@ -297,7 +297,7 @@ fn netcode_over_loopback() {
     for _ in 0..400 {
         server.app.update();
         client.app.update();
-        std::thread::sleep(Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
         let world = client.app.world_mut();
         let mine = world.query_filtered::<(), With<LocalPlayer>>().iter(world).count();
         if world.contains_resource::<Joined>() && mine == 1 {
@@ -313,7 +313,7 @@ fn netcode_over_loopback() {
     let mut gone = false;
     for _ in 0..200 {
         server.app.update();
-        std::thread::sleep(Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
         let world = server.app.world_mut();
         if world.query::<&NetCharacter>().iter(world).count() == 0 {
             gone = true;
@@ -347,7 +347,7 @@ fn udp_pair() -> (crate::stack::harness::Sim, crate::stack::harness::Sim) {
     for _ in 0..400 {
         server.app.update();
         client.app.update();
-        std::thread::sleep(Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
         if client.app.world().contains_resource::<Joined>() {
             return (server, client);
         }
@@ -384,7 +384,7 @@ fn clients_hear_at_once_that_the_server_shut_down() {
             let mut gone = false;
             for _ in 0..50 {
                 client.app.update();
-                std::thread::sleep(Duration::from_millis(2));
+                chimera_world::harness::let_io_run();
                 if *client.app.world().resource::<crate::stack::core::NetRole>() == crate::stack::core::NetRole::Standalone {
                     gone = true;
                     break;
@@ -446,7 +446,7 @@ fn a_client_quiet_for_20_s_stays_connected() {
     for _ in 0..400 {
         server.app.update();
         client.app.update();
-        std::thread::sleep(Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
         if joined(&mut client) {
             ok = true;
             break;
@@ -461,7 +461,7 @@ fn a_client_quiet_for_20_s_stays_connected() {
     for _ in 0..100 {
         server.app.update();
         client.app.update();
-        std::thread::sleep(Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
     }
     assert!(joined(&mut client), "still in the game: {:?}", client.app.world().get_resource::<LastDisconnect>());
     let status = net::status(server.app.world_mut());
@@ -498,7 +498,7 @@ fn fake_lag_delays_what_the_client_receives() {
     while start.elapsed() < Duration::from_secs(6) {
         server.app.update();
         client.app.update();
-        std::thread::sleep(Duration::from_millis(2));
+        chimera_world::harness::let_io_run();
         let world = client.app.world();
         let predicting = world.resource::<net::predict::CommandClock>().tick.is_some();
         rtt = world
