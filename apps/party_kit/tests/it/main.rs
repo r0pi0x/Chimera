@@ -82,6 +82,7 @@ mod heavy {
     mod bots_on_rungs;
     mod ca_mode_objects;
     mod clips_on_maps;
+    mod converted;
     mod cs_decals;
     mod death_bodies;
     mod guest_cache;

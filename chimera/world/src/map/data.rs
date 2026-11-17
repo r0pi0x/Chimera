@@ -1342,6 +1342,7 @@ pub struct MapData {
     /// game in a mashup, `sources::SurfaceTable`): the map's lower-case
     /// surface property name to the gameplay's; empty when the map's
     /// names are the gameplay's. Spawned as `sources::SurfaceNames`.
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub surface_names: std::collections::HashMap<String, String>,
     /// A top-down picture of the map (radar), when the game has one.
     pub overview: Option<hud::MapOverview>,

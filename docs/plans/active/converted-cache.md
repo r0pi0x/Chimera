@@ -238,6 +238,17 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   conversion does; the guest-cache heavy test's comparison
   (`named_refs`, sound entries, bodies) is the check to reuse.
 
+## Progress
+
+- **Step 1, done (2026-11-17):** every `HashMap` a `MapData` serializes
+  (sound entries and surfaces, the HUD look's and menus' tables,
+  surface names, animation names) is written in key order
+  (chimera_world's `pod_serde::sorted`); the decals' groups, materials
+  and logos are `BTreeMap`s now. Each
+  guest's dressing converted twice now encodes to the same bytes: CS:S
+  225 MB, HL2:DM 180 MB, TF2 773 MB, Combat Arms 616 MB (party_kit
+  `heavy::converted::a_guest_dressing_converted_twice_writes_the_same_bytes`).
+
 ## Steps
 
 1. Determinism: sorted serialization of the `HashMap`s in `MapData`
