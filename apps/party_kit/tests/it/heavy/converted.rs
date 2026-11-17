@@ -5,7 +5,8 @@
 //! (step 1: the `HashMap`s a map holds are written in key order,
 //! chimera_world's `pod_serde::sorted`); a dressing kept for the session
 //! (`map::BlocksOnly`) skips decoding its whole-DXT textures and keeps
-//! the same textures (step 2).
+//! the same textures (step 2); read back from the disk layer
+//! (`map::kept::kept_with`), the same bytes as converting (step 4).
 //!
 //! Each game passes with a note without its install (CS:S, HL2:DM, TF2,
 //! Combat Arms with its keys).
@@ -171,6 +172,84 @@ fn a_kept_dressing_skips_decoding_and_keeps_the_same_textures() {
             before as f64 / 1e6,
             after as f64 / 1e6,
             100.0 * (1.0 - after as f64 / before.max(1) as f64)
+        );
+    }
+}
+
+/// The disk layer under the kept dressings (`map::kept::kept_with` on a
+/// cache folder, `CHIMERA_GUEST_CACHE=1` in the apps): each Source
+/// guest's dressing converted and written by one app is read back by the
+/// next, nothing converted, and encodes to the same bytes. Prints each
+/// one's instructions (this thread and those it starts) for
+/// docs/performance.md, "Guest dressings on disk". The folder is
+/// `<cache dir>/chimera/kept-cache-test`, removed after each game.
+#[test]
+fn a_guest_read_from_disk_is_the_same_as_converting() {
+    use chimera_core::metrics::counters::InstructionCounter;
+    use std::sync::Arc;
+
+    use chimera_core::mount::Mount;
+    use chimera_world::map::{MapLoadOptions, cache::MapCache, kept};
+    let Some(dir) = MapCache::default_dir().and_then(|d| d.parent().map(|p| p.join("kept-cache-test"))) else {
+        eprintln!("skipping: no cache folder");
+        return;
+    };
+    type Dress = (&'static str, &'static str, fn() -> Result<Arc<Mount>, String>, Box<dyn Fn(&Mount, &mut MapData)>);
+    let mut games: Vec<Dress> = Vec::new();
+    if cs_source::game::INFO.install().is_some() {
+        games.push((
+            cs_source::game::GAME,
+            cs_source::game::bsp::CONVERTER,
+            cs_source::game::guest_mount,
+            Box::new(|m, map| cs_source::game::bsp::dress_guest(m, map, cs_source::game::BUNDLE.kept, false)),
+        ));
+    }
+    if hl2dm::game::INFO.install().is_some() {
+        games.push((
+            hl2dm::game::GAME,
+            hl2dm::game::maps::CONVERTER,
+            hl2dm::game::maps::guest_mount,
+            Box::new(|m, map| hl2dm::game::maps::dress_guest_in(m, map, hl2dm::game::BUNDLE.kept, false)),
+        ));
+    }
+    if tf2::game::INFO.install().is_some_and(|p| chimera_core::mount::served::usable("tf2", p, "tf")) {
+        games.push((
+            tf2::game::GAME,
+            tf2::game::maps::CONVERTER,
+            tf2::game::maps::guest_mount,
+            Box::new(|m, map| tf2::game::maps::dress_guest_in(m, map, tf2::game::BUNDLE.kept, false)),
+        ));
+    }
+    if games.is_empty() {
+        eprintln!("skipping: needs an install of CS:S, HL2:DM or TF2");
+        return;
+    }
+    for (game, converter, mount, convert) in &games {
+        let game: &'static str = game;
+        let _ = std::fs::remove_dir_all(&dir);
+        let disk = MapCache::at(&dir, u64::MAX);
+        let dressing = kept::Dressing { game, converter: *converter, mount, convert: &**convert };
+        let app = || {
+            let options = MapLoadOptions::default();
+            let mut counter = InstructionCounter::current_with_children();
+            let at = counter.read().unwrap_or(0);
+            let parts = kept::kept_with(&options, &dressing, Some(&disk)).unwrap();
+            let spent = counter.read().unwrap_or(0).saturating_sub(at);
+            let counts = (kept::conversions(&options.context, game, true), kept::disk_reads(&options.context, game, true));
+            (postcard::to_allocvec(&*parts).unwrap(), counts, spent)
+        };
+        let (written, w, miss) = app();
+        let (read, r, hit) = app();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(w, (1, 0), "{game}: the first app converts");
+        assert_eq!(r, (0, 1), "{game}: the next reads it back");
+        assert!(written == read, "{game}: read back, the same bytes ({} and {})", written.len(), read.len());
+        eprintln!(
+            "{game}: converted and written {:.0} M instructions, read back {:.0} M ({:.1}x fewer), {:.0} MB",
+            miss as f64 / 1e6,
+            hit as f64 / 1e6,
+            miss as f64 / hit.max(1) as f64,
+            read.len() as f64 / 1e6
         );
     }
 }

@@ -3021,6 +3021,8 @@ docs/plans/active/sound.md.
     `CaModelIndex`, the effect library; its character models are
     already kept per install data) and Halo (its donors are kept as
     their own types, not `MapData`; measure on the user's PC first).
+    The disk layer under it is in too, off by default
+    (`CHIMERA_GUEST_CACHE=1`; plan converted-cache step 4).
 
 - **Halo: view models and animations at frame rate (user, 2026-11-17).**
   Halo's gun animations and related motion run at its 30 Hz tick and look

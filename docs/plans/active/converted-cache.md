@@ -265,6 +265,15 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   leaves memos (`CaModelIndex`, the effect library) a kept `MapData`
   doesn't carry (step 5's serializable index), and Halo's donors are
   kept as their own types; Halo needs the disc image (the user's PC).
+- **Step 4, done (2026-11-17), off by default:** `map::kept`'s disk
+  layer (`CHIMERA_GUEST_CACHE=1`; `kept_with` takes the cache): the
+  map cache's format and folder, key `guest:<game>` + converter + map
+  format + textures + layers, inputs fingerprinted (a late file's
+  absence too, so its arrival misses). Read back, the same bytes as
+  converting; instructions converted-and-written / read back: CS:S
+  7.2 G / 3.4 G, HL2:DM 12.6 G / 1.9 G, TF2 27.3 G / 10.4 G
+  (docs/performance.md, "Guest dressings on disk"). Unit test: a
+  changed input file misses.
 
 ## Steps
 

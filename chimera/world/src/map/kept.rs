@@ -27,6 +27,17 @@
 //!   so, dresses again, so a file that came after the first dressing
 //!   reaches the next map instead of waiting for a restart.
 //! - **Logs** each conversion's time, and counts them (`conversions`).
+//! - **On disk, off by default** (`CHIMERA_GUEST_CACHE=1`, `DISK_ENV`):
+//!   a session's first ask reads the dressing back from the converted-map
+//!   cache (`map::cache`: its folder, cap and switch, `CHIMERA_MAP_CACHE=0`
+//!   turning guests off too) when one was written from the same files,
+//!   else converts and writes it. The key: `guest:<game>`, the converter's
+//!   version, the map format's, whether textures are decoded and the
+//!   mount's layers; the entry lists every file the dressing read with its
+//!   fingerprint (a late file's absence too), so a changed or arrived file
+//!   converts again. The entry's bytes are the same for the same files
+//!   (`pod_serde::sorted`), as the asset service's records will need
+//!   (docs/plans/active/converted-cache.md). Read back: `disk_reads`.
 //!
 //! The Source games (CS:S, HL2:DM, TF2) dress through it. Porting a game:
 //! docs/new-game.md, "Order of work", step 3.
@@ -54,7 +65,11 @@ use std::{
 use chimera_core::mount::Mount;
 
 use super::{
-    BlocksOnly, LoadContext, MapData, MapLoadOptions, decal::MapDecals, sound::MapSounds, texture_refs::TextureRefs,
+    BlocksOnly, LoadContext, MapData, MapLoadOptions,
+    cache::{self, MapCache, Outcome},
+    decal::MapDecals,
+    sound::MapSounds,
+    texture_refs::TextureRefs,
 };
 
 /// What a game gives Chimera to keep its guest dressing (module doc).
@@ -82,6 +97,17 @@ struct Cache(Mutex<BTreeMap<(&'static str, bool), Arc<Entry>>>);
 struct Entry {
     parts: Mutex<Option<Arc<MapData>>>,
     conversions: AtomicUsize,
+    disk_reads: AtomicUsize,
+}
+
+/// The variable that turns the disk layer on (`1`; module doc).
+pub const DISK_ENV: &str = "CHIMERA_GUEST_CACHE";
+
+/// The disk layer's cache: the converted-map cache's (`MapCache::
+/// from_env`) when `DISK_ENV` is `1` and that cache is on; else none.
+pub fn disk_cache() -> Option<MapCache> {
+    let on = std::env::var(DISK_ENV).is_ok_and(|v| v.trim() == "1");
+    on.then(MapCache::from_env).flatten()
 }
 
 fn entry(context: &LoadContext, game: &'static str, textures: bool) -> Arc<Entry> {
@@ -106,6 +132,12 @@ pub fn conversions(context: &LoadContext, game: &'static str, textures: bool) ->
     entry(context, game, textures).conversions.load(Ordering::Relaxed)
 }
 
+/// How many times `game`'s dressing was read back from the disk layer
+/// for the app of `context`.
+pub fn disk_reads(context: &LoadContext, game: &'static str, textures: bool) -> usize {
+    entry(context, game, textures).disk_reads.load(Ordering::Relaxed)
+}
+
 /// The files a dressing's models missed (`MapModel::late_files`), each
 /// once.
 pub fn late_files(parts: &MapData) -> Vec<String> {
@@ -126,8 +158,18 @@ pub fn late_files(parts: &MapData) -> Vec<String> {
 }
 
 /// The game's kept parts (converted on an empty map) for the app of
-/// `options` (module doc).
+/// `options` (module doc), the disk layer from the environment
+/// (`disk_cache`).
 pub fn kept(options: &MapLoadOptions, dressing: &Dressing) -> Result<Arc<MapData>, String> {
+    kept_with(options, dressing, disk_cache().as_ref())
+}
+
+/// `kept` with `disk` as the disk layer (none: always converted).
+pub fn kept_with(
+    options: &MapLoadOptions,
+    dressing: &Dressing,
+    disk: Option<&MapCache>,
+) -> Result<Arc<MapData>, String> {
     let game = dressing.game;
     let entry = entry(&options.context, game, options.textures);
     let mut parts = entry.parts.lock().unwrap_or_else(|e| e.into_inner());
@@ -147,16 +189,30 @@ pub fn kept(options: &MapLoadOptions, dressing: &Dressing) -> Result<Arc<MapData
     }
     let started = std::time::Instant::now();
     let mount = (dressing.mount)()?;
-    let mut scratch = MapData::default();
-    scratch.memos.insert(BlocksOnly);
-    (dressing.convert)(&mount, &mut scratch);
-    scratch.memos.remove::<BlocksOnly>();
-    entry.conversions.fetch_add(1, Ordering::Relaxed);
-    for t in &mut scratch.textures {
-        t.keep_blocks_only();
-    }
+    let key = cache::key(&format!("guest:{game}"), dressing.converter).part("textures", [options.textures as u8]);
+    let (scratch, outcome) = cache::cached(disk, &mount, key, || {
+        let mut scratch = MapData::default();
+        scratch.memos.insert(BlocksOnly);
+        (dressing.convert)(&mount, &mut scratch);
+        scratch.memos.remove::<BlocksOnly>();
+        for t in &mut scratch.textures {
+            t.keep_blocks_only();
+        }
+        Ok(scratch)
+    })?;
+    let how = if outcome == Outcome::Hit {
+        entry.disk_reads.fetch_add(1, Ordering::Relaxed);
+        "read from disk"
+    } else {
+        entry.conversions.fetch_add(1, Ordering::Relaxed);
+        if outcome == Outcome::Miss {
+            "converted and written to disk"
+        } else {
+            "converted"
+        }
+    };
     bevy::log::info!(
-        "{game}: its guest parts converted in {} ms ({} textures, {} bodies, {} held, {} view models)",
+        "{game}: its guest parts {how} in {} ms ({} textures, {} bodies, {} held, {} view models)",
         started.elapsed().as_millis(),
         scratch.textures.len(),
         scratch.kit.characters.len(),
@@ -392,6 +448,67 @@ mod tests {
         assert_eq!(third.textures[1].name, "full");
         load();
         assert_eq!(conversions(&options.context, "kept_test", false), 2, "complete: kept");
+    }
+
+    /// A file whose bytes a test changes (a patched install).
+    #[derive(Clone)]
+    struct Patched(Arc<Mutex<Vec<u8>>>);
+
+    impl chimera_core::mount::FileSource for Patched {
+        fn name(&self) -> String {
+            "patched".into()
+        }
+        fn entries(&self) -> Vec<chimera_core::mount::Entry> {
+            vec![chimera_core::mount::Entry {
+                path: "look.txt".into(),
+                size: 0,
+            }]
+        }
+        fn read(&self, path: &str) -> Option<std::io::Result<Vec<u8>>> {
+            (path == "look.txt").then(|| Ok(self.0.lock().unwrap().clone()))
+        }
+    }
+
+    /// The disk layer: a second app reads the first one's dressing back
+    /// (the same parts, nothing converted), and a changed input file
+    /// converts again.
+    #[test]
+    fn the_disk_layer_reads_back_and_misses_on_a_changed_file() {
+        let dir = std::env::temp_dir().join(format!("chimera-kept-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let disk = MapCache::at(&dir, u64::MAX);
+        let file = Patched(Arc::new(Mutex::new(b"first".to_vec())));
+        let mount = {
+            let mut m = Mount::default();
+            m.push(file.clone());
+            Arc::new(m)
+        };
+        let mount_of = || Ok(mount.clone());
+        let convert = |mount: &Mount, map: &mut MapData| {
+            let name = String::from_utf8(mount.read("look.txt").unwrap()).unwrap();
+            map.textures.push(texture(&name));
+        };
+        let dressing = Dressing {
+            game: "kept_disk",
+            converter: "v1",
+            mount: &mount_of,
+            convert: &convert,
+        };
+        let app = |disk: &MapCache| {
+            let options = MapLoadOptions::lean();
+            let parts = kept_with(&options, &dressing, Some(disk)).unwrap();
+            let counts = (
+                conversions(&options.context, "kept_disk", false),
+                disk_reads(&options.context, "kept_disk", false),
+            );
+            (parts.textures[0].name.clone(), counts)
+        };
+        assert_eq!(app(&disk), ("first".into(), (1, 0)), "converted and written");
+        assert_eq!(app(&disk), ("first".into(), (0, 1)), "another app reads it back");
+        *file.0.lock().unwrap() = b"second".to_vec();
+        assert_eq!(app(&disk), ("second".into(), (1, 0)), "a changed file converts again");
+        assert_eq!(app(&disk), ("second".into(), (0, 1)));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// No install: nothing kept, the next load tries again.
