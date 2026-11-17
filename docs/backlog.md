@@ -103,6 +103,11 @@ the user's go-ahead: no Actions runs unless asked.
   - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
   - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
 
+- **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.
+  - It connects to a master server (the hub) by an identifier or address, since the hub manages the accounts.
+  - It covers hub plan S3: invite or link code, choosing a username, the recovery key, and Skip.
+  - Design it first as a new UI, with heavy use of motion graphics for a high-quality first experience, using the kit's motion tokens (`chimera_ui::motion`) so it can be slowed for new users or disabled.
+
 - **Range and code-built map follow-ups (2026-11-16):**
   - **More in RangeLayout:** cover-crate boxes (or the clear lane's width), the shelf's size, the board's size and facing (the board is 1.2 m but the target scoring face 1.0 m, so the outer 0.1 m counts as misses), the platform and ramp, and the stripes' half width.
   - **A floor label:** "20 M" looks mirrored from the board's side.
