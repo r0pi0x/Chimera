@@ -2444,6 +2444,18 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
 
 ## 2b. HUD and debug views
 
+- **One component library, used everywhere (user, 2026-11-17).** The
+  kit exists (`chimera_ui::controls`: `text_field`, `button`, `toggle`,
+  `dropdown`, `slider`, ...; `chimera_ui::widgets`), but screens built
+  their own copies, so search boxes and text inputs look and act
+  differently. For example, a caret placed inline pushes the text
+  around, where the kit's caret is an overlay. Move every screen's
+  ad-hoc control onto the kit's (Change gun's and the bench's search,
+  the model picker, the target picker, ...), add a search-field variant
+  if one is missing, and add a `repo_checks` rule against hand-built
+  controls outside `chimera_ui`. Also add a gallery scene that renders
+  every control in every state, for screenshot checks.
+
 - CS:S HUD: health/armour/ammo/money/round-timer panels, death notices
   and the Tab scoreboard are in (`client/game_hud.rs`,
   `games/cs_source/ui/scoreboard.rs`), and the weapon selection and pickup history
@@ -2887,6 +2899,36 @@ docs/plans/active/sound.md.
 
 ## 9. Performance
 
+- **Converted assets on disk and on the asset service (user,
+  2026-11-17).** Save every game's converted parts (models, textures,
+  sounds, dressings) in our own versioned format, and serve them from
+  the asset service too, so even a session's first load skips
+  conversion. Keep the originals reachable when developing, for format
+  changes. A format change is a versioned migration that may invalidate
+  old caches; keep backwards compatibility where cheap. Record each
+  format's version and the policy in one place (generated-assets rule).
+  First step: a prototype measuring the gains (plan:
+  docs/plans/active/converted-cache.md). Builds on the kept-dressing
+  API below.
+
+- **Streamed textures, low resolution first (user, 2026-11-17).** Keep
+  textures apart from models. Serve small mip levels first from the
+  asset service and stream the full ones in behind them, replacing in
+  place and freeing what's no longer needed. Investigate allocating the
+  final texture's buffer up front and filling it from the smallest mip
+  up, so the upgrade never reallocates. More broadly, investigate arenas
+  for load and unload (one region per map or session, freed at once)
+  where measurements show allocation or fragmentation costs.
+
+- **Stand-in assets that say "loading" (user, 2026-11-17).** One
+  consistent look wherever a real asset isn't in yet: our own low-poly
+  stand-ins, readable as what they stand for (a body, a gun, a prop) but
+  cheap to keep loaded, from the default-assets entry (logo characters).
+  They get a loading shader, for example a light dashed or checkered
+  pattern scrolling over them, so players know something will pop in.
+  This replaces today's capsules and odd fallbacks. Keep stand-ins on
+  screen as briefly as possible, and measure how long each shows.
+
 - **One kept-dressing cache in Chimera for every game (user,
   2026-11-17).** The session cache for guest dressings
   (`source_engine::content::guest`, docs/performance.md "Guest dressings
@@ -2920,7 +2962,14 @@ docs/plans/active/sound.md.
   in flight and the local grenades drawn between Halo ticks; tested on
   synthetic animation data, not yet looked at on the disc's models
   (confirm in a playtest). Still at 30 Hz: corpses, a campaign body's own
-  arms, vehicles.
+  arms, vehicles. **The user (2026-11-17): interpolate everything that
+  moves at Halo's tick** (corpses, arms, vehicles, effects, doors and
+  devices, the HUD's moving parts). Skip only what's prohibitively hard
+  or costs measurable frame time, and say which in this entry. The
+  one-tick trail (up to 33 ms) stays where the pose comes from the
+  simulation. The local view model may instead be eased from the
+  client's own predicted tick, if that removes the trail without
+  mispredictions.
 
 - **Halo HUD resolution (user, 2026-11-17).** Done (2026-11-17), left below for the generated-asset option: the opt-in scaling setting `halo_ce:hud_filter` (Options > Video "Halo HUD scaling": Original, the default; Sharp, nearest inside each texel with a one-pixel linear seam; Smooth+sharpen, an unsharp mask; `games/halo_ce/src/ui/hud/material.rs`, hud.wesl). Still open: upscaled HUD bitmaps as a generated asset set. Original text: The HUD's bitmaps are the
   original's, authored for 640x480, so they look soft scaled to 1080p and

@@ -68,6 +68,22 @@ the host can change settings and players can leave.
    on the server; the host can still start it early. The first lobby
    keeps waiting for the host's Start.
 
+5. **Joining: the lobby first, the loading screen when the game is on
+   (user, 2026-11-17).** The load's state (`load_stages(world)`, the
+   download, `LoadWork`) is the one source. Every screen that shows
+   loading reads it and owns none of it: the lobby's rows, the loading
+   screen, a small bar.
+   - A player joining a server in its lobby lands in the lobby, loading
+     behind it, with its own row's progress. The lobby shows the map,
+     the mode and the match's settings, so the player can leave before
+     being put into a match they don't want.
+   - When the host starts while the player is still loading, or the
+     player joins a match already being played, they see the loading
+     screen at once (same state, no restart of the load) and spawn when
+     it's done.
+   - Test: the one load drives both screens, and switching screens
+     doesn't restart or duplicate it.
+
 Each step has a scenario test: step 1 on `harness::Sim` with the
 client's real stepped load (`chimera_client` `map_load_steps`), steps 2
 to 4 on `NetSim` (`chimera_net` `prematch_lobby`).
