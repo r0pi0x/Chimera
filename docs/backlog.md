@@ -2887,6 +2887,30 @@ docs/plans/active/sound.md.
 
 ## 9. Performance
 
+- **One kept-dressing cache in Chimera for every game (user,
+  2026-11-17).** The session cache for guest dressings
+  (`source_engine::content::guest`, docs/performance.md "Guest dressings
+  kept for the session") lives in the Source loader, so only CS:S,
+  HL2:DM and TF2 use it. Combat Arms (`shared_character_models`,
+  `append_shared`) and Halo (`body::load::donor`, `view::load::donor`,
+  `audio::donor` in `LoadContext`) each keep their converted parts their
+  own way. Three mechanisms means three behaviours: a late file
+  re-dresses a Source guest at the next map, but Halo's and Combat
+  Arms' kept parts never refresh. Each game also measures differently,
+  and a new port has to build its own cache. Two parts are already in
+  Chimera for every game: the dealt-games filter
+  (`MapLoadOptions::dealt`) and the texture-index shift
+  (`map::texture_refs`).
+  - **Do:** lift `dress_cached` and `append` into `chimera_world::map`
+    as one API. A game gives its dress function and a `files_here`
+    check, and Chimera keeps the result, appends it, refreshes it on
+    late files and logs the timing. Move CS:S, HL2:DM, TF2, Combat Arms
+    and Halo onto it, and make it part of docs/new-game.md's checklist.
+  - **Measure first:** Halo's per-map append cost (the disc image isn't
+    on this box). If a game gains nothing, say so and leave it as it is.
+  - **Later:** an on-disk converted copy, so the first load of a session
+    is fast as well (performance.md); the same API, for every game.
+
 - **Halo: view models and animations at frame rate (user, 2026-11-17).**
   Halo's gun animations and related motion run at its 30 Hz tick and look
   stepped on high-refresh screens. Interpolate between the 30 Hz poses
