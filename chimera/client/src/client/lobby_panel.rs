@@ -192,6 +192,10 @@ impl Panel<'_> {
         c.spawn((
             Text::new(text),
             UiText::new(role, size, tone),
+            // `case_texts` upper-cases a role that does on every change of
+            // the text, and `Ellipsize` rewrites a name: without this the
+            // name flipped between capitals and as written.
+            chimera_ui::KeepCase,
             TextLayout::new(Justify::Left, LineBreak::NoWrap),
             ChildOf(parent),
         ))

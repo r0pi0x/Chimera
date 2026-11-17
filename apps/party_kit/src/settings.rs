@@ -1579,7 +1579,7 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         let reduced = world.get_resource::<chimera_ui::ReducedMotion>().is_some_and(|r| r.0);
         let party = drawn.as_ref().map(|k| k.party.clone()).unwrap_or_default();
         let differ = differs.len();
-        let d = Draw { ctx, lobby, s: &s, tabs: &tabs, help: &help, keys: &keys_of, bind_changed: &bind_changed, changes, now: t, reduced, party: &party, differs: &differs, differ };
+        let d = Draw { ctx, lobby, s: &s, tabs: &tabs, help: &help, keys: &keys_of, bind_changed: &bind_changed, changes, now: t, reduced, motion: world.get_resource::<chimera_ui::motion::Motion>().copied().unwrap_or_default(), party: &party, differs: &differs, differ };
         let root = spawn(&mut c, &ui, &d, images.as_mut(), icons.as_mut(), ambients.as_mut());
         if let Some(cam) = camera {
             c.entity(root).insert(UiTargetCamera(cam));
@@ -1688,6 +1688,7 @@ struct Draw<'a> {
     now: f64,
     /// Reduced motion: no toggle slide.
     reduced: bool,
+    motion: chimera_ui::motion::Motion,
     party: &'a chimera_ui::shell::Party,
     /// The settings whose value differs from the default.
     differs: &'a std::collections::BTreeSet<String>,
@@ -1947,7 +1948,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                 }
                 (Widget::Toggle, Pick::Choices(ch)) => {
                     let on = ch.get(1).is_some_and(|(cv, _)| host::same_value(cv, &v));
-                    let slide = s.flip.filter(|(r, _)| *r == i).map(|(_, since)| controls::ToggleSlide { since, now: d.now, reduced: d.reduced });
+                    let slide = s.flip.filter(|(r, _)| *r == i).map(|(_, since)| controls::ToggleSlide { since, now: d.now, motion: if d.reduced { chimera_ui::motion::Motion::new(0.0) } else { d.motion } });
                     let tg = ui.toggle_ex(c, vl, on, vst, slide);
                     c.entity(tg).insert(SettingsAction::Step { row: i, dir: 1 });
                 }

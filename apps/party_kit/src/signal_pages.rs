@@ -312,6 +312,11 @@ impl Plugin for SignalPagesPlugin {
         app.init_resource::<SignalPages>()
             .init_resource::<crate::maps_picker::MapsPicker>()
             .init_resource::<crate::maps_picker::MapsSource>()
+            .init_resource::<crate::maps_picker::PickerRows>()
+            .add_systems(
+                PostUpdate,
+                crate::maps_picker::bind_rows.after(chimera_ui::vlist::place_slots).before(bevy::ui::UiSystems::Prepare),
+            )
             .add_message::<crate::maps_picker::PickerAction>()
             .init_resource::<LanList>()
             .init_resource::<HubAsks>()
@@ -352,7 +357,7 @@ fn picker_keys(
     mut out: MessageWriter<crate::maps_picker::PickerAction>,
     mut cues: MessageWriter<UiCue>,
 ) {
-    use crate::maps_picker::{PickerAction as P, TreeRow};
+    use crate::maps_picker::PickerAction as P;
     picker.took_keys = picker.open.is_some();
     if picker.open.is_none() {
         return;
@@ -381,12 +386,11 @@ fn picker_keys(
             picker.cursor = next;
             cues.write(UiCue::new("ui_hover"));
         }
-    } else if (k(KeyCode::ArrowLeft) || k(KeyCode::ArrowRight))
-        && let Some(row) = rows.get(picker.cursor)
-        && !matches!(row, TreeRow::Map(..))
-    {
-        picker.fold(&games, row, k(KeyCode::ArrowRight));
-        cues.write(UiCue::new("ui_select"));
+    } else if k(KeyCode::ArrowLeft) || k(KeyCode::ArrowRight) {
+        let did = if k(KeyCode::ArrowLeft) { picker.left(&games) } else { picker.right(&games) };
+        if did {
+            cues.write(UiCue::new("ui_select"));
+        }
     }
 }
 
@@ -946,10 +950,14 @@ fn now(clock: &Option<Res<UiClock>>) -> f64 {
     clock.as_ref().map_or(0.0, |c| c.now)
 }
 
-/// Focus line `i`: a text field takes the keys (`PartyMenu::focus`).
-fn focus_line(p: &mut SignalPages, menu: &mut PartyMenu, data: &MenuData, lines: &[Line], i: usize) {
+/// Focus line `i`. A text field on it takes the keys (`PartyMenu::focus`)
+/// only when `edit` (a click, an explicit Enter); otherwise the line is
+/// just the cursor and no field has the keys. Switching a tab or moving
+/// down the list never captures the keyboard on Host (Join's address
+/// still opens focused).
+fn focus_line(p: &mut SignalPages, menu: &mut PartyMenu, data: &MenuData, lines: &[Line], i: usize, edit: bool) {
     p.focus = i.min(lines.len().saturating_sub(1));
-    let field = lines.get(p.focus).and_then(|l| l.field(data));
+    let field = lines.get(p.focus).and_then(|l| l.field(data)).filter(|_| edit);
     if menu.focus != field {
         menu.focus = field;
         let text = field.and_then(|f| match f {
@@ -1108,7 +1116,7 @@ fn follow(
             lan.scroll = 0;
         }
         let ls = lines(&menu, &data, &lan);
-        focus_line(&mut p, &mut menu, &data, &ls, 0);
+        focus_line(&mut p, &mut menu, &data, &ls, 0, up == Some(MenuPage::Join));
         if opened && up == Some(MenuPage::Join) {
             if stage_ask
                 && let Some(i) = lan.servers.iter().position(|s| s.locked)
@@ -1142,7 +1150,8 @@ fn follow(
     }
     if p.focus >= ls.len() && !ls.is_empty() {
         let last = ls.len() - 1;
-        focus_line(&mut p, &mut menu, &data, &ls, last);
+        let edit = menu.page != MenuPage::Play;
+        focus_line(&mut p, &mut menu, &data, &ls, last, edit);
     }
     if p.ask.as_ref().is_some_and(|a| lan.rows().get(a.index).is_none()) {
         p.ask = None;
@@ -1245,7 +1254,7 @@ fn keys(
     }
     let ls = lines(&menu, &data, &lan);
     let line = ls.get(p.focus).copied();
-    let typing = line.and_then(|l| l.field(&data)).is_some();
+    let typing = line.and_then(|l| l.field(&data)).is_some_and(|f| menu.focus == Some(f));
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let on_server = matches!(line, Some(Line::Server(_)));
     let jump = on_server && (k(KeyCode::PageUp) || k(KeyCode::PageDown));
@@ -1255,7 +1264,7 @@ fn keys(
         let by = if jump { VISIBLE_ROWS } else { 1 };
         let next = if up { p.focus.saturating_sub(by) } else { (p.focus + by).min(ls.len() - 1) };
         if next != p.focus {
-            focus_line(&mut p, &mut menu, &data, &ls, next);
+            focus_line(&mut p, &mut menu, &data, &ls, next, page != MenuPage::Play);
             p.reveal = true;
             reveal(&mut lan, ls.get(next).copied());
             cues.write(UiCue::new("ui_hover"));
@@ -1265,6 +1274,18 @@ fn keys(
     let on_maps = matches!(line, Some(Line::Play(r)) if data.play.get(r).is_some_and(|row| row.kind == PlayKind::Map));
     if on_maps && (k(KeyCode::Enter) || k(KeyCode::NumpadEnter) || k(KeyCode::Space)) {
         out.write(MainMenuAction::OpenMaps);
+        return;
+    }
+    if page == MenuPage::Play
+        && (k(KeyCode::Enter) || k(KeyCode::NumpadEnter))
+        && let Some(f) = line.and_then(|l| l.field(&data))
+        && menu.focus != Some(f)
+    {
+        // An explicit Enter on a text row: it takes the keys (the next
+        // Enter starts the game, as with any row).
+        let at = p.focus;
+        focus_line(&mut p, &mut menu, &data, &ls, at, true);
+        cues.write(UiCue::new("ui_select"));
         return;
     }
     if k(KeyCode::Enter) || k(KeyCode::NumpadEnter) {
@@ -1369,7 +1390,7 @@ fn line_clicks(
                 None => {}
             }
         } else {
-            focus_line(&mut p, &mut menu, &data, &ls, l.0);
+            focus_line(&mut p, &mut menu, &data, &ls, l.0, true);
             p.reveal = false;
             reveal(&mut lan, Some(line));
             cues.write(UiCue::new("ui_select"));
@@ -1429,6 +1450,7 @@ fn draw(
         Option<Res<chimera_sim::minigame::arena::ArenaSlices>>,
     ),
     mut drawn: Local<DrawKey>,
+    mut lists: ResMut<chimera_ui::VirtualLists>,
     mut commands: Commands,
 ) {
     let (Some(theme), Some(units)) = (theme, units) else { return };
@@ -1472,7 +1494,7 @@ fn draw(
             games
         },
     };
-    let root = spawn(&mut commands, &ui, page, &menu, &p, &cx, images.as_deref_mut(), icons.as_deref_mut(), ambients.as_deref_mut());
+    let root = spawn(&mut commands, &ui, page, &menu, &p, &cx, images.as_deref_mut(), icons.as_deref_mut(), ambients.as_deref_mut(), &mut lists);
     if let Some(c) = cam {
         commands.entity(root).insert(UiTargetCamera(c));
     }
@@ -1522,6 +1544,7 @@ fn spawn(
     images: Option<&mut Assets<Image>>,
     icons: Option<&mut IconImages>,
     ambients: Option<&mut Assets<AmbientMaterial>>,
+    lists: &mut chimera_ui::VirtualLists,
 ) -> Entity {
     let t = ui.theme;
     let sh = chimera_ui::shell::ShellLayout::of(t);
@@ -1661,11 +1684,7 @@ fn spawn(
     };
     chimera_ui::shell::keys(ui, c, frame, keys);
     if page == MenuPage::Play && cx.picker.open.is_some() {
-        let res = match (images.as_deref_mut(), icons.as_deref_mut()) {
-            (Some(a), Some(b)) => Some((a, b)),
-            _ => None,
-        };
-        crate::maps_picker::spawn(c, ui, root, cx.picker, &cx.games, res);
+        crate::maps_picker::spawn(c, ui, root, cx.picker, &cx.games, lists);
     }
     if let Some(ask) = &p.ask {
         password_modal(c, ui, root, menu, p, ask);
