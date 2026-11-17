@@ -14,7 +14,7 @@
 //! - how many players are on the ladder's last rung (`last_rung`; 0 off a
 //!   ladder), from the replicated rungs;
 //! - the respawn countdown's whole seconds left (`respawn_in`, from
-//!   `core::RespawnDue`);
+//!   `core::RespawnDue`; none while the pre-match lobby holds everyone staged);
 //! - the decided match for the local player (`result`): won, lost, a
 //!   draw.
 //!
@@ -124,8 +124,11 @@ pub fn update(world: &mut World) {
         })
     };
     let now = world.get_resource::<SimClock>().map_or(0.0, |c| c.now);
-    let respawn_in = world
-        .get_resource::<RespawnDue>()
+    // None while the pre-match lobby holds everyone staged (dead): no
+    // respawn count's cue under the lobby.
+    let respawn_in = (!super::in_lobby(world))
+        .then(|| world.get_resource::<RespawnDue>())
+        .flatten()
         .and_then(|d| d.0)
         .map(|d| (d.at - now).ceil())
         .filter(|s| *s >= 1.0)

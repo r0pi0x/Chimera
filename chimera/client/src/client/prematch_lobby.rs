@@ -426,9 +426,12 @@ fn follow(
     settings: Option<Res<chimera_net::net::NetSettings>>,
     join: Option<Res<chimera_net::net::client::JoinProgress>>,
     ladder: Option<Res<chimera_sim::minigame::ladder::Ladder>>,
-    (mut passes, mut gate): (super::logo_pass::Passes, ResMut<LobbyGate>),
+    (mut passes, mut gate, first): (super::logo_pass::Passes, ResMut<LobbyGate>, Query<(), With<chimera_net::prematch::HostLobbyFirst>>),
     mut view: ResMut<LobbyView>,
 ) {
+    // A listen host's lobby shown from its Start (`prematch::show_first`):
+    // seen as its host, as the staged one.
+    let first = !first.is_empty();
     // Through the logo pass when the theme has one: up and down at its swap.
     let pass = passes.on();
     let Some(l) = lobby.iter().next() else {
@@ -460,7 +463,7 @@ fn follow(
         }
     }
     let mine = match role.as_deref() {
-        _ if staged.is_some() => Some(HOST_ID),
+        _ if staged.is_some() || first => Some(HOST_ID),
         Some(NetRole::Client) => me.map(|m| m.0),
         Some(NetRole::Server) if !host.is_empty() => Some(HOST_ID),
         _ => None,
@@ -472,7 +475,7 @@ fn follow(
         line: waiting_line(l),
         rows: l.rows.iter().map(|r| view_row(r, mine.is_some() && r.id == mine)).collect(),
         countdown: l.countdown,
-        hosting: staged.is_some() || (role.as_deref() == Some(&NetRole::Server) && !host.is_empty()),
+        hosting: staged.is_some() || first || (role.as_deref() == Some(&NetRole::Server) && !host.is_empty()),
         hint: String::new(),
         game: String::new(),
         slots: None,
@@ -484,6 +487,7 @@ fn follow(
     v.game = l.map.split_once(':').and_then(|(g, _)| short(g)).unwrap_or_default();
     v.slots = match role.as_deref() {
         _ if staged.is_some() => staged.map(|s| s.slots),
+        _ if first => settings.map(|s| s.maxplayers).filter(|&n| n > 1),
         Some(NetRole::Server) => settings.map(|s| s.maxplayers).filter(|&n| n > 1),
         Some(NetRole::Client) => join.and_then(|j| j.server.as_ref().map(|s| s.max_players)).filter(|&n| n > 0),
         _ => None,

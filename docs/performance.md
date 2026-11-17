@@ -4707,6 +4707,48 @@ of need keep to the read-ahead's half of the pool (`ReadAhead`, as Combat
 Arms' bodies), and the first-person views are made on the load's task.
 Test: `halo_ce` `campaign::campaign_units_come_with_the_matchs_ladder_not_the_apps_start`.
 
+### Host's Start: the lobby first
+
+Before, Start set the Play page's cvars and loaded the map behind the
+loading panel; the lobby came once the map was spawned and settled and
+the minigame started (de_dust2: 11.7 s after Start; the load 5 s, the
+settling 6 s, most of it the 1,500 spawn spots sliced behind the
+screen). Meanwhile, heard and run:
+
+- the bots (`MaxPlayer 3`, set before `map`) joined at once and fought,
+  first in the empty world and then on the new map as it spawned behind
+  the loading panel: 19 shots, hits and kills, a ragdoll, before the lobby;
+- Combat Arms' in-game music loop from the loading panel's first frame
+  (the menu's music was handed over as soon as the screen left the menu);
+- props settling behind the panel scraping (two `ScrapeSmooth` loops);
+- in the lobby, `RespawnCountSound` once a second: the staged (dead)
+  host's respawn count as Combat Arms' music director heard it.
+
+Now, with the lobby on, Start shows the host's lobby at once
+(`prematch::show_first`: its own row "loading", the map and the mode;
+the server's lobby replaces it when the match begins), 40 frames after
+Start in the scene's picture (the logo pass between), and the map loads
+under it. No bot joins while this machine's map loads
+(`bots::roster::keep_quota`), the menu's music plays on through the
+loading panel and the lobby with Combat Arms' silent until the match
+(`main_menu::music`), scrapes wait for the load's end
+(`effects::scrapes`), and the lobby's staged players have no respawn
+count (`moments::update`); the host's Start pressed while the map loads
+is kept for when the server's lobby begins. In the after run: no shot,
+kill, scrape, music cue or other game sound before the match (the log's
+`sound: start` and `music cue` lines; 19 shots, hits and kills before). The load and the settling themselves are unchanged
+(the time until the host's row reads loaded); a dedicated server and
+the clients' joins are untouched. Test: `party_kit`
+`host_lobby::hosting_shows_the_lobby_first_and_plays_nothing_while_the_map_loads`.
+
+On this box (installs, no store) a match's start itself showed no bad
+stutter, before or after: de_dust2's first 10 s of play 4 frames over 50
+ms (worst 74 ms, 167 M instructions: the match's start), the lobby's
+first frame 371 M (its 2 ticks: `RunFixedMainLoop` 113 ms); Combat Arms'
+warehouse the same. What the Windows playtest saw is most likely what
+reads the asset store there (the campaign's units above, Halo and TF2
+maps, which this box can't load).
+
 ### Leaving a game for the menu
 
 "Disconnecting from a match takes a really long time. After disconnecting,
