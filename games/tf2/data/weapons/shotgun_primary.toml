@@ -37,10 +37,10 @@ hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
 impulse = 0.0
 
 [sounds]
-fire = "Weapon_Shotgun.Single"
-empty = "Weapon_Shotgun.Empty"
-reload = [[0.0, "Weapon_Shotgun.Reload"]]
-draw = [[0.0, "Weapon_Shotgun.Draw"]]
+fire = "tf2:Weapon_Shotgun.Single"
+empty = "tf2:Weapon_Shotgun.Empty"
+reload = [[0.0, "tf2:Weapon_Shotgun.Reload"]]
+draw = [[0.0, "tf2:Weapon_Shotgun.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_shotgun/c_shotgun.mdl"

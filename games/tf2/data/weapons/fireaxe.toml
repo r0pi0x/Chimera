@@ -3,13 +3,13 @@ id = "tf2:tf_weapon_fireaxe"
 base = "tf2:melee"
 
 [melee.primary]
-sound_swing = "Weapon_FireAxe.Miss"
-sound_hit = "Weapon_FireAxe.HitFlesh"
-sound_hit_world = "Weapon_FireAxe.HitWorld"
+sound_swing = "tf2:Weapon_FireAxe.Miss"
+sound_hit = "tf2:Weapon_FireAxe.HitFlesh"
+sound_hit_world = "tf2:Weapon_FireAxe.HitWorld"
 
 # `fa_draw`'s sound event (8.1).
 [sounds]
-draw = [[0.0333, "Weapon_FireAxe.Draw"]]
+draw = [[0.0333, "tf2:Weapon_FireAxe.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_fireaxe_pyro/c_fireaxe_pyro.mdl"
@@ -23,4 +23,4 @@ icon = "fireaxe"
 [hooks."tf2:melee"]
 arms = "pyro"
 script = "tf_weapon_fireaxe"
-crit_swing = "Weapon_FireAxe.MissCrit"
+crit_swing = "tf2:Weapon_FireAxe.MissCrit"

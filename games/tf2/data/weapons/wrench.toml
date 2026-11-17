@@ -5,13 +5,13 @@ id = "tf2:tf_weapon_wrench"
 base = "tf2:melee"
 
 [melee.primary]
-sound_swing = "Weapon_Wrench.Miss"
-sound_hit = "Weapon_Wrench.HitFlesh"
-sound_hit_world = "Weapon_Wrench.HitWorld"
+sound_swing = "tf2:Weapon_Wrench.Miss"
+sound_hit = "tf2:Weapon_Wrench.HitFlesh"
+sound_hit_world = "tf2:Weapon_Wrench.HitWorld"
 
 # `pdq_draw`'s sound events (8.1).
 [sounds]
-draw = [[0.1, "Weapon_Wrench.Draw"], [0.1, "Weapon_Wrench.Draw2"], [0.6667, "Weapon_Wrench.HitHand"]]
+draw = [[0.1, "tf2:Weapon_Wrench.Draw"], [0.1, "tf2:Weapon_Wrench.Draw2"], [0.6667, "tf2:Weapon_Wrench.HitHand"]]
 
 [models]
 world = "models/weapons/c_models/c_wrench/c_wrench.mdl"
@@ -25,4 +25,4 @@ icon = "wrench"
 [hooks."tf2:melee"]
 arms = "engineer"
 script = "tf_weapon_wrench"
-crit_swing = "Weapon_Wrench.MissCrit"
+crit_swing = "tf2:Weapon_Wrench.MissCrit"

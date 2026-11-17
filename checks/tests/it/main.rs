@@ -10,5 +10,6 @@
 mod architecture;
 mod determinism;
 mod ecs;
+mod gun_sounds;
 mod scripts;
 mod ui_kit;

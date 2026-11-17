@@ -35,10 +35,10 @@ hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
 impulse = 0.0
 
 [sounds]
-fire = "Weapon_Pistol.Single"
-empty = "Weapon_Pistol.ClipEmpty"
-reload = [[0.0, "Weapon_Pistol.ReloadScout"]]
-draw = [[0.0, "Weapon_Pistol.Draw"]]
+fire = "tf2:Weapon_Pistol.Single"
+empty = "tf2:Weapon_Pistol.ClipEmpty"
+reload = [[0.0, "tf2:Weapon_Pistol.ReloadScout"]]
+draw = [[0.0, "tf2:Weapon_Pistol.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_pistol/c_pistol.mdl"

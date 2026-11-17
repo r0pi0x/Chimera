@@ -12,7 +12,7 @@
 //!   before the weapon frame): a crit swing deals 3 times its damage
 //!   (`CRIT_MULT`), starts with the crit swing sound (`crit_swing`, the
 //!   script's `burst`) and its crit sequence (`SWING_CRIT`), and its hit
-//!   plays `TFPlayer.CritHit` (`CRIT_HIT`). The chance is
+//!   plays `TFPlayer.CritHit` (`CRIT_HIT`, under TF2's name prefix: `maps::own_sound`). The chance is
 //!   `crit_chance(D)` (15 % to 60 % with D the damage dealt in the last
 //!   20 s); random crits stay off (`MeleeCrits`, the party's choice, as
 //!   for the guns: weapons.md 2.6), so a melee swing crits only when a
@@ -59,7 +59,7 @@ pub const BACKSTAB_ICON: &str = "backstab";
 /// A crit's damage factor (3).
 pub const CRIT_MULT: f32 = 3.0;
 /// The crit hit's sound (8.3).
-pub const CRIT_HIT: &str = "TFPlayer.CritHit";
+pub const CRIT_HIT: &str = "tf2:TFPlayer.CritHit";
 
 /// The view-model actions (`WeaponEventKind::Action`).
 pub const SWING: &str = "melee_swing";
