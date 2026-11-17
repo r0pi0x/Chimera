@@ -876,6 +876,8 @@ account kinds, main-menu.md (M3 as built), each new file's `//!` doc
 
 ## 11. Decisions
 
+**Superseded in part (user, 2026-11-17; [onboarding.md](onboarding.md)):** invites are one-time codes with an intent and no username, players choose their username at sign-up and may rename it at will, and S3's first-run page is redesigned there.
+
 Taken (user, 2026-11-14), first: a Chimera platform account with
 per-game profiles declared by each game as data; every game open to
 every account by default; the account UX of section 5 (`invite <name>`,

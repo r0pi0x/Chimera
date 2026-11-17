@@ -114,7 +114,7 @@ the user's go-ahead: no Actions runs unless asked.
   - **Left:** loading the next map's data ahead during the match-end screen (before the change); a listen host's own row on other machines pauses while its simulation waits on its spawn (its own screen shows it live).
   - **Plan:** [plans/active/lobby-between-maps.md](plans/active/lobby-between-maps.md).
 
-- **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.
+- **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** Design: docs/plans/active/onboarding.md (decisions taken 2026-11-17; mockups next). a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.
   - It connects to a master server (the hub) by an identifier or address, since the hub manages the accounts.
   - It covers hub plan S3: invite or link code, choosing a username, the recovery key, and Skip.
   - Design it first as a new UI, with heavy use of motion graphics for a high-quality first experience, using the kit's motion tokens (`chimera_ui::motion`) so it can be slowed for new users or disabled.
