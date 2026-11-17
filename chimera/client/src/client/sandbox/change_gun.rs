@@ -4,7 +4,7 @@
 //!
 //! - **Head**: the breadcrumb (Sandbox, B, Esc) and CHANGE GUN at the
 //!   left; the search field at the top centre (no current-gun chip in
-//!   this view): typing goes there, matching a gun's name, id, game,
+//!   this view): `/` or a click focuses it and typing goes there, matching a gun's name, id, game,
 //!   class and tags (`model::GunView::fits`).
 //! - **Games** (left, 14 cq): All games and each game with its count (of
 //!   the guns the other filters leave) and a line under it (how many are
@@ -49,12 +49,16 @@
 //!   left Shift, never typed) folds the class the cursor is in and parks
 //!   it on the header; `\` or Enter there opens it and puts the cursor
 //!   back on the same tile. The detail pane follows the cursor. Letters
-//!   and digits go to the search (not with Ctrl or Alt held), but before
-//!   anything is typed I shows the large model and R retries the
-//!   selected gun's failed download (on any other gun R types); B types
-//!   (Esc leaves). Ctrl+I and Ctrl+R do the same at any time; Ctrl+1–6
-//!   pins; Backspace deletes a letter; Esc closes the popover, then
-//!   clears the search, then closes the view.
+//!   do not go to the search until the field has the keyboard (`/`, a
+//!   click on it, or Enter with nothing under the cursor); then letters
+//!   and digits type (not with Ctrl or Alt held), Backspace deletes a
+//!   letter, and Enter or Esc lets go of the field (Enter: the cursor is
+//!   on the first match; Enter again switches). With the field not
+//!   focused B closes the view (B opens it, B closes it), I shows the
+//!   large model and R retries the selected gun's failed download. Ctrl+I
+//!   and Ctrl+R do the same at any time; Ctrl+1–6 pins; Esc closes the
+//!   popover, then leaves the field, then clears the search, then closes
+//!   the view.
 //!
 //! The user's decisions (the design rules, section 22): a tile's
 //! download state is a bar along its bottom edge (its words in the
@@ -127,6 +131,8 @@ pub enum GunAction {
     /// Pick a variant of the selected tile's gun (the detail pane's list).
     Variant(String),
     Switch,
+    /// A click on the search field.
+    FocusSearch,
     Close,
 }
 
@@ -272,6 +278,8 @@ fn keys(
             ui.view.tag_search.clear();
         } else if ui.view.tags_open {
             ui.view.tags_open = false;
+        } else if ui.view.search_focus {
+            ui.view.search_focus = false;
         } else if !ui.view.search.is_empty() {
             ui.view.search.clear();
         } else {
@@ -322,6 +330,15 @@ fn keys(
     // fold left.
     let fold_key = k(KeyCode::Backslash) || k(KeyCode::IntlBackslash);
     let enter = k(KeyCode::Enter) || k(KeyCode::NumpadEnter);
+    let focus = ui.view.search_focus;
+    if focus && enter {
+        // Confirms the first match: the field lets go; the cursor is on it
+        // (the selection follows the search), Enter again switches.
+        ui.view.search_focus = false;
+    } else if enter && !focus && st.cursor.is_none() {
+        ui.view.search_focus = true;
+    }
+    let enter = enter && !focus;
     match st.cursor {
         Some(VCursor::Item(sec, i)) if fold_key => {
             st.fold(sec, true);
@@ -393,27 +410,37 @@ fn keys(
             (Some(u), UnitState::Failed { .. }) => Some((g.game.clone(), u.clone())),
             _ => None,
         });
-    // Typing: letters and digits go to the search (not with
-    // Ctrl or Alt held, and never `\`); before anything is typed, I is
-    // the model view and R retries the selected gun's failed download
-    // (otherwise R types).
+    // Typing: with the field focused letters and digits go to the search
+    // (not with Ctrl or Alt held, and never `\`); otherwise B closes the
+    // view, `/` focuses the field, I is the model view and R retries the
+    // selected gun's failed download.
     let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
     for e in typed.read() {
         if e.state != ButtonState::Pressed || ctrl || alt || matches!(e.key_code, KeyCode::Backslash | KeyCode::IntlBackslash) {
             continue;
         }
         let empty = ui.view.search.is_empty();
+        if !ui.view.search_focus {
+            match &e.logical_key {
+                Key::Character(c) if c.eq_ignore_ascii_case("b") => {
+                    out.write(GunAction::Close);
+                }
+                Key::Character(c) if c.as_str() == "/" => ui.view.search_focus = true,
+                Key::Character(c) if c.eq_ignore_ascii_case("i") => ui.view.detail = !ui.view.detail,
+                Key::Character(c) if c.eq_ignore_ascii_case("r") => {
+                    if let Some((game, unit)) = failed.clone() {
+                        requests.write(UnitRequest::Retry { game, unit });
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
         match &e.logical_key {
             Key::Backspace => {
                 ui.view.search.pop();
             }
             Key::Space if !empty => ui.view.search.push(' '),
-            Key::Character(c) if empty && c.eq_ignore_ascii_case("i") => ui.view.detail = !ui.view.detail,
-            Key::Character(c) if empty && c.eq_ignore_ascii_case("r") && failed.is_some() => {
-                if let Some((game, unit)) = failed.clone() {
-                    requests.write(UnitRequest::Retry { game, unit });
-                }
-            }
             Key::Character(c) if ui.view.search.len() < 48 => ui.view.search.push_str(c),
             _ => {}
         }
@@ -529,7 +556,9 @@ fn act(world: &mut World) {
                 world.write_message(SandboxAction::Switch(id));
                 world.resource_mut::<SandboxUi>().screen = SandboxScreen::None;
             }
+            GunAction::FocusSearch => world.resource_mut::<SandboxUi>().view.search_focus = true,
             GunAction::Close => {
+                world.resource_mut::<SandboxUi>().view.search_focus = false;
                 world.write_message(SandboxAction::Close);
             }
         }
@@ -586,6 +615,8 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
             Node::default(),
             UiTransform { translation: Val2::percent(-50.0, 0.0), ..default() },
             UiParityId::new("gun.search"),
+            Interaction::default(),
+            GunAction::FocusSearch,
             ChildOf(head),
         ))
         .id();
@@ -615,8 +646,9 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
         ("I", "Model"),
         ("Ctrl 1-6", "Pin"),
         ("R", "Retry"),
-        ("Type", "Find"),
-        ("Esc", "Back to the range"),
+        ("/", "Search (click it too)"),
+        ("B", "Close"),
+        ("Esc", "Leave the search, then back"),
     ] {
         key_hint(&mut c, &ui, keys, k, w, 0.5, Tone::Fg2);
     }
@@ -685,7 +717,7 @@ fn draw(
     for e in [p.search, p.games, p.bar, p.detail, p.pins, p.pop] {
         c.entity(e).despawn_children();
     }
-    search_field(&mut c, &ui, &look, p.search, &next.view.search);
+    search_field(&mut c, &ui, &look, p.search, &next.view.search, next.view.search_focus);
     games_column(&mut c, &ui, p.games, &cat.guns, &ui_state, &progress);
     filter_bar(&mut c, &ui, &look, p.bar, &ui_state, next.grid_count, &cat.guns, &progress);
     if let Some(g) = ui_state.view.selected.as_deref().and_then(|id| cat.get(id)) {
@@ -715,19 +747,19 @@ fn draw(
     *last = Some((p.root, next));
 }
 
-fn search_field(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, text: &str) {
+fn search_field(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, text: &str, focus: bool) {
     kit_icon(c, look, parent, "search", 0.8, Tone::Fg3, 1.0);
     let w = ui.boxed(c, parent, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-    if text.is_empty() {
+    if text.is_empty() && !focus {
         ui.sentence(c, w, 0.78, Tone::Fg3, "Find a gun, a game or a tag");
     } else {
         ui.text_plain(c, w, Role::Text, 0.84, Tone::Fg, text);
         c.spawn((Node { width: Val::Px(look.hair().max(1.5)), height: look.val(1.0), ..default() }, BackgroundColor(look.tone(Tone::Fg)), ChildOf(w)));
     }
-    ui.kbd(c, parent, "Type", 0.44, Tone::Fg3);
+    ui.kbd(c, parent, if focus { "Enter" } else { "/" }, 0.44, Tone::Fg3);
     c.spawn((
         Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, height: Val::Px(look.hair()), ..default() },
-        BackgroundColor(look.tone(if text.is_empty() { Tone::Fg3 } else { Tone::Acc })),
+        BackgroundColor(look.tone(if text.is_empty() && !focus { Tone::Fg3 } else { Tone::Acc })),
         ChildOf(parent),
     ));
 }

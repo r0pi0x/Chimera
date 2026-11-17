@@ -544,7 +544,7 @@ fn keys(
     let k = |c: KeyCode| keys.just_pressed(c);
     // Change gun's own keys are its own (typing, arrows): only Esc and B
     // reach here while it's open.
-    let typing = (ui.screen == SandboxScreen::ChangeGun && !ui.view.search.is_empty()) || picking;
+    let typing = (ui.screen == SandboxScreen::ChangeGun && ui.view.search_focus) || picking;
     if k(KeyCode::Escape) && ui.screen == SandboxScreen::Bench {
         ui.took_esc = true;
         out.write(SandboxAction::Close);
