@@ -53,8 +53,10 @@
 //!   the shield, `Health` the body (`vitality`; under the party's
 //!   cross-game incoming, `cross_game`, the shield's unit is scaled and the
 //!   engine's `Damage` is written divided by the character's
-//!   `core::DamageScale`, so Halo's own hits land exactly as the spec
-//!   says). A death's credit: the
+//!   `core::DamageScale`, so the table's incoming counts once; Halo's own
+//!   hits count the table's scale too, Halo's outgoing times the body's
+//!   incoming, `cross_game::own_scale`: the spec's numbers with the
+//!   switch off or no table). A death's credit: the
 //!   killing hit's instigator, or, when that hit was friendly or had none
 //!   (a fall, a teammate), the enemy who did the most damage within the
 //!   last 6 s.
@@ -311,6 +313,7 @@ pub fn deliver_hits(
     teams: Query<&Team>,
     rules: DamageRules,
     clock: Res<SimClock>,
+    balance: Option<Res<chimera_sim::weapon::balance::Balance>>,
     mut out: (
         MessageWriter<Damage>,
         MessageWriter<RegionHit>,
@@ -351,8 +354,11 @@ pub fn deliver_hits(
             let spartan = super::campaign::vitality_of(&spartan, tables.as_deref(), kind);
             let look = look_of(intent);
             // Another game's damage counts this on it (the party's
-            // balance, `cross_game`); Halo's own lands as it is.
+            // balance, `cross_game`); Halo's own counts the table's too:
+            // Halo's outgoing times this body's incoming, the same
+            // `Balance::pair` as every game's.
             let scale = vitality::scale_of(scale);
+            let own = super::cross_game::own_scale(balance.as_deref(), kind);
             let mirrored = mirrored.filter(|m| m.primed);
             if let Some(m) = mirrored.as_deref() {
                 vitality::take_foreign(spartan, &mut v, health, armor.as_deref(), m, scale);
@@ -371,7 +377,7 @@ pub fn deliver_hits(
                 friendly,
                 unsuspecting: vitality::unsuspecting(transform.translation, hit.epicenter, look),
                 bypass_shields: hit.is(hit_flags::BYPASS_SHIELDS),
-                game_multiplier: 1.0,
+                game_multiplier: own,
             };
             let outcome = v.take(spartan, &event);
             if !outcome.landed {

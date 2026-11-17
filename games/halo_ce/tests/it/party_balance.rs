@@ -1,8 +1,8 @@
 //! The cross-game table (`chimera_sim::weapon::balance`, Halo's
-//! mechanisms in `game::cross_game`) leaves Halo against Halo alone: every row of
-//! specs/halo_ce/health_shields.md "Shots to kill" gives the same break
-//! and kill, hit for hit the same shield, body and engine health, with
-//! the switch on and off. (The cross-game numbers themselves are in
+//! mechanisms in `game::cross_game`) scales Halo against Halo too (Halo's
+//! outgoing times a Halo body's incoming); with the switch off every row
+//! of specs/halo_ce/health_shields.md "Shots to kill" gives its break and
+//! kill. (The cross-game numbers themselves are in
 //! party_kit's tests/it/halo_balance.rs, where the other games' guns are.)
 
 use bevy::prelude::*;
@@ -94,17 +94,23 @@ const TABLE: &[(EffectId, f32, Hit, u32, u32)] = &[
 ];
 
 #[test]
-fn halo_against_halo_is_the_spec_s_table_with_the_switch_on_and_off() {
+fn halo_against_halo_is_the_spec_s_table_off_and_the_table_s_scale_on() {
     for &(effect, rnd, how, broke, kill) in TABLE {
         let (on, on_seen) = run(party(true), effect, rnd, how);
         let (off, off_seen) = run(party(false), effect, rnd, how);
         let want = |got: (u32, u32)| (if broke == 0 { 0 } else { got.0 }, got.1) == (broke, kill);
-        assert!(want(on), "{effect:?} {rnd} {how:?}: on {on:?}");
         assert!(want(off), "{effect:?} {rnd} {how:?}: off {off:?}");
-        assert_eq!(on_seen, off_seen, "{effect:?} {rnd} {how:?}: hit for hit");
+        assert!(on.1 <= off.1, "{effect:?} {rnd} {how:?}: the table's 1.125 kills no later: {on:?} {off:?}");
+        // The first hit takes 1.125 times what it takes raw, shield and body
+        // together, where it is neither a kill nor clamped.
+        let lost = |seen: &Seen| (1.0 - seen[0].0) + (1.0 - seen[0].1);
+        if off.1 > 2 && off_seen[0].0 > 0.0 {
+            let k = lost(&on_seen) / lost(&off_seen);
+            assert!((k - 1.125).abs() < 0.02, "{effect:?} {rnd} {how:?}: first hit x{k}");
+        }
     }
-    // A frag at the centre leaves the body at 0.4, both ways.
-    for cfg in [party(true), party(false)] {
+    // A frag at the centre leaves the body at 0.4, raw.
+    for cfg in [party(false)] {
         let mut sim = sim();
         sim.app.insert_resource(cfg);
         let e = spartan_at(&mut sim, chimera_world::greybox::SPAWNS[0]);

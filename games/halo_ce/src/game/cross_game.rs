@@ -14,9 +14,10 @@
 //!   armour, so it breaks after 66.7 of its damage, which is 100 counted),
 //!   and the body's `core::Health` takes another game's damage times k
 //!   (`core::DamageScale` on the body, applied by the engine's
-//!   `apply_damage`; Halo's own hits are written divided by it, so they
-//!   land as the spec says: Halo against Halo is the same whatever the
-//!   table and the switch). The body holds k so a hit that takes armour in
+//!   `apply_damage`; Halo's own hits are written divided by it, and count
+//!   the table's scale themselves, `own_scale`: Halo's outgoing times the
+//!   body's incoming, as any game's, with the switch on; the spec's
+//!   numbers with it off). The body holds k so a hit that takes armour in
 //!   a game's own step (Combat Arms') counts it too; the engine's armour
 //!   step (`weapon::HitArmor`) applies the rest of the pair's scale, so a
 //!   hit is scaled once. `keep_incoming` keeps k the table's for the body
@@ -80,6 +81,14 @@ pub fn body_id(kind: Option<&BodyKind>) -> &'static str {
 /// id) under the table `balance` (1: none, or the switch off).
 pub fn incoming_of(balance: Option<&Balance>, body: &str) -> f32 {
     balance.map_or(1.0, |b| b.incoming(Some(super::GAME), Some(body)))
+}
+
+/// The scale of a Halo hit on a Halo body of `kind` (None: the Spartan)
+/// under the table `balance`: Halo's outgoing times that body's incoming
+/// (`Balance::pair`, the same one every game's hit gets; 1: no table, or
+/// the switch off).
+pub fn own_scale(balance: Option<&Balance>, kind: Option<&BodyKind>) -> f32 {
+    balance.map_or(1.0, |b| b.pair(super::GAME, Some(super::GAME), Some(body_id(kind))))
 }
 
 /// `incoming_of` with the world's table.

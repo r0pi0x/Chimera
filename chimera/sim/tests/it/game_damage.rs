@@ -80,21 +80,18 @@ const KIT_15: &str = "[games.kit]
 outgoing = 1.5";
 
 /// The switch off (a raw match): the kit's 20 points. The same game on
-/// both sides: 1, unless a pair names it. A victim of another game: the
-/// outgoing times its game's incoming.
+/// both sides counts the table too (outgoing times its own incoming). A
+/// victim of another game: the outgoing times its game's incoming.
 #[test]
-fn the_switch_the_same_game_and_pairs() {
+fn the_switch_and_the_same_game() {
     let raw = Balance::parse(KIT_15).unwrap().raw();
     assert!(close(shot_on(Some(raw), false, None), (0.8, 0.0)), "raw");
     let t = |text: &str| Some(Balance::parse(text).unwrap());
-    assert!(close(shot_on(t(KIT_15), false, Some("kit")), (0.8, 0.0)), "kit on kit");
-    let pair = "[games.kit]
+    assert!(close(shot_on(t(KIT_15), false, Some("kit")), (0.7, 0.0)), "kit on kit: 1.5");
+    let both = "[games.kit]
 outgoing = 1.5
-[[pair]]
-attacker = 'kit'
-victim = 'kit'
-scale = 2.0";
-    assert!(close(shot_on(t(pair), false, Some("kit")), (0.6, 0.0)), "the pair's 2");
+incoming = 2.0";
+    assert!(close(shot_on(t(both), false, Some("kit")), (0.4, 0.0)), "kit on kit: 1.5 x 2");
     let other = "[games.kit]
 outgoing = 1.5
 [games.other]

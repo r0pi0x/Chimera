@@ -336,7 +336,7 @@ fn the_grid_opens_on_the_gun_in_hand_and_the_arrows_move_the_selection() {
 #[test]
 fn typing_finds_and_enter_switches() {
     let mut sim = sim("gun");
-    type_text(&mut sim, "awp");
+    type_text(&mut sim, "/awp");
     assert_eq!(ui(&sim).view.search, "awp");
     frame(&mut sim);
     let grid = sim.app.world().resource::<Grid>().clone();
@@ -346,6 +346,8 @@ fn typing_finds_and_enter_switches() {
     sim.app.world_mut().resource_mut::<SandboxUi>().view.selected = Some("cs_source:weapon_awp".into());
     frame(&mut sim);
     let _ = cat;
+    press(&mut sim, &[KeyCode::Enter]);
+    assert!(!ui(&sim).view.search_focus, "the first Enter lets go of the field");
     press(&mut sim, &[KeyCode::Enter]);
     frame(&mut sim);
     let u = ui(&sim);
@@ -409,16 +411,41 @@ fn the_grid_draws_its_tiles() {
 }
 
 #[test]
-fn every_letter_goes_to_the_search_even_b_i_and_r() {
+fn letters_type_only_in_the_focused_search_and_b_toggles() {
     let mut sim = sim("gun");
-    type_text(&mut sim, "bir");
+    // Not focused: letters don't type; I is the model view.
+    type_text(&mut sim, "ir");
     let u = ui(&sim);
+    assert!(u.view.search.is_empty(), "no letters into an unfocused search");
+    assert!(u.view.detail, "I is the model view");
+    // `/` focuses the field: then every letter types, B and I and R too.
+    type_text(&mut sim, "/bir");
+    let u = ui(&sim);
+    assert!(u.view.search_focus);
     assert_eq!(u.screen, SandboxScreen::ChangeGun, "B doesn't close the view while typing");
     assert_eq!(u.view.search, "bir");
-    assert!(!u.view.detail, "I typed, not the model view");
-    // Ctrl+I is the model view.
-    press(&mut sim, &[KeyCode::ControlLeft, KeyCode::KeyI]);
-    assert!(ui(&sim).view.detail);
+    assert!(u.view.detail, "I typed, the model view unchanged");
+    // Esc leaves the field (the text stays), then clears it, then closes.
+    press(&mut sim, &[KeyCode::Escape]);
+    assert!(!ui(&sim).view.search_focus && ui(&sim).view.search == "bir");
+    press(&mut sim, &[KeyCode::Escape]);
+    assert!(ui(&sim).view.search.is_empty() && ui(&sim).screen == SandboxScreen::ChangeGun);
+    // B closes it; the screen toggles back open with B from the range.
+    type_text(&mut sim, "b");
+    frame(&mut sim);
+    assert_eq!(ui(&sim).screen, SandboxScreen::None, "B closes Change gun");
+    press(&mut sim, &[KeyCode::KeyB]);
+    frame(&mut sim);
+    assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun, "B opens it");
+    // A click on the field focuses it too; Enter lets go of it.
+    sim.app.world_mut().write_message(chimera_client::client::sandbox::change_gun::GunAction::FocusSearch);
+    frame(&mut sim);
+    assert!(ui(&sim).view.search_focus);
+    type_text(&mut sim, "awp");
+    press(&mut sim, &[KeyCode::Enter]);
+    assert!(!ui(&sim).view.search_focus);
+    assert_eq!(ui(&sim).view.search, "awp");
+    assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun, "Enter in the field switched nothing");
 }
 
 #[test]

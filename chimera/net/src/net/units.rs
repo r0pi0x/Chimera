@@ -33,10 +33,13 @@
 //! - **The no-fetch-in-match guard** (`guard`): a unit is fetched on
 //!   demand only while the sandbox plays (`rung_command::holds`), or when
 //!   it is `deferred` (`DeferredUnits`, by kind: `voice/`, Halo's voices,
-//!   wanted after the body is usable), or while no match plays at all (a
-//!   menu). In a normal match nothing new is fetched: a request is
-//!   refused with the reason, and the match's files come with the join's
-//!   or level change's download as before (`assets`). On-demand reads of
+//!   wanted after the body is usable). In a normal match or the menu
+//!   nothing new is fetched: a request is refused with the reason, and the
+//!   match's files come with the join's or level change's download as
+//!   before (`assets`). When the sandbox ends (to the menu, a map or a
+//!   match), every queued unit that isn't `deferred` is unqueued
+//!   (`end_sandbox`: back to `Absent`) and nothing further starts; the
+//!   fetch already running ends by itself. On-demand reads of
 //!   single files by the mounts (`CachedFiles`) are not this guard's: they
 //!   are counted and reported (`on_demand`).
 //! - **Budget** (`UnitBudget`, `chimera:unit_rate` KB/s, 0: no cap):
@@ -182,13 +185,10 @@ pub fn guard(world: &World, game: &str, set: &str) -> Result<(), String> {
     if chimera_sim::minigame::rung_command::holds(world) {
         return Ok(());
     }
-    if world.contains_resource::<chimera_sim::minigame::ActiveMinigame>() {
-        return Err(format!(
-            "{game}'s {set} isn't fetched during a match (nothing new downloads mid-match: the match's files come \
-             with the join); in the sandbox it would be"
-        ));
-    }
-    Ok(())
+    Err(format!(
+        "{game}'s {set} isn't fetched outside the sandbox (nothing new downloads in a match or the menu: the match's \
+         files come with the join); in the sandbox it would be"
+    ))
 }
 
 /// `game`'s `set` with what it needs, followed through (module doc), the
@@ -365,6 +365,22 @@ fn run_units(
     }
 }
 
+/// The sandbox ended: unqueue every on-demand unit not `deferred` (module
+/// doc). `was`: whether it played last frame.
+fn end_sandbox(
+    hold: Option<Res<chimera_sim::minigame::rung_command::HoldRungs>>,
+    active: Option<Res<chimera_sim::minigame::ActiveMinigame>>,
+    deferred: Res<DeferredUnits>,
+    mut d: ResMut<UnitDownloads>,
+    mut was: Local<bool>,
+) {
+    let now = hold.zip(active).is_some_and(|(h, a)| a.def.id == h.0);
+    if !std::mem::replace(&mut *was, now) || now {
+        return;
+    }
+    d.downloads.cancel_queued(|(_, s)| deferred.0.iter().any(|k| s.starts_with(k.as_str())));
+}
+
 /// Quitting: the running download stops at its next chunk.
 fn stop_units(world: &mut World) {
     if let Some(d) = world.get_resource::<UnitDownloads>() {
@@ -380,7 +396,7 @@ pub(super) fn plugin(app: &mut App) {
         .init_resource::<DeferredUnits>()
         .init_resource::<UnitBudget>()
         .add_message::<UnitChanged>()
-        .add_systems(Update, run_units.run_if(resource_exists::<UnitDownloads>));
+        .add_systems(Update, (end_sandbox, run_units).chain().run_if(resource_exists::<UnitDownloads>));
     resource_cvar::<UnitBudget, i64>(
         app,
         RATE_CVAR,

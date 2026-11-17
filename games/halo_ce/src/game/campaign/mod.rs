@@ -65,7 +65,7 @@
 //!   Elite's collision model: 100 body, 100 shield of type 30, a 12 s
 //!   delay, 10 s recharge, its four materials with the arms at x0.5).
 //! - **Choosing it** (`arrive`, the host's): with the host setting
-//!   `halo_ce:campaign_bodies` 1 (`CampaignBodies`; default 0, off), each
+//!   `halo_ce:campaign_bodies` 1 (`CampaignBodies`; default 1, on), each
 //!   time a player arrives on a Halo rung (`ladder::OnRung` inserted) its
 //!   body is drawn by the gun's weights (`CampaignData::weights`; a gun not
 //!   listed: the Spartan) among the kinds whose unit is loaded here
@@ -73,8 +73,17 @@
 //!   (`roll`: the ladder's seed, the ladders made, the player's seed, the
 //!   rung and the player's count of draws; no process-wide state). Off, or
 //!   on another game's rung, the player has no kind (the Spartan). Turning
-//!   the setting on asks for every kind's unit at once, so the first draws
-//!   find them loaded.
+//!   the setting on asks for the units of the kinds the ladder can draw.
+//! - **Loading** (`ladder_kinds`): the kinds a match's ladder can give
+//!   (its Halo rungs' guns' weights, and own guns' kinds) are wanted when
+//!   the ladder is made (`want_ladder_kinds`: a match's start, a
+//!   rotation), so they load while the match loads or its lobby waits,
+//!   and their body sets (`character/<kind>`) are named in the match's
+//!   asset offer (`asset_names`), so a client fetches them with the
+//!   join's or level change's download. Nothing at the app's start (the
+//!   menu): five units read at once there held the async compute pool
+//!   for seconds, and on the asset store fetched about 60 MB through the
+//!   mounts before the first match. Voices are `voice/` units, deferred.
 //! - **Its own gun** (`CampaignData::own_gun`): a gun data/campaign.toml
 //!   gives to one kind alone, not the Spartan (the Hunter's cannon,
 //!   `weapons::rung::HUNTER_RUNG`), makes its holder that kind on any
@@ -501,8 +510,15 @@ pub fn vitality_of<'a>(spartan: &'a Spartan, tables: Option<&'a BodyTables>, kin
 }
 
 /// The host setting: campaign bodies on for the match (module doc).
-#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CampaignBodies(pub bool);
+
+impl Default for CampaignBodies {
+    /// On: the party's variation (Elite, Grunt, Jackal, Marine, Hunter).
+    fn default() -> Self {
+        CampaignBodies(true)
+    }
+}
 
 /// A body a developer forced on a player (`BODY_COMMAND`): every Halo rung
 /// gives it.
@@ -627,15 +643,15 @@ pub fn name_bodies(
     }
 }
 
-/// The host setting's console variable (default 0); turning it on asks
+/// The host setting's console variable (default 1); turning it on asks
 /// for every kind's unit (module doc).
 fn campaign_cvar(app: &mut App) {
     use chimera_core::console::ConsoleAppExt;
     app.console_cvar(
         CVAR,
         "1: a player given a Halo rung may wear one of the campaign's characters (the Elite), drawn by \
-         data/campaign.toml's weights (default 0: the Spartan). The host's.",
-        "0",
+         data/campaign.toml's weights (0: the Spartan alone). The host's.",
+        "1",
         |w| Some(if w.get_resource::<CampaignBodies>().is_some_and(|c| c.0) { "1" } else { "0" }.to_string()),
         |w, v| {
             let on = match v.trim() {
@@ -646,8 +662,7 @@ fn campaign_cvar(app: &mut App) {
             w.insert_resource(CampaignBodies(on));
             own_guns_drawn(w, on);
             if on {
-                let kinds: Vec<BodyKind> =
-                    BodyKind::ALL.into_iter().filter(|k| w.resource::<CampaignData>().body(*k).is_some()).collect();
+                let kinds = ladder_kinds(w, w.get_resource::<chimera_sim::minigame::ladder::Ladder>());
                 w.get_resource_or_init::<UnitsOnDemand>().wanted.extend(kinds);
             }
             Ok(())
@@ -671,6 +686,55 @@ pub fn own_guns_drawn(world: &mut World, on: bool) {
     if !on {
         list.extend(guns.into_iter().map(|g| (g, OWN_GUN_EXCLUDED.to_string())));
     }
+}
+
+/// The campaign kinds `ladder` can give its players (module doc,
+/// "Loading"): each Halo rung's own gun's kind, and with campaign bodies
+/// on every kind its gun's weights name; the Spartan never (always there).
+pub fn ladder_kinds(world: &World, ladder: Option<&chimera_sim::minigame::ladder::Ladder>) -> std::collections::BTreeSet<BodyKind> {
+    let on = world.get_resource::<CampaignBodies>().is_some_and(|c| c.0);
+    kinds_of(world.get_resource::<CampaignData>(), on, ladder)
+}
+
+fn kinds_of(data: Option<&CampaignData>, on: bool, ladder: Option<&chimera_sim::minigame::ladder::Ladder>) -> std::collections::BTreeSet<BodyKind> {
+    let mut kinds = std::collections::BTreeSet::new();
+    let (Some(ladder), Some(data)) = (ladder, data) else { return kinds };
+    for w in ladder.rungs.iter().filter(|w| halo_gun(w)) {
+        if let Some(k) = data.own_gun(w) {
+            kinds.insert(k);
+        } else if on {
+            kinds.extend(data.weights(w).into_iter().map(|(k, _)| k));
+        }
+    }
+    kinds.retain(|k| *k != BodyKind::Spartan && data.body(*k).is_some());
+    kinds
+}
+
+/// A new ladder (a match's start, a rotation): its campaign kinds wanted,
+/// so their units load while the match loads or its lobby waits, not at
+/// the app's start and not at a player's first draw.
+fn want_ladder_kinds(
+    ladder: Option<Res<chimera_sim::minigame::ladder::Ladder>>,
+    data: Option<Res<CampaignData>>,
+    bodies: Option<Res<CampaignBodies>>,
+    mut units: ResMut<UnitsOnDemand>,
+) {
+    let Some(ladder) = ladder.filter(|l| l.is_changed()) else { return };
+    let kinds = kinds_of(data.as_deref(), bodies.is_some_and(|b| b.0), Some(&ladder));
+    if !kinds.is_empty() {
+        units.wanted.extend(kinds);
+    }
+}
+
+/// What a match's asset offer names of the campaign's bodies (an
+/// `AssetHooks` entry, `chimera_net::net::assets`): the body sets
+/// (`character/<kind>`) of the kinds its ladder can give
+/// (`ladder_kinds`), so they come with the join's or the level change's
+/// download; their voices are `voice/` units, fetched deferred.
+pub fn asset_names(world: &World) -> chimera_net::net::assets::AssetNames {
+    let ladder = chimera_net::minigame_net::match_ladder(world);
+    let sets = ladder_kinds(world, ladder.as_deref()).into_iter().map(|k| format!("{GAME}:{}", unit::body_set(k.id()))).collect();
+    chimera_net::net::assets::AssetNames { sets, ..default() }
 }
 
 /// `halo_ce:body <spartan | elite | draw> [player | all]` (module doc).
@@ -857,7 +921,14 @@ impl Plugin for CampaignPlugin {
             .add_systems(FixedUpdate, voice::chatter.after(crate::core::apply_damage).run_if(crate::core::authoritative))
             .net_part("halo_ce_bodies", register);
         campaign_cvar(app);
-        own_guns_drawn(app.world_mut(), false);
+        own_guns_drawn(app.world_mut(), true);
+        // The kinds a match's ladder can draw: wanted once its ladder is
+        // made, and named in its asset offer (not at the app's start).
+        app.add_systems(Update, want_ladder_kinds.run_if(resource_exists_and_changed::<chimera_sim::minigame::ladder::Ladder>).before(unit::load_on_demand));
+        let mut hooks = app.world_mut().get_resource_or_init::<chimera_net::net::assets::AssetHooks>();
+        if !hooks.0.contains(&(asset_names as fn(&World) -> _)) {
+            hooks.0.push(asset_names);
+        }
         app.console_command(
             BODY_COMMAND,
             "halo_ce:body <spartan | elite | grunt | jackal | marine | hunter | draw | status | shield <fraction>> [player | all]: the \

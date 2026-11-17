@@ -61,6 +61,7 @@ the user's go-ahead: no Actions runs unless asked.
 
 - **Our own default assets: player models from the logo's three characters (user, 2026-11-15):** create a small set of original, committed assets, made by us (e.g. in Blender), for games or tests that have no player model yet. Today they fall back to the shell's capsule (`map::CharacterModels::for_identity`).
   - **First goal:** turn the three characters in the logo (the Operator, Trooper and Vanguard avatar glyphs, `shots/avatar-glyphs/*.svg` in the Signal design work, now `chimera_ui::avatar`) into rigged, animated player models in the Signal look.
+  - **Sandbox test dummy (user, 2026-11-17):** the range's dummies should not be a Combat Arms character by default; a dummy mesh in the shape of the logo characters, with hitgroups.
   - **Rigging:** one shared humanoid skeleton, so animations retarget across all three.
   - **Animations:** a base set of idle, run, crouch, jump, death, and holding a pistol, rifle and melee weapon, with weapon attachment bones.
   - **First-person arms:** for weapons that have no view-model arms.
@@ -102,6 +103,18 @@ the user's go-ahead: no Actions runs unless asked.
 - **Move the lists onto the recycling `VirtualList` (user, 2026-11-15):** the user expects to scroll the maps and gun lists smoothly, by pixels, with the mouse wheel and a scrollbar.
   - **Built:** `chimera_ui::vlist` (`Ui::virtual_list`): a pool of the lines in view plus two spare, rebound in place; a list or a tile grid virtualised by row; folded sections; keys; select on a press, the primary action on a double press. Scrolling 2,000 rows costs about a quarter of a rebuild of the rows in view (`chimera_ui` tests, `vlist::scrolling_2000_items_costs_less_than_a_rebuild`). The sandbox's Change gun grid uses it.
   - **Left:** the Maps dialog, the Join server list (they still rebuild a window of rows on each change), later friends and the asset catalogue.
+
+- **Lobby between maps, with everyone's load progress (user, 2026-11-17):**
+  - Keep returning to the lobby after every match. It gives the host a moment to change settings and lets players leave.
+  - The lobby starts fetching and loading the NEXT map in the background as soon as it opens.
+  - Each player's lobby row shows their progress (downloading %, loading, ready), reported to the server and shared, which needs a network-version bump.
+  - Start waits for everyone ready, or the host's timeout.
+  - The loading screen's bar must reflect the real loading stages (downloads in bytes, map load, model builds, physics and navigation). Today it doesn't move. Show only the main bar when there's a single stage.
+
+- **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.
+  - It connects to a master server (the hub) by an identifier or address, since the hub manages the accounts.
+  - It covers hub plan S3: invite or link code, choosing a username, the recovery key, and Skip.
+  - Design it first as a new UI, with heavy use of motion graphics for a high-quality first experience, using the kit's motion tokens (`chimera_ui::motion`) so it can be slowed for new users or disabled.
 
 - **Range and code-built map follow-ups (2026-11-16):**
   - **More in RangeLayout:** cover-crate boxes (or the clear lane's width), the shelf's size, the board's size and facing (the board is 1.2 m but the target scoring face 1.0 m, so the outer 0.1 m counts as misses), the platform and ramp, and the stripes' half width.
@@ -2845,6 +2858,42 @@ docs/plans/active/sound.md.
   instead of the MissionTrigger's `ADD`.
 
 ## 9. Performance
+
+- **Halo: view models and animations at frame rate (user, 2026-11-17).**
+  Halo's gun animations and related motion run at its 30 Hz tick and look
+  stepped on high-refresh screens. Interpolate between the 30 Hz poses
+  (bones, view model, projectiles) for display, simulation unchanged.
+
+- **Halo HUD resolution (user, 2026-11-17).** The HUD's bitmaps are the
+  original's, authored for 640x480, so they look soft scaled to 1080p and
+  up: low resolution by the source, not our choice. Options, opt-in:
+  sharper filtering/scaling (nearest at integer scales, or a sharpening
+  upscale shader), or upscaled HUD bitmaps as a generated asset set built
+  by the reproducible converter (an upscaler run on the user's own
+  originals, deterministic and versioned; generated-assets rule).
+
+- **Tests that control time and await conditions (user, 2026-11-17; after
+  the stutter, host-to-lobby, disconnect and UI fixes).** Real time still
+  leaks into tests and scenes: background work on threads (map loads,
+  model builds, downloads, navigation meshes), things timed on the real
+  clock (UI animations, the kill-icon retry, download pacing, timeouts),
+  fixed waits ("N frames", "N ms") where no event exists, and networked
+  tests that sleep while loopback settles. That makes some runs slow and
+  some flaky (the voted-map race). Wanted:
+  - a manual clock for `harness::Sim` and scenes (Bevy's manual time), so
+    a test jumps "5 s later" at once; `ui_motion_scale` 0 in tests so
+    animations finish at once;
+  - background tasks run deterministically in tests:
+    `sim.run_until_idle()` instead of sleeping;
+  - awaiting conditions, coroutine-style, with a tick limit instead of a
+    timeout: `sim.run_until(|world| ..., max_ticks)`,
+    `sim.await_message::<M>()`; the scene tool's `wait_for <condition>`
+    to match;
+  - an audit moving every sleep, timeout and real-clock read in tests and
+    engine code onto the clock or the await helpers, then a `repo_checks`
+    rule flagging new sleeps in tests.
+  Payoff: faster runs, no timing flakes, simpler agent scenes (fewer wait
+  loops written and debugged). One agent, in stages.
 
 - Done: **Disk guards (2026-10-31: the dev box's disk filled to 100%).**
   `tools/agent-slot.sh trim-incremental` (run by `trim`,

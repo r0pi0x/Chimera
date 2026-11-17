@@ -253,6 +253,22 @@ impl Downloads {
         self.set(&key, UnitStatus { state: UnitState::Queued { position: 0 }, bytes_total: size, ..Default::default() });
     }
 
+    /// Unqueue every waiting unit `keep` doesn't name (a Want not yet
+    /// started): back to `Absent` with its size. The running fetch is not
+    /// cut (it ends on its own; nothing queued follows it). The units
+    /// unqueued.
+    pub fn cancel_queued(&mut self, keep: impl Fn(&UnitKey) -> bool) -> Vec<UnitKey> {
+        let (kept, gone): (Vec<Want>, Vec<Want>) = std::mem::take(&mut self.queue).into_iter().partition(|w| keep(&w.key));
+        self.queue = kept;
+        let mut out = Vec::new();
+        for w in gone {
+            let size = self.states.get(&w.key).map_or(0, |s| s.bytes_total);
+            self.set(&w.key, UnitStatus { state: UnitState::Absent { size }, bytes_total: size, ..Default::default() });
+            out.push(w.key);
+        }
+        out
+    }
+
     /// Ask again for a unit that failed (at a pick's priority); false when
     /// it hadn't failed.
     pub fn retry(&mut self, key: &UnitKey) -> bool {
