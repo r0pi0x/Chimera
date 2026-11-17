@@ -696,6 +696,9 @@ fn change_match_on(world: &mut World, id: &str, map: Option<&str>, load: bool) -
             lacking_text(games.as_ref(), &p.lacking)
         ));
     }
+    // A map dressed for fewer games than this match deals loads again,
+    // dressed for it.
+    let load = load || (target == here && !dressed_for(world, def));
     if load || target != here {
         minigame::check(world, def)?;
         // An arena slice: planned for its map (the map comes in with its
@@ -954,6 +957,46 @@ pub fn match_ladder(world: &World) -> Option<std::borrow::Cow<'_, Ladder>> {
         Some(c) => minigame::ladder::draw(world, c.def).map(std::borrow::Cow::Owned),
         None => world.get_resource::<Ladder>().map(std::borrow::Cow::Borrowed),
     }
+}
+
+/// The games whose parts the match this world's map is loading for can
+/// deal (`map::MapLoadOptions::dealt`: only their guests dress the map):
+/// with a map change for a ladder's match under way (`MapChange`), its
+/// ladder's guns', its rungs' extras' (melee weapons, characters), its
+/// definition's kit's and slots' games. None, any game: no such change
+/// (a sandbox, a plain `map`, a client: the coming match isn't known
+/// here), or a definition without a ladder.
+pub fn dealt_games(world: &World) -> Option<std::collections::BTreeSet<String>> {
+    let def = world.get_resource::<MapChange>()?.def;
+    let ladder = minigame::ladder::draw(world, def)?;
+    Some(games_dealt(def, &ladder))
+}
+
+/// The games `ladder` of `def` deals (`dealt_games`).
+fn games_dealt(def: &MinigameDef, ladder: &Ladder) -> std::collections::BTreeSet<String> {
+    let prefix = |id: &str| id.split_once(':').map(|(g, _)| g.to_string());
+    let mut games: std::collections::BTreeSet<String> = ladder.rungs.iter().filter_map(|r| prefix(r)).collect();
+    for e in ladder.extras.iter().flatten() {
+        games.extend(e.melee.as_deref().and_then(prefix));
+        games.extend(e.character.as_ref().and_then(|c| prefix(&c.id)));
+    }
+    let s = &def.slots;
+    games.extend([&s.hud, &s.binds, &s.tick, &s.bots].into_iter().flatten().cloned());
+    games.extend([&s.movement, &s.character].into_iter().flatten().filter_map(|id| prefix(id)));
+    games.extend(def.spawn.kit.all().into_iter().filter_map(|id| prefix(id)));
+    games
+}
+
+/// Whether the loaded map was dressed for every game `def`'s next ladder
+/// deals (`map::sources::MapDealt`, the load's `dealt`): a match started
+/// on the map as it is (no load) must find the parts of each game it
+/// deals there.
+fn dressed_for(world: &World, def: &MinigameDef) -> bool {
+    let Some(dressed) = world.get_resource::<chimera_world::map::sources::MapDealt>().and_then(|d| d.0.clone()) else {
+        return true;
+    };
+    let Some(ladder) = minigame::ladder::draw(world, def) else { return true };
+    games_dealt(def, &ladder).iter().all(|g| dressed.iter().any(|d| d.eq_ignore_ascii_case(g)))
 }
 
 /// The server's manifest hook: the playing minigame (the coming one
