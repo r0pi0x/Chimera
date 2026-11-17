@@ -1150,7 +1150,6 @@ impl CaLoadout {
 /// keeps the weapon's default. On every character, empty (no weapon's)
 /// off a Combat Arms rung.
 #[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
-#[component(storage = "SparseSet")]
 pub struct CaRungParts {
     pub weapon: String,
     pub parts: Vec<String>,

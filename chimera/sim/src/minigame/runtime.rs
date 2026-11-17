@@ -418,7 +418,6 @@ pub fn spawn_point_in(
 /// On every character (None: the kit's own), so a rung's melee weapon
 /// doesn't make each of its other combinations again.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[component(storage = "SparseSet")]
 pub struct KitMelee(pub Option<&'static str>);
 
 /// `e`'s kit for a life whose rules weapon is `gun` (a kit by game: that
