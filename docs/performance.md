@@ -4707,6 +4707,30 @@ of need keep to the read-ahead's half of the pool (`ReadAhead`, as Combat
 Arms' bodies), and the first-person views are made on the load's task.
 Test: `halo_ce` `campaign::campaign_units_come_with_the_matchs_ladder_not_the_apps_start`.
 
+### Leaving a game for the menu
+
+"Disconnecting from a match takes a really long time. After disconnecting,
+I hear a gun cocking." The same scene, 10 s into the match, `disconnect`
+(the Escape menu's Disconnect), 10 s at the menu:
+
+| | before | after |
+|---|---|---|
+| the disconnect's frame | 10,256 ms, 23,925 M instructions | 71 ms, 79 M |
+| the menu back | 6.7 s after the line | the same frame |
+| the next 15 s | 11 frames in the first 5 s (one of 639 ms), then 272 at a 28 ms median; a second greybox, its navigation mesh and 1,500 spawn spots made | 604 frames, worst 72 ms, median 17.5 ms |
+| bots after leaving | 3, spawned again on the greybox | none |
+
+Causes: `disconnect` loaded the greybox behind the menu, dressing its kit
+(the party's 29 bodies, held and view models, sounds) on the main thread
+in that frame (6.0 s); the dropped listen server's `back_to_menu` then
+loaded it again (2.8 s). And the shell's `bot_kick` is no command in the
+party apps (Combat Arms' is `ca_bot_kick`), so the bots stayed, went
+onto the new greybox and drew their guns there: the cocking. Now a menu
+with no game behind it (`NoPlayerAtMenu`) is left with no map at all, as
+at its start (`console::unload_to_menu`), and leaving kicks the bots
+(`main_menu::no_game_behind`). Test: `party_kit`
+`main_menu::leaving_a_hosted_game_takes_its_bots_and_map_and_loads_nothing`.
+
 ## First join download, 2026-11-14
 
 The playtest's first join downloaded "300+ MB". Measured from the asset

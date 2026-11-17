@@ -99,7 +99,10 @@
 //!   (`minigame::MatchHold`, lifted by the next start); the player is
 //!   spawned once a game started from here is entered with its map in
 //!   (`player_on_entering`; a client's comes from its server). Only the
-//!   menu's own sounds and music play under it.
+//!   menu's own sounds and music play under it. Leaving also kicks the
+//!   bots (`ca_bot_kick all`), and the shell leaves no map behind
+//!   (`console::unload_to_menu`: no greybox and no kit dressed, as at the
+//!   start).
 //!
 //! - **Signal** (a theme with `[layout.menu]`: the Ultimate Gun Game's):
 //!   the first page is `signal_menu`'s (lockup, the entries with their
@@ -1137,6 +1140,15 @@ fn no_game_behind(world: &mut World) {
     }
     if world.contains_resource::<chimera_sim::minigame::ActiveMinigame>() {
         world.insert_resource(chimera_sim::minigame::MatchHold);
+    }
+    // The bots go too (`MaxPlayer 0`; the next Start sets it again): the
+    // shell's `disconnect` kicks with `bot_kick`, which the party's
+    // Combat Arms bots don't answer, so they stayed, spawned again on the
+    // map behind the menu and drew their guns there (the cocking heard
+    // after leaving).
+    let mut console = world.resource_mut::<Console>();
+    if console.command("ca_bot_kick").is_some() {
+        console.submit("ca_bot_kick all");
     }
 }
 
