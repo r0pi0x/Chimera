@@ -31,3 +31,7 @@
 # pressing it: `weapon::AttackAction`): Combat Arms' throw row, its range
 # 300 to 1200 u (about 5.7 to 23 m): a frag's blast reaches 7.6 m.
 "halo_ce:frag_grenade" = "ThrowWeapon"
+# Combat Arms' auto turret (a placed device on the throw rule, its class
+# "launcher"): the throw row, ammunition x1, so a bot on a turret rung gets
+# the one turret a player gets (the class's "MG" row's x10 gave it ten).
+"combat_arms:auto-turret" = "ThrowWeapon"

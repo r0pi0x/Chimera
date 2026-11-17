@@ -24,9 +24,11 @@
 //!   `party_leave_match with|alone` (the leader's Leave dialog) tells it
 //!   "out, together" or "out, alone", then disconnects.
 //! - **Following** (`follow`, a pure rule): a member acts once on each
-//!   move: *join* on the menu goes there at once (`PartyGo::Join`, acted on by `act`),
-//!   in another match asks (`prompt`: `party_follow` joins, `party_stay`
-//!   dismisses); *leave* on the server the party left goes back to the
+//!   move: *join* goes there at once, on the menu or in another match
+//!   (`PartyGo::Join`, acted on by `act`), unless `party_ask_follow 1`
+//!   (archived; the Party options' "Ask before following the party
+//!   leader"), which asks (`prompt`: `party_follow` joins, `party_stay`
+//!   dismisses) everywhere; *leave* on the server the party left goes back to the
 //!   menu (`PartyGo::Leave`) with a note. The first answer after a
 //!   start or a join acts on no old move; it asks when the party is
 //!   somewhere else.
@@ -302,8 +304,11 @@ pub enum Follow {
 }
 
 /// The rule: `handled` the last move acted on (None: the first answer),
-/// `at` the server this process is on, `hosting` it serves a game.
-pub fn follow(view: &PartyView, handled: Option<u32>, at: Option<&str>, hosting: bool) -> Follow {
+/// `at` the server this process is on, `ask` the player's choice.
+/// With `ask` (the player's `party_ask_follow`, off by default) a move to
+/// join always asks first, on the menu too; off, it joins at once
+/// wherever the member is (a match elsewhere, a hosted game).
+pub fn follow(view: &PartyView, handled: Option<u32>, at: Option<&str>, ask: bool) -> Follow {
     if view.leading() {
         return Follow::Nothing;
     }
@@ -319,7 +324,7 @@ pub fn follow(view: &PartyView, handled: Option<u32>, at: Option<&str>, hosting:
     }
     match (view.kind, &view.target) {
         (MoveKind::Join, Some(t)) if elsewhere(t) => {
-            if at.is_none() && !hosting { Follow::Join(t.clone()) } else { Follow::Ask(t.clone()) }
+            if ask { Follow::Ask(t.clone()) } else { Follow::Join(t.clone()) }
         }
         (MoveKind::Leave, _) if at.is_some() && at == view.left.as_deref() => Follow::Leave,
         _ => Follow::Nothing,
@@ -362,6 +367,11 @@ fn act(mut go: MessageReader<PartyGo>, console: Option<ResMut<Console>>) {
 /// profile keeps it; the name from `NetSettings` otherwise).
 #[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
 pub struct PartyMe(pub Me);
+
+/// `party_ask_follow` (archived; default 0): 1 asks before following the
+/// party's leader to a server (Join / Stay), 0 follows at once.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PartyAsk(pub u8);
 
 /// `cl_party`: the party's public id (userinfo; empty alone).
 #[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
@@ -418,7 +428,7 @@ impl Here<'_> {
 
 /// The party's frame: answers taken, the follow rule applied, the
 /// leader's place told, the heartbeat sent, `cl_party` kept.
-fn party_tick(mut pc: ResMut<PartyClient>, here: Here, mut tag: ResMut<PartyTag>, mut go: MessageWriter<PartyGo>) {
+fn party_tick(mut pc: ResMut<PartyClient>, here: Here, mut tag: ResMut<PartyTag>, ask: Res<PartyAsk>, mut go: MessageWriter<PartyGo>) {
     let pc = &mut *pc;
     let at = here.joined_at();
     let host = here.hosting();
@@ -442,7 +452,7 @@ fn party_tick(mut pc: ResMut<PartyClient>, here: Here, mut tag: ResMut<PartyTag>
             Answer::View(token, r) if pc.token.as_deref() == Some(token.as_str()) => match r {
                 Ok(v) => {
                     pc.error = None;
-                    let act = follow(&v, pc.handled, at_text.as_deref(), host.is_some());
+                    let act = follow(&v, pc.handled, at_text.as_deref(), ask.0 != 0);
                     pc.handled = Some(v.moves);
                     if act != Follow::Nothing {
                         acts.push(act);
@@ -562,10 +572,24 @@ pub fn describe(pc: &PartyClient) -> String {
     out
 }
 
+/// The `party_ask_follow` cvar (archived), over `PartyAsk` (the plugin
+/// adds it; the Options' audit test registers it alone).
+pub fn ask_setting(app: &mut App) {
+    app.init_resource::<PartyAsk>();
+    resource_cvar::<PartyAsk, u8>(
+        app,
+        "chimera:party_ask_follow",
+        "1: ask (Join / Stay) before following the party's leader to a server; 0 (the default): follow at once.",
+        |a| &mut a.0,
+    );
+    app.world_mut().resource_mut::<Console>().archive("party_ask_follow");
+}
+
 pub(super) fn plugin(app: &mut App) {
-    app.init_resource::<PartyTag>().init_resource::<PartyActs>().init_resource::<PartyMe>().add_message::<PartyGo>();
+    app.init_resource::<PartyTag>().init_resource::<PartyAsk>().init_resource::<PartyActs>().init_resource::<PartyMe>().add_message::<PartyGo>();
     resource_cvar::<PartyTag, String>(app, USERINFO_KEY, "Your party's id as servers see it (set by the party; empty alone).", |t| &mut t.0);
     app.world_mut().resource_mut::<Console>().userinfo(USERINFO_KEY);
+    ask_setting(app);
     app.add_systems(Update, (party_tick.run_if(resource_exists::<PartyClient>), act.run_if(resource_equals(PartyActs(true)))).chain());
     let _ = app
         .console_command("party", "party: your party (its code, members, where it is).", |w, _| {
@@ -642,10 +666,11 @@ mod tests {
         let s = "192.0.2.1:27031";
         let t = Target { addr: s.into(), name: "S".into() };
         let join = view(false, 3, MoveKind::Join, Some(s), None);
-        // On the menu: go; in another match or hosting: ask; there: nothing.
+        // Not asking: go, on the menu or in another match; asking: ask; there: nothing.
         assert_eq!(follow(&join, Some(2), None, false), Follow::Join(t.clone()));
-        assert_eq!(follow(&join, Some(2), Some("192.0.2.9:1"), false), Follow::Ask(t.clone()));
+        assert_eq!(follow(&join, Some(2), Some("192.0.2.9:1"), false), Follow::Join(t.clone()));
         assert_eq!(follow(&join, Some(2), None, true), Follow::Ask(t.clone()));
+        assert_eq!(follow(&join, Some(2), Some("192.0.2.9:1"), true), Follow::Ask(t.clone()));
         assert_eq!(follow(&join, Some(2), Some(s), false), Follow::Nothing);
         // Once only.
         assert_eq!(follow(&join, Some(3), None, false), Follow::Nothing);

@@ -55,7 +55,7 @@ the hub service ([hub.md](hub.md), S2) and the Signal r8 shell
   dropped; a party with no members is gone at once (its code free
   again). A leader offline for `LEAD_HANDOVER` (2 minutes) while another
   member is online hands the lead to the online member who joined first
-  (an open question below).
+  (question 2 below).
 
 Accounts: every call needs an account's ticket, as every hub route does
 (decision 10), so only players signed in to a hub have parties; the
@@ -123,10 +123,11 @@ for a hosted game.
 - **Following the leader**: the leader's client tells the hub where it
   went (`lead`, after its join is welcomed). Every member's client reads
   the move from its next poll; a move it has not acted on:
-  - *join*: on the menu (not connected), it joins at once ("Joining your
-    party's server" in the status line); in a match elsewhere, a prompt
-    "Your party went to <name>: Join / Stay" (Join is `connect`).
-    Already there: nothing.
+  - *join*: it joins at once ("Joining your party's server" in the
+    status line), on the menu or in a match elsewhere (Join is
+    `connect`); with the option "Ask before following the party leader"
+    (`party_ask_follow 1`, off by default) a prompt "Your party went to
+    <name>: Join / Stay" instead, everywhere. Already there: nothing.
   - *leave*: connected to the server the party left, it goes back to the
     menu with the note "Your party's leader left".
   A map change keeps every client connected, so the party stays
@@ -163,7 +164,8 @@ design replaces it.
   invite code large with *Copy*, the members (leader marked; the
   leader's *Promote* and *Kick* per member), where the party is (with
   *Join* when you're not there) and *Leave party*.
-- **The follow prompt** and the leader's two-choice Leave confirm as
+- **The follow prompt** (only with "Ask before following the party
+  leader" on) and the leader's two-choice Leave confirm as
   above.
 - Console for every action (tests, screenshots): `party`,
   `party_create`, `party_join <code>`, `party_leave`, `party_kick <id>`,
@@ -185,27 +187,34 @@ Later: party chat (Enter opens chat, Tab cycles all, team, party: the
 user's decisions), friends and presence (accounts, hub.md S3/S4),
 invites from Friends, the designed party panel.
 
-## Open questions for the user
-
-The conservative choice is built until the user says otherwise.
+## Questions and the user's answers (2026-11-17)
 
 1. **Parties need a hub account** (decision 10: no anonymous hub
-   access). Players with no account (LAN only) have no parties. Built:
-   account needed; the "+" says so.
+   access). Decided: yes, joining a party requires a hub account (as
+   built); players with no account (LAN only) have no parties; the "+"
+   says so.
 2. **A leader who goes offline**: built: after 2 minutes offline the lead
    passes to the online member who joined first; the old leader comes
-   back as a member.
-3. **Following into a full server**: built: the member's join is
-   refused as any join is, and the panel keeps the party's server with
-   Join to try again. No reserved slots.
-4. **Auto-join from the menu**: built: a member on the menu follows at
-   once; a member in another match is asked. Should the menu ask too?
+   back as a member. (Not asked again; stands.)
+3. **Following into a full server**: decided: as built is fine for now
+   (the join is refused as any join is; the panel keeps the party's
+   server with Join to try again; no reserved slots).
+4. **Following the leader**: decided: no asking by default, anywhere: a
+   member in another match follows at once too, like one on the menu.
+   The client option `party_ask_follow` (archived; Options, Party tab:
+   "Ask before following the party leader", off by default) turns the
+   ask back on, on the menu as well (Join / Stay). The first answer
+   after a start or a join, which is no move, still asks when the party
+   is somewhere else. Tests: `chimera_net` `parties::following::` and
+   the rule's unit test.
 5. **Party size**: 8, the rack's. **Teams**: a party is kept on one side
-   even when that unbalances the sides (no cap).
+   even when that unbalances the sides (no cap). (Not asked again.)
 6. **The party id a client claims is not checked by the game server**
-   (it only groups rows and picks a side). A signed party pass from the
-   hub would close it, if it matters.
-7. **How long an idle member stays**: 6 hours unseen, then dropped.
+   (it only groups rows and picks a side). Not important now. Later
+   work: the check moves server-side, the hub confirming a party pass to
+   game servers if needed.
+7. **How long an idle member stays**: 6 hours unseen, then dropped. (Not
+   asked again.)
 
 ## As built (2026-11-17)
 

@@ -273,3 +273,47 @@ fn a_bot_on_the_turret_rung_places_one() {
     }
     assert!(placed, "a bot placed its turret: {:?}", turrets(&mut sim));
 }
+
+/// The turrets a character carries (its weapons' `Throwable` counts).
+fn carried(sim: &mut Sim, owner: Entity) -> u32 {
+    use chimera_sim::weapon::{Weapon, grenade::Throwable};
+    let inv = sim.app.world().get::<chimera_sim::weapon::Inventory>(owner).map(|i| i.weapons.clone()).unwrap_or_default();
+    inv.iter()
+        .filter(|&&w| sim.app.world().get::<Weapon>(w).is_some_and(|x| x.id == TURRET))
+        .filter_map(|&w| sim.app.world().get::<Throwable>(w).map(|t| t.count))
+        .sum()
+}
+
+#[test]
+fn a_bot_on_the_turret_rung_carries_the_players_count_not_ten_times_it() {
+    let mut sim = turret_game();
+    let a = soldier(&mut sim);
+    sim.seconds(1.5);
+    let players = carried(&mut sim, a);
+    assert!(players > 0, "a player carries a turret on its rung");
+    for x in [-8.0, 8.0] {
+        sim.app.world_mut().spawn((
+            chimera_core::core::SpawnPoint::default(),
+            Transform::from_translation(Vec3::new(x, 1.0, -10.0)),
+        ));
+    }
+    {
+        let mut s = sim.app.world_mut().resource_mut::<combat_arms::game::bots::BotSettings>();
+        s.quota = 2;
+        s.quota_set = true;
+    }
+    // Its count only falls from the first tick it is armed: the most seen.
+    let mut most = 0;
+    for _ in 0..1200 {
+        sim.ticks(1);
+        let bots: Vec<Entity> = {
+            let w = sim.app.world_mut();
+            w.query_filtered::<Entity, With<combat_arms::game::bots::CaBot>>().iter(w).collect()
+        };
+        for b in bots {
+            most = most.max(carried(&mut sim, b));
+        }
+    }
+    assert!(most > 0, "a bot carried the turret");
+    assert_eq!(most, players, "a bot's turrets are the player's count");
+}

@@ -171,6 +171,8 @@ fn every_option_is_archived() {
         chimera_net::net::assets::install_setting(app);
         // "Developer mode" (the UI kit's gallery).
         chimera_client::client::ui_scene::developer_mode_cvar(app);
+        // "Ask before following the party leader" (the party's).
+        chimera_net::net::party::ask_setting(app);
     });
     let console = sim.app.world().resource::<Console>();
     let tabs = party_kit::esc_menu::option_tabs_for(true);
@@ -204,7 +206,7 @@ fn options_rows_read_right() {
     }
     let party: Vec<&str> = tabs.iter().find(|(n, _)| n == "Party").map(|(_, s)| s.iter().map(|s| s.cvar.as_str()).collect()).unwrap_or_default();
     // The chat's row joined the page with the Signal chat (ugg-ui M10).
-    assert_eq!(party, ["party_swap_effect", "party_music", "developer_mode", "cl_chat"], "the Party page keeps the swap effect and the music");
+    assert_eq!(party, ["party_swap_effect", "party_music", "party_ask_follow", "developer_mode", "cl_chat"], "the Party page keeps the swap effect, the music and the follow choice");
     let music = row("party_music");
     assert_eq!(music.shown("2"), "Combat Arms' loop");
     assert_eq!(row("fov_desired").shown("90"), "90", "a plain range stays a number");
