@@ -27,7 +27,9 @@ service"). Design and limits: [plans/active/asset-service.md](plans/active/asset
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net67` since each player's lobby row carries
+   The network version is `net68` since the lobby tells every player the
+   match's settings (`NetLobby::settings`: its length and the host's
+   settings that matter to a player); `net67` (each player's lobby row carries
    its load's stage and share (`LobbyReport`, `LobbyRow`: downloading,
    loading the map, building models, physics; the lobby between maps);
    `net66` (a Halo player's body kind may be

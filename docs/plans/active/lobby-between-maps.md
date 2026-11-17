@@ -83,6 +83,17 @@ the host can change settings and players can leave.
      it's done.
    - Test: the one load drives both screens, and switching screens
      doesn't restart or duplicate it.
+   - **Built (2026-11-17):** the lobby tells the match's settings
+     (`NetLobby::settings`, **net68**: the mode's length, then each
+     `prematch::LobbyFact` an app registers, the party's from its host
+     settings' `lobby = true`: bots, balance, footsteps, rung extras,
+     demote, knife finale, rotation, spawn protection; a value of "" says
+     nothing and is left out); shown in the themed lobby's mode column
+     and as a line in the plain one; a joiner gets the kit's Leave
+     button on the action bar. One source: `load_stages::LoadSource` (a
+     system parameter over `Inputs::from_parts`) is what the lobby's own
+     row and the plain loading panel read; they no longer pick the
+     load's resources apart themselves.
 
 Each step has a scenario test: step 1 on `harness::Sim` with the
 client's real stepped load (`chimera_client` `map_load_steps`), steps 2
@@ -98,6 +109,15 @@ to 4 on `NetSim` (`chimera_net` `prematch_lobby`).
   after_a_match_the_lobby_shows_at_once_while_the_next_map_comes_in,
   the_lobby_after_a_match_waits_for_everyone_or_the_hosts_timeout}`,
   `load_stages` and `prematch` unit tests.
+- 2026-11-17: step 5 built. Tests: `party_kit` `join_flow::{a_joiner_in_the_lobby_sees_it_loading_with_its_row_and_the_settings,
+  the_host_starting_while_a_joiner_loads_shows_the_loading_screen_and_the_same_load_goes_on,
+  a_late_joiner_into_a_running_match_gets_the_loading_screen_directly}`,
+  `chimera_net` `prematch_lobby::the_lobby_tells_a_joiner_the_matchs_settings`,
+  `chimera_client` `lobby_panel::a_joiners_lobby_tells_the_settings_and_has_leave`.
+  Finding: the screens already switched correctly (the lobby over the
+  loading panel while it is up, the loading screen when it goes); the
+  tests pin it. Not done: the plain (unthemed) lobby has no Leave button
+  (its Escape menu leaves).
 - Not yet: loading the next map's data ahead during the match-end
   screen (the change starts its load at once, after it); a listen host's
   row seen by others holds still while its simulation waits on its

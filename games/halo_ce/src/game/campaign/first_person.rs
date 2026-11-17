@@ -33,7 +33,7 @@
 //! own fire (`fire-1`, an overlay: composed on the idle) on a shot and its
 //! melee (`melee`, a base animation: in place of the idle) on a melee,
 //! each played once from its first frame (a new one restarts it,
-//! `anims::apply_action`). The Hunter's view keeps its cannon from the
+//! `anims::apply_action`); drawn at the frame's time (`eased`). The Hunter's view keeps its cannon from the
 //! elbow down (tuned from pictures; data/campaign.toml keeps two
 //! alternates, one with the shield forearm, whose bash is its melee).
 //!
@@ -214,11 +214,14 @@ pub fn add_to_maps(views: Option<Res<BodyViews>>, models: Option<Res<ViewModels>
 
 /// A holder's body view playing (`drive`): the gun, the idle's frame and
 /// the action over it (its sequence and frame).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct Playing {
     pub key: String,
     pub frame: usize,
     pub action: Option<(usize, usize)>,
+    /// Its pose at the last Halo tick and the next ones predicted, drawn
+    /// at the frame's time (`eased`).
+    pub drawn: super::super::eased::PoseStream,
 }
 
 /// Each holder's (`drive`).
@@ -243,6 +246,17 @@ pub fn pose(set: &crate::map::anim::AnimSet, idle: Option<usize>, frame: usize, 
     pose
 }
 
+/// One Halo tick of a body view's play: the idle's frame on, the action's
+/// on until it ends.
+fn step(set: &crate::map::anim::AnimSet, idle: Option<usize>, frame: &mut usize, action: &mut Option<(usize, usize)>) {
+    if let Some(s) = idle {
+        *frame = anims::advance(*frame, anims::frames(set, s), anims::loop_frame(set, s));
+    }
+    if let Some((s, f)) = *action {
+        *action = (f + 1 < anims::frames(set, s)).then_some((s, f + 1));
+    }
+}
+
 /// Every machine, each Halo tick: the pose of each holder's body view
 /// (module doc).
 pub fn drive(
@@ -252,7 +266,9 @@ pub fn drive(
     mut holders: Query<(Entity, &Inventory, &mut ViewAnimator)>,
     guns: Query<&Weapon>,
     mut events: MessageReader<WeaponEvent>,
+    drawing: Option<Res<crate::map::interp::Interpolation>>,
 ) {
+    let drawing = super::super::eased::drawing(&drawing);
     let events: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
     let Some(views) = views else { return };
     let n = super::super::weapons::halo_ticks(&clock);
@@ -272,6 +288,7 @@ pub fn drive(
                 view.key
             );
         }
+        let mut event = false;
         for ev in events.iter().filter(|ev| ev.owner == e) {
             let start = match ev.kind {
                 WeaponEventKind::Action("fire" | "fire_last" | "fire_charged") => fire,
@@ -280,19 +297,28 @@ pub fn drive(
             };
             if let Some(s) = start {
                 p.action = Some((s, 0));
+                event = true;
             }
         }
         for _ in 0..n {
-            if let Some(s) = idle {
-                p.frame = anims::advance(p.frame, anims::frames(&set, s), anims::loop_frame(&set, s));
-            }
-            if let Some((s, f)) = p.action {
-                p.action = (f + 1 < anims::frames(&set, s)).then_some((s, f + 1));
-            }
+            step(&set, idle, &mut p.frame, &mut p.action);
         }
-        let pose = pose(&set, idle, p.frame, p.action, aim);
+        let pose = Later::ready(pose(&set, idle, p.frame, p.action, aim));
+        if drawing && (n > 0 || p.drawn.latest().is_none()) {
+            // The next ticks played on (`eased`).
+            let (mut frame, mut action, set, k) = (p.frame, p.action, set.clone(), super::super::eased::ahead(&clock));
+            let ahead = move || {
+                (0..k)
+                    .map(|_| {
+                        step(&set, idle, &mut frame, &mut action);
+                        self::pose(&set, idle, frame, action, aim)
+                    })
+                    .collect()
+            };
+            p.drawn.lay(super::super::eased::laid(&clock), pose.clone(), ahead, !event);
+        }
         if let Some(a) = view.animator.as_mut() {
-            a.fixed = Some(Later::ready(pose));
+            a.fixed = Some(pose);
             a.main = Some(0);
         }
     }

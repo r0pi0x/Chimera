@@ -221,6 +221,9 @@ struct Painter<'a> {
     data: &'a HudData,
     frame: [i32; 4],
     now: i64,
+    /// The frame's own time in Halo ticks (`now` and the share toward the
+    /// next): what moves continuously (the tracker's sweep) is drawn at it.
+    time: f64,
     out: Vec<Quad>,
 }
 
@@ -376,9 +379,16 @@ pub fn draw(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now:
 
 /// This frame's quads and where its blocks are.
 pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, now: i64) -> (Vec<Quad>, Blocks) {
+    draw_blocks_at(data, unit, state, canvas, now as f64)
+}
+
+/// `draw_blocks` at the frame's own time `time` in Halo ticks: the ticks'
+/// rules at its whole tick, the sweep at the time itself (between ticks).
+pub fn draw_blocks_at(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canvas, time: f64) -> (Vec<Quad>, Blocks) {
+    let now = time.floor() as i64;
     let mut blocks = Blocks::default();
     let bounds = |q: &[Quad]| layout::rect_bounds(q.iter().map(|q| q.rect));
-    let mut p = Painter { data, frame: canvas.frame(), now, out: Vec::new() };
+    let mut p = Painter { data, frame: canvas.frame(), now, time, out: Vec::new() };
     let chain = chain_of(data, unit);
     let w = unit.weapon.as_ref().map(|h| h.now).unwrap_or_default();
     let disabled_all = !unit.alive;
@@ -545,16 +555,17 @@ pub fn draw_blocks(data: &HudData, unit: &Unit, state: &HudState, canvas: &Canva
     blocks.unit = bounds(&p.out[block..tracker_from]);
     if unit.alive {
         let centre = layout::anchor_point(sensor, u.blip_placement.offset, p.frame);
-        tracker(&mut p, state, centre, now);
+        let time = p.time;
+        tracker(&mut p, state, centre, time);
     }
     (p.out, blocks)
 }
 
 /// The tracker's sweep and blips about `centre`.
-fn tracker(p: &mut Painter, state: &HudState, centre: [i32; 2], now: i64) {
+fn tracker(p: &mut Painter, state: &HudState, centre: [i32; 2], time: f64) {
     let data = p.data;
     let half = rules::RADAR_HALF_FIELD;
-    let window = rules::sweep(now);
+    let window = rules::sweep_at(time);
     let (cx, cy) = (centre[0] as f32, centre[1] as f32);
     let field = [cx - half, cy - half, cx + half, cy + half];
     let sweeper = data.sweeper.and_then(|s| data.picture_of(s, 0, 0).or_else(|| data.pages.get(&s).map(|_| Picture { page: s, image: 0, uv: [0.0, 0.0, 1.0, 1.0], size: [64.0, 64.0] })));

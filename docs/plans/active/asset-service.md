@@ -301,10 +301,9 @@ to the content cache) generalized from one map file to any record:
 ### 4.8 Stand-ins (simple, what exists)
 
 For a game a player doesn't own, the client mounts nothing for it and
-falls back to what exists already: characters as the shell's capsules
-(`client::hud`); a gun as a box (Combat Arms' placeholder looks,
-`games/combat_arms/src/ui/visuals.rs`, lifted into Chimera for any
-game) or nothing; grenades and smoke as balls; effects as placeholders;
+falls back to what exists already: Chimera's loading stand-ins
+(`render::stand_in`: a low-poly body for a character, a generic gun held
+and in first person, a crate for a prop) or nothing; grenades and smoke as balls; effects as placeholders;
 sounds silent; HUD icons as the weapon's name in text. Hits are the
 server's, from the game's data, so stand-ins are visual only. The work
 is the data path: each loader degrades to its stand-in when its game

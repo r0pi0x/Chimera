@@ -24,6 +24,11 @@
 //!   it waits for: "Waiting for 2 players..." with the time left of the
 //!   longest wait ("starts anyway in 1:12"), or once counting down who
 //!   it starts without.
+//! - **The settings** (`LobbyView::settings`, `NetLobby::settings`): the
+//!   match's length and the host's settings that matter to a player (the
+//!   party's `lobby = true` ones), under the head: one dim line in this
+//!   panel, the mode column in the themed one, so a joiner can leave
+//!   before being put into a match it doesn't want.
 //! - **The players**, one row each in the server's order (humans, then
 //!   bots): the name with its tags (HOST for a listen server's host, BOT,
 //!   YOU, the session wins as "2 WON": `LobbyRow::wins`), the status in
@@ -31,7 +36,8 @@
 //!   ready), for a downloader a bar with "MB done / total"
 //!   and the percentage, for a loader its stage and share ("Building
 //!   models 62%": `LobbyRow::stage`, `chimera_net::net::load_stages`; this
-//!   machine's own row from its own stages, live while a host's
+//!   machine's own row from the load's one source (`load_stages::
+//!   LoadSource`; this screen keeps no copy of it), live while a host's
 //!   simulation waits on its spawn), and the ping (or "BOT"); the local player's row
 //!   on the gold band the match-end screen gives it (found by its client
 //!   id: `net::client::LocalClientId`, a listen host's `HOST_ID`).
@@ -312,6 +318,8 @@ pub struct LobbyView {
     pub guns_from: Vec<String>,
     /// It waits for the host's Start (`NetLobby::host_start`).
     pub host_start: bool,
+    /// The match's settings (`NetLobby::settings`): label and value.
+    pub settings: Vec<(String, String)>,
 }
 
 /// The lobby's key while it shows (a Source key name), in place of its bind.
@@ -420,36 +428,15 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
     }
 }
 
-/// This machine's own load, for its own row (`chimera_net::net::load_stages`).
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct OwnLoad<'w> {
-    join: Option<Res<'w, chimera_net::net::client::JoinProgress>>,
-    ahead: Option<Res<'w, chimera_net::net::assets::MapAhead>>,
-    local: Option<Res<'w, chimera_world::map::LocalMapLoad>>,
-    work: Option<Res<'w, chimera_net::net::load_stages::LoadWork>>,
-    reporter: Option<Res<'w, chimera_world::map::loading::LoadReporter>>,
+/// This machine's own load for its own row: the stage under way, its share
+/// and the download's bytes, from `load_stages::LoadSource` (the one
+/// source; this screen keeps none).
+fn own_current(load: &chimera_net::net::load_stages::LoadSource) -> Option<(chimera_net::net::load_stages::LoadStep, Option<f32>, Option<(u64, u64)>)> {
+    use chimera_net::net::load_stages::StageState;
+    load.running().map(|s| (s.step, if let StageState::Running(f) = s.state { f } else { None }, s.bytes))
 }
 
-impl OwnLoad<'_> {
-    /// The stage under way here and its share, with the download's bytes.
-    fn current(&self) -> Option<(chimera_net::net::load_stages::LoadStep, Option<f32>, Option<(u64, u64)>)> {
-        use chimera_net::net::load_stages::{Inputs, StageState, stages_of};
-        let local = self.local.is_some();
-        let i = Inputs {
-            join: self.join.as_deref(),
-            ahead: self.ahead.as_deref().filter(|a| a.running()).map(|a| a.bytes()),
-            local,
-            work: self.work.as_deref().copied().filter(|_| local),
-            map_share: self.reporter.as_ref().and_then(|r| r.current()).map(|p| p.fraction),
-        };
-        stages_of(&i).into_iter().find_map(|s| match s.state {
-            StageState::Running(f) => Some((s.step, f, s.bytes)),
-            _ => None,
-        })
-    }
-}
-
-/// Row `r` with this machine's own stage now (`OwnLoad`).
+/// Row `r` with this machine's own stage now (`own_current`).
 fn own_row(
     r: &chimera_net::prematch::LobbyRow,
     (step, share, bytes): (chimera_net::net::load_stages::LoadStep, Option<f32>, Option<(u64, u64)>),
@@ -463,11 +450,16 @@ fn own_row(
     r
 }
 
+/// The staged lobby's joiner's id (`ui_scene lobby join`: the second row).
+pub const STAGED_JOINER: u64 = 2;
+
 /// `ui_scene lobby host`: the staged lobby seen as its listen host (the
 /// `HOST_ID` row is yours, Start is yours), its slots.
 #[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StagedLobbyHost {
     pub slots: u32,
+    /// Seen as a joiner (its row is the second, `JOINER`: not the host's, no Start).
+    pub joiner: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -483,7 +475,7 @@ fn follow(
     ladder: Option<Res<chimera_sim::minigame::ladder::Ladder>>,
     (mut passes, mut gate, first): (super::logo_pass::Passes, ResMut<LobbyGate>, Query<(), With<chimera_net::prematch::HostLobbyFirst>>),
     mut view: ResMut<LobbyView>,
-    own: OwnLoad,
+    own: chimera_net::net::load_stages::LoadSource,
 ) {
     // A listen host's lobby shown from its Start (`prematch::show_first`):
     // seen as its host, as the staged one.
@@ -519,6 +511,7 @@ fn follow(
         }
     }
     let mine = match role.as_deref() {
+        _ if staged.as_ref().is_some_and(|s| s.joiner) => Some(STAGED_JOINER),
         _ if staged.is_some() || first => Some(HOST_ID),
         Some(NetRole::Client) => me.map(|m| m.0),
         Some(NetRole::Server) if !host.is_empty() => Some(HOST_ID),
@@ -534,19 +527,20 @@ fn follow(
             .iter()
             .map(|r| {
                 let local = mine.is_some() && r.id == mine;
-                match own.current().filter(|_| local && matches!(r.status, status::LOADING | status::DOWNLOADING)) {
+                match own_current(&own).filter(|_| local && matches!(r.status, status::LOADING | status::DOWNLOADING)) {
                     Some(o) => view_row(&own_row(r, o), true),
                     None => view_row(r, local),
                 }
             })
             .collect(),
         countdown: l.countdown,
-        hosting: staged.is_some() || first || (role.as_deref() == Some(&NetRole::Server) && !host.is_empty()),
+        hosting: staged.as_ref().is_some_and(|s| !s.joiner) || first || (role.as_deref() == Some(&NetRole::Server) && !host.is_empty()),
         hint: String::new(),
         game: String::new(),
         slots: None,
         guns_from: Vec::new(),
         host_start: l.host_start,
+        settings: l.settings.clone(),
     };
     v.hint = hint(&v);
     let short = |id: &str| games.as_ref().and_then(|g| g.get(id)).map(|g| g.short_name.to_string());
@@ -767,6 +761,10 @@ fn draw(
         label(p, view.mode.to_uppercase(), font(17.0, false), DIM);
         label(p, view.map.clone(), font(34.0, true), GOLD);
         label(p, view.line.clone(), font(20.0, false), TEXT);
+        if !view.settings.is_empty() {
+            let line: Vec<String> = view.settings.iter().map(|(k, v)| format!("{k}: {v}")).collect();
+            label(p, line.join("   \u{b7}   "), font(15.0, false), DIM);
+        }
         p.spawn(Node {
             flex_direction: FlexDirection::Column,
             row_gap: px(4.0 * s),
@@ -909,6 +907,7 @@ mod tests {
             wait_left: Some(72),
             countdown: None,
             host_start: false,
+            settings: Vec::new(),
         };
         assert_eq!(waiting_line(&l), "Waiting for 2 players...   starts anyway in 1:12");
         let ben = view_row(&l.rows[1], true);

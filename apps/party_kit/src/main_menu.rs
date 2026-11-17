@@ -3207,7 +3207,7 @@ fn progress(
     settings: Option<Res<chimera_net::net::NetSettings>>,
     role: Option<Res<NetRole>>,
     reporter: Option<Res<chimera_world::map::loading::LoadReporter>>,
-    work: (Option<Res<chimera_world::map::LocalMapLoad>>, Option<Res<chimera_world::map::loading::LoadWork>>),
+    load: chimera_net::net::load_stages::LoadSource,
     lines: Query<&Children, With<LoadingLine>>,
     mut texts: Query<&mut Text>,
     mut bars: Query<&mut Node, With<LoadingBar>>,
@@ -3221,13 +3221,14 @@ fn progress(
         hosting,
         what,
     );
-    // Past the loader's task: the spawn's and the settling's own counts
-    // (`map::loading::LoadWork`, `chimera_net::net::load_stages`).
-    if let (Some(_), Some(w)) = (work.0, work.1)
-        && matches!(w.step, chimera_net::net::load_stages::LoadStep::Models | chimera_net::net::load_stages::LoadStep::Physics)
+    // Past the loader's task: the spawn's and the settling's own counts,
+    // from the load's one source (`chimera_net::net::load_stages`).
+    if let Some(st) = load.running()
+        && matches!(st.step, chimera_net::net::load_stages::LoadStep::Models | chimera_net::net::load_stages::LoadStep::Physics)
+        && let chimera_net::net::load_stages::StageState::Running(Some(f)) = st.state
     {
-        line = format!("{}...", w.step.words());
-        fraction = w.fraction();
+        line = format!("{}...", st.step.words());
+        fraction = f;
     }
     for mut n in &mut bars {
         let w = percent(100.0 * fraction);

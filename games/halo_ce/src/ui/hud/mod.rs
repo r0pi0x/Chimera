@@ -14,7 +14,9 @@
 //!   number's glyphs (and the widescreen rule: scale by height, anchor to
 //!   the safe edges).
 //! - `rules`: flashes, meters, the shield's bookkeeping, the weapon's
-//!   states and crosshair states, the tracker's blips and sweep.
+//!   states and crosshair states, the tracker's blips and sweep (the
+//!   sweep drawn at the frame's own time between Halo ticks,
+//!   `rules::sweep_at`; the rest at Halo's tick).
 //! - `data`: the HUD read from a map file (`HudData`).
 //! - `draw`: the draw list (`Quad`s) from the data, the unit and the state.
 //! - `material` (hud.wesl): the pictures' blend, the meter shader, the

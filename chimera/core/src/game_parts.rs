@@ -13,7 +13,7 @@
 //! catalogue, the movement registered): that report decides what a game
 //! may take part in. Required for a game to be in an automatic ladder:
 //! guns and movement; optional, with fallbacks (`PartsRegistry::
-//! fallback_hud`, the shell's capsule body, other games' maps): its
+//! fallback_hud`, the stand-in body, other games' maps): its
 //! characters, HUD and maps. A game's guns are its claimed ones plus every
 //! weapon of its own in the catalogue whose data names a `class`
 //! (`GunClass`; its install's weapons too), its maps the claimed ones plus
@@ -146,13 +146,14 @@ impl GameParts {
 /// ammo; no game's HUD drawn).
 pub const MINIMAL_HUD: &str = "chimera";
 
-/// An app that never draws a stand-in for a model it hasn't got (a
-/// player's capsule, a first-person box gun or knife: Ultimate Gun Game):
-/// what is showing stays until the real model is ready, or nothing shows
-/// for a moment. Without it (the greybox app, Combat Arms without its
-/// keys, tests) the stand-ins draw.
+/// An app that would rather show any real body than a stand-in
+/// (`chimera_present::render::stand_in`): a character whose game has no
+/// body on the map keeps what it wears, or wears any body there (Ultimate
+/// Gun Game). Stand-ins still show where nothing real can yet (before the
+/// map's or the kit's models are in, a view model still loading); a body
+/// once shown keeps showing until the next is ready, in every app.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct NoStandIns;
+pub struct PreferRealModels;
 
 /// The registered games' parts, in the order registered, and the HUD a
 /// game without one falls back to.

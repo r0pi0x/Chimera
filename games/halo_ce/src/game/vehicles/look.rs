@@ -22,7 +22,10 @@
 //!   pitch 0, the ground-speed overlay at frame (W/C) × N (continuous,
 //!   wrapping), each suspension overlay at frame value × (N − 1);
 //!   overlay rotations compose on the right, translations add
-//!   (`body::anims`' convention).
+//!   (`body::anims`' convention); where the engine's interpolation is
+//!   plugged in, at the values eased between the last two Halo ticks
+//!   (`VehicleLook::drawn`, laid by `track`; the wheel and treads the short
+//!   way round: `game::eased`).
 //!
 //! Known shortcuts:
 //! - On a networked client the speed variable s is taken as the replicated
@@ -85,6 +88,52 @@ pub struct VehicleLook {
     pub suspension: Vec<f32>,
     /// The last tick's body (a client's estimate).
     pub last: Option<Body>,
+    /// The values at the last Halo ticks, drawn between them where the
+    /// engine's interpolation is plugged in (`game::eased`, `pose`).
+    pub drawn: crate::map::interp::GameTicks<LookValues>,
+}
+
+/// What the overlays play at (`VehicleLook`), kept per Halo tick.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LookValues {
+    pub wheel: f32,
+    pub turn: f32,
+    pub treads: [f32; 2],
+    pub suspension: Vec<f32>,
+}
+
+impl LookValues {
+    pub fn of(look: &VehicleLook) -> Self {
+        Self {
+            wheel: look.wheel,
+            turn: look.turn,
+            treads: look.treads,
+            suspension: look.suspension.clone(),
+        }
+    }
+
+    /// `a` toward `b` by `f`: positions on a wheel of circumference `c`
+    /// the shorter way round (a wheel turns less than half a turn a tick).
+    pub fn between(a: &Self, b: &Self, f: f32, c: f32) -> Self {
+        let round = |x: f32, y: f32| {
+            if c > 0.0 {
+                let d = (y - x + c / 2.0).rem_euclid(c) - c / 2.0;
+                (x + d * f).rem_euclid(c)
+            } else {
+                x + (y - x) * f
+            }
+        };
+        Self {
+            wheel: round(a.wheel, b.wheel),
+            turn: a.turn + (b.turn - a.turn) * f,
+            treads: [round(a.treads[0], b.treads[0]), round(a.treads[1], b.treads[1])],
+            suspension: if a.suspension.len() == b.suspension.len() {
+                a.suspension.iter().zip(&b.suspension).map(|(x, y)| x + (y - x) * f).collect()
+            } else {
+                b.suspension.clone()
+            },
+        }
+    }
 }
 
 impl VehicleLook {
@@ -167,11 +216,13 @@ pub fn track(
     query: SpatialQuery,
     shapes: Query<super::level::Shape>,
     role: Option<Res<crate::core::NetRole>>,
+    drawing: Option<Res<crate::map::interp::Interpolation>>,
 ) {
     let n = super::super::ticks::halo_ticks(&clock);
     if n == 0 {
         return;
     }
+    let drawing = crate::game::eased::drawing(&drawing).then(|| crate::game::eased::laid(&clock));
     let simulated = role.is_none_or(|r| *r != crate::core::NetRole::Client);
     let others: Vec<Entity> = all.iter().collect();
     let skip = |e: Entity| characters.contains(e) || others.contains(&e);
@@ -212,6 +263,10 @@ pub fn track(
         }
         look.last = Some(body);
         if look.elements.is_empty() {
+            if let Some(tick) = drawing {
+                let values = LookValues::of(&look);
+                look.drawn.lay(tick, values);
+            }
             continue;
         }
         let level = EngineLevel {
@@ -230,6 +285,10 @@ pub fn track(
             for _ in 0..n {
                 *value = suspension_store(k, *value);
             }
+        }
+        if let Some(tick) = drawing {
+            let values = LookValues::of(look);
+            look.drawn.lay(tick, values);
         }
     }
 }
@@ -267,6 +326,11 @@ pub fn overlay_at(set: &AnimSet, seq: usize, x: f32, wrap: bool, pose: &mut [Bon
 
 /// The vehicle's pose from its look (module doc).
 pub fn posed(set: &AnimSet, look: &VehicleLook, circumference: f32) -> Vec<BonePose> {
+    posed_values(set, &LookValues::of(look), circumference)
+}
+
+/// `posed` at the values `look`.
+pub fn posed_values(set: &AnimSet, look: &LookValues, circumference: f32) -> Vec<BonePose> {
     let mut pose = set.defaults.clone();
     if let Some(&s) = set.names.get(STEERING) {
         anims::apply_screen(set, s, look.turn, 0.0, &mut pose);
@@ -291,10 +355,17 @@ pub fn pose(
     vehicles: Query<(&HaloVehicle, &VehicleLook, &PropRig)>,
     defs: Res<VehicleDefs>,
     mut joints: Query<&mut Transform, Without<HaloVehicle>>,
+    (sim, fixed, settings): (Option<Res<SimClock>>, Res<Time<Fixed>>, Option<Res<crate::map::interp::Interpolation>>),
 ) {
+    // Eased between Halo's ticks where they are drawn (`game::eased`).
+    let at = sim.as_deref().zip(settings.as_deref()).map(|(s, i)| crate::game::eased::drawn_time(s, &fixed, i));
     for (v, look, rig) in &vehicles {
         let d = &defs.0[v.def].0;
-        let pose = posed(&rig.animator.set, look, d.wheel_circumference);
+        let c = d.wheel_circumference;
+        let values = at
+            .and_then(|t| look.drawn.around(t))
+            .map_or_else(|| LookValues::of(look), |(a, b, f)| LookValues::between(a, b, f, c));
+        let pose = posed_values(&rig.animator.set, &values, c);
         for (joint, (q, p)) in rig.joints.iter().zip(pose) {
             if let Ok(mut t) = joints.get_mut(*joint)
                 && (t.rotation != q || t.translation != p)

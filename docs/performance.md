@@ -4798,6 +4798,27 @@ the guests' converted bodies and guns kept per install as Combat Arms'
 are (`append_shared`'s texture shift), only the ladder's games dressed,
 and the kit loaded on the map load's task.
 
+### Stand-ins on screen
+
+How long Chimera's loading stand-ins (`render::stand_in`) show, from its
+own count (`stand_ins` in the console; an info line when the last one
+showing goes). Each shows only after `stand_in::GRACE` (0.15 s) of
+waiting, so the times below are on top of that. Ultimate Gun Game's
+sandbox on the range (`+sandbox`, dev build, installs from the main
+checkout's config, the box shared with other builds), 2026-11-17:
+
+| load | stand-ins (time on screen) |
+|---|---|
+| the sandbox's start (the local player's first view model) | 1 view gun, 0.14-0.49 s |
+| three practice targets added (their CS:S bodies late) | 3 bodies, 0.02 s each |
+| a map change, the range to de_dust2 and on to the greybox | none (bodies and guns stay drawn) |
+
+The 0.02 s bodies are a frame's flash just past the grace; the view
+gun's is the view model's on-demand build. Where to cut next: build the
+local player's first view model with the kit (it is wanted before the
+first frame), and give bodies wanted by a target a head start
+(`LateWanted` already orders them first).
+
 ### Guest dressings kept for the session
 
 What the measurement above asked for (`source_engine::content::guest`):
@@ -4830,7 +4851,8 @@ What the measurement above asked for (`source_engine::content::guest`):
   code-built map at once and loads its kit on the async compute pool
   (`CodeMapKit`), its spawn's own work (`map::prepare`) there too; the
   kit spawns when it is in, the code-built map again after it. Until then
-  (a cold first dressing: seconds) players show the shell's capsules.
+  (a cold first dressing: seconds) players show the stand-in bodies
+  (`render::stand_in`; "Stand-ins on screen" above).
   Tests that wait for tasks (`WaitForTasks`) get it in the same frame, as
   before. In the real app (`ultimate_gun_game --offscreen 960x540
   --frame-log`, dev build, `+map greybox +after 20 map greybox`, the box

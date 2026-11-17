@@ -8,8 +8,7 @@
 //! (`map::add_view_model`; drawn on a map and on the greybox alike, where
 //! Chimera's drawing has assets of its own: `render::view_model::
 //! assets_without_map`, `tests/ui/heavy/view_model.rs`); until it is
-//! ready the front end's placeholder box stands in (nothing in an app with
-//! `game_parts::NoStandIns`), and `drive` starts the model afresh when it
+//! ready Chimera's stand-in gun shows (`render::stand_in`), and `drive` starts the model afresh when it
 //! arrives. The match's ladder's view models load the same way ahead of
 //! time (`characters::preload`).
 //!
@@ -31,8 +30,8 @@
 //! too (`ViewModelsOnDemand`): they load here, once per session, not again
 //! with each map.
 //!
-//! Known shortcuts (docs/tech-debt.md): outside a ladder the placeholder
-//! box shows for the frames a model takes to load (tens of milliseconds;
+//! Known shortcuts (docs/tech-debt.md): outside a ladder the stand-in
+//! gun shows for the frames a model takes to load (tens of milliseconds;
 //! the first draw of each weapon); the cache keeps every model while the
 //! install data lives (the app's session); outside a ladder nothing
 //! preloads a weapon before it is in the local player's inventory or

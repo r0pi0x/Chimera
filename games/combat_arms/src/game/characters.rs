@@ -180,7 +180,7 @@
 //! - No V2 key: no body, head piece, goggle or third-person weapon model
 //!   loads (the unkeyed corpses and zombie bodies on the stock trees
 //!   aren't player records; `heavy::characters` poses them; characters
-//!   are the shell's capsules) and the library is the spec's names and
+//!   are Chimera's stand-in bodies) and the library is the spec's names and
 //!   measured lengths (`driver::spec_library`; names the spec doesn't
 //!   measure get their kind's length). The skeleton is then the spec's
 //!   measured `LST` t = 0 pose for nodes and spheres and the "stand" pose
@@ -194,7 +194,7 @@
 //!   pool and the head pieces they may wear merged onto its skeleton as
 //!   body-part choices (`models::BodyGroup`, `map::BodyNumber`), so the
 //!   Light and Heavy bodies pose on the Normal one's library; another
-//!   selection's body stays a capsule on the spec's skeleton, a face or
+//!   selection's body stays the stand-in on the spec's skeleton, a face or
 //!   head piece outside the pool shows the body's default; the pose is
 //!   computed per tick (the server's driver runs per movement frame, its
 //!   trackers per server frame: Open question 14) and drawn as is; with

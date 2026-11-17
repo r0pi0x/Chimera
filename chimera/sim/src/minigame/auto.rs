@@ -168,7 +168,7 @@ impl Capabilities {
             self.grenades.len(),
             or(self.knife, "the base game's"),
             or(self.movement, "not in a ladder"),
-            or(self.characters, "a capsule"),
+            or(self.characters, "the stand-in body"),
             or(self.hud, "the fallback HUD"),
             if self.maps.is_empty() { "none (other games')".to_string() } else { self.maps.join(", ") },
             if self.playable() { "" } else { "; not playable" },
@@ -701,7 +701,7 @@ pub fn find_installed_maps(world: &mut World) {
 pub struct Fallbacks {
     /// The HUD drawn: the game's, else the registry's fallback.
     pub hud: &'static str,
-    /// Its own bodies (its character kit), else the shell's capsule.
+    /// Its own bodies (its character kit), else the stand-in body (`render::stand_in`).
     pub own_body: bool,
     /// Its own maps in the pool, else other games' only.
     pub own_maps: bool,

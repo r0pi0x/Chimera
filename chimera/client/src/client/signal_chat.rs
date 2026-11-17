@@ -733,6 +733,7 @@ fn stage_lobby_scene(w: &mut World, args: &[String]) -> Result<(), String> {
             wait_left: Some(24),
             countdown: None,
             host_start: false,
+            settings: Vec::new(),
         },
     ));
     Ok(())
