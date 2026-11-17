@@ -71,7 +71,9 @@ pub struct StagedLobby;
 /// another pair), a stranger and a bot, 8 slots; `ui_scene lobby
 /// between`: the host's lobby after a match, the next map coming in on
 /// every machine, each row at its own stage (downloading, loading the
-/// map, building models, physics).
+/// map, building models, physics); `ui_scene lobby join`: a joiner's view
+/// (its own row second, downloading; no Start, a Leave button) of a lobby
+/// with the match's settings.
 fn stage_lobby(w: &mut World, how: Option<&str>) {
     use chimera_net::prematch::{LobbyRow, NetLobby, status};
     let row = |id: Option<u64>, name: &str, st: u8, ping: Option<u16>, wins: u32| LobbyRow {
@@ -87,9 +89,10 @@ fn stage_lobby(w: &mut World, how: Option<&str>) {
         avatar: if id.is_some() { (name.len() as u8 * 7) % 32 } else { chimera_net::prematch::NO_AVATAR },
         party: 0,
     };
-    if matches!(how, Some("host" | "between")) {
+    if matches!(how, Some("host" | "between" | "join")) {
         use chimera_net::net::HOST_ID;
         let between = how == Some("between");
+        let join = how == Some("join");
         let mut dl = row(Some(2), "AI_alpha_9", status::DOWNLOADING, Some(31), 0);
         (dl.done, dl.total, dl.party, dl.avatar) = (42, 100, 1, 6 * 1 + 8 * 2);
         (dl.step, dl.permille) = (0, 420);
@@ -110,7 +113,7 @@ fn stage_lobby(w: &mut World, how: Option<&str>) {
         }
         let mut st = row(Some(6), "Stranger", status::READY, Some(140), 0);
         st.avatar = 8 * 2 + 7;
-        w.insert_resource(super::prematch_lobby::StagedLobbyHost { slots: 8 });
+        w.insert_resource(super::prematch_lobby::StagedLobbyHost { slots: 8, joiner: how == Some("join") });
         w.spawn((
             StagedLobby,
             NetLobby {
@@ -118,9 +121,15 @@ fn stage_lobby(w: &mut World, how: Option<&str>) {
                 mode: "Ultimate Gun Game".into(),
                 rows: vec![me, dl, ld, nj, wr, st, row(None, "Bot_Kilo", status::READY, None, 0)],
                 waiting: if between { 4 } else { 3 },
-                wait_left: between.then_some(75),
+                wait_left: (between || join).then_some(75),
                 countdown: None,
-                host_start: !between,
+                host_start: !between && !join,
+                settings: vec![
+                ("Length".into(), "10 min".into()),
+                ("Bots".into(), "3".into()),
+                ("Cross-game balance".into(), "On".into()),
+                ("Knife finale".into(), "On".into()),
+            ],
             },
         ));
         return;
@@ -140,6 +149,12 @@ fn stage_lobby(w: &mut World, how: Option<&str>) {
             wait_left: Some(72),
             countdown: None,
             host_start: true,
+            settings: vec![
+                ("Length".into(), "10 min".into()),
+                ("Bots".into(), "3".into()),
+                ("Cross-game balance".into(), "On".into()),
+                ("Knife finale".into(), "On".into()),
+            ],
         },
     ));
 }

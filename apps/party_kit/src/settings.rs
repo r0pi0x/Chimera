@@ -304,6 +304,7 @@ pub fn rows(ctx: Context, tabs: &[(String, Vec<Setting>)], tab: usize, bind_game
                     hard_min: None,
                     hard_max: None,
                     percent: false,
+                    lobby: false,
                 };
                 out.push(Row::Setting { s, note: None });
             }

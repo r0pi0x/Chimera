@@ -76,7 +76,8 @@ fn sim(theme: Option<&str>) -> Sim {
         waiting: 1,
         wait_left: Some(60),
         countdown: None,
-            host_start: false,
+        host_start: false,
+        settings: vec![("Length".into(), "5 min".into()), ("Cross-game balance".into(), "On".into())],
     });
     sim.ticks(2);
     sim
@@ -265,4 +266,41 @@ fn player_names_keep_their_case_across_updates() {
             assert_eq!(names(&mut s), first, "the same on every frame after an update");
         }
     }
+}
+
+/// A joiner's lobby (docs/plans/active/lobby-between-maps.md, step 5): the
+/// match's settings are told in the mode's column and the kit's Leave
+/// button is on the action bar (the host has Start instead), so a
+/// player can go before being put into a match it doesn't want.
+#[test]
+fn a_joiners_lobby_tells_the_settings_and_has_leave() {
+    use chimera_client::client::prematch_lobby::LobbyAction;
+    let texts = |s: &mut Sim| -> Vec<String> {
+        let w = s.app.world_mut();
+        w.query::<&Text>().iter(w).map(|t| t.0.to_lowercase()).collect()
+    };
+    let leaves = |s: &mut Sim| {
+        let w = s.app.world_mut();
+        w.query::<&LobbyAction>().iter(w).filter(|a| **a == LobbyAction::Leave).count()
+    };
+    // The host: its settings are shown, no Leave button (Start instead).
+    let mut s = sim(Some(THEME));
+    let t = texts(&mut s);
+    assert!(t.iter().any(|t| t == "cross-game balance") && t.iter().any(|t| t == "5 min"), "{t:?}");
+    assert_eq!(leaves(&mut s), 0);
+    // A joiner.
+    let mut j = sim(Some(THEME));
+    let host_player = {
+        let w = j.app.world_mut();
+        w.query_filtered::<Entity, With<LocalPlayer>>().iter(w).collect::<Vec<_>>()
+    };
+    for e in host_player {
+        j.app.world_mut().despawn(e);
+    }
+    j.app.insert_resource(NetRole::Client).insert_resource(LocalClientId(JOINER));
+    j.ticks(3);
+    let t = texts(&mut j);
+    assert!(t.iter().any(|t| t == "cross-game balance") && t.iter().any(|t| t == "on"), "{t:?}");
+    assert_eq!(leaves(&mut j), 1);
+    assert!(t.iter().any(|t| t == "leave"), "{t:?}");
 }

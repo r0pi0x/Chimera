@@ -12,6 +12,11 @@
 //! - **Physics**: the spawn's colliders, then the settle hooks
 //!   (navigation, spawn spots, shadows; `LoadWork`).
 //!
+//! **The one source**: every screen showing loading (the lobby's rows, the
+//! loading screens, a small bar) reads it here (`stages`, or `LoadSource`
+//! as a system's parameter) and owns none of it, so switching screens
+//! never restarts or duplicates the load.
+//!
 //! `stages` lists them, each done, running (with its share when known)
 //! or pending; `current` is the running one, which a client reports to
 //! its server (`prematch::LobbyReport::step`, `permille`).
@@ -69,14 +74,61 @@ pub struct Inputs<'a> {
 
 impl<'a> Inputs<'a> {
     pub fn of(world: &'a World) -> Self {
-        let local = world.contains_resource::<chimera_world::map::LocalMapLoad>();
+        Self::from_parts(
+            world.get_resource::<JoinProgress>(),
+            world.get_resource::<crate::net::assets::MapAhead>(),
+            world.contains_resource::<chimera_world::map::LocalMapLoad>(),
+            world.get_resource::<LoadWork>().copied(),
+            world.get_resource::<LoadReporter>(),
+        )
+    }
+
+    /// The one place the load's resources become inputs (`of` and
+    /// `LoadSource` both come here).
+    pub fn from_parts(
+        join: Option<&'a JoinProgress>,
+        ahead: Option<&crate::net::assets::MapAhead>,
+        local: bool,
+        work: Option<LoadWork>,
+        reporter: Option<&LoadReporter>,
+    ) -> Self {
         Inputs {
-            join: world.get_resource::<JoinProgress>(),
-            ahead: world.get_resource::<crate::net::assets::MapAhead>().filter(|a| a.running()).map(|a| a.bytes()),
+            join,
+            ahead: ahead.filter(|a| a.running()).map(|a| a.bytes()),
             local,
-            work: world.get_resource::<LoadWork>().copied().filter(|_| local),
-            map_share: world.get_resource::<LoadReporter>().and_then(|r| r.current()).map(|p| p.fraction),
+            work: work.filter(|_| local),
+            map_share: reporter.and_then(|r| r.current()).map(|p| p.fraction),
         }
+    }
+}
+
+/// The load's state as a system's parameter: every screen showing loading
+/// (the lobby's rows, the loading screens, a bar) reads it here and keeps
+/// none of its own.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct LoadSource<'w> {
+    join: Option<Res<'w, JoinProgress>>,
+    ahead: Option<Res<'w, crate::net::assets::MapAhead>>,
+    local: Option<Res<'w, chimera_world::map::LocalMapLoad>>,
+    work: Option<Res<'w, LoadWork>>,
+    reporter: Option<Res<'w, LoadReporter>>,
+}
+
+impl LoadSource<'_> {
+    /// The stages of the load under way (`stages`).
+    pub fn stages(&self) -> Vec<Stage> {
+        stages_of(&Inputs::from_parts(
+            self.join.as_deref(),
+            self.ahead.as_deref(),
+            self.local.is_some(),
+            self.work.as_deref().copied(),
+            self.reporter.as_deref(),
+        ))
+    }
+
+    /// The running stage (`current`'s, with the download's bytes).
+    pub fn running(&self) -> Option<Stage> {
+        self.stages().into_iter().find(|s| matches!(s.state, StageState::Running(_)))
     }
 }
 
