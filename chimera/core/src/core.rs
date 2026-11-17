@@ -1516,6 +1516,33 @@ impl UserInfo {
         let v = self.0.get(key)?;
         v.trim().parse::<f32>().ok().map(|n| n != 0.0)
     }
+
+    /// The player's party as the hub names it (`cl_party`: its public id;
+    /// docs/plans/active/parties.md), None alone.
+    pub fn party(&self) -> Option<&str> {
+        self.0.get(PARTY_KEY).map(|s| s.trim()).filter(|s| !s.is_empty())
+    }
+}
+
+/// The userinfo key of a player's party (`UserInfo::party`).
+pub const PARTY_KEY: &str = "cl_party";
+
+/// The side (1 or 2) most of `party`'s other players are on, among
+/// `others` (their party and team), if any of them is on one: where a
+/// joining member goes, so a party plays on one team.
+pub fn party_side<'a>(party: Option<&str>, others: impl IntoIterator<Item = (Option<&'a str>, u8)>) -> Option<u8> {
+    let party = party?;
+    let mut count = [0usize; 2];
+    for (p, team) in others {
+        if p == Some(party) && (1..=2).contains(&team) {
+            count[team as usize - 1] += 1;
+        }
+    }
+    match count {
+        [0, 0] => None,
+        [a, b] if a >= b => Some(1),
+        _ => Some(2),
+    }
 }
 
 /// A character a person plays from another machine (a network server's

@@ -922,7 +922,8 @@ impl Plugin for MainMenuPlugin {
         // The hub of this machine's account (the Internet tab, the news
         // card): not in a tool run or a test, which keep and ask nothing.
         if self.keep_recent {
-            app.add_systems(Startup, chimera_net::net::hub::use_user_hub);
+            // Its parties too (a token kept in party.toml is taken up).
+            app.add_systems(Startup, (chimera_net::net::hub::use_user_hub, chimera_net::net::party::use_user_party).chain());
         }
         app.insert_resource(data)
             .insert_resource(last)
@@ -1313,7 +1314,7 @@ fn typing(
         Option<Res<crate::maps_picker::MapsPicker>>,
         Option<Res<crate::loading_signal::LoadingSignal>>,
     ),
-    mut clipboard: Local<chimera_ui::clipboard::Clipboard>,
+    (mut clipboard, party): (Local<chimera_ui::clipboard::Clipboard>, Option<Res<crate::party_signal::PartyPanel>>),
     shared_clipboard: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
     // The app's clipboard (a test's), else this system's own handle on
@@ -1324,7 +1325,8 @@ fn typing(
     };
     // The Signal pages (`signal_pages`) take Enter and Tab on Play and Join.
     let signal_page = crate::signal_pages::themed(theme.as_deref()) && matches!(menu.page, MenuPage::Play | MenuPage::Join);
-    let live = menu.shown() && !console.is_some_and(|c| c.open) && !controls.is_some_and(|c| c.open);
+    // The party panel (open over the menu) takes the keys.
+    let live = menu.shown() && !console.is_some_and(|c| c.open) && !controls.is_some_and(|c| c.open) && !party.is_some_and(|p| p.open);
     if !live {
         events.clear();
         return;
@@ -2170,6 +2172,8 @@ fn cameras(
             With<crate::controls::PageRoot>,
             With<crate::feedback_signal::DialogRoot>,
             With<crate::feedback_signal::NoticeRoot>,
+            With<crate::party_signal::PanelRoot>,
+            With<crate::party_signal::PromptRoot>,
         )>,
     >,
     mut commands: Commands,
@@ -3197,19 +3201,28 @@ fn progress(
     settings: Option<Res<chimera_net::net::NetSettings>>,
     role: Option<Res<NetRole>>,
     reporter: Option<Res<chimera_world::map::loading::LoadReporter>>,
+    work: (Option<Res<chimera_world::map::LocalMapLoad>>, Option<Res<chimera_world::map::loading::LoadWork>>),
     lines: Query<&Children, With<LoadingLine>>,
     mut texts: Query<&mut Text>,
     mut bars: Query<&mut Node, With<LoadingBar>>,
 ) {
     let Some(what) = menu.loading.as_deref() else { return };
     let hosting = settings.is_some_and(|s| s.maxplayers > 1) && role.as_deref().is_none_or(|r| *r != NetRole::Client);
-    let (line, fraction) = loading_state(
+    let (mut line, mut fraction) = loading_state(
         look.ui.as_deref(),
         join.as_deref(),
         reporter.and_then(|r| r.current()),
         hosting,
         what,
     );
+    // Past the loader's task: the spawn's and the settling's own counts
+    // (`map::loading::LoadWork`, `chimera_net::net::load_stages`).
+    if let (Some(_), Some(w)) = (work.0, work.1)
+        && matches!(w.step, chimera_net::net::load_stages::LoadStep::Models | chimera_net::net::load_stages::LoadStep::Physics)
+    {
+        line = format!("{}...", w.step.words());
+        fraction = w.fraction();
+    }
     for mut n in &mut bars {
         let w = percent(100.0 * fraction);
         if n.width != w {

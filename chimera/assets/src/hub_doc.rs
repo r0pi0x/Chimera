@@ -338,6 +338,12 @@ fn call(
     Ok((status, bytes, signature))
 }
 
+/// `POST url` with `ticket` and a JSON body: the answer's bytes (the
+/// party calls, `party_doc`).
+pub fn post_json(url: &str, fingerprint: Option<&str>, ticket: &str, body: &[u8]) -> Result<Vec<u8>, Failure> {
+    call("POST", url, fingerprint, Some(ticket), Some(body)).map(|(_, b, _)| b)
+}
+
 /// The hub's document key (`GET /hub/key`: hex, public).
 pub fn fetch_key(origin: &str, fingerprint: Option<&str>) -> Result<String, Failure> {
     let (_, body, _) = call("GET", &Discovery::url(origin, "/hub/key"), fingerprint, None, None)?;

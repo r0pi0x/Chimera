@@ -228,7 +228,7 @@ fn run_worker(session: Arc<Session>, rx: mpsc::Receiver<Msg>, states: mpsc::Send
     }
 }
 
-fn session_for(path: Option<&std::path::Path>) -> Result<Arc<Session>, String> {
+pub(super) fn session_for(path: Option<&std::path::Path>) -> Result<Arc<Session>, String> {
     let s = match path {
         Some(p) => account::session_at(p),
         None => account::user_session(),

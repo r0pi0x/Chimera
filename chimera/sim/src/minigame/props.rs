@@ -65,7 +65,7 @@
 //!   `standing` falls and a `PropHit` is written (playtest 2026-11-17:
 //!   pieces were laid on the floor at once, no physics, nothing broke). When every piece is down they all stand again `RESET_SECS`
 //!   later; `ResetProp`, `prop reset` and a new prop stand them at once.
-//! - The board: a 1 m square face, its centre `BOARD_CENTRE_Y` m above
+//! - The board: a 1 m square face (on the range, the range's board whole: `BoardFace`, `RangeLayout::board_size`), its centre `BOARD_CENTRE_Y` m above
 //!   the floor, rings painted on, on two posts. Each bullet whose trace
 //!   stopped on the face (each pellet), each other hit on it as an object
 //!   (a projectile's), and a blast whose centre is on the face (a rocket
@@ -95,6 +95,14 @@
 //! A spawn and a single removal are the player's changes of the layout
 //! (`layout` remembers what stands after each; `Prop::origin` and `dir`
 //! are its spawner's spot and line); clearing is not.
+//!
+//! **Under the crosshair** (`spawn_at_aim`: the sandbox's Add prop button
+//! and `prop add <kind>` without a distance): the line from the player's
+//! eye along its whole view stops on the map (what a character bumps
+//! into); the prop stands there on a floor, or on the floor below half a
+//! metre back toward the player on a wall, facing the player, its
+//! `spec.distance_m` the flat distance to it. No range furniture and no
+//! distance line: where the player points (playtest 2026-11-17).
 //!
 //! Console: `prop add <bottles|tin_cans|target_board> [distance m]`,
 //! `prop remove <n|all>`, `prop list`, `prop group <n>` (a board's shot
@@ -282,9 +290,11 @@ pub struct OnRangeFurniture {
     pub board: bool,
 }
 
-/// Half the depth of the range's shelf assumed (m): `RangeLayout` gives its
-/// spots, not its size; knocked pieces lie past it.
-const RANGE_SHELF_HALF_DEPTH: f32 = 0.4;
+/// A board's scored face: its half width and half height (m). The default
+/// is `BOARD_HALF` square; on the range it is the range's board whole
+/// (`RangeLayout::board_size`), so the painted edge counts.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct BoardFace(pub Vec2);
 
 /// A mark where a bullet landed on a board.
 #[derive(Component, Clone, Copy, Debug)]
@@ -348,9 +358,73 @@ pub fn spawn(world: &mut World, req: &SpawnProp) -> Result<Entity, String> {
     Ok(e)
 }
 
+/// How far the crosshair reaches for `spawn_at_aim` (m).
+pub const AIM_REACH_M: f32 = 120.0;
+
+/// Place a prop of `kind` where the player's crosshair meets the map (a
+/// player's change: `layout` remembers it); its entity. The line from the
+/// eye along the full view (yaw and pitch) stops on the first surface a
+/// character would stand on or bump into; on a floor the prop stands
+/// there, on a wall it stands on the floor below, half a metre back
+/// toward the player. Neither the range's furniture nor a distance line:
+/// where the player points. Refused when the line meets nothing within
+/// `AIM_REACH_M` (the sky, the void) or the floor found can't hold it.
+pub fn spawn_at_aim(world: &mut World, kind: &str, by: Option<Entity>) -> Result<Entity, String> {
+    if !rung_command::holds(world) {
+        return Err("props are the sandbox's: start it with `sandbox`".into());
+    }
+    let by = match by {
+        Some(e) => e,
+        None => command_player(world).map_err(|_| "no player to place it in front of".to_string())?,
+    };
+    let origin = world.get::<Transform>(by).ok_or("the player has no place")?.translation;
+    let lift = world.get::<crate::core::MovementState>(by).map_or(Vec3::Y * 0.6, |s| s.eye_offset);
+    let (yaw, pitch) = world.get::<Intent>(by).map_or((0.0, 0.0), |i| (i.yaw, i.pitch));
+    let home = aim_spot(world, origin + lift, yaw, pitch)?;
+    let flat = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
+    let spec = PropSpec { kind: kind.to_string(), distance_m: (home - origin).xz().length() };
+    let e = build(world, &spec, origin, flat, Some(home))?;
+    super::layout::record(world);
+    Ok(e)
+}
+
+/// Where a prop stands for a crosshair at `eye` looking along `yaw` and
+/// `pitch` (`spawn_at_aim`).
+pub fn aim_spot(world: &mut World, eye: Vec3, yaw: f32, pitch: f32) -> Result<Vec3, String> {
+    let dir = Vec3::new(-yaw.sin() * pitch.cos(), pitch.sin(), -yaw.cos() * pitch.cos());
+    let Ok(dir3) = Dir3::new(dir) else { return Err("no view to aim along".into()) };
+    let characters: Vec<Entity> = world.query_filtered::<Entity, With<Intent>>().iter(world).collect();
+    let mut state: bevy::ecs::system::SystemState<SpatialQuery> = bevy::ecs::system::SystemState::new(world);
+    let hit = {
+        let q = state.get(world).map_err(|e| e.to_string())?;
+        let filter = SpatialQueryFilter::from_mask(crate::core::CHARACTER_FILTER).with_excluded_entities(characters);
+        q.cast_ray(eye, dir3, AIM_REACH_M, true, &filter)
+    };
+    let Some(hit) = hit else {
+        return Err(format!("nothing under the crosshair within {AIM_REACH_M:.0} m"));
+    };
+    let at = eye + dir * hit.distance;
+    let from = if hit.normal.y >= 0.7 {
+        // A floor: stand right there (cast from just above it).
+        at + Vec3::Y * 0.3
+    } else {
+        // A wall or a ceiling: the floor below, a little back toward the
+        // player so the prop's shelf clears the wall.
+        let back = Vec3::new(dir.x, 0.0, dir.z).normalize_or_zero();
+        at - back * 0.5 + Vec3::Y * 0.1
+    };
+    super::targets::stand_below(world, from, "under the crosshair")
+}
+
 /// Place a prop as if from `origin` looking along flat `dir` (`spawn`;
 /// the layout's repeat), not remembered.
 pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -> Result<Entity, String> {
+    build(world, spec, origin, dir, None)
+}
+
+/// Build a prop: at `aimed` (`spawn_at_aim`'s spot) when given, else as
+/// `spawn_from` places it.
+fn build(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3, aimed: Option<Vec3>) -> Result<Entity, String> {
     if !rung_command::holds(world) {
         return Err("props are the sandbox's: start it with `sandbox`".into());
     }
@@ -366,12 +440,13 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
     // On the range: its own shelf or board first, else a spot on the asked
     // distance line at the spawner's side (`range_place`); elsewhere along
     // the spawner's view.
-    let range = super::range_place::layout(world);
+    let range = super::range_place::layout(world).filter(|_| aimed.is_none());
     let furniture = match &range {
         Some(l) => range_furniture(world, l, kind, pieces),
         None => None,
     };
     let (frame, origin, dir, distance_m) = match (&range, &furniture) {
+        _ if aimed.is_some() => (aimed.unwrap_or_default(), origin, dir, spec.distance_m),
         (Some(l), Some((frame, _))) => {
             let a = super::range_place::along_side(l, *frame);
             (*frame, super::range_place::origin_at(l, a.y), l.dir, a.x)
@@ -432,7 +507,9 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
         e
     };
     if *kind == "target_board" {
-        world.entity_mut(prop).insert(ShotGroup::default());
+        // The scored face: the range's board whole, else the default.
+        let half2 = range.as_ref().filter(|_| on_furniture).map_or(Vec2::splat(BOARD_HALF), |l| l.board_size / 2.0);
+        world.entity_mut(prop).insert((ShotGroup::default(), BoardFace(half2)));
         let stand = Transform::from_xyz(0.0, BOARD_CENTRE_Y, 0.0);
         let face = if on_furniture {
             // The range's own board: its face and rings are the range's;
@@ -450,13 +527,13 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
         // Its collider's front is the painted rings' (`FACE_HIT`), so a
         // bullet's mark lands on them, not hidden behind them.
         world.entity_mut(face).insert((
-            Collider::cuboid(BOARD_HALF * 2.0, BOARD_HALF * 2.0, FACE_HIT * 2.0),
+            Collider::cuboid(half2.x * 2.0, half2.y * 2.0, FACE_HIT * 2.0),
             PropPiece {
                 prop,
                 index: 0,
                 standing: true,
                 stand,
-                half: Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT),
+                half: Vec3::new(half2.x, half2.y, FACE_FRONT),
                 board: true,
                 floor_y: 0.0,
                 behind: 0.0,
@@ -474,7 +551,9 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
     } else {
         // The shelf (the range's own when it stands on that: its frame then
         // puts `SHELF_TOP` on the range shelf's top).
-        let (floor_y, behind) = if on_furniture { (-world.get::<Transform>(prop).map_or(0.0, |t| t.translation.y), RANGE_SHELF_HALF_DEPTH + 0.05) } else { (0.0, 0.45) };
+        let shelf_top = if on_furniture { range.as_ref().map_or(SHELF_TOP, |l| l.shelf_top) } else { SHELF_TOP };
+        let shelf_half_depth = range.as_ref().map_or(0.4, |l| l.shelf_size.z / 2.0);
+        let (floor_y, behind) = if on_furniture { (-world.get::<Transform>(prop).map_or(0.0, |t| t.translation.y), shelf_half_depth + 0.05) } else { (0.0, 0.45) };
         if !on_furniture {
             part(world, shape(ShapeKind::Box(Vec3::new(0.8, 0.02, 0.15)), wood, Transform::from_xyz(0.0, SHELF_TOP - 0.02, 0.0)), Some("wood"));
             for x in [-0.72, 0.72] {
@@ -486,7 +565,7 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
         let colour = if bottles { Color::srgb(0.12, 0.45, 0.18) } else { Color::srgb(0.75, 0.75, 0.78) };
         for i in 0..pieces {
             let x = (i as f32 - (pieces - 1) as f32 / 2.0) * step;
-            let stand = Transform::from_xyz(x, SHELF_TOP + hh, 0.0);
+            let stand = Transform::from_xyz(x, shelf_top + hh, 0.0);
             // No surface named: a game's hole there would stay in the air
             // when the piece is knocked off (Combat Arms' marks are the
             // world's), so a piece shows none.
@@ -535,7 +614,7 @@ fn range_furniture(world: &mut World, l: &chimera_world::range::RangeLayout, kin
     let taken: Vec<usize> = used.iter().flat_map(|u| u.spots.iter().copied()).collect();
     let first = (0..=spots.len() - need).find(|&i| (i..i + need).all(|k| !taken.contains(&k)))?;
     let centre = spots[first..first + need].iter().copied().sum::<Vec3>() / need as f32;
-    Some((centre - Vec3::Y * SHELF_TOP, OnRangeFurniture { spots: (first..first + need).collect(), board: false }))
+    Some((centre - Vec3::Y * l.shelf_top, OnRangeFurniture { spots: (first..first + need).collect(), board: false }))
 }
 
 /// Remove prop `e` (a player's change: `layout` remembers what is left).
@@ -657,6 +736,7 @@ fn prop_hits(
     world: PropWorld,
     mut out: MessageWriter<PropHit>,
     shapes: Query<&CodeShape>,
+    faces: Query<&BoardFace>,
     mut commands: Commands,
 ) {
     let now = clock.now;
@@ -710,8 +790,9 @@ fn prop_hits(
     let on_face = |prop: Entity, p: Vec3| {
         let l = local(&frame(prop)?, p);
         let on = Vec2::new(l.x, l.y - BOARD_CENTRE_Y);
-        let edge = BOARD_HALF + 0.01;
-        (on.x.abs() <= edge && on.y.abs() <= edge && l.z.abs() <= 0.3).then_some(on.clamp(Vec2::splat(-BOARD_HALF), Vec2::splat(BOARD_HALF)))
+        let half = faces.get(prop).map_or(Vec2::splat(BOARD_HALF), |f| f.0);
+        let edge = half + 0.01;
+        (on.x.abs() <= edge.x && on.y.abs() <= edge.y && l.z.abs() <= 0.3).then_some(on.clamp(-half, half))
     };
     // Knocked pieces and landings: (attacker, prop, piece, landing on the face).
     type Hits = Vec<(Option<Entity>, Entity, Entity, Option<Vec2>)>;
@@ -992,7 +1073,7 @@ fn pick(world: &mut World, which: &str) -> Result<Vec<Entity>, String> {
     all.into_iter().find(|(_, p)| p.number == n).map(|(e, _)| vec![e]).ok_or_else(|| format!("no prop {n} (`prop list`)"))
 }
 
-const USAGE: &str = "prop add <bottles|tin_cans|target_board> [distance m] | prop remove <n|all> | prop list | \
+const USAGE: &str = "prop add <bottles|tin_cans|target_board> [distance m] (none: under the crosshair) | prop remove <n|all> | prop list | \
     prop group <n> | prop reset <n|all> | prop look <n> [piece | shelf]";
 
 fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
@@ -1000,11 +1081,14 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
     match sub.as_str() {
         "add" => {
             let kind = a.get(1).ok_or(USAGE)?.clone();
-            let distance_m = match a.get(2) {
-                Some(d) => d.trim_end_matches('m').parse().map_err(|_| format!("not a distance: {d}"))?,
-                None => 10.0,
+            // No distance: under the crosshair; a distance: on that line.
+            let e = match a.get(2) {
+                Some(d) => {
+                    let distance_m = d.trim_end_matches('m').parse().map_err(|_| format!("not a distance: {d}"))?;
+                    spawn(world, &SpawnProp { spec: PropSpec { kind, distance_m }, by: None })?
+                }
+                None => spawn_at_aim(world, &kind, None)?,
             };
-            let e = spawn(world, &SpawnProp { spec: PropSpec { kind, distance_m }, by: None })?;
             let p = world.get::<Prop>(e).cloned().ok_or("gone")?;
             Ok(Some(format!("added {}", describe(world, e, &p).trim_start())))
         }

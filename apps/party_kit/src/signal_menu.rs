@@ -593,7 +593,7 @@ fn spawn_page(
     // its entrance), the party and the system tiles at the right.
     let fade = k.dur("fade", 0.5);
     let ui = Ui::new(t, k.fonts, u);
-    let parts = shell::bar(&ui, c, frame, images, icon_images, &shell::Bar { left: shell::Left::Lockup, party: &party.members, party_max: party.max, open: None });
+    let parts = shell::bar(&ui, c, frame, images, icon_images, &shell::Bar { left: shell::Left::Lockup, party: &party.members, party_max: party.max, invite: party.invite, open: None });
     if let Some(e) = parts.tile(shell::ShellTile::Settings) {
         c.entity(e).insert(MainMenuAction::OpenSettings);
     }
@@ -1003,9 +1003,10 @@ fn select(
     tabs: Query<(&SignalTab, &Interaction), Changed<Interaction>>,
     lead: Option<Res<PointerLead>>,
     clock: Res<UiClock>,
-    mut out: MessageWriter<MainMenuAction>,
+    (mut out, party): (MessageWriter<MainMenuAction>, Option<Res<crate::party_signal::PartyPanel>>),
 ) {
-    let live = shown.screen == Screen::MainMenu
+    let live = !party.is_some_and(|p| p.open)
+        && shown.screen == Screen::MainMenu
         && menu.page == MenuPage::Main
         && menu.failure.is_none()
         && menu.reconnecting.is_none()

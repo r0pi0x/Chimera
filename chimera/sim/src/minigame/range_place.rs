@@ -24,8 +24,8 @@
 //!
 //! - **The platform** (`platform_spot`, a target's `TargetPlace::
 //!   Platform`): on the raised platform's top, at its centre or, taken, at
-//!   one of eight spots `PLATFORM_RADIUS` m around it (the layout gives
-//!   the top's centre alone: its size is assumed at least 3.6 m across),
+//!   one of eight spots `platform_radius` m around it (at most
+//!   `PLATFORM_RADIUS`, less on a small top: the layout's size),
 //!   standable and at the top's height; placed from the firing line's
 //!   middle (1 m up), facing back toward it. A target there stands still
 //!   (the top has no room for a strafe or a walk: refused) and has no
@@ -35,9 +35,9 @@
 //! `props` place along the spawner's view as before, and the platform is
 //! refused.
 //!
-//! Known shortcuts: the range's cover crates aren't in `RangeLayout`, so
-//! they are found by the floor and standing-box checks, not avoided by
-//! plan; the side is clamped by the floor's half width alone.
+//! Known shortcuts: the range's cover crates are in `RangeLayout` (`cover`,
+//! `lane_half`) but still found by the floor and standing-box checks, not
+//! avoided by plan; the side is clamped by the floor's half width alone.
 
 use bevy::prelude::*;
 use chimera_world::range::RangeLayout;
@@ -142,10 +142,16 @@ fn floor_at(world: &mut World, l: &RangeLayout, along: f32, side: f32) -> Result
     Ok(feet)
 }
 
-/// How far from the platform top's centre a target may stand (m): the
-/// layout gives the top's centre alone, so its size is assumed at least
-/// 2 x (this + `BODY_HALF`) = 3.6 m across (the range's is 6 m).
+/// How far from the platform top's centre a target may stand at most (m),
+/// kept `BODY_HALF` inside the top's smaller half side
+/// (`platform_radius`; the range's top is 6 m across: this).
 pub const PLATFORM_RADIUS: f32 = 1.2;
+
+/// The ring of spots around the platform's centre: `PLATFORM_RADIUS`, or
+/// less on a small top (never negative).
+pub fn platform_radius(l: &RangeLayout) -> f32 {
+    PLATFORM_RADIUS.min((l.platform_size.x.min(l.platform_size.z) / 2.0 - BODY_HALF).max(0.0))
+}
 
 /// A spot on the range's platform (`platform_spot`): its feet, the firing
 /// line's middle it is placed from (1 m up), the flat direction from
@@ -175,11 +181,12 @@ pub fn platform_spot(
     let top = l.platform_top;
     let taken = taken(world, l, except);
     let reach = Footprint::of_target(TargetMotion::Still);
+    let radius = platform_radius(l);
     let mut why = None;
     // The centre, then eight spots around it.
     let spots = std::iter::once(Vec3::ZERO).chain((0..8).map(|k| {
         let a = k as f32 * std::f32::consts::FRAC_PI_4;
-        Vec3::new(a.cos(), 0.0, a.sin()) * PLATFORM_RADIUS
+        Vec3::new(a.cos(), 0.0, a.sin()) * radius
     }));
     for off in spots {
         let at = top + off;

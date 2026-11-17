@@ -139,7 +139,8 @@ default = "8"
 # The pre-match lobby (chimera_net::prematch) of each match the host
 # starts: everyone waits on the map until loaded (loaded is ready; nobody
 # readies up); the first match starts when the host presses Start
-# (mp_lobby_host_start), later ones once everyone has the map.
+# (mp_lobby_host_start), later ones once everyone has the map. After each
+# match everyone is back in the lobby while the next map loads.
 [[play]]
 label = "Pre-match lobby"
 cvar = "mp_lobby"
@@ -158,6 +159,15 @@ label = "Start when"
 cvar = "mp_lobby_host_start"
 choices = [["1", "Host presses Start"]]
 default = "1"
+
+# The lobby after each match (the next map loading under it) starts once
+# everyone has loaded, or after this long since the match was ready
+# (mp_lobby_max_wait, s): the stragglers join when ready.
+[[play]]
+label = "Lobby waits at most (s)"
+cvar = "mp_lobby_max_wait"
+range = [15, 300, 15]
+default = "90"
 
 [[play]]
 label = "Open the router's port (UPnP)"

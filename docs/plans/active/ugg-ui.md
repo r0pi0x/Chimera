@@ -1175,7 +1175,7 @@ Tests (`apps/party_kit/tests/it/lobby_staging.rs`):
 `settings_over_the_lobby_keeps_it_live_and_ready_kept`,
 `settings_stay_open_across_the_match_start`,
 `the_lobby_buttons_work_while_a_client_still_loads`,
-`the_map_left_is_unloaded_before_the_next_lobby_shows`, and the trace
+`the_map_left_is_unloaded_under_the_next_lobby`, and the trace
 (`--nocapture`). The prematch tests (`chimera/net/tests/it/
 prematch_lobby.rs`) check the staged players.
 

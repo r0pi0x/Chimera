@@ -888,6 +888,13 @@ pub struct MapModel {
     /// hidden_meshes`); shorter or empty where the source names none.
     #[serde(default)]
     pub mesh_names: Vec<String>,
+    /// Files its look named that its game has but that couldn't be read
+    /// when it was built (the asset service hadn't brought them yet: a
+    /// lightwarp, a normal map; Source's `MaterialLoader::late_since`): it
+    /// is built again once they arrive (a game's bodies:
+    /// `map::replace_character_model`). Empty: nothing late.
+    #[serde(default)]
+    pub late_files: Vec<String>,
 }
 
 impl MapModel {

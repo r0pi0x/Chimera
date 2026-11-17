@@ -27,7 +27,11 @@
 //!   the download's bytes, from `client::JoinProgress`; sent when the
 //!   stage changes, the bytes at most every `REPORT_EVERY` s, again every
 //!   `REPORT_AGAIN` s): connecting, downloading (bytes done and total),
-//!   loading the map. Ping is the connection's round trip; `wins` the
+//!   loading the map; while downloading or loading, the stage under way
+//!   and its share from the client's own work (`LobbyReport::step`,
+//!   `permille`: `crate::net::load_stages`, the download, the map's load,
+//!   building models, physics; the next map's files fetched ahead count as
+//!   a download). A listen host's row is its own load's stage. Ping is the connection's round trip; `wins` the
 //!   player's matches won this server run (`minigame::wins::MatchWins`,
 //!   by name, bots too).
 //! - **Readying up** (`mp_lobby_ready_up 1`, default 0; the party apps'
@@ -53,6 +57,15 @@
 //!   menu shows its lobby from Start, before the map is in (the host's
 //!   row loading, nothing replicated); `begin` replaces it with the
 //!   server's.
+//! - **Between maps** (`begin_between`, `BetweenMaps`; docs/plans/active/
+//!   lobby-between-maps.md): a match's change to another map
+//!   (`minigame_net::change_match`: a rotation after the match-end
+//!   screen, a vote's map, a host's `changelevel`) begins the lobby at
+//!   once, everyone staged, naming the map coming in, with every row
+//!   loading it (its stage and share) while each machine loads it; the
+//!   match made there takes it over as its own lobby (`begin`), its
+//!   longest wait counted from then. A change called off (the match no
+//!   longer held) ends it.
 //! - **Avatars**: each row carries its player's `cl_avatar` userinfo
 //!   (`LobbyRow::avatar`, `NO_AVATAR` for a bot or none).
 //! - **The countdown** (`mp_lobby_countdown` s, default 5): once every
@@ -178,11 +191,24 @@ pub fn enable(app: &mut App) {
 
 /// Client -> server: where this client's join has come (`status::*`, from
 /// its `JoinProgress`) and the download's bytes while it downloads.
-#[derive(Message, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Message, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LobbyReport {
     pub status: u8,
     pub done: u64,
     pub total: u64,
+    /// The load's running stage (`load_stages::LoadStep::index`; `NO_STEP`:
+    /// none) and its share in thousandths.
+    pub step: u8,
+    pub permille: u16,
+}
+
+/// `LobbyReport::step`, `LobbyRow::step` for no stage.
+pub const NO_STEP: u8 = 255;
+
+impl Default for LobbyReport {
+    fn default() -> Self {
+        Self { status: status::CONNECTING, done: 0, total: 0, step: NO_STEP, permille: 0 }
+    }
 }
 
 /// The server: a client's last `LobbyReport`, on its client entity.
@@ -195,7 +221,7 @@ pub struct ClientLobbyStatus(pub LobbyReport);
 pub struct LobbyReady;
 
 /// One player in the lobby.
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct LobbyRow {
     /// The client's id (`NetCharacter::owner`; `HOST_ID` for a listen
     /// server's host); None for a bot.
@@ -206,6 +232,11 @@ pub struct LobbyRow {
     /// Downloading: bytes done and in all (0: unknown).
     pub done: u64,
     pub total: u64,
+    /// Downloading or loading: the stage under way
+    /// (`load_stages::LoadStep::index`: the download, the map, the models,
+    /// the physics; `NO_STEP`: not known) and its share in thousandths.
+    pub step: u8,
+    pub permille: u16,
     /// Round trip, ms (a remote player's).
     pub ping_ms: Option<u16>,
     /// Matches won this server run (`minigame::wins::MatchWins`, by name).
@@ -214,8 +245,9 @@ pub struct LobbyRow {
     /// colour, `chimera_ui::avatar::AvatarLook`'s byte); `NO_AVATAR` for a
     /// bot or a player who sent none.
     pub avatar: u8,
-    /// The player's party (players who came together share it; 0: alone).
-    /// No parties exist yet: the server sends 0 (the seam for them).
+    /// The player's party (players who came together share it; 0: alone):
+    /// the server's number for its `cl_party` (`PartyNumbers`), given
+    /// to parties with two or more players here.
     pub party: u8,
 }
 
@@ -230,7 +262,31 @@ pub fn avatar_of(info: Option<&crate::core::UserInfo>) -> u8 {
         .map_or(NO_AVATAR, |v| v as u8)
 }
 
+impl Default for LobbyRow {
+    fn default() -> Self {
+        Self {
+            id: None,
+            name: String::new(),
+            status: status::CONNECTING,
+            done: 0,
+            total: 0,
+            step: NO_STEP,
+            permille: 0,
+            ping_ms: None,
+            wins: 0,
+            avatar: NO_AVATAR,
+            party: 0,
+        }
+    }
+}
+
 impl LobbyRow {
+    /// The stage under way and its share (0-1), when told.
+    pub fn stage(&self) -> Option<(crate::net::load_stages::LoadStep, f32)> {
+        let step = crate::net::load_stages::LoadStep::from_index(self.step)?;
+        matches!(self.status, status::DOWNLOADING | status::LOADING).then(|| (step, (self.permille.min(1000) as f32) / 1000.0))
+    }
+
     pub fn ready(&self) -> bool {
         self.status == status::READY
     }
@@ -277,6 +333,18 @@ pub struct Lobby {
     /// Waits for the host's start (the server run's first lobby with
     /// `mp_lobby_host_start 1`).
     pub host_start: bool,
+    /// Between maps (`begin_between`): the next match's map still coming
+    /// in (`BetweenMaps`); nothing counts down until the match is made
+    /// there.
+    pub between: bool,
+}
+
+/// The lobby between maps (`begin_between`): the map coming in and the
+/// mode to be played there.
+#[derive(Resource, Clone, Debug, PartialEq, Eq)]
+pub struct BetweenMaps {
+    pub map: String,
+    pub mode: String,
 }
 
 /// Lobbies begun this server run (the first may wait for the host).
@@ -423,30 +491,46 @@ pub fn status_of(stage: JoinStage) -> u8 {
 /// A client: its join's status to the server (`LobbyReport`): at once
 /// when the status changes, the bytes at most every `REPORT_EVERY` s,
 /// the same again every `REPORT_AGAIN` s.
-fn report(
-    progress: Option<Res<JoinProgress>>,
-    time: Res<Time<Real>>,
-    mut last: Local<Option<(LobbyReport, f64)>>,
-    mut out: MessageWriter<LobbyReport>,
-) {
-    let Some(p) = progress else { return };
-    let status = status_of(p.stage);
-    let (done, total) = match (&p.download, status) {
-        (Some(d), status::DOWNLOADING) => (d.done, d.total),
-        _ => (0, 0),
-    };
-    let now_report = LobbyReport { status, done, total };
-    let now = time.elapsed_secs_f64();
+fn report(world: &mut World, mut last: Local<Option<(LobbyReport, f64)>>) {
+    let Some(p) = world.get_resource::<JoinProgress>() else { return };
+    let now_report = report_of(p.stage, &crate::net::load_stages::stages(world));
+    let now = world.resource::<Time<Real>>().elapsed_secs_f64();
     let due = match *last {
         None => true,
-        Some((r, _)) if r.status != status => true,
+        Some((r, _)) if r.status != now_report.status || r.step != now_report.step => true,
         Some((r, at)) if r != now_report => now - at >= REPORT_EVERY,
         Some((_, at)) => now - at >= REPORT_AGAIN,
     };
     if due {
-        out.write(now_report);
+        world.write_message(now_report);
         *last = Some((now_report, now));
     }
+}
+
+/// A client's report: its join's status (`status_of`), and while it
+/// downloads or loads, the stage under way (`load_stages`: the next map's
+/// files fetched ahead count as downloading) with its share and the
+/// download's bytes.
+pub fn report_of(stage: JoinStage, stages: &[crate::net::load_stages::Stage]) -> LobbyReport {
+    use crate::net::load_stages::{LoadStep, StageState, permille};
+    let mut status = status_of(stage);
+    let running = stages.iter().find_map(|s| match s.state {
+        StageState::Running(f) => Some((s, f)),
+        _ => None,
+    });
+    let mut r = LobbyReport { status, ..default() };
+    if let Some((s, share)) = running {
+        if s.step == LoadStep::Download {
+            status = status::DOWNLOADING;
+        } else if status != status::DOWNLOADING {
+            status = status::LOADING;
+        }
+        r = LobbyReport { status, step: s.step.index(), permille: permille(share), ..r };
+        if let Some((done, total)) = s.bytes.filter(|_| status == status::DOWNLOADING) {
+            (r.done, r.total) = (done, total);
+        }
+    }
+    r
 }
 
 /// The server: each admitted client's report, kept on its entity.
@@ -471,9 +555,24 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
     // A second start while the lobby is up (the automatic gun game starts
     // its match twice; `start` lifted `PreMatch`) keeps the one lobby:
     // held again, no reset and no second log line.
-    if world.contains_resource::<Lobby>() {
+    if let Some(mut lobby) = world.get_resource::<Lobby>().copied() {
         if lobby_on(world) && world.get_resource::<ActiveMinigame>().is_some() && !minigame::held(world) {
             world.insert_resource(PreMatch);
+            // The lobby between maps: the match is made on its map, so it
+            // goes on as this match's lobby, its longest wait counted from
+            // now (a host's start asked meanwhile kept).
+            if lobby.between {
+                lobby.between = false;
+                lobby.began = world.resource::<SimClock>().now;
+                lobby.humans_since = None;
+                world.insert_resource(lobby);
+                world.remove_resource::<BetweenMaps>();
+                info!(
+                    "pre-match lobby: the match is ready on {}; waiting for the players (at most {} s)",
+                    crate::net::current_map(world),
+                    world.resource::<LobbySettings>().max_wait
+                );
+            }
         }
         return;
     }
@@ -497,6 +596,7 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
         countdown_ends: None,
         written: f64::MIN,
         host_start: s.host_start != 0 && begun == 0,
+        between: false,
     });
     // The host's lobby shown first gives way to this one (`serve` writes
     // it this tick), its host's start, if asked meanwhile, taken now.
@@ -510,6 +610,49 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
     if let Some(StartAsked(secs)) = asked {
         let _ = start_now(world, secs);
     }
+}
+
+/// A match's change to another map (`minigame_net::change_match`: a
+/// rotation after the match-end screen, a vote's map, a host's
+/// `changelevel`) with the lobby on: the lobby begins at once, between
+/// the maps, naming the map coming in (`map`) and the mode (`mode`), every
+/// player's row loading it while it is fetched and loaded on every
+/// machine; when the match is made there (`begin`) the same lobby goes on
+/// as its pre-match lobby. A change while a lobby is up takes it over.
+pub fn begin_between(world: &mut World, map: &str, mode: &str) {
+    if !lobby_on(world) {
+        return;
+    }
+    let between = BetweenMaps { map: crate::net::normalize_map(map), mode: mode.to_string() };
+    if world.get_resource::<Lobby>().is_some_and(|l| l.between) {
+        world.insert_resource(between);
+        return;
+    }
+    if world.contains_resource::<Lobby>() {
+        end(world, false);
+    }
+    let now = world.resource::<SimClock>().now;
+    let readied: Vec<Entity> = world.query_filtered::<Entity, With<LobbyReady>>().iter(world).collect();
+    for e in readied {
+        world.entity_mut(e).remove::<LobbyReady>();
+    }
+    // Nobody plays while it shows: everyone staged (`PreMatch`) from now.
+    world.insert_resource(PreMatch);
+    world.insert_resource(EntryHeld);
+    let s = *world.resource::<LobbySettings>();
+    let begun = world.get_resource::<LobbiesBegun>().copied().unwrap_or_default().0;
+    world.insert_resource(LobbiesBegun(begun + 1));
+    world.insert_resource(Lobby {
+        began: now,
+        humans_since: None,
+        countdown_ends: None,
+        written: f64::MIN,
+        host_start: s.host_start != 0 && begun == 0,
+        between: true,
+    });
+    hide_first(world);
+    info!("pre-match lobby between maps: {} coming in", between.map);
+    world.insert_resource(between);
 }
 
 /// The host's start asked in its lobby shown first (`start_now`), for
@@ -541,6 +684,7 @@ pub fn show_first(world: &mut World, map: &str, mode: &str, host: &str) {
                 id: Some(HOST_ID),
                 name: host.to_string(),
                 status: status::LOADING,
+                step: NO_STEP,
                 avatar: NO_AVATAR,
                 ..default()
             }],
@@ -566,6 +710,7 @@ pub fn hide_first(world: &mut World) {
 /// the match begins (`minigame::restart`: everyone spawns together).
 fn end(world: &mut World, start: bool) {
     world.remove_resource::<Lobby>();
+    world.remove_resource::<BetweenMaps>();
     world.remove_resource::<EntryHeld>();
     let had = world.remove_resource::<PreMatch>().is_some();
     let entities: Vec<Entity> = world.query_filtered::<Entity, With<NetLobby>>().iter(world).collect();
@@ -610,7 +755,46 @@ fn let_in(world: &mut World) {
 /// a frame later, and a client's `ClientMap` of the map left mustn't
 /// count).
 fn serving_map(world: &World) -> String {
-    crate::net::current_map(world)
+    match world.get_resource::<BetweenMaps>() {
+        Some(b) => b.map.clone(),
+        None => crate::net::current_map(world),
+    }
+}
+
+/// The lobby's map is the one in here (not yet, while the server changes
+/// to it).
+fn map_in(world: &World) -> bool {
+    let want = serving_map(world);
+    crate::net::maps::loaded_map(world).is_some_and(|(id, _)| id.eq_ignore_ascii_case(&want))
+}
+
+/// The server's small number for each party with two or more players
+/// here (`LobbyRow::party`, 1-255), kept while any of it stays.
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct PartyNumbers(pub std::collections::BTreeMap<String, u8>);
+
+impl PartyNumbers {
+    /// Numbers for the parties in `seen` (one entry per player) with two
+    /// or more players; the others' freed.
+    pub fn update<'a>(&mut self, seen: impl IntoIterator<Item = &'a str>) {
+        let mut count = std::collections::BTreeMap::<&str, usize>::new();
+        for p in seen {
+            *count.entry(p).or_default() += 1;
+        }
+        self.0.retain(|p, _| count.get(p.as_str()).is_some_and(|n| *n >= 2));
+        for (p, n) in count {
+            if n >= 2 && !self.0.contains_key(p) {
+                let used: Vec<u8> = self.0.values().copied().collect();
+                if let Some(free) = (1..=255u8).find(|k| !used.contains(k)) {
+                    self.0.insert(p.to_string(), free);
+                }
+            }
+        }
+    }
+
+    pub fn of(&self, party: Option<&str>) -> u8 {
+        party.and_then(|p| self.0.get(p).copied()).unwrap_or(0)
+    }
 }
 
 /// Every player now: the host, the remote players (admitted), the bots.
@@ -620,22 +804,43 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
     let mut others = Vec::new();
     // A listen host is ready once its own load is done (spawned and
     // settled behind its loading screen).
-    let host = if crate::net::maps::local_load_under_way(world) { status::LOADING } else { status::READY };
+    let host = if crate::net::maps::local_load_under_way(world) || !map_in(world) { status::LOADING } else { status::READY };
+    let (host_step, host_permille) = match crate::net::load_stages::current(world).filter(|_| host == status::LOADING) {
+        Some((step, share)) => (step.index(), crate::net::load_stages::permille(share)),
+        None => (NO_STEP, 0),
+    };
     let ready_up = world.get_resource::<LobbySettings>().is_some_and(|s| s.ready_up != 0);
     let mut avatars = std::collections::BTreeMap::new();
+    // Each player's party (`cl_party`), numbered for the rows.
+    let mut parties = std::collections::BTreeMap::<u64, String>::new();
+    for (c, info) in world.query::<(&NetCharacter, Option<&crate::core::UserInfo>)>().iter(world) {
+        if let (Some(id), Some(p)) = (c.owner, info.and_then(|i| i.party())) {
+            parties.insert(id, p.to_string());
+        }
+    }
+    let mut numbers = world.get_resource::<PartyNumbers>().cloned().unwrap_or_default();
+    numbers.update(parties.values().map(String::as_str));
+    if world.get_resource::<PartyNumbers>() != Some(&numbers) {
+        world.insert_resource(numbers.clone());
+    }
+    let party_of = |id: u64| numbers.of(parties.get(&id).map(String::as_str));
     for (c, info) in world.query::<(&NetCharacter, Option<&crate::core::UserInfo>)>().iter(world) {
         match c.owner {
             Some(HOST_ID) => out.push(LobbyRow {
                 id: Some(HOST_ID),
                 name: c.name.clone(),
                 status: host,
+                step: host_step,
+                permille: host_permille,
                 avatar: avatar_of(info),
+                party: party_of(HOST_ID),
                 ..default()
             }),
             None => others.push(LobbyRow {
                 id: None,
                 name: c.name.clone(),
                 status: status::READY,
+                step: NO_STEP,
                 avatar: NO_AVATAR,
                 ..default()
             }),
@@ -663,6 +868,12 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
                 _ => r.status.min(status::LOADING),
             };
             let (done, total) = if status == status::DOWNLOADING { (r.done, r.total) } else { (0, 0) };
+            // The stage the client told, while it downloads or loads.
+            let (step, permille) = if matches!(status, status::DOWNLOADING | status::LOADING) && r.step != NO_STEP {
+                (r.step, r.permille)
+            } else {
+                (NO_STEP, 0)
+            };
             (
                 id.get(),
                 LobbyRow {
@@ -671,10 +882,12 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
                     status,
                     done,
                     total,
+                    step,
+                    permille,
                     ping_ms: stats.map(|s| (s.rtt * 1000.0).round().clamp(0.0, 9999.0) as u16),
                     wins: 0,
                     avatar: avatars.get(&id.get()).copied().unwrap_or(NO_AVATAR),
-                    party: 0,
+                    party: party_of(id.get()),
                 },
             )
         })
@@ -696,6 +909,30 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
 /// begun or over, `NetLobby` written.
 pub(crate) fn serve(world: &mut World) {
     let Some(mut lobby) = world.get_resource::<Lobby>().copied() else { return };
+    // Between maps: the rows only, until the match is made there (`begin`);
+    // a change called off (the match no longer held) ends it.
+    if lobby.between {
+        if !minigame::held(world) {
+            end(world, false);
+            return;
+        }
+        let now = world.resource::<SimClock>().now;
+        let rows = rows(world);
+        let between = world.resource::<BetweenMaps>().clone();
+        let to_come = world.resource::<LobbySettings>().min_players.saturating_sub(rows.iter().filter(|r| !r.bot()).count() as u32);
+        let want = NetLobby {
+            map: between.map,
+            mode: between.mode,
+            waiting: rows.iter().filter(|r| !r.ready()).count() as u32 + to_come,
+            rows,
+            wait_left: None,
+            countdown: lobby.countdown_ends.map(|t| (t - now).max(0.0).ceil() as u32),
+            host_start: lobby.host_start && lobby.countdown_ends.is_none(),
+        };
+        write_lobby(world, &mut lobby, want, now);
+        world.insert_resource(lobby);
+        return;
+    }
     // Another match is coming (a map change): this lobby is gone.
     if minigame::held(world) || !world.contains_resource::<ActiveMinigame>() {
         end(world, false);
@@ -743,6 +980,14 @@ pub(crate) fn serve(world: &mut World) {
         countdown: lobby.countdown_ends.map(secs),
         host_start: lobby.host_start && lobby.countdown_ends.is_none(),
     };
+    write_lobby(world, &mut lobby, want, now);
+    world.insert_resource(lobby);
+}
+
+/// `NetLobby` written as `want` (spawned the first time): statuses,
+/// counts and seconds at once, bytes, shares and pings at most every
+/// `WRITE_EVERY` s.
+fn write_lobby(world: &mut World, lobby: &mut Lobby, want: NetLobby, now: f64) {
     let have = world.query::<(Entity, &NetLobby)>().iter(world).next().map(|(e, n)| (e, n.clone()));
     match have {
         None => {
@@ -753,7 +998,8 @@ pub(crate) fn serve(world: &mut World) {
             // Statuses, counts and seconds at once; bytes and pings at
             // most every `WRITE_EVERY` s.
             let coarse = |l: &NetLobby| {
-                let rows: Vec<(Option<u64>, String, u8)> = l.rows.iter().map(|r| (r.id, r.name.clone(), r.status)).collect();
+                let rows: Vec<(Option<u64>, String, u8, u8)> =
+                    l.rows.iter().map(|r| (r.id, r.name.clone(), r.status, r.step)).collect();
                 (rows, l.waiting, l.wait_left, l.countdown, l.map.clone(), l.mode.clone())
             };
             if coarse(&n) != coarse(&want) || now - lobby.written >= WRITE_EVERY {
@@ -763,7 +1009,6 @@ pub(crate) fn serve(world: &mut World) {
         }
         Some(_) => {}
     }
-    world.insert_resource(lobby);
 }
 
 /// `lobby_start [s]`: the countdown now (`s` s, default the cvar's; 0:
@@ -832,11 +1077,14 @@ fn lobby_text(world: &mut World) -> String {
         l.countdown.map(|s| format!(", starts in {s} s")).unwrap_or_default()
     )];
     for r in &l.rows {
-        let bytes = if r.status == status::DOWNLOADING {
+        let mut bytes = if r.status == status::DOWNLOADING {
             format!(" {:.1}/{:.1} MB", r.done as f64 / 1e6, r.total as f64 / 1e6)
         } else {
             String::new()
         };
+        if let Some((step, share)) = r.stage() {
+            bytes += &format!(" ({} {:.0}%)", step.words(), share * 100.0);
+        }
         let ping = r.ping_ms.map(|p| format!(" {p} ms")).unwrap_or_default();
         let who = if r.bot() { " (bot)" } else { "" };
         lines.push(format!("  {}{who}: {}{bytes}{ping}", r.name, status::name(r.status)));
@@ -855,5 +1103,24 @@ mod tests {
         assert_eq!(status_of(JoinStage::ChangingLevel), status::LOADING);
         assert_eq!(status_of(JoinStage::LoadingMap), status::LOADING);
         assert_eq!(status_of(JoinStage::Joined), status::READY);
+    }
+
+    /// A report carries the stage under way: a download's bytes, a load's
+    /// stage and share; the next map fetched ahead while joined is a
+    /// download.
+    #[test]
+    fn a_report_carries_the_stage_under_way() {
+        use crate::net::load_stages::{LoadStep, Stage, StageState};
+        let st = |step, state, bytes| Stage { step, state, bytes, files: None };
+        let r = report_of(JoinStage::LoadingMap, &[
+            st(LoadStep::Download, StageState::Done, Some((10, 10))),
+            st(LoadStep::Map, StageState::Done, None),
+            st(LoadStep::Models, StageState::Running(Some(0.25)), None),
+        ]);
+        assert_eq!((r.status, r.step, r.permille, r.done, r.total), (status::LOADING, 2, 250, 0, 0));
+        let r = report_of(JoinStage::Joined, &[st(LoadStep::Download, StageState::Running(Some(0.5)), Some((5, 10)))]);
+        assert_eq!((r.status, r.step, r.permille, r.done, r.total), (status::DOWNLOADING, 0, 500, 5, 10));
+        let r = report_of(JoinStage::Joined, &[]);
+        assert_eq!((r.status, r.step), (status::READY, NO_STEP));
     }
 }

@@ -322,6 +322,14 @@ pub fn add_guns(
 /// appended to the map's, and their sounds where the map hasn't an entry
 /// of that name. `lean` (a load without textures, the dedicated
 /// server's): the textures' sizes only.
+/// Whether any of `files` can be read now from the game's files (a kept
+/// guest dressing that missed them is dressed again:
+/// `source_engine::content::guest`).
+pub fn files_here(files: &[String]) -> bool {
+    let Some(install) = super::INFO.install() else { return false };
+    super::mount::open(&install).is_ok_and(|m| files.iter().any(|f| m.read(f).is_ok()))
+}
+
 pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
     let install = super::INFO
         .install()

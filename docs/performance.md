@@ -4812,6 +4812,10 @@ What the measurement above asked for (`source_engine::content::guest`):
   (sound entries, decal groups, effect materials, muzzle flashes, shells,
   the HUD look) by the same rules. Kept textures that are whole DXT
   blocks keep those alone, as Combat Arms' shared models' do.
+- **Late files refresh it.** A dressing whose models missed files the
+  game has but couldn't give then (the asset service's, not fetched yet:
+  `MapModel::late_files`) is dressed again at the next load once one of
+  them can be read (`dress_cached`'s `here`), not kept until a restart.
 - **Only the games the match deals.** A map loaded for a ladder match
   (`MapChange`: a host's Start, a rotation) is dressed only by the guests
   whose games the coming ladder deals (its guns, rung extras, kit and

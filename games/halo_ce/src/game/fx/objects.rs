@@ -146,7 +146,14 @@ fn authority(role: Option<&NetRole>) -> bool {
 /// The server's grenades out of the hand, drawn and replicated (module
 /// doc).
 #[allow(clippy::type_complexity)]
-pub fn show_grenades(projectiles: Query<(Entity, &HaloProjectile, Option<&mut Transform>, Has<ShownItem>)>, mut commands: Commands) {
+pub fn show_grenades(
+    projectiles: Query<(Entity, &HaloProjectile, Option<&mut Transform>, Has<ShownItem>)>,
+    role: Option<Res<NetRole>>,
+    mut commands: Commands,
+) {
+    // Drawn between Halo's ticks (`eased`) where nothing replicates the
+    // transform: off a server.
+    let eased = role.as_deref() != Some(&NetRole::Server);
     let mut projectiles = projectiles;
     for (e, p, at, shown) in &mut projectiles {
         if (p.id != FRAG_GRENADE && p.id != PLASMA_GRENADE) || matches!(p.holder, Holder::Hand { .. }) {
@@ -162,7 +169,12 @@ pub fn show_grenades(projectiles: Query<(Entity, &HaloProjectile, Option<&mut Tr
                 }
             }
             None => {
-                commands.entity(e).insert(facing(position, p.flight.velocity));
+                let at = facing(position, p.flight.velocity);
+                if eased {
+                    commands.entity(e).insert((at, super::super::eased::HaloEased::default()));
+                } else {
+                    commands.entity(e).insert(at);
+                }
             }
         }
         if !shown {

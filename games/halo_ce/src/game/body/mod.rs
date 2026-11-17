@@ -53,6 +53,10 @@
 //! and the server, as the throw), played once over its pose
 //! (`anims::Inputs::action`).
 //!
+//! Drawn (`eased`): between the last two Halo ticks' poses at the frame's
+//! time (Halo draws at its tick rate; ours at the frame rate, the
+//! simulation's pose unchanged).
+//!
 //! Death (`death`): the body has no ragdoll; a dead player is hidden (the
 //! engine's `Dead`) and the server leaves a body of its own in its place
 //! (`death::HaloCorpse`, replicated: net part `halo_ce_corpses`), which
@@ -61,8 +65,6 @@
 //! the engine's `map::Corpse`.
 //!
 //! Known shortcuts:
-//! - The drawn body takes the tick's pose (no easing between ticks; Halo
-//!   draws at its tick rate, the engine's frames may be faster).
 //! - The left hand's IK onto the held weapon is a later step (the weapon
 //!   in the hand is `view`'s held model).
 
@@ -102,6 +104,8 @@ pub struct HaloBody {
     /// Its melee counter as last seen here (`HaloHands::melee`): a rise
     /// is a melee begun.
     pub melee: i32,
+    /// Its poses at the last Halo ticks, drawn between them (`eased`).
+    pub drawn: super::eased::PoseTicks,
 }
 
 /// The armour colours (objects.md, "Spartan multiplayer colour"): the
@@ -254,6 +258,7 @@ pub fn animate(
         if halo.model != Some(body.0) {
             halo.anim = HaloAnim::default();
             halo.model = Some(body.0);
+            halo.drawn.clear();
         }
         let mut ticks = super::ticks::halo_ticks(&clock).min(4);
         if first {
@@ -294,7 +299,9 @@ pub fn animate(
             i.hit = None;
             i.action = None;
         }
-        let fixed = Some(chimera_core::later::Later::ready(pose));
+        let laid = chimera_core::later::Later::ready(pose);
+        halo.drawn.lay(super::eased::laid(&clock), laid.clone());
+        let fixed = Some(laid);
         animator.fixed = fixed.clone();
         animator.main = Some(0);
         animator.yaw = None;

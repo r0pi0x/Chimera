@@ -1,0 +1,59 @@
+# The range's floor labels, board, shelf and cover crates photographed:
+# from the firing line (low and from above), from down range looking back
+# (the labels read from the board's side), and the board and crates.
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 +volume 0 +sandbox \
+#       +rung tf2:tf_weapon_sniperrifle --scene apps/ultimate_gun_game/scenes/range_labels.scene --out <dir>
+# setpos takes Source units (0.0254 m): x the range's side, y down range
+# (firing line 0), z up; setang pitch yaw (yaw 90 down range, 270 back).
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+noclip
+setpos 0 -59 40
+setang 30 90
+wait 30
+shot labels_firing_line_low
+setpos 0 -59 1200
+setang 55 90
+wait 30
+shot labels_from_above_near
+setpos 0 700 1800
+setang 60 90
+wait 30
+shot labels_from_above_mid
+setpos 0 1000 60
+setang 35 270
+wait 30
+shot labels_board_side_near
+setpos 0 3500 120
+setang 25 270
+wait 30
+shot labels_board_side_far
+setpos 0 500 500
+setang 70 270
+wait 30
+shot labels_board_side_down
+setpos 0 -59 40
+setang 70 90
+wait 30
+shot labels_firing_line_down
+setpos 0 -59 60
+setang 5 58
+wait 30
+shot board_from_firing_line
+setpos 0 300 60
+setang 0 30
+wait 30
+shot board_close
+setpos 0 5000 2500
+setang 60 90
+wait 30
+shot labels_100_200
+setpos 0 -400 3000
+setang 40 90
+wait 30
+shot overview_crates
+setpos 0 3500 3000
+setang 40 90
+wait 30
+shot overview_far

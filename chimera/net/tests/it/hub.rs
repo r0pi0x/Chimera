@@ -251,3 +251,133 @@ fn a_client_reads_the_document_and_the_list_and_keeps_them_offline() {
     assert!(again.doc.is_some() && again.list.is_none());
     let _ = &s.clock;
 }
+
+// --- Parties (docs/plans/active/parties.md): two players' clients on a
+// game server with the real hub behind the front.
+
+mod parties {
+    use std::net::SocketAddr;
+
+    use bevy::ecs::message::MessageCursor;
+    use chimera_assets::party_doc::MoveKind;
+    use chimera_core::{console::Console, slots::Loadout};
+    use chimera_net::{
+        harness::NetSim,
+        net::{
+            client::ServerAddress,
+            memory::LinkConditions,
+            party::{HttpPartyHub, PartyActs, PartyClient, PartyGo},
+        },
+        prematch,
+    };
+    use chimera_sim::{SimBasePlugins, movement::placeholder};
+    use chimera_world::greybox::GreyboxMapPlugin;
+
+    use super::*;
+
+    fn party_client(s: &Services, account: PathBuf) -> impl FnOnce(&mut World) {
+        let hub = HttpPartyHub { origin: s.front.url(), fingerprint: Some(s.fingerprint.clone()), account: Some(account) };
+        move |w| {
+            w.insert_resource(PartyClient::new(Arc::new(hub), None));
+            w.insert_resource(PartyActs(false));
+        }
+    }
+
+    fn party(sim: &mut NetSim, i: usize) -> Option<chimera_assets::party_doc::PartyView> {
+        sim.clients[i].app.world().resource::<PartyClient>().view.clone()
+    }
+
+    fn run(sim: &mut NetSim, what: &str, done: impl FnMut(&mut NetSim) -> bool) {
+        let started = Instant::now();
+        let mut done = done;
+        while started.elapsed() < Duration::from_secs(20) {
+            sim.step();
+            if done(sim) {
+                return;
+            }
+        }
+        panic!("timed out: {what}");
+    }
+
+    fn submit(sim: &mut NetSim, i: usize, line: &str) {
+        sim.clients[i].app.world_mut().resource_mut::<Console>().submit(line.to_string());
+    }
+
+    fn poll(sim: &mut NetSim, i: usize) {
+        sim.clients[i].app.world_mut().resource_mut::<PartyClient>().poll_now();
+    }
+
+    /// Client `i`'s party asked again, and the answer in.
+    fn refreshed(sim: &mut NetSim, i: usize) {
+        let before = sim.clients[i].app.world().resource::<PartyClient>().generation;
+        run(sim, "an answer", |sim| sim.clients[i].app.world().resource::<PartyClient>().busy == 0);
+        poll(sim, i);
+        run(sim, "the poll's answer", |sim| {
+            let p = sim.clients[i].app.world().resource::<PartyClient>();
+            p.generation > before && p.busy == 0
+        });
+    }
+
+    /// The `PartyGo`s client `i` sent since `cursor`.
+    fn gone(sim: &mut NetSim, i: usize, cursor: &mut MessageCursor<PartyGo>) -> Vec<PartyGo> {
+        let m = sim.clients[i].app.world().resource::<Messages<PartyGo>>();
+        cursor.read(m).cloned().collect()
+    }
+
+    #[test]
+    fn a_party_made_by_code_is_grouped_on_the_server_and_follows_its_leader() {
+        let s = Services::new("party_follow");
+        let link = LinkConditions { latency: Duration::from_millis(20), jitter: Duration::ZERO, loss: 0.0 };
+        let mut sim = NetSim::new(SimBasePlugins, link, 9, 0, |app| {
+            app.add_plugins(GreyboxMapPlugin).insert_resource(Loadout { movement: placeholder::ID });
+        });
+        sim.add_client(party_client(&s, s.account("leader", "tester", Some(0))));
+        sim.add_client(party_client(&s, s.account("member", "tester", Some(0))));
+        sim.until_joined(600);
+        // The leader makes a party; the member joins by its code.
+        submit(&mut sim, 0, "party_create");
+        run(&mut sim, "the party made", |sim| party(sim, 0).is_some());
+        let code = party(&mut sim, 0).unwrap().code;
+        submit(&mut sim, 1, &format!("party_join {}", code.to_lowercase()));
+        run(&mut sim, "joined", |sim| party(sim, 1).is_some_and(|v| v.members.len() == 2));
+        assert_eq!(party(&mut sim, 0).unwrap().id, party(&mut sim, 1).unwrap().id);
+        // Both tell the server their party: one number in the lobby's rows.
+        run(&mut sim, "grouped", |sim| {
+            let rows = prematch::rows(sim.server.app.world_mut());
+            rows.len() == 2 && rows[0].party != 0 && rows[0].party == rows[1].party
+        });
+        // The leader is on a server (its address as a real client's): the
+        // hub hears it, and the member on the menu goes there.
+        let server: SocketAddr = "192.0.2.10:27031".parse().unwrap();
+        let mut cursor = MessageCursor::<PartyGo>::default();
+        let _ = gone(&mut sim, 1, &mut cursor);
+        sim.clients[0].app.world_mut().insert_resource(ServerAddress(server));
+        run(&mut sim, "the leader's move told", |sim| party(sim, 0).is_some_and(|v| v.kind == MoveKind::Join && v.moves == 1));
+        refreshed(&mut sim, 1);
+        sim.step();
+        let went = gone(&mut sim, 1, &mut cursor);
+        assert!(matches!(&went[..], [PartyGo::Join(t)] if t.addr == server.to_string()), "{went:?}");
+        // There now; the leader leaves with the party: the member goes back.
+        sim.clients[1].app.world_mut().insert_resource(ServerAddress(server));
+        refreshed(&mut sim, 1);
+        refreshed(&mut sim, 0);
+        let there = party(&mut sim, 0).unwrap();
+        assert!(there.members.iter().any(|m| !m.leader && m.at.as_deref() == Some("192.0.2.10:27031")), "{there:?}");
+        submit(&mut sim, 0, "party_leave_match");
+        sim.step();
+        // (Its disconnect, which the test's `PartyActs(false)` leaves out.)
+        sim.clients[0].app.world_mut().remove_resource::<ServerAddress>();
+        run(&mut sim, "the leave told", |sim| party(sim, 0).is_some_and(|v| v.kind == MoveKind::Leave));
+        refreshed(&mut sim, 1);
+        sim.step();
+        let went = gone(&mut sim, 1, &mut cursor);
+        assert_eq!(went, [PartyGo::Leave]);
+        // The member leaves the party: the leader is alone again.
+        submit(&mut sim, 1, "party_leave");
+        run(&mut sim, "left", |sim| sim.clients[1].app.world().resource::<PartyClient>().busy == 0);
+        refreshed(&mut sim, 0);
+        assert_eq!(party(&mut sim, 0).unwrap().members.len(), 1);
+        assert!(party(&mut sim, 1).is_none());
+        assert_eq!(s.hub().party_count(), 1);
+    }
+}

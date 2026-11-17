@@ -6,7 +6,9 @@
 //! the hardware counters aren't open (Windows) only the behaviour is checked.
 //! A late body some character wears is built before those nobody wears, and
 //! a body not built yet is never drawn; a late view model a view shows is
-//! built before the others.
+//! built before the others. A body built again (its late files arrived:
+//! `replace_character_model`) takes over its name, and its wearer changes
+//! to it once it is built, wearing the old one until then.
 
 use std::sync::Arc;
 
@@ -28,7 +30,7 @@ use chimera_world::{
     harness::Sim,
     map::{
         BodyName, Corpse, GameKit, MapBone, MapBrush, MapCharacterModel, MapData, MapHeldModel, MapMesh, MapModel, MapTexture, MapViewModel,
-        add_character_model, add_held_model, add_view_model,
+        REPLACED, CharacterModels, add_character_model, add_held_model, add_view_model, replace_character_model,
     },
 };
 
@@ -270,6 +272,41 @@ fn a_worn_late_body_is_built_before_the_unworn() {
         chimera_world::harness::let_tasks_run();
     }
     assert_eq!(drawn(&mut sim), Some(LATE));
+}
+
+/// A worn body replaced by one built again: the old entry renamed out of
+/// the way, the wearer on the old one until the new one is built, then on
+/// the new one.
+#[test]
+fn a_replaced_body_takes_over_its_name_once_built() {
+    let mut sim = sim();
+    let e = sim
+        .app
+        .world_mut()
+        .spawn((Intent::default(), Corpse { feet: 0.0 }, Transform::default(), BodyName(BODY.into())))
+        .id();
+    let w = sim.app.world_mut();
+    add_character_model(w, character(Some(BODY), small_model()), small_textures());
+    let mut frames = 0;
+    while drawn(&mut sim) != Some(1) {
+        sim.app.update();
+        frames += 1;
+        assert!(frames < 20_000, "the late body never came");
+        chimera_world::harness::let_tasks_run();
+    }
+    replace_character_model(sim.app.world_mut(), character(Some(BODY), small_model()), small_textures());
+    sim.app.update();
+    let names: Vec<_> = sim.app.world().resource::<CharacterModels>().0.iter().map(|m| m.name.clone()).collect();
+    assert_eq!(names[1].as_deref(), Some(format!("{BODY}{REPLACED}").as_str()), "{names:?}");
+    assert_eq!(names[2].as_deref(), Some(BODY), "{names:?}");
+    while drawn(&mut sim) != Some(2) {
+        assert_eq!(drawn(&mut sim), Some(1), "the old body stays until the new one is built");
+        sim.app.update();
+        frames += 1;
+        assert!(frames < 20_000, "the new body never came");
+        chimera_world::harness::let_tasks_run();
+    }
+    assert!(sim.app.world().get::<BodyName>(e).is_some());
 }
 
 fn view_model(key: &str) -> MapViewModel {

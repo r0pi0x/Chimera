@@ -38,6 +38,10 @@ fn me() -> Member {
 }
 
 fn spawn_bar(app: &mut App, left: Left, open: Option<ShellTile>) -> shell::BarParts {
+    spawn_bar_with(app, left, open, false)
+}
+
+fn spawn_bar_with(app: &mut App, left: Left, open: Option<ShellTile>, invite: bool) -> shell::BarParts {
     let theme = app.world().resource::<Theme>().clone();
     let units = *app.world().resource::<UiUnits>();
     let party = [me()];
@@ -49,7 +53,7 @@ fn spawn_bar(app: &mut App, left: Left, open: Option<ShellTile>) -> shell::BarPa
     let parts = {
         let mut c = Commands::new(&mut queue, world);
         let ui = Ui::new(&theme, None, units);
-        shell::bar(&ui, &mut c, root, &mut images, &mut icons, &Bar { left, party: &party, party_max: 8, open })
+        shell::bar(&ui, &mut c, root, &mut images, &mut icons, &Bar { left, party: &party, party_max: 8, invite, open })
     };
     queue.apply(world);
     world.insert_resource(images);
@@ -81,7 +85,8 @@ fn the_racks_keep_their_order_and_unbuilt_features_are_disabled() {
         assert_eq!(disabled, matches!(t, ShellTile::Invite | ShellTile::Friends), "{t:?}");
         if disabled {
             assert!(w.get::<Hover>(*e).is_none(), "{t:?}: no hover lift");
-            assert!(w.get::<shell::Tip>(*e).is_some_and(|tip| tip.note.as_deref() == Some(shell::COMING_SOON)), "{t:?}: its tooltip says so");
+            let why = if *t == ShellTile::Invite { "Sign in to a hub first" } else { shell::COMING_SOON };
+            assert!(w.get::<shell::Tip>(*e).is_some_and(|tip| tip.note.as_deref() == Some(why)), "{t:?}: its tooltip says why");
         }
     }
     // Settings is open: a white tile.
@@ -156,4 +161,14 @@ fn avatar_looks_round_trip_and_draw_from_the_palette() {
     for key in ["gear", "friends", "bug", "plus", "listchev", "mouse_right", "eye_off", "profile"] {
         assert!(chimera_ui::Icons::shipped().get(key).is_some(), "{key} ships");
     }
+}
+
+/// With a hub account the "+" is live: the party panel (parties.md).
+#[test]
+fn the_invite_tile_is_live_with_parties() {
+    let mut app = app();
+    let parts = spawn_bar_with(&mut app, Left::Lockup, None, true);
+    let plus = parts.tile(ShellTile::Invite).unwrap();
+    assert!(app.world().get::<Disabled>(plus).is_none());
+    assert!(app.world().get::<shell::Tip>(plus).is_some_and(|t| t.name == "Party"));
 }

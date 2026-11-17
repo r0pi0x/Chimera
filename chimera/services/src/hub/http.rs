@@ -8,6 +8,8 @@
 //!   /hub/leave`: a game server's listing.
 //! - All of them with `Authorization: Bearer <ticket>` (401 without, 403
 //!   without the `list` right for a heartbeat).
+//! - `POST /hub/party/{create,join,state,leave,kick,promote,lead}`: the
+//!   parties (`super::party`, `chimera_assets::party_doc`), with a ticket.
 //! - `GET /hub/key`: the document key (hex), to anyone.
 //! - `GET /health` (this machine only, relayed by no front): `ok
 //!   <version> uptime=<s> db=<schema> listings=<n> revocations=<age>`.
@@ -144,11 +146,12 @@ impl Http {
                 text(
                     200,
                     format!(
-                        "ok {} uptime={}s db={} listings={} {}\n",
+                        "ok {} uptime={}s db={} listings={} parties={} {}\n",
                         env!("CARGO_PKG_VERSION"),
                         self.started.elapsed().as_secs(),
                         h.db_version(),
                         h.count(),
+                        h.party_count(),
                         h.auth_status()
                     ),
                 ),
@@ -192,8 +195,31 @@ impl Http {
                 });
                 answer(r)
             }
+            (Method::Post, ["hub", "party", what]) => self.party(request, what, ip),
             (_, ["hub", ..]) => (404, text(404, "no such endpoint\n")),
             _ => (421, text(421, "not the hub's path\n")),
+        }
+    }
+}
+
+impl Http {
+    /// `POST /hub/party/<what>` (`super::party`).
+    fn party(&self, request: &mut Request, what: &str, ip: Option<IpAddr>) -> (u16, ResponseBox) {
+        use chimera_assets::party_doc::{Create, Join, Lead, OnMember, State, Token};
+        let h = &self.hub;
+        let claims = match h.check(bearer(request).as_deref()) {
+            Ok(c) => c,
+            Err(e) => return answer::<()>(Err(e)),
+        };
+        match what {
+            "create" => answer(body::<Create>(request).and_then(|b| h.party_create(&claims, &b))),
+            "join" => answer(body::<Join>(request).and_then(|b| h.party_join(&claims, &b, ip))),
+            "state" => answer(body::<State>(request).and_then(|b| h.party_state(&claims, &b))),
+            "leave" => answer(body::<Token>(request).and_then(|b| h.party_leave(&claims, &b.token)).map(|()| serde_json::json!({}))),
+            "kick" => answer(body::<OnMember>(request).and_then(|b| h.party_kick(&claims, &b))),
+            "promote" => answer(body::<OnMember>(request).and_then(|b| h.party_promote(&claims, &b))),
+            "lead" => answer(body::<Lead>(request).and_then(|b| h.party_lead(&claims, &b, ip))),
+            _ => (404, text(404, "no such endpoint\n")),
         }
     }
 }

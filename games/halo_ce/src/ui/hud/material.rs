@@ -26,6 +26,59 @@ pub struct HudParams {
     pub hi: Vec4,
     pub flash: Vec4,
     pub empty: Vec4,
+    /// x: the scaling (`HudFilter::code`).
+    pub style: Vec4,
+}
+
+/// How the HUD's pictures are scaled up to the screen (`halo_ce:hud_filter`,
+/// an opt-in setting; the pictures are authored for 640 by 480).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HudFilter {
+    /// Linear, as the game's pictures were always drawn here.
+    #[default]
+    Original,
+    /// Nearest at the whole-number scale inside each texel, linear only over
+    /// the one-pixel seam between texels (`sharp_coord`): crisp edges at any
+    /// window size.
+    Sharp,
+    /// Linear with a light sharpening (an unsharp mask over the four
+    /// neighbours a screen pixel away).
+    SmoothSharpen,
+}
+
+impl HudFilter {
+    pub fn from_code(code: u8) -> HudFilter {
+        match code {
+            1 => HudFilter::Sharp,
+            2 => HudFilter::SmoothSharpen,
+            _ => HudFilter::Original,
+        }
+    }
+
+    pub fn code(self) -> u8 {
+        self as u8
+    }
+}
+
+/// The setting `halo_ce:hud_filter`: 0 original, 1 sharp, 2 smooth and
+/// sharpened.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HudFilterSetting(pub u8);
+
+/// Where a `Sharp` picture samples along one axis (hud.wesl's `sharp`,
+/// mirrored here to test it): `p` the position in texels, `scale` the
+/// screen pixels per texel. Inside a texel the position snaps to its
+/// centre (nearest) except for the last pixel's width at each edge, where
+/// it runs linearly to the neighbour's centre, so the texel boundaries
+/// land on whole pixels' seams.
+pub fn sharp_coord(p: f32, scale: f32) -> f32 {
+    if scale <= 1.0 {
+        return p;
+    }
+    let base = p.floor();
+    let centre = p - base - 0.5;
+    let flat = 0.5 - 0.5 / scale;
+    base + (centre - centre.clamp(-flat, flat)) * scale + 0.5
 }
 
 impl HudParams {
@@ -44,6 +97,7 @@ impl HudParams {
                 hi: v3(m.max, m.empty_keep),
                 flash: v3(m.flash, 0.0),
                 empty: v3(m.empty, 0.0),
+                style: Vec4::ZERO,
             },
             Fill::Darken => HudParams { mode: Vec4::new(3.0, 0.0, 0.0, 0.0), color: Vec4::ONE, uv, ..default() },
             Fill::Sweep { colour, half, .. } => HudParams {
@@ -97,5 +151,37 @@ impl Plugin for HudRenderPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "hud.wesl");
         app.add_plugins(UiMaterialPlugin::<HudMaterial>::default());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sharp_sampling_is_flat_inside_a_texel_and_runs_over_one_pixel_at_its_edge() {
+        // Scale 2.25 pixels per texel: flat for the middle 1 - 1/2.25 of it.
+        let flat = 0.5 - 0.5 / 2.25;
+        assert_eq!(sharp_coord(3.5, 2.25), 3.5);
+        assert!((sharp_coord(3.5 + flat * 0.99, 2.25) - 3.5).abs() < 0.02);
+        // The seam: from the texel's centre at the flat edge to the next
+        // texel's centre across one pixel (1/2.25 texel).
+        assert!((sharp_coord(4.0, 2.25) - 4.0).abs() < 1e-6);
+        assert!((sharp_coord(4.0 + 0.5 / 2.25, 2.25) - 4.5).abs() < 1e-5);
+        assert!((sharp_coord(4.0 - 0.5 / 2.25, 2.25) - 3.5).abs() < 1e-5);
+        // Never leaves the texel pair it is between, and never goes back.
+        let mut last = 0.0;
+        for i in 0..400 {
+            let c = sharp_coord(i as f32 * 0.01, 2.25);
+            assert!(c >= last - 1e-6 && (c - i as f32 * 0.01).abs() <= 0.5 + 1e-5);
+            last = c;
+        }
+        // At or under one pixel per texel nothing changes.
+        assert_eq!(sharp_coord(3.3, 1.0), 3.3);
+        assert_eq!(sharp_coord(3.3, 0.5), 3.3);
+        // Scale 2: flat over the middle half, a pixel's seam at the edge.
+        assert!((sharp_coord(3.9, 2.0) - 3.8).abs() < 1e-5);
+        assert_eq!(HudFilter::from_code(1), HudFilter::Sharp);
+        assert_eq!(HudFilter::from_code(9), HudFilter::Original);
     }
 }

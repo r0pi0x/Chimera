@@ -288,6 +288,14 @@ pub fn dress_guest(map: &mut MapData, kept: &'static [&'static str]) -> Result<(
 /// `dress_guest`; `lean` (a load without textures, `MapLoadOptions::
 /// textures` off: the dedicated server's): the kit's textures' sizes only
 /// (`MaterialLoader::lean`), as the map's own.
+/// Whether any of `files` can be read now from the game's files (a kept
+/// guest dressing that missed them is dressed again:
+/// `source_engine::content::guest`).
+pub fn files_here(files: &[String]) -> bool {
+    let Some(install) = super::INFO.install() else { return false };
+    super::mount::open(&install).is_ok_and(|m| files.iter().any(|f| m.read(f).is_ok()))
+}
+
 pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
     let install = super::INFO
         .install()
