@@ -60,6 +60,7 @@ Change a file's `//!` doc with the code, then run
 
 ## apps/lucker_party
 
+- `apps/lucker_party/build.rs`: Embeds the Windows executable's icon (Explorer, the pinned taskbar): `apps/party_kit/assets/icon/app.ico`
 - `apps/lucker_party/src/main.rs`: The Lucker Party game binary (`lucker_party`): the party kit's client app (`party_kit::client::APP`) on Chimera's client app...
 
 ## apps/lucker_party_server
@@ -108,6 +109,7 @@ Change a file's `//!` doc with the code, then run
 
 ## apps/ultimate_gun_game
 
+- `apps/ultimate_gun_game/build.rs`: Embeds the Windows executable's icon (Explorer, the pinned taskbar): `apps/party_kit/assets/icon/app.ico`
 - `apps/ultimate_gun_game/examples/frame_bench.rs`: A frame's cost in play, offscreen (a GPU, no window or display: docs/performance.md, "Performance pass" and "Work counts"): Ultimate Gun Game's...
 - `apps/ultimate_gun_game/src/lib.rs`: Ultimate Gun Game (apps/ultimate_gun_game, crate `ultimate_gun_game`, binary `ultimate_gun_game`; docs/plans/active/ultimate-gun-game.md): the gun...
 - `apps/ultimate_gun_game/src/main.rs`: The Ultimate Gun Game binary (`ultimate_gun_game`): the crate's `APP` (lib.rs: Lucker Party's client app, `party_kit::client::PARTY`, with the...
@@ -314,6 +316,7 @@ Change a file's `//!` doc with the code, then run
 - `chimera/client/src/client/weapon_icons.rs`: Kill-feed weapon icons across games: the party apps put one game's guns in another game's HUD, and a HUD draws only its own art
 - `chimera/client/src/client/weapon_menu.rs`: Weapon selection for any game (`WeaponMenuPlugin`): the state of a HUD's selection row (`WeaponMenu`) and the logic that drives it, without its look
 - `chimera/client/src/client/widgets.rs`: VGUI's controls, one layer shared by the GameUI dialogs (`game_menu`: the options, Create Server, Keyboard Advanced, the loading dialog...
+- `chimera/client/src/client/window_icon.rs`: The window's icon (the taskbar's, the title bar's): an app lists square PNGs (`GameAppHooks::window_icons`), one is drawn at random at each start...
 - `chimera/client/src/lib.rs`: The client shell (docs/ARCHITECTURE.md, "Crates"): everything that needs a window, for any game: local input and binds, the local player's camera...
 
 ## chimera/core

@@ -299,6 +299,15 @@ fn sync_gun_names(
     out.full.extend(ca.0.iter().map(|(k, v)| (k.clone(), v.clone())));
 }
 
+/// The window's icon, one at random per start: the logo's three
+/// characters on their avatar grounds (assets/icon; the .exe's `app.ico`
+/// is the Operator).
+pub const WINDOW_ICONS: &[&[u8]] = &[
+    include_bytes!("../assets/icon/operator.png"),
+    include_bytes!("../assets/icon/trooper.png"),
+    include_bytes!("../assets/icon/vanguard.png"),
+];
+
 /// The party's client app (Lucker Party's, `APP`; another party app's is
 /// `GameApp { title, hooks: .., ..PARTY }`, apps/ultimate_gun_game) on
 /// Chimera's client app (`chimera_client::client::app`): what this
@@ -357,6 +366,7 @@ pub const PARTY: GameApp = GameApp {
         // Its view models load on demand, its start map in the app's
         // install data (`on_demand::front_end_context`).
         load_context: Some(combat_arms::game::view_model::on_demand::front_end_context),
+        window_icons: WINDOW_ICONS,
         ..GameAppHooks::NONE
     },
 };

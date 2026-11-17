@@ -2737,6 +2737,7 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+ "winit",
  "workspace-hack",
 ]
 
@@ -5411,6 +5412,7 @@ version = "0.1.0"
 dependencies = [
  "chimera_client",
  "party_kit",
+ "winresource",
  "workspace-hack",
 ]
 
@@ -6530,6 +6532,7 @@ dependencies = [
  "cs_source",
  "halo_ce",
  "hl2dm",
+ "image",
  "originals",
  "source_engine",
  "source_logic",
@@ -8383,6 +8386,7 @@ dependencies = [
  "combat_arms",
  "hl2dm",
  "party_kit",
+ "winresource",
  "workspace-hack",
 ]
 
@@ -9647,6 +9651,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "winresource"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bc6d36480b829272a5bdabf08e6dca8004761c1da7e35efef800540c66221b"
+dependencies = [
+ "toml",
+ "version_check",
+]
+
+[[package]]
 name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9742,6 +9756,7 @@ dependencies = [
  "syn 3.0.6",
  "thiserror 2.0.21",
  "tinystr",
+ "toml",
  "toml_datetime",
  "toml_parser",
  "tracing",

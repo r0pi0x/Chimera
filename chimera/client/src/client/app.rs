@@ -154,6 +154,9 @@ pub struct GameAppHooks {
     /// context, the app's from then on. Combat Arms' front end puts its
     /// install data and that its view models load on demand there.
     pub load_context: Option<fn(&LoadContext)>,
+    /// The window's icon: PNG files (square), one drawn at random at each
+    /// start (`window_icon`; empty: the system's default).
+    pub window_icons: &'static [&'static [u8]],
 }
 
 impl GameAppHooks {
@@ -169,6 +172,7 @@ impl GameAppHooks {
         launch: None,
         games: None,
         load_context: None,
+        window_icons: &[],
     };
 }
 
@@ -484,6 +488,9 @@ pub fn compose(app: &mut App, game: &'static GameApp, args: Args, start: StartMa
         engine(app, Engine::Installs(installs));
     }
     engine(app, Engine::Window(&args, game.title));
+    if args.offscreen.is_none() {
+        super::window_icon::set_at_start(app, game.hooks.window_icons);
+    }
     engine(app, Engine::Physics);
     (game.sim)(app, &args);
     engine(app, Engine::Presentation);

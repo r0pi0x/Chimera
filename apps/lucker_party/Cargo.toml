@@ -26,6 +26,10 @@ path = "src/main.rs"
 test = false
 required-features = ["present"]
 
+# The Windows executable's icon (build.rs: a no-op elsewhere).
+[target.'cfg(windows)'.build-dependencies]
+winresource.workspace = true
+
 [features]
 default = ["present"]
 present = ["dep:chimera_client", "party_kit/default"]

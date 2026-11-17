@@ -5,6 +5,8 @@
 //! where tests go: docs/OBSERVABILITY.md, section 1.
 
 mod announcer;
+#[cfg(feature = "present")]
+mod window_icons;
 mod arena_pool;
 mod arena_net;
 mod arena_wall;

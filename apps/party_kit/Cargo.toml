@@ -42,6 +42,7 @@ workspace-hack.workspace = true
 
 # The tests aim with the test kit's readers (`chimera_sim::testkit`).
 [dev-dependencies]
+image.workspace = true
 # The presentation's Bevy and Avian features, for this crate's own tests only
 # (the dedicated servers build without them): `cargo test -p <crate>` shares
 # the clients' builds of Bevy instead of building its own (hakari.toml).
