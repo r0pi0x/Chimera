@@ -15,8 +15,11 @@
 //!   no share is known), then the bytes ("182.4 of 291.0 MB"), the files
 //!   ("214 of 340 files", when the asset service told them), the speed
 //!   (over the last seconds) and the time left; at the right the stages,
-//!   each with its small bar (filled done, hollow running, dim pending);
-//!   one sentence in the text face.
+//!   each with its small bar (filled done, hollow running, dim pending),
+//!   shown only when there is more than one: connecting (a join), then
+//!   the load's own from the work done (`chimera_net::net::load_stages`: the
+//!   download when there is one, the map's load, building models, physics
+//!   and navigation); one sentence in the text face.
 //! - **Leave?** (`LoadingSignal::ask`): Esc or a right click asks; Enter
 //!   or a click on Leave (the dialog's hero) leaves (the menu's Cancel);
 //!   Esc or a right click again, or Stay, stays.
@@ -30,8 +33,9 @@
 //! `ui_scene load [ask|slice]` stages it (with `+mainmenu` on a tool run;
 //! `slice`: Blood Gulch's first slice loading).
 //!
-//! Known shortcuts: the map's preview is a gradient; a map's load has no
-//! share (striped); the files show only for the asset service's sets.
+//! Known shortcuts: the map's preview is a gradient; a stage is striped
+//! until its first count (a level change before its load starts); the
+//! files show only for the asset service's sets.
 
 use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_net::net::client::{JoinProgress, JoinStage};
@@ -195,6 +199,8 @@ struct Key {
     label: String,
     units: (u32, u32),
     secs: u64,
+    /// The load's stages, each one's share in 2% steps (redrawn as they move).
+    load: Vec<(u8, u8)>,
     party: Option<shell::Party>,
 }
 
@@ -222,6 +228,12 @@ fn draw(world: &mut World, mut drawn: Local<Key>) {
     let menu = world.resource::<PartyMenu>().clone();
     let map = if staged.is_some() { join.map.clone() } else { menu.loading.clone().or(join.map.clone()) }.unwrap_or_default();
     let label = shown_label(world, &map, staged.as_ref());
+    // The load's stages (`chimera_net::net::load_stages`), the staged join's
+    // when staged.
+    let load = match &staged {
+        Some(st) => chimera_net::net::load_stages::stages_of(&chimera_net::net::load_stages::Inputs { join: Some(&st.join), ..default() }),
+        None => chimera_net::net::load_stages::stages(world),
+    };
     let key = Key {
         up: shown,
         ask: world.resource::<LoadingSignal>().ask,
@@ -232,6 +244,7 @@ fn draw(world: &mut World, mut drawn: Local<Key>) {
         units: ((units.height * 8.0) as u32, (units.scale_factor * 1000.0) as u32),
         secs: now as u64,
         party: world.get_resource::<shell::Party>().cloned(),
+        load: load.iter().map(|s| (s.step.index(), stage_key(s.state))).collect(),
     };
     if *drawn == key {
         return;
@@ -262,7 +275,7 @@ fn draw(world: &mut World, mut drawn: Local<Key>) {
         let root = spawn(
             &mut c,
             &ui,
-            &View { stage: join.stage, dl: dl.as_ref(), map: &map, label: &label, server: &server, hosting, speed, ask, party: &party, between: menu.screen == Screen::Loading && !hosting && join.stage == JoinStage::Idle },
+            &View { stage: join.stage, load: &load, dl: dl.as_ref(), map: &map, label: &label, server: &server, hosting, speed, ask, party: &party, between: menu.screen == Screen::Loading && !hosting && join.stage == JoinStage::Idle },
             images.as_mut().zip(icons.as_mut()),
         );
         if let Some(cam) = camera {
@@ -280,6 +293,8 @@ fn draw(world: &mut World, mut drawn: Local<Key>) {
 
 struct View<'a> {
     stage: JoinStage,
+    /// The load's stages (`chimera_net::net::load_stages`).
+    load: &'a [chimera_net::net::load_stages::Stage],
     dl: Option<&'a chimera_net::net::client::DownloadInfo>,
     map: &'a str,
     /// The map's name as shown when not its id's (`shown_label`).
@@ -293,38 +308,66 @@ struct View<'a> {
     between: bool,
 }
 
-/// The stages in order: (words, progress).
+/// A stage's state for the redraw key: 0 pending, 1 striped, 2 + its
+/// share in 2% steps, 255 done.
+fn stage_key(s: chimera_net::net::load_stages::StageState) -> u8 {
+    use chimera_net::net::load_stages::StageState as S;
+    match s {
+        S::Pending => 0,
+        S::Running(None) => 1,
+        S::Running(Some(f)) => 2 + (f.clamp(0.0, 1.0) * 50.0) as u8,
+        S::Done => 255,
+    }
+}
+
+/// The stages in order: (words, progress): connecting (a join), then the
+/// load's own (`chimera_net::net::load_stages`: the download when there is one,
+/// the map, the models, the physics), each from its work.
 fn stages(v: &View) -> Vec<(String, Progress)> {
     use JoinStage as J;
-    let rank = |s: J| match s {
-        J::Idle | J::Connecting | J::ServerInfo | J::ChangingLevel => 0,
-        J::Verifying | J::Downloading => 1,
-        J::LoadingMap => 2,
-        J::Joined => 3,
-    };
-    let at = if v.hosting && v.stage == J::Idle { 2 } else { rank(v.stage) };
-    let share = v.dl.filter(|d| d.total > 0).map(|d| (d.done as f32 / d.total as f32).clamp(0.0, 1.0));
-    let state = |i: usize, running: Progress| match i.cmp(&at) {
-        std::cmp::Ordering::Less => Progress::Ready,
-        std::cmp::Ordering::Equal => running,
-        std::cmp::Ordering::Greater => Progress::Pending,
-    };
+    use chimera_net::net::load_stages::{LoadStep, StageState};
+    let connected = !matches!(v.stage, J::Idle | J::Connecting | J::ServerInfo) || !v.load.is_empty() && v.stage == J::Idle;
     let mut out = Vec::new();
     if !v.hosting {
-        out.push((if at > 0 { "Connected".to_string() } else { "Connecting".to_string() }, state(0, Progress::Connecting)));
-        let words = match v.dl {
-            Some(d) if d.total > 0 => {
-                let mut w = format!("Downloading assets \u{00b7} {} of {} MB", mb(d.done), mb(d.total));
-                if d.files_total > 0 {
-                    w += &format!(" \u{00b7} {} of {} files", d.files_done, d.files_total);
-                }
-                w
-            }
-            _ => "Downloading assets".to_string(),
-        };
-        out.push((words, state(1, share.map_or(Progress::Connecting, Progress::Running))));
+        out.push(if connected { ("Connected".to_string(), Progress::Ready) } else { ("Connecting".to_string(), Progress::Connecting) });
     }
-    out.push(("Loading".to_string(), state(2, Progress::Connecting)));
+    let download_words = |bytes: Option<(u64, u64)>, files: Option<(u64, u64)>| match bytes.or(v.dl.map(|d| (d.done, d.total))) {
+        Some((done, total)) if total > 0 => {
+            let mut w = format!("Downloading assets \u{00b7} {} of {} MB", mb(done), mb(total));
+            let files = files.or(v.dl.filter(|d| d.files_total > 0).map(|d| (d.files_done, d.files_total)));
+            if let Some((fd, ft)) = files {
+                w += &format!(" \u{00b7} {fd} of {ft} files");
+            }
+            w
+        }
+        _ => "Downloading assets".to_string(),
+    };
+    if v.load.is_empty() {
+        // Nothing under way yet (connecting): what comes, pending.
+        if !v.hosting {
+            out.push((download_words(None, None), Progress::Pending));
+        }
+        for step in [LoadStep::Map, LoadStep::Models, LoadStep::Physics] {
+            out.push((step.words().to_string(), if v.hosting { Progress::Connecting } else { Progress::Pending }));
+            if v.hosting {
+                break;
+            }
+        }
+        return out;
+    }
+    for s in v.load {
+        let words = match s.step {
+            LoadStep::Download => download_words(s.bytes, s.files),
+            step => step.words().to_string(),
+        };
+        let p = match s.state {
+            StageState::Pending => Progress::Pending,
+            StageState::Done => Progress::Ready,
+            StageState::Running(Some(f)) => Progress::Running(f),
+            StageState::Running(None) => Progress::Connecting,
+        };
+        out.push((words, p));
+    }
     out
 }
 
@@ -350,7 +393,7 @@ fn spawn(c: &mut Commands, ui: &Ui, v: &View, res: Option<(&mut Assets<Image>, &
     let title = if v.between { "Loading" } else { "Connecting" };
     let parent = if v.hosting { "Host" } else { "Join" };
     if let Some((images, icons)) = res {
-        shell::bar(ui, c, frame, images, icons, &shell::Bar { left: shell::Left::Crumb { parent, title }, party: &v.party.members, party_max: v.party.max, open: None });
+        shell::bar(ui, c, frame, images, icons, &shell::Bar { left: shell::Left::Crumb { parent, title }, party: &v.party.members, party_max: v.party.max, invite: v.party.invite, open: None });
     }
     // The map's card.
     let card_h = 29.2;
@@ -403,8 +446,10 @@ fn spawn(c: &mut Commands, ui: &Ui, v: &View, res: Option<(&mut Assets<Image>, &
             ui.text(c, nums, Role::Mono, 0.66, Tone::Fg2, &format!("{:.1} MB/s \u{00b7} {} left", sp / 1e6, duration(left_s)));
         }
     }
+    // The stages at the right, each with its small bar: only with more
+    // than one (one stage is the main bar alone).
     let list = ui.boxed(c, frame, UiStyle { gap: Some(0.9), ..UiStyle::column() }.abs([Some(sh.margin + 34.0), Some(below), None, None]));
-    for (w, p) in &all {
+    for (w, p) in all.iter().filter(|_| all.len() > 1) {
         let r = ui.boxed(c, list, UiStyle { gap: Some(0.6), ..UiStyle::row() });
         ui.progress(c, r, *p, "", 2.6, 0.8, 0.5, false);
         let tone = if *p == Progress::Pending { Tone::Fg3 } else { Tone::Fg };

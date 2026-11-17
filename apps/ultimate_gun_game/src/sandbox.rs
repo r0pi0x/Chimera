@@ -59,7 +59,7 @@ pub const HELP: &str = "sandbox [map]: a match alone on the range (or `map`: gre
     target remove <n|all>; target list. Hits on targets and their kills are logged (HitMeasured, KillMeasured),\n\
     and every blast (BlastMeasured: centre, inner and outer radius, each victim's damage).\n\
     prop add <bottles|tin_cans|target_board> [distance m]: bottles or cans on a shelf to knock off, or a board\n\
-    that keeps your shot group (on the range: its own shelf and board first); prop remove <n|all>; prop list; prop group <n>; prop reset <n|all>.\n\
+    that keeps your shot group, under the crosshair (with a distance: on that line; on the range: its own shelf and board first); prop remove <n|all>; prop list; prop group <n>; prop reset <n|all>.\n\
     host_timescale 0.5: half speed (measured times stay in game seconds).\n\
     god, noclip: no damage, fly through walls (sv_cheats is 1 here).\n\
     guns never run dry (the ladder refills them); kills and deaths never move your rung.\n\

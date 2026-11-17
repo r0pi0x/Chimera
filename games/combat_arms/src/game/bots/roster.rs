@@ -11,9 +11,10 @@ use super::{
     data::{BotData, Level, Template},
     math::{self, Dice},
 };
+use crate::game::rules::spawns::CaHeld;
 use crate::{
     character::spawn_character,
-    core::{Connecting, Health, Intent, Seed, Spectating, Team},
+    core::{Connecting, Dead, Health, Intent, Seed, Spectating, Team},
     weapon::{Inventory, Magazine, OwnKit, Weapon, grenade::Throwable},
 };
 
@@ -133,6 +134,12 @@ pub fn kick(world: &mut World, e: Entity) {
 /// type's ammunition multiplier on the reserve (8.1: the ammo's normal
 /// maximum times it, the clip included), the ranged and thrown reach
 /// fixed at the first life (8.2, 8.5).
+/// Only a living bot is armed: a dead one's brain is made fresh every tick
+/// it lies dead (`brain::dead`, `armed` false again) while it still holds
+/// the last life's weapons (a minigame strips them at the respawn), so
+/// arming the dead multiplied the same grenades' count every tick until it
+/// overflowed (a drawn ladder's grenade rung), and left the new life's kit
+/// unscaled. The multiply saturates as a guard besides.
 /// A normal system with declared queries: it writes the magazines and the
 /// bot in place, so the rest of the tick sees them as the exclusive
 /// version's writes (plan ecs-cleanup step 5); a bot is visited only
@@ -140,11 +147,11 @@ pub fn kick(world: &mut World, e: Entity) {
 #[allow(clippy::type_complexity)]
 pub(super) fn arm(
     data: Res<BotData>,
-    mut bots: Query<(&mut CaBot, &Inventory), Without<Connecting>>,
+    mut bots: Query<(&mut CaBot, &Inventory, &Health), (Without<Connecting>, Without<Dead>, Without<CaHeld>)>,
     mut weapons: Query<(&Weapon, Option<&mut Magazine>, Option<&mut Throwable>)>,
 ) {
-    for (mut b, inv) in &mut bots {
-        if b.armed || inv.weapons.is_empty() {
+    for (mut b, inv, health) in &mut bots {
+        if b.armed || inv.weapons.is_empty() || health.current <= 0.0 {
             continue;
         }
         let template = b.template;
@@ -162,7 +169,7 @@ pub(super) fn arm(
                 }
             }
             if let Some(mut t) = throwable {
-                t.count *= gun.ammo.max(1.0) as u32;
+                t.count = t.count.saturating_mul(gun.ammo.max(1.0) as u32);
                 if t.count > 0 {
                     thrown_kinds.push(kind.clone());
                 }

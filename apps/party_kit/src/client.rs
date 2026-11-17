@@ -121,6 +121,9 @@ pub fn front_end(app: &mut App, _: &Args) {
         // The report dialog (F10 in Ultimate Gun Game, the Escape menu's
         // "Report a bug") in the Signal look.
         .add_plugins(crate::feedback_signal::FeedbackSignalPlugin)
+        // The party panel, the follow prompt (provisional:
+        // docs/plans/active/parties.md).
+        .add_plugins(crate::party_signal::PartySignalPlugin)
         // The main menu's notice after a session that died (a crash, a
         // freeze, a power loss): send its report?
         .add_plugins(crate::crash_signal::CrashSignalPlugin)

@@ -725,6 +725,9 @@ fn change_match_on(world: &mut World, id: &str, map: Option<&str>, load: bool) -
             arrived: None,
             reload,
         });
+        // With the lobby on, the lobby between the maps from now: every
+        // player's row loading the map coming in (`prematch::begin_between`).
+        crate::prematch::begin_between(world, &map, &def.name);
         // A server moves its players with it; a standalone game (no
         // server) just loads the map.
         let command = if world.get_resource::<NetRole>() == Some(&NetRole::Server) { "changelevel" } else { "map" };

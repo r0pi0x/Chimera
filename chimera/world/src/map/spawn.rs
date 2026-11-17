@@ -416,8 +416,21 @@ pub(super) fn spawn_steps<D: MapDrawer>(
     pending: Res<PendingMap>,
     mut assets: StaticSystemParam<D>,
     mut progress: ResMut<SpawnProgress<D>>,
+    work: Option<ResMut<super::loading::LoadWork>>,
 ) -> bool {
     let progress = &mut *progress;
+    // The models' stage: the start, the props, the finish (`LoadWork`).
+    if let Some(mut work) = work {
+        let start = u64::from(progress.stage != Stage::Start);
+        let finish = u64::from(progress.built);
+        let w = super::loading::LoadWork {
+            step: super::loading::LoadStep::Models,
+            done: start + progress.next_prop as u64 + finish,
+            total: 2 + pending.0.props.len() as u64,
+            colliders: 0,
+        };
+        work.set_if_neq(w);
+    }
     if progress.built {
         // A frame of its own: what the world does with a whole new map
         // (the colliders' hooks, the hierarchy, a frame's first look at
@@ -442,6 +455,13 @@ pub(super) fn spawn_steps<D: MapDrawer>(
 /// Starts a stepped spawn of the pending map (`spawn_steps`), its
 /// colliders held back (`Colliders`).
 pub(super) fn begin_spawn<D: MapDrawer>(world: &mut World) {
+    let props = world.get_resource::<PendingMap>().map_or(0, |p| p.0.props.len() as u64);
+    world.insert_resource(super::loading::LoadWork {
+        step: super::loading::LoadStep::Models,
+        done: 0,
+        total: 2 + props,
+        colliders: 0,
+    });
     world.insert_resource(SpawnProgress::<D> {
         colliders: Colliders {
             later: Some(Vec::new()),
@@ -479,6 +499,18 @@ pub(super) fn insert_colliders<D: MapDrawer>(world: &mut World, budget: std::tim
         if deadline.is_some_and(|d| std::time::Instant::now() >= d) {
             break;
         }
+    }
+    // The physics stage: the colliders in of all (`LoadWork`; the settle
+    // hooks follow them).
+    let total = later.len() as u64;
+    if let Some(mut work) = world.get_resource_mut::<super::loading::LoadWork>() {
+        let w = super::loading::LoadWork {
+            step: super::loading::LoadStep::Physics,
+            done: colliders.next as u64,
+            total,
+            colliders: total,
+        };
+        work.set_if_neq(w);
     }
     if colliders.next < later.len() {
         world.insert_resource(progress);

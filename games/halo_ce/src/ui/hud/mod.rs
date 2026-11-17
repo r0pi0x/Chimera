@@ -43,6 +43,12 @@
 //! quads over it. Nothing is asked unzoomed or while another game's HUD
 //! is up, in Halo's app and the party apps alike.
 //!
+//! **Scaling** (`material::HudFilter`, cvar `halo_ce:hud_filter`, archived,
+//! Options > Video "Halo HUD scaling"): 0 Original (linear, the default),
+//! 1 Sharp (the shader samples nearest inside each texel and linear only
+//! across the one-pixel seam: `material::sharp_coord`), 2 Smooth+sharpen
+//! (linear plus a 0.6 unsharp mask). Pictures only; meters stay nearest.
+//!
 //! Known shortcuts: see `draw`; the motion tracker ignores `hud_radar`
 //! (the party apps' radar setting is about map overviews, and the tracker
 //! reads none). The grenade HUD is the selected type's (hud.md 10:
@@ -76,6 +82,22 @@ pub fn feed_lines(_: &World) -> usize {
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct HaloHudLayout(pub layout::HudLayout);
 
+/// `halo_ce:hud_filter` (archived; the Options page's "Halo HUD scaling"
+/// row), when there is a console.
+pub fn filter_cvar(app: &mut App) {
+    if app.world().get_resource::<chimera_core::console::Console>().is_none() {
+        return;
+    }
+    app.init_resource::<material::HudFilterSetting>();
+    chimera_core::console::resource_cvar::<material::HudFilterSetting, u8>(
+        app,
+        "halo_ce:hud_filter",
+        "How Halo's HUD pictures are scaled: 0 original (linear), 1 sharp (nearest inside each texel, linear only at its edges), 2 smooth with a light sharpening.",
+        |s| &mut s.0,
+    );
+    app.world_mut().resource_mut::<chimera_core::console::Console>().archive("halo_ce:hud_filter");
+}
+
 /// Halo's HUD: its root, the data's load, the state and the nodes (no
 /// renderer needed: the material's assets are used when there).
 pub struct HaloHudPlugin;
@@ -87,9 +109,11 @@ impl Plugin for HaloHudPlugin {
         app.init_resource::<nodes::HudLoad>()
             .init_resource::<nodes::HudImages>()
             .init_resource::<nodes::HaloHud>()
+            .init_resource::<material::HudFilterSetting>()
             .add_systems(Startup, nodes::spawn_root)
             .add_systems(Update, (nodes::load, nodes::collect, nodes::sync).chain().run_if(hud_is(GAME)))
             .add_systems(Update, (nodes::clear_blur.run_if(not(hud_is(GAME))), nodes::scope_post).chain().after(nodes::sync));
+        filter_cvar(app);
         super::kill_icons::plugin(app);
     }
 }

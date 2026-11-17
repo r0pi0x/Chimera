@@ -27,7 +27,10 @@ service"). Design and limits: [plans/active/asset-service.md](plans/active/asset
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net66` since a Halo player's body kind may be
+   The network version is `net67` since each player's lobby row carries
+   its load's stage and share (`LobbyReport`, `LobbyRow`: downloading,
+   loading the map, building models, physics; the lobby between maps);
+   `net66` (a Halo player's body kind may be
    the Hunter and the Halo guns include the Hunter's cannon (its own rung,
    `halo_ce:hunter_fuel_rod`: the body kind and the rung's weapon id go to
    every client; the rung is drawn unless the host sets `halo_ce:campaign_bodies 0` (default 1));

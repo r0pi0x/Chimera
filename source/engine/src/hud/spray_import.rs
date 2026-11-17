@@ -65,36 +65,7 @@ pub fn stem_of(name: &str) -> String {
     if stem.is_empty() { "spray".into() } else { stem }
 }
 
-/// An uncompressed RGBA8888 VTF (version 7.2, one level).
-pub fn encode_vtf(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
-    const HEADER: usize = 80;
-    // Clamp S and T, no mip maps, no level of detail, 8-bit alpha.
-    const FLAGS: u32 = 0x4 | 0x8 | 0x100 | 0x200 | 0x2000;
-    let mut v = Vec::with_capacity(HEADER + rgba.len());
-    v.extend_from_slice(b"VTF\0");
-    v.extend_from_slice(&7u32.to_le_bytes());
-    v.extend_from_slice(&2u32.to_le_bytes());
-    v.extend_from_slice(&(HEADER as u32).to_le_bytes());
-    v.extend_from_slice(&(width as u16).to_le_bytes());
-    v.extend_from_slice(&(height as u16).to_le_bytes());
-    v.extend_from_slice(&FLAGS.to_le_bytes());
-    v.extend_from_slice(&1u16.to_le_bytes()); // frames
-    v.extend_from_slice(&0u16.to_le_bytes()); // first frame
-    v.extend_from_slice(&[0; 4]);
-    for r in [0.5f32, 0.5, 0.5] {
-        v.extend_from_slice(&r.to_le_bytes());
-    }
-    v.extend_from_slice(&[0; 4]);
-    v.extend_from_slice(&1.0f32.to_le_bytes()); // bump map scale
-    v.extend_from_slice(&0u32.to_le_bytes()); // RGBA8888
-    v.push(1); // mip count
-    v.extend_from_slice(&u32::MAX.to_le_bytes()); // no low resolution image
-    v.extend_from_slice(&[0, 0]);
-    v.extend_from_slice(&1u16.to_le_bytes()); // depth
-    v.resize(HEADER, 0);
-    v.extend_from_slice(rgba);
-    v
-}
+pub use crate::content::material::encode_vtf;
 
 /// Import the picture at `source` into `logos_dir` as `<stem>.vtf`; the
 /// stem.

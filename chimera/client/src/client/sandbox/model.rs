@@ -483,6 +483,10 @@ pub struct GunView {
     /// Global tags ticked (AND).
     pub tags: BTreeSet<Tag>,
     pub search: String,
+    /// The search field's caret and the other end of its selection (char
+    /// indices; the standard text field: `widgets::Caret`).
+    pub search_caret: usize,
+    pub search_anchor: usize,
     /// The search field has the keyboard (`/`, a click, or Enter with
     /// nothing under the cursor); letters type only then.
     pub search_focus: bool,
@@ -504,6 +508,22 @@ pub struct GunView {
 }
 
 impl GunView {
+    /// The search field takes the keyboard (`/`, Enter), its caret at the
+    /// end of what is typed.
+    pub fn focus_search(&mut self) {
+        let n = self.search.chars().count();
+        self.search_focus = true;
+        self.search_caret = n;
+        self.search_anchor = n;
+    }
+
+    /// Empties the search (Esc).
+    pub fn clear_search(&mut self) {
+        self.search.clear();
+        self.search_caret = 0;
+        self.search_anchor = 0;
+    }
+
     fn words(&self) -> Vec<String> {
         self.search.split_whitespace().map(str::to_lowercase).collect()
     }

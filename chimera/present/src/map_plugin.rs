@@ -233,8 +233,6 @@ impl MapLayers for Present {
                     render::bodies::build_late_held.before(render::bodies::attach_held),
                     // On the new body in the frame it comes.
                     render::bodies::attach_held.after(render::bodies::attach_bodies),
-                    render::probe_lit::light_moved_props.before(render::probe_lit::relight),
-                    render::probe_lit::relight,
                     render::loose::attach_shown,
                     render::loose::draw_loose,
                 )
@@ -298,6 +296,21 @@ impl MapLayers for Present {
                 // rewrite on an earlier announcement and then found the
                 // late one empty ("cannot be extracted: already
                 // extracted", logged each time a moving prop stopped).
+                .before(bevy::asset::AssetEventSystems),
+        )
+        .add_systems(
+            PostUpdate,
+            // Moving models lit where they are this frame: after
+            // propagation, so a body, held model or moved prop that came
+            // this frame is sampled where it stands, not at the origin of
+            // its not yet propagated transform (and drawn unlit until the
+            // next frame's sample); before the probe table's upload and
+            // the materials' change events, so it is drawn so this frame.
+            (render::probe_lit::light_moved_props, render::probe_lit::relight)
+                .chain()
+                .run_if(resource_exists::<render::bodies::PlayModels>)
+                .after(bevy::transform::TransformSystems::Propagate)
+                .before(render::probe_lit::upload_probes)
                 .before(bevy::asset::AssetEventSystems),
         )
         .add_systems(

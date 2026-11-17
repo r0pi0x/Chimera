@@ -17,13 +17,23 @@
 //! (`MapTexture::keep_blocks_only`), as Combat Arms' shared models' do:
 //! what the GPU takes, and less to copy into each map.
 //!
-//! Known shortcuts (docs/tech-debt.md): what the dressing read is kept for
-//! the app's life, so files that arrive later (the asset service's, after
-//! a dressing that missed them) or an install changed meanwhile don't
-//! reach it until the app restarts; a kept texture of its blocks alone
-//! casts an opaque shadow (`render::shadows` reads texels for alpha). Why
-//! it's OK for now: a dressing reads only the install's `base` files,
-//! which come before any map loads; the guests' bodies are opaque.
+//! Files that arrive late: a dressing whose models missed files the game
+//! has but couldn't give then (the asset service's, not fetched yet, or
+//! held back while the menu's background map loaded: `MapModel::
+//! late_files`, `MaterialLoader::late_since`) is kept with that list; the
+//! next load asks the game whether any of them can be read now (`here`,
+//! the game's own mount) and, if so, dresses again, so a lightwarp or a
+//! normal map that came after the first dressing reaches the next map
+//! instead of waiting for a restart.
+//!
+//! Known shortcuts (docs/tech-debt.md): an install changed meanwhile
+//! doesn't reach a kept dressing until the app restarts, nor does a late
+//! file of what isn't a model (a sound, a decal, the HUD's look); the map
+//! showing keeps the dressing it was loaded with (the next map takes the
+//! new one); a kept texture of its blocks alone casts an opaque shadow
+//! (`render::shadows` reads texels for alpha). Why it's OK for now: a
+//! dressing reads only the install's `base` files, which come before any
+//! map loads; the guests' bodies are opaque.
 
 use std::{
     collections::HashMap,
@@ -55,14 +65,17 @@ fn entry(context: &LoadContext, game: &'static str, textures: bool) -> Arc<Entry
 
 /// `game`'s guest parts into `map`: converted by `convert` (the game's
 /// dressing, given an empty map) the first time the app (`options.
-/// context`) asks with these options' `textures`, copied from then on.
+/// context`) asks with these options' `textures`, copied from then on;
+/// converted again when the kept one missed late files and `here` says
+/// one of them can be read now (module doc).
 pub fn dress_cached(
     game: &'static str,
     map: &mut MapData,
     options: &MapLoadOptions,
     convert: impl FnOnce(&mut MapData) -> Result<(), String>,
+    here: impl FnOnce(&[String]) -> bool,
 ) -> Result<(), String> {
-    let parts = kept(game, options, convert)?;
+    let parts = kept(game, options, convert, here)?;
     append(map, &parts);
     Ok(())
 }
@@ -73,15 +86,39 @@ pub fn conversions(context: &LoadContext, game: &'static str, textures: bool) ->
     entry(context, game, textures).conversions.load(Ordering::Relaxed)
 }
 
+/// The files a dressing's models missed (`MapModel::late_files`), each
+/// once.
+pub fn late_files(parts: &MapData) -> Vec<String> {
+    let kit = &parts.kit;
+    let models = kit
+        .characters
+        .iter()
+        .map(|c| &c.model)
+        .chain(kit.held.iter().map(|h| &h.model))
+        .chain(kit.view_models.iter().map(|v| &v.model));
+    let mut out: Vec<String> = Vec::new();
+    for f in models.flat_map(|m| &m.late_files) {
+        if !out.contains(f) {
+            out.push(f.clone());
+        }
+    }
+    out
+}
+
 fn kept(
     game: &'static str,
     options: &MapLoadOptions,
     convert: impl FnOnce(&mut MapData) -> Result<(), String>,
+    here: impl FnOnce(&[String]) -> bool,
 ) -> Result<Arc<MapData>, String> {
     let entry = entry(&options.context, game, options.textures);
     let mut parts = entry.parts.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(p) = parts.as_ref() {
-        return Ok(p.clone());
+        let late = late_files(p);
+        if late.is_empty() || !here(&late) {
+            return Ok(p.clone());
+        }
+        bevy::log::info!("{game}: its guest parts dressed again (of {} files it missed, one is here now)", late.len());
     }
     let mut scratch = MapData::default();
     convert(&mut scratch)?;
@@ -133,4 +170,143 @@ pub fn append(map: &mut MapData, parts: &MapData) {
     crate::map::shells::add_shells(&mut map.kit.shells, kit.shells.iter().map(|s| moved(s, t, c)).collect());
     super::bsp::add_guest_sounds(Arc::make_mut(&mut map.sounds), (*parts.sounds).clone());
     map.warnings.extend(parts.warnings.iter().cloned());
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        io,
+        sync::{Arc, Mutex},
+    };
+
+    use bevy::prelude::default;
+
+    use super::*;
+    use crate::{
+        content::material::MaterialLoader,
+        map::{MapHeldModel, MapModel},
+        mount::{Entry, FileSource, Mount},
+    };
+
+    /// An asset store as a mount layer: it lists every file of its
+    /// manifest (`contains`), and gives those whose record arrived (until
+    /// then a read fails, as an asset miss).
+    #[derive(Clone, Default)]
+    pub(crate) struct LateStore {
+        pub listed: Arc<BTreeSet<String>>,
+        pub arrived: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+    }
+
+    impl LateStore {
+        pub(crate) fn arrive(&self, path: &str, bytes: Vec<u8>) {
+            self.arrived.lock().unwrap().insert(path.to_string(), bytes);
+        }
+
+        pub(crate) fn mount(&self) -> Mount {
+            let mut m = Mount::default();
+            m.push(self.clone());
+            m
+        }
+    }
+
+    impl FileSource for LateStore {
+        fn name(&self) -> String {
+            "late store".into()
+        }
+        fn entries(&self) -> Vec<Entry> {
+            self.listed.iter().map(|p| Entry { path: p.clone(), size: 0 }).collect()
+        }
+        fn read(&self, path: &str) -> Option<io::Result<Vec<u8>>> {
+            if !self.listed.contains(path) {
+                return None;
+            }
+            Some(self.arrived.lock().unwrap().get(path).cloned().ok_or_else(|| io::Error::other(format!("asset miss: {path}"))))
+        }
+        fn contains(&self, path: &str) -> bool {
+            self.listed.contains(path)
+        }
+        fn held(&self, path: &str) -> bool {
+            self.arrived.lock().unwrap().contains_key(path)
+        }
+    }
+
+    /// A 4x4 grey VTF.
+    pub(crate) fn vtf() -> Vec<u8> {
+        crate::content::material::encode_vtf(4, 4, &[128; 64])
+    }
+
+    /// A dressing whose held model's look wants a lightwarp the store
+    /// lists but hasn't brought: kept with that late file, then, once the
+    /// file arrives, dressed again at the next load (and not before), the
+    /// new one with nothing late.
+    #[test]
+    fn a_dressing_that_missed_a_file_is_dressed_again_when_it_arrives() {
+        const WARP: &str = "materials/models/player/pyro/pyro_lightwarp.vtf";
+        const BASE: &str = "materials/models/player/heavy/heavy_red.vtf";
+        let store = LateStore { listed: Arc::new([WARP, BASE].map(String::from).into()), ..default() };
+        store.arrive(BASE, vtf());
+        let options = MapLoadOptions::lean();
+        let dress = |store: &LateStore, map: &mut MapData| {
+            dress_cached(
+                "late_test",
+                map,
+                &options,
+                |m| {
+                    let mount = store.mount();
+                    let mut materials = MaterialLoader::guest(&mount, 0, 0).lean(true);
+                    let mark = materials.late_mark();
+                    let base = materials.texture("models/player/heavy/heavy_red", true);
+                    let warp = materials.texture("models/player/pyro/pyro_lightwarp", false);
+                    // The same lookup again (another material): still late.
+                    let _ = materials.texture("models/player/pyro/pyro_lightwarp", false);
+                    assert!(base.is_some());
+                    let model = MapModel { late_files: materials.late_since(mark), ..default() };
+                    m.kit.held.push(MapHeldModel {
+                        key: format!("warp {}", warp.is_some()),
+                        model,
+                        bone: String::new(),
+                        muzzle: None,
+                        attachments: Vec::new(),
+                        merged: Vec::new(),
+                        own: None,
+                    });
+                    Ok(())
+                },
+                |late| {
+                    let mount = store.mount();
+                    late.iter().any(|f| mount.read(f).is_ok())
+                },
+            )
+        };
+        let mut first = MapData::default();
+        dress(&store, &mut first).unwrap();
+        assert_eq!(first.kit.held[0].key, "warp false");
+        assert_eq!(first.kit.held[0].model.late_files, [WARP]);
+        // Nothing arrived: copied, not converted.
+        let mut second = MapData::default();
+        dress(&store, &mut second).unwrap();
+        assert_eq!(conversions(&options.context, "late_test", false), 1);
+        // The lightwarp arrives: the next load dresses again.
+        store.arrive(WARP, vtf());
+        let mut third = MapData::default();
+        dress(&store, &mut third).unwrap();
+        assert_eq!(conversions(&options.context, "late_test", false), 2);
+        assert_eq!(third.kit.held[0].key, "warp true");
+        assert!(third.kit.held[0].model.late_files.is_empty());
+        // Complete now: kept from then on.
+        dress(&store, &mut MapData::default()).unwrap();
+        assert_eq!(conversions(&options.context, "late_test", false), 2);
+    }
+
+    /// A file the game doesn't have at all is not late (nothing would
+    /// arrive): the dressing is kept.
+    #[test]
+    fn a_file_the_game_lacks_is_not_late() {
+        let store = LateStore::default();
+        let mount = store.mount();
+        let mut materials = MaterialLoader::guest(&mount, 0, 0).lean(true);
+        assert!(materials.texture("models/nothing", true).is_none());
+        assert!(materials.late_since(0).is_empty());
+    }
 }

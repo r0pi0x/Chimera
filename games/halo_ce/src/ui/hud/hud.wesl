@@ -25,6 +25,8 @@ struct HudParams {
     flash: vec4<f32>,
     // Empty colour (rgb).
     empty: vec4<f32>,
+    // x: scaling (0 linear, 1 sharp, 2 smooth and sharpened).
+    style: vec4<f32>,
 }
 
 @group(1) @binding(0) var<uniform> params: HudParams;
@@ -35,6 +37,41 @@ struct HudParams {
 
 fn linear(c: vec3<f32>) -> vec3<f32> {
     return pow(max(c, vec3<f32>(0.0)), vec3<f32>(2.2));
+}
+
+// "Sharp" sampling (material.rs `sharp_coord`): nearest inside a texel,
+// linear over one pixel's width at its edge; the sampler is linear.
+fn sharp(t: vec2<f32>, size: vec2<f32>, pixels_per_texel: vec2<f32>) -> vec2<f32> {
+    let p = t * size;
+    let s = max(pixels_per_texel, vec2<f32>(1.0));
+    let base = floor(p);
+    let c = p - base - vec2<f32>(0.5);
+    let flat_ = vec2<f32>(0.5) - vec2<f32>(0.5) / s;
+    return (base + (c - clamp(c, -flat_, flat_)) * s + vec2<f32>(0.5)) / size;
+}
+
+// A sprite's texel by the setting.
+fn sprite_texel(t: vec2<f32>) -> vec4<f32> {
+    let style = params.style.x;
+    let size = vec2<f32>(textureDimensions(image));
+    if style > 1.5 {
+        // Unsharp mask: the linear sample, plus its difference from the
+        // mean of the four neighbours a screen pixel away.
+        let d = fwidth(t);
+        let c = textureSample(image, image_sampler, t);
+        let n = (textureSample(image, image_sampler, t + vec2<f32>(d.x, 0.0))
+            + textureSample(image, image_sampler, t - vec2<f32>(d.x, 0.0))
+            + textureSample(image, image_sampler, t + vec2<f32>(0.0, d.y))
+            + textureSample(image, image_sampler, t - vec2<f32>(0.0, d.y))) * 0.25;
+        let s = c + (c - n) * 0.6;
+        return vec4<f32>(clamp(s.rgb, vec3<f32>(0.0), vec3<f32>(1.0)), c.a);
+    }
+    if style > 0.5 {
+        // Screen pixels per texel: the reciprocal of the texels one pixel spans.
+        let per_pixel = fwidth(t * size);
+        return textureSample(image, image_sampler, sharp(t, size, vec2<f32>(1.0) / max(per_pixel, vec2<f32>(1e-4))));
+    }
+    return textureSample(image, image_sampler, t);
 }
 
 @fragment
@@ -58,7 +95,13 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(linear(params.color.rgb * s.rgb) * a, 0.0);
     }
     let t = mix(params.uv.xy, params.uv.zw, in.uv);
-    let texel = textureSample(image, image_sampler, t);
+    // Meters keep their nearest sampling; the sprites take the setting.
+    var texel: vec4<f32>;
+    if mode > 0.5 {
+        texel = textureSample(image, image_sampler, t);
+    } else {
+        texel = sprite_texel(t);
+    }
     if mode > 0.5 {
         if texel.a <= 0.0 {
             discard;

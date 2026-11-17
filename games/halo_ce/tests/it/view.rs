@@ -504,3 +504,64 @@ fn posing_waits_by_the_sets_idle_numbers() {
     // view came back to idle on.
     assert_eq!((v.state, n), (ViewState::Posing, 30), "posing after the 30-tick wait");
 }
+
+/// Drawn at the frame rate (`game::eased`): a frame between two Halo ticks
+/// draws the view's pose as the blend of the two ticks' poses at the
+/// frame's overstep fraction (Halo's own tick: one tick behind, as the
+/// engine draws its ticks); the simulation's pose is the tick's again at
+/// the next tick's start.
+#[test]
+fn the_view_is_drawn_between_its_ticks() {
+    use bevy::ecs::system::RunSystemOnce;
+    use chimera_world::map::interp::{InterpPlugin, blend_poses};
+    let mut sim = Sim::new(HaloSim, (GreyboxMapPlugin, InterpPlugin));
+    stand_in(&mut sim);
+    let p = sim.spawn_character(greybox::SPAWNS[0], movement::ID);
+    sim.ticks(2);
+    give(sim.app.world_mut(), p, ASSAULT_RIFLE).unwrap();
+    sim.ticks(5);
+    assert_eq!(state(&sim, p), ViewState::Ready, "the draw turns bone 0 a little each tick");
+    let laid = |sim: &Sim| sim.app.world().get::<HaloViewModel>(p).unwrap().drawn.latest().unwrap().get().clone();
+    let drawn = |sim: &Sim| {
+        let view = sim.app.world().get::<chimera_world::map::ViewAnimator>(p).unwrap();
+        view.animator.as_ref().unwrap().fixed.as_ref().unwrap().get().clone()
+    };
+    let before = laid(&sim);
+    sim.ticks(1);
+    let after = laid(&sim);
+    assert_ne!(before, after);
+    // A frame with no tick, a quarter of the way into the next.
+    for f in [0.25f32, 0.5, 0.9] {
+        let w = sim.app.world_mut();
+        let step = w.resource::<Time<Fixed>>().timestep();
+        let o = w.resource::<Time<Fixed>>().overstep();
+        w.resource_mut::<Time<Fixed>>().discard_overstep(o);
+        w.resource_mut::<Time<Fixed>>().accumulate_overstep(step.mul_f32(f));
+        w.run_system_once(halo_ce::game::eased::ease).unwrap();
+        let want = blend_poses(&before, &after, f);
+        let got = drawn(&sim);
+        assert_eq!(got.len(), want.len());
+        for ((qg, pg), (qw, pw)) in got.iter().zip(&want) {
+            assert!(qg.dot(*qw).abs() > 1.0 - 1e-6 && pg.distance(*pw) < 1e-5, "{f}: {got:?} vs {want:?}");
+        }
+        assert!(got != after || before == after, "{f}: between, not the latest");
+    }
+    let w = sim.app.world_mut();
+    let o = w.resource::<Time<Fixed>>().overstep();
+    w.resource_mut::<Time<Fixed>>().discard_overstep(o);
+    // The tick's own pose for the simulation: restored at the start of
+    // the next tick, then that tick's laid.
+    let previous = laid(&sim);
+    sim.ticks(1);
+    let latest = laid(&sim);
+    assert_ne!(previous, latest);
+    // A frame right at the tick's end draws one tick behind (the frame
+    // the harness ran stopped at its own overstep).
+    let w = sim.app.world_mut();
+    let o = w.resource::<Time<Fixed>>().overstep();
+    w.resource_mut::<Time<Fixed>>().discard_overstep(o);
+    w.run_system_once(halo_ce::game::eased::ease).unwrap();
+    assert_eq!(drawn(&sim), previous, "a frame on a tick's end draws one tick behind");
+    sim.app.world_mut().run_schedule(FixedFirst);
+    assert_eq!(drawn(&sim), latest, "the simulation sees the tick's pose");
+}

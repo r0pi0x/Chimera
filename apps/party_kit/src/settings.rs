@@ -1753,7 +1753,7 @@ fn spawn(
         let bar = chimera_ui::shell::Bar {
             left: chimera_ui::shell::Left::Crumb { parent, title },
             party: &d.party.members,
-            party_max: d.party.max,
+            party_max: d.party.max, invite: d.party.invite,
             open: (d.ctx != Context::Host).then_some(chimera_ui::shell::ShellTile::Settings),
         };
         chimera_ui::shell::bar(ui, c, frame, images, icons, &bar);

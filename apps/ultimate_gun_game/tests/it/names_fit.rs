@@ -206,7 +206,7 @@ fn a_twenty_w_name_fits_every_signal_widget() {
         let w = sim.app.world_mut();
         w.insert_resource(NetRole::Server);
         w.insert_resource(NetSettings { maxplayers: 6, ..default() });
-        let row = |id: Option<u64>, st: u8| LobbyRow { id, name: W20.into(), status: st, done: 0, total: 0, ping_ms: Some(40), wins: 3, avatar: 0, party: 0 };
+        let row = |id: Option<u64>, st: u8| LobbyRow { id, name: W20.into(), status: st, done: 0, total: 0, step: chimera_net::prematch::NO_STEP, permille: 0, ping_ms: Some(40), wins: 3, avatar: 0, party: 0 };
         let lobby = w
             .spawn(NetLobby {
                 mode: "Ultimate Gun Game".into(),
