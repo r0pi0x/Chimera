@@ -269,3 +269,16 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   documents, 15.6 G of its cold dressing), as its own entry?
 - Order: the two cheap wins (deterministic bytes, skip the thrown-away
   texture decoding) before the disk layer?
+
+### The user's answers (2026-11-17)
+
+- **Served:** yes, converted parts are served from the asset service.
+  Players get faster loads with no downside to them.
+- **TF2's size:** our call. The rule is visual and experience parity:
+  only lossless reductions, so the result looks and plays the same.
+  Examples: the original DXT blocks kept as blocks, shared or
+  deduplicated animation data, compression.
+- **Combat Arms' install data:** cache it as its own entry if it
+  improves the metrics (parity, performance, load time). Measure it.
+- **Order:** the two cheap wins first, then the Chimera API, then the
+  disk layer.
