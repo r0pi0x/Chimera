@@ -19,6 +19,7 @@ mod hub;
 mod install_setting;
 mod local_load;
 mod minigame_callouts;
+mod parties;
 mod match_effects;
 mod prematch_lobby;
 mod rcon;

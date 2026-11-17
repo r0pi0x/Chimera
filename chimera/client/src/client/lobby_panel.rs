@@ -19,7 +19,7 @@
 //! - **Mode**, pinned at the left (`layout.lobby.mode_w`): the minigame,
 //!   Free for all, the games the guns come from, one per line in full.
 //! - **The list** (Call of Duty's, free for all): everyone in one list,
-//!   you first (your party, once parties exist), then the server's order;
+//!   you first (then your party: `LobbyRow::party`), then the server's order;
 //!   "Loaded n / m" and the slots above. A row (`LobbyPlayerRow`): the
 //!   slot number, the avatar (`chimera_ui::avatar`, from `LobbyRow::
 //!   avatar`; YOU its white frame; a bot the robot, `LobbyMark::Bot`), the
@@ -318,7 +318,7 @@ fn draw(
     let bar = chimera_ui::shell::Bar {
         left: chimera_ui::shell::Left::Crumb { parent, title: "Lobby" },
         party: &party.members,
-        party_max: party.max,
+        party_max: party.max, invite: party.invite,
         open: None,
     };
     let parts = chimera_ui::shell::bar(&ui, c, frame, images, icons, &bar);

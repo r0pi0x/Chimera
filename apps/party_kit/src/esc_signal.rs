@@ -97,6 +97,9 @@ pub fn spawn(
         if d.page == Page::ConfirmLeave {
             confirm(c, ui, root, crate::settings::LOBBY_SHADE, "Leave the lobby?", "You go back to the main menu; the match starts without you.", "Leave", d.focus);
         }
+        if d.page == Page::ConfirmPartyLeave {
+            confirm_party(c, ui, root, crate::settings::LOBBY_SHADE, d.focus);
+        }
         return root;
     }
     match shades {
@@ -153,6 +156,9 @@ pub fn spawn(
     if let Page::ConfirmDisconnect(n) = d.page {
         let who = if n == 1 { "1 player".to_string() } else { format!("{n} players") };
         confirm(c, ui, root, 0.72, &format!("End the game for {who}?"), "You are the host: leaving closes the server.", "End the game", d.focus);
+    }
+    if d.page == Page::ConfirmPartyLeave {
+        confirm_party(c, ui, root, 0.72, d.focus);
     }
     root
 }
@@ -251,6 +257,39 @@ fn vote_box(c: &mut Commands, ui: &Ui, panel: Entity, v: &VoteShown) {
             ui.sentence(c, acts, NOTE, Tone::Fg2, if m == 1 { "You voted yes" } else { "You voted no" });
         }
     }
+}
+
+/// The party leader's leave (provisional, the kit's modal and buttons:
+/// docs/plans/active/parties.md): Leave with my party first (the
+/// default), Leave alone, Stay.
+fn confirm_party(c: &mut Commands, ui: &Ui, root: Entity, shade: f32, focus: usize) {
+    let shade = c
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(ui.color(Tone::Ink, shade)),
+            bevy::ui::FocusPolicy::Block,
+            ChildOf(root),
+        ))
+        .id();
+    let m = ui.modal(c, shade, 42.0, false);
+    let ttl = ui.boxed(c, m, UiStyle { gap: Some(0.6), margin: Some([0.7, 0.0, 0.6, 0.0].into()), ..UiStyle::row() });
+    ui.mark(c, ttl, Tone::Acc, 0.8, 0.9);
+    ui.text(c, ttl, Role::DisplayBold, 1.35, Tone::Fg, "Leave the match?");
+    ui.paragraph(c, m, Role::Text, SENTENCE, Tone::Fg2, "You lead your party: it can come back to the menu with you.");
+    let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
+    let stay = ui.button(c, acts, Kind::Secondary, "Stay", Some("Esc"), 2.4, State::focused(focus == 2));
+    c.entity(stay).insert(Action::Back);
+    let alone = ui.button(c, acts, Kind::Secondary, "Leave alone", None, 2.4, State::focused(focus == 1));
+    c.entity(alone).insert(Action::LeaveAlone);
+    let with = ui.button(c, acts, Kind::Primary, "Leave with my party", Some("Enter"), chimera_ui::controls::HERO_H, State::focused(focus == 0));
+    c.entity(with).insert(Action::LeaveWithParty);
 }
 
 /// A leave (the host's, the lobby's): a modal with the threat bar over a

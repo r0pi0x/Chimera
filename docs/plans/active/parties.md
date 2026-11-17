@@ -1,8 +1,7 @@
 # Plan: session-only parties, joined by invite code
 
-Status: started 2026-11-17. Step 2 (the hub) built: `chimera_assets::
-party_doc`, `chimera_services::hub::party` (table `parties`, hub.db
-version 2), tests `chimera_services` `hub::parties::`. Backlog: "Parties and friends: the social
+Status: started 2026-11-17; steps 1-4 built (as built: the section at
+the end). Backlog: "Parties and friends: the social
 layer" ([../../backlog.md](../../backlog.md)); the user's decisions are
 recorded there and followed here. Scope of this plan's first run, in the
 user's order: **parties without friends**, joined by an invite code; no
@@ -207,3 +206,29 @@ The conservative choice is built until the user says otherwise.
    (it only groups rows and picks a side). A signed party pass from the
    hub would close it, if it matters.
 7. **How long an idle member stays**: 6 hours unseen, then dropped.
+
+## As built (2026-11-17)
+
+- **The hub**: `chimera_assets::party_doc` (the JSON, the calls,
+  `party.toml`), `chimera_services::hub::party` (the model, the limits,
+  the lead handover, expiry; table `parties`, hub.db version 2), the
+  routes in `hub::http`. Tests: `chimera_services` `hub::parties::`.
+- **The game**: `chimera_net::net::party` (`PartyClient`, the
+  `PartyHub` seam with `HttpPartyHub`, `cl_party`, the follow rule
+  `follow`, `PartyGo` acted on as `connect`/`disconnect`, the console
+  commands), `use_user_party` at the party apps' start after the hub;
+  the server's `prematch::PartyNumbers` and `LobbyRow::party`; teams by
+  `core::party_side` in `server::spawn_player` and `mode::assign_team`.
+  Tests: `chimera_net` `parties::` (sides, lobby numbers, `cl_party`
+  changes) and `hub::parties::` (two clients with the real services: made
+  by code, grouped on the server, following the leader in, leaving with
+  it, leaving the party); the follow rule's unit test.
+- **The UI (provisional)**: the rack's "+" live with a hub account
+  (`chimera_ui::shell::Party::invite`), the party's avatars in the rack
+  (`client::profile`), the party panel and the follow prompt
+  (`party_kit::party_signal`, `ui_scene party [in|lead|prompt]`), the
+  leader's Leave confirm in the Escape menu and over the lobby
+  (`esc_menu::Page::ConfirmPartyLeave`: Leave with my party first, Leave
+  alone, Stay).
+- Not built: party chat; Copy for the code; the designed panel; a hub
+  admin view of parties.
