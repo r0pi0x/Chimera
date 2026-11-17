@@ -271,7 +271,9 @@ pub fn sync(
     materials: Option<ResMut<Assets<HudMaterial>>>,
     mut nodes: Query<(&mut Node, &mut Visibility, &MaterialNode<HudMaterial>), With<Picture>>,
     mut pool: Local<Vec<(Entity, HudMaterial)>>,
+    filter: Option<Res<super::material::HudFilterSetting>>,
 ) {
+    let filter = filter.map_or(0, |f| f.0);
     let (Some(mut materials), Ok(root)) = (materials, root.single()) else { return };
     let canvas = window.iter().next().map_or(Canvas::ORIGINAL, |w| Canvas::of(w.width(), w.height()));
     for (i, q) in hud.quads.iter().enumerate() {
@@ -280,7 +282,11 @@ pub fn sync(
             Fill::Sweep { mask: Some(m), .. } => images.0.get(&(m.page, m.image)).cloned().unwrap_or_default(),
             _ => Handle::default(),
         };
-        let want = HudMaterial { params: HudParams::of(&q.fill, q.picture.uv), image, mask };
+        let mut params = HudParams::of(&q.fill, q.picture.uv);
+        if matches!(q.fill, Fill::Sprite(_) | Fill::Reticle(_)) {
+            params.style.x = f32::from(super::material::HudFilter::from_code(filter).code());
+        }
+        let want = HudMaterial { params, image, mask };
         let [left, top, width, height] = canvas.to_screen(q.rect);
         let node = Node { position_type: PositionType::Absolute, left: px(left), top: px(top), width: px(width), height: px(height), ..default() };
         if let Some((e, last)) = pool.get_mut(i) {

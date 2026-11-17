@@ -65,7 +65,7 @@
 //!   `standing` falls and a `PropHit` is written (playtest 2026-11-17:
 //!   pieces were laid on the floor at once, no physics, nothing broke). When every piece is down they all stand again `RESET_SECS`
 //!   later; `ResetProp`, `prop reset` and a new prop stand them at once.
-//! - The board: a 1 m square face, its centre `BOARD_CENTRE_Y` m above
+//! - The board: a 1 m square face (on the range, the range's board whole: `BoardFace`, `RangeLayout::board_size`), its centre `BOARD_CENTRE_Y` m above
 //!   the floor, rings painted on, on two posts. Each bullet whose trace
 //!   stopped on the face (each pellet), each other hit on it as an object
 //!   (a projectile's), and a blast whose centre is on the face (a rocket
@@ -282,9 +282,11 @@ pub struct OnRangeFurniture {
     pub board: bool,
 }
 
-/// Half the depth of the range's shelf assumed (m): `RangeLayout` gives its
-/// spots, not its size; knocked pieces lie past it.
-const RANGE_SHELF_HALF_DEPTH: f32 = 0.4;
+/// A board's scored face: its half width and half height (m). The default
+/// is `BOARD_HALF` square; on the range it is the range's board whole
+/// (`RangeLayout::board_size`), so the painted edge counts.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct BoardFace(pub Vec2);
 
 /// A mark where a bullet landed on a board.
 #[derive(Component, Clone, Copy, Debug)]
@@ -432,7 +434,9 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
         e
     };
     if *kind == "target_board" {
-        world.entity_mut(prop).insert(ShotGroup::default());
+        // The scored face: the range's board whole, else the default.
+        let half2 = range.as_ref().filter(|_| on_furniture).map_or(Vec2::splat(BOARD_HALF), |l| l.board_size / 2.0);
+        world.entity_mut(prop).insert((ShotGroup::default(), BoardFace(half2)));
         let stand = Transform::from_xyz(0.0, BOARD_CENTRE_Y, 0.0);
         let face = if on_furniture {
             // The range's own board: its face and rings are the range's;
@@ -450,13 +454,13 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
         // Its collider's front is the painted rings' (`FACE_HIT`), so a
         // bullet's mark lands on them, not hidden behind them.
         world.entity_mut(face).insert((
-            Collider::cuboid(BOARD_HALF * 2.0, BOARD_HALF * 2.0, FACE_HIT * 2.0),
+            Collider::cuboid(half2.x * 2.0, half2.y * 2.0, FACE_HIT * 2.0),
             PropPiece {
                 prop,
                 index: 0,
                 standing: true,
                 stand,
-                half: Vec3::new(BOARD_HALF, BOARD_HALF, FACE_FRONT),
+                half: Vec3::new(half2.x, half2.y, FACE_FRONT),
                 board: true,
                 floor_y: 0.0,
                 behind: 0.0,
@@ -474,7 +478,9 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
     } else {
         // The shelf (the range's own when it stands on that: its frame then
         // puts `SHELF_TOP` on the range shelf's top).
-        let (floor_y, behind) = if on_furniture { (-world.get::<Transform>(prop).map_or(0.0, |t| t.translation.y), RANGE_SHELF_HALF_DEPTH + 0.05) } else { (0.0, 0.45) };
+        let shelf_top = if on_furniture { range.as_ref().map_or(SHELF_TOP, |l| l.shelf_top) } else { SHELF_TOP };
+        let shelf_half_depth = range.as_ref().map_or(0.4, |l| l.shelf_size.z / 2.0);
+        let (floor_y, behind) = if on_furniture { (-world.get::<Transform>(prop).map_or(0.0, |t| t.translation.y), shelf_half_depth + 0.05) } else { (0.0, 0.45) };
         if !on_furniture {
             part(world, shape(ShapeKind::Box(Vec3::new(0.8, 0.02, 0.15)), wood, Transform::from_xyz(0.0, SHELF_TOP - 0.02, 0.0)), Some("wood"));
             for x in [-0.72, 0.72] {
@@ -486,7 +492,7 @@ pub fn spawn_from(world: &mut World, spec: &PropSpec, origin: Vec3, dir: Vec3) -
         let colour = if bottles { Color::srgb(0.12, 0.45, 0.18) } else { Color::srgb(0.75, 0.75, 0.78) };
         for i in 0..pieces {
             let x = (i as f32 - (pieces - 1) as f32 / 2.0) * step;
-            let stand = Transform::from_xyz(x, SHELF_TOP + hh, 0.0);
+            let stand = Transform::from_xyz(x, shelf_top + hh, 0.0);
             // No surface named: a game's hole there would stay in the air
             // when the piece is knocked off (Combat Arms' marks are the
             // world's), so a piece shows none.
@@ -535,7 +541,7 @@ fn range_furniture(world: &mut World, l: &chimera_world::range::RangeLayout, kin
     let taken: Vec<usize> = used.iter().flat_map(|u| u.spots.iter().copied()).collect();
     let first = (0..=spots.len() - need).find(|&i| (i..i + need).all(|k| !taken.contains(&k)))?;
     let centre = spots[first..first + need].iter().copied().sum::<Vec3>() / need as f32;
-    Some((centre - Vec3::Y * SHELF_TOP, OnRangeFurniture { spots: (first..first + need).collect(), board: false }))
+    Some((centre - Vec3::Y * l.shelf_top, OnRangeFurniture { spots: (first..first + need).collect(), board: false }))
 }
 
 /// Remove prop `e` (a player's change: `layout` remembers what is left).
@@ -657,6 +663,7 @@ fn prop_hits(
     world: PropWorld,
     mut out: MessageWriter<PropHit>,
     shapes: Query<&CodeShape>,
+    faces: Query<&BoardFace>,
     mut commands: Commands,
 ) {
     let now = clock.now;
@@ -710,8 +717,9 @@ fn prop_hits(
     let on_face = |prop: Entity, p: Vec3| {
         let l = local(&frame(prop)?, p);
         let on = Vec2::new(l.x, l.y - BOARD_CENTRE_Y);
-        let edge = BOARD_HALF + 0.01;
-        (on.x.abs() <= edge && on.y.abs() <= edge && l.z.abs() <= 0.3).then_some(on.clamp(Vec2::splat(-BOARD_HALF), Vec2::splat(BOARD_HALF)))
+        let half = faces.get(prop).map_or(Vec2::splat(BOARD_HALF), |f| f.0);
+        let edge = half + 0.01;
+        (on.x.abs() <= edge.x && on.y.abs() <= edge.y && l.z.abs() <= 0.3).then_some(on.clamp(-half, half))
     };
     // Knocked pieces and landings: (attacker, prop, piece, landing on the face).
     type Hits = Vec<(Option<Entity>, Entity, Entity, Option<Vec2>)>;

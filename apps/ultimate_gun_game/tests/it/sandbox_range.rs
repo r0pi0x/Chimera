@@ -371,6 +371,34 @@ fn props_go_on_the_ranges_shelf_and_board_then_their_own_and_real_bullets_knock_
 }
 
 #[test]
+fn the_ranges_board_scores_its_whole_painted_face_to_the_edge() {
+    use props::BoardFace;
+    let (mut sim, me, l) = play();
+    stand(&mut sim, me, &l, 0.0, 0.0);
+    let board = prop(&mut sim, "target_board", 30.0);
+    // The scored face is the range's board, not the 1 m default.
+    let half = sim.app.world().get::<BoardFace>(board).expect("a board's face").0;
+    assert_eq!(half, l.board_size / 2.0);
+    assert!(half.x > props::BOARD_HALF);
+    on_rung(&mut sim, me, SNIPER);
+    stand(&mut sim, me, &l, frame(&l, l.board).y, 0.0);
+    // 5 cm inside the painted edge, 0.1 m past the old 1 m face.
+    let edge = half.x - 0.05;
+    testkit::aim_at(&mut sim, me, l.board + Vec3::new(edge, 0.0, 0.0));
+    for i in 0..200 {
+        sim.intent(me).fire = i % 100 < 2;
+        sim.ticks(1);
+        if sim.app.world().get::<ShotGroup>(board).is_some_and(|g| !g.hits.is_empty() || g.misses > 0) {
+            break;
+        }
+    }
+    sim.intent(me).fire = false;
+    let g = sim.app.world().get::<ShotGroup>(board).cloned().unwrap();
+    assert_eq!((g.hits.len(), g.misses), (1, 0), "a hit on the painted edge, not a miss: {g:?}");
+    assert!((g.hits[0].x - edge).abs() < 0.1, "{g:?}");
+}
+
+#[test]
 fn a_layout_made_on_the_range_comes_back_there_and_one_made_elsewhere_goes_on_its_lines() {
     let (mut sim, me, l) = play();
     stand(&mut sim, me, &l, 5.0, 0.2);

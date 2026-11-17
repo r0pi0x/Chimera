@@ -9,6 +9,9 @@
 //! a ramp for long shots, a backstop past 200 m, a plain gradient sky and
 //! an even, bright light. Our own content: plain shapes and colours.
 //!
+//! Floor labels: each distance has two, one reading from the firing line and
+//! its half turn reading from the board's side (`floor_labels`).
+//!
 //! The layout is data, `data/range.toml` (compiled in, `LAYOUT_TOML`,
 //! read by `data`): dimensions, distances, cover, the shelf, the board,
 //! the platform, colours and light. Game-neutral like the greybox, whose
@@ -105,6 +108,45 @@ pub struct RangeLayout {
     pub prop_spots: Vec<Vec3>,
     /// The middle of the target board's face.
     pub board: Vec3,
+    /// The board's face: width and height (m) and the way it faces (flat,
+    /// unit: back toward the firing line). A shot is scored on this face,
+    /// the painted board's whole size.
+    pub board_size: Vec2,
+    pub board_normal: Vec3,
+    /// The shelf: its middle (on the floor), size (across, up, along) and
+    /// the height of its top (m).
+    pub shelf: Vec3,
+    pub shelf_size: Vec3,
+    pub shelf_top: f32,
+    /// The platform: the middle of its footprint on the floor, its size
+    /// (across, up, along), its ramp's width and slope (degrees).
+    pub platform: Vec3,
+    pub platform_size: Vec3,
+    pub ramp_width: f32,
+    pub ramp_degrees: f32,
+    /// The cover crates (middle on the floor, size), in the order of the
+    /// data's.
+    pub cover: Vec<LayoutBox>,
+    /// Half the clear lane's width (m): axis to the nearest crate's inner
+    /// face (the half width where there are none).
+    pub lane_half: f32,
+    /// Half the distance stripes' length across the lane (m).
+    pub stripe_half: f32,
+}
+
+/// A box of the layout: its middle on the floor and its size (across,
+/// up, along; the range's frame, as the data's).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayoutBox {
+    pub centre: Vec3,
+    pub size: Vec3,
+}
+
+impl LayoutBox {
+    /// The box's extent across the range: (left, right) of the axis.
+    pub fn across(&self) -> (f32, f32) {
+        (self.centre.x - self.size.x / 2.0, self.centre.x + self.size.x / 2.0)
+    }
 }
 
 impl RangeLayout {
@@ -123,6 +165,21 @@ impl RangeLayout {
         let p = &d.platform;
         let s = &d.shelf;
         let spots = s.spots.max(1);
+        let cover: Vec<LayoutBox> = d
+            .cover
+            .iter()
+            .map(|c| LayoutBox { centre: at(c.at[0], c.at[1], 0.0), size: Vec3::from(c.size) })
+            .collect();
+        let half_width = d.floor.width / 2.0;
+        // The nearest a crate's face comes to the axis (a crate across it
+        // closes the lane: zero).
+        let lane_half = cover
+            .iter()
+            .map(|c| {
+                let (l, r) = c.across();
+                if l <= 0.0 && r >= 0.0 { 0.0 } else { l.abs().min(r.abs()) }
+            })
+            .fold(half_width, f32::min);
         Self {
             firing_line: Vec3::ZERO,
             dir: Vec3::NEG_Z,
@@ -139,6 +196,18 @@ impl RangeLayout {
                 })
                 .collect(),
             board: at(d.board.at[0], d.board.at[1] - d.board.size[2] / 2.0, d.board.height),
+            board_size: Vec2::new(d.board.size[0], d.board.size[1]),
+            board_normal: Vec3::Z,
+            shelf: at(s.at[0], s.at[1], 0.0),
+            shelf_size: Vec3::from(s.size),
+            shelf_top: s.size[1],
+            platform: at(p.at[0], p.at[1], 0.0),
+            platform_size: Vec3::from(p.size),
+            ramp_width: p.ramp_width,
+            ramp_degrees: p.ramp_degrees,
+            cover,
+            lane_half,
+            stripe_half: d.distances.half,
         }
     }
 }
@@ -428,6 +497,35 @@ pub fn spawn(world: &mut World) {
     world.insert_resource(layout);
 }
 
+/// A floor label's place: its bottom-left corner, the way its text runs
+/// (`right`, unit), the way its up runs (`up`, stretched down or up range
+/// by `distances.floor_label_stretch`) and its character height.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FloorLabel {
+    pub origin: Vec3,
+    pub right: Vec3,
+    pub up: Vec3,
+    pub height: f32,
+}
+
+/// The floor labels of the `dist` m line, beside the stripe's two ends:
+/// the right one reads from the firing line (up the text is down range),
+/// the left one is that label turned half a turn about the stripe's
+/// middle, so it reads from the board's side, looking back up range
+/// (each label lies where its reader sees it at the stripe's right end).
+pub fn floor_labels(ds: &DistancesData, dist: f32) -> [FloorLabel; 2] {
+    let h = ds.floor_label + ds.floor_label_per_m * dist;
+    let deep = h * ds.floor_label_stretch;
+    let up = Vec3::NEG_Z * ds.floor_label_stretch;
+    let origin = at(ds.half + 0.4 * h, dist - deep / 2.0, 0.0);
+    // The half turn about the stripe's middle (x = 0, z = -dist).
+    let turned = Vec3::new(-origin.x, origin.y, -2.0 * dist - origin.z);
+    [
+        FloorLabel { origin, right: Vec3::X, up, height: h },
+        FloorLabel { origin: turned, right: Vec3::NEG_X, up: -up, height: h },
+    ]
+}
+
 /// The strokes of a character in a cell 0.6 wide and 1 tall (x right, y
 /// up): digits seven-segment style, `M`; others none.
 fn strokes(c: char) -> Vec<(Vec2, Vec2)> {
@@ -634,13 +732,13 @@ mod draw {
         for &dist in &ds.at {
             let width = ds.width + ds.width_per_m * dist;
             m.floor(at(0.0, dist, LINE_Y), Vec2::new(2.0 * ds.half, width), stripe);
-            let h = ds.floor_label + ds.floor_label_per_m * dist;
             let text = format!("{} M", number(dist));
-            // Read from the firing line: up the text is down range,
-            // stretched that way (as road markings) against the slant.
-            let deep = h * ds.floor_label_stretch;
-            let up = Vec3::NEG_Z * ds.floor_label_stretch;
-            m.text(&text, at(ds.half + 0.4 * h, dist - deep / 2.0, LABEL_Y), Vec3::X, up, h, label);
+            // One reads from the firing line (up the text is down range,
+            // stretched that way as road markings against the slant), one
+            // from the board's side (`floor_labels`).
+            for l in floor_labels(ds, dist) {
+                m.text(&text, l.origin + Vec3::Y * LABEL_Y, l.right, l.up, l.height, label);
+            }
             let h = (ds.sign + ds.sign_per_m * dist).min(ds.sign_max);
             let n = number(dist);
             let (bw, bh, depth) = (text_width(&n) * h + 1.0 * h, 1.7 * h, 0.1);
@@ -761,6 +859,64 @@ mod tests {
         assert!(l.spawns.iter().all(|s| s.z > 0.0 && s.z < 3.0), "spawns just behind the firing line");
         assert!(l.prop_spots.len() >= 2);
         assert_eq!(l.at_distance(40.0), Vec3::new(0.0, 0.0, -40.0));
+    }
+
+    #[test]
+    fn the_layout_carries_the_datas_dimensions() {
+        let mut d = data();
+        let l = RangeLayout::of(&d);
+        assert_eq!(l.board_size, Vec2::new(1.2, 1.2));
+        assert_eq!(l.board_normal, Vec3::Z, "the board faces the firing line");
+        assert_eq!(l.shelf_size, Vec3::new(4.0, 1.0, 0.8));
+        assert_eq!(l.shelf_top, 1.0);
+        assert_eq!(l.shelf, Vec3::new(-11.0, 0.0, -12.0));
+        assert_eq!((l.platform_size, l.ramp_width, l.ramp_degrees), (Vec3::new(6.0, 3.0, 6.0), 4.0, 20.0));
+        assert_eq!(l.platform_top, Vec3::new(14.0, 3.0, 4.0));
+        assert_eq!(l.stripe_half, 6.0);
+        assert_eq!(l.cover.len(), d.cover.len());
+        assert_eq!(l.cover[0], LayoutBox { centre: Vec3::new(-15.0, 0.0, -14.0), size: Vec3::new(3.0, 1.2, 2.0) });
+        // The clear lane: the nearest crate face to the axis (the crate at
+        // x = 15 / 2.4 m wide... its face at 14.0 for the 4 m crate).
+        let nearest = d.cover.iter().map(|c| c.at[0].abs() - c.size[0] / 2.0).fold(f32::MAX, f32::min);
+        assert!((l.lane_half - nearest).abs() < 1e-5 && l.lane_half > 5.0, "{}", l.lane_half);
+        // Changing the data changes the layout: nothing is assumed.
+        d.board.size = [2.0, 1.5, 0.05];
+        d.shelf.size = [3.0, 1.4, 1.0];
+        d.platform.size = [8.0, 2.0, 5.0];
+        d.distances.half = 4.0;
+        d.cover.push(CoverData { at: [-2.0, 40.0], size: [2.0, 1.0, 1.0] });
+        let l = RangeLayout::of(&d);
+        assert_eq!(l.board_size, Vec2::new(2.0, 1.5));
+        assert_eq!((l.shelf_size.y, l.shelf_top), (1.4, 1.4));
+        assert_eq!(l.platform_top.y, 2.0);
+        assert_eq!(l.stripe_half, 4.0);
+        assert!((l.lane_half - 1.0).abs() < 1e-5, "a crate 1 m off the axis narrows the lane: {}", l.lane_half);
+        d.cover.push(CoverData { at: [0.0, 60.0], size: [2.0, 1.0, 1.0] });
+        assert_eq!(RangeLayout::of(&d).lane_half, 0.0, "a crate across the axis closes the lane");
+    }
+
+    #[test]
+    fn floor_labels_read_from_the_firing_line_and_from_the_boards_side() {
+        let d = data();
+        for &dist in &d.distances.at {
+            let [near, far] = floor_labels(&d.distances, dist);
+            // From the firing line (looking down range, -Z; its right is
+            // +X): the text runs right, its up goes away.
+            assert_eq!(near.right, Vec3::X);
+            assert!(near.up.dot(Vec3::NEG_Z) > 0.0);
+            // From the board's side (looking back, +Z; its right is -X).
+            assert_eq!(far.right, Vec3::NEG_X);
+            assert!(far.up.dot(Vec3::Z) > 0.0);
+            // Both lie on the floor facing up, either side of the stripe's
+            // ends, the turned one the other's half turn about its middle.
+            assert_eq!(near.right.cross(near.up).normalize(), Vec3::Y);
+            assert_eq!(far.right.cross(far.up).normalize(), Vec3::Y);
+            assert!(near.origin.x > d.distances.half && far.origin.x < -d.distances.half);
+            let w = text_width(&format!("{} M", number(dist))) * near.height;
+            let (a, b) = (near.origin + near.right * w + near.up * near.height, far.origin + far.right * w + far.up * far.height);
+            assert!((far.origin.x + near.origin.x).abs() < 1e-4 && (far.origin.z + near.origin.z + 2.0 * dist).abs() < 1e-3, "{dist}");
+            assert!((a.x + b.x).abs() < 1e-4 && (a.z + b.z + 2.0 * dist).abs() < 1e-3, "{dist}");
+        }
     }
 
     #[test]

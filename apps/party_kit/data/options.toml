@@ -22,6 +22,7 @@ setting = [
   { label = "Display", cvar = "chimera_fullscreen", choices = [["0", "Windowed"], ["1", "Full screen"], ["2", "Borderless"]] },
   { label = "Vertical sync", cvar = "mat_vsync", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Frame limit", cvar = "fps_max", choices = [["0", "None"], ["60", "60"], ["144", "144"], ["240", "240"], ["300", "300"]] },
+  { label = "Halo HUD scaling", cvar = "halo_ce:hud_filter", choices = [["0", "Original"], ["1", "Sharp"], ["2", "Smooth+sharpen"]], help = "How Halo's HUD pictures (drawn for 640 by 480) are scaled up: Original (smooth, as always), Sharp (crisp texel edges at any size) or Smooth+sharpen (smooth with a light sharpening). Halo guns' HUD only." },
   { label = "Gamma", cvar = "mat_monitorgamma", range = [1.6, 2.6, 0.1], help = "The screen's gamma: lower is brighter (1.6 to 2.6; 2.2 by default)." },
 ]
 

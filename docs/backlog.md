@@ -116,7 +116,7 @@ the user's go-ahead: no Actions runs unless asked.
   - It covers hub plan S3: invite or link code, choosing a username, the recovery key, and Skip.
   - Design it first as a new UI, with heavy use of motion graphics for a high-quality first experience, using the kit's motion tokens (`chimera_ui::motion`) so it can be slowed for new users or disabled.
 
-- **Range and code-built map follow-ups (2026-11-16):**
+- **Range and code-built map follow-ups (2026-11-16):** Done (2026-11-17): `RangeLayout` now carries the crates, lane, shelf, board (size, facing), platform, ramp and stripe width from data/range.toml; the board scores its whole painted face (`BoardFace`); floor labels read from both sides (`range::floor_labels`). Original text:
   - **More in RangeLayout:** cover-crate boxes (or the clear lane's width), the shelf's size, the board's size and facing (the board is 1.2 m but the target scoring face 1.0 m, so the outer 0.1 m counts as misses), the platform and ramp, and the stripes' half width.
   - **A floor label:** "20 M" looks mirrored from the board's side.
 
@@ -2864,7 +2864,7 @@ docs/plans/active/sound.md.
   stepped on high-refresh screens. Interpolate between the 30 Hz poses
   (bones, view model, projectiles) for display, simulation unchanged.
 
-- **Halo HUD resolution (user, 2026-11-17).** The HUD's bitmaps are the
+- **Halo HUD resolution (user, 2026-11-17).** Done (2026-11-17), left below for the generated-asset option: the opt-in scaling setting `halo_ce:hud_filter` (Options > Video "Halo HUD scaling": Original, the default; Sharp, nearest inside each texel with a one-pixel linear seam; Smooth+sharpen, an unsharp mask; `games/halo_ce/src/ui/hud/material.rs`, hud.wesl). Still open: upscaled HUD bitmaps as a generated asset set. Original text: The HUD's bitmaps are the
   original's, authored for 640x480, so they look soft scaled to 1080p and
   up: low resolution by the source, not our choice. Options, opt-in:
   sharper filtering/scaling (nearest at integer scales, or a sharpening
