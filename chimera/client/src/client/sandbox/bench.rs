@@ -98,9 +98,19 @@ pub struct BenchUi {
     pub holds_open: bool,
     /// What is typed in the picker's "Find a character or a game".
     pub picker_search: String,
+    /// Its caret and the other end of the selection (char indices).
+    pub picker_caret: usize,
+    pub picker_anchor: usize,
 }
 
 impl BenchUi {
+    /// Empties the picker's search field.
+    pub fn clear_search(&mut self) {
+        self.picker_search.clear();
+        self.picker_caret = 0;
+        self.picker_anchor = 0;
+    }
+
     /// The picker's characters that hold every typed word in their name,
     /// game or id (all of them with nothing typed).
     pub fn found<'a>(&self, chars: &'a [CharacterEntry]) -> Vec<&'a CharacterEntry> {
@@ -153,6 +163,24 @@ pub enum BenchAction {
 #[derive(Component)]
 struct BenchRoot;
 
+/// The picker's own root: it is rebuilt only when the picker's inputs
+/// change (its list binds its slots a frame after it is built, so a
+/// rebuild for an unrelated change of the bench would leave it empty).
+#[derive(Component)]
+struct PickerRoot;
+
+/// What the picker shows.
+#[derive(Clone, Debug, PartialEq)]
+struct PickShown {
+    picker: (Option<u64>, Option<String>),
+    search: String,
+    caret: (usize, usize),
+    chars: usize,
+    /// The target's number in the title.
+    n: usize,
+    size: (u32, u32),
+}
+
 /// The drawer's width, cq.
 pub const W: f32 = 31.0;
 
@@ -164,6 +192,8 @@ fn keys(
     mut bench: ResMut<BenchUi>,
     view: Res<BenchView>,
     mut out: MessageWriter<BenchAction>,
+    mut own: Local<chimera_ui::clipboard::Clipboard>,
+    shared: Option<ResMut<chimera_ui::clipboard::Clipboard>>,
 ) {
     if ui.screen != SandboxScreen::Bench || console.is_some_and(|c| c.open) {
         typed.clear();
@@ -171,20 +201,30 @@ fn keys(
     }
     let k = |c: KeyCode| keys.just_pressed(c);
     if bench.picker.is_some() {
-        // Typing finds a character ("Find a character or a game").
-        use bevy::input::{ButtonState, keyboard::Key};
-        let held = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) || keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+        // Typing finds a character ("Find a character or a game"): the
+        // kit's text field, with its caret, selection, copy and paste.
+        use bevy::input::ButtonState;
+        let held = |ks: [KeyCode; 2]| keys.any_pressed(ks);
+        let (ctrl, shift) = (held([KeyCode::ControlLeft, KeyCode::ControlRight]), held([KeyCode::ShiftLeft, KeyCode::ShiftRight]));
+        let clipboard = match shared {
+            Some(c) => c.into_inner(),
+            None => &mut *own,
+        };
         for e in typed.read() {
-            if e.state != ButtonState::Pressed || held {
+            if e.state != ButtonState::Pressed {
                 continue;
             }
-            match &e.logical_key {
-                Key::Backspace => {
-                    bench.picker_search.pop();
-                }
-                Key::Space if !bench.picker_search.is_empty() => bench.picker_search.push(' '),
-                Key::Character(c) if bench.picker_search.len() < 32 => bench.picker_search.push_str(c),
-                _ => {}
+            let Some(key) = crate::client::widgets::text_key(&e.logical_key, e.key_code, ctrl, shift) else { continue };
+            let mut caret = crate::client::widgets::Caret { at: bench.picker_caret, anchor: bench.picker_anchor };
+            let mut text = bench.picker_search.clone();
+            if caret.key(&mut text, key, clipboard, 32, false) {
+                bench.picker_search = text;
+            }
+            let n = bench.picker_search.chars().count();
+            let (at, anchor) = (caret.at.min(n), caret.anchor.min(n));
+            if (bench.picker_caret, bench.picker_anchor) != (at, anchor) {
+                bench.picker_caret = at;
+                bench.picker_anchor = anchor;
             }
         }
         if k(KeyCode::Enter) {
@@ -312,7 +352,7 @@ fn act(world: &mut World) {
             }
             BenchAction::PickerUse => {
                 let Some((target, Some(ch))) = world.resource_mut::<BenchUi>().picker.take() else { continue };
-                world.resource_mut::<BenchUi>().picker_search.clear();
+                world.resource_mut::<BenchUi>().clear_search();
                 match target.and_then(|id| spec_of(id).map(|s| (id, s))) {
                     Some((id, s)) => req(world, BenchRequest::Set(id, TargetSpec { character: ch, gun: None, ..s })),
                     None => req(world, BenchRequest::Spawn(TargetSpec { character: ch, ..default() })),
@@ -321,7 +361,7 @@ fn act(world: &mut World) {
             BenchAction::PickerCancel => {
                 let mut b = world.resource_mut::<BenchUi>();
                 b.picker = None;
-                b.picker_search.clear();
+                b.clear_search();
             }
             BenchAction::AddProp => {
                 let mut b = world.resource_mut::<BenchUi>();
@@ -372,7 +412,7 @@ fn act(world: &mut World) {
     if (picker_open || holds_open) && esc && world.resource::<SandboxUi>().on {
         let mut b = world.resource_mut::<BenchUi>();
         if !b.picker_search.is_empty() {
-            b.picker_search.clear();
+            b.clear_search();
         } else if picker_open {
             b.picker = None;
         } else {
@@ -404,13 +444,48 @@ fn draw(
     chars: Res<CharacterCatalogue>,
     cat: Res<super::SandboxCatalogue>,
     root: Query<Entity, With<BenchRoot>>,
+    mut lists: ResMut<chimera_ui::VirtualLists>,
+    picker_root: Query<Entity, With<PickerRoot>>,
+    mut last_pick: Local<Option<PickShown>>,
     mut last: Local<Shown>,
     mut c: Commands,
 ) {
+    let open = look.on() && ui_state.on && ui_state.screen == SandboxScreen::Bench;
+    let pick_now = open
+        .then(|| {
+            bench.picker.clone().map(|p| PickShown {
+                n: p.0.and_then(|id| view.targets.iter().position(|t| t.id == id)).unwrap_or(view.targets.len()) + 1,
+                picker: p,
+                search: bench.picker_search.clone(),
+                caret: (bench.picker_caret, bench.picker_anchor),
+                chars: chars.0.len(),
+                size: (look.units.height as u32, (look.units.scale_factor * 100.0) as u32),
+            })
+        })
+        .flatten();
+    if *last_pick != pick_now {
+        *last_pick = pick_now.clone();
+        for r in &picker_root {
+            c.entity(r).despawn();
+        }
+        if let Some(p) = pick_now {
+            let ui = Ui::new(&look.theme, look.fonts.as_deref(), *look.units);
+            let full = c
+                .spawn((
+                    PickerRoot,
+                    Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
+                    GlobalZIndex(super::change_gun::Z + 1),
+                    Pickable::IGNORE,
+                ))
+                .id();
+            picker(&mut c, &ui, &look, full, &chars.0, p.picker.0, p.picker.1.as_deref(), &view, &bench, &mut lists);
+        }
+    }
     let next = Shown {
         open: look.on() && ui_state.on && ui_state.screen == SandboxScreen::Bench,
         view: view.clone(),
-        bench: bench.clone(),
+        // The picker has its own root (`PickerRoot`).
+        bench: BenchUi { picker: None, picker_search: String::new(), picker_caret: 0, picker_anchor: 0, ..bench.clone() },
         options: *options,
         chars: chars.0.len(),
         guns: cat.guns.len(),
@@ -437,9 +512,6 @@ fn draw(
         .id();
     let name = |id: &str| cat.get(id).map_or_else(|| id.to_string(), |g| g.name.clone());
     drawer(&mut c, &ui, &look, full, &view, &bench, &options, &chars.0, &name);
-    if let Some((target, chosen)) = &bench.picker {
-        picker(&mut c, &ui, &look, full, &chars.0, *target, chosen.as_deref(), &view, &bench.picker_search);
-    }
 }
 
 fn button(c: &mut Commands, ui: &Ui, parent: Entity, label: &str, key: Option<&str>, a: BenchAction) -> Entity {
@@ -519,16 +591,21 @@ fn drawer(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, view: &BenchView
             .spawn((UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), h: Some(1.95), ..UiStyle::row() }, Node::default(), BenchAction::Select(i), clickable(), ChildOf(card)))
             .id();
         portrait(c, ui, look, head, 1.7);
-        let tx = ui.boxed(c, head, UiStyle { gap: Some(0.25), ..UiStyle::column() });
-        ui.text(c, tx, Role::DisplayRegular, 0.74, Tone::Fg, &t.name);
-        ui.text(c, tx, Role::Mono, 0.42, Tone::Fg3, &t.game);
-        ui.boxed(c, head, UiStyle { grow: Some(1.0), ..UiStyle::row() });
+        // The name and the stats give way (cut with an ellipsis), the
+        // trash never does.
+        let tx = ui.boxed(c, head, UiStyle { gap: Some(0.25), min_w: Some(0.0), grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() });
+        let nm = ui.text(c, tx, Role::DisplayRegular, 0.74, Tone::Fg, &t.name);
+        c.entity(nm).insert(chimera_ui::Ellipsize::in_parent(t.name.to_uppercase()));
+        let gm = ui.text(c, tx, Role::Mono, 0.42, Tone::Fg3, &t.game);
+        c.entity(gm).insert(chimera_ui::Ellipsize::in_parent(t.game.to_uppercase()));
         let sum = match t.respawn {
             Some(_) => "Down \u{00b7} back soon".to_string(),
             None if t.spec.place == TargetPlace::Platform => format!("Platform \u{00b7} {}", t.spec.motion.label()),
             None => format!("{} m \u{00b7} {}", t.spec.distance_m, t.spec.motion.label()),
         };
-        ui.text(c, head, Role::Mono, 0.46, Tone::Fg2, &sum);
+        let sb = ui.boxed(c, head, UiStyle { min_w: Some(0.0), shrink: Some(2.0), ..UiStyle::row() });
+        let st = ui.text(c, sb, Role::Mono, 0.46, Tone::Fg2, &sum);
+        c.entity(st).insert(chimera_ui::Ellipsize::in_parent(sum.to_uppercase()));
         trash(c, ui, look, head, BenchAction::Remove(t.id));
         if !open {
             continue;
@@ -705,8 +782,9 @@ fn short_game(name: &str) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, every: &[CharacterEntry], target: Option<u64>, chosen: Option<&str>, view: &BenchView, typed: &str) {
-    let found = BenchUi { picker_search: typed.to_string(), ..default() }.found(every);
+fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, every: &[CharacterEntry], target: Option<u64>, chosen: Option<&str>, view: &BenchView, bench: &BenchUi, lists: &mut chimera_ui::VirtualLists) {
+    let typed = bench.picker_search.as_str();
+    let found = bench.found(every);
     let chars: Vec<CharacterEntry> = found.into_iter().cloned().collect();
     let chars = chars.as_slice();
     let scrim = c
@@ -732,7 +810,8 @@ fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, every: &[Charact
     let n = target.and_then(|id| view.targets.iter().position(|t| t.id == id)).unwrap_or(view.targets.len()) + 1;
     ui.text(c, head, Role::DisplayBold, 1.6, Tone::Fg, &format!("Target {n:02}"));
     ui.text(c, head, Role::Mono, 0.52, Tone::Fg2, "Who stands there, and what it holds");
-    let body = ui.boxed(c, plate, UiStyle { gap: Some(1.2), grow: Some(1.0), ..UiStyle::row() });
+    let body = ui.boxed(c, plate, UiStyle { gap: Some(1.2), grow: Some(1.0), align: Some(AlignItems::Stretch), ..UiStyle::row() });
+    c.entity(body).insert(Node { min_height: Val::Px(0.0), ..default() });
     // Games.
     let games = ui.boxed(c, body, UiStyle { w: Some(13.0), gap: Some(0.1), shrink: Some(0.0), ..UiStyle::column() });
     ui.text(c, games, Role::Mono, 0.46, Tone::Fg3, "Games");
@@ -753,50 +832,36 @@ fn picker(c: &mut Commands, ui: &Ui, look: &Look, root: Entity, every: &[Charact
         ui.text(c, r, Role::Mono, 0.54, Tone::Fg3, &chars.iter().filter(|x| x.game == *g).count().to_string());
     }
     // The characters by game.
-    let mid = ui.boxed(c, body, UiStyle { grow: Some(1.0), gap: Some(0.4), ..UiStyle::column() });
-    let find = ui.boxed(c, mid, UiStyle { gap: Some(0.6), align: Some(AlignItems::Center), h: Some(2.1), pad: Some([0.0, 0.8, 0.0, 0.8].into()), ..UiStyle::row() }.bg_a(Tone::Fg, 0.05));
-    c.entity(find).insert(UiParityId::new("bench.picker.find"));
-    kit_icon(c, look, find, "search", 0.8, if typed.is_empty() { Tone::Fg3 } else { Tone::Fg }, 1.0);
-    if typed.is_empty() {
-        ui.sentence(c, find, 0.78, Tone::Fg3, "Find a character or a game");
-    } else {
-        ui.text_plain(c, find, Role::Text, 0.8, Tone::Fg, typed);
-        c.spawn((Node { width: Val::Px(look.hair().max(1.5)), height: look.val(1.0), ..default() }, BackgroundColor(look.tone(Tone::Fg)), ChildOf(find)));
-        ui.boxed(c, find, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-        ui.text(c, find, Role::Mono, 0.42, Tone::Fg3, &format!("{} of {}", chars.len(), every.len()));
+    let mid = ui.boxed(c, body, UiStyle { grow: Some(1.0), gap: Some(0.4), align: Some(AlignItems::Stretch), ..UiStyle::column() });
+    // The kit's text field (a caret, a selection, copy and paste), the
+    // count beside it.
+    let find_row = ui.boxed(c, mid, UiStyle { gap: Some(0.8), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::row() });
+    let byte = |i: usize| typed.char_indices().nth(i).map_or(typed.len(), |(b, _)| b);
+    let cur = chimera_ui::controls::TextCursor { at: byte(bench.picker_caret), anchor: byte(bench.picker_anchor) };
+    let find = ui.text_field(c, find_row, typed, "Find a character or a game", Some(cur), false, 30.0, State::focused(true));
+    c.entity(find).insert((PickerSearch, UiParityId::new("bench.picker.find")));
+    if !typed.is_empty() {
+        ui.text(c, find_row, Role::Mono, 0.42, Tone::Fg3, &format!("{} of {}", chars.len(), every.len()));
     }
     if chars.is_empty() {
         ui.sentence(c, mid, 0.7, Tone::Fg3, "No character or game holds that.");
     }
-    for g in &order {
-        let h = ui.boxed(c, mid, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), h: Some(1.5), ..UiStyle::row() });
-        kit_icon(c, look, h, "chevron", 0.5, Tone::Fg2, 1.0);
-        ui.text(c, h, Role::Mono, 0.5, Tone::Fg2, g);
-        let row = c.spawn((UiStyle { gap: Some(0.35), ..UiStyle::row() }, Node { flex_wrap: FlexWrap::Wrap, row_gap: ui.units.val(0.35), ..default() }, ChildOf(mid))).id();
-        for ch in chars.iter().filter(|x| x.game == *g) {
-            let on = chosen == Some(ch.id.as_str());
-            let t = c
-                .spawn((
-                    UiStyle { w: Some(5.2), gap: Some(0.3), pad: Some([0.3, 0.3, 0.3, 0.3].into()), ..UiStyle::column() }.bg_a(Tone::Fg, if on { 0.1 } else { 0.03 }).outline(if on { Tone::Fg2 } else { Tone::Fg5 }, 1.0),
-                    Node::default(),
-                    BenchAction::PickerChoose(ch.id.clone()),
-                    clickable(),
-                    ChildOf(row),
-                ))
-                .id();
-            if on {
-                ui.underline(c, t, Tone::Acc, 0.22);
-            }
-            let p = ui.boxed(c, t, UiStyle { h: Some(3.4), justify: Some(JustifyContent::Center), align: Some(AlignItems::FlexEnd), ..UiStyle::row() }.bg(Tone::Ink3));
-            kit_icon(c, look, p, "profile", 2.8, if ch.bytes.is_some() { Tone::Fg4 } else { Tone::Fg3 }, 1.0);
-            if let Some(b) = ch.bytes {
-                let dl = ui.boxed(c, p, UiStyle { gap: Some(0.25), align: Some(AlignItems::Center), pad: Some([0.12, 0.25, 0.12, 0.25].into()), ..UiStyle::row() }.abs([None, Some(0.3), Some(0.3), None]).bg_a(Tone::Ink, 0.8).outline(Tone::Fg5, 1.0));
-                kit_icon(c, look, dl, "download", 0.45, Tone::Fg2, 1.0);
-                ui.text(c, dl, Role::Mono, 0.36, Tone::Fg2, &super::units::size_words(b));
-            }
-            ui.text(c, t, Role::DisplayRegular, 0.5, Tone::Fg, &ch.name);
-        }
+    // The characters by game: the kit's recycling list inside the fixed
+    // dialog (it scrolls; the buttons stay put).
+    let by_game: Vec<(String, Vec<CharacterEntry>)> = order.iter().map(|g| (g.to_string(), chars.iter().filter(|x| x.game == *g).cloned().collect())).collect();
+    {
+        let st = lists.state(PICKER_LIST);
+        st.set_shape(chimera_ui::VShape::grid(PICK_COLS, 1.5, PICK_TILE_H, PICK_GAP));
+        st.set_sections(by_game.iter().map(|(g, v)| chimera_ui::VSection::new(g.clone(), v.len())).collect());
+        st.bump();
     }
+    let list = ui.virtual_list(c, mid, PICKER_LIST, UiStyle { grow: Some(1.0), ..UiStyle::row() }, 40.0, chimera_ui::VShape::grid(PICK_COLS, 1.5, PICK_TILE_H, PICK_GAP));
+    c.entity(list.scroll.frame).insert(Node { min_height: Val::Px(0.0), ..default() });
+    c.entity(mid).insert(Node { min_height: Val::Px(0.0), min_width: Val::Px(0.0), ..default() });
+    for &slot in &list.slots {
+        c.entity(slot).insert(Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, display: Display::None, column_gap: ui.units.val(PICK_GAP), ..default() });
+    }
+    c.insert_resource(PickerGrid { games: by_game, chosen: chosen.map(str::to_string) });
     // The chosen one.
     let side = ui.boxed(c, body, UiStyle { w: Some(17.0), gap: Some(0.35), pad: Some([0.0, 0.0, 0.0, 1.2].into()), shrink: Some(0.0), ..UiStyle::column() });
     if let Some(ch) = chosen.and_then(|id| every.iter().find(|x| x.id == id)) {
@@ -863,11 +928,143 @@ pub fn staged_characters() -> CharacterCatalogue {
     ])
 }
 
+/// The picker's search field.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct PickerSearch;
+
+/// The pointer in the picker's search field (`controls::TextPress`): a
+/// press places the caret, a drag selects, a double press selects all.
+fn search_pointer(
+    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    fields: Query<(Entity, &Interaction), With<PickerSearch>>,
+    hits: chimera_ui::controls::TextHits,
+    clock: Option<Res<chimera_ui::UiClock>>,
+    mut press: Local<chimera_ui::controls::TextPress>,
+    mut bench: ResMut<BenchUi>,
+) {
+    let Some(mouse) = mouse else { return };
+    if bench.picker.is_none() {
+        press.release();
+        return;
+    }
+    let now = clock.map_or(0.0, |c| c.now);
+    let set = |bench: &mut BenchUi, c: usize, a: usize| {
+        let n = bench.picker_search.chars().count();
+        let (c, a) = (c.min(n), a.min(n));
+        if (bench.picker_caret, bench.picker_anchor) != (c, a) {
+            bench.picker_caret = c;
+            bench.picker_anchor = a;
+        }
+    };
+    if mouse.just_pressed(MouseButton::Left) {
+        let Some(e) = fields.iter().find_map(|(e, i)| (*i == Interaction::Pressed).then_some(e)) else {
+            press.release();
+            return;
+        };
+        let (Some(at), Some(len)) = (hits.char_at(e), hits.len(e)) else { return };
+        let (c, a) = press.press(now, at, len);
+        set(&mut bench, c, a);
+    } else if mouse.pressed(MouseButton::Left) {
+        let Some((e, _)) = fields.iter().next() else { return };
+        let Some(at) = hits.char_at(e) else { return };
+        if let Some((c, a)) = press.drag(at) {
+            set(&mut bench, c, a);
+        }
+    } else {
+        press.release();
+    }
+}
+
+/// The picker's characters as built, by game, for the list's slots.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct PickerGrid {
+    pub games: Vec<(String, Vec<CharacterEntry>)>,
+    pub chosen: Option<String>,
+}
+
+/// The picker's list key (`VirtualLists`, `ScrollViews`).
+pub const PICKER_LIST: &str = "bench_picker";
+const PICK_COLS: usize = 8;
+const PICK_TILE_H: f32 = 7.2;
+const PICK_GAP: f32 = 0.35;
+
+/// Fills the picker's list slots: a game's header, a row of tiles.
+#[allow(clippy::too_many_arguments)]
+fn bind_picker(
+    look: Look,
+    lists: Res<chimera_ui::VirtualLists>,
+    grid: Res<PickerGrid>,
+    slots: Query<(Entity, &chimera_ui::VSlot), Changed<chimera_ui::VSlot>>,
+    owners: Query<&chimera_ui::vlist::VirtualList>,
+    mut c: Commands,
+) {
+    use chimera_ui::{VCursor, vlist::VLine};
+    let Some(st) = lists.get(PICKER_LIST) else { return };
+    let ui = Ui::new(&look.theme, look.fonts.as_deref(), *look.units);
+    for (slot, s) in &slots {
+        // Only this list's slots (every list's slots change on one query).
+        if !owners.get(s.list).is_ok_and(|l| l.key == PICKER_LIST) {
+            continue;
+        }
+        c.entity(slot).despawn_children();
+        let Some(line) = s.line.and_then(|l| st.layout.lines.get(l)).copied() else { continue };
+        match line {
+            VLine::Header(g) => {
+                let Some((name, _)) = grid.games.get(g) else { continue };
+                let h = ui.boxed(&mut c, slot, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), grow: Some(1.0), ..UiStyle::row() });
+                kit_icon(&mut c, &look, h, "chevron", 0.5, Tone::Fg2, 1.0);
+                ui.text(&mut c, h, Role::Mono, 0.5, Tone::Fg2, name);
+            }
+            VLine::Row { section, first, count } => {
+                for col in 0..PICK_COLS {
+                    let cell = c.spawn((Node { flex_grow: 1.0, flex_basis: Val::Px(0.0), min_width: Val::Px(0.0), height: Val::Percent(100.0), ..default() }, ChildOf(slot))).id();
+                    if col >= count {
+                        continue;
+                    }
+                    let Some(ch) = grid.games.get(section).and_then(|g| g.1.get(first + col)) else { continue };
+                    let _ = VCursor::Item(section, first + col);
+                    let on = grid.chosen.as_deref() == Some(ch.id.as_str());
+                    let t = c
+                        .spawn((
+                            UiStyle { gap: Some(0.3), pad: Some([0.3, 0.3, 0.3, 0.3].into()), grow: Some(1.0), min_w: Some(0.0), ..UiStyle::column() }
+                                .bg_a(Tone::Fg, if on { 0.1 } else { 0.03 })
+                                .outline(if on { Tone::Fg2 } else { Tone::Fg5 }, 1.0),
+                            Node { min_width: Val::Px(0.0), overflow: Overflow::clip_x(), ..default() },
+                            BenchAction::PickerChoose(ch.id.clone()),
+                            clickable(),
+                            ChildOf(cell),
+                        ))
+                        .id();
+                    if on {
+                        ui.underline(&mut c, t, Tone::Acc, 0.22);
+                    }
+                    let p = ui.boxed(&mut c, t, UiStyle { h: Some(3.4), justify: Some(JustifyContent::Center), align: Some(AlignItems::FlexEnd), ..UiStyle::row() }.bg(Tone::Ink3));
+                    kit_icon(&mut c, &look, p, "profile", 2.8, if ch.bytes.is_some() { Tone::Fg4 } else { Tone::Fg3 }, 1.0);
+                    if let Some(b) = ch.bytes {
+                        let dl = ui.boxed(&mut c, p, UiStyle { gap: Some(0.25), align: Some(AlignItems::Center), pad: Some([0.12, 0.25, 0.12, 0.25].into()), ..UiStyle::row() }.abs([None, Some(0.3), Some(0.3), None]).bg_a(Tone::Ink, 0.8).outline(Tone::Fg5, 1.0));
+                        kit_icon(&mut c, &look, dl, "download", 0.45, Tone::Fg2, 1.0);
+                        ui.text(&mut c, dl, Role::Mono, 0.36, Tone::Fg2, &super::units::size_words(b));
+                    }
+                    let nm = ui.text(&mut c, t, Role::DisplayRegular, 0.5, Tone::Fg, &ch.name);
+                    c.entity(nm).insert(chimera_ui::Ellipsize::in_parent(ch.name.to_uppercase()));
+                }
+            }
+        }
+    }
+}
+
 /// The bench's systems.
 pub fn add(app: &mut App) {
-    app.init_resource::<BenchUi>().init_resource::<CharacterCatalogue>().add_message::<BenchAction>().add_systems(
+    app.init_resource::<BenchUi>().init_resource::<CharacterCatalogue>().init_resource::<PickerGrid>().add_message::<BenchAction>().add_systems(
+        PostUpdate,
+        bind_picker
+            .after(chimera_ui::vlist::place_slots)
+            .before(bevy::ui::UiSystems::Prepare)
+            .run_if(resource_exists::<chimera_ui::Theme>)
+            .run_if(resource_exists::<chimera_ui::UiUnits>),
+    ).add_systems(
         Update,
-        (keys, clicks, act, draw)
+        (keys, search_pointer, clicks, act, draw)
             .chain()
             .after(super::SandboxSystems)
             .run_if(resource_exists::<chimera_ui::Theme>)

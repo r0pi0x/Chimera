@@ -691,7 +691,7 @@ impl<'a> Ui<'a> {
         let slab = UiSlant::new(if on { Tone::Fg } else { Tone::Fg4 }, 1.0);
         let left = if on { TOGGLE_ON_LEFT } else { TOGGLE_OFF_LEFT };
         let s = self.slant_at(c, t, slab, [Some(left), Some(0.2), None, None], TOGGLE_SLAB_W, 1.1);
-        c.entity(s).insert((ToggleSlab, UiTransform::default()));
+        c.entity(s).insert((ToggleSlab { track: t }, UiTransform::default()));
         if let Some(sl) = slide.filter(|sl| !sl.motion.snaps()) {
             let from = if on { TOGGLE_OFF_LEFT - TOGGLE_ON_LEFT } else { TOGGLE_ON_LEFT - TOGGLE_OFF_LEFT };
             let tl = Timeline::new([Track::new(Prop::X, from, 0.0).dur(sl.motion.secs(Pace::Normal)).ease(Pace::Normal.ease())]).started(sl.since);
@@ -1578,7 +1578,9 @@ pub struct ToggleFocus;
 
 /// A toggle's slab (the moving part).
 #[derive(Component, Clone, Copy, Debug)]
-pub struct ToggleSlab;
+pub struct ToggleSlab {
+    pub track: Entity,
+}
 
 /// A toggle's label box (OFF, then ON), each its half's width.
 #[derive(Component, Clone, Copy, Debug)]
@@ -1959,21 +1961,30 @@ pub fn slide_picks(
     reduced: Option<Res<crate::ReducedMotion>>,
     units: Res<UiUnits>,
     mut mem: ResMut<PickMemory>,
-    tracks: Query<(&ComputedNode, &UiGlobalTransform), With<SegmentedTrack>>,
-    mut picks: Query<(Entity, &SegmentedPick, &ComputedNode, &mut UiGlobalTransform, Has<PickPlaced>, Option<&Timeline>), Without<SegmentedTrack>>,
+    tracks: Query<&UiGlobalTransform, (Without<SegmentedPick>, Without<ToggleSlab>)>,
+    mut picks: Query<(Entity, Option<&SegmentedPick>, Option<&ToggleSlab>, &ComputedNode, &mut UiGlobalTransform, Has<PickPlaced>, Option<&Timeline>), Or<(With<SegmentedPick>, With<ToggleSlab>)>>,
     mut commands: Commands,
 ) {
     let motion = if reduced.is_some_and(|r| r.0) { Motion::new(0.0) } else { motion.map(|m| *m).unwrap_or_default() };
-    for (e, pick, node, mut gt, placed, tl) in &mut picks {
-        let Ok((tn, tg)) = tracks.get(pick.track) else { continue };
+    for (e, pick, slab, node, mut gt, placed, tl) in &mut picks {
+        // A segmented pick keys by its words, a toggle's slab by its place.
+        let (track, pkey) = match (pick, slab) {
+            (Some(p), _) => (p.track, p.key),
+            (_, Some(t)) => (t.track, 1),
+            _ => continue,
+        };
+        let Ok(tg) = tracks.get(track) else { continue };
         let (w, k) = (node.size().x * node.inverse_scale_factor, node.inverse_scale_factor);
         if w <= 0.0 {
             continue;
         }
-        let key = (pick.key, (tg.translation.x / 8.0).round() as i32, (tg.translation.y / 8.0).round() as i32);
-        let _ = tn;
+        let key = (pkey, (tg.translation.x / 8.0).round() as i32, (tg.translation.y / 8.0).round() as i32);
         if !placed {
             commands.entity(e).insert(PickPlaced);
+            if tl.is_some() {
+                // Slid by its builder (`ToggleSlide`).
+                continue;
+            }
             let centre = (gt.translation.x - tg.translation.x) * k;
             let old = mem.seen.get(&key).filter(|(.., at)| clock.now - at < 0.5).map(|&(c, w, _)| (c, w));
             if let Some((dx_logical, sx)) = pick_slide(old, (centre, w), &motion) {

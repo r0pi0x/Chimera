@@ -729,6 +729,11 @@ fn sim_builds(sim: &Sim) -> u64 {
 /// `sim("gun")` with the UI laid out, `edit` applied to the staging before
 /// the first frame.
 fn laid_out(edit: impl FnOnce(&mut World)) -> Sim {
+    laid_out_as("gun", edit)
+}
+
+/// `laid_out` for another staging.
+fn laid_out_as(what: &str, edit: impl FnOnce(&mut World)) -> Sim {
     use bevy::camera::{ComputedCameraValues, RenderTargetInfo, Viewport};
     let mut sim = Sim::with(SimBasePlugins, |app| {
         app.init_resource::<Assets<Image>>()
@@ -756,7 +761,7 @@ fn laid_out(edit: impl FnOnce(&mut World)) -> Sim {
         },
     ));
     sim.app.insert_resource(chimera_ui::UiUnits { height: 1080.0, scale_factor: 1.0, ..default() });
-    sandbox::stage(sim.app.world_mut(), &["gun".to_string()]).expect("staged");
+    sandbox::stage(sim.app.world_mut(), &[what.to_string()]).expect("staged");
     edit(sim.app.world_mut());
     for _ in 0..8 {
         frame(&mut sim);
@@ -828,4 +833,31 @@ fn a_long_name_keeps_the_details_icon_in_the_pane() {
     let shown = w.query::<(&UiParityId, &Text)>().iter(w).find(|(p, _)| p.0 == "gun.detail.name").map(|(_, t)| t.0.clone()).unwrap();
     assert!(shown.ends_with("...") || shown.ends_with('\u{2026}'), "cut with the kit's ellipsis: {shown}");
     assert!(LONG.to_uppercase().starts_with(shown.trim_end_matches(['.', '\u{2026}']).trim_end()), "its own start: {shown}");
+}
+
+/// The target picker is a fixed dialog: its characters are the kit's list
+/// (tiles bound as slots, scrolling inside), whatever the number of
+/// options, and its search is the standard text field (a caret, a
+/// selection: `PickerSearch` on a `TextField`).
+#[test]
+fn the_target_picker_lists_characters_in_a_scrolling_list_inside_the_dialog() {
+    use chimera_client::client::sandbox::bench::{BenchAction, PICKER_LIST, PickerSearch};
+    let mut sim = laid_out_as("bench-pick", |_| {});
+    let w = sim.app.world_mut();
+    let tiles = w.query::<&BenchAction>().iter(w).filter(|a| matches!(a, BenchAction::PickerChoose(_))).count();
+    assert!(tiles >= 4, "character tiles are bound in the list ({tiles})");
+    let boxes: Vec<(Vec2, Vec2)> = w
+        .query::<(&BenchAction, &bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform)>()
+        .iter(w)
+        .filter(|(a, ..)| matches!(a, BenchAction::PickerChoose(_)))
+        .map(|(_, n, t)| (t.translation, n.size))
+        .collect();
+    assert!(boxes.iter().all(|(_, s)| s.x > 10.0 && s.y > 10.0), "tiles have a size: {boxes:?}");
+    assert_eq!(w.query::<&PickerSearch>().iter(w).count(), 1, "the standard search field");
+    assert!(w.resource::<VirtualLists>().get(PICKER_LIST).is_some());
+    // The buttons stay inside the plate.
+    let (plate_lo, plate_hi) = edges(&mut sim, "bench.picker");
+    let w = sim.app.world_mut();
+    let uses = w.query::<(&BenchAction, &bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform)>().iter(w).find(|(a, ..)| **a == BenchAction::PickerUse).map(|(_, n, t)| (t.translation - n.size * 0.5, t.translation + n.size * 0.5)).unwrap();
+    assert!(uses.1.y <= plate_hi.y + 1.0 && uses.0.y >= plate_lo.y, "Use is inside the dialog");
 }
