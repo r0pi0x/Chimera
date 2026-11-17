@@ -10,7 +10,9 @@
 //! port (hidden from others, shown to its own account with a hint),
 //! expiry, leaving, a revoked account's listing dropped, a restart
 //! keeping the list, the owner's list and delist (loopback and the
-//! services' secret only).
+//! services' secret only); parties (`hub::party`): made, joined by code,
+//! led, followed, left, kicked, size and wrong-code limits, a restart,
+//! the lead handed on and expiry.
 
 use std::{
     fs,
@@ -434,4 +436,150 @@ fn a_hub_restart_keeps_the_list() {
     assert_eq!(list.servers.len(), 1);
     assert_eq!(list.servers[0].addr, SocketAddr::from(([127, 0, 0, 1], up.port)).to_string());
     assert!(s.hub().count() == 1);
+}
+
+// --- Parties (docs/plans/active/parties.md).
+
+mod parties {
+    use chimera_assets::party_doc::{self, Create, Join, Lead, Me, MoveKind, OnMember, State, Target};
+
+    use super::*;
+
+    fn me(name: &str) -> Me {
+        Me { name: name.into(), avatar: 3 }
+    }
+
+    fn state(s: &Services, ticket: &str, token: &str, at: Option<&str>) -> Result<party_doc::PartyView, party_doc::Failure> {
+        party_doc::state(&s.hub_url(), None, ticket, &State { token: token.into(), me: me("x"), at: at.map(str::to_string) })
+    }
+
+    #[test]
+    fn a_party_is_made_joined_by_its_code_led_and_left() {
+        let s = Services::new("party_flow");
+        let origin = s.hub_url();
+        let a = s.ticket("alice", "tester", Some(0));
+        let b = s.ticket("bob", "tester", Some(0));
+        // No ticket, no party.
+        assert_eq!(party_doc::create(&origin, None, "chimera2t.forged.x", &Create { me: me("A") }).unwrap_err().status, Some(401));
+        let made = party_doc::create(&origin, None, &a, &Create { me: me("Alice") }).unwrap();
+        assert!(made.token.starts_with(party_doc::TOKEN_PREFIX));
+        assert_eq!(made.party.code.len(), 7, "{}", made.party.code);
+        assert_eq!(made.party.id.len(), 12);
+        assert!(made.party.leading());
+        // Joined by the code, typed loosely.
+        let typed = made.party.code.to_lowercase().replace('-', " ");
+        let joined = party_doc::join(&origin, None, &b, &Join { code: typed, me: me("Bob") }).unwrap();
+        assert_eq!(joined.party.id, made.party.id);
+        assert_eq!(joined.party.members.len(), 2);
+        assert!(!joined.party.leading());
+        assert!(joined.party.members.iter().all(|m| m.online));
+        // A member may not lead.
+        let lead = |t: &str, target: Option<Target>, together: bool| {
+            party_doc::lead(&origin, None, &b, &Lead { token: t.into(), target, together, hosted: false })
+        };
+        assert_eq!(lead(&joined.token, None, true).unwrap_err().status, Some(403));
+        // The leader takes the party to a server: one move.
+        let server = Target { addr: "192.0.2.7:27031".into(), name: "Ours".into() };
+        let v = party_doc::lead(&origin, None, &a, &Lead { token: made.token.clone(), target: Some(server.clone()), together: false, hosted: false }).unwrap();
+        assert_eq!((v.moves, v.kind), (1, MoveKind::Join));
+        // Telling it again is no new move.
+        let v = party_doc::lead(&origin, None, &a, &Lead { token: made.token.clone(), target: Some(server.clone()), together: false, hosted: false }).unwrap();
+        assert_eq!(v.moves, 1);
+        let seen = state(&s, &b, &joined.token, Some("192.0.2.7:27031")).unwrap();
+        assert_eq!(seen.target.as_ref().map(|t| t.addr.as_str()), Some("192.0.2.7:27031"));
+        assert_eq!(seen.me().unwrap().at.as_deref(), Some("192.0.2.7:27031"));
+        // Leave with my party: a leave move naming the server left.
+        let v = party_doc::lead(&origin, None, &a, &Lead { token: made.token.clone(), target: None, together: true, hosted: false }).unwrap();
+        assert_eq!((v.moves, v.kind, v.left.as_deref(), v.target.is_none()), (2, MoveKind::Leave, Some("192.0.2.7:27031"), true));
+        // Leave alone: nobody moves.
+        let v = party_doc::lead(&origin, None, &a, &Lead { token: made.token.clone(), target: None, together: false, hosted: false }).unwrap();
+        assert_eq!(v.moves, 2);
+        // Promote, then the old leader is a member.
+        let bob = seen.you.clone();
+        let v = party_doc::promote(&origin, None, &a, &OnMember { token: made.token.clone(), member: bob.clone() }).unwrap();
+        assert_eq!(v.leader().unwrap().id, bob);
+        assert_eq!(party_doc::promote(&origin, None, &a, &OnMember { token: made.token.clone(), member: bob.clone() }).unwrap_err().status, Some(403));
+        // The leader leaves: the lead passes; the last one out ends it and frees the code.
+        party_doc::leave(&origin, None, &b, &joined.token).unwrap();
+        let v = state(&s, &a, &made.token, None).unwrap();
+        assert!(v.leading());
+        assert!(party_doc::gone(&state(&s, &b, &joined.token, None).unwrap_err()));
+        party_doc::leave(&origin, None, &a, &made.token).unwrap();
+        assert_eq!(s.hub().party_count(), 0);
+        let again = party_doc::join(&origin, None, &b, &Join { code: made.party.code.clone(), me: me("Bob") }).unwrap_err();
+        assert_eq!(again.status, Some(404));
+    }
+
+    #[test]
+    fn kicks_sizes_and_wrong_codes_are_limited() {
+        let s = Services::new("party_limits");
+        let origin = s.hub_url();
+        let a = s.ticket("lead", "tester", Some(0));
+        let made = party_doc::create(&origin, None, &a, &Create { me: me("Lead") }).unwrap();
+        let mut tokens = Vec::new();
+        for i in 1..party_doc::MAX_MEMBERS {
+            let t = s.ticket(&format!("member{i}"), "tester", Some(0));
+            let j = party_doc::join(&origin, None, &t, &Join { code: made.party.code.clone(), me: me(&format!("M{i}")) }).unwrap();
+            tokens.push((t, j));
+        }
+        let late = s.ticket("late", "tester", Some(0));
+        assert_eq!(party_doc::join(&origin, None, &late, &Join { code: made.party.code.clone(), me: me("Late") }).unwrap_err().status, Some(409));
+        // Kicked: the token is no member's any more.
+        let (kt, kj) = &tokens[0];
+        let v = party_doc::kick(&origin, None, &a, &OnMember { token: made.token.clone(), member: kj.party.you.clone() }).unwrap();
+        assert_eq!(v.members.len(), party_doc::MAX_MEMBERS - 1);
+        assert!(party_doc::gone(&state(&s, kt, &kj.token, None).unwrap_err()));
+        // A member can't kick.
+        let (mt, mj) = &tokens[1];
+        assert_eq!(party_doc::kick(&origin, None, mt, &OnMember { token: mj.token.clone(), member: v.you.clone() }).unwrap_err().status, Some(403));
+        // Wrong codes: 404 each, then 429 for the window.
+        for _ in 0..10 {
+            assert_eq!(party_doc::join(&origin, None, &late, &Join { code: "ZZZ-ZZZ".into(), me: me("Late") }).unwrap_err().status, Some(404));
+        }
+        let blocked = party_doc::join(&origin, None, &late, &Join { code: made.party.code.clone(), me: me("Late") }).unwrap_err();
+        assert_eq!(blocked.status, Some(429), "{blocked}");
+        s.clock.advance(hub::party::CODE_WINDOW as i64);
+        // The window over (and the kicked one's place free): in.
+        party_doc::join(&origin, None, &late, &Join { code: made.party.code.clone(), me: me("Late") }).unwrap();
+    }
+
+    #[test]
+    fn parties_outlast_a_restart_and_expire_when_nobody_comes_back() {
+        let mut s = Services::new("party_expiry");
+        let origin = s.hub_url();
+        let a = s.ticket("lead", "tester", Some(0));
+        let b = s.ticket("other", "tester", Some(0));
+        let made = party_doc::create(&origin, None, &a, &Create { me: me("Lead") }).unwrap();
+        let joined = party_doc::join(&origin, None, &b, &Join { code: made.party.code.clone(), me: me("Other") }).unwrap();
+        // The hub restarts (on another port): the party and both tokens are still good.
+        s.hub_run = None;
+        s.hub_run = Some(Services::start_hub(&s.store, &s.clock, &s.accounts_run.url(), "127.0.0.1:0"));
+        assert_eq!(state(&s, &a, &made.token, None).unwrap().members.len(), 2);
+        // The leader goes quiet; the other stays: after the handover time the lead passes.
+        s.clock.advance(130);
+        state(&s, &b, &joined.token, None).unwrap();
+        s.hub().sweep();
+        let v = state(&s, &b, &joined.token, None).unwrap();
+        assert!(v.leading(), "{v:?}");
+        assert!(!v.members.iter().find(|m| m.id == made.party.you).unwrap().online);
+        // Nobody for six hours: gone.
+        s.clock.advance(6 * 3600 + 1);
+        s.hub().sweep();
+        assert_eq!(s.hub().party_count(), 0);
+        // (A fresh ticket: the old ones expired meanwhile.)
+        let fresh = s.ticket("later", "tester", Some(0));
+        assert!(party_doc::gone(&state(&s, &fresh, &made.token, None).unwrap_err()));
+    }
+
+    #[test]
+    fn a_hosting_leader_is_found_where_the_hub_sees_it() {
+        let s = Services::new("party_hosted");
+        s.write_config("public_address = \"198.51.100.4\"\n");
+        let a = s.ticket("hosting", "tester", Some(0));
+        let made = party_doc::create(&s.hub_url(), None, &a, &Create { me: me("Host") }).unwrap();
+        let lead = Lead { token: made.token.clone(), target: Some(Target { addr: "10.9.9.9:27040".into(), name: "My game".into() }), together: false, hosted: true };
+        // From this machine: hub.toml's public address, the body's port only.
+        let v = party_doc::lead(&s.hub_url(), None, &a, &lead).unwrap();
+        assert_eq!(v.target.unwrap().addr, "198.51.100.4:27040");
+    }
 }

@@ -660,8 +660,11 @@ pub fn action_line(v: &LobbyView, loaded: usize) -> String {
     if let Some(left) = v.countdown {
         return format!("{loaded} of {n} loaded. The match starts in {left} s.");
     }
-    if v.hosting {
+    if v.hosting && v.host_start {
         format!("{loaded} of {n} loaded. The match starts when you press Start.")
+    } else if v.hosting {
+        // A later lobby (between maps): it starts by itself; Start is early.
+        format!("{loaded} of {n} loaded. It starts once everyone has loaded, or press Start.")
     } else if v.host_start {
         format!("{loaded} of {n} loaded. Waiting for the host to start.")
     } else {
