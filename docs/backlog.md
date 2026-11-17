@@ -61,6 +61,7 @@ the user's go-ahead: no Actions runs unless asked.
 
 - **Our own default assets: player models from the logo's three characters (user, 2026-11-15):** create a small set of original, committed assets, made by us (e.g. in Blender), for games or tests that have no player model yet. Today they fall back to the shell's capsule (`map::CharacterModels::for_identity`).
   - **First goal:** turn the three characters in the logo (the Operator, Trooper and Vanguard avatar glyphs, `shots/avatar-glyphs/*.svg` in the Signal design work, now `chimera_ui::avatar`) into rigged, animated player models in the Signal look.
+  - **Sandbox test dummy (user, 2026-11-17):** the range's dummies should not be a Combat Arms character by default; a dummy mesh in the shape of the logo characters, with hitgroups.
   - **Rigging:** one shared humanoid skeleton, so animations retarget across all three.
   - **Animations:** a base set of idle, run, crouch, jump, death, and holding a pistol, rifle and melee weapon, with weapon attachment bones.
   - **First-person arms:** for weapons that have no view-model arms.
@@ -2857,6 +2858,19 @@ docs/plans/active/sound.md.
   instead of the MissionTrigger's `ADD`.
 
 ## 9. Performance
+
+- **Halo: view models and animations at frame rate (user, 2026-11-17).**
+  Halo's gun animations and related motion run at its 30 Hz tick and look
+  stepped on high-refresh screens. Interpolate between the 30 Hz poses
+  (bones, view model, projectiles) for display, simulation unchanged.
+
+- **Halo HUD resolution (user, 2026-11-17).** The HUD's bitmaps are the
+  original's, authored for 640x480, so they look soft scaled to 1080p and
+  up: low resolution by the source, not our choice. Options, opt-in:
+  sharper filtering/scaling (nearest at integer scales, or a sharpening
+  upscale shader), or upscaled HUD bitmaps as a generated asset set built
+  by the reproducible converter (an upscaler run on the user's own
+  originals, deterministic and versioned; generated-assets rule).
 
 - **Tests that control time and await conditions (user, 2026-11-17; after
   the stutter, host-to-lobby, disconnect and UI fixes).** Real time still

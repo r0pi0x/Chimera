@@ -17,7 +17,7 @@
 //!   hairline under it) and `section` (a small header with the accent
 //!   mark); `toggle` (a slab on a slanted track, white when on, each
 //!   label centred on its slab's place; `toggle_ex` slides the slab over,
-//!   `ToggleSlide`, 140 ms eased, none under reduced motion; focus a
+//!   `ToggleSlide`, `Pace::Normal`, a snap at motion scale 0; focus a
 //!   strip clipped to the track's bottom edge);
 //!   `segmented`; `slider` (track, fill, the default's mark, a slanted
 //!   thumb, the value); `stepper` (`-`, the value, `+`); their `_ex`
@@ -69,7 +69,7 @@ use crate::{
     fonts::{self, KitFonts, Role},
     icons::IconImages,
     materials::SlantMaterial,
-    motion::{Prop, Timeline, Track, UiClock},
+    motion::{Motion, Pace, Prop, Timeline, Track, UiClock},
     style::{self, UiSlant, UiStyle, UiText},
     theme::{Theme, Tone},
     units::UiUnits,
@@ -117,9 +117,16 @@ pub enum Kind {
 }
 
 /// The hero's slab (`Ui::button`): its fill lifts and its edge leans out
-/// on hover (`show_hover`).
+/// on hover, eased over `Pace::Fast` (`animate_heroes`). `lift` is how far
+/// along (0 rest, 1 hovered).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct HeroSlab {
+    pub lift: f32,
+}
+
+/// The accent layer over a hero's slab; its alpha is the lift.
 #[derive(Component, Clone, Copy, Debug)]
-pub struct HeroSlab;
+pub struct HeroGlow;
 
 /// What the progress component shows (`Ui::progress`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -159,9 +166,14 @@ pub struct StatusBlock(pub StatusLight);
 #[derive(Component, Clone, Copy, Debug)]
 pub struct SegmentedTrack;
 
-/// A segmented group's pick: the white slanted slab.
+/// A segmented group's pick: the white slanted slab. `key` identifies the
+/// picker by its words (`slide_picks` slides a new pick over from where
+/// the same picker's last one stood).
 #[derive(Component, Clone, Copy, Debug)]
-pub struct SegmentedPick;
+pub struct SegmentedPick {
+    pub track: Entity,
+    pub key: u64,
+}
 
 /// A tab strip's Q or E cap (`Ui::tabs_ex`).
 #[derive(Component, Clone, Copy, Debug)]
@@ -453,13 +465,25 @@ impl<'a> Ui<'a> {
         if kind == Kind::Primary {
             // The slab behind, its right edge on the slant.
             let (fill, a) = if st.disabled { (Tone::Fg, 0.07) } else { (Tone::Hero, 1.0) };
-            c.spawn((
-                HeroSlab,
-                Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, right: Val::ZERO, ..default() },
-                UiSlant::new(fill, a).edges(false, true),
-                Pickable::IGNORE,
-                ChildOf(b),
-            ));
+            let slab = c
+                .spawn((
+                    HeroSlab::default(),
+                    Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, right: Val::ZERO, ..default() },
+                    UiSlant::new(fill, a).edges(false, true),
+                    Pickable::IGNORE,
+                    ChildOf(b),
+                ))
+                .id();
+            if !st.disabled {
+                // The hover's accent, faded in over the cobalt (`animate_heroes`).
+                c.spawn((
+                    HeroGlow,
+                    Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, right: Val::ZERO, ..default() },
+                    UiSlant::new(Tone::Acc, 0.0).edges(false, true),
+                    Pickable::IGNORE,
+                    ChildOf(slab),
+                ));
+            }
         }
         if kind == Kind::Danger {
             self.mark(c, b, Tone::Threat, 0.5, 0.7);
@@ -668,9 +692,9 @@ impl<'a> Ui<'a> {
         let left = if on { TOGGLE_ON_LEFT } else { TOGGLE_OFF_LEFT };
         let s = self.slant_at(c, t, slab, [Some(left), Some(0.2), None, None], TOGGLE_SLAB_W, 1.1);
         c.entity(s).insert((ToggleSlab, UiTransform::default()));
-        if let Some(sl) = slide.filter(|sl| !sl.reduced) {
+        if let Some(sl) = slide.filter(|sl| !sl.motion.snaps()) {
             let from = if on { TOGGLE_OFF_LEFT - TOGGLE_ON_LEFT } else { TOGGLE_ON_LEFT - TOGGLE_OFF_LEFT };
-            let tl = Timeline::new([Track::new(Prop::X, from, 0.0).dur(TOGGLE_SLIDE_SECS).ease(crate::motion::Ease::OUT)]).started(sl.since);
+            let tl = Timeline::new([Track::new(Prop::X, from, 0.0).dur(sl.motion.secs(Pace::Normal)).ease(Pace::Normal.ease())]).started(sl.since);
             if !tl.done(sl.now) {
                 let x = tl.sample(Prop::X, tl.local(sl.now)).unwrap_or(0.0);
                 c.entity(s).insert((tl, UiTransform { translation: Val2::px(self.units.cq(x), 0.0), ..default() }));
@@ -705,9 +729,12 @@ impl<'a> Ui<'a> {
         t
     }
 
-    /// A segmented choice: outlined, each option Mono .58 cq; the selected
-    /// one white (ink text); focus underlines it in accent. Returns the
-    /// options.
+    /// A segmented choice: the toggle's look (a slanted track with a
+    /// `fg_4` outline, the options inset in it, 1.5 cq tall like the
+    /// toggle), each option Mono .58 cq; the selected one a white slanted
+    /// pick (ink text); focus underlines it in accent, clipped to the
+    /// pick's slant. A changed selection slides the pick over from the old
+    /// one (`slide_picks`). Returns the options.
     pub fn segmented(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, st: State) -> Vec<Entity> {
         self.segmented_with(c, parent, options, selected, &[], st)
     }
@@ -717,55 +744,93 @@ impl<'a> Ui<'a> {
     pub fn segmented_with(&self, c: &mut Commands, parent: Entity, options: &[&str], selected: Option<usize>, off: &[usize], st: State) -> Vec<Entity> {
         // One slanted track (fill .05, a `fg_4` outline), slanted `fg_5`
         // dividers, the pick a white slanted slab; the words stay upright
-        // (Display for words, Mono for numbers).
-        let h = 1.7;
+        // (Display for words, Mono for numbers). Hover and pick are
+        // parallelograms on the dividers' slant, not rectangles.
+        let h = TOGGLE_H - 0.4;
         let lean = h * self.theme.tan();
         let u = self.units;
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut hs = std::collections::hash_map::DefaultHasher::new();
+            options.hash(&mut hs);
+            hs.finish()
+        };
         let g = c
-            .spawn((UiStyle { shrink: Some(0.0), pad: Some([0.0, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }, Node::default(), SegmentedTrack, ChildOf(parent)))
+            .spawn((UiStyle { shrink: Some(0.0), pad: Some([0.2, 0.25, 0.2, 0.25].into()), ..UiStyle::row() }, Node::default(), SegmentedTrack, ChildOf(parent)))
             .id();
         let full = || Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, right: Val::ZERO, ..default() };
         c.spawn((full(), UiSlant::new(Tone::Fg, 0.05), Pickable::IGNORE, ChildOf(g)));
         c.spawn((full(), UiSlant::new(Tone::Fg4, 1.0).outline(u.phys(u.hairline())), Pickable::IGNORE, ChildOf(g)));
+        let n = options.len();
+        // Option i's parallelogram: on the dividers' slant at both sides
+        // (a box reaching half a lean past the rectangle at an inner edge).
+        let shape = |i: usize| Node {
+            position_type: PositionType::Absolute,
+            left: if i == 0 { Val::ZERO } else { u.val(-lean / 2.0) },
+            right: if i + 1 == n { Val::ZERO } else { u.val(-lean / 2.0) },
+            top: Val::ZERO,
+            bottom: Val::ZERO,
+            ..default()
+        };
         options
             .iter()
             .enumerate()
             .map(|(i, o)| {
                 let sel = selected == Some(i);
                 let greyed = off.contains(&i) && !sel;
-                let over = if sel || greyed { Color::NONE } else { self.color(Tone::Fg, 0.06) };
-                let (lp, rp) = (0.75 + if i == 0 { lean * 0.6 } else { lean * 0.5 }, 0.75 + if i + 1 == options.len() { lean * 0.6 } else { lean * 0.5 });
+                let (lp, rp) = (0.75 + if i == 0 { lean * 0.6 } else { lean * 0.5 }, 0.75 + if i + 1 == n { lean * 0.6 } else { lean * 0.5 });
                 let b = c
-                    .spawn((
-                        UiStyle { h: Some(h), pad: Some([0.0, rp, 0.0, lp].into()), justify: Some(JustifyContent::Center), ..UiStyle::row() },
-                        Node::default(),
-                        BackgroundColor(Color::NONE),
-                        Hover { base: Color::NONE, over },
-                        ChildOf(g),
-                    ))
+                    .spawn((UiStyle { h: Some(h), pad: Some([0.0, rp, 0.0, lp].into()), justify: Some(JustifyContent::Center), ..UiStyle::row() }, Node::default(), ChildOf(g)))
                     .id();
                 if !greyed {
                     c.entity(b).insert(clickable());
                 }
                 if sel {
-                    c.spawn((full(), UiSlant::new(Tone::Fg, 1.0), SegmentedPick, Pickable::IGNORE, ChildOf(b)));
-                    if st.focus {
-                        // The focus strip on the pick's foot, clipped to its slant.
+                    c.spawn((
+                        shape(i),
+                        UiSlant::new(Tone::Fg, 1.0),
+                        SegmentedPick { track: g, key },
+                        UiTransform::default(),
+                        Pickable::IGNORE,
+                        ChildOf(b),
+                    ))
+                    .with_children(|k| {
+                        if st.focus {
+                            // The focus strip on the pick's foot: its box
+                            // starts at the pick's bottom-left corner and
+                            // ends at the bottom-right one, on the same
+                            // slant, so it stays inside the pick.
+                            let sh = 0.2;
+                            let lean_s = sh * self.theme.tan();
+                            k.spawn((
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::ZERO,
+                                    right: u.val(lean - lean_s),
+                                    bottom: Val::ZERO,
+                                    height: u.val(sh),
+                                    ..default()
+                                },
+                                UiSlant::new(Tone::Acc, 1.0),
+                                Pickable::IGNORE,
+                            ));
+                        }
+                    });
+                } else {
+                    if !greyed {
+                        // The hover: the option's own parallelogram, shown
+                        // while it is hovered (`show_hover`).
+                        c.spawn((shape(i), UiSlant::new(Tone::Fg, 0.06), Tick { always: false }, Visibility::Hidden, Pickable::IGNORE, ChildOf(b)));
+                    }
+                    if i > 0 && selected != Some(i - 1) {
+                        // A slanted divider at its left edge.
                         c.spawn((
-                            Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, height: u.val(0.2), ..default() },
-                            UiSlant::new(Tone::Acc, 1.0),
+                            Node { position_type: PositionType::Absolute, left: u.val(-lean / 2.0), top: Val::ZERO, bottom: Val::ZERO, width: Val::Px(u.cq(lean) + u.hairline()), ..default() },
+                            UiSlant::new(Tone::Fg4, 1.0),
                             Pickable::IGNORE,
                             ChildOf(b),
                         ));
                     }
-                } else if i > 0 && selected != Some(i - 1) {
-                    // A slanted divider at its left edge.
-                    c.spawn((
-                        Node { position_type: PositionType::Absolute, left: u.val(-lean / 2.0), top: Val::ZERO, bottom: Val::ZERO, width: Val::Px(u.cq(lean) + u.hairline()), ..default() },
-                        UiSlant::new(Tone::Fg4, 1.0),
-                        Pickable::IGNORE,
-                        ChildOf(b),
-                    ));
                 }
                 let number = o.chars().all(|ch| ch.is_ascii_digit() || ch == '.' || ch == ' ');
                 let role = if number { Role::Mono } else { Role::DisplayRegular };
@@ -1282,14 +1347,22 @@ impl<'a> Ui<'a> {
                 (Tone::Fg3, None)
             }
             Progress::Connecting => {
-                // Stripes on the slant, every .8 cq, then the outline.
+                // Stripes on the slant, every .8 cq, then the outline. Each
+                // is cut to the track's own edges: its box clamped to the
+                // bar's, which keeps its leaning sides on the track's
+                // (a stripe past an end is just narrower).
+                let lean = h * self.theme.tan();
                 let n = (w / 0.8).ceil() as i32 + 2;
                 let clip = c
                     .spawn((Node { overflow: Overflow::clip(), ..full() }, Pickable::IGNORE, ChildOf(bar)))
                     .id();
                 for k in -1..n {
+                    let (a, b) = ((k as f32 * 0.8).max(0.0), (k as f32 * 0.8 + 0.35 + lean).min(w));
+                    if b - a <= lean {
+                        continue;
+                    }
                     c.spawn((
-                        Node { position_type: PositionType::Absolute, left: u.val(k as f32 * 0.8), top: Val::ZERO, bottom: Val::ZERO, width: u.val(0.35 + h * self.theme.tan()), ..default() },
+                        Node { position_type: PositionType::Absolute, left: u.val(a), top: Val::ZERO, bottom: Val::ZERO, width: u.val(b - a), ..default() },
                         UiSlant::new(Tone::Fg, 0.14),
                         Pickable::IGNORE,
                         ChildOf(clip),
@@ -1301,6 +1374,11 @@ impl<'a> Ui<'a> {
             Progress::Running(f) => {
                 let f = f.clamp(0.0, 1.0);
                 c.spawn((full(), UiSlant::new(Tone::Fg2, 1.0).outline(outline_px), Pickable::IGNORE, ChildOf(bar)));
+                if f > 0.0 {
+                    // The share done: the track's own shape, its right end
+                    // cut along the slant, so it stays inside the track.
+                    c.spawn((full(), UiSlant::new(Tone::Fg2, 1.0).clipped(0.0, 1.0 - f), Pickable::IGNORE, ChildOf(bar)));
+                }
                 (Tone::Fg, Some(f))
             }
         };
@@ -1317,8 +1395,7 @@ impl<'a> Ui<'a> {
         };
         write(c, bar, text_tone);
         if let Some(f) = pct {
-            // The fill: its own slab and the words again in ink, clipped to
-            // the share done.
+            // The words again in ink over the slab, clipped to the share done.
             let fill = c
                 .spawn((
                     Node {
@@ -1335,12 +1412,6 @@ impl<'a> Ui<'a> {
                     ChildOf(bar),
                 ))
                 .id();
-            c.spawn((
-                Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, width: u.val(w), ..default() },
-                UiSlant::new(Tone::Fg2, 1.0),
-                Pickable::IGNORE,
-                ChildOf(fill),
-            ));
             let inner = c
                 .spawn((Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, width: u.val(w), height: u.val(h), ..default() }, ChildOf(fill)))
                 .id();
@@ -1490,16 +1561,15 @@ pub const TOGGLE_H: f32 = 1.5;
 pub const TOGGLE_SLAB_W: f32 = 1.9;
 pub const TOGGLE_OFF_LEFT: f32 = 0.25;
 pub const TOGGLE_ON_LEFT: f32 = 2.25;
-/// The slab's slide from one side to the other, seconds.
-pub const TOGGLE_SLIDE_SECS: f32 = 0.14;
 
 /// A toggle flipped at `since` (UI clock), drawn at `now`: its slab
-/// slides over (`Ui::toggle_ex`); `reduced`: it jumps.
+/// slides over (`Ui::toggle_ex`) over `Pace::Normal` of `motion`; scale 0:
+/// it jumps.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ToggleSlide {
     pub since: f64,
     pub now: f64,
-    pub reduced: bool,
+    pub motion: Motion,
 }
 
 /// A toggle's focus strip (`Ui::toggle`).
@@ -1792,10 +1862,8 @@ pub fn apply_wipes(
 
 /// Hover tints and ticks from the pointer (module doc).
 pub fn show_hover(
-    units: Res<UiUnits>,
     mut nodes: Query<(&Interaction, Option<&Hover>, Option<&Children>, Option<&mut BackgroundColor>), Changed<Interaction>>,
     mut ticks: Query<(&Tick, &mut Visibility)>,
-    mut slabs: Query<(&mut UiSlant, &mut Node), With<HeroSlab>>,
 ) {
     for (i, hover, children, bg) in &mut nodes {
         let over = *i != Interaction::None;
@@ -1810,20 +1878,126 @@ pub fn show_hover(
                 if let Ok((t, mut v)) = ticks.get_mut(ch) {
                     v.set_if_neq(if over || t.always { Visibility::Inherited } else { Visibility::Hidden });
                 }
-                if let Ok((mut slant, mut node)) = slabs.get_mut(ch)
-                    && slant.fill != Tone::Fg
-                {
-                    let fill = if over { Tone::Acc } else { Tone::Hero };
-                    if slant.fill != fill {
-                        slant.fill = fill;
-                    }
-                    let right = if over { units.val(-0.4) } else { Val::ZERO };
-                    if node.right != right {
-                        node.right = right;
-                    }
-                }
             }
         }
+    }
+}
+
+/// The heroes' hover: each slab's lift eases toward its button's hover
+/// over `Pace::Fast` (a snap at motion scale 0); the accent fades in and
+/// the right edge leans out .4 cq with it.
+pub fn animate_heroes(
+    clock: Res<UiClock>,
+    motion: Option<Res<Motion>>,
+    reduced: Option<Res<crate::ReducedMotion>>,
+    units: Res<UiUnits>,
+    mut last: Local<f64>,
+    interactions: Query<&Interaction>,
+    mut slabs: Query<(&mut HeroSlab, &ChildOf, &mut Node, Option<&Children>)>,
+    mut glows: Query<&mut UiSlant, With<HeroGlow>>,
+) {
+    let dt = (clock.now - *last).max(0.0) as f32;
+    *last = clock.now;
+    let motion = if reduced.is_some_and(|r| r.0) { Motion::new(0.0) } else { motion.map(|m| *m).unwrap_or_default() };
+    for (mut slab, parent, mut node, children) in &mut slabs {
+        let over = interactions.get(parent.parent()).is_ok_and(|i| *i != Interaction::None);
+        let target = if over { 1.0 } else { 0.0 };
+        let eased = |t: f32| Pace::Fast.ease().sample(t);
+        let want = motion.approach(slab.lift, target, dt, Pace::Fast);
+        if want == slab.lift && !units.is_changed() {
+            continue;
+        }
+        slab.lift = want;
+        let k = eased(want);
+        let right = if k > 0.0 { units.val(-0.4 * k) } else { Val::ZERO };
+        if node.right != right {
+            node.right = right;
+        }
+        for ch in children.into_iter().flat_map(|c| c.iter()) {
+            if let Ok(mut g) = glows.get_mut(ch)
+                && g.alpha != k
+            {
+                g.alpha = k;
+            }
+        }
+    }
+}
+
+/// Where a segmented picker's pick last stood (`slide_picks`): per picker
+/// (its words and its track's place), the pick's centre from the track's
+/// centre and its width, logical px, and when it was seen.
+#[derive(Resource, Default)]
+pub struct PickMemory {
+    seen: std::collections::BTreeMap<(u64, i32, i32), (f32, f32, f64)>,
+}
+
+/// A pick already placed (`slide_picks`).
+#[derive(Component)]
+pub struct PickPlaced;
+
+/// The slide a new pick starts with, from where the picker's last pick
+/// stood (`old`: centre and width) to `new`: the shift of its centre
+/// (logical px) and its width's scale at the start, or none (nothing
+/// before, it hasn't moved, or motion is off).
+pub fn pick_slide(old: Option<(f32, f32)>, new: (f32, f32), motion: &Motion) -> Option<(f32, f32)> {
+    let (oc, ow) = old?;
+    let (c, w) = new;
+    if motion.snaps() || w <= 0.0 || ((oc - c).abs() <= 0.5 && (ow - w).abs() <= 0.5) {
+        return None;
+    }
+    Some((oc - c, ow / w))
+}
+
+/// A new segmented pick slides in from where the same picker's last one
+/// stood (centre and width), over `Pace::Normal` and its easing; at motion
+/// scale 0, or with no earlier pick seen, it is just there. Runs after
+/// layout, and moves the pick's drawn place too so its first frame is
+/// already at the start of the slide.
+pub fn slide_picks(
+    clock: Res<UiClock>,
+    motion: Option<Res<Motion>>,
+    reduced: Option<Res<crate::ReducedMotion>>,
+    units: Res<UiUnits>,
+    mut mem: ResMut<PickMemory>,
+    tracks: Query<(&ComputedNode, &UiGlobalTransform), With<SegmentedTrack>>,
+    mut picks: Query<(Entity, &SegmentedPick, &ComputedNode, &mut UiGlobalTransform, Has<PickPlaced>, Option<&Timeline>), Without<SegmentedTrack>>,
+    mut commands: Commands,
+) {
+    let motion = if reduced.is_some_and(|r| r.0) { Motion::new(0.0) } else { motion.map(|m| *m).unwrap_or_default() };
+    for (e, pick, node, mut gt, placed, tl) in &mut picks {
+        let Ok((tn, tg)) = tracks.get(pick.track) else { continue };
+        let (w, k) = (node.size().x * node.inverse_scale_factor, node.inverse_scale_factor);
+        if w <= 0.0 {
+            continue;
+        }
+        let key = (pick.key, (tg.translation.x / 8.0).round() as i32, (tg.translation.y / 8.0).round() as i32);
+        let _ = tn;
+        if !placed {
+            commands.entity(e).insert(PickPlaced);
+            let centre = (gt.translation.x - tg.translation.x) * k;
+            let old = mem.seen.get(&key).filter(|(.., at)| clock.now - at < 0.5).map(|&(c, w, _)| (c, w));
+            if let Some((dx_logical, sx)) = pick_slide(old, (centre, w), &motion) {
+                let dur = motion.secs(Pace::Normal);
+                let ease = Pace::Normal.ease();
+                commands.entity(e).insert(
+                    Timeline::new([
+                        Track::new(Prop::X, dx_logical / units.cq(1.0).max(0.001), 0.0).dur(dur).ease(ease),
+                        Track::new(Prop::ScaleX, sx, 1.0).dur(dur).ease(ease),
+                    ])
+                    .started(clock.now),
+                );
+                // This frame's drawing already at the start.
+                let mut a: bevy::math::Affine2 = (*gt).into();
+                a.translation.x += dx_logical / k;
+                a.matrix2.x_axis.x *= sx;
+                *gt = a.into();
+            }
+            continue;
+        }
+        if tl.is_some_and(|t| !t.done(clock.now)) {
+            continue;
+        }
+        mem.seen.insert(key, ((gt.translation.x - tg.translation.x) * k, w, clock.now));
     }
 }
 
@@ -1844,11 +2018,16 @@ pub struct ControlsPlugin;
 
 impl Plugin for ControlsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, show_hover).add_systems(PostUpdate, draw_kit_icons.in_set(crate::UiKitSystems)).add_systems(
-            PostUpdate,
-            (resolve_min_heights.after(crate::style::resolve_styles), apply_wipes.after(crate::motion::step_timelines))
-                .in_set(crate::UiKitSystems),
-        );
+        app.init_resource::<crate::motion::Motion>()
+            .init_resource::<PickMemory>()
+            .add_systems(Update, (show_hover, animate_heroes))
+            .add_systems(PostUpdate, draw_kit_icons.in_set(crate::UiKitSystems))
+            .add_systems(
+                PostUpdate,
+                (resolve_min_heights.after(crate::style::resolve_styles), apply_wipes.after(crate::motion::step_timelines))
+                    .in_set(crate::UiKitSystems),
+            )
+            .add_systems(PostUpdate, slide_picks.after(bevy::ui::UiSystems::Layout).before(bevy::ui::UiSystems::PostLayout));
     }
 }
 

@@ -3,6 +3,7 @@
 
 use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_ui::{
+    motion::{Motion, Pace},
     ChimeraUiPlugin, KitFonts, Role, Theme, Tone, UiClock, UiSlant, UiText, UiUnits,
     controls::{self, Hover, Kind, State, Tick, Ui, Wipe},
 };
@@ -670,7 +671,7 @@ fn the_toggles_labels_are_centred_and_its_slab_slides() {
 
     // The slide.
     let now = app.world().resource::<UiClock>().now;
-    let slide = controls::ToggleSlide { since: now, now, reduced: false };
+    let slide = controls::ToggleSlide { since: now, now, motion: Motion::default() };
     let t = build(&mut app, |ui, c, root| ui.toggle_ex(c, root, true, State::NONE, Some(slide)));
     let slab = descendants_entities::<controls::ToggleSlab>(&mut app, t)[0];
     let x = |app: &App| match app.world().get::<UiTransform>(slab).unwrap().translation.x {
@@ -684,10 +685,10 @@ fn the_toggles_labels_are_centred_and_its_slab_slides() {
     app.update();
     let mid = x(&app);
     assert!(mid > off && mid < 0.0, "half-way it is between: {mid}");
-    app.world_mut().resource_mut::<UiClock>().step(0.1);
+    app.world_mut().resource_mut::<UiClock>().step(0.2);
     app.update();
-    assert_eq!(x(&app), 0.0, "at rest on the on side after {} s", controls::TOGGLE_SLIDE_SECS);
-    let reduced = controls::ToggleSlide { reduced: true, ..slide };
+    assert_eq!(x(&app), 0.0, "at rest on the on side after the normal pace");
+    let reduced = controls::ToggleSlide { motion: Motion::new(0.0), ..slide };
     let r = build(&mut app, |ui, c, root| ui.toggle_ex(c, root, true, State::NONE, Some(reduced)));
     let rs = descendants_entities::<controls::ToggleSlab>(&mut app, r)[0];
     assert!(app.world().get::<chimera_ui::Timeline>(rs).is_none(), "reduced motion: it jumps");
@@ -768,4 +769,82 @@ fn tabs_have_their_keys_at_the_ends() {
     assert_eq!(all, ["Q", "SERVER", "GAME", "E"]);
     assert_eq!(descendants_with_entity::<controls::TabKey>(&mut app, parent).len(), 2);
     assert!(descendants_with::<UiSlant>(&mut app, parent).iter().any(|s| s.fill == Tone::Acc), "the cobalt strip");
+}
+
+/// Motion tokens: the scale multiplies every pace; 0 snaps (approach lands
+/// at once, no slide starts), more is slower.
+#[test]
+fn motion_scale_zero_snaps_and_more_slows() {
+    let normal = Motion::default();
+    let slow = Motion::new(2.0);
+    let off = Motion::new(0.0);
+    assert!(Pace::Fast.base() < Pace::Normal.base() && Pace::Normal.base() < Pace::Slow.base());
+    assert_eq!(slow.secs(Pace::Normal), 2.0 * normal.secs(Pace::Normal));
+    assert_eq!(off.secs(Pace::Slow), 0.0);
+    assert!(off.snaps() && !normal.snaps());
+    assert_eq!(off.approach(0.0, 1.0, 0.0, Pace::Fast), 1.0, "scale 0: there at once");
+    let part = normal.approach(0.0, 1.0, 0.03, Pace::Fast);
+    assert!(part > 0.0 && part < 1.0, "scale 1: on its way: {part}");
+    assert!(slow.approach(0.0, 1.0, 0.03, Pace::Fast) < part, "scale 2: slower");
+    // A pick slides from where it stood; not at scale 0, not when it hasn't moved.
+    assert_eq!(controls::pick_slide(Some((40.0, 50.0)), (100.0, 60.0), &normal), Some((-60.0, 50.0 / 60.0)));
+    assert_eq!(controls::pick_slide(Some((40.0, 50.0)), (100.0, 60.0), &off), None);
+    assert_eq!(controls::pick_slide(Some((100.0, 60.0)), (100.0, 60.0), &normal), None);
+    assert_eq!(controls::pick_slide(None, (100.0, 60.0), &normal), None);
+}
+
+/// A hero button eases to its hover over the fast pace, snaps at scale 0,
+/// and eases back.
+#[test]
+fn hero_hover_eases_through_the_motion_tokens() {
+    for (scale, snaps) in [(1.0, false), (0.0, true)] {
+        let mut app = app();
+        app.insert_resource(Motion::new(scale));
+        let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", None, controls::HERO_H, State::NONE));
+        let slab = descendants_entities::<controls::HeroSlab>(&mut app, b)[0];
+        let glow = descendants_entities::<controls::HeroGlow>(&mut app, b)[0];
+        let lift = |app: &App| app.world().get::<controls::HeroSlab>(slab).unwrap().lift;
+        let alpha = |app: &App| app.world().get::<UiSlant>(glow).unwrap().alpha;
+        assert_eq!(alpha(&app), 0.0);
+        *app.world_mut().get_mut::<Interaction>(b).unwrap() = Interaction::Hovered;
+        app.world_mut().resource_mut::<UiClock>().step(0.03);
+        app.update();
+        if snaps {
+            assert_eq!(lift(&app), 1.0, "scale 0: hovered in one frame");
+            assert_eq!(alpha(&app), 1.0);
+        } else {
+            let l = lift(&app);
+            assert!(l > 0.0 && l < 1.0, "on its way after 30 ms: {l}");
+            assert!(alpha(&app) > 0.0 && alpha(&app) < 1.0);
+            app.world_mut().resource_mut::<UiClock>().step(0.2);
+            app.update();
+            assert_eq!(lift(&app), 1.0);
+            assert_eq!(alpha(&app), 1.0);
+        }
+        *app.world_mut().get_mut::<Interaction>(b).unwrap() = Interaction::None;
+        app.world_mut().resource_mut::<UiClock>().step(0.3);
+        app.update();
+        assert_eq!(lift(&app), 0.0, "back at rest");
+        assert_eq!(alpha(&app), 0.0);
+    }
+}
+
+/// The segmented picker is the toggle's look (inset in its track, its
+/// height), hovers as a parallelogram, and its focus strip is a child of
+/// the pick (inside it).
+#[test]
+fn segmented_is_inset_like_the_toggle_with_slanted_hover() {
+    let mut app = app();
+    let opts = build(&mut app, |ui, c, root| ui.segmented(c, root, &["A", "B", "C"], Some(1), State::focused(true)));
+    let track = app.world().get::<ChildOf>(opts[0]).unwrap().parent();
+    let pad = app.world().get::<chimera_ui::UiStyle>(track).unwrap().pad.unwrap();
+    assert!(pad.0.iter().all(|p| *p > 0.0), "inset: {pad:?}");
+    let h = app.world().get::<chimera_ui::UiStyle>(opts[0]).unwrap().h.unwrap();
+    assert!((h + pad.0[0] + pad.0[2] - controls::TOGGLE_H).abs() < 0.001, "as tall as the toggle");
+    // Hover: a slanted tick on the others, none on the pick.
+    assert_eq!(descendants_with_entity::<Tick>(&mut app, opts[0]).len(), 1);
+    assert!(descendants_with_entity::<Tick>(&mut app, opts[1]).is_empty());
+    let pick = descendants_with_entity::<controls::SegmentedPick>(&mut app, opts[1])[0];
+    let strip = app.world().get::<Children>(pick).expect("the focus strip is the pick's child");
+    assert_eq!(strip.len(), 1);
 }

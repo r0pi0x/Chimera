@@ -24,6 +24,10 @@ use chimera_world::harness::Sim;
 /// A theme with the lobby's layout (the Ultimate Gun Game's numbers).
 const THEME: &str = r#"
 name = "test"
+[type.display_bold]
+face = "display"
+weight = 700
+upper = true
 [layout.lobby]
 mode_w = 18.0
 map_w = 27.4
@@ -233,4 +237,32 @@ fn session_wins_show_in_the_lobby() {
     assert_eq!(wins(&mut sim), [LobbyWins { wins: 1, leader: false }, LobbyWins { wins: 3, leader: true }]);
     let v = sim.app.world().resource::<LobbyView>().rows.iter().map(|r| r.wins).collect::<Vec<_>>();
     assert_eq!(v, [0, 1, 3], "the view carries them");
+}
+
+/// A player's name is written as it is, and stays so across updates (a
+/// status change rebuilds the rows; the text kit's upper-casing and the
+/// ellipsis must not flip it between capitals and as written).
+#[test]
+fn player_names_keep_their_case_across_updates() {
+    let mut s = sim(Some(THEME));
+    let names = |s: &mut Sim| -> Vec<String> {
+        let w = s.app.world_mut();
+        let mut v: Vec<String> = w
+            .query::<(&Text, &chimera_ui::UiText)>()
+            .iter(w)
+            .filter(|(t, u)| u.role == chimera_ui::Role::DisplayBold && ["kestrel", "nadia", "Rook"].iter().any(|n| t.0.eq_ignore_ascii_case(n)))
+            .map(|(t, _)| t.0.clone())
+            .collect();
+        v.sort();
+        v
+    };
+    let first = names(&mut s);
+    assert_eq!(first, ["Rook", "kestrel", "nadia"], "as written");
+    for st in [status::READY, status::NOT_READY, status::READY] {
+        set_status(&mut s, 1, st);
+        for _ in 0..6 {
+            step(&mut s, 0.1);
+            assert_eq!(names(&mut s), first, "the same on every frame after an update");
+        }
+    }
 }

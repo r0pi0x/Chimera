@@ -27,20 +27,24 @@
 //!   `mp_maps_off`, the server's rotation and vote leaving them out:
 //!   `chimera_net::minigame_net::MapsOff`), and while open a working copy,
 //!   the cursor and the folded games and groups.
-//! - **Keys**: ↑↓ the row, Space on or off, ←→ fold or open, Enter Done (the
+//! - **Keys**: ↑↓ the row, Space on or off, ←→ fold or open (← on a map: its group folds, the cursor on its header), Enter Done (the
 //!   dialog's hero), Esc or a right click Cancel; the pointer: a row's box
 //!   toggles it, its chevron folds it.
 //!
-//! Known shortcuts: no Custom maps yet (the local listing has none); the
-//! list doesn't scroll by the wheel (the keys keep the cursor in view by
-//! a window of rows).
+//! The tree is `chimera_ui::vlist` (recycling, smooth wheel scroll, the
+//! keys keep the cursor in view; `bind_rows` fills its slots). ← on a map
+//! folds its group and moves the cursor to the group's header.
+//!
+//! Known shortcuts: no Custom maps yet (the local listing has none); all
+//! rows are one height.
 
 use std::collections::BTreeSet;
 
 use bevy::prelude::*;
 use chimera_ui::{
-    Role, Tone, UiSlant, UiStyle,
+    Role, Tone, UiSlant, UiStyle, VCursor, VSection, VShape, VSlot, VirtualLists,
     controls::{HERO_H, Kind, State, Ui},
+    vlist::VLine,
 };
 
 /// One game's maps, grouped.
@@ -319,6 +323,46 @@ impl MapsPicker {
         }
     }
 
+    /// ←: on a map, folds the group it is in and puts the cursor on that
+    /// group's header; on an open game or group, folds it; on a folded
+    /// group, goes up to its game's header. True when it did something.
+    pub fn left(&mut self, games: &[CatalogueGame]) -> bool {
+        let rows = self.rows(games);
+        let Some(row) = rows.get(self.cursor).cloned() else { return false };
+        let to = match row {
+            TreeRow::Map(g, k, _) => {
+                self.fold(games, &TreeRow::Group(g, k), false);
+                TreeRow::Group(g, k)
+            }
+            TreeRow::Group(g, k) if self.is_folded(games, &row) => TreeRow::Game(g),
+            _ if !self.is_folded(games, &row) => {
+                self.fold(games, &row, false);
+                row
+            }
+            _ => return false,
+        };
+        match self.rows(games).iter().position(|r| *r == to) {
+            Some(i) if i != self.cursor || rows.len() != self.rows(games).len() => {
+                self.cursor = i;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// →: opens a folded game or group; false on anything else.
+    pub fn right(&mut self, games: &[CatalogueGame]) -> bool {
+        let rows = self.rows(games);
+        match rows.get(self.cursor) {
+            Some(row) if !matches!(row, TreeRow::Map(..)) && self.is_folded(games, row) => {
+                let row = row.clone();
+                self.fold(games, &row, true);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// How many entries are on (maps and arena slices alike: what the draw
     /// can take), of how many, in how many games (the kept set, or the
     /// working copy while open).
@@ -372,8 +416,19 @@ pub struct MapsDialog;
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TriBox(pub Tri);
 
-/// The rows the dialog shows at once (a window the cursor keeps in view).
-pub const WINDOW: usize = 17;
+/// The tree's list key (`VirtualLists`, `ScrollViews`).
+pub const LIST: &str = "maps_picker";
+
+/// A tree row's height, cq (all rows alike: the list recycles by line).
+pub const ROW_H: f32 = 1.95;
+
+/// What the dialog shows, as built: the listing and the rows of the tree
+/// (`bind_rows` fills the list's slots from it).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct PickerRows {
+    pub games: Vec<CatalogueGame>,
+    pub rows: Vec<TreeRow>,
+}
 
 /// Spawns the dialog over `root` (a full-screen node): the scrim, the
 /// plate (design rules 13: 26 cq in from each side, the window's top and
@@ -385,7 +440,7 @@ pub fn spawn(
     root: Entity,
     picker: &MapsPicker,
     games: &[CatalogueGame],
-    mut res: Option<(&mut Assets<Image>, &mut chimera_ui::IconImages)>,
+    lists: &mut VirtualLists,
 ) -> Entity {
     let sh = chimera_ui::shell::ShellLayout::of(ui.theme);
     let scrim = c
@@ -418,7 +473,7 @@ pub fn spawn(
     let (on, all, _) = picker.counts(games);
     let head = ui.boxed(c, plate, UiStyle { gap: Some(1.2), align: Some(AlignItems::Baseline), ..UiStyle::row() });
     ui.text(c, head, Role::DisplayBold, 1.6, Tone::Fg, "Maps");
-    ui.text(c, head, Role::Mono, 0.56, Tone::Fg2, &format!("{on} of {all} on \u{00b7} the rotation shuffles them"));
+    ui.text(c, head, Role::Mono, 0.56, Tone::Fg2, &format!("{on} of {all} on"));
     // The legend.
     let legend = ui.boxed(c, plate, UiStyle { gap: Some(0.5), ..UiStyle::row() });
     for (t, words) in [(Tri::On, "On"), (Tri::Mixed, "Some on"), (Tri::Off, "Off")] {
@@ -426,75 +481,24 @@ pub fn spawn(
         let w = ui.boxed(c, legend, UiStyle { margin: Some([0.0, 0.8, 0.0, 0.0].into()), ..UiStyle::row() });
         ui.text(c, w, Role::Mono, 0.56, Tone::Fg2, words);
     }
-    ui.boxed(c, legend, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-    ui.text(c, legend, Role::Mono, 0.56, Tone::Fg2, "A game or group sets all under it");
-    // The tree, a window of rows around the cursor.
-    let tree = c
-        .spawn((
-            UiStyle { grow: Some(1.0), ..UiStyle::column() },
-            Node { overflow: Overflow::clip(), ..default() },
-            ChildOf(plate),
-        ))
-        .id();
+    // The tree: the kit's recycling list, one line a row (`bind_rows`
+    // fills its slots), scrolled by the wheel and kept on the cursor by
+    // the keys.
     let rows = picker.rows(games);
-    let first = picker.cursor.saturating_sub(WINDOW - 1).min(rows.len().saturating_sub(WINDOW));
-    for (i, row) in rows.iter().enumerate().skip(first).take(WINDOW) {
-        let focus = i == picker.cursor;
-        // A game's or group's count: its entries, maps and slices alike.
-        let count_of = |row: &TreeRow| {
-            let maps = MapsPicker::maps_of(games, row);
-            let off = picker.open.as_ref().unwrap_or(&picker.off);
-            Some(format!("{} of {}", maps.iter().filter(|m| !is_off(off, m)).count(), maps.len()))
-        };
-        let (depth, h, name, count) = match *row {
-            TreeRow::Game(g) => (0, 2.05, games[g].name.clone(), count_of(row)),
-            TreeRow::Group(g, k) => (1, 2.05, games[g].groups[k].name.clone(), count_of(row)),
-            // An arena slice: a child of its map, one step in, by its
-            // display name (`CatalogueGame::names`), else its id.
-            TreeRow::Map(g, k, m) => match games[g].groups[k].maps[m].split_once('@') {
-                Some((_, id)) => (3, 1.75, games[g].names.get(&games[g].groups[k].maps[m]).cloned().unwrap_or_else(|| id.to_string()), None),
-                None => (2, 1.75, games[g].groups[k].maps[m].rsplit(':').next().unwrap_or("").to_string(), None),
-            },
-        };
-        let pad_l = [0.6, 2.0, 3.4, 4.8][depth];
-        let bg = if focus { 0.06 } else if depth == 0 { 0.03 } else { 0.0 };
-        let r = c
-            .spawn((
-                UiStyle { h: Some(h), gap: Some(0.7), pad: Some([0.0, 0.6, 0.0, pad_l].into()), shrink: Some(0.0), ..UiStyle::row() }.bg_a(Tone::Fg, bg),
-                Node::default(),
-                PickerAction::Toggle(i),
-                chimera_ui::controls::clickable(),
-                ChildOf(tree),
-            ))
-            .id();
-        ui.hairline(c, r, Tone::Fg5, 1.0);
-        if focus {
-            ui.focus_bar(c, r, 0.24);
+    {
+        let st = lists.state(LIST);
+        st.set_shape(VShape::list(ROW_H));
+        st.set_sections(vec![VSection::plain("maps", rows.len())]);
+        let at = if rows.is_empty() { None } else { Some(VCursor::Item(0, picker.cursor.min(rows.len() - 1))) };
+        if st.cursor != at {
+            st.cursor = at;
+            st.reveal = true;
         }
-        if !matches!(row, TreeRow::Map(..)) {
-            let open = match *row {
-                TreeRow::Game(g) => !picker.folded.contains(&games[g].id),
-                TreeRow::Group(g, k) => !picker.folded.contains(&format!("{}/{}", games[g].id, games[g].groups[k].name)),
-                TreeRow::Map(..) => false,
-            };
-            let chev = ui.boxed(c, r, UiStyle { w: Some(0.8), shrink: Some(0.0), ..UiStyle::row() });
-            c.entity(chev).insert((PickerAction::Fold(i), chimera_ui::controls::clickable()));
-            if let Some((images, icons)) = res.as_mut() {
-                ui.icon(c, chev, images, icons, if open { "chevron" } else { "chev_right" }, 0.5, Tone::Fg2);
-            }
-        }
-        tri_box(c, ui, r, picker.state(games, row));
-        let (role, size) = match depth {
-            0 => (Role::DisplayBold, 0.9),
-            1 => (Role::DisplayRegular, 0.8),
-            _ => (Role::Mono, 0.62),
-        };
-        ui.text(c, r, role, size, Tone::Fg, &name);
-        ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-        if let Some(n) = count {
-            ui.text(c, r, Role::Mono, 0.52, Tone::Fg2, &n);
-        }
+        st.bump();
     }
+    let tree = ui.virtual_list(c, plate, LIST, UiStyle { grow: Some(1.0), ..UiStyle::row() }, 40.0, VShape::list(ROW_H));
+    c.entity(tree.scroll.frame).insert(Node { min_height: Val::Px(0.0), ..default() });
+    c.insert_resource(PickerRows { games: games.to_vec(), rows });
     // The keys, then the actions: All off at the left, Cancel, Done.
     let keys = ui.boxed(c, plate, UiStyle { gap: Some(1.4), ..UiStyle::row() });
     for (k, w) in [("Space", "On / off"), ("\u{2190}\u{2192}", "Fold / open"), ("\u{2191}\u{2193}", "Row")] {
@@ -511,6 +515,101 @@ pub fn spawn(
     let done = ui.button(c, acts, Kind::Primary, "Done", Some("Enter"), HERO_H, State::NONE);
     c.entity(done).insert(PickerAction::Done);
     scrim
+}
+
+/// Fills the tree's slots (`spawn`): a slot's line is a row of the tree;
+/// rebound only when another row scrolls into it.
+#[allow(clippy::too_many_arguments)]
+pub fn bind_rows(
+    theme: Res<chimera_ui::Theme>,
+    fonts: Option<Res<chimera_ui::KitFonts>>,
+    units: Res<chimera_ui::UiUnits>,
+    picker: Res<MapsPicker>,
+    built: Res<PickerRows>,
+    lists: Res<VirtualLists>,
+    mut images: Option<ResMut<Assets<Image>>>,
+    mut icons: Option<ResMut<chimera_ui::IconImages>>,
+    slots: Query<(Entity, &VSlot), Changed<VSlot>>,
+    mut c: Commands,
+) {
+    let Some(st) = lists.get(LIST) else { return };
+    let ui = Ui::new(&theme, fonts.as_deref(), *units);
+    let (games, rows) = (&built.games, &built.rows);
+    for (slot, s) in &slots {
+        c.entity(slot).despawn_children();
+        let Some(VLine::Row { first, .. }) = s.line.and_then(|l| st.layout.lines.get(l)).copied() else { continue };
+        let Some(row) = rows.get(first) else { continue };
+        let res = match (images.as_deref_mut(), icons.as_deref_mut()) {
+            (Some(a), Some(b)) => Some((a, b)),
+            _ => None,
+        };
+        tree_row(&mut c, &ui, slot, picker.as_ref(), games, first, row, res);
+    }
+}
+
+/// One tree row in `slot`.
+#[allow(clippy::too_many_arguments)]
+fn tree_row(
+    c: &mut Commands,
+    ui: &Ui,
+    slot: Entity,
+    picker: &MapsPicker,
+    games: &[CatalogueGame],
+    i: usize,
+    row: &TreeRow,
+    mut res: Option<(&mut Assets<Image>, &mut chimera_ui::IconImages)>,
+) {
+    let focus = i == picker.cursor;
+    // A game's or group's count: its entries, maps and slices alike.
+    let count_of = |row: &TreeRow| {
+        let maps = MapsPicker::maps_of(games, row);
+        let off = picker.open.as_ref().unwrap_or(&picker.off);
+        Some(format!("{} of {}", maps.iter().filter(|m| !is_off(off, m)).count(), maps.len()))
+    };
+    let (depth, name, count) = match *row {
+        TreeRow::Game(g) => (0, games[g].name.clone(), count_of(row)),
+        TreeRow::Group(g, k) => (1, games[g].groups[k].name.clone(), count_of(row)),
+        // An arena slice: a child of its map, one step in, by its display
+        // name (`CatalogueGame::names`), else its id.
+        TreeRow::Map(g, k, m) => match games[g].groups[k].maps[m].split_once('@') {
+            Some((_, id)) => (3, games[g].names.get(&games[g].groups[k].maps[m]).cloned().unwrap_or_else(|| id.to_string()), None),
+            None => (2, games[g].groups[k].maps[m].rsplit(':').next().unwrap_or("").to_string(), None),
+        },
+    };
+    let pad_l = [0.6, 2.0, 3.4, 4.8][depth];
+    let bg = if focus { 0.06 } else if depth == 0 { 0.03 } else { 0.0 };
+    let r = c
+        .spawn((
+            UiStyle { gap: Some(0.7), pad: Some([0.0, 0.6, 0.0, pad_l].into()), grow: Some(1.0), ..UiStyle::row() }.bg_a(Tone::Fg, bg),
+            Node::default(),
+            PickerAction::Toggle(i),
+            chimera_ui::controls::clickable(),
+            ChildOf(slot),
+        ))
+        .id();
+    ui.hairline(c, r, Tone::Fg5, 1.0);
+    if focus {
+        ui.focus_bar(c, r, 0.24);
+    }
+    if !matches!(row, TreeRow::Map(..)) {
+        let open = !picker.is_folded(games, row);
+        let chev = ui.boxed(c, r, UiStyle { w: Some(0.8), shrink: Some(0.0), ..UiStyle::row() });
+        c.entity(chev).insert((PickerAction::Fold(i), chimera_ui::controls::clickable()));
+        if let Some((images, icons)) = res.as_mut() {
+            ui.icon(c, chev, images, icons, if open { "chevron" } else { "chev_right" }, 0.5, Tone::Fg2);
+        }
+    }
+    tri_box(c, ui, r, picker.state(games, row));
+    let (role, size) = match depth {
+        0 => (Role::DisplayBold, 0.9),
+        1 => (Role::DisplayRegular, 0.8),
+        _ => (Role::Mono, 0.62),
+    };
+    ui.text(c, r, role, size, Tone::Fg, &name);
+    ui.boxed(c, r, UiStyle { grow: Some(1.0), ..UiStyle::row() });
+    if let Some(n) = count {
+        ui.text(c, r, Role::Mono, 0.52, Tone::Fg2, &n);
+    }
 }
 
 /// A slanted tri-state box, 1.3 x .75 cq.
