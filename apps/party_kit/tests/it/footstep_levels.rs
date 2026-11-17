@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use chimera_core::core::{LocalPlayer, PropSurface};
+use chimera_core::core::{Carried, LocalPlayer, PropSurface};
 use chimera_world::{
     greybox::GreyboxPart,
     harness::Sim,
@@ -234,4 +234,67 @@ fn on_both_identities_are_heard_alike() {
     // CS:S's own steps don't change.
     let cs = row(&rows, "cs_source", Action::Run).unwrap();
     assert_eq!(cs.level, SoundLevel::Attenuation(1.0));
+}
+
+/// Every step heard, anyone's (the local player's own Combat Arms steps
+/// play unplaced).
+#[derive(Resource, Default)]
+struct AnySteps(usize);
+
+fn hear_any(mut play: MessageReader<PlaySound>, mut ca: MessageReader<CaSound>, mut n: ResMut<AnySteps>) {
+    n.0 += play.read().filter(|s| s.entry.starts_with(STEP)).count();
+    n.0 += ca.read().filter(|s| s.file.contains("footsteps")).count();
+}
+
+/// Carried along (a vehicle's seat moving them each tick).
+fn ride_along(mut q: Query<&mut Transform, With<Carried>>) {
+    for mut t in &mut q {
+        t.translation.x += 0.1;
+    }
+}
+
+/// The steps the local player `a` and `b` make holding the movement keys
+/// forward and back for two seconds.
+fn walk_both(sim: &mut Sim, a: Entity, b: Entity) -> usize {
+    sim.app.world_mut().resource_mut::<AnySteps>().0 = 0;
+    for axis in [Vec2::Y, Vec2::NEG_Y] {
+        sim.intent(a).move_axis = axis;
+        sim.intent(b).move_axis = axis;
+        sim.seconds(1.0);
+    }
+    sim.intent(a).move_axis = Vec2::ZERO;
+    sim.intent(b).move_axis = Vec2::ZERO;
+    sim.seconds(0.5);
+    std::mem::take(&mut sim.app.world_mut().resource_mut::<AnySteps>().0)
+}
+
+/// A carried character (the engine's `Carried`: a vehicle's seat) makes no
+/// steps, the local player's own or another's, holding the movement keys
+/// and carried along, as CS:S's identity and as Combat Arms'; on its feet
+/// again it steps.
+#[test]
+fn a_carried_character_makes_no_steps() {
+    let (mut sim, b) = sim(false);
+    let w = sim.app.world_mut();
+    let a = w.query_filtered::<Entity, With<LocalPlayer>>().single(w).unwrap();
+    sim.app.init_resource::<AnySteps>().add_systems(Last, hear_any).add_systems(FixedUpdate, ride_along);
+    let seat = sim.app.world_mut().spawn(Transform::default()).id();
+    for gun in [None, Some(M4)] {
+        if let Some(gun) = gun {
+            for p in [a, b] {
+                chimera_sim::weapon::give(sim.app.world_mut(), p, gun);
+            }
+            sim.seconds(1.0);
+        }
+        let game = gun.map_or("CS:S", |_| "Combat Arms");
+        assert!(walk_both(&mut sim, a, b) > 0, "{game}: walking steps");
+        for p in [a, b] {
+            sim.app.world_mut().entity_mut(p).insert(Carried(seat));
+        }
+        assert_eq!(walk_both(&mut sim, a, b), 0, "{game}: carried, no steps");
+        for p in [a, b] {
+            sim.app.world_mut().entity_mut(p).remove::<Carried>();
+        }
+        sim.seconds(1.0);
+    }
 }

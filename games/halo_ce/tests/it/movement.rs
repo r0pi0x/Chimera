@@ -144,12 +144,25 @@ impl T {
     /// A player whose origin is at `origin` (WU) on a level of `blocks`,
     /// at `hz` ticks a second; no tick run yet.
     pub(crate) fn at_rate(blocks: Vec<Block>, origin: Vec3, hz: f64) -> Self {
+        Self::build(blocks, origin, hz, false)
+    }
+
+    /// `at_rate` with the client's drawing between ticks (the engine's
+    /// `InterpPlugin`, under which Halo's `eased` runs).
+    pub(crate) fn drawn(blocks: Vec<Block>, origin: Vec3, hz: f64) -> Self {
+        Self::build(blocks, origin, hz, true)
+    }
+
+    fn build(blocks: Vec<Block>, origin: Vec3, hz: f64, drawn: bool) -> Self {
         let map = TestMap(blocks);
         let mut sim = Sim::with(HaloSim, move |app| {
             app.insert_resource(map)
                 .init_resource::<DamageLog>()
                 .add_systems(Startup, spawn_map)
                 .add_systems(Last, log_damage);
+            if drawn {
+                app.add_plugins(chimera_world::map::interp::InterpPlugin);
+            }
         });
         sim.set_tick_interval(1.0 / hz);
         let centre = origin + Vec3::Z * data().centre_above_origin(0.0);

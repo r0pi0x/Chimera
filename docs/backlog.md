@@ -3027,13 +3027,29 @@ docs/plans/active/sound.md.
     after it; eased between the last two ticks (before) it was in full at
     76.4 ms, one Halo tick (about 5 frames, 35 ms) later.
   - Perf: PERF_LINE
+  - **Playtest 2026-11-17 (UGG, `halo_ce:party_vehicles 1`, Blood
+    Gulch), fixed 2026-11-17:** (1) the Warthog jittered under the
+    party's 64 Hz engine tick (the engine's `Interpolated` eased engine
+    ticks, a Halo tick on about every other one): a simulated vehicle is
+    now drawn on Halo's clock (`HaloEased` + the engine's `DrawnByGame`),
+    its riders with it by the engine (`Carried`: `map::interp::
+    ease_carried`, any game's carrier), the local rider's seat camera
+    made each frame from the drawn vehicle (`vehicles::ride_drawn`);
+    `halo_ce` `vehicle_drawn` tests 64 Hz ticks at 64 and 144 Hz frames
+    and 30 Hz at 144. (2) Wheels never turned, the Ghost showed nothing:
+    Combat Arms' props starter (in every party app) gave the vehicle a
+    `PropSequence` and the engine's prop animator played its first
+    overlay over Halo's pose; vehicles are now `PosedByGame` (both skip
+    it; party_kit `halo_vehicle_looks`). (3) Steps from a seated rider
+    pressing WASD: the engine's `Carried` now means no movement sounds,
+    every game's footsteps query `core::Afoot` (Source's movement skipped
+    `Carried` already; Combat Arms' and Halo's now; a seated Halo body no
+    longer runs its legs); party_kit `a_carried_character_makes_no_steps`,
+    halo_ce `a_carried_body_does_not_run_in_its_seat`. Needs a Windows
+    playtest with the disc: driving a Warthog and a Ghost in UGG at 144
+    Hz (smooth body, riders, camera; wheels, steering, suspension), and
+    no steps while seated.
   Left (listed per the user's rule):
-  - A vehicle's own transform and its riders under a party app's 64 Hz
-    engine tick: the engine's `Interpolated` eases engine ticks, and a
-    Halo tick lands on about every other one, so it steps there (smooth
-    at Halo's own 30 Hz app). Moving it to Halo's clock means moving the
-    riders and the seat camera with it (`vehicles::carry`, `ride_drawn`,
-    `camera::view`): a change to the engine's interpolation, not done.
   - The HUD's meters (shield, health, heat, ammunition) and flashes stay
     at Halo's tick: flashes are on/off by the tick (the original's look),
     the meters step a few pixels a tick; easing them would show a hit late.

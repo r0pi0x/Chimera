@@ -34,6 +34,7 @@ mod halo_grenade_rung;
 mod halo_balance;
 mod halo_ladder;
 mod halo_maps;
+mod halo_vehicle_looks;
 mod host_lobby;
 mod hl2dm_parts;
 mod hud;

@@ -126,6 +126,13 @@ pub fn posed_model(model: &MapModel, sequence: &str, cycle: f32) -> Option<MapMo
     Some(out)
 }
 
+/// An animated prop whose joints its game poses itself (Halo's vehicles:
+/// their wheels, steering and suspension from the simulation's values):
+/// the engine's prop animator (`animate_props`) and other games' starters
+/// (Combat Arms' `start_props` in a party app) leave it alone.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct PosedByGame;
+
 /// Holds an animated prop's sequence still at this cycle (0..1): a game's
 /// gauge drawn by its model's frame (HL2's wall chargers' dial). Without
 /// it the prop plays on.
@@ -136,10 +143,11 @@ pub struct PropCycle(pub f32);
 /// specs/source/prop_damage.md 9): a new serial restarts the named
 /// sequence (sequence 0 when the model lacks it), switching at once; a
 /// new round starts the default one (else the first); a non-looping
-/// sequence that ends starts the default again, if there is one.
+/// sequence that ends starts the default again, if there is one. A prop
+/// its game poses (`PosedByGame`) is not played.
 pub fn animate_props(
     time: Res<Time>,
-    mut props: Query<(Entity, &mut PropRig, Option<&PropSequence>, Option<&PropCycle>)>,
+    mut props: Query<(Entity, &mut PropRig, Option<&PropSequence>, Option<&PropCycle>), Without<PosedByGame>>,
     mut done: MessageWriter<PropAnimationDone>,
     mut joints: Query<&mut Transform>,
 ) {

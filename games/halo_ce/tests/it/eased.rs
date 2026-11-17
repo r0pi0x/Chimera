@@ -260,3 +260,31 @@ fn the_trackers_sweep_moves_between_ticks() {
     assert!(m < a.max(b) && m > a.min(b), "{a} {m} {b}");
     assert_eq!(sweep_at(10.0), a);
 }
+
+/// A carried body (a vehicle's rider: the engine's `Carried`) stays still
+/// in its seat whatever its keys and the carrier's speed: no running legs,
+/// so no foot frames (no footsteps: `audio::steps`, which skips it too).
+#[test]
+fn a_carried_body_does_not_run_in_its_seat() {
+    let mut sim = sim();
+    let p = body(&mut sim);
+    sim.ticks(10);
+    let seat = sim.app.world_mut().spawn(Transform::default()).id();
+    sim.app.world_mut().entity_mut(p).insert(chimera_core::core::Carried(seat));
+    let mut feet = 0;
+    for _ in 0..60 {
+        sim.intent(p).move_axis = Vec2::Y;
+        // Carried along as a seat moves it (`vehicles::carry`).
+        sim.app.world_mut().get_mut::<chimera_core::core::Velocity>(p).unwrap().0 = Vec3::new(0.0, 0.0, -8.0);
+        sim.ticks(1);
+        feet |= sim.app.world().get::<HaloBody>(p).unwrap().anim.feet;
+    }
+    let state = sim.app.world().get::<HaloBody>(p).unwrap().anim.state;
+    assert_eq!(state, halo_ce::game::body::anims::State::Idle, "still in its seat");
+    assert_eq!(feet, 0, "no foot frames");
+    // Out of the seat, the keys run it again.
+    sim.app.world_mut().entity_mut(p).remove::<chimera_core::core::Carried>();
+    sim.ticks(30);
+    let state = sim.app.world().get::<HaloBody>(p).unwrap().anim.state;
+    assert_eq!(state, halo_ce::game::body::anims::State::MoveFront, "running again");
+}
