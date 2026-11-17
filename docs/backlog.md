@@ -3192,6 +3192,12 @@ dithered fade bands. Left:
 
 ## 10. Long tail
 
+- **Developer accounts (user idea, 2026-11-17; low priority, not
+  decided).** Hub accounts marked developer or admin could get admin
+  rights on every server they join, with all commands available from the
+  moment they load in. For now a local "Developer mode" switch in
+  Options covers the developer UI (the component gallery).
+
 Counts are from de_dust2's entity lump and static prop lump.
 
 - **Combat Arms world objects, what item 23 left** (docs/plans/active/
