@@ -2446,16 +2446,23 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
 ## 2b. HUD and debug views
 
 - **One component library, used everywhere (user, 2026-11-17).** The
-  kit exists (`chimera_ui::controls`: `text_field`, `button`, `toggle`,
-  `dropdown`, `slider`, ...; `chimera_ui::widgets`), but screens built
-  their own copies, so search boxes and text inputs look and act
-  differently. For example, a caret placed inline pushes the text
-  around, where the kit's caret is an overlay. Move every screen's
-  ad-hoc control onto the kit's (Change gun's and the bench's search,
-  the model picker, the target picker, ...), add a search-field variant
-  if one is missing, and add a `repo_checks` rule against hand-built
-  controls outside `chimera_ui`. Also add a gallery scene that renders
-  every control in every state, for screenshot checks.
+  kit (`chimera_ui::controls`: `text_field`, `search_field`, `text_area`,
+  `chat_field`, `button`, `toggle`, `dropdown`, `slider`, ...) is the one
+  place controls are built. *Done (2026-11-17):* `search_field` (glass,
+  clear key) and `text_area` (wrapping lines, overlay caret and selection)
+  added; Change gun's and the bench picker's search, the tag popover's
+  find box (a hand-built inline caret), the report dialog's text and the
+  chat line (an inline caret that pushed the text) now use them; disabled
+  state on the text fields; `repo_checks` rule `ui_kit`
+  (`text_inputs_are_the_kits`: no hand-built text inputs outside
+  `chimera_ui`, an allowlist with reasons for the VGUI/GameUI widgets and
+  the egui debug UI; a missing feature is first an option on the kit's
+  component); the gallery (`ui_scene fields`, `ui_gallery`, Options'
+  Developer mode and the Escape menu's Developer entry); a test that typing
+  moves no text. *Left:* a rule for the other controls (buttons, toggles,
+  sliders built by hand: only text inputs are flagged), the main menu's
+  Developer entry (only the Escape menu has it), the VGUI look's own
+  text entry stays (the GameUI copy).
 
 - CS:S HUD: health/armour/ammo/money/round-timer panels, death notices
   and the Tab scoreboard are in (`client/game_hud.rs`,
@@ -2908,9 +2915,12 @@ docs/plans/active/sound.md.
   changes. A format change is a versioned migration that may invalidate
   old caches; keep backwards compatibility where cheap. Record each
   format's version and the policy in one place (generated-assets rule).
-  First step: a prototype measuring the gains (plan:
-  docs/plans/active/converted-cache.md). Builds on the kept-dressing
-  API below.
+  First step: a prototype measuring the gains. **Measured 2026-11-17**
+  ([plan and numbers](plans/active/converted-cache.md)): a first
+  dressing read back from disk takes 3.2x (CS:S), 7.1x (HL2:DM) and
+  4.6x (TF2) fewer instructions than converting; entries 49-773 MB raw,
+  20-304 MB compressed; decisions for the user at the plan's end.
+  Builds on the kept-dressing API below.
 
 - **Streamed textures, low resolution first (user, 2026-11-17).** Keep
   textures apart from models. Serve small mip levels first from the
@@ -2967,25 +2977,53 @@ docs/plans/active/sound.md.
 
 - **Halo: view models and animations at frame rate (user, 2026-11-17).**
   Halo's gun animations and related motion run at its 30 Hz tick and look
-  stepped on high-refresh screens. Interpolate between the 30 Hz poses
-  (bones, view model, projectiles) for display, simulation unchanged.
+  stepped on high-refresh screens. First pass (2026-11-17, `fae9b2902`):
+  poses and objects eased between the last two Halo ticks (one tick, 33
+  ms, late). **The user (2026-11-17): smooth everything that moves at
+  Halo's tick; no trail where the data is known** (sample each playing
+  animation at the frame's own time, past the last tick; cross-fade when
+  the next tick changes it; ease only what the simulation decides from
+  input; simulation stays at 30 Hz; measure the delay).
   **Done 2026-11-17** (`halo_ce::game::eased` on the engine's
-  `map::interp::GameTicks`): the body's and view model's poses, the shots
-  in flight and the local grenades drawn between Halo ticks; tested on
-  synthetic animation data, not yet looked at on the disc's models
-  (confirm in a playtest). Still at 30 Hz: corpses, a campaign body's own
-  arms, vehicles. **The user (2026-11-17): interpolate everything that
-  moves at Halo's tick** (corpses, arms, vehicles, effects, doors and
-  devices, the HUD's moving parts). Skip only what's prohibitively hard
-  or costs measurable frame time, and say which in this entry. **No
-  trail where the data is known:** an animation's keyframes are data, so
-  sample each playing animation at the frame's own time (the last tick's
-  time plus the frame's share of the next), continuing past the last
-  tick rather than easing between the last two poses. When the next tick
-  changes the animation, cross-fade it in the usual way. Only motion the
-  simulation decides from input (positions, physics) is eased between
-  ticks, and the local player's comes from its own predicted tick.
-  Measure the visible delay before and after.
+  `map::interp::PoseStream`, `GameClock::now` / `ahead`):
+  - Sampled at the frame's own time, on the keyframes the same animation
+    plays on its next ticks (predicted by a clone of its state, made only
+    when first drawn, only on a client): the body's pose, the
+    first-person view model, a campaign body's own first-person arm, a
+    corpse's death. A tick other than predicted (input drift, a state the
+    game blends into) cross-fades from the old prediction over one Halo
+    tick; an event (shot, melee, hit, throw start, a view cue) shows at
+    once.
+  - Eased between the last two Halo ticks (simulation-decided): shots in
+    flight, local grenades, a corpse's fall, a vehicle's wheel spin,
+    steering and suspension (`VehicleLook::drawn`, the wheel the short way
+    round).
+  - The motion tracker's sweep at the frame's own time (`rules::sweep_at`).
+  - Already at the frame rate, nothing to do: particles (the engine's pool
+    steps per frame), effect lights, the camera and look. No doors or
+    devices exist in Halo's port yet (when they come: `HaloEased`).
+  - Delay (a shot's push on the assault rifle's view, 144 Hz frames under
+    Halo's 30 Hz, `view::a_shot_shows_on_the_first_frame_after_its_tick`):
+    the trigger pressed between ticks, the view first moves on the first
+    frame after the next Halo tick (13.9 ms after the press: the push's
+    spring is predicted) and shows the second tick's pose in full 41.7 ms
+    after it; eased between the last two ticks (before) it was in full at
+    76.4 ms, one Halo tick (about 5 frames, 35 ms) later.
+  - Perf: PERF_LINE
+  Left (listed per the user's rule):
+  - A vehicle's own transform and its riders under a party app's 64 Hz
+    engine tick: the engine's `Interpolated` eases engine ticks, and a
+    Halo tick lands on about every other one, so it steps there (smooth
+    at Halo's own 30 Hz app). Moving it to Halo's clock means moving the
+    riders and the seat camera with it (`vehicles::carry`, `ride_drawn`,
+    `camera::view`): a change to the engine's interpolation, not done.
+  - The HUD's meters (shield, health, heat, ammunition) and flashes stay
+    at Halo's tick: flashes are on/off by the tick (the original's look),
+    the meters step a few pixels a tick; easing them would show a hit late.
+  - Tested on synthetic animation data only (no disc on this box): needs a
+    playtest on the Windows PC (`halo_ce` app and a party app at 64 Hz,
+    a 144 Hz screen): the Spartan running and turning, a shot, a reload, a
+    death, the Hunter's arm, a Warthog's wheels.
 
 - **Halo HUD resolution (user, 2026-11-17).** Done (2026-11-17), left below for the generated-asset option: the opt-in scaling setting `halo_ce:hud_filter` (Options > Video "Halo HUD scaling": Original, the default; Sharp, nearest inside each texel with a one-pixel linear seam; Smooth+sharpen, an unsharp mask; `games/halo_ce/src/ui/hud/material.rs`, hud.wesl). Still open: upscaled HUD bitmaps as a generated asset set. Original text: The HUD's bitmaps are the
   original's, authored for 640x480, so they look soft scaled to 1080p and

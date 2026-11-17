@@ -53,8 +53,9 @@
 //! and the server, as the throw), played once over its pose
 //! (`anims::Inputs::action`).
 //!
-//! Drawn (`eased`): between the last two Halo ticks' poses at the frame's
-//! time (Halo draws at its tick rate; ours at the frame rate, the
+//! Drawn (`eased`): sampled at the frame's own time, on to the next ticks'
+//! keyframes as the same inputs would play them (a shot, melee, hit or
+//! throw shows at once; Halo draws at its tick rate; ours at the frame rate, the
 //! simulation's pose unchanged).
 //!
 //! Death (`death`): the body has no ragdoll; a dead player is hidden (the
@@ -104,8 +105,9 @@ pub struct HaloBody {
     /// Its melee counter as last seen here (`HaloHands::melee`): a rise
     /// is a melee begun.
     pub melee: i32,
-    /// Its poses at the last Halo ticks, drawn between them (`eased`).
-    pub drawn: super::eased::PoseTicks,
+    /// Its pose at the last Halo tick and the next ones predicted, drawn
+    /// at the frame's time (`eased`).
+    pub drawn: super::eased::PoseStream,
 }
 
 /// The armour colours (objects.md, "Spartan multiplayer colour"): the
@@ -220,8 +222,10 @@ pub fn animate(
     )>,
     (tables, data): (Option<Res<super::campaign::BodyTables>>, Option<Res<super::movement::MovementData>>),
     mut fired: MessageReader<super::weapons::HaloFired>,
+    drawing: Option<Res<crate::map::interp::Interpolation>>,
     mut commands: Commands,
 ) {
+    let drawing = super::eased::drawing(&drawing);
     // Who fired since the last tick (every machine: the shooter's own
     // and the shots the server sent).
     let shooters: Vec<Entity> = fired.read().map(|f| f.owner).collect();
@@ -293,6 +297,9 @@ pub fn animate(
             halo.melee = melee;
         }
         let land = landing(table);
+        // An event shows at once in the drawn pose (`eased`); a throw's
+        // start is one too.
+        let event = i.hit.is_some() || i.action.is_some() || (i.throw.is_some() && !halo.anim.throwing);
         let mut pose = Vec::new();
         for _ in 0..ticks {
             pose = halo.anim.tick(&set, &label, &i, &land);
@@ -300,7 +307,21 @@ pub fn animate(
             i.action = None;
         }
         let laid = chimera_core::later::Later::ready(pose);
-        halo.drawn.lay(super::eased::laid(&clock), laid.clone());
+        if drawing {
+            // The next ticks as the same inputs would play them (`eased`):
+            // the throw on at its pace.
+            let (mut anim, set, label, n) = (halo.anim.clone(), set.clone(), label.clone(), super::eased::ahead(&clock));
+            let ahead = move || {
+                (1..=n)
+                    .map(|k| {
+                        let mut i = i;
+                        i.throw = i.throw.map(|f| f + k);
+                        anim.tick(&set, &label, &i, &land)
+                    })
+                    .collect()
+            };
+            halo.drawn.lay(super::eased::laid(&clock), laid.clone(), ahead, !event);
+        }
         let fixed = Some(laid);
         animator.fixed = fixed.clone();
         animator.main = Some(0);

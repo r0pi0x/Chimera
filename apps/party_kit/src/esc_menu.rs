@@ -38,10 +38,13 @@
 //!   party`) is asked how (`Page::ConfirmPartyLeave`, provisional): Leave
 //!   with my party (first, the default: `party_leave_match with`), Leave
 //!   alone (`party_leave_match alone`), Stay; so is the lobby's Leave.
+//! - **Developer**: only while Options' "Developer mode" (`developer_mode`,
+//!   off by default, archived: the Party tab) is on; it opens the UI kit's
+//!   gallery (`ui_gallery`, Esc closes it).
 //! - **Quit.**
 //!
 //! The entries and their order are data (data/main_menu.toml
-//! `[[escape]]`, `when` gating the host's and the main menu's). While the
+//! `[[escape]]`, `when` gating the host's, the main menu's and developer mode's). While the
 //! main menu shows (out of a game) Esc is the main menu's and this menu
 //! stays shut; `AppMenu::open` then counts the main menu too.
 //!
@@ -254,6 +257,12 @@ pub fn shown_entries(host: bool, main_menu: bool, voting: bool) -> Vec<ShownEntr
 /// `shown_entries`, while a sandbox plays or not (its Change gun and
 /// bench show, the skip vote doesn't).
 pub fn shown_entries_in(host: bool, main_menu: bool, voting: bool, sandbox: bool) -> Vec<ShownEntry> {
+    shown_entries_with(host, main_menu, voting, sandbox, false)
+}
+
+/// `shown_entries_in`, with Options' Developer mode on or off (its
+/// Developer entry).
+pub fn shown_entries_with(host: bool, main_menu: bool, voting: bool, sandbox: bool, developer: bool) -> Vec<ShownEntry> {
     use crate::main_menu::{EscDoes, When};
     crate::main_menu::MenuData::shipped()
         .escape
@@ -264,6 +273,7 @@ pub fn shown_entries_in(host: bool, main_menu: bool, voting: bool, sandbox: bool
             When::MainMenu => main_menu,
             When::Sandbox => sandbox,
             When::NotSandbox => !sandbox,
+            When::Developer => developer,
         })
         .map(|e| {
             let action = match e.does {
@@ -273,6 +283,7 @@ pub fn shown_entries_in(host: bool, main_menu: bool, voting: bool, sandbox: bool
                 EscDoes::Disconnect => Some(Action::Disconnect),
                 EscDoes::Quit => Some(Action::Quit),
                 EscDoes::Feedback => Some(Action::Feedback),
+                EscDoes::Developer => Some(Action::Developer),
                 EscDoes::Vote => (!voting).then_some(Action::SkipMap),
                 EscDoes::SandboxGun => Some(Action::SandboxGun),
                 EscDoes::SandboxBench => Some(Action::SandboxBench),
@@ -312,7 +323,11 @@ fn navigate(
     keys: Res<ButtonInput<KeyCode>>,
     theme: Option<Res<chimera_ui::Theme>>,
     role: (Option<Res<chimera_core::core::NetRole>>, Option<Res<chimera_net::net::rcon::RconAdmin>>),
-    (main_menu, sandbox): (Option<Res<crate::main_menu::PartyMenu>>, Option<Res<chimera_client::client::sandbox::SandboxUi>>),
+    (main_menu, sandbox, developer): (
+        Option<Res<crate::main_menu::PartyMenu>>,
+        Option<Res<chimera_client::client::sandbox::SandboxUi>>,
+        Option<Res<chimera_client::client::ui_scene::DeveloperMode>>,
+    ),
     vote: Option<Res<VoteView>>,
     clock: Option<Res<chimera_ui::UiClock>>,
     pointer: (Query<(Ref<Interaction>, &Action)>, Option<Res<chimera_ui::PointerLead>>),
@@ -332,7 +347,7 @@ fn navigate(
         Page::Main => {
             let host = host::may_change(role.0.as_deref(), role.1.as_deref());
             let voting = vote.as_ref().is_some_and(|v| v.active.is_some());
-            let entries = shown_entries_in(host, main_menu.is_some(), voting, sandbox.is_some_and(|s| s.on));
+            let entries = shown_entries_with(host, main_menu.is_some(), voting, sandbox.is_some_and(|s| s.on), developer.is_some_and(|d| d.is_on()));
             let live: Vec<usize> = (0..entries.len()).filter(|i| entries[*i].action.is_some()).collect();
             if live.is_empty() {
                 return;
@@ -434,6 +449,8 @@ pub enum Action {
     /// report dialog (`client::feedback`, `feedback menu`).
     Feedback,
     Quit,
+    /// Developer mode's entry: the UI kit's gallery (`ui_gallery`).
+    Developer,
 }
 
 /// An action as a message (tests, `escmenu`).
@@ -508,6 +525,7 @@ impl Plugin for EscMenuPlugin {
                         Some("back") => Action::Back,
                         Some("quit") => Action::Quit,
                         Some("feedback") => Action::Feedback,
+                        Some("developer") => Action::Developer,
                         other => return Err(format!("no entry {other:?}")),
                     };
                     w.write_message(action);
@@ -854,6 +872,11 @@ fn act_one(world: &mut World, action: Action) {
                 chimera_client::client::feedback::request(world, true);
             }
         }
+        Action::Developer => {
+            leave(world);
+            world.resource_mut::<EscMenu>().set_open(false);
+            submit(world, "ui_gallery");
+        }
         Action::Quit => submit(world, "quit"),
     }
 }
@@ -961,6 +984,8 @@ struct Shown {
     lobby: bool,
     /// A sandbox plays (its entries).
     sandbox: bool,
+    /// Options' Developer mode is on.
+    developer: bool,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -969,7 +994,11 @@ fn show(
     title: Res<EscMenuTitle>,
     vote: Option<Res<VoteView>>,
     role: (Option<Res<chimera_core::core::NetRole>>, Option<Res<chimera_net::net::rcon::RconAdmin>>),
-    (main_menu, sandbox): (Option<Res<crate::main_menu::PartyMenu>>, Option<Res<chimera_client::client::sandbox::SandboxUi>>),
+    (main_menu, sandbox, developer): (
+        Option<Res<crate::main_menu::PartyMenu>>,
+        Option<Res<chimera_client::client::sandbox::SandboxUi>>,
+        Option<Res<chimera_client::client::ui_scene::DeveloperMode>>,
+    ),
     tabs: Res<OptionTabs>,
     root: Query<Entity, With<MenuRoot>>,
     (theme, kit, units, clock, settings, time): (
@@ -1007,6 +1036,7 @@ fn show(
         main_menu: main_menu.is_some(),
         lobby: menu.lobby,
         sandbox: sandbox.is_some_and(|s| s.on),
+        developer: developer.is_some_and(|d| d.is_on()),
         signal: (signal(theme.as_deref()) && units.is_some()).then(|| {
             let u = units.as_deref().copied().unwrap_or_default();
             // A running vote's seconds left redraw it each second.
@@ -1033,7 +1063,7 @@ fn show(
                 mine: v.mine,
                 may_vote: v.may_vote,
             });
-            let entries = shown_entries_in(now.host, now.main_menu, active.is_some(), now.sandbox);
+            let entries = shown_entries_with(now.host, now.main_menu, active.is_some(), now.sandbox, now.developer);
             let at = crate::esc_signal::Drawn {
                 lobby: now.lobby,
                 page: menu.page,
@@ -1150,6 +1180,7 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             crate::main_menu::When::MainMenu => shown.main_menu,
             crate::main_menu::When::Sandbox => shown.sandbox,
             crate::main_menu::When::NotSandbox => !shown.sandbox,
+            crate::main_menu::When::Developer => shown.developer,
         };
         if !visible {
             continue;
@@ -1162,6 +1193,7 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             EscDoes::Disconnect => Action::Disconnect,
             EscDoes::Quit => Action::Quit,
             EscDoes::Feedback => Action::Feedback,
+            EscDoes::Developer => Action::Developer,
             EscDoes::SandboxGun => Action::SandboxGun,
             EscDoes::SandboxBench => Action::SandboxBench,
             EscDoes::Vote => {

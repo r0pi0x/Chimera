@@ -27,8 +27,9 @@
 //! weapon's `overheat_exit` its exit) and the holder's throttle and look.
 //! The pose is laid out by the game (`Animator::fixed`, sequence 0 named
 //! as playing); Halo holds it between ticks (animations.md "Per-tick
-//! order": no interpolation), we draw between the last two at the frame
-//! rate (`eased`, display only). The engine's `ViewAnimator` and its sequence driver
+//! order": no interpolation), we draw it at the frame's own time, on to
+//! the next ticks' keyframes as the machine would play them (`eased`,
+//! display only; a cue's tick shows at once). The engine's `ViewAnimator` and its sequence driver
 //! assume Source's (sequences played in seconds, one at a time); Halo's
 //! view stacks overlays and smoothed inputs on a state animation counted
 //! in ticks, so it is Halo's own small driver beside it, not rules for it.
@@ -233,8 +234,9 @@ pub struct HaloViewModel {
     pub hid: bool,
     /// The held gun's functions (`displays`).
     pub functions: displays::Functions,
-    /// Its poses at the last Halo ticks, drawn between them (`eased`).
-    pub drawn: super::eased::PoseTicks,
+    /// Its pose at the last Halo tick and the next ones predicted, drawn
+    /// at the frame's time (`eased`).
+    pub drawn: super::eased::PoseStream,
 }
 
 /// Holders of Halo guns, one tick (module doc).
@@ -259,8 +261,10 @@ pub fn drive(
     guns: Query<(&Weapon, &HaloGun, Option<&Magazine>, &HaloWeapon)>,
     mut events: MessageReader<WeaponEvent>,
     body_views: Option<Res<super::campaign::first_person::BodyViews>>,
+    drawing: Option<Res<crate::map::interp::Interpolation>>,
     mut commands: Commands,
 ) {
+    let drawing = super::eased::drawing(&drawing);
     let events: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
     let n = halo_ticks(&clock);
     for (e, inv, intent, (health, velocity, state, zoomed), view, own) in &mut holders {
@@ -326,6 +330,9 @@ pub fn drive(
             )
         });
         let mut pose = None;
+        // Shown at once in the drawn pose (`eased`): a cue's tick.
+        let event = fresh || !cues.is_empty();
+        let mut last = None;
         // A fresh view shows the draw's frame 0 on this tick.
         for k in 0..if fresh { n.saturating_sub(1) } else { n } {
             let turn = own.look.map_or(Vec2::ZERO, |l| {
@@ -352,6 +359,7 @@ pub fn drive(
                 ammunition,
             };
             pose = Some(own.view.tick(&set, &t));
+            last = Some(t);
         }
         if fresh && pose.is_none() {
             pose = Some(own.view.pose(&set));
@@ -378,7 +386,14 @@ pub fn drive(
         }
         if let (Some(pose), Some(a)) = (pose, view.animator.as_mut()) {
             let pose = Later::ready(pose);
-            own.drawn.lay(super::eased::laid(&clock), pose.clone());
+            if drawing {
+                // The next ticks with the same inputs and no cue (`eased`).
+                let mut t = last.unwrap_or_else(|| Tick { ammunition, zoomed: zoomed.is_some(), ..Default::default() });
+                t.cues.clear();
+                let (mut machine, set, n) = (own.view.clone(), set.clone(), super::eased::ahead(&clock));
+                let ahead = move || (0..n).map(|_| machine.tick(&set, &t)).collect();
+                own.drawn.lay(super::eased::laid(&clock), pose.clone(), ahead, !event);
+            }
             a.fixed = Some(pose);
             a.main = Some(0);
         }

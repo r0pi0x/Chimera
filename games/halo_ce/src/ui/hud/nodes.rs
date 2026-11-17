@@ -253,7 +253,8 @@ pub fn collect(
         hud.state.tick(data, &unit, &others, yaw, tick);
     }
     let canvas = window.iter().next().map_or(Canvas::ORIGINAL, |w| Canvas::of(w.width(), w.height())).with_layout(layout);
-    (hud.quads, hud.blocks) = draw::draw_blocks(data, &unit, &hud.state, &canvas, now);
+    // The sweep at the frame's own time (`draw::draw_blocks_at`).
+    (hud.quads, hud.blocks) = draw::draw_blocks_at(data, &unit, &hud.state, &canvas, time.elapsed_secs_f64() * 30.0);
     hud.canvas = Some(canvas);
     hud.blur = draw::scope_blur(data, &unit, v);
     hud.unit = Some(unit);

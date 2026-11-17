@@ -136,6 +136,10 @@ pub enum GunAction {
     Switch,
     /// A click on the search field.
     FocusSearch,
+    /// The search field's clear key: empties it and keeps the keys.
+    ClearSearch,
+    /// The tag popover's search clear key.
+    ClearTagSearch,
     Close,
 }
 
@@ -628,6 +632,12 @@ fn act(world: &mut World) {
                 world.resource_mut::<SandboxUi>().screen = SandboxScreen::None;
             }
             GunAction::FocusSearch => world.resource_mut::<SandboxUi>().view.search_focus = true,
+            GunAction::ClearTagSearch => world.resource_mut::<SandboxUi>().view.tag_search.clear(),
+            GunAction::ClearSearch => {
+                let mut ui = world.resource_mut::<SandboxUi>();
+                ui.view.clear_search();
+                ui.view.search_focus = true;
+            }
             GunAction::Close => {
                 world.resource_mut::<SandboxUi>().view.search_focus = false;
                 world.write_message(SandboxAction::Close);
@@ -853,14 +863,17 @@ fn draw(
     *last = Some((p.root, next));
 }
 
-fn search_field(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, text: &str, focus: bool, caret: (usize, usize)) {
-    kit_icon(c, look, parent, "search", 0.8, Tone::Fg3, 1.0);
-    // The kit's text field (a caret, a selection, copy and paste); a
-    // press focuses it (`GunAction::FocusSearch`, `search_pointer`).
+fn search_field(c: &mut Commands, ui: &Ui, _look: &Look, parent: Entity, text: &str, focus: bool, caret: (usize, usize)) {
+    // The kit's search field (a caret, a selection, copy and paste, a
+    // clear key); a press focuses it (`GunAction::FocusSearch`,
+    // `search_pointer`).
     let byte = |i: usize| text.char_indices().nth(i).map_or(text.len(), |(b, _)| b);
     let cur = focus.then(|| chimera_ui::controls::TextCursor { at: byte(caret.0), anchor: byte(caret.1) });
-    let field = ui.text_field(c, parent, text, "Find a gun, a game or a tag", cur, false, 20.0, chimera_ui::controls::State::focused(focus));
-    c.entity(field).insert((GunSearch, GunAction::FocusSearch, UiParityId::new("gun.search.field")));
+    let found = ui.search_field(c, parent, text, "Find a gun, a game or a tag", cur, 20.0, chimera_ui::controls::State::focused(focus));
+    c.entity(found.field).insert((GunSearch, GunAction::FocusSearch, UiParityId::new("gun.search.field")));
+    if let Some(k) = found.clear {
+        c.entity(k).insert(GunAction::ClearSearch);
+    }
     ui.kbd(c, parent, if focus { "Enter" } else { "/" }, 0.44, Tone::Fg3);
 }
 
@@ -1004,23 +1017,18 @@ fn tag_popover(c: &mut Commands, ui: &Ui, look: &Look, parent: Entity, s: &Sandb
             ChildOf(parent),
         ))
         .id();
-    let find = ui.boxed(c, p, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), h: Some(1.7), pad: Some([0.0, 0.6, 0.0, 0.6].into()), ..UiStyle::row() }.bg_a(Tone::Fg, 0.05));
-    c.entity(find).insert(UiParityId::new("gun.popover.find"));
+    // The kit's search field, the hints beside it; typing goes to it
+    // while the popover is open (the caret at the end).
     let typed = &s.view.tag_search;
-    kit_icon(c, look, find, "search", 0.7, if typed.is_empty() { Tone::Fg3 } else { Tone::Fg }, 1.0);
-    if typed.is_empty() {
-        ui.sentence(c, find, 0.7, Tone::Fg3, "Find a tag");
-    } else {
-        ui.text_plain(c, find, Role::Text, 0.74, Tone::Fg, typed);
-        c.spawn((Node { width: Val::Px(look.hair().max(1.5)), height: look.val(0.9), ..default() }, BackgroundColor(look.tone(Tone::Fg)), ChildOf(find)));
+    let find = ui.boxed(c, p, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
+    c.entity(find).insert(UiParityId::new("gun.popover.find"));
+    let cur = (!typed.is_empty()).then(|| chimera_ui::controls::TextCursor::from(typed.len()));
+    let field = ui.search_field(c, find, typed, "Find a tag", cur, 13.0, chimera_ui::controls::State::focused(true));
+    if let Some(k) = field.clear {
+        c.entity(k).insert(GunAction::ClearTagSearch);
     }
     ui.boxed(c, find, UiStyle { grow: Some(1.0), ..UiStyle::row() });
     ui.text(c, find, Role::Mono, 0.42, Tone::Fg3, if typed.is_empty() { "Type to find \u{00b7} every game's guns carry these" } else { "Enter ticks the first \u{00b7} Esc clears" });
-    c.spawn((
-        Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, bottom: Val::ZERO, height: Val::Px(look.hair()), ..default() },
-        BackgroundColor(look.tone(if typed.is_empty() { Tone::Fg4 } else { Tone::Acc })),
-        ChildOf(find),
-    ));
     let found = s.view.tags_found();
     if found.is_empty() {
         ui.sentence(c, p, 0.66, Tone::Fg3, "No tag holds that.");

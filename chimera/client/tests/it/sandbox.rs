@@ -610,7 +610,8 @@ fn the_tag_popovers_own_search_types_finds_and_enter_ticks() {
     let w = sim.app.world_mut();
     assert!(w.query::<&UiParityId>().iter(w).any(|p| p.0 == "gun.popover.find"));
     let shown: Vec<String> = w.query::<&Text>().iter(w).map(|t| t.0.clone()).collect();
-    assert!(shown.iter().any(|t| t == "spl"), "the typed words in the field");
+    // (The kit's field: one text a character.)
+    assert!(["s", "p", "l"].iter().all(|c| shown.iter().any(|t| t == c)), "the typed words in the field");
     // Enter ticks the first one found and clears the field.
     press(&mut sim, &[KeyCode::Enter]);
     let u = ui(&sim);

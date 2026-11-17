@@ -30,6 +30,7 @@ mod bot_triggers;
 mod cross_game;
 mod party_balance;
 mod death;
+mod eased;
 mod flinch;
 mod fx;
 mod fx_place;

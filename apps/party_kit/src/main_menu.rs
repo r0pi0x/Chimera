@@ -218,6 +218,8 @@ pub enum EscDoes {
     SandboxBench,
     /// The report dialog (`client::feedback`).
     Feedback,
+    /// The UI kit's gallery (`ui_gallery`).
+    Developer,
     Quit,
 }
 
@@ -233,6 +235,8 @@ pub enum When {
     Sandbox,
     /// No sandbox plays.
     NotSandbox,
+    /// Options' Developer mode is on (`DeveloperMode`).
+    Developer,
 }
 
 /// An Escape menu entry.
@@ -334,6 +338,7 @@ impl MenuData {
                 Some("disconnect") => EscDoes::Disconnect,
                 Some("quit") => EscDoes::Quit,
                 Some("feedback") => EscDoes::Feedback,
+                Some("developer") => EscDoes::Developer,
                 Some("sandbox_gun") => EscDoes::SandboxGun,
                 Some("sandbox_bench") => EscDoes::SandboxBench,
                 other => return Err(format!("{label}: no action {other:?}")),
@@ -344,6 +349,7 @@ impl MenuData {
                 Some("main_menu") => When::MainMenu,
                 Some("sandbox") => When::Sandbox,
                 Some("not_sandbox") => When::NotSandbox,
+                Some("developer") => When::Developer,
                 Some(w) => return Err(format!("{label}: no `when` {w}")),
             };
             escape.push(EscEntry { label, does, when });

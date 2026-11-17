@@ -25,7 +25,7 @@ use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_client::client::feedback::{Category, Feedback, FeedbackAction, FeedbackOutbox, MAX_TEXT, Phase};
 use chimera_ui::{
     Role, Tone, UiStyle,
-    controls::{Kind, NOTE, State, TYPED, Ui},
+    controls::{Kind, NOTE, State, Ui},
 };
 
 /// Over the Escape menu (90), under the console (100).
@@ -181,46 +181,12 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
         c.entity(e).insert(FeedbackAction::Category(k));
     }
     ui.kbd(c, top, "Tab", 0.5, Tone::Fg3);
-    // The text area: several lines, the caret at the end.
-    let area = c
-        .spawn((
-            UiStyle { h: Some(9.0), pad: Some([0.7, 0.9].into()), ..UiStyle::column() }.bg_a(Tone::Fg, 0.08),
-            Node { overflow: Overflow::clip(), ..default() },
-            ChildOf(m),
-        ))
-        .id();
-    if f.text.is_empty() {
-        let line = ui.boxed(c, area, UiStyle::row());
-        caret(c, ui, line);
-        ui.sentence(c, line, TYPED, Tone::Fg3, " What happened? What did you expect?");
-    } else {
-        let lines: Vec<&str> = f.text.split('\n').collect();
-        for (i, l) in lines.iter().enumerate() {
-            let line = ui.boxed(c, area, UiStyle { align: Some(AlignItems::FlexEnd), ..UiStyle::row() });
-            let t = c
-                .spawn((
-                    Text::new(if l.is_empty() { " ".to_string() } else { l.to_string() }),
-                    chimera_ui::style::UiText::new(Role::Text, TYPED, Tone::Fg),
-                    TextLayout::new(Justify::Left, LineBreak::AnyCharacter),
-                    Node { max_width: ui.units.val(WIDTH - 6.0), ..default() },
-                    ChildOf(line),
-                ))
-                .id();
-            if f.selected {
-                // Ctrl+A: the whole text on the accent tint, as the kit's
-                // fields draw a selection.
-                c.entity(t).insert((BackgroundColor(ui.color(Tone::Acc, 0.45)), chimera_ui::controls::TextSelection));
-            }
-            if i + 1 == lines.len() {
-                caret(c, ui, line);
-            }
-        }
-    }
-    if f.refused {
-        ui.underline(c, area, Tone::Threat, 0.2);
-    } else {
-        ui.underline(c, area, Tone::Acc, 0.2);
-    }
+    // The text area: several lines, the caret at the end (the whole text
+    // selected after Ctrl+A); the kit's, so typing moves nothing.
+    let end = f.text.len();
+    let cur = chimera_ui::controls::TextCursor { at: end, anchor: if f.selected { 0 } else { end } };
+    let st = State { error: f.refused, focus: true, ..State::NONE };
+    ui.text_area(c, m, &f.text, "What happened? What did you expect?", Some(cur), WIDTH - 4.0, 9.0, st);
     let under = ui.boxed(c, m, UiStyle { margin: Some([0.5, 0.0, 1.1, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::SpaceBetween));
     let hint = if f.refused { "Say what happened first" } else { "Enter: new line" };
     ui.sentence(c, under, NOTE, if f.refused { Tone::Threat } else { Tone::Fg3 }, hint);
@@ -279,16 +245,6 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
     let send = ui.button(c, foot, Kind::Primary, "Send", Some("Ctrl+Enter"), chimera_ui::controls::HERO_H, State::focused(true));
     c.entity(send).insert(FeedbackAction::Send);
     root
-}
-
-fn caret(c: &mut Commands, ui: &Ui, parent: Entity) {
-    c.spawn((
-        Node { width: Val::Px(ui.units.hairline() * 2.0), height: ui.units.val(1.0), flex_shrink: 0.0, ..default() },
-        BackgroundColor(ui.color(Tone::Acc, 1.0)),
-        chimera_ui::controls::TextCaret,
-        Pickable::IGNORE,
-        ChildOf(parent),
-    ));
 }
 
 /// The notice after Send, at the top for a few seconds.

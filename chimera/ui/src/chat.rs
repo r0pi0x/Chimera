@@ -30,7 +30,7 @@
 use bevy::prelude::*;
 
 use crate::{
-    controls::{TextCaret, TextCursor, TextSelection, Ui},
+    controls::{Face, TextCursor, Ui, char_of},
     fonts::{self, Role},
     style::UiSlant,
     theme::Tone,
@@ -354,35 +354,10 @@ impl Ui<'_> {
                 self.span(c, body, SENTENCE, size, self.theme.tone(Tone::Fg3), placeholder);
             }
             Some(k) => {
-                let (a, b) = (k.at.min(k.anchor).min(text.len()), k.at.max(k.anchor).min(text.len()));
-                let bar = |c: &mut Commands| {
-                    c.spawn((
-                        Node { width: Val::Px(self.units.hairline() * 2.0), height: self.units.val(size * 1.15), flex_shrink: 0.0, ..default() },
-                        BackgroundColor(self.theme.tone(Tone::Acc)),
-                        TextCaret,
-                        Pickable::IGNORE,
-                        ChildOf(body),
-                    ));
-                };
-                let fg = self.theme.tone(Tone::Fg);
-                if a > 0 {
-                    self.span(c, body, SENTENCE, size, fg, &text[..a]);
-                }
-                if k.at == a {
-                    bar(c);
-                }
-                if b > a {
-                    let sel = c
-                        .spawn((Node { align_items: AlignItems::Center, flex_shrink: 0.0, ..default() }, BackgroundColor(self.theme.tone_a(Tone::Acc, 0.45)), TextSelection, Pickable::IGNORE, ChildOf(body)))
-                        .id();
-                    self.span(c, sel, SENTENCE, size, fg, &text[a..b]);
-                }
-                if k.at == b && b > a {
-                    bar(c);
-                }
-                if b < text.len() {
-                    self.span(c, body, SENTENCE, size, fg, &text[b..]);
-                }
+                // One node a character and the caret an overlay, as the
+                // kit's text field: typing moves nothing already there.
+                let face = Face { role: Role::Text, size, tone: Tone::Fg, plain: true };
+                self.edit_chars(c, body, text, face, Some((char_of(text, k.at), char_of(text, k.anchor))));
             }
         }
         let left = MAX_CHARS.saturating_sub(text.len());

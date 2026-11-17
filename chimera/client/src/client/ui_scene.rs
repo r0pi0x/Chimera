@@ -18,7 +18,10 @@
 //! instead (the UI parity check, `ui_parity`). `proof` (the kit itself: the type ramp of every role, tick
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
 //! the ambient and the match end's lines behind). `controls` (the kit's
-//! form controls in their states: `chimera_ui::controls`). An app adds
+//! form controls in their states: `chimera_ui::controls`), `fields` (the
+//! text inputs and the value controls in every state: rest, hover, focus,
+//! typing with the caret mid-text, a selection, masked, error, disabled:
+//! the gallery to check a change to the kit against). An app adds
 //! its own screens' scenes (`UiSceneHooks`: the party's `menu`, `esc`,
 //! `settings <tab>`, `play [game]` and `join`), staged by the app's code and cleared at `off`. The screens' milestones add theirs
 //! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
@@ -34,6 +37,10 @@
 //!
 //! `ui_scene_name <name>` calls every made-up player of the HUD scenes
 //! `name` (`StagedName`: a 20-character name's fit, screenshots).
+//!
+//! `ui_gallery [fields|controls|off]` opens the kit's gallery in the real
+//! apps (Esc closes it); the Escape menu's Developer entry runs it while
+//! Options' Developer mode (`DeveloperMode`, `developer_mode`) is on.
 //!
 //! `+ui_scene proof` on the command line stages it at start, e.g.
 //! `ultimate_gun_game --offscreen 1920x1080 --frames 30 --screenshot
@@ -52,7 +59,7 @@ pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
 pub const SCENES: &[&str] =
-    &["proof", "controls", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint"];
+    &["proof", "controls", "fields", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend", "lobby", "runghint"];
 
 /// `ui_scene lobby`'s made-up lobby (despawned at `off`).
 #[derive(Component)]
@@ -246,6 +253,7 @@ pub struct UiScenePlugin;
 impl Plugin for UiScenePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<UiScene>()
+            .init_resource::<DeveloperMode>()
             .init_resource::<StagedName>()
             .console_command(
                 "ui_scene_name",
@@ -259,7 +267,7 @@ impl Plugin for UiScenePlugin {
             )
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|controls|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|lobby|runghint|off> [fixture.json | t]: stage a screen of the UI \
+                "ui_scene <proof|controls|fields|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|lobby|runghint|off> [fixture.json | t]: stage a screen of the UI \
                  kit with made-up data (screenshots), or a fixture's (the UI parity check); an animated scene (rankup, airstrike) \
                  with `t` frozen `t` s into its loop.",
                 |w, a| {
@@ -346,7 +354,62 @@ impl Plugin for UiScenePlugin {
                     Ok(None)
                 },
             )
-            .add_systems(Update, stage);
+            .console_command(
+                "ui_gallery",
+                "ui_gallery [fields|controls|off]: open the UI kit's gallery (every control in every state; `fields` by default; \
+                 Esc closes it).",
+                |w, a| {
+                    let name = a.first().map(String::as_str).unwrap_or("fields");
+                    if name == "off" {
+                        w.resource_mut::<UiScene>().want = None;
+                        clear_staged(w);
+                        return Ok(None);
+                    }
+                    if !["fields", "controls"].contains(&name) {
+                        return Err(format!("ui_gallery: no page `{name}` (fields, controls, off)"));
+                    }
+                    clear_staged(w);
+                    w.resource_mut::<UiScene>().want = Some(name.to_string());
+                    Ok(None)
+                },
+            )
+            .add_systems(Update, (stage, close_gallery));
+        developer_mode_cvar(app);
+    }
+}
+
+/// Registers `developer_mode` (archived), when there is a console.
+pub fn developer_mode_cvar(app: &mut App) {
+    if app.world().get_resource::<crate::console::Console>().is_some() {
+        app.init_resource::<DeveloperMode>();
+        crate::console::resource_cvar::<DeveloperMode, u8>(
+            app,
+            "chimera:developer_mode",
+            "1: the Escape menu shows a Developer entry (the UI kit's gallery, `ui_gallery`); 0: off (default).",
+            |s| &mut s.on,
+        );
+        app.world_mut().resource_mut::<crate::console::Console>().archive("developer_mode");
+    }
+}
+
+/// Options' "Developer mode" (`developer_mode`, archived, off by
+/// default): shows the Escape menu's Developer entry, which opens the
+/// gallery (`ui_gallery`).
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DeveloperMode {
+    pub on: u8,
+}
+
+impl DeveloperMode {
+    pub fn is_on(&self) -> bool {
+        self.on != 0
+    }
+}
+
+/// Esc closes the gallery (`ui_gallery`).
+fn close_gallery(keys: Option<Res<ButtonInput<KeyCode>>>, mut scene: ResMut<UiScene>) {
+    if scene.want.as_deref().is_some_and(|n| matches!(n, "fields" | "controls")) && keys.is_some_and(|k| k.just_pressed(KeyCode::Escape)) {
+        scene.want = None;
     }
 }
 
@@ -389,6 +452,9 @@ fn stage(
     }
     if scene.want.as_deref() == Some("controls") {
         controls(&theme, kit.as_deref(), *units, &mut ambients, &mut commands);
+    }
+    if scene.want.as_deref() == Some("fields") {
+        fields(&theme, kit.as_deref(), *units, &mut ambients, &mut commands);
     }
 }
 
@@ -452,6 +518,151 @@ fn controls(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets
     ui.stepper(c, v, "8", 3.2, State::NONE);
     let (_, v) = ui.row(c, right, "Music", None, 2.9, State::NONE);
     ui.dropdown(c, v, &["Party playlist", "The game's loop", "None"], 0, Some(1), 12.0, State::NONE);
+}
+
+/// The kit's text inputs and value controls in every state, labelled: rest,
+/// hover, focus, typing (caret mid-text), a selection, masked, error,
+/// disabled (`chimera_ui::controls`), over the frozen ambient. The gallery
+/// a change to the kit is checked against.
+fn fields(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<chimera_ui::AmbientMaterial>, c: &mut Commands) {
+    use chimera_ui::{
+        UiStyle,
+        controls::{Hover, State, TextCursor, Typing, Ui},
+    };
+    let ui = Ui::new(t, kit, u);
+    let root = c
+        .spawn((
+            UiSceneRoot,
+            Name::new("ui_scene fields"),
+            GlobalZIndex(UI_SCENE_Z),
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                padding: UiRect::axes(u.val(2.0), u.val(2.4)),
+                flex_direction: FlexDirection::Row,
+                column_gap: u.val(1.6),
+                ..default()
+            },
+            BackgroundColor(t.tone(Tone::Ink)),
+        ))
+        .id();
+    c.spawn((
+        MaterialNode(ambients.add(chimera_ui::AmbientMaterial::new(t).freeze(Some(6.0)))),
+        Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, width: percent(100.0), height: percent(100.0), ..default() },
+        ChildOf(root),
+    ));
+    let col = |c: &mut Commands, w: f32| ui.boxed(c, root, UiStyle { w: Some(w), gap: Some(0.55), ..UiStyle::column() });
+    // A labelled cell: the state's name over the control.
+    let cell = |c: &mut Commands, col: Entity, label: &str| {
+        let r = ui.boxed(c, col, UiStyle { gap: Some(0.15), ..UiStyle::column() });
+        ui.text(c, r, Role::Mono, 0.42, Tone::Fg3, label);
+        r
+    };
+    // The look of a hovered control: its own `Hover` tint set at rest.
+    let hovered = |c: &mut Commands, e: Entity, over: Color| {
+        c.entity(e).insert(BackgroundColor(over));
+    };
+    let hov = ui.color(Tone::Fg, 0.07);
+    let cur = |at: usize, anchor: usize| Some(TextCursor { at, anchor });
+    let long = "Counter-Strike: Source";
+
+    let a = col(c, 19.0);
+    ui.section(c, a, "Text field", Some("one node a character, caret overlaid"));
+    for (label, value, caret, st) in [
+        ("Rest, empty", "", None, State::NONE),
+        ("Rest, filled", "de_dust2", None, State::NONE),
+        ("Focus, no keys", "de_dust2", None, State::focused(true)),
+        ("Typing, caret at the end", "de_dust2", cur(8, 8), State::focused(true)),
+        ("Typing, caret mid-text", "de_dust2", cur(3, 3), State::focused(true)),
+        ("Typing, empty", "", cur(0, 0), State::focused(true)),
+        ("Selection", "de_dust2", cur(5, 2), State::focused(true)),
+        ("Selected all", long, cur(long.len(), 0), State::focused(true)),
+        ("Error", "27x15", None, State { error: true, ..State::NONE }),
+        ("Disabled", "de_dust2", None, State { disabled: true, ..State::NONE }),
+    ] {
+        let r = cell(c, a, label);
+        ui.text_field(c, r, value, "Port", caret, false, 17.0, st);
+    }
+    let r = cell(c, a, "Hover");
+    let f = ui.text_field(c, r, "de_dust2", "Port", None, false, 17.0, State::NONE);
+    hovered(c, f, hov);
+    let r = cell(c, a, "Masked, typing");
+    ui.text_field(c, r, "hunter22", "Password", cur(8, 8), true, 17.0, State::focused(true));
+
+    let b = col(c, 24.0);
+    ui.section(c, b, "Search field", Some("glass, clear key once typed"));
+    for (label, value, caret, st) in [
+        ("Rest, empty", "", None, State::NONE),
+        ("Rest, filled", "awp", None, State::NONE),
+        ("Focus, empty (no caret yet)", "", None, State::focused(true)),
+        ("Typing, caret at the end", "ak47", cur(4, 4), State::focused(true)),
+        ("Typing, caret mid-text", "ak47", cur(2, 2), State::focused(true)),
+        ("Selection", "ak47 rifle", cur(10, 5), State::focused(true)),
+        ("Disabled", "awp", None, State { disabled: true, ..State::NONE }),
+    ] {
+        let r = cell(c, b, label);
+        ui.search_field(c, r, value, "Find a gun or a tag", caret, 19.0, st);
+    }
+    let r = cell(c, b, "Hover");
+    let f = ui.search_field(c, r, "awp", "Find a gun", None, 19.0, State::NONE);
+    hovered(c, f.field, hov);
+    ui.section(c, b, "Text area", Some("wraps, caret overlaid"));
+    let r = cell(c, b, "Rest, empty");
+    ui.text_area(c, r, "", "What happened? What did you expect?", None, 24.0, 5.0, State::NONE);
+    let r = cell(c, b, "Typing, three lines");
+    ui.text_area(c, r, "The grenade went through the wall.\n\nIt happened twice on de_dust2 in the second round.", "", cur(34, 34), 24.0, 6.5, State::focused(true));
+    let r = cell(c, b, "Selected all, error");
+    let text = "Not enough said";
+    ui.text_area(c, r, text, "", cur(text.len(), 0), 24.0, 3.2, State { focus: true, error: true, ..State::NONE });
+
+    let d = col(c, 27.0);
+    ui.section(c, d, "Toggle", Some("off, on, focus, disabled"));
+    let r = ui.boxed(c, d, UiStyle { gap: Some(0.5), ..UiStyle::row() });
+    ui.toggle(c, r, false, State::NONE);
+    ui.toggle(c, r, true, State::NONE);
+    ui.toggle(c, r, true, State::focused(true));
+    ui.toggle(c, r, false, State::focused(true));
+    ui.toggle(c, r, true, State { disabled: true, ..State::NONE });
+    ui.section(c, d, "Slider", Some("rest, focus, typing the value, disabled"));
+    let r = cell(c, d, "Rest");
+    ui.slider(c, r, 0.45, Some(0.6), "84", 17.0, State::NONE);
+    let r = cell(c, d, "Focus");
+    ui.slider(c, r, 0.45, Some(0.6), "84", 17.0, State::focused(true));
+    let r = cell(c, d, "Typing the value, caret mid-text");
+    ui.slider_ex(c, r, 0.45, Some(0.6), "84", 17.0, State::focused(true), Some(Typing { text: "1234", caret: 2, anchor: 2, error: false, suffix: None }));
+    let r = cell(c, d, "Typing, refused");
+    ui.slider_ex(c, r, 0.45, Some(0.6), "84", 17.0, State::focused(true), Some(Typing { text: "abc", caret: 3, anchor: 3, error: true, suffix: None }));
+    let r = cell(c, d, "Disabled");
+    ui.slider(c, r, 0.45, None, "84", 17.0, State { disabled: true, ..State::NONE });
+    ui.section(c, d, "Stepper", Some("rest, typing with a selection"));
+    let r = ui.boxed(c, d, UiStyle { gap: Some(1.5), ..UiStyle::row() });
+    ui.stepper(c, r, "8", 3.2, State::NONE);
+    ui.stepper_ex(c, r, "12", 3.2, State::focused(true), Some(Typing { text: "12", caret: 2, anchor: 0, error: false, suffix: None }));
+    ui.stepper(c, r, "8", 3.2, State { disabled: true, ..State::NONE });
+
+    let e = col(c, 17.0);
+    ui.section(c, e, "Buttons", Some("rest, focus, disabled"));
+    for (k, st) in [
+        (chimera_ui::controls::Kind::Primary, State::NONE),
+        (chimera_ui::controls::Kind::Primary, State { disabled: true, ..State::NONE }),
+        (chimera_ui::controls::Kind::Secondary, State::NONE),
+        (chimera_ui::controls::Kind::Secondary, State::focused(true)),
+        (chimera_ui::controls::Kind::Secondary, State { disabled: true, ..State::NONE }),
+        (chimera_ui::controls::Kind::Ghost, State::NONE),
+        (chimera_ui::controls::Kind::Danger, State::NONE),
+    ] {
+        let r = ui.boxed(c, e, UiStyle::row());
+        ui.button(c, r, k, "Apply", None, 2.4, st);
+    }
+    ui.section(c, e, "Dropdown", Some("rest, open, focus, disabled"));
+    let r = cell(c, e, "Rest");
+    ui.dropdown(c, r, &["Party playlist", "The game's loop", "None"], 0, None, 12.0, State::NONE);
+    let r = cell(c, e, "Disabled");
+    ui.dropdown(c, r, &["Party playlist", "None"], 0, None, 12.0, State { disabled: true, ..State::NONE });
+    let r = cell(c, e, "Open");
+    ui.dropdown(c, r, &["Party playlist", "The game's loop", "None"], 0, Some(1), 12.0, State::focused(true));
+    let _ = Hover { base: Color::NONE, over: Color::NONE };
 }
 
 struct Makers<'a> {

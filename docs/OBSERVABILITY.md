@@ -2589,6 +2589,12 @@ made-up guns, kills, downloads and targets; over a real sandbox it reads
 best: `ultimate_gun_game --offscreen 1920x1080 --frames 900 --screenshot
 <out>.png +sandbox +ui_scene sandbox gun` (the scene's words as separate
 arguments).
+`ui_scene fields` (or `ui_gallery`, which works in the real apps: Esc closes it) is the kit's gallery: the text field, search
+field, text area, toggle, slider, stepper, buttons and dropdown in rest, hover, focus, typing (caret mid-text), selection,
+masked, error and disabled; `ui_scene controls` the older page of rows and buttons. Check a change to
+`chimera_ui::controls` against it (offscreen: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
+<out>.png +ui_scene fields`). In the apps, Options' "Developer mode" (Party tab, cvar `developer_mode`, off
+by default) adds a Developer entry to the Escape menu that opens it.
 `ui_scene lobby` stages the lobby with made-up players (for
 screenshots; no parity ids or fixture yet), so `lobby`'s report lists
 the mockup's ids only.
