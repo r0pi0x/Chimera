@@ -1,5 +1,5 @@
 //! The Source guests' dressings kept for the session
-//! (`source_engine::content::guest`): a second map load of the app copies
+//! (`chimera_world::map::kept`): a second map load of the app copies
 //! them, converting nothing again, and every texture index the copied
 //! parts hold names the texture a fresh dressing of the same map gives;
 //! a guest the match can't deal (`MapLoadOptions::dealt`) isn't dressed.
@@ -12,7 +12,7 @@ use chimera_world::map::{
     LoadContext, MapData, MapLoadOptions,
     texture_refs::{Ref, TextureRefs},
 };
-use source_engine::content::guest;
+use chimera_world::map::kept as guest;
 
 fn installs() -> bool {
     let config = LocalConfig::load().ok();

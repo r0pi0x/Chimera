@@ -2994,6 +2994,15 @@ docs/plans/active/sound.md.
     on this box). If a game gains nothing, say so and leave it as it is.
   - **Later:** an on-disk converted copy, so the first load of a session
     is fast as well (performance.md); the same API, for every game.
+  - **Done 2026-11-17 for the Source guests:** `chimera_world::map::kept`
+    (`Dressing`: id, converter version, mount, dress onto an empty map;
+    `dress_cached`, `append`, late-file refresh from the game's mount,
+    conversion time logged); CS:S, HL2:DM and TF2 dress through it, and
+    docs/new-game.md step 3 says to. Still on their own: Combat Arms
+    (its dressing leaves memos the API doesn't keep: the shared models'
+    `CaModelIndex`, the effect library; its character models are
+    already kept per install data) and Halo (its donors are kept as
+    their own types, not `MapData`; measure on the user's PC first).
 
 - **Halo: view models and animations at frame rate (user, 2026-11-17).**
   Halo's gun animations and related motion run at its 30 Hz tick and look

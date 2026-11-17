@@ -175,9 +175,18 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
 pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
     game: GAME,
     // Converted once per app and load kind, then copied into each map
-    // (`source_engine::content::guest`).
+    // (`chimera_world::map::kept`).
     dress: |map, options| {
-        source_engine::content::guest::dress_cached(GAME, map, options, |m| maps::dress_guest_with(m, BUNDLE.kept, !options.textures), maps::files_here)
+        crate::map::kept::dress_cached(
+            map,
+            options,
+            &crate::map::kept::Dressing {
+                game: GAME,
+                converter: maps::CONVERTER,
+                mount: &maps::guest_mount,
+                convert: &|mount, m| maps::dress_guest_in(mount, m, BUNDLE.kept, !options.textures),
+            },
+        )
     },
 };
 

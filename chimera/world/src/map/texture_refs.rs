@@ -1,7 +1,7 @@
 //! Every texture and cubemap index a map's parts hold (`TextureRefs`):
 //! what moves when parts converted on their own (their own texture list,
 //! from 0) are appended to a map's (`shift`), as a guest's dressing kept
-//! for the session is (`source_engine::content::guest`). Each part visits
+//! for the session is (`map::kept`). Each part visits
 //! its indices into `MapData::textures` (`Ref::Texture`) and
 //! `MapData::cubemaps` (`Ref::Cubemap`); a field that holds one and is
 //! missed here keeps its old index, which a test of each user compares

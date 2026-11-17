@@ -4821,12 +4821,13 @@ first frame), and give bodies wanted by a target a head start
 
 ### Guest dressings kept for the session
 
-What the measurement above asked for (`source_engine::content::guest`):
+What the measurement above asked for (`chimera_world::map::kept`, every
+game's one API; the Source guests', CS:S, HL2:DM and TF2, go through it):
 
 - **Kept per app.** Each Source guest's dressing (CS:S's, HL2:DM's,
   TF2's `dress_guest_with`) runs once per app and load kind (with or
   without textures), on an empty map, and is kept in the app's
-  `LoadContext`; every later map gets a copy (`guest::append`): its
+  `LoadContext`; every later map gets a copy (`kept::append`): its
   textures after the map's, every texture and cubemap index its parts
   hold moved past them (`map::texture_refs`, Combat Arms'
   `append_shared` made general), and what the dressing merges by name

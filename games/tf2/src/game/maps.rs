@@ -316,35 +316,38 @@ pub fn add_guns(
     }
 }
 
+/// The game's files for its guest dressing (`map::kept::Dressing::
+/// mount`): the install, mounted.
+pub fn guest_mount() -> Result<std::sync::Arc<crate::mount::Mount>, String> {
+    let install = super::INFO
+        .install()
+        .ok_or_else(|| format!("no `{}` install found (Steam, [games.tf2] path, or $CHIMERA_TF2_ROOT)", super::GAME))?;
+    super::mount::open(&install).map(std::sync::Arc::new).map_err(|e| e.to_string())
+}
+
 /// TF2's guns on another game's map (the party apps', where a player
 /// holding a TF2 gun is TF2's): the guns `kept` names (view and held
 /// models: `add_guns`) read from the TF2 install, their textures
 /// appended to the map's, and their sounds where the map hasn't an entry
 /// of that name. `lean` (a load without textures, the dedicated
 /// server's): the textures' sizes only.
-/// Whether any of `files` can be read now from the game's files (a kept
-/// guest dressing that missed them is dressed again:
-/// `source_engine::content::guest`).
-pub fn files_here(files: &[String]) -> bool {
-    let Some(install) = super::INFO.install() else { return false };
-    super::mount::open(&install).is_ok_and(|m| files.iter().any(|f| m.read(f).is_ok()))
+pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
+    dress_guest_in(&*guest_mount()?, map, kept, lean);
+    Ok(())
 }
 
-pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
-    let install = super::INFO
-        .install()
-        .ok_or_else(|| format!("no `{}` install found (Steam, [games.tf2] path, or $CHIMERA_TF2_ROOT)", super::GAME))?;
-    let mount = super::mount::open(&install).map_err(|e| e.to_string())?;
+/// `dress_guest_with` from `mount` (the game's files: `guest_mount`).
+pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
-    let mut materials = MaterialLoader::guest(&mount, textures, cubemaps).lean(lean)
-        .blocks_only(map.memos.get::<crate::map::BlocksOnly>().is_some());
+    let blocks_only = map.memos.get::<crate::map::BlocksOnly>().is_some();
+    let mut materials = MaterialLoader::guest(mount, textures, cubemaps).lean(lean).blocks_only(blocks_only);
     let surfaces = SurfaceProps::load(&mut materials);
     let kit = crate::map::KitLoad::Players(kept);
     let wants = |g: &str| kit.wants(g);
     let mut guest = crate::map::GameKit::default();
     let mut warnings = Vec::new();
     if super::weapons::GUNS.iter().any(|g| wants(g)) {
-        super::weapons::script_numbers::note_sources(&mount);
+        super::weapons::script_numbers::note_sources(mount);
     }
     add_guns(&mut materials, &wants, true, &mut guest, &mut warnings);
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
@@ -362,7 +365,6 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     map.kit.held.extend(guest.held);
     map.kit.view_models.extend(guest.view_models);
     map.kit.add_guest_hud(look);
-    Ok(())
 }
 
 /// TF2's own effects its guns start (`weapons::looks`): the explosion and

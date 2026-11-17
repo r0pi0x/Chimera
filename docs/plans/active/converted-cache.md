@@ -14,7 +14,7 @@ Each game's guest parts: what its dressing of another game's map
 converts (the Source guests' `dress_guest_in`, Combat Arms'
 `world::dress_with`), dressed onto an empty map with textures and the
 kept guns, its whole-DXT textures keeping their blocks alone, as
-`source_engine::content::guest` keeps it. That is the work a session's
+`source_engine::content::guest` kept it (now `chimera_world::map::kept`). That is the work a session's
 first map load does for every guest today, and what the session cache
 already skips for the second. Each run is its own process.
 
@@ -256,6 +256,15 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   (docs/performance.md, "Guest textures kept as blocks without
   decoding"). Combat Arms' kept models already did; Halo throws nothing
   away.
+- **Step 3, done for the Source guests (2026-11-17):** the session cache
+  is Chimera's `map::kept` (`Dressing { game, converter, mount, convert
+  }`, `dress_cached`, `append`, `add_decals`, `add_sounds`, the late
+  files checked on the game's own mount, each conversion's time logged);
+  CS:S, HL2:DM and TF2 dress through it; docs/new-game.md step 3. Combat
+  Arms and Halo stay on their own caches for now: Combat Arms' dressing
+  leaves memos (`CaModelIndex`, the effect library) a kept `MapData`
+  doesn't carry (step 5's serializable index), and Halo's donors are
+  kept as their own types; Halo needs the disc image (the user's PC).
 
 ## Steps
 

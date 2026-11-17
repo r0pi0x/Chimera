@@ -2490,4 +2490,136 @@ mod tests {
         assert_eq!(dx_block_applies(">=DX90"), Some(true));
         assert_eq!(dx_block_applies("<DX90"), Some(false));
     }
+
+    /// Late files (`MaterialLoader::late_since`) and the kept dressings
+    /// that refresh on them (`chimera_world::map::kept`), with an asset
+    /// store that lists files before it has them.
+    mod late {
+        use std::{
+            collections::{BTreeMap, BTreeSet},
+            io,
+            sync::{Arc, Mutex},
+        };
+
+        use bevy::prelude::default;
+
+        use crate::{
+            content::material::MaterialLoader,
+            map::{MapData, MapHeldModel, MapLoadOptions, MapModel, kept},
+            mount::{Entry, FileSource, Mount},
+        };
+
+        /// An asset store as a mount layer: it lists every file of its
+        /// manifest (`contains`), and gives those whose record arrived (until
+        /// then a read fails, as an asset miss).
+        #[derive(Clone, Default)]
+        pub(crate) struct LateStore {
+            pub listed: Arc<BTreeSet<String>>,
+            pub arrived: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+        }
+
+        impl LateStore {
+            pub(crate) fn arrive(&self, path: &str, bytes: Vec<u8>) {
+                self.arrived.lock().unwrap().insert(path.to_string(), bytes);
+            }
+
+            pub(crate) fn mount(&self) -> Mount {
+                let mut m = Mount::default();
+                m.push(self.clone());
+                m
+            }
+        }
+
+        impl FileSource for LateStore {
+            fn name(&self) -> String {
+                "late store".into()
+            }
+            fn entries(&self) -> Vec<Entry> {
+                self.listed.iter().map(|p| Entry { path: p.clone(), size: 0 }).collect()
+            }
+            fn read(&self, path: &str) -> Option<io::Result<Vec<u8>>> {
+                if !self.listed.contains(path) {
+                    return None;
+                }
+                Some(self.arrived.lock().unwrap().get(path).cloned().ok_or_else(|| io::Error::other(format!("asset miss: {path}"))))
+            }
+            fn contains(&self, path: &str) -> bool {
+                self.listed.contains(path)
+            }
+            fn held(&self, path: &str) -> bool {
+                self.arrived.lock().unwrap().contains_key(path)
+            }
+        }
+
+        /// A 4x4 grey VTF.
+        pub(crate) fn vtf() -> Vec<u8> {
+            crate::content::material::encode_vtf(4, 4, &[128; 64])
+        }
+
+        /// A Source dressing kept by Chimera (`map::kept`) whose held model's
+        /// look wants a lightwarp the store lists but hasn't brought: kept with that late file, then, once the
+        /// file arrives, dressed again at the next load (and not before), the
+        /// new one with nothing late.
+        #[test]
+        fn a_dressing_that_missed_a_file_is_dressed_again_when_it_arrives() {
+            const WARP: &str = "materials/models/player/pyro/pyro_lightwarp.vtf";
+            const BASE: &str = "materials/models/player/heavy/heavy_red.vtf";
+            let store = LateStore { listed: Arc::new([WARP, BASE].map(String::from).into()), ..default() };
+            store.arrive(BASE, vtf());
+            let options = MapLoadOptions::lean();
+            let dress = |store: &LateStore, map: &mut MapData| {
+                let mount_of = || Ok(Arc::new(store.mount()));
+                let convert = |mount: &Mount, m: &mut MapData| {
+                    let mut materials = MaterialLoader::guest(mount, 0, 0).lean(true);
+                    let mark = materials.late_mark();
+                    let base = materials.texture("models/player/heavy/heavy_red", true);
+                    let warp = materials.texture("models/player/pyro/pyro_lightwarp", false);
+                    // The same lookup again (another material): still late.
+                    let _ = materials.texture("models/player/pyro/pyro_lightwarp", false);
+                    assert!(base.is_some());
+                    let model = MapModel { late_files: materials.late_since(mark), ..default() };
+                    m.kit.held.push(MapHeldModel {
+                        key: format!("warp {}", warp.is_some()),
+                        model,
+                        bone: String::new(),
+                        muzzle: None,
+                        attachments: Vec::new(),
+                        merged: Vec::new(),
+                        own: None,
+                    });
+                };
+                let dressing = kept::Dressing { game: "late_test", converter: "test", mount: &mount_of, convert: &convert };
+                kept::dress_cached(map, &options, &dressing)
+            };
+            let mut first = MapData::default();
+            dress(&store, &mut first).unwrap();
+            assert_eq!(first.kit.held[0].key, "warp false");
+            assert_eq!(first.kit.held[0].model.late_files, [WARP]);
+            // Nothing arrived: copied, not converted.
+            let mut second = MapData::default();
+            dress(&store, &mut second).unwrap();
+            assert_eq!(kept::conversions(&options.context, "late_test", false), 1);
+            // The lightwarp arrives: the next load dresses again.
+            store.arrive(WARP, vtf());
+            let mut third = MapData::default();
+            dress(&store, &mut third).unwrap();
+            assert_eq!(kept::conversions(&options.context, "late_test", false), 2);
+            assert_eq!(third.kit.held[0].key, "warp true");
+            assert!(third.kit.held[0].model.late_files.is_empty());
+            // Complete now: kept from then on.
+            dress(&store, &mut MapData::default()).unwrap();
+            assert_eq!(kept::conversions(&options.context, "late_test", false), 2);
+        }
+
+        /// A file the game doesn't have at all is not late (nothing would
+        /// arrive): the dressing is kept.
+        #[test]
+        fn a_file_the_game_lacks_is_not_late() {
+            let store = LateStore::default();
+            let mount = store.mount();
+            let mut materials = MaterialLoader::guest(&mount, 0, 0).lean(true);
+            assert!(materials.texture("models/nothing", true).is_none());
+            assert!(materials.late_since(0).is_empty());
+        }
+    }
 }

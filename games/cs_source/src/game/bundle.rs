@@ -30,9 +30,18 @@ pub static BUNDLE: GameBundle = GameBundle {
 pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
     game: GAME,
     // Converted once per app and load kind, then copied into each map
-    // (`source_engine::content::guest`).
+    // (`chimera_world::map::kept`).
     dress: |map, options| {
-        source_engine::content::guest::dress_cached(GAME, map, options, |m| super::dress_guest_with(m, BUNDLE.kept, !options.textures), super::files_here)
+        crate::map::kept::dress_cached(
+            map,
+            options,
+            &crate::map::kept::Dressing {
+                game: GAME,
+                converter: super::bsp::CONVERTER,
+                mount: &super::guest_mount,
+                convert: &|mount, m| super::bsp::dress_guest(mount, m, BUNDLE.kept, !options.textures),
+            },
+        )
     },
 };
 
