@@ -10,7 +10,8 @@
 //! rung of several classes draws with the ladder (`rung_classes`), the kill icons from
 //! the asset store once their files are here (`kill_icons`), and, in `heavy`, the user's install (its mount, ctf_2fort
 //! and cp_badlands converted with their spawns, the converted-map cache's
-//! key, a player walking on ctf_2fort, the guns' looks on another game's map
+//! key, a player walking on ctf_2fort, TF2's bodies that come late (`late_bodies`: a class picked mid-match, a body
+//! built again once its lightwarp arrives), the guns' looks on another game's map
 //! (`looks`: particle systems, impacts, the `players` set's files), M2's weapon sets packed into a
 //! scratch store and read back, the scripts decrypted with the user's key
 //! when it is set),
@@ -37,6 +38,7 @@ mod weapons_more;
 mod heavy {
     mod bodies;
     mod guns;
+    mod late_bodies;
     mod looks;
     mod map_cache;
     mod maps;
