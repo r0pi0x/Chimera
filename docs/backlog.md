@@ -387,6 +387,14 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
+- **TF2 Scout's pistol sounds and ragdoll lifetime (user, 2026-11-17).**
+  The Scout's pistol fires with another game's sound (CS:S's or
+  HL2:DM's, by ear) and has no reload sound: find which of its sound
+  entries resolve to another game's or to none, fix them, and check
+  TF2's other guns the same way with a test that fails when any gun's
+  sound comes from another game. Ragdolls last too long: match each
+  game's own corpse lifetime (parity), on top of the party's limits.
+
 ### UGG playtest 8 prep, Windows check (2026-11-15)
 
 An agent's check of TF2 in UGG on the Windows PC (the playtest build of
