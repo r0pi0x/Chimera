@@ -2445,6 +2445,15 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
 
 ## 2b. HUD and debug views
 
+- **A compact stepper (user, 2026-11-17).** The kit's `stepper` (`-`,
+  the value, `+`) reads as three loose parts. Make it one control: one
+  border around minus, value and plus, the buttons close to the number,
+  less padding. Size the value box from the setting's own range (enough
+  room for the longest of its min, max and step's digits, plus its unit),
+  so a 0-10 stepper is narrow and a 1-65535 one wider. Typing into the
+  value (`_ex`, `Typing`) is unchanged. Update every stepper in Options
+  and the Host page, and the gallery (`ui_gallery`), with screenshots.
+
 - **One component library, used everywhere (user, 2026-11-17).** The
   kit (`chimera_ui::controls`: `text_field`, `search_field`, `text_area`,
   `chat_field`, `button`, `toggle`, `dropdown`, `slider`, ...) is the one
