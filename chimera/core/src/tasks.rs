@@ -7,6 +7,15 @@
 //! budget, so a scenario plays out the same on every run
 //! (docs/performance.md, "Work counts").
 //!
+//! Pending work: `spawn` starts a task on a pool and counts it until it
+//! has run (or is dropped); `Busy` counts a job on a thread of its own
+//! the same way. `pending()` is the count, process-wide (tests in one
+//! process share it; nextest runs one test per process). The headless
+//! harness's `Sim::run_until_idle` ticks until it is zero, so a test
+//! waits for a map load, a model build or a download instead of
+//! sleeping. A loader that spawns work through `spawn` or holds a `Busy`
+//! shows up there; one that doesn't is invisible to it.
+//!
 //! `ReadAhead`: a game's loads started ahead of need kept to a few at once
 //! on the async compute pool, so what is wanted now does not queue behind
 //! them.
@@ -16,11 +25,21 @@ use bevy::{
     tasks::{Task, block_on, poll_once},
 };
 
+pub use crate::pending_work::{Busy, pending, spawn, thread};
+
 /// Wait for tasks' results on the tick they're first polled, and spawn a
 /// map in one go: runs repeat tick for tick whatever the machine's load.
 /// Measurement and determinism checks only: a game would stall on it.
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct WaitForTasks;
+
+/// The app runs under a test harness (`harness::Sim` inserts it before any
+/// plugin): its clock is stepped by hand, and what only exists for a
+/// player's eyes takes no time: the UI's animations snap
+/// (`chimera_ui::motion::init`: `ui_motion_scale` 0). A test of an
+/// animation itself sets `Motion` back.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct TestRun;
 
 /// The task's result: now if it is done, or, with `wait` (the world holds
 /// `WaitForTasks`), once it is done.

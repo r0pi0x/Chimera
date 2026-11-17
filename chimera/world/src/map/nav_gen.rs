@@ -577,7 +577,7 @@ pub struct NavGenTask(Task<NavMesh>);
 impl NavGenTask {
     pub fn spawn(mut job: NavGenJob, snapshot: CollisionSnapshot, ignore: HashSet<Entity>, vis: Option<Arc<MapVisibility>>) -> Self {
         let pool = AsyncComputeTaskPool::get_or_init(TaskPool::default);
-        Self(pool.spawn(async move {
+        Self(chimera_core::tasks::spawn(&pool, async move {
             loop {
                 if let Some(mesh) = job.step(&snapshot, &|e| ignore.contains(&e), vis.as_deref(), CELLS_PER_TASK_SLICE) {
                     return mesh;

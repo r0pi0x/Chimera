@@ -146,7 +146,7 @@ pub fn load_on_demand(
         }
         pending.tried.insert(id);
         let ca = context.as_deref().map_or_else(CaData::install, CaData::install_for);
-        let task = AsyncComputeTaskPool::get().spawn(async move {
+        let task = chimera_core::tasks::spawn(&AsyncComputeTaskPool::get(), async move {
             let mount = ca.mount().ok_or_else(|| format!("body record {id}: no Combat Arms install"))?;
             models::load_body(&ca, id, &|p: &str| mount.read(p).ok())
         });

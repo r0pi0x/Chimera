@@ -87,7 +87,7 @@ fn the_greybox_server_has_csss_hooks_and_a_client_joins() {
     for _ in 0..1000 {
         server.app.update();
         c.app.update();
-        std::thread::sleep(Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
         if c.app.world().contains_resource::<Joined>() {
             joined = true;
             break;

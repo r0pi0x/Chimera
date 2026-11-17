@@ -566,7 +566,7 @@ pub fn load_on_demand(
         }
         let Some(def) = data.body(kind).cloned() else { continue };
         let context = context.as_deref().cloned().unwrap_or_default();
-        let task = AsyncComputeTaskPool::get().spawn(async move {
+        let task = chimera_core::tasks::spawn(&AsyncComputeTaskPool::get(), async move {
             let mount = super::super::maps::mount_for(&context)?;
             load_voice(kind, v, &def, &mount)
         });
@@ -613,7 +613,7 @@ pub fn load_on_demand(
             let base = crate::game::movement::MovementData::builtin();
             data.movement(kind, &base).map_or(base.camera_stand, |m| m.camera_stand) * crate::game::METERS_PER_UNIT
         };
-        let task = AsyncComputeTaskPool::get().spawn(async move {
+        let task = chimera_core::tasks::spawn(&AsyncComputeTaskPool::get(), async move {
             let mount = super::super::maps::mount_for(&context)?;
             let guns: Vec<&str> = guns.iter().map(String::as_str).collect();
             let body = load_body(kind, &def, &mount, true, &guns)?;

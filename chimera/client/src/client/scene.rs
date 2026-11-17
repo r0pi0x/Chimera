@@ -11,6 +11,8 @@
 //! - `wait_for <fact> [timeout frames]` (default 1800): go on the frame the
 //!   fact holds; past the timeout the run fails (exit code 3, the line
 //!   named on stderr and in the log).
+//! - `wait_for cvar <name> <value> [timeout frames]`: the same, for a
+//!   console variable holding that value (numbers compare as numbers).
 //! - `shot <name>`: save the window as `<out>/<name>.png` now.
 //! - `shot_after <fact> <frames> <name>`: arm a picture the given frames
 //!   after the next frame the fact holds (the script goes on at once; the
@@ -27,9 +29,13 @@
 //! `kill` (a `Died` with a killer), `death` (any `Died`), `ragdoll` (a
 //! body became a ragdoll, `map::ragdoll::Ragdolled`), `blast` (any
 //! game's blast, `weapon::grenade::BlastDealt`, or a `core::Explosion`).
-//! `shot`, `hit`, `kill`, `death`, `ragdoll` and
-//! `blast` hold on the frame they happen; `map_loaded`, `match` and
-//! `spawned` while they are so.
+//! `idle` (no background work pending: loads, model builds, downloads,
+//! navigation meshes: `chimera_core::tasks::pending`; like `map_loaded`, it
+//! also holds in the first frames before anything started, so put it after
+//! the console line that starts the work and a `wait 2`). `shot`, `hit`,
+//! `kill`, `death`, `ragdoll` and
+//! `blast` hold on the frame they happen; `map_loaded`, `match`, `spawned` and `idle`
+//! while they are so.
 //!
 //! The log, `<out>/scene.log`: every console line, directive, fact and
 //! picture with its frame number, and every `HitMeasured`,
@@ -84,11 +90,22 @@ pub enum Fact {
     Death,
     Ragdoll,
     Blast,
+    Idle,
 }
 
 impl Fact {
-    pub const ALL: [Fact; 9] =
-        [Fact::MapLoaded, Fact::Match, Fact::Spawned, Fact::Shot, Fact::Hit, Fact::Kill, Fact::Death, Fact::Ragdoll, Fact::Blast];
+    pub const ALL: [Fact; 10] = [
+        Fact::MapLoaded,
+        Fact::Match,
+        Fact::Spawned,
+        Fact::Shot,
+        Fact::Hit,
+        Fact::Kill,
+        Fact::Death,
+        Fact::Ragdoll,
+        Fact::Blast,
+        Fact::Idle,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -101,6 +118,7 @@ impl Fact {
             Fact::Death => "death",
             Fact::Ragdoll => "ragdoll",
             Fact::Blast => "blast",
+            Fact::Idle => "idle",
         }
     }
 
@@ -119,6 +137,8 @@ pub enum Step {
     Console(String),
     Wait(u64),
     WaitFor(Fact, u64),
+    /// `wait_for cvar <name> <value> [timeout]`.
+    WaitForCvar(String, String, u64),
     Shot(String),
     ShotAfter(Fact, u64, String),
 }
@@ -145,6 +165,13 @@ pub fn parse(text: &str) -> Result<Vec<(usize, Step)>, String> {
         };
         let step = match words[0] {
             "wait" => Step::Wait(num(words.get(1), "wait")?),
+            "wait_for" if words.get(1) == Some(&"cvar") => {
+                let (Some(name), Some(value)) = (words.get(2), words.get(3)) else {
+                    return Err(format!("line {n}: wait_for cvar <name> <value> [timeout frames]"));
+                };
+                let timeout = words.get(4).map_or(Ok(DEFAULT_TIMEOUT), |_| num(words.get(4), "wait_for cvar's timeout"))?;
+                Step::WaitForCvar(name.to_string(), value.to_string(), timeout)
+            }
             "wait_for" => Step::WaitFor(
                 fact(words.get(1))?,
                 words.get(2).map_or(Ok(DEFAULT_TIMEOUT), |_| num(words.get(2), "wait_for's timeout"))?,
@@ -171,6 +198,8 @@ struct Scene {
     frame: u64,
     resume: u64,
     waiting: Option<(Fact, u64, usize)>,
+    /// `wait_for cvar`: the name, the value, the frame it gives up on, the line.
+    waiting_cvar: Option<(String, String, u64, usize)>,
     armed: Vec<(Fact, u64, String)>,
     due: Vec<(u64, String)>,
     in_flight: Arc<AtomicUsize>,
@@ -217,6 +246,7 @@ impl Plugin for ScenePlugin {
             frame: 0,
             resume: 0,
             waiting: None,
+            waiting_cvar: None,
             armed: Vec::new(),
             due: Vec::new(),
             in_flight: Arc::new(AtomicUsize::new(0)),
@@ -249,6 +279,9 @@ fn facts_now(world: &mut World, cursors: &mut FactCursors) -> u16 {
         bits |= Fact::MapLoaded.bit();
     }
     cursors.loads = loads;
+    if chimera_core::tasks::pending() == 0 {
+        bits |= Fact::Idle.bit();
+    }
     if world.get_resource::<chimera_sim::mode::Match>().is_some_and(|m| m.phase == chimera_sim::mode::Phase::Live) {
         bits |= Fact::Match.bit();
     }
@@ -380,6 +413,18 @@ fn shot(world: &mut World, name: &str) {
     });
 }
 
+/// A console variable's value now.
+fn cvar_value(world: &mut World, name: &str) -> Option<String> {
+    let get = world.get_resource::<crate::console::Console>()?.cvar(name)?.get.clone();
+    get(world)
+}
+
+/// Whether the cvar holds `value` (numbers equal as numbers: `1` is `1.0`).
+fn cvar_is(world: &mut World, name: &str, value: &str) -> bool {
+    let Some(now) = cvar_value(world, name) else { return false };
+    now == value || matches!((now.parse::<f64>(), value.parse::<f64>()), (Ok(a), Ok(b)) if a == b)
+}
+
 fn finish(world: &mut World, code: u8, why: Option<String>) {
     let mut scene = world.resource_mut::<Scene>();
     if let Some(why) = &why {
@@ -408,7 +453,7 @@ fn play(world: &mut World, mut cursors: Local<FactCursors>) {
         let frame = scene.frame;
         for f in Fact::ALL {
             // Level facts are noted when they begin only.
-            if bits & f.bit() != 0 && !matches!(f, Fact::Match | Fact::Spawned | Fact::MapLoaded) {
+            if bits & f.bit() != 0 && !matches!(f, Fact::Match | Fact::Spawned | Fact::MapLoaded | Fact::Idle) {
                 scene.note(format!("fact {}", f.name()));
             }
         }
@@ -463,6 +508,20 @@ fn play(world: &mut World, mut cursors: Local<FactCursors>) {
                 return;
             }
         }
+        if let Some((name, value, until, line)) = world.resource::<Scene>().waiting_cvar.clone() {
+            if cvar_is(world, &name, &value) {
+                let mut scene = world.resource_mut::<Scene>();
+                scene.waiting_cvar = None;
+                scene.note(format!("line {line}: {name} is {value}"));
+            } else if frame >= until {
+                let now = cvar_value(world, &name).unwrap_or_else(|| "(no such cvar)".into());
+                finish(world, 3, Some(format!("line {line}: wait_for cvar {name} {value} timed out (it is {now})")));
+                world.resource_mut::<Scene>().ended = Some(u64::MAX / 2);
+                return;
+            } else {
+                return;
+            }
+        }
         let scene = world.resource::<Scene>();
         if frame < scene.resume {
             return;
@@ -490,6 +549,12 @@ fn play(world: &mut World, mut cursors: Local<FactCursors>) {
                 scene.waiting = Some((f, frame + timeout, line));
                 // Checked from the next frame (this frame's facts are
                 // read already).
+                return;
+            }
+            Step::WaitForCvar(name, value, timeout) => {
+                let mut scene = world.resource_mut::<Scene>();
+                scene.note(format!("line {line}: wait_for cvar {name} {value} (up to {timeout} frames)"));
+                scene.waiting_cvar = Some((name, value, frame + timeout, line));
                 return;
             }
             Step::Shot(name) => shot(world, &name),
@@ -522,6 +587,12 @@ mod tests {
         );
         assert!(parse("wait_for nothing").unwrap_err().contains("no fact"));
         assert!(parse("wait x").is_err());
+        assert_eq!(
+            parse("wait_for cvar sv_x 1 30\nwait_for idle").unwrap()[0].1,
+            Step::WaitForCvar("sv_x".into(), "1".into(), 30)
+        );
+        assert_eq!(parse("wait_for idle").unwrap()[0].1, Step::WaitFor(Fact::Idle, DEFAULT_TIMEOUT));
+        assert!(parse("wait_for cvar sv_x").is_err());
         assert_eq!(parse("wait_for spawned").unwrap()[0].1, Step::WaitFor(Fact::Spawned, DEFAULT_TIMEOUT));
     }
 }

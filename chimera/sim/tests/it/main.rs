@@ -17,6 +17,7 @@ mod movement;
 mod noclip_damage;
 mod range_map;
 mod rung_extras;
+mod sim_waits;
 mod spawn_score;
 mod spawns;
 mod view_anim;

@@ -63,7 +63,10 @@
 //!
 //! Known shortcuts: a revoke stops a token's next request, not a batch
 //! already being sent; a batch answer is sent with chunked encoding, so a client
-//! learns its length only at the end; no range requests.
+//! learns its length only at the end; no range requests; the manifest
+//! check's once-a-second limit and the pacing (`pace`) run on the real
+//! clock, so tests of them sleep (the allowlisted `thread::sleep`s in
+//! `chimera/assets/tests/it/service.rs` and `chimera/net/tests/it/assets.rs`).
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},

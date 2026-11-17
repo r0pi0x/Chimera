@@ -7,7 +7,7 @@
 //!   named in the theme (`Ease::parse`).
 //! - Tokens: `Pace` (fast, normal, slow durations and their easings) and
 //!   `Motion` (resource; `scale`, the `ui_motion_scale` cvar: 0 snaps, 1
-//!   normal, more slower). Controls take their lengths from `Motion::secs`.
+//!   normal, more slower; 0 in a test run, `motion::init`). Controls take their lengths from `Motion::secs`.
 //! - `UiClock`: UI time in seconds. Real time in play
 //!   (`UiClock::advance_real`); `manual` in tests, stepped with `step`,
 //!   so frames are reproducible.
@@ -282,6 +282,16 @@ impl Motion {
         let step = dt / d;
         if target > t { (t + step).min(target) } else { (t - step).max(target) }
     }
+}
+
+/// Adds `Motion` unless the app has one: snapping (scale 0) in a test run
+/// (`chimera_core::tasks::TestRun`), so animations finish at once.
+pub fn init(app: &mut App) {
+    if app.world().contains_resource::<Motion>() {
+        return;
+    }
+    let motion = if app.world().contains_resource::<chimera_core::tasks::TestRun>() { Motion::new(0.0) } else { Motion::default() };
+    app.insert_resource(motion);
 }
 
 /// UI time (module doc).

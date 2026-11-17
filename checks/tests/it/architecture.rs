@@ -27,7 +27,8 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("memo", &[]),
     // Tasks the simulation polls, waited for in repeatable runs
     // (`WaitForTasks`): Bevy only.
-    ("tasks", &[]),
+    ("tasks", &["pending_work"]),
+    ("pending_work", &[]),
     ("console", &["core", "env", "query_cache", "console_names"]),
     // Quitting quickly: the steps that must persist, then the process's
     // end (its `chimera:clean_exit` cvar).
@@ -789,6 +790,64 @@ fn tracked_files() -> Vec<String> {
         .filter(|s| !s.is_empty())
         .map(String::from)
         .collect()
+}
+
+/// The `thread::sleep`s tests may still have: file, how many, why. A test
+/// waits through the harness instead (docs/OBSERVABILITY.md, section 1,
+/// "Time and waiting"): `Sim::advance` for time, `run_until` /
+/// `expect_until` / `await_message` for a condition, `run_until_idle` for
+/// background work, `harness::let_tasks_run` / `let_io_run` / `pump_until`
+/// between the frames of a loop on real threads or sockets. What stays
+/// below is real wall-clock time on purpose: a real server's own timers,
+/// a paced dedicated-server loop, a real thread to wait for.
+const TEST_SLEEPS: &[(&str, usize, &str)] = &[
+    ("apps/party_kit/tests/it/feedback.rs", 2, "waits for the outbox's zip on a thread"),
+    ("apps/ultimate_gun_game/tests/it/heavy/map_swap_frames.rs", 1, "a frame's real pace, so the load's threads run beside it"),
+    ("apps/ultimate_gun_game/tests/it/heavy/nav_in_play.rs", 1, "paces the loop at the tick rate, real time"),
+    ("apps/ultimate_gun_game/tests/it/heavy/no_fetch_in_match.rs", 1, "the dedicated loop's frame cap"),
+    ("apps/ultimate_gun_game/tests/it/heavy/pool_maps.rs", 1, "the dedicated loop's frame cap"),
+    ("apps/ultimate_gun_game/tests/it/heavy/server_map_memory.rs", 1, "waits for the memory release's own thread"),
+    ("chimera/assets/tests/it/feedback.rs", 4, "the feedback service's real timers"),
+    ("chimera/assets/tests/it/service.rs", 3, "the asset server's once-a-second manifest check and access-log flush"),
+    ("chimera/client/tests/it/metrics.rs", 1, "measures a real 40 ms stall"),
+    ("chimera/net/tests/it/assets.rs", 3, "the asset server's once-a-second manifest check; its access log"),
+    ("chimera/net/tests/it/hub.rs", 2, "a real hub server's heartbeat pace"),
+    ("chimera/services/tests/it/accounts.rs", 1, "a real account server's thread"),
+    ("chimera/services/tests/it/front.rs", 1, "a real front server's thread"),
+    ("chimera/services/tests/it/hub.rs", 2, "a real hub server's timers"),
+];
+
+/// New `thread::sleep`s in tests fail here: waits go through the harness's
+/// helpers (`TEST_SLEEPS` says which and lists what is left).
+#[test]
+fn tests_do_not_sleep() {
+    let needle = ["thread::sleep", "("].concat();
+    let mut errors = Vec::new();
+    for f in tracked_files() {
+        if !f.ends_with(".rs") || !(f.contains("/tests/") || f.contains("/examples/")) {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(root().join(&f)) else { continue };
+        let n = text
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .map(|l| l.matches(needle.as_str()).count())
+            .sum::<usize>();
+        let allowed = TEST_SLEEPS.iter().find(|(p, _, _)| *p == f).map_or(0, |(_, n, _)| *n);
+        if n > allowed {
+            errors.push(format!(
+                "{f}: {n} thread::sleep calls ({allowed} allowed). Don't sleep in a test: advance the clock with \
+                 `Sim::advance`, wait for a condition with `Sim::run_until` / `expect_until` / `await_message`, \
+                 for background work with `Sim::run_until_idle`, and between the frames of a loop on real sockets \
+                 or threads call `chimera_world::harness::let_io_run` / `let_tasks_run` (or loop in \
+                 `harness::pump_until`). A real wall-clock wait that can't be replaced goes in \
+                 `TEST_SLEEPS` (checks/tests/it/architecture.rs) with its reason; docs/OBSERVABILITY.md, section 1."
+            ));
+        } else if n < allowed {
+            errors.push(format!("{f}: {n} sleeps, {allowed} listed in TEST_SLEEPS: lower (or remove) its entry."));
+        }
+    }
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
 }
 
 /// The look book's CSS tokens are the game's theme, generated

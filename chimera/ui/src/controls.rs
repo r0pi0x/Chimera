@@ -2029,8 +2029,8 @@ pub struct ControlsPlugin;
 
 impl Plugin for ControlsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<crate::motion::Motion>()
-            .init_resource::<PickMemory>()
+        crate::motion::init(app);
+        app.init_resource::<PickMemory>()
             .add_systems(Update, (show_hover, animate_heroes))
             .add_systems(PostUpdate, draw_kit_icons.in_set(crate::UiKitSystems))
             .add_systems(

@@ -1111,7 +1111,7 @@ fn warm_shapes(models: &CharacterModels, changed: bool, wait: bool, shapes: &mut
         return;
     }
     let pool = bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
-    shapes.warming = Some(pool.spawn(async move {
+    shapes.warming = Some(chimera_core::tasks::spawn(&pool, async move {
         wanted
             .into_iter()
             .map(|(pieces, scale)| {

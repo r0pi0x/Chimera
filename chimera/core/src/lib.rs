@@ -43,4 +43,5 @@ pub mod profile;
 pub mod query_cache;
 pub mod shutdown;
 pub mod slots;
+pub mod pending_work;
 pub mod tasks;

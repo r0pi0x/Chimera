@@ -180,7 +180,7 @@ fn large_models_come_in_without_a_frame_over_the_limit() {
         frames += 1;
         assert!(frames < 20_000, "the models never came");
         // The tasks' turn, on a box with few threads to spare.
-        std::thread::sleep(std::time::Duration::from_micros(200));
+        chimera_world::harness::let_tasks_run();
     }
     eprintln!("{frames} frames, the worst {:.2} M instructions", worst as f64 / 1e6);
     // 144 MB of texels with their mip levels and 12 x 2 MB of vertices, three
@@ -250,7 +250,7 @@ fn a_worn_late_body_is_built_before_the_unworn() {
         sim.app.update();
         frames += 1;
         assert!(frames < 20_000, "the worn body never came");
-        std::thread::sleep(std::time::Duration::from_micros(200));
+        chimera_world::harness::let_tasks_run();
     }
     // At worst behind those already on their way when it was first worn
     // (their tasks run first), not behind every lower index.
@@ -267,7 +267,7 @@ fn a_worn_late_body_is_built_before_the_unworn() {
         sim.app.update();
         frames += 1;
         assert!(frames < 20_000, "the unworn bodies never came");
-        std::thread::sleep(std::time::Duration::from_micros(200));
+        chimera_world::harness::let_tasks_run();
     }
     assert_eq!(drawn(&mut sim), Some(LATE));
 }
@@ -313,7 +313,7 @@ fn a_shown_late_view_model_is_built_before_the_rest() {
         sim.app.update();
         frames += 1;
         assert!(frames < 20_000, "the shown view model never came");
-        std::thread::sleep(std::time::Duration::from_micros(200));
+        chimera_world::harness::let_tasks_run();
     }
     let before = built(&sim) - 1;
     assert!(before <= LATE_AHEAD, "the shown view model came after {before} others: it waited behind them");
@@ -321,6 +321,6 @@ fn a_shown_late_view_model_is_built_before_the_rest() {
         sim.app.update();
         frames += 1;
         assert!(frames < 20_000, "the others never came");
-        std::thread::sleep(std::time::Duration::from_micros(200));
+        chimera_world::harness::let_tasks_run();
     }
 }
