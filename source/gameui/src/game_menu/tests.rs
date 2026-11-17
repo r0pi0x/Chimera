@@ -588,6 +588,10 @@ struct GreyboxPart;
 /// way to the greybox, the menu follows.
 #[test]
 fn disconnect_and_the_greybox_on_the_world() {
+    // The greybox's load runs on the async compute pool (the app's task
+    // pools do this; a bare `App` has none, and the test passed only in a
+    // process where another test had made it).
+    bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
     let mut app = App::new();
     app.add_plugins(crate::console::ConsolePlugin)
         .insert_resource(GameMenu {
