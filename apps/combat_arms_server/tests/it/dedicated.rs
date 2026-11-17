@@ -73,7 +73,7 @@ fn step(server: &mut Sim, clients: &mut [Sim]) {
     for c in clients.iter_mut() {
         c.app.update();
     }
-    std::thread::sleep(Duration::from_millis(1));
+    chimera_world::harness::let_io_run();
 }
 
 fn until(server: &mut Sim, clients: &mut [Sim], frames: usize, done: impl Fn(&mut Sim, &mut [Sim]) -> bool) -> bool {

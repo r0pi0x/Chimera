@@ -69,7 +69,7 @@ fn until(sim: &mut Sim, mut done: impl FnMut(&mut Sim) -> bool) -> bool {
             return true;
         }
         sim.app.update();
-        std::thread::sleep(Duration::from_millis(2));
+        chimera_world::harness::let_io_run();
     }
     done(sim)
 }

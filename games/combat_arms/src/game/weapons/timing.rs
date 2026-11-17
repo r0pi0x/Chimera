@@ -243,7 +243,7 @@ pub fn read_ahead(
             continue;
         }
         let at = path.clone();
-        pending.insert(path, bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { read(&at) }));
+        pending.insert(path, chimera_core::tasks::spawn(&bevy::tasks::AsyncComputeTaskPool::get(), async move { read(&at) }));
         if let Some(r) = room.as_mut() {
             r.set(WHO, pending.len());
         }

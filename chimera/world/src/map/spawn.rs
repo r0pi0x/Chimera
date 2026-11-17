@@ -31,6 +31,11 @@
 //! is computed here by the same functions (the props' brushes on threads).
 //! The colliders keep the mass properties Avian's insert hook gave them:
 //! the first tick doesn't compute them again (`counted_colliders`).
+//!
+//! Known shortcuts: the stepped spawn's frame budgets (`deadline`) read
+//! the real clock (`Instant`), by design (they bound a real frame's cost);
+//! a test that needs the same steps on every run uses `WaitForTasks`
+//! (`Sim::repeatable`), under which no budget applies.
 
 use bevy::ecs::{
     change_detection::Tick,

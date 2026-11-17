@@ -4773,7 +4773,7 @@ at its start (`console::unload_to_menu`), and leaving kicks the bots
 (`main_menu::no_game_behind`). Test: `party_kit`
 `main_menu::leaving_a_hosted_game_takes_its_bots_and_map_and_loads_nothing`.
 
-### The code-built maps' kit (measured, not changed yet)
+### The code-built maps' kit (measured before the guests were kept)
 
 The greybox's (and the range's) kit, dressed on the main thread by
 `console::load_code_map` (a sandbox's start, `map greybox`), the time of
@@ -4797,6 +4797,64 @@ every map's load (on its task there). What would take it to tens of ms:
 the guests' converted bodies and guns kept per install as Combat Arms'
 are (`append_shared`'s texture shift), only the ladder's games dressed,
 and the kit loaded on the map load's task.
+
+### Guest dressings kept for the session
+
+What the measurement above asked for (`source_engine::content::guest`):
+
+- **Kept per app.** Each Source guest's dressing (CS:S's, HL2:DM's,
+  TF2's `dress_guest_with`) runs once per app and load kind (with or
+  without textures), on an empty map, and is kept in the app's
+  `LoadContext`; every later map gets a copy (`guest::append`): its
+  textures after the map's, every texture and cubemap index its parts
+  hold moved past them (`map::texture_refs`, Combat Arms'
+  `append_shared` made general), and what the dressing merges by name
+  (sound entries, decal groups, effect materials, muzzle flashes, shells,
+  the HUD look) by the same rules. Kept textures that are whole DXT
+  blocks keep those alone, as Combat Arms' shared models' do.
+- **Only the games the match deals.** A map loaded for a ladder match
+  (`MapChange`: a host's Start, a rotation) is dressed only by the guests
+  whose games the coming ladder deals (its guns, rung extras, kit and
+  slots: `minigame_net::dealt_games`, `MapLoadOptions::dealt`); a match
+  started later on that map (no load) that deals another game loads it
+  again (`dressed_for`). Without a known match (a sandbox, a plain `map`,
+  a client) every guest dresses. Not finer than games: a Source guest's
+  bodies are all dealt with any of its guns. A gun of a game left off
+  given another way (the console's `give`) has no models on that map.
+- **The code-built maps' kit on a task.** `load_code_map` (a sandbox's
+  start, `map greybox`, leaving for a menu with the greybox) spawns the
+  code-built map at once and loads its kit on the async compute pool
+  (`CodeMapKit`), its spawn's own work (`map::prepare`) there too; the
+  kit spawns when it is in, the code-built map again after it. Until then
+  (a cold first dressing: seconds) players show the shell's capsules.
+  Tests that wait for tasks (`WaitForTasks`) get it in the same frame, as
+  before. In the real app (`ultimate_gun_game --offscreen 960x540
+  --frame-log`, dev build, `+map greybox +after 20 map greybox`, the box
+  at load 60): the second load's worst main-thread frame 102 M
+  instructions (the kit's arrival; 1,248 M with the dressing on the task
+  but its spawn unprepared, and every dressing in one main-thread frame
+  before: 2.4-4.9 s), the kit in 692 ms after the command (Combat Arms'
+  share 374 ms of it, the guests' copies under 100 ms each).
+
+Measured with the installs on the code-built maps' kit (Combat Arms' parts
+on it; `party_kit` `heavy::guest_cache::the_guests_cost_cold_and_warm`,
+test profile, the box at load 60; instructions: the dressing's thread,
+the texture decoding's threads aside):
+
+| | CS:S | HL2:DM |
+|---|---|---|
+| before: every load converts | 1,028-1,048 ms, 3,868 M | 1,674-1,819 ms, 9,877 M |
+| kept: the first load | 1,396 ms, 3,892 M | 2,354 ms, 9,896 M |
+| kept: each later load | 17-18 ms, 24 M | 15-16 ms, 18 M |
+
+The same textures are added either way (306 and 233), and every index of
+the copied parts names the texture a fresh dressing gives
+(`a_second_load_copies_the_guests_and_their_indices_hold`, which also
+counts one conversion for two loads and checks a guest the match doesn't
+deal stays off). Not measured: a store-backed (asset service) install,
+whose reads the first dressing makes; a dressing that missed files that
+arrive later keeps missing them until the app restarts (the module's
+known shortcuts).
 
 ## First join download, 2026-11-14
 

@@ -287,7 +287,7 @@ impl<T: Send + 'static> LateQueue<T> {
     /// Describe model `key` on a task (`cook`: what comes out, its assets
     /// added to the `Stage`).
     pub fn start(&mut self, key: String, providers: Providers, cook: impl FnOnce(&mut Stage) -> T + Send + 'static) {
-        let task = AsyncComputeTaskPool::get().spawn(async move {
+        let task = chimera_core::tasks::spawn(&AsyncComputeTaskPool::get(), async move {
             let began = Instant::now();
             let mut stage = Stage::new(providers);
             let out = cook(&mut stage);

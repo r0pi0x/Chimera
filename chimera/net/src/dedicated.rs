@@ -802,7 +802,7 @@ pub fn change_level(world: &mut World, name: &str) -> Result<Option<String>, Str
     // The match's game files the server reads from the asset store come
     // first (`net::server_assets`): none fetched while it plays.
     let files = net::server_assets::fetch_now(world);
-    let task = bevy::tasks::AsyncComputeTaskPool::get().spawn({
+    let task = chimera_core::tasks::spawn(&bevy::tasks::AsyncComputeTaskPool::get(), {
         let id = id.clone();
         async move {
             if let Some(job) = files {

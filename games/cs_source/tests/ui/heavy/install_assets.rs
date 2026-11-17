@@ -22,7 +22,7 @@ fn wait(app: &mut App, handle: UntypedAssetId) -> LoadState {
         if !matches!(state, LoadState::Loading | LoadState::NotLoaded) {
             return state;
         }
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
     }
     panic!("still loading");
 }

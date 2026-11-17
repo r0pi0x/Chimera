@@ -110,6 +110,7 @@ the user's go-ahead: no Actions runs unless asked.
   - Each player's lobby row shows their progress (downloading %, loading, ready), reported to the server and shared, which needs a network-version bump.
   - Start waits for everyone ready, or the host's timeout.
   - The loading screen's bar must reflect the real loading stages (downloads in bytes, map load, model builds, physics and navigation). Today it doesn't move. Show only the main bar when there's a single stage.
+  - **Plan:** [plans/active/lobby-between-maps.md](plans/active/lobby-between-maps.md).
 
 - **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.
   - It connects to a master server (the hub) by an identifier or address, since the hub manages the accounts.
@@ -2872,28 +2873,28 @@ docs/plans/active/sound.md.
   by the reproducible converter (an upscaler run on the user's own
   originals, deterministic and versioned; generated-assets rule).
 
-- **Tests that control time and await conditions (user, 2026-11-17; after
-  the stutter, host-to-lobby, disconnect and UI fixes).** Real time still
-  leaks into tests and scenes: background work on threads (map loads,
-  model builds, downloads, navigation meshes), things timed on the real
-  clock (UI animations, the kill-icon retry, download pacing, timeouts),
-  fixed waits ("N frames", "N ms") where no event exists, and networked
-  tests that sleep while loopback settles. That makes some runs slow and
-  some flaky (the voted-map race). Wanted:
-  - a manual clock for `harness::Sim` and scenes (Bevy's manual time), so
-    a test jumps "5 s later" at once; `ui_motion_scale` 0 in tests so
-    animations finish at once;
-  - background tasks run deterministically in tests:
-    `sim.run_until_idle()` instead of sleeping;
-  - awaiting conditions, coroutine-style, with a tick limit instead of a
-    timeout: `sim.run_until(|world| ..., max_ticks)`,
-    `sim.await_message::<M>()`; the scene tool's `wait_for <condition>`
-    to match;
-  - an audit moving every sleep, timeout and real-clock read in tests and
-    engine code onto the clock or the await helpers, then a `repo_checks`
-    rule flagging new sleeps in tests.
-  Payoff: faster runs, no timing flakes, simpler agent scenes (fewer wait
-  loops written and debugged). One agent, in stages.
+- Done (2026-11-17), left below: **Tests that control time and await
+  conditions (user, 2026-11-17).** `Sim` steps `Time<Real>` and game time
+  together (`advance`), starts UI animations snapped (`TestRun`,
+  `chimera_ui::motion::init`), waits with `run_until` / `expect_until` /
+  `await_message` (tick limits, failure messages say what and the state)
+  and `run_until_idle` (counted background work: `chimera_core::tasks::
+  spawn` / `thread` / `Busy`, `pending()`); the scene tool has `wait_for
+  idle` and `wait_for cvar`; test sleeps moved onto `harness::let_tasks_run`
+  / `let_io_run` / `expect_until`, and `architecture::tests_do_not_sleep`
+  refuses new ones (`TEST_SLEEPS` lists the justified rest);
+  docs/OBSERVABILITY.md section 1, "Time and waiting". Left:
+  - real-clock timers in engine code (`Instant`) that a test can't
+    advance: the hub's refresh timers, server queries' timeouts, the asset
+    server's once-a-second manifest check and pacing (Known shortcuts in
+    their `//!`; the tests sleep, `TEST_SLEEPS`);
+  - loaders still on a raw `std::thread::spawn` or Bevy's `AssetServer`
+    are invisible to `run_until_idle` (the heavy install tests poll with
+    `let_io_run`); route them through `tasks::spawn` as they are touched;
+  - existing scenes still use fixed `wait N` for loads (`wait 1500`):
+    move them to `wait_for idle` once checked on a machine with the games;
+  - `NetSim`'s real-UDP tests could go onto the in-memory link where they
+    don't test the socket.
 
 - Done: **Disk guards (2026-10-31: the dev box's disk filled to 100%).**
   `tools/agent-slot.sh trim-incremental` (run by `trim`,

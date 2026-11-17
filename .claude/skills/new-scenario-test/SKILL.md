@@ -30,6 +30,15 @@ assert!(sim.velocity(p).xz().length() > 4.9);
   `kit:shotgun`).
 - Network: `NetSim::new(base, conditions, seed, clients, setup)`
   (chimera_net `harness`), maps built in code (`cs_source::harness::TestMaps`).
+- Time and waiting, never `thread::sleep` (a repo check refuses it):
+  `sim.advance(Duration)` / `sim.seconds(s)` jump game and real time at
+  once; `sim.run_until(|w| .., max_ticks)` / `sim.expect_until("what",
+  |w| .., max_ticks)` / `sim.await_message::<M>(max_ticks)` wait for a
+  condition with a tick limit; `sim.run_until_idle(max_ticks)` waits for
+  background work (map loads, model builds, downloads, nav meshes). UI
+  animations snap in a `Sim` (`ui_motion_scale` 0). Loops on real sockets:
+  `harness::let_io_run()` / `pump_until`. docs/OBSERVABILITY.md section 1,
+  "Time and waiting".
 - A spec's test cases each become one test; name the spec section in the
   test's doc comment.
 - A cost (how much a tick does): `sim.repeatable()`, then

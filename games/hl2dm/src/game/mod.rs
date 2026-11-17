@@ -162,7 +162,11 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
 /// HL2:DM's guns on the maps of other games.
 pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
     game: GAME,
-    dress: |map, options| maps::dress_guest_with(map, BUNDLE.kept, !options.textures),
+    // Converted once per app and load kind, then copied into each map
+    // (`source_engine::content::guest`).
+    dress: |map, options| {
+        source_engine::content::guest::dress_cached(GAME, map, options, |m| maps::dress_guest_with(m, BUNDLE.kept, !options.textures))
+    },
 };
 
 /// What HL2:DM adds to a game of several games: the game registered, map

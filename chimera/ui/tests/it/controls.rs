@@ -848,3 +848,20 @@ fn segmented_is_inset_like_the_toggle_with_slanted_hover() {
     let strip = app.world().get::<Children>(pick).expect("the focus strip is the pick's child");
     assert_eq!(strip.len(), 1);
 }
+
+/// A test run (`TestRun`, which `harness::Sim` inserts) starts with
+/// animations snapped; an app's own `Motion` is kept.
+#[test]
+fn a_test_run_snaps_the_motion_scale() {
+    let mut plain = App::new();
+    chimera_ui::motion::init(&mut plain);
+    assert_eq!(plain.world().resource::<Motion>().scale, 1.0);
+    let mut test = App::new();
+    test.insert_resource(chimera_core::tasks::TestRun);
+    chimera_ui::motion::init(&mut test);
+    assert!(test.world().resource::<Motion>().snaps());
+    let mut own = App::new();
+    own.insert_resource(chimera_core::tasks::TestRun).insert_resource(Motion::new(2.0));
+    chimera_ui::motion::init(&mut own);
+    assert_eq!(own.world().resource::<Motion>().scale, 2.0);
+}

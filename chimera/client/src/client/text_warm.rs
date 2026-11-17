@@ -162,7 +162,7 @@ impl AtlasPool {
             None => true,
         });
         while self.ready.len() + self.making.len() < POOL {
-            self.making.push(AsyncComputeTaskPool::get().spawn(async { empty_atlas() }));
+            self.making.push(chimera_core::tasks::spawn(&AsyncComputeTaskPool::get(), async { empty_atlas() }));
         }
     }
 }

@@ -901,13 +901,7 @@ fn a_hub_that_does_not_answer_shows_its_last_list() {
     hub_with(&mut sim, vec![s.clone()], None);
     open_join_with(&mut sim, vec![answer(&s, None, 30)]);
     // Opening Join asked the hub again; nothing answers (no account file).
-    for _ in 0..400 {
-        sim.ticks(1);
-        if sim.app.world().resource::<LanList>().hub.offline.is_some() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    sim.expect_until("the hub's offline answer", |w| w.resource::<LanList>().hub.offline.is_some(), 20_000);
     let lan = sim.app.world().resource::<LanList>();
     assert!(lan.hub.offline.is_some() && lan.hub.has_list, "{:?}", lan.hub);
     assert_eq!(lan.internet.len(), 1, "the last list stays");

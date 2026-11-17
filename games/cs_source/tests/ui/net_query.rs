@@ -62,7 +62,7 @@ fn run(
         if done(queries) {
             return true;
         }
-        std::thread::sleep(Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
     }
     false
 }
@@ -122,7 +122,7 @@ fn a_server_answers_queries_with_its_info() {
         while start.elapsed() < Duration::from_secs(5) {
             sv.app.update();
             client.app.update();
-            std::thread::sleep(Duration::from_millis(1));
+            chimera_world::harness::let_io_run();
             let w = client.app.world_mut();
             if w.contains_resource::<Joined>() {
                 net::disconnect(w, "done");
@@ -205,7 +205,7 @@ fn lan_discovery_finds_two_servers_on_their_ports() {
             other.send_to(&reply, from).unwrap();
         }
         q.poll();
-        std::thread::sleep(Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
     }
     assert!(
         q.results.iter().all(|r| !r.lan),

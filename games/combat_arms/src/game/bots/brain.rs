@@ -583,7 +583,7 @@ fn nav_on_task(world: &mut World) {
                 Some(mut mesh) => {
                     nav_gen::link_map(&mut mesh, world);
                     let pool = AsyncComputeTaskPool::get_or_init(TaskPool::default);
-                    let share = pool.spawn(async move {
+                    let share = chimera_core::tasks::spawn(&pool, async move {
                         let patrol = nav::PatrolGraph::build(&mesh);
                         let copy = mesh.clone();
                         (mesh, copy, patrol)

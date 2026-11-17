@@ -150,13 +150,8 @@ fn one(pad: u64) {
         w.resource_mut::<CaVolumes>().set_music(60);
     }
     set_now(&mut sim, 0.0);
-    for _ in 0..200 {
-        sim.ticks(1);
-        if !starts(&sim).is_empty() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    // The clip decodes on a task; the first stream starts when it is in.
+    sim.expect_until("the track's first stream", |w| w.resource::<Seen>().0.iter().any(|c| matches!(c, SoundControl::Start(_))), 20_000);
     sim.ticks(pad);
     let s = starts(&sim);
     assert_eq!(s.len(), 1, "one stream: {:?}", sim.app.world().resource::<Seen>().0);
