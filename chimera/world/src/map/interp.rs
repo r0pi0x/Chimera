@@ -29,6 +29,13 @@
 //!   engine's (Halo's 30 Hz): values laid at the game's ticks, drawn
 //!   between them on the game's clock (`GameClock`); the game eases and
 //!   puts back its own (`halo_ce::game::eased`).
+//! - `PoseStream` is for a pose sampled from keyframed animation at a
+//!   game's tick: drawn at the frame's own time (`GameClock::now`, no
+//!   trail), between the tick's pose and the poses the game predicts for
+//!   its next ticks (the same animation played on with the same inputs);
+//!   a tick that turns out otherwise than predicted cross-fades from the
+//!   old prediction over one game tick (`FADE_TICKS`), unless the game
+//!   says the change is an event to show at once (a shot).
 //!
 //! Plugged in by the client (headless runs and tests without it see the
 //! simulation's values only); `Interpolation::enabled` is its cvar
@@ -402,7 +409,7 @@ fn ease_views(
 /// is always in (`GameClock::lag`). The simulation never sees the blend:
 /// the game puts the latest back at the start of each engine tick
 /// (`GameTicks::latest`).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GameTicks<T> {
     /// The last few values, oldest first, with their game ticks.
     laid: std::collections::VecDeque<(u64, T)>,
@@ -471,23 +478,6 @@ impl GameTicks<Transform> {
     }
 }
 
-impl GameTicks<Later<Vec<BonePose>>> {
-    /// The pose drawn at game time `time`, each bone's rotation and
-    /// position between the two around it (`blend_poses`); made when first
-    /// drawn (`Later`).
-    pub fn at(&self, time: f64) -> Option<Later<Vec<BonePose>>> {
-        let (a, b, f) = self.around(time)?;
-        if f >= 1.0 || Later::ptr_eq(a, b) {
-            return Some(b.clone());
-        }
-        if f <= 0.0 {
-            return Some(a.clone());
-        }
-        let (a, b) = (a.clone(), b.clone());
-        Some(Later::new(move || blend_poses(&a, &b, f)))
-    }
-}
-
 /// Pose `a` toward `b` by `f`: each bone's rotation by the shorter arc,
 /// its position straight; poses of different skeletons give `b`.
 pub fn blend_poses(a: &[BonePose], b: &[BonePose], f: f32) -> Vec<BonePose> {
@@ -495,6 +485,129 @@ pub fn blend_poses(a: &[BonePose], b: &[BonePose], f: f32) -> Vec<BonePose> {
         return b.to_vec();
     }
     a.iter().zip(b).map(|((qa, pa), (qb, pb))| (qa.slerp(*qb, f), pa.lerp(*pb, f))).collect()
+}
+
+/// How long, in game ticks, a pose stream fades from a prediction that
+/// turned out wrong to the new tick's (`PoseStream`).
+pub const FADE_TICKS: f64 = 1.0;
+
+/// A pose sampled from keyframed animation at a game's tick, drawn at the
+/// frame's own time (module doc): `lay` the tick's pose with a maker of
+/// the next ticks' (`GameClock::ahead` of them), `at` the frame's game
+/// time (`GameClock::now`). Between the tick and the next the pose runs
+/// on the predicted keyframes (each bone between two of them, as the
+/// animation itself would be sampled), so a playing animation shows no
+/// trail; past the predicted ones it holds the last. The simulation keeps
+/// the tick's (`latest`).
+#[derive(Clone, Debug, Default)]
+pub struct PoseStream {
+    run: Option<PoseRun>,
+    /// The run a tick replaced otherwise than it predicted, fading out
+    /// from the first frame drawn after (its time).
+    old: Option<(PoseRun, Option<f64>)>,
+}
+
+#[derive(Clone, Debug)]
+struct PoseRun {
+    tick: u64,
+    now: Later<Vec<BonePose>>,
+    ahead: Later<Vec<Vec<BonePose>>>,
+}
+
+impl PoseRun {
+    /// The pose at game time `time`: the tick's before it, between the
+    /// keyframes around it after, the last predicted past them.
+    fn sample(&self, time: f64) -> Later<Vec<BonePose>> {
+        let s = time - self.tick as f64;
+        if s <= 0.0 {
+            return self.now.clone();
+        }
+        let i = s.floor();
+        let f = (s - i) as f32;
+        let i = i.min(1e6) as usize;
+        let (now, ahead) = (self.now.clone(), self.ahead.clone());
+        Later::new(move || {
+            let pick = |k: usize| -> &Vec<BonePose> {
+                if k == 0 {
+                    return now.get();
+                }
+                let a = ahead.get();
+                a.get(k - 1).or(a.last()).unwrap_or(now.get())
+            };
+            if f <= 0.0 { pick(i).clone() } else { blend_poses(pick(i), pick(i + 1), f) }
+        })
+    }
+
+    /// What this run predicted for game tick `tick`, where it was made
+    /// (drawn).
+    fn predicted(&self, tick: u64) -> Option<&Vec<BonePose>> {
+        let k = tick.checked_sub(self.tick)?.checked_sub(1)?;
+        if !self.ahead.is_made() {
+            return None;
+        }
+        let a = self.ahead.get();
+        a.get(k as usize).or(a.last())
+    }
+}
+
+impl PoseStream {
+    /// The game's pose `now` at its tick `tick`, and the maker of the
+    /// poses of its next ticks (called when first drawn). `fade`: a pose
+    /// other than predicted fades in from the old prediction (input that
+    /// drifted, a state the animation changed to); false shows it at once
+    /// (an event: a shot, a hit).
+    pub fn lay(
+        &mut self,
+        tick: u64,
+        now: Later<Vec<BonePose>>,
+        ahead: impl FnOnce() -> Vec<Vec<BonePose>> + Send + 'static,
+        fade: bool,
+    ) {
+        let old = self.run.take();
+        self.old = None;
+        if let Some(old) = old
+            && fade
+            && old.tick < tick
+            && old.predicted(tick).is_some_and(|p| p != now.get())
+        {
+            self.old = Some((old, None));
+        }
+        self.run = Some(PoseRun {
+            tick,
+            now,
+            ahead: Later::new(ahead),
+        });
+    }
+
+    /// Forget what was laid (a model changed).
+    pub fn clear(&mut self) {
+        self.run = None;
+        self.old = None;
+    }
+
+    /// The latest tick's pose (the simulation's).
+    pub fn latest(&self) -> Option<&Later<Vec<BonePose>>> {
+        self.run.as_ref().map(|r| &r.now)
+    }
+
+    /// The pose drawn at game time `time` (module doc); a time that isn't
+    /// finite (the interpolation off) draws the latest. Made when first
+    /// posed (`Later`).
+    pub fn at(&mut self, time: f64) -> Option<Later<Vec<BonePose>>> {
+        let run = self.run.as_ref()?;
+        if !time.is_finite() {
+            return Some(run.now.clone());
+        }
+        let new = run.sample(time);
+        let Some((old, start)) = &mut self.old else { return Some(new) };
+        let u = ((time - *start.get_or_insert(time)) / FADE_TICKS) as f32;
+        if u >= 1.0 {
+            self.old = None;
+            return Some(new);
+        }
+        let from = old.sample(time);
+        Some(Later::new(move || blend_poses(from.get(), new.get(), u)))
+    }
 }
 
 /// A game's tick counted out of the engine's (`GameTicks`): `per_tick`
@@ -525,8 +638,23 @@ impl GameClock {
         (n as f64 + (d - g) as f64) / d as f64
     }
 
+    /// The game time of a frame `overstep` (0 to 1) of an engine tick
+    /// after the end of engine tick `tick`, not behind (`PoseStream`).
+    pub fn now(&self, tick: u64, overstep: f32) -> f64 {
+        let (n, d) = self.per_tick;
+        (tick as f64 + f64::from(overstep.clamp(0.0, 1.0))) * n as f64 / d.max(1) as f64
+    }
+
+    /// The game ticks a `PoseStream` predicts past its latest: as far as a
+    /// frame is ever past the latest (`lag`) and the fade from the one
+    /// before (`FADE_TICKS`); 2 at the game's own tick, 3 for 30 Hz under
+    /// 64 Hz.
+    pub fn ahead(&self) -> usize {
+        (self.lag() + FADE_TICKS).ceil() as usize
+    }
+
     /// The game time a frame draws, `overstep` (0 to 1) of an engine tick
-    /// after the end of engine tick `tick`.
+    /// after the end of engine tick `tick`, `lag` behind.
     pub fn drawn(&self, tick: u64, overstep: f32) -> f64 {
         let (n, d) = self.per_tick;
         (tick as f64 + f64::from(overstep.clamp(0.0, 1.0))) * n as f64 / d.max(1) as f64 - self.lag()
@@ -579,17 +707,72 @@ mod tests {
     #[test]
     fn game_ticks_blend_the_two_around() {
         let mut g = GameTicks::default();
-        let p = |x: f32| Later::ready(vec![(Quat::from_rotation_y(x), Vec3::X * x)]);
+        let p = |x: f32| Transform::from_translation(Vec3::X * x).with_rotation(Quat::from_rotation_y(x));
         g.lay(4, p(0.0));
         g.lay(5, p(1.0));
         let at = g.at(4.25).unwrap();
-        let (q, v) = at.get()[0];
-        assert!(q.dot(Quat::from_rotation_y(0.25)).abs() > 1.0 - 1e-6 && (v - Vec3::X * 0.25).length() < 1e-6);
-        assert!(Later::ptr_eq(&g.at(9.0).unwrap(), g.latest().unwrap()), "after the latest: the latest");
+        assert!(at.rotation.dot(Quat::from_rotation_y(0.25)).abs() > 1.0 - 1e-6);
+        assert!((at.translation - Vec3::X * 0.25).length() < 1e-6);
+        assert_eq!(g.at(9.0), g.latest().copied(), "after the latest: the latest");
         // A tick laid again (a run restarted) replaces what came after.
         g.lay(5, p(2.0));
         g.lay(3, p(3.0));
         assert_eq!(g.around(0.0).map(|(_, _, f)| f), Some(1.0));
-        assert_eq!(g.latest().unwrap().get()[0].1, Vec3::X * 3.0);
+        assert_eq!(g.latest().unwrap().translation, Vec3::X * 3.0);
+    }
+
+    /// A one-bone animation turning `step` radians a frame: frame `f`.
+    fn key(f: f32, step: f32) -> Vec<BonePose> {
+        vec![(Quat::from_rotation_z(f * step), Vec3::Y * f)]
+    }
+
+    fn close(a: &[BonePose], b: &[BonePose]) -> bool {
+        a.len() == b.len() && a.iter().zip(b).all(|((qa, pa), (qb, pb))| qa.dot(*qb).abs() > 1.0 - 1e-6 && pa.distance(*pb) < 1e-5)
+    }
+
+    /// Laid at tick `t` playing frame `t` of the animation, predicting
+    /// the next frames.
+    fn lay_frame(s: &mut PoseStream, t: u64, step: f32, fade: bool) {
+        s.lay(t, Later::ready(key(t as f32, step)), move || (1..=3).map(|k| key((t + k) as f32, step)).collect(), fade);
+    }
+
+    #[test]
+    fn a_pose_stream_samples_the_keyframes_past_its_tick() {
+        let mut s = PoseStream::default();
+        lay_frame(&mut s, 10, 0.1, true);
+        // At the tick, between it and the next, past it: the animation at
+        // that time, no trail.
+        for t in [10.0, 10.25, 10.5, 11.0, 11.4] {
+            let got = s.at(t).unwrap();
+            assert!(close(got.get(), &key(t as f32, 0.1)), "{t}: {:?}", got.get());
+        }
+        assert!(close(s.at(f64::INFINITY).unwrap().get(), &key(10.0, 0.1)), "off: the tick's");
+        assert!(close(s.latest().unwrap().get(), &key(10.0, 0.1)));
+        // The next tick as predicted: no fade, the same path.
+        lay_frame(&mut s, 11, 0.1, true);
+        assert!(s.old.is_none());
+        assert!(close(s.at(11.5).unwrap().get(), &key(11.5, 0.1)));
+    }
+
+    #[test]
+    fn a_changed_tick_fades_from_the_prediction() {
+        let mut s = PoseStream::default();
+        lay_frame(&mut s, 10, 0.1, true);
+        let before = s.at(10.95).unwrap().get().clone();
+        // The next tick plays another animation (twice as fast): the first
+        // frame after draws the old prediction, then fades to the new one
+        // over a tick.
+        lay_frame(&mut s, 11, 0.2, true);
+        let first = s.at(11.0).unwrap().get().clone();
+        assert!(close(&first, &key(11.0, 0.1)), "the old path at first: {first:?}");
+        let step = before[0].0.angle_between(first[0].0);
+        assert!(step < 0.1, "no pop: {step}");
+        let mid = s.at(11.5).unwrap().get().clone();
+        let want = blend_poses(&key(11.5, 0.1), &key(11.5, 0.2), 0.5);
+        assert!(close(&mid, &want), "{mid:?} vs {want:?}");
+        assert!(close(s.at(12.0).unwrap().get(), &key(12.0, 0.2)), "faded: the new path");
+        // An event shows at once.
+        lay_frame(&mut s, 12, 0.5, false);
+        assert!(close(s.at(12.0).unwrap().get(), &key(12.0, 0.5)));
     }
 }

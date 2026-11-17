@@ -482,7 +482,13 @@ pub fn shows(speed_wu_per_tick: f32, firing: bool, distance: f32, sensitivity: f
 /// The sweep's window half size s / 2 at tick `now` (section 11): t =
 /// time mod 2.1 s; s = 1 / ((t + 0.0625) x 1.1) below 2.0375 s, else 0.4.
 pub fn sweep(now: i64) -> f32 {
-    let t = (now as f32 / TICKS).rem_euclid(2.1);
+    sweep_at(now as f64)
+}
+
+/// `sweep` at a time between ticks (`time` in ticks: the frame's own, so
+/// the ring moves at the frame rate).
+pub fn sweep_at(time: f64) -> f32 {
+    let t = ((time / f64::from(TICKS)) as f32).rem_euclid(2.1);
     let s = if t < 2.0375 { 1.0 / ((t + 0.0625) * 1.1) } else { 0.4 };
     s / 2.0
 }

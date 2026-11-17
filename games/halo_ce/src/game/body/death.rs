@@ -36,7 +36,8 @@
 //! death starts on the tick after the one it touched down on (6-tick
 //! blend). It is drawn as the engine's `map::Corpse` (Halo's game identity
 //! picks the Spartan, `BodySkin` its colour, the pose its own
-//! `Animator::fixed`). It has no collider (players and vehicles pass
+//! `Animator::fixed`; drawn at the frame's time and its fall eased between
+//! ticks, `eased`). It has no collider (players and vehicles pass
 //! through it) but hit volumes (`core::Hitboxes`, `corpse_hitboxes`: the
 //! model's boxes on its pose, about its feet, unturned), so shots meet it:
 //! Halo's projectiles (`weapons::HaloTrace`) and every game's hitscan (the
@@ -71,6 +72,7 @@
 
 use bevy::prelude::*;
 use blam_formats::animation::{BodyPart, DamageDirection, DamageKind, UnitDamageSlot};
+use chimera_core::later::Later;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -227,6 +229,10 @@ pub struct CorpseState {
     /// Spartan's while that kind's model is not loaded here), kept for its
     /// whole play: its sequences index that body's set.
     pub shown: BodyKind,
+    /// Its pose at the last Halo tick and the next ones predicted, drawn
+    /// at the frame's time (`eased`; its fall is eased as a position,
+    /// `eased::HaloEased`).
+    pub drawn: crate::game::eased::PoseStream,
 }
 
 impl CorpseState {
@@ -460,8 +466,17 @@ pub fn play_corpses(
         Option<&mut crate::core::Hitboxes>,
     )>,
     mut sounds: MessageWriter<PlaySound>,
+    drawing: Option<Res<crate::map::interp::Interpolation>>,
     mut commands: Commands,
 ) {
+    let drawing = crate::game::eased::drawing(&drawing);
+    // The next ticks of a corpse's play (`eased`), its fall left out.
+    let lay = |state: &mut CorpseState, set: &std::sync::Arc<AnimSet>, pose: Later<Vec<BonePose>>| {
+        let (mut next, set, n) = (state.clone(), set.clone(), crate::game::eased::ahead(&clock));
+        next.drawn = Default::default();
+        let ahead = move || (0..n).map(|_| next.tick(&set).0).collect();
+        state.drawn.lay(crate::game::eased::laid(&clock), pose, ahead, true);
+    };
     let Some(models) = models.as_deref() else { return };
     let ticks = super::super::ticks::halo_ticks(&clock).min(4);
     let g = super::super::movement::MovementData::builtin().gravity * METERS_PER_UNIT;
@@ -486,7 +501,11 @@ pub fn play_corpses(
             let (pose, _) = state.tick(&set);
             let boxes = model.map(|m| corpse_hitboxes(m, &pose, corpse.yaw)).unwrap_or_default();
             let mut animator = Animator::new(set.clone());
-            animator.fixed = Some(chimera_core::later::Later::ready(pose));
+            let pose = Later::ready(pose);
+            if drawing {
+                lay(&mut state, &set, pose.clone());
+            }
+            animator.fixed = Some(pose);
             animator.main = Some(0);
             commands.entity(e).insert((
                 boxes,
@@ -497,6 +516,7 @@ pub fn play_corpses(
                 chimera_core::slots::GameIdentity(GAME.into()),
                 Visibility::default(),
                 Transform::from_translation(corpse.at).with_rotation(Quat::from_rotation_y(corpse.yaw)),
+                crate::game::eased::HaloEased::default(),
             ));
             // A campaign body's corpse draws its own model.
             if let Some(name) = shown.model_name() {
@@ -506,16 +526,24 @@ pub fn play_corpses(
         };
         let Some(mut animator) = animator else { continue };
         let mut hitboxes = hitboxes;
+        let mut last = None;
         for _ in 0..ticks {
             state.fall(g, ground);
             let (pose, sound) = state.tick(&set);
             if let (Some(m), Some(h)) = (model, hitboxes.as_deref_mut()) {
                 *h = corpse_hitboxes(m, &pose, corpse.yaw);
             }
-            animator.fixed = Some(chimera_core::later::Later::ready(pose));
+            last = Some(pose);
             if let Some(entry) = sound {
                 sounds.write(PlaySound::at(entry, state.at + Vec3::Y * 0.5));
             }
+        }
+        if let Some(pose) = last {
+            let pose = Later::ready(pose);
+            if drawing {
+                lay(&mut *state, &set, pose.clone());
+            }
+            animator.fixed = Some(pose);
         }
         let want = Transform::from_translation(state.at).with_rotation(Quat::from_rotation_y(corpse.yaw));
         if let Some(mut t) = transform
