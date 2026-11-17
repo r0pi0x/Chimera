@@ -2446,16 +2446,23 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
 ## 2b. HUD and debug views
 
 - **One component library, used everywhere (user, 2026-11-17).** The
-  kit exists (`chimera_ui::controls`: `text_field`, `button`, `toggle`,
-  `dropdown`, `slider`, ...; `chimera_ui::widgets`), but screens built
-  their own copies, so search boxes and text inputs look and act
-  differently. For example, a caret placed inline pushes the text
-  around, where the kit's caret is an overlay. Move every screen's
-  ad-hoc control onto the kit's (Change gun's and the bench's search,
-  the model picker, the target picker, ...), add a search-field variant
-  if one is missing, and add a `repo_checks` rule against hand-built
-  controls outside `chimera_ui`. Also add a gallery scene that renders
-  every control in every state, for screenshot checks.
+  kit (`chimera_ui::controls`: `text_field`, `search_field`, `text_area`,
+  `chat_field`, `button`, `toggle`, `dropdown`, `slider`, ...) is the one
+  place controls are built. *Done (2026-11-17):* `search_field` (glass,
+  clear key) and `text_area` (wrapping lines, overlay caret and selection)
+  added; Change gun's and the bench picker's search, the tag popover's
+  find box (a hand-built inline caret), the report dialog's text and the
+  chat line (an inline caret that pushed the text) now use them; disabled
+  state on the text fields; `repo_checks` rule `ui_kit`
+  (`text_inputs_are_the_kits`: no hand-built text inputs outside
+  `chimera_ui`, an allowlist with reasons for the VGUI/GameUI widgets and
+  the egui debug UI; a missing feature is first an option on the kit's
+  component); the gallery (`ui_scene fields`, `ui_gallery`, Options'
+  Developer mode and the Escape menu's Developer entry); a test that typing
+  moves no text. *Left:* a rule for the other controls (buttons, toggles,
+  sliders built by hand: only text inputs are flagged), the main menu's
+  Developer entry (only the Escape menu has it), the VGUI look's own
+  text entry stays (the GameUI copy).
 
 - CS:S HUD: health/armour/ammo/money/round-timer panels, death notices
   and the Tab scoreboard are in (`client/game_hud.rs`,

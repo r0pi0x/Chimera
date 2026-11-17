@@ -406,7 +406,7 @@ fn crates() -> Vec<String> {
 
 /// Source without comments, string and char literals (strings left as
 /// `""`), cut at a column-0 `#[cfg(test)]`.
-fn strip(src: &str) -> String {
+pub(crate) fn strip(src: &str) -> String {
     let src = match src.find("\n#[cfg(test)]") {
         Some(i) => &src[..i],
         None if src.starts_with("#[cfg(test)]") => "",

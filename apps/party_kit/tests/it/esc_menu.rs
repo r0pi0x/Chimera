@@ -427,3 +427,13 @@ fn settings_over_play_hides_the_signal_hud() {
     sim.ticks(2);
     assert!(shown(&sim), "back after Settings shuts");
 }
+
+/// Options' Developer mode adds the Escape menu's Developer entry (the
+/// UI kit's gallery); off, it is not there.
+#[test]
+fn developer_mode_adds_the_developer_entry() {
+    let has = |dev: bool| esc_menu::shown_entries_with(true, false, false, false, dev).iter().any(|e| e.action == Some(Action::Developer));
+    assert!(!has(false));
+    assert!(has(true));
+    assert!(esc_menu::option_tabs_for(true).iter().any(|(_, rows)| rows.iter().any(|s| s.cvar == "developer_mode")), "Options has the toggle");
+}
