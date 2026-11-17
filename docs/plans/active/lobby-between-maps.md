@@ -37,7 +37,7 @@ the host can change settings and players can leave.
    (the held-back colliders inserted, out of all of them, then the
    settle hooks done (navigation mesh, spawn spots, shadows, the HUD's
    warm-up), out of all of them). The spawn and the settling write their
-   counts into `LoadWork` (a resource); `chimera_net::load_stages`
+   counts into `LoadWork` (a resource); `chimera_net::net::load_stages`
    puts the four together with the download (`stages(world)`: each
    stage pending, running with its share, or done; only the stages this
    load has). The loading screens' bars read it; with one stage only the
@@ -75,3 +75,14 @@ to 4 on `NetSim` (`chimera_net` `prematch_lobby`).
 ## Progress
 
 - 2026-11-17: plan.
+- 2026-11-17: steps 1-4 built (`load_stages`, `LoadWork`, net67,
+  `prematch::begin_between`, the Host page's "Lobby waits at most").
+  Tests: `chimera_client` `map_load_steps::a_loads_stages_follow_its_work`;
+  `chimera_net` `prematch_lobby::{each_players_load_stage_reaches_the_other_clients,
+  after_a_match_the_lobby_shows_at_once_while_the_next_map_comes_in,
+  the_lobby_after_a_match_waits_for_everyone_or_the_hosts_timeout}`,
+  `load_stages` and `prematch` unit tests.
+- Not yet: loading the next map's data ahead during the match-end
+  screen (the change starts its load at once, after it); a listen host's
+  row seen by others holds still while its simulation waits on its
+  spawn (a few seconds; its own screen reads it live).

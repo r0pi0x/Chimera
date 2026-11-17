@@ -110,6 +110,8 @@ the user's go-ahead: no Actions runs unless asked.
   - Each player's lobby row shows their progress (downloading %, loading, ready), reported to the server and shared, which needs a network-version bump.
   - Start waits for everyone ready, or the host's timeout.
   - The loading screen's bar must reflect the real loading stages (downloads in bytes, map load, model builds, physics and navigation). Today it doesn't move. Show only the main bar when there's a single stage.
+  - **Built (2026-11-17):** a load's real stages (`chimera_net::net::load_stages`: the download in bytes, the map's load, building models, physics and navigation, from the spawn's and the settling's counts, `map::loading::LoadWork`) on both loading screens; each player's stage and share in their lobby row (net67); the lobby begins at a match's change to the next map (`prematch::begin_between`), with the map loading under it on every machine (its files were already fetched ahead during the match-end screen); the match's lobby then starts when everyone has loaded or after the host's longest wait (`mp_lobby_max_wait`, on the Host page) counted from the match being ready.
+  - **Left:** loading the next map's data ahead during the match-end screen (before the change); a listen host's own row on other machines pauses while its simulation waits on its spawn (its own screen shows it live).
   - **Plan:** [plans/active/lobby-between-maps.md](plans/active/lobby-between-maps.md).
 
 - **Onboarding and sign-in flow, with motion design (user, 2026-11-17, later; playtest stability comes first):** a new player launching the game goes through an onboarding flow; a returning player logs in with their account or token.

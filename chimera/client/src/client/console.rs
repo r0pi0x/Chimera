@@ -2344,6 +2344,9 @@ pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>)
     // The local player's map isn't ready until the game is entered
     // (`settle_map`): what starts play waits for it.
     w.insert_resource(crate::map::LocalMapLoad { map: id.to_string() });
+    // Its stages from the map's (`map::loading::LoadWork`: the spawn and
+    // the settling count theirs in).
+    w.insert_resource(crate::map::loading::LoadWork::default());
     // At the HDR level set now (mat_hdr_level), as the game does.
     let hdr_level = w.get_resource::<super::hdr::HdrSettings>().map_or(0, |s| s.level);
     // This load's own progress (the loading screen reads the resource).
@@ -2533,8 +2536,22 @@ fn settle_map(w: &mut World) {
     let hooks: Vec<fn(&mut World) -> bool> =
         w.get_resource::<crate::map::MapHooks>().map(|h| h.settle.clone()).unwrap_or_default();
     let mut done = true;
+    let mut hooks_done = 0u64;
+    let hooks_n = hooks.len() as u64;
     for hook in hooks {
-        done &= hook(w);
+        let d = hook(w);
+        hooks_done += u64::from(d);
+        done &= d;
+    }
+    // The physics stage: after the colliders, the settle hooks done of all.
+    if let Some(mut work) = w.get_resource_mut::<crate::map::loading::LoadWork>() {
+        let colliders = work.colliders;
+        work.set_if_neq(crate::map::loading::LoadWork {
+            step: crate::map::loading::LoadStep::Physics,
+            done: colliders + hooks_done,
+            total: colliders + hooks_n,
+            colliders,
+        });
     }
     if !done && started.elapsed().as_secs_f32() < SETTLE_MAX_SECS {
         return;
