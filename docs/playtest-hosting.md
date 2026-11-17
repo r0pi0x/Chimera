@@ -30,7 +30,7 @@ service"). Design and limits: [plans/active/asset-service.md](plans/active/asset
    The network version is `net66` since a Halo player's body kind may be
    the Hunter and the Halo guns include the Hunter's cannon (its own rung,
    `halo_ce:hunter_fuel_rod`: the body kind and the rung's weapon id go to
-   every client; the rung is drawn only with `halo_ce:campaign_bodies 1`);
+   every client; the rung is drawn unless the host sets `halo_ce:campaign_bodies 0` (default 1));
    `net65` (a Halo player's body kind and
    voice go to every client (net part `halo_ce_bodies`: the campaign's
    characters as party bodies, `BodyKind` and `BodyVoice`; drawn only

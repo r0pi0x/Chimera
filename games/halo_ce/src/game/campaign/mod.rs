@@ -65,7 +65,7 @@
 //!   Elite's collision model: 100 body, 100 shield of type 30, a 12 s
 //!   delay, 10 s recharge, its four materials with the arms at x0.5).
 //! - **Choosing it** (`arrive`, the host's): with the host setting
-//!   `halo_ce:campaign_bodies` 1 (`CampaignBodies`; default 0, off), each
+//!   `halo_ce:campaign_bodies` 1 (`CampaignBodies`; default 1, on), each
 //!   time a player arrives on a Halo rung (`ladder::OnRung` inserted) its
 //!   body is drawn by the gun's weights (`CampaignData::weights`; a gun not
 //!   listed: the Spartan) among the kinds whose unit is loaded here
@@ -501,8 +501,15 @@ pub fn vitality_of<'a>(spartan: &'a Spartan, tables: Option<&'a BodyTables>, kin
 }
 
 /// The host setting: campaign bodies on for the match (module doc).
-#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CampaignBodies(pub bool);
+
+impl Default for CampaignBodies {
+    /// On: the party's variation (Elite, Grunt, Jackal, Marine, Hunter).
+    fn default() -> Self {
+        CampaignBodies(true)
+    }
+}
 
 /// A body a developer forced on a player (`BODY_COMMAND`): every Halo rung
 /// gives it.
@@ -627,15 +634,15 @@ pub fn name_bodies(
     }
 }
 
-/// The host setting's console variable (default 0); turning it on asks
+/// The host setting's console variable (default 1); turning it on asks
 /// for every kind's unit (module doc).
 fn campaign_cvar(app: &mut App) {
     use chimera_core::console::ConsoleAppExt;
     app.console_cvar(
         CVAR,
         "1: a player given a Halo rung may wear one of the campaign's characters (the Elite), drawn by \
-         data/campaign.toml's weights (default 0: the Spartan). The host's.",
-        "0",
+         data/campaign.toml's weights (0: the Spartan alone). The host's.",
+        "1",
         |w| Some(if w.get_resource::<CampaignBodies>().is_some_and(|c| c.0) { "1" } else { "0" }.to_string()),
         |w, v| {
             let on = match v.trim() {
@@ -857,7 +864,9 @@ impl Plugin for CampaignPlugin {
             .add_systems(FixedUpdate, voice::chatter.after(crate::core::apply_damage).run_if(crate::core::authoritative))
             .net_part("halo_ce_bodies", register);
         campaign_cvar(app);
-        own_guns_drawn(app.world_mut(), false);
+        own_guns_drawn(app.world_mut(), true);
+        let kinds: Vec<BodyKind> = BodyKind::ALL.into_iter().filter(|k| app.world().resource::<CampaignData>().body(*k).is_some()).collect();
+        app.world_mut().resource_mut::<UnitsOnDemand>().wanted.extend(kinds);
         app.console_command(
             BODY_COMMAND,
             "halo_ce:body <spartan | elite | grunt | jackal | marine | hunter | draw | status | shield <fraction>> [player | all]: the \
