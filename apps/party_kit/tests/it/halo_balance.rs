@@ -316,14 +316,41 @@ fn halo_hit(sim: &mut Sim, target: Entity, way: Way) {
     sim.ticks(1);
 }
 
+/// `gun_game::line_up` without the respawn protection's two seconds (a
+/// kill's victim, not hurt-proof): `target` alive, 3 m before `shooter`.
+fn back_in_play(sim: &mut Sim, shooter: Entity, target: Entity) {
+    for _ in 0..(6.0 * sim.tick_hz()) as u32 {
+        if alive(sim, target) {
+            break;
+        }
+        sim.ticks(1);
+    }
+    assert!(alive(sim, target), "respawned");
+    sim.app.world_mut().entity_mut(target).remove::<(
+        chimera_core::core::God,
+        chimera_core::core::SpawnProtected,
+        chimera_sim::minigame::runtime::Protected,
+    )>();
+    let from = crate::gun_game::OPEN;
+    crate::gun_game::place(sim, shooter, from);
+    crate::gun_game::place(sim, target, from + Vec3::new(0.0, 0.0, -3.0));
+    // Settle, and finish drawing what the last kill gave.
+    sim.seconds(0.5);
+}
+
 /// `way`'s hits to kill a full `target`, put on rung `r` (the ladder's)
 /// first.
 fn halo_hits_to_kill(sim: &mut Sim, a: Entity, target: Entity, r: usize, way: Way) -> u32 {
-    line_up(sim, a, target, 3.0);
+    // A death with no attacker costs a rung: put back while it is dead, so
+    // its respawn (waited for in `line_up`) comes with the rung's gear.
+    if crate::gun_game::rung(sim, target) != r {
+        set_rung(sim, target, r);
+    }
+    back_in_play(sim, a, target);
     if crate::gun_game::rung(sim, target) != r {
         set_rung(sim, target, r);
         sim.seconds(1.2);
-        line_up(sim, a, target, 3.0);
+        back_in_play(sim, a, target);
     }
     // Bare: no armour (another rung's would stay as kevlar); Combat Arms':
     // its full gear.
@@ -346,16 +373,30 @@ fn halo_hits_to_kill(sim: &mut Sim, a: Entity, target: Entity, r: usize, way: Wa
 /// The rows' hits to kill on a bare CS:S character (rung 0) and a Combat
 /// Arms soldier with its gear (rung 2), with the party's table or in a
 /// raw match.
-fn outgoing(table: bool) -> Vec<(u32, u32)> {
-    let mut sim = party();
+fn outgoing(sim: &mut Sim, a: Entity, b: Entity, table: bool, r: usize) -> Vec<u32> {
     sim.app.insert_resource(party_table(table));
+    OUTGOING.iter().map(|(_, way)| halo_hits_to_kill(sim, a, b, r, *way)).collect()
+}
+
+/// `outgoing` for both tables and both victims in one party, a victim at a
+/// time (no switching between rows): ((bare before, bare after), (Combat
+/// Arms before, after)) rows.
+fn outgoing_all() -> (Vec<(u32, u32)>, Vec<(u32, u32)>) {
+    let mut sim = party();
     let a = soldier(&mut sim);
     let b = soldier(&mut sim);
     sim.seconds(1.5);
-    OUTGOING
-        .iter()
-        .map(|(_, way)| (halo_hits_to_kill(&mut sim, a, b, 0, *way), halo_hits_to_kill(&mut sim, a, b, 2, *way)))
-        .collect()
+    // The victim is back after 0.3 s, not 3 (its wait is no part of
+    // what is measured).
+    sim.app.world_mut().entity_mut(b).insert(chimera_sim::minigame::runtime::RespawnDelay(0.3));
+    let mut rows = Vec::new();
+    for r in [0, 2] {
+        let before = outgoing(&mut sim, a, b, false, r);
+        let after = outgoing(&mut sim, a, b, true, r);
+        rows.push(before.into_iter().zip(after).collect::<Vec<_>>());
+    }
+    let ca = rows.pop().unwrap();
+    (rows.pop().unwrap(), ca)
 }
 
 /// Halo's guns on other games' characters, before (a point 1.333 hit
@@ -364,8 +405,9 @@ fn outgoing(table: bool) -> Vec<(u32, u32)> {
 /// (`-- --nocapture`).
 #[test]
 fn halos_guns_on_other_games_characters_count_a_point_a_hit_point() {
-    let before = outgoing(false);
-    let after = outgoing(true);
+    let (bare, ca) = outgoing_all();
+    let before: Vec<(u32, u32)> = bare.iter().zip(&ca).map(|(b, c)| (b.0, c.0)).collect();
+    let after: Vec<(u32, u32)> = bare.iter().zip(&ca).map(|(b, c)| (b.1, c.1)).collect();
     assert_eq!(party_kit::balance::table().outgoing("halo_ce"), 0.75);
     println!("row: bare before/after, Combat Arms before/after");
     for (((name, _), b), a) in OUTGOING.iter().zip(&before).zip(&after) {
@@ -502,11 +544,14 @@ const HL2: [&str; 5] = ["hl2dm:weapon_pistol", "hl2dm:weapon_357", "hl2dm:weapon
 /// play and full: no armour on CS:S, the full gear on Combat Arms, a full
 /// shield on Halo.
 fn full_on(sim: &mut Sim, a: Entity, target: Entity, r: usize) {
-    line_up(sim, a, target, 3.0);
+    if crate::gun_game::rung(sim, target) != r {
+        set_rung(sim, target, r);
+    }
+    back_in_play(sim, a, target);
     if crate::gun_game::rung(sim, target) != r {
         set_rung(sim, target, r);
         sim.seconds(1.2);
-        line_up(sim, a, target, 3.0);
+        back_in_play(sim, a, target);
     }
     match r {
         0 => {
@@ -538,6 +583,7 @@ fn hl2_rows(scale: f32) -> Vec<(&'static str, f32, f32, [u32; 3])> {
     let a = soldier(&mut sim);
     let b = soldier(&mut sim);
     sim.seconds(1.5);
+    sim.app.world_mut().entity_mut(b).insert(chimera_sim::minigame::runtime::RespawnDelay(0.3));
     let mut out = Vec::new();
     for id in HL2 {
         let (shot, _) = per_hit(&sim, id);
