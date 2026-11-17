@@ -74,6 +74,21 @@ impl Pick {
         }
     }
 
+    #[cfg(feature = "present")]
+    /// What a stepper over this pick knows (`chimera_ui::controls::
+    /// StepperRange`): its range, step and which end `value` is at; for
+    /// choices the longest label (they wrap round: no end).
+    pub fn stepper_range(&self, value: &str) -> chimera_ui::controls::StepperRange<'_> {
+        let r = chimera_ui::controls::StepperRange::new();
+        match self {
+            Pick::Choices(c) => r.longest(c.iter().map(|(_, l)| l.as_str()).max_by_key(|l| l.chars().count()).unwrap_or("")),
+            Pick::Range { min, max, step } => {
+                let v = value.trim().parse::<f32>().unwrap_or(*min);
+                r.range(*min, *max).step(*step).reached(v <= *min + 1e-4, v >= *max - 1e-4)
+            }
+        }
+    }
+
     /// What `value` shows as.
     pub fn shown(&self, value: &str) -> String {
         match self {
@@ -143,6 +158,17 @@ pub struct Setting {
 }
 
 impl Setting {
+    #[cfg(feature = "present")]
+    /// `Pick::stepper_range`, a percentage's scaled by 100 with its `%`.
+    pub fn stepper_range(&self, value: &str) -> chimera_ui::controls::StepperRange<'_> {
+        let r = self.pick.stepper_range(value);
+        if self.percent && matches!(self.pick, Pick::Range { .. }) {
+            r.scale(100.0).unit("%")
+        } else {
+            r
+        }
+    }
+
     /// What `value` shows as (`Pick::shown`, a percentage when `percent`).
     pub fn shown(&self, value: &str) -> String {
         match (&self.pick, value.trim().parse::<f32>()) {

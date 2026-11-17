@@ -20,7 +20,8 @@
 //!   `ToggleSlide`, `Pace::Normal`, a snap at motion scale 0; focus a
 //!   strip clipped to the track's bottom edge);
 //!   `segmented`; `slider` (track, fill, the default's mark, a slanted
-//!   thumb, the value); `stepper` (`-`, the value, `+`); their `_ex`
+//!   thumb, the value); `stepper` (`-`, the value, `+` in one slanted border, the value box
+//!   sized from its `StepperRange`, a key at its end dimmed); their `_ex`
 //!   forms make the value box clickable and, while `Typing`, typed into
 //!   in place (a number, checked by `typed_number`: any finite number
 //!   inside the setting's hard limits); `dropdown` (a field with the
@@ -1072,42 +1073,65 @@ impl<'a> Ui<'a> {
         out
     }
 
-    /// A stepper: `-`, the value (`w` cq at least), `+`, on slanted
-    /// outlined keys 1.9 x 1.7 cq. Returns (minus, plus).
-    pub fn stepper(&self, c: &mut Commands, parent: Entity, value: &str, w: f32, st: State) -> (Entity, Entity) {
-        let p = self.stepper_ex(c, parent, value, w, st, None);
+    /// A stepper: one compact control, a single slanted border around
+    /// `-`, the value and `+` (keys 1.5 x 1.7 cq, no gaps), the value
+    /// box as wide as `range` asks (`StepperRange::width`). Returns
+    /// (minus, plus).
+    pub fn stepper(&self, c: &mut Commands, parent: Entity, value: &str, range: StepperRange, st: State) -> (Entity, Entity) {
+        let p = self.stepper_ex(c, parent, value, range, st, None);
         (p.minus, p.plus)
     }
 
     /// `stepper` with its value box clickable (a number typed in) and,
-    /// while `typing`, a text field in its place.
-    pub fn stepper_ex(&self, c: &mut Commands, parent: Entity, value: &str, w: f32, st: State, typing: Option<Typing>) -> StepperParts {
-        let g = self.boxed(c, parent, UiStyle { gap: Some(0.25), shrink: Some(0.0), ..UiStyle::row() });
-        let key = |c: &mut Commands, label: &str| {
+    /// while `typing`, a text field in its place. Parts, in order: minus,
+    /// value, plus, the border (an overlay that takes no room). A key at
+    /// its end of the range (`StepperRange::reached`) or a disabled
+    /// stepper is dimmed (still a node, so a click lands where it did).
+    pub fn stepper_ex(&self, c: &mut Commands, parent: Entity, value: &str, range: StepperRange, st: State, typing: Option<Typing>) -> StepperParts {
+        let g = c.spawn((UiStyle { shrink: Some(0.0), ..UiStyle::row() }, Node { align_self: AlignSelf::FlexStart, ..default() }, ChildOf(parent))).id();
+        let key = |c: &mut Commands, label: &str, dim: bool, edges: (bool, bool)| {
             let b = c
                 .spawn((
-                    UiStyle { w: Some(1.9), h: Some(1.7), justify: Some(JustifyContent::Center), ..UiStyle::row() },
+                    UiStyle { w: Some(STEPPER_KEY_W), h: Some(STEPPER_H), justify: Some(JustifyContent::Center), ..UiStyle::row() },
                     Node::default(),
                     BackgroundColor(Color::NONE),
-                    Hover { base: Color::NONE, over: Color::NONE },
                     clickable(),
                     ChildOf(g),
                 ))
                 .id();
-            c.spawn((
-                Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, ..default() },
-                UiSlant::new(Tone::Fg4, 1.0).outline(self.units.phys(self.units.hairline())),
-                Pickable::IGNORE,
-                ChildOf(b),
-            ));
-            self.text(c, b, Role::Mono, 0.8, Tone::Fg, label);
+            // The hover tint follows the border's slant at its own end.
+            if !dim {
+                c.spawn((
+                    Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, ..default() },
+                    UiSlant::new(Tone::Fg, 0.09).edges(edges.0, edges.1),
+                    Tick { always: false },
+                    Visibility::Hidden,
+                    Pickable::IGNORE,
+                    ChildOf(b),
+                ));
+            }
+            self.text(c, b, Role::Mono, 0.8, if dim { Tone::Fg4 } else { Tone::Fg }, label);
             b
         };
-        let minus = key(c, "-");
+        let off = st.disabled;
+        let minus = key(c, "-", off || range.at_min, (true, false));
         // As tall as the keys, so the focus underline sits under the
         // value with a gap, as the slider's and the fields' do.
+        let w = range.width(value);
         let value = self.value_box(c, g, value, w, st, typing, ValueLook::STEPPER);
-        let plus = key(c, "+");
+        let plus = key(c, "+", off || range.at_max, (false, true));
+        // The one border: the whole control's, leaning with the kit's slant.
+        let tone = if off { Tone::Fg5 } else if st.focus { Tone::Fg2 } else { Tone::Fg3 };
+        c.spawn((
+            Node { position_type: PositionType::Absolute, left: Val::ZERO, right: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, ..default() },
+            UiSlant::new(tone, 1.0).outline(self.units.phys(self.units.hairline())),
+            StepperBorder,
+            Pickable::IGNORE,
+            ChildOf(g),
+        ));
+        if off {
+            c.entity(value).insert(Pickable::IGNORE);
+        }
         StepperParts { minus, value, plus }
     }
 
@@ -1861,7 +1885,7 @@ struct ValueLook {
 
 impl ValueLook {
     const SLIDER: ValueLook = ValueLook { h: 1.6, pad: 0.4, size: 0.66, justify: JustifyContent::FlexEnd, rest_line: true };
-    const STEPPER: ValueLook = ValueLook { h: 1.7, pad: 0.3, size: 0.7, justify: JustifyContent::Center, rest_line: false };
+    const STEPPER: ValueLook = ValueLook { h: STEPPER_H, pad: 0.25, size: 0.7, justify: JustifyContent::Center, rest_line: false };
 }
 
 /// What `Ui::slider_ex` built: the track (the drag's) and the value box.
@@ -1882,6 +1906,95 @@ pub struct SearchParts {
 /// A search field's clear key (`Ui::search_field`).
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SearchClear;
+
+/// A stepper's key width and height, cq (the control's height too).
+pub const STEPPER_KEY_W: f32 = 1.5;
+pub const STEPPER_H: f32 = 1.7;
+
+/// The one border around a stepper's parts (`Ui::stepper_ex`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct StepperBorder;
+
+/// What a stepper knows of its setting, to size its value box and dim a
+/// key at an end (builder-style: `StepperRange::new().range(1.0, 65535.0)
+/// .step(1.0).unit("s").reached(at_min, at_max)`). With nothing set the
+/// box fits the value it shows.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StepperRange<'a> {
+    pub min: Option<f32>,
+    pub max: Option<f32>,
+    pub step: Option<f32>,
+    /// Shown after the number (a unit, a percent sign).
+    pub unit: &'a str,
+    /// The number is shown times this (a percentage: 100); 0: as is.
+    pub scale: f32,
+    /// A longest word the value may show (a stepper through labels).
+    pub longest: &'a str,
+    pub at_min: bool,
+    pub at_max: bool,
+}
+
+impl<'a> StepperRange<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn range(mut self, min: f32, max: f32) -> Self {
+        self.min = Some(min);
+        self.max = Some(max);
+        self
+    }
+
+    pub fn step(mut self, step: f32) -> Self {
+        self.step = Some(step);
+        self
+    }
+
+    pub fn unit(mut self, unit: &'a str) -> Self {
+        self.unit = unit;
+        self
+    }
+
+    pub fn scale(mut self, scale: f32) -> Self {
+        self.scale = scale;
+        self
+    }
+
+    pub fn longest(mut self, word: &'a str) -> Self {
+        self.longest = word;
+        self
+    }
+
+    /// Which ends the value has reached (their key dims).
+    pub fn reached(mut self, at_min: bool, at_max: bool) -> Self {
+        self.at_min = at_min;
+        self.at_max = at_max;
+        self
+    }
+
+    /// `v` as the box shows it: scaled, as many decimals as the step
+    /// has (at most two), then the unit.
+    fn text_of(&self, v: f32) -> String {
+        let k = if self.scale > 0.0 { self.scale } else { 1.0 };
+        let d = self.step.map_or(0, |s| (0..=2).find(|d| ((s * k * 10f32.powi(*d)).round() - s * k * 10f32.powi(*d)).abs() < 1e-3).unwrap_or(2) as usize);
+        format!("{:.d$}{}", v * k, self.unit)
+    }
+
+    /// The value box's width, cq: room for the longest of the min, the
+    /// max (each with the step's decimals and the unit), `longest` and
+    /// `value` itself, one Mono character `STEPPER_CHAR_W` cq at the
+    /// stepper's text size, a little padding; at least two characters.
+    pub fn width(&self, value: &str) -> f32 {
+        let mut n = value.chars().count().max(self.longest.chars().count()).max(2);
+        for v in [self.min, self.max].into_iter().flatten() {
+            n = n.max(self.text_of(v).chars().count());
+        }
+        n as f32 * STEPPER_CHAR_W + 0.7
+    }
+}
+
+/// One Mono character of a stepper's value, cq.
+const STEPPER_CHAR_W: f32 = 0.46;
 
 /// What `Ui::stepper_ex` built.
 #[derive(Clone, Copy, Debug)]

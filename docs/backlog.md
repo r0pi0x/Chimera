@@ -2479,6 +2479,13 @@ Plan: [plans/active/custom-maps.md](plans/active/custom-maps.md).
   so a 0-10 stepper is narrow and a 1-65535 one wider. Typing into the
   value (`_ex`, `Typing`) is unchanged. Update every stepper in Options
   and the Host page, and the gallery (`ui_gallery`), with screenshots.
+  *Done (2026-11-17):* one slanted border (`StepperBorder`) around keys
+  1.5 x 1.7 cq and the value, no gaps; the value box sized by a
+  `StepperRange` (min, max, step decimals, unit, scale, longest label)
+  that Options and the Party pages pass from the setting's own
+  `Pick::Range`; a key at its end of the range, or a disabled stepper,
+  dimmed; hover a slanted tint on the key. The gallery shows every
+  state.
 
 - **One component library, used everywhere (user, 2026-11-17).** The
   kit (`chimera_ui::controls`: `text_field`, `search_field`, `text_area`,

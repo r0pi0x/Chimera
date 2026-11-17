@@ -1971,7 +1971,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                     }
                 }
                 _ => {
-                    let (minus, plus) = ui.stepper(c, vl, &set.shown(&v), 7.0, vst);
+                    let (minus, plus) = ui.stepper(c, vl, &set.shown(&v), set.stepper_range(&v), vst);
                     c.entity(minus).insert(SettingsAction::Step { row: i, dir: -1 });
                     c.entity(plus).insert(SettingsAction::Step { row: i, dir: 1 });
                 }
