@@ -4860,6 +4860,30 @@ whose reads the first dressing makes; a dressing that missed files that
 arrive later keeps missing them until the app restarts (the module's
 known shortcuts).
 
+### Guest textures kept as blocks without decoding
+
+A kept guest dressing (above) dropped every whole-DXT texture's decoded
+texels and mip levels right after making them. Now the dressing runs on
+a map marked `map::BlocksOnly` and the Source games' material loader
+keeps those textures' blocks without decoding them
+(`MaterialLoader::blocks_only`); other textures decode as before. The
+kept textures are the same, field by field, and the dressing's bytes are
+the same (party_kit `heavy::converted::
+a_kept_dressing_skips_decoding_and_keeps_the_same_textures`, which
+prints these). Instructions of a cold dressing (this thread and the
+threads it starts, `InstructionCounter::current_with_children`; test
+profile, the second of two runs each):
+
+| | textures (blocks only) | decoded, then kept | kept without decoding | |
+|---|---|---|---|---|
+| CS:S | 306 (287) | 10,369 M | 4,053 M | 61% fewer |
+| HL2:DM | 233 (224) | 13,095 M | 10,015 M | 24% fewer |
+| TF2 | 454 (372) | 42,544 M | 18,587 M | 56% fewer |
+
+Combat Arms' kept models already skipped it (its `.dtx` decoding under
+the same memo); Halo's donors keep their decoded texels (nothing thrown
+away).
+
 ## First join download, 2026-11-14
 
 The playtest's first join downloaded "300+ MB". Measured from the asset

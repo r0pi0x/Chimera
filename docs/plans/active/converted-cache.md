@@ -248,6 +248,14 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   guest's dressing converted twice now encodes to the same bytes: CS:S
   225 MB, HL2:DM 180 MB, TF2 773 MB, Combat Arms 616 MB (party_kit
   `heavy::converted::a_guest_dressing_converted_twice_writes_the_same_bytes`).
+- **Step 2, done (2026-11-17):** a kept dressing (`map::BlocksOnly`)
+  no longer decodes its whole-DXT textures (`MaterialLoader::
+  blocks_only`); the kept textures and the dressing's bytes are the
+  same. A cold dressing: CS:S 10.4 G to 4.1 G instructions (61% fewer),
+  HL2:DM 13.1 G to 10.0 G (24%), TF2 42.5 G to 18.6 G (56%)
+  (docs/performance.md, "Guest textures kept as blocks without
+  decoding"). Combat Arms' kept models already did; Halo throws nothing
+  away.
 
 ## Steps
 

@@ -88,6 +88,19 @@ impl MapBc {
     }
 }
 
+/// A memo (`MapData::memos`) on a map whose parts are kept past it (a
+/// game's guest dressing kept for the session, a model loaded on its own
+/// to be kept): a texture added to it whose file holds whole DXT blocks
+/// keeps those alone (`MapTexture::keep_blocks_only`: no RGBA8 texels, no
+/// mip levels), what the GPU takes; a loader that sees it skips decoding
+/// those textures at all (the Source games' `MaterialLoader::blocks_only`,
+/// Combat Arms' `.dtx` decoding), so the kept result is the same as
+/// decoding and then dropping the texels, without the decoding. Nothing
+/// reads such textures' texels on the CPU while converting; the drawing
+/// decodes the blocks where the GPU takes no BC (`MapTexture::decoded`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BlocksOnly;
+
 impl MapTexture {
     /// Whether this texture is its blocks only (`keep_blocks_only`): no
     /// decoded texels, its BC copy whole.
