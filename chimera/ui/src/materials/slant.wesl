@@ -29,9 +29,12 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     let xl = shape.y * (h - p.y) * tan;
     let xr = w - shape.z * p.y * tan;
     let span = max(xr - xl, 0.0);
+    // A cut leans only on a side whose own edge is upright: on a slanted
+    // one the span already follows the slant, and a second lean made the
+    // cut overshoot the edge by one lean until it ended (then snap back).
     let lean = stroke.y * (h - p.y) * tan;
-    let a = xl + wipe.x * span + select(0.0, lean, wipe.x > 0.0);
-    let b = xr - wipe.y * span + select(0.0, lean, wipe.y > 0.0);
+    let a = xl + wipe.x * span + select(0.0, lean * (1.0 - shape.y), wipe.x > 0.0);
+    let b = xr - wipe.y * span + select(0.0, lean * (1.0 - shape.z), wipe.y > 0.0);
     // Horizontal distance to a slanted edge times cos(angle) is the
     // perpendicular distance; one physical pixel of ramp.
     let c = inverseSqrt(1.0 + tan * tan);

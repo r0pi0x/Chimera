@@ -15,7 +15,7 @@
 //! (`EscMenu::focus`: ↑↓ and Enter, or the pointer while it leads,
 //! `chimera_ui::PointerLead`) a white slab with a slanted right
 //! edge and the accent bar, wiping to its new row along the slant
-//! (`layout.esc.wipe`); hover the faint tint and the right-edge tick. A
+//! (`layout.esc.wipe`); hover the faint tint (one highlight at a time: no tick over the slab). A
 //! running vote dims its entry and shows the question, the counts, a pip
 //! per vote needed, the seconds left and Vote yes (F1) / Vote no (F2).
 //! The host's Disconnect asks first in a modal with the threat bar ("End
@@ -31,7 +31,7 @@
 use bevy::prelude::*;
 use chimera_ui::{
     IconImages, Role, ShadeMaterial, Tone, UiSlant, UiStyle,
-    controls::{Kind, NOTE, SENTENCE, State, Tick, Ui, Wipe},
+    controls::{Kind, NOTE, SENTENCE, State, Ui, Wipe},
     widgets::{self, TagKind},
     Prop, Timeline, Track,
 };
@@ -215,17 +215,6 @@ fn entry(c: &mut Commands, ui: &Ui, list: Entity, i: usize, e: &ShownEntry, d: &
         Some(k) => ui.text(c, b, Role::Mono, 0.52, small, k),
         None => ui.text(c, b, Role::Mono, 0.8, small, "▸"),
     };
-    if !off {
-        // Hover's tick (the slab shows the selection).
-        c.spawn((
-            Tick { always: false },
-            Node { position_type: PositionType::Absolute, right: ui.units.val(0.45), top: percent(30.0), bottom: percent(30.0), width: ui.units.val(0.42), ..default() },
-            UiSlant::new(if sel { Tone::Ink } else { Tone::Fg }, 1.0),
-            Visibility::Hidden,
-            Pickable::IGNORE,
-            ChildOf(b),
-        ));
-    }
 }
 
 fn vote_box(c: &mut Commands, ui: &Ui, panel: Entity, v: &VoteShown) {

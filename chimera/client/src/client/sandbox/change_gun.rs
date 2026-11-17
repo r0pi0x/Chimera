@@ -636,8 +636,11 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
         .spawn((UiStyle { w: Some(25.0), gap: Some(0.5), pad: Some([0.0, 0.0, 0.0, 1.2].into()), shrink: Some(0.0), ..UiStyle::column() }, Node::default(), UiParityId::new("gun.detail"), ChildOf(body)))
         .id();
     // The foot: the keys, the pinned bar at the right.
-    let foot = ui.boxed(&mut c, root, UiStyle { align: Some(AlignItems::FlexEnd), shrink: Some(0.0), ..UiStyle::row() });
-    let keys = ui.boxed(&mut c, foot, UiStyle { gap: Some(1.1), align: Some(AlignItems::Center), h: Some(2.6), ..UiStyle::row() });
+    // The hints wrap (and give way to the pinned bar, which never leaves
+    // the screen): at any aspect ratio the hotbar stays in view.
+    let foot = ui.boxed(&mut c, root, UiStyle { gap: Some(1.5), align: Some(AlignItems::FlexEnd), shrink: Some(0.0), ..UiStyle::row() });
+    let keys = ui.boxed(&mut c, foot, UiStyle { gap: Some(1.1), align: Some(AlignItems::Center), min_w: Some(0.0), grow: Some(1.0), shrink: Some(1.0), ..UiStyle::row() });
+    c.entity(keys).insert(Node { flex_wrap: FlexWrap::Wrap, row_gap: look.val(0.3), ..default() });
     for (k, w) in [
         ("\u{2191}\u{2193}\u{2190}\u{2192}", "Tile"),
         ("Enter", "Switch, or fold"),
@@ -652,8 +655,7 @@ fn open_close(look: Look, ui_state: Res<SandboxUi>, parts: Option<Res<Parts>>, m
     ] {
         key_hint(&mut c, &ui, keys, k, w, 0.5, Tone::Fg2);
     }
-    ui.boxed(&mut c, foot, UiStyle { grow: Some(1.0), ..UiStyle::row() });
-    let pins = ui.boxed(&mut c, foot, UiStyle { gap: Some(0.9), align: Some(AlignItems::Center), ..UiStyle::row() });
+    let pins = ui.boxed(&mut c, foot, UiStyle { gap: Some(0.9), align: Some(AlignItems::Center), shrink: Some(0.0), ..UiStyle::row() });
     let pop = c.spawn((Node { position_type: PositionType::Absolute, ..default() }, GlobalZIndex(Z + 2), ChildOf(root))).id();
     c.insert_resource(Parts { root, search, games, bar, detail, pins, pop, view: list.scroll.view, size });
 }
@@ -713,36 +715,72 @@ fn draw(
         return;
     }
     let ui = Ui::new(&look.theme, look.fonts.as_deref(), *look.units);
-    // Rebuild every part (they're small; the grid is the list's own).
-    for e in [p.search, p.games, p.bar, p.detail, p.pins, p.pop] {
-        c.entity(e).despawn_children();
+    // Rebuild only the parts whose inputs changed (a click on a tile
+    // changes the detail, not the games, the bar or the pins): what stays
+    // is not drawn again, so nothing flickers.
+    let strip = |v: &super::model::GunView| {
+        let mut v = v.clone();
+        v.selected = None;
+        v.body = None;
+        v.detail = Default::default();
+        v
+    };
+    let (new_all, prev_s) = (prev.is_none(), prev.as_ref());
+    let search_changed = new_all || prev_s.is_some_and(|o| o.view.search != next.view.search || o.view.search_focus != next.view.search_focus);
+    let side_changed = new_all
+        || prev_s.is_some_and(|o| {
+            strip(&o.view) != strip(&next.view) || o.progress != next.progress || o.catalogue != next.catalogue || o.grid_count != next.grid_count
+        });
+    let detail_changed = new_all
+        || prev_s.is_some_and(|o| {
+            o.view.selected != next.view.selected
+                || o.view.body != next.view.body
+                || o.view.detail != next.view.detail
+                || o.variants != next.variants
+                || o.progress != next.progress
+                || o.pins != next.pins
+        });
+    let pins_changed = new_all || prev_s.is_some_and(|o| o.pins != next.pins || o.current != next.current || o.drop != next.drop || o.dragging != next.dragging);
+    if search_changed {
+        c.entity(p.search).despawn_children();
+        search_field(&mut c, &ui, &look, p.search, &next.view.search, next.view.search_focus);
     }
-    search_field(&mut c, &ui, &look, p.search, &next.view.search, next.view.search_focus);
-    games_column(&mut c, &ui, p.games, &cat.guns, &ui_state, &progress);
-    filter_bar(&mut c, &ui, &look, p.bar, &ui_state, next.grid_count, &cat.guns, &progress);
-    if let Some(g) = ui_state.view.selected.as_deref().and_then(|id| cat.get(id)) {
-        let variants: Vec<&SandboxGun> = next.variants.iter().filter_map(|i| cat.guns.get(*i)).collect();
-        detail(&mut c, &ui, &look, p.detail, g, &variants, &progress, ui_state.view.detail, ui_state.pins.slot_of(&g.id), ui_state.view.body.as_deref());
-    }
-    let hint = ui.boxed(&mut c, p.pins, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
-    let ghost = ui_state.drag.as_ref().and_then(|d| Some((d.over?, face(&d.gun))));
-    match &ghost {
-        Some((slot, g)) => {
-            ui.mark(&mut c, hint, Tone::Acc, 0.3, 0.7);
-            let old = next.pins.get(*slot).cloned().flatten().map(|o| o.name);
-            let t = ui.text(&mut c, hint, Role::Mono, 0.46, Tone::Fg, &super::model::drop_hint(&g.name, *slot, old.as_deref()));
-            c.entity(t).insert(UiParityId::new("gun.drop.hint"));
+    if side_changed {
+        for e in [p.games, p.bar, p.pop] {
+            c.entity(e).despawn_children();
         }
-        None => {
-            ui.text(&mut c, hint, Role::Mono, 0.46, Tone::Fg, "Ctrl+1-6 on a tile, or drag a gun here");
+        games_column(&mut c, &ui, p.games, &cat.guns, &ui_state, &progress);
+        filter_bar(&mut c, &ui, &look, p.bar, &ui_state, next.grid_count, &cat.guns, &progress);
+        if ui_state.view.tags_open {
+            tag_popover(&mut c, &ui, &look, p.pop, &ui_state);
         }
     }
-    let slots = pin_bar(&mut c, &ui, &look, p.pins, &next.pins, next.current.as_deref().and_then(|g| ui_state.pins.slot_of(g)), ghost, 0.72, 1.0);
-    for (i, s) in slots.into_iter().enumerate() {
-        c.entity(s).insert((PinDrop(i), RelativeCursorPosition::default()));
+    if detail_changed {
+        c.entity(p.detail).despawn_children();
+        if let Some(g) = ui_state.view.selected.as_deref().and_then(|id| cat.get(id)) {
+            let variants: Vec<&SandboxGun> = next.variants.iter().filter_map(|i| cat.guns.get(*i)).collect();
+            detail(&mut c, &ui, &look, p.detail, g, &variants, &progress, ui_state.view.detail, ui_state.pins.slot_of(&g.id), ui_state.view.body.as_deref());
+        }
     }
-    if ui_state.view.tags_open {
-        tag_popover(&mut c, &ui, &look, p.pop, &ui_state);
+    if pins_changed {
+        c.entity(p.pins).despawn_children();
+        let hint = ui.boxed(&mut c, p.pins, UiStyle { gap: Some(0.5), align: Some(AlignItems::Center), ..UiStyle::row() });
+        let ghost = ui_state.drag.as_ref().and_then(|d| Some((d.over?, face(&d.gun))));
+        match &ghost {
+            Some((slot, g)) => {
+                ui.mark(&mut c, hint, Tone::Acc, 0.3, 0.7);
+                let old = next.pins.get(*slot).cloned().flatten().map(|o| o.name);
+                let t = ui.text(&mut c, hint, Role::Mono, 0.46, Tone::Fg, &super::model::drop_hint(&g.name, *slot, old.as_deref()));
+                c.entity(t).insert(UiParityId::new("gun.drop.hint"));
+            }
+            None => {
+                ui.text(&mut c, hint, Role::Mono, 0.46, Tone::Fg, "Ctrl+1-6 on a tile, or drag a gun here");
+            }
+        }
+        let slots = pin_bar(&mut c, &ui, &look, p.pins, &next.pins, next.current.as_deref().and_then(|g| ui_state.pins.slot_of(g)), ghost, 0.72, 1.0);
+        for (i, s) in slots.into_iter().enumerate() {
+            c.entity(s).insert((PinDrop(i), RelativeCursorPosition::default()));
+        }
     }
     *last = Some((p.root, next));
 }
@@ -1017,11 +1055,42 @@ fn bind(
     progress: Res<UnitProgress>,
     ui_state: Res<SandboxUi>,
     slots: Query<(Entity, &VSlot), Changed<VSlot>>,
+    owners: Query<&chimera_ui::vlist::VirtualList>,
+    mut stamp: Local<(Option<(UnitProgress, usize, usize, super::model::Pins, (u32, u32))>, u64)>,
+    mut shown: Local<std::collections::BTreeMap<Entity, (usize, Option<usize>, bool, u64)>>,
     mut c: Commands,
 ) {
     let Some(st) = lists.get(LIST) else { return };
+    // A slot is drawn again only when what its line shows changed: its
+    // line, its cursor (a click moves it between two tiles), its fold, or
+    // the data under all of them. The rest stays as it is: no flicker.
+    let data = (progress.clone(), cat.guns.len(), grid.0.iter().map(|s| s.1.len()).sum::<usize>(), ui_state.pins.clone(), (look.units.height as u32, (look.units.scale_factor * 100.0) as u32));
+    if stamp.0.as_ref() != Some(&data) {
+        stamp.0 = Some(data);
+        stamp.1 += 1;
+    }
     let ui = Ui::new(&look.theme, look.fonts.as_deref(), *look.units);
     for (slot, s) in &slots {
+        // Only this list's slots (every list's slots change on one query).
+        if !owners.get(s.list).is_ok_and(|l| l.key == LIST) {
+            continue;
+        }
+        let key = s.line.and_then(|l| st.layout.lines.get(l).map(|ln| (l, *ln))).map(|(l, ln)| match ln {
+            VLine::Header(sec) => (l, None, st.cursor == Some(VCursor::Header(sec)), stamp.1 + if st.is_folded(sec) { 1 << 40 } else { 0 }),
+            VLine::Row { section, first, count } => {
+                let on = (first..first + count).find(|i| st.cursor == Some(VCursor::Item(section, *i))).map(|i| i - first);
+                (l, on, false, stamp.1)
+            }
+        });
+        match key {
+            Some(k) if shown.get(&slot) == Some(&k) => continue,
+            Some(k) => {
+                shown.insert(slot, k);
+            }
+            None => {
+                shown.remove(&slot);
+            }
+        }
         c.entity(slot).despawn_children();
         let Some(line) = s.line.and_then(|l| st.layout.lines.get(l)) else { continue };
         match *line {
