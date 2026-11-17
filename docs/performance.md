@@ -4773,6 +4773,31 @@ at its start (`console::unload_to_menu`), and leaving kicks the bots
 (`main_menu::no_game_behind`). Test: `party_kit`
 `main_menu::leaving_a_hosted_game_takes_its_bots_and_map_and_loads_nothing`.
 
+### The code-built maps' kit (measured, not changed yet)
+
+The greybox's (and the range's) kit, dressed on the main thread by
+`console::load_code_map` (a sandbox's start, `map greybox`), the time of
+each game's dressing now in the log (`map dressing: <game>'s parts on
+<map> in N ms`, info from 100 ms; `MapSources::dress`). Playtest
+profile, two loads in one run (cold, then warm; ms):
+
+| | cold | warm |
+|---|---|---|
+| Combat Arms (its models converted once per install, `shared_character_models`) | 672-1,267 | 152-196 |
+| CS:S's guest parts: bodies 270-450, guns 120-300, HUD, sounds, looks, textures' finish 250 | 730-1,365 | 867-914 |
+| HL2:DM's guest parts: its 19 bodies 960-1,300, held, view models, every sound it plays 110-320, looks, textures' finish 110-240 | 1,511-2,242 | 1,410-1,475 |
+| in all | 2,900-4,900 | 2,430-2,690 |
+
+The cause: the Source games' guest dressings (`bsp::dress_guest`,
+`hl2dm::maps::dress_guest_with`) convert every body, gun and sound again
+on each map load, with nothing kept for the session (Combat Arms keeps
+its converted models), and the code-built maps' kit loads on the main
+thread where a map's loads run on a task. The same guest work is in
+every map's load (on its task there). What would take it to tens of ms:
+the guests' converted bodies and guns kept per install as Combat Arms'
+are (`append_shared`'s texture shift), only the ladder's games dressed,
+and the kit loaded on the map load's task.
+
 ## First join download, 2026-11-14
 
 The playtest's first join downloaded "300+ MB". Measured from the asset
