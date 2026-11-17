@@ -69,7 +69,7 @@ const PLAIN: GameServer = GameServer {
     hooks: ServerHooks::NONE,
 };
 
-static PLAIN_SERVER: GameServer = PLAIN;
+pub(super) static PLAIN_SERVER: GameServer = PLAIN;
 
 /// The greybox at 32 Hz, the map cycle, the map's file, twelve players.
 static HOOKED: GameServer = GameServer {
@@ -137,7 +137,7 @@ static MINIGAME: GameServer = GameServer {
 struct Launched;
 
 /// `server` from its command line, its console lines run.
-fn server(server: &'static GameServer, args: &[&str]) -> Sim {
+pub(super) fn server(server: &'static GameServer, args: &[&str]) -> Sim {
     let Ok(Parsed::Run(options)) = server.parse(args.iter().map(|s| s.to_string())) else {
         panic!("options")
     };

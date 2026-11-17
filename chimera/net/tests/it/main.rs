@@ -15,6 +15,7 @@ mod data_formats;
 mod dedicated;
 mod dedicated_change;
 mod game_hooks;
+mod hub;
 mod install_setting;
 mod local_load;
 mod minigame_callouts;

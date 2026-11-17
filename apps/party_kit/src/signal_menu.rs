@@ -27,9 +27,11 @@
 //! - **The shell's bar** (`chimera_ui::shell::bar`, the lockup's place
 //!   at its left): the party (your avatar with its edge strip, the "+"),
 //!   Friends, Settings (`MainMenuAction::OpenSettings`) and Report a bug.
-//! - **News** (`MenuNews`): the server's news card above the key hints,
-//!   hidden while there is none (`menu_news` sets it by hand; the asset
-//!   service's news line will fill it).
+//! - **News** (`MenuNews`): the hub's news card above the key hints,
+//!   hidden while there is none: the hub's newest news with a Dismiss
+//!   button, else its MOTD, or that a newer build is needed
+//!   (`signal_pages::hub_news` fills it from `chimera_net::net::hub::Hub`;
+//!   `menu_news` sets it by hand).
 //! - **Keys** along the foot (Select, Confirm, F10 Report a bug), the
 //!   backdrop's caption and its tabs (A, B, C with a dwell bar) bottom
 //!   right, the rule of the game up the right edge.
@@ -48,7 +50,7 @@
 //!
 //! Known shortcuts: no text glow (Bevy UI has no blur); the highlight's glow is
 //! left out; Friends and the party's "+" are disabled (no friends or
-//! parties yet); nothing sends news yet.
+//! parties yet).
 
 use bevy::{prelude::*, ui::FocusPolicy};
 use chimera_client::client::{logo_pass::ReduceMotion, widgets};
@@ -213,7 +215,7 @@ impl Plugin for SignalMenuPlugin {
         use chimera_core::console::ConsoleAppExt;
         app.console_command(
             "chimera:menu_news",
-            "menu_news [<title> | <body> | <source>]: the main menu's news card (none: hidden; the asset service will send it).",
+            "menu_news [<title> | <body> | <source>]: the main menu's news card (none: hidden; the hub's news fills it).",
             |w, a| {
                 let line = a.join(" ");
                 let mut parts = line.split('|').map(str::trim);
@@ -223,6 +225,7 @@ impl Plugin for SignalMenuPlugin {
                         title: title.to_string(),
                         body: parts.next().unwrap_or_default().to_string(),
                         source: parts.next().unwrap_or_default().to_string(),
+                        dismiss: None,
                     }),
                 };
                 w.resource_mut::<MenuNews>().0 = news;
@@ -238,11 +241,14 @@ pub struct News {
     pub title: String,
     pub body: String,
     pub source: String,
+    /// The hub's news item it is (its id): the card has a Dismiss button
+    /// (`MainMenuAction::NewsDismiss`). None: nothing to dismiss.
+    pub dismiss: Option<String>,
 }
 
-/// The main menu's news card, from the server (the asset service) when it
-/// sends one; hidden while None. The seam: whatever fetches the server's
-/// news writes it here (`menu_news` sets it by hand).
+/// The main menu's news card, from the hub when it has something to say
+/// (`signal_pages::hub_news`); hidden while None. The seam: whatever
+/// fetches news writes it here (`menu_news` sets it by hand).
 #[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
 pub struct MenuNews(pub Option<News>);
 
@@ -619,6 +625,11 @@ fn spawn_page(
         if !n.body.is_empty() {
             let tx = ui.boxed(c, card, UiStyle { w_pct: Some(100.0), ..UiStyle::column() });
             ui.paragraph(c, tx, Role::Text, 0.8, Tone::Fg2, &n.body);
+        }
+        if n.dismiss.is_some() {
+            let foot = ui.boxed(c, card, UiStyle { margin: Some([0.2, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
+            let b = ui.button(c, foot, chimera_ui::controls::Kind::Secondary, "Dismiss", None, 1.7, chimera_ui::controls::State::NONE);
+            c.entity(b).insert(MainMenuAction::NewsDismiss);
         }
     }
     if let Some(b) = parts.bar {

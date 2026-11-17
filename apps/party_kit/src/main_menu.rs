@@ -839,8 +839,12 @@ pub enum MainMenuAction {
     },
     /// Join a server of the LAN list (`signal_pages::LanList`'s index).
     Server(usize),
-    /// Scan the LAN again.
+    /// Scan the LAN again (and ask the hub's list again).
     Refresh,
+    /// The Internet tab: other apps' servers too, or this app's only.
+    BrowserAllGames,
+    /// Dismiss the news the main menu's card shows (the hub's).
+    NewsDismiss,
     /// Cancel the load or the join (`disconnect`).
     Cancel,
     /// Close the failure box.
@@ -906,6 +910,11 @@ impl Plugin for MainMenuPlugin {
         // game (`player_on_entering`).
         app.insert_resource(chimera_client::client::NoPlayerAtMenu { at_start: self.at_start });
         app.insert_resource(OwedPlayer(self.at_start));
+        // The hub of this machine's account (the Internet tab, the news
+        // card): not in a tool run or a test, which keep and ask nothing.
+        if self.keep_recent {
+            app.add_systems(Startup, chimera_net::net::hub::use_user_hub);
+        }
         app.insert_resource(data)
             .insert_resource(last)
             .init_resource::<BackgroundState>()
@@ -1583,6 +1592,8 @@ fn act_one(world: &mut World, action: MainMenuAction) {
             connect(world, &address, &menu.password);
         }
         A::Refresh => crate::signal_pages::scan(world),
+        A::BrowserAllGames => crate::signal_pages::toggle_all_games(world),
+        A::NewsDismiss => crate::signal_pages::dismiss_news(world),
         A::BrowserTab(t) => crate::signal_pages::set_tab(world, t),
         A::Favourite(i) => crate::signal_pages::toggle_favourite(world, i),
         A::PasswordCancel => {

@@ -213,6 +213,7 @@ pub mod delta;
 pub mod formats;
 pub mod game;
 pub mod http;
+pub mod hub;
 pub mod interp;
 pub mod mapfx;
 pub mod manifest;
@@ -1469,6 +1470,7 @@ impl Plugin for NetPlugin {
         decals::plugin(app);
         udp::plugin(app);
         upnp::plugin(app);
+        hub::plugin(app);
         voice::plugin(app);
         query::plugin(app);
         memory::plugin(app);
@@ -1768,6 +1770,9 @@ pub fn status(world: &mut World) -> String {
             });
             if let Some(line) = world.resource::<upnp::Upnp>().state.line() {
                 out.push(format!("upnp    : {line}"));
+            }
+            if let Some(line) = world.get_resource::<hub::HubListing>().and_then(|l| l.state.line()) {
+                out.push(format!("hub     : {line}"));
             }
             if let Some(t) = world.get_resource::<udp::UdpServer>() {
                 let q = &t.queries;

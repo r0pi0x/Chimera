@@ -417,6 +417,17 @@ impl TicketAuth {
         self.revoked.clone()
     }
 
+    /// A `services` ticket's claims at `now`: checked with the keys and
+    /// the revocations as last read. `Err(None)`: revoked; `Err(Some)`:
+    /// refused, and why (the hub uses the claims' rights).
+    pub fn check(&self, token: &str, now: u64) -> Result<crate::ticket::Claims, Option<String>> {
+        let claims = self.keys().check(token, crate::ticket::SERVICES, now).map_err(|e| Some(e.to_string()))?;
+        if self.revoked.read().unwrap_or_else(|e| e.into_inner()).refuses(&claims) {
+            return Err(None);
+        }
+        Ok(claims)
+    }
+
     fn keys(&self) -> crate::ticket::TicketKeys {
         let stamp = fs::metadata(&self.keys_path).ok().and_then(|m| Some((m.modified().ok()?, m.len())));
         let mut cache = self.keys.lock().unwrap_or_else(|e| e.into_inner());
@@ -451,13 +462,11 @@ impl Authenticator for TicketAuth {
         if !token.starts_with(crate::ticket::PREFIX) {
             return None;
         }
-        let claims = match self.keys().check(token, crate::ticket::SERVICES, now()) {
+        let claims = match self.check(token, now()) {
             Ok(c) => c,
-            Err(e) => return Some(Verdict::Refused(e.to_string())),
+            Err(None) => return Some(Verdict::Revoked),
+            Err(Some(e)) => return Some(Verdict::Refused(e)),
         };
-        if self.revoked.read().unwrap_or_else(|e| e.into_inner()).refuses(&claims) {
-            return Some(Verdict::Revoked);
-        }
         Some(Verdict::Granted(Principal {
             kind: "account".into(),
             name: claims.username.clone(),

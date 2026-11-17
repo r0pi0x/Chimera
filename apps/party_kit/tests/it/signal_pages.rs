@@ -367,7 +367,8 @@ fn the_window_keeps_the_focused_row_in_view() {
     assert_eq!(sl::scroll_by(3, 5, 12, 8), 4, "not past the end");
     assert_eq!(sl::scroll_by(0, 2, 12, 8), 2);
     assert_eq!(sl::clamp_offset(9, 10, 8), 2);
-    assert_eq!(BrowserTab::Lan.step(-1), BrowserTab::Lan);
+    assert_eq!(BrowserTab::Lan.step(-1), BrowserTab::Internet);
+    assert_eq!(BrowserTab::Internet.step(-1), BrowserTab::Internet);
     assert_eq!(BrowserTab::Lan.step(1), BrowserTab::Favourites);
     assert_eq!(BrowserTab::History.step(1), BrowserTab::History);
 }
@@ -551,7 +552,7 @@ fn tabs_favourites_and_history_keep_to_their_files() {
     assert!(sim.app.world().resource::<LanList>().rows().is_empty());
     assert!(files.read_favourites().is_empty());
     // Joining a server records it, newest first, in its file; History lists it.
-    act(&mut sim, A::BrowserTab(0));
+    act(&mut sim, A::BrowserTab(BrowserTab::Lan.index()));
     for _ in 0..6 {
         if lines_of(&sim).get(pages(&sim).focus) != Some(&Line::Server(0)) {
             press(&mut sim, KeyCode::ArrowDown);
@@ -568,7 +569,7 @@ fn tabs_favourites_and_history_keep_to_their_files() {
         act(&mut sim, A::Back);
     }
     act(&mut sim, A::Entry(1));
-    act(&mut sim, A::BrowserTab(2));
+    act(&mut sim, A::BrowserTab(BrowserTab::History.index()));
     let lan = sim.app.world().resource::<LanList>();
     assert_eq!(lan.tab, BrowserTab::History);
     assert_eq!(lan.rows().len(), 1);
@@ -705,4 +706,275 @@ fn recent_joins_are_listed_again_and_join_on_enter() {
     assert_eq!(menu(&sim).recent, ["192.0.2.9:27015", "192.0.2.7:27016"]);
     let nine: SocketAddr = "192.0.2.9:27015".parse().unwrap();
     assert_eq!(sim.app.world().resource::<LanList>().visits[0].addr, nine, "newest first in the History");
+}
+
+// ---------------------------------------------------------------------------
+// The Internet tab (the hub's list, docs/plans/active/hub.md 4.3).
+
+use chimera_net::net::hub::{ClientInfo, Discovery, Hub, HubGame, HubNews, Listing, Reach, ServerList};
+
+const OUR_GAME: &str = "ultimate_gun_game";
+
+/// A hub's listing of server `ip` (on this machine, a port nothing
+/// answers on: a query of it leaves this box nowhere).
+fn listing(ip: u8, name: &str, game: &str, net: &str) -> Listing {
+    Listing {
+        addr: format!("127.0.0.1:{}", 28200 + ip as u16),
+        lan: Vec::new(),
+        instance: format!("{:016x}", 0x1000 + ip as u64),
+        name: name.into(),
+        game: game.into(),
+        minigame: Some("ultimate_gun_game:auto".into()),
+        map: "de_dust2".into(),
+        players: 5,
+        max: 12,
+        bots: 1,
+        password: false,
+        dedicated: true,
+        net: net.into(),
+        reachable: Reach::Yes,
+        since: 0,
+        mine: false,
+        hint: None,
+    }
+}
+
+/// What the server listed as `l` answers at `addr` (None: its listed
+/// address), `ping_ms` away.
+fn answer(l: &Listing, addr: Option<&str>, ping_ms: u32) -> QueryResult {
+    let addr: SocketAddr = addr.unwrap_or(&l.addr).parse().unwrap();
+    let mut r = server(addr.port(), &l.name, ping_ms, l.password, GAME_FOLDER);
+    r.addr = addr;
+    r.lan = false;
+    if let QueryState::Answered { info, .. } = &mut r.state {
+        info.instance = u64::from_str_radix(&l.instance, 16).ok();
+        info.version = l.net.clone();
+    }
+    r
+}
+
+#[test]
+fn the_internet_list_is_the_hubs_asked_directly_and_sorted_by_ping() {
+    let far = listing(1, "Far", OUR_GAME, NET_VERSION);
+    let near = listing(2, "Near", OUR_GAME, NET_VERSION);
+    let asked = listing(3, "Still asked", OUR_GAME, NET_VERSION);
+    let silent = listing(4, "Silent", OUR_GAME, NET_VERSION);
+    let newer = listing(5, "Newer build", OUR_GAME, "0.9.9/net999");
+    let other = listing(6, "Another app", "lucker_party", NET_VERSION);
+    let mut home = listing(7, "Same router", OUR_GAME, NET_VERSION);
+    home.lan = vec!["192.168.1.40:27015".into()];
+    let impostor = listing(8, "Not that one", OUR_GAME, NET_VERSION);
+    let mut mine = listing(9, "My own", OUR_GAME, NET_VERSION);
+    (mine.mine, mine.reachable, mine.hint) = (true, Reach::No, Some("the hub can't reach UDP 27015".into()));
+    let list = vec![far.clone(), near.clone(), asked.clone(), silent.clone(), newer.clone(), other.clone(), home.clone(), impostor.clone(), mine.clone()];
+    let mut wrong = answer(&impostor, None, 1);
+    if let QueryState::Answered { info, .. } = &mut wrong.state {
+        info.instance = Some(0xdead);
+    }
+    let results = vec![
+        answer(&far, None, 140),
+        answer(&near, None, 18),
+        QueryResult { addr: asked.addr.parse().unwrap(), state: QueryState::Pending, lan: false },
+        QueryResult { addr: silent.addr.parse().unwrap(), state: QueryState::NoResponse, lan: false },
+        answer(&newer, None, 30),
+        answer(&other, None, 5),
+        // Reached both ways: the LAN address is the nearer one.
+        answer(&home, None, 44),
+        answer(&home, Some("192.168.1.40:27015"), 2),
+        // Another server answers at the impostor's address.
+        wrong,
+        QueryResult { addr: mine.addr.parse().unwrap(), state: QueryState::NoResponse, lan: false },
+    ];
+    let rows = sl::internet_servers(&list, &results, OUR_GAME, false, &|_| true);
+    let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+    // Answered by ping, then the one still asked, then the silent ones;
+    // the other app's server is left out.
+    assert_eq!(&names[..4], ["Same router", "Near", "Newer build", "Far"], "{names:?}");
+    assert_eq!(names[4], "Still asked");
+    assert_eq!(names.len(), 8, "{names:?}");
+    assert!(!names.contains(&"Another app"));
+    let row = |n: &str| rows.iter().find(|r| r.name == n).unwrap();
+    assert_eq!(row("Same router").addr, "192.168.1.40:27015".parse::<SocketAddr>().unwrap(), "joined over the LAN");
+    assert_eq!(row("Same router").ping_ms, 2);
+    // The hub's numbers fill a row until its server answers.
+    let a = row("Still asked");
+    assert_eq!((a.status, a.listed, a.players, a.max_players, a.map.as_str()), (Status::Asking, true, 5, 12, "de_dust2"));
+    assert_eq!(row("Silent").status, Status::Down);
+    assert_eq!(row("Not that one").status, Status::Down, "another instance's answer isn't its");
+    // Another build: greyed, and why.
+    let n = row("Newer build");
+    assert!(!n.same_version);
+    assert_eq!(n.note.as_deref(), Some("needs build 0.9.9/net999"));
+    // The player's own unreachable server carries the hub's hint.
+    assert_eq!(row("My own").note.as_deref(), Some("the hub can't reach UDP 27015"));
+    // Every game asked for: the other app's is listed, barred.
+    let all = sl::internet_servers(&list, &results, OUR_GAME, true, &|_| true);
+    let o = all.iter().find(|r| r.name == "Another app").expect("listed");
+    assert!(o.barred && o.note.as_deref().is_some_and(|n| n.contains("lucker party")), "{o:?}");
+    // A game the account isn't invited to: barred.
+    let barred = sl::internet_servers(&list, &results, OUR_GAME, false, &|_| false);
+    assert!(barred.iter().all(|r| r.barred));
+}
+
+#[test]
+fn the_hubs_list_is_asked_sixty_four_servers_at_once() {
+    let list: Vec<Listing> = (0..150u8).map(|i| Listing { addr: format!("203.0.113.{i}:27015"), ..listing(i, "S", OUR_GAME, NET_VERSION) }).collect();
+    let mut q = sl::HubQueue::default();
+    q.fill(&list);
+    let first = q.next(|_| true);
+    assert_eq!(first.len(), sl::MAX_QUERIES);
+    assert!(q.next(|_| true).is_empty(), "none while those are awaited");
+    // Ten answered: ten more asked.
+    let done: Vec<SocketAddr> = first[..10].to_vec();
+    assert_eq!(q.next(|a| !done.contains(&a)).len(), 10);
+    assert!(q.busy());
+    let mut asked = sl::MAX_QUERIES + 10;
+    while q.busy() {
+        asked += q.next(|_| false).len();
+    }
+    assert_eq!(asked, 150, "each once");
+}
+
+/// A signed-in hub with `list` (its account file nowhere: asking it again
+/// fails, as a hub that doesn't answer).
+fn hub_with(sim: &mut Sim, list: Vec<Listing>, doc: Option<Discovery>) {
+    let mut hub = Hub::at("https://hub.invalid", std::env::temp_dir().join("chimera_test_no_such_account.toml"));
+    hub.doc = doc;
+    hub.set_list(ServerList { servers: list, now: 0 });
+    sim.app.insert_resource(HubGame(OUR_GAME.into()));
+    sim.app.insert_resource(hub);
+}
+
+#[test]
+fn join_opens_on_the_internet_tab_and_joins_a_listed_server() {
+    let mut sim = sim(PAGES_THEME);
+    let (slow, fast, newer) = (listing(1, "Slow", OUR_GAME, NET_VERSION), listing(2, "Fast", OUR_GAME, NET_VERSION), listing(3, "Newer", OUR_GAME, "0.9.9/net999"));
+    hub_with(&mut sim, vec![slow.clone(), fast.clone(), newer.clone(), listing(4, "Elsewhere", "lucker_party", NET_VERSION)], None);
+    open_join_with(&mut sim, vec![answer(&slow, None, 90), answer(&fast, None, 9), answer(&newer, None, 20)]);
+    let lan = sim.app.world().resource::<LanList>().clone();
+    assert_eq!(lan.tab, BrowserTab::Internet, "signed in to a hub: its list first");
+    let names: Vec<&str> = lan.internet.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["Fast", "Newer", "Slow"], "by ping; another app's left out");
+    assert!(lan.servers.is_empty(), "none of them is a LAN server");
+    // The first row joins on Enter.
+    let first = lines_of(&sim).iter().position(|l| *l == Line::Server(0)).unwrap();
+    for _ in 0..first {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    // The other build's row is refused, and says which build it needs.
+    press(&mut sim, KeyCode::ArrowDown);
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(1);
+    assert!(asked(&sim).is_empty());
+    assert_eq!(pages(&sim).notice.as_deref(), Some("Newer needs build 0.9.9/net999"));
+    press(&mut sim, KeyCode::ArrowUp);
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(1);
+    assert_eq!(asked(&sim), ["connect 127.0.0.1:28202"]);
+    assert_eq!(menu(&sim).screen, Screen::Joining);
+}
+
+#[test]
+fn a_hub_that_does_not_answer_shows_its_last_list() {
+    let mut sim = sim(PAGES_THEME);
+    let s = listing(1, "Remembered", OUR_GAME, NET_VERSION);
+    hub_with(&mut sim, vec![s.clone()], None);
+    open_join_with(&mut sim, vec![answer(&s, None, 30)]);
+    // Opening Join asked the hub again; nothing answers (no account file).
+    for _ in 0..400 {
+        sim.ticks(1);
+        if sim.app.world().resource::<LanList>().hub.offline.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let lan = sim.app.world().resource::<LanList>();
+    assert!(lan.hub.offline.is_some() && lan.hub.has_list, "{:?}", lan.hub);
+    assert_eq!(lan.internet.len(), 1, "the last list stays");
+    assert_eq!(lan.internet[0].name, "Remembered");
+    // LAN is a key away, as ever (F2).
+    press(&mut sim, KeyCode::F2);
+    assert_eq!(sim.app.world().resource::<LanList>().tab, BrowserTab::Lan);
+    press(&mut sim, KeyCode::F1);
+    assert_eq!(sim.app.world().resource::<LanList>().tab, BrowserTab::Internet);
+}
+
+#[test]
+fn without_a_hub_join_opens_on_lan() {
+    let mut sim = sim(PAGES_THEME);
+    open_join_with(&mut sim, lan_results(2));
+    let lan = sim.app.world().resource::<LanList>();
+    assert_eq!(lan.tab, BrowserTab::Lan);
+    assert!(!lan.hub.signed_in && lan.internet.is_empty());
+}
+
+#[test]
+fn the_news_card_is_the_hubs_update_notice_then_its_news_then_its_motd() {
+    use party_kit::signal_menu::MenuNews;
+    let mut sim = sim(PAGES_THEME);
+    let doc = Discovery {
+        name: "Test hub".into(),
+        motd: "Playtest Saturday 13:00 UTC".into(),
+        news: vec![
+            HubNews { id: "a".into(), date: "2026-11-10".into(), title: "Old".into(), text: "Before.".into() },
+            HubNews { id: "b".into(), date: "2026-11-16".into(), title: "Three new maps".into(), text: "In the pool tonight.".into() },
+        ],
+        ..Default::default()
+    };
+    hub_with(&mut sim, Vec::new(), Some(doc.clone()));
+    sim.ticks(2);
+    let card = |sim: &Sim| sim.app.world().resource::<MenuNews>().0.clone();
+    let n = card(&sim).expect("the newest news");
+    assert_eq!((n.title.as_str(), n.body.as_str(), n.dismiss.as_deref()), ("Three new maps", "In the pool tonight.", Some("b")));
+    assert!(n.source.contains("Test hub") && n.source.contains("Playtest Saturday 13:00 UTC"), "the MOTD beside the hub's name: {}", n.source);
+    // Dismissed: the one before it, then the MOTD alone.
+    act(&mut sim, A::NewsDismiss);
+    assert_eq!(card(&sim).unwrap().title, "Old");
+    act(&mut sim, A::NewsDismiss);
+    let m = card(&sim).expect("the MOTD");
+    assert_eq!((m.title.as_str(), m.source.as_str(), m.dismiss), ("Playtest Saturday 13:00 UTC", "Test hub", None));
+    assert_eq!(sim.app.world().resource::<Hub>().dismissed, ["b".to_string(), "a".to_string()]);
+    // A build under the hub's floor: said first, on the card and over the
+    // browser; LAN and the rest work as before.
+    let old = Discovery { client: ClientInfo { min_net: 99_999, recommended_build: "9.9.9".into(), download: "example.invalid/releases".into() }, ..doc };
+    sim.app.world_mut().resource_mut::<Hub>().doc = Some(old);
+    sim.ticks(2);
+    let u = card(&sim).expect("the notice");
+    assert_eq!(u.title, signal_pages::UPDATE_TITLE);
+    assert!(u.body.contains("9.9.9") && u.body.contains("example.invalid/releases"), "{}", u.body);
+    open_join_with(&mut sim, lan_results(1));
+    let lan = sim.app.world().resource::<LanList>();
+    assert_eq!(lan.hub.update, Some(("9.9.9".to_string(), "example.invalid/releases".to_string())));
+    let banner = sim.app.world_mut().query::<&chimera_ui::UiParityId>().iter(sim.app.world()).filter(|p| p.0 == "join.update").count();
+    assert_eq!(banner, 1, "the banner over the browser");
+}
+
+#[test]
+fn ui_scene_stages_the_internet_tab() {
+    let mut sim = sim(PAGES_THEME);
+    signal_pages::stage(sim.app.world_mut(), MenuPage::Join, &["internet".into()]).unwrap();
+    sim.ticks(3);
+    let lan = sim.app.world().resource::<LanList>().clone();
+    assert_eq!(lan.tab, BrowserTab::Internet);
+    assert_eq!(lan.internet.len(), 9, "this app's servers of the made-up hub");
+    assert!(lan.internet.windows(2).take(6).all(|w| w[0].ping_ms <= w[1].ping_ms), "by ping");
+    assert!(lan.internet.iter().any(|r| !r.same_version) && lan.internet.iter().any(|r| r.status == Status::Asking));
+    assert_eq!(lan.internet.last().unwrap().status, Status::Down);
+    act(&mut sim, A::BrowserAllGames);
+    assert_eq!(sim.app.world().resource::<LanList>().internet.len(), 10, "every game's");
+    act(&mut sim, A::Back);
+    for (arg, check) in [("offline", 0), ("update", 1), ("nohub", 2)] {
+        signal_pages::stage(sim.app.world_mut(), MenuPage::Join, &[arg.into()]).unwrap();
+        sim.ticks(3);
+        let lan = sim.app.world().resource::<LanList>();
+        match check {
+            0 => assert!(lan.hub.offline.is_some() && !lan.internet.is_empty()),
+            1 => assert!(lan.hub.update.is_some()),
+            _ => assert!(!lan.hub.signed_in && lan.internet.is_empty()),
+        }
+        act(&mut sim, A::Back);
+    }
+    signal_pages::stage(sim.app.world_mut(), MenuPage::Join, &["off".into()]).unwrap();
+    sim.ticks(2);
+    assert!(sim.app.world().resource::<LanList>().internet.is_empty(), "nothing of the staging stays");
 }

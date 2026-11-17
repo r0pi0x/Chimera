@@ -24,8 +24,17 @@
 //!   bar, the eased wheel); ↑↓ keep the focused row in view
 //!   (`SignalPages::reveal`).
 //! - **Join**: Direct (the address and the password, text fields), the
-//!   recent addresses, and the **server browser** (main-menu.md M2; its
-//!   rows and files are `server_list`'s) in three tabs: **LAN** (every
+//!   recent addresses, and the **server browser** (main-menu.md M2 and
+//!   M3; its rows and files are `server_list`'s) in four tabs:
+//!   **Internet** (docs/plans/active/hub.md 4.3: the servers the
+//!   account's hub lists, `chimera_net::net::hub::Hub`, asked when the
+//!   page opens and on Refresh; each is then asked directly for its info
+//!   and ping, at most `server_list::MAX_QUERIES` at once, the hub's
+//!   numbers filling its row until it answers; another build's server is
+//!   greyed with "needs build ...", another app's left out unless All
+//!   games is on; without an account the tab says how to sign in, with
+//!   the hub not answering it shows the last list, marked; the tab the
+//!   page opens on when signed in to a hub), **LAN** (every
 //!   server of ours `ServerQueries`' LAN scan found: name, minigame from
 //!   its keywords, map, players/max, bots, ping, a password mark, sorted
 //!   by ping; scanned when the page opens, Refresh (F5) again),
@@ -41,7 +50,7 @@
 //! - **Keys**: ↑↓ (and Tab) move the focus through the rows, ←→ change a
 //!   value (on Join, not typing: the browser's tab), Space toggles, Q/E
 //!   (PageUp/PageDown) the Play tabs (not while typing; on a server row
-//!   PageUp/PageDown move a window), F2 F3 F4 the browser's tabs, F
+//!   PageUp/PageDown move a window), F1 F2 F3 F4 the browser's tabs, F
 //!   (not typing) favourites or drops the focused server, F5 refreshes,
 //!   Q/E (not typing) the browser's tabs (their caps at the strip's ends),
 //!   Enter the page's button, Esc back or closes the modal
@@ -52,13 +61,21 @@
 //!   12° slant (`Ui::wipe_cover`); the menu's cues (`ui_cues`: hover,
 //!   select, back, denied, the steppers' slider).
 //!
-//! `ui_scene play [server|game|maps]` (`maps`: the picker open) and `ui_scene join [lan|favourites|
-//! history|password]` stage them for screenshots (`join` with made-up
-//! servers, none of them saved).
+//! - **The hub's words**: a build older than the hub's servers take
+//!   (`client.min_net`) shows a banner over the browser, "A newer build
+//!   is needed for this hub's servers", with the build and the link (LAN,
+//!   Favourites, History and Direct work as before); the main menu's
+//!   news card (`signal_menu::MenuNews`) shows the same, else the hub's
+//!   newest news until dismissed, else its MOTD (`hub_news`).
+//!
+//! `ui_scene play [server|game|maps]` (`maps`: the picker open) and `ui_scene join [internet|lan|favourites|
+//! history|password|offline|update|nohub]` stage them for screenshots (`join` with made-up
+//! servers, none of them saved; `offline`: the hub not answering, its
+//! last list shown; `update`: the newer-build banner; `nohub`: no account).
 //!
 //! Known shortcuts: the server browser keeps its own window of
 //! `VISIBLE_ROWS` rows (PageUp/PageDown move by a window, a row index its
-//! first) rather than the kit's scroll container; no Internet list (M2's rest, M3); a Recent address
+//! first) rather than the kit's scroll container; a Recent address
 //! can't be made a favourite (only a listed server); no selection shown
 //! in a text field.
 
@@ -66,7 +83,10 @@ use std::net::SocketAddr;
 
 use bevy::{input::mouse::{MouseScrollUnit, MouseWheel}, prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_client::client::ui_sound::UiCue;
-use chimera_net::net::query::{LanSettings, QueryResult, QueryState, ServerInfo, ServerQueries};
+use chimera_net::net::{
+    hub::{Hub, HubGame, Listing},
+    query::{LanSettings, QueryResult, QueryState, ServerInfo, ServerQueries},
+};
 use chimera_ui::{
     AmbientMaterial, IconImages, KitFonts, Role, Theme, Tone, UiClock, UiStyle, UiUnits,
     controls::{Kind, NOTE, SENTENCE, State, Ui},
@@ -90,9 +110,46 @@ pub fn themed(theme: Option<&Theme>) -> bool {
     theme.is_some_and(|t| t.has_layout(L))
 }
 
+/// What the Internet tab says of the hub besides its rows.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HubView {
+    /// This machine has an account on a hub.
+    pub signed_in: bool,
+    /// The hub's name (its document's).
+    pub name: String,
+    /// The list is being asked.
+    pub busy: bool,
+    /// Why the last call failed (the hub offline, a refusal).
+    pub offline: Option<String>,
+    /// A list came at all (else nothing to show yet).
+    pub has_list: bool,
+    /// This build is too old for the hub's servers: the build to get and
+    /// where.
+    pub update: Option<(String, String)>,
+}
+
+/// The hub's list asked server by server (`server_list::HubQueue`; apart
+/// from `LanList` so asking doesn't redraw the page).
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct HubAsks(pub sl::HubQueue);
+
 /// The server browser's lists on Join (the LAN one gave it its name).
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct LanList {
+    /// The Internet tab's rows (`server_list::internet_servers`), the
+    /// hub's listings they are made from, this app's game on the hub,
+    /// the games the account may play (None: all) and whether other
+    /// apps' servers are listed too.
+    pub internet: Vec<LanServer>,
+    pub hub_list: Vec<Listing>,
+    pub hub_game: String,
+    pub hub_games: Option<Vec<String>>,
+    pub all_games: bool,
+    pub hub: HubView,
+    /// The hub's generation the listings were taken at, and when the
+    /// list they are came.
+    pub hub_generation: u64,
+    pub hub_listed: Option<std::time::Instant>,
     /// The LAN tab's rows, by ping.
     pub servers: Vec<LanServer>,
     /// The Favourites tab's rows (`fav_addrs`, answered first by ping).
@@ -123,6 +180,7 @@ impl LanList {
     /// The rows of the tab shown.
     pub fn rows(&self) -> &[LanServer] {
         match self.tab {
+            BrowserTab::Internet => &self.internet,
             BrowserTab::Lan => &self.servers,
             BrowserTab::Favourites => &self.favourites,
             BrowserTab::History => &self.history,
@@ -146,6 +204,11 @@ impl LanList {
         sl::sort_favourites(&mut favourites);
         let mut history = sl::listed(&self.visits.iter().map(|v| (v.addr, Some(v.when))).collect::<Vec<_>>(), results);
         history.iter_mut().for_each(|r| r.favourite = fav(&r.addr));
+        let games = self.hub_games.clone();
+        let may_play = |g: &str| games.as_ref().is_none_or(|l| l.iter().any(|x| x == "*" || x == g));
+        let mut internet = sl::internet_servers(&self.hub_list, results, &self.hub_game, self.all_games, &may_play);
+        internet.iter_mut().for_each(|r| r.favourite = fav(&r.addr));
+        self.internet = internet;
         (self.servers, self.favourites, self.history) = (servers, favourites, history);
         self.scroll = sl::clamp_offset(self.scroll, self.rows().len(), VISIBLE_ROWS);
     }
@@ -251,6 +314,7 @@ impl Plugin for SignalPagesPlugin {
             .init_resource::<crate::maps_picker::MapsSource>()
             .add_message::<crate::maps_picker::PickerAction>()
             .init_resource::<LanList>()
+            .init_resource::<HubAsks>()
             .init_resource::<BrowserFiles>()
             .init_resource::<ButtonInput<KeyCode>>()
             .add_message::<MouseWheel>()
@@ -263,7 +327,8 @@ impl Plugin for SignalPagesPlugin {
                     .before(crate::esc_menu::EscMenuSystems),
             )
             .add_systems(Update, crate::ui_cues::hover::<PageLine>.in_set(crate::main_menu::MainMenuSystems))
-            .add_systems(Update, (field_pointer, draw).chain().after(crate::main_menu::MainMenuSystems));
+            .add_systems(Update, (field_pointer, draw).chain().after(crate::main_menu::MainMenuSystems))
+            .add_systems(Update, hub_news.run_if(resource_exists::<crate::signal_menu::MenuNews>));
         use chimera_client::client::ui_scene::UiSceneHooks;
         UiSceneHooks::add(app.world_mut(), "play", |w, a| stage(w, MenuPage::Play, a));
         UiSceneHooks::add(app.world_mut(), "join", |w, a| stage(w, MenuPage::Join, a));
@@ -479,14 +544,28 @@ pub fn stage(w: &mut World, page: MenuPage, args: &[String]) -> Result<(), Strin
         l.fav_addrs = files.read_favourites();
         l.visits = files.read_history();
         l.tab = BrowserTab::Lan;
+        // The hub's list again from the `Hub` (none: no hub).
+        l.hub_list.clear();
+        l.hub = HubView::default();
+        l.all_games = false;
+        l.hub_generation = u64::MAX;
         l.dirty = true;
         return Ok(());
     }
     let arg = args.first().map(|a| a.to_ascii_lowercase());
+    // Join: the browser's tab, whether the password modal is up, and how
+    // the hub stands.
+    let (join_tab, hub_mode) = match arg.as_deref() {
+        Some("internet" | "hub") => (BrowserTab::Internet, "on"),
+        Some("offline") => (BrowserTab::Internet, "offline"),
+        Some("update") => (BrowserTab::Internet, "update"),
+        Some("nohub") => (BrowserTab::Internet, "nohub"),
+        Some("favourites" | "favorites" | "favs" | "1") => (BrowserTab::Favourites, "on"),
+        Some("history" | "2") => (BrowserTab::History, "on"),
+        _ => (BrowserTab::Lan, "on"),
+    };
     let tab = match (page, arg.as_deref()) {
-        (MenuPage::Join, Some("favourites" | "favorites" | "favs" | "1")) => 1,
-        (MenuPage::Join, Some("history" | "2")) => 2,
-        (MenuPage::Join, Some("password" | "3")) => 3,
+        (MenuPage::Join, Some("password" | "3")) => STAGE_ASK,
         (MenuPage::Play, Some("game" | "1")) => 1,
         _ => 0,
     };
@@ -528,12 +607,27 @@ pub fn stage(w: &mut World, page: MenuPage, args: &[String]) -> Result<(), Strin
         }
     }
     if page == MenuPage::Join {
+        let game = w.get_resource::<HubGame>().map(|g| g.0.clone()).unwrap_or_default();
         let mut l = w.resource_mut::<LanList>();
-        let (results, favs, visits) = staged_servers(sl::unix_now());
+        let (mut results, favs, visits) = staged_servers(sl::unix_now());
+        let (listings, answers) = staged_hub(&game);
+        results.extend(answers);
         l.staged_results = results;
         l.fav_addrs = favs;
         l.visits = visits;
-        l.tab = if tab < 3 { BrowserTab::from_index(tab) } else { BrowserTab::Lan };
+        l.tab = join_tab;
+        l.hub_list = if hub_mode == "nohub" { Vec::new() } else { listings };
+        l.hub_game = game;
+        l.hub_games = None;
+        l.all_games = args.get(1).is_some_and(|a| a == "all");
+        l.hub = HubView {
+            signed_in: hub_mode != "nohub",
+            name: if hub_mode == "nohub" { String::new() } else { "Friday hub".into() },
+            busy: false,
+            offline: (hub_mode == "offline").then(|| "the hub didn't answer".to_string()),
+            has_list: hub_mode != "nohub",
+            update: (hub_mode == "update").then(|| ("0.1.1".to_string(), "example.invalid/releases".to_string())),
+        };
         l.scroll = 0;
         l.staged = true;
         l.scanning = false;
@@ -572,6 +666,69 @@ fn made_up(ip: [u8; 4], port: u16, name: &str, map: &str, players: u8, max: u8, 
         },
         lan,
     }
+}
+
+/// A staged scene's password modal (`SignalPages::stage`'s tab on Join).
+const STAGE_ASK: usize = 3;
+
+/// A made-up hub's list for the staged Join (`game`: this app's), and
+/// the answers of the servers of it that answered: most of this app's
+/// and answering, one of another build, one still asked, one silent, one
+/// of another app.
+fn staged_hub(game: &str) -> (Vec<Listing>, Vec<QueryResult>) {
+    use chimera_net::net::hub::Reach;
+    let game = if game.is_empty() { "ultimate_gun_game" } else { game };
+    let mut listings = Vec::new();
+    let mut answers = Vec::new();
+    let mut add = |ip: u8, name: &str, map: &str, players: u8, max: u8, bots: u8, ping: Option<u32>, locked: bool, app: &str, net: &str| {
+        let port = 27015;
+        let addr = SocketAddr::from(([203, 0, 113, ip], port));
+        let instance = port as u64 ^ ((ip as u64) << 16);
+        listings.push(Listing {
+            addr: addr.to_string(),
+            lan: Vec::new(),
+            instance: format!("{instance:016x}"),
+            name: name.into(),
+            game: app.into(),
+            minigame: Some("ultimate_gun_game:auto".into()),
+            map: map.into(),
+            players,
+            max,
+            bots,
+            password: locked,
+            dedicated: true,
+            net: net.into(),
+            reachable: Reach::Yes,
+            since: 0,
+            mine: false,
+            hint: None,
+        });
+        match ping {
+            Some(ms) if ms > 0 => {
+                let mut r = made_up([203, 0, 113, ip], port, name, map, players, max, bots, ms, locked, false);
+                if let QueryState::Answered { info, .. } = &mut r.state {
+                    info.version = net.into();
+                }
+                answers.push(r);
+            }
+            // Silent.
+            Some(_) => answers.push(QueryResult { addr, state: QueryState::NoResponse, lan: false }),
+            // Still asked.
+            None => answers.push(QueryResult { addr, state: QueryState::Pending, lan: false }),
+        }
+    };
+    let ours = chimera_net::net::NET_VERSION;
+    add(11, "Saturday playtest", "de_dust2", 9, 12, 3, Some(24), false, game, ours);
+    add(12, "Halo night", "hangemhigh", 6, 8, 2, Some(31), false, game, ours);
+    add(13, "The long ladder", "warehouse", 12, 16, 4, Some(46), false, game, ours);
+    add(14, "Clubhouse", "cs_office", 3, 8, 5, Some(58), true, game, ours);
+    add(15, "Late and loud", "de_inferno", 2, 12, 8, Some(87), false, game, ours);
+    add(16, "Overseas", "de_nuke", 5, 12, 0, Some(164), false, game, ours);
+    add(17, "Next week's build", "de_train", 4, 12, 2, Some(39), false, game, "0.1.1/net99");
+    add(18, "Just started", "cs_italy", 0, 8, 0, None, false, game, ours);
+    add(19, "Gone quiet", "de_aztec", 1, 8, 0, Some(0), false, game, ours);
+    add(20, "Party mix", "de_dust2", 7, 16, 0, Some(52), false, "lucker_party", ours);
+    (listings, answers)
 }
 
 /// Made-up servers for the staged Join: their answers, the favourites'
@@ -620,6 +777,76 @@ pub fn scan(world: &mut World) {
         l.want_saved = true;
         l.staged = false;
         l.scanning = true;
+    }
+    // The hub's list again too (the Internet tab).
+    if let Some(mut h) = world.get_resource_mut::<Hub>()
+        && h.signed_in()
+    {
+        h.refresh_list();
+    }
+}
+
+/// The Internet tab lists other apps' servers too, or this app's only.
+pub fn toggle_all_games(world: &mut World) {
+    if let Some(mut l) = world.get_resource_mut::<LanList>() {
+        l.all_games = !l.all_games;
+        l.scroll = 0;
+        l.dirty = true;
+    }
+}
+
+/// What the main menu's news card says for the hub (module doc, "The
+/// hub's words"): the newer-build notice, else its newest news not
+/// dismissed (with the MOTD beside the hub's name), else its MOTD.
+pub fn hub_card(hub: &Hub) -> Option<crate::signal_menu::News> {
+    use crate::signal_menu::News;
+    let d = hub.doc.as_ref()?;
+    let name = hub.name();
+    if let Some((build, link)) = hub.needs_newer_build() {
+        return Some(News { title: UPDATE_TITLE.into(), body: format!("{} LAN games and your own installs still work.", update_words(&build, &link)), source: name, dismiss: None });
+    }
+    let motd = d.motd.trim();
+    if let Some(n) = d.newest_news(&hub.dismissed) {
+        let source = [name.as_str(), n.date.trim(), motd].into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" \u{2022} ");
+        return Some(News { title: n.title.clone(), body: n.text.clone(), source, dismiss: Some(n.id.clone()) });
+    }
+    (!motd.is_empty()).then(|| News { title: motd.to_string(), body: String::new(), source: name, dismiss: None })
+}
+
+/// The newer-build notice's title and its second sentence.
+pub const UPDATE_TITLE: &str = "A newer build is needed for this hub's servers";
+
+fn update_words(build: &str, link: &str) -> String {
+    match (build.trim().is_empty(), link.trim().is_empty()) {
+        (false, false) => format!("Get build {build}: {link}."),
+        (true, false) => format!("Get it at {link}."),
+        (false, true) => format!("Ask the host for build {build}."),
+        (true, true) => "Ask the host for the new build.".to_string(),
+    }
+}
+
+/// Keeps the main menu's news card as the hub's (`hub_card`); a card set
+/// by hand (`menu_news`) stays until the hub says something else.
+fn hub_news(hub: Option<Res<Hub>>, mut news: ResMut<crate::signal_menu::MenuNews>, mut mine: Local<Option<crate::signal_menu::News>>) {
+    let Some(hub) = hub else { return };
+    if !hub.is_changed() {
+        return;
+    }
+    let next = hub_card(&hub);
+    if next != *mine {
+        if news.0 == *mine || next.is_some() {
+            news.0 = next.clone();
+        }
+        *mine = next;
+    }
+}
+
+/// Dismiss the news the card shows (its Dismiss button): kept in the
+/// hub's cache, the card then shows the next one or the MOTD.
+pub fn dismiss_news(world: &mut World) {
+    let Some(id) = world.get_resource::<crate::signal_menu::MenuNews>().and_then(|n| n.0.as_ref()?.dismiss.clone()) else { return };
+    if let Some(mut h) = world.get_resource_mut::<Hub>() {
+        h.dismiss(&id);
     }
 }
 
@@ -748,9 +975,59 @@ fn follow(
     mut queries: Option<ResMut<ServerQueries>>,
     lan_settings: Option<Res<LanSettings>>,
     mut views: Option<ResMut<chimera_ui::ScrollViews>>,
+    (mut hub, hub_game, mut asks): (Option<ResMut<Hub>>, Option<Res<HubGame>>, ResMut<HubAsks>),
 ) {
     if !themed(theme.as_deref()) {
         return;
+    }
+    // The hub's list and state (the Internet tab), when they changed.
+    if !lan.staged {
+        match hub.as_deref() {
+            Some(h) => {
+                let view = HubView {
+                    signed_in: h.signed_in(),
+                    name: h.name(),
+                    busy: h.busy,
+                    offline: h.error.clone(),
+                    has_list: h.list.is_some(),
+                    update: h.needs_newer_build(),
+                };
+                if lan.hub != view {
+                    lan.hub = view;
+                }
+                let game = hub_game.as_ref().map(|g| g.0.clone()).unwrap_or_default();
+                if lan.hub_generation != h.generation || lan.hub_game != game {
+                    lan.hub_generation = h.generation;
+                    lan.hub_game = game;
+                    lan.hub_list = h.list.as_ref().map(|l| l.servers.clone()).unwrap_or_default();
+                    lan.hub_games = h.games.clone();
+                    // A list that just came: each of its servers asked
+                    // (again); another answer of the hub's asks none.
+                    if lan.hub_listed != h.listed_at {
+                        lan.hub_listed = h.listed_at;
+                        asks.0.fill(&lan.hub_list);
+                    }
+                    lan.dirty = true;
+                }
+            }
+            None => {
+                if lan.hub != HubView::default() || !lan.hub_list.is_empty() {
+                    lan.hub = HubView::default();
+                    lan.hub_list.clear();
+                    lan.dirty = true;
+                }
+            }
+        }
+        // Each listed server asked itself, a few at once.
+        if asks.0.busy()
+            && let Some(q) = queries.as_deref_mut()
+        {
+            let pending = |a: SocketAddr| q.result(a).is_some_and(|r| matches!(r.state, QueryState::Pending));
+            let now = asks.bypass_change_detection().0.next(pending);
+            for a in now {
+                q.query(a);
+            }
+        }
     }
     let mut stage_ask = false;
     if let Some((page, tab)) = p.stage
@@ -762,7 +1039,7 @@ fn follow(
         if page == MenuPage::Play {
             menu.play_tab = tab;
         }
-        stage_ask = page == MenuPage::Join && tab == 3;
+        stage_ask = page == MenuPage::Join && tab == STAGE_ASK;
         menu.focus = (page == MenuPage::Join).then_some(Field::Address);
         p.stage = None;
     }
@@ -818,6 +1095,17 @@ fn follow(
                 lan.scroll = 0;
             }
             return;
+        }
+        // Join opens on the Internet tab when this machine is signed in to
+        // a hub, and asks its list again.
+        if opened
+            && up == Some(MenuPage::Join)
+            && !lan.staged
+            && let Some(h) = hub.as_deref_mut().filter(|h| h.signed_in())
+        {
+            h.refresh_list();
+            lan.tab = BrowserTab::Internet;
+            lan.scroll = 0;
         }
         let ls = lines(&menu, &data, &lan);
         focus_line(&mut p, &mut menu, &data, &ls, 0);
@@ -878,8 +1166,18 @@ fn press(line: Line, menu: &mut PartyMenu, lan: &LanList, p: &mut SignalPages) -
         Line::Recent(i) => Some(MainMenuAction::Recent(i)),
         Line::Server(i) => {
             let s = lan.rows().get(i)?;
+            if s.barred {
+                p.notice = Some(match &s.note {
+                    Some(n) => format!("{}: {n}", s.name),
+                    None => format!("{} can't be joined", s.name),
+                });
+                return None;
+            }
             if !s.same_version {
-                p.notice = Some(format!("{} runs another version", s.name));
+                p.notice = Some(match &s.note {
+                    Some(n) => format!("{} {n}", s.name),
+                    None => format!("{} runs another version", s.name),
+                });
                 return None;
             }
             if s.locked {
@@ -991,8 +1289,8 @@ fn keys(
         return;
     }
     if page == MenuPage::Join {
-        // The browser's tabs: F2 F3 F4 anywhere, ←→ off a text field.
-        for (key, t) in [(KeyCode::F2, 0), (KeyCode::F3, 1), (KeyCode::F4, 2)] {
+        // The browser's tabs: F1 F2 F3 F4 anywhere, ←→ off a text field.
+        for (key, t) in [(KeyCode::F1, 0), (KeyCode::F2, 1), (KeyCode::F3, 2), (KeyCode::F4, 3)] {
             if k(key) {
                 out.write(MainMenuAction::BrowserTab(t));
                 return;
@@ -1622,6 +1920,25 @@ fn cells(c: &mut Commands, ui: &Ui, vl: Entity, texts: [&str; 5], tone: Tone, si
 fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPages, cx: &Ctx, row_h: f32) {
     let rows = cx.lan.rows();
     let n = rows.len();
+    let hub = &cx.lan.hub;
+    let internet = cx.lan.tab == BrowserTab::Internet;
+    // A build older than the hub's servers take: said over the browser
+    // (the other tabs and Direct work as before).
+    if let Some((build, link)) = &hub.update {
+        let banner = c
+            .spawn((
+                UiStyle { gap: Some(0.25), pad: Some([0.7, 1.1, 0.7, 1.3].into()), margin: Some([0.0, 0.0, 0.9, 0.0].into()), ..UiStyle::column() }
+                    .bg_a(Tone::Ink, 0.7)
+                    .outline(Tone::Fg5, 1.0),
+                Node::default(),
+                chimera_ui::UiParityId::new("join.update"),
+                ChildOf(right),
+            ))
+            .id();
+        ui.focus_bar(c, banner, 0.22);
+        ui.text(c, banner, Role::DisplayBold, 0.8, Tone::Fg, UPDATE_TITLE);
+        ui.sentence(c, banner, NOTE, Tone::Fg2, &update_words(build, link));
+    }
     // One row: the tabs (Q and E at their ends), then the list's tools.
     let top = ui.boxed(c, right, UiStyle { gap: Some(1.0), align: Some(AlignItems::FlexEnd), margin: Some([0.0, 0.0, 0.8, 0.0].into()), ..UiStyle::row() });
     let tabs = ui.boxed(c, top, UiStyle { grow: Some(1.0), ..UiStyle::column() });
@@ -1631,7 +1948,7 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
     }
     let first = cx.lan.scroll.min(n.saturating_sub(VISIBLE_ROWS));
     let last = (first + VISIBLE_ROWS).min(n);
-    let asking = cx.lan.scanning && cx.lan.tab == BrowserTab::Lan;
+    let asking = (cx.lan.scanning && cx.lan.tab == BrowserTab::Lan) || (internet && hub.busy);
     let focused = match ls.get(p.focus) {
         Some(Line::Server(i)) => rows.get(*i).map(|r| (*i, r.favourite)),
         _ => None,
@@ -1644,11 +1961,20 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
     let tools = ui.boxed(c, top, UiStyle { gap: Some(0.6), margin: Some([0.0, 0.0, 0.5, 0.0].into()), ..UiStyle::row() });
     let fav = ui.button(c, tools, Kind::Secondary, label, Some("F"), 1.9, State { disabled: focused.is_none(), ..State::NONE });
     c.entity(fav).insert(MainMenuAction::Favourite(i));
+    if internet && hub.signed_in {
+        let all = ui.button(c, tools, Kind::Secondary, if cx.lan.all_games { "This game" } else { "All games" }, None, 1.9, State::NONE);
+        c.entity(all).insert(MainMenuAction::BrowserAllGames);
+    }
     let refresh = ui.button(c, tools, Kind::Secondary, "Refresh", Some("F5"), 1.9, State { disabled: cx.lan.scanning, ..State::NONE });
     c.entity(refresh).insert(MainMenuAction::Refresh);
-    // Where the list is (a long one's window, a scan under way).
-    let note = if asking {
+    // Where the list is (a long one's window, a scan under way, the hub
+    // not answering).
+    let note = if asking && internet {
+        Some(format!("Asking {}...", hub.name))
+    } else if asking {
         Some("Looking...".to_string())
+    } else if internet && hub.offline.is_some() && hub.has_list {
+        Some(format!("{} isn't answering: its last list", hub.name))
     } else if n > VISIBLE_ROWS {
         Some(format!("{}-{} of {n}", first + 1, last))
     } else {
@@ -1670,12 +1996,22 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
     if n == 0 {
         let e = ui.boxed(c, right, UiStyle { pad: Some([0.6, 0.0, 0.0, 1.1].into()), ..UiStyle::row() });
         let none = match cx.lan.tab {
-            BrowserTab::Lan if asking => "Looking for servers on your network",
-            BrowserTab::Lan => "No server answered on your network",
-            BrowserTab::Favourites => "No favourites yet: focus a server and press F",
-            BrowserTab::History => "No server joined yet",
+            BrowserTab::Internet if !hub.signed_in => {
+                "Not signed in to a hub: start the game once with +chimera:hub <your invite link>. LAN and Direct work without one.".to_string()
+            }
+            BrowserTab::Internet if asking => format!("Asking {} for its servers", hub.name),
+            BrowserTab::Internet if !hub.has_list => match &hub.offline {
+                Some(why) => format!("{} isn't answering ({why}). LAN, Favourites and Direct still work.", hub.name),
+                None => format!("No list from {} yet: press F5", hub.name),
+            },
+            BrowserTab::Internet if !cx.lan.hub_list.is_empty() => format!("No server of this game is listed on {}", hub.name),
+            BrowserTab::Internet => format!("No server is listed on {}", hub.name),
+            BrowserTab::Lan if asking => "Looking for servers on your network".to_string(),
+            BrowserTab::Lan => "No server answered on your network".to_string(),
+            BrowserTab::Favourites => "No favourites yet: focus a server and press F".to_string(),
+            BrowserTab::History => "No server joined yet".to_string(),
         };
-        ui.sentence(c, e, NOTE, Tone::Fg3, none);
+        ui.sentence(c, e, NOTE, Tone::Fg3, &none);
         return;
     }
     let list = ui.boxed(c, right, UiStyle::column());
@@ -1687,11 +2023,15 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
         let Some(sv) = rows.get(*s) else { continue };
         let focus = p.focus == i;
         let mut small: Vec<String> = Vec::new();
+        if sv.status == Status::Up || sv.listed {
+            small.extend(sv.minigame.as_deref().map(|m| m.rsplit(':').next().unwrap_or(m).replace('_', " ")));
+        }
         match sv.status {
-            Status::Up => small.extend(sv.minigame.as_deref().map(|m| m.rsplit(':').next().unwrap_or(m).replace('_', " "))),
+            Status::Up => {}
             Status::Asking => small.push("asking".into()),
             Status::Down => small.push("no answer".into()),
         }
+        small.extend(sv.note.clone());
         if let Some(w) = sv.when {
             small.insert(0, sl::ago(cx.unix, w));
         }
@@ -1699,13 +2039,19 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPag
             small.push("favourite".into());
         }
         let small = small.join(" • ");
-        let (e, vl) = ui.row(c, list, &sv.name, Some(&small), row_h, State { focus, disabled: !sv.same_version || sv.status == Status::Down, ..State::NONE });
+        let (e, vl) = ui.row(c, list, &sv.name, Some(&small), row_h, State { focus, disabled: !sv.same_version || sv.barred || sv.status == Status::Down, ..State::NONE });
         c.entity(e).insert((PageLine(i), crate::ui_cues::CueItem(format!("page_line:{i}"))));
-        if sv.status == Status::Up {
+        if sv.status == Status::Up || sv.listed {
+            // (A listed server's numbers are the hub's until it answers.)
             let players = format!("{}/{}", sv.players, sv.max_players);
             let bots = sv.bots.to_string();
-            let ping = format!("{} ms", sv.ping_ms);
-            cells(c, ui, vl, [&map_label(&sv.map), &players, &bots, &ping, if sv.locked { "PW" } else { "" }], Tone::Fg, 0.6);
+            let ping = match sv.status {
+                Status::Up => format!("{} ms", sv.ping_ms),
+                Status::Asking => "...".to_string(),
+                Status::Down => "-".to_string(),
+            };
+            let tone = if sv.status == Status::Up { Tone::Fg } else { Tone::Fg3 };
+            cells(c, ui, vl, [&map_label(&sv.map), &players, &bots, &ping, if sv.locked { "PW" } else { "" }], tone, 0.6);
         } else {
             cells(c, ui, vl, ["", "", "", if sv.status == Status::Asking { "..." } else { "-" }, ""], Tone::Fg3, 0.6);
         }

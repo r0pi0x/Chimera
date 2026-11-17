@@ -55,8 +55,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
  (chimera/core/)       core, console, console_names, console_scope, slots, envelope, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, diagnostics, query_cache, memo, tasks, later, shutdown
                       chimera_vfs (chimera/vfs/)   the neutral VFS (`FileSource`, `Mount`) under both format crates and `mount`
                       chimera_assets (chimera/assets/)   the asset store over the VFS: records, manifests and sets, `CachedFiles`, the vfs log, the asset service (server, HTTPS client), account tickets and the player's account file; `mount::served` layers it
-                      chimera_services (chimera/services/)   the hub's services, a binary each (`chimera_accounts`, `chimera_front`): accounts on SQLite, the front; on chimera_assets, host tools only
-                      chimera_formats (chimera/formats/)   formats no engine owns, plain data: `wav` (sound files), `keyvalues` (Steam's library files); under `mount`, `map::sound` and both format crates
+                      chimera_services (chimera/services/)   the hub's services, a binary each (`chimera_accounts`, `chimera_front`, `chimera_hub`): accounts on SQLite, the front, the hub (discovery document, server list); on chimera_assets and chimera_formats, host tools only
+                      chimera_formats (chimera/formats/)   formats no engine owns, plain data: `wav` (sound files), `keyvalues` (Steam's library files), `a2s` (the server query packets); under `mount`, `map::sound`, `net::query`, the hub service and both format crates
                       lithtech_formats (lithtech/formats/)   LithTech's formats as plain data (`.rez`, attribute files, worlds, textures, models, animation, effect files)
                       blam_formats (blam/formats/)   Halo: Combat Evolved's formats as plain data (the Xbox disc image so far)
 ```
@@ -112,10 +112,15 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   (`db`: rusqlite with SQLite bundled, migrations, backups) and
   `chimera_front` (`front`: the one public TLS port with the asset
   service's certificate, routing each connection by path to the services
-  on loopback and naming the client in `X-Chimera-Peer`), with their
+  on loopback and naming the client in `X-Chimera-Peer`) and
+  `chimera_hub` (`hub`: the signed discovery document, the server list
+  from game servers' heartbeats on `hub.db`, the reachability probe with
+  `chimera_formats::a2s`; the protocol both sides share is
+  `chimera_assets::hub_doc`, a game process's side
+  `chimera_net::net::hub`), with their
   systemd user units (`units`) and ports (`config`, `services.toml`).
   SQLite lives only here, so no game or client build compiles it. Later
-  the hub and feedback.
+  feedback.
 
 - `source_formats` turns bytes and text into Rust values (glam vectors,
   Source units); it never depends on Bevy, avian or `mashup` (checked).

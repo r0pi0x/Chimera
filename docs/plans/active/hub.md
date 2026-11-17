@@ -1,6 +1,10 @@
 # Plan: the hub and its services (accounts, server list, assets, feedback)
 
-Status: S1a and S1b built (2026-11-14), not deployed; S2 next. The
+Status: S1a and S1b built (2026-11-14) and **deployed on the host's
+box**: the front on the public port, accounts and assets behind it, as
+systemd user units under `chimera-services.target`, running. S2 built
+(2026-11-16: hub service, heartbeats, the Internet tab), its state in "S2 as built" below; the hub's unit is written
+but not installed there yet. The
 user's decisions are in section 11; the plan below follows them. Built in
 S1a: `chimera_services` with `chimera_accounts` (SQLite, migrations, WAL,
 nightly local backups and restore; invites, sign-up, link codes, recovery,
@@ -26,8 +30,65 @@ asset service with the hub's certificate (`net::assets`,
 ticket), `has_token` and `ASSETS_KEY` counting an account, the ticket
 refreshed in the background in the game client
 (`account::keep_fresh`). Not done in S1b: graceful drain on SIGTERM (a
-stop cuts connections under way; clients retry), the hub's unit (S2),
-a deleted username's 30-day hold.
+stop cuts connections under way; clients retry), a deleted username's
+30-day hold.
+
+**S2 as built** (2026-11-16):
+
+- Done, the server role: `chimera_formats::a2s` (the query packets
+  lifted out of `chimera_net::net::query`, which re-exports them);
+  `chimera_assets::hub_doc` (the document, heartbeats, the list, the
+  client's cache; both sides); `chimera_services::hub` and the
+  `chimera_hub` binary (the document signed with the manifest key,
+  `hub.toml` read again when edited, the registry on `hub.db`,
+  heartbeats with the `list` right and its limits, the peer's address
+  and `public_address`, expiry, leave, revoked accounts' listings
+  dropped, the probe from the address the heartbeat came from,
+  `/hub/servers`, the owner's `chimera_hub servers` and `delist` on
+  loopback with the services' secret); its systemd unit
+  (`install-units` writes it). Tests: `chimera_services` `hub::`.
+- Done, the game server: `chimera_net::net::hub`'s listing
+  (`chimera:hub 1`, old name `sv_hub`, or `[hub] list = true` in
+  chimera.local.toml; `[hub] account` names a host account's file): a
+  dedicated or listen server's heartbeat thread with its account's
+  tickets, every 30 s and within 2 s of a change (players, bots, map),
+  the hub's answer as `status`' `hub` line (where it is listed, whether
+  the hub reached its UDP port, why a heartbeat was refused), delisted
+  at `chimera:hub 0` and in the quick exit's flush. Tests: `chimera_net`
+  `hub::`, a headless dedicated server and a client against the real
+  accounts, hub and front services on loopback (a dev-dependency on
+  `chimera_services`: tests only).
+- Done, the client (party_kit, Ultimate Gun Game): the `Hub` resource
+  (`chimera_net::net::hub`: the account's hub, its signed document
+  cached in `hub.toml` and `hub-discovery.json` and shown at once at the
+  next start, the list; `use_user_hub` at the app's start, never in a
+  tool run or a test); **Internet** as the Join page's first tab
+  (`server_list::internet_servers`: the hub's listings of this app,
+  `HubGame`, each asked directly, 64 at once, the hub's numbers until
+  it answers, a LAN address preferred when the same instance answers
+  there, by ping then asked then silent; another build greyed with
+  "needs build ..."; All games lists other apps' servers, barred; a
+  game the account may not play barred; the hub not answering: its last
+  list, said so; no account: how to sign in); the main menu's news card
+  (the `MenuNews` seam) as the hub's newest news with Dismiss (kept in
+  `hub.toml`) and its MOTD beside the hub's name, else the MOTD alone;
+  the min-client banner ("A newer build is needed for this hub's
+  servers", the build and the link) on the card and over the browser.
+  Tests: `party_kit` `signal_pages::` (the model, the page, the card);
+  `ui_scene join internet|offline|update|nohub`.
+- Not built of S2's client: Lucker Party's game id (`HubGame` is
+  Ultimate Gun Game's; another app plays as `chimera`); the list is
+  asked when Join opens and on Refresh (F5), not on a timer; the
+  document's `register` and absolute endpoints elsewhere than the hub's
+  origin are read but heartbeats go to the origin.
+- Not deployed: installing `chimera-hub.service` and a `hub.toml` on the
+  host's box is the owner's step (playtest-hosting.md, "The hub
+  service").
+- Decision 5 as built (open until the user says otherwise): a ticket's
+  `list` right as the accounts service gives it (`host` and `owner` 4,
+  `tester` 1; per account with `--list`), one heartbeat per 10 s per listing unless its info changed.
+- Not built: the admin page's Servers tab (the owner uses the command
+  line), graceful drain.
 The user's direction: a master server players connect to up front, which
 serves the game files by default, lists every lobby (hosting one lists it
 for everyone on the same master) and holds everyone's **accounts**, which

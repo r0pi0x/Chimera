@@ -1,11 +1,23 @@
-//! The server browser's lists, as data (main-menu.md M2; no drawing, no
-//! keys: `signal_pages` draws and drives them): the rows of its three
-//! tabs (**LAN**: the servers the LAN scan found, by ping; **Favourites**:
+//! The server browser's lists, as data (main-menu.md M2 and M3; no
+//! drawing, no keys: `signal_pages` draws and drives them): the rows of
+//! its four tabs (**Internet**: the servers the hub lists,
+//! docs/plans/active/hub.md 4.3, each asked directly for its info and
+//! ping, the hub's numbers filling a row until it answers; **LAN**: the
+//! servers the LAN scan found, by ping; **Favourites**:
 //! the ones the player kept, each asked for its info and ping by address,
 //! the same query, unicast; **History**: the servers joined, newest
 //! first, with when), the scrolling window over a long list, and the two
 //! files they are kept in.
 //!
+//! - Internet (`internet_servers`): a listing of another app is left out
+//!   (unless every game is asked for); the row is the server's own answer
+//!   when the one at the listed address (or at one of its LAN addresses,
+//!   for a player behind the same router) answers with the listing's
+//!   instance id, the best ping of those; another `NET_VERSION` is greyed
+//!   with "needs build ..."; a game the account may not play is greyed;
+//!   the player's own server the hub can't reach shows the hub's hint.
+//!   Sorted as Favourites are: answered by ping, then asked, then silent.
+//!   `HubQueue` asks at most `MAX_QUERIES` servers at once.
 //! - Files: `party_favourites.txt` (one address a line) and
 //!   `party_history.txt` (`<unix seconds> <address>` a line, newest first,
 //!   at most `HISTORY_MAX`) in the config folder, as `party_recent.txt` is
@@ -23,6 +35,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
 use bevy::prelude::*;
+use chimera_net::net::hub::{Listing, Reach};
 use chimera_net::net::query::{QueryResult, QueryState};
 
 /// Rows of a list shown at once.
@@ -34,9 +47,14 @@ pub const HISTORY_MAX: usize = 20;
 /// The port of an address typed without one.
 pub const DEFAULT_PORT: u16 = 27015;
 
-/// The browser's tabs.
+/// Servers of the hub's list asked for their info at once, at most.
+pub const MAX_QUERIES: usize = 64;
+
+/// The browser's tabs (Internet first; LAN is the one shown without a
+/// hub).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BrowserTab {
+    Internet,
     #[default]
     Lan,
     Favourites,
@@ -44,10 +62,11 @@ pub enum BrowserTab {
 }
 
 impl BrowserTab {
-    pub const ALL: [BrowserTab; 3] = [BrowserTab::Lan, BrowserTab::Favourites, BrowserTab::History];
+    pub const ALL: [BrowserTab; 4] = [BrowserTab::Internet, BrowserTab::Lan, BrowserTab::Favourites, BrowserTab::History];
 
     pub fn name(self) -> &'static str {
         match self {
+            BrowserTab::Internet => "Internet",
             BrowserTab::Lan => "LAN",
             BrowserTab::Favourites => "Favourites",
             BrowserTab::History => "History",
@@ -100,6 +119,14 @@ pub struct LanServer {
     pub when: Option<u64>,
     /// It is one of the favourites.
     pub favourite: bool,
+    /// Its numbers are the hub's (it hasn't answered itself yet).
+    pub listed: bool,
+    /// Why it can't be joined, or what its host should know ("needs
+    /// build 0.1.0/net55", the hub's hint): shown under its name.
+    pub note: Option<String>,
+    /// It can't be joined for a reason other than its version (a game
+    /// the account isn't invited to).
+    pub barred: bool,
 }
 
 impl LanServer {
@@ -119,6 +146,9 @@ impl LanServer {
             status,
             when: None,
             favourite: false,
+            listed: false,
+            note: None,
+            barred: false,
         }
     }
 
@@ -139,6 +169,9 @@ impl LanServer {
                 status: Status::Up,
                 when: None,
                 favourite: false,
+                listed: false,
+                note: None,
+                barred: false,
             }),
             _ => None,
         }
@@ -176,6 +209,118 @@ pub fn listed(addrs: &[(SocketAddr, Option<u64>)], results: &[QueryResult]) -> V
             row
         })
         .collect()
+}
+
+/// A hub listing's instance id (16 hex digits) as the query's.
+fn instance_of(listing: &Listing) -> Option<u64> {
+    u64::from_str_radix(&listing.instance, 16).ok()
+}
+
+/// The addresses a listing may be reached at: the one the hub saw, then
+/// its LAN ones.
+pub fn listing_addrs(listing: &Listing) -> Vec<SocketAddr> {
+    std::iter::once(&listing.addr).chain(&listing.lan).filter_map(|a| a.parse().ok()).collect()
+}
+
+/// The Internet tab's rows from the hub's `list` and the queries'
+/// `results` (module doc). `game`: this app's id on the hub; `all_games`:
+/// other apps' servers too (they can't be joined: greyed); `may_play`:
+/// whether the account may play a game (hub.md 5.5).
+pub fn internet_servers(list: &[Listing], results: &[QueryResult], game: &str, all_games: bool, may_play: &dyn Fn(&str) -> bool) -> Vec<LanServer> {
+    let ours = chimera_net::net::NET_VERSION;
+    let mut rows: Vec<LanServer> = list
+        .iter()
+        .filter(|l| all_games || l.game == game)
+        .filter_map(|l| {
+            let addrs = listing_addrs(l);
+            let first = *addrs.first()?;
+            let id = instance_of(l);
+            // Its own answers: the listing's instance only (another server
+            // may sit at a LAN address of the same number).
+            let answer = addrs
+                .iter()
+                .filter_map(|a| results.iter().find(|r| r.addr == *a))
+                .filter(|r| matches!(&r.state, QueryState::Answered { info, .. } if info.instance == id))
+                .filter_map(LanServer::answered)
+                .min_by(by_ping);
+            let mut row = match answer {
+                Some(row) => row,
+                None => {
+                    // The hub's numbers until it answers; silent when none
+                    // of its addresses did.
+                    let state = |a: &SocketAddr| results.iter().find(|r| r.addr == *a).map(|r| &r.state);
+                    let silent = addrs.iter().all(|a| matches!(state(a), Some(QueryState::NoResponse | QueryState::Answered { .. })));
+                    LanServer {
+                        addr: first,
+                        name: if l.name.trim().is_empty() { l.addr.clone() } else { l.name.clone() },
+                        minigame: l.minigame.clone(),
+                        map: l.map.clone(),
+                        players: l.players,
+                        max_players: l.max,
+                        bots: l.bots,
+                        ping_ms: 0,
+                        locked: l.password,
+                        same_version: l.net == ours,
+                        status: if silent { Status::Down } else { Status::Asking },
+                        when: None,
+                        favourite: false,
+                        listed: true,
+                        note: None,
+                        barred: false,
+                    }
+                }
+            };
+            if l.game != game {
+                row.barred = true;
+                row.note = Some(format!("another game: {}", l.game.replace('_', " ")));
+            } else if !may_play(&l.game) {
+                row.barred = true;
+                row.note = Some("this account isn't invited to this game".into());
+            } else if !row.same_version {
+                row.note = Some(format!("needs build {}", l.net));
+            } else if l.mine && l.reachable == Reach::No {
+                row.note = l.hint.clone().or_else(|| Some("the hub can't reach it".into()));
+            }
+            Some(row)
+        })
+        .collect();
+    sort_favourites(&mut rows);
+    rows
+}
+
+/// The hub's list asked server by server, `MAX_QUERIES` at once: the
+/// addresses waiting and the ones asked whose answer is awaited.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HubQueue {
+    pub waiting: Vec<SocketAddr>,
+    pub asked: Vec<SocketAddr>,
+}
+
+impl HubQueue {
+    /// A new list: every address of it to ask (again).
+    pub fn fill(&mut self, list: &[Listing]) {
+        self.waiting.clear();
+        self.asked.clear();
+        for a in list.iter().flat_map(listing_addrs) {
+            if !self.waiting.contains(&a) {
+                self.waiting.push(a);
+            }
+        }
+    }
+
+    /// The addresses to ask now: `pending(addr)` says whether an asked
+    /// one's answer is still awaited.
+    pub fn next(&mut self, pending: impl Fn(SocketAddr) -> bool) -> Vec<SocketAddr> {
+        self.asked.retain(|a| pending(*a));
+        let room = MAX_QUERIES.saturating_sub(self.asked.len()).min(self.waiting.len());
+        let now: Vec<SocketAddr> = self.waiting.drain(..room).collect();
+        self.asked.extend(&now);
+        now
+    }
+
+    pub fn busy(&self) -> bool {
+        !self.waiting.is_empty() || !self.asked.is_empty()
+    }
 }
 
 /// Favourites' order: the ones that answered by ping (then name), those

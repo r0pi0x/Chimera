@@ -26,6 +26,10 @@ pub struct LocalConfig {
     /// (`chimera_assets::AssetsConfig`; `mount::served`).
     #[serde(default)]
     pub assets: chimera_assets::AssetsConfig,
+    /// `[hub]`: listing this machine's servers on its account's hub
+    /// (`chimera_net::net::hub::apply_config`).
+    #[serde(default)]
+    pub hub: chimera_assets::hub_doc::HubSettings,
     /// The file it was read from.
     #[serde(skip)]
     pub file: Option<PathBuf>,
