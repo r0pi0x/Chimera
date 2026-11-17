@@ -2561,6 +2561,30 @@ tab's microphone test, meter, boost and transmit volume
 CS:S's voice HUD and client `voice_*` defaults (Windows), and checking
 the dead-hear-the-dead rule with two clients on the probe server.
 
+- **Voice chat for every character (user, 2026-11-17; low priority:
+  most players talk on Discord).** Since the sandbox fixes (f879e490a)
+  Combat Arms' push to talk (T, `+voicechat`) and its HUD icon work
+  only for a Combat Arms player, outside the sandbox
+  (`chat::radio_allowed`). The reason was that T is the sandbox's bench
+  key and the icon stuck on as a green box. The user wants push to talk
+  for everyone, in Chimera itself and not tied to one game. To
+  investigate, then build:
+  - **Design:** one talking indicator and talker list in the party's
+    own look (docs/DESIGN.md, the UGG visual direction), whatever game
+    the character comes from; per-game voice HUDs only where a game's
+    own mode is played.
+  - **Key:** one push-to-talk key that clashes with no game's default
+    binds. Survey the binds layers of CS:S, Combat Arms, HL2:DM, TF2,
+    Halo and the sandbox before choosing. Chimera's K (`+voicerecord`)
+    and Combat Arms' T are the candidates; rebinding goes through the
+    controls screen.
+  - **Implementation:** reconcile Combat Arms' channels
+    (`games/combat_arms/src/game/chat/voice.rs`) with Chimera's voice
+    (docs/plans/active/voice-chat.md: Opus over the game's connection,
+    `sv_alltalk`, mute, vox). Do the party apps carry it, and do they
+    need a Voice settings tab? Then test with two real microphones on
+    Windows and Linux.
+
 Votes (`callvote`, `net::vote`; CS:S's issues `game::votes`, panels
 `ui::vote_hud`) are in: kick, change level, restart game, F1/F2, the
 vote setup dialog (`ui::game_menu::vote_setup`: `callvote` alone or our
