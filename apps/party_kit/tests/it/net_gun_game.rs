@@ -346,12 +346,18 @@ fn empty_and_reload_on_a_client(sim: &mut NetSim, rung: usize, hold: bool) {
     }
     let gun = sim.server.app.world().resource::<minigame::ladder::Ladder>().rungs[rung];
     assert!(sim.until(300, |s| held(s, 0) == Some(gun)), "{gun} on the client");
-    sim.ticks(150);
+    sim.ticks(60);
     if clip(sim, 0).is_none() {
         // A knife or a grenade: nothing to reload.
         return;
     }
     let me = sim.local_player(0).unwrap();
+    // Three rounds left, on both sides: emptying a whole clip is the gun's
+    // rate of fire over again, not what is checked here.
+    for (w, e) in [(sim.server.app.world_mut(), a), (sim.clients[0].app.world_mut(), me)] {
+        let g = testkit::active(w, e).expect("the gun in hand");
+        w.get_mut::<Magazine>(g).unwrap().clip = 3;
+    }
     let ahead = sim.server.position(a) + Vec3::new(0.0, 6.0, -20.0);
     let reloading = |w: &World, e: Entity| {
         testkit::active(w, e)
@@ -377,7 +383,13 @@ fn empty_and_reload_on_a_client(sim: &mut NetSim, rung: usize, hold: bool) {
         let w = sim.clients[0].app.world();
         testkit::active(w, me).is_some_and(|g| w.get::<chimera_sim::weapon::ShellReload>(g).is_some())
     };
+    // Until the reload is over everywhere and 0.7 s of quiet have passed
+    // (a second reload would show in it): at most 8 s.
+    let mut quiet = 0u32;
     for n in 0..(8.0 / TICK_INTERVAL) as u64 {
+        if quiet > (0.7 / TICK_INTERVAL) as u32 {
+            break;
+        }
         testkit::aim_at(&mut sim.clients[0], me, ahead);
         let refilled = client > 0 && (shells || clip(sim, 0).is_some_and(|c| c > 0));
         let waits = client == 0 && n as f64 * TICK_INTERVAL > 1.0;
@@ -388,6 +400,8 @@ fn empty_and_reload_on_a_client(sim: &mut NetSim, rung: usize, hold: bool) {
         client += (c && !was_c) as u32;
         server += (s && !was_s) as u32;
         (was_c, was_s) = (c, s);
+        let done = client > 0 && server > 0 && !c && !s && clip(sim, 0).is_some_and(|c| c > 0);
+        quiet = if done { quiet + 1 } else { 0 };
     }
     sim.clients[0].intent(me).fire = false;
     let shown = sim.clients[0].app.world().resource::<ShownReloads>().0;
@@ -399,13 +413,11 @@ fn empty_and_reload_on_a_client(sim: &mut NetSim, rung: usize, hold: bool) {
     assert!(clip(sim, 0).is_some_and(|c| c > 0), "{gun} refilled");
 }
 
-/// Emptying a gun on a client reloads it once: one reload shown (one
+/// Emptying `gun` on a client reloads it once: one reload shown (one
 /// reload animation), predicted and on the server, fire held or not, with
 /// the ladder's ammo refill on, on a link that jitters and loses packets
-/// (corrections re-run commands): CS:S's Glock, Combat Arms' M92FS, 870
-/// (shell by shell) and M4A1.
-#[test]
-fn an_emptied_gun_reloads_once_on_a_client() {
+/// (corrections re-run commands).
+fn an_emptied_gun_reloads_once(gun: &str) {
     let mut sim = joined();
     sim.set_conditions(
         0,
@@ -417,17 +429,34 @@ fn an_emptied_gun_reloads_once_on_a_client() {
     );
     sim.clients[0].app.init_resource::<ShownReloads>().add_systems(Update, count_shown_reloads);
     let ladder = sim.server.app.world().resource::<minigame::ladder::Ladder>().rungs.clone();
-    for gun in [
-        cs_source::game::weapons::GLOCK,
-        "combat_arms:beretta_m92fs",
-        "combat_arms:remington_870",
-        "combat_arms:m4a1",
-    ] {
-        let rung = ladder.iter().position(|g| *g == gun).unwrap();
-        for hold in [false, true] {
-            empty_and_reload_on_a_client(&mut sim, rung, hold);
-        }
+    let rung = ladder.iter().position(|g| *g == gun).unwrap();
+    for hold in [false, true] {
+        empty_and_reload_on_a_client(&mut sim, rung, hold);
     }
+}
+
+/// CS:S's Glock (one test a gun: they run side by side).
+#[test]
+fn an_emptied_glock_reloads_once_on_a_client() {
+    an_emptied_gun_reloads_once(cs_source::game::weapons::GLOCK);
+}
+
+/// Combat Arms' M92FS.
+#[test]
+fn an_emptied_m92fs_reloads_once_on_a_client() {
+    an_emptied_gun_reloads_once("combat_arms:beretta_m92fs");
+}
+
+/// Combat Arms' 870 (shell by shell).
+#[test]
+fn an_emptied_870_reloads_once_on_a_client() {
+    an_emptied_gun_reloads_once("combat_arms:remington_870");
+}
+
+/// Combat Arms' M4A1.
+#[test]
+fn an_emptied_m4a1_reloads_once_on_a_client() {
+    an_emptied_gun_reloads_once("combat_arms:m4a1");
 }
 
 /// Rounds fired by `who` this far (first runs only, not a correction's
