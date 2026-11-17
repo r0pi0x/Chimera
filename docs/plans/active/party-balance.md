@@ -730,3 +730,8 @@ Known shortcuts: Combat Arms' guns take armour in their own step and read
 no table (their outgoing, a pair with them, and a non-Halo body's own
 incoming against them count 1); a player's TF2 class is not looked up as
 a body (its game's entry counts; the sandbox's targets are).
+
+## The owner's decisions (2026-11-17)
+
+- **HL2:DM against HL2:DM** keeps its 1.5.
+- **A lean, not yet decided: one value per game against every game, its own included.** Today the same game on both sides counts as 1 (HL2:DM's pair is the exception), and Halo's own hits never reach the table. The owner's worry: two Halo players in a long duel get finished off by a third party. By the table, a Halo gun on a Halo body would be 0.75 × 1.5 = 1.125, a little quicker. Show the owner with the sandbox's kill card before changing anything.

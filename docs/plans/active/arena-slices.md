@@ -803,3 +803,8 @@ says yes.
 **A9 Other games' big maps** (small each). Combat Arms' darkthandark,
 deserthole, desertholezone after a first look at them; the 2-4 player
 slices of the middle-sized maps if question 3 says yes.
+
+## The owner's decisions (2026-11-17)
+
+- **Walls across cave and tunnel mouths: allowed.** Drop the candidate generator's refusal of a wall standing under a roof for more than 1 m (in map_fitness). Keep the 10× cost for cutting through roofed cells, so open cuts are still preferred. Then run `--candidates` and `--pick` again. This should let in Sidewinder's North West Heights (see_pairs .32) and South West Heights (.31), and more of Blood Gulch's sheltered candidates. darkthandark's two passing candidates are still to be written into data.
+- **Blood Gulch: North Caves** stays in the pool.
