@@ -74,3 +74,13 @@ path = "~/games/combat-arms-classic"
 # The server's public key (pinned; without it, the key the server names
 # over HTTPS is trusted).
 # key = "..."
+
+# The hub (docs/plans/active/hub.md, S2): list the servers this machine
+# hosts on its account's hub (the account made with `+chimera:hub <invite
+# link>`; it needs the `list` right, which a `host` invite gives). The
+# same as `+sv_hub 1` (`chimera:hub`) on a server's command line; `+sv_hub
+# 0` there overrides it.
+# [hub]
+# list = true
+# List with this account file, not the user's (a host account's):
+# account = "/path/to/account.toml"

@@ -254,6 +254,9 @@ impl UltimateGunGamePlugin {
     }
 }
 
+/// The app's id on a hub (`chimera_net::net::hub::HubGame`).
+pub const HUB_GAME: &str = "ultimate_gun_game";
+
 impl Plugin for UltimateGunGamePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(AutoLadder {
@@ -263,6 +266,9 @@ impl Plugin for UltimateGunGamePlugin {
         // The rotation's random picks follow the launch's seed too, as
         // the rungs' extras do (`ladder::RungSeed`).
         .insert_resource(MapHistory::seeded(self.seed))
+        // The app's game on a hub: what its servers' heartbeats say and
+        // the Internet tab lists (docs/plans/active/hub.md 4.3).
+        .insert_resource(chimera_net::net::hub::HubGame(HUB_GAME.into()))
         .insert_resource(chimera_sim::minigame::ladder::RungSeed(self.rung_seed.unwrap_or(self.seed)))
         // Never a capsule or a template gun: what shows stays until the
         // real model is ready (`game_parts::NoStandIns`).

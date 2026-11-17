@@ -299,6 +299,7 @@ pub const OLD_NAMES: &[(&str, &str)] = &[
     ("cl_predict_projectiles", "chimera:predict_projectiles"),
     ("hud_radar", "chimera:radar"),
     ("net_upnp", "chimera:upnp"),
+    ("sv_hub", "chimera:hub"),
     ("net_lan_ports", "chimera:lan_ports"),
     ("net_lan_broadcast", "chimera:lan_broadcast"),
     ("chimera_watch", "chimera:watchbot"),

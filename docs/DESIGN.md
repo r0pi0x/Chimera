@@ -1156,8 +1156,12 @@ server browser are CS:S's). Entries and the Play page's rows are data
   listen server when `maxplayers` > 1 (joinable by default), the app's
   minigame once the map is in. The Game tab is the host settings'
   next-match rows.
-- **Join** is direct connect (address, password, recent addresses); the
-  LAN browser is M2.
+- **Join** is direct connect (address, password, recent addresses) and
+  the server browser: Internet (the servers the account's hub lists,
+  each asked directly; docs/plans/active/hub.md 4.3), LAN, Favourites
+  and History. The hub only names servers: the numbers and the ping in
+  a row are the server's own answer, so a hub that is down costs the
+  list, never a join.
 - **Options**: the Escape menu's tabs and Binds.
 - **Behind it** the menu's own backdrop (an original procedural scene
   in code, no game's files) from the first frame; then, when a map is at

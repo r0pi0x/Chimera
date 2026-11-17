@@ -872,7 +872,7 @@ address the server names. To change the certificate (a lost `tls` folder),
 every tester enters their token again (`+chimera:asset_token <token>`),
 which clears the binding.
 
-### Platform accounts and the front (docs/plans/active/hub.md, S1a-S1b)
+### Platform accounts, the front and the hub (docs/plans/active/hub.md, S1a-S2)
 
 The hub runs as separate services over the same server store, each its
 own binary, restarted on its own:
@@ -882,6 +882,7 @@ own binary, restarted on its own:
 | front | `chimera_front` | the public `<hub port>` (TLS, the asset service's certificate) | routes each connection by path: `/accounts/` to accounts, `/hub` to the hub (S2), `/feedback` and everything else to assets; adds `X-Chimera-Peer`; never relays `/admin`, `/internal`, `/feedback/admin` |
 | accounts | `chimera_accounts serve` | 127.0.0.1:8741 | invites, devices, tickets, revocations (`accounts.db`), the admin page |
 | assets | `chimera_asset_server` | 127.0.0.1:8731 | game files and feedback reports, legacy tokens and tickets |
+| hub | `chimera_hub serve` | 127.0.0.1:8742 | the signed discovery document (`GET /hub`), the server list (`/hub/servers`), game servers' heartbeats and the reachability probe (`hub/hub.db`, `hub/hub.toml`) |
 
 Ports live in `<server store>/server/services.toml` (`[front] listen`,
 `[ports] assets/accounts/hub`); defaults as above. With the front, the
@@ -891,7 +892,7 @@ so testers' pinned fingerprint and tokens keep working. One router
 forward and one firewall rule (TCP `<hub port>`).
 
 ```
-cargo build --release -p chimera_services -p chimera_assets --bin chimera_front --bin chimera_accounts --bin chimera_asset_server
+cargo build --release -p chimera_services -p chimera_assets --bin chimera_front --bin chimera_accounts --bin chimera_hub --bin chimera_asset_server
 target/release/chimera_accounts import-legacy   # an account per accounts.toml account; tokens keep working; again after a `user revoke` (carries revocations over)
 target/release/chimera_accounts invite <name> --hub <public address>:<hub port>   # the link, printed once
 target/release/chimera_accounts invites | account list | account show <username>
@@ -900,7 +901,41 @@ target/release/chimera_accounts account refresh <username>   # new rights at onc
 target/release/chimera_accounts account revoke|delete <username>    device revoke <id>
 target/release/chimera_accounts page     # the admin page's address with its key (this machine; ssh -L from another)
 target/release/chimera_accounts status   # one line per service: front, accounts, assets, hub
+target/release/chimera_hub servers       # what the hub lists: every listing, unreachable ones too, with its account
+target/release/chimera_hub delist <instance> [--for <minutes>]   # off the list; its heartbeats refused for an hour (or the time given)
 ```
+
+**The hub service** (S2) answers account holders only (a ticket; `GET
+/hub/key` alone is public). Its settings are
+`<server store>/server/hub/hub.toml`, read again when edited (no
+restart):
+
+```
+name = "<hub name>"
+motd = "Playtest Saturday 13:00 UTC"     # one line in the game's menu
+public_address = "<public address>"      # servers on this machine are listed there
+min_net = 54                             # older builds are told to update (0: no floor)
+recommended_build = "0.1.0"
+download = "<release page>"
+[[news]]                                 # the newest shows in the menu until dismissed
+id = "2026-11-14a"
+date = "2026-11-14"
+title = "..."
+text = "..."
+```
+
+It signs the document with the asset service's manifest key
+(`<server store>/server/signing.key`) and checks tickets with the
+accounts service's public key and revocation feed, so it needs both
+files of the store and nothing else of the other services. A game server
+lists itself with `+sv_hub 1` (or `[hub] list = true` in its
+`chimera.local.toml`) and an account whose `list` right is above 0 (a
+`host` invite gives 4; `chimera_accounts account set <username> --list
+<n>`): the hub lists it at the address its heartbeats come from, asks its
+UDP port once (and every 5 minutes) and hides it from other players
+while it doesn't answer; the server's `status` says which (`hub : listed
+at ..., but the hub can't reach UDP <port> ...`). A server that stops
+sending is dropped after 90 s; quitting delists at once.
 
 A tester signs in once with the link: `+chimera:hub <link> [username]`
 on the game's command line (the first-run page comes with S3); the
@@ -911,7 +946,7 @@ them in the background; a tester with a token keeps working as before.
 
 **Under systemd** (user units, this box): `chimera_accounts install-units
 --front 0.0.0.0:<hub port>` writes `chimera-front`, `chimera-accounts`,
-`chimera-assets` and `chimera-services.target` to
+`chimera-assets`, `chimera-hub` and `chimera-services.target` to
 `~/.config/systemd/user/` (`--assets-args "<the asset server's limits,
 --on-report ...>"`, `--accounts-args "--public <public address>:<hub
 port>"`, `--rw <dir>` for an `--on-report` command's own folder: the
@@ -929,8 +964,10 @@ What keeps working when one is down: accounts down, downloads with a
 ticket go on (6-hour tickets, refreshed at half-life; a game started
 meanwhile uses the ticket in its account file), redeeming fails with
 "the hub's accounts service isn't answering"; assets down, accounts and
-sign-ups work; front down, nothing public works (this box's loopback
-does). `accounts.db` is backed up nightly into `<server store>/server/backups/`
+sign-ups work; hub down, the Internet list is the last one fetched and
+game servers retry their heartbeats quietly (`hub.db` keeps the listings
+across its restart); front down, nothing public works (this box's
+loopback does). `accounts.db` is backed up nightly into `<server store>/server/backups/`
 (local only for now).
 
 ## Pre-flight smoke test (the evening before, and an hour before)

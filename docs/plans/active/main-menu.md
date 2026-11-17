@@ -187,7 +187,9 @@ start --(no map/connect)--> MainMenu --Play/Start--> Loading --> InGame
   marks them). Still to see: broadcast between two machines (only
   127.0.0.1 was seen live, multiplayer.md slice 8), Windows firewall
   prompts for the query port.
-- **M3 (Internet):** planned in [hub.md](hub.md) (the master server as
+- **M3 (Internet):** built 2026-11-16 as [hub.md](hub.md)'s S2 (its
+  "S2 as built"): the Internet tab is the browser's first, the hub's
+  list asked directly server by server. The plan it came from: (the master server as
   a hub: one address for the list, the asset service, feedback and news;
   first-run setup). In short: a master server of our own: servers register
   (heartbeat with address and the query port), clients get a list and

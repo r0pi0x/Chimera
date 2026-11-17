@@ -5,10 +5,12 @@
 //! command line (`admin`) and page (`accounts::page`); the front
 //! (`front`, binary `chimera_front`: the one public TLS port, routing by
 //! path to the services on loopback); where they listen (`config`,
-//! `services.toml`); their systemd user units (`units`). The asset service
+//! `services.toml`); their systemd user units (`units`); the hub (`hub`,
+//! binary `chimera_hub`: the signed discovery document, the server list,
+//! heartbeats and the reachability probe, on `hub.db`). The asset service
 //! stays `chimera_asset_server` (in `chimera_assets`), which takes this
-//! service's tickets (`chimera_assets::accounts::TicketAuth`). Later: the
-//! hub and feedback.
+//! service's tickets (`chimera_assets::accounts::TicketAuth`). Later:
+//! feedback.
 //!
 //! `codes`: invite and link codes, recovery keys, usernames and display
 //! names. Host tools, plain data (no Bevy); SQLite lives only here, so no
@@ -20,6 +22,7 @@ pub mod codes;
 pub mod config;
 pub mod db;
 pub mod front;
+pub mod hub;
 pub mod units;
 
 /// Unix seconds.

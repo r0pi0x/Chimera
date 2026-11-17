@@ -309,9 +309,9 @@ fn run() -> Result<(), String> {
                 println!("wrote {}", path.display());
             }
             println!("next:");
-            println!("  install -D -m 0755 -t {} target/release/chimera_front target/release/chimera_accounts target/release/chimera_asset_server", bin.display());
+            println!("  install -D -m 0755 -t {} target/release/chimera_front target/release/chimera_accounts target/release/chimera_hub target/release/chimera_asset_server", bin.display());
             println!("  systemctl --user daemon-reload");
-            println!("  systemctl --user enable chimera-front chimera-accounts chimera-assets chimera-services.target");
+            println!("  systemctl --user enable chimera-front chimera-accounts chimera-assets chimera-hub chimera-services.target");
             println!("  systemctl --user start chimera-services.target");
             println!("  loginctl enable-linger \"$USER\"   # once: they run without a login session");
             println!("  chimera_accounts status          # one line per service");

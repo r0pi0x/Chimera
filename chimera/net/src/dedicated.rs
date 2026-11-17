@@ -1020,6 +1020,8 @@ pub fn run(server: &'static GameServer) {
     if let Some(files) = files {
         app.insert_resource(files);
     }
+    // `[hub] list`: listed on the account's hub (`+sv_hub 0` overrides).
+    net::hub::apply_config(&mut app);
     if let Some((session, previous)) = session {
         eprintln!("session log: {}", session.log_path().display());
         for p in previous {

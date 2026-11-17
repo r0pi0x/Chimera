@@ -266,7 +266,10 @@ worse than described):
 - **Explosion fire** is cut off where it meets walls.
 - **Sound balance differs by game**: some guns and footsteps are louder or
   heard farther than others. That is known and not being balanced.
-- **No server browser yet**: join by address only.
+- **Server list**: Join lists the servers on your network, your
+  favourites and the ones you joined before. Its Internet tab lists the
+  host's hub's servers once you are signed in to that hub (the invite
+  link you were sent); until then join by address.
 - **Menu widgets are plain**: option choices use `-`/`+` buttons instead of
   drop-downs.
 - **Many fixes are new and untested by anyone but the author**, so tell us if

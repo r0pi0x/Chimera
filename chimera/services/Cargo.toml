@@ -1,7 +1,7 @@
 [package]
 name = "chimera_services"
 version = "0.1.0"
-description = "The hub's services as a library with a binary each (docs/plans/active/hub.md): the accounts service (invites, devices, tickets, revocations) on SQLite, the front (one public TLS port routing by path), systemd units; later the hub and feedback"
+description = "The hub's services as a library with a binary each (docs/plans/active/hub.md): the accounts service (invites, devices, tickets, revocations) on SQLite, the front (one public TLS port routing by path), the hub (discovery document, server list), systemd units; later feedback"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
@@ -12,13 +12,15 @@ license.workspace = true
 doctest = false
 
 [features]
-dev = ["chimera_assets/dev"]
+dev = ["chimera_assets/dev", "chimera_formats/dev"]
 
 # A host tool, plain data: no Bevy, no game (checks/tests/it/architecture.rs
 # checks it). SQLite lives only here, so no game or client build compiles it.
 [dependencies]
 # Tickets, TLS (the in-process front), the asset service's helpers.
 chimera_assets.workspace = true
+# The A2S query packets (the hub's reachability probe).
+chimera_formats.workspace = true
 # The database: SQLite compiled from source (Linux and Windows MSVC alike),
 # blocking like the rest of the server code.
 rusqlite = { version = "0.42", default-features = false, features = ["bundled", "backup"] }
@@ -47,6 +49,12 @@ test = false
 [[bin]]
 name = "chimera_front"
 path = "src/bin/chimera_front.rs"
+test = false
+
+# The hub service: the discovery document, the server list, heartbeats.
+[[bin]]
+name = "chimera_hub"
+path = "src/bin/chimera_hub.rs"
 test = false
 
 # Integration tests as one binary (tests/it/): services on port 0 with

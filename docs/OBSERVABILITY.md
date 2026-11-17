@@ -2507,7 +2507,12 @@ not-looking eye, the idle grey), `cl_avatar <0-31>` (your avatar: glyph x
 8 + colour), `menu_news <title> | <body> | <source>` (the main menu's
 news card; none hides it). The party pages need `+mainmenu` on a tool
 run: `ultimate_gun_game --offscreen 1920x1080 --frames 60 --screenshot
-<out>.png +ui_scene play server +mainmenu`. Revision 8's screens add
+<out>.png +ui_scene play server +mainmenu`. `ui_scene join
+[internet|lan|favourites|history|password|offline|update|nohub]` stages
+the Join page's server browser with made-up servers (`internet`: a
+made-up hub's list, `internet all` with other apps' servers; `offline`:
+the hub not answering, its last list; `update`: the newer-build banner;
+`nohub`: no account). Revision 8's screens add
 `ui_scene play maps [slices]` (Host's Maps picker open; `slices`: the games
 without arena slices folded, a map off with its first slice on), `ui_scene load [ask|slice]` (the
 Signal loading screen, the Leave? dialog with `ask`, a slice loading with `slice`; `+mainmenu` too) and
