@@ -29,9 +29,9 @@ is settled and mocked up. It replaces the first-run page of
    invite carries no username.
 2. **Players choose their username** at sign-up, and can change it at
    will later in game, as on Steam. This replaces hub.md decision 11's
-   permanent handles. The account's id is what stays fixed. Open:
-   whether to rate-limit renames and keep a visible name history
-   against impersonation.
+   permanent handles. The account's id is what stays fixed. Renames are
+   limited to one a minute, and the last 10 names are kept as a visible
+   history against impersonation (low priority).
 3. **One field takes any form.** The redeem field accepts the full
    link, a URL containing the code, or the bare code, parsed when the
    player presses Enter (by pattern). A link already on the clipboard
@@ -41,7 +41,7 @@ is settled and mocked up. It replaces the first-run page of
 5. **Playing without an account is a small skip link**, not a main
    choice: LAN, direct connect and own installs as today, without
    parties, the hub's list or downloads.
-6. **Where sign-up happens** is still open:
+6. **Where sign-up happens:**
    - **In the client:** paste the code, choose a name, save the
      recovery key. The device key is made right there, so the client
      is signed in when it ends. This is the shortest path.
@@ -50,8 +50,9 @@ is settled and mocked up. It replaces the first-run page of
      code or an "open the game" link that signs the client in, because
      the device key must still be made on the player's PC.
 
-   Proposal: the client is the primary path, and the web page is
-   optional and later, for players who haven't installed the game yet.
+   Decided (user, 2026-11-17): the client is the primary path; the web
+   page is optional and later, for players who haven't installed the
+   game yet.
 
 ## The flow (client)
 
