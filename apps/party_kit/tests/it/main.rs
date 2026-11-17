@@ -84,6 +84,7 @@ mod heavy {
     mod clips_on_maps;
     mod cs_decals;
     mod death_bodies;
+    mod converted_cache;
     mod guest_cache;
     mod guest_effects;
     mod guest_shells;

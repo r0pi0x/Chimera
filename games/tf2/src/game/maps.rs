@@ -335,15 +335,22 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
         .install()
         .ok_or_else(|| format!("no `{}` install found (Steam, [games.tf2] path, or $CHIMERA_TF2_ROOT)", super::GAME))?;
     let mount = super::mount::open(&install).map_err(|e| e.to_string())?;
+    dress_guest_in(&mount, map, kept, lean);
+    Ok(())
+}
+
+/// `dress_guest_with` from `mount` (the game's files: a converted-asset
+/// cache tracks what the dressing reads through it).
+pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
-    let mut materials = MaterialLoader::guest(&mount, textures, cubemaps).lean(lean);
+    let mut materials = MaterialLoader::guest(mount, textures, cubemaps).lean(lean);
     let surfaces = SurfaceProps::load(&mut materials);
     let kit = crate::map::KitLoad::Players(kept);
     let wants = |g: &str| kit.wants(g);
     let mut guest = crate::map::GameKit::default();
     let mut warnings = Vec::new();
     if super::weapons::GUNS.iter().any(|g| wants(g)) {
-        super::weapons::script_numbers::note_sources(&mount);
+        super::weapons::script_numbers::note_sources(mount);
     }
     add_guns(&mut materials, &wants, true, &mut guest, &mut warnings);
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
@@ -361,7 +368,6 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     map.kit.held.extend(guest.held);
     map.kit.view_models.extend(guest.view_models);
     map.kit.add_guest_hud(look);
-    Ok(())
 }
 
 /// TF2's own effects its guns start (`weapons::looks`): the explosion and

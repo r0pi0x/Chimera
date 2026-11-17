@@ -301,8 +301,15 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
         .install()
         .ok_or_else(|| format!("no `{}` install found (Steam, [games.hl2dm] path, or $CHIMERA_HL2DM_ROOT)", super::GAME))?;
     let mount = super::mount::open(&install).map_err(|e| e.to_string())?;
+    dress_guest_in(&mount, map, kept, lean);
+    Ok(())
+}
+
+/// `dress_guest_with` from `mount` (the game's files: a converted-asset
+/// cache tracks what the dressing reads through it).
+pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
-    let mut materials = MaterialLoader::guest(&mount, textures, cubemaps).lean(lean);
+    let mut materials = MaterialLoader::guest(mount, textures, cubemaps).lean(lean);
     let surfaces = SurfaceProps::load(&mut materials);
     let kit = crate::map::KitLoad::Players(kept);
     let mut guest = crate::map::GameKit::default();
@@ -325,7 +332,6 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     map.kit.held.extend(guest.held);
     map.kit.view_models.extend(guest.view_models);
     map.kit.add_guest_hud(look);
-    Ok(())
 }
 
 /// What HL2:DM's guns draw, onto another game's map (`dress_guest`):

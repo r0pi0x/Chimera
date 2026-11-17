@@ -223,7 +223,7 @@ pub fn shells(materials: &mut MaterialLoader, warnings: &mut Vec<String>) -> Vec
 /// The players' character bodies `kit` asks for into `into`: a T and a CT
 /// model (CS:S teams 2 and 3; ours are 1 and 2), the CT one for anyone
 /// else; then the other classes' (`core::PlayerClass`, the class menu).
-fn add_bodies(
+pub fn add_bodies(
     materials: &mut MaterialLoader,
     surfaces: &super::surfaceprops::SurfaceProps,
     kit: crate::map::KitLoad,
@@ -256,7 +256,7 @@ fn add_bodies(
 /// The weapons' world models (held on the player skeleton: a mashup's
 /// kept ones take the body's bones without keeping the body) and view
 /// models `kit` wants into `into`.
-fn add_guns(
+pub fn add_guns(
     materials: &mut MaterialLoader,
     surfaces: &super::surfaceprops::SurfaceProps,
     kit: crate::map::KitLoad,
