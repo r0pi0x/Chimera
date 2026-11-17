@@ -2907,9 +2907,12 @@ docs/plans/active/sound.md.
   changes. A format change is a versioned migration that may invalidate
   old caches; keep backwards compatibility where cheap. Record each
   format's version and the policy in one place (generated-assets rule).
-  First step: a prototype measuring the gains (plan:
-  docs/plans/active/converted-cache.md). Builds on the kept-dressing
-  API below.
+  First step: a prototype measuring the gains. **Measured 2026-11-17**
+  ([plan and numbers](plans/active/converted-cache.md)): a first
+  dressing read back from disk takes 3.2x (CS:S), 7.1x (HL2:DM) and
+  4.6x (TF2) fewer instructions than converting; entries 49-773 MB raw,
+  20-304 MB compressed; decisions for the user at the plan's end.
+  Builds on the kept-dressing API below.
 
 - **Streamed textures, low resolution first (user, 2026-11-17).** Keep
   textures apart from models. Serve small mip levels first from the
