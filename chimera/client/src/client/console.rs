@@ -2623,7 +2623,13 @@ pub fn load_code_map(w: &mut World, map: &str) {
         };
         let began = std::time::Instant::now();
         let kit_id = chimera_world::greybox::kit_id(id);
-        let mut task = bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { (hooks.load_map)(&kit_id, &options) });
+        // Its spawn's own work (images, colliders) on the task too.
+        let prepare = crate::map::prepare::preparation(w);
+        let mut task = bevy::tasks::AsyncComputeTaskPool::get().spawn(async move {
+            let kit = (hooks.load_map)(&kit_id, &options)?;
+            let prepared = prepare.run(&kit);
+            Ok((kit, prepared))
+        });
         // Tests that wait for tasks (`WaitForTasks`): in this frame, as before.
         if chimera_core::tasks::waits(w)
             && let Some(result) = chimera_core::tasks::poll(&mut task, true)
@@ -2645,7 +2651,7 @@ pub fn load_code_map(w: &mut World, map: &str) {
 #[derive(Resource)]
 struct CodeMapKit {
     id: &'static str,
-    task: bevy::tasks::Task<Result<crate::map::MapData, String>>,
+    task: bevy::tasks::Task<Result<(crate::map::MapData, crate::map::prepare::Prepared), String>>,
     began: std::time::Instant,
 }
 
@@ -2673,11 +2679,16 @@ fn finish_code_map_kit(w: &mut World) {
 
 /// The kit `result` of code-built map `id` spawned (`change_map`);
 /// whether there was one.
-fn spawn_code_map_kit(w: &mut World, id: &str, result: Result<crate::map::MapData, String>, began: std::time::Instant) -> bool {
+fn spawn_code_map_kit(
+    w: &mut World,
+    id: &str,
+    result: Result<(crate::map::MapData, crate::map::prepare::Prepared), String>,
+    began: std::time::Instant,
+) -> bool {
     match result {
-        Ok(kit) => {
+        Ok((kit, prepared)) => {
             info!("{id}'s kit: {} bodies, loaded in {:.0} ms", kit.kit.characters.len(), began.elapsed().as_secs_f64() * 1000.0);
-            crate::map::change_map(w, kit, crate::map::MapDebugView::Normal);
+            crate::map::prepare::change_map_prepared(w, kit, prepared, crate::map::MapDebugView::Normal);
             true
         }
         Err(e) => {
