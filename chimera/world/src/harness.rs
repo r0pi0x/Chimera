@@ -41,6 +41,79 @@ pub struct Sim {
     pub app: App,
 }
 
+/// Between the frames of a test that drives an `App` by hand while a
+/// background task runs (a map's load, a model's build; counted in
+/// `chimera_core::tasks::pending`): gives the pools the CPU while work is
+/// pending, and little when none is (the 1 ms sleep this replaces
+/// was paid every frame, and nothing was waited on). Prefer `Sim::run_until_idle` where the wait is
+/// for the work to finish; this is for loops that look at each frame.
+pub fn let_tasks_run() {
+    // Work that isn't counted (a loader that doesn't use
+    // `chimera_core::tasks::spawn`) still gets a moment.
+    let pending = chimera_core::tasks::pending() > 0;
+    std::thread::sleep(Duration::from_micros(if pending { 200 } else { 50 }));
+}
+
+/// Between the rounds of a test that waits on real sockets or threads of
+/// its own (UDP loopback, a test HTTP server): the OS needs a moment to
+/// deliver. Use `let_tasks_run` for the engine's own background work, and
+/// a `NetSim` (in-memory link) where the test doesn't need real sockets.
+pub fn let_io_run() {
+    std::thread::sleep(Duration::from_micros(500));
+}
+
+/// Run `round` (a frame of each app, then a look at the state) until it
+/// says done, at most `max_rounds`, letting real I/O run between rounds
+/// (`let_io_run`). Panics naming `what` after the limit: a count, not a
+/// clock, so a loaded machine doesn't flake it. Returns the rounds used.
+#[track_caller]
+pub fn pump_until(what: &str, max_rounds: u64, mut round: impl FnMut() -> bool) -> u64 {
+    for n in 0..max_rounds {
+        if round() {
+            return n + 1;
+        }
+        let_io_run();
+    }
+    panic!("gave up waiting for {what} after {max_rounds} rounds");
+}
+
+/// A wait that ran out: `Sim::run_until`, `run_until_idle` and
+/// `await_message` give up after `ticks` ticks (their limit, not a
+/// clock: a slow machine doesn't change it).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Timeout {
+    /// What was awaited ("" if the caller named nothing).
+    pub what: String,
+    /// Ticks run while waiting.
+    pub ticks: u64,
+    /// The sim's tick when it gave up.
+    pub at_tick: u64,
+    /// Background work still on its way then (`chimera_core::tasks::pending`).
+    pub pending: usize,
+}
+
+impl std::fmt::Display for Timeout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let what = if self.what.is_empty() { "the condition" } else { &self.what };
+        write!(
+            f,
+            "gave up waiting for {what} after {} ticks (sim tick {}, {} background tasks still pending)",
+            self.ticks, self.at_tick, self.pending
+        )
+    }
+}
+
+impl std::error::Error for Timeout {}
+
+/// Ticks a finished background task's result may need to be taken up
+/// (a polling system runs once a tick; a result may start a next task).
+const IDLE_SETTLE_TICKS: u32 = 3;
+
+/// The longest `run_until_idle` waits for a background task on the wall
+/// clock before giving up (a task that never ends; the tick limit
+/// doesn't count while the pool works).
+const IDLE_WALL_LIMIT: Duration = Duration::from_secs(180);
+
 /// Threads of the task pools every `Sim` (`add_headless`) process starts:
 /// one I/O, one async compute, one compute. nextest runs tests as parallel
 /// processes, each would otherwise start a full set. One compute thread
@@ -193,6 +266,7 @@ impl Sim {
     /// several apps from one setup).
     pub fn with<B>(base: impl bevy::app::Plugins<B>, setup: impl FnOnce(&mut App)) -> Self {
         let mut app = App::new();
+        app.insert_resource(chimera_core::tasks::TestRun);
         add_headless(&mut app);
         app.add_plugins(base);
         setup(&mut app);
@@ -389,6 +463,114 @@ impl Sim {
             .collect();
         rows.sort_unstable_by_key(|r| r.0);
         rows
+    }
+
+    /// Advance by whole ticks covering `d`. Game time (`Time<Virtual>`,
+    /// `Time<Fixed>`) and `Time<Real>` both move by it, at once and exactly
+    /// (the app's `TimeUpdateStrategy::ManualDuration`: nothing in a `Sim`
+    /// reads the wall clock for `Time`): a test jumps "5 s later" with
+    /// `sim.advance(Duration::from_secs(5))`.
+    pub fn advance(&mut self, d: Duration) {
+        self.seconds(d.as_secs_f64());
+    }
+
+    /// Tick until `done` holds (checked before the first tick and after
+    /// each), at most `max_ticks`. Ok: the ticks it took; Err: `Timeout`.
+    /// Use instead of a fixed number of ticks wherever the test waits for
+    /// something to happen. `expect_until` names the wait and panics.
+    pub fn run_until(&mut self, mut done: impl FnMut(&mut World) -> bool, max_ticks: u64) -> Result<u64, Timeout> {
+        self.run_until_named("", &mut done, max_ticks)
+    }
+
+    fn run_until_named(&mut self, what: &str, done: &mut dyn FnMut(&mut World) -> bool, max_ticks: u64) -> Result<u64, Timeout> {
+        let mut ran = 0;
+        loop {
+            if done(self.app.world_mut()) {
+                return Ok(ran);
+            }
+            if ran >= max_ticks {
+                return Err(Timeout {
+                    what: what.to_string(),
+                    ticks: ran,
+                    at_tick: self.tick(),
+                    pending: chimera_core::tasks::pending(),
+                });
+            }
+            if chimera_core::tasks::pending() > 0 {
+                let_tasks_run();
+            }
+            self.ticks(1);
+            ran += 1;
+        }
+    }
+
+    /// `run_until`, panicking with `what` ("the map to load") and the
+    /// state when it runs out; returns the ticks it took.
+    #[track_caller]
+    pub fn expect_until(&mut self, what: &str, mut done: impl FnMut(&mut World) -> bool, max_ticks: u64) -> u64 {
+        match self.run_until_named(what, &mut done, max_ticks) {
+            Ok(n) => n,
+            Err(t) => panic!("{t}"),
+        }
+    }
+
+    /// Tick until the first message `M` written from now on, and return it
+    /// (a clone; the tick that wrote it has run). Err after `max_ticks`
+    /// without one.
+    pub fn await_message<M: Message + Clone>(&mut self, max_ticks: u64) -> Result<M, Timeout> {
+        let mut cursor = self.app.world().resource::<Messages<M>>().get_cursor_current();
+        let mut found = None;
+        let what = format!("a {} message", std::any::type_name::<M>());
+        self.run_until_named(
+            &what,
+            &mut |w| {
+                let messages = w.resource::<Messages<M>>();
+                found = cursor.read(messages).next().cloned();
+                found.is_some()
+            },
+            max_ticks,
+        )?;
+        Ok(found.expect("the wait ended on a message"))
+    }
+
+    /// Run background work to completion: tick until no task or job
+    /// counted in `chimera_core::tasks::pending` is left and the systems
+    /// that take up results have had `IDLE_SETTLE_TICKS` ticks (a result
+    /// may start the next task: a map's load, then its models), at most
+    /// `max_ticks`. While work is pending it waits a little between ticks
+    /// so the pools run, and gives up after a wall limit of 3 minutes
+    /// too. Ok: the ticks it took. Replaces sleeping for loads, model
+    /// builds, downloads and navigation meshes. Work not started through
+    /// `chimera_core::tasks::spawn` / `thread` is invisible to it; and
+    /// the count is the process's (under `cargo test`, other tests'
+    /// work counts too; nextest runs one test per process).
+    pub fn run_until_idle(&mut self, max_ticks: u64) -> Result<u64, Timeout> {
+        let began = std::time::Instant::now();
+        let mut ran = 0;
+        let mut quiet = 0;
+        loop {
+            let pending = chimera_core::tasks::pending();
+            if pending == 0 {
+                quiet += 1;
+                if quiet > IDLE_SETTLE_TICKS {
+                    return Ok(ran);
+                }
+            } else {
+                quiet = 0;
+                // The pools work on their own threads; give them the CPU.
+                std::thread::sleep(Duration::from_micros(300));
+            }
+            if ran >= max_ticks || began.elapsed() > IDLE_WALL_LIMIT {
+                return Err(Timeout {
+                    what: "background work to finish".to_string(),
+                    ticks: ran,
+                    at_tick: self.tick(),
+                    pending,
+                });
+            }
+            self.ticks(1);
+            ran += 1;
+        }
     }
 
     /// Advance by whole ticks covering `secs` seconds.

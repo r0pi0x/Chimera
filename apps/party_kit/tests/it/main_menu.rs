@@ -835,7 +835,7 @@ fn picked(sim: &mut Sim) {
         }
         sim.ticks(1);
         // The pick's thread a moment to answer.
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        chimera_world::harness::let_io_run();
     }
     panic!("the background's pick wasn't made");
 }

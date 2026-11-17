@@ -2091,7 +2091,7 @@ struct MapListsAhead(bevy::tasks::Task<Vec<(&'static str, Vec<String>, Vec<Strin
 fn read_map_lists_ahead(mut commands: Commands, games: Option<Res<Games>>) {
     let games: Vec<&'static GameInfo> = games.iter().flat_map(|g| g.all()).collect();
     let Some(pool) = bevy::tasks::AsyncComputeTaskPool::try_get().filter(|_| !games.is_empty()) else { return };
-    let task = pool.spawn(async move {
+    let task = chimera_core::tasks::spawn(&pool, async move {
         games
             .into_iter()
             .map(|g| {
@@ -2345,7 +2345,7 @@ pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>)
     // there too (`map::prepare`): the frame that swaps it in only spawns.
     let hooks = w.get_resource::<super::AppHooks>().copied();
     let prepare = crate::map::prepare::preparation(w);
-    let task = bevy::tasks::AsyncComputeTaskPool::get().spawn({
+    let task = chimera_core::tasks::spawn(&bevy::tasks::AsyncComputeTaskPool::get(), {
         let id = id.to_string();
         async move {
             let hooks = hooks.ok_or("this app loads no maps")?;

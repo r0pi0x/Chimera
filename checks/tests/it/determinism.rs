@@ -44,11 +44,17 @@ const NOT_SIMULATION: &[(&str, &str)] = &[
 
 /// Files of simulation crates that are not simulation, with the reason
 /// (their statics never reach a `World`'s state).
-const NOT_SIMULATION_FILES: &[(&str, &str)] = &[(
-    "chimera/core/src/metrics/work.rs",
-    "measurement: hardware counters per thread and the systems' counted instructions, read by tests and \
-     gates, never by the simulation (docs/performance.md, \"Work counts\")",
-)];
+const NOT_SIMULATION_FILES: &[(&str, &str)] = &[
+    (
+        "chimera/core/src/metrics/work.rs",
+        "measurement: hardware counters per thread and the systems' counted instructions, read by tests and \
+         gates, never by the simulation (docs/performance.md, \"Work counts\")",
+    ),
+    (
+        "chimera/core/src/pending_work.rs",
+        "measurement: a count of background jobs for tests and scenes to wait on, never read by the simulation",
+    ),
+];
 
 /// Simulation crates' source folders with their stored counts:
 /// occurrences of std's `HashMap`/`HashSet`, then mutable statics

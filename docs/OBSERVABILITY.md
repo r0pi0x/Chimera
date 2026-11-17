@@ -35,6 +35,44 @@ on the same base, over an in-memory link: `NetSim::new(CsSim,
 conditions, seed, clients, setup)`; `cs_source::harness`'s `TestMaps`
 and `serve_maps` give network tests maps built in code.
 
+#### Time and waiting
+
+A `Sim`'s clock is its own: `TimeUpdateStrategy::ManualDuration` steps
+`Time<Real>`, `Time<Virtual>` and `Time<Fixed>` by exactly one tick per
+`update`, so nothing waits on the wall clock. Tests jump and wait with
+the helpers, never with `thread::sleep` (`architecture::tests_do_not_sleep`
+refuses a new one and lists the justified rest in `TEST_SLEEPS`):
+
+- `sim.advance(Duration)`, `sim.seconds(s)`, `sim.ticks(n)`: "5 s later" at
+  once, game and real time together. A `Sim` also inserts
+  `chimera_core::tasks::TestRun`, so `chimera_ui::motion::init` starts
+  `Motion` at scale 0 (`ui_motion_scale` 0): UI animations snap. A test of
+  an animation sets `Motion` back.
+- `sim.run_until(|world| ..., max_ticks) -> Result<ticks, Timeout>`;
+  `sim.expect_until("the door to open", |world| ..., max_ticks)` panics
+  with what was awaited, the ticks, the sim tick and the pending background
+  work; `sim.await_message::<M>(max_ticks) -> Result<M, Timeout>` returns
+  the first `M` written from now on. The limit is a tick count, not a
+  clock, so a loaded machine can't flake it.
+- `sim.run_until_idle(max_ticks)`: ticks until no counted background work
+  is left (and three ticks more for the systems that take the results up).
+  Work is counted when it starts through `chimera_core::tasks::spawn(&pool,
+  fut)` or `tasks::thread(job)` (or holds a `tasks::Busy`): the map load,
+  model builds, the late builds, navigation meshes, the asset and map
+  downloads and the hub fetch do; `tasks::pending()` is the count (process
+  wide: under `cargo test` other tests' work counts too, nextest runs one
+  test per process). Work started another way is invisible to it: spawn it
+  through `tasks::spawn` when you add a loader. Bevy's own `AssetServer`
+  loads are not counted.
+- Loops that drive an `App` by hand: `harness::let_tasks_run()` between
+  frames while the engine's tasks run (a short sleep while work is pending),
+  `harness::let_io_run()` when waiting on real sockets or a test server's
+  thread, `harness::pump_until("what", max_rounds, || round_done)` for the
+  whole loop (it panics naming what, after a round count).
+- Scenes: `wait_for idle` (no background work pending) and
+  `wait_for cvar <name> <value> [timeout]` beside the other facts
+  (Scenes, below).
+
 Every spec test case becomes one of these. New behavior gets a scenario test
 before it is called done.
 
@@ -355,11 +393,18 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1600x900 +volume
   for armed pictures at its end). Anything else is a console line
   (`setpos`/`setang`, `thirdperson`, `cam_idealdist`, `cam_idealyaw`,
   `rung`, `target add`, `target look <n>`, `+attack`, ...).
+- `wait_for cvar <name> <value> [timeout frames]` waits for a console
+  variable to hold a value (numbers compare as numbers). After a line that
+  starts loading, `wait 2` then `wait_for idle` replaces a guessed
+  `wait 1500` for loads, model builds and downloads (not for pipelines the
+  GPU compiles).
 - Facts, from what the engine already tells: `map_loaded` (`MapLoads`
   moved), `match` (a minigame's match live), `spawned` (the local player
   alive), `shot` (`ShotMade`), `hit` (`DamageTaken`), `kill`, `death`
   (`Died`), `ragdoll` (`Ragdolled` added), `blast` (any game's blast,
-  `weapon::grenade::BlastDealt`, or a `core::Explosion`).
+  `weapon::grenade::BlastDealt`, or a `core::Explosion`), `idle` (no
+  counted background work pending, `chimera_core::tasks::pending`; holds
+  while it is so).
 - `<dir>/scene.log`: every line, fact and picture with its frame, and
   every `HitMeasured`/`KillMeasured`/`BlastMeasured`/`PropHit`: a scene is
   also a measurement, and the console's output (lines starting `| `).

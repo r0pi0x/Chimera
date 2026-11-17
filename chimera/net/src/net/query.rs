@@ -35,6 +35,11 @@
 //! `net_lan_ports` at `net_lan_broadcast` and this machine, retry, ping by
 //! round trip, one entry per server instance, other games' servers left out),
 //! `serverinfo` and `lanscan`.
+//!
+//! Known shortcuts: the query timeouts and retries read the real clock
+//! (`Instant`; the sockets and their threads are real too), not
+//! `Time<Real>`, so `Sim::advance` doesn't move them and a test of a
+//! timeout waits it out.
 
 use std::{
     collections::HashMap,

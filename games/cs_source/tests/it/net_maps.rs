@@ -516,7 +516,7 @@ fn a_client_downloads_the_map_from_sv_downloadurl() {
     );
     let (i, cache) = joins_without_the_map(&mut sim, &dir);
     let ok = sim.until(3000, |s| {
-        std::thread::sleep(Duration::from_micros(200));
+        chimera_world::harness::let_io_run();
         s.clients[i].app.world().contains_resource::<Joined>()
     });
     let p = progress(&sim, i);
@@ -548,7 +548,7 @@ fn wrong_or_refused_downloads_end_the_join_with_reasons() {
     );
     let (i, cache) = joins_without_the_map(&mut sim, &dir);
     sim.until(3000, |s| {
-        std::thread::sleep(Duration::from_micros(200));
+        chimera_world::harness::let_io_run();
         *s.clients[i].app.world().resource::<NetRole>() == NetRole::Standalone
     });
     let p = progress(&sim, i);

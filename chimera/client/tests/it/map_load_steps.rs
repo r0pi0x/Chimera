@@ -239,7 +239,7 @@ fn a_map_spawns_in_steps_behind_the_screen_with_the_simulation_waiting() {
             );
             assert!(!w.resource::<Time<Virtual>>().is_paused(), "settling: the simulation runs");
         }
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        chimera_world::harness::let_tasks_run();
     }
     assert!(stages.contains(&MapLoadStage::Spawning), "spawned in steps: {stages:?}");
     assert!(stages.contains(&MapLoadStage::Settling), "settled: {stages:?}");
@@ -292,7 +292,7 @@ fn colliders_that_follow_the_map_are_those_of_a_spawn_in_one_go() {
         if console::map_load_stage(stepped.app.world()) == MapLoadStage::None {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        chimera_world::harness::let_tasks_run();
     }
     assert_eq!(console::map_load_stage(stepped.app.world()), MapLoadStage::None, "in the game");
     let mut once = sim();
@@ -400,7 +400,7 @@ fn the_first_tick_on_a_map_computes_no_collider_mass_again() {
         if console::map_load_stage(sim.app.world()) == MapLoadStage::None {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        chimera_world::harness::let_tasks_run();
     }
     sim.ticks(5);
     assert_eq!(
@@ -480,7 +480,7 @@ fn the_local_load_lasts_from_the_start_until_the_game_is_entered() {
             stages.push(stage);
         }
         sim.app.update();
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        chimera_world::harness::let_tasks_run();
     }
     assert!(stages.contains(&MapLoadStage::Settling), "it settled: {stages:?}");
     assert!(!local_load_under_way(sim.app.world()), "off once in the game");

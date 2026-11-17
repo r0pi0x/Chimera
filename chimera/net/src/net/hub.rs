@@ -29,7 +29,9 @@
 //! Known shortcuts: heartbeats go to `/hub/heartbeat` on the account's
 //! hub, not the document's `register` endpoint (the same today); a server
 //! lists one LAN address (the one toward the internet); the list is asked
-//! again only when Join opens or F5.
+//! again only when Join opens or F5; the refresh timers (`listed_at`,
+//! `fetched`, the heartbeat's `sent`) read the real clock (`Instant`), not
+//! `Time<Real>`, so a test cannot jump them with `Sim::advance`.
 
 use std::{
     net::{IpAddr, SocketAddr, UdpSocket},
@@ -412,9 +414,12 @@ impl Hub {
 
     fn spawn(&self, job: impl FnOnce() -> Fetch + Send + 'static) {
         let (tx, rx) = mpsc::channel();
+        // Counted (`chimera_core::tasks::pending`) so a test can wait for it.
+        let busy = chimera_core::tasks::Busy::new();
         std::thread::Builder::new()
             .name("hub-fetch".into())
             .spawn(move || {
+                let _busy = busy;
                 let _ = tx.send(job());
             })
             .expect("a thread");

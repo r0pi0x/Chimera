@@ -168,7 +168,7 @@ fn a_flood_on_a_task_makes_the_same_mesh() {
                 break m;
             }
             assert!(started.elapsed().as_secs() < 60, "the task ends");
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            chimera_world::harness::let_tasks_run();
         };
         assert!(!whole.areas.is_empty());
         assert_eq!(format!("{:?}", whole.areas), format!("{:?}", on_task.areas), "bounded {bounded}, ignoring {ignore}");

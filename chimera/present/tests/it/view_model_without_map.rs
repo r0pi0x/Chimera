@@ -98,7 +98,7 @@ fn a_view_model_added_without_a_map_is_drawn() {
     let mut frames = 0;
     while !sim.app.world().resource::<ViewModelAssets>().has(KEY) {
         sim.ticks(1);
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        chimera_world::harness::let_tasks_run();
         frames += 1;
         assert!(frames < 5000, "never built");
     }
@@ -192,7 +192,7 @@ fn a_mesh_shows_the_frame_the_game_picks() {
     let mut frames = 0;
     while sim.app.world().get_resource::<ViewModelAssets>().is_none_or(|a| !a.has(KEY)) {
         sim.ticks(1);
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        chimera_world::harness::let_tasks_run();
         frames += 1;
         assert!(frames < 5000, "never built");
     }

@@ -708,7 +708,7 @@ fn start_http(url: &str, file: &str, size: u64) -> HttpFetch {
     let file = file.to_string();
     let (p, r) = (progress.clone(), result.clone());
     let max = size.max(1) + 1024 * 1024;
-    std::thread::spawn(move || {
+    chimera_core::tasks::thread(move || {
         let bz = format!("{base}/{file}.bz2");
         let out = match super::http::get(&bz, max, &p) {
             Ok(packed) => {
@@ -848,7 +848,7 @@ fn start(world: &mut World, welcome: &Welcome) -> Fetch {
     };
     super::client::set_stage(world, JoinStage::Verifying);
     let file = world_file(world, &map);
-    let task = AsyncComputeTaskPool::get().spawn(async move { check_local(&files, &map, file.as_deref(), hash) });
+    let task = chimera_core::tasks::spawn(&AsyncComputeTaskPool::get(), async move { check_local(&files, &map, file.as_deref(), hash) });
     Fetch::Checking(task)
 }
 
@@ -974,7 +974,7 @@ fn save(world: &mut World, map: &str, hash: [u8; 32], size: u64, bytes: Vec<u8>,
         return Fetch::Start;
     };
     let map = map.to_string();
-    let task = AsyncComputeTaskPool::get().spawn(async move { save_download(&cache, &map, &file, hash, size, &bytes, &from) });
+    let task = chimera_core::tasks::spawn(&AsyncComputeTaskPool::get(), async move { save_download(&cache, &map, &file, hash, size, &bytes, &from) });
     Fetch::Saving(task)
 }
 
