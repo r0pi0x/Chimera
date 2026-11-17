@@ -4669,6 +4669,44 @@ tick and the bots' first `think`: about 54 M. The test also holds
 `ensure_nav` under 5 M on every tick after the task's start, so the
 coincidence is no longer needed to catch this again.
 
+## A match's start and a host's way to the lobby (2026-11-17)
+
+From a Windows playtest of Ultimate Gun Game (playtest profile): "when
+starting a game it's lagging really badly", and hosting "takes a really
+long time ... plays a whole bunch of sounds ... before it gets into the
+lobby". Reproduced here with a scene (`--scene`) from the main menu:
+Host's Start on de_dust2 and on combat_arms:warehouse, the lobby, the
+host's `lobby_start 0`, 40 s of the match (`--offscreen 1920x1080
+--frame-log`, `+fps_max 60`, playtest profile, the box under other
+agents' builds, load 27-40).
+
+### The campaign's units at the app's start
+
+`halo_ce:campaign_bodies` turned on by default (fd3e4103a) asked for every
+campaign kind's unit (Elite, Grunt, Jackal, Marine, Hunter) when the app
+started: five tasks on the async compute pool (four threads) at the main
+menu, each reading its `body.map` through the mount (on the asset store a
+`CachedFiles` read, fetched on demand: about 60 MB with the Marine's
+voices' sets, each thread blocked on the network meanwhile), cutting and
+decoding it (the unit inflates to about 97 MB), and then, on the main
+thread, each kind's first-person view models (a walk of the body's
+meshes) and its models going into every Halo map (`late_build`). Whatever
+else the pool runs (a map's load, a worn body's cook, Bevy's pipelines
+for a model shown the first time) queued behind them, in the menu and
+into the first match. Not measurable on this box (no Halo install and
+no store here); the cause is plain from the code and the order.
+
+Now (`campaign::ladder_kinds`): nothing at the app's start. The kinds a
+match's ladder can give (its Halo rungs' weights, an own gun's kind) are
+wanted when the ladder is made (`want_ladder_kinds`: the match's start, a
+rotation) and named in the match's asset offer (`asset_names`:
+`halo_ce:character/<kind>`), so a client fetches them with the join's or
+the level change's download and a listen host with the server's own match
+fetch; their voices stay deferred `voice/` units. The loads wanted ahead
+of need keep to the read-ahead's half of the pool (`ReadAhead`, as Combat
+Arms' bodies), and the first-person views are made on the load's task.
+Test: `halo_ce` `campaign::campaign_units_come_with_the_matchs_ladder_not_the_apps_start`.
+
 ## First join download, 2026-11-14
 
 The playtest's first join downloaded "300+ MB". Measured from the asset

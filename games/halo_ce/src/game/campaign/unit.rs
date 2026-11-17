@@ -45,7 +45,9 @@
 //! by a character, or wanted by the host's draw while campaign bodies are
 //! on, is read from the mount (`body.map` at `body_path`: the asset
 //! store's generated set, layered under the install or standing in for
-//! it) in the background, once per session, made into a character model
+//! it) in the background (a kind wanted but not worn yet only while the
+//! read-ahead has room, `chimera_core::tasks::ReadAhead`), once per
+//! session, made into a character model
 //! named `BodyKind::model_name` (`body::load::biped_body`) and added to
 //! every map of Halo's (`map::add_character_model`). Without the file (no
 //! set fetched, no store) it is never offered: the draw gives the Spartan
@@ -393,7 +395,11 @@ pub fn held_on(kind: BodyKind, def: &BodyDef, file: &MapFile, mount: &Mount, gun
     Ok(HeldOn { models, textures })
 }
 
-type Loaded = Result<LoadedBody, String>;
+/// A body's unit and its first-person views (`first_person::view_model`,
+/// made on the task too: each is a walk of the body's meshes).
+type Loaded = Result<(LoadedBody, Views), String>;
+
+type Views = Vec<(std::sync::Arc<chimera_world::map::view_model::MapViewModel>, super::first_person::BodyView)>;
 
 /// Voice `index` of body `kind` (`BodyDef::voices`): its lines from its
 /// own set's file on `mount`, read with the body's biped.
@@ -422,6 +428,9 @@ pub struct UnitsOnDemand {
     /// The voices of kinds with several (`load_voice`), each read once.
     voice_tasks: BTreeMap<(BodyKind, u8), Task<Result<super::voice::BodySounds, String>>>,
     voices_tried: BTreeSet<(BodyKind, u8)>,
+    /// Kinds loading ahead of need (wanted, worn by nobody): counted in
+    /// `chimera_core::tasks::ReadAhead`.
+    ahead: BTreeSet<BodyKind>,
 }
 
 impl UnitsOnDemand {
@@ -477,8 +486,10 @@ pub fn load_on_demand(
     context: Option<Res<LoadContext>>,
     mut pending: ResMut<UnitsOnDemand>,
     wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
+    mut read_ahead: Option<ResMut<chimera_core::tasks::ReadAhead>>,
     mut commands: Commands,
 ) {
+    const WHO: &str = "halo_ce campaign bodies";
     let mut done = Vec::new();
     pending.tasks.retain(|kind, task| {
         let Some(result) = chimera_core::tasks::poll(task, wait.is_some()) else { return true };
@@ -487,7 +498,7 @@ pub fn load_on_demand(
     });
     for (kind, result) in done {
         match result {
-            Ok(LoadedBody { model, textures, held, sounds }) => {
+            Ok((LoadedBody { model, textures, held, sounds }, views)) => {
                 info!(
                     "halo_ce: the {} body loaded ({} hit boxes, {} guns in its hand, {} footstep kinds, {} voice lines)",
                     kind.id(),
@@ -500,20 +511,6 @@ pub fn load_on_demand(
                 let textures = std::sync::Arc::new(textures);
                 let held_textures = std::sync::Arc::new(held.textures);
                 let sounds = std::sync::Arc::new(sounds);
-                // Its first-person view from its own model (`first_person`),
-                // the eye at its standing camera.
-                let views: Vec<_> = data
-                    .body(kind)
-                    .and_then(|d| d.first_person.clone())
-                    .map(|view| {
-                        let base = crate::game::movement::MovementData::builtin();
-                        let eye = data.movement(kind, &base).map_or(base.camera_stand, |m| m.camera_stand) * crate::game::METERS_PER_UNIT;
-                        view.guns
-                            .iter()
-                            .map(|g| (std::sync::Arc::new(super::first_person::view_model(&model, &view, g, eye)), view.clone()))
-                            .collect()
-                    })
-                    .unwrap_or_default();
                 commands.queue(move |world: &mut World| {
                     for (m, view) in views {
                         info!("halo_ce: the {} body is the first-person view of {} ({} meshes kept)", kind.id(), m.key, m.model.meshes.len());
@@ -575,10 +572,32 @@ pub fn load_on_demand(
         });
         pending.voice_tasks.insert((kind, v), task);
     }
-    let wanted: Vec<BodyKind> = worn.iter().map(|(k, _)| *k).chain(pending.wanted.iter().copied()).collect();
-    for kind in wanted {
+    // Those worn now, then those wanted ahead of need (a ladder's kinds:
+    // only while the read-ahead has room, so a worn body's cook or a
+    // pipeline never queues behind five units).
+    {
+        let UnitsOnDemand { tasks, ahead, .. } = &mut *pending;
+        ahead.retain(|k| tasks.contains_key(k));
+    }
+    if let Some(r) = read_ahead.as_mut() {
+        r.set(WHO, pending.ahead.len());
+    }
+    let worn_now: BTreeSet<BodyKind> = worn.iter().map(|(k, _)| *k).collect();
+    let wanted: Vec<(BodyKind, bool)> =
+        worn_now.iter().map(|k| (*k, false)).chain(pending.wanted.iter().filter(|k| !worn_now.contains(k)).map(|k| (*k, true))).collect();
+    for (kind, early) in wanted {
         if kind == BodyKind::Spartan || pending.tried.contains(&kind) {
             continue;
+        }
+        if early && !chimera_core::tasks::read_ahead_room(read_ahead.as_deref()) {
+            break;
+        }
+        if early {
+            pending.ahead.insert(kind);
+            let n = pending.ahead.len();
+            if let Some(r) = read_ahead.as_mut() {
+                r.set(WHO, n);
+            }
         }
         pending.tried.insert(kind);
         let Some(def) = data.body(kind).cloned() else {
@@ -587,10 +606,26 @@ pub fn load_on_demand(
         };
         let context = context.as_deref().cloned().unwrap_or_default();
         let guns: Vec<String> = data.guns.iter().filter(|(_, w)| w.get(kind.id()).is_some_and(|x| *x > 0.0)).map(|(g, _)| g.clone()).collect();
+        // Its first-person view from its own model (`first_person`), the
+        // eye at its standing camera.
+        let view = def.first_person.clone();
+        let eye = {
+            let base = crate::game::movement::MovementData::builtin();
+            data.movement(kind, &base).map_or(base.camera_stand, |m| m.camera_stand) * crate::game::METERS_PER_UNIT
+        };
         let task = AsyncComputeTaskPool::get().spawn(async move {
             let mount = super::super::maps::mount_for(&context)?;
             let guns: Vec<&str> = guns.iter().map(String::as_str).collect();
-            load_body(kind, &def, &mount, true, &guns)
+            let body = load_body(kind, &def, &mount, true, &guns)?;
+            let views: Views = view
+                .map(|view| {
+                    view.guns
+                        .iter()
+                        .map(|g| (std::sync::Arc::new(super::first_person::view_model(&body.model, &view, g, eye)), view.clone()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok((body, views))
         });
         pending.tasks.insert(kind, task);
     }
