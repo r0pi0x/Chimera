@@ -6,11 +6,25 @@
 //! `Arc<Vec<T>>`, `pod_opt_arc` on an `Option<Arc<Vec<T>>>`. Reading
 //! copies each string out (no alignment needed). The bytes are the
 //! machine's own order: the cache is local to the machine.
+//!
+//! `#[serde(serialize_with = "sorted")]` on a std hash map writes it in key
+//! order, so the same map serializes to the same bytes every time (a
+//! hash map's own order is random per instance): a converted map or guest
+//! dressing written twice is byte-identical (the generated-assets rule;
+//! docs/plans/active/converted-cache.md, step 1). Reading needs nothing.
 
 use std::{marker::PhantomData, sync::Arc};
 
 use bytemuck::Pod;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Visitor};
+
+/// A std hash map written in its keys' order (module doc).
+pub fn sorted<K: Serialize + Ord, V: Serialize, H, S: Serializer>(
+    m: &std::collections::HashMap<K, V, H>,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    s.collect_map(m.iter().collect::<std::collections::BTreeMap<_, _>>())
+}
 
 /// A slice written as its bytes.
 struct Blob<'a, T>(&'a [T]);
@@ -226,5 +240,21 @@ mod tests {
         // A byte string that isn't a whole number of elements is refused.
         let bad = postcard::to_allocvec(&(vec![0u8; 5],)).unwrap();
         assert!(postcard::from_bytes::<(Owned<[f32; 3]>,)>(&bad).is_err());
+    }
+
+    /// A map's tables of the same entries, filled in different orders
+    /// (each with its own random hasher), write the same bytes, and read
+    /// back the same.
+    #[test]
+    fn a_sorted_map_writes_the_same_bytes_every_time() {
+        use crate::map::hud::ModelScreen;
+        let (mut a, mut b) = (ModelScreen::default(), ModelScreen::default());
+        for i in 0..200u8 {
+            a.colors.insert(format!("color{i}"), [i; 4]);
+            b.colors.insert(format!("color{}", 199 - i), [199 - i; 4]);
+        }
+        let (x, y) = (postcard::to_allocvec(&a).unwrap(), postcard::to_allocvec(&b).unwrap());
+        assert_eq!(x, y);
+        assert_eq!(postcard::from_bytes::<ModelScreen>(&x).unwrap(), a);
     }
 }

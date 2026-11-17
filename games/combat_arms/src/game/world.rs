@@ -306,14 +306,11 @@ pub struct SizesOnly;
 
 /// A memo (`MapData::memos`) of a model's own data loaded to be kept past
 /// its map (a body, held or view model loaded on demand, the shared
-/// character models): a texture added to it whose file holds whole DXT
-/// blocks keeps those alone (`MapTexture::keep_blocks_only`: no RGBA8
-/// texels, no box-filtered mips), which is what the GPU takes; nothing
-/// reads these textures' texels on the CPU, and the drawing decodes the
-/// blocks where the GPU takes no BC. A client held 1.9 GB of decoded
-/// texels for them (docs/performance.md, "A client's memory").
-#[derive(Clone, Copy, Debug, Default)]
-pub struct BlocksOnly;
+/// character models): Chimera's `map::BlocksOnly`, which every game's
+/// kept parts use (a texture of whole DXT blocks keeps those alone,
+/// never decoded). A client held 1.9 GB of decoded texels for them
+/// (docs/performance.md, "A client's memory").
+pub use crate::map::BlocksOnly;
 
 /// Whether textures added to `map` are decoded (it isn't `SizesOnly`).
 pub fn decodes(map: &MapData) -> bool {

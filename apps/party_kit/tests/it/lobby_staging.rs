@@ -133,7 +133,7 @@ fn setup_signal(app: &mut App) {
 
 /// `staged_party` whose clients draw in the Ultimate Gun Game's theme
 /// (the themed lobby, the Signal Escape menu and Settings).
-fn staged_signal_party() -> NetSim {
+pub(crate) fn staged_signal_party() -> NetSim {
     let mut sim = staged_party_with(setup_signal);
     for c in &mut sim.clients {
         c.app
@@ -305,7 +305,7 @@ pub(crate) fn check(ok: bool, trace: &Trace, what: &str) {
     }
 }
 
-fn live(sim: &NetSim) -> bool {
+pub(crate) fn live(sim: &NetSim) -> bool {
     let w = sim.server.app.world();
     w.resource::<Match>().phase == chimera_sim::mode::Phase::Live && !w.contains_resource::<PreMatch>()
 }
@@ -362,7 +362,7 @@ fn all_staged(sim: &mut NetSim) -> Result<(), String> {
 /// Client `i` shows the lobby in place of the match: its screen up, the
 /// HUDs covered, the world's view off, the input the lobby's (the mouse
 /// free), its own player (if it has one yet) dead without a weapon.
-fn lobby_owns(sim: &mut NetSim, i: usize) -> Result<(), String> {
+pub(crate) fn lobby_owns(sim: &mut NetSim, i: usize) -> Result<(), String> {
     let me = sim.local_player(i);
     let w = sim.clients[i].app.world();
     let shown = w.resource::<LobbyView>().shown;
@@ -390,11 +390,11 @@ fn take_handshake(world: &mut World) {
     }
 }
 
-fn hold_join(sim: &mut NetSim, i: usize) {
+pub(crate) fn hold_join(sim: &mut NetSim, i: usize) {
     sim.clients[i].app.init_resource::<HeldJoin>().add_systems(RunFixedMainLoop, take_handshake);
 }
 
-fn release_join(sim: &mut NetSim, i: usize) {
+pub(crate) fn release_join(sim: &mut NetSim, i: usize) {
     let w = sim.clients[i].app.world_mut();
     let h = w.remove_resource::<HeldJoin>().and_then(|h| h.0).expect("the held handshake");
     w.insert_resource(h);
@@ -409,7 +409,7 @@ fn tap(sim: &mut NetSim, i: usize, key: KeyCode) {
     sim.step();
 }
 
-fn lobby_view(sim: &NetSim, i: usize) -> bool {
+pub(crate) fn lobby_view(sim: &NetSim, i: usize) -> bool {
     sim.clients[i].app.world().resource::<LobbyView>().shown
 }
 

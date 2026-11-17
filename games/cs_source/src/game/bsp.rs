@@ -318,7 +318,8 @@ fn add_guns(
 /// (`MaterialLoader::lean`: a load without textures, the dedicated server's).
 pub fn dress_guest(mount: &Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
-    let mut materials = MaterialLoader::guest(mount, textures, cubemaps).lean(lean);
+    let mut materials = MaterialLoader::guest(mount, textures, cubemaps).lean(lean)
+        .blocks_only(map.memos.get::<crate::map::BlocksOnly>().is_some());
     let surfaces = super::surfaceprops::SurfaceProps::load(&mut materials);
     let kit = crate::map::KitLoad::Players(kept);
     let mut guest = crate::map::GameKit::default();

@@ -2937,7 +2937,10 @@ docs/plans/active/sound.md.
   dressing read back from disk takes 3.2x (CS:S), 7.1x (HL2:DM) and
   4.6x (TF2) fewer instructions than converting; entries 49-773 MB raw,
   20-304 MB compressed; decisions for the user at the plan's end.
-  Builds on the kept-dressing API below.
+  Builds on the kept-dressing API below. **Steps 1-2 done 2026-11-17:**
+  converted dressings write the same bytes each time; kept dressings
+  skip decoding their whole-DXT textures (CS:S 61%, HL2:DM 24%, TF2 56%
+  fewer instructions cold, the same textures).
 
 - **Streamed textures, low resolution first (user, 2026-11-17).** Keep
   textures apart from models. Serve small mip levels first from the

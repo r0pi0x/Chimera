@@ -2584,7 +2584,8 @@ Signal loading screen, the Leave? dialog with `ask`, a slice loading with `slice
 made-up party as a member or its leader, the follow prompt; docs/plans/active/parties.md; `+mainmenu` too, and
 `+ui_scene party lead +party_panel 0 +ui_scene esc +escmenu_press disconnect` without it for the leader's
 Leave confirm), `ui_scene lobby host` (the host's view of a first lobby waiting for its
-Start, two parties with their edges), `ui_scene lobby between` (the
+Start, two parties with their edges), `ui_scene lobby join` (a joiner's view: its own row downloading, the
+match's settings, Leave), `ui_scene lobby between` (the
 host's lobby after a match, the next map coming in: each row at its own
 load stage, `chimera_net::net::load_stages`).
 `ui_scene sandbox <rest|tab|pins|next|gun|gun-detail|gun-tags|gun-fold|drag|bench|bench-pick|range>`

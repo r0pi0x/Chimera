@@ -15,10 +15,6 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-fn sorted<S: serde::Serializer>(m: &HashMap<String, usize>, s: S) -> Result<S::Ok, S::Error> {
-    s.collect_map(m.iter().collect::<std::collections::BTreeMap<_, _>>())
-}
-
 use bevy::prelude::*;
 
 /// One bone's local rotation and position.
@@ -39,7 +35,7 @@ pub struct AnimSet {
     /// Sequence index by lower-case name (filled by loaders; optional).
     /// Serialized in name order, so a cached map's bytes are the same
     /// each time (`cache`).
-    #[serde(serialize_with = "sorted")]
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub names: HashMap<String, usize>,
     /// The target skeleton's bone parents (empty: unknown; inverse
     /// kinematics then does nothing).

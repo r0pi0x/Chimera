@@ -74,6 +74,10 @@ fn setup(app: &mut App) {
     testkit::add_weapons(app);
     app.add_minigames(&[("kit_lobby.toml", DEF)]).expect("the definition reads");
     prematch::enable(app);
+    prematch::add_fact(
+        app,
+        prematch::LobbyFact { label: "Longest wait".into(), cvar: "mp_lobby_max_wait".into(), words: vec![("0".into(), "None".into())], hide: vec!["".into()] },
+    );
 }
 
 fn sim(clients: usize) -> NetSim {
@@ -573,4 +577,22 @@ fn the_lobby_after_a_match_waits_for_everyone_or_the_hosts_timeout() {
     let waited = clock(&sim) - ready_at;
     assert!((waited - 10.0).abs() < 0.5, "10 s from the match made there: {waited}");
     assert!(sim.until(6 * HZ, |s| !in_lobby(s)), "it starts without the straggler");
+}
+
+/// The lobby tells every player the match's settings (docs/plans/active/
+/// lobby-between-maps.md, step 5): the mode's length and the host's
+/// registered facts as words, on a client still downloading too, and
+/// changed when the host changes one.
+#[test]
+fn the_lobby_tells_a_joiner_the_matchs_settings() {
+    let mut sim = sim(2);
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts");
+    let _h = hold(&mut sim, 1);
+    downloading(&mut sim, 1, 1_000_000, 50_000_000);
+    assert!(sim.until(600, |s| joined(s, 0)), "client 0 is in");
+    let want = |v: &str| vec![("Length".to_string(), "5 min".to_string()), ("Longest wait".to_string(), v.to_string())];
+    assert!(sim.until(HZ, |s| client_lobby(s, 1).is_some_and(|l| l.settings == want("90"))), "{:?}", client_lobby(&mut sim, 1));
+    sim.server.app.world_mut().resource_mut::<Console>().submit("mp_lobby_max_wait 0");
+    let none = vec![("Length".to_string(), "5 min".to_string()), ("Longest wait".to_string(), "None".to_string())];
+    assert!(sim.until(HZ, |s| client_lobby(s, 0).is_some_and(|l| l.settings == none)), "{:?}", client_lobby(&mut sim, 0));
 }

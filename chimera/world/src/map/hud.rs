@@ -71,6 +71,7 @@ pub struct HudPanel {
     pub digit: Vec2,
     pub digit2: Vec2,
     /// Every key as written (lower-case keys), for panel-specific values.
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub keys: HashMap<String, String>,
 }
 
@@ -109,22 +110,29 @@ pub struct GameHud {
     /// (`client::hud::HudLookOwner`).
     pub game: String,
     /// By the game's font name (e.g. `HudNumbers`, `Icons`).
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub fonts: HashMap<String, HudFont>,
     /// By panel name (e.g. `HudHealth`).
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub panels: HashMap<String, HudPanel>,
     /// Icon name -> (font name, glyph).
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub icons: HashMap<String, (String, char)>,
     /// Named colours (RGBA 0..255).
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub colors: HashMap<String, [u8; 4]>,
     /// The client scheme's text fonts by name (`ChatFont`, `Default`):
     /// sizes in order of preference, drawn in system faces.
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub text_fonts: HashMap<String, Vec<UiFontSize>>,
     /// Icon name -> a rectangle of a texture (pixels).
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub sprites: HashMap<String, HudSprite>,
     /// The game's own menus, when it describes them (see `GameMenus`).
     pub menus: Option<GameMenus>,
     /// Screens on models (Source's VGUI screens: the C4's keypad display),
     /// by name (`c4_view_panel`).
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub screens: HashMap<String, ModelScreen>,
 }
 
@@ -134,6 +142,7 @@ pub struct GameHud {
 pub struct ModelScreen {
     pub pixels: Vec2,
     pub font: Option<UiFontSize>,
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub colors: HashMap<String, [u8; 4]>,
 }
 
@@ -239,6 +248,7 @@ pub struct UiControl {
     pub info: Option<String>,
     /// Every key as written (lower-case keys), for control-specific values
     /// (e.g. `cost`).
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub keys: HashMap<String, String>,
 }
 
@@ -404,8 +414,10 @@ pub fn layout_key(path: &str) -> String {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct GameMenus {
     /// Layouts by `layout_key` of their file.
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub layouts: HashMap<String, UiLayout>,
     /// The buy menu's first page per team (`core::Team` number).
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub buy: HashMap<u8, String>,
     /// The team menu's layout.
     pub team: Option<String>,
@@ -442,11 +454,13 @@ pub struct GameMenus {
     pub motd_file: Option<String>,
     pub motd_text_file: Option<String>,
     /// The class menu's layout per team (`core::Team` number).
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub class: HashMap<u8, String>,
     /// The loaded map's description (the team menu's `MapInfo`).
     pub map_info: Option<String>,
     /// The game's localised strings by lower-case token (no `#`), for
     /// text the client fills in (`Cstrike_ScoreBoard_CT`).
+    #[serde(serialize_with = "crate::map::pod_serde::sorted")]
     pub strings: HashMap<String, String>,
 }
 
