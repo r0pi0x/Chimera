@@ -373,3 +373,23 @@ fn the_gun_column_shows_short_names() {
         assert!(out.iter().any(|l| l == line), "{line} in {out:?}");
     }
 }
+
+/// Under the Signal look the plain table never shows (only the race
+/// chip's Tab board does), also while the chip is off: the gap between a
+/// match and the lobby or the match end, with no ladder but the minigame
+/// still reading as playing.
+#[test]
+fn the_plain_table_never_shows_under_the_signal_look() {
+    let mut sim = Sim::new(SimBasePlugins, (GreyboxMapPlugin, MinigameScoreboardPlugin));
+    sim.app.init_resource::<HeldActions>();
+    sim.app.insert_resource(chimera_ui::Theme::from_toml("name = \"test\"\n[flags.hud]\nsignal = true\n").expect("theme"));
+    player(&mut sim, "Alpha", 1, 4, 2, 3, None);
+    sim.app.world_mut().insert_resource(MinigameHud { title: "Kit gun game".into(), ..default() });
+    sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
+    sim.ticks(3);
+    assert!(!shown(&mut sim) && rows(&mut sim).is_empty(), "no old table on Tab under the Signal look");
+    // The shell's own look keeps it.
+    sim.app.insert_resource(chimera_ui::Theme::shell_default());
+    sim.ticks(3);
+    assert!(shown(&mut sim) && !rows(&mut sim).is_empty());
+}

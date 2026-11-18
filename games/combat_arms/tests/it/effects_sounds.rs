@@ -1739,6 +1739,51 @@ fn c65_local_voices() {
     assert!(stopped.iter().any(|s| s.volume == 0.0), "killed by a silent copy: {stopped:?}");
 }
 
+/// Your kill voice is Combat Arms' for kills with Combat Arms' guns only:
+/// the killing weapon's game decides, not what you hold or are by now (a
+/// party app's rung swap makes you the next gun's game at once); another
+/// player's kill makes no voice here.
+#[test]
+fn c65b_kill_voice_only_for_own_games_kills() {
+    let mut sim = sim();
+    let me = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
+    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
+    let foe = player(&mut sim, Vec3::new(30.0, 1.0, 20.0), 0.0);
+    let other = player(&mut sim, Vec3::new(40.0, 1.0, 20.0), 0.0);
+    sim.ticks(2);
+    heard(&mut sim);
+    let kill = |sim: &mut Sim, by: Entity, weapon: Option<&'static str>| {
+        sim.app.world_mut().write_message(Died {
+            entity: foe,
+            attacker: Some(by),
+            damage: Damage {
+                target: foe,
+                attacker: Some(by),
+                amount: 1.0,
+                point: Vec3::ZERO,
+                dir: Vec3::Z,
+                hitgroup: Hitgroup::Chest,
+                kind: DamageKind::Bullet,
+                weapon,
+                force: Vec3::ZERO,
+            },
+        });
+        sim.ticks(1);
+        let n = heard(sim).iter().filter(|s| s.file.ends_with("enemykill.wav")).count();
+        sim.seconds(2.0);
+        heard(sim);
+        n
+    };
+    assert_eq!(kill(&mut sim, me, Some("combat_arms:m4")), 1, "a Combat Arms gun's kill");
+    assert_eq!(kill(&mut sim, me, Some("cs_source:ak47")), 0, "a CS:S gun's kill is silent here");
+    // Your identity is Combat Arms' by now (the rung's swap), the kill was
+    // CS:S's: still silent; with no weapon known, the identity decides.
+    sim.app.world_mut().entity_mut(me).insert(chimera_core::slots::GameIdentity("combat_arms".into()));
+    assert_eq!(kill(&mut sim, me, Some("cs_source:ak47")), 0, "the swap doesn't make it ours");
+    assert_eq!(kill(&mut sim, me, None), 1, "no weapon known: the identity's game");
+    assert_eq!(kill(&mut sim, other, Some("combat_arms:m4")), 0, "another player's kill");
+}
+
 /// 66. A hurt sound plays at the victim's centre (not the hit point), and
 /// burning to the head makes no head sound.
 #[test]

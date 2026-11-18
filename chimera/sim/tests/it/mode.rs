@@ -365,6 +365,8 @@ fn a_counted_win_ends_the_round_at_the_next_frame() {
             victim_team: BRAVO,
             killer: Some(a),
             kind: DeathKind::Enemy,
+            weapon: None,
+            damage_kind: Default::default(),
         };
         (mode.on_death)(world, &death);
     };

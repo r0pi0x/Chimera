@@ -136,6 +136,26 @@ impl DamageWeapons {
 }
 
 
+/// Weapon id prefixes that name no game.
+pub const NOT_GAMES: [&str; 1] = ["kit"];
+
+/// The game a kill belongs to, for the sounds and voices each game plays
+/// for its own kills: the game of the weapon that dealt the killing damage
+/// (`DamageWeapons::of`: its own or what the killer held when it struck,
+/// not what it holds by now, a rung's swap), else the killer's identity;
+/// None: no game's in particular (a plain app). A weapon id's prefix
+/// counts unless it is one of `NOT_GAMES` (`kit:` guns are a module's).
+pub fn killing_game(
+    damage: &crate::core::Damage,
+    weapons: Option<&DamageWeapons>,
+    identity: Option<&str>,
+) -> Option<String> {
+    let id = weapons.map_or(damage.weapon, |w| w.of(damage));
+    let prefix = id.and_then(|id| id.split_once(':')).map(|(g, _)| g);
+    let named = prefix.filter(|g| !NOT_GAMES.contains(g));
+    named.map(str::to_string).or_else(|| identity.map(str::to_string))
+}
+
 /// `impulse 101` filled `player`'s weapons: games fill the ammo they count
 /// themselves (HL2:DM's rockets, grenades, S.L.A.M.s, attack2 rounds).
 #[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]

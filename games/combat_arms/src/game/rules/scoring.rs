@@ -172,6 +172,8 @@ fn on_died(world: &mut World, d: &Died) {
             victim_team,
             killer: d.attacker,
             kind,
+            weapon: d.damage.weapon,
+            damage_kind: d.damage.kind,
         };
         if mode.assists && kind == super::state::DeathKind::Enemy {
             give_assists(world, &death);

@@ -264,7 +264,10 @@ run, one that reads only table parts over their tables (party_kit's
 every combination of the rest (two movements on one marker switch by a
 new value in place, `slots::MovementImpl::marker`; a game's parts that
 follow its movement go in the movement's `insert`, `remove` and `leave`,
-not in a system watching the slot). `chimera_census made`
+not in a system watching the slot). Another crate's marker counts too:
+avian marks a body for a mass update at each change of its collider, so a
+character's collider carries no mass (`core::no_collider_mass`).
+`chimera_census made`
 says which moves made them; `ultimate_gun_game`'s lap test caps what a lap
 adds. A per-tick system walks a characters' query once: a loop, not
 `collect`, whose `size_hint` walks every matched archetype first.

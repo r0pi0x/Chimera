@@ -16,9 +16,31 @@ use ultimate_gun_game::{MINIGAME, RUNGS, generate};
 
 use crate::parts::ugg;
 
-/// The automatic gun game with eight bots, on room to spawn.
-fn session() -> (Sim, Vec<Entity>) {
+/// The games the session's ladders draw from, the same on every machine:
+/// without them named, a game counted as installed or not by what this
+/// machine's installs and asset store hold, and so did the counts.
+const PINNED: &[&str] = &["cs_source", "hl2dm", "combat_arms"];
+
+/// Every game the app composes (`party_kit::GAME_PARTS`).
+fn every_game() -> Vec<&'static str> {
+    party_kit::GAME_PARTS.iter().map(|p| p.game).collect()
+}
+
+/// The automatic gun game with eight bots, on room to spawn, its ladders
+/// drawn from `games` alone (as this machine's mount report:
+/// `chimera_net::minigame_net::installed_by_all`).
+fn session(games: &[&str]) -> (Sim, Vec<Entity>) {
     let mut sim = ugg();
+    sim.app.world_mut().insert_resource(chimera_net::net::manifest::LocalMounts(chimera_net::net::manifest::MountReport {
+        games: games
+            .iter()
+            .map(|g| chimera_net::net::manifest::GameMount {
+                game: g.to_string(),
+                installed: true,
+                ..Default::default()
+            })
+            .collect(),
+    }));
     // From the start, not only for the measured matches: the first
     // match's tasks (bodies, held models, the map's kit) landing on the
     // tick the machine's load allows made the session's later counts
@@ -105,13 +127,26 @@ fn steady(w: &Work) -> f64 {
     t.get(t.len() / 2).copied().unwrap_or(0) as f64
 }
 
-/// Match after match the characters' tables and archetypes stop growing
-/// and a tick costs the same. Before their components that come and go were sparse sets
-/// (8 matches): 1112 -> 2272 tables, 7.5M -> 9.1M instructions a tick (means)
-/// (20,000 tables in the real app: 8.3M -> 39.8M, and 60 -> 30 fps).
-#[test]
-fn a_session_of_matches_stops_making_tables() {
-    let (mut sim, _) = session();
+/// The archetypes after eight matches of `PINNED`'s ladders, and made
+/// after the fourth (887 and 11, all the guns' and their shots': see the
+/// main test's history).
+const ARCHETYPES_PINNED: usize = 950;
+const LATER_PINNED: usize = 40;
+/// The same with every game's ladders (943 and 34).
+const ARCHETYPES_EVERY_GAME: usize = 1_000;
+const LATER_EVERY_GAME: usize = 60;
+/// Characters' archetypes made after the fourth match (none now): a
+/// character's parts, kept on or moved together, visit a set that stops
+/// growing; a new one is a part that comes and goes.
+const LATER_CHARACTERS: usize = 5;
+
+/// One match's counts: archetypes made, tables, and what 60 ticks cost.
+type Row = (usize, usize, Option<Work>);
+
+/// Eight matches of ladders from `games` (each its own seed): each one's
+/// counts after it, and the session.
+fn eight_matches(games: &[&str]) -> (Sim, Vec<Row>) {
+    let (mut sim, _) = session(games);
     sim.repeatable();
     let mut rows = Vec::new();
     for m in 0..8u64 {
@@ -127,6 +162,45 @@ fn a_session_of_matches_stops_making_tables() {
         );
         rows.push((c.archetypes_made, c.tables, tick));
     }
+    let characters = chimera_core::metrics::census::command(sim.app.world_mut(), &["made".to_string()]);
+    eprintln!("{characters:?}");
+    (sim, rows)
+}
+
+/// The characters' archetypes (those holding `Health`) made since the
+/// `from`th.
+fn characters_since(world: &World, from: usize) -> usize {
+    let Some(health) = world.components().component_id::<Health>() else { return 0 };
+    world.archetypes().iter().filter(|a| a.id().index() >= from && a.contains(health)).count()
+}
+
+/// The bound on archetypes: under `total` after eight matches, fewer than
+/// `later` made after the fourth, and of those fewer than
+/// `LATER_CHARACTERS` characters'.
+fn archetypes_level_off(sim: &Sim, rows: &[Row], total: usize, later: usize) {
+    let since = chimera_core::metrics::census::made_since(sim.app.world(), rows[3].0, 20);
+    eprintln!("{since}");
+    let last = rows[7].0;
+    let characters = characters_since(sim.app.world(), rows[3].0);
+    assert!(
+        last < total && last - rows[3].0 < later && characters < LATER_CHARACTERS,
+        "{} archetypes after four matches, {} after eight (bounds {total} and {later} more): a part that comes and goes \
+         on characters, one at a time, makes one for every combination of the others. Keep it on them from the spawn \
+         (`chimera_core::character::CharacterPartsExt::on_every_character`), keep it on with a value meaning none, or put \
+         a game's parts on and off in one move (docs/DESIGN.md, \"ECS style\"); {characters} of them characters' \
+         (bound {LATER_CHARACTERS}). {since}",
+        rows[3].0,
+        last
+    );
+}
+
+/// Match after match the characters' tables and archetypes stop growing
+/// and a tick costs the same. Before their components that come and go were sparse sets
+/// (8 matches): 1112 -> 2272 tables, 7.5M -> 9.1M instructions a tick (means)
+/// (20,000 tables in the real app: 8.3M -> 39.8M, and 60 -> 30 fps).
+#[test]
+fn a_session_of_matches_stops_making_tables() {
+    let (mut sim, rows) = eight_matches(PINNED);
     let (first, last) = ((rows[1].0, rows[1].1), (rows[7].0, rows[7].1));
     let what = chimera_core::metrics::census::command(sim.app.world_mut(), &["varies".to_string()]);
     // The growth bound is 80 since the equal-games draw (backlog, "Ladder
@@ -167,18 +241,18 @@ fn a_session_of_matches_stops_making_tables() {
     // Halo's ninth gun changed the draws), so the bound keeps some room:
     // 1,300 and 80; with the equal-games draw (backlog, "Ladder draw"),
     // which reaches more games' guns in the first matches, 1,318 after
-    // eight, 40 since the fourth: 1,400 and 80.)
-    let since = chimera_core::metrics::census::made_since(sim.app.world(), rows[3].0, 20);
-    eprintln!("{since}");
-    assert!(
-        last.0 < 1400 && last.0 - rows[3].0 < 80,
-        "{} archetypes after four matches, {} after eight: a part that comes and goes on characters, one at a time, makes \
-         one for every combination of the others. Keep it on them from the spawn \
-         (`chimera_core::character::CharacterPartsExt::on_every_character`), keep it on with a value meaning none, or put \
-         a game's parts on and off in one move (docs/DESIGN.md, \"ECS style\"). {since}",
-        rows[3].0,
-        last.0
-    );
+    // eight, 40 since the fourth: 1,400 and 80. The ladders drew from the
+    // games this machine's installs and asset store held, so the count
+    // was the machine's: with TF2's and Halo's 1,923. Now pinned to CS:S,
+    // HL2:DM and Combat Arms (`PINNED`; every game: the next test), 952,
+    // 178 of them characters', 11 after the fourth; avian's mass marker
+    // (`RecomputeMassProperties`, on and off at each change of a
+    // character's collider) no longer comes (`core::no_collider_mass`),
+    // and Combat Arms' rung look and on-demand hitboxes, Halo's body kind,
+    // the damage scale, the rung classes and `InMinigame` at a match's
+    // start stay on with a value meaning none: 887, 112 characters', none
+    // after the fourth.)
+    archetypes_level_off(&sim, &rows, ARCHETYPES_PINNED, LATER_PINNED);
     // Each match plays a ladder of its own, so their ticks differ; the
     // counts repeat from run to run (the session plays out the same:
     // `a_match_repeats_tick_for_tick`), so the bound only has to hold the
@@ -191,6 +265,19 @@ fn a_session_of_matches_stops_making_tables() {
             b.systems.per(60).diff_table(&a.systems.per(60), 25)
         );
     }
+}
+
+/// The same with every game's ladders (all five composed games:
+/// TF2's classes and Halo's bodies, movements and vitality in play too):
+/// what the user's long session played (5 minutes: 4,109 archetypes, the
+/// tick from 0.54 to 1.51 ms). Each game's built-in parts where its
+/// install or the asset store isn't reachable, so the bound holds either
+/// way. Before the fixes above: 1,337, 521 characters'; now 943, 130, none
+/// after the fourth match.
+#[test]
+fn a_session_with_every_game_stops_making_archetypes() {
+    let (sim, rows) = eight_matches(&every_game());
+    archetypes_level_off(&sim, &rows, ARCHETYPES_EVERY_GAME, LATER_EVERY_GAME);
 }
 
 /// The session's matches play out the same on every run, and cost the
@@ -206,7 +293,7 @@ fn a_match_repeats_tick_for_tick() {
     // The first run fills the process's caches (models, data); the next
     // two must agree.
     for _ in 0..3 {
-        let (mut sim, _) = session();
+        let (mut sim, _) = session(PINNED);
         sim.repeatable();
         play_match(&mut sim, 100);
         let work = cost(&mut sim, 60);

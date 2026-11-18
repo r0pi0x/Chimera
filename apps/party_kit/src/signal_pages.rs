@@ -1749,6 +1749,7 @@ fn value_of(data: &MenuData, menu: &PartyMenu, cvar: &str) -> String {
 fn pick_widget(pick: &Pick) -> u8 {
     match pick {
         Pick::Choices(ch) if ch.iter().map(|(_, l)| l.to_ascii_lowercase()).collect::<Vec<_>>() == ["off", "on"] => 0,
+        Pick::Choices(ch) if ch.iter().map(|(_, l)| l.to_ascii_lowercase()).collect::<Vec<_>>() == ["no", "yes"] => 0,
         Pick::Choices(ch) if ch.len() <= 5 => 1,
         _ => 2,
     }
@@ -1839,7 +1840,13 @@ fn pick_value(c: &mut Commands, ui: &Ui, vl: Entity, pick: &Pick, v: &str, st: S
         }
         (0, Pick::Choices(ch)) => {
             let on = ch.get(1).is_some_and(|(cv, _)| same_value(cv, v));
-            let tg = ui.toggle(c, vl, on, st);
+            // Yes/No when the choices say so (a question), else On/Off.
+            let word = |i: usize| ch.get(i).map(|(_, w)| w.as_str());
+            let words = match (word(0), word(1)) {
+                (Some(a), Some(b)) if a.eq_ignore_ascii_case("no") && b.eq_ignore_ascii_case("yes") => chimera_ui::controls::TOGGLE_YES_NO,
+                _ => chimera_ui::controls::TOGGLE_ON_OFF,
+            };
+            let tg = ui.toggle_words(c, vl, on, st, words);
             c.entity(tg).insert(act(PickAct::Step(1)));
         }
         (1, Pick::Choices(ch)) => {

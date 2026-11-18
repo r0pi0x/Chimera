@@ -125,8 +125,9 @@ pub struct HeldParts {
 }
 
 /// What held models added after the map spawned (`map::LateHeldModels`)
-/// are built with: the spawned map's fog and look, whether it lights
-/// models from a light field, its debug view, and its first character
+/// are built with: the spawned map's fog and look, whether their
+/// materials take a probe (a map's spawn: yes, its light field's or
+/// `probe_lit::probe_at`'s neutral light), its debug view, and its first character
 /// model's root (their loose form's frame: `map::loose::asset`).
 #[derive(Resource)]
 pub struct HeldLateBase {

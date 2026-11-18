@@ -30,5 +30,6 @@ fn a_client_sees_the_body_kind_the_server_gives() {
     sim.ticks(20);
     let w = sim.clients[0].app.world();
     assert_eq!(w.get::<BodyKind>(mine), Some(&BodyKind::Spartan));
-    assert!(w.get::<BodyName>(mine).is_none());
+    // Emptied, not taken off (`BodyName::none`).
+    assert!(BodyName::named(w.get::<BodyName>(mine)).is_none());
 }

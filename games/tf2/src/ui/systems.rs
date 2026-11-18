@@ -136,6 +136,7 @@ pub fn spawn_root(mut commands: Commands) {
         HudRoot(GAME),
         Node { position_type: PositionType::Absolute, left: px(0.0), top: px(0.0), width: percent(100.0), height: percent(100.0), ..default() },
         Visibility::Inherited,
+        GlobalZIndex(chimera_client::client::hud::GAME_HUD_Z),
         Pickable::IGNORE,
     ));
 }
@@ -147,7 +148,7 @@ pub fn sync(
     state: Res<Tf2HudState>,
     roots: Query<Entity, With<Root>>,
     mut pool: Local<[Vec<Entity>; 3]>,
-    mut nodes: Query<(&mut Node, &mut Visibility, &mut GlobalZIndex)>,
+    mut nodes: Query<(&mut Node, &mut Visibility, &mut ZIndex)>,
     mut boxes: Query<&mut BackgroundColor>,
     mut sprites: Query<&mut MaterialNode<HudGlyphMaterial>>,
     (active, windows): (Option<Res<ActiveHud>>, Query<&Window>),
@@ -174,7 +175,7 @@ pub fn sync(
                         Pooled,
                         Node { position_type: PositionType::Absolute, ..default() },
                         Visibility::Hidden,
-                        GlobalZIndex(0),
+                        ZIndex(0),
                         ChildOf(root),
                     ));
                     if kind == KIND_BOX {
@@ -201,7 +202,7 @@ pub fn sync(
                 }
             };
             let Ok((mut node, mut vis, mut zi)) = nodes.get_mut(entity) else { continue };
-            zi.set_if_neq(GlobalZIndex(100 + z as i32));
+            zi.set_if_neq(ZIndex(z as i32));
             vis.set_if_neq(Visibility::Inherited);
             let place = |node: &mut Node, r: Rect| {
                 node.left = px(r.min.x);

@@ -1086,6 +1086,67 @@ impl LightProbe {
             .iter()
             .fold(ambient, |acc, (dir, color)| acc + *color * n.dot(*dir).max(0.0))
     }
+
+    /// The light a model gets on a map without a light field (Chimera's
+    /// greybox and range, a game whose maps carry none): a neutral
+    /// ambient, brighter above and darker below, and one white light from
+    /// above and in front of a camera looking down -Z, so shading,
+    /// lightwarps and highlights still show. Our choice, not any game's.
+    pub fn neutral() -> Self {
+        // Cube order: +X, -X, +Y, -Y, +Z, -Z.
+        let cube = [0.45, 0.45, 0.6, 0.25, 0.45, 0.45].map(Vec3::splat);
+        LightProbe {
+            cube,
+            lights: vec![(Vec3::new(0.3, 1.0, 0.5).normalize(), Vec3::splat(0.5))],
+        }
+    }
+
+    /// No light at all: a black ambient cube and no lights (a point no
+    /// baked sample reaches).
+    pub fn is_black(&self) -> bool {
+        self.cube.iter().all(|c| c.max_element() <= 0.0) && self.lights.iter().all(|l| l.1.max_element() <= 0.0)
+    }
+
+    /// The probe with at most `keep` lights, the brightest: each other
+    /// light folded into the ambient cube (specs/cs_source/view_models.md
+    /// 9: "the rest is folded into the ambient cube"), adding its colour
+    /// to each face it shines on by the cosine between the face's axis
+    /// and its direction (how it folds is our choice).
+    pub fn folded(&self, keep: usize) -> Self {
+        let mut lights = self.lights.clone();
+        lights.sort_by(|a, b| b.1.max_element().total_cmp(&a.1.max_element()));
+        let rest = lights.split_off(keep.min(lights.len()));
+        let mut cube = self.cube;
+        const AXES: [Vec3; 6] = [Vec3::X, Vec3::NEG_X, Vec3::Y, Vec3::NEG_Y, Vec3::Z, Vec3::NEG_Z];
+        for (dir, color) in rest {
+            for (face, axis) in cube.iter_mut().zip(AXES) {
+                *face += color * axis.dot(dir).max(0.0);
+            }
+        }
+        LightProbe { cube, lights }
+    }
+
+    /// The ambient cube boosted where it is dim beside strong direct
+    /// light (specs/cs_source/view_models.md 9, `r_ambientboost`: by at
+    /// most `AMBIENT_FACTOR` when it is below `AMBIENT_MIN` and below
+    /// `AMBIENT_FRACTION` x the direct light). Our reading: the cube's
+    /// mean (brightest channel per face) is raised toward the lower of
+    /// those two marks; the direct light is the lights' summed brightest
+    /// channels. A black cube stays black.
+    pub fn ambient_boosted(&self) -> Self {
+        const AMBIENT_MIN: f32 = 0.3;
+        const AMBIENT_FACTOR: f32 = 5.0;
+        const AMBIENT_FRACTION: f32 = 0.1;
+        let mean = self.cube.iter().map(|c| c.max_element()).sum::<f32>() / 6.0;
+        let direct: f32 = self.lights.iter().map(|l| l.1.max_element()).sum();
+        let target = AMBIENT_MIN.min(AMBIENT_FRACTION * direct);
+        let mut out = self.clone();
+        if mean > 0.0 && mean < target {
+            let k = (target / mean).min(AMBIENT_FACTOR);
+            out.cube.iter_mut().for_each(|c| *c *= k);
+        }
+        out
+    }
 }
 
 /// A placed model.

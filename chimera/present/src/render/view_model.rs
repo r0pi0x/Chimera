@@ -16,7 +16,10 @@
 //! and with its own field of view (`ViewModelSettings`). It is mirrored
 //! across the eye's vertical plane when its handedness differs from the
 //! player's, and lit per pixel by the map's light at its lighting origin
-//! (`LightField`) plus the scene's point lights (`DynamicLight`).
+//! (`LightField`; on a map without one a neutral light,
+//! `probe_lit::probe_at`), its dim ambient boosted
+//! (`LightProbe::ambient_boosted`), plus the scene's point lights
+//! (`DynamicLight`).
 //!
 //! A view whose model is wanted and not built yet marks its camera
 //! `stand_in::ViewModelWaiting` (the stand-in gun shows there); with
@@ -30,7 +33,8 @@
 //! `ViewModelSource` on it: a spectator in first person; a child camera on
 //! `VIEW_MODEL_LAYER` with its own depth and FOV, so the model never clips into
 //! walls; mirrored when its hand differs from the player's; lit per pixel by
-//! the `LightField` at its lighting origin; the meshes its `ViewAnimator`
+//! the `LightField` at its lighting origin, or a neutral light without
+//! one; the meshes its `ViewAnimator`
 //! hides (`hidden_meshes`) left out, and a mesh's texture frame it picks
 //! (`mesh_frames`, `MapMesh::frames`) shown on that mesh's own material; it draws only while something
 //! on its layer is visible, or in HDR: `view_model_cameras_draw`); muzzle flashes from
@@ -41,7 +45,8 @@
 //!
 //! Known shortcuts (docs/tech-debt.md): View models: near plane 1 cm (not the
 //! spec's 1 unit) and their own depth buffer (not a squeezed depth range); no
-//! light smoothing or ambient boost; muzzle flash look and light falloff, and the shell direction,
+//! light smoothing; the ambient boost's and the folded lights' exact rules
+//! are our reading of the spec's cvars; muzzle flash look and light falloff, and the shell direction,
 //! are our choices from the spec's data (plans/active/view-models.md open
 //! questions). Why it's OK for now: Each needs a CS:S comparison to settle.
 
@@ -81,6 +86,8 @@ pub struct ViewModelBody {
     mesh_frames: Vec<(usize, usize)>,
     /// Where the probe was last sampled (world), and the cubemap used.
     lit_at: Option<Vec3>,
+    /// The light sampled there (before the ambient boost).
+    light: Option<LightProbe>,
     cubemap: Option<usize>,
     /// Its probe light's slot (`probe_lit::ProbeTable`; 0: none yet).
     probe_slot: u32,
@@ -170,7 +177,8 @@ impl Build<'_> {
                 // Nothing in the main world reads its vertices.
                 mesh.asset_usage = bevy::asset::RenderAssetUsages::RENDER_WORLD;
                 let mut material = crate::render::lit_prop_material(m, textures, data, view, false);
-                // Without a light field it shows its texture as is.
+                // Lit by the probe at its lighting origin; without a light
+                // field a neutral one (`probe_lit::probe_at`).
                 if !m.unlit && view != MapDebugView::Albedo && self.lit {
                     material.params.set_probe(&LightProbe::default(), 1.0);
                 }
@@ -220,7 +228,7 @@ pub fn build_assets(
     let build = Build {
         textures,
         data,
-        lit: data.light_field.is_some(),
+        lit: true,
         view,
     };
     let mut stores = Stores { meshes, materials, bindposes, dormant };
@@ -249,7 +257,7 @@ pub fn build_assets(
             look: data.look.clone(),
             ..default()
         },
-        lit: data.light_field.is_some(),
+        lit: true,
         view,
         generation: super::late_build::next_generation(),
     }
@@ -639,8 +647,23 @@ pub fn draw_view_models(
         let moved = body
             .lit_at
             .is_none_or(|at| at.distance(origin) > 0.5 * asset.root.scale.x);
-        if let (true, Some(field)) = (moved, light_field.as_ref()) {
-            let probe = (field.0.0)(origin);
+        if moved {
+            // The map's light there (or the neutral light of a map
+            // without a light field; the last light where the field has
+            // none), its dim ambient boosted (spec view_models.md 9).
+            let sampled = super::probe_lit::probe_at(light_field.as_deref(), origin, body.light.as_ref());
+            let probe = sampled.ambient_boosted();
+            debug!(
+                "view model {} lit at {origin:?}: cube {:?}, lights {:?} (sampled {} lights, cube mean {:.3}; field: {}, scale {})",
+                body.key,
+                probe.cube.map(|c| c.max_element()),
+                probe.lights.iter().map(|l| l.1.max_element()).collect::<Vec<_>>(),
+                sampled.lights.len(),
+                sampled.cube.iter().map(|c| c.max_element()).sum::<f32>() / 6.0,
+                light_field.is_some(),
+                assets.light_scale,
+            );
+            body.light = Some(sampled);
             match probe_table.as_mut() {
                 // Into its table slot: its materials stay unchanged
                 // (`probe_lit::ProbeTable`).
@@ -816,6 +839,7 @@ fn spawn_body(
         hidden_meshes: Vec::new(),
         mesh_frames: Vec::new(),
         lit_at: None,
+        light: None,
         cubemap: None,
         probe_slot: 0,
     });

@@ -556,6 +556,7 @@ pub fn load_world_in(
     let convert = || -> Result<MapData, String> {
         let world = World::parse(&bytes).map_err(|e| format!("{path}: {e}"))?;
         let mut map = convert_with(&world, name, scale, &file, options.textures);
+        map.light_field = super::props::light_field(&world, scale);
         map.warnings.extend(world.warnings.iter().map(|w| format!("{path}: {w}")));
         super::effects::library::tag_surfaces(&mut map, &world);
         if let Some(spec) = &dev_prop {
