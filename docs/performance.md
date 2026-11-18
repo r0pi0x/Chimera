@@ -6589,19 +6589,20 @@ fetched again). The test counts the looks (`server_assets::store_looks`):
 one for the match's sets, none for five more looks at the same sets and
 two seconds of frames, one per change of map.
 
-**The hitch log names systems now, in any build.** The report could say
-`Update` but not which system: per-system spans need a profile build.
-The client puts its main world's systems behind `metrics::work`'s
-wrappers (`app::run_app`), which time each run's own wall time with the
-CPU's time-stamp counter (`metrics::work`, "Timing"), and a hitch line
-ends with the frame's six slowest (`systems by own ms: Update watch
-391.20, ...`). Cost (`chimera_sim` `system_times`, greybox, work counts):
-161 instructions a system run, about 2% of a party tick; the test holds
-it under 300. `CHIMERA_SYSTEM_TIMES=0` leaves the systems unwrapped. The
-session log's health line also carries `archetypes`, the render world's
-`gpu_textures` and `gpu_meshes`, and `pipelines` made/compiling (a
-shader or material first seen compiles one: a pipeline count that jumps
-beside a hitch says so).
+**What the next report shows.** The report could say `Update` but not
+which system (per-system spans needed a profile build). The frame
+inspector (merged the same day: `client::frame_inspector`, docs/
+OBSERVABILITY.md) now times systems for 30 s after any spike, so a
+stutter that comes back is named in its `hitch:` lines (`; systems:
+...; events: ...`) and in the F10 bundle's `perf.txt` and `world.txt`.
+The session log's health line also carries `archetypes`, the render
+world's `gpu_textures` and `gpu_meshes`, and `pipelines` made/compiling
+(a shader or material first seen compiles one: a count that jumps beside
+a hitch says so). An experiment here timed every system with the CPU's
+time-stamp counter instead of `Instant`: 161 instructions a system run
+against the inspector's ~600 (work counts, greybox), cheap enough to
+leave on; not merged (the inspector's switch keeps timing off until a
+spike).
 
 **Left, seen in the same report** (not the freezes): over five minutes
 on one map entities went 2,400 -> 4,100, archetypes to 4,109, the tick

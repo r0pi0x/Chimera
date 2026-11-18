@@ -41,7 +41,7 @@
 //!   file the dressing read with its fingerprint (a late file's absence
 //!   too), so a changed or arrived file converts again. The entry's bytes
 //!   are the same for the same files (`pod_serde::sorted`), as the asset
-//!   service's records will need (docs/plans/active/converted-cache.md).
+//!   service's records need (docs/plans/active/converted-cache.md).
 //!   Read back: `disk_reads`.
 //! - **Memos**: what a dressing leaves in the map's memos (`MapData::
 //!   memos`: Combat Arms' rigs, body groups and effect library) is kept
@@ -50,6 +50,13 @@
 //!   beside the parts (`map::KeptMemoBytes`, taken out again after the
 //!   read) and its `load` reads them back (memos that don't read back
 //!   convert again, as a miss).
+//! - **Served**: on a miss the disk layer first takes the converted
+//!   entry the asset service serves for this game, converter, map format
+//!   and options, when its inputs are the app's mount's files (the store
+//!   alone, as players have it: `cache::cached_served`, named
+//!   `served_name`); counted by `served_reads`. The packer
+//!   (`chimera_pack convert`) puts an `Export` in the app's context and
+//!   gets each entry its dressings write instead.
 //! - **Variants**: an app's choice that changes the dressing (Combat
 //!   Arms' view models, none when they load on demand) is the dressing's
 //!   `variant`, kept apart in the session and on disk.
@@ -140,7 +147,15 @@ struct Entry {
     parts: Mutex<Option<Arc<MapData>>>,
     conversions: AtomicUsize,
     disk_reads: AtomicUsize,
+    served_reads: AtomicUsize,
 }
+
+/// The packer's request in an app's context (`chimera_pack convert`):
+/// each dressing of that context hands over the entry its disk layer
+/// wrote or read (`cache::Served::export`), to serve from the asset
+/// service (module doc, "Served").
+#[derive(Default)]
+pub struct Export(pub Mutex<Vec<cache::ServedEntry>>);
 
 /// The variable that turns the disk layer off (`0`, `off`, `false`,
 /// `no`; module doc).
@@ -201,6 +216,18 @@ pub fn disk_reads(context: &LoadContext, game: &'static str, variant: &'static s
     entry(context, game, variant, textures).disk_reads.load(Ordering::Relaxed)
 }
 
+/// How many times `game`'s dressing was taken from the asset service
+/// (a served entry, module doc) for the app of `context`.
+pub fn served_reads(context: &LoadContext, game: &'static str, variant: &'static str, textures: bool) -> usize {
+    entry(context, game, variant, textures).served_reads.load(Ordering::Relaxed)
+}
+
+/// The name a dressing's served entries go by (`cache::Served::name`):
+/// `guest/<game>/<converter>`, one folder per converter version.
+pub fn served_name(game: &str, converter: &str) -> String {
+    format!("guest/{game}/{converter}")
+}
+
 /// The files a dressing's models missed (`MapModel::late_files`), each
 /// once.
 pub fn late_files(parts: &MapData) -> Vec<String> {
@@ -257,11 +284,26 @@ pub fn kept_with(
     let key = cache::key(&format!("guest:{game}"), dressing.converter)
         .part("textures", [options.textures as u8])
         .part("variant", dressing.variant.as_bytes());
+    let export = options.context.get::<Export>();
+    let served = cache::Served {
+        name: served_name(game, dressing.converter),
+        parts: [
+            ("game", game.to_string()),
+            ("converter", dressing.converter.to_string()),
+            ("format", cache::format()),
+            ("textures", (options.textures as u8).to_string()),
+            ("variant", dressing.variant.to_string()),
+        ]
+        .into_iter()
+        .map(|(n, v)| (n.to_string(), v))
+        .collect(),
+        export: export.as_deref().map(|e| &e.0),
+    };
     let mut outcome = Outcome::Off;
     let mut scratch = None;
     // A hit whose memos don't read back converts again (once).
     for disk in [disk, None] {
-        let (mut parts, how) = cache::cached(disk, &mount, key.clone(), || {
+        let (mut parts, how) = cache::cached_served(disk, &mount, key.clone(), disk.and(Some(&served)), || {
             let mut scratch = MapData::default();
             scratch.memos.insert(BlocksOnly);
             (dressing.convert)(&mount, &mut scratch);
@@ -277,7 +319,7 @@ pub fn kept_with(
         })?;
         let bytes = parts.extras.get_mut::<KeptMemoBytes>().map(|b| std::mem::take(&mut b.0));
         parts.extras.remove::<KeptMemoBytes>();
-        if how == Outcome::Hit
+        if matches!(how, Outcome::Hit | Outcome::Served)
             && let Some(memos) = dressing.memos
         {
             let read = bytes
@@ -296,6 +338,9 @@ pub fn kept_with(
     let how = if outcome == Outcome::Hit {
         entry.disk_reads.fetch_add(1, Ordering::Relaxed);
         "read from disk"
+    } else if outcome == Outcome::Served {
+        entry.served_reads.fetch_add(1, Ordering::Relaxed);
+        "taken as the asset service serves them"
     } else {
         entry.conversions.fetch_add(1, Ordering::Relaxed);
         if outcome == Outcome::Miss {
@@ -608,6 +653,74 @@ mod tests {
         *file.0.lock().unwrap() = b"second".to_vec();
         assert_eq!(app(&disk), ("second".into(), (1, 0)), "a changed file converts again");
         assert_eq!(app(&disk), ("second".into(), (0, 1)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Served (module doc, "Served"): the packer's app (an `Export` in its
+    /// context) hands over the dressing it converted from a store's
+    /// records; a client of that store takes it (nothing converted, the
+    /// same bytes), and one of another converter version converts.
+    #[test]
+    fn a_served_dressing_is_taken_by_a_client_of_the_same_files() {
+        use chimera_core::mount::{
+            LooseDir,
+            assets::{CachedFiles, Manifest, Store},
+        };
+        let dir = std::env::temp_dir().join(format!("chimera-kept-served-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("install")).unwrap();
+        std::fs::write(dir.join("install/look.txt"), b"served look").unwrap();
+        let mut originals = Mount::default();
+        originals.push(LooseDir::new(dir.join("install")));
+        let store = Store::new(dir.join("store"));
+        let mut manifest = Manifest::new("kept_served", "1", None);
+        chimera_core::mount::assets::pack(&originals, &["look.txt".into()], &store, &mut manifest, None, 1).unwrap();
+        let mount_of = |m: &Manifest| {
+            let mut mount = Mount::default();
+            mount.push(CachedFiles::new(store.clone(), m));
+            Arc::new(mount)
+        };
+        let convert = |mount: &Mount, map: &mut MapData| {
+            let name = String::from_utf8(mount.read("look.txt").unwrap()).unwrap();
+            map.textures.push(texture(&name));
+        };
+        let app = |manifest: &Manifest, converter: &'static str, cache: &str, export: bool| {
+            let mount = mount_of(manifest);
+            let mount_of = || Ok(mount.clone());
+            let dressing = Dressing {
+                game: "kept_served",
+                converter,
+                mount: &mount_of,
+                convert: &convert,
+                variant: "",
+                memos: None,
+            };
+            let options = MapLoadOptions::lean();
+            if export {
+                options.context.insert(Export::default());
+            }
+            let parts = kept_with(&options, &dressing, Some(&MapCache::at(dir.join(cache), u64::MAX))).unwrap();
+            let entries = options
+                .context
+                .get::<Export>()
+                .map(|e| std::mem::take(&mut *e.0.lock().unwrap()))
+                .unwrap_or_default();
+            let counts = (
+                conversions(&options.context, "kept_served", "", false),
+                served_reads(&options.context, "kept_served", "", false),
+            );
+            (postcard::to_allocvec(&*parts).unwrap(), counts, entries)
+        };
+        let (made, counts, entries) = app(&manifest, "v1", "packer", true);
+        assert_eq!((counts, entries.len()), ((1, 0), 1), "the packer converts and hands it over");
+        assert!(entries[0].entry_path.starts_with(&format!("_converted/{}/", served_name("kept_served", "v1"))));
+        for e in &entries {
+            cache::served::enter(&store, &mut manifest, e).unwrap();
+        }
+        let (taken, counts, _) = app(&manifest, "v1", "client", false);
+        assert_eq!(counts, (0, 1), "a client takes it");
+        assert!(taken == made, "the same parts");
+        assert_eq!(app(&manifest, "v2", "client-v2", false).1, (1, 0), "another converter converts");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

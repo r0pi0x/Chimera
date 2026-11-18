@@ -1555,15 +1555,39 @@ load; work counts don't (performance.md, "Work counts"):
   world ...: queue ...`): the main world's slowest schedules and the
   render world's time and its slowest `Render` sets
   (`CHIMERA_RENDER_PHASES=0` leaves their marks out), each with wall
-  and thread CPU ms, then the main world's six slowest systems by their
-  own wall time in that frame, in any build (`systems by own ms: Update
-  watch 391.20, FixedUpdate think 2.10 x3, ...`: `metrics::work`'s
-  timing, the time-stamp counter around each system, about 150
-  instructions a run; `CHIMERA_SYSTEM_TIMES=0` turns it off), at most
-  two lines a second (`(N more since the last)`). A profile
+  and thread CPU ms, at most two lines a second (`(N more since the last)`). A profile
   build adds the frame's spans with the most self time (`spans by self
   ms: <system> 12.3 x2, ...`). The debug UI Perf tab has the same percentiles as
   a table, with a frame-time histogram.
+- The frame inspector (why a frame stuttered; `client::frame_inspector`):
+  the debug UI's Frames tab (F8, `debugui frames`) charts the last 10, 15 or 30 s of frames (white the frame, green
+  the main world, blue the render world, yellow ticks frames with
+  engine events, the median and the spike line), spikes (the hitch
+  log's rule: over `chimera_hitch_ratio` times the median) as red dots;
+  click one (or a "Worst" button) for its breakdown: the main world's
+  schedules and the render world's sets (wall and CPU ms), the slowest
+  systems of each world by their own ms, the engine events noted in
+  that frame (`chimera_core::metrics::frame_events`: every log line at
+  INFO and above, asset stores' additions and frees by type,
+  pipelines queued and compiled, a game's own `frame_events::note`), ticks run,
+  RSS and the GPU allocator's bytes. The 8 worst records go into the
+  F10 bundle's `perf.txt` (and its `world.txt` has the census, growth
+  by kind since the session's first map and this map, memory by kind
+  and the event timeline: `client::world_report`); each logged `hitch:` line ends with its
+  record's `; systems: ...; events (N): ...`. `frame_spikes` prints the
+  worst on the console (`frame_spikes clear` forgets them);
+  `chimera_stall <ms>` makes the next frame slow in a system of its own,
+  to see a record. Systems are timed by `metrics::work`'s wrapper
+  (`chimera_frame_inspect`: 1, the default, while the tab is open and
+  for 30 s after any spike, so a spike's first frame usually has
+  schedules and events but no systems; 2 always; 0 never;
+  `CHIMERA_SYSTEM_TIMES=0` leaves the systems unwrapped). Cost, by instructions on the frame's thread
+  (300 trivial systems): the wrapper about 85 instructions a system a
+  frame and the inspector's own systems and bookkeeping about 6k a
+  frame (together about 0.04 ms of a 1,500-system frame, always);
+  timing every system about 600 more a system (two clock reads), only
+  while asked (`cargo test -p chimera_client --features dev --test it
+  frame_inspector:: -- --nocapture` prints it).
 - The worst single frames of a run: `CHIMERA_FRAME_LOG=<csv>` (any app with
   the shell) writes every frame of each world as a line: its start
   (`CLOCK_MONOTONIC`), wall and CPU ms, instructions, ticks and their
@@ -1776,7 +1800,7 @@ load; work counts don't (performance.md, "Work counts"):
 
 F8 (a bind: `debugui`; F1 and F2 are CS:S's autobuy and rebuy) opens a tabbed window; `debugui <tab>` opens it
 on a tab (`player`, `world`, `movement`, `bots`, `rendering`, `perf`,
-`audio`, `logic`, `rounds`, `cvars`), `debugui close` closes it, e.g.
+`frames`, `audio`, `logic`, `rounds`, `cvars`), `debugui close` closes it, e.g.
 `--window 1280x720 --screenshot ui.png +debugui perf` photographs one.
 Every control runs a console line (hover a button for it), so anything
 done there can be typed, bound or scripted too; the window only reads
@@ -1802,6 +1826,8 @@ and keys typed into its fields don't reach binds.
   `chimera_drawphys`, `chimera_drawnav`, `chimera_drawbots`, ...), culling
   (`r_novis`, `r_portalsopenall`, `r_occlusion`, with the vis readout),
   HDR, water, view model and effect cvars, third person and free camera.
+- Frames: the frame inspector (section 3c): frame times over the last
+  seconds with spikes, a spike's schedules, systems, events and memory.
 - Perf: a frame-time graph of the last 300 frames (white frame, green
   main-world CPU, 60 and 30 fps lines), the live interpolation line, the
   `chimera_perf` readout, `chimera_perf`, `chimera_perf_log`,

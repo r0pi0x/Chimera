@@ -133,6 +133,17 @@
 //! machine, copied in with its new records, is signed on the server with
 //! no install there and no other manifest touched.
 //!
+//! `chimera_pack convert <game|all> [--store <server store>] [--sign]`
+//! makes the guests' converted dressings served entries
+//! (docs/plans/active/converted-cache.md, "Served entries"): each game
+//! read from the store alone, as a player's client mounts it (nothing
+//! fetched, no install), its bundle's dressing run with the clients' code
+//! (`map::kept`, an `Export` in the context) for a client and a dedicated
+//! server, each entry and its recipe stored and entered in the game's
+//! newest manifest (`chimera_assets::map_cache::served`). `--check`
+//! compares with what is stored, writing nothing; `--list` shows the
+//! entries by converter version; `--drop <converter>` removes one's.
+//!
 //! Known shortcuts: publishing to a server on another machine (upload over
 //! HTTPS with a publisher token) isn't built: on a VPS, publish there or
 //! copy the store.
@@ -167,6 +178,11 @@ usage: chimera_pack pack <game> [options]       into a store (default the user's
        chimera_pack user list                   (user: --store <server store>)
        chimera_pack sign <game> --store <server store> [--build <id>]
                                                 sign a manifest packed elsewhere (no install)
+       chimera_pack convert <game|all> [--store <server store>] [--sign] [--check]
+                                                the guests' converted dressings as served records
+                                                (from the store's own records; --check: compare only)
+       chimera_pack convert <game|all> [--store <dir>] --list | --drop <converter> [--sign]
+                                                the served entries by converter version; drop one
   games: cs_source, combat_arms, hl2dm, halo_ce, tf2
   --set <name>      enter the packed files as set <name> (needs --from)
   --from <log>      only the game's files in a CHIMERA_VFS_LOG log
@@ -304,6 +320,7 @@ fn run(args: &[String]) -> Result<(), String> {
         Some("lean") => return lean(&args[1..]),
         Some("repack") => return repack(&args[1..]),
         Some("sign") => return sign_command(&args[1..]),
+        Some("convert") => return convert(&args[1..]),
         _ => return Err(USAGE.into()),
     };
     let game_id = it.next().ok_or(USAGE)?;
@@ -1343,6 +1360,157 @@ fn sign_command(args: &[String]) -> Result<(), String> {
     let (build, public) = sign::sign_stored(&store, &game, build.as_deref()).map_err(|e| e.to_string())?;
     println!("{game} build {build}: signed with the server's key {public}");
     println!("manifest: {}", store.manifest_path(&game, &build).display());
+    Ok(())
+}
+
+/// The guests `convert` serves (`all`): those whose dressing is Chimera's
+/// `map::kept` (Halo's donors aren't yet).
+const CONVERTED_GUESTS: &[&str] = &["cs_source", "hl2dm", "tf2", "combat_arms"];
+
+/// A guest's dressing, as its bundle registers it.
+fn guest_dressing(game: &str) -> Option<&'static chimera_world::map::MapDressing> {
+    Some(match game {
+        "cs_source" => &cs_source::game::bundle::GUEST,
+        "hl2dm" => &hl2dm::game::GUEST,
+        "tf2" => &tf2::game::GUEST,
+        "combat_arms" => &combat_arms::game::world::DRESSING,
+        _ => return None,
+    })
+}
+
+/// `convert`: each guest's kept dressing converted from the store's own
+/// records (the store alone, as a player's client mounts it), with the
+/// same code as the clients (its bundle's dressing, `map::kept`), entered
+/// in the game's newest manifest as a served entry and its recipe
+/// (`map_cache::served`): a client's (textures, Combat Arms' view models
+/// on demand) and a dedicated server's (no textures). Records already
+/// stored are kept, so converting again with the same converter and
+/// files adds nothing. `--check` converts and compares with what the
+/// manifest has, byte for byte, changing nothing; `--list` shows the
+/// served entries by converter version; `--drop <converter>` removes one
+/// version's (the retention policy: docs/plans/active/converted-cache.md,
+/// "Served entries").
+fn convert(args: &[String]) -> Result<(), String> {
+    use chimera_assets::map_cache::served;
+    use chimera_world::map::{MapData, MapLoadOptions, kept};
+    let mut it = args.iter();
+    let which = it.next().ok_or(USAGE)?;
+    let (mut store, mut sign_it, mut check, mut list, mut drop) = (None, false, false, false, None);
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--store" => store = Some(Store::new(it.next().ok_or("--store needs a value")?)),
+            "--sign" => sign_it = true,
+            "--check" => check = true,
+            "--list" => list = true,
+            "--drop" => drop = Some(it.next().ok_or("--drop needs a converter version")?.clone()),
+            _ => return Err(format!("unknown option {arg}\n{USAGE}")),
+        }
+    }
+    let games: Vec<&str> = if which == "all" {
+        CONVERTED_GUESTS.to_vec()
+    } else if CONVERTED_GUESTS.contains(&which.as_str()) {
+        vec![which.as_str()]
+    } else {
+        return Err(format!("convert: no kept dressing for {which} (one of {}, or all)", CONVERTED_GUESTS.join(", ")));
+    };
+    let store = store.or_else(server::default_store).ok_or("no store folder: pass --store")?;
+    let sign_manifest = |path: &std::path::Path| -> Result<(), String> {
+        if sign_it {
+            let key = sign::load_or_create_key(&server::key_path(&store)).map_err(|e| e.to_string())?;
+            sign::sign_manifest_file(&key, path).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        Ok(())
+    };
+    let newest = |game: &str| -> Result<(String, std::path::PathBuf, Manifest), String> {
+        let build = store.latest_build(game).ok_or_else(|| format!("{game}: no manifest in {}", store.root.display()))?;
+        let path = store.manifest_path(game, &build);
+        let manifest = Manifest::load(&path)?;
+        Ok((build, path, manifest))
+    };
+    if list || drop.is_some() {
+        for game in &games {
+            let Ok((build, path, mut manifest)) = newest(game) else { continue };
+            if let Some(converter) = &drop {
+                let n = served::drop_served(&mut manifest, &format!("{}/", kept::served_name(game, converter)));
+                if n > 0 {
+                    manifest.save(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                    sign_manifest(&path)?;
+                }
+                println!("{game} build {build}: dropped {n} paths of converter {converter}");
+            }
+            for (name, (n, plain, stored)) in served::listed(&manifest) {
+                println!("{game} build {build}: {name}: {n} entries, {} plain, {} stored", mb(plain), mb(stored));
+            }
+        }
+        return Ok(());
+    }
+    // This process reads each game as a player's client does: the store
+    // alone (never an install), nothing fetched, a converted-map cache of
+    // its own (so every dressing converts), served entries never taken.
+    let scratch = store.root.join("convert-scratch");
+    let _ = std::fs::remove_dir_all(&scratch);
+    // SAFETY: set before any thread of this process starts.
+    unsafe {
+        std::env::set_var(chimera_assets::config::STORE_ENV, &store.root);
+        std::env::set_var(chimera_assets::config::USE_INSTALL_ENV, "0");
+        std::env::set_var(chimera_assets::map_cache::ENV, &scratch);
+        std::env::set_var(kept::DISK_ENV, "1");
+        std::env::set_var(served::SERVED_ENV, "0");
+    }
+    let _no_fetching = chimera_assets::cached::hold_fetches(None);
+    let mut differs = 0;
+    for game in &games {
+        let (build, path, mut manifest) = newest(game)?;
+        let dressing = guest_dressing(game).expect("a converted guest");
+        let mut entries = Vec::new();
+        // A client's (textures; Combat Arms' front end loads its view
+        // models on demand) and a dedicated server's (no textures).
+        for textures in [true, false] {
+            let options = if textures { MapLoadOptions::default() } else { MapLoadOptions::lean() };
+            options.context.insert(kept::Export::default());
+            if *game == "combat_arms" && textures {
+                combat_arms::game::view_model::on_demand::front_end_context(&options.context);
+            }
+            let started = std::time::Instant::now();
+            (dressing.dress)(&mut MapData::default(), &options).map_err(|e| format!("{game}: {e}"))?;
+            let made = options.context.get::<kept::Export>().map(|e| std::mem::take(&mut *e.0.lock().unwrap())).unwrap_or_default();
+            println!(
+                "{game} build {build}: {} dressing converted in {:.1} s",
+                if textures { "a client's" } else { "a server's" },
+                started.elapsed().as_secs_f32()
+            );
+            entries.extend(made);
+        }
+        if entries.is_empty() {
+            return Err(format!("{game}: its dressing converted nothing to serve (is the disk layer off?)"));
+        }
+        for e in &entries {
+            let id = chimera_assets::sha256_hex(&e.entry);
+            if check {
+                let same = manifest.files.get(&e.entry_path).map(|f| f.id == id);
+                match same {
+                    Some(true) => println!("{game}: {}: the same bytes", e.entry_path),
+                    Some(false) => {
+                        differs += 1;
+                        println!("{game}: {}: DIFFERS from the stored record", e.entry_path)
+                    }
+                    None => println!("{game}: {}: not in the manifest (another converter version or files)", e.entry_path),
+                }
+                continue;
+            }
+            let stored = served::enter(&store, &mut manifest, e).map_err(|err| format!("{}: {err}", e.entry_path))?;
+            println!("{game}: {} ({}, {} stored)", e.entry_path, mb(e.entry.len() as u64), mb(stored));
+        }
+        if !check {
+            manifest.save(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            sign_manifest(&path)?;
+            println!("manifest: {}", path.display());
+        }
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
+    if differs > 0 {
+        return Err(format!("{differs} served entries differ from a conversion now"));
+    }
     Ok(())
 }
 

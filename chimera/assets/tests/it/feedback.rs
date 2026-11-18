@@ -210,7 +210,7 @@ fn the_receiver_checks_tokens_sizes_entries_and_stores_once() {
     assert_eq!((meta.status, meta.summary.as_str(), meta.kind.as_str()), (Status::New, "first report", "bug"));
     assert!(meta.account.starts_with("internal:tester"));
     let dir = inbox.find(&id).unwrap();
-    assert!(dir.join("report.zip").is_file() && dir.join("report.json").is_file());
+    assert!(!dir.join("report.zip").exists() && dir.join("report.json").is_file(), "the entries kept, not the zip too");
     assert!(inbox.history(&id).contains("received from internal:tester"));
     assert_eq!(inbox.list().len(), 1);
     // Too large.
@@ -523,4 +523,60 @@ fn the_route_takes_crash_reports_and_groups_them_by_signature() {
     w.add("minidump.dmp", b"not one", false);
     assert_eq!(post(&remote, &id, &w.finish()).0, 400);
     let _ = c;
+}
+
+/// Retention: past `keep_bytes` the oldest reports go after each new one,
+/// never the new one; a `report.zip` an older receiver kept goes too.
+#[test]
+fn the_inbox_keeps_its_reports_under_the_cap() {
+    let dir = scratch("feedback_retention");
+    let (first, bytes) = report("first");
+    let open = |keep_bytes| Inbox::open(dir.join("feedback")).with_limits(FeedbackLimits { keep_bytes, ..FeedbackLimits::default() });
+    assert_eq!(open(0).receive("internal:tester#1", None, Some(&first), &bytes).status, 201);
+    let first_dir = open(0).find(&first).unwrap();
+    fs::write(first_dir.join("report.zip"), &bytes).unwrap();
+    let one = feedback_dir_bytes(&first_dir) - bytes.len() as u64;
+    // Older by a minute (`received` is in seconds).
+    let meta = fs::read_to_string(first_dir.join("meta.toml")).unwrap();
+    let received = meta.lines().find_map(|l| l.strip_prefix("received = ")).unwrap().trim().parse::<u64>().unwrap();
+    fs::write(first_dir.join("meta.toml"), meta.replace(&format!("received = {received}"), &format!("received = {}", received - 60))).unwrap();
+    let (second, bytes) = report("second");
+    // Room for one report and a half: the first goes.
+    let inbox = open(one * 3 / 2);
+    assert_eq!(inbox.receive("internal:tester#1", None, Some(&second), &bytes).status, 201);
+    assert!(inbox.find(&first).is_none(), "the oldest went");
+    let kept = inbox.find(&second).unwrap();
+    assert!(kept.join("report.json").is_file() && !kept.join("report.zip").exists());
+    // A cap below one report still keeps the new one.
+    let (third, bytes) = report("third");
+    let inbox = open(1);
+    assert_eq!(inbox.receive("internal:tester#1", None, Some(&third), &bytes).status, 201);
+    assert_eq!(inbox.list().iter().map(|m| m.id.clone()).collect::<Vec<_>>(), [third]);
+}
+
+fn feedback_dir_bytes(dir: &std::path::Path) -> u64 {
+    fs::read_dir(dir).unwrap().flatten().map(|e| e.metadata().unwrap().len()).sum()
+}
+
+/// The log's repeats fold into one line with a count, at the last one's
+/// place; lines that differ in more than digits stay apart.
+#[test]
+fn repeated_log_lines_fold_with_their_count() {
+    let log: Vec<String> = [
+        "02:05:13.000 WARN bevy_ecs: B0004: entity 12v3 has no parent",
+        "02:05:13.500 INFO sound: start 'Flesh.ScrapeRough' volume 0.50",
+        "02:05:14.000 WARN bevy_ecs: B0004: entity 40v1 has no parent",
+        "02:05:14.200 INFO map: de_dust2 loaded",
+        "02:05:15.000 WARN bevy_ecs: B0004: entity 41v1 has no parent",
+    ]
+    .map(String::from)
+    .to_vec();
+    assert_eq!(
+        bundle::fold_repeats(&log),
+        [
+            "02:05:13.500 INFO sound: start 'Flesh.ScrapeRough' volume 0.50",
+            "02:05:14.200 INFO map: de_dust2 loaded",
+            "02:05:15.000 WARN bevy_ecs: B0004: entity 41v1 has no parent (x3 since 02:05:13.000)",
+        ]
+    );
 }

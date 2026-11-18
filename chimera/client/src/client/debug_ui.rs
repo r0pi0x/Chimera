@@ -13,11 +13,12 @@
 //! spawns and bookmarks, weapons), World (map, time scale, gravity, tick),
 //! Movement (the movement and mouse cvars), Bots (add, kick, skill, each
 //! bot's state, with watch / go to / kick / freeze buttons per bot), Rendering (overlays and culling), Perf (frame-time graph,
-//! the `chimera_perf` readout), Audio, Logic (map entities, fire inputs,
+//! the `chimera_perf` readout), Frames (the frame inspector: frame times
+//! over the last seconds, a spike's breakdown; `frame_inspector`), Audio, Logic (map entities, fire inputs,
 //! outputs fired), Rounds, Cvars (every cvar, searchable and editable).
 //!
 //! The debug UI (F8, `debugui [tab]`): a tabbed egui window (Player, World,
-//! Movement, Bots, Rendering, Perf, Audio, Logic, Rounds, Cvars) whose every
+//! Movement, Bots, Rendering, Perf, Frames, Audio, Logic, Rounds, Cvars) whose every
 //! control runs a console line (cvars as checkboxes, sliders or fields by
 //! `Cvar::range`/`integer`; `CVAR_RANGES` gives the ranges), with readouts
 //! (player state, map, bots, frame-time graph and the `chimera_perf` lines,
@@ -91,6 +92,7 @@ pub enum Tab {
     Bots,
     Rendering,
     Perf,
+    Frames,
     Audio,
     Logic,
     Rounds,
@@ -98,13 +100,14 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 10] = [
+    pub const ALL: [Tab; 11] = [
         Tab::Player,
         Tab::World,
         Tab::Movement,
         Tab::Bots,
         Tab::Rendering,
         Tab::Perf,
+        Tab::Frames,
         Tab::Audio,
         Tab::Logic,
         Tab::Rounds,
@@ -120,6 +123,7 @@ impl Tab {
             Tab::Bots => "bots",
             Tab::Rendering => "rendering",
             Tab::Perf => "perf",
+            Tab::Frames => "frames",
             Tab::Audio => "audio",
             Tab::Logic => "logic",
             Tab::Rounds => "rounds",
@@ -135,6 +139,7 @@ impl Tab {
             Tab::Bots => "Bots",
             Tab::Rendering => "Rendering",
             Tab::Perf => "Perf",
+            Tab::Frames => "Frames",
             Tab::Audio => "Audio",
             Tab::Logic => "Logic",
             Tab::Rounds => "Rounds",
@@ -213,7 +218,7 @@ impl Plugin for DebugUiStatePlugin {
             .console_command(
                 "chimera:debugui",
                 "debugui [tab|close]: toggle the debug window (F8), or open it on a tab (player, world, movement, \
-                 bots, rendering, perf, audio, logic, rounds, cvars).",
+                 bots, rendering, perf, frames, audio, logic, rounds, cvars).",
                 |w, a| {
                     let mut ui = w.resource_mut::<DebugUi>();
                     match a.first().map(|s| s.to_lowercase()) {
@@ -525,6 +530,7 @@ fn draw(world: &mut World, mut fonts_set: Local<bool>) {
                     Tab::Bots => bots_tab(ui, world, &mut state),
                     Tab::Rendering => rendering_tab(ui, world, &mut state),
                     Tab::Perf => perf_tab(ui, world, &mut state),
+                    Tab::Frames => super::frame_inspector::tab(ui, world),
                     Tab::Audio => audio_tab(ui, world, &mut state),
                     Tab::Logic => logic_tab(ui, world, &mut state),
                     Tab::Rounds => rounds_tab(ui, world, &mut state),

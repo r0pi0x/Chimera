@@ -4,7 +4,8 @@
 //! callback registries on an allowed list, per-tick exclusive systems
 //! ratcheted), `affected`, the test selection the git hooks run, and
 //! `docs_index` (`docs_index.rs`), which generates the module and debt lists
-//! from the sources' `//!` docs, and `ui_tokens` (`ui_tokens.rs`), the UI
+//! from the sources' `//!` docs and the converted formats' version table
+//! (`formats.rs`, docs/formats.md), and `ui_tokens` (`ui_tokens.rs`), the UI
 //! theme's values as the look book's CSS custom properties.
 //!
 //! `affected`: from the files a change touches, the workspace packages
@@ -17,4 +18,5 @@
 
 pub mod affected;
 pub mod docs_index;
+pub mod formats;
 pub mod ui_tokens;

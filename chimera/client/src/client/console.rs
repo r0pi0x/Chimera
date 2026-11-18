@@ -1855,6 +1855,8 @@ pub fn log_layer(_: &mut App) -> Option<BoxedLayer> {
     let queue = LOG.get_or_init(Default::default).clone();
     // The session's log too (`diagnostics`: INFO and above, every target).
     let layer = ToConsole(queue).and_then(chimera_core::diagnostics::SessionLayer);
+    // Each frame's log lines, for the frame inspector's spike records.
+    let layer = layer.and_then(chimera_core::metrics::frame_events::LogEvents);
     // A profile build also times every span for the hitch log
     // (`frame_metrics::span_times`).
     #[cfg(feature = "profile")]

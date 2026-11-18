@@ -7,7 +7,7 @@
 //! per install in the app's `LoadContext`), hashes it (`file_hash`, for the
 //! network handshake), and converts it (`convert`) through the
 //! converted-map cache (`map::cache`, keyed by `CONVERTER`, this crate's
-//! build.rs hash of its game sources, data and `blam_formats`, the load
+//! build.rs version of its converting sources and `blam_formats`, the load
 //! options and the file's hash): a second load of the same map reads the
 //! conversion back. The conversion, one concern per submodule:
 //!
@@ -82,9 +82,11 @@ use super::{GAME, INFO, MULTIPLAYER_MAPS};
 /// `map::MapSources`.
 pub static MAP_LOADER: MapLoader = MapLoader { game: GAME, load };
 
-/// The converter's version for the converted-map cache: the hash of this
-/// crate's game sources and data, `blam_formats`' sources and the
-/// lockfile (build.rs).
+/// The converter's version for the converted-map cache, the kept guest
+/// dressing and the served converted entries: `v<number>-<hash>`, a
+/// number bumped by hand and the hash of the conversion's own sources
+/// and data and the parsing crates' versions (build.rs; policy:
+/// docs/plans/active/converted-cache.md, "Converter versions").
 pub const CONVERTER: &str = env!("CHIMERA_CONVERTER_SOURCES");
 
 fn load(name: &str, options: &MapLoadOptions) -> Result<MapData, String> {

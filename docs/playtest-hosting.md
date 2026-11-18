@@ -491,6 +491,46 @@ one kept (waiting at most 5 s) and fetches the startup sets' new files
 in the background (a join waits for them, on the loading panel); each join fetches the offered sets' new
 files before the tester spawns. Nothing more for the tester to do.
 
+### Converted guest dressings (step 7 of docs/plans/active/converted-cache.md)
+
+Each game's players and guns on other games' maps are converted from its
+files at a client's first load (0.5-2.6 s and 3-21 G instructions in the
+playtest build). The service can serve them converted: a client whose
+converter version matches downloads one entry instead and converts
+nothing; any other version converts as before. Run it last, after every
+`publish`, `sets` and `lean` (an entry is checked against the
+manifest's files, so one made before a later publish is ignored), from a
+checkout at the **same commit as the released build** (the converter
+version is that build's):
+
+```
+S=<server store>; B=<backup>/manifests-$(date -u +%Y%m%d-%H%M)
+cp -a $S/manifests $B                      # the snapshot (undo: below)
+cargo run --release --features tools --bin chimera_pack -- convert all --store $S --check   # nothing written
+cargo run --release --features tools --bin chimera_pack -- convert all --store $S --sign
+cargo run --release --features tools --bin chimera_pack -- convert all --store $S --list
+```
+
+It reads each game from the server store alone, as a player's client
+does (no install, no keys, nothing fetched), with a converted-map cache
+of its own (`<server store>/convert-scratch`, removed after), and enters
+in each game's newest manifest, per guest, a client's entry and a
+dedicated server's (no textures): `_converted/guest/<game>/<converter>/
+<key>.map` with its recipe beside it (`<key>-recipe.txt`: the versions
+and every input record). No set holds them; a client fetches the recipe,
+checks it against its manifest, then the entry. Sizes stored (a client's entry): CS:S about
+62 MB, HL2:DM 53 MB, TF2 about 265 MB, Combat Arms tens of MB (`--list`
+prints them). It needs
+memory for the largest entry twice (TF2's, about 1.6 GB) and a few
+minutes per game (zstd level 19).
+
+Undo: `rm -r $S/manifests && cp -a $B $S/manifests` (records are only
+added), or one version's entries: `chimera_pack convert all --store $S
+--drop <converter> --sign`, then `chimera_assets --store $S gc` (`--dry-run` first)
+frees their records. Keep the entries of every converter version a
+released client still uses (`--list` names them); drop a version once no
+release in use has it.
+
 ## The asset service (each session)
 
 ```
@@ -1031,10 +1071,19 @@ loopback does). `accounts.db` is backed up nightly into `<server store>/server/b
 - **Testers' reports** (F10 or Esc > Report a bug, in builds that have
   it) arrive at the asset service: a `POST /feedback` line in the access
   log, the report under `<server store>/server/feedback/<day>/<id>/`
-  (the zip unpacked: `report.json` with the tester's words,
-  `screenshot.jpg`, `game.txt`, `system.txt`, `perf.txt`, `net.txt`,
-  `cvars.txt`, `console.txt`; `meta.toml` with the account and status;
-  `history.log`). Read them on this machine at
+  (the zip unpacked, the zip itself not kept: `report.json` with the
+  tester's words, `screenshot.jpg`, `game.txt` (with the role: listen
+  host, client or offline; bots, tick rate, rung), `system.txt`,
+  `perf.txt` (with the frame inspector's worst stutters, each frame's
+  slowest schedules, systems and events), `world.txt` (entities by kind
+  and their growth since the session's and the map's start, archetypes
+  made and by what, asset stores, memory by kind, the last minutes'
+  event timeline), `net.txt`, `cvars.txt`, `console.txt`, `log.txt`
+  (repeated lines folded with their counts); `meta.toml` with the account
+  and status; `history.log`). Retention: reports older than 60 days go,
+  then the oldest past 2 GB in all, after each new one
+  (`--reports-keep-days`, `--reports-keep-mb`; 0 keeps everything); a
+  `report.zip` older receivers kept beside the files goes then too. Read them on this machine at
   `http://127.0.0.1:<plain port>/feedback/admin/` (the plain listener,
   8731 by default; never the `--tls` port), or with
   `chimera_assets --store <server store> feedback list [--status new]

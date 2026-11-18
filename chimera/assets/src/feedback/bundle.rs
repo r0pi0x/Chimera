@@ -6,8 +6,10 @@
 //! same allow-list and caps (the receiver's validation).
 //!
 //! The game (`chimera_client::client::feedback`) fills the `ReportState`:
-//! the text sections (`game`, `system`, `perf`, `net`) as it formats them,
-//! cvars and binds as lists, console and log lines as they were. A crash
+//! the text sections (`game`, `system`, `perf`, `world`, `net`) as it
+//! formats them, cvars and binds as lists, console and log lines as they
+//! were; the log's repeated lines are folded with their counts
+//! (`fold_repeats`). A crash
 //! report (`Kind::Crash`, made by `session`) adds `backtrace.txt`,
 //! `health.txt` and, from a native crash on Windows, `minidump.dmp` (its
 //! home folders scrubbed; a binary the filter can't read otherwise).
@@ -35,10 +37,11 @@ pub const ENTRIES: &[(&str, usize)] = &[
     ("game.txt", 256 * 1024),
     ("system.txt", 64 * 1024),
     ("perf.txt", 256 * 1024),
+    ("world.txt", 128 * 1024),
     ("net.txt", 256 * 1024),
     ("cvars.txt", 256 * 1024),
     ("console.txt", 512 * 1024),
-    ("log.txt", 1024 * 1024),
+    ("log.txt", 384 * 1024),
     // Crash reports (`Kind::Crash`, `session`).
     ("backtrace.txt", 256 * 1024),
     ("health.txt", 256 * 1024),
@@ -143,6 +146,10 @@ pub struct ReportState {
     /// `perf.txt`: the last `chimera_perf` readout, frame distributions,
     /// hitches.
     pub perf: String,
+    /// `world.txt`: what the world holds and how it grew (entities by
+    /// kind, archetypes), asset stores and memory by kind, the last
+    /// minutes' event timeline.
+    pub world: String,
     /// `net.txt`: ping, loss, choke, rates, reconnects.
     pub net: String,
     /// Cvars that differ from their default.
@@ -210,6 +217,35 @@ fn lines(all: &[String], max: usize) -> String {
     out
 }
 
+/// Log lines with repeats folded: lines alike but for their digits (and
+/// the time each starts with) are one, at the last one's place, ending
+/// in `(xN since <the first's time>)`: a warning every frame or a sound
+/// started each second takes a line, not the whole log.
+pub fn fold_repeats(all: &[String]) -> Vec<String> {
+    use std::collections::HashMap;
+    let shape = |l: &str| -> String {
+        let body = l.split_once(' ').map_or(l, |(_, rest)| rest);
+        body.chars().map(|c| if c.is_ascii_digit() { '#' } else { c }).collect()
+    };
+    let shapes: Vec<String> = all.iter().map(|l| shape(l)).collect();
+    // Per shape: how many, the first's time, the last's index.
+    let mut seen: HashMap<&str, (usize, &str, usize)> = HashMap::new();
+    for (i, (l, s)) in all.iter().zip(&shapes).enumerate() {
+        let e = seen.entry(s.as_str()).or_insert((0, l.split(' ').next().unwrap_or(""), i));
+        e.0 += 1;
+        e.2 = i;
+    }
+    let mut out = Vec::with_capacity(seen.len());
+    for (i, (l, s)) in all.iter().zip(&shapes).enumerate() {
+        let (n, first, last) = seen[s.as_str()];
+        if last != i {
+            continue;
+        }
+        out.push(if n > 1 { format!("{l} (x{n} since {first})") } else { l.clone() });
+    }
+    out
+}
+
 /// `text` cut to `cap` bytes at a character boundary, keeping its end
 /// (the latest lines) when `keep_end`.
 fn fit(text: String, cap: usize, keep_end: bool) -> String {
@@ -268,14 +304,15 @@ pub fn build(state: &ReportState) -> Result<Bundle, String> {
             cvars.push('\n');
         }
     }
-    let texts: [(&str, String, bool); 9] = [
+    let texts: [(&str, String, bool); 10] = [
         ("game.txt", redact::text(&state.game), false),
         ("system.txt", redact::text(&state.system), false),
         ("perf.txt", redact::text(&state.perf), false),
+        ("world.txt", redact::text(&state.world), false),
         ("net.txt", redact::text(&state.net), true),
         ("cvars.txt", cvars, false),
         ("console.txt", lines(&state.console, CONSOLE_LINES), true),
-        ("log.txt", lines(&state.log, if state.kind == Kind::Crash { CRASH_LOG_LINES } else { LOG_LINES }), true),
+        ("log.txt", lines(&fold_repeats(&state.log), if state.kind == Kind::Crash { CRASH_LOG_LINES } else { LOG_LINES }), true),
         ("backtrace.txt", redact::text(&state.backtrace), false),
         ("health.txt", lines(&state.health, LOG_LINES), true),
     ];

@@ -199,6 +199,57 @@ impl Census {
     }
 }
 
+/// A cheap census for a baseline (a report's growth since then):
+/// entities, archetypes made, and entities per non-empty archetype
+/// (names only for those: a long session's thousands of empty ones are
+/// skipped), so it can be taken in play.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Light {
+    pub entities: usize,
+    pub archetypes_made: usize,
+    pub by_archetype: BTreeMap<String, usize>,
+}
+
+impl Light {
+    pub fn take(world: &World) -> Self {
+        let components = world.components();
+        let mut by_archetype = BTreeMap::new();
+        for a in world.archetypes().iter().filter(|a| !a.is_empty()) {
+            let mut names: Vec<String> =
+                a.iter_components().filter_map(|c| components.get_name(c)).map(|n| n.shortname().to_string()).collect();
+            names.sort();
+            *by_archetype.entry(names.join("+")).or_insert(0) += a.len() as usize;
+        }
+        Self { entities: world.entities().count_spawned() as usize, archetypes_made: world.archetypes().len(), by_archetype }
+    }
+
+    /// The `top` kinds (archetypes' component sets) that grew most since
+    /// `before`, as `+N now  kind` lines, and the totals' line first.
+    pub fn growth(&self, before: &Light, top: usize) -> Vec<String> {
+        let mut out = vec![format!(
+            "entities {} -> {} ({:+}), archetypes made {} -> {} ({:+})",
+            before.entities,
+            self.entities,
+            self.entities as i64 - before.entities as i64,
+            before.archetypes_made,
+            self.archetypes_made,
+            self.archetypes_made as i64 - before.archetypes_made as i64
+        )];
+        let mut rows: Vec<(i64, usize, &str)> = self
+            .by_archetype
+            .iter()
+            .map(|(k, n)| (*n as i64 - before.by_archetype.get(k).copied().unwrap_or(0) as i64, *n, k.as_str()))
+            .filter(|r| r.0 != 0)
+            .collect();
+        rows.sort_by(|a, b| b.0.cmp(&a.0).then(a.2.cmp(b.2)));
+        for (d, n, k) in rows.into_iter().take(top) {
+            let k = if k.len() > 240 { &k[..k.char_indices().take_while(|(i, _)| *i < 240).last().map_or(0, |(i, _)| i)] } else { k };
+            out.push(format!("  {d:+6} {n:6}  {k}"));
+        }
+        out
+    }
+}
+
 /// The censuses `chimera_census` took: the last (key "") and those saved
 /// by name.
 #[derive(Resource, Default)]
@@ -280,7 +331,7 @@ pub fn age(world: &mut World, n: u32, sparse: bool) -> Result<(usize, usize), St
 /// The components that come and go on the archetypes holding `component`:
 /// how many of them hold each, the most first, then how many tables they
 /// make and the components all of them hold.
-fn varies(census: &Census, component: &str) -> String {
+pub fn varies(census: &Census, component: &str) -> String {
     let holding = |sets: &BTreeSet<String>| -> Vec<BTreeSet<String>> {
         sets.iter()
             .map(|k| k.split('+').map(str::to_string).collect::<BTreeSet<String>>())

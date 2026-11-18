@@ -2,7 +2,8 @@
 //! "Load-independent metrics"): per-thread CPU time and hardware counters
 //! (`counters`), distributions of the last N values (`dist`), the
 //! simulation tick's own numbers (`TickMetricsPlugin`), and a world's
-//! counts by archetype, schedule and asset type (`census`); with `trace`,
+//! counts by archetype, schedule and asset type (`census`), engine events
+//! by frame (`frame_events`, for the frame inspector); with `trace`,
 //! instructions per span (`span_cost`).
 //!
 //! Wall-clock times move with whatever else the machine runs; a thread's
@@ -13,6 +14,7 @@
 pub mod census;
 pub mod counters;
 pub mod dist;
+pub mod frame_events;
 pub mod memory;
 pub mod work;
 #[cfg(feature = "trace")]

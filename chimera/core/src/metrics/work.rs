@@ -23,6 +23,14 @@
 //! tasks still spawned in scopes (Bevy's `mark_dirty_trees`, Avian's broad
 //! phase) run on the thread waiting in the scope, counted with the system.
 //!
+//! The same wrapper also times systems by wall clock (`set_timing`: a
+//! process-wide switch, for the frame inspector, `client::frame_inspector`):
+//! each run's own nanoseconds (less the schedules it runs inside) go to the
+//! running thread's rows, `take_times` hands them over. Off, a wrapper
+//! costs a thread-local read and an atomic load; on, two clock reads a run.
+//! `count_systems` wraps a live app's worlds too
+//! (`frame_inspector::FrameInspectorPlugin::cleanup`).
+//!
 //! Known shortcuts: Linux only (hardware counters); elsewhere every
 //! count is None and the gates skip. Run conditions and the executor's
 //! own bookkeeping are in no row (in a tick's total, not its systems' sum).
@@ -34,15 +42,6 @@
 //! `nextest`) may run on a thread waiting in a scope: a test that
 //! compares counts closely runs in a process of its own
 //! (`harness::own_process`).
-//!
-//! **Timing** (`set_timing`, one switch for the process; the game client
-//! turns it on for its main world, `client::app::run_app`): the same
-//! wrappers also measure each run's wall time (`Instant`, its own less the
-//! systems run inside, as the counts) into this thread's frame
-//! (`take_frame_times`), so the hitch log names the systems that made a
-//! slow frame in any build, not only a profiling one (docs/performance.md,
-//! "Stutter on Beaver Creek"). On x86_64 the CPU's time-stamp counter
-//! (`clock`): about 150 instructions a run.
 
 use std::{
     any::TypeId,
@@ -71,7 +70,15 @@ static LABELS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// (world, schedule, system key) already wrapped.
 static WRAPPED: Mutex<BTreeSet<(String, SystemKey)>> = Mutex::new(BTreeSet::new());
 
+/// Timing systems by wall clock, on every thread (`set_timing`).
+static TIMING: AtomicBool = AtomicBool::new(false);
+
 thread_local! {
+    /// This thread's timed nanoseconds and runs per row (`take_times`),
+    /// and the rows touched since the last take (to reset only those).
+    static TIMES: RefCell<(Vec<(u64, u32)>, Vec<usize>)> = const { RefCell::new((Vec::new(), Vec::new())) };
+    /// Open timed systems: start and the nested systems' nanoseconds.
+    static TIME_STACK: RefCell<Vec<(std::time::Instant, u64)>> = const { RefCell::new(Vec::new()) };
     /// Counting on this thread (`set_enabled`).
     static ENABLED: Cell<bool> = const { Cell::new(false) };
     /// This thread's instructions and runs per row: each thread counts
@@ -84,123 +91,6 @@ thread_local! {
     static STACK: RefCell<Vec<(u64, u64)>> = const { RefCell::new(Vec::new()) };
     /// This thread's hold on the compute pool while it counts.
     static HOLDING: RefCell<Option<Hold>> = const { RefCell::new(None) };
-}
-
-/// Wall time per system on (true) or off: every wrapped system, on every
-/// thread (`take_frame_times` reads the calling thread's).
-static TIMING: AtomicBool = AtomicBool::new(false);
-
-thread_local! {
-    /// This thread's timed systems: the open ones and the frame's rows.
-    static TIMES: RefCell<Times> = const { RefCell::new(Times { open: Vec::new(), ticks: Vec::new(), runs: Vec::new(), touched: Vec::new() }) };
-}
-
-/// Open timed systems (their start, and the time of the systems run
-/// inside them, in clock ticks), and clock ticks and runs by row since the
-/// last take, with the rows touched (to reset only those).
-struct Times {
-    open: Vec<(u64, u64)>,
-    ticks: Vec<u64>,
-    runs: Vec<u32>,
-    touched: Vec<usize>,
-}
-
-/// Time every wrapped system's runs (wall, self) from now on, or stop.
-pub fn set_timing(on: bool) {
-    if on {
-        let _ = clock::ns_per_tick();
-    }
-    TIMING.store(on, Ordering::Relaxed);
-}
-
-/// Whether systems are timed (`set_timing`).
-pub fn timing() -> bool {
-    TIMING.load(Ordering::Relaxed)
-}
-
-/// The timing's clock: the CPU's time-stamp counter where there is one
-/// (x86_64: one instruction, where the system clock costs a hundred or
-/// more, and a frame runs a thousand or two systems), scaled to
-/// nanoseconds against `Instant` since the first use; `Instant` elsewhere.
-mod clock {
-    use std::{sync::OnceLock, time::Instant};
-
-    static START: OnceLock<(Instant, u64)> = OnceLock::new();
-
-    #[inline]
-    pub fn now() -> u64 {
-        #[cfg(target_arch = "x86_64")]
-        {
-            // SAFETY: `rdtsc` exists on every x86_64 CPU.
-            unsafe { core::arch::x86_64::_rdtsc() }
-        }
-        #[cfg(not(target_arch = "x86_64"))]
-        {
-            START.get_or_init(|| (Instant::now(), 0)).0.elapsed().as_nanos() as u64
-        }
-    }
-
-    /// Nanoseconds a clock tick, measured over the time since the first
-    /// call (better as it goes on).
-    pub fn ns_per_tick() -> f64 {
-        let (at, ticks) = *START.get_or_init(|| (Instant::now(), now()));
-        let (ns, t) = (at.elapsed().as_nanos() as f64, now().wrapping_sub(ticks) as f64);
-        if cfg!(target_arch = "x86_64") && t > 0.0 && ns > 1e6 { ns / t } else if cfg!(target_arch = "x86_64") { 1.0 / 3.0 } else { 1.0 }
-    }
-}
-
-fn t_enter() {
-    let at = clock::now();
-    TIMES.with(|t| t.borrow_mut().open.push((at, 0)));
-}
-
-fn t_leave(row: usize) {
-    let end = clock::now();
-    TIMES.with(|t| {
-        let t = &mut *t.borrow_mut();
-        let Some((at, inner)) = t.open.pop() else { return };
-        let total = end.wrapping_sub(at);
-        if let Some(parent) = t.open.last_mut() {
-            parent.1 += total;
-        }
-        if t.ticks.len() <= row {
-            t.ticks.resize(row + 1, 0);
-            t.runs.resize(row + 1, 0);
-        }
-        if t.runs[row] == 0 {
-            t.touched.push(row);
-        }
-        t.ticks[row] += total.saturating_sub(inner);
-        t.runs[row] += 1;
-    });
-}
-
-/// This thread's timed systems since the last call (`set_timing`), the
-/// `n` slowest by their own wall time, slowest first: (label: schedule and
-/// system, ms, runs); the rest forgotten. `n` 0 only resets (each frame
-/// that isn't a hitch: cheap, the touched rows alone).
-pub fn take_frame_times(n: usize) -> Vec<(String, f64, u32)> {
-    TIMES.with(|t| {
-        let t = &mut *t.borrow_mut();
-        let mut out = Vec::new();
-        if n > 0 && !t.touched.is_empty() {
-            let mut rows: Vec<(usize, u64, u32)> = t.touched.iter().map(|&r| (r, t.ticks[r], t.runs[r])).collect();
-            rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-            rows.truncate(n);
-            let ms = clock::ns_per_tick() / 1e6;
-            let labels = LABELS.lock().unwrap_or_else(|e| e.into_inner());
-            out = rows
-                .into_iter()
-                .map(|(r, ticks, runs)| (labels.get(r).cloned().unwrap_or_else(|| format!("system {r}")), ticks as f64 * ms, runs))
-                .collect();
-        }
-        for &r in &t.touched {
-            t.ticks[r] = 0;
-            t.runs[r] = 0;
-        }
-        t.touched.clear();
-        out
-    })
 }
 
 /// Count the systems this thread runs from now on (true) or stop (false).
@@ -235,6 +125,64 @@ fn enable(on: bool, hold: bool) {
         }
     });
     ENABLED.with(|e| e.set(on));
+}
+
+/// Time every wrapped system by wall clock from now on, on every thread
+/// (true), or stop (false). Rows go to the thread that ran the system:
+/// `take_times` there.
+pub fn set_timing(on: bool) {
+    TIMING.store(on, Ordering::Relaxed);
+}
+
+/// Whether systems are timed (`set_timing`).
+pub fn timing() -> bool {
+    TIMING.load(Ordering::Relaxed)
+}
+
+/// The systems this thread timed since the last take, and zero them:
+/// (row, nanoseconds of their own, runs); `label` names a row.
+pub fn take_times() -> Vec<(usize, u64, u32)> {
+    TIMES.with(|t| {
+        let (rows, touched) = &mut *t.borrow_mut();
+        let out = touched.iter().map(|&i| (i, rows[i].0, rows[i].1)).collect();
+        for &i in touched.iter() {
+            rows[i] = (0, 0);
+        }
+        touched.clear();
+        out
+    })
+}
+
+/// A row's label: its schedule and system (`Update my_system`).
+pub fn label(row: usize) -> Option<String> {
+    LABELS.lock().unwrap_or_else(|e| e.into_inner()).get(row).cloned()
+}
+
+fn time_enter() {
+    TIME_STACK.with(|s| s.borrow_mut().push((std::time::Instant::now(), 0)));
+}
+
+fn time_leave(row: usize) {
+    let Some((at, inner)) = TIME_STACK.with(|s| s.borrow_mut().pop()) else {
+        return;
+    };
+    let total = at.elapsed().as_nanos() as u64;
+    TIME_STACK.with(|s| {
+        if let Some(parent) = s.borrow_mut().last_mut() {
+            parent.1 += total;
+        }
+    });
+    TIMES.with(|r| {
+        let (rows, touched) = &mut *r.borrow_mut();
+        if rows.len() <= row {
+            rows.resize(row + 1, (0, 0));
+        }
+        if rows[row].1 == 0 {
+            touched.push(row);
+        }
+        rows[row].0 += total.saturating_sub(inner);
+        rows[row].1 += 1;
+    });
 }
 
 /// Whether this thread counts.
@@ -392,46 +340,40 @@ impl System for Counted {
     }
 
     unsafe fn run_unsafe(&mut self, input: SystemIn<'_, Self>, world: UnsafeWorldCell) -> Result<(), RunSystemError> {
-        let (counting, timing) = (enabled(), timing());
-        if !counting && !timing {
+        if !enabled() {
+            if !timing() {
+                // SAFETY: the caller's guarantees, passed on.
+                return unsafe { self.inner.run_unsafe(input, world) };
+            }
+            time_enter();
             // SAFETY: the caller's guarantees, passed on.
-            return unsafe { self.inner.run_unsafe(input, world) };
+            let r = unsafe { self.inner.run_unsafe(input, world) };
+            time_leave(self.row);
+            return r;
         }
-        if counting {
-            enter();
-        }
-        if timing {
-            t_enter();
-        }
+        enter();
         // SAFETY: the caller's guarantees, passed on.
         let r = unsafe { self.inner.run_unsafe(input, world) };
-        if timing {
-            t_leave(self.row);
-        }
-        if counting {
-            leave(self.row);
-        }
+        leave(self.row);
         r
     }
 
     fn apply_deferred(&mut self, world: &mut World) {
-        let (counting, timing) = (enabled(), timing());
-        if (!counting && !timing) || !self.inner.has_deferred() {
+        if !self.inner.has_deferred() {
             return self.inner.apply_deferred(world);
         }
-        if counting {
-            enter();
+        if !enabled() {
+            if !timing() {
+                return self.inner.apply_deferred(world);
+            }
+            time_enter();
+            self.inner.apply_deferred(world);
+            time_leave(self.row);
+            return;
         }
-        if timing {
-            t_enter();
-        }
+        enter();
         self.inner.apply_deferred(world);
-        if timing {
-            t_leave(self.row);
-        }
-        if counting {
-            leave(self.row);
-        }
+        leave(self.row);
     }
 
     fn queue_deferred(&mut self, world: DeferredWorld) {
@@ -680,5 +622,36 @@ mod tests {
         let b = runs[2].total() as f64;
         assert!((a - b).abs() / a < 0.005, "{a} {b}");
         assert_eq!(world.resource::<N>().0 > 0, true);
+    }
+
+    fn naps(world: &mut World) {
+        world.resource_mut::<N>().0 += 1;
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    /// Timing by wall clock (`set_timing`): the sleeping system's own time
+    /// is in its row, on the thread that ran it.
+    #[test]
+    fn systems_are_timed_while_timing_is_on() {
+        let mut world = World::new();
+        world.init_resource::<N>();
+        let mut schedule = bevy::ecs::schedule::Schedule::new(bevy::app::PostUpdate);
+        schedule.set_executor(bevy::ecs::schedule::SingleThreadedExecutor::new());
+        schedule.add_systems((naps, light).chain());
+        world.add_schedule(schedule);
+        count_systems(&mut world);
+        let _ = take_times();
+        set_timing(false);
+        world.run_schedule(bevy::app::PostUpdate);
+        assert!(take_times().is_empty(), "nothing timed while off");
+        set_timing(true);
+        world.run_schedule(bevy::app::PostUpdate);
+        set_timing(false);
+        let rows = take_times();
+        let named: Vec<(String, u64, u32)> = rows.iter().map(|&(r, ns, n)| (label(r).unwrap(), ns, n)).collect();
+        let nap = named.iter().find(|r| r.0.ends_with("naps")).expect("the sleeping system timed");
+        assert!(nap.1 >= 5_000_000 && nap.2 == 1, "{named:?}");
+        assert!(nap.0.starts_with("PostUpdate"), "{named:?}");
+        assert!(take_times().is_empty(), "taken");
     }
 }

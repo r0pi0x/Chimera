@@ -67,6 +67,8 @@ pub mod net_graph;
 pub mod night_vision;
 pub mod screen_post;
 pub mod offscreen;
+pub mod frame_inspector;
+pub mod world_report;
 pub mod frame_metrics;
 pub mod memory;
 pub mod perf;

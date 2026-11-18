@@ -810,6 +810,7 @@ const TEST_SLEEPS: &[(&str, usize, &str)] = &[
     ("chimera/assets/tests/it/feedback.rs", 4, "the feedback service's real timers"),
     ("chimera/assets/tests/it/service.rs", 3, "the asset server's once-a-second manifest check and access-log flush"),
     ("chimera/client/tests/it/metrics.rs", 1, "measures a real 40 ms stall"),
+    ("chimera/client/tests/it/frame_inspector.rs", 1, "a real 200 ms stall in a system, the spike the inspector must name"),
     ("chimera/net/tests/it/assets.rs", 3, "the asset server's once-a-second manifest check; its access log"),
     ("chimera/net/tests/it/hub.rs", 2, "a real hub server's heartbeat pace"),
     ("chimera/services/tests/it/accounts.rs", 1, "a real account server's thread"),

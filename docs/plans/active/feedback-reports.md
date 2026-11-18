@@ -101,13 +101,14 @@ entries, never from files on disk:
 |---|---|
 | `report.json` | schema version, report id (UUID v4, made by the client: retries are idempotent), category, the tester's text, UTC time, build (`BuildVersion`) and `NET_VERSION`, app, install id (a random id kept in the data folder, for grouping one machine's reports; no hardware serials) |
 | `screenshot.jpg` | the frame at the key press, JPEG ~85, at most 1920 wide (about 0.3-0.6 MB; the `image` crate, already in the lock) |
-| `game.txt` | map, minigame and rung, ladder position, match clock, players and bots, the server's name (not its address), the local player's `setpos`/`setang`, velocity, weapon, health, alive or spectating, the asset sets fetched and this match's on-demand fetches |
+| `game.txt` | the role (offline, listen host, client), characters and bots, tick rate, the ladder's rungs and the games they deal (`client::world_report::setup_text`), map, minigame and rung, ladder position, match clock, players and bots, the server's name (not its address), the local player's `setpos`/`setang`, velocity, weapon, health, alive or spectating, the asset sets fetched and this match's on-demand fetches |
 | `system.txt` | OS and version, CPU, RAM, GPU name, driver and backend (`RenderAdapterInfo`), window size, scale factor, display mode, vsync, `fps_max` |
-| `perf.txt` | the last `chimera_perf` readout, `FrameMetrics` distributions and the hitch log's last entries |
+| `perf.txt` | the last `chimera_perf` readout, `FrameMetrics` distributions, the hitch log's last entries and the frame inspector's worst spikes with their breakdowns (`client::frame_inspector`) |
 | `net.txt` | ping, loss, choke, in and out rates over the last seconds (`net_graph`'s readout kept in a ring), reconnects this session |
 | `cvars.txt` | cvars whose value differs from the default, after the secret filter (2.5); changed binds |
 | `console.txt` | the last 300 console lines, redacted (2.5) |
-| `log.txt` | the last 500 `tracing` lines at INFO and above, from a ring-buffer layer (Bevy's `LogPlugin::custom_layer`), redacted |
+| `world.txt` | a census (entities by kind, archetypes, systems, asset stores), growth by kind since the session's first map and since this map, the archetypes made since the map and by what, what varies on the characters, memory by kind (`chimera_mem`), the last 5 minutes' event timeline (frame events, alike ones folded with counts) (`client::world_report`) |
+| `log.txt` | the last 500 `tracing` lines at INFO and above, from a ring-buffer layer (Bevy's `LogPlugin::custom_layer`), redacted, lines alike but for digits folded into the last with `(xN since <time>)` (`bundle::fold_repeats`) |
 
 Typical size under 1 MB; the client refuses to queue more than 8 MB.
 No demo yet (nothing records our own matches); see phase 3.
@@ -239,14 +240,15 @@ uses `chimera_assets`; `party_kit` is an app crate.
 ### 3.4 Storage and statuses
 
 `<server store>/server/feedback/<yyyy-mm-dd>/<id>/`: the zip's entries
-unpacked, the zip itself, and `meta.toml` (account, address, received
+unpacked (one form: the zip itself isn't kept since 2026-11-18), and `meta.toml` (account, address, received
 time, size, client build, `status`, `group`, `reason`, `fixed_in`), plus
 `history.log` (one line per status change: time, who, from, to, why).
 
 Statuses: `new` -> `triaged` -> `accepted` | `rejected` | `needs-info` |
 `duplicate` (with `group`) -> `fixed` (with the commit). A report is
-never deleted by a status; retention (delete after N days) is the
-user's call.
+never deleted by a status. Retention (2026-11-18, `inbox::prune` after
+each stored report): older than `--reports-keep-days` (60) go, then the
+oldest past `--reports-keep-mb` (2048) in all; 0 keeps.
 
 ### 3.5 Reading the queue
 
