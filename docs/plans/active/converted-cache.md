@@ -1,12 +1,16 @@
 # Converted assets on disk: a session's first load without conversion
 
-Status: **measured, not built** (2026-11-17). The backlog entry is
+Status: **steps 1-4 done, the disk layer off by default** (2026-11-17;
+"Progress" below); next: Combat Arms and Halo onto `map::kept` (step 5),
+a playtest-profile measurement before turning the disk on (step 6), the
+asset service (step 7). The backlog entry is
 docs/backlog.md §9, "Converted assets on disk and on the asset
 service"; it builds on "One kept-dressing cache in Chimera for every
 game" (the session cache, docs/performance.md, "Guest dressings kept
 for the session"). The prototype is on branch `converted-cache`
-(`apps/party_kit/tests/it/heavy/converted_cache.rs`); nothing of it is
-on main.
+(`apps/party_kit/tests/it/heavy/converted_cache.rs`); main has its
+successors (`apps/party_kit/tests/it/heavy/converted.rs`,
+`chimera_world::map::kept`).
 
 ## What was measured
 
