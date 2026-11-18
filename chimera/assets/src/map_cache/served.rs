@@ -35,9 +35,22 @@
 //!   generated-assets rule), so anyone with the originals rebuilds the
 //!   same records.
 //!
-//! Known shortcuts: the record a client fetched stays in its asset store
-//! beside the local entry (the store has no cap yet); a dressing that
-//! asks whether a file is here (`Access::Held`: TF2's class bodies) takes
+//! - **The records a client fetched** stay in its asset store beside the
+//!   local entry (a re-take after the local entry was evicted needs no
+//!   download), capped like the map cache itself: after each take
+//!   `evict_records` keeps the served records (entries and recipes under
+//!   `SERVED_DIR`, as the mount's layers hold them on disk,
+//!   `FileSource::cached_copy`) within `CHIMERA_SERVED_CACHE_GB`
+//!   (`SERVED_CAP_ENV`, `DEFAULT_SERVED_CAP_GB`; free space weighs in as
+//!   for the map cache, `disk::limit_cap`). Over it, the records of
+//!   another converter version of the same game (older ones: the name's
+//!   last part differs) go first, then the least recently taken (the
+//!   record file's modified time, set by each take). Never removed: the
+//!   entry just taken and its recipe, a record a fill is fetching (no
+//!   `cached_copy`) and a file that won't unlink (still open on Windows).
+//!   Other records of the store (the games' files) are never touched.
+//!
+//! Known shortcuts: a dressing that asks whether a file is here (`Access::Held`: TF2's class bodies) takes
 //! the served entry only when the client holds what the packer held.
 
 use std::{
@@ -58,6 +71,12 @@ pub const SERVED_DIR: &str = "_converted";
 pub const RECIPE_FORMAT: u32 = 1;
 /// `0` (`off`, `false`, `no`): never take a served entry.
 pub const SERVED_ENV: &str = "CHIMERA_CONVERTED_SERVED";
+/// The cap in GB (decimal) on the served records in the client's asset
+/// store (module doc).
+pub const SERVED_CAP_ENV: &str = "CHIMERA_SERVED_CACHE_GB";
+/// The cap when `SERVED_CAP_ENV` isn't set: a quarter of the map cache's
+/// (`map_cache::DEFAULT_CAP_GB`), as the local entry is the one used.
+pub const DEFAULT_SERVED_CAP_GB: f64 = 10.0;
 /// What a served entry's key has for the mount's layers.
 pub(super) const SERVED_LAYERS: &str = "served";
 
@@ -302,6 +321,7 @@ pub(super) fn take<T: DeserializeOwned>(
         if let Err(e) = write_rekeyed(cache, path, payload, &header, key, read) {
             eprintln!("map cache: {}: {e}", path.display());
         }
+        evict_records(mount, &served.name, &[&entry, &recipe], served_cap(), &disk::space);
         eprintln!(
             "map cache: took the served {entry} ({:.0} MB, {} inputs) in {:.2} s",
             bytes.len() as f64 / 1e6,
@@ -311,6 +331,78 @@ pub(super) fn take<T: DeserializeOwned>(
         Ok(value)
     })();
     taken.map_err(|why| eprintln!("map cache: the served {entry}: {why}; converting")).ok()
+}
+
+/// The cap on served records in bytes (`SERVED_CAP_ENV`).
+fn served_cap() -> u64 {
+    let gb = std::env::var(SERVED_CAP_ENV).ok().and_then(|v| v.trim().parse::<f64>().ok());
+    (gb.filter(|g| g.is_finite()).unwrap_or(DEFAULT_SERVED_CAP_GB).max(0.0) * 1e9) as u64
+}
+
+/// Whether `path`'s served name is another converter version of the same
+/// game as `current` (`guest/<game>/<converter>`): an older one.
+fn is_older(path: &str, current: &str) -> bool {
+    let name = |p: &str| p.strip_prefix(SERVED_DIR).and_then(|r| r.strip_prefix('/')).and_then(|r| r.rsplit_once('/')).map(|(n, _)| n.to_string());
+    let (Some(a), Some(b)) = (name(path), Some(current)) else { return false };
+    match (a.rsplit_once('/'), b.rsplit_once('/')) {
+        (Some((game_a, conv_a)), Some((game_b, conv_b))) => game_a == game_b && conv_a != conv_b,
+        _ => false,
+    }
+}
+
+/// Remove served records from the mount's downloaded copies until the
+/// rest fit `cap` (module doc): older converter versions first, then the
+/// least recently taken; never `keep` (paths) nor a record in use. The
+/// kept records are marked used now. Returns the bytes removed.
+pub(super) fn evict_records(mount: &Mount, current: &str, keep: &[&str], cap: u64, read: disk::Reader) -> u64 {
+    struct Held {
+        file: std::path::PathBuf,
+        size: u64,
+        used: std::time::SystemTime,
+        older: bool,
+        keep: bool,
+    }
+    let prefix = format!("{SERVED_DIR}/");
+    let mut held: Vec<Held> = Vec::new();
+    for layer in mount.layers() {
+        for e in layer.entries() {
+            if !e.path.starts_with(&prefix) {
+                continue;
+            }
+            let Some(file) = layer.cached_copy(&e.path) else { continue };
+            if held.iter().any(|h| h.file == file) {
+                continue;
+            }
+            let Ok(meta) = fs::metadata(&file) else { continue };
+            held.push(Held {
+                size: meta.len(),
+                used: meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+                older: is_older(&e.path, current),
+                keep: keep.contains(&e.path.as_str()),
+                file,
+            });
+        }
+    }
+    for h in held.iter_mut().filter(|h| h.keep) {
+        if let Ok(f) = File::options().append(true).open(&h.file) {
+            let _ = f.set_modified(std::time::SystemTime::now());
+        }
+    }
+    let mut total: u64 = held.iter().map(|h| h.size).sum();
+    let Some(first) = held.first() else { return 0 };
+    let cap = disk::limit_cap(cap, total, first.file.parent().unwrap_or(&first.file), read);
+    let before = total;
+    // Older versions first, each group least recently used first.
+    held.sort_by_key(|h| (!h.older, h.used));
+    for h in held.iter().filter(|h| !h.keep) {
+        if total <= cap {
+            break;
+        }
+        if fs::remove_file(&h.file).is_ok() {
+            total -= h.size;
+        }
+    }
+    before - total
 }
 
 /// A served entry kept in the local cache at `path` under `key` (a
@@ -450,6 +542,57 @@ mod tests {
         let (v, how, runs) = client(&changed, "guest/fixture/v1", "client-changed", false);
         assert_eq!((how, runs), (Outcome::Miss, 1));
         assert_eq!(v[0], "alpha 2");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Over the cap, the records of an older converter version go first,
+    /// then the least recently taken; the entry just taken, other
+    /// records of the store and records of other games' versions stay
+    /// until their turn.
+    #[test]
+    fn served_records_over_the_cap_go_older_versions_first_then_least_recently_taken() {
+        let dir = temp("cap");
+        let store = Store::new(dir.join("store"));
+        let mut m = Manifest::new("g", "1", None);
+        let mut put = |path: String, fill: u8, age: u64| {
+            let bytes: Vec<u8> = (0..4000u32).map(|i| (i as u8).wrapping_mul(fill) ^ fill).collect();
+            let p = store.put(&bytes).unwrap();
+            m.files.insert(path, crate::FileRecord { id: p.id.clone(), size: bytes.len() as u64, stored: p.stored });
+            let f = File::options().append(true).open(store.record_path(&p.id)).unwrap();
+            f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(age)).unwrap();
+            p.stored
+        };
+        // Newest converter v3 (current): two takes; v2 (older) and another game's v1.
+        let game_file = put("maps/x.bsp".into(), 11, 1000);
+        let old_new = put(entry_path("guest/g/v2", "a"), 3, 50);
+        let old_old = put(entry_path("guest/g/v2", "b"), 5, 500);
+        let other = put(entry_path("guest/h/v1", "a"), 7, 900);
+        let cur_old = put(entry_path("guest/g/v3", "a"), 13, 800);
+        let cur = put(entry_path("guest/g/v3", "b"), 17, 700);
+        let mut mount = Mount::default();
+        mount.push(CachedFiles::new(store.clone(), &m));
+        let on_disk = |m: &Manifest| m.files.keys().filter(|p| mount.layers().any(|l| l.cached_copy(p).is_some())).cloned().collect::<Vec<_>>();
+        let keep = [entry_path("guest/g/v3", "b")];
+        let keep: Vec<&str> = keep.iter().map(String::as_str).collect();
+        let all = old_new + old_old + other + cur_old + cur;
+        // Room for everything: nothing goes (the taken one is marked used).
+        assert_eq!(evict_records(&mount, "guest/g/v3", &keep, all, &roomy), 0);
+        // One record too many: the oldest of the older version goes.
+        let gone = evict_records(&mount, "guest/g/v3", &keep, all - 1, &roomy);
+        assert_eq!(gone, old_old);
+        assert!(!on_disk(&m).contains(&entry_path("guest/g/v2", "b")));
+        // Down to two records' room: the other older one, then the rest by age.
+        evict_records(&mount, "guest/g/v3", &keep, cur + cur_old, &roomy);
+        let left = on_disk(&m);
+        assert!(!left.contains(&entry_path("guest/g/v2", "a")), "{left:?}");
+        assert!(!left.contains(&entry_path("guest/h/v1", "a")), "{left:?}");
+        assert!(left.contains(&entry_path("guest/g/v3", "a")) && left.contains(&entry_path("guest/g/v3", "b")), "{left:?}");
+        // A cap of nothing still keeps the entry just taken, and never the games' files.
+        evict_records(&mount, "guest/g/v3", &keep, 0, &roomy);
+        let left = on_disk(&m);
+        assert!(left.contains(&entry_path("guest/g/v3", "b")) && !left.contains(&entry_path("guest/g/v3", "a")), "{left:?}");
+        assert!(left.contains(&"maps/x.bsp".to_string()), "the games' files are never touched");
+        assert!(game_file > 0);
         let _ = fs::remove_dir_all(&dir);
     }
 

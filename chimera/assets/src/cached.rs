@@ -440,6 +440,14 @@ impl FileSource for CachedFiles {
         self.index.files.get(path).is_some_and(|f| self.index.has(&self.store, &f.id))
     }
 
+    /// The record's file, when it is in the store and no fill is fetching
+    /// it (`served::evict_records`).
+    fn cached_copy(&self, path: &str) -> Option<std::path::PathBuf> {
+        let f = self.index.files.get(path)?;
+        let file = self.store.record_path(&f.id);
+        (file.is_file() && !crate::pending::is_pending(&self.store, &f.id)).then_some(file)
+    }
+
     /// The record's id: the SHA-256 of the file's bytes.
     fn fingerprint(&self, path: &str) -> Option<String> {
         self.index.files.get(path).map(|f| format!("record {}", f.id))
