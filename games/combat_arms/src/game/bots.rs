@@ -503,6 +503,7 @@ impl Plugin for CaBotsPlugin {
                     s.quota_set = true;
                 }
             },
+            quota: |w| w.get_resource::<BotSettings>().map_or(0, |s| s.quota),
         });
         // A sandbox's practice targets are these bots (the engine's seam,
         // `minigame::targets::TargetBots`): one more in the quota each.

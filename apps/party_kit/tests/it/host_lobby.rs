@@ -249,9 +249,13 @@ fn hosting_shows_the_lobby_first_and_plays_nothing_while_the_map_loads() {
     assert!(!w.contains_resource::<ActiveMinigame>() || chimera_sim::minigame::held(w), "no match before the map is in");
     assert!(!w.contains_resource::<PreMatch>());
     assert!(host_view(&sim).shown, "the lobby stays up while the map loads");
-    // The host's Start meanwhile: taken once the server's lobby begins.
-    press_lobby_key(&mut sim.server.app);
-    sim.ticks(2);
+    // The host's Start is off meanwhile, saying what it waits for (no match
+    // starts on a map that isn't in).
+    let v = host_view(&sim);
+    assert_eq!(v.key_line(), None, "no Start while the host's map loads: {v:?}");
+    assert!(v.start_waits_for().is_some_and(|w| w.starts_with("Your map is loading")), "{v:?}");
+    // The game's bots listed at once, before they are in.
+    assert_eq!(v.rows.iter().filter(|r| r.bot).count(), 3, "{v:?}");
     // The map in: the server's lobby in its place, the bots joining it.
     map_in(&mut sim);
     assert!(sim.until(2 * HZ, |s| in_lobby(s)), "the match held in the lobby");
@@ -260,7 +264,9 @@ fn hosting_shows_the_lobby_first_and_plays_nothing_while_the_map_loads() {
     assert_eq!(w.query_filtered::<(), With<HostLobbyFirst>>().iter(w).count(), 0, "the first lobby gave way");
     assert_eq!(w.query_filtered::<(), With<NetLobby>>().iter(w).count(), 1, "one lobby");
     assert!(host_view(&sim).shown && host_view(&sim).hosting);
-    // The Start pressed while loading counts down now, then the match.
-    assert!(sim.until(HZ, |s| host_view(s).countdown.is_some()), "the start asked while loading: {:?}", host_view(&sim));
+    // The map in: Start is the host's; it counts down, then the match.
+    assert!(sim.until(HZ, |s| host_view(s).key_line() == Some("lobby_start")), "Start once in: {:?}", host_view(&sim));
+    press_lobby_key(&mut sim.server.app);
+    assert!(sim.until(HZ, |s| host_view(s).countdown.is_some()), "the host's start: {:?}", host_view(&sim));
     assert!(sim.until(7 * HZ, |s| !in_lobby(s)), "the countdown starts the match");
 }

@@ -503,14 +503,9 @@ pub(super) fn insert_colliders<D: MapDrawer>(world: &mut World, budget: std::tim
     // The physics stage: the colliders in of all (`LoadWork`; the settle
     // hooks follow them).
     let total = later.len() as u64;
+    let hooks = world.get_resource::<super::MapHooks>().map_or(0, |h| h.settle.len() as u64);
     if let Some(mut work) = world.get_resource_mut::<super::loading::LoadWork>() {
-        let w = super::loading::LoadWork {
-            step: super::loading::LoadStep::Physics,
-            done: colliders.next as u64,
-            total,
-            colliders: total,
-        };
-        work.set_if_neq(w);
+        work.set_if_neq(super::loading::LoadWork::physics(colliders.next as u64, total, 0, hooks));
     }
     if colliders.next < later.len() {
         world.insert_resource(progress);

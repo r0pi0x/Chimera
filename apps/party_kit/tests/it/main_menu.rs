@@ -450,7 +450,8 @@ fn a_quick_map_change_shows_the_loading_panel_from_the_swap_to_the_load_s_end() 
     let mut frames = 0;
     while local_load_under_way(sim.app.world()) {
         assert_eq!(menu(&sim).screen, Screen::Loading, "frame {frames}: the panel shows while the map loads");
-        sim.ticks(1);
+        // A frame (no tick runs while the map settles).
+        sim.app.update();
         frames += 1;
         assert!(frames < 600, "the load ends");
     }

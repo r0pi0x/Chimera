@@ -326,6 +326,26 @@ pub struct LobbyView {
 pub const LOBBY_KEY: &str = "f3";
 
 impl LobbyView {
+    /// This machine's own row while its map still loads (not ready): what
+    /// the host's Start waits for (a match can't start on a map that isn't
+    /// in here).
+    pub fn own_load(&self) -> Option<&LobbyViewRow> {
+        self.rows.iter().find(|r| r.local && !matches!(r.status, status::READY | status::NOT_READY))
+    }
+
+    /// What the host's Start waits for, in words ("Your map is loading:
+    /// Physics 40%"), while it does.
+    pub fn start_waits_for(&self) -> Option<String> {
+        if !self.hosting || self.countdown.is_some() {
+            return None;
+        }
+        let r = self.own_load()?;
+        Some(match (r.step, r.fraction) {
+            (Some(step), Some(f)) => format!("Your map is loading: {} {:.0}%", step.short(), 100.0 * f),
+            _ => "Your map is loading".into(),
+        })
+    }
+
     /// The console line the lobby's key runs now: the host's
     /// `lobby_start` before a countdown runs, a player's `lobby_ready`
     /// once on the map; None otherwise.
@@ -334,7 +354,8 @@ impl LobbyView {
             return None;
         }
         if self.hosting {
-            return self.countdown.is_none().then_some("lobby_start");
+            // Start is the host's once its own map is in (`own_load`).
+            return (self.countdown.is_none() && self.own_load().is_none()).then_some("lobby_start");
         }
         self.rows
             .iter()
@@ -346,6 +367,9 @@ impl LobbyView {
 /// The key's words under the players, for what `key_line` does.
 fn hint(v: &LobbyView) -> String {
     let key = LOBBY_KEY.to_uppercase();
+    if let Some(wait) = v.start_waits_for() {
+        return format!("{wait}. {key} starts the match once it is in");
+    }
     match v.key_line() {
         Some("lobby_start") => format!("Press {key} to start the match now"),
         Some(_) if v.rows.iter().any(|r| r.local && r.status == status::NOT_READY) => {
@@ -950,5 +974,29 @@ mod tests {
         assert_eq!(v.key_line(), None, "not on the map yet");
         v.shown = false;
         assert_eq!(v.key_line(), None);
+    }
+
+    /// The host's Start is honest: off while its own map still loads,
+    /// saying what it waits for, on once the map is in.
+    #[test]
+    fn the_hosts_start_waits_for_its_own_map() {
+        use chimera_net::net::load_stages::LoadStep;
+        let mut v = LobbyView {
+            shown: true,
+            hosting: true,
+            rows: vec![LobbyViewRow {
+                status: status::LOADING,
+                local: true,
+                step: Some(LoadStep::Physics),
+                fraction: Some(0.4),
+                ..default()
+            }],
+            ..default()
+        };
+        assert_eq!(v.key_line(), None, "no start on a map not in");
+        assert_eq!(v.start_waits_for().as_deref(), Some("Your map is loading: Physics 40%"));
+        assert_eq!(hint(&v), "Your map is loading: Physics 40%. F3 starts the match once it is in");
+        v.rows[0].status = status::READY;
+        assert_eq!((v.key_line(), v.start_waits_for()), (Some("lobby_start"), None));
     }
 }

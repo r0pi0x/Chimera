@@ -411,9 +411,17 @@ pub fn camping(
 pub struct NavJob(NavStage);
 
 enum NavStage {
-    Flood(nav_gen::NavGenTask),
+    /// The flood, then where it is kept on disk (`map::nav_cache`).
+    Flood(nav_gen::NavGenTask, Option<(std::path::PathBuf, String)>),
     Share(Task<(NavMesh, NavMesh, nav::PatrolGraph)>),
+    /// The mesh read back from the disk (`map::nav_cache`), shared as
+    /// `Share`'s; None: not read, flooded instead.
+    Read(Task<Option<(NavMesh, NavMesh, nav::PatrolGraph)>>),
 }
+
+/// Our bots' code's part of a kept mesh's key (`map::nav_cache::key`):
+/// bump when the mesh `nav_on_task` makes changes for the same map.
+const NAV_CACHE_VERSION: &str = "ca-bots-1";
 
 /// The map's navigation mesh: generated from the collision
 /// (`map::nav_gen`) once bots play on a map that has none, from its
@@ -424,7 +432,9 @@ enum NavStage {
 /// server's new map settles (`settle_nav`) or, on a map nothing loaded that
 /// way (the command line's `--map`, a server's start map), from the third
 /// tick, bots standing until it is done (a second or two on de_dust2);
-/// without `nav_gen::SliceFloods` (a test) it is flooded at once. The
+/// without `nav_gen::SliceFloods` (a test) it is flooded at once. A
+/// flooded mesh is kept on disk and read back on the map's next load
+/// (`map::nav_cache`, on a task: no flood). The
 /// brains' copy (`BotNav`, with our patrol graph) is made with a mesh off
 /// the task on a task of its own (`NavJob`), else here when the map's mesh
 /// changes.
@@ -479,6 +489,10 @@ struct NavStart {
     ignore: HashSet<Entity>,
     params: nav_gen::NavGenParams,
     vis: Option<std::sync::Arc<crate::map::vis::MapVisibility>>,
+    /// Where the mesh is kept on disk and its key (`map::nav_cache`): a map
+    /// with a content hash, the cache on; the flood then starts from the
+    /// map's own seeds only (the key's).
+    cache: Option<(std::path::PathBuf, String)>,
 }
 
 impl NavStart {
@@ -498,6 +512,7 @@ impl NavStart {
         if let Some(t) = world.get_resource::<crate::map::teleport::MapTeleporters>() {
             seeds.extend(t.pads.iter().map(|p| p.dest));
         }
+        let map_seeds = seeds.len();
         let ignore = SnapQueries::new(world).moving_bodies(world);
         // Bounded to the rooms a walking player reaches (`nav_gen::Bounds`):
         // the jump-ups climb out of de_aztec otherwise.
@@ -508,7 +523,13 @@ impl NavStart {
         }
         // Where the map says it is played (`nav_gen::hold`: Halo's box, a match's slice).
         nav_gen::hold(&mut params, world);
-        Self { seeds, ignore, params, vis }
+        let cache = crate::map::nav_cache::dir().zip(world.get_resource::<crate::map::MapFile>()).and_then(|(dir, map)| {
+            crate::map::nav_cache::key(map, &seeds[..map_seeds], &params, vis.is_some(), NAV_CACHE_VERSION).map(|k| (dir, k))
+        });
+        if cache.is_some() {
+            seeds.truncate(map_seeds);
+        }
+        Self { seeds, ignore, params, vis, cache }
     }
 
     fn job(&self) -> nav_gen::NavGenJob {
@@ -575,22 +596,41 @@ fn nav_on_task(world: &mut World) {
     if let Some(job) = world.remove_resource::<NavJob>() {
         let wait = chimera_core::tasks::waits(world);
         match job.0 {
-            NavStage::Flood(mut flood) => match flood.poll(wait) {
+            NavStage::Flood(mut flood, cache) => match flood.poll(wait) {
                 // The map's own patrol nodes are read from the world
                 // (`ensure_nav` makes the copy); else the copy and ours on
-                // a task.
+                // a task, the mesh kept on disk there (`map::nav_cache`).
                 Some(mesh) if MapAi::of(world).is_some() => insert_mesh(world, mesh, false),
                 Some(mut mesh) => {
                     nav_gen::link_map(&mut mesh, world);
                     let pool = AsyncComputeTaskPool::get_or_init(TaskPool::default);
                     let share = chimera_core::tasks::spawn(&pool, async move {
+                        if let Some((dir, key)) = cache {
+                            crate::map::nav_cache::write(&dir, &key, &mesh, crate::map::nav_cache::CAP);
+                        }
                         let patrol = nav::PatrolGraph::build(&mesh);
                         let copy = mesh.clone();
                         (mesh, copy, patrol)
                     });
                     world.insert_resource(NavJob(NavStage::Share(share)));
                 }
-                None => world.insert_resource(NavJob(NavStage::Flood(flood))),
+                None => world.insert_resource(NavJob(NavStage::Flood(flood, cache))),
+            },
+            NavStage::Read(mut read) => match chimera_core::tasks::poll(&mut read, wait) {
+                Some(Some((mesh, copy, patrol))) => {
+                    info!("bots: the navigation mesh read back from the disk");
+                    say_mesh(&mesh, false);
+                    world.insert_resource(mesh);
+                    let made_for = world.get_resource_change_ticks::<NavMesh>().map(|t| t.changed).unwrap_or_default();
+                    world.insert_resource(BotNav {
+                        made_for,
+                        mesh: std::sync::Arc::new(copy),
+                        patrol: std::sync::Arc::new(patrol),
+                    });
+                }
+                // Unreadable (it is gone now): flooded from the next frame.
+                Some(None) => {}
+                None => world.insert_resource(NavJob(NavStage::Read(read))),
             },
             NavStage::Share(mut share) => match chimera_core::tasks::poll(&mut share, wait) {
                 Some((mesh, copy, patrol)) => {
@@ -612,9 +652,28 @@ fn nav_on_task(world: &mut World) {
     if let Some(mesh) = start.map_ai(world) {
         return insert_mesh(world, mesh, true);
     }
+    // Kept on disk from an earlier load (`map::nav_cache`): read back on a
+    // task, no flood (a map without our patrol nodes of its own).
+    if let Some((dir, key)) = start.cache.clone().filter(|(d, k)| crate::map::nav_cache::has(d, k))
+        && MapAi::of(world).is_none()
+    {
+        let pool = AsyncComputeTaskPool::get_or_init(TaskPool::default);
+        let read = chimera_core::tasks::spawn(&pool, async move {
+            let Some(mesh) = crate::map::nav_cache::read(&dir, &key) else {
+                let _ = std::fs::remove_file(dir.join(format!("{key}.nav")));
+                return None;
+            };
+            let patrol = nav::PatrolGraph::build(&mesh);
+            let copy = mesh.clone();
+            Some((mesh, copy, patrol))
+        });
+        world.insert_resource(NavJob(NavStage::Read(read)));
+        return;
+    }
     let job = start.job();
     let snapshot = nav_gen::CollisionSnapshot::of(world);
-    world.insert_resource(NavJob(NavStage::Flood(nav_gen::NavGenTask::spawn(job, snapshot, start.ignore, start.vis))));
+    let cache = start.cache.clone();
+    world.insert_resource(NavJob(NavStage::Flood(nav_gen::NavGenTask::spawn(job, snapshot, start.ignore, start.vis), cache)));
 }
 
 /// How far under an AI volume's box its floor may be (m, ours).

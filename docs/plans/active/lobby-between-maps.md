@@ -95,6 +95,48 @@ the host can change settings and players can leave.
      row and the plain loading panel read; they no longer pick the
      load's resources apart themselves.
 
+6. **Loading behind the lobby is invisible (playtest 2026-11-18).** The
+   user's reports: a host with Halo maps sat at "loading 95%", bots came
+   at random times, Start was on while things loaded; after a map change
+   the physics bar went back and forth and Half-Life 2 healing-like
+   sounds played under the loading screen. The general causes and fixes:
+   - **95%** was a loader's last report standing for the whole load: the
+     Halo and Source loaders report 0.95 at their end, and the guests'
+     dressings (every game's players and guns) and the spawn's
+     preparation ran after it unseen. `LoadReporter` now only goes forward
+     and has parts (`within`): the loader 0-60% of the map stage
+     (`sources::LOADER_SHARE`), each dressing its share up to 90%, the
+     preparation the rest (`console::PREPARE_FROM`).
+   - **The bar going back**: the physics stage's total grew from the
+     colliders' count to the colliders' plus the settle hooks' (100% then
+     94%), and a hook that said done, then not (the uploads), took a step
+     back. Now `LoadWork::physics` has a fixed total (half the colliders,
+     half the hooks) and the settling counts a hook done from the first
+     time it says so. One bar (the party's loading panel) reads
+     `load_stages::overall`, each stage an equal part (a stage's own
+     share went 0-100% at each stage before), and a fetched-ahead
+     download stays listed done (`Inputs::fetched_ahead`).
+   - **The next match ticking behind the screen** (characters, pickups and
+     chargers: the healing sounds): while a map settles
+     (`map::MapSettling`) the fixed loop is held
+     (`map::hold_ticks_while_settling`) and only its physics steps
+     (`map::settle_physics_step`: `FixedPostUpdate` at a tick's length,
+     the match's clock still).
+   - **Sound**: the game's sounds are held while this machine loads a map
+     (`LocalMapLoad`) or a screen covers the world (`WorldUnheard`, from
+     `staging::WorldCover`): `PlaySound` dropped, live sounds silent but
+     music (`audio::sound::held`).
+   - **Bots at once**: the lobby lists as many bots as the game keeps
+     (`BotHooks::quota`; the host's lobby shown first too), those not in
+     yet as "Bot"; Combat Arms adds its missing bots in one tick.
+   - **Start honest**: the host's Start is off while its own map loads,
+     the sentence saying what it waits for
+     (`LobbyView::start_waits_for`).
+   - **Navigation mesh on disk**: Combat Arms' bots' generated mesh is
+     kept (`map::nav_cache`, 64 MB cap, least recently used out) and read
+     back on a task on the map's next load; a miss floods on a task as
+     before.
+
 Each step has a scenario test: step 1 on `harness::Sim` with the
 client's real stepped load (`chimera_client` `map_load_steps`), steps 2
 to 4 on `NetSim` (`chimera_net` `prematch_lobby`).
@@ -118,6 +160,15 @@ to 4 on `NetSim` (`chimera_net` `prematch_lobby`).
   loading panel while it is up, the loading screen when it goes); the
   tests pin it. Not done: the plain (unthemed) lobby has no Leave button
   (its Escape menu leaves).
+- 2026-11-18: step 6 built. Tests: `chimera_client`
+  `map_load_steps::nothing_of_the_match_ticks_behind_the_screen_and_its_bar_only_goes_on`,
+  `prematch_lobby` `the_hosts_start_waits_for_its_own_map`;
+  `chimera_present` `voice_limits::no_sound_plays_while_a_map_loads_or_the_world_is_covered`;
+  `chimera_net` `prematch_lobby::the_bots_the_game_keeps_are_listed_at_once`;
+  `chimera_world` `nav_cache` and `loading` unit tests. Not done: a
+  dedicated server's settling still ticks its match (nothing heard or
+  seen there); the spawn spots' walk (`spawns::settle_spots`) is still a
+  slice a frame on the main thread, not kept on disk.
 - Not yet: loading the next map's data ahead during the match-end
   screen (the change starts its load at once, after it); a listen host's
   row seen by others holds still while its simulation waits on its

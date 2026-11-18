@@ -78,6 +78,7 @@ pub use material_fx::{DetailMode, MapSelfIllum, MapTextureAnim, MapUvTransform, 
 pub mod bot_profiles;
 pub mod monitor;
 pub mod nav;
+pub mod nav_cache;
 pub mod nav_gen;
 pub mod play_area;
 pub mod particles;
@@ -393,12 +394,43 @@ pub struct MapHooks {
 pub struct MapComingIn;
 
 /// A spawned map is still settling behind a front end's loading screen
-/// (`client::console`'s settling, `MapHooks::settle`): its frames advance
-/// the simulation at most a tick each, so a network client can't keep its
-/// command clock with the server's meanwhile and doesn't start predicting
-/// until it's gone (`net::predict`).
+/// (`client::console`'s settling, `MapHooks::settle`): nothing of the match
+/// ticks meanwhile (the fixed loop is held: `hold_ticks_while_settling`),
+/// only the physics steps, a step a frame (`settle_physics_step`: the
+/// spatial queries' trees, props coming to rest), so no character moves, no
+/// charger, trigger, pickup or bot acts and no rule's clock runs behind the
+/// loading screen; a network client doesn't start predicting until it's
+/// gone (`net::predict`).
 #[derive(Resource, Default)]
 pub struct MapSettling;
+
+/// The fixed loop (every tick's schedules: the match's rules, characters,
+/// map logic, bots) held while a map settles behind a loading screen
+/// (`MapSettling`); `settle_physics_step` steps its physics instead. No
+/// tick is owed for the frames held (the loop's time isn't gathered).
+pub fn hold_ticks_while_settling(app: &mut App) {
+    app.configure_sets(
+        RunFixedMainLoop,
+        RunFixedMainLoopSystems::FixedMainLoop.run_if(not(resource_exists::<MapSettling>)),
+    );
+}
+
+/// One physics step of a settling map (`MapSettling`), the `step`-th of its
+/// settling (from 0): `FixedPostUpdate` alone (the physics, its
+/// preparation and write-back, props' rest), at a tick's length, with
+/// `Time` that tick's; the match's clock (`Time<Fixed>`, `SimClock`) stays
+/// where it is.
+pub fn settle_physics_step(world: &mut World, step: u32) {
+    let Some(fixed) = world.get_resource::<Time<Fixed>>() else { return };
+    let tick = fixed.timestep();
+    let mut time = fixed.as_generic();
+    time.advance_to(fixed.elapsed() + tick * step);
+    time.advance_by(tick);
+    let Some(before) = world.get_resource::<Time>().cloned() else { return };
+    world.insert_resource(time);
+    let _ = world.try_run_schedule(FixedPostUpdate);
+    world.insert_resource(before);
+}
 
 /// A front end's map load is under way here (`client::console`'s
 /// `start_map_load`), from its start, through the spawn and the

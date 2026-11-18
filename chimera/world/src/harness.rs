@@ -45,6 +45,11 @@ pub struct Sim {
     pub app: App,
 }
 
+/// The physics steps `Sim::settle_frames` took (the match's clock stands
+/// meanwhile; each step's time goes on from the last).
+#[derive(Resource, Default)]
+struct SettleSteps(u32);
+
 /// Between the frames of a test that drives an `App` by hand while a
 /// background task runs (a map's load, a model's build; counted in
 /// `chimera_core::tasks::pending`): gives the pools the CPU while work is
@@ -362,8 +367,28 @@ impl Sim {
     /// Advance exactly `n` fixed ticks.
     pub fn ticks(&mut self, n: u64) {
         let target = self.tick() + n;
+        let mut frames = 0u64;
         while self.tick() < target {
+            assert!(
+                !self.app.world().contains_resource::<crate::map::MapSettling>(),
+                "Sim::ticks while a map settles (`map::MapSettling`): no tick runs then; use `settle_frames`"
+            );
             self.app.update();
+            frames += 1;
+            assert!(frames < 1_000_000, "Sim::ticks: no tick in {frames} frames");
+        }
+    }
+
+    /// `n` frames of a map settling behind a loading screen
+    /// (`map::MapSettling`: no tick runs), each with its one physics step
+    /// (`map::settle_physics_step`), as the client's settling has them.
+    pub fn settle_frames(&mut self, n: u32) {
+        for _ in 0..n {
+            self.app.update();
+            let w = self.app.world_mut();
+            let step = w.get_resource::<SettleSteps>().map_or(0, |s| s.0);
+            w.insert_resource(SettleSteps(step + 1));
+            crate::map::settle_physics_step(w, step);
         }
     }
 

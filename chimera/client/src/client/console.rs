@@ -28,8 +28,9 @@
 //! colliders, which follow the map's frame, are all in),
 //! `map::prepare::begin_map_change`, `SPAWN_BUDGET` a frame and the GPU's
 //! uploads capped, `LOAD_UPLOAD_BYTES`; then the map's `MapHooks::settle` work
-//! a slice a frame, at most `SETTLE_MAX_SECS`, a frame advancing the
-//! simulation by at most one tick, before the game is entered; `map greybox` puts the
+//! a slice a frame, at most `SETTLE_MAX_SECS`, nothing of the match ticking
+//! meanwhile (`map::MapSettling`: the physics alone steps once a frame), before
+//! the game is entered; `map greybox` puts the
 //! greybox back, `load_greybox`), disconnect (the greybox, then the main menu),
 //! toggleconsole, quit), `developer 1` notify lines, the `chimera/console`
 //! remote method.
@@ -2242,17 +2243,23 @@ pub fn loading_map(w: &World) -> Option<String> {
 /// flood not done by then goes on a slice a tick in play.
 const SETTLE_MAX_SECS: f32 = 10.0;
 
-/// Ticks a spawned map runs before its settling starts: the collision is in
-/// the spatial queries' trees after the first physics steps.
-const SETTLE_AFTER_TICKS: u64 = 3;
+/// Physics steps a spawned map takes before its settle hooks start: the
+/// collision is in the spatial queries' trees after the first physics steps.
+const SETTLE_AFTER_STEPS: u32 = 3;
 
 /// A spawned map still behind the loading screen, doing what needs its physics
 /// a slice a frame (`map::MapHooks::settle`, docs/performance.md, "Nothing
-/// blocks the main thread"): the game is entered when that's done.
+/// blocks the main thread"): the game is entered when that's done. Nothing
+/// of the match ticks meanwhile (`map::MapSettling`): the physics steps
+/// once a frame (`map::settle_physics_step`).
 #[derive(Resource)]
 struct Settling {
     id: String,
-    tick: u64,
+    /// The physics steps taken.
+    steps: u32,
+    /// The settle hooks seen done so far (each counted once: one that says
+    /// done, then not, as the uploads can, doesn't take the bar back).
+    done: Vec<bool>,
     started: std::time::Instant,
 }
 
@@ -2342,6 +2349,10 @@ fn dealt(w: &mut World) -> Option<std::sync::Arc<std::collections::BTreeSet<Stri
     dealt
 }
 
+/// Where the spawn's preparation (`map::prepare`, on the load's task) begins
+/// in the map stage's share; the loader and its dressings report before it.
+const PREPARE_FROM: f32 = 0.9;
+
 /// A map loading in the background for the `map` command.
 #[derive(Resource)]
 struct MapLoad {
@@ -2372,6 +2383,10 @@ pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>)
     let context = crate::map::LoadContext::of(w);
     // Only the guests whose games the coming match deals (any when not known).
     let dealt = dealt(w);
+    // The loader and its dressings report the first part, the spawn's
+    // preparation the rest (`LoadReporter::within`).
+    let prepared_at = progress.within(PREPARE_FROM, 1.0);
+    let progress = progress.within(0.0, PREPARE_FROM);
     let options = crate::map::MapLoadOptions { hdr_level, progress, context, dealt, ..default() };
     // The app loads it (`AppHooks`), then the spawn's own work is done
     // there too (`map::prepare`): the frame that swaps it in only spawns.
@@ -2385,7 +2400,9 @@ pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>)
                 Some(f) => (hooks.load_map_file)(&id, &f, &options),
                 None => (hooks.load_map)(&id, &options),
             }?;
+            prepared_at.report(0.0, "Preparing the map");
             let prepared = prepare.run(&data);
+            prepared_at.report(1.0, "Preparing the map");
             Ok((data, prepared))
         }
     });
@@ -2530,44 +2547,49 @@ fn spawn_map_steps(w: &mut World, budget: std::time::Duration) {
     }
     crate::gameplay::new_game(w);
     w.resource_mut::<Console>().info(summary);
-    let tick = w.get_resource::<crate::core::SimClock>().map_or(0, |c| c.tick);
     w.insert_resource(Settling {
         id,
-        tick,
+        steps: 0,
+        done: Vec::new(),
         started: std::time::Instant::now(),
     });
-    // A network client predicts once in the game (`net::predict`).
+    // Nothing of the match ticks until the game is entered (the physics
+    // steps: `settle_map`); a network client predicts once in the game
+    // (`net::predict`).
     w.insert_resource(crate::map::MapSettling);
 }
 
 /// A frame of `Settling`: every hook's slice, and into the game when they are
 /// all done.
 fn settle_map(w: &mut World) {
-    let settling = w.resource::<Settling>();
-    let (from, started) = (settling.tick, settling.started);
-    let tick = w.get_resource::<crate::core::SimClock>().map_or(from + SETTLE_AFTER_TICKS, |c| c.tick);
-    if tick < from + SETTLE_AFTER_TICKS {
+    let (steps, started) = {
+        let mut settling = w.resource_mut::<Settling>();
+        settling.steps += 1;
+        (settling.steps - 1, settling.started)
+    };
+    crate::map::settle_physics_step(w, steps);
+    if steps + 1 < SETTLE_AFTER_STEPS {
         return;
     }
     let hooks: Vec<fn(&mut World) -> bool> =
         w.get_resource::<crate::map::MapHooks>().map(|h| h.settle.clone()).unwrap_or_default();
     let mut done = true;
-    let mut hooks_done = 0u64;
-    let hooks_n = hooks.len() as u64;
-    for hook in hooks {
+    let mut seen = std::mem::take(&mut w.resource_mut::<Settling>().done);
+    seen.resize(hooks.len(), false);
+    for (hook, seen) in hooks.into_iter().zip(&mut seen) {
         let d = hook(w);
-        hooks_done += u64::from(d);
+        *seen |= d;
         done &= d;
     }
-    // The physics stage: after the colliders, the settle hooks done of all.
+    // The physics stage: after the colliders, the settle hooks done of all
+    // (each counted from the first time it said done: the bar never goes
+    // back).
+    let hooks_done = seen.iter().filter(|d| **d).count() as u64;
+    let hooks_n = seen.len() as u64;
+    w.resource_mut::<Settling>().done = seen;
     if let Some(mut work) = w.get_resource_mut::<crate::map::loading::LoadWork>() {
         let colliders = work.colliders;
-        work.set_if_neq(crate::map::loading::LoadWork {
-            step: crate::map::loading::LoadStep::Physics,
-            done: colliders + hooks_done,
-            total: colliders + hooks_n,
-            colliders,
-        });
+        work.set_if_neq(crate::map::loading::LoadWork::physics(colliders, colliders, hooks_done, hooks_n));
     }
     if !done && started.elapsed().as_secs_f32() < SETTLE_MAX_SECS {
         return;
@@ -3387,8 +3409,9 @@ mod tests {
             assert!(bevy::tasks::block_on(task).is_err());
         }
         let seen = |w: &World| w.resource::<LoadReporter>().current().map(|p| p.fraction);
-        assert_eq!(seen(&a), Some(0.25));
-        assert_eq!(seen(&b), Some(0.75));
+        // The loader's part of the whole (the preparation the rest).
+        assert_eq!(seen(&a), Some(0.25 * PREPARE_FROM));
+        assert_eq!(seen(&b), Some(0.75 * PREPARE_FROM));
     }
 
     #[test]

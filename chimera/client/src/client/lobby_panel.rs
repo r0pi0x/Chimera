@@ -45,7 +45,8 @@
 //!   lobby waits for the host, `NetLobby::host_start`) and, for the
 //!   host, **Start** [F3], the big hero (`LobbyAction::Ready`: the host's
 //!   `lobby_start`; F3, not the mock's Enter, which opens the docked
-//!   chat). Nobody readies up: loaded is ready. A player who isn't the
+//!   chat); off, with the sentence saying what it waits for, while the
+//!   host's own map loads (`LobbyView::start_waits_for`). Nobody readies up: loaded is ready. A player who isn't the
 //!   host gets **Leave** (the kit's secondary button, `LobbyAction::Leave`)
 //!   there too, to go before a match it didn't want starts.
 //! - **Keys** at the foot (F3 Start for the host, Tab Players), hidden
@@ -602,8 +603,14 @@ fn draw(
     if view.hosting && view.countdown.is_none() {
         // F3 (the lobby's key; Enter is the docked chat's).
         let key = super::prematch_lobby::LOBBY_KEY.to_uppercase();
-        let go = ui.button(c, bar, chimera_ui::controls::Kind::Primary, "Start", Some(&key), chimera_ui::controls::HERO_H, chimera_ui::controls::State::NONE);
-        c.entity(go).insert(LobbyAction::Ready);
+        // Off, saying so, while the host's own map is still loading
+        // (`LobbyView::start_waits_for`): no match starts before it is in.
+        let waits = view.start_waits_for().is_some();
+        let state = chimera_ui::controls::State { disabled: waits, ..chimera_ui::controls::State::NONE };
+        let go = ui.button(c, bar, chimera_ui::controls::Kind::Primary, "Start", Some(&key), chimera_ui::controls::HERO_H, state);
+        if !waits {
+            c.entity(go).insert(LobbyAction::Ready);
+        }
     }
 
     // Footer: the keys (not under an app's overlay, which has its own).
@@ -612,7 +619,7 @@ fn draw(
     }
     let key = super::prematch_lobby::LOBBY_KEY.to_uppercase();
     let mut keys: Vec<(&str, &str)> = Vec::new();
-    if view.hosting && view.countdown.is_none() {
+    if view.key_line() == Some("lobby_start") {
         keys.push((&key, "Start"));
     }
     keys.push(("Tab", "Players"));
@@ -673,6 +680,9 @@ pub fn action_line(v: &LobbyView, loaded: usize) -> String {
     let n = v.rows.len();
     if let Some(left) = v.countdown {
         return format!("{loaded} of {n} loaded. The match starts in {left} s.");
+    }
+    if let Some(wait) = v.start_waits_for() {
+        return format!("{loaded} of {n} loaded. {wait}; Start opens once it is in.");
     }
     if v.hosting && v.host_start {
         format!("{loaded} of {n} loaded. The match starts when you press Start.")

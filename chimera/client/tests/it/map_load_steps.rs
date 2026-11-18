@@ -237,13 +237,15 @@ fn a_map_spawns_in_steps_behind_the_screen_with_the_simulation_waiting() {
                 tick,
                 "settling: a frame advances at most one tick"
             );
-            assert!(!w.resource::<Time<Virtual>>().is_paused(), "settling: the simulation runs");
+            assert!(!w.resource::<Time<Virtual>>().is_paused(), "settling: the frames' time runs");
         }
         chimera_world::harness::let_tasks_run();
     }
     assert!(stages.contains(&MapLoadStage::Spawning), "spawned in steps: {stages:?}");
     assert!(stages.contains(&MapLoadStage::Settling), "settled: {stages:?}");
     assert_eq!(console::map_load_stage(sim.app.world()), MapLoadStage::None, "in the game");
+    // The match ticks once in the game.
+    sim.ticks(2);
     assert!(
         spawning_ticks.windows(2).all(|t| t[0] == t[1]),
         "no tick while the map spawns: {spawning_ticks:?}"
@@ -534,4 +536,74 @@ fn a_loads_stages_follow_its_work() {
     let physics = seen.iter().filter(|s| s.0 == LoadStep::Physics).filter_map(|s| s.1).fold(0.0f32, f32::max);
     assert!(physics > 0.5, "the physics' share grew: {seen:?}");
     assert!(current(sim.app.world()).is_none(), "nothing under way once in the game");
+}
+
+/// Settle hooks for `nothing_of_the_match_ticks_behind_the_screen...`: one
+/// says done, then not, then done (as the uploads can); calls counted.
+static FLIP_CALLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+fn flipping_hook(_: &mut World) -> bool {
+    let n = FLIP_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    n == 2 || n >= 8
+}
+
+/// Ticks of the fixed loop (`FixedUpdate`), counted.
+#[derive(Resource, Default)]
+struct FixedRuns(u32);
+
+fn count_fixed(mut n: ResMut<FixedRuns>) {
+    n.0 += 1;
+}
+
+/// While a map settles behind the loading screen nothing of the match
+/// ticks (`map::MapSettling`: no `FixedUpdate`, the match's clock still),
+/// yet its physics steps (a physics prop falls); and the load's one bar
+/// (`load_stages::overall`) only goes forward, also with a settle hook
+/// that says done, then not, then done.
+#[test]
+fn nothing_of_the_match_ticks_behind_the_screen_and_its_bar_only_goes_on() {
+    use chimera_net::net::load_stages::{overall, stages};
+    let mut sim = sim();
+    sim.app.init_resource::<FixedRuns>().add_systems(FixedUpdate, count_fixed);
+    sim.app.world_mut().resource_mut::<chimera_world::map::MapHooks>().settle.push(flipping_hook);
+    console::start_map_load(sim.app.world_mut(), "test:steps", None);
+    let mut bars: Vec<f32> = Vec::new();
+    let mut settling = 0;
+    let mut fell = false;
+    let mut first: Option<f32> = None;
+    for _ in 0..2000 {
+        let stage = console::map_load_stage(sim.app.world());
+        if stage == MapLoadStage::None && !bars.is_empty() {
+            break;
+        }
+        let (runs, tick) = (sim.app.world().resource::<FixedRuns>().0, sim.app.world().resource::<SimClock>().tick);
+        sim.app.update();
+        chimera_world::harness::let_tasks_run();
+        if let Some(f) = overall(&stages(sim.app.world())) {
+            bars.push(f);
+        }
+        if console::map_load_stage(sim.app.world()) == MapLoadStage::Settling && stage == MapLoadStage::Settling {
+            settling += 1;
+            let w = sim.app.world_mut();
+            assert_eq!(w.resource::<FixedRuns>().0, runs, "no tick while settling");
+            assert_eq!(w.resource::<SimClock>().tick, tick, "the match's clock stands");
+            let y = w
+                .query::<(&Position, &RigidBody)>()
+                .iter(w)
+                .filter(|(_, b)| b.is_dynamic())
+                .map(|(p, _)| p.0.y)
+                .fold(f32::MAX, f32::min);
+            match first {
+                None => first = Some(y),
+                Some(f) => fell |= y < f - 0.01,
+            }
+        }
+    }
+    assert_eq!(console::map_load_stage(sim.app.world()), MapLoadStage::None, "in the game");
+    assert!(settling >= 3, "settled over frames: {settling}");
+    assert!(fell, "the physics stepped while settling (a prop fell)");
+    assert!(bars.windows(2).all(|w| w[0] <= w[1]), "the bar only goes on: {bars:?}");
+    let runs = sim.app.world().resource::<FixedRuns>().0;
+    sim.ticks(2);
+    assert!(sim.app.world().resource::<FixedRuns>().0 > runs, "the match ticks once in the game");
 }

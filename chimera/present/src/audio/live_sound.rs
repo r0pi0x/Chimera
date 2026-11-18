@@ -524,16 +524,19 @@ fn drive_audio(
     hearing: Res<Hearing>,
     room: Res<RoomDsp>,
     mix: Option<Res<SoundMix>>,
+    hold: (Option<Res<crate::map::LocalMapLoad>>, Option<Res<super::sound::WorldUnheard>>),
     mut commands: Commands,
 ) {
     let Some(bank) = bank else { return };
     let mix = mix.map_or_else(SoundMix::default, |m| *m);
+    // Held (`sound::held`): everything but music at nothing, going on.
+    let held = super::sound::held(hold.0.as_deref(), hold.1.as_deref());
     // Bevy applies the master volume when a sink starts; follow later
     // changes to it (the clip's own gains carry the rest).
     let master = global.map_or(1.0, |g| g.volume.to_linear());
     let ear = Ear::find(listener.iter());
     for s in live.sounds.values_mut() {
-        let volume = s.volume * mix.gain(&s.entry);
+        let volume = if held && !is_music(&s.entry) { 0.0 } else { s.volume * mix.gain(&s.entry) };
         let (left, right, send) = match (s.at, ear) {
             (Some(at), Some(ear)) if !matches!(s.level, SoundLevel::Db(l) if l <= 0.0) => {
                 let (l, r, send) = ear.gains(at, s.follow, s.level);

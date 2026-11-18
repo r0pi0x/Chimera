@@ -425,12 +425,15 @@ the user's go-ahead: no Actions runs unless asked.
     - the ringworld in the sky disappears at some view angles (sky
       culling);
     - objects on Halo maps aren't lit as expected.
-  - **Lobby:**
-    - loading behind the lobby must be invisible (no freezes, sound or
-      drawing);
-    - the bot navigation mesh cached per map, and built in the background;
-    - bots shown in the lobby at once;
-    - the Start button says it's waiting while the host's own map loads.
+  - **Lobby:** done 2026-11-18 (docs/plans/active/lobby-between-maps.md,
+    step 6): loading behind the lobby is invisible (nothing of the next
+    match ticks while it settles, only its physics; no game sound while a
+    map loads or the world is covered); one load progress that only moves
+    forward (the 95% was the loader's last report while every game's
+    players and guns were added unseen; the physics bar's total changed
+    under it); the bot navigation mesh kept on disk and read on a task;
+    bots listed at once; the host's Start off, saying why, while its own
+    map loads. Confirm in a playtest (Halo maps in the pool, a map change).
   - Done (2026-11-18): F2, F3 and F4 no longer open chat in the party apps;
     F6 no longer opens the Controls page.
 

@@ -34,27 +34,48 @@ pub struct LoadProgress {
 /// Apps in one process (a listen server and its client, `NetSim`'s
 /// server and clients) each have their own. Equal when they are the same
 /// handle.
+///
+/// Only forward: a report below the one before keeps the fraction where it
+/// was (its stage's words are taken). A part of the load reports through
+/// `within`, its own 0..1 mapped into its span of the whole (the game's
+/// loader, then the guests' dressings, then the spawn's preparation:
+/// `sources::MapSources::load_with`), so no part's last report (a loader's
+/// 0.95) stands for the whole while the rest runs unseen.
 #[derive(Resource, Clone, Debug, Default)]
-pub struct LoadReporter(Arc<Mutex<Option<LoadProgress>>>);
+pub struct LoadReporter {
+    shared: Arc<Mutex<Option<LoadProgress>>>,
+    /// This handle's span of the whole (None: all of it).
+    span: Option<(f32, f32)>,
+}
 
 impl LoadReporter {
-    /// A loader reached `stage` with `fraction` of the work done.
+    /// A loader reached `stage` with `fraction` of its work done (of its
+    /// span's, `within`); never back.
     pub fn report(&self, fraction: f32, stage: &'static str) {
-        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(LoadProgress {
-            fraction: fraction.clamp(0.0, 1.0),
-            stage,
-        });
+        let f = fraction.clamp(0.0, 1.0);
+        let f = self.span.map_or(f, |(lo, hi)| lo + (hi - lo) * f);
+        let mut now = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+        let fraction = now.map_or(f, |p| p.fraction.max(f));
+        *now = Some(LoadProgress { fraction, stage });
+    }
+
+    /// The same load's reporter for a part of it: its 0..1 is `lo..hi` of
+    /// this one's span.
+    pub fn within(&self, lo: f32, hi: f32) -> Self {
+        let (a, b) = self.span.unwrap_or((0.0, 1.0));
+        let at = |f: f32| a + (b - a) * f.clamp(0.0, 1.0);
+        Self { shared: self.shared.clone(), span: Some((at(lo), at(hi.max(lo)))) }
     }
 
     /// The latest report of this load (none before the first).
     pub fn current(&self) -> Option<LoadProgress> {
-        *self.0.lock().unwrap_or_else(|e| e.into_inner())
+        *self.shared.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
 impl PartialEq for LoadReporter {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.shared, &other.shared)
     }
 }
 
@@ -124,7 +145,27 @@ pub struct LoadWork {
     pub colliders: u64,
 }
 
+/// The physics stage's units (`LoadWork::physics`): half for the colliders,
+/// half for the settle hooks (a map's hundreds of colliders and its handful
+/// of hooks, the slow navigation mesh among them, each half the bar).
+pub const PHYSICS_UNITS: u64 = 1000;
+
 impl LoadWork {
+    /// The physics stage: `colliders_in` of `colliders` inserted, then
+    /// `hooks_done` of `hooks` settle hooks done (`MapHooks::settle`; with
+    /// none, the colliders are the whole stage). Its total is the same from
+    /// the first collider to the last hook, so the bar only goes on.
+    pub fn physics(colliders_in: u64, colliders: u64, hooks_done: u64, hooks: u64) -> Self {
+        let half = if hooks == 0 { PHYSICS_UNITS } else { PHYSICS_UNITS / 2 };
+        let part = |done: u64, of: u64, units: u64| if of == 0 { units } else { units * done.min(of) / of };
+        LoadWork {
+            step: LoadStep::Physics,
+            done: part(colliders_in, colliders, half) + part(hooks_done, hooks, PHYSICS_UNITS - half),
+            total: PHYSICS_UNITS,
+            colliders,
+        }
+    }
+
     /// The share done (0 while nothing is known).
     pub fn fraction(&self) -> f32 {
         if self.total == 0 { 0.0 } else { (self.done as f64 / self.total as f64).clamp(0.0, 1.0) as f32 }
@@ -198,5 +239,39 @@ mod tests {
         let mut w = bevy::prelude::World::new();
         w.insert_resource(a.clone());
         assert_eq!(w.resource::<LoadReporter>().current(), a.current());
+    }
+
+    /// The physics stage's share goes on from the colliders to the hooks
+    /// (the colliders all in is half, not all, of it).
+    #[test]
+    fn physics_goes_on_from_the_colliders_to_the_hooks() {
+        let f = |c, h| LoadWork::physics(c, 200, h, 4).fraction();
+        let seq = [f(0, 0), f(100, 0), f(200, 0), f(200, 1), f(200, 4)];
+        assert!(seq.windows(2).all(|w| w[0] < w[1]), "{seq:?}");
+        assert_eq!((seq[2], seq[4]), (0.5, 1.0));
+        assert_eq!(LoadWork::physics(10, 10, 0, 0).fraction(), 1.0, "no hooks: the colliders are all of it");
+    }
+
+    /// A load's progress only goes forward, and a part's reports fill its
+    /// span of the whole (a loader's 0.95 is not the whole's).
+    #[test]
+    fn progress_only_goes_forward_and_parts_fill_their_span() {
+        let r = LoadReporter::default();
+        let loader = r.within(0.0, 0.5);
+        loader.report(0.5, "map");
+        assert_eq!(r.current().unwrap().fraction, 0.25);
+        loader.report(0.95, "map");
+        let after_loader = r.current().unwrap().fraction;
+        assert!((after_loader - 0.475).abs() < 1e-6);
+        // Back is ignored; the words follow.
+        loader.report(0.1, "again");
+        assert_eq!(r.current(), Some(LoadProgress { fraction: after_loader, stage: "again" }));
+        // The next part goes on from its own start.
+        let rest = r.within(0.5, 1.0);
+        rest.within(0.5, 1.0).report(0.0, "half of the rest");
+        assert_eq!(r.current().unwrap().fraction, 0.75);
+        rest.report(1.0, "done");
+        assert_eq!(r.current().unwrap().fraction, 1.0);
+        assert_eq!(rest, r, "one load");
     }
 }

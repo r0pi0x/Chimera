@@ -163,6 +163,8 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
         app.insert_resource(PendingMap(data.clone(), view, prepare::Prepared::default()))
             .insert_resource(ActiveMapLook(data.look.clone()));
     }
+    // Nothing of the match ticks while a map settles (`MapSettling`).
+    super::hold_ticks_while_settling(app);
     ragdoll::plugin(app);
     layers.ragdolls(app);
     placed_ragdoll::plugin(app);

@@ -120,3 +120,31 @@ fn voices_are_limited_per_source_and_per_entry() {
     assert_eq!(sounding(&mut sim, Some(other)), 2);
     assert_eq!(sounding(&mut sim, Some(source)), MAX_VOICES_PER_SOURCE);
 }
+
+/// Nothing of a map sounds while this machine loads one (`map::LocalMapLoad`:
+/// its spawn and settling behind the loading screen or the lobby) or a
+/// screen stands in for the match (`sound::WorldUnheard`): a sound asked
+/// for then is dropped, not played late (`sound::held`).
+#[test]
+fn no_sound_plays_while_a_map_loads_or_the_world_is_covered() {
+    use chimera_present::audio::sound::WorldUnheard;
+    use chimera_world::map::LocalMapLoad;
+    let mut sim = sim();
+    let source = sim.app.world_mut().spawn(Transform::default()).id();
+    for hold in [0, 1] {
+        match hold {
+            0 => sim.app.insert_resource(LocalMapLoad { map: "test:next".into() }),
+            _ => sim.app.insert_resource(WorldUnheard),
+        };
+        sim.app.world_mut().write_message(shot(Some(source), Some(1)));
+        sim.app.update();
+        assert_eq!(sounding(&mut sim, Some(source)), 0, "held ({hold})");
+        sim.app.world_mut().remove_resource::<LocalMapLoad>();
+        sim.app.world_mut().remove_resource::<WorldUnheard>();
+        sim.app.update();
+        assert_eq!(sounding(&mut sim, Some(source)), 0, "not played late ({hold})");
+    }
+    sim.app.world_mut().write_message(shot(Some(source), Some(1)));
+    sim.app.update();
+    assert_eq!(sounding(&mut sim, Some(source)), 1, "plays once the hold is over");
+}

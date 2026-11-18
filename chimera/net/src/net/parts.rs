@@ -297,6 +297,9 @@ pub struct BotHooks {
     pub kick: fn(&mut World, Entity),
     /// Serving starts: bring the quota in step with the bots there are.
     pub sync_quota: fn(&mut World),
+    /// The bots the game keeps (its quota): the pre-match lobby lists that
+    /// many at once, before they are all in (`prematch::rows`).
+    pub quota: fn(&World) -> u32,
 }
 
 impl Default for BotHooks {
@@ -308,6 +311,7 @@ impl Default for BotHooks {
                 }
             },
             sync_quota: |_| {},
+            quota: |_| 0,
         }
     }
 }

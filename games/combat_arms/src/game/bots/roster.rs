@@ -202,9 +202,9 @@ pub fn thrown_reach(data: &BotData, template: Template, kinds: &[&str]) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// The server keeps `MaxPlayer` bots (none by default): adds them one a
-/// tick (not while its own map loads, `map::local_load_under_way`), kicks
-/// the newest when there are too many.
+/// The server keeps `MaxPlayer` bots (none by default): adds the missing
+/// ones in one tick (not while its own map loads,
+/// `map::local_load_under_way`), kicks the newest when there are too many.
 pub(super) fn keep_quota(world: &mut World) {
     let settings = world.resource::<BotSettings>();
     if !settings.quota_set && settings.quota == 0 {
@@ -218,8 +218,13 @@ pub(super) fn keep_quota(world: &mut World) {
     // None added while this machine's map loads (a host's Start sets
     // `MaxPlayer` before its map is in: they fought in the old world and
     // on the new one behind the loading screen, with their sounds).
+    // All at once (the lobby lists them together, `BotHooks::quota`).
     if bots.len() < want && !chimera_world::map::local_load_under_way(world) {
-        add_bot(world, None);
+        for _ in bots.len()..want {
+            if add_bot(world, None).is_none() {
+                break;
+            }
+        }
     } else if bots.len() > want {
         bots.sort();
         if let Some(&(_, e)) = bots.last() {

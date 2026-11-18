@@ -322,6 +322,32 @@ fn bots_are_ready_at_once() {
     assert!(sim.until(HZ, |s| playing(s, 2)), "the player and the bot play");
 }
 
+/// The bots the game keeps are listed at once (`BotHooks::quota`): in the
+/// host's lobby shown first, before its map is in, and in the server's
+/// lobby, those not added yet standing as "Bot" (no rows coming one by one).
+#[test]
+fn the_bots_the_game_keeps_are_listed_at_once() {
+    let mut sim = sim(1);
+    chimera_core::gameplay::GameplayAppExt::any_game_hook(
+        &mut sim.server.app,
+        chimera_net::net::BotHooks { quota: |_| 3, ..default() },
+    );
+    prematch::show_first(sim.server.app.world_mut(), "chimera:greybox", "Kit gun game", "host");
+    sim.server.app.update();
+    let first = server_lobby(&mut sim).expect("the lobby shown first");
+    assert_eq!(first.rows.iter().filter(|r| r.bot() && r.status == status::READY).count(), 3, "{first:?}");
+    prematch::hide_first(sim.server.app.world_mut());
+    let w = sim.server.app.world_mut();
+    let bot = w.spawn(character_bundle(Transform::from_xyz(0.0, 1.0, 0.0), Team(1))).id();
+    w.entity_mut(bot).insert(Name::new("Bot Bob"));
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts");
+    assert!(sim.until(600, |s| joined(s, 0)), "client 0 is in");
+    let l = server_lobby(&mut sim).expect("the lobby");
+    let bots: Vec<&str> = l.rows.iter().filter(|r| r.bot()).map(|r| r.name.as_str()).collect();
+    assert_eq!(bots.len(), 3, "the one in and two to come: {l:?}");
+    assert!(bots.contains(&"Bot Bob"), "{bots:?}");
+}
+
 #[test]
 fn the_host_starts_it_now() {
     let mut sim = sim(2);

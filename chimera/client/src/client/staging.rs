@@ -21,6 +21,9 @@
 //!   load itself replaces it otherwise (a change mid-match, a CS:S level
 //!   change: as before).
 //!
+//! - **The world unheard.** While a cover is up the game's sounds are held
+//!   too (`chimera_present::audio::sound::WorldUnheard`, `held`).
+//!
 //! Part of `ClientPlugins` (`StagingPlugin`); headless apps get the
 //! resources and the unload (the cameras' part is a no-op without
 //! cameras).
@@ -81,8 +84,18 @@ pub struct StagingPlugin;
 impl Plugin for StagingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WorldCover>()
-            .add_systems(Update, unload_when_covered)
+            .add_systems(Update, (unload_when_covered, unheard_when_covered))
             .add_systems(PostUpdate, apply.before(bevy::camera::CameraUpdateSystems));
+    }
+}
+
+/// The world not heard while it is covered, as it is not seen
+/// (`chimera_present::audio::sound::WorldUnheard`: the game's sounds held).
+fn unheard_when_covered(cover: Res<WorldCover>, unheard: Option<Res<chimera_present::audio::sound::WorldUnheard>>, mut commands: Commands) {
+    match (cover.covered(), unheard.is_some()) {
+        (true, false) => commands.insert_resource(chimera_present::audio::sound::WorldUnheard),
+        (false, true) => commands.remove_resource::<chimera_present::audio::sound::WorldUnheard>(),
+        _ => {}
     }
 }
 

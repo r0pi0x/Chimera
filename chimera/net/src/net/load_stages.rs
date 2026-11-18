@@ -64,6 +64,10 @@ pub struct Inputs<'a> {
     pub join: Option<&'a JoinProgress>,
     /// The next map's files fetched ahead, running: bytes done and in all.
     pub ahead: Option<(u64, u64)>,
+    /// The map loading here had its files fetched ahead (done): its
+    /// download stage stays listed, done, so the stages don't change in
+    /// number under a bar (`overall`).
+    pub fetched_ahead: bool,
     /// This machine's own map load is under way (`map::LocalMapLoad`).
     pub local: bool,
     /// Its spawn's and settling's work (`LoadWork`).
@@ -77,7 +81,7 @@ impl<'a> Inputs<'a> {
         Self::from_parts(
             world.get_resource::<JoinProgress>(),
             world.get_resource::<crate::net::assets::MapAhead>(),
-            world.contains_resource::<chimera_world::map::LocalMapLoad>(),
+            world.get_resource::<chimera_world::map::LocalMapLoad>(),
             world.get_resource::<LoadWork>().copied(),
             world.get_resource::<LoadReporter>(),
         )
@@ -88,13 +92,18 @@ impl<'a> Inputs<'a> {
     pub fn from_parts(
         join: Option<&'a JoinProgress>,
         ahead: Option<&crate::net::assets::MapAhead>,
-        local: bool,
+        local: Option<&chimera_world::map::LocalMapLoad>,
         work: Option<LoadWork>,
         reporter: Option<&LoadReporter>,
     ) -> Self {
+        let fetched_ahead = ahead.zip(local).is_some_and(|(a, l)| {
+            !a.running() && a.result.as_ref().is_some_and(|r| r.is_ok()) && same_map(&a.map, &l.map)
+        });
+        let local = local.is_some();
         Inputs {
             join,
             ahead: ahead.filter(|a| a.running()).map(|a| a.bytes()),
+            fetched_ahead,
             local,
             work: work.filter(|_| local),
             map_share: reporter.and_then(|r| r.current()).map(|p| p.fraction),
@@ -120,10 +129,15 @@ impl LoadSource<'_> {
         stages_of(&Inputs::from_parts(
             self.join.as_deref(),
             self.ahead.as_deref(),
-            self.local.is_some(),
+            self.local.as_deref(),
             self.work.as_deref().copied(),
             self.reporter.as_deref(),
         ))
+    }
+
+    /// The whole load's share (`overall`).
+    pub fn overall(&self) -> Option<f32> {
+        overall(&self.stages())
     }
 
     /// The running stage (`current`'s, with the download's bytes).
@@ -155,7 +169,7 @@ pub fn stages_of(i: &Inputs) -> Vec<Stage> {
         (None, Some(a)) => (Some(a), None),
         _ => (None, None),
     };
-    let with_download = downloaded || downloading || ahead.is_some();
+    let with_download = downloaded || downloading || ahead.is_some() || i.fetched_ahead;
     // Where it is: the download, the map's stages (this machine's own
     // load), or before them (connecting, a level change not yet loading).
     let (at, share) = if downloading || (ahead.is_some() && !local) {
@@ -185,6 +199,31 @@ pub fn stages_of(i: &Inputs) -> Vec<Stage> {
             files: (step == LoadStep::Download).then_some(files).flatten(),
         })
         .collect()
+}
+
+/// The whole load's share, for a screen with one bar: each stage an equal
+/// part, the done ones whole, the running one its share (none known: 0).
+/// It only goes on: each stage's share only grows (`LoadReporter`,
+/// `LoadWork`) and a stage is done before the next runs. None with no load.
+pub fn overall(stages: &[Stage]) -> Option<f32> {
+    if stages.is_empty() {
+        return None;
+    }
+    let sum: f32 = stages
+        .iter()
+        .map(|s| match s.state {
+            StageState::Done => 1.0,
+            StageState::Running(f) => f.unwrap_or(0.0).clamp(0.0, 1.0),
+            StageState::Pending => 0.0,
+        })
+        .sum();
+    Some(sum / stages.len() as f32)
+}
+
+/// Two map names for one map (`game:name` or a bare name; case aside).
+fn same_map(a: &str, b: &str) -> bool {
+    let name = |m: &str| m.rsplit_once(':').map_or(m, |(_, n)| n).to_ascii_lowercase();
+    a.eq_ignore_ascii_case(b) || name(a) == name(b)
 }
 
 /// A share in thousandths (the network's form).
@@ -239,6 +278,8 @@ mod tests {
         w.insert_resource(LoadWork { step: LoadStep::Physics, done: 9, total: 10, colliders: 8 });
         assert_eq!(current(&w), Some((LoadStep::Physics, Some(0.9))));
         assert_eq!(permille(Some(0.9)), 900);
+        // One bar: the download and the map's two done, the physics 90%.
+        assert!((overall(&stages(&w)).unwrap() - 3.9 / 4.0).abs() < 1e-6);
     }
 
     #[test]

@@ -30,6 +30,23 @@ use crate::map::{
     sound::{SoundBank, distance_cutoff, distance_gain},
 };
 
+/// A screen stands in for the match (the client's `staging::WorldCover`:
+/// the pre-match lobby, a loading screen): the world is not heard, as it is
+/// not seen (`held`).
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct WorldUnheard;
+
+/// Whether the game's sounds are held: while this machine's map loads
+/// (`map::LocalMapLoad`: its spawn and settling behind the loading screen
+/// or the lobby) or a screen stands in for the match (`WorldUnheard`).
+/// Meanwhile a sound asked for (`PlaySound`) is dropped and the long-lived
+/// ones (`live_sound`: ambience, soundscapes, loops) sound at nothing (but
+/// music), going on where they are once it ends. Interface sounds and the
+/// announcer play on their own way and are never held.
+pub fn held(local: Option<&crate::map::LocalMapLoad>, unheard: Option<&WorldUnheard>) -> bool {
+    local.is_some() || unheard.is_some()
+}
+
 /// Who's listening (the camera the player sees through). The entity it
 /// is a child of (the player whose eyes it is) hears its own sounds
 /// centred, not panned (`Ear`).
@@ -182,11 +199,12 @@ fn play_sounds(
     mix: Option<Res<super::live_sound::SoundMix>>,
     muted: Option<Res<super::live_sound::MutedSounds>>,
     time: Res<Time>,
+    hold: (Option<Res<crate::map::LocalMapLoad>>, Option<Res<WorldUnheard>>),
     mut seed: Local<u64>,
 ) {
     let now = time.elapsed_secs_f64();
     let mix = mix.map_or_else(Default::default, |m| *m);
-    let Some(bank) = bank else {
+    let Some(bank) = bank.filter(|_| !held(hold.0.as_deref(), hold.1.as_deref())) else {
         messages.clear();
         return;
     };

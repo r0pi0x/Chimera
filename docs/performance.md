@@ -1640,7 +1640,9 @@ drawer's in steps of their own) until `SPAWN_BUDGET` (12 ms; 20 ms before "A map
 commands held in a queue of the spawn's own until the last step and applied together in the
 next frame, so the world never holds part of a map; the simulation waits meanwhile
 (`Time<Virtual>` paused: its first tick on the map is after the whole map is in, as before).
-Until the game is entered a frame advances the simulation by at most one tick
+Until the game is entered a frame advances the simulation by at most one tick (and
+since 2026-11-18 none while the map settles: the physics alone steps once a frame,
+`map::settle_physics_step`)
 (`Time<Virtual>::max_delta`, `LoadCaps`: the long frames behind the loading screen left
 470-760 M of catch-up ticks owed) and the GPU is sent at most `LOAD_UPLOAD_BYTES` (16 MiB
 since "A map's swap in the real app", below; 32 MiB before) a frame (Bevy's

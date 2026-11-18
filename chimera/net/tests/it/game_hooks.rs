@@ -89,6 +89,7 @@ fn register<G: Game>(app: &mut App) {
         BotHooks {
             kick: kick::<G>,
             sync_quota: sync_quota::<G>,
+            ..default()
         },
     )
     .game_hook(

@@ -61,8 +61,11 @@
 //!   Later lobbies (map changes) start as below.
 //! - **Shown first** (`show_first`, `HostLobbyFirst`): a listen host's
 //!   menu shows its lobby from Start, before the map is in (the host's
-//!   row loading, nothing replicated); `begin` replaces it with the
-//!   server's.
+//!   row loading, the bots its game keeps: `first_bots`; nothing
+//!   replicated); `begin` replaces it with the server's.
+//! - **Bots at once**: the rows list as many bots as the game keeps
+//!   (`BotHooks::quota`), those not added yet (they come once the map is
+//!   in) as "Bot", so the bots don't appear one by one.
 //! - **Between maps** (`begin_between`, `BetweenMaps`; docs/plans/active/
 //!   lobby-between-maps.md): a match's change to another map
 //!   (`minigame_net::change_match`: a rotation after the match-end
@@ -518,6 +521,7 @@ pub(crate) fn register(app: &mut App) {
     let server = || resource_equals(NetRole::Server);
     app.add_systems(PreUpdate, receive_reports.after(ServerSystems::Receive).run_if(server()))
         .add_systems(FixedUpdate, begin.before(SimSet::Rules).run_if(server()))
+        .add_systems(Update, first_bots)
         .add_systems(
             PostUpdate,
             report.before(ClientSystems::Send).run_if(resource_equals(NetRole::Client)),
@@ -754,6 +758,29 @@ pub fn show_first(world: &mut World, map: &str, mode: &str, host: &str) {
     ));
 }
 
+/// A bot the game keeps but hasn't added yet (`BotHooks::quota`): ready,
+/// as bots are.
+fn bot_to_come() -> LobbyRow {
+    LobbyRow { id: None, name: "Bot".into(), status: status::READY, step: NO_STEP, avatar: NO_AVATAR, ..default() }
+}
+
+/// The host's lobby shown first (`show_first`) lists the game's bots from
+/// the start (its quota, set by the Start's lines a frame after it shows).
+fn first_bots(world: &mut World) {
+    let mut q = world.query_filtered::<&NetLobby, With<HostLobbyFirst>>();
+    let Some(lobby) = q.iter(world).next() else { return };
+    let have = lobby.rows.iter().filter(|r| r.id.is_none()).count();
+    let want = (crate::net::BotHooks::active(world).quota)(world) as usize;
+    if have == want {
+        return;
+    }
+    let mut q = world.query_filtered::<&mut NetLobby, With<HostLobbyFirst>>();
+    for mut lobby in q.iter_mut(world) {
+        lobby.rows.retain(|r| r.id.is_some());
+        lobby.rows.extend((0..want).map(|_| bot_to_come()));
+    }
+}
+
 /// The host's lobby shown first (`show_first`) taken away, with a start
 /// asked in it.
 pub fn hide_first(world: &mut World) {
@@ -907,6 +934,10 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
             }
         }
     }
+    // The bots the game keeps, listed at once: those not in yet (added
+    // after the map is in) stand as "Bot" (`BotHooks::quota`).
+    let quota = (crate::net::BotHooks::active(world).quota)(world) as usize;
+    others.extend((others.len()..quota).map(|_| bot_to_come()));
     let mut remote: Vec<(u64, LobbyRow)> = world
         .query::<(
             &Player,

@@ -432,15 +432,18 @@ fn behind_a_loading_screen_a_shadow_waits_for_its_prop_to_rest() {
         }
         let (node, _) = crate_at(&mut sim);
         sim.app.world_mut().entity_mut(node).insert(LinearVelocity(Vec3::X * 2.0));
+        // A tick a frame: in play the fixed loop's, behind the screen the
+        // settling's physics step (no tick runs then).
+        let step = |sim: &mut Sim| if settling { sim.settle_frames(1) } else { sim.ticks(1) };
         let mut moving = 0;
         for _ in 0..10 {
-            sim.ticks(1);
+            step(&mut sim);
             moving += redrawn(&sim).0;
         }
         sim.app.world_mut().entity_mut(node).insert(LinearVelocity(Vec3::ZERO));
         let mut resting = 0;
         for _ in 0..40 {
-            sim.ticks(1);
+            step(&mut sim);
             resting += redrawn(&sim).0;
         }
         let settled = shadows_settled(sim.app.world_mut());
@@ -498,13 +501,13 @@ fn behind_a_loading_screen_a_frame_redraws_within_its_work() {
     for node in crate_nodes(&mut sim) {
         sim.app.world_mut().entity_mut(node).insert(LinearVelocity(Vec3::X * 2.0));
     }
-    sim.ticks(10);
+    sim.settle_frames(10);
     for node in crate_nodes(&mut sim) {
         sim.app.world_mut().entity_mut(node).insert(LinearVelocity(Vec3::ZERO));
     }
     let (mut frames, mut total) = (0, 0);
     for _ in 0..200 {
-        sim.ticks(1);
+        sim.settle_frames(1);
         let (n, work) = redrawn(&sim);
         if n == 0 {
             continue;

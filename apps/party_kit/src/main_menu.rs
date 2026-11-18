@@ -3224,14 +3224,16 @@ fn progress(
         hosting,
         what,
     );
-    // Past the loader's task: the spawn's and the settling's own counts,
-    // from the load's one source (`chimera_net::net::load_stages`).
+    // The bar is the whole load's, from its one source
+    // (`chimera_net::net::load_stages`: only forward, across its stages);
+    // past the loader's task the line is the stage's words.
+    if let Some(f) = load.overall() {
+        fraction = f;
+    }
     if let Some(st) = load.running()
         && matches!(st.step, chimera_net::net::load_stages::LoadStep::Models | chimera_net::net::load_stages::LoadStep::Physics)
-        && let chimera_net::net::load_stages::StageState::Running(Some(f)) = st.state
     {
         line = format!("{}...", st.step.words());
-        fraction = f;
     }
     for mut n in &mut bars {
         let w = percent(100.0 * fraction);

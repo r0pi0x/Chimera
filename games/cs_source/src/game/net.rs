@@ -219,6 +219,7 @@ fn register(app: &mut App) {
                     }
                 },
                 sync_quota: crate::bot::sync_quota,
+                quota: |w| w.get_resource::<crate::bot::BotQuota>().map_or(0, |q| q.quota),
             },
         )
         .game_hook(

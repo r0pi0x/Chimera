@@ -424,6 +424,11 @@ pub struct MapSources {
     pub guests: &'static [&'static MapDressing],
 }
 
+/// The game's loader's part of a map's load (`MapSources::load_with`); the
+/// dressings report the rest (their parts are often the slower: every
+/// guest game's players and guns, the first time in a session).
+pub const LOADER_SHARE: f32 = 0.6;
+
 impl MapSources {
     /// The loader of `game`, if the app has one.
     pub fn loader(&self, game: &str) -> Option<&'static MapLoader> {
@@ -453,9 +458,15 @@ impl MapSources {
         if self.gameplay.is_some_and(|g| !g.game.eq_ignore_ascii_case(loader.game)) {
             options.kit = if self.players { KitLoad::Players(self.kept) } else { KitLoad::Only(self.kept) };
         }
+        // The load's progress in parts (`LoadReporter::within`): the
+        // game's loader, then the dressings, each its own span.
+        let whole = options.progress.clone();
+        options.progress = whole.within(0.0, LOADER_SHARE);
         let mut map = (loader.load)(name, &options)?;
+        options.progress = whole.within(LOADER_SHARE, 1.0);
         map.impacts.game = Some(loader.game.to_string());
         self.dress(loader.game, &mut map, &options);
+        options.progress.report(1.0, "Adding every game's players and guns");
         Ok(map)
     }
 
@@ -463,19 +474,32 @@ impl MapSources {
     /// gameplay is the map's own game (or there is none); else its game's
     /// parts taken off, its spawn teams mapped (`teams`) and the
     /// gameplay's parts added (for the load `options`).
+    /// Each dressing reports its share of `options.progress` as it is done
+    /// (the gameplay's, then each guest's, the same share each).
     pub fn dress(&self, game: &str, map: &mut MapData, options: &MapLoadOptions) {
-        if let Some(gameplay) = self.gameplay.filter(|g| !g.game.eq_ignore_ascii_case(game)) {
+        let gameplay = self.gameplay.filter(|g| !g.game.eq_ignore_ascii_case(game));
+        // Only the guests the match can deal (`MapLoadOptions::dealt`).
+        let guests: Vec<&MapDressing> =
+            self.guests.iter().copied().filter(|g| !g.game.eq_ignore_ascii_case(game) && options.deals(g.game)).collect();
+        let parts = (gameplay.is_some() as usize + guests.len()).max(1) as f32;
+        let mut done = 0.0;
+        let step = |done: &mut f32| {
+            *done += 1.0;
+            options.progress.report(*done / parts, "Adding every game's players and guns");
+        };
+        if let Some(gameplay) = gameplay {
             let began = std::time::Instant::now();
             self.dress_with(gameplay, game, map, options);
             dressed(gameplay.game, &map.name, began);
+            step(&mut done);
         }
-        // Only the guests the match can deal (`MapLoadOptions::dealt`).
-        for guest in self.guests.iter().filter(|g| !g.game.eq_ignore_ascii_case(game) && options.deals(g.game)) {
+        for guest in guests {
             let began = std::time::Instant::now();
             if let Err(e) = (guest.dress)(map, options) {
                 map.warnings.push(format!("{}'s parts: {e}", guest.game));
             }
             dressed(guest.game, &map.name, began);
+            step(&mut done);
         }
     }
 
