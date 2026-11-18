@@ -325,7 +325,7 @@ fn record(
         let (min, max) = aabb.map_or(DEFAULT_BOX, |b| (b.min - origin, b.max - origin));
         // A game's hitboxes made on demand are kept unmade (one tick's
         // capture); ready ones share the last tick's when unchanged.
-        let hitboxes = match (boxes.lazy, boxes.eager) {
+        let hitboxes = match (boxes.lazy(), boxes.eager) {
             (Some(l), _) => Some(l.0.clone()),
             (None, Some(b)) => Some(match history.frames.back().and_then(|f| f.hitboxes.clone()) {
                 Some(last) if last.is_made() && last.get().0 == b.0 => last,

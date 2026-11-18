@@ -722,7 +722,7 @@ fn drive(
             Option<&OwnViewAnim>,
             Has<LocalPlayer>,
             Option<&super::characters::records::Selection>,
-            Has<super::characters::CaRungLook>,
+            Option<&super::characters::CaRungLook>,
         ),
     )>,
     gear: Option<Res<super::gear::CaGearData>>,
@@ -778,7 +778,7 @@ fn drive(
         // for a weapon without its own `CaGearRates`.
         let model = gear
             .as_deref()
-            .map_or((0.0, 0.0), |g| g.0.vest_rates(look.map_or(0, |l| super::gear::vest_of(l, rung))));
+            .map_or((0.0, 0.0), |g| g.0.vest_rates(look.map_or(0, |l| super::gear::vest_of(l, super::characters::CaRungLook::worn(rung)))));
         let active = inventory.active.filter(|_| alive);
         let parts = active.and_then(|w| weapons.get(w).ok());
         // With drawn parts, the view model with them (`parts::view_key`)

@@ -9,7 +9,9 @@
 //!   (one with no team first on the first side), comes in at once unless
 //!   the match is over, and is marked `InMinigame`; the rules module
 //!   hears of it first (`minigame::Joined`, an entity event triggered and
-//!   applied there: the ladder's join rung).
+//!   applied there: the ladder's join rung). A match's start
+//!   (`minigame::restart`) has its players join again the same way,
+//!   keeping `InMinigame` (`Rejoining`).
 //! - The match waits (`Phase::Waiting`) until `players.min` are in; then
 //!   the runtime starts it (everyone respawned, the module's
 //!   `before_spawns` first), live at once (no setup), for `time_limit`;
@@ -488,8 +490,15 @@ pub fn take_weapon(world: &mut World, owner: Entity, weapon: Entity) {
 }
 
 /// A character the minigame may take in (`join`): in the game, not yet in
-/// the minigame.
-type Joining = (With<Intent>, With<Health>, Without<InMinigame>, Without<Connecting>, Without<Spectating>, Without<Npc>);
+/// the minigame (or asked to join again: `Rejoining`).
+type MayJoin = (With<Intent>, With<Health>, Without<Connecting>, Without<Spectating>, Without<Npc>);
+
+/// The players `minigame::restart` asks to join again: they keep
+/// `InMinigame` (taken off and put back at every match's start, it was an
+/// archetype for every combination of their other parts: docs/DESIGN.md,
+/// "ECS style") and `join` takes them in as if new.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct Rejoining(pub Vec<Entity>);
 
 /// New characters into the minigame: a team as the mode makes them, at
 /// once into play unless the match is over. The joiners are found by the
@@ -497,7 +506,8 @@ type Joining = (With<Intent>, With<Health>, Without<InMinigame>, Without<Connect
 /// the spawn) is world work, queued and applied at the sync point before
 /// the phases step (`plugin`'s chain), in the query's order.
 fn join(
-    joining: Query<(Entity, &Team), Joining>,
+    joining: Query<(Entity, &Team, Has<InMinigame>), MayJoin>,
+    again: Option<Res<Rejoining>>,
     hold: Option<Res<super::MatchHold>>,
     lobby: Option<Res<super::PreMatch>>,
     mut commands: Commands,
@@ -505,11 +515,22 @@ fn join(
     if hold.is_some() || lobby.is_some() {
         return;
     }
-    let new: Vec<(Entity, u8)> = joining.iter().map(|(e, t)| (e, t.0)).filter(|(_, t)| *t != 255).collect();
+    let again = again.as_deref().map_or(&[][..], |a| &a.0[..]);
+    let new: Vec<(Entity, u8)> = joining
+        .iter()
+        .filter(|(e, _, playing)| !playing || again.contains(e))
+        .map(|(e, t, _)| (e, t.0))
+        .filter(|(_, t)| *t != 255)
+        .collect();
     if new.is_empty() {
         return;
     }
-    commands.queue(move |world: &mut World| take_in(world, &new));
+    commands.queue(move |world: &mut World| {
+        if let Some(mut a) = world.get_resource_mut::<Rejoining>() {
+            a.0.retain(|e| !new.iter().any(|(n, _)| n == e));
+        }
+        take_in(world, &new);
+    });
 }
 
 /// `join`'s world part: each of `new` (with its team then) into the

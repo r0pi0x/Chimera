@@ -939,7 +939,9 @@ impl Plugin for CaCharactersPlugin {
     fn build(&self, app: &mut App) {
         use chimera_core::character::CharacterPartsExt;
         CaData::of(app);
-        app.on_every_character::<WantHeld>();
+        app.on_every_character::<WantHeld>()
+            .on_every_character::<CaRungLook>()
+            .on_every_character::<crate::core::LazyHitboxes>();
         // What on-demand loads add, kept across map changes (`models`).
         app.init_resource::<models::CaLateModels>();
         app.add_message::<WeaponEvent>()
@@ -1001,7 +1003,7 @@ impl Plugin for CaCharactersPlugin {
                 let look = ch.default_look(record.id);
                 models::alias_rig(w, ch, record.id);
                 let me = w.query_filtered::<Entity, With<LocalPlayer>>().iter(w).next().ok_or("no player")?;
-                w.entity_mut(me).insert((CaRungLook(look), look));
+                w.entity_mut(me).insert((CaRungLook(Some(look)), look));
                 Ok(Some(format!("{} ({}): {}", record.name, record.id, ch.family(record).name)))
             },
         );
@@ -1152,10 +1154,20 @@ fn look_seed(name: Option<&Name>, e: Entity) -> u64 {
 /// A look every player on a ladder rung wears in place of their own
 /// (`game::rungs`: the rung's character, the same for all on it); the
 /// server's, replicated with the `Selection` it puts on, so every side's
-/// gear reads the rung's baseline vest for it (`gear::vest_of`).
-#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+/// gear reads the rung's baseline vest for it (`gear::vest_of`). On every
+/// character from its spawn, None off a rung's look: put on and off, it
+/// was an archetype for every combination of the character's other parts
+/// (docs/DESIGN.md, "ECS style").
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[component(storage = "SparseSet")]
-pub struct CaRungLook(pub Selection);
+pub struct CaRungLook(pub Option<Selection>);
+
+impl CaRungLook {
+    /// Whether `c` is a rung's look (a character without one: no).
+    pub fn worn(c: Option<&CaRungLook>) -> bool {
+        c.is_some_and(|c| c.0.is_some())
+    }
+}
 
 /// A bot's own look (`CharacterData::bot_look` by its name's seed): what
 /// it wears again off a rung's look.
@@ -1190,8 +1202,8 @@ fn wear_looks(
 ) {
     for (e, look, name, bot, local, rung, infected) in &characters {
         let sent = clients.iter().find(|(p, _)| p.character == e).map(|(_, l)| l.0);
-        let own = if let Some(r) = rung {
-            Some(r.0)
+        let own = if let Some(r) = rung.and_then(|r| r.0) {
+            Some(r)
         } else if local {
             Some(loadout.0)
         } else if let Some(sent) = sent {
@@ -2272,9 +2284,12 @@ fn hitboxes(
 ) {
     for (e, (t, intent, state, aabb), (table, pose, identity), (current, theirs)) in &mut characters {
         if !GameIdentity::allows(identity, super::GAME) {
-            // Now another game's: its body's hitboxes (or none), not ours.
-            if current.is_some() {
-                commands.entity(e).remove::<core::LazyHitboxes>();
+            // Now another game's: its body's hitboxes (or none), not ours:
+            // ours emptied in place (on every character from its spawn).
+            if let Some(mut h) = current
+                && !h.is_none()
+            {
+                *h = core::LazyHitboxes::none();
             }
             continue;
         }

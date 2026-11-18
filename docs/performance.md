@@ -3010,6 +3010,58 @@ simply stay). Folding those into one move would need a Chimera command that
 gathers a switch's inserts and removals per character and applies them
 together (`insert_by_ids` and `remove_by_ids`).
 
+## A session's archetypes: what was left (2026-11-17)
+
+What the section above left, after a report from a five-minute Ultimate
+Gun Game session with all five games (4,109 archetypes, the tick from
+0.54 to 1.51 ms). The fast `session` test drew its ladders from the games
+the machine's installs and asset store held, so its count was the
+machine's (1,337 without TF2's and Halo's assets, 1,923 with them); it now
+names its games (`PINNED`: CS:S, HL2:DM, Combat Arms) through the mount
+report the ladder reads, and a second test plays all five
+(`a_session_with_every_game_stops_making_archetypes`). Counted by
+`chimera_census made` (the characters' archetypes, by the move that made
+each), the makers and their cuts:
+
+- avian's `RecomputeMassProperties` (70 with every game): avian marks a
+  body for a mass update whenever its collider's `ColliderMassProperties`
+  is rewritten, which every change of a character's collider does (Combat
+  Arms' crouch hull, a movement switch's). A character is kinematic and
+  its mass never read, so it carries no `ColliderMassProperties`
+  (`core::no_collider_mass`, an observer of `Intent`): nothing marks
+  it after its spawn. Not changing the collider would have cost the hull;
+  a mass set explicitly (`NoAutoMass`) doesn't stop the marker.
+- Combat Arms' `CaRungLook` (37): on every character, `None` off a rung.
+- Halo's `BodyKind` (40), `NamedByKind`, `BodyDraws` and campaign
+  `Voice`: on every character, the Spartan meaning none; its `BodyName`
+  emptied, not taken off.
+- `DamageScale` (11): on every character at 1 (`CorePlugin`), Halo's
+  vitality setting it in the move that puts its parts on.
+- `LazyHitboxes` (35): on every character in Combat Arms' apps, set to
+  `LazyHitboxes::none` when another game's `Hitboxes` count
+  (`HitShapes::lazy` and `hit_shapes` read none as absent).
+- `InMinigame` (15): a match's start (`minigame::restart`) no longer
+  takes it off for `join` to put back; `runtime::Rejoining` lists the
+  players `join` takes in again.
+- CS:S's and TF2's `RungClass`: on every character (CS:S's a bool).
+
+| fast `session` test, 8 matches | before | after |
+|---|---|---|
+| pinned games: archetypes / characters' | 952 / 178 | 887 / 112 |
+| pinned: made after the fourth match / characters' | 11 / 0 | 11 / 0 |
+| every game: archetypes / characters' | 1,337 / 521 | 943 / 130 |
+| every game: made after the fourth match / characters' | 36 / 4 | 34 / 0 |
+
+What is made after the fourth match is the guns' (a gun's build and its
+shots, once per gun the ladders reach). The tests fail at 950 and 40 more
+(pinned), 1,000 and 60 (every game), and at 5 characters' archetypes made
+after the fourth match. Left: a movement switch's removal and insert
+(`-CaMovement`, `+CaMovement+MovementSlot`, the Source and Halo sets),
+Combat Arms' `ArmorPieces` (its absence is the default kit), deaths and
+spawn protection (`+ColliderDisabled+Dead`, `±God+Protected+
+SpawnProtected`), each made once per combination of the parts that still
+vary.
+
 ## A session's memory (2026-11-09)
 
 What the section above left: Ultimate Gun Game's process memory rising over a

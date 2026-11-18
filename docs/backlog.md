@@ -3176,11 +3176,13 @@ docs/plans/active/sound.md.
   `Shadowed`, ...), and parts that go together go in one move
   (docs/performance.md, "A session's archetypes: the game switch"): three
   laps of real maps make 472 characters' archetypes (1,471 in all), a lap
-  after the first 19-43 (the lap test caps it at 100). Left: a switch's own
-  steps, each another game's system (avian's `RecomputeMassProperties` after
-  Combat Arms' collider changes, the movement swap's removal and insert,
-  Combat Arms' rung look and view model, CS:S's rung class, HL2:DM's suit,
-  `ArmorPieces`): one Chimera command gathering a character's inserts and
+  after the first 19-43 (the lap test caps it at 100). Since 2026-11-17
+  avian's `RecomputeMassProperties`, Combat Arms' rung look and on-demand
+  hitboxes, Halo's body kind, the damage scale, the rung classes and
+  `InMinigame` no longer come and go (docs/performance.md, "A session's
+  archetypes: what was left"). Left: a switch's own steps, each another
+  game's system (the movement swap's removal and insert, Combat Arms' view
+  model, HL2:DM's suit, `ArmorPieces`): one Chimera command gathering a character's inserts and
   removals of a tick and applying them together (`insert_by_ids`,
   `remove_by_ids`) would cut most of the rest. Not measured: a quiet tick
   with the bots kicked against the 800 instructions an archetype.
