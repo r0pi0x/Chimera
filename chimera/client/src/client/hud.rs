@@ -78,6 +78,15 @@ impl Plugin for HudPlugin {
     }
 }
 
+/// The z-order rule for game HUDs against the shell's layers (`GlobalZIndex`):
+/// a game that draws its HUD as a stack of pooled nodes (HL2:DM's, TF2's)
+/// gives its `HudRoot` this `GlobalZIndex` and orders the nodes under it by
+/// their draw index with a local `ZIndex`, so the whole HUD stays one layer
+/// (never a node per global z, which ran over the chat and the menus). Above
+/// it: the chat (`signal_chat::CHAT_Z`, the classic chat 41 and 42), then
+/// the scoreboards, the menus (`widgets::GAME_UI_Z` and up) and the console.
+pub const GAME_HUD_Z: i32 = 40;
+
 /// Only the gameplay's HUD up, in an app with several (`HudRoot`,
 /// `HudDraws`, `HudLookOwner`); `HudPlugin` adds it.
 pub struct HudSwitchPlugin;

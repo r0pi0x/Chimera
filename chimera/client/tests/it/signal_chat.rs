@@ -229,3 +229,24 @@ fn docked_in_the_lobby_the_history_and_field_show_and_enter_opens_it() {
     frame(&mut sim, 0.0);
     assert_eq!(sim.app.world().resource::<ChatInput>().open, Some(false), "Enter opens it in the lobby");
 }
+
+/// One z-order rule for the chat against the games' HUDs: a game's whole
+/// HUD is one layer (`GAME_HUD_Z`; HL2:DM's and TF2's pooled nodes order
+/// themselves under it by a local `ZIndex`), the chat is above it and
+/// below the scoreboards and menus.
+#[test]
+fn the_chat_is_above_every_games_hud_and_below_the_menus() {
+    use chimera_client::client::{
+        hud::GAME_HUD_Z,
+        signal_chat::CHAT_Z,
+        widgets::GAME_UI_Z,
+    };
+    assert!(GAME_HUD_Z < CHAT_Z && CHAT_Z < GAME_UI_Z, "{GAME_HUD_Z} < {CHAT_Z} < {GAME_UI_Z}");
+    let mut sim = sim(true);
+    sim.app.world_mut().write_message(ChatEntry::notice("hello", None));
+    frame(&mut sim, 0.1);
+    frame(&mut sim, 0.0);
+    let w = sim.app.world_mut();
+    let layers: Vec<i32> = w.query_filtered::<&GlobalZIndex, With<ChatPlayRoot>>().iter(w).map(|z| z.0).collect();
+    assert_eq!(layers, [CHAT_Z], "the chat's one layer");
+}

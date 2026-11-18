@@ -219,6 +219,21 @@ impl Tf2Hud {
         let shadow = scheme.colour("TanDarker").unwrap_or([46, 43, 42, 255]);
         let faint = scheme.colour("TransparentBlack").unwrap_or([0, 0, 0, 196]);
         let full = Rect::new(0.0, 0.0, 1.0, 1.0);
+        // The class portrait (3.10, the 2D image): the team's background
+        // (9, r60, 100 x 50) under the class's picture (25, r88, 75 x 75),
+        // drawn first: the health panel (zpos 2) overlaps its right edge
+        // and its number is above it.
+        if let (true, Some(p)) = (i.alive, i.portrait) {
+            let bg = super::super::game::hud::portrait_bg(i.blu);
+            if scheme.has(bg) {
+                let rect = screen.rect(HudCoord::Start(9.0), HudCoord::End(60.0), 100.0, 50.0);
+                out.push(Draw::Sprite { sprite: bg, rect, uv: full, color: white });
+            }
+            if scheme.has(p) {
+                let rect = screen.rect(HudCoord::Start(25.0), HudCoord::End(88.0), 75.0, 75.0);
+                out.push(Draw::Sprite { sprite: p, rect, uv: full, color: white });
+            }
+        }
         // Health.
         let panel = screen.rect(HudCoord::Start(0.0), HudCoord::End(120.0), 250.0, 120.0);
         let state = if i.alive { health_state(i.health, i.max) } else { HealthState::Normal };
@@ -261,19 +276,6 @@ impl Tf2Hud {
                 let text = format!("{}", i.health.max(0.0).round() as i32);
                 let at = Vec2::new(b.center().x, b.center().y - tall / 2.0);
                 out.push(Draw::Text { font: "HudClassHealth", tall, text, color: tan_dark, at, align: Align::Centre });
-            }
-        }
-        // The class portrait (3.10, the 2D image): the team's background
-        // (9, r60, 100 x 50) under the class's picture (25, r88, 75 x 75).
-        if let (true, Some(p)) = (i.alive, i.portrait) {
-            let bg = super::super::game::hud::portrait_bg(i.blu);
-            if scheme.has(bg) {
-                let rect = screen.rect(HudCoord::Start(9.0), HudCoord::End(60.0), 100.0, 50.0);
-                out.push(Draw::Sprite { sprite: bg, rect, uv: full, color: white });
-            }
-            if scheme.has(p) {
-                let rect = screen.rect(HudCoord::Start(25.0), HudCoord::End(88.0), 75.0, 75.0);
-                out.push(Draw::Sprite { sprite: p, rect, uv: full, color: white });
             }
         }
         // Ammo.
@@ -439,11 +441,11 @@ mod tests {
         let (r, ..) = sprite(&d, "class_soldierred").expect("the portrait");
         assert_eq!(*r, Rect::new(56.0, 882.0, 224.0, 1050.0));
         assert!(sprite(&d, "character_red_bg").is_some());
-        let order: Vec<usize> = ["health_bg", "character_red_bg", "class_soldierred"]
+        let order: Vec<usize> = ["character_red_bg", "class_soldierred", "health_bg"]
             .iter()
             .map(|n| d.iter().position(|x| matches!(x, Draw::Sprite { sprite, .. } if sprite == n)).unwrap())
             .collect();
-        assert!(order.windows(2).all(|w| w[0] < w[1]), "health, then the portrait over its background");
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "the portrait over its background, the health panel over both");
         let d = Tf2Hud::default().frame(&Inputs { alive: false, ..i }, s, &Plain);
         assert!(sprite(&d, "class_soldierred").is_none());
     }

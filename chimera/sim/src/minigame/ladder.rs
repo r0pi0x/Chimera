@@ -19,7 +19,9 @@
 //! match's start everyone is on the first. With `knife_finale` the
 //! ladder ends with melee rungs, knife-only: after the last gun the
 //! player holds only the rung's melee weapon, and the last one's kill
-//! wins (off by default in the module; both gun games turn it on). There
+//! wins, when a melee weapon deals it (`Death::weapon`, `damage_kind`: a
+//! grenade thrown earlier whose second victim dies after the swap doesn't
+//! win, it only counts as a kill) (off by default in the module; both gun games turn it on). There
 //! are `melee_rungs` of them (`"auto"`, the default: the power curve's
 //! melee band, `melee_share` of the whole ladder, 7% by default
 //! (`data/power_curve.toml`, `power::melee_rungs_for`: 1 for 10 or 20

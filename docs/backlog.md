@@ -390,11 +390,11 @@ the user's go-ahead: no Actions runs unless asked.
 - **Playtest bugs, 2026-11-18 (user: bug fixes before new features).**
   For each specific bug, check whether it's general and fix the general
   cause.
-  - **Rules:** the final kill must be a melee kill to win. A grenade's
+  - **Rules (done 2026-11-18, all but others' 3D kill voices):** the final kill must be a melee kill to win. A grenade's
     second kill must not count as the finale's melee kill. Kill sounds:
     only your own kills, from your character's game, at that game's
     volume; others' kills are silent.
-  - **UGG chat and HUD:**
+  - **UGG chat and HUD (done 2026-11-18 except the match-end layout):**
     - no Combat Arms chat at all in Ultimate Gun Game;
     - chat drawn above every game's HUD (it is under TF2's);
     - TF2's bottom-left class portrait and its backdrop draw over the
