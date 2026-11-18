@@ -12,7 +12,7 @@
 # apps keep them at their party defaults (on, on, off; party_kit::client).
 # A range's value box takes any typed number; `hard_min` / `hard_max`
 # (inclusive) refuse what is unsafe (a negative volume, no sensitivity).
-# The "Binds" tab is the Controls page (F6); in the Signal look's
+# The "Binds" tab is the Controls page (`controls`); in the Signal look's
 # Settings the Mouse tab is "Controls", with the binds under it.
 
 [[tab]]

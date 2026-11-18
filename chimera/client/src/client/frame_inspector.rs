@@ -21,7 +21,8 @@
 //! part is the frame ring, the event take and the marks the hitch log has
 //! anyway (docs/OBSERVABILITY.md has the measured costs).
 //!
-//! Shown in the debug UI's Frames tab (F8, `debugui frames`):
+//! Shown in the debug UI's Frames tab (F8, `debugui frames`; the party apps'
+//! Escape menu has a Frame inspector entry while Developer mode is on):
 //! a chart of frame times (spikes red, the median and the spike line),
 //! a click picks a spike, its breakdown below. `frame_spikes` prints the
 //! records on the console; `chimera_stall <ms>` makes the next frame
@@ -282,8 +283,9 @@ pub struct Inspector {
     pub spikes: u64,
     pub rss: u64,
     pub vram: Option<u64>,
-    /// The spike the UI shows (its frame).
+    /// The spike the UI shows (its frame); until one is picked, the worst.
     pub selected: Option<u64>,
+    picked: bool,
     /// The chart's span, seconds.
     pub window_s: f32,
     /// Every frame's events over the last minutes, alike ones folded
@@ -303,6 +305,7 @@ impl Inspector {
         self.worst.clear();
         self.spikes = 0;
         self.selected = None;
+        self.picked = false;
         self.timeline.clear();
     }
 
@@ -451,11 +454,11 @@ pub(crate) fn frame_done(world: &World, f: FrameFacts) -> Option<String> {
         let top = |rows: Vec<(usize, u64, u32)>| {
             let mut rows = rows;
             rows.sort_by_key(|r| std::cmp::Reverse(r.1));
-            // Not the schedule runner's own (the whole frame less what
-            // it ran) nor the frame marks'.
+            // Not the schedule runners' own (the whole frame or tick
+            // less what they ran) nor the frame marks'.
             rows.into_iter()
                 .map(|(row, ns, n)| (work::label(row).unwrap_or_else(|| format!("system {row}")), ns as f64 / 1e6, n))
-                .filter(|(l, _, _)| !l.starts_with("Main ") && !l.starts_with("FrameMark("))
+                .filter(|(l, _, _)| !l.starts_with("Main ") && !l.starts_with("FixedMain ") && !l.starts_with("FrameMark("))
                 .take(TOP_SYSTEMS)
                 .collect::<Vec<_>>()
         };
@@ -601,11 +604,12 @@ pub fn tab(ui: &mut egui::Ui, world: &mut World) {
                 }
             }
         });
-        if s.selected.is_none() {
+        if !s.picked || s.selected.is_some_and(|f| s.record(f).is_none()) {
             s.selected = s.worst.first().map(|r| r.frame);
         }
         if let Some(f) = chart(ui, &s, ratio) {
             s.selected = Some(f);
+            s.picked = true;
         }
         ui.horizontal_wrapped(|ui| {
             ui.label("Worst:");
@@ -613,6 +617,7 @@ pub fn tab(ui: &mut egui::Ui, world: &mut World) {
             for (f, ms) in picks {
                 if ui.selectable_label(s.selected == Some(f), format!("{ms:.0} ms (#{f})")).clicked() {
                     s.selected = Some(f);
+                    s.picked = true;
                 }
             }
         });

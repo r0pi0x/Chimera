@@ -387,6 +387,47 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
+- **Playtest bugs, 2026-11-18 (user: bug fixes before new features).**
+  For each specific bug, check whether it's general and fix the general
+  cause.
+  - **Rules:** the final kill must be a melee kill to win. A grenade's
+    second kill must not count as the finale's melee kill. Kill sounds:
+    only your own kills, from your character's game, at that game's
+    volume; others' kills are silent.
+  - **UGG chat and HUD:**
+    - no Combat Arms chat at all in Ultimate Gun Game;
+    - chat drawn above every game's HUD (it is under TF2's);
+    - TF2's bottom-left class portrait and its backdrop draw over the
+      health number: match TF2's own layering;
+    - the match-end chat covers the map vote's timer: a design pass with
+      fixed zones (results, vote and timer, chat), screenshots first.
+  - **TF2 in general:**
+    - projectiles at the wrong orientation (the rocket was fixed alone;
+      the user saw it again on a Medi Gun-class weapon): one general fix
+      for every TF2 projectile model's forward axis, tested per
+      projectile;
+    - missing explosion and visual effects (the sticky bomb launcher, and
+      likely others): an audit of every TF2 weapon's effects against its
+      data;
+    - first-person view models lit wrongly: check whether it's the map
+      (HL2 or Halo maps) or the view-model lighting.
+  - **Halo:**
+    - weapon sounds missing (the shotgun's fire, the plasma pistol's
+      charge): an audit of every Halo weapon's sounds in a party app, with
+      a test like TF2's;
+    - the plasma pistol's effects look messy;
+    - the ringworld in the sky disappears at some view angles (sky
+      culling);
+    - objects on Halo maps aren't lit as expected.
+  - **Lobby:**
+    - loading behind the lobby must be invisible (no freezes, sound or
+      drawing);
+    - the bot navigation mesh cached per map, and built in the background;
+    - bots shown in the lobby at once;
+    - the Start button says it's waiting while the host's own map loads.
+  - Done (2026-11-18): F2, F3 and F4 no longer open chat in the party apps;
+    F6 no longer opens the Controls page.
+
 - **TF2 Scout's pistol sounds and ragdoll lifetime (user, 2026-11-17),
   fixed 2026-11-17 (confirm in a playtest).** Sounds: Source games share
   one namespace of sound script names (`Weapon_Pistol.Single`,

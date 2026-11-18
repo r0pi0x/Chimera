@@ -148,18 +148,28 @@ impl Plugin for CaUiPlugin {
         .insert_resource(crate::client::senses::FlashFade(crate::game::grenades::blinded_alpha))
         .add_message::<crate::game::bots::chat::CaBotChat>()
         .add_systems(Update, bot_chat);
-        // Enter, F2 and F3 open the Signal chat in an app that has it
-        // (`client::signal_chat`), else this game's own input.
+        // Enter opens the Signal chat in an app that has it
+        // (`client::signal_chat`), else this game's own input; F2 and F3
+        // are Combat Arms' own keys only: under the Signal chat (the party
+        // apps) they do nothing (the user, 2026-11-18).
         for (name, team) in [("chat_open", None), ("chat_all", Some(false)), ("chat_team", Some(true))] {
             app.console_command(&format!("combat_arms:{name}"), "Open the chat input (Enter: the current tab; F2 all, F3 team).", move |w, _| {
                 if w.get_resource::<crate::client::chat::SignalChatActive>().is_some_and(|a| a.0) {
-                    crate::client::chat::open_input(w, team.unwrap_or(false));
+                    if team.is_none() {
+                        crate::client::chat::open_input(w, false);
+                    }
                 } else {
                     crate::game::chat::open_key(w, team);
                 }
                 Ok(None)
             });
         }
+        app.console_command("combat_arms:chat_clan", "Chat to your clan (F4).", |w, _| {
+            if !w.get_resource::<crate::client::chat::SignalChatActive>().is_some_and(|a| a.0) {
+                crate::game::chat::open_tab(w, crate::game::chat::client::Tab::Clan);
+            }
+            Ok(None)
+        });
     }
 }
 

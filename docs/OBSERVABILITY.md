@@ -1576,7 +1576,9 @@ load; work counts don't (performance.md, "Work counts"):
   ms: <system> 12.3 x2, ...`). The debug UI Perf tab has the same percentiles as
   a table, with a frame-time histogram.
 - The frame inspector (why a frame stuttered; `client::frame_inspector`):
-  the debug UI's Frames tab (F8, `debugui frames`) charts the last 10, 15 or 30 s of frames (white the frame, green
+  the debug UI's Frames tab (F8, `debugui frames`; the party apps'
+  Escape menu has a Frame inspector entry while Options' Developer mode
+  is on) charts the last 10, 15 or 30 s of frames (white the frame, green
   the main world, blue the render world, yellow ticks frames with
   engine events, the median and the spike line), spikes (the hitch
   log's rule: over `chimera_hitch_ratio` times the median) as red dots;

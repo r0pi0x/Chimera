@@ -40,7 +40,9 @@
 //!   alone (`party_leave_match alone`), Stay; so is the lobby's Leave.
 //! - **Developer**: only while Options' "Developer mode" (`developer_mode`,
 //!   off by default, archived: the Party tab) is on; it opens the UI kit's
-//!   gallery (`ui_gallery`, Esc closes it).
+//!   gallery (`ui_gallery`, Esc closes it); **Frame inspector** beside it
+//!   opens the debug UI's Frames tab (`debugui frames`: why a frame
+//!   stuttered, `client::frame_inspector`).
 //! - **Quit.**
 //!
 //! The entries and their order are data (data/main_menu.toml
@@ -284,6 +286,7 @@ pub fn shown_entries_with(host: bool, main_menu: bool, voting: bool, sandbox: bo
                 EscDoes::Quit => Some(Action::Quit),
                 EscDoes::Feedback => Some(Action::Feedback),
                 EscDoes::Developer => Some(Action::Developer),
+                EscDoes::FrameInspector => Some(Action::FrameInspector),
                 EscDoes::Vote => (!voting).then_some(Action::SkipMap),
                 EscDoes::SandboxGun => Some(Action::SandboxGun),
                 EscDoes::SandboxBench => Some(Action::SandboxBench),
@@ -451,6 +454,8 @@ pub enum Action {
     Quit,
     /// Developer mode's entry: the UI kit's gallery (`ui_gallery`).
     Developer,
+    /// Developer mode's frame inspector (`debugui frames`).
+    FrameInspector,
 }
 
 /// An action as a message (tests, `escmenu`).
@@ -526,6 +531,7 @@ impl Plugin for EscMenuPlugin {
                         Some("quit") => Action::Quit,
                         Some("feedback") => Action::Feedback,
                         Some("developer") => Action::Developer,
+                        Some("frame_inspector") => Action::FrameInspector,
                         other => return Err(format!("no entry {other:?}")),
                     };
                     w.write_message(action);
@@ -877,6 +883,11 @@ fn act_one(world: &mut World, action: Action) {
             world.resource_mut::<EscMenu>().set_open(false);
             submit(world, "ui_gallery");
         }
+        Action::FrameInspector => {
+            leave(world);
+            world.resource_mut::<EscMenu>().set_open(false);
+            submit(world, "debugui frames");
+        }
         Action::Quit => submit(world, "quit"),
     }
 }
@@ -1194,6 +1205,7 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             EscDoes::Quit => Action::Quit,
             EscDoes::Feedback => Action::Feedback,
             EscDoes::Developer => Action::Developer,
+            EscDoes::FrameInspector => Action::FrameInspector,
             EscDoes::SandboxGun => Action::SandboxGun,
             EscDoes::SandboxBench => Action::SandboxBench,
             EscDoes::Vote => {
