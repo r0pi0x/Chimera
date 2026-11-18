@@ -145,6 +145,7 @@ mod tests {
             frame: Transform::IDENTITY,
             half: Vec3::splat(0.1),
             surface: None,
+            nose: None,
         };
         assets.insert("gun".to_string(), gun);
         app.insert_resource(LooseAssets(assets));

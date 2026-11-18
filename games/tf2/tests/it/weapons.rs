@@ -334,8 +334,8 @@ pub(crate) fn rockets(sim: &mut Sim, owner: Entity) -> Vec<(Entity, Vec3, Vec3)>
 }
 
 /// 5.1, tests 24 and 25: the rocket starts 23.5 ahead, 12 right, 3 down
-/// of the eye, flies at 1100 units/s toward the crosshair's point, nose
-/// first, and explodes on the wall it meets.
+/// of the eye, flies at 1100 units/s toward the crosshair's point and
+/// explodes on the wall it meets.
 #[test]
 fn the_rocket_starts_under_the_gun_and_flies_at_1100_24_25() {
     let mut sim = sim();
@@ -360,10 +360,7 @@ fn the_rocket_starts_under_the_gun_and_flies_at_1100_24_25() {
     // wall it meets): from 12 right and 3 down, a little left and up.
     assert!((v.length() - 1100.0 * U).abs() < 1e-3, "{v}");
     assert!(v.normalize().dot(Vec3::NEG_Z) > 0.999 && v.x < 0.0 && v.y > 0.0, "{v}");
-    // Its model's nose (+Y, the held model's frame) along its flight
-    // (playtest 2026-11-17: it flew standing upright).
-    let turned = sim.app.world().get::<Transform>(r[0].0).unwrap().rotation;
-    assert!((turned * Vec3::Y).dot(v.normalize()) > 0.999, "nose {} along {v}", turned * Vec3::Y);
+    // Nose first: `weapons_more::every_projectile_flies_nose_first`.
     // Whatever it meets ahead: gone within a tick or two of its flight
     // time from where it started.
     let mut ticks = 1u64;

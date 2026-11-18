@@ -1013,6 +1013,12 @@ pub struct MapHeldModel {
     pub merged: Vec<(String, MapModel)>,
     /// `model` without the `merged` parts (None: `merged` is empty).
     pub own: Option<MapModel>,
+    /// The way the model faces in its own game (a Source model's +X, a
+    /// Halo object's +X), unit, in the same frame as `model`: what a
+    /// shown item flying along its velocity puts first
+    /// (`loose::LooseAsset::nose`). None: not known (it then flies with
+    /// the shown frame's −Z first).
+    pub nose: Option<Vec3>,
 }
 
 /// One bone of a character skeleton, in its reference pose relative to

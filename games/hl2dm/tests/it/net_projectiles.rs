@@ -39,6 +39,15 @@ fn joined() -> NetSim {
     sim
 }
 
+/// The server's shown model `key` with its nose `nose` (`MapHeldModel::
+/// nose`, in its loose frame: the install's models', measured by
+/// `heavy::player_models::each_projectile_models_nose_is_its_long_axis`).
+/// The greybox loads no models; flyers turn by it as they are made.
+fn with_nose(sim: &mut NetSim, key: &str, nose: Vec3) {
+    let a = chimera_world::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(nose) };
+    sim.server.app.world_mut().get_resource_or_insert_with(chimera_world::map::loose::LooseAssets::default).0.insert(key.into(), a);
+}
+
 fn client_intent(sim: &mut NetSim) -> Mut<'_, Intent> {
     let me = sim.local_player(0).unwrap();
     sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap()
@@ -228,6 +237,7 @@ fn flyers(sim: &mut NetSim, weapon: &str) -> Vec<(u32, Quat, Vec3)> {
 #[test]
 fn the_smg1_grenade_leaves_nose_first_and_tumbles() {
     let mut sim = joined();
+    with_nose(&mut sim, launch::SMG1_GRENADE_MODEL, Vec3::NEG_Z);
     arm(&mut sim, weapons::SMG1, 2, 0.0);
     let mut first: Option<(Quat, Vec3)> = None;
     let mut turns = Vec::new();
@@ -242,7 +252,7 @@ fn the_smg1_grenade_leaves_nose_first_and_tumbles() {
         }
     }
     let (r, v) = first.expect("the grenade's launch seen");
-    let nose = r * Vec3::X;
+    let nose = r * Vec3::NEG_Z;
     assert!(nose.angle_between(v).to_degrees() < 3.0, "nose {nose:?} along the launch {v:?}");
     assert!(
         turns.windows(2).filter(|w| w[0].angle_between(w[1]) > 1e-3).count() > 3,
@@ -250,11 +260,12 @@ fn the_smg1_grenade_leaves_nose_first_and_tumbles() {
     );
 }
 
-/// The RPG's missile noses along its flight (its model's +X), on the
-/// server and as the client draws it.
+/// The RPG's missile noses along its flight (its model's nose, −X in its
+/// loose frame), on the server and as the client draws it.
 #[test]
 fn the_rpg_missile_noses_along_its_flight() {
     let mut sim = joined();
+    with_nose(&mut sim, launch::MISSILE_MODEL, Vec3::NEG_X);
     arm(&mut sim, weapons::RPG, 3, 0.0);
     let mut checked = 0;
     for k in 0..60 {
@@ -262,7 +273,7 @@ fn the_rpg_missile_noses_along_its_flight() {
         sim.step();
         for (_, r, v) in flyers(&mut sim, weapons::RPG) {
             if v.length() > 1.0 {
-                let nose = r * Vec3::X;
+                let nose = r * Vec3::NEG_X;
                 assert!(nose.angle_between(v).to_degrees() < 3.0, "nose {nose:?} vs flight {v:?}");
                 checked += 1;
             }
@@ -278,6 +289,7 @@ fn the_rpg_missile_noses_along_its_flight() {
 fn the_stuck_bolt_keeps_its_flight_direction_on_both_sides() {
     use chimera_sim::weapon::projectile::Flyer;
     let mut sim = joined();
+    with_nose(&mut sim, launch::BOLT_MODEL, Vec3::Y);
     arm(&mut sim, weapons::CROSSBOW, 4, 3.0);
     let mut last_move: Option<Vec3> = None;
     let mut prev: Option<Vec3> = None;

@@ -17,7 +17,10 @@
 //! next. The server's (`core::authoritative`); clients draw it from the
 //! network's `NetItem` (its `ShownItem` and `Transform`, facing its
 //! flight with its model's `Flyer::turn`, or tumbling by its
-//! `Flyer::spin`: `flyer_rotation`), as thrown grenades.
+//! `Flyer::spin`: `flyer_rotation`), as thrown grenades. The turn comes
+//! from its shown model's nose as it is made (`face_nose`, for every game:
+//! the model's own forward, however its loader's frame turned it), so no
+//! weapon names its model's axes.
 //!
 //! Made by a game's `LaunchRequest` (an alt-fire, a rocket) or from a
 //! weapon's frame rounds: a weapon with `chimera:projectile`
@@ -189,7 +192,9 @@ pub struct Flyer {
     /// Hit this tick: what (the game's `FlyerSet::Touch` reads `FlyerHit`).
     pub last_hit: Option<Entity>,
     /// Its model's own turn before it faces its flight (`facing` puts −Z
-    /// along it; a Source model's nose is its +X: `MODEL_X_FORWARD`).
+    /// along it): set as it is made from its shown model's nose
+    /// (`map::loose::LooseAsset::nose_turn`, `face_nose`), whatever its
+    /// game or its model's axes; identity when the nose isn't known.
     pub turn: Quat,
     /// A tumbling flyer's spin, rad/s about its own axes (HL2's SMG1
     /// grenade): it faces its launch once (`turn` too) and then turns
@@ -209,13 +214,6 @@ pub struct SkyEnd {
     pub probe: f32,
     pub expired: bool,
 }
-
-/// `Flyer::turn` for a model whose nose is its +X (Source's models).
-pub const MODEL_X_FORWARD: Quat = Quat::from_xyzw(0.0, std::f32::consts::FRAC_1_SQRT_2, 0.0, std::f32::consts::FRAC_1_SQRT_2);
-
-/// `Flyer::turn` for a model whose nose is its +Y (a quarter turn about X
-/// takes +Y to −Z).
-pub const MODEL_Y_FORWARD: Quat = Quat::from_xyzw(-std::f32::consts::FRAC_1_SQRT_2, 0.0, 0.0, std::f32::consts::FRAC_1_SQRT_2);
 
 impl Flyer {
     /// A flyer of `weapon` by `owner` with `velocity` (m/s), made now: a
@@ -385,13 +383,6 @@ pub struct LauncherParams {
     /// Lifetime, seconds.
     #[serde(default)]
     pub life: Option<f32>,
-    /// Its model's nose is its +X (Source's models: `MODEL_X_FORWARD`).
-    #[serde(default)]
-    pub x_forward: bool,
-    /// Its model's nose is its +Y (the crossbow bolt's, as the loose frame
-    /// leaves it: `MODEL_Y_FORWARD`).
-    #[serde(default)]
-    pub y_forward: bool,
     /// Ends on the sky a line this long finds (data length; 0: never).
     #[serde(default)]
     pub sky_probe: f32,
@@ -484,11 +475,6 @@ impl LauncherParams {
         });
         f.hitboxes = self.hitboxes;
         f.pass_teammates = self.pass_teammates;
-        if self.x_forward {
-            f.turn = MODEL_X_FORWARD;
-        } else if self.y_forward {
-            f.turn = MODEL_Y_FORWARD;
-        }
         // Relative here; made absolute at the launch.
         f.expires = self.life.map(|l| l as f64);
         f.touch = match self.touch.as_str() {
@@ -555,6 +541,7 @@ pub(super) fn plugin(app: &mut App) {
                 .after(super::WeaponFrame)
                 .in_set(crate::core::SimSet::Weapons),
         )
+        .add_observer(face_nose)
         .add_systems(
             FixedUpdate,
             (
@@ -641,6 +628,26 @@ pub fn reflect(v: Vec3, n: Vec3) -> Vec3 {
 
 // ---------------------------------------------------------------------------
 // Making flyers
+
+/// A new flyer's model turn from its shown model's nose (`Flyer::turn`),
+/// and its rotation with it: every flyer of every game flies nose first,
+/// its model's own forward (`MapHeldModel::nose`: a Source model's +X in
+/// whatever frame its loader left it) along its velocity. Without the
+/// model (a headless test's greybox) or its nose, the turn is left as made.
+fn face_nose(
+    add: On<Add<Flyer>>,
+    mut flyers: Query<(&mut Flyer, &ShownItem, &mut Transform)>,
+    assets: Option<Res<crate::map::loose::LooseAssets>>,
+) {
+    let Some(assets) = assets else { return };
+    let Ok((mut f, shown, mut t)) = flyers.get_mut(add.entity) else { return };
+    let Some(a) = assets.0.get(&shown.0).filter(|a| a.nose.is_some()) else { return };
+    let turn = a.nose_turn();
+    // Its rotation as made, the old turn taken off: a tumbling one keeps
+    // its launch's facing.
+    t.rotation = (t.rotation * f.turn.inverse() * turn).normalize();
+    f.turn = turn;
+}
 
 /// Spawn `flyer` at `start`, drawn as `shown`, made now.
 pub fn spawn_flyer(commands: &mut Commands, mut flyer: Flyer, start: Vec3, shown: String, clock: &SimClock) -> Entity {
@@ -1205,16 +1212,13 @@ mod tests {
     }
 
     #[test]
-    fn a_source_model_noses_along_its_flight() {
-        let r = facing(Vec3::Z) * MODEL_X_FORWARD;
-        assert!((r * Vec3::X - Vec3::Z).length() < 1e-5);
-    }
-
-    #[test]
-    fn a_y_nosed_model_noses_along_its_flight() {
-        for d in [Vec3::Z, Vec3::X, Vec3::new(0.3, 0.5, -0.8).normalize()] {
-            let r = facing(d) * MODEL_Y_FORWARD;
-            assert!((r * Vec3::Y - d).length() < 1e-5);
+    fn a_model_noses_along_its_flight_whatever_its_axes() {
+        for nose in [Vec3::X, Vec3::Y, Vec3::NEG_Y, Vec3::Z, Vec3::NEG_Z, Vec3::new(0.2, -0.7, 0.4).normalize()] {
+            let a = crate::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::ONE, surface: None, nose: Some(nose) };
+            for d in [Vec3::Z, Vec3::X, Vec3::Y, Vec3::new(0.3, 0.5, -0.8).normalize()] {
+                let r = facing(d) * a.nose_turn();
+                assert!((r * nose - d).length() < 1e-5, "{nose} along {d}: {}", r * nose);
+            }
         }
     }
 

@@ -256,3 +256,25 @@ fn a_citizens_face_at_rest_and_blinking() {
     let w_shut = hl2dm::game::look::face_weights(face, &values);
     assert!(moved(&w_shut) > moved(&w_rest), "a blink moves the lids: {} vs {}", moved(&w_shut), moved(&w_rest));
 }
+
+/// Each projectile model's nose (`MapHeldModel::nose`: the model's own +X
+/// as its first sequence poses it, in the frame its loader left it) is the
+/// long axis of the long ones (the RPG's missile, the crossbow's bolt): a
+/// flyer turned by it flies nose first, with no axis named in the data.
+#[test]
+fn each_projectile_models_nose_is_its_long_axis() {
+    let Some(mount) = install_mount() else { return };
+    let body = bodies::load_one(&mount, PLAYER_MODELS[0]).expect("a body");
+    let mut materials = source_engine::content::material::MaterialLoader::guest(&mount, 0, 0);
+    for (key, path, _) in hl2dm::game::weapons::launch::MODELS {
+        let held = source_engine::content::props::load_held(&mut materials, path, key, &body.bones).expect(key);
+        let a = chimera_world::map::loose::asset(&held, body.root);
+        let nose = a.nose.expect("a nose");
+        let long = a.half.max_element();
+        let axis = bevy::prelude::Vec3::select(a.half.cmpeq(bevy::prelude::Vec3::splat(long)), bevy::prelude::Vec3::ONE, bevy::prelude::Vec3::ZERO);
+        println!("{key}: nose {nose}, half {}", a.half);
+        if *key == hl2dm::game::weapons::launch::MISSILE_MODEL || *key == hl2dm::game::weapons::launch::BOLT_MODEL {
+            assert!(nose.dot(axis.normalize()).abs() > 0.95, "{key}: nose {nose}, half {}", a.half);
+        }
+    }
+}

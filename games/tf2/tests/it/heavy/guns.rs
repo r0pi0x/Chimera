@@ -239,3 +239,31 @@ fn every_guns_sound_is_tf2s_own() {
         assert!(map.sounds.entry(bare).is_none(), "{bare}: a bare name would meet another game's");
     }
 }
+
+/// Each projectile model's nose (`MapHeldModel::nose`, the model's own
+/// +X wherever its bone frame turned it) is its long axis in the shown
+/// frame for the long ones (the rocket, the needle: a needle flew sideways
+/// when the data named its axis, playtest 2026-11-18), so a flyer turned
+/// by it flies nose first.
+#[test]
+fn each_projectile_models_nose_is_its_long_axis() {
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0);
+    let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
+    maps::add_guns(&mut materials, &|_| true, false, &mut kit, &mut warnings);
+    let root = bevy::prelude::Transform::from_rotation(
+        bevy::prelude::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2) * bevy::prelude::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+    )
+    .with_scale(bevy::prelude::Vec3::splat(0.0254));
+    for (_, key, _) in weapons::PROJECTILES {
+        let held = kit.held.iter().find(|h| h.key == *key).unwrap_or_else(|| panic!("{key}"));
+        let a = chimera_world::map::loose::asset(held, root);
+        let nose = a.nose.unwrap_or_else(|| panic!("{key}: a nose"));
+        let long = a.half.max_element();
+        let axis = bevy::prelude::Vec3::select(a.half.cmpeq(bevy::prelude::Vec3::splat(long)), bevy::prelude::Vec3::ONE, bevy::prelude::Vec3::ZERO);
+        println!("{key}: nose {nose}, half {}", a.half);
+        if *key == weapons::ROCKET_SHOWN || *key == "tf2:syringe" {
+            assert!(nose.dot(axis.normalize()).abs() > 0.95, "{key}: nose {nose}, half {}", a.half);
+        }
+    }
+}
