@@ -13,3 +13,12 @@
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
 rustdocflags = ["-Clinker=rust-lld.exe"]
+
+[alias]
+chk = "check --workspace --all-targets"
+t-fast = "test --features dev -- --skip heavy::"
+checks = "test -p repo_checks --locked"
+sv-css = "run --features dev -p cs_source_server --"
+sv-ca = "run --features dev -p combat_arms_server --"
+sv-party = "run --features dev -p lucker_party_server --"
+sv-ugg = "run --features dev -p ultimate_gun_game_server --"

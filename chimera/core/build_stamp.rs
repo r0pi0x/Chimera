@@ -29,7 +29,22 @@ fn git(args: &[&str]) -> Option<String> {
 }
 
 /// Stamp the build (see the top of this file).
+/// In dev/test profiles, emit a stable `"dev"` stamp without watching `.git/HEAD`
+/// so `git commit` or branch switches never invalidate app binaries.
 fn stamp() {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=../../chimera/core/build_stamp.rs");
+    println!("cargo:rerun-if-changed=../../chimera/core/src/core/version.rs");
+    println!("cargo:rerun-if-env-changed=CHIMERA_STAMP_GIT");
+
+    let profile = std::env::var("PROFILE").unwrap_or_default();
+    let force = std::env::var("CHIMERA_STAMP_GIT").is_ok_and(|v| v == "1");
+    if profile != "release" && !force {
+        println!("cargo:rustc-env=CHIMERA_GIT=dev");
+        println!("cargo:rustc-env=CHIMERA_VERSION=dev");
+        return;
+    }
+
     let hash = git(&["describe", "--always", "--dirty"]).unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=CHIMERA_GIT={hash}");
     let version = match (
@@ -45,11 +60,6 @@ fn stamp() {
         _ => "unknown".into(),
     };
     println!("cargo:rustc-env=CHIMERA_VERSION={version}");
-    // Without git: rerun only when the scripts change (paths from the
-    // app's folder, apps/<app>/).
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=../../chimera/core/build_stamp.rs");
-    println!("cargo:rerun-if-changed=../../chimera/core/src/core/version.rs");
     let Some(head) = git(&["rev-parse", "--git-path", "HEAD"]) else { return };
     println!("cargo:rerun-if-changed={head}");
     // The branch's own ref, or packed-refs when it is packed (a detached

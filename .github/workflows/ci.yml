@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  checks-and-pure:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Fetch workspace crates (for cargo tree --offline)
+        run: cargo fetch --locked
+      - name: Architecture & repository checks
+        run: cargo test -p repo_checks --locked
+      - name: Pure-data format & tool tests
+        run: cargo test --locked -p chimera_vfs -p source_formats -p lithtech_formats -p blam_formats -p source_tools
+
+  workspace-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux build dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - uses: Swatinem/rust-cache@v2
+      - name: Check full workspace
+        run: cargo check --workspace --all-targets --locked
+      - name: Check headless dedicated servers
+        run: |
+          cargo check --locked -p cs_source_server
+          cargo check --locked -p combat_arms_server
+          cargo check --locked -p lucker_party_server
+          cargo check --locked -p ultimate_gun_game_server
+          cargo check --locked -p hl2dm_server
+          cargo check --locked -p halo_ce_server
