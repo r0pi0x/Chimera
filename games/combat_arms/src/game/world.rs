@@ -143,8 +143,8 @@
 //!   `view_model::on_demand::ViewModelsOnDemand`) takes no view models
 //!   (`dress_with`), as Combat Arms' own maps never do. It is kept by
 //!   Chimera's `map::kept` (`dress_kept`: converted once per app, load
-//!   kind and view models, copied into each map; on disk with
-//!   `CHIMERA_GUEST_CACHE`), its memos with it: the character models'
+//!   kind and view models, copied into each map; on disk unless
+//!   `CHIMERA_GUEST_CACHE=0`), its memos with it: the character models'
 //!   index (`characters::kept`: rigs, body groups, held sockets) and the
 //!   effect library's loaded parts (`effects::library::SavedLibrary`;
 //!   the effect file itself is the install data's, parsed once).

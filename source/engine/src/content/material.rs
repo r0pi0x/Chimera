@@ -2589,7 +2589,7 @@ mod tests {
                     });
                 };
                 let dressing = kept::Dressing { game: "late_test", converter: "test", mount: &mount_of, convert: &convert, variant: "", memos: None };
-                kept::dress_cached(map, &options, &dressing)
+                kept::dress_cached_with(map, &options, &dressing, None)
             };
             let mut first = MapData::default();
             dress(&store, &mut first).unwrap();

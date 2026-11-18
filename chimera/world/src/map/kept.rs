@@ -28,8 +28,11 @@
 //!   reaches the next map instead of waiting for a restart.
 //! - **Logs** each conversion's (or read's) time and instructions (this
 //!   thread and those it starts), and counts them (`conversions`).
-//! - **On disk, off by default** (`CHIMERA_GUEST_CACHE=1`, `DISK_ENV`):
-//!   a session's first ask reads the dressing back from the converted-map
+//! - **On disk, on by default** (`CHIMERA_GUEST_CACHE=0` turns it off,
+//!   `DISK_ENV`; on since 2026-11-17, plan converted-cache step 6: a cold
+//!   first dressing read back takes 1.7x (CS:S) to 6.8x (HL2:DM) fewer
+//!   instructions and 3-7x less time in the playtest build, the same
+//!   bytes): a session's first ask reads the dressing back from the converted-map
 //!   cache (`map::cache`: its folder, cap and switch, `CHIMERA_MAP_CACHE=0`
 //!   turning guests off too) when one was written from the same files,
 //!   else converts and writes it. The key: `guest:<game>`, the converter's
@@ -139,14 +142,22 @@ struct Entry {
     disk_reads: AtomicUsize,
 }
 
-/// The variable that turns the disk layer on (`1`; module doc).
+/// The variable that turns the disk layer off (`0`, `off`, `false`,
+/// `no`; module doc).
 pub const DISK_ENV: &str = "CHIMERA_GUEST_CACHE";
 
+/// Whether `DISK_ENV`'s value (None: unset) leaves the disk layer on.
+pub fn disk_on(value: Option<&str>) -> bool {
+    !value.is_some_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "0" | "off" | "false" | "no"))
+}
+
 /// The disk layer's cache: the converted-map cache's (`MapCache::
-/// from_env`) when `DISK_ENV` is `1` and that cache is on; else none.
+/// from_env`, none when `CHIMERA_MAP_CACHE=0`) unless `DISK_ENV` turns
+/// it off.
 pub fn disk_cache() -> Option<MapCache> {
-    let on = std::env::var(DISK_ENV).is_ok_and(|v| v.trim() == "1");
-    on.then(MapCache::from_env).flatten()
+    disk_on(std::env::var(DISK_ENV).ok().as_deref())
+        .then(MapCache::from_env)
+        .flatten()
 }
 
 fn entry(context: &LoadContext, game: &'static str, variant: &'static str, textures: bool) -> Arc<Entry> {
@@ -508,7 +519,7 @@ mod tests {
         let load = || {
             let mut map = MapData::default();
             map.textures.push(texture("own"));
-            dress_cached(&mut map, &options, &dressing).unwrap();
+            dress_cached_with(&mut map, &options, &dressing, None).unwrap();
             map
         };
         let first = load();
@@ -600,6 +611,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The disk layer is on unless its variable turns it off.
+    #[test]
+    fn the_disk_layer_is_on_unless_turned_off() {
+        assert!(disk_on(None));
+        assert!(disk_on(Some("1")) && disk_on(Some("")));
+        for off in ["0", " off", "False", "no"] {
+            assert!(!disk_on(Some(off)), "{off}");
+        }
+    }
+
     /// No install: nothing kept, the next load tries again.
     #[test]
     fn a_failed_dressing_is_not_kept() {
@@ -613,8 +634,8 @@ mod tests {
             variant: "",
             memos: None,
         };
-        assert!(dress_cached(&mut MapData::default(), &options, &dressing).is_err());
-        assert!(dress_cached(&mut MapData::default(), &options, &dressing).is_err());
+        assert!(dress_cached_with(&mut MapData::default(), &options, &dressing, None).is_err());
+        assert!(dress_cached_with(&mut MapData::default(), &options, &dressing, None).is_err());
         assert_eq!(conversions(&options.context, "kept_none", "", false), 0);
     }
 }

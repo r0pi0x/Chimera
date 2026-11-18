@@ -1,9 +1,8 @@
 # Converted assets on disk: a session's first load without conversion
 
-Status: **steps 1-5 done (Halo's part written down, not moved), the
-disk layer off by default** (2026-11-17; "Progress" below); next: a
-playtest-profile measurement before turning the disk on (step 6), the
-asset service (step 7), Halo on the user's PC. The backlog entry is
+Status: **steps 1-6 done, the disk layer on by default** (2026-11-17;
+"Progress" below; Halo's part written down, not moved); next: the asset
+service (step 7), Halo on the user's PC. The backlog entry is
 docs/backlog.md §9, "Converted assets on disk and on the asset
 service"; it builds on "One kept-dressing cache in Chimera for every
 game" (the session cache, docs/performance.md, "Guest dressings kept
@@ -326,6 +325,18 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   `Donor` memos in `LoadContext` then go. Measure first on the user's
   PC (the per-map append, the cold donor build, and the read back),
   with the same heavy test shape as Combat Arms'.
+- **Step 6, done (2026-11-17): the disk layer is on by default**
+  (`CHIMERA_GUEST_CACHE=0` turns it off). Playtest build, a cold first
+  dressing per guest in a process of its own (docs/performance.md,
+  "Guest dressings on disk"): converted / read back, instructions and
+  ms: CS:S 2,949 M 475 ms / 1,697 M 143 ms; HL2:DM 9,006 M 963 ms /
+  1,320 M 139 ms; TF2 13,147 M 2,083 ms / 4,951 M 451 ms; Combat Arms
+  21,446 M 2,610 ms (its install data in it) / 4,066 M 578 ms plus its
+  install data 8,716 M 1,015 ms. With the OS's cache dropped the reads
+  take 193-736 ms, the conversions 628-2,874 ms. The first run of a
+  converter version writes (+0.7-3.4 G). Same bytes and memos read back,
+  so no visual change; heavy test: party_kit `heavy::converted::
+  a_guest_dressing_reads_back_from_disk_by_default`.
 
 ## Steps
 

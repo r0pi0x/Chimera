@@ -6,7 +6,9 @@
 //! chimera_world's `pod_serde::sorted`); a dressing kept for the session
 //! (`map::BlocksOnly`) skips decoding its whole-DXT textures and keeps
 //! the same textures (step 2); read back from the disk layer
-//! (`map::kept::kept_with`), the same bytes as converting (step 4).
+//! (`map::kept::kept_with`), the same bytes as converting (step 4); the
+//! disk layer on by default, and a guest's cold first dressing measured
+//! per process (step 6).
 //!
 //! Each game passes with a note without its install (CS:S, HL2:DM, TF2,
 //! Combat Arms with its keys).
@@ -177,7 +179,7 @@ fn a_kept_dressing_skips_decoding_and_keeps_the_same_textures() {
 }
 
 /// The disk layer under the kept dressings (`map::kept::kept_with` on a
-/// cache folder, `CHIMERA_GUEST_CACHE=1` in the apps): each Source
+/// cache folder; the apps' by default): each Source
 /// guest's dressing converted and written by one app is read back by the
 /// next, nothing converted, and encodes to the same bytes. Prints each
 /// one's instructions (this thread and those it starts) for
@@ -252,4 +254,88 @@ fn a_guest_read_from_disk_is_the_same_as_converting() {
             read.len() as f64 / 1e6
         );
     }
+}
+
+/// One guest's cold first dressing in this process, through its bundle's
+/// dressing (Chimera's `map::kept`, its disk layer as the environment
+/// sets it: `CHIMERA_GUEST_CACHE`, `CHIMERA_MAP_CACHE`), for
+/// docs/performance.md, "Guest dressings on disk"
+/// (plan converted-cache, step 6). The game is `CHIMERA_MEASURE_GUEST`
+/// (`cs_source`, `hl2dm`, `tf2`, `combat_arms`); without it, skipped.
+/// Prints the instructions (this thread and those it starts) and wall
+/// time; for Combat Arms also its install data's weapon set after it
+/// (held through the dressing, as an app holds it), which its weapons
+/// need whatever the dressing does: none left when the dressing parsed it. One measurement
+/// per process (the first dressing is the cold one).
+#[test]
+fn measure_a_cold_first_dressing() {
+    use chimera_core::metrics::counters::InstructionCounter;
+    use chimera_world::map::{MapDressing, MapLoadOptions, kept};
+    let Ok(game) = std::env::var("CHIMERA_MEASURE_GUEST") else {
+        eprintln!("skipping: set CHIMERA_MEASURE_GUEST to a game's id");
+        return;
+    };
+    let dressing: &MapDressing = match game.as_str() {
+        "cs_source" => &cs_source::game::bundle::GUEST,
+        "hl2dm" => &hl2dm::game::GUEST,
+        "tf2" => &tf2::game::GUEST,
+        "combat_arms" => &combat_arms::game::world::DRESSING,
+        other => panic!("no guest {other}"),
+    };
+    let counted = |f: &mut dyn FnMut()| {
+        let mut c = InstructionCounter::current_with_children();
+        let at = c.read().unwrap_or(0);
+        let t = std::time::Instant::now();
+        f();
+        (c.read().unwrap_or(0).saturating_sub(at), t.elapsed().as_millis())
+    };
+    let options = MapLoadOptions::default();
+    // Combat Arms' install data held as an app holds it (else it goes
+    // with the dressing and comes again after).
+    let held = (game == "combat_arms").then(|| combat_arms::game::data::CaData::install_for(&options.context));
+    let mut map = MapData::default();
+    let (n, ms) = counted(&mut || (dressing.dress)(&mut map, &options).unwrap());
+    let reads: usize = ["", "view_models"].iter().map(|v| kept::disk_reads(&options.context, dressing.game, v, true)).sum();
+    let how = if kept::disk_cache().is_none() { "off" } else if reads > 0 { "read" } else { "written" };
+    let bytes = postcard::to_allocvec(&map).map_or(0, |b| b.len());
+    eprintln!("MEASURE {game} dressing {how}: {:.0} M instructions, {ms} ms, {:.0} MB", n as f64 / 1e6, bytes as f64 / 1e6);
+    if let Some(data) = held {
+        let (n, ms) = counted(&mut || {
+            data.weapon_set();
+        });
+        eprintln!("MEASURE {game} install data after it: {:.0} M instructions, {ms} ms", n as f64 / 1e6);
+    }
+}
+
+/// The disk layer is on by default (plan converted-cache, step 6): two
+/// apps dressing a map with CS:S's guest parts the apps' way (its
+/// bundle's dressing, the environment's cache: the default folder unless
+/// `CHIMERA_GUEST_CACHE=0` or `CHIMERA_MAP_CACHE` says otherwise), the
+/// second reads the first's parts back, nothing converted, the same
+/// bytes. Leaves CS:S's entry in the cache, as an app would. Skipped
+/// without the install or with the layer turned off.
+#[test]
+fn a_guest_dressing_reads_back_from_disk_by_default() {
+    use chimera_world::map::{MapLoadOptions, kept};
+    if cs_source::game::INFO.install().is_none() {
+        eprintln!("skipping: needs CS:S's install");
+        return;
+    }
+    if kept::disk_cache().is_none() {
+        eprintln!("skipping: the disk layer is turned off here ({} or CHIMERA_MAP_CACHE)", kept::DISK_ENV);
+        return;
+    }
+    let game = cs_source::game::GAME;
+    let app = || {
+        let options = MapLoadOptions::default();
+        let mut map = MapData::default();
+        (cs_source::game::bundle::GUEST.dress)(&mut map, &options).unwrap();
+        let counts = (kept::conversions(&options.context, game, "", true), kept::disk_reads(&options.context, game, "", true));
+        (postcard::to_allocvec(&map).unwrap(), counts)
+    };
+    let (first, (c, r)) = app();
+    assert_eq!(c + r, 1, "the first app converts or reads an earlier run's entry");
+    let (second, counts) = app();
+    assert_eq!(counts, (0, 1), "the next reads it back");
+    assert!(first == second, "read back, the same bytes");
 }

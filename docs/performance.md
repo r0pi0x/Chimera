@@ -4907,9 +4907,9 @@ Combat Arms' kept models already skipped it (its `.dtx` decoding under
 the same memo); Halo's donors keep their decoded texels (nothing thrown
 away).
 
-### Guest dressings on disk (off by default)
+### Guest dressings on disk (on by default)
 
-Under the kept dressings, a disk layer (`map::kept`, `CHIMERA_GUEST_CACHE=1`;
+Under the kept dressings, a disk layer (`map::kept`, on unless `CHIMERA_GUEST_CACHE=0`;
 the converted-map cache's folder, cap and switch) lets a session's first
 load read a guest's dressing back instead of converting it: the entry
 lists every file the dressing read with its fingerprint, so a changed or
@@ -4966,7 +4966,42 @@ the decoding skipped, CS:S gains little from the disk (4.1 G converting,
 3.4 G reading back); HL2:DM, whose bodies are the cost, gains most. A
 read is mostly decoding the payload and checking the inputs' fingerprints;
 smaller entries (animations compressed, sounds as encoded bytes) would cut
-it. Off until a playtest-profile measurement (plan converted-cache, step 6).
+it.
+
+**In the playtest build (2026-11-17, plan converted-cache step 6), on by
+default since.** A session's cold first dressing of each guest, its
+bundle's own dressing in a process of its own (party_kit
+`heavy::converted::measure_a_cold_first_dressing`, `cargo test --profile
+playtest`, `CHIMERA_MEASURE_GUEST=<game>`); instructions of this thread
+and those it starts (the same to 0.1% run to run), wall ms of two runs;
+"dropped": the installs' and the cache's pages dropped from the OS's
+cache first (`posix_fadvise` DONTNEED on every file; checked with
+`fincore`). The box's disk is NVMe, so dropping costs little here:
+
+| | converted (off) | converted and written (the first run) | read back | read back, dropped | converted, dropped | entry |
+|---|---|---|---|---|---|---|
+| CS:S | 2,949 M, 475-660 ms | 3,985 M, 1,097 ms | **1,697 M, 143-145 ms** | 199 ms | 628 ms | 216 MB |
+| HL2:DM | 9,006 M, 963-1,199 ms | 9,700 M, 1,552 ms | **1,320 M, 139-142 ms** | 193 ms | 961 ms | 172 MB |
+| TF2 | 13,147 M, 2,083-2,553 ms | 16,361 M, 2,693 ms | **4,951 M, 451-452 ms** | 602 ms | 2,439 ms | 737 MB |
+| Combat Arms, the dressing | 21,446 M, 2,610-2,868 ms (its install data parsed in it) | 24,808 M, 3,348 ms | **4,066 M, 578-603 ms** | 736 ms | 2,874 ms | 503 MB (with its merged weapon documents) |
+| Combat Arms, its install data after a read | (in the dressing) | (in the dressing) | 8,716 M, 1,015-1,063 ms | 1,099 ms | | |
+
+Read back, every guest's first dressing takes 1.7x (CS:S) to 6.8x
+(HL2:DM) fewer instructions and 3.3x to 6.9x less time; Combat Arms'
+whole cold start (dressing and install data, which its weapons need
+anyway) goes from 21.4 G and 2.6-2.9 s to 12.8 G and 1.6-1.7 s, the
+install data now the larger part (parsing the attribute files and the
+merged documents; the merge itself read back). The first run of a
+converter version pays 0.7-3.4 G more to write. The parts read back are
+the same bytes (and Combat Arms' memos the same) as converting
+(`heavy::converted`, combat_arms `heavy::guest_dressing`), so nothing on
+screen changes. Hence on by default (`CHIMERA_GUEST_CACHE=0`, or
+`CHIMERA_MAP_CACHE=0` for every converted map, turns it off; party_kit
+`heavy::converted::a_guest_dressing_reads_back_from_disk_by_default`).
+Disk: about 1.6 GB for the four guests per install set and converter
+version, inside the converted-map cache's cap (40 GB) and free-space
+floor; a developer's build of a game crate is a new converter version,
+so its entries are written again (the old ones age out).
 
 ## First join download, 2026-11-14
 

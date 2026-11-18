@@ -2967,7 +2967,10 @@ docs/plans/active/sound.md.
   skip decoding their whole-DXT textures (CS:S 61%, HL2:DM 24%, TF2 56%
   fewer instructions cold, the same textures). **Steps 3-5 done
   2026-11-17** (Halo written down, not moved): every guest but Halo on
-  `map::kept`, its disk layer off by default.
+  `map::kept`. **Step 6 done:** the disk layer is on by default (a cold
+  first dressing read back: 1.7-6.8x fewer instructions, 3-7x less
+  time in the playtest build, the same bytes). Next: step 7, the asset
+  service serving converted parts.
 
 - **Streamed textures, low resolution first (user, 2026-11-17).** Keep
   textures apart from models. Serve small mip levels first from the
@@ -3030,8 +3033,8 @@ docs/plans/active/sound.md.
     `CaModelIndex`, the effect library; its character models are
     already kept per install data) and Halo (its donors are kept as
     their own types, not `MapData`; measure on the user's PC first).
-    The disk layer under it is in too, off by default
-    (`CHIMERA_GUEST_CACHE=1`; plan converted-cache step 4).
+    The disk layer under it is in too, on by default since step 6
+    (`CHIMERA_GUEST_CACHE=0` turns it off; plan converted-cache).
   - **Combat Arms done 2026-11-17** (plan converted-cache step 5): its
     dressing and its memos (the models' index, the effect library) are
     kept through `Dressing::memos`; its merged weapon documents are an
