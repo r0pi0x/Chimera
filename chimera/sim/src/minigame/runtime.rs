@@ -728,6 +728,8 @@ fn on_died(world: &mut World, d: &Died) {
             victim_team,
             killer: d.attacker,
             kind,
+            weapon: d.damage.weapon,
+            damage_kind: d.damage.kind,
         };
         if !world.get_resource::<BlamelessWeapons>().is_some_and(|b| b.spares(d)) {
             (mode.on_death)(world, &death);
