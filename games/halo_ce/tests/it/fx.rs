@@ -52,6 +52,8 @@ pub(crate) fn particle() -> FxParticle {
         first_sequence: 0,
         initial: 1,
         looping: 0,
+        finals: 0,
+        sprites: Vec::new(),
         additive: true,
         physics: None,
         orientation: 0,

@@ -56,7 +56,7 @@ use std::{
 use bevy::prelude::*;
 use blam_formats::{
     animation::{AnimationGraph, FirstPersonSlot},
-    bitmap::Bitmap,
+    bitmap::{Bitmap, BitmapType},
     cache::{MapFile, TagRef, class},
     damage_effect::DamageEffect,
     effect::{Contrail, Decal, Effect, Light, Particle, ParticleSystem, PointPhysics},
@@ -234,6 +234,10 @@ pub struct FxParticle {
     pub first_sequence: i16,
     pub initial: i16,
     pub looping: i16,
+    pub finals: i16,
+    /// The bitmap's sequences' sprite counts (a sequence without sprite
+    /// rectangles, the whole bitmap: 1).
+    pub sprites: Vec<u16>,
     pub additive: bool,
     pub physics: Option<PointPhysics>,
     /// 0 screen facing, 1 parallel to its direction, 2 perpendicular.
@@ -241,8 +245,9 @@ pub struct FxParticle {
     /// The first sprite's width over its height.
     pub aspect: f32,
     /// The first sprite's larger side in pixels times the tag's sprite size
-    /// field (1 / pixels): its drawn width is 2R times this (the bitmap's
-    /// largest sprite spans 2R).
+    /// field (1 / pixels): its drawn width is 2R times this (the largest
+    /// sprite of the sequences it uses spans 2R); 1 on a bitmap that is not
+    /// a sprite group (the whole bitmap a 2R square).
     pub sprite_scale: f32,
 }
 
@@ -624,14 +629,19 @@ impl Compiler<'_> {
         let p = Particle::read(self.file, tag).map_err(|e| self.warn(format!("{}: {e}", tag.path))).ok()?;
         let physics = self.file.tag(p.physics.id).and_then(|t| PointPhysics::read(self.file, t).ok());
         let additive = p.shader.blend != blam_formats::effect::EffectShader::ALPHA_BLEND;
-        let (mut aspect, mut sprite_scale) = (1.0, 1.0);
+        let (mut aspect, mut sprite_scale, mut sprites) = (1.0, 1.0, Vec::new());
+        // A bitmap that is not a sprite group (2D textures: the "lens
+        // flare" particles) is drawn whole as one unit square, 2R by 2R,
+        // whatever its pixels (effects.md "Size, alpha and drawing").
+        let sprite_group = self.file.tag(p.bitmap.id).and_then(|t| Bitmap::read(self.file, t).ok()).is_some_and(|b| b.bitmap_type == BitmapType::Sprites);
         let material = self.bitmap(&p.bitmap).map(|(texture, sequences)| {
+            sprites = sequences.iter().map(|s| s.len().min(u16::MAX as usize) as u16).collect();
             let first = usize::try_from(p.first_sequence).ok().and_then(|i| sequences.get(i)).or(sequences.first());
             if let Some(r) = first.and_then(|s| s.first()) {
                 let (w, h) = self.set.textures.get(texture).map_or((1.0, 1.0), |t| (t.width as f32, t.height as f32));
                 let (pw, ph) = ((r[2] - r[0]).abs() * w, (r[3] - r[1]).abs() * h);
                 aspect = (pw / ph.max(1e-6)).max(1e-3);
-                if p.sprite_size_inverse > 0.0 {
+                if sprite_group && p.sprite_size_inverse > 0.0 {
                     sprite_scale = pw.max(ph) * p.sprite_size_inverse;
                 }
             }
@@ -658,6 +668,8 @@ impl Compiler<'_> {
             first_sequence: p.first_sequence,
             initial: p.initial_sequences,
             looping: p.looping_sequences,
+            finals: p.final_sequences,
+            sprites,
             additive,
             physics,
             orientation: p.orientation,

@@ -207,3 +207,49 @@ fn a_halo_player_climbs_a_ladder_sheet_by_the_aim() {
     assert!(without < 0.05, "a plain wall is not climbed: {without}");
     assert!(with > 1.0, "a ladder is climbed: {with}");
 }
+
+/// multiplayer_rules.md 6.8, "Blocked message": a Halo player stepping on
+/// a pad whose exit another Spartan stands on is shown "Teleporter is
+/// blocked" (`teleporters::BLOCKED_TEXT`, as the shell's hint), once on
+/// the first refusal, not again in the next 120.
+#[test]
+fn a_blocked_player_is_shown_teleporter_is_blocked() {
+    use bevy::prelude::*;
+    use chimera_net::net::Notice;
+    use chimera_world::{
+        greybox::{self, GreyboxMapPlugin},
+        harness::Sim,
+        map::{MapSimPlugin, teleport::{MapTeleporters, Teleporter}},
+    };
+    use halo_ce::{
+        game::{maps::teleporters::{BLOCKED_TEXT, exit}, movement},
+        harness::HaloSim,
+    };
+    // The map's tick systems (the teleporters' among them) on the greybox.
+    let mut sim = Sim::new(HaloSim, (GreyboxMapPlugin, MapSimPlugin::empty()));
+    sim.app.add_message::<Notice>();
+    let walker = sim.spawn_character(greybox::SPAWNS[0], movement::ID);
+    let blocker = sim.spawn_character(greybox::SPAWNS[0] - Vec3::Z * 10.0, movement::ID);
+    sim.app.world_mut().entity_mut(walker).insert(chimera_core::core::LocalPlayer);
+    sim.seconds(1.0);
+    let half = Vec3::Y * chimera_core::character::CAPSULE_HEIGHT / 2.0;
+    let (from, to) = (sim.position(walker) - half, sim.position(blocker) - half);
+    sim.app.world_mut().insert_resource(MapTeleporters {
+        pads: vec![Teleporter { source: from, source_yaw: 0.0, dest: to, dest_yaw: 0.0 }],
+        radius: 0.5 * METERS_PER_UNIT,
+        rearm: METERS_PER_UNIT,
+        keep_velocity: true,
+        telefrag: None,
+        exit: exit(),
+        level_view: true,
+    });
+    let mut cursor = sim.app.world().resource::<Messages<Notice>>().get_cursor_current();
+    let mut shown = Vec::new();
+    for _ in 0..60 {
+        sim.ticks(1);
+        let notices = sim.app.world().resource::<Messages<Notice>>();
+        shown.extend(cursor.read(notices).map(|n| n.text.clone()));
+    }
+    assert_eq!(shown, [BLOCKED_TEXT.to_string()], "once, on the first refusal");
+    assert!((sim.position(walker) - (from + half)).length() < 0.5, "not moved");
+}

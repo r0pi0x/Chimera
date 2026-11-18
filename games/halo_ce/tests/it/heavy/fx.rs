@@ -175,3 +175,26 @@ fn the_grenade_and_item_models_load() {
         assert!(has(item_key(i)), "{i} on the ground");
     }
 }
+
+/// effects.md "Size, alpha and drawing", worked sizes (2026-11-18): the
+/// charged bolt's impact flare is on a 2D bitmap, drawn whole as a 2R
+/// square (scale 1, one one-sprite sequence), not 64 pixels x 2R; the
+/// plasma flashes' largest used sprite spans 2R (98 x 1/98, 84 x 1/84),
+/// each a one-sprite sequence animated once per frame.
+#[test]
+fn the_plasma_flares_and_flashes_are_sized_by_the_spec() {
+    let Some(map) = bloodgulch() else { return };
+    let tags = gun_tags();
+    let set = compile(&map, &tags.iter().map(String::as_str).collect::<Vec<_>>(), false);
+    let lib = &set.library;
+    let find = |path: &str| lib.particles.iter().find(|p| p.path == path).unwrap_or_else(|| panic!("{path}"));
+    let flare = find(r"effects\particles\lens flare\flare h stealth cannon");
+    assert_eq!((flare.sprite_scale, flare.sprites.as_slice()), (1.0, &[1u16][..]), "{flare:?}");
+    for (path, scale) in [(r"effects\particles\energy\flash c generic", 1.0), (r"effects\particles\energy\flash c generic med", 1.0), (r"effects\particles\energy\flash c generic small", 1.0)] {
+        let p = find(path);
+        assert!((p.sprite_scale - scale).abs() < 0.02, "{path}: {}", p.sprite_scale);
+        assert!(p.flags & blam_formats::effect::Particle::ANIMATE_ONCE_PER_FRAME != 0, "{path}");
+        let used = p.first_sequence.max(0) as usize;
+        assert_eq!(p.sprites.get(used), Some(&1), "{path}: {:?}", p.sprites);
+    }
+}

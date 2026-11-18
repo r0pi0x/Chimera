@@ -226,6 +226,7 @@ impl PluginGroup for HaloPlugins {
             .add(respawn::HaloRespawnPlugin)
             .add(vehicles::HaloVehiclesPlugin)
             .add(rules::HaloRulesPlugin)
+            .add(maps::teleporters::TeleportersPlugin)
     }
 }
 
@@ -266,6 +267,9 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
         vehicles::place::party_vehicles(app);
         if !app.is_plugin_added::<audio::HaloAudioPlugin>() {
             app.add_plugins(audio::HaloAudioPlugin);
+        }
+        if !app.is_plugin_added::<maps::teleporters::TeleportersPlugin>() {
+            app.add_plugins(maps::teleporters::TeleportersPlugin);
         }
     },
     display_names: None,

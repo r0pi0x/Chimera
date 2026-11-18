@@ -35,11 +35,19 @@
 //! message of their own. The pads' shimmer is the teleporter scenery's
 //! own shader (`maps::generic`).
 //!
+//! The blocked message (`TeleportersPlugin`, `blocked_message`): each
+//! refusal the engine reports (`teleport::TeleportRefused`, on the first
+//! and every 121st) shows "Teleporter is blocked" (`BLOCKED_TEXT`, 6.8's
+//! text, the executable's) to the refused player: as the shell's hint
+//! (`net::Notice`) on the machine that shows it, sent to its client when
+//! the player is a remote one.
+//!
 //! Known shortcuts: every living character blocks (no vehicles yet; the
 //! dead never do); a crouch is the footing's (crouched or not: the
 //! segment of a crouch in progress is the nearer end's); the blocked
-//! message (`teleport::TeleportRefused`) has no text on screen (the specs
-//! don't give its text).
+//! message is drawn where the shell draws hints, not on Halo's message
+//! lines (its placement and life are multiplayer_rules.md open question
+//! 19; Halo's HUD draws no message lines yet).
 
 use bevy::prelude::*;
 use blam_formats::scenario::{NetgameFlag, Scenario, netgame};
@@ -47,7 +55,7 @@ use blam_formats::scenario::{NetgameFlag, Scenario, netgame};
 use super::space;
 use crate::map::{
     MapData,
-    teleport::{Exit, MapTeleporters, Teleporter},
+    teleport::{Exit, MapTeleporters, TeleportRefused, Teleporter},
 };
 
 /// Refused tries a blocker's count must reach to kill it
@@ -138,6 +146,41 @@ pub fn effects(
             },
             time.elapsed_secs_f64(),
         );
+    }
+}
+
+/// What a player whose exit is blocked is shown (multiplayer_rules.md
+/// 6.8, "Blocked message").
+pub const BLOCKED_TEXT: &str = "Teleporter is blocked";
+
+/// The blocked message (module doc): the engine's refusals as hints.
+pub struct TeleportersPlugin;
+
+impl Plugin for TeleportersPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_message::<TeleportRefused>().add_systems(Update, blocked_message);
+    }
+}
+
+/// Each refused player is shown `BLOCKED_TEXT`: a local one by its
+/// machine's hint (`Notice`, when it draws them), a remote one's client
+/// sent it (`net::game::notify`).
+pub fn blocked_message(
+    mut refused: MessageReader<TeleportRefused>,
+    local: Query<(), With<crate::core::LocalPlayer>>,
+    players: Query<(Entity, &chimera_net::net::server::Player)>,
+    notices: Option<ResMut<Messages<chimera_net::net::Notice>>>,
+    mut commands: Commands,
+) {
+    let mut notices = notices;
+    for r in refused.read() {
+        if local.contains(r.character) {
+            if let Some(n) = notices.as_mut() {
+                n.write(chimera_net::net::Notice { text: BLOCKED_TEXT.into() });
+            }
+        } else if let Some((client, _)) = players.iter().find(|(_, p)| p.character == r.character) {
+            commands.queue(move |w: &mut World| chimera_net::net::game::notify(w, client, BLOCKED_TEXT.into()));
+        }
     }
 }
 
