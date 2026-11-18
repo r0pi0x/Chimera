@@ -395,6 +395,7 @@ the user's go-ahead: no Actions runs unless asked.
     only your own kills, from your character's game, at that game's
     volume; others' kills are silent.
   - **UGG chat and HUD:**
+    - an old plain scoreboard (Name/Kills/Deaths/Gun/Ping/Wins, the game-time table) sometimes shows on Tab while going from a match to the lobby or the match-end screen; only the UGG Tab menu should;
     - no Combat Arms chat at all in Ultimate Gun Game;
     - chat drawn above every game's HUD (it is under TF2's);
     - TF2's bottom-left class portrait and its backdrop draw over the
