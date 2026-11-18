@@ -937,13 +937,21 @@ fn a_bolt_glances_at_shallow_angles_and_sticks_otherwise_40_41() {
     }
 }
 
-/// A bolt's nose (its model's +Y) points along its flight in the air and,
-/// stuck, still along its last flight direction, for a floor hit too.
+/// A bolt's nose (its model's, `MapHeldModel::nose`: here +Y, as the
+/// install's bolt has it in its loose frame) points along its flight in the
+/// air and, stuck, still along its last flight direction, for a floor hit
+/// too.
 #[test]
 fn a_stuck_bolt_keeps_its_flight_direction() {
     let mut sim = sim();
     let p = player(&mut sim);
     let w = holding(&mut sim, p, weapons::CROSSBOW);
+    let bolt = chimera_world::map::loose::LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(Vec3::Y) };
+    sim.app
+        .world_mut()
+        .get_resource_or_insert_with(chimera_world::map::loose::LooseAssets::default)
+        .0
+        .insert(hl2dm::game::weapons::launch::BOLT_MODEL.into(), bolt);
     let template = sim
         .app
         .world()
@@ -956,7 +964,7 @@ fn a_stuck_bolt_keeps_its_flight_direction() {
     let dir = Vec3::new(0.8, 0.0, -0.6);
     f.velocity = to_engine(dir * 3500.0);
     let start = Vec3::new(0.0, 0.3, 0.0) + greybox::SPAWNS[1].with_y(0.0);
-    sim.app.world_mut().write_message(LaunchRequest { flyer: f, start, shown: None, tag: None });
+    sim.app.world_mut().write_message(LaunchRequest { flyer: f, start, shown: Some(hl2dm::game::weapons::launch::BOLT_MODEL.into()), tag: None });
     let mut seen_flying = false;
     let mut seen_stuck = false;
     let mut last = Vec3::ZERO;
@@ -1484,4 +1492,36 @@ fn ammo_of_a_projectile_type_fills_its_weapons_rounds() {
     let added = hl2dm::game::ammo::give(sim.app.world_mut(), p, "hl2dm:rpg_round", 5);
     assert_eq!(added, 2);
     assert_eq!(sim.app.world().get::<Hl2Rounds>(w).unwrap().count, 3);
+}
+
+/// The RPG's missile and the crossbow's bolt fly nose first: their shown
+/// model's own forward (`MapHeldModel::nose`, here a made-up slant) stays
+/// along their velocity from launch until they stop, with no axis named
+/// in the weapons' data (the SMG1 grenade tumbles: 4.1).
+#[test]
+fn every_projectile_flies_nose_first() {
+    use chimera_world::map::loose::{LooseAsset, LooseAssets};
+    use hl2dm::game::weapons::launch::{BOLT_MODEL, MISSILE_MODEL};
+    for (weapon, key) in [(weapons::RPG, MISSILE_MODEL), (weapons::CROSSBOW, BOLT_MODEL)] {
+        let mut sim = sim();
+        let p = player(&mut sim);
+        holding(&mut sim, p, weapon);
+        look(&mut sim, p, EAST, 8.0);
+        let nose = Vec3::new(0.3, -0.8, 0.5).normalize();
+        let asset = LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(nose) };
+        sim.app.world_mut().get_resource_or_insert_with(LooseAssets::default).0.insert(key.into(), asset);
+        let mut seen = 0;
+        for k in 0..60u64 {
+            run(&mut sim, p, 1, |s, _| s.intent(p).fire = k == 0);
+            let w = sim.app.world_mut();
+            let mut q = w.query::<(&Flyer, &Transform)>();
+            for (f, t) in q.iter(w).filter(|(f, _)| f.owner == Some(p) && f.stuck_until.is_none()) {
+                let Some(v) = f.velocity.try_normalize() else { continue };
+                let n = t.rotation * nose;
+                assert!(n.dot(v) > 0.999, "{weapon} tick {k}: nose {n} along {v}");
+                seen += 1;
+            }
+        }
+        assert!(seen > 3, "{weapon}: {seen} flying ticks seen");
+    }
 }

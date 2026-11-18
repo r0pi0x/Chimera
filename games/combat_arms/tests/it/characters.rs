@@ -2182,6 +2182,7 @@ fn a_map_unload_forgets_what_older_ladders_loaded() {
                 attachments: Vec::new(),
                 merged: Vec::new(),
                 own: None,
+                nose: None,
             }),
             Arc::new(Vec::new()),
         )

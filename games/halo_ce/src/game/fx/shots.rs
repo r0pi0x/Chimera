@@ -114,7 +114,7 @@ use crate::{
     core::{Intent, LocalPlayer, MovementState, NetRole, SimClock, SimSet},
     map::{
         PlaceDecal, PlaySound,
-        loose::ShownItem,
+        loose::{LooseAssets, ShownItem, nose_turn},
         impact::{ActiveImpacts, SurfaceClass, SurfaceClasses},
         particles::{Fade, Particle, ParticleCurves, ParticleGroup, Particles, Ramp, Shape},
         sound::SurfaceGrid,
@@ -345,6 +345,7 @@ fn on_fired(
     mut lights: MessageWriter<HaloLight>,
     placer: Placer,
     clock: Res<SimClock>,
+    noses: Option<Res<LooseAssets>>,
     mut commands: Commands,
 ) {
     let authority = role.as_deref().is_none_or(|r| *r != NetRole::Client);
@@ -398,7 +399,9 @@ fn on_fired(
             ));
             // Its model (the rocket, a needle), drawn where it flies.
             if model {
-                e.insert((ShownItem(object_key(&proj.tag)), facing(origin * METERS_PER_UNIT, *dir)));
+                let key = object_key(&proj.tag);
+                let turn = nose_turn(noses.as_deref(), &key);
+                e.insert((ShownItem(key), facing(origin * METERS_PER_UNIT, *dir, turn)));
             }
         }
         let Some(lib) = fx.0.clone() else { continue };
@@ -437,10 +440,11 @@ fn on_fired(
 }
 
 /// A shown object's transform at `at` (metres) moving along `dir`: its
-/// model's +X (Halo's forward, the engine's -Z in its own frame) along it.
-pub fn facing(at: Vec3, dir: Vec3) -> Transform {
+/// model's nose (Halo's forward, its +X: `MapHeldModel::nose`) along it,
+/// `turn` taking the nose to the frame's −Z (`map::loose::nose_turn`).
+pub fn facing(at: Vec3, dir: Vec3, turn: Quat) -> Transform {
     let d = dir.normalize_or(Vec3::NEG_Z);
-    Transform::from_translation(at).with_rotation(Quat::from_rotation_arc(Vec3::NEG_Z, d))
+    Transform::from_translation(at).with_rotation(Quat::from_rotation_arc(Vec3::NEG_Z, d) * turn)
 }
 
 /// The muzzle light's ticks: its intensity falls from 1 by the weapon's
@@ -512,6 +516,7 @@ fn fly(
     impacts: Option<Res<ActiveImpacts>>,
     role: Option<Res<NetRole>>,
     clock: Res<SimClock>,
+    noses: Option<Res<LooseAssets>>,
     mut commands: Commands,
 ) {
     let n = halo_ticks(&clock);
@@ -594,7 +599,8 @@ fn fly(
             s.ignored = ignored;
             s.updates += 1;
             if let Some(t) = at.as_deref_mut() {
-                *t = facing(s.flight.position * METERS_PER_UNIT, s.flight.velocity);
+                let turn = nose_turn(noses.as_deref(), &object_key(&s.proj.tag));
+                *t = facing(s.flight.position * METERS_PER_UNIT, s.flight.velocity, turn);
             }
             if let Some(lib) = &lib {
                 let look = look_of(lib, &gun, &proj);

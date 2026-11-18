@@ -538,6 +538,7 @@ mod tests {
             attachments: Vec::new(),
             merged: Vec::new(),
             own: None,
+            nose: None,
         });
     }
 

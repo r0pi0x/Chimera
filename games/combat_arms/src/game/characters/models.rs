@@ -677,6 +677,7 @@ fn thrown(
         attachments: Vec::new(),
         merged: Vec::new(),
         own: None,
+        nose: None,
     })
 }
 
@@ -1254,6 +1255,7 @@ fn held_with_sockets(
             attachments: Vec::new(),
             merged: Vec::new(),
             own: None,
+            nose: None,
         },
         sockets,
     ))

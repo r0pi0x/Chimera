@@ -39,7 +39,7 @@ use serde::Deserialize;
 
 use chimera_sim::weapon::{
     CHAN_WEAPON, Inventory, Magazine, NetPart, Weapon, WeaponEvent, WeaponEventKind, WeaponState, aim_of,
-    projectile::{Flyer, FlyerHit, MODEL_X_FORWARD, spawn_flyer},
+    projectile::{Flyer, FlyerHit, spawn_flyer},
 };
 
 use super::{
@@ -288,7 +288,6 @@ pub fn launch(
         f.gravity = p.gravity * U;
         f.half = Vec3::splat(2.0 * U);
         f.pass_teammates = true;
-        f.turn = MODEL_X_FORWARD;
         let o = Vec3::from(p.offset) * U;
         let start = origin + dir * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z;
         spawn_flyer(&mut commands, f, start, SHOWN.to_string(), &clock);

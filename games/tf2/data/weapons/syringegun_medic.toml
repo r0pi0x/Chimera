@@ -60,7 +60,6 @@ shown = "tf2:syringe"
 offset = [16.0, 6.0, -8.0]
 pass_teammates = true
 life = 10.0
-x_forward = true
 
 [hooks."tf2:needle"]
 damage = 10.0

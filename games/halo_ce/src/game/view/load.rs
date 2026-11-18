@@ -453,6 +453,7 @@ fn held_model(
             attachments: all,
             merged: Vec::new(),
             own: None,
+            nose: None,
         },
         meshes,
     ))
@@ -516,6 +517,8 @@ fn object_model(file: &MapFile, key: String, path: &str) -> Option<(MapHeldModel
             attachments,
             merged: Vec::new(),
             own: None,
+            // Halo faces its +X; the meshes stay in its own axes.
+            nose: Some(Vec3::X),
         },
         meshes,
     ))

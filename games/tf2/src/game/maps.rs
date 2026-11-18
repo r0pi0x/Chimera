@@ -335,8 +335,9 @@ pub fn add_guns(
             Err(e) => warnings.push(e),
         }
         for (_, key, model) in PROJECTILES.iter().filter(|(g, ..)| *g == gun) {
-            // In its bone's frame, as a held model (its nose then along +X:
-            // `chimera:projectile`'s `x_forward`).
+            // In its bone's frame, as a held model (its nose, the model's
+            // +X, wherever that frame puts it: `MapHeldModel::nose`; flyers
+            // fly nose first by it).
             match props::load_held(materials, model, key, &skeleton) {
                 Ok(h) => into.held.push(h),
                 Err(e) => warnings.push(e),

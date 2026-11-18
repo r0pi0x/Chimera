@@ -1476,6 +1476,7 @@ mod late_held_tests {
             attachments: Vec::new(),
             merged: Vec::new(),
             own: None,
+            nose: None,
         };
         let texture = MapTexture {
             name: "gun.dtx".into(),

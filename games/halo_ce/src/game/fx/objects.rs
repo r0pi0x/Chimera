@@ -149,6 +149,7 @@ fn authority(role: Option<&NetRole>) -> bool {
 pub fn show_grenades(
     projectiles: Query<(Entity, &HaloProjectile, Option<&mut Transform>, Has<ShownItem>)>,
     role: Option<Res<NetRole>>,
+    noses: Option<Res<crate::map::loose::LooseAssets>>,
     mut commands: Commands,
 ) {
     // Drawn between Halo's ticks (`eased`) where nothing replicates the
@@ -161,15 +162,16 @@ pub fn show_grenades(
         }
         let position = p.flight.position * METERS_PER_UNIT;
         let moving = p.flight.velocity.length_squared() > 1e-8;
+        let turn = crate::map::loose::nose_turn(noses.as_deref(), &object_key(&p.proj.tag));
         match at {
             Some(mut t) => {
                 t.translation = position;
                 if moving {
-                    t.rotation = facing(position, p.flight.velocity).rotation;
+                    t.rotation = facing(position, p.flight.velocity, turn).rotation;
                 }
             }
             None => {
-                let at = facing(position, p.flight.velocity);
+                let at = facing(position, p.flight.velocity, turn);
                 if eased {
                     commands.entity(e).insert((at, super::super::eased::HaloEased::default()));
                 } else {
