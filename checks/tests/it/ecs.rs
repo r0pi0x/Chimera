@@ -157,12 +157,12 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "the console: a cvar writes anything",
     ),
     (
-        "chimera/core/src/core.rs",
+        "chimera/core/src/core/prediction.rs",
         "NetCodec",
         "a network codec, generic per type",
     ),
     (
-        "chimera/core/src/core.rs",
+        "chimera/core/src/core/prediction.rs",
         "PredictedComponent",
         "prediction's save and restore, generic per type",
     ),
@@ -333,7 +333,6 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("apps/party_kit/src/settings.rs", "a menu: its clicks as console lines and cvars, its drawing from the console's binds"),
     ("apps/party_kit/src/loading_signal.rs", "a menu (the loading screen and its Leave?): drawn from the join's progress, the menu's and the shell's state; its keys cue sounds and hand Leave to the menu's Cancel"),
     ("apps/party_kit/src/main_menu.rs", "a menu: its clicks as console lines and cvars, the map loads it follows"),
-    ("chimera/client/src/client/console.rs", "the console and map loading"),
     ("chimera/core/src/diagnostics.rs", "a tool: the health line and the context read the whole world (as the console's commands do), at most every second, into the session's log"),
     ("chimera/client/src/client/debug_ui.rs", "a tool"),
     ("chimera/client/src/client/net.rs", "the connection's state"),
@@ -366,7 +365,6 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("games/cs_source/src/game/demo.rs", "demo playback"),
     ("games/cs_source/src/game/net.rs", "network apply and capture"),
     ("games/cs_source/src/harness.rs", "map loading"),
-    ("source/logic/src/logic/bridge.rs", "the map-logic interpreter's I/O"),
     ("source/logic/src/logic/net.rs", "network apply and capture"),
 ];
 
@@ -377,7 +375,7 @@ const EXCLUSIVE_BASELINE: &[(&str, usize)] = &[
     ("chimera/client", 1),
     ("chimera/sim", 4),
     ("games/combat_arms", 16),
-    ("games/cs_source", 4),
+    ("games/cs_source", 3),
 ];
 
 fn is_ident(c: char) -> bool {

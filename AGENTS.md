@@ -193,7 +193,7 @@ installed map's `map/<name>` and Combat Arms' `character/<record>` and
   `frame_bench`: the same to under 0.1% idle or loaded); wall and CPU
   times are for reading only, never an assertion or a gate. A failing
   cost check prints the systems that grew (`WorkCounts::diff_table`).
-  [docs/performance.md](docs/performance.md), "Work counts".
+  [docs/archive/performance-log.md](docs/archive/performance-log.md), "Work counts".
 
 ## Pitfalls (from experience)
 
@@ -229,7 +229,7 @@ installed map's `map/<name>` and Combat Arms' `character/<record>` and
 
 - Ready-to-run task briefs: [docs/tasks/](docs/tasks/) (the shape:
   [.github/ISSUE_TEMPLATE/agent-task.md](.github/ISSUE_TEMPLATE/agent-task.md)).
-  The full to-do list is [docs/backlog.md](docs/backlog.md); known
+  The full to-do list is [docs/archive/backlog-2026-10.md](docs/archive/backlog-2026-10.md); known
   shortcuts are [docs/tech-debt.md](docs/tech-debt.md).
 - Workflows as skills in `.claude/skills/` (playtest, affected-tests,
   new-scenario-test, screenshot-and-compare, profile, review-pr,

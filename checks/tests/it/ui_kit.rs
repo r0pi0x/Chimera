@@ -32,7 +32,7 @@ use super::{
 /// uses the kit.
 const ALLOWED: &[(&str, &str)] = &[
     (
-        "chimera/client/src/client/widgets.rs",
+        "chimera/client/src/client/widgets/look.rs",
         "the VGUI-look widgets (`text_entry`, `Caret`): the games' own GameUI as their installs draw it, not the UGG kit's look",
     ),
     ("chimera/client/src/client/debug_ui.rs", "the developer debug UI is egui (`F`-key inspector), not a player's screen"),

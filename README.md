@@ -26,7 +26,7 @@ play exactly like it. "Exactly" is measured, not guessed: values come from
 a real CS:S dedicated server driven by a test plugin, from SourceTV demos,
 and from written behaviour specs. Movement is compared with CS:S tick by
 tick, and differences we know of are tracked in
-[docs/plans/active/parity-gaps.md](docs/plans/active/parity-gaps.md).
+[docs/archive/plans/active/parity-gaps.md](docs/archive/plans/active/parity-gaps.md).
 
 What works:
 
