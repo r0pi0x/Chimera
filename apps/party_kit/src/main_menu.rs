@@ -220,6 +220,8 @@ pub enum EscDoes {
     Feedback,
     /// The UI kit's gallery (`ui_gallery`).
     Developer,
+    /// The frame inspector (`debugui frames`).
+    FrameInspector,
     Quit,
 }
 
@@ -339,6 +341,7 @@ impl MenuData {
                 Some("quit") => EscDoes::Quit,
                 Some("feedback") => EscDoes::Feedback,
                 Some("developer") => EscDoes::Developer,
+                Some("frame_inspector") => EscDoes::FrameInspector,
                 Some("sandbox_gun") => EscDoes::SandboxGun,
                 Some("sandbox_bench") => EscDoes::SandboxBench,
                 other => return Err(format!("{label}: no action {other:?}")),

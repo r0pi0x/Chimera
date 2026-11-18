@@ -9,6 +9,7 @@ use chimera_core::mount::config::LocalConfig;
 const U: f32 = 0.0254;
 
 fn read(map: &str) -> Option<Vec<u8>> {
+    chimera_core::mount::offline::allow_installs(); // reads the machine's install (`mount::offline`)
     let install = LocalConfig::load().ok()?.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref())?;
     if !chimera_core::mount::served::usable("cs_source", &install, "cstrike") {
         eprintln!("skipping: no CS:S install configured");

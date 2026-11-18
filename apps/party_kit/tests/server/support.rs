@@ -14,6 +14,7 @@ use party_kit::server::{Parsed, ServerPlugin, StartMap};
 /// The server from its command line (`args`), its console lines run (the
 /// minigame started); None when its map can't load (an install missing).
 pub fn server(args: &[&str]) -> Option<Sim> {
+    chimera_core::mount::offline::allow_installs(); // reads the machine's install (`mount::offline`)
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let Ok(Parsed::Run(options)) = party_kit::server::parse(args) else { panic!("options") };
     let start = match StartMap::load(&party_kit::server::SERVER, &options) {

@@ -13,6 +13,7 @@ use party_kit::client::map_file_bytes;
 
 /// The game's install (or the store standing in for it) has its folder.
 fn usable(info: &GameInfo, marker: &str) -> bool {
+    chimera_core::mount::offline::allow_installs(); // reads the machine's install (`mount::offline`)
     info.install().is_some_and(|p| served::usable(info.id, &p, marker))
 }
 

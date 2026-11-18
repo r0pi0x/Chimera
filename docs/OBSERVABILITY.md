@@ -35,6 +35,22 @@ on the same base, over an in-memory link: `NetSim::new(CsSim,
 conditions, seed, clients, setup)`; `cs_source::harness`'s `TestMaps`
 and `serve_maps` give network tests maps built in code.
 
+#### No installs behind a `Sim`
+
+Building a `Sim` turns the "no installs" switch on
+(`chimera_core::mount::offline`): `LocalConfig::game_path_in`, so
+`GameInfo::install`, `mount_for` and every loader, finds no game install
+and no asset store in that process, so a scenario test never reads the
+machine's files (a Halo campaign body, a guest dressing, a map) and means
+the same on every machine (chimera_sim's `tests/it/offline.rs`). A test
+whose subject is the files themselves goes in `heavy::` (a `Sim` built on
+a thread named `heavy::...` leaves installs reachable, for good in that
+process), or calls `offline::allow_installs()` first (the CS:S, server and
+`map_files` helpers that read an install do). It is per process: under
+nextest and `cargo test -- --skip heavy::` exact; a `cargo test` process
+running heavy and fast tests together guards the fast ones only until its
+first heavy test. `CHIMERA_SIM_INSTALLS=1` turns it off.
+
 #### Time and waiting
 
 A `Sim`'s clock is its own: `TimeUpdateStrategy::ManualDuration` steps
@@ -1560,7 +1576,9 @@ load; work counts don't (performance.md, "Work counts"):
   ms: <system> 12.3 x2, ...`). The debug UI Perf tab has the same percentiles as
   a table, with a frame-time histogram.
 - The frame inspector (why a frame stuttered; `client::frame_inspector`):
-  the debug UI's Frames tab (F8, `debugui frames`) charts the last 10, 15 or 30 s of frames (white the frame, green
+  the debug UI's Frames tab (F8, `debugui frames`; the party apps'
+  Escape menu has a Frame inspector entry while Options' Developer mode
+  is on) charts the last 10, 15 or 30 s of frames (white the frame, green
   the main world, blue the render world, yellow ticks frames with
   engine events, the median and the spike line), spikes (the hitch
   log's rule: over `chimera_hitch_ratio` times the median) as red dots;

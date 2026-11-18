@@ -11,7 +11,7 @@
 //!   game's own binds first, then the shared ones (`Console::
 //!   effective_binds`), before the intent is sent, so prediction is not
 //!   involved. A later game adds a row list (`GAMES`) and ships binds.
-//! - The page (`F6`, `controls [tab]`, or the Escape menu's Options > Binds): a tab for "Shared" first, then
+//! - The page (`controls [tab]`, or the Escape menu's Options > Binds): a tab for "Shared" first, then
 //!   one for each game; a row is an action and its keys; clicking the keys
 //!   waits for the next key, mouse button or wheel notch (the wheel is a
 //!   bind like any: `mwheeldown` on Jump bunny hops in both games); Esc
@@ -282,11 +282,10 @@ impl Plugin for ControlsPlugin {
     }
 }
 
+/// Esc closes the page (no key opens it: F6 did until the user,
+/// 2026-11-18; `controls` and the Escape menu's Options do).
 fn toggle(keys: Res<ButtonInput<KeyCode>>, mut page: ResMut<ControlsPage>) {
-    if keys.just_pressed(KeyCode::F6) {
-        page.open = !page.open;
-        page.capture = None;
-    } else if page.open && page.capture.is_none() && keys.just_pressed(KeyCode::Escape) {
+    if page.open && page.capture.is_none() && keys.just_pressed(KeyCode::Escape) {
         page.open = false;
     }
 }

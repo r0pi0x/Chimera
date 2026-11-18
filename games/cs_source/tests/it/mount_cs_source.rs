@@ -7,6 +7,7 @@ use ::cs_source::game::{self as cs_source, vpk::Vpk};
 use chimera_core::mount::{FileSource, config::LocalConfig};
 
 fn install() -> Option<PathBuf> {
+    chimera_core::mount::offline::allow_installs(); // reads the machine's install (`mount::offline`)
     let path = LocalConfig::load().ok()?.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref())?;
     if chimera_core::mount::served::usable("cs_source", &path, "cstrike") {
         Some(path)

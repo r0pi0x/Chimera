@@ -116,6 +116,10 @@ impl LocalConfig {
     /// doesn't serve reading its install; and when no install is found but
     /// the store serves the game.
     pub fn game_path_in(&self, game: &str, steam: Option<&super::install::SteamGame>) -> Option<PathBuf> {
+        // A scenario test's process reads no install (`offline`).
+        if super::offline::installs_forbidden() {
+            return None;
+        }
         self.assets
             .resolve()
             .game_path(game, || super::install::resolve(self, game, steam).install.map(|i| i.path))

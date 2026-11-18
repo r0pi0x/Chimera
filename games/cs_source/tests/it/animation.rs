@@ -7,6 +7,7 @@ use chimera_world::map::anim::{AnimSet, BonePose};
 use chimera_core::mount::config::LocalConfig;
 
 fn read() -> Option<impl Fn(&str) -> Option<Vec<u8>>> {
+    chimera_core::mount::offline::allow_installs(); // reads the machine's install (`mount::offline`)
     let path = LocalConfig::load().ok()?.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref())?;
     let mount = cs_source::mount::open(&path).ok()?;
     Some(move |p: &str| mount.read(&p.to_lowercase().replace('\\', "/")).ok())

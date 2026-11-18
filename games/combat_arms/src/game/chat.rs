@@ -25,7 +25,7 @@
 //!   goes to them is `CaWhisperOut`, `CaClanOut` and `CaAdminOut`
 //!   messages, what comes from them `CaWhisperIn` and `CaClanIn`.
 //! - Commands for binds (the front end's keys call them): `chat_open`
-//!   (Enter), `chat_all`, `chat_team`, `chat_clan` (F2, F3, F4),
+//!   (Enter), `chat_all`, `chat_team`, `chat_clan` (F2, F3, F4; under the party apps' Signal chat only Enter opens it, F2-F4 do nothing),
 //!   `radio_report`, `radio_answer`, `radio_request` (B, V, N: only for a
 //!   player who is Combat Arms', and not in the sandbox, `radio_allowed`), `+voicechat`
 //!   (T, push to talk: likewise) and `voice_toggle` (F8). Cvars: `ca_chatfilter` (the filter

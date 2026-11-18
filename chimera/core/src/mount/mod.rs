@@ -16,10 +16,12 @@
 //! needs; `GameInfo::steam` names the games it looks for;
 //! `LocalConfig::game_path` goes through it); a game's mount with the asset
 //! store under or instead of its install, and the vfs access log
-//! (`served.rs`).
+//! (`served.rs`); the switch that keeps fast-tier tests off installs
+//! (`offline.rs`).
 
 pub mod config;
 pub mod install;
+pub mod offline;
 pub mod served;
 
 pub use chimera_assets as assets;
