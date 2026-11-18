@@ -2019,7 +2019,8 @@ line at INFO and above and every console line, secrets filtered, synced
 to disk every 2 s, and a `health ...` line every `chimera:health_interval`
 seconds (10 in a game, 20 on a server: `up rss peak avail commit tick
 tick_instr frame frame_max gpu ping loss resyncs errors jumps map rung
-entities players ...`; `chimera:health` prints one now). A server prints
+entities archetypes gpu_textures gpu_meshes pipelines players ...`;
+`pipelines` is made/still compiling; `chimera:health` prints one now). A server prints
 its health and `tick_stats` lines on its console too. A
 `<prefix>-<time>.running` marker beside the log is held while the process
 runs and removed at a clean exit; a game's next start offers the report

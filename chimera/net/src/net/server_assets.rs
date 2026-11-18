@@ -39,9 +39,13 @@
 //!   there): the match's sets as the offer names them
 //!   (`assets::match_sets`: every game in play's match sets, the map's,
 //!   the ladder's and kit's `weapon/<id>`, a game's rung bodies), of the
-//!   games read from the store, checked at most every `CHECK_EVERY` and
+//!   games read from the store, named at most every `CHECK_EVERY` and
 //!   at once when the map changes (the coming map, named before it
-//!   loads); what the store lacks is fetched on a thread
+//!   loads); when they changed since the last look, a thread looks at
+//!   the store (every served game's manifest read, each record of the
+//!   sets; never on the main thread: done there every second it froze a
+//!   listen host's frames for 0.4-1 s, docs/performance.md, "Stutter on
+//!   Beaver Creek") and fetches what it lacks
 //!   (`ServerFetching` while it runs; a change while one runs starts
 //!   another, done only after the first: `Job`). A dedicated server's
 //!   `changelevel` loads its map only once the fetch is done
@@ -188,6 +192,8 @@ struct Fetched {
     wanted: Vec<Wanted>,
     checked: Option<Instant>,
     map: String,
+    /// Looks at the store started (`store_looks`).
+    looks: usize,
 }
 
 /// Starts fetching `wanted` with `files` on a thread.
@@ -197,6 +203,17 @@ pub fn start(files: &ServerFiles, wanted: Vec<Wanted>) -> Arc<Job> {
 
 /// `start`, done only once `after` is done too.
 fn start_after(files: &ServerFiles, wanted: Vec<Wanted>, after: Option<Arc<Job>>) -> Arc<Job> {
+    spawn_job(files, wanted, after, None)
+}
+
+/// `start_after`, looking at the store first on the job's thread: done at
+/// once (an empty summary) when it holds every record of `wanted`, else
+/// logged and fetched (for the match on `map`).
+fn start_checked(files: &ServerFiles, wanted: Vec<Wanted>, after: Option<Arc<Job>>, map: String) -> Arc<Job> {
+    spawn_job(files, wanted, after, Some(map))
+}
+
+fn spawn_job(files: &ServerFiles, wanted: Vec<Wanted>, after: Option<Arc<Job>>, check_for: Option<String>) -> Arc<Job> {
     let job = Arc::new(Job {
         after,
         wanted: wanted.clone(),
@@ -206,8 +223,19 @@ fn start_after(files: &ServerFiles, wanted: Vec<Wanted>, after: Option<Arc<Job>>
     });
     let (settings, j) = (files.settings.clone(), job.clone());
     let run = move || {
-        let options = sets::Options { skip_unlisted: true, ..Default::default() };
-        let r = sets::fetch(&settings, &j.wanted, WHAT, &j.transfer, options);
+        let needed = check_for.as_ref().is_none_or(|map| {
+            let missing = sets::missing(&settings, &j.wanted);
+            if missing {
+                info!("assets: fetching {WHAT} for the match on {map}: {}", describe(&j.wanted));
+            }
+            missing
+        });
+        let r = if needed {
+            let options = sets::Options { skip_unlisted: true, ..Default::default() };
+            sets::fetch(&settings, &j.wanted, WHAT, &j.transfer, options)
+        } else {
+            Ok(String::new())
+        };
         *j.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
         j.done.notify_all();
     };
@@ -446,8 +474,15 @@ pub fn match_wanted(world: &mut World, served: &BTreeSet<String>) -> Vec<Wanted>
         .collect()
 }
 
-/// Looks at the match's sets now and starts fetching what the store
-/// lacks; the fetch under way (just started, or one before), if any.
+/// Looks at the match's sets now and, when they changed since the last
+/// look, starts a job that looks at the store and fetches what it lacks
+/// (both on its thread: a look reads every served game's manifest and
+/// each record of the sets, up to a second for five games' manifests,
+/// which every second on the main thread froze a listen host's frames:
+/// docs/performance.md, "Stutter on Beaver Creek"); the fetch under way
+/// (just started, or one before), if any. The same sets aren't looked at
+/// again (nor fetched: a set the service lacks stays missing) until they
+/// change.
 pub fn fetch_now(world: &mut World) -> Option<Arc<Job>> {
     let running = world.get_resource::<ServerFetching>().map(|f| f.0.clone());
     let files = world.get_resource::<ServerFiles>()?.clone();
@@ -456,18 +491,24 @@ pub fn fetch_now(world: &mut World) -> Option<Arc<Job>> {
     fetched.checked = Some(Instant::now());
     fetched.map = crate::net::current_map(world);
     let again = fetched.wanted == wanted;
-    let missing = !wanted.is_empty() && sets::missing(&files.settings, &wanted);
     // A fetch under way for an older look at the match (the map changes
     // while it runs): another for the sets now, done after it.
-    let job = (missing && !again).then(|| {
-        info!("assets: fetching {WHAT} for the match on {}: {}", fetched.map, describe(&wanted));
+    let job = (!wanted.is_empty() && !again).then(|| {
         fetched.wanted = wanted.clone();
-        start_after(&files, wanted, running.clone())
+        fetched.looks += 1;
+        start_checked(&files, wanted, running.clone(), fetched.map.clone())
     });
     world.insert_resource(fetched);
     let Some(job) = job else { return running };
     world.insert_resource(ServerFetching(job.clone()));
     Some(job)
+}
+
+/// How many looks at the store for the match's sets this server started
+/// (`fetch_now`: one each time the sets change; a test's measure that the
+/// same sets aren't looked at again).
+pub fn store_looks(world: &World) -> usize {
+    world.get_resource::<Fetched>().map_or(0, |f| f.looks)
 }
 
 /// Whether the server's own fetch is under way (the match waits for it).
@@ -488,6 +529,8 @@ fn watch(
         let Some(result) = job.0.result() else { return };
         commands.remove_resource::<ServerFetching>();
         match result {
+            // Empty: the store held the sets already (nothing fetched).
+            Ok(summary) if summary.is_empty() => {}
             Ok(summary) => info!("assets: {summary}"),
             Err(e) => warn!("assets: {WHAT} didn't arrive ({e}); what the server reads comes on demand"),
         }

@@ -342,6 +342,16 @@ fn client_health(world: &mut World, h: &mut HealthLine) {
         h.push("rung", r + 1);
     }
     h.push("entities", world.entities().count_spawned());
+    // What grows in a long session (Bevy frees no archetype; a material or
+    // shader first seen compiles a pipeline): docs/performance.md, "Stutter
+    // on Beaver Creek".
+    h.push("archetypes", world.archetypes().len());
+    if let Some(r) = world.get_resource::<super::memory::RenderWorldStats>() {
+        let (images, meshes, pipelines, waiting) = r.health();
+        h.push("gpu_textures", images);
+        h.push("gpu_meshes", meshes);
+        h.push("pipelines", format!("{pipelines}/{waiting}"));
+    }
 }
 
 fn client_context(world: &World) -> String {
