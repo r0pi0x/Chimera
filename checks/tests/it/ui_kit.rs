@@ -17,15 +17,15 @@
 //!   `ALLOWED` with its reason. An entry that matches nothing any more
 //!   fails too, so the list stays true.
 //!
-//! The scan is the text scan of `ecs.rs` (comments and string literals
-//! stripped, cut at a column-0 `#[cfg(test)]`); `tests/` folders are
+//! The scan is the text scan of `scan.rs` (comments and string literals
+//! stripped, `#[cfg(test)]` items dropped); `tests/` folders are
 //! skipped.
 
 use std::{collections::BTreeSet, fs, path::Path};
 
 use super::{
     architecture::{crate_groups, root, rust_files},
-    ecs::strip,
+    scan::strip,
 };
 
 /// Files that may build their own text input, and why. Everything else
