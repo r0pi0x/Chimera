@@ -458,15 +458,21 @@ the user's go-ahead: no Actions runs unless asked.
   data: the entry (`Weapon_Pistol.ReloadScout`) is named and resolves;
   if it is still silent in the next playtest, it is the timing of
   `[[0.0, ..]]` (the view model's event), not a lookup. Ragdolls: each
-  game's lifetime is its own already: CS:S none (the party removes it at
-  the owner's respawn; a round restart too), HL2:DM none (kept past the
-  respawn until the owner dies again, restart removes it), Combat Arms
-  the body 5 s after its owner respawns (mode's `body_removal`), Halo 900
-  ticks idle (`CORPSE_LIFE`); TF2's is in no spec (player_animation.md
-  9 says "the shared Source ragdoll rules"; only its gibs fade, 10 s), so
-  it follows the party's (removed at respawn) and nothing new is picked:
-  needs a spec session on TF2's ragdoll fade (`cl_ragdoll_fade_time`
-  and its friends) before parity can be matched.
+  game's lifetime is its own (`map::ragdoll::RagdollLifetime` by game,
+  `RagdollGameRules`): CS:S none (removed at the owner's respawn; a
+  round restart too), HL2:DM none (kept past the respawn until the owner
+  dies again), Combat Arms the body 5 s after its owner respawns (mode's
+  `body_removal`; its own bodies, not ragdolls), Halo 900 ticks idle
+  (`CORPSE_LIFE`; its own corpses). TF2's now follow
+  specs/tf2/ragdolls.md (2026-11-18; data/ragdolls.toml): kept past the
+  respawn until the owner dies again, leaves or the round restarts, and
+  each machine removes one on a timer of its own, 15 s
+  (`cl_ragdoll_fade_time`) from the death, set to 4.95 s from now on
+  every tick its view sees it (`render::ragdoll_view`); out of view past
+  it, it vanishes at once (no fade); no count cap; `cl_ragdoll_forcefade
+  1` fades a seen one at 600 alpha/s. Tests: tf2 `ragdolls::` (the
+  spec's cases). Not done: feign, ice, ash and dissolve bodies, the
+  late-arrival rule, the death-animation reset (TF2 has none of them yet).
 
 ### UGG playtest 8 prep, Windows check (2026-11-15)
 

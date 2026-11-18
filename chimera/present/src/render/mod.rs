@@ -49,6 +49,7 @@ pub mod prepass_gate;
 pub mod prop_material;
 pub mod props;
 pub mod psys;
+pub mod ragdoll_view;
 pub mod rope_material;
 pub mod rope_sway;
 pub mod shadows;

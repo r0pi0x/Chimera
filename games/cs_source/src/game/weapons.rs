@@ -495,7 +495,7 @@ impl Plugin for CsGunsPlugin {
 /// gun's `[damage] impulse` along the shot (the default `DEATH_IMPULSE`
 /// stays for a death with no force).
 pub const RAGDOLL: crate::map::ragdoll::RagdollRules =
-    crate::map::ragdoll::RagdollRules { death_pose: true, push_root: false, damage_force: true, outlive_respawn: false };
+    crate::map::ragdoll::RagdollRules { death_pose: true, push_root: false, damage_force: true, lifetime: crate::map::ragdoll::RagdollLifetime::UntilRespawn };
 
 /// CS:S's weapons as its game plays them: `CsGunsPlugin` and the rest
 /// around them (the shop and spawn kit, pickup and spray rules, impact

@@ -103,10 +103,19 @@ impl MapLayers for Present {
     fn ragdolls(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (render::bodies::adopt_bodies, render::bodies::pose_ragdolls)
+            (
+                render::bodies::adopt_bodies,
+                render::bodies::pose_ragdolls,
+                render::ragdoll_view::fade_drawn_ragdolls,
+            )
                 .chain()
                 .after(DriveAnimation)
                 .run_if(resource_exists::<render::bodies::PlayModels>),
+        );
+        // Timed ragdolls the view sees (TF2's), with this frame's frusta.
+        app.add_systems(
+            PostUpdate,
+            render::ragdoll_view::see_ragdolls.after(bevy::camera::visibility::VisibilitySystems::UpdateFrusta),
         );
     }
 

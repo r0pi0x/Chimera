@@ -37,6 +37,12 @@ impl Plugin for DebugViewsPlugin {
             "Enable/disable ragdoll physics (0: the dead just vanish).",
             |s| &mut s.enabled,
         );
+        resource_cvar::<RagdollSettings, u8>(
+            app,
+            "cl_ragdoll_forcefade",
+            "1: timed ragdolls (TF2's) fade out once seen instead of vanishing out of view.",
+            |s| &mut s.force_fade,
+        );
         resource_cvar::<RagdollSettings, f32>(
             app,
             "ragdoll_sleepaftertime",
