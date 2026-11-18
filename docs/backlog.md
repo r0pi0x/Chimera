@@ -33,6 +33,9 @@ the user's go-ahead: no Actions runs unless asked.
   menus act on a press as the mouse goes down, so each one's input needs
   checking (docs/tech-debt.md). And `bevy_replicon_renet` back to a
   crates.io release once one supports Bevy 0.20.
+- Compiler warnings (raised on PR #11): clear the workspace's rustc
+  warnings (combat_arms ~52, party_kit's deprecated Bevy `Interaction`),
+  then make warnings fail the fast tier.
 
 ## Roadmap after the gun game settles (user, 2026-10-29)
 
