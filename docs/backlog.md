@@ -413,6 +413,7 @@ the user's go-ahead: no Actions runs unless asked.
       data;
     - first-person view models lit wrongly: check whether it's the map
       (HL2 or Halo maps) or the view-model lighting.
+  - **Rendering:** Z-fighting on a bridge on `combat_arms:neptune` (`setpos -805.77 -236.73 -1779.53;setang 38.72 114.13 0.00`); find whether it is coplanar faces the original game separates (draw order, a decal or overlay flag, a depth bias) and fix it for every map of that kind, not this bridge alone.
   - **Halo:**
     - weapon sounds missing (the shotgun's fire, the plasma pistol's
       charge): an audit of every Halo weapon's sounds in a party app, with
