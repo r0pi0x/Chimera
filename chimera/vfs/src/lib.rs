@@ -68,6 +68,13 @@ pub trait FileSource: Send + Sync {
     fn held(&self, path: &str) -> bool {
         self.contains(path)
     }
+    /// The local file holding `path`'s bytes when it is a downloaded copy
+    /// that may be deleted (an asset store's record, fetched again when
+    /// next read), `None` when it isn't one, isn't on disk or is in use.
+    /// The default: `None` (an install's files are never ours to delete).
+    fn cached_copy(&self, _path: &str) -> Option<PathBuf> {
+        None
+    }
 }
 
 /// What a load asked of a mount (`Mount::track`), by normalized path.

@@ -3462,7 +3462,7 @@ impl MapBrushTree {
     /// which side of a plane it touches.
     pub fn sweep_order(&self, half: Vec3, from: Vec3, to: Vec3, slop: f32) -> Vec<u32> {
         let mut out = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = std::collections::BTreeSet::new();
         let mut stack = vec![self.root];
         while let Some(child) = stack.pop() {
             if child < 0 {

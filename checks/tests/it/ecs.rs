@@ -21,7 +21,7 @@
 //!
 //! Text scans, fast and approximate in the same way as the plan's
 //! inventory (section 1): comments and string literals are stripped, a
-//! file is cut at a column-0 `#[cfg(test)]`, and `tests.rs`, `tests/`,
+//! column-0 `#[cfg(test)]` item is dropped (`scan.rs`), and `tests.rs`, `tests/`,
 //! `ui` folders and developer-tool crates are skipped. A system named by
 //! a plain name matches a function of that name in the same file; a path
 //! (`flow::update`) matches a function in a module of the same crate
@@ -33,7 +33,10 @@ use std::{
     fs,
 };
 
-use super::architecture::{crate_groups, root, rust_files};
+use super::{
+    architecture::{crate_groups, root, rust_files},
+    scan::strip,
+};
 
 /// Crates not scanned: developer tools and generated code.
 const NOT_SCANNED: &[&str] = &["chimera/dev", "chimera/tools", "chimera/workspace-hack", "source/tools"];
@@ -402,95 +405,6 @@ fn crates() -> Vec<String> {
     }
     out.sort();
     out
-}
-
-/// Source without comments, string and char literals (strings left as
-/// `""`), cut at a column-0 `#[cfg(test)]`.
-pub(crate) fn strip(src: &str) -> String {
-    let src = match src.find("\n#[cfg(test)]") {
-        Some(i) => &src[..i],
-        None if src.starts_with("#[cfg(test)]") => "",
-        None => src,
-    };
-    let b: Vec<char> = src.chars().collect();
-    let mut out = String::with_capacity(src.len());
-    let mut i = 0;
-    while i < b.len() {
-        let c = b[i];
-        let next = b.get(i + 1).copied();
-        if c == '/' && next == Some('/') {
-            while i < b.len() && b[i] != '\n' {
-                i += 1;
-            }
-        } else if c == '/' && next == Some('*') {
-            let mut depth = 0;
-            while i < b.len() {
-                if b[i] == '/' && b.get(i + 1) == Some(&'*') {
-                    depth += 1;
-                    i += 2;
-                } else if b[i] == '*' && b.get(i + 1) == Some(&'/') {
-                    depth -= 1;
-                    i += 2;
-                    if depth == 0 {
-                        break;
-                    }
-                } else {
-                    if b[i] == '\n' {
-                        out.push('\n');
-                    }
-                    i += 1;
-                }
-            }
-        } else if (c == 'r' || c == 'b')
-            && !out.chars().next_back().is_some_and(is_ident)
-            && raw_string_start(&b, i).is_some()
-        {
-            let (hashes, start) = raw_string_start(&b, i).unwrap();
-            let close: Vec<char> = std::iter::once('"').chain(std::iter::repeat_n('#', hashes)).collect();
-            i = start;
-            while i < b.len() && !b[i..].starts_with(&close) {
-                i += 1;
-            }
-            i += close.len();
-            out.push_str("\"\"");
-        } else if c == '"' {
-            i += 1;
-            while i < b.len() && b[i] != '"' {
-                i += if b[i] == '\\' { 2 } else { 1 };
-            }
-            i += 1;
-            out.push_str("\"\"");
-        } else if c == '\'' && (next == Some('\\') || b.get(i + 2) == Some(&'\'')) {
-            i += 1;
-            while i < b.len() && b[i] != '\'' {
-                i += if b[i] == '\\' { 2 } else { 1 };
-            }
-            i += 1;
-            out.push_str("''");
-        } else {
-            out.push(c);
-            i += 1;
-        }
-    }
-    out
-}
-
-/// At a raw string (`r"`, `r#"`, `br"`): its `#` count and where its text
-/// starts.
-fn raw_string_start(b: &[char], mut i: usize) -> Option<(usize, usize)> {
-    if b[i] == 'b' {
-        i += 1;
-    }
-    if b.get(i) != Some(&'r') {
-        return None;
-    }
-    i += 1;
-    let mut hashes = 0;
-    while b.get(i) == Some(&'#') {
-        hashes += 1;
-        i += 1;
-    }
-    (b.get(i) == Some(&'"')).then_some((hashes, i + 1))
 }
 
 /// Byte positions of `word` as a whole word.
