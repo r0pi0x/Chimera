@@ -562,7 +562,9 @@ fn build_character_assets(
     };
     let model_material = |m: &MapMesh| {
         let mut material = lit_prop_material(m, textures, data, view, false);
-        if !m.unlit && view != MapDebugView::Albedo && data.light_field.is_some() {
+        // Probe-lit even without a light field: `probe_lit::probe_at`'s
+        // neutral light then.
+        if !m.unlit && view != MapDebugView::Albedo {
             material.params.set_probe(&LightProbe::default(), 1.0);
         }
         material
@@ -676,7 +678,7 @@ fn build_character_assets(
             look: data.look.clone(),
             ..default()
         },
-        lit: data.light_field.is_some(),
+        lit: true,
         view,
         root: data.kit.characters.first().map(|c| c.root),
         generation: super::late_build::next_generation(),
