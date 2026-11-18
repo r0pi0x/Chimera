@@ -210,7 +210,7 @@ pub fn spawn(c: &mut Commands, ui: &Ui, f: &Feedback, destination: &str) -> Enti
     }
     let col = ui.boxed(c, shot, UiStyle { gap: Some(0.6), ..UiStyle::column() });
     let trow = ui.boxed(c, col, UiStyle { gap: Some(0.9), ..UiStyle::row() });
-    let tg = ui.toggle(c, trow, f.include_screenshot && f.thumb.is_some(), State { disabled: f.thumb.is_none(), ..State::NONE });
+    let tg = ui.toggle_words(c, trow, f.include_screenshot && f.thumb.is_some(), State { disabled: f.thumb.is_none(), ..State::NONE }, chimera_ui::controls::TOGGLE_YES_NO);
     c.entity(tg).insert(FeedbackAction::ToggleScreenshot);
     ui.text(c, trow, Role::DisplayRegular, 0.72, Tone::Fg, "Include screenshot");
     ui.sentence(c, col, NOTE, Tone::Fg3, "The frame when you pressed the key");

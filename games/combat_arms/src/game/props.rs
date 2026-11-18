@@ -28,7 +28,9 @@
 //! them outside capture the flag and moves them with the flag's state);
 //! props don't collide (`PropSolid::None`; pickups are the game modes'
 //! item); the light probe is the light-grid sample nearest the object,
-//! the same from every direction.
+//! the same from every direction (also the map's light field,
+//! `light_field`, set only when the world converts: a hit of the opt-in
+//! map cache has none, so its models take Chimera's neutral light).
 
 use std::sync::Arc;
 
@@ -103,7 +105,22 @@ pub fn rotation(o: &Object) -> Quat {
 /// The light grid's sample nearest `pos` (file space) as a probe (linear,
 /// lightmap units), or None without a grid.
 pub fn light_at(world: &World, pos: lt::Vec3) -> Option<LightProbe> {
-    let g = &world.light_grid;
+    grid_light(&world.light_grid, pos)
+}
+
+/// The world's light grid as the map's light field (engine space, `scale`
+/// metres per world unit): the sample nearest any point, as `light_at`;
+/// what lights characters and view models. None without a grid.
+pub fn light_field(world: &World, scale: f32) -> Option<crate::map::MapLightField> {
+    let grid = world.light_grid.clone();
+    grid_light(&grid, [0.0; 3])?;
+    Some(crate::map::MapLightField(Arc::new(move |p| {
+        grid_light(&grid, lt::to_right_handed((p / scale).to_array())).unwrap_or_default()
+    })))
+}
+
+/// `light_at` in grid `g`.
+fn grid_light(g: &lt::LightGrid, pos: lt::Vec3) -> Option<LightProbe> {
     if g.counts.contains(&0) || g.samples.is_empty() {
         return None;
     }

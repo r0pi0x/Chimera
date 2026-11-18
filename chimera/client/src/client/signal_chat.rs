@@ -208,6 +208,11 @@ impl Plugin for SignalChatPlugin {
     }
 }
 
+/// The Signal chat's layer: above every game's HUD (`hud::GAME_HUD_Z`, the
+/// one band a game's whole HUD draws in), below the scoreboards, the menus
+/// and the console.
+pub const CHAT_Z: i32 = 46;
+
 /// The Signal chat owns the chat.
 pub fn active(a: Option<Res<SignalChatActive>>) -> bool {
     a.is_some_and(|a| a.0)
@@ -549,7 +554,7 @@ fn draw(
                     ChatPlayRoot,
                     Name::new("Signal chat"),
                     ChildOf(layer.0),
-                    GlobalZIndex(46),
+                    GlobalZIndex(CHAT_Z),
                     Pickable::IGNORE,
                     Node {
                         position_type: PositionType::Absolute,

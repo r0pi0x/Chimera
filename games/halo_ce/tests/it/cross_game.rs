@@ -75,7 +75,7 @@ fn another_game_s_bullet_takes_the_shield_first() {
     assert_eq!(v.shield, 0.0);
     assert!((v.body - 0.8).abs() < 1e-4, "body {}", v.body);
     assert!((health(&sim, t) - 0.8).abs() < 1e-4);
-    assert!(sim.app.world().get::<DamageScale>(t).is_none(), "off: no scale");
+    assert_eq!(sim.app.world().get::<DamageScale>(t), Some(&DamageScale(1.0)), "off: no scale");
 }
 
 /// The party's table on (incoming 1.5): each 20-point
@@ -168,7 +168,7 @@ fn a_body_s_own_incoming_and_a_change_keep_the_shield() {
     let shield = v.shield;
     sim.app.world_mut().resource_mut::<Balance>().on = false;
     sim.ticks(2);
-    assert!(sim.app.world().get::<DamageScale>(e).is_none(), "raw: no scale");
+    assert_eq!(sim.app.world().get::<DamageScale>(e), Some(&DamageScale(1.0)), "raw: no scale");
     assert!((vit(&sim, e).shield - shield).abs() < 1e-5, "the shield's value kept");
     assert!((sim.app.world().get::<Armor>(e).unwrap().amount - shield).abs() < 1e-5, "in the raw unit");
 }
