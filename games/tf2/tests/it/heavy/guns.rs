@@ -63,7 +63,7 @@ fn each_guns_set_covers_what_a_match_loads_for_it() {
     let scripts = sets::sound_scripts(&mount);
     for w in sets::M2_WEAPONS {
         let gun = format!("tf2:{}", w.id);
-        assert!(weapons::GUNS.contains(&gun.as_str()), "{gun}: the set is named after the gun");
+        assert!(weapons::GUNS.contains(&gun.as_str()) || weapons::MELEE.contains(&gun.as_str()), "{gun}: the set is named after the gun or the melee weapon");
         let set = sets::weapon_files(&mount, w, &scripts);
         // A match's load of this gun: on another game's map (the guest
         // dressing) and on TF2's own.
