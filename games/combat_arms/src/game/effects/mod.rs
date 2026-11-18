@@ -69,7 +69,8 @@
 //! - **Hurt** (`hurt_sounds`, the server's): a sound by damage kind and
 //!   one by hit zone (none for burn and gas) at the victim's centre,
 //!   radius 500, each kind one at a time across the server
-//!   (`rules::HurtLimiter`).
+//!   (`rules::HurtLimiter`), from any game's gun (a party app's ladder:
+//!   the groan is the character's, the bullet's impact the gun's game's).
 //! - **Footsteps** (`footsteps`): yours by the sway phase
 //!   (`rules::OwnSteps`: the bob's ramp restarts it after a stop, a step
 //!   on the movement key, silent off the run flag), others' by their
@@ -331,6 +332,16 @@ impl Plugin for CaEffectsPlugin {
                 // After the tick's deaths; it reads them and queues its
                 // sends: either order against the other systems is right.
                 kill_callout::send.ambiguous_with_all().run_if(authoritative),
+            )
+            // Our characters' voice sets and the kills they speak for
+            // (`chimera_sim::kill_voice`).
+            .add_systems(
+                PostUpdate,
+                (
+                    kill_callout::voice_sets.before(chimera_sim::kill_voice::KillVoiceSet::Ask),
+                    kill_callout::answer.in_set(chimera_sim::kill_voice::KillVoiceSet::Answer),
+                )
+                    .run_if(authoritative),
             );
         app.net_part("combat_arms_kill_callout", |app| {
             use bevy_replicon::prelude::{Channel, ServerMessageAppExt};
@@ -1737,7 +1748,6 @@ pub const HURT_DEFAULT_LENGTH: f32 = 1.0;
 fn hurt_sounds(
     mut damage: MessageReader<Damage>,
     players: Query<(&Transform, Option<&GameIdentity>), (With<Intent>, With<Health>)>,
-    (holders, weapons): (Query<&Inventory>, Query<&Weapon>),
     tables: Res<CaFxTables>,
     lengths: Res<CaSoundLengths>,
     mut limiter: ResMut<HurtLimiter>,
@@ -1753,14 +1763,9 @@ fn hurt_sounds(
         if d.amount <= 0.0 || !GameIdentity::allows(identity, super::GAME) {
             continue;
         }
-        // A bullet's or a swing's hit sounds as its gun's game's
-        // (`weapon::impact::dealt_by`): a TF2 pistol's hit on our
-        // character plays TF2's impact, not ours.
-        if matches!(d.kind, DamageKind::Bullet | DamageKind::Melee)
-            && !crate::weapon::impact::dealt_by(super::GAME, d, &holders, &weapons)
-        {
-            continue;
-        }
+        // Any game's gun makes our character groan (the party apps: a TF2
+        // pistol's hit too); the bullet's own impact is the gun's game's
+        // (`weapon::impact`), not this.
         let gas = d.weapon.is_some_and(|w| w.ends_with("g7a"));
         for k in hurt_kinds(d.kind, d.hitgroup, gas).into_iter().flatten() {
             let Some(file) = rules::draw_any(hurt_files(&tables, k), rolls.next()) else { continue };

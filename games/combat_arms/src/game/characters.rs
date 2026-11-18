@@ -87,7 +87,8 @@
 //! owner respawned and its animation ended in the modes that remove
 //! bodies (data's `body_removal`), or at a new round. With no mode of ours
 //! (`ca_mode none`) but a minigame playing (Lucker Party), as our like
-//! mode: a free-for-all as One Man Army, teams as Team Deathmatch.
+//! mode: a free-for-all as One Man Army, teams as Team Deathmatch. A
+//! party app's (`map::ragdoll::BodiesGoOnRespawn`) go at the respawn.
 //!
 //! Network (`CaCharactersNetPlugin`, part `combat_arms_characters`): each
 //! client sends its own look (`CaLookRequest`, from `CaOwnLook`: when its
@@ -1985,7 +1986,8 @@ pub fn client_clock(world: &mut World) {
 }
 
 /// Bodies: their owner's respawn noted, removed when their time comes or
-/// at a new round.
+/// at a new round (in a party app, `map::ragdoll::BodiesGoOnRespawn`, at
+/// the owner's respawn).
 fn bodies(
     mut bodies: Query<(Entity, &mut CaBody)>,
     owners: Query<(&Health, Has<Dead>)>,
@@ -1994,6 +1996,7 @@ fn bodies(
     mut round: Local<Option<u32>>,
     settings: Option<Res<super::rules::CaRuleSettings>>,
     minigame: Option<Res<chimera_sim::minigame::ActiveMinigame>>,
+    party: Option<Res<crate::map::ragdoll::BodiesGoOnRespawn>>,
     mut commands: Commands,
 ) {
     let new_round = round.is_some_and(|r| r != restarts.0);
@@ -2018,6 +2021,12 @@ fn bodies(
         let alive = owners.get(b.owner).is_ok_and(|(h, dead)| h.current > 0.0 && !dead);
         if alive && b.respawned.is_none() {
             b.respawned = Some(clock.now);
+        }
+        // A party app's bodies go when their owner lives again
+        // (`BodiesGoOnRespawn`), whatever the mode's delay.
+        if party.is_some() && alive {
+            commands.entity(e).despawn();
+            continue;
         }
         // "Done" one millisecond after its last key.
         let end = b.since + b.length + 0.001;

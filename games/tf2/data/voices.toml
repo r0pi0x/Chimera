@@ -1,0 +1,403 @@
+# TF2's player voices (specs/tf2/voices.md; `game::voices`): per class,
+# the pain lines' scene lengths (the gap before the next pain line,
+# spec 2.4) and the kill rules (spec 4.3, 4.4, Appendix A), best score
+# first: the first rule that passes speaks. Entry names are the game's
+# sound script entries, played from the player's own install.
+#
+# A kill rule: `when` (any, many: 2+ recent kills, very_many: 4+, melee,
+# rifle_headshot, rifle, spy_victim, dominated, revenge), `slot` (the
+# killing gun's slot it needs: 0 primary, 1 secondary), `chance` (passes
+# when the draw r in 0..=100 is above it: 70 is the spec's 30 %), `unless`
+# (contexts that must be unset), `sets` (contexts set: name, seconds),
+# `groups` (one drawn; its `lines`, after `predelay` s).
+
+[classes.scout]
+speaker = "Scout"
+pain = [0.321, 0.593, 0.396, 0.37, 0.639, 0.382, 0.354, 0.36]
+
+[[classes.scout.kill]]
+when = "revenge"
+sets = [["ScoutKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.scout.kill.groups]]
+predelay = 2.5
+lines = ["Scout.Award12", "Scout.Cheers02", "Scout.Misc02", "Scout.Misc09", "Scout.NiceShot02", "Scout.Revenge01", "Scout.Revenge02", "Scout.Revenge03", "Scout.Revenge04", "Scout.Revenge05", "Scout.Revenge06", "Scout.Revenge07", "Scout.Revenge08", "Scout.Revenge09", "Scout.SpecialCompleted12"]
+
+[[classes.scout.kill]]
+when = "dominated"
+chance = 70
+sets = [["ScoutKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.scout.kill.groups]]
+predelay = 2.5
+lines = ["Scout.Domination02", "Scout.Misc07", "Scout.Domination15", "Scout.Domination16"]
+
+[[classes.scout.kill]]
+when = "melee"
+chance = 70
+unless = ["ScoutKillSpeechMelee"]
+sets = [["ScoutKillSpeechMelee", 10.0]]
+[[classes.scout.kill.groups]]
+lines = ["Scout.SpecialCompleted04", "Scout.SpecialCompleted06", "Scout.SpecialCompleted07", "Scout.SpecialCompleted09", "Scout.Taunts11"]
+[[classes.scout.kill.groups]]
+lines = ["Scout.SpecialCompleted02", "Scout.SpecialCompleted03", "Scout.SpecialCompleted11", "Scout.Taunts08"]
+
+[[classes.scout.kill]]
+when = "many"
+slot = 0
+chance = 70
+unless = ["ScoutKillSpeech"]
+sets = [["ScoutKillSpeech", 5.0]]
+[[classes.scout.kill.groups]]
+lines = ["Scout.GoodJob02", "Scout.LaughEvil02", "Scout.LaughHappy01", "Scout.LaughHappy02", "Scout.LaughHappy03", "Scout.LaughHappy04", "Scout.LaughLong01", "Scout.LaughLong02", "Scout.Taunts04", "Scout.Taunts16"]
+
+[classes.soldier]
+speaker = "Soldier"
+pain = [0.508, 0.393, 0.462, 0.583, 0.434, 0.321, 0.406, 0.891]
+
+[[classes.soldier.kill]]
+when = "revenge"
+sets = [["SoldierKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.soldier.kill.groups]]
+predelay = 2.5
+lines = ["Soldier.BattleCry06", "Soldier.Cheers01", "Soldier.GoodJob02"]
+
+[[classes.soldier.kill]]
+when = "dominated"
+sets = [["SoldierKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.soldier.kill.groups]]
+predelay = 2.5
+lines = ["Soldier.LaughEvil01", "Soldier.LaughEvil02", "Soldier.LaughEvil03", "Soldier.LaughHappy01", "Soldier.LaughHappy02", "Soldier.LaughHappy03", "Soldier.LaughLong01", "Soldier.LaughLong03", "Soldier.Taunts07", "Soldier.Taunts13"]
+
+[[classes.soldier.kill]]
+when = "melee"
+chance = 70
+unless = ["SoldierKillSpeechMelee"]
+sets = [["SoldierKillSpeechMelee", 10.0]]
+[[classes.soldier.kill.groups]]
+lines = ["Soldier.SpecialCompleted05", "Soldier.DirectHitTaunt01", "Soldier.DirectHitTaunt03", "Soldier.DirectHitTaunt04"]
+
+[[classes.soldier.kill]]
+when = "very_many"
+slot = 0
+chance = 50
+unless = ["SoldierKillSpeech"]
+sets = [["SoldierKillSpeech", 10.0]]
+[[classes.soldier.kill.groups]]
+lines = ["Soldier.Taunts17", "Soldier.Taunts02"]
+
+[[classes.soldier.kill]]
+when = "many"
+slot = 0
+chance = 70
+unless = ["SoldierKillSpeech"]
+sets = [["SoldierKillSpeech", 10.0]]
+[[classes.soldier.kill.groups]]
+lines = ["Soldier.SpecialCompleted03", "Soldier.Taunts01", "Soldier.Taunts09", "Soldier.Taunts10"]
+
+[classes.pyro]
+speaker = "Pyro"
+pain = [4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0]
+
+[[classes.pyro.kill]]
+when = "revenge"
+sets = [["PyroKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.pyro.kill.groups]]
+predelay = 2.5
+lines = ["Pyro.ActivateCharge01", "Pyro.BattleCry01"]
+
+[[classes.pyro.kill]]
+when = "dominated"
+sets = [["PyroKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.pyro.kill.groups]]
+predelay = 2.5
+lines = ["Pyro.LaughEvil01", "Pyro.LaughEvil02", "Pyro.LaughHappy01", "Pyro.LaughLong01"]
+
+[[classes.pyro.kill]]
+when = "melee"
+chance = 70
+unless = ["PyroKillSpeechMelee"]
+sets = [["PyroKillSpeechMelee", 10.0]]
+[[classes.pyro.kill.groups]]
+lines = ["Pyro.Taunts03", "Pyro.Taunts01", "Pyro.Taunts02"]
+
+[[classes.pyro.kill]]
+when = "many"
+slot = 0
+chance = 70
+unless = ["PyroKillSpeech"]
+sets = [["PyroKillSpeech", 10.0]]
+[[classes.pyro.kill.groups]]
+lines = ["Pyro.Taunts04"]
+
+[classes.demoman]
+speaker = "Demoman"
+pain = [1.0, 1.0, 1.771, 1.0, 1.0, 1.0, 2.344]
+
+[[classes.demoman.kill]]
+when = "revenge"
+sets = [["DemomanKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.demoman.kill.groups]]
+predelay = 2.5
+lines = ["Demoman.GoodJob01", "Demoman.PositiveVocalization02", "Demoman.SpecialCompleted09", "Demoman.Taunts16"]
+
+[[classes.demoman.kill]]
+when = "dominated"
+sets = [["DemomanKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.demoman.kill.groups]]
+predelay = 2.5
+lines = ["Demoman.Cheers05", "Demoman.LaughEvil01", "Demoman.LaughEvil02", "Demoman.LaughEvil03", "Demoman.LaughEvil04", "Demoman.LaughEvil05", "Demoman.LaughHappy01", "Demoman.LaughLong01", "Demoman.LaughLong02", "Demoman.LaughShort02", "Demoman.LaughShort05"]
+
+[[classes.demoman.kill]]
+when = "melee"
+chance = 70
+unless = ["DemomanKillSpeechMelee"]
+sets = [["DemomanKillSpeechMelee", 10.0]]
+[[classes.demoman.kill.groups]]
+lines = ["Demoman.gibberish01", "Demoman.gibberish02", "Demoman.gibberish04", "Demoman.gibberish05", "Demoman.gibberish06", "Demoman.gibberish07", "Demoman.gibberish08", "Demoman.gibberish10"]
+[[classes.demoman.kill.groups]]
+lines = ["Demoman.SpecialCompleted02"]
+
+[[classes.demoman.kill]]
+when = "very_many"
+slot = 1
+chance = 50
+unless = ["DemomanKillSpeech"]
+sets = [["DemomanKillSpeech", 10.0]]
+[[classes.demoman.kill.groups]]
+lines = ["Demoman.SpecialCompleted01", "Demoman.SpecialCompleted03", "Demoman.SpecialCompleted07", "Demoman.SpecialCompleted08", "Demoman.SpecialCompleted10", "Demoman.Taunts12"]
+
+[[classes.demoman.kill]]
+when = "many"
+slot = 1
+chance = 70
+unless = ["DemomanKillSpeech"]
+sets = [["DemomanKillSpeech", 10.0]]
+[[classes.demoman.kill.groups]]
+lines = ["Demoman.SpecialCompleted04", "Demoman.Taunts02", "Demoman.Taunts04", "Demoman.Taunts08"]
+
+[classes.heavy]
+speaker = "Heavy"
+pain = [1.814, 1.44, 1.38, 1.44, 1.44]
+
+[[classes.heavy.kill]]
+when = "revenge"
+sets = [["HeavyKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.heavy.kill.groups]]
+predelay = 2.5
+lines = ["Heavy.Cheers03", "Heavy.Cheers06", "Heavy.PositiveVocalization03", "Heavy.Revenge01", "Heavy.Revenge02", "Heavy.Revenge03", "Heavy.Revenge04", "Heavy.Revenge05", "Heavy.Revenge06", "Heavy.Revenge07", "Heavy.Revenge08", "Heavy.Revenge09", "Heavy.Revenge10", "Heavy.Revenge11", "Heavy.Revenge12", "Heavy.Revenge13", "Heavy.Revenge14", "Heavy.Revenge15"]
+
+[[classes.heavy.kill]]
+when = "dominated"
+sets = [["HeavyKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.heavy.kill.groups]]
+predelay = 2.5
+lines = ["Heavy.Domination01", "Heavy.Domination02", "Heavy.Domination03", "Heavy.Domination04", "Heavy.Domination05", "Heavy.Domination06", "Heavy.Domination07", "Heavy.Domination08", "Heavy.Domination09", "Heavy.Domination12", "Heavy.Domination13", "Heavy.Domination14", "Heavy.Domination15", "Heavy.Domination16", "Heavy.Domination17", "Heavy.Domination18", "Heavy.GoodJob02", "Heavy.Jeers06", "Heavy.LaughEvil01", "Heavy.LaughHappy01", "Heavy.LaughHappy02", "Heavy.LaughHappy03", "Heavy.LaughHappy04", "Heavy.LaughHappy05", "Heavy.LaughLong01", "Heavy.LaughLong02", "Heavy.LaughterBig02", "Heavy.LaughterBig03", "Heavy.LaughterBig04", "Heavy.PositiveVocalization01", "Heavy.PositiveVocalization02", "Heavy.Taunts12"]
+
+[[classes.heavy.kill]]
+when = "melee"
+chance = 70
+unless = ["HeavyKillSpeechMelee"]
+sets = [["HeavyKillSpeechMelee", 10.0]]
+[[classes.heavy.kill.groups]]
+lines = ["Heavy.LaughShort01", "Heavy.LaughShort02"]
+
+[[classes.heavy.kill]]
+when = "very_many"
+slot = 0
+chance = 50
+unless = ["HeavyKillSpeech"]
+sets = [["HeavyKillSpeech", 10.0]]
+[[classes.heavy.kill.groups]]
+lines = ["Heavy.SpecialCompleted07", "Heavy.SpecialCompleted08", "Heavy.Taunts01", "Heavy.Taunts14", "Heavy.Taunts19", "Heavy.Taunts10"]
+
+[[classes.heavy.kill]]
+when = "many"
+slot = 0
+chance = 70
+unless = ["HeavyKillSpeech"]
+sets = [["HeavyKillSpeech", 10.0]]
+[[classes.heavy.kill.groups]]
+lines = ["Heavy.SpecialCompleted09", "Heavy.SpecialCompleted10", "Heavy.SpecialCompleted11", "Heavy.Taunts04", "Heavy.Taunts05", "Heavy.Taunts11"]
+
+[classes.engineer]
+speaker = "Engineer"
+pain = [1.0, 1.0, 1.0, 1.003, 1.007, 1.01, 2.019, 1.921]
+
+[[classes.engineer.kill]]
+when = "revenge"
+sets = [["EngineerKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.engineer.kill.groups]]
+predelay = 2.5
+lines = ["engineer_revenge01", "Engineer.BattleCry07", "Engineer.Cheers01", "Engineer.Cheers06", "Engineer.Cheers07", "Engineer.Jeers04", "Engineer.LaughEvil01", "Engineer.LaughEvil02", "Engineer.LaughEvil05", "Engineer.LaughEvil06", "Engineer.LaughHappy01", "Engineer.LaughHappy02", "Engineer.LaughHappy03", "Engineer.LaughLong01", "Engineer.SpecialCompleted03", "Engineer.Taunts02", "Engineer.Taunts04", "engineer_revenge02"]
+
+[[classes.engineer.kill]]
+when = "melee"
+chance = 70
+unless = ["EngineerKillSpeechMelee"]
+sets = [["EngineerKillSpeechMelee", 10.0]]
+[[classes.engineer.kill.groups]]
+lines = ["Engineer.SpecialCompleted07"]
+
+[[classes.engineer.kill]]
+when = "very_many"
+chance = 50
+unless = ["EngineerKillSpeech"]
+sets = [["EngineerKillSpeech", 10.0]]
+[[classes.engineer.kill.groups]]
+lines = ["Engineer.SpecialCompleted01"]
+
+[[classes.engineer.kill]]
+when = "many"
+chance = 70
+unless = ["EngineerKillSpeech"]
+sets = [["EngineerKillSpeech", 10.0]]
+[[classes.engineer.kill.groups]]
+lines = ["Engineer.SpecialCompleted05", "Engineer.SpecialCompleted10", "Engineer.SpecialCompleted11"]
+
+[classes.medic]
+speaker = "Medic"
+pain = [2.354, 2.906, 2.021, 2.292, 1.625, 1.958, 2.583, 1.01]
+
+[[classes.medic.kill]]
+when = "revenge"
+sets = [["MedicKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.medic.kill.groups]]
+predelay = 2.5
+lines = ["Medic.GoodJob02", "Medic.NegativeVocalization02", "Medic.NegativeVocalization06", "Medic.NegativeVocalization07"]
+
+[[classes.medic.kill]]
+when = "dominated"
+sets = [["MedicKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.medic.kill.groups]]
+predelay = 2.5
+lines = ["Medic.LaughEvil02", "Medic.LaughEvil05", "Medic.LaughHappy01", "Medic.LaughHappy02", "Medic.LaughHappy03", "Medic.LaughLong01", "Medic.LaughLong02", "Medic.LaughShort03", "Medic.Taunts12", "Medic.Taunts14"]
+
+[[classes.medic.kill]]
+when = "very_many"
+chance = 50
+unless = ["MedicKillSpeech"]
+sets = [["MedicKillSpeech", 10.0]]
+[[classes.medic.kill.groups]]
+lines = ["Medic.SpecialCompleted02", "Medic.SpecialCompleted09", "Medic.SpecialCompleted10", "Medic.SpecialCompleted11"]
+
+[[classes.medic.kill]]
+when = "many"
+chance = 70
+unless = ["MedicKillSpeech"]
+sets = [["MedicKillSpeech", 10.0]]
+[[classes.medic.kill.groups]]
+lines = ["Medic.SpecialCompleted12", "Medic.Taunts02"]
+
+[[classes.medic.kill]]
+when = "any"
+chance = 70
+unless = ["MedicKillSpeech", "MedicKillSpeechMelee"]
+sets = [["MedicKillSpeechMelee", 10.0]]
+[[classes.medic.kill.groups]]
+lines = ["Medic.SpecialCompleted02", "Medic.SpecialCompleted03", "Medic.SpecialCompleted07"]
+[[classes.medic.kill.groups]]
+lines = ["Medic.SpecialCompleted01"]
+[[classes.medic.kill.groups]]
+lines = ["Medic.SpecialCompleted12", "Medic.Taunts02"]
+[[classes.medic.kill.groups]]
+lines = ["Medic.SpecialCompleted02", "Medic.SpecialCompleted09", "Medic.SpecialCompleted10", "Medic.SpecialCompleted11"]
+[[classes.medic.kill.groups]]
+predelay = 2.5
+lines = ["Medic.LaughEvil02", "Medic.LaughEvil05", "Medic.LaughHappy01", "Medic.LaughHappy02", "Medic.LaughHappy03", "Medic.LaughLong01", "Medic.LaughLong02", "Medic.LaughShort03", "Medic.Taunts12", "Medic.Taunts14"]
+
+[classes.sniper]
+speaker = "Sniper"
+pain = [1.188, 1.073, 1.24, 1.281]
+
+[[classes.sniper.kill]]
+when = "revenge"
+chance = 50
+sets = [["SniperKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.sniper.kill.groups]]
+predelay = 2.5
+lines = ["Sniper.Cheers05", "Sniper.GoodJob01", "Sniper.PositiveVocalization03", "Sniper.PositiveVocalization04", "Sniper.Taunts04", "Sniper.Taunts03", "Sniper.Taunts15", "Sniper.Taunts16"]
+
+[[classes.sniper.kill]]
+when = "rifle_headshot"
+unless = ["SniperKillSpeech"]
+sets = [["SniperKillSpeech", 20.0]]
+[[classes.sniper.kill.groups]]
+predelay = 1.75
+lines = ["Sniper.SpecialCompleted25", "Sniper.SpecialCompleted30", "Sniper.SpecialCompleted36", "Sniper.SpecialCompleted37", "Sniper.SpecialCompleted02", "Sniper.SpecialCompleted17", "Sniper.SpecialCompleted24", "Sniper.SpecialCompleted26", "Sniper.SpecialCompleted27", "Sniper.SpecialCompleted35", "Sniper.SpecialCompleted46", "Sniper.Taunts01", "Sniper.Taunts23"]
+[[classes.sniper.kill.groups]]
+predelay = 1.0
+lines = ["Sniper.SpecialCompleted44", "Sniper.Taunts24", "Sniper.Taunts37", "Sniper.Taunts38", "Sniper.Taunts39", "Sniper.Taunts27", "Sniper.Taunts28", "Sniper.Taunts29", "Sniper.Taunts30", "Sniper.Taunts31"]
+[[classes.sniper.kill.groups]]
+predelay = 1.0
+lines = ["Sniper.SpecialCompleted13", "Sniper.Taunts45", "Sniper.Taunts22", "Sniper.Taunts08", "Sniper.Taunts09", "Sniper.Taunts10", "Sniper.Taunts13", "Sniper.Taunts14", "Sniper.Taunts17", "Sniper.Taunts19", "Sniper.Taunts02"]
+
+[[classes.sniper.kill]]
+when = "melee"
+chance = 70
+unless = ["SniperKillSpeechMelee"]
+sets = [["SniperKillSpeechMelee", 10.0]]
+[[classes.sniper.kill.groups]]
+lines = ["Sniper.SpecialCompleted06", "Sniper.SpecialCompleted09"]
+
+[[classes.sniper.kill]]
+when = "very_many"
+slot = 0
+chance = 50
+unless = ["SniperKillSpeech"]
+sets = [["SniperKillSpeech", 10.0]]
+[[classes.sniper.kill.groups]]
+lines = ["Sniper.SpecialCompleted03", "Sniper.SpecialCompleted07", "Sniper.SpecialCompleted10", "Sniper.Taunts05", "Sniper.Taunts06", "Sniper.Taunts07", "Sniper.Taunts11", "Sniper.Taunts18"]
+
+[[classes.sniper.kill]]
+when = "many"
+slot = 0
+chance = 70
+unless = ["SniperKillSpeech"]
+sets = [["SniperKillSpeech", 10.0]]
+[[classes.sniper.kill.groups]]
+lines = ["Sniper.LaughEvil01", "Sniper.LaughEvil02", "Sniper.LaughHappy01", "Sniper.LaughHappy02", "Sniper.LaughLong01", "Sniper.LaughLong02", "Sniper.SpecialCompleted04", "Sniper.SpecialCompleted15", "Sniper.SpecialCompleted45"]
+
+[[classes.sniper.kill]]
+when = "spy_victim"
+chance = 50
+unless = ["SniperKillSpeech"]
+sets = [["SniperKillSpeech", 10.0]]
+[[classes.sniper.kill.groups]]
+predelay = 1.0
+lines = ["Sniper.SpecialCompleted01", "Sniper.SpecialCompleted12", "Sniper.SpecialCompleted18", "Sniper.SpecialCompleted21"]
+
+[[classes.sniper.kill]]
+when = "rifle"
+chance = 80
+unless = ["SniperKillSpeech"]
+sets = [["SniperKillSpeech", 10.0]]
+[[classes.sniper.kill.groups]]
+predelay = 1.0
+lines = ["Sniper.SpecialCompleted13", "Sniper.Taunts45", "Sniper.Taunts22", "Sniper.Taunts08", "Sniper.Taunts09", "Sniper.Taunts10", "Sniper.Taunts13", "Sniper.Taunts14", "Sniper.Taunts17", "Sniper.Taunts19", "Sniper.Taunts02"]
+
+[classes.spy]
+speaker = "Spy"
+pain = [5.188, 5.021, 4.979, 5.073]
+
+[[classes.spy.kill]]
+when = "revenge"
+sets = [["SpyKillSpeech", 10.0], ["IsDominating", 10.0]]
+[[classes.spy.kill.groups]]
+predelay = 2.5
+lines = ["Spy.Cheers01", "Spy.Cheers06", "Spy.GoodJob01", "Spy.PositiveVocalization04", "Spy.PositiveVocalization05", "Spy.Taunts16", "Spy.Revenge03", "Spy.Revenge01", "Spy.Revenge02"]
+
+[[classes.spy.kill]]
+when = "melee"
+chance = 70
+unless = ["SpyKillSpeechMelee"]
+sets = [["SpyKillSpeechMelee", 5.0]]
+[[classes.spy.kill.groups]]
+lines = ["Spy.SpecialCompleted02", "Spy.SpecialCompleted03", "Spy.SpecialCompleted11"]
+
+[[classes.spy.kill]]
+when = "many"
+slot = 1
+chance = 70
+unless = ["SpyKillSpeech"]
+sets = [["SpyKillSpeech", 10.0]]
+[[classes.spy.kill.groups]]
+lines = ["Spy.LaughEvil01", "Spy.LaughEvil02", "Spy.LaughHappy01", "Spy.LaughHappy02", "Spy.LaughHappy03", "Spy.LaughLong01", "Spy.LaughShort06", "Spy.SpecialCompleted09", "Spy.SpecialCompleted10"]

@@ -43,7 +43,9 @@
 //! Halo's projectiles (`weapons::HaloTrace`) and every game's hitscan (the
 //! engine's trace tests any `Hitboxes`); a hit damages nothing. The server
 //! removes a body at rest (on the ground, not moving) for more than 900
-//! ticks (`CORPSE_LIFE`), and every body at a map change.
+//! ticks (`CORPSE_LIFE`), and every body at a map change; in a party app
+//! (`map::ragdoll::BodiesGoOnRespawn`) also a body whose owner lives
+//! again.
 //!
 //! **At the death, on the server**: the death line (sounds.md "Unit
 //! dialogue": the unit dialogue's violent line for a fall, flame or a push
@@ -555,18 +557,23 @@ pub fn play_corpses(
 }
 
 /// The server: bodies lying idle too long, and every body at a map
-/// change, removed.
+/// change, removed; in a party app (`map::ragdoll::BodiesGoOnRespawn`)
+/// also each body whose owner lives again.
 pub fn remove_corpses(
     loads: Option<Res<MapLoads>>,
     mut seen: Local<Option<u32>>,
-    corpses: Query<(Entity, Option<&CorpseState>), With<HaloCorpse>>,
+    corpses: Query<(Entity, &HaloCorpse, Option<&CorpseState>)>,
+    owners: Query<(&crate::core::Health, Has<crate::core::Dead>)>,
+    party: Option<Res<crate::map::ragdoll::BodiesGoOnRespawn>>,
     mut commands: Commands,
 ) {
     let load = loads.map(|l| l.0);
     let changed = seen.is_some() && *seen != load;
     *seen = load;
-    for (e, state) in &corpses {
-        if changed || state.is_some_and(CorpseState::expired) {
+    for (e, corpse, state) in &corpses {
+        let respawned = party.is_some()
+            && owners.get(corpse.owner).is_ok_and(|(h, dead)| h.current > 0.0 && !dead);
+        if changed || respawned || state.is_some_and(CorpseState::expired) {
             commands.entity(e).despawn();
         }
     }

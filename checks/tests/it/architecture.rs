@@ -156,6 +156,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // guns' hit regions, the server's `sv_announcer`.
     ("announce", &["core", "console", "map", "weapon"]),
     ("dominations", &["core", "weapon"]),
+    // Kill voices (chimera/sim): each kill asked of the killer's game, the
+    // outcome settled before the announcer.
+    ("kill_voice", &["core", "slots"]),
     // Server data documents (chimera/sim): a game's derived data as named
     // documents a network client takes from the server (weapon sets
     // rebuilt in place).

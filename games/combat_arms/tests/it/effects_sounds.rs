@@ -1036,11 +1036,11 @@ fn hurt_sounds_one_per_kind_across_the_server() {
     assert!(s.iter().all(|s| s.server && s.radii.1 == 500.0));
 }
 
-/// Another game's gun's hit on our character sounds as that game's
-/// (`weapon::impact::dealt_by`): a TF2 pistol's plays no hurt sound of
-/// ours; a fall still does.
+/// Any game's gun makes our character groan (a party app's ladder): a
+/// TF2 pistol's hit plays our hurt sound for its kind and zone, as a fall
+/// does.
 #[test]
-fn another_games_guns_hit_plays_no_hurt_sound() {
+fn another_games_guns_hit_plays_our_hurt_sound() {
     let mut sim = sim();
     let a = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
     heard(&mut sim);
@@ -1058,7 +1058,10 @@ fn another_games_guns_hit_plays_no_hurt_sound() {
     sim.app.world_mut().write_message(hurt(DamageKind::Bullet, Some("tf2:tf_weapon_pistol_scout")));
     sim.app.update();
     let s = heard(&mut sim);
-    assert!(s.is_empty(), "TF2's hit: {s:?}");
+    assert!(s.iter().any(|s| s.file.contains("hurtpain_a")), "TF2's hit groans: {s:?}");
+    assert!(s.iter().any(|s| s.file.ends_with("headshot.wav")), "and the head's: {s:?}");
+    sim.seconds(3.0);
+    heard(&mut sim);
     sim.app.world_mut().write_message(hurt(DamageKind::Fall, None));
     sim.app.update();
     assert!(!heard(&mut sim).is_empty(), "a fall");

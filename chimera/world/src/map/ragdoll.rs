@@ -56,7 +56,8 @@
 //! (`RagdollTimer`, run by `remove_ragdolls`: `fade_time` from its tick, run from the next, set to
 //! `view_fraction` of it from now while the view sees it, `RagdollInView`;
 //! out of view past it, removed at once; `cl_ragdoll_forcefade 1`: a seen one fades
-//! out at `forced_fade_speed`; TF2, specs/tf2/ragdolls.md); removed when the owner lives again or is gone (a
+//! out at `forced_fade_speed`; TF2, specs/tf2/ragdolls.md; the party apps'
+//! `BodiesGoOnRespawn` makes every game's removed when the owner lives again); removed when the owner lives again or is gone (a
 //! living owner whose ragdoll went with the map loses `Ragdolled` as well; an
 //! owner lives again only once seen dead since, or after `DEATH_NEWS_WAIT`: a
 //! network client hears of a death before the owner's health comes).
@@ -264,12 +265,35 @@ impl Default for RagdollRules {
 }
 
 impl RagdollRules {
+    /// The rules as played: in a party (`BodiesGoOnRespawn`) every
+    /// game's ragdoll goes when its owner lives again.
+    pub fn in_party(self, party: bool) -> Self {
+        if party {
+            Self {
+                lifetime: RagdollLifetime::UntilRespawn,
+                ..self
+            }
+        } else {
+            self
+        }
+    }
+
     /// The ragdoll stays when its owner lives again, until the owner dies
     /// again or is gone.
     pub fn outlives_respawn(&self) -> bool {
         self.lifetime != RagdollLifetime::UntilRespawn
     }
 }
+
+/// The party apps' rule over every game's own (Ultimate Gun Game, Lucker
+/// Party; for performance): a player's ragdoll or body goes when its owner
+/// lives again, whatever game's it is and whatever character (a previous
+/// rung's) left it. Ragdolls read it here (`RagdollRules::in_party`);
+/// games with bodies of their own read it too (Combat Arms' `CaBody`,
+/// Halo's `HaloCorpse`). The standalone games leave it out and keep their
+/// own lifetimes (TF2's timer, HL2:DM's until the next death).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BodiesGoOnRespawn;
 
 /// How long a game's ragdoll stays (`RagdollRules::lifetime`). Every kind
 /// goes at a round restart and when its owner is gone.
@@ -1340,6 +1364,7 @@ fn remove_ragdolls(
     models: Option<Res<CharacterModels>>,
     rules: Res<RagdollGameRules>,
     settings: Res<RagdollSettings>,
+    party: Option<Res<BodiesGoOnRespawn>>,
     time: Res<Time>,
     mut commands: Commands,
 ) {
@@ -1365,7 +1390,8 @@ fn remove_ragdolls(
             continue;
         }
         let game = models.as_ref().and_then(|m| m.0.get(r.model)).and_then(|m| m.game);
-        if let RagdollLifetime::Faded(fade) = rules.of(game).lifetime {
+        let rule = rules.of(game).in_party(party.is_some());
+        if let RagdollLifetime::Faded(fade) = rule.lifetime {
             // Timed (specs/tf2/ragdolls.md 3, 5): its timer from the tick
             // it was made, first run on the next, once the view has looked
             // at it (spec Open question 1; a forced fade would otherwise
@@ -1411,7 +1437,7 @@ fn remove_ragdolls(
         if !gone(r.owner) && !seen_dead && now - r.born < DEATH_NEWS_WAIT {
             continue;
         }
-        if rules.of(game).outlives_respawn() && !gone(r.owner) {
+        if rule.outlives_respawn() && !gone(r.owner) {
             // The owner gets a body of its own; this one stays.
             commands.entity(e).insert(Outlived);
             commands.entity(r.owner).remove::<Ragdolled>();

@@ -294,11 +294,11 @@ fn a_cs_source_player_moves_as_in_cs_source() {
     assert!(party.app.world().get::<Dead>(a).is_none());
 }
 
-/// Combat Arms' bodies in the gun game go as in its free-for-all (One Man
-/// Army, specs/combat_arms/characters.md 10): 5 s after the owner's
-/// respawn and the death animation's end, not at the next round.
+/// Combat Arms' bodies in the gun game go at the owner's respawn, as
+/// every game's in the party apps (`map::ragdoll::BodiesGoOnRespawn`, for
+/// performance), not 5 s after it as in its free-for-all.
 #[test]
-fn combat_arms_bodies_go_as_in_its_free_for_all() {
+fn combat_arms_bodies_go_at_the_respawn() {
     use combat_arms::game::characters::CaBody;
     let mut sim = party();
     let a = soldier(&mut sim);
@@ -315,12 +315,10 @@ fn combat_arms_bodies_go_as_in_its_free_for_all() {
         w.query::<&CaBody>().iter(w).count()
     };
     assert_eq!(bodies(&mut sim), 1, "Combat Arms' body left");
-    // The respawn (2 s), the death animation (at most 7.8 s), then 5 s.
+    // The respawn (2 s): gone with it.
     sim.seconds(4.0);
     assert!(sim.app.world().get::<Dead>(b).is_none(), "respawned");
-    assert_eq!(bodies(&mut sim), 1, "kept a while after the respawn");
-    sim.seconds(12.0);
-    assert_eq!(bodies(&mut sim), 0, "gone");
+    assert_eq!(bodies(&mut sim), 0, "gone at the respawn");
 }
 
 /// Every rung's gun is in its game's class: Combat Arms' shotgun, SMG,

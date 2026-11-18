@@ -379,3 +379,20 @@ fn t14_t16_forced_fades_on_the_tick() {
     sim.ticks(1);
     assert!(sim.app.world().get_entity(r).is_err(), "alpha 0: gone");
 }
+
+/// A party app (`ragdoll::BodiesGoOnRespawn`) removes TF2's ragdolls
+/// when their owner lives again, over TF2's own timer; the standalone
+/// game keeps them (t5 above).
+#[test]
+fn in_a_party_it_goes_on_the_respawn() {
+    let (mut sim, ps) = sim(1);
+    sim.app.world_mut().insert_resource(chimera_world::map::ragdoll::BodiesGoOnRespawn);
+    let p = ps[0];
+    die(&mut sim, p);
+    sim.ticks(ticks(3.0));
+    assert_eq!(ragdolls(&mut sim).len(), 1, "kept while its owner is dead");
+    respawn(&mut sim, p);
+    sim.ticks(3);
+    assert!(ragdolls(&mut sim).is_empty(), "gone at the respawn");
+    assert!(sim.app.world().get::<Ragdolled>(p).is_none(), "the player has its body back");
+}

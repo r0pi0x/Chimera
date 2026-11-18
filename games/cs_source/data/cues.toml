@@ -26,3 +26,8 @@ match_lost = "sound/buttons/button10.wav"
 # Your gun's game changed on a rung (with `party_swap_effect 1`: the
 # swap's flash; a swap to CS:S, or to a game whose pack has none).
 swap = "sound/items/battery_pickup.wav"
+
+# Raised (ours): the step-up sound is also the kill sound of a character
+# with no kill line (chimera_sim::kill_voice), and was quiet.
+[volumes]
+rung_up = 1.8

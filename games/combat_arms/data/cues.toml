@@ -26,3 +26,9 @@ last_rung_other = "UI_SND/VWRM/WEAPONRACE_LASTCHANGE.WAV"
 # `weapon_change_sound` (music_ambience.md Section 10), the game's only
 # sound for a weapon change. Combat Arms has no swap: our choice.
 swap = "UI_SND/VWRM/WEAPONRACE_CHANGE.WAV"
+
+# Raised (ours): the step-up sound is quiet beside the game's others, and it
+# is also the kill sound of a character with no kill line
+# (chimera_sim::kill_voice).
+[volumes]
+rung_up = 1.8

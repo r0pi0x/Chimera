@@ -393,10 +393,37 @@ the user's go-ahead: no Actions runs unless asked.
 - **Playtest bugs, 2026-11-18 (user: bug fixes before new features).**
   For each specific bug, check whether it's general and fix the general
   cause.
-  - **Rules (done 2026-11-18, all but others' 3D kill voices):** the final kill must be a melee kill to win. A grenade's
+  - **Rules (done 2026-11-18):** the final kill must be a melee kill to win. A grenade's
     second kill must not count as the finale's melee kill. Kill sounds:
     only your own kills, from your character's game, at that game's
     volume; others' kills are silent.
+  - **Character sounds and bodies in the party modes (done 2026-11-18,
+    `char-voices`; confirm by ear in a playtest):** kill voices are the
+    killer's character's, as it was on the kill's tick (`chimera_sim::
+    kill_voice`): Combat Arms' `EnemyDown` and own kill voice only for a
+    Combat Arms character, TF2's class kill lines by its response rules
+    (specs/tf2/voices.md, new), none for CS:S, HL2:DM and Halo; a kill
+    with no line plays the rung-up cue for its killer (once, not on top
+    of the kill's own rung up), every pack's `rung_up` raised to 1.8
+    (`[volumes]`). A rung up on the kill's tick changes neither the line
+    nor its voice. Pain for any gun: Combat Arms' groans no longer need
+    one of its guns; TF2 characters cry their class's pain lines (with
+    the spec's gap) and death cries; CS:S, HL2:DM and Halo kept theirs.
+    Every game's ragdoll or body goes at its owner's respawn in the party
+    apps (`map::ragdoll::BodiesGoOnRespawn`); the standalone games keep
+    their own lifetimes. Tests: tf2 `voices::`, `ragdolls::
+    in_a_party_it_goes_on_the_respawn`, heavy `guns::
+    every_voice_entry_has_waves`; combat_arms `kill_callouts::
+    kill_voice_survives_the_killers_rung_change`, `enemy_down_is_the_
+    character_it_was_when_it_struck`, `effects_sounds::
+    another_games_guns_hit_plays_our_hurt_sound`, `characters::
+    in_a_party_the_body_goes_at_the_respawn`; halo_ce `death::
+    in_a_party_a_body_goes_at_its_owners_respawn`; chimera_client
+    `callouts::an_unvoiced_kill_sounds_the_rung_up_cue`. Left: TF2's
+    voice files in the asset service's sets (`chimera_pack sets tf2`:
+    the `vo/` files are fetched on demand until then), the attacker's
+    own `PainSevere` line, crit pain and the on-fire lines (the module's
+    known shortcuts).
   - **UGG chat and HUD (done 2026-11-18 except the match-end layout):**
     - an old plain scoreboard (Name/Kills/Deaths/Gun/Ping/Wins, the game-time table) sometimes shows on Tab while going from a match to the lobby or the match-end screen; only the UGG Tab menu should;
     - no Combat Arms chat at all in Ultimate Gun Game;
@@ -2887,6 +2914,13 @@ The console and overlays are in (chimera/core/src/console.rs, chimera/client/src
 ## 6. Sound, remaining
 
 docs/plans/active/sound.md.
+
+- **Announcers across games (idea, user 2026-11-18; not now).** Rotate
+  or randomize the kill announcer among games whose announcer has a line
+  for each event we announce (`chimera_core::announcer`: the steps, first
+  kill, headshot, revenge, ...), say per map or per kill. It depends on
+  each game's voice lines covering our events (a pack per game, data);
+  Combat Arms' stays the default.
 
 - **Synced jukebox (future, user 2026-11-15).** Every player in a match
   hears the same music track at the same point: the server picks the

@@ -69,6 +69,7 @@ pub mod player_anim;
 pub mod scripts;
 pub mod sets;
 pub mod view;
+pub mod voices;
 pub mod weapons;
 
 pub use maps::MAP_LOADER;
@@ -137,6 +138,7 @@ impl PluginGroup for Tf2Plugins {
             .add(Tf2ViewPlugin)
             .add(bodies::Tf2BodiesPlugin)
             .add(player_anim::Tf2AnimPlugin)
+            .add(voices::Tf2VoicesPlugin)
     }
 }
 
@@ -211,5 +213,8 @@ pub fn party_sim(app: &mut bevy::app::App) {
     view::add_rules(app);
     if !app.is_plugin_added::<bodies::Tf2BodiesPlugin>() {
         app.add_plugins((bodies::Tf2BodiesPlugin, player_anim::Tf2AnimPlugin));
+    }
+    if !app.is_plugin_added::<voices::Tf2VoicesPlugin>() {
+        app.add_plugins(voices::Tf2VoicesPlugin);
     }
 }

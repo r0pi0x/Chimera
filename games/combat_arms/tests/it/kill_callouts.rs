@@ -255,3 +255,90 @@ fn c111_callout_files() {
     sim.ticks(1);
     assert!(heard(&mut sim, infected, v, Some(infected)).is_empty());
 }
+
+/// The kill voice is the character the killer was on the kill's tick
+/// (`chimera_sim::kill_voice::at_kill`), not the one a rung up
+/// made it since: a woman of ours who is TF2's by now still speaks her
+/// `EnemyDown`; a TF2 character who is ours by now speaks none of ours.
+#[test]
+fn enemy_down_is_the_character_it_was_when_it_struck() {
+    use chimera_core::slots::GameIdentity;
+    use chimera_sim::kill_voice::{CharacterAtTick, KillerCharacter};
+    let mut sim = sim(FIXTURE);
+    let a = player(&mut sim, 1, -500.0);
+    let v = player(&mut sim, 2, 0.0);
+    sim.ticks(1);
+    let struck = |sim: &mut Sim, game: &str, voice: u8, now: &str| {
+        let w = sim.app.world_mut();
+        let tick = w.resource::<chimera_core::core::SimTick>().0;
+        w.entity_mut(a).insert((
+            CharacterAtTick {
+                tick,
+                character: KillerCharacter {
+                    game: Some(game.into()),
+                    voice: Some(voice.to_string()),
+                },
+            },
+            GameIdentity(now.into()),
+        ));
+    };
+    struck(&mut sim, "combat_arms", FEMALE, "tf2");
+    let out = calls(&mut sim, &died(v, Some(a), Vec3::ZERO));
+    let enemy_down: Vec<_> = out.iter().filter(|(_, m)| m.record == ENEMY_DOWN).collect();
+    assert_eq!(enemy_down.len(), 1, "{out:?}");
+    assert_eq!(enemy_down[0].1.template, FEMALE, "her template then");
+    struck(&mut sim, "tf2", MALE, "combat_arms");
+    let out = calls(&mut sim, &died(v, Some(a), Vec3::ZERO));
+    assert!(out.iter().all(|(_, m)| m.record != ENEMY_DOWN), "TF2's kill: {out:?}");
+}
+
+/// The whole tick: a kill whose killer a rung up swaps to TF2 on the same
+/// tick (as the ladder does, after the deaths) still has our `EnemyDown`
+/// heard, in the killer's template then, and `kill_voice` hears it was
+/// voiced (no rung-up sound for it).
+#[test]
+fn kill_voice_survives_the_killers_rung_change() {
+    use chimera_core::slots::GameIdentity;
+    use chimera_sim::kill_voice::KillVoiceOutcome;
+    #[derive(Resource, Default)]
+    struct Outcomes(Vec<KillVoiceOutcome>);
+    let mut sim = sim(FIXTURE);
+    sim.app
+        .init_resource::<Outcomes>()
+        .add_systems(Last, |mut r: MessageReader<KillVoiceOutcome>, mut o: ResMut<Outcomes>| o.0.extend(r.read().copied()))
+        // The rung up: right after the tick's deaths, the killer is TF2's.
+        .add_systems(
+            FixedUpdate,
+            (|mut died: MessageReader<Died>, mut commands: Commands| {
+                for d in died.read() {
+                    if let Some(a) = d.attacker {
+                        commands.entity(a).insert(GameIdentity("tf2".into()));
+                    }
+                }
+            })
+            .after(chimera_core::core::apply_damage),
+        );
+    let a = player(&mut sim, 1, -500.0);
+    let v = player(&mut sim, 2, 0.0);
+    sim.app.world_mut().entity_mut(a).insert((LocalPlayer, GameIdentity("combat_arms".into())));
+    sim.ticks(2);
+    sim.app.world_mut().resource_mut::<Heard>().0.clear();
+    sim.app.world_mut().write_message(Damage {
+        target: v,
+        attacker: Some(a),
+        amount: 5.0,
+        point: Vec3::ZERO,
+        dir: Vec3::X,
+        hitgroup: Hitgroup::Chest,
+        kind: DamageKind::Bullet,
+        weapon: None,
+        force: Vec3::ZERO,
+    });
+    sim.ticks(3);
+    sim.app.update();
+    let w = sim.app.world();
+    assert_eq!(w.get::<GameIdentity>(a).map(|i| i.0.as_str()), Some("tf2"), "swapped on the kill");
+    assert_eq!(w.resource::<Heard>().0, vec!["test\\enemydown_male.wav"], "our line, as he was");
+    let outcomes = &w.resource::<Outcomes>().0;
+    assert_eq!(outcomes, &[KillVoiceOutcome { killer: a, victim: v, voiced: true }]);
+}

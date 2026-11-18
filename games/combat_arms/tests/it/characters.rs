@@ -2064,6 +2064,56 @@ fn c12_corpse_outlives_the_respawn() {
     assert!(bodies(&mut sim).is_empty(), "removed 5 s after the respawn");
 }
 
+/// A party app's bodies (`ragdoll::BodiesGoOnRespawn`) go at their
+/// owner's respawn, not 5 s after it.
+#[test]
+fn in_a_party_the_body_goes_at_the_respawn() {
+    use chimera_core::core::{Dead, Health, Team};
+    let mut sim = Sim::new(CaSim, GreyboxMapPlugin);
+    sim.set_tick_interval(TICK_INTERVAL);
+    combat_arms::harness::with_mode(sim.app.world_mut(), "TDM");
+    sim.app.world_mut().insert_resource(chimera_world::map::ragdoll::BodiesGoOnRespawn);
+    let a = sim.spawn_character(Vec3::new(0.0, 1.0, 12.0), movement::ID);
+    let b = sim.spawn_character(Vec3::new(0.0, 1.0, -20.0), movement::ID);
+    sim.app.world_mut().entity_mut(a).insert(Team(1));
+    sim.app.world_mut().entity_mut(b).insert(Team(2));
+    sim.seconds(4.0);
+    for p in [a, b] {
+        combat_arms::game::rules::spawns::unprotect(sim.app.world_mut(), p);
+    }
+    sim.app.world_mut().write_message(Damage {
+        target: a,
+        attacker: Some(b),
+        amount: 500.0,
+        point: Vec3::ZERO,
+        dir: Vec3::NEG_Z,
+        hitgroup: Hitgroup::Chest,
+        kind: DamageKind::Bullet,
+        weapon: Some(RIFLE),
+        force: Vec3::ZERO,
+    });
+    sim.ticks(2);
+    let bodies = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        w.query::<&CaBody>().iter(w).filter(|b| b.owner == a).cloned().collect::<Vec<_>>()
+    };
+    let died_at = bodies(&mut sim)[0].since;
+    // Until the owner respawns.
+    let alive = |sim: &Sim| {
+        let w = sim.app.world();
+        w.get::<Dead>(a).is_none() && w.get::<Health>(a).is_some_and(|h| h.current > 0.0)
+    };
+    let mut guard = 0;
+    while !alive(&sim) {
+        sim.ticks(1);
+        guard += 1;
+        assert!(guard < 1500, "never respawned");
+    }
+    sim.ticks(2);
+    assert!(bodies(&mut sim).is_empty(), "gone at the respawn");
+    assert!(died_at > 0.0);
+}
+
 /// 13. A leg set without the crouch name crouches on the legs' own
 /// animation.
 #[test]

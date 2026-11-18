@@ -284,3 +284,26 @@ fn a_body_has_hit_volumes_on_its_pose() {
     let ray = h.0[0].center + Vec3::Z * 5.0;
     assert!(h.nearest(ray, Vec3::NEG_Z, 10.0).is_some(), "a shot meets it");
 }
+
+/// A party app (`ragdoll::BodiesGoOnRespawn`): a body goes when its owner
+/// lives again (whatever character left it); without it, Halo's own rule
+/// keeps it (900 idle ticks).
+#[test]
+fn in_a_party_a_body_goes_at_its_owners_respawn() {
+    use bevy::prelude::*;
+    use chimera_core::core::Health;
+    for party in [false, true] {
+        let mut app = App::new();
+        app.add_systems(Update, halo_ce::game::body::death::remove_corpses);
+        if party {
+            app.insert_resource(chimera_world::map::ragdoll::BodiesGoOnRespawn);
+        }
+        let owner = app.world_mut().spawn(Health { current: 0.0, max: 100.0 }).id();
+        let body = app.world_mut().spawn(HaloCorpse { owner, ..corpse("", Vec3::ZERO) }).id();
+        app.update();
+        assert!(app.world().get_entity(body).is_ok(), "kept while its owner is dead");
+        app.world_mut().get_mut::<Health>(owner).unwrap().current = 100.0;
+        app.update();
+        assert_eq!(app.world().get_entity(body).is_err(), party, "party {party}");
+    }
+}

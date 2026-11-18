@@ -431,6 +431,30 @@ full name always works (user decision, 2026-10-31;
   head (the kill voice, sprint breath, idle, jump voice) and the
   heartbeat, interface sounds, the announcer and the gun game's lines.
   Hurt and death sounds were everyone's already.
+- **Kill voices** (user, 2026-11-18; `chimera_sim::kill_voice`): on a
+  kill, the killer's character speaks a kill line of its own game or
+  class, if its game has one (Combat Arms' `EnemyDown` and own kill
+  voice; TF2's class lines by its response rules, specs/tf2/voices.md;
+  CS:S, HL2:DM and Halo players say nothing on a kill). The character is
+  the one the killer was before the kill's frame (noted when either
+  part changes, `CharacterAtTick`), so a rung up that swaps it on the kill
+  or right after neither cuts the line nor changes its voice: the line is
+  chosen then and plays as a sound of its own. A killer whose character
+  said nothing hears the minigame's rung-up cue instead (the client
+  shell's callouts, once: not again when the kill's rung up sounds it),
+  each pack's `rung_up` raised by its cue gain (`[volumes]`). The server
+  decides and sends the outcome with the kill (`net::Killed::marks`), so
+  server, client and listen host agree.
+- **Pain for any gun** (user, 2026-11-18): a character's hurt and death
+  sounds are its own game's whatever game's gun hit it (Combat Arms'
+  groans, TF2's pain lines, CS:S's armour and headshot sounds); only the
+  bullet's impact on the body stays the gun's game's (`weapon::impact`).
+- **Bodies go at the respawn** (user, 2026-11-18, for performance): in
+  the party apps every game's ragdoll or body goes when its owner lives
+  again, a previous rung's character's included
+  (`map::ragdoll::BodiesGoOnRespawn`), over each game's own lifetime
+  (TF2's timer, HL2:DM's until the next death, Combat Arms' 5 s after the
+  respawn, Halo's 900 idle ticks), which the standalone games keep.
 - Cross-game kits (a CS:S character's moveset in another game) are generated
   ahead of time as data, reviewed and playtested, never generated during a
   match. A runtime "chaos kit" could exist later as a server-generated mode.

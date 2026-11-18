@@ -1061,8 +1061,9 @@ pub struct Killed {
     /// kill, head or groin shot, revenge: `announcer::KillFacts`), when the
     /// server announces (specs/combat_arms/kill_streaks.md A1).
     pub facts: Option<chimera_core::announcer::KillFacts>,
-    /// The kill's domination flags (`dominations::KillMark`;
-    /// `kill_marks` bits), 0 for none.
+    /// The kill's domination flags (`dominations::KillMark`) and its
+    /// kill voice's (`kill_voice::KillVoiceOutcome`): `kill_marks` bits, 0
+    /// for none.
     pub marks: u8,
 }
 
@@ -1072,6 +1073,12 @@ pub mod kill_marks {
     pub const DOMINATED: u8 = 1;
     /// The kill was a revenge.
     pub const REVENGE: u8 = 2;
+    /// The killer's character spoke a kill line (`kill_voice::
+    /// KillVoiceOutcome`; unset: its player hears the rung-up sound).
+    pub const VOICED: u8 = 4;
+    /// The kill was asked of the killer's game (`KillVoiceOutcome` comes
+    /// with it).
+    pub const ASKED: u8 = 8;
 }
 
 /// Server -> clients: a thing that is no character was destroyed

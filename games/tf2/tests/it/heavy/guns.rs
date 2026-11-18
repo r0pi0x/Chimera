@@ -267,3 +267,19 @@ fn each_projectile_models_nose_is_its_long_axis() {
         }
     }
 }
+
+/// Every voice entry the players' voices can play (`voices::Tf2Voices::
+/// entries`: pain, death and kill lines) names waves in the install's
+/// sound scripts, the death entries the spec inferred included
+/// (specs/tf2/voices.md open question 1).
+#[test]
+fn every_voice_entry_has_waves() {
+    let Some(mount) = install_mount() else { return };
+    let scripts = sets::sound_scripts(&mount);
+    let missing: Vec<String> = tf2::game::voices::Tf2Voices::built_in()
+        .entries()
+        .into_iter()
+        .filter(|e| scripts.waves(e).is_empty())
+        .collect();
+    assert!(missing.is_empty(), "no waves: {missing:?}");
+}
