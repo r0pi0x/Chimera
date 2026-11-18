@@ -421,6 +421,7 @@ the user's go-ahead: no Actions runs unless asked.
   - Done (2026-11-18), **Windows focus:** clicking the taskbar icon to focus the game did not lock the cursor, so you could not fire. The grab was made only in the frame focus came: lost when a menu flag changed in that frame or when the platform refused or later dropped the clip. Now the grab is retried for 30 frames after every focus gain while playing, sent again every 10, and the click that focused or grabbed doesn't fire (`CapturedKeys` holds mouse buttons). The party's Escape menu counts as a menu. Test: chimera_client `every_focus_gain_grabs_again_and_the_focusing_click_does_not_fire`; confirm on Windows.
   - **Rendering:** Z-fighting on a bridge on `combat_arms:neptune` (`setpos -805.77 -236.73 -1779.53;setang 38.72 114.13 0.00`); find whether it is coplanar faces the original game separates (draw order, a decal or overlay flag, a depth bias) and fix it for every map of that kind, not this bridge alone.
   - **Halo:**
+    - teleporters (the white pads, e.g. `halo_ce:putput` `setpos 511.26 1664.58 76.32;setang 3.83 284.37 0.00`) feel buggy to the user; no sound, no shimmer, no blocked text yet (teleporters.rs "Known shortcuts"); make them read clearly and check the behaviour against specs/halo_ce;
     - weapon sounds missing (the shotgun's fire, the plasma pistol's
       charge): an audit of every Halo weapon's sounds in a party app, with
       a test like TF2's;
@@ -429,6 +430,7 @@ the user's go-ahead: no Actions runs unless asked.
       culling);
     - objects on Halo maps aren't lit as expected.
   - **Lobby:**
+    - after a map change the loading screen's physics step jitters back and forth, and Half-Life 2 healing-like sounds play during the load: nothing of the next match may run, sound or draw under the loading screen; one load progress that only moves forward;
     - loading behind the lobby must be invisible (no freezes, sound or
       drawing);
     - the bot navigation mesh cached per map, and built in the background;
