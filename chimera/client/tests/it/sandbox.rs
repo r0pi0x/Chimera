@@ -431,12 +431,15 @@ fn letters_type_only_in_the_focused_search_and_b_toggles() {
     press(&mut sim, &[KeyCode::Escape]);
     assert!(ui(&sim).view.search.is_empty() && ui(&sim).screen == SandboxScreen::ChangeGun);
     // B closes it; the screen toggles back open with B from the range.
-    type_text(&mut sim, "b");
+    real_key(&mut sim, KeyCode::KeyB, "b");
     frame(&mut sim);
     assert_eq!(ui(&sim).screen, SandboxScreen::None, "B closes Change gun");
-    press(&mut sim, &[KeyCode::KeyB]);
+    // The opening press as the platform gives it (its event too): the
+    // view doesn't take it as its close (playtest 2026-11-18).
+    real_key(&mut sim, KeyCode::KeyB, "b");
     frame(&mut sim);
-    assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun, "B opens it");
+    frame(&mut sim);
+    assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun, "B opens it and it stays open");
     // A click on the field focuses it too; Enter lets go of it.
     sim.app.world_mut().write_message(chimera_client::client::sandbox::change_gun::GunAction::FocusSearch);
     frame(&mut sim);
@@ -446,6 +449,20 @@ fn letters_type_only_in_the_focused_search_and_b_toggles() {
     assert!(!ui(&sim).view.search_focus);
     assert_eq!(ui(&sim).view.search, "awp");
     assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun, "Enter in the field switched nothing");
+}
+
+/// A key as the platform gives it: its event (the text) and its press
+/// (`ButtonInput`) in one frame, then let go.
+fn real_key(sim: &mut Sim, code: KeyCode, ch: &str) {
+    sim.app.world_mut().write_message(KeyboardInput {
+        key_code: code,
+        logical_key: Key::Character(ch.into()),
+        state: ButtonState::Pressed,
+        text: Some(ch.into()),
+        repeat: false,
+        window: Entity::PLACEHOLDER,
+    });
+    press(sim, &[code]);
 }
 
 /// One key event with its physical key (`type_text` has none).
@@ -497,7 +514,7 @@ fn the_search_is_the_standard_text_field_with_a_caret_and_a_selection() {
     type_text(&mut sim, "m4");
     assert_eq!(ui(&sim).view.search, "m4");
     // B is a letter while the field has the keys.
-    type_text(&mut sim, "b");
+    real_key(&mut sim, KeyCode::KeyB, "b");
     assert_eq!(ui(&sim).view.search, "m4b");
     assert_eq!(ui(&sim).screen, SandboxScreen::ChangeGun);
     // Enter lets go; B then closes; Esc after `/` lets go too.
@@ -507,7 +524,7 @@ fn the_search_is_the_standard_text_field_with_a_caret_and_a_selection() {
     assert_eq!(ui(&sim).view.search_caret, 3, "focused again with the caret at the end");
     press(&mut sim, &[KeyCode::Escape]);
     assert!(!ui(&sim).view.search_focus && ui(&sim).view.search == "m4b");
-    type_text(&mut sim, "b");
+    real_key(&mut sim, KeyCode::KeyB, "b");
     frame(&mut sim);
     assert_eq!(ui(&sim).screen, SandboxScreen::None, "B closes it again once the field let go");
 }

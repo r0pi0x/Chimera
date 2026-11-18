@@ -30,7 +30,9 @@
 //! **Keys** (`keys`, only while a sandbox plays and neither the console
 //! nor chat has the keys): B Change gun, T the bench (each toggles; Esc
 //! closes), 1 to 6 switch to a pinned gun (and show the bar), K repeats
-//! the last set-up, Tab held
+//! the last set-up. The sandbox owns B, T, K and its pinned slots'
+//! digits while it plays (`owned_keys`, `binds::OwnedKeys`): no game's
+//! bind on them acts, whoever's character the player is. Tab held
 //! (`+showscores`) the Tab column. The same as console commands:
 //! `sandbox_gun [gun]` (with a gun: opened on it), `sandbox_bench`,
 //! `sandbox_pin <1-6> [gun]`, `sandbox_key <1-6|k>` (scenes).
@@ -513,6 +515,19 @@ pub enum SandboxAction {
     Select(String),
 }
 
+/// The owner of the sandbox's keys (`OwnedKeys`).
+pub const OWNER: &str = "sandbox";
+
+/// The keys the sandbox owns while it plays: B, T, K, and the digit of
+/// each pinned slot (an empty slot's digit stays the game's).
+pub fn owned_keys(pins: &Pins) -> Vec<KeyCode> {
+    let mut k = vec![KeyCode::KeyB, KeyCode::KeyT, KeyCode::KeyK];
+    let digits = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6];
+    k.extend(digits.into_iter().zip(pins.0.iter()).filter(|(_, p)| p.is_some()).map(|(d, _)| d));
+    k.sort();
+    k
+}
+
 /// The keys (module doc).
 #[allow(clippy::too_many_arguments)]
 fn keys(
@@ -522,9 +537,17 @@ fn keys(
     chat: Option<Res<crate::client::chat::ChatInput>>,
     clock: Option<Res<chimera_ui::UiClock>>,
     bench: Option<Res<bench::BenchUi>>,
+    mut owned: ResMut<crate::client::binds::OwnedKeys>,
     mut ui: ResMut<SandboxUi>,
     mut out: MessageWriter<SandboxAction>,
 ) {
+    // The keys are the sandbox's alone while it plays (`OwnedKeys`): no
+    // game's bind on them acts (CS:S's `buymenu` on B, a radio, push to
+    // talk on T).
+    let mine = if ui.on { owned_keys(&ui.pins) } else { Vec::new() };
+    if owned.of(OWNER) != mine {
+        owned.set(OWNER, &mine);
+    }
     if !ui.on {
         return;
     }
@@ -541,16 +564,18 @@ fn keys(
         return;
     }
     let now = clock.map_or(0.0, |c| c.now);
-    let k = |c: KeyCode| keys.just_pressed(c);
+    let k = |c: KeyCode| owned.just_pressed(&keys, c);
     // Change gun's own keys are its own (typing, arrows): only Esc and B
-    // reach here while it's open.
+    // reach here while it's open. B is read here alone, opening and
+    // closing it (it was also read as a typed letter by the view, which
+    // took the press that opened it as a close).
     let typing = (ui.screen == SandboxScreen::ChangeGun && ui.view.search_focus) || picking;
     if k(KeyCode::Escape) && ui.screen == SandboxScreen::Bench {
         ui.took_esc = true;
         out.write(SandboxAction::Close);
         return;
     }
-    if !typing && ui.screen != SandboxScreen::ChangeGun && k(KeyCode::KeyB) {
+    if !typing && k(KeyCode::KeyB) {
         out.write(SandboxAction::Toggle(SandboxScreen::ChangeGun));
     }
     if !picking && ui.screen != SandboxScreen::ChangeGun && k(KeyCode::KeyT) {
@@ -626,6 +651,7 @@ pub struct SandboxUiPlugin;
 impl Plugin for SandboxUiPlugin {
     fn build(&self, app: &mut App) {
         crate::client::signal::setup(app);
+        crate::client::binds::add_owned_keys(app);
         app.init_resource::<SandboxUi>()
             .init_resource::<SandboxCatalogue>()
             .init_resource::<UnitProgress>()

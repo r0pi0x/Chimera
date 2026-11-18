@@ -102,6 +102,7 @@ impl Plugin for LocalInputPlugin {
             .add_systems(PreUpdate, super::binds::release_captured.after(bevy::input::InputSystems))
             .add_systems(Update, ((grab_cursor, write_local_intent, chimera_net::net::predict::hold_view).chain(), drop_key))
             .add_systems(FixedPreUpdate, apply_wheel_jump);
+        super::binds::add_owned_keys(app);
         mouse_cvars(app);
     }
 }
@@ -179,13 +180,35 @@ pub fn capture_cursor(cursor: &mut CursorOptions) {
     cursor.grab_mode = CursorGrabMode::Locked;
 }
 
-#[allow(clippy::type_complexity)]
+/// Frames after a focus gain in which the grab is (re)made: the first
+/// one the player is free to play in grabs; while grabbed the grab is
+/// sent again every `REASSERT_EVERY` frames, since Windows can drop the
+/// cursor clip after the focus came (a taskbar click ends after the
+/// window took focus, a minimized window is restored after), while our
+/// `CursorOptions` still says grabbed, so nothing would send it again.
+const REGRAB_FRAMES: u32 = 30;
+const REASSERT_EVERY: u32 = 10;
+
+/// `grab_cursor`'s memory: frames of a focus gain's regrab left, and
+/// frames in which a click is still the focusing one.
+#[derive(Default)]
+pub(super) struct Regrab {
+    left: u32,
+    focus_click: u32,
+}
+
+/// The grab (module doc of `grab_cursor`'s comments): lost with focus;
+/// on every focus gain (alt-tab, a taskbar click, a click into the
+/// window, a restore) grabbed and hidden again while playing with nothing
+/// open; else a click grabs. The click that grabs, or that came with the
+/// focus, doesn't fire (`CapturedKeys::capture_button`, until let go).
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub(super) fn grab_cursor(
-    mut cursor: Single<&mut CursorOptions>,
+    mut window: Single<(&mut CursorOptions, Option<&Window>)>,
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut focus: MessageReader<bevy::window::WindowFocused>,
-    menu: Option<Res<super::front_end::MenuStatus>>,
+    (menu, app_menu): (Option<Res<super::front_end::MenuStatus>>, Option<Res<super::front_end::AppMenu>>),
     vgui: Option<Res<super::vgui::VguiOpen>>,
     (console, debug_ui, egui, chat): (
         Option<Res<super::console::ConsoleUi>>,
@@ -193,13 +216,18 @@ pub(super) fn grab_cursor(
         Option<Res<bevy_inspector_egui::bevy_egui::input::EguiWantsInput>>,
         Option<Res<super::chat::ChatInput>>,
     ),
+    mut captured: Option<ResMut<super::binds::CapturedKeys>>,
+    mut regrab: Local<Regrab>,
 ) {
+    let (cursor, win) = &mut *window;
     // The game menu and the game-look buy and team menus own the mouse
     // while open (Esc opens and closes the game menu), and the click that
     // closes one isn't a click to grab. So do the console (clicks there
-    // select and scroll its text), the debug UI, and any egui window
+    // select and scroll its text), the debug UI, an app's own menu (the
+    // party apps' Escape menu, the sandbox's screens) and any egui window
     // under the pointer (the inspector).
     let in_menu = menu.as_ref().is_some_and(|m| m.open || m.is_changed())
+        || app_menu.as_ref().is_some_and(|m| m.open || m.is_changed())
         || vgui.as_ref().is_some_and(|v| v.any() || v.is_changed())
         || console.is_some_and(|c| c.open)
         || debug_ui.is_some_and(|d| d.open || d.is_changed())
@@ -207,23 +235,61 @@ pub(super) fn grab_cursor(
     // Losing focus (alt-tab) ends the grab: Windows drops the cursor clip
     // then, and a grab we still believed in would keep turning the view
     // while the real cursor wanders off and clicks other windows. Coming
-    // back (alt-tab) grabs again at once, as CS:S, when playing with
-    // nothing open that owns the mouse or keys (menu, console, chat,
-    // dialogs, debug UI); else a click grabs.
+    // back, however it came (alt-tab, the taskbar, a click), grabs again
+    // as CS:S, when playing with nothing open that owns the mouse or keys
+    // (menu, console, chat, dialogs, debug UI): within `REGRAB_FRAMES`,
+    // so a menu flag changing in the frame focus came doesn't lose it;
+    // else a click grabs.
     let (mut lost, mut gained) = (false, false);
     for f in focus.read() {
         (lost, gained) = (!f.focused, f.focused);
     }
     let playing = menu.as_ref().is_none_or(|m| m.in_game && !m.loading);
     let typing = chat.is_some_and(|c| c.open.is_some());
+    let mut grabbed_now = false;
     if lost {
-        release_cursor(&mut cursor);
-    } else if gained && playing && !in_menu && !typing {
-        capture_cursor(&mut cursor);
-    } else if keys.just_pressed(KeyCode::Escape) && menu.is_none() {
-        release_cursor(&mut cursor);
-    } else if mouse.just_pressed(MouseButton::Left) && !cursor_grabbed(&cursor) && !in_menu {
-        capture_cursor(&mut cursor);
+        release_cursor(cursor);
+        *regrab = Regrab::default();
+        return;
+    }
+    if gained {
+        *regrab = Regrab { left: REGRAB_FRAMES, focus_click: 2 };
+    }
+    // A window that says it lost focus since (no message read here) ends
+    // the regrab.
+    if win.is_some_and(|w| !w.focused) && !gained {
+        regrab.left = 0;
+    }
+    if keys.just_pressed(KeyCode::Escape) && menu.is_none() {
+        release_cursor(cursor);
+        regrab.left = 0;
+    } else if regrab.left > 0 {
+        regrab.left -= 1;
+        if playing && !in_menu && !typing {
+            if !cursor_grabbed(cursor) || cursor.visible {
+                capture_cursor(cursor);
+                grabbed_now = true;
+            } else if regrab.left % REASSERT_EVERY == 0 {
+                // Send the grab again (bevy_winit sends on a change).
+                cursor.set_changed();
+            }
+        }
+    } else if mouse.just_pressed(MouseButton::Left) && !cursor_grabbed(cursor) && !in_menu {
+        capture_cursor(cursor);
+        grabbed_now = true;
+    }
+    // The click that grabbed, or that focused the window, is not a shot.
+    let focusing = regrab.focus_click > 0;
+    regrab.focus_click = regrab.focus_click.saturating_sub(1);
+    if (grabbed_now || focusing)
+        && let Some(c) = captured.as_mut()
+    {
+        let held: Vec<MouseButton> = if grabbed_now { mouse.get_pressed().copied().collect() } else { mouse.get_just_pressed().copied().collect() };
+        for b in held {
+            if !c.holds_button(b) {
+                c.capture_button(b);
+            }
+        }
     }
 }
 
@@ -593,6 +659,83 @@ mod tests {
         app.update();
         let cursor = app.world().get::<CursorOptions>(window).unwrap();
         assert!(cursor_grabbed(cursor) && !cursor.visible);
+    }
+
+    /// However focus comes back (a taskbar click, playtest 2026-11-18:
+    /// the cursor stayed free and the player couldn't fire), the cursor
+    /// is grabbed and hidden again while playing: also when a menu flag
+    /// changed in the frame focus came, and again when the platform
+    /// dropped the grab after it (bevy_winit puts `grab_mode` back when
+    /// the grab fails); the grab is sent again a few frames on (Windows
+    /// can drop the clip once the taskbar click ends). The click that
+    /// came with the focus doesn't fire; the next one does.
+    #[test]
+    fn every_focus_gain_grabs_again_and_the_focusing_click_does_not_fire() {
+        use bevy::ecs::{change_detection::DetectChanges, world::Ref};
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<super::super::binds::CapturedKeys>()
+            .insert_resource(super::super::front_end::MenuStatus { in_game: true, ..default() })
+            .add_message::<bevy::window::WindowFocused>()
+            .add_systems(PreUpdate, super::super::binds::release_captured)
+            .add_systems(Update, grab_cursor);
+        let window = app.world_mut().spawn(CursorOptions { visible: false, grab_mode: CursorGrabMode::Locked, ..default() }).id();
+        app.update();
+        app.update();
+        let focus = |app: &mut App, focused: bool| app.world_mut().write_message(bevy::window::WindowFocused { window, focused });
+        let grabbed = |app: &App| {
+            let c = app.world().get::<CursorOptions>(window).unwrap();
+            cursor_grabbed(c) && !c.visible
+        };
+        let attack = |app: &App| {
+            let binds = std::collections::BTreeMap::from([("mouse1".to_string(), "+attack".to_string())]);
+            let w = app.world();
+            super::super::binds::pressed_free(&binds, w.resource(), w.resource(), Some(w.resource()), "+attack")
+        };
+        focus(&mut app, false);
+        app.update();
+        assert!(!grabbed(&app), "focus lost: free");
+        // Back by the taskbar, a menu flag touched in that frame.
+        focus(&mut app, true);
+        app.world_mut().resource_mut::<super::super::front_end::MenuStatus>().set_changed();
+        app.update();
+        app.update();
+        assert!(grabbed(&app), "grabbed a frame later");
+        // The platform dropped the grab: grabbed again.
+        app.world_mut().get_mut::<CursorOptions>(window).unwrap().bypass_change_detection().grab_mode = CursorGrabMode::None;
+        app.update();
+        assert!(grabbed(&app), "grabbed again after the platform let go");
+        // The grab is sent again within the regrab's frames.
+        let changed = |app: &App| {
+            let c: Ref<CursorOptions> = app.world().entity(window).get_ref::<CursorOptions>().unwrap();
+            c.last_changed()
+        };
+        let before = changed(&app);
+        for _ in 0..REGRAB_FRAMES {
+            app.update();
+        }
+        assert!(changed(&app) != before, "the grab sent again");
+        // A click into the window that focuses it: grabbed, no shot.
+        focus(&mut app, false);
+        app.update();
+        focus(&mut app, true);
+        app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Left);
+        app.update();
+        assert!(grabbed(&app));
+        assert!(!attack(&app), "the focusing click doesn't fire");
+        app.world_mut().resource_mut::<ButtonInput<MouseButton>>().clear();
+        app.update();
+        assert!(!attack(&app), "nor while held");
+        app.world_mut().resource_mut::<ButtonInput<MouseButton>>().release(MouseButton::Left);
+        app.update();
+        app.world_mut().resource_mut::<ButtonInput<MouseButton>>().clear();
+        for _ in 0..3 {
+            app.update();
+        }
+        app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Left);
+        app.update();
+        assert!(attack(&app), "the next click fires");
     }
 
     #[test]

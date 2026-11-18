@@ -57,7 +57,8 @@
 //!   the grid's cursor then), Backspace and Delete edit, Ctrl+A/C/X/V
 //!   work, and Enter or Esc lets go of the field (Enter: the cursor is
 //!   on the first match; Enter again switches). With the field not
-//!   focused B closes the view (B opens it, B closes it), I shows the
+//!   focused B closes the view (B opens it, B closes it: the sandbox's
+//!   `keys` reads B, once per press, never this view), I shows the
 //!   large model and R retries the selected gun's failed download. Ctrl+I
 //!   and Ctrl+R do the same at any time; Ctrl+1–6 pins; Esc closes the
 //!   popover, then leaves the field, then clears the search, then closes
@@ -262,6 +263,7 @@ fn follow_cursor(lists: Res<VirtualLists>, grid: Res<Grid>, cat: Res<SandboxCata
 fn keys(
     keys: Res<ButtonInput<KeyCode>>,
     mut typed: MessageReader<KeyboardInput>,
+    owned: Option<Res<crate::client::binds::OwnedKeys>>,
     console: Option<Res<crate::client::console::ConsoleUi>>,
     cat: Res<SandboxCatalogue>,
     progress: Res<UnitProgress>,
@@ -278,7 +280,7 @@ fn keys(
         return;
     }
     let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    let k = |c: KeyCode| keys.just_pressed(c);
+    let k = |c: KeyCode| owned.as_deref().map_or_else(|| keys.just_pressed(c), |o| o.just_pressed(&keys, c));
     let st = lists.state(LIST);
     if k(KeyCode::Escape) {
         typed.clear();
@@ -422,8 +424,8 @@ fn keys(
             _ => None,
         });
     // Typing: with the field focused letters and digits go to the search
-    // (not with Ctrl or Alt held, and never `\`); otherwise B closes the
-    // view, `/` focuses the field, I is the model view and R retries the
+    // (not with Ctrl or Alt held, and never `\`); otherwise (B, which
+    // closes the view, is the sandbox's `keys`') `/` focuses the field, I is the model view and R retries the
     // selected gun's failed download.
     let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
@@ -456,9 +458,6 @@ fn keys(
             continue;
         }
         match &e.logical_key {
-            Key::Character(c) if c.eq_ignore_ascii_case("b") => {
-                out.write(GunAction::Close);
-            }
             Key::Character(c) if c.as_str() == "/" => ui.view.focus_search(),
             Key::Character(c) if c.eq_ignore_ascii_case("i") => ui.view.detail = !ui.view.detail,
             Key::Character(c) if c.eq_ignore_ascii_case("r") => {

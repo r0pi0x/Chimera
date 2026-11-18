@@ -480,6 +480,22 @@ rules (ours: the specs are silent on mixing):
   it off): Combat Arms stands where CS:S does on all 17 ways up, against
   9 before; its own maps unchanged.
 
+- **Halo's**: any contact inside a ladder volume is climbable (its map's
+  climbable sheets, other maps' brushes, games' zones); another map's
+  ladder line is a volume 24 units around it, reaching the geometry
+  behind it (`halo_ce` movement, `LINE_REACH`).
+- **A game without ladders (TF2's)**: nothing on its own maps (their
+  ladder brushes are walls), and every other game's ladders by the
+  shared Source code's contents rule at its 200 units/s
+  (`SourceMovementConfig::climbs_contents`): a TF2 character climbs a
+  Combat Arms map's ladders too (playtest 2026-11-18: it couldn't). One
+  test holds every registered movement to it: each climbs a Source
+  ladder brush, a Combat Arms ladder volume, an HL2 ladder line and a
+  Halo climbable sheet (made as Halo's loader makes them: a solid
+  two-sided sheet and its ladder brush, the map Halo's) (`party_kit`
+  `every_movement_climbs_every_ladder`); on Prisoner's real sheets with
+  the disc image, heavy `halo_ladders`.
+
 On a map of its own game a movement climbs only what its game climbs
 there (`core::foreign_map`): HL2:DM keeps contents ladders solid on its
 maps, CS:S ignores a stray `func_useableladder` on its own; so each game

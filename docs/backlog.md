@@ -403,7 +403,7 @@ the user's go-ahead: no Actions runs unless asked.
     - the match-end chat covers the map vote's timer: a design pass with
       fixed zones (results, vote and timer, chat), screenshots first.
   - **TF2 in general:**
-    - TF2 characters cannot climb ladders, at least on Combat Arms maps; check every game's characters on every game's ladders (one ladder rule in Chimera);
+    - Done (2026-11-18): TF2 characters cannot climb ladders, at least on Combat Arms maps. TF2's movement climbed no ladders anywhere (`contents_ladders` off); now every Source movement that climbs no ladder lines climbs another game's map's ladder brushes, volumes and lines by the shared code's rule at 200 units/s (`SourceMovementConfig::climbs_contents`), its own maps' brushes still walls. Halo's movement didn't read ladder lines (HL2's): now a volume 24 units around each. party_kit `every_movement_climbs_every_ladder` holds every registered movement (CS:S, Combat Arms, HL2:DM, TF2, Halo) to a Source ladder brush, a Combat Arms ladder volume, an HL2 ladder line and a Halo climbable sheet; heavy `halo_ladders` does it on Prisoner's real sheets (not run here: no Halo disc on the Linux box; run it on Windows, as a CS:S character was reported unable to climb Halo's ladders, while the made sheet climbs);
     - the Engineer's mouth hangs open oddly in third person: check face flexes / jaw bone defaults for every TF2 class (and other games' faces), not the Engineer alone;
     - projectiles at the wrong orientation (the rocket was fixed alone;
       the user saw it again on a Medi Gun-class weapon): one general fix
@@ -414,8 +414,8 @@ the user's go-ahead: no Actions runs unless asked.
       data;
     - first-person view models lit wrongly: check whether it's the map
       (HL2 or Halo maps) or the view-model lighting.
-  - **Sandbox:** B still won't open Change gun: it opens and closes over and over (B is also CS:S's `buymenu` bind and maybe others'; one owner per key while the sandbox is up, check every game's binds on B, chimera/client/src/client/sandbox/mod.rs ~553);
-  - **Windows focus:** clicking the taskbar icon to focus the game does not lock the cursor, so you cannot fire; re-grab the cursor on every focus gain while playing (no menu open), however the window got focus, in every app.
+  - Done (2026-11-18), **Sandbox:** B still won't open Change gun: it opened and closed. The press that opened it reached Change gun's own key reader as a typed `b` in the same frame, which closed it; tests pressed the key and sent its event separately, never both. B is now read once, by the sandbox's keys alone, and an app-level screen owns its keys (`binds::OwnedKeys`: the sandbox's B, T, K and pinned digits), so no game's bind (CS:S's `buymenu`, Combat Arms' radio and push to talk) acts on them. Test: ultimate_gun_game `b_toggles_change_gun_once_per_press_with_every_games_character_and_no_bind_acts`;
+  - Done (2026-11-18), **Windows focus:** clicking the taskbar icon to focus the game did not lock the cursor, so you could not fire. The grab was made only in the frame focus came: lost when a menu flag changed in that frame or when the platform refused or later dropped the clip. Now the grab is retried for 30 frames after every focus gain while playing, sent again every 10, and the click that focused or grabbed doesn't fire (`CapturedKeys` holds mouse buttons). The party's Escape menu counts as a menu. Test: chimera_client `every_focus_gain_grabs_again_and_the_focusing_click_does_not_fire`; confirm on Windows.
   - **Rendering:** Z-fighting on a bridge on `combat_arms:neptune` (`setpos -805.77 -236.73 -1779.53;setang 38.72 114.13 0.00`); find whether it is coplanar faces the original game separates (draw order, a decal or overlay flag, a depth bias) and fix it for every map of that kind, not this bridge alone.
   - **Halo:**
     - weapon sounds missing (the shotgun's fire, the plasma pistol's
