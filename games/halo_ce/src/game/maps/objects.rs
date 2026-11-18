@@ -20,8 +20,10 @@
 //!   position (`space::point`) with the placement's axes as the engine
 //!   rotation (`placement_rotation`: the spec's forward, left and up
 //!   through the world's axis mapping).
-//! - Lighting: a prop is lit by one `LightProbe` for the whole map
-//!   (`sky::prop_light`), baked per vertex by the renderer.
+//! - Lighting: a prop is lit by the lightmap under its origin
+//!   (`light_below`, scenario.md "Static lighting"; the sky's probe,
+//!   `sky::prop_light`, where no lit level is below), baked per vertex by
+//!   the renderer.
 //! - Collision (`add_collision`): a placed object's collision model, each
 //!   node's first BSP (the node's region must be set and the BSP have 3D
 //!   nodes), its surface polygons fan-triangulated, taken through the
@@ -35,9 +37,9 @@
 //!   variant" rule needs the placement's variant; every multiplayer
 //!   scenery region has one candidate) and the highest level of detail
 //!   (no distance levels).
-//! - A scenery object's lighting is one probe for the map, not the
-//!   spec's sample of the lightmap under the object ("Static lighting"),
-//!   and not per object; no shadows.
+//! - A scenery object's lighting is the lightmap sample under its origin
+//!   (not its bounding centre) as an ambient cube (`light_below`); no
+//!   shadows.
 //! - Scenery animations (one plant has an animation graph) and the
 //!   object's modifier shader and creation effect are not used; the
 //!   origin offset (0 on the disc) and bounding offset are ignored.
@@ -286,7 +288,7 @@ impl Cache {
 /// Add every created scenery placement of `scenario` to `map` (props,
 /// their models, collision), and return the models' meshes waiting for
 /// their looks (`Dest::Model`).
-pub fn scenery(file: &MapFile, scenario: &Scenario, light: &LightProbe, map: &mut MapData) -> Vec<Pending> {
+pub fn scenery(file: &MapFile, scenario: &Scenario, light: &dyn Fn(Vec3) -> LightProbe, map: &mut MapData) -> Vec<Pending> {
     let palette = &scenario.scenery_palette;
     let mut cache = Cache::default();
     let mut objects: BTreeMap<usize, Option<Object>> = BTreeMap::new();
@@ -323,15 +325,16 @@ pub fn scenery(file: &MapFile, scenario: &Scenario, light: &LightProbe, map: &mu
         };
         let o = h.orientation();
         if let Some(model) = info.model {
+            let at = space::point(h.position);
             map.props.push(MapProp {
                 model,
                 pose: None,
                 ragdoll: None,
-                translation: space::point(h.position),
+                translation: at,
                 rotation: placement_rotation(&o),
                 solid: PropSolid::None,
                 skybox: false,
-                lighting: Some(light.clone()),
+                lighting: Some(light(at)),
                 vertex_light: None,
                 casts_shadow: false,
                 physics: None,

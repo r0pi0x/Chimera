@@ -2,7 +2,9 @@
 //! teleporters (`game::maps::teleporters`: pairing by team index, placed
 //! and sized by scenario.md's rule, the exit's test, message and telefrag
 //! by multiplayer_rules.md 6.8) and climbable sheets as ladder brushes
-//! (`game::maps::collision::ladder_brush`: the sheet's extent, a thin slab).
+//! (`game::maps::collision::ladder_brush`: the sheet's extent, a slab
+//! standing out of the terrain's thickness); the teleported local
+//! player's sound and flash (`teleporters::effects`).
 
 use bevy::math::Vec3;
 use blam_formats::{
@@ -60,6 +62,49 @@ fn teleporter_pairs_become_pads_by_team_index() {
     assert!((radius - 0.2 * METERS_PER_UNIT).abs() < 1e-5);
     assert!((standing - 0.3 * METERS_PER_UNIT).abs() < 1e-5 && (crouched - 0.1 * METERS_PER_UNIT).abs() < 1e-5);
     assert_eq!((telefrag_ticks, message_every), (90.0, 121));
+    assert!(t.level_view, "the view is levelled (6.8, View)");
+}
+
+/// The teleported local player hears "teleporter activate" and sees the
+/// green flash (multiplayer_rules.md 6.8, "Local player effects"), found
+/// by the body's jump (as a client sees it); walking near the pad, or a
+/// jump on another game's map, gives neither.
+#[test]
+fn a_teleported_local_player_hears_the_activate_sound_and_sees_the_flash() {
+    use bevy::prelude::*;
+    use chimera_world::map::{
+        PlaySound,
+        logic_view::ScreenFades,
+    };
+    use halo_ce::game::maps::teleporters::{ACTIVATE_SOUND, FLASH, effects};
+    use NetgameFlagType::{TeleporterSource as S, TeleporterTarget as T};
+    let pads = teleporters(&[flag(S, 0, [0.0, 0.0, 0.0], 0.0), flag(T, 0, [10.0, 0.0, 0.0], 0.0)]);
+    for (game, walk, want) in [("halo_ce", false, true), ("halo_ce", true, false), ("cs_source", false, false)] {
+        let mut app = App::new();
+        app.add_plugins(bevy::time::TimePlugin)
+            .add_message::<PlaySound>()
+            .init_resource::<ScreenFades>()
+            .insert_resource(pads.clone())
+            .insert_resource(chimera_core::core::MapGame(game.into()))
+            .add_systems(Update, effects);
+        let half = Vec3::Y * chimera_core::character::CAPSULE_HEIGHT / 2.0;
+        let p = app.world_mut().spawn((Transform::from_translation(pads.pads[0].source + half), chimera_core::core::LocalPlayer)).id();
+        app.update();
+        let to = if walk { pads.pads[0].source + Vec3::X * 0.3 } else { pads.pads[0].dest };
+        app.world_mut().get_mut::<Transform>(p).unwrap().translation = to + half;
+        app.update();
+        let heard: Vec<PlaySound> = app.world_mut().resource_mut::<Messages<PlaySound>>().drain().collect();
+        let fades = app.world().resource::<ScreenFades>();
+        assert_eq!(heard.len(), usize::from(want), "{game} walk {walk}: {heard:?}");
+        assert_eq!(fades.fades.len(), usize::from(want), "{game} walk {walk}");
+        if want {
+            assert_eq!(heard[0].entry, halo_ce::game::fx::name_of(ACTIVATE_SOUND));
+            assert_eq!(heard[0].at, None, "unspatialized");
+            let (f, _) = fades.fades[0];
+            assert_eq!((f.color, f.alpha, f.duration), FLASH);
+            assert!(f.fade_in, "the flash fades away over its second");
+        }
+    }
 }
 
 /// multiplayer_rules.md 6.8's exit on the pads above: a Spartan standing
@@ -107,6 +152,10 @@ fn a_climbable_sheet_is_a_thin_ladder_brush_of_its_extent() {
     ];
     let b = ladder_brush(&sheet).unwrap();
     assert!(b.ladder);
+    // It stands out of the twin sheet's terrain solid (2 units thick on
+    // the climber's side): a Source climber's probe reaches the slab, not
+    // the twin's back face (CS:S and TF2 on Prisoner's real sheets).
+    assert!(LADDER_SKIN > chimera_world::map::TERRAIN_THICKNESS, "{LADDER_SKIN}");
     assert!((b.min - Vec3::new(0.0, 0.0, 2.0 - LADDER_SKIN)).length() < 1e-5, "{}", b.min);
     assert!((b.max - Vec3::new(1.0, 3.0, 2.0 + LADDER_SKIN)).length() < 1e-5, "{}", b.max);
     assert!(b.contains(Vec3::new(0.5, 1.5, 2.0 + LADDER_SKIN * 0.5)));

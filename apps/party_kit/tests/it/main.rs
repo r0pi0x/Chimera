@@ -96,6 +96,7 @@ mod heavy {
     mod halo_gun_bots;
     mod halo_net_rung;
     mod halo_maps;
+    mod halo_gun_sounds;
     mod halo_ladders;
     mod halo_vehicles;
     mod halo_party_hud;

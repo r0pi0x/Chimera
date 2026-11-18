@@ -21,8 +21,12 @@
 //!   size, is baked at 1/1024 (`sky_point`) into `skybox` meshes (unlit,
 //!   their shaders' own looks) and `MapSkyCamera` has origin 0 and scale
 //!   1024: the sky camera sits at `eye / 1024`, so the miniature stays
-//!   around the player and shifts by 1/1024 of his distance from the
-//!   origin, as the game's does, and does not turn with the view.
+//!   around the player and does not turn with the view. The game draws the
+//!   model's parts in order with no depth test: the parts are nested
+//!   (`nest`: each scaled about the centre to lie nearer than every part
+//!   drawn before it, which the centre sees the same), and the sky camera
+//!   stays at the centre (`NO_PARALLAX`: the game's shift by 1/1024 of the
+//!   player's distance from the origin is dropped).
 //! - `prop_light`: the one light scenery is lit with (`objects`).
 //!
 //! Known shortcuts:
@@ -32,9 +36,11 @@
 //! - The ambient radiosity colours and the sky lights have no place in
 //!   `MapLook` (and the game reads them only when baking lightmaps).
 //! - No lens flares; the sky is drawn by the engine's sky camera (its own
-//!   depth, sorting and projection), not before everything else with no
-//!   depth test; the sky's lights and ambient colours light nothing but
-//!   the scenery's probe (`prop_light`).
+//!   depth, sorting and projection; the parts nested so its depth test
+//!   gives the game's order), within a part the triangles are depth
+//!   tested (the game's are drawn in order); no parallax; the sky's
+//!   lights and ambient colours light nothing but the scenery's probe
+//!   (`prop_light`).
 
 use bevy::math::Vec3;
 use blam_formats::{
@@ -163,9 +169,13 @@ pub fn sky_model(file: &MapFile, sky: Option<&Sky>, data: &mut MapData) -> Vec<P
         ));
         return Vec::new();
     }
+    let mut meshes = meshes;
+    let shells = nest(&mut meshes.iter_mut().map(|(m, _)| &mut m.positions).collect::<Vec<_>>());
     data.sky_camera = Some(MapSkyCamera {
         origin: Vec3::ZERO,
-        scale: SCALE,
+        // Nested parts are exact seen from their centre: the camera stays
+        // there (module doc).
+        scale: if shells { NO_PARALLAX } else { SCALE },
         fog: None,
     });
     meshes
@@ -180,6 +190,54 @@ pub fn sky_model(file: &MapFile, sky: Option<&Sky>, data: &mut MapData) -> Vec<P
             }
         })
         .collect()
+}
+
+/// The sky camera's scale when the sky's parts are nested (`nest`): the
+/// camera sits at the miniature's centre (the game's parallax, 1/1024 of
+/// the camera's distance from the origin, at most 0.15 WU of the sky's
+/// authored size at Blood Gulch's far end, is dropped).
+pub const NO_PARALLAX: f32 = 1.0e9;
+
+/// The nearest a nested part may come to the sky camera (m; its near
+/// plane is 0.01).
+pub const NEAREST: f32 = 0.05;
+
+/// The sky's parts (each part's points, in draw order) nested so that each
+/// part lies wholly nearer the centre than every part drawn before it,
+/// each scaled about the centre: seen from the centre a scaled part looks
+/// the same, so the engine's depth test then gives the game's picture,
+/// which draws the sky model's parts in order with no depth test
+/// (scenario.md, "How a renderer uses the sky", 2: Blood Gulch's ring,
+/// farther out than the sky dome drawn before it, was hidden behind the
+/// dome whenever the view looked up). False (nothing changed) when the
+/// parts can't nest without one coming nearer than `NEAREST`.
+pub fn nest(parts: &mut [&mut Vec<[f32; 3]>]) -> bool {
+    let range = |ps: &Vec<[f32; 3]>| {
+        ps.iter().map(|p| Vec3::from(*p).length()).fold((f32::MAX, 0.0f32), |(lo, hi), d| (lo.min(d), hi.max(d)))
+    };
+    let mut scales = Vec::with_capacity(parts.len());
+    // The nearest any part drawn so far comes, after its scale.
+    let mut inner = f32::MAX;
+    for ps in parts.iter() {
+        let (lo, hi) = range(ps);
+        if ps.is_empty() || hi <= 0.0 {
+            scales.push(1.0);
+            continue;
+        }
+        // Shrunk only as far as needed, with a margin of 1 %.
+        let s = if hi < inner { 1.0 } else { inner * 0.99 / hi };
+        if lo * s < NEAREST {
+            return false;
+        }
+        scales.push(s);
+        inner = inner.min(lo * s);
+    }
+    for (ps, s) in parts.iter_mut().zip(scales) {
+        if s != 1.0 {
+            ps.iter_mut().for_each(|p| *p = (Vec3::from(*p) * s).to_array());
+        }
+    }
+    true
 }
 
 /// The light every scenery object is lit with (`objects`, "Known

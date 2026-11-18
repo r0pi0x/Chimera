@@ -23,14 +23,25 @@
 //! 121st (`MESSAGE_EVERY`).
 //! A source without a target (none on the disc) is no pad.
 //!
+//! The view is levelled on arrival (`MapTeleporters::level_view`: the
+//! pitch becomes 0, 6.8 "View").
+//!
+//! The local player's effects (6.8 "Local player effects", `effects`): the
+//! sound `sfx\ui\teleporter_activate` (unspatialized, the announcer's
+//! queue's immediate line 27, `ACTIVATE_SOUND`, compiled with the audio
+//! kit) and a screen flash of colour (0.35, 1.0, 0.35) at alpha 0.5 fading
+//! over 1 s (`FLASH`), on the machine that shows that player, found by
+//! the body's jump between frames (`MapTeleporters::arrived`): no network
+//! message of their own. The pads' shimmer is the teleporter scenery's
+//! own shader (`maps::generic`).
+//!
 //! Known shortcuts: every living character blocks (no vehicles yet; the
 //! dead never do); a crouch is the footing's (crouched or not: the
 //! segment of a crouch in progress is the nearer end's); the blocked
-//! message (`teleport::TeleportRefused`) has no text on screen, and the
-//! "teleporter activate" sound for the teleported player and the pads'
-//! shimmer are not played (the engine's teleporter has no hook for them
-//! yet).
+//! message (`teleport::TeleportRefused`) has no text on screen (the specs
+//! don't give its text).
 
+use bevy::prelude::*;
 use blam_formats::scenario::{NetgameFlag, Scenario, netgame};
 
 use super::space;
@@ -69,6 +80,64 @@ pub fn teleporters(flags: &[NetgameFlag]) -> MapTeleporters {
         keep_velocity: true,
         telefrag: None,
         exit: exit(),
+        level_view: true,
+    }
+}
+
+/// The sound a teleported local player hears (multiplayer_rules.md 9,
+/// line 27).
+pub const ACTIVATE_SOUND: &str = r"sound\sfx\ui\teleporter_activate";
+
+/// The teleported local player's flash (6.8): colour (0.35, 1.0, 0.35) as
+/// bytes, alpha 0.5, seconds.
+pub const FLASH: ([u8; 3], u8, f32) = ([89, 255, 89], 128, 1.0);
+
+/// How far (m) a body's jump may differ from a pad's and still be its
+/// (`MapTeleporters::arrived`: what it walked between two frames).
+pub const ARRIVAL_SLACK: f32 = 1.0;
+
+/// The teleported local player's sound and flash (module doc), on a Halo
+/// map with teleporters.
+#[allow(clippy::too_many_arguments)]
+pub fn effects(
+    pads: Option<Res<MapTeleporters>>,
+    game: Option<Res<crate::core::MapGame>>,
+    me: Query<(Entity, &Transform), With<crate::core::LocalPlayer>>,
+    mut last: Local<Option<(Entity, Vec3)>>,
+    time: Res<Time>,
+    mut sounds: MessageWriter<crate::map::PlaySound>,
+    fades: Option<ResMut<crate::map::logic_view::ScreenFades>>,
+) {
+    let Ok((e, t)) = me.single() else {
+        *last = None;
+        return;
+    };
+    let now = t.translation;
+    let before = last.replace((e, now)).filter(|(was, _)| *was == e).map(|(_, p)| p);
+    let (Some(pads), Some(before)) = (pads, before) else { return };
+    if game.is_none_or(|g| g.0 != crate::game::GAME) {
+        return;
+    }
+    let half = Vec3::Y * chimera_core::character::CAPSULE_HEIGHT / 2.0;
+    if pads.arrived(before, now, half, ARRIVAL_SLACK).is_none() {
+        return;
+    }
+    sounds.write(crate::map::PlaySound::ui(crate::game::fx::name_of(ACTIVATE_SOUND)));
+    if let Some(mut fades) = fades {
+        let (color, alpha, seconds) = FLASH;
+        fades.show(
+            crate::map::logic_view::ScreenFade {
+                duration: seconds,
+                hold: 0.0,
+                color,
+                alpha,
+                fade_in: true,
+                modulate: false,
+                stay_out: false,
+                purge: false,
+            },
+            time.elapsed_secs_f64(),
+        );
     }
 }
 

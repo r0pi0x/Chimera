@@ -50,7 +50,9 @@
 
 pub mod audio;
 pub mod collision;
+pub mod generic;
 pub mod geometry;
+pub mod light_below;
 pub mod lightmap;
 pub mod materials;
 pub mod objects;
@@ -149,14 +151,19 @@ pub fn load_in(
     {
         map.memos.insert(super::view::load::displays_of(file));
     }
-    // The light field (a closure: not cached): the scenery's light
-    // (`sky::prop_light`) everywhere, so characters and view models are
-    // lit as the scenery is.
+    // The light field (a closure: not cached): the lightmap under each
+    // point (`light_below`), as the game lights its objects, so characters
+    // and view models are lit as the scenery is; the scenery's sky light
+    // (`sky::prop_light`) where no lit level is below.
     if let Some(file) = &file
         && let Ok(scenario) = Scenario::read(file)
     {
         let light = sky::prop_light(sky::level_sky(file, &scenario, &mut Vec::new()).as_ref());
-        map.light_field = Some(crate::map::MapLightField(std::sync::Arc::new(move |_| light.clone())));
+        // The lightmap under the point (`light_below`), else the scenery's.
+        let below = map.lightmap.as_ref().and_then(|lm| light_below::LightBelow::new(map.meshes.iter(), lm));
+        map.light_field = Some(crate::map::MapLightField(std::sync::Arc::new(move |p| {
+            below.as_ref().and_then(|b| b.probe(p, &light)).unwrap_or_else(|| light.clone())
+        })));
     }
     let took = start.elapsed().as_secs_f32();
     if outcome == Outcome::Hit {
@@ -220,7 +227,10 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
         .collect();
     pending.extend(sky::sky_model(&file, level_sky.as_ref(), &mut map));
     let light = sky::prop_light(level_sky.as_ref());
-    pending.extend(objects::scenery(&file, &scenario, &light, &mut map));
+    // Placed objects are lit by the lightmap under them (`light_below`).
+    let below = map.lightmap.as_ref().and_then(|lm| light_below::LightBelow::new(pending.iter().map(|p| &p.mesh), lm));
+    let light_at = |p: bevy::math::Vec3| below.as_ref().and_then(|b| b.probe(p, &light)).unwrap_or_else(|| light.clone());
+    pending.extend(objects::scenery(&file, &scenario, &light_at, &mut map));
     if super::vehicles::place::placed_with(options) {
         pending.extend(super::vehicles::place::vehicles(&file, &scenario, &light, &mut map));
     }

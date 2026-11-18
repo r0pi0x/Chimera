@@ -16,8 +16,8 @@
 //!   arrived beside it until its feet are farther than `rearm` from it.
 //! - Moved: its feet to the destination (the body by the same offset), its
 //!   look turned by the destination's yaw minus the source's
-//!   (`core::set_view`), its velocity kept in world axes (or zeroed,
-//!   `keep_velocity`), and it then counts as arrived at the first pad whose
+//!   (`core::set_view`; its pitch levelled with `level_view`), its
+//!   velocity kept in world axes (or zeroed, `keep_velocity`), and it then counts as arrived at the first pad whose
 //!   source is within `rearm` of its new feet (arriving beside a source
 //!   doesn't bounce it back). The server's change outside the commands is
 //!   counted (`core::rebase`), so a predicting client takes it as a restart.
@@ -38,9 +38,12 @@
 //!   first refusal and every `message_every`th after, one countdown shared
 //!   by all characters (`TeleportMessageCountdown`).
 //!
+//! A machine that sees only the replicated positions finds a teleport by
+//! the body's jump (`MapTeleporters::arrived`): a game's own sound and
+//! screen effects (Halo's) go by it.
+//!
 //! Known shortcuts: no message to the blocked player and no sound or
-//! effect here (a game's own code may add them from `TeleportArrival`'s
-//! change); props, projectiles and vehicles are not teleported (the only
+//! effect here (a game's own code adds them, `arrived`); props, projectiles and vehicles are not teleported (the only
 //! loader's spec moves players alone); bots' navigation has no teleport
 //! link (`nav::Via` has walks and ladders only).
 
@@ -103,6 +106,29 @@ pub struct MapTeleporters {
     /// The exit's test (default: `Exit::Radius`).
     #[serde(default)]
     pub exit: Exit,
+    /// The look's pitch becomes level on arrival (Halo's: a looking-up
+    /// view is levelled; else the pitch is kept).
+    #[serde(default)]
+    pub level_view: bool,
+}
+
+impl MapTeleporters {
+    /// The pad whose move a character's body made between two of its
+    /// positions (`before`, `now`, engine space): its displacement is the
+    /// pad's (source to destination) within `slack` metres (what it walked
+    /// in between), from within `radius + slack` of the source. What a
+    /// machine that only sees the replicated positions (a client) knows of
+    /// a teleport, for its look and sound (a game's own effects). None:
+    /// no pad's move, or a pad shorter than `slack` twice.
+    pub fn arrived(&self, before: Vec3, now: Vec3, feet_offset: Vec3, slack: f32) -> Option<usize> {
+        let moved = now - before;
+        self.pads.iter().position(|p| {
+            let jump = p.dest - p.source;
+            jump.length() > 2.0 * slack
+                && (moved - jump).length() <= slack
+                && (before - feet_offset).distance(p.source) <= self.radius + slack
+        })
+    }
 }
 
 /// Refusals left before the blocked message shows again (`Exit::Pill`),
@@ -364,6 +390,7 @@ pub fn apply(world: &mut World) {
             v.0 = Vec3::ZERO;
         }
         if let Some((yaw, pitch)) = world.get::<Intent>(e).map(|i| (i.yaw, i.pitch)) {
+            let pitch = if t.level_view { 0.0 } else { pitch };
             crate::core::set_view(world, e, (yaw + turn).rem_euclid(std::f32::consts::TAU), pitch);
         }
         crate::core::rebase(world, e);
@@ -426,6 +453,7 @@ mod tests {
             keep_velocity: true,
             telefrag: Some(3.0),
             exit: Exit::Radius,
+            level_view: false,
         }
     }
 
@@ -633,5 +661,43 @@ mod tests {
         apply(&mut world);
         let q = world.get::<Transform>(e).unwrap().translation;
         assert_eq!(p, q);
+    }
+
+    /// Halo's teleporter levels a looking-up view (multiplayer_rules.md
+    /// 6.8, "View"); others keep the pitch.
+    #[test]
+    fn a_level_view_teleporter_levels_the_pitch() {
+        for level in [false, true] {
+            let mut world = World::new();
+            world.insert_resource(MapTeleporters { level_view: level, ..example() });
+            world.init_resource::<Messages<Damage>>();
+            let half = Vec3::Y * (CAPSULE_HEIGHT / 2.0);
+            let e = world
+                .spawn((
+                    Transform::from_translation(Vec3::new(0.3, 0.0, 0.0) + half),
+                    Intent { yaw: 0.5, pitch: 0.4, ..Default::default() },
+                ))
+                .id();
+            apply(&mut world);
+            let i = world.get::<Intent>(e).unwrap();
+            assert_eq!(i.pitch, if level { 0.0 } else { 0.4 }, "level {level}");
+            assert_eq!(world.get::<crate::core::ViewSet>(e).unwrap().pitch, i.pitch);
+        }
+    }
+
+    /// A body's jump between two seen positions names the pad that made
+    /// it (what a client sees of a teleport), walking included; a walk
+    /// or a jump of another length names none.
+    #[test]
+    fn a_pads_jump_is_found_from_two_positions() {
+        let t = example();
+        let half = Vec3::Y * (CAPSULE_HEIGHT / 2.0);
+        let before = Vec3::new(0.3, 0.0, 0.0) + half;
+        let now = Vec3::new(10.2, 0.0, 0.1) + half;
+        assert_eq!(t.arrived(before, now, half, 0.5), Some(0));
+        assert_eq!(t.arrived(before, before + Vec3::X * 0.4, half, 0.5), None);
+        assert_eq!(t.arrived(before, before + Vec3::X * 5.0, half, 0.5), None);
+        // From far off the source: a respawn, not the pad.
+        assert_eq!(t.arrived(before + Vec3::Z * 5.0, now + Vec3::Z * 5.0, half, 0.5), None);
     }
 }

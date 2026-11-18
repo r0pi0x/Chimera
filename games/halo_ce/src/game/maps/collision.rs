@@ -27,7 +27,9 @@
 //! Ladders (docs/DESIGN.md, "Ladders across games"): each climbable
 //! surface (one of each two-sided twin pair) is also a ladder brush in
 //! `collision_brushes` (`ladder`, `MapBrush::ladder`; in `trace_skip`, so
-//! shots pass it): a slab `LADDER_SKIN` thick on each side of the sheet,
+//! shots pass it): a slab `LADDER_SKIN` thick on each side of the sheet
+//! (past the terrain's thickness, which a two-sided sheet's twin has on
+//! the climber's side),
 //! bounded by the polygon's edges (`ladder_brush`). Chimera publishes
 //! these as `core::MapLadders::volumes`, which every game's movement
 //! climbs by its own rule (Halo's: `movement`'s climbable ground). The
@@ -62,8 +64,12 @@ use blam_formats::collision::{LevelCollision, MaterialType};
 use super::{space, surfaces};
 use crate::map::{MapBrush, MapCollisionSet, MapData, nav_gen::NavWithin};
 
-/// How far a ladder brush stands out on each side of its sheet (m).
-pub const LADDER_SKIN: f32 = 0.02;
+/// How far a ladder brush stands out on each side of its sheet (m): past
+/// the terrain's thickness (`map::TERRAIN_THICKNESS`), since a two-sided
+/// sheet's twin is a terrain solid that thick on the climber's side, and a
+/// slab inside it is never reached (a CS:S or TF2 character's ladder probe
+/// met the twin's back face instead, on Prisoner's real sheets).
+pub const LADDER_SKIN: f32 = crate::map::TERRAIN_THICKNESS + 0.01;
 
 /// The glass set's name.
 pub const GLASS: &str = "glass";

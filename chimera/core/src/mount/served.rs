@@ -97,19 +97,22 @@ pub fn partial(game: &str, install: &Path) -> bool {
 /// image) or whose folder has no marker. The store stands in only where
 /// it can give what it lists (`readable_alone`): a whole publish with no
 /// service to fetch from (no install found, no `[assets] url`, no bound
-/// access) holds little more than its manifest, so a test or tool skips
-/// rather than failing on every file.
+/// access) usually holds little more than its manifest, so a test or tool
+/// skips rather than failing on every file, unless the store holds every
+/// record (`sets::all_held`).
 pub fn usable(game: &str, install: impl AsRef<Path>, marker: &str) -> bool {
     let install = install.as_ref();
     holds(install, marker) || settings().is_ok_and(|a| alone_with(&a, game, install) && readable_alone(&a, game))
 }
 
 /// Whether the store alone can give `game`'s files: a service is set
-/// (files it lacks are fetched on demand), or the build is only some sets
+/// (files it lacks are fetched on demand), the build is only some sets
 /// (`partial`: the ones packed here, which a check of the whole install
-/// skips by `partial` anyway).
+/// skips by `partial` anyway), or the store holds every file its
+/// manifest lists (`sets::all_held`: a whole publish copied in, e.g. a
+/// developer's copy of a service's store with no disc).
 fn readable_alone(assets: &AssetSettings, game: &str) -> bool {
-    assets.fetcher().is_some() || !complete(assets, game)
+    assets.fetcher().is_some() || !complete(assets, game) || chimera_assets::sets::all_held(assets, game)
 }
 
 /// Whether `install` holds `marker` (an empty one: `install` itself exists).

@@ -15,7 +15,10 @@
 //!
 //! An effect on a holder's gun (`Running::on_gun`) has its instances
 //! placed on the gun again each tick, so parts and particles made later
-//! in its life start where the marker is then.
+//! in its life start where the marker is then; its sounds are the
+//! holder's (`Running::sound_source`), an effect out in the world's
+//! (impacts, detonations) nobody's, so a blast's impacts don't take the
+//! shooter's voices from its fire sound.
 //!
 //! A particle system part (`system`) is made at once as a free system.
 //! Its particles live through their particle states (`system_particle`,
@@ -225,6 +228,16 @@ impl Running {
         }
     }
 
+    /// Whose sound a part makes: the holder's for an effect on its gun (its
+    /// firing, empty and ready sounds: its own voices, heard as its own),
+    /// nobody's for one out in the world (an impact, a detonation: a sound
+    /// at a point). A shotgun blast's 15 pellets' impact sounds counted as
+    /// the shooter's crowded its fire sound out of the source's voices
+    /// (playtest 2026-11-18: no shotgun fire).
+    pub fn sound_source(&self) -> Option<Entity> {
+        self.on_gun.as_ref().and(self.owner)
+    }
+
     fn parts(&self, fx: &HaloFx, effect: &FxEffect, rng: &mut ParticleRng, world: &dyn Fn(Vec3, Vec3) -> Option<(f32, Vec3)>, out: &mut Made) {
         for p in &effect.events[self.event].parts {
             if p.mode == 2 || p.environment == 2 || p.environment == 3 {
@@ -237,7 +250,7 @@ impl Running {
                     f = Frame { at: f.at, forward: Vec3::NEG_Y, up: Vec3::NEG_Z };
                 }
                 match &p.kind {
-                    FxPartKind::Sound(entry) => out.sounds.push(PlaySound { source: self.owner, ..PlaySound::at(entry.clone(), f.at) }),
+                    FxPartKind::Sound(entry) => out.sounds.push(PlaySound { source: self.sound_source(), ..PlaySound::at(entry.clone(), f.at) }),
                     FxPartKind::Decal(group) => {
                         let length = range(rng, p.velocity) * METERS_PER_UNIT;
                         if !self.decals || length <= 0.0 {

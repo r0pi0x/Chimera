@@ -127,8 +127,11 @@ pub struct PropSpawn<'a> {
     pub home: Transform,
 }
 
-/// How thick terrain surfaces are as solids (`MapTerrain`), meters: 2 units.
-pub(super) const TERRAIN_THICKNESS: f32 = 2.0 * 0.0254;
+/// How thick terrain surfaces are as solids (`MapTerrain`), meters: 2 units
+/// behind each face (a two-sided surface's twin stands this far out of
+/// the other side: a loader's ladder slab on such a sheet must stand out
+/// farther, `halo_ce`'s `maps::collision::LADDER_SKIN`).
+pub const TERRAIN_THICKNESS: f32 = 2.0 * 0.0254;
 
 /// How far below the map's lowest point (meters) falling ends.
 pub(super) const KILL_MARGIN: f32 = 3.0;
