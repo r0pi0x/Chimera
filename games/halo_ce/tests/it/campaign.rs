@@ -131,13 +131,15 @@ fn the_draw_follows_the_weights_and_the_units_loaded() {
 fn a_kind_names_its_model() {
     let mut app = App::new();
     app.add_systems(Update, campaign::name_bodies);
-    let e = app.world_mut().spawn(BodyKind::Elite).id();
+    // Both on every character from its spawn (`CampaignPlugin`).
+    let e = app.world_mut().spawn((BodyKind::Elite, NamedByKind::default())).id();
     app.update();
     assert_eq!(app.world().get::<chimera_world::map::BodyName>(e).map(|n| n.0.as_str()), Some("halo_ce:elite"));
     app.world_mut().entity_mut(e).insert(BodyKind::Spartan);
     app.update();
-    assert!(app.world().get::<chimera_world::map::BodyName>(e).is_none());
-    assert!(app.world().get::<NamedByKind>(e).is_none());
+    // Emptied in place, not taken off (docs/DESIGN.md, "ECS style").
+    assert_eq!(app.world().get::<chimera_world::map::BodyName>(e).map(|n| n.0.as_str()), Some(""));
+    assert_eq!(app.world().get::<NamedByKind>(e), Some(&NamedByKind(false)));
 }
 
 /// sounds.md "Pain line choice" and "Death line choice" for a worn body
@@ -225,7 +227,7 @@ fn the_kinds_are_sandbox_targets_once_loaded() {
     assert_eq!((world.get::<BodyKind>(e), world.get::<ForcedBody>(e)), (Some(&BodyKind::Grunt), Some(&ForcedBody(BodyKind::Grunt))));
     assert!(world.resource::<UnitsOnDemand>().wanted.contains(&BodyKind::Grunt), "its unit asked for");
     targets::wear_spartan(&mut world, e, "halo_ce:spartan");
-    assert!(world.get::<BodyKind>(e).is_none() && world.get::<ForcedBody>(e).is_none());
+    assert!(world.get::<BodyKind>(e) == Some(&BodyKind::Spartan) && world.get::<ForcedBody>(e).is_none());
 }
 
 /// A kind worn before its unit loaded: the Spartan's body meanwhile, and
@@ -254,7 +256,13 @@ fn a_kind_worn_before_its_unit_wears_it_soon_after_the_load() {
     app.insert_resource(CharacterModels(Arc::new(vec![model(None)])));
     let e = app
         .world_mut()
-        .spawn((chimera_core::core::Intent::default(), chimera_core::slots::GameIdentity(halo_ce::game::GAME.into()), BodyKind::Elite))
+        .spawn((
+            chimera_core::core::Intent::default(),
+            chimera_core::slots::GameIdentity(halo_ce::game::GAME.into()),
+            BodyKind::Elite,
+            // On every character from its spawn (`CampaignPlugin`).
+            NamedByKind::default(),
+        ))
         .id();
     for _ in 0..5 {
         app.update();

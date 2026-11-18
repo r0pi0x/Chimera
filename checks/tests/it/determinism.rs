@@ -55,6 +55,11 @@ const NOT_SIMULATION_FILES: &[(&str, &str)] = &[
         "measurement: engine events by frame for the frame inspector and the report, never read by the simulation",
     ),
     (
+        "chimera/core/src/mount/offline.rs",
+        "test setup: the switch a `Sim` turns on so a test process reads no install, set before the world runs and \
+         never read by the simulation's state",
+    ),
+    (
         "chimera/core/src/pending_work.rs",
         "measurement: a count of background jobs for tests and scenes to wait on, never read by the simulation",
     ),

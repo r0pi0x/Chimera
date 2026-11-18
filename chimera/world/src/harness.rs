@@ -5,6 +5,10 @@
 //! `chimera_sim::SimBasePlugins`), so a crate's tests use the harness at
 //! the layer they test (docs/OBSERVABILITY.md, section 1).
 //!
+//! Every `Sim` turns the "no installs" switch on (`chimera_core::mount::
+//! offline`): its process finds no game install and no asset store, unless
+//! the test is a heavy one.
+//!
 //! `Sim`: a headless app stepped by exact fixed ticks (the network's
 //! server-and-clients `NetSim` is `chimera_net::harness`); `add_headless`
 //! / `add_headless_with`: the engine without a window, as `Sim` and the
@@ -265,6 +269,9 @@ impl Sim {
     /// Like `new`, with what `setup` adds after `base` (a `NetSim` builds
     /// several apps from one setup).
     pub fn with<B>(base: impl bevy::app::Plugins<B>, setup: impl FnOnce(&mut App)) -> Self {
+        // No install or asset store behind a `Sim` (the machine's files
+        // would change what a test sees): `mount::offline`.
+        chimera_core::mount::offline::forbid_installs();
         let mut app = App::new();
         app.insert_resource(chimera_core::tasks::TestRun);
         add_headless(&mut app);

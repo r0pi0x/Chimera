@@ -26,6 +26,7 @@ fn frame(sim: &mut Sim) {
 
 /// The server from its command line (`args`), listening on loopback.
 fn server(args: &[&str]) -> Option<(Sim, std::net::SocketAddr)> {
+    chimera_core::mount::offline::allow_installs(); // reads the machine's install (`mount::offline`)
     let mut args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     args.extend(["+ip", "127.0.0.1", "-port", "0"].map(String::from));
     let Ok(Parsed::Run(options)) = cs_source_server::parse(args) else {

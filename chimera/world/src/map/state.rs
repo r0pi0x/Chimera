@@ -358,6 +358,10 @@ pub enum DecalGroup {
     Named(String),
     /// What a surface with this game material letter takes when shot.
     Material(char),
+    /// What a surface with this game material letter takes when this
+    /// game's gun shoots it: the game's own group where the map holds one
+    /// (`MapDecals::material_group`), else `Material`'s.
+    GameMaterial(String, char),
 }
 
 /// Most decals a server keeps for late joiners; the oldest goes first.

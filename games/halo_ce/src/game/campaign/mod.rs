@@ -15,8 +15,10 @@
 //! cannon, which is a rung of its own: below, "Its own gun").
 //!
 //! - **The body kind** (`BodyKind`: Spartan, Elite, Grunt, Jackal,
-//!   Marine, Hunter; a component on the player, replicated to every
-//!   client, net part `halo_ce_bodies`). Each kind but the Spartan is a row of
+//!   Marine, Hunter; a component on every character from its spawn, the
+//!   Spartan meaning none, set in place, never taken off: put on and off
+//!   it was an archetype for every combination of the character's other
+//!   parts; replicated to every client, net part `halo_ce_bodies`). Each kind but the Spartan is a row of
 //!   data/campaign.toml (`CampaignData`: its biped, the campaign map its
 //!   unit is cut from, and what differs from the Spartan's movement and
 //!   vitality tables, merged key by key): adding the Hunter or the Flood
@@ -30,7 +32,7 @@
 //!   works without it (silent).
 //! - **Its body**: every machine names the kind's model for the character
 //!   (`name_bodies`: the engine's `map::BodyName`, `halo_ce:elite`; the
-//!   Spartan none), so the engine picks it among Halo's models
+//!   Spartan's emptied, `BodyName::none`), so the engine picks it among Halo's models
 //!   (`CharacterModels::for_identity`) once its unit has loaded (`unit`:
 //!   on demand, in the background); until then, or without the unit, the
 //!   Spartan's. The third-person model, its graph's animations (stand,
@@ -141,6 +143,7 @@ pub use unit::UnitsOnDemand;
 
 use super::{GAME, movement::MovementData, vitality::Spartan};
 use crate::map::BodyName;
+use chimera_core::character::CharacterPartsExt;
 
 /// data/campaign.toml, compiled in.
 pub const TABLE: &str = include_str!("../../../data/campaign.toml");
@@ -525,13 +528,17 @@ impl Default for CampaignBodies {
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ForcedBody(pub BodyKind);
 
-/// How many bodies were drawn for a player (the next draw's input).
+/// How many bodies were drawn for a player (the next draw's input; on
+/// every character from its spawn).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BodyDraws(pub u64);
 
-/// The body `BodyName` came from here (`name_bodies` takes it off again).
+/// Whether the body `BodyName` came from here (`name_bodies` empties it
+/// again). On every character from its spawn, false: put on and off, it
+/// was an archetype for every combination of the character's other parts
+/// (docs/DESIGN.md, "ECS style").
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct NamedByKind;
+pub struct NamedByKind(pub bool);
 
 /// A 64-bit mix of `parts` (splitmix64 over them): the draw's roll.
 pub fn roll(parts: &[u64]) -> u64 {
@@ -609,15 +616,12 @@ pub fn choose(world: &mut World, e: Entity) {
     } else {
         None
     };
+    // On every character from its spawn (the Spartan meaning none): a
+    // new value in place, never put on or taken off.
+    let k = kind.unwrap_or_default();
     let mut ent = world.entity_mut(e);
-    match kind {
-        Some(k) if ent.get::<BodyKind>() != Some(&k) => {
-            ent.insert(k);
-        }
-        Some(_) => {}
-        None => {
-            ent.remove::<BodyKind>();
-        }
+    if ent.get::<BodyKind>() != Some(&k) {
+        ent.insert(k);
     }
 }
 
@@ -625,18 +629,19 @@ pub fn choose(world: &mut World, e: Entity) {
 /// taken off again when the kind goes.
 #[allow(clippy::type_complexity)]
 pub fn name_bodies(
-    q: Query<(Entity, Option<&BodyKind>, Option<&BodyName>, Has<NamedByKind>), Or<(With<BodyKind>, With<NamedByKind>)>>,
+    q: Query<(Entity, &BodyKind, Option<&BodyName>, &NamedByKind)>,
     mut commands: Commands,
 ) {
     for (e, kind, name, ours) in &q {
-        match kind.and_then(|k| k.model_name()) {
+        match kind.model_name() {
             Some(want) => {
-                if name.is_none_or(|n| n.0 != want) {
-                    commands.entity(e).insert((BodyName(want), NamedByKind));
+                if name.is_none_or(|n| n.0 != want) || !ours.0 {
+                    commands.entity(e).insert((BodyName(want), NamedByKind(true)));
                 }
             }
-            None if ours => {
-                commands.entity(e).remove::<(BodyName, NamedByKind)>();
+            // Emptied, not taken off (`BodyName::none`).
+            None if ours.0 => {
+                commands.entity(e).insert((BodyName::none(), NamedByKind(false)));
             }
             None => {}
         }
@@ -897,6 +902,10 @@ impl Plugin for CampaignPlugin {
             .init_resource::<CampaignBodies>()
             .init_resource::<UnitsOnDemand>()
             .add_observer(arrive)
+            .on_every_character::<BodyKind>()
+            .on_every_character::<NamedByKind>()
+            .on_every_character::<BodyDraws>()
+            .on_every_character::<voice::Voice>()
             .init_resource::<voice::CampaignSounds>()
             .init_resource::<voice::CampaignVoices>()
             .add_message::<voice::RegionLost>()

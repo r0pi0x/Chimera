@@ -50,6 +50,20 @@ pub struct MapDecals {
     pub logos: BTreeMap<String, usize>,
 }
 
+impl MapDecals {
+    /// The group `game`'s impact on a surface of game material `letter`
+    /// takes: `game`'s own (`impact::own_material_group`, a guest's whose
+    /// letter the map took), else the map's (`by_material`).
+    pub fn material_group(&self, game: Option<&str>, letter: char) -> Option<&str> {
+        if let Some(own) = game.map(|g| super::impact::own_material_group(g, letter))
+            && let Some((name, _)) = self.groups.get_key_value(&own)
+        {
+            return Some(name);
+        }
+        self.by_material.get(&letter.to_ascii_uppercase()).map(String::as_str)
+    }
+}
+
 /// A player's spray (CS:S's `impulse 201`) on its own entity: whose, the
 /// logo's name (`MapDecals::logos`), where on the surface, the surface's
 /// normal and the logo's up direction along it. The simulation keeps one

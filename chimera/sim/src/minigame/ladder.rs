@@ -19,7 +19,9 @@
 //! match's start everyone is on the first. With `knife_finale` the
 //! ladder ends with melee rungs, knife-only: after the last gun the
 //! player holds only the rung's melee weapon, and the last one's kill
-//! wins (off by default in the module; both gun games turn it on). There
+//! wins, when a melee weapon deals it (`Death::weapon`, `damage_kind`: a
+//! grenade thrown earlier whose second victim dies after the swap doesn't
+//! win, it only counts as a kill) (off by default in the module; both gun games turn it on). There
 //! are `melee_rungs` of them (`"auto"`, the default: the power curve's
 //! melee band, `melee_share` of the whole ladder, 7% by default
 //! (`data/power_curve.toml`, `power::melee_rungs_for`: 1 for 10 or 20
@@ -1302,6 +1304,12 @@ fn on_death(world: &mut World, d: &Death) {
     let Some(ladder) = world.get_resource::<Ladder>().cloned() else { return };
     let rung = world.get::<Rung>(k).map_or(0, |r| r.0) + 1;
     if rung >= ladder.rungs.len() {
+        // The last rung's kill wins only when the melee weapon makes it:
+        // not a grenade (or any projectile) thrown on an earlier rung,
+        // whose second victim dies after the swap.
+        if ladder.knife_only(rung - 1) && !melee_death(world, d) {
+            return;
+        }
         if let Some(team) = world.get::<Team>(k).map(|t| t.0) {
             world.resource_mut::<Match>().win(team);
         }
@@ -1396,6 +1404,13 @@ fn melee_kill(d: &Died, held: &Query<&Inventory>, weapons: &Query<&Weapon>, cata
     });
     let Some(id) = id else { return false };
     catalog.and_then(|c| c.get(id)).is_some_and(|w| w.melee.is_some())
+}
+
+/// Whether the killing damage of `d` was a melee weapon's (its weapon, as
+/// `Death::weapon` names it, or melee damage).
+fn melee_death(world: &World, d: &Death) -> bool {
+    d.damage_kind == DamageKind::Melee
+        || d.weapon.is_some_and(|id| world.get_resource::<WeaponCatalog>().and_then(|c| c.get(id)).is_some_and(|w| w.melee.is_some()))
 }
 
 /// `e` on `rung`, holding its weapon in place of the ladder's others (on

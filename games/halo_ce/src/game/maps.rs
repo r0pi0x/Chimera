@@ -26,7 +26,8 @@
 //! - `objects`: render models as meshes, the scenery placements as props
 //!   with their collision;
 //! - `sky`: fog, a flat background, the sky model as a 3D skybox, and the
-//!   scenery's light;
+//!   scenery's light (also the map's light field, the same everywhere:
+//!   characters and view models lit as the scenery; set after the cache);
 //! - `audio`: the level's sounds (background sounds by cluster, sound
 //!   environments, sound scenery) and the kit's (`game::audio`).
 //!
@@ -141,11 +142,21 @@ pub fn load_in(
     let (mut map, outcome) = crate::map::cache::cached(cache, mount, key, || {
         convert(&bytes, name, file_hash, options).map_err(|e| format!("{path}: {e}"))
     })?;
+    let file = MapFile::load(&bytes).ok();
     // The guns' displays (a memo: not cached).
     if options.kit.any_models()
-        && let Ok(file) = MapFile::load(&bytes)
+        && let Some(file) = &file
     {
-        map.memos.insert(super::view::load::displays_of(&file));
+        map.memos.insert(super::view::load::displays_of(file));
+    }
+    // The light field (a closure: not cached): the scenery's light
+    // (`sky::prop_light`) everywhere, so characters and view models are
+    // lit as the scenery is.
+    if let Some(file) = &file
+        && let Ok(scenario) = Scenario::read(file)
+    {
+        let light = sky::prop_light(sky::level_sky(file, &scenario, &mut Vec::new()).as_ref());
+        map.light_field = Some(crate::map::MapLightField(std::sync::Arc::new(move |_| light.clone())));
     }
     let took = start.elapsed().as_secs_f32();
     if outcome == Outcome::Hit {

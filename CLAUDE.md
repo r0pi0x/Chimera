@@ -24,6 +24,7 @@ This file is a map. Follow the links for detail; keep it short.
 | Porting a new game (checklist, the crate's shape) | [docs/new-game.md](docs/new-game.md) |
 | Every source file, one line (generated) | [docs/modules.md](docs/modules.md) |
 | Converted formats' versions (generated) | [docs/formats.md](docs/formats.md) |
+| Where each doc's section starts (generated) | [docs/agent-index.md](docs/agent-index.md) |
 | How to check your work (tests, screenshots, live ECS queries) | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 | Current plan and progress | [docs/plans/active/](docs/plans/active/engine-split.md) |
 | What to build next (to-do list) | [docs/backlog.md](docs/backlog.md) |
@@ -57,8 +58,10 @@ cargo run --features dev       # the game, `cs_source` (apps/cs_source); day-to-
                                    # (dynamic linking + remote protocol)
 cargo run --profile devfull --features dev   # full debug info for inspecting locals
 cargo test --features dev -- --skip heavy::   # whole fast tier
-cargo nextest run --features dev   # full suite (or `cargo test --features dev`,
-                                   # 2x slower)
+cargo nextest run --features dev   # full suite, parallel binaries (on Windows
+                                   # the fast tier measured no faster;
+                                   # docs/performance.md, "nextest on the Windows
+                                   # fast tier")
 cargo run -q -p repo_checks --bin affected -- --base main   # which crates' tests
                                    # a branch can affect, and why (pre-commit
                                    # builds those and runs the changed crates'
@@ -105,8 +108,8 @@ source tools/agent-env.sh && agent_run cargo ...   # several agents on one box:
 tools/post-push-tests.sh   # right after each push: the affected tests (heavy too)
                                    # and build checks of what was pushed
 cargo hakari generate   # after changing a dependency (chimera/workspace-hack)
-cargo run -q -p repo_checks --bin docs_index   # regenerate docs/modules.md and the
-                                   # debt list after editing a `//!` doc
+cargo run -q -p repo_checks --bin docs_index   # regenerate docs/modules.md, the
+                                   # debt list and docs/agent-index.md
 ```
 
 Each crate's integration tests are one binary, `<crate>/tests/it/` (slow
@@ -137,15 +140,16 @@ still work.
 - When something was hard because a tool, doc or check was missing, add it.
 - Keep docs true: when code changes a fact in a doc, change the doc in the
   same commit. A file's detail lives in its `//!` doc (shortcuts under
-  "Known shortcuts"); docs/modules.md and the code part of tech-debt.md are
-  generated from those docs: after changing one, run
+  "Known shortcuts"); docs/modules.md, the code part of tech-debt.md and
+  docs/agent-index.md are generated from those docs and the doc headings:
+  after changing one, run
   `cargo run -q -p repo_checks --bin docs_index` (a test fails when stale).
 
 ## Commit identity
 
 Commits are by `r0pi0x <339403489+r0pi0x@users.noreply.github.com>` with
 UTC dates: set that identity in the clone's local git config and commit
-with `TZ=UTC`. `.githooks/pre-push` refuses anything else. No real names,
+with `TZ=UTC`. `.githooks/pre-push` refuses anything else (commits of someone else's pull request keep their own). No real names,
 personal emails or machine paths in commits or files.
 
 ## Testing on Windows

@@ -632,10 +632,12 @@ fn fields(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<c
     ui.text_area(c, r, text, "", cur(text.len(), 0), 24.0, 3.2, State { focus: true, error: true, ..State::NONE });
 
     let d = col(c, 27.0);
-    ui.section(c, d, "Toggle", Some("off, on, focus, disabled"));
+    ui.section(c, d, "Toggle", Some("off, on, yes/no, focus, disabled"));
     let r = ui.boxed(c, d, UiStyle { gap: Some(0.5), ..UiStyle::row() });
     ui.toggle(c, r, false, State::NONE);
     ui.toggle(c, r, true, State::NONE);
+    ui.toggle_words(c, r, false, State::NONE, chimera_ui::controls::TOGGLE_YES_NO);
+    ui.toggle_words(c, r, true, State::NONE, chimera_ui::controls::TOGGLE_YES_NO);
     ui.toggle(c, r, true, State::focused(true));
     ui.toggle(c, r, false, State::focused(true));
     ui.toggle(c, r, true, State { disabled: true, ..State::NONE });

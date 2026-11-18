@@ -5,6 +5,11 @@
 //! characters once and keeps, there from the spawn instead (each part a
 //! character gains later doubles the archetypes it visits before; Bevy
 //! frees none: docs/DESIGN.md, "ECS style").
+//! A character's collider carries no mass (`core::no_collider_mass`), so
+//! a change of hull (a crouch, another game's movement) doesn't mark its
+//! body for avian's mass update (`RecomputeMassProperties`, on and off
+//! again: an archetype for every combination of the character's other
+//! parts).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;

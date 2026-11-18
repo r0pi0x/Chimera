@@ -27,6 +27,7 @@ use crate::stack::{
 };
 
 fn dust2() -> Option<MapData> {
+    chimera_core::mount::offline::allow_installs(); // reads the machine's install (`mount::offline`)
     let installed = LocalConfig::load()
         .ok()?
         .game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref())

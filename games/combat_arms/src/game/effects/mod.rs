@@ -1737,6 +1737,7 @@ pub const HURT_DEFAULT_LENGTH: f32 = 1.0;
 fn hurt_sounds(
     mut damage: MessageReader<Damage>,
     players: Query<(&Transform, Option<&GameIdentity>), (With<Intent>, With<Health>)>,
+    (holders, weapons): (Query<&Inventory>, Query<&Weapon>),
     tables: Res<CaFxTables>,
     lengths: Res<CaSoundLengths>,
     mut limiter: ResMut<HurtLimiter>,
@@ -1750,6 +1751,14 @@ fn hurt_sounds(
         // Only our characters groan: another game's identity (the party
         // apps' `identity = "weapon"`) sounds as that game's.
         if d.amount <= 0.0 || !GameIdentity::allows(identity, super::GAME) {
+            continue;
+        }
+        // A bullet's or a swing's hit sounds as its gun's game's
+        // (`weapon::impact::dealt_by`): a TF2 pistol's hit on our
+        // character plays TF2's impact, not ours.
+        if matches!(d.kind, DamageKind::Bullet | DamageKind::Melee)
+            && !crate::weapon::impact::dealt_by(super::GAME, d, &holders, &weapons)
+        {
             continue;
         }
         let gas = d.weapon.is_some_and(|w| w.ends_with("g7a"));

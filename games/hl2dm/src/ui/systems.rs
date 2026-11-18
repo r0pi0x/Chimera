@@ -605,13 +605,13 @@ pub fn hide_at_main_menu(status: Res<chimera_client::client::front_end::MenuStat
 }
 
 /// The frame's draws as UI nodes: pooled entities per kind, each kept at
-/// its draw's index in the stack (`GlobalZIndex`), extras hidden.
+/// its draw's index in the stack (`ZIndex` under the root's `GAME_HUD_Z`), extras hidden.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn sync(
     state: Res<Hl2dmHud>,
     roots: Query<Entity, With<Root>>,
     mut pool: Local<[Vec<Entity>; 3]>,
-    mut nodes: Query<(&mut Node, &mut Visibility, &mut GlobalZIndex)>,
+    mut nodes: Query<(&mut Node, &mut Visibility, &mut ZIndex)>,
     mut boxes: Query<(&mut BackgroundColor, Option<&mut BackgroundGradient>)>,
     mut texts: Query<&mut HudText>,
     mut sprites: Query<&mut MaterialNode<HudGlyphMaterial>>,
@@ -646,7 +646,7 @@ pub fn sync(
                     Pooled(kind),
                     Node { position_type: PositionType::Absolute, ..default() },
                     Visibility::Hidden,
-                    GlobalZIndex(0),
+                    ZIndex(0),
                     ChildOf(root),
                 ));
                 match kind {
@@ -680,7 +680,7 @@ pub fn sync(
             }
         };
         let Ok((mut node, mut vis, mut zi)) = nodes.get_mut(entity) else { continue };
-        zi.set_if_neq(GlobalZIndex(100 + z as i32));
+        zi.set_if_neq(ZIndex(z as i32));
         vis.set_if_neq(Visibility::Inherited);
         let place = |node: &mut Node, r: Rect| {
             node.left = px(r.min.x);
@@ -799,6 +799,7 @@ pub fn spawn_root(mut commands: Commands) {
         HudRoot(GAME),
         Node { position_type: PositionType::Absolute, left: px(0.0), top: px(0.0), width: percent(100.0), height: percent(100.0), ..default() },
         Visibility::Inherited,
+        GlobalZIndex(chimera_client::client::hud::GAME_HUD_Z),
         Pickable::IGNORE,
     ));
 }

@@ -15,6 +15,19 @@
 //! materials, `map::sources` guests). Which game draws an impact is
 //! `chimera_sim::weapon::impact`'s choice: the gun's game, else the map's,
 //! else Chimera's generic impact.
+//!
+//! **Whose looks an impact takes** (`own_name`): the drawing game's own,
+//! on any map. Games name their impact looks alike (every Source game's
+//! `Concrete.BulletImpact`, its `concrete` surface, its 'C' decal group,
+//! `effects/spark`), and a map's tables keep one look per name, so a
+//! guest's look whose name the map (or an earlier guest) took is kept
+//! under the guest's own name too (`kept::append`: decal groups and
+//! material letters, surfaces, their bullet impact sound entries, effect
+//! materials). The impact systems ask for the drawing game's own name
+//! first and fall back to the bare one, the map's own game's or the
+//! first guest's (`MapSounds::game_surface`, `MapSounds::game_entry`,
+//! `MapDecals::material_group`, `MapParticles::find_of`): a TF2 pistol
+//! leaves TF2's bullet holes and sounds on de_dust2, not CS:S's.
 
 use bevy::prelude::*;
 
@@ -209,6 +222,19 @@ impl MapImpacts {
     pub fn has(&self, game: &str) -> bool {
         self.looks.is_empty() || self.looks.iter().any(|g| g.eq_ignore_ascii_case(game))
     }
+}
+
+/// `name` as `game`'s own in a map's tables (`tf2:concrete.bulletimpact`):
+/// where a guest's impact look's bare name was taken (module doc). Lower
+/// case, as the tables' keys.
+pub fn own_name(game: &str, name: &str) -> String {
+    format!("{game}:{name}").to_lowercase()
+}
+
+/// The decal group `game`'s surfaces of game material `letter` take, when
+/// it isn't the map's (`MapDecals::material_group`).
+pub fn own_material_group(game: &str, letter: char) -> String {
+    own_name(game, &format!("material:{letter}"))
 }
 
 /// The loaded map's `MapImpacts`.

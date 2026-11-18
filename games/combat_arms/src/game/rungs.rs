@@ -786,10 +786,15 @@ fn apply(world: &mut World, e: Entity, extras: Option<&RungExtras>) {
             // Worn at once (not at `wear_looks`' next tick): the rung's
             // swap restarts the player's prediction (`core::rebase`) with
             // the look's gear in it.
-            world.entity_mut(e).insert((CaRungLook(look), look));
+            world.entity_mut(e).insert((CaRungLook(Some(look)), look));
         }
         None => {
-            if world.entity_mut(e).take::<CaRungLook>().is_some() && world.get::<crate::core::Bot>(e).is_some() {
+            // Kept on, emptied (`CaRungLook`'s doc).
+            let worn = CaRungLook::worn(world.get::<CaRungLook>(e));
+            if worn {
+                world.entity_mut(e).insert(CaRungLook(None));
+            }
+            if worn && world.get::<crate::core::Bot>(e).is_some() {
                 let look = characters::bot_look_of(world.get::<Name>(e), e);
                 world.entity_mut(e).insert(look);
             }

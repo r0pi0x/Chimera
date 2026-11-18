@@ -219,6 +219,25 @@ pub const SENTENCE: f32 = 0.86;
 /// field's hint, a status line under a list).
 pub const NOTE: f32 = 0.72;
 
+/// A toggle's words (off, on): the default, for a setting that switches a
+/// feature.
+pub const TOGGLE_ON_OFF: (&str, &str) = ("Off", "On");
+/// A toggle that answers a question ("Include a screenshot", "Ask ...").
+pub const TOGGLE_YES_NO: (&str, &str) = ("No", "Yes");
+
+/// The words for a toggle labelled `label`: Yes/No for a question-style
+/// label (it starts with Include, Ask, Allow or Send, or ends in `?`),
+/// else On/Off.
+pub fn toggle_words_for(label: &str) -> (&'static str, &'static str) {
+    let l = label.trim();
+    let first = l.split_whitespace().next().unwrap_or("");
+    if l.ends_with('?') || ["include", "ask", "allow", "send"].iter().any(|w| first.eq_ignore_ascii_case(w)) {
+        TOGGLE_YES_NO
+    } else {
+        TOGGLE_ON_OFF
+    }
+}
+
 impl<'a> Ui<'a> {
     pub fn new(theme: &'a Theme, kit: Option<&'a KitFonts>, units: UiUnits) -> Self {
         Ui { theme, kit, units }
@@ -667,10 +686,22 @@ impl<'a> Ui<'a> {
         self.toggle_ex(c, parent, on, st, None)
     }
 
+    /// `toggle` with its own words (off, on): `Off`/`On` for a setting that
+    /// switches a feature, `toggle_words(.., TOGGLE_YES_NO)` for one that
+    /// answers a question ("Include ...", "Ask ...", "Show ...?").
+    pub fn toggle_words(&self, c: &mut Commands, parent: Entity, on: bool, st: State, words: (&str, &str)) -> Entity {
+        self.toggle_with(c, parent, on, st, None, words)
+    }
+
     /// `toggle` with the slab sliding over from the other side
     /// (`ToggleSlide`: flipped at `since`, `TOGGLE_SLIDE_SECS`, eased out;
     /// none under reduced motion).
     pub fn toggle_ex(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>) -> Entity {
+        self.toggle_with(c, parent, on, st, slide, TOGGLE_ON_OFF)
+    }
+
+    /// `toggle_ex` with its words (off, on).
+    pub fn toggle_with(&self, c: &mut Commands, parent: Entity, on: bool, st: State, slide: Option<ToggleSlide>, words: (&str, &str)) -> Entity {
         let t = c
             .spawn((
                 UiStyle { w: Some(TOGGLE_W), h: Some(TOGGLE_H), shrink: Some(0.0), ..UiStyle::row() },
@@ -705,7 +736,7 @@ impl<'a> Ui<'a> {
             }
         }
         // Each label centred on its half, where the slab stands for it.
-        for (l, x, lit) in [("Off", TOGGLE_OFF_LEFT, !on), ("On", TOGGLE_ON_LEFT, on)] {
+        for (l, x, lit) in [(words.0, TOGGLE_OFF_LEFT, !on), (words.1, TOGGLE_ON_LEFT, on)] {
             let half = self.boxed(
                 c,
                 t,

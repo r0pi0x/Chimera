@@ -182,6 +182,12 @@ pub struct Death {
     pub victim_team: u8,
     pub killer: Option<Entity>,
     pub kind: DeathKind,
+    /// The weapon that dealt the killing damage (the damage's own, else
+    /// what the killer held when it struck: a thrown grenade's, not the
+    /// knife the killer holds by now).
+    pub weapon: Option<&'static str>,
+    /// How the killing damage was dealt.
+    pub damage_kind: crate::core::DamageKind,
 }
 
 /// Classify a death of a player on `victim_team` by `killer` (on

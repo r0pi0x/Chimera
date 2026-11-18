@@ -799,6 +799,44 @@ fn a_knife_finale_is_a_knife_alone_and_its_kill_wins() {
     assert!(matches!(phase(&sim), Phase::RoundOver { .. }), "{:?}", phase(&sim));
     assert_eq!(sim.app.world().resource::<Match>().winner, Some(team_a));
 
+    // A kill that lands once the swap to the knife is done (a grenade's
+    // second victim) is no knife kill, whatever the killer holds: it
+    // doesn't win; the knife's does.
+    let mut sim = knife_sim(&finale);
+    minigame::start(sim.app.world_mut(), "kit:gun_game").expect("it starts");
+    let (a, b, c) = (player(&mut sim), player(&mut sim), player(&mut sim));
+    settle(&mut sim);
+    for _ in 0..2 {
+        kill(&mut sim, b, a, DamageKind::Bullet);
+        settle(&mut sim);
+    }
+    assert_eq!(rung(&sim, a), 2);
+    let blast = |sim: &mut Sim, victim: Entity| {
+        let at = sim.position(victim);
+        sim.app.world_mut().write_message(Damage {
+            target: victim,
+            attacker: Some(a),
+            amount: 5.0,
+            point: at,
+            dir: Vec3::NEG_Z,
+            hitgroup: Hitgroup::Chest,
+            kind: DamageKind::Blast,
+            weapon: Some(RIFLE),
+            force: Vec3::ZERO,
+        });
+    };
+    // One blast, two victims in the same tick: the first kill puts a on the
+    // knife, the second must not win.
+    blast(&mut sim, b);
+    blast(&mut sim, c);
+    sim.ticks(3);
+    assert_eq!(rung(&sim, a), 3, "the knife rung");
+    assert_eq!(phase(&sim), Phase::Live, "a blast's second kill doesn't win");
+    assert_eq!(sim.app.world().get::<Score>(a).unwrap().kills, 4, "but it counts as a kill");
+    settle(&mut sim);
+    kill(&mut sim, b, a, DamageKind::Melee);
+    assert!(matches!(phase(&sim), Phase::RoundOver { .. }), "the knife's kill wins: {:?}", phase(&sim));
+
     // Checked: a gun named as a knife; no melee weapon at all in the games: no finale.
     let mut sim = knife_sim(DEF);
     for (finale, says) in [("\"kit:rifle\"", "not a melee weapon")] {
