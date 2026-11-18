@@ -349,6 +349,10 @@ pub struct InstallAttributes {
     /// the weapons' `HUDEffectOverride` sections of the layout and client
     /// files; empty without the weapons file).
     pub announcer_skins: Vec<chimera_core::announcer::Skin>,
+    /// A hash of every attribute file's bytes as read (`read_attributes`;
+    /// None: built by hand, or no weapons file): what the merged weapon documents kept on
+    /// disk are keyed by (`CaData::weapon_docs_merged`).
+    pub digest: Option<String>,
 }
 
 /// Parse one attribute document, errors naming it and the line.
@@ -361,7 +365,11 @@ pub fn parse_document(name: &str, bytes: &[u8]) -> Result<Document, String> {
 /// why (the caller logs them).
 pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAttributes, Vec<String>) {
     let mut problems = Vec::new();
-    let mut doc = |name: &str| match read(name).map_err(|e| format!("{name}: {e}")).and_then(|b| parse_document(name, &b)) {
+    let mut digest = crate::map::cache::Key::new("combat_arms:attributes", "");
+    let mut doc = |name: &str| match read(name).map_err(|e| format!("{name}: {e}")).and_then(|b| {
+        digest = std::mem::replace(&mut digest, crate::map::cache::Key::new("", "")).part(name, &b);
+        parse_document(name, &b)
+    }) {
         Ok(d) => Some(d),
         Err(e) => {
             problems.push(e);
@@ -412,6 +420,8 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
             by_id.iter().find(|(_, x)| std::ptr::eq(**x, r)).map(|(id, _)| id.clone())
         })
     });
+    // Only with weapons to merge (what the digest keys).
+    let digest = weapons.is_some().then(|| digest.hex());
     let attrs = InstallAttributes {
         weapons,
         time_weight: server.as_ref().map(ServerTimeWeight::read),
@@ -422,6 +432,7 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
         attachments: attachments.map(|d| AttachmentsFile::read(&d)),
         gear,
         announcer_skins,
+        digest,
     };
     (attrs, problems)
 }

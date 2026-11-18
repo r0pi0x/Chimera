@@ -86,7 +86,7 @@ type Result<T> = std::result::Result<T, LtbError>;
 
 /// "Model version and counts block": the 15 u32 after the version, as
 /// read (hints and allocation sizes; nothing is located by them).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Counts {
     pub keyframes: u32,
     pub animations: u32,
@@ -106,7 +106,7 @@ pub struct Counts {
 }
 
 /// A piece: one named part with its levels of detail.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Piece {
     pub name: String,
     /// One per LOD, increasing; the first is 0.
@@ -117,7 +117,7 @@ pub struct Piece {
 }
 
 /// "LOD record".
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Lod {
     /// Texture slots used, T.
     pub texture_count: u32,
@@ -141,20 +141,26 @@ impl Lod {
 
 /// Vertices and triangles of one mesh body, as stored ("Mesh bodies",
 /// "Vertex formats").
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Geometry {
     pub stream_flags: [u32; 4],
     pub max_bones_per_triangle: u32,
     pub max_bones_per_vertex: u32,
+    #[serde(with = "crate::plain_serde::plain")]
     pub positions: Vec<Vec3>,
     /// Stored blend weights per vertex (k of them; the rest 0). Empty for
     /// rigid and vertex-animated meshes.
+    #[serde(with = "crate::plain_serde::plain")]
     pub weights: Vec<[f32; 4]>,
     /// Palette meshes: four palette indices per vertex. Empty otherwise.
+    #[serde(with = "crate::plain_serde::plain")]
     pub palette_indices: Vec<[u8; 4]>,
+    #[serde(with = "crate::plain_serde::plain")]
     pub normals: Vec<Vec3>,
+    #[serde(with = "crate::plain_serde::plain")]
     pub uvs: Vec<[f32; 2]>,
     /// Absolute vertex indices, a plain list.
+    #[serde(with = "crate::plain_serde::plain")]
     pub triangles: Vec<[u16; 3]>,
     /// k, the stored weights per vertex.
     pub weight_count: usize,
@@ -164,7 +170,7 @@ pub struct Geometry {
 
 /// "Bone sets": vertices [first, first + count) and the indices up to
 /// `index_end` (counted in indices, 3 per triangle) follow `nodes`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BoneSet {
     pub first_vertex: u16,
     pub vertex_count: u16,
@@ -181,7 +187,7 @@ impl BoneSet {
 }
 
 /// A matrix palette skinned mesh's extra fields.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Palette {
     pub min_index: u32,
     pub max_index: u32,
@@ -191,7 +197,7 @@ pub struct Palette {
 }
 
 /// One LOD's mesh, by kind ("Mesh bodies").
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Mesh {
     /// Kind 4: every vertex follows `node`.
     Rigid { node: u32, geometry: Geometry },
@@ -210,6 +216,7 @@ pub enum Mesh {
         anim_node: u32,
         draw_node: u32,
         geometry: Geometry,
+        #[serde(with = "crate::plain_serde::plain")]
         duplicates: Vec<(u16, u16)>,
     },
     /// Kind 7: no geometry.
@@ -297,7 +304,7 @@ fn blend(nodes: &[u32], stored: &[f32; 4]) -> [(u32, f32); 4] {
 }
 
 /// "Skeleton (node tree)": one node, in depth-first order.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Node {
     pub name: String,
     /// The index field as stored (the engine renumbers by position).
@@ -309,32 +316,38 @@ pub struct Node {
 }
 
 /// "Weight sets".
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WeightSet {
     pub name: String,
     /// One per node.
+    #[serde(with = "crate::plain_serde::plain")]
     pub weights: Vec<f32>,
 }
 
 /// One key: its time (ms) and string (empty for most keys).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Key {
     pub time: u32,
     pub string: String,
 }
 
 /// One node's animation data (animation.md "Node channel record").
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Channel {
     /// Stored positions and rotations: 0 (identity), 1 (constant) or one
     /// per key.
-    Transform { positions: Vec<Vec3>, rotations: Vec<Quat> },
+    Transform {
+        #[serde(with = "crate::plain_serde::plain")]
+        positions: Vec<Vec3>,
+        #[serde(with = "crate::plain_serde::plain")]
+        rotations: Vec<Quat>,
+    },
     /// Compression 0 with the vertex flag: per key, the vertex positions.
-    Vertices(Vec<Vec<Vec3>>),
+    Vertices(#[serde(with = "crate::plain_serde::plain_vecs")] Vec<Vec<Vec3>>),
 }
 
 /// One animation record (animation.md "One animation record").
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Animation {
     /// Default box (half-extents), overridden by the binding.
     pub dims: Vec3,
@@ -405,7 +418,7 @@ fn pick<T: Copy>(values: &[T], i: usize) -> Option<T> {
 }
 
 /// "Sockets".
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Socket {
     pub node: u32,
     pub name: String,
@@ -418,7 +431,7 @@ pub struct Socket {
 }
 
 /// "Animation bindings": one entry.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Binding {
     pub name: String,
     pub dims: Vec3,
@@ -426,7 +439,7 @@ pub struct Binding {
 }
 
 /// A parsed model file.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Model {
     pub version: u32,
     pub counts: Counts,

@@ -141,7 +141,13 @@
 //!   a load without textures (the dedicated server's) or for an app
 //!   whose view models load on demand (a client's front end:
 //!   `view_model::on_demand::ViewModelsOnDemand`) takes no view models
-//!   (`dress_with`), as Combat Arms' own maps never do.
+//!   (`dress_with`), as Combat Arms' own maps never do. It is kept by
+//!   Chimera's `map::kept` (`dress_kept`: converted once per app, load
+//!   kind and view models, copied into each map; on disk with
+//!   `CHIMERA_GUEST_CACHE`), its memos with it: the character models'
+//!   index (`characters::kept`: rigs, body groups, held sockets) and the
+//!   effect library's loaded parts (`effects::library::SavedLibrary`;
+//!   the effect file itself is the install data's, parsed once).
 //!   `MapLoadOptions::kit` limits the character models every map carries
 //!   (`MapData::kit`): none for an app whose gameplay is another game's.
 //! - No map file hash (Q15): the game checks none, a client loads its own
@@ -206,7 +212,7 @@ use lithtech_formats::{
 use crate::{
     core::Team,
     map::{
-        BlendMode, DetailMode, MapAlpha, MapBlend, MapCollisionSet, MapData, MapDetail, MapDressing, MapEntity,
+        BlendMode, DetailMode, MapAlpha, MapBlend, MapCollisionSet, MapData, MapDetail, MapDressing, MapEntity, MapMemos,
         MapFlatEnvmap, MapFog, MapHull, MapLightmap, MapLoadOptions, MapLoader, MapMesh, MapSkyCamera, MapTexture,
         entities::engine_to_entity,
     },
@@ -262,37 +268,115 @@ pub static MAP_LOADER: MapLoader = MapLoader {
 
 /// What Combat Arms' gameplay brings to another game's map
 /// (`map::MapDressing`, a mashup's `map::MapSources`): `dress` with the
-/// install's archives.
+/// install's archives, kept by Chimera's `map::kept` (converted once per
+/// app and load kind, copied into each map; on disk with
+/// `map::kept::DISK_ENV`), its memos (the character models' index, the
+/// effect library) with it (`kept_memos`).
 pub static DRESSING: MapDressing = MapDressing {
     game: super::GAME,
-    dress: |map, options| {
-        let data = super::data::CaData::install_for(&options.context);
-        let mount = data.mount().ok_or_else(|| {
-            "no Combat Arms install: set [games.combat_arms] path in chimera.local.toml".to_string()
-        })?;
-        // A load without textures (the dedicated server's): the models'
-        // keep their sizes only, as the map's own (`SizesOnly`).
-        let sized = !options.textures && decodes(map);
-        if sized {
+    dress: |map, options| dress_kept(map, options, crate::map::kept::disk_cache().as_ref()),
+};
+
+/// `DRESSING`'s dressing with `disk` as the kept dressings' disk layer
+/// (None: kept for the app only; tests, measurements).
+pub fn dress_kept(
+    map: &mut MapData,
+    options: &MapLoadOptions,
+    disk: Option<&crate::map::cache::MapCache>,
+) -> Result<(), String> {
+    let data = super::data::CaData::install_for(&options.context);
+    // A map that can't be drawn (the dedicated server's) takes no view
+    // models, as Combat Arms' own maps never carry them: they are the
+    // picture and its sounds alone; the weapons' timing reads each
+    // view model's animation list itself (`weapons::timing`). They were
+    // 0.5 GB of the server's memory (docs/performance.md, "The
+    // dedicated server's memory"). Nor does a client's whose view
+    // models load on demand (`on_demand::ViewModelsOnDemand`): they
+    // were converted again for each map beside the ones loaded there
+    // (docs/performance.md, "A client's memory").
+    let view_models = options.textures && !super::view_model::on_demand::on_demand_in(&options.context);
+    let mount = || {
+        data.mount()
+            .ok_or_else(|| "no Combat Arms install: set [games.combat_arms] path in chimera.local.toml".to_string())
+    };
+    let convert = |mount: &Mount, map: &mut MapData| {
+        // A load without textures (the dedicated server's): the
+        // models' keep their sizes only, as the map's own (`SizesOnly`).
+        if !options.textures {
             map.memos.insert(SizesOnly);
         }
-        // A map that can't be drawn (the dedicated server's) takes no view
-        // models, as Combat Arms' own maps never carry them: they are the
-        // picture and its sounds alone; the weapons' timing reads each
-        // view model's animation list itself (`weapons::timing`). They were
-        // 0.5 GB of the server's memory (docs/performance.md, "The
-        // dedicated server's memory"). Nor does a client's whose view
-        // models load on demand (`on_demand::ViewModelsOnDemand`): they
-        // were converted again for each map beside the ones loaded there
-        // (docs/performance.md, "A client's memory").
-        let view_models = options.textures && !super::view_model::on_demand::on_demand_in(&options.context);
-        dress_with(&data, &mount, map, view_models);
-        if sized {
-            map.memos.remove::<SizesOnly>();
-        }
-        Ok(())
-    },
-};
+        dress_with(&data, mount, map, view_models);
+        map.memos.remove::<SizesOnly>();
+    };
+    let save = |memos: &MapMemos| save_memos(&data, memos);
+    let load = |bytes: &[u8], mount: &Mount, memos: &mut MapMemos| load_memos(&data, bytes, mount, memos);
+    let memos = crate::map::kept::KeptMemos {
+        save: &save,
+        load: &load,
+        append: &append_memos,
+    };
+    crate::map::kept::dress_cached_with(
+        map,
+        options,
+        &crate::map::kept::Dressing {
+            game: super::GAME,
+            converter: CONVERTER,
+            mount: &mount,
+            convert: &convert,
+            variant: if view_models { "view_models" } else { "" },
+            memos: Some(&memos),
+        },
+        disk,
+    )
+}
+
+/// What Combat Arms' kept dressing writes of its memos
+/// (`map::kept::KeptMemos`): the character models' index
+/// (`characters::kept`) and the effect library's loaded parts.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedMemos {
+    index: Option<serde_bytes_vec::Bytes>,
+    library: Option<super::effects::library::SavedLibrary>,
+}
+
+mod serde_bytes_vec {
+    /// Bytes written as one string.
+    #[derive(serde::Serialize, serde::Deserialize)]
+    pub struct Bytes(#[serde(with = "crate::map::pod_serde::pod")] pub Vec<u8>);
+}
+
+fn save_memos(data: &super::data::CaDataInner, memos: &MapMemos) -> Result<Vec<u8>, String> {
+    use super::characters::models::CaModelIndex;
+    let index = match memos.get::<CaModelIndex>() {
+        Some(i) => Some(serde_bytes_vec::Bytes(super::characters::kept::save(i, data)?)),
+        None => None,
+    };
+    let library = super::effects::library::library(memos).map(|l| l.saved());
+    postcard::to_allocvec(&SavedMemos { index, library }).map_err(|e| e.to_string())
+}
+
+fn load_memos(data: &super::data::CaDataInner, bytes: &[u8], mount: &Mount, memos: &mut MapMemos) -> Result<(), String> {
+    let saved: SavedMemos = postcard::from_bytes(bytes).map_err(|e| e.to_string())?;
+    if let Some(i) = saved.index {
+        memos.insert(super::characters::kept::load(&i.0, data)?);
+    }
+    if let Some(l) = saved.library {
+        let file = |p: &str| mount.read(p).ok();
+        let lib = super::effects::library::FxLibrary::from_saved(l, data, &file)?;
+        super::effects::library::set_library(memos, Some(std::sync::Arc::new(lib)));
+    }
+    Ok(())
+}
+
+/// The kept memos into a map's, as `dress_with` leaves them: the index
+/// merged into the map's, the library set (or none).
+fn append_memos(map: &mut MapMemos, kept: &MapMemos) {
+    use super::characters::models::CaModelIndex;
+    super::effects::library::set_library(map, super::effects::library::library(kept));
+    if let Some(index) = kept.get::<CaModelIndex>() {
+        map.entry::<CaModelIndex>().merge(index);
+    }
+}
 
 /// A map's memo (`MapData::memos`) while it loads without textures
 /// (`MapLoadOptions::textures` off: the dedicated server's): the models'

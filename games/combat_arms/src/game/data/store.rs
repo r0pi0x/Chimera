@@ -309,13 +309,12 @@ impl CaDataInner {
     pub fn weapon_set(&self) -> &'static WeaponSet {
         self.weapon_set.get_or_init(|| {
             let docs: Vec<(&str, &str)> = self.docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
-            let mods = self.attributes().and_then(|a| a.mods.as_ref());
-            let merged = self.attributes().and_then(|a| a.weapons.as_ref()).and_then(|w| {
-                let mpu = movement_data().meters_per_unit as f64;
-                merge_weapon_docs_with_mods(&docs, w, mods, mpu)
-                    .map_err(|e| warn!("Combat Arms: the install's weapons weren't merged: {e}"))
-                    .ok()
-            });
+            let merged = self
+                .weapon_docs_merged(crate::map::kept::disk_cache().as_ref())
+                .map(|r| r.map(|(m, _)| m))
+                .map_err(|e| warn!("Combat Arms: the install's weapons weren't merged: {e}"))
+                .ok()
+                .flatten();
             let parsed = merged.and_then(|merged| {
                 interned(merged, |m| {
                     let refs: Vec<(&str, &str)> = m.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
@@ -333,6 +332,37 @@ impl CaDataInner {
             let _ = self.weapon_docs.set(used);
             set
         })
+    }
+
+    /// Our documents merged with the install's weapons and modification
+    /// records (`merge_weapon_docs_with_mods`; None: no install weapons),
+    /// what `weapon_set` parses. With `disk` (the kept dressings' disk
+    /// layer, `map::kept::disk_cache`), read back when they were merged
+    /// before from the same attribute files (`InstallAttributes::digest`),
+    /// our documents and converter, else merged and written: 4.7 G
+    /// instructions merging against a 16 MB read (docs/performance.md,
+    /// "Guest dressings on disk"). Also how it went (tests).
+    pub fn weapon_docs_merged(
+        &self,
+        disk: Option<&crate::map::cache::MapCache>,
+    ) -> Result<Option<(Vec<(String, String)>, crate::map::cache::Outcome)>, String> {
+        let Some(attrs) = self.attributes() else { return Ok(None) };
+        let Some(weapons) = attrs.weapons.as_ref() else { return Ok(None) };
+        let docs: Vec<(&str, &str)> = self.docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
+        let mpu = movement_data().meters_per_unit as f64;
+        let merge = || merge_weapon_docs_with_mods(&docs, weapons, attrs.mods.as_ref(), mpu);
+        // Only from files read (a digest), never hand-built records.
+        let Some(digest) = attrs.digest.as_ref().filter(|_| disk.is_some()) else {
+            return merge().map(|m| Some((m, crate::map::cache::Outcome::Off)));
+        };
+        let mut key = crate::map::cache::Key::new("combat_arms:weapon_docs", crate::game::world::CONVERTER)
+            .part("attributes", digest)
+            .part("meters_per_unit", mpu.to_le_bytes());
+        for (n, t) in &docs {
+            key = key.part(n, t);
+        }
+        // No files read while merging: the key holds every input.
+        crate::map::cache::cached(disk, &Mount::default(), key, merge).map(Some)
     }
 
     /// The weapon documents (name, TOML text) `weapon_set` is parsed

@@ -244,6 +244,7 @@ pub mod death;
 pub mod driver;
 pub mod families;
 pub mod held_on_demand;
+pub mod kept;
 pub mod models;
 pub mod preload;
 pub mod records;

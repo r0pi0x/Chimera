@@ -31,7 +31,8 @@
 //! map load's, kept by `CaData::memo`) and copied into each map after
 //! (`append_shared`: the textures appended, the indices moved; Combat
 //! Arms' own maps and the dressing of another game's, `world::dress_with`,
-//! alike), with the
+//! alike; that dressing kept whole by Chimera's `map::kept`, the index
+//! written to disk by `characters::kept`), with the
 //! rigs, groups and held models' sockets the conversion registered
 //! (`CaModelIndex`). A map's index goes with it (`MapData::memos`, the
 //! world's `map::MapMemos` while it plays); what is loaded later, on
@@ -173,6 +174,25 @@ impl CaModelIndex {
             .extend(other.held_sockets.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
 
+    /// Every rig, by the body file it serves (normalized).
+    pub fn rigs(&self) -> &BTreeMap<String, Arc<Rig>> {
+        &self.rigs
+    }
+
+    /// Every held model's socket: (weapon, socket) to (node, offset).
+    pub fn held_sockets(&self) -> &BTreeMap<(String, String), (String, Vec3)> {
+        &self.held_sockets
+    }
+
+    /// An index of these rigs (by normalized path), groups and sockets.
+    pub fn from_parts(
+        rigs: BTreeMap<String, Arc<Rig>>,
+        groups: Vec<BodyGroup>,
+        held_sockets: BTreeMap<(String, String), (String, Vec3)>,
+    ) -> Self {
+        Self { rigs, groups, held_sockets }
+    }
+
     /// Nothing registered.
     pub fn is_empty(&self) -> bool {
         self.rigs.is_empty() && self.groups.is_empty() && self.held_sockets.is_empty()
@@ -304,7 +324,7 @@ pub const LOADED: &[i32] = &[0, 1, 2, 7, 8, 9];
 /// One character model's choices (`map::BodyNumber`, in this order of
 /// body parts): which body record's pieces, which face, which head piece,
 /// which goggles and which backpack (-1: none) show.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BodyGroup {
     pub skeleton: usize,
     pub records: Vec<i32>,

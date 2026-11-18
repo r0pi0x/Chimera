@@ -93,6 +93,7 @@ mod heavy {
     mod ladder_bodies;
     mod kept_textures;
     mod dressing_view_models;
+    mod guest_dressing;
     mod attached_fx;
     mod attributes;
     mod body_skins;

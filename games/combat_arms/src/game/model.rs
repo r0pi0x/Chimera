@@ -100,6 +100,19 @@ impl ChildModels {
         let held = self.0.lock().unwrap_or_else(|e| e.into_inner());
         (held.len(), held.values().flat_map(|m| &m.animations).map(|a| a.track_bytes() + a.vertex_anim_bytes()).sum())
     }
+
+    /// Every child read so far, by path.
+    pub fn all(&self) -> Vec<(String, std::sync::Arc<Model>)> {
+        let held = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        held.iter().map(|(p, m)| (p.clone(), m.clone())).collect()
+    }
+
+    /// `model` as child `path`'s unless one was read already: the one
+    /// kept (a kept index read back, `characters::kept`).
+    pub fn keep(&self, path: &str, model: std::sync::Arc<Model>) -> std::sync::Arc<Model> {
+        let mut held = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        held.entry(path.to_string()).or_insert(model).clone()
+    }
 }
 
 /// `load`, its children through `shared`.

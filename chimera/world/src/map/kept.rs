@@ -26,33 +26,47 @@
 //!   asks the game's mount whether any of them can be read now and, if
 //!   so, dresses again, so a file that came after the first dressing
 //!   reaches the next map instead of waiting for a restart.
-//! - **Logs** each conversion's time, and counts them (`conversions`).
+//! - **Logs** each conversion's (or read's) time and instructions (this
+//!   thread and those it starts), and counts them (`conversions`).
 //! - **On disk, off by default** (`CHIMERA_GUEST_CACHE=1`, `DISK_ENV`):
 //!   a session's first ask reads the dressing back from the converted-map
 //!   cache (`map::cache`: its folder, cap and switch, `CHIMERA_MAP_CACHE=0`
 //!   turning guests off too) when one was written from the same files,
 //!   else converts and writes it. The key: `guest:<game>`, the converter's
-//!   version, the map format's, whether textures are decoded and the
-//!   mount's layers; the entry lists every file the dressing read with its
-//!   fingerprint (a late file's absence too), so a changed or arrived file
-//!   converts again. The entry's bytes are the same for the same files
-//!   (`pod_serde::sorted`), as the asset service's records will need
-//!   (docs/plans/active/converted-cache.md). Read back: `disk_reads`.
+//!   version, the map format's, whether textures are decoded, the
+//!   dressing's `variant` and the mount's layers; the entry lists every
+//!   file the dressing read with its fingerprint (a late file's absence
+//!   too), so a changed or arrived file converts again. The entry's bytes
+//!   are the same for the same files (`pod_serde::sorted`), as the asset
+//!   service's records will need (docs/plans/active/converted-cache.md).
+//!   Read back: `disk_reads`.
+//! - **Memos**: what a dressing leaves in the map's memos (`MapData::
+//!   memos`: Combat Arms' rigs, body groups and effect library) is kept
+//!   with its parts when the game gives `Dressing::memos` (`KeptMemos`):
+//!   its `append` adds them to each map; on disk its `save` writes them
+//!   beside the parts (`map::KeptMemoBytes`, taken out again after the
+//!   read) and its `load` reads them back (memos that don't read back
+//!   convert again, as a miss).
+//! - **Variants**: an app's choice that changes the dressing (Combat
+//!   Arms' view models, none when they load on demand) is the dressing's
+//!   `variant`, kept apart in the session and on disk.
 //!
-//! The Source games (CS:S, HL2:DM, TF2) dress through it. Porting a game:
-//! docs/new-game.md, "Order of work", step 3.
+//! The Source games (CS:S, HL2:DM, TF2) and Combat Arms dress through it.
+//! Porting a game: docs/new-game.md, "Order of work", step 3.
 //!
 //! Known shortcuts (docs/tech-debt.md): an install changed meanwhile
 //! doesn't reach a kept dressing until the app restarts, nor does a late
 //! file of what isn't a model (a sound, a decal, the HUD's look); the map
 //! showing keeps the dressing it was loaded with (the next map takes the
 //! new one); a kept texture of its blocks alone casts an opaque shadow
-//! (`render::shadows` reads texels for alpha); a dressing's memos
-//! (`MapData::memos`) aren't kept, so Combat Arms (its shared models'
-//! index, its effect library) and Halo (its donors, kept as their own
-//! types) keep their parts their own way. Why it's OK for now: a dressing
-//! reads only the install's `base` files, which come before any map
-//! loads; the guests' bodies are opaque.
+//! (`render::shadows` reads texels for alpha); Halo keeps its donors as
+//! its own types, outside this module (docs/plans/active/
+//! converted-cache.md, step 5, says how they would move here); a hit
+//! whose memos don't read back converts without rewriting the entry, so
+//! it does so again in each session until the entry changes. Why it's OK
+//! for now: a dressing reads only the install's `base` files, which come
+//! before any map loads; the guests' bodies are opaque; memos that are
+//! written read back (a heavy test checks Combat Arms').
 
 use std::{
     collections::BTreeMap,
@@ -65,7 +79,8 @@ use std::{
 use chimera_core::mount::Mount;
 
 use super::{
-    BlocksOnly, LoadContext, MapData, MapLoadOptions,
+    BlocksOnly, LoadContext, MapData, MapLoadOptions, MapMemos,
+    extras::KeptMemoBytes,
     cache::{self, MapCache, Outcome},
     decal::MapDecals,
     sound::MapSounds,
@@ -85,11 +100,35 @@ pub struct Dressing<'a> {
     pub mount: &'a dyn Fn() -> Result<Arc<Mount>, String>,
     /// The dressing, onto `map` (empty, marked `BlocksOnly`) from `mount`.
     pub convert: &'a dyn Fn(&Mount, &mut MapData),
+    /// What else the dressing depends on, besides the game, its converter,
+    /// the mount and `MapLoadOptions::textures` (an app's choice: Combat
+    /// Arms' view models loaded on demand or not); `""`: nothing. Part of
+    /// the session's key and the disk's.
+    pub variant: &'static str,
+    /// The memos its dressing leaves (`MapData::memos`) that later maps
+    /// need (module doc, "Memos"); None: none.
+    pub memos: Option<&'a KeptMemos<'a>>,
+}
+
+/// How a game keeps the memos its dressing leaves (`MapData::memos`:
+/// Combat Arms' rigs, body groups and effect library): copied into each
+/// map (`append`) and, for the disk layer, written as bytes beside the
+/// parts (`map::KeptMemoBytes`) and read back.
+pub struct KeptMemos<'a> {
+    /// The kept memos as bytes (the same for the same memos: the
+    /// generated-assets rule).
+    pub save: &'a dyn Fn(&MapMemos) -> Result<Vec<u8>, String>,
+    /// `save`'s bytes back into `memos`, with the game's files at hand
+    /// (`Err`: the entry is converted again, as a miss).
+    pub load: &'a dyn Fn(&[u8], &Mount, &mut MapMemos) -> Result<(), String>,
+    /// The kept memos (the second) added to a map's (the first), as the
+    /// dressing would have left them.
+    pub append: &'a dyn Fn(&mut MapMemos, &MapMemos),
 }
 
 /// The app's kept dressings, by game and whether textures were decoded.
 #[derive(Default)]
-struct Cache(Mutex<BTreeMap<(&'static str, bool), Arc<Entry>>>);
+struct Cache(Mutex<BTreeMap<(&'static str, &'static str, bool), Arc<Entry>>>);
 
 /// One game's kept dressing (a lock of its own: two loads at once convert
 /// once) and how many times it was converted.
@@ -110,10 +149,10 @@ pub fn disk_cache() -> Option<MapCache> {
     on.then(MapCache::from_env).flatten()
 }
 
-fn entry(context: &LoadContext, game: &'static str, textures: bool) -> Arc<Entry> {
+fn entry(context: &LoadContext, game: &'static str, variant: &'static str, textures: bool) -> Arc<Entry> {
     let cache = context.get_or_init(Cache::default);
     let mut entries = cache.0.lock().unwrap_or_else(|e| e.into_inner());
-    entries.entry((game, textures)).or_default().clone()
+    entries.entry((game, variant, textures)).or_default().clone()
 }
 
 /// The game's guest parts into `map`: converted the first time the app
@@ -121,21 +160,34 @@ fn entry(context: &LoadContext, game: &'static str, textures: bool) -> Arc<Entry
 /// then on; converted again when the kept one missed late files and one
 /// of them can be read now (module doc).
 pub fn dress_cached(map: &mut MapData, options: &MapLoadOptions, dressing: &Dressing) -> Result<(), String> {
-    let parts = kept(options, dressing)?;
+    dress_cached_with(map, options, dressing, disk_cache().as_ref())
+}
+
+/// `dress_cached` with `disk` as the disk layer (`kept_with`).
+pub fn dress_cached_with(
+    map: &mut MapData,
+    options: &MapLoadOptions,
+    dressing: &Dressing,
+    disk: Option<&MapCache>,
+) -> Result<(), String> {
+    let parts = kept_with(options, dressing, disk)?;
     append(map, &parts);
+    if let Some(memos) = dressing.memos {
+        (memos.append)(&mut map.memos, &parts.memos);
+    }
     Ok(())
 }
 
-/// How many times `game`'s dressing was converted for the app of
-/// `context` (with textures or without).
-pub fn conversions(context: &LoadContext, game: &'static str, textures: bool) -> usize {
-    entry(context, game, textures).conversions.load(Ordering::Relaxed)
+/// How many times `game`'s dressing (of `variant`, `Dressing::variant`)
+/// was converted for the app of `context` (with textures or without).
+pub fn conversions(context: &LoadContext, game: &'static str, variant: &'static str, textures: bool) -> usize {
+    entry(context, game, variant, textures).conversions.load(Ordering::Relaxed)
 }
 
 /// How many times `game`'s dressing was read back from the disk layer
 /// for the app of `context`.
-pub fn disk_reads(context: &LoadContext, game: &'static str, textures: bool) -> usize {
-    entry(context, game, textures).disk_reads.load(Ordering::Relaxed)
+pub fn disk_reads(context: &LoadContext, game: &'static str, variant: &'static str, textures: bool) -> usize {
+    entry(context, game, variant, textures).disk_reads.load(Ordering::Relaxed)
 }
 
 /// The files a dressing's models missed (`MapModel::late_files`), each
@@ -171,7 +223,7 @@ pub fn kept_with(
     disk: Option<&MapCache>,
 ) -> Result<Arc<MapData>, String> {
     let game = dressing.game;
-    let entry = entry(&options.context, game, options.textures);
+    let entry = entry(&options.context, game, dressing.variant, options.textures);
     let mut parts = entry.parts.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(p) = parts.as_ref() {
         let late = late_files(p);
@@ -188,18 +240,48 @@ pub fn kept_with(
         );
     }
     let started = std::time::Instant::now();
+    let mut counter = chimera_core::metrics::InstructionCounter::current_with_children();
+    let counted_from = counter.read();
     let mount = (dressing.mount)()?;
-    let key = cache::key(&format!("guest:{game}"), dressing.converter).part("textures", [options.textures as u8]);
-    let (scratch, outcome) = cache::cached(disk, &mount, key, || {
-        let mut scratch = MapData::default();
-        scratch.memos.insert(BlocksOnly);
-        (dressing.convert)(&mount, &mut scratch);
-        scratch.memos.remove::<BlocksOnly>();
-        for t in &mut scratch.textures {
-            t.keep_blocks_only();
+    let key = cache::key(&format!("guest:{game}"), dressing.converter)
+        .part("textures", [options.textures as u8])
+        .part("variant", dressing.variant.as_bytes());
+    let mut outcome = Outcome::Off;
+    let mut scratch = None;
+    // A hit whose memos don't read back converts again (once).
+    for disk in [disk, None] {
+        let (mut parts, how) = cache::cached(disk, &mount, key.clone(), || {
+            let mut scratch = MapData::default();
+            scratch.memos.insert(BlocksOnly);
+            (dressing.convert)(&mount, &mut scratch);
+            scratch.memos.remove::<BlocksOnly>();
+            for t in &mut scratch.textures {
+                t.keep_blocks_only();
+            }
+            if let Some(memos) = dressing.memos.filter(|_| disk.is_some()) {
+                let bytes = (memos.save)(&scratch.memos)?;
+                scratch.extras.insert(KeptMemoBytes(bytes));
+            }
+            Ok(scratch)
+        })?;
+        let bytes = parts.extras.get_mut::<KeptMemoBytes>().map(|b| std::mem::take(&mut b.0));
+        parts.extras.remove::<KeptMemoBytes>();
+        if how == Outcome::Hit
+            && let Some(memos) = dressing.memos
+        {
+            let read = bytes
+                .ok_or_else(|| "no memos in the entry".to_string())
+                .and_then(|b| (memos.load)(&b, &mount, &mut parts.memos));
+            if let Err(e) = read {
+                bevy::log::warn!("{game}: its kept guest parts' memos don't read back ({e}): converted again");
+                continue;
+            }
         }
-        Ok(scratch)
-    })?;
+        outcome = how;
+        scratch = Some(parts);
+        break;
+    }
+    let scratch = scratch.expect("converted without the disk");
     let how = if outcome == Outcome::Hit {
         entry.disk_reads.fetch_add(1, Ordering::Relaxed);
         "read from disk"
@@ -211,8 +293,11 @@ pub fn kept_with(
             "converted"
         }
     };
+    let instructions = counted_from
+        .zip(counter.read())
+        .map_or(String::new(), |(a, b)| format!(", {} M instructions", b.saturating_sub(a) / 1_000_000));
     bevy::log::info!(
-        "{game}: its guest parts {how} in {} ms ({} textures, {} bodies, {} held, {} view models)",
+        "{game}: its guest parts {how} in {} ms{instructions} ({} textures, {} bodies, {} held, {} view models)",
         started.elapsed().as_millis(),
         scratch.textures.len(),
         scratch.kit.characters.len(),
@@ -417,6 +502,8 @@ mod tests {
             converter: "v1",
             mount: &mount_of,
             convert: &convert,
+            variant: "",
+            memos: None,
         };
         let load = || {
             let mut map = MapData::default();
@@ -434,20 +521,20 @@ mod tests {
         assert_eq!(first.textures[1].name, "partial");
         load();
         assert_eq!(
-            conversions(&options.context, "kept_test", false),
+            conversions(&options.context, "kept_test", "", false),
             1,
             "copied, not converted"
         );
         *late.0.lock().unwrap() = true;
         let third = load();
         assert_eq!(
-            conversions(&options.context, "kept_test", false),
+            conversions(&options.context, "kept_test", "", false),
             2,
             "the late file arrived"
         );
         assert_eq!(third.textures[1].name, "full");
         load();
-        assert_eq!(conversions(&options.context, "kept_test", false), 2, "complete: kept");
+        assert_eq!(conversions(&options.context, "kept_test", "", false), 2, "complete: kept");
     }
 
     /// A file whose bytes a test changes (a patched install).
@@ -493,13 +580,15 @@ mod tests {
             converter: "v1",
             mount: &mount_of,
             convert: &convert,
+            variant: "",
+            memos: None,
         };
         let app = |disk: &MapCache| {
             let options = MapLoadOptions::lean();
             let parts = kept_with(&options, &dressing, Some(disk)).unwrap();
             let counts = (
-                conversions(&options.context, "kept_disk", false),
-                disk_reads(&options.context, "kept_disk", false),
+                conversions(&options.context, "kept_disk", "", false),
+                disk_reads(&options.context, "kept_disk", "", false),
             );
             (parts.textures[0].name.clone(), counts)
         };
@@ -521,9 +610,11 @@ mod tests {
             converter: "v1",
             mount: &none,
             convert: &convert,
+            variant: "",
+            memos: None,
         };
         assert!(dress_cached(&mut MapData::default(), &options, &dressing).is_err());
         assert!(dress_cached(&mut MapData::default(), &options, &dressing).is_err());
-        assert_eq!(conversions(&options.context, "kept_none", false), 0);
+        assert_eq!(conversions(&options.context, "kept_none", "", false), 0);
     }
 }

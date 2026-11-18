@@ -5,7 +5,8 @@
 //! systems read while the map plays. One value per type, keyed by its
 //! `TypeId`, as `MapExtras`; unlike those they are not in the
 //! converted-map cache (a loader adds them after a cache hit, as it adds
-//! the game's kit) and a clone is a copy (each world changes its own).
+//! the game's kit; a kept guest dressing's go through its game's
+//! `kept::KeptMemos`) and a clone is a copy (each world changes its own).
 //!
 //! What lives longer than a map (an app's, a process's install data) is
 //! not here: an app's is in `sources::LoadContext`, an install's on the

@@ -1,9 +1,9 @@
 # Converted assets on disk: a session's first load without conversion
 
-Status: **steps 1-4 done, the disk layer off by default** (2026-11-17;
-"Progress" below); next: Combat Arms and Halo onto `map::kept` (step 5),
-a playtest-profile measurement before turning the disk on (step 6), the
-asset service (step 7). The backlog entry is
+Status: **steps 1-5 done (Halo's part written down, not moved), the
+disk layer off by default** (2026-11-17; "Progress" below); next: a
+playtest-profile measurement before turning the disk on (step 6), the
+asset service (step 7), Halo on the user's PC. The backlog entry is
 docs/backlog.md §9, "Converted assets on disk and on the asset
 service"; it builds on "One kept-dressing cache in Chimera for every
 game" (the session cache, docs/performance.md, "Guest dressings kept
@@ -278,6 +278,54 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   7.2 G / 3.4 G, HL2:DM 12.6 G / 1.9 G, TF2 27.3 G / 10.4 G
   (docs/performance.md, "Guest dressings on disk"). Unit test: a
   changed input file misses.
+- **Step 5, done for Combat Arms (2026-11-17):** `world::DRESSING`
+  dresses through `map::kept` (`dress_kept`). Two additions to the
+  API, for every game: `Dressing::memos` (`KeptMemos`: how a game's
+  memos are appended to each map, written beside the parts on disk,
+  `map::KeptMemoBytes`, and read back) and `Dressing::variant` (an app's
+  choice that changes the dressing: Combat Arms' view models, none when
+  they load on demand; in the session's key and the disk's). Combat
+  Arms' memos: the character models' index (`characters::kept`: each
+  rig as its parsed body file and animation list, every animation once
+  and shared again on the read, the install data's child models
+  refilled so later bodies share them; `lithtech_formats::ltb` derives
+  serde, its big arrays as byte strings) and the effect library's
+  loaded parts (the effect file is the install data's, parsed once). The
+  kept dressing gives the same parts and memos as `dress_with` (its
+  textures as blocks, as every kept dressing's), and read back the same
+  again (combat_arms `heavy::guest_dressing`). Test profile: converted
+  and written 36.6 G, read back 8.9 G (4.1x fewer), 347 MB.
+  **Combat Arms' install data as its own entry: the merged weapon
+  documents.** Of a cold dressing's 34.8 G, the install data is 15.0 G:
+  the attribute files 5.2 G (decrypting 0.7, parsing the documents 4.5)
+  and the weapon set 9.8 G (merging our 63 documents with the install's
+  into 2,363, 16.3 MB of TOML, 4.7; parsing those, 5.6). The game's
+  weapons need the parsed attribute records and the parsed `WeaponSet`
+  whatever the dressing does, and neither serializes (the records are
+  dozens of types read from `Document`s; the set holds typed hooks parsed
+  from TOML), so the entry is the merged TOML (`CaData::
+  weapon_docs_merged`, under the same switch, keyed by a hash of the
+  attribute files' bytes, our documents and the converter): merging
+  4,671 M, read back 54 M, the same documents
+  (`heavy::guest_dressing::the_merged_weapon_documents_read_back_the_same`).
+  The other 10.3 G stay until the records or the set serialize.
+  **Halo, not moved (no disc image here).** How its donors would sit
+  behind the same API: one `Dressing` for `audio::GUEST`'s whole chain
+  (game `halo_ce`, converter `maps::CONVERTER`, mount `maps::mount_for`
+  the context); `convert` reads the donor map (`body::load::DONOR_MAP`)
+  once through the given mount and adds, in today's order, the
+  Spartan (`body::load::add`), the guns' looks (`view::load::add`, its
+  `looks(&file, decode)` with `decode` = the map isn't `SizesOnly`), the
+  effects (`fx::load::add`) and the kit's sounds (`audio`'s `kit` on a
+  `Compiler`), each split from its `donor(context, ..)` into a function
+  of the parsed file; `memos` keeps what they leave in the map's memos,
+  `view::load::Displays` (`displays_of`) and `Arc<HaloFx>`: `append`
+  inserts them as `add` does, `save`/`load` write them with serde if
+  their types allow it, else `load` builds them again from the donor
+  map (then the disk saves the models' conversion only). The four
+  `Donor` memos in `LoadContext` then go. Measure first on the user's
+  PC (the per-map append, the cold donor build, and the read back),
+  with the same heavy test shape as Combat Arms'.
 
 ## Steps
 

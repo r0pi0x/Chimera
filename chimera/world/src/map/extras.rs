@@ -10,8 +10,11 @@
 //! strike beams, embers, smoke stacks, dust motes, detail sprites), filled
 //! by the Source map loader and read by the renderer.
 //!
+//! `KeptMemoBytes` carries a kept guest dressing's memos as its game wrote
+//! them, on disk only (`kept`).
+//!
 //! The converted-map cache (`cache`) serializes the values: each as its
-//! type's name and its postcard bytes. Reading one back needs its type in
+//! type's name and its postcard bytes (one byte string). Reading one back needs its type in
 //! `KNOWN` (a type missing there makes the entry unreadable, so the map
 //! is converted again: a miss, never a wrong map).
 
@@ -38,8 +41,9 @@ fn read<T: Any + Clone + Send + Sync + Serialize + DeserializeOwned>(bytes: &[u8
 
 /// The extension types a serialized map can hold (`cache`): add a new
 /// one here.
-fn known() -> [(&'static str, Read); 3] {
+fn known() -> [(&'static str, Read); 4] {
     [
+        (name_of::<KeptMemoBytes>(), read::<KeptMemoBytes>),
         (name_of::<SourceEffects>(), read::<SourceEffects>),
         (name_of::<super::teleport::MapTeleporters>(), read::<super::teleport::MapTeleporters>),
         (name_of::<super::nav_gen::NavWithin>(), read::<super::nav_gen::NavWithin>),
@@ -72,6 +76,10 @@ impl<T: Any + Clone + Send + Sync + Serialize> Extra for T {
         self
     }
 }
+
+/// One value's bytes, written as one byte string (not byte by byte).
+#[derive(Serialize, Deserialize)]
+struct Bytes(#[serde(with = "super::pod_serde::pod")] Vec<u8>);
 
 /// A map's extensions, one value per type.
 #[derive(Default)]
@@ -124,7 +132,7 @@ impl Serialize for MapExtras {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut out = Vec::with_capacity(self.0.len());
         for (name, value) in self.0.values() {
-            out.push((*name, value.to_bytes().map_err(serde::ser::Error::custom)?));
+            out.push((*name, Bytes(value.to_bytes().map_err(serde::ser::Error::custom)?)));
         }
         out.serialize(s)
     }
@@ -132,7 +140,7 @@ impl Serialize for MapExtras {
 
 impl<'de> Deserialize<'de> for MapExtras {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let values: Vec<(String, Vec<u8>)> = Vec::deserialize(d)?;
+        let values: Vec<(String, Bytes)> = Vec::deserialize(d)?;
         let known = known();
         let mut out = BTreeMap::new();
         for (name, bytes) in values {
@@ -140,7 +148,7 @@ impl<'de> Deserialize<'de> for MapExtras {
                 .iter()
                 .find(|(n, _)| *n == name)
                 .ok_or_else(|| serde::de::Error::custom(format!("unknown map extension {name}")))?;
-            let (id, value) = read(&bytes).ok_or_else(|| serde::de::Error::custom(format!("map extension {name}")))?;
+            let (id, value) = read(&bytes.0).ok_or_else(|| serde::de::Error::custom(format!("map extension {name}")))?;
             out.insert(id, (*static_name, value));
         }
         Ok(Self(out))
@@ -152,6 +160,12 @@ impl std::fmt::Debug for MapExtras {
         f.debug_list().entries(self.0.values().map(|(name, _)| name)).finish()
     }
 }
+
+/// A kept dressing's memos as its game wrote them (`map::kept::
+/// KeptMemos::save`), carried by its entry on disk and read back into
+/// memos on a hit; never on a map that plays.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct KeptMemoBytes(#[serde(with = "super::pod_serde::pod")] pub Vec<u8>);
 
 /// Source's entity-driven effect lists on a map: what a map made for
 /// another game doesn't have (`MapData::source_fx`).

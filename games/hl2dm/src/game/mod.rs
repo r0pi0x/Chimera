@@ -173,6 +173,8 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
                 converter: maps::CONVERTER,
                 mount: &maps::guest_mount,
                 convert: &|mount, m| maps::dress_guest_in(mount, m, BUNDLE.kept, !options.textures),
+                variant: "",
+                memos: None,
             },
         )
     },

@@ -2588,7 +2588,7 @@ mod tests {
                         own: None,
                     });
                 };
-                let dressing = kept::Dressing { game: "late_test", converter: "test", mount: &mount_of, convert: &convert };
+                let dressing = kept::Dressing { game: "late_test", converter: "test", mount: &mount_of, convert: &convert, variant: "", memos: None };
                 kept::dress_cached(map, &options, &dressing)
             };
             let mut first = MapData::default();
@@ -2598,17 +2598,17 @@ mod tests {
             // Nothing arrived: copied, not converted.
             let mut second = MapData::default();
             dress(&store, &mut second).unwrap();
-            assert_eq!(kept::conversions(&options.context, "late_test", false), 1);
+            assert_eq!(kept::conversions(&options.context, "late_test", "", false), 1);
             // The lightwarp arrives: the next load dresses again.
             store.arrive(WARP, vtf());
             let mut third = MapData::default();
             dress(&store, &mut third).unwrap();
-            assert_eq!(kept::conversions(&options.context, "late_test", false), 2);
+            assert_eq!(kept::conversions(&options.context, "late_test", "", false), 2);
             assert_eq!(third.kit.held[0].key, "warp true");
             assert!(third.kit.held[0].model.late_files.is_empty());
             // Complete now: kept from then on.
             dress(&store, &mut MapData::default()).unwrap();
-            assert_eq!(kept::conversions(&options.context, "late_test", false), 2);
+            assert_eq!(kept::conversions(&options.context, "late_test", "", false), 2);
         }
 
         /// A file the game doesn't have at all is not late (nothing would

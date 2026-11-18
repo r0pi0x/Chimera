@@ -23,6 +23,9 @@ chimera_vfs.workspace = true
 # rez_cipher.rs). V1's Twofish is ours too (table-driven; RustCrypto's
 # `twofish`, a dev-dependency below, checks it).
 aes = "=0.9.3"
+# The parsed models' types serialize (a game's kept parts on disk:
+# Combat Arms' rigs, `map::kept`).
+serde.workspace = true
 
 # The heavy tests find the install and keys in chimera.local.toml
 # themselves (no Chimera crate here).

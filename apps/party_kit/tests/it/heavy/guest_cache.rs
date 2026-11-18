@@ -76,7 +76,7 @@ fn a_second_load_copies_the_guests_and_their_indices_hold() {
         }
     }
     for game in [cs_source::game::GAME, hl2dm::game::GAME] {
-        assert_eq!(guest::conversions(&context, game, true), 1, "{game}: converted once for two loads");
+        assert_eq!(guest::conversions(&context, game, "", true), 1, "{game}: converted once for two loads");
     }
     let bodies = |m: &MapData| m.kit.characters.iter().map(|c| (c.game, c.name.clone(), c.team)).collect::<Vec<_>>();
     assert_eq!(bodies(&fresh), bodies(&kept));

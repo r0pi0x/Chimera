@@ -93,6 +93,49 @@ impl FxLibrary {
     }
 }
 
+/// What a library loaded beside its effect file, as Combat Arms' kept
+/// guest dressing writes it to disk (`world::KEPT_MEMOS`): read back, the
+/// effect file is the install data's (`load_fx_file`, parsed once per
+/// install), the rest as written. In key order (the same bytes for the
+/// same library).
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SavedLibrary {
+    textures: Vec<(String, [u32; 2])>,
+    sprites: Vec<(String, String)>,
+    sprite_frames: Vec<(String, (Vec<String>, f32))>,
+}
+
+impl FxLibrary {
+    /// What `saved` keeps of it.
+    pub fn saved(&self) -> SavedLibrary {
+        fn sorted<V: Clone, W>(m: &HashMap<String, V>, f: impl Fn(&V) -> W) -> Vec<(String, W)> {
+            let mut v: Vec<(String, W)> = m.iter().map(|(k, x)| (k.clone(), f(x))).collect();
+            v.sort_by(|a, b| a.0.cmp(&b.0));
+            v
+        }
+        SavedLibrary {
+            textures: sorted(&self.textures, |s| s.to_array()),
+            sprites: sorted(&self.sprites, Clone::clone),
+            sprite_frames: sorted(&self.sprite_frames, Clone::clone),
+        }
+    }
+
+    /// `saved` back, with the install's effect file (`data`'s, read
+    /// through `file` the first time).
+    pub fn from_saved(
+        saved: SavedLibrary,
+        data: &super::super::data::CaDataInner,
+        file: &dyn Fn(&str) -> Option<Vec<u8>>,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            file: load_fx_file(data, file)?,
+            textures: saved.textures.into_iter().map(|(k, s)| (k, UVec2::from_array(s))).collect(),
+            sprites: saved.sprites.into_iter().collect(),
+            sprite_frames: saved.sprite_frames.into_iter().collect(),
+        })
+    }
+}
+
 /// The effect library of a map's memos (None: no install, or the map
 /// loaded none).
 pub fn library(memos: &MapMemos) -> Option<Arc<FxLibrary>> {

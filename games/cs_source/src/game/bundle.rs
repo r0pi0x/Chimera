@@ -40,6 +40,8 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
                 converter: super::bsp::CONVERTER,
                 mount: &super::guest_mount,
                 convert: &|mount, m| super::bsp::dress_guest(mount, m, BUNDLE.kept, !options.textures),
+                variant: "",
+                memos: None,
             },
         )
     },

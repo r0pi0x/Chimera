@@ -4924,6 +4924,42 @@ OS's cache warm, after step 2's skipped decoding):
 | CS:S | 7,208 M | 3,427 M (2.1x fewer) | 225 MB |
 | HL2:DM | 12,622 M | 1,857 M (6.8x fewer) | 180 MB |
 | TF2 | 27,336 M | 10,435 M (2.6x fewer) | 773 MB |
+| Combat Arms (with its memos) | 36,638 M | 8,942 M (4.1x fewer) | 347 MB |
+
+Combat Arms' dressing went onto `map::kept` on 2026-11-17 (plan
+converted-cache, step 5) with what it leaves in the map's memos: its
+character models' index (rigs, body groups, held sockets:
+`characters::kept`, each animation written once and shared again on the
+read, the install data's child models refilled) and its effect library's
+loaded parts (the effect file is the install data's). Read back, the same
+bytes, rigs, groups, sockets and library as converting, and the same as
+`dress_with` itself (combat_arms `heavy::guest_dressing::
+a_kept_dressing_reads_back_the_same_parts_and_memos`, which prints these).
+Its read: the parts' payload 5,248 M, the index 1,126 M (163 MB of its
+347; 3,287 M before the models' big arrays and a map extension's bytes
+were written as byte strings, `lithtech_formats::plain_serde`,
+`MapExtras`), the library 95 M. "Converted and written" is a cold process,
+the install data included; "read back" is the next app of the same
+process, so the install data is parsed already. Where a cold Combat Arms
+dressing goes, apart (`where_a_cold_dressing_goes`, one process, test
+profile, the OS's cache warm):
+
+| | instructions | ms |
+|---|---|---|
+| the install's attribute files (`ATTRIBUTES.rez` read, decrypted and parsed) | 5,193 M (decrypting 0.7 G, parsing 4.5 G) | 434 |
+| the weapon set (2,363 documents merged, 16.3 MB of TOML, then parsed) | 9,753 M (merging 4.7 G, parsing 5.6 G) | 971 |
+| the effect file parsed | 915 M | 64 |
+| the effect looks | 1,157 M | 85 |
+| the view models (58) | 6,944 M | 758 |
+| the character models (6 bodies, 79 held; 4.9 G of it the body and animation files parsed) | 5,628 M + 4,913 M | 1,036 |
+
+A read from disk skips the view models, the character models and the
+effect looks (13.7 G) but not the install data (15 G), which the game's
+weapons need whatever the dressing does. Of that, the merge is kept on
+disk too, under the same switch (`CaData::weapon_docs_merged`, keyed by
+a hash of the attribute files' bytes): 4,671 M merging, 54 M reading the
+2,363 documents back. Parsing the attribute files (4.5 G) and the merged
+documents (5.6 G) stays: neither result serializes.
 
 Writing costs about 3 G (CS:S) to 9 G (TF2) over converting alone. With
 the decoding skipped, CS:S gains little from the disk (4.1 G converting,

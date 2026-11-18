@@ -35,12 +35,17 @@
 //!
 //! Each format follows its spec under specs/ (specs/README.md); comments
 //! name the spec's sections.
+//!
+//! The parsed models (`ltb`) serialize with serde, their big arrays as
+//! byte strings (`plain_serde`): a game keeps its converted parts on
+//! disk with them (Combat Arms' rigs).
 
 pub mod anim;
 pub mod attributes;
 pub mod dtx;
 pub mod fxf;
 pub mod ltb;
+pub mod plain_serde;
 pub mod render_style;
 pub mod rez;
 pub mod rez_cipher;

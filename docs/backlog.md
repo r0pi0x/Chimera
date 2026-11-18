@@ -2965,7 +2965,9 @@ docs/plans/active/sound.md.
   Builds on the kept-dressing API below. **Steps 1-2 done 2026-11-17:**
   converted dressings write the same bytes each time; kept dressings
   skip decoding their whole-DXT textures (CS:S 61%, HL2:DM 24%, TF2 56%
-  fewer instructions cold, the same textures).
+  fewer instructions cold, the same textures). **Steps 3-5 done
+  2026-11-17** (Halo written down, not moved): every guest but Halo on
+  `map::kept`, its disk layer off by default.
 
 - **Streamed textures, low resolution first (user, 2026-11-17).** Keep
   textures apart from models. Serve small mip levels first from the
@@ -3030,6 +3032,11 @@ docs/plans/active/sound.md.
     their own types, not `MapData`; measure on the user's PC first).
     The disk layer under it is in too, off by default
     (`CHIMERA_GUEST_CACHE=1`; plan converted-cache step 4).
+  - **Combat Arms done 2026-11-17** (plan converted-cache step 5): its
+    dressing and its memos (the models' index, the effect library) are
+    kept through `Dressing::memos`; its merged weapon documents are an
+    entry of their own on disk. **Left: Halo**, on the user's PC (the
+    plan says how its donors would move).
 
 - **Halo: view models and animations at frame rate (user, 2026-11-17).**
   Halo's gun animations and related motion run at its 30 Hz tick and look

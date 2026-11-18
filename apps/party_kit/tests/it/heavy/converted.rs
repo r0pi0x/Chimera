@@ -228,14 +228,14 @@ fn a_guest_read_from_disk_is_the_same_as_converting() {
         let game: &'static str = game;
         let _ = std::fs::remove_dir_all(&dir);
         let disk = MapCache::at(&dir, u64::MAX);
-        let dressing = kept::Dressing { game, converter: *converter, mount, convert: &**convert };
+        let dressing = kept::Dressing { game, converter: *converter, mount, convert: &**convert, variant: "", memos: None };
         let app = || {
             let options = MapLoadOptions::default();
             let mut counter = InstructionCounter::current_with_children();
             let at = counter.read().unwrap_or(0);
             let parts = kept::kept_with(&options, &dressing, Some(&disk)).unwrap();
             let spent = counter.read().unwrap_or(0).saturating_sub(at);
-            let counts = (kept::conversions(&options.context, game, true), kept::disk_reads(&options.context, game, true));
+            let counts = (kept::conversions(&options.context, game, "", true), kept::disk_reads(&options.context, game, "", true));
             (postcard::to_allocvec(&*parts).unwrap(), counts, spent)
         };
         let (written, w, miss) = app();
