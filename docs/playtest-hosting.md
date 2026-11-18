@@ -1031,10 +1031,19 @@ loopback does). `accounts.db` is backed up nightly into `<server store>/server/b
 - **Testers' reports** (F10 or Esc > Report a bug, in builds that have
   it) arrive at the asset service: a `POST /feedback` line in the access
   log, the report under `<server store>/server/feedback/<day>/<id>/`
-  (the zip unpacked: `report.json` with the tester's words,
-  `screenshot.jpg`, `game.txt`, `system.txt`, `perf.txt`, `net.txt`,
-  `cvars.txt`, `console.txt`; `meta.toml` with the account and status;
-  `history.log`). Read them on this machine at
+  (the zip unpacked, the zip itself not kept: `report.json` with the
+  tester's words, `screenshot.jpg`, `game.txt` (with the role: listen
+  host, client or offline; bots, tick rate, rung), `system.txt`,
+  `perf.txt` (with the frame inspector's worst stutters, each frame's
+  slowest schedules, systems and events), `world.txt` (entities by kind
+  and their growth since the session's and the map's start, archetypes
+  made and by what, asset stores, memory by kind, the last minutes'
+  event timeline), `net.txt`, `cvars.txt`, `console.txt`, `log.txt`
+  (repeated lines folded with their counts); `meta.toml` with the account
+  and status; `history.log`). Retention: reports older than 60 days go,
+  then the oldest past 2 GB in all, after each new one
+  (`--reports-keep-days`, `--reports-keep-mb`; 0 keeps everything); a
+  `report.zip` older receivers kept beside the files goes then too. Read them on this machine at
   `http://127.0.0.1:<plain port>/feedback/admin/` (the plain listener,
   8731 by default; never the `--tls` port), or with
   `chimera_assets --store <server store> feedback list [--status new]

@@ -339,6 +339,20 @@ impl FrameMetrics {
         &self.schedule_names
     }
 
+    /// The frame so far, schedule by schedule in order (name, wall ms,
+    /// CPU ms), and its start: for the hitch log and the frame inspector.
+    fn schedule_times(&self) -> (Vec<(String, f64, f64)>, Option<Instant>) {
+        let Some((start, start_counts)) = self.start else { return (Vec::new(), None) };
+        let mut out = Vec::with_capacity(self.marks.len());
+        let (mut at, mut cpu) = (start, start_counts.cpu_ns);
+        for (i, &(t, c)) in self.marks.iter().enumerate() {
+            let name = self.schedule_names.get(i).cloned().unwrap_or_else(|| format!("schedule {i}"));
+            out.push((name, (t - at).as_secs_f64() * 1e3, c.saturating_sub(cpu) as f64 / 1e6));
+            (at, cpu) = (t, c);
+        }
+        (out, Some(start))
+    }
+
     /// Count a finished frame that took `frame_ms` (start to start) and
     /// say whether it is a hitch: over `hitch_ratio` times the median frame
     /// time (refreshed every 30 frames; none before frame 61, nor with a
@@ -478,11 +492,27 @@ fn frame_start(world: &mut World) {
         {
             m.prev_spans = span_times::take();
         }
+        let phases = if is_hitch { shared.0.lock().map(|s| s.phases.clone()).unwrap_or_default() } else { Vec::new() };
+        // The frame inspector's dot and, for a hitch, its record.
+        let facts = super::frame_inspector::FrameFacts {
+            frame: m.frames,
+            ms: frame,
+            median_ms: m.median_ms,
+            spike: is_hitch,
+            main_ms: m.last.main_ms,
+            main_cpu_ms: m.last.main.cpu_ns as f64 / 1e6,
+            between_ms: (now - m.marks.last().map_or(t, |l| l.0)).as_secs_f64() * 1e3,
+            ticks: m.ticks_in_frame,
+            schedules: if is_hitch { m.schedule_times().0 } else { Vec::new() },
+            render: m.last_render.map(|r| (r.ms, r.counts.cpu_ns as f64 / 1e6)),
+            render_phases: &phases,
+        };
+        let summary = super::frame_inspector::frame_done(world, facts);
         if is_hitch {
-            let phases = shared.0.lock().map(|s| s.phases.clone()).unwrap_or_default();
-            hitch(&mut m, frame, now, &phases);
+            hitch(&mut world.resource_mut::<FrameMetrics>(), frame, now, &phases, summary.as_deref());
         }
     }
+    let mut m = world.resource_mut::<FrameMetrics>();
     m.prev_ticks = ticks;
     m.tick_start = tick_total;
     m.marks.clear();
@@ -600,24 +630,14 @@ pub fn gpu_latest_ms(diagnostics: &DiagnosticsStore) -> Option<f64> {
 /// slowest schedules (wall and CPU: CPU far below wall means the thread
 /// waited or was descheduled), the render world's slowest sets, and with
 /// the profile feature the spans with the most self time.
-fn hitch(m: &mut FrameMetrics, frame: f64, now: Instant, phases: &[(&'static str, f64, f64)]) {
+fn hitch(m: &mut FrameMetrics, frame: f64, now: Instant, phases: &[(&'static str, f64, f64)], inspected: Option<&str>) {
     if m.last_hitch_log.is_some_and(|t| (now - t).as_secs_f32() < 0.5) {
         m.hitches_unlogged += 1;
         return;
     }
     m.last_hitch_log = Some(now);
-    let Some((start, start_counts)) = m.start else { return };
-    let mut scheds: Vec<(String, f64, f64)> = Vec::new();
-    let (mut at, mut cpu) = (start, start_counts.cpu_ns);
-    for (i, &(t, c)) in m.marks.iter().enumerate() {
-        let name = m
-            .schedule_names
-            .get(i)
-            .cloned()
-            .unwrap_or_else(|| format!("schedule {i}"));
-        scheds.push((name, (t - at).as_secs_f64() * 1e3, c.saturating_sub(cpu) as f64 / 1e6));
-        (at, cpu) = (t, c);
-    }
+    let Some((start, _)) = m.start else { return };
+    let (mut scheds, _) = m.schedule_times();
     let main_end = m.marks.last().map_or(start, |l| l.0);
     let outside = (now - main_end).as_secs_f64() * 1e3;
     scheds.sort_by(|a, b| b.1.total_cmp(&a.1));
@@ -676,6 +696,10 @@ fn hitch(m: &mut FrameMetrics, frame: f64, now: Instant, phases: &[(&'static str
             .map(|(n, ms, k)| format!("{n} {ms:.2}{}", if *k > 1 { format!(" x{k}") } else { String::new() }))
             .collect();
         line += &format!("; spans by self ms: {}", top.join(", "));
+    }
+    // The frame inspector's record: its slowest systems and events.
+    if let Some(i) = inspected {
+        line += i;
     }
     if m.hitches_unlogged > 0 {
         line += &format!(" ({} more since the last)", m.hitches_unlogged);

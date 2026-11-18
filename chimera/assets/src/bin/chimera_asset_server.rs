@@ -20,7 +20,8 @@
 //!
 //! Feedback reports (`feedback::inbox`): `POST /feedback` takes them with
 //! the testers' tokens; `--reports-per-hour`, `--reports-per-day` and
-//! `--reports-per-address` set its limits; `--on-report <command>` (else
+//! `--reports-per-address` set its limits, `--reports-keep-days` (60) and
+//! `--reports-keep-mb` (2048) its retention (0: none); `--on-report <command>` (else
 //! `[feedback] on_report` in the local config) runs a command for each new
 //! one (a Discord ping). The triage page is at
 //! `http://127.0.0.1:<port>/feedback/admin/` on this machine only.
@@ -36,10 +37,13 @@ use chimera_assets::{
 const USAGE: &str = "usage: chimera_asset_server [--store <dir>] [--listen <ip:port>] [--tls <ip:port>] [--threads <n>]
        [--latency-ms <n>] [--rate <requests/s>] [--burst <n>] [--daily-gb <n>] [--bad-tokens <n per minute>]
        [--connections <n per address>] [--on-report <command>] [--reports-per-hour <n>]
-       [--reports-per-day <n>] [--reports-per-address <n per hour>] [--accounts <url> | --no-tickets]
+       [--reports-per-day <n>] [--reports-per-address <n per hour>] [--reports-keep-days <n>]
+       [--reports-keep-mb <n>] [--accounts <url> | --no-tickets]
   --listen     plain HTTP, default 127.0.0.1:8731 (keep it on this machine)
   --tls        HTTPS with the server's own certificate (its fingerprint is printed), e.g. 0.0.0.0:27031
   --on-report  a command run for each new feedback report (default: [feedback] on_report in the local config)
+  --reports-keep-days, --reports-keep-mb  delete reports older than that (default 60 days), then the oldest
+               past that total (default 2048 MB); 0: keep
   --accounts   the accounts service on this machine, for the revocation feed (default http://127.0.0.1:8741)
   --no-tickets legacy tokens only (no account tickets)";
 
@@ -74,6 +78,8 @@ fn run() -> Result<(), String> {
             "--reports-per-hour" => feedback_limits.per_account_hour = number(value()?, arg)? as usize,
             "--reports-per-day" => feedback_limits.per_account_day = number(value()?, arg)? as usize,
             "--reports-per-address" => feedback_limits.per_address_hour = number(value()?, arg)? as usize,
+            "--reports-keep-days" => feedback_limits.keep_days = number(value()?, arg)? as u64,
+            "--reports-keep-mb" => feedback_limits.keep_bytes = (number(value()?, arg)? * 1048576.0) as u64,
             _ => return Err(USAGE.into()),
         }
     }

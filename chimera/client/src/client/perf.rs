@@ -93,7 +93,7 @@ impl Plugin for PerfPlugin {
         if let Some(render) = app.get_sub_app_mut(bevy::render::RenderApp) {
             render.insert_resource(render_time);
         }
-        app.add_plugins(super::frame_metrics::FrameMetricsPlugin);
+        app.add_plugins((super::frame_metrics::FrameMetricsPlugin, super::frame_inspector::FrameInspectorPlugin, super::world_report::WorldReportPlugin));
         #[cfg(feature = "trace")]
         app.add_plugins(super::trace_capture::TraceCapturePlugin);
         resource_cvar::<PerfLog, u8>(

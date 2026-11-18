@@ -613,6 +613,8 @@ pub fn collect_state(w: &mut World, snapshot: &str) -> ReportState {
     if let Some(m) = w.get_resource::<chimera_sim::minigame::ActiveMinigame>() {
         game += &format!("minigame: {}\n", m.def.id);
     }
+    game += &super::world_report::setup_text(w);
+    let world = super::world_report::world_text(w);
     let mut system = format!(
         "os: {} {}\ncpus: {}\n",
         std::env::consts::OS,
@@ -632,7 +634,13 @@ pub fn collect_state(w: &mut World, snapshot: &str) -> ReportState {
             win.present_mode
         );
     }
-    let perf = w.get_resource::<super::perf::PerfReport>().map_or(String::new(), |p| p.lines.join("\n"));
+    let mut perf = w.get_resource::<super::perf::PerfReport>().map_or(String::new(), |p| p.lines.join("\n"));
+    // The frame inspector's worst spikes, each with its breakdown.
+    if let Some(i) = w.get_resource::<super::frame_inspector::FrameInspector>()
+        && let Ok(i) = i.0.lock()
+    {
+        perf += &format!("\n\n{}", i.report());
+    }
     let net = w.get_resource::<crate::net::predict::NetGraph>().map_or(String::new(), |g| {
         format!(
             "ping {:.0} ms, loss {:.1}%, in {:.1} KB/s, out {:.1} KB/s, commands {:.0}/s\n\
@@ -684,6 +692,7 @@ pub fn collect_state(w: &mut World, snapshot: &str) -> ReportState {
         game,
         system,
         perf,
+        world,
         net,
         cvars,
         binds,

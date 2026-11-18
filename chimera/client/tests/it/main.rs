@@ -17,6 +17,7 @@ mod map_load_steps;
 mod swap_effect;
 mod text_warm;
 mod metrics;
+mod frame_inspector;
 mod crash;
 mod minigame_panel;
 mod minigame_scoreboard;

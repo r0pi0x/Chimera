@@ -11,7 +11,8 @@
 //! - **Limits** (`FeedbackLimits`): per account 10 an hour and 40 a day,
 //!   per address 30 an hour; stored and refused-as-invalid reports count.
 //! - **Storage:** `<server store>/server/feedback/<yyyy-mm-dd>/<id>/`: the
-//!   zip's entries unpacked, `report.zip`, `meta.toml` (`Meta`: account,
+//!   zip's entries unpacked (the zip itself isn't kept: one form only),
+//!   `meta.toml` (`Meta`: account,
 //!   address, time, size, build, app, kind, map, a summary line, status,
 //!   group, reason, fixed_in; a crash's `signature` and `signature_key`,
 //!   `session::signature`, for grouping: `crash_groups`) and
@@ -20,8 +21,12 @@
 //!   rename), so a half-written one is never listed.
 //! - **Statuses** (`Status`): `new`, `triaged`, `accepted`, `rejected`,
 //!   `needs-info`, `duplicate` (with a group), `fixed` (with the commit);
-//!   `set_status` is what the CLI and the page call. Nothing deletes a
-//!   report.
+//!   `set_status` is what the CLI and the page call.
+//! - **Retention** (`FeedbackLimits::keep_days`, `keep_bytes`): after each
+//!   stored report, reports older than `keep_days` go, then the oldest
+//!   until all of them together take at most `keep_bytes` (`prune`; the
+//!   new one always stays). A `report.zip` an older receiver kept beside
+//!   the unpacked entries goes too.
 //! - **Mute** (`muted.toml`): a muted account's reports get 202 and are
 //!   dropped.
 //! - **on_report** (`--on-report`, `[feedback] on_report`): a command of
@@ -34,7 +39,8 @@
 //! Report text is untrusted data: shown, never run or followed.
 //!
 //! Known shortcuts: the limit windows are in memory (a restart forgets
-//! them); `list` reads every report's `meta.toml` each time; no retention.
+//! them); `list` reads every report's `meta.toml` each time; retention
+//! walks every report after each one stored.
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -58,12 +64,29 @@ pub struct FeedbackLimits {
     pub per_account_hour: usize,
     pub per_account_day: usize,
     pub per_address_hour: usize,
+    /// Reports older than this many days are deleted (0: kept).
+    pub keep_days: u64,
+    /// The most bytes all stored reports may take; the oldest go first
+    /// (0: no cap).
+    pub keep_bytes: u64,
 }
 
 impl Default for FeedbackLimits {
     fn default() -> Self {
-        Self { max_body: MAX_BUNDLE, per_account_hour: 10, per_account_day: 40, per_address_hour: 30 }
+        Self {
+            max_body: MAX_BUNDLE,
+            per_account_hour: 10,
+            per_account_day: 40,
+            per_address_hour: 30,
+            keep_days: 60,
+            keep_bytes: 2 << 30,
+        }
     }
+}
+
+/// Bytes of the files in `dir` (not below).
+fn dir_bytes(dir: &Path) -> u64 {
+    fs::read_dir(dir).into_iter().flatten().flatten().filter_map(|e| e.metadata().ok()).map(|m| m.len()).sum()
 }
 
 /// A report's triage status.
@@ -402,8 +425,12 @@ impl Inbox {
             signature_key,
             ..Meta::default()
         };
-        match self.store(&day, &meta, &opened, body) {
+        match self.store(&day, &meta, &opened) {
             Ok(dir) => {
+                let pruned = self.prune(now, id);
+                if pruned > 0 {
+                    eprintln!("feedback: {pruned} old reports deleted (retention)");
+                }
                 self.ping(&dir, &meta);
                 Answer::new(201, format!("stored {id}\n"))
             }
@@ -418,7 +445,7 @@ impl Inbox {
         }
     }
 
-    fn store(&self, day: &str, meta: &Meta, opened: &bundle::Opened, zip: &[u8]) -> std::io::Result<PathBuf> {
+    fn store(&self, day: &str, meta: &Meta, opened: &bundle::Opened) -> std::io::Result<PathBuf> {
         let day_dir = self.root.join(day);
         let tmp = day_dir.join(format!(".{}.{}.tmp", meta.id, std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
@@ -428,7 +455,6 @@ impl Inbox {
                 // Names are allow-listed (`bundle::ENTRIES`): flat, no `..`.
                 fs::write(tmp.join(&e.name), &e.data)?;
             }
-            fs::write(tmp.join("report.zip"), zip)?;
             fs::write(tmp.join("meta.toml"), toml::to_string(meta).map_err(std::io::Error::other)?)?;
             fs::write(tmp.join("history.log"), format!("{} received from {} ({})\n", meta.received_utc, meta.account, meta.kind))?;
             let dir = day_dir.join(&meta.id);
@@ -439,6 +465,43 @@ impl Inbox {
             let _ = fs::remove_dir_all(&tmp);
         }
         result
+    }
+
+    /// Retention (`FeedbackLimits::keep_days`, `keep_bytes`): delete
+    /// reports past the age, then the oldest until the rest fit, never
+    /// `keep` (the one just stored); old receivers' `report.zip`s go
+    /// too. Returns how many reports were deleted.
+    pub fn prune(&self, now: u64, keep: &str) -> usize {
+        let mut reports: Vec<(u64, String, PathBuf, u64)> = Vec::new();
+        for day in fs::read_dir(&self.root).into_iter().flatten().flatten().filter(|d| d.path().is_dir()) {
+            for r in fs::read_dir(day.path()).into_iter().flatten().flatten() {
+                let dir = r.path();
+                let Some(meta) = fs::read_to_string(dir.join("meta.toml")).ok().and_then(|t| toml::from_str::<Meta>(&t).ok())
+                else {
+                    continue;
+                };
+                let _ = fs::remove_file(dir.join("report.zip"));
+                reports.push((meta.received, meta.id, dir.clone(), dir_bytes(&dir)));
+            }
+        }
+        reports.sort();
+        let mut total: u64 = reports.iter().map(|r| r.3).sum();
+        let mut deleted = 0;
+        for (received, id, dir, bytes) in reports {
+            let old = self.limits.keep_days > 0 && received + self.limits.keep_days * 86_400 < now;
+            let over = self.limits.keep_bytes > 0 && total > self.limits.keep_bytes;
+            if id == keep || !(old || over) {
+                continue;
+            }
+            if fs::remove_dir_all(&dir).is_ok() {
+                total = total.saturating_sub(bytes);
+                deleted += 1;
+                if let Some(day) = dir.parent() {
+                    let _ = fs::remove_dir(day); // Only when empty.
+                }
+            }
+        }
+        deleted
     }
 
     /// Run `on_report` for a stored report (in the background).

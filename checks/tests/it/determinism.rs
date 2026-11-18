@@ -51,6 +51,10 @@ const NOT_SIMULATION_FILES: &[(&str, &str)] = &[
          gates, never by the simulation (docs/performance.md, \"Work counts\")",
     ),
     (
+        "chimera/core/src/metrics/frame_events.rs",
+        "measurement: engine events by frame for the frame inspector and the report, never read by the simulation",
+    ),
+    (
         "chimera/core/src/pending_work.rs",
         "measurement: a count of background jobs for tests and scenes to wait on, never read by the simulation",
     ),

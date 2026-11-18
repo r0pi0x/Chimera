@@ -181,7 +181,9 @@ fn cached_materials(w: &World) -> String {
     out.join(", ")
 }
 
-fn readout(w: &mut World, files: usize) -> String {
+/// `chimera_mem`'s readout (`files`: the largest files, devices and GPU
+/// allocations named; 0 none); the F10 bundle's `world.txt` has it too.
+pub(crate) fn readout(w: &mut World, files: usize) -> String {
     let props = material_users::<crate::render::prop_material::PropMaterial>(w);
     let cached = cached_materials(w);
     let w: &World = w;
