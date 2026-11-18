@@ -1,7 +1,8 @@
 //! The generated doc lists: `docs/modules.md` (one line per source file,
 //! from the first sentence of its `//!` doc) and the generated block of
 //! `docs/tech-debt.md` (one line per "Known shortcuts" paragraph, from its
-//! first sentence). A feature edits only its own file's `//!` doc; the lists
+//! first sentence), and `docs/formats.md`, the converted formats' versions
+//! (`crate::formats`). A feature edits only its own file's `//!` doc; the lists
 //! are rebuilt, never edited by hand, so parallel branches stop conflicting
 //! on them (architecture review, T5).
 //!
@@ -241,6 +242,10 @@ pub fn stale(root: &Path) -> Result<Vec<(&'static str, String)>, String> {
         .ok_or_else(|| format!("docs/tech-debt.md lacks the markers {DEBT_BEGIN:?} and {DEBT_END:?}"))?;
     if new != debt {
         out.push(("docs/tech-debt.md", new));
+    }
+    let formats = crate::formats::generate(root)?;
+    if read("docs/formats.md") != formats {
+        out.push(("docs/formats.md", formats));
     }
     Ok(out)
 }

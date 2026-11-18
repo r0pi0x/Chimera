@@ -588,9 +588,11 @@ pub fn load_world_in(
 /// converted-map cache"), too little gained for the disk.
 pub const CACHE_ENV: &str = "CHIMERA_MAP_CACHE_CA";
 
-/// The converter's version for the converted-map cache: the hash of this
-/// crate's game sources and data, LithTech's format crate and the
-/// lockfile (build.rs), so any change to them is a new version.
+/// The converter's version for the converted-map cache, the kept guest
+/// dressing and the served converted entries: `v<number>-<hash>`, a
+/// number bumped by hand and the hash of the conversion's own sources
+/// and data and the parsing crates' versions (build.rs; policy:
+/// docs/plans/active/converted-cache.md, "Converter versions").
 pub const CONVERTER: &str = env!("CHIMERA_CONVERTER_SOURCES");
 
 /// A world as Chimera's map, `scale` metres per world unit; `file` reads

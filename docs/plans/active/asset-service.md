@@ -942,8 +942,10 @@ wall, 1,224 s to 972 s summed.
 - **Key** (a BLAKE3, the file's name): the map format (the hash of
   chimera_world's `src/map`, Chimera's core types and the vfs, taken by
   its build.rs, and `FORMAT_BUMP`), the loader, the converter's version
-  (the game's build.rs hashes `src/game`, `data`, its format crate and
-  Cargo.lock: `bsp::CONVERTER`, `world::CONVERTER`), the map's name,
+  (`v<number>-<hash>`: a number the game bumps by hand and the hash of
+  its conversion's own sources, data and parsing crates' versions, its
+  build.rs; `bsp::CONVERTER`, `world::CONVERTER`; docs/formats.md and
+  converted-cache.md, "Converter versions"), the map's name,
   `MapLoadOptions`, the map file's hash and the mount's layers by name
   (an install and a store-only mount are two entries; one key for both
   made them replace each other at every load). Every other file the

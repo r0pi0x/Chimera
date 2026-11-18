@@ -339,3 +339,110 @@ fn a_guest_dressing_reads_back_from_disk_by_default() {
     assert_eq!(counts, (0, 1), "the next reads it back");
     assert!(first == second, "read back, the same bytes");
 }
+
+/// Served (plan converted-cache, step 7): each Source guest's dressing,
+/// its files packed from the install into a test store (never the asset
+/// service's), converted there by the packer's way (`map::kept::Export`,
+/// what `chimera_pack convert` does) and entered as a served entry; a
+/// client of that store (its own cache folder) takes the entry, converts
+/// nothing and gets the same bytes as a conversion from the store's
+/// originals. Prints the entry's size raw and stored (zstd level 19, as
+/// the service stores it). The store and caches are under `<cache
+/// dir>/chimera/served-test`, removed after each game. `CHIMERA_SERVED_TF2=1`
+/// adds TF2 (a 0.8 GB entry, minutes to compress).
+#[test]
+fn a_served_dressing_is_the_same_as_converting() {
+    use std::sync::Arc;
+
+    use chimera_core::mount::{
+        Access, Mount,
+        assets::{CachedFiles, Manifest, Store, map_cache::served},
+    };
+    use chimera_world::map::{BlocksOnly, MapLoadOptions, cache::MapCache, kept};
+    let Some(dir) = MapCache::default_dir().and_then(|d| d.parent().map(|p| p.join("served-test"))) else {
+        eprintln!("skipping: no cache folder");
+        return;
+    };
+    type Dress = (&'static str, &'static str, fn() -> Result<Arc<Mount>, String>, fn(&Mount, &mut MapData));
+    let mut games: Vec<Dress> = Vec::new();
+    if cs_source::game::INFO.install().is_some() {
+        games.push((cs_source::game::GAME, cs_source::game::bsp::CONVERTER, cs_source::game::guest_mount, |m, map| {
+            cs_source::game::bsp::dress_guest(m, map, cs_source::game::BUNDLE.kept, false)
+        }));
+    }
+    if hl2dm::game::INFO.install().is_some() {
+        games.push((hl2dm::game::GAME, hl2dm::game::maps::CONVERTER, hl2dm::game::maps::guest_mount, |m, map| {
+            hl2dm::game::maps::dress_guest_in(m, map, hl2dm::game::BUNDLE.kept, false)
+        }));
+    }
+    if std::env::var("CHIMERA_SERVED_TF2").is_ok_and(|v| v == "1")
+        && tf2::game::INFO.install().is_some_and(|p| chimera_core::mount::served::usable("tf2", p, "tf"))
+    {
+        games.push((tf2::game::GAME, tf2::game::maps::CONVERTER, tf2::game::maps::guest_mount, |m, map| {
+            tf2::game::maps::dress_guest_in(m, map, tf2::game::BUNDLE.kept, false)
+        }));
+    }
+    if games.is_empty() {
+        eprintln!("skipping: needs an install of CS:S or HL2:DM");
+        return;
+    }
+    for (game, converter, install_mount, convert) in games {
+        let _ = std::fs::remove_dir_all(&dir);
+        // The files the dressing reads, packed from the install.
+        let install = install_mount().unwrap();
+        let tracking = install.track();
+        let mut scratch = MapData::default();
+        scratch.memos.insert(BlocksOnly);
+        convert(&install, &mut scratch);
+        drop(scratch);
+        let mut paths: Vec<String> = Vec::new();
+        for a in tracking.finish() {
+            match a {
+                Access::File(p) | Access::Every(p) | Access::Held(p) if install.contains(&p) => paths.push(p),
+                Access::Folder(d) => paths.extend(install.files_in(&d)),
+                _ => {}
+            }
+        }
+        paths.sort();
+        paths.dedup();
+        let store = Store::new(dir.join("store"));
+        let mut manifest = Manifest::new(game, "served-test", None);
+        chimera_core::mount::assets::pack(&install, &paths, &store, &mut manifest, None, 8).unwrap();
+        let store_mount = |m: &Manifest| {
+            let mut mount = Mount::default();
+            mount.push(CachedFiles::new(store.clone(), m));
+            Arc::new(mount)
+        };
+        let app = |manifest: &Manifest, export: bool, disk: Option<&MapCache>| {
+            let mount = store_mount(manifest);
+            let mount_of = || Ok(mount.clone());
+            let dressing = kept::Dressing { game, converter, mount: &mount_of, convert: &convert, variant: "", memos: None };
+            let options = MapLoadOptions::default();
+            if export {
+                options.context.insert(kept::Export::default());
+            }
+            let parts = kept::kept_with(&options, &dressing, disk).unwrap();
+            let made = options.context.get::<kept::Export>().map(|e| std::mem::take(&mut *e.0.lock().unwrap())).unwrap_or_default();
+            let counts = (kept::conversions(&options.context, game, "", true), kept::served_reads(&options.context, game, "", true));
+            (postcard::to_allocvec(&*parts).unwrap(), counts, made)
+        };
+        let (converted, _, _) = app(&manifest, false, None);
+        let packer = MapCache::at(dir.join("packer-cache"), u64::MAX);
+        let (_, _, entries) = app(&manifest, true, Some(&packer));
+        assert_eq!(entries.len(), 1, "{game}: one served entry");
+        let stored = served::enter(&store, &mut manifest, &entries[0]).unwrap();
+        let client = MapCache::at(dir.join("client-cache"), u64::MAX);
+        let (taken, counts, _) = app(&manifest, false, Some(&client));
+        assert_eq!(counts, (0, 1), "{game}: the client takes the served entry, converting nothing");
+        assert!(taken == converted, "{game}: taken, the same bytes as converting ({} and {})", taken.len(), converted.len());
+        let originals: u64 = paths.iter().filter_map(|p| manifest.files.get(p)).map(|f| f.stored).sum();
+        eprintln!(
+            "{game}: served entry {:.0} MB raw, {:.0} MB stored (and its recipe); the originals it reads {:.0} MB stored, {} files",
+            entries[0].entry.len() as f64 / 1e6,
+            stored as f64 / 1e6,
+            originals as f64 / 1e6,
+            paths.len()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

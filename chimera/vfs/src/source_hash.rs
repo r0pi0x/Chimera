@@ -5,6 +5,12 @@
 //! FNV-1a over each file's path, relative to its folder, and bytes, in
 //! sorted order), so a game's `build.rs` can use it as a build
 //! dependency without building anything else.
+//!
+//! A converter's version (`converter`, docs/plans/active/converted-cache.md,
+//! "Converter versions") is a number its game bumps by hand, then the
+//! hash of the folders that shape its output (its conversion modules,
+//! not its gameplay) and of the parsing crates' versions in the lockfile
+//! (`lock_versions`, not the whole lockfile): `v<number>-<hash>`.
 
 use std::{
     fs, io,
@@ -89,6 +95,43 @@ pub fn hash_dirs(dirs: &[&Path]) -> String {
     h.hex()
 }
 
+/// The lockfile's `name version source` lines of the packages named in
+/// `names` (a name ending in `*`: every package starting with it), sorted:
+/// the parsing crates' versions a converter's output depends on.
+pub fn lock_versions(lock: &Path, names: &[&str]) -> String {
+    let text = fs::read_to_string(lock).unwrap_or_default();
+    let wanted = |n: &str| {
+        names
+            .iter()
+            .any(|w| w.strip_suffix('*').map_or(*w == n, |prefix| n.starts_with(prefix)))
+    };
+    let mut out: Vec<String> = Vec::new();
+    for block in text.split("[[package]]") {
+        let field = |key: &str| {
+            block
+                .lines()
+                .find_map(|l| l.strip_prefix(key)?.trim().strip_prefix('=').map(|v| v.trim().trim_matches('"').to_string()))
+        };
+        if let Some(name) = field("name ")
+            && wanted(&name)
+        {
+            out.push(format!("{name} {} {}", field("version ").unwrap_or_default(), field("source ").unwrap_or_default()));
+        }
+    }
+    out.sort();
+    out.join("\n")
+}
+
+/// A converter's version (module doc): `v<version>-<hash>` of `dirs` and
+/// the lockfile's versions of `crates` (`lock_versions`).
+pub fn converter(version: u32, dirs: &[&Path], lock: &Path, crates: &[&str]) -> String {
+    let mut h = Fnv::default();
+    h.write(hash_dirs(dirs).as_bytes());
+    h.write(b"\ncrates\n");
+    h.write(lock_versions(lock, crates).as_bytes());
+    format!("v{version}-{}", h.hex())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +161,36 @@ mod tests {
             hash_dirs(&[&a, &root.join("none")]),
             "a missing folder counts"
         );
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn the_converter_version_follows_its_number_folders_and_crates_only() {
+        let root = std::env::temp_dir().join(format!("chimera_converter_hash_{}", std::process::id()));
+        let src = root.join("src");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("x.rs"), b"fn x() {}").unwrap();
+        let lock = root.join("Cargo.lock");
+        let write_lock = |vtf: &str, other: &str| {
+            fs::write(
+                &lock,
+                format!(
+                    "[[package]]\nname = \"vtf\"\nversion = \"{vtf}\"\n\n[[package]]\nname = \"bevy\"\nversion = \"{other}\"\n\n[[package]]\nname = \"symphonia-core\"\nversion = \"0.5\"\n"
+                ),
+            )
+            .unwrap()
+        };
+        write_lock("0.4.1", "0.20.0");
+        let v = |n: u32| converter(n, &[&src], &lock, &["vtf", "symphonia*"]);
+        let first = v(1);
+        assert!(first.starts_with("v1-"));
+        assert_eq!(lock_versions(&lock, &["vtf", "symphonia*"]), "symphonia-core 0.5 \nvtf 0.4.1 ");
+        write_lock("0.4.1", "0.21.0");
+        assert_eq!(v(1), first, "another crate's version doesn't count");
+        write_lock("0.4.2", "0.21.0");
+        assert_ne!(v(1), first, "a parsing crate's does");
+        let second = v(1);
+        assert_ne!(v(2), second, "the number does");
         fs::remove_dir_all(&root).ok();
     }
 }

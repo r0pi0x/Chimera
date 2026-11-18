@@ -190,7 +190,13 @@ map, options and converter version, in our own format
 test, tool or app in any checkout, reads it back instead of converting.
 Install files the conversion read are checked on each hit (archive
 checksums, store record ids, else a hash), so a patched install converts
-again; so does any change to a converter's sources.
+again; so does a change to what a converter's version covers (its
+conversion's sources and data, its number: docs/formats.md), not a
+gameplay edit. The guests' dressings (each game's players and guns on
+other games' maps) are kept there too, and when the store alone serves a
+game (no install) the asset service's converted copy is downloaded
+instead of converting, if one was made for this build's converter
+(`chimera_pack convert`; `CHIMERA_CONVERTED_SERVED=0` never takes one).
 
 - `CHIMERA_MAP_CACHE=0` turns it off; `CHIMERA_MAP_CACHE=<folder>` moves
   it; `CHIMERA_MAP_CACHE_GB` caps it (40 by default; least recently used
