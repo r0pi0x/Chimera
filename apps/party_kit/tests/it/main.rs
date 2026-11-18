@@ -85,6 +85,7 @@ mod heavy {
     mod ca_mode_objects;
     mod clips_on_maps;
     mod converted;
+    mod converted_prints;
     mod cs_decals;
     mod death_bodies;
     mod guest_cache;

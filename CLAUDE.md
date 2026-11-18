@@ -23,6 +23,7 @@ This file is a map. Follow the links for detail; keep it short.
 | Code layout, layers, data flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Porting a new game (checklist, the crate's shape) | [docs/new-game.md](docs/new-game.md) |
 | Every source file, one line (generated) | [docs/modules.md](docs/modules.md) |
+| Converted formats' versions (generated) | [docs/formats.md](docs/formats.md) |
 | How to check your work (tests, screenshots, live ECS queries) | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 | Current plan and progress | [docs/plans/active/](docs/plans/active/engine-split.md) |
 | What to build next (to-do list) | [docs/backlog.md](docs/backlog.md) |

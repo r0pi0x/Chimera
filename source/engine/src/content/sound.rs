@@ -23,7 +23,7 @@
 //! (cs_militia's, remapping ladder steps by the deck), and no spec covers
 //! the entity.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use source_formats::keyvalues::{Escapes, tokens};
 
@@ -332,7 +332,9 @@ pub fn load_with(
     let scripts = SoundScripts::load_with(materials, map, first_wins);
     let mut out = MapSounds::default();
     let (ambient_entries, ambient_raw) = ambient_messages(entities);
-    let mut wanted: HashSet<String> = ALWAYS
+    // In name order (a `BTreeSet`): the clips are numbered as the entries
+    // are read, so the converted bytes are the same each time.
+    let mut wanted: std::collections::BTreeSet<String> = ALWAYS
         .iter()
         .map(|s| s.to_lowercase())
         .chain(game.into_iter().map(|s| s.to_lowercase()))

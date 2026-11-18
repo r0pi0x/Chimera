@@ -56,6 +56,11 @@
 //!   threads) and decodes it. An entry that doesn't read (truncated, its
 //!   checksum wrong, an older format) is a miss. `CHIMERA_MAP_CACHE_LOG=1`
 //!   prints where a hit's time goes.
+//! - **Served** (`cached_served`, module `served`): an entry the asset
+//!   service serves for the same key and versions (the same bytes, its
+//!   key without this machine's layers), taken on a miss before
+//!   converting when its inputs are this mount's, and kept here
+//!   (`Outcome::Served`); `chimera_pack convert` makes them.
 //!
 //! Known shortcuts: files a converter reads without the mount are the
 //! loader's to put in its key. An entry truncated by hand while a process
@@ -73,7 +78,11 @@ use std::{
 use chimera_vfs::{Access, Mount};
 
 use crate::disk;
+use served::SERVED_LAYERS;
+pub use served::{RECIPE_FORMAT, Recipe, SERVED_DIR, SERVED_ENV, Served, ServedEntry, entry_path as served_entry_path, recipe_path as served_recipe_path};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+
+pub mod served;
 
 /// Where the cache is, or `0` (also `off`, `false`) for none.
 pub const ENV: &str = "CHIMERA_MAP_CACHE";
@@ -173,6 +182,9 @@ pub enum Outcome {
     /// Converted and written (no entry, or one whose inputs changed or
     /// that didn't read).
     Miss,
+    /// The converted entry the asset service serves for this key, its
+    /// inputs this mount's, taken and kept (`cached_served`).
+    Served,
 }
 
 impl MapCache {
@@ -337,7 +349,7 @@ pub fn fingerprint(mount: &Mount, access: &Access) -> String {
 }
 
 /// An `Access` as an entry keeps it (chimera_vfs stays dependency-free).
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 enum Input {
     File(String),
     Every(String),
@@ -467,6 +479,12 @@ fn read_entry<T: DeserializeOwned>(path: &Path, key: &str, mount: &Mount) -> Res
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(Unusable::Missing),
         Err(e) => return Err(Unusable::Corrupt(e.to_string())),
     };
+    check_entry(&bytes, key, mount, &path.display().to_string(), start)
+}
+
+/// An entry's payload and header (the magic, the lengths and the header
+/// checked; not the payload's checksums).
+fn split_entry(bytes: &[u8]) -> Result<(&[u8], Header), Unusable> {
     let corrupt = |why: &str| Unusable::Corrupt(why.to_string());
     let rest = bytes
         .strip_prefix(MAGIC.as_slice())
@@ -479,6 +497,33 @@ fn read_entry<T: DeserializeOwned>(path: &Path, key: &str, mount: &Mount) -> Res
         .split_at_checked(rest.len().wrapping_sub(len))
         .ok_or_else(|| corrupt("truncated header"))?;
     let header: Header = postcard::from_bytes(head).map_err(|e| corrupt(&format!("header: {e}")))?;
+    Ok((payload, header))
+}
+
+/// Whether every input of an entry is what `mount` serves now (the first
+/// that differs, else Ok).
+fn check_inputs(mount: &Mount, inputs: &[(Input, String)]) -> Result<(), Unusable> {
+    let now = parallel(inputs.len(), |i| fingerprint(mount, &Access::from(inputs[i].0.clone())));
+    for ((input, was), now) in inputs.iter().zip(now) {
+        if now != *was {
+            return Err(Unusable::Stale(format!("{:?}: was {was}, now {now}", Access::from(input.clone()))));
+        }
+    }
+    Ok(())
+}
+
+/// An entry's value, from its bytes (`what` names it in the log): the key
+/// it was written under, its payload's checksums and its inputs on
+/// `mount` checked, then decoded.
+fn check_entry<T: DeserializeOwned>(
+    bytes: &[u8],
+    key: &str,
+    mount: &Mount,
+    what: &str,
+    start: std::time::Instant,
+) -> Result<T, Unusable> {
+    let corrupt = |why: &str| Unusable::Corrupt(why.to_string());
+    let (payload, header) = split_entry(bytes)?;
     if header.key != key {
         return Err(corrupt("another key's entry"));
     }
@@ -488,23 +533,12 @@ fn read_entry<T: DeserializeOwned>(path: &Path, key: &str, mount: &Mount) -> Res
     }
     let checked = start.elapsed().as_secs_f32();
     let inputs = header.inputs.len();
-    let now = parallel(inputs, |i| {
-        fingerprint(mount, &Access::from(header.inputs[i].0.clone()))
-    });
-    for ((input, was), now) in header.inputs.into_iter().zip(now) {
-        if now != was {
-            return Err(Unusable::Stale(format!(
-                "{:?}: was {was}, now {now}",
-                Access::from(input)
-            )));
-        }
-    }
+    check_inputs(mount, &header.inputs)?;
     let compared = start.elapsed().as_secs_f32();
     let value = postcard::from_bytes(payload).map_err(|e| corrupt(&format!("payload: {e}")))?;
     if std::env::var_os("CHIMERA_MAP_CACHE_LOG").is_some() {
         eprintln!(
-            "map cache: hit {} ({:.0} MB): read {read:.2} s, checksum {:.2} s, {inputs} inputs {:.2} s, decode {:.2} s",
-            path.display(),
+            "map cache: hit {what} ({:.0} MB): read {read:.2} s, checksum {:.2} s, {inputs} inputs {:.2} s, decode {:.2} s",
             bytes.len() as f64 / 1e6,
             checked - read,
             compared - checked,
@@ -718,15 +752,55 @@ pub fn cached_with<T: Serialize + DeserializeOwned>(
     convert: impl FnOnce() -> Result<T, String>,
     read: disk::Reader,
 ) -> Result<(T, Outcome), String> {
+    cached_served_with(cache, mount, key, None, convert, read)
+}
+
+/// `cached`, with a converted entry the asset service may serve
+/// (`served`, module `served`): on a miss, before converting, the
+/// entry `mount` serves for this key and version is taken when its
+/// inputs are this mount's (`Outcome::Served`), and kept in `cache`
+/// as a converted one; the packer's `Served::export` takes each entry
+/// made instead. Without a cache nothing is served (converted).
+pub fn cached_served<T: Serialize + DeserializeOwned>(
+    cache: Option<&MapCache>,
+    mount: &Mount,
+    key: Key,
+    served: Option<&Served>,
+    convert: impl FnOnce() -> Result<T, String>,
+) -> Result<(T, Outcome), String> {
+    cached_served_with(cache, mount, key, served, convert, &disk::space)
+}
+
+/// `cached_served` with the free-space reader.
+pub fn cached_served_with<T: Serialize + DeserializeOwned>(
+    cache: Option<&MapCache>,
+    mount: &Mount,
+    key: Key,
+    served: Option<&Served>,
+    convert: impl FnOnce() -> Result<T, String>,
+    read: disk::Reader,
+) -> Result<(T, Outcome), String> {
     let Some(cache) = cache else {
         return convert().map(|v| (v, Outcome::Off));
     };
+    // The served entry's key: the same parts but the layers, which name
+    // this machine's folders (its inputs' fingerprints say which files).
+    let served_key = served.map(|_| key.clone().part("layers", SERVED_LAYERS).hex());
     // The mount's layers by name: a load from the asset store alone and
     // one from the install are two entries, not one replacing the other
     // at each load (their inputs' fingerprints differ).
     let layers: Vec<String> = mount.layers().map(|l| l.name()).collect();
     let key = key.part("layers", layers.join("\n")).hex();
     let path = cache.dir.join(format!("{key}.map"));
+    let export = || -> Result<(), String> {
+        if let (Some(s), Some(served_key)) = (served, &served_key)
+            && let Some(sink) = s.export
+        {
+            let entry = served::export(&path, s, served_key)?;
+            sink.lock().unwrap_or_else(|e| e.into_inner()).push(entry);
+        }
+        Ok(())
+    };
     let try_read = || -> Option<T> {
         match read_entry::<T>(&path, &key, mount) {
             Ok(v) => {
@@ -749,6 +823,7 @@ pub fn cached_with<T: Serialize + DeserializeOwned>(
         }
     };
     if let Some(v) = try_read() {
+        export()?;
         return Ok((v, Outcome::Hit));
     }
     let stamp = || fs::metadata(&path).and_then(|m| m.modified()).ok();
@@ -768,7 +843,17 @@ pub fn cached_with<T: Serialize + DeserializeOwned>(
         && stamp().is_some_and(|t| Some(t) != before)
         && let Some(v) = try_read()
     {
+        export()?;
         return Ok((v, Outcome::Hit));
+    }
+    if let (Some(s), Some(served_key)) = (served, &served_key)
+        && s.export.is_none()
+        && served::on()
+        && let Some(v) = served::take::<T>(cache, mount, s, served_key, &path, &key, read)
+    {
+        drop(lock);
+        cache.evict_with(Some(&path), read);
+        return Ok((v, Outcome::Served));
     }
     let tracking = mount.track();
     let value = convert()?;
@@ -778,6 +863,7 @@ pub fn cached_with<T: Serialize + DeserializeOwned>(
         eprintln!("map cache: {}: {e}", path.display());
     }
     drop(lock);
+    export()?;
     cache.evict_with(Some(&path), read);
     Ok((value, Outcome::Miss))
 }

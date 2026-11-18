@@ -64,9 +64,11 @@ use crate::{
     map::{MapData, MapEntity, MapLoadOptions, MapLoader, sound::MapSounds},
 };
 
-/// The converter's version for the converted-map cache: the hash of this
-/// crate's sources, Source's (`source_engine`'s and `source_formats`')
-/// and the lockfile (build.rs).
+/// The converter's version for the converted-map cache, the kept guest
+/// dressing and the served converted entries: `v<number>-<hash>`, a
+/// number bumped by hand and the hash of the conversion's own sources
+/// and data and the parsing crates' versions (build.rs; policy:
+/// docs/plans/active/converted-cache.md, "Converter versions").
 pub const CONVERTER: &str = env!("CHIMERA_CONVERTER_SOURCES");
 
 /// TF2's `sv_gravity` (units/s², specs/tf2/movement.md).

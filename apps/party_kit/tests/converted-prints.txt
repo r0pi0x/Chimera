@@ -1,0 +1,10 @@
+# Converted output's hashes per game, fixture, system, converter version and the
+# install files read (heavy::converted_prints; never any game's files).
+# game fixture os converter inputs output
+combat_arms guest linux v1-709f5c6760fb4ff2611a039855c235be 95a5b18a077c3ad47a696f99234ceb59 62c556237f06fa89c4d18f575186ec3b
+cs_source guest linux v1-fc956afab7dccfbef6ffaaf74b9bde72 1386a64e2ef870552841e30bde1e3c52 f416c7418023e3501189e353c955a7dd
+cs_source test_speakers linux v1-fc956afab7dccfbef6ffaaf74b9bde72 3ef790570495799ae0be32d8dfdae106 393a240e862167a7b99cc2f2ef540fe5
+hl2dm dm_overwatch linux v1-de9ff8b3dd9cc4920744fdef7b3b813f b5e9aec0b2bee3750bb39d90d4cdbffe d8ab845809bdbb366878e50964b7c3cc
+hl2dm guest linux v1-de9ff8b3dd9cc4920744fdef7b3b813f 6440bb0219d9bb107e9dae1b173d03ec e57f0e7ba3249560e1a43e720d381ff2
+tf2 ctf_2fort linux v1-78439aa37ea552730927bcf236a4e903 6d6e4e141be75d282747acfcef7f39e9 f7a5cf6b36b2e27a2ccf7a1ce72ee29c
+tf2 guest linux v1-78439aa37ea552730927bcf236a4e903 edc82ca5842c9dc339311380597e9ed3 35cb623000adf8107315c699a3323fb9
