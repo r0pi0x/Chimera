@@ -528,9 +528,11 @@ pub struct PhysicsShadow {
 /// A character whose contacts with physics props go through its
 /// `PhysicsShadow` (this entity; None: none, its own collider touches
 /// them): its own collider never touches them. On every character of a
-/// movement with shadows from the spawn, a shadow or none.
+/// movement with shadows from the spawn, a shadow or none. Kept in the
+/// table (never removed, so it makes no archetypes): as a sparse set it
+/// made every query reading it step over each character archetype per
+/// run, not each table (party_kit's `archetypes` test).
 #[derive(Component, Clone, Copy, Debug, Default)]
-#[component(storage = "SparseSet")]
 pub struct Shadowed(pub Option<Entity>);
 
 /// The shadow's mass, kg (spec 4.1 step 3).

@@ -71,6 +71,7 @@ pub mod loose;
 pub mod material_fx;
 pub mod phong;
 pub use phong::{MapPhong, MapRimLight, PhongEnvMask, PhongTint};
+pub mod kept;
 pub mod memos;
 pub use memos::MapMemos;
 pub use material_fx::{DetailMode, MapSelfIllum, MapTextureAnim, MapUvTransform, parameter_gamma_to_linear};

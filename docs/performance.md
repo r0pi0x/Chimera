@@ -4821,12 +4821,13 @@ first frame), and give bodies wanted by a target a head start
 
 ### Guest dressings kept for the session
 
-What the measurement above asked for (`source_engine::content::guest`):
+What the measurement above asked for (`chimera_world::map::kept`, every
+game's one API; the Source guests', CS:S, HL2:DM and TF2, go through it):
 
 - **Kept per app.** Each Source guest's dressing (CS:S's, HL2:DM's,
   TF2's `dress_guest_with`) runs once per app and load kind (with or
   without textures), on an empty map, and is kept in the app's
-  `LoadContext`; every later map gets a copy (`guest::append`): its
+  `LoadContext`; every later map gets a copy (`kept::append`): its
   textures after the map's, every texture and cubemap index its parts
   hold moved past them (`map::texture_refs`, Combat Arms'
   `append_shared` made general), and what the dressing merges by name
@@ -4905,6 +4906,31 @@ profile, the second of two runs each):
 Combat Arms' kept models already skipped it (its `.dtx` decoding under
 the same memo); Halo's donors keep their decoded texels (nothing thrown
 away).
+
+### Guest dressings on disk (off by default)
+
+Under the kept dressings, a disk layer (`map::kept`, `CHIMERA_GUEST_CACHE=1`;
+the converted-map cache's folder, cap and switch) lets a session's first
+load read a guest's dressing back instead of converting it: the entry
+lists every file the dressing read with its fingerprint, so a changed or
+newly arrived file converts again. Read back, the dressing encodes to the
+same bytes as converting (party_kit `heavy::converted::
+a_guest_read_from_disk_is_the_same_as_converting`, which prints these).
+Instructions (this thread and the threads it starts; test profile, the
+OS's cache warm, after step 2's skipped decoding):
+
+| | converted and written | read back | entry |
+|---|---|---|---|
+| CS:S | 7,208 M | 3,427 M (2.1x fewer) | 225 MB |
+| HL2:DM | 12,622 M | 1,857 M (6.8x fewer) | 180 MB |
+| TF2 | 27,336 M | 10,435 M (2.6x fewer) | 773 MB |
+
+Writing costs about 3 G (CS:S) to 9 G (TF2) over converting alone. With
+the decoding skipped, CS:S gains little from the disk (4.1 G converting,
+3.4 G reading back); HL2:DM, whose bodies are the cost, gains most. A
+read is mostly decoding the payload and checking the inputs' fingerprints;
+smaller entries (animations compressed, sounds as encoded bytes) would cut
+it. Off until a playtest-profile measurement (plan converted-cache, step 6).
 
 ## First join download, 2026-11-14
 

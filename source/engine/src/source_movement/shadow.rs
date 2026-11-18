@@ -197,8 +197,8 @@ fn knock(
 }
 
 /// What this tick's movement did with physics props: the shadow's input.
+/// On every character from the spawn, in the table like `Shadowed`.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
-#[component(storage = "SparseSet")]
 pub struct PhysicsTouch {
     /// Ran into a movable `prop_physics` it can push (other than the one
     /// stood on).

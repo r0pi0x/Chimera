@@ -209,7 +209,10 @@ fn run(all: bool) -> (Phase, Phase) {
 /// archetype added (module doc).
 const PER_ARCHETYPE: f64 = 200.0;
 /// The most the whole tick may grow, in instructions for each archetype
-/// added, with 2,048 more sparse-set archetypes (620 measured).
+/// added, with 2,048 more sparse-set archetypes (620 measured; 720 on
+/// 2026-11-17 with a sparse set read in per-tick queries, party_kit's
+/// `keep_victims` reading `Victim`, and parts on every character kept as
+/// sparse sets, 576 with those in the table).
 const SPARSE_LIMIT: f64 = 720.0;
 /// The same with 4,094 more archetypes of which half bring a table
 /// (1,361 measured: a table costs every query that matches it a step;

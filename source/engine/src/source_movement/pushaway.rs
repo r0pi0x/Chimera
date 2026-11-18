@@ -162,7 +162,6 @@ fn push_props(
 
 /// When a player may next shove props (`push_props`).
 #[derive(Component, Clone, Copy, Debug, Default)]
-#[component(storage = "SparseSet")]
 pub struct NextPush(pub f64);
 
 /// The impulse a player at `player` (centre, units) gives a prop centred at

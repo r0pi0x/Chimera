@@ -36,7 +36,8 @@
 //! particle systems the guns start (`weapons::looks`: the explosion, the
 //! muzzle flashes) load with its maps (`extra_particles`). Its sounds are
 //! Source's sound scripts (the map's own entries, its surfaces' and the
-//! guns', `weapon_sounds`) and the map's soundscapes. On another game's
+//! guns', `weapon_sounds`, kept in a map's table under `SOUND_PREFIX`: Source games'
+//! script names collide, and a table keeps the first of a name) and the map's soundscapes. On another game's
 //! map its guns come with the same (`dress_guest_with`), and with their
 //! looks from TF2's own files (`add_guest_looks`: the particle systems,
 //! the impact decals and effect materials), so they look the same on any
@@ -259,6 +260,32 @@ pub fn weapon_sounds() -> impl Iterator<Item = String> {
     super::sets::M2_WEAPONS.iter().flat_map(|w| w.sounds.iter().map(|s| s.to_string()))
 }
 
+/// What names TF2's own sound entries in a map's table: a Source game's
+/// script names collide across games (`Weapon_Pistol.Single` is HL2's too,
+/// `Weapon_Shotgun.Single`, `Weapon_RPG.Single`), and a map's table keeps
+/// the first entry of a name, so a gun's sound played another game's. The
+/// guns' entries are kept under this prefix (`own_sound`), and their data
+/// (data/weapons) names them so.
+pub const SOUND_PREFIX: &str = "tf2:";
+
+/// `script_name` (an entry of TF2's sound scripts) as TF2's table holds it.
+pub fn own_sound(script_name: &str) -> String {
+    format!("{SOUND_PREFIX}{script_name}")
+}
+
+/// TF2's weapon entries in `sounds` moved under `SOUND_PREFIX` (`own_sound`);
+/// the bare names stay too unless `guest` (on another game's map they would
+/// shadow or be shadowed by that game's).
+fn own_weapon_sounds(sounds: &mut MapSounds, guest: bool) {
+    for name in weapon_sounds() {
+        let key = name.to_lowercase();
+        let entry = if guest { sounds.entries.remove(&key) } else { sounds.entries.get(&key).cloned() };
+        if let Some(entry) = entry {
+            sounds.entries.insert(own_sound(&name).to_lowercase(), entry);
+        }
+    }
+}
+
 /// What players hold on TF2's maps: its guns' view and held models
 /// (`add_guns`).
 fn held_kit(kit: &mut Kit) {
@@ -316,39 +343,43 @@ pub fn add_guns(
     }
 }
 
+/// The game's files for its guest dressing (`map::kept::Dressing::
+/// mount`): the install, mounted.
+pub fn guest_mount() -> Result<std::sync::Arc<crate::mount::Mount>, String> {
+    let install = super::INFO
+        .install()
+        .ok_or_else(|| format!("no `{}` install found (Steam, [games.tf2] path, or $CHIMERA_TF2_ROOT)", super::GAME))?;
+    super::mount::open(&install).map(std::sync::Arc::new).map_err(|e| e.to_string())
+}
+
 /// TF2's guns on another game's map (the party apps', where a player
 /// holding a TF2 gun is TF2's): the guns `kept` names (view and held
 /// models: `add_guns`) read from the TF2 install, their textures
 /// appended to the map's, and their sounds where the map hasn't an entry
 /// of that name. `lean` (a load without textures, the dedicated
 /// server's): the textures' sizes only.
-/// Whether any of `files` can be read now from the game's files (a kept
-/// guest dressing that missed them is dressed again:
-/// `source_engine::content::guest`).
-pub fn files_here(files: &[String]) -> bool {
-    let Some(install) = super::INFO.install() else { return false };
-    super::mount::open(&install).is_ok_and(|m| files.iter().any(|f| m.read(f).is_ok()))
+pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
+    dress_guest_in(&*guest_mount()?, map, kept, lean);
+    Ok(())
 }
 
-pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
-    let install = super::INFO
-        .install()
-        .ok_or_else(|| format!("no `{}` install found (Steam, [games.tf2] path, or $CHIMERA_TF2_ROOT)", super::GAME))?;
-    let mount = super::mount::open(&install).map_err(|e| e.to_string())?;
+/// `dress_guest_with` from `mount` (the game's files: `guest_mount`).
+pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
-    let mut materials = MaterialLoader::guest(&mount, textures, cubemaps).lean(lean)
-        .blocks_only(map.memos.get::<crate::map::BlocksOnly>().is_some());
+    let blocks_only = map.memos.get::<crate::map::BlocksOnly>().is_some();
+    let mut materials = MaterialLoader::guest(mount, textures, cubemaps).lean(lean).blocks_only(blocks_only);
     let surfaces = SurfaceProps::load(&mut materials);
     let kit = crate::map::KitLoad::Players(kept);
     let wants = |g: &str| kit.wants(g);
     let mut guest = crate::map::GameKit::default();
     let mut warnings = Vec::new();
     if super::weapons::GUNS.iter().any(|g| wants(g)) {
-        super::weapons::script_numbers::note_sources(&mount);
+        super::weapons::script_numbers::note_sources(mount);
     }
     add_guns(&mut materials, &wants, true, &mut guest, &mut warnings);
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
-    let sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], weapon_sounds(), true);
+    let mut sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], weapon_sounds(), true);
+    own_weapon_sounds(&mut sounds, true);
     bsp::add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);
     let look = kit.hud().then(|| super::hud::load(&mut materials).map(std::sync::Arc::new)).flatten();
     add_guest_looks(&mut materials, map);
@@ -362,7 +393,6 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     map.kit.held.extend(guest.held);
     map.kit.view_models.extend(guest.view_models);
     map.kit.add_guest_hud(look);
-    Ok(())
 }
 
 /// TF2's own effects its guns start (`weapons::looks`): the explosion and
@@ -375,6 +405,7 @@ fn extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static 
 /// surfaces'), then the map's soundscapes.
 fn sounds(materials: &mut MaterialLoader, bsp: &vbsp::Bsp, name: &str, surfaces: &SurfaceProps, entities: &[MapEntity]) -> MapSounds {
     let mut out = source_engine::content::sound::load_with(materials, name, surfaces, entities, weapon_sounds(), true);
+    own_weapon_sounds(&mut out, false);
     source_engine::content::soundscape::load(materials, bsp, name, &mut out);
     out
 }

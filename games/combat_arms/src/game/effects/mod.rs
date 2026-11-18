@@ -299,7 +299,6 @@ pub struct CaSoundLengths(pub HashMap<String, f32>);
 
 /// Others' footstep clocks (s of their gait's animation) and last place.
 #[derive(Component, Clone, Copy, Debug, Default)]
-#[component(storage = "SparseSet")]
 pub struct OthersSteps {
     pub clock: f32,
     pub last: Option<Vec3>,
@@ -1785,7 +1784,7 @@ fn footsteps(
         Option<&mut OwnSteps>,
         Option<&mut OthersSteps>,
         (Option<&super::perks::CaPerkEffects>, Option<&Team>, Option<&Selection>, Option<&GameIdentity>),
-    )>,
+    ), crate::core::Afoot>,
     listener: Query<(&super::perks::CaPerkEffects, Option<&Team>), With<LocalPlayer>>,
     ca: Option<Res<super::data::CaData>>,
     grid: Ground,

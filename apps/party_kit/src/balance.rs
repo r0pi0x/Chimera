@@ -52,12 +52,17 @@ pub fn add(app: &mut App) {
 
 /// Each character's game and body for the table (`Victim`): its game
 /// identity (else a sandbox target's game) and a sandbox target's body id.
+/// `Victim` (a sparse set) is read apart: in the changes' query it would
+/// make that query step over every character archetype each tick, not
+/// over their tables (`archetypes` test).
 #[allow(clippy::type_complexity)]
 fn keep_victims(
-    q: Query<(Entity, Option<&GameIdentity>, Option<&Target>, Option<&Victim>), Or<(Changed<GameIdentity>, Changed<Target>)>>,
+    q: Query<(Entity, Option<&GameIdentity>, Option<&Target>), Or<(Changed<GameIdentity>, Changed<Target>)>>,
+    victims: Query<&Victim>,
     mut commands: Commands,
 ) {
-    for (e, identity, target, now) in &q {
+    for (e, identity, target) in &q {
+        let now = victims.get(e).ok();
         let want = Victim {
             game: identity.map(|g| g.0.clone()).or_else(|| target.map(|t| t.game.clone())),
             body: target.map(|t| t.character.clone()),

@@ -208,3 +208,34 @@ fn the_muzzles_sit_where_the_spec_puts_them() {
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
+
+/// Every sound a TF2 gun's data names (`weapons/*.toml`) is in the table a
+/// guest dressing hands another game's map under TF2's prefix, with as many
+/// waves as TF2's own script gives it (not another game's entry of the
+/// same name: the Scout's pistol fired with HL2:DM's `Weapon_Pistol.Single`),
+/// and the bare script names stay out of it.
+#[test]
+fn every_guns_sound_is_tf2s_own() {
+    let Some(mount) = install_mount() else { return };
+    let scripts = sets::sound_scripts(&mount);
+    let mut map = chimera_world::map::MapData::default();
+    maps::dress_guest_with(&mut map, tf2::game::BUNDLE.kept, false).unwrap();
+    let mut named = std::collections::BTreeSet::new();
+    for f in std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/data/weapons")).unwrap().flatten() {
+        let text = std::fs::read_to_string(f.path()).unwrap();
+        for part in text.lines().map(|l| l.split('#').next().unwrap_or("")).flat_map(|l| l.split('"').skip(1).step_by(2).map(str::to_string).collect::<Vec<_>>()) {
+            if let Some(bare) = part.strip_prefix("tf2:") && bare.contains('.') && !bare.contains('/') {
+                named.insert(bare.to_string());
+            }
+        }
+    }
+    assert!(named.len() > 80, "the weapon data names its sounds");
+    for bare in &named {
+        let own = maps::own_sound(bare);
+        let want = scripts.waves(bare);
+        assert!(!want.is_empty(), "{bare}: TF2's script has no waves");
+        let entry = map.sounds.entry(&own).unwrap_or_else(|| panic!("{own}: no entry in the table a match plays from"));
+        assert!(!entry.waves.is_empty(), "{own}: no clips");
+        assert!(map.sounds.entry(bare).is_none(), "{bare}: a bare name would meet another game's");
+    }
+}

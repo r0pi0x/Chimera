@@ -355,7 +355,6 @@ impl CaCharacter {
 /// (`c_mod`), on the player. Set by the weapon part; on every character
 /// (`weapons`), its default no penalty.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
-#[component(storage = "SparseSet")]
 pub struct HeldMovePenalty {
     pub penalty: f32,
     pub mod_factor: f32,

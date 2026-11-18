@@ -275,23 +275,20 @@ pub fn dress_guest(map: &mut crate::map::MapData, kept: &'static [&'static str])
     dress_guest_with(map, kept, false)
 }
 
-/// `dress_guest`; `lean` (a load without textures, `MapLoadOptions::
-/// textures` off: the dedicated server's): the kit's textures' sizes only
-/// (`MaterialLoader::lean`), as the map's own.
-/// Whether any of `files` can be read now from CS:S's files (a kept guest
-/// dressing that missed them is dressed again:
-/// `source_engine::content::guest`).
-pub fn files_here(files: &[String]) -> bool {
-    let Some(install) = INFO.install() else { return false };
-    mount::open(&install).is_ok_and(|m| files.iter().any(|f| m.read(f).is_ok()))
-}
-
-pub fn dress_guest_with(map: &mut crate::map::MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
+/// CS:S's files for its guest dressing (`map::kept::Dressing::mount`):
+/// the install, mounted.
+pub fn guest_mount() -> Result<std::sync::Arc<crate::mount::Mount>, String> {
     let install = INFO
         .install()
         .ok_or_else(|| format!("no `{GAME}` install found (chimera_install <folder>, or chimera.local.toml)"))?;
-    let mount = mount::open(&install).map_err(|e| e.to_string())?;
-    bsp::dress_guest(&mount, map, kept, lean);
+    mount::open(&install).map(std::sync::Arc::new).map_err(|e| e.to_string())
+}
+
+/// `dress_guest`; `lean` (a load without textures, `MapLoadOptions::
+/// textures` off: the dedicated server's): the kit's textures' sizes only
+/// (`MaterialLoader::lean`), as the map's own.
+pub fn dress_guest_with(map: &mut crate::map::MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
+    bsp::dress_guest(&*guest_mount()?, map, kept, lean);
     Ok(())
 }
 

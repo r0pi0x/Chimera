@@ -35,9 +35,9 @@ punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]
-fire = "Weapon_GrenadeLauncher.Single"
-reload = [[0.0, "Weapon_GrenadeLauncher.DrumLoad"]]
-draw = [[0.0, "Weapon_GrenadeLauncher.Draw"]]
+fire = "tf2:Weapon_GrenadeLauncher.Single"
+reload = [[0.0, "tf2:Weapon_GrenadeLauncher.DrumLoad"]]
+draw = [[0.0, "tf2:Weapon_GrenadeLauncher.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_grenadelauncher/c_grenadelauncher.mdl"
@@ -78,5 +78,5 @@ push_other = 6.0
 push_self_air = 9.0
 push_self_ground = 9.0
 by_distance = false
-sound = "Weapon_Grenade_Pipebomb.Explode"
-bounce_sound = "Weapon_Grenade_Pipebomb.Bounce"
+sound = "tf2:Weapon_Grenade_Pipebomb.Explode"
+bounce_sound = "tf2:Weapon_Grenade_Pipebomb.Bounce"

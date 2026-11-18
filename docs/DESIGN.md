@@ -256,7 +256,10 @@ run; a session's combinations made tens of thousands (docs/performance.md,
 aren't freed either, and each costs every tick: a part a character gains
 once and keeps, or whose absence means its default, is on it from the spawn
 (`CharacterPartsExt::on_every_character`, a value meaning "none" in place of
-removing it, as `BodyName::none`); parts that go together go on and off in one move (one bundle,
+removing it, as `BodyName::none`), and stays in the table: a query
+that reads a sparse set steps over every archetype it matches on each
+run, one that reads only table parts over their tables (party_kit's
+`archetypes` test); parts that go together go on and off in one move (one bundle,
 `insert_if_new` to keep what's there): each step alone is an archetype for
 every combination of the rest (two movements on one marker switch by a
 new value in place, `slots::MovementImpl::marker`; a game's parts that

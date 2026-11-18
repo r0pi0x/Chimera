@@ -1,12 +1,16 @@
 # Converted assets on disk: a session's first load without conversion
 
-Status: **measured, not built** (2026-11-17). The backlog entry is
+Status: **steps 1-4 done, the disk layer off by default** (2026-11-17;
+"Progress" below); next: Combat Arms and Halo onto `map::kept` (step 5),
+a playtest-profile measurement before turning the disk on (step 6), the
+asset service (step 7). The backlog entry is
 docs/backlog.md §9, "Converted assets on disk and on the asset
 service"; it builds on "One kept-dressing cache in Chimera for every
 game" (the session cache, docs/performance.md, "Guest dressings kept
 for the session"). The prototype is on branch `converted-cache`
-(`apps/party_kit/tests/it/heavy/converted_cache.rs`); nothing of it is
-on main.
+(`apps/party_kit/tests/it/heavy/converted_cache.rs`); main has its
+successors (`apps/party_kit/tests/it/heavy/converted.rs`,
+`chimera_world::map::kept`).
 
 ## What was measured
 
@@ -14,7 +18,7 @@ Each game's guest parts: what its dressing of another game's map
 converts (the Source guests' `dress_guest_in`, Combat Arms'
 `world::dress_with`), dressed onto an empty map with textures and the
 kept guns, its whole-DXT textures keeping their blocks alone, as
-`source_engine::content::guest` keeps it. That is the work a session's
+`source_engine::content::guest` kept it (now `chimera_world::map::kept`). That is the work a session's
 first map load does for every guest today, and what the session cache
 already skips for the second. Each run is its own process.
 
@@ -256,6 +260,24 @@ same way (the backlog's "One kept-dressing cache in Chimera"):
   (docs/performance.md, "Guest textures kept as blocks without
   decoding"). Combat Arms' kept models already did; Halo throws nothing
   away.
+- **Step 3, done for the Source guests (2026-11-17):** the session cache
+  is Chimera's `map::kept` (`Dressing { game, converter, mount, convert
+  }`, `dress_cached`, `append`, `add_decals`, `add_sounds`, the late
+  files checked on the game's own mount, each conversion's time logged);
+  CS:S, HL2:DM and TF2 dress through it; docs/new-game.md step 3. Combat
+  Arms and Halo stay on their own caches for now: Combat Arms' dressing
+  leaves memos (`CaModelIndex`, the effect library) a kept `MapData`
+  doesn't carry (step 5's serializable index), and Halo's donors are
+  kept as their own types; Halo needs the disc image (the user's PC).
+- **Step 4, done (2026-11-17), off by default:** `map::kept`'s disk
+  layer (`CHIMERA_GUEST_CACHE=1`; `kept_with` takes the cache): the
+  map cache's format and folder, key `guest:<game>` + converter + map
+  format + textures + layers, inputs fingerprinted (a late file's
+  absence too, so its arrival misses). Read back, the same bytes as
+  converting; instructions converted-and-written / read back: CS:S
+  7.2 G / 3.4 G, HL2:DM 12.6 G / 1.9 G, TF2 27.3 G / 10.4 G
+  (docs/performance.md, "Guest dressings on disk"). Unit test: a
+  changed input file misses.
 
 ## Steps
 

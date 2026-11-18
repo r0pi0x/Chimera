@@ -476,7 +476,7 @@ fn stage(
 /// The kit's form controls in their states (`chimera_ui::controls`), over
 /// the frozen ambient.
 fn controls(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<chimera_ui::AmbientMaterial>, c: &mut Commands) {
-    use chimera_ui::controls::{Kind, State, Ui};
+    use chimera_ui::controls::{Kind, State, StepperRange, Ui};
     let ui = Ui::new(t, kit, u);
     let root = c
         .spawn((
@@ -530,7 +530,7 @@ fn controls(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets
     let (_, v) = ui.row(c, right, "Brightness (gamma)", None, 2.9, State { error: true, ..State::NONE });
     ui.slider(c, v, 0.6, Some(0.6), "2.2", 15.0, State { error: true, ..State::NONE });
     let (_, v) = ui.row(c, right, "Max. players", Some("next match"), 2.9, State::NONE);
-    ui.stepper(c, v, "8", 3.2, State::NONE);
+    ui.stepper(c, v, "8", StepperRange::new().range(2.0, 16.0).step(1.0).reached(false, false), State::NONE);
     let (_, v) = ui.row(c, right, "Music", None, 2.9, State::NONE);
     ui.dropdown(c, v, &["Party playlist", "The game's loop", "None"], 0, Some(1), 12.0, State::NONE);
 }
@@ -542,7 +542,7 @@ fn controls(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets
 fn fields(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<chimera_ui::AmbientMaterial>, c: &mut Commands) {
     use chimera_ui::{
         UiStyle,
-        controls::{Hover, State, TextCursor, Typing, Ui},
+        controls::{Hover, State, StepperRange, TextCursor, Typing, Ui},
     };
     let ui = Ui::new(t, kit, u);
     let root = c
@@ -650,11 +650,42 @@ fn fields(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<c
     ui.slider_ex(c, r, 0.45, Some(0.6), "84", 17.0, State::focused(true), Some(Typing { text: "abc", caret: 3, anchor: 3, error: true, suffix: None }));
     let r = cell(c, d, "Disabled");
     ui.slider(c, r, 0.45, None, "84", 17.0, State { disabled: true, ..State::NONE });
-    ui.section(c, d, "Stepper", Some("rest, typing with a selection"));
-    let r = ui.boxed(c, d, UiStyle { gap: Some(1.5), ..UiStyle::row() });
-    ui.stepper(c, r, "8", 3.2, State::NONE);
-    ui.stepper_ex(c, r, "12", 3.2, State::focused(true), Some(Typing { text: "12", caret: 2, anchor: 0, error: false, suffix: None }));
-    ui.stepper(c, r, "8", 3.2, State { disabled: true, ..State::NONE });
+    ui.section(c, d, "Stepper", Some("one border; the box follows the range"));
+    let small = StepperRange::new().range(0.0, 10.0).step(1.0);
+    let wide = StepperRange::new().range(1.0, 65535.0).step(1.0);
+    let unit = StepperRange::new().range(0.5, 4.0).step(0.5).unit("s");
+    let r = cell(c, d, "Rest: 0-10, 1-65535, 0.5-4 s");
+    let r = ui.boxed(c, r, UiStyle { gap: Some(1.0), ..UiStyle::row() });
+    ui.stepper(c, r, "8", small, State::NONE);
+    ui.stepper(c, r, "27015", wide, State::NONE);
+    ui.stepper(c, r, "1.5 s", unit, State::NONE);
+    let r = cell(c, d, "Hover on minus, then plus");
+    let r = ui.boxed(c, r, UiStyle { gap: Some(1.0), ..UiStyle::row() });
+    for key in [0, 1] {
+        let (m, p) = ui.stepper(c, r, "8", small, State::NONE);
+        // The tint a hovered key shows (its `Tick`, kept shown).
+        let k = if key == 0 { m } else { p };
+        c.queue(move |w: &mut World| {
+            let kids: Vec<Entity> = w.get::<Children>(k).map(|c| c.iter().collect()).unwrap_or_default();
+            for e in kids {
+                if w.get::<chimera_ui::controls::Tick>(e).is_some() {
+                    w.entity_mut(e).insert((chimera_ui::controls::Tick { always: true }, Visibility::Inherited));
+                }
+            }
+        });
+    }
+    let r = cell(c, d, "Focus");
+    ui.stepper(c, r, "8", small, State::focused(true));
+    let r = cell(c, d, "Typing with a selection, refused");
+    let r = ui.boxed(c, r, UiStyle { gap: Some(1.0), ..UiStyle::row() });
+    ui.stepper_ex(c, r, "10", small, State::focused(true), Some(Typing { text: "10", caret: 2, anchor: 0, error: false, suffix: None }));
+    ui.stepper_ex(c, r, "10", small, State::focused(true), Some(Typing { text: "abc", caret: 3, anchor: 3, error: true, suffix: None }));
+    let r = cell(c, d, "At its minimum, at its maximum");
+    let r = ui.boxed(c, r, UiStyle { gap: Some(1.0), ..UiStyle::row() });
+    ui.stepper(c, r, "0", small.reached(true, false), State::NONE);
+    ui.stepper(c, r, "10", small.reached(false, true), State::NONE);
+    let r = cell(c, d, "Disabled");
+    ui.stepper(c, r, "8", small, State { disabled: true, ..State::NONE });
 
     let e = col(c, 17.0);
     ui.section(c, e, "Buttons", Some("rest, focus, disabled"));

@@ -35,10 +35,10 @@ hitgroups = { head = 1.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
 impulse = 0.0
 
 [sounds]
-fire = "Weapon_Scatter_Gun.Single"
-empty = "Weapon_Scatter_Gun.Empty"
-reload = [[0.0, "Weapon_Scatter_Gun.Reload"]]
-draw = [[0.0, "Weapon_Scatter_Gun.Draw"]]
+fire = "tf2:Weapon_Scatter_Gun.Single"
+empty = "tf2:Weapon_Scatter_Gun.Empty"
+reload = [[0.0, "tf2:Weapon_Scatter_Gun.Reload"]]
+draw = [[0.0, "tf2:Weapon_Scatter_Gun.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_scattergun.mdl"

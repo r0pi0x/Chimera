@@ -35,8 +35,8 @@ punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]
-fire = "Weapon_StickyBombLauncher.Single"
-reload = [[0.0, "Weapon_StickyBombLauncher.BoltBack"], [0.3, "Weapon_StickyBombLauncher.BoltForward"]]
+fire = "tf2:Weapon_StickyBombLauncher.Single"
+reload = [[0.0, "tf2:Weapon_StickyBombLauncher.BoltBack"], [0.3, "tf2:Weapon_StickyBombLauncher.BoltForward"]]
 
 [models]
 world = "models/weapons/c_models/c_stickybomb_launcher/c_stickybomb_launcher.mdl"
@@ -75,6 +75,6 @@ up_speed = 200.0
 charge_time = 4.0
 gravity = 800.0
 offset = [16.0, 8.0, -6.0]
-sound = "Weapon_Grenade_Pipebomb.Explode"
-charge_sound = "Weapon_StickyBombLauncher.ChargeUp"
-detonate_sound = "Weapon_StickyBombLauncher.ModeSwitch"
+sound = "tf2:Weapon_Grenade_Pipebomb.Explode"
+charge_sound = "tf2:Weapon_StickyBombLauncher.ChargeUp"
+detonate_sound = "tf2:Weapon_StickyBombLauncher.ModeSwitch"

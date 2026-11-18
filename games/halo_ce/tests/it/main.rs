@@ -63,6 +63,7 @@ mod vitality_data;
 mod weapons;
 mod weapons_rules;
 mod vehicle_camera;
+mod vehicle_drawn;
 mod vehicle_look;
 mod vehicle_physics;
 mod vehicle_types;

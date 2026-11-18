@@ -285,25 +285,28 @@ pub fn dress_guest(map: &mut MapData, kept: &'static [&'static str]) -> Result<(
     dress_guest_with(map, kept, false)
 }
 
-/// `dress_guest`; `lean` (a load without textures, `MapLoadOptions::
-/// textures` off: the dedicated server's): the kit's textures' sizes only
-/// (`MaterialLoader::lean`), as the map's own.
-/// Whether any of `files` can be read now from the game's files (a kept
-/// guest dressing that missed them is dressed again:
-/// `source_engine::content::guest`).
-pub fn files_here(files: &[String]) -> bool {
-    let Some(install) = super::INFO.install() else { return false };
-    super::mount::open(&install).is_ok_and(|m| files.iter().any(|f| m.read(f).is_ok()))
-}
-
-pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
+/// The game's files for its guest dressing (`map::kept::Dressing::
+/// mount`): the install, mounted.
+pub fn guest_mount() -> Result<std::sync::Arc<crate::mount::Mount>, String> {
     let install = super::INFO
         .install()
         .ok_or_else(|| format!("no `{}` install found (Steam, [games.hl2dm] path, or $CHIMERA_HL2DM_ROOT)", super::GAME))?;
-    let mount = super::mount::open(&install).map_err(|e| e.to_string())?;
+    super::mount::open(&install).map(std::sync::Arc::new).map_err(|e| e.to_string())
+}
+
+/// `dress_guest`; `lean` (a load without textures, `MapLoadOptions::
+/// textures` off: the dedicated server's): the kit's textures' sizes only
+/// (`MaterialLoader::lean`), as the map's own.
+pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
+    dress_guest_in(&*guest_mount()?, map, kept, lean);
+    Ok(())
+}
+
+/// `dress_guest_with` from `mount` (the game's files: `guest_mount`).
+pub fn dress_guest_in(mount: &crate::mount::Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
-    let mut materials = MaterialLoader::guest(&mount, textures, cubemaps).lean(lean)
-        .blocks_only(map.memos.get::<crate::map::BlocksOnly>().is_some());
+    let blocks_only = map.memos.get::<crate::map::BlocksOnly>().is_some();
+    let mut materials = MaterialLoader::guest(mount, textures, cubemaps).lean(lean).blocks_only(blocks_only);
     let surfaces = SurfaceProps::load(&mut materials);
     let kit = crate::map::KitLoad::Players(kept);
     let mut guest = crate::map::GameKit::default();
@@ -326,7 +329,6 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     map.kit.held.extend(guest.held);
     map.kit.view_models.extend(guest.view_models);
     map.kit.add_guest_hud(look);
-    Ok(())
 }
 
 /// What HL2:DM's guns draw, onto another game's map (`dress_guest`):

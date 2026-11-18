@@ -31,7 +31,7 @@ punch_scale = 1.0
 spread = { template = 0.0 }
 
 [sounds]
-draw = [[0.0, "Weapon_FlameThrower.Draw"]]
+draw = [[0.0, "tf2:Weapon_FlameThrower.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_flamethrower/c_flamethrower.mdl"
@@ -74,7 +74,7 @@ burn_start = 3.0
 burn_add = 0.4
 burn_max = 10.0
 pyro_burn = 0.25
-start_sound = "Weapon_FlameThrower.FireStart"
-loop_sound = "Weapon_FlameThrower.FireLoop"
-end_sound = "Weapon_FlameThrower.FireEnd"
-hit_sound = "Weapon_FlameThrower.FireHit"
+start_sound = "tf2:Weapon_FlameThrower.FireStart"
+loop_sound = "tf2:Weapon_FlameThrower.FireLoop"
+end_sound = "tf2:Weapon_FlameThrower.FireEnd"
+hit_sound = "tf2:Weapon_FlameThrower.FireHit"

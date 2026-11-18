@@ -3,13 +3,13 @@ id = "tf2:tf_weapon_shovel"
 base = "tf2:melee"
 
 [melee.primary]
-sound_swing = "Weapon_Shovel.Miss"
-sound_hit = "Weapon_Shovel.HitFlesh"
-sound_hit_world = "Weapon_Shovel.HitWorld"
+sound_swing = "tf2:Weapon_Shovel.Miss"
+sound_hit = "tf2:Weapon_Shovel.HitFlesh"
+sound_hit_world = "tf2:Weapon_Shovel.HitWorld"
 
 # `s_draw`'s sound event (8.1).
 [sounds]
-draw = [[0.0333, "Weapon_Shovel.Draw"]]
+draw = [[0.0333, "tf2:Weapon_Shovel.Draw"]]
 
 [models]
 world = "models/weapons/c_models/c_shovel/c_shovel.mdl"
@@ -23,4 +23,4 @@ icon = "shovel"
 [hooks."tf2:melee"]
 arms = "soldier"
 script = "tf_weapon_shovel"
-crit_swing = "Weapon_Shovel.MissCrit"
+crit_swing = "tf2:Weapon_Shovel.MissCrit"

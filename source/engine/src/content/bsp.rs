@@ -597,47 +597,10 @@ fn convert_level_bytes(
     Ok(Converted { data, light })
 }
 
-/// A guest's impact decals added to a map's (`dress_guest`): each group
-/// and material letter the map lacks, with its decals appended.
-pub fn add_guest_decals(map: &mut crate::map::decal::MapDecals, guest: crate::map::decal::MapDecals) {
-    let base = map.decals.len();
-    map.decals.extend(guest.decals);
-    let mut groups: Vec<_> = guest.groups.into_iter().filter(|(k, _)| !map.groups.contains_key(k)).collect();
-    groups.sort_by(|a, b| a.0.cmp(&b.0));
-    for (name, variants) in groups {
-        map.groups.insert(name, variants.into_iter().map(|(w, i)| (w, i + base)).collect());
-    }
-    for (letter, group) in guest.by_material {
-        map.by_material.entry(letter).or_insert(group);
-    }
-    for (name, i) in guest.logos {
-        map.logos.entry(name).or_insert(i + base);
-    }
-}
-
-/// A guest's sound entries added to a map's (`dress_guest`): each entry
-/// the map lacks, its clips appended (their indices moved past the map's
-/// own), and each surface the map lacks. The map's entries, surfaces and
-/// soundscapes stay.
-pub fn add_guest_sounds(map: &mut crate::map::sound::MapSounds, guest: crate::map::sound::MapSounds) {
-    for (name, surface) in guest.surfaces {
-        map.surfaces.entry(name).or_insert(surface);
-    }
-    let base = map.clips.len();
-    let mut used = std::collections::BTreeMap::new();
-    let mut entries: Vec<_> = guest.entries.into_iter().filter(|(k, _)| !map.entries.contains_key(k)).collect();
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
-    for (name, mut entry) in entries {
-        for w in &mut entry.waves {
-            let next = base + used.len();
-            *w = *used.entry(*w).or_insert(next);
-        }
-        map.entries.insert(name, entry);
-    }
-    let mut order: Vec<(usize, usize)> = used.into_iter().collect();
-    order.sort_by_key(|&(_, new)| new);
-    map.clips.extend(order.into_iter().map(|(old, _)| guest.clips[old].clone()));
-}
+/// A guest's decals and sound entries added to a map's: Chimera's
+/// (`map::kept::add_decals`, `add_sounds`), by the names the Source
+/// dressings call them.
+pub use crate::map::kept::{add_decals as add_guest_decals, add_sounds as add_guest_sounds};
 
 /// The BSP with its entity and texture-name lumps made valid UTF-8 in
 /// place: maps compiled or edited by other tools carry Latin-1 bytes there

@@ -1157,7 +1157,6 @@ pub struct AltShot {
 /// the camera, and its pitch and yaw to shots by `Hitscan::punch_scale`.
 /// Games that model recoil or flinching add and decay it.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[component(storage = "SparseSet")]
 pub struct ViewPunch(pub Vec3);
 
 /// How far a character's first-person camera sits back along its own
