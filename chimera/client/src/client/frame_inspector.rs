@@ -21,7 +21,8 @@
 //! part is the frame ring, the event take and the marks the hitch log has
 //! anyway (docs/OBSERVABILITY.md has the measured costs).
 //!
-//! Shown in the debug UI's Frames tab (F8, `debugui frames`):
+//! Shown in the debug UI's Frames tab (F8, `debugui frames`; the party apps'
+//! Escape menu has a Frame inspector entry while Developer mode is on):
 //! a chart of frame times (spikes red, the median and the spike line),
 //! a click picks a spike, its breakdown below. `frame_spikes` prints the
 //! records on the console; `chimera_stall <ms>` makes the next frame
