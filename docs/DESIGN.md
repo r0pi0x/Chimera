@@ -531,7 +531,15 @@ Chimera has a generic fallback (`chimera_world::map::impact`,
   a guest's dressing adds its own). An impact is drawn by the gun's game
   when its looks are on the map, else the map's game, else any game whose
   looks are there, else Chimera's generic mark and puff; each game's
-  impact code asks this route and draws only its own.
+  impact code asks this route and draws only its own. The drawing game
+  takes its own looks, never another game's of the same name: a guest's
+  impact looks whose names the map (or an earlier guest) took are kept
+  under its own names too (`map::impact::own_name`: `tf2:concrete`,
+  `tf2:concrete.bulletimpact`, its decal group per material letter,
+  `tf2:effects/spark`), and the impact code looks up the drawing game's
+  name first, the bare one after. A bullet's hit on a character sounds
+  as its gun's game's (`weapon::impact::dealt_by`): another game's hurt
+  sounds stay silent for it.
 - **What a gun draws comes with its game.** A gun's effect materials,
   muzzle flashes and spent shells are its game's on any map: the map's
   game brings its own with its kept guns (`GameKit::stay`), a guest's

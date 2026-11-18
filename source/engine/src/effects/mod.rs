@@ -44,6 +44,12 @@ pub struct ImpactStyle {
     /// The surface a character's hitbox is: its bullet impact is a body
     /// hit's sound where the game's hurt sounds don't play one.
     pub flesh: &'static str,
+    /// Its bullets' hits on players sound here (`impacts::bullet_impacts`:
+    /// `flesh`'s impact at the hit), the game having no hurt sounds that
+    /// play one (TF2 so far); false: its hurt sounds do (CS:S's `pain`,
+    /// HL2:DM's `sounds`). Another game's hurt sounds never play for its
+    /// gun (`weapon::impact::dealt_by`).
+    pub player_hits: bool,
     /// The decal group a melee hit places (CS:S's knife slash); None: the
     /// surface's, as a bullet's (HL2:DM's crowbar and stunstick,
     /// specs/hl2dm/effects_sounds.md 6).

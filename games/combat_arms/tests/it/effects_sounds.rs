@@ -1036,6 +1036,34 @@ fn hurt_sounds_one_per_kind_across_the_server() {
     assert!(s.iter().all(|s| s.server && s.radii.1 == 500.0));
 }
 
+/// Another game's gun's hit on our character sounds as that game's
+/// (`weapon::impact::dealt_by`): a TF2 pistol's plays no hurt sound of
+/// ours; a fall still does.
+#[test]
+fn another_games_guns_hit_plays_no_hurt_sound() {
+    let mut sim = sim();
+    let a = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
+    heard(&mut sim);
+    let hurt = |kind, weapon| Damage {
+        target: a,
+        attacker: None,
+        amount: 0.1,
+        point: Vec3::new(20.0, 1.5, 20.0),
+        dir: Vec3::Z,
+        hitgroup: Hitgroup::Head,
+        kind,
+        weapon,
+        force: Vec3::ZERO,
+    };
+    sim.app.world_mut().write_message(hurt(DamageKind::Bullet, Some("tf2:tf_weapon_pistol_scout")));
+    sim.app.update();
+    let s = heard(&mut sim);
+    assert!(s.is_empty(), "TF2's hit: {s:?}");
+    sim.app.world_mut().write_message(hurt(DamageKind::Fall, None));
+    sim.app.update();
+    assert!(!heard(&mut sim).is_empty(), "a fall");
+}
+
 #[test]
 fn footsteps_by_surface_and_stance() {
     let mut sim = sim();

@@ -195,7 +195,13 @@ pub struct EffectMaterials {
 
 impl EffectMaterials {
     pub fn new(p: &MapParticles) -> Self {
-        let f = |n: &str| p.find(n);
+        Self::of(p, None)
+    }
+
+    /// `game`'s own materials where the map holds them under its name
+    /// (`MapParticles::find_of`, `map::impact::own_name`), else the map's.
+    pub fn of(p: &MapParticles, game: Option<&str>) -> Self {
+        let f = |n: &str| p.find_of(game, n);
         Self {
             fleck_cement: [f("effects/fleck_cement1"), f("effects/fleck_cement2")],
             fleck_wood: [f("effects/fleck_wood1"), f("effects/fleck_wood2")],
@@ -1527,11 +1533,18 @@ fn impact_effects(
 ) {
     // Without materials (headless) there are no particles; sounds still
     // play.
-    let mats = materials.map(|m| EffectMaterials::new(&m.0));
-    let mats = mats.as_ref();
+    // Each drawing game's own (`EffectMaterials::of`), made once.
+    let mut by_game: Vec<(&'static str, EffectMaterials)> = Vec::new();
     let rng = &mut rng.0;
     for e in events.read().filter(|e| e.shown()) {
         let Some(&style) = styles.drawing(&route, e) else { continue };
+        let mats = materials.as_ref().map(|m| {
+            if !by_game.iter().any(|(g, _)| *g == style.game) {
+                by_game.push((style.game, EffectMaterials::of(&m.0, Some(style.game))));
+            }
+            by_game.iter().find(|(g, _)| *g == style.game).map(|(_, x)| x.clone()).unwrap_or_default()
+        });
+        let mats = mats.as_ref();
         let (from, point, normal, hit, bullet) = match &e.kind {
             // Also where a bullet enters the next surface after passing
             // something (penetration).
@@ -1632,7 +1645,7 @@ fn impact_effects(
         );
         let letter = bank
             .as_ref()
-            .and_then(|b| surface(&b.0, &name))
+            .and_then(|b| super::impacts::game_surface(&b.0, style.game, &name))
             .map_or('C', |s| s.game_material);
         let effect = effect_for(letter);
         let prop = props.get(hit).ok().map(|p| p.0);
@@ -1647,6 +1660,7 @@ fn impact_effects(
         };
         // Bullets only: 3 in 10 impacts ricochet (spec section 2 step 6).
         if bullet && let Some((entry, chance)) = style.ricochet && rng.random() < chance {
+            let entry = bank.as_ref().map_or_else(|| entry.to_string(), |b| b.0.game_entry(style.game, entry));
             play.write(PlaySound::at(entry, point));
         }
         let Some(mats) = mats else { continue };

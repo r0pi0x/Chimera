@@ -89,7 +89,8 @@ pub const MUZZLE_ATTACHMENT: &str = "muzzle";
 
 /// TF2's impacts: Source's shared impact effects and sounds. No spec says
 /// TF2's own rules yet (module doc): no ricochet, splashes of 4 to 8,
-/// every pellet's impact sound, damage in whole points.
+/// every pellet's impact sound, damage in whole points, a hit on a
+/// player sounding its flesh impact (TF2 has no hurt sounds yet).
 pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::ImpactStyle {
     game: crate::game::GAME,
     ricochet: None,
@@ -97,6 +98,7 @@ pub const STYLE: source_engine::effects::ImpactStyle = source_engine::effects::I
     group_radius: None,
     damage_unit: 1.0,
     flesh: "flesh",
+    player_hits: true,
     blood: source_engine::effects::BloodView::Damage,
     melee_decal: None,
 };

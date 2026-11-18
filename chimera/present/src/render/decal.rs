@@ -396,6 +396,7 @@ impl DecalAssets {
         let name = match group {
             DecalGroup::Named(n) => n.to_lowercase(),
             DecalGroup::Material(c) => self.data.by_material.get(&c.to_ascii_uppercase())?.clone(),
+            DecalGroup::GameMaterial(game, c) => self.data.material_group(Some(game), *c)?.to_string(),
         };
         let list = self.data.groups.get(&name)?.clone();
         let total: f32 = list.iter().map(|(w, _)| w.max(0.0)).sum();
