@@ -17,6 +17,8 @@ want_email=339403489+r0pi0x@users.noreply.github.com
 zero=0000000000000000000000000000000000000000
 bad=0
 pushing=0
+# Pull request heads on the remote (their commits are other people's).
+pr_heads=$(git ls-remote "${1:-origin}" 'refs/pull/*/head' 2>/dev/null | cut -f1)
 while read -r _local_ref local_sha _remote_ref remote_sha; do
     [ "$local_sha" = "$zero" ] && continue
     pushing=1
@@ -27,7 +29,12 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     else
         range="$remote_sha..$local_sha"
     fi
-    out=$(git log --format='%h %an|%ae|%ad|%cn|%ce|%cd' --date=format:%z $range |
+    # Commits from someone else's pull request keep their own identity and
+    # dates (the user, 2026-11-18: other contributors choose their own
+    # anonymity): the commits a GitHub PR head holds are left out here.
+    others=""
+    for h in $pr_heads; do git cat-file -e "$h^{commit}" 2>/dev/null && others="$others ^$h"; done
+    out=$(git log --format='%h %an|%ae|%ad|%cn|%ce|%cd' --date=format:%z $range $others |
         awk -F'|' -v n="$want_name" -v e="$want_email" '{
             split($1, a, " "); an = substr($1, length(a[1]) + 2)
             if (an != n || $2 != e || $3 != "+0000" || $4 != n || $5 != e || $6 != "+0000") print

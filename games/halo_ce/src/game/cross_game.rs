@@ -137,10 +137,7 @@ pub fn keep_incoming(
                 a.amount = shield_unit(shield_of(a.amount, have), want);
             }
         }
-        if want == 1.0 {
-            commands.entity(e).remove::<DamageScale>();
-        } else {
-            commands.entity(e).insert(DamageScale(want));
-        }
+        // Set in place (on every character from its spawn; 1: none).
+        commands.entity(e).insert(DamageScale(want));
     }
 }

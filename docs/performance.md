@@ -3010,6 +3010,58 @@ simply stay). Folding those into one move would need a Chimera command that
 gathers a switch's inserts and removals per character and applies them
 together (`insert_by_ids` and `remove_by_ids`).
 
+## A session's archetypes: what was left (2026-11-17)
+
+What the section above left, after a report from a five-minute Ultimate
+Gun Game session with all five games (4,109 archetypes, the tick from
+0.54 to 1.51 ms). The fast `session` test drew its ladders from the games
+the machine's installs and asset store held, so its count was the
+machine's (1,337 without TF2's and Halo's assets, 1,923 with them); it now
+names its games (`PINNED`: CS:S, HL2:DM, Combat Arms) through the mount
+report the ladder reads, and a second test plays all five
+(`a_session_with_every_game_stops_making_archetypes`). Counted by
+`chimera_census made` (the characters' archetypes, by the move that made
+each), the makers and their cuts:
+
+- avian's `RecomputeMassProperties` (70 with every game): avian marks a
+  body for a mass update whenever its collider's `ColliderMassProperties`
+  is rewritten, which every change of a character's collider does (Combat
+  Arms' crouch hull, a movement switch's). A character is kinematic and
+  its mass never read, so it carries no `ColliderMassProperties`
+  (`core::no_collider_mass`, an observer of `Intent`): nothing marks
+  it after its spawn. Not changing the collider would have cost the hull;
+  a mass set explicitly (`NoAutoMass`) doesn't stop the marker.
+- Combat Arms' `CaRungLook` (37): on every character, `None` off a rung.
+- Halo's `BodyKind` (40), `NamedByKind`, `BodyDraws` and campaign
+  `Voice`: on every character, the Spartan meaning none; its `BodyName`
+  emptied, not taken off.
+- `DamageScale` (11): on every character at 1 (`CorePlugin`), Halo's
+  vitality setting it in the move that puts its parts on.
+- `LazyHitboxes` (35): on every character in Combat Arms' apps, set to
+  `LazyHitboxes::none` when another game's `Hitboxes` count
+  (`HitShapes::lazy` and `hit_shapes` read none as absent).
+- `InMinigame` (15): a match's start (`minigame::restart`) no longer
+  takes it off for `join` to put back; `runtime::Rejoining` lists the
+  players `join` takes in again.
+- CS:S's and TF2's `RungClass`: on every character (CS:S's a bool).
+
+| fast `session` test, 8 matches | before | after |
+|---|---|---|
+| pinned games: archetypes / characters' | 952 / 178 | 887 / 112 |
+| pinned: made after the fourth match / characters' | 11 / 0 | 11 / 0 |
+| every game: archetypes / characters' | 1,337 / 521 | 943 / 130 |
+| every game: made after the fourth match / characters' | 36 / 4 | 34 / 0 |
+
+What is made after the fourth match is the guns' (a gun's build and its
+shots, once per gun the ladders reach). The tests fail at 950 and 40 more
+(pinned), 1,000 and 60 (every game), and at 5 characters' archetypes made
+after the fourth match. Left: a movement switch's removal and insert
+(`-CaMovement`, `+CaMovement+MovementSlot`, the Source and Halo sets),
+Combat Arms' `ArmorPieces` (its absence is the default kit), deaths and
+spawn protection (`+ColliderDisabled+Dead`, `±God+Protected+
+SpawnProtected`), each made once per combination of the parts that still
+vary.
+
 ## A session's memory (2026-11-09)
 
 What the section above left: Ultimate Gun Game's process memory rising over a
@@ -5788,6 +5840,38 @@ agents building:
 The heavy tests now sum to ~5,500 s of the suite's ~7,200: with five
 heavy slots the wall time can't go much under ~1,100 s without more
 slots (memory allowed it in the last run) or cheaper map loads.
+
+### nextest on the Windows fast tier (2026-10-30)
+
+`cargo nextest run` runs test binaries in parallel; `cargo test` runs one
+binary after another. On the Windows box (Ryzen 7 7800X3D, 8 cores / 16
+threads, 32 GB), a warm target, `CARGO_BUILD_JOBS=8`, three alternating
+rounds of the same 4,020 fast-tier tests (601 heavy tests filtered out),
+one failure in both modes (Combat Arms' `inventory::t36_rate_cap`):
+
+| round | `cargo test` | `cargo nextest` |
+|---|---|---|
+| 1 | 113.75 s | 115.84 s |
+| 2 | 104.39 s | 114.29 s |
+| 3 | 104.71 s | 114.57 s |
+| median | 113.75 s | 115.84 s |
+| mean | 107.62 s | 114.90 s |
+
+No gain: by mean nextest was 7% slower, by median 2%. Load was not
+recorded; the rounds alternated so both modes saw the same conditions. The fast tier's
+wall time is a few long tests (`party_kit`'s net tests, `combat_arms`'
+inventory, `repo_checks`' architecture) and `.config/nextest.toml` caps
+it at 8 test processes, so running binaries side by side does not shorten
+it. Keep `cargo test` as the Windows default. nextest stays the Linux
+full-suite runner (above), and the affected runner's `-Nextest` option
+filters by module: `scripts/affected-tests.ps1 -Files
+chimera/client/tests/it/metrics.rs -Nextest` ran 39 tests (`repo_checks`
+plus `metrics::`), 12 heavy skipped, 5.9 s end to end once warm.
+
+Warming the `-p` configuration after a workspace-wide build cost one
+1 m 33 s rebuild of 8 workspace crates; repeats then took 5.9 s, and a
+switch back to the workspace build cost a 3.7 s `repo_checks` relink.
+That is a one-time switch per revision, not a per-run cost.
 
 ### Warm slots, a lighter commit, push first (2026-10-27)
 

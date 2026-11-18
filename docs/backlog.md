@@ -395,6 +395,7 @@ the user's go-ahead: no Actions runs unless asked.
     only your own kills, from your character's game, at that game's
     volume; others' kills are silent.
   - **UGG chat and HUD (done 2026-11-18 except the match-end layout):**
+    - an old plain scoreboard (Name/Kills/Deaths/Gun/Ping/Wins, the game-time table) sometimes shows on Tab while going from a match to the lobby or the match-end screen; only the UGG Tab menu should;
     - no Combat Arms chat at all in Ultimate Gun Game;
     - chat drawn above every game's HUD (it is under TF2's);
     - TF2's bottom-left class portrait and its backdrop draw over the
@@ -402,6 +403,8 @@ the user's go-ahead: no Actions runs unless asked.
     - the match-end chat covers the map vote's timer: a design pass with
       fixed zones (results, vote and timer, chat), screenshots first.
   - **TF2 in general:**
+    - TF2 characters cannot climb ladders, at least on Combat Arms maps; check every game's characters on every game's ladders (one ladder rule in Chimera);
+    - the Engineer's mouth hangs open oddly in third person: check face flexes / jaw bone defaults for every TF2 class (and other games' faces), not the Engineer alone;
     - projectiles at the wrong orientation (the rocket was fixed alone;
       the user saw it again on a Medi Gun-class weapon): one general fix
       for every TF2 projectile model's forward axis, tested per
@@ -411,6 +414,9 @@ the user's go-ahead: no Actions runs unless asked.
       data;
     - first-person view models lit wrongly: check whether it's the map
       (HL2 or Halo maps) or the view-model lighting.
+  - **Sandbox:** B still won't open Change gun: it opens and closes over and over (B is also CS:S's `buymenu` bind and maybe others'; one owner per key while the sandbox is up, check every game's binds on B, chimera/client/src/client/sandbox/mod.rs ~553);
+  - **Windows focus:** clicking the taskbar icon to focus the game does not lock the cursor, so you cannot fire; re-grab the cursor on every focus gain while playing (no menu open), however the window got focus, in every app.
+  - **Rendering:** Z-fighting on a bridge on `combat_arms:neptune` (`setpos -805.77 -236.73 -1779.53;setang 38.72 114.13 0.00`); find whether it is coplanar faces the original game separates (draw order, a decal or overlay flag, a depth bias) and fix it for every map of that kind, not this bridge alone.
   - **Halo:**
     - weapon sounds missing (the shotgun's fire, the plasma pistol's
       charge): an audit of every Halo weapon's sounds in a party app, with
@@ -3217,11 +3223,13 @@ docs/plans/active/sound.md.
   `Shadowed`, ...), and parts that go together go in one move
   (docs/performance.md, "A session's archetypes: the game switch"): three
   laps of real maps make 472 characters' archetypes (1,471 in all), a lap
-  after the first 19-43 (the lap test caps it at 100). Left: a switch's own
-  steps, each another game's system (avian's `RecomputeMassProperties` after
-  Combat Arms' collider changes, the movement swap's removal and insert,
-  Combat Arms' rung look and view model, CS:S's rung class, HL2:DM's suit,
-  `ArmorPieces`): one Chimera command gathering a character's inserts and
+  after the first 19-43 (the lap test caps it at 100). Since 2026-11-17
+  avian's `RecomputeMassProperties`, Combat Arms' rung look and on-demand
+  hitboxes, Halo's body kind, the damage scale, the rung classes and
+  `InMinigame` no longer come and go (docs/performance.md, "A session's
+  archetypes: what was left"). Left: a switch's own steps, each another
+  game's system (the movement swap's removal and insert, Combat Arms' view
+  model, HL2:DM's suit, `ArmorPieces`): one Chimera command gathering a character's inserts and
   removals of a tick and applying them together (`insert_by_ids`,
   `remove_by_ids`) would cut most of the rest. Not measured: a quiet tick
   with the bots kicked against the 800 instructions an archetype.
