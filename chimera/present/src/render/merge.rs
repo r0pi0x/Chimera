@@ -5,7 +5,8 @@
 //! opaque and alpha-tested meshes are drawn as part of a combined mesh
 //! per material and chunk (`MergedChunk`), and its own meshes
 //! (`MergedPiece`) stay hidden. When it moves, breaks, is removed or
-//! turned off by the logic (`LogicHidden`), or shows broken panes
+//! turned off by the logic (`LogicHidden`) or hidden by its game
+//! (`Visibility::Hidden` on the node), or shows broken panes
 //! (`BrushPanes`), its triangles leave the combined mesh and its own
 //! meshes are drawn again; when it is back as it started (a closed door,
 //! a round restart) it rejoins. A node with a render colour other than
@@ -13,7 +14,7 @@
 //! decals) is unchanged either way.
 //!
 //! Brush entities drawn merged (any game): while a brush entity node is at its
-//! spawn pose, shown and without broken panes, its opaque and alpha-tested
+//! spawn pose, shown (neither `LogicHidden` nor `Visibility::Hidden`) and without broken panes, its opaque and alpha-tested
 //! meshes are drawn through combined meshes per material and 512-unit chunk
 //! (`MergedChunk`, under the map's root of static parts, culled by the clusters
 //! of their parts) and its own meshes (`MergedPiece`) are hidden;
@@ -186,8 +187,12 @@ fn at_home(t: &Transform, home: &Transform) -> bool {
 }
 
 /// Each frame: brush entities that left their merged state (moved,
-/// removed, broken panes) are drawn from their own meshes and their
-/// triangles leave the combined meshes; those back home rejoin.
+/// removed, hidden, broken panes) are drawn from their own meshes and
+/// their triangles leave the combined meshes; those back home rejoin. A
+/// node its game hides with `Visibility::Hidden` (Combat Arms' objects:
+/// a world model whose `Visible` is off, a mode's other bridge) leaves
+/// them too: merged, it was drawn anyway (two bridges in one place on
+/// NEPTUNE, z-fighting).
 #[allow(clippy::type_complexity)]
 pub fn sync_merged_brushes(
     mut nodes: Query<(
@@ -197,7 +202,8 @@ pub fn sync_merged_brushes(
         &mut MergedBrush,
         &Children,
         Option<&crate::map::BrushTint>,
-    )>,
+        Option<&Visibility>,
+    ), (Without<MergedPiece>, Without<MergedChunk>)>,
     mut pieces: Query<&mut Visibility, (With<MergedPiece>, Without<MergedChunk>)>,
     mut chunks: Query<(
         &MergedChunk,
@@ -212,8 +218,9 @@ pub fn sync_merged_brushes(
 ) {
     let Some(mut meshes) = meshes else { return };
     dirty.clear();
-    for (t, hidden, panes, mut merged, children, tint) in &mut nodes {
-        // A tinted node draws its own (tinted) meshes.
+    for (t, hidden, panes, mut merged, children, tint, shown) in &mut nodes {
+        // A tinted node draws its own (tinted) meshes; a hidden one none.
+        let hidden = hidden || shown == Some(&Visibility::Hidden);
         let want = !hidden && !panes && at_home(t, &merged.home) && tint.is_none_or(|t| t.is_white());
         if merged.merged == want {
             continue;
@@ -239,7 +246,7 @@ pub fn sync_merged_brushes(
         let indices: Vec<u32> = c
             .parts
             .iter()
-            .filter(|(n, _)| nodes.get(*n).is_ok_and(|(_, _, _, m, _, _)| m.merged))
+            .filter(|(n, _)| nodes.get(*n).is_ok_and(|(_, _, _, m, _, _, _)| m.merged))
             .flat_map(|(_, r)| c.indices[r.clone()].iter().copied())
             .collect();
         if indices.is_empty() {
@@ -317,5 +324,55 @@ mod tests {
         assert_eq!(world.get::<Visibility>(copied), Some(&Visibility::Inherited));
         assert!(world.get::<MergedBrush>(node).is_some());
         assert!(world.get::<MergedPiece>(piece).is_some());
+    }
+
+    /// A node its game hides (`Visibility::Hidden`, as Combat Arms'
+    /// objects hide a world model whose `Visible` is off) leaves the
+    /// combined mesh, which then draws none of its triangles; shown
+    /// again, it rejoins.
+    #[test]
+    fn a_hidden_node_leaves_the_combined_mesh() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>().add_systems(Update, sync_merged_brushes);
+        let mut mesh = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default());
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0f32; 3]; 6]);
+        mesh.insert_indices(Indices::U32(vec![0, 1, 2, 3, 4, 5]));
+        let handle = app.world_mut().resource_mut::<Assets<Mesh>>().add(mesh);
+        let world = app.world_mut();
+        let node = |world: &mut World| {
+            let n = world
+                .spawn((Transform::default(), Visibility::Inherited, MergedBrush { home: Transform::default(), chunks: Vec::new(), merged: true }))
+                .id();
+            let piece = world.spawn((MergedPiece, Visibility::Hidden, ChildOf(n))).id();
+            (n, piece)
+        };
+        let (a, _) = node(world);
+        let (b, b_piece) = node(world);
+        let chunk = world
+            .spawn((
+                MergedChunk { parts: vec![(a, 0..3), (b, 3..6)], indices: vec![0, 1, 2, 3, 4, 5] },
+                Mesh3d(handle.clone()),
+                Visibility::Inherited,
+            ))
+            .id();
+        for n in [a, b] {
+            world.get_mut::<MergedBrush>(n).unwrap().chunks = vec![chunk];
+        }
+        let drawn = |app: &App| -> Vec<u32> {
+            match app.world().resource::<Assets<Mesh>>().get(&handle).unwrap().indices() {
+                Some(Indices::U32(i)) => i.clone(),
+                _ => panic!("no indices"),
+            }
+        };
+        app.update();
+        assert_eq!(drawn(&app), [0, 1, 2, 3, 4, 5]);
+        app.world_mut().entity_mut(b).insert(Visibility::Hidden);
+        app.update();
+        assert!(!app.world().get::<MergedBrush>(b).unwrap().merged);
+        assert_eq!(drawn(&app), [0, 1, 2], "the hidden node's triangles leave");
+        assert_eq!(app.world().get::<Visibility>(b_piece), Some(&Visibility::Inherited), "its own meshes, hidden with it");
+        app.world_mut().entity_mut(b).insert(Visibility::Inherited);
+        app.update();
+        assert_eq!(drawn(&app), [0, 1, 2, 3, 4, 5], "shown again, it rejoins");
     }
 }
