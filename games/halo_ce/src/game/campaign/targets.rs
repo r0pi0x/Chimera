@@ -16,7 +16,8 @@
 //!   offered a few seconds after the sandbox starts.
 //! - **Wearing it** (`wear`): the target is forced to that kind
 //!   (`ForcedBody`, and its `BodyKind` at once), as `halo_ce:body` forces
-//!   a player's; Halo's Spartan takes both off again (`wear_spartan`).
+//!   a player's; Halo's Spartan takes the force off and sets the kind back
+//!   to the Spartan (`wear_spartan`).
 //! - **Its fresh numbers** (`vitals`, in `TargetVitals`' units, which
 //!   read `core::Health` and `weapon::Armor`): health 1.0 (Halo's health
 //!   is the body's fraction of its own maximum, whatever that is: the
@@ -73,10 +74,14 @@ pub fn wear(world: &mut World, e: Entity, id: &str) {
 
 /// Target `e` wears Halo's Spartan: a campaign body forced on it goes.
 pub fn wear_spartan(world: &mut World, e: Entity, _: &str) {
-    if let Ok(mut ent) = world.get_entity_mut(e)
-        && (ent.contains::<ForcedBody>() || ent.contains::<BodyKind>())
-    {
-        ent.remove::<(ForcedBody, BodyKind)>();
+    if let Ok(mut ent) = world.get_entity_mut(e) {
+        if ent.contains::<ForcedBody>() {
+            ent.remove::<ForcedBody>();
+        }
+        // Kept on, the Spartan (`campaign::choose`).
+        if ent.get::<BodyKind>().is_some_and(|k| *k != BodyKind::Spartan) {
+            ent.insert(BodyKind::Spartan);
+        }
     }
 }
 

@@ -105,11 +105,12 @@ pub const HOOK: RungExtrasHook = RungExtrasHook {
     apply,
 };
 
-/// Marks a player whose `PlayerClass` is a rung's (so leaving the rung
-/// sets it to none, 0).
-#[derive(Component, Clone, Copy, Debug)]
+/// Whether a player's `PlayerClass` is (or was) a rung's (so leaving the
+/// rung sets it to none, 0). On every character from its spawn, false
+/// (docs/DESIGN.md, "ECS style").
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[component(storage = "SparseSet")]
-pub struct RungClass;
+pub struct RungClass(pub bool);
 
 /// A CS:S rung's draw.
 fn draw(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
@@ -133,13 +134,13 @@ fn apply(world: &mut World, e: Entity, extras: Option<&RungExtras>) {
     let class = extras.and_then(|x| x.value(CLASS)?.parse::<u8>().ok()).filter(|c| (1..=8).contains(c));
     match class {
         Some(c) => {
-            world.entity_mut(e).insert((PlayerClass(c), RungClass));
+            world.entity_mut(e).insert((PlayerClass(c), RungClass(true)));
         }
         None => {
             // Kept on, no class (0, as an unassigned player's): taken off
             // and put back, each was an archetype for every combination of
             // the character's other parts (docs/DESIGN.md, "ECS style").
-            if world.get::<RungClass>(e).is_some() && world.get::<PlayerClass>(e).is_some_and(|c| c.0 != 0) {
+            if world.get::<RungClass>(e).is_some_and(|r| r.0) && world.get::<PlayerClass>(e).is_some_and(|c| c.0 != 0) {
                 world.entity_mut(e).insert(PlayerClass(0));
             }
         }
@@ -151,6 +152,7 @@ pub struct CsRungsPlugin;
 
 impl Plugin for CsRungsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_rung_extras(HOOK);
+        use chimera_core::character::CharacterPartsExt;
+        app.add_rung_extras(HOOK).on_every_character::<RungClass>();
     }
 }

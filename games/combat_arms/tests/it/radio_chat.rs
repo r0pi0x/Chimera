@@ -1261,3 +1261,22 @@ fn standalone() {
     assert!(text.starts_with("[Report] A1 : "), "{text}");
     let _ = (Health { current: 1.0, max: 1.0 }, CaSayRequest::default());
 }
+
+/// Another chat owns the chat (`ChatUiState::disabled`, set under the party
+/// apps' Signal chat): none of Combat Arms' chat inputs opens, by Enter or
+/// by a channel key; the input opens again once it is enabled.
+#[test]
+fn another_chat_owning_the_chat_keeps_ours_shut() {
+    let mut sim = world();
+    let w = sim.app.world_mut();
+    w.resource_mut::<ChatUiState>().playing = true;
+    w.resource_mut::<ChatUiState>().disabled = true;
+    assert!(!chat::open_enter(w));
+    assert!(!chat::open_tab(w, chat::client::Tab::All));
+    assert!(!chat::open_tab(w, chat::client::Tab::Clan));
+    chat::open_key(w, Some(true));
+    assert!(!w.resource::<CaChat>().is_open(), "no input opened");
+    w.resource_mut::<ChatUiState>().disabled = false;
+    assert!(chat::open_enter(w));
+    assert!(w.resource::<CaChat>().is_open());
+}

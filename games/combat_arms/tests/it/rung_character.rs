@@ -48,7 +48,7 @@ fn player(look: Selection, rung: bool, tweak: impl FnOnce(&mut World)) -> (Sim, 
     let p = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
     sim.app.world_mut().entity_mut(p).insert(look);
     if rung {
-        sim.app.world_mut().entity_mut(p).insert(CaRungLook(look));
+        sim.app.world_mut().entity_mut(p).insert(CaRungLook(Some(look)));
     }
     sim.seconds(0.5);
     (sim, p)

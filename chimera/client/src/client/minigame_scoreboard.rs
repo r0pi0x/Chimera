@@ -24,8 +24,10 @@
 //! at a word with `…`). The board is drawn above the minigame panel with an
 //! opaque background.
 //!
-//! Under the Signal look (`signal::signal_on`) a ladder's Tab board is the
-//! race chip's (`race_chip`); this one stays for other minigames and apps.
+//! Under the Signal look (`signal::signal_on`) the Tab board is the race
+//! chip's (`race_chip`), always: this one never draws there (not in the
+//! gap between a match and the lobby or the match end either); it stays
+//! for other apps.
 //! `MinigameScoreboardPlugin` adds `RaceChipPlugin`.
 //!
 //! Known shortcuts: plain text, no team colours.
@@ -270,6 +272,7 @@ pub fn sorted(mut rows: Vec<(usize, ScoreboardRow)>) -> Vec<ScoreboardRow> {
 #[allow(clippy::type_complexity)]
 fn draw(
     held: Res<HeldActions>,
+    theme: Option<Res<chimera_ui::Theme>>,
     hud: Option<Res<MinigameHud>>,
     ladder: Option<Res<Ladder>>,
     settings: Option<Res<NetSettings>>,
@@ -293,8 +296,15 @@ fn draw(
     old: Query<Entity, Or<(With<ScoreboardRow>, With<ScoreboardHeader>)>>,
     mut commands: Commands,
 ) {
-    // Under the Signal look a ladder's board is the race chip's.
-    let show = held.scores() && hud.is_some_and(|h| h.playing()) && !race.active && !race.sandbox;
+    // Under the Signal look every board is the race chip's: this plain
+    // table never shows there, not even between a match and the lobby or
+    // the match end, where the chip is off (`race.active`: no ladder) but
+    // the minigame still reads as playing.
+    let show = held.scores()
+        && !super::signal::signal_on(theme.as_deref())
+        && hud.is_some_and(|h| h.playing())
+        && !race.active
+        && !race.sandbox;
     root.1.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
     for e in &old {
         commands.entity(e).despawn();

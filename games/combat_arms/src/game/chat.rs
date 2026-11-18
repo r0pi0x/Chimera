@@ -208,6 +208,10 @@ pub struct ChatUiState {
     pub fading: bool,
     pub hud_hidden: bool,
     pub vote_on: bool,
+    /// Another chat owns the chat (the party apps' Signal chat): this
+    /// game's chat input never opens, whichever key or command asks (the
+    /// radio is not the chat: it stays).
+    pub disabled: bool,
 }
 
 impl Default for ChatUiState {
@@ -217,6 +221,7 @@ impl Default for ChatUiState {
             fading: false,
             hud_hidden: false,
             vote_on: false,
+            disabled: false,
         }
     }
 }
@@ -436,12 +441,23 @@ pub fn dispatch(world: &mut World, outs: Vec<Out>) {
 
 /// Enter: open the input on the current tab.
 pub fn open_enter(world: &mut World) -> bool {
+    if chat_disabled(world) {
+        return false;
+    }
     let env = env(world);
     world.resource_mut::<CaChat>().open_with_enter(&env)
 }
 
+/// Another chat owns the chat (`ChatUiState::disabled`).
+fn chat_disabled(world: &World) -> bool {
+    world.get_resource::<ChatUiState>().is_some_and(|s| s.disabled)
+}
+
 /// A channel bind.
 pub fn open_tab(world: &mut World, tab: Tab) -> bool {
+    if chat_disabled(world) {
+        return false;
+    }
     let env = env(world);
     world.resource_mut::<CaChat>().open_with_bind(tab, &env)
 }

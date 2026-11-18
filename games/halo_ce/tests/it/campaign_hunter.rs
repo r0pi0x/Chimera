@@ -69,7 +69,7 @@ fn the_cannon_is_the_hunters_own_rung() {
     assert!(world.resource::<campaign::UnitsOnDemand>().wanted.contains(&BodyKind::Hunter), "its unit asked for");
     world.entity_mut(e).insert(OnRung { index: 0, ..Default::default() });
     campaign::choose(&mut world, e);
-    assert_eq!(world.get::<BodyKind>(e), None, "the plasma rifle, setting off: the Spartan");
+    assert_eq!(world.get::<BodyKind>(e), Some(&BodyKind::Spartan), "the plasma rifle, setting off: the Spartan");
     // A drawn ladder deals it only with the setting on.
     campaign::own_guns_drawn(&mut world, false);
     let why = |w: &World| w.resource::<PowerReaders>().exclusions.reason(HUNTER_RUNG).map(str::to_string);

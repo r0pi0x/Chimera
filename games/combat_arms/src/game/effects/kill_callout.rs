@@ -13,7 +13,8 @@
 //! (`EventSounds::enemy_down`) and nothing else (`ManDown` is empty in
 //! the stock data too).
 //!
-//! The server (`send`, on each `Died`): the killer is the attacker, or
+//! The server (`send`, on each `Died`; only for a kill with Combat Arms' own
+//! gun when the killer's game follows its weapon, `weapon::killing_game`): the killer is the attacker, or
 //! for a squad AI (`rules::mercs::CaMerc`) its leader (the leader's voice
 //! from the AI's place); with no player behind the kill (a fall, the
 //! world, a non-squad AI) the killer's team is 0, the voice the male
@@ -216,6 +217,14 @@ pub fn of_death(world: &World, d: &Died) -> Vec<(u8, CaTeamCallout)> {
         None => (0, MALE, None),
     };
     let u = |p: Vec3| p / UNIT;
+    // A kill with another game's gun (a party app's ladder: the killing
+    // weapon's game, not the killer's current identity, which a rung's swap
+    // may have changed) is that game's: no Combat Arms voice for it.
+    let ours = {
+        let identity = killer.and_then(|k| world.get::<crate::slots::GameIdentity>(k)).map(|i| i.0.as_str());
+        crate::weapon::killing_game(&d.damage, world.get_resource::<crate::weapon::DamageWeapons>(), identity)
+            .is_none_or(|g| g.eq_ignore_ascii_case(crate::game::GAME))
+    };
     // Rules (11): EnemyDown when the teams differ and it isn't a suicide.
     let living: Vec<(Entity, u8, Vec3)> = {
         let mut q = world.try_query::<(Entity, &Team, &Transform, &Health)>().expect("registered");
@@ -226,7 +235,7 @@ pub fn of_death(world: &World, d: &Died) -> Vec<(u8, CaTeamCallout)> {
     };
     let killer_entry = (speaker.unwrap_or(Entity::PLACEHOLDER), killer_team, u(damager_at));
     let (enemy_down, man_down) = rules::callouts(Some(killer_entry), (victim, victim_team, u(victim_at)), &living);
-    if enemy_down.is_some() && speaker != Some(victim) {
+    if enemy_down.is_some() && speaker != Some(victim) && ours {
         out.push((
             killer_team,
             CaTeamCallout {

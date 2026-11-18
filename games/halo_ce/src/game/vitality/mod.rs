@@ -347,25 +347,21 @@ fn put_on(e: &mut EntityWorldMut, extra: impl Bundle) {
     let fresh = || (Vitality::default(), Stun::default(), super::damage::Attackers::default(), Mirrored::default(), brought);
     let body = super::cross_game::body_id(e.get::<super::campaign::BodyKind>());
     let scale = super::cross_game::incoming_of(e.get_resource::<chimera_sim::weapon::balance::Balance>(), body);
-    let scaled = (scale != 1.0).then_some(DamageScale(scale));
+    // In the same move (on every character from its spawn, 1: none).
+    let scaled = DamageScale(scale);
     if e.contains::<Vitality>() {
         e.insert((extra, pieces));
     } else if e.contains::<Armor>() {
-        e.insert((extra, pieces, fresh()));
-        if let Some(s) = scaled {
-            e.insert(s);
-        }
+        e.insert((extra, pieces, fresh(), scaled));
     } else {
-        e.insert((extra, pieces, fresh(), Armor { amount: 1.0, helmet: false }));
-        if let Some(s) = scaled {
-            e.insert(s);
-        }
+        e.insert((extra, pieces, fresh(), Armor { amount: 1.0, helmet: false }, scaled));
     }
 }
 
 /// Halo's parts taken off a character, all in one move (`Armor` is given
 /// back separately: `armour_back`).
-type HaloParts = (Vitality, Stun, ArmorPieces, PiecesOf, ArmorRatio, Mirrored, super::damage::Attackers, DamageScale, Brought);
+/// (`DamageScale` stays, back at 1: on every character from its spawn.)
+type HaloParts = (Vitality, Stun, ArmorPieces, PiecesOf, ArmorRatio, Mirrored, super::damage::Attackers, Brought);
 
 /// The incoming scale a Halo character's shield and health are in (1:
 /// none, `cross_game`).
@@ -384,6 +380,9 @@ fn leave_halo(e: &mut EntityWorldMut) {
     if e.contains::<Vitality>() {
         let back = armour_back(e);
         e.remove::<(super::movement::HaloMovement, HaloParts)>();
+        if e.get::<DamageScale>().is_some_and(|s| s.0 != 1.0) {
+            e.insert(DamageScale(1.0));
+        }
         give_back(e, back);
     } else {
         e.remove::<super::movement::HaloMovement>();

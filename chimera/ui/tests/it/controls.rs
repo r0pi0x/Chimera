@@ -968,3 +968,34 @@ fn stepper_is_one_bordered_control_sized_by_its_range() {
         assert!((left_of_plus - right_of_value).abs() <= 1.0, "plus touches the value");
     }
 }
+
+/// A toggle's words: On/Off by default; Yes/No for a question ("Include a
+/// screenshot"), by `toggle_words` or by `toggle_words_for`'s label rule.
+#[test]
+fn a_toggle_reads_on_off_or_yes_no() {
+    use chimera_ui::controls::{TOGGLE_ON_OFF, TOGGLE_YES_NO, toggle_words_for};
+    assert_eq!(toggle_words_for("Vertical sync"), TOGGLE_ON_OFF);
+    assert_eq!(toggle_words_for("Include screenshot"), TOGGLE_YES_NO);
+    assert_eq!(toggle_words_for("Ask before quitting"), TOGGLE_YES_NO);
+    assert_eq!(toggle_words_for("Show the clock?"), TOGGLE_YES_NO);
+    let mut app = app();
+    let texts = |app: &mut App, e: Entity| -> Vec<String> {
+        let w = app.world_mut();
+        let mut out = Vec::new();
+        let mut stack = vec![e];
+        while let Some(n) = stack.pop() {
+            if let Some(t) = w.get::<Text>(n) {
+                out.push(t.0.clone());
+            }
+            if let Some(ch) = w.get::<Children>(n) {
+                stack.extend(ch.iter());
+            }
+        }
+        out.sort();
+        out
+    };
+    let plain = build(&mut app, |ui, c, root| ui.toggle(c, root, true, State::NONE));
+    assert_eq!(texts(&mut app, plain), ["OFF", "ON"], "drawn upper case");
+    let yn = build(&mut app, |ui, c, root| ui.toggle_words(c, root, true, State::NONE, TOGGLE_YES_NO));
+    assert_eq!(texts(&mut app, yn), ["NO", "YES"]);
+}

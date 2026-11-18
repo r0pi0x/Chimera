@@ -485,7 +485,8 @@ fn begin(world: &mut World, id: &str, fresh: bool) -> Result<&'static MinigameDe
 }
 
 /// The match from the start: waiting for players, every player joining
-/// again with nothing scored.
+/// again with nothing scored (`runtime::Rejoining`: `join` takes them in
+/// again, `InMinigame` kept on them).
 pub fn restart(world: &mut World) {
     world.insert_resource(Match::default());
     world.remove_resource::<MatchResults>();
@@ -495,10 +496,11 @@ pub fn restart(world: &mut World) {
     world.insert_resource(mode::flow::MissionFrames::default());
     spawns::reset(world);
     let players: Vec<Entity> = world.query_filtered::<Entity, With<InMinigame>>().iter(world).collect();
-    for p in players {
+    for &p in &players {
         runtime::unprotect(world, p);
-        world.entity_mut(p).remove::<InMinigame>().insert(Score::default());
+        world.entity_mut(p).insert(Score::default());
     }
+    world.insert_resource(runtime::Rejoining(players));
 }
 
 /// Registering minigames, their rules modules and modifiers.
