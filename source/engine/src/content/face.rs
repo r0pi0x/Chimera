@@ -12,7 +12,9 @@
 //! vertex offsets; `MapFace`, `MapMesh::morphs`) and what a game does
 //! with them each frame: the rules from controller values to descriptor
 //! weights (`run_rules`), the lids of FACS eyeballs (`eyelids`) and each
-//! mesh flex's weight on its two sides (`flex_weights`).
+//! mesh flex's weight on its two sides (`flex_weights`); all three from
+//! controller values (`weights`), and at rest, every controller at 0
+//! (`MapFace::rest`, set by `flexes`).
 //!
 //! The eyeball layout and its checks follow hl2-rs's `eyes::decode`, the
 //! flex tables, rule program and ramps its `flexes`; the mouths' (header
@@ -295,6 +297,8 @@ pub fn flexes(data: &[u8]) -> Result<(Option<MapFace>, Vec<StoredMorph>), String
     }
     // The FACS lids of the eyeballs.
     face.eyelids = eyeball_lids(data)?;
+    // At rest: every controller at 0.
+    face.rest = weights(&face, &vec![0.0; face.controllers.len()]);
     Ok(((!face.descriptors.is_empty()).then_some(face), morphs))
 }
 
@@ -514,6 +518,15 @@ pub fn eyelids(face: &MapFace, weights: &mut [f32]) {
             }
         }
     }
+}
+
+/// Each mesh flex's weights (`map::FaceWeights`) at controller values
+/// `values` (one per `face.controllers`, in their own ranges): the rules,
+/// the FACS lids, then each flex's ramp.
+pub fn weights(face: &MapFace, values: &[f32]) -> Vec<[f32; 2]> {
+    let mut d = run_rules(face, values);
+    eyelids(face, &mut d);
+    flex_weights(face, &d)
 }
 
 /// Each mesh flex's weight on its own side and its pair's from the

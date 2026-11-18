@@ -1,0 +1,85 @@
+# TF2's living players' idle faces (specs/tf2/faces.md 5): the looping
+# idle expression scene each class plays when alive, not hurt, not
+# speaking, not firing (`game::faces`). Each class's scene holds one
+# expression event: its preset's controller weights (each controller's
+# own range; lids negative) at the event's intensity.
+#
+# model: the class's player model; length: the scene's length (s; it
+# starts again after it); from, to: the event's span in the scene (s);
+# ramp: its intensity samples (event time s, intensity), between edge
+# points of 0 at its start and end (spec 4.1; none: 1 throughout);
+# preset: the preset's controllers and weights. The Pyro has none (spec
+# 11): his face stays at rest.
+
+[classes.engineer]
+model = "models/player/engineer.mdl"
+length = 30.0
+from = 0.0
+to = 30.0
+ramp = [[0.194, 0.98], [29.68, 0.98]]
+preset = { defaultFace = 1.0 }
+
+[classes.soldier]
+model = "models/player/soldier.mdl"
+length = 15.0
+from = 0.0
+to = 15.0
+ramp = [[0.253, 0.733], [14.771, 0.733]]
+preset = { defaultFace = 1.0, right_CloseLid = -0.392, left_CloseLid = -0.392, multi_CloseLid = -0.656 }
+
+[classes.demoman]
+model = "models/player/demo.mdl"
+length = 15.0
+from = 0.0
+to = 15.0
+ramp = [[0.306, 1.0], [14.473, 1.0]]
+preset = { defaultFace = 1.0 }
+
+[classes.heavy]
+model = "models/player/heavy.mdl"
+length = 15.0
+from = 0.0
+to = 15.0
+ramp = [[0.335, 1.0], [14.501, 0.992]]
+preset = { idleface = 1.0, right_CloseLid = -0.58, left_CloseLid = -0.58, multi_CloseLid = 0.62 }
+
+[classes.sniper]
+model = "models/player/sniper.mdl"
+length = 15.0
+from = 0.0
+to = 15.0
+ramp = [[0.338, 0.514], [14.556, 0.514]]
+preset = { defaultFace = 1.0, right_CloseLid = -0.392, left_CloseLid = -0.392, multi_CloseLid = -0.656 }
+
+[classes.spy]
+model = "models/player/spy.mdl"
+length = 15.0
+from = 0.0
+to = 15.0
+ramp = [[0.306, 1.0], [14.473, 1.0]]
+preset = { defaultFace = 1.0, right_CloseLid = -0.962, left_CloseLid = -0.962, multi_CloseLid = -0.656 }
+
+[classes.scout]
+model = "models/player/scout.mdl"
+length = 16.627
+from = 0.013
+to = 16.627
+ramp = [
+    [0.62, 0.54], [1.99, 0.55], [2.45, 0.27], [3.43, 0.24], [3.89, 0.49],
+    [4.30, 0.35], [4.84, 0.27], [7.15, 0.27], [7.79, 0.48], [8.30, 0.13],
+    [8.95, 0.13], [10.68, 0.12], [11.21, 0.42], [11.73, 0.18], [13.08, 0.07],
+    [13.72, 0.10], [14.06, 0.37], [14.55, 0.15], [15.62, 0.13],
+]
+preset = { madUpper = 1.0, right_CloseLid = -0.5, left_CloseLid = -0.5, multi_CloseLid = -0.46 }
+
+[classes.medic]
+model = "models/player/medic.mdl"
+length = 15.0
+from = 0.0
+to = 15.0
+ramp = [
+    [0.29, 0.33], [1.97, 0.31], [2.40, 0.62], [3.10, 0.38], [5.41, 0.27],
+    [5.93, 0.57], [6.67, 0.39], [7.56, 0.42], [10.74, 0.29], [11.32, 0.57],
+    [12.54, 0.37], [14.68, 0.33],
+]
+preset = { madUpper = 1.0 }

@@ -13,7 +13,8 @@
 //! - `bodies` (M3): the classes' player models as bodies (the gun's
 //!   class's, the team's skin), `player_anim` their animation on Source's
 //!   shared half (activities by state and the gun's kind, the move grid,
-//!   aim, gestures);
+//!   aim, gestures); `faces` their idle expressions (the class's
+//!   looping idle face, data/faces.toml: the Engineer's mouth closed);
 //! - `hud` (M3): TF2's HUD look from the install (the scheme's colours
 //!   and fonts, the layout, the kill icons, the health crosses), in the
 //!   map's kit;
@@ -56,6 +57,7 @@
 
 pub mod bodies;
 pub mod classes;
+pub mod faces;
 pub mod hud;
 pub mod ice;
 pub mod late_bodies;

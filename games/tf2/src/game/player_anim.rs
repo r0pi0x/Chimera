@@ -421,7 +421,8 @@ fn follow_class(
 }
 
 /// TF2's bodies animated: drawn (`PlayerAnimPlugin`), on a server per tick
-/// (`SimAnimPlugin`), sent to clients (`AnimNetPlugin`), and what they hold.
+/// (`SimAnimPlugin`), sent to clients (`AnimNetPlugin`), what they hold and
+/// their faces (`faces`).
 pub struct Tf2AnimPlugin;
 
 impl Plugin for Tf2AnimPlugin {
@@ -431,7 +432,11 @@ impl Plugin for Tf2AnimPlugin {
             source_engine::player_anim::SimAnimPlugin::<Tf2PlayerAnim>::default(),
             source_engine::anim_net::AnimNetPlugin::<Tf2PlayerAnim>::new("tf2_anim"),
         ))
-        .add_systems(Update, (hold_weapons, follow_class));
+        .insert_resource(super::faces::IdleFaces::builtin())
+        .add_systems(
+            Update,
+            (hold_weapons, follow_class, super::faces::faces.in_set(crate::map::DriveAnimation)),
+        );
     }
 }
 

@@ -186,9 +186,7 @@ impl Blink {
 /// The face's descriptors at controller values `values` (the rules, then
 /// the lids) and its mesh flexes' weights.
 pub fn face_weights(face: &crate::map::MapFace, values: &[f32]) -> Vec<[f32; 2]> {
-    let mut d = source_engine::content::face::run_rules(face, values);
-    source_engine::content::face::eyelids(face, &mut d);
-    source_engine::content::face::flex_weights(face, &d)
+    source_engine::content::face::weights(face, values)
 }
 
 /// Each drawn HL2:DM body with a face: its blink and flex weights.
