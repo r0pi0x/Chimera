@@ -15,6 +15,7 @@ mod nav_bounds;
 mod nav_links;
 mod movement;
 mod noclip_damage;
+mod offline;
 mod range_map;
 mod rung_extras;
 mod sim_waits;

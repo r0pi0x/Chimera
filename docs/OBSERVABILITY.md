@@ -35,6 +35,22 @@ on the same base, over an in-memory link: `NetSim::new(CsSim,
 conditions, seed, clients, setup)`; `cs_source::harness`'s `TestMaps`
 and `serve_maps` give network tests maps built in code.
 
+#### No installs behind a `Sim`
+
+Building a `Sim` turns the "no installs" switch on
+(`chimera_core::mount::offline`): `LocalConfig::game_path_in`, so
+`GameInfo::install`, `mount_for` and every loader, finds no game install
+and no asset store in that process, so a scenario test never reads the
+machine's files (a Halo campaign body, a guest dressing, a map) and means
+the same on every machine (chimera_sim's `tests/it/offline.rs`). A test
+whose subject is the files themselves goes in `heavy::` (a `Sim` built on
+a thread named `heavy::...` leaves installs reachable, for good in that
+process), or calls `offline::allow_installs()` first (the CS:S, server and
+`map_files` helpers that read an install do). It is per process: under
+nextest and `cargo test -- --skip heavy::` exact; a `cargo test` process
+running heavy and fast tests together guards the fast ones only until its
+first heavy test. `CHIMERA_SIM_INSTALLS=1` turns it off.
+
 #### Time and waiting
 
 A `Sim`'s clock is its own: `TimeUpdateStrategy::ManualDuration` steps

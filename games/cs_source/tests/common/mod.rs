@@ -13,6 +13,7 @@ use chimera_world::map::MapData;
 
 /// The install's mount for a `cs_source:<name>` id, and the name.
 fn mount_of(id: &str) -> Result<(chimera_core::mount::Mount, &str), String> {
+    chimera_core::mount::offline::allow_installs(); // reads the machine's install (`mount::offline`)
     let name = id
         .strip_prefix("cs_source:")
         .ok_or_else(|| format!("map ID `{id}` should look like cs_source:name"))?;
