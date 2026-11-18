@@ -149,7 +149,7 @@ still work.
 
 Commits are by `r0pi0x <339403489+r0pi0x@users.noreply.github.com>` with
 UTC dates: set that identity in the clone's local git config and commit
-with `TZ=UTC`. `.githooks/pre-push` refuses anything else. No real names,
+with `TZ=UTC`. `.githooks/pre-push` refuses anything else (commits of someone else's pull request keep their own). No real names,
 personal emails or machine paths in commits or files.
 
 ## Testing on Windows

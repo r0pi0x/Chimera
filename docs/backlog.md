@@ -415,6 +415,7 @@ the user's go-ahead: no Actions runs unless asked.
     - first-person view models lit wrongly: check whether it's the map
       (HL2 or Halo maps) or the view-model lighting.
   - **Sandbox:** B still won't open Change gun: it opens and closes over and over (B is also CS:S's `buymenu` bind and maybe others'; one owner per key while the sandbox is up, check every game's binds on B, chimera/client/src/client/sandbox/mod.rs ~553);
+  - **Windows focus:** clicking the taskbar icon to focus the game does not lock the cursor, so you cannot fire; re-grab the cursor on every focus gain while playing (no menu open), however the window got focus, in every app.
   - **Rendering:** Z-fighting on a bridge on `combat_arms:neptune` (`setpos -805.77 -236.73 -1779.53;setang 38.72 114.13 0.00`); find whether it is coplanar faces the original game separates (draw order, a decal or overlay flag, a depth bias) and fix it for every map of that kind, not this bridge alone.
   - **Halo:**
     - weapon sounds missing (the shotgun's fire, the plasma pistol's
