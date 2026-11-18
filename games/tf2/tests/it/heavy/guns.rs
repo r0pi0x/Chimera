@@ -3,6 +3,7 @@
 //! each other class's arms that can hold it, `view::CLASS_SEQUENCES`), with the
 //! spec's sequences (8.2) by name with their activities (the include's, not the
 //! arms' stubs) and a muzzle on the gun, the posed gun in front of the eye;
+//! each melee weapon's view model with its sequences (M4b);
 //! the held models and the rocket's model; the guns' sound entries in the
 //! sound scripts; and each gun's `weapon/<id>` set covering everything a
 //! match loads for it (`maps::add_guns` and its sounds): a client with the
@@ -23,8 +24,18 @@ fn each_gun_shows_on_its_class_arms_with_the_specs_sequences() {
     maps::add_guns(&mut materials, &|_| true, true, &mut kit, &mut warnings);
     assert!(warnings.is_empty(), "{warnings:?}");
     // Each gun on its own class's arms, and on each other class's that
-    // can hold it (the Shotgun's three, the Pistol's Engineer).
-    assert_eq!(kit.view_models.len(), weapons::GUNS.len() + view::CLASS_SEQUENCES.len());
+    // can hold it (the Shotgun's three, the Pistol's Engineer); each melee
+    // weapon on its class's arms (the Fists the arms alone).
+    assert_eq!(kit.view_models.len(), weapons::GUNS.len() + view::CLASS_SEQUENCES.len() + weapons::MELEE.len());
+    for melee in weapons::MELEE {
+        let v = kit.view_models.iter().find(|v| v.key == melee).unwrap_or_else(|| panic!("{melee}'s view model"));
+        let set = v.animations.as_ref().expect("the arms' animations");
+        let q = view::melee_sequences(melee).unwrap();
+        let backstab = q.backstab.iter().flatten();
+        for name in [q.draw, q.idle, q.crit].into_iter().chain(q.swing.iter().copied()).chain(q.swing_alt.iter().copied()).chain(backstab.copied()) {
+            assert!(set.sequence(name).is_some(), "{melee}: no sequence {name}");
+        }
+    }
     for gun in weapons::GUNS {
         assert!(kit.view_models.iter().any(|v| v.key == gun), "{gun}'s view model");
     }
@@ -32,7 +43,7 @@ fn each_gun_shows_on_its_class_arms_with_the_specs_sequences() {
         let key = chimera_sim::weapon::view_anim::variant_key(g, c);
         assert!(kit.view_models.iter().any(|v| v.key == key), "{key}'s view model");
     }
-    for v in &kit.view_models {
+    for v in kit.view_models.iter().filter(|v| !weapons::MELEE.contains(&v.key.as_str())) {
         let gun = v.key.split_once('#').map_or(v.key.as_str(), |(g, _)| g);
         let set = v.animations.as_ref().expect("the arms' animations");
         assert!(v.attachments.iter().any(|a| a.name.eq_ignore_ascii_case("muzzle")), "{gun}: a muzzle");
@@ -101,7 +112,7 @@ fn the_posed_gun_is_in_front_of_the_eye() {
     let mut materials = MaterialLoader::guest(&mount, 0, 0);
     let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
     maps::add_guns(&mut materials, &|_| true, true, &mut kit, &mut warnings);
-    for v in &kit.view_models {
+    for v in kit.view_models.iter().filter(|v| !weapons::MELEE.contains(&v.key.as_str())) {
         let set = v.animations.clone().unwrap();
         let mut a = chimera_world::map::anim::Animator::new(set.clone());
         let q = view::sequences(&v.key).unwrap();
