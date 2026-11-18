@@ -45,8 +45,8 @@
 //! `special::object_files`), `players`
 //! (CS:S: the eight class models; HL2:DM: its 19 player models; TF2: what
 //! every class's body reads and its HUD's look, with a set per class,
-//! `players/<class>`: its body, animations, textures and first-person
-//! arms, `tf2::game::sets::player_pieces`), TF2's `weapon/<id>` for M2's guns
+//! `players/<class>`: its body, animations, textures, first-person
+//! arms and voice, `tf2::game::sets::player_pieces`), TF2's `weapon/<id>` for M2's guns
 //! (`tf2::game::sets`: the `c_` model, the class's arms with their
 //! animations, sounds, the rocket, and the script, packed decrypted:
 //! `publish tf2` and `pack tf2` read the install's `.ctx` files through

@@ -213,9 +213,10 @@ fn update(world: &mut World) {
         }
         let mut talk = world.resource_mut::<CaTalk>();
         talk.queue.frame(now);
-        let input = input.map(|(tab, text)| InputView { tab, text });
-        if talk.input != input {
-            talk.input = input;
+        // This game's input never opens here (`ChatUiState::disabled`): none
+        // shows, whatever opened it.
+        if talk.input.is_some() {
+            talk.input = None;
         }
         if talk.radio != menu {
             talk.radio = menu;
@@ -223,6 +224,7 @@ fn update(world: &mut World) {
         if talk.talking != talking {
             talk.talking = talking;
         }
+        let _ = input;
         return;
     }
     let mut talk = world.resource_mut::<CaTalk>();
@@ -285,8 +287,14 @@ fn sync_ui_state(
     cursor: Query<&CursorOptions>,
     console: Option<Res<crate::client::console::ConsoleUi>>,
     menu: Option<Res<InGameMenu>>,
+    signal: Option<Res<crate::client::chat::SignalChatActive>>,
     mut state: ResMut<ChatUiState>,
 ) {
+    // The Signal chat owns the chat: none of this game's opens or draws.
+    let disabled = signal.is_some_and(|a| a.0);
+    if state.disabled != disabled {
+        state.disabled = disabled;
+    }
     let grabbed = cursor.iter().next().is_some_and(crate::client::input::cursor_grabbed);
     let busy = console.is_some_and(|c| c.open) || menu.is_some_and(|m| m.open);
     let playing = grabbed && !busy;

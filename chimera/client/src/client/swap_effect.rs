@@ -157,7 +157,7 @@ fn detect(
                 && let Some(file) = pack.sound(SWAP_CUE)
             {
                 callouts.heard.push(SWAP_CUE.to_string());
-                callouts.to_play.push((pack.clone(), file.to_string()));
+                callouts.to_play.push((pack.clone(), file.to_string(), pack.gain(SWAP_CUE)));
             }
             continue;
         }

@@ -1156,9 +1156,32 @@ pub struct Hitboxes(pub Vec<Hitbox>);
 /// first (`HitShapes::may_meet`) and makes the shapes only when its ray
 /// can reach them: a ray far from a body leaves it unposed
 /// (docs/performance.md, "A broad phase for the hitscan").
+///
+/// Its default is none (no shapes made, no bound): a game that keeps it
+/// on its characters from the spawn (Combat Arms) sets it to that rather
+/// than taking it off, so another game's `Hitboxes` count (put on and off,
+/// it was an archetype for every combination of the character's other
+/// parts: docs/DESIGN.md, "ECS style").
 #[derive(Component, Clone, Debug, Default)]
 #[component(storage = "SparseSet")]
 pub struct LazyHitboxes(pub crate::later::Later<Hitboxes>, pub Option<crate::later::Later<HitBound>>);
+
+impl LazyHitboxes {
+    /// None: the default, as without it.
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// Whether it holds no shapes (`none`): made, empty and unbounded.
+    pub fn is_none(&self) -> bool {
+        self.1.is_none() && self.0.is_made() && self.0.get().0.is_empty()
+    }
+
+    /// `l` if it holds shapes.
+    pub fn set(l: Option<&LazyHitboxes>) -> Option<&LazyHitboxes> {
+        l.filter(|l| !l.is_none())
+    }
+}
 
 /// An axis-aligned box in a character's hitbox space (its `Hitbox`es'
 /// own: feet at the origin, turned by its look) that holds every shape of
@@ -1222,9 +1245,14 @@ impl<'w> HitShapesItem<'w, '_> {
         hit_shapes(self.eager, self.lazy)
     }
 
+    /// Its `LazyHitboxes` if they hold shapes (not `LazyHitboxes::none`).
+    pub fn lazy(&self) -> Option<&'w LazyHitboxes> {
+        LazyHitboxes::set(self.lazy)
+    }
+
     /// Whether it has hitboxes (without making them).
     pub fn is_some(&self) -> bool {
-        self.eager.is_some() || self.lazy.is_some()
+        self.eager.is_some() || self.lazy().is_some()
     }
 
     /// Whether a ray (hitbox space) may enter one of its shapes, grown by
@@ -1233,7 +1261,7 @@ impl<'w> HitShapesItem<'w, '_> {
     /// for ready `Hitboxes`, for lazy ones already made and for a game
     /// that declares no bound.
     pub fn may_meet(&self, origin: Vec3, dir: Vec3, limit: f32, grow: f32) -> bool {
-        match self.lazy {
+        match self.lazy() {
             Some(LazyHitboxes(shapes, Some(bound))) if !shapes.is_made() => bound.get().may_meet(origin, dir, limit, grow),
             _ => true,
         }
@@ -1242,7 +1270,7 @@ impl<'w> HitShapesItem<'w, '_> {
 
 /// `HitShapes::get` from the two components.
 pub fn hit_shapes<'a>(eager: Option<&'a Hitboxes>, lazy: Option<&'a LazyHitboxes>) -> Option<&'a Hitboxes> {
-    lazy.map(|l| l.0.get()).or(eager)
+    LazyHitboxes::set(lazy).map(|l| l.0.get()).or(eager)
 }
 
 /// A character's hitboxes in `world` either way (tests, tools).
@@ -2532,10 +2560,19 @@ pub struct HealthHeld;
 /// `DamageRemainder`) takes it, so `Damage::amount` stays what the hit
 /// dealt and its `DamageTaken` and `Died` carry what health lost. A game
 /// whose own hits must land as they are writes them divided by it.
-/// Without it, health takes the damage as it comes.
+/// At 1 (its default, as without it) health takes the damage as it comes.
+/// On every character from its spawn (`CorePlugin`): put on and off, it
+/// was an archetype for every combination of the character's other parts
+/// (docs/DESIGN.md, "ECS style").
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
 #[component(storage = "SparseSet")]
 pub struct DamageScale(pub f32);
+
+impl Default for DamageScale {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
 
 /// Health that takes whole points and carries the fraction of each hit
 /// (Half-Life 2's, specs/hl2dm/suit.md "Fractional damage"): the
@@ -2700,6 +2737,18 @@ pub fn keep_moved_positions(
     }
 }
 
+/// A character's collider without `ColliderMassProperties` (avian puts it
+/// on with the collider): its body is kinematic and moved by its movement,
+/// so its mass is never read, but each change of its collider (a crouch's
+/// hull, another game's movement's) rewrote it and avian then marked the
+/// body for a mass update (`RecomputeMassProperties`, a marker on for one
+/// step): an archetype for every combination of the character's other
+/// parts, for good. Without it nothing marks the body after its spawn.
+/// An observer of `Intent` (every character), registered by `CorePlugin`.
+pub fn no_collider_mass(on: On<Add<Intent>>, mut commands: Commands) {
+    commands.entity(on.event_target()).try_remove::<avian3d::prelude::ColliderMassProperties>();
+}
+
 pub struct CorePlugin;
 
 impl Plugin for CorePlugin {
@@ -2779,6 +2828,8 @@ impl Plugin for CorePlugin {
         // On every character from the spawn (`character::CharacterPartsExt::
         // on_every_character`'s way, which this layer can't name).
         app.register_required_components::<Intent, MaxSpeed>();
+        app.register_required_components::<Intent, DamageScale>();
+        app.add_observer(no_collider_mass);
         for stage in Predict::ALL {
             app.init_schedule(stage);
         }
@@ -3411,7 +3462,7 @@ impl MapBrushTree {
     /// which side of a plane it touches.
     pub fn sweep_order(&self, half: Vec3, from: Vec3, to: Vec3, slop: f32) -> Vec<u32> {
         let mut out = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = std::collections::BTreeSet::new();
         let mut stack = vec![self.root];
         while let Some(child) = stack.pop() {
             if child < 0 {

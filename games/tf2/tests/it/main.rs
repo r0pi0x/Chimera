@@ -6,8 +6,11 @@
 //! the script reader on fixtures encrypted with throwaway keys
 //! (`scripts`), the guns (`weapons`: M2b's four; `weapons_more`: the
 //! next eight; `melee`: the nine stock melee weapons and the backstab),
-//! the class sets a match offers (`player_sets`), the class a
-//! rung of several classes draws with the ladder (`rung_classes`), the kill icons from
+//! a gun's impacts taking TF2's own looks on another game's map
+//! (`impacts`), the class sets a match offers (`player_sets`), the ragdolls' lifetime
+//! (`ragdolls`: ragdolls.md's cases on a made-up skeleton), the class a
+//! rung of several classes draws with the ladder (`rung_classes`), the
+//! players' pain, death and kill lines (`voices`), the kill icons from
 //! the asset store once their files are here (`kill_icons`), and, in `heavy`, the user's install (its mount, ctf_2fort
 //! and cp_badlands converted with their spawns, the converted-map cache's
 //! key, a player walking on ctf_2fort, TF2's bodies that come late (`late_bodies`: a class picked mid-match, a body
@@ -21,14 +24,17 @@
 //! docs/OBSERVABILITY.md, section 1.
 
 mod ice;
+mod impacts;
 mod info;
 mod kill_icons;
 mod movement;
 mod player_sets;
+mod ragdolls;
 mod rung_classes;
 mod scripts;
 mod skeleton;
 mod spawns;
+mod voices;
 mod weapon_scripts;
 mod weapons;
 mod melee;

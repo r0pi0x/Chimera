@@ -95,6 +95,7 @@ pub const ENGINE_NAMES: &[&str] = &[
     "musicvolume",
     "violence_hblood",
     "cl_ragdoll_physics_enable",
+    "cl_ragdoll_forcefade",
     "cam_idealdist",
     "cam_idealyaw",
     "firstperson",

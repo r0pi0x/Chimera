@@ -257,8 +257,14 @@ pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
     source_engine::content::pcf::add_guest_particle_systems(materials, map, names, files);
 }
 
-/// The guns' sound entries (weapons.md 8.3; `sets::M2_WEAPONS`).
+/// The guns' sound entries (weapons.md 8.3; `sets::M2_WEAPONS`) and the
+/// players' voices (`voices`: pain, death and kill lines).
 pub fn weapon_sounds() -> impl Iterator<Item = String> {
+    gun_sounds().chain(super::voices::Tf2Voices::built_in().entries())
+}
+
+/// The guns' sound entries alone (kept under `SOUND_PREFIX`).
+fn gun_sounds() -> impl Iterator<Item = String> {
     super::sets::M2_WEAPONS.iter().flat_map(|w| w.sounds.iter().map(|s| s.to_string()))
 }
 
@@ -279,7 +285,7 @@ pub fn own_sound(script_name: &str) -> String {
 /// the bare names stay too unless `guest` (on another game's map they would
 /// shadow or be shadowed by that game's).
 fn own_weapon_sounds(sounds: &mut MapSounds, guest: bool) {
-    for name in weapon_sounds() {
+    for name in gun_sounds() {
         let key = name.to_lowercase();
         let entry = if guest { sounds.entries.remove(&key) } else { sounds.entries.get(&key).cloned() };
         if let Some(entry) = entry {
@@ -335,8 +341,9 @@ pub fn add_guns(
             Err(e) => warnings.push(e),
         }
         for (_, key, model) in PROJECTILES.iter().filter(|(g, ..)| *g == gun) {
-            // In its bone's frame, as a held model (its nose then along +X:
-            // `chimera:projectile`'s `x_forward`).
+            // In its bone's frame, as a held model (its nose, the model's
+            // +X, wherever that frame puts it: `MapHeldModel::nose`; flyers
+            // fly nose first by it).
             match props::load_held(materials, model, key, &skeleton) {
                 Ok(h) => into.held.push(h),
                 Err(e) => warnings.push(e),

@@ -143,7 +143,7 @@ pub const RAGDOLL: crate::map::ragdoll::RagdollRules = crate::map::ragdoll::Ragd
     death_pose: false,
     push_root: true,
     damage_force: true,
-    outlive_respawn: true,
+    lifetime: crate::map::ragdoll::RagdollLifetime::UntilNextDeath,
 };
 
 /// The dead player's view (specs/hl2dm/rules.md "The dead view"): its

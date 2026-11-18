@@ -15,8 +15,8 @@
 //! - **Touches** (5.2, `touch`): the world (what doesn't move) stops it
 //!   dead and it stays (`Flyer::stuck_until` far away); anything else
 //!   bounces it off at half speed; it never explodes on contact.
-//! - **Detonation** (5.3, 5.4, `detonate`): attack2 with the launcher out
-//!   detonates every sticky of its owner armed (`arm`, 0.8 s after launch;
+//! - **Detonation** (5.3, 5.4, `detonate`): attack2 with the launcher, or any
+//!   other TF2 weapon, out detonates every sticky of its owner armed (`arm`, 0.8 s after launch;
 //!   the detonate sound); over `max` (8) the oldest goes off; a dead owner's
 //!   vanish. Each explodes with the shared blast (`blast`): 120 x the
 //!   splash x the short-range-reduced modifier M_s (121.8 % at 0, the
@@ -29,8 +29,8 @@
 //! Known shortcuts: a ninth sticky blows the oldest at once (the game: at
 //! its next 0.2 s fuse check); bullets don't destroy stickies; no launch
 //! jitter or spin; the stickies' 2-unit box is ours (the game's 4-unit
-//! cube); attack2 detonates only with the launcher out (the game: any of
-//! the Demoman's weapons), and unarmed ones play no deny sound.
+//! cube); attack2 detonates with any TF2 weapon out (the game: any of the
+//! Demoman's; a party's players have no fixed class), and unarmed ones play no deny sound.
 
 use std::sync::Arc;
 
@@ -39,7 +39,7 @@ use serde::Deserialize;
 
 use chimera_sim::weapon::{
     CHAN_WEAPON, Inventory, Magazine, NetPart, Weapon, WeaponEvent, WeaponEventKind, WeaponState, aim_of,
-    projectile::{Flyer, FlyerHit, MODEL_X_FORWARD, spawn_flyer},
+    projectile::{Flyer, FlyerHit, spawn_flyer},
 };
 
 use super::{
@@ -288,7 +288,6 @@ pub fn launch(
         f.gravity = p.gravity * U;
         f.half = Vec3::splat(2.0 * U);
         f.pass_teammates = true;
-        f.turn = MODEL_X_FORWARD;
         let o = Vec3::from(p.offset) * U;
         let start = origin + dir * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z;
         spawn_flyer(&mut commands, f, start, SHOWN.to_string(), &clock);
@@ -319,6 +318,7 @@ pub fn touch(mut hits: MessageReader<FlyerHit>, rules: Res<StickyRules>, mut fly
 pub fn detonate(
     owners: Query<(Entity, &Intent, &Inventory, Option<&Health>)>,
     launchers: Query<&Tf2Sticky>,
+    weapons: Query<&Weapon>,
     stickies: Query<(Entity, &Flyer, &Transform)>,
     rules: Res<StickyRules>,
     clock: Res<SimClock>,
@@ -358,7 +358,12 @@ pub fn detonate(
         // Over the limit: the oldest.
         let over = of.len().saturating_sub(p.max);
         blow.extend(of.iter().take(over));
-        let out = inv.active.is_some_and(|a| launchers.contains(a));
+        // With the launcher out, or any of TF2's weapons (the game: any of
+        // the Demoman's; a ladder's rung swap takes the launcher away and
+        // the stickies laid with it still go off).
+        let out = inv
+            .active
+            .is_some_and(|a| launchers.contains(a) || weapons.get(a).is_ok_and(|w| chimera_sim::weapon::impact::weapon_game(w.id) == Some(super::super::GAME)));
         if out && intent.secondary {
             let mut any = false;
             for &i in of.iter().skip(over) {

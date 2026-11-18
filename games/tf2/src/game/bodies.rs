@@ -43,9 +43,17 @@
 //! files of its look were late is built again when they arrive
 //! (`late_bodies`).
 //!
+//! Its ragdolls (`ragdoll_rules`, data/ragdolls.toml; specs/tf2/ragdolls.md)
+//! stay past the respawn until the owner dies again, and each machine
+//! removes one on a timer its view resets (`map::ragdoll::RagdollLifetime::
+//! Faded`).
+//!
 //! Known shortcuts: body groups stay at their first choice (the Soldier's
 //! `rocket` group is never shown in his hand during a reload, 5's
-//! event); no death animations or gibs (9).
+//! event); no death animations or gibs (9); of the ragdolls' rules
+//! (ragdolls.md) no Dead Ringer feign bodies, special bodies (ice, ash,
+//! dissolve...) or late-arrival check (Edge cases), and with no death
+//! animation the timer is never reset at one's end (3).
 
 use bevy::prelude::*;
 use source_engine::content::{material::MaterialLoader, props, surfaceprops::SurfaceProps};
@@ -246,12 +254,31 @@ pub fn wear_bodies(
     }
 }
 
+/// TF2's ragdolls' lifetime (data/ragdolls.toml; specs/tf2/ragdolls.md).
+pub const RAGDOLL_DATA: &str = include_str!("../../data/ragdolls.toml");
+
+/// TF2's ragdoll rules: the shared Source ones (player_animation.md 9),
+/// kept past the respawn until the owner dies again and timed on each
+/// machine by its view (`RAGDOLL_DATA`).
+pub fn ragdoll_rules() -> crate::map::ragdoll::RagdollRules {
+    let fade: crate::map::ragdoll::RagdollFade = toml::from_str(RAGDOLL_DATA).expect("data/ragdolls.toml");
+    crate::map::ragdoll::RagdollRules {
+        lifetime: crate::map::ragdoll::RagdollLifetime::Faded(fade),
+        ..default()
+    }
+}
+
 /// TF2's bodies worn.
 pub struct Tf2BodiesPlugin;
 
 impl Plugin for Tf2BodiesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Classes>().add_systems(Update, wear_bodies);
+        // Its ragdolls' lifetime (specs/tf2/ragdolls.md).
+        let mut rules = app.world_mut().get_resource_or_init::<crate::map::ragdoll::RagdollGameRules>();
+        if !rules.0.iter().any(|(g, _)| *g == GAME) {
+            rules.0.push((GAME, ragdoll_rules()));
+        }
         // Bodies that come late: a class picked mid-match, a body built
         // again when files of its look arrive.
         super::late_bodies::add(app);

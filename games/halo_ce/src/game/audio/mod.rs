@@ -14,7 +14,7 @@
 //! - `level`: the level's background sound by the listener's cluster, its
 //!   sound environment, its sound scenery.
 //! - `attached`: the looping sounds attached to the shown projectiles (the
-//!   rocket's flight).
+//!   rocket's flight) and to the held guns (the plasma pistol's charge).
 //! - `steps`: the Spartan's footsteps, jumps and landings by the surface's
 //!   material.
 //!
@@ -50,7 +50,8 @@ use crate::map::{LoadContext, MapData, MapLoadOptions, PlaySound, SoundControl};
 pub const STEP_KINDS: usize = 6;
 
 /// The kit's part of the library from `file`: the guns' projectiles' and
-/// weapons' looping sound attachments, the Spartan's footstep sounds.
+/// weapons' looping sound attachments, the interface sounds the game
+/// plays (the teleporter's), the Spartan's footstep sounds.
 pub fn kit(c: &mut Compiler) {
     let file = c.file;
     let guns = super::fx::load::gun_tags();
@@ -66,9 +67,17 @@ pub fn kit(c: &mut Compiler) {
     for g in &guns {
         let Some(t) = file.find(class::WEAPON, g) else { continue };
         let Ok(w) = Weapon::read(file, t) else { continue };
-        let loops = c.attached_loops(&w.object.attachments);
+        let loops = c.scaled_loops(&w.object.attachments);
         if !loops.is_empty() {
             c.set.library.weapons.insert(g.to_ascii_lowercase(), loops);
+        }
+    }
+    // The interface sounds the game's own code plays (the teleporter's,
+    // `maps::teleporters::effects`).
+    for p in [super::maps::teleporters::ACTIVATE_SOUND] {
+        if let Some(t) = file.find(class::SOUND, p) {
+            let r = blam_formats::cache::TagRef { class: t.class, path_address: t.path_address, id: t.id };
+            c.sound(&r);
         }
     }
     let foot = file
@@ -153,7 +162,8 @@ impl Plugin for HaloAudioPlugin {
                 Update,
                 (
                     (library::follow, looping::listen, level::environment).chain().in_set(HaloAudioSet::Listen),
-                    (level::background, level::scenery, attached::projectiles).in_set(HaloAudioSet::Ask),
+                    (level::background, level::scenery, attached::projectiles, attached::weapons, super::maps::teleporters::effects)
+                        .in_set(HaloAudioSet::Ask),
                     looping::play.in_set(HaloAudioSet::Play),
                 ),
             );

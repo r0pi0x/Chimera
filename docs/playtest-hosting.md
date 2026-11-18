@@ -245,7 +245,7 @@ TF2's bodies come per class (2026-11-16): `players` holds what every
 class reads, the HUD's look and the kill feed's icons
 (`scripts/mod_textures.txt` and `hud/d_images`), offered with every TF2
 match; `players/<class>` (`players/heavy`, ...) a class's player model,
-animations, materials and first-person arms, offered only when the
+animations, materials, first-person arms and voice lines, offered only when the
 match's ladder (or kit, or drawn weapons) holds a gun of that class, with
 the classes it needs (`needs` in games/tf2/data/classes.toml: the Spy's
 disguise will need every class). A machine reading TF2 from the store

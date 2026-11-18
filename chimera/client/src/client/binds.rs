@@ -51,6 +51,9 @@
 //!
 //! Menus that read keys take them (`CapturedKeys`): the polled binds of
 //! `input` and `weapon_menu` don't see a captured key until it is up.
+//! An app-level screen owns its keys while it is up (`OwnedKeys`: the
+//! sandbox's B, T, K): one owner per key, and no game's bind, polled or
+//! run, sees an owned key's press.
 //!
 //! Named actions are held from the console too (`+throw`, `-throw`:
 //! `console::HeldActions::named`).
@@ -636,9 +639,11 @@ pub fn just_pressed(
 /// out a weapon, in the frame it picks or after the menu has closed with
 /// the key still down. A menu calls `capture` for the keys it reads (in
 /// `PreUpdate`, after `InputSystems`); `release_captured` forgets a key
-/// once it is up.
+/// once it is up. Mouse buttons too (`capture_button`): the click that
+/// grabs the cursor (a click into the window, or one landing with a focus
+/// gain) doesn't also fire.
 #[derive(Resource, Default, Clone, Debug, PartialEq, Eq)]
-pub struct CapturedKeys(std::collections::HashSet<KeyCode>);
+pub struct CapturedKeys(std::collections::HashSet<KeyCode>, std::collections::HashSet<MouseButton>);
 
 impl CapturedKeys {
     pub fn capture(&mut self, key: KeyCode) {
@@ -649,16 +654,146 @@ impl CapturedKeys {
         self.0.contains(&key)
     }
 
+    pub fn capture_button(&mut self, button: MouseButton) {
+        self.1.insert(button);
+    }
+
+    pub fn holds_button(&self, button: MouseButton) -> bool {
+        self.1.contains(&button)
+    }
+
     /// Forget the keys that are up.
     pub fn release_up(&mut self, keys: &ButtonInput<KeyCode>) {
         self.0.retain(|k| keys.pressed(*k));
     }
+
+    /// Forget the buttons that are up.
+    pub fn release_buttons_up(&mut self, mouse: &ButtonInput<MouseButton>) {
+        self.1.retain(|b| mouse.pressed(*b));
+    }
 }
 
-/// Forget captured keys that are let go.
-pub fn release_captured(keys: Res<ButtonInput<KeyCode>>, mut captured: ResMut<CapturedKeys>) {
+/// Forget captured keys and buttons that are let go.
+pub fn release_captured(keys: Res<ButtonInput<KeyCode>>, mouse: Option<Res<ButtonInput<MouseButton>>>, mut captured: ResMut<CapturedKeys>) {
     if !captured.0.is_empty() {
         captured.release_up(&keys);
+    }
+    if !captured.1.is_empty()
+        && let Some(m) = mouse
+    {
+        captured.release_buttons_up(&m);
+    }
+}
+
+/// Keys an app-level screen owns while it is up (the sandbox's B, T, K
+/// and its pinned slots' digits): one owner per key, and no game's bind
+/// acts on an owned key. `take_owned_keys` (in `PreUpdate`, after
+/// `InputSystems`) moves an owned key's press and release out of
+/// `ButtonInput<KeyCode>` into here, so `run_binds`, every polled bind
+/// (`just_pressed`, CS:S's `buymenu`, a game's radio) and any system
+/// reading the raw key miss it; while held it is also captured
+/// (`CapturedKeys`), so the held polled binds (`pressed_free`: `+attack`,
+/// movement) miss it too. The owner reads it with `just_pressed` here.
+/// A key held when its owner lets it go stays held for the others,
+/// without a new press.
+#[derive(Resource, Default, Clone, Debug, PartialEq, Eq)]
+pub struct OwnedKeys {
+    owners: BTreeMap<KeyCode, &'static str>,
+    just_pressed: std::collections::BTreeSet<KeyCode>,
+    just_released: std::collections::BTreeSet<KeyCode>,
+}
+
+impl OwnedKeys {
+    /// The keys `owner` owns.
+    pub fn of(&self, owner: &str) -> Vec<KeyCode> {
+        self.owners.iter().filter(|(_, o)| **o == owner).map(|(k, _)| *k).collect()
+    }
+
+    /// Who owns `key`.
+    pub fn owner(&self, key: KeyCode) -> Option<&'static str> {
+        self.owners.get(&key).copied()
+    }
+
+    /// `owner` owns exactly `keys` from now (none: it lets all go). A key
+    /// another owner holds stays theirs (one owner per key): a warning,
+    /// and false.
+    pub fn set(&mut self, owner: &'static str, keys: &[KeyCode]) -> bool {
+        self.owners.retain(|k, o| *o != owner || keys.contains(k));
+        let mut all = true;
+        for k in keys {
+            match self.owners.get(k) {
+                Some(o) if *o != owner => {
+                    warn!("{owner} can't own {k:?}: {o} owns it");
+                    all = false;
+                }
+                _ => {
+                    self.owners.insert(*k, owner);
+                }
+            }
+        }
+        all
+    }
+
+    /// Pressed this frame: an owned key's press (taken here), else the
+    /// shared input's (an owner reads its keys through this whether or
+    /// not it owns them yet).
+    pub fn just_pressed(&self, keys: &ButtonInput<KeyCode>, key: KeyCode) -> bool {
+        self.just_pressed.contains(&key) || keys.just_pressed(key)
+    }
+
+    /// Let go this frame (as `just_pressed`).
+    pub fn just_released(&self, keys: &ButtonInput<KeyCode>, key: KeyCode) -> bool {
+        self.just_released.contains(&key) || keys.just_released(key)
+    }
+}
+
+/// Take the owned keys' presses and releases out of the shared input
+/// (`OwnedKeys`).
+pub fn take_owned_keys(mut owned: ResMut<OwnedKeys>, mut keys: ResMut<ButtonInput<KeyCode>>, captured: Option<ResMut<CapturedKeys>>) {
+    if owned.owners.is_empty() && owned.just_pressed.is_empty() && owned.just_released.is_empty() {
+        return;
+    }
+    let owned = owned.as_mut();
+    owned.just_pressed.clear();
+    owned.just_released.clear();
+    let mut held = Vec::new();
+    for k in owned.owners.keys() {
+        if keys.just_pressed(*k) && keys.bypass_change_detection().clear_just_pressed(*k) {
+            owned.just_pressed.insert(*k);
+        }
+        if keys.just_released(*k) && keys.bypass_change_detection().clear_just_released(*k) {
+            owned.just_released.insert(*k);
+        }
+        if keys.pressed(*k) {
+            held.push(*k);
+        }
+    }
+    if let Some(mut c) = captured {
+        for k in held {
+            if !c.holds(k) {
+                c.capture(k);
+            }
+        }
+    }
+}
+
+/// `OwnedKeys` and `take_owned_keys` (added once, by whichever plugin
+/// needs it first: the local input, the sandbox).
+pub struct OwnedKeysPlugin;
+
+impl Plugin for OwnedKeysPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<OwnedKeys>()
+            .init_resource::<CapturedKeys>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(PreUpdate, take_owned_keys.after(bevy::input::InputSystems));
+    }
+}
+
+/// Add `OwnedKeysPlugin` unless it is in.
+pub fn add_owned_keys(app: &mut App) {
+    if !app.is_plugin_added::<OwnedKeysPlugin>() {
+        app.add_plugins(OwnedKeysPlugin);
     }
 }
 
@@ -671,7 +806,8 @@ pub fn pressed_free(
     command: &str,
 ) -> bool {
     let free = |k: &KeyCode| !captured.is_some_and(|c| c.holds(*k));
-    bound_down(binds, keys.get_pressed().copied().filter(free), mouse.get_pressed().copied(), command)
+    let free_b = |b: &MouseButton| !captured.is_some_and(|c| c.holds_button(*b));
+    bound_down(binds, keys.get_pressed().copied().filter(free), mouse.get_pressed().copied().filter(free_b), command)
 }
 
 /// `just_pressed`, not counting the keys a menu has taken.
@@ -683,7 +819,8 @@ pub fn just_pressed_free(
     command: &str,
 ) -> bool {
     let free = |k: &KeyCode| !captured.is_some_and(|c| c.holds(*k));
-    bound_down(binds, keys.get_just_pressed().copied().filter(free), mouse.get_just_pressed().copied(), command)
+    let free_b = |b: &MouseButton| !captured.is_some_and(|c| c.holds_button(*b));
+    bound_down(binds, keys.get_just_pressed().copied().filter(free), mouse.get_just_pressed().copied().filter(free_b), command)
 }
 
 /// Wheel notches this frame on wheel directions bound to `command`.

@@ -244,6 +244,20 @@ impl MapSounds {
     pub fn surface(&self, name: &str) -> Option<&MapSurface> {
         self.surfaces.get(&name.to_lowercase())
     }
+    /// `game`'s surface `name` for its impacts (`impact::own_name`): its
+    /// own where a guest's name was taken, else the map's.
+    pub fn game_surface(&self, game: &str, name: &str) -> Option<&MapSurface> {
+        self.surfaces
+            .get(&super::impact::own_name(game, name))
+            .or_else(|| self.surface(name))
+    }
+    /// The name `game`'s impact sound `entry` plays as: its own
+    /// (`impact::own_name`) where a guest's entry of that name was
+    /// taken, else `entry`.
+    pub fn game_entry(&self, game: &str, entry: &str) -> String {
+        let own = super::impact::own_name(game, entry);
+        if self.entries.contains_key(&own) { own } else { entry.to_string() }
+    }
     /// The surface whose steps play for a step on `surface` with the feet
     /// at `feet` (engine space): the first remap volume holding the feet
     /// that remaps `surface`, else `surface` itself.

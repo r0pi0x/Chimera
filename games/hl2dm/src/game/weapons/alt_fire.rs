@@ -276,10 +276,9 @@ pub fn before_frame(
             if out.makes() {
                 let mut f = Flyer::new(super::SMG1, Some(owner), fwd * p.speed * U, &out.clock);
                 // 4.1: it tumbles, U(-400, 400) deg/s on each axis, from
-                // its nose (the model's +X) along the launch.
+                // its nose (its model's, `MapHeldModel::nose`) along the launch.
                 let mut rng = shared_random(intent.command, "hl2dm:smg1_grenade", 0);
                 let mut spin = || (rng.next() * 2.0 - 1.0) * SMG1_GRENADE_SPIN.to_radians();
-                f.turn = chimera_sim::weapon::projectile::MODEL_X_FORWARD;
                 f.spin = Vec3::new(spin(), spin(), spin());
                 f.gravity = p.gravity * U;
                 f.half = Vec3::splat(p.half * U);

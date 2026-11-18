@@ -12,12 +12,15 @@
 //! `games/*` with a `src/` folder except those on
 //! `NOT_SIMULATION`, so a new crate (`games/hl2dm`) is checked from its
 //! first commit and starts at 0.
-//! Skipped: code under `#[cfg(test)]` (from a column-0 attribute to the
-//! end of the file), `tests.rs`, `tests/` folders and front ends (`ui`).
+//! Skipped: `#[cfg(test)]` items (a column-0 attribute and the item it
+//! marks; code below an inline test module is scanned, `scan.rs`), `tests.rs`, `tests/` folders and front ends (`ui`).
 
 use std::{fs, path::Path};
 
-use super::architecture::{crate_groups, root, rust_files};
+use super::{
+    architecture::{crate_groups, root, rust_files},
+    scan::strip,
+};
 
 /// The folder of crates that are never simulation: the apps compose it.
 const APPS: &str = "apps";
@@ -85,7 +88,8 @@ const BASELINE: &[(&str, usize, usize)] = &[
     // `CHIMERA_SLIDE_DEBUG`, `CHIMERA_GROUND_DEBUG`, read once).
     ("source/engine/src", 109, 3),
     ("source/gameui/src", 1, 0),
-    ("games/combat_arms/src", 103, 14),
+    // 15: one more found when the scanner stopped cutting files at an inline test module.
+    ("games/combat_arms/src", 103, 15),
     // Plain-data loaders (no Bevy, so no fixed-hasher maps at hand): what
     // they read becomes the map both sides simulate.
     ("source/formats/src", 8, 0),
@@ -101,17 +105,9 @@ fn is_ident(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-/// The file's code without comments and without its test module.
+/// The file's code without comments, strings and its test items.
 fn code_of(file: &Path) -> String {
-    let mut out = String::new();
-    for line in fs::read_to_string(file).unwrap().lines() {
-        if line.starts_with("#[cfg(test)]") {
-            break;
-        }
-        out.push_str(line.split("//").next().unwrap_or(""));
-        out.push('\n');
-    }
-    out
+    strip(&fs::read_to_string(file).unwrap())
 }
 
 /// Occurrences of `word` as a whole word (`!` ends a macro name).

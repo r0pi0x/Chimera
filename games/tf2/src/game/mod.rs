@@ -13,7 +13,8 @@
 //! - `bodies` (M3): the classes' player models as bodies (the gun's
 //!   class's, the team's skin), `player_anim` their animation on Source's
 //!   shared half (activities by state and the gun's kind, the move grid,
-//!   aim, gestures);
+//!   aim, gestures); `faces` their idle expressions (the class's
+//!   looping idle face, data/faces.toml: the Engineer's mouth closed);
 //! - `hud` (M3): TF2's HUD look from the install (the scheme's colours
 //!   and fonts, the layout, the kill icons, the health crosses), in the
 //!   map's kit;
@@ -56,6 +57,7 @@
 
 pub mod bodies;
 pub mod classes;
+pub mod faces;
 pub mod hud;
 pub mod ice;
 pub mod late_bodies;
@@ -67,6 +69,7 @@ pub mod player_anim;
 pub mod scripts;
 pub mod sets;
 pub mod view;
+pub mod voices;
 pub mod weapons;
 
 pub use maps::MAP_LOADER;
@@ -135,6 +138,7 @@ impl PluginGroup for Tf2Plugins {
             .add(Tf2ViewPlugin)
             .add(bodies::Tf2BodiesPlugin)
             .add(player_anim::Tf2AnimPlugin)
+            .add(voices::Tf2VoicesPlugin)
     }
 }
 
@@ -209,5 +213,8 @@ pub fn party_sim(app: &mut bevy::app::App) {
     view::add_rules(app);
     if !app.is_plugin_added::<bodies::Tf2BodiesPlugin>() {
         app.add_plugins((bodies::Tf2BodiesPlugin, player_anim::Tf2AnimPlugin));
+    }
+    if !app.is_plugin_added::<voices::Tf2VoicesPlugin>() {
+        app.add_plugins(voices::Tf2VoicesPlugin);
     }
 }

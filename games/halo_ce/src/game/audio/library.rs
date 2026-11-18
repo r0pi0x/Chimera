@@ -151,8 +151,11 @@ pub struct AudioLibrary {
     pub loops: BTreeMap<String, HaloLoop>,
     /// A projectile's looping sound attachments, by projectile tag path.
     pub projectiles: BTreeMap<String, Vec<String>>,
-    /// A weapon's looping sound attachments, by weapon tag path.
-    pub weapons: BTreeMap<String, Vec<String>>,
+    /// A weapon's looping sound attachments, by weapon tag path (lower
+    /// case): the looping sound and its primary scale's function
+    /// reference (0 none: full scale; 1 to 4 the weapon's outgoing
+    /// function A to D: the plasma pistol's charge hum by its charge).
+    pub weapons: BTreeMap<String, Vec<WeaponLoop>>,
     /// The Spartan's footstep sounds (its biped's material effects): by
     /// kind (0 walk ... 5 jump land), by material type code; empty: none.
     pub footsteps: Vec<Vec<String>>,
@@ -172,6 +175,15 @@ impl AudioLibrary {
     pub fn decode(s: &str) -> Option<AudioLibrary> {
         toml::from_str(s).ok()
     }
+}
+
+/// A looping sound attached to a weapon (`AudioLibrary::weapons`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WeaponLoop {
+    /// The looping sound's tag path (lower case).
+    pub sound: String,
+    /// The attachment's primary scale (objects.md "Attachments").
+    pub scale: i16,
 }
 
 /// The library with what it brings to a map (clips and entries, indices
@@ -372,10 +384,15 @@ impl<'a> Compiler<'a> {
 
     /// An object's looping sound attachments (compiled); their paths.
     pub fn attached_loops(&mut self, attachments: &[blam_formats::object::Attachment]) -> Vec<String> {
+        self.scaled_loops(attachments).into_iter().map(|l| l.sound).collect()
+    }
+
+    /// `attached_loops` with each attachment's primary scale.
+    pub fn scaled_loops(&mut self, attachments: &[blam_formats::object::Attachment]) -> Vec<WeaponLoop> {
         attachments
             .iter()
             .filter(|a| a.attached.class == class::SOUND_LOOPING)
-            .filter_map(|a| self.looping(&a.attached))
+            .filter_map(|a| Some(WeaponLoop { sound: self.looping(&a.attached)?, scale: a.primary_scale }))
             .collect()
     }
 }

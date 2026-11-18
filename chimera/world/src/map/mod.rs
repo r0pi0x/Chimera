@@ -129,7 +129,7 @@ mod registration;
 pub use registration::{Effects, LayerSystems, MapLayers, MapSimPlugin, Undrawn, build};
 mod spawn;
 pub use spawn::{Draws, DrawnResource, MapDrawer, MapSpawn, PropSpawn};
-pub use spawn::{merged_world, spawn_map};
+pub use spawn::{TERRAIN_THICKNESS, merged_world, spawn_map};
 pub use view_model::{
     DynamicLight, EffectSettings, GameFov, GameViewModelFovs, LateViewModelTextures, MapAttachment, MapViewModel, ViewAnimator, ViewModelAnchor,
     ViewModelCamera, ViewModelEvent, ViewModelEventKind, ViewModelOffset, ViewModelScreen, ViewModelSettings,

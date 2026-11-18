@@ -251,6 +251,13 @@ pub fn held(settings: &AssetSettings, game: &str, sets: &[&str]) -> bool {
     kept_manifest(settings, game).is_some_and(|(store, manifest)| sets.iter().all(|s| whole(&store, &manifest, s)))
 }
 
+/// Whether the store alone holds every record its kept manifest of
+/// `game` lists (as `held`, no network): a whole publish copied or
+/// fetched in full, readable with no service (`mount::served::usable`).
+pub fn all_held(settings: &AssetSettings, game: &str) -> bool {
+    kept_manifest(settings, game).is_some_and(|(store, manifest)| !manifest.files.is_empty() && manifest.files.values().all(|r| store.has(&r.id)))
+}
+
 /// Whether the store alone holds map `name` of `game` whole, as `held`:
 /// its set (`map/<name>`, else an older manifest's `<name>`), and the
 /// game's `base` set when the manifest names one.

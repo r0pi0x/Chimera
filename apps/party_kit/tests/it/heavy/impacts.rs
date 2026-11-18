@@ -138,7 +138,7 @@ fn a_cs_source_gun_on_warehouse_leaves_cs_sources_impact() {
     let seen = fire_at(&mut sim, p, wall);
     let decal = seen.decals.iter().find(|d| d.point.distance(wall) < 0.5);
     assert!(
-        matches!(decal.map(|d| &d.group), Some(DecalGroup::Material(_) | DecalGroup::Named(_))),
+        matches!(decal.map(|d| &d.group), Some(DecalGroup::Material(_) | DecalGroup::GameMaterial(..) | DecalGroup::Named(_))),
         "CS:S's bullet hole on the wall: {:?}",
         seen.decals
     );

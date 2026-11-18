@@ -414,14 +414,14 @@ impl CaGearRates {
 /// tick, before the attachments apply them.
 pub fn weapon_rates(
     data: Option<Res<CaGearData>>,
-    owners: Query<(Option<&Selection>, Has<CaRungLook>, Option<&CaGearEffects>)>,
+    owners: Query<(Option<&Selection>, Option<&CaRungLook>, Option<&CaGearEffects>)>,
     mut weapons: Query<(&Weapon, &mut CaGearRates)>,
 ) {
     let Some(data) = data else { return };
     for (w, mut rates) in &mut weapons {
         let owner = w.owner.filter(|o| *o != Entity::PLACEHOLDER).and_then(|o| owners.get(o).ok());
         let want = owner.map_or_else(CaGearRates::default, |(look, rung, effects)| {
-            CaGearRates::of(&data.0, look, rung, effects, w.id)
+            CaGearRates::of(&data.0, look, CaRungLook::worn(rung), effects, w.id)
         });
         if *rates != want {
             *rates = want;
@@ -923,7 +923,7 @@ fn derive(
             Option<&CaGearEffects>,
             Has<super::movement::CaInfected>,
             Has<CaCharacter>,
-            Has<CaRungLook>,
+            Option<&CaRungLook>,
         ),
         (With<Intent>, With<MovementState>),
     >,
@@ -931,6 +931,7 @@ fn derive(
 ) {
     let quarantine = mode_key(&view) == QUARANTINE;
     for (e, look, loadout, key, effects, infected, has_character, rung) in &characters {
+        let rung = CaRungLook::worn(rung);
         let empty = CaLoadout::default();
         let loadout = loadout.unwrap_or(&empty);
         let want = CaGearEffects {
@@ -1084,7 +1085,7 @@ pub fn spawn_gear(world: &mut World, e: Entity) {
         world.entity_mut(e).insert(default_armour());
         return;
     };
-    let (vest, figure) = gear_view(&data, movement, &look, world.get::<CaRungLook>(e).is_some());
+    let (vest, figure) = gear_view(&data, movement, &look, CaRungLook::worn(world.get::<CaRungLook>(e)));
     let resolved = resolve(&data, figure, quirks, &vest, &loadout, &effects, infected);
     let mut ent = world.entity_mut(e);
     ent.insert(spawn_armour(&resolved));
@@ -1107,6 +1108,6 @@ pub fn max_armour(world: &World, e: Entity) -> f32 {
     let (Some(data), Some(movement)) = (world.get_resource::<CaGearData>(), world.get_resource::<MovementData>()) else {
         return 100.0;
     };
-    let (vest, figure) = gear_view(&data.0, movement, look, world.get::<CaRungLook>(e).is_some());
+    let (vest, figure) = gear_view(&data.0, movement, look, CaRungLook::worn(world.get::<CaRungLook>(e)));
     resolve(&data.0, figure, quirks, &vest, &loadout, &effects, infected).max_armor
 }

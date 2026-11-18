@@ -7,7 +7,11 @@
 //! Across games (`weapon::impact`): bullet impacts and decals are drawn
 //! for the shots Chimera's route gives CS:S (`BulletImpactsPlugin`, which
 //! an app with CS:S's guns but not its game adds), with another game's
-//! map's surface names as CS:S's by class (`as_cs`, `SURFACES`).
+//! map's surface names as CS:S's by class (`as_cs`, `SURFACES`). The
+//! surface, its impact entry and its decal group are the drawing game's
+//! own where the map holds them under its name (`game_surface`,
+//! `MapSounds::game_entry`, `DecalGroup::GameMaterial`; `map::impact`):
+//! a TF2 gun on de_dust2 sounds and marks as TF2's, not CS:S's.
 
 use std::collections::HashMap;
 
@@ -164,6 +168,14 @@ pub fn surface<'a>(sounds: &'a MapSounds, name: &str) -> Option<&'a MapSurface> 
     sounds.surface(name).or_else(|| sounds.surface("default"))
 }
 
+/// `surface` for `game`'s impacts: its own surface where a guest's name
+/// was taken (`MapSounds::game_surface`, `map::impact::own_name`).
+pub fn game_surface<'a>(sounds: &'a MapSounds, game: &str, name: &str) -> Option<&'a MapSurface> {
+    sounds
+        .game_surface(game, name)
+        .or_else(|| sounds.game_surface(game, "default"))
+}
+
 /// Entry volume as the script sets it (middle of its range).
 fn script_volume(sounds: &MapSounds, entry: &str) -> f32 {
     sounds
@@ -236,7 +248,7 @@ fn bullet_impacts(
         // or this flesh impact where none plays (`pain::hurt_sounds`;
         // measured, sounds.md "Hurt and death sounds"). A network client
         // can't tell, not knowing others' armour.
-        if hit.is_some_and(|e| players.contains(e)) {
+        if !style.player_hits && hit.is_some_and(|e| players.contains(e)) {
             continue;
         }
         // Hostages' hitboxes are `flesh` (impact_effects.md 3), not the
@@ -250,7 +262,11 @@ fn bullet_impacts(
                 style.game,
             ),
         };
-        let Some(entry) = surface(&bank.0, &name).and_then(|s| s.bullet_impact.clone()) else {
+        // The drawing game's own surface and entry, on any map.
+        let Some(entry) = game_surface(&bank.0, style.game, &name)
+            .and_then(|s| s.bullet_impact.as_deref())
+            .map(|entry| bank.0.game_entry(style.game, entry))
+        else {
             continue;
         };
         if let Some(radius) = style.group_radius
@@ -351,12 +367,12 @@ fn impact_decals(
                         );
                         let Some(material) = bank
                             .as_ref()
-                            .and_then(|b| surface(&b.0, &name))
+                            .and_then(|b| game_surface(&b.0, style.game, &name))
                             .map(|s| s.game_material)
                         else {
                             continue;
                         };
-                        DecalGroup::Material(material)
+                        DecalGroup::GameMaterial(style.game.into(), material)
                     }
                 };
                 decals.write(PlaceDecal {
@@ -387,11 +403,14 @@ fn impact_decals(
                             route.map_game(),
                             style.game,
                         );
-                        let Some(material) = bank.as_ref().and_then(|b| surface(&b.0, &name)).map(|s| s.game_material)
+                        let Some(material) = bank
+                            .as_ref()
+                            .and_then(|b| game_surface(&b.0, style.game, &name))
+                            .map(|s| s.game_material)
                         else {
                             continue;
                         };
-                        DecalGroup::Material(material)
+                        DecalGroup::GameMaterial(style.game.into(), material)
                     }
                 };
                 decals.write(PlaceDecal {

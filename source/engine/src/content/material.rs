@@ -2586,6 +2586,7 @@ mod tests {
                         attachments: Vec::new(),
                         merged: Vec::new(),
                         own: None,
+                        nose: None,
                     });
                 };
                 let dressing = kept::Dressing { game: "late_test", converter: "test", mount: &mount_of, convert: &convert, variant: "", memos: None };

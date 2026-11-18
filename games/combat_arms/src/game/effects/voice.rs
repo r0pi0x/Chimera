@@ -135,15 +135,22 @@ pub fn voices(
     >,
     tables: Res<CaFxTables>,
     lengths: Res<CaSoundLengths>,
+    weapons: Option<Res<crate::weapon::DamageWeapons>>,
     mut sounds: MessageWriter<CaSound>,
     mut rolls: Local<Rolls>,
     mut commands: Commands,
 ) {
     let mine = me.single().ok().map(|m| m.0);
-    let kills: Vec<Hitgroup> = died
+    let identity_now = me.single().ok().and_then(|m| m.5).map(|i| i.0.as_str());
+    // Your kills, with the game each belongs to (the killing weapon's, not
+    // what you hold by now: a rung's swap may have changed your identity).
+    let kills: Vec<(Hitgroup, bool)> = died
         .read()
         .filter(|d| d.attacker.is_some() && d.attacker == mine)
-        .map(|d| d.damage.hitgroup)
+        .map(|d| {
+            let game = crate::weapon::killing_game(&d.damage, weapons.as_deref(), identity_now);
+            (d.damage.hitgroup, game.is_none_or(|g| g.eq_ignore_ascii_case(crate::game::GAME)))
+        })
         .collect();
     let (dt, now) = (time.delta_secs(), time.elapsed_secs_f64());
     let Ok((e, intent, state, health, v, identity)) = me.single_mut() else { return };
@@ -156,7 +163,9 @@ pub fn voices(
     let ours = GameIdentity::allows(identity, crate::game::GAME);
     let alive = ours && health.is_none_or(|h| h.current > 0.0);
     let s = &tables.sounds;
-    for zone in kills.into_iter().filter(|_| ours) {
+    // Only a kill of this game's own (a Combat Arms gun) has its voice: a
+    // kill with another game's gun is that game's, and is silent here.
+    for zone in kills.into_iter().filter(|(_, own)| *own).map(|(zone, _)| zone) {
         if let Some(f) = rules::draw_any(&s.kill, rolls.next())
             && v.kill(zone, now, length_of(&lengths, f))
         {

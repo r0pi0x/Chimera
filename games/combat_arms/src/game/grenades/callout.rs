@@ -40,7 +40,7 @@ use super::super::{
 use crate::{core::Team, weapon::random::shared_random};
 
 /// The skeleton of the female bodies (`weapons::FEMALE`).
-const FEMALE_SKELETON: usize = 1;
+pub(crate) const FEMALE_SKELETON: usize = 1;
 
 /// Server to the thrower's team: a grenade was thrown.
 #[derive(Message, Serialize, Deserialize, Clone, Debug, PartialEq, MapEntities)]

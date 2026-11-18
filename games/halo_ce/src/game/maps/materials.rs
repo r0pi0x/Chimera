@@ -55,7 +55,11 @@
 //!   and 7 (alpha-multiply add) blend, 3 (add) adds (`MapAlpha::Blend`/
 //!   `Add`); alpha-tested masks at 0.5; two-sided by flag bit 2; unlit. A
 //!   generic shader's tint is the upper constant colour 0 of the first
-//!   stage that multiplies it with map 0.
+//!   stage that multiplies it with map 0, else the colour the whole stage
+//!   combiner gives on average over map 0's brightness (`generic::tint`:
+//!   the teleporter shield's green, drawn plain white before), over map 0
+//!   times its alpha for an added shader (`Derive::Premultiplied`: the
+//!   engine adds the colour alone, the shield's pattern is in its alpha).
 //! - Model (`soso`, "Minimum faithful approximation (model)"): the base
 //!   map at the shader's map scales, the detail map as detail, alpha-tested
 //!   at 0.5 unless "not alpha-tested" (blended for an alpha-blended decal),
@@ -128,8 +132,8 @@
 //!   not drawn (its base alpha holds the cut-out).
 //! - Texture animations other than slides (cosine, noise, spark, wander:
 //!   5 chicago tags) are frozen at time 0; a transparent shader's maps
-//!   after map 0, its stages and fade are not combined (generic: "need the
-//!   full combiner").
+//!   after map 0, its stages and fade are not combined per texel (generic:
+//!   only their mean colour, `generic`).
 //! - Blend functions multiply, double multiply, subtract, component min
 //!   and max (none on the multiplayer maps) are drawn as alpha blend.
 //! - The cut-out bake samples the bump map nearest, exact when the bump
@@ -218,6 +222,10 @@ pub enum Derive {
     /// self-illumination map `map` (at the base coordinates: its scale is
     /// 1 on every disc tag) and its channels' weights (f32 bits).
     SelfIllum { map: u32, weights: [u32; 3] },
+    /// The colour times its alpha (`premultiply`): an added generic
+    /// shader's map 0 whose pattern is in its alpha (the engine adds the
+    /// colour alone, the teleporter shield's energy map is white).
+    Premultiplied,
 }
 
 /// A reflection cube map the meshes want: Halo's cube bitmap turned into
@@ -432,8 +440,19 @@ pub fn look(map: &MapFile, shader: &TagRef, tables: &PeriodicTables) -> Look {
                     [linear(c.r), linear(c.g), linear(c.b)]
                 })
             });
+            // Else the whole combiner's mean colour (`generic::tint`), over
+            // map 0 times its alpha when added (the engine adds the colour
+            // alone).
+            let combined = tint.is_none().then(|| super::generic::tint(map, s, tables)).flatten();
+            let added = s.common.framebuffer_blend_function == blam_formats::shader::BlendFunction::Add;
+            let premultiplied = combined.is_some() && added;
+            let tint = tint.or(combined);
+            let mut base = colour(map0.and_then(|m| tag_id(&m.map)));
+            if let Some(b) = base.as_mut().filter(|_| premultiplied) {
+                b.derive = Derive::Premultiplied;
+            }
             Look {
-                base: colour(map0.and_then(|m| tag_id(&m.map))),
+                base,
                 alpha,
                 double_sided: s.common.flags & TransparentCommon::TWO_SIDED != 0,
                 unlit: true,
@@ -1092,6 +1111,7 @@ fn texture_name(map: &MapFile, r: &TextureRequest) -> String {
         Derive::Channel(c) => return format!("{path} (channel {c})"),
         Derive::SelfIllum { .. } if r.cutout.is_none() => return format!("{path} (self-illumination in alpha)"),
         Derive::SelfIllum { .. } => {}
+        Derive::Premultiplied => return format!("{path} (times its alpha)"),
     }
     match (r.srgb, r.cutout.is_some()) {
         (true, false) => path,
@@ -1170,6 +1190,12 @@ pub fn texture(map: &MapFile, r: &TextureRequest, decode: bool) -> Result<MapTex
                 .map_err(|e| format!("{}: self-illumination map: {e}", texture.name))?;
             let weights = weights.map(f32::from_bits);
             bake_self_illumination(&mut rgba8, width, height, &si.rgba, si.width, si.height, weights);
+            texture.rgba8 = rgba8;
+            texture.mips = texture.box_mips();
+            return Ok(texture);
+        }
+        Derive::Premultiplied => {
+            premultiply(&mut rgba8);
             texture.rgba8 = rgba8;
             texture.mips = texture.box_mips();
             return Ok(texture);
@@ -1328,6 +1354,16 @@ pub fn bake_cutout(rgba: &mut [u8], width: u32, height: u32, bump: &[u8], bw: u3
             let by = ((v.rem_euclid(1.0) * bh as f32) as u32).min(bh - 1);
             let a = bump[((by * bw + bx) * 4 + 3) as usize];
             rgba[((y * width + x) * 4 + 3) as usize] = if a > 127 { 255 } else { 0 };
+        }
+    }
+}
+
+/// Every RGBA8 texel's colour times its alpha (`Derive::Premultiplied`).
+pub fn premultiply(rgba: &mut [u8]) {
+    for p in rgba.chunks_exact_mut(4) {
+        let a = u16::from(p[3]);
+        for c in &mut p[..3] {
+            *c = ((u16::from(*c) * a + 127) / 255) as u8;
         }
     }
 }

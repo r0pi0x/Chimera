@@ -739,3 +739,50 @@ fn errata4_contrail_point_lengths() {
     let half_last = point_lengths(&[st(0.1, 0.2), st(0.5, 0.0)], dt, || 0.0);
     assert!((half_last[1].0 - 0.5).abs() <= dt + 1e-6 && half_last[1].1 == 0.0, "{:?}", half_last);
 }
+
+/// effects.md "Size, alpha and drawing" and "Each update" (2026-11-18):
+/// a particle on a bitmap that is not a sprite group (the charged bolt's
+/// impact flare, R 2.5) is a 2R square, 5 WU, not 2R x its 64 pixels; an
+/// initial sequence with nothing to follow dies when its sprites run out
+/// (a one-sprite flash animated once per frame shows for one update, six
+/// sprites with a 0.075 s lifespan die at the lifespan), a looping one
+/// lives its lifespan; a fade out longer than the lifespan starts below
+/// full (0.2 / 0.27); the radius animation runs on the lifespan.
+#[test]
+fn a_flare_is_a_2r_square_and_a_flash_lives_its_sprites() {
+    use blam_formats::effect::Particle as Tag;
+    use halo_ce::game::fx::{place::Frame, play::particle};
+    let m = halo_ce::game::METERS_PER_UNIT;
+    let frame = Frame::facing(Vec3::ZERO, Vec3::NEG_Y);
+    let make = |def: &halo_ce::game::fx::load::FxParticle, r: f32| {
+        let mut e = super::fx::entry(0, 1, 0);
+        e.radius = (r, r);
+        particle(def, &e, &frame, &mut chimera_world::map::ParticleRng::new(1)).unwrap()
+    };
+    // The flare: 2R across (its loader's sprite scale is 1 for a 2D bitmap,
+    // heavy::fx checks it on the disc).
+    let mut flare = super::fx::particle();
+    (flare.radius_animation, flare.fade_in, flare.fade_out) = ((1.0, 1.0), 0.0, 0.27);
+    (flare.lifespan, flare.sprites, flare.first_sequence) = ((0.2, 0.2), vec![1], 3);
+    let p = make(&flare, 2.5);
+    assert!((2.0 * p.current_size() / m - 5.0).abs() < 1e-4, "{} WU", 2.0 * p.current_size() / m);
+    assert_eq!(p.sequence, 0, "sequence 3 of a one-sequence bitmap is clamped to it");
+    assert!((p.fade.at(0.0, p.life) - 0.2 / 0.27).abs() < 1e-3, "{}", p.fade.at(0.0, p.life));
+    assert!(p.fade.at(0.2, p.life) < 1e-4);
+    // A one-sprite flash, once per frame, lifespan 0.5: one update.
+    let mut flash = super::fx::particle();
+    (flash.flags, flash.sprites, flash.radius_animation) = (Tag::ANIMATE_ONCE_PER_FRAME, vec![1], (1.0, 2.0));
+    let p = make(&flash, 1.0);
+    assert!((p.life - 1.0 / 30.0).abs() < 1e-6, "{}", p.life);
+    // Its radius animation and fades on the 0.5 s lifespan: grown by
+    // (1/30) / 0.5 of the way, its fade out (0.2 s) not begun.
+    let end = p.size.at(1.0) / p.size.at(0.0);
+    assert!((end - (1.0 + 1.0 / 15.0)).abs() < 1e-4, "{end}");
+    assert!((p.fade.at(p.life, p.life) - 1.0 / 3.0).abs() < 1e-3, "a third into its 0.1 s fade in: {}", p.fade.at(p.life, p.life));
+    // Six sprites, lifespan 0.075 (the AR's flash): the lifespan ends it.
+    (flash.sprites, flash.lifespan) = (vec![6], (0.075, 0.075));
+    assert!((make(&flash, 1.0).life - 0.075).abs() < 1e-6);
+    // A looping sequence after it: the lifespan.
+    (flash.sprites, flash.lifespan, flash.looping) = (vec![1, 1], (0.5, 0.5), 1);
+    assert!((make(&flash, 1.0).life - 0.5).abs() < 1e-6);
+}

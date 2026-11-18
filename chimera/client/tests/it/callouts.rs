@@ -130,3 +130,41 @@ fn a_callouts_text_is_a_small_share_of_the_screen() {
         }
     }
 }
+
+/// A kill of the local player's whose character said no kill line
+/// (`kill_voice::KillVoiceOutcome`, unvoiced) sounds the pack's rung-up
+/// cue once, at its own gain (`[volumes]`); a voiced kill, another
+/// player's kill, and one whose rung up sounds its cue, don't.
+#[test]
+fn an_unvoiced_kill_sounds_the_rung_up_cue() {
+    use chimera_client::client::callouts::{CHIME_WAIT, KILL_CHIME};
+    use chimera_core::core::LocalPlayer;
+    use chimera_sim::kill_voice::KillVoiceOutcome;
+    let mut sim = Sim::with(SimBasePlugins, |app| {
+        app.add_plugins((GreyboxMapPlugin, CalloutsPlugin)).init_resource::<MinigameHud>();
+        app.register_cues(&format!("{PACK}[volumes]\nrung_up = 1.8\n"));
+    });
+    let me = sim.app.world_mut().spawn(LocalPlayer).id();
+    let other = sim.app.world_mut().spawn_empty().id();
+    sim.ticks(2);
+    let kill = |sim: &mut Sim, killer: Entity, voiced: bool| {
+        sim.app.world_mut().write_message(KillVoiceOutcome { killer, victim: other, voiced });
+    };
+    let chimes = |sim: &Sim| sim.app.world().resource::<CalloutView>().heard.iter().filter(|h| *h == KILL_CHIME).count();
+    kill(&mut sim, me, false);
+    sim.seconds(CHIME_WAIT + 0.2);
+    assert_eq!(chimes(&sim), 1, "unvoiced: the rung-up sound");
+    let view = sim.app.world().resource::<CalloutView>().clone();
+    let (_, file, gain) = view.to_play.last().expect("queued").clone();
+    assert_eq!((file.as_str(), gain), ("up.wav", 1.8), "at the cue's own gain");
+    kill(&mut sim, me, true);
+    kill(&mut sim, other, false);
+    sim.seconds(CHIME_WAIT + 0.2);
+    assert_eq!(chimes(&sim), 1, "voiced, or someone else's: nothing");
+    // The kill's rung up sounds `rung_up` itself: no second one.
+    kill(&mut sim, me, false);
+    let up = Callout::new(2, "rung_up", vec![HudLine::new("Level up")]);
+    set(&mut sim, Some(up), 7);
+    sim.seconds(CHIME_WAIT + 0.2);
+    assert_eq!(chimes(&sim), 1, "the rung up said it");
+}

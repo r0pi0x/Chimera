@@ -46,6 +46,27 @@ pub struct LooseAsset {
     pub half: Vec3,
     /// The model's surface property (impact sounds), lower-case.
     pub surface: Option<String>,
+    /// The way the model faces in its own game (`MapHeldModel::nose`) in
+    /// the item's frame, unit; None: not known. `nose_turn` turns it to
+    /// −Z, the axis movers put along their flight.
+    pub nose: Option<Vec3>,
+}
+
+impl LooseAsset {
+    /// The turn that puts this model's nose on the item's −Z (identity
+    /// when its nose isn't known): a shown item turned `facing(dir) *
+    /// turn` flies nose first, whatever its game or its model's axes.
+    pub fn nose_turn(&self) -> Quat {
+        self.nose.map_or(Quat::IDENTITY, |n| Quat::from_rotation_arc(n, Vec3::NEG_Z))
+    }
+}
+
+/// The turn that puts shown model `key`'s nose on −Z
+/// (`LooseAsset::nose_turn`; identity without its loose form or nose):
+/// a mover facing its flight with −Z (`weapon::projectile::facing`, a
+/// game's own) turns its model by this so it flies nose first.
+pub fn nose_turn(assets: Option<&LooseAssets>, key: &str) -> Quat {
+    assets.and_then(|a| a.0.get(key)).map_or(Quat::IDENTITY, LooseAsset::nose_turn)
 }
 
 /// Each held model's loose form, sized by the first character's scale
@@ -88,6 +109,7 @@ pub fn asset(held: &MapHeldModel, root: Transform) -> LooseAsset {
         frame: to.with_translation(-centre),
         half,
         surface: held.model.surfaceprop.clone(),
+        nose: held.nose.map(|n| (to.rotation * (to.scale * n)).normalize_or(Vec3::NEG_Z)),
     }
 }
 
@@ -183,6 +205,7 @@ mod tests {
             bone: "b".into(),
             muzzle: None,
             attachments: Vec::new(),
+            nose: None,
         };
         let a = asset(&held, Transform::from_scale(Vec3::splat(0.0254)));
         assert!((a.half - Vec3::new(0.508, 0.0508, 0.0254)).length() < 1e-5);
@@ -211,7 +234,7 @@ mod tests {
         let held = |key: &str| {
             let mut model = MapModel::default();
             model.meshes.push(MapMesh { positions: vec![[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]], ..default() });
-            MapHeldModel { merged: Vec::new(), own: None, key: key.into(), model, bone: String::new(), muzzle: None, attachments: Vec::new() }
+            MapHeldModel { merged: Vec::new(), own: None, key: key.into(), model, bone: String::new(), muzzle: None, attachments: Vec::new(), nose: None }
         };
         let mut data = crate::map::MapData::default();
         data.kit.characters = vec![body("cs_source", 0.0254), body("halo_ce", 3.0)];

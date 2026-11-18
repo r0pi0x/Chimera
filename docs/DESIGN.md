@@ -264,7 +264,10 @@ run, one that reads only table parts over their tables (party_kit's
 every combination of the rest (two movements on one marker switch by a
 new value in place, `slots::MovementImpl::marker`; a game's parts that
 follow its movement go in the movement's `insert`, `remove` and `leave`,
-not in a system watching the slot). `chimera_census made`
+not in a system watching the slot). Another crate's marker counts too:
+avian marks a body for a mass update at each change of its collider, so a
+character's collider carries no mass (`core::no_collider_mass`).
+`chimera_census made`
 says which moves made them; `ultimate_gun_game`'s lap test caps what a lap
 adds. A per-tick system walks a characters' query once: a loop, not
 `collect`, whose `size_hint` walks every matched archetype first.
@@ -428,6 +431,30 @@ full name always works (user decision, 2026-10-31;
   head (the kill voice, sprint breath, idle, jump voice) and the
   heartbeat, interface sounds, the announcer and the gun game's lines.
   Hurt and death sounds were everyone's already.
+- **Kill voices** (user, 2026-11-18; `chimera_sim::kill_voice`): on a
+  kill, the killer's character speaks a kill line of its own game or
+  class, if its game has one (Combat Arms' `EnemyDown` and own kill
+  voice; TF2's class lines by its response rules, specs/tf2/voices.md;
+  CS:S, HL2:DM and Halo players say nothing on a kill). The character is
+  the one the killer was before the kill's frame (noted when either
+  part changes, `CharacterAtTick`), so a rung up that swaps it on the kill
+  or right after neither cuts the line nor changes its voice: the line is
+  chosen then and plays as a sound of its own. A killer whose character
+  said nothing hears the minigame's rung-up cue instead (the client
+  shell's callouts, once: not again when the kill's rung up sounds it),
+  each pack's `rung_up` raised by its cue gain (`[volumes]`). The server
+  decides and sends the outcome with the kill (`net::Killed::marks`), so
+  server, client and listen host agree.
+- **Pain for any gun** (user, 2026-11-18): a character's hurt and death
+  sounds are its own game's whatever game's gun hit it (Combat Arms'
+  groans, TF2's pain lines, CS:S's armour and headshot sounds); only the
+  bullet's impact on the body stays the gun's game's (`weapon::impact`).
+- **Bodies go at the respawn** (user, 2026-11-18, for performance): in
+  the party apps every game's ragdoll or body goes when its owner lives
+  again, a previous rung's character's included
+  (`map::ragdoll::BodiesGoOnRespawn`), over each game's own lifetime
+  (TF2's timer, HL2:DM's until the next death, Combat Arms' 5 s after the
+  respawn, Halo's 900 idle ticks), which the standalone games keep.
 - Cross-game kits (a CS:S character's moveset in another game) are generated
   ahead of time as data, reviewed and playtested, never generated during a
   match. A runtime "chaos kit" could exist later as a server-generated mode.
@@ -480,6 +507,22 @@ rules (ours: the specs are silent on mixing):
   it off): Combat Arms stands where CS:S does on all 17 ways up, against
   9 before; its own maps unchanged.
 
+- **Halo's**: any contact inside a ladder volume is climbable (its map's
+  climbable sheets, other maps' brushes, games' zones); another map's
+  ladder line is a volume 24 units around it, reaching the geometry
+  behind it (`halo_ce` movement, `LINE_REACH`).
+- **A game without ladders (TF2's)**: nothing on its own maps (their
+  ladder brushes are walls), and every other game's ladders by the
+  shared Source code's contents rule at its 200 units/s
+  (`SourceMovementConfig::climbs_contents`): a TF2 character climbs a
+  Combat Arms map's ladders too (playtest 2026-11-18: it couldn't). One
+  test holds every registered movement to it: each climbs a Source
+  ladder brush, a Combat Arms ladder volume, an HL2 ladder line and a
+  Halo climbable sheet (made as Halo's loader makes them: a solid
+  two-sided sheet and its ladder brush, the map Halo's) (`party_kit`
+  `every_movement_climbs_every_ladder`); on Prisoner's real sheets with
+  the disc image, heavy `halo_ladders`.
+
 On a map of its own game a movement climbs only what its game climbs
 there (`core::foreign_map`): HL2:DM keeps contents ladders solid on its
 maps, CS:S ignores a stray `func_useableladder` on its own; so each game
@@ -531,7 +574,15 @@ Chimera has a generic fallback (`chimera_world::map::impact`,
   a guest's dressing adds its own). An impact is drawn by the gun's game
   when its looks are on the map, else the map's game, else any game whose
   looks are there, else Chimera's generic mark and puff; each game's
-  impact code asks this route and draws only its own.
+  impact code asks this route and draws only its own. The drawing game
+  takes its own looks, never another game's of the same name: a guest's
+  impact looks whose names the map (or an earlier guest) took are kept
+  under its own names too (`map::impact::own_name`: `tf2:concrete`,
+  `tf2:concrete.bulletimpact`, its decal group per material letter,
+  `tf2:effects/spark`), and the impact code looks up the drawing game's
+  name first, the bare one after. A bullet's hit on a character sounds
+  as its gun's game's (`weapon::impact::dealt_by`): another game's hurt
+  sounds stay silent for it.
 - **What a gun draws comes with its game.** A gun's effect materials,
   muzzle flashes and spent shells are its game's on any map: the map's
   game brings its own with its kept guns (`GameKit::stay`), a guest's

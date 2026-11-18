@@ -3,6 +3,7 @@
 //! each other class's arms that can hold it, `view::CLASS_SEQUENCES`), with the
 //! spec's sequences (8.2) by name with their activities (the include's, not the
 //! arms' stubs) and a muzzle on the gun, the posed gun in front of the eye;
+//! each melee weapon's view model with its sequences (M4b);
 //! the held models and the rocket's model; the guns' sound entries in the
 //! sound scripts; and each gun's `weapon/<id>` set covering everything a
 //! match loads for it (`maps::add_guns` and its sounds): a client with the
@@ -23,8 +24,18 @@ fn each_gun_shows_on_its_class_arms_with_the_specs_sequences() {
     maps::add_guns(&mut materials, &|_| true, true, &mut kit, &mut warnings);
     assert!(warnings.is_empty(), "{warnings:?}");
     // Each gun on its own class's arms, and on each other class's that
-    // can hold it (the Shotgun's three, the Pistol's Engineer).
-    assert_eq!(kit.view_models.len(), weapons::GUNS.len() + view::CLASS_SEQUENCES.len());
+    // can hold it (the Shotgun's three, the Pistol's Engineer); each melee
+    // weapon on its class's arms (the Fists the arms alone).
+    assert_eq!(kit.view_models.len(), weapons::GUNS.len() + view::CLASS_SEQUENCES.len() + weapons::MELEE.len());
+    for melee in weapons::MELEE {
+        let v = kit.view_models.iter().find(|v| v.key == melee).unwrap_or_else(|| panic!("{melee}'s view model"));
+        let set = v.animations.as_ref().expect("the arms' animations");
+        let q = view::melee_sequences(melee).unwrap();
+        let backstab = q.backstab.iter().flatten();
+        for name in [q.draw, q.idle, q.crit].into_iter().chain(q.swing.iter().copied()).chain(q.swing_alt.iter().copied()).chain(backstab.copied()) {
+            assert!(set.sequence(name).is_some(), "{melee}: no sequence {name}");
+        }
+    }
     for gun in weapons::GUNS {
         assert!(kit.view_models.iter().any(|v| v.key == gun), "{gun}'s view model");
     }
@@ -32,7 +43,7 @@ fn each_gun_shows_on_its_class_arms_with_the_specs_sequences() {
         let key = chimera_sim::weapon::view_anim::variant_key(g, c);
         assert!(kit.view_models.iter().any(|v| v.key == key), "{key}'s view model");
     }
-    for v in &kit.view_models {
+    for v in kit.view_models.iter().filter(|v| !weapons::MELEE.contains(&v.key.as_str())) {
         let gun = v.key.split_once('#').map_or(v.key.as_str(), |(g, _)| g);
         let set = v.animations.as_ref().expect("the arms' animations");
         assert!(v.attachments.iter().any(|a| a.name.eq_ignore_ascii_case("muzzle")), "{gun}: a muzzle");
@@ -101,7 +112,7 @@ fn the_posed_gun_is_in_front_of_the_eye() {
     let mut materials = MaterialLoader::guest(&mount, 0, 0);
     let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
     maps::add_guns(&mut materials, &|_| true, true, &mut kit, &mut warnings);
-    for v in &kit.view_models {
+    for v in kit.view_models.iter().filter(|v| !weapons::MELEE.contains(&v.key.as_str())) {
         let set = v.animations.clone().unwrap();
         let mut a = chimera_world::map::anim::Animator::new(set.clone());
         let q = view::sequences(&v.key).unwrap();
@@ -238,4 +249,48 @@ fn every_guns_sound_is_tf2s_own() {
         assert!(!entry.waves.is_empty(), "{own}: no clips");
         assert!(map.sounds.entry(bare).is_none(), "{bare}: a bare name would meet another game's");
     }
+}
+
+/// Each projectile model's nose (`MapHeldModel::nose`, the model's own
+/// +X wherever its bone frame turned it) is its long axis in the shown
+/// frame for the long ones (the rocket, the needle: a needle flew sideways
+/// when the data named its axis, playtest 2026-11-18), so a flyer turned
+/// by it flies nose first.
+#[test]
+fn each_projectile_models_nose_is_its_long_axis() {
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0);
+    let (mut kit, mut warnings) = (chimera_world::map::GameKit::default(), Vec::new());
+    maps::add_guns(&mut materials, &|_| true, false, &mut kit, &mut warnings);
+    let root = bevy::prelude::Transform::from_rotation(
+        bevy::prelude::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2) * bevy::prelude::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+    )
+    .with_scale(bevy::prelude::Vec3::splat(0.0254));
+    for (_, key, _) in weapons::PROJECTILES {
+        let held = kit.held.iter().find(|h| h.key == *key).unwrap_or_else(|| panic!("{key}"));
+        let a = chimera_world::map::loose::asset(held, root);
+        let nose = a.nose.unwrap_or_else(|| panic!("{key}: a nose"));
+        let long = a.half.max_element();
+        let axis = bevy::prelude::Vec3::select(a.half.cmpeq(bevy::prelude::Vec3::splat(long)), bevy::prelude::Vec3::ONE, bevy::prelude::Vec3::ZERO);
+        println!("{key}: nose {nose}, half {}", a.half);
+        if *key == weapons::ROCKET_SHOWN || *key == "tf2:syringe" {
+            assert!(nose.dot(axis.normalize()).abs() > 0.95, "{key}: nose {nose}, half {}", a.half);
+        }
+    }
+}
+
+/// Every voice entry the players' voices can play (`voices::Tf2Voices::
+/// entries`: pain, death and kill lines) names waves in the install's
+/// sound scripts, the death entries the spec inferred included
+/// (specs/tf2/voices.md open question 1).
+#[test]
+fn every_voice_entry_has_waves() {
+    let Some(mount) = install_mount() else { return };
+    let scripts = sets::sound_scripts(&mount);
+    let missing: Vec<String> = tf2::game::voices::Tf2Voices::built_in()
+        .entries()
+        .into_iter()
+        .filter(|e| scripts.waves(e).is_empty())
+        .collect();
+    assert!(missing.is_empty(), "no waves: {missing:?}");
 }

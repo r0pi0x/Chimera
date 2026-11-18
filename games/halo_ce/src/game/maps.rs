@@ -26,7 +26,8 @@
 //! - `objects`: render models as meshes, the scenery placements as props
 //!   with their collision;
 //! - `sky`: fog, a flat background, the sky model as a 3D skybox, and the
-//!   scenery's light;
+//!   scenery's light (also the map's light field, the same everywhere:
+//!   characters and view models lit as the scenery; set after the cache);
 //! - `audio`: the level's sounds (background sounds by cluster, sound
 //!   environments, sound scenery) and the kit's (`game::audio`).
 //!
@@ -49,7 +50,9 @@
 
 pub mod audio;
 pub mod collision;
+pub mod generic;
 pub mod geometry;
+pub mod light_below;
 pub mod lightmap;
 pub mod materials;
 pub mod objects;
@@ -141,11 +144,26 @@ pub fn load_in(
     let (mut map, outcome) = crate::map::cache::cached(cache, mount, key, || {
         convert(&bytes, name, file_hash, options).map_err(|e| format!("{path}: {e}"))
     })?;
+    let file = MapFile::load(&bytes).ok();
     // The guns' displays (a memo: not cached).
     if options.kit.any_models()
-        && let Ok(file) = MapFile::load(&bytes)
+        && let Some(file) = &file
     {
-        map.memos.insert(super::view::load::displays_of(&file));
+        map.memos.insert(super::view::load::displays_of(file));
+    }
+    // The light field (a closure: not cached): the lightmap under each
+    // point (`light_below`), as the game lights its objects, so characters
+    // and view models are lit as the scenery is; the scenery's sky light
+    // (`sky::prop_light`) where no lit level is below.
+    if let Some(file) = &file
+        && let Ok(scenario) = Scenario::read(file)
+    {
+        let light = sky::prop_light(sky::level_sky(file, &scenario, &mut Vec::new()).as_ref());
+        // The lightmap under the point (`light_below`), else the scenery's.
+        let below = map.lightmap.as_ref().and_then(|lm| light_below::LightBelow::new(map.meshes.iter(), lm));
+        map.light_field = Some(crate::map::MapLightField(std::sync::Arc::new(move |p| {
+            below.as_ref().and_then(|b| b.probe(p, &light)).unwrap_or_else(|| light.clone())
+        })));
     }
     let took = start.elapsed().as_secs_f32();
     if outcome == Outcome::Hit {
@@ -209,7 +227,10 @@ pub fn convert(bytes: &[u8], name: &str, file_hash: [u8; 32], options: &MapLoadO
         .collect();
     pending.extend(sky::sky_model(&file, level_sky.as_ref(), &mut map));
     let light = sky::prop_light(level_sky.as_ref());
-    pending.extend(objects::scenery(&file, &scenario, &light, &mut map));
+    // Placed objects are lit by the lightmap under them (`light_below`).
+    let below = map.lightmap.as_ref().and_then(|lm| light_below::LightBelow::new(pending.iter().map(|p| &p.mesh), lm));
+    let light_at = |p: bevy::math::Vec3| below.as_ref().and_then(|b| b.probe(p, &light)).unwrap_or_else(|| light.clone());
+    pending.extend(objects::scenery(&file, &scenario, &light_at, &mut map));
     if super::vehicles::place::placed_with(options) {
         pending.extend(super::vehicles::place::vehicles(&file, &scenario, &light, &mut map));
     }

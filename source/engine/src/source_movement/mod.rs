@@ -35,7 +35,9 @@
 //! standing box, so feet = origin - 36 units. Ladders and water (swimming,
 //! water jumps) follow the spec's sections; other games' liquid and ladder
 //! volumes (`WaterZone`, `LadderZone`: Combat Arms' maps') count as the
-//! map's water and ladder brushes (a ladder zone is swept as a solid); for
+//! map's water and ladder brushes (a ladder zone is swept as a solid); a
+//! movement whose game has no ladders (TF2) climbs them on another game's
+//! map all the same (`climbs_contents`); for
 //! a movement climbing contents ladders on another game's map, the map's
 //! ladder lines (`core::MapLadders::lines`, HL2's) are thin solid ladder
 //! posts (docs/DESIGN.md "Ladders across games"). Player clips are among
@@ -266,7 +268,9 @@ pub struct SourceMovementConfig {
     pub fall_fraction: bool,
     /// Brushes with ladder contents are climbed (CS:S). HL2's games climb
     /// `func_useableladder`s instead (`useable_ladders`) and contents
-    /// ladders are solid like any brush.
+    /// ladders are solid like any brush; a game with no ladders (TF2)
+    /// climbs none on its own maps. On another game's map every movement
+    /// climbs (`SourceMovementConfig::climbs_contents`).
     pub contents_ladders: bool,
     /// `func_useableladder`s are climbed (`useable_ladders`; HL2:DM), with
     /// `sv_ladder_useonly` (only `+use` mounts) and
@@ -405,6 +409,17 @@ pub const CVARS: &[(&str, &str)] = &[
 ];
 
 impl SourceMovementConfig {
+    /// Whether ladder contents (and ladder zones, and other games'
+    /// ladder lines as posts) are climbed on this map: the game's own
+    /// rule on its own maps; on another game's map (`foreign`) any
+    /// movement that climbs no ladder lines climbs them, so a game
+    /// without ladders (TF2) still climbs every other game's
+    /// (docs/DESIGN.md "Ladders across games"), at the shared code's
+    /// climb speed (200 units/s, specs/cs_source/movement.md).
+    pub fn climbs_contents(&self, foreign: bool) -> bool {
+        self.contents_ladders || (foreign && !self.useable_ladders)
+    }
+
     /// Set a console variable by name, as a server config would.
     pub fn set_cvar(&mut self, name: &str, value: &str) -> Result<(), String> {
         let num = || {
@@ -2782,7 +2797,7 @@ impl Mover<'_, '_, '_, '_> {
                 useable_ladders::LadderStep::Walk => {}
             }
         }
-        if self.cfg.contents_ladders {
+        if self.cfg.climbs_contents(self.foreign_map) {
             self.ladder(intent, f, s, ladder_scale);
         }
         if self.me.ladder.is_some() {
@@ -3272,7 +3287,7 @@ fn step(
             others.push(b);
             owners.push(None);
         }
-        if cfg.contents_ladders && foreign {
+        if cfg.climbs_contents(foreign) && foreign {
             for b in &posts {
                 others.push(b);
                 owners.push(None);

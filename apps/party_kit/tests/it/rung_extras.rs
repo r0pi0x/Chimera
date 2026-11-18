@@ -175,7 +175,7 @@ fn css_rungs_keep_their_knife_and_combat_arms_own_look() {
     }
     let (a, _b) = two_on(&mut sim, 0);
     assert!(carried(&sim, a).contains(&cs_source::game::weapons::KNIFE), "CS:S's knife: {:?}", carried(&sim, a));
-    assert!(sim.app.world().get::<CaRungLook>(a).is_none(), "no Combat Arms look on a CS:S rung");
+    assert!(!CaRungLook::worn(sim.app.world().get::<CaRungLook>(a)), "no Combat Arms look on a CS:S rung");
 }
 
 /// The class rung `rung` draws.
@@ -259,7 +259,7 @@ fn each_option_off_is_todays_behaviour() {
     assert!(ladder_of(&sim).extras.iter().all(Option::is_none), "none drawn");
     let (a, _) = two_on(&mut sim, M4);
     assert_eq!(melee(&sim, a), Some(CA_KNIFE));
-    assert!(sim.app.world().get::<CaRungLook>(a).is_none());
+    assert!(!CaRungLook::worn(sim.app.world().get::<CaRungLook>(a)));
     assert_eq!(look(&sim, a).map(|s| s.model), Some(0), "the default look");
     let stock = fitted(sim.app.world(), a, "combat_arms:m4a1").unwrap();
     // One at a time.
@@ -268,7 +268,7 @@ fn each_option_off_is_todays_behaviour() {
         let (a, _) = two_on(&mut sim, M4);
         let w = sim.app.world();
         let parts_stock = fitted(w, a, "combat_arms:m4a1") == Some(stock);
-        let own_look = w.get::<CaRungLook>(a).is_none();
+        let own_look = !CaRungLook::worn(w.get::<CaRungLook>(a));
         let m9 = melee(&sim, a) == Some(CA_KNIFE);
         assert_eq!([parts_stock, own_look, m9][check], true, "{key} off");
         let others: Vec<bool> = [parts_stock, own_look, m9].iter().enumerate().filter(|(i, _)| *i != check).map(|(_, v)| *v).collect();

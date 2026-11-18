@@ -3,7 +3,8 @@
 //! simulation's determinism ratchets and the ECS-style checks (callback
 //! registries, per-tick exclusive systems), the UI kit rule (`ui_kit`: no
 //! hand-built text inputs outside `chimera_ui`) and tests of the shell tools that
-//! guard the disk (`scripts`). They run
+//! guard the disk (`scripts`); `scan` is the source reader the text scans share (drops
+//! comments, strings and `#[cfg(test)]` items). They run
 //! on every selection of `affected`, docs-only changes included, and build
 //! in seconds (no workspace crate under them). `cargo test -p repo_checks`.
 
@@ -11,5 +12,6 @@ mod architecture;
 mod determinism;
 mod ecs;
 mod gun_sounds;
+mod scan;
 mod scripts;
 mod ui_kit;

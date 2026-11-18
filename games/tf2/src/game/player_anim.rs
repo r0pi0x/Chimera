@@ -14,7 +14,9 @@
 //! against the feet, which stay until the eyes turn past 45 degrees
 //! standing and follow them while moving, at 720 degrees/s, slower in the
 //! last 60), the main sequences' own aim-matrix autolayers adding the
-//! pose (4); fire, reload (start, a loop per round, end) and landing
+//! pose (4); `r_hand_grip` and `r_arm` at 0 (the constants; the engine's
+//! default for a range from 0 is its middle, a special item's pose);
+//! fire, reload (start, a loop per round, end) and landing
 //! gestures by the stance on overlay layers (5). Each side runs it on its
 //! own values (`PlayerAnimPlugin` drawn, `SimAnimPlugin` for a server's
 //! hitboxes) and a client poses others as the server's tick pose had them
@@ -331,6 +333,16 @@ impl Tf2PlayerAnim {
                 a.set_param(p, v);
             }
         }
+        // The hand- and arm-pose libraries at their first pose (the
+        // constants: 0 for the guns). Left to the engine's default, a
+        // parameter whose range starts at 0 sits at its middle: the
+        // Engineer's arms took a special item's pose and held his pistol
+        // turned at the belt (playtest 2026-11-18).
+        for name in ["r_hand_grip", "r_arm"] {
+            if let Some(p) = set.param(name) {
+                a.set_param(p, 0.0);
+            }
+        }
         self.pose = values;
         a.playback = 1.0;
         a.advance(dt, now);
@@ -409,7 +421,8 @@ fn follow_class(
 }
 
 /// TF2's bodies animated: drawn (`PlayerAnimPlugin`), on a server per tick
-/// (`SimAnimPlugin`), sent to clients (`AnimNetPlugin`), and what they hold.
+/// (`SimAnimPlugin`), sent to clients (`AnimNetPlugin`), what they hold and
+/// their faces (`faces`).
 pub struct Tf2AnimPlugin;
 
 impl Plugin for Tf2AnimPlugin {
@@ -419,7 +432,11 @@ impl Plugin for Tf2AnimPlugin {
             source_engine::player_anim::SimAnimPlugin::<Tf2PlayerAnim>::default(),
             source_engine::anim_net::AnimNetPlugin::<Tf2PlayerAnim>::new("tf2_anim"),
         ))
-        .add_systems(Update, (hold_weapons, follow_class));
+        .insert_resource(super::faces::IdleFaces::builtin())
+        .add_systems(
+            Update,
+            (hold_weapons, follow_class, super::faces::faces.in_set(crate::map::DriveAnimation)),
+        );
     }
 }
 
@@ -451,6 +468,21 @@ mod tests {
         assert_eq!(Kind::of_class("tf2:tf_weapon_shotgun_primary", Some("pyro")), Kind::Secondary);
         assert_eq!(Kind::of_class("tf2:tf_weapon_shotgun_primary", None), Kind::Primary);
         assert_eq!(Kind::of_class("tf2:tf_weapon_pistol_scout", Some("engineer")), Kind::Secondary);
+    }
+
+    /// The constants: `r_hand_grip` and `r_arm` at 0 for the guns, not
+    /// at their range's middle (the engine's default for a range that
+    /// starts at 0): the Engineer held his pistol turned at the belt.
+    #[test]
+    fn the_hand_and_arm_poses_are_the_first() {
+        use crate::map::anim::PoseParam;
+        let p = |name: &str, end: f32| PoseParam { name: name.into(), start: 0.0, end, looping: 0.0 };
+        let set = std::sync::Arc::new(AnimSet { params: vec![p("r_hand_grip", 16.0), p("r_arm", 3.0)], ..Default::default() });
+        let mut a = Animator::new(set.clone());
+        assert_eq!(a.params, vec![0.5, 0.5], "the engine's default");
+        let mut s = Tf2PlayerAnim::default();
+        s.step(&mut a, &Inputs { on_ground: true, ..Default::default() }, Some("tf2:tf_weapon_pistol_scout"), 0.015, 0.0);
+        assert_eq!(a.params, vec![0.0, 0.0]);
     }
 
     /// 4, tests 13-14: the pitch's sign and clamp; the feet stay until the

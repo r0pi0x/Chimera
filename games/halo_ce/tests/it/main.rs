@@ -37,6 +37,7 @@ mod fx_place;
 mod gun_displays;
 mod hud;
 mod hud_score;
+mod generic;
 mod info;
 mod ladders;
 mod looks;
@@ -78,6 +79,7 @@ mod heavy {
     mod death;
     mod fx;
     mod gun_displays;
+    mod gun_sounds;
     mod hud;
     mod ladder;
     mod looks;

@@ -173,3 +173,100 @@ fn combat_arms_movement_gets_off_a_ladder_brush_onto_a_narrow_top() {
     assert!((feet(&sim) - 3.0).abs() < 0.1, "on the wall's top (3 m): feet at {}, at {at}", feet(&sim));
     assert!(at.x > TANK_MAX.x - 0.3 && at.x < TANK_MAX.x + 0.8, "on the wall, not in the tank: {at}");
 }
+
+/// A Halo ladder's sheet: upright, facing +Z at `HALO_Z`, 1.5 m wide, 6 m
+/// tall, in the open.
+const HALO_Z: f32 = -10.0;
+const HALO_BEFORE: Vec3 = Vec3::new(0.0, 1.0, HALO_Z + 1.4);
+
+/// A Halo map's ladder on the greybox, the map made Halo's: the sheet a
+/// solid two-sided triangle mesh and its ladder brush among the map's
+/// brushes, as `halo_ce`'s map loader makes them.
+fn halo_ladder(sim: &mut Sim) {
+    use avian3d::prelude::{Collider, RigidBody};
+    let c = [
+        Vec3::new(-0.75, 0.0, HALO_Z),
+        Vec3::new(0.75, 0.0, HALO_Z),
+        Vec3::new(0.75, 6.0, HALO_Z),
+        Vec3::new(-0.75, 6.0, HALO_Z),
+    ];
+    let w = sim.app.world_mut();
+    w.spawn((RigidBody::Static, Collider::trimesh(c.to_vec(), vec![[0, 1, 2], [0, 2, 3]]), Transform::default()));
+    let brush = halo_ce::game::maps::collision::ladder_brush(&c).expect("a sheet");
+    w.resource_mut::<chimera_core::core::MapBrushes>().0.push(brush);
+    w.insert_resource(MapGame("halo_ce".into()));
+    sim.ticks(2);
+}
+
+/// One ladder rule for every game's characters (playtest 2026-11-18: a
+/// TF2 character couldn't climb a Combat Arms map's ladder; docs/DESIGN.md
+/// "Ladders across games"): every movement the party registers, a game
+/// without ladders of its own (TF2's) too, climbs each kind of ladder on
+/// a map of nobody's: a Source ladder brush (CS:S's `func_ladder`, the
+/// greybox's north wall), a Combat Arms ladder volume and an HL2 ladder
+/// line; and a Halo map's climbable sheet (a CS:S character couldn't
+/// climb Halo's ladders either). A game added later is held to it by being registered.
+#[test]
+fn every_movement_climbs_every_ladder() {
+    let ids: Vec<&'static str> = {
+        let sim = self::sim();
+        let reg = sim.app.world().resource::<chimera_core::slots::MovementRegistry>();
+        reg.0.iter().map(|m| m.id).filter(|id| !id.starts_with("chimera:")).collect()
+    };
+    for game in ["cs_source", "combat_arms", "hl2dm", "tf2", "halo_ce"] {
+        assert!(ids.iter().any(|id| id.starts_with(&format!("{game}:"))), "{game}'s movement is registered: {ids:?}");
+    }
+    let mut failed = Vec::new();
+    for id in &ids {
+        // The Source ladder brush.
+        let mut s = self::sim();
+        let p = stand(&mut s, *id, BEFORE_BRUSH);
+        let (_, rose) = climb(&mut s, p, 0.0, 45.0, 4.0);
+        if rose < 2.5 {
+            failed.push(format!("{id}: Source ladder brush, rose {rose:.2} m"));
+        }
+        // A Combat Arms ladder volume on the north wall up to its top (as
+        // that game's maps put them on their ladders' geometry), 0.4 m
+        // deep, away from the wall's ladder brush.
+        let mut s = self::sim();
+        let x = LADDER_X + 10.0;
+        let p = stand(&mut s, *id, Vec3::new(x, 1.0, NORTH_WALL_Z + 1.4));
+        let ladder = CaVolume::class_box("Ladder", Vec3::new(x - 1.0, 0.0, NORTH_WALL_Z), Vec3::new(x + 1.0, 6.0, NORTH_WALL_Z + 0.4)).unwrap();
+        s.app.world_mut().spawn(ladder);
+        s.ticks(2);
+        let (_, rose) = climb(&mut s, p, 0.0, 45.0, 4.0);
+        if rose < 2.5 {
+            failed.push(format!("{id}: Combat Arms ladder volume, rose {rose:.2} m"));
+        }
+        // A Halo ladder on a Halo map: a climbable sheet (two-sided, no
+        // thickness) published as its maps publish them, a ladder brush
+        // (`halo_ce` `maps::collision::ladder_brush`).
+        let mut s = self::sim();
+        let p = stand(&mut s, *id, HALO_BEFORE);
+        halo_ladder(&mut s);
+        let (_, rose) = climb(&mut s, p, 0.0, 45.0, 4.0);
+        if rose < 2.5 {
+            failed.push(format!("{id}: Halo climbable sheet, rose {rose:.2} m"));
+        }
+        // An HL2 ladder line.
+        let mut s = self::sim();
+        let p = stand(&mut s, *id, BEFORE_LINE);
+        hl2_ladder(&mut s, LINE_FOOT, 6.0);
+        let (_, rose) = climb(&mut s, p, 0.0, 45.0, 4.0);
+        if rose < 2.5 {
+            failed.push(format!("{id}: HL2 ladder line, rose {rose:.2} m"));
+        }
+    }
+    assert!(failed.is_empty(), "every movement climbs every ladder:\n{}", failed.join("\n"));
+}
+
+/// TF2 has no ladders: on a map of its own the ladder brushes stay walls
+/// (its parity), as HL2:DM's do on its own.
+#[test]
+fn tf2_movement_on_its_own_map_leaves_ladder_brushes_solid() {
+    let mut sim = self::sim();
+    sim.app.world_mut().insert_resource(MapGame("tf2".into()));
+    let p = stand(&mut sim, tf2::game::movement::ID, BEFORE_BRUSH);
+    let (on, rose) = climb(&mut sim, p, 0.0, 45.0, 2.0);
+    assert!(!on && rose < 0.5, "TF2 climbs nothing on its own maps: on {on}, rose {rose}");
+}

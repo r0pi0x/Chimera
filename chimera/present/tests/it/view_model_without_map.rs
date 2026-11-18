@@ -6,7 +6,9 @@
 //! built those assets, so on the greybox the model was in `ViewModels`
 //! (and the game's placeholder stepped aside) but nothing drew it. The
 //! meshes its `ViewAnimator` hides aren't drawn, and a mesh whose frame
-//! the game picks (`ViewAnimator::mesh_frames`) shows that frame.
+//! the game picks (`ViewAnimator::mesh_frames`) shows that frame. Without
+//! a map's light field it is lit by the neutral probe
+//! (`probe_lit::probe_at`), not drawn full-bright.
 
 use std::sync::Arc;
 
@@ -14,6 +16,7 @@ use bevy::{camera::visibility::RenderLayers, prelude::*};
 use chimera_present::{
     MapPlugin,
     render::{
+        probe_lit::ProbeTable,
         prop_material::PropMaterial,
         rope_material::RopeMaterial,
         shadows::ShadowMaterial,
@@ -120,6 +123,24 @@ fn a_view_model_added_without_a_map_is_drawn() {
         .filter(|(_, l, c)| c.parent() == body && l.intersects(&layer))
         .count();
     assert_eq!(meshes, 2, "its meshes on the view-model layer");
+    // Lit though the map has no light field: a neutral probe, not the
+    // texture full-bright (which also left phong and lightwarps unlit).
+    let parts: Vec<Handle<PropMaterial>> = world
+        .query::<(&MeshMaterial3d<PropMaterial>, &ChildOf)>()
+        .iter(world)
+        .filter(|(_, c)| c.parent() == body)
+        .map(|(m, _)| m.0.clone())
+        .collect();
+    let table = world.get_resource::<ProbeTable>();
+    let materials = world.resource::<Assets<PropMaterial>>();
+    for m in &parts {
+        let m = materials.get(m).expect("its material");
+        assert!(m.params.probe > 0.5, "probe-lit without a light field");
+        let rows = table.map_or_else(|| ProbeTable::default().drawn(m), |t| t.drawn(m));
+        let cube = rows[..6].iter().map(|r| r[0]).fold(0.0f32, f32::max);
+        let light = rows[10..14].iter().map(|r| r[0]).fold(0.0f32, f32::max);
+        assert!(cube > 0.1 && light > 0.1, "a neutral ambient and a light: {rows:?}");
+    }
     // A mesh the game hides (`ViewAnimator::hidden_meshes`: a launcher's
     // fired rocket) isn't drawn, the rest are; shown again once cleared.
     let hidden = |sim: &mut Sim| {

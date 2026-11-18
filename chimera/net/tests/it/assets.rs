@@ -1452,15 +1452,20 @@ fn a_server_looks_at_its_store_once_per_change_of_the_matchs_sets() {
     sim.server.app.insert_resource(session);
     server_assets::for_host(sim.server.app.world_mut());
     assert!(sim.server.app.world().contains_resource::<ServerFiles>());
+    // The first frame looks at the match's sets and starts the job; wait
+    // on the job itself (its thread can lag any count of frames under
+    // load), then a frame takes its end.
+    sim.step();
+    let job = sim.server.app.world().get_resource::<server_assets::ServerFetching>().expect("the first frame's look").0.clone();
+    job.wait().unwrap();
+    sim.step();
+    assert!(!server_assets::fetching(sim.server.app.world()), "the job's end taken");
     assert!(
-        until(&mut sim, 30.0, |s| {
-            !server_assets::fetching(s.server.app.world())
-                && ["base", "players", "common", "weapon/gun"].iter().all(|set| svc.ids(set).iter().all(|id| store.has(id)))
-        }),
+        ["base", "players", "common", "weapon/gun"].iter().all(|set| svc.ids(set).iter().all(|id| store.has(id))),
         "the match's sets fetched by the host"
     );
     let looks = server_assets::store_looks(sim.server.app.world());
-    assert!(looks >= 1, "the first look fetched them");
+    assert_eq!(looks, 1, "one look fetched them");
     // Every look from now on names the same sets: none looks at the store
     // or starts a job.
     for _ in 0..5 {

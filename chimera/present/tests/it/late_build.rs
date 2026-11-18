@@ -152,6 +152,7 @@ fn large_models_come_in_without_a_frame_over_the_limit() {
             attachments: Vec::new(),
             merged: Vec::new(),
             own: None,
+            nose: None,
         },
         textures(),
     );

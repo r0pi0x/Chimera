@@ -33,6 +33,12 @@
 //! no text, its cue sounding still: the rank-up toast says it
 //! (`rank_toast`).
 //!
+//! A kill of the local player's whose character said no kill line
+//! (`chimera_sim::kill_voice::KillVoiceOutcome`, unvoiced) sounds the
+//! same pack's `rung_up` cue (`kill_chime`, `KILL_CHIME` in `heard`),
+//! unless the kill's own rung up sounds it within `CHIME_WAIT`. Each cue
+//! plays at its pack's gain for it (`CuePack::gain`).
+//!
 //! Known shortcuts: plain text on a dark band, no animation; the
 //! files load on first use (the first cue of each kind may come up to
 //! a load late, given up after 3 s).
@@ -48,6 +54,8 @@ use chimera_sim::{
     },
     weapon::data::WeaponCatalog,
 };
+
+use chimera_sim::kill_voice::KillVoiceOutcome;
 
 use super::minigame_scoreboard::{GunNames, gun_short_name};
 use crate::{
@@ -68,7 +76,8 @@ impl Plugin for CalloutsPlugin {
         app.init_resource::<CalloutView>()
             .init_resource::<CuePacks>()
             .add_systems(Startup, spawn)
-            .add_systems(Update, (draw.after(super::hud::HudSwitch), size));
+            .add_message::<KillVoiceOutcome>()
+            .add_systems(Update, (draw.after(super::hud::HudSwitch), kill_chime.after(draw), size));
         crate::console::ConsoleAppExt::console_command(
             app,
             "chimera:callout",
@@ -93,9 +102,23 @@ pub struct CalloutView {
     /// Every cue sounded (its key), for the console and tests (the last
     /// 32).
     pub heard: Vec<String>,
-    /// Cues waiting for the sound system: (pack, file).
-    pub to_play: Vec<(Arc<CuePack>, String)>,
+    /// Cues waiting for the sound system: (pack, file, gain).
+    pub to_play: Vec<(Arc<CuePack>, String, f32)>,
+    /// When the last `rung_up` cue sounded (`Time`'s seconds).
+    pub last_rung_up: Option<f64>,
+    /// The local player's unvoiced kills waiting for their rung-up sound
+    /// (`kill_chime`): when each was heard of.
+    pub chimes: Vec<f64>,
 }
+
+/// How long an unvoiced kill's rung-up sound waits for the kill's own
+/// rung up (whose cue it then leaves alone), and how recent a rung up
+/// before it does the same (s): a network client hears of the kill and
+/// of the rung up apart.
+pub const CHIME_WAIT: f64 = 0.4;
+
+/// `CalloutView::heard`'s name for an unvoiced kill's rung-up sound.
+pub const KILL_CHIME: &str = "kill_rung_up";
 
 /// The callout's root (hidden while there is none).
 #[derive(Component)]
@@ -218,7 +241,9 @@ fn draw(
     theme: Option<Res<chimera_ui::Theme>>,
     mut root: Query<&mut Visibility, (With<CalloutRoot>, Without<CalloutLine>)>,
     mut lines: Query<(&CalloutLine, &mut Text, &mut Visibility), Without<CalloutRoot>>,
+    time: Res<Time>,
 ) {
+    let now = time.elapsed_secs_f64();
     let shown = hud.as_ref().and_then(|h| h.callout.clone());
     let player = |e: Entity| {
         let (ch, name, local) = players.get(e).unwrap_or((None, None, false));
@@ -247,7 +272,11 @@ fn draw(
             if let Some(pack) = pack
                 && let Some(file) = pack.sound(cue).map(str::to_string)
             {
-                view.to_play.push((pack, file));
+                let gain = pack.gain(cue);
+                view.to_play.push((pack, file, gain));
+            }
+            if cue == "rung_up" {
+                view.last_rung_up = Some(now);
             }
         }
     }
@@ -318,10 +347,10 @@ fn play(
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
-    for (pack, file) in std::mem::take(&mut view.to_play) {
+    for (pack, file, gain) in std::mem::take(&mut view.to_play) {
         let path = chimera_present::assets::install_path(&pack.game, &file);
         let h = assets.sounds.entry(path.clone()).or_insert_with(|| server.load(path)).clone();
-        assets.waiting.push((h, pack.volume, now));
+        assets.waiting.push((h, gain, now));
     }
     let Some(mut clips) = clips else { return };
     assets.waiting.retain(|(h, volume, since)| {
@@ -333,4 +362,54 @@ fn play(
         }
         now - since < 3.0
     });
+}
+
+/// The local player's kills whose character said no kill line
+/// (`chimera_sim::kill_voice::KillVoiceOutcome`): the rung-up cue of the
+/// pack a callout would use, at its gain, `CHIME_WAIT` after the kill,
+/// unless a rung up's own cue sounded within `CHIME_WAIT` of it (the
+/// kill's rung up says it already).
+#[allow(clippy::too_many_arguments)]
+fn kill_chime(
+    mut outcomes: MessageReader<KillVoiceOutcome>,
+    local: Query<Entity, With<LocalPlayer>>,
+    active: Option<Res<ActiveMinigame>>,
+    packs: Res<CuePacks>,
+    gameplay: Option<Res<chimera_core::gameplay::Gameplay>>,
+    time: Res<Time>,
+    mut view: ResMut<CalloutView>,
+) {
+    let now = time.elapsed_secs_f64();
+    for o in outcomes.read() {
+        if !o.voiced && local.contains(o.killer) {
+            view.chimes.push(now);
+        }
+    }
+    if view.chimes.is_empty() {
+        return;
+    }
+    let last = view.last_rung_up;
+    let mut due = 0;
+    view.chimes.retain(|kill| {
+        if last.is_some_and(|r| (r - kill).abs() <= CHIME_WAIT) {
+            return false;
+        }
+        if now - kill < CHIME_WAIT {
+            return true;
+        }
+        due += 1;
+        false
+    });
+    for _ in 0..due.min(1) {
+        view.heard.push(KILL_CHIME.to_string());
+        let pack = packs
+            .choose_for(active.as_ref().and_then(|a| a.def.cues.as_deref()), gameplay.as_ref().map(|g| g.hud))
+            .cloned();
+        if let Some(pack) = pack
+            && let Some(file) = pack.sound("rung_up").map(str::to_string)
+        {
+            let gain = pack.gain("rung_up");
+            view.to_play.push((pack, file, gain));
+        }
+    }
 }

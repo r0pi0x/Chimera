@@ -2085,7 +2085,7 @@ fn view_model_hands_change_with_the_body() {
     let female = Selection { model: 7, face: 4, ..default() };
     let key = hands::key_for(CaData::builtin().characters(), &female).expect("her hands are her own");
     let hers = hands::with_hands(M92FS, Some(&key));
-    sim.app.world_mut().entity_mut(p).insert((CaRungLook(female), female));
+    sim.app.world_mut().entity_mut(p).insert((CaRungLook(Some(female)), female));
     drawn(&mut sim, p, M92FS);
     let key_of = |s: &Sim| s.app.world().get::<ViewAnimator>(p).unwrap().key.clone();
     assert_eq!(key_of(&sim).as_deref(), Some(M92FS), "the default hands while hers aren't made");
@@ -2096,11 +2096,11 @@ fn view_model_hands_change_with_the_body() {
     assert_eq!(key_of(&sim).as_deref(), Some(hers.as_str()), "her hands");
     assert_eq!(playing(&sim, p).as_deref(), Some("idle_0"), "not drawn again");
     // The next rung's body: the default character's.
-    sim.app.world_mut().entity_mut(p).insert((CaRungLook(Selection::default()), Selection::default()));
+    sim.app.world_mut().entity_mut(p).insert((CaRungLook(Some(Selection::default())), Selection::default()));
     sim.ticks(2);
     assert_eq!(key_of(&sim).as_deref(), Some(M92FS), "the default body's hands");
     // And back to hers.
-    sim.app.world_mut().entity_mut(p).insert((CaRungLook(female), female));
+    sim.app.world_mut().entity_mut(p).insert((CaRungLook(Some(female)), female));
     sim.ticks(2);
     assert_eq!(key_of(&sim).as_deref(), Some(hers.as_str()));
 }

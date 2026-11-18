@@ -986,12 +986,12 @@ and a carrier loses active camouflage every tick.
   own object sat). The announcer for grabs is not played. (A start
   nearer its own flag is dropped in section 4.3.)
 - **Single flag.** With a nonzero time T (ticks), one flag is made for
-  a random team at the start (messages "you are on defense" to its
-  team, "you are on attack" to the other; no announcer line at the
+  a random team at the start (messages "You are on defense." to its
+  team, "You are on offense." to the other, the executable's texts; no announcer line at the
   start beyond "capture the flag"), and a swap timer is set to T. The
   timer falls by 1 every tick from the start, **carried or not**, and
   stops at 0. On the first tick on which the timer is 0 and the flag is
-  not held by a unit, the swap happens: the "time expired" message, both
+  not held by a unit, the swap happens: the "Time expired." message, both
   warnings off, every flag marker cleared, the flag's owner team
   changes to the other team, the announcer names the new **attacking**
   team ("blue team ctf" when red now defends, "red team ctf" when blue
@@ -1254,7 +1254,7 @@ that tick, before the objects' update and the telefrag counters).
 | A biped blocks when | the flag lies within 0.4 (0.2 + 0.2) of the segment from (its origin z + 0.2 − the arriving segment length) up to (its origin z + 0.2 + its own segment length), measured as a capsule | WU | its own segment length is 0.3 − 0.2 c' with its crouch c'; the segment has rounded ends |
 | A vehicle blocks when | the same pill overlaps its collision model's surfaces | | no simple shape |
 | Blocked: effects | the arriving player is not moved; the blocking player (if the blocker is a player's unit) gets +1 on its telefrag counter and is marked "blocking" this tick; nothing else happens to a non-player blocker; with several overlapping objects only the deepest one is credited | | |
-| Blocked message | shown to the arriving player on the first blocked attempt and then on every 121st (one counter shared by all players, decremented only on blocked attempts) | attempts | not "every 120 ticks" |
+| Blocked message | shown to the arriving player on the first blocked attempt and then on every 121st (one counter shared by all players, decremented only on blocked attempts) | attempts | not "every 120 ticks". The text is **"Teleporter is blocked"** (no final full stop), English only: a UTF-16 string built into the game's executable (`default.xbe`, build 01.10.12.2276) among the other in-game engine texts ("Waiting for space to clear", "Rejoin in %d", "You are out of lives", ...), not in any `ustr` tag of `bloodgulch.map` or `ui.map` (disc, checked 2026-11-18). Drawn as an engine text line (`hud.md` section 13, Other text); its placement and how long it stays are open (question 19) |
 | Telefrag counter | +1 per blocked attempt (one per attempting player per tick); −1 per tick on which the player was not blocking (never below 0) | | the check runs at the end of the tick, after the attempts |
 | Telefrag | the blocker's unit is killed when it is marked "blocking" this tick and its counter is at least 90 | ticks | a death with no killer; the killing tick is the 90th consecutive blocked attempt |
 | Arrival position | exactly the target flag's position, as the origin | | whatever the floor there |
@@ -1632,6 +1632,10 @@ Gulch's every entry is in `scenario.md`.
   on three maps compared.
 - **Tags present.** The 14 weapon list tags and the three powerup
   tags exist on all 13 maps.
+- **Engine texts (2026-11-18).** The executable's UTF-16 strings
+  were listed: "Teleporter is blocked", "You are on offense.", "You
+  are on defense.", "Time expired." are there; no `ustr` tag of
+  `bloodgulch.map` (8 lists) or `ui.map` holds a teleporter text.
 - **Not checked on the disc:** the spawn rating, respawn rules, item
   clock, substitution tables, ammunition and scoring rules (read from
   the reference; the executable was not disassembled for them).
@@ -1893,7 +1897,7 @@ spare rounds go to 0 (the weapon is deleted).
 | 6.6 lone and degenerate hills, drawing, control sounds | reference only; hill shader checked against the disc |
 | 3.1 friendly fire and balance | Xbox: absence checked against the disc (layout, menus); PC options from the reference's additions only |
 | 7.1 objective markers | reference only; arrow names checked against the disc (`hud.md`) |
-| 6.8 teleporters | reference only (the flags and pairs checked against the disc, `scenario.md`); the exit volume's numbers follow from the biped's pill (`movement.md`) |
+| 6.8 teleporters | reference only (the flags and pairs checked against the disc, `scenario.md`); the exit volume's numbers follow from the biped's pill (`movement.md`); the blocked message's text checked in the disc's executable, its placement and duration open |
 | 7 radar | the three numbers checked against the disc; rule from the reference |
 | 8 vehicles | placements checked against the disc; no respawn from the reference |
 | 9 announcer | list and lengths checked against the disc; queue, triggers and who hears from the reference |
@@ -1968,3 +1972,12 @@ spare rounds go to 0 (the weapon is deleted).
     from the target flag of a pair and walk into the source: expected
     blocked at 0.3, not at 0.5; and that a corpse at the exit does not
     block.
+19. **Engine text lines' placement and life.** The executable's
+    built-in texts ("Teleporter is blocked", the single flag "You are
+    on defense." / "You are on offense." / "Time expired.", the flag
+    and score lines) are drawn by engine code, not by a HUD tag; which
+    screen line they use and how long one stays up were not read
+    (the reference was not available to the 2026-11-18 session). Until
+    then use the item messages' timing (`hud.md` section 13: 2 s up,
+    2 s fade). Check on a capture: block a teleporter exit and time the
+    line.

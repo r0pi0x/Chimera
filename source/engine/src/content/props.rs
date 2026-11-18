@@ -819,7 +819,34 @@ pub fn load_held_posed(
         attachments,
         own: (!merged.is_empty()).then_some(own),
         merged: merged.into_iter().map(|(b, m)| (mdl.bones[b].name.clone(), m)).collect(),
+        nose: Some(nose_in(materials, path, &global, i, to_bone)),
     })
+}
+
+/// Where a Source model faces (its entity's +X: its `MapHeldModel::nose`)
+/// in the frame its held meshes were left in (`held`, from model space),
+/// as the game draws it: posed by its first sequence's first frame (a
+/// projectile's model may turn its bone there: TF2's rocket lies along
+/// its bone's Z at rest and is turned nose first by its sequence), else
+/// at rest. `global`: each bone's rest pose in model space; `bone`: the
+/// bone the meshes follow.
+fn nose_in(materials: &mut MaterialLoader, path: &str, global: &[(Quat, Vec3)], bone: usize, held: Mat4) -> Vec3 {
+    let rest = global.get(bone).map_or(Quat::IDENTITY, |g| g.0);
+    let posed = load_rig(materials, path)
+        .and_then(|rig| {
+            let set = &rig.animations;
+            let mut pose: Vec<crate::map::anim::BonePose> = rig.bones.iter().map(|b| (b.rotation, b.position)).collect();
+            set.sequence_pose(0, 0.0, &set.default_params(), &mut pose);
+            let mut out: Vec<Quat> = Vec::with_capacity(pose.len());
+            for (k, b) in rig.bones.iter().enumerate() {
+                let parent = b.parent.filter(|p| *p < k).map_or(Quat::IDENTITY, |p| out[p]);
+                out.push(parent * pose[k].0);
+            }
+            out.get(bone).copied()
+        })
+        .unwrap_or(rest);
+    let (_, held_rotation, _) = held.to_scale_rotation_translation();
+    (held_rotation * rest * posed.inverse() * Vec3::X).normalize_or(Vec3::X)
 }
 
 /// The `prop_data` block of a model's key values (spec 2.2), lower-case

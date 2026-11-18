@@ -306,8 +306,9 @@ pub fn ladder_classes<'a>(table: &'a Classes, ladder: &Ladder) -> Vec<&'a Class>
 }
 
 /// The class a player's rung drew (`HOOK`), on every machine from its
-/// `ladder::OnRung` (`follow_rung`); empty off a TF2 rung.
-#[derive(Component, Clone, Debug, PartialEq, Eq)]
+/// `ladder::OnRung` (`follow_rung`); empty off a TF2 rung. On every
+/// character from its spawn, empty (docs/DESIGN.md, "ECS style").
+#[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
 pub struct RungClass(pub String);
 
 /// A player arrived on a rung (`ladder::OnRung`, on every machine): its
@@ -338,12 +339,14 @@ pub fn add_rung_classes(app: &mut App) {
     if has {
         return;
     }
-    app.add_rung_extras(HOOK).add_observer(follow_rung);
+    use chimera_core::character::CharacterPartsExt;
+    app.add_rung_extras(HOOK).add_observer(follow_rung).on_every_character::<RungClass>();
 }
 
 /// The asset set of class `name`'s body (`chimera_pack sets tf2`,
 /// `super::sets::class_files`): its player model with its animations and
-/// textures and its first-person arms, `players/<name>` (`players/heavy`).
+/// textures, its first-person arms and its voice's waves, `players/<name>`
+/// (`players/heavy`).
 pub fn set_of(name: &str) -> String {
     format!("players/{name}")
 }

@@ -1036,6 +1036,37 @@ fn hurt_sounds_one_per_kind_across_the_server() {
     assert!(s.iter().all(|s| s.server && s.radii.1 == 500.0));
 }
 
+/// Any game's gun makes our character groan (a party app's ladder): a
+/// TF2 pistol's hit plays our hurt sound for its kind and zone, as a fall
+/// does.
+#[test]
+fn another_games_guns_hit_plays_our_hurt_sound() {
+    let mut sim = sim();
+    let a = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
+    heard(&mut sim);
+    let hurt = |kind, weapon| Damage {
+        target: a,
+        attacker: None,
+        amount: 0.1,
+        point: Vec3::new(20.0, 1.5, 20.0),
+        dir: Vec3::Z,
+        hitgroup: Hitgroup::Head,
+        kind,
+        weapon,
+        force: Vec3::ZERO,
+    };
+    sim.app.world_mut().write_message(hurt(DamageKind::Bullet, Some("tf2:tf_weapon_pistol_scout")));
+    sim.app.update();
+    let s = heard(&mut sim);
+    assert!(s.iter().any(|s| s.file.contains("hurtpain_a")), "TF2's hit groans: {s:?}");
+    assert!(s.iter().any(|s| s.file.ends_with("headshot.wav")), "and the head's: {s:?}");
+    sim.seconds(3.0);
+    heard(&mut sim);
+    sim.app.world_mut().write_message(hurt(DamageKind::Fall, None));
+    sim.app.update();
+    assert!(!heard(&mut sim).is_empty(), "a fall");
+}
+
 #[test]
 fn footsteps_by_surface_and_stance() {
     let mut sim = sim();
@@ -1709,6 +1740,51 @@ fn c65_local_voices() {
     sim.ticks(2);
     let stopped = idle(&mut sim);
     assert!(stopped.iter().any(|s| s.volume == 0.0), "killed by a silent copy: {stopped:?}");
+}
+
+/// Your kill voice is Combat Arms' for kills with Combat Arms' guns only:
+/// the killing weapon's game decides, not what you hold or are by now (a
+/// party app's rung swap makes you the next gun's game at once); another
+/// player's kill makes no voice here.
+#[test]
+fn c65b_kill_voice_only_for_own_games_kills() {
+    let mut sim = sim();
+    let me = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
+    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
+    let foe = player(&mut sim, Vec3::new(30.0, 1.0, 20.0), 0.0);
+    let other = player(&mut sim, Vec3::new(40.0, 1.0, 20.0), 0.0);
+    sim.ticks(2);
+    heard(&mut sim);
+    let kill = |sim: &mut Sim, by: Entity, weapon: Option<&'static str>| {
+        sim.app.world_mut().write_message(Died {
+            entity: foe,
+            attacker: Some(by),
+            damage: Damage {
+                target: foe,
+                attacker: Some(by),
+                amount: 1.0,
+                point: Vec3::ZERO,
+                dir: Vec3::Z,
+                hitgroup: Hitgroup::Chest,
+                kind: DamageKind::Bullet,
+                weapon,
+                force: Vec3::ZERO,
+            },
+        });
+        sim.ticks(1);
+        let n = heard(sim).iter().filter(|s| s.file.ends_with("enemykill.wav")).count();
+        sim.seconds(2.0);
+        heard(sim);
+        n
+    };
+    assert_eq!(kill(&mut sim, me, Some("combat_arms:m4")), 1, "a Combat Arms gun's kill");
+    assert_eq!(kill(&mut sim, me, Some("cs_source:ak47")), 0, "a CS:S gun's kill is silent here");
+    // Your identity is Combat Arms' by now (the rung's swap), the kill was
+    // CS:S's: still silent; with no weapon known, the identity decides.
+    sim.app.world_mut().entity_mut(me).insert(chimera_core::slots::GameIdentity("combat_arms".into()));
+    assert_eq!(kill(&mut sim, me, Some("cs_source:ak47")), 0, "the swap doesn't make it ours");
+    assert_eq!(kill(&mut sim, me, None), 1, "no weapon known: the identity's game");
+    assert_eq!(kill(&mut sim, other, Some("combat_arms:m4")), 0, "another player's kill");
 }
 
 /// 66. A hurt sound plays at the victim's centre (not the hit point), and

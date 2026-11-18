@@ -1409,3 +1409,74 @@ fn dominations_go_with_the_kill_and_only_to_their_players() {
         assert_eq!(rel(&mut sim, 2, of).1, None, "C sees no one's");
     }
 }
+
+/// Kill voices over the network (`chimera_sim::kill_voice`): the server
+/// settles each kill's outcome (a listen host's own shell reads it
+/// there) and every client gets it with the kill (`Killed::marks`):
+/// unvoiced for a CS:S killer (no kill line), voiced when the killer's
+/// game spoke for it (a stand-in game here, answering every kill).
+#[test]
+fn kill_voice_outcomes_go_with_the_kill() {
+    use crate::stack::{
+        core::{Hitgroup, Team},
+        rules::Dead,
+    };
+    use chimera_sim::kill_voice::{KillVoiceAsk, KillVoiceOutcome, KillVoiceSet, KillVoiced};
+    #[derive(Resource, Default)]
+    struct SpeakAll(bool);
+    let mut sim = joined(link(60, 0, 0.0), 53, 2);
+    sim.server.app.init_resource::<SpeakAll>().add_systems(
+        PostUpdate,
+        (|mut asks: MessageReader<KillVoiceAsk>, on: Res<SpeakAll>, mut out: MessageWriter<KillVoiced>| {
+            for a in asks.read() {
+                if on.0 {
+                    out.write(KillVoiced { killer: a.killer, victim: a.victim });
+                }
+            }
+        })
+        .in_set(KillVoiceSet::Answer),
+    );
+    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    sim.server.app.world_mut().entity_mut(a).insert(Team(1));
+    sim.server.app.world_mut().entity_mut(b).insert(Team(2));
+    sim.ticks(20);
+    let mut logs: Vec<Log<KillVoiceOutcome>> = (0..=2).map(|app| Log::<KillVoiceOutcome>::new(&sim, app)).collect();
+    for voiced in [false, true] {
+        sim.server.app.world_mut().resource_mut::<SpeakAll>().0 = voiced;
+        let w = sim.server.app.world_mut();
+        let mut e = w.entity_mut(b);
+        e.remove::<Dead>();
+        e.get_mut::<Health>().unwrap().current = 100.0;
+        w.write_message(Damage {
+            force: Vec3::ZERO,
+            target: b,
+            attacker: Some(a),
+            amount: 1000.0,
+            point: Vec3::ZERO,
+            dir: Vec3::X,
+            hitgroup: Hitgroup::Chest,
+            kind: default(),
+            weapon: None,
+        });
+        let mut polls: Vec<&mut dyn Poll> = logs.iter_mut().map(|l| l as &mut dyn Poll).collect();
+        steps(&mut sim, 30, &mut polls);
+    }
+    let server: Vec<bool> = logs[0].all.iter().map(|o| o.voiced).collect();
+    assert_eq!(server, [false, true], "the server's (a listen host's)");
+    assert!(logs[0].all.iter().all(|o| o.killer == a && o.victim == b));
+    for i in 0..2 {
+        let (ia, ib) = (sim.client_id(0), sim.client_id(1));
+        let (ka, kb) = (
+            NetSim::owned_by(&mut sim.clients[i], Some(ia)).unwrap(),
+            NetSim::owned_by(&mut sim.clients[i], Some(ib)).unwrap(),
+        );
+        assert_eq!(
+            logs[i + 1].all,
+            [
+                KillVoiceOutcome { killer: ka, victim: kb, voiced: false },
+                KillVoiceOutcome { killer: ka, victim: kb, voiced: true }
+            ],
+            "client {i}"
+        );
+    }
+}

@@ -412,3 +412,73 @@ fn surface_names_are_impact_classes() {
     assert_eq!(surfaces::class_of("hunter shield"), None);
     assert_eq!(surfaces::SURFACES.game, halo_ce::game::GAME);
 }
+
+/// The sky model's parts drawn in order with no depth test (scenario.md,
+/// "How a renderer uses the sky", 2) as nested shells
+/// (`maps::sky::nest`): a ring drawn after the dome but farther out (Blood
+/// Gulch's, hidden behind the dome whenever the view looked up) is scaled
+/// about the centre to lie inside it, in the same directions; parts already
+/// nested stay; parts that can't nest without coming nearer than the
+/// camera's reach are left alone.
+#[test]
+fn the_skys_parts_nest_in_draw_order() {
+    use bevy::math::Vec3;
+    use halo_ce::game::maps::sky::{NEAREST, nest};
+    let dome: Vec<[f32; 3]> = vec![[80.0, 0.0, 0.0], [0.0, 80.0, 0.0], [-80.0, 0.0, 10.0]];
+    let ring: Vec<[f32; 3]> = vec![[0.0, 290.0, 0.0], [70.0, 1.0, 160.0]];
+    let clouds: Vec<[f32; 3]> = vec![[0.0, 9.0, 78.0], [40.0, 2.0, 0.0]];
+    let (mut a, mut b, mut c) = (dome.clone(), ring.clone(), clouds.clone());
+    assert!(nest(&mut [&mut a, &mut b, &mut c]));
+    assert_eq!(a, dome, "the first part stays");
+    let far = |ps: &Vec<[f32; 3]>| ps.iter().map(|p| Vec3::from(*p).length()).fold(0.0f32, f32::max);
+    let near = |ps: &Vec<[f32; 3]>| ps.iter().map(|p| Vec3::from(*p).length()).fold(f32::MAX, f32::min);
+    assert!(far(&b) < near(&a), "the ring inside the dome: {} < {}", far(&b), near(&a));
+    assert!(far(&c) < near(&b), "the clouds inside the ring");
+    for (p, q) in b.iter().zip(&ring) {
+        assert!(Vec3::from(*p).normalize().abs_diff_eq(Vec3::from(*q).normalize(), 1e-5), "same direction");
+    }
+    // Already nested: nothing moves.
+    let (mut x, mut y) = (ring.clone(), dome.clone());
+    assert!(nest(&mut [&mut x, &mut y]));
+    assert_eq!((x, y), (ring.clone(), dome.clone()));
+    // A part through the centre can't have a part inside it.
+    let (mut x, mut y) = (vec![[NEAREST * 0.5, 0.0, 0.0], [10.0, 0.0, 0.0]], dome.clone());
+    let before = y.clone();
+    assert!(!nest(&mut [&mut x, &mut y]));
+    assert_eq!(y, before);
+}
+
+/// Objects are lit by the lightmap below them (structure_bsp.md, "World
+/// bounds, lighting, vehicles and sky"; scenario.md "Static lighting";
+/// `maps::light_below`): a point over a lit floor under a lit ceiling
+/// takes the floor's texel, a point over the ceiling the ceiling's, a
+/// point off the level none; the probe is that colour shaped by the sky
+/// profile (its mean the colour), with no directional light.
+#[test]
+fn objects_take_the_lightmap_below_them() {
+    use bevy::math::Vec3;
+    use chimera_world::map::{MapLightmap, MapMesh};
+    use halo_ce::game::maps::{light_below::LightBelow, sky};
+    // A 2 x 1 atlas: dark left texel, bright right texel.
+    let atlas = MapLightmap { width: 2, height: 1, rgb: vec![[0.1, 0.1, 0.1], [0.9, 0.8, 0.7]], ..Default::default() };
+    let quad = |y: f32, u: f32| MapMesh {
+        positions: vec![[-5.0, y, -5.0], [5.0, y, -5.0], [5.0, y, 5.0], [-5.0, y, 5.0]],
+        lightmap_uvs: vec![[u, 0.5]; 4],
+        indices: vec![0, 1, 2, 0, 2, 3],
+        ..Default::default()
+    };
+    let (floor, ceiling) = (quad(0.0, 0.25), quad(3.0, 0.75));
+    let below = LightBelow::new([&floor, &ceiling], &atlas).expect("lit triangles");
+    let near = |a: Vec3, b: [f32; 3]| (a - Vec3::from(b)).length() < 1e-4;
+    assert!(near(below.sample(Vec3::new(1.0, 1.0, 1.0)).unwrap(), [0.1, 0.1, 0.1]), "the floor's");
+    assert!(near(below.sample(Vec3::new(1.0, 0.0, 1.0)).unwrap(), [0.1, 0.1, 0.1]), "standing on the floor");
+    assert!(near(below.sample(Vec3::new(1.0, 4.0, 1.0)).unwrap(), [0.9, 0.8, 0.7]), "on the roof, the ceiling's");
+    assert_eq!(below.sample(Vec3::new(20.0, 1.0, 1.0)), None, "off the level");
+    assert_eq!(below.sample(Vec3::new(1.0, -1.0, 1.0)), None, "under everything");
+    let profile = sky::prop_light(None);
+    let probe = below.probe(Vec3::new(1.0, 4.0, 1.0), &profile).unwrap();
+    assert!(probe.lights.is_empty());
+    let mean = probe.cube.iter().copied().sum::<Vec3>() / 6.0;
+    assert!(near(mean, [0.9, 0.8, 0.7]), "{mean}");
+    assert!(probe.cube[2].x > probe.cube[3].x, "brighter from above");
+}

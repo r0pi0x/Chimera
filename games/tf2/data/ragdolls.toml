@@ -1,0 +1,14 @@
+# TF2's player ragdolls' lifetime (specs/tf2/ragdolls.md; `game::bodies::
+# ragdoll_rules`). The ragdoll stays past its owner's respawn until the
+# owner dies again, leaves, or the round restarts (spec 2), and each
+# machine also removes it on a timer of its own (spec 3): `fade_time`
+# from its death; every tick the view sees it, `view_fraction` x
+# `fade_time` from then (4.95 s; shorter too); out of view past it, it
+# vanishes at once, no fade. No cap on their count (spec 7).
+# `cl_ragdoll_forcefade 1`: a seen one fades out at `forced_fade_speed`
+# alpha (0-255) a second instead (spec 5).
+
+# cl_ragdoll_fade_time's default (s).
+fade_time = 15.0
+view_fraction = 0.33
+forced_fade_speed = 600.0

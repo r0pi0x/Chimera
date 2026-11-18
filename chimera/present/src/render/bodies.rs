@@ -22,7 +22,8 @@
 //! their iris projected toward the character's `EyeTarget`, teeth) set
 //! each frame from where the pose puts the head (`aim_faces`), face meshes
 //! with flexes drawn from the body's own copy, moved by the character's
-//! `map::FaceWeights` (`apply_face_morphs`);
+//! `map::FaceWeights`, or at rest (`MapFace::rest`) when its game sets
+//! none (`apply_face_morphs`);
 //! `adopt_bodies`/`pose_ragdolls` hand a dead
 //! character's body to its ragdoll and pose it from the ragdoll's bodies.
 //! A skeleton never drives another's model: an animator says which skeleton
@@ -125,8 +126,9 @@ pub struct HeldParts {
 }
 
 /// What held models added after the map spawned (`map::LateHeldModels`)
-/// are built with: the spawned map's fog and look, whether it lights
-/// models from a light field, its debug view, and its first character
+/// are built with: the spawned map's fog and look, whether their
+/// materials take a probe (a map's spawn: yes, its light field's or
+/// `probe_lit::probe_at`'s neutral light), its debug view, and its first character
 /// model's root (their loose form's frame: `map::loose::asset`).
 #[derive(Resource)]
 pub struct HeldLateBase {
@@ -384,14 +386,18 @@ pub struct BodyAssets {
     /// Each part's facial flexes (`MapMesh::morphs`; empty: none): its
     /// own copy of the mesh follows its character's `FaceWeights`.
     pub morphs: Vec<std::sync::Arc<Vec<MapMorph>>>,
+    /// The face's weights at rest (`MapFace::rest`; empty: none), shown
+    /// while the character has no `FaceWeights`.
+    pub face_rest: std::sync::Arc<Vec<[f32; 2]>>,
 }
 
 /// A body's own copy of a face mesh with flexes: its rest positions, its
-/// flexes and the weights it shows.
+/// flexes, the face's weights at rest and the weights it shows.
 #[derive(Component, Clone, Debug)]
 pub struct FaceMorph {
     pub rest: std::sync::Arc<Vec<[f32; 3]>>,
     pub morphs: std::sync::Arc<Vec<MapMorph>>,
+    pub at_rest: std::sync::Arc<Vec<[f32; 2]>>,
     pub shown: Vec<[f32; 2]>,
 }
 
@@ -630,7 +636,12 @@ pub fn attach_bodies(
                             Some(bevy::mesh::VertexAttributeValues::Float32x3(p)) => p.clone(),
                             _ => Vec::new(),
                         };
-                        morph = Some(FaceMorph { rest: std::sync::Arc::new(rest), morphs: f.clone(), shown: Vec::new() });
+                        morph = Some(FaceMorph {
+                            rest: std::sync::Arc::new(rest),
+                            morphs: f.clone(),
+                            at_rest: assets.face_rest.clone(),
+                            shown: Vec::new(),
+                        });
                         meshes.add(copy)
                     }
                     None => mesh.clone(),
@@ -1234,12 +1245,15 @@ where
             })
             .collect(),
         morphs: model.meshes.iter().map(|m| std::sync::Arc::new(m.morphs.clone())).collect(),
+        face_rest: std::sync::Arc::new(model.face.as_ref().map(|f| f.rest.clone()).unwrap_or_default()),
     }
 }
 
 /// Each face mesh with flexes takes its character's `FaceWeights` (when
-/// they change): its rest positions plus each flex's offsets at its
-/// side's weight. A ragdoll's keeps what it showed.
+/// they change), or the face at rest when its game sets none
+/// (`MapFace::rest`, every controller at 0, not the bare mesh): its rest
+/// positions plus each flex's offsets at its side's weight. A ragdoll's
+/// keeps what it showed.
 pub fn apply_face_morphs(
     mut parts: Query<(&mut FaceMorph, &Mesh3d, &ChildOf)>,
     bodies: Query<Option<&ChildOf>, With<CharacterBody>>,
@@ -1249,13 +1263,14 @@ pub fn apply_face_morphs(
     let Some(mut meshes) = meshes else { return };
     for (mut face, mesh, body) in &mut parts {
         let Some(owner) = bodies.get(body.parent()).ok().flatten().map(ChildOf::parent) else { continue };
-        let Ok(w) = weights.get(owner) else { continue };
-        if w.0 == face.shown {
+        let w = weights.get(owner).map_or(face.at_rest.as_slice(), |w| w.0.as_slice());
+        if w == face.shown.as_slice() {
             continue;
         }
+        let w = w.to_vec();
         let mut positions: Vec<[f32; 3]> = face.rest.to_vec();
         for m in face.morphs.iter() {
-            let [w1, w3] = w.0.get(m.flex as usize).copied().unwrap_or([0.0; 2]);
+            let [w1, w3] = w.get(m.flex as usize).copied().unwrap_or([0.0; 2]);
             if w1.abs() < 1e-4 && w3.abs() < 1e-4 {
                 continue;
             }
@@ -1271,7 +1286,7 @@ pub fn apply_face_morphs(
         if let Some(mut m) = meshes.get_mut(&mesh.0) {
             m.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         }
-        face.shown = w.0.clone();
+        face.shown = w;
     }
 }
 
@@ -1476,6 +1491,7 @@ mod late_held_tests {
             attachments: Vec::new(),
             merged: Vec::new(),
             own: None,
+            nose: None,
         };
         let texture = MapTexture {
             name: "gun.dtx".into(),
@@ -1507,5 +1523,79 @@ mod late_held_tests {
         // The next map's spawn replaces `HeldAssets`.
         app.world_mut().insert_resource(HeldAssets(HashMap::new()));
         until_built(&mut app);
+    }
+}
+
+#[cfg(test)]
+mod face_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    /// A character whose body has one face part: one vertex at the origin
+    /// and one flex moving it 1 along x; the face at rest holds that flex
+    /// at `at_rest`. Returns (character, the part's mesh).
+    fn spawn_face(app: &mut App, at_rest: f32) -> (Entity, Handle<Mesh>) {
+        let mut mesh = Mesh::new(bevy::mesh::PrimitiveTopology::PointList, bevy::asset::RenderAssetUsages::default());
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0f32, 0.0, 0.0]]);
+        let handle = app.world_mut().resource_mut::<Assets<Mesh>>().add(mesh);
+        let world = app.world_mut();
+        let character = world.spawn_empty().id();
+        let body = world
+            .spawn((
+                CharacterBody {
+                    skeleton: 0,
+                    model: 0,
+                    skin: 0,
+                    body: 0,
+                    joints: Vec::new(),
+                    held: None,
+                    held_parts: Vec::new(),
+                },
+                ChildOf(character),
+            ))
+            .id();
+        let morph = MapMorph {
+            flex: 0,
+            vertices: vec![0],
+            deltas: vec![[1.0, 0.0, 0.0]],
+            sides: vec![0.0],
+        };
+        world.spawn((
+            Mesh3d(handle.clone()),
+            FaceMorph {
+                rest: Arc::new(vec![[0.0, 0.0, 0.0]]),
+                morphs: Arc::new(vec![morph]),
+                at_rest: Arc::new(vec![[at_rest, at_rest]]),
+                shown: Vec::new(),
+            },
+            ChildOf(body),
+        ));
+        (character, handle)
+    }
+
+    fn x(app: &App, mesh: &Handle<Mesh>) -> f32 {
+        match app.world().resource::<Assets<Mesh>>().get(mesh).unwrap().attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(bevy::mesh::VertexAttributeValues::Float32x3(p)) => p[0][0],
+            _ => panic!("no positions"),
+        }
+    }
+
+    /// A face its game sets no weights for shows the face at rest (its
+    /// rules at every controller 0: an HL2 citizen's neutral lids), not
+    /// the bare mesh; weights its game sets replace it, and losing them
+    /// returns it to rest.
+    #[test]
+    fn a_face_without_weights_shows_its_rest() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>().add_systems(Update, apply_face_morphs);
+        let (character, mesh) = spawn_face(&mut app, 0.5);
+        app.update();
+        assert_eq!(x(&app, &mesh), 0.5, "at rest");
+        app.world_mut().entity_mut(character).insert(FaceWeights(vec![[1.0, 1.0]]));
+        app.update();
+        assert_eq!(x(&app, &mesh), 1.0, "the game's weights");
+        app.world_mut().entity_mut(character).remove::<FaceWeights>();
+        app.update();
+        assert_eq!(x(&app, &mesh), 0.5, "back at rest");
     }
 }

@@ -1510,7 +1510,11 @@ to 45) are single-player.
 **Other text** (informational: the party app draws its own): the
 multiplayer score and the match timer, the kill messages, player names and
 chat are not part of the HUD tags and are drawn by the game engine's own
-text (kill and event lines go through the same message lines); the
+text (kill and event lines go through the same message lines; their
+English texts are built into the executable, not into a `ustr` tag:
+for example the teleporter's "Teleporter is blocked",
+`multiplayer_rules.md` 6.8, whose placement and duration are that
+spec's open question 19); the
 scripted timer (number glyphs, two digits each of minutes, seconds,
 hundredths, its colour block `timer` with the "time up" block when it
 runs out) and the objective text (the objective colour block's up and

@@ -546,7 +546,8 @@ fn blood_gulch_has_a_sky_that_encloses_the_level() {
     let Some(mount) = mount() else { return };
     let map = load(&mount, "bloodgulch", true);
     let cam = map.sky_camera.as_ref().expect("a sky camera");
-    assert_eq!(cam.scale, halo_ce::game::maps::sky::SCALE);
+    // The parts nested in draw order, seen from the centre (`sky::nest`).
+    assert_eq!(cam.scale, halo_ce::game::maps::sky::NO_PARALLAX);
     assert_eq!(cam.origin, Vec3::ZERO);
     assert!(cam.fog.is_none(), "the world's fog stays the world's");
     let sky: Vec<_> = map.meshes.iter().filter(|m| m.skybox).collect();
@@ -556,12 +557,21 @@ fn blood_gulch_has_a_sky_that_encloses_the_level() {
         assert!(m.unlit, "{} is unlit", m.material);
         assert!(!m.indices.is_empty());
     }
-    // The meshes, scaled by the camera's scale, enclose the level.
+    let dist = |m: &chimera_world::map::MapMesh| {
+        m.positions.iter().map(|p| Vec3::from(*p).length()).fold((f32::MAX, 0.0f32), |(lo, hi), d| (lo.min(d), hi.max(d)))
+    };
+    for w in sky.windows(2) {
+        assert!(dist(w[1]).1 < dist(w[0]).0, "{} inside {}", w[1].material, w[0].material);
+    }
+    assert!(sky[3].material.ends_with("ring clear afternoon"), "{}", sky[3].material);
+    // The dome (drawn first, its size kept), scaled by the miniature's
+    // scale, encloses the level.
+    let scale = halo_ce::game::maps::sky::SCALE;
     let mut lo = Vec3::splat(f32::MAX);
     let mut hi = Vec3::splat(f32::MIN);
-    for p in sky.iter().flat_map(|m| m.positions.iter()) {
-        lo = lo.min(Vec3::from(*p) * cam.scale);
-        hi = hi.max(Vec3::from(*p) * cam.scale);
+    for p in &sky[0].positions {
+        lo = lo.min(Vec3::from(*p) * scale);
+        hi = hi.max(Vec3::from(*p) * scale);
     }
     let (level_lo, level_hi) = bounds_of(&map);
     assert!(
@@ -569,14 +579,6 @@ fn blood_gulch_has_a_sky_that_encloses_the_level() {
         "{lo} {hi}"
     );
     assert!(hi.y > level_hi.y);
-    // The sky model's size (models.md): about 425 km across after scaling
-    // (y -53461.3..86000.4 units).
-    // (engine x is Halo's y: -53461.3..86000.4 units).
-    assert!(
-        ((hi.x - lo.x) / 3.048 - 139461.7).abs() < 100.0,
-        "{}",
-        (hi.x - lo.x) / 3.048
-    );
     // The flat background stays behind it, and the level keeps a fog.
     assert!(map.sky.is_some() && map.fog.is_some());
     assert!(!map.warnings.iter().any(|w| w.contains("sky model")));

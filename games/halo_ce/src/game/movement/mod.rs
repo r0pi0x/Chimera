@@ -107,7 +107,8 @@
 //!   (above 0.2) have no body to play on yet.
 //! - Climbable surfaces: a contact inside any ladder volume the engine
 //!   publishes (`core::MapLadders`: a Halo map's climbable sheets,
-//!   `maps::collision`; another game's map's ladders; games'
+//!   `maps::collision`; another game's map's ladders, its ladder lines
+//!   as volumes `LINE_REACH` around them; games'
 //!   `LadderZone`s) is climbable (`space::EngineSpace::ladders`, within
 //!   3 cm), and counts as ground by the spec's rule (`tick`). The edge
 //!   neighbour's hold (`mover::hold_on_neighbour`) knows only ladder
@@ -151,6 +152,11 @@ use crate::core::{
 
 /// The movement's id.
 pub const ID: &str = "halo_ce:movement";
+
+/// How far around another game's ladder line (HL2's, 18 Source units in
+/// front of its ladder's geometry) its climbable volume reaches (m; ours:
+/// 24 units), so the wall behind it is a climbable contact.
+const LINE_REACH: f32 = 24.0 * 0.0254;
 
 /// The player's speed multiplier m_p (the game type's,
 /// multiplayer_rules.md): scales the wanted speed only.
@@ -330,12 +336,18 @@ fn step(
     (envelopes, map_game, tables): (Option<Res<MovementEnvelopes>>, Option<Res<MapGame>>, Option<Res<BodyTables>>),
 ) {
     let map = map_body_envelope(envelopes.as_deref(), map_game.as_deref());
-    // Every ladder volume, climbed by Halo's rule (docs/DESIGN.md,
-    // "Ladders across games"): the map's and the games' zones.
+    // Every ladder, climbed by Halo's rule (docs/DESIGN.md, "Ladders
+    // across games"): the map's volumes, the games' zones, and the map's
+    // ladder lines (HL2's) as volumes reaching the geometry behind them
+    // (`LINE_REACH` around the line).
     let ladders: Vec<MapBrush> = map_ladders
         .iter()
         .flat_map(|l| l.volumes.iter().cloned())
         .chain(zones.iter().map(|z| z.0.clone()))
+        .chain(map_ladders.iter().flat_map(|l| l.lines.iter()).map(|l| {
+            let r = Vec3::new(LINE_REACH, 0.0, LINE_REACH);
+            MapBrush { ladder: true, ..MapBrush::from_box(l.bottom.min(l.top) - r, l.bottom.max(l.top) + r) }
+        }))
         .collect();
     let s = crate::game::METERS_PER_UNIT;
     let per_tick = s * data::TICKS_PER_SECOND;

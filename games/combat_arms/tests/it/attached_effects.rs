@@ -681,7 +681,7 @@ fn t114_eyes_third_person_only() {
     sim.app.insert_resource(ShowLocalBody(false));
     let infected = Selection { face: 20, ..default() };
     let other = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
-    sim.app.world_mut().entity_mut(other).insert(CaRungLook(infected));
+    sim.app.world_mut().entity_mut(other).insert(CaRungLook(Some(infected)));
     sim.ticks(2);
     assert!(sim.app.world().get::<CaAttachedGroups>(other).is_some_and(|g| g.0[0].group == "Test_Eyes"));
     let eye = material(&sim, EYE_TEX, true);
@@ -702,7 +702,7 @@ fn t114_eyes_third_person_only() {
     assert_eq!(near(&sim, other, eye), 1, "looping past its 3 s");
     // The same look on the local player: hidden in first person.
     let me = sim.spawn_character(Vec3::new(10.0, 1.0, 0.0), combat_arms::game::movement::ID);
-    sim.app.world_mut().entity_mut(me).insert((LocalPlayer, CaRungLook(infected)));
+    sim.app.world_mut().entity_mut(me).insert((LocalPlayer, CaRungLook(Some(infected))));
     sim.ticks(3);
     assert!(sim.app.world().get::<CaAttachedGroups>(me).is_some());
     assert_eq!(near(&sim, me, eye), 0, "you never see your own eyes");
@@ -710,7 +710,7 @@ fn t114_eyes_third_person_only() {
     sim.ticks(2);
     assert_eq!(near(&sim, me, eye), 1, "seen in third person");
     // Changed back (another face): the groups go.
-    sim.app.world_mut().entity_mut(other).insert(CaRungLook(Selection::default()));
+    sim.app.world_mut().entity_mut(other).insert(CaRungLook(Some(Selection::default())));
     sim.ticks(3);
     assert!(sim.app.world().get::<CaAttachedGroups>(other).is_none());
     assert_eq!(sim.app.world().resource::<CaFx>().attached(other).count(), 0);

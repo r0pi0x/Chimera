@@ -40,7 +40,8 @@ pub struct ImpulseRequest(pub u8);
 #[derive(Message, Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct SprayRequest(pub Option<crate::map::decal::SprayPicture>);
 
-/// One world decal: its group (a named one or a surface material's), where,
+/// One world decal: its group (a named one, a surface material's, or both:
+/// that game's group for the material, `DecalGroup::GameMaterial`), where,
 /// the surface's normal, the direction of what made it, spun or upright.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct NetDecal {
@@ -57,6 +58,7 @@ impl NetDecal {
         let (named, material) = match &p.group {
             DecalGroup::Named(n) => (Some(n.clone()), None),
             DecalGroup::Material(m) => (None, Some(*m)),
+            DecalGroup::GameMaterial(g, m) => (Some(g.clone()), Some(*m)),
         };
         Self {
             named,
@@ -70,7 +72,8 @@ impl NetDecal {
 
     fn place(&self) -> Option<PlaceDecal> {
         let group = match (&self.named, self.material) {
-            (Some(n), _) => DecalGroup::Named(n.chars().take(64).collect()),
+            (Some(g), Some(m)) => DecalGroup::GameMaterial(g.chars().take(64).collect(), m),
+            (Some(n), None) => DecalGroup::Named(n.chars().take(64).collect()),
             (None, Some(m)) => DecalGroup::Material(m),
             (None, None) => return None,
         };

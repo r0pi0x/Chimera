@@ -15,7 +15,10 @@
 //!
 //! An effect on a holder's gun (`Running::on_gun`) has its instances
 //! placed on the gun again each tick, so parts and particles made later
-//! in its life start where the marker is then.
+//! in its life start where the marker is then; its sounds are the
+//! holder's (`Running::sound_source`), an effect out in the world's
+//! (impacts, detonations) nobody's, so a blast's impacts don't take the
+//! shooter's voices from its fire sound.
 //!
 //! A particle system part (`system`) is made at once as a free system.
 //! Its particles live through their particle states (`system_particle`,
@@ -26,7 +29,13 @@
 //! the state it is in (blended in reverse through a transition) as its own
 //! motion keys (`ParticleCurves::motion`); the rotational render mode's
 //! face-on sprite following the rotation. A plain particle's sprite spans
-//! 2R x its pixels x the tag's sprite size field.
+//! 2R x its pixels x the tag's sprite size field, one on a bitmap that is
+//! not a sprite group (the "lens flare" particles: the charged bolt's
+//! impact flare) a 2R square. A particle whose initial sequence has no
+//! looping or final one after it dies when its sprites run out (a muzzle
+//! flash animated once per frame shows for one update), its fades and
+//! radius animation still on its lifespan (a fade out longer than the
+//! lifespan starts below full).
 //!
 //! Known shortcuts: a free particle system's particles are made at its
 //! creation only (its creation rate counted over its birth state; an
@@ -49,7 +58,11 @@
 //! engine's particle generator, not Halo's recurrence; environments are
 //! all "air" (no water test) and every effect is violent; visibility is
 //! not tested; a particle's collision effect and material effect are not
-//! made; split-screen division is off (one local player).
+//! made; split-screen division is off (one local player); a particle whose
+//! initial sequence ends with looping or final sequences to follow holds
+//! its last sprite to its lifespan (no change of sequence); a first-person
+//! particle's size is not scaled where the view model is drawn with
+//! another field of view than the world's (its position is: `place`).
 
 use bevy::prelude::*;
 
@@ -225,6 +238,16 @@ impl Running {
         }
     }
 
+    /// Whose sound a part makes: the holder's for an effect on its gun (its
+    /// firing, empty and ready sounds: its own voices, heard as its own),
+    /// nobody's for one out in the world (an impact, a detonation: a sound
+    /// at a point). A shotgun blast's 15 pellets' impact sounds counted as
+    /// the shooter's crowded its fire sound out of the source's voices
+    /// (playtest 2026-11-18: no shotgun fire).
+    pub fn sound_source(&self) -> Option<Entity> {
+        self.on_gun.as_ref().and(self.owner)
+    }
+
     fn parts(&self, fx: &HaloFx, effect: &FxEffect, rng: &mut ParticleRng, world: &dyn Fn(Vec3, Vec3) -> Option<(f32, Vec3)>, out: &mut Made) {
         for p in &effect.events[self.event].parts {
             if p.mode == 2 || p.environment == 2 || p.environment == 3 {
@@ -237,7 +260,7 @@ impl Running {
                     f = Frame { at: f.at, forward: Vec3::NEG_Y, up: Vec3::NEG_Z };
                 }
                 match &p.kind {
-                    FxPartKind::Sound(entry) => out.sounds.push(PlaySound { source: self.owner, ..PlaySound::at(entry.clone(), f.at) }),
+                    FxPartKind::Sound(entry) => out.sounds.push(PlaySound { source: self.sound_source(), ..PlaySound::at(entry.clone(), f.at) }),
                     FxPartKind::Decal(group) => {
                         let length = range(rng, p.velocity) * METERS_PER_UNIT;
                         if !self.decals || length <= 0.0 {
@@ -363,11 +386,16 @@ pub fn particle(def: &FxParticle, entry: &FxEntry, frame: &Frame, rng: &mut Part
     let (lo, hi) = (entry.tint_lower, entry.tint_upper);
     let color = Vec3::new(lo[1] + (hi[1] - lo[1]) * q, lo[2] + (hi[2] - lo[2]) * q, lo[3] + (hi[3] - lo[3]) * q);
     let alpha = lo[0] + (hi[0] - lo[0]) * q;
-    let life = range(rng, def.lifespan).max(1.0 / 30.0);
+    let lifespan = range(rng, def.lifespan).max(1.0 / 30.0);
     let (sequence, frame_loop) = if def.initial > 0 {
         (def.first_sequence + (rng.random() * def.initial as f32) as i16, false)
     } else {
         (def.first_sequence + (rng.random() * def.looping.max(1) as f32) as i16, true)
+    };
+    // The index is clamped to the bitmap's sequences (creation step 7).
+    let sequence = match def.sprites.len() {
+        0 => sequence,
+        n => sequence.clamp(0, n as i16 - 1),
     };
     let fps = if def.flags & blam_formats::effect::Particle::ANIMATE_ONCE_PER_FRAME != 0 {
         30.0
@@ -376,8 +404,21 @@ pub fn particle(def: &FxParticle, entry: &FxEntry, frame: &Frame, rng: &mut Part
     } else {
         0.0
     };
-    let fade_in = if def.fade_in > 0.0 { (0.0, (def.fade_in / life).min(1.0)) } else { (0.0, 0.0) };
-    let fade_out = if def.fade_out > 0.0 { ((1.0 - def.fade_out / life).max(0.0), 1.0) } else { (2.0, 2.0) };
+    // An initial sequence with no looping or final one to follow dies when
+    // its sprites run out (each update, step 3), before its lifespan when
+    // that is longer: a one-sprite flash animated once per frame is drawn
+    // for one update.
+    let shown = def.sprites.get(sequence.max(0) as usize).filter(|n| **n > 0).map(|n| f32::from(*n) / fps);
+    let life = match shown {
+        Some(t) if !frame_loop && def.looping <= 0 && def.finals <= 0 && fps > 0.0 => lifespan.min(t),
+        _ => lifespan,
+    };
+    // Fades and the radius animation run on the lifespan, not on that:
+    // a / fade in, times (L - a) / fade out in the last fade out seconds
+    // (a fade out longer than L starts below 1).
+    let at_life = |seconds: f32| seconds / life;
+    let fade_in = if def.fade_in > 0.0 { (0.0, at_life(def.fade_in)) } else { (0.0, 0.0) };
+    let fade_out = if def.fade_out > 0.0 { (at_life(lifespan - def.fade_out), at_life(lifespan)) } else { (2.0, 2.0) };
     // Parallel to its direction: a strip along it through the point, the
     // sprite's width across (its largest side spans 2R).
     let (long, across) = if def.aspect >= 1.0 { (radius, radius / def.aspect) } else { (radius * def.aspect, radius) };
@@ -399,7 +440,7 @@ pub fn particle(def: &FxParticle, entry: &FxEntry, frame: &Frame, rng: &mut Part
         color,
         alpha: alpha.clamp(0.0, 1.0),
         fade: Fade::Windows { start_alpha: if def.fade_in > 0.0 { 0.0 } else { 1.0 }, fade_in, fade_out },
-        size: Ramp::linear(radius * def.radius_animation.0, radius * def.radius_animation.1),
+        size: Ramp::linear(radius * def.radius_animation.0, radius * (def.radius_animation.0 + (def.radius_animation.1 - def.radius_animation.0) * life / lifespan)),
         roll,
         roll_speed: spin,
         ..Particle::new(at, life, material, radius)

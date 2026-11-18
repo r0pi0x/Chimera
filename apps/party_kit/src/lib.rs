@@ -23,6 +23,9 @@
 //!   flinch of a CS:S-identity player), the minigame runtime
 //!   (`MinigamePlugin`), its part of the network (`chimera_net::
 //!   minigame_net`) and the original minigames (`OriginalsPlugin`).
+//!   Every game's ragdolls and bodies go when their owner respawns
+//!   (`map::ragdoll::BodiesGoOnRespawn`, for performance), over each
+//!   game's own lifetime.
 //!   The app's gameplay is Combat Arms' until a minigame starts
 //!   (`minigame <id>`, `+minigame originals:gun_game_dust2` on the command
 //!   line), which takes the rules slot and names the others.
@@ -375,6 +378,10 @@ impl Plugin for PartyPartsPlugin {
         }
         even_footsteps(app);
         voice_lines(app);
+        // Every game's ragdolls and bodies go when their owner respawns
+        // (performance; a previous rung's character's too), over each
+        // game's own lifetime (TF2's timer, HL2:DM's until the next death).
+        app.insert_resource(chimera_world::map::ragdoll::BodiesGoOnRespawn);
         // The host's settings and the skip-map vote (the Escape menu's).
         host::build(app);
     }

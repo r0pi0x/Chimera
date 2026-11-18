@@ -11,7 +11,8 @@
 //! (`MapFace`: descriptors, controllers, rules, mesh flexes, FACS lids, for
 //! its game to run) and each mesh's vertex offsets (`MapMorph`), which a
 //! drawn body's own copy of the mesh follows from its character's
-//! `FaceWeights`.
+//! `FaceWeights`, or, when its game sets none, from the face at rest
+//! (`MapFace::rest`: every controller at 0 through the rules).
 //!
 //! The eye basis and the planar iris projection follow hl2-rs's
 //! `eyes::basis` and `eyes::projection`, in world space here.
@@ -146,6 +147,12 @@ pub struct MapFace {
     pub rules: Vec<MapFlexRule>,
     pub flexes: Vec<MapFlex>,
     pub eyelids: Vec<MapEyelids>,
+    /// The mesh flexes' weights with every controller at 0 (`FaceWeights`
+    /// order), made by its loader through the rules and lids: what a body
+    /// whose game sets no `FaceWeights` shows, not the bare mesh (an
+    /// HL2 citizen's lids, which the rules hold at neutral).
+    #[serde(default)]
+    pub rest: Vec<[f32; 2]>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -200,7 +207,8 @@ pub struct MapMorph {
 
 /// A character's face as its game drives it: each mesh flex's weight for
 /// its own side and its pair's (`MapFace::flexes` order). The drawn body's
-/// face meshes follow it (`render::bodies`).
+/// face meshes follow it (`render::bodies`); without it they show the
+/// face at rest (`MapFace::rest`).
 #[derive(Component, Clone, Debug, Default, PartialEq)]
 pub struct FaceWeights(pub Vec<[f32; 2]>);
 

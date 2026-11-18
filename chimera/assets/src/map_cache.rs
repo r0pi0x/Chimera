@@ -60,7 +60,9 @@
 //!   service serves for the same key and versions (the same bytes, its
 //!   key without this machine's layers), taken on a miss before
 //!   converting when its inputs are this mount's, and kept here
-//!   (`Outcome::Served`); `chimera_pack convert` makes them.
+//!   (`Outcome::Served`); `chimera_pack convert` makes them. The records
+//!   a client fetched for them are capped too (`CHIMERA_SERVED_CACHE_GB`,
+//!   `served::SERVED_CAP_ENV`).
 //!
 //! Known shortcuts: files a converter reads without the mount are the
 //! loader's to put in its key. An entry truncated by hand while a process
@@ -79,7 +81,7 @@ use chimera_vfs::{Access, Mount};
 
 use crate::disk;
 use served::SERVED_LAYERS;
-pub use served::{RECIPE_FORMAT, Recipe, SERVED_DIR, SERVED_ENV, Served, ServedEntry, entry_path as served_entry_path, recipe_path as served_recipe_path};
+pub use served::{RECIPE_FORMAT, Recipe, DEFAULT_SERVED_CAP_GB, SERVED_CAP_ENV, SERVED_DIR, SERVED_ENV, Served, ServedEntry, entry_path as served_entry_path, recipe_path as served_recipe_path};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub mod served;

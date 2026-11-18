@@ -5,7 +5,8 @@
 //! sounds and environments each map carries, Blood Gulch's background
 //! (sounds.md: `bloodgultch`, one track looping `countryday2`, fades of
 //! 3 s) heard everywhere in the level, its teleporter loop (0.5 and 2.5
-//! WU, class 50), the rocket's flight loop and the Spartan's footsteps.
+//! WU, class 50), the rocket's flight loop, the teleporter's activate
+//! sound, the plasma pistol's charge hum and the Spartan's footsteps.
 //! Each test passes with a note without an install.
 
 use bevy::math::Vec3;
@@ -100,6 +101,42 @@ fn blood_gulchs_sounds() {
     eprintln!("projectile loops: {:?}", lib.projectiles);
     eprintln!("weapon loops: {:?}", lib.weapons);
     assert!(lib.projectiles.keys().any(|p| p.contains("rocket")), "{:?}", lib.projectiles);
+    // The teleporter's activate sound, for the teleported player.
+    let activate = halo_ce::game::fx::name_of(halo_ce::game::maps::teleporters::ACTIVATE_SOUND);
+    assert!(map.sounds.entry(&activate).is_some_and(|e| !e.waves.is_empty()), "{activate}");
+}
+
+/// The plasma pistol's charge hum (playtest 2026-11-18: no charge sound):
+/// its weapon tag's looping attachment `plasma rifle\charging` scaled by
+/// function D, which follows the primary charge (weapons.md 17, export B
+/// = 10): silent at rest, full when charged, and played by
+/// `audio::attached::weapons` at that scale.
+#[test]
+fn the_plasma_pistols_charge_hums_by_its_charge() {
+    use halo_ce::game::{
+        audio::{attached::weapon_loop_scale, library::WeaponLoop},
+        view::displays::{Functions, export, step},
+        weapons::{guns, tick::TriggerMode, HaloGun},
+    };
+    let Some(mount) = mount() else { return };
+    let map = load(&mount, "bloodgulch", false);
+    let lib = library(&map);
+    let pp = r"weapons\plasma pistol\plasma pistol";
+    let loops = &lib.weapons[pp];
+    assert!(loops.contains(&WeaponLoop { sound: r"sound\sfx\weapons\plasma rifle\charging".into(), scale: 4 }), "{loops:?}");
+    let bytes = mount.read("maps/bloodgulch.map").unwrap();
+    let file = blam_formats::cache::MapFile::load(&bytes).unwrap();
+    let shows = halo_ce::game::view::load::displays_of(&file);
+    let (id, gun) = guns().into_iter().find(|(_, g)| g.tag == pp).unwrap();
+    let program = &shows.guns[id.as_str()];
+    let scale = |trigger: TriggerMode| {
+        let state = HaloGun { trigger, ..Default::default() };
+        let mut f = Functions::default();
+        step(program, &|code| export(code, &gun, &state), None, &shows.tables, &mut f);
+        weapon_loop_scale(4, &f.outgoing)
+    };
+    assert_eq!(scale(TriggerMode::Idle), 0.0, "silent at rest");
+    assert!((scale(TriggerMode::Charged) - 1.0).abs() < 1e-5, "full when charged");
 }
 
 /// What a machine's sound seams were asked for.

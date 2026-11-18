@@ -171,6 +171,10 @@ impl FileSource for Recording {
         self.inner.held(path)
     }
 
+    fn cached_copy(&self, path: &str) -> Option<std::path::PathBuf> {
+        self.inner.cached_copy(path)
+    }
+
     fn files_in(&self, dir: &str) -> Vec<String> {
         self.inner.files_in(dir)
     }

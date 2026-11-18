@@ -433,3 +433,94 @@ fn the_catalogue_names_guns_by_their_games_strings_never_by_a_token() {
     assert_eq!(cat.get("cs_source:weapon_p90").map(|g| g.name.as_str()), Some("ES C90"), "CS:S's own name");
     assert_eq!(cat.guns.iter().filter(|g| g.game == "cs_source").count(), cs.len());
 }
+
+/// B opens Change gun once per press and closes it on the next, with
+/// each game's character, through the real input path (key events, the
+/// key held with the system's repeats; playtest 2026-11-18: it opened and
+/// closed at once, the view reading the opening press as its close). No
+/// game's bind on B or T acts while the sandbox plays (CS:S's `buymenu`,
+/// Combat Arms' radio and push to talk: the sandbox owns the keys,
+/// `binds::OwnedKeys`), and T still opens the bench.
+#[test]
+fn b_toggles_change_gun_once_per_press_with_every_games_character_and_no_bind_acts() {
+    use bevy::input::{
+        ButtonState,
+        keyboard::{Key, KeyboardInput},
+    };
+    use chimera_client::client::{binds, sandbox::SandboxScreen};
+    use chimera_core::{console::Console, slots::GameIdentity};
+    let movements = ["cs_source:movement", "combat_arms:movement", "hl2dm:movement", "tf2:movement", "halo_ce:movement"];
+    for movement in movements {
+        let (mut sim, me) = play();
+        // The platform's key path (InputPlugin's keyboard system): key
+        // events into the pressed keys, as a real client has.
+        sim.app
+            .init_resource::<ButtonInput<bevy::input::keyboard::Key>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .add_message::<bevy::input::keyboard::KeyboardFocusLost>()
+            .add_systems(PreUpdate, bevy::input::keyboard::keyboard_input_system.in_set(bevy::input::InputSystems));
+        let game = movement.split(':').next().unwrap();
+        sim.app.world_mut().commands().queue(chimera_core::slots::set_movement(me, movement));
+        sim.app.world_mut().entity_mut(me).insert(GameIdentity(game.into()));
+        // Each game's binds on B and T (its layer's, else CS:S's).
+        let lines: Vec<(String, String)> = {
+            let c = sim.app.world().resource::<Console>();
+            let binds = c.effective_binds(Some(game));
+            ["b", "t"].iter().map(|k| (k.to_string(), binds.get(*k).cloned().unwrap_or_else(|| if *k == "b" { "buymenu".into() } else { "+voicechat".into() }))).collect()
+        };
+        for (k, line) in &lines {
+            sim.app.world_mut().resource_mut::<Console>().binds.insert(k.clone(), line.clone());
+        }
+        let commands: Vec<String> = lines.iter().map(|(_, l)| l.split(';').next().unwrap().split_whitespace().next().unwrap_or("").to_string()).collect();
+        let key = |sim: &mut Sim, code: KeyCode, ch: &str, state: ButtonState, repeat: bool| {
+            sim.app.world_mut().write_message(KeyboardInput {
+                key_code: code,
+                logical_key: Key::Character(ch.into()),
+                state,
+                text: (state == ButtonState::Pressed).then(|| ch.into()),
+                repeat,
+                window: Entity::PLACEHOLDER,
+            });
+        };
+        let screen = |sim: &Sim| sim.app.world().resource::<SandboxUi>().screen;
+        // No game's bind sees the key, this frame or while held.
+        let bind_acts = |sim: &Sim| {
+            let w = sim.app.world();
+            let (c, k, m) = (w.resource::<Console>(), w.resource::<ButtonInput<KeyCode>>(), w.resource::<ButtonInput<MouseButton>>());
+            let captured = w.get_resource::<binds::CapturedKeys>();
+            commands.iter().find(|cmd| binds::just_pressed(&c.binds, k, m, cmd) || binds::pressed_free(&c.binds, k, m, captured, cmd)).cloned()
+        };
+        sim.app.update();
+        sim.app.update();
+        assert!(sim.app.world().resource::<SandboxUi>().on, "{movement}: the sandbox plays");
+        for (round, open) in [(0, SandboxScreen::ChangeGun), (1, SandboxScreen::None), (2, SandboxScreen::ChangeGun)] {
+            key(&mut sim, KeyCode::KeyB, "b", ButtonState::Pressed, false);
+            sim.app.update();
+            assert_eq!(bind_acts(&sim), None, "{movement}, press {round}: a bind on B acted");
+            for f in 0..40 {
+                if f % 3 == 0 {
+                    key(&mut sim, KeyCode::KeyB, "b", ButtonState::Pressed, true);
+                }
+                sim.app.update();
+                assert_eq!(screen(&sim), open, "{movement}, press {round}, held frame {f}");
+                assert_eq!(bind_acts(&sim), None, "{movement}, press {round}, held frame {f}: a bind on B acted");
+            }
+            key(&mut sim, KeyCode::KeyB, "b", ButtonState::Released, false);
+            for _ in 0..3 {
+                sim.app.update();
+            }
+            assert_eq!(screen(&sim), open, "{movement}, press {round}: released");
+        }
+        // T: the bench, the game's T bind (push to talk) silent.
+        key(&mut sim, KeyCode::KeyB, "b", ButtonState::Pressed, false);
+        sim.app.update();
+        key(&mut sim, KeyCode::KeyB, "b", ButtonState::Released, false);
+        sim.app.update();
+        assert_eq!(screen(&sim), SandboxScreen::None, "{movement}: closed");
+        key(&mut sim, KeyCode::KeyT, "t", ButtonState::Pressed, false);
+        sim.app.update();
+        assert_eq!(bind_acts(&sim), None, "{movement}: a bind on T acted");
+        sim.app.update();
+        assert_eq!(screen(&sim), SandboxScreen::Bench, "{movement}: T opens the bench");
+    }
+}

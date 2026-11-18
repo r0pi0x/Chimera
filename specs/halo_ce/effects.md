@@ -557,7 +557,7 @@ Class `part`, struct 0x164 bytes.
 | 0x09C | 2 | i16 | looping sequence count | | |
 | 0x09E | 2 | i16 | final sequence count | | |
 | 0x0A0 | 8 | pad | | | |
-| 0x0A8 | 4 | f32 | runtime: 1 / sprite size | 1/pixels | build-time; matches 1 / the largest sprite dimension in the bitmap within a pixel on the disc (the AR flash's is exactly 1/135 = 0.007407407, f32 0x3BF2B9D6, not a rounded 0.0074) |
+| 0x0A8 | 4 | f32 | runtime: 1 / sprite size | 1/pixels | build-time: 1 / S, S = the largest sprite dimension (max of width and height in page pixels) over the sequences the particle uses (first sequence index to first + initial + looping + final - 1), not over the whole bitmap; 94 of 94 sprite-bitmap particles on the disc match within a pixel (the AR flash's is exactly 1/135 = 0.007407407, f32 0x3BF2B9D6, not a rounded 0.0074; `flash c generic med` stores 1/84 although its bitmap's other sequences hold 98-pixel sprites). Exactly 1.0 on the two particles whose bitmap is not a sprite group (see Size, alpha and drawing) |
 | 0x0AC | 2 | enum16 | orientation | | 0 screen facing, 1 parallel to direction, 2 perpendicular to direction |
 | 0x0AE | 2 | pad | | | |
 | 0x0B0 | 0xB4 | struct | shader | | the effect shader part, below |
@@ -723,16 +723,72 @@ angular velocity, rotation, tint, owner, view flags):
   radius animation bounds.
 - Sprite: the current sequence's current sprite, centred on its
   registration point (`bitmaps.md`), rotated by the rotation about the
-  view axis, mirrored per the mirror flags. Its world size is
-  2 R x (1/sprite size field) x the sprite's pixel size, so the
-  bitmap's largest sprite spans 2R. If its projected diameter is below
-  the minimum size it is scaled up to it; if not above the fade end
-  size it is not drawn. **Units:** r (the entry's radius draw) and R
-  are in WU and are a radius: the sprite is about 2R across, not R and
-  not R in some other unit; the radius animation bounds multiply r
-  (they are factors, not sizes); the sprite size field is 1 / pixels.
-  (A particle system's size has a different rule: its scale is WU per
-  sprite pixel, Particle systems, Drawing size.)
+  view axis, mirrored per the mirror flags. If its projected diameter
+  is below the minimum size it is scaled up to it; if not above the
+  fade end size it is not drawn.
+- **World size of a sprite.** Let R = R(a) in WU, k = the particle's
+  "1 / sprite size" field (1/pixels), and (w, h) the current sprite's
+  width and height in pixels, (x_r, y_r) its registration point in
+  pixels from the sprite's top-left corner (rectangle fractions times
+  the page's pixel size, `bitmaps.md`). Then
+  - one sprite pixel is s = 2 R k WU;
+  - the quad is w s wide and h s tall (WU), its corners at
+    -x_r s .. (w - x_r) s along the sprite's x axis and -y_r s .. (h -
+    y_r) s along its y axis (y down the picture), relative to the
+    particle's position.
+  Because k = 1 / S with S the largest sprite dimension among the
+  sequences the particle uses, the largest of those sprites spans
+  exactly 2R along its longer side and every other sprite is drawn at
+  the same pixel scale (smaller sprites look smaller, never stretched).
+  **Units:** r (the entry's radius draw) and R are in WU and are a
+  radius: the sprite is about 2R across, not R and not R in some other
+  unit; the radius animation bounds multiply r (they are factors, not
+  sizes); k is 1 / pixels. (A particle system's size has a different
+  rule: its scale is WU per sprite pixel, Particle systems, Drawing
+  size.)
+- **A bitmap that is not a sprite group** (tag type 0, 2D textures:
+  the disc's only cases are the two "lens flare" particles below) has
+  no sprite rectangles: a sequence is one or more whole bitmaps
+  (`bitmaps.md`, Sprite sequences), each drawn whole (texture
+  coordinates 0 to 1) as one frame. For such a particle the build tool
+  stored k = 1.0 exactly, and the size rule is: **the whole bitmap is
+  one unit square, so the quad is 2R by 2R** (centred on the bitmap's
+  registration point, which is its centre, (32, 32) of 64 x 64, on both
+  disc bitmaps). It is NOT 2R x k x the bitmap's pixel size: that
+  would make a 64-pixel bitmap 128 R across (the assault rifle's
+  common bullet impact flare, R 0.25 - 0.7, would be a 32 to 90 WU
+  square on every hit, and the charged plasma bolt's impact flare, R
+  from 2 to 3, 256 to 384 WU). Inferred (see Confidence): k = 1.0 is what the
+  sprite rule yields when the whole picture counts as one unit-sized
+  sprite, and it is the only reading that keeps "the particle's
+  largest frame spans 2R" true for every particle on the disc; the
+  sequence index is reduced into the bitmap's sequences as
+  `bitmaps.md` says (`flare h stealth cannon` asks for sequence 3 of a
+  one-sequence bitmap and gets sequence 0).
+- **Worked sizes (from the disc, 1 WU = 3.048 m).**
+
+  | Particle (bitmap, type) | k | Sprite (px) | Entry radius r (WU) | Quad (WU) |
+  |---|---|---|---|---|
+  | `flare h stealth cannon` (`effects\particles\lens flare\bitmaps\flares weapon lens`, 2D, one 64 x 64 y8 bitmap) | 1.0 | whole bitmap | charged plasma bolt impacts 2.0 - 3.0 | 4.0 - 6.0 square (12.2 - 18.3 m) |
+  | the same | 1.0 | whole bitmap | bullet impacts (AR, pistol, shotgun, sniper) mostly 0.25 - 0.7; pistol stone 0.15 - 0.175 | 0.5 - 1.4; 0.30 - 0.35 |
+  | `grenade explosion flare` (`...\flares_generic`, 2D, sequence 0 = a 64 x 64 x8r8g8b8 bitmap) | 1.0 | whole bitmap | rocket and tank shell explosions 2.0 | 4.0 square |
+  | `flash c generic` (`effects\particles\energy\bitmaps\flash c generic muzzle`, sprites) | 1/98 | 98 x 84, registration (49, 38) | plasma pistol first person 0.04 - 0.05; plasma rifle first person 0.06 - 0.075, third person 0.12 - 0.15 | 0.080 - 0.100 x 0.069 - 0.086; 0.120 - 0.150 x 0.103 - 0.129; 0.24 - 0.30 x 0.21 - 0.26 |
+  | `flash c generic med` (same bitmap, sequences 3 - 5) | 1/84 | 84 x 82 | plasma pistol first person 0.065 - 0.08; plasma rifle first person 0.05 - 0.06 and 0.075 - 0.125 | 0.130 - 0.160 x 0.127 - 0.156; 0.10 - 0.12 and 0.15 - 0.25 |
+  | `flash c generic small` (sequences 6 - 8) | 1/84 | 84 x 82 | plasma pistol 0.15 - 0.25 (both persons); plasma rifle first person 0.075 - 0.125, third person 0.15 - 0.25 | 0.30 - 0.50; 0.15 - 0.25; 0.30 - 0.50 |
+  | `smoke white c generic` / `smoke c generic` | 1/68 | 68 x 54 | plasma pistol 0.075 - 0.15 and 0.015 - 0.025; plasma rifle first person 0.045 - 0.09 and 0.0225 - 0.045 | 2r x (1 by 54/68) |
+  | `tracer c generic` (orientation 1) | 1/55 | 32, 55, 54 x 17 (three frames) | plasma rifle 0.08 - 0.16 | longest frame 0.16 - 0.32 long, 0.05 - 0.10 wide |
+
+  The visible picture inside these quads is smaller than the quad:
+  on the energy flash sprites the pixels at half the peak brightness
+  or more span about 55 of 98 (flash) and 50 to 60 of 84 (med, small)
+  pixels; the `flares weapon lens` picture is a bright core about 8
+  pixels across (peak 219 of 255), a faint ring and a halo falling
+  from about 25 % at 20 pixels from the centre to 0 at the edge. Both
+  flare particles draw additively (blend 3); `flare h stealth cannon`
+  lives 0.20 - 0.21 s with a 0.27 s fade out longer than its life (so
+  its fade starts at about 0.74 and falls to 0), and its charged-bolt
+  tints are light green, alpha 1 (RGB from about (0.6, 1.0, 0.58) to
+  (0.45, 1.0, 0.44)).
 - **View-filling sprites are capped.** For every sprite built (plain
   particles, particle systems, weather, glows), the fraction of the view
   its world-space bounding box covers is estimated (1 when the box
@@ -743,7 +799,38 @@ angular velocity, rotation, tint, owner, view flags):
 - Orientation: screen facing (0); parallel to direction (1: the
   sprite's long axis along the particle's direction, turned to face the
   viewer as far as it can); perpendicular to direction (2: the sprite
-  lies in the plane normal to the direction).
+  lies in the plane normal to the direction). As vectors (inferred, see
+  open question 5): p the particle's position, d its unit direction, e
+  the unit vector from p to the eye, X and Y the world vectors of the
+  sprite's x axis (rightward in the picture) and y axis (downward in
+  the picture), each multiplied by the pixel scale s of World size:
+  - 0: X = the camera's right vector, Y = the camera's down vector,
+    both turned by the particle's rotation about the view axis.
+  - 1: X = d (the picture's x axis is its long one on every streak
+    sprite of the disc: `tracer c generic` 55 x 17, `sparks energy
+    trail` 62 x 25, `shield jackal spark` 72 x 40), Y = normalize(d x
+    e). The quad contains the direction and turns about it toward the
+    eye; looked at along d it shrinks to a line. The rotation draw does
+    not apply.
+  - 2: X and Y any orthonormal pair perpendicular to d, turned by the
+    rotation about d.
+  The direction d is the entry's direction (its relative yaw and pitch
+  in the marker's frame, turned into the world) at creation and the
+  velocity's direction after each physics step. **The plasma muzzle
+  flashes:** in both plasma weapons' fire effects two `flash c generic
+  med` entries have pitch +2.094 and -2.094 rad (+-120 degrees) in the
+  muzzle marker's frame, d = (-0.5, 0, +-0.866) in (forward, left, up):
+  pointing back and up, back and down, moving that way at 0.7 and 1.0
+  WU/s; the third `med` and the `small` point along the barrel (d =
+  (1, 0, 0)) and so are seen nearly end-on from the first-person
+  camera. All of them are "stay attached to marker". The two +-120
+  degree streaks and the end-on barrel ones are the plasma muzzle's
+  spiky shape; a streak running diagonally across the view from the
+  muzzle is expected when the gun is held canted, not an orientation
+  bug. The plasma rifle's `tracer c generic` (event 1) starts 0.2 WU
+  ahead of the muzzle along the barrel and flies along it at 4 - 6 WU/s
+  for its 0.067 s: from the first-person eye it is a short streak from
+  the muzzle toward the aim point.
 - Fade: fade = 1; if fade in > 0 and a < fade in, fade = a / fade in;
   if fade out > 0 and L - a < fade out, fade x= (L - a) / fade out.
   With a framebuffer fade mode other than none and a non-screen-facing
@@ -758,6 +845,33 @@ angular velocity, rotation, tint, owner, view flags):
   local player while that player is in first person (or in a gunner
   seat); "not drawn in third person" is shown only to its local player
   in first person.
+- **First-person particles.** The size rule (World size of a sprite)
+  is the same in both persons, in WU. The effect tags give first- and
+  third-person entries their own radii: the plasma rifle's
+  third-person flashes are twice its first-person ones (radii and
+  offsets; one smoke bound 0.1825 against 0.09), the
+  plasma pistol's are the same in both. Entries on the first-person
+  weapon's markers are placed in the first-person model's frame,
+  which is rooted at the camera (`animations.md`, First person), and
+  drawn with the projection the first-person weapon model is drawn
+  with (step 9 of One particle). So what fixes their look is their
+  size against the first-person gun, and that is in the data: the
+  plasma pistol's first-person model is 0.112 WU long (x -0.0215 to
+  0.0907), its muzzle markers `primary trigger` and `primary
+  trigger01` lie 0.056 WU ahead of `frame gun` (0.0005 and 0.029 WU
+  below it) with the gun's own axes; the plasma rifle's is 0.217 WU
+  long, `primary trigger` and `primary trigger1` 0.106 WU ahead of
+  `frame gun` and 0.02 WU above and below it. The plasma pistol's core
+  flash (0.08 - 0.10 WU across) is as wide as the whole first-person
+  pistol, and its `small` flash (0.30 - 0.50 WU) about three to four
+  and a half times its length; those are the data's sizes, additive
+  and lasting one or two frames (each has "animate once per frame"
+  and a one-sprite sequence, so it dies on the update after the one
+  that shows it, whatever its lifespan). Whether the first-person projection has
+  its own field of view or near plane is not settled here (open
+  question 11); a port draws these particles with exactly the
+  projection it uses for the first-person weapon model, so a
+  different first-person field of view scales gun and flash alike.
 
 ## Particle systems
 
@@ -1058,6 +1172,45 @@ bit 5 colour (multiplied by the point's density).
   point is drawn one tick at full colour and expires at the next
   update, so the visible tracer is a 0.05 WU additive streak covering
   the bullet's path over its latest tick, its tail fading to black.
+- **Geometry, summarised** (what a renderer needs; the ribbon rule
+  above is from the reference, the attachments and numbers from the
+  disc):
+  - **Where points start.** On the disc every contrail hangs on a
+    projectile, at the empty marker name (the projectile's origin)
+    except the rocket's, at its "exhaust" marker; none is on a weapon,
+    so no contrail is part of any first-person or muzzle effect. A new
+    point starts at the marker position after the projectile moved
+    this tick (k due points spread back along the segment from the
+    previous newest point).
+  - **Which way the strip runs.** Along the chain of points, newest
+    to oldest: the path the marker has travelled (for a projectile,
+    its trajectory), not the marker's forward axis and not any
+    velocity. Each point drifts on its own afterwards: initial speed
+    U(point velocity bounds) along a direction in the cone around the
+    marker's forward (the projectile's direction of flight), plus
+    the inherited fraction of the object's velocity, then its state's
+    point physics; on the disc the bounds are 0 - 0.05 WU/s (0 - 5 for
+    the rocket exhaust), the cone 0 and the inherited fraction 0, so
+    the strip stays on the trajectory except for the rocket smoke.
+  - **How the width faces the camera.** Render type 4 (all 8 on the
+    disc): at point i with neighbour segment direction t_i (from the
+    point toward the next newer one; the newest point uses the segment
+    to its predecessor) and e_i the unit vector from the point to the
+    eye, the two vertices are p_i +- (w_i / 2) normalize(t_i x e_i): the
+    ribbon is flat, contains the path, and turns about it toward the
+    eye. Seen end-on (eye on the path) it collapses to a line.
+    (Neighbour averaging of t at interior points, and the treatment
+    of t parallel to e, are inferred, not read.)
+  - **Point size.** A point has no size of its own beyond its full
+    width w (WU) from its state (and transition): plasma rifle bolt
+    0.1 at birth, 0.035 after 0.125 s, then over 1.0 - 1.2 s to 0.0125
+    and black; charged plasma bolt 0.5, then 0.2, then 0.05 (10 points
+    per second, texture moving at -3 repeats/s); needler 0.04 to
+    0.008; assault rifle and Warthog 0.05; sniper 0.025, 0.044, 0.088;
+    tank shell 0.05, 0.1, 0.15; rocket 0.15, 0.2, 0.3125, 0.5. All
+    contrail bitmaps are 2D textures (one 32 x 32 or 64 x 64 bitmap),
+    stretched as u (repeats u per point) along the strip and v across
+    it.
 
 ## Lights
 
@@ -1174,6 +1327,26 @@ between are padding (zero on the disc). Behaviour beyond this layout
 is left to the renderer spec (open question 8); the grenade
 quickflash's flare (12 WU and 3 WU reflections, brightness 0 to 1) and
 the plasma bolts' flares are the multiplayer ones.
+
+**"Lens flare" particles are not lens flares.** The particles under
+`effects\particles\lens flare\` (`flare h stealth cannon`, `grenade
+explosion flare`) are ordinary `part` sprites: they share bitmaps with
+the `lens` tags but none of a lens flare's fields (corona radius
+scale, reflection radius bounds, occlusion, fade distances) applies to
+them; their size is the particle rule (How a particle lives, World
+size). Every `lens` bitmap on Blood Gulch is a 2D-texture tag (type
+0), never a sprite group; a reflection picks one bitmap by its bitmap
+index. Disc values for comparison (each with corona radius scale (1,
+1), except the needler explosion's (0.75, 2.5)): the plasma rifle
+bolt's and Ghost bolt's `lens` use `flares weapon lens` bitmap 0 with
+one reflection of radius 0.125 (occlusion radius 0.03); the charged
+bolt's, the same bitmap at radius 0.5 (occlusion 0.125); the `lens`
+tags `weapons\plasma pistol\plasma pistol lens flare` and `weapons\plasma
+rifle\plasma rifle lens flare` (`soft flares`) 0.019 and 0.05; the needler's 0.003; the AR flashlight's 0.7 and 0.2. So the
+charged bolt's flare in flight has a reflection radius of 0.5 and its
+impact particle a radius of 2 - 3 WU. What unit a reflection radius is
+in (WU at the flare, or a fraction of the screen) belongs to open
+question 8.
 
 **Glow** (`glw!`, 0x154 bytes; none on Blood Gulch, so layout from the
 reference only): 0x00 attachment marker (tag string); 0x20 i16 number
@@ -1718,10 +1891,12 @@ those thresholds.
 - **Light of duration 0**: lives only while its creation tick is
   current (deleted once one tick has passed); its fall-off input is
   0/0, which the implementation must treat as 0 (full intensity).
-- **Lens flare particles** (`flare h stealth cannon`, `grenade
-  explosion flare`): their "1 / sprite size" is 1.0, so their size is
-  2R x the sprite's pixel size (they are huge unless R is tiny: R is
-  0.15 - 0.175, see Open questions).
+- **Particles on a bitmap that is not a sprite group** (`flare h
+  stealth cannon`, `grenade explosion flare`; 2D-texture bitmaps,
+  "1 / sprite size" 1.0): the whole bitmap is drawn as a 2R by 2R
+  square, never 2R x the bitmap's pixel size (How a particle lives,
+  World size). A requested sequence beyond the bitmap's sequences is
+  reduced into them (`flare h stealth cannon` asks for 3 of 1).
 - **Particle physics with radius 0** works (offset min(r, 0.005) = 0).
 - **Effect light on an object** follows the node; a free one stays.
 
@@ -1863,6 +2038,19 @@ colour 0.961, 0.910, 0.686 times the intensity.
 | last state with duration 0 | transition into it ends | the point expires in that same update |
 | last state with duration 0.5 | transition into it ends | the point lives 0.5 s more in it, then expires |
 
+**Particle size and orientation (2026-11-18).**
+
+| Setup | Input | Expected |
+|---|---|---|
+| sprite-group bitmap, one sequence of sprites 98 x 84 and 60 x 40 pixels, registration (49, 38) on the first; particle k = 1/98, radius draw 0.05, radius animation (1, 1) | draw the first sprite | quad 0.100 x 0.0857 WU, corners x from -0.05 to +0.05, y (down the picture) from -0.0388 to +0.0469 WU about the particle |
+| same | draw the second sprite | quad 0.0612 x 0.0408 WU (same pixel scale 0.00102 WU per pixel; never stretched to 2R) |
+| particle using sequences 3 to 5 of a bitmap whose sequence 0 holds a 98-pixel sprite and 3 to 5 hold 84 x 82 | build-time k | 1/84 (only the used sequences count) |
+| 2D-texture bitmap (type 0), one sequence of one 64 x 64 bitmap, registration (32, 32); particle k = 1.0, radius draw 2.5 | drawn quad | 5.0 x 5.0 WU centred on the particle (not 320 WU) |
+| same bitmap, particle asks for first sequence index 3 | creation | sequence 0 drawn (the index is reduced into the one sequence); the particle lives |
+| orientation 1, d = (1, 0, 0), eye at (0, 0, 10) from the particle, sprite 55 x 17, k = 1/55, R = 0.1 | quad | 0.2 WU along world x, 0.0618 WU along world y (normalize(d x e) = (0, -1, 0) up to sign), lying in the ground plane |
+| same, eye at (10, 0, 0) (looking along d) | quad | zero area (not drawn) |
+| first-person entry radius 0.04, third-person entry radius 0.08 of the same sprite particle | both drawn | the third-person quad is twice the first-person one; neither is rescaled for its view |
+
 ### (b) Disc-backed (slow tests, the user's own disc files)
 
 | Check | Expected |
@@ -1882,6 +2070,14 @@ colour 0.961, 0.910, 0.686 times the intensity.
 | `globals\cyborg` | 6 kinds of 32 materials; kind 1 material 2 sound `sound\sfx\impulse\footsteps\cyborg\grtcement\run`; kind 0 material 28 effect `effects\footsteps water` |
 | parse every `effe`, `part`, `pctl`, `cont`, `ligh`, `lens`, `deca`, `pphy`, `foot` of the map with these layouts | every reference resolves to its class, every enumeration in range, every listed padding byte zero except `part` 0x6C..0x73 |
 | the same tags on `hangemhigh.map` | identical parsed values (550 tags) |
+| `effects\particles\lens flare\flare h stealth cannon` | flags 0x208, lifespan 0.2 - 0.21, fade out 0.27, sequences first 3 initial 1, orientation 0, blend 3, "1 / sprite size" exactly 1.0; bitmap `effects\particles\lens flare\bitmaps\flares weapon lens`: tag type 0 (2D textures), one sequence (bitmap 0, count 1, no sprites), one 64 x 64 bitmap, format 1 (y8), registration (32, 32) |
+| `effects\particles\lens flare\grenade explosion flare` | "1 / sprite size" 1.0; bitmap `...\flares_generic`: type 0, 7 one-bitmap sequences (64, 32, 16, 32, 32, 16, 64 pixels square, format 10) |
+| every other `part` of the map (94) | bitmap type 3 (sprites); 1 / "1 / sprite size" equals, within one pixel, the largest of width and height in pixels over the sprites of sequences first .. first + initial + looping + final - 1 |
+| `weapons\plasma rifle\effects\charged bolt impact dirt` | `flare h stealth cannon` x 1, radius 2.0 - 3.0, tint (a, r, g, b) (1, 0.6, 1, 0.58) to (1, 0.45, 1, 0.44); drawn 4.0 - 6.0 WU square |
+| `weapons\plasma pistol\effects\fire bolt` | locations "primary trigger", "primary trigger01"; event 0 camera 1 and event 1 camera 2 with the same entries: `flash c generic` r 0.04 - 0.05 offset 0.015 forward; three `flash c generic med` r 0.065 - 0.08 (pitch +2.094 at offset up 0.04 velocity 0.7, pitch -2.094 at offset down 0.04 velocity 1.0, pitch 0 velocity 0.7); `smoke white c generic` x 4 - 6 r 0.075 - 0.15; `flash c generic small` r 0.15 - 0.25; `smoke white c generic` x 8 - 12 r 0.015 - 0.025 velocity 1 - 6 |
+| `effects\particles\energy\flash c generic` / `med` / `small` | k 1/98, 1/84, 1/84; sprites 98 x 84 (registration 49, 38), 84 x 82, 84 x 82; orientation 0, 1, 1; flags 0x208 |
+| the 8 contrails' attachments | on projectiles only, marker "" except the rocket's "exhaust"; render type 4; plasma rifle widths 0.1, 0.035, 0.0125 (30 points/s); charged bolt 0.5, 0.2, 0.05 (10 points/s) |
+| the 22 `lens` tags | every bitmap of type 0; plasma rifle bolt reflection radius 0.125, charged bolt 0.5, both on `flares weapon lens` |
 
 ## Verification performed
 
@@ -1912,6 +2108,21 @@ colour 0.961, 0.910, 0.686 times the intensity.
   on all 96 tags (within one pixel; 1.0 for two lens-flare particles).
 - Effect event timing simulated in float32 for the delays and
   durations quoted.
+- 2026-11-18 (particle size, orientation, first person; data only:
+  the behaviour reference was not available to this session, so
+  nothing in this batch was read from it): on `bloodgulch.map`, the
+  bitmap tag type, sequences, sprites and pixel sizes of every
+  particle's bitmap; the "1 / sprite size" rule over used sequences
+  checked on all 94 sprite-group particles; the two non-sprite
+  particles' bitmaps (type, sizes, formats, registration) and the
+  `flares weapon lens` and `flares_generic` pixel profiles decoded
+  (y8 and x8r8g8b8, to stdout); the energy flash and smoke sprites
+  decoded (DXT1) to measure the visible extent inside the quad; every
+  effect entry using the two flare particles listed with its radius;
+  the plasma pistol and plasma rifle fire effects' entries; the
+  plasma pistol and plasma rifle first-person models' nodes and muzzle
+  markers; all 8 contrails with their projectiles' attachments; all 22
+  `lens` tags' bitmaps and reflection radii.
 - Statistics: 576 events (23 with a skip fraction), 461 parts
   (214 decal, 221 sound, 11 damage, 9 light, 6 particle system, 0
   object), particle entries' camera modes 0/1/2/3 = 1737/80/93/19.
@@ -1926,11 +2137,12 @@ colour 0.961, 0.910, 0.686 times the intensity.
 | Event timing, distribution functions, loop and 8-step cap | reference; timings computed |
 | Parts and particle entries behaviour, random draw order | reference only |
 | Particle tag layout | checked against the disc (0x6C..0x73 unused per the reference; leftovers on the disc) |
-| Particle behaviour, size, fade, drawing | reference only; "1 / sprite size" relation inferred and checked on the disc |
+| Particle behaviour, size, fade, drawing | reference only; "1 / sprite size" relation (largest sprite over the used sequences spans 2R) checked on all 94 sprite particles of the disc; the non-sprite rule (whole bitmap = 2R square) inferred from the disc's stored 1.0 and the impact sizes it would otherwise give, not read from the reference; orientation 1 and 2 vector construction inferred |
+| First-person particles | the radii, markers and model sizes checked against the disc; "drawn with the first-person weapon's projection" from the reference (earlier batch); that projection's field of view not determined |
 | Point physics layout and runtime formulas | checked against the disc; integration from the reference |
 | Particle systems layout | checked against the disc; behaviour reference only (per-state physics and its reversed blend, the drawing scale in WU per sprite pixel and the rotational sprites read from the reference's update and draw code); the frag explosion's values and sizes from the disc |
 | View-filling sprite cap (11 per view frame) | reference only |
-| Contrails layout | checked against the disc; behaviour reference only (per-point duration draws, the dropped overshoot and the expiry after the last state's own duration read from the reference); flag names bits 2 to 5 inferred |
+| Contrails layout | checked against the disc (attachments, render types, widths re-checked 2026-11-18); behaviour reference only (per-point duration draws, the dropped overshoot and the expiry after the last state's own duration read from the reference); flag names bits 2 to 5 inferred |
 | Lights layout | checked against the disc (0xD4..0xE3 values present but not read per the reference); behaviour reference only; duration in ticks inferred from the reference's use and the disc's values |
 | Lens flares | layout checked against the disc; behaviour not specified |
 | Glows | layout from the reference only (no tag on the disc's multiplayer maps) |
@@ -1953,16 +2165,27 @@ colour 0.961, 0.910, 0.686 times the intensity.
    intensity. None of the multiplayer weapons uses such an effect
    light (their muzzle lights are attachments), so it is moot for the
    first port.
-3. **Lens-flare particles' size** (1 / sprite size = 1.0): their
-   bitmaps may not be sprite groups, which would change how the size
-   is computed. Check the bitmap type of `effects\particles\lens
-   flare\bitmaps\flares weapon lens`.
+3. **Lens-flare particles' size.** Resolved from the data (2026-11-18):
+   both bitmaps are 2D-texture tags, not sprite groups, and the whole
+   bitmap is drawn as a 2R square (How a particle lives, World size).
+   What stays inferred is that the engine treats a non-sprite frame as
+   one unit square rather than as its pixel size; the reference was
+   not available to confirm it. Check on hardware or a capture: a
+   charged plasma pistol shot into a wall shows a light-green additive
+   glow about 4 to 6 WU (12 to 18 m) across at most, its bright core
+   about an eighth of that, gone within a quarter second; an assault
+   rifle bullet on wood or metal shows one well under 1.5 WU.
 4. **Wind and water current** values for point physics with the wind
    flags: owned by the level spec (`scenario.md` / `structure_bsp.md`
    wind); this spec assumes zero without the flags.
 5. **Sprite orientation 1 and 2** basis construction and the
    "rotational" complex sprites of particle systems are described in
-   outline; a renderer spec should pin the vertex maths.
+   outline. Size and Orientation now give a vector construction
+   (orientation 1: x along the direction, y = normalize(d x e)) that
+   matches the disc's streak sprites (all long along the picture's x)
+   but is inferred, not read; which end of the picture leads, whether
+   the rotation draw applies to orientations 1 and 2, and the basis
+   of orientation 2 remain to pin from the reference.
 6. **Effect shader flags** names (bit 0 to 2) are inferred; only "bit 1
    nonlinear tint" changes behaviour here.
 7. **Decal depth offset** magnitude is a renderer setting not in the
@@ -1970,9 +2193,24 @@ colour 0.961, 0.910, 0.686 times the intensity.
 8. **Lens flare drawing** (occlusion test, fades, reflections along
    the screen line, corona rotation): not specified; the multiplayer
    uses are the plasma bolts, the grenade quickflash, the needler and
-   flashlights.
+   flashlights. Also open: the unit of a reflection's radius (the
+   disc's values, 0.003 to 12, are listed under Lens flares and
+   glows). Settled: particles named "lens flare" are plain particles
+   and use none of a `lens` tag's fields.
 9. **Material effects kinds 6, 7, 11, 12**: never played by the
    engine per the reference; their names are guesses.
 10. **The 0x6C..0x73 leftovers** in `part` tags look like unconverted
     big-endian copies of fields from an older layout; harmless, but a
     hint that the field set changed late.
+11. **First-person projection.** First-person particles are drawn
+    with the first-person weapon's projection (reference, step 9 of
+    One particle); whether that projection's field of view or near
+    plane differs from the world camera's (`weapons.md` section 12) is
+    not determined, and no tag carries one. It does not change their
+    size relative to the first-person gun. Check from the reference's
+    first-person weapon drawing, or on a capture: the plasma pistol's
+    core muzzle flash appears about as wide as the pistol.
+12. **Contrail segment direction at interior points.** Whether a
+    ribbon vertex pair uses the segment to the newer point, to the
+    older one, or their mean, and what happens when that segment
+    points at the eye; only visible on curved or end-on ribbons.

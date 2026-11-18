@@ -114,7 +114,11 @@ fn melee_hits_make_the_surfaces_impact_and_decal() {
         assert!(heard.iter().any(|e| e == "Default.BulletImpact"), "{id}: {heard:?}");
         assert!(heard.iter().any(|e| e == extra), "{id}: {heard:?}");
         assert_eq!(marks.len(), 1, "{id}: {marks:?}");
-        assert!(matches!(marks[0].group, DecalGroup::Material('C')), "{id}: {:?}", marks[0].group);
+        assert!(
+            matches!(&marks[0].group, DecalGroup::GameMaterial(g, 'C') if g == "hl2dm"),
+            "{id}: {:?}",
+            marks[0].group
+        );
         // And loaded with the map: what isn't plays nothing.
         assert!(hl2dm::game::sounds::entries().iter().any(|e| e == extra), "{id}");
     }

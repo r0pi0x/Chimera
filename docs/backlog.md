@@ -33,6 +33,9 @@ the user's go-ahead: no Actions runs unless asked.
   menus act on a press as the mouse goes down, so each one's input needs
   checking (docs/tech-debt.md). And `bevy_replicon_renet` back to a
   crates.io release once one supports Bevy 0.20.
+- Compiler warnings (raised on PR #11): clear the workspace's rustc
+  warnings (combat_arms ~52, party_kit's deprecated Bevy `Interaction`),
+  then make warnings fail the fast tier.
 
 ## Roadmap after the gun game settles (user, 2026-10-29)
 
@@ -390,11 +393,38 @@ the user's go-ahead: no Actions runs unless asked.
 - **Playtest bugs, 2026-11-18 (user: bug fixes before new features).**
   For each specific bug, check whether it's general and fix the general
   cause.
-  - **Rules:** the final kill must be a melee kill to win. A grenade's
+  - **Rules (done 2026-11-18):** the final kill must be a melee kill to win. A grenade's
     second kill must not count as the finale's melee kill. Kill sounds:
     only your own kills, from your character's game, at that game's
     volume; others' kills are silent.
-  - **UGG chat and HUD:**
+  - **Character sounds and bodies in the party modes (done 2026-11-18,
+    `char-voices`; confirm by ear in a playtest):** kill voices are the
+    killer's character's, as it was on the kill's tick (`chimera_sim::
+    kill_voice`): Combat Arms' `EnemyDown` and own kill voice only for a
+    Combat Arms character, TF2's class kill lines by its response rules
+    (specs/tf2/voices.md, new), none for CS:S, HL2:DM and Halo; a kill
+    with no line plays the rung-up cue for its killer (once, not on top
+    of the kill's own rung up), every pack's `rung_up` raised to 1.8
+    (`[volumes]`). A rung up on the kill's tick changes neither the line
+    nor its voice. Pain for any gun: Combat Arms' groans no longer need
+    one of its guns; TF2 characters cry their class's pain lines (with
+    the spec's gap) and death cries; CS:S, HL2:DM and Halo kept theirs.
+    Every game's ragdoll or body goes at its owner's respawn in the party
+    apps (`map::ragdoll::BodiesGoOnRespawn`); the standalone games keep
+    their own lifetimes. Tests: tf2 `voices::`, `ragdolls::
+    in_a_party_it_goes_on_the_respawn`, heavy `guns::
+    every_voice_entry_has_waves`; combat_arms `kill_callouts::
+    kill_voice_survives_the_killers_rung_change`, `enemy_down_is_the_
+    character_it_was_when_it_struck`, `effects_sounds::
+    another_games_guns_hit_plays_our_hurt_sound`, `characters::
+    in_a_party_the_body_goes_at_the_respawn`; halo_ce `death::
+    in_a_party_a_body_goes_at_its_owners_respawn`; chimera_client
+    `callouts::an_unvoiced_kill_sounds_the_rung_up_cue`. Left: TF2's
+    voice files in the asset service's sets (`chimera_pack sets tf2`:
+    the `vo/` files are fetched on demand until then), the attacker's
+    own `PainSevere` line, crit pain and the on-fire lines (the module's
+    known shortcuts).
+  - **UGG chat and HUD (done 2026-11-18 except the match-end layout):**
     - an old plain scoreboard (Name/Kills/Deaths/Gun/Ping/Wins, the game-time table) sometimes shows on Tab while going from a match to the lobby or the match-end screen; only the UGG Tab menu should;
     - no Combat Arms chat at all in Ultimate Gun Game;
     - chat drawn above every game's HUD (it is under TF2's);
@@ -403,28 +433,44 @@ the user's go-ahead: no Actions runs unless asked.
     - the match-end chat covers the map vote's timer: a design pass with
       fixed zones (results, vote and timer, chat), screenshots first.
   - **TF2 in general:**
-    - TF2 characters cannot climb ladders, at least on Combat Arms maps; check every game's characters on every game's ladders (one ladder rule in Chimera);
-    - the Engineer's mouth hangs open oddly in third person: check face flexes / jaw bone defaults for every TF2 class (and other games' faces), not the Engineer alone;
-    - projectiles at the wrong orientation (the rocket was fixed alone;
-      the user saw it again on a Medi Gun-class weapon): one general fix
-      for every TF2 projectile model's forward axis, tested per
-      projectile;
-    - missing explosion and visual effects (the sticky bomb launcher, and
-      likely others): an audit of every TF2 weapon's effects against its
-      data;
+    - Done (2026-11-18): TF2 characters cannot climb ladders, at least on Combat Arms maps. TF2's movement climbed no ladders anywhere (`contents_ladders` off); now every Source movement that climbs no ladder lines climbs another game's map's ladder brushes, volumes and lines by the shared code's rule at 200 units/s (`SourceMovementConfig::climbs_contents`), its own maps' brushes still walls. Halo's movement didn't read ladder lines (HL2's): now a volume 24 units around each. party_kit `every_movement_climbs_every_ladder` holds every registered movement (CS:S, Combat Arms, HL2:DM, TF2, Halo) to a Source ladder brush, a Combat Arms ladder volume, an HL2 ladder line and a Halo climbable sheet; heavy `halo_ladders` does it on Prisoner's real sheets (fixed 2026-11-18, `halo-batch`, run here from a copy of the asset service's store: CS:S and TF2 climbed none of Prisoner's sheets, because a two-sided sheet's twin is a terrain solid 2 units thick on the climber's side and the 2 cm ladder slab was inside it, so the ladder probe met the twin's back face; the slab now stands out past the terrain's thickness, `maps::collision::LADDER_SKIN`; a test or tool now also reads a whole store held locally with no service, `sets::all_held`);
+    - ~~the Engineer's mouth hangs open oddly in third person~~ (fixed 2026-11-18, `face-zfight`): TF2's base mesh is a slack face; a living TF2 player plays its class's looping idle expression (specs/tf2/faces.md, new: the Engineer's `defaultFace` closes his mouth), now `tf2::game::faces` from data/faces.toml for every class (the Pyro none). Every Source face whose game sets no weights shows its rules at rest (`MapFace::rest`: an HL2 citizen's neutral lids), not the bare mesh. Still to do from the spec: hurt, round-lost, winner, scoped and Minigun faces, firing faces, the eyes' look target (300 u), a ragdoll following its owner's scene;
+    - ~~projectiles at the wrong orientation~~ (fixed 2026-11-18,
+      `tf2-general`: every held model carries its nose,
+      `MapHeldModel::nose`, and every flyer of every game flies nose first
+      by it; no axis in the data);
+    - missing explosion and visual effects: a kept guest dressing dropped
+      its particle systems (fixed 2026-11-18, `kept::append`), stickies
+      went off only with the launcher out (fixed); what is left per weapon
+      (tracers, trails, the rocket's muzzle, explosion variants, the
+      scripts' effect names) is in
+      [plans/active/tf2-effects.md](plans/active/tf2-effects.md);
     - first-person view models lit wrongly: check whether it's the map
-      (HL2 or Halo maps) or the view-model lighting.
-  - **Sandbox:** B still won't open Change gun: it opens and closes over and over (B is also CS:S's `buymenu` bind and maybe others'; one owner per key while the sandbox is up, check every game's binds on B, chimera/client/src/client/sandbox/mod.rs ~553);
-  - **Windows focus:** clicking the taskbar icon to focus the game does not lock the cursor, so you cannot fire; re-grab the cursor on every focus gain while playing (no menu open), however the window got focus, in every app.
-  - **Rendering:** Z-fighting on a bridge on `combat_arms:neptune` (`setpos -805.77 -236.73 -1779.53;setang 38.72 114.13 0.00`); find whether it is coplanar faces the original game separates (draw order, a decal or overlay flag, a depth bias) and fix it for every map of that kind, not this bridge alone.
+      (HL2 or Halo maps) or the view-model lighting (Halo maps: their
+      light field is now the lightmap under the point, 2026-11-18,
+      `maps::light_below`; HL2 maps not checked).
+  - Done (2026-11-18), **Sandbox:** B still won't open Change gun: it opened and closed. The press that opened it reached Change gun's own key reader as a typed `b` in the same frame, which closed it; tests pressed the key and sent its event separately, never both. B is now read once, by the sandbox's keys alone, and an app-level screen owns its keys (`binds::OwnedKeys`: the sandbox's B, T, K and pinned digits), so no game's bind (CS:S's `buymenu`, Combat Arms' radio and push to talk) acts on them. Test: ultimate_gun_game `b_toggles_change_gun_once_per_press_with_every_games_character_and_no_bind_acts`;
+  - Done (2026-11-18), **Windows focus:** clicking the taskbar icon to focus the game did not lock the cursor, so you could not fire. The grab was made only in the frame focus came: lost when a menu flag changed in that frame or when the platform refused or later dropped the clip. Now the grab is retried for 30 frames after every focus gain while playing, sent again every 10, and the click that focused or grabbed doesn't fire (`CapturedKeys` holds mouse buttons). The party's Escape menu counts as a menu. Test: chimera_client `every_focus_gain_grabs_again_and_the_focusing_click_does_not_fire`; confirm on Windows.
+  - Done (2026-11-18, `face-zfight`), **Rendering:** Z-fighting on a bridge on `combat_arms:neptune` (`setpos -805.77 -236.73 -1779.53;setang 38.72 114.13 0.00`): two world models in one place, `QRT_Bridge2F` (`Visible` 0, the Quarantine mode's) and `QRT_Hide_Bridge2F`, both drawn. Combat Arms' objects hide a node with `Visibility::Hidden`, but brush entities drawn merged (`render::merge`, any game) left the combined mesh only for `LogicHidden`, so every hidden world model of every Combat Arms map (mode variants, `StartHidden`, hidden by a command) was still drawn. A node hidden by its game now leaves the combined mesh too. Test: chimera_present `a_hidden_node_leaves_the_combined_mesh`.
   - **Halo:**
-    - weapon sounds missing (the shotgun's fire, the plasma pistol's
-      charge): an audit of every Halo weapon's sounds in a party app, with
-      a test like TF2's;
-    - the plasma pistol's effects look messy;
-    - the ringworld in the sky disappears at some view angles (sky
-      culling);
-    - objects on Halo maps aren't lit as expected.
+    - ~~teleporters feel buggy~~ (fixed 2026-11-18, `halo-batch`; `halo_ce:putput` `setpos 511.26 1664.58 76.32;setang 3.83 284.37 0.00`): used in the app, entering, the exit, the turn, the kept velocity and the re-arm were the spec's; what was wrong: the white things are the teleporter shields, a 7-stage transparent generic shader drawn as its map 0 alone (white, its pattern in the alpha the engine's additive ignores): now the stage combiner's mean colour over map 0 times its alpha (`maps::generic`, every such shader: the shield's green); the view wasn't levelled on arrival (6.8 "View", `MapTeleporters::level_view`); no "teleporter activate" sound and no green flash for the teleported player (now `teleporters::effects`, from the body's jump, on every machine). The blocked message's text (2026-11-18, `halo-plasma`): "Teleporter is blocked" (multiplayer_rules.md 6.8, new), shown to the refused player as the shell's hint, sent to a remote one's client (`teleporters::blocked_message`; test map_objects `a_blocked_player_is_shown_teleporter_is_blocked`); its placement and life on Halo's message lines are the spec's open question 19;
+    - ~~weapon sounds missing~~ (fixed 2026-11-18, `halo-batch`): the shotgun's fire was raised but dropped by the sound player's voice limit, because each pellet's impact sound counted as the shooter's (`fx::play::Running::sound_source`: an effect out in the world is nobody's); the plasma pistol's charge hum (its weapon tag's looping attachment `plasma rifle\charging`, scaled by its charge) was compiled and never played (`audio::attached::weapons`). Tests: halo_ce heavy `gun_sounds`, `audio::the_plasma_pistols_charge_hums_by_its_charge`, party_kit heavy `halo_gun_sounds` (de_dust2 and Blood Gulch);
+    - ~~the plasma pistol's effects look messy~~ (fixed 2026-11-18,
+      `halo-plasma`, specs/halo_ce/effects.md open question 3 resolved
+      from the disc): a particle on a bitmap that is not a sprite group
+      (the charged bolt's impact flare, `flare h stealth cannon`) was
+      drawn 2R x its 64 pixels (hundreds of WU: the huge rectangle) and
+      is now a 2R square (4 - 6 WU); every Halo particle whose initial
+      sequence has nothing after it dies when its sprites run out (the
+      muzzle flashes, animated once per frame, show for one update instead
+      of their whole lifespan: the lingering green blobs); a fade out
+      longer than the lifespan starts below full. The diagonal streak is
+      the data's (two flashes at +-120 degrees in the muzzle's frame,
+      oriented along their direction). Tests: arsenal_fx
+      `a_flare_is_a_2r_square_and_a_flash_lives_its_sprites`, heavy fx
+      `the_plasma_flares_and_flashes_are_sized_by_the_spec`;
+    - ~~the ringworld in the sky disappears at some view angles~~ (fixed 2026-11-18, `halo-batch`): not culling: the game draws the sky model's parts in order with no depth test, and Blood Gulch's ring (and Threshold) lie farther out than the sky dome drawn before them, so the depth test hid them whenever the view looked up; the parts are now nested in draw order about the sky camera's centre (`maps::sky::nest`), which then stays there (the 1/1024 parallax dropped);
+    - ~~objects on Halo maps aren't lit as expected~~ (fixed 2026-11-18, `halo-batch`): every object, character and view model on a Halo map took one sky-lit probe everywhere (the light field from `sky::prop_light`), lit as outdoors in Chiron's corridors; the game lights objects from the lightmap below them (structure_bsp.md, scenario.md "Static lighting"): now the light field and the scenery's probes are the lightmap's texel under the point (`maps::light_below`), the sky's probe only where no lit level is below. Checked with a CS:S AK-47 and Halo's guns in the sandbox on `halo_ce:putput`. Test: halo_ce `maps::objects_take_the_lightmap_below_them`.
   - **Lobby:** done 2026-11-18 (docs/plans/active/lobby-between-maps.md,
     step 6): loading behind the lobby is invisible (nothing of the next
     match ticks while it settles, only its physics; no game sound while a
@@ -453,15 +499,21 @@ the user's go-ahead: no Actions runs unless asked.
   data: the entry (`Weapon_Pistol.ReloadScout`) is named and resolves;
   if it is still silent in the next playtest, it is the timing of
   `[[0.0, ..]]` (the view model's event), not a lookup. Ragdolls: each
-  game's lifetime is its own already: CS:S none (the party removes it at
-  the owner's respawn; a round restart too), HL2:DM none (kept past the
-  respawn until the owner dies again, restart removes it), Combat Arms
-  the body 5 s after its owner respawns (mode's `body_removal`), Halo 900
-  ticks idle (`CORPSE_LIFE`); TF2's is in no spec (player_animation.md
-  9 says "the shared Source ragdoll rules"; only its gibs fade, 10 s), so
-  it follows the party's (removed at respawn) and nothing new is picked:
-  needs a spec session on TF2's ragdoll fade (`cl_ragdoll_fade_time`
-  and its friends) before parity can be matched.
+  game's lifetime is its own (`map::ragdoll::RagdollLifetime` by game,
+  `RagdollGameRules`): CS:S none (removed at the owner's respawn; a
+  round restart too), HL2:DM none (kept past the respawn until the owner
+  dies again), Combat Arms the body 5 s after its owner respawns (mode's
+  `body_removal`; its own bodies, not ragdolls), Halo 900 ticks idle
+  (`CORPSE_LIFE`; its own corpses). TF2's now follow
+  specs/tf2/ragdolls.md (2026-11-18; data/ragdolls.toml): kept past the
+  respawn until the owner dies again, leaves or the round restarts, and
+  each machine removes one on a timer of its own, 15 s
+  (`cl_ragdoll_fade_time`) from the death, set to 4.95 s from now on
+  every tick its view sees it (`render::ragdoll_view`); out of view past
+  it, it vanishes at once (no fade); no count cap; `cl_ragdoll_forcefade
+  1` fades a seen one at 600 alpha/s. Tests: tf2 `ragdolls::` (the
+  spec's cases). Not done: feign, ice, ash and dissolve bodies, the
+  late-arrival rule, the death-animation reset (TF2 has none of them yet).
 
 ### UGG playtest 8 prep, Windows check (2026-11-15)
 
@@ -2878,6 +2930,13 @@ The console and overlays are in (chimera/core/src/console.rs, chimera/client/src
 
 docs/plans/active/sound.md.
 
+- **Announcers across games (idea, user 2026-11-18; not now).** Rotate
+  or randomize the kill announcer among games whose announcer has a line
+  for each event we announce (`chimera_core::announcer`: the steps, first
+  kill, headshot, revenge, ...), say per map or per kill. It depends on
+  each game's voice lines covering our events (a pack per game, data);
+  Combat Arms' stays the default.
+
 - **Synced jukebox (future, user 2026-11-15).** Every player in a match
   hears the same music track at the same point: the server picks the
   party playlist's order and sends each track's start time, the clients
@@ -3226,11 +3285,13 @@ docs/plans/active/sound.md.
   `Shadowed`, ...), and parts that go together go in one move
   (docs/performance.md, "A session's archetypes: the game switch"): three
   laps of real maps make 472 characters' archetypes (1,471 in all), a lap
-  after the first 19-43 (the lap test caps it at 100). Left: a switch's own
-  steps, each another game's system (avian's `RecomputeMassProperties` after
-  Combat Arms' collider changes, the movement swap's removal and insert,
-  Combat Arms' rung look and view model, CS:S's rung class, HL2:DM's suit,
-  `ArmorPieces`): one Chimera command gathering a character's inserts and
+  after the first 19-43 (the lap test caps it at 100). Since 2026-11-17
+  avian's `RecomputeMassProperties`, Combat Arms' rung look and on-demand
+  hitboxes, Halo's body kind, the damage scale, the rung classes and
+  `InMinigame` no longer come and go (docs/performance.md, "A session's
+  archetypes: what was left"). Left: a switch's own steps, each another
+  game's system (the movement swap's removal and insert, Combat Arms' view
+  model, HL2:DM's suit, `ArmorPieces`): one Chimera command gathering a character's inserts and
   removals of a tick and applying them together (`insert_by_ids`,
   `remove_by_ids`) would cut most of the rest. Not measured: a quiet tick
   with the bots kicked against the 800 instructions an archetype.

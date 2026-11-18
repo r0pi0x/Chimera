@@ -5,6 +5,8 @@
 //! cue`: `rung_up`, `rung_down`, `last_rung`, `last_rung_other`,
 //! `lead_taken`, `lead_lost`, `lead_tied`, `match_won`, `match_lost`), and
 //! `swap` (a rung's change of game, `chimera_client::client::swap_effect`).
+//! A kill whose killer's character says no kill line plays `rung_up` too
+//! for its player (`chimera_sim::kill_voice`), unless a rung up just did.
 //! A key the pack lacks is silent.
 //!
 //! ```toml
@@ -14,6 +16,8 @@
 //! volume = 0.8                 # every cue's gain (default 1)
 //! [sounds]
 //! rung_up = "sound/items/itempickup.wav"
+//! [volumes]
+//! rung_up = 1.8                # one cue's own gain, times `volume`
 //! ```
 //!
 //! A game contributes its pack as one of its parts (`GameParts::cues`),
@@ -47,6 +51,10 @@ pub struct CuePack {
     /// The sound file of each cue key.
     #[serde(default)]
     pub sounds: BTreeMap<String, String>,
+    /// A cue's own gain, times `volume` (default 1): a file quieter than
+    /// the pack's others raised.
+    #[serde(default)]
+    pub volumes: BTreeMap<String, f32>,
 }
 
 impl CuePack {
@@ -58,6 +66,11 @@ impl CuePack {
     /// The sound file of cue `key` (None: silent).
     pub fn sound(&self, key: &str) -> Option<&str> {
         self.sounds.get(key).map(String::as_str)
+    }
+
+    /// Cue `key`'s gain: the pack's `volume` times its own (`volumes`).
+    pub fn gain(&self, key: &str) -> f32 {
+        self.volume * self.volumes.get(key).copied().unwrap_or(1.0)
     }
 }
 

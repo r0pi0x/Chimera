@@ -14,7 +14,9 @@
 //! up, the jump's cap at 1.2 x the player's top speed P, the 520 ceiling
 //! in place of `sv_maxspeed`, fall damage as max health x speed / 6000
 //! above 650 with a +-20 % spread: movement.md and its corrections from
-//! the SDK)
+//! the SDK; TF2 has no ladders, so its own maps' ladder brushes are walls,
+//! while another game's map's ladders are climbed by the shared code's
+//! rule at its 200 units/s, `SourceMovementConfig::climbs_contents`)
 //! and a class layer: each player is the class of the TF2 gun in hand
 //! (`super::classes`, `select_class`, predicted: its rung's drawn class
 //! when the gun can be it, `classes::RungClass`, else the gun's own),
@@ -108,7 +110,9 @@ pub fn config() -> SourceMovementConfig {
         fall_safe: 650.0,
         fall_by_max_health: 1.0 / 6000.0,
         fall_spread: 0.2,
-        // No ladders in TF2: its maps' ladder brushes are walls.
+        // No ladders in TF2: its maps' ladder brushes are walls. Other
+        // games' maps' ladders are climbed by the shared code's rule
+        // (`SourceMovementConfig::climbs_contents`).
         contents_ladders: false,
         ..SourceMovementConfig::shared_code()
     }

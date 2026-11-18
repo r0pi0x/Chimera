@@ -540,3 +540,67 @@ fn one_press_raises_the_scope_and_a_held_key_toggles_it_3_1() {
     let flips = seen.windows(2).filter(|w| w[0] != w[1]).count();
     assert!(flips >= 2, "a held attack2 toggles the scope: {seen:?}");
 }
+
+/// Every TF2 projectile (the rocket, the grenade, the sticky, the needle)
+/// flies nose first: its shown model's own forward (`MapHeldModel::nose`,
+/// here a made-up slant, as a model's bone frame leaves it) stays along
+/// its velocity from its launch until it stops (playtest 2026-11-18: the
+/// needles flew sideways).
+#[test]
+fn every_projectile_flies_nose_first() {
+    use chimera_world::map::loose::{LooseAsset, LooseAssets};
+    for (i, (gun, key, _)) in tf2::game::weapons::PROJECTILES.iter().enumerate() {
+        let mut sim = sim();
+        let (p, _) = holding(&mut sim, greybox::SPAWNS[0], gun);
+        let nose = [Vec3::new(0.3, -0.8, 0.5), Vec3::Y, Vec3::NEG_X, Vec3::new(-0.2, 0.1, 0.9)][i % 4].normalize();
+        let asset = LooseAsset { frame: Transform::IDENTITY, half: Vec3::splat(0.05), surface: None, nose: Some(nose) };
+        sim.app.world_mut().get_resource_or_insert_with(LooseAssets::default).0.insert(key.to_string(), asset);
+        let mut seen = 0;
+        for k in 0..60u64 {
+            run(&mut sim, p, 1, |s, _| {
+                s.intent(p).fire = k < 2;
+                s.intent(p).yaw = 0.0;
+                s.intent(p).pitch = -10.0;
+            });
+            let w = sim.app.world_mut();
+            let mut q = w.query::<(&Flyer, &Transform)>();
+            for (f, t) in q.iter(w).filter(|(f, _)| f.owner == Some(p) && f.stuck_until.is_none()) {
+                let Some(v) = f.velocity.try_normalize() else { continue };
+                let n = t.rotation * nose;
+                assert!(n.dot(v) > 0.999, "{gun} tick {k}: nose {n} along {v}");
+                seen += 1;
+            }
+        }
+        assert!(seen > 3, "{gun}: {seen} flying ticks seen");
+    }
+}
+
+/// A sticky laid with the launcher still goes off on attack2 once its
+/// owner holds another TF2 weapon (the game: any of the Demoman's; a
+/// ladder's rung swap took the launcher, and the stickies stayed forever
+/// with no explosion, playtest 2026-11-18), with its explosion drawn.
+#[test]
+fn stickies_detonate_with_another_tf2_weapon_out() {
+    use chimera_sim::weapon::{Inventory, give};
+    use tf2::game::weapons::{SHOTGUN, blast::Tf2Explosion};
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], STICKY_LAUNCHER);
+    run(&mut sim, p, 2, |s, k| {
+        s.intent(p).fire = k == 0;
+        s.intent(p).pitch = -89f32.to_radians();
+    });
+    run(&mut sim, p, 80, |s, _| s.intent(p).fire = false);
+    assert_eq!(stickies(&mut sim, p).len(), 1, "stuck at his feet");
+    let w = give(sim.app.world_mut(), p, SHOTGUN).unwrap();
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(w);
+    sim.seconds(1.0);
+    assert_eq!(stickies(&mut sim, p).len(), 1, "still there with the shotgun out");
+    let mut drawn = sim.app.world().resource::<Messages<Tf2Explosion>>().get_cursor_current();
+    let mut explosions = 0;
+    for k in 0..5 {
+        run(&mut sim, p, 1, |s, _| s.intent(p).secondary = k < 2);
+        explosions += drawn.read(sim.app.world().resource::<Messages<Tf2Explosion>>()).count();
+    }
+    assert!(stickies(&mut sim, p).is_empty(), "detonated");
+    assert_eq!(explosions, 1, "its explosion drawn");
+}

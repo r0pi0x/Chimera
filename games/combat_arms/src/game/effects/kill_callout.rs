@@ -13,7 +13,10 @@
 //! (`EventSounds::enemy_down`) and nothing else (`ManDown` is empty in
 //! the stock data too).
 //!
-//! The server (`send`, on each `Died`): the killer is the attacker, or
+//! The server (`send`, on each `Died`; `EnemyDown` only for a kill by a
+//! character of ours, as it was on the kill's tick: `chimera_sim::
+//! kill_voice::at_kill`, its game and sound template, `voice_sets`; `answer`
+//! tells `kill_voice` such a kill is voiced): the killer is the attacker, or
 //! for a squad AI (`rules::mercs::CaMerc`) its leader (the leader's voice
 //! from the AI's place); with no player behind the kill (a fall, the
 //! world, a non-squad AI) the killer's team is 0, the voice the male
@@ -57,6 +60,7 @@ use super::super::{
     rules::{escort::CaVip, mercs::CaMerc},
 };
 use crate::core::{Died, Health, Npc, Team};
+use chimera_sim::kill_voice::{CharacterAtTick, CharacterVoice, KillVoiceAsk, KillVoiced};
 
 /// The auto-cast attribute file in the attributes archive.
 pub const FILE: &str = "attributes/autocastsound.txt";
@@ -182,15 +186,70 @@ pub struct CaTeamCallout {
 /// `Q_Female`), the male VIP's, else the body's (`Male`, `Female`).
 pub fn template_of(world: &World, e: Entity) -> u8 {
     let female = crate::game::grenades::callout::is_female(world, e);
-    if world.get::<CaInfected>(e).is_some() {
-        return if female { Q_FEMALE } else { Q_MALE };
+    template(female, world.get::<CaInfected>(e).is_some(), world.get::<CaVip>(e).is_some())
+}
+
+/// The sound template of a body (`template_of`).
+pub fn template(female: bool, infected: bool, vip: bool) -> u8 {
+    match (infected, female) {
+        (true, true) => Q_FEMALE,
+        (true, false) => Q_MALE,
+        (false, true) => FEMALE,
+        (false, false) if vip => VIP_M,
+        _ => MALE,
     }
-    if female {
-        FEMALE
-    } else if world.get::<CaVip>(e).is_some() {
-        VIP_M
-    } else {
-        MALE
+}
+
+/// Our characters' voice set (`kill_voice::CharacterVoice`): their sound
+/// template's number, kept current so a kill's line is the template the
+/// killer had on the kill's tick (a rung's new look may change it).
+#[allow(clippy::type_complexity)]
+pub fn voice_sets(
+    ca: Option<Res<crate::game::data::CaData>>,
+    characters: Query<(
+        Entity,
+        &crate::game::characters::records::Selection,
+        Has<CaInfected>,
+        Has<CaVip>,
+        Option<&crate::slots::GameIdentity>,
+        Option<&CharacterVoice>,
+    )>,
+    mut commands: Commands,
+) {
+    let Some(ca) = ca else { return };
+    for (e, look, infected, vip, identity, voice) in &characters {
+        if !crate::slots::GameIdentity::allows(identity, crate::game::GAME) {
+            continue;
+        }
+        let female = ca.characters().effective(look).0.skeleton == crate::game::grenades::callout::FEMALE_SKELETON;
+        let want = template(female, infected, vip).to_string();
+        if voice.is_none_or(|v| v.0 != want) {
+            commands.entity(e).insert(CharacterVoice(want));
+        }
+    }
+}
+
+/// The server: the kills our characters speak for (`kill_voice`): every
+/// kill by a character of ours whose template has a kill line (the
+/// killer's own `EnemyKill` voice or the team's `EnemyDown`).
+pub fn answer(
+    mut asks: MessageReader<KillVoiceAsk>,
+    tables: Res<CaFxTables>,
+    records: Option<Res<CaTeamCallouts>>,
+    mut out: MessageWriter<KillVoiced>,
+) {
+    for a in asks.read() {
+        if !a.is_for(crate::game::GAME) {
+            continue;
+        }
+        let template = a.character.voice.as_deref().and_then(|v| v.parse().ok()).unwrap_or(MALE);
+        let enemy_down = records.as_ref().is_some_and(|r| r.voice(ENEMY_DOWN, template).is_some());
+        if enemy_down || !tables.sounds.kill.is_empty() {
+            out.write(KillVoiced {
+                killer: a.killer,
+                victim: a.victim,
+            });
+        }
     }
 }
 
@@ -211,11 +270,39 @@ pub fn of_death(world: &World, d: &Died) -> Vec<(u8, CaTeamCallout)> {
         None => player(a).then_some(a),
     });
     let mut out = Vec::new();
+    // The killer's character on the kill's tick (`kill_voice::at_kill`),
+    // not now: a rung up may have swapped it since.
+    // (`send` runs on the kill's tick: a change on it counts.)
+    let tick = world.get_resource::<crate::core::SimTick>().map_or(0, |t| t.0).saturating_sub(1);
+    let noted = d.attacker.filter(|a| Some(*a) == killer).map(|a| {
+        chimera_sim::kill_voice::at_kill(
+            world.get::<CharacterAtTick>(a),
+            world.get::<crate::slots::GameIdentity>(a),
+            world.get::<CharacterVoice>(a),
+            tick,
+        )
+    });
     let (killer_team, template, speaker) = match killer {
-        Some(k) => (world.get::<Team>(k).map_or(0, |t| t.0), template_of(world, k), Some(k)),
+        Some(k) => (
+            world.get::<Team>(k).map_or(0, |t| t.0),
+            noted
+                .as_ref()
+                .and_then(|c| c.voice.as_deref()?.parse().ok())
+                .unwrap_or_else(|| template_of(world, k)),
+            Some(k),
+        ),
         None => (0, MALE, None),
     };
     let u = |p: Vec3| p / UNIT;
+    // A kill by another game's character (a party app's ladder: the
+    // character it was on the kill's tick) is that game's to voice.
+    let ours = match &noted {
+        Some(c) => c.game.as_deref().is_none_or(|g| g.eq_ignore_ascii_case(crate::game::GAME)),
+        None => crate::slots::GameIdentity::allows(
+            killer.and_then(|k| world.get::<crate::slots::GameIdentity>(k)),
+            crate::game::GAME,
+        ),
+    };
     // Rules (11): EnemyDown when the teams differ and it isn't a suicide.
     let living: Vec<(Entity, u8, Vec3)> = {
         let mut q = world.try_query::<(Entity, &Team, &Transform, &Health)>().expect("registered");
@@ -226,7 +313,7 @@ pub fn of_death(world: &World, d: &Died) -> Vec<(u8, CaTeamCallout)> {
     };
     let killer_entry = (speaker.unwrap_or(Entity::PLACEHOLDER), killer_team, u(damager_at));
     let (enemy_down, man_down) = rules::callouts(Some(killer_entry), (victim, victim_team, u(victim_at)), &living);
-    if enemy_down.is_some() && speaker != Some(victim) {
+    if enemy_down.is_some() && speaker != Some(victim) && ours {
         out.push((
             killer_team,
             CaTeamCallout {

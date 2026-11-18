@@ -26,7 +26,9 @@
 //! - A game's rules may differ (`RagdollGameRules` by the body's game:
 //!   HL2:DM's push the root body with the hit's own force, aim at no death
 //!   pose and stay after the respawn until the owner dies again; CS:S's
-//!   keep the death pose and the hit body but push with the gun's impulse).
+//!   keep the death pose and the hit body but push with the gun's impulse;
+//!   how long they stay is `RagdollLifetime`: TF2's also go on a timer of
+//!   each machine's own that its view resets, specs/tf2/ragdolls.md).
 //!
 //! Ragdolls for any game (specs/cs_source/ragdolls.md): `MapRagdoll` on a
 //! character model (bodies on bones, joints with per-axis limits),
@@ -49,7 +51,13 @@
 //! its drawn body over (`render::bodies`), whose joints then follow the bodies; forced sleep after
 //! `ragdoll_sleepaftertime`; only awake joints in the substeps' passes; none at
 //! all with `RagdollSettings::enabled` 0 (a dedicated server's: no pose record
-//! for bodies it animates either); removed when the owner lives again or is gone (a
+//! for bodies it animates either); `RagdollLifetime` per game (`RagdollGameRules`): removed when the
+//! owner lives again (CS:S), when it dies again (HL2:DM), or that and a timer
+//! (`RagdollTimer`, run by `remove_ragdolls`: `fade_time` from its tick, run from the next, set to
+//! `view_fraction` of it from now while the view sees it, `RagdollInView`;
+//! out of view past it, removed at once; `cl_ragdoll_forcefade 1`: a seen one fades
+//! out at `forced_fade_speed`; TF2, specs/tf2/ragdolls.md; the party apps'
+//! `BodiesGoOnRespawn` makes every game's removed when the owner lives again); removed when the owner lives again or is gone (a
 //! living owner whose ragdoll went with the map loses `Ragdolled` as well; an
 //! owner lives again only once seen dead since, or after `DEATH_NEWS_WAIT`: a
 //! network client hears of a death before the owner's health comes).
@@ -212,6 +220,9 @@ pub struct RagdollSettings {
     /// Stationary this long, a ragdoll is put to sleep
     /// (`ragdoll_sleepaftertime`), s.
     pub sleep_after: f32,
+    /// 1: a game's timed ragdolls fade out once seen
+    /// (`cl_ragdoll_forcefade`; `RagdollFade`).
+    pub force_fade: u8,
 }
 
 impl Default for RagdollSettings {
@@ -219,6 +230,7 @@ impl Default for RagdollSettings {
         Self {
             enabled: 1,
             sleep_after: 5.0,
+            force_fade: 0,
         }
     }
 }
@@ -237,9 +249,8 @@ pub struct RagdollRules {
     /// The killing push is the damage's own force (`Damage::force`, when
     /// it has one) instead of `DEATH_IMPULSE` along the hit.
     pub damage_force: bool,
-    /// The ragdoll stays when its owner lives again, until the owner dies
-    /// again or is gone.
-    pub outlive_respawn: bool,
+    /// How long the ragdoll stays.
+    pub lifetime: RagdollLifetime,
 }
 
 impl Default for RagdollRules {
@@ -248,8 +259,122 @@ impl Default for RagdollRules {
             death_pose: true,
             push_root: false,
             damage_force: false,
-            outlive_respawn: false,
+            lifetime: RagdollLifetime::UntilRespawn,
         }
+    }
+}
+
+impl RagdollRules {
+    /// The rules as played: in a party (`BodiesGoOnRespawn`) every
+    /// game's ragdoll goes when its owner lives again.
+    pub fn in_party(self, party: bool) -> Self {
+        if party {
+            Self {
+                lifetime: RagdollLifetime::UntilRespawn,
+                ..self
+            }
+        } else {
+            self
+        }
+    }
+
+    /// The ragdoll stays when its owner lives again, until the owner dies
+    /// again or is gone.
+    pub fn outlives_respawn(&self) -> bool {
+        self.lifetime != RagdollLifetime::UntilRespawn
+    }
+}
+
+/// The party apps' rule over every game's own (Ultimate Gun Game, Lucker
+/// Party; for performance): a player's ragdoll or body goes when its owner
+/// lives again, whatever game's it is and whatever character (a previous
+/// rung's) left it. Ragdolls read it here (`RagdollRules::in_party`);
+/// games with bodies of their own read it too (Combat Arms' `CaBody`,
+/// Halo's `HaloCorpse`). The standalone games leave it out and keep their
+/// own lifetimes (TF2's timer, HL2:DM's until the next death).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BodiesGoOnRespawn;
+
+/// How long a game's ragdoll stays (`RagdollRules::lifetime`). Every kind
+/// goes at a round restart and when its owner is gone.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum RagdollLifetime {
+    /// Removed when its owner lives again (CS:S's).
+    #[default]
+    UntilRespawn,
+    /// Kept after the owner's respawn until it dies again (HL2:DM's,
+    /// specs/hl2dm/player_models.md 10).
+    UntilNextDeath,
+    /// Kept until the owner dies again, and each machine also removes it
+    /// on a timer of its own that the view resets (TF2's,
+    /// specs/tf2/ragdolls.md 2-5: `RagdollTimer`).
+    Faded(RagdollFade),
+}
+
+/// A machine's own timer on a ragdoll (specs/tf2/ragdolls.md 3, 5): made
+/// with `fade_time`; each tick it is in view (`RagdollInView`) it is set
+/// to `view_fraction` x `fade_time` from now (shorter, too); out of view
+/// past it, it goes at once, no fade. With `cl_ragdoll_forcefade 1`
+/// (`RagdollSettings::force_fade`) one seen fades out at
+/// `forced_fade_speed` alpha a second instead, and one never seen goes on
+/// its first tick.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize)]
+pub struct RagdollFade {
+    /// `cl_ragdoll_fade_time`, s.
+    pub fade_time: f64,
+    /// The share of `fade_time` the timer is set to while in view.
+    pub view_fraction: f64,
+    /// The forced fade's speed, alpha (0-255) a second.
+    pub forced_fade_speed: f64,
+}
+
+/// On a ragdoll the local view saw this frame (specs/tf2/ragdolls.md 4:
+/// a box of ±1 unit at its root body in a potentially visible cluster and
+/// in the view frustum). The drawing layer writes it
+/// (`render::ragdoll_view`); without a view none is ever seen.
+#[derive(Component, Clone, Copy, Debug)]
+#[component(storage = "SparseSet")]
+pub struct RagdollInView;
+
+/// A `RagdollLifetime::Faded` ragdoll's timer on this machine.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct RagdollTimer {
+    /// Removed out of view once the clock is past this (s).
+    pub remove_at: f64,
+    /// Fading out (forced fade): its alpha, 255 opaque.
+    pub alpha: Option<u8>,
+}
+
+impl RagdollTimer {
+    /// The timer of a ragdoll made at `now`: `fade_time` on, none when
+    /// fades are forced (spec 5).
+    pub fn new(fade: &RagdollFade, forced: bool, now: f64) -> Self {
+        Self {
+            remove_at: if forced { f64::NEG_INFINITY } else { now + fade.fade_time },
+            alpha: None,
+        }
+    }
+
+    /// One evaluation at `now`, `dt` after the last (spec "Per-tick
+    /// order" 3-5); true: remove it now.
+    pub fn step(&mut self, fade: &RagdollFade, forced: bool, in_view: bool, now: f64, dt: f64) -> bool {
+        if forced {
+            if let Some(a) = self.alpha {
+                // Integer alpha, the drop truncated: ceil(speed·dt) a step.
+                let next = (a as f64 - fade.forced_fade_speed * dt).max(0.0) as u8;
+                self.alpha = Some(next);
+                return next == 0;
+            }
+            if in_view {
+                // Its alpha drops from the next evaluation on.
+                self.alpha = Some(255);
+                return false;
+            }
+        } else if in_view {
+            self.remove_at = now + fade.view_fraction * fade.fade_time;
+            return false;
+        }
+        self.remove_at < now
     }
 }
 
@@ -346,7 +471,7 @@ pub struct Ragdoll {
 
 /// On a ragdoll whose owner lives again and has a body of its own: it
 /// stays until the owner dies again or is gone
-/// (`RagdollRules::outlive_respawn`).
+/// (`RagdollRules::outlives_respawn`).
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Outlived;
 
@@ -1224,13 +1349,22 @@ pub fn spawn_body(
 /// (the map unloaded under it: ragdolls are map parts, characters stay)
 /// loses `Ragdolled` too, or it never got a body again (a bot killed by
 /// the gun game's winning shot stayed invisible on the next map).
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn remove_ragdolls(
-    ragdolls: Query<(Entity, &Ragdoll, Has<Outlived>, Has<OwnerSeenDead>)>,
+    mut ragdolls: Query<(
+        Entity,
+        &Ragdoll,
+        Has<Outlived>,
+        Has<OwnerSeenDead>,
+        (Option<&mut RagdollTimer>, Has<RagdollInView>),
+    )>,
     owners: Query<Option<&Health>>,
     marked: Query<Entity, With<Ragdolled>>,
     restarts: Option<Res<crate::core::RoundRestarts>>,
     models: Option<Res<CharacterModels>>,
     rules: Res<RagdollGameRules>,
+    settings: Res<RagdollSettings>,
+    party: Option<Res<BodiesGoOnRespawn>>,
     time: Res<Time>,
     mut commands: Commands,
 ) {
@@ -1242,17 +1376,46 @@ fn remove_ragdolls(
     };
     let gone = |owner: Entity| owners.get(owner).is_err();
     for owner in &marked {
-        if alive(owner) && !ragdolls.iter().any(|(_, r, outlived, _)| r.owner == owner && !r.placed && !outlived) {
+        if alive(owner) && !ragdolls.iter().any(|(_, r, outlived, ..)| r.owner == owner && !r.placed && !outlived) {
             commands.entity(owner).remove::<Ragdolled>();
         }
     }
-    for (e, r, outlived, seen_dead) in &ragdolls {
+    let (dt, forced) = (time.delta_secs_f64(), settings.force_fade != 0);
+    for (e, r, outlived, seen_dead, (timer, in_view)) in &mut ragdolls {
         if r.placed {
             continue;
         }
         if restart {
             despawn_ragdoll(&mut commands, e, r);
             continue;
+        }
+        let game = models.as_ref().and_then(|m| m.0.get(r.model)).and_then(|m| m.game);
+        let rule = rules.of(game).in_party(party.is_some());
+        if let RagdollLifetime::Faded(fade) = rule.lifetime {
+            // Timed (specs/tf2/ragdolls.md 3, 5): its timer from the tick
+            // it was made, first run on the next, once the view has looked
+            // at it (spec Open question 1; a forced fade would otherwise
+            // take every ragdoll at once).
+            let due = match timer {
+                Some(mut t) => t.step(&fade, forced, in_view, now, dt),
+                None => {
+                    let mut t = RagdollTimer::new(&fade, forced, r.born);
+                    let due = t.step(&fade, forced, in_view, now, dt);
+                    commands.entity(e).insert(t);
+                    due
+                }
+            };
+            if due {
+                // An owner still dead keeps `Ragdolled`: no standing body
+                // comes back until it lives again.
+                despawn_parts(&mut commands, e, r);
+                if alive(r.owner)
+                    && let Ok(mut owner) = commands.get_entity(r.owner)
+                {
+                    owner.remove::<Ragdolled>();
+                }
+                continue;
+            }
         }
         if !seen_dead && !alive(r.owner) {
             commands.entity(e).insert(OwnerSeenDead);
@@ -1274,8 +1437,7 @@ fn remove_ragdolls(
         if !gone(r.owner) && !seen_dead && now - r.born < DEATH_NEWS_WAIT {
             continue;
         }
-        let game = models.as_ref().and_then(|m| m.0.get(r.model)).and_then(|m| m.game);
-        if rules.of(game).outlive_respawn && !gone(r.owner) {
+        if rule.outlives_respawn() && !gone(r.owner) {
             // The owner gets a body of its own; this one stays.
             commands.entity(e).insert(Outlived);
             commands.entity(r.owner).remove::<Ragdolled>();
@@ -1294,15 +1456,20 @@ const DEATH_NEWS_WAIT: f64 = 1.0;
 /// Remove a ragdoll with its bodies, joints and drawn body, and its
 /// owner's `Ragdolled`.
 pub fn despawn_ragdoll(commands: &mut Commands, e: Entity, r: &Ragdoll) {
+    despawn_parts(commands, e, r);
+    if let Ok(mut owner) = commands.get_entity(r.owner) {
+        owner.remove::<Ragdolled>();
+    }
+}
+
+/// A ragdoll's entity, bodies, joints and drawn body.
+fn despawn_parts(commands: &mut Commands, e: Entity, r: &Ragdoll) {
     for x in r.joints.iter().chain(&r.bodies).chain(&r.visual) {
         if let Ok(mut x) = commands.get_entity(*x) {
             x.despawn();
         }
     }
     commands.entity(e).despawn();
-    if let Ok(mut owner) = commands.get_entity(r.owner) {
-        owner.remove::<Ragdolled>();
-    }
 }
 
 /// Bullets push the ragdolls on their path (spec 6.2): once per ragdoll,

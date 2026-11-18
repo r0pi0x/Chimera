@@ -556,8 +556,8 @@ fn receive_hurts(
 }
 
 /// Deaths, to every client (kill feed, ragdolls), with the gun that
-/// killed (`weapon::DamageWeapons`) and the announcer's facts of each
-/// enemy kill.
+/// killed (`weapon::DamageWeapons`), the announcer's facts of each
+/// enemy kill and the kill voice's outcome (`kill_voice`, in `marks`).
 fn send_deaths(
     mut died: MessageReader<Died>,
     replicated: Query<(), With<Replicated>>,
@@ -565,10 +565,12 @@ fn send_deaths(
     held: Option<Res<crate::weapon::DamageWeapons>>,
     mut announced: MessageReader<chimera_core::announcer::KillAnnounced>,
     mut marked: MessageReader<chimera_sim::dominations::KillMark>,
+    mut voices: MessageReader<chimera_sim::kill_voice::KillVoiceOutcome>,
     mut out: MessageWriter<ToClients<Killed>>,
 ) {
     let announced: Vec<_> = announced.read().collect();
     let marked: Vec<_> = marked.read().copied().collect();
+    let voices: Vec<_> = voices.read().copied().collect();
     for d in died.read() {
         if !replicated.contains(d.entity) {
             continue;
@@ -588,7 +590,11 @@ fn send_deaths(
             .map_or(0, |m| {
                 (if m.dominated { super::kill_marks::DOMINATED } else { 0 })
                     | (if m.revenge { super::kill_marks::REVENGE } else { 0 })
-            });
+            })
+            | voices
+                .iter()
+                .find(|v| v.victim == d.entity && Some(v.killer) == d.attacker)
+                .map_or(0, |v| super::kill_marks::ASKED | if v.voiced { super::kill_marks::VOICED } else { 0 });
         out.write(ToClients {
             targets: SendTargets::CLIENTS_ONLY,
             message: Killed {
@@ -705,8 +711,17 @@ fn receive_deaths(mut killed: MessageReader<Killed>, mut commands: Commands) {
                     force: Vec3::from_array(k.force),
                 },
             });
+            // The kill voice's outcome (`kill_voice::KillVoiceOutcome`).
+            if let Some(killer) = k.attacker.filter(|_| k.marks & super::kill_marks::ASKED != 0) {
+                w.write_message(chimera_sim::kill_voice::KillVoiceOutcome {
+                    killer,
+                    victim: k.victim,
+                    voiced: k.marks & super::kill_marks::VOICED != 0,
+                });
+            }
             // Dominations (`dominations::KillMark`).
-            if let Some(killer) = k.attacker.filter(|_| k.marks != 0) {
+            let dominations = super::kill_marks::DOMINATED | super::kill_marks::REVENGE;
+            if let Some(killer) = k.attacker.filter(|_| k.marks & dominations != 0) {
                 w.write_message(chimera_sim::dominations::KillMark {
                     victim: k.victim,
                     killer,
