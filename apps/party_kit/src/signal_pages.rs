@@ -1850,7 +1850,7 @@ fn pick_value(c: &mut Commands, ui: &Ui, vl: Entity, pick: &Pick, v: &str, st: S
             }
         }
         _ => {
-            let (minus, plus) = ui.stepper(c, vl, &pick.shown(v), 7.0, st);
+            let (minus, plus) = ui.stepper(c, vl, &pick.shown(v), pick.stepper_range(v), st);
             c.entity(minus).insert(act(PickAct::Step(-1)));
             c.entity(plus).insert(act(PickAct::Step(1)));
         }

@@ -241,7 +241,7 @@ fn text_on_white_is_full_strength_ink() {
 #[test]
 fn stepper_underline_clears_the_value() {
     let mut app = app();
-    let (minus, _) = build(&mut app, |ui, c, root| ui.stepper(c, root, "Rotation · 138 maps", 13.0, State::focused(true)));
+    let (minus, _) = build(&mut app, |ui, c, root| ui.stepper(c, root, "Rotation · 138 maps", controls::StepperRange::new(), State::focused(true)));
     let group = app.world().get::<ChildOf>(minus).unwrap().parent();
     let out = app.world().get::<Children>(group).unwrap()[1];
     let px = |v: f32| (v * 19.2).round();
@@ -434,7 +434,7 @@ fn a_sliders_value_box_types() {
     let p = build(&mut app, |ui, c, root| ui.slider_ex(c, root, 1.0, None, "1.6", 15.0, State::NONE, Some(typing)));
     assert_eq!(joined(&mut app, p.value), "1.6", "as typed");
     assert_eq!(descendants_with::<controls::TextCaret>(&mut app, p.value).len(), 1, "the caret");
-    let s = build(&mut app, |ui, c, root| ui.stepper_ex(c, root, "8", 4.0, State::NONE, None));
+    let s = build(&mut app, |ui, c, root| ui.stepper_ex(c, root, "8", controls::StepperRange::new().range(0.0, 10.0), State::NONE, None));
     assert!(app.world().get::<Interaction>(s.value).is_some(), "a stepper's value too");
 }
 
@@ -599,7 +599,7 @@ fn a_click_places_the_caret_between_characters() {
     point(&mut app, xs[8] + 200.0, f);
     assert_eq!(char_at(&mut app, f), Some(9), "past the end");
     // A value box too.
-    let v = build_laid(&mut app, |ui, c, root| ui.stepper_ex(c, root, "8.5", 4.0, State::NONE, None)).value;
+    let v = build_laid(&mut app, |ui, c, root| ui.stepper_ex(c, root, "8.5", controls::StepperRange::new().range(0.0, 10.0).step(0.5), State::NONE, None)).value;
     let xs = char_xs(&app, v);
     point(&mut app, (xs[0] + xs[1]) / 2.0, v);
     assert_eq!(char_at(&mut app, v), Some(1));
@@ -936,5 +936,35 @@ fn typing_into_any_text_input_moves_no_text() {
     for at in [3, 7, line.len()] {
         let f = chat(&mut app, at);
         assert_eq!(text_places(&mut app, f), want, "the chat's text stays with the caret at {at}");
+    }
+}
+
+/// A stepper is one control: its value box is as wide as its range asks
+/// (a 0-10 one narrow, a 1-65535 one wider, a unit adds room), and its
+/// minus, value and plus all sit inside the one border.
+#[test]
+fn stepper_is_one_bordered_control_sized_by_its_range() {
+    let mut app = laid_out();
+    let narrow = build_laid(&mut app, |ui, c, root| ui.stepper_ex(c, root, "8", controls::StepperRange::new().range(0.0, 10.0).step(1.0), State::NONE, None));
+    let wide = build_laid(&mut app, |ui, c, root| ui.stepper_ex(c, root, "8", controls::StepperRange::new().range(1.0, 65535.0).step(1.0), State::NONE, None));
+    let unit = build_laid(&mut app, |ui, c, root| ui.stepper_ex(c, root, "8", controls::StepperRange::new().range(0.0, 10.0).step(1.0).unit(" s"), State::NONE, None));
+    let (n, w, u) = (size_of(&app, narrow.value).x, size_of(&app, wide.value).x, size_of(&app, unit.value).x);
+    assert!(n < w, "0-10 ({n}px) is narrower than 1-65535 ({w}px)");
+    assert!(n < u && u < w, "a unit adds room: {n} < {u} < {w}");
+    for s in [&narrow, &wide] {
+        let g = app.world().get::<ChildOf>(s.minus).unwrap().parent();
+        let border = descendants_with_entity::<controls::StepperBorder>(&mut app, g);
+        assert_eq!(border.len(), 1, "one border");
+        let (bc, bs) = (centre_of(&app, border[0]), size_of(&app, border[0]));
+        for part in [s.minus, s.value, s.plus] {
+            let (pc, ps) = (centre_of(&app, part), size_of(&app, part));
+            assert!((pc.x - ps.x / 2.0) >= bc.x - bs.x / 2.0 - 0.5 && (pc.x + ps.x / 2.0) <= bc.x + bs.x / 2.0 + 0.5, "inside the border across");
+            assert!((pc.y - ps.y / 2.0) >= bc.y - bs.y / 2.0 - 0.5 && (pc.y + ps.y / 2.0) <= bc.y + bs.y / 2.0 + 0.5, "inside the border down");
+        }
+        // No loose gaps: the keys touch the value box.
+        let (right_of_minus, left_of_value) = (centre_of(&app, s.minus).x + size_of(&app, s.minus).x / 2.0, centre_of(&app, s.value).x - size_of(&app, s.value).x / 2.0);
+        let (right_of_value, left_of_plus) = (centre_of(&app, s.value).x + size_of(&app, s.value).x / 2.0, centre_of(&app, s.plus).x - size_of(&app, s.plus).x / 2.0);
+        assert!((left_of_value - right_of_minus).abs() <= 1.0, "minus touches the value");
+        assert!((left_of_plus - right_of_value).abs() <= 1.0, "plus touches the value");
     }
 }
