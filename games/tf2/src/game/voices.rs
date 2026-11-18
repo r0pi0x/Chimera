@@ -156,16 +156,30 @@ impl Tf2Voices {
         Self::parse(DATA).unwrap_or_else(|e| panic!("{e}"))
     }
 
-    /// Every sound entry it can play (the maps' sound tables keep them).
+    /// Every sound entry it can play (the maps' sound tables keep them):
+    /// `SHARED` and each class's (`ClassVoice::entries`).
     pub fn entries(&self) -> Vec<String> {
-        let mut out = vec![DROWN.to_string(), FALL_GIB.to_string()];
-        for c in self.classes.values() {
-            out.extend((1..=c.pain.len()).map(|n| pain_entry(&c.speaker, n)));
-            for kind in ["Death", "CritDeath", "MeleeDeath", "ExplosionDeath"] {
-                out.push(format!("{}.{kind}", c.speaker));
-            }
-            out.extend(c.kill.iter().flat_map(|r| r.groups.iter().flat_map(|g| g.lines.iter().cloned())));
+        let mut out: Vec<String> = SHARED.iter().map(|e| e.to_string()).collect();
+        out.extend(self.classes.values().flat_map(ClassVoice::entries));
+        out.sort();
+        out.dedup();
+        out
+    }
+}
+
+/// The entries any class can play (drowning, the fall splat).
+pub const SHARED: [&str; 2] = [DROWN, FALL_GIB];
+
+impl ClassVoice {
+    /// The sound entries of this class's own voice: its pain lines, death
+    /// cries and kill lines (the class's `players/<class>` set holds their
+    /// waves: `sets::class_files`), sorted.
+    pub fn entries(&self) -> Vec<String> {
+        let mut out: Vec<String> = (1..=self.pain.len()).map(|n| pain_entry(&self.speaker, n)).collect();
+        for kind in ["Death", "CritDeath", "MeleeDeath", "ExplosionDeath"] {
+            out.push(format!("{}.{kind}", self.speaker));
         }
+        out.extend(self.kill.iter().flat_map(|r| r.groups.iter().flat_map(|g| g.lines.iter().cloned())));
         out.sort();
         out.dedup();
         out

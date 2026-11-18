@@ -11,14 +11,17 @@
 //! per class `players/<class>` (`classes::set_of`, `class_files`): its
 //! body as a match loads it (`bodies::load`: the player model, its
 //! animation includes, its materials and textures), the model as a view
-//! model reads it, and its first-person arms (`c_<arms>_arms.mdl` with
-//! their animations), less what every class reads; `players` (offered
+//! model reads it, its first-person arms (`c_<arms>_arms.mdl` with
+//! their animations) and the waves of its voice (`voices`: its pain,
+//! death and kill lines, data/voices.toml), less what every class reads;
+//! `players` (offered
 //! with every TF2 match, `resolve::MATCH_SETS`) what every class reads,
 //! the HUD's look (`hud::load`, the class portraits too), the kill feed's
 //! icons (`hud::kill_icon_pictures`: `scripts/mod_textures.txt` and its
 //! sheets) and the guns' looks on any map (`maps::add_guest_looks`: the
 //! particle files and their materials, the impact decals and effect
-//! materials) with the surfaces' bullet-impact sounds. The match's offer names the class sets
+//! materials) with the surfaces' bullet-impact sounds and the voice lines
+//! any class plays (`voices::SHARED`). The match's offer names the class sets
 //! its TF2 guns can make (`bodies::asset_names`, with the classes they
 //! need: data/classes.toml's `needs`).
 //!
@@ -380,15 +383,21 @@ pub fn sound_scripts(mount: &Mount) -> SoundScripts {
     SoundScripts::load_with(&mut MaterialLoader::guest(mount, 0, 0), "", true)
 }
 
-/// The files class `class`'s body and arms read (module doc), sorted.
-pub fn class_files(mount: &Mount, class: &super::classes::Class) -> Vec<String> {
+/// The files class `class`'s body, arms and voice read (module doc),
+/// sorted. `sound_scripts`: the sound scripts (`sound_scripts`).
+pub fn class_files(mount: &Mount, class: &super::classes::Class, sound_scripts: &SoundScripts) -> Vec<String> {
     let default = super::classes::classes().get(super::classes::DEFAULT).map(|c| c.model.clone()).unwrap_or_default();
+    let voice = super::voices::Tf2Voices::built_in().classes.get(&class.name).map(|v| v.entries()).unwrap_or_default();
     read_by(mount, || {
         let mut materials = MaterialLoader::guest(mount, 0, 0);
         let surfaces = source_engine::content::surfaceprops::SurfaceProps::load(&mut materials);
         let _ = super::bodies::load(&mut materials, &surfaces, &class.model, &default);
         let _ = props::load_view_model(&mut materials, &class.model, &class.model, true);
         let _ = props::load_view_model(&mut materials, &arms_model(&class.arms), &class.arms, true);
+        // Its voice (`voices`: pain, death and kill lines).
+        for wave in voice.iter().flat_map(|e| sound_scripts.waves(e)) {
+            let _ = mount.read(&wave);
+        }
     })
 }
 
@@ -396,8 +405,9 @@ pub fn class_files(mount: &Mount, class: &super::classes::Class) -> Vec<String> 
 /// files (every class's and the HUD's) apart, then each class's own.
 pub fn player_pieces(mount: &Mount) -> Vec<(String, Vec<String>)> {
     let table = super::classes::classes();
+    let sounds = sound_scripts(mount);
     let per_class: Vec<(String, Vec<String>)> =
-        table.classes.iter().map(|c| (super::classes::set_of(&c.name), class_files(mount, c))).collect();
+        table.classes.iter().map(|c| (super::classes::set_of(&c.name), class_files(mount, c, &sounds))).collect();
     let hud = read_by(mount, || {
         let mut materials = MaterialLoader::guest(mount, 0, 0);
         let _ = super::hud::load(&mut materials);
@@ -414,6 +424,10 @@ pub fn player_pieces(mount: &Mount) -> Vec<(String, Vec<String>)> {
         let impacts: std::collections::BTreeSet<String> =
             surfaces.names().filter_map(|n| surfaces.text(n, "bulletimpact")).collect();
         for wave in impacts.iter().flat_map(|e| scripts.waves(e)) {
+            let _ = mount.read(&wave);
+        }
+        // The voice lines any class plays (`voices::SHARED`).
+        for wave in super::voices::SHARED.iter().flat_map(|e| scripts.waves(e)) {
             let _ = mount.read(&wave);
         }
     });

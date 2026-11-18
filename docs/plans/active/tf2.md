@@ -982,3 +982,8 @@ server probe for parity checks, TF2's own app.
   sheet metal), nothing missing; TF2's class parts (the class layer, the
   view kick's spring, the view model's class) on and off with the
   movement in one move, a body's skin with its name.
+- 2026-11-18: the voices' waves in the sets: each class's pain, death and
+  kill lines (data/voices.toml) in its `players/<class>`, the lines any
+  class plays (drowning, the fall splat) in `players`
+  (`sets::class_files`, `voices::SHARED`); a client no longer fetches them
+  on demand once the sets are republished.

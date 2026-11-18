@@ -107,8 +107,8 @@ fn the_weapon_sets_pack_into_a_scratch_store_and_read_back_from_it_alone() {
 /// (`bodies::add_bodies`) are exactly the Heavy's and the Scout's, loaded
 /// from the store with nothing missing and nothing fetched (no fetcher:
 /// a read of a missing record would be a warning); the kill icons read
-/// from `players` alone; every class set holds its model, its animations
-/// and its arms.
+/// from `players` alone; every class set holds its model, its animations,
+/// its arms and its voice's waves.
 #[test]
 fn the_class_sets_load_only_the_offered_classes_bodies() {
     use chimera_world::map::{GameKit, KitLoad};
@@ -139,6 +139,21 @@ fn the_class_sets_load_only_the_offered_classes_bodies() {
         }
     }
     let shared = &manifest.sets["players"];
+    // Each class's voice (pain, death and kill lines) with its body, the
+    // lines any class plays with every TF2 match: none fetched on demand.
+    let scripts = sets::sound_scripts(&source);
+    let voices = tf2::game::voices::Tf2Voices::built_in();
+    for c in &classes::classes().classes {
+        let files = &manifest.sets[&classes::set_of(&c.name)];
+        let voice = voices.classes.get(&c.name).unwrap_or_else(|| panic!("{}: a voice", c.name));
+        let waves: Vec<String> = voice.entries().iter().flat_map(|e| scripts.waves(e)).filter(|w| source.contains(w)).collect();
+        assert!(!waves.is_empty(), "{}: voice waves", c.name);
+        let missing: Vec<&String> = waves.iter().filter(|w| !files.contains(*w) && !shared.contains(*w)).collect();
+        assert!(missing.is_empty(), "{}: voice waves not in its set: {missing:?}", c.name);
+    }
+    for e in tf2::game::voices::SHARED {
+        assert!(scripts.waves(e).iter().filter(|w| source.contains(w)).all(|w| shared.contains(w)), "{e} in players");
+    }
     assert!(shared.contains("scripts/mod_textures.txt") && shared.contains("materials/hud/d_images.vtf"), "the kill icons");
     manifest.save(&store.manifest_path(GAME, build)).unwrap();
     // Only `players`, the Heavy's and the Scout's records stay.

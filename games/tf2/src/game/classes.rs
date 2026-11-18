@@ -345,7 +345,8 @@ pub fn add_rung_classes(app: &mut App) {
 
 /// The asset set of class `name`'s body (`chimera_pack sets tf2`,
 /// `super::sets::class_files`): its player model with its animations and
-/// textures and its first-person arms, `players/<name>` (`players/heavy`).
+/// textures, its first-person arms and its voice's waves, `players/<name>`
+/// (`players/heavy`).
 pub fn set_of(name: &str) -> String {
     format!("players/{name}")
 }
