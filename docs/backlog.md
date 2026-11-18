@@ -405,13 +405,16 @@ the user's go-ahead: no Actions runs unless asked.
   - **TF2 in general:**
     - Done (2026-11-18): TF2 characters cannot climb ladders, at least on Combat Arms maps. TF2's movement climbed no ladders anywhere (`contents_ladders` off); now every Source movement that climbs no ladder lines climbs another game's map's ladder brushes, volumes and lines by the shared code's rule at 200 units/s (`SourceMovementConfig::climbs_contents`), its own maps' brushes still walls. Halo's movement didn't read ladder lines (HL2's): now a volume 24 units around each. party_kit `every_movement_climbs_every_ladder` holds every registered movement (CS:S, Combat Arms, HL2:DM, TF2, Halo) to a Source ladder brush, a Combat Arms ladder volume, an HL2 ladder line and a Halo climbable sheet; heavy `halo_ladders` does it on Prisoner's real sheets (not run here: no Halo disc on the Linux box; run it on Windows, as a CS:S character was reported unable to climb Halo's ladders, while the made sheet climbs);
     - the Engineer's mouth hangs open oddly in third person: check face flexes / jaw bone defaults for every TF2 class (and other games' faces), not the Engineer alone;
-    - projectiles at the wrong orientation (the rocket was fixed alone;
-      the user saw it again on a Medi Gun-class weapon): one general fix
-      for every TF2 projectile model's forward axis, tested per
-      projectile;
-    - missing explosion and visual effects (the sticky bomb launcher, and
-      likely others): an audit of every TF2 weapon's effects against its
-      data;
+    - ~~projectiles at the wrong orientation~~ (fixed 2026-11-18,
+      `tf2-general`: every held model carries its nose,
+      `MapHeldModel::nose`, and every flyer of every game flies nose first
+      by it; no axis in the data);
+    - missing explosion and visual effects: a kept guest dressing dropped
+      its particle systems (fixed 2026-11-18, `kept::append`), stickies
+      went off only with the launcher out (fixed); what is left per weapon
+      (tracers, trails, the rocket's muzzle, explosion variants, the
+      scripts' effect names) is in
+      [plans/active/tf2-effects.md](plans/active/tf2-effects.md);
     - first-person view models lit wrongly: check whether it's the map
       (HL2 or Halo maps) or the view-model lighting.
   - Done (2026-11-18), **Sandbox:** B still won't open Change gun: it opened and closed. The press that opened it reached Change gun's own key reader as a typed `b` in the same frame, which closed it; tests pressed the key and sent its event separately, never both. B is now read once, by the sandbox's keys alone, and an app-level screen owns its keys (`binds::OwnedKeys`: the sandbox's B, T, K and pinned digits), so no game's bind (CS:S's `buymenu`, Combat Arms' radio and push to talk) acts on them. Test: ultimate_gun_game `b_toggles_change_gun_once_per_press_with_every_games_character_and_no_bind_acts`;
