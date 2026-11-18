@@ -403,6 +403,7 @@ the user's go-ahead: no Actions runs unless asked.
     - the match-end chat covers the map vote's timer: a design pass with
       fixed zones (results, vote and timer, chat), screenshots first.
   - **TF2 in general:**
+    - TF2 characters cannot climb ladders, at least on Combat Arms maps; check every game's characters on every game's ladders (one ladder rule in Chimera);
     - projectiles at the wrong orientation (the rocket was fixed alone;
       the user saw it again on a Medi Gun-class weapon): one general fix
       for every TF2 projectile model's forward axis, tested per
