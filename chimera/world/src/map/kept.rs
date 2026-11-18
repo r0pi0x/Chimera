@@ -17,7 +17,8 @@
 //!   cubemaps after the map's, every index its parts hold moved past them
 //!   (`texture_refs`), its bodies, held and view models after the map's,
 //!   and what a dressing merges by name (sound entries, decal groups,
-//!   effect materials, muzzle flashes, spent shells, the HUD look) by the
+//!   effect materials, particle systems, muzzle flashes, spent shells, the
+//!   HUD look) by the
 //!   same rules (`add_sounds`, `add_decals`, `MapData::add_guest_hud`,
 //!   `shells::add_shells`); a guest's impact looks (decal groups and
 //!   material letters, surfaces and their bullet impact entries, effect
@@ -397,18 +398,34 @@ pub fn append(map: &mut MapData, parts: &MapData) {
         _ => None,
     };
     add_decals_of(&mut map.kit.decals, moved(&kit.decals, t, c), game);
+    // Each of the guest's effect materials as the map now holds it (its
+    // own, or the map's of the same name): its particle systems point at
+    // them.
+    let mut material_at = Vec::with_capacity(parts.particles.materials.len());
     for m in &parts.particles.materials {
-        if map.particles.find(&m.name).is_none() {
-            map.particles.materials.push(moved(m, t, c));
-        } else if let Some(g) = game {
-            let own = super::impact::own_name(g, &m.name);
-            if map.particles.find(&own).is_none() {
-                let mut m = moved(m, t, c);
-                m.name = own;
-                map.particles.materials.push(m);
+        let at = if let Some(i) = map.particles.find(&m.name) {
+            match game {
+                Some(g) => {
+                    let own = super::impact::own_name(g, &m.name);
+                    Some(match map.particles.find(&own) {
+                        Some(i) => i,
+                        None => {
+                            let mut m = moved(m, t, c);
+                            m.name = own;
+                            map.particles.materials.push(m);
+                            map.particles.materials.len() - 1
+                        }
+                    })
+                }
+                None => Some(i),
             }
-        }
+        } else {
+            map.particles.materials.push(moved(m, t, c));
+            Some(map.particles.materials.len() - 1)
+        };
+        material_at.push(at);
     }
+    add_particle_systems(map, &parts.particle_systems, &material_at);
     for game in &parts.impacts.looks {
         map.impacts.add(game);
     }
@@ -428,6 +445,46 @@ pub fn append(map: &mut MapData, parts: &MapData) {
     super::shells::add_shells(&mut map.kit.shells, kit.shells.iter().map(|s| moved(s, t, c)).collect());
     add_sounds_of(Arc::make_mut(&mut map.sounds), (*parts.sounds).clone(), game);
     map.warnings.extend(parts.warnings.iter().cloned());
+}
+
+/// A guest's particle systems (its guns' explosions, muzzle flashes and
+/// flames: TF2's `pcf::add_guest_particle_systems`, which its dressing
+/// ran on the empty map) added to the map's, as that function adds them:
+/// each the map lacks by name, after the map's, its children renumbered
+/// and its material moved to where the map now holds it (`material_at`,
+/// by the guest's index). Before, a kept dressing dropped them: a guest's
+/// guns showed no explosion or muzzle flash on any map but their own.
+fn add_particle_systems(map: &mut MapData, guest: &super::psys::MapParticleSystems, material_at: &[Option<usize>]) {
+    if guest.defs.is_empty() {
+        return;
+    }
+    let out = Arc::make_mut(&mut map.particle_systems);
+    let base = out.defs.len();
+    let mut at = Vec::with_capacity(guest.defs.len());
+    let mut next = base;
+    for d in &guest.defs {
+        match out.find(&d.name) {
+            Some(i) => at.push((i, false)),
+            None => {
+                at.push((next, true));
+                next += 1;
+            }
+        }
+    }
+    for (d, (_, new)) in guest.defs.iter().zip(&at) {
+        if !new {
+            continue;
+        }
+        let mut d = d.clone();
+        d.material = d.material.and_then(|m| material_at.get(m).copied().flatten());
+        for c in &mut d.children {
+            c.0 = at.get(c.0).map_or(c.0, |a| a.0);
+        }
+        out.defs.push(d);
+    }
+    if base == 0 || out.scale <= 0.0 {
+        out.scale = guest.scale;
+    }
 }
 
 /// A guest's decals added to a map's: appended, each group, material
@@ -885,6 +942,40 @@ mod tests {
     /// A guest's impact looks named as the map's (TF2's and CS:S's
     /// `Concrete.BulletImpact`, 'C' decals, `effects/spark`) are its own
     /// for its impacts; the map's game keeps its own under the bare names.
+    /// A guest's particle systems (TF2's explosion on de_dust2) reach the
+    /// map: each the map lacks, its material and children where the map
+    /// holds them; the map's own of a name stays.
+    #[test]
+    fn a_guests_particle_systems_are_appended() {
+        use crate::map::{particles::ParticleMaterial, psys::SystemDef};
+        let mat = |n: &str| ParticleMaterial { name: n.into(), ..Default::default() };
+        let def = |n: &str, material, children: Vec<(usize, f32)>| SystemDef { name: n.into(), material, children, ..Default::default() };
+        let mut map = MapData::default();
+        map.particles.materials = vec![mat("effects/map_only"), mat("effects/shared")];
+        Arc::make_mut(&mut map.particle_systems).defs = vec![def("Shared_Child", Some(0), Vec::new())];
+        let mut parts = MapData::default();
+        parts.particles.materials = vec![mat("effects/shared"), mat("effects/fire")];
+        {
+            let ps = Arc::make_mut(&mut parts.particle_systems);
+            ps.defs = vec![
+                def("ExplosionCore_MidAir", Some(1), vec![(1, 0.0), (2, 0.1)]),
+                def("Shared_Child", Some(0), Vec::new()),
+                def("Explosion_Flash", Some(0), Vec::new()),
+            ];
+            ps.scale = 0.0254;
+        }
+        append(&mut map, &parts);
+        let ps = &map.particle_systems;
+        let names: Vec<&str> = ps.defs.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, ["Shared_Child", "ExplosionCore_MidAir", "Explosion_Flash"]);
+        let core = &ps.defs[1];
+        assert_eq!(map.particles.materials[core.material.unwrap()].name, "effects/fire");
+        assert_eq!(core.children, vec![(0, 0.0), (2, 0.1)], "the map's child of the name, the new one after");
+        assert_eq!(map.particles.materials[ps.defs[2].material.unwrap()].name, "effects/shared");
+        assert_eq!(ps.defs[0].material, Some(0), "the map's own stays");
+        assert!((ps.scale - 0.0254).abs() < 1e-6);
+    }
+
     #[test]
     fn a_guests_impact_looks_are_its_own_where_its_names_are_taken() {
         let mut map = looks("cs_source", 1);

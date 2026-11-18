@@ -574,3 +574,33 @@ fn every_projectile_flies_nose_first() {
         assert!(seen > 3, "{gun}: {seen} flying ticks seen");
     }
 }
+
+/// A sticky laid with the launcher still goes off on attack2 once its
+/// owner holds another TF2 weapon (the game: any of the Demoman's; a
+/// ladder's rung swap took the launcher, and the stickies stayed forever
+/// with no explosion, playtest 2026-11-18), with its explosion drawn.
+#[test]
+fn stickies_detonate_with_another_tf2_weapon_out() {
+    use chimera_sim::weapon::{Inventory, give};
+    use tf2::game::weapons::{SHOTGUN, blast::Tf2Explosion};
+    let mut sim = sim();
+    let (p, _) = holding(&mut sim, greybox::SPAWNS[0], STICKY_LAUNCHER);
+    run(&mut sim, p, 2, |s, k| {
+        s.intent(p).fire = k == 0;
+        s.intent(p).pitch = -89f32.to_radians();
+    });
+    run(&mut sim, p, 80, |s, _| s.intent(p).fire = false);
+    assert_eq!(stickies(&mut sim, p).len(), 1, "stuck at his feet");
+    let w = give(sim.app.world_mut(), p, SHOTGUN).unwrap();
+    sim.app.world_mut().get_mut::<Inventory>(p).unwrap().wanted = Some(w);
+    sim.seconds(1.0);
+    assert_eq!(stickies(&mut sim, p).len(), 1, "still there with the shotgun out");
+    let mut drawn = sim.app.world().resource::<Messages<Tf2Explosion>>().get_cursor_current();
+    let mut explosions = 0;
+    for k in 0..5 {
+        run(&mut sim, p, 1, |s, _| s.intent(p).secondary = k < 2);
+        explosions += drawn.read(sim.app.world().resource::<Messages<Tf2Explosion>>()).count();
+    }
+    assert!(stickies(&mut sim, p).is_empty(), "detonated");
+    assert_eq!(explosions, 1, "its explosion drawn");
+}

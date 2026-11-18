@@ -405,13 +405,16 @@ the user's go-ahead: no Actions runs unless asked.
   - **TF2 in general:**
     - TF2 characters cannot climb ladders, at least on Combat Arms maps; check every game's characters on every game's ladders (one ladder rule in Chimera);
     - the Engineer's mouth hangs open oddly in third person: check face flexes / jaw bone defaults for every TF2 class (and other games' faces), not the Engineer alone;
-    - projectiles at the wrong orientation (the rocket was fixed alone;
-      the user saw it again on a Medi Gun-class weapon): one general fix
-      for every TF2 projectile model's forward axis, tested per
-      projectile;
-    - missing explosion and visual effects (the sticky bomb launcher, and
-      likely others): an audit of every TF2 weapon's effects against its
-      data;
+    - ~~projectiles at the wrong orientation~~ (fixed 2026-11-18,
+      `tf2-general`: every held model carries its nose,
+      `MapHeldModel::nose`, and every flyer of every game flies nose first
+      by it; no axis in the data);
+    - missing explosion and visual effects: a kept guest dressing dropped
+      its particle systems (fixed 2026-11-18, `kept::append`), stickies
+      went off only with the launcher out (fixed); what is left per weapon
+      (tracers, trails, the rocket's muzzle, explosion variants, the
+      scripts' effect names) is in
+      [plans/active/tf2-effects.md](plans/active/tf2-effects.md);
     - first-person view models lit wrongly: check whether it's the map
       (HL2 or Halo maps) or the view-model lighting.
   - **Sandbox:** B still won't open Change gun: it opens and closes over and over (B is also CS:S's `buymenu` bind and maybe others'; one owner per key while the sandbox is up, check every game's binds on B, chimera/client/src/client/sandbox/mod.rs ~553);
