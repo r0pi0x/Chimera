@@ -595,6 +595,14 @@ pub fn window(args: &super::Args, title: &str) -> Window {
 pub fn run_app(mut app: App) -> AppExit {
     if chimera_core::env::var("CHIMERA_EXECUTOR").as_deref() != Ok("multi") {
         single_threaded_schedules(&mut app);
+        // Each main-world system's wall time, for the hitch log to name
+        // the slow ones in any build (`metrics::work`, "Timing"; on one
+        // thread only: the main world's executors are single-threaded).
+        // `CHIMERA_SYSTEM_TIMES=0` leaves them unwrapped.
+        if chimera_core::env::var("CHIMERA_SYSTEM_TIMES").as_deref() != Ok("0") {
+            chimera_core::metrics::work::count_systems(app.world_mut());
+            chimera_core::metrics::work::set_timing(true);
+        }
     }
     if let Some(path) = chimera_core::env::var_os("CHIMERA_SYSTEM_DUMP") {
         dump_systems(&mut app, std::path::Path::new(&path));

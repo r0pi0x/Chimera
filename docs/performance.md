@@ -6550,3 +6550,65 @@ the kernel's driver does the same teardown). The window is hidden
 before it (on Windows and X11; Wayland can't hide a window), so the
 player no longer sees it. Not measured on Windows, whose heap frees
 are slower: the share the drop took there should be larger.
+
+## Stutter on Beaver Creek (2026-11-18)
+
+Playtest report (Windows, RTX 5080, Ultimate Gun Game as a listen host on
+halo_ce:beavercreek, 4 bots, games from the asset service): frames at
+4.5 ms, then from about 100 s a freeze of ~400 ms about once a second
+(two a second at most), for minutes at a time. The F10 report's hitch
+lines all said the same: `Update 390-416 ms (cpu ~406)`, 0-1 ticks, the
+render world ~2 ms: one main-thread job on a one-second cadence.
+
+**Cause: the listen server's look at its own game files**
+(`net::server_assets`). A server reading games from the asset store
+(a listen host with its hub account, `for_host`) named the match's sets
+every `CHECK_EVERY` (1 s) and asked `sets::missing` whether the store
+held them, on the main thread (a command queued from `watch`, applied in
+`Update`): every served game's whole manifest read from disk and parsed
+(CS:S 124k lines, Combat Arms 192k, HL2:DM 61k, TF2 44k), then each
+record of the sets looked up on disk. On the dev box that look took
+1,026 ms with five games' manifests and nothing missing (a release build,
+a loaded box; the Windows PC's 400 ms is the same work). `missing` stops
+at the first record absent, so while sets were still to come the look was
+cheap, and while a fetch ran it was skipped: the freezes began once
+everything had arrived, and paused while a new rung body's or gun's set
+was fetched: "fine for a bit, then it drops".
+
+Why the offscreen reproduction on the dev box didn't show it: a tool run
+has no hub account, so no `ServerFiles` and no look (it reads the
+installs). The check (no game files needed):
+`chimera_net` `assets::a_server_looks_at_its_store_once_per_change_of_the_matchs_sets`.
+
+**Fix.** The look happens once per change of the match's sets, and on the
+fetch job's thread (`start_checked`): `fetch_now` starts a job only when
+the sets differ from the last look's; the job reads the store, and
+fetches only if something is missing (an empty summary otherwise). The
+same sets aren't looked at again (as before, the same sets weren't
+fetched again). The test counts the looks (`server_assets::store_looks`):
+one for the match's sets, none for five more looks at the same sets and
+two seconds of frames, one per change of map.
+
+**The hitch log names systems now, in any build.** The report could say
+`Update` but not which system: per-system spans need a profile build.
+The client puts its main world's systems behind `metrics::work`'s
+wrappers (`app::run_app`), which time each run's own wall time with the
+CPU's time-stamp counter (`metrics::work`, "Timing"), and a hitch line
+ends with the frame's six slowest (`systems by own ms: Update watch
+391.20, ...`). Cost (`chimera_sim` `system_times`, greybox, work counts):
+161 instructions a system run, about 2% of a party tick; the test holds
+it under 300. `CHIMERA_SYSTEM_TIMES=0` leaves the systems unwrapped. The
+session log's health line also carries `archetypes`, the render world's
+`gpu_textures` and `gpu_meshes`, and `pipelines` made/compiling (a
+shader or material first seen compiles one: a pipeline count that jumps
+beside a hitch says so).
+
+**Left, seen in the same report** (not the freezes): over five minutes
+on one map entities went 2,400 -> 4,100, archetypes to 4,109, the tick
+0.54 -> 1.51 ms, RSS 1.0 -> 4.4 GB, GPU memory 0.8 -> 2.0 GB. On the dev
+box (offscreen, Beaver Creek, 4 bots, the report's ladder seed 644495)
+archetypes went 2,713 -> 3,833 and entities 3,448 -> 4,270 in 15
+minutes; the box was too loaded (load 26-61, the game swapped out) to
+time anything, and `chimera_census diff` is the tool for what they are
+(docs/OBSERVABILITY.md). The report's `B0004` warning (a `Body` parented
+to a `Body` without `InheritedVisibility`) is new with the stand-ins.

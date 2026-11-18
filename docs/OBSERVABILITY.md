@@ -1555,7 +1555,12 @@ load; work counts don't (performance.md, "Work counts"):
   world ...: queue ...`): the main world's slowest schedules and the
   render world's time and its slowest `Render` sets
   (`CHIMERA_RENDER_PHASES=0` leaves their marks out), each with wall
-  and thread CPU ms, at most two lines a second (`(N more since the last)`). A profile
+  and thread CPU ms, then the main world's six slowest systems by their
+  own wall time in that frame, in any build (`systems by own ms: Update
+  watch 391.20, FixedUpdate think 2.10 x3, ...`: `metrics::work`'s
+  timing, the time-stamp counter around each system, about 150
+  instructions a run; `CHIMERA_SYSTEM_TIMES=0` turns it off), at most
+  two lines a second (`(N more since the last)`). A profile
   build adds the frame's spans with the most self time (`spans by self
   ms: <system> 12.3 x2, ...`). The debug UI Perf tab has the same percentiles as
   a table, with a frame-time histogram.
@@ -1988,7 +1993,8 @@ line at INFO and above and every console line, secrets filtered, synced
 to disk every 2 s, and a `health ...` line every `chimera:health_interval`
 seconds (10 in a game, 20 on a server: `up rss peak avail commit tick
 tick_instr frame frame_max gpu ping loss resyncs errors jumps map rung
-entities players ...`; `chimera:health` prints one now). A server prints
+entities archetypes gpu_textures gpu_meshes pipelines players ...`;
+`pipelines` is made/still compiling; `chimera:health` prints one now). A server prints
 its health and `tick_stats` lines on its console too. A
 `<prefix>-<time>.running` marker beside the log is held while the process
 runs and removed at a clean exit; a game's next start offers the report

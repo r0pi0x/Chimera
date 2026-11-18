@@ -182,6 +182,10 @@ pub struct FrameMetrics {
     stats_at: Option<Instant>,
     #[cfg(feature = "profile")]
     prev_spans: Vec<(String, f64, u32)>,
+    /// The frame's slowest systems by their own wall time, on a hitch
+    /// (`metrics::work::take_frame_times`: the client times its main
+    /// world's systems, `app::run_app`).
+    slow_systems: Vec<(String, f64, u32)>,
 }
 
 impl Default for FrameMetrics {
@@ -211,6 +215,7 @@ impl Default for FrameMetrics {
             stats_at: None,
             #[cfg(feature = "profile")]
             prev_spans: Vec::new(),
+            slow_systems: Vec::new(),
         }
     }
 }
@@ -478,6 +483,9 @@ fn frame_start(world: &mut World) {
         {
             m.prev_spans = span_times::take();
         }
+        // The systems' times of the frame just ended: its slowest on a
+        // hitch, else only reset.
+        m.slow_systems = crate::metrics::work::take_frame_times(if is_hitch { 6 } else { 0 });
         if is_hitch {
             let phases = shared.0.lock().map(|s| s.phases.clone()).unwrap_or_default();
             hitch(&mut m, frame, now, &phases);
@@ -666,6 +674,14 @@ fn hitch(m: &mut FrameMetrics, frame: f64, now: Instant, phases: &[(&'static str
                 format!(": {}", top.join(", "))
             }
         );
+    }
+    if !m.slow_systems.is_empty() {
+        let top: Vec<String> = m
+            .slow_systems
+            .iter()
+            .map(|(n, ms, k)| format!("{n} {ms:.2}{}", if *k > 1 { format!(" x{k}") } else { String::new() }))
+            .collect();
+        line += &format!("; systems by own ms: {}", top.join(", "));
     }
     #[cfg(feature = "profile")]
     {

@@ -34,6 +34,15 @@
 //! `nextest`) may run on a thread waiting in a scope: a test that
 //! compares counts closely runs in a process of its own
 //! (`harness::own_process`).
+//!
+//! **Timing** (`set_timing`, one switch for the process; the game client
+//! turns it on for its main world, `client::app::run_app`): the same
+//! wrappers also measure each run's wall time (`Instant`, its own less the
+//! systems run inside, as the counts) into this thread's frame
+//! (`take_frame_times`), so the hitch log names the systems that made a
+//! slow frame in any build, not only a profiling one (docs/performance.md,
+//! "Stutter on Beaver Creek"). On x86_64 the CPU's time-stamp counter
+//! (`clock`): about 150 instructions a run.
 
 use std::{
     any::TypeId,
@@ -75,6 +84,123 @@ thread_local! {
     static STACK: RefCell<Vec<(u64, u64)>> = const { RefCell::new(Vec::new()) };
     /// This thread's hold on the compute pool while it counts.
     static HOLDING: RefCell<Option<Hold>> = const { RefCell::new(None) };
+}
+
+/// Wall time per system on (true) or off: every wrapped system, on every
+/// thread (`take_frame_times` reads the calling thread's).
+static TIMING: AtomicBool = AtomicBool::new(false);
+
+thread_local! {
+    /// This thread's timed systems: the open ones and the frame's rows.
+    static TIMES: RefCell<Times> = const { RefCell::new(Times { open: Vec::new(), ticks: Vec::new(), runs: Vec::new(), touched: Vec::new() }) };
+}
+
+/// Open timed systems (their start, and the time of the systems run
+/// inside them, in clock ticks), and clock ticks and runs by row since the
+/// last take, with the rows touched (to reset only those).
+struct Times {
+    open: Vec<(u64, u64)>,
+    ticks: Vec<u64>,
+    runs: Vec<u32>,
+    touched: Vec<usize>,
+}
+
+/// Time every wrapped system's runs (wall, self) from now on, or stop.
+pub fn set_timing(on: bool) {
+    if on {
+        let _ = clock::ns_per_tick();
+    }
+    TIMING.store(on, Ordering::Relaxed);
+}
+
+/// Whether systems are timed (`set_timing`).
+pub fn timing() -> bool {
+    TIMING.load(Ordering::Relaxed)
+}
+
+/// The timing's clock: the CPU's time-stamp counter where there is one
+/// (x86_64: one instruction, where the system clock costs a hundred or
+/// more, and a frame runs a thousand or two systems), scaled to
+/// nanoseconds against `Instant` since the first use; `Instant` elsewhere.
+mod clock {
+    use std::{sync::OnceLock, time::Instant};
+
+    static START: OnceLock<(Instant, u64)> = OnceLock::new();
+
+    #[inline]
+    pub fn now() -> u64 {
+        #[cfg(target_arch = "x86_64")]
+        {
+            // SAFETY: `rdtsc` exists on every x86_64 CPU.
+            unsafe { core::arch::x86_64::_rdtsc() }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            START.get_or_init(|| (Instant::now(), 0)).0.elapsed().as_nanos() as u64
+        }
+    }
+
+    /// Nanoseconds a clock tick, measured over the time since the first
+    /// call (better as it goes on).
+    pub fn ns_per_tick() -> f64 {
+        let (at, ticks) = *START.get_or_init(|| (Instant::now(), now()));
+        let (ns, t) = (at.elapsed().as_nanos() as f64, now().wrapping_sub(ticks) as f64);
+        if cfg!(target_arch = "x86_64") && t > 0.0 && ns > 1e6 { ns / t } else if cfg!(target_arch = "x86_64") { 1.0 / 3.0 } else { 1.0 }
+    }
+}
+
+fn t_enter() {
+    let at = clock::now();
+    TIMES.with(|t| t.borrow_mut().open.push((at, 0)));
+}
+
+fn t_leave(row: usize) {
+    let end = clock::now();
+    TIMES.with(|t| {
+        let t = &mut *t.borrow_mut();
+        let Some((at, inner)) = t.open.pop() else { return };
+        let total = end.wrapping_sub(at);
+        if let Some(parent) = t.open.last_mut() {
+            parent.1 += total;
+        }
+        if t.ticks.len() <= row {
+            t.ticks.resize(row + 1, 0);
+            t.runs.resize(row + 1, 0);
+        }
+        if t.runs[row] == 0 {
+            t.touched.push(row);
+        }
+        t.ticks[row] += total.saturating_sub(inner);
+        t.runs[row] += 1;
+    });
+}
+
+/// This thread's timed systems since the last call (`set_timing`), the
+/// `n` slowest by their own wall time, slowest first: (label: schedule and
+/// system, ms, runs); the rest forgotten. `n` 0 only resets (each frame
+/// that isn't a hitch: cheap, the touched rows alone).
+pub fn take_frame_times(n: usize) -> Vec<(String, f64, u32)> {
+    TIMES.with(|t| {
+        let t = &mut *t.borrow_mut();
+        let mut out = Vec::new();
+        if n > 0 && !t.touched.is_empty() {
+            let mut rows: Vec<(usize, u64, u32)> = t.touched.iter().map(|&r| (r, t.ticks[r], t.runs[r])).collect();
+            rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            rows.truncate(n);
+            let ms = clock::ns_per_tick() / 1e6;
+            let labels = LABELS.lock().unwrap_or_else(|e| e.into_inner());
+            out = rows
+                .into_iter()
+                .map(|(r, ticks, runs)| (labels.get(r).cloned().unwrap_or_else(|| format!("system {r}")), ticks as f64 * ms, runs))
+                .collect();
+        }
+        for &r in &t.touched {
+            t.ticks[r] = 0;
+            t.runs[r] = 0;
+        }
+        t.touched.clear();
+        out
+    })
 }
 
 /// Count the systems this thread runs from now on (true) or stop (false).
@@ -266,24 +392,46 @@ impl System for Counted {
     }
 
     unsafe fn run_unsafe(&mut self, input: SystemIn<'_, Self>, world: UnsafeWorldCell) -> Result<(), RunSystemError> {
-        if !enabled() {
+        let (counting, timing) = (enabled(), timing());
+        if !counting && !timing {
             // SAFETY: the caller's guarantees, passed on.
             return unsafe { self.inner.run_unsafe(input, world) };
         }
-        enter();
+        if counting {
+            enter();
+        }
+        if timing {
+            t_enter();
+        }
         // SAFETY: the caller's guarantees, passed on.
         let r = unsafe { self.inner.run_unsafe(input, world) };
-        leave(self.row);
+        if timing {
+            t_leave(self.row);
+        }
+        if counting {
+            leave(self.row);
+        }
         r
     }
 
     fn apply_deferred(&mut self, world: &mut World) {
-        if !enabled() || !self.inner.has_deferred() {
+        let (counting, timing) = (enabled(), timing());
+        if (!counting && !timing) || !self.inner.has_deferred() {
             return self.inner.apply_deferred(world);
         }
-        enter();
+        if counting {
+            enter();
+        }
+        if timing {
+            t_enter();
+        }
         self.inner.apply_deferred(world);
-        leave(self.row);
+        if timing {
+            t_leave(self.row);
+        }
+        if counting {
+            leave(self.row);
+        }
     }
 
     fn queue_deferred(&mut self, world: DeferredWorld) {

@@ -120,6 +120,16 @@ fn render_stats(
     *shared.0.lock().unwrap() = s;
 }
 
+impl RenderWorldStats {
+    /// For the session log's health line: the render world's textures and
+    /// meshes, and its pipelines (all made, and still compiling), as of
+    /// its last look (about once a second).
+    pub fn health(&self) -> (usize, usize, usize, usize) {
+        let s = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        (s.images, s.meshes, s.pipelines, s.waiting_pipelines)
+    }
+}
+
 /// A texture's bytes, every mip of every layer.
 fn texture_bytes(i: &GpuImage) -> u64 {
     let d = &i.texture_descriptor;

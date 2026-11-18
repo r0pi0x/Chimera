@@ -1430,3 +1430,57 @@ fn a_listen_server_fetches_the_match_files_with_the_hosts_credential() {
     let log = fs::read_to_string(svc.store.root.join("server").join("access.log")).unwrap();
     assert!(log.lines().any(|l| l.contains("account:hosty") && l.contains(" 200 ")), "{log}");
 }
+
+/// A listen host whose match's sets are all in its store looks at the
+/// store once for them, not every second: a look reads every served
+/// game's manifest and each record of the sets (up to a second with five
+/// games' manifests), and done on the main thread every `CHECK_EVERY` it
+/// froze the host's frames about once a second (docs/performance.md,
+/// "Stutter on Beaver Creek"). The look runs on the job's thread; the
+/// same sets aren't looked at again until they change.
+#[test]
+fn a_server_looks_at_its_store_once_per_change_of_the_matchs_sets() {
+    use chimera_net::net::server_assets::{self, ServerFiles};
+    let svc = Fixture::with_tickets("listen_looks", 3);
+    let account = hub_account(&svc, "looker");
+    let mut session = svc.session("host", "", true);
+    session.settings.as_mut().unwrap().remote = None;
+    session.access = Some(svc.dir.join("host-access.toml"));
+    session.account = Some(account);
+    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup_gun(svc.host()));
+    sim.server.app.insert_resource(session);
+    server_assets::for_host(sim.server.app.world_mut());
+    assert!(sim.server.app.world().contains_resource::<ServerFiles>());
+    assert!(
+        until(&mut sim, 30.0, |s| {
+            !server_assets::fetching(s.server.app.world())
+                && ["base", "players", "common", "weapon/gun"].iter().all(|set| svc.ids(set).iter().all(|id| store.has(id)))
+        }),
+        "the match's sets fetched by the host"
+    );
+    let looks = server_assets::store_looks(sim.server.app.world());
+    assert!(looks >= 1, "the first look fetched them");
+    // Every look from now on names the same sets: none looks at the store
+    // or starts a job.
+    for _ in 0..5 {
+        assert!(server_assets::fetch_now(sim.server.app.world_mut()).is_none(), "no job for the same sets");
+    }
+    let start = std::time::Instant::now();
+    while start.elapsed() < server_assets::CHECK_EVERY * 2 {
+        sim.step();
+    }
+    assert_eq!(server_assets::store_looks(sim.server.app.world()), looks, "the same sets looked at again");
+    assert!(!server_assets::fetching(sim.server.app.world()));
+    // A change of level names other sets: one look, on the job's thread,
+    // which fetches the coming map's.
+    sim.server.app.insert_resource(chimera_world::map::LoadedMapName(format!("{GAME}:later")));
+    let job = server_assets::fetch_now(sim.server.app.world_mut()).expect("a look for the new sets");
+    assert_eq!(server_assets::store_looks(sim.server.app.world()), looks + 1);
+    job.wait().unwrap();
+    assert!(svc.ids("map/later").iter().all(|id| store.has(id)), "the coming map's set");
+    // Looked at with everything there: done, nothing fetched.
+    sim.server.app.insert_resource(chimera_world::map::LoadedMapName(chimera_net::net::GREYBOX.to_string()));
+    let job = server_assets::fetch_now(sim.server.app.world_mut()).expect("a look for the first map's sets again");
+    assert_eq!(job.wait(), Ok(String::new()), "everything was in the store");
+}
