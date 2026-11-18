@@ -72,6 +72,7 @@ pub const STYLE: ImpactStyle = ImpactStyle {
     group_radius: None,
     damage_unit: 0.01,
     flesh: "flesh",
+    player_hits: false,
     blood: source_engine::effects::BloodView::PerViewer,
     melee_decal: None,
 };

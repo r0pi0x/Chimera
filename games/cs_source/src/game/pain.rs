@@ -90,7 +90,7 @@ use crate::{
     map::{GameSound, PlaySound, sound::SoundBank},
     objectives::hostages::Hostage,
     slots::GameIdentity,
-    weapon::{Armor, Inventory, Weapon, impact::weapon_game},
+    weapon::{Armor, Inventory, Weapon},
 };
 
 pub const DAMAGE_KEVLAR: &str = "Player.DamageKevlar";
@@ -183,8 +183,11 @@ fn hurt_sounds(
 ) {
     let flesh = bank
         .as_ref()
-        .and_then(|b| super::impacts::surface(&b.0, FLESH))
-        .and_then(|s| s.bullet_impact.clone());
+        .and_then(|b| {
+            // CS:S's own on any map (`map::impact::own_name`).
+            let entry = super::impacts::game_surface(&b.0, super::GAME, FLESH)?.bullet_impact.as_deref()?;
+            Some(b.0.game_entry(super::GAME, entry))
+        });
     // Health left as this tick's hits land (several can hit one victim).
     let mut left: HashMap<Entity, f32> = HashMap::new();
     for d in damage.read() {
@@ -232,11 +235,7 @@ fn hurt_sounds(
 /// Whether `d` was dealt by a CS:S weapon (or one of no game: map
 /// damage): another game's gun makes its own impact on characters.
 fn dealt_by_ours(d: &Damage, holders: &Query<&Inventory>, weapons: &Query<&Weapon>) -> bool {
-    let id = d.weapon.or_else(|| {
-        let held = holders.get(d.attacker?).ok()?.active?;
-        Some(weapons.get(held).ok()?.id)
-    });
-    id.and_then(weapon_game).is_none_or(|g| g.eq_ignore_ascii_case(super::GAME))
+    crate::weapon::impact::dealt_by(super::GAME, d, holders, weapons)
 }
 
 /// A hit in water makes no impact sound (as `impacts::bullet_impacts`).

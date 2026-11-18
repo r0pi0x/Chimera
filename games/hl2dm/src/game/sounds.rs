@@ -153,6 +153,11 @@ fn hurt_sounds(
     victims: Query<(&Health, &Transform, Option<&GameIdentity>), (With<Suit>, With<crate::core::Intent>)>,
     rules: DamageRules,
     mut out: MessageWriter<GameSound>,
+    (holders, weapons, bank): (
+        Query<&crate::weapon::Inventory>,
+        Query<&crate::weapon::Weapon>,
+        Option<Res<crate::map::sound::SoundBank>>,
+    ),
 ) {
     let mut left: BTreeMap<Entity, f32> = BTreeMap::new();
     for d in damage.read() {
@@ -162,8 +167,16 @@ fn hurt_sounds(
             continue;
         }
         *h -= d.amount;
+        let flesh;
         let entry = match d.kind {
-            DamageKind::Bullet => FLESH_IMPACT,
+            // Another game's gun's hit sounds as that game's
+            // (`weapon::impact::dealt_by`); ours takes our own flesh
+            // impact on any map (`map::impact::own_name`).
+            DamageKind::Bullet if !crate::weapon::impact::dealt_by(GAME, d, &holders, &weapons) => continue,
+            DamageKind::Bullet => {
+                flesh = bank.as_ref().map_or_else(|| FLESH_IMPACT.to_string(), |b| b.0.game_entry(GAME, FLESH_IMPACT));
+                flesh.as_str()
+            }
             DamageKind::Burn => BURN_PAIN,
             _ => continue,
         };

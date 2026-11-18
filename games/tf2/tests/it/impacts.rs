@@ -1,0 +1,134 @@
+//! A TF2 gun's impacts on another game's map take TF2's own looks
+//! (`map::impact::own_name`): with CS:S's looks on the map under the same
+//! names (every Source game's `Default.BulletImpact`, its 'C' decal group,
+//! its `flesh` surface), as on de_dust2 with TF2's as a guest
+//! (`map::kept::append`), a TF2 pistol's hit on the world plays TF2's
+//! impact entry and asks for TF2's decal group, and its hit on a player
+//! plays TF2's flesh impact (TF2 has no hurt sounds of its own).
+
+use std::sync::Arc;
+
+use bevy::prelude::*;
+use chimera_world::{
+    greybox,
+    harness::Sim,
+    map::{
+        DecalGroup, MapData, PlaceDecal, PlaySound,
+        decal::{DecalBlend, MapDecal},
+        impact::{ActiveImpacts, MapImpacts},
+        kept,
+        sound::{Interval, MapSoundClip, MapSoundEntry, MapSurface, SoundBank, SoundLevel},
+    },
+};
+use chimera_sim::testkit;
+use tf2::game::weapons::PISTOL_SCOUT;
+
+use super::weapons::{holding, sim, target};
+
+/// One game's impact looks under the names every Source game uses; `tag`
+/// tells whose (the clip's rate, the decal's size).
+fn looks(game: &str, tag: usize) -> MapData {
+    let mut map = MapData::default();
+    let sounds = Arc::make_mut(&mut map.sounds);
+    for (surface, entry, letter) in [("default", "Default.BulletImpact", 'C'), ("flesh", "Flesh.BulletImpact", 'F')] {
+        sounds.surfaces.insert(
+            surface.into(),
+            MapSurface {
+                game_material: letter,
+                bullet_impact: Some(entry.into()),
+                ..default()
+            },
+        );
+        sounds.entries.insert(
+            entry.to_lowercase(),
+            MapSoundEntry {
+                waves: vec![sounds.clips.len()],
+                volume: Interval::fixed(1.0),
+                pitch: Interval::fixed(100.0),
+                level: SoundLevel::Db(75.0),
+                channel: 0,
+                dry: false,
+            },
+        );
+        sounds.clips.push(MapSoundClip {
+            rate: tag as u32,
+            channels: 1,
+            samples: Arc::from(&[0i16][..]),
+            loop_start: None,
+        });
+    }
+    map.kit.decals.decals.push(MapDecal {
+        texture: 0,
+        uv_min: Vec2::ZERO,
+        uv_max: Vec2::ONE,
+        size: Vec2::splat(tag as f32),
+        blend: DecalBlend::Modulate2x,
+    });
+    map.kit.decals.groups.insert("impact.concrete".into(), vec![(1.0, 0)]);
+    map.kit.decals.by_material.insert('C', "impact.concrete".into());
+    map.impacts.add(game);
+    map
+}
+
+/// A CS:S map with TF2's looks on it as a guest's.
+fn cs_map_with_tf2s() -> MapData {
+    let mut map = looks("cs_source", 1);
+    map.impacts.game = Some("cs_source".into());
+    kept::append(&mut map, &looks("tf2", 2));
+    map
+}
+
+/// A TF2 pistol's one shot at `at` on `map`'s looks: the sounds played
+/// and the decals asked for.
+fn shoot(map: &MapData, at: impl FnOnce(&mut Sim, Vec3) -> Vec3) -> (Vec<String>, Vec<DecalGroup>) {
+    let mut sim = sim();
+    let from = greybox::SPAWNS[0];
+    let (p, _) = holding(&mut sim, from, PISTOL_SCOUT);
+    let aim = at(&mut sim, from);
+    sim.app.insert_resource(SoundBank(map.sounds.clone()));
+    sim.app.insert_resource(ActiveImpacts(MapImpacts::clone(&map.impacts)));
+    testkit::aim_at(&mut sim, p, aim);
+    let mut sounds = sim.app.world().resource::<Messages<PlaySound>>().get_cursor_current();
+    let mut decals = sim.app.world().resource::<Messages<PlaceDecal>>().get_cursor_current();
+    let (mut played, mut placed) = (Vec::new(), Vec::new());
+    for k in 0..10 {
+        sim.intent(p).fire = k == 0;
+        sim.ticks(1);
+        let w = sim.app.world();
+        played.extend(sounds.read(w.resource::<Messages<PlaySound>>()).map(|s| s.entry.clone()));
+        placed.extend(decals.read(w.resource::<Messages<PlaceDecal>>()).map(|d| d.group.clone()));
+    }
+    (played, placed)
+}
+
+#[test]
+fn a_tf2_guns_hit_on_another_games_map_is_tf2s_own() {
+    let map = cs_map_with_tf2s();
+    // At the floor ahead.
+    let (played, placed) = shoot(&map, |_, from| from + Vec3::new(0.0, -3.0, -2.0));
+    assert!(played.iter().any(|s| s == "tf2:default.bulletimpact"), "TF2's impact: {played:?}");
+    assert!(!played.iter().any(|s| s.eq_ignore_ascii_case("Default.BulletImpact")), "not CS:S's: {played:?}");
+    let group = placed.iter().find_map(|g| match g {
+        DecalGroup::GameMaterial(game, letter) if game == "tf2" => Some(*letter),
+        _ => None,
+    });
+    let letter = group.unwrap_or_else(|| panic!("TF2's decal group: {placed:?}"));
+    // Resolved as the renderer does: TF2's bullet hole, not CS:S's.
+    let decals = &map.kit.decals;
+    let name = decals.material_group(Some("tf2"), letter).unwrap();
+    assert_eq!(decals.decals[decals.groups[name][0].1].size.x, 2.0, "{name}");
+    // The entry is TF2's clip.
+    let entry = map.sounds.entry("tf2:default.bulletimpact").unwrap();
+    assert_eq!(map.sounds.clips[entry.waves[0]].rate, 2);
+}
+
+#[test]
+fn a_tf2_guns_hit_on_a_player_sounds_tf2s_flesh_impact() {
+    let map = cs_map_with_tf2s();
+    let (played, _) = shoot(&map, |sim, from| {
+        let t = target(sim, from, 100.0);
+        sim.position(t)
+    });
+    assert!(played.iter().any(|s| s == "tf2:flesh.bulletimpact"), "TF2's flesh impact: {played:?}");
+    assert!(!played.iter().any(|s| s.eq_ignore_ascii_case("Flesh.BulletImpact")), "not CS:S's: {played:?}");
+}

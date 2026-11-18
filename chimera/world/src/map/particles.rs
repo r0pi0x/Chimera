@@ -133,6 +133,12 @@ impl MapParticles {
     pub fn find(&self, name: &str) -> Option<usize> {
         self.materials.iter().position(|m| m.name.eq_ignore_ascii_case(name))
     }
+    /// `game`'s material `name` (`impact::own_name`: its own where a
+    /// guest's name was taken), else the map's.
+    pub fn find_of(&self, game: Option<&str>, name: &str) -> Option<usize> {
+        game.and_then(|g| self.find(&super::impact::own_name(g, name)))
+            .or_else(|| self.find(name))
+    }
 }
 
 /// When the pool steps and draws each frame (`Update`): games that show

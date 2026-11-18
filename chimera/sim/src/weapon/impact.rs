@@ -11,7 +11,10 @@
 //!   Generic`, the client's `effects::GenericImpactsPlugin`). Every game's
 //!   impact systems ask the route and draw only their own, so one impact
 //!   is drawn once. The hit surface goes between the games by class
-//!   (`map::impact::SurfaceClasses`).
+//!   (`map::impact::SurfaceClasses`), and the drawing game takes its own
+//!   looks on any map (`map::impact::own_name`). A hit on a character
+//!   sounds as the gun's game's too (`dealt_by`: another game's effects
+//!   play no flesh impact for it).
 //! - **The push on physics objects** (`BulletImpulse`): every game's
 //!   bullets tell the impulse they give a body at the hit point, in N·s
 //!   (each game converts its own numbers: CS:S's damage force by ammo
@@ -80,6 +83,32 @@ pub enum ImpactBy {
 /// The game of a weapon id (`cs_source` of `cs_source:weapon_ak47`).
 pub fn weapon_game(id: &'static str) -> Option<&'static str> {
     id.split_once(':').map(|(g, _)| g)
+}
+
+/// The game of the weapon that dealt `d`: its own (`Damage::weapon`),
+/// else the one the attacker holds; None: no game's (map damage).
+pub fn damage_game(
+    d: &crate::core::Damage,
+    holders: &Query<&Inventory>,
+    weapons: &Query<&Weapon>,
+) -> Option<&'static str> {
+    let id = d.weapon.or_else(|| {
+        let held = holders.get(d.attacker?).ok()?.active?;
+        Some(weapons.get(held).ok()?.id)
+    });
+    id.and_then(weapon_game)
+}
+
+/// Whether `d` was dealt by a weapon of `game` (or of no game: map
+/// damage): a hit's impact on a character (its flesh sound) is the gun's
+/// game's, so another game's effects leave it alone.
+pub fn dealt_by(
+    game: &str,
+    d: &crate::core::Damage,
+    holders: &Query<&Inventory>,
+    weapons: &Query<&Weapon>,
+) -> bool {
+    damage_game(d, holders, weapons).is_none_or(|g| g.eq_ignore_ascii_case(game))
 }
 
 /// Who draws an impact of a gun of `gun` (its game) on a map that carries
