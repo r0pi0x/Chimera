@@ -21,8 +21,15 @@ copied) was read for how the game chooses the main activity, sets the
 move and aim pose parameters and the feet yaw, and plays gestures
 (fire, reload, jump, flinch, the Minigun's spin), and for the footstep
 rule. What the earlier draft marked inferred is now stated as the
-game's rule where the code settles it.
-Status: checked against the SDK's game code (2026-11-15)
+game's rule where the code settles it. For the 2026-11-19 pass (install.md
+Open questions 6 and the Heavy's spun pose), the engine's include-model
+merge, activity-to-sequence pick, layer composition and sequence IK
+locks were read in the same SDK, and the class models' sequence flags,
+bone weights, autolayers, IK locks and IK rules were read from the
+retail models; the poses quoted in §6 and the tests were computed from
+the decoded animations with a throwaway reader (nothing kept).
+Status: checked against the SDK's game code (2026-11-15; lookup, layers
+and the Minigun's look 2026-11-19)
 
 ## Summary
 
@@ -37,8 +44,10 @@ corners are authored at the class's own top speed; each main sequence
 carries an **aim matrix** autolayer (3 × 4 additive grid on `body_yaw`
 / `body_pitch`); short **additive gestures** play fire, reload
 (start / loop / end for one-at-a-time reloads), land and flinch on top.
-The Heavy's Minigun has its own spun-up ("deployed") main sequences and
-spin-up / spin-down gestures that cross-fade the aim matrix. The held
+The Heavy's Minigun has its own spun-up ("deployed") main sequences,
+which hold the gun level and forward where the idle holds it raised,
+and spin-up / spin-down gestures whose full-body layers carry the gun
+down and up and cross-fade the aim matrix. The held
 weapon is the same `c_` model as in first person, bone-merged by bone
 name onto `weapon_bone` and its siblings under the right hand.
 
@@ -87,6 +96,29 @@ name onto `weapon_bone` and its siblings under the right hand.
   Heavy shows no jump or airwalk; ducked and moving spun, the plain
   crouch-walk.
 
+## Corrections (2026-11-19)
+
+- "Merging: a same-named local stub must lose" (inferred) -> the rule:
+  the stubs are forward declarations (flag 0x800, no animation) and an
+  include's same-named sequence takes their slot; any other duplicate
+  name keeps the first (§1a).
+- "0x400 hidden (not selectable by activity)" -> hidden sequences **are**
+  selectable by activity (the Heavy's and Demoman's crouch, swim and
+  airwalk reload gestures are hidden and carry activities); the flag
+  only hides them from tool listings.
+- Minigun spin gestures "own animation empty (delta, all zero)" -> the
+  gesture sequence itself is non-additive with **all bone weights 0**
+  (it contributes nothing); its autolayer `layer_attackStand_PRIMARY_spoolup`
+  (or `…_spooldown`) is a **full-body, non-additive** pose with every
+  bone weight 1, which overrides the body while it is ramped in and then
+  re-adds the aim matrices (§5a, §6).
+- Aim matrices and most gestures carry **foot IK locks** (both feet,
+  position weight 1): an aim or gesture layer never moves the feet (§4a).
+- The spun look: `stand_deployed_PRIMARY` holds the Minigun level and
+  forward (barrels about 1° above horizontal), `stand_PRIMARY` holds it
+  raised (about 34° up); the fire gesture changes either by about 1°
+  (§6, "What it looks like").
+
 ## Units and conventions
 
 - Hammer units, Z up. Model space: the animated character faces +X, its
@@ -95,7 +127,10 @@ name onto `weapon_bone` and its siblings under the right hand.
   "Loop" = the looping flag. Flags: 0x1 looping, 0x2 snap (no
   cross-fade into it), 0x4 delta (additive), 0x10 post (with delta:
   applied in the bone's local frame after the base), 0x400 hidden
-  (not selectable by activity).
+  (only hidden from tool listings; still selectable by activity), 0x800
+  forward declaration (a stub, §1a). Animation (not sequence) flags: 0x4
+  delta (values relative to identity / zero, not to the bind pose), 0x20
+  all zero.
 - Ground speed = the authored displacement of the grid's forward (N)
   cell divided by its duration (our dumper prints the same).
 - Pose parameters by **name**: the include models list them in
@@ -149,11 +184,72 @@ Spy's (300 authored vs 320 measured).
 | Engineer | `models/player/engineer.mdl` | 73 | same pattern (`engineer_…`) | 73 / 402 / 1131 |
 
 The other five classes follow the same pattern (`pyro`, `demo`,
-`medic`, `sniper`, `spy`). Merging (bones by name, the include's
-sequences after the model's own; a same-named local stub must lose to
-the include's real sequence) is cs_source/animation.md §8 and
-install.md 4.3. The class model's local sequences are 1-frame stubs
-except `ref` and `ragdoll` (`ACT_DIERAGDOLL`, 1 frame).
+`medic`, `sniper`, `spy`). Merging bones by name is cs_source/animation.md
+§8; which sequence a name finds is §1a. The class model's local
+sequences are forward-declared stubs except `ref` and `ragdoll`
+(`ACT_DIERAGDOLL`, 1 frame).
+
+### 1a. Which sequence a name or an activity finds (install.md Open questions 6)
+
+The engine builds one merged sequence list per model:
+
+1. **Order**: the model's own sequences first, in file order; then each
+   include in the order listed, depth first (an include's own includes
+   come right after it, before the next sibling). For a class:
+   `<class>.mdl`, then `<class>_user_animations.mdl`, then
+   `<class>_animations.mdl`, then `<class>_workshop_animations.mdl`. For
+   arms: `c_<class>_arms.mdl`, then `c_<class>_animations.mdl`.
+2. **New name** (compared without case): appended at the end.
+3. **Name already present**: if the sequence **currently in that slot**
+   has the forward-declaration flag (0x800), the new one replaces it in
+   the same slot (same merged index, the new one's flags, activity and
+   weight); otherwise the new one is dropped and the earlier one stays.
+   Since a replacement has no 0x800, a third same-named sequence never
+   replaces it.
+4. Every reference an include makes to one of its own sequences (an
+   autolayer, a sequence named in an event) resolves **by name** to the
+   merged slot, so it lands on whichever sequence holds that slot.
+5. Animations merge by name too, but **first wins with no exception**;
+   a sequence's animation reference resolves through that merged list.
+   In TF2's data the only animation names that repeat are `@user_ref`
+   (user and workshop includes), so this never changes a pose.
+
+What the data has (retail build, all checked for the Scout, Soldier,
+Heavy and Engineer; the arms models alike):
+
+| Model | Local sequences | Forward-declared (0x800) | Real |
+|---|---|---|---|
+| `heavy.mdl` | 259 | 257 (no animation, 0 × 0 grid, no activity) | `ref` (1 frame), `ragdoll` (`ACT_DIERAGDOLL`, 1 frame) |
+| `c_heavy_arms.mdl` | 42 | 41 | `c_heavy_arms` (1 frame) |
+| `heavy_user_animations.mdl` | 1 (`user_ref`) | 0 | 1 |
+| `heavy_animations.mdl` | 317 | 0 | 317 |
+| `heavy_workshop_animations.mdl` | 75 | 0 | 75 (its `user_ref` is dropped: the user include's came first) |
+
+So every stub is replaced by the `_animations` include's sequence of the
+same name: **the include's sequence wins** for name and activity
+lookups alike, and the stub is never what plays. A few stubs have no
+match in any include (the Heavy's `show1`; the Soldier's `show1`,
+`taunt_slit_throat`, `taunt_gimmie20` and their layers) and stay empty:
+playing one shows the pose underneath unchanged.
+
+**Activity to sequence** (each time a sequence is chosen for an
+activity, main or gesture):
+
+- Candidates are all merged sequences whose activity equals the asked
+  one (hidden ones included). None: "not available"; for the main
+  sequence that means the merged list's first sequence (`ref`, the
+  reference pose), for a gesture nothing plays (§2).
+- If the asker passes its current sequence, that sequence has the
+  activity and its activity weight is **negative**, it is kept (no TF2
+  class sequence has a negative weight).
+- Otherwise one is drawn at random with probability |weight| / Σ|weight|
+  over the candidates, walking them in merged order. Weights in the
+  data: 1 almost everywhere; the Engineer's reload loops 2 (`a_`) and 1
+  (`b_`), his flinches 2, 10, 5, his crouch reload starts 1 and 100, the
+  Soldier's five airwalk floats 1 each.
+- The main sequence then changes only when the drawn sequence's activity
+  differs from the current main sequence's (§3 step 6), so a draw among
+  equal-activity sequences happens once, when the activity starts.
 
 Skeleton (all classes): root `bip_pelvis`; spine `bip_spine_0` … `_3`,
 `bip_neck`, `bip_head`; arms `bip_collar_L/R`, `bip_upperArm_L/R`,
@@ -213,6 +309,46 @@ holder's model has no sequence for the translated activity, the game
 falls back to the model's first sequence (the reference pose); and a
 ducked player whose kind has no crouch-walk sequence is treated as not
 ducked.
+
+**One rule for every kind** (SDK; the same for primary, secondary,
+melee, PDA, building and items). The state machine (§3, §5) asks for a
+kind-less activity; the held weapon's **kind table** turns it into the
+kind's activity; then an item's own activity replacements apply; the
+result is looked up as in §1a. Each kind table maps the movement states
+(stand, crouch, run, walk, airwalk, crouch-walk, jump, jump start / float
+/ land, swim, the air-jump crouch), the fire gestures (stand, crouch,
+swim, airwalk), the reload gestures (start, loop, end for stand, crouch,
+swim, airwalk) and the flinch to `…_<KIND>`. Kinds and their suffix:
+primary `PRIMARY`; secondary `SECONDARY`; melee `MELEE`; all-class melee
+`MELEE_ALLCLASS`; building `BUILDING`; PDA `PDA`; item 1 to 4 `ITEM1` …
+`ITEM4`; "secondary 2" `SECONDARY2`; "primary 2" uses the `PRIMARY`
+movement set but fires `ACT_MP_ATTACK_STAND_PRIMARY_ALT` (and the crouch
+/ swim ALT variants). The kind is the weapon script's type unless the
+item schema gives an animation slot (and a server setting can force
+one). Anything a table does not list is looked up untranslated.
+
+The **deployed** (spun / aiming) activities are the exception:
+
+| Asked | Primary and primary-2 tables | Item 1–4 tables | Secondary, melee, building, PDA tables |
+|---|---|---|---|
+| deployed idle `ACT_MP_DEPLOYED_IDLE` | not listed: stays `ACT_MP_DEPLOYED_IDLE` | `ACT_MP_DEPLOYED_IDLE_ITEMn` | not listed |
+| deployed move `ACT_MP_DEPLOYED` | `ACT_MP_DEPLOYED_PRIMARY` | `ACT_MP_DEPLOYED_ITEMn` | not listed: stays `ACT_MP_DEPLOYED` (no sequence has it) |
+| crouched deployed idle `ACT_MP_CROUCH_DEPLOYED_IDLE` | itself | `ACT_MP_CROUCH_DEPLOYED_IDLE_ITEMn` | not listed |
+| crouched deployed move | `ACT_MP_CROUCHWALK_DEPLOYED` | `ACT_MP_CROUCHWALK_DEPLOYED_ITEMn` | not listed |
+| swim deployed | `ACT_MP_SWIM_DEPLOYED_PRIMARY` | – | not listed |
+
+So the kind-less `ACT_MP_DEPLOYED_IDLE` and `ACT_MP_CROUCH_DEPLOYED_IDLE`
+are carried by each model's **primary** deployed sequences
+(`stand_deployed_PRIMARY`, `crouch_deployed_PRIMARY`). Models that have
+them: Heavy and Pyro (stand and crouch idle, deployed movement, and
+stand / crouch / swim spin-up and spin-down gestures), Sniper (the same
+idles and movement plus `deployed_crouch_walk_PRIMARY`
+`ACT_MP_CROUCHWALK_DEPLOYED` and an `ITEM2` deployed set for the bow),
+Medic (only stand and crouch pre-fire / post-fire gestures on his
+`SECONDARY`). The Scout, Soldier, Demoman, Engineer and Spy have none.
+Who is "aiming": a Heavy whose Minigun spins (from the start of the
+wind-up), a zoomed Sniper, a Sniper drawing a bow; never a Soldier
+(his class is excluded from the aiming state whatever he holds).
 
 ### 3. Main sequences (lower body and stance)
 
@@ -283,6 +419,31 @@ Engineer:
 | JUMP_START | `a_jumpstart_PRIMARY` 26, 0.8333 | `a_jumpstart_SECONDARY` same | `a_jumpstart_MELEE` same |
 | JUMP_FLOAT | `a_jumpfloat_PRIMARY` 31, 1.0 | `a_jumpfloat_SECONDARY` same | `a_jumpfloat_MELEE` 35, 1.1333 |
 | JUMP_LAND | `jumpland_PRIMARY` 21, 0.6667, additive | same | same |
+
+**Rest stance** (the same rule as everything else: the include's
+`stand_<KIND>`, never a stub or the reference pose; the aim matrix's
+centre cell is identity and the foot locks keep the feet where the
+stand put them). Feet (`bip_foot_R` / `bip_foot_L` origins, model space,
+frame 0, x forward, y left) and their lateral spread |yL − yR|:
+
+| Class | `stand_PRIMARY` | `stand_SECONDARY` | `stand_MELEE` |
+|---|---|---|---|
+| Scout | R (−19.5, −5.0), L (20.6, 10.9): 15.9 | (−19.3, −6.1), (20.8, 9.7): 15.9 | (−19.8, −5.1), (20.3, 10.8): 15.9 |
+| Soldier | (−6.5, −8.9), (13.7, 10.5): 19.4 | (−7.6, −10.6), (12.6, 8.7): 19.4 | (−6.5, −11.0), (13.7, 8.3): 19.4 |
+| Pyro | (−5.4, −10.7), (4.0, 9.4): 20.0 | same | same |
+| Demoman | (−10.7, −9.9), (12.0, 8.0): 17.9 | same | (−10.5, −8.0), (12.2, 10.5): 18.5 |
+| Heavy | (−7.1, −7.7), (6.7, 8.2): 16.0 | (−8.9, −6.2), (4.3, 7.3): 13.5 | (−7.5, −9.0), (7.8, 7.2): 16.2 |
+| Engineer | (−6.0, −7.1), (7.8, 6.0): 13.1 | same | (−6.2, −7.7), (7.6, 5.4): 13.1 |
+| Medic | (−13.1, −7.5), (7.3, 5.1): 12.6 | (−14.9, −8.9), (7.5, 7.6): 16.5 | (−15.6, −9.7), (9.9, 8.9): 18.6 |
+| Sniper | (−9.9, −5.1), (5.6, 9.0): 14.1 | same | same |
+| Spy | – | (−10.6, −8.9), (5.9, 6.6): 15.5 | (−10.0, −8.9), (6.5, 6.6): 15.5 |
+
+Every class stands with the left foot forward and the feet 13–20 units
+apart sideways (the Scout's 40 units front to back). The reference pose
+(bind) has the feet side by side about 8–17 apart along a different
+axis, so a body showing the bind or stub pose on its legs looks
+narrower. The Heavy's spun stand (`stand_deployed_PRIMARY` frame 0)
+widens his: R (−5.8, −7.5), L (12.2, 8.4), 24.0 apart (15.9 sideways).
 
 All rows are 30 fps unless shown. The Engineer's `PDA` and `BUILDING`
 kinds have the same set (`stand_PDA`, `run_BUILDING`, …); carrying a
@@ -398,6 +559,36 @@ the ground; a Scout crouch-walking at 133 (a third of 400) has |move| =
   forward (≥ −0.2) the forward set, and between them they cross-fade
   linearly. Other classes have one run aim layer.
 
+### 4a. Foot locks and the left hand
+
+- **Foot locks** (data: every aim-matrix sequence and most gestures of
+  all four checked classes list two IK locks, chains `rfoot` and
+  `lfoot`, position weight 1, local-rotation weight 0; the chains are
+  hip → knee → foot). When such a sequence is layered on: before it is
+  applied, each locked foot's model-space position and rotation are
+  recorded; after it (and its own autolayers) is applied, each foot is
+  put back: the target position is the recorded one (position weight 1),
+  the hip–knee–foot chain is solved two-bone style to reach it, keeping
+  the knee in the plane the chain currently bends in (the chains carry
+  no knee direction), skipped when the leg is within 1° of straight;
+  then the foot's model-space rotation is set to the recorded one
+  (local-rotation weight 0 keeps that). Result: aim and gestures turn
+  the pelvis and spine, the feet stay planted where the main sequence
+  put them and the knees bend to follow. The class models' own IK
+  chains are the ones used (they have no knee directions).
+- The centre cells of the aim matrices are identity, so at
+  `body_pitch` = `body_yaw` = 0 the locks change nothing. Off centre
+  they matter: without them the aim cells move the feet as a rigid unit
+  with the pelvis (Scout `up_center` 7 units, Soldier `up_center` 8–9,
+  Heavy `mid_left` / `mid_right` 2–4, Engineer up to 5).
+- **Left hand on the gun**: every Heavy `PRIMARY` aim cell's animation
+  carries a "self" IK rule on the `lhand` chain relative to
+  `weapon_bone` (the left hand is pulled to the place the cell's
+  animation has it relative to the right hand's weapon bone, so blends
+  of cells keep the left hand on the Minigun); the main and spin
+  sequences release all four chains. This needs the client's IK
+  context, which TF2's players have.
+
 ### 5. Gestures (additive overlays)
 
 Gestures are additive post sequences (flags 0x14; the Scout's primary
@@ -417,6 +608,41 @@ swim, flinch, scene, custom (stun and the like). Rules:
 - A gesture ends (the slot frees) when its cycle passes 1, except a
   non-Minigun pre-fire gesture, which holds its last frame.
 - The variant is chosen when the gesture starts.
+
+### 5a. How one layer is composed (main sequence, autolayer or gesture)
+
+The same steps apply to every sequence put on the pose with a weight w
+(the main sequence with w = 1, a fading main sequence with its fade
+weight, a gesture with its slot weight 1, an autolayer with the weight
+below), in this order:
+
+1. Record the foot-lock positions if the sequence has IK locks (§4a).
+2. Sample the sequence's own animation(s) at its cycle and blend
+   parameters; bones whose own weight in the sequence's bone-weight
+   list is 0 are not sampled.
+3. Apply it per bone with s = w × the bone's weight: a **non-additive**
+   sequence slerps rotation and lerps position from the current pose
+   toward its pose by s (s capped at 1); an **additive** one scales its
+   delta rotation by s (about its axis) and its delta position by s and
+   combines them with the current pose: with the post flag (0x10, all
+   TF2 gestures and aim matrices) the delta is applied in the bone's
+   own frame after the current rotation (current × delta), without it
+   before (delta × current).
+4. Then each of the sequence's autolayers in order, each composed by
+   these same steps with weight w × r and its own cycle. The ramp r
+   comes from the autolayer's (start, peak, tail, end) on the parent's
+   cycle c (or on a pose parameter, flag 0x4000): if start = end, r = 1
+   and the layer runs on the parent's cycle; otherwise the layer is
+   skipped when c < start or c ≥ end (so it is off at c = 1 exactly),
+   r = (c − start) / (peak − start) while c < peak (when start ≠ peak),
+   r = (end − c) / (end − tail) while c > tail (when end ≠ tail), else
+   1; flag 0x40 eases r with a smooth spline (3r² − 2r³); its cycle is
+   (c − start) / (end − start).
+5. Solve the foot locks recorded in 1.
+
+A gesture is therefore not always additive: a non-additive gesture
+(Scout melee, the Minigun spin layers) overrides the pose underneath by
+its bone weights, and its autolayers then add on top of that.
 
 Fire (`ACT_MP_ATTACK_STAND_K`, `…_CROUCH_K`, `…_SWIM_K`): on each shot,
 the swim variant if the player is in the swim state, else the crouch
@@ -508,15 +734,19 @@ Data (all `heavy_animations.mdl`):
 
 | Activity | Sequence | Shape |
 |---|---|---|
-| `ACT_MP_ATTACK_STAND_PREFIRE` | `attackStand_PRIMARY_spoolup` | 16 f, 0.5 s; its own animation is empty (delta, all zero); its autolayer `layer_attackStand_PRIMARY_spoolup` (weight ramped in over cycle 0–0.67, then full) cross-fades `PRIMARY_aimmatrix_idle` (out over 0–0.33) into `PRIMARY_aimmatrix_deployed` (in over 0.33–1) |
-| `ACT_MP_ATTACK_STAND_POSTFIRE` | `attackStand_PRIMARY_spooldown` | 31 f, 1.0 s; the reverse cross-fade (deployed out over 0–0.33, idle in 0.33–1), ramped out after cycle 0.67 |
-| `ACT_MP_ATTACK_CROUCH_PREFIRE` / `POSTFIRE` | `attackCrouch_PRIMARY_spoolup` / `_spooldown` | 16 f, 0.5 s each; crouch aim matrices |
-| `ACT_MP_ATTACK_SWIM_PREFIRE` / `POSTFIRE` | `attackSwim_PRIMARY_spoolup` / `_spooldown` | 16 f, 0.5 s; no layers |
+| `ACT_MP_ATTACK_STAND_PREFIRE` | `attackStand_PRIMARY_spoolup` | 16 f, 0.5 s, flags 0 (non-additive, not looping), **every bone weight 0** (its animation is flagged delta + all zero): contributes nothing itself. One autolayer, `layer_attackStand_PRIMARY_spoolup`, ramp (0, 0.667, 1, 1) spline: in over cycle 0–0.667, full until the end. That layer: 16 f, flags 0 (**non-additive full-body pose**, every bone weight 1, its own animation of the gun coming down), fade 0.7; its autolayers `PRIMARY_aimmatrix_idle` ramp (0, 0, 0, 0.333) spline (out over 0–0.333) and `PRIMARY_aimmatrix_deployed` ramp (0, 0.333, 1, 1) spline (in over 0–0.333) |
+| `ACT_MP_ATTACK_STAND_POSTFIRE` | `attackStand_PRIMARY_spooldown` | 31 f, 1.0 s, flags 0, every bone weight 0; autolayer `layer_attackStand_PRIMARY_spooldown` ramp (0, 0, 0.667, 1) spline (full, out over 0.667–1). That layer: 31 f, non-additive full body (the gun going back up), fade 0.5; its autolayers `PRIMARY_aimmatrix_deployed` (0, 0, 0, 0.333) out, `PRIMARY_aimmatrix_idle` (0, 0.333, 1, 1) in |
+| `ACT_MP_ATTACK_CROUCH_PREFIRE` / `POSTFIRE` | `attackCrouch_PRIMARY_spoolup` / `_spooldown` | 16 f, 0.5 s each, same build: layer `layer_attackCrouch_PRIMARY_spoolup` (ramp (0, 0, 1, 1): full from the start) / `…_spooldown` (ramp (0, 0, 1, 1)), with `PRIMARY_aimmatrix_crouch_idle` ↔ `PRIMARY_aimmatrix_deployed_crouch` cross-fades as the stand ones |
+| `ACT_MP_ATTACK_SWIM_PREFIRE` / `POSTFIRE` | `attackSwim_PRIMARY_spoolup` / `_spooldown` | 16 f, 0.5 s, non-additive with every bone weight 1 (a full-body pose of its own), no layers |
 | `ACT_MP_DEPLOYED_IDLE` | `stand_deployed_PRIMARY` | 61 f, 2.0 s, loop; aim `PRIMARY_aimmatrix_deployed` |
 | `ACT_MP_DEPLOYED_PRIMARY` | `PRIMARY_deployed_movement` | 3 × 3, 24 f, 0.7667 s, loop, 80 u/s; footsteps 0.2083 / 0.7083 |
 | `ACT_MP_CROUCH_DEPLOYED_IDLE` | `crouch_deployed_PRIMARY` | 16 f, 0.5 s, loop (no crouched deployed movement: a spun Heavy can't move crouched, weapons.md 7.1) |
 | `ACT_MP_SWIM_DEPLOYED_PRIMARY` | `PRIMARY_swim_deployed_movement` | 3 × 3, 31 f, 1.0 s, 80 u/s |
-| `ACT_MP_ATTACK_STAND_PRIMARY` | `attackStand_PRIMARY` | 21 f, 0.6667 s additive: the firing recoil gesture |
+| `ACT_MP_ATTACK_STAND_PRIMARY` | `attackStand_PRIMARY` | 21 f, 0.6667 s, additive post (0x14), every bone weight 1: the firing recoil gesture (`attackCrouch_PRIMARY` 16 f, weights tapering from 1 at the upper spine to 0.1 at the pelvis) |
+
+Every sequence in this table, the aim matrices and the main deployed
+sequences are in `heavy_animations.mdl`; `heavy.mdl` has only 0x800
+stubs of the same names, which never play (§1a).
 
 Sequence of states (SDK, matched to weapons.md 7.1):
 
@@ -536,6 +766,60 @@ Sequence of states (SDK, matched to weapons.md 7.1):
 - Spun movement: the deployed grid's 80 u/s against the spun speed 110:
   the move parameters reach 1 and the playback rate stays 1, so the feet
   slide a little at full spun speed (no rate scaling in the game).
+
+**What it looks like** (decoded poses, model space: +X forward, +Y
+left, +Z up, origin between the feet on the floor; `body_pitch` =
+`body_yaw` = 0 unless said; "barrels" = `weapon_bone`'s +Z axis, which
+carries the Minigun's barrels; muzzle = `weapon_bone` × (0, −7.76,
+57.76)):
+
+| Pose | `weapon_bone` origin | Barrels | Elevation | Muzzle |
+|---|---|---|---|---|
+| `stand_PRIMARY` frame 0 (+ `PRIMARY_aimmatrix_idle`, identity at the centre) | (−5.1, −14.7, 43.8) | (0.81, 0.18, 0.56) | 34° up, 13° left | (46.0, −6.7, 70.5) |
+| `stand_deployed_PRIMARY` frame 0 (+ `PRIMARY_aimmatrix_deployed`) | (−8.6, −13.7, 41.4) | (1.00, 0.02, 0.02) | 1° up | (49.4, −14.2, 35.2) |
+| deployed + `attackStand_PRIMARY` frame 6 (cycle 0.3) | (−8.9, −13.0, 40.8) | (1.00, 0.01, 0.03) | 2° | – |
+| `layer_attackStand_PRIMARY_spoolup` frames 0 / 5 / 10 / 15 | – | – | 34° / 12° / 2° / 8° | – |
+| `layer_attackStand_PRIMARY_spooldown` frames 0 / 15 / 30 | – | – | 8° / 26° / 34° | – |
+
+Over its cycle `stand_PRIMARY` stays at 33–34° and `stand_deployed_PRIMARY`
+at 0.9–1.4°. So the Heavy at rest carries the Minigun **raised** (barrels
+up and slightly left, muzzle above head height), and from the start of
+the wind-up he **lowers it level and forward** (the deployed main
+sequence), firing adds only a shake of about 1° and under a unit; the
+fire gesture is the same whether spun or not. Aim follows the view
+much more closely when spun: at the `up` row (`body_pitch` 45) the
+barrels point 48° up spun but 39° at rest, at the `down` row (−45) −25°
+spun but +25° at rest; the `straight_up` row (90) points them 78° up
+spun, 47° at rest. Correct poses come only from playing **both** the
+deployed main sequence **and** its own aim matrix with the right
+`body_pitch`: an aim matrix driven to its `straight_up` row (`body_pitch`
+90, e.g. a pitch parameter mapped by index instead of name, or a sign
+error) raises the spun gun nearly vertical.
+
+Spin-up and spin-down as the layers compose them (the main sequence
+cross-fading over 0.2 s, the gesture on top; elevation of the barrels):
+
+| t after the wind-up starts | 0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.49 | 0.5 (gesture over) |
+|---|---|---|---|---|---|---|---|
+| main only | 34° | 18° | 1.4° | 1.4° | 1.3° | 1.3° | 1.3° |
+| with the spin-up layer (its weight) | 34° (0) | 19° (0.22) | 5° (0.65) | 2° (0.97) | 5° (1) | 8° (1) | 1.3° |
+
+| t after the wind-down starts | 0 | 0.2 | 0.4 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0 |
+|---|---|---|---|---|---|---|---|---|
+| main only (back to `stand_PRIMARY`) | 1.3° | 34° | 34° | 34° | 34° | 33° | 33° | 33° |
+| with the spin-down layer (its weight) | 8° (1) | 9° (1) | 20° (1) | 33° (1) | 36° (0.97) | 35° (0.65) | 34° (0.22) | 33° (0) |
+
+(Layer weights are the splined ramps of §5a; the main cross-fade is
+taken as linear over 0.2 s; the layer's own aim cross-fade is identity
+at the centre.) The spin-down layer holds the gun low for the first 0.2–0.4 s
+although the main sequence has already gone back to the raised idle:
+that is how TF2's Heavy keeps the gun forward while the barrels run
+down.
+
+First person follows the same pattern with the arms' own sequences
+(viewmodel.md §7): `m_idle` raised, `m_spool_up` lowering it, `m_fire` /
+`m_spool_idle` level, `m_spool_down` raising it again; the arms' stubs
+resolve as §1a.
 
 The same deployed set serves a scoped Sniper; after a scoped shot the
 deployed idle is also held for 2 s unless he moves (the "deployed
@@ -707,6 +991,23 @@ Per player, on each client frame (bone setup cs_source/animation.md
 | 17 | Scattergun on the Scout's player model | – | – | `c_scattergun.mdl` bone-merged; its `weapon_bone` world transform = the Scout's `weapon_bone` (child of `bip_hand_R`) |
 | 18 | merged model pose parameters | – | – | names `body_pitch`, `body_yaw`, `r_hand_grip`, `r_arm`, `move_x`, `move_y`; a Soldier grid's X axis is `move_y` by name though its local index is 4 |
 | 19 | head hitbox, Heavy | – | – | bone `bip_head`, group 1, (−6, −9.35, −8.7)–(6, 4.65, 4.3) |
+| 20 | merged `heavy.mdl` | look up `stand_PRIMARY`, `PRIMARY_aimmatrix_deployed`, `attackStand_PRIMARY_spoolup` by name | – | each resolves to the `heavy_animations.mdl` sequence (61 frames; 3 × 4 grid of 1-frame cells; 16 frames), at the stub's merged index (the stub's position in `heavy.mdl`); none is 1 frame or empty |
+| 21 | merged `heavy.mdl` | activity `ACT_MP_STAND_PRIMARY` | – | `stand_PRIMARY` from the include (the stub has no activity) |
+| 22 | merge rule, synthetic models | A has `x` with 0x800; include B has `x` (no flag); include C has `x` | – | merged `x` is B's, at A's index; C's dropped |
+| 23 | merge rule, synthetic models | A has `x` without 0x800 (1 frame); include B has `x` with an activity | – | merged `x` stays A's (no activity); B's dropped |
+| 24 | merged `heavy.mdl` | `user_ref` | – | the user include's (the workshop include's is dropped) |
+| 25 | weighted pick | Engineer `ACT_MP_RELOAD_STAND_PRIMARY_LOOP`, 30 000 seeded draws | – | `a_PRIMARY_reload_loop` 2/3 ± 0.01, `b_…` 1/3 |
+| 26 | hidden + activity | Heavy, Shotgun, ducked reload | – | `ACT_MP_RELOAD_CROUCH_SECONDARY` finds `SECONDARY_crouch_reload` though it is hidden |
+| 27 | Heavy, Minigun, idle | `body_pitch` = `body_yaw` = 0, frame 0 | – | `weapon_bone` at (−5.1, −14.7, 43.8) ± 0.2, barrels (0.81, 0.18, 0.56) ± 0.02 (34° up); muzzle (46.0, −6.7, 70.5) ± 0.5 |
+| 28 | Heavy spun, still | same | 0.5 s after the wind-up | main `stand_deployed_PRIMARY`; `weapon_bone` (−8.6, −13.7, 41.4) ± 0.2, barrels (1.00, 0.02, 0.02) ± 0.02 (level); muzzle (49.4, −14.2, 35.2) ± 0.5 |
+| 29 | Heavy spun, firing | hold attack | any time | barrels' elevation 0–3° (never above 10° at `body_pitch` 0); `weapon_bone` within 2.5 units of test 28's (the idle's own sway included) |
+| 30 | Heavy spun | `body_pitch` 45 / −45 / 90 | – | barrels 48° / −25° / 78° up (idle: 39° / 25° / 47°) ± 2° |
+| 31 | Heavy wind-up, standing | – | t = 0.1 / 0.2 / 0.3 / 0.49 s | spin-up layer weight 0.22 / 0.65 / 0.97 / 1 (splined ramp on cycle t / 0.5); barrels 19° / 5° / 2° / 8° ± 2° |
+| 32 | Heavy wind-down | – | t = 0.2 / 0.4 / 0.6 / 0.8 s | main `stand_PRIMARY`; barrels 9° / 20° / 33° / 35° ± 2°; slot free at 1.0 s |
+| 33 | spin gesture's own sequence | `attackStand_PRIMARY_spoolup` alone at weight 1 over any pose | – | the pose is unchanged (all bone weights 0): only its layer moves bones |
+| 34 | foot locks | Soldier `stand_PRIMARY` + `PRIMARY_aimmatrix_idle` at `body_pitch` 45 | – | feet within 0.1 of `stand_PRIMARY`'s own (without locks they move 7.7 / 9.0); the knees re-bend |
+| 35 | rest stance | each class, `stand_<KIND>` frame 0 | – | feet as in the §3 "Rest stance" table ± 0.2 |
+| 36 | Scout with the Minigun (mash-up), spun | – | – | real TF2: `ACT_MP_DEPLOYED_IDLE` not in the Scout's model → reference pose (Open questions 13 for ours) |
 
 ## Open questions
 
@@ -728,6 +1029,18 @@ Per player, on each client frame (bone setup cs_source/animation.md
 11. The class-data flags `DontDoAirwalk` and `DontDoNewJump` (in the
     class scripts): which classes set them; read with the class-scripts
     spec.
+12. **Stance width against ours** (2026-11-19 brief: TF2's idle stances
+    look slightly wider than Chimera's): TF2's rest stance is the
+    include's `stand_<KIND>` (table in §3) with nothing on the legs at
+    a level view, so it follows from the same lookup rule; aiming up or
+    down keeps the feet only through the foot locks (§4a), which
+    Chimera lacks. Whether ours differs at a level view (and why) is to
+    measure against test 35; not confirmed from here.
+13. **Deployed state on a class without deployed sequences** (mash-ups:
+    a Scout spinning the Minigun): TF2 would show the reference pose
+    (§2, `ACT_MP_DEPLOYED_IDLE` missing); Chimera may prefer to keep the
+    kind's normal set and add only the fire gesture. A design choice,
+    not parity.
 9. Whether the server traces bullets against the full aim-matrix pose
    or a simplified one, and the server's bone-setup rate.
 10. Ragdoll start velocity and the force from the killing hit (the

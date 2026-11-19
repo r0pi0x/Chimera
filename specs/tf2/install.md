@@ -525,10 +525,14 @@ Each arms model has a small local skeleton, one bodypart, 10 skin
 families, one default hitbox set, **one local animation and a set of
 1-frame stub sequences without activities**, and **one include model**
 `models/weapons/c_models/c_<class>_animations.mdl` holding the real
-sequences (with activities). Sequence selection is by activity, so it
-lands on the include's sequences; a by-name lookup must also prefer the
-include's sequence over a same-named local stub (inferred: the stubs
-are 1-frame; Open questions 6). Our dumper's merged listing of an
+sequences (with activities). The stubs are **forward declarations**:
+sequence flag 0x800, no animation at all (a 0 × 0 blend grid), no
+activity. A same-named sequence from an include **replaces** a
+forward-declared one in its slot, so both by-name and by-activity
+lookups land on the include's real sequence (rule and order:
+player_animation.md §1a; Open questions 6 settled). A same-named
+sequence without that flag never replaces an earlier one: the first
+wins. Our dumper's merged listing of an
 arms model shows the stubs first: dump the `_animations` model to see
 the real data. All arms models have a pose parameter `r_hand_grip`
 (0..12).
@@ -664,7 +668,8 @@ are on the weapon's bones, so the muzzle follows the merged
 
 `models/player/<class>.mdl` (scout, soldier, pyro, demo, heavy,
 engineer, medic, sniper, spy; all version 48). Each has a local stub
-sequence set (2 local animations) and **three include models**:
+sequence set (2 local animations; every stub but `ref` and `ragdoll`
+is a 0x800 forward declaration, 4.3) and **three include models**:
 `models/player/<class>_user_animations.mdl`,
 `models/player/<class>_animations.mdl` (the real animation: scout 377
 sequences, 1 012 animations), and
@@ -982,11 +987,13 @@ specs/cs_source/ files it lists.
 4. **Absent `spawnflags` on teamspawns** (ctf_2fort): inferred to mean
    every class; confirm on a listen server with a non-scout class.
 5. **`MatchSummary` values 1 and 2**: which team or result each means.
-6. **Local stub vs include sequence with the same name** (arms and
-   player models): by-name lookups should get the include's animated
-   sequence; confirm against the game (e.g. a `sv_cheats` `ent_fire` of
-   a named sequence, or how our loader's include merge behaves with
-   the real view).
+6. ~~**Local stub vs include sequence with the same name**~~ Settled
+   (2026-11-19, from the model data and the engine's include merge
+   read in the SDK): every stub in the arms and class models carries
+   the forward-declaration flag 0x800 and no animation, and an include's
+   same-named sequence takes the stub's slot; without the flag the first
+   one wins. The include's sequence is what plays (player_animation.md
+   §1a, with the include order and the duplicate rules).
 7. **`w_` models**: whether dropped weapons use `model_world`, the
    `c_` model, or the `w_` model; TF2's dropped weapons are recent
    (2014+) and mostly use the `c_` model (public).
