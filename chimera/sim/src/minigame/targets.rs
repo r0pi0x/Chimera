@@ -73,6 +73,11 @@
 //!   line, level, toward where it was placed from (its brain's look is
 //!   overridden: a body faces the spawner, for a fair look at it); on, it
 //!   fights as its game's bot does from where its motion keeps it.
+//! - `fires_ahead` (off by default; `ahead`): its trigger held every
+//!   tick, facing back along its line, level, whatever is there (TF2's
+//!   `bot_forceattack` on a puppet bot): a staging mode for pictures of a
+//!   gun firing as others see it (tools/tf2ref, `thirdperson.scene`).
+//!   Over `shoots_back`.
 //! - `protected` (off by default): `core::HealthHeld` (hits land and are
 //!   measured, health never drops, it never dies), and its health and
 //!   shield are put back to full at the start of each tick.
@@ -159,8 +164,8 @@
 //! replicated (the sandbox is a local match).
 //!
 //! Console: `target add <rung n | gun id | character id> [distance m]
-//! [still|strafe|walk] [shoots] [protect] [platform]`, `target set <n|all>
-//! <shoots | noshoot | protect | noprotect | still | strafe | walk |
+//! [still|strafe|walk] [shoots] [ahead] [protect] [platform]`, `target set <n|all>
+//! <shoots | noshoot | ahead | noahead | protect | noprotect | still | strafe | walk |
 //! platform | line | gun <id> |
 //! character <id> | respawn <s> | distance <m>>`, `target remove <n|all>`,
 //! `target list`, `target characters`, `target look <n>` (turns the
@@ -345,6 +350,8 @@ pub struct SetTarget {
     pub distance_m: Option<f32>,
     pub motion: Option<TargetMotion>,
     pub shoots_back: Option<bool>,
+    /// Trigger held, facing along its line (`Target::fires_ahead`).
+    pub fires_ahead: Option<bool>,
     pub protected: Option<bool>,
     pub armored: Option<bool>,
     pub respawn_secs: Option<f32>,
@@ -364,6 +371,7 @@ impl SetTarget {
             distance_m: None,
             motion: None,
             shoots_back: None,
+            fires_ahead: None,
             protected: None,
             armored: None,
             respawn_secs: None,
@@ -391,6 +399,9 @@ pub struct TargetRefused {
 pub struct Target {
     pub motion: TargetMotion,
     pub shoots_back: bool,
+    /// Its trigger held every tick, facing back along its line, level
+    /// (module doc); over `shoots_back`.
+    pub fires_ahead: bool,
     pub protected: bool,
     /// Its second bar on (false: none, `TargetVitals` reads 0).
     pub armored: bool,
@@ -895,6 +906,7 @@ pub fn spawn_placed_from(
     let target = Target {
         motion: req.motion,
         shoots_back: req.shoots_back,
+        fires_ahead: false,
         protected: req.protected,
         armored: req.armored,
         respawn_secs: req.respawn_secs.max(0.0),
@@ -1097,6 +1109,7 @@ fn finish_set(
     }
     t.motion = req.motion.unwrap_or(t.motion);
     t.shoots_back = req.shoots_back.unwrap_or(t.shoots_back);
+    t.fires_ahead = req.fires_ahead.unwrap_or(t.fires_ahead);
     t.protected = req.protected.unwrap_or(t.protected);
     let armour_off = req.armored == Some(false) && t.armored;
     t.armored = req.armored.unwrap_or(t.armored);
@@ -1171,6 +1184,7 @@ pub fn all_targets(world: &mut World) -> Vec<(Entity, Target)> {
 fn describe(t: &Target) -> String {
     let flags = [
         (t.shoots_back, "shoots back"),
+        (t.fires_ahead, "fires ahead"),
         (t.protected, "protected"),
         (!t.armored, "no armour"),
     ]
@@ -1224,8 +1238,8 @@ fn pick(world: &mut World, which: &str) -> Result<Vec<Entity>, String> {
     all.into_iter().find(|(_, t)| t.number == n).map(|(e, _)| vec![e]).ok_or_else(|| format!("no target {n} (`target list`)"))
 }
 
-const USAGE: &str = "target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [protect] [noarmor] [platform] | \
-    target set <n|all> <shoots|noshoot|protect|noprotect|armor|noarmor|still|strafe|walk|platform|line|gun <id>|character <id>|respawn <s>|distance <m>> | \
+const USAGE: &str = "target add <rung n | gun id | body id> [distance m] [still|strafe|walk] [shoots] [ahead] [protect] [noarmor] [platform] | \
+    target set <n|all> <shoots|noshoot|ahead|noahead|protect|noprotect|armor|noarmor|still|strafe|walk|platform|line|gun <id>|character <id>|respawn <s>|distance <m>> | \
     target remove <n|all> | target list | target characters | target look <n> | target repeat";
 
 /// A gun id, exact or the one gun of the ladder whose id holds the text.
@@ -1252,6 +1266,7 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
             let what = a.get(1).ok_or(USAGE)?;
             let mut req = SpawnTarget::default();
             let mut place = TargetPlace::Line;
+            let mut ahead = false;
             if let Ok(n) = what.parse::<usize>() {
                 req.rung = Some(n.checked_sub(1).ok_or("rungs are numbered from 1 (`rung list`)")?);
             } else if character_info(world, what).is_some() {
@@ -1270,6 +1285,8 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                     req.shoots_back = true;
                 } else if w.eq_ignore_ascii_case("protect") {
                     req.protected = true;
+                } else if w.eq_ignore_ascii_case("ahead") {
+                    ahead = true;
                 } else if w.eq_ignore_ascii_case("noarmor") {
                     req.armored = false;
                 } else if w.eq_ignore_ascii_case("armor") {
@@ -1279,6 +1296,9 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                 }
             }
             let e = spawn_placed(world, &req, place)?;
+            if ahead {
+                set(world, &SetTarget { fires_ahead: Some(true), ..SetTarget::of(e) })?;
+            }
             Ok(Some(format!("added {}", world.get::<Target>(e).map(describe).unwrap_or_default())))
         }
         "set" => {
@@ -1291,6 +1311,8 @@ fn command(world: &mut World, a: &[String]) -> Result<Option<String>, String> {
                 match what.as_str() {
                     "shoots" => req.shoots_back = Some(true),
                     "noshoot" => req.shoots_back = Some(false),
+                    "ahead" => req.fires_ahead = Some(true),
+                    "noahead" => req.fires_ahead = Some(false),
                     "protect" => req.protected = Some(true),
                     "noprotect" => req.protected = Some(false),
                     "armor" => req.armored = Some(true),
@@ -1487,7 +1509,8 @@ fn drive(
         // its keys are for that facing, not the brain's look this tick
         // (keys made for the brain's yaw walked a strafer off its line).
         let line_yaw = t.dir.x.atan2(t.dir.z);
-        let facing = if t.shoots_back { intent.yaw } else { line_yaw };
+        let aims = t.shoots_back && !t.fires_ahead;
+        let facing = if aims { intent.yaw } else { line_yaw };
         let axis = goal.map_or(Vec2::ZERO, |g| axis_toward(g - feet, facing));
         if intent.move_axis != axis {
             intent.move_axis = axis;
@@ -1497,14 +1520,19 @@ fn drive(
             intent.crouch = false;
             intent.sprint = false;
         }
-        if !t.shoots_back && (intent.fire || intent.secondary || intent.actions != 0) {
+        if t.fires_ahead && (!intent.fire || intent.secondary || intent.actions != 0) {
+            intent.fire = true;
+            intent.secondary = false;
+            intent.actions = 0;
+        } else if !t.shoots_back && !t.fires_ahead && (intent.fire || intent.secondary || intent.actions != 0) {
             intent.fire = false;
             intent.secondary = false;
             intent.actions = 0;
         }
-        // One that may not fire faces back along its line, level: toward
-        // where it was placed from, whatever the brain looks at.
-        if !t.shoots_back && (intent.yaw != line_yaw || intent.pitch != 0.0) {
+        // One that may not fire, or fires ahead, faces back along its
+        // line, level: toward where it was placed from, whatever the brain
+        // looks at.
+        if !aims && (intent.yaw != line_yaw || intent.pitch != 0.0) {
             intent.yaw = line_yaw;
             intent.pitch = 0.0;
         }

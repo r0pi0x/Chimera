@@ -6,11 +6,14 @@
 //! drew it, 1.96x too big at FOV 90); with `r_drawviewmodel 0` there is
 //! none. In third person the flash is the held model's, in the world.
 //! Tracers (effects.md 6) start at the same re-projected muzzle and head
-//! for the bullet's end. A made-up view model with a `muzzle` attachment
-//! on the greybox (`harness::Tf2Sim`).
+//! for the bullet's end. This machine's own player's flashes ride the
+//! animated muzzle: they follow its `AttachmentMark`, placed each frame
+//! where the attachment appears. A made-up view model with a `muzzle`
+//! attachment on the greybox (`harness::Tf2Sim`).
 
 use bevy::prelude::*;
 use chimera_world::map::{
+    attached::{AttachPoint, AttachmentMark},
     MapAttachment, MapBone, MapModel, MapViewModel, ShowLocalBody, ViewAnimator, ViewModelAnchor, ViewModelCamera, ViewModels,
     psys::StartParticleSystem,
     view_model::reproject,
@@ -40,8 +43,19 @@ fn gun(key: &str) -> MapViewModel {
 /// The flashes `p`'s SMG starts over a burst, with the view-model camera
 /// at `vm_fov` degrees (the world's at 90), the local body shown or not.
 fn flashes(vm_fov: f32, third_person: bool) -> (Entity, Vec<StartParticleSystem>) {
+    let (_, anchor, starts) = flashes_of(vm_fov, third_person, false);
+    (anchor, starts)
+}
+
+/// `flashes`, `local`: the shooter this machine's own player; with the sim.
+fn flashes_of(vm_fov: f32, third_person: bool, local: bool) -> (chimera_world::harness::Sim, Entity, Vec<StartParticleSystem>) {
     let mut sim = sim();
     let (p, _) = holding(&mut sim, Vec3::new(0.0, 1.0, 0.0), SMG);
+    if local {
+        sim.app.world_mut().entity_mut(p).insert(chimera_core::core::LocalPlayer);
+        // The map's drawing places the marks (not in a headless sim).
+        sim.app.add_systems(Update, chimera_world::map::attached::place_marks.in_set(chimera_world::map::attached::MarksPlaced));
+    }
     sim.app.world_mut().insert_resource(ViewModels::of([gun(SMG)]));
     sim.app.world_mut().insert_resource(ShowLocalBody(third_person));
     let perspective = |deg: f32| Projection::Perspective(PerspectiveProjection { fov: deg.to_radians(), ..default() });
@@ -59,7 +73,31 @@ fn flashes(vm_fov: f32, third_person: bool) -> (Entity, Vec<StartParticleSystem>
         sim.ticks(1);
         out.extend(cursor.read(sim.app.world().resource::<Messages<StartParticleSystem>>()).cloned());
     }
-    (anchor, out)
+    (sim, anchor, out)
+}
+
+/// The own player's flash follows its muzzle's mark (riding the gun's
+/// kick, TF2's lock to the view model's attachment), which sits where the
+/// muzzle appears in the world view, turned as the eye.
+#[test]
+fn the_own_players_flash_rides_the_muzzles_mark() {
+    let (mut sim, anchor, starts) = flashes_of(54.0, false, true);
+    let flashes: Vec<_> = starts.iter().filter(|s| s.name.starts_with("muzzle_")).collect();
+    assert!(!flashes.is_empty(), "the SMG fired and flashed");
+    let world = sim.app.world_mut();
+    let mut marks = world.query::<(Entity, &AttachmentMark, &Transform)>();
+    let (mark, m, at) = marks
+        .iter(world)
+        .find(|(_, m, _)| m.at == AttachPoint::named("muzzle"))
+        .map(|(e, m, t)| (e, m.clone(), *t))
+        .expect("a mark on the muzzle");
+    assert!(m.shown, "placed this frame");
+    let eye = *world.get::<GlobalTransform>(anchor).expect("the eye");
+    let want = eye.transform_point(reproject(MUZZLE, 90.0, 54.0));
+    assert!(at.translation.abs_diff_eq(want, 1e-3), "at the muzzle as it appears: {} vs {want}", at.translation);
+    let ridden = flashes.iter().filter(|s| s.follow.is_some_and(|f| f.entity == mark && f.local == Vec3::ZERO && f.carry)).count();
+    // The first shot may come before the mark was placed: it follows the eye.
+    assert!(ridden + 1 >= flashes.len() && ridden > 0, "{ridden} of {} on the mark: {flashes:?}", flashes.len());
 }
 
 #[test]

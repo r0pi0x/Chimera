@@ -352,3 +352,50 @@ fn the_bodies_list_their_numbers_guns_and_full_game_names() {
     let ca = of("combat_arms:default");
     assert_eq!((ca.game_name.as_str(), ca.game_tag.as_str(), ca.shield_max), ("Combat Arms", "CA", 1.0));
 }
+
+/// What a target's shots were aimed along (yaw, pitch), kept.
+#[derive(Resource, Default)]
+struct Aims(Vec<(Entity, f32, f32)>);
+
+fn keep_aims(mut aims: ResMut<Aims>, mut w: MessageReader<WeaponEvent>) {
+    for e in w.read() {
+        if let WeaponEventKind::Fired { yaw, pitch, .. } = e.kind {
+            aims.0.push((e.owner, yaw, pitch));
+        }
+    }
+}
+
+/// `ahead` (TF2's `bot_forceattack`, a staging mode for pictures): its
+/// trigger held, every shot level along its line back toward where it
+/// was placed from, whoever stands there or not.
+#[test]
+fn a_target_firing_ahead_holds_its_trigger_level_along_its_line() {
+    for (body, gun) in [(None, GUN), (Some("tf2:pyro"), "tf2:tf_weapon_flamethrower"), (Some("tf2:heavy"), "tf2:tf_weapon_minigun")] {
+        fires_ahead(body, gun);
+    }
+}
+
+fn fires_ahead(body: Option<&str>, gun: &str) {
+    let (mut sim, me) = play();
+    sim.app.init_resource::<Aims>().add_systems(FixedPostUpdate, keep_aims);
+    let e = add(&mut sim, SpawnTarget { character: body.map(Into::into), gun: Some(gun.into()), ..at(8.0) });
+    sim.app.world_mut().write_message(SetTarget { fires_ahead: Some(true), ..SetTarget::of(e) });
+    // The player steps out of its line: it fires all the same.
+    let away = sim.position(me) + Vec3::new(6.0, 0.0, 0.0);
+    sim.app.world_mut().entity_mut(me).insert((Transform::from_translation(away), avian3d::prelude::Position(away)));
+    sim.seconds(2.0);
+    let t = sim.app.world().get::<Target>(e).cloned().unwrap();
+    assert!(t.fires_ahead);
+    let line_yaw = t.dir.x.atan2(t.dir.z);
+    let aims: Vec<_> = sim.app.world().resource::<Aims>().0.iter().filter(|a| a.0 == e).copied().collect();
+    assert!(aims.len() > 3, "it kept firing: {aims:?}");
+    for (_, yaw, pitch) in &aims {
+        let dyaw = (yaw - line_yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        assert!(dyaw.abs() < 0.05 && pitch.abs() < 0.05, "{gun} level along its line: yaw {yaw} (line {line_yaw}), pitch {pitch}");
+    }
+    sim.app.world_mut().write_message(SetTarget { fires_ahead: Some(false), ..SetTarget::of(e) });
+    sim.seconds(0.5);
+    let before = sim.app.world().resource::<Aims>().0.len();
+    sim.seconds(1.0);
+    assert_eq!(sim.app.world().resource::<Aims>().0.len(), before, "it stopped");
+}

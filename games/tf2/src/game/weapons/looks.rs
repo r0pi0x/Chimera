@@ -13,8 +13,12 @@
 //!   tan(view-model FOV/2)) and drawn as a world system with the world
 //!   camera (particles.md 6: never the view-model camera, which drew it
 //!   1.96x too big at FOV 90), depth tested against the world (a flash
-//!   inside a wall you stand against is hidden by it, as in TF2), following
-//!   the eye it was started from (`StartParticleSystem::follow`); else the
+//!   inside a wall you stand against is hidden by it, as in TF2), riding
+//!   the animated attachment (TF2's "Movement Lock to Control Point" on the
+//!   view model's: the flash goes with the gun's kick) through its
+//!   `attached::AttachmentMark` (`mark_attachments`: this machine's own
+//!   player's `muzzle` and `eject_brass`), else following the eye it was
+//!   started from (`StartParticleSystem::follow`); else the
 //!   held model's (`HeldAttachment`: what others see), else a little ahead
 //!   of the eye under the gun (`MUZZLE_OFFSET`). None while the local
 //!   player's view model is switched off (`r_drawviewmodel 0`).
@@ -94,7 +98,7 @@ use super::{
 };
 use crate::map::{
     ShowLocalBody,
-    attached::{AnchorQuery, AttachPoint, first_person_shown},
+    attached::{AnchorQuery, AttachPoint, AttachmentMark, MarksPlaced, first_person_shown},
     particles::ParticleSet,
     psys::{ControlPointState, Follow, ParticleControlPoints, StartParticleSystem, StartedSystemsRun, StopParticleSystems},
     view_model::{HeldAttachment, ViewAnimator, ViewModelCamera, ViewModelOffset, ViewModelSettings, ViewModels},
@@ -445,6 +449,7 @@ pub struct Muzzles<'w, 's> {
     models: Option<Res<'w, ViewModels>>,
     settings: Option<Res<'w, ViewModelSettings>>,
     third_person: Option<Res<'w, ShowLocalBody>>,
+    marks: Query<'w, 's, (Entity, &'static AttachmentMark)>,
 }
 
 /// An attachment on the first-person view model.
@@ -461,6 +466,9 @@ pub struct ViewMuzzle {
     /// Both in engine space.
     pub at: Vec3,
     pub world: Vec3,
+    /// The attachment's `AttachmentMark`, placed this frame: what a
+    /// system started here follows, to ride the gun's kick.
+    pub mark: Option<Entity>,
 }
 
 /// Where an attachment is.
@@ -514,7 +522,9 @@ impl Muzzles<'_, '_> {
             Some(f) => {
                 let local = f.camera_point(&at)?;
                 let world_local = f.fovs.map_or(local, |(w, v)| crate::map::view_model::reproject(local, w, v));
+                let mark = self.marks.iter().find(|(_, m)| m.owner == owner && m.shown && m.at == at).map(|(e, _)| e);
                 Some(MuzzleAt::View(ViewMuzzle {
+                    mark,
                     anchor: f.anchor,
                     turn: f.eye.rotation(),
                     local,
@@ -558,6 +568,10 @@ impl Muzzles<'_, '_> {
     /// what carries it: the eye on a first-person gun, else `owner`.
     pub fn start_on(&self, owner: Entity, m: &MuzzleAt, name: &str, forward: Vec3) -> StartParticleSystem {
         let follow = match m {
+            // On the attachment's mark: riding the animated muzzle.
+            MuzzleAt::View(ViewMuzzle { mark: Some(mark), turn, .. }) => {
+                Some(Follow { entity: *mark, local: Vec3::ZERO, forward: turn.inverse() * forward, carry: true })
+            }
             MuzzleAt::View(v) => Some(Follow { entity: v.anchor, local: v.world_local, forward: v.turn.inverse() * forward, carry: true }),
             MuzzleAt::Held(p) => self.owners.get(owner).ok().and_then(|(.., t, _)| t).map(|t| Follow {
                 entity: owner,
@@ -567,6 +581,23 @@ impl Muzzles<'_, '_> {
             }),
         };
         StartParticleSystem { follow, ..StartParticleSystem::new(name, m.world(), forward) }
+    }
+}
+
+/// The attachments first-person systems start on (the per-shot flash, the
+/// Minigun's and the stream's at `muzzle`, the brass at `eject_brass`).
+const MARKED: &[&str] = &[MUZZLE_ATTACHMENT, "eject_brass"];
+
+/// An `AttachmentMark` on each of `MARKED` for this machine's own player,
+/// so its first-person systems ride the animated gun (effects.md 2).
+fn mark_attachments(players: Query<Entity, (With<LocalPlayer>, With<ViewAnimator>)>, marks: Query<&AttachmentMark>, mut commands: Commands) {
+    for owner in &players {
+        for name in MARKED {
+            let at = AttachPoint::named(name);
+            if !marks.iter().any(|m| m.owner == owner && m.at == at) {
+                commands.spawn((Name::new(format!("Attachment mark ({name})")), AttachmentMark::new(owner, at), Transform::default()));
+            }
+        }
     }
 }
 
@@ -841,8 +872,10 @@ pub fn add(app: &mut App) {
                 .after(ParticleSet::Step)
                 .before(ParticleSet::Draw)
                 .after(crate::map::attached::EyePlaced)
-                .after(crate::map::DriveAnimation),
+                .after(crate::map::DriveAnimation)
+                .after(MarksPlaced),
         )
+        .add_systems(Update, mark_attachments)
         .net_part("tf2_looks", register);
 }
 

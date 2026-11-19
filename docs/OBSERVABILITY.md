@@ -624,7 +624,9 @@ as `rung: <gun> for <player> Applied after <s> s`).
 Beside it: `ca_bot_add`, `ca_bot_kick`, `ca_bot_stop 1`, `ca_bot_dont_shoot 1`,
 `god`, `noclip` (`sv_cheats` is 1 there), guns refill; `sandbox help` says it.
 Practice targets: `target add <rung n | gun id | body id> [distance]
-[still|strafe|walk] [shoots] [protect] [platform]`, `target set`, `target remove`,
+[still|strafe|walk] [shoots] [ahead] [protect] [platform]` (`ahead`: its
+trigger held level along its line, TF2's `bot_forceattack`, for pictures
+of a gun as others see it), `target set`, `target remove`,
 `target list`, `target characters` (`chimera_sim::minigame::targets`;
 on the range a target asked for at `d` m stands on the range's `d` m
 line at your side of the axis, nudged aside from what stands there
@@ -2561,6 +2563,13 @@ tools/tf2ref/tf2ref.py down [--all]               # --all: Steam and our X serve
   different sizes.
 - Ours hides its HUDs with `cl_drawhud 0` (the scenes do); TF2's with
   `cl_drawhud 0; r_drawvgui 0`.
+- Third person (`thirdperson.tf2`/`.scene`): TF2's puppet bot fires with
+  `bot_forceattack` (start it inside the stepped movie: forced before it,
+  the bot vanished), spawned at once (`mp_disable_respawn_times 1`, else a
+  teleport before the respawn wave moved nothing), no random crits
+  (`tf_weapon_criticals 0`); ours' target fires `ahead`, and our camera
+  stays put (`chimera_freecam 2`) while our body steps out of the line
+  of fire, as TF2's spectator has no body.
 - Pictures are game imagery: scratch folders only. Quit the game when
   done (`down`; or `pkill -x tf_linux64`, never `pkill -f`).
 

@@ -1,8 +1,13 @@
 # Ours for thirdperson.tf2: a sandbox target with the gun 11 m (433 units)
-# ahead, facing us and firing at us (`shoots`, `protect`); we stand at
-# 0 -300 0 as an Engineer (eye 68) with no view model, god mode. In real
-# time (the target's own aim and timing): pictures 1.5 s after it may
-# shoot, then 0.1 and 0.15 s apart (its shots aren't `wait_for shot`'s).
+# ahead, facing us, its trigger held straight ahead (`ahead`, TF2's
+# `bot_forceattack`: level along its line, not aimed); we stand at
+# 0 -300 0 as an Engineer (eye 68) with no view model, god mode; then the
+# camera stays there (`chimera_freecam 2`) and our body steps 400 units back
+# out of sight, so its shots fly past the camera as past TF2's spectator.
+# Single shots are stepped at `host_timescale 0.01` from its first shot
+# (`wait_for shot`): pictures 1, 3, 6 and 12 frames of 60 a second after it
+# (`f01` ...: TF2's movie frames counted from the flash's onset). The
+# Minigun and the Flame Thrower fire 1.5 s first, then the same steps.
 #   ultimate_gun_game --offscreen 1024x768 +volume 0 +sandbox tf2:ctf_2fort --scene tools/tf2ref/scenes/thirdperson.scene --out <dir>
 wait_for map_loaded 6000
 wait_for spawned 3000
@@ -16,6 +21,7 @@ rung tf2:tf_weapon_wrench
 wait 2
 wait_for idle 3000
 # scattergun
+chimera_freecam 0
 target remove all
 wait 30
 setpos 0 -300 0
@@ -26,17 +32,28 @@ wait 240
 setpos 0 -300 0
 setang 0 90 0
 wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
 shot tp_scattergun_idle
-target set all shoots
-wait 90
-shot tp_scattergun_a
-gwait 0.1
-shot tp_scattergun_b
-gwait 0.15
-shot tp_scattergun_c
-target set all noshoot
+host_timescale 0.01
+wait 3
+target set all ahead
+wait_for shot
+gwait 0.0167
+shot tp_scattergun_f01
+gwait 0.0333
+shot tp_scattergun_f03
+gwait 0.0500
+shot tp_scattergun_f06
+gwait 0.1000
+shot tp_scattergun_f12
+target set all noahead
+host_timescale 1
 wait 60
 # rocket
+chimera_freecam 0
 target remove all
 wait 30
 setpos 0 -300 0
@@ -47,17 +64,28 @@ wait 240
 setpos 0 -300 0
 setang 0 90 0
 wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
 shot tp_rocket_idle
-target set all shoots
-wait 90
-shot tp_rocket_a
-gwait 0.1
-shot tp_rocket_b
-gwait 0.15
-shot tp_rocket_c
-target set all noshoot
+host_timescale 0.01
+wait 3
+target set all ahead
+wait_for shot
+gwait 0.0167
+shot tp_rocket_f01
+gwait 0.0333
+shot tp_rocket_f03
+gwait 0.0500
+shot tp_rocket_f06
+gwait 0.1000
+shot tp_rocket_f12
+target set all noahead
+host_timescale 1
 wait 60
 # minigun
+chimera_freecam 0
 target remove all
 wait 30
 setpos 0 -300 0
@@ -68,40 +96,61 @@ wait 240
 setpos 0 -300 0
 setang 0 90 0
 wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
 shot tp_minigun_idle
-target set all shoots
-wait 90
-shot tp_minigun_a
-gwait 0.1
-shot tp_minigun_b
-gwait 0.15
-shot tp_minigun_c
-gwait 1.2
-shot tp_minigun_d
-target set all noshoot
+target set all ahead
+gwait 1.5
+host_timescale 0.01
+wait 3
+gwait 0.0167
+shot tp_minigun_f01
+gwait 0.0333
+shot tp_minigun_f03
+gwait 0.0500
+shot tp_minigun_f06
+gwait 0.1000
+shot tp_minigun_f12
+target set all noahead
+host_timescale 1
 wait 60
 # shotgun
+chimera_freecam 0
 target remove all
 wait 30
 setpos 0 -300 0
 setang 0 90 0
 wait 30
-target add tf2:tf_weapon_shotgun_primary 11 still protect
+target add tf2:engineer 11 still protect
+target set all gun tf2:tf_weapon_shotgun_primary
 wait 240
 setpos 0 -300 0
 setang 0 90 0
 wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
 shot tp_shotgun_idle
-target set all shoots
-wait 90
-shot tp_shotgun_a
-gwait 0.1
-shot tp_shotgun_b
-gwait 0.15
-shot tp_shotgun_c
-target set all noshoot
+host_timescale 0.01
+wait 3
+target set all ahead
+wait_for shot
+gwait 0.0167
+shot tp_shotgun_f01
+gwait 0.0333
+shot tp_shotgun_f03
+gwait 0.0500
+shot tp_shotgun_f06
+gwait 0.1000
+shot tp_shotgun_f12
+target set all noahead
+host_timescale 1
 wait 60
 # flamethrower
+chimera_freecam 0
 target remove all
 wait 30
 setpos 0 -300 0
@@ -112,16 +161,25 @@ wait 240
 setpos 0 -300 0
 setang 0 90 0
 wait 30
+chimera_freecam 2
+wait 2
+setpos 0 -700 0
+wait 10
 shot tp_flamethrower_idle
-target set all shoots
-wait 90
-shot tp_flamethrower_a
-gwait 0.1
-shot tp_flamethrower_b
-gwait 0.15
-shot tp_flamethrower_c
-gwait 1.2
-shot tp_flamethrower_d
-target set all noshoot
+target set all ahead
+gwait 1.5
+host_timescale 0.01
+wait 3
+gwait 0.0167
+shot tp_flamethrower_f01
+gwait 0.0333
+shot tp_flamethrower_f03
+gwait 0.0500
+shot tp_flamethrower_f06
+gwait 0.1000
+shot tp_flamethrower_f12
+target set all noahead
+host_timescale 1
 wait 60
+chimera_freecam 0
 target remove all

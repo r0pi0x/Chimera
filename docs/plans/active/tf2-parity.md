@@ -29,8 +29,8 @@ Captured imagery stays in scratch, never in the repo.
 |---|---|---|
 | Tool: headless TF2, scenes, pairs | done | – |
 | Camera match (2fort bridge, setpos/setang) | matches | – |
-| Muzzle flashes, first person | close (scattergun, shotgun, SMG) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). Ours' flash stays where it started while the gun kicks; TF2's rides the muzzle ("Movement Lock to Control Point" on the animated attachment), and TF2's view model kicks harder (the Scattergun's pump) |
-| Muzzle flashes, third person | todo | `thirdperson.tf2` (bot 433 units ahead, free spectator via `spec_mode 6` then `setpos`) and `thirdperson.scene` (a sandbox target, `target add <gun> 11 still protect`) frame the same; but ours' target aims at us and hits us (blood, flames on the camera) where TF2's bot fires straight ahead, and its Minigun points at the camera: the target needs a "fire ahead" mode before the pictures compare. Ours' brass shows (golden casings at its feet) |
+| Muzzle flashes, first person | close (scattergun, shotgun, SMG) | size, colour and lifetime agree frame by frame at 60 fps (the "TF2 stays bright 2x longer" was two capture errors: TF2's `wait 2` is one frame, and ours' shot ran 13 ms in one step). The flash now rides the animated muzzle as TF2's does (`attached::AttachmentMark`); TF2's view model kicks harder (the Scattergun's pump) |
+| Muzzle flashes, third person | close (Scattergun, Shotgun) | the scenes compare now: ours' target fires `ahead` (TF2's `bot_forceattack`) and our camera stays while our body leaves the line of fire (`chimera_freecam 2`). The flashes' size and life agree. TF2 draws another player's flash some 7 frames before its tracers and fire gesture (seen on the Scattergun and the Shotgun); ours draws them together |
 | Minigun constant flash, brass | close | the core is a compact glow now (a trail no wider than long); ours is dimmer and nearer the barrel than the account's own Minigun's (not stock); the brass lived one frame (lifetime from a sheet the casing has none of): now 2 s |
 | Tracers | matches (SMG, Shotgun) | were a thick beam bright at the gun: the trail's texture ran backwards (TF2's `tracer1` is bright at v = 1, the head) and the radius is the full width, not the half (particles.md 5, Open questions 4 answered) |
 | Rocket explosion on a surface | close | aligned on the blast, the same sequence (flash, fire with streaks, smoke, debris); ours a little paler in the first 50 ms. TF2's rocket took ~0.5 s to a floor 150 units ahead under host_framerate (ours 0.1 s): not understood, compared aligned on the blast |
@@ -133,3 +133,19 @@ Captured imagery stays in scratch, never in the repo.
   TF2's flame points' boxes (they reach the bridge's far end).
 - `cl_drawhud 0` now hides the sandbox range's look panel too (it showed
   over the third-person captures).
+- 2026-11-19 (third pass): `target add ... ahead` / `target set <n>
+  ahead|noahead` (`Target::fires_ahead`): the trigger held, level along
+  its line. TF2's bots in `thirdperson.tf2` now spawn at once
+  (`mp_disable_respawn_times 1`: a bot teleported before its respawn wave
+  wasn't moved, so a class was missing from a run, a different one each
+  time), carry their own names, fire no random crits (one Engineer shot
+  was a crit: violet tracers), and the Minigun and Flame Thrower are
+  forced to fire inside the stepped movie (forced before it, the bot
+  vanished). First-person systems (the flash, the Minigun's constant
+  systems and brass, the flame stream) of this machine's own player now
+  follow an `AttachmentMark`, placed each frame where the view model's
+  attachment appears in the world view: the flash rides the gun's kick.
+- The "flames go up" seen in ours' third person is the stream's end: the
+  points stop about 286 units out (2450 units/s under drag 8.5/s for
+  0.6 s, flames.md) and the sprites there rise; not an obstacle (checked
+  against 2fort's brushes and by moving our body).

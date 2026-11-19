@@ -4,8 +4,14 @@
 # `setpos`: the eye) from 68 units up, an Engineer's eye. The muzzle flashes
 # as others see them, the Rocket Launcher's backblast, the Minigun's brass,
 # the flames; the bodies and their firing poses. Every frame at 60 a second
-# (`movie`) for 0.5 s; the Minigun and the Flame Thrower 1.5 s into the fire.
+# (`movie`) for 0.5 s; the Minigun and the Flame Thrower recorded from the
+# trigger to 1.75 s (forcing the attack before the stepped movie made the
+# bot vanish).
 # Blue, as ours' targets are; no spectator outlines (`tf_spec_xray 0`).
+# Each class's bot has its own name (a kicked one's name may linger), and
+# spawns at once (`mp_disable_respawn_times 1`: a new bot otherwise waited
+# for the next respawn wave, and a teleport before it moved nothing; teleported
+# three times, 2 s apart), no random crits (`tf_weapon_criticals 0`).
 #   tools/tf2ref/tf2ref.py scene tools/tf2ref/scenes/thirdperson.tf2 --out <dir>
 cl_drawhud 0
 r_drawvgui 0
@@ -13,6 +19,8 @@ tf_spec_xray 0
 fov_desired 90
 fps_max 60
 host_framerate 0
+mp_disable_respawn_times 1
+tf_weapon_criticals 0
 bot_kick all
 sleep 2
 jointeam spectator
@@ -21,9 +29,13 @@ sleep 2
 bot_kick all
 sleep 1
 bot_selectweaponslot 0
-bot -name P1 -class scout -team blue
+bot -name RefScout -class scout -team blue
 sleep 3
-bot_teleport P1 0 133 0 0 270 0
+bot_teleport RefScout 0 133 0 0 270 0
+sleep 2
+bot_teleport RefScout 0 133 0 0 270 0
+sleep 2
+bot_teleport RefScout 0 133 0 0 270 0
 spec_mode 6
 sleep 1
 setpos 0 -300 68
@@ -34,7 +46,7 @@ host_framerate 0.016667
 movie tp_scattergun
 wait 2
 bot_forceattack 1
-wait 30
+wait 60
 endmovie
 bot_forceattack 0
 wait 2
@@ -44,9 +56,13 @@ sleep 2
 bot_kick all
 sleep 1
 bot_selectweaponslot 0
-bot -name P1 -class soldier -team blue
+bot -name RefSoldier -class soldier -team blue
 sleep 3
-bot_teleport P1 0 133 0 0 270 0
+bot_teleport RefSoldier 0 133 0 0 270 0
+sleep 2
+bot_teleport RefSoldier 0 133 0 0 270 0
+sleep 2
+bot_teleport RefSoldier 0 133 0 0 270 0
 spec_mode 6
 sleep 1
 setpos 0 -300 68
@@ -57,7 +73,7 @@ host_framerate 0.016667
 movie tp_rocket
 wait 2
 bot_forceattack 1
-wait 30
+wait 60
 endmovie
 bot_forceattack 0
 wait 2
@@ -67,20 +83,24 @@ sleep 2
 bot_kick all
 sleep 1
 bot_selectweaponslot 0
-bot -name P1 -class heavy -team blue
+bot -name RefHeavy -class heavy -team blue
 sleep 3
-bot_teleport P1 0 133 0 0 270 0
+bot_teleport RefHeavy 0 133 0 0 270 0
+sleep 2
+bot_teleport RefHeavy 0 133 0 0 270 0
+sleep 2
+bot_teleport RefHeavy 0 133 0 0 270 0
 spec_mode 6
 sleep 1
 setpos 0 -300 68
 setang 0 90 0
 sleep 2
 shot tp_minigun_idle
-bot_forceattack 1
-sleep 1.5
 host_framerate 0.016667
 movie tp_minigun
-wait 32
+wait 2
+bot_forceattack 1
+wait 210
 endmovie
 bot_forceattack 0
 wait 2
@@ -90,9 +110,13 @@ sleep 2
 bot_kick all
 sleep 1
 bot_selectweaponslot 0
-bot -name P1 -class engineer -team blue
+bot -name RefEngineer -class engineer -team blue
 sleep 3
-bot_teleport P1 0 133 0 0 270 0
+bot_teleport RefEngineer 0 133 0 0 270 0
+sleep 2
+bot_teleport RefEngineer 0 133 0 0 270 0
+sleep 2
+bot_teleport RefEngineer 0 133 0 0 270 0
 spec_mode 6
 sleep 1
 setpos 0 -300 68
@@ -103,7 +127,7 @@ host_framerate 0.016667
 movie tp_shotgun
 wait 2
 bot_forceattack 1
-wait 30
+wait 60
 endmovie
 bot_forceattack 0
 wait 2
@@ -113,20 +137,24 @@ sleep 2
 bot_kick all
 sleep 1
 bot_selectweaponslot 0
-bot -name P1 -class pyro -team blue
+bot -name RefPyro -class pyro -team blue
 sleep 3
-bot_teleport P1 0 133 0 0 270 0
+bot_teleport RefPyro 0 133 0 0 270 0
+sleep 2
+bot_teleport RefPyro 0 133 0 0 270 0
+sleep 2
+bot_teleport RefPyro 0 133 0 0 270 0
 spec_mode 6
 sleep 1
 setpos 0 -300 68
 setang 0 90 0
 sleep 2
 shot tp_flamethrower_idle
-bot_forceattack 1
-sleep 1.5
 host_framerate 0.016667
 movie tp_flamethrower
-wait 32
+wait 2
+bot_forceattack 1
+wait 210
 endmovie
 bot_forceattack 0
 wait 2

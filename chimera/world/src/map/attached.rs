@@ -29,6 +29,10 @@
 //! `AttachedPiece`, `AttachPoint`, `BeamEnd`, `draw_attached` in
 //! `AttachedSet`; `first_person_shown`, `attachment_point`), drawn on the
 //! view model's layer in first person and at `HeldAttachment`s otherwise.
+//! `AttachmentMark`s (`place_marks`, in `MarksPlaced`) are entities placed
+//! each frame at a view-model attachment as it appears in the world view,
+//! for started particle systems to follow (a muzzle flash riding the gun's
+//! kick).
 //!
 //! Known shortcuts (docs/tech-debt.md): beams are drawn as separate quads
 //! per segment (no mitred joints) and without shading or a halo; sprites
@@ -144,6 +148,93 @@ pub struct EyePlaced;
 /// `AttachedSet` after this frame's eye and view-model motion.
 pub fn order_sets(app: &mut App) {
     app.configure_sets(Update, AttachedSet.after(EyePlaced).after(DriveAnimation));
+}
+
+/// An entity placed each frame where `owner`'s first-person view model's
+/// attachment `at` appears in the world view (re-projected, as muzzle
+/// flashes start), turned as the eye: what a started particle system
+/// follows (`psys::Follow` on it, `carry`) to ride the animated
+/// attachment as the gun kicks, Source's "lock to control point" on a
+/// view-model attachment. `shown`: placed this frame (a view model of
+/// `owner`'s with that attachment is drawn); otherwise it keeps its last
+/// place. Gone with its owner. `place_marks`, in `MarksPlaced`.
+#[derive(Component, Clone, Debug, PartialEq)]
+pub struct AttachmentMark {
+    pub owner: Entity,
+    pub at: AttachPoint,
+    pub shown: bool,
+}
+
+impl AttachmentMark {
+    pub fn new(owner: Entity, at: AttachPoint) -> Self {
+        Self { owner, at, shown: false }
+    }
+}
+
+/// `place_marks`: after this frame's eye and view-model motion; what
+/// follows a mark goes after it.
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MarksPlaced;
+
+/// Each `AttachmentMark` where its attachment appears this frame (the
+/// eye from this frame's `Transform`s, as `draw_attached` reads it).
+#[allow(clippy::too_many_arguments)]
+pub fn place_marks(
+    time: Res<Time>,
+    owners: Query<(Option<&ViewAnimator>, Option<&ViewModelOffset>, Option<&crate::core::MapControls>)>,
+    anchors: AnchorQuery,
+    vm_cameras: Query<&Projection, With<ViewModelCamera>>,
+    models: Option<Res<ViewModels>>,
+    settings: Option<Res<ViewModelSettings>>,
+    third_person: Option<Res<ShowLocalBody>>,
+    mut place: ParamSet<(Query<(Entity, &AttachmentMark)>, TransformHelper, Query<(&mut AttachmentMark, &mut Transform)>)>,
+    mut commands: Commands,
+) {
+    let marks: Vec<(Entity, AttachmentMark)> = place.p0().iter().map(|(e, m)| (e, m.clone())).collect();
+    if marks.is_empty() {
+        return;
+    }
+    let now = time.elapsed_secs_f64();
+    let settings = settings.map(|s| *s).unwrap_or_default();
+    let third_person = third_person.is_some_and(|t| t.0);
+    let mut placed = Vec::new();
+    for (e, mark) in marks {
+        let Ok((view, offset, controls)) = owners.get(mark.owner) else {
+            commands.entity(e).try_despawn();
+            continue;
+        };
+        let fp = first_person_shown(
+            mark.owner,
+            view,
+            offset,
+            controls,
+            &anchors,
+            &vm_cameras,
+            models.as_deref(),
+            settings,
+            third_person,
+            now,
+        );
+        let at = fp.and_then(|f| {
+            let p = f.camera_point(&mark.at)?;
+            let p = f.fovs.map_or(p, |(w, v)| reproject(p, w, v));
+            let eye = place.p1().compute_global_transform(f.anchor).unwrap_or(f.eye);
+            Some(Transform { translation: eye.transform_point(p), rotation: eye.rotation(), scale: Vec3::ONE })
+        });
+        placed.push((e, at));
+    }
+    let mut q = place.p2();
+    for (e, at) in placed {
+        let Ok((mut mark, mut t)) = q.get_mut(e) else { continue };
+        if mark.shown != at.is_some() {
+            mark.shown = at.is_some();
+        }
+        if let Some(at) = at
+            && *t != at
+        {
+            *t = at;
+        }
+    }
 }
 
 /// The view model drawn for `owner` at an anchor, if one is (the drawing's
