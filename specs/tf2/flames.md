@@ -157,8 +157,9 @@ where marked):
 
 - Born at CP 0 (the muzzle), no velocity of its own.
 - Assigned to the active CP (the newest point) and **follows it**
-  ("Movement Follow CP", catch-up speed 100; inferred: it is pulled from
-  the muzzle onto its point and then moves with it; Open questions 1).
+  ("Movement Follow CP", catch-up speed 100; measured, Open questions 1:
+  it moves with its point and closes the gap at 100 units/s, so it
+  trails the point from the muzzle on).
 - Lifetime = its point's duration (0.5–0.7 s) ("Lifetime From Control
   Point Life Time"; inferred).
 - Radius = 23 × s_d × s_t where s_d = 0.5 + 0.5 × clamp(distance to CP 0
@@ -255,8 +256,22 @@ and drawn.
    exponential pull (fraction 100 × dt per step, i.e. effectively instant)
    or a speed in units/s (100 units/s would leave sprites far behind
    2450-unit/s points, so the first reading is far more likely). A
-   frame capture of the first 0.05 s of a burst would settle it. Until
-   then: place each core sprite at its point.
+   frame capture of the first 0.05 s of a burst would settle it.
+   **Measured (2026-11-19, tools/tf2ref, a puppet Pyro bot on ctf_2fort's
+   bridge firing level, filmed from the side 330 units away at 60
+   frames a second, and from the front with `tf_debug_flamethrower 1`
+   drawing the points' boxes):** neither reading as stated. The visible
+   fire does not sit on the points: its leading edge advances about
+   1300 units/s in the first frames (the points 2450), about 120 units
+   from the nozzle when the first point is some 200 out (0.15 s), and
+   the stream is drawn continuously from close to the nozzle to the
+   points' end, faint and violet near the nozzle; placed on their points
+   the sprites made only puffs at the stream's end. Read as: each sprite
+   moves with its point (the point's velocity) and closes the gap to it
+   at the catch-up value in units/s (100), so a sprite born at the muzzle
+   trails its point by tens of units for most of its life. The
+   fire's lateral extent at the stream's end (front view) is about 1.5x
+   what 23-unit sprites on those points give: open.
 2. The weapon also starts the same system name attached to its effect
    model's `muzzle` (the view model in first person) when a burst starts,
    with no point CPs. What that second instance draws (its sprites have

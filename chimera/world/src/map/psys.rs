@@ -348,11 +348,13 @@ pub enum Op {
         axis: Vec3,
         local: bool,
     },
-    /// "Movement Follow CP": each step the particle moves `catch_up` x
-    /// the step of the way to its own control point (`Init::
-    /// AssignTargetCp`; at 100 and steps of 0.01 s or more: onto it). 0
-    /// leaves it where it is. (specs/tf2/flames.md Open questions 1: read
-    /// as a pull of that fraction a second, not a speed.)
+    /// "Movement Follow CP": each step the particle moves with its own
+    /// control point (`Init::AssignTargetCp`; the point's velocity) and
+    /// closes the gap to it at `catch_up` units a second. 0 leaves it
+    /// where it is. (specs/tf2/flames.md Open questions 1, answered by
+    /// capture: TF2's flame sprites, born at the muzzle, trail their
+    /// points by tens of units along the whole stream; a pull onto the
+    /// point drew the stream as puffs at its end.)
     FollowCp {
         catch_up: f32,
     },

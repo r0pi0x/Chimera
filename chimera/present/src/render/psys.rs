@@ -17,8 +17,8 @@
 //! tag (`StopParticleSystems`: a gun's systems that run while it fires),
 //! with control points 1-63 and an active one from the tag's
 //! `ParticleControlPoints` each frame (TF2's flame points: "Assign target
-//! CP" gives each new particle the active one, "Movement Follow CP" pulls
-//! it onto its point by catch-up x step, "Lifetime From Control Point
+//! CP" gives each new particle the active one, "Movement Follow CP" moves
+//! it with its point and closes the gap at catch-up units a second, "Lifetime From Control Point
 //! Life Time" gives it the point's duration; specs/tf2/flames.md 3.3),
 //! "Remap Distance to Control Point to Scalar / Vector" each step (radius,
 //! alpha, tint), and `RunningSystems` (what the started systems show, for
@@ -39,8 +39,9 @@
 //! times a second; oscillate scalar, collision via traces and the visibility,
 //! cull and sleep settings aren't run (an unseen system freezes); control
 //! points 1-63 (`cpointN`) of a placed system all sit on the entity;
-//! "Movement Follow CP"'s catch-up is read as a fraction a second (onto the
-//! point at TF2's 100), and a particle whose point is never set stays where
+//! "Movement Follow CP" carries a particle by its point's velocity and
+//! closes the gap at catch-up units a second (fitted to TF2's flame
+//! stream seen from the side; the operator itself isn't public), and a particle whose point is never set stays where
 //! it was born; `$addself` sprite cards are
 //! blended with the overbright factor, not part-added; `tint_perc` is read
 //! as a blend in gamma space toward the light probe averaged over its six
@@ -71,6 +72,9 @@ pub struct ControlPoint {
     /// How long what it stands for lives, s (0: not set):
     /// `Init::LifetimeFromCp`.
     pub duration: f32,
+    /// How fast what it stands for moves (game units a second; zero when
+    /// not set): `Op::FollowCp` carries its particles along with it.
+    pub velocity: Vec3,
 }
 
 impl Default for ControlPoint {
@@ -80,6 +84,7 @@ impl Default for ControlPoint {
             rotation: Quat::IDENTITY,
             light: Vec3::ONE,
             duration: 0.0,
+            velocity: Vec3::ZERO,
         }
     }
 }
@@ -598,8 +603,14 @@ impl Instance {
                     && let Some(t) = p.target
                     && catch_up > 0.0
                 {
-                    let to = cp(t as usize).position;
-                    p.position = p.position.lerp(to, (catch_up * dt).min(1.0));
+                    // It moves with its point and closes the gap at
+                    // `catch_up` units a second (flames.md Open
+                    // questions 1, measured: Op::FollowCp).
+                    let c = cp(t as usize);
+                    p.position += c.velocity * dt;
+                    let gap = c.position - p.position;
+                    let close = catch_up * dt;
+                    p.position = if gap.length() <= close { c.position } else { p.position + gap.normalize() * close };
                 }
             }
             for o in &d.operators {
@@ -1133,6 +1144,7 @@ pub fn update_systems(
             rotation: Quat::from_xyzw(rotation.x, -rotation.z, rotation.y, rotation.w),
             light,
             duration: 0.0,
+            velocity: Vec3::ZERO,
         };
         let cps = [cp; MAX_CONTROL_POINTS];
         for i in &mut e.instances {
@@ -1220,6 +1232,7 @@ impl StartedSystems {
                 rotation,
                 light,
                 duration: 0.0,
+                velocity: Vec3::ZERO,
             },
             emit_for,
             follow: None,
@@ -1302,15 +1315,17 @@ pub struct RunningSystems(pub Vec<RunningSystem>);
 
 /// `psys_running`: the first call starts keeping `RunningSystems`, later
 /// ones print it (each started system: name, emitting, particle count,
-/// the first particles' places in game units and radii). A probe for
+/// the first four particles' places in game units and radii, every one
+/// with `all`). A probe for
 /// effect captures (docs/OBSERVABILITY.md 6, "TF2 as the reference").
 pub fn console(app: &mut App) {
     use chimera_core::console::ConsoleAppExt;
     app.console_command(
         "psys_running",
-        "psys_running: the started particle systems now (name, particles, first places in game units, radii); \
-         the first call starts watching.",
-        |w, _| {
+        "psys_running [all]: the started particle systems now (name, particles, the first four places in game units \
+         and radii, or every one with `all`); the first call starts watching.",
+        |w, args| {
+            let shown_max = if args.iter().any(|a| a == "all") { usize::MAX } else { 4 };
             let scale = w.get_resource::<ParticleSystemDefs>().map_or(1.0, |d| d.0.scale.max(1e-6));
             let Some(shown) = w.get_resource::<RunningSystems>() else {
                 w.init_resource::<RunningSystems>();
@@ -1318,11 +1333,21 @@ pub fn console(app: &mut App) {
             };
             let game = |v: Vec3| Vec3::new(v.x, -v.z, v.y) / scale;
             let mut out = format!("{} systems", shown.0.len());
-            for r in &shown.0 {
+            let all = shown_max == usize::MAX;
+            for r in &shown.0.clone() {
                 out.push_str(&format!("\n{}{}: {} particles", r.name, if r.emitting { " (emitting)" } else { "" }, r.particles.len()));
-                for ((p, _), radius) in r.particles.iter().zip(&r.radii).take(4) {
+                for ((p, cp), radius) in r.particles.iter().zip(&r.radii).take(shown_max) {
                     let g = game(*p);
                     out.push_str(&format!("\n  ({:.1} {:.1} {:.1}) r {radius:.2}", g.x, g.y, g.z));
+                    if let (true, Some(cp)) = (all, cp) {
+                        out.push_str(&format!(" cp {cp}"));
+                    }
+                }
+                // With `all`, the control points set on its tag too.
+                if let (true, Some(points)) = (all, r.tag.and_then(|t| w.get::<ParticleControlPoints>(t))) {
+                    for (i, c) in &points.points {
+                        out.push_str(&format!("\n  cp {i} at {:.1} {:.1} {:.1}", c.position.x, c.position.y, c.position.z));
+                    }
                 }
             }
             Ok(Some(out))
@@ -1456,6 +1481,7 @@ pub fn run_started_systems(
                 let at = ControlPoint {
                     position: to_game(p.position),
                     duration: p.duration,
+                    velocity: to_game(p.velocity),
                     ..ControlPoint::default()
                 };
                 (*n, at)
@@ -2018,7 +2044,7 @@ mod tests {
     }
 
     /// TF2's flame core (specs/tf2/flames.md 3.3): each sprite takes the
-    /// active control point, lives its duration, sits on it (catch-up
+    /// active control point, lives its duration, trails it (catch-up
     /// 100), its radius 23 x (0.5 to 1 over 0..64 units from control
     /// point 0) x (0.4 to 1 over its life) and its tint (0.2, 0.2, 1) to
     /// white over 0..200 units.
@@ -2063,12 +2089,18 @@ mod tests {
         cps[3] = ControlPoint { position: Vec3::new(120.0, 0.0, 0.0), duration: 0.6, ..ControlPoint::default() };
         // One sprite (0.01 s at 100/s), on control point 3.
         i.step_with(&defs, &cps, Some(3), 0.01, &mut rng, &none);
-        assert_eq!(i.placed(), vec![(Vec3::new(120.0, 0.0, 0.0), Some(3))]);
+        // Born at the muzzle (control point 0), it heads for its point at
+        // 100 units a second: at most a unit on in 0.01 s.
+        let (at, cp) = i.placed()[0];
+        assert_eq!(cp, Some(3));
+        assert!(at.y == 0.0 && at.z == 0.0 && (0.0..=1.0 + 1e-4).contains(&at.x), "{at}");
         let p = &i.particles[0];
         assert!((p.life - 0.6).abs() < 1e-6);
         // Half its life on, 120 from the muzzle: 23 x 1 x 0.7; tint 0.68.
         let mut q = p.clone();
         q.age = 0.3;
+        q.position = Vec3::new(120.0, 0.0, 0.0);
+        Instance::remap(&defs[0], &|n| cps[n], &mut q);
         assert!((Instance::radius(&defs[0], &q) - 16.1).abs() < 1e-3, "{}", Instance::radius(&defs[0], &q));
         let c = Instance::color(&defs[0], &q);
         assert!((c - Vec3::new(0.68, 0.68, 1.0)).length() < 1e-4, "{c}");
@@ -2080,10 +2112,26 @@ mod tests {
         q.age = 0.0;
         assert!((Instance::radius(&defs[0], &q) - 4.6).abs() < 1e-3);
         assert!((Instance::color(&defs[0], &q) - Vec3::new(0.2, 0.2, 1.0)).length() < 1e-5);
-        // The point moves: the sprite goes with it.
-        cps[3].position = Vec3::new(150.0, 0.0, 10.0);
-        at_muzzle.step_with(&defs, &cps, None, 0.01, &mut rng, &none);
-        assert_eq!(at_muzzle.placed()[0], (Vec3::new(150.0, 0.0, 10.0), Some(3)));
+        // The point moves: the sprite moves with it (its velocity) and
+        // closes the gap at 100 units a second, so it trails it (TF2's
+        // stream: sprites along the whole way from the muzzle).
+        let mut trailing = Instance::new(&defs, 0);
+        cps[3] = ControlPoint { position: Vec3::new(40.0, 0.0, 0.0), velocity: Vec3::new(1000.0, 0.0, 0.0), duration: 0.6, ..ControlPoint::default() };
+        trailing.step_with(&defs, &cps, Some(3), 0.01, &mut rng, &none);
+        let start = trailing.particles[0].position.x;
+        for _ in 0..20 {
+            cps[3].position += cps[3].velocity * 0.01;
+            trailing.step_with(&defs, &cps, None, 0.01, &mut rng, &none);
+        }
+        let x = trailing.particles[0].position.x;
+        // 0.2 s at 1000 units a second, plus 20 units of the gap closed.
+        assert!((x - (start + 200.0 + 20.0)).abs() < 1e-2, "{x} from {start}");
+        assert!(x < cps[3].position.x, "it trails its point");
+        // Close enough, it is on it.
+        cps[3].velocity = Vec3::ZERO;
+        cps[3].position = Vec3::new(x + 0.5, 0.0, 0.0);
+        trailing.step_with(&defs, &cps, None, 0.01, &mut rng, &none);
+        assert_eq!(trailing.particles[0].position, cps[3].position);
         // Without an active point a new sprite has none and stays put.
         let mut lone = Instance::new(&defs, 0);
         lone.step_with(&defs, &cps, None, 0.01, &mut rng, &none);

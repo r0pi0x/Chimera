@@ -178,3 +178,16 @@ Captured imagery stays in scratch, never in the repo.
   points stop about 286 units out (2450 units/s under drag 8.5/s for
   0.6 s, flames.md) and the sprites there rise; not an obstacle (checked
   against 2fort's brushes and by moving our body).
+- 2026-11-19 (fourth pass): tracers from the front are the same geometry
+  in both (a streak passing within ~20 units of the camera widens to tens
+  of pixels in TF2 too); TF2's fan downward because the stream starts at
+  the third-person muzzle, below the bot's eye (65-68, checked with
+  `spec_mode 4` + `getpos`), and ends far behind the camera. Flames: seen
+  from the side (`side.tf2`-style camera outside the bridge, 330 units
+  off) TF2 draws one continuous stream from near the nozzle; ours drew
+  puffs. Two causes: others' rounds reach a client in batches, so their
+  points were made together in one place (now played out one `emit`
+  apart, `flame::RemoteRounds`), and the sprites sat on their points
+  (now they move with them and close the gap at the catch-up value in
+  units/s, flames.md Open questions 1, measured). `psys_running all`
+  prints every particle with its control point, and the tag's points.

@@ -26,7 +26,8 @@
 //! - **The server's points** (`FlameStream`, `flames`, each tick) hurt;
 //!   **every drawing machine runs them again** (`FlameShown`,
 //!   `shown_flames`, each frame by its time) from the same rounds (its own
-//!   player's predicted, others' as `RemoteShot`) for the stream drawn on
+//!   player's predicted, others' as `RemoteShot`, played out one `emit`
+//!   apart, `RemoteRounds`: they arrive in batches) for the stream drawn on
 //!   them (`looks::flame_stream`).
 //! - **Hits** (`flames`): each tick every point whose swept box (half-size
 //!   `size`, 12) meets an enemy's box touches him; the oldest is the one
@@ -56,7 +57,8 @@
 //! the same everywhere), not the spawn tick and a per-Pyro seed; a point
 //! on a wall stops where its box touches (12 units off an axis-aligned
 //! surface; the game's slid remainder is traced once more); others'
-//! points start when their round arrives (no catch-up for the time it
+//! points start when their round's turn comes (one `emit` after the
+//! last, not at the server's spawn tick: no catch-up for the time it
 //! missed) and take the Pyro's velocity as this machine has it; this
 //! machine's own player's points are predicted (TF2's appear a network
 //! update late); the line from the eye to the muzzle isn't checked and a
@@ -365,6 +367,58 @@ pub struct FlameStream {
 pub struct FlameShown {
     pub points: Points,
     pub now: f64,
+    /// Others' rounds waiting for their turn (`RemoteRounds`).
+    pub remote: RemoteRounds,
+}
+
+/// Others' rounds, played out one `emit` apart (flames.md 1, "Client
+/// copy": TF2 makes each point at its own spawn tick). The server's
+/// rounds reach a client in batches (several in one update); made at
+/// once they were points in the same place, the stream drawn as a few
+/// separate puffs with every sprite between batches on the newest one.
+/// A round is made at the later of its arrival and one `emit` after the
+/// last one made; one held more than `REMOTE_HOLD_MAX` behind is made at
+/// once.
+#[derive(Clone, Debug, Default)]
+pub struct RemoteRounds {
+    pub waiting: std::collections::VecDeque<RemoteRound>,
+    /// When the last one was (or will be) made.
+    pub last: Option<f64>,
+}
+
+/// One of `RemoteRounds`: when to make it, from where, which way, its
+/// seed and the Pyro's velocity.
+#[derive(Clone, Copy, Debug)]
+pub struct RemoteRound {
+    pub at: f64,
+    pub eye: Vec3,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub seed: u32,
+    pub pyro: Vec3,
+}
+
+/// At most this long (s) a remote round waits behind the ones before it.
+pub const REMOTE_HOLD_MAX: f64 = 0.1;
+
+impl RemoteRounds {
+    /// A round that arrived at `now`: its turn after the last one, `emit`
+    /// s apart.
+    pub fn arrive(&mut self, now: f64, emit: f64, mut round: RemoteRound) {
+        let turn = self.last.map_or(now, |l| (l + emit).max(now));
+        round.at = if turn - now > REMOTE_HOLD_MAX { now } else { turn };
+        self.last = Some(round.at);
+        self.waiting.push_back(round);
+    }
+
+    /// The rounds whose turn has come by `now`, in order.
+    pub fn due(&mut self, now: f64) -> Vec<RemoteRound> {
+        let mut out = Vec::new();
+        while self.waiting.front().is_some_and(|r| r.at <= now + 1e-9) {
+            out.extend(self.waiting.pop_front());
+        }
+        out
+    }
 }
 
 /// On a burning character: the burn left (s), the next afterburn tick,
@@ -685,7 +739,16 @@ pub fn shown_flames(
     }
     for r in remote.read() {
         let Some(w) = owners.get(r.shooter).ok().and_then(|(i, _)| i.active) else { continue };
-        add(w, r.shooter, r.origin, r.yaw, r.pitch, r.seed);
+        let pyro = owners.get(r.shooter).ok().and_then(|(_, v)| v).map_or(Vec3::ZERO, |v| v.0);
+        let Ok((_, f, mut shown)) = guns.get_mut(w) else { continue };
+        let round = RemoteRound { at: now, eye: r.origin, yaw: r.yaw, pitch: r.pitch, seed: r.seed, pyro };
+        shown.remote.arrive(now, f.params.emit as f64, round);
+    }
+    for (_, f, mut shown) in &mut guns {
+        for r in shown.remote.due(now) {
+            let wet = world.wet(r.eye);
+            shown.points.round(&f.params, r.eye, r.yaw, r.pitch, r.seed, r.pyro, now, wet);
+        }
     }
     for (_, f, mut shown) in &mut guns {
         if shown.points.points.is_empty() && shown.points.last_round.is_none() {
@@ -831,6 +894,29 @@ mod tests {
         let a = p.point(Vec3::ONE, 0.3, -0.1, 42, Vec3::X, 1.0, 3);
         assert_eq!(a, p.point(Vec3::ONE, 0.3, -0.1, 42, Vec3::X, 1.0, 3));
         assert_ne!(a.velocity, p.point(Vec3::ONE, 0.3, -0.1, 43, Vec3::X, 1.0, 3).velocity);
+    }
+
+    #[test]
+    fn others_rounds_arriving_together_are_made_one_emit_apart() {
+        let round = RemoteRound { at: 0.0, eye: Vec3::ZERO, yaw: 0.0, pitch: 0.0, seed: 1, pyro: Vec3::ZERO };
+        let mut r = RemoteRounds::default();
+        // Three in one update at 1.0: made at 1.0, 1.02 and 1.04.
+        for _ in 0..3 {
+            r.arrive(1.0, 0.02, round);
+        }
+        assert_eq!(r.due(1.0).len(), 1);
+        assert_eq!(r.due(1.019).len(), 0);
+        assert_eq!(r.due(1.02).len(), 1);
+        assert_eq!(r.due(1.05).len(), 1);
+        // A batch far behind isn't held more than REMOTE_HOLD_MAX.
+        for _ in 0..10 {
+            r.arrive(2.0, 0.02, round);
+        }
+        assert!(r.waiting.iter().all(|w| w.at - 2.0 <= REMOTE_HOLD_MAX + 1e-9));
+        // A round after a pause is made when it arrives.
+        r.due(10.0);
+        r.arrive(10.0, 0.02, round);
+        assert_eq!(r.due(10.0).len(), 1);
     }
 
     #[test]
