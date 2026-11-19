@@ -547,6 +547,7 @@ fn posed_model() -> MapCharacterModel {
                 rotation: Some((0..7).map(|f| if f == 0 { upright } else { bent }).collect()),
                 position: None,
             }],
+            ik_targets: Vec::new(),
         }],
         sequences: vec![Sequence {
             name: "deathpose_front".into(),

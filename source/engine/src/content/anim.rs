@@ -4,7 +4,10 @@
 //! model (specs/cs_source/animation.md §1–§3, §8; an include's same-named
 //! sequence takes a forward-declared (0x800) one's slot, else the first
 //! wins: specs/tf2/player_animation.md 1a), with the autolayers' spline
-//! and pose-parameter ramps and the sequences' IK locks (5a). Animation
+//! and pose-parameter ramps, the sequences' IK locks (5a) and the
+//! animations' IK rules with their stored places (a chain's end relative
+//! to a bone per frame: TF2's Heavy's left hand on the Minigun, 4a,
+//! `Animation::ik_targets`). Animation
 //! data may sit
 //! in sections and in external `.ani` blocks (HL2 content such as the
 //! hostages' `humans/male_*` models, mdl_v48.md §8); data that is missing
@@ -31,7 +34,7 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::map::anim::{
-    AnimSet, Animation, AutoLayer, Axis, BonePose, IkChain, IkLock, IkRule, PoseParam, Sequence, Track, euler,
+    AnimSet, Animation, AutoLayer, Axis, BonePose, IkChain, IkLock, IkRule, IkTarget, PoseParam, Sequence, Track, euler,
 };
 
 /// Reads a file from the game (path relative to the game root).
@@ -115,6 +118,18 @@ struct RawSequence {
     events: Vec<crate::map::anim::AnimEvent>,
 }
 
+/// An IK rule as stored: chain, lock (kind 1) or release (4), the bone a
+/// lock holds the chain's end relative to, its ramp on the cycle, and
+/// the end's place and turn in that bone's frame per frame (empty: none
+/// stored).
+struct RawIkRule {
+    chain: usize,
+    lock: bool,
+    bone: Option<usize>,
+    ramp: [f32; 4],
+    targets: Vec<BonePose>,
+}
+
 /// An autolayer as stored: sequence, pose parameter (when ramped on
 /// one), flags, and the ramp (start, peak, tail, end).
 struct RawLayer {
@@ -138,8 +153,8 @@ struct Model {
     bones: Vec<Bone>,
     /// Animation descriptions: name and byte offset.
     anims: Vec<(String, usize)>,
-    /// Each animation's IK rules: (chain, lock), chains local.
-    anim_ik: Vec<Vec<(usize, bool)>>,
+    /// Each animation's IK rules, chains and bones local.
+    anim_ik: Vec<Vec<RawIkRule>>,
     /// IK chains: name and (root, middle, end) bones, local.
     ik_chains: Vec<(String, [usize; 3])>,
     sequences: Vec<RawSequence>,
@@ -188,9 +203,16 @@ fn parse(bytes: Vec<u8>) -> Result<Model, String> {
             Ok((b.name(o, o + 4)?, o))
         })
         .collect::<Result<_, String>>()?;
-    // IK rules (152 bytes each, read from the files: +4 kind, +8 chain;
-    // kind 1 locks the chain's end to a bone, 4 releases it), in this file
-    // only (animations streamed from `.ani` blocks keep none here).
+    // IK rules (152 bytes each, read from the files, specs/tf2/
+    // player_animation.md 4a): +4 kind, +8 chain, +12 bone, +60 the offset
+    // of its per-frame data (from the rule's start; 0: none), +76 to +88
+    // its ramp (start, peak, tail, end) on the cycle. Kind 1 holds the
+    // chain's end where the animation has it relative to the bone (TF2's
+    // Heavy: the left hand on `weapon_bone`); 4 releases the chain. The
+    // per-frame data: six scales (place x, y, z, then turn x, y, z as
+    // radians), then six offsets (16-bit, from the data's start; 0: zero)
+    // of run-length streams like the animations' tracks. In this file only
+    // (animations streamed from `.ani` blocks keep none here).
     let anim_ik = anims
         .iter()
         .map(|(_, o): &(String, usize)| {
@@ -198,15 +220,48 @@ fn parse(bytes: Vec<u8>) -> Result<Model, String> {
             if at == 0 {
                 return Ok(Vec::new());
             }
+            let frames = b.i32(o + 16)?.max(1) as usize;
             (0..n.min(16))
                 .filter_map(|k| {
                     let r = o + at + 152 * k;
-                    match (b.i32(r + 4), b.i32(r + 8)) {
-                        (Ok(1), Ok(c)) if c >= 0 => Some(Ok((c as usize, true))),
-                        (Ok(4), Ok(c)) if c >= 0 => Some(Ok((c as usize, false))),
-                        (Err(e), _) | (_, Err(e)) => Some(Err(e)),
-                        _ => None,
-                    }
+                    let rule = || -> Result<Option<RawIkRule>, String> {
+                        let (kind, chain) = (b.i32(r + 4)?, b.i32(r + 8)?);
+                        if chain < 0 || !(kind == 1 || kind == 4) {
+                            return Ok(None);
+                        }
+                        let bone = b.i32(r + 12)?;
+                        let data = b.i32(r + 60)?;
+                        // Unreadable stored places (another game's rule
+                        // kinds) leave the rule without them.
+                        let targets = || -> Result<Vec<BonePose>, String> {
+                            if kind != 1 || data <= 0 {
+                                return Ok(Vec::new());
+                            }
+                            let d = r + data as usize;
+                            let mut values: Vec<Vec<f32>> = Vec::with_capacity(6);
+                            for j in 0..6 {
+                                let scale = b.f32(d + 4 * j)?;
+                                let off = b.u16(d + 24 + 2 * j)? as usize;
+                                values.push(if off == 0 {
+                                    vec![0.0; frames]
+                                } else {
+                                    stream(&b, d + off, frames)?.into_iter().map(|v| v * scale).collect()
+                                });
+                            }
+                            Ok((0..frames)
+                                .map(|f| (euler(values[3][f], values[4][f], values[5][f]), Vec3::new(values[0][f], values[1][f], values[2][f])))
+                                .collect())
+                        };
+                        let targets = targets().unwrap_or_default();
+                        Ok(Some(RawIkRule {
+                            chain: chain as usize,
+                            lock: kind == 1,
+                            bone: (kind == 1 && bone >= 0).then_some(bone as usize),
+                            ramp: [b.f32(r + 76)?, b.f32(r + 80)?, b.f32(r + 84)?, b.f32(r + 88)?],
+                            targets,
+                        }))
+                    };
+                    rule().transpose()
                 })
                 .collect()
         })
@@ -950,6 +1005,27 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
         bases,
         ..default()
     };
+    // IK chains: first name wins; each model's chain → the merged one.
+    let mut chain_maps: Vec<Vec<Option<usize>>> = Vec::new();
+    for (mi, m) in models.iter().enumerate() {
+        let mut local = Vec::new();
+        for (name, bones) in &m.ik_chains {
+            let found = set.ik_chains.iter().position(|c| c.name.eq_ignore_ascii_case(name));
+            let mapped = bones.map(|b| bone_maps[mi].get(b).copied().flatten());
+            local.push(match (found, mapped) {
+                (Some(i), _) => Some(i),
+                (None, [Some(a), Some(b), Some(c)]) => {
+                    set.ik_chains.push(IkChain {
+                        name: name.to_lowercase(),
+                        bones: [a, b, c],
+                    });
+                    Some(set.ik_chains.len() - 1)
+                }
+                _ => None,
+            });
+        }
+        chain_maps.push(local);
+    }
     let mut anim_names: HashMap<String, usize> = HashMap::new();
     let mut anim_maps: Vec<Vec<usize>> = Vec::new();
     for (mi, m) in models.iter().enumerate() {
@@ -962,6 +1038,19 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
             }
             let mut anim = decode(m, a)?;
             anim.base = mi;
+            // Its IK locks' stored places (player_animation.md 4a).
+            anim.ik_targets = m.anim_ik[a]
+                .iter()
+                .filter(|r| r.lock && !r.targets.is_empty())
+                .filter_map(|r| {
+                    Some(IkTarget {
+                        chain: chain_maps[mi].get(r.chain).copied().flatten()?,
+                        bone: bone_maps[mi].get(r.bone?).copied().flatten()?,
+                        ramp: r.ramp,
+                        frames: r.targets.clone(),
+                    })
+                })
+                .collect();
             anim.tracks.retain_mut(|t| match bone_maps[mi][t.bone] {
                 Some(b) => {
                     t.bone = b;
@@ -1014,27 +1103,6 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
             }
         }
         param_maps.push(local);
-    }
-    // IK chains: first name wins; each model's chain → the merged one.
-    let mut chain_maps: Vec<Vec<Option<usize>>> = Vec::new();
-    for (mi, m) in models.iter().enumerate() {
-        let mut local = Vec::new();
-        for (name, bones) in &m.ik_chains {
-            let found = set.ik_chains.iter().position(|c| c.name.eq_ignore_ascii_case(name));
-            let mapped = bones.map(|b| bone_maps[mi].get(b).copied().flatten());
-            local.push(match (found, mapped) {
-                (Some(i), _) => Some(i),
-                (None, [Some(a), Some(b), Some(c)]) => {
-                    set.ik_chains.push(IkChain {
-                        name: name.to_lowercase(),
-                        bones: [a, b, c],
-                    });
-                    Some(set.ik_chains.len() - 1)
-                }
-                _ => None,
-            });
-        }
-        chain_maps.push(local);
     }
     // Sequences (specs/tf2/player_animation.md 1a): the model's, then its
     // includes' depth first; a new name is appended; a name already there
@@ -1094,10 +1162,10 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
                     .and_then(|a| m.anim_ik.get(*a))
                     .into_iter()
                     .flatten()
-                    .filter_map(|(c, lock)| {
+                    .filter_map(|r| {
                         Some(IkRule {
-                            chain: chain_maps[mi].get(*c).copied().flatten()?,
-                            lock: *lock,
+                            chain: chain_maps[mi].get(r.chain).copied().flatten()?,
+                            lock: r.lock,
                         })
                     })
                     .collect(),

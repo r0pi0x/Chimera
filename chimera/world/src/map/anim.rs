@@ -12,7 +12,11 @@
 //! rules and IK locks), the blend/layer math (a layer's IK-locked chain
 //! ends put back where the pose underneath had them when the animator
 //! asks, `Animator::ik_locks`: TF2's feet under aim matrices,
-//! specs/tf2/player_animation.md 4a, 5a), two-bone IK (`solve_ik`: a chain's end onto a
+//! specs/tf2/player_animation.md 4a, 5a; the animations' IK rules' stored
+//! places, a chain's end held relative to a bone, blended by the grid's
+//! cell weights and folded through the layers, then solved on the whole
+//! pose when the animator asks, `Animator::ik_rules`: TF2's Heavy's left
+//! hand on the Minigun, 4a), two-bone IK (`solve_ik`: a chain's end onto a
 //! bone, e.g. hands onto a weapon's grips), and the `Animator` component that
 //! `pose_bodies` turns into body joint transforms; games drive it in
 //! `DriveAnimation`.
@@ -97,6 +101,68 @@ pub struct Animation {
     #[serde(default)]
     pub motion: Vec2,
     pub tracks: Vec<Track>,
+    /// Its IK rules' stored places: where a chain's end sits relative to a
+    /// bone in each frame (Source's IK rules with stored data; TF2's
+    /// Heavy's aim cells hold the left hand on the Minigun,
+    /// specs/tf2/player_animation.md 4a). Used when the animator asks
+    /// (`Animator::ik_rules`).
+    #[serde(default)]
+    pub ik_targets: Vec<IkTarget>,
+}
+
+/// An animation's IK rule with stored places: chain `chain`'s end held at
+/// `frames[f]` (rotation, position) in bone `bone`'s frame, weighted by
+/// `ramp` (start, peak, tail, end) on the cycle (all equal: always 1).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct IkTarget {
+    /// `AnimSet::ik_chains` index.
+    pub chain: usize,
+    /// Target bone index.
+    pub bone: usize,
+    pub ramp: [f32; 4],
+    pub frames: Vec<BonePose>,
+}
+
+impl IkTarget {
+    /// The rule's weight at `cycle` from its ramp.
+    pub fn weight(&self, cycle: f32) -> f32 {
+        let [start, peak, tail, end] = self.ramp;
+        if start == end {
+            return 1.0;
+        }
+        if cycle < start || cycle > end {
+            0.0
+        } else if cycle < peak {
+            (cycle - start) / (peak - start)
+        } else if cycle > tail {
+            (end - cycle) / (end - tail)
+        } else {
+            1.0
+        }
+    }
+
+    /// The stored place at `cycle` (frames interpolated).
+    pub fn at(&self, cycle: f32) -> Option<BonePose> {
+        let n = self.frames.len();
+        let first = *self.frames.first()?;
+        if n == 1 {
+            return Some(first);
+        }
+        let f = cycle.clamp(0.0, 1.0) * (n - 1) as f32;
+        let i = (f as usize).min(n - 2);
+        let t = f - i as f32;
+        let (a, b) = (self.frames[i], self.frames[i + 1]);
+        Some((nlerp(a.0, b.0, t), a.1.lerp(b.1, t)))
+    }
+}
+
+/// One chain's goal from the IK rules so far (`AnimSet::rule_goals`): its
+/// end's place in the target bone's frame and how strongly it is held.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RuleGoal {
+    pub bone: usize,
+    pub place: BonePose,
+    pub weight: f32,
 }
 
 /// One bone's values per frame (one entry: constant); None keeps the
@@ -528,46 +594,57 @@ impl AnimSet {
             return;
         }
         for g in goals {
-            let (Some(chain), true) = (self.ik_chains.get(g.chain), g.weight > 0.0) else {
-                continue;
-            };
-            let global = model_space(pose, &self.parents);
-            let [a, b, c] = chain.bones;
-            if [a, b, c, g.target].iter().any(|i| *i >= pose.len()) {
+            if g.target >= pose.len() {
                 continue;
             }
-            let w = g.weight.min(1.0);
-            let (target_q, target_p) = global[g.target];
-            let goal_p = global[c].1.lerp(target_p, w);
-            let goal_q = slerp(global[c].0, target_q, w);
-            let (sa, eb, hc) = (global[a].1, global[b].1, global[c].1);
-            let (upper, lower) = (eb.distance(sa), hc.distance(eb));
-            let to_goal = goal_p - sa;
-            let d = to_goal.length().clamp((upper - lower).abs() + 1e-3, upper + lower - 1e-3);
-            let Some(dir) = to_goal.try_normalize() else { continue };
-            // The elbow stays on its side of the shoulder-goal line.
-            let bend = (eb - sa)
-                .reject_from_normalized(dir)
-                .try_normalize()
-                .unwrap_or_else(|| dir.any_orthonormal_vector());
-            let along = (upper * upper - lower * lower + d * d) / (2.0 * d);
-            let elbow = sa + dir * along + bend * (upper * upper - along * along).max(0.0).sqrt();
-            // Turn the upper bone onto the new elbow, then the lower one onto the goal.
-            let turn_a = Quat::from_rotation_arc((eb - sa).normalize_or_zero(), (elbow - sa).normalize_or_zero());
-            let qa = turn_a * global[a].0;
-            let lower_now = turn_a * (hc - eb);
-            let reach = sa + dir * d;
-            let turn_b = Quat::from_rotation_arc(lower_now.normalize_or_zero(), (reach - elbow).normalize_or_zero());
-            let qb = turn_b * turn_a * global[b].0;
-            let parent_q = |i: usize, own: &[(Quat, Vec3)]| self.parents[i].map_or(Quat::IDENTITY, |p| own[p].0);
-            let mut own = global.clone();
-            own[a].0 = qa;
-            own[b].0 = qb;
-            own[c].0 = goal_q;
-            pose[a].0 = (parent_q(a, &own).inverse() * qa).normalize();
-            pose[b].0 = (parent_q(b, &own).inverse() * qb).normalize();
-            pose[c].0 = (parent_q(c, &own).inverse() * goal_q).normalize();
+            let target = model_space(pose, &self.parents)[g.target];
+            self.reach(pose, g.chain, target, g.weight);
         }
+    }
+
+    /// Bend chain `chain` so its end moves toward `target` (model-space
+    /// turn and place) by `weight`, keeping the elbow in the plane it bent
+    /// in.
+    fn reach(&self, pose: &mut [BonePose], chain: usize, target: BonePose, weight: f32) {
+        let (Some(chain), true) = (self.ik_chains.get(chain), weight > 0.0) else {
+            return;
+        };
+        let global = model_space(pose, &self.parents);
+        let [a, b, c] = chain.bones;
+        if [a, b, c].iter().any(|i| *i >= pose.len()) {
+            return;
+        }
+        let w = weight.min(1.0);
+        let (target_q, target_p) = target;
+        let goal_p = global[c].1.lerp(target_p, w);
+        let goal_q = slerp(global[c].0, target_q, w);
+        let (sa, eb, hc) = (global[a].1, global[b].1, global[c].1);
+        let (upper, lower) = (eb.distance(sa), hc.distance(eb));
+        let to_goal = goal_p - sa;
+        let d = to_goal.length().clamp((upper - lower).abs() + 1e-3, upper + lower - 1e-3);
+        let Some(dir) = to_goal.try_normalize() else { return };
+        // The elbow stays on its side of the shoulder-goal line.
+        let bend = (eb - sa)
+            .reject_from_normalized(dir)
+            .try_normalize()
+            .unwrap_or_else(|| dir.any_orthonormal_vector());
+        let along = (upper * upper - lower * lower + d * d) / (2.0 * d);
+        let elbow = sa + dir * along + bend * (upper * upper - along * along).max(0.0).sqrt();
+        // Turn the upper bone onto the new elbow, then the lower one onto the goal.
+        let turn_a = Quat::from_rotation_arc((eb - sa).normalize_or_zero(), (elbow - sa).normalize_or_zero());
+        let qa = turn_a * global[a].0;
+        let lower_now = turn_a * (hc - eb);
+        let reach = sa + dir * d;
+        let turn_b = Quat::from_rotation_arc(lower_now.normalize_or_zero(), (reach - elbow).normalize_or_zero());
+        let qb = turn_b * turn_a * global[b].0;
+        let parent_q = |i: usize, own: &[(Quat, Vec3)]| self.parents[i].map_or(Quat::IDENTITY, |p| own[p].0);
+        let mut own = global.clone();
+        own[a].0 = qa;
+        own[b].0 = qb;
+        own[c].0 = goal_q;
+        pose[a].0 = (parent_q(a, &own).inverse() * qa).normalize();
+        pose[b].0 = (parent_q(b, &own).inverse() * qb).normalize();
+        pose[c].0 = (parent_q(c, &own).inverse() * goal_q).normalize();
     }
 
     /// Merge sequence `s` at `cycle` and `weight` into `pose`, then its
@@ -611,34 +688,136 @@ impl AnimSet {
             }
         }
         for l in &seq.autolayers {
-            // The ramp's position: the parent's cycle, or a pose
-            // parameter's value (5a step 4).
-            let at = match l.param.and_then(|p| Some((self.params.get(p)?, params.get(p)?))) {
-                Some((p, n)) => n * (p.end - p.start) + p.start,
-                None => cycle,
-            };
-            let ramped = l.start != l.end && !(l.start.is_nan() || l.end.is_nan());
-            if !ramped {
-                self.accumulate_depth(pose, l.sequence, cycle, weight, params, locks, depth + 1);
-                continue;
+            if let Some((c, r)) = self.layer_ramp(l, cycle, params) {
+                self.accumulate_depth(pose, l.sequence, c, weight * r, params, locks, depth + 1);
             }
-            if at < l.start || at >= l.end {
-                continue;
-            }
-            let mut r = 1.0;
-            if at < l.peak && l.start != l.peak {
-                r = (at - l.start) / (l.peak - l.start);
-            } else if at > l.tail && l.end != l.tail {
-                r = (l.end - at) / (l.end - l.tail);
-            }
-            if l.spline {
-                r = 3.0 * r * r - 2.0 * r * r * r;
-            }
-            // A layer ramped on a parameter plays on the parent's cycle.
-            let c = if l.param.is_some() { cycle } else { (cycle - l.start) / (l.end - l.start) };
-            self.accumulate_depth(pose, l.sequence, c, weight * r, params, locks, depth + 1);
         }
         self.solve_locks(pose, &locked);
+    }
+
+    /// An autolayer's cycle and weight under a parent at `cycle` (5a step
+    /// 4), None when it is off: the ramp on the parent's cycle or a pose
+    /// parameter's value (start = end: always on, on the parent's cycle),
+    /// eased by a spline when flagged.
+    fn layer_ramp(&self, l: &AutoLayer, cycle: f32, params: &[f32]) -> Option<(f32, f32)> {
+        let at = match l.param.and_then(|p| Some((self.params.get(p)?, params.get(p)?))) {
+            Some((p, n)) => n * (p.end - p.start) + p.start,
+            None => cycle,
+        };
+        let ramped = l.start != l.end && !(l.start.is_nan() || l.end.is_nan());
+        if !ramped {
+            return Some((cycle, 1.0));
+        }
+        if at < l.start || at >= l.end {
+            return None;
+        }
+        let mut r = 1.0;
+        if at < l.peak && l.start != l.peak {
+            r = (at - l.start) / (l.peak - l.start);
+        } else if at > l.tail && l.end != l.tail {
+            r = (l.end - at) / (l.end - l.tail);
+        }
+        if l.spline {
+            r = 3.0 * r * r - 2.0 * r * r * r;
+        }
+        // A layer ramped on a parameter plays on the parent's cycle.
+        let c = if l.param.is_some() { cycle } else { (cycle - l.start) / (l.end - l.start) };
+        Some((c, r))
+    }
+
+    /// The grid cells sequence `s` blends at `params` and their weights
+    /// (the triangle blend of `sequence_pose`, §5).
+    pub fn cell_weights(&self, s: usize, params: &[f32]) -> Vec<(usize, f32)> {
+        let seq = &self.sequences[s];
+        let (i0, s0) = self.axis(seq, 0, params);
+        let (i1, s1) = self.axis(seq, 1, params);
+        let cell = |x: usize, y: usize| Self::cell(seq, x, y);
+        let edge = |s: f32| if s < 0.001 { Some(0) } else if s > 0.999 { Some(1) } else { None };
+        match (edge(s0), edge(s1)) {
+            (Some(e0), Some(e1)) => vec![(cell(i0 + e0, i1 + e1), 1.0)],
+            (Some(e0), None) => vec![(cell(i0 + e0, i1), 1.0 - s1), (cell(i0 + e0, i1 + 1), s1)],
+            (None, Some(e1)) => vec![(cell(i0, i1 + e1), 1.0 - s0), (cell(i0 + 1, i1 + e1), s0)],
+            (None, None) => {
+                let (c, w) = triangle(i0, i1, s0, s1);
+                c.iter().zip(w).filter(|(_, w)| *w > 0.0).map(|(c, w)| (cell(c.0, c.1), w)).collect()
+            }
+        }
+    }
+
+    /// Fold sequence `s`'s IK rules at `cycle` and `weight`, then its
+    /// autolayers', into `goals` (per chain; specs/tf2/player_animation.md
+    /// 4a): a release lets the chain go by the weight; a lock with stored
+    /// places (its cells' blended by the grid's weights, each by its
+    /// ramp) pulls the goal toward its place by the weight.
+    pub fn rule_goals(&self, s: usize, cycle: f32, weight: f32, params: &[f32], goals: &mut [Option<RuleGoal>]) {
+        self.rule_goals_depth(s, cycle, weight, params, goals, 0);
+    }
+
+    fn rule_goals_depth(&self, s: usize, cycle: f32, weight: f32, params: &[f32], goals: &mut [Option<RuleGoal>], depth: u32) {
+        let weight = weight.clamp(0.0, 1.0);
+        let Some(seq) = self.sequences.get(s).filter(|_| weight > 0.0 && depth <= 8) else {
+            return;
+        };
+        let cycle = wrap_cycle(cycle, seq.looping);
+        for r in seq.ik_rules.iter().filter(|r| !r.lock) {
+            if let Some(Some(g)) = goals.get_mut(r.chain) {
+                g.weight *= 1.0 - weight;
+            }
+        }
+        let cells = if seq.anims.iter().any(|&a| self.animations.get(a).is_some_and(|a| !a.ik_targets.is_empty())) {
+            self.cell_weights(s, params)
+        } else {
+            Vec::new()
+        };
+        for chain in 0..goals.len() {
+            // The cells' places for this chain, blended by their weights.
+            let (mut sum, mut bone, mut q, mut p) = (0.0f32, None, Quat::IDENTITY, Vec3::ZERO);
+            for &(a, w) in &cells {
+                let Some(t) = self.animations.get(a).and_then(|a| a.ik_targets.iter().find(|t| t.chain == chain)) else {
+                    continue;
+                };
+                let (Some(place), w) = (t.at(cycle), w * t.weight(cycle)) else { continue };
+                if w <= 0.0 || bone.is_some_and(|b| b != t.bone) {
+                    continue;
+                }
+                bone = Some(t.bone);
+                sum += w;
+                q = if sum == w { place.0 } else { nlerp(q, place.0, w / sum) };
+                p = p.lerp(place.1, w / sum);
+            }
+            let Some(bone) = bone.filter(|_| sum > 0.0) else { continue };
+            let w = weight * sum.min(1.0);
+            let g = &mut goals[chain];
+            *g = Some(match *g {
+                Some(old) if old.bone == bone && old.weight > 0.0 => {
+                    let total = old.weight + (1.0 - old.weight) * w;
+                    let t = w / total;
+                    RuleGoal { bone, place: (nlerp(old.place.0, q, t), old.place.1.lerp(p, t)), weight: total }
+                }
+                _ => RuleGoal { bone, place: (q, p), weight: w },
+            });
+        }
+        for l in &seq.autolayers {
+            if let Some((c, r)) = self.layer_ramp(l, cycle, params) {
+                self.rule_goals_depth(l.sequence, c, weight * r, params, goals, depth + 1);
+            }
+        }
+    }
+
+    /// Bend each goal's chain so its end reaches the goal's place in its
+    /// bone's frame (from this pose), by the goal's weight
+    /// (`rule_goals`).
+    pub fn solve_rule_goals(&self, pose: &mut [BonePose], goals: &[Option<RuleGoal>]) {
+        if self.parents.len() != pose.len() {
+            return;
+        }
+        for (chain, g) in goals.iter().enumerate() {
+            let Some(g) = g.filter(|g| g.weight > 0.0 && g.bone < pose.len()) else { continue };
+            let global = model_space(pose, &self.parents);
+            let (bq, bp) = global[g.bone];
+            let target = (bq * g.place.0, bp + bq * g.place.1);
+            self.reach(pose, chain, target, g.weight);
+        }
     }
 
     /// Each lock's chain end in model space now (with the lock).
@@ -872,6 +1051,10 @@ pub struct Animator {
     /// (`AnimSet::accumulate_locked`): TF2's players' feet under the aim
     /// matrices and gestures.
     pub ik_locks: bool,
+    /// Pull chains to their animations' IK rules' stored places after the
+    /// layers (`AnimSet::rule_goals`, `solve_rule_goals`): TF2's Heavy's
+    /// left hand on the Minigun.
+    pub ik_rules: bool,
     /// A pose the game laid out itself (its own layering and bone
     /// controllers: Combat Arms' trackers and aim), one per bone:
     /// `pose` returns it as it is, and the sequences above are ignored.
@@ -1055,6 +1238,23 @@ impl Animator {
                 acc(&mut pose, s, 0.0, 1.0, &self.params);
             }
         }
+        if self.ik_rules && !set.ik_chains.is_empty() {
+            // The rules in the layers' order, then solved on the whole pose.
+            let mut goals = vec![None; set.ik_chains.len()];
+            if let Some(s) = self.main {
+                set.rule_goals(s, self.cycle, 1.0, &self.params, &mut goals);
+            }
+            for f in &self.fading {
+                set.rule_goals(f.sequence, f.cycle, f.weight(now), &self.params, &mut goals);
+            }
+            for l in self.layers.iter().flatten() {
+                if let Some(seq) = set.sequences.get(l.sequence) {
+                    let cycle = if seq.looping { wrap_cycle(l.cycle, true) } else { l.cycle.clamp(0.0, 0.999) };
+                    set.rule_goals(l.sequence, cycle, l.weight.min(1.0), &self.params, &mut goals);
+                }
+            }
+            set.solve_rule_goals(&mut pose, &goals);
+        }
         set.solve_ik(&mut pose, &self.ik);
         pose
     }
@@ -1152,6 +1352,60 @@ mod tests {
         set.solve_ik(&mut pose, &[goal]);
         let g = model_space(&pose, &set.parents);
         assert!(g[2].1.distance(Vec3::new(0.0, 18.0, 0.0)) < 0.01, "{:?}", g[2].1);
+    }
+
+    /// IK rules with stored places (specs/tf2/player_animation.md 4a):
+    /// two grid cells hold the arm's end at different places relative to
+    /// bone 3; half-way between them the goal is the blend, the solved
+    /// end lands there in bone 3's frame, a release from a later layer
+    /// lets it go by its weight, and without `ik_rules` nothing moves.
+    #[test]
+    fn ik_rules_hold_a_chain_relative_to_a_bone() {
+        let x = Vec3::X;
+        let defaults = vec![
+            (Quat::IDENTITY, Vec3::ZERO),
+            (Quat::IDENTITY, x * 10.0),
+            (Quat::from_rotation_z(0.3), x * 8.0),
+            (Quat::from_rotation_y(0.5), Vec3::new(6.0, 7.0, 1.0)),
+        ];
+        let place = |p: Vec3| IkTarget { chain: 0, bone: 3, ramp: [0.0, 0.0, 1.0, 1.0], frames: vec![(Quat::IDENTITY, p)] };
+        let anim = |t: Option<IkTarget>| Animation { fps: 30.0, frames: 1, delta: true, ik_targets: t.into_iter().collect(), ..default() };
+        let sequence = |anims: Vec<usize>, rules: Vec<IkRule>| Sequence {
+            delta: true,
+            looping: true,
+            grid: (anims.len(), 1),
+            anims,
+            axes: [Axis { param: Some(0), keys: vec![], range: (0.0, 1.0) }, Axis::default()],
+            bone_weights: vec![1.0; 4],
+            ik_rules: rules,
+            ..default()
+        };
+        let set = Arc::new(AnimSet {
+            defaults: defaults.clone(),
+            bases: vec![defaults.clone()],
+            parents: vec![None, Some(0), Some(1), None],
+            ik_chains: vec![IkChain { name: "arm".into(), bones: [0, 1, 2] }],
+            animations: vec![anim(Some(place(Vec3::new(1.0, 2.0, 0.0)))), anim(Some(place(Vec3::new(3.0, 2.0, 0.0)))), anim(None)],
+            sequences: vec![sequence(vec![0, 1], vec![]), sequence(vec![2], vec![IkRule { chain: 0, lock: false }])],
+            params: vec![PoseParam { name: "p".into(), start: 0.0, end: 1.0, looping: 0.0 }],
+            ..default()
+        });
+        let mut a = Animator::new(set.clone());
+        a.main = Some(0);
+        a.params[0] = 0.5;
+        let end_in_bone = |a: &Animator| {
+            let g = model_space(&a.pose(0.0), &set.parents);
+            g[3].0.inverse() * (g[2].1 - g[3].1)
+        };
+        let free = end_in_bone(&a);
+        a.ik_rules = true;
+        let held = end_in_bone(&a);
+        assert!(held.distance(Vec3::new(2.0, 2.0, 0.0)) < 1e-3, "the cells' blend: {held}");
+        assert!(free.distance(held) > 1.0, "without ik_rules the end stays: {free}");
+        // A release at half weight: half-way back.
+        a.layers = vec![Some(Layer { sequence: 1, cycle: 0.0, weight: 0.5 })];
+        let half = end_in_bone(&a);
+        assert!(half.distance(held) > 0.1 && half.distance(free) > 0.1, "{half}");
     }
 
     #[test]

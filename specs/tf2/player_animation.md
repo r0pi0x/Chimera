@@ -109,8 +109,9 @@ name onto `weapon_bone` and its siblings under the right hand.
 - Minigun spin gestures "own animation empty (delta, all zero)" -> the
   gesture sequence itself is non-additive with **all bone weights 0**
   (it contributes nothing); its autolayer `layer_attackStand_PRIMARY_spoolup`
-  (or `…_spooldown`) is a **full-body, non-additive** pose with every
-  bone weight 1, which overrides the body while it is ramped in and then
+  (or `…_spooldown`) is a **full-body, non-additive** pose with bone
+  weights 0.5 to 1 (the first reading said every bone weight 1: §6,
+  2026-11-19 implementation note), which overrides the body while it is ramped in and then
   re-adds the aim matrices (§5a, §6).
 - Aim matrices and most gestures carry **foot IK locks** (both feet,
   position weight 1): an aim or gesture layer never moves the feet (§4a).
@@ -588,6 +589,44 @@ the ground; a Scout crouch-walking at 133 (a third of 400) has |move| =
   of cells keep the left hand on the Minigun); the main and spin
   sequences release all four chains. This needs the client's IK
   context, which TF2's players have.
+- **The rule on disk** (2026-11-19, read in place from
+  `heavy_animations.mdl`; implementation pass): an animation description
+  lists its IK rules at +60 (count) and +64 (offset from the
+  description), 152 bytes each. In a rule: +4 the kind (1 = hold the
+  chain's end relative to a bone, the "self" rule; 4 = release), +8 the
+  chain (the model's IK chain index: 0 `rhand`, 1 `lhand`, 2 `rfoot`,
+  3 `lfoot`), +12 the bone (19 = `weapon_bone` in the Heavy's models), +16
+  a slot (the chain again in every rule read), +60 the offset of the
+  rule's per-frame data counted from the rule's own start (152: right
+  after it; 0 when there is none, as in every release), and +76, +80,
+  +84, +88 a ramp on the cycle (start, peak, tail, end; (0, 0, 1, 1) in
+  every rule read: full throughout). The other fields read 0. The
+  per-frame data: six 32-bit scales (place x, y, z; turn x, y, z), then
+  six 16-bit offsets counted from the data's start (0: the value is 0),
+  each to a run-length stream of 16-bit values in the same format as an
+  animation's tracks (a byte of stored values, a byte of frames covered,
+  the values; past the stored ones the last repeats), one value per frame
+  of the animation, times its scale. The six values are the chain end's
+  (`bip_hand_L`) place in the bone's frame and its turn there as
+  x, y, z Euler angles in radians, composed as the tracks' rotations.
+  Values: every cell of `PRIMARY_aimmatrix_idle`, `…_run`,
+  `…_crouch_idle` and `…_deployed_crouch` (3 × 3 plus `straight_up`)
+  holds the hand at (13.2, 4.0, 27.4) turned (−2.29, −1.05, 1.11);
+  `PRIMARY_aimmatrix_deployed` at (6.3, 8.4, 27.5) in its `down` and
+  `mid` rows, (9.5, 4.5, 28.5) in its `up` row and (10.0, −4.9, 21.8) at
+  `straight_up`; each `…_neutral` animation instead carries two releases
+  (`rhand`, `lhand`). In the centre pose the stored place is where the
+  animation already has the hand (`stand_PRIMARY` with the idle aim:
+  within 0.5 units), so the rule only acts off centre.
+- **Applying it** (ours where the data is silent): the rules are taken in
+  the layers' order (the main sequence, then each autolayer, the fading
+  sequences, then the gestures, each by its weight times its ramps); a
+  release lets the chain go by its weight; a hold with stored data blends
+  the cells' stored places by the grid's cell weights (the same triangle
+  weights as the pose) and pulls the chain's goal toward that place by
+  its weight. After all layers the chain is bent two-bone style (the
+  elbow kept in the plane it bends in) so its end lands at the bone's
+  final place times the goal, and the end takes the goal's turn.
 
 ### 5. Gestures (additive overlays)
 
@@ -734,8 +773,8 @@ Data (all `heavy_animations.mdl`):
 
 | Activity | Sequence | Shape |
 |---|---|---|
-| `ACT_MP_ATTACK_STAND_PREFIRE` | `attackStand_PRIMARY_spoolup` | 16 f, 0.5 s, flags 0 (non-additive, not looping), **every bone weight 0** (its animation is flagged delta + all zero): contributes nothing itself. One autolayer, `layer_attackStand_PRIMARY_spoolup`, ramp (0, 0.667, 1, 1) spline: in over cycle 0–0.667, full until the end. That layer: 16 f, flags 0 (**non-additive full-body pose**, every bone weight 1, its own animation of the gun coming down), fade 0.7; its autolayers `PRIMARY_aimmatrix_idle` ramp (0, 0, 0, 0.333) spline (out over 0–0.333) and `PRIMARY_aimmatrix_deployed` ramp (0, 0.333, 1, 1) spline (in over 0–0.333) |
-| `ACT_MP_ATTACK_STAND_POSTFIRE` | `attackStand_PRIMARY_spooldown` | 31 f, 1.0 s, flags 0, every bone weight 0; autolayer `layer_attackStand_PRIMARY_spooldown` ramp (0, 0, 0.667, 1) spline (full, out over 0.667–1). That layer: 31 f, non-additive full body (the gun going back up), fade 0.5; its autolayers `PRIMARY_aimmatrix_deployed` (0, 0, 0, 0.333) out, `PRIMARY_aimmatrix_idle` (0, 0.333, 1, 1) in |
+| `ACT_MP_ATTACK_STAND_PREFIRE` | `attackStand_PRIMARY_spoolup` | 16 f, 0.5 s, flags 0 (non-additive, not looping), **every bone weight 0** (its animation is flagged delta + all zero): contributes nothing itself. One autolayer, `layer_attackStand_PRIMARY_spoolup`, ramp (0, 0.667, 1, 1) spline: in over cycle 0–0.667, full until the end. That layer: 16 f, flags 0 (**non-additive full-body pose**, its own animation of the gun coming down; bone weights as `attackStand_PRIMARY`'s: 0.5 at the pelvis, legs, feet, `mvm` and the `prop_bone`s, 0.6 to 0.9 up the spine and on the left arm and hand, 1 on the neck, head, right arm, `weapon_bone` and the rest; see the 2026-11-19 implementation note below the timelines), fade 0.7; its autolayers `PRIMARY_aimmatrix_idle` ramp (0, 0, 0, 0.333) spline (out over 0–0.333) and `PRIMARY_aimmatrix_deployed` ramp (0, 0.333, 1, 1) spline (in over 0–0.333) |
+| `ACT_MP_ATTACK_STAND_POSTFIRE` | `attackStand_PRIMARY_spooldown` | 31 f, 1.0 s, flags 0, every bone weight 0; autolayer `layer_attackStand_PRIMARY_spooldown` ramp (0, 0, 0.667, 1) spline (full, out over 0.667–1). That layer: 31 f, non-additive full body with the same bone weights (the gun going back up), fade 0.5; its autolayers `PRIMARY_aimmatrix_deployed` (0, 0, 0, 0.333) out, `PRIMARY_aimmatrix_idle` (0, 0.333, 1, 1) in |
 | `ACT_MP_ATTACK_CROUCH_PREFIRE` / `POSTFIRE` | `attackCrouch_PRIMARY_spoolup` / `_spooldown` | 16 f, 0.5 s each, same build: layer `layer_attackCrouch_PRIMARY_spoolup` (ramp (0, 0, 1, 1): full from the start) / `…_spooldown` (ramp (0, 0, 1, 1)), with `PRIMARY_aimmatrix_crouch_idle` ↔ `PRIMARY_aimmatrix_deployed_crouch` cross-fades as the stand ones |
 | `ACT_MP_ATTACK_SWIM_PREFIRE` / `POSTFIRE` | `attackSwim_PRIMARY_spoolup` / `_spooldown` | 16 f, 0.5 s, non-additive with every bone weight 1 (a full-body pose of its own), no layers |
 | `ACT_MP_DEPLOYED_IDLE` | `stand_deployed_PRIMARY` | 61 f, 2.0 s, loop; aim `PRIMARY_aimmatrix_deployed` |
@@ -802,16 +841,31 @@ cross-fading over 0.2 s, the gesture on top; elevation of the barrels):
 | t after the wind-up starts | 0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.49 | 0.5 (gesture over) |
 |---|---|---|---|---|---|---|---|
 | main only | 34° | 18° | 1.4° | 1.4° | 1.3° | 1.3° | 1.3° |
-| with the spin-up layer (its weight) | 34° (0) | 19° (0.22) | 5° (0.65) | 2° (0.97) | 5° (1) | 8° (1) | 1.3° |
+| with the spin-up layer (its weight) | 34° (0) | 21° (0.22) | 6° (0.65) | 2° (0.97) | 5° (1) | 7.5° (1) | 1.3° |
 
 | t after the wind-down starts | 0 | 0.2 | 0.4 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0 |
 |---|---|---|---|---|---|---|---|---|
 | main only (back to `stand_PRIMARY`) | 1.3° | 34° | 34° | 34° | 34° | 33° | 33° | 33° |
-| with the spin-down layer (its weight) | 8° (1) | 9° (1) | 20° (1) | 33° (1) | 36° (0.97) | 35° (0.65) | 34° (0.22) | 33° (0) |
+| with the spin-down layer (its weight) | 8° (1) | 6.6° (1) | 18° (1) | 33° (1) | 37° (0.97) | 36° (0.65) | 34° (0.22) | 33° (0) |
 
 (Layer weights are the splined ramps of §5a; the main cross-fade is
 taken as linear over 0.2 s; the layer's own aim cross-fade is identity
-at the centre.) The spin-down layer holds the gun low for the first 0.2–0.4 s
+at the centre; the layers' bone weights as the file has them.)
+
+**2026-11-19 implementation note** (read in place, our own decoder): the
+first reading of this section gave the spin layers every bone weight 1
+and computed the timelines with it (spin-up 19° / 5° / 2° / 5° / 8°,
+spin-down 9° / 20° / 33° / 36° / 35° / 34°). The layers' weight lists
+(the sequence description's +156) hold 0.5 to 1, the same list as
+`attackStand_PRIMARY`'s (the stubs in `heavy.mdl` hold 0, as every
+forward declaration). §5a's rule (each bone by the layer weight times its
+own weight) applies to them as to every layer, so the tables above are
+recomputed with the file's weights: partly weighted spine and pelvis let
+some of the main sequence through, chiefly early in the spin-down (6.6°
+at 0.2 s rather than 9°). With the weights forced to 1 the same decoder
+gives the first reading's numbers within 0.5°, so the weights are the
+whole difference. Whether TF2 draws 6.6° or 9° at that moment is for a
+live capture to confirm. The spin-down layer holds the gun low for the first 0.2–0.4 s
 although the main sequence has already gone back to the raised idle:
 that is how TF2's Heavy keeps the gun forward while the barrels run
 down.
@@ -1002,12 +1056,17 @@ Per player, on each client frame (bone setup cs_source/animation.md
 | 28 | Heavy spun, still | same | 0.5 s after the wind-up | main `stand_deployed_PRIMARY`; `weapon_bone` (−8.6, −13.7, 41.4) ± 0.2, barrels (1.00, 0.02, 0.02) ± 0.02 (level); muzzle (49.4, −14.2, 35.2) ± 0.5 |
 | 29 | Heavy spun, firing | hold attack | any time | barrels' elevation 0–3° (never above 10° at `body_pitch` 0); `weapon_bone` within 2.5 units of test 28's (the idle's own sway included) |
 | 30 | Heavy spun | `body_pitch` 45 / −45 / 90 | – | barrels 48° / −25° / 78° up (idle: 39° / 25° / 47°) ± 2° |
-| 31 | Heavy wind-up, standing | – | t = 0.1 / 0.2 / 0.3 / 0.49 s | spin-up layer weight 0.22 / 0.65 / 0.97 / 1 (splined ramp on cycle t / 0.5); barrels 19° / 5° / 2° / 8° ± 2° |
-| 32 | Heavy wind-down | – | t = 0.2 / 0.4 / 0.6 / 0.8 s | main `stand_PRIMARY`; barrels 9° / 20° / 33° / 35° ± 2°; slot free at 1.0 s |
+| 31 | Heavy wind-up, standing | – | t = 0.1 / 0.2 / 0.3 / 0.4 / 0.49 s | spin-up layer weight 0.22 / 0.65 / 0.97 / 1 / 1 (splined ramp on cycle t / 0.5); barrels 21° / 6° / 2° / 5° / 7.5° ± 1° |
+| 32 | Heavy wind-down | – | t = 0.2 / 0.4 / 0.6 / 0.7 / 0.8 / 0.9 s | main `stand_PRIMARY`; barrels 6.6° / 18° / 33° / 37° / 36° / 34° ± 1° (the layers' bone weights as in the file; forced to 1: 9° / 20° / 33° / 36° / 35° / 34°); slot free at 1.0 s |
 | 33 | spin gesture's own sequence | `attackStand_PRIMARY_spoolup` alone at weight 1 over any pose | – | the pose is unchanged (all bone weights 0): only its layer moves bones |
 | 34 | foot locks | Soldier `stand_PRIMARY` + `PRIMARY_aimmatrix_idle` at `body_pitch` 45 | – | feet within 0.1 of `stand_PRIMARY`'s own (without locks they move 7.7 / 9.0); the knees re-bend |
 | 35 | rest stance | each class, `stand_<KIND>` frame 0 | – | feet as in the §3 "Rest stance" table ± 0.2 |
 | 36 | Scout with the Minigun (mash-up), spun | – | – | real TF2: `ACT_MP_DEPLOYED_IDLE` not in the Scout's model → reference pose (Open questions 13 for ours) |
+| 37 | the left hand's rule as read | Heavy `PRIMARY_aimmatrix_idle`'s cells | – | each holds `lhand` relative to `weapon_bone` at (13.2, 4.0, 27.4) ± 0.05; `stand_PRIMARY` at the centre has the hand there within 0.5 and 3° (4a) |
+| 38 | the left hand held | Heavy, at rest and spun, `body_pitch` 30 / −30 / 70 with the eyes 20 / −40 / 10 off the feet | after 1 s | `bip_hand_L` in `weapon_bone`'s frame within 0.1 and 1° of the blended cells' stored place (4a) |
+| 39 | airwalk threshold | off a ledge (falling, or rising at 289 / 300 u/s) | – | the ground activity goes on, no land gesture; rising at 301 → `ACT_MP_AIRWALK`, kept falling; ducked → no airwalk; landing → restart at cycle 0 + `ACT_MP_JUMP_LAND` (3 step 1) |
+| 40 | jump start cut | a jump, the start sequence 2 s long | 0.1 / 0.49 / 0.51 s; landing at 0.8 s | start (still on the ground at 0.1 s: start), start, float; landing restarts the ground activity at cycle 0 with the land gesture (3 step 2, Quirks) |
+| 41 | entering water | running, then in water; a jump that ends in water | – | swim restarted at cycle 0, not again while swimming; the jump ended into swim with no land gesture (3 steps 2, 4) |
 
 ## Open questions
 

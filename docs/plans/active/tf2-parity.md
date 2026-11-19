@@ -50,6 +50,15 @@ Captured imagery stays in scratch, never in the repo.
 1. The spun Heavy and player animation: another agent's (specs/tf2/
    player_animation.md, install.md Open question 6 answered; commit
    3bdaaae1d and on). Leave `heavy::bodies`/player animation to it.
+   Its second pass (2026-11-19): the 2026-11-15 main-activity rules
+   (airwalk only rising above 300 units/s, the jump's start cut at 0.5 s,
+   restarts on landing and entering water, the land gesture only after a
+   jump or airwalk); the aim cells' IK rule holding the Heavy's left hand
+   on the Minigun (its on-disk layout in 4a, general in `map::anim`:
+   `Animator::ik_rules`); the spin layers' bone weights are 0.5-1 as the
+   file has them and the spec's spin timelines were recomputed with them
+   (6.6 degrees at 0.2 s into the wind-down, not 9: the first reading
+   took every weight as 1). Left: a side-by-side with TF2's bots.
 2. The rocket's explosion on a player (`air.tf2`/`air.scene` in the
    pass's scratch: a Soldier at 0 -300 firing at a Heavy ~300 units
    ahead): ours draws a large uniform orange disc with a hard round edge

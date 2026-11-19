@@ -1,7 +1,11 @@
 //! TF2's player animation state (specs/tf2/player_animation.md 1a-6, 8)
 //! on Source's shared half (`source_engine::player_anim`, as HL2:DM's):
-//! one main sequence from the movement state (stand, crouch, run,
-//! crouch-walk, swim, airwalk, a jump's start played once then its float)
+//! one main sequence from the movement state (3: airwalk only rising above
+//! 300 units/s or already in it, until the ground or water; a jump's start
+//! for 0.5 s, then its float, until water or the ground after 0.2 s; then
+//! crouch, swim, run or stand; the jump, landing and entering water
+//! restart it at cycle 0, landing from a jump or airwalk plays the land
+//! gesture)
 //! asked kind-less and translated by the held gun's kind table
 //! (`translate`, 2: the suffix, a reload's before its `_LOOP` / `_END`,
 //! the deployed activities only in the primary table; `Kind::of_class`:
@@ -29,7 +33,9 @@
 //! than 45 off it, moving it is the eyes; the feet turn at 720
 //! degrees/s, slower in the last 60), each parameter by name, the main
 //! sequences' own aim-matrix autolayers adding the pose with the feet
-//! kept where the main sequence put them (`Animator::ik_locks`, 4a);
+//! kept where the main sequence put them (`Animator::ik_locks`, 4a) and
+//! the left hand held on the Minigun by the aim cells' IK rule
+//! (`Animator::ik_rules`, 4a);
 //! `r_hand_grip` and `r_arm` at 0 (the constants; the engine's default
 //! for a range from 0 is its middle, a special item's pose); fire,
 //! reload (start, a loop per round, end), the spin and landing gestures
@@ -40,12 +46,10 @@
 //! `hold_weapons` puts the gun's `c_` model in their hands (bone-merged
 //! on `weapon_bone`).
 //!
-//! Known shortcuts: the left hand isn't pulled onto the Minigun by the
-//! aim cells' IK rule (4a; blends of aim cells may drift it a little);
-//! the scoped Sniper's deployed set and its 2 s hold aren't played; the
-//! main-activity rules are the earlier reading (airwalk whenever airborne
-//! without a jump, not above 300 units/s up; the jump's start until its
-//! end, not 0.5 s; no restarts on landing or entering water: 3); no
+//! Known shortcuts: the
+//! scoped Sniper's deployed set and its 2 s hold aren't played; the
+//! class data's `DontDoAirwalk` / `DontDoNewJump` and the Scout's air-dash
+//! crouch aren't read (3); no
 //! flinch on damage (open question 7) and no air-jump sequence (open
 //! question 4: `jump_double_primary` has no activity).
 
@@ -68,6 +72,12 @@ pub const FEET_MAX_TORSO: f32 = 45.0;
 pub const BODY_YAW: f32 = 45.0;
 pub const PITCH_UP: f32 = 90.0;
 pub const PITCH_DOWN: f32 = -45.0;
+/// Rising faster than this (units/s) is airwalk (3 step 1).
+pub const AIRWALK_SPEED: f32 = 300.0;
+/// The jump's start plays this long (s), then its float (3 step 2).
+pub const JUMP_START_TIME: f64 = 0.5;
+/// The jump state ends on the ground only after this long (s).
+pub const JUMP_LAND_AFTER: f64 = 0.2;
 /// Overlay layers a body may have.
 pub const MAX_GESTURES: usize = 8;
 
@@ -216,9 +226,12 @@ pub struct Tf2PlayerAnim {
     /// The render and hitbox yaw: the feet before this update's turn.
     pub render_yaw: f32,
     pub state: Option<State>,
-    /// In the air after a jump (its start, then its float).
-    jumping: bool,
-    airborne: bool,
+    /// The jump state's start time (3 step 2: its start, then its float).
+    jump_t0: Option<f64>,
+    /// In airwalk (3 step 1).
+    airwalk: bool,
+    /// In water at the last update (entering it restarts the main sequence).
+    in_water: bool,
     weapon: Option<String>,
     kind: Option<Kind>,
     /// The holder's class (`follow_class`; None: the gun's own).
@@ -243,8 +256,9 @@ impl Default for Tf2PlayerAnim {
             goal_yaw: 0.0,
             render_yaw: 0.0,
             state: None,
-            jumping: false,
-            airborne: false,
+            jump_t0: None,
+            airwalk: false,
+            in_water: false,
             weapon: None,
             kind: None,
             class: None,
@@ -308,34 +322,59 @@ impl Tf2PlayerAnim {
         self.spun && self.class.as_deref() != Some("soldier")
     }
 
-    /// The main sequence's state from the inputs (3, "Choosing").
-    fn pick(&mut self, i: &Inputs, a: &Animator) -> State {
+    /// The main sequence's state from the inputs (3, "Choosing"), with
+    /// whether the main sequence restarts at cycle 0 and whether the land
+    /// gesture plays: airwalk (not ducked, rising above 300 units/s or
+    /// already in it) until the ground or water; then the jump state (its
+    /// start for 0.5 s, then its float; ended by water, or by the ground
+    /// after 0.2 s); then crouch, swim, run or stand. A spun Heavy skips
+    /// airwalk and the jump (6).
+    fn pick(&mut self, i: &Inputs, set: &AnimSet, kind: Kind, now: f64) -> (State, bool, bool) {
         let moving = i.velocity.length() > MOVING_SPEED;
-        // Spun: no jump or airwalk (6).
-        let spun = self.aiming();
-        if i.jumped && !spun {
-            self.jumping = true;
-            return State::JumpStart;
-        }
-        if i.swimming {
-            self.jumping = false;
-            return State::Swim;
-        }
-        if !i.on_ground && !spun {
-            if self.jumping {
-                // The start plays once, then the float.
-                let done = self.state == Some(State::JumpStart) && a.cycle >= 0.99;
-                return if self.state == Some(State::JumpFloat) || done { State::JumpFloat } else { State::JumpStart };
+        // "Ducked": the duck flag, if the kind has a crouch-walk.
+        let ducked = i.ducked && set.activity(&translate("ACT_MP_CROUCHWALK", kind)).is_some();
+        let (mut restart, mut land) = (false, false);
+        let entered_water = i.swimming && !self.in_water;
+        self.in_water = i.swimming;
+        if !self.aiming() {
+            if !ducked && (i.vertical > AIRWALK_SPEED || self.airwalk) {
+                if i.on_ground {
+                    self.airwalk = false;
+                    (restart, land) = (true, true);
+                } else if i.swimming {
+                    self.airwalk = false;
+                    restart = true;
+                } else {
+                    self.airwalk = true;
+                    return (State::Airwalk, restart, land);
+                }
             }
-            return State::Airwalk;
+            if i.jumped {
+                self.jump_t0 = Some(now);
+                restart = true;
+            }
+            if let Some(t0) = self.jump_t0 {
+                let t = now - t0;
+                if i.swimming {
+                    self.jump_t0 = None;
+                    restart = true;
+                } else if t > JUMP_LAND_AFTER && i.on_ground {
+                    self.jump_t0 = None;
+                    (restart, land) = (true, true);
+                } else {
+                    let state = if t <= JUMP_START_TIME { State::JumpStart } else { State::JumpFloat };
+                    return (state, restart, land);
+                }
+            }
         }
-        self.jumping = false;
-        match (i.ducked, moving) {
-            (true, true) => State::CrouchWalk,
-            (true, false) => State::Crouch,
-            (false, true) => State::Run,
-            (false, false) => State::Stand,
-        }
+        let state = match (ducked, i.swimming, moving) {
+            (true, _, true) => State::CrouchWalk,
+            (true, _, false) => State::Crouch,
+            (false, true, _) => State::Swim,
+            (false, false, true) => State::Run,
+            (false, false, false) => State::Stand,
+        };
+        (state, restart || (entered_water && state == State::Swim), land)
     }
 
     /// The kind-less main activity for `state`, spun or not (2, 6): spun,
@@ -392,6 +431,7 @@ impl Tf2PlayerAnim {
     pub fn step(&mut self, a: &mut Animator, i: &Inputs, weapon: Option<&str>, dt: f32, now: f64) {
         let set = a.set.clone();
         a.ik_locks = true;
+        a.ik_rules = true;
         let kind = weapon.map_or(Kind::Primary, |w| Kind::of_class(w, self.class.as_deref()));
         if self.reset || weapon != self.weapon.as_deref() || self.kind != Some(kind) {
             if self.reset {
@@ -413,11 +453,6 @@ impl Tf2PlayerAnim {
         } else {
             "STAND"
         };
-        // Landing: the additive land gesture.
-        if self.airborne && i.on_ground && !i.swimming {
-            self.gesture(&set, "ACT_MP_JUMP_LAND", kind, Slot::Jump, false, false);
-        }
-        self.airborne = !i.on_ground && !i.swimming;
         // The wind-up's and wind-down's gestures for the stance (6).
         let spin_changed = self.aiming() != self.was_spun;
         if spin_changed {
@@ -425,15 +460,20 @@ impl Tf2PlayerAnim {
             self.gesture(&set, &format!("ACT_MP_ATTACK_{stance}_{part}"), kind, Slot::Attack, false, false);
             self.was_spun = self.aiming();
         }
-        let state = self.pick(i, a);
-        if self.state != Some(state) || a.main.is_none() || spin_changed {
+        let (state, restart, land) = self.pick(i, &set, kind, now);
+        if land {
+            // Landing from a jump or airwalk: the additive land gesture.
+            self.gesture(&set, "ACT_MP_JUMP_LAND", kind, Slot::Jump, false, false);
+        }
+        if self.state != Some(state) || a.main.is_none() || spin_changed || restart {
             let (act, s) = self.main_sequence(&set, state, kind, a.main);
             // The main sequence changes only with its activity (3 step 6).
             let same = a.main.and_then(|m| set.sequences.get(m)).is_some_and(|m| !act.is_empty() && m.activity.eq_ignore_ascii_case(&act));
             if !same && !set.sequences.is_empty() {
                 a.play(s, now);
             }
-            if state == State::JumpStart && self.state != Some(State::JumpStart) {
+            // The jump, landing and entering water restart it (3).
+            if restart {
                 a.cycle = 0.0;
             }
             self.state = Some(state);
@@ -444,7 +484,7 @@ impl Tf2PlayerAnim {
             self.gesture(&set, &format!("ACT_MP_ATTACK_{stance}"), kind, Slot::Attack, false, keep);
         }
         if i.reloaded {
-            let reload_stance = if !i.on_ground && !i.swimming { "AIRWALK" } else { stance };
+            let reload_stance = if self.airwalk { "AIRWALK" } else { stance };
             match i.reload_part {
                 "_loop" => self.gesture(&set, &format!("ACT_MP_RELOAD_{reload_stance}_LOOP"), kind, Slot::Attack, true, false),
                 "_end" => self.gesture(&set, &format!("ACT_MP_RELOAD_{reload_stance}_END"), kind, Slot::Attack, false, false),
@@ -808,5 +848,123 @@ mod tests {
         assert!((share - 2.0 / 3.0).abs() < 0.01, "{share}");
         set.sequences[2].activity_weight = -1;
         assert!((0..100).all(|_| set.select_activity("ACT_X", Some(2), s.roll()) == Some(2)));
+    }
+
+    const MOVES: [&str; 7] = ["", "ACT_MP_STAND_PRIMARY", "ACT_MP_AIRWALK_PRIMARY", "ACT_MP_JUMP_START_PRIMARY", "ACT_MP_JUMP_FLOAT_PRIMARY", "ACT_MP_JUMP_LAND_PRIMARY", "ACT_MP_SWIM_PRIMARY"];
+
+    /// Steps `s` with `i` at `t`, 15 ms after the last.
+    fn at(s: &mut Tf2PlayerAnim, a: &mut Animator, i: &Inputs, t: f64) {
+        s.step(a, i, Some("tf2:tf_weapon_scattergun"), 0.015, t);
+    }
+
+    /// 3 step 1 (2026-11-15): airwalk only rising above 300 units/s or
+    /// already in it; off a ledge (falling) the ground activity goes on;
+    /// landing from airwalk restarts the main sequence and plays the land
+    /// gesture.
+    #[test]
+    fn airwalk_only_above_300_units_per_second() {
+        let mut a = Animator::new(made_up(&MOVES));
+        let mut s = Tf2PlayerAnim::default();
+        let ground = Inputs { on_ground: true, ..Default::default() };
+        let mut t = 0.0;
+        for _ in 0..20 {
+            t += 0.015;
+            at(&mut s, &mut a, &ground, t);
+        }
+        assert_eq!(a.main, Some(1));
+        // Walked off a ledge, falling: still the stand, no land gesture after.
+        for v in [-50.0, -300.0, 289.0, 300.0] {
+            t += 0.015;
+            at(&mut s, &mut a, &Inputs { on_ground: false, vertical: v, ..Default::default() }, t);
+            assert_eq!(a.main, Some(1), "{v} units/s up: no airwalk");
+        }
+        t += 0.015;
+        at(&mut s, &mut a, &ground, t);
+        assert!(s.gestures.is_empty(), "no land gesture off a ledge: {:?}", s.gestures);
+        // A blast: rising at 301 is airwalk, and stays so falling.
+        t += 0.015;
+        at(&mut s, &mut a, &Inputs { vertical: 301.0, ..Default::default() }, t);
+        assert_eq!(a.main, Some(2));
+        for _ in 0..30 {
+            t += 0.015;
+            at(&mut s, &mut a, &Inputs { vertical: -400.0, ..Default::default() }, t);
+        }
+        assert_eq!(a.main, Some(2), "airwalk until the ground");
+        // Ducked: no airwalk.
+        let mut d = Tf2PlayerAnim::default();
+        let mut b = Animator::new(made_up(&["", "ACT_MP_STAND_PRIMARY", "ACT_MP_AIRWALK_PRIMARY", "ACT_MP_CROUCH_PRIMARY", "ACT_MP_CROUCHWALK_PRIMARY"]));
+        at(&mut d, &mut b, &Inputs { vertical: 600.0, ducked: true, ..Default::default() }, 0.0);
+        assert_eq!(b.main, Some(3), "ducked: the crouch");
+        // Landing: the stand from cycle 0 and the land gesture.
+        t += 0.015;
+        at(&mut s, &mut a, &ground, t);
+        assert_eq!(a.main, Some(1));
+        assert!(a.cycle < 0.02, "restarted: {}", a.cycle);
+        assert!(s.gestures.iter().any(|g| g.sequence == 5 && g.slot == Slot::Jump), "{:?}", s.gestures);
+    }
+
+    /// 3 step 2 (2026-11-15): the jump's start for 0.5 s whatever its
+    /// length, then its float; the ground ends it only after 0.2 s, with a
+    /// restart and the land gesture.
+    #[test]
+    fn the_jump_start_is_cut_at_half_a_second() {
+        let mut set = made_up_set(&MOVES);
+        // A 2 s start: the cut, not its end, ends it.
+        set.animations[0].frames = 60;
+        let mut a = Animator::new(std::sync::Arc::new(set));
+        let mut s = Tf2PlayerAnim::default();
+        let ground = Inputs { on_ground: true, ..Default::default() };
+        at(&mut s, &mut a, &ground, 0.0);
+        at(&mut s, &mut a, &Inputs { on_ground: true, jumped: true, vertical: 289.0, ..Default::default() }, 1.0);
+        assert_eq!(a.main, Some(3));
+        assert_eq!(s.state, Some(State::JumpStart));
+        // Still on the ground at 0.1 s (the ground is checked after 0.2 s).
+        at(&mut s, &mut a, &ground, 1.1);
+        assert_eq!(s.state, Some(State::JumpStart));
+        let air = Inputs { vertical: 100.0, ..Default::default() };
+        at(&mut s, &mut a, &air, 1.49);
+        assert_eq!(s.state, Some(State::JumpStart), "0.49 s");
+        at(&mut s, &mut a, &air, 1.51);
+        assert_eq!(s.state, Some(State::JumpFloat), "0.51 s");
+        assert_eq!(a.main, Some(4));
+        at(&mut s, &mut a, &ground, 1.8);
+        assert_eq!(s.state, Some(State::Stand));
+        assert!(a.cycle < 0.02, "restarted on landing: {}", a.cycle);
+        assert!(s.gestures.iter().any(|g| g.sequence == 5), "the land gesture: {:?}", s.gestures);
+    }
+
+    /// 3 steps 2 and 4 (2026-11-15): entering water restarts the main
+    /// sequence (and ends a jump without a land gesture).
+    #[test]
+    fn entering_water_restarts_the_main_sequence() {
+        let mut a = Animator::new(made_up(&MOVES));
+        let mut s = Tf2PlayerAnim::default();
+        let ground = Inputs { on_ground: true, ..Default::default() };
+        let mut t = 0.0;
+        for _ in 0..40 {
+            t += 0.015;
+            at(&mut s, &mut a, &ground, t);
+        }
+        assert!(a.cycle > 0.5);
+        t += 0.015;
+        at(&mut s, &mut a, &Inputs { swimming: true, ..Default::default() }, t);
+        assert_eq!(a.main, Some(6));
+        assert!(a.cycle < 0.02, "restarted: {}", a.cycle);
+        for _ in 0..40 {
+            t += 0.015;
+            at(&mut s, &mut a, &Inputs { swimming: true, ..Default::default() }, t);
+        }
+        assert!(a.cycle > 0.5, "staying in water doesn't restart it: {}", a.cycle);
+        // A jump that ends in water: restarted, no land gesture.
+        t += 0.015;
+        at(&mut s, &mut a, &Inputs { on_ground: true, jumped: true, ..Default::default() }, t);
+        t += 0.3;
+        at(&mut s, &mut a, &Inputs { vertical: 50.0, ..Default::default() }, t);
+        assert_eq!(s.state, Some(State::JumpStart));
+        t += 0.015;
+        at(&mut s, &mut a, &Inputs { swimming: true, ..Default::default() }, t);
+        assert_eq!(s.state, Some(State::Swim));
+        assert!(a.cycle < 0.02);
+        assert!(s.gestures.is_empty(), "{:?}", s.gestures);
     }
 }

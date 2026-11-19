@@ -1,11 +1,12 @@
 //! TF2's player animation on the user's install's class models
-//! (specs/tf2/player_animation.md test cases 20-36): which sequence a
+//! (specs/tf2/player_animation.md test cases 20-38): which sequence a
 //! name or an activity finds in a merged model (1a: the include's over the
 //! class model's forward-declared stubs, the user include's `user_ref`
 //! over the workshop's, hidden sequences by activity, weighted picks); the
 //! Heavy's Minigun at rest raised and spun level, its aim when spun, the
 //! spin-up's and spin-down's layers over time (6); the spin gesture's own
-//! sequence moving nothing (5a); the foot locks under an aim matrix (4a);
+//! sequence moving nothing (5a); the foot locks under an aim matrix and
+//! the left hand's IK rule onto the Minigun, as read and as held (4a);
 //! every class's rest stance (3); a Scout spinning the Minigun keeps his
 //! normal set (open question 13, ours). Passes with a note without the
 //! install.
@@ -189,29 +190,39 @@ fn the_spun_aim_30() {
 }
 
 /// Tests 31, 32: the spin-up's layer over the wind-up, the spin-down's
-/// over the wind-down.
+/// over the wind-down, with the layers' bone weights as the file has them
+/// (0.5 to 1; 6, the 2026-11-19 implementation note). Forced to 1 they
+/// give the first reading's timeline (9 / 20 / 33 / 35 degrees down), so
+/// the weights are the whole difference.
 #[test]
 fn the_spin_layers_over_time_31_32() {
-    let Some(sets) = sets(&["heavy"]) else { return };
+    let Some(mut sets) = sets(&["heavy", "heavy"]) else { return };
+    let mut ones = sets.pop().unwrap();
     let set = &sets[0];
     let up = seq(set, "attackStand_PRIMARY_spoolup");
-    for (time, want) in [(0.1, 19.0), (0.2, 5.0), (0.3, 2.0), (0.49, 8.0)] {
+    for (time, want) in [(0.1, 20.8), (0.2, 5.6), (0.3, 1.8), (0.4, 5.0), (0.49, 7.5)] {
         let (a, s, t) = heavy_run(set, &[(1.0, false, still()), (time, true, still())]);
         assert!(s.gestures.iter().any(|g| g.sequence == up), "31: the spin-up at {time}");
         let (_, _, elevation, _) = gun(set, &a.pose(t));
         eprintln!("31: {time}: {elevation}");
-        assert!((elevation - want).abs() < 2.0, "31: at {time}: {elevation}, want {want}");
+        assert!((elevation - want).abs() < 1.0, "31: at {time}: {elevation}, want {want}");
     }
     let down = seq(set, "attackStand_PRIMARY_spooldown");
-    for (time, want) in [(0.2, 9.0), (0.4, 20.0), (0.6, 33.0), (0.8, 35.0)] {
+    for name in ["layer_attackStand_PRIMARY_spooldown", "layer_attackStand_PRIMARY_spoolup"] {
+        let s = seq(&ones, name);
+        let set = Arc::get_mut(&mut ones).expect("a fresh set");
+        set.sequences[s].bone_weights.iter_mut().filter(|w| **w > 0.0).for_each(|w| *w = 1.0);
+    }
+    for (time, want, first) in [(0.2, 6.6, 9.0), (0.4, 18.2, 20.0), (0.6, 32.8, 33.0), (0.7, 36.9, 36.0), (0.8, 35.6, 35.0), (0.9, 33.6, 34.0)] {
         let (a, s, t) = heavy_run(set, &[(1.0, false, still()), (1.0, true, still()), (time, false, still())]);
         assert_eq!(a.main, Some(seq(set, "stand_PRIMARY")), "32");
         assert!(s.gestures.iter().any(|g| g.sequence == down), "32: the spin-down at {time}");
         let (_, _, elevation, _) = gun(set, &a.pose(t));
-        eprintln!("32: {time}: {elevation} (want {want})");
-        // 3 degrees: the layer's bone weights (0.5 to 1 in the file, 1 in
-        // the spec's timeline) let some of the main sequence through.
-        assert!((elevation - want).abs() < 3.0, "32: at {time}: {elevation}, want {want}");
+        let (a1, _, t1) = heavy_run(&ones, &[(1.0, false, still()), (1.0, true, still()), (time, false, still())]);
+        let (_, _, at_one, _) = gun(&ones, &a1.pose(t1));
+        eprintln!("32: {time}: {elevation} (weights 1: {at_one}, the first reading {first})");
+        assert!((elevation - want).abs() < 1.0, "32: at {time}: {elevation}, want {want}");
+        assert!((at_one - first).abs() < 1.5, "32: weights 1 at {time}: {at_one}, the first reading {first}");
     }
     let (_, s, _) = heavy_run(set, &[(1.0, true, still()), (1.01, false, still())]);
     assert!(s.gestures.is_empty(), "32: the slot free at 1.0 s: {:?}", s.gestures);
@@ -227,8 +238,8 @@ fn the_spin_gestures_own_sequence_moves_nothing_33() {
     assert!(up.bone_weights.iter().all(|w| *w == 0.0), "33: every bone weight 0");
     // Its layer is what moves the gun: full-body and non-additive.
     let layer = &set.sequences[up.autolayers[0].sequence];
-    // Every bone of the animation model weighted (0.5 to 1 in the file;
-    // the spec says 1).
+    // Every bone of the animation model weighted (0.5 to 1, as the file
+    // has them: 6).
     let weighted = layer.bone_weights.iter().filter(|w| **w >= 0.5).count();
     assert!(!layer.delta && weighted >= 77, "33: {}: {weighted}", layer.name);
     assert!(up.autolayers[0].spline, "33: the splined ramp");
@@ -329,4 +340,69 @@ fn a_scout_spinning_the_minigun_keeps_his_stand_36() {
     s.spun = true;
     s.step(&mut a, &still(), Some("tf2:tf_weapon_minigun"), 0.01, 0.01);
     assert_eq!(a.main, Some(seq(set, "stand_PRIMARY")));
+}
+
+/// The left hand's place in `weapon_bone`'s frame.
+fn left_hand(set: &AnimSet, pose: &[BonePose]) -> (Quat, Vec3) {
+    let g = model_space(pose, &set.parents);
+    let (wq, wp) = g[bone(set, "weapon_bone")];
+    let (hq, hp) = g[bone(set, "bip_hand_l")];
+    (wq.inverse() * hq, wq.inverse() * (hp - wp))
+}
+
+/// Test 37 (4a): the aim cells' IK rule as read (the layout written in
+/// 4a): every Heavy `PRIMARY` idle cell holds `lhand` on `weapon_bone`
+/// at about (13.2, 4.0, 27.4), where the centre pose has the hand.
+#[test]
+fn the_aim_cells_left_hand_rule_as_read_37() {
+    let Some(sets) = sets(&["heavy"]) else { return };
+    let set = &sets[0];
+    let lhand = set.ik_chains.iter().position(|c| c.name == "lhand").expect("lhand");
+    let aim = &set.sequences[seq(set, "PRIMARY_aimmatrix_idle")];
+    let wb = bone(set, "weapon_bone");
+    for &a in &aim.anims {
+        let t = set.animations[a].ik_targets.iter().find(|t| t.chain == lhand);
+        let t = t.unwrap_or_else(|| panic!("37: {} has no lhand rule", set.animations[a].name));
+        assert_eq!(t.bone, wb, "37: relative to weapon_bone");
+        assert!(t.frames[0].1.distance(Vec3::new(13.2, 3.96, 27.42)) < 0.05, "37: {}: {}", set.animations[a].name, t.frames[0].1);
+    }
+    // The centre pose (identity cell) has the hand where the rule says.
+    let mut a = Animator::new(set.clone());
+    a.main = Some(seq(set, "stand_PRIMARY"));
+    for p in ["body_pitch", "body_yaw", "move_x", "move_y"] {
+        if let Some(i) = set.param(p) {
+            a.set_param(i, 0.0);
+        }
+    }
+    let (q, p) = left_hand(set, &a.pose(0.0));
+    let (rq, rp) = set.animations[aim.anims[0]].ik_targets[0].frames[0];
+    eprintln!("37: centre {p} {q}, rule {rp} {rq}");
+    assert!(p.distance(rp) < 0.5, "37: place {p} against {rp}");
+    assert!(q.angle_between(rq).to_degrees() < 3.0, "37: turn {} degrees off", q.angle_between(rq).to_degrees());
+}
+
+/// Test 38 (4a): off centre the rule keeps the left hand on the Minigun;
+/// without it the blended cells move it.
+#[test]
+fn the_left_hand_stays_on_the_minigun_38() {
+    let Some(sets) = sets(&["heavy"]) else { return };
+    let set = &sets[0];
+    let lhand = set.ik_chains.iter().position(|c| c.name == "lhand").unwrap();
+    for spun in [false, true] {
+        for (pitch, yaw) in [(30.0, 20.0), (-30.0, -40.0), (70.0, 10.0)] {
+            let i = Inputs { eye_pitch: -pitch, eye_yaw: yaw, ..still() };
+            let (mut a, _, t) = heavy_run(set, &[(0.01, false, Inputs { eye_yaw: 0.0, ..i }), (1.0, spun, i)]);
+            a.fading.clear();
+            a.layers.clear();
+            let mut goals = vec![None; set.ik_chains.len()];
+            set.rule_goals(a.main.unwrap(), a.cycle, 1.0, &a.params, &mut goals);
+            let goal = goals[lhand].expect("38: a goal for the left hand");
+            let held = left_hand(set, &a.pose(t));
+            a.ik_rules = false;
+            let free = left_hand(set, &a.pose(t));
+            eprintln!("38: spun {spun} pitch {pitch} yaw {yaw}: held {} free {} goal {}", held.1, free.1, goal.place.1);
+            assert!(held.1.distance(goal.place.1) < 0.1, "38: held {} against {}", held.1, goal.place.1);
+            assert!(held.0.angle_between(goal.place.0).to_degrees() < 1.0, "38: the hand's turn");
+        }
+    }
 }
