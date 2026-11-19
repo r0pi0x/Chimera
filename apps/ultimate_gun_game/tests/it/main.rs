@@ -30,6 +30,7 @@ mod no_damage;
 mod stand_ins;
 mod offered_weapons;
 mod net;
+mod match_end_layout;
 mod names_fit;
 mod net_ui_sounds;
 mod parts;

@@ -28,7 +28,9 @@
 //!   no rebuild); hidden under Settings and the lobby (a `SignalHud`).
 //!   Docked in the lobby (under its root, `prematch_lobby::LobbyRoot`) and
 //!   on the match end (`match_end_signal::SignalEndRoot`), where people
-//!   wait: the history always open on its plate (`dock_*`), the field
+//!   wait: the history always open on its plate (the lobby's `dock_*`; the
+//!   match end's a fixed box in its right column, `[layout.matchend]`
+//!   `chat_x`, `chat_w`, `cols_top`, `cols_h`, newest lines kept inside), the field
 //!   below it ("Press Enter to chat"); hidden while an app's overlay is
 //!   over the lobby (`LobbyOverlay`).
 //! - **Typing** (`typing`, before anything reads the keys): `messagemode`
@@ -198,7 +200,7 @@ impl Plugin for SignalChatPlugin {
         app.init_resource::<ButtonInput<KeyCode>>()
             .add_message::<KeyboardInput>()
             .add_systems(PreUpdate, typing.after(InputSystems).run_if(active))
-            .add_systems(Update, (draw, fade_lines, mute_clicks).chain().after(collect));
+            .add_systems(Update, (draw, trim_boxed, fade_lines, mute_clicks).chain().after(collect));
         super::signal::setup(app);
         super::overlay::layer(app);
         let scene: super::ui_scene::SceneHook = stage_scene;
@@ -569,9 +571,11 @@ fn draw(
                 ))
                 .id()
         }
-        Dock::Lobby(parent) | Dock::MatchEnd(parent) => {
-            let lobby = matches!(dock, Dock::Lobby(_));
-            let k = |key: &str, or: f32| get(&format!("{}_{key}", if lobby { "dock" } else { "end" }), or);
+        Dock::MatchEnd(parent) => {
+            // A fixed box in the match end's right column (its frame is
+            // centred in the window: placed from the middle): the newest
+            // lines stay inside it, older ones are cut off at the top.
+            let e = super::match_end_signal::EndLayout::of(&look);
             commands
                 .spawn((
                     ChatDockRoot,
@@ -580,10 +584,38 @@ fn draw(
                     ZIndex(20),
                     Node {
                         position_type: PositionType::Absolute,
-                        left: look.val(k("left", if lobby { 4.6 } else { 4.6 })),
-                        bottom: look.val(k("bottom", if lobby { 7.0 } else { 8.0 })),
-                        width: look.val(k("w", if lobby { 34.0 } else { 30.0 })),
-                        min_height: look.val(k("h", if lobby { 11.0 } else { 9.0 })),
+                        left: percent(50.0),
+                        margin: UiRect { left: look.val(e.chat_x - 50.0), top: look.val(e.cols_top - super::match_end_signal::EndLayout::FRAME_H / 2.0), ..default() },
+                        top: percent(50.0),
+                        width: look.val(e.chat_w),
+                        height: look.val(e.cols_h),
+                        flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::FlexEnd,
+                        row_gap: look.val(0.18),
+                        padding: UiRect::all(look.val(0.5)),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    // The standings' and the climb's panel look: a faint fill in a hairline frame.
+                    BackgroundColor(look.theme.tone_a(chimera_ui::Tone::Fg, 0.04)),
+                    Outline::new(px(look.hair()), px(0.0), look.theme.tone_a(chimera_ui::Tone::Fg, 0.16)),
+                ))
+                .id()
+        }
+        Dock::Lobby(parent) => {
+            let k = |key: &str, or: f32| get(&format!("dock_{key}"), or);
+            commands
+                .spawn((
+                    ChatDockRoot,
+                    Name::new("Signal chat (docked)"),
+                    ChildOf(parent),
+                    ZIndex(20),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: look.val(k("left", 4.6)),
+                        bottom: look.val(k("bottom", 7.0)),
+                        width: look.val(k("w", 34.0)),
+                        min_height: look.val(k("h", 11.0)),
                         flex_direction: FlexDirection::Column,
                         justify_content: JustifyContent::FlexEnd,
                         row_gap: look.val(0.18),
@@ -596,8 +628,17 @@ fn draw(
     };
     let ui = Ui::new(&look.theme, look.fonts.as_deref(), *look.units);
     let history = open || docked;
-    if history {
+    let boxed = matches!(dock, Dock::MatchEnd(_));
+    if history && !boxed {
         ui.chat_plate(&mut commands, root);
+    }
+    if boxed && ids.is_empty() {
+        commands.spawn((
+            Node { margin: UiRect::all(look.val(0.3)), ..default() },
+            look.text(chimera_ui::Role::Mono, 0.6, look.tone(chimera_ui::Tone::Fg3), "No messages yet"),
+            Pickable::IGNORE,
+            ChildOf(root),
+        ));
     }
     let by_id = |id: u64| shown.iter().find(|l| l.id == id).copied();
     for id in ids.iter().rev() {
@@ -620,6 +661,28 @@ fn draw(
         let cursor = input.open.map(|_| input.caret.cursor(&input.text));
         let hint = if docked { "Press Enter to chat" } else { "" };
         ui.chat_field(&mut commands, root, team, &input.text, cursor, hint, SIZE);
+    }
+}
+
+/// The match end's chat box shows whole messages only: a line the box
+/// cuts at its top is hidden (from the last layout).
+#[allow(clippy::type_complexity)]
+fn trim_boxed(
+    boxes: Query<(&Node, &ComputedNode, &UiGlobalTransform, &Children), With<ChatDockRoot>>,
+    lines: Query<(&ComputedNode, &UiGlobalTransform, &mut Visibility), With<FeedLineId>>,
+) {
+    let mut lines = lines;
+    for (node, cn, t, kids) in &boxes {
+        if node.overflow.y == OverflowAxis::Visible {
+            continue;
+        }
+        let top = t.translation.y - cn.size().y / 2.0;
+        for k in kids {
+            if let Ok((ln, lt, mut v)) = lines.get_mut(*k) {
+                let cut = lt.translation.y - ln.size().y / 2.0 < top - 0.5;
+                v.set_if_neq(if cut { Visibility::Hidden } else { Visibility::Inherited });
+            }
+        }
     }
 }
 
@@ -742,6 +805,42 @@ fn stage_lobby_scene(w: &mut World, args: &[String]) -> Result<(), String> {
         },
     ));
     Ok(())
+}
+
+/// `ui_scene matchend ... chat|busy`: the match end's chat box with made-up
+/// lines (`busy`: dozens of long ones, to show the box never grows).
+pub fn stage_end_chat(w: &mut World, busy: bool) {
+    stage_lines(w, false);
+    if !busy {
+        return;
+    }
+    let now = w.get_resource::<UiClock>().map_or(0.0, |c| c.now);
+    let mut log = w.remove_resource::<SignalChatLog>().unwrap_or_default();
+    let who = ["kestrel", "nadia.exe", "Sgt. Biscuit", "vex", "mothman", "pixelpirate"];
+    let said = [
+        "honestly the rung 9 weapon is a crime against everyone who ever held a controller, whoever put the rocket launcher there owes me an apology and a new keyboard",
+        "gg everyone, that last stretch on the knife was the tensest minute of my entire week and i am not exaggerating even a little bit",
+        "can we vote for the warehouse map next? the sightlines are so much better for the sniper rungs and nobody can camp the stairs",
+        "lol",
+        "the bot behind the crates keeps killing me and i swear it is cheating, it looked through the wall twice in a row",
+    ];
+    for i in 0..24usize {
+        let you = i % 7 == 3;
+        let name = if you { "You" } else { who[i % who.len()] };
+        log.push(FeedEntry {
+            id: 0,
+            kind: LineKind::All,
+            sender: Some(Entity::PLACEHOLDER),
+            owner: None,
+            own: you,
+            name: Some(name.to_string()),
+            tag: None,
+            team: None,
+            text: said[i % said.len()].into(),
+            at: now - 60.0 + i as f64,
+        });
+    }
+    w.insert_resource(log);
 }
 
 /// Made-up lines, newest last (a notice newest with `notice`).

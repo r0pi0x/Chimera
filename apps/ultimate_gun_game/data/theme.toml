@@ -292,9 +292,24 @@ banner_top = 15.5
 chip_w = 13.4
 chip_pitch = 3.05
 
+# The match end's blocks in its 100 x 56.25 frame (chimera_client
+# match_end_signal::EndLayout; the chat docks with the same numbers):
+# winner and compact climb on top, standings | chat in two columns, the
+# footer (Leave, map cards, countdown) under them.
 [layout.matchend]
 winner = 3.6
-row_h = 2.62
+row_h = 2.62        # the most a standings row gets; they shrink to fit cols_h
+win_top = 9.6
+win_w = 46.0
+graph_top = 9.0
+graph_w = 32.0      # the climb's width, right edge on the page margin
+cols_top = 24.6
+cols_h = 19.8
+std_w = 52.0
+chat_x = 59.2
+chat_w = 36.2
+foot_top = 45.4
+thumb_h = 2.0       # the map cards' picture
 
 
 # The Escape menu over play (party_kit esc_signal; the components page's

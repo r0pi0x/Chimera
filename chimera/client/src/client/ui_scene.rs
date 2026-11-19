@@ -9,7 +9,7 @@
 //! an air strike's banner, edge pulses and fold into the chip stack;
 //! `airstrike <t>` frozen likewise):
 //! the HUD's own screens with made-up players (`race_chip::stage`,
-//! `kill_feed::signal_feed::stage`), and `matchend` (the match end with
+//! `kill_feed::signal_feed::stage`), and `matchend [fixture.json] [chat|busy]` (the match end, with chat lines, with
 //! eight players, the climb and the vote: `match_end_signal::stage`),
 //! `runghint` (the rung hint: G, THROW; `rung_hint`),
 //! `lobby` (the pre-match lobby with made-up players, names as typed:
@@ -341,8 +341,14 @@ impl Plugin for UiScenePlugin {
                             return Ok(None);
                         }
                         "matchend" => {
-                            super::match_end_signal::stage(w, a.get(1).map(String::as_str))?;
+                            // `matchend [fixture.json] [chat|busy]`
+                            let chat = a.iter().skip(1).find(|x| matches!(x.as_str(), "chat" | "busy")).cloned();
+                            let fixture = a.get(1).filter(|x| !matches!(x.as_str(), "chat" | "busy"));
+                            super::match_end_signal::stage(w, fixture.map(String::as_str))?;
                             rename_staged(w);
+                            if let Some(c) = chat {
+                                super::signal_chat::stage_end_chat(w, c == "busy");
+                            }
                             return Ok(None);
                         }
                         "lobby" => {

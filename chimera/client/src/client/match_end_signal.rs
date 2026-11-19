@@ -5,8 +5,11 @@
 //! (`match_end::MatchEndView`, from the results and the vote), same gate
 //! (the logo pass in and out), same vote input; this is presentation.
 //!
-//! On the ink, a 16:9 frame (100 x 56.25 cq, centred) with the look
-//! book's numbers:
+//! On the ink, a 16:9 frame (100 x 56.25 cq, centred). Blocks sit where
+//! `[layout.matchend]` puts them (`EndLayout`: the winner with the compact
+//! climb beside it, the standings and the chat's fixed box in two columns,
+//! the footer with Leave, the vote cards and the countdown); the look
+//! book's numbers otherwise:
 //!
 //! - **Header**: the lockup, MATCH OVER, and the map, its game, the
 //!   minigame and the players; a rule under it; `+` marks in the corners.
@@ -475,6 +478,56 @@ const ROW_PAD: f32 = 0.8;
 const ROW_PAD_RIGHT: f32 = ROW_PAD + 0.64;
 const LEFT: f32 = 4.6;
 
+/// Where the screen's blocks sit in its 100 x 56.25 cq frame, from
+/// `[layout.matchend]` (the theme's data; these are the defaults): the
+/// winner and the compact climb beside it on top, the standings and the
+/// chat in two columns under them, the footer (Leave, the map cards, the
+/// countdown) along the bottom. `signal_chat` docks its box with the
+/// same numbers, so the three never overlap.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EndLayout {
+    pub win_top: f32,
+    pub win_w: f32,
+    pub graph_top: f32,
+    pub graph_w: f32,
+    pub graph_x: f32,
+    pub cols_top: f32,
+    pub cols_h: f32,
+    pub std_w: f32,
+    pub chat_x: f32,
+    pub chat_w: f32,
+    pub foot_top: f32,
+    pub row_h: f32,
+    pub thumb_h: f32,
+}
+
+impl EndLayout {
+    /// The frame's height, cq.
+    pub const FRAME_H: f32 = 56.25;
+
+    pub fn of(look: &Look) -> Self {
+        let g = |k: &str, or: f32| look.layout("matchend", k, or);
+        let graph_w = g("graph_w", 32.0);
+        let std_w = g("std_w", 52.0);
+        let chat_x = g("chat_x", LEFT + std_w + 2.6);
+        EndLayout {
+            win_top: g("win_top", 9.6),
+            win_w: g("win_w", 46.0),
+            graph_top: g("graph_top", 9.0),
+            graph_w,
+            graph_x: g("graph_x", 100.0 - LEFT - graph_w - 0.6),
+            cols_top: g("cols_top", 24.6),
+            cols_h: g("cols_h", 19.8),
+            std_w,
+            chat_x,
+            chat_w: g("chat_w", 100.0 - LEFT - chat_x),
+            foot_top: g("foot_top", 45.4),
+            row_h: g("row_h", 2.62),
+            thumb_h: g("thumb_h", 2.0),
+        }
+    }
+}
+
 /// The selection pointer's triangle at the window's size.
 fn pointer_image(units: Res<chimera_ui::UiUnits>, mut images: Option<ResMut<Assets<Image>>>, mut state: ResMut<EndState>) {
     let tri_px = units.phys(units.cq(0.5)).round().max(2.0) as u32;
@@ -569,7 +622,8 @@ fn build_static(
 
         // The winner.
         let winner = view.rows.iter().find(|r| r.winner);
-        f.spawn((abs(&look, LEFT, 9.6, Some(46.0), None), Pickable::IGNORE)).with_children(|w| {
+        let lay = EndLayout::of(&look);
+        f.spawn((abs(&look, LEFT, lay.win_top, Some(lay.win_w), None), Pickable::IGNORE)).with_children(|w| {
             w.spawn((Node::default(), enter(&look, came_up, 0.4, 0.0, 0.0), Pickable::IGNORE)).with_children(|t| {
                 let e = signal::tag(t, &look, TagKind::Accent, if winner.is_some() { "Winner" } else { "Draw" }, 0.62);
                 parity::name(t, e, "end.win.tag");
@@ -601,7 +655,14 @@ fn build_static(
         });
 
         // The standings.
-        f.spawn((abs(&look, 55.0, 9.6, None, Some(LEFT)), Pickable::IGNORE)).with_children(|s| {
+        // Rows share the column's height, down to 1.5 cq each.
+        let head = 3.6;
+        let row_h = ((lay.cols_h - head) / view.rows.len().max(1) as f32).clamp(1.5, lay.row_h);
+        f.spawn((
+            Node { height: look.val(lay.cols_h), overflow: Overflow::clip_y(), ..abs(&look, LEFT, lay.cols_top, Some(lay.std_w), None) },
+            Pickable::IGNORE,
+        ))
+        .with_children(|s| {
             s.spawn((Node::default(), enter(&look, came_up, 0.6, 0.0, 0.0), Pickable::IGNORE)).with_children(|t| {
                 let e = signal::tag(t, &look, TagKind::Accent, "Standings", 0.62);
                 parity::name(t, e, "end.std.tag");
@@ -624,8 +685,8 @@ fn build_static(
             };
             s.spawn((
                 Node {
-                    margin: UiRect::top(look.val(1.1)),
-                    padding: UiRect::new(look.val(ROW_PAD), look.val(ROW_PAD_RIGHT), px(0.0), look.val(0.55)),
+                    margin: UiRect::top(look.val(0.8)),
+                    padding: UiRect::new(look.val(ROW_PAD), look.val(ROW_PAD_RIGHT), px(0.0), look.val(0.4)),
                     border: UiRect::bottom(px(hair)),
                     ..row_node()
                 },
@@ -658,7 +719,7 @@ fn build_static(
                     StandingsRow { index: i, you: row.local },
                     super::widgets::clickable(),
                     Node {
-                        height: look.val(look.layout("matchend", "row_h", 2.62)),
+                        height: look.val(row_h),
                         border: UiRect::bottom(px(hair)),
                         flex_shrink: 0.0,
                         ..row_node()
@@ -671,7 +732,7 @@ fn build_static(
                 if row.local {
                     r.insert(signal::you_row(&look));
                 }
-                row_cells(&mut r, &look, row, i, &p, top_wins, slants.as_deref_mut(), &cell, &right, &pointer);
+                row_cells(&mut r, &look, row, i, &p, top_wins, row_h, slants.as_deref_mut(), &cell, &right, &pointer);
             }
         });
     });
@@ -686,12 +747,12 @@ fn row_cells(
     i: usize,
     p: &str,
     top_wins: u32,
+    row_h: f32,
     mut slants: Option<&mut Assets<SlantMaterial>>,
     cell: &dyn Fn(usize) -> Node,
     right: &dyn Fn(usize) -> Node,
     pointer: &Handle<Image>,
 ) {
-    let row_h = look.layout("matchend", "row_h", 2.62);
     r.with_children(|r| {
         if row.winner {
             r.spawn((
@@ -922,7 +983,11 @@ fn build_climb(
     let came_up = state.came_up.unwrap_or(0.0);
     let row = &view.rows[shown];
     let axes = ChartAxes::new(view.length, view.rungs.max(row.rung.unwrap_or(1)));
-    let k = look.units.cq(0.1);
+    let lay = EndLayout::of(&look);
+    // The chart is the look book's 47 cq wide drawing at a scale, beside the winner.
+    let scale = lay.graph_w / 47.0;
+    let k = look.units.cq(0.1) * scale;
+    let fs = (0.64 * scale).max(0.5);
     let end = view.length;
     let fg = |a: f32| look.theme.tone_a(Tone::Fg, a);
     let label = |p: &mut ChildSpawnerCommands, text: &str, x: f32, baseline: f32, anchor: f32, color: Color| {
@@ -948,7 +1013,7 @@ fn build_climb(
             Pickable::IGNORE,
         ))
         .with_children(|t| {
-            t.spawn((look.tracked(Role::Mono, 0.64, 0.64 * 0.08, color, text), Pickable::IGNORE));
+            t.spawn((look.tracked(Role::Mono, fs, fs * 0.08, color, text), Pickable::IGNORE));
         });
     };
     let line = |p: &mut ChildSpawnerCommands, a: Vec2, b: Vec2, w: f32, color: Color| {
@@ -960,14 +1025,14 @@ fn build_climb(
     let hair = look.hair() / k;
     commands.spawn((ClimbPart, ChildOf(*root), Pickable::IGNORE, Node { width: look.val(100.0), height: look.val(56.25), position_type: PositionType::Absolute, align_self: AlignSelf::Center, ..default() }))
         .with_children(|f| {
-            f.spawn((abs(&look, LEFT, 18.6, Some(47.0), None), enter(&look, came_up, 1.1, 0.0, 0.0), UiParityId::new("end.climb"), Pickable::IGNORE)).with_children(|c| {
+            f.spawn((abs(&look, lay.graph_x, lay.graph_top, Some(lay.graph_w), None), enter(&look, came_up, 1.1, 0.0, 0.0), UiParityId::new("end.climb"), Pickable::IGNORE)).with_children(|c| {
                 // The head: the tag, whose climb, what it came to.
-                c.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.8), ..default() }, Pickable::IGNORE)).with_children(|h| {
+                c.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.8), row_gap: look.val(0.3), flex_wrap: FlexWrap::Wrap, ..default() }, Pickable::IGNORE)).with_children(|h| {
                     let e = signal::tag(h, &look, TagKind::Accent, "The climb", 0.62);
                     parity::name(h, e, "end.climb.tag");
                     h.spawn((
                         look.tracked(Role::Mono, 0.56, 0.056, look.tone(Tone::Fg), &row.name.to_uppercase()),
-                        chimera_ui::Ellipsize::max(row.name.to_uppercase(), 12.0),
+                        chimera_ui::Ellipsize::max(row.name.to_uppercase(), 9.0),
                         UiParityId::new("end.climb.name"),
                     ));
                     let reach = match (winner, row.rung) {
@@ -980,7 +1045,7 @@ fn build_climb(
                 });
                 c.spawn((
                     ClimbChart { index: shown },
-                    Node { width: look.val(47.0), height: look.val(17.4), margin: UiRect::top(look.val(0.6)), ..default() },
+                    Node { width: look.val(47.0 * scale), height: look.val(17.4 * scale), margin: UiRect::top(look.val(0.6)), ..default() },
                     UiParityId::new("end.climb.chart"),
                     Pickable::IGNORE,
                 ))
@@ -1009,7 +1074,7 @@ fn build_climb(
                             continue;
                         }
                         for s in segments(&axes.points(&other.climb, end), hair) {
-                            g.spawn((seg_node(&s, k, 1.0), BackgroundColor(fg(0.12)), Pickable::IGNORE));
+                            g.spawn((seg_node(&s, k, 1.0), BackgroundColor(fg(0.2)), Pickable::IGNORE));
                         }
                     }
                     // The longest stall, boxed.
@@ -1056,7 +1121,7 @@ fn build_climb(
                                 Pickable::IGNORE,
                             ))
                             .with_children(|t| {
-                                t.spawn((look.tracked(Role::Mono, 0.64, 0.64 * 0.08, look.tone(Tone::Fg3), &format!("Stall {} \u{2022} R{r:02}", mmss(b - a))), Pickable::IGNORE));
+                                t.spawn((look.tracked(Role::Mono, fs, fs * 0.08, look.tone(Tone::Fg3), &format!("Stall {} \u{2022} R{r:02}", mmss(b - a))), Pickable::IGNORE));
                             });
                         });
                     }
@@ -1105,7 +1170,7 @@ fn build_climb(
                         Pickable::IGNORE,
                     ))
                     .with_children(|t| {
-                        t.spawn((look.tracked(Role::Mono, 0.64, 0.64 * 0.08, accent, &fin.to_uppercase()), UiParityId::new("end.climb.final")));
+                        t.spawn((look.tracked(Role::Mono, fs, fs * 0.08, accent, &fin.to_uppercase()), UiParityId::new("end.climb.final")));
                     });
                     let _ = draw;
                 });
@@ -1189,7 +1254,7 @@ fn animate(
     }
     // The climb's line and ticks.
     let draw = look.dur("matchend", "climb_draw", 0.7);
-    let k = look.units.cq(0.1);
+    let k = look.units.cq(0.1) * (EndLayout::of(&look).graph_w / 47.0);
     let elapsed = state.drawing.map(|d| (clock.now - d) as f32);
     let done = elapsed.is_none_or(|e| e > draw.max(1.2));
     let key = (state.drawing.unwrap_or(-1.0), done);
@@ -1540,6 +1605,7 @@ fn build_vote(
     let came_up = state.came_up.unwrap_or(0.0);
     let hair = look.hair();
     let tan = look.theme.tan();
+    let lay = EndLayout::of(&look);
     let n = 40;
     commands
         .spawn((VotePart, ChildOf(*root), Pickable::IGNORE, Node { width: look.val(100.0), height: look.val(56.25), position_type: PositionType::Absolute, align_self: AlignSelf::Center, ..default() }))
@@ -1548,10 +1614,10 @@ fn build_vote(
                 Node {
                     flex_direction: FlexDirection::Row,
                     column_gap: look.val(1.4),
-                    padding: UiRect::top(look.val(1.3)),
+                    padding: UiRect::top(look.val(0.9)),
                     border: UiRect::top(px(hair)),
-                    align_items: AlignItems::FlexStart,
-                    ..abs(&look, LEFT, 39.4, None, Some(LEFT))
+                    align_items: AlignItems::FlexEnd,
+                    ..abs(&look, LEFT, lay.foot_top, None, Some(LEFT))
                 },
                 BorderColor::all(look.tone(Tone::Fg4)),
                 enter(&look, came_up, 1.5, 0.8, 0.0),
@@ -1559,41 +1625,39 @@ fn build_vote(
                 Pickable::IGNORE,
             ))
             .with_children(|b| {
-                // The countdown: one, the vote's close and the next match.
-                b.spawn((Node { width: look.val(14.6), flex_direction: FlexDirection::Column, align_items: AlignItems::FlexStart, flex_shrink: 0.0, ..default() }, Pickable::IGNORE)).with_children(|c| {
-                    c.spawn((Node::default(), Pickable::IGNORE)).with_children(|t| {
-                        let e = signal::tag(t, &look, TagKind::Accent, "Next match", 0.62);
-                        parity::name(t, e, "end.vote.tag");
-                    });
+                // The way out.
+                b.spawn((Node { width: look.val(9.0), flex_shrink: 0.0, flex_direction: FlexDirection::Column, row_gap: look.val(0.6), align_self: AlignSelf::FlexEnd, ..default() }, LeaveColumn, Pickable::IGNORE)).with_children(|c| {
                     c.spawn((
-                        Node { margin: UiRect::top(look.val(0.6)), ..default() },
-                        look.tracked(Role::DisplayBold, 2.4, 2.4 * 0.02, look.tone(Tone::Fg), "00:00"),
-                        VoteCountdown,
-                        UiParityId::new("end.vote.count"),
-                    ));
-                    let u = *look.units;
-                    let layout = TickLayout::new(u.phys(u.cq(14.6)).floor() as u32, u.phys(u.cq(1.1)).floor() as u32, n);
-                    let sf = u.scale_factor.max(1e-3);
-                    c.spawn((Node { margin: UiRect::top(look.val(0.9)), height: look.val(1.1), ..default() }, Pickable::IGNORE)).with_children(|w| {
-                        let mut bar = w.spawn((
-                            Node { width: px(layout.w as f32 / sf), height: px(layout.h as f32 / sf), ..default() },
-                            UiParityId::new("end.vote.ticks"),
-                            Pickable::IGNORE,
-                        ));
-                        if let Some(ticks) = ticks.as_deref_mut() {
-                            let material = ticks.add(TickBarMaterial::new(&look.theme, n, layout));
-                            bar.insert((MaterialNode(material.clone()), VoteTicks { material, ticks: n }));
-                        }
-                    });
-                    c.spawn((
-                        Node { margin: UiRect::top(look.val(0.55)), max_width: look.val(14.6), ..default() },
-                        look.tracked(Role::Mono, 0.5, 0.05, look.tone(Tone::Fg3), &vote_hint(&view)),
-                        UiParityId::new("end.vote.hint"),
+                        Node { max_width: look.val(9.0), ..default() },
+                        look.tracked(Role::Mono, 0.48, 0.048, look.tone(Tone::Fg3), "Not staying? Leave any time; the match starts without you."),
+                        UiParityId::new("end.vote.ex"),
                     ))
                     .insert((TextLayout::new(Justify::Left, LineBreak::WordBoundary), bevy::text::LineHeight::RelativeToFont(1.45)));
+                    // Leave: outlined, the label and a triangle.
+                    c.spawn((
+                        LeaveButton,
+                        super::widgets::clickable(),
+                        Node {
+                            justify_content: JustifyContent::SpaceBetween,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::new(look.val(0.7), look.val(0.6), look.val(0.5), look.val(0.45)),
+                            ..default()
+                        },
+                        BackgroundColor(look.theme.tone_a(Tone::Ink, 0.9)),
+                        Outline::new(px(hair), px(-hair), look.tone(Tone::Fg3)),
+                        UiParityId::new("end.vote.leave"),
+                    ))
+                    .with_children(|t| {
+                        t.spawn((look.tracked(Role::Mono, 0.64, 0.064, look.tone(Tone::Fg), "Leave"), Pickable::IGNORE));
+                        t.spawn((
+                            Node { width: look.val(0.36), height: look.val(0.44), ..default() },
+                            ImageNode { image: state.pointer.as_ref().map(|(_, h)| h.clone()).unwrap_or_default(), color: look.tone(Tone::Fg), flip_x: true, ..default() },
+                            Pickable::IGNORE,
+                        ));
+                    });
                 });
                 // The map cards.
-                b.spawn((Node { flex_grow: 1.0, column_gap: look.val(0.9), align_items: AlignItems::FlexStart, ..default() }, Pickable::IGNORE)).with_children(|cards| {
+                b.spawn((Node { flex_grow: 1.0, column_gap: look.val(0.9), align_items: AlignItems::FlexEnd, ..default() }, Pickable::IGNORE)).with_children(|cards| {
                     let Some(v) = &view.vote else { return };
                     let locked = !v.open();
                     let best = v.counts.iter().copied().max().unwrap_or(0);
@@ -1626,7 +1690,7 @@ fn build_vote(
                             let (a, b) = map_tint(map);
                             let (a, b) = (a.with_alpha(dim), b.with_alpha(dim));
                             c.spawn((
-                                Node { height: look.val(4.6), ..default() },
+                                Node { height: look.val(lay.thumb_h), ..default() },
                                 BackgroundGradient::from(LinearGradient::degrees(110.0, vec![ColorStop::percent(a, 0.0), ColorStop::percent(b, 100.0)])),
                                 UiParityId(format!("{p}.thumb")),
                                 Pickable::IGNORE,
@@ -1680,40 +1744,46 @@ fn build_vote(
                         });
                     }
                 });
-                // The way out.
-                b.spawn((Node { width: look.val(9.0), flex_shrink: 0.0, flex_direction: FlexDirection::Column, row_gap: look.val(0.6), align_self: AlignSelf::FlexEnd, ..default() }, LeaveColumn, Pickable::IGNORE)).with_children(|c| {
+                // The countdown: one, the vote's close and the next match.
+                b.spawn((Node { width: look.val(17.0), flex_direction: FlexDirection::Column, align_items: AlignItems::FlexEnd, flex_shrink: 0.0, ..default() }, VoteCountdownColumn, Pickable::IGNORE)).with_children(|c| {
+                    c.spawn((Node::default(), Pickable::IGNORE)).with_children(|t| {
+                        let e = signal::tag(t, &look, TagKind::Accent, "Next match", 0.62);
+                        parity::name(t, e, "end.vote.tag");
+                    });
                     c.spawn((
-                        Node { max_width: look.val(9.0), ..default() },
-                        look.tracked(Role::Mono, 0.48, 0.048, look.tone(Tone::Fg3), "Not staying? Leave any time; the match starts without you."),
-                        UiParityId::new("end.vote.ex"),
-                    ))
-                    .insert((TextLayout::new(Justify::Left, LineBreak::WordBoundary), bevy::text::LineHeight::RelativeToFont(1.45)));
-                    // Leave: outlined, the label and a triangle.
-                    c.spawn((
-                        LeaveButton,
-                        super::widgets::clickable(),
-                        Node {
-                            justify_content: JustifyContent::SpaceBetween,
-                            align_items: AlignItems::Center,
-                            padding: UiRect::new(look.val(0.7), look.val(0.6), look.val(0.5), look.val(0.45)),
-                            ..default()
-                        },
-                        BackgroundColor(look.theme.tone_a(Tone::Ink, 0.9)),
-                        Outline::new(px(hair), px(-hair), look.tone(Tone::Fg3)),
-                        UiParityId::new("end.vote.leave"),
-                    ))
-                    .with_children(|t| {
-                        t.spawn((look.tracked(Role::Mono, 0.64, 0.064, look.tone(Tone::Fg), "Leave"), Pickable::IGNORE));
-                        t.spawn((
-                            Node { width: look.val(0.36), height: look.val(0.44), ..default() },
-                            ImageNode { image: state.pointer.as_ref().map(|(_, h)| h.clone()).unwrap_or_default(), color: look.tone(Tone::Fg), flip_x: true, ..default() },
+                        Node { margin: UiRect::top(look.val(0.4)), ..default() },
+                        look.tracked(Role::DisplayBold, 2.4, 2.4 * 0.02, look.tone(Tone::Fg), "00:00"),
+                        VoteCountdown,
+                        UiParityId::new("end.vote.count"),
+                    ));
+                    let u = *look.units;
+                    let layout = TickLayout::new(u.phys(u.cq(14.6)).floor() as u32, u.phys(u.cq(1.1)).floor() as u32, n);
+                    let sf = u.scale_factor.max(1e-3);
+                    c.spawn((Node { margin: UiRect::top(look.val(0.6)), height: look.val(1.1), ..default() }, Pickable::IGNORE)).with_children(|w| {
+                        let mut bar = w.spawn((
+                            Node { width: px(layout.w as f32 / sf), height: px(layout.h as f32 / sf), ..default() },
+                            UiParityId::new("end.vote.ticks"),
                             Pickable::IGNORE,
                         ));
+                        if let Some(ticks) = ticks.as_deref_mut() {
+                            let material = ticks.add(TickBarMaterial::new(&look.theme, n, layout));
+                            bar.insert((MaterialNode(material.clone()), VoteTicks { material, ticks: n }));
+                        }
                     });
+                    c.spawn((
+                        Node { margin: UiRect::top(look.val(0.4)), max_width: look.val(17.0), ..default() },
+                        look.tracked(Role::Mono, 0.5, 0.05, look.tone(Tone::Fg3), &vote_hint(&view)),
+                        UiParityId::new("end.vote.hint"),
+                    ))
+                    .insert((TextLayout::new(Justify::Right, LineBreak::WordBoundary), bevy::text::LineHeight::RelativeToFont(1.45)));
                 });
             });
         });
 }
+
+/// The footer's right column: "Next match", the countdown, its ticks.
+#[derive(Component)]
+pub struct VoteCountdownColumn;
 
 /// The column the way out sits in (the Leave button joins it).
 #[derive(Component)]
