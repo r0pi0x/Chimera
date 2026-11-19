@@ -9,7 +9,8 @@
 //!   with ammo) or dry (attack, none), its next shot `fire_step` (0.1 s)
 //!   after the wind-up ends, so a held attack fires about 0.85 s (57
 //!   ticks) after the press and then every 0.105 s; firing to spun waits
-//!   `fire_step` again. With neither button held it stops: at once when
+//!   `fire_step` again. A press waits for the draw (`Inventory::ready`:
+//!   a gun given with attack held starts idle). With neither button held it stops: at once when
 //!   only spun, `idle_after_fire` (0.2 s) after the last shot when firing.
 //!   There is **no gameplay wind-down**: the stop is idle at once (speed,
 //!   jump and a new wind-up back); only switching weapons waits for the
@@ -32,7 +33,9 @@
 //!   its own); view-model actions `SPIN_UP` and `SPIN_DOWN`
 //!   (`WeaponEventKind::Action`) for its sequences, and its
 //!   `view_anim::ViewPose` (1 while winding up or spun: the view model
-//!   idles in its spun sequence).
+//!   idles in its spun sequence). The wind-up and the loops stop when the
+//!   gun leaves the hand (`held_sounds::HeldSounds`: a rung's swap, a
+//!   death).
 //!
 //! Known shortcuts: crits are off (weapons.md 2.6), so the crit loop
 //! (`...FireCrit`) never plays; a wind-up begun in the air doesn't keep
@@ -42,7 +45,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use chimera_sim::weapon::{
-    CHAN_WEAPON, DamageEffect, Hitscan, HolsterLocked, Inventory, Magazine, NetPart, SpreadShape, Weapon, WeaponEvent,
+    CHAN_WEAPON, DamageEffect, Hitscan, HolsterLocked, held_sounds::HeldSounds, Inventory, Magazine, NetPart, SpreadShape, Weapon, WeaponEvent,
     WeaponEventKind, WeaponState, view_anim::ViewPose,
 };
 
@@ -163,6 +166,9 @@ pub fn attach(e: &mut EntityWorldMut, p: &MinigunParams) {
             base_spread,
         },
         ViewPose(0),
+        // Its wind-up and loops end when it leaves the hand (a rung's
+        // swap, a death): `held_sounds`.
+        HeldSounds(vec![p.wind_up_sound.clone(), p.spin_sound.clone(), p.fire_sound.clone(), p.empty_sound.clone()]),
     ));
 }
 
@@ -285,8 +291,13 @@ pub fn spin(
         for &w in &inv.weapons {
             let Ok((we, mut gun, mut weapon, mut st, mut dmg, scan, mag, tf2, locked, pose)) = guns.get_mut(w) else { continue };
             let active = inv.active == Some(w) && alive;
-            let fire = active && intent.fire;
-            let held = active && (intent.fire || intent.secondary);
+            // From idle a press winds up only once the gun is drawn
+            // (`Inventory::ready`: no weapon logic before the deploy ends;
+            // a Minigun given with attack held starts idle, then winds up).
+            let idle = matches!(gun.spin, Spin::Idle | Spin::Down { .. });
+            let ready = !idle || inv.ready(now);
+            let fire = active && ready && intent.fire;
+            let held = active && ready && (intent.fire || intent.secondary);
             let ammo = mag.is_none_or(|m| m.clip > 0);
             let last_shot = tf2.map_or(f64::MIN, |g| g.last_shot);
             let was = gun.spin;

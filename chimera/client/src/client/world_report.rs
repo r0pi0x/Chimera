@@ -14,7 +14,11 @@
 //!   events (`frame_inspector::Inspector::timeline_text`).
 //! - `game.txt`'s setup lines (`setup_text`): the role (offline, listen
 //!   host, client), players and bots, the tick rate, the minigame, the
-//!   local player's rung of the ladder and the games its rungs deal.
+//!   local player's rung of the ladder and the games its rungs deal; and
+//!   what is in the local player's hand (`hand_text`): the weapon, its
+//!   draw, the view model's sequence and pose, and the sounds the player
+//!   makes now (entry, channel, age), so a gun's sound or animation that
+//!   goes on after a swap shows in the report.
 //! - Events for the timeline (`frame_events`): a map loaded, a bot joined
 //!   or left, the local rung and the minigame changed.
 //!
@@ -174,5 +178,50 @@ pub fn setup_text(world: &mut World) -> String {
             games.join(", ")
         );
     }
+    out
+}
+
+/// `game.txt`'s hand lines (module doc): the local player's weapon in
+/// hand, its draw, its view model's sequence and pose, the sounds the
+/// player makes.
+pub fn hand_text(world: &mut World) -> String {
+    use chimera_sim::weapon::{Inventory, Weapon, view_anim::ViewPose};
+    let now = world.get_resource::<Time>().map_or(0.0, |t| t.elapsed_secs_f64());
+    let tick = world.get_resource::<crate::core::SimClock>().map_or(0.0, |c| c.now);
+    let Some((player, inv)) = world
+        .query_filtered::<(Entity, &Inventory), With<crate::core::LocalPlayer>>()
+        .iter(world)
+        .next()
+        .map(|(e, i)| (e, i.clone()))
+    else {
+        return String::new();
+    };
+    let mut out = String::new();
+    let held = inv.active.and_then(|w| world.get::<Weapon>(w).map(|x| (w, x.id)));
+    match held {
+        Some((w, id)) => {
+            let pose = world.get::<ViewPose>(w).map_or(0, |p| p.0);
+            out += &format!(
+                "in hand: {id} ({} carried), ready in {:.3} s, view pose {pose}",
+                inv.weapons.len(),
+                (inv.next_attack - tick).max(0.0)
+            );
+        }
+        None => out += &format!("in hand: nothing ({} carried)", inv.weapons.len()),
+    }
+    if let Some(v) = world.get::<crate::map::ViewAnimator>(player) {
+        let cycle = v.animator.as_ref().map_or(0.0, |a| a.cycle);
+        out += &format!("; view model {} at cycle {cycle:.2}", v.sequence().unwrap_or("-"));
+    }
+    out += "\n";
+    let mut sounds: Vec<(f64, String)> = world
+        .query::<&chimera_present::audio::sound::Playing>()
+        .iter(world)
+        .filter(|p| p.source() == Some(player) && p.sounding(now))
+        .map(|p| (p.started(), format!("{} (channel {}, {:.1} s)", p.entry(), p.channel().map_or("-".into(), |c| c.to_string()), now - p.started())))
+        .collect();
+    sounds.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let sounds: Vec<String> = sounds.into_iter().map(|s| s.1).collect();
+    out += &format!("sounds from the player: {}\n", if sounds.is_empty() { "none".to_string() } else { sounds.join(", ") });
     out
 }

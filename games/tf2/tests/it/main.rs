@@ -5,7 +5,8 @@
 //! (`movement`: movement.md's test cases), ICE against its spec (`ice`),
 //! the script reader on fixtures encrypted with throwaway keys
 //! (`scripts`), the guns (`weapons`: M2b's four; `weapons_more`: the
-//! next eight; `melee`: the nine stock melee weapons and the backstab),
+//! next eight; `melee`: the nine stock melee weapons and the backstab;
+//! `held_guns`: a gun coming into and leaving the hand, its loops and view model),
 //! a gun's impacts taking TF2's own looks on another game's map
 //! (`impacts`), a first-person muzzle flash drawn by the view-model camera
 //! (`flashes`), the class sets a match offers (`player_sets`), the ragdolls' lifetime
@@ -41,6 +42,7 @@ mod flashes;
 mod weapons;
 mod melee;
 mod weapons_more;
+mod held_guns;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {

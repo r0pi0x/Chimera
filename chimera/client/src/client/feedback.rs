@@ -614,6 +614,7 @@ pub fn collect_state(w: &mut World, snapshot: &str) -> ReportState {
         game += &format!("minigame: {}\n", m.def.id);
     }
     game += &super::world_report::setup_text(w);
+    game += &super::world_report::hand_text(w);
     let world = super::world_report::world_text(w);
     let mut system = format!(
         "os: {} {}\ncpus: {}\n",

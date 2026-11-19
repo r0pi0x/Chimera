@@ -7,7 +7,9 @@
 //! changes, or when its model comes in after the weapon did; nothing when
 //! dead), react to the weapon's `WeaponEvent`s,
 //! advance the animation and send the effects of the events its cycle
-//! passed, and idle once the sequence has played out, no grenade is held
+//! passed, and idle once the sequence has played out (a looping attack
+//! sequence, TF2's `ft_fire`: one length after the last attack,
+//! `ViewFrame::sustain`), no grenade is held
 //! primed, no reload runs and the weapon's idle delay has passed (its
 //! data's `[anim]`: `idle_after`, `idle_interval`, `idle_after_draw`). A
 //! view model behind a scope (`Zoomed::scope`) is hidden.
@@ -174,6 +176,11 @@ pub struct ViewModelPlay {
     /// Games' rules' count of a series of attacks (HL2's pistol counts
     /// shots close together).
     pub series: u32,
+    /// The looping sequence the last attack started (TF2's Flame
+    /// Thrower's `ft_fire`): it counts as played out one length after the
+    /// last attack (`ViewFrame::sustain` keeps it going), as a Source
+    /// weapon's idle time is the attack sequence's duration.
+    pub attacked: Option<usize>,
     rng: u32,
 }
 
@@ -186,6 +193,7 @@ impl ViewModelPlay {
             burst_started: f64::MIN,
             zoomed: false,
             series: 0,
+            attacked: None,
             rng: owner.to_bits() as u32 ^ 0x9e37_79b9,
         }
     }
@@ -295,7 +303,18 @@ impl ViewFrame<'_, '_> {
     /// Play `pick` as an attack (the idle delay counts from now).
     pub fn attack(&mut self, pick: &Pick) -> bool {
         self.dice.last_attack = self.now;
-        self.play(pick)
+        let played = self.play(pick);
+        if played {
+            self.dice.attacked = self.view.animator.as_ref().and_then(|a| a.main);
+        }
+        played
+    }
+
+    /// A looping attack sequence already playing goes on (a shot of a gun
+    /// whose fire sequence loops): its idle delay counts from now, and it
+    /// runs out one length after the last of these (`ViewModelPlay::attacked`).
+    pub fn sustain(&mut self) {
+        self.dice.last_attack = self.now;
     }
 }
 
@@ -502,6 +521,7 @@ pub fn drive(
                 drawn = play_pick(&mut view, &mut dice, &p, now);
             }
             dice.drawn_at = now;
+            dice.attacked = None;
             dice.zoomed = zoomed.is_some();
         }
         let Some(state) = state else { continue };
@@ -525,6 +545,7 @@ pub fn drive(
                             frame.drawn = frame.play(&p);
                         }
                         frame.dice.drawn_at = now;
+                        frame.dice.attacked = None;
                     }
                 }
                 kind if by_data => data_event(&mut frame, kind),
@@ -572,7 +593,17 @@ pub fn drive(
             dice.last_attack
         };
         let idling = animator.main.is_some_and(|m| idle.matches(&animator.set.sequences[m]));
-        if animator.finished()
+        // A looping attack sequence (a held flame's) plays out one length
+        // after the last attack: it never reaches its end, and kept looping
+        // after the release (the Flame Thrower's view model shaking in
+        // `ft_fire` until the next draw).
+        let looped_out = !idling
+            && dice.attacked.is_some_and(|a| {
+            animator.main == Some(a)
+                && animator.set.sequences.get(a).is_some_and(|q| q.looping)
+                && now - dice.last_attack >= animator.set.duration(a) as f64
+        });
+        if (animator.finished() || looped_out)
             && !state.primed
             && !state.reloading
             && now - since >= delay as f64

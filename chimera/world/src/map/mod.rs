@@ -100,7 +100,7 @@ pub mod steam;
 pub mod teleport;
 pub use sound::{
     GameSound, MapSoundClip, MapSoundEntry, MapSounds, MapSurface, PlaySound, PredictedSound, SoundControl, SoundKey,
-    SoundLevel, StartSound, StepRemap,
+    SoundLevel, StartSound, StepRemap, StopSound,
 };
 pub mod shells;
 pub mod shapes;

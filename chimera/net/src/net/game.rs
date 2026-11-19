@@ -19,7 +19,9 @@
 //!   part uses for its own requests).
 //! - **The rules' sounds** as `ServerSound` (`map::GameSound`: CS:S's
 //!   beeps, plant, defuse, blast, hostages), a player's own predicted ones
-//!   (`map::PredictedSound`) to everyone but that player's client.
+//!   (`map::PredictedSound`) to everyone but that player's client; a
+//!   sound stopped (`map::StopSound`: a gun's loop out of its holder's
+//!   hand) as `ServerStopSound`, to everyone but the holder's client.
 //! - **Time**: the server's times go as server ticks (`tick_of`), which a
 //!   client puts on its own clock (`ServerTime`).
 //!
@@ -33,13 +35,13 @@ use bevy::{ecs::message::MessageCursor, prelude::*};
 use bevy_replicon::prelude::*;
 
 use super::{
-    BuyRequest, NetCharacter, NetScore, Notice, OwnState, ServerSound, interp::InterpClock, parts::OwnParts,
+    BuyRequest, NetCharacter, NetScore, Notice, OwnState, ServerSound, ServerStopSound, interp::InterpClock, parts::OwnParts,
     predict::CommandClock,
     score_flags, server::Player,
 };
 use crate::{
     core::{LocalPlayer, NetRole, Npc, Score, ScoreMark, SimClock},
-    map::{GameSound, PlaySound, PredictedSound},
+    map::{GameSound, PlaySound, PredictedSound, StopSound},
     weapon::{
         Inventory,
         economy::{BuyRequested, DefuseKit},
@@ -57,10 +59,10 @@ pub(super) fn plugin(app: &mut App) {
                 .after(ServerSystems::Receive)
                 .run_if(in_state(ServerState::Running)),
         )
-        .add_systems(PostUpdate, send_sounds.before(ServerSystems::Send).run_if(server()))
+        .add_systems(PostUpdate, (send_sounds, send_stops).before(ServerSystems::Send).run_if(server()))
         .add_systems(
             PreUpdate,
-            (apply_scores, apply_own, receive_sounds)
+            (apply_scores, apply_own, receive_sounds, receive_stops)
                 .chain()
                 .after(ClientSystems::Receive)
                 .after(super::predict::rebuild_own_states)
@@ -241,6 +243,26 @@ fn send_sounds(
     }
 }
 
+/// Sounds stopped (`StopSound`: a gun's loop out of its holder's hand),
+/// to every client but the holder's, which stops its own.
+fn send_stops(
+    mut stops: MessageReader<StopSound>,
+    replicated: Query<(), With<Replicated>>,
+    players: Query<(Entity, &Player)>,
+    mut out: MessageWriter<ToClients<ServerStopSound>>,
+) {
+    for s in stops.read() {
+        if !replicated.contains(s.source) {
+            continue;
+        }
+        let client = s.by.and_then(|by| players.iter().find(|(_, p)| p.character == by).map(|(c, _)| c));
+        out.write(ToClients {
+            targets: client.map_or(SendTargets::CLIENTS_ONLY, |c| SendTargets::AllExcept(ClientId::Client(c))),
+            message: ServerStopSound { source: s.source, entry: s.entry.clone() },
+        });
+    }
+}
+
 // --- Client
 
 /// Scores and kits into `Score` and `DefuseKit` (the scoreboard and HUD
@@ -291,6 +313,15 @@ fn receive_sounds(mut sounds: MessageReader<ServerSound>, mut play: MessageWrite
             source: s.source.filter(|e| *e != Entity::PLACEHOLDER),
             channel: s.channel,
         });
+    }
+}
+
+/// The sounds the server stopped.
+fn receive_stops(mut stops: MessageReader<ServerStopSound>, mut out: MessageWriter<StopSound>) {
+    for s in stops.read() {
+        if s.source != Entity::PLACEHOLDER {
+            out.write(StopSound { by: None, source: s.source, entry: s.entry.clone() });
+        }
     }
 }
 

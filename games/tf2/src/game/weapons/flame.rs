@@ -33,7 +33,9 @@
 //!   hit: 3.4 s, 7 ticks, 28); out at waist-deep water. An enemy Pyro
 //!   takes the hits but only a `pyro_burn` (0.25 s) look, no afterburn.
 //! - **Sounds** (`sounds`, predicted): the start and the loop when it
-//!   starts flaming, the end when it stops (the weapon channel).
+//!   starts flaming, the end when it stops (the weapon channel); the
+//!   start and the loop stop when the gun leaves the hand
+//!   (`held_sounds::HeldSounds`: a rung's swap, a death).
 //!
 //! The flames' look is `looks`' (TF2's `flamethrower` system, a piece per
 //! round); the flame points themselves aren't drawn.
@@ -49,7 +51,7 @@ use serde::Deserialize;
 
 use avian3d::prelude::*;
 use chimera_sim::weapon::{
-    CHAN_ITEM, CHAN_WEAPON, Inventory, Magazine, NetPart, Trigger, Weapon, WeaponEvent, WeaponEventKind, aim_of,
+    CHAN_ITEM, CHAN_WEAPON, Inventory, held_sounds::HeldSounds, Magazine, NetPart, Trigger, Weapon, WeaponEvent, WeaponEventKind, aim_of,
     random::shared_random,
 };
 use source_engine::source_movement::SourceMovement;
@@ -162,6 +164,11 @@ impl NetPart for Tf2Flame {
 /// `tf2:flame` on a weapon.
 pub fn attach(e: &mut EntityWorldMut, p: &FlameParams) {
     e.insert(Tf2Flame { params: p.clone(), flaming: false, owed: 0.0 });
+    // The start and the loop end when it leaves the hand (`held_sounds`).
+    let held: Vec<String> = p.start_sound.iter().chain(p.loop_sound.iter()).cloned().collect();
+    if !held.is_empty() {
+        e.insert(HeldSounds(held));
+    }
 }
 
 /// One flame point (units, m/s).

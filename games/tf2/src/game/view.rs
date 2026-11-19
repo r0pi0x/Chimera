@@ -381,6 +381,7 @@ fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
         WeaponEventKind::Fired { .. } if !f.fired => {
             // A looping fire sequence goes on while it fires.
             if q.fire_loops && f.view.sequence() == Some(q.fire.1) {
+                f.sustain();
                 f.fired = true;
                 return;
             }

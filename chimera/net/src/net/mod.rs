@@ -59,7 +59,7 @@
 //! `FireBullets`, `WeaponFx`, `Detonation`, `Senses`, `Killed`, `HitConfirm`,
 //! `Hurt`, `DropRequest`; game rules' `NetScore`, `BuyRequest`, `ServerMotd`
 //! (`motd.rs`), `SayRequest`, `RadioRequest`, `Notice`, `ChatMessage`,
-//! `RadioCall`, `ServerSound`, `CvarValues`, `NameRequest`, `NameChanged`,
+//! `RadioCall`, `ServerSound`, `ServerStopSound`, `CvarValues`, `NameRequest`, `NameChanged`,
 //! `decals::Decals`, voice (`voice::VoiceData`, `VoiceRelay`), votes' `CallVote`,
 //! `CastVote`, `VoteNews` (`vote`), `weapon_params::WeaponParams` (a weapon id's
 //! server-decided parameters, once per id per client), `server_docs::DocsRequest`,
@@ -1228,6 +1228,16 @@ pub struct ServerSound {
     pub channel: Option<u8>,
 }
 
+/// Server -> clients: stop a source's sound by its entry (`map::StopSound`:
+/// a gun's loop that left its holder's hand), to every client but the
+/// holder's.
+#[derive(Message, Serialize, Deserialize, Clone, Debug, PartialEq, bevy::ecs::entity::MapEntities)]
+pub struct ServerStopSound {
+    #[entities]
+    pub source: Entity,
+    pub entry: String,
+}
+
 /// Server -> clients: replicated cvars' values (`console::CvarScope::
 /// Replicated`): all of them when a client joins, then those that
 /// changed. A client sets them and refuses local changes while connected.
@@ -1409,6 +1419,7 @@ impl Plugin for NetPlugin {
             .add_mapped_server_message::<ChatMessage>(Channel::Ordered)
             .add_mapped_server_message::<RadioCall>(Channel::Ordered)
             .add_mapped_server_message::<ServerSound>(Channel::Unreliable)
+            .add_mapped_server_message::<ServerStopSound>(Channel::Ordered)
             .add_server_message::<CvarValues>(Channel::Ordered)
             .make_message_independent::<CvarValues>()
             .add_client_message::<NameRequest>(Channel::Ordered)

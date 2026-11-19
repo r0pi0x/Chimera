@@ -84,6 +84,7 @@ pub mod economy_data;
 pub mod equip;
 pub mod grenade;
 pub mod harm;
+pub mod held_sounds;
 pub mod hits;
 pub mod impact;
 pub mod lagcomp;
@@ -266,6 +267,9 @@ impl Plugin for WeaponPlugin {
             .add_message::<PlayerImpulse>()
             .add_message::<crate::map::RagdollShot>()
             .add_message::<PlaySound>()
+            // A weapon's loops stop when it leaves the hand (`held_sounds`).
+            .add_message::<crate::map::StopSound>()
+            .add_systems(Update, held_sounds::stop_out_of_hand)
             // The rules' sounds (`map::GameSound`), played here.
             .add_message::<crate::map::GameSound>()
             .add_message::<crate::map::PredictedSound>()
@@ -830,6 +834,15 @@ pub struct Inventory {
 }
 
 impl Inventory {
+    /// Whether weapon logic may run at `now` (`next_attack` passed: not
+    /// drawing or reloading a whole clip). A game's own trigger logic (a
+    /// spin-up, a charge) starts nothing before it, as the weapon frame
+    /// doesn't: a gun drawn with the button held starts idle and reacts
+    /// once drawn.
+    pub fn ready(&self, now: f64) -> bool {
+        now + 1e-6 >= self.next_attack
+    }
+
     /// `slot` drawn just now: first in the order.
     pub fn touch_slot(&mut self, slot: u8) {
         self.slot_mru.retain(|s| *s != slot);

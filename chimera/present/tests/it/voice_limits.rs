@@ -2,7 +2,8 @@
 //! `MAX_VOICES_PER_SOURCE` voices at once, a sound without a source at
 //! most `MAX_VOICES_PER_ENTRY` copies of one entry; past the limit the
 //! oldest fades (`FadingOut`). Headless: a voice counts while its clip
-//! lasts (`Playing::sounding`).
+//! lasts (`Playing::sounding`). A `StopSound` fades a source's sound
+//! by its entry, nothing else.
 
 use std::sync::Arc;
 
@@ -21,14 +22,14 @@ use chimera_present::{
 use chimera_world::{
     harness::Sim,
     map::{
-        MapData, MapSoundClip, MapSoundEntry, MapSounds, PlaySound, SoundLevel,
+        MapData, MapSoundClip, MapSoundEntry, MapSounds, PlaySound, SoundLevel, StopSound,
         sound::Interval,
     },
 };
 
 use crate::prop_shadows::base;
 
-/// One entry, "test.shot": a one-second clip.
+/// Two entries, "test.shot" and "test.loop": a one-second clip.
 fn sim() -> Sim {
     let mut sounds = MapSounds::default();
     sounds.clips.push(MapSoundClip {
@@ -48,6 +49,8 @@ fn sim() -> Sim {
             dry: false,
         },
     );
+    let shot = sounds.entries["test.shot"].clone();
+    sounds.entries.insert("test.loop".into(), shot);
     let data = MapData {
         name: "test:voice_limits".into(),
         sounds: Arc::new(sounds),
@@ -147,4 +150,25 @@ fn no_sound_plays_while_a_map_loads_or_the_world_is_covered() {
     sim.app.world_mut().write_message(shot(Some(source), Some(1)));
     sim.app.update();
     assert_eq!(sounding(&mut sim, Some(source)), 1, "plays once the hold is over");
+}
+
+/// A gun's loop out of its holder's hand (`map::StopSound`): that
+/// source's sound of that entry fades, its other sounds and another
+/// source's same entry go on.
+#[test]
+fn a_stop_fades_one_sources_entry_only() {
+    let mut sim = sim();
+    let (a, b) = (sim.app.world_mut().spawn(Transform::default()).id(), sim.app.world_mut().spawn(Transform::default()).id());
+    for (source, channel) in [(a, 1), (b, 1)] {
+        sim.app.world_mut().write_message(PlaySound { entry: "test.loop".into(), ..shot(Some(source), Some(channel)) });
+    }
+    sim.app.world_mut().write_message(shot(Some(a), Some(2)));
+    sim.app.update();
+    assert_eq!((sounding(&mut sim, Some(a)), sounding(&mut sim, Some(b))), (2, 1));
+    sim.app.world_mut().write_message(StopSound { by: None, source: a, entry: "TEST.LOOP".into() });
+    sim.app.update();
+    assert_eq!((sounding(&mut sim, Some(a)), sounding(&mut sim, Some(b))), (1, 1));
+    let w = sim.app.world_mut();
+    let left: Vec<String> = w.query::<&Playing>().iter(w).filter(|p| p.source() == Some(a)).map(|p| p.entry().to_string()).collect();
+    assert_eq!(left, ["test.shot"]);
 }

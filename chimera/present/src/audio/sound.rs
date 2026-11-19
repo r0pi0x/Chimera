@@ -3,7 +3,8 @@
 //! and level), applies the distance model (and a `Radius` level's
 //! distance low-pass, `Gains::with_cutoff`) and left/right panning toward
 //! the listener, and plays it, pitch as playback speed. A new sound on the
-//! same (source entity, channel) replaces the one playing there.
+//! same (source entity, channel) replaces the one playing there; a
+//! `map::StopSound` fades out a source's sound by its entry.
 //!
 //! Voice limits (ours, for the mix: every voice is summed and the output
 //! clips past full scale): a source sounds at most
@@ -26,7 +27,7 @@ use super::{
     room::{RoomDsp, distance_send},
 };
 use crate::map::{
-    MapHooks, MapSoundClip, PlaySound, SoundLevel,
+    MapHooks, MapSoundClip, PlaySound, SoundLevel, StopSound,
     sound::{SoundBank, distance_cutoff, distance_gain},
 };
 
@@ -128,6 +129,10 @@ impl Playing {
     pub fn entry(&self) -> &str {
         &self.entry
     }
+    /// When it started (`Time` elapsed, s).
+    pub fn started(&self) -> f64 {
+        self.started
+    }
     /// Still sounding at `now` (`Time` elapsed, s): its clip hasn't
     /// ended. Headless, nothing despawns a finished one.
     pub fn sounding(&self, now: f64) -> bool {
@@ -176,6 +181,7 @@ impl Plugin for SoundPlugin {
             .unload
             .extend([super::soundscape::reset as fn(&mut World), super::live_sound::reset]);
         app.add_message::<PlaySound>()
+            .add_message::<StopSound>()
             .add_systems(PostUpdate, play_sounds.run_if(resource_exists::<Assets<LiveClip>>))
             .add_plugins((
                 super::soundscape::SoundscapePlugin,
@@ -190,6 +196,7 @@ impl Plugin for SoundPlugin {
 fn play_sounds(
     mut commands: Commands,
     mut messages: MessageReader<PlaySound>,
+    mut stops: MessageReader<StopSound>,
     bank: Option<Res<SoundBank>>,
     listeners: Query<(&GlobalTransform, Option<&ChildOf>), With<SoundListener>>,
     playing: Query<(Entity, &Playing)>,
@@ -204,6 +211,17 @@ fn play_sounds(
 ) {
     let now = time.elapsed_secs_f64();
     let mix = mix.map_or_else(Default::default, |m| *m);
+    let mut stopped: Vec<Entity> = Vec::new();
+    // Sounds asked to stop (`StopSound`: a gun's loop out of its holder's
+    // hand) fade out first, before this run's new ones start
+    // (held or not).
+    for s in stops.read() {
+        for (e, p) in &playing {
+            if p.source == Some(s.source) && p.entry.eq_ignore_ascii_case(&s.entry) && !stopped.contains(&e) {
+                fade(&mut commands, &mut stopped, e, p);
+            }
+        }
+    }
     let Some(bank) = bank.filter(|_| !held(hold.0.as_deref(), hold.1.as_deref())) else {
         messages.clear();
         return;
@@ -218,7 +236,6 @@ fn play_sounds(
     // network client gets a burst after a stall) replace each other, and
     // each old sound is stopped once (it was despawned twice: a warning
     // each time, hundreds in a 17-minute live soak).
-    let mut stopped: Vec<Entity> = Vec::new();
     let mut started: Vec<((Entity, u8), Entity)> = Vec::new();
     // Every sound started this run (source, entry), for the voice limits.
     let mut fresh: Vec<(Entity, Option<Entity>, String)> = Vec::new();

@@ -321,6 +321,19 @@ pub struct PredictedSound {
     pub sound: PlaySound,
 }
 
+/// Stop `source`'s sound `entry` wherever it plays (fading out, as a
+/// sound replaced on its channel): a gun's loop when the gun leaves its
+/// holder's hand (`chimera_sim::weapon::HeldSounds`). Only that entry: a
+/// wind-down the game plays on the same channel is left alone. A network
+/// server sends it to every client but `by`'s (whose client stops its
+/// own prediction's).
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct StopSound {
+    pub by: Option<Entity>,
+    pub source: Entity,
+    pub entry: String,
+}
+
 /// Play the rules' sounds here (and characters' predicted ones).
 pub fn relay_game_sounds(
     mut sounds: MessageReader<GameSound>,
