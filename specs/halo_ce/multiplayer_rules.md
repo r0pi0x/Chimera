@@ -2169,3 +2169,14 @@ spare rounds go to 0 (the weapon is deleted).
     as a living biped (the 408-tick landing assumes it does) and
     whether it is removed before it lands; only visible on a capture
     that follows the body.
+23. **Walking off: tick 97 or 96?** (Raised by the implementation,
+    2026-11-18.) 6.9 and its test case put the first 105 hit of a walk
+    off a ledge on tick 97 of the fall and the death on tick 98, the
+    numbers of a fall from rest (v_z = 0 on the first tick).
+    `movement.md` ("Ground and air", "First-tick fall") says the tick
+    that walks off has already moved the biped 1/128 WU down and the
+    next adds gravity to v_z = −0.0078125, which reaches −0.3430028 one
+    tick sooner (first hit on tick 96, death on 97, counting the
+    walk-off tick as tick 1). Which one the game does, and whether the
+    walk-off tick counts as tick 1 of the fall, is for question 20's
+    frame count; the implementation follows `movement.md` (96, 97).

@@ -65,6 +65,7 @@ impl Plugin for SimBasePlugins {
                 movement::MovementPlugins,
             ))
             .add_plugins(game_log::GameLogPlugin)
+            .add_plugins(chimera_core::recent_hits::RecentHitsPlugin)
             .add_plugins(weapon::WeaponPlugin)
             .add_plugins(announce::AnnouncePlugin)
             .add_plugins(dominations::DominationsPlugin)

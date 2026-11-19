@@ -172,3 +172,39 @@ fn a_body_s_own_incoming_and_a_change_keep_the_shield() {
     assert!((vit(&sim, e).shield - shield).abs() < 1e-5, "the shield's value kept");
     assert!((sim.app.world().get::<Armor>(e).unwrap().amount - shield).abs() < 1e-5, "in the raw unit");
 }
+
+/// multiplayer_rules.md 6.9 on another game's body (the party's rule: a
+/// map's environment hurts every body): a non-Halo character falling
+/// faster than 0.3430028 WU/t (31.36 m/s) on a Halo map takes
+/// `globals\distance`, an unshielded Spartan's 105 of 75: dead in the air,
+/// with no killer, the cross-game table's scale left out (a fall is the
+/// map's). On another game's map the rule is not Halo's to apply.
+#[test]
+fn another_game_s_body_dies_falling_off_a_halo_map() {
+    for (map, dies) in [("halo_ce", true), ("cs_source", false)] {
+        let mut sim = sim();
+        sim.app.insert_resource(party(true));
+        let e = sim.spawn_character(greybox::SPAWNS[0] + Vec3::Y * 400.0, placeholder::ID);
+        sim.ticks(2);
+        sim.app.insert_resource(chimera_core::core::MapGame(map.into()));
+        let mut died = sim.app.world().resource::<Messages<chimera_core::core::Died>>().get_cursor_current();
+        let mut at = None;
+        for n in 0..90 {
+            sim.ticks(1);
+            if let Some(d) = died.read(sim.app.world().resource::<Messages<chimera_core::core::Died>>()).find(|d| d.entity == e) {
+                assert_eq!(d.attacker, None, "{map}: no killer");
+                at = Some(n);
+                break;
+            }
+        }
+        let speed = -sim.velocity(e).y;
+        if dies {
+            let n = at.expect("dead");
+            assert!(sim.app.world().get::<chimera_core::core::MovementState>(e).is_some_and(|s| !s.on_ground), "in the air");
+            // The placeholder's 20 m/s² reaches 31.36 m/s in 1.57 s.
+            assert!((45..=50).contains(&n), "{map}: dead on tick {n} (30 Hz)");
+        } else {
+            assert!(at.is_none() && speed > 40.0, "{map}: falling at {speed} m/s, alive");
+        }
+    }
+}

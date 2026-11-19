@@ -615,6 +615,10 @@ pub fn collect_state(w: &mut World, snapshot: &str) -> ReportState {
     }
     game += &super::world_report::setup_text(w);
     game += &super::world_report::hand_text(w);
+    // What the last hits did (a listen host's or a local game's server).
+    if let Some(h) = w.get_resource::<chimera_core::recent_hits::RecentHits>() {
+        game += &h.text();
+    }
     let world = super::world_report::world_text(w);
     let mut system = format!(
         "os: {} {}\ncpus: {}\n",

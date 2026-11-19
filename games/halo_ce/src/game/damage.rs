@@ -67,6 +67,13 @@
 //!   (`weapon::HitArmor`, ratio 1, fractions kept); a "can cause
 //!   headshots" hit whose damage reaches a head's health, or a melee
 //!   from behind, kills.
+//! - A fall (`fall`, `lethal_fall`: falling category, no instigator) is
+//!   the map's damage, not a game's: no cross-game table's scale on
+//!   either kind of body (the party's rule: self and fall damage
+//!   untouched).
+//! - A hit that does nothing to a Halo character (an immune material:
+//!   the fuel rod on a Hunter) is noted for a feedback report
+//!   (`chimera_core::recent_hits`).
 //! - Either way the engine's team rules decide first (`DamageRules`: a
 //!   teammate's hit with friendly fire off, a protected or noclipping
 //!   target do nothing), as for every game's hits; self damage counts.
@@ -87,13 +94,14 @@
 //!   reference's player-index comparison (Quirks, Open question 6).
 
 use bevy::{ecs::system::ParamSet, prelude::*};
+use chimera_core::recent_hits;
 use chimera_sim::weapon::{Armor, HitArmor};
 
 use crate::core::{BodyRegion, Damage, DamageRules, Health, Hitgroup, Intent, RegionHit, SimClock, Team};
 
 use super::vitality::{
     self, DamageEffects, EffectId, Event, HaloPing, Mirrored, Outcome, Spartan, Stun, Vitality,
-    data::{SideEffect, flags},
+    data::{Category, SideEffect, flags},
 };
 
 /// The hit's flags.
@@ -319,6 +327,7 @@ pub fn deliver_hits(
         MessageWriter<RegionHit>,
         MessageWriter<HaloPing>,
         MessageWriter<HaloHurt>,
+        Option<ResMut<recent_hits::RecentHits>>,
     ),
 ) {
     let team = |e: Entity| teams.get(e).map_or(0, |t| t.0);
@@ -345,6 +354,8 @@ pub fn deliver_hits(
         if !rules.lands(&damage) {
             continue;
         }
+        // A fall (no instigator): the map's damage, not a game's.
+        let environment = hit.instigator.is_none() && fx.category == Category::Falling;
         let friendly = hit
             .instigator
             .is_some_and(|i| i == hit.target || (team(i) != 0 && team(i) == team(hit.target)));
@@ -358,7 +369,9 @@ pub fn deliver_hits(
             // Halo's outgoing times this body's incoming, the same
             // `Balance::pair` as every game's.
             let scale = vitality::scale_of(scale);
-            let own = super::cross_game::own_scale(balance.as_deref(), kind);
+            // A fall is the map's, not a game's: no table's scale (the
+            // party's rule: self and fall damage untouched).
+            let own = if environment { 1.0 } else { super::cross_game::own_scale(balance.as_deref(), kind) };
             let mirrored = mirrored.filter(|m| m.primed);
             if let Some(m) = mirrored.as_deref() {
                 vitality::take_foreign(spartan, &mut v, health, armor.as_deref(), m, scale);
@@ -380,6 +393,25 @@ pub fn deliver_hits(
                 game_multiplier: own,
             };
             let outcome = v.take(spartan, &event);
+            // For a report: a hit that took nothing (an immune body: a
+            // material modifier of 0).
+            if outcome.shield_taken == 0.0 && outcome.body_fraction == 0.0 && !outcome.died {
+                if let Some(r) = out.4.as_deref_mut() {
+                    r.note(
+                        clock.tick,
+                        format!(
+                            "{} -> {} ({}): {} {:?} did nothing (amount {:.1}, scale {:.2})",
+                            recent_hits::who(hit.instigator),
+                            recent_hits::who(Some(hit.target)),
+                            super::cross_game::body_id(kind),
+                            hit.weapon.unwrap_or("-"),
+                            hit.effect,
+                            hit.amount,
+                            own
+                        ),
+                    );
+                }
+            }
             if !outcome.landed {
                 continue;
             }
@@ -458,7 +490,12 @@ pub fn deliver_hits(
             damage.amount = x;
             // Halo's damage, whatever its weapon: the party's cross-game
             // table's scale of Halo's on this body (`weapon::balance`).
-            set.p1().apply_region_of(Some(super::GAME), &mut damage, at, x, Some(1.0), 0.0);
+            // A fall: the map's, unscaled (`apply_environment`).
+            if environment {
+                set.p1().apply_environment(&mut damage, x, Some(1.0), 0.0);
+            } else {
+                set.p1().apply_region_of(Some(super::GAME), &mut damage, at, x, Some(1.0), 0.0);
+            }
             let (health, transform, intent) = others.get(hit.target).unwrap_or((None, None, None));
             let instant = fx.side_effect == SideEffect::LethalToTheUnsuspecting
                 && transform.is_some_and(|t| vitality::unsuspecting(t.translation, hit.epicenter, look_of(intent)));

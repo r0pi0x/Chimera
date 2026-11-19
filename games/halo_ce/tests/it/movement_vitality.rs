@@ -206,3 +206,114 @@ fn a_stunned_jump_uses_the_turning_penalty() {
         close(t.vel().z, v_z, 2e-6, &format!("s_b = {s}: v_z"));
     }
 }
+
+// ---- Leaving the map (multiplayer_rules.md 6.9, "Test cases") ----
+
+/// Ticks from the first airborne tick (fall tick 1) until the player's
+/// death, and the fall tick of the first 105-point hit; `Died` names no
+/// killer.
+fn fall_ticks(t: &mut T, max: u32) -> (u32, u32) {
+    let mut first_hit = None;
+    for n in 1..=max {
+        t.tick();
+        let v = vit(t, t.p);
+        if first_hit.is_none() && (v.shield < 1.0 || v.body < 1.0) {
+            first_hit = Some(n);
+        }
+        if let Some(killer) = died(t) {
+            assert_eq!(killer, None, "a fall's death has no killer");
+            assert!(t.mv().airborne, "killed in the air");
+            return (first_hit.expect("hit before the death"), n);
+        }
+    }
+    panic!("no death in {max} ticks of falling");
+}
+
+/// A full Spartan walks off a ledge (Boarding Action's gap): 105 points
+/// on one tick (shield 0, body 0.6), dead on the next, in the air, no
+/// killer. multiplayer_rules.md 6.9 says ticks 97 and 98 of the fall, as
+/// from rest; movement.md ("First-tick fall": the tick that walks off has
+/// already moved the biped 1/128 WU down, the next adds gravity to v_z =
+/// -0.0078125) makes it one tick sooner, 96 and 97, which the movement
+/// does (the gap is that spec's open question 23). From rest the spec's
+/// 97 and 98 hold (`the_in_air_kill_damage_is_a_hit_too`).
+#[test]
+fn walking_off_a_ledge_kills_on_the_97th_tick_of_the_fall() {
+    let ledge = crate::movement::aabb(Vec3::new(-60.0, -60.0, -5.0), Vec3::new(0.3, 60.0, 0.0));
+    let mut t = T::new(vec![ledge], Vec3::ZERO);
+    t.ticks(3);
+    assert!(!t.mv().airborne, "settled on the ledge");
+    t.face(0.0);
+    t.throttle(1.0, 0.0);
+    for _ in 0..60 {
+        t.tick();
+        if t.mv().airborne {
+            break;
+        }
+    }
+    assert!(t.mv().airborne, "walked off");
+    t.throttle(0.0, 0.0);
+    // That tick was fall tick 1.
+    let mut first = None;
+    for n in 2..=120u32 {
+        t.tick();
+        let v = vit(&t, t.p);
+        if first.is_none() && v.body < 1.0 {
+            first = Some(n);
+            close(v.shield, 0.0, 1e-6, "the first hit: shield");
+            close(v.body, 0.6, 1e-5, "the first hit: body");
+        }
+        if let Some(killer) = died(&t) {
+            assert_eq!(killer, None, "no killer");
+            assert_eq!((first, n), (Some(96), 97), "first hit, death (fall ticks)");
+            return;
+        }
+    }
+    panic!("not killed: first hit {first:?}");
+}
+
+/// The same from rest under a full overshield (shield 3.0, 225 points):
+/// three hits, dead on tick 99. The spec's 1.6 and 0.2 left after ticks 97
+/// and 98 leave out the overshield's own drain (1/1350 a tick above 1,
+/// health_shields.md), which takes 0.072 more by then.
+#[test]
+fn an_overshield_lasts_one_more_tick() {
+    let mut t = T::new(vec![floor()], Vec3::new(0.0, 0.0, 30.0));
+    // Fall tick 1 makes the body's vitality; the overshield on it after.
+    t.tick();
+    t.sim.app.world_mut().get_mut::<Vitality>(t.p).unwrap().shield = 3.0;
+    t.ticks(95);
+    assert_eq!(vit(&t, t.p).body, 1.0);
+    t.tick();
+    let drain = 96.0 / 1350.0;
+    close(vit(&t, t.p).shield, 1.6 - drain, 2e-3, "tick 97: shield");
+    t.tick();
+    let v = vit(&t, t.p);
+    close(v.shield, 0.2 - drain, 2e-3, "tick 98: shield");
+    assert_eq!((v.body, v.dead), (1.0, false), "tick 98: the body untouched");
+    t.tick();
+    assert!(vit(&t, t.p).dead && died(&t) == Some(None), "tick 99: dead, no killer");
+}
+
+/// Jumping off (leaving at +0.07 WU/t): the first hit about 116 ticks
+/// after the jump, dead on the next tick.
+#[test]
+fn jumping_off_kills_about_117_ticks_after_the_jump() {
+    let mut t = T::new(vec![floor()], Vec3::new(0.0, 0.0, 30.0));
+    t.set_vel(Vec3::new(0.0, 0.0, 0.07));
+    let (first, dead) = fall_ticks(&mut t, 200);
+    assert!((115..=117).contains(&first), "first hit on tick {first}");
+    assert_eq!(dead, first + 1, "dead on the next tick");
+}
+
+/// Under a party app's 66.7 Hz tick the hits still come once a 30 Hz
+/// tick: a fall from rest still kills about 98/30 s in.
+#[test]
+fn under_a_party_tick_a_fall_kills_at_the_same_time() {
+    let hz = 1.0 / 0.015;
+    let mut t = T::at_rate(vec![floor()], Vec3::new(0.0, 0.0, 30.0), hz);
+    let (first, dead) = fall_ticks(&mut t, 400);
+    let (first, dead) = (first as f64 * 0.015, dead as f64 * 0.015);
+    assert!((96.0 / 30.0..=98.0 / 30.0).contains(&first), "first hit at {first} s");
+    assert!(dead - first > 0.029 && dead - first < 0.05, "the second hit a 30 Hz tick later: {first} s, {dead} s");
+}

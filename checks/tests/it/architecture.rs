@@ -99,6 +99,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // lines, the memory readers and the tick metrics; the session ends as
     // a step of the quick exit (`shutdown`, below it).
     ("diagnostics", &["console", "metrics", "env", "shutdown"]),
+    // The server's last hits for a feedback report, over the core's
+    // damage messages.
+    ("recent_hits", &["core"]),
     ("slots", &["core"]),
     ("envelope", &["core"]),
     ("character", &["core", "slots"]),

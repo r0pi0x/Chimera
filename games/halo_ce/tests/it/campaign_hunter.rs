@@ -309,3 +309,68 @@ fn an_effects_set_merges_with_its_indices_moved() {
     assert_eq!(lib.projectiles["rod"].detonation, Some(2));
     assert_eq!(lib.projectiles["rod"].attached[0].0, 3);
 }
+
+/// The Hunter's cannon at a full Spartan and at a Hunter on the greybox,
+/// 2, 5 and 10 m ahead, a rod each charge for 12 s: whether a rod's
+/// explosion reaches the body, what each did (`HaloHurt`), and the death.
+/// characters.md section 5 rule 3 and test case 6: the fuel rod's
+/// explosion modifier for both Hunter material types (12 armour, 13 skin)
+/// is 0, so Hunters are immune to it (the table's "never"), while a
+/// Spartan dies to 3 rods.
+#[test]
+fn the_cannon_kills_a_spartan_and_never_a_hunter() {
+    use chimera_core::core::{Died, Health};
+    use halo_ce::game::{damage::HaloHurt, movement, weapons::HaloFired};
+    fn world(s: &chimera_world::harness::Sim) -> &World {
+        s.app.world()
+    }
+    for kind in [BodyKind::Spartan, BodyKind::Hunter] {
+        for metres in [2.0, 5.0, 10.0] {
+            let (mut sim, p, _) = crate::weapons::armed(HUNTER_RUNG);
+            sim.app.insert_resource(BodyTables::build(&CampaignData::builtin(), &MovementData::builtin()).unwrap());
+            let at = sim.position(p) - Vec3::Z * metres;
+            let t = sim.spawn_character(at, movement::ID);
+            sim.app.world_mut().entity_mut(t).insert(kind);
+            sim.ticks(2);
+            let aim = sim.position(t) - (sim.position(p) + sim.state(p).eye_offset);
+            sim.intent(p).yaw = (-aim.x).atan2(-aim.z);
+            sim.intent(p).pitch = (aim.y / aim.xz().length()).atan();
+            let mut fired = world(&sim).resource::<Messages<HaloFired>>().get_cursor_current();
+            let mut hurt = world(&sim).resource::<Messages<HaloHurt>>().get_cursor_current();
+            let mut died = world(&sim).resource::<Messages<Died>>().get_cursor_current();
+            let (mut rods, mut hits, mut taken, mut dead) = (0, 0, 0.0, None);
+            for n in 0..360 {
+                sim.intent(p).fire = true;
+                sim.ticks(1);
+                rods += fired.read(world(&sim).resource::<Messages<HaloFired>>()).filter(|f| f.owner == p).count();
+                for h in hurt.read(world(&sim).resource::<Messages<HaloHurt>>()).filter(|h| h.target == t) {
+                    hits += 1;
+                    taken += h.outcome.shield_taken + h.outcome.body_amount;
+                    println!(
+                        "{kind:?} at {metres} m, tick {n}: {:?} landed {} shield {} body {} fraction {}",
+                        h.effect, h.outcome.landed, h.outcome.shield_taken, h.outcome.body_amount, h.outcome.body_fraction
+                    );
+                }
+                if dead.is_none() && died.read(world(&sim).resource::<Messages<Died>>()).any(|d| d.entity == t) {
+                    dead = Some(rods);
+                    break;
+                }
+            }
+            let health = world(&sim).get::<Health>(t).map_or(-1.0, |h| h.current);
+            println!("{kind:?} at {metres} m: {rods} rods, {hits} hits, {taken} points, dead after {dead:?}, health {health}");
+            assert!(rods >= 3, "{kind:?} at {metres} m: the cannon fires ({rods})");
+            // A report names each hit that did nothing (`RecentHits`).
+            let noted = world(&sim).resource::<chimera_core::recent_hits::RecentHits>().lines().filter(|l| l.contains("did nothing")).count();
+            match kind {
+                BodyKind::Hunter => {
+                    assert!(dead.is_none() && health == 1.0, "{kind:?} at {metres} m: immune");
+                    assert_eq!(noted, hits, "{kind:?} at {metres} m: each rod noted");
+                }
+                _ => {
+                    assert!(dead.is_some_and(|r| r <= 3), "{kind:?} at {metres} m: dead to 3 rods ({dead:?}, {hits} hits)");
+                    assert_eq!(noted, 0);
+                }
+            }
+        }
+    }
+}

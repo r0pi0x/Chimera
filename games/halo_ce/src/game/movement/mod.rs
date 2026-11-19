@@ -17,6 +17,9 @@
 //! - `mover`: the collision move (the slide, the clip set, the stored
 //!   velocity, the virtual crease contact) on a `mover::Space`.
 //! - `space`: that space on the engine's collision (avian shape casts).
+//! - `falls`: a Halo map's too-fast-fall rule (`globals\distance`, 105 a
+//!   30 Hz tick) for every other game's body on it; Halo's own movement
+//!   deals it in its tick, one hit a 30 Hz tick under any engine tick.
 //!
 //! A campaign body (`campaign::BodyKind`, the party apps' Elite) moves by
 //! its own table (`campaign::movement_of`, used by `step`, the collider,
@@ -123,6 +126,7 @@
 //!   (the input layer's), the airborne tick counter (animation only).
 
 pub mod data;
+pub mod falls;
 pub mod mover;
 pub mod space;
 pub mod tick;
@@ -193,6 +197,14 @@ pub fn register(app: &mut App) {
         .register_movement::<HaloMovement>(ID)
         .seat_movement(ID, footing, seat)
         .add_systems(Predict::Movement, (step.after(UnitStep), sync_collider).chain())
+        .add_systems(
+            FixedUpdate,
+            falls::other_bodies
+                .after(crate::core::SimSet::Movement)
+                .before(crate::core::SimSet::Weapons)
+                .run_if(crate::core::authoritative)
+                .run_if(falls::on_halo_map),
+        )
         .predicted_net::<HaloMovement>();
 }
 
@@ -400,10 +412,18 @@ fn step(
         transform.translation = (out.origin + Vec3::Y * d.centre_above_origin(me.crouch)) * s;
         vel.0 = out.velocity * per_tick;
         if first && let Some(fall) = out.damage {
-            hits.write(match fall {
-                Fall::Landing(q_f) => HaloHit::fall(&effects, e, q_f),
-                Fall::Lethal => HaloHit::lethal_fall(&effects, e),
-            });
+            match fall {
+                Fall::Landing(q_f) => {
+                    hits.write(HaloHit::fall(&effects, e, q_f));
+                }
+                // One a 30 Hz tick (movement.md 6), whatever the engine's
+                // tick: none on an engine tick that crosses no Halo tick.
+                Fall::Lethal => {
+                    for _ in 0..crate::game::ticks::halo_ticks(&clock) {
+                        hits.write(HaloHit::lethal_fall(&effects, e));
+                    }
+                }
+            }
         }
         *state = MovementState {
             on_ground: !me.airborne,
