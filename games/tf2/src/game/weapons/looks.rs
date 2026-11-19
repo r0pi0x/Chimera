@@ -37,6 +37,10 @@
 //!   muzzle as the flash's (else the bullet's start) to the bullet's end:
 //!   control point 1 (`StartParticleSystem::end`), which the system's
 //!   "move particles between 2 control points" heads for at its speed.
+//!   Another player's (one drawn from snapshots, `NetDrawn`) waits the
+//!   interpolation delay (`tracer_hold`), leaving when the drawn body
+//!   fires: real TF2 draws others' flashes at once and their tracers about
+//!   7 frames (at 60) later.
 //! - **Trails** (effects.md 1): a gun's `trail` (`FlyerTrail`) starts on
 //!   each of its flyers as it appears (`ShownItem`: `rockettrail` on
 //!   `tf2:rocket`, `pipebombtrail_<team>`, `stickybombtrail_<team>`,
@@ -760,16 +764,56 @@ pub fn flame_stream(
     }
 }
 
+/// A tracer of another player's shot waiting for its body to fire
+/// (`tracers`): when (this machine's time), whose, the bullet's start and
+/// end, the system.
+#[derive(Clone, Debug)]
+pub struct HeldTracer {
+    pub at: f64,
+    pub owner: Entity,
+    pub from: Vec3,
+    pub to: Vec3,
+    pub name: String,
+}
+
+/// How long another player's tracer waits: the interpolation delay
+/// others are drawn with (`InterpClock::delay`), so it leaves when the
+/// drawn body fires, as in TF2 (its flash comes at once, its tracers and
+/// fire gesture about 7 frames at 60 later: `thirdperson.tf2`); none for
+/// this machine's own player or without a clock.
+pub fn tracer_hold(own: bool, delay: Option<f64>) -> f64 {
+    if own { 0.0 } else { delay.unwrap_or(0.0).clamp(0.0, 0.5) }
+}
+
 /// Each bullet's tracer by the shared count (effects.md 6).
+#[allow(clippy::too_many_arguments)]
 fn tracers(
+    time: Res<Time>,
     looks: Res<GunLooks>,
     mut events: MessageReader<WeaponEvent>,
     weapons: Query<&Weapon>,
     teams: Query<&Team>,
+    drawn: Query<(), With<crate::map::interp::NetDrawn>>,
+    clock: Option<Res<chimera_net::net::interp::InterpClock>>,
     muzzles: Muzzles,
     mut count: ResMut<TracerCount>,
+    mut held: Local<Vec<HeldTracer>>,
     mut start: MessageWriter<StartParticleSystem>,
 ) {
+    let now = time.elapsed_secs_f64();
+    let mut go = |owner: Entity, from: Vec3, to: Vec3, name: String, start: &mut MessageWriter<StartParticleSystem>| {
+        let at = if muzzles.view_model_off(owner) { None } else { muzzles.of(owner) };
+        let at = at.unwrap_or(from);
+        let forward = (to - at).try_normalize().unwrap_or(Vec3::NEG_Z);
+        start.write(StartParticleSystem { end: Some(to), ..StartParticleSystem::new(name, at, forward) });
+    };
+    held.retain(|h| {
+        if h.at > now {
+            return true;
+        }
+        go(h.owner, h.from, h.to, h.name.clone(), &mut start);
+        false
+    });
     for e in events.read() {
         let WeaponEventKind::Shot { from, to, .. } = e.kind else { continue };
         if !e.shown() {
@@ -783,10 +827,13 @@ fn tracers(
             continue;
         }
         let blu = teams.get(e.owner).is_ok_and(|t| super::super::bodies::skin_of(Some(*t)) == 1);
-        let at = if muzzles.view_model_off(e.owner) { None } else { muzzles.of(e.owner) };
-        let at = at.unwrap_or(from);
-        let forward = (to - at).try_normalize().unwrap_or(Vec3::NEG_Z);
-        start.write(StartParticleSystem { end: Some(to), ..StartParticleSystem::new(tracer_name(base, blu, false), at, forward) });
+        let name = tracer_name(base, blu, false);
+        let hold = tracer_hold(!drawn.contains(e.owner), clock.as_ref().map(|c| c.delay));
+        if hold > 0.0 {
+            held.push(HeldTracer { at: now + hold, owner: e.owner, from, to, name });
+        } else {
+            go(e.owner, from, to, name, &mut start);
+        }
     }
 }
 
@@ -961,6 +1008,14 @@ mod tests {
 
     /// effects.md 1 (the per-gun tracer names, "pcf (inferred)" ones
     /// included) and 6 (every 2nd bullet, the Minigun's 4th).
+    #[test]
+    fn others_tracers_wait_for_their_drawn_body() {
+        assert_eq!(tracer_hold(true, Some(0.1)), 0.0);
+        assert!((tracer_hold(false, Some(0.1)) - 0.1).abs() < 1e-9);
+        assert_eq!(tracer_hold(false, None), 0.0);
+        assert_eq!(tracer_hold(false, Some(3.0)), 0.5);
+    }
+
     #[test]
     fn tracer_names_and_rates_follow_the_spec() {
         use super::super as w;

@@ -201,3 +201,11 @@ Captured imagery stays in scratch, never in the repo.
   `Op::Collide` now runs for started systems (a ray per step against the
   solid world, characters left out): the casings land and lie. TF2's fly
   farther out to the Heavy's side and fewer lie by his feet (open).
+- Others' flash before their tracers: confirmed (`thirdperson.tf2`, the
+  Scattergun and Shotgun: the flash at frame 2, the tracers at 9-10, with
+  the fire gesture). Read as TF2's interpolation: the flash comes with
+  the shot, the tracers when the body drawn 0.1 s in the past fires. Ours
+  now holds another player's tracers (`NetDrawn`) for the interpolation
+  delay (`looks::tracer_hold`, `InterpClock::delay`). The sandbox's
+  targets live in the client's own world (not interpolated, delay 0), so
+  its pictures still show them together, as its bodies fire.
