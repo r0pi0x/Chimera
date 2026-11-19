@@ -509,10 +509,12 @@ impl MapScopedApp for App {
 
 /// Free `old` on a task: a map's models and textures are many allocations,
 /// a good part of a map's unload (docs/performance.md, "Nothing blocks the main
-/// thread").
+/// thread"). Counted in `chimera_core::pending_work::pending()`, so a test
+/// waiting for idle sees the free (and the asset removals it queues) done
+/// rather than racing a detached task.
 pub fn drop_later<T: Send + 'static>(old: T) {
     match bevy::tasks::AsyncComputeTaskPool::try_get() {
-        Some(pool) => pool.spawn(async move { drop(old) }).detach(),
+        Some(pool) => chimera_core::pending_work::spawn(pool, async move { drop(old) }).detach(),
         None => drop(old),
     }
 }
