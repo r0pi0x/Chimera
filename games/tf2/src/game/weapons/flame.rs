@@ -167,7 +167,7 @@ pub fn attach(e: &mut EntityWorldMut, p: &FlameParams) {
     // The start and the loop end when it leaves the hand (`held_sounds`).
     let held: Vec<String> = p.start_sound.iter().chain(p.loop_sound.iter()).cloned().collect();
     if !held.is_empty() {
-        e.insert(HeldSounds(held));
+        e.insert(HeldSounds::new(held));
     }
 }
 

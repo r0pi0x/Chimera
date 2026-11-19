@@ -168,7 +168,7 @@ pub fn attach(e: &mut EntityWorldMut, p: &MinigunParams) {
         ViewPose(0),
         // Its wind-up and loops end when it leaves the hand (a rung's
         // swap, a death): `held_sounds`.
-        HeldSounds(vec![p.wind_up_sound.clone(), p.spin_sound.clone(), p.fire_sound.clone(), p.empty_sound.clone()]),
+        HeldSounds::new(vec![p.wind_up_sound.clone(), p.spin_sound.clone(), p.fire_sound.clone(), p.empty_sound.clone()]),
     ));
 }
 

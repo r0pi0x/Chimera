@@ -270,6 +270,7 @@ impl Plugin for WeaponPlugin {
             // A weapon's loops stop when it leaves the hand (`held_sounds`).
             .add_message::<crate::map::StopSound>()
             .add_systems(Update, held_sounds::stop_out_of_hand)
+            .add_observer(held_sounds::stop_on_remove)
             // The rules' sounds (`map::GameSound`), played here.
             .add_message::<crate::map::GameSound>()
             .add_message::<crate::map::PredictedSound>()
