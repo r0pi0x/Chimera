@@ -25,8 +25,9 @@
 //! `[feedback] on_report` in the local config) runs a command for each new
 //! one (a Discord ping). The triage page is at
 //! `http://127.0.0.1:<port>/feedback/admin/` on this machine only (a proxy on
-//! this machine, e.g. over a private network, may use another `Host`: each
-//! `--admin-host <name>`, or `admin_hosts = [...]` under `[feedback]`).
+//! this machine may use this machine's own name or a Tailscale `*.ts.net`
+//! name as `Host`; `--admin-host <name>`, or `admin_hosts = [...]` under
+//! `[feedback]`, adds others).
 //! docs/playtest-hosting.md has the steps. A host tool: not in releases.
 
 use std::process::ExitCode;
@@ -44,7 +45,7 @@ const USAGE: &str = "usage: chimera_asset_server [--store <dir>] [--listen <ip:p
   --listen     plain HTTP, default 127.0.0.1:8731 (keep it on this machine)
   --tls        HTTPS with the server's own certificate (its fingerprint is printed), e.g. 0.0.0.0:27031
   --on-report  a command run for each new feedback report (default: [feedback] on_report in the local config)
-  --admin-host an extra Host name the triage page answers to, from this machine only (repeatable; a private\n               network's proxy; default: admin_hosts under [feedback] in the local config)
+  --admin-host another Host name the triage page answers to, from this machine only (repeatable; besides\n               localhost, this machine's name and *.ts.net; default: admin_hosts under [feedback] in the local config)
   --reports-keep-days, --reports-keep-mb  delete reports older than that (default 60 days), then the oldest
                past that total (default 2048 MB); 0: keep
   --accounts   the accounts service on this machine, for the revocation feed (default http://127.0.0.1:8741)

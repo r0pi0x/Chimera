@@ -210,38 +210,70 @@ pub struct Service {
     /// Host names besides the loopback ones the triage page answers to
     /// (lowercase; from a loopback connection only).
     admin_hosts: Vec<String>,
+    /// This machine's host name, read at start.
+    own_host: Option<String>,
     started: Instant,
 }
 
-/// The triage page's rule: from loopback, not relayed, to a loopback `Host`
-/// or one of `extra` (lowercase names).
-fn admin_allowed(loopback: bool, relayed: bool, host: &str, extra: &[String]) -> bool {
+/// This machine's host name from the OS (lowercase), if it has one.
+fn own_host_name() -> Option<String> {
+    #[cfg(unix)]
+    let name = {
+        let mut buf = [0u8; 256];
+        // SAFETY: `buf` is valid for 256 bytes; gethostname writes at most that.
+        let ok = unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) } == 0;
+        let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        ok.then(|| String::from_utf8_lossy(&buf[..end]).into_owned())
+    };
+    #[cfg(not(unix))]
+    let name = std::env::var("COMPUTERNAME").ok();
+    name.map(|n| n.trim().trim_end_matches('.').to_ascii_lowercase()).filter(|n| !n.is_empty())
+}
+
+/// The triage page's rule: from loopback, not relayed by the TLS front, to
+/// a `Host` whose name is a loopback one, this machine's own (`own`, and
+/// `<own>.local`), a Tailscale MagicDNS name (`*.ts.net`: resolves only
+/// inside a tailnet, so a rebinding page can't produce it) or one of
+/// `extra`. Names are matched exactly (or by the `.ts.net` suffix), never
+/// "any Host" (DNS rebinding).
+fn admin_allowed(loopback: bool, relayed: bool, host: &str, own: Option<&str>, extra: &[String]) -> bool {
     let host = host.to_ascii_lowercase();
     let host = match host.strip_prefix('[') {
         Some(v6) => v6.split(']').next().unwrap_or("").to_string(),
         None => host.split(':').next().unwrap_or("").to_string(),
     };
-    loopback && !relayed && (matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1") || extra.iter().any(|h| *h == host))
+    let host = host.trim_end_matches('.');
+    if !loopback || relayed || host.is_empty() {
+        return false;
+    }
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
+        || own.is_some_and(|o| host == o || host.strip_suffix(".local") == Some(o))
+        || host.strip_suffix(".ts.net").is_some_and(|label| !label.is_empty())
+        || extra.iter().any(|h| h == host)
 }
 
 #[cfg(test)]
 mod admin_tests {
     use super::admin_allowed;
 
+    fn ok(relayed: bool, host: &str) -> bool {
+        admin_allowed(true, relayed, host, Some("mybox"), &["proxy.example".to_string()])
+    }
+
     #[test]
-    fn extra_admin_hosts_need_loopback_and_no_front() {
-        let extra = vec!["box.example.ts.net".to_string()];
-        assert!(admin_allowed(true, false, "localhost:8731", &[]));
-        assert!(admin_allowed(true, false, "[::1]:8731", &[]));
-        assert!(admin_allowed(true, false, "Box.Example.TS.net", &extra));
-        assert!(admin_allowed(true, false, "box.example.ts.net:443", &extra));
+    fn the_admin_rule_takes_known_names_from_loopback_only() {
+        assert!(ok(false, "localhost:8731") && ok(false, "[::1]:8731") && ok(false, "127.0.0.1"));
+        assert!(ok(false, "mybox") && ok(false, "MyBox.local:80") && ok(false, "mybox."));
+        assert!(ok(false, "Box.Tail1234.TS.net") && ok(false, "box.tail1234.ts.net:443") && ok(false, "box.tail1234.ts.net."));
+        assert!(ok(false, "Proxy.Example"));
         // Relayed by the front, or not from loopback: refused.
-        assert!(!admin_allowed(true, true, "box.example.ts.net", &extra));
-        assert!(!admin_allowed(false, false, "box.example.ts.net", &extra));
-        // Not listed (also by suffix or prefix): refused.
-        assert!(!admin_allowed(true, false, "other.example.ts.net", &extra));
-        assert!(!admin_allowed(true, false, "evil.box.example.ts.net", &extra));
-        assert!(!admin_allowed(true, false, "box.example.ts.net", &[]));
+        assert!(!ok(true, "box.tail1234.ts.net") && !ok(true, "localhost"));
+        assert!(!admin_allowed(false, false, "box.tail1234.ts.net", None, &[]));
+        // Other names, suffix and prefix tricks: refused.
+        for bad in ["evil.example", "ts.net.evil.example", "evilts.net", "ts.net", ".ts.net", "mybox.evil.example", "xmybox", "evil.mybox.local", ""] {
+            assert!(!ok(false, bad), "{bad}");
+        }
+        assert!(!admin_allowed(true, false, "mybox", None, &[]));
     }
 }
 
@@ -318,6 +350,7 @@ impl Service {
             peers: None,
             feedback: crate::feedback::inbox::Inbox::open(feedback_dir(&store)),
             admin_hosts: Vec::new(),
+            own_host: own_host_name(),
             store,
             started: Instant::now(),
         })
@@ -400,7 +433,7 @@ impl Service {
     fn local_admin(&self, request: &Request) -> bool {
         let Some(at) = request.remote_addr() else { return false };
         let host = request.headers().iter().find(|h| h.field.equiv("Host")).map(|h| h.value.as_str()).unwrap_or("");
-        admin_allowed(at.ip().is_loopback(), self.relayed(request), host, &self.admin_hosts)
+        admin_allowed(at.ip().is_loopback(), self.relayed(request), host, self.own_host.as_deref(), &self.admin_hosts)
     }
 
     /// `/feedback/admin...` (`feedback::page`).

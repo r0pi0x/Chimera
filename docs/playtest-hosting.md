@@ -1098,14 +1098,17 @@ loopback does). `accounts.db` is backed up nightly into `<server store>/server/b
   takes it back); revoking its token stops them too. `--on-report
   <command>` (or `on_report` under `[feedback]` in the local config)
   runs a command with the new report's folder, e.g. a ping.
-- **The page over a private network.** The triage page answers only to
-  `localhost`, `127.0.0.1` and `::1`. A proxy on the same machine that keeps
-  the original `Host` (e.g. `tailscale serve`) needs its name listed:
+- **The page over a private network.** The triage page answers only to a
+  connection from this machine (loopback, not through the TLS front) whose
+  `Host` is `localhost`, `127.0.0.1`, `::1`; this machine's own host name
+  (read from the OS; also `<name>.local`); or a Tailscale MagicDNS name (any
+  `*.ts.net`: it resolves only inside a tailnet). Anything else is a 404, so
+  a rebinding page can't reach it. `tailscale serve --set-path /feedback
+  http://127.0.0.1:<plain port>/feedback` therefore works with no
+  configuration (never Funnel). For another private proxy,
   `--admin-host <name>` (repeatable; e.g. `--admin-host
-  my-box.example.ts.net`, a placeholder) or `admin_hosts = ["<name>"]` under
-  `[feedback]` in the local config. Exact, case-insensitive match; the
-  connection must still come from loopback and not through the TLS front.
-  Default: none.
+  proxy.example.internal`, a placeholder) or `admin_hosts = ["<name>"]` under
+  `[feedback]` in the local config adds an exact, case-insensitive name.
 - **Unknown entries.** A bundle from a newer game may hold files this
   server doesn't know: up to 8, each at most 512 KiB, are dropped (not
   stored) and named in the report's `history.log`; more or larger, or a
