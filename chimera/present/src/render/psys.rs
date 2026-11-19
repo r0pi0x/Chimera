@@ -9,7 +9,11 @@
 //! entity, switched by `EntityPart`, drawn as one-frame pool groups (sprites,
 //! sprite trails, ropes; the material's overbright); `run_started_systems`
 //! runs the one-shot systems games start (`StartParticleSystem`) to their
-//! end. Colour random's `tint_perc` blends each new particle's colour that
+//! end, those started on a first-person view model
+//! (`StartParticleSystem::view_model`: a muzzle flash) in a group of
+//! their own the view-model camera draws (`ParticleGroup::view_model`:
+//! its field of view, over the world, depth tested against the model).
+//! Colour random's `tint_perc` blends each new particle's colour that
 //! far toward the light at its control point (`ControlPoint::light`: the
 //! map's `LightField` there, sampled when the system starts or its entity
 //! moves; white without one).
@@ -839,10 +843,19 @@ pub fn update_systems(
 #[derive(Default)]
 pub struct StartedSystems {
     defs: Option<std::sync::Arc<MapParticleSystems>>,
-    /// Each system, its control point, how long it emits, and what it
-    /// follows with its frame last step (engine space).
-    running: Vec<(Instance, ControlPoint, Option<f32>, Option<(crate::map::psys::Follow, Transform)>)>,
+    running: Vec<Running>,
     rng: Option<ParticleRng>,
+}
+
+/// A started system: its instance, its control point, how long it emits,
+/// what it follows with its frame last step (engine space), and whether
+/// the view-model camera draws it (`StartParticleSystem::view_model`).
+struct Running {
+    instance: Instance,
+    cp: ControlPoint,
+    emit_for: Option<f32>,
+    follow: Option<(crate::map::psys::Follow, Transform)>,
+    view_model: bool,
 }
 
 impl StartedSystems {
@@ -877,34 +890,35 @@ impl StartedSystems {
         }
         let Some(def) = defs.find(name) else { return false };
         let rotation = Quat::from_rotation_arc(Vec3::X, forward.try_normalize().unwrap_or(Vec3::X));
-        self.running.push((
-            Instance::new(&defs.defs, def),
-            ControlPoint {
+        self.running.push(Running {
+            instance: Instance::new(&defs.defs, def),
+            cp: ControlPoint {
                 position,
                 rotation,
                 light,
             },
             emit_for,
-            None,
-        ));
+            follow: None,
+            view_model: false,
+        });
         true
     }
 
     pub fn count(&self) -> usize {
-        self.running.iter().map(|(i, ..)| i.count()).sum()
+        self.running.iter().map(|r| r.instance.count()).sum()
     }
 
     /// Advance every started system by `dt`; finished ones go.
     pub fn step(&mut self, dt: f32, sheets: &impl Sheets) {
         let Some(defs) = self.defs.clone() else { return };
         let rng = self.rng.get_or_insert_with(|| ParticleRng::new(0x5_1A5));
-        for (i, cp, emit_for, _) in &mut self.running {
+        for Running { instance: i, cp, emit_for, .. } in &mut self.running {
             if emit_for.is_some_and(|t| i.age >= t) && i.emitting {
                 i.stop();
             }
             i.step(&defs.defs, &[*cp; MAX_CONTROL_POINTS], dt, rng, sheets);
         }
-        self.running.retain(|(i, ..)| !i.finished(&defs.defs));
+        self.running.retain(|r| !r.instance.finished(&defs.defs));
     }
 }
 
@@ -953,25 +967,28 @@ pub fn run_started_systems(
         let light = light_field
             .as_deref()
             .map_or(Vec3::ONE, |field| point_light(&(field.0.0)(s.position)));
-        if started.start_for(defs, &s.name, to_game(s.position), f, light, s.emit_for)
-            && let Some(follow) = s.follow
+        if !started.start_for(defs, &s.name, to_game(s.position), f, light, s.emit_for) {
+            continue;
+        }
+        let Some(last) = started.running.last_mut() else { continue };
+        last.view_model = s.view_model;
+        if let Some(follow) = s.follow
             && let Some(at) = frame(follow.entity)
-            && let Some(last) = started.running.last_mut()
         {
             // Placed by the frame now (the start's world place came from
             // the same eye, maybe a frame older).
             let p = at.transform_point(follow.local);
             let fw = at.rotation * follow.forward;
-            last.1.position = to_game(p);
-            last.1.rotation = Quat::from_rotation_arc(Vec3::X, Vec3::new(fw.x, -fw.z, fw.y).try_normalize().unwrap_or(Vec3::X));
-            last.3 = Some((follow, at));
+            last.cp.position = to_game(p);
+            last.cp.rotation = Quat::from_rotation_arc(Vec3::X, Vec3::new(fw.x, -fw.z, fw.y).try_normalize().unwrap_or(Vec3::X));
+            last.follow = Some((follow, at));
         }
     }
     if started.running.is_empty() {
         return;
     }
     // Followed systems carried with their entity's frame since last step.
-    for (i, cp, _, follow) in &mut started.running {
+    for Running { instance: i, cp, follow, .. } in &mut started.running {
         let Some((f, last)) = follow else { continue };
         let Some(now) = frame(f.entity) else {
             *follow = None;
@@ -999,17 +1016,22 @@ pub fn run_started_systems(
     let Some(eye) = eyes.iter().next().map(|e| e.translation()) else {
         return;
     };
-    let mut out = Vec::new();
-    for (i, ..) in &started.running {
-        i.draw(&defs.defs, &to_engine, scale, eye, &sheets, &mut out);
-    }
-    if !out.is_empty() {
-        let mut g = ParticleGroup::new(default());
-        g.particles = out;
-        g.capped = false;
-        g.skip_first = true;
-        g.kill_after = Some(0.0);
-        pool.add(g);
+    // One group for the world pass, one for the view-model camera's
+    // (the same eye: its camera sits at the world camera's place).
+    for view_model in [false, true] {
+        let mut out = Vec::new();
+        for r in started.running.iter().filter(|r| r.view_model == view_model) {
+            r.instance.draw(&defs.defs, &to_engine, scale, eye, &sheets, &mut out);
+        }
+        if !out.is_empty() {
+            let mut g = ParticleGroup::new(default());
+            g.particles = out;
+            g.capped = false;
+            g.skip_first = true;
+            g.kill_after = Some(0.0);
+            g.view_model = view_model;
+            pool.add(g);
+        }
     }
 }
 
@@ -1231,7 +1253,7 @@ mod tests {
         assert!(!started.start(&defs, "nothing", Vec3::ZERO, Vec3::Z, Vec3::ONE));
         assert!(started.start(&defs, "TEST", Vec3::ZERO, Vec3::Z, Vec3::ONE));
         // Pointing up: the frame's forward axis is +Z.
-        let (_, cp, _, _) = &started.running[0];
+        let cp = &started.running[0].cp;
         assert!((cp.rotation * Vec3::X).abs_diff_eq(Vec3::Z, 1e-5));
         started.step(0.1, &none);
         assert!(started.count() > 0);
@@ -1263,7 +1285,7 @@ mod tests {
                 s.step(0.05, &none);
                 made = made.max(s.count());
             }
-            (made, s.running[0].0.emitting)
+            (made, s.running[0].instance.emitting)
         };
         let (cut, emitting) = run(Some(0.1));
         let (full, _) = run(None);

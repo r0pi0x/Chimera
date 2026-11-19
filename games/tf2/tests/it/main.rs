@@ -7,7 +7,8 @@
 //! (`scripts`), the guns (`weapons`: M2b's four; `weapons_more`: the
 //! next eight; `melee`: the nine stock melee weapons and the backstab),
 //! a gun's impacts taking TF2's own looks on another game's map
-//! (`impacts`), the class sets a match offers (`player_sets`), the ragdolls' lifetime
+//! (`impacts`), a first-person muzzle flash drawn by the view-model camera
+//! (`flashes`), the class sets a match offers (`player_sets`), the ragdolls' lifetime
 //! (`ragdolls`: ragdolls.md's cases on a made-up skeleton), the class a
 //! rung of several classes draws with the ladder (`rung_classes`), the
 //! players' pain, death and kill lines (`voices`), the kill icons from
@@ -36,6 +37,7 @@ mod skeleton;
 mod spawns;
 mod voices;
 mod weapon_scripts;
+mod flashes;
 mod weapons;
 mod melee;
 mod weapons_more;

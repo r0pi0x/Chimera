@@ -1769,6 +1769,7 @@ fn splash(
             forward: Vec3::Y,
             emit_for: None,
             follow: None,
+            view_model: false,
         });
     } else if let Some(mats) = mats {
         let light = colors.map_or(Vec3::ONE, |c| light_below(c, world, at + Vec3::Y * s * UNIT));

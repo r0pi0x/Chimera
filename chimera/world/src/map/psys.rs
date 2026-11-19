@@ -337,6 +337,14 @@ pub struct StartParticleSystem {
     /// particles move with the entity's frame; `position` and `forward`
     /// are then the start's in the world, as without it.
     pub follow: Option<Follow>,
+    /// Drawn by the view-model camera (its layer, its field of view, over
+    /// the world and depth tested against the model:
+    /// `ParticleGroup::view_model`): a first-person effect on the view
+    /// model, `position` where the model is drawn
+    /// (`map::attached::FirstPerson::point`, not re-projected), so it sits
+    /// on the gun at any view-model field of view. Others' views of the
+    /// same effect start it in the world (on the held model).
+    pub view_model: bool,
 }
 
 /// What a started system follows (`StartParticleSystem::follow`): the
@@ -353,6 +361,6 @@ pub struct Follow {
 impl StartParticleSystem {
     /// `name` at `position` facing `forward`, as its definition runs.
     pub fn new(name: impl Into<String>, position: Vec3, forward: Vec3) -> Self {
-        Self { name: name.into(), position, forward, emit_for: None, follow: None }
+        Self { name: name.into(), position, forward, emit_for: None, follow: None, view_model: false }
     }
 }

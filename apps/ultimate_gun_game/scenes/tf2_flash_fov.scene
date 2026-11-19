@@ -1,0 +1,30 @@
+# A TF2 gun's first-person muzzle flash at two view-model fields of view
+# (`tf2_viewmodel_fov` 54, TF2's, and 80): the flash should sit on the
+# barrel at both (it is drawn by the view-model camera:
+# `StartParticleSystem::view_model`). On the greybox, looking at a wall.
+#   cargo run --features dev --bin ultimate_gun_game -- --offscreen 1280x720 +volume 0 +sandbox \
+#       --scene apps/ultimate_gun_game/scenes/tf2_flash_fov.scene --out <dir>
+wait_for map_loaded 6000
+wait_for spawned 3000
+wait 120
+god
+sandbox ammo on
+rung tf2:tf_weapon_smg
+wait 2
+wait_for idle 3000
+wait 120
+setang 0 90
+tf2_viewmodel_fov 54
+wait 30
+shot_after shot 1 flash_fov54
++attack
+wait 20
+-attack
+wait 60
+tf2_viewmodel_fov 80
+wait 30
+shot_after shot 1 flash_fov80
++attack
+wait 20
+-attack
+wait 30

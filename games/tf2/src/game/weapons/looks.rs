@@ -11,10 +11,14 @@
 //! - **Muzzle flashes**: each shot of a bullet gun or launcher (`Fired`)
 //!   starts its TF2 muzzle system (`muzzle_pistol`, `muzzle_minigun`, ...:
 //!   `GunLooks`) at the gun's `muzzle` attachment (install.md 4: on the `c_`
-//!   weapon's bones): the first-person view model's, re-projected into
-//!   the world view (`map::attached::FirstPerson::world_point`), else the
-//!   held model's (`HeldAttachment`), else a little ahead of the eye under
-//!   the gun (`MUZZLE_OFFSET`).
+//!   weapon's bones): on the first-person view model, drawn by the
+//!   view-model camera where the model is (`StartParticleSystem::
+//!   view_model`: its field of view and depth, on the barrel at any
+//!   view-model FOV); else the held model's (`HeldAttachment`: what others
+//!   see), else a little ahead of the eye under the gun (`MUZZLE_OFFSET`).
+//!   The flames start at the first-person muzzle re-projected into the
+//!   world view (`map::attached::FirstPerson::world_point`), as they
+//!   stream into the world.
 //! - **Flames**: each round of the Flame Thrower (one every 0.08 s while
 //!   attack is held) starts a piece of TF2's `flamethrower` system
 //!   (`flamethrower_blue` for team 2, BLU's) at the muzzle along the aim,
@@ -33,9 +37,7 @@
 //!   drawn in the view while the player moves and turns (playtest
 //!   2026-11-17: the flashes hung in the world behind a strafing player).
 //!
-//! Known shortcuts: the flash is drawn in the world pass at the
-//! re-projected muzzle (the view-model layer has no particle systems of
-//! its own), so the view model covers its back half; the flame is pieces
+//! Known shortcuts: the flame is pieces
 //! of TF2's system per round, not its own continuous emitter; no airblast
 //! look, no scorch decals; TF2's impact style (ricochets, pellet
 //! grouping) has no spec yet: no ricochet, every pellet's sound, as
@@ -172,8 +174,7 @@ fn explosions(mut blasts: MessageReader<Tf2Explosion>, mut start: MessageWriter<
 }
 
 /// Where a muzzle is drawn for each owner this frame (`MUZZLE_ATTACHMENT`):
-/// the first-person view model's re-projected into the world, else the
-/// held model's.
+/// the first-person view model's, else the held model's.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Muzzles<'w, 's> {
     time: Res<'w, Time>,
@@ -194,16 +195,50 @@ pub struct Muzzles<'w, 's> {
     third_person: Option<Res<'w, ShowLocalBody>>,
 }
 
+/// A muzzle on the first-person view model.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewMuzzle {
+    /// The eye it is drawn from (the view model's anchor) and its turn.
+    pub anchor: Entity,
+    pub turn: Quat,
+    /// The muzzle in the eye's frame where the view-model camera draws
+    /// it, and where it appears in the world view (re-projected).
+    pub local: Vec3,
+    pub world_local: Vec3,
+    /// Both in engine space.
+    pub at: Vec3,
+    pub world: Vec3,
+}
+
+/// Where a muzzle is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MuzzleAt {
+    View(ViewMuzzle),
+    /// On the held model (engine space).
+    Held(Vec3),
+}
+
+impl MuzzleAt {
+    /// Where it appears in the world view (engine space).
+    pub fn world(&self) -> Vec3 {
+        match self {
+            Self::View(v) => v.world,
+            Self::Held(p) => *p,
+        }
+    }
+}
+
 impl Muzzles<'_, '_> {
-    /// `owner`'s muzzle (engine space), if its gun's is drawn.
+    /// `owner`'s muzzle as it appears in the world view (engine space),
+    /// if its gun's is drawn.
     pub fn of(&self, owner: Entity) -> Option<Vec3> {
-        self.placed(owner).map(|(at, _)| at)
+        self.placed(owner).map(|m| m.world())
     }
 
-    /// `owner`'s muzzle (engine space), and on a first-person view model
-    /// the eye it is drawn from with the muzzle in the eye's frame (a
-    /// flash started there follows the gun drawn in the view).
-    pub fn placed(&self, owner: Entity) -> Option<(Vec3, Option<(Entity, Vec3, Quat)>)> {
+    /// `owner`'s muzzle: on its first-person view model (a flash started
+    /// there is drawn by the view-model camera and follows the gun drawn
+    /// in the view), else on its held model.
+    pub fn placed(&self, owner: Entity) -> Option<MuzzleAt> {
         let at = AttachPoint::named(MUZZLE_ATTACHMENT);
         let (view, offset, controls) = self.owners.get(owner).ok()?;
         let fp = first_person_shown(
@@ -220,11 +255,18 @@ impl Muzzles<'_, '_> {
         );
         match fp {
             Some(f) => {
-                let p = f.camera_point(&at)?;
-                let p = f.fovs.map_or(p, |(w, v)| crate::map::view_model::reproject(p, w, v));
-                Some((f.eye.transform_point(p), Some((f.anchor, p, f.eye.rotation()))))
+                let local = f.camera_point(&at)?;
+                let world_local = f.fovs.map_or(local, |(w, v)| crate::map::view_model::reproject(local, w, v));
+                Some(MuzzleAt::View(ViewMuzzle {
+                    anchor: f.anchor,
+                    turn: f.eye.rotation(),
+                    local,
+                    world_local,
+                    at: f.eye.transform_point(local),
+                    world: f.eye.transform_point(world_local),
+                }))
             }
-            None => attachment_point(&self.held, owner, &at).map(|p| (p, None)),
+            None => attachment_point(&self.held, owner, &at).map(MuzzleAt::Held),
         }
     }
 }
@@ -248,15 +290,22 @@ fn muzzle_flashes(
         let Some((name, emit_for)) = looks.shot_system(weapon, blu) else { continue };
         let aim = aim_of(yaw, pitch);
         let forward = aim * Vec3::NEG_Z;
-        let (at, eye) = muzzles.placed(e.owner).unwrap_or_else(|| {
-            let o = MUZZLE_OFFSET * U;
-            (origin + forward * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z, None)
-        });
-        // On a first-person gun the flash goes with the gun drawn in the
-        // view (the eye's frame), not left where it started; the flames
-        // stream into the world.
-        let follow = eye.filter(|_| emit_for.is_none()).map(|(entity, local, turn)| Follow { entity, local, forward: turn.inverse() * forward });
-        start.write(StartParticleSystem { emit_for, follow, ..StartParticleSystem::new(name, at, forward) });
+        let o = MUZZLE_OFFSET * U;
+        let ahead = || origin + forward * o.x + aim * Vec3::X * o.y + aim * Vec3::Y * o.z;
+        let s = match muzzles.placed(e.owner) {
+            // On a first-person gun the flash is the view model's: drawn by
+            // its camera where the model is, going with the gun drawn in
+            // the view (the eye's frame), not left where it started.
+            Some(MuzzleAt::View(v)) if emit_for.is_none() => StartParticleSystem {
+                follow: Some(Follow { entity: v.anchor, local: v.local, forward: v.turn.inverse() * forward }),
+                view_model: true,
+                ..StartParticleSystem::new(name, v.at, forward)
+            },
+            // The flames stream into the world from where the muzzle
+            // appears there.
+            m => StartParticleSystem { emit_for, ..StartParticleSystem::new(name, m.map_or_else(ahead, |m| m.world()), forward) },
+        };
+        start.write(s);
     }
 }
 

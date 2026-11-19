@@ -163,3 +163,54 @@ fn depth_blend_materials_fade_against_a_prepass() {
     assert!(!prepass, "no material asks: no prepass for it");
     assert!(!drawn[0].0, "{drawn:?}");
 }
+
+/// A started particle system (`StartParticleSystem`, a `.pcf` effect)
+/// marked `view_model` is drawn by the view-model camera (its layer, its
+/// field of view: a first-person muzzle flash on the gun drawn in the
+/// view), one not marked by the world's.
+#[test]
+fn started_systems_on_the_view_model_go_to_its_layer() {
+    use chimera_present::render::psys::{ParticleSystemDefs, run_started_systems};
+    use chimera_world::map::psys::{Emitter, MapParticleSystems, Render, StartParticleSystem, SystemDef};
+    let def = |name: &str| SystemDef {
+        name: name.into(),
+        material: Some(0),
+        initial_particles: 0,
+        emitters: vec![Emitter::Instantaneously { start: 0.0, count: 4 }],
+        renderer: Render::Sprites { rate: 1.0, as_fps: false, fit_life: false, orientation: 0 },
+        ..default()
+    };
+    let run = |view_model: bool| {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<Mesh>()
+            .init_asset::<ParticleDrawMaterial>()
+            .insert_resource(ParticleAssets::new(
+                MapParticles { materials: vec![ParticleMaterial { name: "flash".into(), vertex_alpha: true, ..default() }] },
+                Vec::new(),
+            ))
+            .insert_resource(ParticleSystemDefs(std::sync::Arc::new(MapParticleSystems {
+                defs: vec![def("flash")],
+                placed: Vec::new(),
+                scale: 0.0254,
+            })))
+            .init_resource::<Particles>()
+            .add_message::<StartParticleSystem>()
+            .add_systems(Update, (run_started_systems, draw_particles).chain());
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Projection::Perspective(PerspectiveProjection::default()),
+            GlobalTransform::default(),
+        ));
+        app.world_mut().write_message(StartParticleSystem {
+            view_model,
+            ..StartParticleSystem::new("flash", Vec3::new(0.1, -0.1, -0.5), Vec3::NEG_Z)
+        });
+        app.update();
+        app.update();
+        let mut q = app.world_mut().query_filtered::<Option<&RenderLayers>, With<MeshMaterial3d<ParticleDrawMaterial>>>();
+        q.iter(app.world()).map(|l| l.is_some_and(|l| *l == RenderLayers::layer(VIEW_MODEL_LAYER))).collect::<Vec<_>>()
+    };
+    assert_eq!(run(true), vec![true], "on the view model's layer");
+    assert_eq!(run(false), vec![false], "in the world");
+}
