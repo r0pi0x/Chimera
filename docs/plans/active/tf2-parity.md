@@ -196,3 +196,8 @@ Captured imagery stays in scratch, never in the repo.
   mip level (`render::detail::tested_alpha`); TF2 fades it the same way
   between 800 and 1200 units (cl_detaildist 1200, cl_detailfade 400:
   gone at ~1180, measured along the bridge) but blended, ours dithered.
+- Brass: "collision via traces" was parsed and dropped, so the Minigun's
+  casings (bounce 0, slide 0, radius scale 1.5) fell through the floor.
+  `Op::Collide` now runs for started systems (a ray per step against the
+  solid world, characters left out): the casings land and lie. TF2's fly
+  farther out to the Heavy's side and fewer lie by his feet (open).

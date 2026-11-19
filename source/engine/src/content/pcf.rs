@@ -297,8 +297,13 @@ fn add_operator(def: &mut SystemDef, list: &str, op: &Element, notes: &mut Vec<S
             axis: op.vec3("twist axis", Vec3::Z),
             local: op.bool("object local space axis 0/1"),
         }),
-        // World collision of particles: not run.
-        ("constraints", "collision via traces") => {}
+        // World collision of particles (`render::psys`: a ray from the last place).
+        ("constraints", "collision via traces") => def.operators.push(Op::Collide {
+            bounce: op.float("amount of bounce", 0.0),
+            slide: op.float("amount of slide", 0.0),
+            radius_scale: op.float("radius scale", 1.0),
+            kill: op.bool("kill particle on collision"),
+        }),
         ("renderers", "render_animated_sprites") => {
             def.renderer = Render::Sprites {
                 rate: op.float("animation rate", 1.0),

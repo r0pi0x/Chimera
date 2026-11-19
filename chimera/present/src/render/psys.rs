@@ -36,7 +36,11 @@
 //! force a uniform draw per step, twist a tangential acceleration, sprite
 //! trails are streaks back along the velocity 0.1 s long between the min and
 //! max length, animation rate without "as FPS" plays the sequence that many
-//! times a second; oscillate scalar, collision via traces and the visibility,
+//! times a second; "collision via traces" is a ray per step (its radius past
+//! the step) against the solid world for started systems only (placed
+//! ones don't collide), bounce and slide read as fractions of the speed
+//! into and along the surface (its trace tolerances and collision group
+//! aren't read); oscillate scalar and the visibility,
 //! cull and sleep settings aren't run (an unseen system freezes); control
 //! points 1-63 (`cpointN`) of a placed system all sit on the entity;
 //! "Movement Follow CP" carries a particle by its point's velocity and
@@ -238,6 +242,46 @@ pub trait Sheets {
     /// The material's colour multiplier (sprite cards' overbright).
     fn overbright(&self, _material: usize) -> f32 {
         1.0
+    }
+    /// The world particles collide with (`Op::Collide`): the first
+    /// surface on the segment `from` to `to` (game units), its point and
+    /// normal; None when nothing is there (or there's no world: tests).
+    fn trace(&self, _from: Vec3, _to: Vec3) -> Option<(Vec3, Vec3)> {
+        None
+    }
+}
+
+/// `MaterialSheets` with the map's solid world for `Sheets::trace`
+/// (characters left out: brass lands on the floor, not on the Heavy).
+pub struct WorldSheets<'a, 'w, 's> {
+    pub sheets: MaterialSheets<'a>,
+    pub spatial: Option<&'a avian3d::prelude::SpatialQuery<'w, 's>>,
+    pub filter: avian3d::prelude::SpatialQueryFilter,
+    /// Meters per game unit.
+    pub scale: f32,
+}
+
+impl Sheets for WorldSheets<'_, '_, '_> {
+    fn frames(&self, material: usize, sequence: u32) -> usize {
+        self.sheets.frames(material, sequence)
+    }
+
+    fn sheet_frames(&self, material: usize, sequence: u32) -> Option<usize> {
+        self.sheets.sheet_frames(material, sequence)
+    }
+
+    fn overbright(&self, material: usize) -> f32 {
+        self.sheets.overbright(material)
+    }
+
+    fn trace(&self, from: Vec3, to: Vec3) -> Option<(Vec3, Vec3)> {
+        let to_engine = |v: Vec3| Vec3::new(v.x, v.z, -v.y) * self.scale;
+        let (a, b) = (to_engine(from), to_engine(to));
+        let (dir, length) = Dir3::new_and_length(b - a).ok()?;
+        let hit = self.spatial?.cast_ray(a, dir, length, true, &self.filter)?;
+        let at = from + (to - from) * (hit.distance / length);
+        let n = hit.normal;
+        Some((at, Vec3::new(n.x, -n.z, n.y).normalize_or_zero()))
     }
 }
 
@@ -528,6 +572,11 @@ impl Instance {
             Op::LockToControlPoint { cp } => Some(*cp),
             _ => None,
         });
+        let collide = d.operators.iter().find_map(|o| match *o {
+            Op::Collide { bounce, slide, radius_scale, kill } => Some((bounce, slide, radius_scale, kill)),
+            _ => None,
+        });
+        let mut killed = false;
         for p in &mut self.particles {
             // A particle made during this step lives only its part of it.
             let dt = dt + p.age.min(0.0);
@@ -576,7 +625,25 @@ impl Instance {
                         p.velocity = p.velocity.clamp_length_max(max);
                     }
                 }
-                p.position += p.velocity * dt;
+                let to = p.position + p.velocity * dt;
+                // A ray reaching its radius (x the scale) past the step: it
+                // stops that far off a surface.
+                let reach = |scale: f32| (to - p.position).normalize_or_zero() * (p.radius * p.radius_mul * scale).max(0.01);
+                match collide.and_then(|c| sheets.trace(p.position, to + reach(c.2)).map(|h| (c, h))) {
+                    Some(((bounce, slide, radius_scale, kill), (at, normal))) => {
+                        // On the surface: `slide` of its speed along it,
+                        // `bounce` of its speed into it, reversed.
+                        let into = p.velocity.dot(normal).min(0.0);
+                        let along = p.velocity - normal * p.velocity.dot(normal);
+                        p.velocity = along * slide - normal * into * bounce;
+                        p.position = at + normal * (p.radius * p.radius_mul * radius_scale).max(0.01);
+                        if kill {
+                            p.life = -1.0;
+                            killed = true;
+                        }
+                    }
+                    None => p.position = to,
+                }
             }
             for o in &d.operators {
                 match *o {
@@ -624,6 +691,9 @@ impl Instance {
         }
         if decays {
             self.particles.retain(|p| p.age < p.life);
+        }
+        if killed {
+            self.particles.retain(|p| p.life >= 0.0);
         }
         // Children start after their delay (while the parent emits).
         for (delay, child, def) in &mut self.children {
@@ -1390,6 +1460,8 @@ pub fn run_started_systems(
     frames: Query<(&Transform, Option<&ChildOf>)>,
     set_points: Query<&ParticleControlPoints>,
     mut shown: Option<ResMut<RunningSystems>>,
+    spatial: Option<avian3d::prelude::SpatialQuery>,
+    characters: Query<Entity, With<crate::core::Intent>>,
 ) {
     let Some(defs) = defs else {
         starts.clear();
@@ -1489,7 +1561,12 @@ pub fn run_started_systems(
             .collect();
         started.set_points(tag, &points, set.active);
     }
-    let sheets = MaterialSheets(materials.as_ref().map(|m| &m.0));
+    let sheets = WorldSheets {
+        sheets: MaterialSheets(materials.as_ref().map(|m| &m.0)),
+        spatial: spatial.as_ref(),
+        filter: avian3d::prelude::SpatialQueryFilter::from_excluded_entities(characters.iter()).with_mask(crate::core::SOLID_LAYERS),
+        scale: defs.scale.max(1e-6),
+    };
     started.step(time.delta_secs().min(0.25), &sheets);
     if let Some(shown) = shown.as_mut() {
         shown.0 = started
@@ -1966,6 +2043,55 @@ mod tests {
         let long = corners[0].distance(corners[1]);
         assert!(long > 100.0 && long < 400.0, "{long}");
         assert!((corners[0].distance(corners[3]) - long).abs() < 1e-3, "as wide as long: {corners:?}");
+    }
+
+    /// "Collision via traces" (`Op::Collide`): TF2's Minigun brass (bounce
+    /// 0, slide 0, radius scale 1.5) lands on the floor and lies there; it
+    /// fell through the bridge's floor before. With bounce 1 a particle
+    /// comes back up; with `kill` it dies on the floor.
+    #[test]
+    fn particles_land_on_the_world_with_their_bounce_and_slide() {
+        struct Floor;
+        impl Sheets for Floor {
+            fn frames(&self, _: usize, _: u32) -> usize {
+                1
+            }
+            fn trace(&self, from: Vec3, to: Vec3) -> Option<(Vec3, Vec3)> {
+                (from.z >= 0.0 && to.z < 0.0).then(|| (from + (to - from) * (from.z / (from.z - to.z)), Vec3::Z))
+            }
+        }
+        let fall = |bounce: f32, kill: bool| {
+            let mut brass = system();
+            brass.radius = 2.0;
+            brass.emitters = vec![Emitter::Instantaneously { start: 0.0, count: 1 }];
+            brass.initializers = vec![Init::Lifetime(Pick::new(2.0, 2.0, 1.0))];
+            brass.operators = vec![
+                Op::Movement { gravity: Vec3::new(0.0, 0.0, -800.0), drag: 0.0 },
+                Op::Collide { bounce, slide: 0.0, radius_scale: 1.5, kill },
+                Op::Decay,
+            ];
+            let defs = vec![brass];
+            let cps = [ControlPoint { position: Vec3::new(0.0, 0.0, 40.0), ..ControlPoint::default() }];
+            let mut rng = ParticleRng::new(3);
+            let mut i = Instance::new(&defs, 0);
+            let mut lowest = f32::MAX;
+            for _ in 0..60 {
+                i.step(&defs, &cps, 1.0 / 60.0, &mut rng, &Floor);
+                if let Some(p) = i.particles.first() {
+                    lowest = lowest.min(p.position.z);
+                }
+            }
+            (i.particles.first().map(|p| (p.position, p.velocity)), lowest)
+        };
+        let (rest, lowest) = fall(0.0, false);
+        let (at, velocity) = rest.expect("still there");
+        assert!((at.z - 3.0).abs() < 0.2, "lies 1.5 x its radius up: {at}");
+        assert!(lowest >= 2.9, "never under the floor: {lowest}");
+        assert!(velocity.length() < 15.0, "at rest: {velocity}");
+        let (bounced, _) = fall(1.0, false);
+        assert!(bounced.is_some());
+        let (gone, _) = fall(0.0, true);
+        assert!(gone.is_none(), "killed on the floor");
     }
 
     /// "Lifetime from sequence" leaves the life alone on a material

@@ -348,6 +348,18 @@ pub enum Op {
         axis: Vec3,
         local: bool,
     },
+    /// "Collision via traces": a particle meeting the world stops on it
+    /// (`radius_scale` x its radius off the surface), keeping `slide` of
+    /// its speed along the surface and `bounce` of its speed into it,
+    /// reversed; with `kill` it dies there. Specs/tf2/particles.md 7:
+    /// "bounce and slide fractions" (the Minigun's brass: 0 and 0, it
+    /// lands and lies; the flame's drips 0.2 and 0.2).
+    Collide {
+        bounce: f32,
+        slide: f32,
+        radius_scale: f32,
+        kill: bool,
+    },
     /// "Movement Follow CP": each step the particle moves with its own
     /// control point (`Init::AssignTargetCp`; the point's velocity) and
     /// closes the gap to it at `catch_up` units a second. 0 leaves it
